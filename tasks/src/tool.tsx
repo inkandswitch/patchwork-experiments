@@ -51,7 +51,7 @@ export const Tool = (handle: DocHandle<unknown>, element: HTMLElement) => {
   root.render(
     <RepoContext.Provider value={repo}>
       <div className="flex flex-col items-center justify-center h-full">
-        <Suspense fallback="..."><ITaskBrowserTool docUrl={handle.url} /></Suspense>
+        <Suspense fallback="..."><ITaskQueueBrowserTool docUrl={handle.url} /></Suspense>
       </div>
     </RepoContext.Provider>
   );
