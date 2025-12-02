@@ -1,5 +1,3 @@
-import { HasVersionControlMetadata } from '@patchwork/sdk/versionControl';
-import { type DataTypeImplementation } from '@patchwork/sdk';
 import { AutomergeUrl } from '@automerge/automerge-repo';
 
 // Task
@@ -10,8 +8,7 @@ export type Task<Input, Result> = {
   runs: RunInfo<Result>[];
 };
 
-export type TaskDoc<Input, Result> = HasVersionControlMetadata<unknown, unknown> &
-  Task<Input, Result>;
+export type TaskDoc<Input, Result> = Task<Input, Result>;
 
 export type RunInfo<Result> = {
   runner: string;
@@ -22,16 +19,16 @@ export type RunInfo<Result> = {
   endTime: number;
 };
 
-export const taskDatatype: DataTypeImplementation<TaskDoc<any, any>, unknown> = {
+export const taskDatatype: any = {
   init(doc: TaskDoc<any, any>) {
     doc.input = null;
     doc.importUrl = '';
     doc.runs = [];
   },
-  async getTitle(_doc: TaskDoc<any, any>) {
+  getTitle(_doc: TaskDoc<any, any>) {
     return 'Task';
   },
-  async setTitle(_doc: TaskDoc<any, any>, _title: string) {
+  setTitle(_doc: TaskDoc<any, any>, _title: string) {
     // no op
   },
   markCopy(_doc: TaskDoc<any, any>) {
@@ -49,9 +46,9 @@ export type TaskQueue = {
   done: AutomergeUrl[]; // ids of task documents
 };
 
-export type TaskQueueDoc = HasVersionControlMetadata<unknown, unknown> & TaskQueue;
+export type TaskQueueDoc = TaskQueue;
 
-export const taskQueueDatatype: DataTypeImplementation<TaskQueueDoc, unknown> = {
+export const taskQueueDatatype: any = {
   init(doc: TaskQueueDoc) {
     doc.pending = [];
     doc.done = [];
@@ -72,11 +69,11 @@ async function seconds(s) {
 }
 `;
   },
-  async getTitle(doc: TaskQueueDoc) {
+  getTitle(doc: TaskQueueDoc) {
     // the fact that this is async makes it not so useful in react, no?
     return doc.title ?? 'Task Queue';
   },
-  async setTitle(doc: TaskQueueDoc, title: string) {
+  setTitle(doc: TaskQueueDoc, title: string) {
     doc.title = title;
   },
   markCopy(doc: TaskQueueDoc) {
@@ -92,4 +89,4 @@ export type Runner = {
   currentTask: AutomergeUrl | null;
 };
 
-export type RunnerDoc = HasVersionControlMetadata<unknown, unknown> & Runner;
+export type RunnerDoc = Runner;

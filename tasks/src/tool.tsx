@@ -1,7 +1,5 @@
 import React, { Suspense, useEffect, useState } from 'react';
 import { useRepo, useDocument, useDocHandle, RepoContext } from '@automerge/automerge-repo-react-hooks';
-import { EditorProps, useCurrentAccount } from '@patchwork/sdk';
-import { InlineContactAvatar } from '@patchwork/sdk/components';
 import { RunInfo, Runner, Task, TaskQueue } from './datatype';
 import { TaskRunner } from './task-runner';
 import { AutomergeUrl, DocHandle, Repo, updateText } from '@automerge/automerge-repo';
@@ -25,7 +23,7 @@ const IRunner: React.FC<any> = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   return (
     <div className="m-4">
       <div>
-        {doc.contactUrl && <InlineContactAvatar url={doc.contactUrl} size={'default'} />} /{' '}
+        {doc.contactUrl /*&& <InlineContactAvatar url={doc.contactUrl} size={'default'} />*/} /{' '}
         {doc.name}
       </div>
       <div>
@@ -60,7 +58,8 @@ export const Tool = (handle: DocHandle<unknown>, element: HTMLElement) => {
   return () => root.unmount();
 };
 
-const ITaskBrowserTool: React.FC<EditorProps<Task<any, any>, string>> = ({ docUrl }) => {
+// TODO: EditorProps replacement type
+const ITaskBrowserTool: React.FC<any> = ({ docUrl }) => {
   const [doc] = useDocument<Task<any, any>>(docUrl, { suspense: true });
   const hasntRun = doc.runs.length === 0;
   const failed = doc.runs.every((run) => run.status === 'failed');
@@ -113,13 +112,13 @@ const Run: React.FC<any> = ({ run }: { run: RunInfo<any> }) => {
   );
 };
 
-export const TaskBrowserTool: React.FC<EditorProps<Task<any, any>, string>> = (props) => (
+export const TaskBrowserTool: React.FC<any> = (props) => (
   <Suspense fallback="...">
     <ITaskBrowserTool {...props} />
   </Suspense>
 );
 
-const ITaskQueueBrowserTool: React.FC<EditorProps<TaskQueue, string>> = ({ docUrl }) => {
+const ITaskQueueBrowserTool: React.FC<any> = ({ docUrl }) => {
   const repo = useRepo();
   const [doc, changeDoc] = useDocument<TaskQueue>(docUrl, { suspense: true });
 
@@ -143,8 +142,11 @@ const ITaskQueueBrowserTool: React.FC<EditorProps<TaskQueue, string>> = ({ docUr
     };
   }, [handle]);
 
-  const account = useCurrentAccount();
-  const contactUrl = account?.contactHandle?.url;
+  // const account = useCurrentAccount();
+  // const contactUrl = account?.contactHandle?.url;
+  
+  // everyone is pvh
+  const contactUrl = "automerge:2GNWv5e8GRirMDEff14LfQKCc9J6" as AutomergeUrl;
 
   useEffect(() => {
     if (!contactUrl) return;
@@ -242,7 +244,7 @@ const ITaskQueueBrowserTool: React.FC<EditorProps<TaskQueue, string>> = ({ docUr
   }
 };
 
-export const TaskQueueBrowserTool: React.FC<EditorProps<TaskQueue, string>> = (props) => (
+export const TaskQueueBrowserTool: React.FC<any> = (props) => (
   <Suspense fallback="...">
     <ITaskQueueBrowserTool {...props} />
   </Suspense>
