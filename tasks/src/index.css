@@ -1,0 +1,4 @@
+.task-browser {
+  @import 'tailwindcss';
+  margin: 4pt;
+}
