@@ -1,7 +1,6 @@
 import type { BuildOptions } from "esbuild";
-import dynamicExternal from "./plugin-dynamic-external.ts";
 import process from "node:process";
-
+import externals from "@patchwork/bootloader/externals";
 import pushworkSync from "./plugin-pushwork-sync.ts";
 import pkgJSON from "../package.json" with { type: "json" };
 
@@ -18,8 +17,7 @@ export default {
   sourcemap: false,
   jsx: "automatic",
   jsxImportSource: "react",
-  plugins: [
-    dynamicExternal(/^((@automerge\/automerge(-repo)?)|@patchwork\/.*)$/),
-  ].concat(pushworking ? pushworkSync() : []),
+  external: externals,
+  plugins: pushworking ? [pushworkSync()] : [],
   loader: { ".ttf": "dataurl" },
 } satisfies BuildOptions;
