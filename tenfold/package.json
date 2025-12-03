@@ -36,6 +36,7 @@
     "@kobalte/core": "^0.13.11",
     "@lezer/highlight": "^1.2.2",
     "@lezer/javascript": "^1.5.4",
+    "@patchwork/bootloader": "workspace:^",
     "@patchwork/context-selection": "workspace:^",
     "@patchwork/elements": "workspace:^",
     "@patchwork/solid": "workspace:^",

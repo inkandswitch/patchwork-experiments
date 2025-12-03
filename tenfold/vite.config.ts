@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import solid from "vite-plugin-solid";
+import externals from "@patchwork/bootloader/externals";
 
 export default defineConfig({
   base: "./",
@@ -14,12 +15,6 @@ export default defineConfig({
       },
       formats: ["es"],
     },
-    rollupOptions: {
-      external(id) {
-        return !!id.match(
-          /^((@automerge\/automerge(-repo)?(\/.*)?)|solid-js(\/.*)?|@patchwork\/.*|@codemirror\/state)$/
-        );
-      },
-    },
+    rollupOptions: { external: externals },
   },
 });
