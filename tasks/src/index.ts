@@ -25,5 +25,3 @@ export const plugins: Plugin<any>[] = [
     },
   },
 ];
-
-export const { TaskRunner } = await import('./task-runner');
