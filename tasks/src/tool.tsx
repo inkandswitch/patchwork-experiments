@@ -274,17 +274,6 @@ export const TaskQueueBrowserTool: React.FC<any> = (props) => (
 );
 
 function startWorkers(queueHandle: DocHandle<TaskQueue>, contactUrl: AutomergeUrl): Worker[] {
-  // Check if SharedWorker is available (for tiny-patchwork)
-  // @ts-ignore - window.__sharedworker may exist
-  const existingSharedWorker = (window as any).__sharedworker as SharedWorker | undefined;
-
-  if (!existingSharedWorker) {
-    console.warn(
-      'no shared worker available (window.__sharedworker not found), workers cannot be initialized'
-    );
-    return [];
-  }
-
   // Extract import map from the main thread
   const importMapElement = document.querySelector('script[type="importmap"]');
   let importMap = null;
