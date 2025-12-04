@@ -298,47 +298,21 @@ function startWorkers(queueHandle: DocHandle<TaskQueue>, contactUrl: AutomergeUr
 
   const workers: Worker[] = [];
   for (let i = 0; i < NUM_WORKERS; i++) {
-    // Create a new SharedWorker connection for this worker
-    // Each new SharedWorker instance (even with the same name) triggers a 'connect' event
-    // in the SharedWorker, which adds the port to the repo's network adapters
-    // Hardcoded for testing - this is the actual built file path
-    const sharedWorkerUrl = '/assets/automerge-worker-BYRQdlqy.js';
-    console.log('sharedWorkerUrl', sharedWorkerUrl);
-    const workerSharedWorker = new SharedWorker(sharedWorkerUrl, {
-      type: 'module',
-      name: 'automerge-repo-shared-worker',
-    });
-    // Don't start the port yet - wait until the worker is ready
-    console.log('workerSharedWorker', workerSharedWorker);
-    console.log('workerSharedWorker.port', workerSharedWorker.port);
     // Create and initialize autonomous worker
     const worker = new Worker(new URL('./worker.js', import.meta.url), {
       type: 'module',
     });
 
-    // Add diagnostic listeners to the SharedWorker port
-    workerSharedWorker.port.addEventListener('message', (e) => {
-      console.log('main: SharedWorker port received message', e.data);
-    });
-    workerSharedWorker.port.addEventListener('messageerror', (e) => {
-      console.error('main: SharedWorker port message error', e);
-    });
-
-    // Send the SharedWorker port, queue URL, contact URL, and import map to the worker
-    // The port from workerSharedWorker.port is already connected to the SharedWorker's repo
-    console.log('main: Sending port to worker', {
-      queueUrl: queueHandle.url,
-      portType: workerSharedWorker.port.constructor.name,
-    });
+    const port = (window as any).getRepoChannel();
     worker.postMessage(
       {
-        port: workerSharedWorker.port,
+        port: port,
         queueUrl: queueHandle.url,
         contactUrl: contactUrl!,
         importMap,
         baseURI: document.baseURI,
       },
-      [workerSharedWorker.port]
+      [port]
     );
     console.log('main: Port transferred to worker');
     workers.push(worker);
