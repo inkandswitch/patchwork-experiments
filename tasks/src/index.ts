@@ -18,7 +18,7 @@ export const plugins: Plugin<any>[] = [
     id: 'task-queue-browser',
     name: 'Task Queue Browser',
     icon: 'CirclePlus',
-    supportedDataTypes: ['task-queue'],
+    supportedDatatypes: ['task-queue'],
     async load() {
       const { Tool } = await import('./tool');
       return Tool;
@@ -29,7 +29,7 @@ export const plugins: Plugin<any>[] = [
     id: 'task-titlebar',
     name: 'Task Titlebar',
     icon: 'Square',
-    supportedDataTypes: '*',
+    supportedDatatypes: '*',
     unlisted: true,
     forTitleBar: true,
     async load() {
