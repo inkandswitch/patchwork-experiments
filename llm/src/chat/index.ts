@@ -1,5 +1,4 @@
 import { Plugin } from "@inkandswitch/patchwork-plugins";
-import { createAgentAction } from "./actions";
 
 export const plugins: Plugin<any>[] = [
   {
@@ -23,5 +22,4 @@ export const plugins: Plugin<any>[] = [
       return ChatDataType;
     },
   },
-  createAgentAction,
 ];

@@ -1,7 +1,7 @@
 import globals from "globals";
 import pluginJs from "@eslint/js";
 import tseslint from "typescript-eslint";
-import pluginReactConfig from "eslint-plugin-react/configs/recommended.js";
+import pluginReactConfig from "eslint-plugin-react/configs/recommended";
 
 export default [
   { files: ["**/*.{js,mjs,cjs,ts,jsx,tsx}"] },
@@ -17,6 +17,3 @@ export default [
     },
   },
 ];
-
-
-
