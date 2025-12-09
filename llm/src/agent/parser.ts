@@ -196,23 +196,26 @@ export async function* parseBlocks(
  * Returns buffer.length if no potential partial tag is found.
  */
 function findPotentialPartialOpenTag(buffer: string): number {
-  const maxTagLength = '<thinking description="">'.length;
+  // Search the entire buffer since descriptions can be arbitrarily long
+  for (let i = 0; i < buffer.length; i++) {
+    if (buffer[i] !== "<") continue;
 
-  for (
-    let i = Math.max(0, buffer.length - maxTagLength);
-    i < buffer.length;
-    i++
-  ) {
-    if (buffer[i] === "<") {
-      const remaining = buffer.slice(i);
+    const remaining = buffer.slice(i);
 
-      // Check if this could be the start of <action or <thinking
-      if (
-        '<action description="'.startsWith(remaining) ||
-        '<thinking description="'.startsWith(remaining)
-      ) {
+    // Check for very short partials (e.g., "<", "<t", "<thi", "<action ")
+    if ("<action".startsWith(remaining) || "<thinking".startsWith(remaining)) {
+      return i;
+    }
+
+    // Check for longer partials where the tag name is complete but description may be partial
+    if (remaining.startsWith("<action") || remaining.startsWith("<thinking")) {
+      // Verify it's not a complete tag by checking if regex matches at start
+      const match = remaining.match(OPENING_TAG_REGEX);
+      if (!match || match.index !== 0) {
+        // No complete tag at this position, so it's partial
         return i;
       }
+      // Complete tag found here, continue looking for potential partials after it
     }
   }
 
