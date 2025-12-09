@@ -1,22 +1,40 @@
 import { AutomergeUrl, parseAutomergeUrl } from "@automerge/automerge-repo";
-import { useDocument } from "@automerge/automerge-repo-react-hooks";
-import { BotIcon, MessageSquareIcon, SendIcon } from "lucide-react";
+import { useDocument, useRepo } from "@automerge/automerge-repo-react-hooks";
+import { BotIcon, SendIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import "./styles.css";
 import { ChatDoc, ChatMessage } from "./types";
 import "@inkandswitch/patchwork-elements";
 import { formatTimestamp, toolify, useCurrentContactUrl } from "./utils";
+import { AgentDoc, step } from "../agent/Agent";
 
 const FIVE_MINUTES_MS = 1000 * 60 * 5;
 
 const Chat = ({ docUrl }: { docUrl: AutomergeUrl }) => {
+  const repo = useRepo();
   const [chatDoc, changeChatDoc] = useDocument<ChatDoc>(docUrl, {
     suspense: true,
   });
+  const [agentDoc, changeAgentDoc] = useDocument<AgentDoc>(
+    chatDoc.agentDocUrl,
+    {
+      suspense: true,
+    }
+  );
   const [pendingMessage, setPendingMessage] = useState("");
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const contactUrl = useCurrentContactUrl();
+
+  // link agent doc to chat
+  // we can't do that in init because we don't know the url of the chat doc in that method
+  useEffect(() => {
+    if (agentDoc.chatDocUrl !== docUrl) {
+      changeAgentDoc((doc: AgentDoc) => {
+        doc.chatDocUrl = docUrl;
+      });
+    }
+  }, [agentDoc]);
 
   // Auto-scroll chat to bottom
   useEffect(() => {
@@ -34,7 +52,7 @@ const Chat = ({ docUrl }: { docUrl: AutomergeUrl }) => {
       author: contactUrl,
       content: {
         type: "text",
-        content: pendingMessage,
+        text: pendingMessage,
       },
       timestamp: Date.now(),
     };
@@ -43,6 +61,8 @@ const Chat = ({ docUrl }: { docUrl: AutomergeUrl }) => {
       if (!doc.messages) doc.messages = [];
       doc.messages.push(message);
     });
+
+    step(chatDoc.agentDocUrl, repo);
 
     setPendingMessage("");
   };
@@ -61,33 +81,23 @@ const Chat = ({ docUrl }: { docUrl: AutomergeUrl }) => {
 
   return (
     <div className="h-full w-full flex flex-col">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b">
-        <MessageSquareIcon size={16} />
-        <span className="font-semibold">Chat</span>
-      </div>
-
       {/* Attached Agents Section */}
-      {chatDoc.agentDocUrls && chatDoc.agentDocUrls.length > 0 && (
+      {chatDoc.agentDocUrl && (
         <div className="px-4 py-2 border-b bg-base-200">
           <div className="flex items-center gap-2 text-sm">
             <BotIcon size={14} />
-            <span className="font-medium">Attached agents:</span>
+            <span className="font-medium">Attached agent:</span>
             <div className="flex gap-2 flex-wrap">
-              {chatDoc.agentDocUrls.map((agentUrl, idx) => {
-                const { documentId } = parseAutomergeUrl(agentUrl);
-
-                return (
-                  <a
-                    key={agentUrl}
-                    className="badge badge-sm badge-primary cursor-pointer"
-                    title={agentUrl}
-                    href={`#doc=${documentId}&tool=agent`}
-                  >
-                    Agent {idx + 1}
-                  </a>
-                );
-              })}
+              <a
+                key={chatDoc.agentDocUrl}
+                className="badge badge-sm p-2 cursor-pointer"
+                title={chatDoc.agentDocUrl}
+                href={`#doc=${
+                  parseAutomergeUrl(chatDoc.agentDocUrl).documentId
+                }&tool=agent`}
+              >
+                Agent
+              </a>
             </div>
           </div>
         </div>
@@ -174,7 +184,7 @@ const groupMessages = (messages: ChatMessage[]): MessageGroup[] => {
 // Render a single message content
 const MessageRenderer = ({ message }: { message: ChatMessage }) => {
   if (message.content.type === "text") {
-    const content = message.content.content;
+    const content = message.content.text;
     if (!content || !content.trim()) {
       return null;
     }
@@ -197,7 +207,7 @@ const MessageGroupRenderer = ({ group }: { group: MessageGroup }) => {
       <div className="w-fit">
         <patchwork-view doc-url={group.author} tool-id="contact-avatar" />
       </div>
-      <div className="flex flex-col gap-2 bg-neutral-100 rounded-md p-2 flex-1">
+      <div className="flex flex-col gap-2 rounded-md p-2 flex-1">
         <div className="flex items-center gap-2 ">
           <span className="text-sm font-medium">
             {contactDoc.name ?? "Anonymous"}

@@ -2,13 +2,13 @@ import { AutomergeUrl } from "@automerge/automerge-repo";
 
 type TextBlock = {
   type: "text";
-  content: string;
+  text: string;
 };
 
 type ThinkingBlock = {
   type: "thinking";
   description: string;
-  content: string;
+  text: string;
 };
 
 type ActionBlock = {
@@ -34,6 +34,7 @@ export type ChatMessage = {
 };
 
 export type ChatDoc = {
+  title: string;
   messages: ChatMessage[];
-  agentDocUrls: AutomergeUrl[];
+  agentDocUrl: AutomergeUrl;
 };
