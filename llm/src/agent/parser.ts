@@ -1,224 +1,246 @@
-// Block types with state discriminator
+import type {
+  ActionBlock,
+  ContentBlock,
+  TextBlock,
+  ThinkingBlock,
+} from "../chat/types";
 
-type;
+type ParserState = "text" | "in_action" | "in_thinking";
 
-export type ThinkingBlock = {
-  type: "thinking";
-  state: "in_progress" | "complete";
-  description: string;
-  content: string;
+export type CreateBlockEvent = {
+  type: "create";
+  block: ContentBlock;
 };
 
-export type MessageBlock = {
-  type: "message";
-  state: "complete";
-  content: string;
-};
-
-export type InProgressActionBlock = {
-  type: "action";
-  state: "in_progress";
-  description: string;
-  content: string;
-};
-
-export type CompleteActionBlock = {
-  type: "action";
-  state: "complete";
-  description: string;
-  action: {
-    actionId: string;
-    target: string;
-    args: Record<string, unknown>;
-  };
-};
-
-export type ActionBlock = InProgressActionBlock | CompleteActionBlock;
-
-export type ParsedBlock = ThinkingBlock | MessageBlock | ActionBlock;
-
-export type ParseResult = {
-  blocks: ParsedBlock[];
-  remainingBuffer: string;
-};
-
-interface BlockMatch {
-  start: number;
-  end: number;
-  complete: boolean;
-  block: ThinkingBlock | ActionBlock;
-}
-
-type AddAction<T> = {
-  type: "add";
-  block: T
-}
-
-type UpdateAction<T> = {
+export type UpdateBlockEvent = {
   type: "update";
-  block: T
+  block: ContentBlock;
+};
+
+export type ParseEvent = CreateBlockEvent | UpdateBlockEvent;
+
+const OPENING_TAG_REGEX = /<(action|thinking)\s+description="([^"]*)">/;
+
+/**
+ * Streaming parser that processes an AsyncGenerator of string chunks
+ * and emits ParseEvents for content blocks.
+ *
+ * Block types:
+ * - <action description="...">JSON content</action>
+ * - <thinking description="...">text content</thinking>
+ * - Everything else is plain text
+ */
+export async function* parseBlocks(
+  stream: AsyncGenerator<string>
+): AsyncGenerator<ParseEvent> {
+  let buffer = "";
+  let state: ParserState = "text";
+  let currentTextBlock: TextBlock | null = null;
+  let currentSpecialBlock: ActionBlock | ThinkingBlock | null = null;
+  let blockContent = "";
+
+  for await (const chunk of stream) {
+    buffer += chunk;
+
+    while (true) {
+      if (state === "text") {
+        const match = buffer.match(OPENING_TAG_REGEX);
+
+        if (match && match.index !== undefined) {
+          // Emit text before the tag
+          if (match.index > 0) {
+            const textBefore = buffer.slice(0, match.index);
+            if (currentTextBlock) {
+              currentTextBlock.text += textBefore;
+              yield { type: "update", block: currentTextBlock };
+            } else {
+              currentTextBlock = { type: "text", text: textBefore };
+              yield { type: "create", block: currentTextBlock };
+            }
+          }
+
+          // Reset text block since we're starting a special block
+          currentTextBlock = null;
+
+          const tagType = match[1] as "action" | "thinking";
+          const description = match[2];
+
+          if (tagType === "action") {
+            currentSpecialBlock = { type: "action", description };
+            state = "in_action";
+          } else {
+            currentSpecialBlock = { type: "thinking", description, text: "" };
+            state = "in_thinking";
+          }
+
+          yield { type: "create", block: currentSpecialBlock };
+          blockContent = "";
+          buffer = buffer.slice(match.index + match[0].length);
+        } else {
+          // No complete opening tag found
+          // Check if there might be a partial tag at the end
+          const partialTagIndex = findPotentialPartialOpenTag(buffer);
+
+          if (partialTagIndex < buffer.length) {
+            // Emit safe text before potential partial tag
+            if (partialTagIndex > 0) {
+              const textToEmit = buffer.slice(0, partialTagIndex);
+              if (currentTextBlock) {
+                currentTextBlock.text += textToEmit;
+                yield { type: "update", block: currentTextBlock };
+              } else {
+                currentTextBlock = { type: "text", text: textToEmit };
+                yield { type: "create", block: currentTextBlock };
+              }
+            }
+            buffer = buffer.slice(partialTagIndex);
+          } else {
+            // No potential partial tag, emit all
+            if (buffer.length > 0) {
+              if (currentTextBlock) {
+                currentTextBlock.text += buffer;
+                yield { type: "update", block: currentTextBlock };
+              } else {
+                currentTextBlock = { type: "text", text: buffer };
+                yield { type: "create", block: currentTextBlock };
+              }
+              buffer = "";
+            }
+          }
+          break; // Wait for more data
+        }
+      } else {
+        // In action or thinking block
+        const closingTag = state === "in_action" ? "</action>" : "</thinking>";
+        const closeIndex = buffer.indexOf(closingTag);
+
+        if (closeIndex !== -1) {
+          // Found closing tag
+          blockContent += buffer.slice(0, closeIndex);
+
+          if (currentSpecialBlock) {
+            if (currentSpecialBlock.type === "action") {
+              try {
+                currentSpecialBlock.action = JSON.parse(blockContent.trim());
+              } catch (e) {
+                console.error("Failed to parse action JSON:", blockContent, e);
+              }
+            } else {
+              currentSpecialBlock.text = blockContent;
+            }
+            yield { type: "update", block: currentSpecialBlock };
+          }
+
+          buffer = buffer.slice(closeIndex + closingTag.length);
+          state = "text";
+          currentSpecialBlock = null;
+          blockContent = "";
+        } else {
+          // No closing tag yet, check for partial closing tag at end
+          const tagType = state === "in_action" ? "action" : "thinking";
+          const partialCloseIndex = findPotentialPartialCloseTag(
+            buffer,
+            tagType
+          );
+
+          if (partialCloseIndex < buffer.length) {
+            blockContent += buffer.slice(0, partialCloseIndex);
+            buffer = buffer.slice(partialCloseIndex);
+          } else {
+            blockContent += buffer;
+            buffer = "";
+          }
+
+          // For thinking blocks, emit streaming updates
+          if (currentSpecialBlock && currentSpecialBlock.type === "thinking") {
+            currentSpecialBlock.text = blockContent;
+            yield { type: "update", block: currentSpecialBlock };
+          }
+
+          break; // Wait for more data
+        }
+      }
+    }
+  }
+
+  // Handle remaining buffer at end of stream
+  if (state === "text") {
+    if (buffer.length > 0) {
+      if (currentTextBlock) {
+        currentTextBlock.text += buffer;
+        yield { type: "update", block: currentTextBlock };
+      } else {
+        yield { type: "create", block: { type: "text", text: buffer } };
+      }
+    }
+  } else {
+    // Unclosed block at end of stream - finalize it with remaining content
+    blockContent += buffer;
+    if (currentSpecialBlock) {
+      if (currentSpecialBlock.type === "action") {
+        try {
+          currentSpecialBlock.action = JSON.parse(blockContent.trim());
+        } catch {
+          // Leave action undefined if JSON is invalid
+        }
+      } else {
+        currentSpecialBlock.text = blockContent;
+      }
+      yield { type: "update", block: currentSpecialBlock };
+    }
+  }
 }
 
-type Action = 
+/**
+ * Find the index where a potential partial opening tag starts at the end of the buffer.
+ * Returns buffer.length if no potential partial tag is found.
+ */
+function findPotentialPartialOpenTag(buffer: string): number {
+  const maxTagLength = '<thinking description="">'.length;
 
+  for (
+    let i = Math.max(0, buffer.length - maxTagLength);
+    i < buffer.length;
+    i++
+  ) {
+    if (buffer[i] === "<") {
+      const remaining = buffer.slice(i);
 
-export async function* parseResponse(buffer: string): Generator<ParsedBlock> {
-  const blocks: ParsedBlock[] = [];
-  const workingBuffer = buffer;
-  const blockMatches: BlockMatch[] = [];
-
-  // Find complete thinking blocks
-  const thinkingRegex =
-    /<thinking\s+description="([^"]+)">([\s\S]*?)<\/thinking>/g;
-  let match;
-  while ((match = thinkingRegex.exec(workingBuffer)) !== null) {
-    blockMatches.push({
-      start: match.index,
-      end: match.index + match[0].length,
-      complete: true,
-      block: {
-        type: "thinking",
-        state: "complete",
-        description: match[1].trim(),
-        content: match[2].trim(),
-      },
-    });
-  }
-
-  // Find complete action blocks
-  const actionRegex = /<action\s+description="([^"]+)">([\s\S]*?)<\/action>/g;
-  while ((match = actionRegex.exec(workingBuffer)) !== null) {
-    const description = match[1].trim();
-    const jsonContent = match[2].trim();
-    try {
-      const parsed = JSON.parse(jsonContent);
-      blockMatches.push({
-        start: match.index,
-        end: match.index + match[0].length,
-        complete: true,
-        block: {
-          type: "action",
-          state: "complete",
-          description,
-          action: {
-            actionId: parsed.actionId,
-            target: parsed.target,
-            args: parsed.args || {},
-          },
-        },
-      });
-    } catch {
-      // Invalid JSON in complete block - skip it
-      console.error("Invalid JSON in action block:", jsonContent);
-    }
-  }
-
-  // Check for incomplete thinking block at end
-  let incompleteStart = -1;
-  let remainingBuffer = "";
-
-  const hasIncompleteThinking =
-    workingBuffer.includes("<thinking") &&
-    !workingBuffer
-      .slice(workingBuffer.lastIndexOf("<thinking"))
-      .includes("</thinking>");
-
-  if (hasIncompleteThinking) {
-    const startIndex = workingBuffer.lastIndexOf("<thinking");
-    incompleteStart = startIndex;
-    const incompleteText = workingBuffer.slice(startIndex);
-    const incompleteThinkingRegex =
-      /<thinking\s+description="([^"]+)">([^]*?)$/;
-    const incMatch = incompleteText.match(incompleteThinkingRegex);
-    if (incMatch) {
-      blockMatches.push({
-        start: startIndex,
-        end: workingBuffer.length,
-        complete: false,
-        block: {
-          type: "thinking",
-          state: "in_progress",
-          description: incMatch[1].trim(),
-          content: incMatch[2].trim(),
-        },
-      });
-    }
-    remainingBuffer = incompleteText;
-  }
-
-  // Check for incomplete action block at end (if no incomplete thinking)
-  if (incompleteStart === -1) {
-    const hasIncompleteAction =
-      workingBuffer.includes("<action") &&
-      !workingBuffer
-        .slice(workingBuffer.lastIndexOf("<action"))
-        .includes("</action>");
-
-    if (hasIncompleteAction) {
-      const startIndex = workingBuffer.lastIndexOf("<action");
-      incompleteStart = startIndex;
-      const incompleteText = workingBuffer.slice(startIndex);
-      const incompleteActionRegex = /<action\s+description="([^"]+)">([^]*?)$/;
-      const incMatch = incompleteText.match(incompleteActionRegex);
-      if (incMatch) {
-        blockMatches.push({
-          start: startIndex,
-          end: workingBuffer.length,
-          complete: false,
-          block: {
-            type: "action",
-            state: "in_progress",
-            description: incMatch[1].trim(),
-            content: incMatch[2].trim(),
-          },
-        });
-      }
-      remainingBuffer = incompleteText;
-    }
-  }
-
-  // Sort blocks by start position
-  blockMatches.sort((a, b) => a.start - b.start);
-
-  // Build final block list, inserting message blocks for text between blocks
-  let lastEnd = 0;
-  const textEndBoundary =
-    incompleteStart !== -1 ? incompleteStart : workingBuffer.length;
-
-  // Process only complete blocks for text extraction
-  const completeBlockMatches = blockMatches.filter((b) => b.complete);
-  for (const blockMatch of completeBlockMatches) {
-    if (blockMatch.start > lastEnd) {
-      const textBetween = workingBuffer.slice(lastEnd, blockMatch.start);
-      if (textBetween.trim()) {
-        blocks.push({
-          type: "message",
-          state: "complete",
-          content: textBetween.trim(),
-        });
+      // Check if this could be the start of <action or <thinking
+      if (
+        '<action description="'.startsWith(remaining) ||
+        '<thinking description="'.startsWith(remaining)
+      ) {
+        return i;
       }
     }
-    blocks.push(blockMatch.block);
-    lastEnd = blockMatch.end;
   }
 
-  // Add any text after the last complete block (before incomplete block if any)
-  if (lastEnd < textEndBoundary) {
-    const remainingText = workingBuffer.slice(lastEnd, textEndBoundary);
-    if (remainingText.trim()) {
-      blocks.push({
-        type: "message",
-        state: "complete",
-        content: remainingText.trim(),
-      });
+  return buffer.length;
+}
+
+/**
+ * Find the index where a potential partial closing tag starts at the end of the buffer.
+ * Returns buffer.length if no potential partial tag is found.
+ */
+function findPotentialPartialCloseTag(
+  buffer: string,
+  tagType: "action" | "thinking"
+): number {
+  const closeTag = `</${tagType}>`;
+
+  for (
+    let i = Math.max(0, buffer.length - closeTag.length);
+    i < buffer.length;
+    i++
+  ) {
+    if (buffer[i] === "<") {
+      const remaining = buffer.slice(i);
+      if (closeTag.startsWith(remaining)) {
+        return i;
+      }
     }
   }
 
-  // Finally, add incomplete block if any
-  const incompleteBlock = blockMatches.find((b) => !b.complete);
-  if (incompleteBlock) {
-    blocks.push(incompleteBlock.block);
-  }
-
-  return { blocks, remainingBuffer };
+  return buffer.length;
 }

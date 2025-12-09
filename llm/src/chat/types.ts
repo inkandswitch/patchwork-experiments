@@ -1,36 +1,37 @@
 import { AutomergeUrl } from "@automerge/automerge-repo";
 
-type TextBlock = {
+export type TextBlock = {
   type: "text";
   text: string;
 };
 
-type ThinkingBlock = {
+export type ThinkingBlock = {
   type: "thinking";
   description: string;
   text: string;
 };
 
-type ActionBlock = {
+export type ActionBlock = {
   type: "action";
   description: string;
   action?: {
     target: AutomergeUrl;
     args: string;
     result?: {
+      id: string;
       type: "success" | "error";
       value: string;
     };
   };
 };
 
-type MessageContent = TextBlock | ActionBlock | ThinkingBlock;
+export type ContentBlock = TextBlock | ActionBlock | ThinkingBlock;
 
 export type ChatMessage = {
   id: string;
   author: AutomergeUrl;
   timestamp: number;
-  content: MessageContent;
+  content: ContentBlock;
 };
 
 export type ChatDoc = {

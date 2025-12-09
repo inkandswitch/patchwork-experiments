@@ -1,18 +1,19 @@
-import * as Automerge from "@automerge/automerge";
 import { AutomergeUrl, Repo } from "@automerge/automerge-repo";
-import type {
-  LLMMessage,
-  LLMProviderDescription,
-  LoadedLLMProvider,
-  LLMProviderImplementation,
-} from "../llm-providers/types";
-import type { ChatDoc, ChatMessage } from "../chat/types";
 import {
   getRegistry,
   isLoadablePlugin,
   isLoadedPlugin,
 } from "@inkandswitch/patchwork-plugins";
-import { last } from "./utils";
+import type { ChatDoc, ChatMessage } from "../chat/types";
+import type {
+  LLMMessage,
+  LLMProviderDescription,
+  LLMProviderImplementation,
+  LoadedLLMProvider,
+} from "../llm-providers/types";
+import { parseBlocks } from "./parser";
+
+console.log("new agent!!!");
 
 // Agent document schema
 export type AgentDoc = {
@@ -49,41 +50,41 @@ export async function step(
     ...buildLLMHistory(chatDoc.messages, contactUrl),
   ];
 
-  chatDocHandle.change((doc) => {
-    doc.messages.push({
-      id: `msg-${Date.now()}-${Math.random()}`,
-      author: contactUrl,
-      content: {
-        type: "text",
-        text: "",
-      },
-      timestamp: Date.now(),
-    });
+  let currentBotMessageId: string | null = null;
+
+  const responseStream = llmProvider.chatCompletionStream(llmMessages, {
+    model: modelId,
   });
 
-  const currentBotMessage = last(chatDocHandle.doc().messages)!;
-
-  for await (const chunk of llmProvider.chatCompletionStream(llmMessages, {
-    model: modelId,
-  })) {
-    chatDocHandle.change((doc) => {
-      for (let i = 0; i < doc.messages.length; i++) {
-        const message = doc.messages[i];
-        if (
-          message.id === currentBotMessage.id &&
-          message.content.type === "text"
-        ) {
-          Automerge.splice(
-            doc,
-            ["messages", i, "content", "text"],
-            message.content.text.length,
-            0,
-            chunk
-          );
-          break;
-        }
+  for await (const event of parseBlocks(responseStream)) {
+    console.log("event", event);
+    switch (event.type) {
+      case "create": {
+        const id = crypto.randomUUID();
+        chatDocHandle.change((doc) => {
+          doc.messages.push({
+            id,
+            author: contactUrl,
+            timestamp: Date.now(),
+            content: event.block,
+          });
+        });
+        currentBotMessageId = id;
+        break;
       }
-    });
+
+      case "update": {
+        chatDocHandle.change((doc) => {
+          const message = doc.messages.find(
+            (m) => m.id === currentBotMessageId
+          );
+          if (message) {
+            // todo: do incremental update
+            message.content = event.block;
+          }
+        });
+      }
+    }
   }
 }
 
