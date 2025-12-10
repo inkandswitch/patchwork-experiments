@@ -92,9 +92,9 @@ export async function step(
     }
 
     // try to execute action
-    const currentBotMessage = chatDoc.messages.find(
-      (m) => m.id === currentBotMessageId
-    );
+    const currentBotMessage = chatDocHandle
+      .doc()
+      .messages.find((m) => m.id === currentBotMessageId);
     if (
       !currentBotMessage ||
       !(currentBotMessage.content.type === "action") ||
