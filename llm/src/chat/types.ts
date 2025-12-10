@@ -15,10 +15,10 @@ export type ActionBlock = {
   type: "action";
   description: string;
   action?: {
+    id: string;
     target: AutomergeUrl;
     args: string;
     result?: {
-      id: string;
       type: "success" | "error";
       value: string;
     };

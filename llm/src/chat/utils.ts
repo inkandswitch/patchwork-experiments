@@ -1,4 +1,4 @@
-import { AutomergeUrl } from "@automerge/automerge-repo";
+import { AutomergeUrl, isValidAutomergeUrl } from "@automerge/automerge-repo";
 import {
   RepoContext,
   useDocument,
@@ -65,4 +65,34 @@ export function useCurrentContactUrl() {
   );
 
   return accountDoc.contactUrl;
+}
+
+export function extractAutomergeUrls(text: string): AutomergeUrl[] {
+  const docUrls: AutomergeUrl[] = [];
+
+  // First, match automerge:... URLs as before
+  const automergePattern = /automerge:[a-zA-Z0-9]{28}/g;
+  const automergeMatches = text.match(automergePattern) || [];
+  for (const match of automergeMatches) {
+    if (isValidAutomergeUrl(match)) {
+      docUrls.push(match);
+    }
+  }
+
+  // Second, match any URL containing /#doc=<id>
+  // Example: http://localhost:5173/#doc=45oVmqdzjpcYMD5WJUFoNYcgnzEw&title=...
+  // We'll extract the "doc" parameter value (should be 28 chars, likely automerge id)
+  // Accepts http(s) or plain domain as well
+  const docParamPattern =
+    /(?:https?:\/\/[^\s]*|[^\s]+)?\/#doc=([a-zA-Z0-9]+)\b/g;
+  let match: RegExpExecArray | null;
+  while ((match = docParamPattern.exec(text))) {
+    const foundId = match[1];
+    const possibleUrl = `automerge:${foundId}`;
+    if (isValidAutomergeUrl(possibleUrl) && !docUrls.includes(possibleUrl)) {
+      docUrls.push(possibleUrl);
+    }
+  }
+
+  return docUrls;
 }

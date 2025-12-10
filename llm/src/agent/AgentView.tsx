@@ -1,0 +1,89 @@
+import { AutomergeUrl } from "@automerge/automerge-repo";
+import {
+  useDocHandle,
+  useDocument,
+  useRepo,
+} from "@automerge/automerge-repo-react-hooks";
+import "@inkandswitch/patchwork-elements";
+import { AgentDoc } from "./Agent";
+import { toolify } from "../chat/utils";
+import { FolderDoc } from "@inkandswitch/patchwork-filesystem";
+import { getSystemPrompts } from "./prompts/";
+import { useEffect, useState } from "react";
+
+const AgentView = ({ docUrl }: { docUrl: AutomergeUrl }) => {
+  const [agentDoc] = useDocument<AgentDoc>(docUrl, {
+    suspense: true,
+  });
+
+  const systemPrompts = useSystemPrompts(docUrl);
+
+  return (
+    <div className="w-full h-full overflow-auto p-4 flex flex-col gap-6">
+      <patchwork-view doc-url={agentDoc.contactUrl} tool-id="contact-avatar" />
+
+      <section>
+        <h3 className="text-sm font-medium text-base-content/70 mb-2">
+          Prompts
+        </h3>
+        <div className="flex flex-col gap-2">
+          {systemPrompts.map((prompt, index) => (
+            <pre
+              key={index}
+              className="text-xs bg-base-200 p-3 rounded-md overflow-x-auto whitespace-pre-wrap"
+            >
+              {prompt}
+            </pre>
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <h3 className="text-sm font-medium text-base-content/70 mb-2">
+          Context
+        </h3>
+        {!agentDoc.contextFolderUrl ? (
+          <div className="py-8 flex items-center justify-center text-base-content/50 text-sm">
+            No context folder configured
+          </div>
+        ) : (
+          <FolderView docUrl={agentDoc.contextFolderUrl} />
+        )}
+      </section>
+    </div>
+  );
+};
+
+export const renderAgentView = toolify(AgentView);
+
+const FolderView = ({ docUrl }: { docUrl: AutomergeUrl }) => {
+  const [folderDoc] = useDocument<FolderDoc>(docUrl, {
+    suspense: true,
+  });
+
+  return (
+    <div className="flex flex-col gap-2 border border-base-300 rounded-md overflow-auto max-h-[500px]">
+      {folderDoc.docs.map((doc) => (
+        <patchwork-view key={doc.url} doc-url={doc.url} />
+      ))}
+    </div>
+  );
+};
+
+function useSystemPrompts(agentDocUrl: AutomergeUrl) {
+  const agentDocHandle = useDocHandle<AgentDoc>(agentDocUrl);
+  const [prompts, setPrompts] = useState<string[]>([]);
+  const repo = useRepo();
+
+  useEffect(() => {
+    if (!agentDocHandle) {
+      return;
+    }
+
+    getSystemPrompts(agentDocHandle, repo).then((prompts) => {
+      setPrompts(prompts);
+    });
+  }, [agentDocHandle]);
+
+  return prompts;
+}

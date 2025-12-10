@@ -3,6 +3,7 @@ import { ChatDoc } from "./types";
 import { ContactDoc } from "../type";
 import { Repo } from "@automerge/automerge-repo";
 import { AgentDoc } from "../agent/Agent";
+import { FolderDoc } from "@inkandswitch/patchwork-filesystem";
 
 export const ChatDataType: DatatypeImplementation<ChatDoc> = {
   init: (doc: ChatDoc, repo: Repo) => {
@@ -11,9 +12,15 @@ export const ChatDataType: DatatypeImplementation<ChatDoc> = {
       name: "Agent",
     });
 
+    const contextFolderHandle = repo.create<FolderDoc>({
+      title: "Context Folder",
+      docs: [],
+    });
+
     const agentDocHandle = repo.create<AgentDoc>({
       contactUrl: contactDocHandle.url,
       modelId: "claude-sonnet-4-0",
+      contextFolderUrl: contextFolderHandle.url,
     });
 
     doc.title = "Chat";

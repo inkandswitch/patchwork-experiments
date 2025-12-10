@@ -6,6 +6,17 @@ export const plugins: Plugin<any>[] = [
   openAIProvider,
   anthropicProvider,
   {
+    type: "patchwork:tool",
+    id: "agent",
+    name: "Agent",
+    icon: "Bot",
+    supportedDataTypes: ["agent"],
+    async load() {
+      const { renderAgentView } = await import("./AgentView");
+      return renderAgentView;
+    },
+  },
+  {
     type: "patchwork:datatype",
     id: "agent",
     name: "Agent",

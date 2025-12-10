@@ -1,13 +1,33 @@
 import { AutomergeUrl, parseAutomergeUrl } from "@automerge/automerge-repo";
 import { useDocument, useRepo } from "@automerge/automerge-repo-react-hooks";
-import { BotIcon, SendIcon } from "lucide-react";
+import {
+  BotIcon,
+  CheckIcon,
+  ChevronRightIcon,
+  SendIcon,
+  XIcon,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import "./styles.css";
 import { ChatDoc, ChatMessage } from "./types";
 import "@inkandswitch/patchwork-elements";
-import { formatTimestamp, toolify, useCurrentContactUrl } from "./utils";
+import {
+  extractAutomergeUrls,
+  formatTimestamp,
+  toolify,
+  useCurrentContactUrl,
+} from "./utils";
 import { AgentDoc, step } from "../agent/Agent";
+import {
+  FolderDoc,
+  HasPatchworkMetadata,
+} from "@inkandswitch/patchwork-filesystem";
+import {
+  getRegistry,
+  DatatypeImplementation,
+  DatatypeDescription,
+} from "@inkandswitch/patchwork-plugins";
 
 const FIVE_MINUTES_MS = 1000 * 60 * 5;
 
@@ -64,6 +84,35 @@ const Chat = ({ docUrl }: { docUrl: AutomergeUrl }) => {
 
     step(chatDoc.agentDocUrl, repo);
 
+    const urls = extractAutomergeUrls(pendingMessage);
+    const datatypes = getRegistry("patchwork:datatype");
+
+    // add new docs to context folder
+
+    for (const url of urls) {
+      const contextFolderHandle = await repo.find<FolderDoc>(
+        agentDoc.contextFolderUrl
+      );
+      const contextFolderDoc = contextFolderHandle.doc();
+
+      if (contextFolderDoc.docs.some((doc) => doc.url === url)) {
+        continue;
+      }
+
+      const newDoc = (await repo.find<HasPatchworkMetadata>(url)).doc();
+      const type = newDoc["@patchwork"].type;
+      const datatype = await datatypes.load(type);
+      const title = datatype?.module.getTitle(newDoc) ?? "Unknown";
+
+      contextFolderHandle.change((doc) => {
+        doc.docs.push({
+          url,
+          name: title,
+          type,
+        });
+      });
+    }
+
     setPendingMessage("");
   };
 
@@ -86,7 +135,7 @@ const Chat = ({ docUrl }: { docUrl: AutomergeUrl }) => {
         <div className="px-4 py-2 border-b bg-base-200">
           <div className="flex items-center gap-2 text-sm">
             <BotIcon size={14} />
-            <span className="font-medium">Attached agent:</span>
+            <span className="font-medium">Attached agent!!:</span>
             <div className="flex gap-2 flex-wrap">
               <a
                 key={chatDoc.agentDocUrl}
@@ -181,21 +230,6 @@ const groupMessages = (messages: ChatMessage[]): MessageGroup[] => {
   return groups;
 };
 
-// Render a single message content
-const MessageRenderer = ({ message }: { message: ChatMessage }) => {
-  if (message.content.type === "text") {
-    const content = message.content.text;
-    if (!content || !content.trim()) {
-      return null;
-    }
-
-    return <Markdown>{content}</Markdown>;
-  }
-
-  // For now, throw for other message types
-  throw new Error(`Unsupported message type: ${message.content.type}`);
-};
-
 // Render a group of messages from the same author
 const MessageGroupRenderer = ({ group }: { group: MessageGroup }) => {
   const [contactDoc] = useDocument<{ name?: string }>(group.author, {
@@ -219,9 +253,138 @@ const MessageGroupRenderer = ({ group }: { group: MessageGroup }) => {
 
         {/* Messages and timestamp */}
         {group.messages.map((message, idx) => (
-          <MessageRenderer key={message.id || idx} message={message} />
+          <MessageView key={message.id || idx} message={message} />
         ))}
       </div>
     </div>
+  );
+};
+
+// Render a single message content
+const MessageView = ({ message }: { message: ChatMessage }) => {
+  const content = message.content;
+
+  if (content.type === "text") {
+    if (!content.text || !content.text.trim()) {
+      return null;
+    }
+    return <Markdown>{content.text}</Markdown>;
+  }
+
+  if (content.type === "thinking") {
+    return (
+      <ThinkingBlockView
+        description={content.description}
+        text={content.text}
+      />
+    );
+  }
+
+  if (content.type === "action") {
+    return (
+      <ActionBlockView
+        description={content.description}
+        action={content.action}
+      />
+    );
+  }
+};
+
+// Render a thinking block (collapsible)
+const ThinkingBlockView = ({
+  description,
+  text,
+}: {
+  description: string;
+  text: string;
+}) => {
+  return (
+    <details className="group rounded-lg border border-base-300 bg-base-200/50">
+      <summary className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+        <ChevronRightIcon
+          size={14}
+          className="text-base-content/50 transition-transform group-open:rotate-90"
+        />
+        <span className="text-xs font-medium text-base-content/70">
+          Thinking
+        </span>
+        <span className="text-sm text-base-content/80 truncate">
+          {description}
+        </span>
+      </summary>
+      <div className="px-3 pb-3 pt-1 text-sm text-base-content/90 border-t border-base-300">
+        <Markdown>{text}</Markdown>
+      </div>
+    </details>
+  );
+};
+
+// Render an action block (collapsible with status indicator)
+const ActionBlockView = ({
+  description,
+  action,
+}: {
+  description: string;
+  action?: {
+    target: AutomergeUrl;
+    args: string;
+    result?: {
+      id: string;
+      type: "success" | "error";
+      value: string;
+    };
+  };
+}) => {
+  const isSuccess = action?.result?.type === "success";
+  const isError = action?.result?.type === "error";
+  const isPending = !action?.result;
+
+  return (
+    <details className="group rounded-lg border border-base-300 bg-base-200/50">
+      <summary className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+        <span className="flex items-center justify-center w-4 h-4">
+          {isPending && (
+            <span className="w-2 h-2 rounded-full bg-warning animate-pulse" />
+          )}
+          {isSuccess && <CheckIcon size={14} className="text-success" />}
+          {isError && <XIcon size={14} className="text-error" />}
+        </span>
+        <span className="text-sm text-base-content/80">{description}</span>
+      </summary>
+      <div className="px-3 pb-3 pt-1 space-y-2 border-t border-base-300">
+        {action && (
+          <>
+            <div className="flex gap-2 text-xs">
+              <span className="font-medium text-base-content/60">Target:</span>
+              <code className="text-base-content/80 break-all">
+                {action.target}
+              </code>
+            </div>
+            <div className="text-xs">
+              <span className="font-medium text-base-content/60">Args:</span>
+              <pre className="mt-1 p-2 rounded bg-base-300/50 overflow-x-auto text-base-content/80">
+                {JSON.stringify(action.args, null, 2)}
+              </pre>
+            </div>
+            {action.result && (
+              <div className="text-xs">
+                <span className="font-medium text-base-content/60">
+                  Result:
+                </span>
+                <pre
+                  className={`mt-1 p-2 rounded overflow-x-auto ${
+                    action.result.type === "success"
+                      ? "bg-success/10 text-success"
+                      : "bg-error/10 text-error"
+                  }`}
+                >
+                  {JSON.stringify(action.result.value, null, 2)}
+                </pre>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </details>
   );
 };

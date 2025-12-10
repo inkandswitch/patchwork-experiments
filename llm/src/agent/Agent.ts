@@ -12,14 +12,14 @@ import type {
   LoadedLLMProvider,
 } from "../llm-providers/types";
 import { parseBlocks } from "./parser";
-
-console.log("new agent!!!");
+import { getSystemPrompts } from "./prompts/index";
 
 // Agent document schema
 export type AgentDoc = {
   contactUrl: AutomergeUrl;
   modelId: string;
   chatDocUrl?: AutomergeUrl;
+  contextFolderUrl: AutomergeUrl;
 };
 
 // Main step function
@@ -45,19 +45,24 @@ export async function step(
     return;
   }
 
-  // Build message history from our message types
-  const llmMessages: LLMMessage[] = [
-    ...buildLLMHistory(chatDoc.messages, contactUrl),
-  ];
+  const historyMessages = buildLLMHistory(chatDoc.messages, contactUrl);
+  const systemPromptMessages: LLMMessage[] = (
+    await getSystemPrompts(agentDocHandle, repo)
+  ).map((prompt) => ({
+    role: "system",
+    content: prompt,
+  }));
 
   let currentBotMessageId: string | null = null;
 
-  const responseStream = llmProvider.chatCompletionStream(llmMessages, {
-    model: modelId,
-  });
+  const responseStream = llmProvider.chatCompletionStream(
+    [...systemPromptMessages, ...historyMessages],
+    {
+      model: modelId,
+    }
+  );
 
   for await (const event of parseBlocks(responseStream)) {
-    console.log("event", event);
     switch (event.type) {
       case "create": {
         const id = crypto.randomUUID();
@@ -85,6 +90,49 @@ export async function step(
         });
       }
     }
+
+    // try to execute action
+    const currentBotMessage = chatDoc.messages.find(
+      (m) => m.id === currentBotMessageId
+    );
+    if (
+      !currentBotMessage ||
+      !(currentBotMessage.content.type === "action") ||
+      !currentBotMessage.content.action
+    ) {
+      continue;
+    }
+
+    const { id, target, args } = currentBotMessage.content.action;
+
+    let result: { type: "success" | "error"; value: unknown };
+    try {
+      result = {
+        type: "success",
+        value: JSON.stringify(
+          await executeAction(target, id, JSON.parse(args), repo),
+          null,
+          2
+        ),
+      };
+    } catch (error) {
+      result = {
+        type: "error",
+        value: (error as Error).toString(),
+      };
+    }
+
+    chatDocHandle.change((doc) => {
+      const message = doc.messages.find((m) => m.id === currentBotMessageId);
+      if (
+        !message ||
+        message.content.type !== "action" ||
+        !message.content.action
+      ) {
+        return;
+      }
+      message.content.action.result = result;
+    });
   }
 }
 
@@ -147,5 +195,35 @@ async function loadLLMProvider(
   } catch (error) {
     console.error("Error loading LLM provider:", error);
     return null;
+  }
+}
+
+async function executeAction(
+  target: AutomergeUrl,
+  actionId: string,
+  args: unknown,
+  repo: Repo
+): Promise<unknown> {
+  const registry = getRegistry("patchwork:action");
+  const actionPlugin = await registry.load(actionId);
+
+  if (!actionPlugin) {
+    throw new Error(`Action plugin not found: ${actionId}`);
+  }
+
+  const targetDocHandle = await repo.find(target);
+  const targetDoc = targetDocHandle.doc();
+
+  if (actionPlugin.module.argsSchema) {
+    // Validate args with schema
+    const schema = actionPlugin.module.argsSchema(targetDoc);
+    const validatedArgs = schema.parse(args || {});
+    return await actionPlugin.module.default(
+      targetDocHandle,
+      repo,
+      validatedArgs
+    );
+  } else {
+    return await actionPlugin.module.default(targetDocHandle, repo);
   }
 }
