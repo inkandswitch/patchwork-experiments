@@ -109,11 +109,12 @@ export async function step(
     try {
       result = {
         type: "success",
-        value: JSON.stringify(
-          await executeAction(target, id, JSON.parse(args), repo),
-          null,
-          2
-        ),
+        value:
+          JSON.stringify(
+            await executeAction(target, id, args, repo),
+            null,
+            2
+          ) ?? null,
       };
     } catch (error) {
       result = {

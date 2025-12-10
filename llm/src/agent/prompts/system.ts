@@ -21,7 +21,7 @@ Your reasoning about what actions to take and why
 
 <action description="short description">
 {
-  "actionId": "action-id",
+  "id": "action-id",
   "target": "automerge:url",
   "args": {
     "argName": "value"
