@@ -1,6 +1,7 @@
 import { DocHandle, Repo } from "@automerge/automerge-repo";
 import { SYSTEM_PROMPT } from "./system";
 import { getActionsContextPrompt } from "./actions-context";
+import { getTodoContextPrompt } from "./actions-todo-context";
 import { type AgentDoc } from "../Agent";
 
 export async function getSystemPrompts(
@@ -10,5 +11,6 @@ export async function getSystemPrompts(
   return await Promise.all([
     SYSTEM_PROMPT,
     getActionsContextPrompt(agentDocHandle, repo),
+    getTodoContextPrompt(agentDocHandle, repo),
   ]);
 }

@@ -1,7 +1,7 @@
 {
-  "name": "@tiny-patchwork/chat",
+  "name": "@tiny-patchwork/llm",
   "type": "module",
-  "version": "0.0.18",
+  "version": "0.0.4",
   "main": "./dist/index.js",
   "scripts": {
     "dev": "vite build --watch",

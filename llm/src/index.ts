@@ -8,3 +8,5 @@ export const plugins: Plugin<any>[] = [
   ...agentPlugins,
   ...llmProvidersPlugins,
 ];
+
+console.log("version", 3);

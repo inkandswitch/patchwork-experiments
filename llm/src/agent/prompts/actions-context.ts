@@ -4,48 +4,6 @@ import { FolderDoc } from "@inkandswitch/patchwork-filesystem";
 import { AgentDoc } from "../Agent";
 import outdent from "outdent";
 
-async function getAvailableActionsForDocument(
-  targetDoc: unknown,
-  docUrl: AutomergeUrl
-): Promise<string> {
-  const actionDescriptions: string[] = [];
-  const actions = await getActionsOfDatatype(targetDoc);
-
-  for (const action of actions) {
-    const actionObj = action as Record<string, unknown>;
-    let argsDescription = "No arguments";
-
-    if ((actionObj.module as Record<string, unknown>)?.argsSchema) {
-      try {
-        const argsSchemaFn = (actionObj.module as Record<string, unknown>)
-          .argsSchema as (_doc: unknown) => unknown;
-        const schema = argsSchemaFn(targetDoc);
-        argsDescription = formatSchemaDescription(schema);
-      } catch (e) {
-        console.error(
-          `Error generating args description for ${actionObj.id}:`,
-          e
-        );
-        argsDescription = "Arguments: (error loading schema)";
-      }
-    }
-
-    actionDescriptions.push(
-      outdent`
-        **${actionObj.name}**
-        target: ${docUrl}
-        id: ${actionObj.id}
-        args:
-        ${argsDescription}
-      `
-    );
-  }
-
-  return actionDescriptions.length > 0
-    ? actionDescriptions.join("\n\n")
-    : "No actions available for this document";
-}
-
 export async function getActionsContextPrompt(
   agentDocHandle: DocHandle<AgentDoc>,
   repo: Repo
@@ -119,6 +77,48 @@ export async function getActionsContextPrompt(
 
     ${documentActionDescriptions.join("\n\n")}
   `;
+}
+
+async function getAvailableActionsForDocument(
+  targetDoc: unknown,
+  docUrl: AutomergeUrl
+): Promise<string> {
+  const actionDescriptions: string[] = [];
+  const actions = await getActionsOfDatatype(targetDoc);
+
+  for (const action of actions) {
+    const actionObj = action as Record<string, unknown>;
+    let argsDescription = "No arguments";
+
+    if ((actionObj.module as Record<string, unknown>)?.argsSchema) {
+      try {
+        const argsSchemaFn = (actionObj.module as Record<string, unknown>)
+          .argsSchema as (_doc: unknown) => unknown;
+        const schema = argsSchemaFn(targetDoc);
+        argsDescription = formatSchemaDescription(schema);
+      } catch (e) {
+        console.error(
+          `Error generating args description for ${actionObj.id}:`,
+          e
+        );
+        argsDescription = "Arguments: (error loading schema)";
+      }
+    }
+
+    actionDescriptions.push(
+      outdent`
+        **${actionObj.name}**
+        target: ${docUrl}
+        id: ${actionObj.id}
+        args:
+        ${argsDescription}
+      `
+    );
+  }
+
+  return actionDescriptions.length > 0
+    ? actionDescriptions.join("\n\n")
+    : "No actions available for this document";
 }
 
 async function getActionsOfDatatype(doc: unknown): Promise<unknown[]> {

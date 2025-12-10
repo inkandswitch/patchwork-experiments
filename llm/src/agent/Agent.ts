@@ -105,16 +105,11 @@ export async function step(
 
     const { id, target, args } = currentBotMessage.content.action;
 
-    let result: { type: "success" | "error"; value: string };
+    let result: { type: "success" | "error"; value: unknown };
     try {
       result = {
         type: "success",
-        value:
-          JSON.stringify(
-            await executeAction(target, id, args, repo),
-            null,
-            2
-          ) ?? null,
+        value: (await executeAction(target, id, args, repo)) ?? null,
       };
     } catch (error) {
       result = {

@@ -20,7 +20,7 @@ export type ActionBlock = {
     args: string;
     result?: {
       type: "success" | "error";
-      value: string;
+      value: unknown;
     };
   };
 };

@@ -320,11 +320,7 @@ const ActionBlockView = ({ value }: { value: ActionBlock }) => {
         </span>
       </summary>
       <div className="px-3 pb-3 pt-1 space-y-2 border-t border-base-300">
-        {value.action && (
-          <pre className="mt-1 p-2 rounded bg-base-300/50 overflow-x-auto text-base-content/80">
-            {JSON.stringify(value.action, null, 2)}
-          </pre>
-        )}
+        {value.action && <pre>{JSON.stringify(value.action, null, 2)}</pre>}
       </div>
     </details>
   );
