@@ -1,14 +1,14 @@
-import type { LoadablePlugin } from "@patchwork/sdk";
+import type {Plugin, Tool} from "@inkandswitch/patchwork-plugins"
 
-export const plugins: LoadablePlugin<any>[] = [
-  {
-    type: "patchwork:tool",
-    id: "raw",
-    name: "Raw",
-    supportedDataTypes: "*",
-    async load() {
-      const { TinyTool } = await import("./components/RawEditor");
-      return TinyTool;
-    },
-  },
-];
+export const plugins: Plugin<any>[] = [
+	{
+		type: "patchwork:tool",
+		id: "raw",
+		name: "Raw",
+		supportedDatatypes: "*",
+		async load() {
+			const {TinyTool} = await import("./components/RawEditor")
+			return TinyTool
+		},
+	} satisfies Tool,
+]

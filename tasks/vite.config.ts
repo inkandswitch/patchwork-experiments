@@ -5,7 +5,7 @@ import wasm from 'vite-plugin-wasm';
 import cssInjectedByJsPlugin from 'vite-plugin-css-injected-by-js';
 import tailwindcss from '@tailwindcss/vite';
 
-import { EXTERNAL_DEPENDENCIES } from '@patchwork/sdk/shared-dependencies';
+import external from '@inkandswitch/patchwork-bootloader/externals';
 
 export default defineConfig({
   base: './',
@@ -13,10 +13,8 @@ export default defineConfig({
 
   build: {
     rollupOptions: {
-      //external: EXTERNAL_DEPENDENCIES,
-      external(id) {
-        return !!id.match(/^((@automerge\/automerge(-repo)?)|@patchwork\/.*)$/);
-      },input: './src/index.ts',
+      external,
+      input: './src/index.ts',
       output: {
         format: 'es',
         entryFileNames: '[name].js',

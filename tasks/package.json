@@ -17,7 +17,8 @@
   "dependencies": {
     "@automerge/automerge-repo": "2.5.0-alpha.2",
     "@automerge/automerge-repo-react-hooks": "2.5.0-alpha.2",
-    "@patchwork/sdk": "file:../../patchwork/sdk",
+    "@inkandswitch/patchwork-bootloader": "^0.0.3",
+    "@inkandswitch/patchwork-plugins": "^0.0.2",
     "boring-name-generator": "^1.0.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -28,6 +29,7 @@
     "@types/react": "^18.3.3",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.20",
+    "client@^18.3.1": "link:@types/react-dom/client@^18.3.1",
     "nodemon": "^3.1.9",
     "vite": "^5.3.4",
     "vite-plugin-css-injected-by-js": "^3.5.2",
