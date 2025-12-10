@@ -105,7 +105,7 @@ export async function step(
 
     const { id, target, args } = currentBotMessage.content.action;
 
-    let result: { type: "success" | "error"; value: unknown };
+    let result: { type: "success" | "error"; value: string };
     try {
       result = {
         type: "success",
@@ -141,15 +141,50 @@ function buildLLMHistory(
   agentContactUrl: AutomergeUrl
 ): LLMMessage[] {
   return messages.map((message) => {
-    if (message.content.type === "text") {
-      if (message.author === agentContactUrl) {
-        return { role: "assistant", content: message.content.text };
-      } else {
-        return { role: "user", content: message.content.text };
+    const isAssistant = message.author === agentContactUrl;
+    const role = isAssistant ? "assistant" : "user";
+
+    switch (message.content.type) {
+      case "text": {
+        return { role, content: message.content.text };
+      }
+
+      case "thinking": {
+        const thinking = message.content;
+        return {
+          role: "assistant" as const,
+          content: `<thinking description="${thinking.description}">\n${thinking.text}\n</thinking>`,
+        };
+      }
+
+      case "action": {
+        const action = message.content;
+        let content = `<action description="${action.description}">`;
+
+        if (action.action) {
+          // Include the action call parameters (excluding result)
+          const actionCall = {
+            id: action.action.id,
+            target: action.action.target,
+            args: action.action.args,
+          };
+          content += `\n${JSON.stringify(actionCall, null, 2)}\n`;
+        }
+
+        content += `</action>`;
+
+        // Append the result as feedback if present
+        if (action.action?.result) {
+          const result = action.action.result;
+          content += `\n\n[Action ${result.type}]: ${result.value}`;
+        }
+
+        return {
+          role: "assistant" as const,
+          content,
+        };
       }
     }
-
-    throw new Error("not implemented");
   });
 }
 
