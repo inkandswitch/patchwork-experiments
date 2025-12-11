@@ -62,9 +62,16 @@ const FolderView = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   });
 
   return (
-    <div className="flex flex-col gap-2 border border-base-300 rounded-md overflow-auto max-h-[500px]">
-      {folderDoc.docs.map((doc) => (
-        <patchwork-view key={doc.url} doc-url={doc.url} />
+    <div className="flex flex-col gap-2">
+      {folderDoc.docs.map((doc, index) => (
+        <div key={index}>
+          <h4 className="text-sm font-medium text-base-content/70 mb-2">
+            {doc.name}
+          </h4>
+          <div className="border border-base-300 rounded-md overflow-auto max-h-[500px]">
+            <patchwork-view key={doc.url} doc-url={doc.url} />
+          </div>
+        </div>
       ))}
     </div>
   );

@@ -1,4 +1,4 @@
-import { AutomergeUrl, DocHandle, Repo } from "@automerge/automerge-repo";
+import { DocHandle, Repo } from "@automerge/automerge-repo";
 import { FolderDoc } from "@inkandswitch/patchwork-filesystem";
 import outdent from "outdent";
 import { createDocOfDatatype } from "../../lib";
