@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
-import { AgentDoc, step } from "../agent/Agent";
+import { AgentDoc, step } from "../agent/agent";
 import "./styles.css";
 import { ActionBlock, ChatDoc, ChatMessage, ThinkingBlock } from "./types";
 import {

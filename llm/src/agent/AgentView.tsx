@@ -5,6 +5,8 @@ import { AgentDoc, buildSystemPrompt } from "./agent";
 import { toolify } from "../chat/utils";
 import { FolderDoc } from "@inkandswitch/patchwork-filesystem";
 import { useEffect, useState } from "react";
+import Markdown from "react-markdown";
+import "./markdown.css";
 
 const AgentView = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   const [agentDoc] = useDocument<AgentDoc>(docUrl, {
@@ -22,7 +24,7 @@ const AgentView = ({ docUrl }: { docUrl: AutomergeUrl }) => {
           Prompt
         </h3>
         <pre className="text-xs bg-base-200 p-3 rounded-md overflow-x-auto whitespace-pre-wrap">
-          {systemPrompt}
+          <Markdown className="markdown">{systemPrompt}</Markdown>
         </pre>
       </section>
 

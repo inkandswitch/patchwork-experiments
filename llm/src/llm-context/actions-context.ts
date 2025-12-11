@@ -3,7 +3,23 @@ import { getRegistry, isLoadedPlugin } from "@inkandswitch/patchwork-plugins";
 import { FolderDoc } from "@inkandswitch/patchwork-filesystem";
 import { AgentDoc } from "../agent/agent";
 import outdent from "outdent";
-import type { LLMContextPlugin, LLMContextImplementation } from "./types";
+import type { LLMContextPlugin } from "./types";
+
+interface LoadedAction {
+  id: string;
+  name: string;
+  supportedDataTypes: string | string[];
+  module: {
+    argsSchema?: (_doc: unknown) => unknown;
+  };
+}
+
+interface DocumentInfo {
+  url: AutomergeUrl;
+  title: string;
+  type: string;
+  doc: unknown;
+}
 
 async function getActionsContextPrompt(
   agentDocUrl: AutomergeUrl,
@@ -19,21 +35,17 @@ async function getActionsContextPrompt(
   if (!folderDoc || !folderDoc.docs || folderDoc.docs.length === 0) {
     return outdent`
       ## Active Documents
-
       No documents in context.
     `;
   }
 
-  const documentActionDescriptions: string[] = [];
-
-  // Only look at toplevel files in the context folder
+  // Load all documents first
+  const documents: DocumentInfo[] = [];
   for (const docRef of folderDoc.docs) {
     const docUrl = docRef.url;
-
     try {
       const handle = await repo.find(docUrl);
       const doc = handle.doc();
-
       if (!doc) continue;
 
       const patchworkMeta = (doc as Record<string, Record<string, unknown>>)?.[
@@ -41,7 +53,7 @@ async function getActionsContextPrompt(
       ];
       const type = (patchworkMeta?.type as string) || "unknown";
 
-      let title = "untitled";
+      let title = "Untitled";
       try {
         const datatype = await getRegistry("patchwork:datatype").load(type);
         if (datatype && isLoadedPlugin(datatype)) {
@@ -51,185 +63,214 @@ async function getActionsContextPrompt(
             }
           ).module;
           if (moduleObj.getTitle) {
-            title = moduleObj.getTitle(doc) ?? "untitled";
+            title = moduleObj.getTitle(doc) || "Untitled";
           }
         }
       } catch (e) {
         console.warn(`Could not load datatype for ${type}:`, e);
       }
 
-      // Get actions for this document
-      const actionsText = await getAvailableActionsForDocument(doc, docUrl);
-
-      documentActionDescriptions.push(
-        outdent`
-          ### ${title}
-          url: "${docUrl}"
-          type: "${type}"
-          ${actionsText}
-        `
-      );
+      documents.push({ url: docUrl, title, type, doc });
     } catch (e) {
       console.error(`Error loading document ${docUrl}:`, e);
     }
   }
 
-  return outdent`
-    ## Active Documents
-
-    ${documentActionDescriptions.join("\n\n")}
-  `;
-}
-
-async function getAvailableActionsForDocument(
-  targetDoc: unknown,
-  docUrl: AutomergeUrl
-): Promise<string> {
-  const actionDescriptions: string[] = [];
-  const actions = await getActionsOfDatatype(targetDoc);
-
-  for (const action of actions) {
-    const actionObj = action as Record<string, unknown>;
-    let argsDescription = "No arguments";
-
-    if ((actionObj.module as Record<string, unknown>)?.argsSchema) {
-      try {
-        const argsSchemaFn = (actionObj.module as Record<string, unknown>)
-          .argsSchema as (_doc: unknown) => unknown;
-        const schema = argsSchemaFn(targetDoc);
-        argsDescription = formatSchemaDescription(schema);
-      } catch (e) {
-        console.error(
-          `Error generating args description for ${actionObj.id}:`,
-          e
-        );
-        argsDescription = "Arguments: (error loading schema)";
-      }
-    }
-
-    actionDescriptions.push(
-      outdent`
-        **${actionObj.name}**
-        target: ${docUrl}
-        id: ${actionObj.id}
-        args:
-        ${argsDescription}
-      `
-    );
+  if (documents.length === 0) {
+    return outdent`
+      ## Active Documents
+      No documents in context.
+    `;
   }
 
-  return actionDescriptions.length > 0
-    ? actionDescriptions.join("\n\n")
-    : "No actions available for this document";
+  // Load all actions
+  const { genericActions, specificActions } = await loadAndCategorizeActions();
+
+  // Build output sections
+  const sections: string[] = [];
+
+  // Documents list
+  const docList = documents
+    .map((d) => `- **${d.title}** (${d.type}) → \`${d.url}\``)
+    .join("\n");
+  sections.push(outdent`
+    ## Documents
+    ${docList}
+  `);
+
+  // Generic actions (apply to all documents)
+  if (genericActions.length > 0) {
+    const genericActionsText = genericActions
+      .map((action) => formatAction(action, documents[0].doc))
+      .join("\n");
+    sections.push(outdent`
+      ## Generic Actions
+      These actions work on any document. Use the document URL as the target.
+
+      ${genericActionsText}
+    `);
+  }
+
+  // Document-specific actions grouped by type
+  const typeSpecificActions = new Map<string, LoadedAction[]>();
+  for (const action of specificActions) {
+    const types = Array.isArray(action.supportedDataTypes)
+      ? action.supportedDataTypes.filter((t) => t !== "*")
+      : [action.supportedDataTypes];
+
+    for (const type of types) {
+      if (!typeSpecificActions.has(type)) {
+        typeSpecificActions.set(type, []);
+      }
+      typeSpecificActions.get(type)!.push(action);
+    }
+  }
+
+  // Only show type-specific actions for types we have documents for
+  const relevantTypes = new Set(documents.map((d) => d.type));
+  for (const type of relevantTypes) {
+    const actions = typeSpecificActions.get(type);
+    if (actions && actions.length > 0) {
+      const sampleDoc = documents.find((d) => d.type === type)?.doc;
+      const actionsText = actions
+        .map((action) => formatAction(action, sampleDoc))
+        .join("\n");
+      sections.push(outdent`
+        ## ${type} Actions
+        ${actionsText}
+      `);
+    }
+  }
+
+  return sections.join("\n\n");
 }
 
-async function getActionsOfDatatype(doc: unknown): Promise<unknown[]> {
-  const patchworkMeta = (doc as Record<string, Record<string, unknown>>)?.[
-    "@patchwork"
-  ];
-  const dataTypeId = patchworkMeta?.type || "*";
+async function loadAndCategorizeActions(): Promise<{
+  genericActions: LoadedAction[];
+  specificActions: LoadedAction[];
+}> {
   const registry = getRegistry("patchwork:action");
   const allActions = registry.all();
 
-  // Filter actions that match this datatype
-  const matchingActions = allActions.filter((action: unknown) => {
-    const supportedDataTypes = (action as Record<string, unknown>)
-      .supportedDataTypes;
-    if (!supportedDataTypes) return false;
-    if (supportedDataTypes === "*") return true;
-    if (Array.isArray(supportedDataTypes)) {
-      return (
-        supportedDataTypes.includes("*") ||
-        supportedDataTypes.includes(dataTypeId)
-      );
-    }
-    return supportedDataTypes === dataTypeId;
-  });
+  const loadedActions: LoadedAction[] = [];
 
-  // Load all matching actions
-  const loadedActions = await Promise.all(
-    matchingActions.map(async (action: unknown) => {
-      try {
-        const plugin = await registry.load(
-          (action as Record<string, unknown>).id as string
-        );
-        if (plugin && isLoadedPlugin(plugin)) {
-          return plugin;
-        }
-        return null;
-      } catch (e) {
-        console.error(
-          `Failed to load plugin ${(action as Record<string, unknown>).id}:`,
-          e
-        );
-        return null;
+  for (const action of allActions) {
+    const actionMeta = action as unknown as Record<string, unknown>;
+    if (!actionMeta.supportedDataTypes) continue;
+
+    try {
+      const plugin = await registry.load(actionMeta.id as string);
+      if (plugin && isLoadedPlugin(plugin)) {
+        loadedActions.push(plugin as unknown as LoadedAction);
       }
-    })
-  );
+    } catch (e) {
+      console.error(`Failed to load plugin ${actionMeta.id}:`, e);
+    }
+  }
 
-  return loadedActions.filter((action) => action !== null);
+  const genericActions: LoadedAction[] = [];
+  const specificActions: LoadedAction[] = [];
+
+  for (const action of loadedActions) {
+    const supported = action.supportedDataTypes;
+    const isGeneric =
+      supported === "*" ||
+      (Array.isArray(supported) && supported.includes("*"));
+
+    if (isGeneric) {
+      genericActions.push(action);
+    } else {
+      specificActions.push(action);
+    }
+  }
+
+  return { genericActions, specificActions };
 }
 
-function formatSchemaDescription(schema: unknown): string {
-  const schemaObj = schema as Record<string, unknown>;
-  const shape =
-    schemaObj.shape ||
-    (schemaObj.def as Record<string, unknown>)?.shape ||
-    (schemaObj._def as Record<string, unknown>)?.shape;
+function formatAction(action: LoadedAction, sampleDoc: unknown): string {
+  const args = formatArgs(action, sampleDoc);
+  return `- **${action.id}**: ${action.name}${args}`;
+}
 
-  if (!shape || typeof shape !== "object") {
-    return "(no schema)";
+function formatArgs(action: LoadedAction, sampleDoc: unknown): string {
+  if (!action.module?.argsSchema) {
+    return "";
   }
 
-  const fields = Object.entries(shape as Record<string, unknown>).map(
-    ([key, value]: [string, unknown]) => {
-      let isOptional = false;
-      let innerType = value as Record<string, unknown>;
+  try {
+    const schema = action.module.argsSchema(sampleDoc);
+    const schemaObj = schema as Record<string, unknown>;
+    const shape =
+      schemaObj.shape ||
+      (schemaObj.def as Record<string, unknown>)?.shape ||
+      (schemaObj._def as Record<string, unknown>)?.shape;
 
-      // Unwrap optional types
-      while (
-        (innerType.def as Record<string, unknown>)?.innerType ||
-        (innerType.def as Record<string, unknown>)?.schema ||
-        (innerType._def as Record<string, unknown>)?.innerType ||
-        (innerType._def as Record<string, unknown>)?.schema
-      ) {
-        if (
-          (innerType.def as Record<string, unknown>)?.type === "optional" ||
-          (innerType._def as Record<string, unknown>)?.typeName ===
-            "ZodOptional"
-        ) {
-          isOptional = true;
-        }
-        innerType = ((innerType.def as Record<string, unknown>)?.innerType ||
-          (innerType.def as Record<string, unknown>)?.schema ||
-          (innerType._def as Record<string, unknown>)?.innerType ||
-          (innerType._def as Record<string, unknown>)?.schema) as Record<
-          string,
-          unknown
-        >;
-      }
-
-      const typeName =
-        innerType.type ||
-        (innerType.def as Record<string, unknown>)?.type ||
-        (innerType._def as Record<string, unknown>)?.typeName;
-      const description =
-        (value as Record<string, unknown>).description ||
-        innerType.description ||
-        "";
-      const optionalMarker = isOptional ? " (optional)" : "";
-
-      return `  - ${key}: ${typeName}${optionalMarker}${
-        description ? ` - ${description}` : ""
-      }`;
+    if (!shape || typeof shape !== "object") {
+      return "";
     }
-  );
 
-  if (fields.length > 0) {
-    return `\n${fields.join("\n")}`;
+    const fields = Object.entries(shape as Record<string, unknown>).map(
+      ([key, value]: [string, unknown]) => {
+        const { typeName, isOptional, description } = extractFieldInfo(value);
+        const optMarker = isOptional ? "?" : "";
+        const desc = description ? ` "${description}"` : "";
+        return `${key}${optMarker}: ${typeName}${desc}`;
+      }
+    );
+
+    if (fields.length === 0) {
+      return "";
+    }
+
+    return `\n  args: { ${fields.join(", ")} }`;
+  } catch (e) {
+    console.error(`Error generating args for ${action.id}:`, e);
+    return "";
+  }
+}
+
+function extractFieldInfo(value: unknown): {
+  typeName: string;
+  isOptional: boolean;
+  description: string;
+} {
+  let isOptional = false;
+  let innerType = value as Record<string, unknown>;
+  const topLevelDescription =
+    ((value as Record<string, unknown>).description as string) || "";
+
+  // Unwrap optional/default types
+  while (true) {
+    const def = (innerType.def || innerType._def) as Record<string, unknown>;
+    if (!def) break;
+
+    const defTypeName = def.type || def.typeName;
+    if (defTypeName === "optional" || defTypeName === "ZodOptional") {
+      isOptional = true;
+    }
+    if (defTypeName === "default" || defTypeName === "ZodDefault") {
+      isOptional = true;
+    }
+
+    const next = def.innerType || def.schema;
+    if (!next) break;
+    innerType = next as Record<string, unknown>;
   }
 
-  return "(empty schema)";
+  // Get type name
+  let typeName =
+    (innerType.type as string) ||
+    ((innerType.def as Record<string, unknown>)?.type as string) ||
+    ((innerType._def as Record<string, unknown>)?.typeName as string) ||
+    "unknown";
+
+  // Normalize Zod type names
+  typeName = typeName.replace(/^Zod/, "").toLowerCase();
+
+  const description =
+    topLevelDescription || (innerType.description as string) || "";
+
+  return { typeName, isOptional, description };
 }
 
 export const actionsContextPlugin: LLMContextPlugin = {

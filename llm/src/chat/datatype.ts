@@ -1,9 +1,9 @@
-import { DatatypeImplementation } from "@inkandswitch/patchwork-plugins";
-import { ChatDoc } from "./types";
-import { ContactDoc } from "../type";
 import { Repo } from "@automerge/automerge-repo";
-import { AgentDoc } from "../agent/Agent";
 import { FolderDoc } from "@inkandswitch/patchwork-filesystem";
+import { DatatypeImplementation } from "@inkandswitch/patchwork-plugins";
+import { AgentDoc } from "../agent/agent";
+import { ContactDoc } from "../type";
+import { ChatDoc } from "./types";
 
 export const ChatDataType: DatatypeImplementation<ChatDoc> = {
   init: (doc: ChatDoc, repo: Repo) => {
