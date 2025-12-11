@@ -11,8 +11,8 @@ import type {
   LLMProviderImplementation,
   LoadedLLMProvider,
 } from "../llm-providers/types";
+import type { LLMContextDescription, LoadedLLMContext } from "../llm-context";
 import { parseBlocks } from "./parser";
-import { getSystemPrompts } from "./prompts/index";
 
 // Agent document schema
 export type AgentDoc = {
@@ -46,12 +46,10 @@ export async function step(
   }
 
   const historyMessages = buildLLMHistory(chatDoc.messages, contactUrl);
-  const systemPromptMessages: LLMMessage[] = (
-    await getSystemPrompts(agentDocHandle, repo)
-  ).map((prompt) => ({
-    role: "system",
-    content: prompt,
-  }));
+  const systemPrompt = await buildSystemPrompt(agentDocUrl, repo);
+  const systemPromptMessages: LLMMessage[] = [
+    { role: "system", content: systemPrompt },
+  ];
 
   let currentBotMessageId: string | null = null;
 
@@ -130,6 +128,43 @@ export async function step(
       message.content.action.result = result;
     });
   }
+}
+
+export async function buildSystemPrompt(
+  agentDocUrl: AutomergeUrl,
+  repo: Repo
+): Promise<string> {
+  const registry = getRegistry<LLMContextDescription>("patchwork:llm-context");
+  const allContextPlugins = registry.all();
+
+  const promptParts: string[] = [];
+
+  for (const plugin of allContextPlugins) {
+    try {
+      let loadedPlugin: LoadedLLMContext;
+      if (isLoadablePlugin(plugin)) {
+        const loaded = await registry.load(plugin.id);
+        if (!loaded || !isLoadedPlugin(loaded)) {
+          console.error(`Failed to load context plugin: ${plugin.id}`);
+          continue;
+        }
+        loadedPlugin = loaded as LoadedLLMContext;
+      } else if (isLoadedPlugin(plugin)) {
+        loadedPlugin = plugin as LoadedLLMContext;
+      } else {
+        continue;
+      }
+
+      const prompt = await loadedPlugin.module.prompt(agentDocUrl, repo);
+      if (prompt) {
+        promptParts.push(prompt);
+      }
+    } catch (err) {
+      console.error(`Error loading context plugin ${plugin.id}:`, err);
+    }
+  }
+
+  return promptParts.join("\n\n");
 }
 
 function buildLLMHistory(

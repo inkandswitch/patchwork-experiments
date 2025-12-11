@@ -1,14 +1,9 @@
 import { AutomergeUrl } from "@automerge/automerge-repo";
-import {
-  useDocHandle,
-  useDocument,
-  useRepo,
-} from "@automerge/automerge-repo-react-hooks";
+import { useDocument, useRepo } from "@automerge/automerge-repo-react-hooks";
 import "@inkandswitch/patchwork-elements";
-import { AgentDoc } from "./Agent";
+import { AgentDoc, buildSystemPrompt } from "./agent";
 import { toolify } from "../chat/utils";
 import { FolderDoc } from "@inkandswitch/patchwork-filesystem";
-import { getSystemPrompts } from "./prompts/";
 import { useEffect, useState } from "react";
 
 const AgentView = ({ docUrl }: { docUrl: AutomergeUrl }) => {
@@ -16,7 +11,7 @@ const AgentView = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     suspense: true,
   });
 
-  const systemPrompts = useSystemPrompts(docUrl);
+  const systemPrompt = useSystemPrompt(docUrl);
 
   return (
     <div className="w-full h-full overflow-auto p-4 flex flex-col gap-6">
@@ -24,18 +19,11 @@ const AgentView = ({ docUrl }: { docUrl: AutomergeUrl }) => {
 
       <section>
         <h3 className="text-sm font-medium text-base-content/70 mb-2">
-          Prompts
+          Prompt
         </h3>
-        <div className="flex flex-col gap-2">
-          {systemPrompts.map((prompt, index) => (
-            <pre
-              key={index}
-              className="text-xs bg-base-200 p-3 rounded-md overflow-x-auto whitespace-pre-wrap"
-            >
-              {prompt}
-            </pre>
-          ))}
-        </div>
+        <pre className="text-xs bg-base-200 p-3 rounded-md overflow-x-auto whitespace-pre-wrap">
+          {systemPrompt}
+        </pre>
       </section>
 
       <section>
@@ -77,20 +65,13 @@ const FolderView = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   );
 };
 
-function useSystemPrompts(agentDocUrl: AutomergeUrl) {
-  const agentDocHandle = useDocHandle<AgentDoc>(agentDocUrl);
-  const [prompts, setPrompts] = useState<string[]>([]);
+function useSystemPrompt(agentDocUrl: AutomergeUrl) {
+  const [prompt, setPrompt] = useState<string>("");
   const repo = useRepo();
 
   useEffect(() => {
-    if (!agentDocHandle) {
-      return;
-    }
+    buildSystemPrompt(agentDocUrl, repo).then(setPrompt);
+  }, [agentDocUrl, repo]);
 
-    getSystemPrompts(agentDocHandle, repo).then((prompts) => {
-      setPrompts(prompts);
-    });
-  }, [agentDocHandle]);
-
-  return prompts;
+  return prompt;
 }

@@ -1,6 +1,7 @@
 import outdent from "outdent";
+import type { LLMContextPlugin, LLMContextImplementation } from "./types";
 
-export const SYSTEM_PROMPT = outdent`
+const SYSTEM_PROMPT = outdent`
 You are an AI assistant helping to edit multiple documents by invoking actions on them.
 
 You have access to multiple documents simultaneously. Each document has its own set of available actions based on its type.
@@ -30,3 +31,12 @@ Your reasoning about what actions to take and why
 </action>
 
 `;
+
+export const systemContextPlugin: LLMContextPlugin = {
+  id: "llm-context:system",
+  name: "System Prompt",
+  type: "patchwork:llm-context",
+  module: {
+    prompt: async () => SYSTEM_PROMPT,
+  },
+};

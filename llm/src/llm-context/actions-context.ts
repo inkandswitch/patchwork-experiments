@@ -1,13 +1,15 @@
-import { AutomergeUrl, DocHandle, Repo } from "@automerge/automerge-repo";
+import { AutomergeUrl, Repo } from "@automerge/automerge-repo";
 import { getRegistry, isLoadedPlugin } from "@inkandswitch/patchwork-plugins";
 import { FolderDoc } from "@inkandswitch/patchwork-filesystem";
-import { AgentDoc } from "../Agent";
+import { AgentDoc } from "../agent/agent";
 import outdent from "outdent";
+import type { LLMContextPlugin, LLMContextImplementation } from "./types";
 
-export async function getActionsContextPrompt(
-  agentDocHandle: DocHandle<AgentDoc>,
+async function getActionsContextPrompt(
+  agentDocUrl: AutomergeUrl,
   repo: Repo
 ): Promise<string> {
+  const agentDocHandle = await repo.find<AgentDoc>(agentDocUrl);
   const agentDoc = agentDocHandle.doc();
   const { contextFolderUrl } = agentDoc;
 
@@ -229,3 +231,12 @@ function formatSchemaDescription(schema: unknown): string {
 
   return "(empty schema)";
 }
+
+export const actionsContextPlugin: LLMContextPlugin = {
+  id: "llm-context:actions",
+  name: "Actions Context",
+  type: "patchwork:llm-context",
+  module: {
+    prompt: getActionsContextPrompt,
+  },
+};

@@ -1,8 +1,9 @@
-import { DocHandle, Repo } from "@automerge/automerge-repo";
+import { AutomergeUrl, DocHandle, Repo } from "@automerge/automerge-repo";
 import { FolderDoc } from "@inkandswitch/patchwork-filesystem";
 import outdent from "outdent";
-import { createDocOfDatatype } from "../../lib";
-import { AgentDoc } from "../Agent";
+import { createDocOfDatatype } from "../lib";
+import { AgentDoc } from "../agent/agent";
+import type { LLMContextPlugin, LLMContextImplementation } from "./types";
 
 const AGENT_TODO_LIST_NAME = "agent todo list";
 
@@ -18,10 +19,11 @@ type TodoDoc = {
   "@patchwork"?: { type: string };
 };
 
-export async function getTodoContextPrompt(
-  agentDocHandle: DocHandle<AgentDoc>,
+async function getTodoContextPrompt(
+  agentDocUrl: AutomergeUrl,
   repo: Repo
 ): Promise<string> {
+  const agentDocHandle = await repo.find<AgentDoc>(agentDocUrl);
   const agentDoc = agentDocHandle.doc();
   const { contextFolderUrl } = agentDoc;
 
@@ -98,3 +100,12 @@ async function findOrCreateAgentTodoDocHandle(
 
   return handle as DocHandle<TodoDoc>;
 }
+
+export const todoContextPlugin: LLMContextPlugin = {
+  id: "llm-context:todo",
+  name: "Todo Context",
+  type: "patchwork:llm-context",
+  module: {
+    prompt: getTodoContextPrompt,
+  },
+};
