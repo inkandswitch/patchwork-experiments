@@ -371,16 +371,6 @@ const EmbedBlockView = ({ value }: { value: EmbedBlock }) => {
 
   return (
     <div className="rounded-lg border border-base-300 overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-2 bg-base-200 border-b border-base-300">
-        <span className="text-sm font-medium truncate">{title}</span>
-        <a
-          href={openUrl}
-          className="btn btn-ghost btn-xs"
-          title="Open document"
-        >
-          Open
-        </a>
-      </div>
       <div className="h-64 overflow-auto">
         <patchwork-view doc-url={value.documentUrl} tool-id={value.toolId} />
       </div>

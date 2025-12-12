@@ -35,7 +35,10 @@ const AgentView = ({ docUrl }: { docUrl: AutomergeUrl }) => {
             No context folder configured
           </div>
         ) : (
-          <FolderView docUrl={agentDoc.contextFolderUrl} />
+          <patchwork-view
+            doc-url={agentDoc.contextFolderUrl}
+            tool-id="folder-viewer"
+          />
         )}
       </section>
     </div>
@@ -43,35 +46,3 @@ const AgentView = ({ docUrl }: { docUrl: AutomergeUrl }) => {
 };
 
 export const renderAgentView = toolify(AgentView);
-
-const FolderView = ({ docUrl }: { docUrl: AutomergeUrl }) => {
-  const [folderDoc] = useDocument<FolderDoc>(docUrl, {
-    suspense: true,
-  });
-
-  return (
-    <div className="flex flex-col gap-2">
-      {folderDoc.docs.map((doc, index) => (
-        <div key={index}>
-          <h4 className="text-sm font-medium text-base-content/70 mb-2">
-            {doc.name}
-          </h4>
-          <div className="border border-base-300 rounded-md overflow-auto max-h-[500px]">
-            <patchwork-view key={doc.url} doc-url={doc.url} />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-};
-
-function useSystemPrompt(agentDocUrl: AutomergeUrl) {
-  const [prompt, setPrompt] = useState<string>("");
-  const repo = useRepo();
-
-  useEffect(() => {
-    buildSystemPrompt(agentDocUrl, repo).then(setPrompt);
-  }, [agentDocUrl, repo]);
-
-  return prompt;
-}

@@ -1,9 +1,10 @@
-import { AutomergeUrl, Repo } from "@automerge/automerge-repo";
+import { AutomergeUrl, DocHandle, Repo } from "@automerge/automerge-repo";
 import {
   getRegistry,
   isLoadablePlugin,
   isLoadedPlugin,
 } from "@inkandswitch/patchwork-plugins";
+import { DocLink, FolderDoc } from "@inkandswitch/patchwork-filesystem";
 import type { ChatDoc, ChatMessage } from "../chat/types";
 import type {
   LLMMessage,
@@ -13,6 +14,8 @@ import type {
 } from "../llm-providers/types";
 import type { LLMContextDescription, LoadedLLMContext } from "../llm-context";
 import { parseBlocks } from "./parser";
+import { getFolderDocLinks, getChangedDocLinks } from "./folder-utils";
+import { createDocOfDatatype } from "../lib";
 
 // Agent document schema
 export type AgentDoc = {
@@ -20,6 +23,7 @@ export type AgentDoc = {
   modelId: string;
   chatDocUrl?: AutomergeUrl;
   contextFolderUrl: AutomergeUrl;
+  previousDocLinks?: DocLink[];
 };
 
 /**
@@ -42,10 +46,19 @@ export async function step(
   console.log("step agent");
 
   const agentDocHandle = await repo.find<AgentDoc>(agentDocUrl);
-  const { modelId, chatDocUrl, contactUrl } = agentDocHandle.doc();
+  const agentDoc = agentDocHandle.doc();
+  const { modelId, chatDocUrl, contactUrl, contextFolderUrl } = agentDoc;
 
   if (!chatDocUrl) {
     return;
+  }
+
+  // Initialize previousDocLinks if not set
+  if (!agentDoc.previousDocLinks) {
+    const initialDocLinks = await getFolderDocLinks(contextFolderUrl, repo);
+    agentDocHandle.change((doc) => {
+      doc.previousDocLinks = initialDocLinks;
+    });
   }
 
   // Load chat document
@@ -167,7 +180,76 @@ export async function step(
   const nextRerunReason = await getRerunReasonFromContexts(agentDocUrl, repo);
   if (nextRerunReason) {
     await step(agentDocUrl, repo);
+    return;
   }
+
+  // We're truly done - compute changed docLinks and create a snapshot folder
+  await createChangedDocsMessage(agentDocHandle, repo);
+}
+
+/**
+ * Creates a snapshot folder containing documents that have changed since the last step.
+ * Adds an embed message to the chat with the snapshot folder.
+ */
+async function createChangedDocsMessage(
+  agentDocHandle: DocHandle<AgentDoc>,
+  repo: Repo
+): Promise<void> {
+  const agentDoc = agentDocHandle.doc();
+  const { contextFolderUrl, previousDocLinks, chatDocUrl, contactUrl } =
+    agentDoc;
+
+  // Get current state of all docs
+  const currentDocLinks = await getFolderDocLinks(contextFolderUrl, repo);
+
+  // Find what has changed
+  const changedDocLinks = getChangedDocLinks(
+    previousDocLinks || [],
+    currentDocLinks
+  );
+
+  // Do nothing if no files have changed
+  if (changedDocLinks.length === 0) {
+    return;
+  }
+
+  console.log(`${changedDocLinks.length} documents changed, creating snapshot`);
+
+  // Create a new folder for the changed docs
+  const snapshotFolderHandle = await createDocOfDatatype<FolderDoc>(
+    "folder",
+    repo
+  );
+
+  // Set up the folder with changed docLinks
+  snapshotFolderHandle.change((doc) => {
+    doc.title = `Changes ${new Date().toISOString()}`;
+    doc.docs = changedDocLinks;
+  });
+
+  console.log("Created snapshot folder:", snapshotFolderHandle.url);
+
+  // Add embed message to chat
+  if (chatDocUrl) {
+    const chatDocHandle = await repo.find<ChatDoc>(chatDocUrl);
+    chatDocHandle.change((doc) => {
+      doc.messages.push({
+        id: `msg-${Date.now()}-${Math.random()}`,
+        author: contactUrl,
+        timestamp: Date.now(),
+        content: {
+          type: "embed",
+          documentUrl: snapshotFolderHandle.url,
+          toolId: "folder-viewer",
+        },
+      });
+    });
+  }
+
+  // Reset previousDocLinks to null
+  agentDocHandle.change((doc) => {
+    delete doc.previousDocLinks;
+  });
 }
 
 export async function buildSystemPrompt(
@@ -299,6 +381,14 @@ function buildLLMHistory(
         return {
           role: "assistant" as const,
           content,
+        };
+      }
+
+      case "embed": {
+        const embed = message.content;
+        return {
+          role,
+          content: `[Embedded document: ${embed.documentUrl}]`,
         };
       }
     }

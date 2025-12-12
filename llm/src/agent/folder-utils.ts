@@ -29,46 +29,32 @@ export async function getFolderDocLinks(
     return result;
   }
 
-  // Add the folder itself with heads
-  const { documentId: folderId } = parseAutomergeUrl(folderUrl);
-  result.push({
-    name: folderDoc.title || "Folder",
-    type: "folder",
-    url: stringifyAutomergeUrl({
-      documentId: folderId,
-      heads: encodeHeads(getHeads(folderDoc)),
-    }),
-  });
-
   // Add all documents in the folder with heads
   if (folderDoc.docs) {
-    for (const docRef of folderDoc.docs) {
+    for (const docLink of folderDoc.docs) {
       try {
-        const handle = await repo.find(docRef.url);
+        const handle = await repo.find(docLink.url);
         const doc = handle.doc();
         if (doc) {
-          const { documentId } = parseAutomergeUrl(docRef.url);
-          const docLink: DocLink = {
-            name: docRef.name,
-            type: docRef.type,
+          const { documentId } = parseAutomergeUrl(docLink.url);
+          const docLinkWithHeads: DocLink = {
+            ...docLink,
             url: stringifyAutomergeUrl({
               documentId,
               heads: encodeHeads(getHeads(doc)),
             }),
-            icon: docRef.icon,
-            copyOf: docRef.copyOf,
           };
-          result.push(docLink);
+
+          result.push(docLinkWithHeads);
 
           // Recursively traverse nested folders
-          if (docRef.type === "folder") {
-            const nestedLinks = await getFolderDocLinks(docRef.url, repo);
-            // Skip the first item (the folder itself) since we already added it
-            result.push(...nestedLinks.slice(1));
+          if (docLink.type === "folder") {
+            const nestedLinks = await getFolderDocLinks(docLink.url, repo);
+            result.push(...nestedLinks);
           }
         }
       } catch (e) {
-        console.error(`Error loading document ${docRef.url}:`, e);
+        console.error(`Error loading document ${docLink.url}:`, e);
       }
     }
   }
