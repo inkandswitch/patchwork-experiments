@@ -3,6 +3,10 @@ import { type DocHandle } from '@automerge/automerge-repo';
 import { z } from 'zod';
 import { TodoDoc } from './Todo';
 
+export type MarkdownDoc = {
+  content: string;
+};
+
 type Todo = {
   id: string;
   description: string;
@@ -289,6 +293,28 @@ export const completeTodoAction: Plugin<any> = {
   },
 };
 
+// Update markdown document content
+export const updateMarkdownContentAction: Plugin<any> = {
+  type: 'patchwork:action',
+  id: 'markdown-update-content',
+  name: 'Update Markdown Content',
+  icon: 'FileText',
+  supportedDataTypes: ['markdown'],
+  module: {
+    argsSchema: () => {
+      return z.object({
+        content: z.string().describe('The new markdown content'),
+      });
+    },
+    isApplicable: () => true,
+    default: (handle: DocHandle<MarkdownDoc>, _repo: any, args: { content: string }) => {
+      handle.change((doc) => {
+        doc.content = args.content;
+      });
+    },
+  },
+};
+
 export const actions: Plugin<any>[] = [
   addTodoAction,
   markTodoDoneAction,
@@ -300,3 +326,5 @@ export const actions: Plugin<any>[] = [
   markAllCompleteAction,
   markAllIncompleteAction,
 ];
+
+export const markdownActions: Plugin<any>[] = [updateMarkdownContentAction];

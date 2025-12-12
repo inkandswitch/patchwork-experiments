@@ -208,6 +208,11 @@ async function createChangedDocsMessage(
     currentDocLinks
   );
 
+  // Always update previousDocLinks to current state for next comparison
+  agentDocHandle.change((doc) => {
+    doc.previousDocLinks = currentDocLinks;
+  });
+
   // Do nothing if no files have changed
   if (changedDocLinks.length === 0) {
     return;
@@ -245,11 +250,6 @@ async function createChangedDocsMessage(
       });
     });
   }
-
-  // Reset previousDocLinks to null
-  agentDocHandle.change((doc) => {
-    delete doc.previousDocLinks;
-  });
 }
 
 export async function buildSystemPrompt(

@@ -3,7 +3,6 @@ import { useDocument, useRepo } from "@automerge/automerge-repo-react-hooks";
 import "@inkandswitch/patchwork-elements";
 import { AgentDoc, buildSystemPrompt } from "./agent";
 import { toolify } from "../chat/utils";
-import { FolderDoc } from "@inkandswitch/patchwork-filesystem";
 import { useEffect, useState } from "react";
 import Markdown from "react-markdown";
 import "./markdown.css";
@@ -46,3 +45,14 @@ const AgentView = ({ docUrl }: { docUrl: AutomergeUrl }) => {
 };
 
 export const renderAgentView = toolify(AgentView);
+
+function useSystemPrompt(agentDocUrl: AutomergeUrl) {
+  const [prompt, setPrompt] = useState<string>("");
+  const repo = useRepo();
+
+  useEffect(() => {
+    buildSystemPrompt(agentDocUrl, repo).then(setPrompt);
+  }, [agentDocUrl, repo]);
+
+  return prompt;
+}
