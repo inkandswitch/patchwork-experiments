@@ -3,20 +3,30 @@ import { type DocHandle } from "@automerge/automerge-repo";
 import { type Repo } from "@automerge/automerge-repo";
 import { z } from "zod";
 
+function getAvailableDatatypes(): string[] {
+  const registry = getRegistry("patchwork:datatype");
+  const allDatatypes = registry.all();
+  return allDatatypes.map((dt) => (dt as { id: string }).id);
+}
+
+// Only applies to folders (expects the handle to be a FolderDoc)
+// Puts the new document into that folder (in .docs)
 export const createDocumentAction: Plugin<any> = {
   type: "patchwork:action",
   id: "create-document",
-  name: "Create Document",
+  name: "Create Document in Folder",
   icon: "FilePlus",
-  supportedDataTypes: ["*"],
+  supportedDataTypes: ["folder"], // Only available on folders
   module: {
     argsSchema: () => {
+      const availableTypes = getAvailableDatatypes();
+      const typesDescription =
+        availableTypes.length > 0
+          ? `Available types: ${availableTypes.join(", ")}`
+          : "The type of document to create";
+
       return z.object({
-        dataType: z
-          .string()
-          .describe(
-            "The type of document to create (e.g., 'counter', 'essay', 'map')"
-          ),
+        dataType: z.string().describe(typesDescription),
         title: z
           .string()
           .optional()
@@ -59,23 +69,24 @@ export const createDocumentAction: Plugin<any> = {
           });
         }
 
-        // Add a reference to the new document in the current document
-        // This creates a link that can be opened
-        handle.change((doc) => {
-          if (!doc.createdDocuments) {
-            doc.createdDocuments = [];
+        // Add a reference to the new document in the folder's docs array
+        handle.change((folderDoc) => {
+          if (!Array.isArray(folderDoc.docs)) {
+            folderDoc.docs = [];
           }
-          doc.createdDocuments.push({
+          folderDoc.docs.push({
             url: newHandle.url,
             type: args.dataType,
-            title: args.title || `New ${args.dataType}`,
-            createdAt: new Date().toISOString(),
+            name: args.title || `New ${args.dataType}`,
           });
         });
 
-        console.log(`Created new ${args.dataType} document:`, newHandle.url);
+        console.log(
+          `Created new ${args.dataType} document in folder:`,
+          newHandle.url
+        );
       } catch (err) {
-        console.error("Error creating document:", err);
+        console.error("Error creating document in folder:", err);
         throw err;
       }
     },

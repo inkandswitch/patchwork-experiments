@@ -32,55 +32,59 @@ async function getActionsContextPrompt(
   const folderHandle = await repo.find<FolderDoc>(contextFolderUrl);
   const folderDoc = folderHandle.doc();
 
-  if (!folderDoc || !folderDoc.docs || folderDoc.docs.length === 0) {
+  if (!folderDoc) {
     return outdent`
-      ## Active Documents
+      ## Documents
       No documents in context.
     `;
   }
 
-  // Load all documents first
-  const documents: DocumentInfo[] = [];
-  for (const docRef of folderDoc.docs) {
-    const docUrl = docRef.url;
-    try {
-      const handle = await repo.find(docUrl);
-      const doc = handle.doc();
-      if (!doc) continue;
+  // Start with the root folder in the documents list
+  const documents: DocumentInfo[] = [
+    {
+      url: contextFolderUrl,
+      title: "Root Folder",
+      type: "folder",
+      doc: folderDoc,
+    },
+  ];
 
-      const patchworkMeta = (doc as Record<string, Record<string, unknown>>)?.[
-        "@patchwork"
-      ];
-      const type = (patchworkMeta?.type as string) || "unknown";
-
-      let title = "Untitled";
+  // Load all documents from the folder
+  if (folderDoc.docs) {
+    for (const docRef of folderDoc.docs) {
+      const docUrl = docRef.url;
       try {
-        const datatype = await getRegistry("patchwork:datatype").load(type);
-        if (datatype && isLoadedPlugin(datatype)) {
-          const moduleObj = (
-            datatype as unknown as {
-              module: { getTitle?: (_d: unknown) => string };
+        const handle = await repo.find(docUrl);
+        const doc = handle.doc();
+        if (!doc) continue;
+
+        const patchworkMeta = (
+          doc as Record<string, Record<string, unknown>>
+        )?.["@patchwork"];
+        const type = (patchworkMeta?.type as string) || "unknown";
+
+        let title = "Untitled";
+        try {
+          const datatype = await getRegistry("patchwork:datatype").load(type);
+          if (datatype && isLoadedPlugin(datatype)) {
+            const moduleObj = (
+              datatype as unknown as {
+                module: { getTitle?: (_d: unknown) => string };
+              }
+            ).module;
+            if (moduleObj.getTitle) {
+              title = moduleObj.getTitle(doc) || "Untitled";
             }
-          ).module;
-          if (moduleObj.getTitle) {
-            title = moduleObj.getTitle(doc) || "Untitled";
           }
+        } catch (e) {
+          console.warn(`Could not load datatype for ${type}:`, e);
         }
+
+        documents.push({ url: docUrl, title, type, doc });
       } catch (e) {
-        console.warn(`Could not load datatype for ${type}:`, e);
+        console.error(`Error loading document ${docUrl}:`, e);
       }
-
-      documents.push({ url: docUrl, title, type, doc });
-    } catch (e) {
-      console.error(`Error loading document ${docUrl}:`, e);
     }
-  }
-
-  if (documents.length === 0) {
-    return outdent`
-      ## Active Documents
-      No documents in context.
-    `;
   }
 
   // Load all actions
@@ -89,9 +93,14 @@ async function getActionsContextPrompt(
   // Build output sections
   const sections: string[] = [];
 
-  // Documents list
+  // Documents list - format root folder specially to explain its role
   const docList = documents
-    .map((d) => `- **${d.title}** (${d.type}) → \`${d.url}\``)
+    .map((d) => {
+      if (d.url === contextFolderUrl) {
+        return `- **${d.title}** (${d.type}) → \`${d.url}\` — *Add all new documents to this folder*`;
+      }
+      return `- **${d.title}** (${d.type}) → \`${d.url}\``;
+    })
     .join("\n");
   sections.push(outdent`
     ## Documents
@@ -126,8 +135,9 @@ async function getActionsContextPrompt(
     }
   }
 
-  // Only show type-specific actions for types we have documents for
+  // Show type-specific actions for types we have documents for
   const relevantTypes = new Set(documents.map((d) => d.type));
+
   for (const type of relevantTypes) {
     const actions = typeSpecificActions.get(type);
     if (actions && actions.length > 0) {

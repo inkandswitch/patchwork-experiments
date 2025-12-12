@@ -163,10 +163,10 @@ export async function step(
     return;
   }
 
-  // Check if any LLM context plugin wants to continue
+  // Check if any LLM context plugin is not done (e.g., pending actions to execute)
   const nextRerunReason = await getRerunReasonFromContexts(agentDocUrl, repo);
   if (nextRerunReason) {
-    await step(agentDocUrl, repo, nextRerunReason);
+    await step(agentDocUrl, repo);
   }
 }
 
