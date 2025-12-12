@@ -79,7 +79,8 @@ export async function step(
     historyMessages.push({ role: "user", content: rerunReason });
   }
 
-  const systemPrompt = await buildSystemPrompt(agentDocUrl, repo);
+  const promptParts = await buildSystemPromptParts(agentDocUrl, repo);
+  const systemPrompt = promptParts.map((part) => part.content).join("\n\n");
   const systemPromptMessages: LLMMessage[] = [
     { role: "system", content: systemPrompt },
   ];
@@ -252,14 +253,20 @@ async function createChangedDocsMessage(
   }
 }
 
-export async function buildSystemPrompt(
+export type PromptPart = {
+  pluginId: string;
+  pluginName: string;
+  content: string;
+};
+
+export async function buildSystemPromptParts(
   agentDocUrl: AutomergeUrl,
   repo: Repo
-): Promise<string> {
+): Promise<PromptPart[]> {
   const registry = getRegistry<LLMContextDescription>("patchwork:llm-context");
   const allContextPlugins = registry.all();
 
-  const promptParts: string[] = [];
+  const promptParts: PromptPart[] = [];
 
   for (const plugin of allContextPlugins) {
     try {
@@ -277,16 +284,20 @@ export async function buildSystemPrompt(
         continue;
       }
 
-      const prompt = await loadedPlugin.module.prompt(agentDocUrl, repo);
-      if (prompt) {
-        promptParts.push(prompt);
+      const content = await loadedPlugin.module.prompt(agentDocUrl, repo);
+      if (content) {
+        promptParts.push({
+          pluginId: plugin.id,
+          pluginName: plugin.name,
+          content,
+        });
       }
     } catch (err) {
       console.error(`Error loading context plugin ${plugin.id}:`, err);
     }
   }
 
-  return promptParts.join("\n\n");
+  return promptParts;
 }
 
 async function getRerunReasonFromContexts(

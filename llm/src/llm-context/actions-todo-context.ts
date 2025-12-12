@@ -34,10 +34,11 @@ async function getTodoContextPrompt(
     return "";
   }
 
-  const todoDocHandle = await findOrCreateAgentTodoDocHandle(
-    folderHandle,
-    repo
-  );
+  const todoDocHandle = await findAgentTodoDocHandle(folderHandle, repo);
+
+  if (!todoDocHandle) {
+    return ""; // Todo list not initialized yet
+  }
 
   // Get open todos (not done)
   const openTodos = todoDocHandle.doc().todos.filter((todo) => !todo.done);
@@ -74,22 +75,50 @@ ${openTodosList}
   `;
 }
 
-async function findOrCreateAgentTodoDocHandle(
+async function findAgentTodoDocHandle(
   folderHandle: DocHandle<FolderDoc>,
   repo: Repo
-): Promise<DocHandle<TodoDoc>> {
+): Promise<DocHandle<TodoDoc> | null> {
   const folderDoc = folderHandle.doc();
   for (const docRef of folderDoc.docs) {
     if (docRef.type === "todo" && docRef.name === AGENT_TODO_LIST_NAME) {
       return repo.find<TodoDoc>(docRef.url);
     }
   }
+  return null;
+}
 
+async function initTodoContext(
+  agentDocUrl: AutomergeUrl,
+  repo: Repo
+): Promise<void> {
+  const agentDocHandle = await repo.find<AgentDoc>(agentDocUrl);
+  const agentDoc = agentDocHandle.doc();
+  const { contextFolderUrl } = agentDoc;
+
+  const folderHandle = await repo.find<FolderDoc>(contextFolderUrl);
+  const folderDoc = folderHandle.doc();
+
+  if (!folderDoc) {
+    return;
+  }
+
+  // Check if todo list already exists
+  const existingTodo = folderDoc.docs.find(
+    (doc) => doc.type === "todo" && doc.name === AGENT_TODO_LIST_NAME
+  );
+
+  if (existingTodo) {
+    return; // Already exists
+  }
+
+  // Create the todo list document
   const handle = await createDocOfDatatype<TodoDoc>("todo", repo);
   handle.change((doc) => {
     doc.title = AGENT_TODO_LIST_NAME;
   });
 
+  // Add to folder
   folderHandle.change((doc) => {
     doc.docs.push({
       url: handle.url,
@@ -97,8 +126,6 @@ async function findOrCreateAgentTodoDocHandle(
       type: "todo",
     });
   });
-
-  return handle as DocHandle<TodoDoc>;
 }
 
 async function getTodoRerunReason(
@@ -153,5 +180,6 @@ export const todoContextPlugin: LLMContextPlugin = {
   module: {
     prompt: getTodoContextPrompt,
     getRerunReason: getTodoRerunReason,
+    init: initTodoContext,
   },
 };
