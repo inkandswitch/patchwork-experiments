@@ -27,6 +27,8 @@ export async function step(
   agentDocUrl: AutomergeUrl,
   repo: Repo
 ): Promise<void> {
+  console.log("step agent");
+
   const agentDocHandle = await repo.find<AgentDoc>(agentDocUrl);
   const { modelId, chatDocUrl, contactUrl } = agentDocHandle.doc();
 
@@ -52,6 +54,7 @@ export async function step(
   ];
 
   let currentBotMessageId: string | null = null;
+  let hasActionWithReturnValue = false;
 
   const responseStream = llmProvider.chatCompletionStream(
     [...systemPromptMessages, ...historyMessages],
@@ -105,15 +108,22 @@ export async function step(
 
     let result: { type: "success" | "error"; value: unknown };
     try {
+      const returnValue = await executeAction(target, id, args, repo);
       result = {
         type: "success",
-        value: (await executeAction(target, id, args, repo)) ?? null,
+        value: returnValue ?? null,
       };
+      // Track if this action returned a meaningful value (not null/undefined)
+      if (returnValue !== undefined && returnValue !== null) {
+        hasActionWithReturnValue = true;
+      }
     } catch (error) {
       result = {
         type: "error",
         value: (error as Error).toString(),
       };
+      // Errors also count as needing a follow-up prompt
+      hasActionWithReturnValue = true;
     }
 
     chatDocHandle.change((doc) => {
@@ -127,6 +137,11 @@ export async function step(
       }
       message.content.action.result = result;
     });
+  }
+
+  // If an action returned a value, run the step again so the LLM can see the result
+  if (hasActionWithReturnValue) {
+    await step(agentDocUrl, repo);
   }
 }
 

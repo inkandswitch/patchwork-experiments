@@ -71,8 +71,6 @@ export const anthropicProvider: LLMProviderPlugin = {
           throw new Error("At least one non-system message is required");
         }
 
-        console.log(systemMessage, anthropicMessages);
-
         const stream = await client.messages.stream({
           model: options?.model || "claude-sonnet-4-0",
           messages: anthropicMessages,

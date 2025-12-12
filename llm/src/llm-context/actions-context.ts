@@ -142,6 +142,27 @@ async function getActionsContextPrompt(
     }
   }
 
+  // Add guidance about ID timing
+  sections.push(outdent`
+    ## Important: ID Timing for Actions
+
+    You **can** create multiple items in a single response—that's perfectly fine. The constraint is about **referencing** newly created items:
+
+    When you create a new item (e.g., a task, a note, a row), you do **not** know its ID until after the action completes. If another action needs to reference that newly created item by ID, you **cannot** perform both in the same response.
+
+    **Examples:**
+    - ✅ Creating 5 tasks at once → Fine, no IDs needed between them.
+    - ❌ Creating a task, then updating that same task → Not possible in one response. You don't know the task's ID yet.
+    - ❌ Creating an item, then linking another item to it → Wait for the ID first.
+
+    **What to do when you need to reference a new item:**
+    1. Perform the creation action(s) in your current response.
+    2. Wait for the next prompt cycle—you will be reprompted with the actual IDs.
+    3. Then perform actions that reference those IDs.
+
+    Do **not** guess or use placeholder IDs. Always wait for the real ID before referencing it.
+  `);
+
   return sections.join("\n\n");
 }
 
