@@ -12,3 +12,5 @@ export const plugins: Plugin<any>[] = [
   insertAction,
   viewAction,
 ];
+
+console.log("actions", 1);

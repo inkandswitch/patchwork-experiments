@@ -10,3 +10,5 @@ export const plugins: Plugin<any>[] = [
   ...llmProvidersPlugins,
   ...llmContextPlugins,
 ];
+
+console.log("llm", 9);
