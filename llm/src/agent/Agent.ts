@@ -22,10 +22,22 @@ export type AgentDoc = {
   contextFolderUrl: AutomergeUrl;
 };
 
-// Main step function
+/**
+ * Main step function - runs one iteration of the agent loop.
+ *
+ * @param agentDocUrl - The URL of the agent document
+ * @param repo - The Automerge repo
+ * @param rerunReason - Optional reason for why the agent is being re-run.
+ *   This is needed because if a context provider determines we're not done
+ *   (e.g., open todos remain), simply re-running with the same messages would
+ *   cause the LLM to produce the same response. By injecting this reason as a
+ *   fake user message, we give the LLM new input that guides it toward what
+ *   it should be doing next.
+ */
 export async function step(
   agentDocUrl: AutomergeUrl,
-  repo: Repo
+  repo: Repo,
+  rerunReason?: string
 ): Promise<void> {
   console.log("step agent");
 
@@ -48,6 +60,12 @@ export async function step(
   }
 
   const historyMessages = buildLLMHistory(chatDoc.messages, contactUrl);
+
+  // If there's a rerun reason, append it as a fake user message
+  if (rerunReason) {
+    historyMessages.push({ role: "user", content: rerunReason });
+  }
+
   const systemPrompt = await buildSystemPrompt(agentDocUrl, repo);
   const systemPromptMessages: LLMMessage[] = [
     { role: "system", content: systemPrompt },
@@ -142,6 +160,13 @@ export async function step(
   // If an action returned a value, run the step again so the LLM can see the result
   if (hasActionWithReturnValue) {
     await step(agentDocUrl, repo);
+    return;
+  }
+
+  // Check if any LLM context plugin wants to continue
+  const nextRerunReason = await getRerunReasonFromContexts(agentDocUrl, repo);
+  if (nextRerunReason) {
+    await step(agentDocUrl, repo, nextRerunReason);
   }
 }
 
@@ -180,6 +205,52 @@ export async function buildSystemPrompt(
   }
 
   return promptParts.join("\n\n");
+}
+
+async function getRerunReasonFromContexts(
+  agentDocUrl: AutomergeUrl,
+  repo: Repo
+): Promise<string | null> {
+  const registry = getRegistry<LLMContextDescription>("patchwork:llm-context");
+  const allContextPlugins = registry.all();
+
+  for (const plugin of allContextPlugins) {
+    try {
+      let loadedPlugin: LoadedLLMContext;
+      if (isLoadablePlugin(plugin)) {
+        const loaded = await registry.load(plugin.id);
+        if (!loaded || !isLoadedPlugin(loaded)) {
+          continue;
+        }
+        loadedPlugin = loaded as LoadedLLMContext;
+      } else if (isLoadedPlugin(plugin)) {
+        loadedPlugin = plugin as LoadedLLMContext;
+      } else {
+        continue;
+      }
+
+      // If the plugin has a getRerunReason function, check it
+      if (loadedPlugin.module.getRerunReason) {
+        const reason = await loadedPlugin.module.getRerunReason(
+          agentDocUrl,
+          repo
+        );
+        if (reason) {
+          console.log(
+            `Context plugin ${plugin.id} wants to continue: ${reason}`
+          );
+          return reason;
+        }
+      }
+    } catch (err) {
+      console.error(
+        `Error checking getRerunReason for plugin ${plugin.id}:`,
+        err
+      );
+    }
+  }
+
+  return null;
 }
 
 function buildLLMHistory(

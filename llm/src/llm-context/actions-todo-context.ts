@@ -3,7 +3,7 @@ import { FolderDoc } from "@inkandswitch/patchwork-filesystem";
 import outdent from "outdent";
 import { createDocOfDatatype } from "../lib";
 import { AgentDoc } from "../agent/agent";
-import type { LLMContextPlugin, LLMContextImplementation } from "./types";
+import type { LLMContextPlugin } from "./types";
 
 const AGENT_TODO_LIST_NAME = "agent todo list";
 
@@ -101,11 +101,57 @@ async function findOrCreateAgentTodoDocHandle(
   return handle as DocHandle<TodoDoc>;
 }
 
+async function getTodoRerunReason(
+  agentDocUrl: AutomergeUrl,
+  repo: Repo
+): Promise<string | null> {
+  const agentDocHandle = await repo.find<AgentDoc>(agentDocUrl);
+  const agentDoc = agentDocHandle.doc();
+  const { contextFolderUrl } = agentDoc;
+
+  const folderHandle = await repo.find<FolderDoc>(contextFolderUrl);
+  const folderDoc = folderHandle.doc();
+
+  if (!folderDoc) {
+    return null;
+  }
+
+  // Find the agent todo list (don't create if it doesn't exist)
+  let todoDocUrl: AutomergeUrl | null = null;
+  for (const docRef of folderDoc.docs) {
+    if (docRef.type === "todo" && docRef.name === AGENT_TODO_LIST_NAME) {
+      todoDocUrl = docRef.url;
+      break;
+    }
+  }
+
+  // No todo list exists yet - done
+  if (!todoDocUrl) {
+    return null;
+  }
+
+  const todoDocHandle = await repo.find<TodoDoc>(todoDocUrl);
+  const todoDoc = todoDocHandle.doc();
+
+  // Get open todos
+  const openTodos = todoDoc.todos.filter((todo) => !todo.done);
+
+  if (openTodos.length === 0) {
+    return null;
+  }
+
+  // Return a reason with the list of open todos
+  const todoList = openTodos.map((todo) => `- ${todo.description}`).join("\n");
+
+  return `You still have ${openTodos.length} open todo item(s) to complete:\n${todoList}\n\nPlease continue working on these tasks.`;
+}
+
 export const todoContextPlugin: LLMContextPlugin = {
   id: "llm-context:todo",
   name: "Todo Context",
   type: "patchwork:llm-context",
   module: {
     prompt: getTodoContextPrompt,
+    getRerunReason: getTodoRerunReason,
   },
 };

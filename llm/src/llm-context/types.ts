@@ -13,7 +13,8 @@ export type LLMContextDescription = PluginDescription & {
 
 export type LLMContextImplementation = {
   prompt(agentDocUrl: AutomergeUrl, repo: Repo): Promise<string>;
-  isDone?: (agentDocUrl: AutomergeUrl, repo: Repo) => Promise<boolean>;
+  /** Returns a reason string if the agent should continue, or null/undefined if done */
+  getRerunReason?: (agentDocUrl: AutomergeUrl, repo: Repo) => Promise<string | null>;
   init?: (agentDocUrl: AutomergeUrl, repo: Repo) => Promise<void>;
 };
 
