@@ -25,7 +25,13 @@ export type ActionBlock = {
   };
 };
 
-export type ContentBlock = TextBlock | ActionBlock | ThinkingBlock;
+export type EmbedBlock = {
+  type: "embed";
+  documentUrl: AutomergeUrl;
+  toolId: string;
+};
+
+export type ContentBlock = TextBlock | ActionBlock | ThinkingBlock | EmbedBlock;
 
 export type ChatMessage = {
   id: string;

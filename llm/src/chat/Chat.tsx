@@ -17,7 +17,13 @@ import { useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import { AgentDoc, step } from "../agent/agent";
 import "./styles.css";
-import { ActionBlock, ChatDoc, ChatMessage, ThinkingBlock } from "./types";
+import {
+  ActionBlock,
+  ChatDoc,
+  ChatMessage,
+  EmbedBlock,
+  ThinkingBlock,
+} from "./types";
 import {
   extractAutomergeUrls,
   formatTimestamp,
@@ -274,6 +280,10 @@ const MessageView = ({ message }: { message: ChatMessage }) => {
   if (content.type === "action") {
     return <ActionBlockView value={content} />;
   }
+
+  if (content.type === "embed") {
+    return <EmbedBlockView value={content} />;
+  }
 };
 
 // Render a thinking block (collapsible)
@@ -323,5 +333,57 @@ const ActionBlockView = ({ value }: { value: ActionBlock }) => {
         {value.action && <pre>{JSON.stringify(value.action, null, 2)}</pre>}
       </div>
     </details>
+  );
+};
+
+// Render an embedded document view
+const EmbedBlockView = ({ value }: { value: EmbedBlock }) => {
+  const [doc] = useDocument<HasPatchworkMetadata>(value.documentUrl, {
+    suspense: true,
+  });
+  const [title, setTitle] = useState<string>("Loading...");
+
+  useEffect(() => {
+    const loadTitle = async () => {
+      const type = doc?.["@patchwork"]?.type;
+      if (!type) {
+        setTitle("Unknown Document");
+        return;
+      }
+
+      try {
+        const datatype = await getRegistry("patchwork:datatype").load(type);
+        if (datatype?.module?.getTitle) {
+          setTitle(datatype.module.getTitle(doc) || "Untitled");
+        } else {
+          setTitle("Untitled");
+        }
+      } catch {
+        setTitle("Unknown Document");
+      }
+    };
+
+    loadTitle();
+  }, [doc]);
+
+  const documentId = parseAutomergeUrl(value.documentUrl).documentId;
+  const openUrl = `#doc=${documentId}&tool=${value.toolId}`;
+
+  return (
+    <div className="rounded-lg border border-base-300 overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 bg-base-200 border-b border-base-300">
+        <span className="text-sm font-medium truncate">{title}</span>
+        <a
+          href={openUrl}
+          className="btn btn-ghost btn-xs"
+          title="Open document"
+        >
+          Open
+        </a>
+      </div>
+      <div className="h-64 overflow-auto">
+        <patchwork-view doc-url={value.documentUrl} tool-id={value.toolId} />
+      </div>
+    </div>
   );
 };
