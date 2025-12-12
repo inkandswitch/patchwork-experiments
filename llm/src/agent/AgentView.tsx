@@ -23,9 +23,7 @@ const AgentView = ({ docUrl }: { docUrl: AutomergeUrl }) => {
         <h3 className="text-sm font-medium text-base-content/70 mb-2">
           Prompt
         </h3>
-        <pre className="text-xs bg-base-200 p-3 rounded-md overflow-x-auto whitespace-pre-wrap">
-          <Markdown className="markdown">{systemPrompt}</Markdown>
-        </pre>
+        <Markdown className="markdown">{systemPrompt}</Markdown>
       </section>
 
       <section>
