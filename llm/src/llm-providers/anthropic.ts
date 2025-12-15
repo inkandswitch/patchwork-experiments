@@ -5,7 +5,11 @@ export const anthropicProvider: LLMProviderPlugin = {
   type: "patchwork:llm-provider",
   id: "anthropic",
   name: "Anthropic",
-  supportedModels: ["claude-sonnet-4-0", "claude-3-5-sonnet-20241022"],
+  supportedModels: [
+    "claude-opus-4-5-20251101",
+    "claude-sonnet-4-0",
+    "claude-3-5-sonnet-20241022",
+  ],
   async available() {
     const envKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
     const localKey = localStorage.getItem("anthropic-api-key");

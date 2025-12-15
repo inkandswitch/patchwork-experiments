@@ -7,6 +7,10 @@ export type MarkdownDoc = {
   content: string;
 };
 
+export type FileDoc = {
+  content: string;
+};
+
 type Todo = {
   id: string;
   description: string;
@@ -328,3 +332,42 @@ export const actions: Plugin<any>[] = [
 ];
 
 export const markdownActions: Plugin<any>[] = [updateMarkdownContentAction];
+
+// View file content
+export const viewFileAction: Plugin<any> = {
+  type: 'patchwork:action',
+  id: 'file-view',
+  name: 'View File',
+  icon: 'Eye',
+  supportedDataTypes: ['file'],
+  module: {
+    isApplicable: () => true,
+    default: (handle: DocHandle<FileDoc>) => {
+      return handle.doc().content;
+    },
+  },
+};
+
+// Replace file content
+export const replaceFileContentAction: Plugin<any> = {
+  type: 'patchwork:action',
+  id: 'file-replace-content',
+  name: 'Replace File Content',
+  icon: 'FileEdit',
+  supportedDataTypes: ['file'],
+  module: {
+    argsSchema: () => {
+      return z.object({
+        content: z.string().describe('The new content to replace the entire file'),
+      });
+    },
+    isApplicable: () => true,
+    default: (handle: DocHandle<FileDoc>, _repo: any, args: { content: string }) => {
+      handle.change((doc) => {
+        doc.content = args.content;
+      });
+    },
+  },
+};
+
+export const fileActions: Plugin<any>[] = [viewFileAction, replaceFileContentAction];

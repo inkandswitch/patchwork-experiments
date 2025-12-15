@@ -7,43 +7,57 @@ import { useEffect, useState } from "react";
 import Markdown from "react-markdown";
 import "./markdown.css";
 
+type Tab = "prompt" | "context";
+
 const AgentView = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   const [agentDoc] = useDocument<AgentDoc>(docUrl, {
     suspense: true,
   });
+  const [activeTab, setActiveTab] = useState<Tab>("prompt");
 
   const promptParts = usePromptParts(docUrl);
 
   return (
-    <div className="w-full h-full overflow-auto p-4 flex flex-col gap-6">
-      <patchwork-view doc-url={agentDoc.contactUrl} tool-id="contact-avatar" />
+    <div className="w-full h-full overflow-auto p-4 flex flex-col gap-4">
+      <div role="tablist" className="tabs tabs-bordered">
+        <button
+          role="tab"
+          className={`tab ${activeTab === "prompt" ? "tab-active" : ""}`}
+          onClick={() => setActiveTab("prompt")}
+        >
+          Prompts
+        </button>
+        <button
+          role="tab"
+          className={`tab ${activeTab === "context" ? "tab-active" : ""}`}
+          onClick={() => setActiveTab("context")}
+        >
+          Context Folder
+        </button>
+      </div>
 
-      <section>
-        <h3 className="text-sm font-medium text-base-content/70 mb-2">
-          Prompt
-        </h3>
+      {activeTab === "prompt" && (
         <div className="flex flex-col gap-4">
           {promptParts.map((part) => (
             <PromptPartBox key={part.pluginId} part={part} />
           ))}
         </div>
-      </section>
+      )}
 
-      <section>
-        <h3 className="text-sm font-medium text-base-content/70 mb-2">
-          Context
-        </h3>
-        {!agentDoc.contextFolderUrl ? (
-          <div className="py-8 flex items-center justify-center text-base-content/50 text-sm">
-            No context folder configured
-          </div>
-        ) : (
-          <patchwork-view
-            doc-url={agentDoc.contextFolderUrl}
-            tool-id="folder-viewer"
-          />
-        )}
-      </section>
+      {activeTab === "context" && (
+        <>
+          {!agentDoc.contextFolderUrl ? (
+            <div className="py-8 flex items-center justify-center text-base-content/50 text-sm">
+              No context folder configured
+            </div>
+          ) : (
+            <patchwork-view
+              doc-url={agentDoc.contextFolderUrl}
+              tool-id="folder-viewer"
+            />
+          )}
+        </>
+      )}
     </div>
   );
 };
