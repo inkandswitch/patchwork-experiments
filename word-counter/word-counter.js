@@ -1,7 +1,7 @@
 /**
  * Word Counter - Bundleless Patchwork Toolbar Tool
  *
- * A title bar tool that displays word count for markdown documents.
+ * A title bar tool that displays word count and character count for markdown documents.
  */
 
 // ============================================================================

@@ -97,6 +97,7 @@ export async function step(
 
   let currentBotMessageId: string | null = null;
   let hasActionWithReturnValue = false;
+  let hasActionError = false;
 
   const responseStream = llmProvider.chatCompletionStream(
     [...systemPromptMessages, ...historyMessages],
@@ -106,6 +107,14 @@ export async function step(
   );
 
   for await (const event of parseBlocks(responseStream)) {
+    // Add default description if missing for action/thinking blocks
+    const block = event.block;
+    if (block.type === "action" && !block.description) {
+      block.description = "do some action";
+    } else if (block.type === "thinking" && !block.description) {
+      block.description = "thinking";
+    }
+
     switch (event.type) {
       case "create": {
         const id = crypto.randomUUID();
@@ -114,7 +123,7 @@ export async function step(
             id,
             author: contactUrl,
             timestamp: Date.now(),
-            content: event.block,
+            content: block,
           });
         });
         currentBotMessageId = id;
@@ -128,7 +137,7 @@ export async function step(
           );
           if (message) {
             // todo: do incremental update
-            message.content = event.block;
+            message.content = block;
           }
         });
       }
@@ -164,8 +173,7 @@ export async function step(
         type: "error",
         value: (error as Error).toString(),
       };
-      // Errors also count as needing a follow-up prompt
-      hasActionWithReturnValue = true;
+      hasActionError = true;
     }
 
     chatDocHandle.change((doc) => {
@@ -179,6 +187,17 @@ export async function step(
       }
       message.content.action.result = result;
     });
+
+    // If action failed, ignore remaining tokens and rerun step immediately
+    if (hasActionError) {
+      break;
+    }
+  }
+
+  // If an action failed, rerun step so the LLM can see the error and retry
+  if (hasActionError) {
+    await step(agentDocUrl, repo);
+    return;
   }
 
   // If an action returned a value, run the step again so the LLM can see the result

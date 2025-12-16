@@ -116,7 +116,7 @@ async function getActionsContextPrompt(
   const docList = documents
     .map((d) => {
       if (d.url === contextFolderUrl) {
-        return `- **${d.title}** (${d.type}) → \`${d.url}\` — *Add all new documents to this folder*`;
+        return `- **${d.title}** (${d.type}) → \`${d.url}\` — *When creating a new document use this folder as the target*`;
       }
       return `- **${d.title}** (${d.type}) → \`${d.url}\``;
     })

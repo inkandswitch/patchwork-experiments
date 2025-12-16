@@ -371,7 +371,7 @@ const EmbedBlockView = ({ value }: { value: EmbedBlock }) => {
 
   return (
     <div className="rounded-lg border border-base-300 overflow-hidden">
-      <div className="h-64 overflow-auto">
+      <div className="h-[500px] overflow-auto">
         <patchwork-view doc-url={value.documentUrl} tool-id={value.toolId} />
       </div>
     </div>

@@ -19,7 +19,8 @@ export type UpdateBlockEvent = {
 
 export type ParseEvent = CreateBlockEvent | UpdateBlockEvent;
 
-const OPENING_TAG_REGEX = /<(action|thinking)\s+description="([^"]*)">/;
+// Matches both <action description="..."> and <action> (description is optional)
+const OPENING_TAG_REGEX = /<(action|thinking)(?:\s+description="([^"]*)")?>/;
 
 /**
  * Streaming parser that processes an AsyncGenerator of string chunks
@@ -63,7 +64,7 @@ export async function* parseBlocks(
           currentTextBlock = null;
 
           const tagType = match[1] as "action" | "thinking";
-          const description = match[2];
+          const description = match[2] ?? "";
 
           if (tagType === "action") {
             currentSpecialBlock = { type: "action", description };
