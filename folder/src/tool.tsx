@@ -77,8 +77,8 @@ const FolderEntry = ({ docLink }: FolderEntryProps) => {
           </div>
         ) : (
           <div className="flex-1 min-h-0">
-            {/* @ts-ignore */}
             <div className="h-full overflow-auto">
+              {/* @ts-expect-error Custom element from patchwork-elements */}
               <patchwork-view doc-url={docLink.url} />
             </div>
           </div>
