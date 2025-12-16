@@ -81,10 +81,9 @@ export const createDocumentAction: Plugin<any> = {
           });
         });
 
-        console.log(
-          `Created new ${args.dataType} document in folder:`,
-          newHandle.url
-        );
+        return {
+          documentUrl: newHandle.url,
+        };
       } catch (err) {
         console.error("Error creating document in folder:", err);
         throw err;

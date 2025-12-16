@@ -49,10 +49,20 @@ async function getActionsContextPrompt(
     },
   ];
 
-  // Load all documents from the folder
-  if (folderDoc.docs) {
-    for (const docRef of folderDoc.docs) {
+  // Recursively load all documents from the folder and its subfolders
+  async function loadDocumentsFromFolder(
+    folder: FolderDoc,
+    visited: Set<AutomergeUrl>
+  ): Promise<void> {
+    if (!folder.docs) return;
+
+    for (const docRef of folder.docs) {
       const docUrl = docRef.url;
+
+      // Skip already visited documents to avoid infinite loops
+      if (visited.has(docUrl)) continue;
+      visited.add(docUrl);
+
       try {
         const handle = await repo.find(docUrl);
         const doc = handle.doc();
@@ -81,11 +91,20 @@ async function getActionsContextPrompt(
         }
 
         documents.push({ url: docUrl, title, type, doc });
+
+        // If this document is a folder, recursively load its contents
+        if (type === "folder") {
+          await loadDocumentsFromFolder(doc as FolderDoc, visited);
+        }
       } catch (e) {
         console.error(`Error loading document ${docUrl}:`, e);
       }
     }
   }
+
+  // Start recursive loading from the root folder
+  const visited = new Set<AutomergeUrl>([contextFolderUrl]);
+  await loadDocumentsFromFolder(folderDoc, visited);
 
   // Load all actions
   const { genericActions, specificActions } = await loadAndCategorizeActions();

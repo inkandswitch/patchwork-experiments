@@ -1,7 +1,7 @@
 import { Plugin } from '@inkandswitch/patchwork-plugins';
 import { actions } from './actions';
 
-console.log('todo', 1);
+console.log('todo', 2);
 
 export const plugins: Plugin<any>[] = [
   {

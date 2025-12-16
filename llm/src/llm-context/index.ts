@@ -2,6 +2,7 @@ import { systemContextPlugin } from "./base-context";
 import { actionsContextPlugin } from "./actions-context";
 import { todoContextPlugin } from "./actions-todo-context";
 import { Plugin } from "@inkandswitch/patchwork-plugins";
+import { toolEditingContextPlugin } from "./tool-editing-context";
 
 export { systemContextPlugin } from "./base-context";
 export { actionsContextPlugin } from "./actions-context";
@@ -17,4 +18,5 @@ export const plugins: Plugin<any>[] = [
   systemContextPlugin,
   actionsContextPlugin,
   todoContextPlugin,
+  toolEditingContextPlugin,
 ];

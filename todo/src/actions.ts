@@ -40,9 +40,11 @@ export const addTodoAction: Plugin<any> = {
       _repo: any,
       args: { description: string; done?: boolean }
     ) => {
+      const id = crypto.randomUUID();
+
       handle.change((doc) => {
         const newTodo: Todo = {
-          id: crypto.randomUUID(),
+          id,
           description: args.description,
           done: args.done || false,
         };
@@ -51,6 +53,8 @@ export const addTodoAction: Plugin<any> = {
         }
         doc.todos.push(newTodo);
       });
+
+      return { id };
     },
   },
 };

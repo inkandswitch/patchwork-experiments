@@ -1,10 +1,20 @@
-import { AutomergeUrl, DocHandle, Repo } from "@automerge/automerge-repo";
+import {
+  AutomergeUrl,
+  DocHandle,
+  parseAutomergeUrl,
+  Repo,
+  stringifyAutomergeUrl,
+} from "@automerge/automerge-repo";
 import {
   getRegistry,
   isLoadablePlugin,
   isLoadedPlugin,
 } from "@inkandswitch/patchwork-plugins";
-import { DocLink, FolderDoc } from "@inkandswitch/patchwork-filesystem";
+import {
+  DocLink,
+  FolderDoc,
+  HasPatchworkMetadata,
+} from "@inkandswitch/patchwork-filesystem";
 import type { ChatDoc, ChatMessage } from "../chat/types";
 import type {
   LLMMessage,
@@ -209,6 +219,19 @@ async function createChangedDocsMessage(
     currentDocLinks
   );
 
+  // touch all folders so packages update
+  for (const docLink of currentDocLinks) {
+    if (docLink.type !== "folder") {
+      continue;
+    }
+
+    const docUrlWithoutHeads = getDocUrlWithoutHeads(docLink.url);
+    const docHandle = await repo.find<HasPatchworkMetadata>(docUrlWithoutHeads);
+    docHandle.change((doc) => {
+      (doc as any).lastSyncAt = Date.now();
+    });
+  }
+
   // Always update previousDocLinks to current state for next comparison
   agentDocHandle.change((doc) => {
     doc.previousDocLinks = currentDocLinks;
@@ -251,6 +274,11 @@ async function createChangedDocsMessage(
       });
     });
   }
+}
+
+function getDocUrlWithoutHeads(docUrl: AutomergeUrl): AutomergeUrl {
+  const { documentId } = parseAutomergeUrl(docUrl);
+  return stringifyAutomergeUrl({ documentId });
 }
 
 export type PromptPart = {
