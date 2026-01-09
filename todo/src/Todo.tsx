@@ -1,8 +1,12 @@
 import { AutomergeUrl } from '@automerge/automerge-repo';
-import './styles.css';
 import { useDocHandle, useDocument } from '@automerge/automerge-repo-react-hooks';
-import { useState } from 'react';
+import { annotations } from '@inkandswitch/annotations-context';
+import { Diff } from '@inkandswitch/annotations-diff';
+import { ref, Ref, RefOfType } from '@inkandswitch/patchwork-refs';
+import { useSubscribe } from '@inkandswitch/subscribables-react';
+import { useEffect, useState } from 'react';
 import { toolify } from './react-util';
+import './styles.css';
 
 type Todo = {
   id: string;
@@ -16,8 +20,8 @@ export type TodoDoc = {
 };
 
 export const TodoEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
-  const [doc, changeDoc] = useDocument<TodoDoc>(docUrl);
-  const docHandle = useDocHandle<TodoDoc>(docUrl);
+  const [doc, changeDoc] = useDocument<TodoDoc>(docUrl, { suspense: true });
+  const docHandle = useDocHandle<TodoDoc>(docUrl, { suspense: true });
   const [text, setText] = useState('');
 
   const addTodo = () => {
@@ -39,33 +43,12 @@ export const TodoEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     });
   };
 
-  const toggleTodo = (index: number) => {
-    changeDoc((doc) => {
-      doc.todos[index].done = !doc.todos[index].done;
-    });
-  };
-
-  const updateDescription = (index: number, description: string) => {
-    changeDoc((doc) => {
-      doc.todos[index].description = description;
-    });
-  };
-
-  // hack: ignore
-  if (
-    !docHandle ||
-    !docHandle.doc() ||
-    !docHandle.doc().todos ||
-    !doc ||
-    !doc.todos ||
-    docHandle.doc().todos.length !== doc.todos.length
-  ) {
-    return null;
-  }
+  const diffAnnotations = useSubscribe(annotations.ofType(Diff));
 
   return (
     <div className="p-4  h-full">
       <div className="max-w-[400px] mx-auto flex flex-col gap-2 dark:bg-base-300 bg-base-100 rounded-md p-4">
+        {[...diffAnnotations].length}
         <div className="text-2xl font-bold">
           <input
             type="text"
@@ -88,12 +71,7 @@ export const TodoEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
           </button>
         </div>
         {doc.todos.map((todo, index) => (
-          <TodoItem
-            key={todo.id}
-            todo={todo}
-            onToggle={() => toggleTodo(index)}
-            onChangeDescription={(description) => updateDescription(index, description)}
-          />
+          <TodoItem key={todo.id} todoRef={ref(docHandle, 'todos', index) as RefOfType<Todo>} />
         ))}
       </div>
     </div>
@@ -101,14 +79,50 @@ export const TodoEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
 };
 
 type TodoItemProps = {
-  todo: Todo;
-  onToggle: () => void;
-  onChangeDescription: (description: string) => void;
+  todoRef: RefOfType<Todo>;
 };
 
-const TodoItem = ({ todo, onToggle, onChangeDescription }: TodoItemProps) => {
+const TodoItem = ({ todoRef }: TodoItemProps) => {
+  const todo = todoRef.value();
+
+  const onToggle = () => {
+    todoRef.change((t) => {
+      t.done = !t.done;
+    });
+  };
+
+  const onChangeDescription = (description: string) => {
+    todoRef.change((t) => {
+      t.description = description;
+    });
+  };
+
+  // Query diff annotations reactively
+  const todoAnnotations = useSubscribe(annotations.onRef(todoRef as Ref));
+
+  useEffect(() => {
+    console.log('todoAnnotations', todoAnnotations);
+  }, [todoAnnotations]);
+
+  const diffType = todoAnnotations?.lookup(Diff)?.type;
+
+  // Visual diff indicators
+  const diffStyles: Record<string, string> = {
+    added: 'bg-green-100 dark:bg-green-900/30 border-l-4 border-green-500',
+    changed: 'bg-amber-100 dark:bg-amber-900/30 border-l-4 border-amber-500',
+    deleted: 'bg-red-100 dark:bg-red-900/30 border-l-4 border-red-500 line-through opacity-60',
+  };
+
+  const diffClass = diffType ? diffStyles[diffType] : '';
+
+  if (!todo) return null;
+
   return (
-    <div className={'flex gap-2 items-center px-2 py-1' + (todo.done ? ' line-through' : '')}>
+    <div
+      className={
+        `flex gap-2 items-center px-2 py-1 ${diffClass}` + (todo.done ? ' line-through' : '')
+      }
+    >
       <input type="checkbox" checked={todo.done} onChange={onToggle} />
       <input
         className="flex-1"
