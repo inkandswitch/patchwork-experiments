@@ -43,12 +43,9 @@ export const TodoEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     });
   };
 
-  const diffAnnotations = useSubscribe(annotations.ofType(Diff));
-
   return (
     <div className="p-4  h-full">
       <div className="max-w-[400px] mx-auto flex flex-col gap-2 dark:bg-base-300 bg-base-100 rounded-md p-4">
-        {[...diffAnnotations].length}
         <div className="text-2xl font-bold">
           <input
             type="text"

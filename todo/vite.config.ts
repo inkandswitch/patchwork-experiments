@@ -22,7 +22,7 @@ export default defineConfig({
   build: {
     minify: false,
     rollupOptions: {
-      external: [...external, 'react', 'react-dom', 'react/jsx-runtime'],
+      external,
       input: './src/index.ts',
       output: {
         format: 'es',
