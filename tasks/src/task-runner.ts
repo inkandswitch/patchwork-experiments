@@ -25,7 +25,7 @@ export class TaskRunner {
     private readonly repo: Repo,
     private readonly queueHandle: DocHandle<TaskQueue>,
     private workerCount = 2
-  ) {}
+  ) { }
 
   public setContactUrl(url: AutomergeUrl) {
     this.contactUrl = url;
@@ -52,32 +52,24 @@ export class TaskRunner {
   }
 
   private async initializeWorkers() {
-    const serviceWorker = navigator.serviceWorker.controller;
-    if (!serviceWorker) {
-      console.warn('TaskRunner: No service worker available, workers cannot be initialized');
-      return;
-    }
-
     for (let i = 0; i < this.workerCount; i++) {
-      this.workers.push(this.createWorker(serviceWorker));
+      this.workers.push(this.createWorker());
     }
   }
 
-  private createWorker(serviceWorker: ServiceWorker): Worker {
-    const { port1, port2 } = new MessageChannel();
+  private createWorker(): Worker {
+    // Get a channel to the repo from the site's SharedWorker
+    const port = window.getRepoChannel();
 
-    // Send port1 to service worker
-    serviceWorker.postMessage({ type: 'INIT' }, [port1]);
-
-    // Create and initialize autonomous worker
+    // Create runner worker and transfer the port to it
     const worker = new Worker(new URL('./runnerWorker.js', import.meta.url), { type: 'module' });
     worker.postMessage(
       {
-        port: port2,
+        port,
         queueUrl: this.queueHandle.url,
         contactUrl: this.contactUrl,
       },
-      [port2]
+      [port]
     );
 
     return worker;
