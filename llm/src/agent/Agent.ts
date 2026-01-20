@@ -138,7 +138,7 @@ export async function step(
           );
           if (message) {
             if (block.type == "text" && message.content.type === "text") {
-              updateText(doc, ["messages", doc.messages.indexOf(message), "content"], block.type);
+              updateText(doc, ["messages", doc.messages.indexOf(message), "content", "text"], block.text);
             } else {
               message.content = block;
             }
