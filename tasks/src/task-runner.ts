@@ -1,6 +1,12 @@
 import { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo';
 import { TaskQueue } from './datatype';
 
+declare global {
+  interface Window {
+    getRepoChannel: () => MessagePort;
+  }
+}
+
 export class TaskRunner {
   public static factory(repo: Repo) {
     return {
@@ -58,7 +64,11 @@ export class TaskRunner {
   }
 
   private createWorker(): Worker {
-    // Get a channel to the repo from the site's SharedWorker
+    // Get a channel to the repo from the site's SharedWorker.
+    // The site must define window.getRepoChannel() to return a MessagePort connected to the automerge-repo SharedWorker.
+    if (typeof window.getRepoChannel !== 'function') {
+      throw new Error('TaskRunner requires window.getRepoChannel() to be defined by the site');
+    }
     const port = window.getRepoChannel();
 
     // Create runner worker and transfer the port to it
