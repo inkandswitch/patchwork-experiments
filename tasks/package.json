@@ -15,10 +15,12 @@
   "keywords": [],
   "author": "Ink & Switch",
   "dependencies": {
-    "@automerge/automerge-repo": "2.5.0-alpha.2",
-    "@automerge/automerge-repo-react-hooks": "2.5.0-alpha.2",
+    "@automerge/automerge-repo": "2.5.2-alpha.0",
+    "@automerge/automerge-repo-react-hooks": "2.5.2-alpha.0",
     "@inkandswitch/patchwork-bootloader": "^0.0.3",
     "@inkandswitch/patchwork-plugins": "^0.0.2",
+    "@inkandswitch/patchwork-elements": "^0.0.3",
+    "@patchwork/sdk": "file:../../patchwork/sdk",
     "boring-name-generator": "^1.0.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -35,5 +37,6 @@
     "vite-plugin-css-injected-by-js": "^3.5.2",
     "vite-plugin-top-level-await": "^1.4.2",
     "vite-plugin-wasm": "^3.3.0"
-  }
+  },
+  "packageManager": "pnpm@10.24.0+sha512.01ff8ae71b4419903b65c60fb2dc9d34cf8bb6e06d03bde112ef38f7a34d6904c424ba66bea5cdcf12890230bf39f9580473140ed9c946fef328b6e5238a345a"
 }

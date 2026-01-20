@@ -11,7 +11,7 @@ export type Task<Input, Result> = {
 export type TaskDoc<Input, Result> = Task<Input, Result>;
 
 export type RunInfo<Result> = {
-  runner: string;
+  worker: AutomergeUrl;
   status: 'succeeded' | 'failed';
   result?: Result; // only if status === 'succeeded'
   log?: [number, string][];
@@ -42,7 +42,9 @@ export type TaskQueue = {
   title?: string;
   inputExpr?: string; // text field for input expression
   code?: string; // text field for task code
+  router: AutomergeUrl | null; // id of the current router
   pending: AutomergeUrl[]; // ids of task documents
+  // TODO: change done to { [AutomergeUrl]: true }
   done: AutomergeUrl[]; // ids of task documents
 };
 
@@ -50,6 +52,7 @@ export type TaskQueueDoc = TaskQueue;
 
 export const taskQueueDatatype: any = {
   init(doc: TaskQueueDoc) {
+    doc.router = null;
     doc.pending = [];
     doc.done = [];
     doc.inputExpr = `[
@@ -81,12 +84,33 @@ async function seconds(s) {
   },
 };
 
-// Runner
+// Worker
 
-export type Runner = {
+export type Worker = {
   name: string;
   contactUrl: AutomergeUrl | null;
   currentTask: AutomergeUrl | null;
 };
 
-export type RunnerDoc = Runner;
+export type WorkerDoc = Worker;
+
+export type WorkerStatus = {
+  worker: AutomergeUrl;
+  currentTask: AutomergeUrl | null;
+};
+
+export type MessageToWorker = { type: 'work on'; task: AutomergeUrl };
+
+// Router
+
+export type Router = {
+  name: string;
+  contactUrl: AutomergeUrl | null;
+};
+
+export type RouterDoc = Router;
+
+export type RouterHeartbeat = {
+  router: AutomergeUrl;
+  workers: AutomergeUrl[];
+};

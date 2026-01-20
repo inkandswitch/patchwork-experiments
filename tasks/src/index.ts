@@ -23,6 +23,17 @@ export const plugins: Plugin<any>[] = [
       return Tool;
     },
   } satisfies Tool,
+  {
+    type: 'patchwork:tool',
+    id: 'task-titlebar',
+    name: 'Task Titlebar',
+    icon: 'Square',
+    supportedDatatypes: '*',
+    unlisted: true,
+    forTitleBar: true,
+    async load() {
+      const { TitlebarTool } = await import('./titlebar-tool');
+      return TitlebarTool;
+    },
+  } satisfies Tool,
 ];
-
-export const { TaskRunner } = await import('./task-runner');
