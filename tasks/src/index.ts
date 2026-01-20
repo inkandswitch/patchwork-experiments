@@ -8,8 +8,8 @@ export const plugins: Plugin<any>[] = [
     name: 'Task Queue',
     icon: 'CirclePlus',
     async load() {
-      const { taskQueueDatatype } = await import('./datatype');
-      return taskQueueDatatype;
+      const { TaskQueueDatatype } = await import('./datatype');
+      return TaskQueueDatatype;
     },
   } satisfies Datatype,
   {

@@ -1,4 +1,5 @@
 import { AutomergeUrl } from '@automerge/automerge-repo';
+import { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
 
 // Task
 
@@ -50,7 +51,7 @@ export type TaskQueue = {
 
 export type TaskQueueDoc = TaskQueue;
 
-export const taskQueueDatatype: any = {
+export const TaskQueueDatatype: DatatypeImplementation<TaskQueueDoc> = {
   init(doc: TaskQueueDoc) {
     doc.router = null;
     doc.pending = [];
@@ -78,9 +79,6 @@ async function seconds(s) {
   },
   setTitle(doc: TaskQueueDoc, title: string) {
     doc.title = title;
-  },
-  markCopy(doc: TaskQueueDoc) {
-    doc.title = 'Copy of ' + this.getTitle(doc, null as any);
   },
 };
 
