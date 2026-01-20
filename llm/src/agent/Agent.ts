@@ -4,6 +4,7 @@ import {
   parseAutomergeUrl,
   Repo,
   stringifyAutomergeUrl,
+  updateText,
 } from "@automerge/automerge-repo";
 import {
   getRegistry,
@@ -15,7 +16,7 @@ import {
   FolderDoc,
   HasPatchworkMetadata,
 } from "@inkandswitch/patchwork-filesystem";
-import type { ChatDoc, ChatMessage } from "../chat/types";
+import type { ChatDoc, ChatMessage, ContentBlock } from "../chat/types";
 import type {
   LLMMessage,
   LLMProviderDescription,
@@ -136,8 +137,11 @@ export async function step(
             (m) => m.id === currentBotMessageId
           );
           if (message) {
-            // todo: do incremental update
-            message.content = block;
+            if (block.type == "text" && message.content.type === "text") {
+              updateText(doc, ["messages", doc.messages.indexOf(message), "content"], block.type);
+            } else {
+              message.content = block;
+            }
           }
         });
       }
@@ -527,3 +531,4 @@ async function executeAction(
     return await actionPlugin.module.default(targetDocHandle, repo);
   }
 }
+
