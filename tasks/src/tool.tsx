@@ -307,7 +307,7 @@ function startWorkers(queueHandle: DocHandle<TaskQueue>, contactUrl: AutomergeUr
   const workers: Worker[] = [];
   for (let i = 0; i < NUM_WORKERS; i++) {
     // Create and initialize autonomous worker
-    const worker = new Worker(new URL('./worker.js', import.meta.url), {
+    const worker = new Worker(new URL('./worker.ts', import.meta.url), {
       type: 'module',
     });
 

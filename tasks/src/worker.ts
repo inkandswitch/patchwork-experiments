@@ -16,7 +16,9 @@ let repo = null;
 let queueHandle = null;
 let activeRouterHandle = null;
 let workerHandle = null;
-let currentTaskUrl = null;
+let currentTaskUrl: string | null = null;
+
+console.log('i am worker, hear me roar');
 
 // Worker initialization - wait for SharedWorker port, queue URL, contact URL, and import map
 self.onmessage = async (event) => {
@@ -103,7 +105,7 @@ self.onmessage = async (event) => {
             } catch (e) {
               console.warn(
                 `worker: Failed to resolve scope entry ${scopeKey}[${key}]: ${value}`,
-                e,
+                e
               );
               resolvedImportMap.scopes[resolvedScopeKey][key] = value; // Keep original if resolution fails
             }
@@ -258,7 +260,7 @@ async function executeTask() {
           console.log('Task log:', message);
         },
       },
-      input,
+      input
     );
   } catch (error) {
     console.error('Worker: Task execution failed:', error);
