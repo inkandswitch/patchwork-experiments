@@ -1,4 +1,4 @@
-import { type Datatype, type Tool, Plugin } from '@inkandswitch/patchwork-plugins';
+import { Plugin } from '@inkandswitch/patchwork-plugins';
 import './index.css';
 
 export const plugins: Plugin<any>[] = [
@@ -11,7 +11,7 @@ export const plugins: Plugin<any>[] = [
       const { TaskQueueDatatype } = await import('./datatype');
       return TaskQueueDatatype;
     },
-  } satisfies Datatype,
+  },
   {
     type: 'patchwork:tool',
     id: 'task-queue-browser',
@@ -22,7 +22,7 @@ export const plugins: Plugin<any>[] = [
       const { Tool } = await import('./tool');
       return Tool;
     },
-  } satisfies Tool,
+  },
   {
     type: 'patchwork:tool',
     id: 'task-titlebar',
@@ -35,5 +35,5 @@ export const plugins: Plugin<any>[] = [
       const { TitlebarTool } = await import('./titlebar-tool');
       return TitlebarTool;
     },
-  } satisfies Tool,
+  },
 ];
