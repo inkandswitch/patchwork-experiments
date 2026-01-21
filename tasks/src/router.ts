@@ -27,7 +27,7 @@ export function start(
   _repo: Repo,
   _taskQueueHandle: DocHandle<TaskQueue>,
   _setWorkers: (workers: AutomergeUrl[]) => void,
-  _contactUrl: AutomergeUrl | null
+  _contactUrl: AutomergeUrl | null,
 ) {
   // console.log('router: starting');
 
@@ -39,7 +39,7 @@ export function start(
   console.log('router: task queue doc', taskQueueHandle.doc());
   taskQueueHandle.on('change', (payload) => updateActiveRouter(payload.doc));
   taskQueueHandle.on('ephemeral-message', (payload) =>
-    processRouterHeartbeat(payload.message as RouterHeartbeat)
+    processRouterHeartbeat(payload.message as RouterHeartbeat),
   );
 
   updateActiveRouter(taskQueueHandle.doc());
@@ -49,7 +49,7 @@ export function start(
     contactUrl: contactUrl ?? null,
   });
   thisRouterHandle.on('ephemeral-message', (payload) =>
-    processWorkerStatus(payload.message as WorkerStatus)
+    processWorkerStatus(payload.message as WorkerStatus),
   );
 
   console.log('router: hey there, I am router', thisRouterHandle.url);

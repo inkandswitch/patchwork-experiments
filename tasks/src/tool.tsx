@@ -1,6 +1,12 @@
 import React, { Suspense, useEffect, useState } from 'react';
 import { useRepo, useDocument, useDocHandle } from '@automerge/automerge-repo-react-hooks';
-import { AutomergeUrl, DocHandle, isValidAutomergeUrl, Repo, updateText } from '@automerge/automerge-repo';
+import {
+  AutomergeUrl,
+  DocHandle,
+  isValidAutomergeUrl,
+  Repo,
+  updateText,
+} from '@automerge/automerge-repo';
 import { Router, RunInfo, Worker as TaskWorker, Task, TaskQueue } from './datatype';
 import * as router from './router';
 import { createRoot } from 'react-dom/client';
@@ -13,7 +19,7 @@ const IRouter: React.FC<any> = ({ docUrl, isMine }: { docUrl: AutomergeUrl; isMi
   const [doc] = useDocument<Router>(docUrl, { suspense: true });
   return (
     <div className="m-4">
-      {doc.contactUrl && <patchwork-view doc-url={doc.contactUrl} toolId="contact-inline"/>} /{' '}
+      {doc.contactUrl && <patchwork-view doc-url={doc.contactUrl} toolId="contact-inline" />} /{' '}
       {doc.name}
       {isMine ? ' (mine)' : ''}
     </div>
@@ -31,7 +37,7 @@ const IWorker: React.FC<any> = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   return (
     <div className="m-4">
       <div>
-        {doc.contactUrl && <patchwork-view doc-url={doc.contactUrl} toolId="contact-inline"/>} /{' '}
+        {doc.contactUrl && <patchwork-view doc-url={doc.contactUrl} toolId="contact-inline" />} /{' '}
         {doc.name}
       </div>
       <div>
@@ -58,7 +64,7 @@ export const Tool = (handle: DocHandle<unknown>, element: HTMLElement) => {
           <ITaskQueueBrowserTool docUrl={handle.url} />
         </Suspense>
       </div>
-    </RepoContext.Provider>
+    </RepoContext.Provider>,
   );
   return () => root.unmount();
 };
@@ -114,7 +120,7 @@ const Run: React.FC<any> = ({ run }: { run: RunInfo<any> }) => {
   return (
     <div>
       <div>
-        {doc.contactUrl   && <patchwork-view doc-url={doc.contactUrl} toolId="contact-inline"/>} /{' '}
+        {doc.contactUrl && <patchwork-view doc-url={doc.contactUrl} toolId="contact-inline" />} /{' '}
         {doc.name} → {status === 'succeeded' ? result : '✗'} ({timeAgo})
       </div>
     </div>
@@ -138,7 +144,7 @@ async function getSelfContactUrl(repo: Repo): Promise<AutomergeUrl | null> {
     return null;
   }
   return accountHandle.doc().contactUrl;
-};
+}
 
 const ITaskQueueBrowserTool: React.FC<any> = ({ docUrl }) => {
   const repo = useRepo();
@@ -177,8 +183,8 @@ const ITaskQueueBrowserTool: React.FC<any> = ({ docUrl }) => {
         repo as unknown as Repo,
         handle as unknown as DocHandle<TaskQueue>,
         setWorkers,
-        selfContactUrl
-      )
+        selfContactUrl,
+      ),
     );
     setMyWorkers(startWorkers(handle as unknown as DocHandle<TaskQueue>, selfContactUrl));
     return () => {
@@ -314,7 +320,7 @@ function startWorkers(queueHandle: DocHandle<TaskQueue>, contactUrl: AutomergeUr
         importMap,
         baseURI: document.baseURI,
       },
-      [port]
+      [port],
     );
     console.log('main: Port transferred to worker');
     workers.push(worker);

@@ -103,7 +103,7 @@ self.onmessage = async (event) => {
             } catch (e) {
               console.warn(
                 `worker: Failed to resolve scope entry ${scopeKey}[${key}]: ${value}`,
-                e
+                e,
               );
               resolvedImportMap.scopes[resolvedScopeKey][key] = value; // Keep original if resolution fails
             }
@@ -258,7 +258,7 @@ async function executeTask() {
           console.log('Task log:', message);
         },
       },
-      input
+      input,
     );
   } catch (error) {
     console.error('Worker: Task execution failed:', error);
