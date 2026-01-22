@@ -1,6 +1,9 @@
 import { AutomergeUrl } from '@automerge/automerge-repo';
 import { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
 
+// TODO: add WorkerPool document type that contains a an array of task queue document URLs
+// (ask pvh if this should be a property in the account document)
+
 // Task
 
 export type Task<Input, Result> = {
@@ -12,7 +15,7 @@ export type Task<Input, Result> = {
 export type TaskDoc<Input, Result> = Task<Input, Result>;
 
 export type RunInfo<Result> = {
-  worker: AutomergeUrl;
+  workerUrl: AutomergeUrl;
   status: 'succeeded' | 'failed';
   result?: Result; // only if status === 'succeeded'
   log?: [number, string][];
@@ -87,17 +90,10 @@ async function seconds(s) {
 export type Worker = {
   name: string;
   contactUrl: AutomergeUrl | null;
-  currentTask: AutomergeUrl | null;
+  currentTask: { url: AutomergeUrl; taskQueueUrl: AutomergeUrl } | null;
 };
 
 export type WorkerDoc = Worker;
-
-export type WorkerStatus = {
-  worker: AutomergeUrl;
-  currentTask: AutomergeUrl | null;
-};
-
-export type MessageToWorker = { type: 'work on'; task: AutomergeUrl };
 
 // Router
 
@@ -107,8 +103,3 @@ export type Router = {
 };
 
 export type RouterDoc = Router;
-
-export type RouterHeartbeat = {
-  router: AutomergeUrl;
-  workers: AutomergeUrl[];
-};

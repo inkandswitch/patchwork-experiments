@@ -1,268 +1,204 @@
 /* eslint-env worker */
 
-// Import es-module-shims for import map support
-import 'https://ga.jspm.io/npm:es-module-shims@1.10.0/dist/es-module-shims.js';
+import generateName from 'boring-name-generator';
+import { Repo } from '@automerge/automerge-repo/slim';
+import { AutomergeUrl, DocHandle } from '@automerge/automerge-repo';
+import { Task, TaskQueue, Worker as TaskWorker } from './datatype';
+import { MessageToWorker, MessageToWorkerChannel, MessageToWorkerPool } from './protocol';
+import { getRepo } from './webworker-lib';
 
-// Import Automerge dependencies from esm.sh CDN
-import { automergeWasmBase64 } from 'https://esm.sh/@automerge/automerge@3.1.2/automerge.wasm.base64';
-import {
-  Repo,
-  initializeBase64Wasm,
-} from 'https://esm.sh/@automerge/automerge-repo@2.3.0/slim?bundle-deps';
-import { MessageChannelNetworkAdapter } from 'https://esm.sh/@automerge/automerge-repo-network-messagechannel@2.3.0?bundle-deps';
-import generateName from 'https://esm.sh/boring-name-generator@1.0.3';
+let repo: Repo;
+let contactUrl: AutomergeUrl;
+let importMap: ImportMap;
+let baseURI: string;
 
-let repo = null;
-let queueHandle = null;
-let activeRouterHandle = null;
-let workerHandle = null;
-let currentTaskUrl: string | null = null;
+let workerHandle: DocHandle<TaskWorker>;
+let currentTask: { url: AutomergeUrl; taskQueueUrl: AutomergeUrl } | null = null;
 
-console.log('i am worker, hear me roar');
+console.log('I am worker, hear me roar!'); // TODO: remove this
 
-// Worker initialization - wait for SharedWorker port, queue URL, contact URL, and import map
-self.onmessage = async (event) => {
-  const { port, queueUrl, contactUrl, importMap, baseURI } = event.data;
-
-  console.log('worker: Received message', {
-    hasPort: !!port,
-    queueUrl,
-    portType: port?.constructor?.name,
-  });
-
-  if (!port || !queueUrl) {
-    console.error('worker: Missing port or queueUrl', { port: !!port, queueUrl: !!queueUrl });
-    return;
-  }
-
-  // Add diagnostic listeners to the port
-  port.addEventListener('message', (e) => {
-    console.log('worker: Port received message', e.data);
-  });
-  port.addEventListener('messageerror', (e) => {
-    console.error('worker: Port message error', e);
-  });
-
-  try {
-    // Initialize Automerge WASM
-    await initializeBase64Wasm(automergeWasmBase64);
-    console.log('worker: Automerge WASM initialized');
-
-    // Create repo with MessageChannel network adapter
-    // The port comes from the main thread's SharedWorker connection
-    // Don't start the port yet - MessageChannelNetworkAdapter will start it when connect() is called
-    // This ensures both sides are set up before messages start flowing
-    const networkAdapter = new MessageChannelNetworkAdapter(port);
-    console.log('worker: Created MessageChannelNetworkAdapter', {
-      adapterType: networkAdapter.constructor.name,
-      hasPort: !!networkAdapter.messagePortRef?.port,
-    });
-
-    repo = new Repo({
-      network: [networkAdapter],
-      peerId: `worker-${Math.round(Math.random() * 10_000)}`,
-    });
-    self.repo = repo;
-    console.log('worker: Repo created', { peerId: repo.peerId });
-
-    // Set up import map if provided from main thread
-    if (importMap) {
-      // Convert relative URLs in import map to absolute URLs
-      const resolvedImportMap = {};
-
-      // Handle imports
-      if (importMap.imports) {
-        resolvedImportMap.imports = {};
-        for (const [key, value] of Object.entries(importMap.imports)) {
-          // Resolve relative URLs to absolute URLs using the base URI from main thread
-          try {
-            resolvedImportMap.imports[key] = new URL(value, baseURI).href;
-          } catch (e) {
-            console.warn(`worker: Failed to resolve import map entry ${key}: ${value}`, e);
-            resolvedImportMap.imports[key] = value; // Keep original if resolution fails
-          }
-        }
+self.onmessage = (e) => {
+  const msg: MessageToWorker = e.data;
+  switch (msg.type) {
+    case 'init':
+      try {
+        init(msg.port, msg.contactUrl, msg.importMap, msg.baseURI);
+      } catch (error) {
+        console.error('worker: Failed to start:', error);
       }
-
-      // Handle scopes
-      if (importMap.scopes) {
-        resolvedImportMap.scopes = {};
-        for (const [scopeKey, scopeMap] of Object.entries(importMap.scopes)) {
-          // Resolve the scope key itself to absolute URL
-          let resolvedScopeKey;
-          try {
-            resolvedScopeKey = new URL(scopeKey, baseURI).href;
-          } catch (e) {
-            console.warn(`worker: Failed to resolve scope key ${scopeKey}`, e);
-            resolvedScopeKey = scopeKey; // Keep original if resolution fails
-          }
-
-          // Resolve each entry in the scope's import map
-          resolvedImportMap.scopes[resolvedScopeKey] = {};
-          for (const [key, value] of Object.entries(scopeMap)) {
-            try {
-              resolvedImportMap.scopes[resolvedScopeKey][key] = new URL(value, baseURI).href;
-            } catch (e) {
-              console.warn(
-                `worker: Failed to resolve scope entry ${scopeKey}[${key}]: ${value}`,
-                e
-              );
-              resolvedImportMap.scopes[resolvedScopeKey][key] = value; // Keep original if resolution fails
-            }
-          }
-        }
-      }
-
-      self.importShim.addImportMap(resolvedImportMap);
-      console.log('worker: Import map configured from main thread', resolvedImportMap);
-    }
-
-    // Find the queue document
-    console.log('worker: Attempting to find queue document', { queueUrl });
-    try {
-      queueHandle = await repo.find(queueUrl);
-      console.log('worker: Found queue document', {
-        queueUrl: queueHandle.url,
-        hasDoc: !!queueHandle.doc(),
-        docKeys: queueHandle.doc() ? Object.keys(queueHandle.doc()) : [],
-      });
-      queueHandle.on('change', (payload) => updateActiveRouter(payload.doc));
-      updateActiveRouter(queueHandle.doc());
-    } catch (findError) {
-      console.error('worker: Failed to find queue document', { queueUrl, error: findError });
-      throw findError;
-    }
-
-    // Create our own worker document for announcement
-    workerHandle = repo.create({
-      name: generateName().dashed,
-      contactUrl: contactUrl ?? null,
-      currentTask: null,
-    });
-    workerHandle.on('ephemeral-message', (payload) => processMessageFromRouter(payload.message));
-
-    pHeartbeat();
-
-    console.log('worker: Ready and running autonomously', {
-      queueUrl,
-      workerUrl: workerHandle.url,
-    });
-  } catch (error) {
-    console.error('worker: Failed to start:', error);
+      break;
   }
 };
 
-async function pHeartbeat() {
-  while (true) {
-    await seconds(1);
-
-    if (activeRouterHandle == null) {
-      // console.log('worker: not sending heartbeat b/c no active router!');
-      continue;
-    }
-
-    const status = {
-      worker: workerHandle.url,
-      currentTask: currentTaskUrl,
-    };
-    // console.log('worker: sending heartbeat to', activeRouterHandle.url, status);
-    activeRouterHandle.broadcast(status);
-  }
-}
-
-async function updateActiveRouter(taskQueue) {
-  if (
-    (taskQueue.router == null && activeRouterHandle == null) ||
-    taskQueue.router === activeRouterHandle?.url
-  ) {
-    return;
+async function init(
+  port: MessagePort,
+  _contactUrl: AutomergeUrl,
+  _importMap: ImportMap,
+  _baseURI: string
+) {
+  if (repo) {
+    const msg = 'router: Received two init messages!';
+    console.error(msg);
+    throw new Error(msg);
   }
 
-  // console.log('worker: active router is now', taskQueue.router);
+  console.log('router: Initializing');
+  repo = await getRepo(port, `task-worker-${Math.round(Math.random() * 10_000)}`);
+  contactUrl = _contactUrl;
+  importMap = _importMap;
+  baseURI = _baseURI;
 
-  activeRouterHandle?.off('ephemeral-message');
+  // Add diagnostic listeners to the port
+  // port.addEventListener('message', (e) => {
+  //   console.log('worker: Port received message', e.data);
+  // });
+  // port.addEventListener('messageerror', (e) => {
+  //   console.error('worker: Port message error', e);
+  // });
 
-  if (taskQueue.router == null) {
-    activeRouterHandle = null;
-  } else {
-    activeRouterHandle = await repo.find(taskQueue.router);
-  }
-}
+  setUpImportMap();
 
-async function processMessageFromRouter(m) {
-  // console.log('worker: received message from router', m);
-  switch (m.type) {
-    case 'work on': {
-      if (currentTaskUrl == null) {
-        processTask(m.task);
-      }
-      break;
-    }
-  }
-}
-
-async function processTask(taskUrl) {
-  currentTaskUrl = taskUrl;
-  try {
-    await executeTask();
-    moveTaskToDone();
-  } catch (error) {
-    console.error('worker: error while processing task:', error);
-  } finally {
-    currentTaskUrl = null;
-  }
-}
-
-// Move completed task to done queue
-function moveTaskToDone() {
-  queueHandle.change((doc) => {
-    const idx = doc.pending.indexOf(currentTaskUrl);
-    doc.pending.splice(idx, 1);
-    doc.done.push(currentTaskUrl);
+  workerHandle = repo.create<TaskWorker>({
+    name: generateName().dashed,
+    contactUrl,
+    currentTask,
   });
+  workerHandle.on('ephemeral-message', (payload) => {
+    const msg: MessageToWorkerChannel = payload.message as any;
+    switch (msg.type) {
+      case 'work on':
+        processTask(msg.taskUrl, msg.taskQueueUrl);
+        break;
+    }
+  });
+
+  console.log('worker: Ready', { workerUrl: workerHandle.url });
 }
 
-async function executeTask() {
+function setUpImportMap() {
+  // Convert relative URLs in import map to absolute URLs
+  const resolvedImportMap: any = {};
+
+  // Handle imports
+  if (importMap.imports) {
+    resolvedImportMap.imports = {};
+    for (const [key, value] of Object.entries(importMap.imports)) {
+      // Resolve relative URLs to absolute URLs using the base URI from main thread
+      try {
+        resolvedImportMap.imports[key] = new URL(value, baseURI).href;
+      } catch (e) {
+        console.warn(`worker: Failed to resolve import map entry ${key}: ${value}`, e);
+        resolvedImportMap.imports[key] = value; // Keep original if resolution fails
+      }
+    }
+  }
+
+  // Handle scopes
+  if (importMap.scopes) {
+    resolvedImportMap.scopes = {};
+    for (const [scopeKey, scopeMap] of Object.entries(importMap.scopes)) {
+      // Resolve the scope key itself to absolute URL
+      let resolvedScopeKey;
+      try {
+        resolvedScopeKey = new URL(scopeKey, baseURI).href;
+      } catch (e) {
+        console.warn(`worker: Failed to resolve scope key ${scopeKey}`, e);
+        resolvedScopeKey = scopeKey; // Keep original if resolution fails
+      }
+
+      // Resolve each entry in the scope's import map
+      resolvedImportMap.scopes[resolvedScopeKey] = {};
+      for (const [key, value] of Object.entries(scopeMap)) {
+        try {
+          resolvedImportMap.scopes[resolvedScopeKey][key] = new URL(value, baseURI).href;
+        } catch (e) {
+          console.warn(`worker: Failed to resolve scope entry ${scopeKey}[${key}]: ${value}`, e);
+          resolvedImportMap.scopes[resolvedScopeKey][key] = value; // Keep original if resolution fails
+        }
+      }
+    }
+  }
+
+  self.importShim.addImportMap(resolvedImportMap);
+  console.log('worker: Import map configured from main thread', resolvedImportMap);
+}
+
+async function processTask(url: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
+  currentTask = { url, taskQueueUrl };
+  self.postMessage({
+    type: 'update worker state',
+    workerUrl: workerHandle.url,
+    currentTask,
+  } satisfies MessageToWorkerPool);
+
+  try {
+    // Find the queue document
+    console.log('worker: Attempting to find task queue document', { taskQueueUrl });
+    const taskQueueHandle = await repo.find<TaskQueue>(taskQueueUrl);
+    console.log('worker: Found queue document', {
+      queueUrl: taskQueueHandle.url,
+      hasDoc: !!taskQueueHandle.doc(),
+      docKeys: taskQueueHandle.doc() ? Object.keys(taskQueueHandle.doc()) : [],
+    });
+    await executeCurrentTask(taskQueueHandle);
+    moveCurrentTaskToDone(taskQueueHandle);
+  } catch (error) {
+    console.error('worker: Error while processing task:', error);
+  } finally {
+    currentTask = null;
+    self.postMessage({
+      type: 'update worker state',
+      workerUrl: workerHandle.url,
+      currentTask,
+    } satisfies MessageToWorkerPool);
+  }
+}
+
+async function executeCurrentTask(taskQueueHandle: DocHandle<TaskQueue>) {
+  if (!currentTask) {
+    throw new Error('executeCurrentTask() should never be called with currentTask == null');
+  }
+
   // Update worker status to show current task
   workerHandle.change((doc) => {
-    doc.currentTask = currentTaskUrl;
+    doc.currentTask = currentTask;
   });
 
-  const currentTaskHandle = await repo.find(currentTaskUrl);
+  const currentTaskHandle = await repo.find<Task<any, any>>(currentTask.url);
   const taskDoc = currentTaskHandle.doc();
   if (!taskDoc) {
-    console.error('worker: Task document not found:', currentTaskUrl);
-    return;
+    throw new Error('Task document not found: ' + currentTask.url);
   }
 
-  console.log('worker: Executing task:', currentTaskUrl);
+  console.log('worker: Executing task:', currentTask.url);
 
   const input = taskDoc.input;
-  const log = [];
-  let status = 'succeeded';
-  let result = null;
+  const log: [number, string][] = [];
   const startTime = Date.now();
-
+  let status: 'succeeded' | 'failed' = 'succeeded';
+  let result: any;
   try {
     // Dynamic import of the task module using importShim for import map support
     console.log('worker: importing task module via shims', taskDoc.importUrl);
     const module = await self.importShim(taskDoc.importUrl);
     console.log('worker: imported task module via shims', module);
-    const taskFunction = module.default;
+    const taskFunction = module.default as any;
 
     // Execute the task with logging context
     result = await taskFunction.call(
       {
-        log(...args) {
+        log(...args: any) {
           const timestamp = Date.now();
-          const message = args.map((arg) => '' + arg).reduce((acc, m) => `${acc} ${m}`);
+          const message = args
+            .map((arg: any) => '' + arg)
+            .reduce((acc: string, m: string) => `${acc} ${m}`);
           log.push([timestamp, message]);
           console.log('Task log:', message);
         },
       },
       input
     );
-  } catch (error) {
+  } catch (error: any) {
     console.error('Worker: Task execution failed:', error);
     log.push([Date.now(), error?.message ?? '' + error]);
     status = 'failed';
@@ -273,7 +209,7 @@ async function executeTask() {
   // Update task document with results
   currentTaskHandle.change((doc) => {
     doc.runs.push({
-      worker: workerHandle.documentId,
+      workerUrl: workerHandle.url,
       status,
       result,
       startTime,
@@ -288,7 +224,15 @@ async function executeTask() {
   });
 }
 
-const seconds = async (s) =>
-  new Promise((resolve) => {
-    setTimeout(resolve, s * 1_000);
+function moveCurrentTaskToDone(taskQueueHandle: DocHandle<TaskQueue>) {
+  if (!currentTask) {
+    throw new Error('moveCurrentTaskToDone() should never be called with currentTask == null');
+  }
+
+  const taskUrl = currentTask.url;
+  taskQueueHandle.change((doc) => {
+    const idx = doc.pending.indexOf(taskUrl);
+    doc.pending.splice(idx, 1);
+    doc.done.push(taskUrl);
   });
+}

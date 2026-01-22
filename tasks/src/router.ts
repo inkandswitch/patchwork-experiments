@@ -1,89 +1,90 @@
-import { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo';
-import generateName from 'boring-name-generator';
-import {
-  MessageToWorker,
-  Router,
-  RouterHeartbeat,
-  Worker as TaskWorker,
-  WorkerStatus,
-  TaskQueue,
-} from './datatype';
+/* eslint-env worker */
 
-interface WorkerInfo extends WorkerStatus {
+import generateName from 'boring-name-generator';
+import { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo';
+import { Router, Worker as TaskWorker, TaskQueue } from './datatype';
+import { MessageToRouter, MessageToRouterChannel, MessageToTaskQueueChannel, MessageToWorkerChannel } from './protocol';
+import { getRepo } from './webworker-lib';
+
+interface WorkerState {
+  workerUrl: AutomergeUrl;
+  currentTaskUrl: AutomergeUrl | null;
   lastTimestamp: number;
   handle: DocHandle<TaskWorker>;
 }
 
 let repo: Repo;
+let contactUrl: AutomergeUrl;
 let taskQueueHandle: DocHandle<TaskQueue>;
-let setWorkers: (workers: AutomergeUrl[]) => void;
-let contactUrl: AutomergeUrl | null;
 let thisRouterHandle: DocHandle<Router>;
 let activeRouter: { url: AutomergeUrl; lastTimestamp: number } | null = null;
-const workerInfos = new Map<string, WorkerInfo>();
-let running = false;
+const workers = new Map<AutomergeUrl, WorkerState>();
 
-export function start(
-  _repo: Repo,
-  _taskQueueHandle: DocHandle<TaskQueue>,
-  _setWorkers: (workers: AutomergeUrl[]) => void,
-  _contactUrl: AutomergeUrl | null,
-) {
-  // console.log('router: starting');
+self.onmessage = (e) => {
+  const msg: MessageToRouter = e.data;
+  switch (msg.type) {
+    case 'init':
+      init(msg.port, msg.contactUrl, msg.taskQueueUrl);
+      break;
+  }
+};
 
-  repo = _repo;
-  taskQueueHandle = _taskQueueHandle;
-  setWorkers = _setWorkers;
+async function init(port: MessagePort, _contactUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
+  if (repo) {
+    const msg = 'router: Received two init messages!';
+    console.error(msg);
+    throw new Error(msg);
+  }
+
+  console.log('router: Initializing');
+
+  repo = await getRepo(port, `task-router-${taskQueueUrl}-${Math.round(Math.random() * 10_000)}`);
   contactUrl = _contactUrl;
 
-  console.log('router: task queue doc', taskQueueHandle.doc());
+  taskQueueHandle = await repo.find<TaskQueue>(taskQueueUrl);
   taskQueueHandle.on('change', (payload) => updateActiveRouter(payload.doc));
-  taskQueueHandle.on('ephemeral-message', (payload) =>
-    processRouterHeartbeat(payload.message as RouterHeartbeat),
-  );
-
+  taskQueueHandle.on('ephemeral-message', (payload) => {
+    const msg: MessageToTaskQueueChannel = payload.message as any;
+    switch (msg.type) {
+      case 'router heartbeat':
+        processRouterHeartbeat(msg.routerUrl);
+        break;
+    }
+  });
   updateActiveRouter(taskQueueHandle.doc());
 
   thisRouterHandle = repo.create<Router>({
     name: generateName().dashed,
     contactUrl: contactUrl ?? null,
   });
-  thisRouterHandle.on('ephemeral-message', (payload) =>
-    processWorkerStatus(payload.message as WorkerStatus),
-  );
-
-  console.log('router: hey there, I am router', thisRouterHandle.url);
-  running = true;
+  thisRouterHandle.on('ephemeral-message', (payload) => {
+    const msg: MessageToRouterChannel = payload.message as any;
+    switch (msg.type) {
+      case 'worker heartbeat':
+        processWorkerHeartbeat(msg.workerUrl, msg.currentTaskUrl);
+        break;
+    }
+  });
 
   pHeartbeat();
   pTakeOverWhenActiveRouterDropsOut();
   pDropStaleWorkerInfos();
 
-  return thisRouterHandle.url;
-}
-
-export function stop() {
-  taskQueueHandle.off('change');
-  taskQueueHandle.off('ephemeral-message');
-  thisRouterHandle.off('ephemeral-message');
-  running = false;
+  console.log('router: started!', thisRouterHandle.url);
 }
 
 async function pHeartbeat() {
-  while (running) {
+  while (true) {
     if (thisIsTheActiveRouter()) {
-      console.log('router: sending heartbeat');
-      const workers = [...workerInfos.keys()] as AutomergeUrl[];
-      setWorkers(workers);
-      const h: RouterHeartbeat = { router: thisRouterHandle.url, workers };
-      taskQueueHandle.broadcast(h);
+      console.log('router: Sending heartbeat');
+      taskQueueHandle.broadcast({ type: 'router heartbeat', routerUrl: thisRouterHandle.url, workerUrls: [...workers.keys()] } satisfies MessageToTaskQueueChannel);
     }
     await seconds(1);
   }
 }
 
 async function pTakeOverWhenActiveRouterDropsOut() {
-  while (running) {
+  while (true) {
     if (
       !thisIsTheActiveRouter() &&
       (activeRouter == null || Date.now() - activeRouter.lastTimestamp > 3 * 1_000)
@@ -96,34 +97,34 @@ async function pTakeOverWhenActiveRouterDropsOut() {
 }
 
 async function pTakeOver() {
-  workerInfos.clear();
+  workers.clear();
 
-  console.log('router: attempting takeover!');
+  console.log('router: Attempting takeover!');
   taskQueueHandle.change((doc) => {
     doc.router = thisRouterHandle.url;
   });
 
   // this wait is important!
   // - it enables this router to gather info from workers (who's around, who's working on what)
-  // - it also gives the change to the task queue (to set the active router) a chance to propagate
+  // - it also gives the change to the task queue doc (to set the active router) a chance to propagate
   await seconds(3);
 
   // note that we check that this router is active every time around the loop
   // this is to avoid a situation where we *thought* we successfully promoted ourselves
   // when another router got there later and updated the doc.
-  while (running && thisIsTheActiveRouter()) {
+  while (thisIsTheActiveRouter()) {
     const pendingTasks = taskQueueHandle.doc().pending.filter(isReallyPending);
-    const idleWorkers = [...workerInfos.values()].filter((w) => w.currentTask == null);
+    const idleWorkers = [...workers.values()].filter((w) => w.currentTaskUrl == null);
     if (pendingTasks.length > 0 && idleWorkers.length === 0) {
       console.log(`router: ${pendingTasks.length} pending tasks but no idle workers!`);
     }
     while (pendingTasks.length > 0 && idleWorkers.length > 0) {
-      const task = pendingTasks.shift()!;
+      const taskUrl = pendingTasks.shift()!;
       const worker = idleWorkers.shift()!;
-      const message: MessageToWorker = { type: 'work on', task };
-      console.log('router: telling', worker.handle.url, 'to work on', task);
+      const message: MessageToWorkerChannel = { type: 'work on', taskUrl, taskQueueUrl: taskQueueHandle.url };
+      console.log('router: Telling', worker.handle.url, 'to work on', taskUrl, 'from task queue', taskQueueHandle.url);
       worker.handle.broadcast(message);
-      worker.currentTask = task;
+      worker.currentTaskUrl = taskUrl;
     }
 
     await seconds(1);
@@ -131,9 +132,9 @@ async function pTakeOver() {
 
   // helpers
 
-  function isReallyPending(task: AutomergeUrl) {
-    for (const { currentTask } of workerInfos.values()) {
-      if (task === currentTask) {
+  function isReallyPending(taskUrl: AutomergeUrl) {
+    for (const { currentTaskUrl } of workers.values()) {
+      if (taskUrl === currentTaskUrl) {
         return false;
       }
     }
@@ -142,10 +143,10 @@ async function pTakeOver() {
 }
 
 async function pDropStaleWorkerInfos() {
-  while (running) {
-    for (const { worker, lastTimestamp: timestamp } of workerInfos.values()) {
+  while (true) {
+    for (const { workerUrl, lastTimestamp: timestamp } of workers.values()) {
       if (Date.now() - timestamp! > 10 * 1_000) {
-        workerInfos.delete(worker);
+        workers.delete(workerUrl);
       }
     }
     await seconds(0.5);
@@ -160,23 +161,20 @@ function updateActiveRouter({ router }: TaskQueue) {
   }
 }
 
-function processRouterHeartbeat({ router }: RouterHeartbeat) {
-  if (router === activeRouter?.url) {
+function processRouterHeartbeat(routerUrl: AutomergeUrl) {
+  if (routerUrl === activeRouter?.url) {
     activeRouter.lastTimestamp = Date.now();
   }
 }
 
-async function processWorkerStatus(status: WorkerStatus) {
-  let info = workerInfos.get(status.worker);
-  if (info) {
-    Object.assign(info, status);
-    info.lastTimestamp = Date.now();
+async function processWorkerHeartbeat(workerUrl: AutomergeUrl, currentTaskUrl: AutomergeUrl | null) {
+  const lastTimestamp = Date.now();
+  const state = workers.get(workerUrl);
+  if (state) {
+    state.currentTaskUrl = currentTaskUrl;
+    state.lastTimestamp = lastTimestamp;
   } else {
-    workerInfos.set(status.worker, {
-      ...status,
-      lastTimestamp: Date.now(),
-      handle: await repo.find(status.worker),
-    });
+    workers.set(workerUrl, { workerUrl, currentTaskUrl, lastTimestamp, handle: await repo.find(workerUrl) });
   }
 }
 
