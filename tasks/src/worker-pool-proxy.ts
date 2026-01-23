@@ -1,51 +1,47 @@
 import { AutomergeUrl } from '@automerge/automerge-repo';
 import { MessageToWorkerPool } from './protocol';
 
+const SHARED_WORKER_URL = new URL('./worker-pool.ts', import.meta.url);
+const SHARED_WORKER_OPTIONS: WorkerOptions = {
+  name: `worker-pool`,
+  type: 'module',
+} as const;
+
 export class WorkerPoolProxy {
-  private readonly getRepoChannel: () => MessagePort = (window as any).getRepoChannel();
   private readonly workerPool: SharedWorker;
 
   constructor(
     readonly contactUrl: AutomergeUrl,
-    readonly importMap: ImportMap,
-    readonly baseURI: string,
-    numWorkers = 2
+    importMap: ImportMap,
+    baseURI: string,
+    numWorkers = 2,
   ) {
-    this.workerPool = new SharedWorker(new URL('./worker-pool.ts', import.meta.url), {
-      name: `worker-pool`,
-      type: 'module',
-    });
+    this.workerPool = new SharedWorker(SHARED_WORKER_URL, SHARED_WORKER_OPTIONS);
     this.workerPool.port.start();
 
-    const port = this.getRepoChannel();
-    this.workerPool.port.postMessage(
-      { type: 'init', contactUrl, port } satisfies MessageToWorkerPool,
-      [port]
-    );
-
-    for (let idx = 0; idx < numWorkers; idx++) {
-      this.addWorker();
+    const port = (window as any).getRepoChannel();
+    const workerPorts: MessagePort[] = [];
+    for (let i = 0; i < numWorkers; i++) {
+      workerPorts.push((window as any).getRepoChannel());
     }
-  }
-
-  addWorker() {
-    const port = this.getRepoChannel();
     this.workerPool.port.postMessage(
       {
-        type: 'add worker',
+        type: 'init',
+        contactUrl,
         port,
-        importMap: this.importMap,
-        baseURI: this.baseURI,
+        workerPorts,
+        importMap,
+        baseURI,
       } satisfies MessageToWorkerPool,
-      [port]
+      [port, ...workerPorts],
     );
   }
 
   joinTaskQueue(url: AutomergeUrl) {
-    const port = this.getRepoChannel();
+    const port = (window as any).getRepoChannel();
     this.workerPool.port.postMessage(
       { type: 'join task queue', url, port } satisfies MessageToWorkerPool,
-      [port]
+      [port],
     );
   }
 

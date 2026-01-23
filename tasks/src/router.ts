@@ -3,7 +3,12 @@
 import generateName from 'boring-name-generator';
 import { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo';
 import { Router, Worker as TaskWorker, TaskQueue } from './datatype';
-import { MessageToRouter, MessageToRouterChannel, MessageToTaskQueueChannel, MessageToWorkerChannel } from './protocol';
+import {
+  MessageToRouter,
+  MessageToRouterChannel,
+  MessageToTaskQueueChannel,
+  MessageToWorkerChannel,
+} from './protocol';
 import { getRepo } from './webworker-lib';
 
 interface WorkerState {
@@ -77,7 +82,11 @@ async function pHeartbeat() {
   while (true) {
     if (thisIsTheActiveRouter()) {
       console.log('router: Sending heartbeat');
-      taskQueueHandle.broadcast({ type: 'router heartbeat', routerUrl: thisRouterHandle.url, workerUrls: [...workers.keys()] } satisfies MessageToTaskQueueChannel);
+      taskQueueHandle.broadcast({
+        type: 'router heartbeat',
+        routerUrl: thisRouterHandle.url,
+        workerUrls: [...workers.keys()],
+      } satisfies MessageToTaskQueueChannel);
     }
     await seconds(1);
   }
@@ -121,8 +130,19 @@ async function pTakeOver() {
     while (pendingTasks.length > 0 && idleWorkers.length > 0) {
       const taskUrl = pendingTasks.shift()!;
       const worker = idleWorkers.shift()!;
-      const message: MessageToWorkerChannel = { type: 'work on', taskUrl, taskQueueUrl: taskQueueHandle.url };
-      console.log('router: Telling', worker.handle.url, 'to work on', taskUrl, 'from task queue', taskQueueHandle.url);
+      const message: MessageToWorkerChannel = {
+        type: 'work on',
+        taskUrl,
+        taskQueueUrl: taskQueueHandle.url,
+      };
+      console.log(
+        'router: Telling',
+        worker.handle.url,
+        'to work on',
+        taskUrl,
+        'from task queue',
+        taskQueueHandle.url,
+      );
       worker.handle.broadcast(message);
       worker.currentTaskUrl = taskUrl;
     }
@@ -167,14 +187,22 @@ function processRouterHeartbeat(routerUrl: AutomergeUrl) {
   }
 }
 
-async function processWorkerHeartbeat(workerUrl: AutomergeUrl, currentTaskUrl: AutomergeUrl | null) {
+async function processWorkerHeartbeat(
+  workerUrl: AutomergeUrl,
+  currentTaskUrl: AutomergeUrl | null,
+) {
   const lastTimestamp = Date.now();
   const state = workers.get(workerUrl);
   if (state) {
     state.currentTaskUrl = currentTaskUrl;
     state.lastTimestamp = lastTimestamp;
   } else {
-    workers.set(workerUrl, { workerUrl, currentTaskUrl, lastTimestamp, handle: await repo.find(workerUrl) });
+    workers.set(workerUrl, {
+      workerUrl,
+      currentTaskUrl,
+      lastTimestamp,
+      handle: await repo.find(workerUrl),
+    });
   }
 }
 

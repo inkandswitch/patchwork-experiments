@@ -8,8 +8,14 @@ import { AutomergeUrl } from '@automerge/automerge-repo';
 
 export type MessageToWorkerPool =
   // sent by the app
-  | { type: 'init'; contactUrl: AutomergeUrl; port: MessagePort }
-  | { type: 'add worker'; port: MessagePort; importMap: ImportMap; baseURI: string }
+  | {
+      type: 'init';
+      contactUrl: AutomergeUrl;
+      port: MessagePort;
+      workerPorts: MessagePort[];
+      importMap: ImportMap;
+      baseURI: string;
+    }
   | { type: 'join task queue'; url: AutomergeUrl; port: MessagePort }
   | { type: 'leave task queue'; url: AutomergeUrl }
   // sent by workers

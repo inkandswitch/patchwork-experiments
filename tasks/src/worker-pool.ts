@@ -1,7 +1,6 @@
 /* eslint-env worker */
 
 import { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo';
-import { MessageChannelNetworkAdapter } from '@automerge/vanillajs';
 import {
   MessageToWorker,
   MessageToRouter,
@@ -33,10 +32,7 @@ self.onmessage = (e) => {
   const msg: MessageToWorkerPool = e.data;
   switch (msg.type) {
     case 'init':
-      init(msg.port, msg.contactUrl);
-      break;
-    case 'add worker':
-      addWorker(msg.port, msg.importMap, msg.baseURI);
+      init(msg.port, msg.contactUrl, msg.workerPorts, msg.importMap, msg.baseURI);
       break;
     case 'join task queue':
       joinTaskQueue(msg.port, msg.url);
@@ -47,13 +43,22 @@ self.onmessage = (e) => {
   }
 };
 
-async function init(port: MessagePort, _contactUrl: AutomergeUrl) {
+async function init(
+  port: MessagePort,
+  _contactUrl: AutomergeUrl,
+  workerPorts: MessagePort[],
+  importMap: ImportMap,
+  baseURI: string,
+) {
   if (repo) {
     console.log('worker pool: Ignoring init message -- already initialized');
   } else {
     console.log('worker pool: initializing');
     repo = await getRepo(port, `task-worker-pool-${Math.round(Math.random() * 10_000)}`);
     contactUrl = _contactUrl;
+    for (const workerPort of workerPorts) {
+      addWorker(workerPort, importMap, baseURI);
+    }
 
     pSendWorkerStatuses();
   }
@@ -66,7 +71,7 @@ function addWorker(port: MessagePort, importMap: any, baseURI: string) {
   });
   webWorker.postMessage(
     { type: 'init', port, contactUrl: contactUrl, importMap, baseURI } satisfies MessageToWorker,
-    [port]
+    [port],
   );
 
   const state: WorkerState = { webWorker, workerUrl: null, currentTask: null };
@@ -94,7 +99,7 @@ async function joinTaskQueue(port: MessagePort, taskQueueUrl: AutomergeUrl) {
   });
   myRouter.postMessage(
     { type: 'init', port, contactUrl: contactUrl, taskQueueUrl } satisfies MessageToRouter,
-    [port]
+    [port],
   );
   taskQueueState.set(taskQueueUrl, { myRouter, activeRouterHandle: null });
 

@@ -1,19 +1,9 @@
 import React, { Suspense, useEffect, useState } from 'react';
-import { useRepo, useDocument, useDocHandle } from '@automerge/automerge-repo-react-hooks';
-import {
-  AutomergeUrl,
-  DocHandle,
-  isValidAutomergeUrl,
-  Repo,
-  updateText,
-} from '@automerge/automerge-repo';
-import { Router, RunInfo, Worker as TaskWorker, Task, TaskQueue } from './datatype';
-import * as router from './router';
 import { createRoot } from 'react-dom/client';
+import { useRepo, useDocument, useDocHandle } from '@automerge/automerge-repo-react-hooks';
+import { AutomergeUrl, DocHandle, updateText } from '@automerge/automerge-repo';
 import { RepoContext } from '@automerge/automerge-repo-react-hooks';
-import { ContactDoc } from '@patchwork/sdk';
-
-const NUM_WORKERS = 2;
+import { Router, RunInfo, Worker as TaskWorker, Task, TaskQueue } from './datatype';
 
 const IRouter: React.FC<any> = ({ docUrl, isMine }: { docUrl: AutomergeUrl; isMine: boolean }) => {
   const [doc] = useDocument<Router>(docUrl, { suspense: true });
@@ -53,9 +43,8 @@ export const WorkerComponent: React.FC<any> = (props) => (
   </Suspense>
 );
 
-// TODO: element.repo is not ideal
 export const Tool = (handle: DocHandle<unknown>, element: HTMLElement) => {
-  const repo = (element as any).repo;
+  const repo = (element as any).repo; // TODO: better way to get the repo
   const root = createRoot(element);
   root.render(
     <RepoContext.Provider value={repo}>
@@ -116,7 +105,7 @@ const ITaskBrowserTool: React.FC<any> = ({ docUrl }) => {
 const Run: React.FC<any> = ({ run }: { run: RunInfo<any> }) => {
   const { startTime, endTime, result, status } = run;
   const timeAgo = `${endTime - startTime}ms`;
-  const [doc] = useDocument<TaskWorker>(run.worker as AutomergeUrl, { suspense: true });
+  const [doc] = useDocument<TaskWorker>(run.workerUrl as AutomergeUrl, { suspense: true });
   return (
     <div>
       <div>
@@ -133,27 +122,12 @@ export const TaskBrowserTool: React.FC<any> = (props) => (
   </Suspense>
 );
 
-async function getSelfContactUrl(repo: Repo): Promise<AutomergeUrl | null> {
-  // TODO: not like this!
-  const accountDocUrl = localStorage.getItem('accountDocUrl');
-  if (!isValidAutomergeUrl(accountDocUrl)) {
-    return null;
-  }
-  const accountHandle = await repo.find<any>(accountDocUrl);
-  if (!accountHandle) {
-    return null;
-  }
-  return accountHandle.doc().contactUrl;
-}
-
 const ITaskQueueBrowserTool: React.FC<any> = ({ docUrl }) => {
   const repo = useRepo();
   const [doc, changeDoc] = useDocument<TaskQueue>(docUrl, { suspense: true });
 
   const handle = useDocHandle<TaskQueue>(docUrl, { suspense: true });
 
-  const [myRouterUrl, setMyRouterUrl] = useState<AutomergeUrl | null>(null);
-  const [myWorkers, setMyWorkers] = useState<Worker[]>([]);
   const [workers, setWorkers] = useState<AutomergeUrl[]>([]);
 
   useEffect(() => {
@@ -168,42 +142,13 @@ const ITaskQueueBrowserTool: React.FC<any> = ({ docUrl }) => {
     };
   }, [handle]);
 
-  const [selfContactUrl, setSelfContactUrl] = useState<AutomergeUrl | null>(null);
-  useEffect(() => {
-    getSelfContactUrl(repo).then((url) => setSelfContactUrl(url));
-  }, [repo]);
-
-  useEffect(() => {
-    if (!selfContactUrl) {
-      return;
-    }
-
-    setMyRouterUrl(
-      router.start(
-        repo as unknown as Repo,
-        handle as unknown as DocHandle<TaskQueue>,
-        setWorkers,
-        selfContactUrl,
-      ),
-    );
-    setMyWorkers(startWorkers(handle as unknown as DocHandle<TaskQueue>, selfContactUrl));
-    return () => {
-      setMyRouterUrl(null);
-      router.stop();
-      for (const worker of myWorkers) {
-        worker.terminate();
-      }
-      setMyWorkers([]);
-    };
-  }, [repo, docUrl, selfContactUrl]);
-
   return (
     <div className="task-browser h-full overflow-y-auto">
       <div className="flex flex-col items-left h-full overflow-y-auto">
         <h1>{doc.title}</h1>
         <h2 className="text-2xl font-bold mb-4">{doc.title ?? 'Task Queue'}</h2>
         <div className="mb-4 flex flex-col">
-          <div className="flex-grow">
+          <div className="grow">
             <textarea
               className="font-mono p-2 border rounded w-full h-full"
               rows={5}
@@ -215,7 +160,7 @@ const ITaskQueueBrowserTool: React.FC<any> = ({ docUrl }) => {
               }}
             />
           </div>
-          <div className="flex-grow">
+          <div className="grow">
             <textarea
               className="font-mono p-2 border rounded w-full h-full"
               rows={5}
@@ -239,11 +184,7 @@ const ITaskQueueBrowserTool: React.FC<any> = ({ docUrl }) => {
         {doc.router ? (
           <div className="mb-4">
             <div className="text-2xl">Router:</div>
-            <RouterComponent
-              key={doc.router}
-              docUrl={doc.router}
-              isMine={doc.router === myRouterUrl}
-            />
+            <RouterComponent key={doc.router} docUrl={doc.router} isMine={false} />
           </div>
         ) : null}
         <div className="mb-4">
@@ -291,39 +232,3 @@ export const TaskQueueBrowserTool: React.FC<any> = (props) => (
     <ITaskQueueBrowserTool {...props} />
   </Suspense>
 );
-
-function startWorkers(queueHandle: DocHandle<TaskQueue>, contactUrl: AutomergeUrl): Worker[] {
-  // Extract import map from the main thread
-  const importMapElement = document.querySelector('script[type="importmap"]');
-  let importMap = null;
-  if (importMapElement) {
-    try {
-      importMap = JSON.parse(importMapElement.textContent || '{}');
-    } catch (e) {
-      console.warn('Failed to parse import map:', e);
-    }
-  }
-
-  const workers: Worker[] = [];
-  for (let i = 0; i < NUM_WORKERS; i++) {
-    // Create and initialize autonomous worker
-    const worker = new Worker(new URL('./worker.ts', import.meta.url), {
-      type: 'module',
-    });
-
-    const port = (window as any).getRepoChannel();
-    worker.postMessage(
-      {
-        port: port,
-        queueUrl: queueHandle.url,
-        contactUrl: contactUrl!,
-        importMap,
-        baseURI: document.baseURI,
-      },
-      [port],
-    );
-    console.log('main: Port transferred to worker');
-    workers.push(worker);
-  }
-  return workers;
-}

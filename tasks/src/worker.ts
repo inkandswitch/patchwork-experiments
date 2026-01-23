@@ -34,7 +34,7 @@ async function init(
   port: MessagePort,
   _contactUrl: AutomergeUrl,
   _importMap: ImportMap,
-  _baseURI: string
+  _baseURI: string,
 ) {
   if (repo) {
     const msg = 'router: Received two init messages!';
@@ -196,7 +196,7 @@ async function executeCurrentTask(taskQueueHandle: DocHandle<TaskQueue>) {
           console.log('Task log:', message);
         },
       },
-      input
+      input,
     );
   } catch (error: any) {
     console.error('Worker: Task execution failed:', error);
