@@ -1,8 +1,7 @@
 /* eslint-env worker */
 
 import generateName from 'boring-name-generator';
-import { Repo } from '@automerge/automerge-repo/slim';
-import { AutomergeUrl, DocHandle } from '@automerge/automerge-repo';
+import { Repo, AutomergeUrl, DocHandle } from '@automerge/automerge-repo/slim';
 import { Task, TaskQueue, Worker as TaskWorker } from './datatype';
 import { MessageToWorker, MessageToWorkerChannel, MessageToWorkerPool } from './protocol';
 import { getRepo } from './webworker-lib';

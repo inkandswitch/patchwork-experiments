@@ -1,6 +1,6 @@
 /* eslint-env worker */
 
-import { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo';
+import { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo/slim';
 import {
   MessageToWorker,
   MessageToRouter,
@@ -9,6 +9,9 @@ import {
 } from './protocol';
 import { Router, TaskQueue } from './datatype';
 import { getRepo } from './webworker-lib';
+
+import TaskWorker from './worker.ts?worker';
+import TaskRouter from './router.ts?worker';
 
 interface WorkerState {
   webWorker: Worker;
@@ -28,18 +31,29 @@ let nextWorkerId = 1;
 const workers: WorkerState[] = [];
 const taskQueueState = new Map<AutomergeUrl, TaskQueueState>();
 
+console.log('worker pool: ready to roll!');
+
+setInterval(() => {
+  console.log('worker pool: alive');
+}, 1000);
+
 self.onmessage = (e) => {
   const msg: MessageToWorkerPool = e.data;
-  switch (msg.type) {
-    case 'init':
-      init(msg.port, msg.contactUrl, msg.workerPorts, msg.importMap, msg.baseURI);
-      break;
-    case 'join task queue':
-      joinTaskQueue(msg.port, msg.url);
-      break;
-    case 'leave task queue':
-      leaveTaskQueue(msg.url);
-      break;
+  console.log('worker pool: received message', msg);
+  try {
+    switch (msg.type) {
+      case 'init':
+        init(msg.port, msg.contactUrl, msg.workerPorts, msg.importMap, msg.baseURI);
+        break;
+      case 'join task queue':
+        joinTaskQueue(msg.port, msg.url);
+        break;
+      case 'leave task queue':
+        leaveTaskQueue(msg.url);
+        break;
+    }
+  } catch (error) {
+    console.error('uh-oh, error handling message in worker pool', { msg, error });
   }
 };
 
@@ -56,6 +70,7 @@ async function init(
     console.log('worker pool: initializing');
     repo = await getRepo(port, `task-worker-pool-${Math.round(Math.random() * 10_000)}`);
     contactUrl = _contactUrl;
+    console.log('adding workers ');
     for (const workerPort of workerPorts) {
       addWorker(workerPort, importMap, baseURI);
     }
@@ -65,10 +80,8 @@ async function init(
 }
 
 function addWorker(port: MessagePort, importMap: any, baseURI: string) {
-  const webWorker = new Worker(new URL('./worker.ts', import.meta.url), {
-    name: `task-worker-${nextWorkerId++}`,
-    type: 'module',
-  });
+  console.log('worker pool: adding worker');
+  const webWorker = new TaskWorker({ name: `task-worker-${nextWorkerId++}` });
   webWorker.postMessage(
     { type: 'init', port, contactUrl: contactUrl, importMap, baseURI } satisfies MessageToWorker,
     [port],
@@ -93,9 +106,8 @@ async function joinTaskQueue(port: MessagePort, taskQueueUrl: AutomergeUrl) {
     return;
   }
 
-  const myRouter = new Worker(new URL('./router.ts', import.meta.url), {
+  const myRouter = new TaskRouter({
     name: `task-router-${taskQueueUrl}`,
-    type: 'module',
   });
   myRouter.postMessage(
     { type: 'init', port, contactUrl: contactUrl, taskQueueUrl } satisfies MessageToRouter,

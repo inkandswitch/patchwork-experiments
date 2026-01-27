@@ -1,4 +1,4 @@
-import { AutomergeUrl } from '@automerge/automerge-repo';
+import { AutomergeUrl } from '@automerge/automerge-repo/slim';
 import { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
 
 // TODO: add WorkerPool document type that contains a an array of task queue document URLs

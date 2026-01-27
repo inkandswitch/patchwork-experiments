@@ -1,11 +1,7 @@
 import { AutomergeUrl } from '@automerge/automerge-repo';
 import { MessageToWorkerPool } from './protocol';
 
-const SHARED_WORKER_URL = new URL('./worker-pool.ts', import.meta.url);
-const SHARED_WORKER_OPTIONS: WorkerOptions = {
-  name: `worker-pool`,
-  type: 'module',
-} as const;
+import WorkerPool from './worker-pool.ts?sharedworker';
 
 export class WorkerPoolProxy {
   private readonly workerPool: SharedWorker;
@@ -16,7 +12,10 @@ export class WorkerPoolProxy {
     baseURI: string,
     numWorkers = 2,
   ) {
-    this.workerPool = new SharedWorker(SHARED_WORKER_URL, SHARED_WORKER_OPTIONS);
+    this.workerPool = new WorkerPool({ name: `task-worker-pool` });
+    this.workerPool.onerror = (error) => {
+      console.error('SharedWorker error:', error);
+    };
     this.workerPool.port.start();
 
     const port = (window as any).getRepoChannel();

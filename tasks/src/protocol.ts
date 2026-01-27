@@ -4,7 +4,7 @@
 // TODO: consider using `any` instead of `ImportMap`.
 import 'es-module-shims';
 
-import { AutomergeUrl } from '@automerge/automerge-repo';
+import { AutomergeUrl } from '@automerge/automerge-repo/slim';
 
 export type MessageToWorkerPool =
   // sent by the app

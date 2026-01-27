@@ -1,4 +1,4 @@
-import { AutomergeUrl, isValidAutomergeUrl, Repo } from '@automerge/automerge-repo';
+import { AutomergeUrl, isValidAutomergeUrl, Repo } from '@automerge/automerge-repo/slim';
 
 // TODO: replace this with the real thing -- how do we get the account doc?
 export async function getSelfContactUrl(repo: Repo): Promise<AutomergeUrl | null> {

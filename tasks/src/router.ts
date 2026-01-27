@@ -1,7 +1,7 @@
 /* eslint-env worker */
 
 import generateName from 'boring-name-generator';
-import { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo';
+import { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo/slim';
 import { Router, Worker as TaskWorker, TaskQueue } from './datatype';
 import {
   MessageToRouter,
