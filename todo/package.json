@@ -9,6 +9,9 @@
     "build": "vite build",
     "sync": "vite build && pushwork sync"
   },
+  "pushwork": {
+    "url": "automerge:2qTWd74BsagyJCDqn5dpYHYBHWsc"
+  },
   "dependencies": {
     "@automerge/automerge-codemirror": "^0.2.0",
     "@automerge/automerge-repo": "2.5.2-alpha.0",
