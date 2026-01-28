@@ -1,0 +1,127 @@
+.markdown {
+  font-family: inherit;
+  color: inherit;
+  line-height: 1.7;
+  font-size: 1rem;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  font-weight: bold;
+  margin-top: 2em;
+  margin-bottom: 0.5em;
+  line-height: 1.2;
+}
+
+.markdown h1 {
+  font-size: 2em;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 0.25em;
+}
+
+.markdown h2 {
+  font-size: 1.5em;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 0.15em;
+}
+
+.markdown h3 {
+  font-size: 1.25em;
+}
+
+.markdown h4 {
+  font-size: 1.1em;
+}
+
+.markdown h5 {
+  font-size: 1em;
+}
+
+.markdown h6 {
+  font-size: 0.95em;
+  color: #6b7280;
+  font-style: italic;
+}
+
+.markdown p {
+  margin: 1em 0;
+}
+
+.markdown strong,
+.markdown b {
+  font-weight: bold;
+}
+
+.markdown em,
+.markdown i {
+  font-style: italic;
+}
+
+.markdown ul {
+  margin: 1em 0 1em 2em;
+  padding-left: 1.4em;
+  list-style-type: disc;
+}
+
+.markdown ol {
+  margin: 1em 0 1em 2em;
+  padding-left: 1.6em;
+  list-style-type: decimal;
+}
+
+.markdown ul ul,
+.markdown ul ol,
+.markdown ol ul,
+.markdown ol ol {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.markdown li {
+  margin: 0.4em 0;
+  /* Ensure bullet/number is visible and aligned */
+  list-style-position: outside;
+}
+
+.markdown blockquote {
+  border-left: 4px solid #d1d5db;
+  background: #f3f4f6;
+  padding: 0.5em 1em;
+  color: #374151;
+  margin: 1em 0;
+}
+
+.markdown code {
+  font-family: "Fira Mono", monospace, monospace;
+  background: #f6f8fa;
+  color: #dc3a00;
+  padding: 0.15em 0.35em;
+  border-radius: 3px;
+  font-size: 0.97em;
+}
+
+.markdown pre {
+  background: #f6f8fa;
+  color: #1e293b;
+  padding: 1em;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-family: "Fira Mono", monospace, monospace;
+  font-size: 0.98em;
+  margin: 1.2em 0;
+}
+
+.markdown a {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+.markdown hr {
+  border: none;
+  border-top: 1px solid #e5e7eb;
+  margin: 2em 0;
+}

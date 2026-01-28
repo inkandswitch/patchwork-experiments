@@ -1,12 +1,16 @@
 {
   "name": "@tiny-patchwork/todo",
   "type": "module",
+  "version": "0.0.2",
   "private": true,
   "main": "./dist/index.js",
   "scripts": {
     "dev": "pushwork watch . --dir src --verbose --script \"pnpm build\"",
     "build": "vite build",
     "sync": "vite build && pushwork sync"
+  },
+  "pushwork": {
+    "url": "automerge:2qTWd74BsagyJCDqn5dpYHYBHWsc"
   },
   "dependencies": {
     "@automerge/automerge-codemirror": "^0.2.0",
@@ -26,7 +30,8 @@
     "lucide-react": "^0.400.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "tailwindcss": "^4.1.18"
+    "tailwindcss": "^4.1.18",
+    "zod": "^4.1.13"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
