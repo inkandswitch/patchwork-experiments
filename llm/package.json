@@ -8,6 +8,9 @@
     "build": "vite build",
     "sync": "vite build && pushwork sync"
   },
+  "pushwork": {
+    "url": "automerge:N6gHBSEqCEQ9usHDkUZZQuKduFT"
+  },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
     "@automerge/automerge": "3.2.0",
