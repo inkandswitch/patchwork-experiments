@@ -17,7 +17,7 @@ export const AgentDataType: DatatypeImplementation<AgentDoc> = {
       name: "Agent",
     });
     doc.contactUrl = contactDocHandle.url;
-    doc.modelId = "claude-sonnet-4-0";
+    doc.modelId = "anthropic/claude-sonnet-4";
   },
   getTitle() {
     return "Agent";

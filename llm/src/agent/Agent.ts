@@ -121,7 +121,7 @@ export async function step(
         chatDocHandle.change((doc) => {
           doc.messages.push({
             id,
-            author: contactUrl,
+            ...(contactUrl && { author: contactUrl }),
             timestamp: Date.now(),
             content: block,
           });
@@ -283,7 +283,7 @@ async function createChangedDocsMessage(
     chatDocHandle.change((doc) => {
       doc.messages.push({
         id: `msg-${Date.now()}-${Math.random()}`,
-        author: contactUrl,
+        ...(contactUrl && { author: contactUrl }),
         timestamp: Date.now(),
         content: {
           type: "embed",

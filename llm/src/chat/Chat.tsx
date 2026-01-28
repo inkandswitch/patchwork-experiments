@@ -71,7 +71,7 @@ const Chat = ({ docUrl }: { docUrl: AutomergeUrl }) => {
 
     const message: ChatMessage = {
       id: `msg-${Date.now()}-${Math.random()}`,
-      author: contactUrl,
+      ...(contactUrl && { author: contactUrl }),
       content: {
         type: "text",
         text: pendingMessage,
@@ -199,7 +199,7 @@ export const renderChat = toolify(Chat);
 
 // Group messages by author and time proximity
 type MessageGroup = {
-  author: AutomergeUrl;
+  author?: AutomergeUrl;
   messages: ChatMessage[];
   timestamp: number;
 };
@@ -219,11 +219,14 @@ const groupMessages = (messages: ChatMessage[]): MessageGroup[] => {
       timeSinceLastGroup > FIVE_MINUTES_MS;
 
     if (shouldStartNewGroup) {
-      groups.push({
-        author: message.author,
+      const group: MessageGroup = {
         messages: [message],
         timestamp: message.timestamp,
-      });
+      };
+      if (message.author) {
+        group.author = message.author;
+      }
+      groups.push(group);
     } else {
       lastGroup.messages.push(message);
     }
@@ -234,9 +237,28 @@ const groupMessages = (messages: ChatMessage[]): MessageGroup[] => {
 
 // Render a group of messages from the same author
 const MessageGroupRenderer = ({ group }: { group: MessageGroup }) => {
-  const [contactDoc] = useDocument<{ name?: string }>(group.author, {
+  const [contactDoc] = useDocument<{ name?: string }>(group.author!, {
     suspense: true,
   });
+
+  // Render without author info if no author
+  if (!group.author) {
+    return (
+      <div className="flex gap-2">
+        <div className="flex flex-col gap-2 rounded-md p-2 flex-1">
+          <div className="flex items-center gap-2 ">
+            <span className="text-sm font-medium">Anonymous</span>
+            <span className="opacity-50 text-xs whitespace-nowrap">
+              {formatTimestamp(group.timestamp)}
+            </span>
+          </div>
+          {group.messages.map((message, idx) => (
+            <MessageView key={message.id || idx} message={message} />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex gap-2">

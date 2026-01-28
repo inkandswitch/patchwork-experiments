@@ -35,7 +35,7 @@ export type ContentBlock = TextBlock | ActionBlock | ThinkingBlock | EmbedBlock;
 
 export type ChatMessage = {
   id: string;
-  author: AutomergeUrl;
+  author?: AutomergeUrl;
   timestamp: number;
   content: ContentBlock;
 };

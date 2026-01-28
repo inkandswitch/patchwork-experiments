@@ -25,7 +25,7 @@ export const ChatDataType: DatatypeImplementation<ChatDoc> = {
 
     const agentDocHandle = repo.create<AgentDoc>({
       contactUrl: contactDocHandle.url,
-      modelId: "claude-sonnet-4-0",
+      modelId: "anthropic/claude-sonnet-4",
       contextFolderUrl: contextFolderHandle.url,
     });
 
