@@ -34,11 +34,9 @@ const TitlebarToolComponent: React.FC<{ element: HTMLElement; docUrl: AutomergeU
       const wp = new WorkerPoolProxy(selfContactUrl, importMap as any, document.baseURI);
       // TODO: join/leave task queues based on the WorkerPool Automerge document
       // (see my plan in datatype.ts)
-      wp.joinTaskQueue('automerge:42hQytH35tjvdmfHUCoiZqmmRoxz' as AutomergeUrl);
-      wp.joinTaskQueue('automerge:4TbpZ95Da8SDVWAtEYasLE5PTtKh' as AutomergeUrl);
-      wp.joinTaskQueue('automerge:3KECZ9PSYgQ825k8WYaaSN6F8b5q' as AutomergeUrl);
+      wp.joinTaskQueue('automerge:49chELGgFg1BrnDpNfVv6BK9VUkw' as AutomergeUrl);
 
-      console.log('### worker pool', wp);
+      console.log('#### worker pool', wp);
 
       setWorkerPool(wp);
     }

@@ -1,75 +1,85 @@
 /* eslint-env worker */
 
-import generateName from 'boring-name-generator';
-import { Repo, AutomergeUrl, DocHandle } from '@automerge/automerge-repo/slim';
-import { Task, TaskQueue, Worker as TaskWorker } from './datatype';
-import { MessageToWorker, MessageToWorkerChannel, MessageToWorkerPool } from './protocol';
+import type { Task, TaskQueue, Worker as TaskWorker } from './datatype';
+import type { MessageToWorker, MessageToWorkerChannel, MessageToWorkerPool } from './protocol';
+import type { Repo, AutomergeUrl, DocHandle } from '@automerge/vanillajs/slim';
+
+import 'es-module-shims';
 import { getRepo } from './webworker-lib';
+import generateName from 'boring-name-generator';
 
 let repo: Repo;
+let workerPoolPort: MessagePort;
+
+let workerId: number;
 let contactUrl: AutomergeUrl;
 let importMap: ImportMap;
 let baseURI: string;
 
 let workerHandle: DocHandle<TaskWorker>;
-let currentTask: { url: AutomergeUrl; taskQueueUrl: AutomergeUrl } | null = null;
+let currentTask: { taskUrl: AutomergeUrl; taskQueueUrl: AutomergeUrl } | null = null;
 
-console.log('I am worker, hear me roar!'); // TODO: remove this
+console.log('I am worker, hear me roar!');
 
-self.onmessage = (e) => {
-  const msg: MessageToWorker = e.data;
-  switch (msg.type) {
-    case 'init':
-      try {
-        init(msg.port, msg.contactUrl, msg.importMap, msg.baseURI);
-      } catch (error) {
-        console.error('worker: Failed to start:', error);
+self.addEventListener('connect', (e: any) => {
+  const port = e.ports[0];
+  port.onmessage = (e: any) => {
+    const msg: MessageToWorker = e.data;
+    console.log('worker: received message', e.data);
+    try {
+      switch (msg.type) {
+        case 'init':
+          init(
+            msg.repoPort,
+            msg.workerPoolPort,
+            msg.workerId,
+            msg.contactUrl,
+            msg.importMap,
+            msg.baseURI,
+          );
+          break;
       }
-      break;
-  }
-};
+    } catch (error) {
+      console.error('uh-oh, error handling message in worker', { msg, error });
+    }
+  };
+});
 
 async function init(
-  port: MessagePort,
+  repoPort: MessagePort,
+  _workerPoolPort: MessagePort,
+  _workerId: number,
   _contactUrl: AutomergeUrl,
   _importMap: ImportMap,
   _baseURI: string,
 ) {
-  if (repo) {
-    const msg = 'router: Received two init messages!';
-    console.error(msg);
-    throw new Error(msg);
+  if (!repo) {
+    repo = await getRepo(repoPort, `task-worker-${Math.round(Math.random() * 10_000)}`);
+    workerHandle = repo.create<TaskWorker>({
+      name: generateName().dashed,
+      contactUrl,
+      currentTask,
+    });
+    workerHandle.on('ephemeral-message', (payload) => {
+      const msg: MessageToWorkerChannel = payload.message as any;
+      switch (msg.type) {
+        case 'work on':
+          processTask(msg.taskUrl, msg.taskQueueUrl);
+          break;
+      }
+    });
+    workerId = _workerId;
+    contactUrl = _contactUrl;
+    importMap = _importMap;
+    baseURI = _baseURI;
+    setUpImportMap();
   }
 
-  console.log('router: Initializing');
-  repo = await getRepo(port, `task-worker-${Math.round(Math.random() * 10_000)}`);
-  contactUrl = _contactUrl;
-  importMap = _importMap;
-  baseURI = _baseURI;
-
-  // Add diagnostic listeners to the port
-  // port.addEventListener('message', (e) => {
-  //   console.log('worker: Port received message', e.data);
-  // });
-  // port.addEventListener('messageerror', (e) => {
-  //   console.error('worker: Port message error', e);
-  // });
-
-  setUpImportMap();
-
-  workerHandle = repo.create<TaskWorker>({
-    name: generateName().dashed,
-    contactUrl,
-    currentTask,
-  });
-  workerHandle.on('ephemeral-message', (payload) => {
-    const msg: MessageToWorkerChannel = payload.message as any;
-    switch (msg.type) {
-      case 'work on':
-        processTask(msg.taskUrl, msg.taskQueueUrl);
-        break;
-    }
-  });
+  // There is a chance that we're getting an init message because
+  // the worker pool's SharedWorker was restarted. Updating our
+  // reference to its port below ensures that this worker can
+  // continue to do its thing.
+  workerPoolPort = _workerPoolPort;
 
   console.log('worker: Ready', { workerUrl: workerHandle.url });
 }
@@ -122,10 +132,11 @@ function setUpImportMap() {
   console.log('worker: Import map configured from main thread', resolvedImportMap);
 }
 
-async function processTask(url: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
-  currentTask = { url, taskQueueUrl };
-  self.postMessage({
-    type: 'update worker state',
+async function processTask(taskUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
+  currentTask = { taskUrl, taskQueueUrl };
+  workerPoolPort.postMessage({
+    type: 'worker update',
+    workerId,
     workerUrl: workerHandle.url,
     currentTask,
   } satisfies MessageToWorkerPool);
@@ -145,8 +156,9 @@ async function processTask(url: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
     console.error('worker: Error while processing task:', error);
   } finally {
     currentTask = null;
-    self.postMessage({
-      type: 'update worker state',
+    workerPoolPort.postMessage({
+      type: 'worker update',
+      workerId,
       workerUrl: workerHandle.url,
       currentTask,
     } satisfies MessageToWorkerPool);
@@ -163,13 +175,13 @@ async function executeCurrentTask(taskQueueHandle: DocHandle<TaskQueue>) {
     doc.currentTask = currentTask;
   });
 
-  const currentTaskHandle = await repo.find<Task<any, any>>(currentTask.url);
+  const currentTaskHandle = await repo.find<Task<any, any>>(currentTask.taskUrl);
   const taskDoc = currentTaskHandle.doc();
   if (!taskDoc) {
-    throw new Error('Task document not found: ' + currentTask.url);
+    throw new Error('Task document not found: ' + currentTask.taskUrl);
   }
 
-  console.log('worker: Executing task:', currentTask.url);
+  console.log('worker: Executing task:', currentTask.taskUrl);
 
   const input = taskDoc.input;
   const log: [number, string][] = [];
@@ -228,7 +240,7 @@ function moveCurrentTaskToDone(taskQueueHandle: DocHandle<TaskQueue>) {
     throw new Error('moveCurrentTaskToDone() should never be called with currentTask == null');
   }
 
-  const taskUrl = currentTask.url;
+  const { taskUrl } = currentTask;
   taskQueueHandle.change((doc) => {
     const idx = doc.pending.indexOf(taskUrl);
     doc.pending.splice(idx, 1);

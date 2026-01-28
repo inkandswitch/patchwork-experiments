@@ -19,8 +19,8 @@ export const plugins: Plugin<any>[] = [
     icon: 'CirclePlus',
     supportedDatatypes: ['task-queue'],
     async load() {
-      const { Tool } = await import('./tool');
-      return Tool;
+      const { TaskQueueTool } = await import('./task-queue-tool');
+      return TaskQueueTool;
     },
   },
   {

@@ -1,6 +1,5 @@
-import { Repo, Automerge } from '@automerge/automerge-repo/slim';
 import { automergeWasmBase64 } from '@automerge/automerge/automerge.wasm.base64';
-import { MessageChannelNetworkAdapter } from '@automerge/vanillajs';
+import { Repo, Automerge, MessageChannelNetworkAdapter } from '@automerge/vanillajs/slim';
 
 // TODO: can we get rid of the base64 thing?
 // (can we just initializeWasm?)

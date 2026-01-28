@@ -27,7 +27,7 @@ const IWorker: React.FC<any> = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   return (
     <div className="m-4">
       <div>
-        {doc.contactUrl && <patchwork-view doc-url={doc.contactUrl} toolId="contact-inline" />} /{' '}
+        {doc.contactUrl && <patchwork-view doc-url={doc.contactUrl} tool-id="contact-inline" />} /{' '}
         {doc.name}
       </div>
       <div>
@@ -43,7 +43,7 @@ export const WorkerComponent: React.FC<any> = (props) => (
   </Suspense>
 );
 
-export const Tool = (handle: DocHandle<unknown>, element: HTMLElement) => {
+export const TaskQueueTool = (handle: DocHandle<unknown>, element: HTMLElement) => {
   const repo = (element as any).repo; // TODO: better way to get the repo
   const root = createRoot(element);
   root.render(

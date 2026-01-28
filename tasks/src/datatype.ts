@@ -1,5 +1,5 @@
-import { AutomergeUrl } from '@automerge/automerge-repo/slim';
-import { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
+import type { AutomergeUrl } from '@automerge/vanillajs/slim';
+import type { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
 
 // TODO: add WorkerPool document type that contains a an array of task queue document URLs
 // (ask pvh if this should be a property in the account document)
@@ -90,7 +90,7 @@ async function seconds(s) {
 export type Worker = {
   name: string;
   contactUrl: AutomergeUrl | null;
-  currentTask: { url: AutomergeUrl; taskQueueUrl: AutomergeUrl } | null;
+  currentTask: { taskUrl: AutomergeUrl; taskQueueUrl: AutomergeUrl } | null;
 };
 
 export type WorkerDoc = Worker;

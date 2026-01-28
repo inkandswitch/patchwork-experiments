@@ -1,15 +1,16 @@
 /* eslint-env worker */
 
-import generateName from 'boring-name-generator';
-import { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo/slim';
-import { Router, Worker as TaskWorker, TaskQueue } from './datatype';
-import {
+import type { Router, Worker as TaskWorker, TaskQueue } from './datatype';
+import type {
   MessageToRouter,
   MessageToRouterChannel,
   MessageToTaskQueueChannel,
   MessageToWorkerChannel,
 } from './protocol';
+import type { AutomergeUrl, DocHandle, Repo } from '@automerge/vanillajs/slim';
+
 import { getRepo } from './webworker-lib';
+import generateName from 'boring-name-generator';
 
 interface WorkerState {
   workerUrl: AutomergeUrl;
@@ -25,25 +26,35 @@ let thisRouterHandle: DocHandle<Router>;
 let activeRouter: { url: AutomergeUrl; lastTimestamp: number } | null = null;
 const workers = new Map<AutomergeUrl, WorkerState>();
 
-self.onmessage = (e) => {
-  const msg: MessageToRouter = e.data;
-  switch (msg.type) {
-    case 'init':
-      init(msg.port, msg.contactUrl, msg.taskQueueUrl);
-      break;
-  }
-};
+self.addEventListener('connect', (e: any) => {
+  const port = e.ports[0];
+  port.onmessage = (e: any) => {
+    const msg: MessageToRouter = e.data;
+    console.log('router: received message', e.data);
+    try {
+      switch (msg.type) {
+        case 'init':
+          init(msg.repoPort, msg.contactUrl, msg.taskQueueUrl);
+          break;
+      }
+    } catch (error) {
+      console.error('uh-oh, error handling message in router', { msg, error });
+    }
+  };
+});
 
-async function init(port: MessagePort, _contactUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
+async function init(repoPort: MessagePort, _contactUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
   if (repo) {
-    const msg = 'router: Received two init messages!';
-    console.error(msg);
-    throw new Error(msg);
+    console.log('router: Already initialized');
+    return;
   }
 
   console.log('router: Initializing');
 
-  repo = await getRepo(port, `task-router-${taskQueueUrl}-${Math.round(Math.random() * 10_000)}`);
+  repo = await getRepo(
+    repoPort,
+    `task-router-${taskQueueUrl}-${Math.round(Math.random() * 10_000)}`,
+  );
   contactUrl = _contactUrl;
 
   taskQueueHandle = await repo.find<TaskQueue>(taskQueueUrl);
@@ -66,7 +77,7 @@ async function init(port: MessagePort, _contactUrl: AutomergeUrl, taskQueueUrl: 
     const msg: MessageToRouterChannel = payload.message as any;
     switch (msg.type) {
       case 'worker heartbeat':
-        processWorkerHeartbeat(msg.workerUrl, msg.currentTaskUrl);
+        processWorkerHeartbeat(msg.workerUrl, msg.currentTask?.taskUrl ?? null);
         break;
     }
   });
