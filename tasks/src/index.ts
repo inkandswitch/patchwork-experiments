@@ -1,4 +1,4 @@
-import { type Datatype, type Tool, Plugin } from '@inkandswitch/patchwork-plugins';
+import { Plugin } from '@inkandswitch/patchwork-plugins';
 import './index.css';
 
 export const plugins: Plugin<any>[] = [
@@ -8,10 +8,10 @@ export const plugins: Plugin<any>[] = [
     name: 'Task Queue',
     icon: 'CirclePlus',
     async load() {
-      const { taskQueueDatatype } = await import('./datatype');
-      return taskQueueDatatype;
+      const { TaskQueueDatatype } = await import('./datatype');
+      return TaskQueueDatatype;
     },
-  } satisfies Datatype,
+  },
   {
     type: 'patchwork:tool',
     id: 'task-queue-browser',
@@ -22,7 +22,18 @@ export const plugins: Plugin<any>[] = [
       const { Tool } = await import('./tool');
       return Tool;
     },
-  } satisfies Tool,
+  },
+  {
+    type: 'patchwork:tool',
+    id: 'task-titlebar',
+    name: 'Task Titlebar',
+    icon: 'Square',
+    supportedDatatypes: '*',
+    unlisted: true,
+    forTitleBar: true,
+    async load() {
+      const { TitlebarTool } = await import('./titlebar-tool');
+      return TitlebarTool;
+    },
+  },
 ];
-
-export const { TaskRunner } = await import('./task-runner');

@@ -1,4 +1,8 @@
-import { AutomergeUrl } from '@automerge/automerge-repo';
+import { AutomergeUrl } from '@automerge/automerge-repo/slim';
+import { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
+
+// TODO: add WorkerPool document type that contains a an array of task queue document URLs
+// (ask pvh if this should be a property in the account document)
 
 // Task
 
@@ -11,7 +15,7 @@ export type Task<Input, Result> = {
 export type TaskDoc<Input, Result> = Task<Input, Result>;
 
 export type RunInfo<Result> = {
-  runner: string;
+  workerUrl: AutomergeUrl;
   status: 'succeeded' | 'failed';
   result?: Result; // only if status === 'succeeded'
   log?: [number, string][];
@@ -42,14 +46,17 @@ export type TaskQueue = {
   title?: string;
   inputExpr?: string; // text field for input expression
   code?: string; // text field for task code
+  router: AutomergeUrl | null; // id of the current router
   pending: AutomergeUrl[]; // ids of task documents
+  // TODO: change done to { [AutomergeUrl]: true }
   done: AutomergeUrl[]; // ids of task documents
 };
 
 export type TaskQueueDoc = TaskQueue;
 
-export const taskQueueDatatype: any = {
+export const TaskQueueDatatype: DatatypeImplementation<TaskQueueDoc> = {
   init(doc: TaskQueueDoc) {
+    doc.router = null;
     doc.pending = [];
     doc.done = [];
     doc.inputExpr = `[
@@ -76,17 +83,23 @@ async function seconds(s) {
   setTitle(doc: TaskQueueDoc, title: string) {
     doc.title = title;
   },
-  markCopy(doc: TaskQueueDoc) {
-    doc.title = 'Copy of ' + this.getTitle(doc, null as any);
-  },
 };
 
-// Runner
+// Worker
 
-export type Runner = {
+export type Worker = {
   name: string;
   contactUrl: AutomergeUrl | null;
-  currentTask: AutomergeUrl | null;
+  currentTask: { url: AutomergeUrl; taskQueueUrl: AutomergeUrl } | null;
 };
 
-export type RunnerDoc = Runner;
+export type WorkerDoc = Worker;
+
+// Router
+
+export type Router = {
+  name: string;
+  contactUrl: AutomergeUrl | null;
+};
+
+export type RouterDoc = Router;
