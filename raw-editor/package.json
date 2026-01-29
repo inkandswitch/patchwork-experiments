@@ -2,6 +2,9 @@
   "name": "@patchwork/raw-editor",
   "version": "0.0.1",
   "description": "A raw view and editor for any Automerge document",
+  "pushwork": {
+    "url": "automerge:26DMKMTJzWxZ7t5yQPYTucwNCFAa"
+  },
   "type": "module",
   "exports": "./dist/index.js",
   "scripts": {
