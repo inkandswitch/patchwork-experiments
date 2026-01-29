@@ -1,14 +1,18 @@
-import type {Plugin, Tool} from "@inkandswitch/patchwork-plugins"
+import type {
+	LoadablePlugin,
+	ToolDescription,
+	ToolImplementation,
+} from "@inkandswitch/patchwork-plugins"
 
-export const plugins: Plugin<any>[] = [
+export const plugins: LoadablePlugin<any>[] = [
 	{
 		type: "patchwork:tool",
 		id: "raw",
 		name: "Raw",
-		supportedDatatypes: "*",
+		supportedDataTypes: "*",
 		async load() {
 			const {TinyTool} = await import("./components/RawEditor")
 			return TinyTool
 		},
-	} satisfies Tool,
+	} satisfies LoadablePlugin<ToolDescription, ToolImplementation>,
 ]

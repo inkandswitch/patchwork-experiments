@@ -9,10 +9,10 @@ import ReactJson, { InteractionProps } from "@microlink/react-json-view";
 import { useCallback, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "../rawEditor.module.css";
-import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 
-export const TinyTool: ToolRender = (handle, element) => {
-  const repo = element.repo;
+// TODO: element.repo is not ideal
+export const TinyTool = (handle: DocHandle<unknown>, element: HTMLElement) => {
+  const repo = (element as any).repo;
   const root = createRoot(element);
   root.render(
     <RepoContext.Provider value={repo}>
