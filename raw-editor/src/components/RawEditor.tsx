@@ -6,9 +6,9 @@ import {
   RepoContext,
 } from "@automerge/automerge-repo-react-hooks";
 import ReactJson, { InteractionProps } from "@microlink/react-json-view";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import "../rawEditor.module.css";
+import "../rawEditor.css";
 
 // TODO: element.repo is not ideal
 export const TinyTool = (handle: DocHandle<unknown>, element: HTMLElement) => {
@@ -16,13 +16,28 @@ export const TinyTool = (handle: DocHandle<unknown>, element: HTMLElement) => {
   const root = createRoot(element);
   root.render(
     <RepoContext.Provider value={repo}>
-      <div className="flex flex-col items-center justify-center h-full">
+      <div className="raw-editor-wrapper">
         <RawEditor docUrl={handle.url} />
       </div>
-    </RepoContext.Provider>
+    </RepoContext.Provider>,
   );
   return () => root.unmount();
 };
+
+function usePrefersDarkMode() {
+  const getPref = () =>
+    window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const [isDark, setIsDark] = useState(getPref);
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const listener = () => setIsDark(media.matches);
+    media.addEventListener("change", listener);
+    return () => media.removeEventListener("change", listener);
+  }, []);
+
+  return isDark;
+}
 
 export const RawEditor = ({
   docUrl: originalDocumentUrl,
@@ -35,12 +50,14 @@ export const RawEditor = ({
   const [doc, changeDoc] = useDocument(documentUrl);
   const handle = useDocHandle(documentUrl);
 
+  const isDark = usePrefersDarkMode();
+
   const onSelectAutomergeUrl = useCallback(
     (url: AutomergeUrl) => {
       setHistory([documentUrl, ...history]);
       changeDocumentUrl(url);
     },
-    [history, setHistory, changeDocumentUrl]
+    [history, setHistory, changeDocumentUrl],
   );
 
   const onEdit = useCallback(
@@ -50,7 +67,7 @@ export const RawEditor = ({
 
         for (const key of namespace) {
           if (key === null) {
-            console.error("faild to update property");
+            console.error("failed to update property");
             return;
           }
           current = current[key];
@@ -64,7 +81,7 @@ export const RawEditor = ({
         current[name] = new_value;
       });
     },
-    [changeDoc]
+    [changeDoc],
   );
 
   const onAdd = useCallback(function () {
@@ -78,7 +95,7 @@ export const RawEditor = ({
 
         for (const key of namespace) {
           if (key === null) {
-            console.error("faild to delete property");
+            console.error("failed to delete property");
             return;
           }
           current = current[key];
@@ -92,7 +109,7 @@ export const RawEditor = ({
         delete current[name];
       });
     },
-    [changeDoc]
+    [changeDoc],
   );
 
   const onSelect = useCallback(function (arg: unknown) {
@@ -118,7 +135,7 @@ export const RawEditor = ({
       const data = Automerge.save(doc);
       const filename = `${handle.documentId}.automerge`;
       const blobURL = URL.createObjectURL(
-        new Blob([data as BlobPart], { type: "application/octet-stream" })
+        new Blob([data as BlobPart], { type: "application/octet-stream" }),
       );
 
       const tempLink = document.createElement("a");
@@ -137,7 +154,7 @@ export const RawEditor = ({
         window.URL.revokeObjectURL(blobURL);
       }, 100);
     },
-    [doc]
+    [doc],
   );
 
   if (!doc) {
@@ -145,7 +162,7 @@ export const RawEditor = ({
   }
 
   return (
-    <div className={`p-2 h-full overflow-auto`}>
+    <div className="raw-editor-container">
       <ReactJson
         collapsed={3}
         src={doc}
@@ -153,6 +170,8 @@ export const RawEditor = ({
         onAdd={onAdd}
         onDelete={onDelete}
         onSelect={onSelect}
+        theme={isDark ? "monokai" : "rjv-default"}
+        style={{ backgroundColor: "transparent" }}
       />
     </div>
   );

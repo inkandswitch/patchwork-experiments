@@ -1,0 +1,15 @@
+/* Tool wrapper */
+.raw-editor-wrapper {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: 100%;
+  padding: 0.5rem;
+}
+
+/* Container styles */
+.raw-editor-container {
+  padding: 0.5rem;
+  height: 100%;
+  overflow: auto;
+}
