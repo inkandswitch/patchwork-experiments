@@ -1,3 +1,15 @@
+:root {
+  --link-color: #0969da;
+  --link-hover: #0550ae;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --link-color: #58a6ff;
+    --link-hover: #79c0ff;
+  }
+}
+
 /* Tool wrapper */
 .raw-editor-wrapper {
   display: flex;
@@ -12,4 +24,15 @@
   padding: 0.5rem;
   height: 100%;
   overflow: auto;
+}
+
+/* Style automerge URLs as clickable links */
+.automerge-url {
+  color: var(--link-color);
+  cursor: pointer !important;
+  text-decoration: underline;
+}
+
+.automerge-url:hover {
+  color: var(--link-hover);
 }

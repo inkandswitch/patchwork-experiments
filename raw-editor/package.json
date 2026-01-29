@@ -18,6 +18,7 @@
     "@automerge/automerge-repo": "2.5.0",
     "@automerge/automerge-repo-react-hooks": "2.5.0",
     "@inkandswitch/patchwork-bootloader": "^0.0.3",
+    "@inkandswitch/patchwork-elements": "^0.0.5",
     "@inkandswitch/patchwork-plugins": "^0.0.2",
     "@microlink/react-json-view": "^1.26.2",
     "react": "^18.3.1",
