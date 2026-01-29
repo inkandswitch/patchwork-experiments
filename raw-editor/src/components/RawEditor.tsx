@@ -1,10 +1,15 @@
 import * as Automerge from "@automerge/automerge";
-import { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
+import {
+  AutomergeUrl,
+  DocHandle,
+  isValidAutomergeUrl,
+} from "@automerge/automerge-repo";
 import {
   useDocument,
   useDocHandle,
   RepoContext,
 } from "@automerge/automerge-repo-react-hooks";
+import type { OpenDocumentEventDetail } from "@inkandswitch/patchwork-elements";
 import ReactJson, { InteractionProps } from "@microlink/react-json-view";
 import { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -17,7 +22,7 @@ export const TinyTool = (handle: DocHandle<unknown>, element: HTMLElement) => {
   root.render(
     <RepoContext.Provider value={repo}>
       <div className="raw-editor-wrapper">
-        <RawEditor docUrl={handle.url} />
+        <RawEditor docUrl={handle.url} element={element} />
       </div>
     </RepoContext.Provider>,
   );
@@ -39,25 +44,63 @@ function usePrefersDarkMode() {
   return isDark;
 }
 
+function createOpenEvent(detail: OpenDocumentEventDetail) {
+  const openEvent = new CustomEvent("patchwork:open-document", {
+    detail,
+    bubbles: true,
+    composed: true,
+  });
+  return openEvent;
+}
+
 export const RawEditor = ({
-  docUrl: originalDocumentUrl,
+  docUrl,
+  element,
 }: {
   docUrl: AutomergeUrl;
+  element: HTMLElement;
 }) => {
-  const [documentUrl, changeDocumentUrl] = useState(originalDocumentUrl);
-  const [history, setHistory] = useState<AutomergeUrl[]>([]); // TODO: make these actual navigation effects? knapsack's design makes this tricky.
-
-  const [doc, changeDoc] = useDocument(documentUrl);
-  const handle = useDocHandle(documentUrl);
+  const [doc, changeDoc] = useDocument(docUrl);
+  const handle = useDocHandle(docUrl);
 
   const isDark = usePrefersDarkMode();
 
+  // Mark automerge URLs with a class for styling
+  const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (!containerNode) return;
+
+    const markAutomergeUrls = () => {
+      const stringElements = containerNode.querySelectorAll(".string-value");
+      stringElements.forEach((el) => {
+        const text = el.textContent || "";
+        if (
+          isValidAutomergeUrl(text.slice(1, -1)) &&
+          !el.classList.contains("automerge-url")
+        ) {
+          el.classList.add("automerge-url");
+        }
+      });
+    };
+
+    // Initial mark
+    markAutomergeUrls();
+
+    // Watch for DOM changes (e.g., when editing and canceling in react-json-view)
+    const observer = new MutationObserver(markAutomergeUrls);
+    observer.observe(containerNode, { childList: true, subtree: true });
+
+    return () => observer.disconnect();
+  }, [containerNode, doc]);
+
   const onSelectAutomergeUrl = useCallback(
     (url: AutomergeUrl) => {
-      setHistory([documentUrl, ...history]);
-      changeDocumentUrl(url);
+      element.dispatchEvent(createOpenEvent({ url, toolId: "raw" }));
     },
-    [history, setHistory, changeDocumentUrl],
+    [element],
   );
 
   const onEdit = useCallback(
@@ -113,17 +156,19 @@ export const RawEditor = ({
   );
 
   const onSelect = useCallback(function (arg: unknown) {
-    console.log("select", arg);
-    /*const { value } = arg;
+    if (typeof arg !== "object" || arg === null || !("value" in arg)) {
+      return;
+    }
+    const { value } = arg;
     if (!(typeof value === "string")) {
       return;
     }
 
     if (isValidAutomergeUrl(value)) {
       onSelectAutomergeUrl(value);
-    } else if (isServiceWorkerUrl(value)) {
-      onSelectAutomergeUrl(parseServiceWorkerUrl(value));
-    }*/
+      // } else if (isServiceWorkerUrl(value)) {
+      //   onSelectAutomergeUrl(parseServiceWorkerUrl(value));
+    }
   }, []);
 
   // lifted from https://gist.github.com/davalapar/d0a5ba7cce4bc599f54800da22926da2
@@ -158,21 +203,23 @@ export const RawEditor = ({
   );
 
   if (!doc) {
-    return <div>Loading {documentUrl}...</div>;
+    return <div>Loading {docUrl}...</div>;
   }
 
   return (
     <div className="raw-editor-container">
-      <ReactJson
-        collapsed={3}
-        src={doc}
-        onEdit={onEdit}
-        onAdd={onAdd}
-        onDelete={onDelete}
-        onSelect={onSelect}
-        theme={isDark ? "monokai" : "rjv-default"}
-        style={{ backgroundColor: "transparent" }}
-      />
+      <div ref={setContainerNode}>
+        <ReactJson
+          collapsed={3}
+          src={doc}
+          onEdit={onEdit}
+          onAdd={onAdd}
+          onDelete={onDelete}
+          onSelect={onSelect}
+          theme={isDark ? "monokai" : "rjv-default"}
+          style={{ backgroundColor: "transparent" }}
+        />
+      </div>
     </div>
   );
 };
