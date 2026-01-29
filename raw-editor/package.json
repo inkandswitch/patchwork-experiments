@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "description": "A raw view and editor for any Automerge document",
   "pushwork": {
-    "url": "automerge:26DMKMTJzWxZ7t5yQPYTucwNCFAa"
+    "url": "automerge:2c1R47RtNU6rmWMZ6LePNfC7FUe2"
   },
   "type": "module",
   "exports": "./dist/index.js",
