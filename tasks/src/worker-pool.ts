@@ -119,31 +119,31 @@ async function pSendWorkerStatuses() {
 
     for (const [taskQueueUrl, { activeRouterHandle }] of taskQueueState.entries()) {
       if (!activeRouterHandle) {
-        console.log('activeRouterHandle is null');
+        // console.log('activeRouterHandle is null');
         continue;
       }
 
-      console.log('sending worker statuses');
+      // console.log('sending worker statuses');
       for (const { workerUrl, currentTask } of workers.values()) {
         // don't bother sending the heartbeats of workers that are busy with tasks from other queues
         if (workerUrl && (!currentTask || currentTask?.taskQueueUrl === taskQueueUrl)) {
-          console.log('sending heartbeat to task queue', taskQueueUrl, 'about worker', workerUrl);
+          // console.log('sending heartbeat to task queue', taskQueueUrl, 'about worker', workerUrl);
           activeRouterHandle.broadcast({
             type: 'worker heartbeat',
             workerUrl,
             currentTask,
           } satisfies MessageToRouterChannel);
         } else {
-          console.log(
-            'not sending heartbeat',
-            workerUrl,
-            currentTask,
-            currentTask?.taskQueueUrl,
-            taskQueueUrl,
-          );
+          // console.log(
+          //   'not sending heartbeat',
+          //   workerUrl,
+          //   currentTask,
+          //   currentTask?.taskQueueUrl,
+          //   taskQueueUrl,
+          // );
         }
       }
-      console.log('sending worker statuses (done)');
+      // console.log('sending worker statuses (done)');
     }
   }
 }
