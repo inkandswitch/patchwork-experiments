@@ -9,7 +9,7 @@ const IRouter: React.FC<any> = ({ docUrl, isMine }: { docUrl: AutomergeUrl; isMi
   const [doc] = useDocument<Router>(docUrl, { suspense: true });
   return (
     <div className="m-4">
-      {doc.contactUrl && <patchwork-view doc-url={doc.contactUrl} toolId="contact-inline" />} /{' '}
+      {doc.contactUrl && <patchwork-view doc-url={doc.contactUrl} tool-id="contact-inline" />} /{' '}
       {doc.name}
       {isMine ? ' (mine)' : ''}
     </div>
@@ -109,7 +109,7 @@ const Run: React.FC<any> = ({ run }: { run: RunInfo<any> }) => {
   return (
     <div>
       <div>
-        {doc.contactUrl && <patchwork-view doc-url={doc.contactUrl} toolId="contact-inline" />} /{' '}
+        {doc.contactUrl && <patchwork-view doc-url={doc.contactUrl} tool-id="contact-inline" />} /{' '}
         {doc.name} → {status === 'succeeded' ? result : '✗'} ({timeAgo})
       </div>
     </div>

@@ -7,6 +7,7 @@ import type { OpenDocumentEventDetail } from '@inkandswitch/patchwork-elements';
 import { WorkerPoolProxy } from './worker-pool-proxy';
 import { getSelfContactUrl } from './helpers';
 
+// TODO: load from the account document
 const TASK_QUEUE_URL: AutomergeUrl = 'automerge:4GWBHzg3fYXp338pErVYKkZPc4wE' as any;
 
 const TitlebarToolComponent: React.FC<{ element: HTMLElement; docUrl: AutomergeUrl }> = ({
@@ -22,12 +23,9 @@ const TitlebarToolComponent: React.FC<{ element: HTMLElement; docUrl: AutomergeU
 
   const [workerPool, setWorkerPool] = useState<WorkerPoolProxy | null>(null);
   useEffect(() => {
-    console.log('aaaaa');
     if (selfContactUrl) {
-      console.log('bbbbb');
       const importMapElement = document.querySelector('script[type="importmap"]');
       let importMap = {};
-      console.log('ccccc', importMapElement);
       if (importMapElement) {
         try {
           importMap = JSON.parse(importMapElement.textContent || '{}');
@@ -45,9 +43,7 @@ const TitlebarToolComponent: React.FC<{ element: HTMLElement; docUrl: AutomergeU
 
       console.log('#### worker pool', wp);
 
-      console.log('setting wpp');
       setWorkerPool(wp);
-      console.log('done');
     }
   }, [selfContactUrl]);
 
