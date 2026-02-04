@@ -4,6 +4,7 @@ import topLevelAwait from 'vite-plugin-top-level-await';
 import wasm from 'vite-plugin-wasm';
 import cssInjectedByJsPlugin from 'vite-plugin-css-injected-by-js';
 import tailwindcss from '@tailwindcss/vite';
+import path from 'path';
 
 import external from '@inkandswitch/patchwork-bootloader/externals';
 
@@ -38,5 +39,20 @@ export default defineConfig({
       wasm(),
       topLevelAwait(),
     ],
+  },
+
+  resolve: {
+    alias: {
+      // Direct file system path bypasses the 'exports' check
+      'es-module-shims-worker': path.resolve(
+        __dirname, 
+        'node_modules/es-module-shims/dist/es-module-shims.wasm.js'
+      )
+    }
+  },
+
+  optimizeDeps: {
+    // Prevent Vite from pre-bundling the shim (which causes the 'window' error)
+    exclude: ['es-module-shims']
   },
 });

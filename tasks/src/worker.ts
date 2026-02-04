@@ -4,7 +4,10 @@ import type { Task, TaskQueue, Worker as TaskWorker } from './datatype';
 import type { MessageToWorker, MessageToWorkerChannel, MessageToWorkerPool } from './protocol';
 import type { Repo, AutomergeUrl, DocHandle } from '@automerge/vanillajs/slim';
 
-import 'es-module-shims';
+// import 'es-module-shims/wasm';
+const shimCodeUrl = 'https://ga.jspm.io/npm:es-module-shims@1.6.2/dist/es-module-shims.wasm.js';
+import(shimCodeUrl);
+
 import { getRepo } from './webworker-lib';
 import generateName from 'boring-name-generator';
 
@@ -13,7 +16,7 @@ let workerPoolPort: MessagePort;
 
 let workerId: number;
 let contactUrl: AutomergeUrl;
-let importMap: ImportMap;
+let importMap: any;
 let baseURI: string;
 
 let workerHandle: DocHandle<TaskWorker>;
@@ -22,6 +25,7 @@ let currentTask: { taskUrl: AutomergeUrl; taskQueueUrl: AutomergeUrl } | null = 
 console.log('I am worker, hear me roar!');
 
 self.addEventListener('connect', (e: any) => {
+  console.log('worker: connected to', e);
   const port = e.ports[0];
   port.onmessage = (e: any) => {
     const msg: MessageToWorker = e.data;
@@ -50,15 +54,21 @@ async function init(
   _workerPoolPort: MessagePort,
   _workerId: number,
   _contactUrl: AutomergeUrl,
-  _importMap: ImportMap,
+  _importMap: any,
   _baseURI: string,
 ) {
+  console.log('worker: Initializing');
   if (!repo) {
+    console.log('worker: Really initializing');
+    workerId = _workerId;
+    contactUrl = _contactUrl;
+    importMap = _importMap;
+    baseURI = _baseURI;
     repo = await getRepo(repoPort, `task-worker-${Math.round(Math.random() * 10_000)}`);
     workerHandle = repo.create<TaskWorker>({
       name: generateName().dashed,
       contactUrl,
-      currentTask,
+      currentTask: currentTask ?? null,
     });
     workerHandle.on('ephemeral-message', (payload) => {
       const msg: MessageToWorkerChannel = payload.message as any;
@@ -68,18 +78,19 @@ async function init(
           break;
       }
     });
-    workerId = _workerId;
-    contactUrl = _contactUrl;
-    importMap = _importMap;
-    baseURI = _baseURI;
     setUpImportMap();
   }
 
-  // There is a chance that we're getting an init message because
-  // the worker pool's SharedWorker was restarted. Updating our
-  // reference to its port below ensures that this worker can
-  // continue to do its thing.
+  // There is a chance that we're getting an init message because the worker pool's
+  // SharedWorker was restarted. Updating our reference to its port below will enable
+  // this worker to keep doing its thing.
   workerPoolPort = _workerPoolPort;
+  workerPoolPort.postMessage({
+    type: 'worker update',
+    workerId,
+    workerUrl: workerHandle.url,
+    currentTask: null,
+  } satisfies MessageToWorkerPool);
 
   console.log('worker: Ready', { workerUrl: workerHandle.url });
 }
@@ -94,7 +105,7 @@ function setUpImportMap() {
     for (const [key, value] of Object.entries(importMap.imports)) {
       // Resolve relative URLs to absolute URLs using the base URI from main thread
       try {
-        resolvedImportMap.imports[key] = new URL(value, baseURI).href;
+        resolvedImportMap.imports[key] = new URL(value as any, baseURI).href;
       } catch (e) {
         console.warn(`worker: Failed to resolve import map entry ${key}: ${value}`, e);
         resolvedImportMap.imports[key] = value; // Keep original if resolution fails
@@ -117,9 +128,9 @@ function setUpImportMap() {
 
       // Resolve each entry in the scope's import map
       resolvedImportMap.scopes[resolvedScopeKey] = {};
-      for (const [key, value] of Object.entries(scopeMap)) {
+      for (const [key, value] of Object.entries(scopeMap as any)) {
         try {
-          resolvedImportMap.scopes[resolvedScopeKey][key] = new URL(value, baseURI).href;
+          resolvedImportMap.scopes[resolvedScopeKey][key] = new URL(value as any, baseURI).href;
         } catch (e) {
           console.warn(`worker: Failed to resolve scope entry ${scopeKey}[${key}]: ${value}`, e);
           resolvedImportMap.scopes[resolvedScopeKey][key] = value; // Keep original if resolution fails
@@ -128,7 +139,7 @@ function setUpImportMap() {
     }
   }
 
-  self.importShim.addImportMap(resolvedImportMap);
+  (self as any).importShim.addImportMap(resolvedImportMap);
   console.log('worker: Import map configured from main thread', resolvedImportMap);
 }
 
@@ -191,7 +202,7 @@ async function executeCurrentTask(taskQueueHandle: DocHandle<TaskQueue>) {
   try {
     // Dynamic import of the task module using importShim for import map support
     console.log('worker: importing task module via shims', taskDoc.importUrl);
-    const module = await self.importShim(taskDoc.importUrl);
+    const module = await (self as any).importShim(taskDoc.importUrl);
     console.log('worker: imported task module via shims', module);
     const taskFunction = module.default as any;
 
@@ -247,3 +258,5 @@ function moveCurrentTaskToDone(taskQueueHandle: DocHandle<TaskQueue>) {
     doc.done.push(taskUrl);
   });
 }
+
+export {}; // to ensure this is a module

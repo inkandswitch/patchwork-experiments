@@ -92,12 +92,13 @@ async function init(repoPort: MessagePort, _contactUrl: AutomergeUrl, taskQueueU
 async function pHeartbeat() {
   while (true) {
     if (thisIsTheActiveRouter()) {
-      console.log('router: Sending heartbeat');
-      taskQueueHandle.broadcast({
+      const heartbeat = {
         type: 'router heartbeat',
         routerUrl: thisRouterHandle.url,
         workerUrls: [...workers.keys()],
-      } satisfies MessageToTaskQueueChannel);
+      } satisfies MessageToTaskQueueChannel;
+      console.log('router: Sending heartbeat to task queue', heartbeat);
+      taskQueueHandle.broadcast(heartbeat);
     }
     await seconds(1);
   }
@@ -223,3 +224,5 @@ const seconds = async (s: number) =>
   new Promise((resolve) => {
     setTimeout(resolve, s * 1_000);
   });
+
+export {}; // to ensure this is a module

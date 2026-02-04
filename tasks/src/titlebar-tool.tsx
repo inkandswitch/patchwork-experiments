@@ -7,6 +7,8 @@ import type { OpenDocumentEventDetail } from '@inkandswitch/patchwork-elements';
 import { WorkerPoolProxy } from './worker-pool-proxy';
 import { getSelfContactUrl } from './helpers';
 
+const TASK_QUEUE_URL: AutomergeUrl = 'automerge:4GWBHzg3fYXp338pErVYKkZPc4wE' as any;
+
 const TitlebarToolComponent: React.FC<{ element: HTMLElement; docUrl: AutomergeUrl }> = ({
   element,
   docUrl,
@@ -20,9 +22,12 @@ const TitlebarToolComponent: React.FC<{ element: HTMLElement; docUrl: AutomergeU
 
   const [workerPool, setWorkerPool] = useState<WorkerPoolProxy | null>(null);
   useEffect(() => {
+    console.log('aaaaa');
     if (selfContactUrl) {
+      console.log('bbbbb');
       const importMapElement = document.querySelector('script[type="importmap"]');
       let importMap = {};
+      console.log('ccccc', importMapElement);
       if (importMapElement) {
         try {
           importMap = JSON.parse(importMapElement.textContent || '{}');
@@ -31,14 +36,18 @@ const TitlebarToolComponent: React.FC<{ element: HTMLElement; docUrl: AutomergeU
         }
       }
 
+      console.log('creating wpp');
       const wp = new WorkerPoolProxy(selfContactUrl, importMap as any, document.baseURI);
+      console.log('joining dummy task queue');
       // TODO: join/leave task queues based on the WorkerPool Automerge document
       // (see my plan in datatype.ts)
-      wp.joinTaskQueue('automerge:49chELGgFg1BrnDpNfVv6BK9VUkw' as AutomergeUrl);
+      wp.joinTaskQueue(docUrl);
 
       console.log('#### worker pool', wp);
 
+      console.log('setting wpp');
       setWorkerPool(wp);
+      console.log('done');
     }
   }, [selfContactUrl]);
 
@@ -49,7 +58,7 @@ const TitlebarToolComponent: React.FC<{ element: HTMLElement; docUrl: AutomergeU
       className="h-full flex items-center"
       onClick={() => element.dispatchEvent(createOpenEvent({ url: docUrl }))}
     >
-      <span>{doc.title ?? 'TQ'}</span>
+      <span>{doc.title ?? 'AAATQ'}</span>
       <span>{doc.pending.length}</span>/<span>{doc.done.length}</span>
     </div>
   );
@@ -60,10 +69,7 @@ export const TitlebarTool = (handle: DocHandle<unknown>, element: HTMLElement) =
   const root = createRoot(element);
   root.render(
     <RepoContext.Provider value={repo}>
-      <TitlebarToolComponent
-        element={element}
-        docUrl={'automerge:38YYaP6izqpmgUcTK2NNhmDJj1fD' as AutomergeUrl}
-      />
+      <TitlebarToolComponent element={element} docUrl={TASK_QUEUE_URL} />
     </RepoContext.Provider>,
   );
   return () => root.unmount();

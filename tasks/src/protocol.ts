@@ -1,11 +1,20 @@
 import type { AutomergeUrl } from '@automerge/automerge-repo/slim';
 
 export type MessageToWorkerPool =
-  // sent by the app
+  // sent by the app (worker pool proxy)
   | {
       type: 'init';
       repoPort: MessagePort;
       contactUrl: AutomergeUrl;
+    }
+  | {
+      type: 'join';
+      taskQueueUrl: AutomergeUrl;
+    }
+  | {
+      type: 'listen to worker';
+      workerId: number;
+      workerPort: MessagePort;
     }
   // sent by workers
   // TODO: consider having the worker pool subscribe to changes in the worker docs, then this is not needed
@@ -17,7 +26,7 @@ export type MessageToWorkerPool =
     };
 
 export type MessageToRouter =
-  // sent by the worker pool proxy
+  // sent by the app (worker pool proxy)
   | {
       type: 'init';
       repoPort: MessagePort;
@@ -45,7 +54,7 @@ export type MessageToTaskQueueChannel =
   };
 
 export type MessageToWorker =
-  // sent by the worker pool proxy
+  // sent by the app (worker pool proxy)
   {
     type: 'init';
     repoPort: MessagePort;

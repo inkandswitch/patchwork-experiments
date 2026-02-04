@@ -14,7 +14,7 @@ export class WorkerPoolProxy {
 
   constructor(
     readonly contactUrl: AutomergeUrl,
-    importMap: ImportMap,
+    importMap: any,
     baseURI: string,
   ) {
     this.workerPool = this.createWorkerPool();
@@ -54,24 +54,44 @@ export class WorkerPoolProxy {
     return worker;
   }
 
-  private initializeWorker(workerId: number, importMap: ImportMap, baseURI: string) {
+  private initializeWorker(workerId: number, importMap: any, baseURI: string) {
     // (It doesn't matter if this messgage is sent more than once.)
     const worker = this.workers.get(workerId)!;
     const repoPort = (window as any).getRepoChannel();
-    const workerPoolPort = this.workerPool.port; // TODO: fix this (need to create a new MessageChannel, etc.)
+    const { port1: workerPoolPort, port2: workerPort } = new MessageChannel();
     const contactUrl = this.contactUrl;
-    worker.port.postMessage(
-      {
-        type: 'init',
-        repoPort,
-        workerPoolPort,
-        workerId,
-        contactUrl,
-        importMap,
-        baseURI,
-      } satisfies MessageToWorker,
-      [repoPort, workerPoolPort],
-    );
+    console.log('initializing worker', { workerId });
+    try {
+      worker.port.postMessage(
+        {
+          type: 'init',
+          repoPort,
+          workerPoolPort,
+          workerId,
+          contactUrl,
+          importMap,
+          baseURI,
+        } satisfies MessageToWorker,
+        [repoPort, workerPoolPort],
+      );
+    } catch (e1) {
+      console.error('Failed to initialize worker', { workerId, e: e1 });
+      throw e1;
+    }
+    console.log('telling worker pool about worker', { workerId });
+    try {
+      this.workerPool.port.postMessage(
+        {
+          type: 'listen to worker',
+          workerId,
+          workerPort,
+        } satisfies MessageToWorkerPool,
+        [workerPort],
+      );
+    } catch (e2) {
+      console.error('Failed to register worker with worker pool', { workerId, e: e2 });
+      throw e2;
+    }
   }
 
   joinTaskQueue(taskQueueUrl: AutomergeUrl) {
@@ -80,19 +100,27 @@ export class WorkerPoolProxy {
       return;
     }
 
-    // create it
+    // TODO: remove this once we have a doc w/ all the URLs that the worker pool can pay attention to
+    this.workerPool.port.postMessage({ type: 'join', taskQueueUrl } satisfies MessageToWorkerPool);
+
+    // Create a router (SharedWorker) for this task queue if our browser doesn't have one already.
+    // (If another window or tab already created one, we'll just get that one.)
     router = new TaskRouter({ name: `task-router-${taskQueueUrl}` });
     this.routers.set(taskQueueUrl, router);
 
-    // initialize it (doesn't matter if this message is sent more than once)
+    // Initialize the router -- it's OK even if the `new TaskRouter(...)` above didn't create a new one.
     const repoPort = (window as any).getRepoChannel();
     const contactUrl = this.contactUrl;
-    router.port.postMessage({
-      type: 'init',
-      repoPort,
-      contactUrl,
-      taskQueueUrl,
-    } satisfies MessageToRouter);
+    router.port.start();
+    router.port.postMessage(
+      {
+        type: 'init',
+        repoPort,
+        contactUrl,
+        taskQueueUrl,
+      } satisfies MessageToRouter,
+      [repoPort],
+    );
   }
 
   leaveTaskQueue(taskQueueUrl: AutomergeUrl) {
