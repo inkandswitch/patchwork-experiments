@@ -1,9 +1,7 @@
 import { AutomergeUrl, isValidAutomergeUrl, Repo } from '@automerge/automerge-repo/slim';
 
-// TODO: replace this with the real thing -- how do we get the account doc?
 export async function getSelfContactUrl(repo: Repo): Promise<AutomergeUrl | null> {
-  const accountDocUrl = localStorage.getItem('accountDocUrl');
-  console.log('accountDocUrl is', accountDocUrl);
+  const accountDocUrl = localStorage.getItem('tinyPatchworkAccountUrl');
   if (!isValidAutomergeUrl(accountDocUrl)) {
     console.log('account doc url invalid', accountDocUrl);
     return null;
