@@ -1,0 +1,40 @@
+@import "tailwindcss";
+@plugin "daisyui";
+
+/* Post-it style cards */
+.unconference .postit {
+  --postit-yellow: #fef08a;
+  --postit-pink: #fbcfe8;
+  --postit-blue: #bfdbfe;
+  --postit-green: #bbf7d0;
+  background: var(--postit-yellow);
+  box-shadow:
+    1px 1px 0 0 rgba(0 0 0 / 0.08),
+    2px 2px 4px rgba(0 0 0 / 0.12),
+    0 1px 0 0 rgba(255 255 255 / 0.5) inset;
+  border-radius: 2px;
+  border: none;
+  position: relative;
+}
+.unconference .postit::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 0 8px 8px;
+  border-color: transparent transparent rgba(0 0 0 / 0.06) transparent;
+  border-radius: 0 0 2px 0;
+  pointer-events: none;
+}
+.unconference .postit-tint-pink {
+  background: var(--postit-pink);
+}
+.unconference .postit-tint-blue {
+  background: var(--postit-blue);
+}
+.unconference .postit-tint-green {
+  background: var(--postit-green);
+}
