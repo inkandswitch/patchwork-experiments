@@ -20,6 +20,8 @@ export class TaskRunner {
 
   private workers: Worker[] = [];
   private contactUrl: AutomergeUrl | null = null;
+  private sharedWorker: SharedWorker | null = null;
+  private sharedWorkerPort: MessagePort | null = null;
 
   private constructor(
     private readonly repo: Repo,
@@ -52,6 +54,19 @@ export class TaskRunner {
   }
 
   private async initializeWorkers() {
+    // Check if SharedWorker is available (for tiny-patchwork)
+    // @ts-ignore - window.__sharedworker may exist
+    const existingSharedWorker = (window as any).__sharedworker as SharedWorker | undefined;
+
+    if (existingSharedWorker) {
+      // Workers will connect directly to the SharedWorker themselves
+      for (let i = 0; i < this.workerCount; i++) {
+        this.workers.push(this.createWorkerWithSharedWorker());
+      }
+      return;
+    }
+
+    // Fall back to ServiceWorker (for older setups)
     const serviceWorker = navigator.serviceWorker.controller;
     if (!serviceWorker) {
       console.warn('TaskRunner: No service worker available, workers cannot be initialized');
@@ -59,11 +74,33 @@ export class TaskRunner {
     }
 
     for (let i = 0; i < this.workerCount; i++) {
-      this.workers.push(this.createWorker(serviceWorker));
+      this.workers.push(this.createWorkerWithServiceWorker(serviceWorker));
     }
   }
 
-  private createWorker(serviceWorker: ServiceWorker): Worker {
+  private createWorkerWithSharedWorker(): Worker {
+    const { port1, port2 } = new MessageChannel();
+
+    // Send port1 to shared worker via its port
+    if (this.sharedWorkerPort) {
+      this.sharedWorkerPort.postMessage({ type: 'INIT' }, [port1]);
+    }
+
+    // Create and initialize autonomous worker
+    const worker = new Worker(new URL('./runnerWorker.js', import.meta.url), { type: 'module' });
+    worker.postMessage(
+      {
+        port: port2,
+        queueUrl: this.queueHandle.url,
+        contactUrl: this.contactUrl,
+      },
+      [port2]
+    );
+
+    return worker;
+  }
+
+  private createWorkerWithServiceWorker(serviceWorker: ServiceWorker): Worker {
     const { port1, port2 } = new MessageChannel();
 
     // Send port1 to service worker

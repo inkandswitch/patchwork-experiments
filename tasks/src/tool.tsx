@@ -1,25 +1,32 @@
 import React, { Suspense, useEffect, useState } from 'react';
-import { useRepo, useDocument, useDocHandle, RepoContext } from '@automerge/automerge-repo-react-hooks';
-import { RunInfo, Runner, Task, TaskQueue } from './datatype';
-import { TaskRunner } from './task-runner';
+import { useRepo, useDocument, useDocHandle } from '@automerge/automerge-repo-react-hooks';
 import { AutomergeUrl, DocHandle, Repo, updateText } from '@automerge/automerge-repo';
+import { Router, RunInfo, Worker as TaskWorker, Task, TaskQueue } from './datatype';
+import * as router from './router';
 import { createRoot } from 'react-dom/client';
+import { RepoContext } from '@automerge/automerge-repo-react-hooks';
 
-let runner: TaskRunner;
+const NUM_WORKERS = 2;
 
-async function startRunner(repo: Repo, queueId: AutomergeUrl, contactUrl: AutomergeUrl) {
-  runner = await TaskRunner.factory(repo).withQueue(queueId);
-  runner.setContactUrl(contactUrl);
-  await runner.start();
-  console.log('started runner!', runner);
-}
+const IRouter: React.FC<any> = ({ docUrl, isMine }: { docUrl: AutomergeUrl; isMine: boolean }) => {
+  const [doc] = useDocument<Router>(docUrl, { suspense: true });
+  return (
+    <div className="m-4">
+      {doc.contactUrl /* && <InlineContactAvatar url={doc.contactUrl} size={'default'} />*/} /{' '}
+      {doc.name}
+      {isMine ? ' (mine)' : ''}
+    </div>
+  );
+};
 
-function stopRunner() {
-  runner?.stop();
-}
+export const RouterComponent: React.FC<any> = (props) => (
+  <Suspense fallback="...">
+    <IRouter {...props} />
+  </Suspense>
+);
 
-const IRunner: React.FC<any> = ({ docUrl }: { docUrl: AutomergeUrl }) => {
-  const [doc] = useDocument<Runner>(docUrl, { suspense: true });
+const IWorker: React.FC<any> = ({ docUrl }: { docUrl: AutomergeUrl }) => {
+  const [doc] = useDocument<TaskWorker>(docUrl, { suspense: true });
   return (
     <div className="m-4">
       <div>
@@ -27,22 +34,17 @@ const IRunner: React.FC<any> = ({ docUrl }: { docUrl: AutomergeUrl }) => {
         {doc.name}
       </div>
       <div>
-        {doc.currentTask ? (
-          <TaskBrowserTool docUrl={doc.currentTask} />
-        ) : (
-          'idle'
-        )}
+        {doc.currentTask ? <TaskBrowserTool docUrl={doc.currentTask} docPath={[]} /> : 'idle'}
       </div>
     </div>
   );
 };
 
-const RunnerComponent: React.FC<any> = ({ docUrl }: { docUrl: AutomergeUrl }) => (
+export const WorkerComponent: React.FC<any> = (props) => (
   <Suspense fallback="...">
-    <IRunner docUrl={docUrl} />
+    <IWorker {...props} />
   </Suspense>
 );
-
 
 // TODO: element.repo is not ideal
 export const Tool = (handle: DocHandle<unknown>, element: HTMLElement) => {
@@ -51,7 +53,9 @@ export const Tool = (handle: DocHandle<unknown>, element: HTMLElement) => {
   root.render(
     <RepoContext.Provider value={repo}>
       <div className="flex flex-col items-center justify-center h-full">
-        <Suspense fallback="..."><ITaskQueueBrowserTool docUrl={handle.url} /></Suspense>
+        <Suspense fallback="...">
+          <ITaskQueueBrowserTool docUrl={handle.url} />
+        </Suspense>
       </div>
     </RepoContext.Provider>
   );
@@ -105,10 +109,14 @@ const ITaskBrowserTool: React.FC<any> = ({ docUrl }) => {
 const Run: React.FC<any> = ({ run }: { run: RunInfo<any> }) => {
   const { startTime, endTime, result, status } = run;
   const timeAgo = `${endTime - startTime}ms`;
+  const [doc] = useDocument<TaskWorker>(run.worker as AutomergeUrl, { suspense: true });
   return (
-    <span>
-      → {status === 'succeeded' ? result : '✗'} ({timeAgo})
-    </span>
+    <div>
+      <div>
+        {doc.contactUrl /*&& <InlineContactAvatar url={doc.contactUrl} size={'default'} />*/} /{' '}
+        {doc.name} → {status === 'succeeded' ? result : '✗'} ({timeAgo})
+      </div>
+    </div>
   );
 };
 
@@ -124,41 +132,51 @@ const ITaskQueueBrowserTool: React.FC<any> = ({ docUrl }) => {
 
   const handle = useDocHandle<TaskQueue>(docUrl, { suspense: true });
 
-  const [runners, setRunners] = useState({});
+  const [myRouterUrl, setMyRouterUrl] = useState<AutomergeUrl | null>(null);
+  const [myWorkers, setMyWorkers] = useState<Worker[]>([]);
+  const [workers, setWorkers] = useState<AutomergeUrl[]>([]);
 
   useEffect(() => {
     const messageHandler = (m: any) => {
-      setRunners((r) => ({ ...r, [m.message.runnerUrl]: Date.now() }));
+      if (m?.message?.workers) {
+        setWorkers(m.message.workers);
+      }
     };
     handle.on('ephemeral-message', messageHandler);
-    const intervalId = setInterval(() => {
-      if (!runner) {
-        return;
-      }
-    }, 3000);
     return () => {
-      clearInterval(intervalId);
       handle.off('ephemeral-message', messageHandler);
     };
   }, [handle]);
 
   // const account = useCurrentAccount();
   // const contactUrl = account?.contactHandle?.url;
-  
-  // everyone is pvh
-  const contactUrl = "automerge:2GNWv5e8GRirMDEff14LfQKCc9J6" as AutomergeUrl;
+
+  // everyone is pvh until grjte saves us
+  const contactUrl = 'automerge:2GNWv5e8GRirMDEff14LfQKCc9J6' as AutomergeUrl;
 
   useEffect(() => {
-    if (!contactUrl) return;
-    startRunner(repo as unknown as Repo, docUrl, contactUrl);
-    return stopRunner;
+    if (!contactUrl) {
+      return;
+    }
+
+    setMyRouterUrl(
+      router.start(
+        repo as unknown as Repo,
+        handle as unknown as DocHandle<TaskQueue>,
+        setWorkers,
+        contactUrl
+      )
+    );
+    setMyWorkers(startWorkers(handle as unknown as DocHandle<TaskQueue>, contactUrl));
+    return () => {
+      setMyRouterUrl(null);
+      router.stop();
+      for (const worker of myWorkers) {
+        worker.terminate();
+      }
+      setMyWorkers([]);
+    };
   }, [repo, docUrl, contactUrl]);
-
-  const [time, setTime] = useState(Date.now());
-  useEffect(() => {
-    const interval = setInterval(() => setTime(Date.now()), 1_000);
-    return () => clearInterval(interval);
-  }, []);
 
   return (
     <div className="task-browser h-full overflow-y-auto">
@@ -199,16 +217,22 @@ const ITaskQueueBrowserTool: React.FC<any> = ({ docUrl }) => {
             </button>
           </div>
         </div>
-        {runner ? (
+        {doc.router ? (
           <div className="mb-4">
-            <div className="text-2xl">Task Runners:</div>
-            {Object.entries(runners)
-              .filter(([, lastHeartbeat]: any) => time < lastHeartbeat + 5_000)
-              .map(([url]) => (
-                <RunnerComponent key={url} docUrl={url} />
-              ))}
+            <div className="text-2xl">Router:</div>
+            <RouterComponent
+              key={doc.router}
+              docUrl={doc.router}
+              isMine={doc.router === myRouterUrl}
+            />
           </div>
         ) : null}
+        <div className="mb-4">
+          <div className="text-2xl">Workers:</div>
+          {workers.map((url) => (
+            <WorkerComponent key={url} docUrl={url} />
+          ))}
+        </div>
         <div className="mb-4">
           <div className="text-2xl">{doc.pending.length} pending:</div>
           {renderTasks(doc.pending.toReversed())}
@@ -219,7 +243,6 @@ const ITaskQueueBrowserTool: React.FC<any> = ({ docUrl }) => {
         </div>
       </div>
     </div>
-    // </div>
   );
 
   function renderTasks(urls: AutomergeUrl[]) {
@@ -229,7 +252,7 @@ const ITaskQueueBrowserTool: React.FC<any> = ({ docUrl }) => {
       <ul>
         {urls.map((url) => (
           <li key={url}>
-            <TaskBrowserTool docUrl={url}/>
+            <TaskBrowserTool docUrl={url} docPath={[]} />
           </li>
         ))}
       </ul>
@@ -249,3 +272,59 @@ export const TaskQueueBrowserTool: React.FC<any> = (props) => (
     <ITaskQueueBrowserTool {...props} />
   </Suspense>
 );
+function startWorkers(queueHandle: DocHandle<TaskQueue>, contactUrl: AutomergeUrl): Worker[] {
+  // Check if SharedWorker is available (for tiny-patchwork)
+  // @ts-ignore - window.__sharedworker may exist
+  const existingSharedWorker = (window as any).__sharedworker as SharedWorker | undefined;
+
+  if (!existingSharedWorker) {
+    console.warn(
+      'no shared worker available (window.__sharedworker not found), workers cannot be initialized'
+    );
+    return [];
+  }
+
+  // Extract import map from the main thread
+  const importMapElement = document.querySelector('script[type="importmap"]');
+  let importMap = null;
+  if (importMapElement) {
+    try {
+      importMap = JSON.parse(importMapElement.textContent || '{}');
+    } catch (e) {
+      console.warn('Failed to parse import map:', e);
+    }
+  }
+
+  const workers: Worker[] = [];
+  for (let i = 0; i < NUM_WORKERS; i++) {
+    // Create a new SharedWorker connection for this worker
+    // This triggers the 'connect' event in the shared worker, which adds the port to the repo
+    // Construct URL relative to window.location since automerge-worker.ts is in the app, not in this package
+    const sharedWorkerUrl = new URL('./automerge-worker.ts', window.location.origin).href;
+    const workerSharedWorker = new SharedWorker(sharedWorkerUrl, {
+      type: 'module',
+      name: 'automerge-repo-shared-worker',
+    });
+    workerSharedWorker.port.start();
+
+    // Create and initialize autonomous worker
+    const worker = new Worker(new URL('./worker.js', import.meta.url), {
+      type: 'module',
+    });
+
+    // Send the SharedWorker port, queue URL, contact URL, and import map to the worker
+    worker.postMessage(
+      {
+        port: workerSharedWorker.port,
+        queueUrl: queueHandle.url,
+        contactUrl: contactUrl!,
+        importMap,
+        baseURI: document.baseURI,
+      },
+      [workerSharedWorker.port]
+    );
+    workers.push(worker);
+  }
+  return workers;
+}
+
