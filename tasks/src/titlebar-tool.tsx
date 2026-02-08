@@ -5,21 +5,13 @@ import { RepoContext, useDocument, useRepo } from '@automerge/automerge-repo-rea
 import { TaskQueue } from './datatype';
 import type { OpenDocumentEventDetail } from '@inkandswitch/patchwork-elements';
 import { WorkerPoolProxy } from './worker-pool-proxy';
-import { getSelfContactUrl } from './helpers';
+import { getTaskQueues } from './helpers';
 
-// TODO: load from the account document
-const TASK_QUEUE_URL: AutomergeUrl = 'automerge:4GWBHzg3fYXp338pErVYKkZPc4wE' as any;
-
-const TitlebarToolComponent: React.FC<{ element: HTMLElement; docUrl: AutomergeUrl }> = ({
-  element,
-  docUrl,
-}) => {
-  const repo = useRepo();
-
-  const [selfContactUrl, setSelfContactUrl] = useState<AutomergeUrl | null>(null);
-  useEffect(() => {
-    getSelfContactUrl(repo).then((url) => setSelfContactUrl(url));
-  }, [repo]);
+const TitlebarToolComponent: React.FC<{ element: HTMLElement }> = ({ element }) => {
+  const accountUrl = localStorage.getItem('tinyPatchworkAccountUrl') as AutomergeUrl;
+  const [accountDoc] = useDocument<any>(accountUrl, { suspense: true });
+  const selfContactUrl: AutomergeUrl | null = accountDoc.contactUrl;
+  const taskQueueUrls = getTaskQueues(accountDoc);
 
   const [workerPool, setWorkerPool] = useState<WorkerPoolProxy | null>(null);
   useEffect(() => {
@@ -36,25 +28,32 @@ const TitlebarToolComponent: React.FC<{ element: HTMLElement; docUrl: AutomergeU
 
       console.log('creating wpp');
       const wp = new WorkerPoolProxy(selfContactUrl, importMap as any, document.baseURI);
-      console.log('joining dummy task queue');
-      // TODO: join/leave task queues based on the WorkerPool Automerge document
-      // (see my plan in datatype.ts)
-      wp.joinTaskQueue(docUrl);
-
       console.log('#### worker pool', wp);
 
       setWorkerPool(wp);
     }
   }, [selfContactUrl]);
 
-  const [doc] = useDocument<TaskQueue>(docUrl, { suspense: true });
+  return (
+    <>
+      {Object.keys(taskQueueUrls).map((taskQueueUrl) => (
+        <TaskQueueComponent element={element} taskQueueUrl={taskQueueUrl as AutomergeUrl} />
+      ))}
+    </>
+  );
+};
 
+const TaskQueueComponent: React.FC<{ element: HTMLElement; taskQueueUrl: AutomergeUrl }> = ({
+  element,
+  taskQueueUrl,
+}) => {
+  const [doc] = useDocument<TaskQueue>(taskQueueUrl, { suspense: true });
   return (
     <div
       className="h-full flex items-center"
-      onClick={() => element.dispatchEvent(createOpenEvent({ url: docUrl }))}
+      onClick={() => element.dispatchEvent(createOpenEvent({ url: taskQueueUrl }))}
     >
-      <span>{doc.title ?? 'AAATQ'}</span>
+      <span>{doc.title ?? 'TQ'}</span>
       <span>{doc.pending.length}</span>/<span>{doc.done.length}</span>
     </div>
   );
@@ -65,7 +64,9 @@ export const TitlebarTool = (handle: DocHandle<unknown>, element: HTMLElement) =
   const root = createRoot(element);
   root.render(
     <RepoContext.Provider value={repo}>
-      <TitlebarToolComponent element={element} docUrl={TASK_QUEUE_URL} />
+      <>
+        <TitlebarToolComponent element={element} />
+      </>
     </RepoContext.Provider>,
   );
   return () => root.unmount();

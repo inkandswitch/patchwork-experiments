@@ -1,5 +1,7 @@
 import { AutomergeUrl, isValidAutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo/slim';
 
+export const TASK_QUEUE_URLS_FIELD_NAME = '__taskQueues__';
+
 // TODO: where's the type for account??
 export async function getAccountHandle(repo: Repo): Promise<DocHandle<any>> {
   const accountDocUrl = localStorage.getItem('tinyPatchworkAccountUrl');
@@ -20,4 +22,18 @@ export async function getAccountHandle(repo: Repo): Promise<DocHandle<any>> {
 export async function getSelfContactUrl(repo: Repo): Promise<AutomergeUrl> {
   const accountHandle = await getAccountHandle(repo);
   return accountHandle.doc().contactUrl;
+}
+
+export type TaskQueues = { [taskQueueUrl: AutomergeUrl]: true };
+
+export function getTaskQueues(account: any): TaskQueues {
+  return account[TASK_QUEUE_URLS_FIELD_NAME] ?? { 'automerge:4GWBHzg3fYXp338pErVYKkZPc4wE': true };
+}
+
+export function addTaskQueue(account: any, taskQueueUrl: AutomergeUrl) {
+  const taskQueues: TaskQueues | null = account[TASK_QUEUE_URLS_FIELD_NAME];
+  if (!taskQueues) {
+    account[TASK_QUEUE_URLS_FIELD_NAME] = [];
+  }
+  taskQueues![taskQueueUrl] = true;
 }

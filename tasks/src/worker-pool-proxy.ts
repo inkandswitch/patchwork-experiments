@@ -1,9 +1,12 @@
 import type { AutomergeUrl } from '@automerge/automerge-repo';
 import type { MessageToRouter, MessageToWorker, MessageToWorkerPool } from './protocol';
 
+import { MessageChannelNetworkAdapter, NetworkAdapter, Repo } from '@automerge/vanillajs';
 import WorkerPool from './worker-pool.ts?sharedworker';
 import TaskWorker from './worker.ts?sharedworker';
 import TaskRouter from './router.ts?sharedworker';
+import { getAccountHandle, getTaskQueues, TaskQueues } from './helpers';
+import { getRepo } from './webworker-lib';
 
 const NUM_WORKERS = 2;
 
@@ -19,10 +22,67 @@ export class WorkerPoolProxy {
   ) {
     this.workerPool = this.createWorkerPool();
     this.initializeWorkerPool();
-
     for (let workerId = 0; workerId < NUM_WORKERS; workerId++) {
       this.workers.set(workerId, this.createWorker(workerId));
       this.initializeWorker(workerId, importMap, baseURI);
+    }
+
+    this.initializeRouters();
+  }
+
+  private async initializeRouters() {
+    console.log('00000');
+    const repo = new Repo({
+      network: [new MessageChannelNetworkAdapter((window as any).getRepoChannel())],
+      peerId: `worker-pool-proxy-${Math.round(Math.random() * 10_000)}` as any,
+    });
+    console.log('aaaaa');
+    const accountHandle = await getAccountHandle(repo as any);
+    console.log('bbbbb');
+    accountHandle.addListener('change', (doc) => this.updateRouters(getTaskQueues(doc)));
+    console.log('ccccc');
+    this.updateRouters(getTaskQueues(accountHandle.doc()));
+    console.log('ddddd');
+  }
+
+  private async updateRouters(taskQueues: TaskQueues) {
+    // terminate routers for the task queues we're no longer interested in
+    for (const [taskQueueUrl, router] of this.routers.entries()) {
+      if (!taskQueues[taskQueueUrl as any]) {
+        this.routers.delete(taskQueueUrl);
+        router.port.postMessage({
+          type: 'terminate',
+        } satisfies MessageToRouter);
+      }
+    }
+
+    // add routers for the task queues we didn't already know about
+    for (const url of Object.keys(taskQueues)) {
+      const taskQueueUrl = url as AutomergeUrl;
+
+      this.workerPool.port.postMessage({
+        type: 'join',
+        taskQueueUrl,
+      } satisfies MessageToWorkerPool);
+
+      // Create a router (SharedWorker) for this task queue if our browser doesn't have one already.
+      // (If another window or tab already created one, we'll just get that one.)
+      const router = new TaskRouter({ name: `task-router-${taskQueueUrl}` });
+      this.routers.set(taskQueueUrl, router);
+
+      // Initialize the router -- this is OK even if the `new TaskRouter(...)` above didn't create a new one.
+      const repoPort = (window as any).getRepoChannel();
+      const contactUrl = this.contactUrl;
+      router.port.start();
+      router.port.postMessage(
+        {
+          type: 'init',
+          repoPort,
+          contactUrl,
+          taskQueueUrl,
+        } satisfies MessageToRouter,
+        [repoPort],
+      );
     }
   }
 
@@ -92,46 +152,5 @@ export class WorkerPoolProxy {
       console.error('Failed to register worker with worker pool', { workerId, e: e2 });
       throw e2;
     }
-  }
-
-  joinTaskQueue(taskQueueUrl: AutomergeUrl) {
-    let router = this.routers.get(taskQueueUrl);
-    if (router) {
-      return;
-    }
-
-    // TODO: remove this once we have a doc w/ all the URLs that the worker pool can pay attention to
-    this.workerPool.port.postMessage({ type: 'join', taskQueueUrl } satisfies MessageToWorkerPool);
-
-    // Create a router (SharedWorker) for this task queue if our browser doesn't have one already.
-    // (If another window or tab already created one, we'll just get that one.)
-    router = new TaskRouter({ name: `task-router-${taskQueueUrl}` });
-    this.routers.set(taskQueueUrl, router);
-
-    // Initialize the router -- it's OK even if the `new TaskRouter(...)` above didn't create a new one.
-    const repoPort = (window as any).getRepoChannel();
-    const contactUrl = this.contactUrl;
-    router.port.start();
-    router.port.postMessage(
-      {
-        type: 'init',
-        repoPort,
-        contactUrl,
-        taskQueueUrl,
-      } satisfies MessageToRouter,
-      [repoPort],
-    );
-  }
-
-  leaveTaskQueue(taskQueueUrl: AutomergeUrl) {
-    const router = this.routers.get(taskQueueUrl);
-    if (!router) {
-      return;
-    }
-
-    this.routers.delete(taskQueueUrl);
-    router.port.postMessage({
-      type: 'terminate',
-    } satisfies MessageToRouter);
   }
 }

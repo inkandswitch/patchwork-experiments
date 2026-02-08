@@ -4,6 +4,7 @@ import { useRepo, useDocument, useDocHandle } from '@automerge/automerge-repo-re
 import { AutomergeUrl, DocHandle, updateText } from '@automerge/automerge-repo';
 import { RepoContext } from '@automerge/automerge-repo-react-hooks';
 import { Router, RunInfo, Worker as TaskWorker, Task, TaskQueue } from './datatype';
+import { MessageToTaskQueueChannel } from './protocol';
 
 const IRouter: React.FC<any> = ({ docUrl, isMine }: { docUrl: AutomergeUrl; isMine: boolean }) => {
   const [doc] = useDocument<Router>(docUrl, { suspense: true });
@@ -25,13 +26,17 @@ export const RouterComponent: React.FC<any> = (props) => (
 const IWorker: React.FC<any> = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   const [doc] = useDocument<TaskWorker>(docUrl, { suspense: true });
   return (
-    <div className="m-4">
+    <div className="m-4 p-2">
       <div>
         {doc.contactUrl && <patchwork-view doc-url={doc.contactUrl} tool-id="contact-inline" />} /{' '}
         {doc.name}
       </div>
       <div>
-        {doc.currentTask ? <TaskBrowserTool docUrl={doc.currentTask} docPath={[]} /> : 'idle'}
+        {doc.currentTask ? (
+          <TaskBrowserTool docUrl={doc.currentTask.taskUrl} docPath={[]} />
+        ) : (
+          'idle'
+        )}
       </div>
     </div>
   );
@@ -132,8 +137,9 @@ const ITaskQueueBrowserTool: React.FC<any> = ({ docUrl }) => {
 
   useEffect(() => {
     const messageHandler = (m: any) => {
-      if (m?.message?.workers) {
-        setWorkers(m.message.workers);
+      const msg = m.message as MessageToTaskQueueChannel;
+      if (msg) {
+        setWorkers(msg.workerUrls);
       }
     };
     handle.on('ephemeral-message', messageHandler);
