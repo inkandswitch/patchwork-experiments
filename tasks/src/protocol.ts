@@ -12,7 +12,7 @@ export type MessageToWorkerPool =
       taskQueueUrl: AutomergeUrl;
     }
   | {
-      type: 'listen to worker';
+      type: 'add worker';
       workerId: number;
       workerUrl: AutomergeUrl;
     };

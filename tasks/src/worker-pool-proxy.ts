@@ -13,7 +13,7 @@ const NUM_WORKERS = 2;
 
 export class WorkerPoolProxy {
   private readonly workerPool: SharedWorker;
-  private readonly workers = new Map<number, SharedWorker>();
+  private readonly workers: SharedWorker[] = [];
   private readonly routers = new Map<AutomergeUrl, SharedWorker>();
   private _repo: Repo | null = null;
 
@@ -25,7 +25,7 @@ export class WorkerPoolProxy {
     this.workerPool = this.createWorkerPool();
     this.initializeWorkerPool();
     for (let workerId = 0; workerId < NUM_WORKERS; workerId++) {
-      this.workers.set(workerId, this.createWorker(workerId));
+      this.workers.push(this.createWorker(workerId));
       this.initializeWorker(workerId, importMap, baseURI);
     }
 
@@ -44,10 +44,10 @@ export class WorkerPoolProxy {
 
   private async initializeRouters() {
     const accountHandle = await getAccountHandle(this.repo as any);
-    accountHandle.addListener('change', (payload) =>
+    accountHandle.on('change', (payload) =>
       this.updateRouters(getTaskQueues(payload.handle.doc())),
     );
-    this.updateRouters(getTaskQueues(accountHandle.doc()));
+    await this.updateRouters(getTaskQueues(accountHandle.doc()));
   }
 
   private async updateRouters(taskQueues: TaskQueues) {
@@ -101,9 +101,9 @@ export class WorkerPoolProxy {
   }
 
   private initializeWorkerPool() {
-    // (It doesn't matter if this messgage is sent more than once.)
     const contactUrl = this.contactUrl;
     const repoPort = (window as any).getRepoChannel();
+    // (It doesn't matter if this messgage is sent more than once.)
     this.workerPool.port.postMessage(
       { type: 'init', contactUrl, repoPort: repoPort } satisfies MessageToWorkerPool,
       [repoPort],
@@ -121,23 +121,21 @@ export class WorkerPoolProxy {
 
   private initializeWorker(workerId: number, importMap: any, baseURI: string) {
     // (It doesn't matter if this messgage is sent more than once.)
-    const worker = this.workers.get(workerId)!;
+    const worker = this.workers[workerId];
     const repoPort = (window as any).getRepoChannel();
-    const contactUrl = this.contactUrl;
     const workerHandle = this.repo.create<Worker>({
       name: generateName().dashed,
-      contactUrl,
+      contactUrl: this.contactUrl,
       currentTask: null,
     });
     try {
-      console.log('initializing worker', { workerId });
       worker.port.postMessage(
         {
           type: 'init',
           repoPort,
           workerId,
           workerUrl: workerHandle.url,
-          contactUrl,
+          contactUrl: this.contactUrl,
           importMap,
           baseURI,
         } satisfies MessageToWorker,
@@ -148,9 +146,8 @@ export class WorkerPoolProxy {
       throw e1;
     }
     try {
-      console.log('telling worker pool about worker', { workerId });
       this.workerPool.port.postMessage({
-        type: 'listen to worker',
+        type: 'add worker',
         workerId,
         workerUrl: workerHandle.url,
       } satisfies MessageToWorkerPool);

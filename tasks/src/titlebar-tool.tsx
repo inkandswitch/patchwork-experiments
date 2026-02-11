@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AutomergeUrl, DocHandle } from '@automerge/automerge-repo';
-import { RepoContext, useDocument, useRepo } from '@automerge/automerge-repo-react-hooks';
+import { RepoContext, useDocument } from '@automerge/automerge-repo-react-hooks';
 import { TaskQueue } from './datatype';
 import type { OpenDocumentEventDetail } from '@inkandswitch/patchwork-elements';
 import { WorkerPoolProxy } from './worker-pool-proxy';
@@ -13,7 +13,7 @@ const TitlebarToolComponent: React.FC<{ element: HTMLElement }> = ({ element }) 
   const selfContactUrl: AutomergeUrl | null = accountDoc.contactUrl;
   const taskQueueUrls = getTaskQueues(accountDoc);
 
-  const [workerPool, setWorkerPool] = useState<WorkerPoolProxy | null>(null);
+  const [, setWorkerPool] = useState<WorkerPoolProxy | null>(null);
   useEffect(() => {
     if (selfContactUrl) {
       const importMapElement = document.querySelector('script[type="importmap"]');
@@ -26,18 +26,18 @@ const TitlebarToolComponent: React.FC<{ element: HTMLElement }> = ({ element }) 
         }
       }
 
-      console.log('creating wpp');
-      const wp = new WorkerPoolProxy(selfContactUrl, importMap as any, document.baseURI);
-      console.log('#### worker pool', wp);
-
-      setWorkerPool(wp);
+      setWorkerPool(new WorkerPoolProxy(selfContactUrl, importMap as any, document.baseURI));
     }
   }, [selfContactUrl]);
 
   return (
     <>
       {Object.keys(taskQueueUrls).map((taskQueueUrl) => (
-        <TaskQueueComponent element={element} taskQueueUrl={taskQueueUrl as AutomergeUrl} />
+        <TaskQueueComponent
+          key={taskQueueUrl}
+          element={element}
+          taskQueueUrl={taskQueueUrl as AutomergeUrl}
+        />
       ))}
     </>
   );
