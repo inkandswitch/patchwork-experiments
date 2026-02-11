@@ -1,12 +1,13 @@
 import type { AutomergeUrl } from '@automerge/automerge-repo';
 import type { MessageToRouter, MessageToWorker, MessageToWorkerPool } from './protocol';
 
-import { MessageChannelNetworkAdapter, NetworkAdapter, Repo } from '@automerge/vanillajs';
+import { MessageChannelNetworkAdapter, Repo } from '@automerge/vanillajs';
 import WorkerPool from './worker-pool.ts?sharedworker';
 import TaskWorker from './worker.ts?sharedworker';
 import TaskRouter from './router.ts?sharedworker';
+import type { Worker } from './datatype';
 import { getAccountHandle, getTaskQueues, TaskQueues } from './helpers';
-import { getRepo } from './webworker-lib';
+import generateName from 'boring-name-generator';
 
 const NUM_WORKERS = 2;
 
@@ -14,6 +15,7 @@ export class WorkerPoolProxy {
   private readonly workerPool: SharedWorker;
   private readonly workers = new Map<number, SharedWorker>();
   private readonly routers = new Map<AutomergeUrl, SharedWorker>();
+  private _repo: Repo | null = null;
 
   constructor(
     readonly contactUrl: AutomergeUrl,
@@ -30,19 +32,22 @@ export class WorkerPoolProxy {
     this.initializeRouters();
   }
 
+  get repo(): Repo {
+    if (!this._repo) {
+      this._repo = new Repo({
+        network: [new MessageChannelNetworkAdapter((window as any).getRepoChannel())],
+        peerId: `worker-pool-proxy-${Math.round(Math.random() * 10_000)}` as any,
+      });
+    }
+    return this._repo;
+  }
+
   private async initializeRouters() {
-    console.log('00000');
-    const repo = new Repo({
-      network: [new MessageChannelNetworkAdapter((window as any).getRepoChannel())],
-      peerId: `worker-pool-proxy-${Math.round(Math.random() * 10_000)}` as any,
-    });
-    console.log('aaaaa');
-    const accountHandle = await getAccountHandle(repo as any);
-    console.log('bbbbb');
-    accountHandle.addListener('change', (doc) => this.updateRouters(getTaskQueues(doc)));
-    console.log('ccccc');
+    const accountHandle = await getAccountHandle(this.repo as any);
+    accountHandle.addListener('change', (payload) =>
+      this.updateRouters(getTaskQueues(payload.handle.doc())),
+    );
     this.updateRouters(getTaskQueues(accountHandle.doc()));
-    console.log('ddddd');
   }
 
   private async updateRouters(taskQueues: TaskQueues) {
@@ -118,36 +123,37 @@ export class WorkerPoolProxy {
     // (It doesn't matter if this messgage is sent more than once.)
     const worker = this.workers.get(workerId)!;
     const repoPort = (window as any).getRepoChannel();
-    const { port1: workerPoolPort, port2: workerPort } = new MessageChannel();
     const contactUrl = this.contactUrl;
-    console.log('initializing worker', { workerId });
+    const workerHandle = this.repo.create<Worker>({
+      name: generateName().dashed,
+      contactUrl,
+      currentTask: null,
+    });
     try {
+      console.log('initializing worker', { workerId });
       worker.port.postMessage(
         {
           type: 'init',
           repoPort,
-          workerPoolPort,
           workerId,
+          workerUrl: workerHandle.url,
           contactUrl,
           importMap,
           baseURI,
         } satisfies MessageToWorker,
-        [repoPort, workerPoolPort],
+        [repoPort],
       );
     } catch (e1) {
-      console.error('Failed to initialize worker', { workerId, e: e1 });
+      console.error('failed to initialize worker', { workerId, e: e1 });
       throw e1;
     }
-    console.log('telling worker pool about worker', { workerId });
     try {
-      this.workerPool.port.postMessage(
-        {
-          type: 'listen to worker',
-          workerId,
-          workerPort,
-        } satisfies MessageToWorkerPool,
-        [workerPort],
-      );
+      console.log('telling worker pool about worker', { workerId });
+      this.workerPool.port.postMessage({
+        type: 'listen to worker',
+        workerId,
+        workerUrl: workerHandle.url,
+      } satisfies MessageToWorkerPool);
     } catch (e2) {
       console.error('Failed to register worker with worker pool', { workerId, e: e2 });
       throw e2;

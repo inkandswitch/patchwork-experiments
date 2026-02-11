@@ -14,15 +14,7 @@ export type MessageToWorkerPool =
   | {
       type: 'listen to worker';
       workerId: number;
-      workerPort: MessagePort;
-    }
-  // sent by workers
-  // TODO: consider having the worker pool subscribe to changes in the worker docs, then this is not needed
-  | {
-      type: 'worker update';
-      workerId: number;
       workerUrl: AutomergeUrl;
-      currentTask: { taskUrl: AutomergeUrl; taskQueueUrl: AutomergeUrl } | null;
     };
 
 export type MessageToRouter =
@@ -58,8 +50,8 @@ export type MessageToWorker =
   {
     type: 'init';
     repoPort: MessagePort;
-    workerPoolPort: MessagePort;
     workerId: number;
+    workerUrl: AutomergeUrl;
     contactUrl: AutomergeUrl;
     importMap: any;
     baseURI: string;
