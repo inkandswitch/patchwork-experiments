@@ -31,7 +31,7 @@ const TitlebarToolComponent: React.FC<{ element: HTMLElement }> = ({ element }) 
   }, [selfContactUrl]);
 
   return (
-    <>
+    <div style={{ display: 'flex', gap: '0.25em', alignItems: 'center', height: '100%' }}>
       {Object.keys(taskQueueUrls).map((taskQueueUrl) => (
         <TaskQueueComponent
           key={taskQueueUrl}
@@ -39,7 +39,7 @@ const TitlebarToolComponent: React.FC<{ element: HTMLElement }> = ({ element }) 
           taskQueueUrl={taskQueueUrl as AutomergeUrl}
         />
       ))}
-    </>
+    </div>
   );
 };
 
