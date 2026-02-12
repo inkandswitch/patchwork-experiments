@@ -25,9 +25,9 @@ type SpatialFolderDoc = FolderDoc & {
 // ---- Constants --------------------------------------------------------------
 
 const GRID_COLS = 3;
-const DEFAULT_W = 400;
-const DEFAULT_H = 300;
-const GAP = 40;
+const DEFAULT_W = 640;
+const DEFAULT_H = 480;
+const GAP = 60;
 
 const customShapeUtils = [PatchworkDocShapeUtil];
 
@@ -479,6 +479,7 @@ function reconcilePatchworkDocShapes(editor: Editor, folderDocs: DocLink[]) {
         docUrl: docLink.url,
         docName: docLink.name,
         docType: docLink.type,
+        toolId: '',
       },
     } as any);
   }
