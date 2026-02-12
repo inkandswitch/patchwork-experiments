@@ -1,4 +1,5 @@
-@import url("tldraw/tldraw.css");
+@import "tailwindcss";
+@import "tldraw/tldraw.css";
 
 .tlui-layout {
   padding: 0px;

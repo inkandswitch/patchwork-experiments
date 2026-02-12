@@ -1,5 +1,5 @@
 import type { AutomergeUrl } from "@automerge/automerge-repo";
-import { useDocHandle } from "@automerge/react";
+import { useDocHandle } from "@automerge/automerge-repo-react-hooks";
 import { Tldraw, useEditor } from "tldraw";
 import { useAutomergeStore } from "./automerge-tldraw/useAutomergeStore.ts";
 import type { TLDrawDoc } from "./datatype.ts";
@@ -21,7 +21,7 @@ export function TldrawTool({ docUrl }: { docUrl: AutomergeUrl }) {
   });
 
   return (
-    <Tldraw inferDarkMode autoFocus store={store} shapeUtils={shapeUtils} tools={tools} overrides={uiOverrides} components={components}>
+    <Tldraw inferDarkMode autoFocus store={store} shapeUtils={shapeUtils} tools={tools} overrides={uiOverrides} components={components} licenseKey={import.meta.env.VITE_TLDRAW_LICENSE_KEY}>
       <TldrawInner docUrl={docUrl} />
     </Tldraw>
   );

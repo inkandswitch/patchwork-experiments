@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BaseBoxShapeUtil, HTMLContainer, type RecordProps, Rectangle2d, T, type TLResizeInfo, type TLShape, resizeBox, type Editor } from "tldraw";
-import { useDocHandle } from "@automerge/react";
+import { useDocHandle, useDocument } from "@automerge/automerge-repo-react-hooks";
+import { type AutomergeUrl } from "@automerge/automerge-repo";
 import { getSupportedToolsForType } from "@inkandswitch/patchwork-plugins";
 import type { HasPatchworkMetadata } from "@inkandswitch/patchwork-filesystem";
 import { parseEmbedUrl } from "./parseEmbedUrl";
 import "@inkandswitch/patchwork-elements";
+import { getDatatypeById } from "../local-modules";
 
 const EMBED_TYPE = "patchwork-embed";
-const EMBED_BG = "var(--color-background)";
 
 declare module "tldraw" {
   export interface TLGlobalShapePropsMap {
@@ -88,13 +89,12 @@ export class EmbedShapeUtil extends BaseBoxShapeUtil<IEmbedShape> {
           height: shape.props.h,
           minWidth: shape.props.w,
           minHeight: shape.props.h,
-          overflow: "hidden",
-          position: "relative",
           pointerEvents: "all",
-          backgroundColor: EMBED_BG,
         }}
       >
-        <EmbedContent shape={shape} util={this} />
+        <div className="w-full h-full overflow-hidden relative border border-gray-300 rounded bg-white">
+          <EmbedContent shape={shape} util={this} />
+        </div>
       </HTMLContainer>
     );
   }
@@ -117,19 +117,16 @@ function EmbedContent({ shape, util }: { shape: IEmbedShape; util: EmbedShapeUti
 
   return (
     <div
-      style={{
-        width: "100%",
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        position: "relative",
-        backgroundColor: EMBED_BG,
+      className="w-full h-full flex flex-col relative bg-white"
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        e.preventDefault();
       }}
     >
       <EmbedHeader
         shape={shape}
         editor={editor}
-        docUrl={docUrl}
+        docUrl={docUrl as AutomergeUrl}
         type={type}
         effectiveToolId={effectiveToolId}
         onSelectTool={(id) => {
@@ -145,13 +142,7 @@ function EmbedContent({ shape, util }: { shape: IEmbedShape; util: EmbedShapeUti
         }}
       />
       {effectiveToolId && (
-        <div
-          style={{
-            flex: 1,
-            minHeight: 0,
-            pointerEvents: "all",
-          }}
-        >
+        <div className="flex-1 min-h-0 pointer-events-auto">
           {/* @ts-expect-error Custom element from patchwork-elements */}
           <patchwork-view doc-url={docUrl} tool-id={effectiveToolId} style={{ width: "100%", height: "100%", display: "block" }} />
         </div>
@@ -160,8 +151,13 @@ function EmbedContent({ shape, util }: { shape: IEmbedShape; util: EmbedShapeUti
   );
 }
 
-function EmbedHeader({ shape, editor, docUrl, type, effectiveToolId, onSelectTool }: { shape: IEmbedShape; editor: Editor; docUrl: string; type?: string; effectiveToolId: string | null; onSelectTool: (id: string) => void }) {
-  const dragRef = useRef<{ startX: number; startY: number; shapeX: number; shapeY: number } | null>(null);
+function EmbedHeader({ shape, editor, docUrl, type, effectiveToolId, onSelectTool }: { shape: IEmbedShape; editor: Editor; docUrl: AutomergeUrl; type?: string; effectiveToolId: string | null; onSelectTool: (id: string) => void }) {
+  const dragRef = useRef<{
+    startX: number;
+    startY: number;
+    shapeX: number;
+    shapeY: number;
+  } | null>(null);
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
@@ -206,44 +202,43 @@ function EmbedHeader({ shape, editor, docUrl, type, effectiveToolId, onSelectToo
   }, []);
 
   return (
-    <div
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerLeave={handlePointerUp}
-      style={{
-        padding: "6px 8px",
-        borderBottom: "1px solid var(--color-text-3)",
-        cursor: "grab",
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        flexShrink: 0,
-        backgroundColor: "var(--color-muted-1)",
-      }}
-    >
-      {!effectiveToolId ? <ToolPickerDropdown docUrl={docUrl} type={type} onSelect={onSelectTool} /> : <ToolPickerDropdown docUrl={docUrl} type={type} onSelect={onSelectTool} value={effectiveToolId} />}
+    <div onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp} className="px-2 py-1.5 border-b border-gray-200 cursor-grab flex items-center gap-2 shrink-0 bg-gray-50">
+      <DocTitle docUrl={docUrl} type={type} />
+      <div className="flex-1 min-w-0"></div>
+      <ToolPickerDropdown docUrl={docUrl} type={type} onSelect={onSelectTool} value={effectiveToolId ?? undefined} />
     </div>
   );
 }
 
+function DocTitle({ docUrl, type }: { docUrl: AutomergeUrl; type?: string }) {
+  const [doc] = useDocument<HasPatchworkMetadata>(docUrl, { suspense: true });
+  const [title, setTitle] = useState<string>("");
+
+  useEffect(() => {
+    if (!doc) return;
+
+    const docType = type ?? doc["@patchwork"]?.type;
+    if (!docType) return;
+
+    // Use local-modules getDatatypeById for registry lookup
+    // eslint-disable-next-line import/no-relative-packages
+    // (If not already imported, at the top: import { getDatatypeById } from "@tool-sketch/src/local-modules";)
+    // Here, we use dynamic import if not statically available, adapt as needed for your codebase.
+
+    const plugin = getDatatypeById(docType) as any;
+    if (plugin?.module?.getTitle) {
+      setTitle(plugin.module.getTitle(doc));
+    }
+  }, [doc, type]);
+
+  if (!title) return "Untitled";
+  return <span className="text-xs font-medium text-gray-700 truncate">{title}</span>;
+}
+
 function EmptyEmbed({ w, h }: { w: number; h: number }) {
   return (
-    <div
-      style={{
-        width: w,
-        height: h,
-        border: "2px dashed var(--color-text-3)",
-        borderRadius: 4,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        flexDirection: "column",
-        gap: 8,
-      }}
-    >
-      <span style={{ fontSize: 12, color: "var(--color-text-3)" }}>Double click to add embed URL</span>
-      <span style={{ fontSize: 10, color: "var(--color-text-2)" }}>Examples: automerge:xxx, or full patchwork URL</span>
+    <div className="flex items-center justify-center flex-col gap-2" style={{ width: w, height: h }}>
+      <span className="text-xs text-gray-400">Double click to add embed URL</span>
     </div>
   );
 }
@@ -271,39 +266,43 @@ function ToolPickerDropdown({ docUrl, type, onSelect, value }: { docUrl: string;
     });
   }, [handle, type]);
 
+  const autoSelectedRef = useRef(false);
+
   if (loading || !docType) {
-    return <span style={{ fontSize: 12, color: "var(--color-text-3)" }}>{loading ? "Loading..." : "Unknown document type"}</span>;
+    return <span className="text-xs text-gray-400">{loading ? "Loading..." : "Unknown document type"}</span>;
   }
 
-  const tools = getSupportedToolsForType(docType);
+  const tools = getSupportedToolsForType(docType).filter((t) => !t.unlisted);
+
   if (tools.length === 0) {
-    return <span style={{ fontSize: 12, color: "var(--color-text-3)" }}>No tools for {docType}</span>;
+    return <span className="text-xs text-gray-400">No tools for {docType}</span>;
   }
+
+  return <ToolSelect tools={tools} value={value} onSelect={onSelect} autoSelectedRef={autoSelectedRef} />;
+}
+
+function ToolSelect({ tools, value, onSelect, autoSelectedRef }: { tools: { id: string; name: string }[]; value?: string; onSelect: (toolId: string) => void; autoSelectedRef: React.MutableRefObject<boolean> }) {
+  useEffect(() => {
+    if (!autoSelectedRef.current && !value && tools.length > 0) {
+      autoSelectedRef.current = true;
+      onSelect(tools[0].id);
+    }
+  }, [tools, value, onSelect, autoSelectedRef]);
 
   if (tools.length === 1) {
-    return <SingleToolPicker toolId={tools[0].id} name={tools[0].name} onSelect={onSelect} />;
+    return <span className="text-xs text-gray-500">{tools[0].name}</span>;
   }
 
   return (
     <select
-      value={value ?? ""}
+      value={value ?? tools[0]?.id ?? ""}
       onChange={(e) => {
         const id = e.target.value;
         if (id) onSelect(id);
       }}
       onPointerDown={(e) => e.stopPropagation()}
-      style={{
-        padding: "4px 8px",
-        fontSize: 12,
-        border: "1px solid var(--color-text-3)",
-        borderRadius: 4,
-        background: "var(--color-background)",
-        cursor: "pointer",
-        flex: 1,
-        minWidth: 0,
-      }}
+      className="px-2 py-1 text-xs border border-gray-300 rounded bg-white cursor-pointer flex-1 min-w-0 w-fit"
     >
-      <option value="">Choose tool...</option>
       {tools.map((tool) => (
         <option key={tool.id} value={tool.id}>
           {tool.name}
@@ -311,16 +310,4 @@ function ToolPickerDropdown({ docUrl, type, onSelect, value }: { docUrl: string;
       ))}
     </select>
   );
-}
-
-function SingleToolPicker({ toolId, name, onSelect }: { toolId: string; name: string; onSelect: (id: string) => void }) {
-  const calledRef = useRef(false);
-  useEffect(() => {
-    if (!calledRef.current) {
-      calledRef.current = true;
-      onSelect(toolId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toolId]);
-  return <span style={{ fontSize: 12, color: "var(--color-text-3)" }}>Loading {name}...</span>;
 }
