@@ -10,6 +10,10 @@ export default defineConfig({
   base: './',
   plugins: [topLevelAwait(), wasm(), react(), cssInjectedByJsPlugin()],
 
+  define: {
+    'process.env.NODE_ENV': JSON.stringify('development'),
+  },
+
   build: {
     rollupOptions: {
       external,

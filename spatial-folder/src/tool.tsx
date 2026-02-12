@@ -1,23 +1,28 @@
-import { Tldraw, Editor, createShapeId, TLShapeId, TLUiComponents } from 'tldraw';
+import { Tldraw, Editor, createShapeId, TLShapeId, TLUiComponents, TLRecord } from 'tldraw';
 import 'tldraw/tldraw.css';
 import { DocHandle } from '@automerge/automerge-repo';
 import { useDocument, RepoContext } from '@automerge/automerge-repo-react-hooks';
 import { createRoot } from 'react-dom/client';
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 import { FolderDoc, DocLink } from '@inkandswitch/patchwork-filesystem';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import { PatchworkDocShapeUtil, PATCHWORK_DOC_SHAPE_TYPE } from './PatchworkDocShape';
 import '@inkandswitch/patchwork-elements';
 
-// ---- Types ----------------------------------------------------------------
+// ---- Logging ----------------------------------------------------------------
+
+const LOG = '[spatial-folder]';
+
+// ---- Types ------------------------------------------------------------------
 
 type LayoutEntry = { x: number; y: number; w: number; h: number };
 
 type SpatialFolderDoc = FolderDoc & {
-  layout?: { [docUrl: string]: LayoutEntry };
+  /** Every document-scope tldraw record, keyed by record id, stored as JSON. */
+  tldraw?: { [recordId: string]: string };
 };
 
-// ---- Constants -------------------------------------------------------------
+// ---- Constants --------------------------------------------------------------
 
 const GRID_COLS = 3;
 const DEFAULT_W = 400;
@@ -26,40 +31,24 @@ const GAP = 40;
 
 const customShapeUtils = [PatchworkDocShapeUtil];
 
-// Hide the page menu so users stay on a single page, but keep everything else.
+// Keep everything except the page picker.
 const uiComponents: TLUiComponents = {
   PageMenu: null,
 };
 
-// ---- Helpers ---------------------------------------------------------------
+// ---- Helpers ----------------------------------------------------------------
 
 function makeShapeId(docUrl: string): TLShapeId {
   return createShapeId(docUrl.replace(/[^a-zA-Z0-9]/g, '_'));
 }
 
-function defaultLayout(index: number): LayoutEntry {
+function defaultPosition(index: number) {
   const col = index % GRID_COLS;
   const row = Math.floor(index / GRID_COLS);
-  return {
-    x: col * (DEFAULT_W + GAP),
-    y: row * (DEFAULT_H + GAP),
-    w: DEFAULT_W,
-    h: DEFAULT_H,
-  };
+  return { x: col * (DEFAULT_W + GAP), y: row * (DEFAULT_H + GAP) };
 }
 
-/** Return the set of docUrls that already have a patchwork-doc shape on the current page. */
-function getExistingDocUrls(editor: Editor): Set<string> {
-  const urls = new Set<string>();
-  for (const shape of editor.getCurrentPageShapes()) {
-    if (shape.type === PATCHWORK_DOC_SHAPE_TYPE) {
-      urls.add((shape as any).props.docUrl as string);
-    }
-  }
-  return urls;
-}
-
-// ---- Tool entry point ------------------------------------------------------
+// ---- Tool entry point -------------------------------------------------------
 
 export const SpatialFolderTool: ToolRender = (handle, element) => {
   const repo = element.repo;
@@ -69,274 +58,438 @@ export const SpatialFolderTool: ToolRender = (handle, element) => {
       <SpatialFolderCanvas handle={handle as DocHandle<SpatialFolderDoc>} />
     </RepoContext.Provider>,
   );
-  return () => root.unmount();
+  return () => {
+    console.log(LOG, 'tool unmounting');
+    root.unmount();
+  };
 };
 
-// ---- React component -------------------------------------------------------
+// ---- React component --------------------------------------------------------
 
 function SpatialFolderCanvas({ handle }: { handle: DocHandle<SpatialFolderDoc> }) {
+  // useDocument is ONLY used to derive the folder-doc list key and for
+  // the loading overlay.  We never pass the reactive `doc` into any
+  // tldraw-touching code-path — that caused the previous unmount/flicker bug.
   const [doc] = useDocument<SpatialFolderDoc>(handle.url);
-  const [editor, setEditor] = useState<Editor | null>(null);
-  const hasZoomedRef = useRef(false);
 
-  // Track whether *we* are currently writing layout back so we can skip the
-  // resulting automerge change echo when it flows back through useDocument.
+  const editorRef = useRef<Editor | null>(null);
+  const initializedRef = useRef(false);
+  const cleanupFnsRef = useRef<(() => void)[]>([]);
+
+  // Guards to break the tldraw ↔ automerge feedback loop.
+  const isSyncingToTldrawRef = useRef(false);
   const isSyncingToAutomergeRef = useRef(false);
 
-  // A stable key that only changes when the *list* of doc urls/names changes
-  // (not on every layout position update). This keeps the shape-sync effect
-  // from running more often than necessary.
+  // ---- Tldraw mount callback (stable reference, never changes) ----
+  const handleMountRef = useRef((editor: Editor) => {
+    console.log(LOG, 'tldraw editor mounted, waiting for doc…');
+    editorRef.current = editor;
+
+    handle.whenReady().then(() => {
+      if (initializedRef.current) {
+        console.log(LOG, 'doc ready but already initialized — skipping');
+        return;
+      }
+      initializedRef.current = true;
+      console.log(LOG, 'doc ready — running initializeSync');
+      initializeSync(editor, handle, isSyncingToTldrawRef, isSyncingToAutomergeRef, cleanupFnsRef);
+    });
+  });
+
+  // ---- Folder-doc-list reconciliation (add / remove patchwork-doc shapes) ---
   const docUrlsKey = useMemo(
     () => (doc?.docs ?? []).map((d) => `${d.url}|${d.name}|${d.type}`).join('\n'),
     [doc?.docs],
   );
 
-  // Keep a snapshot of docs for the effects below so they can close over a
-  // stable reference that matches the docUrlsKey they were triggered by.
-  const docsRef = useRef<DocLink[]>([]);
   useEffect(() => {
-    docsRef.current = doc?.docs ?? [];
-  }, [docUrlsKey]);
+    const editor = editorRef.current;
+    if (!editor || !initializedRef.current) return;
 
-  // ------- Initialise layout entries for docs that don't have one yet -------
+    const currentDoc = handle.docSync?.() ?? (handle as any).doc?.();
+    if (!currentDoc?.docs) {
+      console.log(LOG, 'reconcile effect: no doc yet');
+      return;
+    }
 
-  useEffect(() => {
-    const docs = docsRef.current;
-    if (docs.length === 0) return;
-
-    const current = handle.docSync();
-    if (!current) return;
-
-    const layout = current.layout ?? {};
-    const missingUrls = docs.filter((d) => !layout[d.url]);
-
-    if (missingUrls.length === 0) return;
-
-    handle.change((d) => {
-      if (!d.layout) {
-        (d as any).layout = {};
-      }
-      const existingCount = Object.keys(d.layout!).length;
-      let nextIdx = existingCount;
-      for (const link of missingUrls) {
-        if (!d.layout![link.url]) {
-          d.layout![link.url] = defaultLayout(nextIdx);
-          nextIdx++;
-        }
-      }
-    });
+    console.log(
+      LOG,
+      'folder doc list changed (',
+      currentDoc.docs.length,
+      'docs) — reconciling patchwork-doc shapes',
+    );
+    reconcilePatchworkDocShapes(editor, currentDoc.docs);
   }, [docUrlsKey, handle]);
 
-  // ------- Sync: automerge doc → tldraw shapes ------------------------------
-  //
-  // Creates shapes for new docs and removes shapes for deleted docs.
-  // Position data flows automerge → tldraw **only on initial creation**; after
-  // that tldraw is the source of truth for positions and writes back.
-  //
-  // IMPORTANT: this effect intentionally does NOT depend on doc.layout so that
-  // every layout write-back from tldraw doesn't re-trigger the entire shape
-  // reconciliation (which was causing the flickering).
-
+  // ---- Cleanup on unmount ---------------------------------------------------
   useEffect(() => {
-    if (!editor) return;
-
-    const docs = docsRef.current;
-    if (docs.length === 0) return;
-
-    // Read layout from handle synchronously — NOT from the reactive `doc`
-    // which would force this effect to re-run on every layout change.
-    const layout = handle.docSync()?.layout ?? {};
-
-    const existingUrls = getExistingDocUrls(editor);
-    const folderUrls = new Set<string>();
-
-    for (let i = 0; i < docs.length; i++) {
-      const docLink = docs[i];
-      folderUrls.add(docLink.url);
-
-      if (existingUrls.has(docLink.url)) {
-        // Shape already exists – update the name / type badge if it changed.
-        const shapeId = makeShapeId(docLink.url);
-        const existing = editor.getShape(shapeId) as any;
-        if (
-          existing &&
-          (existing.props.docName !== docLink.name || existing.props.docType !== docLink.type)
-        ) {
-          editor.updateShape({
-            id: shapeId,
-            type: PATCHWORK_DOC_SHAPE_TYPE,
-            props: {
-              docName: docLink.name,
-              docType: docLink.type,
-            },
-          } as any);
-        }
-      } else {
-        // New doc – create a shape at the stored (or default) position.
-        const pos = layout[docLink.url] ?? defaultLayout(i);
-        editor.createShape({
-          id: makeShapeId(docLink.url),
-          type: PATCHWORK_DOC_SHAPE_TYPE,
-          x: pos.x,
-          y: pos.y,
-          rotation: 0,
-          props: {
-            w: pos.w,
-            h: pos.h,
-            docUrl: docLink.url,
-            docName: docLink.name,
-            docType: docLink.type,
-          },
-        } as any);
-      }
-    }
-
-    // Remove patchwork-doc shapes whose docs were removed from the folder.
-    for (const url of existingUrls) {
-      if (!folderUrls.has(url)) {
-        const id = makeShapeId(url);
-        if (editor.getShape(id)) {
-          editor.deleteShapes([id]);
-        }
-      }
-    }
-
-    // Zoom to fit all shapes on first meaningful load.
-    if (!hasZoomedRef.current && docs.length > 0) {
-      hasZoomedRef.current = true;
-      requestAnimationFrame(() => {
+    return () => {
+      console.log(LOG, 'component unmounting — cleaning up', cleanupFnsRef.current.length, 'fns');
+      for (const fn of cleanupFnsRef.current) {
         try {
-          editor.zoomToFit({ animation: { duration: 300 } });
-        } catch {
-          // editor might have been disposed
+          fn();
+        } catch (e) {
+          console.warn(LOG, 'cleanup error', e);
         }
-      });
-    }
-  }, [editor, docUrlsKey, handle]);
+      }
+      cleanupFnsRef.current = [];
+    };
+  }, []);
 
-  // ------- Re-create patchwork-doc shapes if user deletes them --------------
-  //
-  // The user can freely create/delete their own drawings, text, arrows etc.
-  // but patchwork-doc shapes represent the folder contents and should persist.
-  // If the user deletes one we immediately recreate it.
-
-  useEffect(() => {
-    if (!editor) return;
-
-    const unsub = editor.store.listen(
-      ({ changes }) => {
-        const toRecreate: any[] = [];
-
-        for (const rec of Object.values(changes.removed)) {
-          const r = rec as any;
-          if (r.typeName === 'shape' && r.type === PATCHWORK_DOC_SHAPE_TYPE && r.props?.docUrl) {
-            toRecreate.push(r);
-          }
-        }
-
-        if (toRecreate.length === 0) return;
-
-        // Re-create them in the next microtask so we don't mutate mid-listener.
-        queueMicrotask(() => {
-          for (const r of toRecreate) {
-            // Only recreate if the doc is still in the folder.
-            const current = handle.docSync();
-            const stillInFolder = current?.docs?.some((d: DocLink) => d.url === r.props.docUrl);
-            if (!stillInFolder) continue;
-
-            editor.createShape({
-              id: r.id,
-              type: PATCHWORK_DOC_SHAPE_TYPE,
-              x: r.x,
-              y: r.y,
-              rotation: 0,
-              props: r.props,
-            } as any);
-          }
-        });
-      },
-      { source: 'user', scope: 'document' },
-    );
-
-    return unsub;
-  }, [editor, handle]);
-
-  // ------- Sync: tldraw user changes → automerge layout ---------------------
-
-  useEffect(() => {
-    if (!editor) return;
-
-    const unsub = editor.store.listen(
-      ({ changes }) => {
-        const updates: Record<string, LayoutEntry> = {};
-
-        // Process updated shapes — only patchwork-doc shapes write layout back.
-        for (const [, [, after]] of Object.entries(changes.updated)) {
-          const rec = after as any;
-          if (
-            rec.typeName === 'shape' &&
-            rec.type === PATCHWORK_DOC_SHAPE_TYPE &&
-            rec.props?.docUrl
-          ) {
-            updates[rec.props.docUrl] = {
-              x: rec.x,
-              y: rec.y,
-              w: rec.props.w,
-              h: rec.props.h,
-            };
-          }
-        }
-
-        if (Object.keys(updates).length === 0) return;
-
-        isSyncingToAutomergeRef.current = true;
-        handle.change((d) => {
-          if (!d.layout) {
-            (d as any).layout = {};
-          }
-          for (const [url, entry] of Object.entries(updates)) {
-            // Write each property individually so automerge can diff cleanly
-            // against concurrent edits.
-            if (!d.layout![url]) {
-              d.layout![url] = { x: 0, y: 0, w: DEFAULT_W, h: DEFAULT_H };
-            }
-            d.layout![url].x = entry.x;
-            d.layout![url].y = entry.y;
-            d.layout![url].w = entry.w;
-            d.layout![url].h = entry.h;
-          }
-        });
-        isSyncingToAutomergeRef.current = false;
-      },
-      { source: 'user', scope: 'document' },
-    );
-
-    return unsub;
-  }, [editor, handle]);
-
-  // ------- Render -----------------------------------------------------------
-
-  if (!doc) {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: '100%',
-          height: '100%',
-          fontFamily: 'system-ui, -apple-system, sans-serif',
-          color: '#888',
-        }}
-      >
-        Loading…
-      </div>
-    );
-  }
+  // ---- Render ---------------------------------------------------------------
+  // IMPORTANT: <Tldraw> is ALWAYS rendered.  We never conditionally
+  // switch it out for a loading indicator — that would destroy the
+  // editor instance and all shapes.  Instead we overlay a translucent
+  // loading screen until the doc arrives.
 
   return (
-    <div style={{ width: '100%', height: '100%' }}>
-      <Tldraw shapeUtils={customShapeUtils} onMount={setEditor} components={uiComponents} />
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      <Tldraw
+        shapeUtils={customShapeUtils}
+        onMount={handleMountRef.current}
+        components={uiComponents}
+      />
+      {!doc && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(255,255,255,0.85)',
+            fontFamily: 'system-ui, -apple-system, sans-serif',
+            color: '#888',
+            fontSize: '16px',
+            zIndex: 9999,
+          }}
+        >
+          Loading…
+        </div>
+      )}
     </div>
   );
+}
+
+// =============================================================================
+//  initializeSync — called exactly once when editor + doc are both ready
+// =============================================================================
+
+function initializeSync(
+  editor: Editor,
+  handle: DocHandle<SpatialFolderDoc>,
+  isSyncingToTldrawRef: React.MutableRefObject<boolean>,
+  isSyncingToAutomergeRef: React.MutableRefObject<boolean>,
+  cleanupFnsRef: React.MutableRefObject<(() => void)[]>,
+) {
+  const currentDoc = handle.docSync?.() ?? (handle as any).doc?.();
+  if (!currentDoc) {
+    console.error(LOG, 'initializeSync called but docSync() returned null!');
+    return;
+  }
+
+  const folderDocs: DocLink[] = currentDoc.docs ?? [];
+  const stored: Record<string, string> = currentDoc.tldraw ?? {};
+
+  console.log(
+    LOG,
+    'initializeSync',
+    '| folder docs:',
+    folderDocs.length,
+    '| stored tldraw records:',
+    Object.keys(stored).length,
+  );
+
+  // ------------------------------------------------------------------
+  // 1.  Set up tldraw → automerge listener FIRST so that shapes created
+  //     by reconcile (step 3) get persisted.
+  // ------------------------------------------------------------------
+
+  const unsubStore = editor.store.listen(
+    ({ changes, source }) => {
+      if (isSyncingToTldrawRef.current) {
+        console.log(LOG, 'tldraw→am SKIP (isSyncingToTldraw=true, source=' + source + ')');
+        return;
+      }
+
+      const added = Object.values(changes.added);
+      const updated = Object.values(changes.updated).map(([, after]) => after);
+      const removed = Object.values(changes.removed);
+
+      // Filter out page records — we never persist those because tldraw
+      // generates a fresh page id on every mount and we don't want stale
+      // page references.
+      const filterPage = (r: TLRecord) => r.typeName !== 'page';
+      const addedFiltered = added.filter(filterPage);
+      const updatedFiltered = updated.filter(filterPage);
+      const removedFiltered = removed.filter(filterPage);
+
+      const total = addedFiltered.length + updatedFiltered.length + removedFiltered.length;
+      if (total === 0) return;
+
+      console.log(
+        LOG,
+        'tldraw→am',
+        '+' + addedFiltered.length,
+        '~' + updatedFiltered.length,
+        '-' + removedFiltered.length,
+        '(source=' + source + ')',
+      );
+
+      if (addedFiltered.length <= 5) {
+        for (const r of addedFiltered)
+          console.log(LOG, '  + ', r.id, r.typeName, (r as any).type ?? '');
+      }
+      if (updatedFiltered.length <= 5) {
+        for (const r of updatedFiltered)
+          console.log(LOG, '  ~ ', r.id, r.typeName, (r as any).type ?? '');
+      }
+      if (removedFiltered.length <= 5) {
+        for (const r of removedFiltered)
+          console.log(LOG, '  - ', r.id, r.typeName, (r as any).type ?? '');
+      }
+
+      isSyncingToAutomergeRef.current = true;
+      try {
+        handle.change((d) => {
+          if (!d.tldraw) {
+            (d as any).tldraw = {};
+          }
+          for (const r of addedFiltered) d.tldraw![r.id] = JSON.stringify(r);
+          for (const r of updatedFiltered) d.tldraw![r.id] = JSON.stringify(r);
+          for (const r of removedFiltered) delete d.tldraw![r.id];
+        });
+        console.log(LOG, 'tldraw→am handle.change() succeeded');
+      } catch (e) {
+        console.error(LOG, 'tldraw→am handle.change() THREW', e);
+      }
+      isSyncingToAutomergeRef.current = false;
+    },
+    { source: 'user', scope: 'document' },
+  );
+  cleanupFnsRef.current.push(() => {
+    console.log(LOG, 'unsubscribing store listener');
+    unsubStore();
+  });
+
+  // ------------------------------------------------------------------
+  // 2.  Set up automerge → tldraw listener (for remote peer changes)
+  // ------------------------------------------------------------------
+
+  const handleDocChange = () => {
+    if (isSyncingToAutomergeRef.current) {
+      // This is the echo from our own handle.change() — ignore it.
+      return;
+    }
+
+    const latestDoc = handle.docSync?.() ?? (handle as any).doc?.();
+    if (!latestDoc?.tldraw) return;
+
+    const currentPageId = editor.getCurrentPageId();
+
+    // Parse every stored record.
+    const storedById = new Map<string, TLRecord>();
+    for (const [id, json] of Object.entries(latestDoc.tldraw)) {
+      try {
+        storedById.set(id, JSON.parse(json as string));
+      } catch {}
+    }
+
+    // Diff against tldraw's store.
+    const toPut: TLRecord[] = [];
+    const toRemove: TLRecord['id'][] = [];
+
+    for (const [id, rec] of storedById) {
+      const existing = editor.store.get(rec.id);
+      if (!existing) {
+        // Remap page parentId for shapes
+        const remapped = remapParentPage(rec, currentPageId);
+        toPut.push(remapped);
+      } else {
+        // Simple dirty check — compare JSON
+        const existingJson = JSON.stringify(existing);
+        const storedJson = JSON.stringify(rec);
+        if (existingJson !== storedJson) {
+          const remapped = remapParentPage(rec, currentPageId);
+          toPut.push(remapped);
+        }
+      }
+    }
+
+    // Shapes we have locally but that are gone from automerge → remove
+    // (only document-scope records; skip pages and patchwork-doc shapes)
+    for (const r of editor.store.allRecords()) {
+      if (r.typeName === 'page') continue;
+      if (r.typeName !== 'shape' && r.typeName !== 'asset') continue;
+      if ((r as any).type === PATCHWORK_DOC_SHAPE_TYPE) continue;
+      if (!storedById.has(r.id)) {
+        toRemove.push(r.id);
+      }
+    }
+
+    if (toPut.length + toRemove.length === 0) return;
+
+    console.log(LOG, 'am→tldraw (remote change)', 'put:', toPut.length, 'remove:', toRemove.length);
+
+    isSyncingToTldrawRef.current = true;
+    try {
+      editor.store.mergeRemoteChanges(() => {
+        if (toPut.length) editor.store.put(toPut);
+        if (toRemove.length) editor.store.remove(toRemove);
+      });
+    } catch (e) {
+      console.error(LOG, 'am→tldraw mergeRemoteChanges THREW', e);
+    }
+    isSyncingToTldrawRef.current = false;
+  };
+
+  handle.on('change', handleDocChange);
+  cleanupFnsRef.current.push(() => {
+    console.log(LOG, 'removing handle change listener');
+    handle.off('change', handleDocChange);
+  });
+
+  // ------------------------------------------------------------------
+  // 3.  Load stored tldraw records into the editor
+  // ------------------------------------------------------------------
+
+  const currentPageId = editor.getCurrentPageId();
+  const storedRecords: TLRecord[] = [];
+  for (const [id, json] of Object.entries(stored)) {
+    try {
+      const rec = JSON.parse(json) as TLRecord;
+      // Skip page records — we use tldraw's fresh page.
+      if (rec.typeName === 'page') continue;
+      storedRecords.push(remapParentPage(rec, currentPageId));
+    } catch (e) {
+      console.warn(LOG, 'bad stored record', id, e);
+    }
+  }
+
+  if (storedRecords.length > 0) {
+    console.log(LOG, 'loading', storedRecords.length, 'stored records into tldraw store');
+    isSyncingToTldrawRef.current = true;
+    try {
+      editor.store.mergeRemoteChanges(() => {
+        editor.store.put(storedRecords);
+      });
+      console.log(LOG, 'stored records loaded OK');
+    } catch (e) {
+      console.error(LOG, 'loading stored records THREW', e);
+    }
+    isSyncingToTldrawRef.current = false;
+  } else {
+    console.log(LOG, 'no stored records to load');
+  }
+
+  // ------------------------------------------------------------------
+  // 4.  Ensure patchwork-doc shapes exist for every folder item
+  //     These are created as *user* changes so the store listener
+  //     (step 1) persists them to automerge automatically.
+  // ------------------------------------------------------------------
+
+  reconcilePatchworkDocShapes(editor, folderDocs);
+
+  // ------------------------------------------------------------------
+  // 5.  Zoom to fit
+  // ------------------------------------------------------------------
+
+  const shapeCount = editor.getCurrentPageShapes().length;
+  if (shapeCount > 0) {
+    console.log(LOG, 'zooming to fit', shapeCount, 'shapes');
+    requestAnimationFrame(() => {
+      try {
+        editor.zoomToFit({ animation: { duration: 300 } });
+      } catch {
+        /* editor may have been disposed */
+      }
+    });
+  }
+
+  console.log(LOG, 'initializeSync complete ✓');
+}
+
+// =============================================================================
+//  remapParentPage — rewrite parentId so shapes land on the current page
+// =============================================================================
+
+function remapParentPage(record: TLRecord, currentPageId: string): TLRecord {
+  const r = record as any;
+  if (r.typeName === 'shape' && typeof r.parentId === 'string' && r.parentId.startsWith('page:')) {
+    if (r.parentId !== currentPageId) {
+      console.log(LOG, 'remapping parentId', r.parentId, '→', currentPageId, 'for', r.id);
+      return { ...r, parentId: currentPageId };
+    }
+  }
+  return record;
+}
+
+// =============================================================================
+//  reconcilePatchworkDocShapes — create / update / remove folder-item shapes
+// =============================================================================
+
+function reconcilePatchworkDocShapes(editor: Editor, folderDocs: DocLink[]) {
+  const existing = new Map<string, TLShapeId>();
+
+  for (const shape of editor.getCurrentPageShapes()) {
+    if (shape.type === PATCHWORK_DOC_SHAPE_TYPE) {
+      existing.set((shape as any).props.docUrl, shape.id);
+    }
+  }
+
+  const folderUrls = new Set<string>(folderDocs.map((d) => d.url));
+  let nextIdx = existing.size;
+
+  console.log(
+    LOG,
+    'reconcile: existing patchwork shapes:',
+    existing.size,
+    '| folder docs:',
+    folderDocs.length,
+  );
+
+  for (const docLink of folderDocs) {
+    if (existing.has(docLink.url)) {
+      // Already on canvas — update metadata if stale
+      const shapeId = existing.get(docLink.url)!;
+      const shape = editor.getShape(shapeId) as any;
+      if (shape && (shape.props.docName !== docLink.name || shape.props.docType !== docLink.type)) {
+        console.log(LOG, 'reconcile: updating metadata for', docLink.name);
+        editor.updateShape({
+          id: shapeId,
+          type: PATCHWORK_DOC_SHAPE_TYPE,
+          props: { docName: docLink.name, docType: docLink.type },
+        } as any);
+      }
+      continue;
+    }
+
+    // New doc — create a shape
+    const pos = defaultPosition(nextIdx++);
+    console.log(LOG, 'reconcile: creating shape for', docLink.name, 'at', pos.x, pos.y);
+    editor.createShape({
+      id: makeShapeId(docLink.url),
+      type: PATCHWORK_DOC_SHAPE_TYPE,
+      x: pos.x,
+      y: pos.y,
+      rotation: 0,
+      props: {
+        w: DEFAULT_W,
+        h: DEFAULT_H,
+        docUrl: docLink.url,
+        docName: docLink.name,
+        docType: docLink.type,
+      },
+    } as any);
+  }
+
+  // Remove shapes whose doc was removed from the folder
+  for (const [url, shapeId] of existing) {
+    if (!folderUrls.has(url)) {
+      console.log(LOG, 'reconcile: removing shape for deleted doc', url);
+      if (editor.getShape(shapeId)) {
+        editor.deleteShapes([shapeId]);
+      }
+    }
+  }
 }
