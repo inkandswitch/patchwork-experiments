@@ -5,13 +5,19 @@ import { useDocument, RepoContext } from '@automerge/automerge-repo-react-hooks'
 import { createRoot } from 'react-dom/client';
 import { useEffect, useRef, useMemo } from 'react';
 import { FolderDoc, DocLink } from '@inkandswitch/patchwork-filesystem';
-import type { ToolRender } from '@inkandswitch/patchwork-plugins';
+import type { ToolRender, ToolElement } from '@inkandswitch/patchwork-plugins';
 import { PatchworkDocShapeUtil, PATCHWORK_DOC_SHAPE_TYPE } from './PatchworkDocShape';
 import {
   applyTLStoreChangesToAutomergeDoc,
   applyAutomergePatchesToTLStore,
   readStoredRecord,
 } from './automerge-tldraw-sync';
+import {
+  NewDocShapeTool,
+  newDocUiOverrides,
+  NewDocToolbar,
+  setNewDocToolContext,
+} from './NewDocTool';
 import '@inkandswitch/patchwork-elements';
 
 // ---- Logging ----------------------------------------------------------------
@@ -35,10 +41,12 @@ const DEFAULT_H = 480;
 const GAP = 60;
 
 const customShapeUtils = [PatchworkDocShapeUtil];
+const customTools = [NewDocShapeTool];
 
-// Keep everything except the page picker.
+// Keep everything except the page picker; use custom toolbar with new-doc tool.
 const uiComponents: TLUiComponents = {
   PageMenu: null,
+  Toolbar: NewDocToolbar,
 };
 
 // ---- Helpers ----------------------------------------------------------------
@@ -60,7 +68,7 @@ export const SpatialFolderTool: ToolRender = (handle, element) => {
   const root = createRoot(element);
   root.render(
     <RepoContext.Provider value={repo}>
-      <SpatialFolderCanvas handle={handle as DocHandle<SpatialFolderDoc>} />
+      <SpatialFolderCanvas handle={handle as DocHandle<SpatialFolderDoc>} element={element} />
     </RepoContext.Provider>,
   );
   return () => {
@@ -71,7 +79,13 @@ export const SpatialFolderTool: ToolRender = (handle, element) => {
 
 // ---- React component --------------------------------------------------------
 
-function SpatialFolderCanvas({ handle }: { handle: DocHandle<SpatialFolderDoc> }) {
+function SpatialFolderCanvas({
+  handle,
+  element,
+}: {
+  handle: DocHandle<SpatialFolderDoc>;
+  element: ToolElement;
+}) {
   // useDocument is ONLY used to derive the folder-doc list key and for
   // the loading overlay.  We never pass the reactive `doc` into any
   // tldraw-touching code-path — that caused the previous unmount/flicker bug.
@@ -97,6 +111,7 @@ function SpatialFolderCanvas({ handle }: { handle: DocHandle<SpatialFolderDoc> }
       }
       initializedRef.current = true;
       console.log(LOG, 'doc ready — running initializeSync');
+      setNewDocToolContext(element, handle);
       initializeSync(editor, handle, isSyncingToTldrawRef, isSyncingToAutomergeRef, cleanupFnsRef);
     });
   });
@@ -151,6 +166,8 @@ function SpatialFolderCanvas({ handle }: { handle: DocHandle<SpatialFolderDoc> }
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <Tldraw
         shapeUtils={customShapeUtils}
+        tools={customTools}
+        overrides={newDocUiOverrides}
         onMount={handleMountRef.current}
         components={uiComponents}
       />
