@@ -12,21 +12,22 @@ interface TaskQueueState {
 
 let repo: Repo;
 
+let status: 'not initialized' | 'initializing' | 'ready' = 'not initialized';
 const toDoAfterInit: (() => Promise<void>)[] = [];
-const workers = new Map<AutomergeUrl, Worker>();
+
+const sharedWorkerNames = new Set<string>();
+const workerByUrl = new Map<AutomergeUrl, Worker>();
+
+const taskQueueUrls = new Set<AutomergeUrl>();
 const taskQueueState = new Map<AutomergeUrl, TaskQueueState>();
 
 console.log('hi there, I am the worker pool!');
 
 self.addEventListener('connect', (e: any) => {
   const port = e.ports[0];
-  receiveMessagesOn(port);
-});
-
-function receiveMessagesOn(port: MessagePort) {
   port.onmessage = (e: any) => {
-    console.log('received message', e.data);
     const msg: MessageToWorkerPool = e.data;
+    console.log('received message', msg);
     try {
       switch (msg.type) {
         case 'init':
@@ -36,35 +37,39 @@ function receiveMessagesOn(port: MessagePort) {
           join(msg.taskQueueUrl);
           break;
         case 'add worker':
-          addWorker(msg.workerId, msg.workerUrl);
+          addWorker(msg.sharedWorkerName, msg.workerUrl);
           break;
       }
     } catch (error) {
       console.error('uh-oh, error handling message in worker pool', { msg, error });
     }
   };
-}
+});
 
 async function init(port: MessagePort) {
-  if (repo) {
-    console.log('ignoring init message -- already initialized');
+  if (status !== 'not initialized') {
     return;
   }
 
-  console.log('initializing');
+  console.log('initializing...');
+  status = 'initializing';
 
   repo = await getRepo(port, `task-worker-pool-${Math.round(Math.random() * 10_000)}`);
-  while (toDoAfterInit.length > 0) {
-    await toDoAfterInit.shift()!();
-  }
-
   pSendWorkerStatuses(); // this is a "process", meant to be running in the background (hence no `await`)
 
   console.log('ready');
+  status = 'ready';
+
+  while (toDoAfterInit.length > 0) {
+    await toDoAfterInit.shift()!();
+  }
 }
 
 async function join(taskQueueUrl: AutomergeUrl) {
-  if (!repo) {
+  if (taskQueueUrls.has(taskQueueUrl)) {
+    // already joined or joining!
+    return;
+  } else if (status !== 'ready') {
     // haven't initialized yet, so save this for later
     toDoAfterInit.push(() => join(taskQueueUrl));
     return;
@@ -72,30 +77,41 @@ async function join(taskQueueUrl: AutomergeUrl) {
 
   console.log('joining task queue', taskQueueUrl);
 
+  taskQueueUrls.add(taskQueueUrl);
+
   const taskQueueHandle = await repo.find<TaskQueue>(taskQueueUrl);
   taskQueueHandle.on('change', (payload) => setTaskQueueState(payload.doc));
   await setTaskQueueState(taskQueueHandle.doc());
 
   async function setTaskQueueState(taskQueue: TaskQueue) {
-    taskQueueState.set(taskQueueUrl, {
-      activeRouterHandle: taskQueue.router ? await repo.find<Router>(taskQueue.router) : null,
-    });
+    try {
+      const activeRouterHandle = taskQueue.router ? await repo.find<Router>(taskQueue.router) : null;
+      taskQueueState.set(taskQueueUrl, { activeRouterHandle });
+    } catch (error) {
+      console.error('error finding doc for active router', { taskQueueUrl, error });
+    }
   }
+
+  console.log('done joining task queue', taskQueueUrl);
 }
 
-async function addWorker(workerId: number, workerUrl: AutomergeUrl) {
-  if (!repo) {
+async function addWorker(sharedWorkerName: string, workerUrl: AutomergeUrl) {
+  if (sharedWorkerNames.has(sharedWorkerName)) {
+    // already added!
+    return;
+  } else if (status !== 'ready') {
     // haven't initialized yet, so save this for later
-    toDoAfterInit.push(() => addWorker(workerId, workerUrl));
+    toDoAfterInit.push(() => addWorker(sharedWorkerName, workerUrl));
     return;
   }
 
-  console.log('adding worker', workerId);
+  console.log('adding worker', { sharedWorkerName, workerUrl });
+
+  sharedWorkerNames.add(sharedWorkerName);
+
   const workerHandle = await repo.find<Worker>(workerUrl);
-  workerHandle.on('change', (payload) => {
-    workers.set(workerUrl, payload.doc);
-  });
-  workers.set(workerUrl, workerHandle.doc());
+  workerHandle.on('change', (payload) => workerByUrl.set(workerUrl, payload.doc));
+  workerByUrl.set(workerUrl, workerHandle.doc());
 }
 
 async function pSendWorkerStatuses() {
@@ -107,9 +123,11 @@ async function pSendWorkerStatuses() {
         continue;
       }
 
-      for (const [workerUrl, { currentTask }] of workers.entries()) {
-        // don't bother sending the heartbeats of workers that are busy with tasks from other queues
-        if (workerUrl && (!currentTask || currentTask?.taskQueueUrl === taskQueueUrl)) {
+      for (const [workerUrl, { currentTask }] of workerByUrl.entries()) {
+        if (currentTask && currentTask.taskQueueUrl !== taskQueueUrl) {
+          // don't bother sending the heartbeats of workers that are busy with tasks from other queues
+        } else {
+          // console.log('sending worker heartbeat to', activeRouterHandle.url, { workerUrl, currentTask });
           activeRouterHandle.broadcast({
             type: 'worker heartbeat',
             workerUrl,
@@ -126,4 +144,4 @@ const seconds = async (s: number) =>
     setTimeout(resolve, s * 1_000);
   });
 
-export {}; // to ensure this is a module
+export { }; // to ensure this is a module

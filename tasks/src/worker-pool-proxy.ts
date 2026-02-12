@@ -2,12 +2,11 @@ import type { AutomergeUrl } from '@automerge/automerge-repo';
 import type { MessageToRouter, MessageToWorker, MessageToWorkerPool } from './protocol';
 
 import { MessageChannelNetworkAdapter, Repo } from '@automerge/vanillajs';
+import { getAccountHandle, getTaskQueues, TaskQueues } from './helpers';
+
 import WorkerPool from './worker-pool.ts?sharedworker';
 import TaskWorker from './worker.ts?sharedworker';
 import TaskRouter from './router.ts?sharedworker';
-import type { Worker } from './datatype';
-import { getAccountHandle, getTaskQueues, TaskQueues } from './helpers';
-import generateName from 'boring-name-generator';
 
 const NUM_WORKERS = 2;
 
@@ -22,24 +21,53 @@ export class WorkerPoolProxy {
     importMap: any,
     baseURI: string,
   ) {
-    this.workerPool = this.createWorkerPool();
-    this.initializeWorkerPool();
+    this.workerPool = this.createAndInitializeWorkerPool();
     for (let workerId = 0; workerId < NUM_WORKERS; workerId++) {
-      this.workers.push(this.createWorker(workerId));
-      this.initializeWorker(workerId, importMap, baseURI);
+      this.workers.push(this.createAndInitializeWorker(workerId, importMap, baseURI));
     }
-
     this.initializeRouters();
   }
 
-  get repo(): Repo {
-    if (!this._repo) {
-      this._repo = new Repo({
-        network: [new MessageChannelNetworkAdapter((window as any).getRepoChannel())],
-        peerId: `worker-pool-proxy-${Math.round(Math.random() * 10_000)}` as any,
-      });
-    }
-    return this._repo;
+  private createAndInitializeWorkerPool() {
+    // create the shared worker
+    const workerPool = new WorkerPool({ name: `task-worker-pool` });
+    workerPool.onerror = (error) => console.error('worker pool error:', error);
+    workerPool.port.start();
+
+    // initialize it (it doesn't matter if this message is sent more than once)
+    const repoPort = (window as any).getRepoChannel();
+    workerPool.port.postMessage(
+      { type: 'init', contactUrl: this.contactUrl, repoPort: repoPort } satisfies MessageToWorkerPool,
+      [repoPort],
+    );
+    return workerPool;
+  }
+
+  private createAndInitializeWorker(id: number, importMap: any, baseURI: string) {
+    // create the shared worker
+    const worker = new TaskWorker({ name: `task-worker-${id}` });
+    worker.onerror = (error) => console.error(`worker ${id} error:`, error);
+    worker.port.start();
+
+    // initialize it (it doesn't matter if this message is sent more than once)
+    const repoPort = (window as any).getRepoChannel();
+    worker.port.postMessage(
+      {
+        type: 'init',
+        repoPort,
+        contactUrl: this.contactUrl,
+        importMap,
+        baseURI,
+      } satisfies MessageToWorker,
+      [repoPort],
+    );
+
+    // forward messages from the worker (type 'add worker')to the worker pool
+    worker.port.onmessage = (e: any) => {
+      this.workerPool.port.postMessage(e.data);
+    };
+
+    return worker;
   }
 
   private async initializeRouters() {
@@ -91,69 +119,13 @@ export class WorkerPoolProxy {
     }
   }
 
-  private createWorkerPool(): SharedWorker {
-    const workerPool = new WorkerPool({ name: `task-worker-pool` });
-    workerPool.onerror = (error) => {
-      console.error('worker pool error:', error);
-    };
-    workerPool.port.start();
-    return workerPool;
-  }
-
-  private initializeWorkerPool() {
-    const contactUrl = this.contactUrl;
-    const repoPort = (window as any).getRepoChannel();
-    // (It doesn't matter if this messgage is sent more than once.)
-    this.workerPool.port.postMessage(
-      { type: 'init', contactUrl, repoPort: repoPort } satisfies MessageToWorkerPool,
-      [repoPort],
-    );
-  }
-
-  private createWorker(workerId: number) {
-    const worker = new TaskWorker({ name: `task-worker-${workerId}` });
-    worker.onerror = (error) => {
-      console.error(`worker ${workerId} error:`, error);
-    };
-    worker.port.start();
-    return worker;
-  }
-
-  private initializeWorker(workerId: number, importMap: any, baseURI: string) {
-    // (It doesn't matter if this messgage is sent more than once.)
-    const worker = this.workers[workerId];
-    const repoPort = (window as any).getRepoChannel();
-    const workerHandle = this.repo.create<Worker>({
-      name: generateName().dashed,
-      contactUrl: this.contactUrl,
-      currentTask: null,
-    });
-    try {
-      worker.port.postMessage(
-        {
-          type: 'init',
-          repoPort,
-          workerId,
-          workerUrl: workerHandle.url,
-          contactUrl: this.contactUrl,
-          importMap,
-          baseURI,
-        } satisfies MessageToWorker,
-        [repoPort],
-      );
-    } catch (e1) {
-      console.error('failed to initialize worker', { workerId, e: e1 });
-      throw e1;
+  get repo(): Repo {
+    if (!this._repo) {
+      this._repo = new Repo({
+        network: [new MessageChannelNetworkAdapter((window as any).getRepoChannel())],
+        peerId: `worker-pool-proxy-${Math.round(Math.random() * 10_000)}` as any,
+      });
     }
-    try {
-      this.workerPool.port.postMessage({
-        type: 'add worker',
-        workerId,
-        workerUrl: workerHandle.url,
-      } satisfies MessageToWorkerPool);
-    } catch (e2) {
-      console.error('Failed to register worker with worker pool', { workerId, e: e2 });
-      throw e2;
-    }
+    return this._repo;
   }
 }

@@ -97,7 +97,7 @@ async function pHeartbeat() {
         routerUrl: thisRouterHandle.url,
         workerUrls: [...workers.keys()],
       } satisfies MessageToTaskQueueChannel;
-      console.log('router: Sending heartbeat to task queue', heartbeat);
+      // console.log('router: Sending heartbeat to task queue', heartbeat);
       taskQueueHandle.broadcast(heartbeat);
     }
     await seconds(1);
@@ -225,4 +225,4 @@ const seconds = async (s: number) =>
     setTimeout(resolve, s * 1_000);
   });
 
-export {}; // to ensure this is a module
+export { }; // to ensure this is a module

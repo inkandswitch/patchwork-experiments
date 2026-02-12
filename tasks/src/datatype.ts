@@ -89,7 +89,7 @@ async function seconds(s) {
 
 export type Worker = {
   name: string;
-  contactUrl: AutomergeUrl | null;
+  contactUrl: AutomergeUrl;
   currentTask: { taskUrl: AutomergeUrl; taskQueueUrl: AutomergeUrl } | null;
 };
 

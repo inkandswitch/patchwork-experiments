@@ -1,33 +1,43 @@
 import type { AutomergeUrl } from '@automerge/automerge-repo/slim';
 
+export type MessageToWorkerPoolProxy =
+  // sent by workers
+  | {
+    type: 'add worker',
+    sharedWorkerName: string;
+    workerUrl: AutomergeUrl;
+  };
+
 export type MessageToWorkerPool =
   // sent by the app (worker pool proxy)
   | {
-      type: 'init';
-      repoPort: MessagePort;
-      contactUrl: AutomergeUrl;
-    }
+    type: 'init';
+    repoPort: MessagePort;
+    contactUrl: AutomergeUrl;
+  }
   | {
-      type: 'join';
-      taskQueueUrl: AutomergeUrl;
-    }
+    type: 'join';
+    taskQueueUrl: AutomergeUrl;
+  }
   | {
-      type: 'add worker';
-      workerId: number;
-      workerUrl: AutomergeUrl;
-    };
+    // this message is forwarded by the worker pool proxy to the worker pool
+    // (when the worker pool proxy receives it from a worker)
+    type: 'add worker';
+    sharedWorkerName: string;
+    workerUrl: AutomergeUrl;
+  };
 
 export type MessageToRouter =
   // sent by the app (worker pool proxy)
   | {
-      type: 'init';
-      repoPort: MessagePort;
-      contactUrl: AutomergeUrl;
-      taskQueueUrl: AutomergeUrl;
-    }
+    type: 'init';
+    repoPort: MessagePort;
+    contactUrl: AutomergeUrl;
+    taskQueueUrl: AutomergeUrl;
+  }
   | {
-      type: 'terminate';
-    };
+    type: 'terminate';
+  };
 
 export type MessageToRouterChannel =
   // sent by worker pools (one per worker) to the active router of each task queue
@@ -50,8 +60,6 @@ export type MessageToWorker =
   {
     type: 'init';
     repoPort: MessagePort;
-    workerId: number;
-    workerUrl: AutomergeUrl;
     contactUrl: AutomergeUrl;
     importMap: any;
     baseURI: string;
