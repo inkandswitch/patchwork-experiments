@@ -1,8 +1,8 @@
 import { getHeads } from "@automerge/automerge";
 import { type AutomergeUrl, encodeHeads, parseAutomergeUrl, stringifyAutomergeUrl } from "@automerge/automerge-repo";
 import { useDocHandle, useRepo } from "@automerge/automerge-repo-react-hooks";
-import { useCallback, useState } from "react";
-import { createShapeId, useEditor } from "tldraw";
+import { useCallback } from "react";
+import { type Box, type Editor, createShapeId, useEditor } from "tldraw";
 import type { ToolSketchDoc } from "../datatype.ts";
 import { createFolder } from "./folder.ts";
 import { generateToolFromCapture } from "./generate-tool-prompt.ts";
@@ -13,13 +13,47 @@ export interface TurnIntoToolCapture {
 }
 
 const EMBED_TYPE = "patchwork-embed";
+const EMBED_WIDTH = 400;
+const EMBED_HEIGHT = 300;
+
+function rectsOverlap(
+  ax: number, ay: number, aw: number, ah: number,
+  bx: number, by: number, bw: number, bh: number
+): boolean {
+  return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+}
+
+function findPlacementPosition(
+  editor: Editor,
+  selectionBounds: Box,
+  embedWidth: number,
+  embedHeight: number,
+  gap: number
+): { x: number; y: number } {
+  const allShapes = editor.getCurrentPageShapes();
+  const candidateX = selectionBounds.maxX + gap;
+  let candidateY = selectionBounds.y;
+
+  for (let attempts = 0; attempts < 50; attempts++) {
+    const hasOverlap = allShapes.some((shape) => {
+      const shapeBounds = editor.getShapePageBounds(shape.id);
+      if (!shapeBounds) return false;
+      return rectsOverlap(
+        candidateX, candidateY, embedWidth, embedHeight,
+        shapeBounds.x, shapeBounds.y, shapeBounds.w, shapeBounds.h
+      );
+    });
+    if (!hasOverlap) break;
+    candidateY += embedHeight + 20;
+  }
+
+  return { x: candidateX, y: candidateY };
+}
 
 export function TurnIntoTool({ docUrl }: { docUrl: AutomergeUrl }) {
   const editor = useEditor();
   const repo = useRepo();
   const tldrawDocHandle = useDocHandle<ToolSketchDoc>(docUrl);
-  const [generating, setGenerating] = useState(false);
-
   const handleClick = useCallback(async () => {
     const selectedShapeIds = editor.getSelectedShapeIds();
     if (selectedShapeIds.length === 0) {
@@ -63,29 +97,60 @@ export function TurnIntoTool({ docUrl }: { docUrl: AutomergeUrl }) {
 
     // ── 2. Create placeholder embed to the right of the selection ─
     const placeholderShapeId = createShapeId();
-    const gap = 40;
+    const gap = 80;
+    const placement = findPlacementPosition(editor, bounds, EMBED_WIDTH, EMBED_HEIGHT, gap);
     editor.createShape({
       id: placeholderShapeId,
       type: EMBED_TYPE,
-      x: bounds.maxX + gap,
-      y: bounds.y,
+      x: placement.x,
+      y: placement.y,
       props: {
-        w: 400,
-        h: 300,
+        w: EMBED_WIDTH,
+        h: EMBED_HEIGHT,
         placeholder: true,
       },
     });
 
+    // ── 2b. Create arrow from embed to selection ─────────────────
+    const arrowId = createShapeId();
+    const selectionRightCenter = {
+      x: bounds.maxX,
+      y: bounds.y + bounds.h / 2,
+    };
+
+    editor.createShape({
+      id: arrowId,
+      type: "arrow",
+      x: selectionRightCenter.x,
+      y: selectionRightCenter.y,
+      props: {
+        color: "grey",
+        start: { x: 0, y: 0 },
+        end: { x: 0, y: 0 },
+      },
+    });
+
+    editor.createBinding({
+      fromId: arrowId,
+      toId: placeholderShapeId,
+      type: "arrow",
+      props: {
+        terminal: "start",
+        normalizedAnchor: { x: 0, y: 0.5 },
+        isExact: false,
+        isPrecise: true,
+      },
+    });
+
     // ── 3. Generate tool via LLM ─────────────────────────────────
-    setGenerating(true);
+    const idSuffix = crypto.randomUUID().split("-")[0];
     let result;
     try {
-      result = await generateToolFromCapture(capture);
+      result = await generateToolFromCapture(capture, idSuffix);
     } catch (err) {
       console.error("Failed to generate tool:", err);
-      // Remove the placeholder on failure
-      editor.deleteShape(placeholderShapeId);
-      setGenerating(false);
+      // Remove the placeholder and arrow on failure
+      editor.deleteShapes([placeholderShapeId, arrowId]);
       return;
     }
 
@@ -124,7 +189,6 @@ export function TurnIntoTool({ docUrl }: { docUrl: AutomergeUrl }) {
     const folderDoc = folder.handle.doc();
     if (!folderDoc) {
       console.error("Folder document not ready after flush");
-      setGenerating(false);
       return;
     }
     const { documentId: folderDocId } = parseAutomergeUrl(folder.handle.url);
@@ -163,14 +227,13 @@ export function TurnIntoTool({ docUrl }: { docUrl: AutomergeUrl }) {
       d.moduleFolders.push(folder.handle.url);
     });
 
-    setGenerating(false);
     console.log(`Tool "${name}" generated successfully. Folder: ${folderUrlWithHeads}`);
   }, [editor, repo, tldrawDocHandle]);
 
   return (
     <div className="p-2">
-      <button className="pointer-events-auto flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-base font-semibold cursor-pointer bg-blue-600 text-white border-0 disabled:opacity-50 disabled:cursor-not-allowed" onClick={handleClick} disabled={generating}>
-        {generating ? "Generating..." : "Make Tool"}
+      <button className="pointer-events-auto flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-base font-semibold cursor-pointer bg-blue-600 text-white border-0" onClick={handleClick}>
+        Make Tool
       </button>
     </div>
   );

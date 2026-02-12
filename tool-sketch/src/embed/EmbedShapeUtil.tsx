@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BaseBoxShapeUtil, HTMLContainer, type RecordProps, Rectangle2d, T, type TLResizeInfo, type TLShape, resizeBox, type Editor } from "tldraw";
+import { BaseBoxShapeUtil, HTMLContainer, type RecordProps, Rectangle2d, T, type TLResizeInfo, type TLShape, resizeBox, type Editor, useIsEditing } from "tldraw";
 import { useDocHandle, useDocument } from "@automerge/automerge-repo-react-hooks";
 import { type AutomergeUrl } from "@automerge/automerge-repo";
-import { getSupportedToolsForType } from "@inkandswitch/patchwork-plugins";
+import { useToolDescriptions } from "@inkandswitch/patchwork-react";
 import type { HasPatchworkMetadata } from "@inkandswitch/patchwork-filesystem";
 import { parseEmbedUrl } from "./parseEmbedUrl";
 import "@inkandswitch/patchwork-elements";
@@ -57,8 +57,8 @@ export class EmbedShapeUtil extends BaseBoxShapeUtil<IEmbedShape> {
     return resizeBox(shape, info);
   }
 
-  override canEdit() {
-    return false;
+  override canEdit(shape: IEmbedShape) {
+    return !!shape.props.docUrl;
   }
 
   override onDoubleClick(shape: IEmbedShape) {
@@ -113,6 +113,41 @@ function EmbedContent({ shape, util }: { shape: IEmbedShape; util: EmbedShapeUti
   const [selectedToolId, setSelectedToolId] = useState<string | null>(toolId ?? null);
   const effectiveToolId = toolId ?? selectedToolId;
 
+  const isEditing = useIsEditing(shape.id);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  // Stop events from bubbling to tldraw when in editing/interaction mode.
+  // Unlike iframes, custom elements don't create an event boundary,
+  // so we need to manually prevent propagation.
+  useEffect(() => {
+    if (!isEditing) return;
+    const el = contentRef.current;
+    if (!el) return;
+
+    const stopProp = (e: Event) => {
+      e.stopPropagation();
+    };
+
+    const events = [
+      "pointerdown", "pointermove", "pointerup", "pointercancel",
+      "mousedown", "mousemove", "mouseup",
+      "click", "dblclick",
+      "keydown", "keyup", "keypress",
+      "wheel",
+      "touchstart", "touchmove", "touchend", "touchcancel",
+    ];
+
+    for (const evt of events) {
+      el.addEventListener(evt, stopProp);
+    }
+
+    return () => {
+      for (const evt of events) {
+        el.removeEventListener(evt, stopProp);
+      }
+    };
+  }, [isEditing]);
+
   if (placeholder) {
     return <PlaceholderEmbed w={shape.props.w} h={shape.props.h} />;
   }
@@ -122,13 +157,7 @@ function EmbedContent({ shape, util }: { shape: IEmbedShape; util: EmbedShapeUti
   }
 
   return (
-    <div
-      className="w-full h-full flex flex-col relative bg-white"
-      onDoubleClick={(e) => {
-        e.stopPropagation();
-        e.preventDefault();
-      }}
-    >
+    <div className="w-full h-full flex flex-col relative bg-white">
       <EmbedHeader
         shape={shape}
         editor={editor}
@@ -148,9 +177,51 @@ function EmbedContent({ shape, util }: { shape: IEmbedShape; util: EmbedShapeUti
         }}
       />
       {effectiveToolId && (
-        <div className="flex-1 min-h-0 pointer-events-auto">
+        <div
+          ref={contentRef}
+          className="flex-1 min-h-0 relative"
+        >
           {/* @ts-expect-error Custom element from patchwork-elements */}
-          <patchwork-view doc-url={docUrl} tool-id={effectiveToolId} style={{ width: "100%", height: "100%", display: "block" }} />
+          <patchwork-view
+            key={effectiveToolId}
+            doc-url={docUrl}
+            tool-id={effectiveToolId}
+            style={{
+              width: "100%",
+              height: "100%",
+              display: "block",
+              pointerEvents: isEditing ? "auto" : "none",
+            }}
+          />
+        </div>
+      )}
+      {effectiveToolId && (
+        <div
+          style={{
+            textAlign: "center",
+            position: "absolute",
+            bottom: isEditing ? -40 : 0,
+            padding: 4,
+            fontFamily: "inherit",
+            fontSize: 12,
+            left: 0,
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            pointerEvents: "none",
+          }}
+        >
+          <span
+            style={{
+              background: "var(--color-panel, white)",
+              padding: "4px 12px",
+              borderRadius: 99,
+              border: "1px solid var(--color-muted-1, #e5e7eb)",
+            }}
+          >
+            {isEditing ? "Click the canvas to exit" : "Double click to interact"}
+          </span>
         </div>
       )}
     </div>
@@ -158,6 +229,7 @@ function EmbedContent({ shape, util }: { shape: IEmbedShape; util: EmbedShapeUti
 }
 
 function EmbedHeader({ shape, editor, docUrl, type, effectiveToolId, onSelectTool }: { shape: IEmbedShape; editor: Editor; docUrl: AutomergeUrl; type?: string; effectiveToolId: string | null; onSelectTool: (id: string) => void }) {
+  const headerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{
     startX: number;
     startY: number;
@@ -175,7 +247,7 @@ function EmbedHeader({ shape, editor, docUrl, type, effectiveToolId, onSelectToo
         shapeX: shape.x,
         shapeY: shape.y,
       };
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      headerRef.current?.setPointerCapture(e.pointerId);
     },
     [editor, shape.x, shape.y]
   );
@@ -184,31 +256,26 @@ function EmbedHeader({ shape, editor, docUrl, type, effectiveToolId, onSelectToo
     (e: React.PointerEvent) => {
       if (!dragRef.current) return;
       const pagePoint = editor.screenToPage({ x: e.clientX, y: e.clientY });
-      const dx = pagePoint.x - dragRef.current.startX;
-      const dy = pagePoint.y - dragRef.current.startY;
       editor.updateShape({
         id: shape.id,
         type: EMBED_TYPE,
-        x: dragRef.current.shapeX + dx,
-        y: dragRef.current.shapeY + dy,
+        x: dragRef.current.shapeX + (pagePoint.x - dragRef.current.startX),
+        y: dragRef.current.shapeY + (pagePoint.y - dragRef.current.startY),
       });
-      dragRef.current = {
-        startX: pagePoint.x,
-        startY: pagePoint.y,
-        shapeX: dragRef.current.shapeX + dx,
-        shapeY: dragRef.current.shapeY + dy,
-      };
     },
     [editor, shape.id]
   );
 
-  const handlePointerUp = useCallback((e: React.PointerEvent) => {
-    dragRef.current = null;
-    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-  }, []);
+  const handlePointerUp = useCallback(
+    (e: React.PointerEvent) => {
+      dragRef.current = null;
+      headerRef.current?.releasePointerCapture(e.pointerId);
+    },
+    []
+  );
 
   return (
-    <div onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp} className="px-2 py-1.5 border-b border-gray-200 cursor-grab flex items-center gap-2 shrink-0 bg-gray-50">
+    <div ref={headerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} className="px-2 py-1.5 border-b border-gray-200 cursor-grab flex items-center gap-2 shrink-0 bg-gray-50" style={{ pointerEvents: "all" }}>
       <DocTitle docUrl={docUrl} type={type} />
       <div className="flex-1 min-w-0"></div>
       <ToolPickerDropdown docUrl={docUrl} type={type} onSelect={onSelectTool} value={effectiveToolId ?? undefined} />
@@ -286,13 +353,17 @@ function ToolPickerDropdown({ docUrl, type, onSelect, value }: { docUrl: string;
     });
   }, [handle, type]);
 
+  const allTools = useToolDescriptions();
   const autoSelectedRef = useRef(false);
 
   if (loading || !docType) {
     return <span className="text-xs text-gray-400">{loading ? "Loading..." : "Unknown document type"}</span>;
   }
 
-  const tools = getSupportedToolsForType(docType).filter((t) => !t.unlisted);
+  const tools = allTools.filter((t) => {
+    if (t.unlisted) return false;
+    return t.supportedDatatypes === "*" || t.supportedDatatypes.includes(docType);
+  });
 
   if (tools.length === 0) {
     return <span className="text-xs text-gray-400">No tools for {docType}</span>;

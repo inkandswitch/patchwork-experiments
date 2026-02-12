@@ -71,7 +71,9 @@ IMPORTANT RULES:
 - "example" is a JSON object representing a filled-in example document of the datatype.
 - The Tool function must use vanilla DOM manipulation — no React, no JSX, no imports.
 - The tool should look beautiful with modern CSS styling.
-- Make the tool interactive and functional, matching the screenshot as closely as possible.
+- Use the screenshot as a rough reference for layout and functionality, but come up with a more polished and refined visual style. Don't just replicate the sketch literally — improve it.
+- Any markings in RED in the screenshot are annotations and instructions, NOT part of the UI. They explain how things should work or provide context. Do not render them as visual elements.
+- Make the tool interactive and functional.
 - Do NOT wrap the JSON in markdown code fences.`;
 
 export interface GenerateToolResult {
@@ -81,46 +83,44 @@ export interface GenerateToolResult {
   example: Record<string, unknown>;
 }
 
-export async function generateToolFromCapture(
-  capture: TurnIntoToolCapture
-): Promise<GenerateToolResult> {
+export async function generateToolFromCapture(capture: TurnIntoToolCapture, idSuffix: string): Promise<GenerateToolResult> {
   if (!OPENROUTER_API_KEY) {
     throw new Error("VITE_PUBLIC_OPENROUTER_API_KEY is not set");
   }
 
-  const response = await fetch(
-    "https://openrouter.ai/api/v1/chat/completions",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "anthropic/claude-sonnet-4",
-        messages: [
-          {
-            role: "system",
-            content: SYSTEM_PROMPT,
-          },
-          {
-            role: "user",
-            content: [
-              {
-                type: "image_url",
-                image_url: { url: capture.imageUrl },
-              },
-              {
-                type: "text",
-                text: "Generate a Patchwork tool that matches this screenshot. Return JSON with keys: id, name, code, example.",
-              },
-            ],
-          },
-        ],
-        max_tokens: 8192,
-      }),
-    }
-  );
+  const seed = Math.floor(Math.random() * 1_000_000);
+
+  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "openai/gpt-5.2-codex",
+      seed,
+      messages: [
+        {
+          role: "system",
+          content: SYSTEM_PROMPT,
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "image_url",
+              image_url: { url: capture.imageUrl },
+            },
+            {
+              type: "text",
+              text: `Generate a Patchwork tool that matches this screenshot. Append "-${idSuffix}" to the tool id (e.g. "my-tool-${idSuffix}") and append " (${idSuffix})" to the tool name (e.g. "My Tool (${idSuffix})"). Return JSON with keys: id, name, code, example.`,
+            },
+          ],
+        },
+      ],
+      max_tokens: 8192,
+    }),
+  });
 
   if (!response.ok) {
     const errorText = await response.text();

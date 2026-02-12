@@ -26,6 +26,9 @@ importers:
       '@inkandswitch/patchwork-plugins':
         specifier: ^0.0.5
         version: 0.0.5
+      '@inkandswitch/patchwork-react':
+        specifier: 0.0.1
+        version: 0.0.1
       '@types/lodash':
         specifier: ^4.17.20
         version: 4.17.23
@@ -487,6 +490,9 @@ packages:
 
   '@inkandswitch/patchwork-plugins@0.0.5':
     resolution: {integrity: sha512-pQv5M7asDdN8J2moTmLoSnqA8FC/vcOuNJnKveL3MzjEhH0GQdIl6vV3k5jxs83ZpB8stwceE85Zsve/QRnVSA==}
+
+  '@inkandswitch/patchwork-react@0.0.1':
+    resolution: {integrity: sha512-+LAHA53WVKpqnrrIkP1RBnBxbP/atTO4tev+6a6TeHAqMpRoHRWXlNWcIsPtpMgeAD0P8liGLh0gcdb+F9wTrg==}
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -3087,6 +3093,18 @@ snapshots:
       resolve.exports: 2.0.3
     transitivePeerDependencies:
       - supports-color
+
+  '@inkandswitch/patchwork-react@0.0.1':
+    dependencies:
+      '@automerge/automerge-repo-react-hooks': 2.5.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@automerge/vanillajs': 2.5.0
+      '@inkandswitch/patchwork-plugins': 0.0.5
+      react: 18.3.1
+      react-dom: 18.3.1(react@18.3.1)
+    transitivePeerDependencies:
+      - bufferutil
+      - supports-color
+      - utf-8-validate
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:

@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { datatype } from "./datatype.ts";
 import "./main.css";
 
-console.log("tool-sketch 0.1");
+console.log("tool-sketch 0.3");
 
 export const plugins = [
   {

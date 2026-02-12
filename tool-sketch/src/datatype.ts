@@ -28,6 +28,9 @@ export const setTitle = (doc: ToolSketchDoc, title: string) => {
 export const init = (doc: ToolSketchDoc) => {
   const snapshot = createDefaultStoreSnapshot();
   Object.assign(doc, tldrawValueToAutomergeValue(snapshot));
+
+  setTitle(doc, "Tool sketch");
+  doc.moduleFolders = [];
 };
 
 export const datatype: DatatypeImplementation<ToolSketchDoc> = {
