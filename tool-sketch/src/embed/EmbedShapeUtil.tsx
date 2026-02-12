@@ -18,6 +18,7 @@ declare module "tldraw" {
       docUrl?: string;
       toolId?: string;
       type?: string;
+      placeholder?: boolean;
     };
   }
 }
@@ -32,6 +33,7 @@ export class EmbedShapeUtil extends BaseBoxShapeUtil<IEmbedShape> {
     docUrl: T.string.optional(),
     toolId: T.string.optional(),
     type: T.string.optional(),
+    placeholder: T.boolean.optional(),
   };
 
   override getDefaultProps(): IEmbedShape["props"] {
@@ -105,11 +107,15 @@ export class EmbedShapeUtil extends BaseBoxShapeUtil<IEmbedShape> {
 }
 
 function EmbedContent({ shape, util }: { shape: IEmbedShape; util: EmbedShapeUtil }) {
-  const { docUrl, toolId, type } = shape.props;
+  const { docUrl, toolId, type, placeholder } = shape.props;
   const editor = util.editor;
 
   const [selectedToolId, setSelectedToolId] = useState<string | null>(toolId ?? null);
   const effectiveToolId = toolId ?? selectedToolId;
+
+  if (placeholder) {
+    return <PlaceholderEmbed w={shape.props.w} h={shape.props.h} />;
+  }
 
   if (!docUrl) {
     return <EmptyEmbed w={shape.props.w} h={shape.props.h} />;
@@ -220,12 +226,7 @@ function DocTitle({ docUrl, type }: { docUrl: AutomergeUrl; type?: string }) {
     const docType = type ?? doc["@patchwork"]?.type;
     if (!docType) return;
 
-    // Use local-modules getDatatypeById for registry lookup
-    // eslint-disable-next-line import/no-relative-packages
-    // (If not already imported, at the top: import { getDatatypeById } from "@tool-sketch/src/local-modules";)
-    // Here, we use dynamic import if not statically available, adapt as needed for your codebase.
-
-    const plugin = getDatatypeById(docType) as any;
+    const plugin = getDatatypeById(docType);
     if (plugin?.module?.getTitle) {
       setTitle(plugin.module.getTitle(doc));
     }
@@ -239,6 +240,25 @@ function EmptyEmbed({ w, h }: { w: number; h: number }) {
   return (
     <div className="flex items-center justify-center flex-col gap-2" style={{ width: w, height: h }}>
       <span className="text-xs text-gray-400">Double click to add embed URL</span>
+    </div>
+  );
+}
+
+function PlaceholderEmbed({ w, h }: { w: number; h: number }) {
+  return (
+    <div className="flex items-center justify-center flex-col gap-3" style={{ width: w, height: h }}>
+      <div
+        style={{
+          width: 24,
+          height: 24,
+          border: "3px solid #e5e7eb",
+          borderTopColor: "#2563eb",
+          borderRadius: "50%",
+          animation: "spin 0.8s linear infinite",
+        }}
+      />
+      <span className="text-xs text-gray-500 font-medium">Generating tool...</span>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }

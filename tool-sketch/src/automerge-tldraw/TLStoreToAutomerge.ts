@@ -1,5 +1,5 @@
 import type { RecordsDiff, TLRecord } from "tldraw";
-import type { TLDrawDoc } from "../datatype.ts";
+import type { ToolSketchDoc } from "../datatype.ts";
 import { isObject, forIn, isArray, mapValues } from "lodash";
 import { ImmutableString } from "@automerge/automerge";
 
@@ -24,10 +24,7 @@ export function tldrawValueToAutomergeValue(value: any): any {
   return value;
 }
 
-export function applyTLStoreChangesToAutomerge(
-  doc: TLDrawDoc,
-  changes: RecordsDiff<TLRecord>
-) {
+export function applyTLStoreChangesToAutomerge(doc: ToolSketchDoc, changes: RecordsDiff<TLRecord>) {
   Object.values(changes.added).forEach((record) => {
     doc.store[record.id] = tldrawValueToAutomergeValue(record);
   });

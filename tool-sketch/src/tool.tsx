@@ -1,18 +1,20 @@
 import type { AutomergeUrl } from "@automerge/automerge-repo";
-import { useDocHandle } from "@automerge/automerge-repo-react-hooks";
+import { RepoContext, useDocHandle, useRepo } from "@automerge/automerge-repo-react-hooks";
 import { Tldraw, useEditor } from "tldraw";
 import { useAutomergeStore } from "./automerge-tldraw/useAutomergeStore.ts";
-import type { TLDrawDoc } from "./datatype.ts";
+import type { ToolSketchDoc } from "./datatype.ts";
 import { EmbedShapeUtil } from "./embed/EmbedShapeUtil.tsx";
 import { EmbedShapeTool } from "./embed/EmbedShapeTool.tsx";
-import { components, uiOverrides } from "./ui-overrides.tsx";
-import { useCallback, useEffect, useMemo } from "react";
+import { makeComponents, uiOverrides } from "./ui-overrides.tsx";
+import { useModuleFolders } from "./turn-into-tool/useModuleFolders.ts";
+import React, { useCallback, useEffect, useMemo } from "react";
 
 const shapeUtils = [EmbedShapeUtil];
 const tools = [EmbedShapeTool];
 
 export function TldrawTool({ docUrl }: { docUrl: AutomergeUrl }) {
-  const handle = useDocHandle<TLDrawDoc>(docUrl, { suspense: true });
+  const repo = useRepo();
+  const handle = useDocHandle<ToolSketchDoc>(docUrl, { suspense: true });
   const userId = "chee";
   const store = useAutomergeStore({
     handle,
@@ -20,8 +22,17 @@ export function TldrawTool({ docUrl }: { docUrl: AutomergeUrl }) {
     shapeUtils,
   });
 
+  const tldrawComponents = useMemo(() => makeComponents(docUrl), [docUrl]);
+
+  const tldrawOptions = useMemo(
+    () => ({
+      exportProvider: ({ children }: { children: React.ReactNode }) => <RepoContext.Provider value={repo}>{children}</RepoContext.Provider>,
+    }),
+    [repo]
+  );
+
   return (
-    <Tldraw inferDarkMode autoFocus store={store} shapeUtils={shapeUtils} tools={tools} overrides={uiOverrides} components={components} licenseKey={import.meta.env.VITE_TLDRAW_LICENSE_KEY}>
+    <Tldraw inferDarkMode autoFocus store={store} shapeUtils={shapeUtils} tools={tools} overrides={uiOverrides} components={tldrawComponents} options={tldrawOptions} licenseKey={import.meta.env.VITE_TLDRAW_LICENSE_KEY}>
       <TldrawInner docUrl={docUrl} />
     </Tldraw>
   );
@@ -29,6 +40,8 @@ export function TldrawTool({ docUrl }: { docUrl: AutomergeUrl }) {
 
 function TldrawInner(props: { docUrl: AutomergeUrl }) {
   const key = useMemo(() => `${props.docUrl}-camera`, [props.docUrl]);
+
+  useModuleFolders(props.docUrl);
 
   const editor = useEditor();
   const onChange = useCallback(() => {
