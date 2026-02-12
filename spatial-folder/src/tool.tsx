@@ -1,4 +1,4 @@
-import { Tldraw, Editor, createShapeId, TLShapeId } from 'tldraw';
+import { Tldraw, Editor, createShapeId, TLShapeId, TLUiComponents } from 'tldraw';
 import 'tldraw/tldraw.css';
 import { DocHandle } from '@automerge/automerge-repo';
 import { useDocument, RepoContext } from '@automerge/automerge-repo-react-hooks';
@@ -6,11 +6,7 @@ import { createRoot } from 'react-dom/client';
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { FolderDoc, DocLink } from '@inkandswitch/patchwork-filesystem';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
-import {
-  PatchworkDocShapeUtil,
-  PatchworkDocShape,
-  PATCHWORK_DOC_SHAPE_TYPE,
-} from './PatchworkDocShape';
+import { PatchworkDocShapeUtil, PATCHWORK_DOC_SHAPE_TYPE } from './PatchworkDocShape';
 import '@inkandswitch/patchwork-elements';
 
 // ---- Types ----------------------------------------------------------------
@@ -29,6 +25,11 @@ const DEFAULT_H = 300;
 const GAP = 40;
 
 const customShapeUtils = [PatchworkDocShapeUtil];
+
+// Hide the page menu so users stay on a single page, but keep everything else.
+const uiComponents: TLUiComponents = {
+  PageMenu: null,
+};
 
 // ---- Helpers ---------------------------------------------------------------
 
@@ -78,27 +79,41 @@ function SpatialFolderCanvas({ handle }: { handle: DocHandle<SpatialFolderDoc> }
   const [editor, setEditor] = useState<Editor | null>(null);
   const hasZoomedRef = useRef(false);
 
-  // A stable key that only changes when the *list* of docs changes (not on
-  // every layout position update). This keeps the shape-sync effect from
-  // running more often than necessary.
+  // Track whether *we* are currently writing layout back so we can skip the
+  // resulting automerge change echo when it flows back through useDocument.
+  const isSyncingToAutomergeRef = useRef(false);
+
+  // A stable key that only changes when the *list* of doc urls/names changes
+  // (not on every layout position update). This keeps the shape-sync effect
+  // from running more often than necessary.
   const docUrlsKey = useMemo(
-    () => (doc?.docs ?? []).map((d) => `${d.url}|${d.name}`).join('\n'),
+    () => (doc?.docs ?? []).map((d) => `${d.url}|${d.name}|${d.type}`).join('\n'),
     [doc?.docs],
   );
+
+  // Keep a snapshot of docs for the effects below so they can close over a
+  // stable reference that matches the docUrlsKey they were triggered by.
+  const docsRef = useRef<DocLink[]>([]);
+  useEffect(() => {
+    docsRef.current = doc?.docs ?? [];
+  }, [docUrlsKey]);
 
   // ------- Initialise layout entries for docs that don't have one yet -------
 
   useEffect(() => {
-    if (!doc?.docs) return;
+    const docs = docsRef.current;
+    if (docs.length === 0) return;
 
-    const layout = doc.layout ?? {};
-    const missingUrls = doc.docs.filter((d) => !layout[d.url]);
+    const current = handle.docSync();
+    if (!current) return;
+
+    const layout = current.layout ?? {};
+    const missingUrls = docs.filter((d) => !layout[d.url]);
 
     if (missingUrls.length === 0) return;
 
     handle.change((d) => {
       if (!d.layout) {
-        // First time: create the layout map on the automerge doc
         (d as any).layout = {};
       }
       const existingCount = Object.keys(d.layout!).length;
@@ -113,19 +128,30 @@ function SpatialFolderCanvas({ handle }: { handle: DocHandle<SpatialFolderDoc> }
   }, [docUrlsKey, handle]);
 
   // ------- Sync: automerge doc → tldraw shapes ------------------------------
+  //
   // Creates shapes for new docs and removes shapes for deleted docs.
-  // Position data flows automerge → tldraw **only on initial creation**;
-  // after that, tldraw is the source of truth for positions and writes back.
+  // Position data flows automerge → tldraw **only on initial creation**; after
+  // that tldraw is the source of truth for positions and writes back.
+  //
+  // IMPORTANT: this effect intentionally does NOT depend on doc.layout so that
+  // every layout write-back from tldraw doesn't re-trigger the entire shape
+  // reconciliation (which was causing the flickering).
 
   useEffect(() => {
-    if (!editor || !doc?.docs) return;
+    if (!editor) return;
 
-    const layout = doc.layout ?? {};
+    const docs = docsRef.current;
+    if (docs.length === 0) return;
+
+    // Read layout from handle synchronously — NOT from the reactive `doc`
+    // which would force this effect to re-run on every layout change.
+    const layout = handle.docSync()?.layout ?? {};
+
     const existingUrls = getExistingDocUrls(editor);
     const folderUrls = new Set<string>();
 
-    for (let i = 0; i < doc.docs.length; i++) {
-      const docLink = doc.docs[i];
+    for (let i = 0; i < docs.length; i++) {
+      const docLink = docs[i];
       folderUrls.add(docLink.url);
 
       if (existingUrls.has(docLink.url)) {
@@ -165,7 +191,7 @@ function SpatialFolderCanvas({ handle }: { handle: DocHandle<SpatialFolderDoc> }
       }
     }
 
-    // Remove shapes whose docs were removed from the folder.
+    // Remove patchwork-doc shapes whose docs were removed from the folder.
     for (const url of existingUrls) {
       if (!folderUrls.has(url)) {
         const id = makeShapeId(url);
@@ -176,7 +202,7 @@ function SpatialFolderCanvas({ handle }: { handle: DocHandle<SpatialFolderDoc> }
     }
 
     // Zoom to fit all shapes on first meaningful load.
-    if (!hasZoomedRef.current && doc.docs.length > 0) {
+    if (!hasZoomedRef.current && docs.length > 0) {
       hasZoomedRef.current = true;
       requestAnimationFrame(() => {
         try {
@@ -186,7 +212,54 @@ function SpatialFolderCanvas({ handle }: { handle: DocHandle<SpatialFolderDoc> }
         }
       });
     }
-  }, [editor, docUrlsKey, doc?.layout]);
+  }, [editor, docUrlsKey, handle]);
+
+  // ------- Re-create patchwork-doc shapes if user deletes them --------------
+  //
+  // The user can freely create/delete their own drawings, text, arrows etc.
+  // but patchwork-doc shapes represent the folder contents and should persist.
+  // If the user deletes one we immediately recreate it.
+
+  useEffect(() => {
+    if (!editor) return;
+
+    const unsub = editor.store.listen(
+      ({ changes }) => {
+        const toRecreate: any[] = [];
+
+        for (const rec of Object.values(changes.removed)) {
+          const r = rec as any;
+          if (r.typeName === 'shape' && r.type === PATCHWORK_DOC_SHAPE_TYPE && r.props?.docUrl) {
+            toRecreate.push(r);
+          }
+        }
+
+        if (toRecreate.length === 0) return;
+
+        // Re-create them in the next microtask so we don't mutate mid-listener.
+        queueMicrotask(() => {
+          for (const r of toRecreate) {
+            // Only recreate if the doc is still in the folder.
+            const current = handle.docSync();
+            const stillInFolder = current?.docs?.some((d: DocLink) => d.url === r.props.docUrl);
+            if (!stillInFolder) continue;
+
+            editor.createShape({
+              id: r.id,
+              type: PATCHWORK_DOC_SHAPE_TYPE,
+              x: r.x,
+              y: r.y,
+              rotation: 0,
+              props: r.props,
+            } as any);
+          }
+        });
+      },
+      { source: 'user', scope: 'document' },
+    );
+
+    return unsub;
+  }, [editor, handle]);
 
   // ------- Sync: tldraw user changes → automerge layout ---------------------
 
@@ -197,7 +270,7 @@ function SpatialFolderCanvas({ handle }: { handle: DocHandle<SpatialFolderDoc> }
       ({ changes }) => {
         const updates: Record<string, LayoutEntry> = {};
 
-        // Process updated shapes.
+        // Process updated shapes — only patchwork-doc shapes write layout back.
         for (const [, [, after]] of Object.entries(changes.updated)) {
           const rec = after as any;
           if (
@@ -216,13 +289,14 @@ function SpatialFolderCanvas({ handle }: { handle: DocHandle<SpatialFolderDoc> }
 
         if (Object.keys(updates).length === 0) return;
 
+        isSyncingToAutomergeRef.current = true;
         handle.change((d) => {
           if (!d.layout) {
             (d as any).layout = {};
           }
           for (const [url, entry] of Object.entries(updates)) {
-            // Write each property individually so automerge can diff
-            // cleanly against concurrent edits.
+            // Write each property individually so automerge can diff cleanly
+            // against concurrent edits.
             if (!d.layout![url]) {
               d.layout![url] = { x: 0, y: 0, w: DEFAULT_W, h: DEFAULT_H };
             }
@@ -232,6 +306,7 @@ function SpatialFolderCanvas({ handle }: { handle: DocHandle<SpatialFolderDoc> }
             d.layout![url].h = entry.h;
           }
         });
+        isSyncingToAutomergeRef.current = false;
       },
       { source: 'user', scope: 'document' },
     );
@@ -261,7 +336,7 @@ function SpatialFolderCanvas({ handle }: { handle: DocHandle<SpatialFolderDoc> }
 
   return (
     <div style={{ width: '100%', height: '100%' }}>
-      <Tldraw shapeUtils={customShapeUtils} onMount={setEditor} hideUi />
+      <Tldraw shapeUtils={customShapeUtils} onMount={setEditor} components={uiComponents} />
     </div>
   );
 }
