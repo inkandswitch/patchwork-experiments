@@ -9,6 +9,7 @@ import {
   TLShape,
   resizeBox,
   useEditor,
+  useValue,
 } from 'tldraw';
 import { useMemo, useCallback } from 'react';
 import { getSupportedToolsForType, type LoadedTool } from '@inkandswitch/patchwork-plugins';
@@ -118,6 +119,9 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
   const { docUrl, docName, docType, toolId } = shape.props;
   const editor = useEditor();
   const tools = useSupportedToolsForDatatype(docType);
+  const isSelectTool = useValue('is select tool', () => editor.getCurrentToolId() === 'select', [
+    editor,
+  ]);
 
   const handleToolChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -261,7 +265,7 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
           overflow: 'hidden',
           position: 'relative',
         }}
-        onPointerDown={(e) => e.stopPropagation()}
+        onPointerDown={isSelectTool ? (e) => e.stopPropagation() : undefined}
       >
         {docUrl ? (
           // @ts-expect-error Custom element from patchwork-elements
