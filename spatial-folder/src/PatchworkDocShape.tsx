@@ -264,6 +264,7 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
           minHeight: 0,
           overflow: 'hidden',
           position: 'relative',
+          pointerEvents: isSelectTool ? 'auto' : 'none',
         }}
         onPointerDown={isSelectTool ? (e) => e.stopPropagation() : undefined}
       >
