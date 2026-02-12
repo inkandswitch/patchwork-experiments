@@ -21,7 +21,7 @@ import {
   useValue,
   DefaultToolbar,
 } from 'tldraw';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { DocHandle } from '@automerge/automerge-repo';
 import {
   getRegistry,
@@ -262,6 +262,7 @@ export const newDocUiOverrides: TLUiOverrides = {
       id: 'new-doc',
       icon: 'plus' as any,
       label: 'New document' as any,
+      kbd: 'c',
       onSelect(_source) {
         _editor.setCurrentTool('new-doc');
       },
@@ -281,6 +282,9 @@ export function NewDocToolbar() {
   ]);
 
   const [datatypes, setDatatypes] = useState<DatatypeDescription[]>([]);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [hovering, setHovering] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Load datatypes on mount
   useEffect(() => {
@@ -291,25 +295,52 @@ export function NewDocToolbar() {
     }
   }, []);
 
-  const handleSelectAndActivate = useCallback(
-    (e: React.ChangeEvent<HTMLSelectElement>) => {
-      e.stopPropagation();
-      const id = e.target.value;
-      if (id) {
-        setSelectedDatatypeId(id);
-        editor.setCurrentTool('new-doc');
+  // Close menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
       }
+    };
+    document.addEventListener('pointerdown', handler, true);
+    return () => document.removeEventListener('pointerdown', handler, true);
+  }, [menuOpen]);
+
+  // Close menu when tool deactivates
+  useEffect(() => {
+    if (!isActive) setMenuOpen(false);
+  }, [isActive]);
+
+  const activateTool = useCallback(() => {
+    if (datatypes.length > 0 && !_selectedDatatypeId) {
+      _selectedDatatypeId = datatypes[0].id;
+    }
+    editor.setCurrentTool('new-doc');
+  }, [datatypes, editor]);
+
+  const handlePlusClick = useCallback(() => {
+    if (!isActive) {
+      // First click: activate the tool
+      activateTool();
+    } else {
+      // Already active: toggle the menu
+      setMenuOpen((prev) => !prev);
+    }
+  }, [isActive, activateTool]);
+
+  const handlePillClick = useCallback(() => {
+    setMenuOpen((prev) => !prev);
+  }, []);
+
+  const handlePickDatatype = useCallback(
+    (id: string) => {
+      setSelectedDatatypeId(id);
+      setMenuOpen(false);
+      editor.setCurrentTool('new-doc');
     },
     [editor],
   );
-
-  const handlePlusClick = useCallback(() => {
-    if (datatypes.length === 1) {
-      setSelectedDatatypeId(datatypes[0].id);
-      editor.setCurrentTool('new-doc');
-    }
-    // If multiple, the invisible select handles it
-  }, [datatypes, editor]);
 
   if (datatypes.length === 0) {
     return (
@@ -318,6 +349,8 @@ export function NewDocToolbar() {
       </DefaultToolbar>
     );
   }
+
+  const selectedName = datatypes.find((d) => d.id === _selectedDatatypeId)?.name ?? 'document';
 
   return (
     <DefaultToolbar>
@@ -334,8 +367,9 @@ export function NewDocToolbar() {
         }}
       />
 
-      {/* + button with invisible select overlay for multi-datatype */}
+      {/* + button and pill/menu container */}
       <div
+        ref={containerRef}
         style={{
           position: 'relative',
           display: 'inline-flex',
@@ -344,10 +378,57 @@ export function NewDocToolbar() {
           flexShrink: 0,
         }}
       >
+        {/* Pill showing selected datatype — visible when hovering or active */}
+        {(isActive || hovering) && !menuOpen && (
+          <button
+            type="button"
+            onClick={handlePillClick}
+            style={{
+              position: 'absolute',
+              bottom: '100%',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              marginBottom: '6px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '3px 10px',
+              background: '#e8f0fe',
+              border: '1px solid #c4d7f2',
+              borderRadius: '9999px',
+              cursor: 'pointer',
+              fontSize: '11px',
+              fontFamily: 'system-ui, -apple-system, sans-serif',
+              fontWeight: 500,
+              color: '#2f80ed',
+              whiteSpace: 'nowrap',
+              lineHeight: '16px',
+              zIndex: 10000,
+            }}
+          >
+            {selectedName}
+            {datatypes.length > 1 && (
+              <svg width="8" height="8" viewBox="0 0 8 8" style={{ opacity: 0.6 }}>
+                <path
+                  d="M1 2.5L4 5.5L7 2.5"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            )}
+          </button>
+        )}
+
+        {/* + button */}
         <button
           type="button"
           onClick={handlePlusClick}
-          title="Create a new document"
+          onPointerEnter={() => setHovering(true)}
+          onPointerLeave={() => setHovering(false)}
+          title="Create a new document (C)"
           style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -360,7 +441,6 @@ export function NewDocToolbar() {
             cursor: 'pointer',
             color: isActive ? 'var(--color-selected-contrast, #2f80ed)' : 'currentColor',
             flexShrink: 0,
-            pointerEvents: datatypes.length > 1 ? 'none' : 'auto',
           }}
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -373,31 +453,56 @@ export function NewDocToolbar() {
           </svg>
         </button>
 
-        {/* For multiple datatypes: invisible native select over the button */}
-        {datatypes.length > 1 && (
-          <select
-            value={_selectedDatatypeId}
-            onChange={handleSelectAndActivate}
-            onPointerDown={(e) => e.stopPropagation()}
+        {/* Custom dropdown menu */}
+        {menuOpen && datatypes.length > 1 && (
+          <div
             style={{
               position: 'absolute',
-              inset: 0,
-              width: '100%',
-              height: '100%',
-              opacity: 0,
-              cursor: 'pointer',
-              fontSize: '13px',
+              bottom: '100%',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              marginBottom: '6px',
+              background: '#fff',
+              border: '1px solid #ddd',
+              borderRadius: '8px',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+              padding: '4px',
+              minWidth: '150px',
+              zIndex: 10001,
             }}
           >
-            <option value="" disabled>
-              New…
-            </option>
             {datatypes.map((dt) => (
-              <option key={dt.id} value={dt.id}>
+              <button
+                key={dt.id}
+                type="button"
+                onClick={() => handlePickDatatype(dt.id)}
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  padding: '6px 10px',
+                  border: 'none',
+                  borderRadius: '4px',
+                  background: dt.id === _selectedDatatypeId ? '#e8f0fe' : 'transparent',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontFamily: 'system-ui, -apple-system, sans-serif',
+                  color: '#333',
+                  textAlign: 'left',
+                  whiteSpace: 'nowrap',
+                }}
+                onPointerEnter={(e) => {
+                  (e.currentTarget as HTMLElement).style.background =
+                    dt.id === _selectedDatatypeId ? '#e8f0fe' : '#f5f5f5';
+                }}
+                onPointerLeave={(e) => {
+                  (e.currentTarget as HTMLElement).style.background =
+                    dt.id === _selectedDatatypeId ? '#e8f0fe' : 'transparent';
+                }}
+              >
                 {dt.name}
-              </option>
+              </button>
             ))}
-          </select>
+          </div>
         )}
       </div>
     </DefaultToolbar>
