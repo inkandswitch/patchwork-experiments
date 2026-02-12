@@ -1,12 +1,17 @@
 import { Tldraw, Editor, createShapeId, TLShapeId, TLUiComponents, TLRecord } from 'tldraw';
 import 'tldraw/tldraw.css';
-import { DocHandle } from '@automerge/automerge-repo';
+import { DocHandle, type DocHandleChangePayload } from '@automerge/automerge-repo';
 import { useDocument, RepoContext } from '@automerge/automerge-repo-react-hooks';
 import { createRoot } from 'react-dom/client';
 import { useEffect, useRef, useMemo } from 'react';
 import { FolderDoc, DocLink } from '@inkandswitch/patchwork-filesystem';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import { PatchworkDocShapeUtil, PATCHWORK_DOC_SHAPE_TYPE } from './PatchworkDocShape';
+import {
+  applyTLStoreChangesToAutomergeDoc,
+  applyAutomergePatchesToTLStore,
+  readStoredRecord,
+} from './automerge-tldraw-sync';
 import '@inkandswitch/patchwork-elements';
 
 // ---- Logging ----------------------------------------------------------------
@@ -18,8 +23,8 @@ const LOG = '[spatial-folder]';
 type LayoutEntry = { x: number; y: number; w: number; h: number };
 
 type SpatialFolderDoc = FolderDoc & {
-  /** Every document-scope tldraw record, keyed by record id, stored as JSON. */
-  tldraw?: { [recordId: string]: string };
+  /** Every document-scope tldraw record, keyed by record id, stored as objects. */
+  tldraw?: { [recordId: string]: any };
 };
 
 // ---- Constants --------------------------------------------------------------
@@ -189,7 +194,7 @@ function initializeSync(
   }
 
   const folderDocs: DocLink[] = currentDoc.docs ?? [];
-  const stored: Record<string, string> = currentDoc.tldraw ?? {};
+  const stored: Record<string, any> = currentDoc.tldraw ?? {};
 
   console.log(
     LOG,
@@ -236,28 +241,17 @@ function initializeSync(
         '(source=' + source + ')',
       );
 
-      if (addedFiltered.length <= 5) {
-        for (const r of addedFiltered)
-          console.log(LOG, '  + ', r.id, r.typeName, (r as any).type ?? '');
-      }
-      if (updatedFiltered.length <= 5) {
-        for (const r of updatedFiltered)
-          console.log(LOG, '  ~ ', r.id, r.typeName, (r as any).type ?? '');
-      }
-      if (removedFiltered.length <= 5) {
-        for (const r of removedFiltered)
-          console.log(LOG, '  - ', r.id, r.typeName, (r as any).type ?? '');
-      }
-
       isSyncingToAutomergeRef.current = true;
       try {
         handle.change((d) => {
           if (!d.tldraw) {
             (d as any).tldraw = {};
           }
-          for (const r of addedFiltered) d.tldraw![r.id] = JSON.stringify(r);
-          for (const r of updatedFiltered) d.tldraw![r.id] = JSON.stringify(r);
-          for (const r of removedFiltered) delete d.tldraw![r.id];
+          applyTLStoreChangesToAutomergeDoc(d.tldraw!, {
+            added: addedFiltered,
+            updated: updatedFiltered,
+            removed: removedFiltered,
+          });
         });
         console.log(LOG, 'tldraw→am handle.change() succeeded');
       } catch (e) {
@@ -276,77 +270,34 @@ function initializeSync(
   // 2.  Set up automerge → tldraw listener (for remote peer changes)
   // ------------------------------------------------------------------
 
-  const handleDocChange = () => {
+  const handleDocChange = ({ patches }: DocHandleChangePayload<SpatialFolderDoc>) => {
     if (isSyncingToAutomergeRef.current) {
       // This is the echo from our own handle.change() — ignore it.
       return;
     }
 
-    const latestDoc = handle.docSync?.() ?? (handle as any).doc?.();
-    if (!latestDoc?.tldraw) return;
-
     const currentPageId = editor.getCurrentPageId();
 
-    // Parse every stored record.
-    const storedById = new Map<string, TLRecord>();
-    for (const [id, json] of Object.entries(latestDoc.tldraw)) {
-      try {
-        storedById.set(id, JSON.parse(json as string));
-      } catch {}
-    }
+    // Filter to only patches that touch doc.tldraw.*
+    const tldrawPatches = patches.filter((p) => p.path[0] === 'tldraw' && p.path.length >= 2);
 
-    // Diff against tldraw's store.
-    const toPut: TLRecord[] = [];
-    const toRemove: TLRecord['id'][] = [];
+    if (tldrawPatches.length === 0) return;
 
-    for (const [id, rec] of storedById) {
-      const existing = editor.store.get(rec.id);
-      if (!existing) {
-        // Remap page parentId for shapes
-        const remapped = remapParentPage(rec, currentPageId);
-        toPut.push(remapped);
-      } else {
-        // Simple dirty check — compare JSON
-        const existingJson = JSON.stringify(existing);
-        const storedJson = JSON.stringify(rec);
-        if (existingJson !== storedJson) {
-          const remapped = remapParentPage(rec, currentPageId);
-          toPut.push(remapped);
-        }
-      }
-    }
-
-    // Shapes we have locally but that are gone from automerge → remove
-    // (only document-scope records; skip pages and patchwork-doc shapes)
-    for (const r of editor.store.allRecords()) {
-      if (r.typeName === 'page') continue;
-      if (r.typeName !== 'shape' && r.typeName !== 'asset') continue;
-      if ((r as any).type === PATCHWORK_DOC_SHAPE_TYPE) continue;
-      if (!storedById.has(r.id)) {
-        toRemove.push(r.id);
-      }
-    }
-
-    if (toPut.length + toRemove.length === 0) return;
-
-    console.log(LOG, 'am→tldraw (remote change)', 'put:', toPut.length, 'remove:', toRemove.length);
+    console.log(LOG, 'am→tldraw (remote patches)', tldrawPatches.length, 'patches');
 
     isSyncingToTldrawRef.current = true;
     try {
-      editor.store.mergeRemoteChanges(() => {
-        if (toPut.length) editor.store.put(toPut);
-        if (toRemove.length) editor.store.remove(toRemove);
-      });
+      applyAutomergePatchesToTLStore(tldrawPatches, editor.store, currentPageId);
     } catch (e) {
-      console.error(LOG, 'am→tldraw mergeRemoteChanges THREW', e);
+      console.error(LOG, 'am→tldraw applyPatches THREW', e);
     }
     isSyncingToTldrawRef.current = false;
   };
 
-  handle.on('change', handleDocChange);
+  handle.on('change', handleDocChange as any);
   cleanupFnsRef.current.push(() => {
     console.log(LOG, 'removing handle change listener');
-    handle.off('change', handleDocChange);
+    handle.off('change', handleDocChange as any);
   });
 
   // ------------------------------------------------------------------
@@ -355,15 +306,16 @@ function initializeSync(
 
   const currentPageId = editor.getCurrentPageId();
   const storedRecords: TLRecord[] = [];
-  for (const [id, json] of Object.entries(stored)) {
-    try {
-      const rec = JSON.parse(json) as TLRecord;
-      // Skip page records — we use tldraw's fresh page.
-      if (rec.typeName === 'page') continue;
-      storedRecords.push(remapParentPage(rec, currentPageId));
-    } catch (e) {
-      console.warn(LOG, 'bad stored record', id, e);
+  for (const [id, value] of Object.entries(stored)) {
+    // Backwards compat: old format stored JSON strings, new format stores objects.
+    const rec = readStoredRecord(value);
+    if (!rec) {
+      console.warn(LOG, 'bad stored record', id);
+      continue;
     }
+    // Skip page records — we use tldraw's fresh page.
+    if (rec.typeName === 'page') continue;
+    storedRecords.push(remapParentPage(rec, currentPageId));
   }
 
   if (storedRecords.length > 0) {
@@ -409,15 +361,13 @@ function initializeSync(
   console.log(LOG, 'initializeSync complete ✓');
 }
 
-// =============================================================================
-//  remapParentPage — rewrite parentId so shapes land on the current page
-// =============================================================================
-
+// remapParentPage is now in automerge-tldraw-sync.ts but we still need
+// a local version for reconcilePatchworkDocShapes which creates shapes
+// that go through the tldraw store (not automerge directly).
 function remapParentPage(record: TLRecord, currentPageId: string): TLRecord {
   const r = record as any;
   if (r.typeName === 'shape' && typeof r.parentId === 'string' && r.parentId.startsWith('page:')) {
     if (r.parentId !== currentPageId) {
-      console.log(LOG, 'remapping parentId', r.parentId, '→', currentPageId, 'for', r.id);
       return { ...r, parentId: currentPageId };
     }
   }
