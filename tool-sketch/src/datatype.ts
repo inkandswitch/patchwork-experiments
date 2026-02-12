@@ -1,14 +1,7 @@
 import type { DatatypeImplementation } from "@inkandswitch/patchwork-plugins";
-import {
-  type SerializedSchema,
-  type SerializedStore,
-  type TLPage,
-  type TLPageId,
-  type TLRecord,
-  type TLShapeId,
-} from "tldraw";
-import { createDefaultStoreSnapshot } from "./lith/default_store.ts";
-import { tldrawValueToAutomergeValue } from "./lith/TLStoreToAutomerge.ts";
+import { type SerializedSchema, type SerializedStore, type TLPage, type TLPageId, type TLRecord, type TLShapeId } from "tldraw";
+import { createDefaultStoreSnapshot } from "./automerge-tldraw/default_store.ts";
+import { tldrawValueToAutomergeValue } from "./automerge-tldraw/TLStoreToAutomerge.ts";
 
 // SCHEMA
 export type TLDrawDoc = {
@@ -22,7 +15,7 @@ const pageKey = "page:page" as TLPageId;
 
 export const getTitle = (doc: TLDrawDoc) => {
   const page = doc.store[pageKey] as TLPage;
-  return page.name.toString() || "Drawing";
+  return page.name.toString() || "Tool sketch";
 };
 
 export const setTitle = (doc: TLDrawDoc, title: string) => {

@@ -1,17 +1,27 @@
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import { useDocHandle } from "@automerge/react";
 import { Tldraw, useEditor } from "tldraw";
-import { useAutomergeStore } from "./lith/useAutomergeStore.ts";
+import { useAutomergeStore } from "./automerge-tldraw/useAutomergeStore.ts";
 import type { TLDrawDoc } from "./datatype.ts";
+import { EmbedShapeUtil } from "./embed/EmbedShapeUtil.tsx";
+import { EmbedShapeTool } from "./embed/EmbedShapeTool.tsx";
+import { components, uiOverrides } from "./ui-overrides.tsx";
 import { useCallback, useEffect, useMemo } from "react";
+
+const shapeUtils = [EmbedShapeUtil];
+const tools = [EmbedShapeTool];
 
 export function TldrawTool({ docUrl }: { docUrl: AutomergeUrl }) {
   const handle = useDocHandle<TLDrawDoc>(docUrl, { suspense: true });
   const userId = "chee";
-  const store = useAutomergeStore({ handle, userId });
+  const store = useAutomergeStore({
+    handle,
+    userId,
+    shapeUtils,
+  });
 
   return (
-    <Tldraw inferDarkMode autoFocus store={store}>
+    <Tldraw inferDarkMode autoFocus store={store} shapeUtils={shapeUtils} tools={tools} overrides={uiOverrides} components={components}>
       <TldrawInner docUrl={docUrl} />
     </Tldraw>
   );

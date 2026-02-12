@@ -12,6 +12,8 @@ function addStyles(textContent: string, element: HTMLElement = document.head) {
   element.append(el);
 }
 
+console.log("tool-sketch 0.1");
+
 async function loadStyles() {
   const url = new URL("./main.css", import.meta.url);
   return (await fetch(url)).text();
