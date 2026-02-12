@@ -40,7 +40,7 @@ export function applyTLStoreChangesToAutomergeDoc(
       // Missing, or old JSON-string format — replace the whole thing.
       tldrawMap[record.id] = structuredCloneCompat(record);
     } else {
-      deepCompareAndUpdate(existing, record);
+      shallowCompareAndUpdate(existing, record);
     }
   }
 
@@ -227,57 +227,47 @@ function applySpliceToObject(patch: Patch, object: any): TLRecord {
 }
 
 // ============================================================================
-// Helpers — deep compare & update (tldraw → automerge)
+// Helpers — shallow compare & update (tldraw → automerge)
 // ============================================================================
 
 /**
- * Recursively walk `objectA` (the automerge proxy) and `objectB` (the new
- * tldraw record) and only assign leaves that actually changed.  This is
- * critical so automerge generates fine-grained operations instead of
- * replacing the entire record.
+ * Compare top-level keys of objectA (automerge proxy) with objectB (new
+ * tldraw record).  For primitive values, update only if changed.  For
+ * objects/arrays, compare via JSON and replace the whole sub-value if
+ * different.
+ *
+ * This is intentionally NOT recursive.  Recursing into nested arrays
+ * generates automerge patches with numeric indices that the patchwork
+ * host's solid-store bridge cannot handle ("index is not a number").
+ * Shallow comparison still avoids replacing the entire record on every
+ * drag (x/y/rotation are primitives and get individual updates).
  */
-function deepCompareAndUpdate(objectA: any, objectB: any): void {
-  if (Array.isArray(objectB)) {
-    if (!Array.isArray(objectA)) {
-      // Type mismatch — overwrite.
-      Object.assign(objectA, objectB);
-      return;
-    }
-    for (let i = 0; i < objectB.length; i++) {
-      if (i >= objectA.length) {
-        objectA.push(objectB[i]);
-      } else if (isObject(objectB[i]) || Array.isArray(objectB[i])) {
-        deepCompareAndUpdate(objectA[i], objectB[i]);
-      } else if (objectA[i] !== objectB[i]) {
-        objectA[i] = objectB[i];
-      }
-    }
-    // Trim excess elements.
-    while (objectA.length > objectB.length) {
-      objectA.pop();
-    }
-  } else if (isObject(objectB)) {
-    // Set new / changed keys.
-    for (const key of Object.keys(objectB)) {
-      if (objectA[key] === undefined) {
-        objectA[key] = objectB[key];
-      } else if (isObject(objectB[key]) || Array.isArray(objectB[key])) {
-        deepCompareAndUpdate(objectA[key], objectB[key]);
-      } else if (objectA[key] !== objectB[key]) {
-        objectA[key] = objectB[key];
-      }
-    }
-    // Remove keys that no longer exist.
-    for (const key of Object.keys(objectA)) {
-      if ((objectB as any)[key] === undefined) {
-        delete objectA[key];
+function shallowCompareAndUpdate(objectA: any, objectB: any): void {
+  // Set new / changed keys
+  for (const key of Object.keys(objectB)) {
+    const bVal = objectB[key];
+    const aVal = objectA[key];
+
+    if (bVal === aVal) continue;
+
+    if (bVal === null || bVal === undefined || typeof bVal !== 'object') {
+      // Primitive — set directly if changed (already passed === check above)
+      objectA[key] = bVal;
+    } else {
+      // Object or array — compare via JSON to avoid unnecessary writes,
+      // but always replace wholesale (never recurse into sub-properties).
+      if (JSON.stringify(aVal) !== JSON.stringify(bVal)) {
+        objectA[key] = structuredCloneCompat(bVal);
       }
     }
   }
-}
 
-function isObject(v: unknown): v is Record<string, unknown> {
-  return v !== null && typeof v === 'object' && !Array.isArray(v);
+  // Remove keys that no longer exist
+  for (const key of Object.keys(objectA)) {
+    if (objectB[key] === undefined) {
+      delete objectA[key];
+    }
+  }
 }
 
 // ============================================================================

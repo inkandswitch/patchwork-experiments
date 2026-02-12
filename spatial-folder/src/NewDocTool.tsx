@@ -12,7 +12,6 @@
 import {
   BaseBoxShapeTool,
   DefaultToolbarContent,
-  ToolbarItem,
   type TLShape,
   type TLUiOverrides,
   type TLUiToolsContextType,
@@ -21,7 +20,7 @@ import {
   useValue,
   DefaultToolbar,
 } from 'tldraw';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { DocHandle } from '@automerge/automerge-repo';
 import {
   getRegistry,
@@ -87,11 +86,6 @@ export class NewDocShapeTool extends BaseBoxShapeTool {
   static override initial = 'idle';
   override shapeType = PATCHWORK_DOC_SHAPE_TYPE;
 
-  /**
-   * Called by BaseBoxShapeTool after the user finishes drawing the box.
-   * The shape already exists on the canvas with the drawn x/y/w/h.
-   * We kick off the async doc creation and update the shape when done.
-   */
   override onCreate(shape: TLShape | null) {
     if (!shape) return;
 
@@ -124,10 +118,12 @@ export class NewDocShapeTool extends BaseBoxShapeTool {
       },
     } as any);
 
+    // Switch back to select tool immediately so the user isn't stuck
+    editor.setCurrentTool('select');
+
     // Async: load the datatype module, create document, update shape, add to folder
     (async () => {
       try {
-        // IMPORTANT: load the datatype so its .module.init() is available
         const datatype = await loadDatatype(datatypeId);
         if (!datatype) {
           throw new Error(`Could not load datatype: ${datatypeId}`);
@@ -136,7 +132,6 @@ export class NewDocShapeTool extends BaseBoxShapeTool {
         const docHandle = await (createDocOfDatatype2 as any)(datatype, repo, undefined, hive);
         const docUrl = docHandle.url;
 
-        // Fill in the real doc URL
         editor.updateShape({
           id: shapeId,
           type: PATCHWORK_DOC_SHAPE_TYPE,
@@ -148,7 +143,6 @@ export class NewDocShapeTool extends BaseBoxShapeTool {
           },
         } as any);
 
-        // Add the new doc to the folder
         handle.change((d: any) => {
           if (!d.docs) d.docs = [];
           d.docs.push({
@@ -177,14 +171,6 @@ export class NewDocShapeTool extends BaseBoxShapeTool {
 
 export const newDocUiOverrides: TLUiOverrides = {
   tools(_editor: Editor, tools: TLUiToolsContextType) {
-    const datatypes = getListedDatatypeDescriptions();
-    if (datatypes.length === 0) return tools;
-
-    // Auto-select the first datatype if nothing chosen yet
-    if (!_selectedDatatypeId && datatypes.length > 0) {
-      _selectedDatatypeId = datatypes[0].id;
-    }
-
     tools['new-doc'] = {
       id: 'new-doc',
       icon: 'plus' as any,
@@ -193,13 +179,12 @@ export const newDocUiOverrides: TLUiOverrides = {
         _editor.setCurrentTool('new-doc');
       },
     };
-
     return tools;
   },
 };
 
 // ---------------------------------------------------------------------------
-// Custom Toolbar — default tldraw tools + "new-doc" + datatype picker
+// Custom Toolbar — default tools + a "+" button with datatype select
 // ---------------------------------------------------------------------------
 
 export function NewDocToolbar() {
@@ -208,111 +193,126 @@ export function NewDocToolbar() {
     editor,
   ]);
 
-  const datatypes = useMemo(() => getListedDatatypeDescriptions(), []);
-  const [selected, setSelected] = useState(() => getSelectedDatatypeId() || datatypes[0]?.id || '');
+  const [datatypes, setDatatypes] = useState<DatatypeDescription[]>([]);
 
-  // Keep module state in sync
+  // Load datatypes on mount
   useEffect(() => {
-    if (selected) setSelectedDatatypeId(selected);
-  }, [selected]);
-
-  // If the registry loads late, pick the first entry
-  useEffect(() => {
-    if (!selected && datatypes.length > 0) {
-      setSelected(datatypes[0].id);
+    const dt = getListedDatatypeDescriptions();
+    setDatatypes(dt);
+    if (dt.length > 0 && !_selectedDatatypeId) {
+      _selectedDatatypeId = dt[0].id;
     }
-  }, [datatypes, selected]);
+  }, []);
 
-  const selectedName = datatypes.find((d) => d.id === selected)?.name ?? 'document';
+  const handleSelectAndActivate = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      e.stopPropagation();
+      const id = e.target.value;
+      if (id) {
+        setSelectedDatatypeId(id);
+        editor.setCurrentTool('new-doc');
+      }
+    },
+    [editor],
+  );
+
+  const handlePlusClick = useCallback(() => {
+    if (datatypes.length === 1) {
+      setSelectedDatatypeId(datatypes[0].id);
+      editor.setCurrentTool('new-doc');
+    }
+    // If multiple, the invisible select handles it
+  }, [datatypes, editor]);
+
+  if (datatypes.length === 0) {
+    return (
+      <DefaultToolbar>
+        <DefaultToolbarContent />
+      </DefaultToolbar>
+    );
+  }
 
   return (
     <DefaultToolbar>
       <DefaultToolbarContent />
-      {datatypes.length > 0 && (
-        <>
-          {/* Separator */}
-          <div
-            style={{
-              width: '1px',
-              height: '20px',
-              background: '#ddd',
-              margin: '0 2px',
-              flexShrink: 0,
-            }}
-          />
 
-          {/* The new-doc tool button in the toolbar */}
-          <ToolbarItem tool="new-doc" />
+      {/* Separator */}
+      <div
+        style={{
+          width: '1px',
+          height: '20px',
+          background: '#ddd',
+          margin: '0 4px',
+          flexShrink: 0,
+        }}
+      />
 
-          {/* Datatype pill picker right next to the button */}
-          <div
+      {/* + button with invisible select overlay for multi-datatype */}
+      <div
+        style={{
+          position: 'relative',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        <button
+          type="button"
+          onClick={handlePlusClick}
+          title="Create a new document"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '32px',
+            height: '32px',
+            border: 'none',
+            borderRadius: '6px',
+            background: isActive ? 'var(--color-selected, #e8f0fe)' : 'transparent',
+            cursor: 'pointer',
+            color: isActive ? 'var(--color-selected-contrast, #2f80ed)' : 'currentColor',
+            flexShrink: 0,
+            pointerEvents: datatypes.length > 1 ? 'none' : 'auto',
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path
+              d="M8 2v12M2 8h12"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+
+        {/* For multiple datatypes: invisible native select over the button */}
+        {datatypes.length > 1 && (
+          <select
+            value={_selectedDatatypeId}
+            onChange={handleSelectAndActivate}
+            onPointerDown={(e) => e.stopPropagation()}
             style={{
-              position: 'relative',
-              flexShrink: 0,
-              display: 'flex',
-              alignItems: 'center',
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              opacity: 0,
+              cursor: 'pointer',
+              fontSize: '13px',
             }}
           >
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '3px',
-                fontSize: '11px',
-                color: isActive ? '#2f80ed' : '#666',
-                padding: '2px 8px',
-                background: isActive ? '#e8f0fe' : '#eee',
-                borderRadius: '9999px',
-                fontFamily: 'system-ui, -apple-system, sans-serif',
-                pointerEvents: 'none',
-                whiteSpace: 'nowrap',
-                lineHeight: '16px',
-                fontWeight: isActive ? 600 : 400,
-              }}
-            >
-              {selectedName}
-              {datatypes.length > 1 && (
-                <svg width="8" height="8" viewBox="0 0 8 8" style={{ opacity: 0.5 }}>
-                  <path
-                    d="M1 2.5L4 5.5L7 2.5"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    fill="none"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              )}
-            </span>
-
-            {datatypes.length > 1 && (
-              <select
-                value={selected}
-                onChange={(e) => {
-                  setSelected(e.target.value);
-                  // Also activate the tool when the user picks a type
-                  editor.setCurrentTool('new-doc');
-                }}
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  width: '100%',
-                  height: '100%',
-                  opacity: 0,
-                  cursor: 'pointer',
-                  fontSize: '11px',
-                }}
-              >
-                {datatypes.map((dt) => (
-                  <option key={dt.id} value={dt.id}>
-                    {dt.name}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-        </>
-      )}
+            <option value="" disabled>
+              New…
+            </option>
+            {datatypes.map((dt) => (
+              <option key={dt.id} value={dt.id}>
+                + {dt.name}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
     </DefaultToolbar>
   );
 }
