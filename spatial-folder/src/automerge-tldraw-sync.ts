@@ -35,11 +35,12 @@ export function applyTLStoreChangesToAutomergeDoc(
   }
 
   for (const record of changes.updated) {
-    if (tldrawMap[record.id] === undefined) {
-      // Shouldn't happen, but recover gracefully.
+    const existing = tldrawMap[record.id];
+    if (existing === undefined || typeof existing === 'string') {
+      // Missing, or old JSON-string format — replace the whole thing.
       tldrawMap[record.id] = structuredCloneCompat(record);
     } else {
-      deepCompareAndUpdate(tldrawMap[record.id], record);
+      deepCompareAndUpdate(existing, record);
     }
   }
 
@@ -77,8 +78,7 @@ export function applyAutomergePatchesToTLStore(
           toRemove.push(id as TLRecord['id']);
         } else {
           // Deleting a property inside a record
-          const record =
-            updatedObjects[id] ?? cloneFromStore(store, id);
+          const record = updatedObjects[id] ?? cloneFromStore(store, id);
           if (record) {
             applyDelToObject(patch, record);
             updatedObjects[id] = record;
@@ -90,14 +90,10 @@ export function applyAutomergePatchesToTLStore(
         if (patch.path.length === 2) {
           // Whole record being set — typically an add
           if (patch.value && typeof patch.value === 'object') {
-            updatedObjects[id] = remapParentPage(
-              patch.value as TLRecord,
-              currentPageId,
-            );
+            updatedObjects[id] = remapParentPage(patch.value as TLRecord, currentPageId);
           }
         } else {
-          const record =
-            updatedObjects[id] ?? cloneFromStore(store, id);
+          const record = updatedObjects[id] ?? cloneFromStore(store, id);
           if (record) {
             updatedObjects[id] = applyPutToObject(patch, record);
           }
@@ -105,16 +101,14 @@ export function applyAutomergePatchesToTLStore(
         break;
       }
       case 'insert': {
-        const record =
-          updatedObjects[id] ?? cloneFromStore(store, id);
+        const record = updatedObjects[id] ?? cloneFromStore(store, id);
         if (record) {
           updatedObjects[id] = applyInsertToObject(patch, record);
         }
         break;
       }
       case 'splice': {
-        const record =
-          updatedObjects[id] ?? cloneFromStore(store, id);
+        const record = updatedObjects[id] ?? cloneFromStore(store, id);
         if (record) {
           updatedObjects[id] = applySpliceToObject(patch, record);
         }
@@ -132,9 +126,7 @@ export function applyAutomergePatchesToTLStore(
     }
   }
 
-  const toPut = Object.values(updatedObjects).map((r) =>
-    remapParentPage(r, currentPageId),
-  );
+  const toPut = Object.values(updatedObjects).map((r) => remapParentPage(r, currentPageId));
 
   if (toPut.length === 0 && toRemove.length === 0) return;
 
