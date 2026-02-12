@@ -79,16 +79,94 @@ async function loadDatatype(id: string): Promise<LoadedDatatype | undefined> {
 }
 
 // ---------------------------------------------------------------------------
-// NewDocShapeTool — uses a plain StateNode so no shape is rendered mid-drag.
-// On pointer-up we create the shape at the click point with a default size.
-// This avoids the HTMLContainer capturing pointer events during the drag.
+// NewDocShapeTool — draws a preview rectangle while dragging, then creates
+// the patchwork-doc shape at the drawn bounds on pointer-up.
 // ---------------------------------------------------------------------------
 
 export class NewDocShapeTool extends StateNode {
   static override id = 'new-doc';
 
-  override onPointerUp(info: TLPointerEventInfo) {
+  private startPoint = { x: 0, y: 0 };
+  private previewId: ReturnType<typeof createShapeId> | null = null;
+
+  override onPointerDown(info: TLPointerEventInfo) {
     const { currentPagePoint } = this.editor.inputs;
+    this.startPoint = { x: currentPagePoint.x, y: currentPagePoint.y };
+
+    // Create a temporary dashed geo rectangle as a visual preview
+    this.previewId = createShapeId();
+    this.editor.createShape({
+      id: this.previewId,
+      type: 'geo',
+      x: currentPagePoint.x,
+      y: currentPagePoint.y,
+      props: {
+        w: 1,
+        h: 1,
+        geo: 'rectangle',
+        dash: 'dashed',
+        fill: 'none',
+      },
+    });
+  }
+
+  override onPointerMove(info: TLPointerEventInfo) {
+    if (!this.previewId) return;
+
+    const { currentPagePoint } = this.editor.inputs;
+    const x = Math.min(this.startPoint.x, currentPagePoint.x);
+    const y = Math.min(this.startPoint.y, currentPagePoint.y);
+    const w = Math.max(1, Math.abs(currentPagePoint.x - this.startPoint.x));
+    const h = Math.max(1, Math.abs(currentPagePoint.y - this.startPoint.y));
+
+    this.editor.updateShape({
+      id: this.previewId,
+      type: 'geo',
+      x,
+      y,
+      props: { w, h },
+    });
+  }
+
+  override onCancel() {
+    this.cleanup();
+    this.editor.setCurrentTool('select');
+  }
+
+  override onInterrupt() {
+    this.cleanup();
+  }
+
+  private cleanup() {
+    if (this.previewId) {
+      if (this.editor.getShape(this.previewId)) {
+        this.editor.deleteShapes([this.previewId]);
+      }
+      this.previewId = null;
+    }
+  }
+
+  override onPointerUp(info: TLPointerEventInfo) {
+    if (!this.previewId) return;
+
+    // Read final bounds from the preview shape
+    const preview = this.editor.getShape(this.previewId);
+    this.editor.deleteShapes([this.previewId]);
+    this.previewId = null;
+
+    if (!preview) {
+      this.editor.setCurrentTool('select');
+      return;
+    }
+
+    const px = (preview as any).x as number;
+    const py = (preview as any).y as number;
+    const pw = (preview as any).props.w as number;
+    const ph = (preview as any).props.h as number;
+
+    // Enforce minimum size
+    const finalW = Math.max(pw, 200);
+    const finalH = Math.max(ph, 150);
 
     if (!_element || !_handle) {
       console.warn('[spatial-folder] NewDocTool: context not set');
@@ -109,16 +187,16 @@ export class NewDocShapeTool extends StateNode {
     const hive = _element.hive;
     const handle = _handle;
 
-    // Create the shape immediately at the click point
+    // Create the patchwork-doc shape at the drawn bounds
     editor.createShape({
       id: shapeId,
       type: PATCHWORK_DOC_SHAPE_TYPE,
-      x: currentPagePoint.x - 320,
-      y: currentPagePoint.y - 240,
+      x: px,
+      y: py,
       rotation: 0,
       props: {
-        w: 640,
-        h: 480,
+        w: finalW,
+        h: finalH,
         docUrl: '',
         docName: 'Creating…',
         docType: datatypeId,
