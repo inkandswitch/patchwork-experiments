@@ -10,9 +10,10 @@
  */
 
 import {
-  BaseBoxShapeTool,
+  StateNode,
+  createShapeId,
   DefaultToolbarContent,
-  type TLShape,
+  type TLPointerEventInfo,
   type TLUiOverrides,
   type TLUiToolsContextType,
   type Editor,
@@ -78,48 +79,56 @@ async function loadDatatype(id: string): Promise<LoadedDatatype | undefined> {
 }
 
 // ---------------------------------------------------------------------------
-// NewDocShapeTool
+// NewDocShapeTool — uses a plain StateNode so no shape is rendered mid-drag.
+// On pointer-up we create the shape at the click point with a default size.
+// This avoids the HTMLContainer capturing pointer events during the drag.
 // ---------------------------------------------------------------------------
 
-export class NewDocShapeTool extends BaseBoxShapeTool {
+export class NewDocShapeTool extends StateNode {
   static override id = 'new-doc';
-  static override initial = 'idle';
-  override shapeType = PATCHWORK_DOC_SHAPE_TYPE;
 
-  override onCreate(shape: TLShape | null) {
-    if (!shape) return;
+  override onPointerUp(info: TLPointerEventInfo) {
+    const { currentPagePoint } = this.editor.inputs;
 
     if (!_element || !_handle) {
-      console.warn(
-        '[spatial-folder] NewDocTool: context not set — call setNewDocToolContext first',
-      );
+      console.warn('[spatial-folder] NewDocTool: context not set');
+      this.editor.setCurrentTool('select');
       return;
     }
 
     const datatypeId = _selectedDatatypeId;
     if (!datatypeId) {
       console.warn('[spatial-folder] NewDocTool: no datatype selected');
+      this.editor.setCurrentTool('select');
       return;
     }
 
     const editor = this.editor;
-    const shapeId = shape.id;
+    const shapeId = createShapeId();
     const repo = _element.repo;
     const hive = _element.hive;
     const handle = _handle;
 
-    // Label the shape while the doc is being created
-    editor.updateShape({
+    // Create the shape immediately at the click point
+    editor.createShape({
       id: shapeId,
       type: PATCHWORK_DOC_SHAPE_TYPE,
+      x: currentPagePoint.x - 320,
+      y: currentPagePoint.y - 240,
+      rotation: 0,
       props: {
-        docName: `Creating…`,
+        w: 640,
+        h: 480,
+        docUrl: '',
+        docName: 'Creating…',
         docType: datatypeId,
+        toolId: '',
       },
     } as any);
 
-    // Switch back to select tool immediately so the user isn't stuck
+    // Switch to select immediately
     editor.setCurrentTool('select');
+    editor.setSelectedShapes([shapeId]);
 
     // Async: load the datatype module, create document, update shape, add to folder
     (async () => {
@@ -307,7 +316,7 @@ export function NewDocToolbar() {
             </option>
             {datatypes.map((dt) => (
               <option key={dt.id} value={dt.id}>
-                + {dt.name}
+                {dt.name}
               </option>
             ))}
           </select>
