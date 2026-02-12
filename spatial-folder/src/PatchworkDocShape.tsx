@@ -132,8 +132,12 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
     [editor, shape.id],
   );
 
-  // Resolve which toolId to show – fall back to first available tool
-  const effectiveToolId = toolId || (tools.length > 0 ? tools[0].id : '');
+  // Only pass tool-id once the user has explicitly picked one
+  const effectiveToolId = toolId || '';
+
+  // Label for the pill: show selected tool name, or the docType fallback
+  const selectedTool = tools.find((t) => t.id === effectiveToolId);
+  const pillLabel = selectedTool ? selectedTool.name : docType || '';
 
   return (
     <HTMLContainer
@@ -181,61 +185,72 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
           {docName}
         </span>
 
-        {/* Tool selector dropdown */}
-        {tools.length > 1 ? (
-          <select
-            value={effectiveToolId}
-            onChange={handleToolChange}
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
+        {/* Tool selector pill */}
+        {pillLabel && (
+          <div
             style={{
-              fontSize: '12px',
-              fontFamily: 'system-ui, -apple-system, sans-serif',
-              color: '#555',
-              background: '#e8e8e8',
-              border: '1px solid #d0d0d0',
-              borderRadius: '4px',
-              padding: '2px 6px',
-              cursor: 'pointer',
-              flexShrink: 0,
-              maxWidth: '140px',
-            }}
-          >
-            {tools.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-        ) : tools.length === 1 ? (
-          <span
-            style={{
-              fontSize: '11px',
-              color: '#888',
-              padding: '2px 8px',
-              background: '#e8e8e8',
-              borderRadius: '4px',
-              fontFamily: 'system-ui, -apple-system, sans-serif',
+              position: 'relative',
               flexShrink: 0,
             }}
           >
-            {tools[0].name}
-          </span>
-        ) : docType ? (
-          <span
-            style={{
-              fontSize: '11px',
-              color: '#888',
-              padding: '2px 8px',
-              background: '#e8e8e8',
-              borderRadius: '4px',
-              fontFamily: 'system-ui, -apple-system, sans-serif',
-              flexShrink: 0,
-            }}
-          >
-            {docType}
-          </span>
-        ) : null}
+            {/* Visible pill label */}
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: '11px',
+                color: '#666',
+                padding: '2px 8px',
+                background: '#e8e8e8',
+                borderRadius: '9999px',
+                fontFamily: 'system-ui, -apple-system, sans-serif',
+                pointerEvents: 'none',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {pillLabel}
+              {tools.length > 1 && (
+                <svg width="8" height="8" viewBox="0 0 8 8" style={{ opacity: 0.5 }}>
+                  <path
+                    d="M1 2.5L4 5.5L7 2.5"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              )}
+            </span>
+
+            {/* Invisible native select overlaid on the pill for interaction */}
+            {tools.length > 1 && (
+              <select
+                value={effectiveToolId}
+                onChange={handleToolChange}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  opacity: 0,
+                  cursor: 'pointer',
+                  fontSize: '11px',
+                }}
+              >
+                {!effectiveToolId && <option value="">{docType} (default)</option>}
+                {tools.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ---- Patchwork view content ---- */}
@@ -253,6 +268,7 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
           <patchwork-view
             doc-url={docUrl}
             {...(effectiveToolId ? { 'tool-id': effectiveToolId } : {})}
+            key={effectiveToolId || 'default'}
             style={{
               display: 'block',
               width: '100%',
