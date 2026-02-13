@@ -5,8 +5,6 @@ import { createRoot } from "react-dom/client";
 import { datatype } from "./datatype.ts";
 import "./main.css";
 
-console.log("tool-sketch 0.3");
-
 export const plugins = [
   {
     type: "patchwork:datatype",
@@ -33,6 +31,16 @@ export const plugins = [
         );
         return () => root.unmount();
       };
+    },
+  },
+  {
+    type: "patchwork:tool",
+    id: "codemirror-extendable",
+    name: "Extendable Text Editor",
+    supportedDatatypes: ["essay", "markdown"],
+    async load(): Promise<ToolImplementation> {
+      const { createCodeMirrorEditor } = await import("./codemirror-extendable/tool.ts");
+      return createCodeMirrorEditor;
     },
   },
 ];
