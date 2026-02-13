@@ -21,7 +21,8 @@ import {
   useValue,
   DefaultToolbar,
 } from 'tldraw';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import type { DocHandle } from '@automerge/automerge-repo';
 import {
   getRegistry,
@@ -93,13 +94,16 @@ export class NewDocShapeTool extends StateNode {
     const { currentPagePoint } = this.editor.inputs;
     this.startPoint = { x: currentPagePoint.x, y: currentPagePoint.y };
 
-    // Create a temporary dashed geo rectangle as a visual preview
+    // Create a temporary dashed geo rectangle as a visual preview.
+    // Explicitly parent to the current page so it doesn't get auto-parented
+    // to a frame (which would offset it).
     this.previewId = createShapeId();
     this.editor.createShape({
       id: this.previewId,
       type: 'geo',
       x: currentPagePoint.x,
       y: currentPagePoint.y,
+      parentId: this.editor.getCurrentPageId(),
       props: {
         w: 1,
         h: 1,
@@ -194,11 +198,12 @@ export class NewDocShapeTool extends StateNode {
       x: px,
       y: py,
       rotation: 0,
+      parentId: this.editor.getCurrentPageId(),
       props: {
         w: finalW,
         h: finalH,
         docUrl: '',
-        docName: 'Creating…',
+        docName: 'Creating\u2026',
         docType: datatypeId,
         toolId: '',
       },
@@ -285,6 +290,9 @@ export function NewDocToolbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [hovering, setHovering] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
 
   // Load datatypes on mount
   useEffect(() => {
@@ -299,7 +307,10 @@ export function NewDocToolbar() {
   useEffect(() => {
     if (!menuOpen) return;
     const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      const inContainer = containerRef.current?.contains(target);
+      const inMenu = menuRef.current?.contains(target);
+      if (!inContainer && !inMenu) {
         setMenuOpen(false);
       }
     };
@@ -307,10 +318,10 @@ export function NewDocToolbar() {
     return () => document.removeEventListener('pointerdown', handler, true);
   }, [menuOpen]);
 
-  // Close menu when tool deactivates
-  useEffect(() => {
-    if (!isActive) setMenuOpen(false);
-  }, [isActive]);
+  // NOTE: we intentionally do NOT close the menu when isActive flips to false.
+  // tldraw deactivates the tool on pointerdown before React can process the
+  // click on a menu button.  The menu closes itself in handlePickDatatype
+  // or via the outside-click handler.
 
   const activateTool = useCallback(() => {
     if (datatypes.length > 0 && !_selectedDatatypeId) {
@@ -319,19 +330,35 @@ export function NewDocToolbar() {
     editor.setCurrentTool('new-doc');
   }, [datatypes, editor]);
 
+  const openMenu = useCallback(() => {
+    if (buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setMenuPos({ x: rect.left + rect.width / 2, y: rect.top });
+    }
+    setMenuOpen(true);
+  }, []);
+
   const handlePlusClick = useCallback(() => {
     if (!isActive) {
       // First click: activate the tool
       activateTool();
     } else {
       // Already active: toggle the menu
-      setMenuOpen((prev) => !prev);
+      if (menuOpen) {
+        setMenuOpen(false);
+      } else {
+        openMenu();
+      }
     }
-  }, [isActive, activateTool]);
+  }, [isActive, activateTool, menuOpen, openMenu]);
 
   const handlePillClick = useCallback(() => {
-    setMenuOpen((prev) => !prev);
-  }, []);
+    if (menuOpen) {
+      setMenuOpen(false);
+    } else {
+      openMenu();
+    }
+  }, [menuOpen, openMenu]);
 
   const handlePickDatatype = useCallback(
     (id: string) => {
@@ -424,6 +451,7 @@ export function NewDocToolbar() {
 
         {/* + button */}
         <button
+          ref={buttonRef}
           type="button"
           onClick={handlePlusClick}
           onPointerEnter={() => setHovering(true)}
@@ -453,57 +481,68 @@ export function NewDocToolbar() {
           </svg>
         </button>
 
-        {/* Custom dropdown menu */}
-        {menuOpen && datatypes.length > 1 && (
-          <div
-            style={{
-              position: 'absolute',
-              bottom: '100%',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              marginBottom: '6px',
-              background: '#fff',
-              border: '1px solid #ddd',
-              borderRadius: '8px',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
-              padding: '4px',
-              minWidth: '150px',
-              zIndex: 10001,
-            }}
-          >
-            {datatypes.map((dt) => (
-              <button
-                key={dt.id}
-                type="button"
-                onClick={() => handlePickDatatype(dt.id)}
-                style={{
-                  display: 'block',
-                  width: '100%',
-                  padding: '6px 10px',
-                  border: 'none',
-                  borderRadius: '4px',
-                  background: dt.id === _selectedDatatypeId ? '#e8f0fe' : 'transparent',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  fontFamily: 'system-ui, -apple-system, sans-serif',
-                  color: '#333',
-                  textAlign: 'left',
-                  whiteSpace: 'nowrap',
-                }}
-                onPointerEnter={(e) => {
-                  (e.currentTarget as HTMLElement).style.background =
-                    dt.id === _selectedDatatypeId ? '#e8f0fe' : '#f5f5f5';
-                }}
-                onPointerLeave={(e) => {
-                  (e.currentTarget as HTMLElement).style.background =
-                    dt.id === _selectedDatatypeId ? '#e8f0fe' : 'transparent';
-                }}
-              >
-                {dt.name}
-              </button>
-            ))}
-          </div>
-        )}
+        {/* Custom dropdown menu — portalled to body to escape overflow:hidden */}
+        {menuOpen &&
+          datatypes.length > 1 &&
+          menuPos &&
+          createPortal(
+            <div
+              ref={menuRef}
+              style={{
+                position: 'fixed',
+                left: menuPos.x,
+                top: menuPos.y,
+                transform: 'translate(-50%, -100%)',
+                marginTop: '-8px',
+                background: '#fff',
+                border: '1px solid #ddd',
+                borderRadius: '8px',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+                padding: '4px',
+                minWidth: '150px',
+                zIndex: 100000,
+              }}
+            >
+              {datatypes.map((dt) => (
+                <button
+                  key={dt.id}
+                  type="button"
+                  onPointerDown={(e) => {
+                    // Handle selection on pointerdown so it fires before
+                    // tldraw can process the event and deactivate the tool.
+                    e.stopPropagation();
+                    e.preventDefault();
+                    handlePickDatatype(dt.id);
+                  }}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    padding: '6px 10px',
+                    border: 'none',
+                    borderRadius: '4px',
+                    background: dt.id === _selectedDatatypeId ? '#e8f0fe' : 'transparent',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontFamily: 'system-ui, -apple-system, sans-serif',
+                    color: '#333',
+                    textAlign: 'left',
+                    whiteSpace: 'nowrap',
+                  }}
+                  onPointerEnter={(e) => {
+                    (e.currentTarget as HTMLElement).style.background =
+                      dt.id === _selectedDatatypeId ? '#e8f0fe' : '#f5f5f5';
+                  }}
+                  onPointerLeave={(e) => {
+                    (e.currentTarget as HTMLElement).style.background =
+                      dt.id === _selectedDatatypeId ? '#e8f0fe' : 'transparent';
+                  }}
+                >
+                  {dt.name}
+                </button>
+              ))}
+            </div>,
+            document.body,
+          )}
       </div>
     </DefaultToolbar>
   );
