@@ -7,6 +7,7 @@ import { EmbedShapeUtil } from "./embed/EmbedShapeUtil.tsx";
 import { EmbedShapeTool } from "./embed/EmbedShapeTool.tsx";
 import { makeComponents, uiOverrides } from "./ui-overrides.tsx";
 import { useModuleFolders } from "./turn-into-tool/useModuleFolders.ts";
+import { ToolSketchDocProvider } from "./ToolSketchContext.tsx";
 import React, { useCallback, useEffect, useMemo } from "react";
 
 const shapeUtils = [EmbedShapeUtil];
@@ -32,9 +33,11 @@ export function TldrawTool({ docUrl }: { docUrl: AutomergeUrl }) {
   );
 
   return (
-    <Tldraw inferDarkMode autoFocus store={store} shapeUtils={shapeUtils} tools={tools} overrides={uiOverrides} components={tldrawComponents} options={tldrawOptions} licenseKey={import.meta.env.VITE_TLDRAW_LICENSE_KEY}>
-      <TldrawInner docUrl={docUrl} />
-    </Tldraw>
+    <ToolSketchDocProvider value={docUrl}>
+      <Tldraw inferDarkMode autoFocus store={store} shapeUtils={shapeUtils} tools={tools} overrides={uiOverrides} components={tldrawComponents} options={tldrawOptions} licenseKey={import.meta.env.VITE_TLDRAW_LICENSE_KEY}>
+        <TldrawInner docUrl={docUrl} />
+      </Tldraw>
+    </ToolSketchDocProvider>
   );
 }
 

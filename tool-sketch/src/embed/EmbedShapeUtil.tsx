@@ -7,6 +7,8 @@ import type { HasPatchworkMetadata } from "@inkandswitch/patchwork-filesystem";
 import { parseEmbedUrl } from "./parseEmbedUrl";
 import "@inkandswitch/patchwork-elements";
 import { getRegistry, type DatatypeDescription, type LoadedDatatype } from "@inkandswitch/patchwork-plugins";
+import { useToolSketchDocUrl } from "../ToolSketchContext.tsx";
+import type { ToolSketchDoc } from "../datatype.ts";
 
 const EMBED_TYPE = "patchwork-embed";
 
@@ -272,8 +274,54 @@ function EmbedHeader({ shape, editor, docUrl, type, effectiveToolId, onSelectToo
     <div ref={headerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} className="px-2 py-1.5 border-b border-gray-200 cursor-grab flex items-center gap-2 shrink-0 bg-gray-50" style={{ pointerEvents: "all" }}>
       <DocTitle docUrl={docUrl} type={type} />
       <div className="flex-1 min-w-0"></div>
+      <CopyButton docUrl={docUrl} extensionModuleUrl={shape.props.extensionModuleUrl} />
       <ToolPickerDropdown docUrl={docUrl} type={type} onSelect={onSelectTool} value={effectiveToolId ?? undefined} />
     </div>
+  );
+}
+
+function CopyButton({ docUrl, extensionModuleUrl }: { docUrl: AutomergeUrl; extensionModuleUrl?: string }) {
+  const toolSketchDocUrl = useToolSketchDocUrl();
+  const [toolSketchDoc] = useDocument<ToolSketchDoc>(toolSketchDocUrl as AutomergeUrl);
+  const [doc] = useDocument<HasPatchworkMetadata>(docUrl);
+  const [copied, setCopied] = useState(false);
+
+  // Determine which folder to copy from and which label to show
+  let folderUrl: AutomergeUrl | null = null;
+  let label: string | null = null;
+
+  if (extensionModuleUrl) {
+    folderUrl = extensionModuleUrl as AutomergeUrl;
+    label = "Copy Extension";
+  } else {
+    const importUrl = doc?.["@patchwork"]?.suggestedImportUrl;
+    if (importUrl && toolSketchDoc?.moduleFolders?.includes(importUrl as AutomergeUrl)) {
+      folderUrl = importUrl as AutomergeUrl;
+      label = "Copy Tool";
+    }
+  }
+
+  const handleCopy = useCallback(async () => {
+    if (!folderUrl) return;
+    try {
+      await navigator.clipboard.writeText(folderUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (err) {
+      console.warn("Failed to copy folder URL:", err);
+    }
+  }, [folderUrl]);
+
+  if (!label) return null;
+
+  return (
+    <button
+      onClick={handleCopy}
+      onPointerDown={(e) => e.stopPropagation()}
+      className="px-2 py-0.5 text-xs border border-gray-300 rounded bg-white hover:bg-gray-100 cursor-pointer text-gray-600 whitespace-nowrap"
+    >
+      {copied ? "Copied!" : label}
+    </button>
   );
 }
 
