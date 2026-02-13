@@ -19,6 +19,7 @@ declare module "tldraw" {
       toolId?: string;
       type?: string;
       placeholder?: boolean;
+      extensionModuleUrl?: string;
     };
   }
 }
@@ -34,6 +35,7 @@ export class EmbedShapeUtil extends BaseBoxShapeUtil<IEmbedShape> {
     toolId: T.string.optional(),
     type: T.string.optional(),
     placeholder: T.boolean.optional(),
+    extensionModuleUrl: T.string.optional(),
   };
 
   override getDefaultProps(): IEmbedShape["props"] {
@@ -107,7 +109,7 @@ export class EmbedShapeUtil extends BaseBoxShapeUtil<IEmbedShape> {
 }
 
 function EmbedContent({ shape, util }: { shape: IEmbedShape; util: EmbedShapeUtil }) {
-  const { docUrl, toolId, type, placeholder } = shape.props;
+  const { docUrl, toolId, type, placeholder, extensionModuleUrl } = shape.props;
   const editor = util.editor;
 
   const [selectedToolId, setSelectedToolId] = useState<string | null>(toolId ?? null);
@@ -128,14 +130,7 @@ function EmbedContent({ shape, util }: { shape: IEmbedShape; util: EmbedShapeUti
       e.stopPropagation();
     };
 
-    const events = [
-      "pointerdown", "pointermove", "pointerup", "pointercancel",
-      "mousedown", "mousemove", "mouseup",
-      "click", "dblclick",
-      "keydown", "keyup", "keypress",
-      "wheel",
-      "touchstart", "touchmove", "touchend", "touchcancel",
-    ];
+    const events = ["pointerdown", "pointermove", "pointerup", "pointercancel", "mousedown", "mousemove", "mouseup", "click", "dblclick", "keydown", "keyup", "keypress", "wheel", "touchstart", "touchmove", "touchend", "touchcancel"];
 
     for (const evt of events) {
       el.addEventListener(evt, stopProp);
@@ -177,13 +172,15 @@ function EmbedContent({ shape, util }: { shape: IEmbedShape; util: EmbedShapeUti
         }}
       />
       {effectiveToolId && (
-        <div
-          ref={contentRef}
-          className="flex-1 min-h-0 relative"
-        >
+        <div ref={contentRef} className="flex-1 min-h-0 relative">
           {/* @ts-expect-error Custom element from patchwork-elements */}
           <patchwork-view
-            key={effectiveToolId}
+            key={`${effectiveToolId}-${extensionModuleUrl ?? ""}`}
+            ref={(el: HTMLElement | null) => {
+              if (el && extensionModuleUrl) {
+                (el as any).extensionModuleUrl = extensionModuleUrl;
+              }
+            }}
             doc-url={docUrl}
             tool-id={effectiveToolId}
             style={{
@@ -266,13 +263,10 @@ function EmbedHeader({ shape, editor, docUrl, type, effectiveToolId, onSelectToo
     [editor, shape.id]
   );
 
-  const handlePointerUp = useCallback(
-    (e: React.PointerEvent) => {
-      dragRef.current = null;
-      headerRef.current?.releasePointerCapture(e.pointerId);
-    },
-    []
-  );
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    dragRef.current = null;
+    headerRef.current?.releasePointerCapture(e.pointerId);
+  }, []);
 
   return (
     <div ref={headerRef} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} className="px-2 py-1.5 border-b border-gray-200 cursor-grab flex items-center gap-2 shrink-0 bg-gray-50" style={{ pointerEvents: "all" }}>
@@ -294,7 +288,7 @@ function DocTitle({ docUrl, type }: { docUrl: AutomergeUrl; type?: string }) {
     if (!docType) return;
 
     const registryPlugin = getRegistry<DatatypeDescription>("patchwork:datatype").get(docType);
-    const plugin = registryPlugin && "module" in registryPlugin ? registryPlugin as LoadedDatatype : undefined;
+    const plugin = registryPlugin && "module" in registryPlugin ? (registryPlugin as LoadedDatatype) : undefined;
     if (plugin?.module?.getTitle) {
       setTitle(plugin.module.getTitle(doc));
     }
@@ -363,6 +357,7 @@ function ToolPickerDropdown({ docUrl, type, onSelect, value }: { docUrl: string;
 
   const tools = allTools.filter((t) => {
     if (t.unlisted) return false;
+    if (!t.supportedDatatypes) return false;
     return t.supportedDatatypes === "*" || t.supportedDatatypes.includes(docType);
   });
 
