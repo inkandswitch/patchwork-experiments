@@ -6,7 +6,7 @@ import { useToolDescriptions } from "@inkandswitch/patchwork-react";
 import type { HasPatchworkMetadata } from "@inkandswitch/patchwork-filesystem";
 import { parseEmbedUrl } from "./parseEmbedUrl";
 import "@inkandswitch/patchwork-elements";
-import { getDatatypeById } from "../local-modules";
+import { getRegistry, type DatatypeDescription, type LoadedDatatype } from "@inkandswitch/patchwork-plugins";
 
 const EMBED_TYPE = "patchwork-embed";
 
@@ -293,7 +293,8 @@ function DocTitle({ docUrl, type }: { docUrl: AutomergeUrl; type?: string }) {
     const docType = type ?? doc["@patchwork"]?.type;
     if (!docType) return;
 
-    const plugin = getDatatypeById(docType);
+    const registryPlugin = getRegistry<DatatypeDescription>("patchwork:datatype").get(docType);
+    const plugin = registryPlugin && "module" in registryPlugin ? registryPlugin as LoadedDatatype : undefined;
     if (plugin?.module?.getTitle) {
       setTitle(plugin.module.getTitle(doc));
     }

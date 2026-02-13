@@ -1,6 +1,7 @@
 import { getHeads } from "@automerge/automerge";
 import { type AutomergeUrl, encodeHeads, parseAutomergeUrl, stringifyAutomergeUrl } from "@automerge/automerge-repo";
 import { useDocHandle, useRepo } from "@automerge/automerge-repo-react-hooks";
+import { createDocOfDatatype2, getRegistry, type DatatypeDescription, type LoadedDatatype } from "@inkandswitch/patchwork-plugins";
 import { useCallback } from "react";
 import { type Box, type Editor, createShapeId, useEditor } from "tldraw";
 import type { ToolSketchDoc } from "../datatype.ts";
@@ -16,20 +17,11 @@ const EMBED_TYPE = "patchwork-embed";
 const EMBED_WIDTH = 400;
 const EMBED_HEIGHT = 300;
 
-function rectsOverlap(
-  ax: number, ay: number, aw: number, ah: number,
-  bx: number, by: number, bw: number, bh: number
-): boolean {
+function rectsOverlap(ax: number, ay: number, aw: number, ah: number, bx: number, by: number, bw: number, bh: number): boolean {
   return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
 }
 
-function findPlacementPosition(
-  editor: Editor,
-  selectionBounds: Box,
-  embedWidth: number,
-  embedHeight: number,
-  gap: number
-): { x: number; y: number } {
+function findPlacementPosition(editor: Editor, selectionBounds: Box, embedWidth: number, embedHeight: number, gap: number): { x: number; y: number } {
   const allShapes = editor.getCurrentPageShapes();
   const candidateX = selectionBounds.maxX + gap;
   let candidateY = selectionBounds.y;
@@ -38,10 +30,7 @@ function findPlacementPosition(
     const hasOverlap = allShapes.some((shape) => {
       const shapeBounds = editor.getShapePageBounds(shape.id);
       if (!shapeBounds) return false;
-      return rectsOverlap(
-        candidateX, candidateY, embedWidth, embedHeight,
-        shapeBounds.x, shapeBounds.y, shapeBounds.w, shapeBounds.h
-      );
+      return rectsOverlap(candidateX, candidateY, embedWidth, embedHeight, shapeBounds.x, shapeBounds.y, shapeBounds.w, shapeBounds.h);
     });
     if (!hasOverlap) break;
     candidateY += embedHeight + 20;
@@ -197,18 +186,24 @@ export function TurnIntoTool({ docUrl }: { docUrl: AutomergeUrl }) {
       heads: encodeHeads(getHeads(folderDoc)),
     });
 
-    // ── 5. Create example document ───────────────────────────────
-    const exampleHandle = repo.create<Record<string, unknown>>();
-    exampleHandle.change((doc: Record<string, unknown>) => {
-      // Set patchwork metadata so the platform recognizes the type
-      (doc as any)["@patchwork"] = { type: datatypeId };
-      // Apply the example fields
-      for (const [key, value] of Object.entries(example)) {
-        doc[key] = value;
-      }
+    // ── 5. Load module so the datatype is registered ───────────────
+    const patchworkView = document.createElement("patchwork-view") as any;
+    await patchworkView.moduleWatcher.loadModules([folder.handle.url]);
+
+    const datatype = (await getRegistry<DatatypeDescription>("patchwork:datatype").load(datatypeId)) as LoadedDatatype | undefined;
+    if (!datatype) {
+      console.error(`Datatype "${datatypeId}" not found after loading module`);
+      editor.deleteShapes([placeholderShapeId, arrowId]);
+      return;
+    }
+
+    // ── 6. Create example document via datatype API ──────────────
+    const exampleHandle = await createDocOfDatatype2(datatype, repo, (doc: any) => {
+      // Apply the example fields on top of the init() defaults
+      Object.assign(doc, example);
     });
 
-    // ── 6. Update the placeholder embed ──────────────────────────
+    // ── 7. Update the placeholder embed ──────────────────────────
     editor.updateShape({
       id: placeholderShapeId,
       type: EMBED_TYPE,
@@ -220,7 +215,7 @@ export function TurnIntoTool({ docUrl }: { docUrl: AutomergeUrl }) {
       },
     });
 
-    // ── 7. Track the folder URL on the TLDrawDoc ─────────────────
+    // ── 8. Track the folder URL on the TLDrawDoc ─────────────────
     // this will trigger a load of the module in the tool-sketch tool
     tldrawDocHandle?.change((d) => {
       if (!d.moduleFolders) d.moduleFolders = [];

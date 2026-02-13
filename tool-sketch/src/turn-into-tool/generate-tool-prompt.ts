@@ -68,7 +68,7 @@ IMPORTANT RULES:
 - "id" is a kebab-case identifier for the tool (e.g. "tic-tac-toe").
 - "name" is a human-readable name (e.g. "Tic Tac Toe").
 - "code" is a single JavaScript source string containing the datatype, Tool function, and plugins export as shown above. The datatype id in the plugins array must match "id". The tool id in the plugins array should be "id" + "-tool".
-- "example" is a JSON object representing a filled-in example document of the datatype.
+- "example" is a JSON object containing only the data properties of a filled-in document (e.g. {title: "...", board: [...]}). Do NOT include any "@patchwork" metadata — just the plain data fields that the init() method would set up.
 - The Tool function must use vanilla DOM manipulation — no React, no JSX, no imports.
 - The tool should look beautiful with modern CSS styling.
 - Use the screenshot as a rough reference for layout and functionality, but come up with a more polished and refined visual style. Don't just replicate the sketch literally — improve it.
