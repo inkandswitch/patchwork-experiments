@@ -11,7 +11,7 @@ import {
   useEditor,
   useValue,
 } from 'tldraw';
-import { useMemo, useCallback } from 'react';
+import { useMemo, useCallback, useRef, useEffect, useState } from 'react';
 import { getSupportedToolsForType, type LoadedTool } from '@inkandswitch/patchwork-plugins';
 
 export const PATCHWORK_DOC_SHAPE_TYPE = 'patchwork-doc' as const;
@@ -122,6 +122,37 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
   const isSelectTool = useValue('is select tool', () => editor.getCurrentToolId() === 'select', [
     editor,
   ]);
+
+  // Measure the actual rendered size on screen to avoid infinite recursion
+  // when nested spatial folders get too small
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [actualSize, setActualSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+
+    const updateSize = () => {
+      const rect = element.getBoundingClientRect();
+      setActualSize({ width: rect.width, height: rect.height });
+    };
+
+    // Initial measurement
+    updateSize();
+
+    // Watch for size changes
+    const resizeObserver = new ResizeObserver(updateSize);
+    resizeObserver.observe(element);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []);
+
+  // Threshold: don't render patchwork-view if smaller than 50 pixels in either dimension
+  const MIN_VISUAL_SIZE = 10;
+  const shouldRenderContent =
+    actualSize.width >= MIN_VISUAL_SIZE && actualSize.height >= MIN_VISUAL_SIZE;
 
   const handleToolChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -259,6 +290,7 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
 
       {/* ---- Patchwork view content ---- */}
       <div
+        ref={containerRef}
         style={{
           flex: 1,
           minHeight: 0,
@@ -268,7 +300,22 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
         }}
         onPointerDown={isSelectTool ? (e) => e.stopPropagation() : undefined}
       >
-        {docUrl ? (
+        {!shouldRenderContent ? (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '100%',
+              color: '#ccc',
+              fontSize: '12px',
+              fontFamily: 'system-ui, -apple-system, sans-serif',
+              background: '#fafafa',
+            }}
+          >
+            {docName}
+          </div>
+        ) : docUrl ? (
           // @ts-expect-error Custom element from patchwork-elements
           <patchwork-view
             doc-url={docUrl}

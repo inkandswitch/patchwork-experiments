@@ -61,6 +61,32 @@ function defaultPosition(index: number) {
   return { x: col * (DEFAULT_W + GAP), y: row * (DEFAULT_H + GAP) };
 }
 
+async function filterTldrawDocs(repo: any, docLinks: DocLink[]): Promise<DocLink[]> {
+  const filtered: DocLink[] = [];
+
+  for (const docLink of docLinks) {
+    try {
+      const docHandle = repo.find(docLink.url);
+      await docHandle.whenReady();
+      const doc = docHandle.docSync?.() ?? (docHandle as any).doc?.();
+
+      // Skip documents with @patchwork.type === "tldraw"
+      if (doc?.['@patchwork']?.type === 'tldraw') {
+        console.log(LOG, 'filtering out tldraw doc:', docLink.name);
+        continue;
+      }
+
+      filtered.push(docLink);
+    } catch (error) {
+      console.warn(LOG, 'error checking doc', docLink.url, error);
+      // Include the doc if we can't check it
+      filtered.push(docLink);
+    }
+  }
+
+  return filtered;
+}
+
 // ---- Tool entry point -------------------------------------------------------
 
 export const SpatialFolderTool: ToolRender = (handle, element) => {
@@ -98,6 +124,7 @@ function SpatialFolderCanvas({
   // Guards to break the tldraw ↔ automerge feedback loop.
   const isSyncingToTldrawRef = useRef(false);
   const isSyncingToAutomergeRef = useRef(false);
+  const isReconcilingRef = useRef(false);
 
   // ---- Tldraw mount callback (stable reference, never changes) ----
   const handleMountRef = useRef((editor: Editor) => {
@@ -112,7 +139,15 @@ function SpatialFolderCanvas({
       initializedRef.current = true;
       console.log(LOG, 'doc ready — running initializeSync');
       setNewDocToolContext(element, handle);
-      initializeSync(editor, handle, isSyncingToTldrawRef, isSyncingToAutomergeRef, cleanupFnsRef);
+      initializeSync(
+        editor,
+        handle,
+        element.repo,
+        isSyncingToTldrawRef,
+        isSyncingToAutomergeRef,
+        isReconcilingRef,
+        cleanupFnsRef,
+      );
     });
   });
 
@@ -138,8 +173,14 @@ function SpatialFolderCanvas({
       currentDoc.docs.length,
       'docs) — reconciling patchwork-doc shapes',
     );
-    reconcilePatchworkDocShapes(editor, currentDoc.docs);
-  }, [docUrlsKey, handle]);
+
+    // Filter out tldraw documents before reconciling
+    filterTldrawDocs(element.repo, currentDoc.docs).then((filteredDocs) => {
+      isReconcilingRef.current = true;
+      reconcilePatchworkDocShapes(editor, filteredDocs);
+      isReconcilingRef.current = false;
+    });
+  }, [docUrlsKey, handle, element.repo]);
 
   // ---- Cleanup on unmount ---------------------------------------------------
   useEffect(() => {
@@ -200,8 +241,10 @@ function SpatialFolderCanvas({
 function initializeSync(
   editor: Editor,
   handle: DocHandle<SpatialFolderDoc>,
+  repo: any,
   isSyncingToTldrawRef: React.MutableRefObject<boolean>,
   isSyncingToAutomergeRef: React.MutableRefObject<boolean>,
+  isReconcilingRef: React.MutableRefObject<boolean>,
   cleanupFnsRef: React.MutableRefObject<(() => void)[]>,
 ) {
   const currentDoc = handle.docSync?.() ?? (handle as any).doc?.();
@@ -269,6 +312,20 @@ function initializeSync(
             updated: updatedFiltered,
             removed: removedFiltered,
           });
+
+          // When patchwork-doc shapes are deleted, remove from the folder doc list.
+          // Skip during reconciliation (those deletions reflect docs already gone).
+          // if (!isReconcilingRef.current && d.docs) {
+          //   for (const record of removedFiltered) {
+          //     const r = record as any;
+          //     if (r.type === PATCHWORK_DOC_SHAPE_TYPE && r.props?.docUrl) {
+          //       const idx = d.docs.findIndex((doc) => doc.url === r.props.docUrl);
+          //       if (idx >= 0) {
+          //         d.docs.splice(idx, 1);
+          //       }
+          //     }
+          //   }
+          // }
         });
         console.log(LOG, 'tldraw→am handle.change() succeeded');
       } catch (e) {
@@ -357,7 +414,11 @@ function initializeSync(
   //     (step 1) persists them to automerge automatically.
   // ------------------------------------------------------------------
 
-  reconcilePatchworkDocShapes(editor, folderDocs);
+  filterTldrawDocs(repo, folderDocs).then((filteredDocs) => {
+    isReconcilingRef.current = true;
+    reconcilePatchworkDocShapes(editor, filteredDocs);
+    isReconcilingRef.current = false;
+  });
 
   // ------------------------------------------------------------------
   // 5.  Zoom to fit
