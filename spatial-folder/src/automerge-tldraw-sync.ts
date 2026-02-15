@@ -35,6 +35,10 @@ export function applyTLStoreChangesToAutomergeDoc(
   }
 
   for (const record of changes.updated) {
+    if (!tldrawMap[record.id]) {
+      tldrawMap[record.id] = tldrawValueToAutomergeValue(record);
+      continue;
+    }
     deepCompareAndUpdate(tldrawMap[record.id], record);
   }
 
@@ -263,20 +267,16 @@ export function readStoredRecord(value: unknown): TLRecord | null {
   return null;
 }
 
-function structuredCloneCompat<T>(obj: T): T {
-  if (typeof structuredClone === 'function') return structuredClone(obj);
-  return JSON.parse(JSON.stringify(obj));
-}
-
 export function tldrawValueToAutomergeValue(value: any): any {
   if (Array.isArray(value)) {
     return value.map(tldrawValueToAutomergeValue);
   }
   if (value != null && typeof value === 'object') {
+    const obj: any = {};
     for (const key in value) {
-      value[key] = tldrawValueToAutomergeValue(value[key]);
+      obj[key] = tldrawValueToAutomergeValue(value[key]);
     }
-    return value;
+    return obj;
   }
   return value;
 }
