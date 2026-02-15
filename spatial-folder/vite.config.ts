@@ -15,6 +15,8 @@ export default defineConfig({
   },
 
   build: {
+    minify: false,
+    sourcemap: true,
     rollupOptions: {
       external,
       input: './src/index.ts',
