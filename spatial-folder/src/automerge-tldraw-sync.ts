@@ -31,17 +31,11 @@ export function applyTLStoreChangesToAutomergeDoc(
   },
 ) {
   for (const record of changes.added) {
-    tldrawMap[record.id] = structuredCloneCompat(record);
+    tldrawMap[record.id] = tldrawValueToAutomergeValue(record);
   }
 
   for (const record of changes.updated) {
-    const existing = tldrawMap[record.id];
-    if (existing === undefined || typeof existing === 'string') {
-      // Missing, or old JSON-string format — replace the whole thing.
-      tldrawMap[record.id] = structuredCloneCompat(record);
-    } else {
-      shallowCompareAndUpdate(existing, record);
-    }
+    deepCompareAndUpdate(tldrawMap[record.id], record);
   }
 
   for (const record of changes.removed) {
@@ -227,50 +221,6 @@ function applySpliceToObject(patch: Patch, object: any): TLRecord {
 }
 
 // ============================================================================
-// Helpers — shallow compare & update (tldraw → automerge)
-// ============================================================================
-
-/**
- * Compare top-level keys of objectA (automerge proxy) with objectB (new
- * tldraw record).  For primitive values, update only if changed.  For
- * objects/arrays, compare via JSON and replace the whole sub-value if
- * different.
- *
- * This is intentionally NOT recursive.  Recursing into nested arrays
- * generates automerge patches with numeric indices that the patchwork
- * host's solid-store bridge cannot handle ("index is not a number").
- * Shallow comparison still avoids replacing the entire record on every
- * drag (x/y/rotation are primitives and get individual updates).
- */
-function shallowCompareAndUpdate(objectA: any, objectB: any): void {
-  // Set new / changed keys
-  for (const key of Object.keys(objectB)) {
-    const bVal = objectB[key];
-    const aVal = objectA[key];
-
-    if (bVal === aVal) continue;
-
-    if (bVal === null || bVal === undefined || typeof bVal !== 'object') {
-      // Primitive — set directly if changed (already passed === check above)
-      objectA[key] = bVal;
-    } else {
-      // Object or array — compare via JSON to avoid unnecessary writes,
-      // but always replace wholesale (never recurse into sub-properties).
-      if (JSON.stringify(aVal) !== JSON.stringify(bVal)) {
-        objectA[key] = structuredCloneCompat(bVal);
-      }
-    }
-  }
-
-  // Remove keys that no longer exist
-  for (const key of Object.keys(objectA)) {
-    if (objectB[key] === undefined) {
-      delete objectA[key];
-    }
-  }
-}
-
-// ============================================================================
 // Helpers — page remapping
 // ============================================================================
 
@@ -316,4 +266,69 @@ export function readStoredRecord(value: unknown): TLRecord | null {
 function structuredCloneCompat<T>(obj: T): T {
   if (typeof structuredClone === 'function') return structuredClone(obj);
   return JSON.parse(JSON.stringify(obj));
+}
+
+export function tldrawValueToAutomergeValue(value: any): any {
+  if (Array.isArray(value)) {
+    return value.map(tldrawValueToAutomergeValue);
+  }
+  if (value != null && typeof value === 'object') {
+    for (const key in value) {
+      value[key] = tldrawValueToAutomergeValue(value[key]);
+    }
+    return value;
+  }
+  return value;
+}
+
+function deepCompareAndUpdate(objectA: any, objectB: any) {
+  if (Array.isArray(objectB)) {
+    if (!Array.isArray(objectA)) {
+      // if objectA is not an array, replace it with objectB
+      objectA = objectB.map(tldrawValueToAutomergeValue);
+    } else {
+      // compare and update array elements
+      for (let i = 0; i < objectB.length; i++) {
+        if (i >= objectA.length) {
+          objectA.push(tldrawValueToAutomergeValue(objectB[i]));
+        } else {
+          if ((objectB[i] != null && typeof objectB[i] === 'object') || Array.isArray(objectB[i])) {
+            // if element is an object or array, recursively compare and update
+            deepCompareAndUpdate(objectA[i], objectB[i]);
+          } else if (objectA[i] !== objectB[i]) {
+            // update the element
+            objectA[i] = tldrawValueToAutomergeValue(objectB[i]);
+          }
+        }
+      }
+      // remove extra elements
+      if (objectA.length > objectB.length) {
+        objectA.splice(objectB.length);
+      }
+    }
+  } else if (objectB != null && typeof objectB === 'object') {
+    for (const key in objectB) {
+      const value = objectB[key];
+      if (objectA[key] === undefined) {
+        // if key is not in objectA, add it
+        objectA[key] = tldrawValueToAutomergeValue(value);
+      } else {
+        if ((value != null && typeof value === 'object') || Array.isArray(value)) {
+          // if value is an object or array, recursively compare and update
+          deepCompareAndUpdate(objectA[key], value);
+        } else if (objectA[key] !== value) {
+          // update the value
+          objectA[key] = tldrawValueToAutomergeValue(value);
+        }
+      }
+    }
+
+    // remove extra keys
+    for (const key in objectA) {
+      if ((objectB as any)[key] === undefined) {
+        // if key is not in objectB, remove it
+        delete objectA[key];
+      }
+    }
+  }
 }
