@@ -7,6 +7,9 @@
 	"exports": {
 		".": "./dist/index.js"
 	},
+	"pushwork": {
+		"url": "automerge:3gH1AZwy53dHX3mqxkdfN875J3HT"
+	},
 	"scripts": {
 		"build": "vite build",
 		"dev": "vite build --watch",
