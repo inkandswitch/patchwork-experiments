@@ -1,0 +1,15 @@
+{
+  "sync_enabled": true,
+  "sync_server": "wss://sync3.automerge.org",
+  "sync_server_storage_id": "3760df37-a4c6-4f66-9ecd-732039a9385d",
+  "exclude_patterns": [
+    ".git",
+    "node_modules",
+    "*.tmp",
+    ".pushwork",
+    ".DS_Store"
+  ],
+  "sync": {
+    "move_detection_threshold": 0.7
+  }
+}

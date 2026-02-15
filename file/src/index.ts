@@ -1,0 +1,31 @@
+// File plugin for Patchwork
+// Bundleless plugin that supports viewing and editing various file types
+
+import {FileDatatype} from "./datatype"
+import {FileTool} from "./tool"
+
+export * from "./types"
+export * from "./datatype"
+export * from "./utils"
+
+export const plugins = [
+	{
+		type: "patchwork:datatype",
+		id: "file",
+		name: "File",
+		icon: "File",
+		async load() {
+			return FileDatatype
+		},
+	},
+	{
+		type: "patchwork:tool",
+		id: "file",
+		name: "File",
+		icon: "File",
+		supportedDatatypes: ["file"],
+		async load() {
+			return FileTool
+		},
+	},
+]

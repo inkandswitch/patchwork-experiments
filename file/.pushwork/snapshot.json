@@ -1,0 +1,306 @@
+{
+  "timestamp": 1771174186281,
+  "rootPath": "/Users/chee/soft/inkandswitch/patchwork-tools/file",
+  "rootDirectoryUrl": "automerge:3gH1AZwy53dHX3mqxkdfN875J3HT",
+  "files": [
+    [
+      "package.json",
+      {
+        "path": "/Users/chee/soft/inkandswitch/patchwork-tools/file/package.json",
+        "url": "automerge:BuGJk7C6gYsooqWik9ZoppXS3QE#E7NcrKoTXTCqd4mEWhFAsrpRmCzUztocF5cL1wK9DJJy3C9GT",
+        "head": [
+          "E7NcrKoTXTCqd4mEWhFAsrpRmCzUztocF5cL1wK9DJJy3C9GT"
+        ],
+        "extension": "json",
+        "mimeType": "application/json"
+      }
+    ],
+    [
+      "README.md",
+      {
+        "path": "/Users/chee/soft/inkandswitch/patchwork-tools/file/README.md",
+        "url": "automerge:2RQ56WKUVrieapzGY3b4Eou1EezH#XbDCbaYTvHi74vkTcXmACe4ktnFpeweDyjkumSBrCwXB35ibn",
+        "head": [
+          "XbDCbaYTvHi74vkTcXmACe4ktnFpeweDyjkumSBrCwXB35ibn"
+        ],
+        "extension": "md",
+        "mimeType": "text/markdown"
+      }
+    ],
+    [
+      "pnpm-lock.yaml",
+      {
+        "path": "/Users/chee/soft/inkandswitch/patchwork-tools/file/pnpm-lock.yaml",
+        "url": "automerge:bSuabjB8kfBfXdAvYVADHprdFT6#2cxND9wSyrouDKEMQEkoq3noqQqtKUeDub8fpWh9gTVDcXz2mq",
+        "head": [
+          "2cxND9wSyrouDKEMQEkoq3noqQqtKUeDub8fpWh9gTVDcXz2mq"
+        ],
+        "extension": "yaml",
+        "mimeType": "text/yaml"
+      }
+    ],
+    [
+      ".gitignore",
+      {
+        "path": "/Users/chee/soft/inkandswitch/patchwork-tools/file/.gitignore",
+        "url": "automerge:4A1FMiDbqp7iFyiK1PSKg2fwk6sx#B7MF5KfYB9FEncPkLie3tcutc3TbTGZMUdYfak6GJsEeKTKV5",
+        "head": [
+          "B7MF5KfYB9FEncPkLie3tcutc3TbTGZMUdYfak6GJsEeKTKV5"
+        ],
+        "extension": "",
+        "mimeType": "text/plain"
+      }
+    ],
+    [
+      "tsconfig.json",
+      {
+        "path": "/Users/chee/soft/inkandswitch/patchwork-tools/file/tsconfig.json",
+        "url": "automerge:bFeuyjoG1cHG8KjKMX9oyVYCST3#2Ru7cnfN6LNcDoddGkrqNXsrPBXja3A2xgc2XWkv87MzCRNf5b",
+        "head": [
+          "2Ru7cnfN6LNcDoddGkrqNXsrPBXja3A2xgc2XWkv87MzCRNf5b"
+        ],
+        "extension": "json",
+        "mimeType": "application/json"
+      }
+    ],
+    [
+      "vite.config.ts",
+      {
+        "path": "/Users/chee/soft/inkandswitch/patchwork-tools/file/vite.config.ts",
+        "url": "automerge:388vwqhN7q8UiQkMxXG8X1g65e5G#2bU3FMtREwn7vwRgnfn9CJPW3NHsNPPpUSy8UCcXCUDMXH8YUr",
+        "head": [
+          "2bU3FMtREwn7vwRgnfn9CJPW3NHsNPPpUSy8UCcXCUDMXH8YUr"
+        ],
+        "extension": "ts",
+        "mimeType": "text/typescript"
+      }
+    ],
+    [
+      ".eslintrc.cjs",
+      {
+        "path": "/Users/chee/soft/inkandswitch/patchwork-tools/file/.eslintrc.cjs",
+        "url": "automerge:3ZqrbAs2mAyDPRhrHWpi7RreUrKn#EhbDiXSzdnUxsSw44cVW3vJ1EhKD9Mdp98xuEpbHcFKiVpgY1",
+        "head": [
+          "EhbDiXSzdnUxsSw44cVW3vJ1EhKD9Mdp98xuEpbHcFKiVpgY1"
+        ],
+        "extension": "cjs",
+        "mimeType": "application/javascript"
+      }
+    ],
+    [
+      "src/utils.ts",
+      {
+        "path": "/Users/chee/soft/inkandswitch/patchwork-tools/file/src/utils.ts",
+        "url": "automerge:3fbJa1eMfWnda79Q2tk2tJ88uLe2#2TLnqtJsQ54k8DF88TMKgU8ontbvYwmtgEHPz54Gw2qa42r3iG",
+        "head": [
+          "2TLnqtJsQ54k8DF88TMKgU8ontbvYwmtgEHPz54Gw2qa42r3iG"
+        ],
+        "extension": "ts",
+        "mimeType": "text/typescript"
+      }
+    ],
+    [
+      "src/types.ts",
+      {
+        "path": "/Users/chee/soft/inkandswitch/patchwork-tools/file/src/types.ts",
+        "url": "automerge:45RgTjPAGYUozPh9SjtdaGaAVkph#2TSaSRhpm68hc8EZrZ9RFGcgfd377ecj1bBYDdnmjQp7TT6prv",
+        "head": [
+          "2TSaSRhpm68hc8EZrZ9RFGcgfd377ecj1bBYDdnmjQp7TT6prv"
+        ],
+        "extension": "ts",
+        "mimeType": "text/typescript"
+      }
+    ],
+    [
+      "src/tool.tsx",
+      {
+        "path": "/Users/chee/soft/inkandswitch/patchwork-tools/file/src/tool.tsx",
+        "url": "automerge:4RswWsYqnjn5frPqhyHiHUT3dQzN#qPXzA54rdLg4AiQviTNRUBWSBm1eJ6DGZRK1m5av8eayFCv99",
+        "head": [
+          "qPXzA54rdLg4AiQviTNRUBWSBm1eJ6DGZRK1m5av8eayFCv99"
+        ],
+        "extension": "tsx",
+        "mimeType": "text/tsx"
+      }
+    ],
+    [
+      "src/index.ts",
+      {
+        "path": "/Users/chee/soft/inkandswitch/patchwork-tools/file/src/index.ts",
+        "url": "automerge:2GeWxLRjTTr3Qxdjuxe1eVaeX9RT#2qdewuDh8fGGBSrd4N3LS6PiMtDTn6pd3uA565KAC1rqqp8dyr",
+        "head": [
+          "2qdewuDh8fGGBSrd4N3LS6PiMtDTn6pd3uA565KAC1rqqp8dyr"
+        ],
+        "extension": "ts",
+        "mimeType": "text/typescript"
+      }
+    ],
+    [
+      "src/isBinaryFile.ts",
+      {
+        "path": "/Users/chee/soft/inkandswitch/patchwork-tools/file/src/isBinaryFile.ts",
+        "url": "automerge:39w4otsz3VFcLgkdxkaHhGT96g1j#2mZebpaVX5eUPWtExzG1RQtrzpqwZe19FTn3kjCux7dAz5E7d1",
+        "head": [
+          "2mZebpaVX5eUPWtExzG1RQtrzpqwZe19FTn3kjCux7dAz5E7d1"
+        ],
+        "extension": "ts",
+        "mimeType": "text/typescript"
+      }
+    ],
+    [
+      "dist/index.js",
+      {
+        "path": "/Users/chee/soft/inkandswitch/patchwork-tools/file/dist/index.js",
+        "url": "automerge:4PoyemvKbSBx2Lgo81a3iEik3JTb#2Bn2baMyzBUzCsf4aHFhbRQi3GbginjNkmXSzKUEMiJPPRnc97",
+        "head": [
+          "2Bn2baMyzBUzCsf4aHFhbRQi3GbginjNkmXSzKUEMiJPPRnc97"
+        ],
+        "extension": "js",
+        "mimeType": "application/javascript"
+      }
+    ],
+    [
+      "src/datatype.ts",
+      {
+        "path": "/Users/chee/soft/inkandswitch/patchwork-tools/file/src/datatype.ts",
+        "url": "automerge:po7EqvAutLaQ4NfCSnQ6ZfbVnDb#rQDkVVHYRwJHmmViZZac9h2f724mMxQ83qynfymqsFfhVXYjc",
+        "head": [
+          "rQDkVVHYRwJHmmViZZac9h2f724mMxQ83qynfymqsFfhVXYjc"
+        ],
+        "extension": "ts",
+        "mimeType": "text/typescript"
+      }
+    ],
+    [
+      "src/components/PDFFileViewer.tsx",
+      {
+        "path": "/Users/chee/soft/inkandswitch/patchwork-tools/file/src/components/PDFFileViewer.tsx",
+        "url": "automerge:4Hkt41kPvRaeKspJxXq3WJc2PuEy#k6aPFfM1xPMhJPGoocgvbTt3Y3VqVDHzXo4H69XLsbgXw6BQA",
+        "head": [
+          "k6aPFfM1xPMhJPGoocgvbTt3Y3VqVDHzXo4H69XLsbgXw6BQA"
+        ],
+        "extension": "tsx",
+        "mimeType": "text/tsx"
+      }
+    ],
+    [
+      "src/components/TextFileEditor.tsx",
+      {
+        "path": "/Users/chee/soft/inkandswitch/patchwork-tools/file/src/components/TextFileEditor.tsx",
+        "url": "automerge:3eJdxZM6oT9992dFu746uxB3pmSW#M1NGmiSUHJSgvEVPExHgfAaU6qRGjEBznAsZN8XQnzH9tZGuX",
+        "head": [
+          "M1NGmiSUHJSgvEVPExHgfAaU6qRGjEBznAsZN8XQnzH9tZGuX"
+        ],
+        "extension": "tsx",
+        "mimeType": "text/tsx"
+      }
+    ],
+    [
+      "src/components/index.ts",
+      {
+        "path": "/Users/chee/soft/inkandswitch/patchwork-tools/file/src/components/index.ts",
+        "url": "automerge:hzFw65YogJNqmNDkTvBQSmMnjQu#MvueDuVxVwEAcYqko6kt3WgaNVxp1VigXPyqoSFu2hWEJkR5K",
+        "head": [
+          "MvueDuVxVwEAcYqko6kt3WgaNVxp1VigXPyqoSFu2hWEJkR5K"
+        ],
+        "extension": "ts",
+        "mimeType": "text/typescript"
+      }
+    ],
+    [
+      "src/components/LongTextFileViewer.tsx",
+      {
+        "path": "/Users/chee/soft/inkandswitch/patchwork-tools/file/src/components/LongTextFileViewer.tsx",
+        "url": "automerge:bLNoTTuc1dtsSkbrAsGztD8QmPs#PqwsCkG6wvR5pPZDRWHsPNhUNNNpUczGCzxhgdJEMogVN2qcb",
+        "head": [
+          "PqwsCkG6wvR5pPZDRWHsPNhUNNNpUczGCzxhgdJEMogVN2qcb"
+        ],
+        "extension": "tsx",
+        "mimeType": "text/tsx"
+      }
+    ],
+    [
+      "src/components/FileEditor.tsx",
+      {
+        "path": "/Users/chee/soft/inkandswitch/patchwork-tools/file/src/components/FileEditor.tsx",
+        "url": "automerge:4GerPt3MiFeLRXudEL34qjfErcKe#UhddpBcjtTBC6KTyN7S1823rVNZ9pmG1t5QL5k8tcip2QTgVP",
+        "head": [
+          "UhddpBcjtTBC6KTyN7S1823rVNZ9pmG1t5QL5k8tcip2QTgVP"
+        ],
+        "extension": "tsx",
+        "mimeType": "text/tsx"
+      }
+    ],
+    [
+      "src/components/ImageFileViewer.tsx",
+      {
+        "path": "/Users/chee/soft/inkandswitch/patchwork-tools/file/src/components/ImageFileViewer.tsx",
+        "url": "automerge:3TrwiyegumK3uKfVxXHfot5UuRrr#vfgWoRWwfwLqYZHVVRwaXWFNTpS8yXStg4VH9qRj1DRqWmDgU",
+        "head": [
+          "vfgWoRWwfwLqYZHVVRwaXWFNTpS8yXStg4VH9qRj1DRqWmDgU"
+        ],
+        "extension": "tsx",
+        "mimeType": "text/tsx"
+      }
+    ],
+    [
+      "src/components/HTMLFileViewer.tsx",
+      {
+        "path": "/Users/chee/soft/inkandswitch/patchwork-tools/file/src/components/HTMLFileViewer.tsx",
+        "url": "automerge:dpPr4mrnSXhXZqejWDmPYms8SsE#28YEaHztHAGQPhnFAL7KEvZCqjvs8gYTRMDJhhYaNbkqYeu59A",
+        "head": [
+          "28YEaHztHAGQPhnFAL7KEvZCqjvs8gYTRMDJhhYaNbkqYeu59A"
+        ],
+        "extension": "tsx",
+        "mimeType": "text/tsx"
+      }
+    ],
+    [
+      "src/components/CodeEditor.tsx",
+      {
+        "path": "/Users/chee/soft/inkandswitch/patchwork-tools/file/src/components/CodeEditor.tsx",
+        "url": "automerge:48oZhkvE733mJ6fGdqGB1HadyT9k#MsEUzbC8F9d7tTYj2XfTWuwhU2m4rBkpux21vgkQH5TKSgocX",
+        "head": [
+          "MsEUzbC8F9d7tTYj2XfTWuwhU2m4rBkpux21vgkQH5TKSgocX"
+        ],
+        "extension": "tsx",
+        "mimeType": "text/tsx"
+      }
+    ]
+  ],
+  "directories": [
+    [
+      "src",
+      {
+        "path": "/Users/chee/soft/inkandswitch/patchwork-tools/file/src",
+        "url": "automerge:3KJm6zg2fdtrCSuxyKN3mX6rn686#vLXqTejaC35tWvv1ohVQLK2G3ozuQTQgvwRrqiDkijCMg5M6J",
+        "head": [
+          "vLXqTejaC35tWvv1ohVQLK2G3ozuQTQgvwRrqiDkijCMg5M6J"
+        ],
+        "entries": []
+      }
+    ],
+    [
+      "dist",
+      {
+        "path": "/Users/chee/soft/inkandswitch/patchwork-tools/file/dist",
+        "url": "automerge:3XteUvUWMezud2qUUjFboCnuCTUc#z8tkWn2cq7j5KFqHAwAkSFuMbjoFuST794HsHhhzMQ7A5eurZ",
+        "head": [
+          "z8tkWn2cq7j5KFqHAwAkSFuMbjoFuST794HsHhhzMQ7A5eurZ"
+        ],
+        "entries": []
+      }
+    ],
+    [
+      "src/components",
+      {
+        "path": "/Users/chee/soft/inkandswitch/patchwork-tools/file/src/components",
+        "url": "automerge:3J8mAKgs8hFXzCDZFBca16zoFzJP#2XBtTEhuVQFUa86Ee8HTiUZihFJND7FV4r3Cu79qfGDzW2BeiD",
+        "head": [
+          "2XBtTEhuVQFUa86Ee8HTiUZihFJND7FV4r3Cu79qfGDzW2BeiD"
+        ],
+        "entries": []
+      }
+    ]
+  ]
+}
