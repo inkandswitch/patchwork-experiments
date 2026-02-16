@@ -17,8 +17,10 @@
     "@inkandswitch/patchwork-filesystem": "^0.0.3",
     "@inkandswitch/patchwork-plugins": "0.0.4",
     "@inkandswitch/patchwork-react": "0.0.1",
+    "@tailwindcss/typography": "^0.5.19",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
     "tailwindcss": "^4.1.18"
   },
   "devDependencies": {
