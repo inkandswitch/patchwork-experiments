@@ -14,6 +14,7 @@ export const plugins = [
 		id: "file",
 		name: "File",
 		icon: "File",
+		unlisted: true,
 		async load() {
 			return FileDatatype
 		},
