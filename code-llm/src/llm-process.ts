@@ -11,32 +11,33 @@ import { isValidAutomergeUrl, type AutomergeUrl } from '@automerge/automerge-rep
 import type { FolderDoc } from '@inkandswitch/patchwork-filesystem';
 import { AutomergeFS } from './fs';
 import { parseScriptBlocks } from './parser';
-import type { LLMProcessDoc, OutputBlock } from './types';
-
-const LOG_PREFIX = '[llm-process]';
-function log(...args: any[]) {
-  console.log(LOG_PREFIX, ...args);
-}
-function logError(...args: any[]) {
-  console.error(LOG_PREFIX, ...args);
-}
+import type { LLMProcessDoc, OutputBlock, WorkspaceDoc } from './types';
 
 // --- Captured console for eval context ---
+
+function stringifyArg(arg: any): string {
+  if (typeof arg === 'string') return arg;
+  try {
+    return JSON.stringify(arg, null, 2);
+  } catch {
+    return '[object]';
+  }
+}
 
 function createCapturedConsole() {
   const output: string[] = [];
   return {
     log: (...args: any[]) => {
-      output.push(args.map(String).join(' '));
+      output.push(args.map(stringifyArg).join(' '));
     },
     error: (...args: any[]) => {
-      output.push('[error] ' + args.map(String).join(' '));
+      output.push('[error] ' + args.map(stringifyArg).join(' '));
     },
     warn: (...args: any[]) => {
-      output.push('[warn] ' + args.map(String).join(' '));
+      output.push('[warn] ' + args.map(stringifyArg).join(' '));
     },
     info: (...args: any[]) => {
-      output.push(args.map(String).join(' '));
+      output.push(args.map(stringifyArg).join(' '));
     },
     flush(): string {
       const text = output.join('\n');
@@ -69,13 +70,19 @@ export async function runLLMProcess(repo: Repo, docUrl: AutomergeUrl): Promise<v
       d.docs = [];
     });
     rootFolderUrl = folderHandle.url;
-    handle.change((d: any) => {
+    handle.change((d) => {
       d.rootFolderUrl = rootFolderUrl;
     });
   }
 
+  // Create or load the workspace doc (COW overlay)
+  const workspaceUrl = doc.workspaceUrl;
+
+  const workspaceHandle = await repo.find<WorkspaceDoc>(workspaceUrl);
+  await workspaceHandle.whenReady();
+
   // Set up the FS for the eval context
-  const fs = new AutomergeFS(repo, rootFolderUrl);
+  const fs = new AutomergeFS(repo, workspaceHandle);
   const capturedConsole = createCapturedConsole();
 
   // Auto-link patchwork URLs found in the task text
@@ -85,14 +92,12 @@ export async function runLLMProcess(repo: Repo, docUrl: AutomergeUrl): Promise<v
   // If docs were linked, append context to the task so the LLM knows what's available.
   // This keeps it as part of the user message to avoid assistant-prefill errors.
   if (linkedDocs.length > 0) {
-    const lines = linkedDocs.map(
-      (d) => `  /${d.name} (${d.type}) — automerge:${d.docId}`
-    );
-    const contextMsg =
-      `\n\n[The following documents were linked into your filesystem:\n${lines.join('\n')}\nYou can browse them with fs.listDir("/${linkedDocs[0].name}")]`;
-    handle.change((d: any) => {
-      const run = d.runs[d.runs.length - 1];
-      run.task += contextMsg;
+    const lines = linkedDocs.map((d) => `  /${d.name} (${d.type}) — automerge:${d.docId}`);
+    const contextMsg = `\n\n[The following documents were linked into your filesystem:\n${lines.join(
+      '\n'
+    )}\nYou can browse them with fs.listDir("/${linkedDocs[0].name}")]`;
+    handle.change((d) => {
+      d.runs[d.runs.length - 1].task += contextMsg;
     });
   }
 
@@ -114,28 +119,40 @@ export async function runLLMProcess(repo: Repo, docUrl: AutomergeUrl): Promise<v
 
     for await (const block of parseScriptBlocks(stream)) {
       if (block.type === 'text' && block.content.trim().length > 0) {
-        handle.change((d: any) => {
+        handle.change((d) => {
           const run = d.runs[d.runs.length - 1];
-          run.output.push({ type: 'text', content: block.content });
+          const last = run.output[run.output.length - 1];
+          if (last && last.type === 'text') {
+            last.content += block.content;
+          } else {
+            run.output.push({ type: 'text', content: block.content });
+          }
         });
       }
 
       if (block.type === 'script') {
-        foundScript = true;
-
-        handle.change((d: any) => {
+        // Update or push the script block (handles both in-progress and final)
+        handle.change((d) => {
           const run = d.runs[d.runs.length - 1];
-          run.output.push({ type: 'script', code: block.code });
+          const last = run.output[run.output.length - 1];
+          if (last && last.type === 'script') {
+            last.code = block.code;
+          } else {
+            run.output.push({ type: 'script', code: block.code });
+          }
         });
 
-        const result = await evalScript(block.code, capturedConsole);
+        if (block.complete) {
+          foundScript = true;
 
-        handle.change((d: any) => {
-          const run = d.runs[d.runs.length - 1];
-          run.output.push(result);
-        });
+          const result = await evalScript(block.code, capturedConsole);
 
-        break;
+          handle.change((d) => {
+            d.runs[d.runs.length - 1].output.push(result);
+          });
+
+          break;
+        }
       }
     }
 
@@ -316,23 +333,24 @@ async function evalScript(
     // `fs` is available as a global on globalThis.
     // Wrapped in an async function so the LLM can use `return` to produce a value.
     const wrappedCode = `(async () => { const console = globalThis.__llmCapturedConsole;\n${code}\n})()`;
-    // eslint-disable-next-line no-eval
     const returnValue = await eval(wrappedCode);
 
     const consoleOutput = capturedConsole.flush();
     const parts: string[] = [];
     if (consoleOutput) parts.push(consoleOutput);
-    if (returnValue !== undefined) parts.push(String(returnValue));
+    if (returnValue !== undefined) parts.push(stringifyArg(returnValue));
 
-    const result: OutputBlock = { type: 'result' };
-    if (parts.length > 0) (result as any).output = parts.join('\n');
-    return result;
+    return {
+      type: 'result',
+      output: parts.length > 0 ? parts.join('\n') : undefined,
+    };
   } catch (err: any) {
     const consoleOutput = capturedConsole.flush();
-    const result: OutputBlock = { type: 'result' };
-    if (consoleOutput) (result as any).output = consoleOutput;
-    (result as any).error = err.message || String(err);
-    return result;
+    return {
+      type: 'result',
+      output: consoleOutput || undefined,
+      error: err.message || String(err),
+    };
   }
 }
 
@@ -378,10 +396,7 @@ function extractPatchworkUrls(text: string): ExtractedDoc[] {
 
 type LinkedDoc = { name: string; docId: string; type: string };
 
-async function autoLinkPatchworkUrls(
-  taskText: string,
-  fs: AutomergeFS
-): Promise<LinkedDoc[]> {
+async function autoLinkPatchworkUrls(taskText: string, fs: AutomergeFS): Promise<LinkedDoc[]> {
   const extracted = extractPatchworkUrls(taskText);
   const linked: LinkedDoc[] = [];
 

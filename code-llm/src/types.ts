@@ -1,4 +1,12 @@
-import type { AutomergeUrl } from "@automerge/automerge-repo";
+import type { AutomergeUrl } from '@automerge/automerge-repo';
+
+// --- WorkspaceDoc schema ---
+
+export type WorkspaceDoc = {
+  '@patchwork': { type: 'workspace' };
+  rootFolderUrl: AutomergeUrl;
+  mappings: Record<string, AutomergeUrl>; // originalUrl → clonedUrl
+};
 
 // --- LLMProcessDoc schema ---
 
@@ -9,6 +17,7 @@ export type LLMProcessDoc = {
     model: string; // e.g. "gpt-4o"
   };
   rootFolderUrl: AutomergeUrl; // The folder this process can access
+  workspaceUrl: AutomergeUrl; // Points to the WorkspaceDoc for COW
   runs: TaskRun[]; // All task runs, most recent last
 };
 
@@ -19,12 +28,12 @@ export type TaskRun = {
 };
 
 export type OutputBlock =
-  | { type: "text"; content: string }
-  | { type: "script"; code: string }
-  | { type: "result"; output?: string; error?: string };
+  | { type: 'text'; content: string }
+  | { type: 'script'; code: string }
+  | { type: 'result'; output?: string; error?: string };
 
 // --- Parser types ---
 
 export type ParsedBlock =
-  | { type: "text"; content: string }
-  | { type: "script"; code: string };
+  | { id: number; type: 'text'; content: string; complete: boolean }
+  | { id: number; type: 'script'; code: string; complete: boolean };
