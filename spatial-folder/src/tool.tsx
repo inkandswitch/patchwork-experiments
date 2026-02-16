@@ -68,7 +68,7 @@ async function filterTldrawDocs(repo: any, docLinks: DocLink[]): Promise<DocLink
     try {
       const docHandle = repo.find(docLink.url);
       await docHandle.whenReady();
-      const doc = docHandle.docSync?.() ?? (docHandle as any).doc?.();
+      const doc = docHandle.doc();
 
       // Skip documents with @patchwork.type === "tldraw"
       if (doc?.['@patchwork']?.type === 'tldraw') {
@@ -161,7 +161,7 @@ function SpatialFolderCanvas({
     const editor = editorRef.current;
     if (!editor || !initializedRef.current) return;
 
-    const currentDoc = handle.docSync?.() ?? (handle as any).doc?.();
+    const currentDoc = handle.doc();
     if (!currentDoc?.docs) {
       console.log(LOG, 'reconcile effect: no doc yet');
       return;
@@ -247,9 +247,9 @@ function initializeSync(
   isReconcilingRef: React.MutableRefObject<boolean>,
   cleanupFnsRef: React.MutableRefObject<(() => void)[]>,
 ) {
-  const currentDoc = handle.docSync?.() ?? (handle as any).doc?.();
+  const currentDoc = handle.doc?.();
   if (!currentDoc) {
-    console.error(LOG, 'initializeSync called but docSync() returned null!');
+    console.error(LOG, 'initializeSync called but .doc() returned null!');
     return;
   }
 
