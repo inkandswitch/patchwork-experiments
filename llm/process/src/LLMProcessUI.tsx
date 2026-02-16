@@ -2,7 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useDocument, useRepo } from "@automerge/automerge-repo-react-hooks";
 import { toolify } from "@inkandswitch/patchwork-react";
 import type { ToolImplementation } from "@inkandswitch/patchwork-plugins";
-import type { AutomergeUrl } from "@automerge/automerge-repo";
+import {
+  parseAutomergeUrl,
+  type AutomergeUrl,
+} from "@automerge/automerge-repo";
 import type { LLMProcessDoc, TaskRun, OutputBlock } from "./types";
 import { runLLMProcess } from "./llm-process";
 import "./styles.css";
@@ -121,13 +124,25 @@ const LLMProcessEditor = ({ docUrl }: ReactToolProps) => {
             {status}
           </span>
         </div>
-        <button
-          className="btn btn-ghost btn-xs"
-          onClick={handleClearContext}
-          disabled={status === "running" || !doc.runs.length}
-        >
-          Clear context
-        </button>
+        <div className="flex items-center gap-1">
+          {doc.workspaceUrl && (
+            <a
+              className="btn btn-ghost btn-xs"
+              href={`https://tiny.patchwork.inkandswitch.com/#doc=${parseAutomergeUrl(doc.workspaceUrl).documentId}&tool=workspace-review`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Review changes
+            </a>
+          )}
+          <button
+            className="btn btn-ghost btn-xs"
+            onClick={handleClearContext}
+            disabled={status === "running" || !doc.runs.length}
+          >
+            Clear context
+          </button>
+        </div>
       </div>
 
       {/* Output area */}

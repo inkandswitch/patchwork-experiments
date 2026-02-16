@@ -1,0 +1,42 @@
+{
+  "name": "@tiny-patchwork/workspace-review",
+  "type": "module",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./dist/index.js",
+  "scripts": {
+    "dev": "pushwork watch . --dir src --verbose --script \"pnpm build\"",
+    "build": "vite build",
+    "sync": "vite build && pushwork sync"
+  },
+  "pushwork": {},
+  "dependencies": {
+    "@automerge/automerge-repo": "2.5.2-alpha.0",
+    "@automerge/automerge-repo-react-hooks": "2.5.2-alpha.0",
+    "@inkandswitch/patchwork-filesystem": "^0.0.3",
+    "@inkandswitch/patchwork-plugins": "0.0.4",
+    "@inkandswitch/patchwork-react": "0.0.1",
+    "diff": "^7.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwindcss": "^4.1.18"
+  },
+  "devDependencies": {
+    "@inkandswitch/patchwork-bootloader": "^0.0.4",
+    "@tailwindcss/vite": "^4.1.18",
+    "@types/diff": "^6.0.0",
+    "@types/react": "^18.3.27",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^5.1.2",
+    "daisyui": "^5.5.14",
+    "externals": "link:@inkandswitch/patchwork-bootloader/externals",
+    "vite": "^7.3.1",
+    "vite-plugin-css-injected-by-js": "^3.5.2",
+    "vite-plugin-wasm": "^3.5.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "@automerge/automerge-repo-react-hooks": "2.5.2-alpha.0"
+    }
+  }
+}

@@ -106,13 +106,16 @@ export async function runLLMProcess(repo: Repo, docUrl: AutomergeUrl): Promise<v
   (globalThis as any).fs = fs;
   (globalThis as any).__llmCapturedConsole = capturedConsole;
 
+  // Discover available skills
+  const skills = await discoverSkills(fs);
+
   const MAX_ITERATIONS = 20;
 
   for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
     const currentDoc = handle.doc();
     if (!currentDoc) break;
 
-    const messages = buildLLMMessages(currentDoc);
+    const messages = buildLLMMessages(currentDoc, skills, rootFolderUrl);
     const stream = streamChatCompletion(apiUrl, apiKey, model, messages);
 
     let foundScript = false;
@@ -169,12 +172,21 @@ type ChatMessage = {
   content: string;
 };
 
-function buildLLMMessages(doc: LLMProcessDoc): ChatMessage[] {
+function buildLLMMessages(
+  doc: LLMProcessDoc,
+  skills: SkillInfo[] = [],
+  rootFolderUrl?: AutomergeUrl
+): ChatMessage[] {
   const messages: ChatMessage[] = [];
+
+  let systemPrompt = SYSTEM_PROMPT;
+  if (skills.length > 0 && rootFolderUrl) {
+    systemPrompt += buildSkillsPromptSection(skills, rootFolderUrl);
+  }
 
   messages.push({
     role: 'system',
-    content: SYSTEM_PROMPT,
+    content: systemPrompt,
   });
 
   for (let i = 0; i < doc.runs.length - 1; i++) {
@@ -256,6 +268,22 @@ Use this to inspect results and decide your next steps.
 
 Write text outside of script tags to explain your reasoning.
 Keep your code concise and focused on the task.`;
+
+function buildSkillsPromptSection(skills: SkillInfo[], rootFolderUrl: AutomergeUrl): string {
+  const exampleSkill = skills[0];
+  const lines = skills.map((s) => `- **${s.name}** — ${s.description}`);
+  return `
+
+## Available Skills
+
+Skills are reusable modules in /skills/. Read a skill's README for full docs with fs.readFile("/skills/<name>/README.md"), then import its code:
+
+\`\`\`
+const mod = await import("/${rootFolderUrl}/skills/${exampleSkill.folder}/index.js")
+\`\`\`
+
+${lines.join('\n')}`;
+}
 
 // --- LLM streaming ---
 
@@ -393,6 +421,51 @@ function extractPatchworkUrls(text: string): ExtractedDoc[] {
 
   return results;
 }
+
+// --- Skill discovery ---
+
+type SkillInfo = { name: string; description: string; folder: string };
+
+function parseFrontmatter(content: string): Record<string, string> {
+  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return {};
+  const result: Record<string, string> = {};
+  for (const line of match[1].split('\n')) {
+    const idx = line.indexOf(':');
+    if (idx > 0) {
+      result[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+    }
+  }
+  return result;
+}
+
+async function discoverSkills(fs: AutomergeFS): Promise<SkillInfo[]> {
+  let entries: { name: string; type: string }[];
+  try {
+    entries = await fs.listDir('/skills');
+  } catch {
+    return [];
+  }
+
+  const skills: SkillInfo[] = [];
+  for (const entry of entries) {
+    if (entry.type !== 'folder') continue;
+    try {
+      const readme = await fs.readFile(`/skills/${entry.name}/README.md`);
+      const fm = parseFrontmatter(readme);
+      skills.push({
+        name: fm.name || entry.name,
+        description: fm.description || '',
+        folder: entry.name,
+      });
+    } catch {
+      // Skill folder without a README — skip
+    }
+  }
+  return skills;
+}
+
+// --- Patchwork URL extraction and auto-linking ---
 
 type LinkedDoc = { name: string; docId: string; type: string };
 
