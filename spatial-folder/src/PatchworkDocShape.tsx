@@ -129,7 +129,7 @@ export class PatchworkDocShapeUtil extends ShapeUtil<PatchworkDocShape> {
 const TITLEBAR_STRIPES = [
   'linear-gradient(#fff, #fff)',        // top clear line
   'linear-gradient(#fff, #fff)',        // bottom clear line
-  'repeating-linear-gradient(#d0d0d0 0px, #d0d0d0 1px, transparent 1px, transparent 2px)',
+  'repeating-linear-gradient(#d0d0d0 0px, #d0d0d0 1px, transparent 1px, transparent 3px)',
 ].join(', ');
 
 const TITLEBAR_BG_SIZE = '100% 1px, 100% 1px, 100% 100%';
@@ -149,6 +149,69 @@ async function loadDatatype(id: string): Promise<LoadedDatatype | undefined> {
   }
 }
 
+const CLICK_THRESHOLD = 5;
+
+function ClickableTitle({
+  docName,
+  onClickTitle,
+}: {
+  docName: string;
+  onClickTitle: () => void;
+}) {
+  const spanRef = useRef<HTMLSpanElement>(null);
+  const downPos = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    const span = spanRef.current;
+    if (!span) return;
+
+    const onDown = (e: PointerEvent) => {
+      downPos.current = { x: e.clientX, y: e.clientY };
+    };
+
+    // Listen on window so we still get the event even when tldraw
+    // captures the pointer for dragging.
+    const onUp = (e: PointerEvent) => {
+      if (!downPos.current) return;
+      const dx = e.clientX - downPos.current.x;
+      const dy = e.clientY - downPos.current.y;
+      downPos.current = null;
+      if (Math.abs(dx) < CLICK_THRESHOLD && Math.abs(dy) < CLICK_THRESHOLD) {
+        onClickTitle();
+      }
+    };
+
+    span.addEventListener('pointerdown', onDown);
+    window.addEventListener('pointerup', onUp);
+    return () => {
+      span.removeEventListener('pointerdown', onDown);
+      window.removeEventListener('pointerup', onUp);
+    };
+  }, [onClickTitle]);
+
+  return (
+    <span
+      ref={spanRef}
+      style={{
+        fontSize: '13px',
+        fontWeight: 700,
+        color: '#000',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        fontFamily: 'Geneva, "Lucida Grande", "Helvetica Neue", Helvetica, sans-serif',
+        textAlign: 'center',
+        padding: '0 6px',
+        background: '#fff',
+        cursor: 'text',
+        display: 'block',
+      }}
+    >
+      {docName}
+    </span>
+  );
+}
+
 function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
   const { docUrl, docName, docType, toolId } = shape.props;
   const editor = useEditor();
@@ -159,8 +222,12 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
   ]);
 
   const [isEditingName, setIsEditingName] = useState(false);
+  const [isEditingTool, setIsEditingTool] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
+  const toolInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   // Focus the name input when editing starts
   useEffect(() => {
@@ -169,6 +236,25 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
       nameInputRef.current.select();
     }
   }, [isEditingName]);
+
+  // Focus the tool input when editing starts
+  useEffect(() => {
+    if (isEditingTool && toolInputRef.current) {
+      toolInputRef.current.focus();
+    }
+  }, [isEditingTool]);
+
+  // Unfocus content when clicking outside
+  useEffect(() => {
+    if (!isFocused) return;
+    const handlePointerDown = (e: PointerEvent) => {
+      if (contentRef.current && !contentRef.current.contains(e.target as Node)) {
+        setIsFocused(false);
+      }
+    };
+    window.addEventListener('pointerdown', handlePointerDown, true);
+    return () => window.removeEventListener('pointerdown', handlePointerDown, true);
+  }, [isFocused]);
 
   const handleToolChange = useCallback(
     (newToolId: string) => {
@@ -227,6 +313,12 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
 
   return (
     <HTMLContainer>
+      <style>{`
+        @keyframes tool-expand {
+          from { width: 13px; opacity: 0.5; }
+          to { width: 108px; opacity: 1; }
+        }
+      `}</style>
       <div
         ref={containerRef}
         style={{
@@ -235,8 +327,11 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          boxShadow: '2px 2px 8px rgba(0,0,0,0.15)',
-          border: '1px solid #ccc',
+          boxShadow: '1px 1px 0 rgba(0,0,0,0.4), 2px 2px 0 rgba(0,0,0,0.2), 0 2px 12px rgba(0,0,0,0.08)',
+          border: '1px solid #888',
+          borderTopColor: '#fff',
+          borderLeftColor: '#fff',
+          borderRadius: '2px',
           background: '#ffffff',
           pointerEvents: 'all',
         }}
@@ -253,14 +348,14 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
           backgroundPosition: TITLEBAR_BG_POS,
           backgroundRepeat: TITLEBAR_BG_REPEAT,
           backgroundColor: '#fff',
-          borderBottom: '1px solid #ccc',
+          borderBottom: '1px solid #808080',
           cursor: 'grab',
           userSelect: 'none',
           flexShrink: 0,
           minHeight: '22px',
         }}
       >
-        {/* Open-document box (System 7 close-box style) */}
+        {/* Open-document box (System 7.5 close-box style — sunken) */}
         <button
           title="Open document"
           onClick={(e) => {
@@ -269,10 +364,15 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
           }}
           onPointerDown={(e) => e.stopPropagation()}
           style={{
-            width: '12px',
-            height: '12px',
-            border: '1px solid #999',
-            background: '#fff',
+            width: '13px',
+            height: '13px',
+            border: 'none',
+            borderTop: '1px solid #808080',
+            borderLeft: '1px solid #808080',
+            borderRight: '1px solid #fff',
+            borderBottom: '1px solid #fff',
+            boxShadow: 'inset 1px 1px 0 #404040, inset -1px -1px 0 #dfdfdf',
+            background: '#c0c0c0',
             padding: 0,
             cursor: 'pointer',
             flexShrink: 0,
@@ -304,9 +404,9 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
               }}
               onBlur={(e) => handleRename(e.target.value)}
               style={{
-                fontSize: '11px',
+                fontSize: '13px',
                 fontWeight: 700,
-                fontFamily: '"Chicago", "Geneva", system-ui, sans-serif',
+                fontFamily: 'Geneva, "Lucida Grande", "Helvetica Neue", Helvetica, sans-serif',
                 color: '#000',
                 background: '#fff',
                 border: 'none',
@@ -317,90 +417,111 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
               }}
             />
           ) : (
-            <span
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsEditingName(true);
-              }}
-              onPointerDown={(e) => e.stopPropagation()}
-              style={{
-                fontSize: '11px',
-                fontWeight: 700,
-                color: '#000',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                fontFamily: '"Chicago", "Geneva", system-ui, sans-serif',
-                textAlign: 'center',
-                padding: '0 6px',
-                background: '#fff',
-                cursor: 'text',
-                display: 'block',
-              }}
-            >
-              {docName}
-            </span>
+            <ClickableTitle
+              docName={docName}
+              onClickTitle={() => setIsEditingName(true)}
+            />
           )}
         </div>
 
-        {/* Tool selector — pushed right */}
+        {/* Tool selector — zoom box on right, expands to input on click */}
         <div style={{ position: 'relative', flexShrink: 0, marginLeft: 'auto', zIndex: 1 }}>
-          <input
-            list={`tool-list-${shape.id}`}
-            defaultValue={effectiveToolId || pillLabel}
-            placeholder={docType || 'tool id'}
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
-            onFocus={(e) => {
-              const input = e.target as HTMLInputElement;
-              input.dataset.prev = input.value;
-              input.value = '';
-            }}
-            onKeyDown={(e) => {
-              e.stopPropagation();
-              if (e.key === 'Enter') {
-                handleToolChange((e.target as HTMLInputElement).value);
-                (e.target as HTMLInputElement).blur();
-              }
-              if (e.key === 'Escape') {
-                const input = e.target as HTMLInputElement;
-                input.value = input.dataset.prev || '';
-                input.blur();
-              }
-            }}
-            onBlur={(e) => {
-              const input = e.target as HTMLInputElement;
-              const val = input.value.trim();
-              if (val) {
-                handleToolChange(val);
-              } else {
-                input.value = input.dataset.prev || '';
-              }
-            }}
-            style={{
-              fontSize: '10px',
-              color: '#555',
-              padding: '1px 4px',
+          {isEditingTool ? (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
               background: '#fff',
-              border: '1px solid #ccc',
-              fontFamily: '"Geneva", "Chicago", system-ui, sans-serif',
-              outline: 'none',
-              width: '90px',
-              cursor: 'text',
-            }}
-          />
-          <datalist id={`tool-list-${shape.id}`}>
-            {tools.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </datalist>
+              animation: 'tool-expand 150ms ease-out',
+            }}>
+              <input
+                ref={toolInputRef}
+                list={`tool-list-${shape.id}`}
+                placeholder={pillLabel || docType || 'tool id'}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === 'Enter') {
+                    const val = (e.target as HTMLInputElement).value.trim();
+                    if (val) handleToolChange(val);
+                    setIsEditingTool(false);
+                  }
+                  if (e.key === 'Escape') {
+                    setIsEditingTool(false);
+                  }
+                }}
+                onBlur={(e) => {
+                  const val = e.target.value.trim();
+                  if (val) handleToolChange(val);
+                  setIsEditingTool(false);
+                }}
+                style={{
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  color: '#000',
+                  padding: '1px 4px',
+                  background: '#fff',
+                  border: '1px solid #808080',
+                  borderTopColor: '#404040',
+                  borderLeftColor: '#404040',
+                  borderRightColor: '#dfdfdf',
+                  borderBottomColor: '#dfdfdf',
+                  fontFamily: 'Geneva, "Lucida Grande", "Helvetica Neue", Helvetica, sans-serif',
+                  outline: 'none',
+                  width: '100px',
+                  cursor: 'text',
+                }}
+              />
+              <datalist id={`tool-list-${shape.id}`}>
+                {tools.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </datalist>
+            </div>
+          ) : (
+            <button
+              title={pillLabel || effectiveToolId || 'Change tool'}
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsEditingTool(true);
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              style={{
+                width: '13px',
+                height: '13px',
+                border: 'none',
+                borderTop: '1px solid #808080',
+                borderLeft: '1px solid #808080',
+                borderRight: '1px solid #fff',
+                borderBottom: '1px solid #fff',
+                boxShadow: 'inset 1px 1px 0 #404040, inset -1px -1px 0 #dfdfdf',
+                background: '#c0c0c0',
+                padding: 0,
+                cursor: 'pointer',
+                flexShrink: 0,
+                position: 'relative',
+              }}
+            >
+              {/* Inner box for the zoom-box icon */}
+              <span style={{
+                position: 'absolute',
+                top: '1px',
+                left: '1px',
+                width: '5px',
+                height: '5px',
+                border: '1px solid #999',
+                background: 'transparent',
+              }} />
+            </button>
+          )}
         </div>
       </div>
 
       {/* ---- Content area ---- */}
       <div
+        ref={contentRef}
         style={{
           flex: 1,
           minHeight: 0,
@@ -408,7 +529,8 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
           position: 'relative',
           pointerEvents: isSelectTool ? 'auto' : 'none',
         }}
-        onPointerDown={isSelectTool ? (e) => e.stopPropagation() : undefined}
+        onPointerDown={isSelectTool ? (e) => { e.stopPropagation(); setIsFocused(true); } : undefined}
+        onWheelCapture={isFocused ? (e) => e.stopPropagation() : undefined}
       >
         {docUrl ? (
           // @ts-expect-error Custom element from patchwork-elements
@@ -431,7 +553,7 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
               height: '100%',
               color: '#000',
               fontSize: '12px',
-              fontFamily: '"Geneva", "Chicago", system-ui, sans-serif',
+              fontFamily: 'Geneva, "Lucida Grande", "Helvetica Neue", Helvetica, sans-serif',
             }}
           >
             No document

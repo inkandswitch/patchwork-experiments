@@ -1,17 +1,31 @@
-import { Tldraw, Editor, createShapeId, TLShapeId, TLUiComponents, TLRecord } from 'tldraw';
+import {
+  Tldraw,
+  Editor,
+  createShapeId,
+  TLShapeId,
+  TLUiComponents,
+  TLRecord,
+  TLAssetId,
+  TLAsset,
+  TLContent,
+  createTLStore,
+  defaultShapeUtils,
+  getMediaAssetInfoPartial,
+
+} from 'tldraw';
+import type { VecLike } from 'tldraw';
 import 'tldraw/tldraw.css';
 import { DocHandle, type DocHandleChangePayload } from '@automerge/automerge-repo';
 import { useDocument, RepoContext } from '@automerge/automerge-repo-react-hooks';
 import { createRoot } from 'react-dom/client';
 import { useEffect, useRef, useMemo } from 'react';
 import { FolderDoc, DocLink } from '@inkandswitch/patchwork-filesystem';
+import { automergeUrlToServiceWorkerUrl } from '@inkandswitch/patchwork-filesystem';
 import type { ToolRender, ToolElement } from '@inkandswitch/patchwork-plugins';
 import { PatchworkDocShapeUtil, PATCHWORK_DOC_SHAPE_TYPE } from './PatchworkDocShape';
-import {
-  applyTLStoreChangesToAutomergeDoc,
-  applyAutomergePatchesToTLStore,
-  readStoredRecord,
-} from './automerge-tldraw-sync';
+import { applyTLStoreChangesToAutomerge, tldrawValueToAutomergeValue } from './TLStoreToAutomerge';
+import type { TldrawDoc } from './TLStoreToAutomerge';
+import { applyAutomergePatchesToTLStore } from './AutomergeToTLStore';
 import {
   NewDocShapeTool,
   newDocUiOverrides,
@@ -34,12 +48,6 @@ type SpatialFolderDoc = FolderDoc & {
   tldraw?: string | { [recordId: string]: any };
 };
 
-/** The dedicated tldraw document — record IDs are top-level keys. */
-type TldrawDoc = {
-  '@patchwork'?: { type: 'tldraw' };
-  [recordId: string]: any;
-};
-
 // ---- Constants --------------------------------------------------------------
 
 const GRID_COLS = 3;
@@ -55,6 +63,24 @@ const uiComponents: TLUiComponents = {
   PageMenu: null,
   Toolbar: NewDocToolbar,
 };
+
+const MIME_TO_EXT: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/svg+xml': 'svg',
+  'image/bmp': 'bmp',
+  'image/tiff': 'tiff',
+  'image/avif': 'avif',
+  'video/mp4': 'mp4',
+  'video/webm': 'webm',
+  'video/quicktime': 'mov',
+};
+
+function extensionForMimeType(mimeType: string): string {
+  return MIME_TO_EXT[mimeType] || mimeType.split('/')[1] || 'bin';
+}
 
 // ---- Helpers ----------------------------------------------------------------
 
@@ -127,9 +153,8 @@ function SpatialFolderCanvas({
   const initializedRef = useRef(false);
   const cleanupFnsRef = useRef<(() => void)[]>([]);
 
-  // Guards to break the tldraw ↔ automerge feedback loop.
-  const isSyncingToTldrawRef = useRef(false);
-  const isSyncingToAutomergeRef = useRef(false);
+  // Guard to break the tldraw ↔ automerge feedback loop.
+  const preventPatchApplicationsRef = useRef(false);
   const isReconcilingRef = useRef(false);
 
   // ---- Tldraw mount callback (stable reference, never changes) ----
@@ -149,8 +174,7 @@ function SpatialFolderCanvas({
         editor,
         handle,
         element.repo,
-        isSyncingToTldrawRef,
-        isSyncingToAutomergeRef,
+        preventPatchApplicationsRef,
         isReconcilingRef,
         cleanupFnsRef,
       );
@@ -226,7 +250,7 @@ function SpatialFolderCanvas({
       className="spatial-folder-root"
       style={{ width: '100%', height: '100%', position: 'relative' }}
     >
-      <style>{`.spatial-folder-root .tl-background { background: #f5f0f8 !important; }`}</style>
+      <style>{`.spatial-folder-root > .tl-container .tl-background { background: #ece8f4 !important; }`}</style>
       <Tldraw
         shapeUtils={customShapeUtils}
         tools={customTools}
@@ -268,22 +292,53 @@ async function resolveTldrawHandle(
   const existing = doc?.tldraw;
 
   if (typeof existing === 'string') {
-    // Already migrated — it's an automerge URL.
+    // Already an automerge URL.
     console.log(LOG, 'tldraw doc URL found:', existing);
     const tldrawHandle = (await repo.find(existing)) as DocHandle<TldrawDoc>;
+
+    // Check if this is an old-format doc (records at root, no `store` key).
+    const tldrawDoc = tldrawHandle.doc();
+    if (tldrawDoc && !tldrawDoc.store) {
+      console.log(LOG, 'migrating old root-level tldraw doc to store/schema format');
+      const tlStore = createTLStore({
+        shapeUtils: [PatchworkDocShapeUtil, ...defaultShapeUtils],
+      });
+      const currentSchema = tlStore.schema.serialize();
+
+      tldrawHandle.change((d: any) => {
+        const store: Record<string, any> = {};
+        for (const [id, value] of Object.entries(d)) {
+          if (id === '@patchwork') continue;
+          store[id] = JSON.parse(JSON.stringify(value));
+          delete d[id];
+        }
+        d.store = store;
+        d.schema = currentSchema;
+      });
+      console.log(LOG, 'migration to store/schema format complete');
+    }
+
     return tldrawHandle;
   }
 
   if (existing && typeof existing === 'object') {
-    // Legacy: tldraw data stored inline — migrate to a new doc.
+    // Legacy: tldraw data stored inline — migrate to a new doc with store/schema.
     console.log(LOG, 'migrating inline tldraw data to dedicated doc');
-    const initial: TldrawDoc = { '@patchwork': { type: 'tldraw' } };
+    const tlStore = createTLStore({
+      shapeUtils: [PatchworkDocShapeUtil, ...defaultShapeUtils],
+    });
+    const currentSchema = tlStore.schema.serialize();
+    const store: Record<string, any> = {};
     for (const [id, value] of Object.entries(existing)) {
-      initial[id] = value;
+      store[id] = value;
     }
+    const initial: TldrawDoc = {
+      '@patchwork': { type: 'tldraw' },
+      store,
+      schema: currentSchema,
+    };
     const tldrawHandle = (await repo.create2(initial)) as DocHandle<TldrawDoc>;
 
-    // Point the folder doc at the new tldraw doc URL.
     handle.change((d: any) => {
       d.tldraw = tldrawHandle.url;
     });
@@ -291,11 +346,19 @@ async function resolveTldrawHandle(
     return tldrawHandle;
   }
 
-  // No tldraw data yet — create an empty doc.
+  // No tldraw data yet — create with a proper snapshot.
   console.log(LOG, 'creating new tldraw doc');
-  const tldrawHandle = (await repo.create2({
+  const tlStore = createTLStore({
+    shapeUtils: [PatchworkDocShapeUtil, ...defaultShapeUtils],
+  });
+  const snapshot = tlStore.getStoreSnapshot();
+
+  const initial: TldrawDoc = {
     '@patchwork': { type: 'tldraw' },
-  })) as DocHandle<TldrawDoc>;
+    store: tldrawValueToAutomergeValue(snapshot.store),
+    schema: snapshot.schema,
+  };
+  const tldrawHandle = (await repo.create2(initial)) as DocHandle<TldrawDoc>;
 
   handle.change((d: any) => {
     d.tldraw = tldrawHandle.url;
@@ -312,8 +375,7 @@ async function initializeSync(
   editor: Editor,
   handle: DocHandle<SpatialFolderDoc>,
   repo: any,
-  isSyncingToTldrawRef: React.MutableRefObject<boolean>,
-  isSyncingToAutomergeRef: React.MutableRefObject<boolean>,
+  preventPatchApplicationsRef: React.MutableRefObject<boolean>,
   isReconcilingRef: React.MutableRefObject<boolean>,
   cleanupFnsRef: React.MutableRefObject<(() => void)[]>,
 ) {
@@ -329,8 +391,8 @@ async function initializeSync(
   const tldrawHandle = await resolveTldrawHandle(handle, repo);
   const tldrawDoc = tldrawHandle.doc();
 
-  const storedCount = tldrawDoc
-    ? Object.keys(tldrawDoc).filter((k) => k !== '@patchwork').length
+  const storedCount = tldrawDoc?.store
+    ? Object.keys(tldrawDoc.store).length
     : 0;
 
   console.log(
@@ -351,54 +413,29 @@ async function initializeSync(
 
   const unsubStore = editor.store.listen(
     ({ changes, source }) => {
-      if (isSyncingToTldrawRef.current) {
-        console.log(LOG, 'tldraw→am SKIP (isSyncingToTldraw=true, source=' + source + ')');
+      if (preventPatchApplicationsRef.current) {
+        console.log(LOG, 'tldraw→am SKIP (preventPatchApplications=true, source=' + source + ')');
         return;
       }
 
-      const added = Object.values(changes.added);
-      const updated = Object.values(changes.updated).map(([, after]) => after);
-      const removed = Object.values(changes.removed);
-
-      // Filter out page records — we never persist those because tldraw
-      // generates a fresh page id on every mount and we don't want stale
-      // page references.
-      const filterPage = (r: TLRecord) => r.typeName !== 'page';
-      const addedFiltered = added.filter(filterPage);
-      const updatedFiltered = updated.filter(filterPage);
-      const removedFiltered = removed.filter(filterPage);
-
-      const total = addedFiltered.length + updatedFiltered.length + removedFiltered.length;
-      if (total === 0) return;
-
-      console.log(
-        LOG,
-        'tldraw→am',
-        '+' + addedFiltered.length,
-        '~' + updatedFiltered.length,
-        '-' + removedFiltered.length,
-        '(source=' + source + ')',
-      );
-
-      isSyncingToAutomergeRef.current = true;
+      preventPatchApplicationsRef.current = true;
       try {
         // Persist tldraw records to the dedicated tldraw doc.
         tldrawHandle.change((d: any) => {
-          applyTLStoreChangesToAutomergeDoc(d, {
-            added: addedFiltered,
-            updated: updatedFiltered,
-            removed: removedFiltered,
-          });
+          applyTLStoreChangesToAutomerge(d, changes);
         });
 
         // When patchwork-doc shapes are deleted, remove from the folder doc list.
         // When patchwork-doc shapes are renamed, sync name to the folder doc list.
         // Skip during reconciliation (those changes reflect docs already gone/synced).
         if (!isReconcilingRef.current) {
-          const docsToRemove = removedFiltered.filter(
+          const removed = Object.values(changes.removed);
+          const updated = Object.values(changes.updated).map(([, after]) => after);
+
+          const docsToRemove = removed.filter(
             (r: any) => r.type === PATCHWORK_DOC_SHAPE_TYPE && r.props?.docUrl,
           );
-          const docsRenamed = updatedFiltered.filter(
+          const docsRenamed = updated.filter(
             (r: any) => r.type === PATCHWORK_DOC_SHAPE_TYPE && r.props?.docUrl && r.props?.docName,
           );
 
@@ -428,7 +465,7 @@ async function initializeSync(
       } catch (e) {
         console.error(LOG, 'tldraw→am handle.change() THREW', e);
       }
-      isSyncingToAutomergeRef.current = false;
+      preventPatchApplicationsRef.current = false;
     },
     { source: 'user', scope: 'document' },
   );
@@ -442,27 +479,23 @@ async function initializeSync(
   // ------------------------------------------------------------------
 
   const handleTldrawDocChange = ({ patches }: DocHandleChangePayload<TldrawDoc>) => {
-    if (isSyncingToAutomergeRef.current) {
-      // This is the echo from our own tldrawHandle.change() — ignore it.
+    if (preventPatchApplicationsRef.current) {
       return;
     }
 
-    const currentPageId = editor.getCurrentPageId();
+    // applyAutomergePatchesToTLStore already filters for path[0] === "store"
+    // and naturally skips @patchwork patches.
+    if (patches.length === 0) return;
 
-    // Filter out @patchwork metadata patches; everything else is a tldraw record.
-    const tldrawPatches = patches.filter((p) => p.path.length >= 1 && p.path[0] !== '@patchwork');
+    console.log(LOG, 'am→tldraw (remote patches)', patches.length, 'patches');
 
-    if (tldrawPatches.length === 0) return;
-
-    console.log(LOG, 'am→tldraw (remote patches)', tldrawPatches.length, 'patches');
-
-    isSyncingToTldrawRef.current = true;
+    preventPatchApplicationsRef.current = true;
     try {
-      applyAutomergePatchesToTLStore(tldrawPatches, editor.store, currentPageId);
+      applyAutomergePatchesToTLStore(patches, editor.store);
     } catch (e) {
       console.error(LOG, 'am→tldraw applyPatches THREW', e);
     }
-    isSyncingToTldrawRef.current = false;
+    preventPatchApplicationsRef.current = false;
   };
 
   tldrawHandle.on('change', handleTldrawDocChange as any);
@@ -472,40 +505,101 @@ async function initializeSync(
   });
 
   // ------------------------------------------------------------------
-  // 3.  Load stored tldraw records into the editor
+  // 3.  Load stored document-scoped records into the editor
+  //     Skip session-scoped records (camera, instance, pointer, etc.)
+  //     and page records (tldraw generates a fresh page on each mount).
   // ------------------------------------------------------------------
 
-  const currentPageId = editor.getCurrentPageId();
-  const storedRecords: TLRecord[] = [];
-  if (tldrawDoc) {
-    for (const [id, value] of Object.entries(tldrawDoc)) {
-      if (id === '@patchwork') continue;
-      const rec = readStoredRecord(value);
-      if (!rec) {
-        console.warn(LOG, 'bad stored record', id);
-        continue;
+  const SESSION_RECORD_TYPES = new Set([
+    'camera', 'instance', 'instance_page_state', 'instance_presence', 'pointer', 'page',
+  ]);
+
+  if (tldrawDoc?.store) {
+    const storedRecords: TLRecord[] = [];
+    for (const [id, value] of Object.entries(tldrawDoc.store)) {
+      if (!value || typeof value !== 'object') continue;
+      if (SESSION_RECORD_TYPES.has(value.typeName)) continue;
+      storedRecords.push(value as TLRecord);
+    }
+
+    if (storedRecords.length > 0) {
+      console.log(LOG, 'loading', storedRecords.length, 'stored records into tldraw store');
+      preventPatchApplicationsRef.current = true;
+      try {
+        editor.store.mergeRemoteChanges(() => {
+          editor.store.put(storedRecords);
+        });
+        console.log(LOG, 'stored records loaded OK');
+      } catch (e) {
+        console.error(LOG, 'loading stored records THREW', e);
       }
-      // Skip page records — we use tldraw's fresh page.
-      if (rec.typeName === 'page') continue;
-      storedRecords.push(remapParentPage(rec, currentPageId));
+      preventPatchApplicationsRef.current = false;
+    } else {
+      console.log(LOG, 'no stored records to load');
     }
   }
 
-  if (storedRecords.length > 0) {
-    console.log(LOG, 'loading', storedRecords.length, 'stored records into tldraw store');
-    isSyncingToTldrawRef.current = true;
-    try {
-      editor.store.mergeRemoteChanges(() => {
-        editor.store.put(storedRecords);
+  // ------------------------------------------------------------------
+  // 3b. Register image/file and paste handlers
+  // ------------------------------------------------------------------
+
+  editor.registerExternalAssetHandler('file', async ({ file, assetId }) => {
+    const isImage = file.type.startsWith('image/');
+    const isVideo = file.type.startsWith('video/');
+
+    const id = assetId ?? (`asset:${crypto.randomUUID()}` as TLAssetId);
+
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const ext = extensionForMimeType(file.type);
+    const name =
+      file.name && file.name !== 'image.png'
+        ? file.name
+        : `Pasted image on ${new Date().toLocaleDateString()}.${ext}`;
+
+    const fileHandle = await repo.create2({
+      content: bytes,
+      extension: ext,
+      mimeType: file.type,
+      name,
+    });
+
+    const asset = await getMediaAssetInfoPartial(file, id, isImage, isVideo);
+    asset.props.src = automergeUrlToServiceWorkerUrl(fileHandle.url);
+
+    return asset as TLAsset;
+  });
+
+  editor.registerExternalContentHandler(
+    'tldraw',
+    ({ point, content }: { point?: VecLike; content: TLContent }) => {
+      editor.run(() => {
+        const selectionBoundsBefore = editor.getSelectionPageBounds();
+        editor.markHistoryStoppingPoint('paste');
+
+        for (const shape of content.shapes) {
+          if (content.rootShapeIds.includes(shape.id)) {
+            shape.isLocked = false;
+          }
+        }
+
+        content.schema = editor.store.schema.serialize();
+
+        editor.putContentOntoCurrentPage(content, {
+          point,
+          select: true,
+        });
+
+        const selectedBoundsAfter = editor.getSelectionPageBounds();
+        if (
+          selectionBoundsBefore &&
+          selectedBoundsAfter &&
+          selectionBoundsBefore.collides(selectedBoundsAfter)
+        ) {
+          editor.updateInstanceState({ isChangingStyle: true });
+        }
       });
-      console.log(LOG, 'stored records loaded OK');
-    } catch (e) {
-      console.error(LOG, 'loading stored records THREW', e);
-    }
-    isSyncingToTldrawRef.current = false;
-  } else {
-    console.log(LOG, 'no stored records to load');
-  }
+    },
+  );
 
   // ------------------------------------------------------------------
   // 4.  Ensure patchwork-doc shapes exist for every folder item
@@ -542,19 +636,6 @@ async function initializeSync(
   }
 
   console.log(LOG, 'initializeSync complete ✓');
-}
-
-// remapParentPage is now in automerge-tldraw-sync.ts but we still need
-// a local version for reconcilePatchworkDocShapes which creates shapes
-// that go through the tldraw store (not automerge directly).
-function remapParentPage(record: TLRecord, currentPageId: string): TLRecord {
-  const r = record as any;
-  if (r.typeName === 'shape' && typeof r.parentId === 'string' && r.parentId.startsWith('page:')) {
-    if (r.parentId !== currentPageId) {
-      return { ...r, parentId: currentPageId };
-    }
-  }
-  return record;
 }
 
 // =============================================================================
