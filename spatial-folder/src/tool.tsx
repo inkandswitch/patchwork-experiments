@@ -26,11 +26,18 @@ const LOG = '[spatial-folder]';
 
 // ---- Types ------------------------------------------------------------------
 
-type LayoutEntry = { x: number; y: number; w: number; h: number };
-
 type SpatialFolderDoc = FolderDoc & {
-  /** Every document-scope tldraw record, keyed by record id, stored as objects. */
-  tldraw?: { [recordId: string]: any };
+  /**
+   * Automerge URL pointing at a dedicated tldraw document.
+   * Legacy: may be a `{ [recordId: string]: any }` object — migrated on first load.
+   */
+  tldraw?: string | { [recordId: string]: any };
+};
+
+/** The dedicated tldraw document — record IDs are top-level keys. */
+type TldrawDoc = {
+  '@patchwork'?: { type: 'tldraw' };
+  [recordId: string]: any;
 };
 
 // ---- Constants --------------------------------------------------------------
@@ -235,10 +242,58 @@ function SpatialFolderCanvas({
 }
 
 // =============================================================================
+//  resolveTldrawHandle — find, create, or migrate the dedicated tldraw doc
+// =============================================================================
+
+async function resolveTldrawHandle(
+  handle: DocHandle<SpatialFolderDoc>,
+  repo: any,
+): Promise<DocHandle<TldrawDoc>> {
+  const doc = handle.doc();
+  const existing = doc?.tldraw;
+
+  if (typeof existing === 'string') {
+    // Already migrated — it's an automerge URL.
+    console.log(LOG, 'tldraw doc URL found:', existing);
+    const tldrawHandle = (await repo.find(existing)) as DocHandle<TldrawDoc>;
+    return tldrawHandle;
+  }
+
+  if (existing && typeof existing === 'object') {
+    // Legacy: tldraw data stored inline — migrate to a new doc.
+    console.log(LOG, 'migrating inline tldraw data to dedicated doc');
+    const initial: TldrawDoc = { '@patchwork': { type: 'tldraw' } };
+    for (const [id, value] of Object.entries(existing)) {
+      initial[id] = value;
+    }
+    const tldrawHandle = (await repo.create2(initial)) as DocHandle<TldrawDoc>;
+
+    // Point the folder doc at the new tldraw doc URL.
+    handle.change((d: any) => {
+      d.tldraw = tldrawHandle.url;
+    });
+    console.log(LOG, 'migration complete, tldraw doc:', tldrawHandle.url);
+    return tldrawHandle;
+  }
+
+  // No tldraw data yet — create an empty doc.
+  console.log(LOG, 'creating new tldraw doc');
+  const tldrawHandle = (await repo.create2({
+    '@patchwork': { type: 'tldraw' },
+  })) as DocHandle<TldrawDoc>;
+
+  handle.change((d: any) => {
+    d.tldraw = tldrawHandle.url;
+  });
+  console.log(LOG, 'new tldraw doc created:', tldrawHandle.url);
+  return tldrawHandle;
+}
+
+// =============================================================================
 //  initializeSync — called exactly once when editor + doc are both ready
 // =============================================================================
 
-function initializeSync(
+async function initializeSync(
   editor: Editor,
   handle: DocHandle<SpatialFolderDoc>,
   repo: any,
@@ -254,7 +309,14 @@ function initializeSync(
   }
 
   const folderDocs: DocLink[] = currentDoc.docs ?? [];
-  const stored: Record<string, any> = currentDoc.tldraw ?? {};
+
+  // Resolve (or create/migrate) the dedicated tldraw document.
+  const tldrawHandle = await resolveTldrawHandle(handle, repo);
+  const tldrawDoc = tldrawHandle.doc();
+
+  const storedCount = tldrawDoc
+    ? Object.keys(tldrawDoc).filter((k) => k !== '@patchwork').length
+    : 0;
 
   console.log(
     LOG,
@@ -262,7 +324,9 @@ function initializeSync(
     '| folder docs:',
     folderDocs.length,
     '| stored tldraw records:',
-    Object.keys(stored).length,
+    storedCount,
+    '| tldraw doc:',
+    tldrawHandle.url,
   );
 
   // ------------------------------------------------------------------
@@ -303,30 +367,35 @@ function initializeSync(
 
       isSyncingToAutomergeRef.current = true;
       try {
-        handle.change((d) => {
-          if (!d.tldraw) {
-            (d as any).tldraw = {};
-          }
-          applyTLStoreChangesToAutomergeDoc(d.tldraw!, {
+        // Persist tldraw records to the dedicated tldraw doc.
+        tldrawHandle.change((d: any) => {
+          applyTLStoreChangesToAutomergeDoc(d, {
             added: addedFiltered,
             updated: updatedFiltered,
             removed: removedFiltered,
           });
-
-          // When patchwork-doc shapes are deleted, remove from the folder doc list.
-          // Skip during reconciliation (those deletions reflect docs already gone).
-          // if (!isReconcilingRef.current && d.docs) {
-          //   for (const record of removedFiltered) {
-          //     const r = record as any;
-          //     if (r.type === PATCHWORK_DOC_SHAPE_TYPE && r.props?.docUrl) {
-          //       const idx = d.docs.findIndex((doc) => doc.url === r.props.docUrl);
-          //       if (idx >= 0) {
-          //         d.docs.splice(idx, 1);
-          //       }
-          //     }
-          //   }
-          // }
         });
+
+        // When patchwork-doc shapes are deleted, remove from the folder doc list.
+        // Skip during reconciliation (those deletions reflect docs already gone).
+        if (!isReconcilingRef.current) {
+          const docsToRemove = removedFiltered.filter(
+            (r: any) => r.type === PATCHWORK_DOC_SHAPE_TYPE && r.props?.docUrl,
+          );
+          if (docsToRemove.length > 0) {
+            handle.change((d) => {
+              if (!d.docs) return;
+              for (const record of docsToRemove) {
+                const r = record as any;
+                const idx = d.docs.findIndex((doc: any) => doc.url === r.props.docUrl);
+                if (idx >= 0) {
+                  d.docs.splice(idx, 1);
+                }
+              }
+            });
+          }
+        }
+
         console.log(LOG, 'tldraw→am handle.change() succeeded');
       } catch (e) {
         console.error(LOG, 'tldraw→am handle.change() THREW', e);
@@ -341,19 +410,19 @@ function initializeSync(
   });
 
   // ------------------------------------------------------------------
-  // 2.  Set up automerge → tldraw listener (for remote peer changes)
+  // 2.  Set up automerge → tldraw listener (on the dedicated tldraw doc)
   // ------------------------------------------------------------------
 
-  const handleDocChange = ({ patches }: DocHandleChangePayload<SpatialFolderDoc>) => {
+  const handleTldrawDocChange = ({ patches }: DocHandleChangePayload<TldrawDoc>) => {
     if (isSyncingToAutomergeRef.current) {
-      // This is the echo from our own handle.change() — ignore it.
+      // This is the echo from our own tldrawHandle.change() — ignore it.
       return;
     }
 
     const currentPageId = editor.getCurrentPageId();
 
-    // Filter to only patches that touch doc.tldraw.*
-    const tldrawPatches = patches.filter((p) => p.path[0] === 'tldraw' && p.path.length >= 2);
+    // Filter out @patchwork metadata patches; everything else is a tldraw record.
+    const tldrawPatches = patches.filter((p) => p.path.length >= 1 && p.path[0] !== '@patchwork');
 
     if (tldrawPatches.length === 0) return;
 
@@ -368,10 +437,10 @@ function initializeSync(
     isSyncingToTldrawRef.current = false;
   };
 
-  handle.on('change', handleDocChange as any);
+  tldrawHandle.on('change', handleTldrawDocChange as any);
   cleanupFnsRef.current.push(() => {
-    console.log(LOG, 'removing handle change listener');
-    handle.off('change', handleDocChange as any);
+    console.log(LOG, 'removing tldraw handle change listener');
+    tldrawHandle.off('change', handleTldrawDocChange as any);
   });
 
   // ------------------------------------------------------------------
@@ -380,16 +449,18 @@ function initializeSync(
 
   const currentPageId = editor.getCurrentPageId();
   const storedRecords: TLRecord[] = [];
-  for (const [id, value] of Object.entries(stored)) {
-    // Backwards compat: old format stored JSON strings, new format stores objects.
-    const rec = readStoredRecord(value);
-    if (!rec) {
-      console.warn(LOG, 'bad stored record', id);
-      continue;
+  if (tldrawDoc) {
+    for (const [id, value] of Object.entries(tldrawDoc)) {
+      if (id === '@patchwork') continue;
+      const rec = readStoredRecord(value);
+      if (!rec) {
+        console.warn(LOG, 'bad stored record', id);
+        continue;
+      }
+      // Skip page records — we use tldraw's fresh page.
+      if (rec.typeName === 'page') continue;
+      storedRecords.push(remapParentPage(rec, currentPageId));
     }
-    // Skip page records — we use tldraw's fresh page.
-    if (rec.typeName === 'page') continue;
-    storedRecords.push(remapParentPage(rec, currentPageId));
   }
 
   if (storedRecords.length > 0) {

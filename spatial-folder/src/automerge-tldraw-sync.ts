@@ -1,8 +1,8 @@
 /**
  * Bidirectional sync helpers for tldraw ↔ automerge.
  *
- * Records are stored as plain objects (not JSON strings) under
- * `doc.tldraw[recordId]`, so automerge can produce granular patches.
+ * Records are stored as plain objects (not JSON strings) in a dedicated
+ * tldraw automerge doc, keyed by record ID at the top level.
  *
  * Based on https://github.com/pvh/automerge-tldraw
  */
@@ -15,7 +15,7 @@ import type { Patch } from '@automerge/automerge';
 // ============================================================================
 
 /**
- * Write tldraw store changes into the automerge doc's `tldraw` map.
+ * Write tldraw store changes into the dedicated tldraw automerge doc.
  *
  * - Added records are assigned directly.
  * - Updated records are deep-compared so only changed leaves create
@@ -53,8 +53,10 @@ export function applyTLStoreChangesToAutomergeDoc(
 
 /**
  * Apply automerge patches (from a `handle.on('change')` event) to a
- * tldraw `TLStore`.  Only patches whose root path component is
- * `"tldraw"` are processed.
+ * tldraw `TLStore`.
+ *
+ * Patches come from a dedicated tldraw doc where record IDs are
+ * top-level keys, so paths look like `["shape:X", "x"]`.
  */
 export function applyAutomergePatchesToTLStore(
   patches: Patch[],
@@ -65,13 +67,17 @@ export function applyAutomergePatchesToTLStore(
   const updatedObjects: Record<string, TLRecord> = {};
 
   for (const patch of patches) {
-    if (!isTldrawPatch(patch)) continue;
+    // Every patch on the tldraw doc is relevant; just need at least a record id.
+    if (patch.path.length < 1) continue;
 
-    const id = pathToRecordId(patch.path);
+    const id = String(patch.path[0]);
+
+    // Skip @patchwork metadata patches
+    if (id === '@patchwork') continue;
 
     switch (patch.action) {
       case 'del': {
-        if (patch.path.length === 2) {
+        if (patch.path.length === 1) {
           // Deleting the whole record
           toRemove.push(id as TLRecord['id']);
         } else {
@@ -85,7 +91,7 @@ export function applyAutomergePatchesToTLStore(
         break;
       }
       case 'put': {
-        if (patch.path.length === 2) {
+        if (patch.path.length === 1) {
           // Whole record being set — typically an add
           if (patch.value && typeof patch.value === 'object') {
             updatedObjects[id] = remapParentPage(patch.value as TLRecord, currentPageId);
@@ -138,15 +144,6 @@ export function applyAutomergePatchesToTLStore(
 // Helpers — patch application
 // ============================================================================
 
-function isTldrawPatch(patch: Patch): boolean {
-  return patch.path[0] === 'tldraw' && patch.path.length >= 2;
-}
-
-/** `["tldraw", "shape:abc123", "x"]` → `"shape:abc123"` */
-function pathToRecordId(path: (string | number)[]): string {
-  return String(path[1]);
-}
-
 function cloneFromStore(store: TLStore, id: string): TLRecord | null {
   const existing = store.get(id as TLRecord['id']);
   if (!existing) return null;
@@ -155,16 +152,16 @@ function cloneFromStore(store: TLStore, id: string): TLRecord | null {
 
 function applyPutToObject(patch: Patch, object: any): TLRecord {
   const { path, value } = patch as any;
-  if (path.length === 3) {
-    // e.g. ["tldraw", "shape:X", "x"] → set object.x
-    const prop = path[2];
+  if (path.length === 2) {
+    // e.g. ["shape:X", "x"] → set object.x
+    const prop = path[1];
     object[prop] = value;
     return object;
   }
 
   // Deeper path: walk to the parent and set the leaf.
   let current = object;
-  const parts = path.slice(2, -1);
+  const parts = path.slice(1, -1);
   for (const part of parts) {
     if (current[part] === undefined) return object;
     current = current[part];
@@ -176,12 +173,12 @@ function applyPutToObject(patch: Patch, object: any): TLRecord {
 
 function applyDelToObject(patch: Patch, object: any): TLRecord {
   const { path } = patch;
-  if (path.length === 3) {
-    delete object[path[2]];
+  if (path.length === 2) {
+    delete object[path[1]];
     return object;
   }
   let current = object;
-  const parts = path.slice(2, -1);
+  const parts = path.slice(1, -1);
   for (const part of parts) {
     if (current[part] === undefined) return object;
     current = current[part];
@@ -195,7 +192,7 @@ function applyInsertToObject(patch: Patch, object: any): TLRecord {
   let current = object;
   const insertionPoint = path[path.length - 1] as number;
   const arrayKey = path[path.length - 2];
-  const parts = path.slice(2, -2);
+  const parts = path.slice(1, -2);
   for (const part of parts) {
     if (current[part] === undefined) return object;
     current = current[part];
@@ -211,7 +208,7 @@ function applySpliceToObject(patch: Patch, object: any): TLRecord {
   let current = object;
   const insertionPoint = path[path.length - 1] as number;
   const arrayKey = path[path.length - 2];
-  const parts = path.slice(2, -2);
+  const parts = path.slice(1, -2);
   for (const part of parts) {
     if (current[part] === undefined) return object;
     current = current[part];
