@@ -131,7 +131,7 @@ Available inside `<script>` blocks:
 - `fs.listDir(path)` → `Promise<{name, type}[]>`
 - `fs.mkdir(path)` → `Promise<void>`
 - `fs.rm(path)` → `Promise<void>` (unlinks from parent folder)
-- `fs.linkDoc(path, automergeUrl, type?)` → `Promise<void>` — link an existing automerge doc into a folder
+- `fs.linkDoc(path, automergeUrl)` → `Promise<void>` — link an existing automerge doc into a folder (type is read from the doc's `@patchwork` metadata)
 - `import("/automerge:docId/path")` → `Promise<module>` — native import via service worker
 - `import("https://...")` → `Promise<module>` — import from URL
 - `console.log(...)` — captured and returned as output to LLM (values are JSON-stringified)

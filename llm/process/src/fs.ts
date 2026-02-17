@@ -277,13 +277,21 @@ export class AutomergeFS {
 
   /**
    * Link an existing Automerge document into a folder at the given path.
+   * Reads the type from the document's @patchwork metadata.
    * Parent folder is cloned via COW before mutation.
+   * The linked URL is recorded in the workspace so it doesn't appear as a
+   * change unless the document is subsequently modified.
    */
-  async linkDoc(pathStr: string, automergeUrl: AutomergeUrl, type: string = 'file'): Promise<void> {
+  async linkDoc(pathStr: string, automergeUrl: AutomergeUrl): Promise<void> {
     const parent = await this.resolveParent(pathStr);
     if (!parent) {
       throw new Error(`Parent directory not found for: ${pathStr}`);
     }
+
+    const targetHandle = await this.repo.find(automergeUrl);
+    await targetHandle.whenReady();
+    const targetDoc = targetHandle.doc() as any;
+    const type: string = targetDoc?.['@patchwork']?.type || 'file';
 
     parent.folderHandle.change((doc) => {
       if (!doc.docs) {
@@ -294,6 +302,13 @@ export class AutomergeFS {
         name: parent.targetName,
         type,
       });
+    });
+
+    this.workspaceHandle.change((ws: any) => {
+      if (!ws.linkedUrls) ws.linkedUrls = [];
+      if (!ws.linkedUrls.includes(automergeUrl)) {
+        ws.linkedUrls.push(automergeUrl);
+      }
     });
   }
 

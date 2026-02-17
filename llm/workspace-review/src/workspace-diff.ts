@@ -122,19 +122,45 @@ export async function computeChangeset(
   }
 
   // Find added files
+  const linkedUrls = new Set(workspaceDoc.linkedUrls || []);
+
   for (const [path, overlayEntry] of overlayTree) {
     if (overlayEntry.type === "folder") continue;
     if (originalTree.has(path)) continue;
 
-    const resolvedUrl =
-      (mappings[overlayEntry.url] as AutomergeUrl) ?? overlayEntry.url;
-    const content = await readFileContent(repo, resolvedUrl);
-    changes.push({
-      path,
-      changeType: "added",
-      modifiedContent: content,
-      cloneUrl: resolvedUrl,
-    });
+    const isLinked = linkedUrls.has(overlayEntry.url);
+    const cloneUrl = mappings[overlayEntry.url] as AutomergeUrl | undefined;
+
+    if (isLinked && !cloneUrl) {
+      // Linked but not modified — skip
+      continue;
+    }
+
+    if (isLinked && cloneUrl) {
+      // Linked and then modified — show as modified
+      const origContent = await readFileContent(repo, overlayEntry.url);
+      const modContent = await readFileContent(repo, cloneUrl);
+      if (origContent !== modContent) {
+        changes.push({
+          path,
+          changeType: "modified",
+          originalContent: origContent,
+          modifiedContent: modContent,
+          originalUrl: overlayEntry.url,
+          cloneUrl,
+        });
+      }
+    } else {
+      // Truly new file (created by the agent)
+      const resolvedUrl = cloneUrl ?? overlayEntry.url;
+      const content = await readFileContent(repo, resolvedUrl);
+      changes.push({
+        path,
+        changeType: "added",
+        modifiedContent: content,
+        cloneUrl: resolvedUrl,
+      });
+    }
   }
 
   // Sort: modified first, then added, then deleted; alphabetically within each group
@@ -312,9 +338,10 @@ export async function mergeChanges(
   // Phase 2: Heads propagation -- update head-pinned URLs bottom-up
   await propagateHeads(repo, ws.rootFolderUrl);
 
-  // Phase 3: Clear mappings
+  // Phase 3: Clear mappings and linked URLs
   workspaceHandle.change((ws) => {
     ws.mappings = {} as Record<string, AutomergeUrl>;
+    ws.linkedUrls = [] as unknown as AutomergeUrl[];
   });
 }
 

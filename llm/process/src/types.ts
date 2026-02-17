@@ -3,9 +3,9 @@ import type { AutomergeUrl } from '@automerge/automerge-repo';
 // --- WorkspaceDoc schema ---
 
 export type WorkspaceDoc = {
-  '@patchwork': { type: 'workspace' };
   rootFolderUrl: AutomergeUrl;
   mappings: Record<string, AutomergeUrl>; // originalUrl → clonedUrl
+  linkedUrls: AutomergeUrl[]; // docs linked into workspace (not created) — excluded from changeset unless modified
 };
 
 // --- LLMProcessDoc schema ---

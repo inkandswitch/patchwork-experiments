@@ -7,7 +7,7 @@
  */
 
 import type { Repo } from '@automerge/automerge-repo';
-import { isValidAutomergeUrl, type AutomergeUrl } from '@automerge/automerge-repo';
+import { isValidAutomergeUrl, updateText, type AutomergeUrl } from '@automerge/automerge-repo';
 import type { FolderDoc } from '@inkandswitch/patchwork-filesystem';
 import { AutomergeFS } from './fs';
 import { parseScriptBlocks } from './parser';
@@ -97,7 +97,8 @@ export async function runLLMProcess(repo: Repo, docUrl: AutomergeUrl): Promise<v
       '\n'
     )}\nYou can browse them with fs.listDir("/${linkedDocs[0].name}")]`;
     handle.change((d) => {
-      d.runs[d.runs.length - 1].task += contextMsg;
+      const run = d.runs[d.runs.length - 1];
+      updateText(d, ['runs', d.runs.length - 1, 'task'], run.task + contextMsg);
     });
   }
 
@@ -109,13 +110,21 @@ export async function runLLMProcess(repo: Repo, docUrl: AutomergeUrl): Promise<v
   // Discover available skills
   const skills = await discoverSkills(fs);
 
+  // List root directory so the LLM knows what files are available
+  let rootListing: { name: string; type: string }[] = [];
+  try {
+    rootListing = await fs.listDir('/');
+  } catch {
+    // Empty workspace — that's fine
+  }
+
   const MAX_ITERATIONS = 20;
 
   for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
     const currentDoc = handle.doc();
     if (!currentDoc) break;
 
-    const messages = buildLLMMessages(currentDoc, skills, rootFolderUrl);
+    const messages = buildLLMMessages(currentDoc, skills, rootFolderUrl, rootListing);
     const stream = streamChatCompletion(apiUrl, apiKey, model, messages);
 
     let foundScript = false;
@@ -124,9 +133,15 @@ export async function runLLMProcess(repo: Repo, docUrl: AutomergeUrl): Promise<v
       if (block.type === 'text' && block.content.trim().length > 0) {
         handle.change((d) => {
           const run = d.runs[d.runs.length - 1];
+          const runIdx = d.runs.length - 1;
           const last = run.output[run.output.length - 1];
           if (last && last.type === 'text') {
-            last.content += block.content;
+            const outputIdx = run.output.length - 1;
+            updateText(
+              d,
+              ['runs', runIdx, 'output', outputIdx, 'content'],
+              last.content + block.content
+            );
           } else {
             run.output.push({ type: 'text', content: block.content });
           }
@@ -137,9 +152,11 @@ export async function runLLMProcess(repo: Repo, docUrl: AutomergeUrl): Promise<v
         // Update or push the script block (handles both in-progress and final)
         handle.change((d) => {
           const run = d.runs[d.runs.length - 1];
+          const runIdx = d.runs.length - 1;
           const last = run.output[run.output.length - 1];
           if (last && last.type === 'script') {
-            last.code = block.code;
+            const outputIdx = run.output.length - 1;
+            updateText(d, ['runs', runIdx, 'output', outputIdx, 'code'], block.code);
           } else {
             run.output.push({ type: 'script', code: block.code });
           }
@@ -175,13 +192,18 @@ type ChatMessage = {
 function buildLLMMessages(
   doc: LLMProcessDoc,
   skills: SkillInfo[] = [],
-  rootFolderUrl?: AutomergeUrl
+  rootFolderUrl?: AutomergeUrl,
+  rootListing: { name: string; type: string }[] = []
 ): ChatMessage[] {
   const messages: ChatMessage[] = [];
 
   let systemPrompt = SYSTEM_PROMPT;
   if (skills.length > 0 && rootFolderUrl) {
     systemPrompt += buildSkillsPromptSection(skills, rootFolderUrl);
+  }
+  if (rootListing.length > 0) {
+    const entries = rootListing.map((e) => `  ${e.name} (${e.type})`).join('\n');
+    systemPrompt += `\n\nCurrent files in the workspace:\n${entries}`;
   }
 
   messages.push({
@@ -255,13 +277,13 @@ Available APIs in your execution context:
 - fs.listDir(path) — list directory contents (returns [{name, type}])
 - fs.mkdir(path) — create a directory
 - fs.rm(path) — remove a file or directory
-- fs.linkDoc(path, automergeUrl, type?) — link an existing automerge document into a folder (type defaults to "file", use "folder" for folders)
+- fs.linkDoc(path, automergeUrl) — link an existing automerge document into a folder
 - import("/automerge:docId/path/to/file") — import a module from the automerge filesystem
 - import("https://esm.sh/...") — import a module from a URL
 - console.log(...) — output text (captured and shown to you)
 - return value — return a value from the script (shown to you as output)
 
-Patchwork URLs: If you see a URL like https://example.com/#doc=ABCDEF&type=folder&title=Something, extract the doc ID from the #doc= parameter. The automerge URL is automerge:ABCDEF. Use this with fs.linkDoc() or import().
+Patchwork URLs: If you see a URL like https://example.com/#doc=ABCDEF&type=folder&title=Something, extract the doc ID from the #doc= parameter. The automerge URL is automerge:ABCDEF. Use this with fs.linkDoc(path, automergeUrl) or import().
 
 After each <script> block you will see the console output, return value, or any errors.
 Use this to inspect results and decide your next steps.
@@ -368,17 +390,17 @@ async function evalScript(
     if (consoleOutput) parts.push(consoleOutput);
     if (returnValue !== undefined) parts.push(stringifyArg(returnValue));
 
-    return {
-      type: 'result',
-      output: parts.length > 0 ? parts.join('\n') : undefined,
-    };
+    const result: { type: 'result'; output?: string; error?: string } = { type: 'result' };
+    if (parts.length > 0) result.output = parts.join('\n');
+    return result;
   } catch (err: any) {
     const consoleOutput = capturedConsole.flush();
-    return {
+    const result: { type: 'result'; output?: string; error?: string } = {
       type: 'result',
-      output: consoleOutput || undefined,
       error: err.message || String(err),
     };
+    if (consoleOutput) result.output = consoleOutput;
+    return result;
   }
 }
 
@@ -479,7 +501,7 @@ async function autoLinkPatchworkUrls(taskText: string, fs: AutomergeFS): Promise
     const automergeUrl = `automerge:${doc.docId}` as AutomergeUrl;
 
     try {
-      await fs.linkDoc(`/${name}`, automergeUrl, type);
+      await fs.linkDoc(`/${name}`, automergeUrl);
       linked.push({ name, docId: doc.docId, type });
     } catch {
       // If linking fails (e.g. root folder issue), skip silently
