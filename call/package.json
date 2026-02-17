@@ -1,0 +1,15 @@
+{
+	"name": "@patchwork/call",
+	"version": "0.0.1",
+	"description": "Video call tool for Patchwork",
+	"type": "module",
+	"main": "call.js",
+	"exports": {
+		".": "./call.js"
+	},
+	"scripts": {
+		"push": "pushwork sync"
+	},
+	"keywords": [],
+	"author": "Ink & Switch"
+}
