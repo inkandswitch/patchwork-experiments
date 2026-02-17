@@ -180,8 +180,20 @@ function SpatialFolderCanvas({
       'docs) — reconciling patchwork-doc shapes',
     );
 
-    // Filter out tldraw documents before reconciling
-    filterTldrawDocs(element.repo, currentDoc.docs).then((filteredDocs) => {
+    // Synchronously exclude our own tldraw doc, then async-filter any others.
+    const tldrawUrl = typeof currentDoc.tldraw === 'string' ? currentDoc.tldraw : null;
+    const withoutOwn = tldrawUrl
+      ? currentDoc.docs.filter((d) => d.url !== tldrawUrl)
+      : currentDoc.docs;
+
+    // Immediately reconcile with the synchronous filter so there's no
+    // flash of a tldraw-doc shape on canvas.
+    isReconcilingRef.current = true;
+    reconcilePatchworkDocShapes(editor, withoutOwn);
+    isReconcilingRef.current = false;
+
+    // Then async-filter any remaining tldraw docs from other sources.
+    filterTldrawDocs(element.repo, withoutOwn).then((filteredDocs) => {
       isReconcilingRef.current = true;
       reconcilePatchworkDocShapes(editor, filteredDocs);
       isReconcilingRef.current = false;
@@ -210,7 +222,11 @@ function SpatialFolderCanvas({
   // loading screen until the doc arrives.
 
   return (
-    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+    <div
+      className="spatial-folder-root"
+      style={{ width: '100%', height: '100%', position: 'relative' }}
+    >
+      <style>{`.spatial-folder-root .tl-background { background: #f5f0f8 !important; }`}</style>
       <Tldraw
         shapeUtils={customShapeUtils}
         tools={customTools}
@@ -376,12 +392,17 @@ async function initializeSync(
         });
 
         // When patchwork-doc shapes are deleted, remove from the folder doc list.
-        // Skip during reconciliation (those deletions reflect docs already gone).
+        // When patchwork-doc shapes are renamed, sync name to the folder doc list.
+        // Skip during reconciliation (those changes reflect docs already gone/synced).
         if (!isReconcilingRef.current) {
           const docsToRemove = removedFiltered.filter(
             (r: any) => r.type === PATCHWORK_DOC_SHAPE_TYPE && r.props?.docUrl,
           );
-          if (docsToRemove.length > 0) {
+          const docsRenamed = updatedFiltered.filter(
+            (r: any) => r.type === PATCHWORK_DOC_SHAPE_TYPE && r.props?.docUrl && r.props?.docName,
+          );
+
+          if (docsToRemove.length > 0 || docsRenamed.length > 0) {
             handle.change((d) => {
               if (!d.docs) return;
               for (const record of docsToRemove) {
@@ -389,6 +410,14 @@ async function initializeSync(
                 const idx = d.docs.findIndex((doc: any) => doc.url === r.props.docUrl);
                 if (idx >= 0) {
                   d.docs.splice(idx, 1);
+                }
+              }
+              for (const record of docsRenamed) {
+                const r = record as any;
+                const entry = d.docs.find((doc: any) => doc.url === r.props.docUrl);
+                if (entry && (entry as any).name !== r.props.docName) {
+                  (entry as any).name = r.props.docName;
+                  console.log(LOG, 'synced doc name to folder list:', r.props.docName);
                 }
               }
             });
@@ -484,7 +513,13 @@ async function initializeSync(
   //     (step 1) persists them to automerge automatically.
   // ------------------------------------------------------------------
 
-  filterTldrawDocs(repo, folderDocs).then((filteredDocs) => {
+  const withoutOwn = folderDocs.filter((d) => d.url !== tldrawHandle.url);
+
+  isReconcilingRef.current = true;
+  reconcilePatchworkDocShapes(editor, withoutOwn);
+  isReconcilingRef.current = false;
+
+  filterTldrawDocs(repo, withoutOwn).then((filteredDocs) => {
     isReconcilingRef.current = true;
     reconcilePatchworkDocShapes(editor, filteredDocs);
     isReconcilingRef.current = false;

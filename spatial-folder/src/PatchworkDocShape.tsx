@@ -11,8 +11,17 @@ import {
   useEditor,
   useValue,
 } from 'tldraw';
-import { useMemo, useCallback, useRef, useEffect, useState } from 'react';
-import { getSupportedToolsForType, type LoadedTool } from '@inkandswitch/patchwork-plugins';
+import { useMemo, useCallback, useRef, useEffect, useState, useContext } from 'react';
+import {
+  getSupportedToolsForType,
+  getRegistry,
+  type LoadedTool,
+  type DatatypeDescription,
+  type LoadedDatatype,
+} from '@inkandswitch/patchwork-plugins';
+import { openDocument } from '@inkandswitch/patchwork-elements';
+import type { AutomergeUrl } from '@automerge/automerge-repo';
+import { RepoContext } from '@automerge/automerge-repo-react-hooks';
 
 export const PATCHWORK_DOC_SHAPE_TYPE = 'patchwork-doc' as const;
 
@@ -107,52 +116,59 @@ export class PatchworkDocShapeUtil extends ShapeUtil<PatchworkDocShape> {
   }
 
   indicator(shape: PatchworkDocShape) {
-    return <rect width={shape.props.w} height={shape.props.h} rx={8} ry={8} />;
+    return <rect width={shape.props.w} height={shape.props.h} />;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Mac OS 7.5 titlebar styling
+// ---------------------------------------------------------------------------
+
+// Horizontal lines with clear 1px gaps at top and bottom of the titlebar
+// Mac OS 7.5 used light grey stripes, not black
+const TITLEBAR_STRIPES = [
+  'linear-gradient(#fff, #fff)',        // top clear line
+  'linear-gradient(#fff, #fff)',        // bottom clear line
+  'repeating-linear-gradient(#d0d0d0 0px, #d0d0d0 1px, transparent 1px, transparent 2px)',
+].join(', ');
+
+const TITLEBAR_BG_SIZE = '100% 1px, 100% 1px, 100% 100%';
+const TITLEBAR_BG_POS = 'top, bottom, center';
+const TITLEBAR_BG_REPEAT = 'no-repeat, no-repeat, repeat';
 
 // ---------------------------------------------------------------------------
 // Inner React component (so we can use hooks like useEditor)
 // ---------------------------------------------------------------------------
 
+async function loadDatatype(id: string): Promise<LoadedDatatype | undefined> {
+  try {
+    const registry = getRegistry<DatatypeDescription>('patchwork:datatype');
+    return (await registry.load(id)) as unknown as LoadedDatatype | undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
   const { docUrl, docName, docType, toolId } = shape.props;
   const editor = useEditor();
+  const repo = useContext(RepoContext);
   const tools = useSupportedToolsForDatatype(docType);
   const isSelectTool = useValue('is select tool', () => editor.getCurrentToolId() === 'select', [
     editor,
   ]);
 
-  // Measure the actual rendered size on screen to avoid infinite recursion
-  // when nested spatial folders get too small
+  const [isEditingName, setIsEditingName] = useState(false);
+  const nameInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [actualSize, setActualSize] = useState({ width: 0, height: 0 });
 
+  // Focus the name input when editing starts
   useEffect(() => {
-    const element = containerRef.current;
-    if (!element) return;
-
-    const updateSize = () => {
-      const rect = element.getBoundingClientRect();
-      setActualSize({ width: rect.width, height: rect.height });
-    };
-
-    // Initial measurement
-    updateSize();
-
-    // Watch for size changes
-    const resizeObserver = new ResizeObserver(updateSize);
-    resizeObserver.observe(element);
-
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, []);
-
-  // Threshold: don't render patchwork-view if smaller than 50 pixels in either dimension
-  const MIN_VISUAL_SIZE = 10;
-  const shouldRenderContent =
-    actualSize.width >= MIN_VISUAL_SIZE && actualSize.height >= MIN_VISUAL_SIZE;
+    if (isEditingName && nameInputRef.current) {
+      nameInputRef.current.focus();
+      nameInputRef.current.select();
+    }
+  }, [isEditingName]);
 
   const handleToolChange = useCallback(
     (newToolId: string) => {
@@ -165,61 +181,170 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
     [editor, shape.id],
   );
 
-  // Only pass tool-id once the user has explicitly picked one
+  const handleOpenDocument = useCallback(() => {
+    const el = containerRef.current;
+    if (!el || !docUrl) return;
+    console.log('[spatial-folder] patchwork:open-document', { url: docUrl, toolId: toolId || undefined });
+    openDocument(el, docUrl as AutomergeUrl, toolId || undefined);
+  }, [docUrl, toolId]);
+
+  const handleRename = useCallback(
+    async (newName: string) => {
+      const trimmed = newName.trim();
+      if (!trimmed || trimmed === docName || !repo || !docUrl || !docType) {
+        setIsEditingName(false);
+        return;
+      }
+
+      // Set title on the child doc via its datatype
+      const datatype = await loadDatatype(docType);
+      if (datatype?.module.setTitle) {
+        const childHandle = await repo.find(docUrl as any);
+        childHandle.change((d: any) => {
+          datatype.module.setTitle!(d, trimmed);
+        });
+
+        // Read back the canonical title
+        const childDoc = childHandle.doc();
+        const canonicalName = childDoc ? datatype.module.getTitle(childDoc) : trimmed;
+
+        editor.updateShape({
+          id: shape.id,
+          type: PATCHWORK_DOC_SHAPE_TYPE,
+          props: { docName: canonicalName },
+        } as any);
+      }
+
+      setIsEditingName(false);
+    },
+    [editor, shape.id, docName, docUrl, docType, repo],
+  );
+
   const effectiveToolId = toolId || '';
 
-  // Label for the pill: show selected tool name, or the docType fallback
   const selectedTool = tools.find((t) => t.id === effectiveToolId);
   const pillLabel = selectedTool ? selectedTool.name : docType || '';
 
   return (
-    <HTMLContainer
-      style={{
-        width: '100%',
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        borderRadius: '8px',
-        overflow: 'hidden',
-        boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
-        border: '1px solid #e0e0e0',
-        background: '#ffffff',
-        pointerEvents: 'all',
-      }}
-    >
-      {/* ---- Titlebar ---- */}
+    <HTMLContainer>
+      <div
+        ref={containerRef}
+        style={{
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          boxShadow: '2px 2px 8px rgba(0,0,0,0.15)',
+          border: '1px solid #ccc',
+          background: '#ffffff',
+          pointerEvents: 'all',
+        }}
+      >
+      {/* ---- Mac OS 7.5 Titlebar ---- */}
       <div
         style={{
+          position: 'relative',
           display: 'flex',
           alignItems: 'center',
-          gap: '8px',
-          padding: '8px 12px',
-          background: '#f5f5f5',
-          borderBottom: '1px solid #e0e0e0',
+          padding: '3px 5px',
+          backgroundImage: TITLEBAR_STRIPES,
+          backgroundSize: TITLEBAR_BG_SIZE,
+          backgroundPosition: TITLEBAR_BG_POS,
+          backgroundRepeat: TITLEBAR_BG_REPEAT,
+          backgroundColor: '#fff',
+          borderBottom: '1px solid #ccc',
           cursor: 'grab',
           userSelect: 'none',
           flexShrink: 0,
-          minHeight: '44px',
+          minHeight: '22px',
         }}
       >
-        {/* Document name */}
-        <span
+        {/* Open-document box (System 7 close-box style) */}
+        <button
+          title="Open document"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleOpenDocument();
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
           style={{
-            fontSize: '15px',
-            fontWeight: 600,
-            color: '#333',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            flex: 1,
-            fontFamily: 'system-ui, -apple-system, sans-serif',
+            width: '12px',
+            height: '12px',
+            border: '1px solid #999',
+            background: '#fff',
+            padding: 0,
+            cursor: 'pointer',
+            flexShrink: 0,
+            zIndex: 1,
+          }}
+        />
+
+        {/* Document name — absolutely centered over the titlebar */}
+        <div
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+            maxWidth: '70%',
+            zIndex: 1,
           }}
         >
-          {docName}
-        </span>
+          {isEditingName ? (
+            <input
+              ref={nameInputRef}
+              defaultValue={docName}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === 'Enter') handleRename((e.target as HTMLInputElement).value);
+                if (e.key === 'Escape') setIsEditingName(false);
+              }}
+              onBlur={(e) => handleRename(e.target.value)}
+              style={{
+                fontSize: '11px',
+                fontWeight: 700,
+                fontFamily: '"Chicago", "Geneva", system-ui, sans-serif',
+                color: '#000',
+                background: '#fff',
+                border: 'none',
+                padding: '0 6px',
+                outline: 'none',
+                textAlign: 'center',
+                width: '100%',
+              }}
+            />
+          ) : (
+            <span
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsEditingName(true);
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              style={{
+                fontSize: '11px',
+                fontWeight: 700,
+                color: '#000',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                fontFamily: '"Chicago", "Geneva", system-ui, sans-serif',
+                textAlign: 'center',
+                padding: '0 6px',
+                background: '#fff',
+                cursor: 'text',
+                display: 'block',
+              }}
+            >
+              {docName}
+            </span>
+          )}
+        </div>
 
-        {/* Tool selector — type a tool ID or pick from suggestions */}
-        <div style={{ position: 'relative', flexShrink: 0 }}>
+        {/* Tool selector — pushed right */}
+        <div style={{ position: 'relative', flexShrink: 0, marginLeft: 'auto', zIndex: 1 }}>
           <input
             list={`tool-list-${shape.id}`}
             defaultValue={effectiveToolId || pillLabel}
@@ -253,15 +378,14 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
               }
             }}
             style={{
-              fontSize: '11px',
-              color: '#666',
-              padding: '2px 8px',
-              background: '#e8e8e8',
-              borderRadius: '9999px',
-              fontFamily: 'system-ui, -apple-system, sans-serif',
-              border: 'none',
+              fontSize: '10px',
+              color: '#555',
+              padding: '1px 4px',
+              background: '#fff',
+              border: '1px solid #ccc',
+              fontFamily: '"Geneva", "Chicago", system-ui, sans-serif',
               outline: 'none',
-              width: '120px',
+              width: '90px',
               cursor: 'text',
             }}
           />
@@ -275,9 +399,8 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
         </div>
       </div>
 
-      {/* ---- Patchwork view content ---- */}
+      {/* ---- Content area ---- */}
       <div
-        ref={containerRef}
         style={{
           flex: 1,
           minHeight: 0,
@@ -287,22 +410,7 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
         }}
         onPointerDown={isSelectTool ? (e) => e.stopPropagation() : undefined}
       >
-        {!shouldRenderContent ? (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '100%',
-              color: '#ccc',
-              fontSize: '12px',
-              fontFamily: 'system-ui, -apple-system, sans-serif',
-              background: '#fafafa',
-            }}
-          >
-            {docName}
-          </div>
-        ) : docUrl ? (
+        {docUrl ? (
           // @ts-expect-error Custom element from patchwork-elements
           <patchwork-view
             doc-url={docUrl}
@@ -321,14 +429,15 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
               alignItems: 'center',
               justifyContent: 'center',
               height: '100%',
-              color: '#999',
-              fontSize: '14px',
-              fontFamily: 'system-ui, -apple-system, sans-serif',
+              color: '#000',
+              fontSize: '12px',
+              fontFamily: '"Geneva", "Chicago", system-ui, sans-serif',
             }}
           >
             No document
           </div>
         )}
+      </div>
       </div>
     </HTMLContainer>
   );
