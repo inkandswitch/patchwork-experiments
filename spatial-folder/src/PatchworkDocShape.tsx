@@ -155,9 +155,7 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
     actualSize.width >= MIN_VISUAL_SIZE && actualSize.height >= MIN_VISUAL_SIZE;
 
   const handleToolChange = useCallback(
-    (e: React.ChangeEvent<HTMLSelectElement>) => {
-      e.stopPropagation();
-      const newToolId = e.target.value;
+    (newToolId: string) => {
       editor.updateShape({
         id: shape.id,
         type: PATCHWORK_DOC_SHAPE_TYPE,
@@ -220,72 +218,61 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
           {docName}
         </span>
 
-        {/* Tool selector pill */}
-        {pillLabel && (
-          <div
-            style={{
-              position: 'relative',
-              flexShrink: 0,
+        {/* Tool selector — type a tool ID or pick from suggestions */}
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <input
+            list={`tool-list-${shape.id}`}
+            defaultValue={effectiveToolId || pillLabel}
+            placeholder={docType || 'tool id'}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            onFocus={(e) => {
+              const input = e.target as HTMLInputElement;
+              input.dataset.prev = input.value;
+              input.value = '';
             }}
-          >
-            {/* Visible pill label */}
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-                fontSize: '11px',
-                color: '#666',
-                padding: '2px 8px',
-                background: '#e8e8e8',
-                borderRadius: '9999px',
-                fontFamily: 'system-ui, -apple-system, sans-serif',
-                pointerEvents: 'none',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {pillLabel}
-              {tools.length > 1 && (
-                <svg width="8" height="8" viewBox="0 0 8 8" style={{ opacity: 0.5 }}>
-                  <path
-                    d="M1 2.5L4 5.5L7 2.5"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    fill="none"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              )}
-            </span>
-
-            {/* Invisible native select overlaid on the pill for interaction */}
-            {tools.length > 1 && (
-              <select
-                value={effectiveToolId}
-                onChange={handleToolChange}
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  width: '100%',
-                  height: '100%',
-                  opacity: 0,
-                  cursor: 'pointer',
-                  fontSize: '11px',
-                }}
-              >
-                {!effectiveToolId && <option value="">{docType} (default)</option>}
-                {tools.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-        )}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === 'Enter') {
+                handleToolChange((e.target as HTMLInputElement).value);
+                (e.target as HTMLInputElement).blur();
+              }
+              if (e.key === 'Escape') {
+                const input = e.target as HTMLInputElement;
+                input.value = input.dataset.prev || '';
+                input.blur();
+              }
+            }}
+            onBlur={(e) => {
+              const input = e.target as HTMLInputElement;
+              const val = input.value.trim();
+              if (val) {
+                handleToolChange(val);
+              } else {
+                input.value = input.dataset.prev || '';
+              }
+            }}
+            style={{
+              fontSize: '11px',
+              color: '#666',
+              padding: '2px 8px',
+              background: '#e8e8e8',
+              borderRadius: '9999px',
+              fontFamily: 'system-ui, -apple-system, sans-serif',
+              border: 'none',
+              outline: 'none',
+              width: '120px',
+              cursor: 'text',
+            }}
+          />
+          <datalist id={`tool-list-${shape.id}`}>
+            {tools.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </datalist>
+        </div>
       </div>
 
       {/* ---- Patchwork view content ---- */}
