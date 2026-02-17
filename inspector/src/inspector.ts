@@ -2,75 +2,63 @@ import type { DocHandle, Repo } from "@automerge/automerge-repo";
 import { getHeads } from "@automerge/automerge";
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 
-interface PatchworkViewElement extends HTMLElement {
+interface ViewElement extends HTMLElement {
   repo: Repo;
-  docUrl?: string;
-  toolId?: string;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function findViewAt(x: number, y: number): PatchworkViewElement | null {
-  const els = document.elementsFromPoint(x, y);
-  for (const el of els) {
-    let node: Element | null = el;
-    while (node) {
-      if (node.tagName?.toLowerCase() === "patchwork-view") {
-        return node as PatchworkViewElement;
-      }
-      node = node.parentElement;
+function findViewAt(x: number, y: number): ViewElement | null {
+  for (const el of document.elementsFromPoint(x, y)) {
+    let n: Element | null = el;
+    while (n) {
+      if (n.tagName?.toLowerCase() === "patchwork-view") return n as ViewElement;
+      n = n.parentElement;
     }
   }
   return null;
 }
 
-function shortHash(h: string): string {
-  return h.substring(0, 8);
-}
-
 function ago(ms: number): string {
-  const sec = Math.floor(ms / 1000);
-  if (sec < 5) return "just now";
-  if (sec < 60) return `${sec}s ago`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  return `${hr}h ${min % 60}m ago`;
+  const s = Math.floor(ms / 1000);
+  if (s < 5) return "just now";
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  return `${Math.floor(m / 60)}h ${m % 60}m ago`;
 }
 
-async function resolveToolUrl(toolId: string | null | undefined): Promise<string | null> {
-  const id = toolId?.trim();
-  if (!id) return null;
+async function heads(repo: Repo, url: string): Promise<string | null> {
   try {
-    const plugin = getRegistry("patchwork:tool").get(id);
-    return (plugin as any)?.importUrl ?? null;
+    const doc = (await repo.find(url as any)).doc();
+    if (!doc) return null;
+    const h = getHeads(doc);
+    const short = h.map((s) => s.substring(0, 8)).join(", ");
+    return h.length > 1 ? `${short}  (${h.length} heads)` : short;
   } catch {
     return null;
   }
 }
 
-async function resolveFallbackTool(
+async function resolveToolUrl(
   repo: Repo,
-  docUrl: string
-): Promise<{ id: string; url: string } | null> {
+  toolId: string | null,
+  docUrl: string | null
+): Promise<{ id: string; url: string; fallback: boolean } | null> {
   try {
-    const handle = await repo.find(docUrl as any);
-    const doc = handle.doc() as any;
-    const datatype = doc?.datatype as string | undefined;
-    if (!datatype) return null;
+    const registry = getRegistry("patchwork:tool");
 
-    const allTools = getRegistry("patchwork:tool").all();
-    for (const tool of allTools) {
-      const supported = (tool as any).supportedDatatypes;
-      if (
-        Array.isArray(supported)
-          ? supported.includes(datatype)
-          : supported === datatype
-      ) {
-        if ((tool as any).importUrl) {
-          return { id: tool.id as string, url: (tool as any).importUrl };
+    if (toolId) {
+      const url = (registry.get(toolId) as any)?.importUrl;
+      if (url) return { id: toolId, url, fallback: false };
+    }
+
+    if (docUrl) {
+      const datatype = ((await repo.find(docUrl as any)).doc() as any)?.datatype;
+      if (datatype) {
+        for (const t of registry.all()) {
+          const sup = (t as any).supportedDatatypes;
+          const match = Array.isArray(sup) ? sup.includes(datatype) : sup === datatype;
+          if (match && (t as any).importUrl)
+            return { id: t.id as string, url: (t as any).importUrl, fallback: true };
         }
       }
     }
@@ -78,233 +66,142 @@ async function resolveFallbackTool(
   return null;
 }
 
-async function getHeadsInfo(
-  repo: Repo,
-  url: string
-): Promise<{ hashes: string[]; formatted: string } | null> {
-  try {
-    const handle = await repo.find(url as any);
-    const doc = handle.doc();
-    if (!doc) return null;
-    const heads = getHeads(doc);
-    const formatted = heads.map(shortHash).join(", ");
-    return {
-      hashes: heads as string[],
-      formatted: heads.length > 1 ? `${formatted}  (${heads.length} heads)` : formatted,
-    };
-  } catch {
-    return null;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Popup UI
-// ---------------------------------------------------------------------------
-
-const POPUP_STYLE = `
-  position: fixed; z-index: 99999; pointer-events: none;
-  background: rgba(18, 18, 30, 0.96); color: #ccc;
-  font: 11px/1.6 "SF Mono", "JetBrains Mono", "Fira Code", monospace;
-  padding: 10px 14px; border-radius: 8px; min-width: 260px; max-width: 380px;
-  border: 1px solid rgba(120, 140, 255, 0.3);
-  box-shadow: 0 4px 24px rgba(0,0,0,0.45);
-`;
-
 function row(label: string, value: string, color: string): string {
-  const escaped = value.replace(/&/g, "&amp;").replace(/</g, "&lt;");
-  return `
-    <div style="margin-bottom: 4px;">
-      <div style="color:#666;font-size:9px;">${label}</div>
-      <div style="color:${color};word-break:break-all;">${escaped || '<span style="opacity:0.4">(none)</span>'}</div>
-    </div>`;
+  const v = value.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  return `<div style="margin-bottom:4px">
+    <div style="color:#666;font-size:9px">${label}</div>
+    <div style="color:${color};word-break:break-all">${v || '<span style="opacity:.4">(none)</span>'}</div>
+  </div>`;
 }
 
-function separator(): string {
-  return `<div style="border-top:1px solid rgba(255,255,255,0.06);margin:6px 0;"></div>`;
-}
+const HR = `<div style="border-top:1px solid rgba(255,255,255,.06);margin:6px 0"></div>`;
 
-async function buildContent(view: PatchworkViewElement): Promise<string> {
-  const repo = view.repo;
-  const toolId = view.getAttribute("tool-id") || null;
+async function buildContent(view: ViewElement): Promise<string> {
+  const { repo } = view;
+  const toolId = view.getAttribute("tool-id")?.trim() || null;
   const docUrl = view.getAttribute("doc-url") || null;
-  const hasExplicitTool = toolId && toolId.trim() !== "";
   let html = "";
 
-  // --- Tool section ---
-  html += row("tool-id", hasExplicitTool ? toolId! : "(fallback)", "#8ba4ff");
-
-  let toolUrl: string | null = null;
-
-  if (hasExplicitTool) {
-    toolUrl = await resolveToolUrl(toolId);
-  } else if (docUrl && repo) {
-    const fallback = await resolveFallbackTool(repo, docUrl);
-    if (fallback) {
-      toolUrl = fallback.url;
-      html += row("resolved-tool", fallback.id, "#8ba4ff");
-    }
+  const tool = await resolveToolUrl(repo, toolId, docUrl);
+  html += row("tool-id", tool ? (tool.fallback ? `(fallback) ${tool.id}` : tool.id) : toolId ?? "", "#8ba4ff");
+  if (tool) {
+    html += row("tool-url", tool.url, "#aa88ff");
+    const h = await heads(repo, tool.url);
+    if (h) html += row("tool-heads", h, "#9988cc");
   }
 
-  if (toolUrl) {
-    html += row("tool-url", toolUrl, "#aa88ff");
-    const toolHeads = await getHeadsInfo(repo, toolUrl);
-    if (toolHeads) html += row("tool-heads", toolHeads.formatted, "#9988cc");
-  }
-
-  html += separator();
-
-  // --- Doc section ---
+  html += HR;
   html += row("doc-url", docUrl ?? "", "#7a9a6a");
 
   if (docUrl && repo) {
-    const docHeads = await getHeadsInfo(repo, docUrl);
-    if (docHeads) html += row("doc-heads", docHeads.formatted, "#7aa0a0");
+    const h = await heads(repo, docUrl);
+    if (h) html += row("doc-heads", h, "#7aa0a0");
 
     try {
-      const handle = await repo.find(docUrl as any);
-      let lastChange: number | null = null;
-      if (typeof (handle as any).lastLocalChange === "number") {
-        lastChange = (handle as any).lastLocalChange;
-      }
-      if (lastChange) {
-        html += row("last-sync", ago(Date.now() - lastChange), "#7aa0a0");
-      }
+      const lc = (await repo.find(docUrl as any) as any).lastLocalChange;
+      if (typeof lc === "number") html += row("last-sync", ago(Date.now() - lc), "#7aa0a0");
     } catch {}
   }
 
   return html;
 }
 
-// ---------------------------------------------------------------------------
-// Tool entry point
-// ---------------------------------------------------------------------------
+const POPUP_CSS = `
+  position:fixed; z-index:99999; pointer-events:none;
+  background:rgba(18,18,30,.96); color:#ccc;
+  font:11px/1.6 "SF Mono","JetBrains Mono","Fira Code",monospace;
+  padding:10px 14px; border-radius:8px; min-width:260px; max-width:380px;
+  border:1px solid rgba(120,140,255,.3);
+  box-shadow:0 4px 24px rgba(0,0,0,.45);
+`;
 
-function renderInspector(
-  _handle: DocHandle<unknown>,
-  element: PatchworkViewElement
-): () => void {
+function renderInspector(_handle: DocHandle<unknown>, element: ViewElement): () => void {
   const btn = document.createElement("button");
   btn.textContent = "\u{1F50D}";
   btn.title = "Inspect View (Cmd+Shift+I)";
   btn.style.cssText = `
-    background: none; border: 1px solid transparent; border-radius: 4px;
-    cursor: pointer; font-size: 14px; padding: 2px 6px; color: inherit;
-    opacity: 0.6; transition: opacity 0.15s, border-color 0.15s; line-height: 1;
+    background:none; border:1px solid transparent; border-radius:4px;
+    cursor:pointer; font-size:14px; padding:2px 6px; color:inherit;
+    opacity:.6; transition:opacity .15s,border-color .15s; line-height:1;
   `;
 
   let active = false;
   let popup: HTMLElement | null = null;
-  let currentView: PatchworkViewElement | null = null;
-  let buildId = 0; // to discard stale async builds
+  let currentView: ViewElement | null = null;
+  let gen = 0;
 
-  function ensurePopup(): HTMLElement {
-    if (!popup) {
-      popup = document.createElement("div");
-      popup.style.cssText = POPUP_STYLE;
-      document.body.appendChild(popup);
-    }
-    return popup;
-  }
+  const setActive = (on: boolean) => {
+    btn.style.opacity = on ? "1" : ".6";
+    btn.style.borderColor = on ? "rgba(120,140,255,.6)" : "transparent";
+  };
 
-  function positionPopup(x: number, y: number) {
+  const position = (x: number, y: number) => {
     if (!popup) return;
     const pad = 16;
-    const pw = popup.offsetWidth || 280;
-    const ph = popup.offsetHeight || 100;
-    let left = x + pad;
-    let top = y + pad;
-    if (left + pw > window.innerWidth - pad) left = x - pw - pad;
-    if (top + ph > window.innerHeight - pad) top = y - ph - pad;
-    popup.style.left = `${Math.max(pad, left)}px`;
-    popup.style.top = `${Math.max(pad, top)}px`;
-  }
+    const w = popup.offsetWidth || 280;
+    const h = popup.offsetHeight || 100;
+    let l = x + pad, t = y + pad;
+    if (l + w > innerWidth - pad) l = x - w - pad;
+    if (t + h > innerHeight - pad) t = y - h - pad;
+    popup.style.left = `${Math.max(pad, l)}px`;
+    popup.style.top = `${Math.max(pad, t)}px`;
+  };
 
-  function deactivate() {
+  const deactivate = () => {
     active = false;
     currentView = null;
-    buildId++;
+    gen++;
     popup?.remove();
     popup = null;
-    btn.style.opacity = "0.6";
-    btn.style.borderColor = "transparent";
-    document.removeEventListener("mousemove", onMouseMove);
-  }
+    setActive(false);
+    document.removeEventListener("mousemove", onMove);
+  };
 
-  function activate() {
-    active = true;
-    btn.style.opacity = "1";
-    btn.style.borderColor = "rgba(120, 140, 255, 0.6)";
-    document.addEventListener("mousemove", onMouseMove);
-  }
-
-  async function inspectView(view: PatchworkViewElement, x: number, y: number) {
+  const inspect = async (view: ViewElement, x: number, y: number) => {
     currentView = view;
-    const p = ensurePopup();
-    positionPopup(x, y);
+    if (!popup) {
+      popup = document.createElement("div");
+      popup.style.cssText = POPUP_CSS;
+      document.body.appendChild(popup);
+    }
+    position(x, y);
 
-    const id = ++buildId;
-    p.innerHTML = `<div style="color:#666;font-size:9px;">loading\u2026</div>`;
+    const id = ++gen;
+    popup.innerHTML = `<div style="color:#666;font-size:9px">loading\u2026</div>`;
     const html = await buildContent(view);
-    if (buildId !== id) return; // stale
-    p.innerHTML = html;
-    positionPopup(x, y); // re-position after content changes size
-  }
+    if (gen !== id) return;
+    popup.innerHTML = html;
+    position(x, y);
+  };
 
-  function onMouseMove(e: MouseEvent) {
+  const onMove = (e: MouseEvent) => {
     if (!active) return;
-
-    // Temporarily hide popup so elementsFromPoint sees through it
     if (popup) popup.style.display = "none";
     const view = findViewAt(e.clientX, e.clientY);
     if (popup) popup.style.display = "";
 
-    if (!view) {
-      // No view under cursor: keep last popup but reposition
-      positionPopup(e.clientX, e.clientY);
-      if (!currentView) {
-        ensurePopup().innerHTML = `<div style="color:#666;font-size:10px;">move over a patchwork-view\u2026</div>`;
-        positionPopup(e.clientX, e.clientY);
-      }
-      return;
-    }
+    if (view && view !== currentView) inspect(view, e.clientX, e.clientY);
+    else position(e.clientX, e.clientY);
+  };
 
-    if (view !== currentView) {
-      inspectView(view, e.clientX, e.clientY);
-    } else {
-      positionPopup(e.clientX, e.clientY);
-    }
-  }
-
-  function toggle() {
+  const toggle = () => {
     if (active) deactivate();
-    else activate();
-  }
+    else { active = true; setActive(true); document.addEventListener("mousemove", onMove); }
+  };
 
   btn.addEventListener("click", toggle);
+  btn.addEventListener("mouseenter", () => { if (!active) setActive(true); });
+  btn.addEventListener("mouseleave", () => { if (!active) setActive(false); });
   element.appendChild(btn);
 
-  btn.addEventListener("mouseenter", () => { if (!active) btn.style.opacity = "1"; });
-  btn.addEventListener("mouseleave", () => { if (!active) btn.style.opacity = "0.6"; });
-
   const onKey = (e: KeyboardEvent) => {
-    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "i") {
-      e.preventDefault();
-      toggle();
-    }
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "i") { e.preventDefault(); toggle(); }
     if (e.key === "Escape" && active) deactivate();
   };
   document.addEventListener("keydown", onKey);
 
-  return () => {
-    document.removeEventListener("keydown", onKey);
-    deactivate();
-    btn.remove();
-  };
+  return () => { document.removeEventListener("keydown", onKey); deactivate(); btn.remove(); };
 }
-
-// ---------------------------------------------------------------------------
-// Plugin export
-// ---------------------------------------------------------------------------
 
 export const plugins = [
   {
@@ -316,8 +213,6 @@ export const plugins = [
     unlisted: true,
     forTitleBar: true,
     tags: ["titlebar-tool"],
-    async load() {
-      return renderInspector;
-    },
+    async load() { return renderInspector; },
   },
 ];
