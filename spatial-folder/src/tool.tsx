@@ -73,8 +73,7 @@ async function filterTldrawDocs(repo: any, docLinks: DocLink[]): Promise<DocLink
 
   for (const docLink of docLinks) {
     try {
-      const docHandle = repo.find(docLink.url);
-      await docHandle.whenReady();
+      const docHandle = await repo.find(docLink.url);
       const doc = docHandle.doc();
 
       // Skip documents with @patchwork.type === "tldraw"
