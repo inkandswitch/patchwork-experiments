@@ -109,7 +109,7 @@ export async function runLLMProcess(repo: Repo, docUrl: AutomergeUrl): Promise<v
   const skills = await discoverSkills(fs);
 
   // List root directory so the LLM knows what files are available
-  let rootListing: { name: string; type: string }[] = [];
+  let rootListing: { name: string; type: string; url: string }[] = [];
   try {
     rootListing = await fs.listFolder('/');
   } catch {
@@ -209,7 +209,7 @@ function buildLLMMessages(
   doc: LLMProcessDoc,
   skills: SkillInfo[] = [],
   rootFolderUrl?: AutomergeUrl,
-  rootListing: { name: string; type: string }[] = []
+  rootListing: { name: string; type: string; url: string }[] = []
 ): ChatMessage[] {
   const messages: ChatMessage[] = [];
 
@@ -218,7 +218,7 @@ function buildLLMMessages(
     systemPrompt += buildSkillsPromptSection(skills, rootFolderUrl);
   }
   if (rootListing.length > 0) {
-    const entries = rootListing.map((e) => `  ${e.name} (${e.type})`).join('\n');
+    const entries = rootListing.map((e) => `  ${e.name} (${e.type}) — ${e.url}`).join('\n');
     systemPrompt += `\n\nCurrent files in the workspace:\n${entries}`;
   }
 
@@ -296,15 +296,15 @@ console.log(files)
 </script>
 
 Available APIs in your execution context:
-- fs.readFile(path) — read a file as a string
+- fs.readDoc(pathOrUrl) — read a document as a string (accepts a filesystem path or an automerge: URL)
 - fs.writeFile(path, content) — write/create a file (full replacement)
 - fs.patchFile(path, oldStr, newStr) — replace the first occurrence of oldStr with newStr in a file. Prefer this over writeFile for targeted edits to existing files — it's safer and more token-efficient.
-- fs.listFolder(path) — list folder contents (returns [{name, type}])
+- fs.listFolder(path) — list folder contents (returns [{name, type, url}])
 - fs.createFolder(path) — create a folder
 - fs.move(srcPath, destPath) — move or rename a file or folder
 - fs.remove(path) — remove a file or folder
 - fs.linkDoc(path, automergeUrl) — link an existing automerge document into a folder
-- fs.getDocHandle(path) — get the Automerge DocHandle for a document (for direct Automerge operations)
+- fs.getDocHandle(pathOrUrl) — get a cloned Automerge DocHandle for a document (accepts a path or automerge: URL; always returns a clone, never the original)
 - import("/automerge:docId/path/to/file") — import a module from the automerge filesystem
 - import("https://esm.sh/...") — import a module from a URL
 - console.log(...) — output text (captured and shown to you)
@@ -329,7 +329,7 @@ function buildSkillsPromptSection(skills: SkillInfo[], rootFolderUrl: AutomergeU
 
 ## Available Skills
 
-Skills are reusable modules in /skills/. Read a skill's README for full docs with fs.readFile("/skills/<name>/README.md"), then import its code:
+Skills are reusable modules in /skills/. Read a skill's README for full docs with fs.readDoc("/skills/<name>/README.md"), then import its code:
 
 \`\`\`
 const mod = await import("/${rootFolderUrl}/skills/${exampleSkill.folder}/index.js")
@@ -505,7 +505,7 @@ function parseFrontmatter(content: string): Record<string, string> {
 }
 
 async function discoverSkills(fs: AutomergeFS): Promise<SkillInfo[]> {
-  let entries: { name: string; type: string }[];
+  let entries: { name: string; type: string; url: string }[];
   try {
     entries = await fs.listFolder('/skills');
   } catch {
@@ -516,7 +516,7 @@ async function discoverSkills(fs: AutomergeFS): Promise<SkillInfo[]> {
   for (const entry of entries) {
     if (entry.type !== 'folder') continue;
     try {
-      const readme = await fs.readFile(`/skills/${entry.name}/README.md`);
+      const readme = await fs.readDoc(`/skills/${entry.name}/README.md`);
       const fm = parseFrontmatter(readme);
       skills.push({
         name: fm.name || entry.name,

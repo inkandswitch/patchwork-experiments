@@ -18,7 +18,8 @@ export type WorkspaceDoc = {
 
 export type FileChange = {
   path: string;
-  changeType: "modified" | "added" | "deleted";
+  oldPath?: string; // previous path (set only on moves)
+  changeType: "modified" | "added" | "deleted" | "moved" | "unchanged";
   docType: string; // @patchwork.type of the document (e.g. "file", "tldraw", etc.)
   originalContent?: string;
   modifiedContent?: string;

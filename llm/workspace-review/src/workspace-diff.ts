@@ -19,22 +19,24 @@ import type { WorkspaceDoc, MappingEntry, FileChange, DiffRow } from "./types";
 
 type TreeEntry = {
   url: AutomergeUrl;
+  path: string;
   type: string;
   docType: string; // @patchwork.type of the document
 };
 
 /**
- * Recursively walk a FolderDoc tree and build a flat map of path -> entry.
- * When `mappings` is provided, URLs are resolved through the COW overlay
- * (i.e. if a clone exists for a URL, the clone is used instead).
+ * Recursively walk a FolderDoc tree and build a flat map of URL -> entry.
+ * When `mappings` is provided, folder URLs are resolved through the COW
+ * overlay (i.e. if a clone exists for a folder, the clone is used instead).
+ * Keying by URL avoids collisions when multiple entries share the same name.
  */
 async function walkTree(
   repo: Repo,
   folderUrl: AutomergeUrl,
   mappings: Record<string, MappingEntry> | null,
   prefix: string = ""
-): Promise<Map<string, TreeEntry>> {
-  const result = new Map<string, TreeEntry>();
+): Promise<Map<AutomergeUrl, TreeEntry>> {
+  const result = new Map<AutomergeUrl, TreeEntry>();
 
   const effectiveUrl = mappings
     ? (mappings[folderUrl]?.cloneUrl ?? folderUrl)
@@ -51,14 +53,14 @@ async function walkTree(
     const childUrl = link.url;
 
     if (link.type === "folder") {
-      result.set(childPath, { url: childUrl, type: "folder", docType: "folder" });
+      result.set(childUrl, { url: childUrl, path: childPath, type: "folder", docType: "folder" });
       const subtree = await walkTree(repo, childUrl, mappings, childPath);
       for (const [k, v] of subtree) {
         result.set(k, v);
       }
     } else {
       const docType = await readDocType(repo, childUrl, mappings);
-      result.set(childPath, { url: childUrl, type: link.type || "file", docType });
+      result.set(childUrl, { url: childUrl, path: childPath, type: link.type || "file", docType });
     }
   }
 
@@ -88,7 +90,8 @@ async function readDocType(
 
 /**
  * Compare original tree vs overlay tree to produce a list of file changes.
- * Folders themselves are not reported -- only leaf files.
+ * Matching is done by document URL (not path) so duplicate names don't collide.
+ * Folders themselves are not reported -- only leaf documents.
  */
 export async function computeChangeset(
   repo: Repo,
@@ -102,77 +105,154 @@ export async function computeChangeset(
   const originalTree = await walkTree(repo, rootFolderUrl, null);
   const overlayTree = await walkTree(repo, rootFolderUrl, mappings);
 
+  console.log("[workspace-diff] mappings:", Object.keys(mappings).length, "entries");
+  console.log("[workspace-diff] originalTree:", originalTree.size, "entries");
+  for (const [url, entry] of originalTree) {
+    console.log(`  original: ${entry.path} (${entry.type}/${entry.docType}) url=${url}`);
+  }
+  console.log("[workspace-diff] overlayTree:", overlayTree.size, "entries");
+  for (const [url, entry] of overlayTree) {
+    console.log(`  overlay: ${entry.path} (${entry.type}/${entry.docType}) url=${url}`);
+  }
+
   const changes: FileChange[] = [];
+  const createdUrls = new Set(workspaceDoc.createdUrls || []);
 
-  // Find modified and deleted files
-  for (const [path, origEntry] of originalTree) {
-    if (origEntry.type === "folder") continue;
+  // For each document in the original tree, match by URL in the overlay tree
+  for (const [url, origEntry] of originalTree) {
+    if (origEntry.type === "folder") {
+      console.log(`[workspace-diff] skipping folder: ${origEntry.path} url=${url}`);
+      continue;
+    }
 
-    const overlayEntry = overlayTree.get(path);
+    const overlayEntry = overlayTree.get(url);
 
     if (!overlayEntry) {
-      // Deleted: exists in original but not in overlay
+      console.log(`[workspace-diff] DELETED: ${origEntry.path} url=${url} (not in overlay)`);
       const content = origEntry.docType === "file"
         ? await readFileContent(repo, origEntry.url)
         : undefined;
       changes.push({
-        path,
+        path: origEntry.path,
         changeType: "deleted",
         docType: origEntry.docType,
         originalContent: content,
         originalUrl: origEntry.url,
       });
-    } else {
-      // Check if modified: the overlay resolved to a different URL
-      const mappingEntry = mappings[overlayEntry.url];
-      const resolvedOverlayUrl = mappingEntry?.cloneUrl ?? overlayEntry.url;
-      const resolvedOrigUrl = origEntry.url;
+      continue;
+    }
 
-      if (resolvedOverlayUrl !== resolvedOrigUrl) {
-        const originalUrlWithHeads = mappingEntry?.originalUrlWithHeads;
+    const pathChanged = origEntry.path !== overlayEntry.path;
+    const mappingEntry = mappings[url];
+    console.log(`[workspace-diff] comparing url=${url}: origPath="${origEntry.path}" overlayPath="${overlayEntry.path}" pathChanged=${pathChanged} hasMapping=${!!mappingEntry}`);
 
-        if (origEntry.docType === "file") {
-          const origContent = await readFileContent(repo, resolvedOrigUrl);
-          const modContent = await readFileContent(repo, resolvedOverlayUrl);
-          if (origContent !== modContent) {
-            changes.push({
-              path,
-              changeType: "modified",
-              docType: origEntry.docType,
-              originalContent: origContent,
-              modifiedContent: modContent,
-              originalUrl: origEntry.url,
-              cloneUrl: resolvedOverlayUrl,
-              originalUrlWithHeads,
-            });
-          }
-        } else {
-          // Non-file doc: just record URLs, no text content
+    if (mappingEntry) {
+      // Document was cloned (modified, or moved+modified)
+      const cloneUrl = mappingEntry.cloneUrl;
+      const originalUrlWithHeads = mappingEntry.originalUrlWithHeads;
+
+      if (origEntry.docType === "file") {
+        const origContent = await readFileContent(repo, origEntry.url);
+        const modContent = await readFileContent(repo, cloneUrl);
+        const contentChanged = origContent !== modContent;
+
+        if (pathChanged && contentChanged) {
           changes.push({
-            path,
+            path: overlayEntry.path,
+            oldPath: origEntry.path,
+            changeType: "moved",
+            docType: origEntry.docType,
+            originalContent: origContent,
+            modifiedContent: modContent,
+            originalUrl: origEntry.url,
+            cloneUrl,
+            originalUrlWithHeads,
+          });
+        } else if (pathChanged) {
+          // Moved but content identical (clone exists but no text diff)
+          changes.push({
+            path: overlayEntry.path,
+            oldPath: origEntry.path,
+            changeType: "moved",
+            docType: origEntry.docType,
+            originalUrl: origEntry.url,
+            cloneUrl,
+            originalUrlWithHeads,
+          });
+        } else if (contentChanged) {
+          changes.push({
+            path: origEntry.path,
+            changeType: "modified",
+            docType: origEntry.docType,
+            originalContent: origContent,
+            modifiedContent: modContent,
+            originalUrl: origEntry.url,
+            cloneUrl,
+            originalUrlWithHeads,
+          });
+        }
+        // else: clone exists but content is identical and path unchanged — treat as unchanged
+        else {
+          changes.push({
+            path: origEntry.path,
+            changeType: "unchanged",
+            docType: origEntry.docType,
+            originalUrl: origEntry.url,
+          });
+        }
+      } else {
+        // Non-file doc with a clone
+        if (pathChanged) {
+          changes.push({
+            path: overlayEntry.path,
+            oldPath: origEntry.path,
+            changeType: "moved",
+            docType: origEntry.docType,
+            originalUrl: origEntry.url,
+            cloneUrl,
+            originalUrlWithHeads,
+          });
+        } else {
+          changes.push({
+            path: origEntry.path,
             changeType: "modified",
             docType: origEntry.docType,
             originalUrl: origEntry.url,
-            cloneUrl: resolvedOverlayUrl,
+            cloneUrl,
             originalUrlWithHeads,
           });
         }
       }
+    } else if (pathChanged) {
+      // No clone but path differs — pure move
+      changes.push({
+        path: overlayEntry.path,
+        oldPath: origEntry.path,
+        changeType: "moved",
+        docType: origEntry.docType,
+        originalUrl: origEntry.url,
+      });
+    } else {
+      // Same URL, same path, no mapping — unchanged
+      changes.push({
+        path: origEntry.path,
+        changeType: "unchanged",
+        docType: origEntry.docType,
+        originalUrl: origEntry.url,
+      });
     }
   }
 
   // Find added files — new docs created by the agent are tracked in createdUrls
-  const createdUrls = new Set(workspaceDoc.createdUrls || []);
-
-  for (const [path, entry] of overlayTree) {
+  for (const [url, entry] of overlayTree) {
     if (entry.type === "folder") continue;
-    if (!createdUrls.has(entry.url)) continue;
+    if (!createdUrls.has(url)) continue;
 
     const content = entry.docType === "file"
       ? await readFileContent(repo, entry.url)
       : undefined;
     changes.push({
-      path,
+      path: entry.path,
       changeType: "added",
       docType: entry.docType,
       modifiedContent: content,
@@ -180,11 +260,19 @@ export async function computeChangeset(
     });
   }
 
-  // Sort: modified first, then added, then deleted; alphabetically within each group
-  const order = { modified: 0, added: 1, deleted: 2 };
+  console.log("[workspace-diff] total changes:", changes.length);
+  for (const c of changes) {
+    console.log(`  ${c.changeType}: ${c.path}${c.oldPath ? ` (from ${c.oldPath})` : ""} docType=${c.docType}`);
+  }
+
+  // Sort: modified first, then moved, added, deleted, unchanged last
+  const order: Record<string, number> = {
+    modified: 0, moved: 1, added: 2, deleted: 3, unchanged: 4,
+  };
   changes.sort(
     (a, b) =>
-      order[a.changeType] - order[b.changeType] || a.path.localeCompare(b.path)
+      (order[a.changeType] ?? 9) - (order[b.changeType] ?? 9) ||
+      a.path.localeCompare(b.path)
   );
 
   return changes;

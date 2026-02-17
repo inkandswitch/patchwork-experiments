@@ -24,4 +24,4 @@ export const plugins: Plugin<any>[] = [
   },
 ];
 
-console.log("workspace-review v5");
+console.log("workspace-review v8");

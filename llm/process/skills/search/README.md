@@ -10,7 +10,7 @@ Recursively search file contents for a text pattern. Returns matching lines with
 ## Import
 
 ```javascript
-const { search } = await import("/<rootFolderUrl>/skills/search/index.js")
+const { search } = await import('/<rootFolderUrl>/skills/search/index.js');
 ```
 
 Replace `<rootFolderUrl>` with the actual automerge root folder URL (e.g. `automerge:ABC123`).
@@ -29,15 +29,15 @@ Returns `Array<{ file: string, line: string, lineNumber: number }>` — matching
 ## Examples
 
 ```javascript
-const { search } = await import("/<rootFolderUrl>/skills/search/index.js")
+const { search } = await import('/<rootFolderUrl>/skills/search/index.js');
 
 // Find all files mentioning "TODO"
-const results = await search("TODO")
-console.log(results)
+const results = await search('TODO');
+console.log(results);
 
 // Search only in a specific directory
-const results = await search("import", "/src")
-console.log(results)
+const results = await search('import', '/src');
+console.log(results);
 ```
 
 ## Guidelines

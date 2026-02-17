@@ -126,7 +126,8 @@ Console output and return values are JSON-stringified with `JSON.stringify(value
 - **Modifying a folder** (adding/removing files via `writeFile`, `createFolder`, `remove`, `move`, `linkDoc`): The parent folder is cloned via COW before mutation, same mechanism.
 - **Moving files** (`move`): Removes the DocLink from the source folder and adds it to the destination folder, both via COW. The underlying document URL is preserved — only the folder links change.
 - **Creating new docs**: New files get `{ "@patchwork": { type: "file" } }` metadata. New folders get `{ "@patchwork": { type: "folder" } }`. Created file URLs are tracked in `WorkspaceDoc.createdUrls`.
-- **Reading**: Fully transparent — `readFile` and `listFolder` go through `resolvePath` which resolves through the overlay automatically.
+- **Reading**: Fully transparent — `readDoc` and `listFolder` go through `resolvePath` which resolves through the overlay automatically. Both `readDoc` and `getDocHandle` also accept automerge URLs directly (not just paths).
+- **Getting doc handles** (`getDocHandle`): Always returns a cloned handle via COW — never a handle to the original document. Accepts a filesystem path or an automerge URL.
 
 The COW helpers (`resolveOverlayUrl`, `getWritableHandle`) are private methods on `AutomergeFS`, so the LLM's eval context cannot access them — only the public FS API is exposed.
 
@@ -134,15 +135,15 @@ The COW helpers (`resolveOverlayUrl`, `getWritableHandle`) are private methods o
 
 Available inside `<script>` blocks:
 
-- `fs.readFile(path)` → `Promise<string>`
+- `fs.readDoc(pathOrUrl)` → `Promise<string>` — accepts a filesystem path or automerge URL
 - `fs.writeFile(path, content)` → `Promise<void>` (creates if missing, COW if existing)
 - `fs.patchFile(path, oldStr, newStr)` → `Promise<void>` — replace the first occurrence of `oldStr` with `newStr`. Preferred over `writeFile` for targeted edits to existing files.
-- `fs.listFolder(path)` → `Promise<{name, type}[]>`
+- `fs.listFolder(path)` → `Promise<{name, type, url}[]>` — `url` is the automerge URL (resolved through COW overlay)
 - `fs.createFolder(path)` → `Promise<void>`
 - `fs.move(srcPath, destPath)` → `Promise<void>` (move or rename a file/folder)
 - `fs.remove(path)` → `Promise<void>` (unlinks from parent folder)
 - `fs.linkDoc(path, automergeUrl)` → `Promise<void>` — link an existing automerge doc into a folder (type is read from the doc's `@patchwork` metadata)
-- `fs.getDocHandle(path)` → `Promise<DocHandle<any>>` — get the Automerge DocHandle for direct access
+- `fs.getDocHandle(pathOrUrl)` → `Promise<DocHandle<any>>` — get a cloned Automerge DocHandle (accepts a path or automerge URL; always returns a clone, never the original)
 - `import("/automerge:docId/path")` → `Promise<module>` — native import via service worker
 - `import("https://...")` → `Promise<module>` — import from URL
 - `console.log(...)` — captured and returned as output to LLM (values are JSON-stringified)

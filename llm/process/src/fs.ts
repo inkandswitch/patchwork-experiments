@@ -1,5 +1,10 @@
 import type { AutomergeUrl, Repo, DocHandle } from '@automerge/automerge-repo';
-import { parseAutomergeUrl, stringifyAutomergeUrl, updateText } from '@automerge/automerge-repo';
+import {
+  isValidAutomergeUrl,
+  parseAutomergeUrl,
+  stringifyAutomergeUrl,
+  updateText,
+} from '@automerge/automerge-repo';
 import type { FolderDoc, DocLink } from '@inkandswitch/patchwork-filesystem';
 import type { WorkspaceDoc } from './types';
 
@@ -168,31 +173,42 @@ export class AutomergeFS {
   }
 
   /**
-   * Get the DocHandle for a document at the given path.
-   * Resolves through the COW overlay transparently.
+   * Get the DocHandle for a document at the given path or automerge URL.
+   * Always returns a cloned handle (via COW) — never the original document.
    */
-  async getDocHandle(pathStr: string): Promise<DocHandle<any>> {
-    const resolved = await this.resolvePath(pathStr);
-    if (!resolved) {
-      throw new Error(`Not found: ${pathStr}`);
+  async getDocHandle(pathOrUrl: string): Promise<DocHandle<any>> {
+    if (isValidAutomergeUrl(pathOrUrl)) {
+      return this.getWritableHandle(pathOrUrl);
     }
-    return resolved.handle;
+    const resolved = await this.resolvePath(pathOrUrl);
+    if (!resolved) {
+      throw new Error(`Not found: ${pathOrUrl}`);
+    }
+    return this.getWritableHandle(resolved.link.url);
   }
 
   /**
-   * Read a file's content as a string.
-   * For patchwork file docs, returns the content field.
+   * Read a document's content as a string. Accepts a filesystem path or an
+   * automerge URL. For patchwork file docs, returns the content field.
    * For any other Automerge document, returns its JSON representation.
    */
-  async readFile(pathStr: string): Promise<string> {
-    const resolved = await this.resolvePath(pathStr);
-    if (!resolved) {
-      throw new Error(`File not found: ${pathStr}`);
+  async readDoc(pathOrUrl: string): Promise<string> {
+    let handle: DocHandle<any>;
+
+    if (isValidAutomergeUrl(pathOrUrl)) {
+      const effectiveUrl = this.resolveOverlayUrl(pathOrUrl);
+      handle = await this.repo.find(effectiveUrl);
+    } else {
+      const resolved = await this.resolvePath(pathOrUrl);
+      if (!resolved) {
+        throw new Error(`File not found: ${pathOrUrl}`);
+      }
+      handle = resolved.handle;
     }
 
-    const doc = resolved.handle.doc();
+    const doc = handle.doc();
     if (!doc) {
-      throw new Error(`Document not found: ${pathStr}`);
+      throw new Error(`Document not found: ${pathOrUrl}`);
     }
 
     // Patchwork file docs have a content field
@@ -264,7 +280,7 @@ export class AutomergeFS {
    * the entire file — the LLM only needs to specify the changed region.
    */
   async patchFile(pathStr: string, oldStr: string, newStr: string): Promise<void> {
-    const content = await this.readFile(pathStr);
+    const content = await this.readDoc(pathStr);
     const idx = content.indexOf(oldStr);
     if (idx === -1) {
       // Provide a short snippet of what was searched for to help the LLM debug
@@ -278,9 +294,10 @@ export class AutomergeFS {
 
   /**
    * List the contents of a directory.
-   * Returns an array of { name, type } entries.
+   * Returns an array of { name, type, url } entries. URLs are resolved
+   * through the COW overlay so they point to clones when they exist.
    */
-  async listFolder(pathStr: string): Promise<{ name: string; type: string }[]> {
+  async listFolder(pathStr: string): Promise<{ name: string; type: string; url: AutomergeUrl }[]> {
     const resolved = await this.resolvePath(pathStr);
     if (!resolved) {
       throw new Error(`Directory not found: ${pathStr}`);
@@ -291,7 +308,11 @@ export class AutomergeFS {
       throw new Error(`Not a directory: ${pathStr}`);
     }
 
-    return doc.docs.map((d) => ({ name: d.name, type: d.type }));
+    return doc.docs.map((d) => ({
+      name: d.name,
+      type: d.type,
+      url: this.resolveOverlayUrl(d.url),
+    }));
   }
 
   /**
