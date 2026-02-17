@@ -14,16 +14,22 @@
     "@automerge/automerge": "3.2.1",
     "@automerge/automerge-repo": "2.5.0",
     "@automerge/automerge-repo-react-hooks": "2.5.0",
+    "@huggingface/transformers": "^3.8.1",
     "@inkandswitch/patchwork-filesystem": "^0.0.3",
     "@inkandswitch/patchwork-plugins": "^0.0.2",
+    "@react-three/drei": "^9.122.0",
+    "@react-three/fiber": "^8.18.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "three": "^0.182.0",
+    "umap-js": "^1.4.0"
   },
   "devDependencies": {
     "@inkandswitch/patchwork-bootloader": "^0.0.3",
     "@tailwindcss/vite": "^4.1.18",
     "@types/react": "^18.3.23",
     "@types/react-dom": "^18.2.2",
+    "@types/three": "^0.182.0",
     "@vitejs/plugin-react": "^4.5.1",
     "daisyui": "^5.5.13",
     "pushwork": "^1.0.5",
