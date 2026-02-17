@@ -11,14 +11,21 @@ import {
   createTLStore,
   defaultShapeUtils,
   getMediaAssetInfoPartial,
-
+  getUserPreferences,
+  setUserPreferences,
+  defaultUserPreferences,
+  createPresenceStateDerivation,
+  InstancePresenceRecordType,
+  computed,
+  react,
+  sortById,
 } from 'tldraw';
 import type { VecLike } from 'tldraw';
 import 'tldraw/tldraw.css';
-import { DocHandle, type DocHandleChangePayload } from '@automerge/automerge-repo';
-import { useDocument, RepoContext } from '@automerge/automerge-repo-react-hooks';
+import { DocHandle, type AutomergeUrl, type DocHandleChangePayload } from '@automerge/automerge-repo';
+import { useDocument, useLocalAwareness, useRemoteAwareness, RepoContext } from '@automerge/automerge-repo-react-hooks';
 import { createRoot } from 'react-dom/client';
-import { useEffect, useRef, useMemo } from 'react';
+import { useEffect, useRef, useMemo, useState, useCallback } from 'react';
 import { FolderDoc, DocLink } from '@inkandswitch/patchwork-filesystem';
 import { automergeUrlToServiceWorkerUrl } from '@inkandswitch/patchwork-filesystem';
 import type { ToolRender, ToolElement } from '@inkandswitch/patchwork-plugins';
@@ -119,6 +126,111 @@ async function filterTldrawDocs(repo: any, docLinks: DocLink[]): Promise<DocLink
   return filtered;
 }
 
+// ---- Presence ---------------------------------------------------------------
+
+interface ContactDoc {
+  type: string;
+  name?: string;
+  color?: string;
+}
+
+function useContactInfo() {
+  const [contactUrl, setContactUrl] = useState<AutomergeUrl | undefined>();
+
+  useEffect(() => {
+    const accountDocHandle = (
+      window as any
+    ).accountDocHandle as DocHandle<{ contactUrl: AutomergeUrl }> | undefined;
+    if (!accountDocHandle) return;
+    accountDocHandle.whenReady().then(() => {
+      const doc = accountDocHandle.doc();
+      if (doc?.contactUrl) {
+        setContactUrl(doc.contactUrl);
+      }
+    });
+  }, []);
+
+  const [contactDoc] = useDocument<ContactDoc>(contactUrl);
+
+  return {
+    userId: contactUrl ?? (window as any).repo?.peerId ?? 'anonymous',
+    name: contactDoc?.name ?? 'Anonymous',
+    color: contactDoc?.color,
+  };
+}
+
+function usePresence(
+  handle: DocHandle<SpatialFolderDoc>,
+  editorRef: React.MutableRefObject<Editor | null>,
+) {
+  const { userId, name, color } = useContactInfo();
+
+  const [, updateLocalState] = useLocalAwareness({
+    handle: handle as DocHandle<any>,
+    userId,
+    initialState: {},
+  });
+
+  const [peerStates] = useRemoteAwareness({
+    handle: handle as DocHandle<any>,
+    localUserId: userId,
+  });
+
+  // Sync remote presence records into the editor's store
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    const toPut: TLRecord[] = Object.values(peerStates).filter(
+      (record: any) => record && Object.keys(record).length !== 0,
+    );
+
+    const toRemove = editor.store.query
+      .records('instance_presence')
+      .get()
+      .sort(sortById)
+      .map((record) => record.id)
+      .filter((id) => !toPut.find((record) => record.id === id));
+
+    if (toRemove.length) editor.store.remove(toRemove);
+    if (toPut.length) editor.store.put(toPut);
+  }, [peerStates, editorRef]);
+
+  // Broadcast local presence state derived from the editor
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    setUserPreferences({ id: userId, color, name });
+
+    const userPreferences = computed<{
+      id: string;
+      color: string;
+      name: string;
+    }>('userPreferences', () => {
+      const user = getUserPreferences();
+      return {
+        id: user.id,
+        color: user.color ?? defaultUserPreferences.color,
+        name: user.name ?? defaultUserPreferences.name,
+      };
+    });
+
+    const presenceId = InstancePresenceRecordType.createId(userId);
+    const presenceDerivation = createPresenceStateDerivation(
+      userPreferences,
+      presenceId,
+    )(editor.store);
+
+    return react('when presence changes', () => {
+      const presence = presenceDerivation.get();
+      requestAnimationFrame(() => {
+        updateLocalState(presence);
+      });
+    });
+  }, [editorRef.current, userId, updateLocalState, name, color]);
+}
+
 // ---- Tool entry point -------------------------------------------------------
 
 export const SpatialFolderTool: ToolRender = (handle, element) => {
@@ -156,6 +268,9 @@ function SpatialFolderCanvas({
   // Guard to break the tldraw ↔ automerge feedback loop.
   const preventPatchApplicationsRef = useRef(false);
   const isReconcilingRef = useRef(false);
+
+  // ---- Presence (cursors, selections visible to other users) ----
+  usePresence(handle, editorRef);
 
   // ---- Tldraw mount callback (stable reference, never changes) ----
   const handleMountRef = useRef((editor: Editor) => {
@@ -426,12 +541,17 @@ async function initializeSync(
         });
 
         // When patchwork-doc shapes are deleted, remove from the folder doc list.
+        // When patchwork-doc shapes are added (e.g. undo), re-insert into the folder doc list.
         // When patchwork-doc shapes are renamed, sync name to the folder doc list.
         // Skip during reconciliation (those changes reflect docs already gone/synced).
         if (!isReconcilingRef.current) {
+          const added = Object.values(changes.added);
           const removed = Object.values(changes.removed);
           const updated = Object.values(changes.updated).map(([, after]) => after);
 
+          const docsToAdd = added.filter(
+            (r: any) => r.type === PATCHWORK_DOC_SHAPE_TYPE && r.props?.docUrl,
+          );
           const docsToRemove = removed.filter(
             (r: any) => r.type === PATCHWORK_DOC_SHAPE_TYPE && r.props?.docUrl,
           );
@@ -439,14 +559,26 @@ async function initializeSync(
             (r: any) => r.type === PATCHWORK_DOC_SHAPE_TYPE && r.props?.docUrl && r.props?.docName,
           );
 
-          if (docsToRemove.length > 0 || docsRenamed.length > 0) {
+          if (docsToAdd.length > 0 || docsToRemove.length > 0 || docsRenamed.length > 0) {
             handle.change((d) => {
-              if (!d.docs) return;
+              if (!d.docs) d.docs = [];
               for (const record of docsToRemove) {
                 const r = record as any;
                 const idx = d.docs.findIndex((doc: any) => doc.url === r.props.docUrl);
                 if (idx >= 0) {
                   d.docs.splice(idx, 1);
+                }
+              }
+              for (const record of docsToAdd) {
+                const r = record as any;
+                const alreadyExists = d.docs.some((doc: any) => doc.url === r.props.docUrl);
+                if (!alreadyExists) {
+                  d.docs.push({
+                    name: r.props.docName || '',
+                    type: r.props.docType || '',
+                    url: r.props.docUrl,
+                  });
+                  console.log(LOG, 'reinserted doc into folder list:', r.props.docUrl);
                 }
               }
               for (const record of docsRenamed) {
