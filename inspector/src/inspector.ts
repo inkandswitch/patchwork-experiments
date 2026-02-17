@@ -127,6 +127,7 @@ function renderInspector(_handle: DocHandle<unknown>, element: ViewElement): () 
 
   let active = false;
   let popup: HTMLElement | null = null;
+  let highlight: HTMLElement | null = null;
   let currentView: ViewElement | null = null;
   let gen = 0;
 
@@ -147,18 +148,40 @@ function renderInspector(_handle: DocHandle<unknown>, element: ViewElement): () 
     popup.style.top = `${Math.max(pad, t)}px`;
   };
 
+  const positionHighlight = (view: ViewElement) => {
+    if (!highlight) {
+      highlight = document.createElement("div");
+      highlight.style.cssText = `
+        position:fixed; z-index:99998; pointer-events:none;
+        border:2px solid rgba(120,140,255,.5);
+        border-radius:3px;
+        background:rgba(120,140,255,.04);
+        transition:all .1s ease-out;
+      `;
+      document.body.appendChild(highlight);
+    }
+    const r = view.getBoundingClientRect();
+    highlight.style.left = `${r.left}px`;
+    highlight.style.top = `${r.top}px`;
+    highlight.style.width = `${r.width}px`;
+    highlight.style.height = `${r.height}px`;
+  };
+
   const deactivate = () => {
     active = false;
     currentView = null;
     gen++;
     popup?.remove();
     popup = null;
+    highlight?.remove();
+    highlight = null;
     setActive(false);
     document.removeEventListener("mousemove", onMove);
   };
 
   const inspect = async (view: ViewElement, x: number, y: number) => {
     currentView = view;
+    positionHighlight(view);
     if (!popup) {
       popup = document.createElement("div");
       popup.style.cssText = POPUP_CSS;
@@ -177,11 +200,16 @@ function renderInspector(_handle: DocHandle<unknown>, element: ViewElement): () 
   const onMove = (e: MouseEvent) => {
     if (!active) return;
     if (popup) popup.style.display = "none";
+    if (highlight) highlight.style.display = "none";
     const view = findViewAt(e.clientX, e.clientY);
     if (popup) popup.style.display = "";
+    if (highlight) highlight.style.display = "";
 
     if (view && view !== currentView) inspect(view, e.clientX, e.clientY);
-    else position(e.clientX, e.clientY);
+    else {
+      if (currentView) positionHighlight(currentView);
+      position(e.clientX, e.clientY);
+    }
   };
 
   const toggle = () => {
