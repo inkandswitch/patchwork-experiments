@@ -128,17 +128,18 @@ export class AutomergeFS {
     folderHandle: DocHandle<FolderDoc>;
     folderOriginalUrl: AutomergeUrl;
     targetName: string;
-  } | null> {
+  }> {
     const parts = pathStr.split('/').filter((p) => p.length > 0);
 
     if (parts.length === 0) {
-      return null;
+      throw new Error(`Cannot resolve parent of root path: ${pathStr}`);
     }
 
     const targetName = parts[parts.length - 1];
     const parentParts = parts.slice(0, -1);
 
     let currentFolderUrl = this.rootFolderUrl;
+    let currentPath = '/';
 
     for (const part of parentParts) {
       const effectiveUrl = this.resolveOverlayUrl(currentFolderUrl);
@@ -146,14 +147,20 @@ export class AutomergeFS {
       const folderDoc = folderHandle.doc();
 
       if (!folderDoc || !folderDoc.docs) {
-        return null;
+        throw new Error(
+          `Parent resolution failed: "${currentPath}" is not a directory or has no entries (looking for "${part}" in path "${pathStr}")`
+        );
       }
 
       const match = folderDoc.docs.find((d: DocLink) => d.name === part && d.type === 'folder');
       if (!match) {
-        return null;
+        const available = folderDoc.docs.map((d: DocLink) => `${d.name} (${d.type})`).join(', ');
+        throw new Error(
+          `Parent resolution failed: "${part}" not found in "${currentPath}". Available entries: [${available}]`
+        );
       }
       currentFolderUrl = match.url;
+      currentPath = currentPath === '/' ? `/${part}` : `${currentPath}/${part}`;
     }
 
     const writableHandle = (await this.getWritableHandle(currentFolderUrl)) as DocHandle<FolderDoc>;
@@ -210,16 +217,17 @@ export class AutomergeFS {
     if (resolved) {
       const writable = await this.getWritableHandle(resolved.link.url);
       writable.change((doc: any) => {
-        updateText(doc, ['content'], content);
+        try {
+          updateText(doc, ['content'], content);
+        } catch {
+          // Fallback when content isn't a mutable text field
+          doc.content = content;
+        }
       });
       return;
     }
 
     const parent = await this.resolveParent(pathStr);
-    if (!parent) {
-      throw new Error(`Parent directory not found for: ${pathStr}`);
-    }
-
     const name = parent.targetName;
     const extension = name.includes('.') ? name.split('.').pop() || '' : '';
     const mimeType = guessMimeType(extension);
@@ -251,10 +259,28 @@ export class AutomergeFS {
   }
 
   /**
+   * Patch a file by replacing occurrences of `oldStr` with `newStr`.
+   * If `oldStr` is not found, throws an error. This is safer than rewriting
+   * the entire file — the LLM only needs to specify the changed region.
+   */
+  async patchFile(pathStr: string, oldStr: string, newStr: string): Promise<void> {
+    const content = await this.readFile(pathStr);
+    const idx = content.indexOf(oldStr);
+    if (idx === -1) {
+      // Provide a short snippet of what was searched for to help the LLM debug
+      const preview = oldStr.length > 120 ? oldStr.slice(0, 120) + '…' : oldStr;
+      throw new Error(`patchFile: oldStr not found in ${pathStr}. Searched for: ${preview}`);
+    }
+
+    const patched = content.slice(0, idx) + newStr + content.slice(idx + oldStr.length);
+    await this.writeFile(pathStr, patched);
+  }
+
+  /**
    * List the contents of a directory.
    * Returns an array of { name, type } entries.
    */
-  async listDir(pathStr: string): Promise<{ name: string; type: string }[]> {
+  async listFolder(pathStr: string): Promise<{ name: string; type: string }[]> {
     const resolved = await this.resolvePath(pathStr);
     if (!resolved) {
       throw new Error(`Directory not found: ${pathStr}`);
@@ -272,16 +298,13 @@ export class AutomergeFS {
    * Create a directory. Creates the folder doc and links it into the parent.
    * Parent folder is cloned via COW before mutation.
    */
-  async mkdir(pathStr: string): Promise<void> {
+  async createFolder(pathStr: string): Promise<void> {
     const existing = await this.resolvePath(pathStr);
     if (existing) {
       return;
     }
 
     const parent = await this.resolveParent(pathStr);
-    if (!parent) {
-      throw new Error(`Parent directory not found for: ${pathStr}`);
-    }
 
     const folderHandle = this.repo.create<any>();
     folderHandle.change((doc: any) => {
@@ -310,9 +333,6 @@ export class AutomergeFS {
    */
   async linkDoc(pathStr: string, automergeUrl: AutomergeUrl): Promise<void> {
     const parent = await this.resolveParent(pathStr);
-    if (!parent) {
-      throw new Error(`Parent directory not found for: ${pathStr}`);
-    }
 
     const targetHandle = await this.repo.find(automergeUrl);
     const targetDoc = targetHandle.doc() as any;
@@ -331,14 +351,60 @@ export class AutomergeFS {
   }
 
   /**
+   * Move (rename) a file or directory from one path to another.
+   * Both source and destination parent folders are cloned via COW before mutation.
+   * The underlying document URL is preserved — only the folder links change.
+   */
+  async move(srcPath: string, destPath: string): Promise<void> {
+    const srcResolved = await this.resolvePath(srcPath);
+    if (!srcResolved) {
+      throw new Error(`Source not found: ${srcPath}`);
+    }
+
+    const destResolved = await this.resolvePath(destPath);
+    if (destResolved) {
+      throw new Error(`Destination already exists: ${destPath}`);
+    }
+
+    const srcParent = await this.resolveParent(srcPath);
+    const destParent = await this.resolveParent(destPath);
+
+    const srcParentDoc = srcParent.folderHandle.doc();
+    if (!srcParentDoc || !srcParentDoc.docs) {
+      throw new Error(`Source parent is not a directory: ${srcPath}`);
+    }
+
+    const srcIdx = srcParentDoc.docs.findIndex((d) => d.name === srcParent.targetName);
+    if (srcIdx === -1) {
+      throw new Error(`Not found in source folder: ${srcPath}`);
+    }
+
+    const entry = srcParentDoc.docs[srcIdx];
+
+    // Remove from source folder
+    srcParent.folderHandle.change((doc) => {
+      doc.docs.splice(srcIdx, 1);
+    });
+
+    // Add to destination folder with the new name
+    destParent.folderHandle.change((doc) => {
+      if (!doc.docs) {
+        doc.docs = [];
+      }
+      doc.docs.push({
+        url: entry.url,
+        name: destParent.targetName,
+        type: entry.type,
+      });
+    });
+  }
+
+  /**
    * Remove a file or directory from its parent folder.
    * Parent folder is cloned via COW before mutation.
    */
-  async rm(pathStr: string): Promise<void> {
+  async remove(pathStr: string): Promise<void> {
     const parent = await this.resolveParent(pathStr);
-    if (!parent) {
-      throw new Error(`Cannot remove: ${pathStr}`);
-    }
 
     const parentDoc = parent.folderHandle.doc();
     if (!parentDoc || !parentDoc.docs) {

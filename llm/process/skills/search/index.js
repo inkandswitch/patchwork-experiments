@@ -18,7 +18,7 @@ export async function search(pattern, startPath = "/") {
   async function walk(dirPath) {
     let entries;
     try {
-      entries = await fs.listDir(dirPath);
+      entries = await fs.listFolder(dirPath);
     } catch {
       return;
     }

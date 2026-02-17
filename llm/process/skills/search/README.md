@@ -44,5 +44,5 @@ console.log(results)
 
 - Searches are case-insensitive
 - Only text files are searched (binary files and folders are skipped)
-- The skill walks directories recursively using `fs.listDir` and `fs.readFile`
+- The skill walks folders recursively using `fs.listFolder` and `fs.readFile`
 - Large files are read in full; be mindful of very large codebases

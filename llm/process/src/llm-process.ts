@@ -93,7 +93,7 @@ export async function runLLMProcess(repo: Repo, docUrl: AutomergeUrl): Promise<v
     const lines = linkedDocs.map((d) => `  /${d.name} (${d.type}) — automerge:${d.docId}`);
     const contextMsg = `\n\n[The following documents were linked into your filesystem:\n${lines.join(
       '\n'
-    )}\nYou can browse them with fs.listDir("/${linkedDocs[0].name}")]`;
+    )}\nYou can browse them with fs.listFolder("/${linkedDocs[0].name}")]`;
     handle.change((d) => {
       const run = d.runs[d.runs.length - 1];
       updateText(d, ['runs', d.runs.length - 1, 'task'], run.task + contextMsg);
@@ -111,7 +111,7 @@ export async function runLLMProcess(repo: Repo, docUrl: AutomergeUrl): Promise<v
   // List root directory so the LLM knows what files are available
   let rootListing: { name: string; type: string }[] = [];
   try {
-    rootListing = await fs.listDir('/');
+    rootListing = await fs.listFolder('/');
   } catch {
     // Empty workspace — that's fine
   }
@@ -258,7 +258,9 @@ function appendOutputMessages(messages: ChatMessage[], blocks: OutputBlock[]): v
     } else if (block.type === 'script') {
       // Script code is assistant content
       if (block.description) {
-        assistantParts.push(`<script data-description="${block.description}">\n${block.code}\n</script>`);
+        assistantParts.push(
+          `<script data-description="${block.description}">\n${block.code}\n</script>`
+        );
       } else {
         assistantParts.push(`<script>\n${block.code}\n</script>`);
       }
@@ -289,16 +291,18 @@ const SYSTEM_PROMPT = `You are a coding agent with access to a filesystem and th
 You can execute code by writing it inside <script> tags. Add a data-description attribute to briefly describe what the code does:
 
 <script data-description="List workspace files">
-const files = await fs.listDir("/")
+const files = await fs.listFolder("/")
 console.log(files)
 </script>
 
 Available APIs in your execution context:
 - fs.readFile(path) — read a file as a string
-- fs.writeFile(path, content) — write/create a file
-- fs.listDir(path) — list directory contents (returns [{name, type}])
-- fs.mkdir(path) — create a directory
-- fs.rm(path) — remove a file or directory
+- fs.writeFile(path, content) — write/create a file (full replacement)
+- fs.patchFile(path, oldStr, newStr) — replace the first occurrence of oldStr with newStr in a file. Prefer this over writeFile for targeted edits to existing files — it's safer and more token-efficient.
+- fs.listFolder(path) — list folder contents (returns [{name, type}])
+- fs.createFolder(path) — create a folder
+- fs.move(srcPath, destPath) — move or rename a file or folder
+- fs.remove(path) — remove a file or folder
 - fs.linkDoc(path, automergeUrl) — link an existing automerge document into a folder
 - fs.getDocHandle(path) — get the Automerge DocHandle for a document (for direct Automerge operations)
 - import("/automerge:docId/path/to/file") — import a module from the automerge filesystem
@@ -306,13 +310,17 @@ Available APIs in your execution context:
 - console.log(...) — output text (captured and shown to you)
 - return value — return a value from the script (shown to you as output)
 
-Patchwork URLs: If you see a URL like https://example.com/#doc=ABCDEF&type=folder&title=Something, extract the doc ID from the #doc= parameter. The automerge URL is automerge:ABCDEF. Use this with fs.linkDoc(path, automergeUrl) or import().
+Patchwork URLs: If you see a URL like https://example.com/#doc=ABCDEF&type=folder&title=Something, extract the doc ID from the #doc= parameter. The automerge URL is automerge:ABCDEF. Use this with fs.linkDoc(path, automergeUrl) or import(). Bare automerge URLs (automerge:ABCDEF) in your task are automatically linked into the workspace.
 
 After each <script> block you will see the console output, return value, or any errors.
 Use this to inspect results and decide your next steps.
 
 Write text outside of script tags to explain your reasoning.
-Keep your code concise and focused on the task.`;
+Keep your code concise and focused on the task.
+
+Tips:
+- For editing existing files, prefer fs.patchFile() for targeted changes over fs.writeFile() for full rewrites. This is more reliable and avoids issues with large content replacements.
+- Use \`return value\` to inspect values; it's the most reliable way to see output.`;
 
 function buildSkillsPromptSection(skills: SkillInfo[], rootFolderUrl: AutomergeUrl): string {
   const exampleSkill = skills[0];
@@ -401,6 +409,10 @@ async function evalScript(
 ): Promise<{ output?: string; error?: string }> {
   capturedConsole.flush();
 
+  // Re-inject the captured console before every eval to guard against
+  // previous scripts accidentally deleting or overwriting the global.
+  (globalThis as any).__llmCapturedConsole = capturedConsole;
+
   try {
     const wrappedCode = `(async () => { const console = globalThis.__llmCapturedConsole;\n${code}\n})()`;
     const returnValue = await eval(wrappedCode);
@@ -436,20 +448,18 @@ function extractPatchworkUrls(text: string): ExtractedDoc[] {
   const seen = new Set<string>();
 
   // Match URLs with #doc= fragment parameter
-  const regex = /#doc=([A-Za-z0-9]+)([^\\s]*)/g;
+  const fragmentRegex = /#doc=([A-Za-z0-9]+)([^\s]*)/g;
   let match;
 
-  while ((match = regex.exec(text)) !== null) {
+  while ((match = fragmentRegex.exec(text)) !== null) {
     const docId = match[1];
     const rest = match[2] || '';
 
-    // Validate that this forms a valid automerge URL
     const candidateUrl = `automerge:${docId}`;
     if (!isValidAutomergeUrl(candidateUrl)) continue;
     if (seen.has(docId)) continue;
     seen.add(docId);
 
-    // Try to extract title and type from remaining fragment params
     const titleMatch = rest.match(/[&?]title=([^&]*)/);
     const typeMatch = rest.match(/[&?]type=([^&]*)/);
 
@@ -458,6 +468,20 @@ function extractPatchworkUrls(text: string): ExtractedDoc[] {
       title: titleMatch ? decodeURIComponent(titleMatch[1]) : undefined,
       type: typeMatch ? decodeURIComponent(typeMatch[1]) : undefined,
     });
+  }
+
+  // Match bare automerge: URLs (e.g. "automerge:442qEMJubfbNtu8bEikzX2j3Yyps")
+  const bareRegex = /automerge:([A-Za-z0-9]+)/g;
+
+  while ((match = bareRegex.exec(text)) !== null) {
+    const docId = match[1];
+
+    const candidateUrl = `automerge:${docId}`;
+    if (!isValidAutomergeUrl(candidateUrl)) continue;
+    if (seen.has(docId)) continue;
+    seen.add(docId);
+
+    results.push({ docId });
   }
 
   return results;
@@ -483,7 +507,7 @@ function parseFrontmatter(content: string): Record<string, string> {
 async function discoverSkills(fs: AutomergeFS): Promise<SkillInfo[]> {
   let entries: { name: string; type: string }[];
   try {
-    entries = await fs.listDir('/skills');
+    entries = await fs.listFolder('/skills');
   } catch {
     return [];
   }
