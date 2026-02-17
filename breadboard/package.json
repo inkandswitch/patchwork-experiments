@@ -1,0 +1,26 @@
+{
+  "name": "@patchwork/breadboard",
+  "version": "0.0.1",
+  "description": "Breadboard: pull apart the interface to see the wiring",
+  "type": "module",
+  "private": true,
+  "main": "dist/breadboard.js",
+  "exports": {
+    ".": "./dist/breadboard.js"
+  },
+  "scripts": {
+    "build": "esbuild src/breadboard.ts --bundle --format=esm --outfile=dist/breadboard.js --external:@automerge/* --external:@inkandswitch/*",
+    "dev": "esbuild src/breadboard.ts --bundle --format=esm --outfile=dist/breadboard.js --external:@automerge/* --external:@inkandswitch/* --watch",
+    "push": "pnpm build && pushwork sync"
+  },
+  "dependencies": {
+    "@automerge/automerge": "3.2.1",
+    "@automerge/automerge-repo": "2.5.2-alpha.0",
+    "@inkandswitch/patchwork-plugins": "0.0.5",
+    "@inkandswitch/patchwork-elements": "0.0.5"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "typescript": "~5.9.3"
+  }
+}

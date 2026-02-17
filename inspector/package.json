@@ -1,0 +1,25 @@
+{
+  "name": "@patchwork/inspector",
+  "version": "0.0.1",
+  "description": "Inspector: peek at the nearest patchwork-view's wiring",
+  "type": "module",
+  "private": true,
+  "main": "dist/inspector.js",
+  "exports": {
+    ".": "./dist/inspector.js"
+  },
+  "scripts": {
+    "build": "esbuild src/inspector.ts --bundle --format=esm --outfile=dist/inspector.js --external:@automerge/* --external:@inkandswitch/*",
+    "dev": "esbuild src/inspector.ts --bundle --format=esm --outfile=dist/inspector.js --external:@automerge/* --external:@inkandswitch/* --watch",
+    "push": "pnpm build && pushwork sync"
+  },
+  "dependencies": {
+    "@automerge/automerge": "3.2.1",
+    "@automerge/automerge-repo": "2.5.2-alpha.0",
+    "@inkandswitch/patchwork-plugins": "0.0.5"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "typescript": "~5.9.3"
+  }
+}
