@@ -1,36 +1,11 @@
 /**
- * Call - Video call tool for Patchwork
+ * Telephone — WebRTC video call with local Whisper transcription.
  *
- * Uses WebRTC for peer-to-peer video/audio, with signaling over
- * handle.broadcast (ephemeral messages).
- *
- * @typedef {Object} CallDoc
- * @property {string} content - Text content (unused for now)
- * @property {string} title - Document title
+ * Each participant's voice is transcribed locally using WebGPU-accelerated
+ * Whisper and written into doc.content as `<name> text\n` lines.
  */
 
-// ============================================================================
-// Datatype
-// ============================================================================
-
-export const CallDatatype = {
-  init(doc) {
-    doc.title = "Call";
-    doc.content = "";
-  },
-
-  getTitle(doc) {
-    return doc.title || "Call";
-  },
-
-  setTitle(doc, title) {
-    doc.title = title;
-  },
-};
-
-// ============================================================================
-// WebRTC Configuration
-// ============================================================================
+import { next as Automerge } from "@automerge/automerge";
 
 const RTC_CONFIG = {
   iceServers: [
@@ -38,10 +13,6 @@ const RTC_CONFIG = {
     { urls: "stun:stun1.l.google.com:19302" },
   ],
 };
-
-// ============================================================================
-// Styles
-// ============================================================================
 
 function createStyles() {
   const style = document.createElement("style");
@@ -149,11 +120,7 @@ function createStyles() {
   return style;
 }
 
-// ============================================================================
-// Tool
-// ============================================================================
-
-export function Tool(handle, element) {
+export default function TelephoneTool(handle, element) {
   const style = createStyles();
   element.appendChild(style);
 
@@ -162,7 +129,7 @@ export function Tool(handle, element) {
   let cameraEnabled = true;
   let micEnabled = true;
 
-  // Map of remotePeerId -> { pc: RTCPeerConnection, stream: MediaStream, el: HTMLElement }
+  // Map of remotePeerId -> { pc, stream, el, name, label }
   const peers = new Map();
 
   // DOM
@@ -219,12 +186,19 @@ export function Tool(handle, element) {
 
   // ---- Grid layout ---
   function updateGrid() {
-    const count = 1 + peers.size; // local + remotes
+    const count = 1 + peers.size;
     grid.setAttribute("data-count", String(Math.min(count, 9)));
 
-    // Ensure local box is first
-    if (!grid.contains(localBox)) {
-      grid.prepend(localBox);
+    const all = [
+      { name: myName, el: localBox },
+      ...[...peers.values()].map((p) => ({ name: p.name, el: p.el })),
+    ];
+    all.sort((a, b) =>
+      a.name.toLowerCase().localeCompare(b.name.toLowerCase())
+    );
+
+    for (const { el } of all) {
+      grid.appendChild(el);
     }
   }
 
@@ -234,14 +208,12 @@ export function Tool(handle, element) {
 
     const pc = new RTCPeerConnection(RTC_CONFIG);
 
-    // Add local tracks
     if (localStream) {
       for (const track of localStream.getTracks()) {
         pc.addTrack(track, localStream);
       }
     }
 
-    // Remote video element
     const box = document.createElement("div");
     box.className = "call-participant";
     const video = document.createElement("video");
@@ -283,7 +255,13 @@ export function Tool(handle, element) {
       }
     };
 
-    const peer = { pc, stream: remoteStream, el: box };
+    const peer = {
+      pc,
+      stream: remoteStream,
+      el: box,
+      name: remotePeerId.slice(0, 8),
+      label,
+    };
     peers.set(remotePeerId, peer);
     grid.appendChild(box);
     updateGrid();
@@ -306,15 +284,17 @@ export function Tool(handle, element) {
   }
 
   async function handleSignal(msg) {
-    // Ignore our own messages
     if (msg.from === peerId) return;
-    // Ignore messages not for us (if targeted)
     if (msg.to && msg.to !== peerId) return;
 
     switch (msg.type) {
       case "join": {
-        // A new peer joined — create a connection and send an offer
         const peer = createPeerConnection(msg.from);
+        if (msg.name) {
+          peer.name = msg.name;
+          peer.label.textContent = msg.name;
+          updateGrid();
+        }
         const offer = await peer.pc.createOffer();
         await peer.pc.setLocalDescription(offer);
         broadcast({
@@ -323,6 +303,7 @@ export function Tool(handle, element) {
           to: msg.from,
           sdp: peer.pc.localDescription.toJSON(),
         });
+        broadcast({ type: "name", from: peerId, name: myName });
         break;
       }
 
@@ -358,6 +339,16 @@ export function Tool(handle, element) {
         break;
       }
 
+      case "name": {
+        const peer = peers.get(msg.from);
+        if (peer && msg.name) {
+          peer.name = msg.name;
+          peer.label.textContent = msg.name;
+          updateGrid();
+        }
+        break;
+      }
+
       case "leave": {
         removePeer(msg.from);
         break;
@@ -365,7 +356,6 @@ export function Tool(handle, element) {
     }
   }
 
-  // Listen for ephemeral messages
   function onEphemeral(payload) {
     const msg = payload.message;
     if (msg && msg.type) {
@@ -373,6 +363,129 @@ export function Tool(handle, element) {
     }
   }
   handle.on("ephemeral-message", onEphemeral);
+
+  // ============================================================================
+  // Transcription
+  // ============================================================================
+
+  let whisperWorker = null;
+  let audioContext = null;
+  let scriptProcessor = null;
+  let audioBuffer = [];
+  let audioBufferLength = 0;
+  let sendInterval = null;
+  let myName = "unknown";
+  const SEND_INTERVAL_MS = 5000;
+  const WHISPER_SAMPLE_RATE = 16000;
+
+  const loadingIndicator = document.createElement("div");
+  loadingIndicator.style.cssText =
+    "position:absolute;top:8px;left:8px;background:rgba(0,0,0,0.7);" +
+    "color:white;padding:4px 10px;border-radius:6px;font-size:12px;" +
+    "font-family:system-ui,sans-serif;z-index:10;display:none;";
+  container.style.position = "relative";
+  container.appendChild(loadingIndicator);
+
+  async function resolveMyName() {
+    try {
+      const contactHandle = await repo.find(
+        window.accountDocHandle.doc().contactUrl
+      );
+      const name = contactHandle.doc().name;
+      if (name) {
+        myName = name;
+        localName.textContent = myName;
+      }
+    } catch (err) {
+      console.warn("[call] Could not resolve name:", err);
+    }
+  }
+
+  function resample(inputSamples, inputRate, outputRate) {
+    if (inputRate === outputRate) return inputSamples;
+    const ratio = inputRate / outputRate;
+    const outputLength = Math.round(inputSamples.length / ratio);
+    const output = new Float32Array(outputLength);
+    for (let i = 0; i < outputLength; i++) {
+      const srcIndex = i * ratio;
+      const low = Math.floor(srcIndex);
+      const high = Math.min(low + 1, inputSamples.length - 1);
+      const frac = srcIndex - low;
+      output[i] = inputSamples[low] * (1 - frac) + inputSamples[high] * frac;
+    }
+    return output;
+  }
+
+  function sendAudioToWorker() {
+    if (!whisperWorker || audioBufferLength === 0) return;
+
+    const fullBuffer = new Float32Array(audioBufferLength);
+    let offset = 0;
+    for (const chunk of audioBuffer) {
+      fullBuffer.set(chunk, offset);
+      offset += chunk.length;
+    }
+
+    audioBuffer = [];
+    audioBufferLength = 0;
+
+    const resampled = resample(
+      fullBuffer,
+      audioContext.sampleRate,
+      WHISPER_SAMPLE_RATE
+    );
+
+    whisperWorker.postMessage(
+      { type: "transcribe", audio: resampled },
+      [resampled.buffer]
+    );
+  }
+
+  function startTranscription() {
+    if (!localStream) return;
+
+    const audioTrack = localStream.getAudioTracks()[0];
+    if (!audioTrack) return;
+
+    const workerUrl = new URL("./worker.js", import.meta.url);
+    whisperWorker = new Worker(workerUrl, { type: "module" });
+
+    whisperWorker.onmessage = (e) => {
+      const { type, text, message } = e.data;
+
+      if (type === "status") {
+        loadingIndicator.style.display = "block";
+        loadingIndicator.textContent = message;
+      } else if (type === "ready") {
+        loadingIndicator.style.display = "none";
+      } else if (type === "result") {
+        handle.change((doc) => {
+          const line = `<${myName}> ${text}\n`;
+          Automerge.splice(doc, ["content"], doc.content.length, 0, line);
+        });
+      }
+    };
+
+    audioContext = new AudioContext();
+    const source = audioContext.createMediaStreamSource(
+      new MediaStream([audioTrack])
+    );
+    scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+
+    scriptProcessor.onaudioprocess = (e) => {
+      if (!micEnabled) return;
+      const input = e.inputBuffer.getChannelData(0);
+      const copy = new Float32Array(input.length);
+      copy.set(input);
+      audioBuffer.push(copy);
+      audioBufferLength += copy.length;
+    };
+
+    source.connect(scriptProcessor);
+    scriptProcessor.connect(audioContext.destination);
+
+    sendInterval = setInterval(sendAudioToWorker, SEND_INTERVAL_MS);
+  }
 
   // ---- Start ----
   async function start() {
@@ -384,19 +497,19 @@ export function Tool(handle, element) {
       localVideo.srcObject = localStream;
     } catch (err) {
       console.warn("[call] Could not get media devices:", err);
-      // Still join so others can see us as a box
       localName.textContent = "You (no camera)";
     }
 
     grid.appendChild(localBox);
     updateGrid();
 
-    // Announce our presence
-    broadcast({ type: "join", from: peerId });
+    await resolveMyName();
+    startTranscription();
 
-    // Periodically re-announce in case peers missed us
+    broadcast({ type: "join", from: peerId, name: myName });
+
     heartbeatInterval = setInterval(() => {
-      broadcast({ type: "join", from: peerId });
+      broadcast({ type: "join", from: peerId, name: myName });
     }, 5000);
   }
 
@@ -406,20 +519,31 @@ export function Tool(handle, element) {
   // ---- Cleanup ----
   return () => {
     if (heartbeatInterval) clearInterval(heartbeatInterval);
+    if (sendInterval) clearInterval(sendInterval);
 
-    // Announce departure
     broadcast({ type: "leave", from: peerId });
 
     handle.off("ephemeral-message", onEphemeral);
 
-    // Stop all tracks
+    if (whisperWorker) {
+      whisperWorker.terminate();
+      whisperWorker = null;
+    }
+    if (scriptProcessor) {
+      scriptProcessor.disconnect();
+      scriptProcessor = null;
+    }
+    if (audioContext) {
+      audioContext.close();
+      audioContext = null;
+    }
+
     if (localStream) {
       for (const track of localStream.getTracks()) {
         track.stop();
       }
     }
 
-    // Close all peer connections
     for (const [, peer] of peers) {
       peer.pc.close();
     }
@@ -429,29 +553,3 @@ export function Tool(handle, element) {
     style.remove();
   };
 }
-
-// ============================================================================
-// Plugin Exports
-// ============================================================================
-
-export const plugins = [
-  {
-    type: "patchwork:datatype",
-    id: "call",
-    name: "Call",
-    icon: "Video",
-    async load() {
-      return CallDatatype;
-    },
-  },
-  {
-    type: "patchwork:tool",
-    id: "call",
-    name: "Call",
-    icon: "Video",
-    supportedDatatypes: ["call"],
-    async load() {
-      return Tool;
-    },
-  },
-];
