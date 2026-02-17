@@ -1,4 +1,5 @@
 import type { AutomergeUrl, Repo, DocHandle } from '@automerge/automerge-repo';
+import { parseAutomergeUrl, stringifyAutomergeUrl, updateText } from '@automerge/automerge-repo';
 import type { FolderDoc, DocLink } from '@inkandswitch/patchwork-filesystem';
 import type { WorkspaceDoc } from './types';
 
@@ -23,30 +24,40 @@ export class AutomergeFS {
   private resolveOverlayUrl(url: AutomergeUrl): AutomergeUrl {
     const ws = this.workspaceHandle.doc();
     if (!ws || !ws.mappings) return url;
-    return ws.mappings[url] || url;
+    const entry = ws.mappings[url];
+    return entry ? entry.cloneUrl : url;
   }
 
   /**
    * Get a writable handle for the given original URL.
-   * If a clone already exists in the workspace mappings, returns the clone.
-   * Otherwise clones the doc via repo.clone(), records the mapping, and
-   * returns the clone handle.
+   * The root folder is workspace-owned and mutated directly (no COW).
+   * For all other docs, if a clone already exists in the workspace mappings,
+   * returns the clone. Otherwise clones via repo.clone(), records the mapping,
+   * and returns the clone handle.
    */
   private async getWritableHandle(originalUrl: AutomergeUrl): Promise<DocHandle<any>> {
+    // Root folder is workspace-owned — mutate directly, no COW
+    if (originalUrl === this.rootFolderUrl) {
+      const handle = await this.repo.find(originalUrl);
+      return handle;
+    }
+
     const existingCloneUrl = this.resolveOverlayUrl(originalUrl);
     if (existingCloneUrl !== originalUrl) {
       const handle = await this.repo.find(existingCloneUrl);
-      await handle.whenReady();
       return handle;
     }
 
     const originalHandle = await this.repo.find(originalUrl);
-    await originalHandle.whenReady();
+    const heads = originalHandle.heads();
     const cloneHandle = this.repo.clone(originalHandle);
+
+    const { documentId } = parseAutomergeUrl(originalUrl);
+    const originalUrlWithHeads = stringifyAutomergeUrl({ documentId, heads });
 
     this.workspaceHandle.change((ws: any) => {
       if (!ws.mappings) ws.mappings = {};
-      ws.mappings[originalUrl] = cloneHandle.url;
+      ws.mappings[originalUrl] = { cloneUrl: cloneHandle.url, originalUrlWithHeads };
     });
 
     return cloneHandle;
@@ -65,7 +76,7 @@ export class AutomergeFS {
     if (parts.length === 0) {
       const effectiveUrl = this.resolveOverlayUrl(this.rootFolderUrl);
       const handle = await this.repo.find<FolderDoc>(effectiveUrl);
-      await handle.whenReady();
+
       return {
         handle,
         link: {
@@ -81,7 +92,7 @@ export class AutomergeFS {
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
       const folderHandle = await this.repo.find<FolderDoc>(currentFolderUrl);
-      await folderHandle.whenReady();
+
       const folderDoc = folderHandle.doc();
 
       if (!folderDoc || !folderDoc.docs) {
@@ -96,7 +107,7 @@ export class AutomergeFS {
       if (i === parts.length - 1) {
         const effectiveUrl = this.resolveOverlayUrl(match.url);
         const handle = await this.repo.find(effectiveUrl);
-        await handle.whenReady();
+
         return { handle, link: match };
       }
 
@@ -132,7 +143,6 @@ export class AutomergeFS {
     for (const part of parentParts) {
       const effectiveUrl = this.resolveOverlayUrl(currentFolderUrl);
       const folderHandle = await this.repo.find<FolderDoc>(effectiveUrl);
-      await folderHandle.whenReady();
       const folderDoc = folderHandle.doc();
 
       if (!folderDoc || !folderDoc.docs) {
@@ -148,6 +158,18 @@ export class AutomergeFS {
 
     const writableHandle = (await this.getWritableHandle(currentFolderUrl)) as DocHandle<FolderDoc>;
     return { folderHandle: writableHandle, folderOriginalUrl: currentFolderUrl, targetName };
+  }
+
+  /**
+   * Get the DocHandle for a document at the given path.
+   * Resolves through the COW overlay transparently.
+   */
+  async getDocHandle(pathStr: string): Promise<DocHandle<any>> {
+    const resolved = await this.resolvePath(pathStr);
+    if (!resolved) {
+      throw new Error(`Not found: ${pathStr}`);
+    }
+    return resolved.handle;
   }
 
   /**
@@ -188,7 +210,7 @@ export class AutomergeFS {
     if (resolved) {
       const writable = await this.getWritableHandle(resolved.link.url);
       writable.change((doc: any) => {
-        doc.content = content;
+        updateText(doc, ['content'], content);
       });
       return;
     }
@@ -220,6 +242,11 @@ export class AutomergeFS {
         name,
         type: 'file',
       });
+    });
+
+    this.workspaceHandle.change((ws: any) => {
+      if (!ws.createdUrls) ws.createdUrls = [];
+      ws.createdUrls.push(fileHandle.url);
     });
   }
 
@@ -278,9 +305,8 @@ export class AutomergeFS {
   /**
    * Link an existing Automerge document into a folder at the given path.
    * Reads the type from the document's @patchwork metadata.
-   * Parent folder is cloned via COW before mutation.
-   * The linked URL is recorded in the workspace so it doesn't appear as a
-   * change unless the document is subsequently modified.
+   * The root folder is mutated directly (no COW) so linked docs don't
+   * appear as changes unless subsequently modified.
    */
   async linkDoc(pathStr: string, automergeUrl: AutomergeUrl): Promise<void> {
     const parent = await this.resolveParent(pathStr);
@@ -289,7 +315,6 @@ export class AutomergeFS {
     }
 
     const targetHandle = await this.repo.find(automergeUrl);
-    await targetHandle.whenReady();
     const targetDoc = targetHandle.doc() as any;
     const type: string = targetDoc?.['@patchwork']?.type || 'file';
 
@@ -302,13 +327,6 @@ export class AutomergeFS {
         name: parent.targetName,
         type,
       });
-    });
-
-    this.workspaceHandle.change((ws: any) => {
-      if (!ws.linkedUrls) ws.linkedUrls = [];
-      if (!ws.linkedUrls.includes(automergeUrl)) {
-        ws.linkedUrls.push(automergeUrl);
-      }
     });
   }
 

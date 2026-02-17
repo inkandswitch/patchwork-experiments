@@ -17,6 +17,15 @@ importers:
       '@automerge/automerge-repo-react-hooks':
         specifier: 2.5.2-alpha.0
         version: 2.5.2-alpha.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@inkandswitch/annotations':
+        specifier: ^0.1.4
+        version: 0.1.4
+      '@inkandswitch/annotations-context':
+        specifier: ^0.1.4
+        version: 0.1.4
+      '@inkandswitch/annotations-diff':
+        specifier: ^0.1.4
+        version: 0.1.4
       '@inkandswitch/patchwork-filesystem':
         specifier: ^0.0.3
         version: 0.0.3
@@ -26,6 +35,9 @@ importers:
       '@inkandswitch/patchwork-react':
         specifier: 0.0.1
         version: 0.0.1
+      '@inkandswitch/patchwork-refs':
+        specifier: ^0.1.3
+        version: 0.1.3
       diff:
         specifier: ^7.0.0
         version: 7.0.0
@@ -386,6 +398,15 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@inkandswitch/annotations-context@0.1.4':
+    resolution: {integrity: sha512-dvv4JwHufm4gzvz9e60wZA1MKQCPbjolRBH6ipJNZeH+6kZyPnySy4x4DM8zMPkDsv6lBHCwLKptHh+KmTqkxw==}
+
+  '@inkandswitch/annotations-diff@0.1.4':
+    resolution: {integrity: sha512-8n+zdl/k/xRbAlx2hZ7u2jncvjtxVJiMvcfQOy2FX6fjIpXW/1Z07+v9kDxzrWlAZnFHes84xLZwKTSwpa6nmw==}
+
+  '@inkandswitch/annotations@0.1.4':
+    resolution: {integrity: sha512-7jVuIaheFo9AIo1yDwcyLrcrJXtCYsaDPa73KbzORMWQsET3q2mKP9l6PeTU81nwC0kRIkwmjyglASeObzrKrw==}
+
   '@inkandswitch/patchwork-bootloader@0.0.4':
     resolution: {integrity: sha512-3VWkDYPTiY4H2+877tYHptRGQcCg22uoa0NG+7cgwbmETcBhnXheoLh/cv3clPf2mcMiglhY1Htt7ezkgKa17g==}
     peerDependencies:
@@ -406,6 +427,12 @@ packages:
 
   '@inkandswitch/patchwork-react@0.0.1':
     resolution: {integrity: sha512-+LAHA53WVKpqnrrIkP1RBnBxbP/atTO4tev+6a6TeHAqMpRoHRWXlNWcIsPtpMgeAD0P8liGLh0gcdb+F9wTrg==}
+
+  '@inkandswitch/patchwork-refs@0.1.3':
+    resolution: {integrity: sha512-obWR/dIWu3pja6u6jLnHw3rJxApSZ7mWwf5PaknH2lckxRgEOeNxG5Zp76mPx/1jiqxZAgV20ZlHKhoK/A2BDw==}
+
+  '@inkandswitch/subscribables@0.1.2':
+    resolution: {integrity: sha512-z6emWk5LuSPDbKJGzM8oB4D764CfLwGD292FRT/QNo6N8e9lsUJHtL6KzDvJmAk5bGwCrrZ1r7zifnVwNTlsAg==}
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -1126,7 +1153,7 @@ snapshots:
 
   '@automerge/automerge-repo@2.5.0':
     dependencies:
-      '@automerge/automerge': 3.2.1
+      '@automerge/automerge': 3.2.4
       bs58check: 3.0.1
       cbor-x: 1.6.0
       debug: 4.4.3
@@ -1387,6 +1414,31 @@ snapshots:
   '@esbuild/win32-x64@0.27.3':
     optional: true
 
+  '@inkandswitch/annotations-context@0.1.4':
+    dependencies:
+      '@inkandswitch/annotations': 0.1.4
+    transitivePeerDependencies:
+      - supports-color
+
+  '@inkandswitch/annotations-diff@0.1.4':
+    dependencies:
+      '@automerge/automerge': 3.2.1
+      '@automerge/automerge-repo': 2.5.2-alpha.0
+      '@inkandswitch/annotations': 0.1.4
+      '@inkandswitch/annotations-context': 0.1.4
+      '@inkandswitch/patchwork-refs': 0.1.3
+      '@inkandswitch/subscribables': 0.1.2
+    transitivePeerDependencies:
+      - supports-color
+
+  '@inkandswitch/annotations@0.1.4':
+    dependencies:
+      '@inkandswitch/patchwork-refs': 0.1.3
+      '@inkandswitch/subscribables': 0.1.2
+      eventemitter3: 5.0.4
+    transitivePeerDependencies:
+      - supports-color
+
   '@inkandswitch/patchwork-bootloader@0.0.4(@automerge/automerge-repo-keyhive@0.0.0-alpha.71)(@automerge/automerge-repo@2.5.2-alpha.0)(@automerge/automerge@3.2.4)(@automerge/vanillajs@2.5.0)(@keyhive/keyhive@0.0.0-alpha.40)':
     dependencies:
       '@automerge/automerge': 3.2.4
@@ -1450,6 +1502,17 @@ snapshots:
       - bufferutil
       - supports-color
       - utf-8-validate
+
+  '@inkandswitch/patchwork-refs@0.1.3':
+    dependencies:
+      '@automerge/automerge': 3.2.1
+      '@automerge/automerge-repo': 2.5.2-alpha.0
+    transitivePeerDependencies:
+      - supports-color
+
+  '@inkandswitch/subscribables@0.1.2':
+    dependencies:
+      eventemitter3: 5.0.4
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:

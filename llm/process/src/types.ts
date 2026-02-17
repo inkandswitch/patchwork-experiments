@@ -2,10 +2,15 @@ import type { AutomergeUrl } from '@automerge/automerge-repo';
 
 // --- WorkspaceDoc schema ---
 
+export type MappingEntry = {
+  cloneUrl: AutomergeUrl;
+  originalUrlWithHeads: AutomergeUrl; // original URL with heads at clone time baked in
+};
+
 export type WorkspaceDoc = {
   rootFolderUrl: AutomergeUrl;
-  mappings: Record<string, AutomergeUrl>; // originalUrl → clonedUrl
-  linkedUrls: AutomergeUrl[]; // docs linked into workspace (not created) — excluded from changeset unless modified
+  mappings: Record<string, MappingEntry>; // originalUrl → { cloneUrl, originalUrlWithHeads }
+  createdUrls: AutomergeUrl[]; // new files created by the agent — shown as "added" in changeset
 };
 
 // --- LLMProcessDoc schema ---
@@ -29,11 +34,10 @@ export type TaskRun = {
 
 export type OutputBlock =
   | { type: 'text'; content: string }
-  | { type: 'script'; code: string }
-  | { type: 'result'; output?: string; error?: string };
+  | { type: 'script'; code: string; description?: string; output?: string; error?: string };
 
 // --- Parser types ---
 
 export type ParsedBlock =
   | { id: number; type: 'text'; content: string; complete: boolean }
-  | { id: number; type: 'script'; code: string; complete: boolean };
+  | { id: number; type: 'script'; code: string; description?: string; complete: boolean };

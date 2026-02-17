@@ -13,13 +13,14 @@ import {
 } from "@automerge/automerge-repo";
 import type { FolderDoc, DocLink } from "@inkandswitch/patchwork-filesystem";
 import { diffLines } from "diff";
-import type { WorkspaceDoc, FileChange, DiffRow } from "./types";
+import type { WorkspaceDoc, MappingEntry, FileChange, DiffRow } from "./types";
 
 // ---- Tree walking ----
 
 type TreeEntry = {
   url: AutomergeUrl;
   type: string;
+  docType: string; // @patchwork.type of the document
 };
 
 /**
@@ -30,13 +31,13 @@ type TreeEntry = {
 async function walkTree(
   repo: Repo,
   folderUrl: AutomergeUrl,
-  mappings: Record<string, AutomergeUrl> | null,
+  mappings: Record<string, MappingEntry> | null,
   prefix: string = ""
 ): Promise<Map<string, TreeEntry>> {
   const result = new Map<string, TreeEntry>();
 
   const effectiveUrl = mappings
-    ? ((mappings[folderUrl] as AutomergeUrl) ?? folderUrl)
+    ? (mappings[folderUrl]?.cloneUrl ?? folderUrl)
     : folderUrl;
 
   const handle = await repo.find<FolderDoc>(effectiveUrl);
@@ -50,17 +51,37 @@ async function walkTree(
     const childUrl = link.url;
 
     if (link.type === "folder") {
-      result.set(childPath, { url: childUrl, type: "folder" });
+      result.set(childPath, { url: childUrl, type: "folder", docType: "folder" });
       const subtree = await walkTree(repo, childUrl, mappings, childPath);
       for (const [k, v] of subtree) {
         result.set(k, v);
       }
     } else {
-      result.set(childPath, { url: childUrl, type: link.type || "file" });
+      const docType = await readDocType(repo, childUrl, mappings);
+      result.set(childPath, { url: childUrl, type: link.type || "file", docType });
     }
   }
 
   return result;
+}
+
+/** Read the @patchwork.type from a document, resolving through the overlay if needed. */
+async function readDocType(
+  repo: Repo,
+  url: AutomergeUrl,
+  mappings: Record<string, MappingEntry> | null
+): Promise<string> {
+  try {
+    const effectiveUrl = mappings
+      ? (mappings[url]?.cloneUrl ?? url)
+      : url;
+    const handle = await repo.find(effectiveUrl);
+    await handle.whenReady();
+    const doc = handle.doc() as any;
+    return doc?.["@patchwork"]?.type ?? "file";
+  } catch {
+    return "file";
+  }
 }
 
 // ---- Changeset computation ----
@@ -91,76 +112,72 @@ export async function computeChangeset(
 
     if (!overlayEntry) {
       // Deleted: exists in original but not in overlay
-      const content = await readFileContent(repo, origEntry.url);
+      const content = origEntry.docType === "file"
+        ? await readFileContent(repo, origEntry.url)
+        : undefined;
       changes.push({
         path,
         changeType: "deleted",
+        docType: origEntry.docType,
         originalContent: content,
         originalUrl: origEntry.url,
       });
     } else {
       // Check if modified: the overlay resolved to a different URL
-      const resolvedOverlayUrl =
-        (mappings[overlayEntry.url] as AutomergeUrl) ?? overlayEntry.url;
+      const mappingEntry = mappings[overlayEntry.url];
+      const resolvedOverlayUrl = mappingEntry?.cloneUrl ?? overlayEntry.url;
       const resolvedOrigUrl = origEntry.url;
 
       if (resolvedOverlayUrl !== resolvedOrigUrl) {
-        const origContent = await readFileContent(repo, resolvedOrigUrl);
-        const modContent = await readFileContent(repo, resolvedOverlayUrl);
-        if (origContent !== modContent) {
+        const originalUrlWithHeads = mappingEntry?.originalUrlWithHeads;
+
+        if (origEntry.docType === "file") {
+          const origContent = await readFileContent(repo, resolvedOrigUrl);
+          const modContent = await readFileContent(repo, resolvedOverlayUrl);
+          if (origContent !== modContent) {
+            changes.push({
+              path,
+              changeType: "modified",
+              docType: origEntry.docType,
+              originalContent: origContent,
+              modifiedContent: modContent,
+              originalUrl: origEntry.url,
+              cloneUrl: resolvedOverlayUrl,
+              originalUrlWithHeads,
+            });
+          }
+        } else {
+          // Non-file doc: just record URLs, no text content
           changes.push({
             path,
             changeType: "modified",
-            originalContent: origContent,
-            modifiedContent: modContent,
+            docType: origEntry.docType,
             originalUrl: origEntry.url,
             cloneUrl: resolvedOverlayUrl,
+            originalUrlWithHeads,
           });
         }
       }
     }
   }
 
-  // Find added files
-  const linkedUrls = new Set(workspaceDoc.linkedUrls || []);
+  // Find added files — new docs created by the agent are tracked in createdUrls
+  const createdUrls = new Set(workspaceDoc.createdUrls || []);
 
-  for (const [path, overlayEntry] of overlayTree) {
-    if (overlayEntry.type === "folder") continue;
-    if (originalTree.has(path)) continue;
+  for (const [path, entry] of overlayTree) {
+    if (entry.type === "folder") continue;
+    if (!createdUrls.has(entry.url)) continue;
 
-    const isLinked = linkedUrls.has(overlayEntry.url);
-    const cloneUrl = mappings[overlayEntry.url] as AutomergeUrl | undefined;
-
-    if (isLinked && !cloneUrl) {
-      // Linked but not modified — skip
-      continue;
-    }
-
-    if (isLinked && cloneUrl) {
-      // Linked and then modified — show as modified
-      const origContent = await readFileContent(repo, overlayEntry.url);
-      const modContent = await readFileContent(repo, cloneUrl);
-      if (origContent !== modContent) {
-        changes.push({
-          path,
-          changeType: "modified",
-          originalContent: origContent,
-          modifiedContent: modContent,
-          originalUrl: overlayEntry.url,
-          cloneUrl,
-        });
-      }
-    } else {
-      // Truly new file (created by the agent)
-      const resolvedUrl = cloneUrl ?? overlayEntry.url;
-      const content = await readFileContent(repo, resolvedUrl);
-      changes.push({
-        path,
-        changeType: "added",
-        modifiedContent: content,
-        cloneUrl: resolvedUrl,
-      });
-    }
+    const content = entry.docType === "file"
+      ? await readFileContent(repo, entry.url)
+      : undefined;
+    changes.push({
+      path,
+      changeType: "added",
+      docType: entry.docType,
+      modifiedContent: content,
+      cloneUrl: entry.url,
+    });
   }
 
   // Sort: modified first, then added, then deleted; alphabetically within each group
@@ -299,15 +316,15 @@ export async function mergeChanges(
 
   // Build reverse mapping: cloneUrl -> originalUrl
   const reverseMap = new Map<string, AutomergeUrl>();
-  for (const [origUrl, cloneUrl] of Object.entries(mappings)) {
-    reverseMap.set(cloneUrl, origUrl as AutomergeUrl);
+  for (const [origUrl, entry] of Object.entries(mappings)) {
+    reverseMap.set(entry.cloneUrl, origUrl as AutomergeUrl);
   }
 
   // Phase 1: Content merge
-  for (const [originalUrl, cloneUrl] of Object.entries(mappings)) {
+  for (const [originalUrl, entry] of Object.entries(mappings)) {
     const originalHandle = await repo.find(originalUrl as AutomergeUrl);
     await originalHandle.whenReady();
-    const cloneHandle = await repo.find(cloneUrl);
+    const cloneHandle = await repo.find(entry.cloneUrl);
     await cloneHandle.whenReady();
 
     const originalDoc = originalHandle.doc() as any;
@@ -338,10 +355,10 @@ export async function mergeChanges(
   // Phase 2: Heads propagation -- update head-pinned URLs bottom-up
   await propagateHeads(repo, ws.rootFolderUrl);
 
-  // Phase 3: Clear mappings and linked URLs
+  // Phase 3: Clear mappings and created URLs
   workspaceHandle.change((ws) => {
-    ws.mappings = {} as Record<string, AutomergeUrl>;
-    ws.linkedUrls = [] as unknown as AutomergeUrl[];
+    ws.mappings = {} as any;
+    ws.createdUrls = [] as unknown as AutomergeUrl[];
   });
 }
 

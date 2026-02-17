@@ -23,5 +23,3 @@ export const plugins: Plugin<any>[] = [
     },
   },
 ];
-
-console.log('llm v8');

@@ -23,7 +23,7 @@ export const LLMProcessDatatype: DatatypeImplementation<LLMProcessDoc> = {
 
       ws.rootFolderUrl = folderHandle.url;
       ws.mappings = {};
-      ws.linkedUrls = [];
+      ws.createdUrls = [];
     });
     doc.workspaceUrl = wsHandle.url;
 

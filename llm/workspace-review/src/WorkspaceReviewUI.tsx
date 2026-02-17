@@ -1,8 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useDocument, useRepo } from "@automerge/automerge-repo-react-hooks";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useDocument, useDocHandle, useRepo } from "@automerge/automerge-repo-react-hooks";
 import { toolify } from "@inkandswitch/patchwork-react";
 import type { ToolImplementation } from "@inkandswitch/patchwork-plugins";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
+import { parseAutomergeUrl, decodeHeads } from "@automerge/automerge-repo";
+import { AnnotationSet } from "@inkandswitch/annotations";
+import { annotations as globalAnnotations } from "@inkandswitch/annotations-context";
+import { diffAnnotationsOfDoc, ViewHeads } from "@inkandswitch/annotations-diff";
+import { ref } from "@inkandswitch/patchwork-refs";
 import type { WorkspaceDoc, FileChange, DiffRow } from "./types";
 import { computeChangeset, computeSideBySideDiff, mergeChanges } from "./workspace-diff";
 import "./styles.css";
@@ -136,9 +141,13 @@ const WorkspaceReview = ({ docUrl }: ReactToolProps) => {
           </div>
         )}
 
-        {changes.map((change) => (
-          <FileDiffView key={change.path} change={change} />
-        ))}
+        {changes.map((change) =>
+          change.docType === "file" ? (
+            <FileDiffView key={change.path} change={change} />
+          ) : (
+            <DocDiffView key={change.path} change={change} />
+          )
+        )}
       </div>
 
       {/* Merge footer */}
@@ -201,6 +210,86 @@ function FileDiffView({ change }: { change: FileChange }) {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- Doc diff card (non-file documents rendered via patchwork-view) ----
+
+function DocDiffView({ change }: { change: FileChange }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const repo = useRepo();
+
+  const cloneUrl = change.cloneUrl;
+
+  const cloneHandle = useDocHandle(cloneUrl);
+
+  // Compute diff annotations and register with global context
+  const annotations = useMemo(() => new AnnotationSet(), []);
+
+  useEffect(() => {
+    if (!cloneHandle) return;
+    if (change.changeType === "added") return;
+    if (!change.originalUrlWithHeads) return;
+
+    const { heads: encodedHeads } = parseAutomergeUrl(change.originalUrlWithHeads);
+    if (!encodedHeads || encodedHeads.length === 0) return;
+
+    const beforeHeads = decodeHeads(encodedHeads);
+    const diffAnns = diffAnnotationsOfDoc(cloneHandle, beforeHeads);
+    const docRef = ref(cloneHandle);
+    const afterHeads = cloneHandle.heads();
+
+    globalAnnotations.add(annotations);
+
+    annotations.change(() => {
+      annotations.clear();
+      annotations.add(diffAnns);
+      if (afterHeads) {
+        annotations.add(docRef, ViewHeads({ beforeHeads, afterHeads }));
+      }
+    });
+
+    return () => {
+      annotations.clear();
+      globalAnnotations.remove(annotations);
+    };
+  }, [cloneHandle, annotations, change.changeType, change.originalUrlWithHeads]);
+
+  return (
+    <div
+      id={`diff-${encodeURIComponent(change.path)}`}
+      className="border-b border-base-200 dark:border-base-content/10"
+    >
+      {/* File header */}
+      <div
+        className="flex items-center gap-2 px-4 py-2 bg-base-200/50 dark:bg-base-content/5 cursor-pointer select-none sticky top-0 z-10"
+        onClick={() => setCollapsed((c) => !c)}
+      >
+        <span className="text-xs text-base-content/40">
+          {collapsed ? "\u25B6" : "\u25BC"}
+        </span>
+        <ChangeTypeBadge type={change.changeType} />
+        <span className="text-sm font-mono text-base-content/80">
+          {change.path}
+        </span>
+        <span className="text-xs text-base-content/30 ml-auto">
+          {change.docType}
+        </span>
+      </div>
+
+      {/* Document view */}
+      {!collapsed && cloneUrl && (
+        <div className="h-[400px] border border-base-200 dark:border-base-content/10 m-2 rounded overflow-hidden">
+          <patchwork-view doc-url={cloneUrl} />
+        </div>
+      )}
+
+      {!collapsed && !cloneUrl && change.originalUrl && (
+        <div className="p-4 text-sm text-base-content/50 italic">
+          Document deleted
         </div>
       )}
     </div>

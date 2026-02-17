@@ -105,7 +105,7 @@ const LLMProcessEditor = ({ docUrl }: ReactToolProps) => {
   );
 
   return (
-    <div className="flex flex-col h-full bg-base-100 dark:bg-base-300">
+    <div className="flex flex-col h-full">
       {/* Top bar */}
       <div className="flex items-center justify-end gap-2 px-4 py-1.5 text-xs text-base-content/40 bg-base-300">
         {doc.workspaceUrl && (
@@ -114,8 +114,6 @@ const LLMProcessEditor = ({ docUrl }: ReactToolProps) => {
             href={`https://tiny.patchwork.inkandswitch.com/#doc=${
               parseAutomergeUrl(doc.workspaceUrl).documentId
             }&tool=workspace-review`}
-            target="_blank"
-            rel="noopener noreferrer"
           >
             Review changes
           </a>
@@ -131,78 +129,72 @@ const LLMProcessEditor = ({ docUrl }: ReactToolProps) => {
           </button>
         )}
       </div>
+      <div className="flex flex-col h-full bg-base-100 dark:bg-base-300 max-w-[1024px] mx-auto w-full">
+        {/* Output area */}
+        <div className="flex-1 overflow-y-auto px-4 py-4">
+          {doc.runs.map((run, runIdx) => (
+            <RunView
+              key={runIdx}
+              run={run}
+              runIndex={runIdx}
+              isLast={runIdx === doc.runs.length - 1}
+              isRunning={status === 'running' && runIdx === doc.runs.length - 1}
+              onDelete={() => handleDeleteRun(runIdx)}
+              canDelete={status !== 'running'}
+            />
+          ))}
 
-      {/* Output area */}
-      <div className="flex-1 overflow-y-auto px-4 py-4">
-        {doc.runs.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-base-content/25">
-            <div className="text-2xl mb-2">⌘</div>
-            <div className="text-sm">What would you like to do?</div>
-          </div>
-        )}
-
-        {doc.runs.map((run, runIdx) => (
-          <RunView
-            key={runIdx}
-            run={run}
-            runIndex={runIdx}
-            isLast={runIdx === doc.runs.length - 1}
-            isRunning={status === 'running' && runIdx === doc.runs.length - 1}
-            onDelete={() => handleDeleteRun(runIdx)}
-            canDelete={status !== 'running'}
-          />
-        ))}
-
-        {errorMsg && (
-          <div className="ml-7 mt-2 text-sm text-error/80 bg-error/[0.06] rounded-lg px-3 py-2">
-            {errorMsg}
-          </div>
-        )}
-
-        <div ref={outputEndRef} />
-      </div>
-
-      {/* Input area */}
-      <div className="px-4 pb-3 pt-1">
-        <div className="rounded-xl bg-base-200/60 dark:bg-base-content/[0.04] ring-1 ring-base-content/[0.06] focus-within:ring-primary/30 transition-shadow">
-          <textarea
-            className="w-full bg-transparent text-sm px-4 pt-3 pb-2 min-h-[2.5rem] max-h-[10rem] resize-none outline-none placeholder:text-base-content/30"
-            placeholder="What would you like to do?"
-            value={taskInput}
-            onChange={(e) => setTaskInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            disabled={status === 'running'}
-            rows={1}
-          />
-          <div className="flex items-center justify-between px-3 pb-2">
-            <div className="flex items-center gap-2 text-xs text-base-content/35">
-              <select
-                className="bg-transparent outline-none font-mono cursor-pointer hover:text-base-content/60 transition-colors"
-                value={doc.config.model}
-                onChange={(e) => handleModelChange(e.target.value)}
-                disabled={status === 'running'}
-              >
-                {AVAILABLE_MODELS.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-                {!AVAILABLE_MODELS.includes(doc.config.model) && (
-                  <option value={doc.config.model}>{doc.config.model}</option>
-                )}
-              </select>
+          {errorMsg && (
+            <div className="ml-7 mt-2 text-sm text-error/80 bg-error/[0.06] rounded-lg px-3 py-2">
+              {errorMsg}
             </div>
-            <div className="flex items-center gap-2">
-              {status === 'running' && (
-                <span className="loading loading-spinner loading-xs text-base-content/30" />
-              )}
-              <button
-                className="text-xs font-medium px-3 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                onClick={handleRun}
-                disabled={status !== 'idle' || !taskInput.trim()}
-              >
-                Run
-              </button>
+          )}
+
+          <div ref={outputEndRef} />
+        </div>
+
+        {/* Input area */}
+        <div className="px-4 pb-3 pt-1">
+          <div className="rounded-xl bg-base-200/60 dark:bg-base-content/[0.04] ring-1 ring-base-content/[0.06] focus-within:ring-primary/30 transition-shadow">
+            <textarea
+              className="w-full bg-transparent text-sm px-4 pt-3 pb-2 min-h-[2.5rem] max-h-[10rem] resize-none outline-none placeholder:text-base-content/30"
+              placeholder="What would you like to do?"
+              value={taskInput}
+              onChange={(e) => setTaskInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={status === 'running'}
+              rows={1}
+            />
+            <div className="flex items-center justify-between px-3 pb-2">
+              <div className="flex items-center gap-2 text-xs text-base-content/35">
+                <select
+                  className="bg-transparent outline-none font-mono cursor-pointer hover:text-base-content/60 transition-colors"
+                  value={doc.config.model}
+                  onChange={(e) => handleModelChange(e.target.value)}
+                  disabled={status === 'running'}
+                >
+                  {AVAILABLE_MODELS.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                  {!AVAILABLE_MODELS.includes(doc.config.model) && (
+                    <option value={doc.config.model}>{doc.config.model}</option>
+                  )}
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                {status === 'running' && (
+                  <span className="loading loading-spinner loading-xs text-base-content/30" />
+                )}
+                <button
+                  className="text-xs font-medium px-3 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  onClick={handleRun}
+                  disabled={status !== 'idle' || !taskInput.trim()}
+                >
+                  Run
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -213,45 +205,18 @@ const LLMProcessEditor = ({ docUrl }: ReactToolProps) => {
 
 // --- Run display ---
 
-/**
- * Group output blocks so that consecutive script+result pairs
- * are rendered together as a single visual unit.
- */
-function groupOutputBlocks(
-  blocks: OutputBlock[]
-): Array<
-  | { type: 'text'; block: OutputBlock }
-  | { type: 'scriptGroup'; script: OutputBlock; result?: OutputBlock }
-> {
-  const groups: Array<
-    | { type: 'text'; block: OutputBlock }
-    | { type: 'scriptGroup'; script: OutputBlock; result?: OutputBlock }
-  > = [];
-
-  for (let i = 0; i < blocks.length; i++) {
-    const block = blocks[i];
-    if (block.type === 'text') {
-      groups.push({ type: 'text', block });
-    } else if (block.type === 'script') {
-      const next = blocks[i + 1];
-      if (next && next.type === 'result') {
-        groups.push({ type: 'scriptGroup', script: block, result: next });
-        i++;
-      } else {
-        groups.push({ type: 'scriptGroup', script: block });
-      }
-    } else if (block.type === 'result') {
-      // Orphaned result (no preceding script) — render as standalone
-      groups.push({ type: 'scriptGroup', script: { type: 'script', code: '' }, result: block });
-    }
-  }
-
-  return groups;
-}
+const PROSE_CLASSES = `prose prose-sm max-w-none text-base-content/80
+  prose-headings:text-base-content/90 prose-headings:font-semibold prose-headings:mt-4 prose-headings:mb-2
+  prose-p:my-1.5 prose-p:leading-relaxed
+  prose-pre:bg-base-200/60 prose-pre:dark:bg-base-content/[0.04] prose-pre:text-base-content/70 prose-pre:text-xs prose-pre:rounded-lg prose-pre:my-2
+  prose-code:text-base-content/70 prose-code:text-xs prose-code:bg-base-200/80 prose-code:dark:bg-base-content/[0.06] prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none
+  prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5
+  prose-a:text-primary prose-a:no-underline hover:prose-a:underline
+  prose-strong:text-base-content/90 prose-strong:font-semibold`;
 
 function RunView({
   run,
-  runIndex,
+  runIndex: _runIndex,
   isLast,
   isRunning,
   onDelete,
@@ -264,7 +229,11 @@ function RunView({
   onDelete: () => void;
   canDelete: boolean;
 }) {
-  const groups = groupOutputBlocks(run.output);
+  // Find the last script block index for default-expand logic
+  const lastScriptIdx = run.output.reduce(
+    (acc, block, idx) => (block.type === 'script' ? idx : acc),
+    -1
+  );
 
   return (
     <div className={`${!isLast ? 'mb-8' : ''}`}>
@@ -283,28 +252,23 @@ function RunView({
       </div>
 
       {/* Assistant output */}
-      <div className="space-y-3">
-        {groups.map((group, gIdx) => {
-          if (group.type === 'text') {
+      <div className="space-y-2">
+        {run.output.map((block, bIdx) => {
+          if (block.type === 'text') {
             return (
-              <div
-                key={gIdx}
-                className="prose prose-sm max-w-none text-base-content/80
-                  prose-headings:text-base-content/90 prose-headings:font-semibold prose-headings:mt-4 prose-headings:mb-2
-                  prose-p:my-1.5 prose-p:leading-relaxed
-                  prose-pre:bg-base-200/60 prose-pre:dark:bg-base-content/[0.04] prose-pre:text-base-content/70 prose-pre:text-xs prose-pre:rounded-lg prose-pre:my-2
-                  prose-code:text-base-content/70 prose-code:text-xs prose-code:bg-base-200/80 prose-code:dark:bg-base-content/[0.06] prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none
-                  prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5
-                  prose-a:text-primary prose-a:no-underline hover:prose-a:underline
-                  prose-strong:text-base-content/90 prose-strong:font-semibold"
-              >
-                <Markdown>{group.block.type === 'text' ? group.block.content : ''}</Markdown>
+              <div key={bIdx} className={PROSE_CLASSES}>
+                <Markdown>{block.content}</Markdown>
               </div>
             );
           }
 
-          // Script + result group
-          return <ScriptGroupView key={gIdx} script={group.script} result={group.result} />;
+          if (block.type === 'script') {
+            return (
+              <ScriptBlockView key={bIdx} block={block} isLastScript={bIdx === lastScriptIdx} />
+            );
+          }
+
+          return null;
         })}
 
         {isRunning && run.output.length === 0 && (
@@ -318,71 +282,68 @@ function RunView({
   );
 }
 
-function ScriptGroupView({ script, result }: { script: OutputBlock; result?: OutputBlock }) {
-  const [collapsed, setCollapsed] = useState(!!result);
-  const hasError = result?.type === 'result' && !!result.error;
-  const hasOutput = result?.type === 'result' && !!(result.output || result.error);
+function ScriptBlockView({
+  block,
+  isLastScript,
+}: {
+  block: Extract<OutputBlock, { type: 'script' }>;
+  isLastScript: boolean;
+}) {
+  const hasCompleted = block.output !== undefined;
+  const hasError = !!block.error;
+  const hasOutput = !!(block.output || block.error);
 
-  if (script.type !== 'script') return null;
+  // Last script block defaults to expanded; completed non-last blocks start collapsed
+  const [collapsed, setCollapsed] = useState(hasCompleted && !isLastScript);
+
+  const label = block.description || 'Code';
 
   return (
-    <div className="rounded-lg bg-base-200/50 dark:bg-base-content/[0.03] overflow-hidden">
-      {/* Script header — clickable to toggle */}
+    <div className="my-1">
+      {/* Header — subtle, no background, like the reference screenshot */}
       <button
-        className="flex items-center gap-1.5 w-full px-3 py-1.5 text-left hover:bg-base-200/80 dark:hover:bg-base-content/[0.06] transition-colors"
+        className="flex items-center gap-1.5 py-0.5 text-left hover:opacity-70 transition-opacity"
         onClick={() => setCollapsed(!collapsed)}
       >
         <span
-          className={`text-[10px] text-base-content/30 transition-transform ${
+          className={`text-[10px] text-base-content/25 transition-transform ${
             collapsed ? '' : 'rotate-90'
           }`}
         >
           ▶
         </span>
-        <span className="text-xs text-base-content/40 font-mono">script</span>
-        {result && !hasError && <span className="text-[10px] text-success/50 ml-auto">✓</span>}
-        {hasError && <span className="text-[10px] text-error/60 ml-auto">✗ error</span>}
-        {!result && (
-          <span className="loading loading-spinner loading-xs ml-auto text-base-content/20" />
+        <span className="text-xs text-base-content/30">{label}</span>
+        {hasCompleted && !hasError && <span className="text-[10px] text-success/40">✓</span>}
+        {hasError && <span className="text-[10px] text-error/50">✗</span>}
+        {!hasCompleted && (
+          <span className="loading loading-spinner loading-xs ml-0.5 text-base-content/20" />
         )}
       </button>
 
       {/* Expanded content */}
       {!collapsed && (
-        <>
-          <pre className="px-3 py-2 text-xs overflow-x-auto font-mono text-base-content/70 border-t border-base-content/[0.04]">
-            <code>{script.code}</code>
+        <div className="ml-[18px] border-l border-base-content/[0.06] pl-3 mt-0.5">
+          <pre className="py-1 text-xs font-mono text-base-content/60 max-h-[20rem] overflow-y-auto overflow-x-auto">
+            <code>{block.code}</code>
           </pre>
 
-          {hasOutput && result?.type === 'result' && (
+          {hasOutput && (
             <div
-              className={`px-3 py-2 text-xs font-mono border-t ${
-                hasError
-                  ? 'border-error/10 bg-error/[0.04]'
-                  : 'border-base-content/[0.04] bg-base-content/[0.02]'
+              className={`py-1 text-xs font-mono max-h-[20rem] overflow-y-auto border-t border-base-content/[0.04] mt-1 pt-1 ${
+                hasError ? 'text-error/60' : 'text-base-content/40'
               }`}
             >
-              {result.output && (
-                <pre
-                  className={`whitespace-pre-wrap ${
-                    hasError ? 'text-base-content/60' : 'text-base-content/50'
-                  }`}
-                >
-                  {result.output}
-                </pre>
-              )}
-              {result.error && (
-                <pre className="whitespace-pre-wrap text-error/70 mt-1">{result.error}</pre>
+              {block.output && <pre className="whitespace-pre-wrap">{block.output}</pre>}
+              {block.error && (
+                <pre className="whitespace-pre-wrap text-error/60 mt-1">{block.error}</pre>
               )}
             </div>
           )}
 
-          {result?.type === 'result' && !result.output && !result.error && (
-            <div className="px-3 py-1.5 text-[10px] text-base-content/25 italic border-t border-base-content/[0.04]">
-              No output
-            </div>
+          {hasCompleted && !block.output && !block.error && (
+            <div className="py-0.5 text-[10px] text-base-content/20 italic">No output</div>
           )}
-        </>
+        </div>
       )}
     </div>
   );

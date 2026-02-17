@@ -51,7 +51,6 @@ function createCapturedConsole() {
 
 export async function runLLMProcess(repo: Repo, docUrl: AutomergeUrl): Promise<void> {
   const handle = await repo.find<LLMProcessDoc>(docUrl);
-  await handle.whenReady();
   const doc = handle.doc();
 
   if (!doc || !doc.runs || doc.runs.length === 0) {
@@ -79,7 +78,6 @@ export async function runLLMProcess(repo: Repo, docUrl: AutomergeUrl): Promise<v
   const workspaceUrl = doc.workspaceUrl;
 
   const workspaceHandle = await repo.find<WorkspaceDoc>(workspaceUrl);
-  await workspaceHandle.whenReady();
 
   // Set up the FS for the eval context
   const fs = new AutomergeFS(repo, workspaceHandle);
@@ -154,11 +152,15 @@ export async function runLLMProcess(repo: Repo, docUrl: AutomergeUrl): Promise<v
           const run = d.runs[d.runs.length - 1];
           const runIdx = d.runs.length - 1;
           const last = run.output[run.output.length - 1];
-          if (last && last.type === 'script') {
+          if (last && last.type === 'script' && last.output === undefined) {
             const outputIdx = run.output.length - 1;
             updateText(d, ['runs', runIdx, 'output', outputIdx, 'code'], block.code);
           } else {
-            run.output.push({ type: 'script', code: block.code });
+            if (block.description) {
+              run.output.push({ type: 'script', code: block.code, description: block.description });
+            } else {
+              run.output.push({ type: 'script', code: block.code });
+            }
           }
         });
 
@@ -167,8 +169,22 @@ export async function runLLMProcess(repo: Repo, docUrl: AutomergeUrl): Promise<v
 
           const result = await evalScript(block.code, capturedConsole);
 
+          // Merge result into the existing script block using updateText
           handle.change((d) => {
-            d.runs[d.runs.length - 1].output.push(result);
+            const runIdx = d.runs.length - 1;
+            const run = d.runs[runIdx];
+            const outputIdx = run.output.length - 1;
+            const scriptBlock = run.output[outputIdx];
+            if (scriptBlock.type !== 'script') return;
+            // Always set output to signal completion (empty string = no output)
+            scriptBlock.output = '';
+            if (result.output) {
+              updateText(d, ['runs', runIdx, 'output', outputIdx, 'output'], result.output);
+            }
+            if (result.error) {
+              scriptBlock.error = '';
+              updateText(d, ['runs', runIdx, 'output', outputIdx, 'error'], result.error);
+            }
           });
 
           break;
@@ -229,8 +245,8 @@ function buildLLMMessages(
 
 /**
  * Convert output blocks into alternating assistant/user messages.
- * Text and script blocks are assistant content (what the LLM wrote).
- * Result blocks are user content (environment feedback from script execution).
+ * Text and script code are assistant content (what the LLM wrote).
+ * Script results (output/error) are user content (environment feedback).
  * This ensures the conversation never ends with an assistant message.
  */
 function appendOutputMessages(messages: ChatMessage[], blocks: OutputBlock[]): void {
@@ -240,19 +256,25 @@ function appendOutputMessages(messages: ChatMessage[], blocks: OutputBlock[]): v
     if (block.type === 'text') {
       assistantParts.push(block.content);
     } else if (block.type === 'script') {
-      assistantParts.push(`<script>\n${block.code}\n</script>`);
-    } else if (block.type === 'result') {
-      // Flush accumulated assistant content
-      if (assistantParts.length > 0) {
-        messages.push({ role: 'assistant', content: assistantParts.join('\n') });
-        assistantParts = [];
+      // Script code is assistant content
+      if (block.description) {
+        assistantParts.push(`<script data-description="${block.description}">\n${block.code}\n</script>`);
+      } else {
+        assistantParts.push(`<script>\n${block.code}\n</script>`);
       }
-      // Result is environment feedback — sent as a user message
-      let resultText: string;
-      if (block.error) resultText = `[Error: ${block.error}]`;
-      else if (block.output) resultText = `[Output: ${block.output}]`;
-      else resultText = '[Done]';
-      messages.push({ role: 'user', content: resultText });
+
+      // If the script has a result, flush assistant and emit result as user message
+      if (block.output !== undefined) {
+        if (assistantParts.length > 0) {
+          messages.push({ role: 'assistant', content: assistantParts.join('\n') });
+          assistantParts = [];
+        }
+        let resultText: string;
+        if (block.error) resultText = `[Error: ${block.error}]`;
+        else if (block.output) resultText = `[Output: ${block.output}]`;
+        else resultText = '[Done]';
+        messages.push({ role: 'user', content: resultText });
+      }
     }
   }
 
@@ -264,9 +286,9 @@ function appendOutputMessages(messages: ChatMessage[], blocks: OutputBlock[]): v
 
 const SYSTEM_PROMPT = `You are a coding agent with access to a filesystem and the ability to execute JavaScript.
 
-You can execute code by writing it inside <script> tags:
+You can execute code by writing it inside <script> tags. Add a data-description attribute to briefly describe what the code does:
 
-<script>
+<script data-description="List workspace files">
 const files = await fs.listDir("/")
 console.log(files)
 </script>
@@ -278,6 +300,7 @@ Available APIs in your execution context:
 - fs.mkdir(path) — create a directory
 - fs.rm(path) — remove a file or directory
 - fs.linkDoc(path, automergeUrl) — link an existing automerge document into a folder
+- fs.getDocHandle(path) — get the Automerge DocHandle for a document (for direct Automerge operations)
 - import("/automerge:docId/path/to/file") — import a module from the automerge filesystem
 - import("https://esm.sh/...") — import a module from a URL
 - console.log(...) — output text (captured and shown to you)
@@ -375,13 +398,10 @@ async function* streamChatCompletion(
 async function evalScript(
   code: string,
   capturedConsole: ReturnType<typeof createCapturedConsole>
-): Promise<OutputBlock> {
+): Promise<{ output?: string; error?: string }> {
   capturedConsole.flush();
 
   try {
-    // Shadow `console` locally so the real window.console is not replaced.
-    // `fs` is available as a global on globalThis.
-    // Wrapped in an async function so the LLM can use `return` to produce a value.
     const wrappedCode = `(async () => { const console = globalThis.__llmCapturedConsole;\n${code}\n})()`;
     const returnValue = await eval(wrappedCode);
 
@@ -390,13 +410,12 @@ async function evalScript(
     if (consoleOutput) parts.push(consoleOutput);
     if (returnValue !== undefined) parts.push(stringifyArg(returnValue));
 
-    const result: { type: 'result'; output?: string; error?: string } = { type: 'result' };
+    const result: { output?: string; error?: string } = {};
     if (parts.length > 0) result.output = parts.join('\n');
     return result;
   } catch (err: any) {
     const consoleOutput = capturedConsole.flush();
-    const result: { type: 'result'; output?: string; error?: string } = {
-      type: 'result',
+    const result: { output?: string; error?: string } = {
       error: err.message || String(err),
     };
     if (consoleOutput) result.output = consoleOutput;
