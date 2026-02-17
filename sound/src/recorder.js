@@ -466,6 +466,8 @@ class VinylProcessor extends AudioWorkletProcessor {
 				this.playing = true
 			} else if (e.data.type === "rate") {
 				this.rate = e.data.rate
+			} else if (e.data.type === "restart") {
+				this.playhead = 0
 			} else if (e.data.type === "stop") {
 				this.playing = false
 			}
@@ -480,18 +482,12 @@ class VinylProcessor extends AudioWorkletProcessor {
 		}
 		const len = this.samples.length
 		for (let i = 0; i < output.length; i++) {
+			// Wrap playhead continuously so it always loops
+			if (this.playhead >= len) this.playhead -= len
+			if (this.playhead < 0) this.playhead += len
 			const idx = Math.floor(this.playhead)
-			if (idx >= 0 && idx < len) {
-				output[i] = this.samples[idx]
-			} else {
-				output[i] = 0
-			}
+			output[i] = this.samples[idx] || 0
 			this.playhead += this.rate
-		}
-		if (this.playhead < 0) this.playhead = 0
-		if (this.playhead >= len && this.rate > 0) {
-			this.playing = false
-			this.port.postMessage({type: "ended"})
 		}
 		return true
 	}
@@ -504,6 +500,7 @@ function renderPlayback(root, handle) {
 	let audioContext = null
 	let vinylNode = null
 	let analyser = null
+	let decodedSamples = null
 	let playing = false
 	let animFrame = null
 	let destroyed = false
@@ -574,7 +571,8 @@ function renderPlayback(root, handle) {
 	})()
 
 	async function startPlayback() {
-		if (!rawArrayBuf || playing) return
+		if (!rawArrayBuf || playing || starting) return
+		starting = true
 
 		// Create AudioContext on user gesture so it's not suspended
 		if (!audioContext) {
@@ -589,23 +587,20 @@ function renderPlayback(root, handle) {
 
 		if (audioContext.state === "suspended") await audioContext.resume()
 
-		// Decode audio and send samples to worklet
-		const audioBuffer = await audioContext.decodeAudioData(
-			rawArrayBuf.slice(0)
-		)
-		const samples = audioBuffer.getChannelData(0)
+		// Decode once, reuse for subsequent plays
+		if (!decodedSamples) {
+			const audioBuffer = await audioContext.decodeAudioData(
+				rawArrayBuf.slice(0)
+			)
+			decodedSamples = new Float32Array(audioBuffer.getChannelData(0))
+		}
 
 		vinylNode = new AudioWorkletNode(audioContext, "vinyl-processor", {
 			outputChannelCount: [1],
 		})
-		vinylNode.port.onmessage = e => {
-			if (e.data.type === "ended" && !dragging) {
-				stopPlayback()
-			}
-		}
 
-		// Transfer a copy of the samples to the worklet
-		const samplesCopy = new Float32Array(samples)
+		// Send a copy of samples to the worklet (transfer neuters the buffer)
+		const samplesCopy = new Float32Array(decodedSamples)
 		vinylNode.port.postMessage(
 			{type: "load", samples: samplesCopy},
 			[samplesCopy.buffer]
@@ -615,65 +610,108 @@ function renderPlayback(root, handle) {
 		analyser.connect(audioContext.destination)
 
 		playing = true
+		starting = false
 		root.classList.add("active")
 		drawWaveform()
 	}
 
-	root.addEventListener("mousedown", e => {
+	let didDrag = false
+	let starting = false
+
+	function onPointerDown(x) {
 		if (destroyed || !rawArrayBuf) return
 		dragging = true
-		dragStartX = e.clientX
-		if (!playing) startPlayback()
-	})
+		didDrag = false
+		dragStartX = x
+	}
 
-	root.addEventListener("mousemove", e => {
-		if (!dragging || !playing || !vinylNode) return
-		const dx = e.clientX - dragStartX
-		// ~200px right = 4x, ~200px left = -4x (reverse)
+	function onPointerMove(x) {
+		if (!dragging) return
+		const dx = x - dragStartX
+		if (!didDrag && Math.abs(dx) > 3) {
+			didDrag = true
+			if (!playing && !starting) startPlayback()
+		}
+		if (!didDrag || !playing || !vinylNode) return
 		const sensitivity = 200
 		rate = (dx / sensitivity) * 4
 		if (Math.abs(rate) < 0.1) rate = 0
 		vinylNode.port.postMessage({type: "rate", rate})
-	})
-
-	function onMouseUp() {
-		if (!dragging) return
-		dragging = false
-		rate = 1.0
-		if (vinylNode) vinylNode.port.postMessage({type: "rate", rate: 1.0})
 	}
 
-	root.addEventListener("mouseup", onMouseUp)
-	root.addEventListener("mouseleave", onMouseUp)
+	function onPointerUp() {
+		if (!dragging) return
+		const wasDrag = didDrag
+		dragging = false
+		if (wasDrag) {
+			rate = 1.0
+			if (vinylNode) vinylNode.port.postMessage({type: "rate", rate: 1.0})
+		}
+	}
 
-	root.addEventListener(
-		"touchstart",
-		e => {
-			if (destroyed || !rawArrayBuf) return
-			dragging = true
-			dragStartX = e.touches[0].clientX
-			if (!playing) startPlayback()
-		},
-		{passive: true}
-	)
+	function togglePlayback() {
+		if (destroyed || !rawArrayBuf) return
+		if (playing) {
+			stopPlayback()
+			handle.broadcast({type: "sound:playback", playing: false})
+		} else if (!starting) {
+			startPlayback().then(() => {
+				handle.broadcast({type: "sound:playback", playing: true})
+			})
+		}
+	}
 
-	root.addEventListener(
-		"touchmove",
-		e => {
-			if (!dragging || !playing || !vinylNode) return
-			const dx = e.touches[0].clientX - dragStartX
-			const sensitivity = 200
-			rate = (dx / sensitivity) * 4
-			if (Math.abs(rate) < 0.1) rate = 0
-			vinylNode.port.postMessage({type: "rate", rate})
-		},
-		{passive: true}
-	)
+	root.addEventListener("mousedown", e => onPointerDown(e.clientX))
+	root.addEventListener("mousemove", e => onPointerMove(e.clientX))
+	root.addEventListener("mouseup", onPointerUp)
+	document.addEventListener("mouseup", onPointerUp)
 
-	root.addEventListener("touchend", onMouseUp)
+	// click fires after mouseup — use it for play/pause toggle
+	root.addEventListener("click", e => {
+		if (didDrag) return
+		togglePlayback()
+	})
+
+	// Double-click restarts from the beginning
+	root.addEventListener("dblclick", e => {
+		e.preventDefault()
+		if (destroyed || !rawArrayBuf) return
+		if (playing && vinylNode) {
+			vinylNode.port.postMessage({type: "restart"})
+		} else if (!starting) {
+			startPlayback()
+		}
+		handle.broadcast({type: "sound:playback", playing: true, restart: true})
+	})
+
+	root.addEventListener("touchstart", e => onPointerDown(e.touches[0].clientX), {passive: true})
+	root.addEventListener("touchmove", e => onPointerMove(e.touches[0].clientX), {passive: true})
+	root.addEventListener("touchend", () => {
+		const wasDrag = didDrag
+		onPointerUp()
+		if (!wasDrag) togglePlayback()
+	})
+
+	// Sync play state from other peers
+	function onEphemeral(payload) {
+		const msg = payload.message
+		if (!msg || msg.type !== "sound:playback") return
+		if (msg.playing) {
+			if (msg.restart && playing && vinylNode) {
+				vinylNode.port.postMessage({type: "restart"})
+			} else if (!playing && !starting) {
+				startPlayback()
+			}
+		} else {
+			if (playing) stopPlayback()
+		}
+	}
+	handle.on("ephemeral-message", onEphemeral)
 
 	return () => {
 		destroyed = true
+		handle.off("ephemeral-message", onEphemeral)
+		document.removeEventListener("mouseup", onPointerUp)
 		if (animFrame) cancelAnimationFrame(animFrame)
 		if (vinylNode) vinylNode.disconnect()
 		if (audioContext && audioContext.state !== "closed") audioContext.close()
