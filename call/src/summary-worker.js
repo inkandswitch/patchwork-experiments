@@ -1,7 +1,7 @@
 /**
  * Summary Web Worker
  *
- * Loads distilbart-cnn-6-6 via transformers.js for in-browser summarization.
+ * Loads bart-large-cnn via transformers.js for in-browser summarization.
  * Produces a summary from call transcript text.
  *
  * Messages IN:  { type: "summarize", text: string }
@@ -17,7 +17,7 @@ import {
 
 env.allowLocalModels = false;
 
-const MODEL_ID = "Xenova/distilbart-cnn-6-6";
+const MODEL_ID = "Xenova/bart-large-cnn";
 
 let summarizer = null;
 let loading = false;

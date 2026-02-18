@@ -1,7 +1,7 @@
 /**
  * Whisper transcription Web Worker
  *
- * Loads whisper-base.en with WebGPU via transformers.js and transcribes
+ * Loads whisper-small.en with WebGPU via transformers.js and transcribes
  * audio chunks sent from the main thread.
  *
  * Messages IN:  { type: "transcribe", audio: Float32Array }
@@ -32,7 +32,7 @@ async function loadModel() {
     try {
       transcriber = await pipeline(
         "automatic-speech-recognition",
-        "onnx-community/whisper-base.en",
+        "onnx-community/whisper-small.en",
         {
           device: "webgpu",
           dtype: {
@@ -60,7 +60,7 @@ async function loadModel() {
   try {
     transcriber = await pipeline(
       "automatic-speech-recognition",
-      "onnx-community/whisper-base.en",
+      "onnx-community/whisper-small.en",
       {
         dtype: {
           encoder_model: "fp32",
