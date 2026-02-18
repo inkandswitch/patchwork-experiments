@@ -11,7 +11,7 @@ import {
   parseAutomergeUrl,
   stringifyAutomergeUrl,
 } from "@automerge/automerge-repo";
-import type { FolderDoc, DocLink } from "@inkandswitch/patchwork-filesystem";
+import type { FolderDoc } from "@inkandswitch/patchwork-filesystem";
 import { diffLines } from "diff";
 import type { WorkspaceDoc, MappingEntry, FileChange, DiffRow } from "./types";
 
@@ -389,7 +389,7 @@ function splitLines(value: string): string[] {
 /**
  * Merge all workspace overlay changes back into the original documents.
  *
- * Phase 1: Content merge -- copy clone content to originals.
+ * Phase 1: CRDT merge -- merge clone history into originals.
  * Phase 2: Heads propagation -- update head-pinned URLs bottom-up.
  * Phase 3: Clear mappings.
  */
@@ -402,42 +402,21 @@ export async function mergeChanges(
 
   const mappings = { ...ws.mappings };
 
-  // Build reverse mapping: cloneUrl -> originalUrl
-  const reverseMap = new Map<string, AutomergeUrl>();
-  for (const [origUrl, entry] of Object.entries(mappings)) {
-    reverseMap.set(entry.cloneUrl, origUrl as AutomergeUrl);
-  }
-
-  // Phase 1: Content merge
+  // Phase 1: CRDT merge — merge each clone back into its original.
+  // Mapping keys may contain pinned heads, so we strip them to get
+  // the live writable handle for the original document.
   for (const [originalUrl, entry] of Object.entries(mappings)) {
-    const originalHandle = await repo.find(originalUrl as AutomergeUrl);
+    const { documentId } = parseAutomergeUrl(originalUrl as AutomergeUrl);
+    const bareUrl = stringifyAutomergeUrl({ documentId });
+
+    const originalHandle = await repo.find(bareUrl);
     await originalHandle.whenReady();
     const cloneHandle = await repo.find(entry.cloneUrl);
     await cloneHandle.whenReady();
 
-    const originalDoc = originalHandle.doc() as any;
-    const cloneDoc = cloneHandle.doc() as any;
+    if (!originalHandle.doc() || !cloneHandle.doc()) continue;
 
-    if (!originalDoc || !cloneDoc) continue;
-
-    if (cloneDoc.content !== undefined) {
-      // File: copy content
-      originalHandle.change((d: any) => {
-        d.content = cloneDoc.content;
-      });
-    } else if (Array.isArray(cloneDoc.docs)) {
-      // Folder: sync the docs array, translating cloned URLs back to originals
-      const translatedDocs = (cloneDoc.docs as DocLink[]).map(
-        (link: DocLink) => {
-          const origUrl = reverseMap.get(link.url);
-          return origUrl ? { ...link, url: origUrl } : link;
-        }
-      );
-
-      originalHandle.change((d: any) => {
-        d.docs = translatedDocs;
-      });
-    }
+    originalHandle.merge(cloneHandle);
   }
 
   // Phase 2: Heads propagation -- update head-pinned URLs bottom-up
@@ -472,30 +451,33 @@ async function propagateHeads(
     }
   }
 
-  // Now update any head-pinned URLs in this folder's docs
+  // Update URLs to include current heads.
+  // HACK: match pushwork's behavior for caching — also pin heads on file-type
+  // documents even if they didn't previously have heads.
   let needsUpdate = false;
   const updatedDocs: { index: number; newUrl: AutomergeUrl }[] = [];
 
   for (let i = 0; i < doc.docs.length; i++) {
     const link = doc.docs[i];
     const parsed = parseAutomergeUrl(link.url);
+    const alreadyHadHeads = parsed.heads && parsed.heads.length > 0;
 
-    if (parsed.heads && parsed.heads.length > 0) {
-      // This URL has pinned heads -- update to current heads
-      const childHandle = await repo.find(link.url);
-      await childHandle.whenReady();
-      const currentHeads = childHandle.heads();
+    const shouldPinHeads = alreadyHadHeads || link.type === "file";
+    if (!shouldPinHeads) continue;
 
-      if (currentHeads) {
-        const newUrl = stringifyAutomergeUrl({
-          documentId: parsed.documentId,
-          heads: currentHeads,
-        });
+    const childHandle = await repo.find(link.url);
+    await childHandle.whenReady();
+    const currentHeads = childHandle.heads();
 
-        if (newUrl !== link.url) {
-          updatedDocs.push({ index: i, newUrl });
-          needsUpdate = true;
-        }
+    if (currentHeads) {
+      const newUrl = stringifyAutomergeUrl({
+        documentId: parsed.documentId,
+        heads: currentHeads,
+      });
+
+      if (newUrl !== link.url) {
+        updatedDocs.push({ index: i, newUrl });
+        needsUpdate = true;
       }
     }
   }
