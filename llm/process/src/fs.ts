@@ -173,42 +173,34 @@ export class AutomergeFS {
   }
 
   /**
-   * Get the DocHandle for a document at the given path or automerge URL.
+   * Get the DocHandle for a document at the given filesystem path.
    * Always returns a cloned handle (via COW) — never the original document.
+   * Automerge URLs must be linked into the filesystem first via linkDoc().
    */
-  async getDocHandle(pathOrUrl: string): Promise<DocHandle<any>> {
-    if (isValidAutomergeUrl(pathOrUrl)) {
-      return this.getWritableHandle(pathOrUrl);
-    }
-    const resolved = await this.resolvePath(pathOrUrl);
+  async getDocHandle(path: string): Promise<DocHandle<any>> {
+    const resolved = await this.resolvePath(path);
     if (!resolved) {
-      throw new Error(`Not found: ${pathOrUrl}`);
+      throw new Error(`Not found: ${path}`);
     }
     return this.getWritableHandle(resolved.link.url);
   }
 
   /**
-   * Read a document's content as a string. Accepts a filesystem path or an
-   * automerge URL. For patchwork file docs, returns the content field.
+   * Read a document's content as a string. Accepts a filesystem path only —
+   * automerge URLs must be linked into the filesystem first via linkDoc().
+   * For patchwork file docs, returns the content field.
    * For any other Automerge document, returns its JSON representation.
    */
-  async readDoc(pathOrUrl: string): Promise<string> {
-    let handle: DocHandle<any>;
-
-    if (isValidAutomergeUrl(pathOrUrl)) {
-      const effectiveUrl = this.resolveOverlayUrl(pathOrUrl);
-      handle = await this.repo.find(effectiveUrl);
-    } else {
-      const resolved = await this.resolvePath(pathOrUrl);
-      if (!resolved) {
-        throw new Error(`File not found: ${pathOrUrl}`);
-      }
-      handle = resolved.handle;
+  async readDoc(path: string): Promise<string> {
+    const resolved = await this.resolvePath(path);
+    if (!resolved) {
+      throw new Error(`File not found: ${path}`);
     }
+    const handle = resolved.handle;
 
     const doc = handle.doc();
     if (!doc) {
-      throw new Error(`Document not found: ${pathOrUrl}`);
+      throw new Error(`Document not found: ${path}`);
     }
 
     // Patchwork file docs have a content field

@@ -282,21 +282,23 @@ console.log(files)
 </script>
 
 Available APIs in your execution context:
-- fs.readDoc(pathOrUrl) — read a document as a string (accepts a filesystem path or an automerge: URL)
+- fs.readDoc(path) — read a document as a string by filesystem path
 - fs.writeFile(path, content) — write/create a file (full replacement)
 - fs.patchFile(path, oldStr, newStr) — replace the first occurrence of oldStr with newStr in a file. Prefer this over writeFile for targeted edits to existing files — it's safer and more token-efficient.
 - fs.listFolder(path) — list folder contents (returns [{name, type, url}])
 - fs.createFolder(path) — create a folder
 - fs.move(srcPath, destPath) — move or rename a file or folder
 - fs.remove(path) — remove a file or folder
-- fs.linkDoc(path, automergeUrl) — link an existing automerge document into a folder
-- fs.getDocHandle(pathOrUrl) — get a cloned Automerge DocHandle for a document (accepts a path or automerge: URL; always returns a clone, never the original)
+- fs.linkDoc(path, automergeUrl) — link an existing automerge document into the filesystem at the given path
+- fs.getDocHandle(path) — get an Automerge DocHandle for a document by filesystem path
 - fs.importModule(path) — dynamically import a JS module from the filesystem (e.g. \`await fs.importModule("/skills/search/index.js")\`)
 - import("https://esm.sh/...") — import a module from a URL
 - console.log(...) — output text (captured and shown to you)
 - return value — return a value from the script (shown to you as output)
 
-Patchwork URLs: If you see a URL like https://example.com/#doc=ABCDEF&type=folder&title=Something, extract the doc ID from the #doc= parameter. The automerge URL is automerge:ABCDEF. Use this with fs.linkDoc(path, automergeUrl) or import(). Bare automerge URLs (automerge:ABCDEF) in your task are automatically linked into the workspace.
+IMPORTANT: All fs methods that read or access documents accept filesystem paths only — not raw automerge: URLs. To work with an automerge document, first link it into the filesystem with fs.linkDoc(path, automergeUrl), then access it by path.
+
+Patchwork URLs: If you see a URL like https://example.com/#doc=ABCDEF&type=folder&title=Something, extract the doc ID from the #doc= parameter. The automerge URL is automerge:ABCDEF. Use fs.linkDoc(path, automergeUrl) to link it, then read/browse by path. Bare automerge URLs (automerge:ABCDEF) in your task are automatically linked into the workspace.
 
 After each <script> block you will see the console output, return value, or any errors.
 Use this to inspect results and decide your next steps.
