@@ -419,8 +419,8 @@ export async function mergeChanges(
     originalHandle.merge(cloneHandle);
   }
 
-  // Phase 2: Heads propagation -- update head-pinned URLs bottom-up
-  await propagateHeads(repo, ws.rootFolderUrl);
+  // Phase 2: Strip pinned heads from folder URLs so all references are bare
+  await stripHeadsFromTree(repo, ws.rootFolderUrl);
 
   // Phase 3: Clear mappings and created URLs
   workspaceHandle.change((ws) => {
@@ -430,11 +430,10 @@ export async function mergeChanges(
 }
 
 /**
- * Walk the folder tree bottom-up. For any DocLink whose URL contains pinned
- * heads, update it to reference the current heads of the target document.
- * Processing bottom-up ensures children are finalized before parents.
+ * Walk the folder tree and strip pinned heads from any DocLink URLs,
+ * leaving bare document URLs. Recurses into child folders first (bottom-up).
  */
-async function propagateHeads(
+async function stripHeadsFromTree(
   repo: Repo,
   folderUrl: AutomergeUrl
 ): Promise<void> {
@@ -444,41 +443,23 @@ async function propagateHeads(
 
   if (!doc || !doc.docs) return;
 
-  // Recurse into child folders first (bottom-up)
   for (const link of doc.docs) {
     if (link.type === "folder") {
-      await propagateHeads(repo, link.url);
+      await stripHeadsFromTree(repo, link.url);
     }
   }
 
-  // Update URLs to include current heads.
-  // HACK: match pushwork's behavior for caching — also pin heads on file-type
-  // documents even if they didn't previously have heads.
   let needsUpdate = false;
   const updatedDocs: { index: number; newUrl: AutomergeUrl }[] = [];
 
   for (let i = 0; i < doc.docs.length; i++) {
     const link = doc.docs[i];
     const parsed = parseAutomergeUrl(link.url);
-    const alreadyHadHeads = parsed.heads && parsed.heads.length > 0;
 
-    const shouldPinHeads = alreadyHadHeads || link.type === "file";
-    if (!shouldPinHeads) continue;
-
-    const childHandle = await repo.find(link.url);
-    await childHandle.whenReady();
-    const currentHeads = childHandle.heads();
-
-    if (currentHeads) {
-      const newUrl = stringifyAutomergeUrl({
-        documentId: parsed.documentId,
-        heads: currentHeads,
-      });
-
-      if (newUrl !== link.url) {
-        updatedDocs.push({ index: i, newUrl });
-        needsUpdate = true;
-      }
+    if (parsed.heads && parsed.heads.length > 0) {
+      const bareUrl = stringifyAutomergeUrl({ documentId: parsed.documentId });
+      updatedDocs.push({ index: i, newUrl: bareUrl });
+      needsUpdate = true;
     }
   }
 
