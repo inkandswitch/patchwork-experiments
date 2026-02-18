@@ -96,7 +96,7 @@ const WorkspaceReview = ({ docUrl }: ReactToolProps) => {
       {/* File list summary */}
       {changes.length > 0 && (
         <div className="px-4 py-2 border-b border-base-200 dark:border-base-content/10 flex flex-wrap gap-2">
-          {changes.map((change) => (
+          {changedFiles.map((change) => (
             <a key={change.originalUrl ?? change.cloneUrl ?? change.path} href={`#diff-${encodeURIComponent(change.originalUrl ?? change.path)}`} className="flex items-center gap-1 text-xs font-mono hover:underline">
               <ChangeTypeBadge type={change.changeType} />
               {change.changeType === "moved" && change.oldPath ? (
@@ -106,7 +106,7 @@ const WorkspaceReview = ({ docUrl }: ReactToolProps) => {
                   {change.path}
                 </span>
               ) : (
-                <span className={change.changeType === "unchanged" ? "text-base-content/40" : "text-base-content/70"}>{change.path}</span>
+                <span className="text-base-content/70">{change.path}</span>
               )}
             </a>
           ))}
@@ -132,11 +132,8 @@ const WorkspaceReview = ({ docUrl }: ReactToolProps) => {
 
         {merged && !hasChanges && <div className="flex items-center justify-center py-12 text-success text-sm">All changes have been merged successfully.</div>}
 
-        {changes.map((change) => {
+        {changedFiles.map((change) => {
           const key = change.originalUrl ?? change.cloneUrl ?? change.path;
-          if (change.changeType === "unchanged") {
-            return change.docType === "file" ? <UnchangedFileView key={key} change={change} /> : <UnchangedDocView key={key} change={change} />;
-          }
           return change.docType === "file" ? <FileDiffView key={key} change={change} /> : <DocDiffView key={key} change={change} />;
         })}
       </div>
@@ -262,88 +259,6 @@ function DocDiffView({ change }: { change: FileChange }) {
   );
 }
 
-// ---- Unchanged file card (text content, no diff coloring) ----
-
-function UnchangedFileView({ change }: { change: FileChange }) {
-  const [collapsed, setCollapsed] = useState(true);
-  const repo = useRepo();
-  const [content, setContent] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (collapsed || !change.originalUrl) return;
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const handle = await repo.find(change.originalUrl!);
-        await handle.whenReady();
-        const doc = handle.doc() as any;
-        const text = typeof doc?.content === "string" ? doc.content : doc?.content instanceof Uint8Array ? new TextDecoder().decode(doc.content) : doc?.content !== undefined ? String(doc.content) : "";
-        if (!cancelled) setContent(text);
-      } catch {
-        if (!cancelled) setContent("");
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [collapsed, repo, change.originalUrl]);
-
-  return (
-    <div id={`diff-${encodeURIComponent(change.originalUrl ?? change.path)}`} className="border-b border-base-200 dark:border-base-content/10">
-      <div className="flex items-center gap-2 px-4 py-2 bg-base-200/50 dark:bg-base-content/5 cursor-pointer select-none sticky top-0 z-10" onClick={() => setCollapsed((c) => !c)}>
-        <span className="text-xs text-base-content/40">{collapsed ? "\u25B6" : "\u25BC"}</span>
-        <ChangeTypeBadge type={change.changeType} />
-        <FilePathLabel change={change} />
-      </div>
-
-      {!collapsed && content !== null && (
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse font-mono text-xs leading-5">
-            <tbody>
-              {content.split("\n").map((line, i, arr) => {
-                if (i === arr.length - 1 && line === "") return null;
-                return (
-                  <tr key={i}>
-                    <td className="w-10 text-right pr-2 select-none bg-base-200/20 dark:bg-base-content/3">
-                      <span className="text-base-content/30">{i + 1}</span>
-                    </td>
-                    <td className="px-2 whitespace-pre">{line}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ---- Unchanged doc card (non-file, rendered via patchwork-view) ----
-
-function UnchangedDocView({ change }: { change: FileChange }) {
-  const [collapsed, setCollapsed] = useState(true);
-
-  return (
-    <div id={`diff-${encodeURIComponent(change.originalUrl ?? change.path)}`} className="border-b border-base-200 dark:border-base-content/10">
-      <div className="flex items-center gap-2 px-4 py-2 bg-base-200/50 dark:bg-base-content/5 cursor-pointer select-none sticky top-0 z-10" onClick={() => setCollapsed((c) => !c)}>
-        <span className="text-xs text-base-content/40">{collapsed ? "\u25B6" : "\u25BC"}</span>
-        <ChangeTypeBadge type={change.changeType} />
-        <FilePathLabel change={change} />
-        <span className="text-xs text-base-content/30 ml-auto">{change.docType}</span>
-      </div>
-
-      {!collapsed && change.originalUrl && (
-        <div className="h-[400px] border border-base-200 dark:border-base-content/10 m-2 rounded overflow-hidden">
-          <patchwork-view doc-url={change.originalUrl} />
-        </div>
-      )}
-    </div>
-  );
-}
-
 function computeFileDiffRows(change: FileChange): DiffRow[] {
   if (change.changeType === "modified") {
     return computeSideBySideDiff(change.originalContent ?? "", change.modifiedContent ?? "");
@@ -440,14 +355,8 @@ function FilePathLabel({ change }: { change: FileChange }) {
 }
 
 function ChangeTypeBadge({ type }: { type: FileChange["changeType"] }) {
-  if (type === "unchanged") {
-    return <span className="badge badge-xs badge-ghost font-bold">{"\u2013"}</span>;
-  }
-
   const cls = type === "modified" ? "badge-warning" : type === "added" ? "badge-success" : type === "moved" ? "badge-info" : "badge-error";
-
   const label = type === "modified" ? "M" : type === "added" ? "A" : type === "moved" ? "R" : "D";
-
   return <span className={`badge badge-xs font-bold ${cls}`}>{label}</span>;
 }
 
