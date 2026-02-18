@@ -24,6 +24,7 @@ const ChatView = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   const [taskInput, setTaskInput] = useState('');
   const [status, setStatus] = useState<'idle' | 'running' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const isRunningRef = useRef(false);
   const outputEndRef = useRef<HTMLDivElement>(null);
 
@@ -95,6 +96,51 @@ const ChatView = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     [handleRun]
   );
 
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('text/x-patchwork-dnd')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      setDragOver(true);
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      setDragOver(false);
+      const dndData = e.dataTransfer?.getData('text/x-patchwork-dnd');
+      if (!dndData) return;
+      e.preventDefault();
+
+      const { items } = JSON.parse(dndData) as {
+        source: string;
+        items: { url: string; type: string; name: string }[];
+      };
+      if (!items?.length) return;
+
+      const snippet = items
+        .map((item) => {
+          const docId = item.url?.replace(/^automerge:/, '');
+          if (!docId) return item.name ?? 'untitled';
+          const params = new URLSearchParams({ doc: docId });
+          if (item.type) params.set('type', item.type);
+          if (item.name) params.set('title', item.name);
+          return `[${item.name ?? 'untitled'}](#${params})`;
+        })
+        .join('\n');
+
+      setTaskInput((prev) => {
+        const sep = prev.length > 0 && !prev.endsWith('\n') ? '\n' : '';
+        return prev + sep + snippet;
+      });
+    },
+    []
+  );
+
   return (
     <div className="flex flex-col h-full bg-base-100 dark:bg-base-300 max-w-[1024px] mx-auto w-full">
       {/* Output area */}
@@ -122,7 +168,16 @@ const ChatView = ({ docUrl }: { docUrl: AutomergeUrl }) => {
 
       {/* Input area */}
       <div className="px-4 pb-3 pt-1">
-        <div className="rounded-xl bg-base-200/60 dark:bg-base-content/[0.04] ring-1 ring-base-content/[0.06] focus-within:ring-primary/30 transition-shadow">
+        <div
+          className={`rounded-xl bg-base-200/60 dark:bg-base-content/[0.04] ring-1 transition-shadow ${
+            dragOver
+              ? 'ring-primary/50 bg-primary/[0.04]'
+              : 'ring-base-content/[0.06] focus-within:ring-primary/30'
+          }`}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
           <textarea
             className="w-full bg-transparent text-sm px-4 pt-3 pb-2 min-h-[2.5rem] max-h-[10rem] resize-none outline-none placeholder:text-base-content/30"
             placeholder="What would you like to do?"
@@ -212,7 +267,9 @@ function RunView({
   return (
     <div className={`${!isLast ? 'mb-8' : ''}`}>
       <div className="group relative rounded-lg bg-base-200 dark:bg-base-content/[0.04] px-3 py-2 mb-3">
-        <div className="text-sm whitespace-pre-wrap leading-relaxed pr-6">{run.task}</div>
+        <div className={`text-sm leading-relaxed pr-6 ${PROSE_CLASSES}`}>
+          <Markdown>{run.task}</Markdown>
+        </div>
         {canDelete && (
           <button
             className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity text-base-content/30 hover:text-error text-xs px-1"
