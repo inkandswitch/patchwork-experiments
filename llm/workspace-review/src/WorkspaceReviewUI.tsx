@@ -128,7 +128,7 @@ const WorkspaceReview = ({ docUrl }: ReactToolProps) => {
           </div>
         )}
 
-        {!loading && changes.length === 0 && !merged && <div className="flex items-center justify-center py-12 text-base-content/40 text-sm">No changes in this workspace !!!</div>}
+        {!loading && changes.length === 0 && !merged && <div className="flex items-center justify-center py-12 text-base-content/40 text-sm">No changes in this workspace</div>}
 
         {merged && !hasChanges && <div className="flex items-center justify-center py-12 text-success text-sm">All changes have been merged successfully.</div>}
 

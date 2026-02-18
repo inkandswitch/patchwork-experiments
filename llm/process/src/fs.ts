@@ -441,6 +441,16 @@ export class AutomergeFS {
       doc.docs.splice(idx, 1);
     });
   }
+
+  /**
+   * Import a module from the filesystem by path.
+   * Translates e.g. "/skills/search/index.js" into
+   * import("/automerge:<rootFolderDocId>/skills/search/index.js").
+   */
+  async importModule(pathStr: string): Promise<any> {
+    const normalizedPath = pathStr.startsWith('/') ? pathStr.slice(1) : pathStr;
+    return import(`/${this.rootFolderUrl}/${normalizedPath}`);
+  }
 }
 
 function guessMimeType(ext: string): string {

@@ -2,16 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useDocument, useRepo } from '@automerge/automerge-repo-react-hooks';
 import { toolify } from '@inkandswitch/patchwork-react';
 import type { ToolImplementation } from '@inkandswitch/patchwork-plugins';
-import { parseAutomergeUrl, type AutomergeUrl } from '@automerge/automerge-repo';
+import type { AutomergeUrl } from '@automerge/automerge-repo';
 import Markdown from 'react-markdown';
-import type { LLMProcessDoc, TaskRun, OutputBlock } from './types';
-import { runLLMProcess } from './llm-process';
-import './styles.css';
-
-type ReactToolProps = {
-  docUrl: AutomergeUrl;
-  element: any;
-};
+import type { LLMProcessDoc, TaskRun, OutputBlock } from '../types';
+import { runLLMProcess } from '../llm-process';
 
 const AVAILABLE_MODELS = [
   'anthropic/claude-opus-4.6',
@@ -21,7 +15,7 @@ const AVAILABLE_MODELS = [
   'google/gemini-2.5-pro-preview',
 ];
 
-const LLMProcessEditor = ({ docUrl }: ReactToolProps) => {
+const ChatView = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   const repo = useRepo();
   const [doc, changeDoc] = useDocument<LLMProcessDoc>(docUrl, {
     suspense: true,
@@ -33,7 +27,6 @@ const LLMProcessEditor = ({ docUrl }: ReactToolProps) => {
   const isRunningRef = useRef(false);
   const outputEndRef = useRef<HTMLDivElement>(null);
 
-  // Scroll to bottom when output changes
   useEffect(() => {
     outputEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [doc?.runs]);
@@ -41,7 +34,6 @@ const LLMProcessEditor = ({ docUrl }: ReactToolProps) => {
   const handleRun = useCallback(async () => {
     if (!taskInput.trim() || isRunningRef.current) return;
 
-    // Push a new TaskRun onto the doc
     changeDoc((d) => {
       d.runs.push({
         task: taskInput.trim(),
@@ -59,7 +51,7 @@ const LLMProcessEditor = ({ docUrl }: ReactToolProps) => {
       await runLLMProcess(repo, docUrl);
       setStatus('idle');
     } catch (err: any) {
-      console.error('[LLMProcessUI] Run error:', err);
+      console.error('[ChatView] Run error:', err);
       setStatus('error');
       setErrorMsg(err.message || String(err));
     } finally {
@@ -79,7 +71,6 @@ const LLMProcessEditor = ({ docUrl }: ReactToolProps) => {
 
   const handleClearContext = useCallback(() => {
     if (isRunningRef.current) return;
-
     changeDoc((d) => {
       d.runs = [];
     });
@@ -105,96 +96,80 @@ const LLMProcessEditor = ({ docUrl }: ReactToolProps) => {
   );
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Top bar */}
-      <div className="flex items-center justify-end gap-2 px-4 py-1.5 text-xs text-base-content/40 bg-base-300">
-        {doc.workspaceUrl && (
-          <a
-            className="hover:text-base-content/70 transition-colors"
-            href={`https://tiny.patchwork.inkandswitch.com/#doc=${
-              parseAutomergeUrl(doc.workspaceUrl).documentId
-            }&tool=workspace-review`}
-          >
-            Review changes
-          </a>
+    <div className="flex flex-col h-full bg-base-100 dark:bg-base-300 max-w-[1024px] mx-auto w-full">
+      {/* Output area */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4">
+        {doc.runs.map((run, runIdx) => (
+          <RunView
+            key={runIdx}
+            run={run}
+            runIndex={runIdx}
+            isLast={runIdx === doc.runs.length - 1}
+            isRunning={status === 'running' && runIdx === doc.runs.length - 1}
+            onDelete={() => handleDeleteRun(runIdx)}
+            canDelete={status !== 'running'}
+          />
+        ))}
+
+        {errorMsg && (
+          <div className="ml-7 mt-2 text-sm text-error/80 bg-error/[0.06] rounded-lg px-3 py-2">
+            {errorMsg}
+          </div>
         )}
-        {doc.workspaceUrl && doc.runs.length > 0 && <span className="opacity-30">·</span>}
-        {doc.runs.length > 0 && (
-          <button
-            className="hover:text-base-content/70 transition-colors"
-            onClick={handleClearContext}
-            disabled={status === 'running'}
-          >
-            Clear context
-          </button>
-        )}
+
+        <div ref={outputEndRef} />
       </div>
-      <div className="flex flex-col h-full bg-base-100 dark:bg-base-300 max-w-[1024px] mx-auto w-full">
-        {/* Output area */}
-        <div className="flex-1 overflow-y-auto px-4 py-4">
-          {doc.runs.map((run, runIdx) => (
-            <RunView
-              key={runIdx}
-              run={run}
-              runIndex={runIdx}
-              isLast={runIdx === doc.runs.length - 1}
-              isRunning={status === 'running' && runIdx === doc.runs.length - 1}
-              onDelete={() => handleDeleteRun(runIdx)}
-              canDelete={status !== 'running'}
-            />
-          ))}
 
-          {errorMsg && (
-            <div className="ml-7 mt-2 text-sm text-error/80 bg-error/[0.06] rounded-lg px-3 py-2">
-              {errorMsg}
-            </div>
-          )}
-
-          <div ref={outputEndRef} />
-        </div>
-
-        {/* Input area */}
-        <div className="px-4 pb-3 pt-1">
-          <div className="rounded-xl bg-base-200/60 dark:bg-base-content/[0.04] ring-1 ring-base-content/[0.06] focus-within:ring-primary/30 transition-shadow">
-            <textarea
-              className="w-full bg-transparent text-sm px-4 pt-3 pb-2 min-h-[2.5rem] max-h-[10rem] resize-none outline-none placeholder:text-base-content/30"
-              placeholder="What would you like to do?"
-              value={taskInput}
-              onChange={(e) => setTaskInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              disabled={status === 'running'}
-              rows={1}
-            />
-            <div className="flex items-center justify-between px-3 pb-2">
-              <div className="flex items-center gap-2 text-xs text-base-content/35">
-                <select
-                  className="bg-transparent outline-none font-mono cursor-pointer hover:text-base-content/60 transition-colors"
-                  value={doc.config.model}
-                  onChange={(e) => handleModelChange(e.target.value)}
+      {/* Input area */}
+      <div className="px-4 pb-3 pt-1">
+        <div className="rounded-xl bg-base-200/60 dark:bg-base-content/[0.04] ring-1 ring-base-content/[0.06] focus-within:ring-primary/30 transition-shadow">
+          <textarea
+            className="w-full bg-transparent text-sm px-4 pt-3 pb-2 min-h-[2.5rem] max-h-[10rem] resize-none outline-none placeholder:text-base-content/30"
+            placeholder="What would you like to do?"
+            value={taskInput}
+            onChange={(e) => setTaskInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={status === 'running'}
+            rows={1}
+          />
+          <div className="flex items-center justify-between px-3 pb-2">
+            <div className="flex items-center gap-2 text-xs text-base-content/35">
+              <select
+                className="bg-transparent outline-none font-mono cursor-pointer hover:text-base-content/60 transition-colors"
+                value={doc.config.model}
+                onChange={(e) => handleModelChange(e.target.value)}
+                disabled={status === 'running'}
+              >
+                {AVAILABLE_MODELS.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+                {!AVAILABLE_MODELS.includes(doc.config.model) && (
+                  <option value={doc.config.model}>{doc.config.model}</option>
+                )}
+              </select>
+              {doc.runs.length > 0 && (
+                <button
+                  className="hover:text-base-content/60 transition-colors"
+                  onClick={handleClearContext}
                   disabled={status === 'running'}
                 >
-                  {AVAILABLE_MODELS.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                  {!AVAILABLE_MODELS.includes(doc.config.model) && (
-                    <option value={doc.config.model}>{doc.config.model}</option>
-                  )}
-                </select>
-              </div>
-              <div className="flex items-center gap-2">
-                {status === 'running' && (
-                  <span className="loading loading-spinner loading-xs text-base-content/30" />
-                )}
-                <button
-                  className="text-xs font-medium px-3 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                  onClick={handleRun}
-                  disabled={status !== 'idle' || !taskInput.trim()}
-                >
-                  Run
+                  Clear context
                 </button>
-              </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {status === 'running' && (
+                <span className="loading loading-spinner loading-xs text-base-content/30" />
+              )}
+              <button
+                className="text-xs font-medium px-3 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                onClick={handleRun}
+                disabled={status !== 'idle' || !taskInput.trim()}
+              >
+                Run
+              </button>
             </div>
           </div>
         </div>
@@ -229,7 +204,6 @@ function RunView({
   onDelete: () => void;
   canDelete: boolean;
 }) {
-  // Find the last script block index for default-expand logic
   const lastScriptIdx = run.output.reduce(
     (acc, block, idx) => (block.type === 'script' ? idx : acc),
     -1
@@ -237,7 +211,6 @@ function RunView({
 
   return (
     <div className={`${!isLast ? 'mb-8' : ''}`}>
-      {/* Task message */}
       <div className="group relative rounded-lg bg-base-200 dark:bg-base-content/[0.04] px-3 py-2 mb-3">
         <div className="text-sm whitespace-pre-wrap leading-relaxed pr-6">{run.task}</div>
         {canDelete && (
@@ -251,7 +224,6 @@ function RunView({
         )}
       </div>
 
-      {/* Assistant output */}
       <div className="space-y-2">
         {run.output.map((block, bIdx) => {
           if (block.type === 'text') {
@@ -293,14 +265,12 @@ function ScriptBlockView({
   const hasError = !!block.error;
   const hasOutput = !!(block.output || block.error);
 
-  // Last script block defaults to expanded; completed non-last blocks start collapsed
   const [collapsed, setCollapsed] = useState(hasCompleted && !isLastScript);
 
   const label = block.description || 'Code';
 
   return (
     <div className="my-1">
-      {/* Header — subtle, no background, like the reference screenshot */}
       <button
         className="flex items-center gap-1.5 py-0.5 text-left hover:opacity-70 transition-opacity"
         onClick={() => setCollapsed(!collapsed)}
@@ -320,7 +290,6 @@ function ScriptBlockView({
         )}
       </button>
 
-      {/* Expanded content */}
       {!collapsed && (
         <div className="ml-[18px] border-l border-base-content/[0.06] pl-3 mt-0.5">
           <pre className="py-1 text-xs font-mono text-base-content/60 max-h-[20rem] overflow-y-auto overflow-x-auto">
@@ -349,4 +318,4 @@ function ScriptBlockView({
   );
 }
 
-export const renderLLMProcessEditor: ToolImplementation = toolify(LLMProcessEditor);
+export const renderProcessChat: ToolImplementation = toolify(ChatView);

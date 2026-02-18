@@ -1,4 +1,5 @@
 import { Plugin } from '@inkandswitch/patchwork-plugins';
+import { AutomergeFS } from './fs';
 
 export const plugins: Plugin<any>[] = [
   {
@@ -8,8 +9,30 @@ export const plugins: Plugin<any>[] = [
     icon: 'Bot',
     supportedDatatypes: ['llm-process'],
     async load() {
-      const { renderLLMProcessEditor } = await import('./LLMProcessUI');
+      const { renderLLMProcessEditor } = await import('./components/LLMProcessUI');
       return renderLLMProcessEditor;
+    },
+  },
+  {
+    type: 'patchwork:tool',
+    id: 'llm-process-chat',
+    name: 'LLM Process Chat',
+    icon: 'MessageSquare',
+    supportedDatatypes: ['llm-process'],
+    async load() {
+      const { renderProcessChat } = await import('./components/ChatView');
+      return renderProcessChat;
+    },
+  },
+  {
+    type: 'patchwork:tool',
+    id: 'llm-process-context',
+    name: 'LLM Process Context',
+    icon: 'FileText',
+    supportedDatatypes: ['llm-process'],
+    async load() {
+      const { renderProcessContext } = await import('./components/ContextView');
+      return renderProcessContext;
     },
   },
   {
@@ -24,4 +47,4 @@ export const plugins: Plugin<any>[] = [
   },
 ];
 
-console.log('llm v27');
+console.log('llm v31');

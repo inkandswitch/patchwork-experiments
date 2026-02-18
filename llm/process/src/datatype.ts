@@ -1,6 +1,7 @@
 import { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
 import type { LLMProcessDoc, WorkspaceDoc } from './types';
 import { FolderDoc, HasPatchworkMetadata } from '@inkandswitch/patchwork-filesystem';
+import { SKILLS_FOLDER_URL } from './llm-process';
 
 export const LLMProcessDatatype: DatatypeImplementation<LLMProcessDoc> = {
   init: (doc: LLMProcessDoc, repo) => {
@@ -14,7 +15,7 @@ export const LLMProcessDatatype: DatatypeImplementation<LLMProcessDoc> = {
     folderHandle.change((d) => {
       d.title = 'Root';
       d['@patchwork'] = { type: 'folder' };
-      d.docs = [];
+      d.docs = [{ url: SKILLS_FOLDER_URL, name: 'skills', type: 'folder' }];
     });
 
     const wsHandle = repo.create<WorkspaceDoc & HasPatchworkMetadata>();

@@ -21,7 +21,6 @@ export type LLMProcessDoc = {
     apiUrl: string; // OpenAI-compatible endpoint
     model: string; // e.g. "gpt-4o"
   };
-  rootFolderUrl: AutomergeUrl; // The folder this process can access
   workspaceUrl: AutomergeUrl; // Points to the WorkspaceDoc for COW
   runs: TaskRun[]; // All task runs, most recent last
 };

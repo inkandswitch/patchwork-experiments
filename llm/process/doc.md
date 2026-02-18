@@ -1,6 +1,6 @@
 # code-agent
 
-A minimal coding agent that runs in the browser main thread. The LLM's output is text interleaved with `<script>` blocks that get evaluated incrementally. It operates on an Automerge-based filesystem with copy-on-write protection (original documents are never mutated) and can import skills (folders with a README + JS SDK).
+A minimal coding agent that runs in the browser main thread. The LLM's output is text interleaved with `<script>` blocks that get evaluated incrementally. It operates on an Automerge-based filesystem with copy-on-write protection (original documents are never mutated) and can import skills (folders following the Agent Skills spec with SKILL.md + optional scripts).
 
 ## Architecture
 
@@ -39,7 +39,6 @@ type LLMProcessDoc = {
     apiUrl: string; // OpenAI-compatible endpoint
     model: string;  // e.g. "anthropic/claude-opus-4.6"
   };
-  rootFolderUrl: AutomergeUrl;
   workspaceUrl: AutomergeUrl;  // points to WorkspaceDoc
   runs: TaskRun[];             // all task runs, most recent last
 };
@@ -96,6 +95,8 @@ The workspace is a self-contained document that can be loaded independently of t
 2. Create or load WorkspaceDoc (COW overlay)
 3. Create AutomergeFS backed by workspace handle
 4. Auto-link any patchwork URLs found in the task text (supports both #doc= fragment URLs and bare automerge: URLs)
+5. Link external skills folder into the workspace (from hardcoded automerge URL)
+6. Discover skills by reading SKILL.md frontmatter from /skills/*
 
 for each iteration (max 20):
   5. Build messages from all runs
@@ -161,16 +162,35 @@ Available inside `<script>` blocks:
 
 ## Skills
 
-Skills are just folders in the Automerge filesystem:
+Skills follow the [Agent Skills](https://agentskills.io) format and are loaded from an external Automerge folder. At startup, the agent links the skills folder from `automerge:2qTWd74BsagyJCDqn5dpYHYBHWsc/skills` into the workspace at `/skills` (skipped if `/skills` already exists).
+
+Each skill is a folder containing a `SKILL.md` file with YAML frontmatter:
 
 ```
 skills/
   some-skill/
-    README.md     ← agent reads for API docs
-    index.js      ← agent imports via import("/automerge:<rootId>/skills/some-skill/index.js")
+    SKILL.md        ← required: frontmatter (name, description) + instructions
+    scripts/        ← optional: executable code the agent can import
+    references/     ← optional: additional documentation
+    assets/         ← optional: templates, data files, etc.
 ```
 
-No registration. Agent discovers skills by listing `skills/` and reading READMEs.
+### Skill discovery (progressive disclosure)
+
+1. **Metadata** (~100 tokens): `name` and `description` from SKILL.md frontmatter are loaded at startup for all skills and included in the system prompt
+2. **Instructions**: The full SKILL.md body is loaded when the agent activates a skill via `fs.readDoc("/skills/<name>/SKILL.md")`
+3. **Resources**: Files in `scripts/`, `references/`, `assets/` are loaded only when referenced by SKILL.md
+
+### SKILL.md frontmatter
+
+```yaml
+---
+name: some-skill
+description: What this skill does and when to use it.
+---
+```
+
+The `name` field must be lowercase alphanumeric + hyphens (max 64 chars, must match the directory name). The `description` field (max 1024 chars) should describe both what the skill does and when to use it.
 
 ## Config
 

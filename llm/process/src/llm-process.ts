@@ -8,10 +8,11 @@
 
 import type { Repo } from '@automerge/automerge-repo';
 import { isValidAutomergeUrl, updateText, type AutomergeUrl } from '@automerge/automerge-repo';
-import type { FolderDoc } from '@inkandswitch/patchwork-filesystem';
 import { AutomergeFS } from './fs';
 import { parseScriptBlocks } from './parser';
 import type { LLMProcessDoc, OutputBlock, WorkspaceDoc } from './types';
+
+export const SKILLS_FOLDER_URL = 'automerge:2JmCge8uTsj6ytyYpRhswQPQTDcf' as AutomergeUrl;
 
 // --- Captured console for eval context ---
 
@@ -59,20 +60,6 @@ export async function runLLMProcess(repo: Repo, docUrl: AutomergeUrl): Promise<v
 
   const { apiUrl, model } = doc.config;
   const apiKey = (import.meta as any).env?.VITE_LLM_API_KEY || '';
-
-  // Auto-create root folder if missing
-  let rootFolderUrl = doc.rootFolderUrl;
-  if (!rootFolderUrl) {
-    const folderHandle = repo.create<FolderDoc>();
-    folderHandle.change((d) => {
-      d.title = 'Root';
-      d.docs = [];
-    });
-    rootFolderUrl = folderHandle.url;
-    handle.change((d) => {
-      d.rootFolderUrl = rootFolderUrl;
-    });
-  }
 
   // Create or load the workspace doc (COW overlay)
   const workspaceUrl = doc.workspaceUrl;
@@ -122,7 +109,7 @@ export async function runLLMProcess(repo: Repo, docUrl: AutomergeUrl): Promise<v
     const currentDoc = handle.doc();
     if (!currentDoc) break;
 
-    const messages = buildLLMMessages(currentDoc, skills, rootFolderUrl, rootListing);
+    const messages = buildLLMMessages(currentDoc, skills, rootListing);
     const stream = streamChatCompletion(apiUrl, apiKey, model, messages);
 
     let foundScript = false;
@@ -200,22 +187,21 @@ export async function runLLMProcess(repo: Repo, docUrl: AutomergeUrl): Promise<v
 
 // --- LLM message building ---
 
-type ChatMessage = {
+export type ChatMessage = {
   role: 'system' | 'user' | 'assistant';
   content: string;
 };
 
-function buildLLMMessages(
+export function buildLLMMessages(
   doc: LLMProcessDoc,
   skills: SkillInfo[] = [],
-  rootFolderUrl?: AutomergeUrl,
   rootListing: { name: string; type: string; url: string }[] = []
 ): ChatMessage[] {
   const messages: ChatMessage[] = [];
 
   let systemPrompt = SYSTEM_PROMPT;
-  if (skills.length > 0 && rootFolderUrl) {
-    systemPrompt += buildSkillsPromptSection(skills, rootFolderUrl);
+  if (skills.length > 0) {
+    systemPrompt += buildSkillsPromptSection(skills);
   }
   if (rootListing.length > 0) {
     const entries = rootListing.map((e) => `  ${e.name} (${e.type}) — ${e.url}`).join('\n');
@@ -286,7 +272,7 @@ function appendOutputMessages(messages: ChatMessage[], blocks: OutputBlock[]): v
   }
 }
 
-const SYSTEM_PROMPT = `You are a coding agent with access to a filesystem and the ability to execute JavaScript.
+export const SYSTEM_PROMPT = `You are a coding agent with access to a filesystem and the ability to execute JavaScript.
 
 You can execute code by writing it inside <script> tags. Add a data-description attribute to briefly describe what the code does:
 
@@ -305,7 +291,7 @@ Available APIs in your execution context:
 - fs.remove(path) — remove a file or folder
 - fs.linkDoc(path, automergeUrl) — link an existing automerge document into a folder
 - fs.getDocHandle(pathOrUrl) — get a cloned Automerge DocHandle for a document (accepts a path or automerge: URL; always returns a clone, never the original)
-- import("/automerge:docId/path/to/file") — import a module from the automerge filesystem
+- fs.importModule(path) — dynamically import a JS module from the filesystem (e.g. \`await fs.importModule("/skills/search/index.js")\`)
 - import("https://esm.sh/...") — import a module from a URL
 - console.log(...) — output text (captured and shown to you)
 - return value — return a value from the script (shown to you as output)
@@ -322,20 +308,33 @@ Tips:
 - For editing existing files, prefer fs.patchFile() for targeted changes over fs.writeFile() for full rewrites. This is more reliable and avoids issues with large content replacements.
 - Use \`return value\` to inspect values; it's the most reliable way to see output.`;
 
-function buildSkillsPromptSection(skills: SkillInfo[], rootFolderUrl: AutomergeUrl): string {
-  const exampleSkill = skills[0];
+function buildSkillsPromptSection(skills: SkillInfo[]): string {
   const lines = skills.map((s) => `- **${s.name}** — ${s.description}`);
   return `
 
 ## Available Skills
 
-Skills are reusable modules in /skills/. Read a skill's README for full docs with fs.readDoc("/skills/<name>/README.md"), then import its code:
+Skills are reusable modules in /skills/. You MUST read a skill's SKILL.md before using it — it contains the API, required arguments, and import instructions:
 
 \`\`\`
-const mod = await import("/${rootFolderUrl}/skills/${exampleSkill.folder}/index.js")
+const instructions = await fs.readDoc("/skills/<skill-name>/SKILL.md")
 \`\`\`
 
 ${lines.join('\n')}`;
+}
+
+/**
+ * Build the full system prompt including dynamically discovered skills.
+ * Uses AutomergeFS to read the skills folder so all content-reading logic
+ * stays in one place.
+ */
+export async function buildFullSystemPrompt(fs: AutomergeFS): Promise<string> {
+  let prompt = SYSTEM_PROMPT;
+  const skills = await discoverSkills(fs);
+  if (skills.length > 0) {
+    prompt += buildSkillsPromptSection(skills);
+  }
+  return prompt;
 }
 
 // --- LLM streaming ---
@@ -516,15 +515,15 @@ async function discoverSkills(fs: AutomergeFS): Promise<SkillInfo[]> {
   for (const entry of entries) {
     if (entry.type !== 'folder') continue;
     try {
-      const readme = await fs.readDoc(`/skills/${entry.name}/README.md`);
-      const fm = parseFrontmatter(readme);
+      const skillMd = await fs.readDoc(`/skills/${entry.name}/SKILL.md`);
+      const fm = parseFrontmatter(skillMd);
       skills.push({
         name: fm.name || entry.name,
         description: fm.description || '',
         folder: entry.name,
       });
     } catch {
-      // Skill folder without a README — skip
+      // Skill folder without SKILL.md — skip
     }
   }
   return skills;
