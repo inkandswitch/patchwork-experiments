@@ -231,6 +231,94 @@ function createStyles() {
     .call-local-status .call-retry-btn:hover {
       background: rgba(255, 255, 255, 0.35);
     }
+
+    .call-lobby {
+      position: absolute;
+      inset: 0;
+      z-index: 20;
+      background: #111;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      font-family: system-ui, -apple-system, sans-serif;
+      color: white;
+    }
+
+    .call-lobby-preview {
+      width: 320px;
+      max-width: 80%;
+      aspect-ratio: 4 / 3;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #16213e;
+      position: relative;
+    }
+
+    .call-lobby-preview video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+    }
+
+    .call-lobby-controls {
+      display: flex;
+      gap: 10px;
+    }
+
+    .call-lobby-toggle {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.15);
+      color: white;
+      transition: background 0.15s;
+    }
+
+    .call-lobby-toggle:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    .call-lobby-toggle.off {
+      background: #dc2626;
+    }
+
+    .call-lobby-join {
+      padding: 12px 36px;
+      border-radius: 24px;
+      border: none;
+      background: #22c55e;
+      color: white;
+      font-size: 16px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .call-lobby-join:hover {
+      background: #16a34a;
+    }
+
+    .call-lobby-name {
+      font-size: 14px;
+      opacity: 0.7;
+    }
+
+    .call-lobby-error {
+      font-size: 13px;
+      color: #f87171;
+      text-align: center;
+      max-width: 280px;
+    }
   `;
   return style;
 }
@@ -1145,13 +1233,91 @@ export default function TelephoneTool(handle, element) {
   }
   navigator.mediaDevices.addEventListener("devicechange", onDeviceChange);
 
-  // ---- Start ----
-  async function start() {
+  // ---- Lobby ----
+  const lobby = document.createElement("div");
+  lobby.className = "call-lobby";
+
+  const lobbyPreview = document.createElement("div");
+  lobbyPreview.className = "call-lobby-preview";
+  const lobbyVideo = document.createElement("video");
+  lobbyVideo.autoplay = true;
+  lobbyVideo.muted = true;
+  lobbyVideo.playsInline = true;
+  lobbyPreview.appendChild(lobbyVideo);
+  lobby.appendChild(lobbyPreview);
+
+  const lobbyNameEl = document.createElement("div");
+  lobbyNameEl.className = "call-lobby-name";
+  lobbyNameEl.textContent = "Loading\u2026";
+  lobby.appendChild(lobbyNameEl);
+
+  const lobbyControls = document.createElement("div");
+  lobbyControls.className = "call-lobby-controls";
+
+  const lobbyCamBtn = document.createElement("button");
+  lobbyCamBtn.className = "call-lobby-toggle";
+  lobbyCamBtn.textContent = "\u{1F4F7}";
+  lobbyCamBtn.title = "Toggle camera";
+  lobbyCamBtn.addEventListener("click", () => {
+    if (!localStream) return;
+    cameraEnabled = !cameraEnabled;
+    for (const track of localStream.getVideoTracks()) {
+      track.enabled = cameraEnabled;
+    }
+    lobbyCamBtn.className = `call-lobby-toggle${cameraEnabled ? "" : " off"}`;
+    camBtn.className = `call-btn${cameraEnabled ? "" : " off"}`;
+  });
+
+  const lobbyMicBtn = document.createElement("button");
+  lobbyMicBtn.className = "call-lobby-toggle";
+  lobbyMicBtn.textContent = "\u{1F3A4}";
+  lobbyMicBtn.title = "Toggle microphone";
+  lobbyMicBtn.addEventListener("click", () => {
+    if (!localStream) return;
+    micEnabled = !micEnabled;
+    for (const track of localStream.getAudioTracks()) {
+      track.enabled = micEnabled;
+    }
+    lobbyMicBtn.className = `call-lobby-toggle${micEnabled ? "" : " off"}`;
+    micBtn.className = `call-btn${micEnabled ? "" : " off"}`;
+  });
+
+  lobbyControls.appendChild(lobbyCamBtn);
+  lobbyControls.appendChild(lobbyMicBtn);
+  lobby.appendChild(lobbyControls);
+
+  const lobbyError = document.createElement("div");
+  lobbyError.className = "call-lobby-error";
+  lobbyError.hidden = true;
+  lobby.appendChild(lobbyError);
+
+  const joinBtn = document.createElement("button");
+  joinBtn.className = "call-lobby-join";
+  joinBtn.textContent = "Join Call";
+  joinBtn.addEventListener("click", joinCall);
+  lobby.appendChild(joinBtn);
+
+  container.appendChild(lobby);
+
+  async function setupLobby() {
+    await resolveMyName();
+    lobbyNameEl.textContent = `Joining as ${myName}`;
+
     localStream = await acquireMedia();
+    if (localStream) {
+      lobbyVideo.srcObject = localStream;
+    } else {
+      lobbyError.hidden = false;
+      lobbyError.textContent = await describeMediaError();
+    }
+  }
+
+  function joinCall() {
+    lobby.remove();
+
     if (localStream) {
       localVideo.srcObject = localStream;
 
-      // Watch for tracks ending (device pulled, permission revoked)
       for (const track of localStream.getTracks()) {
         track.addEventListener("ended", () => {
           console.warn(`[call] Track ${track.kind} ended`);
@@ -1166,7 +1332,6 @@ export default function TelephoneTool(handle, element) {
     grid.appendChild(localBox);
     updateGrid();
 
-    await resolveMyName();
     startTranscription();
 
     broadcast({ type: "join", from: peerId, name: myName });
@@ -1179,7 +1344,7 @@ export default function TelephoneTool(handle, element) {
   }
 
   let heartbeatInterval = null;
-  start();
+  setupLobby();
 
   // ---- Cleanup ----
   return () => {
