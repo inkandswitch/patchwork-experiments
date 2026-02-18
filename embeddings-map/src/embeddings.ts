@@ -6,7 +6,7 @@ import {
 } from '@huggingface/transformers';
 import { JSONPath } from 'jsonpath-plus';
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo';
-import type { LeafDoc } from './tool.tsx';
+import type { LeafDoc } from './tool';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -15,6 +15,7 @@ import type { LeafDoc } from './tool.tsx';
 const MODEL_ID = 'nomic-ai/nomic-embed-text-v1.5';
 const EMBED_DIM = 768;
 const TASK_PREFIX = 'clustering: ';
+const SEARCH_PREFIX = 'search_query: ';
 const LONG_DOC_WORD_THRESHOLD = 6000;
 // nomic uses standard O(n²) attention — at large sequence lengths ONNX Runtime
 // OOMs in the browser. WebGPU can handle more, WASM less.
@@ -359,14 +360,21 @@ async function loadModel(onProgress?: (p: EmbedProgress) => void) {
 }
 
 /**
- * Embed a single text string. Handles tokenization, forward pass,
- * mean pooling, layer norm, and L2 normalization.
- * Prepends the clustering task prefix if not already present.
+ * Embed a single text string with the clustering task prefix.
  */
 export async function embedText(text: string): Promise<number[]> {
   const { tokenizer, model } = await loadModel();
   const prefixed = text.startsWith(TASK_PREFIX) ? text : TASK_PREFIX + text;
   return runEmbedding(tokenizer, model, prefixed);
+}
+
+/**
+ * Embed a search query using the search_query task prefix.
+ * Compatible with corpus vectors embedded via embedText (clustering prefix).
+ */
+export async function embedQuery(text: string): Promise<number[]> {
+  const { tokenizer, model } = await loadModel();
+  return runEmbedding(tokenizer, model, SEARCH_PREFIX + text);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

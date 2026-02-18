@@ -16,7 +16,7 @@ import {
   type EmbedProgress,
   type ExtractionRules,
 } from './embeddings';
-import { projectToUMAP } from './projection';
+import { projectToUMAP, type Projector } from './projection';
 import { clusterAndLabel, type Cluster } from './clustering';
 import { MapView, type MapPoint } from './MapView';
 import './index.css';
@@ -25,7 +25,6 @@ import './index.css';
 // Types
 // ---------------------------------------------------------------------------
 
-/** A leaf document with its path through the folder tree. */
 export type LeafDoc = {
   doc: DocLink;
   path: string[];
@@ -34,27 +33,48 @@ export type LeafDoc = {
 type ViewState =
   | { kind: 'table' }
   | { kind: 'embedding'; progress: EmbedProgress }
-  | { kind: 'scene'; points: MapPoint[]; clusters: Cluster[] };
+  | {
+      kind: 'scene';
+      points: MapPoint[];
+      clusters: Cluster[];
+      vectors: Map<AutomergeUrl, number[]>;
+      projector: Projector;
+    };
 
 // ---------------------------------------------------------------------------
-// Binary extension detection
+// localStorage persistence for filters
 // ---------------------------------------------------------------------------
 
-const BINARY_EXTENSIONS = new Set([
-  'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'svg', 'tiff', 'tif',
-  'avif', 'heic', 'heif',
-  'otf', 'ttf', 'woff', 'woff2', 'eot',
-  'mp3', 'mp4', 'wav', 'ogg', 'webm', 'flac', 'aac', 'm4a', 'avi', 'mov',
-  'mkv',
-  'zip', 'tar', 'gz', 'bz2', 'xz', '7z', 'rar',
-  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
-  'wasm', 'exe', 'dll', 'so', 'dylib', 'bin',
-]);
+const LS_TYPE_FILTERS = 'embeddings-map:type-filters';
+const LS_OVERRIDES = 'embeddings-map:overrides';
+const DEFAULT_INCLUDED_TYPES = new Set(['essay']);
 
-function isBinaryFile(name: string): boolean {
-  const dot = name.lastIndexOf('.');
-  if (dot === -1 || dot === name.length - 1) return false;
-  return BINARY_EXTENSIONS.has(name.slice(dot + 1).toLowerCase());
+function loadTypeFilters(): Map<string, boolean> {
+  try {
+    const raw = localStorage.getItem(LS_TYPE_FILTERS);
+    if (raw) return new Map(JSON.parse(raw));
+  } catch { /* ignore */ }
+  return new Map();
+}
+
+function saveTypeFilters(filters: Map<string, boolean>): void {
+  try {
+    localStorage.setItem(LS_TYPE_FILTERS, JSON.stringify(Array.from(filters.entries())));
+  } catch { /* ignore */ }
+}
+
+function loadOverrides(): Map<AutomergeUrl, boolean> {
+  try {
+    const raw = localStorage.getItem(LS_OVERRIDES);
+    if (raw) return new Map(JSON.parse(raw));
+  } catch { /* ignore */ }
+  return new Map();
+}
+
+function saveOverrides(overrides: Map<AutomergeUrl, boolean>): void {
+  try {
+    localStorage.setItem(LS_OVERRIDES, JSON.stringify(Array.from(overrides.entries())));
+  } catch { /* ignore */ }
 }
 
 // ---------------------------------------------------------------------------
@@ -73,15 +93,11 @@ async function collectLeafDocs(
     if (!folder?.docs) return [];
 
     const results: LeafDoc[] = [];
-
     await Promise.all(
       folder.docs.map(async (docLink: DocLink) => {
         try {
           if (docLink.type === 'folder') {
-            const nested = await collectLeafDocs(repo, docLink.url, [
-              ...path,
-              docLink.name,
-            ]);
+            const nested = await collectLeafDocs(repo, docLink.url, [...path, docLink.name]);
             results.push(...nested);
           } else {
             results.push({ doc: docLink, path });
@@ -91,7 +107,6 @@ async function collectLeafDocs(
         }
       }),
     );
-
     return results;
   } catch (e) {
     console.warn(`Failed to load folder ${folderUrl}:`, e);
@@ -126,7 +141,7 @@ export const EmbeddingsMapTool: ToolRender = (handle, element) => {
   const root = createRoot(element);
   root.render(
     <RepoContext.Provider value={repo}>
-      <EmbeddingsMap docUrl={handle.url} />
+      <EmbeddingsMap docUrl={handle.url} hostElement={element} />
     </RepoContext.Provider>,
   );
   return () => root.unmount();
@@ -149,8 +164,8 @@ function progressLabel(p: EmbedProgress): string {
     }
     case 'embedding': {
       const device = getActiveDevice();
-      const deviceTag = device === 'webgpu' ? ' [GPU]' : ' [CPU]';
-      return `Embedding ${p.current}/${p.total}${p.detail ? ` — ${p.detail}` : ''}${deviceTag}${skippedNote}`;
+      const tag = device === 'webgpu' ? ' [GPU]' : ' [CPU]';
+      return `Embedding ${p.current}/${p.total}${p.detail ? ` — ${p.detail}` : ''}${tag}${skippedNote}`;
     }
     case 'projecting':
       return `PCA + UMAP projection...${skippedNote}`;
@@ -182,49 +197,63 @@ function buildClusterLookup(
 }
 
 // ---------------------------------------------------------------------------
+// Scene builder (shared between cache and fresh-embed paths)
+// ---------------------------------------------------------------------------
+
+async function buildScene(
+  leaves: LeafDoc[],
+  vectors: Map<AutomergeUrl, number[]>,
+  docTexts: Map<AutomergeUrl, string>,
+): Promise<{ points: MapPoint[]; clusters: Cluster[]; projector: Projector } | null> {
+  const embeddedLeaves = leaves.filter((l) => vectors.has(l.doc.url));
+  if (embeddedLeaves.length < 2) return null;
+
+  const { positions, projector } = await projectToUMAP(vectors);
+  const clusters = await clusterAndLabel(embeddedLeaves, positions, vectors, docTexts, embedText);
+  const clusterLookup = buildClusterLookup(clusters, embeddedLeaves);
+
+  const points: MapPoint[] = embeddedLeaves.map((leaf) => {
+    const info = clusterLookup.get(leaf.doc.url);
+    return {
+      leaf,
+      position: positions.get(leaf.doc.url) ?? [0, 0],
+      clusterId: info?.clusterId ?? -1,
+      color: info?.color ?? [120, 120, 120],
+    };
+  });
+
+  return { points, clusters, projector };
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
-const EmbeddingsMap = ({ docUrl }: { docUrl: AutomergeUrl }) => {
+const EmbeddingsMap = ({ docUrl, hostElement }: { docUrl: AutomergeUrl; hostElement: HTMLElement }) => {
   const repo = useRepo();
   const [folder] = useDocument<FolderDoc>(docUrl);
   const [leafDocs, setLeafDocs] = useState<LeafDoc[]>([]);
   const [loadingDocs, setLoadingDocs] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Per-doc overrides: url -> true (force include) / false (force exclude)
-  const [overrides, setOverrides] = useState<Map<AutomergeUrl, boolean>>(
-    () => new Map(),
-  );
+  const [overrides, setOverrides] = useState<Map<AutomergeUrl, boolean>>(loadOverrides);
+  const [typeFilters, setTypeFilters] = useState<Map<string, boolean>>(loadTypeFilters);
 
-  // Type-level filters: type -> false means exclude all of that type
-  const [typeFilters, setTypeFilters] = useState<Map<string, boolean>>(
-    () => new Map(),
-  );
-
-  // Extraction rules per doc type
-  const [extractionRules, setExtractionRules] = useState<ExtractionRules>(
-    () => loadExtractionRules(),
-  );
-  const [previewResults, setPreviewResults] = useState<Map<string, { charCount: number; failed: boolean }>>(
-    () => new Map(),
-  );
+  const [extractionRules, setExtractionRules] = useState<ExtractionRules>(loadExtractionRules);
+  const [previewResults, setPreviewResults] = useState<Map<string, { charCount: number; failed: boolean }>>(() => new Map());
   const [showRulesEditor, setShowRulesEditor] = useState(false);
 
-  // View state machine
   const [view, setView] = useState<ViewState>({ kind: 'table' });
   const cacheChecked = useRef(false);
-
-  // Long docs warning
   const [longDocs, setLongDocs] = useState<string[]>([]);
 
-  // Collect leaf docs on folder change
+  // ---- Collect leaf docs ----
+
   const refresh = useCallback(async () => {
     setLoadingDocs(true);
     setError(null);
     try {
-      const leaves = await collectLeafDocs(repo, docUrl);
-      setLeafDocs(leaves);
+      setLeafDocs(await collectLeafDocs(repo, docUrl));
     } catch (e) {
       setError(`Failed to load folder contents: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -232,13 +261,10 @@ const EmbeddingsMap = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     }
   }, [repo, docUrl]);
 
-  useEffect(() => {
-    if (folder) {
-      refresh();
-    }
-  }, [folder, refresh]);
+  useEffect(() => { if (folder) refresh(); }, [folder, refresh]);
 
-  // Collect unique types for filter UI
+  // ---- Type counts ----
+
   const uniqueTypes = useMemo(() => {
     const counts = new Map<string, number>();
     for (const leaf of leafDocs) {
@@ -247,40 +273,32 @@ const EmbeddingsMap = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
   }, [leafDocs]);
 
-  // Initialize type filters: binary-heavy types off, rest on
+  // Initialize newly-discovered types: default to included only for essay, off for everything else
   useEffect(() => {
     if (leafDocs.length === 0) return;
     setTypeFilters((prev) => {
       const next = new Map(prev);
+      let changed = false;
       for (const leaf of leafDocs) {
         if (!next.has(leaf.doc.type)) {
-          const typeDocs = leafDocs.filter((l) => l.doc.type === leaf.doc.type);
-          const binaryCount = typeDocs.filter((l) => isBinaryFile(l.doc.name)).length;
-          next.set(leaf.doc.type, binaryCount < typeDocs.length / 2);
+          next.set(leaf.doc.type, DEFAULT_INCLUDED_TYPES.has(leaf.doc.type));
+          changed = true;
         }
       }
-      return next;
+      if (changed) saveTypeFilters(next);
+      return changed ? next : prev;
     });
   }, [leafDocs]);
 
-  // Derive included/excluded rows
+  // ---- Derive included/excluded rows ----
+
   const rows = useMemo(
     () =>
       leafDocs.map((leaf) => {
-        const binary = isBinaryFile(leaf.doc.name);
         const override = overrides.get(leaf.doc.url);
-        const typeEnabled = typeFilters.get(leaf.doc.type) ?? true;
-
-        let included: boolean;
-        if (override !== undefined) {
-          included = override;
-        } else if (!typeEnabled) {
-          included = false;
-        } else {
-          included = !binary;
-        }
-
-        return { leaf, binary, included };
+        const typeEnabled = typeFilters.get(leaf.doc.type) ?? DEFAULT_INCLUDED_TYPES.has(leaf.doc.type);
+        const included = override !== undefined ? override : typeEnabled;
+        return { leaf, included };
       }),
     [leafDocs, overrides, typeFilters],
   );
@@ -292,72 +310,45 @@ const EmbeddingsMap = ({ docUrl }: { docUrl: AutomergeUrl }) => {
 
   const includedCount = includedLeaves.length;
 
-  // Run extraction preview when rules change
+  // ---- Extraction rule preview ----
+
   const runPreview = useCallback(async (type: string, rule: string) => {
     const sampleLeaf = leafDocs.find((l) => l.doc.type === type);
     if (!sampleLeaf || !rule.trim()) {
-      setPreviewResults((prev) => {
-        const next = new Map(prev);
-        next.delete(type);
-        return next;
-      });
+      setPreviewResults((prev) => { const next = new Map(prev); next.delete(type); return next; });
       return;
     }
     const result = await previewExtraction(repo, sampleLeaf, rule);
     if (result) {
-      setPreviewResults((prev) => {
-        const next = new Map(prev);
-        next.set(type, result);
-        return next;
-      });
+      setPreviewResults((prev) => { const next = new Map(prev); next.set(type, result); return next; });
     }
   }, [repo, leafDocs]);
 
-  // Update extraction rule for a type
   const updateRule = useCallback((type: string, rule: string) => {
     setExtractionRules((prev) => {
       const next = new Map(prev);
-      if (rule.trim()) {
-        next.set(type, rule);
-      } else {
-        next.delete(type);
-      }
+      if (rule.trim()) next.set(type, rule);
+      else next.delete(type);
       saveExtractionRules(next);
       return next;
     });
     runPreview(type, rule);
   }, [runPreview]);
 
-  // Check cache on first load
+  // ---- Cache check on first load ----
+
   useEffect(() => {
-    if (cacheChecked.current || loadingDocs || includedLeaves.length === 0)
-      return;
+    if (cacheChecked.current || loadingDocs || includedLeaves.length === 0) return;
     cacheChecked.current = true;
 
     (async () => {
       try {
         const cached = await getCachedEmbeddings(repo, includedLeaves, extractionRules);
-        if (cached && cached.vectors.size >= 2) {
-          const cachedLeaves = includedLeaves.filter((l) => cached.vectors.has(l.doc.url));
-          const positions = await projectToUMAP(cached.vectors);
-          const clusters = await clusterAndLabel(
-            cachedLeaves,
-            positions,
-            cached.vectors,
-            cached.docTexts,
-            embedText,
-          );
-          const clusterLookup = buildClusterLookup(clusters, cachedLeaves);
-          const points: MapPoint[] = cachedLeaves.map((leaf) => {
-            const info = clusterLookup.get(leaf.doc.url);
-            return {
-              leaf,
-              position: positions.get(leaf.doc.url) ?? [0, 0],
-              clusterId: info?.clusterId ?? -1,
-              color: info?.color ?? [120, 120, 120],
-            };
-          });
-          setView({ kind: 'scene', points, clusters });
+        if (!cached || cached.vectors.size < 2) return;
+
+        const scene = await buildScene(includedLeaves, cached.vectors, cached.docTexts);
+        if (scene) {
+          setView({ kind: 'scene', vectors: cached.vectors, ...scene });
         }
       } catch (e) {
         console.warn('Cache check failed:', e);
@@ -365,97 +356,67 @@ const EmbeddingsMap = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     })();
   }, [loadingDocs, includedLeaves, repo, extractionRules]);
 
-  // Start embedding pipeline
+  // ---- Start embedding pipeline ----
+
   const startEmbedding = useCallback(async () => {
     setError(null);
     setLongDocs([]);
-    setView({
-      kind: 'embedding',
-      progress: { phase: 'serializing', current: 0, total: includedCount },
-    });
+    setView({ kind: 'embedding', progress: { phase: 'serializing', current: 0, total: includedCount } });
 
     try {
       const result = await computeEmbeddings(repo, includedLeaves, extractionRules, (p) => {
         setView({ kind: 'embedding', progress: p });
-        if (p.longDocs && p.longDocs.length > 0) {
-          setLongDocs(p.longDocs);
-        }
+        if (p.longDocs?.length) setLongDocs(p.longDocs);
       });
 
       const { vectors, docTexts } = result;
-      const embeddedLeaves = includedLeaves.filter((l) => vectors.has(l.doc.url));
-      const embeddedCount = embeddedLeaves.length;
 
-      if (embeddedCount < 2) {
-        setError(`Only ${embeddedCount} document(s) could be embedded — need at least 2.`);
+      setView({ kind: 'embedding', progress: { phase: 'projecting', current: vectors.size, total: vectors.size } });
+      const scene = await buildScene(includedLeaves, vectors, docTexts);
+
+      if (!scene) {
+        setError(`Only ${vectors.size} document(s) could be embedded — need at least 2.`);
         setView({ kind: 'table' });
         return;
       }
 
-      setView({
-        kind: 'embedding',
-        progress: { phase: 'projecting', current: embeddedCount, total: embeddedCount },
-      });
-
-      const positions = await projectToUMAP(vectors);
-
-      setView({
-        kind: 'embedding',
-        progress: { phase: 'clustering', current: embeddedCount, total: embeddedCount },
-      });
-
-      const clusters = await clusterAndLabel(
-        embeddedLeaves,
-        positions,
-        vectors,
-        docTexts,
-        embedText,
-      );
-
-      const clusterLookup = buildClusterLookup(clusters, embeddedLeaves);
-      const points: MapPoint[] = embeddedLeaves.map((leaf) => {
-        const info = clusterLookup.get(leaf.doc.url);
-        return {
-          leaf,
-          position: positions.get(leaf.doc.url) ?? [0, 0],
-          clusterId: info?.clusterId ?? -1,
-          color: info?.color ?? [120, 120, 120],
-        };
-      });
-
-      setView({ kind: 'scene', points, clusters });
+      setView({ kind: 'scene', vectors, ...scene });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setError(`Embedding failed: ${msg}`);
+      setError(`Embedding failed: ${e instanceof Error ? e.message : String(e)}`);
       setView({ kind: 'table' });
     }
   }, [repo, includedLeaves, includedCount, extractionRules]);
 
-  const toggleOverride = useCallback(
-    (url: AutomergeUrl, currentIncluded: boolean) => {
-      setOverrides((prev) => {
-        const next = new Map(prev);
-        next.set(url, !currentIncluded);
-        return next;
-      });
-    },
-    [],
-  );
+  // ---- Filter toggles (persisted) ----
+
+  const toggleOverride = useCallback((url: AutomergeUrl, currentIncluded: boolean) => {
+    setOverrides((prev) => {
+      const next = new Map(prev);
+      next.set(url, !currentIncluded);
+      saveOverrides(next);
+      return next;
+    });
+  }, []);
 
   const toggleTypeFilter = useCallback((type: string) => {
     setTypeFilters((prev) => {
       const next = new Map(prev);
-      next.set(type, !(next.get(type) ?? true));
+      next.set(type, !(next.get(type) ?? DEFAULT_INCLUDED_TYPES.has(type)));
+      saveTypeFilters(next);
       return next;
     });
+    // Clear per-doc overrides for this type so the type toggle takes effect cleanly
     setOverrides((prev) => {
       const next = new Map(prev);
+      let changed = false;
       for (const leaf of leafDocs) {
-        if (leaf.doc.type === type) {
+        if (leaf.doc.type === type && next.has(leaf.doc.url)) {
           next.delete(leaf.doc.url);
+          changed = true;
         }
       }
-      return next;
+      if (changed) saveOverrides(next);
+      return changed ? next : prev;
     });
   }, [leafDocs]);
 
@@ -464,69 +425,52 @@ const EmbeddingsMap = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     setView({ kind: 'table' });
   }, []);
 
-  // -------------------------------------------------------------------------
-  // Loading state
-  // -------------------------------------------------------------------------
+  // ---- Render ----
 
   if (!folder || loadingDocs) {
     return (
       <div className="flex items-center justify-center h-full p-4 gap-3">
-        <span className="loading loading-spinner loading-md"></span>
+        <span className="loading loading-spinner loading-md" />
         <span className="text-base-content/60">Loading folder contents...</span>
       </div>
     );
   }
-
-  // -------------------------------------------------------------------------
-  // Scene view
-  // -------------------------------------------------------------------------
 
   if (view.kind === 'scene') {
     return (
       <MapView
         points={view.points}
         clusters={view.clusters}
+        vectors={view.vectors}
+        projector={view.projector}
+        repo={repo}
+        extractionRules={extractionRules}
         onBack={goBackToTable}
+        hostElement={hostElement}
       />
     );
   }
-
-  // -------------------------------------------------------------------------
-  // Table view (+ embedding progress overlay)
-  // -------------------------------------------------------------------------
 
   const isEmbedding = view.kind === 'embedding';
   const progress = isEmbedding ? view.progress : null;
 
   return (
     <div className="p-4 h-full overflow-hidden flex flex-col gap-3">
-      {/* Error banner */}
       {error && (
         <div className="alert alert-error text-sm">
           <span>{error}</span>
-          <button
-            className="btn btn-ghost btn-xs"
-            onClick={() => setError(null)}
-          >
-            Dismiss
-          </button>
+          <button className="btn btn-ghost btn-xs" onClick={() => setError(null)}>Dismiss</button>
         </div>
       )}
 
-      {/* Long docs warning */}
       {longDocs.length > 0 && (
         <div className="alert alert-warning text-sm">
           <span>
-            {longDocs.length} doc(s) exceed ~6000 words and may be truncated by the model:
+            {longDocs.length} doc(s) exceed ~6 000 words and may be truncated:
             {' '}{longDocs.slice(0, 5).join(', ')}
             {longDocs.length > 5 ? ` (+${longDocs.length - 5} more)` : ''}
           </span>
-          <button
-            className="btn btn-ghost btn-xs"
-            onClick={() => setLongDocs([])}
-          >
-            Dismiss
-          </button>
+          <button className="btn btn-ghost btn-xs" onClick={() => setLongDocs([])}>Dismiss</button>
         </div>
       )}
 
@@ -534,9 +478,7 @@ const EmbeddingsMap = ({ docUrl }: { docUrl: AutomergeUrl }) => {
       <div className="flex justify-between items-center border-b border-base-300 pb-2">
         <h2 className="text-lg font-semibold">Embeddings Map</h2>
         <div className="flex items-center gap-3">
-          <span className="badge badge-ghost">
-            {includedCount}/{rows.length} included
-          </span>
+          <span className="badge badge-ghost">{includedCount}/{rows.length} included</span>
           <button
             className={`btn btn-xs ${showRulesEditor ? 'btn-primary' : 'btn-outline'}`}
             onClick={() => setShowRulesEditor((v) => !v)}
@@ -559,17 +501,12 @@ const EmbeddingsMap = ({ docUrl }: { docUrl: AutomergeUrl }) => {
         <div className="border border-base-300 rounded-lg p-3 flex flex-col gap-2 bg-base-200/50">
           <div className="flex items-center gap-2 text-xs text-base-content/60">
             <span className="font-semibold">Per-type JSONPath extraction</span>
-            <a
-              href="https://goessner.net/articles/JsonPath/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="link link-primary"
-            >
+            <a href="https://goessner.net/articles/JsonPath/" target="_blank" rel="noopener noreferrer" className="link link-primary">
               Syntax reference
             </a>
           </div>
           {uniqueTypes.map(([type, count]) => {
-            const enabled = typeFilters.get(type) ?? true;
+            const enabled = typeFilters.get(type) ?? DEFAULT_INCLUDED_TYPES.has(type);
             if (!enabled) return null;
             const currentRule = extractionRules.get(type) ?? '';
             const preview = previewResults.get(type);
@@ -577,8 +514,7 @@ const EmbeddingsMap = ({ docUrl }: { docUrl: AutomergeUrl }) => {
             return (
               <div key={type} className="flex items-center gap-2">
                 <span className="badge badge-xs badge-outline w-20 shrink-0 justify-center">
-                  {type}
-                  <span className="ml-1 opacity-50">({count})</span>
+                  {type}<span className="ml-1 opacity-50">({count})</span>
                 </span>
                 <input
                   type="text"
@@ -594,12 +530,7 @@ const EmbeddingsMap = ({ docUrl }: { docUrl: AutomergeUrl }) => {
                   </span>
                 )}
                 {!preview && currentRule && (
-                  <button
-                    className="btn btn-xs btn-ghost"
-                    onClick={() => runPreview(type, currentRule)}
-                  >
-                    Preview
-                  </button>
+                  <button className="btn btn-xs btn-ghost" onClick={() => runPreview(type, currentRule)}>Preview</button>
                 )}
               </div>
             );
@@ -615,7 +546,7 @@ const EmbeddingsMap = ({ docUrl }: { docUrl: AutomergeUrl }) => {
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs text-base-content/50 mr-1">Types:</span>
           {uniqueTypes.map(([type, count]) => {
-            const enabled = typeFilters.get(type) ?? true;
+            const enabled = typeFilters.get(type) ?? DEFAULT_INCLUDED_TYPES.has(type);
             return (
               <button
                 key={type}
@@ -623,45 +554,33 @@ const EmbeddingsMap = ({ docUrl }: { docUrl: AutomergeUrl }) => {
                 disabled={isEmbedding}
                 onClick={() => toggleTypeFilter(type)}
               >
-                {type}
-                <span className="badge badge-xs ml-1">{count}</span>
+                {type}<span className="badge badge-xs ml-1">{count}</span>
               </button>
             );
           })}
         </div>
       )}
 
-      {/* Progress bar */}
+      {/* Progress */}
       {progress && (
         <div className="flex flex-col gap-1">
           <div className="flex items-center justify-between text-xs text-base-content/60">
             <span>{progressLabel(progress)}</span>
-            <span>
-              {Math.round(
-                (progress.current / Math.max(progress.total, 1)) * 100,
-              )}
-              %
-            </span>
+            <span>{Math.round((progress.current / Math.max(progress.total, 1)) * 100)}%</span>
           </div>
-          <progress
-            className="progress progress-primary w-full"
-            value={progress.current}
-            max={progress.total}
-          />
+          <progress className="progress progress-primary w-full" value={progress.current} max={progress.total} />
         </div>
       )}
 
       {/* Table */}
       <div className="overflow-y-auto flex-1">
         {rows.length === 0 ? (
-          <div className="text-center text-base-content/60 py-8">
-            No documents found
-          </div>
+          <div className="text-center text-base-content/60 py-8">No documents found</div>
         ) : (
           <table className="table table-xs table-pin-rows w-full">
             <thead>
               <tr>
-                <th className="w-8"></th>
+                <th className="w-8" />
                 <th>Path</th>
                 <th>Name</th>
                 <th>Type</th>
@@ -669,39 +588,21 @@ const EmbeddingsMap = ({ docUrl }: { docUrl: AutomergeUrl }) => {
             </thead>
             <tbody>
               {rows.map((row, i) => (
-                <tr
-                  key={`${row.leaf.doc.url}-${i}`}
-                  className={row.included ? '' : 'opacity-40'}
-                >
+                <tr key={`${row.leaf.doc.url}-${i}`} className={row.included ? '' : 'opacity-40'}>
                   <td>
                     <input
                       type="checkbox"
                       className="checkbox checkbox-xs"
                       checked={row.included}
                       disabled={isEmbedding}
-                      onChange={() =>
-                        toggleOverride(row.leaf.doc.url, row.included)
-                      }
+                      onChange={() => toggleOverride(row.leaf.doc.url, row.included)}
                     />
                   </td>
                   <td className="font-mono text-base-content/50 truncate max-w-[200px]">
-                    {row.leaf.path.length > 0
-                      ? row.leaf.path.join('/') + '/'
-                      : ''}
+                    {row.leaf.path.length > 0 ? row.leaf.path.join('/') + '/' : ''}
                   </td>
-                  <td className="truncate max-w-[250px]">
-                    {row.leaf.doc.name}
-                    {row.binary && (
-                      <span className="badge badge-xs badge-warning ml-1">
-                        binary
-                      </span>
-                    )}
-                  </td>
-                  <td>
-                    <span className="badge badge-xs badge-outline">
-                      {row.leaf.doc.type}
-                    </span>
-                  </td>
+                  <td className="truncate max-w-[250px]">{row.leaf.doc.name}</td>
+                  <td><span className="badge badge-xs badge-outline">{row.leaf.doc.type}</span></td>
                 </tr>
               ))}
             </tbody>
