@@ -1,1 +1,5 @@
 .cursor
+.pushwork
+node_modules
+dist/
+.claude/
