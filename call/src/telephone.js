@@ -244,7 +244,6 @@ export default function TelephoneTool(handle, element) {
   let cameraEnabled = true;
   let micEnabled = true;
   let destroyed = false;
-  let summaryWorker = null;
 
   // Map of remotePeerId -> peer object
   const peers = new Map();
@@ -341,51 +340,9 @@ export default function TelephoneTool(handle, element) {
     broadcast({ type: "join", from: peerId, name: myName });
   });
 
-  const summarizeBtn = document.createElement("button");
-  summarizeBtn.className = "call-btn";
-  summarizeBtn.textContent = "\u{1F4DD}";
-  summarizeBtn.title = "Summarize transcript";
-  summarizeBtn.addEventListener("click", () => {
-    const content = handle.doc()?.content;
-    if (!content || content.trim().length === 0) {
-      loadingIndicator.style.display = "block";
-      loadingIndicator.textContent = "No transcript to summarize";
-      setTimeout(() => {
-        loadingIndicator.style.display = "none";
-      }, 2000);
-      return;
-    }
-
-    if (!summaryWorker) {
-      const workerUrl = new URL("./summary-worker.js", import.meta.url);
-      summaryWorker = new Worker(workerUrl, { type: "module" });
-
-      summaryWorker.onmessage = (e) => {
-        const { type, message, summary } = e.data;
-        if (type === "status") {
-          loadingIndicator.style.display = "block";
-          loadingIndicator.textContent = message;
-        } else if (type === "ready") {
-          loadingIndicator.style.display = "none";
-        } else if (type === "result") {
-          loadingIndicator.style.display = "none";
-          handle.change((doc) => {
-            const text = `\n--- Summary ---\n${summary}\n`;
-            Automerge.splice(doc, ["content"], doc.content.length, 0, text);
-          });
-        }
-      };
-    }
-
-    loadingIndicator.style.display = "block";
-    loadingIndicator.textContent = "Summarizing…";
-    summaryWorker.postMessage({ type: "summarize", text: content });
-  });
-
   localBar.appendChild(camBtn);
   localBar.appendChild(micBtn);
   localBar.appendChild(renegotiateBtn);
-  localBar.appendChild(summarizeBtn);
   localBox.appendChild(localBar);
 
   // ---- Grid layout ----
@@ -1237,11 +1194,6 @@ export default function TelephoneTool(handle, element) {
     navigator.mediaDevices.removeEventListener("devicechange", onDeviceChange);
 
     stopTranscription();
-
-    if (summaryWorker) {
-      summaryWorker.terminate();
-      summaryWorker = null;
-    }
 
     if (localStream) {
       for (const track of localStream.getTracks()) {
