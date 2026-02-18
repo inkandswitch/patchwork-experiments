@@ -1,16 +1,19 @@
 import { UMAP } from 'umap-js';
+import { PCA } from 'ml-pca';
 import type { AutomergeUrl } from '@automerge/automerge-repo';
 
 export type Point2D = [number, number];
 
 /**
- * Run UMAP to reduce high-dimensional embedding vectors to 2D coordinates.
+ * Run PCA pre-reduction + UMAP to reduce high-dimensional embedding vectors to 2D.
+ * PCA reduces 768-dim to ~50-dim (removes noise), then UMAP projects to 2D.
  * Returns a map from doc URL to [x, y] position, normalized to [-scale, scale].
  */
 export async function projectToUMAP(
   vectors: Map<AutomergeUrl, number[]>,
   options?: {
     nComponents?: number;
+    pcaDims?: number;
     scale?: number;
     onEpoch?: (epoch: number, totalEpochs: number) => void;
   },
@@ -19,7 +22,7 @@ export async function projectToUMAP(
   const scale = options?.scale ?? 500;
 
   const urls = Array.from(vectors.keys());
-  const data = urls.map((url) => vectors.get(url)!);
+  let data = urls.map((url) => vectors.get(url)!);
 
   if (data.length < 2) {
     const result = new Map<AutomergeUrl, Point2D>();
@@ -27,6 +30,14 @@ export async function projectToUMAP(
       result.set(urls[0], [0, 0]);
     }
     return result;
+  }
+
+  // PCA pre-reduction: reduce high-dim vectors to a smaller space before UMAP
+  const pcaTarget = options?.pcaDims ?? 50;
+  const pcaDims = Math.min(pcaTarget, data.length - 1, data[0].length);
+  if (data[0].length > pcaDims) {
+    const pca = new PCA(data, { scale: false, center: true });
+    data = pca.predict(data, { nComponents: pcaDims }).to2DArray();
   }
 
   const nNeighbors = Math.min(15, data.length - 1);

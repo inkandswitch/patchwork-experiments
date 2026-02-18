@@ -9,7 +9,12 @@ import {
   computeEmbeddings,
   getCachedEmbeddings,
   embedText,
+  loadExtractionRules,
+  saveExtractionRules,
+  previewExtraction,
+  getActiveDevice,
   type EmbedProgress,
+  type ExtractionRules,
 } from './embeddings';
 import { projectToUMAP } from './projection';
 import { clusterAndLabel, type Cluster } from './clustering';
@@ -95,11 +100,23 @@ async function collectLeafDocs(
 }
 
 // ---------------------------------------------------------------------------
+// JSONPath placeholder examples per type
+// ---------------------------------------------------------------------------
+
+const JSONPATH_EXAMPLES: Record<string, string> = {
+  essay: '$.content',
+  markdown: '$.content',
+  tldraw: '$.store.*.props.text',
+  todo: '$.title, $.todos[*].description',
+  chat: '$.title, $.messages[*].content.text',
+  file: '$.content',
+};
+
+// ---------------------------------------------------------------------------
 // React entry point
 // ---------------------------------------------------------------------------
 
 export const EmbeddingsMapTool: ToolRender = (handle, element) => {
-  // Ensure the host element fills its parent (Patchwork doesn't guarantee this)
   element.style.width = '100%';
   element.style.height = '100%';
   element.style.position = 'relative';
@@ -126,14 +143,19 @@ function progressLabel(p: EmbedProgress): string {
       return `Loading docs... ${p.current}/${p.total}${skippedNote}`;
     case 'checking-cache':
       return `Checking cache... ${p.current}/${p.total}${skippedNote}`;
-    case 'loading-model':
-      return `Loading embedding model (first time may download ~22MB)...${skippedNote}`;
-    case 'embedding':
-      return `Embedding ${p.current}/${p.total}${p.detail ? ` — ${p.detail}` : ''}${skippedNote}`;
+    case 'loading-model': {
+      const detail = p.detail ? ` — ${p.detail}` : ' (first download ~137MB)';
+      return `Loading model${detail}${skippedNote}`;
+    }
+    case 'embedding': {
+      const device = getActiveDevice();
+      const deviceTag = device === 'webgpu' ? ' [GPU]' : ' [CPU]';
+      return `Embedding ${p.current}/${p.total}${p.detail ? ` — ${p.detail}` : ''}${deviceTag}${skippedNote}`;
+    }
     case 'projecting':
-      return `Running UMAP projection...${skippedNote}`;
+      return `PCA + UMAP projection...${skippedNote}`;
     case 'clustering':
-      return `Clustering & labeling...${skippedNote}`;
+      return `Clustering & labeling (c-TF-IDF)...${skippedNote}`;
     case 'done':
       return `Done${skippedNote}`;
   }
@@ -180,9 +202,21 @@ const EmbeddingsMap = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     () => new Map(),
   );
 
+  // Extraction rules per doc type
+  const [extractionRules, setExtractionRules] = useState<ExtractionRules>(
+    () => loadExtractionRules(),
+  );
+  const [previewResults, setPreviewResults] = useState<Map<string, { charCount: number; failed: boolean }>>(
+    () => new Map(),
+  );
+  const [showRulesEditor, setShowRulesEditor] = useState(false);
+
   // View state machine
   const [view, setView] = useState<ViewState>({ kind: 'table' });
   const cacheChecked = useRef(false);
+
+  // Long docs warning
+  const [longDocs, setLongDocs] = useState<string[]>([]);
 
   // Collect leaf docs on folder change
   const refresh = useCallback(async () => {
@@ -220,7 +254,6 @@ const EmbeddingsMap = ({ docUrl }: { docUrl: AutomergeUrl }) => {
       const next = new Map(prev);
       for (const leaf of leafDocs) {
         if (!next.has(leaf.doc.type)) {
-          // Default: exclude types where most files are binary
           const typeDocs = leafDocs.filter((l) => l.doc.type === leaf.doc.type);
           const binaryCount = typeDocs.filter((l) => isBinaryFile(l.doc.name)).length;
           next.set(leaf.doc.type, binaryCount < typeDocs.length / 2);
@@ -238,7 +271,6 @@ const EmbeddingsMap = ({ docUrl }: { docUrl: AutomergeUrl }) => {
         const override = overrides.get(leaf.doc.url);
         const typeEnabled = typeFilters.get(leaf.doc.type) ?? true;
 
-        // Priority: per-doc override > type filter > binary default
         let included: boolean;
         if (override !== undefined) {
           included = override;
@@ -260,7 +292,43 @@ const EmbeddingsMap = ({ docUrl }: { docUrl: AutomergeUrl }) => {
 
   const includedCount = includedLeaves.length;
 
-  // Check cache on first load — if all included docs are cached, run projection + clustering
+  // Run extraction preview when rules change
+  const runPreview = useCallback(async (type: string, rule: string) => {
+    const sampleLeaf = leafDocs.find((l) => l.doc.type === type);
+    if (!sampleLeaf || !rule.trim()) {
+      setPreviewResults((prev) => {
+        const next = new Map(prev);
+        next.delete(type);
+        return next;
+      });
+      return;
+    }
+    const result = await previewExtraction(repo, sampleLeaf, rule);
+    if (result) {
+      setPreviewResults((prev) => {
+        const next = new Map(prev);
+        next.set(type, result);
+        return next;
+      });
+    }
+  }, [repo, leafDocs]);
+
+  // Update extraction rule for a type
+  const updateRule = useCallback((type: string, rule: string) => {
+    setExtractionRules((prev) => {
+      const next = new Map(prev);
+      if (rule.trim()) {
+        next.set(type, rule);
+      } else {
+        next.delete(type);
+      }
+      saveExtractionRules(next);
+      return next;
+    });
+    runPreview(type, rule);
+  }, [runPreview]);
+
+  // Check cache on first load
   useEffect(() => {
     if (cacheChecked.current || loadingDocs || includedLeaves.length === 0)
       return;
@@ -268,14 +336,15 @@ const EmbeddingsMap = ({ docUrl }: { docUrl: AutomergeUrl }) => {
 
     (async () => {
       try {
-        const cached = await getCachedEmbeddings(repo, includedLeaves);
-        if (cached && cached.size >= 2) {
-          const cachedLeaves = includedLeaves.filter((l) => cached.has(l.doc.url));
-          const positions = await projectToUMAP(cached);
+        const cached = await getCachedEmbeddings(repo, includedLeaves, extractionRules);
+        if (cached && cached.vectors.size >= 2) {
+          const cachedLeaves = includedLeaves.filter((l) => cached.vectors.has(l.doc.url));
+          const positions = await projectToUMAP(cached.vectors);
           const clusters = await clusterAndLabel(
             cachedLeaves,
             positions,
-            cached,
+            cached.vectors,
+            cached.docTexts,
             embedText,
           );
           const clusterLookup = buildClusterLookup(clusters, cachedLeaves);
@@ -294,22 +363,26 @@ const EmbeddingsMap = ({ docUrl }: { docUrl: AutomergeUrl }) => {
         console.warn('Cache check failed:', e);
       }
     })();
-  }, [loadingDocs, includedLeaves, repo]);
+  }, [loadingDocs, includedLeaves, repo, extractionRules]);
 
   // Start embedding pipeline
   const startEmbedding = useCallback(async () => {
     setError(null);
+    setLongDocs([]);
     setView({
       kind: 'embedding',
       progress: { phase: 'serializing', current: 0, total: includedCount },
     });
 
     try {
-      const vectors = await computeEmbeddings(repo, includedLeaves, (p) => {
+      const result = await computeEmbeddings(repo, includedLeaves, extractionRules, (p) => {
         setView({ kind: 'embedding', progress: p });
+        if (p.longDocs && p.longDocs.length > 0) {
+          setLongDocs(p.longDocs);
+        }
       });
 
-      // Filter to only leaves that were successfully embedded
+      const { vectors, docTexts } = result;
       const embeddedLeaves = includedLeaves.filter((l) => vectors.has(l.doc.url));
       const embeddedCount = embeddedLeaves.length;
 
@@ -335,6 +408,7 @@ const EmbeddingsMap = ({ docUrl }: { docUrl: AutomergeUrl }) => {
         embeddedLeaves,
         positions,
         vectors,
+        docTexts,
         embedText,
       );
 
@@ -355,7 +429,7 @@ const EmbeddingsMap = ({ docUrl }: { docUrl: AutomergeUrl }) => {
       setError(`Embedding failed: ${msg}`);
       setView({ kind: 'table' });
     }
-  }, [repo, includedLeaves, includedCount]);
+  }, [repo, includedLeaves, includedCount, extractionRules]);
 
   const toggleOverride = useCallback(
     (url: AutomergeUrl, currentIncluded: boolean) => {
@@ -374,7 +448,6 @@ const EmbeddingsMap = ({ docUrl }: { docUrl: AutomergeUrl }) => {
       next.set(type, !(next.get(type) ?? true));
       return next;
     });
-    // Clear per-doc overrides for this type so the filter takes effect cleanly
     setOverrides((prev) => {
       const next = new Map(prev);
       for (const leaf of leafDocs) {
@@ -440,6 +513,23 @@ const EmbeddingsMap = ({ docUrl }: { docUrl: AutomergeUrl }) => {
         </div>
       )}
 
+      {/* Long docs warning */}
+      {longDocs.length > 0 && (
+        <div className="alert alert-warning text-sm">
+          <span>
+            {longDocs.length} doc(s) exceed ~6000 words and may be truncated by the model:
+            {' '}{longDocs.slice(0, 5).join(', ')}
+            {longDocs.length > 5 ? ` (+${longDocs.length - 5} more)` : ''}
+          </span>
+          <button
+            className="btn btn-ghost btn-xs"
+            onClick={() => setLongDocs([])}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex justify-between items-center border-b border-base-300 pb-2">
         <h2 className="text-lg font-semibold">Embeddings Map</h2>
@@ -447,6 +537,13 @@ const EmbeddingsMap = ({ docUrl }: { docUrl: AutomergeUrl }) => {
           <span className="badge badge-ghost">
             {includedCount}/{rows.length} included
           </span>
+          <button
+            className={`btn btn-xs ${showRulesEditor ? 'btn-primary' : 'btn-outline'}`}
+            onClick={() => setShowRulesEditor((v) => !v)}
+            disabled={isEmbedding}
+          >
+            Extraction Rules
+          </button>
           <button
             className="btn btn-sm btn-primary"
             disabled={isEmbedding || includedCount === 0}
@@ -456,6 +553,62 @@ const EmbeddingsMap = ({ docUrl }: { docUrl: AutomergeUrl }) => {
           </button>
         </div>
       </div>
+
+      {/* Extraction rules editor */}
+      {showRulesEditor && (
+        <div className="border border-base-300 rounded-lg p-3 flex flex-col gap-2 bg-base-200/50">
+          <div className="flex items-center gap-2 text-xs text-base-content/60">
+            <span className="font-semibold">Per-type JSONPath extraction</span>
+            <a
+              href="https://goessner.net/articles/JsonPath/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="link link-primary"
+            >
+              Syntax reference
+            </a>
+          </div>
+          {uniqueTypes.map(([type, count]) => {
+            const enabled = typeFilters.get(type) ?? true;
+            if (!enabled) return null;
+            const currentRule = extractionRules.get(type) ?? '';
+            const preview = previewResults.get(type);
+            const placeholder = JSONPATH_EXAMPLES[type] ?? '$.content';
+            return (
+              <div key={type} className="flex items-center gap-2">
+                <span className="badge badge-xs badge-outline w-20 shrink-0 justify-center">
+                  {type}
+                  <span className="ml-1 opacity-50">({count})</span>
+                </span>
+                <input
+                  type="text"
+                  className="input input-xs input-bordered flex-1 font-mono"
+                  placeholder={placeholder}
+                  value={currentRule}
+                  onChange={(e) => updateRule(type, e.target.value)}
+                  disabled={isEmbedding}
+                />
+                {preview && (
+                  <span className={`text-xs whitespace-nowrap ${preview.failed ? 'text-warning' : 'text-success'}`}>
+                    {preview.failed ? 'fallback: ' : ''}{preview.charCount} chars
+                  </span>
+                )}
+                {!preview && currentRule && (
+                  <button
+                    className="btn btn-xs btn-ghost"
+                    onClick={() => runPreview(type, currentRule)}
+                  >
+                    Preview
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          <div className="text-xs text-base-content/40 mt-1">
+            Leave empty to use recursive string extraction (universal fallback). Comma-separate multiple JSONPath expressions.
+          </div>
+        </div>
+      )}
 
       {/* Type filters */}
       {uniqueTypes.length > 1 && (
