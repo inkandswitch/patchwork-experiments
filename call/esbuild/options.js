@@ -43,7 +43,7 @@ if (pushworking) {
 
 /** @type {import("esbuild").BuildOptions} */
 export default {
-  entryPoints: ["src/call.js", "src/telephone.js", "src/teleprint.js", "src/worker.js"],
+  entryPoints: ["src/call.js", "src/telephone.js", "src/teleprint.js", "src/worker.js", "src/summary-worker.js"],
   outdir: "dist",
   bundle: true,
   platform: "browser",

@@ -25,35 +25,16 @@ async function loadModel() {
   if (transcriber || loading) return;
   loading = true;
 
-  self.postMessage({ type: "status", message: "Loading transcription model…" });
+  const hasWebGPU = typeof navigator !== "undefined" && !!navigator.gpu;
 
-  try {
-    transcriber = await pipeline(
-      "automatic-speech-recognition",
-      "onnx-community/whisper-base.en",
-      {
-        device: "webgpu",
-        dtype: {
-          encoder_model: "fp32",
-          decoder_model_merged: "q4",
-        },
-      }
-    );
-
-    self.postMessage({ type: "status", message: "Model ready" });
-    self.postMessage({ type: "ready" });
-  } catch (err) {
-    // Fall back to wasm if WebGPU isn't available
-    self.postMessage({
-      type: "status",
-      message: "WebGPU unavailable, falling back to WASM…",
-    });
-
+  if (hasWebGPU) {
+    self.postMessage({ type: "status", message: "Loading transcription model (WebGPU)…" });
     try {
       transcriber = await pipeline(
         "automatic-speech-recognition",
         "onnx-community/whisper-base.en",
         {
+          device: "webgpu",
           dtype: {
             encoder_model: "fp32",
             decoder_model_merged: "q4",
@@ -61,14 +42,40 @@ async function loadModel() {
         }
       );
 
-      self.postMessage({ type: "status", message: "Model ready (WASM)" });
+      self.postMessage({ type: "status", message: "Model ready (WebGPU)" });
       self.postMessage({ type: "ready" });
-    } catch (err2) {
+      loading = false;
+      return;
+    } catch (err) {
+      console.warn("[whisper worker] WebGPU pipeline failed, falling back to WASM:", err);
       self.postMessage({
         type: "status",
-        message: `Failed to load model: ${err2.message}`,
+        message: "WebGPU failed, falling back to WASM…",
       });
     }
+  } else {
+    self.postMessage({ type: "status", message: "Loading transcription model (WASM)…" });
+  }
+
+  try {
+    transcriber = await pipeline(
+      "automatic-speech-recognition",
+      "onnx-community/whisper-base.en",
+      {
+        dtype: {
+          encoder_model: "fp32",
+          decoder_model_merged: "q4",
+        },
+      }
+    );
+
+    self.postMessage({ type: "status", message: "Model ready (WASM)" });
+    self.postMessage({ type: "ready" });
+  } catch (err) {
+    self.postMessage({
+      type: "status",
+      message: `Failed to load model: ${err.message}`,
+    });
   } finally {
     loading = false;
   }
