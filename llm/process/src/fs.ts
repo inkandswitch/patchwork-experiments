@@ -53,6 +53,12 @@ export class AutomergeFS {
       return handle;
     }
 
+    // Agent-created docs are already writable — no need to clone
+    const ws = this.workspaceHandle.doc();
+    if (ws?.createdUrls?.includes(originalUrl)) {
+      return this.repo.find(originalUrl);
+    }
+
     const originalHandle = await this.repo.find(originalUrl);
     const heads = originalHandle.heads();
     const cloneHandle = this.repo.clone(originalHandle);

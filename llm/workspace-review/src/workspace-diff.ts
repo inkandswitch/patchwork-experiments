@@ -227,13 +227,15 @@ export async function computeChangeset(repo: Repo, workspaceDoc: WorkspaceDoc): 
     if (entry.type === "folder") continue;
     if (!createdUrls.has(url)) continue;
 
-    const content = entry.docType === "file" ? await readFileContent(repo, entry.url) : undefined;
+    const mapping = mappings[url];
+    const effectiveUrl = mapping ? mapping.cloneUrl : entry.url;
+    const content = entry.docType === "file" ? await readFileContent(repo, effectiveUrl) : undefined;
     changes.push({
       path: entry.path,
       changeType: "added",
       docType: entry.docType,
       modifiedContent: content,
-      cloneUrl: entry.url,
+      cloneUrl: effectiveUrl,
     });
   }
 
