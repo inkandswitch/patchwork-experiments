@@ -128,8 +128,8 @@ Console output and return values are JSON-stringified with `JSON.stringify(value
 - **Copying files** (`copy`): Clones the source document via `repo.clone()` (preserving type and metadata) and links the clone into the destination folder. The clone is tracked in `WorkspaceDoc.createdUrls`. For folders, the copy is recursive — a new folder is created and all children are cloned individually.
 - **Moving files** (`move`): Removes the DocLink from the source folder and adds it to the destination folder, both via COW. The underlying document URL is preserved — only the folder links change.
 - **Creating new docs**: New files get `{ "@patchwork": { type: "file" } }` metadata. New folders get `{ "@patchwork": { type: "folder" } }`. Created file URLs are tracked in `WorkspaceDoc.createdUrls`.
-- **Reading**: Fully transparent — `readDoc` and `listFolder` go through `resolvePath` which resolves through the overlay automatically. Both `readDoc` and `getDocHandle` accept filesystem paths only — automerge URLs must be linked into the filesystem first via `linkDoc`.
-- **Getting doc handles** (`getDocHandle`): Always returns a cloned handle via COW — never a handle to the original document. Accepts a filesystem path only.
+- **Reading**: Fully transparent — `readFile` and `listFolder` go through `resolvePath` which resolves through the overlay automatically. Both `readFile` and `createOrGetDocHandle` accept filesystem paths only — automerge URLs must be linked into the filesystem first via `linkDoc`.
+- **Getting doc handles** (`createOrGetDocHandle`): Always returns a cloned handle via COW — never a handle to the original document. Accepts a filesystem path only.
 
 The COW helpers (`resolveOverlayUrl`, `getWritableHandle`) are private methods on `AutomergeFS`, so the LLM's eval context cannot access them — only the public FS API is exposed.
 
@@ -137,7 +137,7 @@ The COW helpers (`resolveOverlayUrl`, `getWritableHandle`) are private methods o
 
 Available inside `<script>` blocks:
 
-- `fs.readDoc(path)` → `Promise<string>` — accepts a filesystem path only (automerge URLs must be linked first via `linkDoc`)
+- `fs.readFile(path)` → `Promise<string>` — accepts a filesystem path only (automerge URLs must be linked first via `linkDoc`)
 - `fs.writeFile(path, content)` → `Promise<void>` (creates if missing, COW if existing)
 - `fs.patchFile(path, oldStr, newStr)` → `Promise<void>` — replace the first occurrence of `oldStr` with `newStr`. Preferred over `writeFile` for targeted edits to existing files.
 - `fs.listFolder(path)` → `Promise<{name, type, url}[]>` — `url` is the automerge URL (resolved through COW overlay)
@@ -146,7 +146,8 @@ Available inside `<script>` blocks:
 - `fs.move(srcPath, destPath)` → `Promise<void>` (move or rename a file/folder)
 - `fs.remove(path)` → `Promise<void>` (unlinks from parent folder)
 - `fs.linkDoc(path, automergeUrl)` → `Promise<void>` — link an existing automerge doc into a folder (type is read from the doc's `@patchwork` metadata)
-- `fs.getDocHandle(path)` → `Promise<DocHandle<any>>` — get a cloned Automerge DocHandle by filesystem path (always returns a clone, never the original; automerge URLs must be linked first via `linkDoc`)
+- `fs.getDocUrl(path)` → `Promise<AutomergeUrl>` — get the original automerge URL for a document by filesystem path (not a clone URL; useful for referencing docs)
+- `fs.createOrGetDocHandle(path)` → `Promise<DocHandle<any>>` — get a cloned Automerge DocHandle by filesystem path (always returns a clone, never the original; automerge URLs must be linked first via `linkDoc`)
 - `import("/automerge:docId/path")` → `Promise<module>` — native import via service worker
 - `import("https://...")` → `Promise<module>` — import from URL
 - `console.log(...)` — captured and returned as output to LLM (values are JSON-stringified)
@@ -180,7 +181,7 @@ skills/
 ### Skill discovery (progressive disclosure)
 
 1. **Metadata** (~100 tokens): `name` and `description` from SKILL.md frontmatter are loaded at startup for all skills and included in the system prompt
-2. **Instructions**: The full SKILL.md body is loaded when the agent activates a skill via `fs.readDoc("/skills/<name>/SKILL.md")`
+2. **Instructions**: The full SKILL.md body is loaded when the agent activates a skill via `fs.readFile("/skills/<name>/SKILL.md")`
 3. **Resources**: Files in `scripts/`, `references/`, `assets/` are loaded only when referenced by SKILL.md
 
 ### SKILL.md frontmatter

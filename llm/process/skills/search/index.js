@@ -34,7 +34,7 @@ export async function search(fs, pattern, startPath = "/") {
         await walk(fullPath);
       } else {
         try {
-          const content = await fs.readDoc(fullPath);
+          const content = await fs.readFile(fullPath);
           const lines = content.split("\n");
           for (let i = 0; i < lines.length; i++) {
             if (matcher(lines[i])) {

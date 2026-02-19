@@ -177,7 +177,7 @@ export class AutomergeFS {
    * Always returns a cloned handle (via COW) — never the original document.
    * Automerge URLs must be linked into the filesystem first via linkDoc().
    */
-  async getDocHandle(path: string): Promise<DocHandle<any>> {
+  async createOrGetDocHandle(path: string): Promise<DocHandle<any>> {
     const resolved = await this.resolvePath(path);
     if (!resolved) {
       throw new Error(`Not found: ${path}`);
@@ -186,12 +186,25 @@ export class AutomergeFS {
   }
 
   /**
+   * Get the original automerge URL for a document at the given path.
+   * Returns the URL as stored in the folder tree — not a clone URL.
+   * Useful for referencing a document (e.g. as suggestedImportUrl).
+   */
+  async getDocUrl(path: string): Promise<AutomergeUrl> {
+    const resolved = await this.resolvePath(path);
+    if (!resolved) {
+      throw new Error(`Not found: ${path}`);
+    }
+    return resolved.link.url;
+  }
+
+  /**
    * Read a document's content as a string. Accepts a filesystem path only —
    * automerge URLs must be linked into the filesystem first via linkDoc().
    * For patchwork file docs, returns the content field.
    * For any other Automerge document, returns its JSON representation.
    */
-  async readDoc(path: string): Promise<string> {
+  async readFile(path: string): Promise<string> {
     const resolved = await this.resolvePath(path);
     if (!resolved) {
       throw new Error(`File not found: ${path}`);
@@ -272,7 +285,7 @@ export class AutomergeFS {
    * the entire file — the LLM only needs to specify the changed region.
    */
   async patchFile(pathStr: string, oldStr: string, newStr: string): Promise<void> {
-    const content = await this.readDoc(pathStr);
+    const content = await this.readFile(pathStr);
     const idx = content.indexOf(oldStr);
     if (idx === -1) {
       // Provide a short snippet of what was searched for to help the LLM debug

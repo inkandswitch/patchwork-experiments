@@ -26,6 +26,7 @@ const ChatView = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const isRunningRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
   const outputEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -48,17 +49,29 @@ const ChatView = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     setErrorMsg(null);
     isRunningRef.current = true;
 
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
-      await runLLMProcess(repo, docUrl);
+      await runLLMProcess(repo, docUrl, controller.signal);
       setStatus('idle');
     } catch (err: any) {
-      console.error('[ChatView] Run error:', err);
-      setStatus('error');
-      setErrorMsg(err.message || String(err));
+      if (controller.signal.aborted) {
+        setStatus('idle');
+      } else {
+        console.error('[ChatView] Run error:', err);
+        setStatus('error');
+        setErrorMsg(err.message || String(err));
+      }
     } finally {
       isRunningRef.current = false;
+      abortRef.current = null;
     }
   }, [taskInput, repo, docUrl, changeDoc]);
+
+  const handleStop = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
 
   const handleDeleteRun = useCallback(
     (runIndex: number) => {
@@ -109,37 +122,34 @@ const ChatView = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     setDragOver(false);
   }, []);
 
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      setDragOver(false);
-      const dndData = e.dataTransfer?.getData('text/x-patchwork-dnd');
-      if (!dndData) return;
-      e.preventDefault();
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    setDragOver(false);
+    const dndData = e.dataTransfer?.getData('text/x-patchwork-dnd');
+    if (!dndData) return;
+    e.preventDefault();
 
-      const { items } = JSON.parse(dndData) as {
-        source: string;
-        items: { url: string; type: string; name: string }[];
-      };
-      if (!items?.length) return;
+    const { items } = JSON.parse(dndData) as {
+      source: string;
+      items: { url: string; type: string; name: string }[];
+    };
+    if (!items?.length) return;
 
-      const snippet = items
-        .map((item) => {
-          const docId = item.url?.replace(/^automerge:/, '');
-          if (!docId) return item.name ?? 'untitled';
-          const params = new URLSearchParams({ doc: docId });
-          if (item.type) params.set('type', item.type);
-          if (item.name) params.set('title', item.name);
-          return `[${item.name ?? 'untitled'}](#${params})`;
-        })
-        .join('\n');
+    const snippet = items
+      .map((item) => {
+        const docId = item.url?.replace(/^automerge:/, '');
+        if (!docId) return item.name ?? 'untitled';
+        const params = new URLSearchParams({ doc: docId });
+        if (item.type) params.set('type', item.type);
+        if (item.name) params.set('title', item.name);
+        return `[${item.name ?? 'untitled'}](#${params})`;
+      })
+      .join('\n');
 
-      setTaskInput((prev) => {
-        const sep = prev.length > 0 && !prev.endsWith('\n') ? '\n' : '';
-        return prev + sep + snippet;
-      });
-    },
-    []
-  );
+    setTaskInput((prev) => {
+      const sep = prev.length > 0 && !prev.endsWith('\n') ? '\n' : '';
+      return prev + sep + snippet;
+    });
+  }, []);
 
   return (
     <div className="flex flex-col h-full bg-base-100 dark:bg-base-300 max-w-[1024px] mx-auto w-full">
@@ -215,16 +225,22 @@ const ChatView = ({ docUrl }: { docUrl: AutomergeUrl }) => {
               )}
             </div>
             <div className="flex items-center gap-2">
-              {status === 'running' && (
-                <span className="loading loading-spinner loading-xs text-base-content/30" />
+              {status === 'running' ? (
+                <button
+                  className="text-xs font-medium px-3 py-1 rounded-lg bg-error/10 text-error hover:bg-error/20 transition-colors"
+                  onClick={handleStop}
+                >
+                  Stop
+                </button>
+              ) : (
+                <button
+                  className="text-xs font-medium px-3 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  onClick={handleRun}
+                  disabled={status !== 'idle' || !taskInput.trim()}
+                >
+                  Run
+                </button>
               )}
-              <button
-                className="text-xs font-medium px-3 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                onClick={handleRun}
-                disabled={status !== 'idle' || !taskInput.trim()}
-              >
-                Run
-              </button>
             </div>
           </div>
         </div>

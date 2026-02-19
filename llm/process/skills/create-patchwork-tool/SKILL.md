@@ -188,37 +188,78 @@ export const plugins = [
 
 ### Step 4: Create a Document Instance
 
-The document must include the `@patchwork` metadata block linking it to the tool:
+Tool documents have custom schemas beyond a simple text `content` field. Use `fs.writeFile()` to create a placeholder, then `fs.createOrGetDocHandle()` to get the Automerge handle and set the fields directly with `handle.change()`:
 
-```json
-{
-  "title": "My Tool Instance",
-  "...your schema fields...",
-  "@patchwork": {
-    "type": "my-tool-type",
-    "suggestedImportUrl": "automerge:<url-of-your-tool-package>"
-  }
-}
+```javascript
+// Get the original automerge URL of the tool folder
+const toolUrl = await fs.getDocUrl("/my-tool");
+
+await fs.writeFile("/my-tool/instance.json", "");
+const handle = await fs.createOrGetDocHandle("/my-tool/instance.json");
+handle.change(d => {
+  d.title = "My Tool Instance";
+  // ... set your schema fields ...
+  d["@patchwork"] = {
+    type: "my-tool-type",
+    suggestedImportUrl: toolUrl,
+  };
+});
+```
+
+### Step 5: Generate an Example Document
+
+After creating the tool package, generate an example document instance pre-populated with realistic sample data. This lets the user immediately see the tool in action without having to manually set up state.
+
+- Fill the document fields with plausible, non-trivial content (not just empty defaults).
+- The example should demonstrate the tool's key features and give a sense of how it looks when actively in use.
+- Include the `@patchwork` metadata block pointing to the tool package.
+
+To create the example document, first create a placeholder file, then use `fs.createOrGetDocHandle()` to get the Automerge handle and set the document fields directly with `handle.change()`. This is necessary because tool documents have custom schemas (not just a `content` string field).
+
+**Example** (tic-tac-toe — a game mid-progress):
+
+```javascript
+// Get the original automerge URL of the tool folder (for suggestedImportUrl)
+const toolUrl = await fs.getDocUrl("/my-tool");
+
+// Create a placeholder file, then get its handle to set custom fields
+await fs.writeFile("/my-tool/example.json", "");
+const handle = await fs.createOrGetDocHandle("/my-tool/example.json");
+handle.change(d => {
+  d.title = "Tic Tac Toe — Example Game";
+  d.board = ["X", "O", "X", null, "O", null, null, null, null];
+  d.currentPlayer = "X";
+  d.status = "playing";
+  d.winner = null;
+  d["@patchwork"] = {
+    type: "tic-tac-toe",
+    suggestedImportUrl: toolUrl,
+  };
+});
 ```
 
 ## Complete Example: Tic Tac Toe
 
 Here is a full working example for reference:
 
-**Document schema:**
+**Document schema** (created via `createOrGetDocHandle` + `handle.change()`):
 
-```json
-{
-  "title": "Tic Tac Toe",
-  "board": [null, null, null, null, null, null, null, null, null],
-  "currentPlayer": "X",
-  "status": "playing",
-  "winner": null,
-  "@patchwork": {
-    "type": "tic-tac-toe",
-    "suggestedImportUrl": "automerge:442qEMJubfbNtu8bEikzX2j3Yyps"
-  }
-}
+```javascript
+const toolUrl = await fs.getDocUrl("/tic-tac-toe");
+
+await fs.writeFile("/tic-tac-toe/example.json", "");
+const handle = await fs.createOrGetDocHandle("/tic-tac-toe/example.json");
+handle.change(d => {
+  d.title = "Tic Tac Toe";
+  d.board = [null, null, null, null, null, null, null, null, null];
+  d.currentPlayer = "X";
+  d.status = "playing";
+  d.winner = null;
+  d["@patchwork"] = {
+    type: "tic-tac-toe",
+    suggestedImportUrl: toolUrl,
+  };
+});
 ```
 
 **Tool module** (`tic-tac-toe.js`): see the reference implementation at `automerge:442qEMJubfbNtu8bEikzX2j3Yyps`.

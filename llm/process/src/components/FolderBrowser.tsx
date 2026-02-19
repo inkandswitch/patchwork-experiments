@@ -10,7 +10,7 @@ export function FolderBrowser({ docUrl }: { docUrl: AutomergeUrl }) {
   const openFullScreen = useCallback(() => {
     if (!selectedUrl || !containerRef.current) return;
     containerRef.current.dispatchEvent(
-      new CustomEvent("patchwork:open-document", {
+      new CustomEvent('patchwork:open-document', {
         detail: { url: selectedUrl },
         bubbles: true,
         composed: true,

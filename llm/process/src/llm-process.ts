@@ -50,7 +50,11 @@ function createCapturedConsole() {
 
 // --- Main entry point ---
 
-export async function runLLMProcess(repo: Repo, docUrl: AutomergeUrl): Promise<void> {
+export async function runLLMProcess(
+  repo: Repo,
+  docUrl: AutomergeUrl,
+  signal?: AbortSignal
+): Promise<void> {
   const handle = await repo.find<LLMProcessDoc>(docUrl);
   const doc = handle.doc();
 
@@ -106,15 +110,19 @@ export async function runLLMProcess(repo: Repo, docUrl: AutomergeUrl): Promise<v
   const MAX_ITERATIONS = 20;
 
   for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
+    if (signal?.aborted) break;
+
     const currentDoc = handle.doc();
     if (!currentDoc) break;
 
     const messages = buildLLMMessages(currentDoc, skills, rootListing);
-    const stream = streamChatCompletion(apiUrl, apiKey, model, messages);
+    const stream = streamChatCompletion(apiUrl, apiKey, model, messages, signal);
 
     let foundScript = false;
 
     for await (const block of parseScriptBlocks(stream)) {
+      if (signal?.aborted) break;
+
       if (block.type === 'text' && block.content.trim().length > 0) {
         handle.change((d) => {
           const run = d.runs[d.runs.length - 1];
@@ -282,7 +290,7 @@ console.log(files)
 </script>
 
 Available APIs in your execution context:
-- fs.readDoc(path) — read a document as a string by filesystem path
+- fs.readFile(path) — read a file as a string by filesystem path
 - fs.writeFile(path, content) — write/create a file (full replacement)
 - fs.patchFile(path, oldStr, newStr) — replace the first occurrence of oldStr with newStr in a file. Prefer this over writeFile for targeted edits to existing files — it's safer and more token-efficient.
 - fs.listFolder(path) — list folder contents (returns [{name, type, url}])
@@ -291,7 +299,8 @@ Available APIs in your execution context:
 - fs.move(srcPath, destPath) — move or rename a file or folder
 - fs.remove(path) — remove a file or folder
 - fs.linkDoc(path, automergeUrl) — link an existing automerge document into the filesystem at the given path
-- fs.getDocHandle(path) — get an Automerge DocHandle for a document by filesystem path
+- fs.getDocUrl(path) — get the original automerge URL for a document by filesystem path (not a clone URL; useful for referencing docs, e.g. as suggestedImportUrl)
+- fs.createOrGetDocHandle(path) — get an Automerge DocHandle for a document by filesystem path
 - fs.importModule(path) — dynamically import a JS module from the filesystem (e.g. \`await fs.importModule("/skills/search/index.js")\`)
 - import("https://esm.sh/...") — import a module from a URL
 - console.log(...) — output text (captured and shown to you)
@@ -320,7 +329,7 @@ function buildSkillsPromptSection(skills: SkillInfo[]): string {
 Skills are reusable modules in /skills/. You MUST read a skill's SKILL.md before using it — it contains the API, required arguments, and import instructions:
 
 \`\`\`
-const instructions = await fs.readDoc("/skills/<skill-name>/SKILL.md")
+const instructions = await fs.readFile("/skills/<skill-name>/SKILL.md")
 \`\`\`
 
 ${lines.join('\n')}`;
@@ -346,7 +355,8 @@ async function* streamChatCompletion(
   apiUrl: string,
   apiKey: string,
   model: string,
-  messages: ChatMessage[]
+  messages: ChatMessage[],
+  signal?: AbortSignal
 ): AsyncGenerator<string> {
   const url = `${apiUrl.replace(/\/$/, '')}/chat/completions`;
 
@@ -361,6 +371,7 @@ async function* streamChatCompletion(
       messages,
       stream: true,
     }),
+    signal,
   });
 
   if (!response.ok) {
@@ -518,7 +529,7 @@ async function discoverSkills(fs: AutomergeFS): Promise<SkillInfo[]> {
   for (const entry of entries) {
     if (entry.type !== 'folder') continue;
     try {
-      const skillMd = await fs.readDoc(`/skills/${entry.name}/SKILL.md`);
+      const skillMd = await fs.readFile(`/skills/${entry.name}/SKILL.md`);
       const fm = parseFrontmatter(skillMd);
       skills.push({
         name: fm.name || entry.name,
