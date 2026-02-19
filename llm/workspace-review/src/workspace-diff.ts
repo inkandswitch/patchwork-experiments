@@ -405,6 +405,7 @@ export async function mergeChanges(
   // Phase 1: CRDT merge — merge each clone back into its original.
   // Mapping keys may contain pinned heads, so we strip them to get
   // the live writable handle for the original document.
+  const changedUrls = new Set<string>();
   for (const [originalUrl, entry] of Object.entries(mappings)) {
     const { documentId } = parseAutomergeUrl(originalUrl as AutomergeUrl);
     const bareUrl = stringifyAutomergeUrl({ documentId });
@@ -417,57 +418,95 @@ export async function mergeChanges(
     if (!originalHandle.doc() || !cloneHandle.doc()) continue;
 
     originalHandle.merge(cloneHandle);
+    changedUrls.add(bareUrl);
   }
 
-  // Phase 2: Strip pinned heads from folder URLs so all references are bare
-  await stripHeadsFromTree(repo, ws.rootFolderUrl);
+  // Phase 2: Strip pinned heads from folder URLs so all references are bare,
+  // and set lastSyncAt on any folder whose subtree contains a changed file.
+  await cleanupTree(repo, ws.rootFolderUrl, changedUrls);
 
-  // Phase 3: Clear mappings and created URLs
+  // Phase 3: Update mappings so future changes are tracked relative to
+  // the post-merge state. Keep each clone as the working copy but update
+  // originalUrlWithHeads to the current heads (post-merge baseline).
+  // Use bare URLs as keys (strip any pinned heads from old keys).
+  // Clear createdUrls since those files are now part of the tree.
+  const newMappings: Record<string, { cloneUrl: AutomergeUrl; originalUrlWithHeads: AutomergeUrl }> = {};
+  for (const [originalUrl, entry] of Object.entries(mappings)) {
+    const { documentId } = parseAutomergeUrl(originalUrl as AutomergeUrl);
+    const bareUrl = stringifyAutomergeUrl({ documentId });
+
+    const handle = await repo.find(bareUrl);
+    await handle.whenReady();
+    const heads = handle.heads();
+
+    if (heads) {
+      newMappings[bareUrl] = {
+        cloneUrl: entry.cloneUrl,
+        originalUrlWithHeads: stringifyAutomergeUrl({ documentId, heads }),
+      };
+    }
+  }
+
   workspaceHandle.change((ws) => {
-    ws.mappings = {} as any;
+    ws.mappings = newMappings as any;
     ws.createdUrls = [] as unknown as AutomergeUrl[];
   });
 }
 
 /**
- * Walk the folder tree and strip pinned heads from any DocLink URLs,
- * leaving bare document URLs. Recurses into child folders first (bottom-up).
+ * Walk the folder tree bottom-up. Strips pinned heads from DocLink URLs and
+ * sets `lastSyncAt` on any folder whose subtree contains a changed document.
+ * Returns true if this subtree had changes.
  */
-async function stripHeadsFromTree(
+async function cleanupTree(
   repo: Repo,
-  folderUrl: AutomergeUrl
-): Promise<void> {
-  const handle = await repo.find<FolderDoc>(folderUrl);
+  folderUrl: AutomergeUrl,
+  changedUrls: Set<string>
+): Promise<boolean> {
+  // Strip heads from the folder URL itself so we get a live writable handle
+  const { documentId: folderId } = parseAutomergeUrl(folderUrl);
+  const bareFolderUrl = stringifyAutomergeUrl({ documentId: folderId });
+
+  const handle = await repo.find<FolderDoc>(bareFolderUrl);
   await handle.whenReady();
   const doc = handle.doc();
 
-  if (!doc || !doc.docs) return;
+  if (!doc || !doc.docs) return false;
+
+  let subtreeHasChanges = false;
 
   for (const link of doc.docs) {
     if (link.type === "folder") {
-      await stripHeadsFromTree(repo, link.url);
+      const childHasChanges = await cleanupTree(repo, link.url, changedUrls);
+      if (childHasChanges) subtreeHasChanges = true;
+    } else {
+      const { documentId } = parseAutomergeUrl(link.url);
+      const bareUrl = stringifyAutomergeUrl({ documentId });
+      if (changedUrls.has(bareUrl)) subtreeHasChanges = true;
     }
   }
 
-  let needsUpdate = false;
-  const updatedDocs: { index: number; newUrl: AutomergeUrl }[] = [];
-
+  const urlUpdates: { index: number; newUrl: AutomergeUrl }[] = [];
   for (let i = 0; i < doc.docs.length; i++) {
-    const link = doc.docs[i];
-    const parsed = parseAutomergeUrl(link.url);
-
+    const parsed = parseAutomergeUrl(doc.docs[i].url);
     if (parsed.heads && parsed.heads.length > 0) {
-      const bareUrl = stringifyAutomergeUrl({ documentId: parsed.documentId });
-      updatedDocs.push({ index: i, newUrl: bareUrl });
-      needsUpdate = true;
+      urlUpdates.push({
+        index: i,
+        newUrl: stringifyAutomergeUrl({ documentId: parsed.documentId }),
+      });
     }
   }
 
-  if (needsUpdate) {
-    handle.change((d) => {
-      for (const { index, newUrl } of updatedDocs) {
-        (d.docs[index] as any).url = newUrl;
+  if (urlUpdates.length > 0 || subtreeHasChanges) {
+    handle.change((d: any) => {
+      for (const { index, newUrl } of urlUpdates) {
+        d.docs[index].url = newUrl;
+      }
+      if (subtreeHasChanges) {
+        d.lastSyncAt = Date.now();
       }
     });
   }
+
+  return subtreeHasChanges;
 }

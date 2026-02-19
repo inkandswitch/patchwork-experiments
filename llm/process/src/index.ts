@@ -1,5 +1,4 @@
 import { Plugin } from '@inkandswitch/patchwork-plugins';
-import { AutomergeFS } from './fs';
 
 export const plugins: Plugin<any>[] = [
   {
@@ -47,4 +46,4 @@ export const plugins: Plugin<any>[] = [
   },
 ];
 
-console.log('llm v31');
+console.log('llm v33');

@@ -287,6 +287,7 @@ Available APIs in your execution context:
 - fs.patchFile(path, oldStr, newStr) — replace the first occurrence of oldStr with newStr in a file. Prefer this over writeFile for targeted edits to existing files — it's safer and more token-efficient.
 - fs.listFolder(path) — list folder contents (returns [{name, type, url}])
 - fs.createFolder(path) — create a folder
+- fs.copy(srcPath, destPath) — copy a file or folder to a new path (clones the document, preserving type and metadata; folders are copied recursively)
 - fs.move(srcPath, destPath) — move or rename a file or folder
 - fs.remove(path) — remove a file or folder
 - fs.linkDoc(path, automergeUrl) — link an existing automerge document into the filesystem at the given path

@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "pushwork watch . --dir src --verbose --script \"pnpm build\"",
     "build": "vite build",
-    "sync": "vite build && pushwork sync"
+    "sync": "vite build --watch && pushwork sync",
+    "push": "DEBUG=true vite build && pushwork push"
   },
   "pushwork": {},
   "dependencies": {

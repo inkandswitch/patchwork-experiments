@@ -37,15 +37,15 @@ type LLMProcessDoc = {
   title: string;
   config: {
     apiUrl: string; // OpenAI-compatible endpoint
-    model: string;  // e.g. "anthropic/claude-opus-4.6"
+    model: string; // e.g. "anthropic/claude-opus-4.6"
   };
-  workspaceUrl: AutomergeUrl;  // points to WorkspaceDoc
-  runs: TaskRun[];             // all task runs, most recent last
+  workspaceUrl: AutomergeUrl; // points to WorkspaceDoc
+  runs: TaskRun[]; // all task runs, most recent last
 };
 
 type TaskRun = {
-  task: string;           // user's instruction
-  output: OutputBlock[];  // appended as the agent runs
+  task: string; // user's instruction
+  output: OutputBlock[]; // appended as the agent runs
   timestamp: number;
 };
 
@@ -69,7 +69,7 @@ type MappingEntry = {
 type WorkspaceDoc = {
   rootFolderUrl: AutomergeUrl;
   mappings: Record<string, MappingEntry>; // originalUrl → { cloneUrl, originalUrlWithHeads }
-  createdUrls: AutomergeUrl[];            // new files created by the agent
+  createdUrls: AutomergeUrl[]; // new files created by the agent
 };
 ```
 
@@ -77,16 +77,16 @@ The workspace is a self-contained document that can be loaded independently of t
 
 ## Files
 
-| File                   | Purpose                                                                                                                                                                                     |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/types.ts`         | All shared types: `WorkspaceDoc`, `MappingEntry`, `LLMProcessDoc`, `TaskRun`, `OutputBlock`, `ParsedBlock`                                                                                  |
-| `src/datatype.ts`      | Patchwork datatype registration (`LLMProcessDatatype`) with init defaults                                                                                                                   |
-| `src/index.ts`         | Plugin exports: `patchwork:tool` (id: "llm-process") + `patchwork:datatype` (id: "llm-process")                                                                                            |
-| `src/LLMProcessUI.tsx` | React component. Renders runs/output, provides task input, model selector, per-task deletion, clear context                                                                                 |
-| `src/llm-process.ts`   | Agent loop. Creates WorkspaceDoc, calls LLM streaming endpoint, parses `<script>` blocks, evals them, feeds results back. Injects `fs`/`console` as globals                                |
-| `src/parser.ts`        | Simple `<script>`/`</script>` state machine. Async generator over a token stream, yields `{type:"text"}` or `{type:"script"}` blocks                                                       |
+| File                   | Purpose                                                                                                                                                                                                                                      |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/types.ts`         | All shared types: `WorkspaceDoc`, `MappingEntry`, `LLMProcessDoc`, `TaskRun`, `OutputBlock`, `ParsedBlock`                                                                                                                                   |
+| `src/datatype.ts`      | Patchwork datatype registration (`LLMProcessDatatype`) with init defaults                                                                                                                                                                    |
+| `src/index.ts`         | Plugin exports: `patchwork:tool` (id: "llm-process") + `patchwork:datatype` (id: "llm-process")                                                                                                                                              |
+| `src/LLMProcessUI.tsx` | React component. Renders runs/output, provides task input, model selector, per-task deletion, clear context                                                                                                                                  |
+| `src/llm-process.ts`   | Agent loop. Creates WorkspaceDoc, calls LLM streaming endpoint, parses `<script>` blocks, evals them, feeds results back. Injects `fs`/`console` as globals                                                                                  |
+| `src/parser.ts`        | Simple `<script>`/`</script>` state machine. Async generator over a token stream, yields `{type:"text"}` or `{type:"script"}` blocks                                                                                                         |
 | `src/fs.ts`            | `AutomergeFS` class. COW filesystem backed by `WorkspaceDoc`. Resolves paths by walking `FolderDoc.docs` arrays with overlay resolution at each step. Clones docs on first write. Includes `patchFile` for targeted search-and-replace edits |
-| `src/styles.css`       | Tailwind import                                                                                                                                                                             |
+| `src/styles.css`       | Tailwind import                                                                                                                                                                                                                              |
 
 ## Agent loop (llm-process.ts)
 
@@ -125,6 +125,7 @@ Console output and return values are JSON-stringified with `JSON.stringify(value
 - **Writing to an existing file**: The file doc is cloned via `repo.clone()`, the mapping `originalUrl → { cloneUrl, originalUrlWithHeads }` is recorded in the workspace, and the write goes to the clone. The `originalUrlWithHeads` captures the original's heads at clone time via `stringifyAutomergeUrl`. Subsequent writes to the same file reuse the existing clone. `writeFile` uses `updateText` for efficient text diffs, with a fallback to direct assignment for docs with incompatible content types (e.g. older Automerge Text objects).
 - **Patching a file** (`patchFile`): Reads the file, finds `oldStr`, replaces it with `newStr`, and writes back via `writeFile`. This is the preferred method for targeted edits — avoids full-file rewrites and the token cost of re-generating unchanged content.
 - **Modifying a folder** (adding/removing files via `writeFile`, `createFolder`, `remove`, `move`, `linkDoc`): The parent folder is cloned via COW before mutation, same mechanism.
+- **Copying files** (`copy`): Clones the source document via `repo.clone()` (preserving type and metadata) and links the clone into the destination folder. The clone is tracked in `WorkspaceDoc.createdUrls`. For folders, the copy is recursive — a new folder is created and all children are cloned individually.
 - **Moving files** (`move`): Removes the DocLink from the source folder and adds it to the destination folder, both via COW. The underlying document URL is preserved — only the folder links change.
 - **Creating new docs**: New files get `{ "@patchwork": { type: "file" } }` metadata. New folders get `{ "@patchwork": { type: "folder" } }`. Created file URLs are tracked in `WorkspaceDoc.createdUrls`.
 - **Reading**: Fully transparent — `readDoc` and `listFolder` go through `resolvePath` which resolves through the overlay automatically. Both `readDoc` and `getDocHandle` accept filesystem paths only — automerge URLs must be linked into the filesystem first via `linkDoc`.
@@ -141,6 +142,7 @@ Available inside `<script>` blocks:
 - `fs.patchFile(path, oldStr, newStr)` → `Promise<void>` — replace the first occurrence of `oldStr` with `newStr`. Preferred over `writeFile` for targeted edits to existing files.
 - `fs.listFolder(path)` → `Promise<{name, type, url}[]>` — `url` is the automerge URL (resolved through COW overlay)
 - `fs.createFolder(path)` → `Promise<void>`
+- `fs.copy(srcPath, destPath)` → `Promise<void>` — copy a file or folder to a new path (clones the document; folders are copied recursively)
 - `fs.move(srcPath, destPath)` → `Promise<void>` (move or rename a file/folder)
 - `fs.remove(path)` → `Promise<void>` (unlinks from parent folder)
 - `fs.linkDoc(path, automergeUrl)` → `Promise<void>` — link an existing automerge doc into a folder (type is read from the doc's `@patchwork` metadata)

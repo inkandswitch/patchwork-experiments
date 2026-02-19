@@ -1,11 +1,9 @@
-import { useState, useEffect } from 'react';
-import { useDocument, useRepo } from '@automerge/automerge-repo-react-hooks';
+import { useDocument } from '@automerge/automerge-repo-react-hooks';
 import { toolify } from '@inkandswitch/patchwork-react';
 import type { ToolImplementation } from '@inkandswitch/patchwork-plugins';
 import type { AutomergeUrl } from '@automerge/automerge-repo';
-import type { LLMProcessDoc, WorkspaceDoc } from '../types';
-import { AutomergeFS } from '../fs';
-import { buildLLMMessages, buildFullSystemPrompt, type ChatMessage } from '../llm-process';
+import type { LLMProcessDoc } from '../types';
+import { buildLLMMessages, SYSTEM_PROMPT, type ChatMessage } from '../llm-process';
 
 const ROLE_STYLES: Record<ChatMessage['role'], string> = {
   system: 'bg-info/[0.06] border-info/20 text-info/80',
@@ -20,34 +18,10 @@ const ROLE_LABELS: Record<ChatMessage['role'], string> = {
 };
 
 const ContextView = ({ docUrl }: { docUrl: AutomergeUrl }) => {
-  const repo = useRepo();
   const [doc] = useDocument<LLMProcessDoc>(docUrl, { suspense: true });
-  const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    repo.find<WorkspaceDoc>(doc.workspaceUrl).then((wsHandle) => {
-      if (cancelled) return;
-      const fs = new AutomergeFS(repo, wsHandle);
-      buildFullSystemPrompt(fs).then((prompt) => {
-        if (!cancelled) setSystemPrompt(prompt);
-      });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [repo, doc.workspaceUrl]);
-
-  if (!systemPrompt) {
-    return (
-      <div className="flex items-center justify-center h-full text-base-content/40 text-sm">
-        Loading…
-      </div>
-    );
-  }
 
   const messages: ChatMessage[] =
-    doc.runs.length > 0 ? buildLLMMessages(doc) : [{ role: 'system', content: systemPrompt }];
+    doc.runs.length > 0 ? buildLLMMessages(doc) : [{ role: 'system', content: SYSTEM_PROMPT }];
 
   return (
     <div className="flex flex-col h-full overflow-y-auto px-4 py-4 max-w-[1024px] mx-auto w-full">

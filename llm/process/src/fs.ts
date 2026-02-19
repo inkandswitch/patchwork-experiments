@@ -413,6 +413,53 @@ export class AutomergeFS {
   }
 
   /**
+   * Copy a file or folder to a new path. For files and non-folder docs,
+   * clones the source document (preserving type and metadata) and links
+   * the clone into the destination folder. For folders, recursively copies
+   * all contents. Cloned docs are tracked in createdUrls.
+   */
+  async copy(srcPath: string, destPath: string): Promise<void> {
+    const srcResolved = await this.resolvePath(srcPath);
+    if (!srcResolved) {
+      throw new Error(`Source not found: ${srcPath}`);
+    }
+
+    const destResolved = await this.resolvePath(destPath);
+    if (destResolved) {
+      throw new Error(`Destination already exists: ${destPath}`);
+    }
+
+    if (srcResolved.link.type === 'folder') {
+      await this.createFolder(destPath);
+      const entries = await this.listFolder(srcPath);
+      for (const entry of entries) {
+        const childSrc = srcPath.replace(/\/$/, '') + '/' + entry.name;
+        const childDest = destPath.replace(/\/$/, '') + '/' + entry.name;
+        await this.copy(childSrc, childDest);
+      }
+    } else {
+      const destParent = await this.resolveParent(destPath);
+      const cloneHandle = this.repo.clone(srcResolved.handle);
+
+      destParent.folderHandle.change((doc) => {
+        if (!doc.docs) {
+          doc.docs = [];
+        }
+        doc.docs.push({
+          url: cloneHandle.url,
+          name: destParent.targetName,
+          type: srcResolved.link.type,
+        });
+      });
+
+      this.workspaceHandle.change((ws: any) => {
+        if (!ws.createdUrls) ws.createdUrls = [];
+        ws.createdUrls.push(cloneHandle.url);
+      });
+    }
+  }
+
+  /**
    * Remove a file or directory from its parent folder.
    * Parent folder is cloned via COW before mutation.
    */

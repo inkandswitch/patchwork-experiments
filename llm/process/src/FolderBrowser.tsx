@@ -1,44 +1,22 @@
-import { useCallback, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useDocument } from '@automerge/automerge-repo-react-hooks';
 import type { AutomergeUrl } from '@automerge/automerge-repo';
 import type { FolderDoc, DocLink } from '@inkandswitch/patchwork-filesystem';
 
 export function FolderBrowser({ docUrl }: { docUrl: AutomergeUrl }) {
   const [selectedUrl, setSelectedUrl] = useState<AutomergeUrl | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const openFullScreen = useCallback(() => {
-    if (!selectedUrl || !containerRef.current) return;
-    containerRef.current.dispatchEvent(
-      new CustomEvent("patchwork:open-document", {
-        detail: { url: selectedUrl },
-        bubbles: true,
-        composed: true,
-      })
-    );
-  }, [selectedUrl]);
 
   return (
-    <div ref={containerRef} className="flex h-full overflow-hidden">
+    <div className="flex h-full">
       <div className="w-[250px] shrink-0 border-r border-base-content/[0.06] overflow-y-auto py-1">
         <FolderNode url={docUrl} depth={0} onSelect={setSelectedUrl} selectedUrl={selectedUrl} />
       </div>
-      <div className="flex-1 min-w-0 overflow-hidden flex flex-col">
+      <div className="flex-1 min-w-0">
         {selectedUrl ? (
-          <>
-            <div className="flex items-center justify-end px-2 py-1 border-b border-base-content/[0.06]">
-              <button
-                onClick={openFullScreen}
-                className="text-xs px-2 py-0.5 rounded bg-base-content/[0.06] hover:bg-base-content/[0.12] text-base-content/60 hover:text-base-content transition-colors"
-              >
-                Open
-              </button>
-            </div>
-            <patchwork-view doc-url={selectedUrl} class="overflow-auto flex-1 w-full" />
-          </>
+          <patchwork-view doc-url={selectedUrl} />
         ) : (
           <div className="flex items-center justify-center h-full text-sm text-base-content/30">
-            Select a file to preview!!!
+            Select a file to preview
           </div>
         )}
       </div>
