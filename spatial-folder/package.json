@@ -1,7 +1,7 @@
 {
-  "name": "@patchwork/spatial-folder",
+  "name": "@patchwork/pauls-spatial-folder",
   "version": "0.0.1",
-  "description": "tldraw-based spatial folder viewer",
+  "description": "Paul's tldraw-based spatial folder viewer",
   "type": "module",
   "exports": "./dist/index.js",
   "scripts": {

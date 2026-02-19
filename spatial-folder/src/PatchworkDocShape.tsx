@@ -311,12 +311,19 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
   const selectedTool = tools.find((t) => t.id === effectiveToolId);
   const pillLabel = selectedTool ? selectedTool.name : docType || '';
 
+  const contentClassName = `patchwork-doc-content-${shape.id.replace(/[^a-zA-Z0-9]/g, '_')}`;
+
   return (
     <HTMLContainer>
       <style>{`
         @keyframes tool-expand {
           from { width: 13px; opacity: 0.5; }
           to { width: 108px; opacity: 1; }
+        }
+        .${contentClassName}.focused,
+        .${contentClassName}.focused * {
+          user-select: text !important;
+          -webkit-user-select: text !important;
         }
       `}</style>
       <div
@@ -522,6 +529,7 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
       {/* ---- Content area ---- */}
       <div
         ref={contentRef}
+        className={`${contentClassName}${isFocused ? ' focused' : ''}`}
         style={{
           flex: 1,
           minHeight: 0,
@@ -529,7 +537,9 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
           position: 'relative',
           pointerEvents: isSelectTool ? 'auto' : 'none',
         }}
-        onPointerDown={isSelectTool ? (e) => { e.stopPropagation(); setIsFocused(true); } : undefined}
+        onPointerDownCapture={isSelectTool ? (e) => { e.stopPropagation(); setIsFocused(true); } : undefined}
+        onPointerMoveCapture={isFocused ? (e) => e.stopPropagation() : undefined}
+        onPointerUpCapture={isFocused ? (e) => e.stopPropagation() : undefined}
         onWheelCapture={isFocused ? (e) => e.stopPropagation() : undefined}
       >
         {docUrl ? (
