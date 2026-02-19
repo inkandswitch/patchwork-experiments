@@ -1,4 +1,8 @@
 import { Plugin } from "@inkandswitch/patchwork-plugins";
+import type { Repo } from "@automerge/automerge-repo";
+import { registerScopedElements } from "./scoped-elements/scoped-elements";
+
+registerScopedElements({ repo: (window as any).repo as Repo });
 
 export const plugins: Plugin<any>[] = [
   {
@@ -13,6 +17,17 @@ export const plugins: Plugin<any>[] = [
     },
   },
   {
+    type: "patchwork:tool",
+    id: "workspace-browser",
+    name: "Workspace Browser",
+    icon: "FolderOpen",
+    supportedDatatypes: ["workspace"],
+    async load() {
+      const { renderWorkspaceBrowser } = await import("./WorkspaceBrowserUI");
+      return renderWorkspaceBrowser;
+    },
+  },
+  {
     type: "patchwork:datatype",
     id: "workspace",
     name: "Workspace",
@@ -24,4 +39,4 @@ export const plugins: Plugin<any>[] = [
   },
 ];
 
-console.log("workspace-review v9");
+console.log("workspace-review v12");

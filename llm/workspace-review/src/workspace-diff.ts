@@ -7,10 +7,7 @@
  */
 
 import type { AutomergeUrl, DocHandle, Repo } from "@automerge/automerge-repo";
-import {
-  parseAutomergeUrl,
-  stringifyAutomergeUrl,
-} from "@automerge/automerge-repo";
+import { parseAutomergeUrl, stringifyAutomergeUrl } from "@automerge/automerge-repo";
 import type { FolderDoc } from "@inkandswitch/patchwork-filesystem";
 import { diffLines } from "diff";
 import type { WorkspaceDoc, MappingEntry, FileChange, DiffRow } from "./types";
@@ -30,17 +27,10 @@ type TreeEntry = {
  * overlay (i.e. if a clone exists for a folder, the clone is used instead).
  * Keying by URL avoids collisions when multiple entries share the same name.
  */
-async function walkTree(
-  repo: Repo,
-  folderUrl: AutomergeUrl,
-  mappings: Record<string, MappingEntry> | null,
-  prefix: string = ""
-): Promise<Map<AutomergeUrl, TreeEntry>> {
+async function walkTree(repo: Repo, folderUrl: AutomergeUrl, mappings: Record<string, MappingEntry> | null, prefix: string = ""): Promise<Map<AutomergeUrl, TreeEntry>> {
   const result = new Map<AutomergeUrl, TreeEntry>();
 
-  const effectiveUrl = mappings
-    ? (mappings[folderUrl]?.cloneUrl ?? folderUrl)
-    : folderUrl;
+  const effectiveUrl = mappings ? mappings[folderUrl]?.cloneUrl ?? folderUrl : folderUrl;
 
   const handle = await repo.find<FolderDoc>(effectiveUrl);
   await handle.whenReady();
@@ -68,15 +58,9 @@ async function walkTree(
 }
 
 /** Read the @patchwork.type from a document, resolving through the overlay if needed. */
-async function readDocType(
-  repo: Repo,
-  url: AutomergeUrl,
-  mappings: Record<string, MappingEntry> | null
-): Promise<string> {
+async function readDocType(repo: Repo, url: AutomergeUrl, mappings: Record<string, MappingEntry> | null): Promise<string> {
   try {
-    const effectiveUrl = mappings
-      ? (mappings[url]?.cloneUrl ?? url)
-      : url;
+    const effectiveUrl = mappings ? mappings[url]?.cloneUrl ?? url : url;
     const handle = await repo.find(effectiveUrl);
     await handle.whenReady();
     const doc = handle.doc() as any;
@@ -93,10 +77,7 @@ async function readDocType(
  * Matching is done by document URL (not path) so duplicate names don't collide.
  * Folders themselves are not reported -- only leaf documents.
  */
-export async function computeChangeset(
-  repo: Repo,
-  workspaceDoc: WorkspaceDoc
-): Promise<FileChange[]> {
+export async function computeChangeset(repo: Repo, workspaceDoc: WorkspaceDoc): Promise<FileChange[]> {
   const { rootFolderUrl, mappings } = workspaceDoc;
   if (!rootFolderUrl || !mappings || Object.keys(mappings).length === 0) {
     return [];
@@ -129,9 +110,7 @@ export async function computeChangeset(
 
     if (!overlayEntry) {
       console.log(`[workspace-diff] DELETED: ${origEntry.path} url=${url} (not in overlay)`);
-      const content = origEntry.docType === "file"
-        ? await readFileContent(repo, origEntry.url)
-        : undefined;
+      const content = origEntry.docType === "file" ? await readFileContent(repo, origEntry.url) : undefined;
       changes.push({
         path: origEntry.path,
         changeType: "deleted",
@@ -248,9 +227,7 @@ export async function computeChangeset(
     if (entry.type === "folder") continue;
     if (!createdUrls.has(url)) continue;
 
-    const content = entry.docType === "file"
-      ? await readFileContent(repo, entry.url)
-      : undefined;
+    const content = entry.docType === "file" ? await readFileContent(repo, entry.url) : undefined;
     changes.push({
       path: entry.path,
       changeType: "added",
@@ -267,21 +244,18 @@ export async function computeChangeset(
 
   // Sort: modified first, then moved, added, deleted, unchanged last
   const order: Record<string, number> = {
-    modified: 0, moved: 1, added: 2, deleted: 3, unchanged: 4,
+    modified: 0,
+    moved: 1,
+    added: 2,
+    deleted: 3,
+    unchanged: 4,
   };
-  changes.sort(
-    (a, b) =>
-      (order[a.changeType] ?? 9) - (order[b.changeType] ?? 9) ||
-      a.path.localeCompare(b.path)
-  );
+  changes.sort((a, b) => (order[a.changeType] ?? 9) - (order[b.changeType] ?? 9) || a.path.localeCompare(b.path));
 
   return changes;
 }
 
-async function readFileContent(
-  repo: Repo,
-  url: AutomergeUrl
-): Promise<string> {
+async function readFileContent(repo: Repo, url: AutomergeUrl): Promise<string> {
   try {
     const handle = await repo.find(url);
     await handle.whenReady();
@@ -289,8 +263,7 @@ async function readFileContent(
     if (!doc || doc.content === undefined) return "";
 
     if (typeof doc.content === "string") return doc.content;
-    if (doc.content instanceof Uint8Array)
-      return new TextDecoder().decode(doc.content);
+    if (doc.content instanceof Uint8Array) return new TextDecoder().decode(doc.content);
     return String(doc.content);
   } catch {
     return "";
@@ -304,10 +277,7 @@ async function readFileContent(
  * Returns an array of DiffRow, where each row has a left and right DiffLine.
  * Spacer lines are inserted to keep sides aligned.
  */
-export function computeSideBySideDiff(
-  oldText: string,
-  newText: string
-): DiffRow[] {
+export function computeSideBySideDiff(oldText: string, newText: string): DiffRow[] {
   const changes = diffLines(oldText, newText);
   const rows: DiffRow[] = [];
 
@@ -358,15 +328,9 @@ export function computeSideBySideDiff(
     const maxLen = Math.max(removedLines.length, addedLines.length);
 
     for (let j = 0; j < maxLen; j++) {
-      const left: DiffRow["left"] =
-        j < removedLines.length
-          ? { type: "removed", oldLineNo: oldLineNo++, content: removedLines[j] }
-          : { type: "spacer", content: "" };
+      const left: DiffRow["left"] = j < removedLines.length ? { type: "removed", oldLineNo: oldLineNo++, content: removedLines[j] } : { type: "spacer", content: "" };
 
-      const right: DiffRow["right"] =
-        j < addedLines.length
-          ? { type: "added", newLineNo: newLineNo++, content: addedLines[j] }
-          : { type: "spacer", content: "" };
+      const right: DiffRow["right"] = j < addedLines.length ? { type: "added", newLineNo: newLineNo++, content: addedLines[j] } : { type: "spacer", content: "" };
 
       rows.push({ left, right });
     }
@@ -393,10 +357,7 @@ function splitLines(value: string): string[] {
  * Phase 2: Heads propagation -- update head-pinned URLs bottom-up.
  * Phase 3: Clear mappings.
  */
-export async function mergeChanges(
-  repo: Repo,
-  workspaceHandle: DocHandle<WorkspaceDoc>
-): Promise<void> {
+export async function mergeChanges(repo: Repo, workspaceHandle: DocHandle<WorkspaceDoc>): Promise<void> {
   const ws = workspaceHandle.doc();
   if (!ws || !ws.mappings || Object.keys(ws.mappings).length === 0) return;
 
@@ -458,11 +419,7 @@ export async function mergeChanges(
  * sets `lastSyncAt` on any folder whose subtree contains a changed document.
  * Returns true if this subtree had changes.
  */
-async function cleanupTree(
-  repo: Repo,
-  folderUrl: AutomergeUrl,
-  changedUrls: Set<string>
-): Promise<boolean> {
+async function cleanupTree(repo: Repo, folderUrl: AutomergeUrl, changedUrls: Set<string>): Promise<boolean> {
   // Strip heads from the folder URL itself so we get a live writable handle
   const { documentId: folderId } = parseAutomergeUrl(folderUrl);
   const bareFolderUrl = stringifyAutomergeUrl({ documentId: folderId });

@@ -12,7 +12,7 @@ import { AutomergeFS } from './fs';
 import { parseScriptBlocks } from './parser';
 import type { LLMProcessDoc, OutputBlock, WorkspaceDoc } from './types';
 
-export const SKILLS_FOLDER_URL = 'automerge:2JmCge8uTsj6ytyYpRhswQPQTDcf' as AutomergeUrl;
+export const SKILLS_FOLDER_URL = 'automerge:3dryb49P6WNaNEC54TFGpcGUZYJ2' as AutomergeUrl;
 
 // --- Captured console for eval context ---
 

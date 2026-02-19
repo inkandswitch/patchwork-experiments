@@ -5,7 +5,6 @@ import type { ToolImplementation } from '@inkandswitch/patchwork-plugins';
 import type { AutomergeUrl } from '@automerge/automerge-repo';
 import type { LLMProcessDoc, WorkspaceDoc } from '../types';
 import { AutomergeFS } from '../fs';
-import { FolderBrowser } from './FolderBrowser';
 import '../styles.css';
 
 type ReactToolProps = {
@@ -25,7 +24,6 @@ const TABS: { id: Tab; label: string }[] = [
 const LLMProcessEditor = ({ docUrl }: ReactToolProps) => {
   const repo = useRepo();
   const [doc] = useDocument<LLMProcessDoc>(docUrl, { suspense: true });
-  const [workspaceDoc] = useDocument<WorkspaceDoc>(doc.workspaceUrl);
   const [activeTab, setActiveTab] = useState<Tab>('chat');
 
   // make fs of current llm process available on window
@@ -67,8 +65,12 @@ const LLMProcessEditor = ({ docUrl }: ReactToolProps) => {
             style={{ display: 'block', width: '100%', height: '100%' }}
           />
         )}
-        {activeTab === 'files' && workspaceDoc?.rootFolderUrl && (
-          <FolderBrowser docUrl={workspaceDoc.rootFolderUrl} />
+        {activeTab === 'files' && doc.workspaceUrl && (
+          <patchwork-view
+            doc-url={doc.workspaceUrl}
+            tool-id="workspace-browser"
+            style={{ display: 'block', width: '100%', height: '100%' }}
+          />
         )}
         {activeTab === 'review' && doc.workspaceUrl && (
           <patchwork-view

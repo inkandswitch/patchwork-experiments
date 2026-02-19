@@ -15,6 +15,7 @@
     "@automerge/automerge-repo": "2.5.2-alpha.0",
     "@automerge/automerge-repo-network-messagechannel": "2.5.2-alpha.0",
     "@automerge/automerge-repo-react-hooks": "2.5.2-alpha.0",
+    "@inkandswitch/patchwork-elements": "^0.0.5",
     "@inkandswitch/patchwork-filesystem": "^0.0.3",
     "@inkandswitch/patchwork-plugins": "0.0.4",
     "@inkandswitch/patchwork-react": "0.0.1",

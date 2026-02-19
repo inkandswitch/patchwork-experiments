@@ -165,7 +165,7 @@ Available inside `<script>` blocks:
 
 ## Skills
 
-Skills follow the [Agent Skills](https://agentskills.io) format and are loaded from an external Automerge folder. At startup, the agent links the skills folder from `automerge:2qTWd74BsagyJCDqn5dpYHYBHWsc/skills` into the workspace at `/skills` (skipped if `/skills` already exists).
+Skills follow the [Agent Skills](https://agentskills.io) format and are loaded from an external Automerge folder. At startup, the agent links the skills folder from `automerge:3dryb49P6WNaNEC54TFGpcGUZYJ2` into the workspace at `/skills` (skipped if `/skills` already exists).
 
 Each skill is a folder containing a `SKILL.md` file with YAML frontmatter:
 

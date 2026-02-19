@@ -26,6 +26,9 @@ importers:
       '@inkandswitch/annotations-diff':
         specifier: ^0.1.4
         version: 0.1.4
+      '@inkandswitch/patchwork-elements':
+        specifier: ^0.0.5
+        version: 0.0.5
       '@inkandswitch/patchwork-filesystem':
         specifier: ^0.0.3
         version: 0.0.3
@@ -415,6 +418,9 @@ packages:
       '@automerge/automerge-repo-keyhive': 0.0.0-alpha.71
       '@automerge/vanillajs': 2.5.0
       '@keyhive/keyhive': 0.0.0-alpha.40
+
+  '@inkandswitch/patchwork-elements@0.0.5':
+    resolution: {integrity: sha512-4MugOD0opAXa5c3OgsUDVq/yVwp8xe/CEXYWHt2LGPyl5AhMLKQa3t8Rk8qEZe13qMUkfR4kVKp2YdIcI9ghjw==}
 
   '@inkandswitch/patchwork-filesystem@0.0.3':
     resolution: {integrity: sha512-x6yqX1Xyr05ug4YfRyfKJ7jSm/zjhMxU7g/e70nz4QbxfLmcG98LHB9qAkFI2zd+VvKLnTvSpPGu2UvJzXGciw==}
@@ -1451,6 +1457,14 @@ snapshots:
       resolve.exports: 2.0.3
       service-worker-types: '@types/serviceworker@0.0.153'
       tinyargs: 0.1.4
+    transitivePeerDependencies:
+      - supports-color
+
+  '@inkandswitch/patchwork-elements@0.0.5':
+    dependencies:
+      '@automerge/automerge-repo': 2.5.0
+      '@inkandswitch/patchwork-filesystem': 0.0.3
+      '@inkandswitch/patchwork-plugins': 0.0.5
     transitivePeerDependencies:
       - supports-color
 

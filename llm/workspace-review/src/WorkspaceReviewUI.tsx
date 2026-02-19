@@ -81,7 +81,6 @@ const WorkspaceReview = ({ docUrl }: ReactToolProps) => {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-base-200 dark:border-base-content/10">
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold">Workspace Review</h2>
           {loading && <span className="loading loading-spinner loading-xs" />}
           {!loading && !hasChanges && !merged && <span className="badge badge-xs badge-ghost">No changes</span>}
           {!loading && hasChanges && (
