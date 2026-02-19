@@ -34,17 +34,21 @@ import {
 import { PATCHWORK_DOC_SHAPE_TYPE } from './PatchworkDocShape';
 
 // ---------------------------------------------------------------------------
-// Module-level context — set once from tool.tsx during initializeSync
+// Per-editor context — keyed by editor instance so nested spatial-folders
+// (subfolders rendered inside a parent) don't overwrite each other.
 // ---------------------------------------------------------------------------
 
-let _element: ToolElement | null = null;
-let _handle: DocHandle<any> | null = null;
+interface NewDocContext {
+  element: ToolElement;
+  handle: DocHandle<any>;
+}
+
+const _contextByEditor = new WeakMap<Editor, NewDocContext>();
 let _selectedDatatypeId = '';
 
-/** Call this once when the editor + doc are ready. */
-export function setNewDocToolContext(element: ToolElement, handle: DocHandle<any>) {
-  _element = element;
-  _handle = handle;
+/** Call this once per editor when the editor + doc are ready. */
+export function setNewDocToolContext(element: ToolElement, handle: DocHandle<any>, editor: Editor) {
+  _contextByEditor.set(editor, { element, handle });
 }
 
 export function setSelectedDatatypeId(id: string) {
@@ -172,8 +176,9 @@ export class NewDocShapeTool extends StateNode {
     const finalW = Math.max(pw, 200);
     const finalH = Math.max(ph, 150);
 
-    if (!_element || !_handle) {
-      console.warn('[spatial-folder] NewDocTool: context not set');
+    const ctx = _contextByEditor.get(this.editor);
+    if (!ctx) {
+      console.warn('[spatial-folder] NewDocTool: context not set for this editor');
       this.editor.setCurrentTool('select');
       return;
     }
@@ -187,9 +192,8 @@ export class NewDocShapeTool extends StateNode {
 
     const editor = this.editor;
     const shapeId = createShapeId();
-    const repo = _element.repo;
-    const hive = _element.hive;
-    const handle = _handle;
+    const repo = ctx.element.repo;
+    const hive = ctx.element.hive;
 
     // Create the patchwork-doc shape at the drawn bounds
     editor.createShape({
@@ -224,6 +228,8 @@ export class NewDocShapeTool extends StateNode {
         const docHandle = await (createDocOfDatatype2 as any)(datatype, repo, undefined, hive);
         const docUrl = docHandle.url;
 
+        // Updating docUrl from '' to a real URL triggers the store listener
+        // in tool.tsx which adds the doc to the correct folder's docs list.
         editor.updateShape({
           id: shapeId,
           type: PATCHWORK_DOC_SHAPE_TYPE,
@@ -234,15 +240,6 @@ export class NewDocShapeTool extends StateNode {
             toolId: '',
           },
         } as any);
-
-        handle.change((d: any) => {
-          if (!d.docs) d.docs = [];
-          d.docs.push({
-            name: datatype.name ?? datatypeId,
-            type: datatypeId,
-            url: docUrl,
-          });
-        });
 
         console.log('[spatial-folder] new doc created:', datatypeId, docUrl);
       } catch (err) {

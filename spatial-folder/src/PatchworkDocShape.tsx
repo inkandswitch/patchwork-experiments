@@ -21,7 +21,8 @@ import {
 } from '@inkandswitch/patchwork-plugins';
 import { openDocument } from '@inkandswitch/patchwork-elements';
 import type { AutomergeUrl } from '@automerge/automerge-repo';
-import { RepoContext } from '@automerge/automerge-repo-react-hooks';
+import { RepoContext, useDocument } from '@automerge/automerge-repo-react-hooks';
+import { automergeUrlToServiceWorkerUrl } from '@inkandswitch/patchwork-filesystem';
 
 export const PATCHWORK_DOC_SHAPE_TYPE = 'patchwork-doc' as const;
 
@@ -212,10 +213,57 @@ function ClickableTitle({
   );
 }
 
+const SPARKLE_POSITIONS = [
+  { top: '-6px', left: '10%' },
+  { top: '-6px', right: '20%' },
+  { top: '15%', right: '-6px' },
+  { top: '60%', right: '-6px' },
+  { bottom: '-6px', right: '25%' },
+  { bottom: '-6px', left: '15%' },
+  { top: '40%', left: '-6px' },
+  { top: '8%', left: '-6px' },
+];
+
+function Sparkles() {
+  return (
+    <>
+      {SPARKLE_POSITIONS.map((pos, i) => (
+        <span
+          key={i}
+          style={{
+            position: 'absolute',
+            ...pos,
+            width: '10px',
+            height: '10px',
+            pointerEvents: 'none',
+            zIndex: 10000,
+            animation: `sparkle-pop 600ms ease-out ${i * 60}ms both`,
+          }}
+        >
+          <svg viewBox="0 0 10 10" width="10" height="10">
+            <path
+              d="M5 0 L6 4 L10 5 L6 6 L5 10 L4 6 L0 5 L4 4 Z"
+              fill="#ffd700"
+            />
+          </svg>
+        </span>
+      ))}
+    </>
+  );
+}
+
+function useIsImage(docUrl: string): boolean {
+  const [doc] = useDocument<{ '@patchwork'?: { type?: string }; mimeType?: string }>(
+    docUrl ? docUrl as AutomergeUrl : undefined,
+  );
+  return doc?.['@patchwork']?.type === 'file' && !!doc?.mimeType?.startsWith('image/');
+}
+
 function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
   const { docUrl, docName, docType, toolId } = shape.props;
   const editor = useEditor();
   const repo = useContext(RepoContext);
+  const isImage = useIsImage(docUrl);
   const tools = useSupportedToolsForDatatype(docType);
   const isSelectTool = useValue('is select tool', () => editor.getCurrentToolId() === 'select', [
     editor,
@@ -224,6 +272,7 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
   const [isEditingName, setIsEditingName] = useState(false);
   const [isEditingTool, setIsEditingTool] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
+  const [sparkling, setSparkling] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const toolInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -243,6 +292,18 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
       toolInputRef.current.focus();
     }
   }, [isEditingTool]);
+
+  // Listen for patchwork:mounted on the content area
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    const handler = () => {
+      setSparkling(true);
+      setTimeout(() => setSparkling(false), 800);
+    };
+    el.addEventListener('patchwork:mounted', handler);
+    return () => el.removeEventListener('patchwork:mounted', handler);
+  }, []);
 
   // Unfocus content when clicking outside
   useEffect(() => {
@@ -318,6 +379,16 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
           from { width: 13px; opacity: 0.5; }
           to { width: 108px; opacity: 1; }
         }
+        @keyframes sparkle-pop {
+          0% { transform: scale(0) rotate(0deg); opacity: 1; }
+          50% { transform: scale(1) rotate(180deg); opacity: 1; }
+          100% { transform: scale(0) rotate(360deg); opacity: 0; }
+        }
+        @keyframes sparkle-border {
+          0% { box-shadow: 0 0 0 0 rgba(255,215,0,0.6), inset 0 0 0 0 rgba(255,215,0,0.1); }
+          30% { box-shadow: 0 0 12px 3px rgba(255,215,0,0.5), inset 0 0 8px 1px rgba(255,215,0,0.08); }
+          100% { box-shadow: 0 0 0 0 rgba(255,215,0,0), inset 0 0 0 0 rgba(255,215,0,0); }
+        }
       `}</style>
       <div
         ref={containerRef}
@@ -326,7 +397,7 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
           height: '100%',
           display: 'flex',
           flexDirection: 'column',
-          overflow: 'hidden',
+          overflow: 'visible',
           boxShadow: '1px 1px 0 rgba(0,0,0,0.4), 2px 2px 0 rgba(0,0,0,0.2), 0 2px 12px rgba(0,0,0,0.08)',
           border: '1px solid #888',
           borderTopColor: '#fff',
@@ -334,8 +405,10 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
           borderRadius: '2px',
           background: '#ffffff',
           pointerEvents: 'all',
+          ...(sparkling ? { animation: 'sparkle-border 800ms ease-out' } : {}),
         }}
       >
+      {sparkling && <Sparkles />}
       {/* ---- Mac OS 7.5 Titlebar ---- */}
       <div
         style={{
@@ -530,9 +603,36 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
           pointerEvents: isSelectTool ? 'auto' : 'none',
         }}
         onPointerDown={isSelectTool ? (e) => { e.stopPropagation(); setIsFocused(true); } : undefined}
+        onPointerUp={isSelectTool ? (e) => {
+          e.stopPropagation();
+          // Synthesize a click event so frameworks with document-level
+          // event delegation (Solid.js) receive it. tldraw's preventDefault
+          // on pointerdown suppresses the browser's native click event.
+          const target = e.target as HTMLElement;
+          if (target) {
+            const click = new MouseEvent('click', {
+              bubbles: true,
+              cancelable: true,
+              view: window,
+              clientX: e.clientX,
+              clientY: e.clientY,
+            });
+            target.dispatchEvent(click);
+          }
+        } : undefined}
         onWheelCapture={isFocused ? (e) => e.stopPropagation() : undefined}
       >
-        {docUrl ? (
+        {docUrl && isImage ? (
+          <img
+            src={automergeUrlToServiceWorkerUrl(docUrl as AutomergeUrl)}
+            alt={docName}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'contain',
+            }}
+          />
+        ) : docUrl ? (
           // @ts-expect-error Custom element from patchwork-elements
           <patchwork-view
             doc-url={docUrl}

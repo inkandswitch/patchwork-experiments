@@ -284,7 +284,7 @@ function SpatialFolderCanvas({
       }
       initializedRef.current = true;
       console.log(LOG, 'doc ready — running initializeSync');
-      setNewDocToolContext(element, handle);
+      setNewDocToolContext(element, handle, editor);
       initializeSync(
         editor,
         handle,
@@ -332,12 +332,55 @@ function SpatialFolderCanvas({
     isReconcilingRef.current = false;
 
     // Then async-filter any remaining tldraw docs from other sources.
+    // Use a stale flag so that if docUrlsKey changes before this resolves,
+    // we don't reconcile with outdated data (which could delete valid shapes).
+    let stale = false;
     filterTldrawDocs(element.repo, withoutOwn).then((filteredDocs) => {
+      if (stale) return;
       isReconcilingRef.current = true;
       reconcilePatchworkDocShapes(editor, filteredDocs);
       isReconcilingRef.current = false;
     });
+
+    return () => { stale = true; };
   }, [docUrlsKey, handle, element.repo]);
+
+  // ---- patchwork:open-document → pan/zoom to matching shape -----------------
+  // Only handle events originating from the sideboard panel; let others bubble.
+  const sideboardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const handler = (e: Event) => {
+      // Only intercept events from inside the sideboard panel
+      const sideboardEl = sideboardRef.current;
+      if (!sideboardEl) return;
+      const path = e.composedPath();
+      if (!path.includes(sideboardEl)) return;
+
+      const editor = editorRef.current;
+      if (!editor) return;
+      const detail = (e as CustomEvent).detail as { url?: string };
+      if (!detail?.url) return;
+
+      // Find the shape whose docUrl matches the requested URL
+      const targetId = makeShapeId(detail.url);
+      const shape = editor.getShape(targetId);
+      if (!shape) {
+        console.log(LOG, 'open-document: no shape found for', detail.url);
+        return;
+      }
+
+      // Stop the event from bubbling further — we're handling it
+      e.stopPropagation();
+
+      // Select the shape and zoom to it with some padding
+      editor.setSelectedShapes([targetId]);
+      editor.zoomToSelection({ animation: { duration: 300 } });
+      console.log(LOG, 'open-document: zoomed to shape for', detail.url);
+    };
+
+    element.addEventListener('patchwork:open-document', handler);
+    return () => element.removeEventListener('patchwork:open-document', handler);
+  }, [element]);
 
   // ---- Cleanup on unmount ---------------------------------------------------
   useEffect(() => {
@@ -365,7 +408,11 @@ function SpatialFolderCanvas({
       className="spatial-folder-root"
       style={{ width: '100%', height: '100%', position: 'relative' }}
     >
-      <style>{`.spatial-folder-root > .tl-container .tl-background { background: #ece8f4 !important; }`}</style>
+      <style>{`
+        .spatial-folder-root > .tl-container .tl-background {
+          background: #ece8f4 !important;
+        }
+      `}</style>
       <Tldraw
         shapeUtils={customShapeUtils}
         tools={customTools}
@@ -390,6 +437,121 @@ function SpatialFolderCanvas({
         >
           Loading…
         </div>
+      )}
+      <SideboardPanel containerRef={sideboardRef} docUrl={handle.url} title={doc?.title} />
+    </div>
+  );
+}
+
+// ---- Sideboard panel — fixed overlay, collapsible -------------------------
+
+function SideboardPanel({ containerRef, docUrl, title }: { containerRef: React.RefObject<HTMLDivElement | null>; docUrl: string; title?: string }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div
+      ref={containerRef as any}
+      style={{
+        position: 'fixed',
+        top: '52px',
+        left: '12px',
+        zIndex: 99,
+        pointerEvents: 'auto',
+      }}
+    >
+      {open ? (
+        <div
+          style={{
+            width: '280px',
+            height: '400px',
+            display: 'flex',
+            flexDirection: 'column',
+            background: '#fff',
+            border: '1px solid #ccc',
+            borderRadius: '8px',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+            overflow: 'hidden',
+          }}
+        >
+          {/* Header with collapse button on left, title on right */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 8px',
+              borderBottom: '1px solid #eee',
+              background: '#fafafa',
+              flexShrink: 0,
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              style={{
+                border: 'none',
+                background: 'none',
+                cursor: 'pointer',
+                padding: '2px',
+                lineHeight: 1,
+                fontSize: '16px',
+                color: '#999',
+                flexShrink: 0,
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <line x1="3" y1="8" x2="13" y2="8" stroke="#999" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+            </button>
+            <span
+              style={{
+                fontSize: '12px',
+                fontWeight: 600,
+                fontFamily: 'system-ui, -apple-system, sans-serif',
+                color: '#333',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {title || 'Sideboard'}
+            </span>
+          </div>
+          {/* patchwork-view content */}
+          <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+            {/* @ts-expect-error Custom element */}
+            <patchwork-view
+              doc-url={docUrl}
+              tool-id="chee/sideboard"
+              style={{ display: 'block', width: '100%', height: '100%' }}
+            />
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          title={title || 'Sideboard'}
+          style={{
+            width: '36px',
+            height: '36px',
+            border: '1px solid #ccc',
+            borderRadius: '8px',
+            background: '#fff',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 0,
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <line x1="3" y1="5" x2="13" y2="5" stroke="#666" strokeWidth="2" strokeLinecap="round" />
+            <line x1="3" y1="8" x2="13" y2="8" stroke="#666" strokeWidth="2" strokeLinecap="round" />
+            <line x1="3" y1="11" x2="13" y2="11" stroke="#666" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        </button>
       )}
     </div>
   );
@@ -547,13 +709,31 @@ async function initializeSync(
         if (!isReconcilingRef.current) {
           const added = Object.values(changes.added);
           const removed = Object.values(changes.removed);
-          const updated = Object.values(changes.updated).map(([, after]) => after);
+          const updatedPairs = Object.values(changes.updated);
+          const updated = updatedPairs.map(([, after]) => after);
 
+          // Shapes that were just added with a docUrl (e.g. undo)
+          // Exclude shapes pointing at the folder itself (e.g. sideboard)
           const docsToAdd = added.filter(
-            (r: any) => r.type === PATCHWORK_DOC_SHAPE_TYPE && r.props?.docUrl,
+            (r: any) => r.type === PATCHWORK_DOC_SHAPE_TYPE && r.props?.docUrl && r.props.docUrl !== handle.url,
           );
+
+          // Shapes whose docUrl went from empty to non-empty (NewDocTool flow:
+          // shape is created with docUrl='', then updated once the doc is ready)
+          const newlyLinked = updatedPairs
+            .filter(([before, after]: any) =>
+              after.type === PATCHWORK_DOC_SHAPE_TYPE &&
+              after.props?.docUrl &&
+              after.props.docUrl !== handle.url &&
+              !before.props?.docUrl,
+            )
+            .map(([, after]) => after);
+
+          // Combine both sources of new docs
+          docsToAdd.push(...newlyLinked);
+
           const docsToRemove = removed.filter(
-            (r: any) => r.type === PATCHWORK_DOC_SHAPE_TYPE && r.props?.docUrl,
+            (r: any) => r.type === PATCHWORK_DOC_SHAPE_TYPE && r.props?.docUrl && r.props.docUrl !== handle.url,
           );
           const docsRenamed = updated.filter(
             (r: any) => r.type === PATCHWORK_DOC_SHAPE_TYPE && r.props?.docUrl && r.props?.docName,
@@ -734,7 +914,7 @@ async function initializeSync(
   );
 
   // ------------------------------------------------------------------
-  // 4.  Ensure patchwork-doc shapes exist for every folder item
+  // 3c. Ensure patchwork-doc shapes exist for every folder item
   //     These are created as *user* changes so the store listener
   //     (step 1) persists them to automerge automatically.
   // ------------------------------------------------------------------
