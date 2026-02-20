@@ -330,14 +330,44 @@ function createStyles() {
     .chat-msg-embed {
       margin-top:6px; border:1px solid var(--border); border-radius:8px;
       overflow:hidden; width:100%; height:300px; position:relative;
-      background:var(--bg-surface);
+      background:var(--bg-surface); display:flex; flex-direction:column;
     }
-    .chat-msg-embed patchwork-view { width:100%; height:100%; display:block; }
+    .chat-msg-embed patchwork-view { width:100%; flex:1; min-height:0; display:block; }
     .chat-msg-embed-title {
-      position:absolute; bottom:0; left:0; right:0; padding:4px 8px;
-      font-size:11px; color:var(--text-secondary); background:var(--bg-darkest);
-      border-top:1px solid var(--border); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+      padding:0 8px 0 0; font-weight:500; color:var(--text-primary);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex-shrink:1; min-width:0;
     }
+    .chat-embed-infobar {
+      display:flex; align-items:center; gap:4px; padding:3px 6px;
+      background:var(--bg-darkest); border-top:1px solid var(--border);
+      font-size:11px; overflow:hidden; flex-wrap:wrap;
+    }
+    .chat-embed-pill {
+      display:inline-flex; align-items:center; gap:3px;
+      background:var(--bg-hover); border:1px solid var(--border); border-radius:10px;
+      padding:1px 8px; font-size:10px; color:var(--text-secondary);
+      white-space:nowrap; cursor:default; max-width:200px;
+      overflow:hidden; text-overflow:ellipsis; flex-shrink:0;
+    }
+    .chat-embed-pill.clickable { cursor:pointer; }
+    .chat-embed-pill.clickable:hover { color:var(--text-primary); border-color:var(--accent); background:var(--bg-input); }
+    .chat-embed-pill-label { opacity:0.6; font-size:9px; text-transform:uppercase; letter-spacing:0.3px; }
+    .chat-embed-tool-input {
+      background:var(--bg-darkest); border:1px solid var(--accent); border-radius:10px;
+      color:var(--text-primary); font-size:10px; padding:1px 8px; outline:none;
+      width:120px;
+    }
+    .chat-embed-url-menu {
+      position:absolute; bottom:100%; left:0; z-index:20;
+      background:var(--bg-surface); border:1px solid var(--border); border-radius:6px;
+      padding:2px; box-shadow:0 2px 8px rgba(0,0,0,0.3); white-space:nowrap;
+    }
+    .chat-embed-url-menu button {
+      display:block; width:100%; text-align:left; background:none; border:none;
+      color:var(--text-secondary); font-size:11px; padding:4px 10px; cursor:pointer;
+      border-radius:4px;
+    }
+    .chat-embed-url-menu button:hover { background:var(--bg-hover); color:var(--text-primary); }
 
     /* Resize handle */
     .chat-resize-handle {
@@ -3041,15 +3071,149 @@ export function Tool(handle, element, options) {
         wrap.className = "chat-msg-embed";
         if (msg["embed_" + ei + "Width"]) wrap.style.width = msg["embed_" + ei + "Width"] + "px";
         if (msg["embed_" + ei + "Height"]) wrap.style.height = msg["embed_" + ei + "Height"] + "px";
+
+        // Resolve tool override from chat doc
+        const chatDoc = handle.doc();
+        const toolId = chatDoc?.toolOverrides?.[embed.docUrl] || "";
+
         const pv = document.createElement("patchwork-view");
         pv.setAttribute("doc-url", embed.docUrl);
+        if (toolId) pv.setAttribute("tool-id", toolId);
         wrap.appendChild(pv);
+
+        // Info bar under the embed
+        const infobar = document.createElement("div");
+        infobar.className = "chat-embed-infobar";
+
+        // Title (if present)
         if (embed.title) {
-          const titleEl = document.createElement("div");
+          const titleEl = document.createElement("span");
           titleEl.className = "chat-msg-embed-title";
           titleEl.textContent = embed.title;
-          wrap.appendChild(titleEl);
+          infobar.appendChild(titleEl);
         }
+
+        // Tool pill (clickable → editable)
+        const toolPill = document.createElement("span");
+        toolPill.className = "chat-embed-pill clickable";
+        toolPill.title = "Change tool";
+        const toolLabel = document.createElement("span");
+        toolLabel.className = "chat-embed-pill-label";
+        toolLabel.textContent = "tool";
+        toolPill.appendChild(toolLabel);
+        toolPill.appendChild(document.createTextNode(" " + (toolId || "default")));
+        toolPill.addEventListener("pointerdown", (e) => { e.stopPropagation(); });
+        toolPill.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const inp = document.createElement("input");
+          inp.className = "chat-embed-tool-input";
+          inp.type = "text";
+          inp.placeholder = "tool id";
+          inp.value = toolId;
+          inp.addEventListener("pointerdown", (e) => { e.stopPropagation(); });
+          inp.addEventListener("keydown", (ev) => {
+            ev.stopPropagation();
+            if (ev.key === "Enter") {
+              const val = inp.value.trim();
+              handle.change((d) => {
+                if (!d.toolOverrides) d.toolOverrides = {};
+                if (val) d.toolOverrides[embed.docUrl] = val;
+                else delete d.toolOverrides[embed.docUrl];
+              });
+              render();
+            } else if (ev.key === "Escape") { render(); }
+          });
+          inp.addEventListener("blur", () => {
+            const val = inp.value.trim();
+            if (val !== toolId) {
+              handle.change((d) => {
+                if (!d.toolOverrides) d.toolOverrides = {};
+                if (val) d.toolOverrides[embed.docUrl] = val;
+                else delete d.toolOverrides[embed.docUrl];
+              });
+              render();
+            }
+          });
+          toolPill.replaceWith(inp);
+          inp.focus();
+          inp.select();
+        });
+        infobar.appendChild(toolPill);
+
+        // Datatype pill
+        if (embed.type) {
+          const typePill = document.createElement("span");
+          typePill.className = "chat-embed-pill";
+          const typeLabel = document.createElement("span");
+          typeLabel.className = "chat-embed-pill-label";
+          typeLabel.textContent = "type";
+          typePill.appendChild(typeLabel);
+          typePill.appendChild(document.createTextNode(" " + embed.type));
+          infobar.appendChild(typePill);
+        }
+
+        // URL pill (clickable → copy menu)
+        const urlPill = document.createElement("span");
+        urlPill.className = "chat-embed-pill clickable";
+        urlPill.style.position = "relative";
+        urlPill.title = "Copy URL";
+        const urlLabel = document.createElement("span");
+        urlLabel.className = "chat-embed-pill-label";
+        urlLabel.textContent = "url";
+        urlPill.appendChild(urlLabel);
+        // Show short doc ID
+        const docIdShort = embed.docUrl.replace("automerge:", "").slice(0, 8) + "…";
+        urlPill.appendChild(document.createTextNode(" " + docIdShort));
+        urlPill.addEventListener("pointerdown", (e) => { e.stopPropagation(); });
+        urlPill.addEventListener("click", (e) => {
+          e.stopPropagation();
+          // Toggle menu
+          const existing = urlPill.querySelector(".chat-embed-url-menu");
+          if (existing) { existing.remove(); return; }
+          const menu = document.createElement("div");
+          menu.className = "chat-embed-url-menu";
+
+          // Copy as tiny patchwork URL
+          const tinyBtn = document.createElement("button");
+          tinyBtn.textContent = "Copy tiny patchwork URL";
+          tinyBtn.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            const params = new URLSearchParams();
+            const docId = embed.docUrl.replace("automerge:", "");
+            params.set("doc", docId);
+            if (embed.title) params.set("title", embed.title);
+            if (embed.type) params.set("type", embed.type);
+            if (toolId) params.set("tool", toolId);
+            const url = "https://tiny.patchwork.inkandswitch.com/#" + params.toString();
+            navigator.clipboard.writeText(url).then(() => {
+              tinyBtn.textContent = "Copied!";
+              setTimeout(() => menu.remove(), 600);
+            });
+          });
+          menu.appendChild(tinyBtn);
+
+          // Copy as automerge URL
+          const amBtn = document.createElement("button");
+          amBtn.textContent = "Copy automerge URL";
+          amBtn.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            navigator.clipboard.writeText(embed.docUrl).then(() => {
+              amBtn.textContent = "Copied!";
+              setTimeout(() => menu.remove(), 600);
+            });
+          });
+          menu.appendChild(amBtn);
+
+          urlPill.appendChild(menu);
+          // Close on outside click
+          const closeMenu = (ev) => {
+            if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener("click", closeMenu, true); }
+          };
+          setTimeout(() => document.addEventListener("click", closeMenu, true), 0);
+        });
+        infobar.appendChild(urlPill);
+
+        wrap.appendChild(infobar);
         makeResizable(wrap, msg, "embed_" + ei);
         parent.appendChild(wrap);
       }
