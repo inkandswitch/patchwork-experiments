@@ -1,0 +1,20 @@
+{
+  "name": "@patchwork/chat",
+  "version": "0.1.0",
+  "description": "Enhanced chat with emoji reactions, presence/typing indicators, image paste, voice notes, and message replies. Pink theme with yellow highlights.",
+  "type": "module",
+  "main": "chat.js",
+  "exports": {
+    ".": "chat.js"
+  },
+  "scripts": {
+    "push": "pushwork sync"
+  },
+  "keywords": [
+    "chat",
+    "reactions",
+    "voice-notes",
+    "presence"
+  ],
+  "author": "Ink & Switch"
+}

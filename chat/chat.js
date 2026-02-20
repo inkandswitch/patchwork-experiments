@@ -1,0 +1,1615 @@
+/**
+ * Chat Tool - Enhanced Patchwork Chat
+ *
+ * Features:
+ * - Emoji reactions (any emoji via picker)
+ * - Presence & typing indicators
+ * - Image paste, voice notes, replies
+ * - User fonts, colors, avatars from contact doc
+ * - Cat ears on avatar click
+ * - GIF selfie mode (inline camera toggle left of input)
+ * - IRC/Discord-style layout
+ * - Themeable via single oklch base color + CSS variables
+ */
+
+// ============================================================================
+// Datatype
+// ============================================================================
+
+export const ChatDatatype = {
+  init(doc) {
+    doc.title = "Chat";
+    doc.messages = [];
+    doc.docs = [];
+  },
+  getTitle(doc) { return doc.title || "Chat"; },
+  setTitle(doc, title) { doc.title = title; },
+  markCopy(doc) { doc.title = "Copy of " + this.getTitle(doc); },
+};
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+function generateId() {
+  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+}
+
+function formatTime(ts) {
+  return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatDuration(s) {
+  const m = Math.floor(s / 60);
+  return m + ":" + Math.floor(s % 60).toString().padStart(2, "0");
+}
+
+// ============================================================================
+// Styles with CSS custom properties derived from a single theme color
+// ============================================================================
+
+function createStyles() {
+  const style = document.createElement("style");
+  style.textContent = `
+    /* ================================================================
+       THEME SYSTEM
+       Everything derives from --theme, a single oklch color.
+       --theme-fg uses contrast-color (with fallback).
+       ================================================================ */
+    .chat-root {
+      /* Default theme: Discord-ish indigo */
+      --theme: oklch(0.55 0.18 270);
+
+      /* Surfaces: theme color mixed with black to create darker shades.
+         This preserves the theme's hue and just shifts lightness down. */
+      --bg-darkest:  color-mix(in oklch, var(--theme) 15%, black);
+      --bg-dark:     color-mix(in oklch, var(--theme) 20%, black);
+      --bg-mid:      color-mix(in oklch, var(--theme) 25%, black);
+      --bg-hover:    color-mix(in oklch, var(--theme) 30%, black);
+      --bg-input:    color-mix(in oklch, var(--theme) 22%, black);
+      --border:      color-mix(in oklch, var(--theme) 40%, black);
+
+      /* Accent */
+      --accent:       var(--theme);
+      --accent-hover: color-mix(in oklch, var(--theme) 85%, oklch(0.35 0 0));
+      --accent-soft:  color-mix(in oklch, var(--theme) 15%, transparent);
+
+      /* Text: contrast against the background */
+      --text-primary:   oklch(0.93 0.01 0);
+      --text-secondary: oklch(0.68 0.01 0);
+      --text-muted:     oklch(0.55 0.01 0);
+
+      /* Accent foreground */
+      --accent-fg: oklch(1 0 0);
+    }
+
+    /* Light theme: when --theme has high luminosity, flip the base to light */
+    .chat-root.light-mode {
+      --bg-darkest:  color-mix(in oklch, var(--theme) 15%, white);
+      --bg-dark:     color-mix(in oklch, var(--theme) 10%, white);
+      --bg-mid:      color-mix(in oklch, var(--theme) 8%, white);
+      --bg-hover:    color-mix(in oklch, var(--theme) 18%, white);
+      --bg-input:    color-mix(in oklch, var(--theme) 5%, white);
+      --border:      color-mix(in oklch, var(--theme) 20%, white);
+      --accent-hover: color-mix(in oklch, var(--theme) 80%, black);
+      --text-primary:   oklch(0.15 0.01 0);
+      --text-secondary: oklch(0.35 0.01 0);
+      --text-muted:     oklch(0.50 0.01 0);
+      --accent-fg: oklch(1 0 0);
+    }
+
+    @supports (color: contrast-color(red max)) {
+      .chat-root {
+        --accent-fg: contrast-color(var(--theme) max);
+        --text-primary: contrast-color(var(--bg-dark) max);
+      }
+    }
+
+    /* ---- Reset ---- */
+    .chat-root {
+      display:flex; flex-direction:column;
+      position:absolute; inset:0;
+      font-family:system-ui,-apple-system,sans-serif;
+      background:var(--bg-dark); color:var(--text-primary);
+      box-sizing:border-box; font-size:15px;
+      overflow:hidden;
+    }
+    .chat-root *, .chat-root *::before, .chat-root *::after { box-sizing:border-box; }
+
+    /* ---- Header ---- */
+    .chat-header {
+      padding:12px 16px; background:var(--bg-darkest); color:var(--text-primary);
+      font-size:16px; font-weight:700; flex-shrink:0;
+      display:flex; align-items:center; gap:10px;
+      border-bottom:1px solid var(--border);
+    }
+    .chat-header-title { flex:1; }
+    .chat-header-actions { display:flex; gap:4px; align-items:center; }
+    .chat-header-btn {
+      background:none; border:none; color:var(--text-secondary); cursor:pointer;
+      font-size:18px; padding:4px 8px; border-radius:4px; position:relative;
+    }
+    .chat-header-btn:hover { background:var(--bg-hover); color:var(--text-primary); }
+
+    /* Theme picker popover */
+    .chat-theme-popover {
+      display:none; position:absolute; top:100%; right:0; margin-top:4px;
+      background:var(--bg-darkest); border:1px solid var(--border); border-radius:8px;
+      padding:12px; z-index:50; min-width:200px;
+      box-shadow:0 4px 20px rgba(0,0,0,0.4);
+    }
+    .chat-theme-popover.show { display:block; }
+    .chat-theme-popover label { font-size:13px; color:var(--text-secondary); display:block; margin-bottom:6px; }
+    .chat-theme-presets { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+    .chat-theme-preset {
+      width:28px; height:28px; border-radius:50%; border:2px solid transparent; cursor:pointer;
+      transition: border-color 0.15s;
+    }
+    .chat-theme-preset:hover, .chat-theme-preset.active { border-color:var(--text-primary); }
+    .chat-theme-hue-row { display:flex; align-items:center; gap:8px; }
+    .chat-theme-hue-row input[type=range] { flex:1; accent-color:var(--accent); }
+    .chat-theme-hue-row input[type=number] { width:50px; background:var(--bg-input); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; padding:2px 4px; font-size:13px; }
+
+    /* ---- Presence bar ---- */
+    .chat-presence-bar {
+      padding:4px 16px; background:var(--bg-darkest);
+      border-bottom:1px solid var(--border);
+      display:flex; gap:8px; align-items:center; flex-shrink:0; min-height:24px;
+    }
+    .chat-presence-user { display:flex; align-items:center; gap:4px; font-size:12px; color:var(--text-secondary); }
+    .chat-presence-dot { width:8px; height:8px; border-radius:50%; background:#23a55a; flex-shrink:0; }
+
+    /* ---- Messages ---- */
+    .chat-messages { flex:1; overflow-y:auto; padding:8px 0; display:flex; flex-direction:column; min-height:0; }
+
+    .chat-msg-group { padding:2px 16px; display:flex; gap:12px; position:relative; }
+    .chat-msg-group:hover { background:var(--bg-hover); }
+
+    /* Avatar */
+    .chat-avatar-col { width:40px; flex-shrink:0; padding-top:2px; }
+    .chat-avatar {
+      width:40px; height:40px; border-radius:50%; background:var(--accent);
+      display:flex; align-items:center; justify-content:center;
+      font-size:18px; font-weight:700; color:var(--accent-fg);
+      overflow:hidden; cursor:pointer; position:relative; user-select:none;
+    }
+    .chat-avatar img { width:100%; height:100%; object-fit:cover; }
+    .chat-avatar.gif-selfie { border-radius:4px; }
+    .chat-avatar.gif-selfie img { border-radius:4px; }
+    .chat-avatar.cat-ears::before {
+      content:""; position:absolute; top:-6px; left:2px;
+      border-left:8px solid transparent; border-right:8px solid transparent;
+      border-bottom:12px solid var(--accent); z-index:2;
+    }
+    .chat-avatar.cat-ears::after {
+      content:""; position:absolute; top:-6px; right:2px;
+      border-left:8px solid transparent; border-right:8px solid transparent;
+      border-bottom:12px solid var(--accent); z-index:2;
+    }
+
+    /* Message body */
+    .chat-msg-body { flex:1; min-width:0; }
+    .chat-msg-header { display:flex; align-items:baseline; gap:8px; }
+    .chat-msg-name { font-weight:600; font-size:15px; color:var(--text-primary); cursor:pointer; }
+    .chat-msg-name:hover { text-decoration:underline; }
+    .chat-msg-time { font-size:11px; color:var(--text-muted); }
+    .chat-msg-text { color:var(--text-primary); line-height:1.45; margin-top:2px; white-space:pre-wrap; word-wrap:break-word; }
+
+    /* Continuation messages */
+    .chat-msg-continuation { padding:0 16px 0 68px; position:relative; }
+    .chat-msg-continuation.has-gif { padding-left:16px; display:flex; gap:12px; align-items:flex-start; }
+    .chat-msg-continuation:hover { background:var(--bg-hover); }
+    .chat-msg-inline-time {
+      display:none; font-size:11px; color:var(--text-muted);
+      position:absolute; left:16px; top:2px; width:48px; text-align:right;
+    }
+    .chat-msg-continuation:hover .chat-msg-inline-time { display:block; }
+
+    /* GIF selfie shown inline in continuation */
+    .chat-msg-gif-inline {
+      width:40px; height:40px; border-radius:4px; object-fit:cover;
+      border:none; display:block; margin-right:6px; flex-shrink:0;
+    }
+
+    /* Reply ref */
+    .chat-msg-reply-ref {
+      display:flex; align-items:center; gap:6px; font-size:13px; color:var(--text-muted);
+      margin-bottom:2px; padding-left:36px; cursor:pointer; position:relative;
+    }
+    .chat-msg-reply-ref::before {
+      content:""; position:absolute; left:20px; top:50%; width:12px; height:12px;
+      border-left:2px solid var(--border); border-top:2px solid var(--border);
+      border-radius:6px 0 0 0; transform:translateY(-20%);
+    }
+    .chat-msg-reply-ref:hover { color:var(--text-primary); }
+    .chat-msg-reply-ref-avatar { width:16px; height:16px; border-radius:50%; overflow:hidden; flex-shrink:0; }
+    .chat-msg-reply-ref-avatar img { width:100%; height:100%; object-fit:cover; }
+    .chat-msg-reply-ref-name { font-weight:600; color:var(--text-primary); }
+    .chat-msg-reply-ref-text { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:300px; }
+
+    /* Images */
+    .chat-msg-image { max-width:350px; max-height:300px; border-radius:8px; margin-top:4px; cursor:pointer; }
+
+    /* Voice note */
+    .chat-voice-note {
+      display:flex; align-items:center; gap:8px; margin-top:4px; padding:8px 12px;
+      background:var(--bg-darkest); border-radius:8px; max-width:300px;
+    }
+    .chat-voice-play-btn {
+      width:32px; height:32px; border-radius:50%; background:var(--accent); color:var(--accent-fg);
+      border:none; font-size:14px; cursor:pointer; display:flex; align-items:center;
+      justify-content:center; flex-shrink:0;
+    }
+    .chat-voice-play-btn:hover { background:var(--accent-hover); }
+    .chat-voice-waveform { flex:1; height:24px; display:flex; align-items:center; gap:2px; }
+    .chat-voice-bar { width:3px; background:var(--accent); border-radius:2px; min-height:3px; }
+    .chat-voice-duration { font-size:12px; color:var(--text-muted); flex-shrink:0; }
+
+    /* Reactions */
+    .chat-reactions { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+    .chat-reaction {
+      display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:8px;
+      border:1px solid var(--border); background:var(--bg-dark); font-size:15px;
+      cursor:pointer; user-select:none; transition:all 0.1s;
+    }
+    .chat-reaction:hover { border-color:var(--accent); background:var(--bg-hover); }
+    .chat-reaction.mine { border-color:var(--accent); background:var(--accent-soft); }
+    .chat-reaction-count { font-size:12px; color:var(--text-secondary); font-weight:500; }
+    .chat-reaction-add {
+      display:inline-flex; align-items:center; justify-content:center;
+      width:28px; height:28px; border-radius:8px; border:1px dashed var(--border);
+      background:transparent; font-size:16px; cursor:pointer; color:var(--text-muted); transition:all 0.1s;
+    }
+    .chat-reaction-add:hover { border-color:var(--accent); color:var(--text-primary); background:var(--bg-hover); }
+
+    /* Message hover actions */
+    .chat-msg-actions {
+      position:absolute; top:-14px; right:16px; display:none;
+      background:var(--bg-darkest); border:1px solid var(--border);
+      border-radius:4px; overflow:hidden; z-index:10;
+    }
+    .chat-msg-group:hover .chat-msg-actions,
+    .chat-msg-continuation:hover .chat-msg-actions { display:flex; }
+    .chat-msg-action-btn {
+      background:none; border:none; color:var(--text-secondary);
+      padding:6px 8px; cursor:pointer; font-size:16px;
+    }
+    .chat-msg-action-btn:hover { background:var(--bg-hover); color:var(--text-primary); }
+
+    /* Emoji picker overlay */
+    .chat-emoji-picker-overlay {
+      position:fixed; top:0; left:0; right:0; bottom:0; z-index:100; display:none;
+    }
+    .chat-emoji-picker-overlay.show { display:block; }
+    .chat-emoji-picker {
+      position:absolute; background:var(--bg-darkest); border:1px solid var(--border);
+      border-radius:8px; padding:8px; box-shadow:0 4px 20px rgba(0,0,0,0.3);
+      z-index:101; display:flex; flex-wrap:wrap; gap:2px; max-width:300px;
+    }
+    .chat-emoji-picker button {
+      background:none; border:none; font-size:22px; cursor:pointer; padding:4px;
+      border-radius:4px; width:36px; height:36px; display:flex; align-items:center; justify-content:center;
+    }
+    .chat-emoji-picker button:hover { background:var(--bg-hover); }
+    .chat-emoji-picker-search {
+      width:100%; padding:6px 10px; background:var(--bg-input); border:1px solid var(--border);
+      border-radius:4px; color:var(--text-primary); font-size:14px; margin-bottom:6px; outline:none;
+    }
+    .chat-emoji-picker-search:focus { border-color:var(--accent); }
+
+    /* ---- Bottom area ---- */
+    .chat-typing-bar {
+      padding:0 16px; min-height:22px; font-size:12px;
+      color:var(--text-muted); font-style:italic; flex-shrink:0;
+    }
+    .chat-input-wrapper { flex-shrink:0; padding:0 16px 16px; }
+
+    .chat-reply-bar {
+      display:none; padding:8px 12px; background:var(--bg-mid);
+      border-radius:8px 8px 0 0; border-left:3px solid var(--accent);
+      align-items:center; gap:8px; font-size:13px; color:var(--text-secondary);
+    }
+    .chat-reply-bar.show { display:flex; }
+    .chat-reply-bar-text { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .chat-reply-bar-close { background:none; border:none; font-size:16px; cursor:pointer; color:var(--text-secondary); }
+    .chat-reply-bar-close:hover { color:var(--text-primary); }
+
+    .chat-paste-preview {
+      display:none; padding:8px 12px; background:var(--bg-mid); align-items:center; gap:8px;
+    }
+    .chat-paste-preview.show { display:flex; }
+    .chat-paste-preview img { max-height:50px; border-radius:4px; }
+    .chat-paste-preview-close { background:none; border:none; font-size:16px; cursor:pointer; color:var(--text-secondary); margin-left:auto; }
+
+    .chat-input-row {
+      display:flex; gap:0; background:var(--bg-input); border-radius:8px;
+      padding:4px; align-items:flex-end;
+    }
+    .chat-input {
+      flex:1; padding:8px 12px; border:none; font-size:15px; outline:none;
+      background:transparent; color:var(--text-primary);
+      font-family:inherit; resize:none; max-height:120px; min-height:24px; line-height:1.4;
+    }
+    .chat-input::placeholder { color:var(--text-muted); }
+
+    .chat-input-btn {
+      width:36px; height:36px; background:none; border:none; color:var(--text-secondary);
+      cursor:pointer; font-size:20px; border-radius:4px;
+      display:flex; align-items:center; justify-content:center; flex-shrink:0;
+    }
+    .chat-input-btn:hover { color:var(--text-primary); }
+    .chat-input-btn.recording { color:#ed4245; animation:pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.15)} }
+
+    /* Voice recording bar (replaces input row while recording) */
+    .chat-recording-bar {
+      display:flex; align-items:center; gap:10px; background:var(--bg-input); border-radius:8px;
+      padding:8px 12px; animation:fadeIn 0.15s ease;
+    }
+    @keyframes fadeIn { from{opacity:0;transform:scale(0.98)} to{opacity:1;transform:scale(1)} }
+    .chat-recording-dot {
+      width:10px; height:10px; border-radius:50%; background:#ed4245; flex-shrink:0;
+      animation:recPulse 1s ease-in-out infinite;
+    }
+    @keyframes recPulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.8)} }
+    .chat-recording-time { font-size:14px; color:var(--text-primary); font-variant-numeric:tabular-nums; min-width:40px; }
+    .chat-recording-viz {
+      flex:1; height:24px; display:flex; align-items:center; gap:2px; overflow:hidden;
+    }
+    .chat-recording-viz-bar {
+      width:3px; border-radius:2px; background:var(--accent); min-height:3px;
+      transition:height 0.1s ease;
+    }
+    .chat-recording-cancel {
+      background:none; border:none; color:var(--text-muted); cursor:pointer;
+      font-size:13px; padding:4px 10px; border-radius:4px;
+    }
+    .chat-recording-cancel:hover { color:var(--text-primary); background:var(--bg-hover); }
+    .chat-recording-send {
+      background:var(--accent); color:var(--accent-fg); border:none; cursor:pointer;
+      padding:6px 14px; border-radius:6px; font-size:13px; font-weight:600;
+    }
+    .chat-recording-send:hover { background:var(--accent-hover); }
+
+    /* GIF camera toggle (left of input) */
+    .chat-gif-toggle {
+      width:36px; height:36px; border:none; cursor:pointer; border-radius:4px;
+      display:flex; align-items:center; justify-content:center; flex-shrink:0;
+      background:none; color:var(--text-secondary); font-size:20px; position:relative;
+      overflow:hidden;
+    }
+    .chat-gif-toggle:hover { color:var(--text-primary); }
+    .chat-gif-toggle.active { color:var(--accent); }
+    .chat-gif-toggle video {
+      position:absolute; inset:0; width:100%; height:100%; object-fit:cover; border-radius:4px;
+      display:none;
+    }
+    .chat-gif-toggle.active video { display:block; }
+    .chat-gif-toggle.active .chat-gif-icon { display:none; }
+    
+    /* GIF recording/processing feedback */
+    .chat-gif-toggle.recording {
+      opacity:0.6; pointer-events:none; position:relative;
+    }
+    .chat-gif-toggle.recording::after {
+      content:""; position:absolute; top:2px; right:2px; width:12px; height:12px;
+      border:2px solid var(--accent); border-top:2px solid transparent; border-radius:50%;
+      animation:spin 1s linear infinite; z-index:10;
+    }
+    @keyframes spin { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
+    
+    .chat-input-row.processing .chat-input,
+    .chat-input-row.processing .chat-input-btn { opacity:0.5; pointer-events:none; }
+    .chat-input-row.processing .chat-gif-toggle { pointer-events:none; }
+
+    .chat-empty {
+      flex:1; display:flex; align-items:center; justify-content:center;
+      color:var(--text-muted); font-size:16px;
+    }
+  `;
+  return style;
+}
+
+// ============================================================================
+// Emoji list
+// ============================================================================
+const EMOJI_LIST = [
+  "😀","😃","😄","😁","😆","😅","🤣","😂","🙂","🙃","😉","😊","😇","🥰","😍","🤩",
+  "😘","😗","😚","😙","🥲","😋","😛","😜","🤪","😝","🤑","🤗","🤭","🤫","🤔","🫡",
+  "🤐","🤨","😐","😑","😶","🫥","😏","😒","🙄","😬","🤥","😌","😔","😪","🤤","😴",
+  "😷","🤒","🤕","🤢","🤮","🥵","🥶","🥴","😵","🤯","🤠","🥳","🥸","😎","🤓","🧐",
+  "😕","🫤","😟","🙁","☹️","😮","😯","😲","😳","🥺","🥹","😦","😧","😨","😰","😥",
+  "😢","😭","😱","😖","😣","😞","😓","😩","😫","🥱","😤","😡","😠","🤬","😈","👿",
+  "💀","☠️","💩","🤡","👹","👺","👻","👽","👾","🤖","😺","😸","😹","😻","😼","😽",
+  "🙀","😿","😾","❤️","🧡","💛","💚","💙","💜","🖤","🤍","🤎","💔","❤️‍🔥","💕","💞",
+  "💓","💗","💖","💘","💝","💟","👍","👎","👊","✊","🤛","🤜","🤞","✌️","🤟","🤘",
+  "👌","🤌","🤏","👈","👉","👆","👇","☝️","✋","🤚","🖐️","🖖","👋","🤙","💪","🦾",
+  "🙏","🎉","🎊","🎈","🎁","🎀","🏆","🏅","🥇","🥈","🥉","⚽","🏀","🏈","⚾","🎾",
+  "🔥","⭐","🌟","💫","✨","⚡","💥","💯","🎵","🎶","🎸","🎹","🥁","🎺","🎷","🪗",
+];
+
+const QUICK_EMOJIS = ["👍","❤️","😂","😮","😢","🎉","🔥","👀"];
+
+// ============================================================================
+// GIF Encoder
+// ============================================================================
+class SimpleGIFEncoder {
+  constructor(w, h) { this.width = w; this.height = h; this.frames = []; }
+
+  addFrame(canvas, delay = 100) {
+    const ctx = canvas.getContext("2d");
+    this.frames.push({ data: ctx.getImageData(0, 0, this.width, this.height).data, delay });
+  }
+
+  _quantize(pixels) {
+    const m = new Map();
+    for (let i = 0; i < pixels.length; i += 4) {
+      const k = ((pixels[i]>>3)<<10)|((pixels[i+1]>>3)<<5)|(pixels[i+2]>>3);
+      m.set(k, (m.get(k)||0)+1);
+    }
+    const s = [...m.entries()].sort((a,b)=>b[1]-a[1]).slice(0,256);
+    const p = s.map(([k])=>[(k>>10&0x1f)<<3,(k>>5&0x1f)<<3,(k&0x1f)<<3]);
+    while(p.length<256) p.push([0,0,0]);
+    return p;
+  }
+
+  _closest(p,r,g,b) {
+    let best=0,bd=Infinity;
+    for(let i=0;i<p.length;i++){const dr=r-p[i][0],dg=g-p[i][1],db=b-p[i][2],d=dr*dr+dg*dg+db*db;if(d<bd){bd=d;best=i;}}
+    return best;
+  }
+
+  encode() {
+    if(!this.frames.length) return null;
+    const pal=this._quantize(this.frames[0].data), bytes=[];
+    const wb=(b)=>bytes.push(b&0xff), ws=(s)=>{wb(s);wb(s>>8);}, wr=(s)=>{for(let i=0;i<s.length;i++)wb(s.charCodeAt(i));};
+
+    wr("GIF89a"); ws(this.width); ws(this.height); wb(0xf7); wb(0); wb(0);
+    for(const[r,g,b] of pal){wb(r);wb(g);wb(b);}
+    wb(0x21);wb(0xff);wb(11);wr("NETSCAPE2.0");wb(3);wb(1);ws(0);wb(0);
+
+    for(const frame of this.frames){
+      wb(0x21);wb(0xf9);wb(4);wb(0x04);ws(Math.round(frame.delay/10));wb(0);wb(0);
+      wb(0x2c);ws(0);ws(0);ws(this.width);ws(this.height);wb(0);
+      const mcs=8; wb(mcs);
+      const w=this.width,h=this.height,px=frame.data,idx=new Uint8Array(w*h);
+      for(let i=0;i<w*h;i++) idx[i]=this._closest(pal,px[i*4],px[i*4+1],px[i*4+2]);
+      const lzw=this._lzw(mcs,idx);
+      let pos=0;
+      while(pos<lzw.length){const c=Math.min(255,lzw.length-pos);wb(c);for(let i=0;i<c;i++)bytes.push(lzw[pos++]);}
+      wb(0);
+    }
+    wb(0x3b);
+    return new Uint8Array(bytes);
+  }
+
+  _lzw(mcs, pixels) {
+    const cc=1<<mcs, eoi=cc+1; let cs=mcs+1, nc=eoi+1;
+    const tbl=new Map(), out=[];
+    let buf=0, bb=0;
+    const emit=(c)=>{buf|=c<<bb;bb+=cs;while(bb>=8){out.push(buf&0xff);buf>>=8;bb-=8;}};
+    const reset=()=>{tbl.clear();for(let i=0;i<cc;i++)tbl.set(String(i),i);nc=eoi+1;cs=mcs+1;};
+    emit(cc); reset();
+    if(!pixels.length){emit(eoi);if(bb>0)out.push(buf&0xff);return out;}
+    let cur=String(pixels[0]);
+    for(let i=1;i<pixels.length;i++){
+      const nx=cur+","+pixels[i];
+      if(tbl.has(nx)){cur=nx;}else{
+        emit(tbl.get(cur));
+        if(nc<4096){tbl.set(nx,nc++);if(nc>(1<<cs)&&cs<12)cs++;}else{emit(cc);reset();}
+        cur=String(pixels[i]);
+      }
+    }
+    emit(tbl.get(cur)); emit(eoi); if(bb>0)out.push(buf&0xff); return out;
+  }
+}
+
+// ============================================================================
+// Theme presets
+// ============================================================================
+const THEME_PRESETS = [
+  { name: "Indigo",      color: "oklch(0.55 0.18 270)" },
+  { name: "Rose",        color: "oklch(0.55 0.18 350)" },
+  { name: "Emerald",     color: "oklch(0.55 0.18 155)" },
+  { name: "Amber",       color: "oklch(0.65 0.18 85)" },
+  { name: "Cyan",        color: "oklch(0.55 0.18 200)" },
+  { name: "Purple",      color: "oklch(0.50 0.20 300)" },
+  { name: "Slate",       color: "oklch(0.45 0.02 260)" },
+  { name: "Light Pink",  color: "oklch(0.80 0.12 350)" },
+  { name: "Light Blue",  color: "oklch(0.80 0.10 240)" },
+  { name: "Light Green", color: "oklch(0.78 0.12 155)" },
+  { name: "Lavender",    color: "oklch(0.75 0.14 300)" },
+  { name: "Peach",       color: "oklch(0.80 0.10 60)" },
+  { name: "White",       color: "oklch(1.00 0 0)" },
+  { name: "Black",       color: "oklch(0.15 0 0)" },
+];
+
+// ============================================================================
+// Tool
+// ============================================================================
+
+
+// SVG Icons
+const SVG_ICONS = {
+  reply: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>',
+  react: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>',
+  send: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>',
+  mic: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>',
+  micStop: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>',
+  camera: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h12v12H4z"/><path d="M16 6l4-3v18l-4-3"/><circle cx="10" cy="12" r="2.5"/><text x="6" y="22" font-size="5" font-weight="bold" fill="currentColor" stroke="none" font-family="system-ui">GIF</text></svg>',
+  theme: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="10.5" r="2.5"/><circle cx="8.5" cy="7.5" r="2.5"/><circle cx="6.5" cy="12" r="2.5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.9 0 1.7-.1 2.5-.3a1 1 0 0 0 .7-1.1l-.5-3a1 1 0 0 1 1-1.2h2.8a1 1 0 0 0 1-1.1A10 10 0 0 0 12 2z"/></svg>',
+  play: '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg>',
+  pause: '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>',
+  close: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+  plus: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+};
+
+export function Tool(handle, element, options) {
+  const style = createStyles();
+  element.appendChild(style);
+
+  // Ensure the host element is a positioning context for the absolute root
+  if (getComputedStyle(element).position === "static") {
+    element.style.position = "relative";
+  }
+
+  const root = document.createElement("div");
+  root.className = "chat-root";
+  element.appendChild(root);
+
+  // Prevent tldraw (or other parent tools) from eating pointer events on our
+  // interactive elements. tldraw calls stopPropagation on pointerdown which
+  // prevents click events from ever firing. We stop pointerdown propagation
+  // on the root so our clicks work. Per patchwork rules: only stopPropagation
+  // on pointerDown/pointerUp, never on click.
+  root.addEventListener("pointerdown", (e) => { e.stopPropagation(); });
+  root.addEventListener("pointerup", (e) => { e.stopPropagation(); });
+  // Prevent parent tools (tldraw etc.) from intercepting scroll/wheel events
+  root.addEventListener("wheel", (e) => { e.stopPropagation(); }, { passive: true });
+  root.addEventListener("touchstart", (e) => { e.stopPropagation(); }, { passive: true });
+  root.addEventListener("touchmove", (e) => { e.stopPropagation(); }, { passive: true });
+
+  let myName = "Anonymous";
+  let myFont = null;
+  let myAvatarUrl = null;
+  let myAvatarBlobUrl = null;
+  let replyToId = null;
+  let pastedImageData = null;
+  let isRecording = false;
+  let mediaRecorder = null;
+  let recordingChunks = [];
+  let recordingStartTime = 0;
+  let gifModeEnabled = false;
+  let gifStream = null;
+  let catEarsSet = new Set();
+  const avatarCache = new Map();
+
+  const PRESENCE_TIMEOUT = 30000;
+  const TYPING_TIMEOUT = 3000;
+  let presenceInterval = null;
+  const presenceMap = new Map();
+
+  // ---- Load saved theme ----
+  try {
+    const saved = localStorage.getItem("chat-theme-color");
+    if (saved) {
+      root.style.setProperty("--theme", saved);
+      const m = saved.match(/oklch\(([\d.]+)/);
+      if (m && parseFloat(m[1]) > 0.65) root.classList.add("light-mode");
+    }
+  } catch(e) {}
+
+  // ---- Resolve account ----
+  async function resolveAccountName() {
+    try {
+      const repo = window.repo; if (!repo) return;
+      const adh = window.accountDocHandle; if (!adh) return;
+      const ad = adh.doc(); if (!ad?.contactUrl) return;
+      const ch = await repo.find(ad.contactUrl);
+      const cd = ch.doc(); if (!cd) return;
+      if (cd.name) myName = cd.name;
+      if (cd.chat?.font) {
+        myFont = cd.chat.font;
+        input.style.fontFamily = myFont;
+      }
+      if (cd.avatarUrl) {
+        myAvatarUrl = cd.avatarUrl;
+        myAvatarBlobUrl = await loadBlobUrl(cd.avatarUrl);
+      }
+      render();
+      broadcastPresence();
+    } catch (e) { console.warn("[Chat] resolve account:", e); }
+  }
+  resolveAccountName();
+
+  // ---- Ephemeral presence ----
+  function broadcastPresence(typing) {
+    try {
+      handle.broadcast({ type:"presence", name:myName, typing:!!typing, avatarUrl:myAvatarUrl, timestamp:Date.now() });
+    } catch(e) {}
+  }
+
+  handle.on("ephemeral-message", (data) => {
+    const msg = data.message;
+    if (msg?.type === "presence") {
+      presenceMap.set(msg.name, { timestamp:msg.timestamp, typing:msg.typing, avatarUrl:msg.avatarUrl });
+      renderPresence();
+      renderTyping();
+    }
+  });
+
+  presenceInterval = setInterval(() => {
+    broadcastPresence(false);
+    const now = Date.now();
+    for (const [n, info] of presenceMap) { if (now - info.timestamp > PRESENCE_TIMEOUT) presenceMap.delete(n); }
+    renderPresence(); renderTyping();
+  }, 10000);
+
+  // ============================================================
+  // UI Construction
+  // ============================================================
+
+  // ---- Header ----
+  const header = document.createElement("div");
+  header.className = "chat-header";
+  const headerTitle = document.createElement("span");
+  headerTitle.className = "chat-header-title";
+  const headerActions = document.createElement("div");
+  headerActions.className = "chat-header-actions";
+
+  // Theme button
+  const themeBtn = document.createElement("button");
+  themeBtn.className = "chat-header-btn";
+  themeBtn.title = "Theme";
+  themeBtn.innerHTML = SVG_ICONS.theme;
+  themeBtn.style.position = "relative";
+
+  const themePopover = document.createElement("div");
+  themePopover.className = "chat-theme-popover";
+
+  const themeLabel = document.createElement("label");
+  themeLabel.textContent = "Theme Color";
+  themePopover.appendChild(themeLabel);
+
+  const presetRow = document.createElement("div");
+  presetRow.className = "chat-theme-presets";
+  for (const preset of THEME_PRESETS) {
+    const dot = document.createElement("button");
+    dot.className = "chat-theme-preset";
+    dot.style.background = preset.color;
+    dot.title = preset.name;
+    dot.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const m = preset.color.match(/oklch\(([\d.]+)\s+([\d.]+)\s+([\d.]+)\)/);
+      if (m) {
+        themeL = parseFloat(m[1]); themeC = parseFloat(m[2]); themeH = parseFloat(m[3]);
+        hueSlider.value = String(themeH); hueNumber.value = String(themeH);
+        lumSlider.value = String(Math.round(themeL * 100)); lumNumber.value = String(Math.round(themeL * 100));
+        chromaSlider.value = String(Math.round(themeC * 100)); chromaNumber.value = String(Math.round(themeC * 100));
+      }
+      setTheme(preset.color);
+    });
+    presetRow.appendChild(dot);
+  }
+  themePopover.appendChild(presetRow);
+
+  // Theme sliders state
+  let themeL = 0.55, themeC = 0.18, themeH = 270;
+
+  // Try to parse saved theme
+  try {
+    const saved = localStorage.getItem("chat-theme-color");
+    if (saved) {
+      const m = saved.match(/oklch\(([\d.]+)\s+([\d.]+)\s+([\d.]+)\)/);
+      if (m) { themeL = parseFloat(m[1]); themeC = parseFloat(m[2]); themeH = parseFloat(m[3]); }
+    }
+  } catch(e) {}
+
+  function updateThemeFromSliders() {
+    setTheme("oklch(" + themeL + " " + themeC + " " + themeH + ")");
+  }
+
+  // Hue
+  const hueLabel = document.createElement("label");
+  hueLabel.textContent = "Hue";
+  themePopover.appendChild(hueLabel);
+
+  const hueRow = document.createElement("div");
+  hueRow.className = "chat-theme-hue-row";
+  const hueSlider = document.createElement("input");
+  hueSlider.type = "range"; hueSlider.min = "0"; hueSlider.max = "360"; hueSlider.value = String(themeH);
+  const hueNumber = document.createElement("input");
+  hueNumber.type = "number"; hueNumber.min = "0"; hueNumber.max = "360"; hueNumber.value = String(themeH);
+
+  hueSlider.addEventListener("input", () => {
+    themeH = parseFloat(hueSlider.value); hueNumber.value = hueSlider.value;
+    updateThemeFromSliders();
+  });
+  hueNumber.addEventListener("input", () => {
+    themeH = parseFloat(hueNumber.value); hueSlider.value = hueNumber.value;
+    updateThemeFromSliders();
+  });
+  hueRow.appendChild(hueSlider);
+  hueRow.appendChild(hueNumber);
+  themePopover.appendChild(hueRow);
+
+  // Luminosity
+  const lumLabel = document.createElement("label");
+  lumLabel.textContent = "Luminosity";
+  themePopover.appendChild(lumLabel);
+
+  const lumRow = document.createElement("div");
+  lumRow.className = "chat-theme-hue-row";
+  const lumSlider = document.createElement("input");
+  lumSlider.type = "range"; lumSlider.min = "0"; lumSlider.max = "100"; lumSlider.value = String(Math.round(themeL * 100));
+  const lumNumber = document.createElement("input");
+  lumNumber.type = "number"; lumNumber.min = "0"; lumNumber.max = "100"; lumNumber.value = String(Math.round(themeL * 100));
+
+  lumSlider.addEventListener("input", () => {
+    themeL = parseFloat(lumSlider.value) / 100; lumNumber.value = lumSlider.value;
+    updateThemeFromSliders();
+  });
+  lumNumber.addEventListener("input", () => {
+    themeL = parseFloat(lumNumber.value) / 100; lumSlider.value = lumNumber.value;
+    updateThemeFromSliders();
+  });
+  lumRow.appendChild(lumSlider);
+  lumRow.appendChild(lumNumber);
+  themePopover.appendChild(lumRow);
+
+  // Chroma
+  const chromaLabel = document.createElement("label");
+  chromaLabel.textContent = "Chroma";
+  themePopover.appendChild(chromaLabel);
+
+  const chromaRow = document.createElement("div");
+  chromaRow.className = "chat-theme-hue-row";
+  const chromaSlider = document.createElement("input");
+  chromaSlider.type = "range"; chromaSlider.min = "0"; chromaSlider.max = "40"; chromaSlider.value = String(Math.round(themeC * 100));
+  const chromaNumber = document.createElement("input");
+  chromaNumber.type = "number"; chromaNumber.min = "0"; chromaNumber.max = "40"; chromaNumber.value = String(Math.round(themeC * 100));
+
+  chromaSlider.addEventListener("input", () => {
+    themeC = parseFloat(chromaSlider.value) / 100; chromaNumber.value = chromaSlider.value;
+    updateThemeFromSliders();
+  });
+  chromaNumber.addEventListener("input", () => {
+    themeC = parseFloat(chromaNumber.value) / 100; chromaSlider.value = chromaNumber.value;
+    updateThemeFromSliders();
+  });
+  chromaRow.appendChild(chromaSlider);
+  chromaRow.appendChild(chromaNumber);
+  themePopover.appendChild(chromaRow);
+
+  themeBtn.appendChild(themePopover);
+  themeBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    themePopover.classList.toggle("show");
+  });
+
+  function setTheme(color) {
+    root.style.setProperty("--theme", color);
+    // Toggle light/dark mode based on luminosity
+    const m = color.match(/oklch\(([\d.]+)/);
+    if (m) {
+      const l = parseFloat(m[1]);
+      root.classList.toggle("light-mode", l > 0.65);
+    }
+    try { localStorage.setItem("chat-theme-color", color); } catch(e) {}
+  }
+
+  headerActions.appendChild(themeBtn);
+  header.appendChild(headerTitle);
+  header.appendChild(headerActions);
+  root.appendChild(header);
+
+  // Close popover on outside click
+  // Stop clicks inside the popover from bubbling to root's close handler
+  themePopover.addEventListener("click", (e) => { e.stopPropagation(); });
+  root.addEventListener("click", () => { themePopover.classList.remove("show"); });
+
+  // ---- Presence bar ----
+  const presenceBar = document.createElement("div");
+  presenceBar.className = "chat-presence-bar";
+  root.appendChild(presenceBar);
+
+  // ---- Messages area ----
+  const messagesArea = document.createElement("div");
+  messagesArea.className = "chat-messages";
+  root.appendChild(messagesArea);
+
+  // ---- Typing bar (at the bottom, above input) ----
+  const typingBar = document.createElement("div");
+  typingBar.className = "chat-typing-bar";
+  root.appendChild(typingBar);
+
+  // ---- Input wrapper ----
+  const inputWrapper = document.createElement("div");
+  inputWrapper.className = "chat-input-wrapper";
+  root.appendChild(inputWrapper);
+
+  // Reply bar
+  const replyBar = document.createElement("div");
+  replyBar.className = "chat-reply-bar";
+  const replyBarLabel = document.createElement("span");
+  replyBarLabel.textContent = "Replying to ";
+  const replyBarText = document.createElement("span");
+  replyBarText.className = "chat-reply-bar-text";
+  const replyBarClose = document.createElement("button");
+  replyBarClose.className = "chat-reply-bar-close";
+  replyBarClose.innerHTML = SVG_ICONS.close;
+  replyBarClose.addEventListener("click", () => { replyToId = null; replyBar.classList.remove("show"); });
+  replyBar.appendChild(replyBarLabel);
+  replyBar.appendChild(replyBarText);
+  replyBar.appendChild(replyBarClose);
+  inputWrapper.appendChild(replyBar);
+
+  // Paste preview
+  const pastePreview = document.createElement("div");
+  pastePreview.className = "chat-paste-preview";
+  const pasteImg = document.createElement("img");
+  const pasteName = document.createElement("span");
+  pasteName.style.color = "var(--text-secondary)";
+  const pasteClose = document.createElement("button");
+  pasteClose.className = "chat-paste-preview-close";
+  pasteClose.innerHTML = SVG_ICONS.close;
+  pasteClose.addEventListener("click", clearPaste);
+  pastePreview.appendChild(pasteImg);
+  pastePreview.appendChild(pasteName);
+  pastePreview.appendChild(pasteClose);
+  inputWrapper.appendChild(pastePreview);
+
+  // Input row
+  const inputRow = document.createElement("div");
+  inputRow.className = "chat-input-row";
+  inputWrapper.appendChild(inputRow);
+
+  // GIF camera toggle (left side of input bar)
+  const gifToggle = document.createElement("button");
+  gifToggle.className = "chat-gif-toggle";
+  gifToggle.title = "Toggle GIF selfie mode";
+  const gifIcon = document.createElement("span");
+  gifIcon.className = "chat-gif-icon";
+  gifIcon.innerHTML = SVG_ICONS.camera;
+  const gifVideo = document.createElement("video");
+  gifVideo.autoplay = true; gifVideo.muted = true; gifVideo.playsInline = true;
+  gifToggle.appendChild(gifIcon);
+  gifToggle.appendChild(gifVideo);
+  inputRow.appendChild(gifToggle);
+
+  const gifCanvas = document.createElement("canvas");
+  gifCanvas.width = 80; gifCanvas.height = 80;
+  gifCanvas.style.display = "none";
+  inputRow.appendChild(gifCanvas);
+
+  gifToggle.addEventListener("click", () => {
+    gifModeEnabled = !gifModeEnabled;
+    gifToggle.classList.toggle("active", gifModeEnabled);
+    if (gifModeEnabled) startGifCamera();
+    else stopGifCamera();
+  });
+
+  // Text input
+  const input = document.createElement("textarea");
+  input.className = "chat-input";
+  input.rows = 1;
+  input.placeholder = "Message #Chat";
+  inputRow.appendChild(input);
+
+  // Mic button
+  const micBtn = document.createElement("button");
+  micBtn.className = "chat-input-btn";
+  micBtn.innerHTML = SVG_ICONS.mic;
+  micBtn.title = "Record voice note";
+  inputRow.appendChild(micBtn);
+
+  // Send button
+  const sendBtn = document.createElement("button");
+  sendBtn.className = "chat-input-btn";
+  sendBtn.innerHTML = SVG_ICONS.send;
+  sendBtn.title = "Send";
+  inputRow.appendChild(sendBtn);
+
+  // ---- Emoji picker overlay ----
+  const emojiOverlay = document.createElement("div");
+  emojiOverlay.className = "chat-emoji-picker-overlay";
+  const emojiPicker = document.createElement("div");
+  emojiPicker.className = "chat-emoji-picker";
+  emojiOverlay.appendChild(emojiPicker);
+  root.appendChild(emojiOverlay);
+
+  let emojiPickerTarget = null;
+
+  function openEmojiPicker(msgIndex, anchorEl) {
+    emojiPickerTarget = { msgIndex };
+    const rect = anchorEl.getBoundingClientRect();
+    const rootRect = root.getBoundingClientRect();
+    emojiPicker.style.bottom = (rootRect.bottom - rect.top + 4) + "px";
+    emojiPicker.style.right = (rootRect.right - rect.right) + "px";
+    emojiPicker.style.top = "auto"; emojiPicker.style.left = "auto";
+    renderEmojiPicker();
+    emojiOverlay.classList.add("show");
+  }
+
+  function renderEmojiPicker(filter) {
+    emojiPicker.innerHTML = "";
+    const search = document.createElement("input");
+    search.className = "chat-emoji-picker-search";
+    search.placeholder = "Search emoji...";
+    search.value = filter || "";
+    search.addEventListener("input", () => renderEmojiPicker(search.value));
+    emojiPicker.appendChild(search);
+    setTimeout(() => search.focus(), 0);
+    const list = filter ? EMOJI_LIST.filter(e => e.includes(filter)) : EMOJI_LIST;
+    for (const emoji of list.slice(0, 80)) {
+      const btn = document.createElement("button");
+      btn.textContent = emoji;
+      btn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        if (emojiPickerTarget) toggleReaction(emojiPickerTarget.msgIndex, emoji);
+        closeEmojiPicker();
+      });
+      emojiPicker.appendChild(btn);
+    }
+  }
+
+  function closeEmojiPicker() { emojiOverlay.classList.remove("show"); emojiPickerTarget = null; }
+  emojiOverlay.addEventListener("click", (e) => { if (e.target === emojiOverlay) closeEmojiPicker(); });
+
+  // ---- Auto-resize textarea ----
+  input.addEventListener("input", () => {
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 120) + "px";
+    broadcastPresence(true);
+  });
+
+  // ---- Paste image ----
+  input.addEventListener("paste", (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith("image/")) {
+        e.preventDefault();
+        const blob = item.getAsFile();
+        const ext = item.type.split("/")[1] || "png";
+        const name = "image-" + Date.now() + "." + ext;
+        const reader = new FileReader();
+        reader.onload = () => {
+          pastedImageData = { blob, dataUrl: reader.result, name, mimeType: item.type };
+          pasteImg.src = reader.result;
+          pasteName.textContent = name;
+          pastePreview.classList.add("show");
+        };
+        reader.readAsDataURL(blob);
+        break;
+      }
+    }
+  });
+
+  function clearPaste() { pastedImageData = null; pastePreview.classList.remove("show"); pasteImg.src = ""; }
+
+  // ---- File/recording creation ----
+  async function createFileDoc(blob) {
+    const repo = window.repo; if (!repo) throw new Error("No repo");
+    const u8 = new Uint8Array(await blob.arrayBuffer());
+    const fh = await repo.create2({ content: u8, "@patchwork": { type: "file" } });
+    return fh.url;
+  }
+
+  async function createRecordingDoc(audioBlob, duration) {
+    const repo = window.repo; if (!repo) throw new Error("No repo");
+    const u8 = new Uint8Array(await audioBlob.arrayBuffer());
+    const ah = await repo.create2({ content: u8 });
+    const rh = await repo.create2({
+      title: "Voice Note", audio: ah.url, duration: duration,
+      "@patchwork": { type: "recording", suggestedImportUrl: "automerge:2a5Rkw9LkqXfBAQZbcBWjTcf15Mc" },
+    });
+    return { url: rh.url };
+  }
+
+  // ---- GIF camera ----
+  async function startGifCamera() {
+    try {
+      gifStream = await navigator.mediaDevices.getUserMedia({ video: { width:80, height:80, facingMode:"user" } });
+      gifVideo.srcObject = gifStream;
+    } catch(e) { console.warn("[Chat] camera:", e); gifModeEnabled = false; gifToggle.classList.remove("active"); }
+  }
+
+  function stopGifCamera() {
+    if (gifStream) { gifStream.getTracks().forEach(t => t.stop()); gifStream = null; }
+    gifVideo.srcObject = null;
+  }
+
+  async function captureGif() {
+    if (!gifStream || !gifVideo.videoWidth) return null;
+    
+    // Show recording feedback
+    gifToggle.classList.add("recording");
+    inputRow.classList.add("processing");
+    
+    try {
+      const size = 80;
+      gifCanvas.width = size; gifCanvas.height = size;
+      const ctx = gifCanvas.getContext("2d");
+      const encoder = new SimpleGIFEncoder(size, size);
+      const frameCount = 10, frameDelay = 200;
+      
+      for (let i = 0; i < frameCount; i++) {
+        ctx.drawImage(gifVideo, 0, 0, size, size);
+        encoder.addFrame(gifCanvas, frameDelay);
+        if (i < frameCount - 1) await new Promise(r => setTimeout(r, frameDelay));
+      }
+      
+      const data = encoder.encode();
+      if (!data) return null;
+      const blob = new Blob([data], { type: "image/gif" });
+      const url = await createFileDoc(blob);
+      handle.change((d) => { if (!d.docs) d.docs = []; d.docs.push({ url, type:"file", name:"selfie-"+Date.now()+".gif" }); });
+      return url;
+    } finally {
+      // Remove recording feedback
+      gifToggle.classList.remove("recording");
+      inputRow.classList.remove("processing");
+    }
+  }
+
+  // ---- Voice recording ----
+  let recTimerInterval = null;
+  let recAnalyser = null;
+  let recAnimFrame = null;
+  let recSendOnStop = false; // true = send, false = cancelled
+  let recordingBar = null;
+
+  micBtn.addEventListener("click", () => { isRecording ? stopAndSendRec() : startRec(); });
+
+  async function startRec() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      let mime = "audio/webm;codecs=opus";
+      if (!MediaRecorder.isTypeSupported(mime)) { mime = "audio/webm"; if (!MediaRecorder.isTypeSupported(mime)) mime = undefined; }
+      recordingChunks = [];
+      recSendOnStop = false;
+      mediaRecorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordingChunks.push(e.data); };
+      mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        cleanupRecordingUI();
+        const dur = (Date.now() - recordingStartTime) / 1000;
+        if (!recSendOnStop || dur < 0.5) {
+          isRecording = false;
+          return;
+        }
+        const blob = new Blob(recordingChunks, { type: mediaRecorder.mimeType || "audio/webm" });
+        try {
+          const { url } = await createRecordingDoc(blob, dur);
+          handle.change((d) => { if (!d.docs) d.docs = []; d.docs.push({ url, type:"recording", name:"voice-"+Date.now() }); });
+          sendMsg(null, null, null, url, dur);
+        } catch(e) { console.error("[Chat] voice:", e); }
+        isRecording = false;
+      };
+
+      // Set up audio analyser for waveform visualization
+      try {
+        const audioCtx = new AudioContext();
+        const source = audioCtx.createMediaStreamSource(stream);
+        recAnalyser = audioCtx.createAnalyser();
+        recAnalyser.fftSize = 64;
+        source.connect(recAnalyser);
+      } catch(e) { recAnalyser = null; }
+
+      recordingStartTime = Date.now();
+      mediaRecorder.start(100);
+      isRecording = true;
+      showRecordingUI();
+    } catch(e) { console.error("[Chat] mic:", e); }
+  }
+
+  function stopAndSendRec() {
+    recSendOnStop = true;
+    if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+  }
+
+  function cancelRec() {
+    recSendOnStop = false;
+    if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+  }
+
+  function showRecordingUI() {
+    // Hide the normal input row, show recording bar
+    inputRow.style.display = "none";
+
+    recordingBar = document.createElement("div");
+    recordingBar.className = "chat-recording-bar";
+
+    const dot = document.createElement("div");
+    dot.className = "chat-recording-dot";
+    recordingBar.appendChild(dot);
+
+    const timeEl = document.createElement("span");
+    timeEl.className = "chat-recording-time";
+    timeEl.textContent = "0:00";
+    recordingBar.appendChild(timeEl);
+
+    // Live waveform visualization
+    const viz = document.createElement("div");
+    viz.className = "chat-recording-viz";
+    const vizBars = [];
+    for (let i = 0; i < 32; i++) {
+      const bar = document.createElement("div");
+      bar.className = "chat-recording-viz-bar";
+      bar.style.height = "3px";
+      viz.appendChild(bar);
+      vizBars.push(bar);
+    }
+    recordingBar.appendChild(viz);
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.className = "chat-recording-cancel";
+    cancelBtn.textContent = "Cancel";
+    cancelBtn.addEventListener("click", cancelRec);
+    recordingBar.appendChild(cancelBtn);
+
+    const sendRecBtn = document.createElement("button");
+    sendRecBtn.className = "chat-recording-send";
+    sendRecBtn.innerHTML = SVG_ICONS.send;
+    sendRecBtn.addEventListener("click", stopAndSendRec);
+    recordingBar.appendChild(sendRecBtn);
+
+    inputWrapper.appendChild(recordingBar);
+
+    // Update timer every second
+    recTimerInterval = setInterval(() => {
+      const elapsed = (Date.now() - recordingStartTime) / 1000;
+      timeEl.textContent = formatDuration(elapsed);
+    }, 500);
+
+    // Animate waveform from analyser
+    function animateViz() {
+      if (!isRecording) return;
+      if (recAnalyser) {
+        const data = new Uint8Array(recAnalyser.frequencyBinCount);
+        recAnalyser.getByteFrequencyData(data);
+        for (let i = 0; i < vizBars.length; i++) {
+          const val = data[i] || 0;
+          vizBars[i].style.height = Math.max(3, (val / 255) * 22) + "px";
+        }
+      }
+      recAnimFrame = requestAnimationFrame(animateViz);
+    }
+    animateViz();
+  }
+
+  function cleanupRecordingUI() {
+    if (recTimerInterval) { clearInterval(recTimerInterval); recTimerInterval = null; }
+    if (recAnimFrame) { cancelAnimationFrame(recAnimFrame); recAnimFrame = null; }
+    recAnalyser = null;
+    if (recordingBar) { recordingBar.remove(); recordingBar = null; }
+    inputRow.style.display = "";
+  }
+
+  // ---- Send ----
+  async function sendMessage() {
+    const text = input.value.trim();
+    let imageUrl = null, imageName = null;
+    if (pastedImageData) {
+      try {
+        imageUrl = await createFileDoc(pastedImageData.blob);
+        imageName = pastedImageData.name;
+        handle.change((d) => { if (!d.docs) d.docs = []; d.docs.push({ url:imageUrl, type:"file", name:imageName }); });
+      } catch(e) { console.error("[Chat] image:", e); }
+      clearPaste();
+    }
+    if (!text && !imageUrl) return;
+
+    let gifUrl = null;
+    if (gifModeEnabled) {
+      try { gifUrl = await captureGif(); } catch(e) { console.warn("[Chat] gif:", e); }
+    }
+
+    try {
+      sendMsg(text, imageUrl, imageName, null, null, gifUrl);
+    } catch(e) { console.error("[Chat] sendMsg:", e); }
+    input.value = "";
+    input.style.height = "auto";
+    input.focus();
+  }
+
+  function sendMsg(text, imageUrl, imageName, voiceUrl, voiceDuration, gifSelfieUrl) {
+    handle.change((d) => {
+      if (!d.messages) d.messages = [];
+      const msg = { id: generateId(), name: myName, text: text || "", timestamp: Date.now() };
+      if (myFont) msg.font = myFont;
+      if (myAvatarUrl) msg.avatarUrl = myAvatarUrl;
+      if (replyToId) msg.replyTo = replyToId;
+      if (imageUrl) { msg.imageUrl = imageUrl; msg.imageName = imageName; }
+      if (voiceUrl) { msg.voiceUrl = voiceUrl; msg.voiceDuration = voiceDuration; }
+      if (gifSelfieUrl) msg.gifSelfieUrl = gifSelfieUrl;
+      d.messages.push(msg);
+    });
+    replyToId = null;
+    replyBar.classList.remove("show");
+  }
+
+  sendBtn.addEventListener("click", sendMessage);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+
+  // ---- Reactions ----
+  function toggleReaction(idx, emoji) {
+    handle.change((d) => {
+      const msg = d.messages[idx]; if (!msg) return;
+      if (!msg.reactions) msg.reactions = {};
+      if (!msg.reactions[emoji]) msg.reactions[emoji] = [];
+      const arr = msg.reactions[emoji];
+      const i = arr.indexOf(myName);
+      if (i >= 0) { arr.splice(i, 1); if (arr.length === 0) delete msg.reactions[emoji]; }
+      else arr.push(myName);
+    });
+  }
+
+  // ---- Reply ----
+  function setReply(msgId) {
+    replyToId = msgId;
+    const doc = handle.doc();
+    const msg = (doc.messages || []).find(m => m.id === msgId);
+    if (msg) replyBarText.textContent = msg.name + ": " + (msg.text || "(attachment)");
+    replyBar.classList.add("show");
+    input.focus();
+  }
+
+  // ---- Load blobs ----
+  async function loadBlobUrl(automergeUrl) {
+    if (!automergeUrl) return null;
+    if (avatarCache.has(automergeUrl)) return avatarCache.get(automergeUrl);
+    try {
+      const repo = window.repo; if (!repo) return null;
+      const fh = await repo.find(automergeUrl);
+      const doc = fh.doc();
+      if (doc?.content) {
+        const bytes = doc.content instanceof Uint8Array ? doc.content : new Uint8Array(doc.content);
+        const url = URL.createObjectURL(new Blob([bytes]));
+        avatarCache.set(automergeUrl, url);
+        return url;
+      }
+    } catch(e) {}
+    return null;
+  }
+
+  async function loadAudioUrl(automergeUrl) {
+    try {
+      const repo = window.repo; if (!repo) return null;
+      const rh = await repo.find(automergeUrl); const rd = rh.doc();
+      if (!rd?.audio) return null;
+      const ah = await repo.find(rd.audio); const ad = ah.doc();
+      if (ad?.content) {
+        const bytes = ad.content instanceof Uint8Array ? ad.content : new Uint8Array(ad.content);
+        return URL.createObjectURL(new Blob([bytes], { type:"audio/webm;codecs=opus" }));
+      }
+    } catch(e) {}
+    return null;
+  }
+
+  // ---- Render presence ----
+  function renderPresence() {
+    const now = Date.now();
+    presenceBar.innerHTML = "";
+    for (const [name, info] of presenceMap) {
+      if (name === myName) continue;
+      if (now - info.timestamp > PRESENCE_TIMEOUT) continue;
+      const el = document.createElement("div");
+      el.className = "chat-presence-user";
+      el.innerHTML = '<span class="chat-presence-dot"></span>';
+      const lbl = document.createElement("span");
+      lbl.textContent = name;
+      el.appendChild(lbl);
+      presenceBar.appendChild(el);
+    }
+  }
+
+  function renderTyping() {
+    const now = Date.now();
+    const typers = [];
+    for (const [name, info] of presenceMap) {
+      if (name === myName) continue;
+      if (info.typing && now - info.timestamp < TYPING_TIMEOUT) typers.push(name);
+    }
+    typingBar.textContent = typers.length > 0
+      ? typers.join(", ") + (typers.length === 1 ? " is" : " are") + " typing..."
+      : "";
+  }
+
+  // ---- Render messages ----
+  function render() {
+    const doc = handle.doc();
+    if (!doc) return;
+
+    headerTitle.textContent = "# " + (doc.title || "Chat");
+    input.placeholder = "Message #" + (doc.title || "Chat");
+
+    const messages = doc.messages || [];
+    const msgMap = new Map();
+    for (const m of messages) if (m.id) msgMap.set(m.id, m);
+
+    // Remember scroll position to decide if we should auto-scroll
+    const wasAtBottom = messagesArea.scrollHeight - messagesArea.scrollTop - messagesArea.clientHeight < 40;
+
+    messagesArea.innerHTML = "";
+
+    if (messages.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "chat-empty";
+      empty.textContent = "No messages yet. Say hello! 👋";
+      messagesArea.appendChild(empty);
+      return;
+    }
+
+    let prevName = null, prevTime = 0;
+
+    messages.forEach((msg, idx) => {
+      const isMine = msg.name === myName;
+      const sameAuthor = msg.name === prevName;
+      const closeInTime = msg.timestamp - prevTime < 300000;
+      const isContinuation = sameAuthor && closeInTime && !msg.replyTo;
+      const hasGifSelfie = !!msg.gifSelfieUrl;
+
+      // Reply reference (always before the message)
+      if (msg.replyTo && msgMap.has(msg.replyTo)) {
+        const orig = msgMap.get(msg.replyTo);
+        const ref = document.createElement("div");
+        ref.className = "chat-msg-reply-ref";
+        const refAvatar = document.createElement("span");
+        refAvatar.className = "chat-msg-reply-ref-avatar";
+        if (orig.avatarUrl) loadBlobUrl(orig.avatarUrl).then(u => { if (u) refAvatar.innerHTML = '<img src="'+u+'">'; });
+        ref.appendChild(refAvatar);
+        const refName = document.createElement("span");
+        refName.className = "chat-msg-reply-ref-name";
+        refName.textContent = orig.name;
+        ref.appendChild(refName);
+        const refText = document.createElement("span");
+        refText.className = "chat-msg-reply-ref-text";
+        refText.textContent = orig.text || "(attachment)";
+        ref.appendChild(refText);
+        ref.addEventListener("click", () => {
+          const el = messagesArea.querySelector('[data-msg-id="'+msg.replyTo+'"]');
+          if (el) { el.scrollIntoView({ behavior:"smooth", block:"center" }); el.style.background="var(--bg-hover)"; setTimeout(()=>el.style.background="",1500); }
+        });
+        messagesArea.appendChild(ref);
+      }
+
+      if (!isContinuation) {
+        // Full message row with avatar
+        const row = document.createElement("div");
+        row.className = "chat-msg-group";
+        row.dataset.msgId = msg.id || "";
+
+        buildActions(row, msg, idx);
+
+        // Avatar
+        const avatarCol = document.createElement("div");
+        avatarCol.className = "chat-avatar-col";
+        const avatar = document.createElement("div");
+        avatar.className = "chat-avatar";
+        if (catEarsSet.has(msg.name)) avatar.classList.add("cat-ears");
+
+        const avatarSrc = msg.gifSelfieUrl || msg.avatarUrl;
+        if (msg.gifSelfieUrl) avatar.classList.add("gif-selfie");
+        if (avatarSrc) {
+          loadBlobUrl(avatarSrc).then(u => { if (u) avatar.innerHTML = '<img src="'+u+'">'; });
+        } else {
+          avatar.textContent = (msg.name || "?")[0].toUpperCase();
+        }
+        avatar.addEventListener("click", () => {
+          if (catEarsSet.has(msg.name)) catEarsSet.delete(msg.name);
+          else catEarsSet.add(msg.name);
+          render();
+        });
+        avatarCol.appendChild(avatar);
+        row.appendChild(avatarCol);
+
+        // Body
+        const body = document.createElement("div");
+        body.className = "chat-msg-body";
+
+        const hdr = document.createElement("div");
+        hdr.className = "chat-msg-header";
+        const nameEl = document.createElement("span");
+        nameEl.className = "chat-msg-name";
+        nameEl.textContent = msg.name;
+        hdr.appendChild(nameEl);
+        const timeEl = document.createElement("span");
+        timeEl.className = "chat-msg-time";
+        timeEl.textContent = formatTime(msg.timestamp);
+        hdr.appendChild(timeEl);
+        body.appendChild(hdr);
+
+        if (msg.text) {
+          const textEl = document.createElement("div");
+          textEl.className = "chat-msg-text";
+          textEl.textContent = msg.text;
+          if (msg.font) textEl.style.fontFamily = msg.font;
+          body.appendChild(textEl);
+        }
+
+        renderAttachments(body, msg);
+        renderReactions(body, msg, idx);
+        row.appendChild(body);
+        messagesArea.appendChild(row);
+
+      } else {
+        // Continuation message
+        const row = document.createElement("div");
+        row.className = "chat-msg-continuation" + (hasGifSelfie ? " has-gif" : "");
+        row.dataset.msgId = msg.id || "";
+
+        const inlineTime = document.createElement("span");
+        inlineTime.className = "chat-msg-inline-time";
+        inlineTime.textContent = formatTime(msg.timestamp);
+        row.appendChild(inlineTime);
+
+        buildActions(row, msg, idx);
+
+        // If this continuation has a GIF selfie, show it aligned with the avatar column
+        if (hasGifSelfie) {
+          const gifCol = document.createElement("div");
+          gifCol.className = "chat-avatar-col";
+          const gifInline = document.createElement("img");
+          gifInline.className = "chat-msg-gif-inline";
+          gifInline.alt = "selfie";
+          loadBlobUrl(msg.gifSelfieUrl).then(u => { if (u) gifInline.src = u; });
+          gifCol.appendChild(gifInline);
+          row.appendChild(gifCol);
+        }
+
+        const contBody = document.createElement("div");
+        contBody.className = "chat-msg-body";
+
+        if (msg.text) {
+          const textEl = document.createElement("div");
+          textEl.className = "chat-msg-text";
+          textEl.textContent = msg.text;
+          if (msg.font) textEl.style.fontFamily = msg.font;
+          contBody.appendChild(textEl);
+        }
+
+        renderAttachments(contBody, msg);
+        renderReactions(contBody, msg, idx);
+        row.appendChild(contBody);
+        messagesArea.appendChild(row);
+      }
+
+      prevName = msg.name;
+      prevTime = msg.timestamp;
+    });
+
+    // Scroll to bottom reliably
+    if (wasAtBottom || messagesArea.children.length <= 1) {
+      requestAnimationFrame(() => {
+        messagesArea.scrollTop = messagesArea.scrollHeight;
+      });
+    }
+
+    renderPresence();
+    renderTyping();
+  }
+
+  function buildActions(row, msg, idx) {
+    const actions = document.createElement("div");
+    actions.className = "chat-msg-actions";
+    const replyBtn = document.createElement("button");
+    replyBtn.className = "chat-msg-action-btn";
+    replyBtn.innerHTML = SVG_ICONS.reply;
+    replyBtn.title = "Reply";
+    replyBtn.addEventListener("click", (e) => { e.stopPropagation(); setReply(msg.id); });
+    actions.appendChild(replyBtn);
+    const reactBtn = document.createElement("button");
+    reactBtn.className = "chat-msg-action-btn";
+    reactBtn.innerHTML = SVG_ICONS.react;
+    reactBtn.title = "Add reaction";
+    reactBtn.addEventListener("click", (e) => { e.stopPropagation(); openEmojiPicker(idx, reactBtn); });
+    actions.appendChild(reactBtn);
+    row.appendChild(actions);
+  }
+
+  function renderAttachments(parent, msg) {
+    if (msg.imageUrl) {
+      const img = document.createElement("img");
+      img.className = "chat-msg-image";
+      img.alt = msg.imageName || "image";
+      img.loading = "lazy";
+      loadBlobUrl(msg.imageUrl).then(u => { if (u) img.src = u; });
+      parent.appendChild(img);
+    }
+    if (msg.voiceUrl) {
+      const vn = document.createElement("div");
+      vn.className = "chat-voice-note";
+      const playBtn = document.createElement("button");
+      playBtn.className = "chat-voice-play-btn";
+      playBtn.innerHTML = SVG_ICONS.play;
+      const waveform = document.createElement("div");
+      waveform.className = "chat-voice-waveform";
+      for (let i = 0; i < 24; i++) {
+        const bar = document.createElement("div");
+        bar.className = "chat-voice-bar";
+        bar.style.height = (3 + Math.random() * 18) + "px";
+        waveform.appendChild(bar);
+      }
+      const dur = document.createElement("span");
+      dur.className = "chat-voice-duration";
+      dur.textContent = msg.voiceDuration ? formatDuration(msg.voiceDuration) : "0:00";
+      let audio = null, loaded = false;
+      playBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (!loaded) {
+          const u = await loadAudioUrl(msg.voiceUrl);
+          if (u) { audio = new Audio(u); audio.onended = () => { playBtn.innerHTML = SVG_ICONS.play; }; loaded = true; }
+        }
+        if (audio) {
+          if (audio.paused) { audio.play(); playBtn.innerHTML = SVG_ICONS.pause; }
+          else { audio.pause(); playBtn.innerHTML = SVG_ICONS.play; }
+        }
+      });
+      vn.appendChild(playBtn); vn.appendChild(waveform); vn.appendChild(dur);
+      parent.appendChild(vn);
+    }
+  }
+
+  function renderReactions(parent, msg, idx) {
+    if (!msg.reactions || Object.keys(msg.reactions).length === 0) return;
+    const container = document.createElement("div");
+    container.className = "chat-reactions";
+    for (const [emoji, names] of Object.entries(msg.reactions)) {
+      if (!names || names.length === 0) continue;
+      const el = document.createElement("span");
+      el.className = "chat-reaction" + (names.includes(myName) ? " mine" : "");
+      el.title = names.join(", ");
+      el.appendChild(document.createTextNode(emoji + " "));
+      const count = document.createElement("span");
+      count.className = "chat-reaction-count";
+      count.textContent = names.length;
+      el.appendChild(count);
+      el.addEventListener("click", (e) => { e.stopPropagation(); toggleReaction(idx, emoji); });
+      container.appendChild(el);
+    }
+    const addBtn = document.createElement("button");
+    addBtn.className = "chat-reaction-add";
+    addBtn.innerHTML = SVG_ICONS.plus;
+    addBtn.addEventListener("click", (e) => { e.stopPropagation(); openEmojiPicker(idx, addBtn); });
+    container.appendChild(addBtn);
+    parent.appendChild(container);
+  }
+
+  render();
+  handle.on("change", render);
+  setTimeout(() => broadcastPresence(false), 500);
+
+  return () => {
+    handle.off("change", render);
+    if (presenceInterval) clearInterval(presenceInterval);
+    if (mediaRecorder && mediaRecorder.state !== "inactive") { recSendOnStop = false; mediaRecorder.stop(); }
+    cleanupRecordingUI();
+    stopGifCamera();
+    root.remove();
+    style.remove();
+  };
+}
+
+// ============================================================================
+// Plugin Exports
+// ============================================================================
+
+export const plugins = [
+  {
+    type: "patchwork:datatype",
+    id: "chat",
+    name: "Chat",
+    icon: "MessageCircle",
+    async load() { return ChatDatatype; },
+  },
+  {
+    type: "patchwork:tool",
+    id: "chat",
+    name: "Chat",
+    icon: "MessageCircle",
+    supportedDatatypes: ["chat"],
+    async load() { return Tool; },
+  },
+];
