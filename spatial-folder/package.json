@@ -8,8 +8,10 @@
   },
   "exports": "./dist/index.js",
   "scripts": {
-    "build": "tsc && vite build",
-    "sync": "pnpm build && npx pushwork sync"
+    "build": "node esbuild/build.js",
+    "dev": "node esbuild/watch.js",
+    "pushwatch": "pnpm dev pushwork",
+    "push": "pnpm build && pushwork sync"
   },
   "keywords": [],
   "author": "Ink & Switch",
@@ -28,12 +30,8 @@
     "@inkandswitch/patchwork-bootloader": "^0.0.3",
     "@types/react": "^18.3.23",
     "@types/react-dom": "^18.2.2",
-    "@vitejs/plugin-react": "^4.5.1",
+    "esbuild": "^0.23.1",
     "pushwork": "^1.0.5",
-    "typescript": "^5.8.3",
-    "vite": "^6.3.5",
-    "vite-plugin-css-injected-by-js": "^3.5.2",
-    "vite-plugin-top-level-await": "^1.5.0",
-    "vite-plugin-wasm": "^3.4.1"
+    "typescript": "^5.8.3"
   }
 }

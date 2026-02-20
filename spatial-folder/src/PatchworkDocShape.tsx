@@ -101,7 +101,7 @@ export class PatchworkDocShapeUtil extends ShapeUtil<PatchworkDocShape> {
     return true;
   }
   override canEdit() {
-    return false;
+    return true;
   }
   override isAspectRatioLocked() {
     return false;
@@ -306,11 +306,16 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
   const isSelectTool = useValue('is select tool', () => editor.getCurrentToolId() === 'select', [
     editor,
   ]);
+  const isEditingShape = useValue(
+    'is editing shape',
+    () => editor.getEditingShapeId() === shape.id,
+    [editor, shape.id],
+  );
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [isEditingTool, setIsEditingTool] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [isFocused, setIsFocused] = useState(false);
+  const isFocused = isEditingShape;
   const [sparkling, setSparkling] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -459,17 +464,7 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
     };
   }, [isFocused]);
 
-  // Unfocus content when clicking outside
-  useEffect(() => {
-    if (!isFocused) return;
-    const handlePointerDown = (e: PointerEvent) => {
-      if (contentRef.current && !contentRef.current.contains(e.target as Node)) {
-        setIsFocused(false);
-      }
-    };
-    window.addEventListener('pointerdown', handlePointerDown, true);
-    return () => window.removeEventListener('pointerdown', handlePointerDown, true);
-  }, [isFocused]);
+  // tldraw handles exiting editing mode when clicking outside the shape.
 
   const handleToolChange = useCallback(
     (newToolId: string) => {
@@ -796,8 +791,15 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
           position: 'relative',
           pointerEvents: isSelectTool ? 'auto' : 'none',
           userSelect: isFocused ? 'text' : 'none',
+          WebkitUserSelect: isFocused ? 'text' : 'none',
+          cursor: isFocused ? 'auto' : undefined,
         }}
-        onPointerDown={isSelectTool ? (e) => { e.stopPropagation(); setIsFocused(true); } : undefined}
+        onPointerDown={isSelectTool ? (e) => {
+          e.stopPropagation();
+          if (!isEditingShape) {
+            editor.setEditingShape(shape.id);
+          }
+        } : undefined}
         onPointerUp={isSelectTool ? (e) => {
           e.stopPropagation();
           // Synthesize a click event so frameworks with document-level

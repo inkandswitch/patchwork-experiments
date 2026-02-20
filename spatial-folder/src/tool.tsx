@@ -86,6 +86,7 @@ const StableTldraw = memo(function StableTldraw({
       overrides={newDocUiOverrides}
       onMount={onMount}
       components={uiComponents}
+      forceMobile
     />
   );
 });
@@ -466,6 +467,50 @@ function SpatialFolderCanvas({
           height: calc(100% - 18px) !important;
           border-radius: 0 0 8px 8px !important;
         }
+
+        /* ---- Move all UI panels to the bottom ---- */
+
+        /* Remove the top section from grid flow so it doesn't push the toolbar down */
+        .spatial-folder-root .tlui-layout__top {
+          position: absolute;
+          width: 0;
+          height: 0;
+          overflow: visible;
+          pointer-events: none;
+        }
+
+        /* Keep the toolbar centered by not sharing a grid row with __top */
+        .spatial-folder-root .tlui-layout__bottom {
+          grid-row: 5;
+        }
+
+        /* Fixed-position hamburger in the bottom-left */
+        .spatial-folder-root .tlui-menu-zone {
+          position: fixed;
+          bottom: 12px;
+          left: 12px;
+          z-index: var(--tl-layer-panels);
+          border-radius: var(--tl-radius-4);
+          border: none;
+          box-shadow: var(--tl-shadow-3);
+        }
+
+        /* ---- Replace hamburger icon with bold semicolon ---- */
+        .spatial-folder-root .tlui-menu-zone [data-testid="main-menu.button"] .tlui-icon {
+          mask: none !important;
+          -webkit-mask: none !important;
+          background-color: transparent !important;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .spatial-folder-root .tlui-menu-zone [data-testid="main-menu.button"] .tlui-icon::after {
+          content: ";";
+          font-weight: 900;
+          font-size: 18px;
+          line-height: 1;
+          color: currentColor;
+        }
       `}</style>
       <StableTldraw onMount={handleMountRef.current} />
       {!doc && (
@@ -501,7 +546,7 @@ function SideboardPanel({ containerRef, docUrl, title }: { containerRef: React.R
       ref={containerRef as any}
       style={{
         position: 'fixed',
-        top: '52px',
+        top: '12px',
         left: '12px',
         zIndex: 99,
         pointerEvents: 'auto',

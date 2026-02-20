@@ -377,8 +377,10 @@ export function NewDocToolbar() {
 
   const handlePlusClick = useCallback(() => {
     if (!isActive) {
-      // First click: activate the tool
+      // First click: activate the tool and open the drawer
       activateTool();
+      // openMenu needs the button rect, so defer until after render
+      requestAnimationFrame(() => openMenu());
     } else {
       // Already active: toggle the menu
       if (menuOpen) {
@@ -509,11 +511,24 @@ export function NewDocToolbar() {
           }}
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path
-              d="M8 2v12M2 8h12"
+            {/* Drafting board */}
+            <rect
+              x="1.5" y="1.5" width="13" height="13" rx="0.5"
               stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
+              strokeWidth="1"
+              fill="none"
+            />
+            {/* T-square crossbar */}
+            <path
+              d="M1.5 5.5h13"
+              stroke="currentColor"
+              strokeWidth="1"
+            />
+            {/* T-square stem */}
+            <path
+              d="M8 5.5v9"
+              stroke="currentColor"
+              strokeWidth="1"
             />
           </svg>
         </button>
