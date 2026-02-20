@@ -352,6 +352,12 @@ function createStyles() {
       background: #dc2626;
     }
 
+    .lobby-quality-label {
+      font-size: 11px;
+      font-weight: 700;
+      pointer-events: none;
+    }
+
     .call-lobby-join {
       padding: 12px 36px;
       border-radius: 24px;
@@ -927,8 +933,53 @@ export default function TelephoneTool(handle, element) {
       lobbyMicBtn.className = `call-lobby-toggle${lobbyMicOn ? "" : " off"}`;
     });
 
+    let lobbyQuality = "high";
+    const lobbyQualityAnchor = document.createElement("div");
+    lobbyQualityAnchor.className = "call-quality-anchor";
+    const lobbyQualityBtn = document.createElement("button");
+    lobbyQualityBtn.className = "call-lobby-toggle";
+    lobbyQualityBtn.title = "Sending quality";
+    const lobbyQualityLabel = document.createElement("span");
+    lobbyQualityLabel.className = "lobby-quality-label";
+    lobbyQualityLabel.textContent = QUALITY_PRESETS["high"].label;
+    lobbyQualityBtn.appendChild(lobbyQualityLabel);
+    lobbyQualityAnchor.appendChild(lobbyQualityBtn);
+
+    let lobbyQualityMenuOpen = false;
+    let lobbyQualityMenu = null;
+
+    function closeLobbyQualityMenu() {
+      if (lobbyQualityMenu) {
+        lobbyQualityMenu.remove();
+        lobbyQualityMenu = null;
+      }
+      lobbyQualityMenuOpen = false;
+    }
+
+    lobbyQualityBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (lobbyQualityMenuOpen) {
+        closeLobbyQualityMenu();
+        return;
+      }
+      lobbyQualityMenu = createQualityMenu(lobbyQuality, (level) => {
+        closeLobbyQualityMenu();
+        lobbyQuality = level;
+        lobbyQualityLabel.textContent = QUALITY_PRESETS[level].label;
+      });
+      lobbyQualityAnchor.appendChild(lobbyQualityMenu);
+      lobbyQualityMenuOpen = true;
+    });
+
+    on(document, "pointerdown", (e) => {
+      if (lobbyQualityMenuOpen && !lobbyQualityAnchor.contains(e.target)) {
+        closeLobbyQualityMenu();
+      }
+    });
+
     lobbyControls.appendChild(lobbyCamBtn);
     lobbyControls.appendChild(lobbyMicBtn);
+    lobbyControls.appendChild(lobbyQualityAnchor);
     lobby.appendChild(lobbyControls);
 
     const lobbyError = document.createElement("div");
@@ -952,6 +1003,7 @@ export default function TelephoneTool(handle, element) {
       // Transfer lobby toggle state to session before joining
       s.cameraEnabled = lobbyCameraOn;
       s.micEnabled = lobbyMicOn;
+      s.sendQuality = lobbyQuality;
       bindSession(s);
       await s.joinCall();
       enterCallView();
