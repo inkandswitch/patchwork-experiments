@@ -67,6 +67,12 @@ function renderMarkdown(md) {
 
     if (line.trim() === "") continue;
 
+    // Horizontal rule
+    if (/^---+$/.test(line.trim())) {
+      html += "<hr>";
+      continue;
+    }
+
     html += `<p>${inlineMarkdown(line)}</p>`;
   }
 
@@ -212,6 +218,11 @@ export default function TeleprintTool(handle, element) {
     .tp-summary-panel strong {
       font-weight: bold;
     }
+    .tp-summary-panel hr {
+      border: none;
+      border-top: 1px solid #808080;
+      margin: 10px 0;
+    }
     .tp-summary-panel .tp-summary-actions {
       display: flex;
       align-items: center;
@@ -330,7 +341,7 @@ export default function TeleprintTool(handle, element) {
 
   const generateBtn = document.createElement("button");
   generateBtn.className = "tp-generate-btn";
-  generateBtn.textContent = "Generate";
+  generateBtn.textContent = doc?.summary ? "Regenerate" : "Generate";
   generateBtn.title = "Generate meeting notes from transcript";
   actionsRow.appendChild(generateBtn);
 
@@ -394,11 +405,21 @@ export default function TeleprintTool(handle, element) {
         } else if (type === "result") {
           statusEl.textContent = "";
           generateBtn.disabled = false;
+          generateBtn.textContent = "Regenerate";
           handle.change((doc) => {
             doc.summary = summary;
           });
           renderSummaryContent();
         }
+      };
+
+      summaryWorker.onerror = (err) => {
+        console.error("[teleprint] Summary worker error:", err);
+        statusEl.textContent = "Summary worker crashed";
+        generateBtn.disabled = false;
+        // Kill the broken worker so a fresh one is created next time
+        summaryWorker.terminate();
+        summaryWorker = null;
       };
     }
 

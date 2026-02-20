@@ -329,6 +329,7 @@ export default function TelephoneTool(handle, element) {
 
   const peerId = crypto.randomUUID();
   let localStream = null;
+  let screenStream = null;
   let cameraEnabled = true;
   let micEnabled = true;
   let destroyed = false;
@@ -428,10 +429,95 @@ export default function TelephoneTool(handle, element) {
     broadcast({ type: "join", from: peerId, name: myName });
   });
 
+  const screenBtn = document.createElement("button");
+  screenBtn.className = "call-btn";
+  screenBtn.textContent = "\u{1F5A5}";
+  screenBtn.title = "Share screen";
+  screenBtn.addEventListener("click", toggleScreenShare);
+
   localBar.appendChild(camBtn);
   localBar.appendChild(micBtn);
+  localBar.appendChild(screenBtn);
   localBar.appendChild(renegotiateBtn);
   localBox.appendChild(localBar);
+
+  // ---- Screen share box (added to grid when sharing) ----
+  const screenBox = document.createElement("div");
+  screenBox.className = "call-participant";
+  const screenVideo = document.createElement("video");
+  screenVideo.autoplay = true;
+  screenVideo.muted = true;
+  screenVideo.playsInline = true;
+  screenBox.appendChild(screenVideo);
+  const screenBar = document.createElement("div");
+  screenBar.className = "call-participant-bar";
+  const screenLabel = document.createElement("span");
+  screenLabel.textContent = "Your screen";
+  screenBar.appendChild(screenLabel);
+  screenBox.appendChild(screenBar);
+
+  async function toggleScreenShare() {
+    if (screenStream) {
+      stopScreenShare();
+      return;
+    }
+
+    try {
+      screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: false,
+      });
+    } catch (err) {
+      // User cancelled the picker
+      console.warn("[call] Screen share cancelled:", err.message);
+      return;
+    }
+
+    screenVideo.srcObject = screenStream;
+    screenBtn.className = "call-btn off";
+
+    // Add screen track to all peers
+    const screenTrack = screenStream.getVideoTracks()[0];
+    for (const [, peer] of peers) {
+      try {
+        peer.pc.addTrack(screenTrack, screenStream);
+      } catch (err) {
+        console.warn("[call] addTrack (screen) failed:", err);
+      }
+    }
+
+    grid.appendChild(screenBox);
+    updateGrid();
+
+    // Handle user clicking browser's "stop sharing" button
+    screenTrack.addEventListener("ended", () => {
+      stopScreenShare();
+    });
+  }
+
+  function stopScreenShare() {
+    if (!screenStream) return;
+    const screenTrack = screenStream.getVideoTracks()[0];
+
+    // Remove screen track from all peers
+    for (const [, peer] of peers) {
+      const sender = peer.pc.getSenders().find((s) => s.track === screenTrack);
+      if (sender) {
+        try {
+          peer.pc.removeTrack(sender);
+        } catch (err) {
+          console.warn("[call] removeTrack (screen) failed:", err);
+        }
+      }
+    }
+
+    for (const track of screenStream.getTracks()) track.stop();
+    screenStream = null;
+    screenVideo.srcObject = null;
+    screenBtn.className = "call-btn";
+    screenBox.remove();
+    updateGrid();
+  }
 
   // ---- Grid layout ----
   function updateGrid() {
@@ -605,6 +691,11 @@ export default function TelephoneTool(handle, element) {
     if (localStream) {
       for (const track of localStream.getTracks()) {
         pc.addTrack(track, localStream);
+      }
+    }
+    if (screenStream) {
+      for (const track of screenStream.getTracks()) {
+        pc.addTrack(track, screenStream);
       }
     }
 
@@ -797,6 +888,11 @@ export default function TelephoneTool(handle, element) {
     if (localStream) {
       for (const track of localStream.getTracks()) {
         pc.addTrack(track, localStream);
+      }
+    }
+    if (screenStream) {
+      for (const track of screenStream.getTracks()) {
+        pc.addTrack(track, screenStream);
       }
     }
 
@@ -1359,6 +1455,11 @@ export default function TelephoneTool(handle, element) {
     navigator.mediaDevices.removeEventListener("devicechange", onDeviceChange);
 
     stopTranscription();
+
+    if (screenStream) {
+      for (const track of screenStream.getTracks()) track.stop();
+      screenStream = null;
+    }
 
     if (localStream) {
       for (const track of localStream.getTracks()) {
