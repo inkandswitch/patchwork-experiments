@@ -1857,7 +1857,7 @@ export function Tool(handle, element, options) {
     if (rawEntries.length === 0) {
       const empty = document.createElement("div");
       empty.className = "chat-empty";
-      empty.textContent = "No messages yet. Say hello! 👋";
+      empty.textContent = "no messages yet. say hello 🥰";
       messagesArea.appendChild(empty);
       return;
     }
