@@ -1341,26 +1341,80 @@ export function Tool(handle, element, options) {
     }
 
     try {
-      sendMsg(cleanText, imageUrl, imageName, null, null, gifUrl, patchworkLinks.length > 0 ? patchworkLinks : null);
+      await sendMsg(cleanText, imageUrl, imageName, null, null, gifUrl, patchworkLinks.length > 0 ? patchworkLinks : null);
     } catch(e) { console.error("[Chat] sendMsg:", e); }
     input.value = "";
     input.style.height = "auto";
     input.focus();
   }
 
-  function sendMsg(text, imageUrl, imageName, voiceUrl, voiceDuration, gifSelfieUrl, embeds) {
+  // ---- Message doc cache ----
+  const msgDocCache = new Map(); // url -> { data, handle }
+  const msgDocSubscribed = new Set(); // urls we're listening to
+
+  async function resolveMessageDoc(url) {
+    if (msgDocCache.has(url)) return msgDocCache.get(url);
+    try {
+      const repo = window.repo; if (!repo) return null;
+      const mh = await repo.find(url);
+      const data = mh.doc();
+      if (data) msgDocCache.set(url, { data, handle: mh });
+      // Subscribe to changes on this message doc
+      if (!msgDocSubscribed.has(url)) {
+        msgDocSubscribed.add(url);
+        mh.on("change", () => {
+          const updated = mh.doc();
+          if (updated) msgDocCache.set(url, { data: updated, handle: mh });
+          render();
+        });
+      }
+      return msgDocCache.get(url);
+    } catch(e) { console.warn("[Chat] resolve msg doc:", e); return null; }
+  }
+
+  // Kick off loading for any unresolved message refs
+  function ensureMessageDocsLoaded(entries) {
+    let needsRerender = false;
+    for (const entry of entries) {
+      if (entry.ref && entry.url && !msgDocCache.has(entry.url)) {
+        needsRerender = true;
+        resolveMessageDoc(entry.url); // async, will trigger render on resolve
+      }
+    }
+  }
+
+  async function sendMsg(text, imageUrl, imageName, voiceUrl, voiceDuration, gifSelfieUrl, embeds) {
+    const repo = window.repo;
+    const msgData = { id: generateId(), name: myName, text: text || "", timestamp: Date.now() };
+    if (myFont) msgData.font = myFont;
+    if (myAvatarUrl) msgData.avatarUrl = myAvatarUrl;
+    if (replyToId) msgData.replyTo = replyToId;
+    if (imageUrl) { msgData.imageUrl = imageUrl; msgData.imageName = imageName; }
+    if (voiceUrl) { msgData.voiceUrl = voiceUrl; msgData.voiceDuration = voiceDuration; }
+    if (gifSelfieUrl) msgData.gifSelfieUrl = gifSelfieUrl;
+    if (embeds) msgData.embeds = embeds;
+
+    // Create individual message doc
+    const msgHandle = await repo.create2(msgData);
+    const msgUrl = msgHandle.url;
+
+    // Cache it immediately
+    msgDocCache.set(msgUrl, { data: msgData, handle: msgHandle });
+    if (!msgDocSubscribed.has(msgUrl)) {
+      msgDocSubscribed.add(msgUrl);
+      msgHandle.on("change", () => {
+        const updated = msgHandle.doc();
+        if (updated) msgDocCache.set(msgUrl, { data: updated, handle: msgHandle });
+        render();
+      });
+    }
+
+    // Add reference to chat doc
     handle.change((d) => {
       if (!d.messages) d.messages = [];
-      const msg = { id: generateId(), name: myName, text: text || "", timestamp: Date.now() };
-      if (myFont) msg.font = myFont;
-      if (myAvatarUrl) msg.avatarUrl = myAvatarUrl;
-      if (replyToId) msg.replyTo = replyToId;
-      if (imageUrl) { msg.imageUrl = imageUrl; msg.imageName = imageName; }
-      if (voiceUrl) { msg.voiceUrl = voiceUrl; msg.voiceDuration = voiceDuration; }
-      if (gifSelfieUrl) msg.gifSelfieUrl = gifSelfieUrl;
-      if (embeds) msg.embeds = embeds;
-      d.messages.push(msg);
+      d.messages.push({ ref: true, url: msgUrl, timestamp: msgData.timestamp });
     });
+
     replyToId = null;
     replyBar.classList.remove("show");
   }
@@ -1370,22 +1424,48 @@ export function Tool(handle, element, options) {
 
   // ---- Reactions ----
   function toggleReaction(idx, emoji) {
-    handle.change((d) => {
-      const msg = d.messages[idx]; if (!msg) return;
-      if (!msg.reactions) msg.reactions = {};
-      if (!msg.reactions[emoji]) msg.reactions[emoji] = [];
-      const arr = msg.reactions[emoji];
-      const i = arr.indexOf(myName);
-      if (i >= 0) { arr.splice(i, 1); if (arr.length === 0) delete msg.reactions[emoji]; }
-      else arr.push(myName);
-    });
+    const doc = handle.doc();
+    const entry = doc?.messages?.[idx];
+    if (!entry) return;
+
+    if (entry.ref && entry.url) {
+      // Ref message: change the message's own doc
+      const cached = msgDocCache.get(entry.url);
+      if (!cached) return;
+      cached.handle.change((d) => {
+        if (!d.reactions) d.reactions = {};
+        if (!d.reactions[emoji]) d.reactions[emoji] = [];
+        const arr = d.reactions[emoji];
+        const i = arr.indexOf(myName);
+        if (i >= 0) { arr.splice(i, 1); if (arr.length === 0) delete d.reactions[emoji]; }
+        else arr.push(myName);
+      });
+    } else {
+      // Inline (legacy) message
+      handle.change((d) => {
+        const msg = d.messages[idx]; if (!msg) return;
+        if (!msg.reactions) msg.reactions = {};
+        if (!msg.reactions[emoji]) msg.reactions[emoji] = [];
+        const arr = msg.reactions[emoji];
+        const i = arr.indexOf(myName);
+        if (i >= 0) { arr.splice(i, 1); if (arr.length === 0) delete msg.reactions[emoji]; }
+        else arr.push(myName);
+      });
+    }
   }
 
   // ---- Reply ----
   function setReply(msgId) {
     replyToId = msgId;
+    // Find message data - could be inline or ref
     const doc = handle.doc();
-    const msg = (doc.messages || []).find(m => m.id === msgId);
+    let msg = null;
+    for (const entry of (doc.messages || [])) {
+      if (entry.ref && entry.url) {
+        const cached = msgDocCache.get(entry.url);
+        if (cached && cached.data.id === msgId) { msg = cached.data; break; }
+      } else if (entry.id === msgId) { msg = entry; break; }
+    }
     if (msg) replyBarText.textContent = msg.name + ": " + (msg.text || "(attachment)");
     replyBar.classList.add("show");
     input.focus();
@@ -1488,7 +1568,27 @@ export function Tool(handle, element, options) {
 
     input.placeholder = "Message " + (doc.title || "chat");
 
-    const messages = doc.messages || [];
+    const rawEntries = doc.messages || [];
+
+    // Kick off loading for any unresolved ref messages
+    ensureMessageDocsLoaded(rawEntries);
+
+    // Resolve entries: inline messages pass through, ref messages resolve from cache
+    // Each resolved item tracks its rawIndex for mutations (reactions, delete)
+    const messages = [];
+    for (let ri = 0; ri < rawEntries.length; ri++) {
+      const entry = rawEntries[ri];
+      if (entry.ref && entry.url) {
+        const cached = msgDocCache.get(entry.url);
+        if (cached) {
+          messages.push({ ...cached.data, _rawIdx: ri, _ref: entry });
+        }
+        // If not cached yet, skip — will re-render when loaded
+      } else {
+        messages.push({ ...entry, _rawIdx: ri });
+      }
+    }
+
     const msgMap = new Map();
     for (const m of messages) if (m.id) msgMap.set(m.id, m);
 
@@ -1507,7 +1607,8 @@ export function Tool(handle, element, options) {
 
     let prevName = null, prevTime = 0;
 
-    messages.forEach((msg, idx) => {
+    messages.forEach((msg) => {
+      const rawIdx = msg._rawIdx;
       const isMine = msg.name === myName;
       const sameAuthor = msg.name === prevName;
       const closeInTime = msg.timestamp - prevTime < 300000;
@@ -1544,7 +1645,7 @@ export function Tool(handle, element, options) {
         row.className = "chat-msg-group";
         row.dataset.msgId = msg.id || "";
 
-        buildActions(row, msg, idx);
+        buildActions(row, msg, rawIdx);
 
         // Avatar
         const avatarCol = document.createElement("div");
@@ -1593,7 +1694,7 @@ export function Tool(handle, element, options) {
         }
 
         renderAttachments(body, msg);
-        renderReactions(body, msg, idx);
+        renderReactions(body, msg, rawIdx);
         row.appendChild(body);
         messagesArea.appendChild(row);
 
@@ -1603,7 +1704,7 @@ export function Tool(handle, element, options) {
         row.className = "chat-msg-continuation" + (hasGifSelfie ? " has-gif" : "");
         row.dataset.msgId = msg.id || "";
 
-        buildActions(row, msg, idx);
+        buildActions(row, msg, rawIdx);
 
         // If this continuation has a GIF selfie, show it aligned with the avatar column
         if (hasGifSelfie) {
@@ -1629,7 +1730,7 @@ export function Tool(handle, element, options) {
         }
 
         renderAttachments(contBody, msg);
-        renderReactions(contBody, msg, idx);
+        renderReactions(contBody, msg, rawIdx);
         row.appendChild(contBody);
         messagesArea.appendChild(row);
       }
@@ -1652,6 +1753,12 @@ export function Tool(handle, element, options) {
   function deleteMessage(idx) {
     handle.change((d) => {
       if (!d.messages || idx < 0 || idx >= d.messages.length) return;
+      const entry = d.messages[idx];
+      // Clean up cache if it was a ref
+      if (entry.ref && entry.url) {
+        msgDocCache.delete(entry.url);
+        msgDocSubscribed.delete(entry.url);
+      }
       d.messages.splice(idx, 1);
     });
   }
