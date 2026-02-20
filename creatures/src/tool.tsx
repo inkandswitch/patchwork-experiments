@@ -1,6 +1,6 @@
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import { useDocHandle, useDocument, useRepo } from "@automerge/react";
-import { Tldraw, useEditor, getMediaAssetInfoPartial, type VecLike, type TLContent, type TLAssetId, type TLAsset } from "@tldraw/tldraw";
+import { Tldraw, useEditor, getMediaAssetInfoPartial, type VecLike, type TLContent, type TLAssetId, type TLAsset, type TLUiComponents } from "@tldraw/tldraw";
 import { useAutomergeStore, useAutomergePresence } from "./automerge/useAutomergeStore.ts";
 import type { CreatureSketchDoc } from "./datatype.ts";
 import { PatchworkTokenShapeUtil, PATCHWORK_TOKEN_TYPE } from "./PatchworkTokenShape.tsx";
@@ -57,6 +57,12 @@ function useContactInfo() {
 
 const customShapeUtils = [PatchworkTokenShapeUtil];
 
+const hiddenUiComponents: TLUiComponents = {
+  PageMenu: null,
+  QuickActions: null,
+  ActionsMenu: null,
+};
+
 export function CreatureSketchTool({ docUrl }: { docUrl: AutomergeUrl }) {
   const handle = useDocHandle<CreatureSketchDoc>(docUrl, { suspense: true });
   const contactInfo = useContactInfo();
@@ -73,7 +79,7 @@ export function CreatureSketchTool({ docUrl }: { docUrl: AutomergeUrl }) {
   });
 
   return (
-    <Tldraw inferDarkMode autoFocus store={store} shapeUtils={customShapeUtils}>
+    <Tldraw inferDarkMode autoFocus store={store} shapeUtils={customShapeUtils} components={hiddenUiComponents}>
       <TldrawInner docUrl={docUrl} />
     </Tldraw>
   );
@@ -181,6 +187,7 @@ function TldrawInner(props: { docUrl: AutomergeUrl }) {
     const handleDragOver = (e: DragEvent) => {
       if (e.dataTransfer?.types.includes("text/x-patchwork-dnd")) {
         e.preventDefault();
+        e.stopPropagation();
       }
     };
 
@@ -188,13 +195,19 @@ function TldrawInner(props: { docUrl: AutomergeUrl }) {
       const raw = e.dataTransfer?.getData("text/x-patchwork-dnd");
       if (!raw) return;
       e.preventDefault();
+      e.stopPropagation();
+
+      console.log("[patchwork-dnd] drop received, types:", Array.from(e.dataTransfer?.types ?? []));
 
       let parsed: { source?: string; items?: unknown[] };
       try {
         parsed = JSON.parse(raw);
       } catch {
+        console.warn("[patchwork-dnd] failed to parse drop data");
         return;
       }
+
+      console.log("[patchwork-dnd] creating token shape, items:", parsed.items?.length ?? 0);
 
       const point = editor.screenToPage({ x: e.clientX, y: e.clientY });
       const itemCount = Array.isArray(parsed.items) ? parsed.items.length : 1;
