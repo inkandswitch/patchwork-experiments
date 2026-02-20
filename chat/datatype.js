@@ -1,10 +1,13 @@
 export const ChatDatatype = {
-  init(doc) {
-    doc.title = "Chat";
-    doc.messages = [];
-    doc.docs = [];
-  },
-  getTitle(doc) { return doc.title || "Chat"; },
-  setTitle(doc, title) { doc.title = title; },
-  markCopy(doc) { doc.title = "Copy of " + this.getTitle(doc); },
-};
+	init(doc) {
+		doc.title = "chitter chatter " + new Date().toLocaleString()
+		doc.messages = []
+		doc.docs = []
+	},
+	getTitle(doc) {
+		return doc.title || "chitter chatter"
+	},
+	setTitle(doc, title) {
+		doc.title = title
+	},
+}

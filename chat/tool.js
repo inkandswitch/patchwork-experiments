@@ -1767,7 +1767,7 @@ export function Tool(handle, element, options) {
         const btn = document.createElement("button");
         btn.title = ":" + name + ":" + (info.mine ? "" : " (by " + info.owner + ")");
         const img = document.createElement("img");
-        loadEmoticonBlobUrl(info.url).then(u => { if (u) img.src = u; });
+        img.src = "/" + encodeURIComponent(info.url) + "/";
         btn.appendChild(img);
         btn.addEventListener("click", (ev) => {
           ev.stopPropagation();
@@ -2380,8 +2380,9 @@ export function Tool(handle, element, options) {
   const msgDocCache = new Map(); // url -> { data, handle }
   const msgDocSubscribed = new Set(); // urls we're listening to
   let renderTimer = null;
-  function scheduleRender() {
-    if (renderTimer) return;
+  function scheduleRender(force) {
+    if (renderTimer && !force) return;
+    if (renderTimer) cancelAnimationFrame(renderTimer);
     renderTimer = requestAnimationFrame(() => { renderTimer = null; render(); });
   }
 
@@ -2401,8 +2402,8 @@ export function Tool(handle, element, options) {
           render();
         });
       }
-      // Re-render to show this newly loaded message
-      scheduleRender();
+      // Re-render to show this newly loaded message (force to avoid dedup)
+      scheduleRender(true);
       return msgDocCache.get(url);
     } catch(e) { console.warn("[Chat] resolve msg doc:", e); return null; }
   }
@@ -2615,6 +2616,190 @@ export function Tool(handle, element, options) {
   }
 
   // ---- Render messages ----
+  let renderedMsgOrder = []; // msg IDs currently in DOM
+  let renderedLastName = null;
+  let renderedLastTime = 0;
+  const pvCache = new Map(); // docUrl -> detached patchwork-view element
+
+  function getOrCreatePatchworkView(docUrl, toolId) {
+    const cached = pvCache.get(docUrl);
+    if (cached) {
+      pvCache.delete(docUrl);
+      if (toolId) cached.setAttribute("tool-id", toolId);
+      else cached.removeAttribute("tool-id");
+      return cached;
+    }
+    const pv = document.createElement("patchwork-view");
+    pv.setAttribute("doc-url", docUrl);
+    if (toolId) pv.setAttribute("tool-id", toolId);
+    return pv;
+  }
+
+  function renderMessageToDOM(msg, prevName, prevTime, msgMap, emoticonBlobUrls) {
+    const rawIdx = msg._rawIdx;
+    const sameAuthor = msg.name === prevName;
+    const closeInTime = msg.timestamp - prevTime < 300000;
+    const isContinuation = sameAuthor && closeInTime && !msg.replyTo;
+    const hasGifSelfie = !!msg.gifSelfieUrl;
+
+    // Reply reference (always before the message)
+    if (msg.replyTo && msgMap.has(msg.replyTo)) {
+      const orig = msgMap.get(msg.replyTo);
+      const ref = document.createElement("div");
+      ref.className = "chat-msg-reply-ref";
+      const refAvatar = document.createElement("span");
+      refAvatar.className = "chat-msg-reply-ref-avatar";
+      if (orig.avatarUrl) loadBlobUrl(orig.avatarUrl).then(u => { if (u) refAvatar.innerHTML = '<img src="'+u+'">'; });
+      ref.appendChild(refAvatar);
+      const refName = document.createElement("span");
+      refName.className = "chat-msg-reply-ref-name";
+      refName.textContent = orig.name;
+      ref.appendChild(refName);
+      const refText = document.createElement("span");
+      refText.className = "chat-msg-reply-ref-text";
+      refText.textContent = orig.text || "(attachment)";
+      ref.appendChild(refText);
+      ref.addEventListener("click", () => {
+        const el = messagesArea.querySelector('[data-msg-id="'+msg.replyTo+'"]');
+        if (el) { el.scrollIntoView({ behavior:"smooth", block:"center" }); el.style.background="var(--bg-hover)"; setTimeout(()=>el.style.background="",1500); }
+      });
+      messagesArea.appendChild(ref);
+    }
+
+    // Action messages (/me, /slap)
+    if (msg.action) {
+      const row = document.createElement("div");
+      row.className = "chat-msg-action";
+      row.dataset.msgId = msg.id || "";
+      if (msg.font) row.style.fontFamily = msg.font;
+      if (msg.color) row.style.color = resolveNamedColor(msg.color);
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "chat-msg-action-name";
+      nameSpan.textContent = msg.name;
+      row.appendChild(document.createTextNode("* "));
+      row.appendChild(nameSpan);
+      const actionText = document.createElement("span");
+      actionText.innerHTML = " " + formatText(msg.text, emoticonBlobUrls);
+      actionText.querySelectorAll(".chat-spoiler").forEach(sp => {
+        sp.addEventListener("click", () => sp.classList.toggle("revealed"));
+      });
+      row.appendChild(actionText);
+      buildActions(row, msg, rawIdx);
+      renderReactions(row, msg, rawIdx, emoticonBlobUrls);
+      messagesArea.appendChild(row);
+      return;
+    }
+
+    if (!isContinuation) {
+      // Full message row with avatar
+      const row = document.createElement("div");
+      row.className = "chat-msg-group";
+      row.dataset.msgId = msg.id || "";
+
+      buildActions(row, msg, rawIdx);
+
+      // Avatar
+      const avatarCol = document.createElement("div");
+      avatarCol.className = "chat-avatar-col";
+      const avatar = document.createElement("div");
+      avatar.className = "chat-avatar";
+      if (catEarsSet.has(msg.name)) avatar.classList.add("cat-ears");
+
+      const avatarSrc = msg.gifSelfieUrl || msg.avatarUrl;
+      if (msg.gifSelfieUrl) avatar.classList.add("gif-selfie");
+      if (avatarSrc) {
+        loadBlobUrl(avatarSrc).then(u => { if (u) avatar.innerHTML = '<img src="'+u+'">'; });
+      } else {
+        avatar.textContent = (msg.name || "?")[0].toUpperCase();
+      }
+      avatar.addEventListener("click", () => {
+        if (catEarsSet.has(msg.name)) catEarsSet.delete(msg.name);
+        else catEarsSet.add(msg.name);
+        render();
+      });
+      avatarCol.appendChild(avatar);
+      row.appendChild(avatarCol);
+
+      // Body
+      const body = document.createElement("div");
+      body.className = "chat-msg-body";
+
+      const hdr = document.createElement("div");
+      hdr.className = "chat-msg-header";
+      const nameEl = document.createElement("span");
+      nameEl.className = "chat-msg-name";
+      nameEl.textContent = msg.name;
+      hdr.appendChild(nameEl);
+      const timeEl = document.createElement("span");
+      timeEl.className = "chat-msg-time";
+      timeEl.textContent = formatTime(msg.timestamp);
+      hdr.appendChild(timeEl);
+      body.appendChild(hdr);
+
+      if (msg.text) {
+        const textEl = document.createElement("div");
+        textEl.className = "chat-msg-text";
+        let html = formatText(msg.text, emoticonBlobUrls);
+        if (msg.marquee) html = "<marquee>" + html + "</marquee>";
+        textEl.innerHTML = html;
+        if (msg.font) textEl.style.fontFamily = msg.font;
+        if (msg.color) textEl.style.color = resolveNamedColor(msg.color);
+        // Wire up spoiler clicks
+        textEl.querySelectorAll(".chat-spoiler").forEach(sp => {
+          sp.addEventListener("click", () => sp.classList.toggle("revealed"));
+        });
+        body.appendChild(textEl);
+      }
+
+      renderAttachments(body, msg);
+      renderReactions(body, msg, rawIdx, emoticonBlobUrls);
+      row.appendChild(body);
+      messagesArea.appendChild(row);
+
+    } else {
+      // Continuation message
+      const row = document.createElement("div");
+      row.className = "chat-msg-continuation" + (hasGifSelfie ? " has-gif" : "");
+      row.dataset.msgId = msg.id || "";
+
+      buildActions(row, msg, rawIdx);
+
+      // If this continuation has a GIF selfie, show it aligned with the avatar column
+      if (hasGifSelfie) {
+        const gifCol = document.createElement("div");
+        gifCol.className = "chat-avatar-col";
+        const gifInline = document.createElement("img");
+        gifInline.className = "chat-msg-gif-inline";
+        gifInline.alt = "selfie";
+        loadBlobUrl(msg.gifSelfieUrl).then(u => { if (u) gifInline.src = u; });
+        gifCol.appendChild(gifInline);
+        row.appendChild(gifCol);
+      }
+
+      const contBody = document.createElement("div");
+      contBody.className = "chat-msg-body";
+
+      if (msg.text) {
+        const textEl = document.createElement("div");
+        textEl.className = "chat-msg-text";
+        let html = formatText(msg.text, emoticonBlobUrls);
+        if (msg.marquee) html = "<marquee>" + html + "</marquee>";
+        textEl.innerHTML = html;
+        if (msg.font) textEl.style.fontFamily = msg.font;
+        if (msg.color) textEl.style.color = resolveNamedColor(msg.color);
+        textEl.querySelectorAll(".chat-spoiler").forEach(sp => {
+          sp.addEventListener("click", () => sp.classList.toggle("revealed"));
+        });
+        contBody.appendChild(textEl);
+      }
+
+      renderAttachments(contBody, msg);
+      renderReactions(contBody, msg, rawIdx, emoticonBlobUrls);
+      row.appendChild(contBody);
+      messagesArea.appendChild(row);
+    }
+  }
+
   function render() {
     const doc = handle.doc();
     if (!doc) return;
@@ -2645,23 +2830,19 @@ export function Tool(handle, element, options) {
     const msgMap = new Map();
     for (const m of messages) if (m.id) msgMap.set(m.id, m);
 
-    // Resolve emoticon blob URLs for rendering (sync from cache, async triggers re-render)
+    // Resolve emoticon URLs for rendering using service worker URLs
     const emoticonBlobUrls = {};
     const allEm = getAllEmoticons();
     // From known emoticons
     for (const [name, info] of Object.entries(allEm)) {
-      const cached = emoticonBlobCache.get(info.url);
-      if (cached) emoticonBlobUrls[name] = cached;
-      else loadEmoticonBlobUrl(info.url).then(u => { if (u) scheduleRender(); });
+      emoticonBlobUrls[name] = "/" + encodeURIComponent(info.url) + "/";
     }
     // From message-embedded emoticons
     for (const msg of messages) {
       if (msg.emoticons) {
         for (const [name, url] of Object.entries(msg.emoticons)) {
           if (emoticonBlobUrls[name]) continue;
-          const cached = emoticonBlobCache.get(url);
-          if (cached) emoticonBlobUrls[name] = cached;
-          else loadEmoticonBlobUrl(url).then(u => { if (u) scheduleRender(); });
+          emoticonBlobUrls[name] = "/" + encodeURIComponent(url) + "/";
         }
       }
     }
@@ -2669,207 +2850,87 @@ export function Tool(handle, element, options) {
     // Remember scroll position to decide if we should auto-scroll
     const wasAtBottom = messagesArea.scrollHeight - messagesArea.scrollTop - messagesArea.clientHeight < 40;
 
-    messagesArea.innerHTML = "";
+    const newMsgIds = messages.map(m => m.id);
 
-    // Count pending refs
-    const totalRefs = rawEntries.filter(e => e.ref && e.url).length;
-    const loadedRefs = rawEntries.filter(e => e.ref && e.url && msgDocCache.has(e.url)).length;
-    const pendingRefs = totalRefs - loadedRefs;
-
-    if (rawEntries.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "chat-empty";
-      empty.textContent = "no messages yet. say hello 🥰";
-      messagesArea.appendChild(empty);
-      return;
+    // Find common prefix with currently rendered messages
+    let commonPrefix = 0;
+    while (commonPrefix < renderedMsgOrder.length && commonPrefix < newMsgIds.length
+      && renderedMsgOrder[commonPrefix] === newMsgIds[commonPrefix]) {
+      commonPrefix++;
     }
 
-    if (pendingRefs > 0) {
-      const loading = document.createElement("div");
-      loading.className = "chat-loading";
-      const bar = document.createElement("div");
-      bar.className = "chat-loading-bar";
-      const fill = document.createElement("div");
-      fill.className = "chat-loading-fill";
-      fill.style.width = (totalRefs > 0 ? Math.round((loadedRefs / totalRefs) * 100) : 0) + "%";
-      bar.appendChild(fill);
-      loading.appendChild(bar);
-      loading.appendChild(document.createTextNode("Loading messages " + loadedRefs + "/" + totalRefs));
-      messagesArea.appendChild(loading);
-    }
+    const isAppendOnly = commonPrefix === renderedMsgOrder.length;
 
-    let prevName = null, prevTime = 0;
-
-    messages.forEach((msg) => {
-      const rawIdx = msg._rawIdx;
-      const isMine = msg.name === myName;
-      const sameAuthor = msg.name === prevName;
-      const closeInTime = msg.timestamp - prevTime < 300000;
-      const isContinuation = sameAuthor && closeInTime && !msg.replyTo;
-      const hasGifSelfie = !!msg.gifSelfieUrl;
-
-      // Reply reference (always before the message)
-      if (msg.replyTo && msgMap.has(msg.replyTo)) {
-        const orig = msgMap.get(msg.replyTo);
-        const ref = document.createElement("div");
-        ref.className = "chat-msg-reply-ref";
-        const refAvatar = document.createElement("span");
-        refAvatar.className = "chat-msg-reply-ref-avatar";
-        if (orig.avatarUrl) loadBlobUrl(orig.avatarUrl).then(u => { if (u) refAvatar.innerHTML = '<img src="'+u+'">'; });
-        ref.appendChild(refAvatar);
-        const refName = document.createElement("span");
-        refName.className = "chat-msg-reply-ref-name";
-        refName.textContent = orig.name;
-        ref.appendChild(refName);
-        const refText = document.createElement("span");
-        refText.className = "chat-msg-reply-ref-text";
-        refText.textContent = orig.text || "(attachment)";
-        ref.appendChild(refText);
-        ref.addEventListener("click", () => {
-          const el = messagesArea.querySelector('[data-msg-id="'+msg.replyTo+'"]');
-          if (el) { el.scrollIntoView({ behavior:"smooth", block:"center" }); el.style.background="var(--bg-hover)"; setTimeout(()=>el.style.background="",1500); }
-        });
-        messagesArea.appendChild(ref);
+    if (!isAppendOnly) {
+      // Structural change (deletion, reorder, etc.) — full rebuild
+      // Save patchwork-view elements so they survive the rebuild
+      for (const pv of messagesArea.querySelectorAll("patchwork-view")) {
+        const url = pv.getAttribute("doc-url");
+        if (url) { pv.remove(); pvCache.set(url, pv); }
       }
+      messagesArea.innerHTML = "";
 
-      // Action messages (/me, /slap)
-      if (msg.action) {
-        const row = document.createElement("div");
-        row.className = "chat-msg-action";
-        row.dataset.msgId = msg.id || "";
-        if (msg.font) row.style.fontFamily = msg.font;
-        if (msg.color) row.style.color = resolveNamedColor(msg.color);
-        const nameSpan = document.createElement("span");
-        nameSpan.className = "chat-msg-action-name";
-        nameSpan.textContent = msg.name;
-        row.appendChild(document.createTextNode("* "));
-        row.appendChild(nameSpan);
-        const actionText = document.createElement("span");
-        actionText.innerHTML = " " + formatText(msg.text, emoticonBlobUrls);
-        actionText.querySelectorAll(".chat-spoiler").forEach(sp => {
-          sp.addEventListener("click", () => sp.classList.toggle("revealed"));
-        });
-        row.appendChild(actionText);
-        buildActions(row, msg, rawIdx);
-        renderReactions(row, msg, rawIdx, emoticonBlobUrls);
-        messagesArea.appendChild(row);
-        prevName = msg.name;
-        prevTime = msg.timestamp;
+      // Count pending refs
+      const totalRefs = rawEntries.filter(e => e.ref && e.url).length;
+      const loadedRefs = rawEntries.filter(e => e.ref && e.url && msgDocCache.has(e.url)).length;
+      const pendingRefs = totalRefs - loadedRefs;
+
+      if (rawEntries.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "chat-empty";
+        empty.textContent = "no messages yet. say hello 🥰";
+        messagesArea.appendChild(empty);
+        renderedMsgOrder = [];
+        renderedLastName = null;
+        renderedLastTime = 0;
+        renderPresence();
+        renderTyping();
         return;
       }
 
-      if (!isContinuation) {
-        // Full message row with avatar
-        const row = document.createElement("div");
-        row.className = "chat-msg-group";
-        row.dataset.msgId = msg.id || "";
-
-        buildActions(row, msg, rawIdx);
-
-        // Avatar
-        const avatarCol = document.createElement("div");
-        avatarCol.className = "chat-avatar-col";
-        const avatar = document.createElement("div");
-        avatar.className = "chat-avatar";
-        if (catEarsSet.has(msg.name)) avatar.classList.add("cat-ears");
-
-        const avatarSrc = msg.gifSelfieUrl || msg.avatarUrl;
-        if (msg.gifSelfieUrl) avatar.classList.add("gif-selfie");
-        if (avatarSrc) {
-          loadBlobUrl(avatarSrc).then(u => { if (u) avatar.innerHTML = '<img src="'+u+'">'; });
-        } else {
-          avatar.textContent = (msg.name || "?")[0].toUpperCase();
-        }
-        avatar.addEventListener("click", () => {
-          if (catEarsSet.has(msg.name)) catEarsSet.delete(msg.name);
-          else catEarsSet.add(msg.name);
-          render();
-        });
-        avatarCol.appendChild(avatar);
-        row.appendChild(avatarCol);
-
-        // Body
-        const body = document.createElement("div");
-        body.className = "chat-msg-body";
-
-        const hdr = document.createElement("div");
-        hdr.className = "chat-msg-header";
-        const nameEl = document.createElement("span");
-        nameEl.className = "chat-msg-name";
-        nameEl.textContent = msg.name;
-        hdr.appendChild(nameEl);
-        const timeEl = document.createElement("span");
-        timeEl.className = "chat-msg-time";
-        timeEl.textContent = formatTime(msg.timestamp);
-        hdr.appendChild(timeEl);
-        body.appendChild(hdr);
-
-        if (msg.text) {
-          const textEl = document.createElement("div");
-          textEl.className = "chat-msg-text";
-          let html = formatText(msg.text, emoticonBlobUrls);
-          if (msg.marquee) html = "<marquee>" + html + "</marquee>";
-          textEl.innerHTML = html;
-          if (msg.font) textEl.style.fontFamily = msg.font;
-          if (msg.color) textEl.style.color = resolveNamedColor(msg.color);
-          // Wire up spoiler clicks
-          textEl.querySelectorAll(".chat-spoiler").forEach(sp => {
-            sp.addEventListener("click", () => sp.classList.toggle("revealed"));
-          });
-          body.appendChild(textEl);
-        }
-
-        renderAttachments(body, msg);
-        renderReactions(body, msg, rawIdx, emoticonBlobUrls);
-        row.appendChild(body);
-        messagesArea.appendChild(row);
-
-      } else {
-        // Continuation message
-        const row = document.createElement("div");
-        row.className = "chat-msg-continuation" + (hasGifSelfie ? " has-gif" : "");
-        row.dataset.msgId = msg.id || "";
-
-        buildActions(row, msg, rawIdx);
-
-        // If this continuation has a GIF selfie, show it aligned with the avatar column
-        if (hasGifSelfie) {
-          const gifCol = document.createElement("div");
-          gifCol.className = "chat-avatar-col";
-          const gifInline = document.createElement("img");
-          gifInline.className = "chat-msg-gif-inline";
-          gifInline.alt = "selfie";
-          loadBlobUrl(msg.gifSelfieUrl).then(u => { if (u) gifInline.src = u; });
-          gifCol.appendChild(gifInline);
-          row.appendChild(gifCol);
-        }
-
-        const contBody = document.createElement("div");
-        contBody.className = "chat-msg-body";
-
-        if (msg.text) {
-          const textEl = document.createElement("div");
-          textEl.className = "chat-msg-text";
-          let html = formatText(msg.text, emoticonBlobUrls);
-          if (msg.marquee) html = "<marquee>" + html + "</marquee>";
-          textEl.innerHTML = html;
-          if (msg.font) textEl.style.fontFamily = msg.font;
-          if (msg.color) textEl.style.color = resolveNamedColor(msg.color);
-          textEl.querySelectorAll(".chat-spoiler").forEach(sp => {
-            sp.addEventListener("click", () => sp.classList.toggle("revealed"));
-          });
-          contBody.appendChild(textEl);
-        }
-
-        renderAttachments(contBody, msg);
-        renderReactions(contBody, msg, rawIdx, emoticonBlobUrls);
-        row.appendChild(contBody);
-        messagesArea.appendChild(row);
+      if (pendingRefs > 0) {
+        const loading = document.createElement("div");
+        loading.className = "chat-loading";
+        const bar = document.createElement("div");
+        bar.className = "chat-loading-bar";
+        const fill = document.createElement("div");
+        fill.className = "chat-loading-fill";
+        fill.style.width = (totalRefs > 0 ? Math.round((loadedRefs / totalRefs) * 100) : 0) + "%";
+        bar.appendChild(fill);
+        loading.appendChild(bar);
+        loading.appendChild(document.createTextNode("Loading messages " + loadedRefs + "/" + totalRefs));
+        messagesArea.appendChild(loading);
       }
 
-      prevName = msg.name;
-      prevTime = msg.timestamp;
-    });
+      let prevName = null, prevTime = 0;
+      for (const msg of messages) {
+        renderMessageToDOM(msg, prevName, prevTime, msgMap, emoticonBlobUrls);
+        prevName = msg.name;
+        prevTime = msg.timestamp;
+      }
+      renderedLastName = prevName;
+      renderedLastTime = prevTime;
+
+    } else if (newMsgIds.length > renderedMsgOrder.length) {
+      // Append-only — just render the new messages without touching existing DOM
+      const loadingEl = messagesArea.querySelector(".chat-loading");
+      if (loadingEl) loadingEl.remove();
+      const emptyEl = messagesArea.querySelector(".chat-empty");
+      if (emptyEl) emptyEl.remove();
+
+      let prevName = renderedLastName;
+      let prevTime = renderedLastTime;
+      for (let i = commonPrefix; i < messages.length; i++) {
+        renderMessageToDOM(messages[i], prevName, prevTime, msgMap, emoticonBlobUrls);
+        prevName = messages[i].name;
+        prevTime = messages[i].timestamp;
+      }
+      renderedLastName = prevName;
+      renderedLastTime = prevTime;
+    }
+    // else: same messages, no DOM changes needed
+
+    renderedMsgOrder = newMsgIds;
 
     // Scroll to bottom reliably
     if (wasAtBottom || messagesArea.children.length <= 1) {
@@ -3061,9 +3122,7 @@ export function Tool(handle, element, options) {
         const chatDoc = handle.doc();
         const toolId = chatDoc?.toolOverrides?.[embed.docUrl] || "";
 
-        const pv = document.createElement("patchwork-view");
-        pv.setAttribute("doc-url", embed.docUrl);
-        if (toolId) pv.setAttribute("tool-id", toolId);
+        const pv = getOrCreatePatchworkView(embed.docUrl, toolId);
         wrap.appendChild(pv);
 
         // Info bar under the embed
