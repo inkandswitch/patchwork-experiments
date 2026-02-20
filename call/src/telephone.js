@@ -33,6 +33,65 @@ const HEARTBEAT_MS = 5000;
 // How long since last heartbeat before we consider a peer gone
 const PEER_TIMEOUT_MS = 20000;
 
+// Quality presets for video sending
+const QUALITY_PRESETS = {
+  high: { label: "HD" },
+  medium: { label: "SD", maxFramerate: 15, scaleResolutionDownBy: 1.5, maxBitrate: 500_000 },
+  low: { label: "LD", maxFramerate: 10, scaleResolutionDownBy: 2, maxBitrate: 250_000 },
+  potato: { label: "🥔", maxFramerate: 5, scaleResolutionDownBy: 4, maxBitrate: 100_000 },
+};
+const QUALITY_LEVELS = ["high", "medium", "low", "potato"];
+
+async function applyQuality(pc, quality) {
+  const preset = QUALITY_PRESETS[quality];
+  if (!preset) return;
+  for (const sender of pc.getSenders()) {
+    if (!sender.track || sender.track.kind !== "video") continue;
+    const params = sender.getParameters();
+    if (!params.encodings || params.encodings.length === 0) {
+      params.encodings = [{}];
+    }
+    for (const enc of params.encodings) {
+      if (preset.maxFramerate) {
+        enc.maxFramerate = preset.maxFramerate;
+      } else {
+        delete enc.maxFramerate;
+      }
+      if (preset.scaleResolutionDownBy) {
+        enc.scaleResolutionDownBy = preset.scaleResolutionDownBy;
+      } else {
+        delete enc.scaleResolutionDownBy;
+      }
+      if (preset.maxBitrate) {
+        enc.maxBitrate = preset.maxBitrate;
+      } else {
+        delete enc.maxBitrate;
+      }
+    }
+    try {
+      await sender.setParameters(params);
+    } catch (err) {
+      console.warn("[call] setParameters failed:", err);
+    }
+  }
+}
+
+function createQualityMenu(currentLevel, onSelect) {
+  const menu = document.createElement("div");
+  menu.className = "call-quality-menu";
+  for (const level of QUALITY_LEVELS) {
+    const btn = document.createElement("button");
+    btn.textContent = QUALITY_PRESETS[level].label;
+    if (level === currentLevel) btn.className = "active";
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onSelect(level);
+    });
+    menu.appendChild(btn);
+  }
+  return menu;
+}
+
 function createStyles() {
   const style = document.createElement("style");
   style.textContent = `
@@ -230,6 +289,54 @@ function createStyles() {
 
     .call-local-status .call-retry-btn:hover {
       background: rgba(255, 255, 255, 0.35);
+    }
+
+    .call-btn .quality-label {
+      font-size: 9px;
+      font-weight: 700;
+      pointer-events: none;
+    }
+
+    .call-quality-anchor {
+      position: relative;
+    }
+
+    .call-quality-menu {
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 8px;
+      padding: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      z-index: 30;
+      min-width: 56px;
+    }
+
+    .call-quality-menu button {
+      background: none;
+      border: none;
+      color: white;
+      padding: 5px 10px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 12px;
+      font-family: inherit;
+      font-weight: 500;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    .call-quality-menu button:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    .call-quality-menu button.active {
+      background: rgba(255, 255, 255, 0.25);
     }
 
     .call-lobby {
@@ -435,9 +542,57 @@ export default function TelephoneTool(handle, element) {
   screenBtn.title = "Share screen";
   screenBtn.addEventListener("click", toggleScreenShare);
 
+  let sendQuality = "high";
+  const qualityAnchor = document.createElement("div");
+  qualityAnchor.className = "call-quality-anchor";
+  const qualityBtn = document.createElement("button");
+  qualityBtn.className = "call-btn";
+  qualityBtn.title = "Sending quality";
+  const qualityLabel = document.createElement("span");
+  qualityLabel.className = "quality-label";
+  qualityLabel.textContent = QUALITY_PRESETS[sendQuality].label;
+  qualityBtn.appendChild(qualityLabel);
+  qualityAnchor.appendChild(qualityBtn);
+
+  let qualityMenuOpen = false;
+  let qualityMenu = null;
+
+  function closeQualityMenu() {
+    if (qualityMenu) {
+      qualityMenu.remove();
+      qualityMenu = null;
+    }
+    qualityMenuOpen = false;
+  }
+
+  qualityBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (qualityMenuOpen) {
+      closeQualityMenu();
+      return;
+    }
+    qualityMenu = createQualityMenu(sendQuality, async (level) => {
+      sendQuality = level;
+      qualityLabel.textContent = QUALITY_PRESETS[sendQuality].label;
+      closeQualityMenu();
+      for (const [, peer] of peers) {
+        await applyQuality(peer.pc, sendQuality);
+      }
+    });
+    qualityAnchor.appendChild(qualityMenu);
+    qualityMenuOpen = true;
+  });
+
+  document.addEventListener("pointerdown", (e) => {
+    if (qualityMenuOpen && !qualityAnchor.contains(e.target)) {
+      closeQualityMenu();
+    }
+  });
+
   localBar.appendChild(camBtn);
   localBar.appendChild(micBtn);
   localBar.appendChild(screenBtn);
+  localBar.appendChild(qualityAnchor);
   localBar.appendChild(renegotiateBtn);
   localBox.appendChild(localBar);
 
@@ -717,6 +872,59 @@ export default function TelephoneTool(handle, element) {
     const label = document.createElement("span");
     label.textContent = remotePeerId.slice(0, 8);
     bar.appendChild(label);
+
+    let requestedQuality = "high";
+    const reqQualityAnchor = document.createElement("div");
+    reqQualityAnchor.className = "call-quality-anchor";
+    const reqQualityBtn = document.createElement("button");
+    reqQualityBtn.className = "call-btn";
+    reqQualityBtn.title = "Request quality from this peer";
+    const reqQualityLabel = document.createElement("span");
+    reqQualityLabel.className = "quality-label";
+    reqQualityLabel.textContent = QUALITY_PRESETS[requestedQuality].label;
+    reqQualityBtn.appendChild(reqQualityLabel);
+    reqQualityAnchor.appendChild(reqQualityBtn);
+
+    let reqMenuOpen = false;
+    let reqMenu = null;
+
+    function closeReqMenu() {
+      if (reqMenu) {
+        reqMenu.remove();
+        reqMenu = null;
+      }
+      reqMenuOpen = false;
+    }
+
+    reqQualityBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (reqMenuOpen) {
+        closeReqMenu();
+        return;
+      }
+      reqMenu = createQualityMenu(requestedQuality, (level) => {
+        requestedQuality = level;
+        reqQualityLabel.textContent = QUALITY_PRESETS[level].label;
+        closeReqMenu();
+        broadcast({
+          type: "quality-request",
+          from: peerId,
+          to: remotePeerId,
+          quality: requestedQuality,
+        });
+      });
+      reqQualityAnchor.appendChild(reqMenu);
+      reqMenuOpen = true;
+    });
+
+    document.addEventListener("pointerdown", (e) => {
+      if (reqMenuOpen && !reqQualityAnchor.contains(e.target)) {
+        closeReqMenu();
+      }
+    });
+
+    bar.appendChild(reqQualityAnchor);
+
     box.appendChild(bar);
 
     const remoteStream = new MediaStream();
@@ -779,6 +987,10 @@ export default function TelephoneTool(handle, element) {
           updatePeerDot(peer, "connected");
           hidePeerStatus(peer);
           peer.reconnectAttempts = 0;
+          // Apply current sending quality to this new peer
+          if (sendQuality !== "high") {
+            applyQuality(pc, sendQuality);
+          }
           break;
         case "disconnected":
           updatePeerDot(peer, "reconnecting");
@@ -826,6 +1038,8 @@ export default function TelephoneTool(handle, element) {
       pendingCandidates: [],
       reconnectAttempts: 0,
       lastHeartbeat: Date.now(),
+      requestedQuality,
+      setRequestedQuality(q) { requestedQuality = q; reqQualityLabel.textContent = QUALITY_PRESETS[q].label; },
     };
     peers.set(remotePeerId, peer);
 
@@ -985,6 +1199,11 @@ export default function TelephoneTool(handle, element) {
     oldPeer.pendingCandidates = [];
     oldPeer.reconnectAttempts = reconnectAttempts;
 
+    // Re-apply local sending quality after reconnect
+    if (sendQuality !== "high") {
+      applyQuality(pc, sendQuality);
+    }
+
     // Send a join to trigger the remote side to send an offer
     broadcast({ type: "join", from: peerId, name: myName });
   }
@@ -1143,6 +1362,15 @@ export default function TelephoneTool(handle, element) {
         break;
       }
 
+      case "quality-request": {
+        const peer = peers.get(msg.from);
+        if (peer && msg.quality) {
+          console.log(`[call] ${msg.from} requested quality: ${msg.quality}`);
+          applyQuality(peer.pc, msg.quality);
+        }
+        break;
+      }
+
       case "leave": {
         removePeer(msg.from);
         break;
@@ -1156,18 +1384,10 @@ export default function TelephoneTool(handle, element) {
       handleSignal(msg);
     }
   }
-  handle.on("ephemeral-message", onEphemeral);
+  // NOTE: ephemeral-message listener is registered in joinCall(), not here,
+  // so no WebRTC connections are created until the user clicks Join.
 
-  // ---- Peer liveness: remove peers that stop sending heartbeats ----
-  const livenessInterval = setInterval(() => {
-    const now = Date.now();
-    for (const [id, peer] of peers) {
-      if (now - peer.lastHeartbeat > PEER_TIMEOUT_MS) {
-        console.warn(`[call] Peer ${id} timed out (no heartbeat)`);
-        removePeer(id);
-      }
-    }
-  }, PEER_TIMEOUT_MS / 2);
+  let livenessInterval = null;
 
   // ============================================================================
   // Transcription
@@ -1430,6 +1650,20 @@ export default function TelephoneTool(handle, element) {
 
     startTranscription();
 
+    // Start listening for signaling messages only after joining
+    handle.on("ephemeral-message", onEphemeral);
+
+    // Start peer liveness checks
+    livenessInterval = setInterval(() => {
+      const now = Date.now();
+      for (const [id, peer] of peers) {
+        if (now - peer.lastHeartbeat > PEER_TIMEOUT_MS) {
+          console.warn(`[call] Peer ${id} timed out (no heartbeat)`);
+          removePeer(id);
+        }
+      }
+    }, PEER_TIMEOUT_MS / 2);
+
     broadcast({ type: "join", from: peerId, name: myName });
 
     heartbeatInterval = setInterval(() => {
@@ -1447,7 +1681,7 @@ export default function TelephoneTool(handle, element) {
     destroyed = true;
 
     if (heartbeatInterval) clearInterval(heartbeatInterval);
-    clearInterval(livenessInterval);
+    if (livenessInterval) clearInterval(livenessInterval);
 
     broadcast({ type: "leave", from: peerId });
 

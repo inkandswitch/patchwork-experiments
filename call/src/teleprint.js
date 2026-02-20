@@ -159,7 +159,6 @@ export default function TeleprintTool(handle, element) {
       font-size: 11px;
     }
     .tp-summary-panel {
-      display: none;
       overflow: auto;
       padding: 10px 16px 14px;
       background: #fff;
@@ -170,9 +169,6 @@ export default function TeleprintTool(handle, element) {
       color: #000;
       max-height: 50%;
       flex-shrink: 0;
-    }
-    .tp-summary-panel.visible {
-      display: block;
     }
     .tp-summary-panel h1 {
       font-family: "Chicago", "ChicagoFLF", Geneva, system-ui, sans-serif;
@@ -334,6 +330,7 @@ export default function TeleprintTool(handle, element) {
   // ---- Summary panel (below the bar) ----
   const summaryPanel = document.createElement("div");
   summaryPanel.className = "tp-summary-panel";
+  summaryPanel.style.display = "none";
   container.appendChild(summaryPanel);
 
   const actionsRow = document.createElement("div");
@@ -364,7 +361,7 @@ export default function TeleprintTool(handle, element) {
 
   function toggleSummary() {
     summaryVisible = !summaryVisible;
-    summaryPanel.classList.toggle("visible", summaryVisible);
+    summaryPanel.style.display = summaryVisible ? "block" : "none";
     summaryBar.classList.toggle("active", summaryVisible);
     if (summaryVisible) {
       renderSummaryContent();

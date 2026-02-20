@@ -1,9 +1,9 @@
 /**
  * Summary Web Worker
  *
- * Loads distilbart-cnn-12-6 via transformers.js for in-browser summarization.
- * Chunks long transcripts to stay within model limits, summarizes each chunk,
- * then produces per-speaker summaries and a pithy top-line.
+ * Uses Qwen2.5-1.5B-Instruct via transformers.js to generate structured
+ * meeting notes from call transcripts. Runs in-browser via WebGPU (preferred)
+ * or WASM fallback.
  *
  * Messages IN:  { type: "summarize", text: string }
  * Messages OUT: { type: "result", summary: string }
@@ -18,54 +18,57 @@ import {
 
 env.allowLocalModels = false;
 
-const MODEL_ID = "Xenova/distilbart-cnn-12-6-samsum";
-const MAX_CHUNK_CHARS = 3000;
+const MODEL_ID = "onnx-community/Qwen2.5-0.5B-Instruct";
+// ~15k tokens of input, leaving headroom for output
+const MAX_INPUT_CHARS = 60000;
 
-let summarizer = null;
+let generator = null;
 let loading = false;
 
+function progress(msg) {
+  self.postMessage({ type: "status", message: msg });
+}
+
 async function loadModel() {
-  if (summarizer || loading) return;
+  if (generator || loading) return;
   loading = true;
 
   const hasWebGPU = typeof navigator !== "undefined" && !!navigator.gpu;
 
+  const onProgress = (p) => {
+    if (p.status === "progress" && p.progress != null) {
+      const pct = Math.round(p.progress);
+      progress(`Downloading model\u2026 ${pct}%`);
+    }
+  };
+
   if (hasWebGPU) {
-    self.postMessage({
-      type: "status",
-      message: "Loading summary model (WebGPU)\u2026",
-    });
+    progress("Loading summary model (WebGPU)\u2026");
     try {
-      summarizer = await pipeline("summarization", MODEL_ID, {
+      generator = await pipeline("text-generation", MODEL_ID, {
+        dtype: "q4f16",
         device: "webgpu",
+        progress_callback: onProgress,
       });
-      self.postMessage({ type: "status", message: "Summary model ready" });
       self.postMessage({ type: "ready" });
       loading = false;
       return;
     } catch (err) {
-      console.warn("[summary worker] WebGPU failed, falling back to WASM:", err);
-      self.postMessage({
-        type: "status",
-        message: "WebGPU unavailable, falling back to WASM\u2026",
-      });
+      console.warn("[summary] WebGPU failed, falling back to WASM:", err);
+      progress("WebGPU unavailable, falling back to WASM\u2026");
     }
   } else {
-    self.postMessage({
-      type: "status",
-      message: "Loading summary model (WASM)\u2026",
-    });
+    progress("Loading summary model (WASM)\u2026");
   }
 
   try {
-    summarizer = await pipeline("summarization", MODEL_ID);
-    self.postMessage({ type: "status", message: "Summary model ready (WASM)" });
+    generator = await pipeline("text-generation", MODEL_ID, {
+      dtype: "q4",
+      progress_callback: onProgress,
+    });
     self.postMessage({ type: "ready" });
   } catch (err) {
-    self.postMessage({
-      type: "status",
-      message: `Failed to load summary model: ${err.message}`,
-    });
+    progress(`Failed to load summary model: ${err.message}`);
   } finally {
     loading = false;
   }
@@ -79,200 +82,74 @@ function extractSpeakers(text) {
   return [...names];
 }
 
-/**
- * Collect all text said by each speaker.
- * Returns Map<name, string>
- */
-function textBySpeaker(text) {
-  const map = new Map();
-  for (const line of text.split("\n")) {
-    const m = line.match(/^<([^>]+)>\s*(.*)/);
-    if (m && m[2].trim()) {
-      const prev = map.get(m[1]) || "";
-      map.set(m[1], prev + (prev ? " " : "") + m[2].trim());
-    }
-  }
-  return map;
-}
-
-function chunkText(text, maxChars) {
-  const lines = text.split("\n");
-  const chunks = [];
-  let current = "";
-  for (const line of lines) {
-    if (current.length + line.length + 1 > maxChars && current.length > 0) {
-      chunks.push(current);
-      current = "";
-    }
-    current += (current ? "\n" : "") + line;
-  }
-  if (current) chunks.push(current);
-  return chunks;
-}
-
-/**
- * Summarize a piece of text, chunking if needed. Returns a single string.
- */
-async function summarizeText(text, statusPrefix, opts = {}) {
-  const maxTokens = opts.max_new_tokens || 150;
-  const minLen = opts.min_length || 30;
-
-  const chunks = chunkText(text, MAX_CHUNK_CHARS);
-  const summaries = [];
-
-  for (let i = 0; i < chunks.length; i++) {
-    if (chunks.length > 1 && statusPrefix) {
-      self.postMessage({
-        type: "status",
-        message: `${statusPrefix} (${i + 1}/${chunks.length})\u2026`,
-      });
-    }
-    const result = await summarizer(chunks[i], {
-      max_new_tokens: maxTokens,
-      min_length: minLen,
-    });
-    const t = result[0]?.summary_text?.trim();
-    if (t) summaries.push(t);
-  }
-
-  if (summaries.length === 0) return "";
-
-  // Condense multiple chunk summaries into one
-  if (summaries.length > 1) {
-    const combined = summaries.join(" ");
-    if (combined.length <= MAX_CHUNK_CHARS) {
-      try {
-        const r = await summarizer(combined, {
-          max_new_tokens: maxTokens,
-          min_length: minLen,
-        });
-        const t = r[0]?.summary_text?.trim();
-        if (t) return t;
-      } catch {}
-    }
-    return summaries.join(" ");
-  }
-
-  return summaries[0];
-}
-
-function toSentenceBullets(text) {
-  return text
-    .replace(/\s+/g, " ")
-    .split(/(?<=[.!?])\s+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0)
-    .map((s) => `- ${s}`)
-    .join("\n");
-}
-
 self.onmessage = async (e) => {
   const { type, text } = e.data;
+  if (type !== "summarize") return;
 
-  if (type === "summarize") {
-    if (!summarizer) {
-      await loadModel();
-      if (!summarizer) {
-        self.postMessage({
-          type: "status",
-          message: "Summary model failed to load",
-        });
-        return;
-      }
+  if (!generator) {
+    await loadModel();
+    if (!generator) {
+      progress("Summary model failed to load");
+      return;
+    }
+  }
+
+  try {
+    progress("Generating meeting notes\u2026");
+
+    // Truncate very long transcripts, keeping the most recent portion
+    let transcript = text;
+    if (transcript.length > MAX_INPUT_CHARS) {
+      transcript = transcript.slice(-MAX_INPUT_CHARS);
+      // Start at a clean line boundary
+      const nl = transcript.indexOf("\n");
+      if (nl !== -1) transcript = transcript.slice(nl + 1);
     }
 
-    try {
-      const speakers = extractSpeakers(text);
-      const speakerTexts = textBySpeaker(text);
-      const cleaned = text.replace(/^<[^>]+>\s*/gm, "").trim();
+    const speakers = extractSpeakers(transcript);
+    const speakerList =
+      speakers.length > 0
+        ? `\nParticipants: ${speakers.join(", ")}`
+        : "";
 
-      // --- Overview: detailed summary of the full transcript ---
-      self.postMessage({ type: "status", message: "Summarizing transcript\u2026" });
-      const overview = await summarizeText(cleaned, "Summarizing transcript", {
-        max_new_tokens: 200,
-        min_length: 40,
-      });
+    const messages = [
+      {
+        role: "system",
+        content:
+          "You are a meeting notes assistant. You receive call transcripts " +
+          "where each line is formatted as `<Speaker Name> what they said`. " +
+          "Produce clear, structured meeting notes in markdown.\n\n" +
+          "Include these sections:\n" +
+          "# Meeting Notes\n" +
+          "- A **one-sentence summary** of what the meeting was about\n" +
+          "- **Participants** list\n" +
+          "- **Key Discussion Points** as bullet points\n" +
+          "- **Decisions** (if any were made)\n" +
+          "- **Action Items** (if any, with who is responsible)\n" +
+          "- A brief **Per-Participant Summary** section with a short " +
+          "paragraph for each speaker describing their main contributions\n\n" +
+          "Be concise but thorough. Use markdown formatting with headers. " +
+          "Do not include the raw transcript in your output.",
+      },
+      {
+        role: "user",
+        content:
+          `Here is the meeting transcript:${speakerList}\n\n${transcript}\n\n` +
+          "Please generate the meeting notes.",
+      },
+    ];
 
-      if (!overview) {
-        self.postMessage({ type: "status", message: "No summary could be generated" });
-        return;
-      }
+    const output = await generator(messages, {
+      max_new_tokens: 1024,
+      do_sample: false,
+      repetition_penalty: 1.2,
+    });
 
-      // --- Top-line: pithy one-liner from the overview ---
-      self.postMessage({ type: "status", message: "Generating top-line\u2026" });
-      let topLine = "";
-      try {
-        const r = await summarizer(overview, {
-          max_new_tokens: 40,
-          min_length: 10,
-        });
-        topLine = r[0]?.summary_text?.trim() || "";
-      } catch {
-        // Fall back to first sentence of overview
-        const firstSentence = overview.match(/^[^.!?]+[.!?]/);
-        topLine = firstSentence ? firstSentence[0].trim() : "";
-      }
+    const result = output[0].generated_text.at(-1).content;
 
-      // --- Per-speaker summaries ---
-      const speakerSummaries = new Map();
-      const speakerList = [...speakerTexts.keys()];
-      for (let i = 0; i < speakerList.length; i++) {
-        const name = speakerList[i];
-        const spkText = speakerTexts.get(name);
-        if (!spkText || spkText.length < 20) continue;
-
-        self.postMessage({
-          type: "status",
-          message: `Summarizing ${name}\u2026 (${i + 1}/${speakerList.length})`,
-        });
-
-        const spkSummary = await summarizeText(spkText, null, {
-          max_new_tokens: 150,
-          min_length: 20,
-        });
-        if (spkSummary) {
-          speakerSummaries.set(name, spkSummary);
-        }
-      }
-
-      // --- Assemble ---
-      const now = new Date();
-      const dateStr = now.toLocaleDateString("en-US", {
-        weekday: "long",
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      });
-
-      let md = "# Meeting Notes\n\n";
-      md += `**${dateStr}**\n\n`;
-      if (speakers.length > 0) {
-        md += `**Participants:** ${speakers.join(", ")}\n\n`;
-      }
-      md += "---\n\n";
-
-      if (topLine) {
-        md += `*${topLine}*\n\n`;
-      }
-
-      md += "## Overview\n\n";
-      md += toSentenceBullets(overview) + "\n\n";
-
-      // Per-speaker sections
-      for (const name of speakerList) {
-        const spkSummary = speakerSummaries.get(name);
-        if (!spkSummary) continue;
-        md += `## ${name}\n\n`;
-        md += toSentenceBullets(spkSummary) + "\n\n";
-      }
-
-      self.postMessage({ type: "result", summary: md });
-    } catch (err) {
-      console.error("[summary worker] error:", err);
-      self.postMessage({
-        type: "status",
-        message: `Summary error: ${err.message}`,
-      });
-    }
+    self.postMessage({ type: "result", summary: result });
+  } catch (err) {
+    console.error("[summary] error:", err);
+    progress(`Summary error: ${err.message}`);
   }
 };
