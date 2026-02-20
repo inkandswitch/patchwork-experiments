@@ -278,6 +278,21 @@ function createStyles() {
       background: rgba(255, 255, 255, 0.25);
     }
 
+    .call-sending-quality {
+      position: absolute;
+      bottom: 8px;
+      right: 8px;
+      background: rgba(0, 0, 0, 0.6);
+      color: rgba(255, 255, 255, 0.7);
+      padding: 2px 6px;
+      border-radius: 5px;
+      font-size: 10px;
+      font-weight: 600;
+      font-family: system-ui, -apple-system, sans-serif;
+      pointer-events: none;
+      z-index: 4;
+    }
+
     .call-lobby {
       position: absolute;
       inset: 0;
@@ -587,6 +602,12 @@ export default function TelephoneTool(handle, element) {
     bar.appendChild(reqQualityAnchor);
     box.appendChild(bar);
 
+    // Sending quality badge (bottom-right)
+    const sendingBadge = document.createElement("span");
+    sendingBadge.className = "call-sending-quality";
+    sendingBadge.hidden = true;
+    box.appendChild(sendingBadge);
+
     // Update state based on current connection state
     if (peer.connectionState === "connected") {
       dot.className = "call-status-dot connected";
@@ -595,7 +616,13 @@ export default function TelephoneTool(handle, element) {
       dot.className = "call-status-dot failed";
     }
 
-    const entry = { el: box, video, overlay, dot, label, reqQualityLabel, requestedQuality, closeReqMenu };
+    // Show initial sending quality if known
+    if (peer.sendingQuality) {
+      sendingBadge.textContent = `Sending ${QUALITY_PRESETS[peer.sendingQuality]?.label || peer.sendingQuality}`;
+      sendingBadge.hidden = false;
+    }
+
+    const entry = { el: box, video, overlay, dot, label, reqQualityLabel, requestedQuality, closeReqMenu, sendingBadge };
     peerDom.set(remotePeerId, entry);
     grid.appendChild(box);
     return entry;
@@ -758,6 +785,13 @@ export default function TelephoneTool(handle, element) {
       // Update stream reference
       dom.video.srcObject = peer.stream;
       dom.label.textContent = peer.name;
+      // Update sending quality badge
+      if (peer.sendingQuality) {
+        dom.sendingBadge.textContent = `Sending ${QUALITY_PRESETS[peer.sendingQuality]?.label || peer.sendingQuality}`;
+        dom.sendingBadge.hidden = false;
+      } else {
+        dom.sendingBadge.hidden = true;
+      }
     }
 
     updateGrid();

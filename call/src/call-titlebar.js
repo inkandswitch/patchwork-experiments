@@ -180,43 +180,19 @@ export default function CallTitlebarTool(handle, element) {
     popover.style.top = `${rect.bottom + 6}px`;
     popover.style.right = `${window.innerWidth - rect.right}px`;
 
-    // Determine if we're currently viewing the call doc
-    const viewingCall = handle.url === session.callUrl;
-
-    if (viewingCall) {
-      // We're on the call doc — offer "Go back" if we have a return URL
-      if (session.returnUrl) {
-        const goBackBtn = document.createElement("button");
-        goBackBtn.textContent = "\u{2190} Go back";
-        goBackBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          closePopover();
-          const url = session.returnUrl;
-          const toolId = session.returnToolId;
-          element.dispatchEvent(
-            new CustomEvent("patchwork:open-document", {
-              detail: { url, toolId },
-              bubbles: true,
-              composed: true,
-            })
-          );
-        });
-        popover.appendChild(goBackBtn);
-      }
-    } else {
-      // We're on a different doc — offer "Go to call"
+    // "Go to call" — navigate to the context where the call was joined
+    // (e.g. a spatial folder embedding the call), parsed from the URL at
+    // join time so we return to the exact same view.
+    const ctx = session.callContext;
+    if (ctx) {
       const goToCallBtn = document.createElement("button");
       goToCallBtn.textContent = "\u{1F4DE} Go to call";
       goToCallBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         closePopover();
-        // Store current location so we can come back
-        session.returnUrl = handle.url;
-        // Try to get toolId from the element
-        session.returnToolId = element.hive?.currentToolId || null;
         element.dispatchEvent(
           new CustomEvent("patchwork:open-document", {
-            detail: { url: session.callUrl },
+            detail: { url: ctx.url, toolId: ctx.toolId },
             bubbles: true,
             composed: true,
           })

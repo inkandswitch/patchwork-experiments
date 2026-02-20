@@ -107,9 +107,10 @@ export class CallSession extends EventTarget {
     this.sendQuality = "high";
     this.myName = "unknown";
 
-    // Navigation: where the user was before joining the call
-    this.returnUrl = null;
-    this.returnToolId = null;
+    // Parsed from window.location.hash at join time so the titlebar
+    // can dispatch patchwork:open-document to return to the exact
+    // context (e.g. spatial folder that embeds the call).
+    this.callContext = null; // { url, toolId } | null
 
     // Peer connections: remotePeerId -> { pc, polite, stream, name, lastHeartbeat, reconnectAttempts, connectionState, pendingCandidates, makingOffer }
     this.peers = new Map();
@@ -178,6 +179,26 @@ export class CallSession extends EventTarget {
 
   static _notifyChanged() {
     window.dispatchEvent(new CustomEvent("patchwork-call-session-changed"));
+  }
+
+  /**
+   * Parse the current page URL hash to extract the patchwork document
+   * context. Hash format: #doc=<docId>&tool=<toolId>&...
+   * Returns { url, toolId } suitable for a patchwork:open-document event.
+   */
+  static _parseLocationContext() {
+    try {
+      const hash = window.location.hash;
+      if (!hash || hash.length < 2) return null;
+      const params = new URLSearchParams(hash.slice(1));
+      const docId = params.get("doc");
+      if (!docId) return null;
+      const url = docId.startsWith("automerge:") ? docId : `automerge:${docId}`;
+      const toolId = params.get("tool") || undefined;
+      return { url, toolId };
+    } catch {
+      return null;
+    }
   }
 
   static async isActiveInAnotherTab(callUrl) {
@@ -368,6 +389,7 @@ export class CallSession extends EventTarget {
     }
 
     this.joined = true;
+    this.callContext = CallSession._parseLocationContext();
     this._emit("state-changed");
     this._emit("media-changed");
     CallSession._notifyChanged();
@@ -391,11 +413,11 @@ export class CallSession extends EventTarget {
       }
     }, PEER_TIMEOUT_MS / 2);
 
-    this._broadcast({ type: "join", from: this.peerId, name: this.myName });
+    this._broadcast({ type: "join", from: this.peerId, name: this.myName, quality: this.sendQuality });
 
     this._heartbeatInterval = setInterval(() => {
       if (!this.destroyed) {
-        this._broadcast({ type: "join", from: this.peerId, name: this.myName });
+        this._broadcast({ type: "join", from: this.peerId, name: this.myName, quality: this.sendQuality });
       }
     }, HEARTBEAT_MS);
 
@@ -523,6 +545,11 @@ export class CallSession extends EventTarget {
     for (const [, peer] of this.peers) {
       await applyQuality(peer.pc, this.sendQuality);
     }
+    this._broadcast({
+      type: "quality-announce",
+      from: this.peerId,
+      quality: this.sendQuality,
+    });
     this._emit("state-changed");
   }
 
@@ -667,6 +694,7 @@ export class CallSession extends EventTarget {
       reconnectAttempts: 0,
       lastHeartbeat: Date.now(),
       connectionState: "new",
+      sendingQuality: null, // quality the remote peer is sending at
     };
     this.peers.set(remotePeerId, peer);
 
@@ -866,10 +894,10 @@ export class CallSession extends EventTarget {
         const existing = this.peers.get(msg.from);
         if (existing) {
           existing.lastHeartbeat = Date.now();
-          if (msg.name) {
-            existing.name = msg.name;
-            this._emit("peers-changed");
-          }
+          let changed = false;
+          if (msg.name) { existing.name = msg.name; changed = true; }
+          if (msg.quality) { existing.sendingQuality = msg.quality; changed = true; }
+          if (changed) this._emit("peers-changed");
           if (
             existing.pc.connectionState === "connected" ||
             existing.pc.signalingState !== "stable"
@@ -880,10 +908,9 @@ export class CallSession extends EventTarget {
         }
         const peer = this._createPeerConnection(msg.from);
         peer.lastHeartbeat = Date.now();
-        if (msg.name) {
-          peer.name = msg.name;
-          this._emit("peers-changed");
-        }
+        if (msg.name) { peer.name = msg.name; }
+        if (msg.quality) { peer.sendingQuality = msg.quality; }
+        if (msg.name || msg.quality) this._emit("peers-changed");
         if (!this.localStream) {
           try {
             const offer = await peer.pc.createOffer();
@@ -968,6 +995,15 @@ export class CallSession extends EventTarget {
         if (peer && msg.quality) {
           console.log(`[call] ${msg.from} requested quality: ${msg.quality}`);
           applyQuality(peer.pc, msg.quality);
+        }
+        break;
+      }
+
+      case "quality-announce": {
+        const peer = this.peers.get(msg.from);
+        if (peer && msg.quality) {
+          peer.sendingQuality = msg.quality;
+          this._emit("peers-changed");
         }
         break;
       }
