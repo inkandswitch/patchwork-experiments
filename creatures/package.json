@@ -24,7 +24,7 @@
   },
   "scripts": {
     "build": "tsc && vite build",
-    "sync": "pnpm build && npx pushwork sync"
+    "sync": "pnpm build && pushwork sync"
   },
   "dependencies": {
     "@automerge/automerge-repo-react-hooks": "2.5.0",

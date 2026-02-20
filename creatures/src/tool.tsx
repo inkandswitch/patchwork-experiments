@@ -55,6 +55,8 @@ function useContactInfo() {
   };
 }
 
+const VERSION = "0.1.0";
+
 const customShapeUtils = [PatchworkTokenShapeUtil];
 
 const hiddenUiComponents: TLUiComponents = {
@@ -79,9 +81,25 @@ export function CreatureSketchTool({ docUrl }: { docUrl: AutomergeUrl }) {
   });
 
   return (
-    <Tldraw inferDarkMode autoFocus store={store} shapeUtils={customShapeUtils} components={hiddenUiComponents}>
-      <TldrawInner docUrl={docUrl} />
-    </Tldraw>
+    <div style={{ position: "relative", width: "100%", height: "100%" }}>
+      <Tldraw inferDarkMode autoFocus store={store} shapeUtils={customShapeUtils} components={hiddenUiComponents}>
+        <TldrawInner docUrl={docUrl} />
+      </Tldraw>
+      <div
+        style={{
+          position: "absolute",
+          top: 8,
+          right: 8,
+          fontSize: 11,
+          opacity: 0.4,
+          pointerEvents: "none",
+          fontFamily: "sans-serif",
+          zIndex: 9999,
+        }}
+      >
+        v{VERSION}
+      </div>
+    </div>
   );
 }
 
@@ -187,7 +205,7 @@ function TldrawInner(props: { docUrl: AutomergeUrl }) {
     const handleDragOver = (e: DragEvent) => {
       if (e.dataTransfer?.types.includes("text/x-patchwork-dnd")) {
         e.preventDefault();
-        e.stopPropagation();
+        e.stopImmediatePropagation();
       }
     };
 
@@ -195,19 +213,14 @@ function TldrawInner(props: { docUrl: AutomergeUrl }) {
       const raw = e.dataTransfer?.getData("text/x-patchwork-dnd");
       if (!raw) return;
       e.preventDefault();
-      e.stopPropagation();
-
-      console.log("[patchwork-dnd] drop received, types:", Array.from(e.dataTransfer?.types ?? []));
+      e.stopImmediatePropagation();
 
       let parsed: { source?: string; items?: unknown[] };
       try {
         parsed = JSON.parse(raw);
       } catch {
-        console.warn("[patchwork-dnd] failed to parse drop data");
         return;
       }
-
-      console.log("[patchwork-dnd] creating token shape, items:", parsed.items?.length ?? 0);
 
       const point = editor.screenToPage({ x: e.clientX, y: e.clientY });
       const itemCount = Array.isArray(parsed.items) ? parsed.items.length : 1;
@@ -222,11 +235,11 @@ function TldrawInner(props: { docUrl: AutomergeUrl }) {
       });
     };
 
-    container.addEventListener("dragover", handleDragOver);
-    container.addEventListener("drop", handleDrop);
+    container.addEventListener("dragover", handleDragOver, { capture: true });
+    container.addEventListener("drop", handleDrop, { capture: true });
     return () => {
-      container.removeEventListener("dragover", handleDragOver);
-      container.removeEventListener("drop", handleDrop);
+      container.removeEventListener("dragover", handleDragOver, { capture: true });
+      container.removeEventListener("drop", handleDrop, { capture: true });
     };
   }, [editor]);
 
