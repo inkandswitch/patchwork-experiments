@@ -1,20 +1,26 @@
 {
-  "name": "@patchwork/chat",
-  "version": "0.1.0",
-  "description": "Enhanced chat with emoji reactions, presence/typing indicators, image paste, voice notes, and message replies. Pink theme with yellow highlights.",
-  "type": "module",
-  "main": "chat.js",
-  "exports": {
-    ".": "chat.js"
-  },
-  "scripts": {
-    "push": "pushwork sync"
-  },
-  "keywords": [
-    "chat",
-    "reactions",
-    "voice-notes",
-    "presence"
-  ],
-  "author": "Ink & Switch"
+	"name": "@patchwork/chat",
+	"version": "0.2.0",
+	"description": "Enhanced chat with emoji reactions, presence/typing indicators, image paste, voice notes, and message replies.",
+	"type": "module",
+	"main": "./main.js",
+	"exports": {
+		".": "./main.js"
+	},
+	"scripts": {
+		"push": "pushwork sync"
+	},
+	"keywords": [
+		"chat",
+		"reactions",
+		"voice-notes",
+		"presence"
+	],
+	"author": "chee",
+	"dependencies": {
+		"@automerge/automerge": "^3.2.1",
+		"@automerge/automerge-repo": "^2.5.0",
+		"@inkandswitch/patchwork-elements": "^0.0.5",
+		"@inkandswitch/patchwork-filesystem": "^0.0.3"
+	}
 }
