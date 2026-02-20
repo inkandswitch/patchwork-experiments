@@ -3140,17 +3140,6 @@ export function Tool(handle, element, options) {
         });
         infobar.appendChild(toolPill);
 
-        // Datatype pill
-        if (embed.type) {
-          const typePill = document.createElement("span");
-          typePill.className = "chat-embed-pill";
-          const typeLabel = document.createElement("span");
-          typeLabel.className = "chat-embed-pill-label";
-          typeLabel.textContent = "type";
-          typePill.appendChild(typeLabel);
-          typePill.appendChild(document.createTextNode(" " + embed.type));
-          infobar.appendChild(typePill);
-        }
 
         // URL pill (clickable → copy menu)
         const urlPill = document.createElement("span");
