@@ -1,7 +1,7 @@
 /**
  * Summary Web Worker
  *
- * Uses Qwen2.5-1.5B-Instruct via transformers.js to generate structured
+ * Uses Qwen2.5-0.5B-Instruct via transformers.js to generate structured
  * meeting notes from call transcripts. Runs in-browser via WebGPU (preferred)
  * or WASM fallback.
  *
@@ -19,8 +19,8 @@ import {
 env.allowLocalModels = false;
 
 const MODEL_ID = "onnx-community/Qwen2.5-0.5B-Instruct";
-// ~15k tokens of input, leaving headroom for output
-const MAX_INPUT_CHARS = 60000;
+// Keep input short so the model doesn't churn forever
+const MAX_INPUT_CHARS = 8000;
 
 let generator = null;
 let loading = false;
@@ -140,7 +140,7 @@ self.onmessage = async (e) => {
     ];
 
     const output = await generator(messages, {
-      max_new_tokens: 1024,
+      max_new_tokens: 512,
       do_sample: false,
       repetition_penalty: 1.2,
     });

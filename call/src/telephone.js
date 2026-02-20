@@ -1,80 +1,19 @@
 /**
- * Telephone — WebRTC video call with local Whisper transcription.
+ * Telephone — View layer for WebRTC video calls.
  *
- * Each participant's voice is transcribed locally using WebGPU-accelerated
- * Whisper and written into doc.content as `<name> text\n` lines.
- *
- * Uses the "perfect negotiation" pattern for glare-free WebRTC signaling,
- * with automatic ICE restart, exponential backoff reconnection, graceful
- * media device fallback, and user-visible connection status.
+ * All WebRTC state lives in CallSession (call-session.js). This module
+ * creates/consumes a session and renders the video grid, lobby, and controls.
+ * Navigating away removes DOM + event listeners but does NOT end the call —
+ * the session persists for the titlebar indicator.
  */
 
-import { next as Automerge } from "@automerge/automerge";
-
-const RTC_CONFIG = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-    {
-      urls: "turn:sync3.automerge.org:3478",
-      username: "user",
-      credential: "password",
-    },
-  ],
-};
-
-// How long to wait in "disconnected" before treating it as gone
-const DISCONNECT_TIMEOUT_MS = 8000;
-// Reconnection backoff
-const RECONNECT_BASE_MS = 1000;
-const RECONNECT_MAX_MS = 30000;
-// Heartbeat
-const HEARTBEAT_MS = 5000;
-// How long since last heartbeat before we consider a peer gone
-const PEER_TIMEOUT_MS = 20000;
-
-// Quality presets for video sending
-const QUALITY_PRESETS = {
-  high: { label: "HD" },
-  medium: { label: "SD", maxFramerate: 15, scaleResolutionDownBy: 1.5, maxBitrate: 500_000 },
-  low: { label: "LD", maxFramerate: 10, scaleResolutionDownBy: 2, maxBitrate: 250_000 },
-  potato: { label: "🥔", maxFramerate: 5, scaleResolutionDownBy: 4, maxBitrate: 100_000 },
-};
-const QUALITY_LEVELS = ["high", "medium", "low", "potato"];
-
-async function applyQuality(pc, quality) {
-  const preset = QUALITY_PRESETS[quality];
-  if (!preset) return;
-  for (const sender of pc.getSenders()) {
-    if (!sender.track || sender.track.kind !== "video") continue;
-    const params = sender.getParameters();
-    if (!params.encodings || params.encodings.length === 0) {
-      params.encodings = [{}];
-    }
-    for (const enc of params.encodings) {
-      if (preset.maxFramerate) {
-        enc.maxFramerate = preset.maxFramerate;
-      } else {
-        delete enc.maxFramerate;
-      }
-      if (preset.scaleResolutionDownBy) {
-        enc.scaleResolutionDownBy = preset.scaleResolutionDownBy;
-      } else {
-        delete enc.scaleResolutionDownBy;
-      }
-      if (preset.maxBitrate) {
-        enc.maxBitrate = preset.maxBitrate;
-      } else {
-        delete enc.maxBitrate;
-      }
-    }
-    try {
-      await sender.setParameters(params);
-    } catch (err) {
-      console.warn("[call] setParameters failed:", err);
-    }
-  }
-}
+import {
+  createCallSession,
+  getCallSession,
+  CallSession,
+  QUALITY_PRESETS,
+  QUALITY_LEVELS,
+} from "./call-session.js";
 
 function createQualityMenu(currentLevel, onSelect) {
   const menu = document.createElement("div");
@@ -426,6 +365,42 @@ function createStyles() {
       text-align: center;
       max-width: 280px;
     }
+
+    .call-other-tab {
+      position: absolute;
+      inset: 0;
+      z-index: 20;
+      background: #111;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      font-family: system-ui, -apple-system, sans-serif;
+      color: white;
+    }
+
+    .call-other-tab-msg {
+      font-size: 15px;
+      opacity: 0.8;
+    }
+
+    .call-other-tab button {
+      padding: 10px 28px;
+      border-radius: 20px;
+      border: none;
+      background: #3b82f6;
+      color: white;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .call-other-tab button:hover {
+      background: #2563eb;
+    }
   `;
   return style;
 }
@@ -434,15 +409,7 @@ export default function TelephoneTool(handle, element) {
   const style = createStyles();
   element.appendChild(style);
 
-  const peerId = crypto.randomUUID();
-  let localStream = null;
-  let screenStream = null;
-  let cameraEnabled = true;
-  let micEnabled = true;
-  let destroyed = false;
-
-  // Map of remotePeerId -> peer object
-  const peers = new Map();
+  let viewDestroyed = false;
 
   // DOM
   const container = document.createElement("div");
@@ -454,11 +421,64 @@ export default function TelephoneTool(handle, element) {
   grid.className = "call-grid";
   container.appendChild(grid);
 
-  // ---- Local status banner (media errors, retry) ----
+  // Local status banner
   const localStatus = document.createElement("div");
   localStatus.className = "call-local-status";
   localStatus.hidden = true;
   container.appendChild(localStatus);
+
+  // Transcription loading indicator
+  const loadingIndicator = document.createElement("div");
+  loadingIndicator.style.cssText =
+    "position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.7);" +
+    "color:white;padding:4px 10px;border-radius:6px;font-size:12px;" +
+    "font-family:system-ui,sans-serif;z-index:10;display:none;";
+  container.appendChild(loadingIndicator);
+
+  // ---- Local video box ----
+  const localBox = document.createElement("div");
+  localBox.className = "call-participant local";
+  const localVideo = document.createElement("video");
+  localVideo.autoplay = true;
+  localVideo.muted = true;
+  localVideo.playsInline = true;
+  localBox.appendChild(localVideo);
+
+  const localBar = document.createElement("div");
+  localBar.className = "call-participant-bar";
+  const localName = document.createElement("span");
+  localName.textContent = "You";
+  localBar.appendChild(localName);
+
+  // ---- Screen share box ----
+  const screenBox = document.createElement("div");
+  screenBox.className = "call-participant";
+  const screenVideo = document.createElement("video");
+  screenVideo.autoplay = true;
+  screenVideo.muted = true;
+  screenVideo.playsInline = true;
+  screenBox.appendChild(screenVideo);
+  const screenBar = document.createElement("div");
+  screenBar.className = "call-participant-bar";
+  const screenLabel = document.createElement("span");
+  screenLabel.textContent = "Your screen";
+  screenBar.appendChild(screenLabel);
+  screenBox.appendChild(screenBar);
+
+  // ---- Peer DOM tracking ----
+  // Map<remotePeerId, { el, video, overlay, dot, label, reqQualityLabel, requestedQuality, closeReqMenu }>
+  const peerDom = new Map();
+
+  // ---- Session reference ----
+  let session = null;
+  const listeners = [];
+
+  function on(target, event, handler) {
+    target.addEventListener(event, handler);
+    listeners.push({ target, event, handler });
+  }
+
+  // ---- DOM helpers ----
 
   function showLocalStatus(message, retryFn) {
     localStatus.hidden = false;
@@ -480,317 +500,6 @@ export default function TelephoneTool(handle, element) {
     localStatus.innerHTML = "";
   }
 
-  // ---- Local video box ----
-  const localBox = document.createElement("div");
-  localBox.className = "call-participant local";
-  const localVideo = document.createElement("video");
-  localVideo.autoplay = true;
-  localVideo.muted = true;
-  localVideo.playsInline = true;
-  localBox.appendChild(localVideo);
-
-  const localBar = document.createElement("div");
-  localBar.className = "call-participant-bar";
-  const localName = document.createElement("span");
-  localName.textContent = "You";
-  localBar.appendChild(localName);
-
-  const camBtn = document.createElement("button");
-  camBtn.className = "call-btn";
-  camBtn.textContent = "\u{1F4F7}";
-  camBtn.addEventListener("click", () => {
-    if (!localStream) return;
-    cameraEnabled = !cameraEnabled;
-    for (const track of localStream.getVideoTracks()) {
-      track.enabled = cameraEnabled;
-    }
-    camBtn.className = `call-btn${cameraEnabled ? "" : " off"}`;
-  });
-
-  const micBtn = document.createElement("button");
-  micBtn.className = "call-btn";
-  micBtn.textContent = "\u{1F3A4}";
-  micBtn.addEventListener("click", () => {
-    if (!localStream) return;
-    micEnabled = !micEnabled;
-    for (const track of localStream.getAudioTracks()) {
-      track.enabled = micEnabled;
-    }
-    micBtn.className = `call-btn${micEnabled ? "" : " off"}`;
-  });
-
-  const renegotiateBtn = document.createElement("button");
-  renegotiateBtn.className = "call-btn";
-  renegotiateBtn.textContent = "\u{1F504}";
-  renegotiateBtn.title = "Renegotiate connections";
-  renegotiateBtn.addEventListener("click", () => {
-    console.log("[call] Renegotiating with all peers");
-    for (const [id, peer] of peers) {
-      try {
-        peer.pc.restartIce();
-        console.log(`[call] ICE restart triggered for ${id}`);
-      } catch (err) {
-        console.warn(`[call] ICE restart failed for ${id}:`, err);
-      }
-    }
-    broadcast({ type: "join", from: peerId, name: myName });
-  });
-
-  const screenBtn = document.createElement("button");
-  screenBtn.className = "call-btn";
-  screenBtn.textContent = "\u{1F5A5}";
-  screenBtn.title = "Share screen";
-  screenBtn.addEventListener("click", toggleScreenShare);
-
-  let sendQuality = "high";
-  const qualityAnchor = document.createElement("div");
-  qualityAnchor.className = "call-quality-anchor";
-  const qualityBtn = document.createElement("button");
-  qualityBtn.className = "call-btn";
-  qualityBtn.title = "Sending quality";
-  const qualityLabel = document.createElement("span");
-  qualityLabel.className = "quality-label";
-  qualityLabel.textContent = QUALITY_PRESETS[sendQuality].label;
-  qualityBtn.appendChild(qualityLabel);
-  qualityAnchor.appendChild(qualityBtn);
-
-  let qualityMenuOpen = false;
-  let qualityMenu = null;
-
-  function closeQualityMenu() {
-    if (qualityMenu) {
-      qualityMenu.remove();
-      qualityMenu = null;
-    }
-    qualityMenuOpen = false;
-  }
-
-  qualityBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    if (qualityMenuOpen) {
-      closeQualityMenu();
-      return;
-    }
-    qualityMenu = createQualityMenu(sendQuality, async (level) => {
-      sendQuality = level;
-      qualityLabel.textContent = QUALITY_PRESETS[sendQuality].label;
-      closeQualityMenu();
-      for (const [, peer] of peers) {
-        await applyQuality(peer.pc, sendQuality);
-      }
-    });
-    qualityAnchor.appendChild(qualityMenu);
-    qualityMenuOpen = true;
-  });
-
-  document.addEventListener("pointerdown", (e) => {
-    if (qualityMenuOpen && !qualityAnchor.contains(e.target)) {
-      closeQualityMenu();
-    }
-  });
-
-  localBar.appendChild(camBtn);
-  localBar.appendChild(micBtn);
-  localBar.appendChild(screenBtn);
-  localBar.appendChild(qualityAnchor);
-  localBar.appendChild(renegotiateBtn);
-  localBox.appendChild(localBar);
-
-  // ---- Screen share box (added to grid when sharing) ----
-  const screenBox = document.createElement("div");
-  screenBox.className = "call-participant";
-  const screenVideo = document.createElement("video");
-  screenVideo.autoplay = true;
-  screenVideo.muted = true;
-  screenVideo.playsInline = true;
-  screenBox.appendChild(screenVideo);
-  const screenBar = document.createElement("div");
-  screenBar.className = "call-participant-bar";
-  const screenLabel = document.createElement("span");
-  screenLabel.textContent = "Your screen";
-  screenBar.appendChild(screenLabel);
-  screenBox.appendChild(screenBar);
-
-  async function toggleScreenShare() {
-    if (screenStream) {
-      stopScreenShare();
-      return;
-    }
-
-    try {
-      screenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: false,
-      });
-    } catch (err) {
-      // User cancelled the picker
-      console.warn("[call] Screen share cancelled:", err.message);
-      return;
-    }
-
-    screenVideo.srcObject = screenStream;
-    screenBtn.className = "call-btn off";
-
-    // Add screen track to all peers
-    const screenTrack = screenStream.getVideoTracks()[0];
-    for (const [, peer] of peers) {
-      try {
-        peer.pc.addTrack(screenTrack, screenStream);
-      } catch (err) {
-        console.warn("[call] addTrack (screen) failed:", err);
-      }
-    }
-
-    grid.appendChild(screenBox);
-    updateGrid();
-
-    // Handle user clicking browser's "stop sharing" button
-    screenTrack.addEventListener("ended", () => {
-      stopScreenShare();
-    });
-  }
-
-  function stopScreenShare() {
-    if (!screenStream) return;
-    const screenTrack = screenStream.getVideoTracks()[0];
-
-    // Remove screen track from all peers
-    for (const [, peer] of peers) {
-      const sender = peer.pc.getSenders().find((s) => s.track === screenTrack);
-      if (sender) {
-        try {
-          peer.pc.removeTrack(sender);
-        } catch (err) {
-          console.warn("[call] removeTrack (screen) failed:", err);
-        }
-      }
-    }
-
-    for (const track of screenStream.getTracks()) track.stop();
-    screenStream = null;
-    screenVideo.srcObject = null;
-    screenBtn.className = "call-btn";
-    screenBox.remove();
-    updateGrid();
-  }
-
-  // ---- Grid layout ----
-  function updateGrid() {
-    const count = 1 + peers.size;
-    grid.setAttribute("data-count", String(Math.min(count, 9)));
-
-    const all = [
-      { name: myName, el: localBox },
-      ...[...peers.values()].map((p) => ({ name: p.name, el: p.el })),
-    ];
-    all.sort((a, b) =>
-      a.name.toLowerCase().localeCompare(b.name.toLowerCase())
-    );
-
-    for (const { el } of all) {
-      grid.appendChild(el);
-    }
-  }
-
-  // ---- Media acquisition with graceful fallback ----
-  async function acquireMedia() {
-    // Try video + audio
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
-      });
-      hideLocalStatus();
-      return stream;
-    } catch (err) {
-      console.warn("[call] Could not get video+audio:", err.name, err.message);
-    }
-
-    // Try audio only
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: false,
-        audio: true,
-      });
-      showLocalStatus("Camera unavailable — audio only", retryMedia);
-      return stream;
-    } catch (err) {
-      console.warn("[call] Could not get audio:", err.name, err.message);
-    }
-
-    // Try video only
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: false,
-      });
-      showLocalStatus("Microphone unavailable — video only", retryMedia);
-      return stream;
-    } catch (err) {
-      console.warn("[call] Could not get video:", err.name, err.message);
-    }
-
-    // Nothing available
-    const reason = await describeMediaError();
-    showLocalStatus(reason, retryMedia);
-    return null;
-  }
-
-  async function describeMediaError() {
-    try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const hasCam = devices.some((d) => d.kind === "videoinput");
-      const hasMic = devices.some((d) => d.kind === "audioinput");
-      if (!hasCam && !hasMic) return "No camera or microphone found";
-      if (!hasCam) return "No camera found";
-      if (!hasMic) return "No microphone found";
-      return "Camera/mic may be in use by another app";
-    } catch {
-      return "Could not access media devices";
-    }
-  }
-
-  async function retryMedia() {
-    const stream = await acquireMedia();
-    if (!stream) return;
-
-    // Stop old tracks
-    if (localStream) {
-      for (const track of localStream.getTracks()) track.stop();
-    }
-    localStream = stream;
-    localVideo.srcObject = localStream;
-
-    // Replace tracks on all existing peer connections
-    replaceTracksOnAllPeers();
-
-    // Restart transcription with new audio
-    stopTranscription();
-    startTranscription();
-  }
-
-  function replaceTracksOnAllPeers() {
-    if (!localStream) return;
-    for (const [, peer] of peers) {
-      const senders = peer.pc.getSenders();
-      for (const track of localStream.getTracks()) {
-        const sender = senders.find((s) => s.track?.kind === track.kind);
-        if (sender) {
-          sender.replaceTrack(track).catch((err) => {
-            console.warn("[call] replaceTrack failed:", err);
-          });
-        } else {
-          try {
-            peer.pc.addTrack(track, localStream);
-          } catch (err) {
-            console.warn("[call] addTrack failed:", err);
-          }
-        }
-      }
-    }
-  }
-
-  // ---- Status overlay for remote peers ----
   function createStatusOverlay() {
     const overlay = document.createElement("div");
     overlay.className = "call-status-overlay";
@@ -801,65 +510,21 @@ export default function TelephoneTool(handle, element) {
     return overlay;
   }
 
-  function showPeerStatus(peer, message, retryFn) {
-    peer.overlay.hidden = false;
-    const textEl = peer.overlay.querySelector(".call-status-text");
-    textEl.textContent = message;
-    // Remove old retry button if present
-    const oldBtn = peer.overlay.querySelector(".call-retry-btn");
-    if (oldBtn) oldBtn.remove();
-    if (retryFn) {
-      const btn = document.createElement("button");
-      btn.className = "call-retry-btn";
-      btn.textContent = "Reconnect";
-      btn.addEventListener("click", retryFn);
-      peer.overlay.appendChild(btn);
-    }
-  }
-
-  function hidePeerStatus(peer) {
-    peer.overlay.hidden = true;
-  }
-
   function createStatusDot() {
     const dot = document.createElement("span");
     dot.className = "call-status-dot connecting";
     return dot;
   }
 
-  function updatePeerDot(peer, state) {
-    peer.dot.className = `call-status-dot ${state}`;
-  }
+  function ensurePeerDom(remotePeerId, peer) {
+    if (peerDom.has(remotePeerId)) return peerDom.get(remotePeerId);
 
-  // ---- Create peer connection ----
-  // "Perfect negotiation" roles: the peer with the higher ID is "impolite"
-  function isPolite(remotePeerId) {
-    return peerId < remotePeerId;
-  }
-
-  function createPeerConnection(remotePeerId) {
-    if (peers.has(remotePeerId)) return peers.get(remotePeerId);
-
-    const pc = new RTCPeerConnection(RTC_CONFIG);
-    const polite = isPolite(remotePeerId);
-
-    if (localStream) {
-      for (const track of localStream.getTracks()) {
-        pc.addTrack(track, localStream);
-      }
-    }
-    if (screenStream) {
-      for (const track of screenStream.getTracks()) {
-        pc.addTrack(track, screenStream);
-      }
-    }
-
-    // Build DOM for remote participant
     const box = document.createElement("div");
     box.className = "call-participant";
     const video = document.createElement("video");
     video.autoplay = true;
     video.playsInline = true;
+    video.srcObject = peer.stream;
     box.appendChild(video);
 
     const overlay = createStatusOverlay();
@@ -870,9 +535,10 @@ export default function TelephoneTool(handle, element) {
     const dot = createStatusDot();
     bar.appendChild(dot);
     const label = document.createElement("span");
-    label.textContent = remotePeerId.slice(0, 8);
+    label.textContent = peer.name;
     bar.appendChild(label);
 
+    // Per-peer quality request button
     let requestedQuality = "high";
     const reqQualityAnchor = document.createElement("div");
     reqQualityAnchor.className = "call-quality-anchor";
@@ -906,807 +572,479 @@ export default function TelephoneTool(handle, element) {
         requestedQuality = level;
         reqQualityLabel.textContent = QUALITY_PRESETS[level].label;
         closeReqMenu();
-        broadcast({
-          type: "quality-request",
-          from: peerId,
-          to: remotePeerId,
-          quality: requestedQuality,
-        });
+        session.requestPeerQuality(remotePeerId, level);
       });
       reqQualityAnchor.appendChild(reqMenu);
       reqMenuOpen = true;
     });
 
-    document.addEventListener("pointerdown", (e) => {
+    on(document, "pointerdown", (e) => {
       if (reqMenuOpen && !reqQualityAnchor.contains(e.target)) {
         closeReqMenu();
       }
     });
 
     bar.appendChild(reqQualityAnchor);
-
     box.appendChild(bar);
 
-    const remoteStream = new MediaStream();
-    video.srcObject = remoteStream;
+    // Update state based on current connection state
+    if (peer.connectionState === "connected") {
+      dot.className = "call-status-dot connected";
+      overlay.hidden = true;
+    } else if (peer.connectionState === "failed") {
+      dot.className = "call-status-dot failed";
+    }
 
-    pc.ontrack = (event) => {
-      // Avoid duplicate tracks
-      if (!remoteStream.getTrackById(event.track.id)) {
-        remoteStream.addTrack(event.track);
-      }
-    };
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        broadcast({
-          type: "ice-candidate",
-          from: peerId,
-          to: remotePeerId,
-          candidate: event.candidate.toJSON(),
-        });
-      }
-    };
-
-    // ---- Perfect negotiation: onnegotiationneeded ----
-    let makingOffer = false;
-    pc.onnegotiationneeded = async () => {
-      try {
-        makingOffer = true;
-        await pc.setLocalDescription();
-        broadcast({
-          type: "offer",
-          from: peerId,
-          to: remotePeerId,
-          sdp: pc.localDescription.toJSON(),
-        });
-      } catch (err) {
-        console.warn("[call] negotiationneeded error:", err);
-      } finally {
-        makingOffer = false;
-      }
-    };
-
-    // ---- Connection state: visual feedback + disconnect timeout ----
-    let disconnectTimer = null;
-
-    pc.onconnectionstatechange = () => {
-      const state = pc.connectionState;
-      if (disconnectTimer) {
-        clearTimeout(disconnectTimer);
-        disconnectTimer = null;
-      }
-
-      switch (state) {
-        case "connecting":
-        case "new":
-          updatePeerDot(peer, "connecting");
-          showPeerStatus(peer, "Connecting\u2026");
-          break;
-        case "connected":
-          updatePeerDot(peer, "connected");
-          hidePeerStatus(peer);
-          peer.reconnectAttempts = 0;
-          // Apply current sending quality to this new peer
-          if (sendQuality !== "high") {
-            applyQuality(pc, sendQuality);
-          }
-          break;
-        case "disconnected":
-          updatePeerDot(peer, "reconnecting");
-          showPeerStatus(peer, "Connection interrupted\u2026");
-          // Give it time — transient disconnects are normal
-          disconnectTimer = setTimeout(() => {
-            if (pc.connectionState === "disconnected") {
-              attemptReconnect(remotePeerId);
-            }
-          }, DISCONNECT_TIMEOUT_MS);
-          break;
-        case "failed":
-          updatePeerDot(peer, "failed");
-          attemptReconnect(remotePeerId);
-          break;
-        case "closed":
-          removePeer(remotePeerId);
-          break;
-      }
-    };
-
-    // ---- ICE connection: restart on failure ----
-    pc.oniceconnectionstatechange = () => {
-      if (pc.iceConnectionState === "failed") {
-        console.warn(`[call] ICE failed for ${remotePeerId}, restarting`);
-        try {
-          pc.restartIce();
-        } catch (err) {
-          console.warn("[call] ICE restart failed:", err);
-        }
-      }
-    };
-
-    const peer = {
-      pc,
-      polite,
-      makingOffer: () => makingOffer,
-      stream: remoteStream,
-      el: box,
-      video,
-      name: remotePeerId.slice(0, 8),
-      label,
-      dot,
-      overlay,
-      pendingCandidates: [],
-      reconnectAttempts: 0,
-      lastHeartbeat: Date.now(),
-      requestedQuality,
-      setRequestedQuality(q) { requestedQuality = q; reqQualityLabel.textContent = QUALITY_PRESETS[q].label; },
-    };
-    peers.set(remotePeerId, peer);
-
-    showPeerStatus(peer, "Connecting\u2026");
+    const entry = { el: box, video, overlay, dot, label, reqQualityLabel, requestedQuality, closeReqMenu };
+    peerDom.set(remotePeerId, entry);
     grid.appendChild(box);
-    updateGrid();
-
-    return peer;
+    return entry;
   }
 
-  // ---- Reconnection with exponential backoff ----
-  function attemptReconnect(remotePeerId) {
-    const peer = peers.get(remotePeerId);
-    if (!peer || destroyed) return;
+  function removePeerDom(remotePeerId) {
+    const dom = peerDom.get(remotePeerId);
+    if (!dom) return;
+    dom.el.remove();
+    peerDom.delete(remotePeerId);
+  }
 
-    peer.reconnectAttempts++;
-    const delay = Math.min(
-      RECONNECT_BASE_MS * Math.pow(2, peer.reconnectAttempts - 1),
-      RECONNECT_MAX_MS
+  function updateGrid() {
+    if (!session) return;
+    const count = 1 + session.peers.size + (session.screenStream ? 1 : 0);
+    grid.setAttribute("data-count", String(Math.min(count, 9)));
+
+    const all = [
+      { name: session.myName, el: localBox },
+      ...[...session.peers.entries()].map(([id, p]) => {
+        const dom = ensurePeerDom(id, p);
+        return { name: p.name, el: dom.el };
+      }),
+    ];
+    all.sort((a, b) =>
+      a.name.toLowerCase().localeCompare(b.name.toLowerCase())
     );
 
-    if (peer.reconnectAttempts <= 5) {
-      updatePeerDot(peer, "reconnecting");
-      showPeerStatus(
-        peer,
-        `Reconnecting (attempt ${peer.reconnectAttempts})\u2026`
-      );
-      console.warn(
-        `[call] Reconnecting to ${remotePeerId} in ${delay}ms (attempt ${peer.reconnectAttempts})`
-      );
+    for (const { el } of all) {
+      grid.appendChild(el);
+    }
 
-      setTimeout(() => {
-        if (destroyed || !peers.has(remotePeerId)) return;
-        reconnectPeer(remotePeerId);
-      }, delay);
+    // Screen share box
+    if (session.screenStream) {
+      screenVideo.srcObject = session.screenStream;
+      grid.appendChild(screenBox);
     } else {
-      updatePeerDot(peer, "failed");
-      showPeerStatus(peer, "Connection lost", () => {
-        peer.reconnectAttempts = 0;
-        reconnectPeer(remotePeerId);
-      });
+      screenBox.remove();
+      screenVideo.srcObject = null;
     }
   }
 
-  function reconnectPeer(remotePeerId) {
-    const oldPeer = peers.get(remotePeerId);
-    if (!oldPeer) return;
+  // ---- Buttons (wired to session) ----
 
-    // Preserve UI state
-    const name = oldPeer.name;
-    const reconnectAttempts = oldPeer.reconnectAttempts;
+  const camBtn = document.createElement("button");
+  camBtn.className = "call-btn";
+  camBtn.textContent = "\u{1F4F7}";
+  camBtn.addEventListener("click", () => {
+    if (!session) return;
+    session.toggleCamera();
+  });
 
-    // Tear down old PC, but keep the DOM element
-    try { oldPeer.pc.close(); } catch {}
+  const micBtn = document.createElement("button");
+  micBtn.className = "call-btn";
+  micBtn.textContent = "\u{1F3A4}";
+  micBtn.addEventListener("click", () => {
+    if (!session) return;
+    session.toggleMic();
+  });
 
-    // Create fresh PC and reuse the existing DOM
-    const pc = new RTCPeerConnection(RTC_CONFIG);
-    const polite = isPolite(remotePeerId);
+  const screenBtn = document.createElement("button");
+  screenBtn.className = "call-btn";
+  screenBtn.textContent = "\u{1F5A5}";
+  screenBtn.title = "Share screen";
+  screenBtn.addEventListener("click", () => {
+    if (!session) return;
+    session.toggleScreenShare();
+  });
 
-    if (localStream) {
-      for (const track of localStream.getTracks()) {
-        pc.addTrack(track, localStream);
-      }
+  const renegotiateBtn = document.createElement("button");
+  renegotiateBtn.className = "call-btn";
+  renegotiateBtn.textContent = "\u{1F504}";
+  renegotiateBtn.title = "Renegotiate connections";
+  renegotiateBtn.addEventListener("click", () => {
+    if (!session) return;
+    session.renegotiateAll();
+  });
+
+  const hangUpBtn = document.createElement("button");
+  hangUpBtn.className = "call-btn off";
+  hangUpBtn.textContent = "\u{1F4DE}";
+  hangUpBtn.title = "Hang up";
+  hangUpBtn.style.background = "#dc2626";
+  hangUpBtn.addEventListener("click", () => {
+    if (!session) return;
+    session.leave();
+  });
+
+  // Quality button
+  const qualityAnchor = document.createElement("div");
+  qualityAnchor.className = "call-quality-anchor";
+  const qualityBtn = document.createElement("button");
+  qualityBtn.className = "call-btn";
+  qualityBtn.title = "Sending quality";
+  const qualityLabel = document.createElement("span");
+  qualityLabel.className = "quality-label";
+  qualityLabel.textContent = QUALITY_PRESETS["high"].label;
+  qualityBtn.appendChild(qualityLabel);
+  qualityAnchor.appendChild(qualityBtn);
+
+  let qualityMenuOpen = false;
+  let qualityMenu = null;
+
+  function closeQualityMenu() {
+    if (qualityMenu) {
+      qualityMenu.remove();
+      qualityMenu = null;
     }
-    if (screenStream) {
-      for (const track of screenStream.getTracks()) {
-        pc.addTrack(track, screenStream);
-      }
-    }
-
-    const remoteStream = new MediaStream();
-    oldPeer.video.srcObject = remoteStream;
-
-    pc.ontrack = (event) => {
-      if (!remoteStream.getTrackById(event.track.id)) {
-        remoteStream.addTrack(event.track);
-      }
-    };
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        broadcast({
-          type: "ice-candidate",
-          from: peerId,
-          to: remotePeerId,
-          candidate: event.candidate.toJSON(),
-        });
-      }
-    };
-
-    let makingOffer = false;
-    pc.onnegotiationneeded = async () => {
-      try {
-        makingOffer = true;
-        await pc.setLocalDescription();
-        broadcast({
-          type: "offer",
-          from: peerId,
-          to: remotePeerId,
-          sdp: pc.localDescription.toJSON(),
-        });
-      } catch (err) {
-        console.warn("[call] negotiationneeded error:", err);
-      } finally {
-        makingOffer = false;
-      }
-    };
-
-    let disconnectTimer = null;
-    pc.onconnectionstatechange = () => {
-      const state = pc.connectionState;
-      if (disconnectTimer) {
-        clearTimeout(disconnectTimer);
-        disconnectTimer = null;
-      }
-      switch (state) {
-        case "connecting":
-        case "new":
-          updatePeerDot(oldPeer, "connecting");
-          showPeerStatus(oldPeer, "Connecting\u2026");
-          break;
-        case "connected":
-          updatePeerDot(oldPeer, "connected");
-          hidePeerStatus(oldPeer);
-          oldPeer.reconnectAttempts = 0;
-          break;
-        case "disconnected":
-          updatePeerDot(oldPeer, "reconnecting");
-          showPeerStatus(oldPeer, "Connection interrupted\u2026");
-          disconnectTimer = setTimeout(() => {
-            if (pc.connectionState === "disconnected") {
-              attemptReconnect(remotePeerId);
-            }
-          }, DISCONNECT_TIMEOUT_MS);
-          break;
-        case "failed":
-          updatePeerDot(oldPeer, "failed");
-          attemptReconnect(remotePeerId);
-          break;
-        case "closed":
-          removePeer(remotePeerId);
-          break;
-      }
-    };
-
-    pc.oniceconnectionstatechange = () => {
-      if (pc.iceConnectionState === "failed") {
-        try { pc.restartIce(); } catch {}
-      }
-    };
-
-    // Update the peer entry in-place
-    oldPeer.pc = pc;
-    oldPeer.polite = polite;
-    oldPeer.makingOffer = () => makingOffer;
-    oldPeer.stream = remoteStream;
-    oldPeer.pendingCandidates = [];
-    oldPeer.reconnectAttempts = reconnectAttempts;
-
-    // Re-apply local sending quality after reconnect
-    if (sendQuality !== "high") {
-      applyQuality(pc, sendQuality);
-    }
-
-    // Send a join to trigger the remote side to send an offer
-    broadcast({ type: "join", from: peerId, name: myName });
+    qualityMenuOpen = false;
   }
 
-  function removePeer(remotePeerId) {
-    const peer = peers.get(remotePeerId);
-    if (!peer) return;
-    try { peer.pc.close(); } catch {}
-    peer.el.remove();
-    peers.delete(remotePeerId);
-    updateGrid();
-  }
-
-  // ---- Signaling over broadcast ----
-  function broadcast(msg) {
-    handle.broadcast(msg);
-  }
-
-  async function flushCandidates(peer) {
-    if (peer.pendingCandidates.length === 0) return;
-    const candidates = peer.pendingCandidates.splice(0);
-    for (const candidate of candidates) {
-      try {
-        await peer.pc.addIceCandidate(new RTCIceCandidate(candidate));
-      } catch (err) {
-        console.warn("[call] Error flushing ICE candidate:", err);
-      }
-    }
-  }
-
-  // ---- Perfect negotiation signal handler ----
-  async function handleSignal(msg) {
-    if (msg.from === peerId) return;
-    if (msg.to && msg.to !== peerId) return;
-
-    switch (msg.type) {
-      case "join": {
-        const existing = peers.get(msg.from);
-        if (existing) {
-          existing.lastHeartbeat = Date.now();
-          if (msg.name) {
-            existing.name = msg.name;
-            existing.label.textContent = msg.name;
-            updateGrid();
-          }
-          // If we have a stable connection already, just send our name back
-          if (
-            existing.pc.connectionState === "connected" ||
-            existing.pc.signalingState !== "stable"
-          ) {
-            broadcast({ type: "name", from: peerId, name: myName });
-            break;
-          }
-        }
-        const peer = createPeerConnection(msg.from);
-        peer.lastHeartbeat = Date.now();
-        if (msg.name) {
-          peer.name = msg.name;
-          peer.label.textContent = msg.name;
-          updateGrid();
-        }
-        // The onnegotiationneeded handler will fire from addTrack and send the offer
-        // But if we have no local stream, we need to create an offer manually
-        if (!localStream) {
-          try {
-            const offer = await peer.pc.createOffer();
-            await peer.pc.setLocalDescription(offer);
-            broadcast({
-              type: "offer",
-              from: peerId,
-              to: msg.from,
-              sdp: peer.pc.localDescription.toJSON(),
-            });
-          } catch (err) {
-            console.warn("[call] Error creating offer:", err);
-          }
-        }
-        broadcast({ type: "name", from: peerId, name: myName });
-        break;
-      }
-
-      case "offer": {
-        const peer = createPeerConnection(msg.from);
-        try {
-          const offerCollision =
-            peer.makingOffer() || peer.pc.signalingState !== "stable";
-
-          if (offerCollision) {
-            if (!peer.polite) {
-              // Impolite peer ignores incoming offer during collision
-              break;
-            }
-            // Polite peer rolls back and accepts
-          }
-
-          await peer.pc.setRemoteDescription(
-            new RTCSessionDescription(msg.sdp)
-          );
-          await flushCandidates(peer);
-          await peer.pc.setLocalDescription();
-          broadcast({
-            type: "answer",
-            from: peerId,
-            to: msg.from,
-            sdp: peer.pc.localDescription.toJSON(),
-          });
-        } catch (err) {
-          console.warn("[call] Error handling offer:", err);
-        }
-        break;
-      }
-
-      case "answer": {
-        const peer = peers.get(msg.from);
-        if (!peer) break;
-        try {
-          if (peer.pc.signalingState !== "have-local-offer") {
-            // Stale answer — ignore
-            break;
-          }
-          await peer.pc.setRemoteDescription(
-            new RTCSessionDescription(msg.sdp)
-          );
-          await flushCandidates(peer);
-        } catch (err) {
-          console.warn("[call] Error handling answer:", err);
-        }
-        break;
-      }
-
-      case "ice-candidate": {
-        const peer = peers.get(msg.from);
-        if (!peer) break;
-        try {
-          if (!peer.pc.remoteDescription) {
-            peer.pendingCandidates.push(msg.candidate);
-          } else {
-            await peer.pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-          }
-        } catch (err) {
-          // Non-fatal — candidates can arrive for old sessions
-          if (!err.message?.includes("location information")) {
-            console.warn("[call] Error adding ICE candidate:", err);
-          }
-        }
-        break;
-      }
-
-      case "name": {
-        const peer = peers.get(msg.from);
-        if (peer && msg.name) {
-          peer.name = msg.name;
-          peer.label.textContent = msg.name;
-          updateGrid();
-        }
-        break;
-      }
-
-      case "quality-request": {
-        const peer = peers.get(msg.from);
-        if (peer && msg.quality) {
-          console.log(`[call] ${msg.from} requested quality: ${msg.quality}`);
-          applyQuality(peer.pc, msg.quality);
-        }
-        break;
-      }
-
-      case "leave": {
-        removePeer(msg.from);
-        break;
-      }
-    }
-  }
-
-  function onEphemeral(payload) {
-    const msg = payload.message;
-    if (msg && msg.type) {
-      handleSignal(msg);
-    }
-  }
-  // NOTE: ephemeral-message listener is registered in joinCall(), not here,
-  // so no WebRTC connections are created until the user clicks Join.
-
-  let livenessInterval = null;
-
-  // ============================================================================
-  // Transcription
-  // ============================================================================
-
-  let whisperWorker = null;
-  let audioContext = null;
-  let scriptProcessor = null;
-  let audioBuffer = [];
-  let audioBufferLength = 0;
-  let sendInterval = null;
-  let myName = "unknown";
-  const SEND_INTERVAL_MS = 5000;
-  const WHISPER_SAMPLE_RATE = 16000;
-
-  const loadingIndicator = document.createElement("div");
-  loadingIndicator.style.cssText =
-    "position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.7);" +
-    "color:white;padding:4px 10px;border-radius:6px;font-size:12px;" +
-    "font-family:system-ui,sans-serif;z-index:10;display:none;";
-  container.appendChild(loadingIndicator);
-
-  async function resolveMyName() {
-    try {
-      const contactHandle = await repo.find(
-        window.accountDocHandle.doc().contactUrl
-      );
-      const name = contactHandle.doc().name;
-      if (name) {
-        myName = name;
-        localName.textContent = myName;
-      }
-    } catch (err) {
-      console.warn("[call] Could not resolve name:", err);
-    }
-  }
-
-  function resample(inputSamples, inputRate, outputRate) {
-    if (inputRate === outputRate) return inputSamples;
-    const ratio = inputRate / outputRate;
-    const outputLength = Math.round(inputSamples.length / ratio);
-    const output = new Float32Array(outputLength);
-    for (let i = 0; i < outputLength; i++) {
-      const srcIndex = i * ratio;
-      const low = Math.floor(srcIndex);
-      const high = Math.min(low + 1, inputSamples.length - 1);
-      const frac = srcIndex - low;
-      output[i] = inputSamples[low] * (1 - frac) + inputSamples[high] * frac;
-    }
-    return output;
-  }
-
-  function sendAudioToWorker() {
-    if (!whisperWorker || audioBufferLength === 0) return;
-
-    const fullBuffer = new Float32Array(audioBufferLength);
-    let offset = 0;
-    for (const chunk of audioBuffer) {
-      fullBuffer.set(chunk, offset);
-      offset += chunk.length;
-    }
-
-    audioBuffer = [];
-    audioBufferLength = 0;
-
-    const resampled = resample(
-      fullBuffer,
-      audioContext.sampleRate,
-      WHISPER_SAMPLE_RATE
-    );
-
-    whisperWorker.postMessage(
-      { type: "transcribe", audio: resampled },
-      [resampled.buffer]
-    );
-  }
-
-  function stopTranscription() {
-    if (sendInterval) {
-      clearInterval(sendInterval);
-      sendInterval = null;
-    }
-    if (whisperWorker) {
-      whisperWorker.terminate();
-      whisperWorker = null;
-    }
-    if (scriptProcessor) {
-      scriptProcessor.disconnect();
-      scriptProcessor = null;
-    }
-    if (audioContext) {
-      audioContext.close();
-      audioContext = null;
-    }
-    audioBuffer = [];
-    audioBufferLength = 0;
-  }
-
-  function startTranscription() {
-    if (!localStream) return;
-
-    const audioTrack = localStream.getAudioTracks()[0];
-    if (!audioTrack) return;
-
-    const workerUrl = new URL("./worker.js", import.meta.url);
-    whisperWorker = new Worker(workerUrl, { type: "module" });
-
-    whisperWorker.onmessage = (e) => {
-      const { type, text, message } = e.data;
-
-      if (type === "status") {
-        loadingIndicator.style.display = "block";
-        loadingIndicator.textContent = message;
-      } else if (type === "ready") {
-        loadingIndicator.style.display = "none";
-      } else if (type === "result") {
-        handle.change((doc) => {
-          const line = `<${myName}> ${text}\n`;
-          Automerge.splice(doc, ["content"], doc.content.length, 0, line);
-        });
-      }
-    };
-
-    audioContext = new AudioContext();
-    const source = audioContext.createMediaStreamSource(
-      new MediaStream([audioTrack])
-    );
-    scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
-
-    scriptProcessor.onaudioprocess = (e) => {
-      if (!micEnabled) return;
-      const input = e.inputBuffer.getChannelData(0);
-      const copy = new Float32Array(input.length);
-      copy.set(input);
-      audioBuffer.push(copy);
-      audioBufferLength += copy.length;
-    };
-
-    source.connect(scriptProcessor);
-    scriptProcessor.connect(audioContext.destination);
-
-    sendInterval = setInterval(sendAudioToWorker, SEND_INTERVAL_MS);
-  }
-
-  // ---- Listen for device changes (e.g. camera unplugged/plugged) ----
-  function onDeviceChange() {
-    if (destroyed) return;
-    if (!localStream) {
-      // We had no media before — maybe a device just appeared
-      retryMedia();
+  qualityBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (!session) return;
+    if (qualityMenuOpen) {
+      closeQualityMenu();
       return;
     }
-    // Check if our tracks are still live
-    const dead = localStream.getTracks().some((t) => t.readyState === "ended");
-    if (dead) {
-      console.warn("[call] Media track ended, retrying");
-      retryMedia();
+    qualityMenu = createQualityMenu(session.sendQuality, async (level) => {
+      closeQualityMenu();
+      await session.setQuality(level);
+    });
+    qualityAnchor.appendChild(qualityMenu);
+    qualityMenuOpen = true;
+  });
+
+  on(document, "pointerdown", (e) => {
+    if (qualityMenuOpen && !qualityAnchor.contains(e.target)) {
+      closeQualityMenu();
+    }
+  });
+
+  localBar.appendChild(camBtn);
+  localBar.appendChild(micBtn);
+  localBar.appendChild(screenBtn);
+  localBar.appendChild(qualityAnchor);
+  localBar.appendChild(renegotiateBtn);
+  localBar.appendChild(hangUpBtn);
+  localBox.appendChild(localBar);
+
+  // ---- Session event handlers ----
+
+  function syncFromSession() {
+    if (!session) return;
+
+    localName.textContent = session.myName;
+    localVideo.srcObject = session.localStream;
+    camBtn.className = `call-btn${session.cameraEnabled ? "" : " off"}`;
+    micBtn.className = `call-btn${session.micEnabled ? "" : " off"}`;
+    screenBtn.className = `call-btn${session.screenStream ? " off" : ""}`;
+    qualityLabel.textContent = QUALITY_PRESETS[session.sendQuality].label;
+
+    // Sync peers: add missing DOM, remove stale
+    const sessionPeerIds = new Set(session.peers.keys());
+    for (const [id] of peerDom) {
+      if (!sessionPeerIds.has(id)) removePeerDom(id);
+    }
+    for (const [id, peer] of session.peers) {
+      const dom = ensurePeerDom(id, peer);
+      // Update stream reference
+      dom.video.srcObject = peer.stream;
+      dom.label.textContent = peer.name;
+    }
+
+    updateGrid();
+  }
+
+  function onPeersChanged() {
+    syncFromSession();
+  }
+
+  function onMediaChanged() {
+    syncFromSession();
+  }
+
+  function onStateChanged() {
+    syncFromSession();
+  }
+
+  function onLocalStatus(e) {
+    const { message, retryable } = e.detail;
+    if (message) {
+      showLocalStatus(message, retryable ? () => session.retryMedia() : null);
+    } else {
+      hideLocalStatus();
     }
   }
-  navigator.mediaDevices.addEventListener("devicechange", onDeviceChange);
+
+  function onPeerStatus(e) {
+    const { peerId, message, state, retryable } = e.detail;
+    const dom = peerDom.get(peerId);
+    if (!dom) return;
+
+    dom.dot.className = `call-status-dot ${state}`;
+
+    if (message) {
+      dom.overlay.hidden = false;
+      dom.overlay.querySelector(".call-status-text").textContent = message;
+      const oldBtn = dom.overlay.querySelector(".call-retry-btn");
+      if (oldBtn) oldBtn.remove();
+      if (retryable) {
+        const btn = document.createElement("button");
+        btn.className = "call-retry-btn";
+        btn.textContent = "Reconnect";
+        btn.addEventListener("click", () => session.manualReconnectPeer(peerId));
+        dom.overlay.appendChild(btn);
+      }
+    } else {
+      dom.overlay.hidden = true;
+    }
+  }
+
+  function onTranscriptionStatus(e) {
+    const { message } = e.detail;
+    if (message) {
+      loadingIndicator.style.display = "block";
+      loadingIndicator.textContent = message;
+    } else {
+      loadingIndicator.style.display = "none";
+    }
+  }
+
+  function onDestroyed() {
+    // Session was destroyed (hang up). Clean up our view.
+    for (const [id] of peerDom) removePeerDom(id);
+    session = null;
+    // Show lobby again
+    showLobby();
+  }
+
+  function bindSession(s) {
+    session = s;
+    on(session, "peers-changed", onPeersChanged);
+    on(session, "media-changed", onMediaChanged);
+    on(session, "state-changed", onStateChanged);
+    on(session, "local-status", onLocalStatus);
+    on(session, "peer-status", onPeerStatus);
+    on(session, "transcription-status", onTranscriptionStatus);
+    on(session, "destroyed", onDestroyed);
+  }
 
   // ---- Lobby ----
-  const lobby = document.createElement("div");
-  lobby.className = "call-lobby";
 
-  const lobbyPreview = document.createElement("div");
-  lobbyPreview.className = "call-lobby-preview";
-  const lobbyVideo = document.createElement("video");
-  lobbyVideo.autoplay = true;
-  lobbyVideo.muted = true;
-  lobbyVideo.playsInline = true;
-  lobbyPreview.appendChild(lobbyVideo);
-  lobby.appendChild(lobbyPreview);
+  let lobbyEl = null;
+  let lobbyStream = null;
 
-  const lobbyNameEl = document.createElement("div");
-  lobbyNameEl.className = "call-lobby-name";
-  lobbyNameEl.textContent = "Loading\u2026";
-  lobby.appendChild(lobbyNameEl);
+  function showLobby() {
+    const lobby = document.createElement("div");
+    lobby.className = "call-lobby";
+    lobbyEl = lobby;
 
-  const lobbyControls = document.createElement("div");
-  lobbyControls.className = "call-lobby-controls";
+    const lobbyPreview = document.createElement("div");
+    lobbyPreview.className = "call-lobby-preview";
+    const lobbyVideo = document.createElement("video");
+    lobbyVideo.autoplay = true;
+    lobbyVideo.muted = true;
+    lobbyVideo.playsInline = true;
+    lobbyPreview.appendChild(lobbyVideo);
+    lobby.appendChild(lobbyPreview);
 
-  const lobbyCamBtn = document.createElement("button");
-  lobbyCamBtn.className = "call-lobby-toggle";
-  lobbyCamBtn.textContent = "\u{1F4F7}";
-  lobbyCamBtn.title = "Toggle camera";
-  lobbyCamBtn.addEventListener("click", () => {
-    if (!localStream) return;
-    cameraEnabled = !cameraEnabled;
-    for (const track of localStream.getVideoTracks()) {
-      track.enabled = cameraEnabled;
-    }
-    lobbyCamBtn.className = `call-lobby-toggle${cameraEnabled ? "" : " off"}`;
-    camBtn.className = `call-btn${cameraEnabled ? "" : " off"}`;
-  });
+    const lobbyNameEl = document.createElement("div");
+    lobbyNameEl.className = "call-lobby-name";
+    lobbyNameEl.textContent = "Loading\u2026";
+    lobby.appendChild(lobbyNameEl);
 
-  const lobbyMicBtn = document.createElement("button");
-  lobbyMicBtn.className = "call-lobby-toggle";
-  lobbyMicBtn.textContent = "\u{1F3A4}";
-  lobbyMicBtn.title = "Toggle microphone";
-  lobbyMicBtn.addEventListener("click", () => {
-    if (!localStream) return;
-    micEnabled = !micEnabled;
-    for (const track of localStream.getAudioTracks()) {
-      track.enabled = micEnabled;
-    }
-    lobbyMicBtn.className = `call-lobby-toggle${micEnabled ? "" : " off"}`;
-    micBtn.className = `call-btn${micEnabled ? "" : " off"}`;
-  });
+    const lobbyControls = document.createElement("div");
+    lobbyControls.className = "call-lobby-controls";
 
-  lobbyControls.appendChild(lobbyCamBtn);
-  lobbyControls.appendChild(lobbyMicBtn);
-  lobby.appendChild(lobbyControls);
+    let lobbyCameraOn = true;
+    let lobbyMicOn = true;
 
-  const lobbyError = document.createElement("div");
-  lobbyError.className = "call-lobby-error";
-  lobbyError.hidden = true;
-  lobby.appendChild(lobbyError);
-
-  const joinBtn = document.createElement("button");
-  joinBtn.className = "call-lobby-join";
-  joinBtn.textContent = "Join Call";
-  joinBtn.addEventListener("click", joinCall);
-  lobby.appendChild(joinBtn);
-
-  container.appendChild(lobby);
-
-  async function setupLobby() {
-    await resolveMyName();
-    lobbyNameEl.textContent = `Joining as ${myName}`;
-
-    localStream = await acquireMedia();
-    if (localStream) {
-      lobbyVideo.srcObject = localStream;
-    } else {
-      lobbyError.hidden = false;
-      lobbyError.textContent = await describeMediaError();
-    }
-  }
-
-  function joinCall() {
-    lobby.remove();
-
-    if (localStream) {
-      localVideo.srcObject = localStream;
-
-      for (const track of localStream.getTracks()) {
-        track.addEventListener("ended", () => {
-          console.warn(`[call] Track ${track.kind} ended`);
-          showLocalStatus(
-            `${track.kind === "video" ? "Camera" : "Microphone"} disconnected`,
-            retryMedia
-          );
-        });
+    const lobbyCamBtn = document.createElement("button");
+    lobbyCamBtn.className = "call-lobby-toggle";
+    lobbyCamBtn.textContent = "\u{1F4F7}";
+    lobbyCamBtn.title = "Toggle camera";
+    lobbyCamBtn.addEventListener("click", () => {
+      if (!lobbyStream) return;
+      lobbyCameraOn = !lobbyCameraOn;
+      for (const track of lobbyStream.getVideoTracks()) {
+        track.enabled = lobbyCameraOn;
       }
-    }
+      lobbyCamBtn.className = `call-lobby-toggle${lobbyCameraOn ? "" : " off"}`;
+    });
 
-    grid.appendChild(localBox);
-    updateGrid();
+    const lobbyMicBtn = document.createElement("button");
+    lobbyMicBtn.className = "call-lobby-toggle";
+    lobbyMicBtn.textContent = "\u{1F3A4}";
+    lobbyMicBtn.title = "Toggle microphone";
+    lobbyMicBtn.addEventListener("click", () => {
+      if (!lobbyStream) return;
+      lobbyMicOn = !lobbyMicOn;
+      for (const track of lobbyStream.getAudioTracks()) {
+        track.enabled = lobbyMicOn;
+      }
+      lobbyMicBtn.className = `call-lobby-toggle${lobbyMicOn ? "" : " off"}`;
+    });
 
-    startTranscription();
+    lobbyControls.appendChild(lobbyCamBtn);
+    lobbyControls.appendChild(lobbyMicBtn);
+    lobby.appendChild(lobbyControls);
 
-    // Start listening for signaling messages only after joining
-    handle.on("ephemeral-message", onEphemeral);
+    const lobbyError = document.createElement("div");
+    lobbyError.className = "call-lobby-error";
+    lobbyError.hidden = true;
+    lobby.appendChild(lobbyError);
 
-    // Start peer liveness checks
-    livenessInterval = setInterval(() => {
-      const now = Date.now();
-      for (const [id, peer] of peers) {
-        if (now - peer.lastHeartbeat > PEER_TIMEOUT_MS) {
-          console.warn(`[call] Peer ${id} timed out (no heartbeat)`);
-          removePeer(id);
+    const joinBtn = document.createElement("button");
+    joinBtn.className = "call-lobby-join";
+    joinBtn.textContent = "Join Call";
+    joinBtn.addEventListener("click", async () => {
+      // Stop lobby preview stream — the session will acquire its own
+      if (lobbyStream) {
+        for (const track of lobbyStream.getTracks()) track.stop();
+        lobbyStream = null;
+      }
+      lobby.remove();
+      lobbyEl = null;
+
+      const s = createCallSession(handle, element.repo || repo);
+      // Transfer lobby toggle state to session before joining
+      s.cameraEnabled = lobbyCameraOn;
+      s.micEnabled = lobbyMicOn;
+      bindSession(s);
+      await s.joinCall();
+      enterCallView();
+    });
+    lobby.appendChild(joinBtn);
+
+    container.appendChild(lobby);
+
+    // Setup lobby preview
+    (async () => {
+      // Resolve name for display
+      try {
+        const contactHandle = await repo.find(
+          window.accountDocHandle.doc().contactUrl
+        );
+        const name = contactHandle.doc().name;
+        if (name) lobbyNameEl.textContent = `Joining as ${name}`;
+      } catch {}
+
+      // Preview media
+      try {
+        lobbyStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      } catch {
+        try {
+          lobbyStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        } catch {
+          try {
+            lobbyStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+          } catch {}
         }
       }
-    }, PEER_TIMEOUT_MS / 2);
-
-    broadcast({ type: "join", from: peerId, name: myName });
-
-    heartbeatInterval = setInterval(() => {
-      if (!destroyed) {
-        broadcast({ type: "join", from: peerId, name: myName });
+      if (lobbyStream) {
+        lobbyVideo.srcObject = lobbyStream;
+      } else {
+        lobbyError.hidden = false;
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const hasCam = devices.some((d) => d.kind === "videoinput");
+          const hasMic = devices.some((d) => d.kind === "audioinput");
+          if (!hasCam && !hasMic) lobbyError.textContent = "No camera or microphone found";
+          else if (!hasCam) lobbyError.textContent = "No camera found";
+          else if (!hasMic) lobbyError.textContent = "No microphone found";
+          else lobbyError.textContent = "Camera/mic may be in use by another app";
+        } catch {
+          lobbyError.textContent = "Could not access media devices";
+        }
       }
-    }, HEARTBEAT_MS);
+    })();
   }
 
-  let heartbeatInterval = null;
-  setupLobby();
+  function enterCallView() {
+    if (!session) return;
+    localVideo.srcObject = session.localStream;
+    localName.textContent = session.myName;
+    grid.appendChild(localBox);
+    syncFromSession();
+  }
+
+  // ---- Initialize ----
+
+  async function init() {
+    // Check for existing session for this call
+    const existing = getCallSession();
+    if (existing && existing.callUrl === handle.url && !existing.destroyed) {
+      if (existing.joined) {
+        // Already in call — skip lobby, render grid immediately
+        bindSession(existing);
+        enterCallView();
+        return;
+      }
+    }
+
+    // Check cross-tab
+    const inOtherTab = await CallSession.isActiveInAnotherTab(handle.url);
+    if (inOtherTab) {
+      showOtherTabMessage();
+      return;
+    }
+
+    showLobby();
+  }
+
+  function showOtherTabMessage() {
+    const otherTab = document.createElement("div");
+    otherTab.className = "call-other-tab";
+
+    const msg = document.createElement("div");
+    msg.className = "call-other-tab-msg";
+    msg.textContent = "You're in this call in another tab";
+    otherTab.appendChild(msg);
+
+    const takeOverBtn = document.createElement("button");
+    takeOverBtn.textContent = "Take over";
+    takeOverBtn.addEventListener("click", () => {
+      otherTab.remove();
+      showLobby();
+    });
+    otherTab.appendChild(takeOverBtn);
+
+    container.appendChild(otherTab);
+  }
+
+  init();
 
   // ---- Cleanup ----
   return () => {
-    destroyed = true;
+    viewDestroyed = true;
 
-    if (heartbeatInterval) clearInterval(heartbeatInterval);
-    if (livenessInterval) clearInterval(livenessInterval);
+    // Remove all event listeners
+    for (const { target, event, handler } of listeners) {
+      target.removeEventListener(event, handler);
+    }
+    listeners.length = 0;
 
-    broadcast({ type: "leave", from: peerId });
-
-    handle.off("ephemeral-message", onEphemeral);
-    navigator.mediaDevices.removeEventListener("devicechange", onDeviceChange);
-
-    stopTranscription();
-
-    if (screenStream) {
-      for (const track of screenStream.getTracks()) track.stop();
-      screenStream = null;
+    // Stop lobby preview stream if still active
+    if (lobbyStream) {
+      for (const track of lobbyStream.getTracks()) track.stop();
+      lobbyStream = null;
     }
 
-    if (localStream) {
-      for (const track of localStream.getTracks()) {
-        track.stop();
-      }
-    }
-
-    for (const [, peer] of peers) {
-      try { peer.pc.close(); } catch {}
-    }
-    peers.clear();
+    // Remove DOM
+    for (const [id] of peerDom) removePeerDom(id);
+    peerDom.clear();
 
     container.remove();
     style.remove();
+
+    // Do NOT call session.leave() — session persists for the titlebar
   };
 }
