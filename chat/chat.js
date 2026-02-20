@@ -154,7 +154,7 @@ function createStyles() {
       font-family:system-ui,-apple-system,sans-serif;
       background:var(--bg-dark); color:var(--text-primary);
       box-sizing:border-box; font-size:15px;
-      overflow:hidden;
+      overflow:hidden; user-select:text; -webkit-user-select:text;
     }
     .chat-root *, .chat-root *::before, .chat-root *::after { box-sizing:border-box; }
 
@@ -713,8 +713,10 @@ export function Tool(handle, element, options) {
   // prevents click events from ever firing. We stop pointerdown propagation
   // on the root so our clicks work. Per patchwork rules: only stopPropagation
   // on pointerDown/pointerUp, never on click.
-  root.addEventListener("pointerdown", (e) => { e.stopPropagation(); });
-  root.addEventListener("pointerup", (e) => { e.stopPropagation(); });
+  // Note: Do NOT blanket-stopPropagation on root for pointer/wheel/touch events.
+  // When embedded in tldraw, PatchworkDocShape handles event isolation in the
+  // capture phase when the shape is focused. Blanket stopping interferes with
+  // the focus mechanism. Only stop propagation on specific interactive elements.
 
   let myName = "Anonymous";
   let myFont = null;
