@@ -196,12 +196,17 @@ function createStyles() {
     .chat-msg-reply-ref-text { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:300px; }
 
     /* Images */
-    .chat-msg-image { max-width:350px; max-height:300px; border-radius:8px; margin-top:4px; cursor:pointer; }
+    .chat-msg-image-wrap {
+      position:relative; display:inline-block; margin-top:4px; max-width:100%;
+    }
+    .chat-msg-image {
+      display:block; border-radius:8px; cursor:pointer; width:100%; height:100%; object-fit:cover;
+    }
 
     /* Patchwork doc embed */
     .chat-msg-embed {
       margin-top:6px; border:1px solid var(--border); border-radius:8px;
-      overflow:hidden; max-width:350px; height:200px; position:relative;
+      overflow:hidden; width:100%; height:300px; position:relative;
       background:var(--bg-surface);
     }
     .chat-msg-embed patchwork-view { width:100%; height:100%; display:block; }
@@ -210,6 +215,17 @@ function createStyles() {
       font-size:11px; color:var(--text-secondary); background:var(--bg-darkest);
       border-top:1px solid var(--border); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
     }
+
+    /* Resize handle */
+    .chat-resize-handle {
+      position:absolute; bottom:0; right:0; width:16px; height:16px; cursor:nwse-resize;
+      display:flex; align-items:center; justify-content:center; opacity:0; transition:opacity 0.15s;
+      z-index:5;
+    }
+    .chat-msg-image-wrap:hover .chat-resize-handle,
+    .chat-msg-embed:hover .chat-resize-handle { opacity:0.6; }
+    .chat-resize-handle:hover { opacity:1 !important; }
+    .chat-resize-handle svg { width:10px; height:10px; color:var(--text-muted); }
 
     /* Voice note */
     .chat-voice-note {
@@ -1826,14 +1842,60 @@ export function Tool(handle, element, options) {
     row.appendChild(actions);
   }
 
+  function makeResizable(container, msg, key) {
+    const grip = document.createElement("div");
+    grip.className = "chat-resize-handle";
+    grip.innerHTML = '<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 1L1 9M9 5L5 9M9 8L8 9"/></svg>';
+    container.appendChild(grip);
+
+    grip.addEventListener("pointerdown", (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const startX = e.clientX, startY = e.clientY;
+      const startW = container.offsetWidth, startH = container.offsetHeight;
+      const onMove = (ev) => {
+        const w = Math.max(100, startW + ev.clientX - startX);
+        const h = Math.max(60, startH + ev.clientY - startY);
+        container.style.width = w + "px";
+        container.style.height = h + "px";
+      };
+      const onUp = (ev) => {
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        const w = container.offsetWidth, h = container.offsetHeight;
+        // Save dimensions to message doc
+        const rawIdx = msg._rawIdx;
+        const ref = msg._ref;
+        if (ref && ref.url) {
+          const cached = msgDocCache.get(ref.url);
+          if (cached) cached.handle.change((d) => { d[key + "Width"] = w; d[key + "Height"] = h; });
+        } else {
+          handle.change((d) => {
+            const m = d.messages?.[rawIdx]; if (!m) return;
+            m[key + "Width"] = w; m[key + "Height"] = h;
+          });
+        }
+      };
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+    });
+  }
+
   function renderAttachments(parent, msg) {
     if (msg.imageUrl) {
+      const wrap = document.createElement("div");
+      wrap.className = "chat-msg-image-wrap";
+      if (msg.imageWidth) wrap.style.width = msg.imageWidth + "px";
+      else wrap.style.width = "350px";
+      if (msg.imageHeight) wrap.style.height = msg.imageHeight + "px";
+      else wrap.style.height = "auto";
       const img = document.createElement("img");
       img.className = "chat-msg-image";
       img.alt = msg.imageName || "image";
       img.loading = "lazy";
       loadBlobUrl(msg.imageUrl).then(u => { if (u) img.src = u; });
-      parent.appendChild(img);
+      wrap.appendChild(img);
+      makeResizable(wrap, msg, "image");
+      parent.appendChild(wrap);
     }
     if (msg.voiceUrl) {
       const vn = document.createElement("div");
@@ -1868,9 +1930,12 @@ export function Tool(handle, element, options) {
       parent.appendChild(vn);
     }
     if (msg.embeds) {
-      for (const embed of msg.embeds) {
+      for (let ei = 0; ei < msg.embeds.length; ei++) {
+        const embed = msg.embeds[ei];
         const wrap = document.createElement("div");
         wrap.className = "chat-msg-embed";
+        if (msg["embedWidth_" + ei]) wrap.style.width = msg["embedWidth_" + ei] + "px";
+        if (msg["embedHeight_" + ei]) wrap.style.height = msg["embedHeight_" + ei] + "px";
         const pv = document.createElement("patchwork-view");
         pv.setAttribute("doc-url", embed.docUrl);
         wrap.appendChild(pv);
@@ -1880,6 +1945,7 @@ export function Tool(handle, element, options) {
           titleEl.textContent = embed.title;
           wrap.appendChild(titleEl);
         }
+        makeResizable(wrap, msg, "embed_" + ei);
         parent.appendChild(wrap);
       }
     }
