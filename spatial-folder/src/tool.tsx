@@ -19,13 +19,14 @@ import {
   computed,
   react,
   sortById,
+  createBookmarkFromUrl,
 } from 'tldraw';
 import type { VecLike } from 'tldraw';
 import 'tldraw/tldraw.css';
 import { DocHandle, type AutomergeUrl, type DocHandleChangePayload } from '@automerge/automerge-repo';
 import { useDocument, useLocalAwareness, useRemoteAwareness, RepoContext } from '@automerge/automerge-repo-react-hooks';
 import { createRoot } from 'react-dom/client';
-import { useEffect, useRef, useMemo, useState, useCallback } from 'react';
+import { useEffect, useRef, useMemo, useState, useCallback, memo } from 'react';
 import { FolderDoc, DocLink } from '@inkandswitch/patchwork-filesystem';
 import { automergeUrlToServiceWorkerUrl } from '@inkandswitch/patchwork-filesystem';
 import type { ToolRender, ToolElement } from '@inkandswitch/patchwork-plugins';
@@ -71,6 +72,24 @@ const uiComponents: TLUiComponents = {
   Toolbar: NewDocToolbar,
 };
 
+// Memoized wrapper so parent re-renders (presence, useDocument, etc.)
+// don't cause tldraw to re-render.  All props are stable references.
+const StableTldraw = memo(function StableTldraw({
+  onMount,
+}: {
+  onMount: (editor: Editor) => void;
+}) {
+  return (
+    <Tldraw
+      shapeUtils={customShapeUtils}
+      tools={customTools}
+      overrides={newDocUiOverrides}
+      onMount={onMount}
+      components={uiComponents}
+    />
+  );
+});
+
 const MIME_TO_EXT: Record<string, string> = {
   'image/png': 'png',
   'image/jpeg': 'jpg',
@@ -91,7 +110,7 @@ function extensionForMimeType(mimeType: string): string {
 
 // ---- Helpers ----------------------------------------------------------------
 
-function makeShapeId(docUrl: string): TLShapeId {
+export function makeShapeId(docUrl: string): TLShapeId {
   return createShapeId(docUrl.replace(/[^a-zA-Z0-9]/g, '_'));
 }
 
@@ -410,16 +429,45 @@ function SpatialFolderCanvas({
     >
       <style>{`
         .spatial-folder-root > .tl-container .tl-background {
-          background: #ece8f4 !important;
+          background: #e6ddf0 !important;
+        }
+        /* Make embed iframes (YouTube, etc.) always interactive */
+        .spatial-folder-root .tl-embed-container iframe.tl-embed {
+          pointer-events: auto !important;
+          z-index: auto !important;
+        }
+        /* Titlebar for embed shapes so they can be dragged */
+        .spatial-folder-root .tl-embed-container {
+          position: relative;
+        }
+        .spatial-folder-root .tl-embed-container::before {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          height: 18px;
+          background:
+            linear-gradient(#fff, #fff),
+            linear-gradient(#fff, #fff),
+            repeating-linear-gradient(#d0d0d0 0px, #d0d0d0 1px, transparent 1px, transparent 3px);
+          background-size: 100% 1px, 100% 1px, 100% 100%;
+          background-position: top, bottom, center;
+          background-repeat: no-repeat, no-repeat, repeat;
+          background-color: #fff;
+          border-bottom: 1px solid #808080;
+          border-radius: 8px 8px 0 0;
+          z-index: 1;
+          pointer-events: auto;
+          cursor: grab;
+        }
+        .spatial-folder-root .tl-embed-container iframe.tl-embed {
+          margin-top: 18px !important;
+          height: calc(100% - 18px) !important;
+          border-radius: 0 0 8px 8px !important;
         }
       `}</style>
-      <Tldraw
-        shapeUtils={customShapeUtils}
-        tools={customTools}
-        overrides={newDocUiOverrides}
-        onMount={handleMountRef.current}
-        components={uiComponents}
-      />
+      <StableTldraw onMount={handleMountRef.current} />
       {!doc && (
         <div
           style={{
@@ -740,11 +788,24 @@ async function initializeSync(
           );
 
           if (docsToAdd.length > 0 || docsToRemove.length > 0 || docsRenamed.length > 0) {
+            // Collect URLs that still have shapes on canvas (after removals).
+            // Only remove a URL from the folder list if NO shapes reference it.
+            const remainingShapes = editor.getCurrentPageShapes();
+            const urlsStillOnCanvas = new Set<string>();
+            for (const s of remainingShapes) {
+              if (s.type === PATCHWORK_DOC_SHAPE_TYPE) {
+                urlsStillOnCanvas.add((s as any).props?.docUrl);
+              }
+            }
+
             handle.change((d) => {
               if (!d.docs) d.docs = [];
               for (const record of docsToRemove) {
                 const r = record as any;
-                const idx = d.docs.findIndex((doc: any) => doc.url === r.props.docUrl);
+                const url = r.props.docUrl;
+                // Don't remove from folder if another shape still uses this URL
+                if (urlsStillOnCanvas.has(url)) continue;
+                const idx = d.docs.findIndex((doc: any) => doc.url === url);
                 if (idx >= 0) {
                   d.docs.splice(idx, 1);
                 }
@@ -914,6 +975,94 @@ async function initializeSync(
   );
 
   // ------------------------------------------------------------------
+  // 3b-2. Handle pasted/dropped YouTube URLs → create playable embed
+  // ------------------------------------------------------------------
+
+  editor.registerExternalContentHandler(
+    'url',
+    async ({ point, url }: { point?: VecLike; url: string }) => {
+      // Handle patchwork tiny links (e.g. https://tiny.patchwork.inkandswitch.com/#doc=XXXX&title=...&type=...&tool=...&heads=...)
+      try {
+        const parsed = new URL(url);
+        if (parsed.hostname === 'tiny.patchwork.inkandswitch.com' && parsed.hash) {
+          const params = new URLSearchParams(parsed.hash.slice(1));
+          const docId = params.get('doc');
+          if (docId) {
+            const heads = params.get('heads');
+            const automergeUrl = `automerge:${docId}${heads ? `#${heads}` : ''}` as AutomergeUrl;
+            const title = params.get('title') || '';
+            const type = params.get('type') || '';
+            const toolId = params.get('tool') || '';
+
+            const position = point ?? editor.getViewportPageBounds().center;
+            const shapeId = makeShapeId(automergeUrl);
+
+            // Add to folder doc list
+            handle.change((d) => {
+              if (!d.docs) d.docs = [];
+              const alreadyExists = d.docs.some((doc: any) => doc.url === automergeUrl);
+              if (!alreadyExists) {
+                d.docs.push({ name: title, type, url: automergeUrl });
+              }
+            });
+
+            // Create shape on canvas if it doesn't already exist
+            if (!editor.getShape(shapeId)) {
+              editor.createShape({
+                id: shapeId,
+                type: PATCHWORK_DOC_SHAPE_TYPE,
+                x: position.x - DEFAULT_W / 2,
+                y: position.y - DEFAULT_H / 2,
+                props: {
+                  w: DEFAULT_W,
+                  h: DEFAULT_H,
+                  docUrl: automergeUrl,
+                  docName: title,
+                  docType: type,
+                  toolId,
+                },
+              } as any);
+            }
+
+            console.log(LOG, 'patchwork link pasted:', automergeUrl, '(tool:', toolId, ')');
+            return;
+          }
+        }
+      } catch {
+        // Not a valid URL or parsing failed, continue to other handlers
+      }
+
+      const ytMatch = url.match(
+        /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/,
+      );
+
+      if (ytMatch) {
+        const videoId = ytMatch[1];
+        const embedUrl = `https://www.youtube.com/embed/${videoId}?enablejsapi=1`;
+        const position = point ?? editor.getViewportPageBounds().center;
+        const id = createShapeId();
+        editor.createShape({
+          id,
+          type: 'embed',
+          x: position.x - 240,
+          y: position.y - 135,
+          props: {
+            w: 480,
+            h: 270,
+            url: embedUrl,
+          },
+        });
+        console.log(LOG, 'YouTube embed created for', url);
+        return;
+      }
+
+      // For non-YouTube URLs, fall back to tldraw's default bookmark shape
+      const position = point ?? editor.getViewportPageBounds().center;
+      await createBookmarkFromUrl(editor, { url, center: position });
+    },
+  );
+
+  // ------------------------------------------------------------------
   // 3c. Ensure patchwork-doc shapes exist for every folder item
   //     These are created as *user* changes so the store listener
   //     (step 1) persists them to automerge automatically.
@@ -932,11 +1081,31 @@ async function initializeSync(
   });
 
   // ------------------------------------------------------------------
-  // 5.  Zoom to fit
+  // 5.  Restore camera from localStorage, or zoom to fit
   // ------------------------------------------------------------------
 
+  const cameraKey = `spatial-folder-camera:${handle.url}`;
+
   const shapeCount = editor.getCurrentPageShapes().length;
-  if (shapeCount > 0) {
+  const savedCamera = (() => {
+    try {
+      const raw = localStorage.getItem(cameraKey);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  if (savedCamera && typeof savedCamera.x === 'number' && typeof savedCamera.y === 'number' && typeof savedCamera.z === 'number') {
+    console.log(LOG, 'restoring saved camera position');
+    requestAnimationFrame(() => {
+      try {
+        editor.setCamera({ x: savedCamera.x, y: savedCamera.y, z: savedCamera.z });
+      } catch {
+        /* editor may have been disposed */
+      }
+    });
+  } else if (shapeCount > 0) {
     console.log(LOG, 'zooming to fit', shapeCount, 'shapes');
     requestAnimationFrame(() => {
       try {
@@ -947,6 +1116,195 @@ async function initializeSync(
     });
   }
 
+  // Persist camera position to localStorage on changes (debounced).
+  let cameraSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  const unsubCamera = editor.store.listen(
+    () => {
+      if (cameraSaveTimer) clearTimeout(cameraSaveTimer);
+      cameraSaveTimer = setTimeout(() => {
+        try {
+          const camera = editor.getCamera();
+          localStorage.setItem(cameraKey, JSON.stringify({ x: camera.x, y: camera.y, z: camera.z }));
+        } catch {
+          /* localStorage may be full or unavailable */
+        }
+      }, 500);
+    },
+    { source: 'user', scope: 'session' },
+  );
+  cleanupFnsRef.current.push(() => {
+    unsubCamera();
+    if (cameraSaveTimer) clearTimeout(cameraSaveTimer);
+  });
+
+  // ------------------------------------------------------------------
+  // 6.  YouTube playback sync via broadcast channel
+  // ------------------------------------------------------------------
+
+  const ytCurrentTime = new Map<string, number>();
+  let ytSuppressBroadcast = false;
+
+  // Find YouTube iframes, ensure they have enablejsapi=1 in their src,
+  // and send the "listening" handshake so they post state-change events.
+  const initYTIframes = () => {
+    const iframes = document.querySelectorAll(
+      '.spatial-folder-root .tl-embed-container iframe.tl-embed',
+    ) as NodeListOf<HTMLIFrameElement>;
+    for (const iframe of iframes) {
+      if (!iframe.src.includes('youtube.com/embed/')) continue;
+
+      // Inject enablejsapi=1 if tldraw stripped it from the URL
+      if (!iframe.src.includes('enablejsapi=1')) {
+        const separator = iframe.src.includes('?') ? '&' : '?';
+        iframe.src = `${iframe.src}${separator}enablejsapi=1`;
+        // iframe will reload — skip handshake for now, next poll will catch it
+        iframe.dataset.ytInitialized = '';
+        continue;
+      }
+
+      if (iframe.dataset.ytInitialized) continue;
+      iframe.dataset.ytInitialized = 'true';
+
+      // Send the listening handshake once the iframe is ready
+      const sendListening = () => {
+        iframe.contentWindow?.postMessage(
+          JSON.stringify({ event: 'listening', id: 1 }),
+          '*',
+        );
+        console.log(LOG, 'youtube: sent listening handshake to', iframe.src);
+      };
+
+      if (iframe.contentDocument?.readyState === 'complete') {
+        sendListening();
+      } else {
+        iframe.addEventListener('load', sendListening, { once: true });
+      }
+    }
+  };
+
+  const ytInitInterval = setInterval(initYTIframes, 2000);
+  initYTIframes();
+  cleanupFnsRef.current.push(() => clearInterval(ytInitInterval));
+
+  // Listen for YouTube postMessage events (state changes + current time).
+  const handleYTMessage = (event: MessageEvent) => {
+    if (typeof event.data !== 'string') return;
+    let data: any;
+    try {
+      data = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+
+    // Find the videoId of the iframe that sent this message.
+    const findVideoId = (): string | null => {
+      const iframes = document.querySelectorAll(
+        '.spatial-folder-root .tl-embed-container iframe.tl-embed',
+      ) as NodeListOf<HTMLIFrameElement>;
+      // Try matching by event.source first
+      for (const iframe of iframes) {
+        try {
+          if (iframe.contentWindow === event.source) {
+            const match = iframe.src.match(/embed\/([a-zA-Z0-9_-]{11})/);
+            return match ? match[1] : null;
+          }
+        } catch {
+          // contentWindow access may fail for sandboxed iframes
+        }
+      }
+      // Fallback: if there's only one YouTube iframe, assume it sent the event
+      const ytIframes = Array.from(iframes).filter((f) =>
+        f.src.includes('youtube.com/embed/'),
+      );
+      if (ytIframes.length === 1) {
+        const match = ytIframes[0].src.match(/embed\/([a-zA-Z0-9_-]{11})/);
+        return match ? match[1] : null;
+      }
+      // If data includes info.videoData.video_id, use that
+      if (data.info?.videoData?.video_id) {
+        return data.info.videoData.video_id;
+      }
+      return null;
+    };
+
+    // Log all YouTube events for debugging
+    if (data.event) {
+      console.log(LOG, 'youtube event:', data.event, data.info);
+    }
+
+    // Track current time from periodic infoDelivery events.
+    if (data.event === 'infoDelivery' && data.info?.currentTime !== undefined) {
+      const vid = findVideoId();
+      if (vid) ytCurrentTime.set(vid, data.info.currentTime);
+      return;
+    }
+
+    // Broadcast play/pause state changes to peers.
+    if (data.event === 'onStateChange' && !ytSuppressBroadcast) {
+      const state = typeof data.info === 'number' ? data.info : data.info?.playerState;
+      // 1 = playing, 2 = paused
+      if (state !== 1 && state !== 2) return;
+      const videoId = findVideoId();
+      if (!videoId) return;
+
+      handle.broadcast({
+        type: 'youtube-sync',
+        videoId,
+        state,
+        currentTime: ytCurrentTime.get(videoId) ?? 0,
+      });
+      console.log(LOG, 'youtube broadcast:', state === 1 ? 'play' : 'pause', videoId, 'at', ytCurrentTime.get(videoId));
+    }
+  };
+
+  window.addEventListener('message', handleYTMessage);
+  cleanupFnsRef.current.push(() => window.removeEventListener('message', handleYTMessage));
+
+  // Receive YouTube sync broadcasts from peers.
+  const handleYTBroadcast = (payload: any) => {
+    const msg = payload.message;
+    if (msg?.type !== 'youtube-sync') return;
+
+    console.log(LOG, 'youtube received:', msg.state === 1 ? 'play' : 'pause', msg.videoId, '@', msg.currentTime);
+
+    ytSuppressBroadcast = true;
+    const iframes = document.querySelectorAll(
+      '.spatial-folder-root .tl-embed-container iframe.tl-embed',
+    ) as NodeListOf<HTMLIFrameElement>;
+
+    for (const iframe of iframes) {
+      if (!iframe.src.includes(msg.videoId)) continue;
+      const win = iframe.contentWindow;
+      if (!win) continue;
+
+      // Seek first, then play or pause.
+      win.postMessage(
+        JSON.stringify({ event: 'command', func: 'seekTo', args: [msg.currentTime, true] }),
+        '*',
+      );
+
+      if (msg.state === 1) {
+        win.postMessage(
+          JSON.stringify({ event: 'command', func: 'playVideo', args: '' }),
+          '*',
+        );
+      } else if (msg.state === 2) {
+        win.postMessage(
+          JSON.stringify({ event: 'command', func: 'pauseVideo', args: '' }),
+          '*',
+        );
+      }
+    }
+
+    // Re-enable broadcasting after a short delay to avoid echo.
+    setTimeout(() => {
+      ytSuppressBroadcast = false;
+    }, 500);
+  };
+
+  handle.on('ephemeral-message', handleYTBroadcast as any);
+  cleanupFnsRef.current.push(() => handle.off('ephemeral-message', handleYTBroadcast as any));
+
   console.log(LOG, 'initializeSync complete ✓');
 }
 
@@ -955,11 +1313,16 @@ async function initializeSync(
 // =============================================================================
 
 function reconcilePatchworkDocShapes(editor: Editor, folderDocs: DocLink[]) {
-  const existing = new Map<string, TLShapeId>();
+  // Collect ALL shapes per URL (there may be duplicates from sync races).
+  const existing = new Map<string, TLShapeId[]>();
 
   for (const shape of editor.getCurrentPageShapes()) {
     if (shape.type === PATCHWORK_DOC_SHAPE_TYPE) {
-      existing.set((shape as any).props.docUrl, shape.id);
+      const url = (shape as any).props.docUrl;
+      if (!url) continue;
+      const ids = existing.get(url) ?? [];
+      ids.push(shape.id);
+      existing.set(url, ids);
     }
   }
 
@@ -970,14 +1333,16 @@ function reconcilePatchworkDocShapes(editor: Editor, folderDocs: DocLink[]) {
     LOG,
     'reconcile: existing patchwork shapes:',
     existing.size,
-    '| folder docs:',
+    'URLs |',
+    'folder docs:',
     folderDocs.length,
   );
 
   for (const docLink of folderDocs) {
-    if (existing.has(docLink.url)) {
-      // Already on canvas — update metadata if stale
-      const shapeId = existing.get(docLink.url)!;
+    const shapeIds = existing.get(docLink.url);
+    if (shapeIds && shapeIds.length > 0) {
+      // Already on canvas — update metadata on the first shape if stale
+      const shapeId = shapeIds[0];
       const shape = editor.getShape(shapeId) as any;
       if (shape && (shape.props.docName !== docLink.name || shape.props.docType !== docLink.type)) {
         console.log(LOG, 'reconcile: updating metadata for', docLink.name);
@@ -987,6 +1352,7 @@ function reconcilePatchworkDocShapes(editor: Editor, folderDocs: DocLink[]) {
           props: { docName: docLink.name, docType: docLink.type },
         } as any);
       }
+
       continue;
     }
 
@@ -1011,11 +1377,12 @@ function reconcilePatchworkDocShapes(editor: Editor, folderDocs: DocLink[]) {
   }
 
   // Remove shapes whose doc was removed from the folder
-  for (const [url, shapeId] of existing) {
+  for (const [url, shapeIds] of existing) {
     if (!folderUrls.has(url)) {
-      console.log(LOG, 'reconcile: removing shape for deleted doc', url);
-      if (editor.getShape(shapeId)) {
-        editor.deleteShapes([shapeId]);
+      const toDelete = shapeIds.filter((id) => editor.getShape(id));
+      if (toDelete.length > 0) {
+        console.log(LOG, 'reconcile: removing', toDelete.length, 'shapes for deleted doc', url);
+        editor.deleteShapes(toDelete);
       }
     }
   }

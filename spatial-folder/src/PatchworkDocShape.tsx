@@ -21,6 +21,8 @@ import {
 } from '@inkandswitch/patchwork-plugins';
 import { openDocument } from '@inkandswitch/patchwork-elements';
 import type { AutomergeUrl } from '@automerge/automerge-repo';
+import { parseAutomergeUrl, encodeHeads, stringifyAutomergeUrl } from '@automerge/automerge-repo';
+import { getHeads } from '@automerge/automerge';
 import { RepoContext, useDocument } from '@automerge/automerge-repo-react-hooks';
 import { automergeUrlToServiceWorkerUrl } from '@inkandswitch/patchwork-filesystem';
 
@@ -252,6 +254,42 @@ function Sparkles() {
   );
 }
 
+function MenuItem({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerEnter={(e) => {
+        (e.currentTarget as HTMLElement).style.background = '#000';
+        (e.currentTarget as HTMLElement).style.color = '#fff';
+      }}
+      onPointerLeave={(e) => {
+        (e.currentTarget as HTMLElement).style.background = 'transparent';
+        (e.currentTarget as HTMLElement).style.color = '#000';
+      }}
+      style={{
+        display: 'block',
+        width: '100%',
+        padding: '2px 12px',
+        border: 'none',
+        background: 'transparent',
+        color: '#000',
+        fontSize: '11px',
+        fontFamily: 'inherit',
+        textAlign: 'left',
+        cursor: 'pointer',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function MenuSeparator() {
+  return <div style={{ height: '1px', background: '#c0c0c0', margin: '2px 0' }} />;
+}
+
 function useIsImage(docUrl: string): boolean {
   const [doc] = useDocument<{ '@patchwork'?: { type?: string }; mimeType?: string }>(
     docUrl ? docUrl as AutomergeUrl : undefined,
@@ -271,8 +309,10 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [isEditingTool, setIsEditingTool] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const [sparkling, setSparkling] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const toolInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -293,6 +333,80 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
     }
   }, [isEditingTool]);
 
+  // Close menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: PointerEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+        setIsEditingTool(false);
+      }
+    };
+    window.addEventListener('pointerdown', handler, true);
+    return () => window.removeEventListener('pointerdown', handler, true);
+  }, [menuOpen]);
+
+  // Flash "Copied" feedback then clear
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(null), 1200);
+    return () => clearTimeout(t);
+  }, [copied]);
+
+  const copyToClipboard = useCallback(async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(label);
+    } catch {
+      setCopied('Failed');
+    }
+  }, []);
+
+  const handleCopyAutomergeUrl = useCallback(() => {
+    if (!docUrl) return;
+    copyToClipboard(docUrl, 'URL');
+    setMenuOpen(false);
+  }, [docUrl, copyToClipboard]);
+
+  const handleCopyUrlAtHeads = useCallback(async () => {
+    if (!docUrl || !repo) return;
+    try {
+      const handle = await repo.find(docUrl as AutomergeUrl);
+      const doc = handle.doc();
+      if (!doc) { setCopied('No doc'); return; }
+      const heads = getHeads(doc);
+      const { documentId } = parseAutomergeUrl(docUrl as AutomergeUrl);
+      const urlAtHeads = stringifyAutomergeUrl({ documentId, heads: encodeHeads(heads) });
+      copyToClipboard(urlAtHeads, 'URL@heads');
+    } catch {
+      setCopied('Failed');
+    }
+    setMenuOpen(false);
+  }, [docUrl, repo, copyToClipboard]);
+
+  const handleCopyTinyUrl = useCallback(async () => {
+    if (!docUrl || !repo) return;
+    try {
+      const handle = await repo.find(docUrl as AutomergeUrl);
+      const doc = handle.doc();
+      const { documentId } = parseAutomergeUrl(docUrl as AutomergeUrl);
+      const params = new URLSearchParams();
+      params.set('doc', documentId);
+      if (docName) params.set('title', docName);
+      if (docType) params.set('type', docType);
+      if (toolId) params.set('tool', toolId);
+      if (doc) {
+        const heads = getHeads(doc);
+        params.set('heads', encodeHeads(heads).join(','));
+      }
+      const tinyUrl = `https://tiny.patchwork.inkandswitch.com/#${params.toString()}`;
+      copyToClipboard(tinyUrl, 'Tiny URL');
+    } catch {
+      setCopied('Failed');
+    }
+    setMenuOpen(false);
+  }, [docUrl, docName, docType, toolId, repo, copyToClipboard]);
+
   // Listen for patchwork:mounted on the content area
   useEffect(() => {
     const el = contentRef.current;
@@ -304,6 +418,46 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
     el.addEventListener('patchwork:mounted', handler);
     return () => el.removeEventListener('patchwork:mounted', handler);
   }, []);
+
+  // Stop keyboard, wheel, and pointer events from reaching tldraw when
+  // the shape content is focused.  This prevents tldraw keybindings from
+  // activating, wheel-to-zoom from hijacking scroll, and pointer capture
+  // from blocking text selection inside embedded tools.
+  useEffect(() => {
+    if (!isFocused) return;
+    const el = contentRef.current;
+    if (!el) return;
+
+    const stopKey = (e: KeyboardEvent) => {
+      e.stopPropagation();
+    };
+    const stopWheel = (e: WheelEvent) => {
+      // Let pinch-to-zoom (ctrlKey + wheel) pass through to tldraw
+      if (e.ctrlKey) return;
+      e.stopPropagation();
+    };
+    const stopPointer = (e: PointerEvent) => {
+      e.stopPropagation();
+    };
+
+    el.addEventListener('keydown', stopKey);
+    el.addEventListener('keyup', stopKey);
+    el.addEventListener('keypress', stopKey);
+    el.addEventListener('wheel', stopWheel);
+    el.addEventListener('pointerdown', stopPointer, true);
+    el.addEventListener('pointermove', stopPointer, true);
+    el.addEventListener('pointerup', stopPointer, true);
+
+    return () => {
+      el.removeEventListener('keydown', stopKey);
+      el.removeEventListener('keyup', stopKey);
+      el.removeEventListener('keypress', stopKey);
+      el.removeEventListener('wheel', stopWheel);
+      el.removeEventListener('pointerdown', stopPointer, true);
+      el.removeEventListener('pointermove', stopPointer, true);
+      el.removeEventListener('pointerup', stopPointer, true);
+    };
+  }, [isFocused]);
 
   // Unfocus content when clicking outside
   useEffect(() => {
@@ -497,97 +651,137 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
           )}
         </div>
 
-        {/* Tool selector — zoom box on right, expands to input on click */}
+        {/* Menu button — zoom box on right */}
         <div style={{ position: 'relative', flexShrink: 0, marginLeft: 'auto', zIndex: 1 }}>
-          {isEditingTool ? (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              background: '#fff',
-              animation: 'tool-expand 150ms ease-out',
-            }}>
-              <input
-                ref={toolInputRef}
-                list={`tool-list-${shape.id}`}
-                placeholder={pillLabel || docType || 'tool id'}
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => {
-                  e.stopPropagation();
-                  if (e.key === 'Enter') {
-                    const val = (e.target as HTMLInputElement).value.trim();
-                    if (val) handleToolChange(val);
-                    setIsEditingTool(false);
-                  }
-                  if (e.key === 'Escape') {
-                    setIsEditingTool(false);
-                  }
-                }}
-                onBlur={(e) => {
-                  const val = e.target.value.trim();
-                  if (val) handleToolChange(val);
-                  setIsEditingTool(false);
-                }}
-                style={{
-                  fontSize: '10px',
-                  fontWeight: 700,
-                  color: '#000',
-                  padding: '1px 4px',
-                  background: '#fff',
-                  border: '1px solid #808080',
-                  borderTopColor: '#404040',
-                  borderLeftColor: '#404040',
-                  borderRightColor: '#dfdfdf',
-                  borderBottomColor: '#dfdfdf',
-                  fontFamily: 'Geneva, "Lucida Grande", "Helvetica Neue", Helvetica, sans-serif',
-                  outline: 'none',
-                  width: '100px',
-                  cursor: 'text',
-                }}
-              />
-              <datalist id={`tool-list-${shape.id}`}>
-                {tools.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </datalist>
-            </div>
-          ) : (
-            <button
-              title={pillLabel || effectiveToolId || 'Change tool'}
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsEditingTool(true);
-              }}
+          <button
+            title="Menu"
+            onClick={(e) => {
+              e.stopPropagation();
+              setMenuOpen((v) => !v);
+              setIsEditingTool(false);
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            style={{
+              width: '13px',
+              height: '13px',
+              border: 'none',
+              borderTop: '1px solid #808080',
+              borderLeft: '1px solid #808080',
+              borderRight: '1px solid #fff',
+              borderBottom: '1px solid #fff',
+              boxShadow: 'inset 1px 1px 0 #404040, inset -1px -1px 0 #dfdfdf',
+              background: '#c0c0c0',
+              padding: 0,
+              cursor: 'pointer',
+              flexShrink: 0,
+              position: 'relative',
+            }}
+          >
+            <span style={{
+              position: 'absolute',
+              top: '1px',
+              left: '1px',
+              width: '5px',
+              height: '5px',
+              border: '1px solid #999',
+              background: 'transparent',
+            }} />
+          </button>
+
+          {/* Dropdown menu */}
+          {menuOpen && (
+            <div
               onPointerDown={(e) => e.stopPropagation()}
               style={{
-                width: '13px',
-                height: '13px',
-                border: 'none',
-                borderTop: '1px solid #808080',
-                borderLeft: '1px solid #808080',
-                borderRight: '1px solid #fff',
-                borderBottom: '1px solid #fff',
-                boxShadow: 'inset 1px 1px 0 #404040, inset -1px -1px 0 #dfdfdf',
-                background: '#c0c0c0',
-                padding: 0,
-                cursor: 'pointer',
-                flexShrink: 0,
-                position: 'relative',
+                position: 'absolute',
+                top: '100%',
+                right: 0,
+                marginTop: '2px',
+                background: '#fff',
+                border: '1px solid #808080',
+                borderTopColor: '#fff',
+                borderLeftColor: '#fff',
+                borderRightColor: '#404040',
+                borderBottomColor: '#404040',
+                boxShadow: '1px 1px 0 #000',
+                padding: '2px',
+                minWidth: '160px',
+                fontFamily: 'Geneva, "Lucida Grande", "Helvetica Neue", Helvetica, sans-serif',
+                fontSize: '11px',
+                zIndex: 10000,
               }}
             >
-              {/* Inner box for the zoom-box icon */}
-              <span style={{
-                position: 'absolute',
-                top: '1px',
-                left: '1px',
-                width: '5px',
-                height: '5px',
-                border: '1px solid #999',
-                background: 'transparent',
-              }} />
-            </button>
+              {/* Tool selector row */}
+              {isEditingTool ? (
+                <div style={{ padding: '2px' }}>
+                  <input
+                    ref={toolInputRef}
+                    list={`tool-list-${shape.id}`}
+                    placeholder={pillLabel || docType || 'tool id'}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => {
+                      e.stopPropagation();
+                      if (e.key === 'Enter') {
+                        const val = (e.target as HTMLInputElement).value.trim();
+                        if (val) handleToolChange(val);
+                        setIsEditingTool(false);
+                        setMenuOpen(false);
+                      }
+                      if (e.key === 'Escape') {
+                        setIsEditingTool(false);
+                      }
+                    }}
+                    onBlur={(e) => {
+                      const val = e.target.value.trim();
+                      if (val) handleToolChange(val);
+                      setIsEditingTool(false);
+                    }}
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 400,
+                      color: '#000',
+                      padding: '2px 4px',
+                      background: '#fff',
+                      border: '1px solid #808080',
+                      fontFamily: 'inherit',
+                      outline: 'none',
+                      width: '100%',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                  <datalist id={`tool-list-${shape.id}`}>
+                    {tools.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </datalist>
+                </div>
+              ) : (
+                <MenuItem
+                  label={`Tool: ${pillLabel || 'default'}`}
+                  onClick={() => setIsEditingTool(true)}
+                />
+              )}
+              <MenuSeparator />
+              <MenuItem label="Copy automerge URL" onClick={handleCopyAutomergeUrl} />
+              <MenuItem label="Copy URL at heads" onClick={handleCopyUrlAtHeads} />
+              <MenuItem label="Copy tiny.patchwork URL" onClick={handleCopyTinyUrl} />
+              {copied && (
+                <>
+                  <MenuSeparator />
+                  <div style={{
+                    padding: '2px 12px',
+                    color: '#808080',
+                    fontSize: '10px',
+                    textAlign: 'center',
+                  }}>
+                    Copied {copied}
+                  </div>
+                </>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -601,6 +795,7 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
           overflow: 'hidden',
           position: 'relative',
           pointerEvents: isSelectTool ? 'auto' : 'none',
+          userSelect: isFocused ? 'text' : 'none',
         }}
         onPointerDown={isSelectTool ? (e) => { e.stopPropagation(); setIsFocused(true); } : undefined}
         onPointerUp={isSelectTool ? (e) => {
@@ -620,7 +815,6 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
             target.dispatchEvent(click);
           }
         } : undefined}
-        onWheelCapture={isFocused ? (e) => e.stopPropagation() : undefined}
       >
         {docUrl && isImage ? (
           <img

@@ -32,6 +32,7 @@ import {
   type ToolElement,
 } from '@inkandswitch/patchwork-plugins';
 import { PATCHWORK_DOC_SHAPE_TYPE } from './PatchworkDocShape';
+import { makeShapeId as makeDeterministicShapeId } from './tool';
 
 // ---------------------------------------------------------------------------
 // Per-editor context — keyed by editor instance so nested spatial-folders
@@ -228,19 +229,54 @@ export class NewDocShapeTool extends StateNode {
         const docHandle = await (createDocOfDatatype2 as any)(datatype, repo, undefined, hive);
         const docUrl = docHandle.url;
 
-        // Updating docUrl from '' to a real URL triggers the store listener
-        // in tool.tsx which adds the doc to the correct folder's docs list.
-        editor.updateShape({
-          id: shapeId,
-          type: PATCHWORK_DOC_SHAPE_TYPE,
-          props: {
-            docUrl,
-            docName: datatype.name ?? datatypeId,
-            docType: datatypeId,
-            toolId: '',
-          },
-        } as any);
+        // Use the deterministic shape ID (same one reconcile would use) so
+        // remote peers don't end up with duplicate shapes for the same doc.
+        const deterministicId = makeDeterministicShapeId(docUrl);
 
+        // Read the temp shape's position/size before removing it.
+        const tempShape = editor.getShape(shapeId) as any;
+        const sx = tempShape?.x ?? px;
+        const sy = tempShape?.y ?? py;
+        const sw = tempShape?.props?.w ?? finalW;
+        const sh = tempShape?.props?.h ?? finalH;
+
+        // Delete the temp shape (random ID).
+        if (editor.getShape(shapeId)) {
+          editor.deleteShapes([shapeId]);
+        }
+
+        // Create (or update) the shape with the deterministic ID.
+        if (editor.getShape(deterministicId)) {
+          editor.updateShape({
+            id: deterministicId,
+            type: PATCHWORK_DOC_SHAPE_TYPE,
+            props: {
+              docUrl,
+              docName: datatype.name ?? datatypeId,
+              docType: datatypeId,
+              toolId: '',
+            },
+          } as any);
+        } else {
+          editor.createShape({
+            id: deterministicId,
+            type: PATCHWORK_DOC_SHAPE_TYPE,
+            x: sx,
+            y: sy,
+            rotation: 0,
+            parentId: editor.getCurrentPageId(),
+            props: {
+              w: sw,
+              h: sh,
+              docUrl,
+              docName: datatype.name ?? datatypeId,
+              docType: datatypeId,
+              toolId: '',
+            },
+          } as any);
+        }
+
+        editor.setSelectedShapes([deterministicId]);
         console.log('[spatial-folder] new doc created:', datatypeId, docUrl);
       } catch (err) {
         console.error('[spatial-folder] new doc creation failed:', err);
@@ -269,6 +305,10 @@ export const newDocUiOverrides: TLUiOverrides = {
         _editor.setCurrentTool('new-doc');
       },
     };
+    // Remove 'd' keybinding for draw tool (conflicts with embedded tools)
+    if (tools['draw']) {
+      tools['draw'] = { ...tools['draw'], kbd: '' };
+    }
     return tools;
   },
 };
