@@ -4,7 +4,8 @@ import { Tldraw, useEditor, getMediaAssetInfoPartial, type VecLike, type TLConte
 import { useAutomergeStore, useAutomergePresence } from "./automerge/useAutomergeStore.ts";
 import type { CreatureSketchDoc } from "./datatype.ts";
 import { PatchworkTokenShapeUtil } from "./PatchworkTokenShape.tsx";
-import { PatchworkWindowShapeUtil, PATCHWORK_WINDOW_TYPE } from "./PatchworkWindowShape.tsx";
+import { PatchworkViewShapeUtil, PATCHWORK_VIEW_TYPE } from "./PatchworkViewShape.tsx";
+import { MonsterShapeUtil, MonsterShapeTool, monsterUiOverrides, monsterComponents } from "./monster/index.tsx";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { UnixFileEntry } from "@inkandswitch/patchwork-filesystem";
 import { automergeUrlToServiceWorkerUrl } from "@inkandswitch/patchwork-filesystem";
@@ -56,14 +57,16 @@ function useContactInfo() {
   };
 }
 
-const VERSION = "0.2.0";
+const VERSION = "0.3.0";
 
-const customShapeUtils = [PatchworkTokenShapeUtil, PatchworkWindowShapeUtil];
+const customShapeUtils = [PatchworkTokenShapeUtil, PatchworkViewShapeUtil, MonsterShapeUtil];
+const customTools = [MonsterShapeTool];
 
-const hiddenUiComponents: TLUiComponents = {
+const uiComponents: TLUiComponents = {
   PageMenu: null,
   QuickActions: null,
   ActionsMenu: null,
+  ...monsterComponents,
 };
 
 export function CreatureSketchTool({ docUrl }: { docUrl: AutomergeUrl }) {
@@ -83,7 +86,7 @@ export function CreatureSketchTool({ docUrl }: { docUrl: AutomergeUrl }) {
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
-      <Tldraw inferDarkMode autoFocus store={store} shapeUtils={customShapeUtils} components={hiddenUiComponents}>
+      <Tldraw inferDarkMode autoFocus store={store} shapeUtils={customShapeUtils} tools={customTools} overrides={monsterUiOverrides} components={uiComponents}>
         <TldrawInner docUrl={docUrl} />
       </Tldraw>
       <div
@@ -216,21 +219,28 @@ function TldrawInner(props: { docUrl: AutomergeUrl }) {
       e.preventDefault();
       e.stopImmediatePropagation();
 
-      let parsed: { source?: string; items?: unknown[] };
+      let parsed: { source?: string; items?: { url?: string; name?: string; type?: string }[] };
       try {
         parsed = JSON.parse(raw);
       } catch {
         return;
       }
 
+      const firstItem = parsed.items?.[0];
       const point = editor.screenToPage({ x: e.clientX, y: e.clientY });
 
-      editor.markHistoryStoppingPoint("drop patchwork window");
+      editor.markHistoryStoppingPoint("drop patchwork view");
       editor.createShape({
-        type: PATCHWORK_WINDOW_TYPE,
+        type: PATCHWORK_VIEW_TYPE,
         x: point.x - 200,
         y: point.y - 150,
-        props: { w: 400, h: 300, data: raw },
+        props: {
+          w: 400,
+          h: 300,
+          docUrl: firstItem?.url ?? "",
+          docName: firstItem?.name ?? "",
+          toolId: firstItem?.type || "raw",
+        },
       });
     };
 

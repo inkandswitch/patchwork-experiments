@@ -4,19 +4,19 @@
   padding: 0px;
 }
 
-.patchwork-window-header {
+.patchwork-view-header {
   border-radius: 8px 8px 0 0;
 }
 
-.patchwork-window-token {
+.patchwork-view-token {
   transition: background 0.15s, box-shadow 0.15s;
 }
 
-.patchwork-window-token:hover {
+.patchwork-view-token:hover {
   box-shadow: 0 0 0 2px rgba(0, 120, 255, 0.3);
 }
 
-.patchwork-window-token:active {
+.patchwork-view-token:active {
   cursor: grabbing;
   opacity: 0.7;
 }
