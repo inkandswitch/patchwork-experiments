@@ -3,7 +3,8 @@ import { useDocHandle, useDocument, useRepo } from "@automerge/react";
 import { Tldraw, useEditor, getMediaAssetInfoPartial, type VecLike, type TLContent, type TLAssetId, type TLAsset, type TLUiComponents } from "@tldraw/tldraw";
 import { useAutomergeStore, useAutomergePresence } from "./automerge/useAutomergeStore.ts";
 import type { CreatureSketchDoc } from "./datatype.ts";
-import { PatchworkTokenShapeUtil, PATCHWORK_TOKEN_TYPE } from "./PatchworkTokenShape.tsx";
+import { PatchworkTokenShapeUtil } from "./PatchworkTokenShape.tsx";
+import { PatchworkWindowShapeUtil, PATCHWORK_WINDOW_TYPE } from "./PatchworkWindowShape.tsx";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { UnixFileEntry } from "@inkandswitch/patchwork-filesystem";
 import { automergeUrlToServiceWorkerUrl } from "@inkandswitch/patchwork-filesystem";
@@ -55,9 +56,9 @@ function useContactInfo() {
   };
 }
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 
-const customShapeUtils = [PatchworkTokenShapeUtil];
+const customShapeUtils = [PatchworkTokenShapeUtil, PatchworkWindowShapeUtil];
 
 const hiddenUiComponents: TLUiComponents = {
   PageMenu: null,
@@ -223,15 +224,13 @@ function TldrawInner(props: { docUrl: AutomergeUrl }) {
       }
 
       const point = editor.screenToPage({ x: e.clientX, y: e.clientY });
-      const itemCount = Array.isArray(parsed.items) ? parsed.items.length : 1;
-      const h = 40 + itemCount * 28;
 
-      editor.markHistoryStoppingPoint("drop patchwork token");
+      editor.markHistoryStoppingPoint("drop patchwork window");
       editor.createShape({
-        type: PATCHWORK_TOKEN_TYPE,
-        x: point.x,
-        y: point.y,
-        props: { w: 220, h, data: raw },
+        type: PATCHWORK_WINDOW_TYPE,
+        x: point.x - 200,
+        y: point.y - 150,
+        props: { w: 400, h: 300, data: raw },
       });
     };
 

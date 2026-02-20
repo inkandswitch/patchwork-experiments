@@ -3,6 +3,7 @@ import { createTLStore, defaultShapeUtils, type SerializedSchema, type Serialize
 
 import { tldrawValueToAutomergeValue } from "./automerge/TLStoreToAutomerge.ts";
 import { PatchworkTokenShapeUtil } from "./PatchworkTokenShape.tsx";
+import { PatchworkWindowShapeUtil } from "./PatchworkWindowShape.tsx";
 
 // SCHEMA
 export type CreatureSketchDoc = {
@@ -29,7 +30,7 @@ export const init = (doc: CreatureSketchDoc) => {
     doc,
     tldrawValueToAutomergeValue(
       createTLStore({
-        shapeUtils: [...defaultShapeUtils, PatchworkTokenShapeUtil],
+        shapeUtils: [...defaultShapeUtils, PatchworkTokenShapeUtil, PatchworkWindowShapeUtil],
       }).getStoreSnapshot()
     )
   );
