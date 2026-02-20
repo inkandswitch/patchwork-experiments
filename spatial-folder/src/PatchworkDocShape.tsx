@@ -428,13 +428,32 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
   // the shape content is focused.  This prevents tldraw keybindings from
   // activating, wheel-to-zoom from hijacking scroll, and pointer capture
   // from blocking text selection inside embedded tools.
+  //
+  // After stopping propagation we re-dispatch a clone of the event
+  // directly on `document` so that frameworks with document-level event
+  // delegation (Solid.js, etc.) still receive keyboard and pointer events.
   useEffect(() => {
     if (!isFocused) return;
     const el = contentRef.current;
     if (!el) return;
 
+    // Re-dispatch an event on `document` preserving the original target
+    // and composedPath so framework delegation walks the right DOM path.
+    const REDISPATCHED = Symbol.for('patchwork-redispatched');
+    const redispatchToDocument = (e: Event) => {
+      const target = e.target;
+      const path = e.composedPath();
+      const clone = new (e.constructor as any)(e.type, e);
+      (clone as any)[REDISPATCHED] = true;
+      Object.defineProperty(clone, 'target', { value: target });
+      clone.composedPath = () => path;
+      document.dispatchEvent(clone);
+    };
+
     const stopKey = (e: KeyboardEvent) => {
+      if ((e as any)[REDISPATCHED]) return;
       e.stopPropagation();
+      redispatchToDocument(e);
     };
     const stopWheel = (e: WheelEvent) => {
       // Let pinch-to-zoom (ctrlKey + wheel) pass through to tldraw
@@ -442,7 +461,9 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
       e.stopPropagation();
     };
     const stopPointer = (e: PointerEvent) => {
+      if ((e as any)[REDISPATCHED]) return;
       e.stopPropagation();
+      redispatchToDocument(e);
     };
 
     el.addEventListener('keydown', stopKey);

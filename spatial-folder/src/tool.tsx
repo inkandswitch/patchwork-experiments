@@ -1,3 +1,19 @@
+// Side-effect dynamic imports to coax esbuild into chunking packages separately
+import('react');
+import('react-dom/client');
+import('@tldraw/editor');
+import('@tldraw/state');
+import('@tldraw/state-react');
+import('@tldraw/store');
+import('@tldraw/tlschema');
+import('@tldraw/utils');
+import('@tldraw/validate');
+import('@tiptap/core');
+import('@tiptap/pm/state');
+import('@tiptap/pm/view');
+import('@tiptap/pm/model');
+import('@tiptap/react');
+
 import {
   Tldraw,
   Editor,
