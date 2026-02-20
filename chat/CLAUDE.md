@@ -20,7 +20,7 @@ A patchwork chat tool with Discord/IRC-style layout, built as a single vanilla J
     name: string,         // sender display name
     text: string,
     timestamp: number,
-    font?: string,        // from contact.chat.font
+    font?: string,        // from chat profile doc (contact.chatProfileUrl)
     avatarUrl?: string,   // automerge URL to avatar file doc
     replyTo?: string,     // id of message being replied to
     imageUrl?: string,    // automerge URL to pasted image file doc
@@ -47,6 +47,18 @@ A patchwork chat tool with Discord/IRC-style layout, built as a single vanilla J
 - Full emoji picker overlay with 160+ emojis and search
 - Reactions display as badges with count; clicking toggles your reaction
 - `+` button on reaction row opens picker to add more
+
+### Custom Emoticons
+- Users can add custom emoticons (images resized to 128x128, encoded as WebP)
+- Stored in the chat profile doc at `.emoticons` — a `{name: automergeUrl}` map
+- File docs are standard patchwork file docs (`@patchwork.type: "file"`, content as Uint8Array)
+- Animated GIFs are decoded with `gifuct-js` (from esm.sh), resized frame-by-frame to 128x128, and re-encoded as GIF with transparency via `SimpleGIFEncoder`
+- Static images are resized to 128x128 and encoded as WebP
+- Emoticon catalog is broadcast via presence so peers see each other's emoticons
+- Use `:name:` syntax in messages to insert emoticons inline
+- Messages embed the emoticon URLs they reference in a `.emoticons` field for offline rendering
+- Adopt button ("+") appears on hover over other users' emoticons in the picker
+- Add dialog: name input + file picker, accessible from the emoticon section header
 
 ### Presence & Typing
 - Broadcasts presence every 10s via ephemeral messages
@@ -104,10 +116,33 @@ Resolved from `window.accountDocHandle`:
 ```js
 const ad = accountDocHandle.doc()
 const contact = await repo.find(ad.contactUrl)
-// contact.doc().name        -> display name
-// contact.doc().chat?.font  -> custom font
-// contact.doc().avatarUrl   -> avatar file doc URL
+// contact.doc().name             -> display name
+// contact.doc().chatProfileUrl   -> automerge URL to chat profile doc
+// contact.doc().avatarUrl        -> avatar file doc URL
 ```
+
+### Chat Profile Doc
+
+Stored at `contact.chatProfileUrl`. Contains per-user chat preferences and read state:
+```js
+{
+  font?: string,          // custom font family for messages
+  readPositions: {        // per-chat read tracking
+    [chatUrl]: number     // timestamp of last read message
+  }
+}
+```
+
+On first load, if the contact has `.chat.font` but no `.chatProfileUrl`, the tool
+migrates by creating the profile doc and deleting the old `.chat` field.
+
+### Notifications & Unread Tracking
+
+- The `<title>` shows `* ChatTitle` when there are unread messages
+- When someone is typing: `name is typing… — ChatTitle`
+- Both combine: `* name is typing… — ChatTitle`
+- A notification sound (`3beep.mp3`) plays when a new message arrives while the window is not focused
+- Read position updates when: window is visible AND scroll is at the bottom
 
 ## Event Handling (tldraw embedding issue)
 
