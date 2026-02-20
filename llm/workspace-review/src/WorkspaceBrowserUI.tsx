@@ -4,6 +4,7 @@ import type { ToolImplementation } from "@inkandswitch/patchwork-plugins";
 import { toolify } from "@inkandswitch/patchwork-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createWorkspaceRepo, type WorkspaceOverlay } from "./scoped-elements/workspace-repo";
+import { OpenDocumentEvent } from "./scoped-elements/events";
 import type { WorkspaceDoc } from "./types";
 
 type ReactToolProps = {
@@ -137,12 +138,29 @@ const WorkspaceBrowser = ({ docUrl }: ReactToolProps) => {
                 />
               )}
             </div>
-            <div className="flex-1 min-w-0 overflow-hidden">
+            <div className="flex-1 min-w-0 overflow-hidden flex flex-col">
               {selectedUrl ? (
-                <patchwork-view-scoped
-                  doc-url={selectedUrl}
-                  style={{ display: "block", width: "100%", height: "100%" }}
-                />
+                <>
+                  <div className="flex items-center justify-end px-3 py-1.5 border-b border-base-content/[0.06] shrink-0">
+                    <button
+                      className="btn btn-xs btn-ghost gap-1 text-base-content/50 hover:text-base-content"
+                      onClick={(e) => {
+                        e.currentTarget.dispatchEvent(
+                          new OpenDocumentEvent({ url: selectedUrl })
+                        );
+                      }}
+                    >
+                      Open
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/><path d="m21 3-9 9"/><path d="M15 3h6v6"/></svg>
+                    </button>
+                  </div>
+                  <div className="flex-1 min-h-0">
+                    <patchwork-view-scoped
+                      doc-url={selectedUrl}
+                      style={{ display: "block", width: "100%", height: "100%" }}
+                    />
+                  </div>
+                </>
               ) : (
                 <div className="flex items-center justify-center h-full text-sm text-base-content/30">
                   Select a file to preview
