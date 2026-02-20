@@ -2,14 +2,19 @@
  * Call Titlebar — compact call indicator for the Patchwork titlebar.
  *
  * Shows a green dot, participant count, and tiny circular video thumbnails
- * when a CallSession is active. Clicking opens a popover with "Return to call"
- * and "Hang up" options.
+ * when a CallSession is active. Clicking opens a popover (portaled to body)
+ * with "Go to call" / "Go back" and "Hang up" options.
+ *
+ * Listens for `patchwork-call-session-changed` on window so it picks up
+ * sessions that start after the titlebar has already mounted.
  */
 
 import { getCallSession } from "./call-session.js";
 
-function createStyles() {
+function injectStyles() {
+  if (document.getElementById("call-titlebar-styles")) return;
   const style = document.createElement("style");
+  style.id = "call-titlebar-styles";
   style.textContent = `
     .call-titlebar {
       display: flex;
@@ -24,7 +29,6 @@ function createStyles() {
       background: rgba(34, 197, 94, 0.15);
       border: 1px solid rgba(34, 197, 94, 0.3);
       transition: background 0.15s;
-      position: relative;
       user-select: none;
       height: 28px;
       box-sizing: border-box;
@@ -82,19 +86,18 @@ function createStyles() {
     }
 
     .call-titlebar-popover {
-      position: absolute;
-      top: calc(100% + 6px);
-      right: 0;
+      position: fixed;
       background: #1e1e2e;
       border: 1px solid rgba(255, 255, 255, 0.12);
       border-radius: 10px;
       padding: 4px;
-      min-width: 160px;
+      min-width: 180px;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-      z-index: 100;
+      z-index: 10000;
       display: flex;
       flex-direction: column;
       gap: 2px;
+      font-family: system-ui, -apple-system, sans-serif;
     }
 
     .call-titlebar-popover button {
@@ -125,21 +128,24 @@ function createStyles() {
       background: rgba(239, 68, 68, 0.15);
     }
   `;
-  return style;
+  document.head.appendChild(style);
 }
 
 const MAX_THUMBS = 4;
 
 export default function CallTitlebarTool(handle, element) {
-  const session = getCallSession();
-  if (!session || !session.joined || session.destroyed) {
-    // Nothing to show
-    return () => {};
+  injectStyles();
+
+  let session = getCallSession();
+  let destroyed = false;
+  const listeners = [];
+
+  function on(target, event, handler) {
+    target.addEventListener(event, handler);
+    listeners.push({ target, event, handler });
   }
 
-  const style = createStyles();
-  element.appendChild(style);
-
+  // ---- Root element ----
   const root = document.createElement("div");
   root.className = "call-titlebar";
   element.appendChild(root);
@@ -152,102 +158,84 @@ export default function CallTitlebarTool(handle, element) {
   count.className = "call-titlebar-count";
   root.appendChild(count);
 
-  const thumbs = document.createElement("div");
-  thumbs.className = "call-titlebar-thumbs";
-  root.appendChild(thumbs);
+  const thumbsContainer = document.createElement("div");
+  thumbsContainer.className = "call-titlebar-thumbs";
+  root.appendChild(thumbsContainer);
 
+  // ---- Popover (portaled to body) ----
   let popover = null;
-  const listeners = [];
-
-  function on(target, event, handler) {
-    target.addEventListener(event, handler);
-    listeners.push({ target, event, handler });
-  }
-
-  function render() {
-    if (!session || session.destroyed) {
-      root.style.display = "none";
-      return;
-    }
-
-    const participantCount = 1 + session.peers.size;
-    count.textContent = String(participantCount);
-
-    // Rebuild thumbnails
-    thumbs.innerHTML = "";
-
-    // Local thumbnail
-    if (session.localStream) {
-      const vid = document.createElement("video");
-      vid.className = "call-titlebar-thumb local";
-      vid.autoplay = true;
-      vid.muted = true;
-      vid.playsInline = true;
-      vid.srcObject = session.localStream;
-      thumbs.appendChild(vid);
-    }
-
-    // Remote thumbnails
-    let shown = 0;
-    for (const [, peer] of session.peers) {
-      if (shown >= MAX_THUMBS - 1) break; // -1 for local
-      const vid = document.createElement("video");
-      vid.className = "call-titlebar-thumb";
-      vid.autoplay = true;
-      vid.muted = true;
-      vid.playsInline = true;
-      vid.srcObject = peer.stream;
-      thumbs.appendChild(vid);
-      shown++;
-    }
-
-    // Overflow indicator
-    const remaining = session.peers.size - shown;
-    if (remaining > 0) {
-      const overflow = document.createElement("span");
-      overflow.className = "call-titlebar-overflow";
-      overflow.textContent = `+${remaining}`;
-      thumbs.appendChild(overflow);
-    }
-
-    root.style.display = "";
-  }
 
   function openPopover() {
     if (popover) {
       closePopover();
       return;
     }
+    if (!session || session.destroyed) return;
 
     popover = document.createElement("div");
     popover.className = "call-titlebar-popover";
 
-    const returnBtn = document.createElement("button");
-    returnBtn.innerHTML = "\u{1F4DE} Return to call";
-    returnBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      closePopover();
-      element.dispatchEvent(
-        new CustomEvent("patchwork:open-document", {
-          detail: { url: session.callUrl },
-          bubbles: true,
-          composed: true,
-        })
-      );
-    });
+    // Position relative to the root button
+    const rect = root.getBoundingClientRect();
+    popover.style.top = `${rect.bottom + 6}px`;
+    popover.style.right = `${window.innerWidth - rect.right}px`;
+
+    // Determine if we're currently viewing the call doc
+    const viewingCall = handle.url === session.callUrl;
+
+    if (viewingCall) {
+      // We're on the call doc — offer "Go back" if we have a return URL
+      if (session.returnUrl) {
+        const goBackBtn = document.createElement("button");
+        goBackBtn.textContent = "\u{2190} Go back";
+        goBackBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          closePopover();
+          const url = session.returnUrl;
+          const toolId = session.returnToolId;
+          element.dispatchEvent(
+            new CustomEvent("patchwork:open-document", {
+              detail: { url, toolId },
+              bubbles: true,
+              composed: true,
+            })
+          );
+        });
+        popover.appendChild(goBackBtn);
+      }
+    } else {
+      // We're on a different doc — offer "Go to call"
+      const goToCallBtn = document.createElement("button");
+      goToCallBtn.textContent = "\u{1F4DE} Go to call";
+      goToCallBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        closePopover();
+        // Store current location so we can come back
+        session.returnUrl = handle.url;
+        // Try to get toolId from the element
+        session.returnToolId = element.hive?.currentToolId || null;
+        element.dispatchEvent(
+          new CustomEvent("patchwork:open-document", {
+            detail: { url: session.callUrl },
+            bubbles: true,
+            composed: true,
+          })
+        );
+      });
+      popover.appendChild(goToCallBtn);
+    }
 
     const hangUpBtn = document.createElement("button");
     hangUpBtn.className = "hangup";
-    hangUpBtn.innerHTML = "\u{260E}\u{FE0F} Hang up";
+    hangUpBtn.textContent = "\u{260E}\u{FE0F} Hang up";
     hangUpBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       closePopover();
       session.leave();
     });
-
-    popover.appendChild(returnBtn);
     popover.appendChild(hangUpBtn);
-    root.appendChild(popover);
+
+    document.body.appendChild(popover);
   }
 
   function closePopover() {
@@ -263,30 +251,111 @@ export default function CallTitlebarTool(handle, element) {
   });
 
   on(document, "pointerdown", (e) => {
-    if (popover && !root.contains(e.target)) {
+    if (popover && !popover.contains(e.target) && !root.contains(e.target)) {
       closePopover();
     }
   });
 
-  // Session events
-  on(session, "peers-changed", render);
-  on(session, "media-changed", render);
-  on(session, "state-changed", render);
-  on(session, "destroyed", () => {
-    root.style.display = "none";
-    closePopover();
+  // ---- Render ----
+
+  function render() {
+    if (!session || !session.joined || session.destroyed) {
+      root.style.display = "none";
+      closePopover();
+      return;
+    }
+
+    root.style.display = "";
+
+    const participantCount = 1 + session.peers.size;
+    count.textContent = String(participantCount);
+
+    // Rebuild thumbnails
+    thumbsContainer.innerHTML = "";
+
+    // Local thumbnail
+    if (session.localStream) {
+      const vid = document.createElement("video");
+      vid.className = "call-titlebar-thumb local";
+      vid.autoplay = true;
+      vid.muted = true;
+      vid.playsInline = true;
+      vid.srcObject = session.localStream;
+      thumbsContainer.appendChild(vid);
+    }
+
+    // Remote thumbnails
+    let shown = 0;
+    for (const [, peer] of session.peers) {
+      if (shown >= MAX_THUMBS - 1) break;
+      const vid = document.createElement("video");
+      vid.className = "call-titlebar-thumb";
+      vid.autoplay = true;
+      vid.muted = true;
+      vid.playsInline = true;
+      vid.srcObject = peer.stream;
+      thumbsContainer.appendChild(vid);
+      shown++;
+    }
+
+    // Overflow indicator
+    const remaining = session.peers.size - shown;
+    if (remaining > 0) {
+      const overflow = document.createElement("span");
+      overflow.className = "call-titlebar-overflow";
+      overflow.textContent = `+${remaining}`;
+      thumbsContainer.appendChild(overflow);
+    }
+  }
+
+  // ---- Session binding ----
+
+  function unbindSession() {
+    // Session event listeners are tracked in `listeners` and cleaned up globally
+  }
+
+  function bindSession(s) {
+    session = s;
+    if (!s) return;
+    on(s, "peers-changed", render);
+    on(s, "media-changed", render);
+    on(s, "state-changed", render);
+    on(s, "destroyed", () => {
+      session = null;
+      render();
+    });
+  }
+
+  // Listen for session creation/change (covers the case where session
+  // starts after this titlebar tool has already mounted)
+  on(window, "patchwork-call-session-changed", () => {
+    if (destroyed) return;
+    const newSession = getCallSession();
+    if (newSession !== session) {
+      session = null; // clear so we re-bind
+      if (newSession && !newSession.destroyed) {
+        bindSession(newSession);
+      }
+      render();
+    } else {
+      render();
+    }
   });
 
+  // Initial bind
+  if (session && session.joined && !session.destroyed) {
+    bindSession(session);
+  }
   render();
 
-  // Cleanup
+  // ---- Cleanup ----
   return () => {
+    destroyed = true;
     for (const { target, event, handler } of listeners) {
       target.removeEventListener(event, handler);
     }
     listeners.length = 0;
     closePopover();
     root.remove();
-    style.remove();
   };
 }

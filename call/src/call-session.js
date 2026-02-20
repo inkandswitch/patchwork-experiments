@@ -107,6 +107,10 @@ export class CallSession extends EventTarget {
     this.sendQuality = "high";
     this.myName = "unknown";
 
+    // Navigation: where the user was before joining the call
+    this.returnUrl = null;
+    this.returnToolId = null;
+
     // Peer connections: remotePeerId -> { pc, polite, stream, name, lastHeartbeat, reconnectAttempts, connectionState, pendingCandidates, makingOffer }
     this.peers = new Map();
 
@@ -168,7 +172,12 @@ export class CallSession extends EventTarget {
     if (existing) existing.leave();
     const session = new CallSession(handle, repo);
     window.__patchworkCallSession = session;
+    CallSession._notifyChanged();
     return session;
+  }
+
+  static _notifyChanged() {
+    window.dispatchEvent(new CustomEvent("patchwork-call-session-changed"));
   }
 
   static async isActiveInAnotherTab(callUrl) {
@@ -361,6 +370,10 @@ export class CallSession extends EventTarget {
     this.joined = true;
     this._emit("state-changed");
     this._emit("media-changed");
+    CallSession._notifyChanged();
+    // Re-notify after a tick — titlebar tools may have mounted during the
+    // async acquireMedia() gap and missed the synchronous event.
+    setTimeout(() => CallSession._notifyChanged(), 0);
 
     this._startTranscription();
 
@@ -432,6 +445,7 @@ export class CallSession extends EventTarget {
     }
 
     this._emit("destroyed");
+    CallSession._notifyChanged();
   }
 
   // ---- Toggle controls ----
