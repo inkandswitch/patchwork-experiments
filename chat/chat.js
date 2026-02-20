@@ -57,52 +57,22 @@ function createStyles() {
        --theme-fg uses contrast-color (with fallback).
        ================================================================ */
     .chat-root {
-      /* Default theme: Discord-ish indigo */
+      /* All theme variables are set dynamically by setTheme() in JS.
+         These are just fallback defaults. */
       --theme: oklch(0.55 0.18 270);
-
-      /* Surfaces: theme color mixed with black to create darker shades.
-         This preserves the theme's hue and just shifts lightness down. */
-      --bg-darkest:  color-mix(in oklch, var(--theme) 15%, black);
-      --bg-dark:     color-mix(in oklch, var(--theme) 20%, black);
-      --bg-mid:      color-mix(in oklch, var(--theme) 25%, black);
-      --bg-hover:    color-mix(in oklch, var(--theme) 30%, black);
-      --bg-input:    color-mix(in oklch, var(--theme) 22%, black);
-      --border:      color-mix(in oklch, var(--theme) 40%, black);
-
-      /* Accent */
-      --accent:       var(--theme);
-      --accent-hover: color-mix(in oklch, var(--theme) 85%, oklch(0.35 0 0));
-      --accent-soft:  color-mix(in oklch, var(--theme) 15%, transparent);
-
-      /* Text: contrast against the background */
+      --bg-darkest:  oklch(0.12 0.02 270);
+      --bg-dark:     oklch(0.15 0.03 270);
+      --bg-mid:      oklch(0.19 0.03 270);
+      --bg-hover:    oklch(0.22 0.04 270);
+      --bg-input:    oklch(0.17 0.03 270);
+      --border:      oklch(0.28 0.05 270);
+      --accent:      oklch(0.55 0.18 270);
+      --accent-hover: oklch(0.45 0.15 270);
+      --accent-soft: oklch(0.55 0.18 270 / 0.15);
+      --accent-fg:   oklch(1 0 0);
       --text-primary:   oklch(0.93 0.01 0);
       --text-secondary: oklch(0.68 0.01 0);
       --text-muted:     oklch(0.55 0.01 0);
-
-      /* Accent foreground */
-      --accent-fg: oklch(1 0 0);
-    }
-
-    /* Light theme: when --theme has high luminosity, flip the base to light */
-    .chat-root.light-mode {
-      --bg-darkest:  color-mix(in oklch, var(--theme) 15%, white);
-      --bg-dark:     color-mix(in oklch, var(--theme) 10%, white);
-      --bg-mid:      color-mix(in oklch, var(--theme) 8%, white);
-      --bg-hover:    color-mix(in oklch, var(--theme) 18%, white);
-      --bg-input:    color-mix(in oklch, var(--theme) 5%, white);
-      --border:      color-mix(in oklch, var(--theme) 20%, white);
-      --accent-hover: color-mix(in oklch, var(--theme) 80%, black);
-      --text-primary:   oklch(0.15 0.01 0);
-      --text-secondary: oklch(0.35 0.01 0);
-      --text-muted:     oklch(0.50 0.01 0);
-      --accent-fg: oklch(1 0 0);
-    }
-
-    @supports (color: contrast-color(red max)) {
-      .chat-root {
-        --accent-fg: contrast-color(var(--theme) max);
-        --text-primary: contrast-color(var(--bg-dark) max);
-      }
     }
 
     /* ---- Reset ---- */
@@ -116,20 +86,12 @@ function createStyles() {
     }
     .chat-root *, .chat-root *::before, .chat-root *::after { box-sizing:border-box; }
 
-    /* ---- Header ---- */
-    .chat-header {
-      padding:12px 16px; background:var(--bg-darkest); color:var(--text-primary);
-      font-size:16px; font-weight:700; flex-shrink:0;
-      display:flex; align-items:center; gap:10px;
-      border-bottom:1px solid var(--border);
-    }
-    .chat-header-title { flex:1; }
-    .chat-header-actions { display:flex; gap:4px; align-items:center; }
-    .chat-header-btn {
+    /* Theme button */
+    .chat-theme-btn {
       background:none; border:none; color:var(--text-secondary); cursor:pointer;
-      font-size:18px; padding:4px 8px; border-radius:4px; position:relative;
+      font-size:16px; padding:2px 6px; border-radius:4px; position:relative; margin-left:auto;
     }
-    .chat-header-btn:hover { background:var(--bg-hover); color:var(--text-primary); }
+    .chat-theme-btn:hover { background:var(--bg-hover); color:var(--text-primary); }
 
     /* Theme picker popover */
     .chat-theme-popover {
@@ -156,8 +118,14 @@ function createStyles() {
       border-bottom:1px solid var(--border);
       display:flex; gap:8px; align-items:center; flex-shrink:0; min-height:24px;
     }
-    .chat-presence-user { display:flex; align-items:center; gap:4px; font-size:12px; color:var(--text-secondary); }
-    .chat-presence-dot { width:8px; height:8px; border-radius:50%; background:#23a55a; flex-shrink:0; }
+    .chat-presence-user { display:flex; align-items:center; gap:4px; font-size:12px; color:var(--text-secondary); transition:opacity 0.2s; }
+    .chat-presence-user.away { opacity:0.9; }
+    .chat-presence-avatar {
+      width:18px; height:18px; border-radius:50%; overflow:hidden; flex-shrink:0;
+      background:var(--bg-hover); display:flex; align-items:center; justify-content:center;
+      font-size:10px; color:var(--text-muted);
+    }
+    .chat-presence-avatar img { width:100%; height:100%; object-fit:cover; }
 
     /* ---- Messages ---- */
     .chat-messages { flex:1; overflow-y:auto; padding:8px 0; display:flex; flex-direction:column; min-height:0; }
@@ -200,10 +168,10 @@ function createStyles() {
     .chat-msg-continuation.has-gif { padding-left:16px; display:flex; gap:12px; align-items:flex-start; }
     .chat-msg-continuation:hover { background:var(--bg-hover); }
     .chat-msg-inline-time {
-      display:none; font-size:11px; color:var(--text-muted);
-      position:absolute; left:16px; top:2px; width:48px; text-align:right;
+      font-size:10px; color:var(--text-muted);
+      position:absolute; top:100%; right:0; white-space:nowrap;
+      margin-top:2px; pointer-events:none;
     }
-    .chat-msg-continuation:hover .chat-msg-inline-time { display:block; }
 
     /* GIF selfie shown inline in continuation */
     .chat-msg-gif-inline {
@@ -229,6 +197,19 @@ function createStyles() {
 
     /* Images */
     .chat-msg-image { max-width:350px; max-height:300px; border-radius:8px; margin-top:4px; cursor:pointer; }
+
+    /* Patchwork doc embed */
+    .chat-msg-embed {
+      margin-top:6px; border:1px solid var(--border); border-radius:8px;
+      overflow:hidden; max-width:350px; height:200px; position:relative;
+      background:var(--bg-surface);
+    }
+    .chat-msg-embed patchwork-view { width:100%; height:100%; display:block; }
+    .chat-msg-embed-title {
+      position:absolute; bottom:0; left:0; right:0; padding:4px 8px;
+      font-size:11px; color:var(--text-secondary); background:var(--bg-darkest);
+      border-top:1px solid var(--border); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
 
     /* Voice note */
     .chat-voice-note {
@@ -266,7 +247,7 @@ function createStyles() {
     .chat-msg-actions {
       position:absolute; top:-14px; right:16px; display:none;
       background:var(--bg-darkest); border:1px solid var(--border);
-      border-radius:4px; overflow:hidden; z-index:10;
+      border-radius:4px; z-index:10;
     }
     .chat-msg-group:hover .chat-msg-actions,
     .chat-msg-continuation:hover .chat-msg-actions { display:flex; }
@@ -284,18 +265,42 @@ function createStyles() {
     .chat-emoji-picker {
       position:absolute; background:var(--bg-darkest); border:1px solid var(--border);
       border-radius:8px; padding:8px; box-shadow:0 4px 20px rgba(0,0,0,0.3);
-      z-index:101; display:flex; flex-wrap:wrap; gap:2px; max-width:300px;
+      z-index:101; max-width:280px; width:280px; display:flex; flex-direction:column;
+      max-height:320px;
     }
-    .chat-emoji-picker button {
+    .chat-emoji-grid {
+      display:flex; flex-wrap:wrap; gap:2px; max-height:200px; overflow-y:auto; min-height:0;
+      overscroll-behavior:contain;
+    }
+    .chat-emoji-grid button {
       background:none; border:none; font-size:22px; cursor:pointer; padding:4px;
       border-radius:4px; width:36px; height:36px; display:flex; align-items:center; justify-content:center;
     }
-    .chat-emoji-picker button:hover { background:var(--bg-hover); }
+    .chat-emoji-grid button:hover { background:var(--bg-hover); }
     .chat-emoji-picker-search {
       width:100%; padding:6px 10px; background:var(--bg-input); border:1px solid var(--border);
       border-radius:4px; color:var(--text-primary); font-size:14px; margin-bottom:6px; outline:none;
+      flex-shrink:0;
     }
     .chat-emoji-picker-search:focus { border-color:var(--accent); }
+
+    /* Message context menu (... button) */
+    .chat-msg-menu-wrap { position:relative; }
+    .chat-msg-menu {
+      display:none; position:absolute; top:100%; right:0; margin-top:2px;
+      background:var(--bg-darkest); border:1px solid var(--border); border-radius:6px;
+      padding:4px 0; min-width:120px; z-index:20;
+      box-shadow:0 4px 12px rgba(0,0,0,0.3);
+    }
+    .chat-msg-menu.show { display:block; }
+    .chat-msg-menu-item {
+      display:flex; align-items:center; gap:8px; width:100%; padding:6px 12px;
+      background:none; border:none; color:var(--text-primary); font-size:13px;
+      cursor:pointer; text-align:left;
+    }
+    .chat-msg-menu-item:hover { background:var(--bg-hover); }
+    .chat-msg-menu-item.danger { color:#ed4245; }
+    .chat-msg-menu-item.danger:hover { background:rgba(237,66,69,0.1); }
 
     /* ---- Bottom area ---- */
     .chat-typing-bar {
@@ -389,7 +394,7 @@ function createStyles() {
     
     /* GIF recording/processing feedback */
     .chat-gif-toggle.recording {
-      opacity:0.6; pointer-events:none; position:relative;
+      pointer-events:none; position:relative;
     }
     .chat-gif-toggle.recording::after {
       content:""; position:absolute; top:2px; right:2px; width:12px; height:12px;
@@ -400,7 +405,6 @@ function createStyles() {
     
     .chat-input-row.processing .chat-input,
     .chat-input-row.processing .chat-input-btn { opacity:0.5; pointer-events:none; }
-    .chat-input-row.processing .chat-gif-toggle { pointer-events:none; }
 
     .chat-empty {
       flex:1; display:flex; align-items:center; justify-content:center;
@@ -411,24 +415,33 @@ function createStyles() {
 }
 
 // ============================================================================
-// Emoji list
+// Emoji data — loaded from unicode-emoji-json via esm.sh
 // ============================================================================
-const EMOJI_LIST = [
-  "😀","😃","😄","😁","😆","😅","🤣","😂","🙂","🙃","😉","😊","😇","🥰","😍","🤩",
-  "😘","😗","😚","😙","🥲","😋","😛","😜","🤪","😝","🤑","🤗","🤭","🤫","🤔","🫡",
-  "🤐","🤨","😐","😑","😶","🫥","😏","😒","🙄","😬","🤥","😌","😔","😪","🤤","😴",
-  "😷","🤒","🤕","🤢","🤮","🥵","🥶","🥴","😵","🤯","🤠","🥳","🥸","😎","🤓","🧐",
-  "😕","🫤","😟","🙁","☹️","😮","😯","😲","😳","🥺","🥹","😦","😧","😨","😰","😥",
-  "😢","😭","😱","😖","😣","😞","😓","😩","😫","🥱","😤","😡","😠","🤬","😈","👿",
-  "💀","☠️","💩","🤡","👹","👺","👻","👽","👾","🤖","😺","😸","😹","😻","😼","😽",
-  "🙀","😿","😾","❤️","🧡","💛","💚","💙","💜","🖤","🤍","🤎","💔","❤️‍🔥","💕","💞",
-  "💓","💗","💖","💘","💝","💟","👍","👎","👊","✊","🤛","🤜","🤞","✌️","🤟","🤘",
-  "👌","🤌","🤏","👈","👉","👆","👇","☝️","✋","🤚","🖐️","🖖","👋","🤙","💪","🦾",
-  "🙏","🎉","🎊","🎈","🎁","🎀","🏆","🏅","🥇","🥈","🥉","⚽","🏀","🏈","⚾","🎾",
-  "🔥","⭐","🌟","💫","✨","⚡","💥","💯","🎵","🎶","🎸","🎹","🥁","🎺","🎷","🪗",
+let EMOJI_DATA = []; // [{emoji, name, group}]
+let EMOJI_LOADED = false;
+
+// Fallback while loading
+const FALLBACK_EMOJIS = [
+  "😀","😃","😄","😁","😆","😅","🤣","😂","🙂","😉","😊","😇","🥰","😍","🤩",
+  "😘","😋","😛","😜","🤪","😝","🤗","🤭","🤫","🤔","😐","😏","🙄","😬","😌",
+  "😴","🤮","🥵","🥶","🤯","🤠","🥳","😎","🤓","😢","😭","😱","😤","😡","😈",
+  "💀","💩","🤡","👻","👽","🤖","❤️","🧡","💛","💚","💙","💜","🖤","🤍","💔",
+  "👍","👎","👊","✊","🤞","✌️","🤟","🤘","👌","👋","💪","🙏",
+  "🎉","🎊","🏆","🔥","⭐","✨","⚡","💥","💯","🎵","🎶",
 ];
 
 const QUICK_EMOJIS = ["👍","❤️","😂","😮","😢","🎉","🔥","👀"];
+
+// Load full emoji catalog async
+import("https://esm.sh/unicode-emoji-json@0.6.0").then(mod => {
+  const data = mod.default;
+  EMOJI_DATA = Object.entries(data).map(([emoji, info]) => ({
+    emoji,
+    name: info.name || "",
+    group: info.group || "",
+  }));
+  EMOJI_LOADED = true;
+}).catch(e => console.warn("[Chat] emoji load failed, using fallback:", e));
 
 // ============================================================================
 // GIF Encoder
@@ -511,15 +524,14 @@ const THEME_PRESETS = [
   { name: "Indigo",      color: "oklch(0.55 0.18 270)" },
   { name: "Rose",        color: "oklch(0.55 0.18 350)" },
   { name: "Emerald",     color: "oklch(0.55 0.18 155)" },
-  { name: "Amber",       color: "oklch(0.65 0.18 85)" },
-  { name: "Cyan",        color: "oklch(0.55 0.18 200)" },
+  { name: "Cyan",        color: "oklch(0.75 0.30 200)" },
+  { name: "Yellow",      color: "oklch(0.90 0.35 95)" },
+  { name: "Neon Mint",   color: "oklch(0.85 0.30 160)" },
   { name: "Purple",      color: "oklch(0.50 0.20 300)" },
-  { name: "Slate",       color: "oklch(0.45 0.02 260)" },
   { name: "Light Pink",  color: "oklch(0.80 0.12 350)" },
   { name: "Light Blue",  color: "oklch(0.80 0.10 240)" },
-  { name: "Light Green", color: "oklch(0.78 0.12 155)" },
   { name: "Lavender",    color: "oklch(0.75 0.14 300)" },
-  { name: "Peach",       color: "oklch(0.80 0.10 60)" },
+  { name: "Slate",       color: "oklch(0.45 0.02 260)" },
   { name: "White",       color: "oklch(1.00 0 0)" },
   { name: "Black",       color: "oklch(0.15 0 0)" },
 ];
@@ -542,6 +554,8 @@ const SVG_ICONS = {
   pause: '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>',
   close: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
   plus: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+  trash: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>',
+  more: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>',
 };
 
 export function Tool(handle, element, options) {
@@ -572,6 +586,7 @@ export function Tool(handle, element, options) {
   let myName = "Anonymous";
   let myFont = null;
   let myAvatarUrl = null;
+  let myColor = null;
   let myAvatarBlobUrl = null;
   let replyToId = null;
   let pastedImageData = null;
@@ -589,15 +604,7 @@ export function Tool(handle, element, options) {
   let presenceInterval = null;
   const presenceMap = new Map();
 
-  // ---- Load saved theme ----
-  try {
-    const saved = localStorage.getItem("chat-theme-color");
-    if (saved) {
-      root.style.setProperty("--theme", saved);
-      const m = saved.match(/oklch\(([\d.]+)/);
-      if (m && parseFloat(m[1]) > 0.65) root.classList.add("light-mode");
-    }
-  } catch(e) {}
+  // Saved theme is applied after setTheme is defined (see below)
 
   // ---- Resolve account ----
   async function resolveAccountName() {
@@ -616,6 +623,7 @@ export function Tool(handle, element, options) {
         myAvatarUrl = cd.avatarUrl;
         myAvatarBlobUrl = await loadBlobUrl(cd.avatarUrl);
       }
+      if (cd.color) myColor = cd.color;
       render();
       broadcastPresence();
     } catch (e) { console.warn("[Chat] resolve account:", e); }
@@ -623,16 +631,24 @@ export function Tool(handle, element, options) {
   resolveAccountName();
 
   // ---- Ephemeral presence ----
+  let isFocused = document.hasFocus();
+  document.addEventListener("visibilitychange", () => {
+    isFocused = !document.hidden;
+    broadcastPresence(false);
+  });
+  window.addEventListener("focus", () => { isFocused = true; broadcastPresence(false); });
+  window.addEventListener("blur", () => { isFocused = false; broadcastPresence(false); });
+
   function broadcastPresence(typing) {
     try {
-      handle.broadcast({ type:"presence", name:myName, typing:!!typing, avatarUrl:myAvatarUrl, timestamp:Date.now() });
+      handle.broadcast({ type:"presence", name:myName, typing:!!typing, avatarUrl:myAvatarUrl, color:myColor, active:isFocused, timestamp:Date.now() });
     } catch(e) {}
   }
 
   handle.on("ephemeral-message", (data) => {
     const msg = data.message;
     if (msg?.type === "presence") {
-      presenceMap.set(msg.name, { timestamp:msg.timestamp, typing:msg.typing, avatarUrl:msg.avatarUrl });
+      presenceMap.set(msg.name, { timestamp:msg.timestamp, typing:msg.typing, avatarUrl:msg.avatarUrl, color:msg.color, active:msg.active });
       renderPresence();
       renderTyping();
     }
@@ -649,17 +665,9 @@ export function Tool(handle, element, options) {
   // UI Construction
   // ============================================================
 
-  // ---- Header ----
-  const header = document.createElement("div");
-  header.className = "chat-header";
-  const headerTitle = document.createElement("span");
-  headerTitle.className = "chat-header-title";
-  const headerActions = document.createElement("div");
-  headerActions.className = "chat-header-actions";
-
-  // Theme button
+  // ---- Theme button ----
   const themeBtn = document.createElement("button");
-  themeBtn.className = "chat-header-btn";
+  themeBtn.className = "chat-theme-btn";
   themeBtn.title = "Theme";
   themeBtn.innerHTML = SVG_ICONS.theme;
   themeBtn.style.position = "relative";
@@ -789,28 +797,82 @@ export function Tool(handle, element, options) {
 
   function setTheme(color) {
     root.style.setProperty("--theme", color);
-    // Toggle light/dark mode based on luminosity
-    const m = color.match(/oklch\(([\d.]+)/);
-    if (m) {
-      const l = parseFloat(m[1]);
-      root.classList.toggle("light-mode", l > 0.65);
+
+    // Parse L, C, H from the oklch color
+    const m = color.match(/oklch\(([\d.]+)\s+([\d.]+)\s+([\d.]+)\)/);
+    const L = m ? parseFloat(m[1]) : 0.55;
+    const C = m ? parseFloat(m[2]) : 0.18;
+    const H = m ? parseFloat(m[3]) : 270;
+
+    // Use L to smoothly interpolate between dark and light surfaces.
+    // t=0 means fully dark surfaces, t=1 means fully light surfaces.
+    // Smooth transition centred around L=0.5
+    const t = Math.max(0, Math.min(1, (L - 0.3) / 0.4));
+
+    // Surface lightness: lerp between dark (0.08-0.25) and light (0.88-0.97)
+    const lerp = (a, b) => a + (b - a) * t;
+    // Surface chroma: scale down from theme chroma
+    const sc = C * 0.3;
+
+    const set = (k, v) => root.style.setProperty(k, v);
+    const oklch = (l, c, h) => `oklch(${l.toFixed(3)} ${c.toFixed(3)} ${h})`;
+
+    // Surface lightness lerps between dark and light extremes.
+    // At L=1,C=0 the lerp should produce pure white (1.0).
+    set("--bg-darkest",  oklch(lerp(0.08, 1.00), sc, H));
+    set("--bg-dark",     oklch(lerp(0.11, 0.98), sc, H));
+    set("--bg-mid",      oklch(lerp(0.15, 0.95), sc, H));
+    set("--bg-hover",    oklch(lerp(0.18, 0.92), sc, H));
+    set("--bg-input",    oklch(lerp(0.13, 1.00), sc, H));
+    set("--border",      oklch(lerp(0.25, 0.85), sc * 1.3, H));
+
+    // Text: always pure black or white for maximum contrast.
+    // bg-dark lightness determines which to use.
+    const bgL = lerp(0.11, 0.98);
+    const lightBg = bgL > 0.55;
+    set("--text-primary",   lightBg ? "black" : "white");
+    set("--text-secondary", oklch(lightBg ? 0.35 : 0.68, 0, 0));
+    set("--text-muted",     oklch(lightBg ? 0.50 : 0.50, 0, 0));
+
+    // Accent: ensure it contrasts with the background.
+    // When chroma is very low OR luminosity is very low, the raw theme color
+    // would be invisible against the background.
+    const darkBg = L < 0.32;  // very dark background
+    if (C < 0.04) {
+      // Near-grayscale: use a contrasting neutral
+      const accentL = darkBg || t < 0.5 ? 0.75 : 0.25;
+      set("--accent",       oklch(accentL, 0, H));
+      set("--accent-hover", oklch(accentL + (accentL > 0.5 ? -0.1 : 0.1), 0, H));
+      set("--accent-fg",    oklch(accentL > 0.5 ? 0.10 : 0.95, 0, 0));
+    } else if (darkBg) {
+      // Dark bg with chroma: lighten the accent so it's visible
+      set("--accent",       oklch(Math.max(L + 0.35, 0.55), C, H));
+      set("--accent-hover", oklch(Math.max(L + 0.45, 0.65), C, H));
+      set("--accent-fg",    oklch(0.10, 0, 0));
+    } else {
+      set("--accent",       color);
+      set("--accent-hover", oklch(L + (t > 0.5 ? -0.1 : 0.1), C, H));
+      set("--accent-fg",    oklch(L > 0.6 ? 0.10 : 0.97, 0, 0));
     }
+    set("--accent-soft", `oklch(${L.toFixed(3)} ${C.toFixed(3)} ${H} / 0.15)`);
+
     try { localStorage.setItem("chat-theme-color", color); } catch(e) {}
   }
 
-  headerActions.appendChild(themeBtn);
-  header.appendChild(headerTitle);
-  header.appendChild(headerActions);
-  root.appendChild(header);
+  // Apply saved theme now that setTheme is defined
+  try {
+    const saved = localStorage.getItem("chat-theme-color");
+    if (saved) setTheme(saved);
+  } catch(e) {}
 
   // Close popover on outside click
-  // Stop clicks inside the popover from bubbling to root's close handler
   themePopover.addEventListener("click", (e) => { e.stopPropagation(); });
   root.addEventListener("click", () => { themePopover.classList.remove("show"); });
 
-  // ---- Presence bar ----
+  // ---- Presence bar (with theme button) ----
   const presenceBar = document.createElement("div");
   presenceBar.className = "chat-presence-bar";
+  presenceBar.appendChild(themeBtn);
   root.appendChild(presenceBar);
 
   // ---- Messages area ----
@@ -922,34 +984,72 @@ export function Tool(handle, element, options) {
 
   function openEmojiPicker(msgIndex, anchorEl) {
     emojiPickerTarget = { msgIndex };
-    const rect = anchorEl.getBoundingClientRect();
-    const rootRect = root.getBoundingClientRect();
-    emojiPicker.style.bottom = (rootRect.bottom - rect.top + 4) + "px";
-    emojiPicker.style.right = (rootRect.right - rect.right) + "px";
-    emojiPicker.style.top = "auto"; emojiPicker.style.left = "auto";
     renderEmojiPicker();
     emojiOverlay.classList.add("show");
+
+    const rect = anchorEl.getBoundingClientRect();
+    const rootRect = root.getBoundingClientRect();
+    const pickerWidth = 280;
+    const pickerHeight = Math.min(emojiPicker.scrollHeight, 320);
+
+    // Horizontal: center on anchor, clamp within root
+    let left = (rect.left + rect.width / 2) - rootRect.left - pickerWidth / 2;
+    if (left + pickerWidth > rootRect.width - 8) left = rootRect.width - pickerWidth - 8;
+    if (left < 8) left = 8;
+
+    // Vertical: prefer above anchor, fall back to below if not enough space
+    const spaceAbove = rect.top - rootRect.top;
+    const spaceBelow = rootRect.bottom - rect.bottom;
+    if (spaceAbove >= pickerHeight + 4) {
+      emojiPicker.style.bottom = (rootRect.bottom - rect.top + 4) + "px";
+      emojiPicker.style.top = "auto";
+    } else {
+      emojiPicker.style.top = (rect.bottom - rootRect.top + 4) + "px";
+      emojiPicker.style.bottom = "auto";
+    }
+    emojiPicker.style.left = left + "px";
+    emojiPicker.style.right = "auto";
   }
 
   function renderEmojiPicker(filter) {
     emojiPicker.innerHTML = "";
     const search = document.createElement("input");
     search.className = "chat-emoji-picker-search";
-    search.placeholder = "Search emoji...";
+    search.placeholder = "Search emoji by name...";
     search.value = filter || "";
     search.addEventListener("input", () => renderEmojiPicker(search.value));
     emojiPicker.appendChild(search);
     setTimeout(() => search.focus(), 0);
-    const list = filter ? EMOJI_LIST.filter(e => e.includes(filter)) : EMOJI_LIST;
-    for (const emoji of list.slice(0, 80)) {
+
+    const grid = document.createElement("div");
+    grid.className = "chat-emoji-grid";
+    grid.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
+    grid.addEventListener("touchmove", (e) => e.stopPropagation(), { passive: true });
+    emojiPicker.appendChild(grid);
+
+    let emojis;
+    if (EMOJI_LOADED) {
+      const q = (filter || "").toLowerCase();
+      emojis = q
+        ? EMOJI_DATA.filter(e => e.name.includes(q) || e.emoji === q)
+        : EMOJI_DATA;
+    } else {
+      emojis = (filter
+        ? FALLBACK_EMOJIS.filter(e => e.includes(filter))
+        : FALLBACK_EMOJIS
+      ).map(e => ({ emoji: e, name: "" }));
+    }
+
+    for (const entry of emojis) {
       const btn = document.createElement("button");
-      btn.textContent = emoji;
+      btn.textContent = entry.emoji;
+      if (entry.name) btn.title = entry.name;
       btn.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        if (emojiPickerTarget) toggleReaction(emojiPickerTarget.msgIndex, emoji);
+        if (emojiPickerTarget) toggleReaction(emojiPickerTarget.msgIndex, entry.emoji);
         closeEmojiPicker();
       });
-      emojiPicker.appendChild(btn);
+      grid.appendChild(btn);
     }
   }
 
@@ -1187,6 +1287,32 @@ export function Tool(handle, element, options) {
     inputRow.style.display = "";
   }
 
+  // ---- Patchwork URL parsing ----
+  const TINY_PW_RE = /https?:\/\/tiny\.patchwork\.inkandswitch\.com\/#[^\s]+/g;
+  function parsePatchworkLinks(text) {
+    const links = [];
+    let match;
+    while ((match = TINY_PW_RE.exec(text)) !== null) {
+      try {
+        const parsed = new URL(match[0]);
+        if (parsed.hash) {
+          const params = new URLSearchParams(parsed.hash.slice(1));
+          const docId = params.get("doc");
+          if (docId) {
+            links.push({
+              docUrl: "automerge:" + docId,
+              title: params.get("title") ? decodeURIComponent(params.get("title").replace(/\+/g, " ")) : "",
+              type: params.get("type") || "",
+              originalUrl: match[0],
+            });
+          }
+        }
+      } catch(e) {}
+    }
+    TINY_PW_RE.lastIndex = 0;
+    return links;
+  }
+
   // ---- Send ----
   async function sendMessage() {
     const text = input.value.trim();
@@ -1199,7 +1325,15 @@ export function Tool(handle, element, options) {
       } catch(e) { console.error("[Chat] image:", e); }
       clearPaste();
     }
-    if (!text && !imageUrl) return;
+    // Extract patchwork doc links from text
+    const patchworkLinks = parsePatchworkLinks(text);
+    // Strip the URLs from the displayed text
+    let cleanText = text;
+    for (const link of patchworkLinks) {
+      cleanText = cleanText.replace(link.originalUrl, "").trim();
+    }
+
+    if (!cleanText && !imageUrl && patchworkLinks.length === 0) return;
 
     let gifUrl = null;
     if (gifModeEnabled) {
@@ -1207,14 +1341,14 @@ export function Tool(handle, element, options) {
     }
 
     try {
-      sendMsg(text, imageUrl, imageName, null, null, gifUrl);
+      sendMsg(cleanText, imageUrl, imageName, null, null, gifUrl, patchworkLinks.length > 0 ? patchworkLinks : null);
     } catch(e) { console.error("[Chat] sendMsg:", e); }
     input.value = "";
     input.style.height = "auto";
     input.focus();
   }
 
-  function sendMsg(text, imageUrl, imageName, voiceUrl, voiceDuration, gifSelfieUrl) {
+  function sendMsg(text, imageUrl, imageName, voiceUrl, voiceDuration, gifSelfieUrl, embeds) {
     handle.change((d) => {
       if (!d.messages) d.messages = [];
       const msg = { id: generateId(), name: myName, text: text || "", timestamp: Date.now() };
@@ -1224,6 +1358,7 @@ export function Tool(handle, element, options) {
       if (imageUrl) { msg.imageUrl = imageUrl; msg.imageName = imageName; }
       if (voiceUrl) { msg.voiceUrl = voiceUrl; msg.voiceDuration = voiceDuration; }
       if (gifSelfieUrl) msg.gifSelfieUrl = gifSelfieUrl;
+      if (embeds) msg.embeds = embeds;
       d.messages.push(msg);
     });
     replyToId = null;
@@ -1292,17 +1427,46 @@ export function Tool(handle, element, options) {
   function renderPresence() {
     const now = Date.now();
     presenceBar.innerHTML = "";
+
+    // Show self first
+    if (myName) {
+      const el = document.createElement("div");
+      el.className = "chat-presence-user" + (!isFocused ? " away" : "");
+      const av = document.createElement("span");
+      av.className = "chat-presence-avatar";
+      if (myAvatarBlobUrl) {
+        av.innerHTML = '<img src="'+myAvatarBlobUrl+'">';
+      } else {
+        av.textContent = (myName || "?")[0].toUpperCase();
+      }
+      el.appendChild(av);
+      const lbl = document.createElement("span");
+      lbl.textContent = myName;
+      el.appendChild(lbl);
+      presenceBar.appendChild(el);
+    }
+
     for (const [name, info] of presenceMap) {
       if (name === myName) continue;
       if (now - info.timestamp > PRESENCE_TIMEOUT) continue;
       const el = document.createElement("div");
-      el.className = "chat-presence-user";
-      el.innerHTML = '<span class="chat-presence-dot"></span>';
+      el.className = "chat-presence-user" + (!info.active ? " away" : "");
+      const av = document.createElement("span");
+      av.className = "chat-presence-avatar";
+      if (info.avatarUrl) {
+        loadBlobUrl(info.avatarUrl).then(u => { if (u) av.innerHTML = '<img src="'+u+'">'; });
+      } else {
+        av.textContent = (name || "?")[0].toUpperCase();
+      }
+      el.appendChild(av);
       const lbl = document.createElement("span");
       lbl.textContent = name;
       el.appendChild(lbl);
       presenceBar.appendChild(el);
     }
+
+    // Re-append theme button (innerHTML cleared it)
+    presenceBar.appendChild(themeBtn);
   }
 
   function renderTyping() {
@@ -1322,8 +1486,7 @@ export function Tool(handle, element, options) {
     const doc = handle.doc();
     if (!doc) return;
 
-    headerTitle.textContent = "# " + (doc.title || "Chat");
-    input.placeholder = "Message #" + (doc.title || "Chat");
+    input.placeholder = "Message " + (doc.title || "chat");
 
     const messages = doc.messages || [];
     const msgMap = new Map();
@@ -1440,11 +1603,6 @@ export function Tool(handle, element, options) {
         row.className = "chat-msg-continuation" + (hasGifSelfie ? " has-gif" : "");
         row.dataset.msgId = msg.id || "";
 
-        const inlineTime = document.createElement("span");
-        inlineTime.className = "chat-msg-inline-time";
-        inlineTime.textContent = formatTime(msg.timestamp);
-        row.appendChild(inlineTime);
-
         buildActions(row, msg, idx);
 
         // If this continuation has a GIF selfie, show it aligned with the avatar column
@@ -1491,21 +1649,73 @@ export function Tool(handle, element, options) {
     renderTyping();
   }
 
+  function deleteMessage(idx) {
+    handle.change((d) => {
+      if (!d.messages || idx < 0 || idx >= d.messages.length) return;
+      d.messages.splice(idx, 1);
+    });
+  }
+
   function buildActions(row, msg, idx) {
     const actions = document.createElement("div");
     actions.className = "chat-msg-actions";
+
     const replyBtn = document.createElement("button");
     replyBtn.className = "chat-msg-action-btn";
     replyBtn.innerHTML = SVG_ICONS.reply;
     replyBtn.title = "Reply";
     replyBtn.addEventListener("click", (e) => { e.stopPropagation(); setReply(msg.id); });
     actions.appendChild(replyBtn);
+
     const reactBtn = document.createElement("button");
     reactBtn.className = "chat-msg-action-btn";
     reactBtn.innerHTML = SVG_ICONS.react;
     reactBtn.title = "Add reaction";
     reactBtn.addEventListener("click", (e) => { e.stopPropagation(); openEmojiPicker(idx, reactBtn); });
     actions.appendChild(reactBtn);
+
+    // "..." menu with delete
+    const menuWrap = document.createElement("div");
+    menuWrap.className = "chat-msg-menu-wrap";
+    const moreBtn = document.createElement("button");
+    moreBtn.className = "chat-msg-action-btn";
+    moreBtn.innerHTML = SVG_ICONS.more;
+    moreBtn.title = "More";
+    const menu = document.createElement("div");
+    menu.className = "chat-msg-menu";
+
+    const deleteItem = document.createElement("button");
+    deleteItem.className = "chat-msg-menu-item danger";
+    deleteItem.innerHTML = SVG_ICONS.trash + " Delete";
+    deleteItem.addEventListener("click", (e) => {
+      e.stopPropagation();
+      menu.classList.remove("show");
+      deleteMessage(idx);
+    });
+    menu.appendChild(deleteItem);
+
+    moreBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      // Close any other open menus
+      root.querySelectorAll(".chat-msg-menu.show").forEach(m => { if (m !== menu) m.classList.remove("show"); });
+      menu.classList.toggle("show");
+    });
+
+    // Close menu on outside click
+    const closeMenu = (e) => {
+      if (!menuWrap.contains(e.target)) menu.classList.remove("show");
+    };
+    root.addEventListener("click", closeMenu);
+
+    menuWrap.appendChild(moreBtn);
+    menuWrap.appendChild(menu);
+    actions.appendChild(menuWrap);
+
+    const inlineTime = document.createElement("span");
+    inlineTime.className = "chat-msg-inline-time";
+    inlineTime.textContent = formatTime(msg.timestamp);
+    actions.appendChild(inlineTime);
+
     row.appendChild(actions);
   }
 
@@ -1549,6 +1759,22 @@ export function Tool(handle, element, options) {
       });
       vn.appendChild(playBtn); vn.appendChild(waveform); vn.appendChild(dur);
       parent.appendChild(vn);
+    }
+    if (msg.embeds) {
+      for (const embed of msg.embeds) {
+        const wrap = document.createElement("div");
+        wrap.className = "chat-msg-embed";
+        const pv = document.createElement("patchwork-view");
+        pv.setAttribute("doc-url", embed.docUrl);
+        wrap.appendChild(pv);
+        if (embed.title) {
+          const titleEl = document.createElement("div");
+          titleEl.className = "chat-msg-embed-title";
+          titleEl.textContent = embed.title;
+          wrap.appendChild(titleEl);
+        }
+        parent.appendChild(wrap);
+      }
     }
   }
 
