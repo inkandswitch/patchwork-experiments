@@ -44,6 +44,78 @@ function formatDuration(s) {
   return m + ":" + Math.floor(s % 60).toString().padStart(2, "0");
 }
 
+function escapeHtml(str) {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+const URL_RE = /https?:\/\/[^\s<>]+/g;
+
+// Format for input preview — keeps delimiters visible so cursor stays aligned
+function formatTextPreview(text) {
+  const parts = text.split(/(`[^`]+`)/g);
+  let out = "";
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 1) {
+      const inner = escapeHtml(parts[i]);
+      out += "<code>" + inner + "</code>";
+      continue;
+    }
+    let s = escapeHtml(parts[i]);
+    // Wrap content AND delimiters in the styled element
+    s = s.replace(/\._([^_]+?)_\./g, '<sub>._$1_.</sub>');
+    s = s.replace(/\.\^([^^]+?)\^\./g, '<sup>.^$1^.</sup>');
+    s = s.replace(/___([^_]+?)___/g, '<u><em>___$1___</em></u>');
+    s = s.replace(/__([^_]+?)__/g, '<u>__$1__</u>');
+    s = s.replace(/(?<![_])_([^_]+?)_(?![_.])/g, '<em>_$1_</em>');
+    s = s.replace(/\*([^*]+?)\*/g, '<strong>*$1*</strong>');
+    s = s.replace(/\|\|([^|]+?)\|\|/g, '<span class="chat-spoiler revealed">||$1||</span>');
+    s = s.replace(/&lt;&gt;(.+?)&lt;&gt;/g, '<span style="color:var(--accent)">&lt;&gt;$1&lt;&gt;</span>');
+    s = s.replace(/%%([^%]+?)%%/g, '<span class="chat-inverted">%%$1%%</span>');
+    s = s.replace(/~~([^~]+?)~~/g, '<s>~~$1~~</s>');
+    out += s;
+  }
+  return out;
+}
+
+function formatText(text) {
+  // Split by code spans first to avoid formatting inside them
+  const parts = text.split(/(`[^`]+`)/g);
+  let out = "";
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 1) {
+      // Code span
+      out += "<code>" + escapeHtml(parts[i].slice(1, -1)) + "</code>";
+      continue;
+    }
+    let s = escapeHtml(parts[i]);
+    // Order matters: specific delimiters first
+    // ._text_. → subscript
+    s = s.replace(/\._([^_]+?)_\./g, '<sub>$1</sub>');
+    // .^text^. → superscript
+    s = s.replace(/\.\^([^^]+?)\^\./g, '<sup>$1</sup>');
+    // ___text___ → underline + italic
+    s = s.replace(/___([^_]+?)___/g, '<u><em>$1</em></u>');
+    // __text__ → underline
+    s = s.replace(/__([^_]+?)__/g, '<u>$1</u>');
+    // _text_ → italic
+    s = s.replace(/(?<![_])_([^_]+?)_(?![_.])/g, '<em>$1</em>');
+    // *text* → bold
+    s = s.replace(/\*([^*]+?)\*/g, '<strong>$1</strong>');
+    // ||text|| → spoiler
+    s = s.replace(/\|\|([^|]+?)\|\|/g, '<span class="chat-spoiler">$1</span>');
+    // <>text<> → marquee
+    s = s.replace(/&lt;&gt;(.+?)&lt;&gt;/g, '<marquee>$1</marquee>');
+    // %%text%% → inverted
+    s = s.replace(/%%([^%]+?)%%/g, '<span class="chat-inverted">$1</span>');
+    // ~~text~~ → strikethrough
+    s = s.replace(/~~([^~]+?)~~/g, '<s>$1</s>');
+    // URLs → clickable links
+    s = s.replace(URL_RE, (url) => '<a href="' + url + '" target="_blank" rel="noopener">' + url + '</a>');
+    out += s;
+  }
+  return out;
+}
+
 // ============================================================================
 // Styles with CSS custom properties derived from a single theme color
 // ============================================================================
@@ -162,6 +234,44 @@ function createStyles() {
     .chat-msg-name:hover { text-decoration:underline; }
     .chat-msg-time { font-size:11px; color:var(--text-muted); }
     .chat-msg-text { color:var(--text-primary); line-height:1.45; margin-top:2px; white-space:pre-wrap; word-wrap:break-word; }
+    .chat-msg-text code {
+      background:var(--bg-hover); padding:1px 4px; border-radius:3px;
+      font-family:ui-monospace,monospace; font-size:0.9em;
+    }
+    .chat-msg-text a { color:var(--accent); text-decoration:underline; }
+    .chat-msg-text a:hover { text-decoration:none; }
+    .chat-spoiler {
+      background:var(--text-primary); color:transparent; border-radius:3px;
+      padding:0 3px; cursor:pointer; transition:all 0.2s;
+    }
+    .chat-spoiler.revealed { background:var(--bg-hover); color:var(--text-primary); }
+    .chat-inverted {
+      background:var(--text-primary); color:var(--bg-dark); padding:0 3px; border-radius:3px;
+    }
+    .chat-msg-action {
+      padding:4px 16px; font-style:italic; color:var(--text-secondary); font-size:14px;
+    }
+    .chat-msg-action .chat-msg-action-name { font-weight:600; color:var(--text-primary); }
+
+    /* Input preview overlay */
+    .chat-input-wrap { position:relative; flex:1; min-width:0; }
+    .chat-input-preview {
+      position:absolute; top:0; left:0; right:0; bottom:0; pointer-events:none;
+      white-space:pre-wrap; word-wrap:break-word; overflow:hidden;
+      padding:8px 12px; font-size:15px; line-height:1.4;
+      color:var(--text-primary); font-family:inherit;
+    }
+    .chat-input-preview code {
+      background:var(--bg-hover); padding:1px 4px; border-radius:3px;
+      font-family:ui-monospace,monospace; font-size:0.9em;
+    }
+    .chat-input-preview .chat-spoiler { background:var(--text-muted); }
+    .chat-input-preview .chat-inverted {
+      background:var(--text-primary); color:var(--bg-dark); padding:0 3px; border-radius:3px;
+    }
+    .chat-input-editing {
+      color:transparent !important; caret-color:var(--text-primary);
+    }
 
     /* Continuation messages */
     .chat-msg-continuation { padding:0 16px 0 68px; position:relative; }
@@ -347,9 +457,10 @@ function createStyles() {
       padding:4px; align-items:flex-end;
     }
     .chat-input {
-      flex:1; padding:8px 12px; border:none; font-size:15px; outline:none;
+      width:100%; padding:8px 12px; border:none; font-size:15px; outline:none;
       background:transparent; color:var(--text-primary);
       font-family:inherit; resize:none; max-height:120px; min-height:24px; line-height:1.4;
+      position:relative; z-index:1;
     }
     .chat-input::placeholder { color:var(--text-muted); }
 
@@ -425,6 +536,16 @@ function createStyles() {
     .chat-empty {
       flex:1; display:flex; align-items:center; justify-content:center;
       color:var(--text-muted); font-size:16px;
+    }
+    .chat-loading {
+      padding:12px 16px; display:flex; flex-direction:column; gap:6px; align-items:center;
+      color:var(--text-muted); font-size:13px;
+    }
+    .chat-loading-bar {
+      width:200px; height:4px; background:var(--bg-hover); border-radius:2px; overflow:hidden;
+    }
+    .chat-loading-fill {
+      height:100%; background:var(--accent); border-radius:2px; transition:width 0.2s;
     }
   `;
   return style;
@@ -594,16 +715,13 @@ export function Tool(handle, element, options) {
   // on pointerDown/pointerUp, never on click.
   root.addEventListener("pointerdown", (e) => { e.stopPropagation(); });
   root.addEventListener("pointerup", (e) => { e.stopPropagation(); });
-  // Prevent parent tools (tldraw etc.) from intercepting scroll/wheel events
-  root.addEventListener("wheel", (e) => { e.stopPropagation(); }, { passive: true });
-  root.addEventListener("touchstart", (e) => { e.stopPropagation(); }, { passive: true });
-  root.addEventListener("touchmove", (e) => { e.stopPropagation(); }, { passive: true });
 
   let myName = "Anonymous";
   let myFont = null;
   let myAvatarUrl = null;
   let myColor = null;
   let myAvatarBlobUrl = null;
+  let isLightBg = false;
   let replyToId = null;
   let pastedImageData = null;
   let isRecording = false;
@@ -846,6 +964,7 @@ export function Tool(handle, element, options) {
     // bg-dark lightness determines which to use.
     const bgL = lerp(0.11, 0.98);
     const lightBg = bgL > 0.55;
+    isLightBg = lightBg;
     set("--text-primary",   lightBg ? "black" : "white");
     set("--text-secondary", oklch(lightBg ? 0.35 : 0.68, 0, 0));
     set("--text-muted",     oklch(lightBg ? 0.50 : 0.50, 0, 0));
@@ -967,12 +1086,32 @@ export function Tool(handle, element, options) {
     else stopGifCamera();
   });
 
-  // Text input
+  // Text input with formatting preview
+  const inputWrap = document.createElement("div");
+  inputWrap.className = "chat-input-wrap";
   const input = document.createElement("textarea");
   input.className = "chat-input";
   input.rows = 1;
   input.placeholder = "Message #Chat";
-  inputRow.appendChild(input);
+  const inputPreview = document.createElement("div");
+  inputPreview.className = "chat-input-preview";
+  inputWrap.appendChild(input);
+  inputWrap.appendChild(inputPreview);
+  inputRow.appendChild(inputWrap);
+
+  function updateInputPreview() {
+    const val = input.value;
+    if (!val || !/[_*`|<>%~^.]/.test(val)) {
+      // No formatting chars — hide preview, show normal text
+      input.classList.remove("chat-input-editing");
+      inputPreview.innerHTML = "";
+      return;
+    }
+    input.classList.add("chat-input-editing");
+    inputPreview.innerHTML = formatTextPreview(val);
+    inputPreview.style.fontFamily = input.style.fontFamily || "";
+    inputPreview.scrollTop = input.scrollTop;
+  }
 
   // Mic button
   const micBtn = document.createElement("button");
@@ -1039,8 +1178,6 @@ export function Tool(handle, element, options) {
 
     const grid = document.createElement("div");
     grid.className = "chat-emoji-grid";
-    grid.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
-    grid.addEventListener("touchmove", (e) => e.stopPropagation(), { passive: true });
     emojiPicker.appendChild(grid);
 
     let emojis;
@@ -1076,8 +1213,11 @@ export function Tool(handle, element, options) {
   input.addEventListener("input", () => {
     input.style.height = "auto";
     input.style.height = Math.min(input.scrollHeight, 120) + "px";
+    inputPreview.style.height = input.style.height;
+    updateInputPreview();
     broadcastPresence(true);
   });
+  input.addEventListener("scroll", () => { inputPreview.scrollTop = input.scrollTop; });
 
   // ---- Paste image ----
   input.addEventListener("paste", (e) => {
@@ -1329,6 +1469,83 @@ export function Tool(handle, element, options) {
     return links;
   }
 
+  // ---- Slash commands ----
+  const NAMED_COLORS = {
+    red:        { light: "oklch(0.55 0.25 25)",   dark: "oklch(0.72 0.22 25)" },
+    orange:     { light: "oklch(0.62 0.22 55)",   dark: "oklch(0.78 0.18 55)" },
+    yellow:     { light: "oklch(0.60 0.20 95)",   dark: "oklch(0.88 0.18 95)" },
+    green:      { light: "oklch(0.50 0.20 145)",  dark: "oklch(0.75 0.22 145)" },
+    teal:       { light: "oklch(0.50 0.14 180)",  dark: "oklch(0.75 0.14 180)" },
+    cyan:       { light: "oklch(0.52 0.15 210)",  dark: "oklch(0.80 0.15 210)" },
+    blue:       { light: "oklch(0.50 0.22 260)",  dark: "oklch(0.72 0.18 260)" },
+    indigo:     { light: "oklch(0.45 0.25 280)",  dark: "oklch(0.68 0.20 280)" },
+    purple:     { light: "oklch(0.50 0.25 300)",  dark: "oklch(0.72 0.22 300)" },
+    pink:       { light: "oklch(0.55 0.25 340)",  dark: "oklch(0.75 0.22 340)" },
+    hotpink:    { light: "oklch(0.55 0.30 350)",  dark: "oklch(0.75 0.28 350)" },
+    magenta:    { light: "oklch(0.52 0.28 320)",  dark: "oklch(0.72 0.25 320)" },
+    coral:      { light: "oklch(0.58 0.20 35)",   dark: "oklch(0.78 0.18 35)" },
+    gold:       { light: "oklch(0.58 0.18 85)",   dark: "oklch(0.85 0.16 85)" },
+    lime:       { light: "oklch(0.52 0.22 130)",  dark: "oklch(0.82 0.25 130)" },
+    lavender:   { light: "oklch(0.50 0.18 290)",  dark: "oklch(0.78 0.15 290)" },
+    salmon:     { light: "oklch(0.55 0.18 25)",   dark: "oklch(0.78 0.16 25)" },
+    white:      { light: "oklch(0.35 0 0)",       dark: "oklch(0.95 0 0)" },
+    black:      { light: "oklch(0.20 0 0)",       dark: "oklch(0.60 0 0)" },
+    grey:       { light: "oklch(0.45 0 0)",       dark: "oklch(0.70 0 0)" },
+    gray:       { light: "oklch(0.45 0 0)",       dark: "oklch(0.70 0 0)" },
+    neonmint:   { light: "oklch(0.85 0.30 160)",  dark: "oklch(0.85 0.30 160)" },
+  };
+
+  function resolveNamedColor(name) {
+    const entry = NAMED_COLORS[name.toLowerCase()];
+    if (entry) return isLightBg ? entry.light : entry.dark;
+    // Try as raw CSS color
+    return name;
+  }
+
+  // Parse a possibly-quoted token from the start of a string.
+  // Returns [token, rest] or null.
+  function parseToken(str) {
+    str = str.trimStart();
+    if (str.startsWith('"')) {
+      const end = str.indexOf('"', 1);
+      if (end < 0) return null;
+      return [str.slice(1, end), str.slice(end + 1).trimStart()];
+    }
+    const sp = str.indexOf(' ');
+    if (sp < 0) return [str, ""];
+    return [str.slice(0, sp), str.slice(sp + 1)];
+  }
+
+  function parseSlashCommand(text) {
+    if (text.startsWith("/me ")) {
+      return { action: true, text: text.slice(4) };
+    }
+    const slapMatch = text.match(/^\/slap\s+(.+)/);
+    if (slapMatch) {
+      return { action: true, text: "slaps " + slapMatch[1].trim() + " with a large trout" };
+    }
+    if (text.startsWith("/font ")) {
+      const parsed = parseToken(text.slice(6));
+      if (parsed && parsed[1]) return { overrideFont: parsed[0], text: parsed[1] };
+    }
+    if (text.startsWith("/color ") || text.startsWith("/colour ")) {
+      const offset = text.startsWith("/colour ") ? 8 : 7;
+      const parsed = parseToken(text.slice(offset));
+      if (parsed && parsed[1]) return { overrideColor: parsed[0], text: parsed[1] };
+    }
+    if (text.startsWith("/face ")) {
+      const p1 = parseToken(text.slice(6));
+      if (p1) {
+        const p2 = parseToken(p1[1]);
+        if (p2 && p2[1]) return { overrideColor: p1[0], overrideFont: p2[0], text: p2[1] };
+      }
+    }
+    if (text.startsWith("/marquee ")) {
+      return { marquee: true, text: text.slice(9) };
+    }
+    return null;
+  }
+
   // ---- Send ----
   async function sendMessage() {
     const text = input.value.trim();
@@ -1341,10 +1558,14 @@ export function Tool(handle, element, options) {
       } catch(e) { console.error("[Chat] image:", e); }
       clearPaste();
     }
+    // Check for slash commands
+    const slashCmd = parseSlashCommand(text);
+
     // Extract patchwork doc links from text
-    const patchworkLinks = parsePatchworkLinks(text);
+    const sourceText = slashCmd ? slashCmd.text : text;
+    const patchworkLinks = parsePatchworkLinks(sourceText);
     // Strip the URLs from the displayed text
-    let cleanText = text;
+    let cleanText = sourceText;
     for (const link of patchworkLinks) {
       cleanText = cleanText.replace(link.originalUrl, "").trim();
     }
@@ -1357,16 +1578,23 @@ export function Tool(handle, element, options) {
     }
 
     try {
-      await sendMsg(cleanText, imageUrl, imageName, null, null, gifUrl, patchworkLinks.length > 0 ? patchworkLinks : null);
+      await sendMsg(cleanText, imageUrl, imageName, null, null, gifUrl, patchworkLinks.length > 0 ? patchworkLinks : null, slashCmd?.action || false, slashCmd?.overrideFont || null, slashCmd?.overrideColor || null, slashCmd?.marquee || false);
     } catch(e) { console.error("[Chat] sendMsg:", e); }
     input.value = "";
     input.style.height = "auto";
+    input.classList.remove("chat-input-editing");
+    inputPreview.innerHTML = "";
     input.focus();
   }
 
   // ---- Message doc cache ----
   const msgDocCache = new Map(); // url -> { data, handle }
   const msgDocSubscribed = new Set(); // urls we're listening to
+  let renderTimer = null;
+  function scheduleRender() {
+    if (renderTimer) return;
+    renderTimer = requestAnimationFrame(() => { renderTimer = null; render(); });
+  }
 
   async function resolveMessageDoc(url) {
     if (msgDocCache.has(url)) return msgDocCache.get(url);
@@ -1384,6 +1612,8 @@ export function Tool(handle, element, options) {
           render();
         });
       }
+      // Re-render to show this newly loaded message
+      scheduleRender();
       return msgDocCache.get(url);
     } catch(e) { console.warn("[Chat] resolve msg doc:", e); return null; }
   }
@@ -1399,16 +1629,20 @@ export function Tool(handle, element, options) {
     }
   }
 
-  async function sendMsg(text, imageUrl, imageName, voiceUrl, voiceDuration, gifSelfieUrl, embeds) {
+  async function sendMsg(text, imageUrl, imageName, voiceUrl, voiceDuration, gifSelfieUrl, embeds, action, overrideFont, overrideColor, marquee) {
     const repo = window.repo;
     const msgData = { id: generateId(), name: myName, text: text || "", timestamp: Date.now() };
-    if (myFont) msgData.font = myFont;
+    if (overrideFont) msgData.font = overrideFont;
+    else if (myFont) msgData.font = myFont;
     if (myAvatarUrl) msgData.avatarUrl = myAvatarUrl;
     if (replyToId) msgData.replyTo = replyToId;
     if (imageUrl) { msgData.imageUrl = imageUrl; msgData.imageName = imageName; }
     if (voiceUrl) { msgData.voiceUrl = voiceUrl; msgData.voiceDuration = voiceDuration; }
     if (gifSelfieUrl) msgData.gifSelfieUrl = gifSelfieUrl;
     if (embeds) msgData.embeds = embeds;
+    if (action) msgData.action = true;
+    if (marquee) msgData.marquee = true;
+    if (overrideColor) msgData.color = overrideColor;
 
     // Create individual message doc
     const msgHandle = await repo.create2(msgData);
@@ -1613,12 +1847,31 @@ export function Tool(handle, element, options) {
 
     messagesArea.innerHTML = "";
 
-    if (messages.length === 0) {
+    // Count pending refs
+    const totalRefs = rawEntries.filter(e => e.ref && e.url).length;
+    const loadedRefs = rawEntries.filter(e => e.ref && e.url && msgDocCache.has(e.url)).length;
+    const pendingRefs = totalRefs - loadedRefs;
+
+    if (rawEntries.length === 0) {
       const empty = document.createElement("div");
       empty.className = "chat-empty";
       empty.textContent = "No messages yet. Say hello! 👋";
       messagesArea.appendChild(empty);
       return;
+    }
+
+    if (pendingRefs > 0) {
+      const loading = document.createElement("div");
+      loading.className = "chat-loading";
+      const bar = document.createElement("div");
+      bar.className = "chat-loading-bar";
+      const fill = document.createElement("div");
+      fill.className = "chat-loading-fill";
+      fill.style.width = (totalRefs > 0 ? Math.round((loadedRefs / totalRefs) * 100) : 0) + "%";
+      bar.appendChild(fill);
+      loading.appendChild(bar);
+      loading.appendChild(document.createTextNode("Loading messages " + loadedRefs + "/" + totalRefs));
+      messagesArea.appendChild(loading);
     }
 
     let prevName = null, prevTime = 0;
@@ -1653,6 +1906,32 @@ export function Tool(handle, element, options) {
           if (el) { el.scrollIntoView({ behavior:"smooth", block:"center" }); el.style.background="var(--bg-hover)"; setTimeout(()=>el.style.background="",1500); }
         });
         messagesArea.appendChild(ref);
+      }
+
+      // Action messages (/me, /slap)
+      if (msg.action) {
+        const row = document.createElement("div");
+        row.className = "chat-msg-action";
+        row.dataset.msgId = msg.id || "";
+        if (msg.font) row.style.fontFamily = msg.font;
+        if (msg.color) row.style.color = resolveNamedColor(msg.color);
+        const nameSpan = document.createElement("span");
+        nameSpan.className = "chat-msg-action-name";
+        nameSpan.textContent = msg.name;
+        row.appendChild(document.createTextNode("* "));
+        row.appendChild(nameSpan);
+        const actionText = document.createElement("span");
+        actionText.innerHTML = " " + formatText(msg.text);
+        actionText.querySelectorAll(".chat-spoiler").forEach(sp => {
+          sp.addEventListener("click", () => sp.classList.toggle("revealed"));
+        });
+        row.appendChild(actionText);
+        buildActions(row, msg, rawIdx);
+        renderReactions(row, msg, rawIdx);
+        messagesArea.appendChild(row);
+        prevName = msg.name;
+        prevTime = msg.timestamp;
+        return;
       }
 
       if (!isContinuation) {
@@ -1704,8 +1983,15 @@ export function Tool(handle, element, options) {
         if (msg.text) {
           const textEl = document.createElement("div");
           textEl.className = "chat-msg-text";
-          textEl.textContent = msg.text;
+          let html = formatText(msg.text);
+          if (msg.marquee) html = "<marquee>" + html + "</marquee>";
+          textEl.innerHTML = html;
           if (msg.font) textEl.style.fontFamily = msg.font;
+          if (msg.color) textEl.style.color = resolveNamedColor(msg.color);
+          // Wire up spoiler clicks
+          textEl.querySelectorAll(".chat-spoiler").forEach(sp => {
+            sp.addEventListener("click", () => sp.classList.toggle("revealed"));
+          });
           body.appendChild(textEl);
         }
 
@@ -1740,8 +2026,14 @@ export function Tool(handle, element, options) {
         if (msg.text) {
           const textEl = document.createElement("div");
           textEl.className = "chat-msg-text";
-          textEl.textContent = msg.text;
+          let html = formatText(msg.text);
+          if (msg.marquee) html = "<marquee>" + html + "</marquee>";
+          textEl.innerHTML = html;
           if (msg.font) textEl.style.fontFamily = msg.font;
+          if (msg.color) textEl.style.color = resolveNamedColor(msg.color);
+          textEl.querySelectorAll(".chat-spoiler").forEach(sp => {
+            sp.addEventListener("click", () => sp.classList.toggle("revealed"));
+          });
           contBody.appendChild(textEl);
         }
 
@@ -1850,6 +2142,7 @@ export function Tool(handle, element, options) {
 
     grip.addEventListener("pointerdown", (e) => {
       e.preventDefault(); e.stopPropagation();
+      grip.setPointerCapture(e.pointerId);
       const startX = e.clientX, startY = e.clientY;
       const startW = container.offsetWidth, startH = container.offsetHeight;
       const onMove = (ev) => {
@@ -1859,8 +2152,10 @@ export function Tool(handle, element, options) {
         container.style.height = h + "px";
       };
       const onUp = (ev) => {
-        document.removeEventListener("pointermove", onMove);
-        document.removeEventListener("pointerup", onUp);
+        grip.releasePointerCapture(ev.pointerId);
+        grip.removeEventListener("pointermove", onMove);
+        grip.removeEventListener("pointerup", onUp);
+        grip.removeEventListener("lostpointercapture", onUp);
         const w = container.offsetWidth, h = container.offsetHeight;
         // Save dimensions to message doc
         const rawIdx = msg._rawIdx;
@@ -1875,8 +2170,9 @@ export function Tool(handle, element, options) {
           });
         }
       };
-      document.addEventListener("pointermove", onMove);
-      document.addEventListener("pointerup", onUp);
+      grip.addEventListener("pointermove", onMove);
+      grip.addEventListener("pointerup", onUp);
+      grip.addEventListener("lostpointercapture", onUp);
     });
   }
 
@@ -1934,8 +2230,8 @@ export function Tool(handle, element, options) {
         const embed = msg.embeds[ei];
         const wrap = document.createElement("div");
         wrap.className = "chat-msg-embed";
-        if (msg["embedWidth_" + ei]) wrap.style.width = msg["embedWidth_" + ei] + "px";
-        if (msg["embedHeight_" + ei]) wrap.style.height = msg["embedHeight_" + ei] + "px";
+        if (msg["embed_" + ei + "Width"]) wrap.style.width = msg["embed_" + ei + "Width"] + "px";
+        if (msg["embed_" + ei + "Height"]) wrap.style.height = msg["embed_" + ei + "Height"] + "px";
         const pv = document.createElement("patchwork-view");
         pv.setAttribute("doc-url", embed.docUrl);
         wrap.appendChild(pv);
