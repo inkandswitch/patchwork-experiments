@@ -183,6 +183,7 @@ async function execute(taskUrl: AutomergeUrl) {
           log.push([timestamp, message]);
           console.log('Task log:', message);
         },
+        repo,
       },
       input,
     );
