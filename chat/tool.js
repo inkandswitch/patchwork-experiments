@@ -248,8 +248,11 @@ function createStyles() {
     }
     .chat-msg-action {
       padding:4px 16px; font-style:italic; color:var(--text-secondary); font-size:14px;
+      position:relative;
     }
+    .chat-msg-action:hover { background:var(--bg-hover); }
     .chat-msg-action .chat-msg-action-name { font-weight:600; color:var(--text-primary); }
+    .chat-time-gap { margin-top:16px; }
 
     /* Input preview overlay */
     .chat-input-wrap { position:relative; flex:1; min-width:0; }
@@ -404,7 +407,8 @@ function createStyles() {
       border-radius:4px; z-index:10;
     }
     .chat-msg-group:hover .chat-msg-actions,
-    .chat-msg-continuation:hover .chat-msg-actions { display:flex; }
+    .chat-msg-continuation:hover .chat-msg-actions,
+    .chat-msg-action:hover .chat-msg-actions { display:flex; }
     .chat-msg-action-btn {
       background:none; border:none; color:var(--text-secondary);
       padding:6px 8px; cursor:pointer; font-size:16px;
@@ -431,6 +435,7 @@ function createStyles() {
       border-radius:4px; width:36px; height:36px; display:flex; align-items:center; justify-content:center;
     }
     .chat-emoji-grid button:hover { background:var(--bg-hover); }
+    .chat-emoji-active { background:var(--accent) !important; outline:2px solid var(--accent); outline-offset:-2px; opacity:0.8; }
     .chat-emoji-picker-search {
       width:100%; padding:6px 10px; background:var(--bg-input); border:1px solid var(--border);
       border-radius:4px; color:var(--text-primary); font-size:14px; margin-bottom:6px; outline:none;
@@ -552,7 +557,20 @@ function createStyles() {
     }
     .chat-drop-overlay.show { display:flex; }
     .chat-msg-video-wrap { max-width:350px; border-radius:8px; overflow:hidden; margin-top:4px; position:relative; }
-    .chat-msg-video { width:100%; display:block; border-radius:8px; }
+    .chat-msg-video { width:100%; display:block; border-radius:8px; cursor:pointer; }
+
+    /* Lightbox */
+    .chat-lightbox {
+      display:none; position:absolute; inset:0; z-index:200;
+      background:rgba(0,0,0,0.85); align-items:center; justify-content:center;
+      cursor:zoom-out;
+    }
+    .chat-lightbox.show { display:flex; }
+    .chat-lightbox img, .chat-lightbox video {
+      max-width:95%; max-height:95%; object-fit:contain; border-radius:4px;
+      cursor:default;
+    }
+    .chat-lightbox video { background:#000; }
     .chat-msg-file {
       display:inline-flex; align-items:center; gap:6px; background:var(--bg-hover);
       border-radius:6px; padding:6px 10px; margin-top:4px; font-size:13px;
@@ -646,16 +664,20 @@ function createStyles() {
       flex:1; display:flex; align-items:center; justify-content:center;
       color:var(--text-muted); font-size:16px;
     }
-    .chat-loading {
-      padding:12px 16px; display:flex; flex-direction:column; gap:6px; align-items:center;
-      color:var(--text-muted); font-size:13px;
+    @keyframes chat-skeleton-pulse {
+      0%, 100% { opacity:0.3; }
+      50% { opacity:0.6; }
     }
-    .chat-loading-bar {
-      width:200px; height:4px; background:var(--bg-hover); border-radius:2px; overflow:hidden;
+    .chat-msg-loading { opacity:0.5; }
+    .chat-skeleton {
+      background:var(--bg-hover); animation:chat-skeleton-pulse 1.5s ease-in-out infinite;
     }
-    .chat-loading-fill {
-      height:100%; background:var(--accent); border-radius:2px; transition:width 0.2s;
+    .chat-skeleton-line {
+      height:14px; background:var(--bg-hover); border-radius:4px; margin:4px 0;
+      animation:chat-skeleton-pulse 1.5s ease-in-out infinite;
+      width:60%;
     }
+    .chat-skeleton-line.short { width:30%; }
   `;
   return style;
 }
@@ -990,8 +1012,8 @@ export function Tool(handle, element, options) {
     if (!notificationsEnabled || typeof Notification === "undefined") return;
     if (Notification.permission !== "granted") return;
     try {
-      const n = new Notification(baseTitle, {
-        body: authorName + ": " + (text || "").slice(0, 200),
+      const n = new Notification("New message from " + authorName, {
+        body: (text || "").slice(0, 200),
         icon: avatarBlobUrl || undefined,
         tag: chatUrl,
       });
@@ -1700,10 +1722,55 @@ export function Tool(handle, element, options) {
   emojiOverlay.appendChild(emojiPicker);
   root.appendChild(emojiOverlay);
 
+  // Lightbox for full-size image/video viewing
+  const lightbox = document.createElement("div");
+  lightbox.className = "chat-lightbox";
+  lightbox.addEventListener("click", (e) => {
+    if (e.target === lightbox) {
+      lightbox.classList.remove("show");
+      lightbox.innerHTML = "";
+    }
+  });
+  root.appendChild(lightbox);
+
+  function openLightbox(src, type) {
+    lightbox.innerHTML = "";
+    if (type === "video") {
+      const vid = document.createElement("video");
+      vid.src = src;
+      vid.controls = true;
+      vid.autoplay = true;
+      lightbox.appendChild(vid);
+    } else {
+      const img = document.createElement("img");
+      img.src = src;
+      lightbox.appendChild(img);
+    }
+    lightbox.classList.add("show");
+  }
+
   let emojiPickerTarget = null;
 
   function openEmojiPicker(msgIndex, anchorEl) {
-    emojiPickerTarget = { msgIndex };
+    // Get existing reactions for this message so we can highlight them
+    const doc = handle.doc();
+    const entry = doc?.messages?.[msgIndex];
+    let myReactions = new Set();
+    if (entry) {
+      let reactions;
+      if (entry.ref && entry.url) {
+        const cached = msgDocCache.get(entry.url);
+        reactions = cached?.data?.reactions;
+      } else {
+        reactions = entry.reactions;
+      }
+      if (reactions) {
+        for (const [emoji, names] of Object.entries(reactions)) {
+          if (names && names.includes(myName)) myReactions.add(emoji);
+        }
+      }
+    }
+    emojiPickerTarget = { msgIndex, myReactions };
     renderEmojiPicker();
     emojiOverlay.classList.add("show");
 
@@ -1764,14 +1831,16 @@ export function Tool(handle, element, options) {
       emGrid.className = "chat-emoticon-grid";
       for (const name of filteredEm) {
         const info = allEm[name];
+        const emojiKey = ":" + name + ":";
         const btn = document.createElement("button");
-        btn.title = ":" + name + ":" + (info.mine ? "" : " (by " + info.owner + ")");
+        btn.title = emojiKey + (info.mine ? "" : " (by " + info.owner + ")");
+        if (emojiPickerTarget?.myReactions?.has(emojiKey)) btn.classList.add("chat-emoji-active");
         const img = document.createElement("img");
         img.src = "/" + encodeURIComponent(info.url) + "/";
         btn.appendChild(img);
         btn.addEventListener("click", (ev) => {
           ev.stopPropagation();
-          if (emojiPickerTarget) toggleReaction(emojiPickerTarget.msgIndex, ":" + name + ":");
+          if (emojiPickerTarget) toggleReaction(emojiPickerTarget.msgIndex, emojiKey);
           closeEmojiPicker();
         });
         // Adopt button for non-owned emoticons
@@ -1813,6 +1882,7 @@ export function Tool(handle, element, options) {
       const btn = document.createElement("button");
       btn.textContent = entry.emoji;
       if (entry.name) btn.title = entry.name;
+      if (emojiPickerTarget?.myReactions?.has(entry.emoji)) btn.classList.add("chat-emoji-active");
       btn.addEventListener("click", (ev) => {
         ev.stopPropagation();
         if (emojiPickerTarget) toggleReaction(emojiPickerTarget.msgIndex, entry.emoji);
@@ -2619,27 +2689,48 @@ export function Tool(handle, element, options) {
   let renderedMsgOrder = []; // msg IDs currently in DOM
   let renderedLastName = null;
   let renderedLastTime = 0;
-  const pvCache = new Map(); // docUrl -> detached patchwork-view element
+  const renderedElements = new Map(); // msgId -> Element (the message row)
 
-  function getOrCreatePatchworkView(docUrl, toolId) {
-    const cached = pvCache.get(docUrl);
-    if (cached) {
-      pvCache.delete(docUrl);
-      if (toolId) cached.setAttribute("tool-id", toolId);
-      else cached.removeAttribute("tool-id");
-      return cached;
-    }
-    const pv = document.createElement("patchwork-view");
-    pv.setAttribute("doc-url", docUrl);
-    if (toolId) pv.setAttribute("tool-id", toolId);
-    return pv;
+  function updateMessageReactions(msg, rawIdx, emoticonBlobUrls) {
+    const el = renderedElements.get(msg.id);
+    if (!el) return;
+    const parent = el.querySelector(".chat-msg-body") || el;
+    const old = parent.querySelector(".chat-reactions");
+    if (old) old.remove();
+    renderReactions(parent, msg, rawIdx, emoticonBlobUrls);
   }
 
   function renderMessageToDOM(msg, prevName, prevTime, msgMap, emoticonBlobUrls) {
+    // Loading placeholder for unresolved ref messages
+    if (msg._loading) {
+      const row = document.createElement("div");
+      row.className = "chat-msg-group chat-msg-loading";
+      row.dataset.msgId = msg.id || "";
+      const avatarCol = document.createElement("div");
+      avatarCol.className = "chat-avatar-col";
+      const avatar = document.createElement("div");
+      avatar.className = "chat-avatar chat-skeleton";
+      avatarCol.appendChild(avatar);
+      row.appendChild(avatarCol);
+      const body = document.createElement("div");
+      body.className = "chat-msg-body";
+      const line1 = document.createElement("div");
+      line1.className = "chat-skeleton-line short";
+      const line2 = document.createElement("div");
+      line2.className = "chat-skeleton-line";
+      body.appendChild(line1);
+      body.appendChild(line2);
+      row.appendChild(body);
+      messagesArea.appendChild(row);
+      renderedElements.set(msg.id, row);
+      return;
+    }
+
     const rawIdx = msg._rawIdx;
     const sameAuthor = msg.name === prevName;
-    const closeInTime = msg.timestamp - prevTime < 300000;
+    const closeInTime = msg.timestamp - prevTime < 120000;
     const isContinuation = sameAuthor && closeInTime && !msg.replyTo;
+    const timeGap = prevTime > 0 && msg.timestamp - prevTime >= 120000;
     const hasGifSelfie = !!msg.gifSelfieUrl;
 
     // Reply reference (always before the message)
@@ -2659,6 +2750,7 @@ export function Tool(handle, element, options) {
       refText.className = "chat-msg-reply-ref-text";
       refText.textContent = orig.text || "(attachment)";
       ref.appendChild(refText);
+      ref.dataset.replyFor = msg.id;
       ref.addEventListener("click", () => {
         const el = messagesArea.querySelector('[data-msg-id="'+msg.replyTo+'"]');
         if (el) { el.scrollIntoView({ behavior:"smooth", block:"center" }); el.style.background="var(--bg-hover)"; setTimeout(()=>el.style.background="",1500); }
@@ -2669,7 +2761,7 @@ export function Tool(handle, element, options) {
     // Action messages (/me, /slap)
     if (msg.action) {
       const row = document.createElement("div");
-      row.className = "chat-msg-action";
+      row.className = "chat-msg-action" + (timeGap ? " chat-time-gap" : "");
       row.dataset.msgId = msg.id || "";
       if (msg.font) row.style.fontFamily = msg.font;
       if (msg.color) row.style.color = resolveNamedColor(msg.color);
@@ -2687,13 +2779,14 @@ export function Tool(handle, element, options) {
       buildActions(row, msg, rawIdx);
       renderReactions(row, msg, rawIdx, emoticonBlobUrls);
       messagesArea.appendChild(row);
+      renderedElements.set(msg.id, row);
       return;
     }
 
     if (!isContinuation) {
       // Full message row with avatar
       const row = document.createElement("div");
-      row.className = "chat-msg-group";
+      row.className = "chat-msg-group" + (timeGap ? " chat-time-gap" : "");
       row.dataset.msgId = msg.id || "";
 
       buildActions(row, msg, rawIdx);
@@ -2755,6 +2848,7 @@ export function Tool(handle, element, options) {
       renderReactions(body, msg, rawIdx, emoticonBlobUrls);
       row.appendChild(body);
       messagesArea.appendChild(row);
+      renderedElements.set(msg.id, row);
 
     } else {
       // Continuation message
@@ -2797,6 +2891,7 @@ export function Tool(handle, element, options) {
       renderReactions(contBody, msg, rawIdx, emoticonBlobUrls);
       row.appendChild(contBody);
       messagesArea.appendChild(row);
+      renderedElements.set(msg.id, row);
     }
   }
 
@@ -2812,7 +2907,7 @@ export function Tool(handle, element, options) {
     ensureMessageDocsLoaded(rawEntries);
 
     // Resolve entries: inline messages pass through, ref messages resolve from cache
-    // Each resolved item tracks its rawIndex for mutations (reactions, delete)
+    // Unresolved refs get a loading placeholder
     const messages = [];
     for (let ri = 0; ri < rawEntries.length; ri++) {
       const entry = rawEntries[ri];
@@ -2820,8 +2915,10 @@ export function Tool(handle, element, options) {
         const cached = msgDocCache.get(entry.url);
         if (cached) {
           messages.push({ ...cached.data, _rawIdx: ri, _ref: entry });
+        } else {
+          // Loading placeholder — stable ID based on url so incremental rendering works
+          messages.push({ _loading: true, _rawIdx: ri, id: "_loading_" + entry.url, timestamp: entry.timestamp || 0 });
         }
-        // If not cached yet, skip — will re-render when loaded
       } else {
         messages.push({ ...entry, _rawIdx: ri });
       }
@@ -2859,65 +2956,31 @@ export function Tool(handle, element, options) {
       commonPrefix++;
     }
 
-    const isAppendOnly = commonPrefix === renderedMsgOrder.length;
-
-    if (!isAppendOnly) {
-      // Structural change (deletion, reorder, etc.) — full rebuild
-      // Save patchwork-view elements so they survive the rebuild
-      for (const pv of messagesArea.querySelectorAll("patchwork-view")) {
-        const url = pv.getAttribute("doc-url");
-        if (url) { pv.remove(); pvCache.set(url, pv); }
-      }
-      messagesArea.innerHTML = "";
-
-      // Count pending refs
-      const totalRefs = rawEntries.filter(e => e.ref && e.url).length;
-      const loadedRefs = rawEntries.filter(e => e.ref && e.url && msgDocCache.has(e.url)).length;
-      const pendingRefs = totalRefs - loadedRefs;
-
-      if (rawEntries.length === 0) {
+    // Handle empty state
+    const existingEmpty = messagesArea.querySelector(".chat-empty");
+    if (messages.length === 0 && rawEntries.length === 0) {
+      if (!existingEmpty) {
         const empty = document.createElement("div");
         empty.className = "chat-empty";
         empty.textContent = "no messages yet. say hello 🥰";
         messagesArea.appendChild(empty);
-        renderedMsgOrder = [];
-        renderedLastName = null;
-        renderedLastTime = 0;
-        renderPresence();
-        renderTyping();
-        return;
       }
+      renderedMsgOrder = [];
+      renderedLastName = null;
+      renderedLastTime = 0;
+      renderedElements.clear();
+      renderPresence();
+      renderTyping();
+      return;
+    } else if (existingEmpty) {
+      existingEmpty.remove();
+    }
 
-      if (pendingRefs > 0) {
-        const loading = document.createElement("div");
-        loading.className = "chat-loading";
-        const bar = document.createElement("div");
-        bar.className = "chat-loading-bar";
-        const fill = document.createElement("div");
-        fill.className = "chat-loading-fill";
-        fill.style.width = (totalRefs > 0 ? Math.round((loadedRefs / totalRefs) * 100) : 0) + "%";
-        bar.appendChild(fill);
-        loading.appendChild(bar);
-        loading.appendChild(document.createTextNode("Loading messages " + loadedRefs + "/" + totalRefs));
-        messagesArea.appendChild(loading);
-      }
+    const isAppendOnly = commonPrefix === renderedMsgOrder.length
+      && newMsgIds.length > renderedMsgOrder.length;
 
-      let prevName = null, prevTime = 0;
-      for (const msg of messages) {
-        renderMessageToDOM(msg, prevName, prevTime, msgMap, emoticonBlobUrls);
-        prevName = msg.name;
-        prevTime = msg.timestamp;
-      }
-      renderedLastName = prevName;
-      renderedLastTime = prevTime;
-
-    } else if (newMsgIds.length > renderedMsgOrder.length) {
+    if (isAppendOnly) {
       // Append-only — just render the new messages without touching existing DOM
-      const loadingEl = messagesArea.querySelector(".chat-loading");
-      if (loadingEl) loadingEl.remove();
-      const emptyEl = messagesArea.querySelector(".chat-empty");
-      if (emptyEl) emptyEl.remove();
-
       let prevName = renderedLastName;
       let prevTime = renderedLastTime;
       for (let i = commonPrefix; i < messages.length; i++) {
@@ -2927,8 +2990,34 @@ export function Tool(handle, element, options) {
       }
       renderedLastName = prevName;
       renderedLastTime = prevTime;
+
+    } else if (commonPrefix === newMsgIds.length && commonPrefix === renderedMsgOrder.length) {
+      // Same messages — just update reactions in-place
+      for (const msg of messages) {
+        updateMessageReactions(msg, msg._rawIdx, emoticonBlobUrls);
+      }
+
+    } else {
+      // Structural change — remove from divergence point, re-render from there
+      for (let i = commonPrefix; i < renderedMsgOrder.length; i++) {
+        const id = renderedMsgOrder[i];
+        const el = renderedElements.get(id);
+        if (el) el.remove();
+        renderedElements.delete(id);
+        const replyRef = messagesArea.querySelector('[data-reply-for="' + id + '"]');
+        if (replyRef) replyRef.remove();
+      }
+
+      let prevName = commonPrefix > 0 ? messages[commonPrefix - 1].name : null;
+      let prevTime = commonPrefix > 0 ? messages[commonPrefix - 1].timestamp : 0;
+      for (let i = commonPrefix; i < messages.length; i++) {
+        renderMessageToDOM(messages[i], prevName, prevTime, msgMap, emoticonBlobUrls);
+        prevName = messages[i].name;
+        prevTime = messages[i].timestamp;
+      }
+      renderedLastName = prevName;
+      renderedLastTime = prevTime;
     }
-    // else: same messages, no DOM changes needed
 
     renderedMsgOrder = newMsgIds;
 
@@ -3074,6 +3163,7 @@ export function Tool(handle, element, options) {
       img.alt = msg.imageName || "image";
       img.loading = "lazy";
       loadBlobUrl(msg.imageUrl).then(u => { if (u) img.src = u; });
+      img.addEventListener("click", () => { if (img.src) openLightbox(img.src, "image"); });
       wrap.appendChild(img);
       makeResizable(wrap, msg, "image");
       parent.appendChild(wrap);
@@ -3118,11 +3208,14 @@ export function Tool(handle, element, options) {
         if (msg["embed_" + ei + "Width"]) wrap.style.width = msg["embed_" + ei + "Width"] + "px";
         if (msg["embed_" + ei + "Height"]) wrap.style.height = msg["embed_" + ei + "Height"] + "px";
 
-        // Resolve tool override from chat doc
+        // Resolve tool override from chat doc (per-embed, keyed by msgId:embedIndex)
         const chatDoc = handle.doc();
-        const toolId = chatDoc?.toolOverrides?.[embed.docUrl] || "";
+        const overrideKey = msg.id + ":" + ei;
+        const toolId = chatDoc?.toolOverrides?.[overrideKey] || "";
 
-        const pv = getOrCreatePatchworkView(embed.docUrl, toolId);
+        const pv = document.createElement("patchwork-view");
+        pv.setAttribute("doc-url", embed.docUrl);
+        if (toolId) pv.setAttribute("tool-id", toolId);
         wrap.appendChild(pv);
 
         // Info bar under the embed
@@ -3161,8 +3254,8 @@ export function Tool(handle, element, options) {
               const val = inp.value.trim();
               handle.change((d) => {
                 if (!d.toolOverrides) d.toolOverrides = {};
-                if (val) d.toolOverrides[embed.docUrl] = val;
-                else delete d.toolOverrides[embed.docUrl];
+                if (val) d.toolOverrides[overrideKey] = val;
+                else delete d.toolOverrides[overrideKey];
               });
               render();
             } else if (ev.key === "Escape") { render(); }
@@ -3172,8 +3265,8 @@ export function Tool(handle, element, options) {
             if (val !== toolId) {
               handle.change((d) => {
                 if (!d.toolOverrides) d.toolOverrides = {};
-                if (val) d.toolOverrides[embed.docUrl] = val;
-                else delete d.toolOverrides[embed.docUrl];
+                if (val) d.toolOverrides[overrideKey] = val;
+                else delete d.toolOverrides[overrideKey];
               });
               render();
             }
@@ -3263,6 +3356,7 @@ export function Tool(handle, element, options) {
           img.alt = file.name || "image";
           img.loading = "lazy";
           loadBlobUrl(file.url).then(u => { if (u) img.src = u; });
+          img.addEventListener("click", () => { if (img.src) openLightbox(img.src, "image"); });
           wrap.appendChild(img);
           parent.appendChild(wrap);
         } else if (mime.startsWith("video/")) {
@@ -3273,6 +3367,10 @@ export function Tool(handle, element, options) {
           vid.controls = true;
           vid.preload = "metadata";
           loadBlobUrl(file.url).then(u => { if (u) vid.src = u; });
+          vid.addEventListener("click", (e) => {
+            if (e.target.paused !== undefined && !e.target.paused) return; // don't hijack play/pause clicks
+            if (vid.src) openLightbox(vid.src, "video");
+          });
           wrap.appendChild(vid);
           parent.appendChild(wrap);
         } else if (mime.startsWith("audio/")) {
@@ -3365,11 +3463,24 @@ export function Tool(handle, element, options) {
             return e.name !== myName;
           });
           if (lastOther) {
-            const name = lastOther.name || (lastOther.ref && lastOther.url && msgDocCache.get(lastOther.url)?.data?.name) || "Someone";
-            const text = lastOther.text || (lastOther.ref && lastOther.url && msgDocCache.get(lastOther.url)?.data?.text) || "";
-            const avUrl = lastOther.avatarUrl || (lastOther.ref && lastOther.url && msgDocCache.get(lastOther.url)?.data?.avatarUrl);
-            const avBlob = avUrl ? avatarCache.get(avUrl) : undefined;
-            showOSNotification(name, text, avBlob);
+            // Resolve the message doc if needed (it's likely a ref that hasn't been cached yet)
+            const notifyFrom = async () => {
+              let data = lastOther;
+              if (lastOther.ref && lastOther.url) {
+                const cached = msgDocCache.get(lastOther.url);
+                if (cached) { data = cached.data; }
+                else {
+                  const resolved = await resolveMessageDoc(lastOther.url);
+                  if (resolved) data = resolved.data;
+                }
+              }
+              const name = data.name || "Someone";
+              const text = data.text || "";
+              const avUrl = data.avatarUrl;
+              const avBlob = avUrl ? avatarCache.get(avUrl) : undefined;
+              showOSNotification(name, text, avBlob);
+            };
+            notifyFrom();
           }
         } else {
           // Focused — check if at bottom, if so mark read
