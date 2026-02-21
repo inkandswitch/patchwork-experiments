@@ -9,7 +9,13 @@ import { getRepo } from './webworker-lib';
 
 // import 'es-module-shims/wasm';
 const shimCodeUrl = 'https://ga.jspm.io/npm:es-module-shims@1.6.2/dist/es-module-shims.wasm.js';
-import(shimCodeUrl);
+try {
+  console.log('importing es-module-shims...');
+  await import(shimCodeUrl);
+  console.log('yay');
+} catch (error) {
+  console.error('failed to import es-module-shims:', error);
+}
 
 let status: 'not initialized' | 'initializing' | 'ready' = 'not initialized';
 
