@@ -160,8 +160,31 @@ function createStyles() {
     .chat-notify-btn {
       background:none; border:none; color:var(--text-secondary); cursor:pointer;
       padding:2px 4px; border-radius:4px; display:flex; align-items:center;
+      position:relative;
     }
-    .chat-notify-btn.denied { opacity:0.4; cursor:not-allowed; }
+    .chat-notify-menu {
+      display:none; position:absolute; top:100%; right:0; margin-top:4px;
+      background:var(--bg-darkest); border:1px solid var(--border); border-radius:8px;
+      padding:8px; min-width:180px; z-index:100;
+    }
+    .chat-notify-menu.show { display:block; }
+    .chat-notify-menu-row {
+      display:flex; align-items:center; justify-content:space-between; gap:8px;
+      padding:6px 4px; font-size:13px; color:var(--text-secondary); cursor:pointer;
+      border-radius:4px;
+    }
+    .chat-notify-menu-row:hover { background:var(--bg-hover); }
+    .chat-notify-toggle {
+      width:32px; height:18px; border-radius:9px; border:none; cursor:pointer;
+      background:var(--bg-hover); position:relative; transition:background 0.15s;
+      flex-shrink:0;
+    }
+    .chat-notify-toggle.on { background:var(--accent); }
+    .chat-notify-toggle::after {
+      content:""; position:absolute; top:2px; left:2px; width:14px; height:14px;
+      border-radius:50%; background:white; transition:transform 0.15s;
+    }
+    .chat-notify-toggle.on::after { transform:translateX(14px); }
 
     /* Theme picker popover */
     .chat-theme-popover {
@@ -967,32 +990,24 @@ export function Tool(handle, element, options) {
     });
   }
 
-  // ---- OS Notifications ----
+  // ---- Notifications & Sound ----
   let notificationsEnabled = localStorage.getItem("chat-notifications-enabled") === "true";
+  let soundEnabled = localStorage.getItem("chat-sound-enabled") !== "false"; // default on
   let notifyBtn = null;
 
   function updateNotifyBtn() {
     if (!notifyBtn) return;
-    const perm = typeof Notification !== "undefined" ? Notification.permission : "denied";
-    if (perm === "denied") {
-      notifyBtn.innerHTML = SVG_ICONS.bellOff;
-      notifyBtn.title = "Notifications blocked by browser";
-      notifyBtn.classList.add("denied");
-      notificationsEnabled = false;
-    } else if (notificationsEnabled && perm === "granted") {
+    if (soundEnabled || notificationsEnabled) {
       notifyBtn.innerHTML = SVG_ICONS.bellFilled;
-      notifyBtn.title = "Notifications on";
-      notifyBtn.classList.remove("denied");
+      notifyBtn.title = "Notification settings";
     } else {
       notifyBtn.innerHTML = SVG_ICONS.bellOutline;
-      notifyBtn.title = "Enable notifications";
-      notifyBtn.classList.remove("denied");
+      notifyBtn.title = "Notification settings";
     }
   }
 
   async function toggleNotifications() {
     if (typeof Notification === "undefined") return;
-    if (Notification.permission === "denied") return;
     if (!notificationsEnabled) {
       const perm = Notification.permission === "granted"
         ? "granted"
@@ -1005,6 +1020,12 @@ export function Tool(handle, element, options) {
       notificationsEnabled = false;
       localStorage.setItem("chat-notifications-enabled", "false");
     }
+    updateNotifyBtn();
+  }
+
+  function toggleSound() {
+    soundEnabled = !soundEnabled;
+    localStorage.setItem("chat-sound-enabled", soundEnabled ? "true" : "false");
     updateNotifyBtn();
   }
 
@@ -1583,13 +1604,60 @@ export function Tool(handle, element, options) {
   themePopover.addEventListener("click", (e) => { e.stopPropagation(); });
   root.addEventListener("click", () => { themePopover.classList.remove("show"); });
 
-  // ---- Notification bell button ----
+  // ---- Notification bell button with menu ----
   notifyBtn = document.createElement("button");
   notifyBtn.className = "chat-notify-btn";
+
+  const notifyMenu = document.createElement("div");
+  notifyMenu.className = "chat-notify-menu";
+
+  function renderNotifyMenu() {
+    notifyMenu.innerHTML = "";
+
+    const soundRow = document.createElement("div");
+    soundRow.className = "chat-notify-menu-row";
+    soundRow.textContent = "Sound";
+    const soundToggle = document.createElement("button");
+    soundToggle.className = "chat-notify-toggle" + (soundEnabled ? " on" : "");
+    soundRow.appendChild(soundToggle);
+    soundRow.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      toggleSound();
+      renderNotifyMenu();
+    });
+    notifyMenu.appendChild(soundRow);
+
+    const desktopRow = document.createElement("div");
+    desktopRow.className = "chat-notify-menu-row";
+    const perm = typeof Notification !== "undefined" ? Notification.permission : "denied";
+    if (perm === "denied") {
+      desktopRow.textContent = "Desktop notifications blocked";
+      desktopRow.style.opacity = "0.5";
+      desktopRow.style.cursor = "default";
+    } else {
+      desktopRow.textContent = "Desktop notifications";
+      const desktopToggle = document.createElement("button");
+      desktopToggle.className = "chat-notify-toggle" + (notificationsEnabled ? " on" : "");
+      desktopRow.appendChild(desktopToggle);
+      desktopRow.addEventListener("click", async (ev) => {
+        ev.stopPropagation();
+        await toggleNotifications();
+        renderNotifyMenu();
+      });
+    }
+    notifyMenu.appendChild(desktopRow);
+  }
+
   notifyBtn.addEventListener("click", (e) => {
     e.preventDefault(); e.stopPropagation();
-    toggleNotifications();
+    const showing = notifyMenu.classList.toggle("show");
+    if (showing) renderNotifyMenu();
   });
+  // Close menu on outside click
+  document.addEventListener("click", (e) => {
+    if (!notifyBtn.contains(e.target)) notifyMenu.classList.remove("show");
+  });
+  notifyBtn.appendChild(notifyMenu);
   updateNotifyBtn();
 
   // ---- Presence bar (with theme + notify buttons) ----
@@ -3456,7 +3524,7 @@ export function Tool(handle, element, options) {
         if (!isFocused || document.hidden) {
           hasUnread = true;
           updateTitle();
-          getNotificationSound().then(audio => { if (audio) { audio.currentTime = 0; audio.play().catch(() => {}); } });
+          if (soundEnabled) getNotificationSound().then(audio => { if (audio) { audio.currentTime = 0; audio.play().catch(() => {}); } });
           // OS notification — find the last message from someone else for the notification body
           const lastOther = [...newEntries].reverse().find(e => {
             if (e.ref && e.url) { const c = msgDocCache.get(e.url); return c ? c.data.name !== myName : true; }
