@@ -46,4 +46,22 @@ export const plugins = [
       };
     },
   },
+  {
+    type: "patchwork:datatype",
+    id: "llm-process",
+    name: "LLM Process",
+    icon: "Cpu",
+    async load() {
+      return (await import("./process/datatype.ts")).llmProcessDatatype;
+    },
+  },
+  {
+    type: "patchwork:tool",
+    id: "llm-process",
+    name: "LLM Process",
+    supportedDatatypes: ["llm-process"],
+    async load(): Promise<ToolImplementation> {
+      return (await import("./process/tool-plugin.tsx")).llmProcessToolImpl;
+    },
+  },
 ];

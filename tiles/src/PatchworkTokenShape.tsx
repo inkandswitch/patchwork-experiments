@@ -8,6 +8,15 @@ import {
   type Geometry2d,
   type TLShape,
 } from "@tldraw/tldraw";
+import type { Repo } from "@automerge/automerge-repo";
+import type { LLMProcessDoc, WorkspaceDoc, WorkspaceEntry } from "./process/types";
+
+let _repo: Repo | null = null;
+
+/** Call once from TldrawInner to give shape utils access to the repo. */
+export function setTokenShapeRepo(repo: Repo) {
+  _repo = repo;
+}
 
 export const PATCHWORK_TOKEN_TYPE = "patchwork-token" as const;
 
@@ -270,6 +279,70 @@ export class PatchworkTokenShapeUtil extends ShapeUtil<PatchworkTokenShape> {
 
     const view = target as any;
     const { item, isDoc, isTool } = info;
+
+    // -----------------------------------------------------------------------
+    // TEMPORARY: When the drop target is a patchwork-view rendering an
+    // llm-process tool, write the token's entry directly into the
+    // LLMProcessDoc's WorkspaceDoc via Automerge.
+    //
+    // This bridges the gap between tldraw's shape-drag system and the
+    // embedded <patchwork-view> which can't receive tldraw drag events.
+    // Replace with a proper cross-boundary DnD protocol when available.
+    // -----------------------------------------------------------------------
+    if (view.props?.toolId === "llm-process" && view.props?.docUrl && _repo) {
+      const repo = _repo;
+      const processDocUrl = view.props.docUrl;
+
+      (async () => {
+        try {
+          const processHandle = await repo.find<LLMProcessDoc>(processDocUrl);
+          const processDoc = processHandle.doc();
+          if (!processDoc?.workspaceUrl) return;
+
+          const wsHandle = await repo.find<WorkspaceDoc>(processDoc.workspaceUrl);
+          wsHandle.change((ws: any) => {
+            if (!ws.entries) ws.entries = [];
+
+            const exists = ws.entries.some(
+              (e: WorkspaceEntry) => e.name === item.name && e.url === item.url,
+            );
+            if (exists) return;
+
+            if (item.type && item.type !== "raw" && !item.url) return;
+
+            const isToolEntry =
+              item.type &&
+              item.type !== "raw" &&
+              item.type !== "file" &&
+              item.type !== "folder";
+
+            if (isToolEntry) {
+              ws.entries.push({
+                name: item.name || item.type,
+                url: item.url,
+                path: "tool.js",
+                type: "tool",
+              });
+            } else {
+              ws.entries.push({
+                name: item.name || "Untitled",
+                url: item.url,
+                type: "document",
+              });
+            }
+          });
+        } catch (err) {
+          console.error("[tiles] token→llm-process bridge failed:", err);
+        }
+      })();
+
+      editor.deleteShape(shape.id);
+      previewOriginals.delete(view.id);
+      return;
+    }
+    // -----------------------------------------------------------------------
+    // END TEMPORARY
+    // -----------------------------------------------------------------------
 
     const updates: Record<string, string> = {};
     if (isDoc) {

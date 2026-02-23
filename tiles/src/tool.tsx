@@ -3,9 +3,10 @@ import { useDocHandle, useDocument, useRepo } from "@automerge/react";
 import { Tldraw, useEditor, getMediaAssetInfoPartial, type VecLike, type TLContent, type TLAssetId, type TLAsset, type TLUiComponents } from "@tldraw/tldraw";
 import { useAutomergeStore, useAutomergePresence } from "./automerge/useAutomergeStore.ts";
 import type { TilesDoc } from "./datatype.ts";
-import { PatchworkTokenShapeUtil } from "./PatchworkTokenShape.tsx";
+import { PatchworkTokenShapeUtil, setTokenShapeRepo } from "./PatchworkTokenShape.tsx";
 import { PatchworkViewShapeUtil, PATCHWORK_VIEW_TYPE } from "./PatchworkViewShape.tsx";
 import { LLMProcessShapeUtil, LLMProcessShapeTool } from "./process/LLMProcessShape.tsx";
+import { NewDocShapeTool, newDocUiOverrides, NewDocToolbar, setNewDocToolContext } from "./NewDocTool.tsx";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { UnixFileEntry } from "@inkandswitch/patchwork-filesystem";
 import { automergeUrlToServiceWorkerUrl } from "@inkandswitch/patchwork-filesystem";
@@ -60,12 +61,13 @@ function useContactInfo() {
 const VERSION = "0.3.0";
 
 const customShapeUtils = [PatchworkTokenShapeUtil, PatchworkViewShapeUtil, LLMProcessShapeUtil];
-const customTools: any[] = [LLMProcessShapeTool];
+const customTools: any[] = [LLMProcessShapeTool, NewDocShapeTool];
 
 const uiComponents: TLUiComponents = {
   PageMenu: null,
   QuickActions: null,
   ActionsMenu: null,
+  Toolbar: NewDocToolbar,
 };
 
 export function TilesTool({ docUrl }: { docUrl: AutomergeUrl }) {
@@ -85,7 +87,7 @@ export function TilesTool({ docUrl }: { docUrl: AutomergeUrl }) {
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
-      <Tldraw inferDarkMode autoFocus store={store} shapeUtils={customShapeUtils} tools={customTools} components={uiComponents}>
+      <Tldraw inferDarkMode autoFocus store={store} shapeUtils={customShapeUtils} tools={customTools} components={uiComponents} overrides={newDocUiOverrides}>
         <TldrawInner docUrl={docUrl} />
       </Tldraw>
       <div
@@ -111,6 +113,11 @@ function TldrawInner(props: { docUrl: AutomergeUrl }) {
 
   const editor = useEditor();
   const repo = useRepo();
+
+  useEffect(() => {
+    setNewDocToolContext(repo, editor);
+    setTokenShapeRepo(repo);
+  }, [repo, editor]);
 
   const onChange = useCallback(() => {
     if (!editor) return;
