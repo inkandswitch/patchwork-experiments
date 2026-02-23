@@ -84,6 +84,10 @@ function findToolForDatatype(datatypeId: string): string {
     const tools = registry.filter(
       (t) => t.supportedDatatypes === '*' || (Array.isArray(t.supportedDatatypes) && t.supportedDatatypes.includes(datatypeId)),
     );
+    const specific = tools.find(
+      (t) => Array.isArray(t.supportedDatatypes) && t.supportedDatatypes.includes(datatypeId),
+    );
+    if (specific) return specific.id;
     if (tools.length > 0) return tools[0].id;
   } catch {
     // ignore
