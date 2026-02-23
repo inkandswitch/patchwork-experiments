@@ -13,6 +13,21 @@
  */
 
 // ============================================================================
+// Datatype
+// ============================================================================
+
+export const ChatDatatype = {
+  init(doc) {
+    doc.title = "Chat";
+    doc.messages = [];
+    doc.docs = [];
+  },
+  getTitle(doc) { return doc.title || "Chat"; },
+  setTitle(doc, title) { doc.title = title; },
+  markCopy(doc) { doc.title = "Copy of " + this.getTitle(doc); },
+};
+
+// ============================================================================
 // Helpers
 // ============================================================================
 
@@ -109,15 +124,6 @@ function formatText(text, emoticonBlobUrls) {
   return out;
 }
 
-function isEmojiOnly(text) {
-  // Strip :custom: emoticon tokens and unicode emoji, see if anything non-whitespace remains
-  const stripped = text
-    .replace(/:[a-zA-Z0-9_-]+:/g, "")
-    .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}\u200d\ufe0f\ufe0e\u20e3\u{1f3fb}-\u{1f3ff}\u{e0061}-\u{e007a}\u{e007f}]/gu, "")
-    .trim();
-  return stripped.length === 0 && text.trim().length > 0;
-}
-
 // ============================================================================
 // Styles with CSS custom properties derived from a single theme color
 // ============================================================================
@@ -169,31 +175,8 @@ function createStyles() {
     .chat-notify-btn {
       background:none; border:none; color:var(--text-secondary); cursor:pointer;
       padding:2px 4px; border-radius:4px; display:flex; align-items:center;
-      position:relative;
     }
-    .chat-notify-menu {
-      display:none; position:absolute; top:100%; right:0; margin-top:4px;
-      background:var(--bg-darkest); border:1px solid var(--border); border-radius:8px;
-      padding:8px; min-width:180px; z-index:100;
-    }
-    .chat-notify-menu.show { display:block; }
-    .chat-notify-menu-row {
-      display:flex; align-items:center; justify-content:space-between; gap:8px;
-      padding:6px 4px; font-size:13px; color:var(--text-secondary); cursor:pointer;
-      border-radius:4px;
-    }
-    .chat-notify-menu-row:hover { background:var(--bg-hover); }
-    .chat-notify-toggle {
-      width:32px; height:18px; border-radius:9px; border:none; cursor:pointer;
-      background:var(--bg-hover); position:relative; transition:background 0.15s;
-      flex-shrink:0;
-    }
-    .chat-notify-toggle.on { background:var(--accent); }
-    .chat-notify-toggle::after {
-      content:""; position:absolute; top:2px; left:2px; width:14px; height:14px;
-      border-radius:50%; background:white; transition:transform 0.15s;
-    }
-    .chat-notify-toggle.on::after { transform:translateX(14px); }
+    .chat-notify-btn.denied { opacity:0.4; cursor:not-allowed; }
 
     /* Theme picker popover */
     .chat-theme-popover {
@@ -264,8 +247,6 @@ function createStyles() {
     .chat-msg-name:hover { text-decoration:underline; }
     .chat-msg-time { font-size:11px; color:var(--text-muted); }
     .chat-msg-text { color:var(--text-primary); line-height:1.45; margin-top:2px; white-space:pre-wrap; word-wrap:break-word; }
-    .chat-msg-text.emoji-only { font-size:2em; line-height:1.2; }
-    .chat-msg-text.emoji-only .chat-emoticon-inline { height:2em; }
     .chat-msg-text code {
       background:var(--bg-hover); padding:1px 4px; border-radius:3px;
       font-family:ui-monospace,monospace; font-size:0.9em;
@@ -282,11 +263,8 @@ function createStyles() {
     }
     .chat-msg-action {
       padding:4px 16px; font-style:italic; color:var(--text-secondary); font-size:14px;
-      position:relative;
     }
-    .chat-msg-action:hover { background:var(--bg-hover); }
     .chat-msg-action .chat-msg-action-name { font-weight:600; color:var(--text-primary); }
-    .chat-time-gap { margin-top:16px; }
 
     /* Input preview overlay */
     .chat-input-wrap { position:relative; flex:1; min-width:0; }
@@ -434,24 +412,6 @@ function createStyles() {
     }
     .chat-reaction-add:hover { border-color:var(--accent); color:var(--text-primary); background:var(--bg-hover); }
 
-    /* Emoticon/reaction tooltip */
-    .chat-emoticon-tooltip {
-      position:absolute; z-index:200; pointer-events:none;
-      background:var(--bg-darkest); border:1px solid var(--border); border-radius:8px;
-      padding:8px 12px; box-shadow:0 4px 16px rgba(0,0,0,0.3);
-      display:none; flex-direction:column; align-items:center; gap:4px; max-width:200px;
-    }
-    .chat-emoticon-tooltip.show { display:flex; pointer-events:auto; }
-    .chat-emoticon-tooltip-preview { font-size:48px; line-height:1; }
-    .chat-emoticon-tooltip-preview img { width:48px; height:48px; object-fit:contain; }
-    .chat-emoticon-tooltip-name { font-size:12px; color:var(--text-muted); }
-    .chat-emoticon-tooltip-names { font-size:11px; color:var(--text-secondary); text-align:center; }
-    .chat-emoticon-tooltip-adopt {
-      background:var(--accent); color:var(--accent-fg); border:none; cursor:pointer;
-      font-size:11px; padding:2px 10px; border-radius:4px; font-weight:600;
-    }
-    .chat-emoticon-tooltip-adopt:hover { opacity:0.85; }
-
     /* Message hover actions */
     .chat-msg-actions {
       position:absolute; top:-14px; right:16px; display:none;
@@ -459,8 +419,7 @@ function createStyles() {
       border-radius:4px; z-index:10;
     }
     .chat-msg-group:hover .chat-msg-actions,
-    .chat-msg-continuation:hover .chat-msg-actions,
-    .chat-msg-action:hover .chat-msg-actions { display:flex; }
+    .chat-msg-continuation:hover .chat-msg-actions { display:flex; }
     .chat-msg-action-btn {
       background:none; border:none; color:var(--text-secondary);
       padding:6px 8px; cursor:pointer; font-size:16px;
@@ -487,7 +446,6 @@ function createStyles() {
       border-radius:4px; width:36px; height:36px; display:flex; align-items:center; justify-content:center;
     }
     .chat-emoji-grid button:hover { background:var(--bg-hover); }
-    .chat-emoji-active { background:var(--accent) !important; outline:2px solid var(--accent); outline-offset:-2px; opacity:0.8; }
     .chat-emoji-picker-search {
       width:100%; padding:6px 10px; background:var(--bg-input); border:1px solid var(--border);
       border-radius:4px; color:var(--text-primary); font-size:14px; margin-bottom:6px; outline:none;
@@ -520,12 +478,6 @@ function createStyles() {
       font-size:10px; display:none; align-items:center; justify-content:center; line-height:1;
     }
     .chat-emoticon-grid button:hover .chat-emoticon-adopt { display:flex; }
-    .chat-emoticon-remove {
-      position:absolute; top:-2px; right:-2px; width:14px; height:14px; border-radius:50%;
-      background:#ed4245; color:#fff; border:none; cursor:pointer;
-      font-size:10px; display:none; align-items:center; justify-content:center; line-height:1;
-    }
-    .chat-emoticon-grid button:hover .chat-emoticon-remove { display:flex; }
 
     /* Inline emoticon in message text */
     .chat-emoticon-inline { height:1.5em; vertical-align:middle; display:inline; }
@@ -540,15 +492,10 @@ function createStyles() {
     }
     .chat-emoticon-dialog input[type=text]:focus { border-color:var(--accent); }
     .chat-emoticon-dialog-preview {
-      width:80px; height:80px; border-radius:4px; background:var(--bg-hover);
+      width:64px; height:64px; border-radius:4px; background:var(--bg-hover);
       display:flex; align-items:center; justify-content:center; overflow:hidden; align-self:center;
-      color:var(--text-muted); font-size:24px;
     }
-    .chat-emoticon-dialog-preview:hover { background:var(--bg-input); border:1px dashed var(--border); }
     .chat-emoticon-dialog-preview img { width:100%; height:100%; object-fit:contain; }
-    .chat-emoticon-dialog-counter {
-      font-size:11px; color:var(--text-muted); text-align:center;
-    }
     .chat-emoticon-dialog-btns { display:flex; gap:6px; justify-content:flex-end; }
     .chat-emoticon-dialog-btns button {
       padding:4px 12px; border-radius:4px; font-size:13px; cursor:pointer; border:none;
@@ -620,20 +567,7 @@ function createStyles() {
     }
     .chat-drop-overlay.show { display:flex; }
     .chat-msg-video-wrap { max-width:350px; border-radius:8px; overflow:hidden; margin-top:4px; position:relative; }
-    .chat-msg-video { width:100%; display:block; border-radius:8px; cursor:pointer; }
-
-    /* Lightbox */
-    .chat-lightbox {
-      display:none; position:absolute; inset:0; z-index:200;
-      background:rgba(0,0,0,0.85); align-items:center; justify-content:center;
-      cursor:zoom-out;
-    }
-    .chat-lightbox.show { display:flex; }
-    .chat-lightbox img, .chat-lightbox video {
-      max-width:95%; max-height:95%; object-fit:contain; border-radius:4px;
-      cursor:default;
-    }
-    .chat-lightbox video { background:#000; }
+    .chat-msg-video { width:100%; display:block; border-radius:8px; }
     .chat-msg-file {
       display:inline-flex; align-items:center; gap:6px; background:var(--bg-hover);
       border-radius:6px; padding:6px 10px; margin-top:4px; font-size:13px;
@@ -711,17 +645,16 @@ function createStyles() {
     
     /* GIF recording/processing feedback */
     .chat-gif-toggle.recording {
-      pointer-events:none; position:relative; overflow:visible;
+      pointer-events:none; position:relative;
     }
     .chat-gif-progress {
-      position:absolute; top:-10px; left:-10px; width:calc(100% + 20px); height:calc(100% + 20px);
-      z-index:20; pointer-events:none;
+      position:absolute; top:0; left:0; width:100%; height:100%; z-index:20; pointer-events:none;
     }
     .chat-gif-progress circle.chat-gif-progress-bg {
-      fill:none; stroke:rgba(0,0,0,0.15); stroke-width:2;
+      fill:none; stroke:rgba(0,0,0,0.4); stroke-width:3;
     }
     .chat-gif-progress circle.chat-gif-progress-fg {
-      fill:none; stroke:var(--accent); stroke-width:2; stroke-linecap:round;
+      fill:none; stroke:var(--accent); stroke-width:3; stroke-linecap:round;
       transform:rotate(-90deg); transform-origin:center;
       transition:stroke-dashoffset 100ms linear;
     }
@@ -733,20 +666,16 @@ function createStyles() {
       flex:1; display:flex; align-items:center; justify-content:center;
       color:var(--text-muted); font-size:16px;
     }
-    @keyframes chat-skeleton-pulse {
-      0%, 100% { opacity:0.3; }
-      50% { opacity:0.6; }
+    .chat-loading {
+      padding:12px 16px; display:flex; flex-direction:column; gap:6px; align-items:center;
+      color:var(--text-muted); font-size:13px;
     }
-    .chat-msg-loading { opacity:0.5; }
-    .chat-skeleton {
-      background:var(--bg-hover); animation:chat-skeleton-pulse 1.5s ease-in-out infinite;
+    .chat-loading-bar {
+      width:200px; height:4px; background:var(--bg-hover); border-radius:2px; overflow:hidden;
     }
-    .chat-skeleton-line {
-      height:14px; background:var(--bg-hover); border-radius:4px; margin:4px 0;
-      animation:chat-skeleton-pulse 1.5s ease-in-out infinite;
-      width:60%;
+    .chat-loading-fill {
+      height:100%; background:var(--accent); border-radius:2px; transition:width 0.2s;
     }
-    .chat-skeleton-line.short { width:30%; }
   `;
   return style;
 }
@@ -795,48 +724,18 @@ class SimpleGIFEncoder {
     this.frames.push({ data: imageData, delay });
   }
 
-  // Median-cut quantization — full 8-bit per channel, no binning
   _quantize(pixels) {
-    const max = this.transparent ? 255 : 256;
-    // Collect unique colours as [r,g,b]
-    const colors = [];
+    const m = new Map();
     for (let i = 0; i < pixels.length; i += 4) {
-      if (this.transparent && pixels[i+3] < 128) continue;
-      colors.push([pixels[i], pixels[i+1], pixels[i+2]]);
+      if (this.transparent && pixels[i+3] < 128) continue; // skip transparent pixels
+      const k = ((pixels[i]>>3)<<10)|((pixels[i+1]>>3)<<5)|(pixels[i+2]>>3);
+      m.set(k, (m.get(k)||0)+1);
     }
-    if (colors.length === 0) { const p = []; while(p.length<256) p.push([0,0,0]); return p; }
-
-    // Median cut: recursively split colour buckets along the channel with the widest range
-    let buckets = [colors];
-    while (buckets.length < max) {
-      // Find the bucket with the largest range to split
-      let bestIdx = 0, bestRange = -1, bestCh = 0;
-      for (let bi = 0; bi < buckets.length; bi++) {
-        const b = buckets[bi];
-        if (b.length < 2) continue;
-        for (let ch = 0; ch < 3; ch++) {
-          let lo = 255, hi = 0;
-          for (const c of b) { if (c[ch] < lo) lo = c[ch]; if (c[ch] > hi) hi = c[ch]; }
-          const range = hi - lo;
-          if (range > bestRange) { bestRange = range; bestIdx = bi; bestCh = ch; }
-        }
-      }
-      if (bestRange <= 0) break;
-      const bucket = buckets[bestIdx];
-      bucket.sort((a,b) => a[bestCh] - b[bestCh]);
-      const mid = bucket.length >> 1;
-      buckets.splice(bestIdx, 1, bucket.slice(0, mid), bucket.slice(mid));
-    }
-
-    // Average each bucket to get the palette colour
-    const pal = buckets.map(b => {
-      let r=0, g=0, bl=0;
-      for (const c of b) { r+=c[0]; g+=c[1]; bl+=c[2]; }
-      const n = b.length || 1;
-      return [Math.round(r/n), Math.round(g/n), Math.round(bl/n)];
-    });
-    while (pal.length < 256) pal.push([0,0,0]);
-    return pal;
+    const max = this.transparent ? 255 : 256; // reserve index 255 for transparent
+    const s = [...m.entries()].sort((a,b)=>b[1]-a[1]).slice(0,max);
+    const p = s.map(([k])=>[(k>>10&0x1f)<<3,(k>>5&0x1f)<<3,(k&0x1f)<<3]);
+    while(p.length<256) p.push([0,0,0]);
+    return p;
   }
 
   _closest(p,r,g,b) {
@@ -847,34 +746,20 @@ class SimpleGIFEncoder {
 
   encode() {
     if(!this.frames.length) return null;
-    const bytes=[];
+    const pal=this._quantize(this.frames[0].data), bytes=[];
     const wb=(b)=>bytes.push(b&0xff), ws=(s)=>{wb(s);wb(s>>8);}, wr=(s)=>{for(let i=0;i<s.length;i++)wb(s.charCodeAt(i));};
     const transIdx = this.transparent ? 255 : 0;
 
-    // GIF header — no global colour table (each frame has its own local table)
-    wr("GIF89a"); ws(this.width); ws(this.height);
-    wb(0x70); // no GCT, 8-bit colour resolution
-    wb(0); wb(0);
-    // NETSCAPE looping extension
+    wr("GIF89a"); ws(this.width); ws(this.height); wb(0xf7); wb(0); wb(0);
+    for(const[r,g,b] of pal){wb(r);wb(g);wb(b);}
     wb(0x21);wb(0xff);wb(11);wr("NETSCAPE2.0");wb(3);wb(1);ws(0);wb(0);
 
     for(const frame of this.frames){
-      // Per-frame palette via median cut
-      const pal = this._quantize(frame.data);
-
-      // Graphic control extension
       wb(0x21);wb(0xf9);wb(4);
-      wb(this.transparent ? 0x09 : 0x04);
+      wb(this.transparent ? 0x09 : 0x04); // disposal=1, transparency flag if needed
       ws(Math.round(frame.delay/10));
       wb(transIdx); wb(0);
-
-      // Image descriptor with local colour table flag
-      wb(0x2c);ws(0);ws(0);ws(this.width);ws(this.height);
-      wb(0x87); // local colour table, 256 entries (2^(7+1))
-
-      // Write local colour table
-      for(const[r,g,b] of pal){wb(r);wb(g);wb(b);}
-
+      wb(0x2c);ws(0);ws(0);ws(this.width);ws(this.height);wb(0);
       const mcs=8; wb(mcs);
       const w=this.width,h=this.height,px=frame.data,idx=new Uint8Array(w*h);
       for(let i=0;i<w*h;i++) {
@@ -1080,24 +965,32 @@ export function Tool(handle, element, options) {
     });
   }
 
-  // ---- Notifications & Sound ----
+  // ---- OS Notifications ----
   let notificationsEnabled = localStorage.getItem("chat-notifications-enabled") === "true";
-  let soundEnabled = localStorage.getItem("chat-sound-enabled") !== "false"; // default on
   let notifyBtn = null;
 
   function updateNotifyBtn() {
     if (!notifyBtn) return;
-    if (soundEnabled || notificationsEnabled) {
+    const perm = typeof Notification !== "undefined" ? Notification.permission : "denied";
+    if (perm === "denied") {
+      notifyBtn.innerHTML = SVG_ICONS.bellOff;
+      notifyBtn.title = "Notifications blocked by browser";
+      notifyBtn.classList.add("denied");
+      notificationsEnabled = false;
+    } else if (notificationsEnabled && perm === "granted") {
       notifyBtn.innerHTML = SVG_ICONS.bellFilled;
-      notifyBtn.title = "Notification settings";
+      notifyBtn.title = "Notifications on";
+      notifyBtn.classList.remove("denied");
     } else {
       notifyBtn.innerHTML = SVG_ICONS.bellOutline;
-      notifyBtn.title = "Notification settings";
+      notifyBtn.title = "Enable notifications";
+      notifyBtn.classList.remove("denied");
     }
   }
 
   async function toggleNotifications() {
     if (typeof Notification === "undefined") return;
+    if (Notification.permission === "denied") return;
     if (!notificationsEnabled) {
       const perm = Notification.permission === "granted"
         ? "granted"
@@ -1113,18 +1006,12 @@ export function Tool(handle, element, options) {
     updateNotifyBtn();
   }
 
-  function toggleSound() {
-    soundEnabled = !soundEnabled;
-    localStorage.setItem("chat-sound-enabled", soundEnabled ? "true" : "false");
-    updateNotifyBtn();
-  }
-
   function showOSNotification(authorName, text, avatarBlobUrl) {
     if (!notificationsEnabled || typeof Notification === "undefined") return;
     if (Notification.permission !== "granted") return;
     try {
-      const n = new Notification("New message from " + authorName, {
-        body: (text || "").slice(0, 200),
+      const n = new Notification(baseTitle, {
+        body: authorName + ": " + (text || "").slice(0, 200),
         icon: avatarBlobUrl || undefined,
         tag: chatUrl,
       });
@@ -1189,11 +1076,89 @@ export function Tool(handle, element, options) {
     return blobUrl;
   }
 
+  async function resizeAnimatedGif(file) {
+    const { parseGIF, decompressFrames } = await import("https://esm.sh/gifuct-js@2.1.2");
+    const buf = await file.arrayBuffer();
+    const gif = parseGIF(buf);
+    const frames = decompressFrames(gif, true);
+    if (!frames.length) throw new Error("No frames in GIF");
+
+    const srcW = gif.lsd.width, srcH = gif.lsd.height;
+    const size = 128;
+    const encoder = new SimpleGIFEncoder(size, size, true);
+
+    // Source canvas for compositing full frames
+    const srcCanvas = document.createElement("canvas");
+    srcCanvas.width = srcW; srcCanvas.height = srcH;
+    const srcCtx = srcCanvas.getContext("2d");
+
+    // Destination canvas for resized output
+    const dstCanvas = document.createElement("canvas");
+    dstCanvas.width = size; dstCanvas.height = size;
+    const dstCtx = dstCanvas.getContext("2d");
+
+    const scale = Math.min(size / srcW, size / srcH);
+    const dw = srcW * scale, dh = srcH * scale;
+    const dx = (size - dw) / 2, dy = (size - dh) / 2;
+
+    for (const frame of frames) {
+      // Draw frame patch onto source canvas
+      const patch = new ImageData(new Uint8ClampedArray(frame.patch), frame.dims.width, frame.dims.height);
+      srcCtx.putImageData(patch, frame.dims.left, frame.dims.top);
+
+      // Resize onto destination
+      dstCtx.clearRect(0, 0, size, size);
+      dstCtx.drawImage(srcCanvas, dx, dy, dw, dh);
+
+      const resized = dstCtx.getImageData(0, 0, size, size);
+      encoder.addFrameData(resized.data, frame.delay || 100);
+
+      // Handle disposal
+      if (frame.disposalType === 2) {
+        srcCtx.clearRect(frame.dims.left, frame.dims.top, frame.dims.width, frame.dims.height);
+      }
+    }
+
+    const encoded = encoder.encode();
+    return new Blob([encoded], { type: "image/gif" });
+  }
+
+  async function resizeStaticImage(file) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 128; canvas.height = 128;
+        const ctx = canvas.getContext("2d");
+        const scale = Math.min(128 / img.width, 128 / img.height);
+        const w = img.width * scale, h = img.height * scale;
+        ctx.drawImage(img, (128 - w) / 2, (128 - h) / 2, w, h);
+        canvas.toBlob(
+          (blob) => blob ? resolve(blob) : reject(new Error("toBlob failed")),
+          "image/webp", 0.85
+        );
+      };
+      img.onerror = reject;
+      img.src = URL.createObjectURL(file);
+    });
+  }
+
+  async function resizeImageToEmoticon(file) {
+    const isGif = file.type === "image/gif";
+    if (isGif) {
+      try { return await resizeAnimatedGif(file); }
+      catch (e) { console.warn("[Chat] animated gif resize failed, falling back to static:", e); }
+    }
+    return resizeStaticImage(file);
+  }
+
   async function addEmoticon(name, file) {
-    const ext = file.name?.split(".").pop()?.toLowerCase() || "png";
-    const mime = file.type || "image/" + ext;
+    const blob = await resizeImageToEmoticon(file);
+    const isGif = blob.type === "image/gif";
+    const ext = isGif ? "gif" : "webp";
+    const mime = isGif ? "image/gif" : "image/webp";
     const repo = window.repo; if (!repo) throw new Error("No repo");
-    const u8 = new Uint8Array(await file.arrayBuffer());
+    const u8 = new Uint8Array(await blob.arrayBuffer());
     const fh = await repo.create2({ content: u8, extension: ext, mimeType: mime, name: name + "." + ext, "@patchwork": { type: "file" } });
     const url = fh.url;
     myEmoticons[name] = url;
@@ -1206,19 +1171,6 @@ export function Tool(handle, element, options) {
     addEmoticonToChatDoc(name, url);
     broadcastPresence(false);
     return url;
-  }
-
-  function removeEmoticon(name) {
-    delete myEmoticons[name];
-    if (chatProfileHandle) {
-      chatProfileHandle.change((d) => {
-        if (d.emoticons) delete d.emoticons[name];
-      });
-    }
-    handle.change((d) => {
-      if (d.emoticons) delete d.emoticons[name];
-    });
-    broadcastPresence(false);
   }
 
   function adoptEmoticon(name, url) {
@@ -1629,60 +1581,13 @@ export function Tool(handle, element, options) {
   themePopover.addEventListener("click", (e) => { e.stopPropagation(); });
   root.addEventListener("click", () => { themePopover.classList.remove("show"); });
 
-  // ---- Notification bell button with menu ----
+  // ---- Notification bell button ----
   notifyBtn = document.createElement("button");
   notifyBtn.className = "chat-notify-btn";
-
-  const notifyMenu = document.createElement("div");
-  notifyMenu.className = "chat-notify-menu";
-
-  function renderNotifyMenu() {
-    notifyMenu.innerHTML = "";
-
-    const soundRow = document.createElement("div");
-    soundRow.className = "chat-notify-menu-row";
-    soundRow.textContent = "Sound";
-    const soundToggle = document.createElement("button");
-    soundToggle.className = "chat-notify-toggle" + (soundEnabled ? " on" : "");
-    soundRow.appendChild(soundToggle);
-    soundRow.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      toggleSound();
-      renderNotifyMenu();
-    });
-    notifyMenu.appendChild(soundRow);
-
-    const desktopRow = document.createElement("div");
-    desktopRow.className = "chat-notify-menu-row";
-    const perm = typeof Notification !== "undefined" ? Notification.permission : "denied";
-    if (perm === "denied") {
-      desktopRow.textContent = "Desktop notifications blocked";
-      desktopRow.style.opacity = "0.5";
-      desktopRow.style.cursor = "default";
-    } else {
-      desktopRow.textContent = "Desktop notifications";
-      const desktopToggle = document.createElement("button");
-      desktopToggle.className = "chat-notify-toggle" + (notificationsEnabled ? " on" : "");
-      desktopRow.appendChild(desktopToggle);
-      desktopRow.addEventListener("click", async (ev) => {
-        ev.stopPropagation();
-        await toggleNotifications();
-        renderNotifyMenu();
-      });
-    }
-    notifyMenu.appendChild(desktopRow);
-  }
-
   notifyBtn.addEventListener("click", (e) => {
     e.preventDefault(); e.stopPropagation();
-    const showing = notifyMenu.classList.toggle("show");
-    if (showing) renderNotifyMenu();
+    toggleNotifications();
   });
-  // Close menu on outside click
-  document.addEventListener("click", (e) => {
-    if (!notifyBtn.contains(e.target)) notifyMenu.classList.remove("show");
-  });
-  notifyBtn.appendChild(notifyMenu);
   updateNotifyBtn();
 
   // ---- Presence bar (with theme + notify buttons) ----
@@ -1755,7 +1660,7 @@ export function Tool(handle, element, options) {
   inputRow.appendChild(gifToggle);
 
   const gifCanvas = document.createElement("canvas");
-  gifCanvas.width = 160; gifCanvas.height = 160;
+  gifCanvas.width = 240; gifCanvas.height = 240;
   gifCanvas.style.display = "none";
   inputRow.appendChild(gifCanvas);
 
@@ -1815,171 +1720,10 @@ export function Tool(handle, element, options) {
   emojiOverlay.appendChild(emojiPicker);
   root.appendChild(emojiOverlay);
 
-  // Lightbox for full-size image/video viewing
-  const lightbox = document.createElement("div");
-  lightbox.className = "chat-lightbox";
-  lightbox.addEventListener("click", (e) => {
-    if (e.target === lightbox) {
-      lightbox.classList.remove("show");
-      lightbox.innerHTML = "";
-    }
-  });
-  root.appendChild(lightbox);
-
-  function openLightbox(src, type) {
-    lightbox.innerHTML = "";
-    if (type === "video") {
-      const vid = document.createElement("video");
-      vid.src = src;
-      vid.controls = true;
-      vid.autoplay = true;
-      lightbox.appendChild(vid);
-    } else {
-      const img = document.createElement("img");
-      img.src = src;
-      lightbox.appendChild(img);
-    }
-    lightbox.classList.add("show");
-  }
-
-  // ---- Emoticon/reaction tooltip ----
-  const emTooltip = document.createElement("div");
-  emTooltip.className = "chat-emoticon-tooltip";
-  root.appendChild(emTooltip);
-  let emTooltipTimer = null;
-
-  function showEmoticonTooltip(anchorEl, { emoji, emoticonName, emoticonUrl, blobUrl, names, isOwned }) {
-    clearTimeout(emTooltipTimer);
-    emTooltip.innerHTML = "";
-
-    // Preview (big)
-    const previewEl = document.createElement("div");
-    previewEl.className = "chat-emoticon-tooltip-preview";
-    if (blobUrl) {
-      const img = document.createElement("img");
-      img.src = blobUrl;
-      previewEl.appendChild(img);
-    } else {
-      previewEl.textContent = emoji || "";
-    }
-    emTooltip.appendChild(previewEl);
-
-    // Name
-    const nameEl = document.createElement("div");
-    nameEl.className = "chat-emoticon-tooltip-name";
-    nameEl.textContent = emoticonName ? ":" + emoticonName + ":" : emoji || "";
-    emTooltip.appendChild(nameEl);
-
-    // Names of people who reacted
-    if (names && names.length > 0) {
-      const namesEl = document.createElement("div");
-      namesEl.className = "chat-emoticon-tooltip-names";
-      namesEl.textContent = names.join(", ");
-      emTooltip.appendChild(namesEl);
-    }
-
-    // Adopt button for non-owned custom emoticons
-    if (emoticonName && emoticonUrl && !isOwned) {
-      const adoptBtn = document.createElement("button");
-      adoptBtn.className = "chat-emoticon-tooltip-adopt";
-      adoptBtn.textContent = "Adopt :" + emoticonName + ":";
-      adoptBtn.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        adoptEmoticon(emoticonName, emoticonUrl);
-        hideEmoticonTooltip();
-      });
-      emTooltip.appendChild(adoptBtn);
-    }
-
-    // Position below the hovered element, relative to root
-    const rect = anchorEl.getBoundingClientRect();
-    const rootRect = root.getBoundingClientRect();
-    emTooltip.classList.add("show");
-    const tw = emTooltip.offsetWidth, th = emTooltip.offsetHeight;
-    let left = rect.left - rootRect.left + rect.width / 2 - tw / 2;
-    let top = rect.bottom - rootRect.top + 4;
-    if (rect.bottom + th + 4 > window.innerHeight) top = rect.top - rootRect.top - th - 4;
-    if (left < 4) left = 4;
-    if (left + tw > rootRect.width - 4) left = rootRect.width - tw - 4;
-    emTooltip.style.left = left + "px";
-    emTooltip.style.top = top + "px";
-  }
-
-  function hideEmoticonTooltip() {
-    clearTimeout(emTooltipTimer);
-    emTooltip.classList.remove("show");
-  }
-
-  // Delegate hover/touch on inline emoticons in messages
-  messagesArea.addEventListener("pointerenter", (e) => {
-    const emImg = e.target.closest(".chat-emoticon-inline");
-    if (emImg) {
-      const name = (emImg.alt || "").replace(/^:|:$/g, "");
-      const allEm = getAllEmoticons();
-      const info = allEm[name];
-      showEmoticonTooltip(emImg, {
-        emoticonName: name,
-        blobUrl: emImg.src,
-        emoticonUrl: info?.url,
-        isOwned: info?.mine ?? false,
-      });
-      return;
-    }
-    const reaction = e.target.closest(".chat-reaction");
-    if (reaction) {
-      // Parse reaction data from the element
-      const reactionImg = reaction.querySelector(".chat-emoticon-inline");
-      const emoticonMatch = reactionImg ? (reactionImg.alt || "").match(/^:([a-zA-Z0-9_-]+):$/) : null;
-      const emojiText = reactionImg ? null : reaction.firstChild?.textContent?.trim();
-      const names = (reaction.title || "").split(", ").filter(Boolean);
-      const allEm = getAllEmoticons();
-      const emName = emoticonMatch?.[1];
-      const info = emName ? allEm[emName] : null;
-      showEmoticonTooltip(reaction, {
-        emoji: emojiText,
-        emoticonName: emName,
-        blobUrl: reactionImg?.src,
-        emoticonUrl: info?.url,
-        isOwned: info?.mine ?? false,
-        names,
-      });
-    }
-  }, true);
-
-  messagesArea.addEventListener("pointerleave", (e) => {
-    const emImg = e.target.closest(".chat-emoticon-inline");
-    const reaction = e.target.closest(".chat-reaction");
-    if (emImg || reaction) {
-      emTooltipTimer = setTimeout(hideEmoticonTooltip, 200);
-    }
-  }, true);
-
-  // Keep tooltip alive when hovering over it (for adopt button)
-  emTooltip.addEventListener("pointerenter", () => clearTimeout(emTooltipTimer));
-  emTooltip.addEventListener("pointerleave", () => { emTooltipTimer = setTimeout(hideEmoticonTooltip, 200); });
-
   let emojiPickerTarget = null;
 
   function openEmojiPicker(msgIndex, anchorEl) {
-    // Get existing reactions for this message so we can highlight them
-    const doc = handle.doc();
-    const entry = doc?.messages?.[msgIndex];
-    let myReactions = new Set();
-    if (entry) {
-      let reactions;
-      if (entry.ref && entry.url) {
-        const cached = msgDocCache.get(entry.url);
-        reactions = cached?.data?.reactions;
-      } else {
-        reactions = entry.reactions;
-      }
-      if (reactions) {
-        for (const [emoji, names] of Object.entries(reactions)) {
-          if (names && names.includes(myName)) myReactions.add(emoji);
-        }
-      }
-    }
-    emojiPickerTarget = { msgIndex, myReactions };
+    emojiPickerTarget = { msgIndex };
     renderEmojiPicker();
     emojiOverlay.classList.add("show");
 
@@ -2040,32 +1784,18 @@ export function Tool(handle, element, options) {
       emGrid.className = "chat-emoticon-grid";
       for (const name of filteredEm) {
         const info = allEm[name];
-        const emojiKey = ":" + name + ":";
         const btn = document.createElement("button");
-        btn.title = emojiKey + (info.mine ? "" : " (by " + info.owner + ")");
-        if (emojiPickerTarget?.myReactions?.has(emojiKey)) btn.classList.add("chat-emoji-active");
+        btn.title = ":" + name + ":" + (info.mine ? "" : " (by " + info.owner + ")");
         const img = document.createElement("img");
-        img.src = "/" + encodeURIComponent(info.url) + "/";
+        loadEmoticonBlobUrl(info.url).then(u => { if (u) img.src = u; });
         btn.appendChild(img);
         btn.addEventListener("click", (ev) => {
           ev.stopPropagation();
-          if (emojiPickerTarget) toggleReaction(emojiPickerTarget.msgIndex, emojiKey);
+          if (emojiPickerTarget) toggleReaction(emojiPickerTarget.msgIndex, ":" + name + ":");
           closeEmojiPicker();
         });
-        if (info.mine) {
-          // Remove button for owned emoticons
-          const removeBtn = document.createElement("button");
-          removeBtn.className = "chat-emoticon-remove";
-          removeBtn.textContent = "×";
-          removeBtn.title = "Remove this emoticon";
-          removeBtn.addEventListener("click", (ev) => {
-            ev.stopPropagation();
-            removeEmoticon(name);
-            renderEmojiPicker(filter);
-          });
-          btn.appendChild(removeBtn);
-        } else {
-          // Adopt button for non-owned emoticons
+        // Adopt button for non-owned emoticons
+        if (!info.mine) {
           const adoptBtn = document.createElement("button");
           adoptBtn.className = "chat-emoticon-adopt";
           adoptBtn.textContent = "+";
@@ -2103,7 +1833,6 @@ export function Tool(handle, element, options) {
       const btn = document.createElement("button");
       btn.textContent = entry.emoji;
       if (entry.name) btn.title = entry.name;
-      if (emojiPickerTarget?.myReactions?.has(entry.emoji)) btn.classList.add("chat-emoji-active");
       btn.addEventListener("click", (ev) => {
         ev.stopPropagation();
         if (emojiPickerTarget) toggleReaction(emojiPickerTarget.msgIndex, entry.emoji);
@@ -2114,139 +1843,74 @@ export function Tool(handle, element, options) {
   }
 
   // ---- Emoticon add dialog ----
-  function nameFromFilename(filename) {
-    return (filename || "").replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_").replace(/^_+|_+$/g, "").toLowerCase() || "";
-  }
-
   function showEmoticonAddDialog() {
     emojiPicker.innerHTML = "";
     const dialog = document.createElement("div");
     dialog.className = "chat-emoticon-dialog";
 
-    // Hidden file input (multiple)
-    const fileInput = document.createElement("input");
-    fileInput.type = "file";
-    fileInput.accept = "image/*";
-    fileInput.multiple = true;
-    fileInput.style.display = "none";
-    dialog.appendChild(fileInput);
-
-    // State: list of { file, name, aliases }
-    let entries = [];
-    let currentIdx = 0;
-
-    // Preview — clicking it opens the file browser
-    const preview = document.createElement("div");
-    preview.className = "chat-emoticon-dialog-preview";
-    preview.textContent = "?";
-    preview.title = "Click to browse for images";
-    preview.style.cursor = "pointer";
-    preview.addEventListener("click", (ev) => { ev.stopPropagation(); fileInput.click(); });
-    dialog.appendChild(preview);
-
-    // Name input
     const nameInput = document.createElement("input");
     nameInput.type = "text";
     nameInput.placeholder = "Emoticon name (e.g. catjam)";
     nameInput.pattern = "[a-zA-Z0-9_-]+";
     dialog.appendChild(nameInput);
 
-    // Counter for multi-file
-    const counter = document.createElement("div");
-    counter.className = "chat-emoticon-dialog-counter";
-    counter.style.display = "none";
-    dialog.appendChild(counter);
+    const preview = document.createElement("div");
+    preview.className = "chat-emoticon-dialog-preview";
+    preview.textContent = "?";
+    dialog.appendChild(preview);
 
-    function showEntry(idx) {
-      currentIdx = idx;
-      const entry = entries[idx];
-      if (!entry) return;
-      preview.innerHTML = "";
-      const previewImg = document.createElement("img");
-      previewImg.src = URL.createObjectURL(entry.file);
-      preview.appendChild(previewImg);
-      nameInput.value = entry.name;
-      if (entries.length > 1) {
-        counter.style.display = "block";
-        counter.textContent = (idx + 1) + " / " + entries.length;
-      }
-      updateSaveBtn();
-    }
-
+    const fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.accept = "image/*";
+    fileInput.style.fontSize = "13px";
+    fileInput.style.color = "var(--text-secondary)";
+    let selectedFile = null;
     fileInput.addEventListener("change", () => {
-      const files = Array.from(fileInput.files || []);
-      if (!files.length) return;
-      entries = files.map(f => ({ file: f, name: nameFromFilename(f.name) }));
-      showEntry(0);
-      updateSaveBtn();
-      nameInput.focus();
-      nameInput.select();
+      if (fileInput.files[0]) {
+        selectedFile = fileInput.files[0];
+        const previewImg = document.createElement("img");
+        previewImg.src = URL.createObjectURL(selectedFile);
+        preview.innerHTML = "";
+        preview.appendChild(previewImg);
+        updateSaveBtn();
+      }
     });
+    dialog.appendChild(fileInput);
 
-    // Sync edits back to entry
-    nameInput.addEventListener("input", () => {
-      if (entries[currentIdx]) entries[currentIdx].name = nameInput.value;
-      updateSaveBtn();
-    });
     const btns = document.createElement("div");
     btns.className = "chat-emoticon-dialog-btns";
-
     const cancelBtn = document.createElement("button");
     cancelBtn.className = "cancel-btn";
     cancelBtn.textContent = "Cancel";
     cancelBtn.addEventListener("click", (ev) => { ev.stopPropagation(); renderEmojiPicker(); });
-
-    // Nav buttons for multi-file
-    const prevBtn = document.createElement("button");
-    prevBtn.className = "cancel-btn";
-    prevBtn.textContent = "‹ Prev";
-    prevBtn.addEventListener("click", (ev) => { ev.stopPropagation(); if (currentIdx > 0) showEntry(currentIdx - 1); });
-    const nextBtn = document.createElement("button");
-    nextBtn.className = "cancel-btn";
-    nextBtn.textContent = "Next ›";
-    nextBtn.addEventListener("click", (ev) => { ev.stopPropagation(); if (currentIdx < entries.length - 1) showEntry(currentIdx + 1); });
-
     const saveBtn = document.createElement("button");
     saveBtn.className = "save-btn";
     saveBtn.textContent = "Add";
     saveBtn.disabled = true;
-
     function updateSaveBtn() {
-      const allValid = entries.length > 0 && entries.every(e => e.name.match(/^[a-zA-Z0-9_-]+$/));
-      saveBtn.disabled = !allValid;
-      saveBtn.textContent = entries.length > 1 ? "Add " + entries.length : "Add";
-      prevBtn.style.display = entries.length > 1 ? "" : "none";
-      nextBtn.style.display = entries.length > 1 ? "" : "none";
+      const valid = nameInput.value.match(/^[a-zA-Z0-9_-]+$/) && selectedFile;
+      saveBtn.disabled = !valid;
     }
-    updateSaveBtn();
-
+    nameInput.addEventListener("input", updateSaveBtn);
     saveBtn.addEventListener("click", async (ev) => {
       ev.stopPropagation();
-      if (entries.length === 0) return;
+      if (!nameInput.value || !selectedFile) return;
       saveBtn.disabled = true;
-      const total = entries.length;
+      saveBtn.textContent = "...";
       try {
-        for (let i = 0; i < total; i++) {
-          saveBtn.textContent = total > 1 ? (i + 1) + "/" + total + "…" : "…";
-          const e = entries[i];
-          await addEmoticon(e.name, e.file);
-        }
+        await addEmoticon(nameInput.value, selectedFile);
         renderEmojiPicker();
       } catch (e) {
         console.error("[Chat] add emoticon:", e);
         saveBtn.textContent = "Error";
       }
     });
-
     btns.appendChild(cancelBtn);
-    btns.appendChild(prevBtn);
-    btns.appendChild(nextBtn);
     btns.appendChild(saveBtn);
     dialog.appendChild(btns);
 
     emojiPicker.appendChild(dialog);
-    // Open file picker immediately
-    fileInput.click();
+    setTimeout(() => nameInput.focus(), 0);
   }
 
   function closeEmojiPicker() { emojiOverlay.classList.remove("show"); emojiPickerTarget = null; }
@@ -2437,7 +2101,7 @@ export function Tool(handle, element, options) {
     gifToggle.appendChild(pieSvg);
 
     try {
-      const size = 160;
+      const size = 240;
       gifCanvas.width = size; gifCanvas.height = size;
       const ctx = gifCanvas.getContext("2d");
       const encoder = new SimpleGIFEncoder(size, size);
@@ -2446,7 +2110,7 @@ export function Tool(handle, element, options) {
       for (let i = 0; i < frameCount; i++) {
         ctx.drawImage(gifVideo, 0, 0, size, size);
         encoder.addFrame(gifCanvas, frameDelay);
-        // Update pie progress — fills once from 0 to 100%
+        // Update pie progress
         const progress = (i + 1) / frameCount;
         pieCircle.setAttribute("stroke-dashoffset", String(circumference * (1 - progress)));
         if (i < frameCount - 1) await new Promise(r => setTimeout(r, frameDelay));
@@ -2459,6 +2123,7 @@ export function Tool(handle, element, options) {
       handle.change((d) => { if (!d.docs) d.docs = []; d.docs.push({ url, type:"file", name:"selfie-"+Date.now()+".gif" }); });
       return url;
     } finally {
+      // Remove recording feedback
       pieSvg.remove();
       gifToggle.classList.remove("recording");
       inputRow.classList.remove("processing");
@@ -2760,9 +2425,8 @@ export function Tool(handle, element, options) {
   const msgDocCache = new Map(); // url -> { data, handle }
   const msgDocSubscribed = new Set(); // urls we're listening to
   let renderTimer = null;
-  function scheduleRender(force) {
-    if (renderTimer && !force) return;
-    if (renderTimer) cancelAnimationFrame(renderTimer);
+  function scheduleRender() {
+    if (renderTimer) return;
     renderTimer = requestAnimationFrame(() => { renderTimer = null; render(); });
   }
 
@@ -2782,8 +2446,8 @@ export function Tool(handle, element, options) {
           render();
         });
       }
-      // Re-render to show this newly loaded message (force to avoid dedup)
-      scheduleRender(true);
+      // Re-render to show this newly loaded message
+      scheduleRender();
       return msgDocCache.get(url);
     } catch(e) { console.warn("[Chat] resolve msg doc:", e); return null; }
   }
@@ -2996,221 +2660,6 @@ export function Tool(handle, element, options) {
   }
 
   // ---- Render messages ----
-  let renderedMsgOrder = []; // msg IDs currently in DOM
-  let renderedLastName = null;
-  let renderedLastTime = 0;
-  const renderedElements = new Map(); // msgId -> Element (the message row)
-
-  function updateMessageReactions(msg, rawIdx, emoticonBlobUrls) {
-    const el = renderedElements.get(msg.id);
-    if (!el) return;
-    const parent = el.querySelector(".chat-msg-body") || el;
-    const old = parent.querySelector(".chat-reactions");
-    if (old) old.remove();
-    renderReactions(parent, msg, rawIdx, emoticonBlobUrls);
-  }
-
-  function renderMessageToDOM(msg, prevName, prevTime, msgMap, emoticonBlobUrls) {
-    // Loading placeholder for unresolved ref messages
-    if (msg._loading) {
-      const row = document.createElement("div");
-      row.className = "chat-msg-group chat-msg-loading";
-      row.dataset.msgId = msg.id || "";
-
-      // Actions (delete + react still work via rawIdx)
-      buildActions(row, msg, msg._rawIdx);
-
-      const avatarCol = document.createElement("div");
-      avatarCol.className = "chat-avatar-col";
-      const avatar = document.createElement("div");
-      avatar.className = "chat-avatar chat-skeleton";
-      avatarCol.appendChild(avatar);
-      row.appendChild(avatarCol);
-      const body = document.createElement("div");
-      body.className = "chat-msg-body";
-      const line1 = document.createElement("div");
-      line1.className = "chat-skeleton-line short";
-      const line2 = document.createElement("div");
-      line2.className = "chat-skeleton-line";
-      body.appendChild(line1);
-      body.appendChild(line2);
-      row.appendChild(body);
-      messagesArea.appendChild(row);
-      renderedElements.set(msg.id, row);
-      return;
-    }
-
-    const rawIdx = msg._rawIdx;
-    const sameAuthor = msg.name === prevName;
-    const closeInTime = msg.timestamp - prevTime < 120000;
-    const isContinuation = sameAuthor && closeInTime && !msg.replyTo;
-    const timeGap = prevTime > 0 && msg.timestamp - prevTime >= 120000;
-    const hasGifSelfie = !!msg.gifSelfieUrl;
-
-    // Reply reference (always before the message)
-    if (msg.replyTo && msgMap.has(msg.replyTo)) {
-      const orig = msgMap.get(msg.replyTo);
-      const ref = document.createElement("div");
-      ref.className = "chat-msg-reply-ref";
-      const refAvatar = document.createElement("span");
-      refAvatar.className = "chat-msg-reply-ref-avatar";
-      if (orig.avatarUrl) loadBlobUrl(orig.avatarUrl).then(u => { if (u) refAvatar.innerHTML = '<img src="'+u+'">'; });
-      ref.appendChild(refAvatar);
-      const refName = document.createElement("span");
-      refName.className = "chat-msg-reply-ref-name";
-      refName.textContent = orig.name;
-      ref.appendChild(refName);
-      const refText = document.createElement("span");
-      refText.className = "chat-msg-reply-ref-text";
-      refText.textContent = orig.text || "(attachment)";
-      ref.appendChild(refText);
-      ref.dataset.replyFor = msg.id;
-      ref.addEventListener("click", () => {
-        const el = messagesArea.querySelector('[data-msg-id="'+msg.replyTo+'"]');
-        if (el) { el.scrollIntoView({ behavior:"smooth", block:"center" }); el.style.background="var(--bg-hover)"; setTimeout(()=>el.style.background="",1500); }
-      });
-      messagesArea.appendChild(ref);
-    }
-
-    // Action messages (/me, /slap)
-    if (msg.action) {
-      const row = document.createElement("div");
-      row.className = "chat-msg-action" + (timeGap ? " chat-time-gap" : "");
-      row.dataset.msgId = msg.id || "";
-      if (msg.font) row.style.fontFamily = msg.font;
-      if (msg.color) row.style.color = resolveNamedColor(msg.color);
-      const nameSpan = document.createElement("span");
-      nameSpan.className = "chat-msg-action-name";
-      nameSpan.textContent = msg.name;
-      row.appendChild(document.createTextNode("* "));
-      row.appendChild(nameSpan);
-      const actionText = document.createElement("span");
-      actionText.innerHTML = " " + formatText(msg.text, emoticonBlobUrls);
-      actionText.querySelectorAll(".chat-spoiler").forEach(sp => {
-        sp.addEventListener("click", () => sp.classList.toggle("revealed"));
-      });
-      row.appendChild(actionText);
-      buildActions(row, msg, rawIdx);
-      renderReactions(row, msg, rawIdx, emoticonBlobUrls);
-      messagesArea.appendChild(row);
-      renderedElements.set(msg.id, row);
-      return;
-    }
-
-    if (!isContinuation) {
-      // Full message row with avatar
-      const row = document.createElement("div");
-      row.className = "chat-msg-group" + (timeGap ? " chat-time-gap" : "");
-      row.dataset.msgId = msg.id || "";
-
-      buildActions(row, msg, rawIdx);
-
-      // Avatar
-      const avatarCol = document.createElement("div");
-      avatarCol.className = "chat-avatar-col";
-      const avatar = document.createElement("div");
-      avatar.className = "chat-avatar";
-      if (catEarsSet.has(msg.name)) avatar.classList.add("cat-ears");
-
-      const avatarSrc = msg.gifSelfieUrl || msg.avatarUrl;
-      if (msg.gifSelfieUrl) avatar.classList.add("gif-selfie");
-      if (avatarSrc) {
-        loadBlobUrl(avatarSrc).then(u => { if (u) avatar.innerHTML = '<img src="'+u+'">'; });
-      } else {
-        avatar.textContent = (msg.name || "?")[0].toUpperCase();
-      }
-      avatar.addEventListener("click", () => {
-        if (catEarsSet.has(msg.name)) catEarsSet.delete(msg.name);
-        else catEarsSet.add(msg.name);
-        render();
-      });
-      avatarCol.appendChild(avatar);
-      row.appendChild(avatarCol);
-
-      // Body
-      const body = document.createElement("div");
-      body.className = "chat-msg-body";
-
-      const hdr = document.createElement("div");
-      hdr.className = "chat-msg-header";
-      const nameEl = document.createElement("span");
-      nameEl.className = "chat-msg-name";
-      nameEl.textContent = msg.name;
-      hdr.appendChild(nameEl);
-      const timeEl = document.createElement("span");
-      timeEl.className = "chat-msg-time";
-      timeEl.textContent = formatTime(msg.timestamp);
-      hdr.appendChild(timeEl);
-      body.appendChild(hdr);
-
-      if (msg.text) {
-        const textEl = document.createElement("div");
-        textEl.className = "chat-msg-text";
-        if (isEmojiOnly(msg.text)) textEl.classList.add("emoji-only");
-        let html = formatText(msg.text, emoticonBlobUrls);
-        if (msg.marquee) html = "<marquee>" + html + "</marquee>";
-        textEl.innerHTML = html;
-        if (msg.font) textEl.style.fontFamily = msg.font;
-        if (msg.color) textEl.style.color = resolveNamedColor(msg.color);
-        // Wire up spoiler clicks
-        textEl.querySelectorAll(".chat-spoiler").forEach(sp => {
-          sp.addEventListener("click", () => sp.classList.toggle("revealed"));
-        });
-        body.appendChild(textEl);
-      }
-
-      renderAttachments(body, msg);
-      renderReactions(body, msg, rawIdx, emoticonBlobUrls);
-      row.appendChild(body);
-      messagesArea.appendChild(row);
-      renderedElements.set(msg.id, row);
-
-    } else {
-      // Continuation message
-      const row = document.createElement("div");
-      row.className = "chat-msg-continuation" + (hasGifSelfie ? " has-gif" : "");
-      row.dataset.msgId = msg.id || "";
-
-      buildActions(row, msg, rawIdx);
-
-      // If this continuation has a GIF selfie, show it aligned with the avatar column
-      if (hasGifSelfie) {
-        const gifCol = document.createElement("div");
-        gifCol.className = "chat-avatar-col";
-        const gifInline = document.createElement("img");
-        gifInline.className = "chat-msg-gif-inline";
-        gifInline.alt = "selfie";
-        loadBlobUrl(msg.gifSelfieUrl).then(u => { if (u) gifInline.src = u; });
-        gifCol.appendChild(gifInline);
-        row.appendChild(gifCol);
-      }
-
-      const contBody = document.createElement("div");
-      contBody.className = "chat-msg-body";
-
-      if (msg.text) {
-        const textEl = document.createElement("div");
-        textEl.className = "chat-msg-text";
-        if (isEmojiOnly(msg.text)) textEl.classList.add("emoji-only");
-        let html = formatText(msg.text, emoticonBlobUrls);
-        if (msg.marquee) html = "<marquee>" + html + "</marquee>";
-        textEl.innerHTML = html;
-        if (msg.font) textEl.style.fontFamily = msg.font;
-        if (msg.color) textEl.style.color = resolveNamedColor(msg.color);
-        textEl.querySelectorAll(".chat-spoiler").forEach(sp => {
-          sp.addEventListener("click", () => sp.classList.toggle("revealed"));
-        });
-        contBody.appendChild(textEl);
-      }
-
-      renderAttachments(contBody, msg);
-      renderReactions(contBody, msg, rawIdx, emoticonBlobUrls);
-      row.appendChild(contBody);
-      messagesArea.appendChild(row);
-      renderedElements.set(msg.id, row);
-    }
-  }
-
   function render() {
     const doc = handle.doc();
     if (!doc) return;
@@ -3223,7 +2672,7 @@ export function Tool(handle, element, options) {
     ensureMessageDocsLoaded(rawEntries);
 
     // Resolve entries: inline messages pass through, ref messages resolve from cache
-    // Unresolved refs get a loading placeholder
+    // Each resolved item tracks its rawIndex for mutations (reactions, delete)
     const messages = [];
     for (let ri = 0; ri < rawEntries.length; ri++) {
       const entry = rawEntries[ri];
@@ -3232,8 +2681,8 @@ export function Tool(handle, element, options) {
         if (cached) {
           messages.push({ ...cached.data, _rawIdx: ri, _ref: entry });
         } else {
-          // Loading placeholder — stable ID based on url so incremental rendering works
-          messages.push({ _loading: true, _rawIdx: ri, id: "_loading_" + entry.url, timestamp: entry.timestamp || 0 });
+          // Not cached yet — show as loading placeholder with rawIdx so actions still work
+          messages.push({ _loading: true, _rawIdx: ri, _ref: entry, timestamp: entry.timestamp || 0 });
         }
       } else {
         messages.push({ ...entry, _rawIdx: ri });
@@ -3243,19 +2692,23 @@ export function Tool(handle, element, options) {
     const msgMap = new Map();
     for (const m of messages) if (m.id) msgMap.set(m.id, m);
 
-    // Resolve emoticon URLs for rendering using service worker URLs
+    // Resolve emoticon blob URLs for rendering (sync from cache, async triggers re-render)
     const emoticonBlobUrls = {};
     const allEm = getAllEmoticons();
     // From known emoticons
     for (const [name, info] of Object.entries(allEm)) {
-      emoticonBlobUrls[name] = "/" + encodeURIComponent(info.url) + "/";
+      const cached = emoticonBlobCache.get(info.url);
+      if (cached) emoticonBlobUrls[name] = cached;
+      else loadEmoticonBlobUrl(info.url).then(u => { if (u) scheduleRender(); });
     }
     // From message-embedded emoticons
     for (const msg of messages) {
       if (msg.emoticons) {
         for (const [name, url] of Object.entries(msg.emoticons)) {
           if (emoticonBlobUrls[name]) continue;
-          emoticonBlobUrls[name] = "/" + encodeURIComponent(url) + "/";
+          const cached = emoticonBlobCache.get(url);
+          if (cached) emoticonBlobUrls[name] = cached;
+          else loadEmoticonBlobUrl(url).then(u => { if (u) scheduleRender(); });
         }
       }
     }
@@ -3263,79 +2716,240 @@ export function Tool(handle, element, options) {
     // Remember scroll position to decide if we should auto-scroll
     const wasAtBottom = messagesArea.scrollHeight - messagesArea.scrollTop - messagesArea.clientHeight < 40;
 
-    const newMsgIds = messages.map(m => m.id);
+    messagesArea.innerHTML = "";
 
-    // Find common prefix with currently rendered messages
-    let commonPrefix = 0;
-    while (commonPrefix < renderedMsgOrder.length && commonPrefix < newMsgIds.length
-      && renderedMsgOrder[commonPrefix] === newMsgIds[commonPrefix]) {
-      commonPrefix++;
-    }
+    // Count pending refs
+    const totalRefs = rawEntries.filter(e => e.ref && e.url).length;
+    const loadedRefs = rawEntries.filter(e => e.ref && e.url && msgDocCache.has(e.url)).length;
+    const pendingRefs = totalRefs - loadedRefs;
 
-    // Handle empty state
-    const existingEmpty = messagesArea.querySelector(".chat-empty");
-    if (messages.length === 0 && rawEntries.length === 0) {
-      if (!existingEmpty) {
-        const empty = document.createElement("div");
-        empty.className = "chat-empty";
-        empty.textContent = "no messages yet. say hello 🥰";
-        messagesArea.appendChild(empty);
-      }
-      renderedMsgOrder = [];
-      renderedLastName = null;
-      renderedLastTime = 0;
-      renderedElements.clear();
-      renderPresence();
-      renderTyping();
+    if (rawEntries.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "chat-empty";
+      empty.textContent = "no messages yet. say hello 🥰";
+      messagesArea.appendChild(empty);
       return;
-    } else if (existingEmpty) {
-      existingEmpty.remove();
     }
 
-    const isAppendOnly = commonPrefix === renderedMsgOrder.length
-      && newMsgIds.length > renderedMsgOrder.length;
-
-    if (isAppendOnly) {
-      // Append-only — just render the new messages without touching existing DOM
-      let prevName = renderedLastName;
-      let prevTime = renderedLastTime;
-      for (let i = commonPrefix; i < messages.length; i++) {
-        renderMessageToDOM(messages[i], prevName, prevTime, msgMap, emoticonBlobUrls);
-        prevName = messages[i].name;
-        prevTime = messages[i].timestamp;
-      }
-      renderedLastName = prevName;
-      renderedLastTime = prevTime;
-
-    } else if (commonPrefix === newMsgIds.length && commonPrefix === renderedMsgOrder.length) {
-      // Same messages — just update reactions in-place
-      for (const msg of messages) {
-        updateMessageReactions(msg, msg._rawIdx, emoticonBlobUrls);
-      }
-
-    } else {
-      // Structural change — remove from divergence point, re-render from there
-      for (let i = commonPrefix; i < renderedMsgOrder.length; i++) {
-        const id = renderedMsgOrder[i];
-        const el = renderedElements.get(id);
-        if (el) el.remove();
-        renderedElements.delete(id);
-        const replyRef = messagesArea.querySelector('[data-reply-for="' + id + '"]');
-        if (replyRef) replyRef.remove();
-      }
-
-      let prevName = commonPrefix > 0 ? messages[commonPrefix - 1].name : null;
-      let prevTime = commonPrefix > 0 ? messages[commonPrefix - 1].timestamp : 0;
-      for (let i = commonPrefix; i < messages.length; i++) {
-        renderMessageToDOM(messages[i], prevName, prevTime, msgMap, emoticonBlobUrls);
-        prevName = messages[i].name;
-        prevTime = messages[i].timestamp;
-      }
-      renderedLastName = prevName;
-      renderedLastTime = prevTime;
+    if (pendingRefs > 0) {
+      const loading = document.createElement("div");
+      loading.className = "chat-loading";
+      const bar = document.createElement("div");
+      bar.className = "chat-loading-bar";
+      const fill = document.createElement("div");
+      fill.className = "chat-loading-fill";
+      fill.style.width = (totalRefs > 0 ? Math.round((loadedRefs / totalRefs) * 100) : 0) + "%";
+      bar.appendChild(fill);
+      loading.appendChild(bar);
+      loading.appendChild(document.createTextNode("Loading messages " + loadedRefs + "/" + totalRefs));
+      messagesArea.appendChild(loading);
     }
 
-    renderedMsgOrder = newMsgIds;
+    let prevName = null, prevTime = 0;
+
+    messages.forEach((msg) => {
+      const rawIdx = msg._rawIdx;
+
+      // Render loading placeholder for unresolved ref messages
+      if (msg._loading) {
+        const row = document.createElement("div");
+        row.className = "chat-msg-group";
+        row.style.opacity = "0.5";
+
+        // Actions (delete + react still work via rawIdx)
+        buildActions(row, msg, rawIdx);
+
+        const avatarCol = document.createElement("div");
+        avatarCol.className = "chat-avatar-col";
+        const avatar = document.createElement("div");
+        avatar.className = "chat-avatar";
+        avatar.textContent = "…";
+        avatarCol.appendChild(avatar);
+        row.appendChild(avatarCol);
+
+        const body = document.createElement("div");
+        body.className = "chat-msg-body";
+        const textEl = document.createElement("div");
+        textEl.className = "chat-msg-text";
+        textEl.style.color = "var(--text-muted)";
+        textEl.textContent = "Loading message…";
+        body.appendChild(textEl);
+        row.appendChild(body);
+
+        messagesArea.appendChild(row);
+        prevName = null;
+        prevTime = 0;
+        return;
+      }
+
+      const isMine = msg.name === myName;
+      const sameAuthor = msg.name === prevName;
+      const closeInTime = msg.timestamp - prevTime < 300000;
+      const isContinuation = sameAuthor && closeInTime && !msg.replyTo;
+      const hasGifSelfie = !!msg.gifSelfieUrl;
+
+      // Reply reference (always before the message)
+      if (msg.replyTo && msgMap.has(msg.replyTo)) {
+        const orig = msgMap.get(msg.replyTo);
+        const ref = document.createElement("div");
+        ref.className = "chat-msg-reply-ref";
+        const refAvatar = document.createElement("span");
+        refAvatar.className = "chat-msg-reply-ref-avatar";
+        if (orig.avatarUrl) loadBlobUrl(orig.avatarUrl).then(u => { if (u) refAvatar.innerHTML = '<img src="'+u+'">'; });
+        ref.appendChild(refAvatar);
+        const refName = document.createElement("span");
+        refName.className = "chat-msg-reply-ref-name";
+        refName.textContent = orig.name;
+        ref.appendChild(refName);
+        const refText = document.createElement("span");
+        refText.className = "chat-msg-reply-ref-text";
+        refText.textContent = orig.text || "(attachment)";
+        ref.appendChild(refText);
+        ref.addEventListener("click", () => {
+          const el = messagesArea.querySelector('[data-msg-id="'+msg.replyTo+'"]');
+          if (el) { el.scrollIntoView({ behavior:"smooth", block:"center" }); el.style.background="var(--bg-hover)"; setTimeout(()=>el.style.background="",1500); }
+        });
+        messagesArea.appendChild(ref);
+      }
+
+      // Action messages (/me, /slap)
+      if (msg.action) {
+        const row = document.createElement("div");
+        row.className = "chat-msg-action";
+        row.dataset.msgId = msg.id || "";
+        if (msg.font) row.style.fontFamily = msg.font;
+        if (msg.color) row.style.color = resolveNamedColor(msg.color);
+        const nameSpan = document.createElement("span");
+        nameSpan.className = "chat-msg-action-name";
+        nameSpan.textContent = msg.name;
+        row.appendChild(document.createTextNode("* "));
+        row.appendChild(nameSpan);
+        const actionText = document.createElement("span");
+        actionText.innerHTML = " " + formatText(msg.text, emoticonBlobUrls);
+        actionText.querySelectorAll(".chat-spoiler").forEach(sp => {
+          sp.addEventListener("click", () => sp.classList.toggle("revealed"));
+        });
+        row.appendChild(actionText);
+        buildActions(row, msg, rawIdx);
+        renderReactions(row, msg, rawIdx, emoticonBlobUrls);
+        messagesArea.appendChild(row);
+        prevName = msg.name;
+        prevTime = msg.timestamp;
+        return;
+      }
+
+      if (!isContinuation) {
+        // Full message row with avatar
+        const row = document.createElement("div");
+        row.className = "chat-msg-group";
+        row.dataset.msgId = msg.id || "";
+
+        buildActions(row, msg, rawIdx);
+
+        // Avatar
+        const avatarCol = document.createElement("div");
+        avatarCol.className = "chat-avatar-col";
+        const avatar = document.createElement("div");
+        avatar.className = "chat-avatar";
+        if (catEarsSet.has(msg.name)) avatar.classList.add("cat-ears");
+
+        const avatarSrc = msg.gifSelfieUrl || msg.avatarUrl;
+        if (msg.gifSelfieUrl) avatar.classList.add("gif-selfie");
+        if (avatarSrc) {
+          loadBlobUrl(avatarSrc).then(u => { if (u) avatar.innerHTML = '<img src="'+u+'">'; });
+        } else {
+          avatar.textContent = (msg.name || "?")[0].toUpperCase();
+        }
+        avatar.addEventListener("click", () => {
+          if (catEarsSet.has(msg.name)) catEarsSet.delete(msg.name);
+          else catEarsSet.add(msg.name);
+          render();
+        });
+        avatarCol.appendChild(avatar);
+        row.appendChild(avatarCol);
+
+        // Body
+        const body = document.createElement("div");
+        body.className = "chat-msg-body";
+
+        const hdr = document.createElement("div");
+        hdr.className = "chat-msg-header";
+        const nameEl = document.createElement("span");
+        nameEl.className = "chat-msg-name";
+        nameEl.textContent = msg.name;
+        hdr.appendChild(nameEl);
+        const timeEl = document.createElement("span");
+        timeEl.className = "chat-msg-time";
+        timeEl.textContent = formatTime(msg.timestamp);
+        hdr.appendChild(timeEl);
+        body.appendChild(hdr);
+
+        if (msg.text) {
+          const textEl = document.createElement("div");
+          textEl.className = "chat-msg-text";
+          let html = formatText(msg.text, emoticonBlobUrls);
+          if (msg.marquee) html = "<marquee>" + html + "</marquee>";
+          textEl.innerHTML = html;
+          if (msg.font) textEl.style.fontFamily = msg.font;
+          if (msg.color) textEl.style.color = resolveNamedColor(msg.color);
+          // Wire up spoiler clicks
+          textEl.querySelectorAll(".chat-spoiler").forEach(sp => {
+            sp.addEventListener("click", () => sp.classList.toggle("revealed"));
+          });
+          body.appendChild(textEl);
+        }
+
+        renderAttachments(body, msg);
+        renderReactions(body, msg, rawIdx, emoticonBlobUrls);
+        row.appendChild(body);
+        messagesArea.appendChild(row);
+
+      } else {
+        // Continuation message
+        const row = document.createElement("div");
+        row.className = "chat-msg-continuation" + (hasGifSelfie ? " has-gif" : "");
+        row.dataset.msgId = msg.id || "";
+
+        buildActions(row, msg, rawIdx);
+
+        // If this continuation has a GIF selfie, show it aligned with the avatar column
+        if (hasGifSelfie) {
+          const gifCol = document.createElement("div");
+          gifCol.className = "chat-avatar-col";
+          const gifInline = document.createElement("img");
+          gifInline.className = "chat-msg-gif-inline";
+          gifInline.alt = "selfie";
+          loadBlobUrl(msg.gifSelfieUrl).then(u => { if (u) gifInline.src = u; });
+          gifCol.appendChild(gifInline);
+          row.appendChild(gifCol);
+        }
+
+        const contBody = document.createElement("div");
+        contBody.className = "chat-msg-body";
+
+        if (msg.text) {
+          const textEl = document.createElement("div");
+          textEl.className = "chat-msg-text";
+          let html = formatText(msg.text, emoticonBlobUrls);
+          if (msg.marquee) html = "<marquee>" + html + "</marquee>";
+          textEl.innerHTML = html;
+          if (msg.font) textEl.style.fontFamily = msg.font;
+          if (msg.color) textEl.style.color = resolveNamedColor(msg.color);
+          textEl.querySelectorAll(".chat-spoiler").forEach(sp => {
+            sp.addEventListener("click", () => sp.classList.toggle("revealed"));
+          });
+          contBody.appendChild(textEl);
+        }
+
+        renderAttachments(contBody, msg);
+        renderReactions(contBody, msg, rawIdx, emoticonBlobUrls);
+        row.appendChild(contBody);
+        messagesArea.appendChild(row);
+      }
+
+      prevName = msg.name;
+      prevTime = msg.timestamp;
+    });
 
     // Scroll to bottom reliably
     if (wasAtBottom || messagesArea.children.length <= 1) {
@@ -3481,7 +3095,6 @@ export function Tool(handle, element, options) {
       img.alt = msg.imageName || "image";
       img.loading = "lazy";
       loadBlobUrl(msg.imageUrl).then(u => { if (u) img.src = u; });
-      img.addEventListener("click", () => { if (img.src) openLightbox(img.src, "image"); });
       wrap.appendChild(img);
       makeResizable(wrap, msg, "image");
       parent.appendChild(wrap);
@@ -3526,10 +3139,9 @@ export function Tool(handle, element, options) {
         if (msg["embed_" + ei + "Width"]) wrap.style.width = msg["embed_" + ei + "Width"] + "px";
         if (msg["embed_" + ei + "Height"]) wrap.style.height = msg["embed_" + ei + "Height"] + "px";
 
-        // Resolve tool override from chat doc (per-embed, keyed by msgId:embedIndex)
+        // Resolve tool override from chat doc
         const chatDoc = handle.doc();
-        const overrideKey = msg.id + ":" + ei;
-        const toolId = chatDoc?.toolOverrides?.[overrideKey] || "";
+        const toolId = chatDoc?.toolOverrides?.[embed.docUrl] || "";
 
         const pv = document.createElement("patchwork-view");
         pv.setAttribute("doc-url", embed.docUrl);
@@ -3572,8 +3184,8 @@ export function Tool(handle, element, options) {
               const val = inp.value.trim();
               handle.change((d) => {
                 if (!d.toolOverrides) d.toolOverrides = {};
-                if (val) d.toolOverrides[overrideKey] = val;
-                else delete d.toolOverrides[overrideKey];
+                if (val) d.toolOverrides[embed.docUrl] = val;
+                else delete d.toolOverrides[embed.docUrl];
               });
               render();
             } else if (ev.key === "Escape") { render(); }
@@ -3583,8 +3195,8 @@ export function Tool(handle, element, options) {
             if (val !== toolId) {
               handle.change((d) => {
                 if (!d.toolOverrides) d.toolOverrides = {};
-                if (val) d.toolOverrides[overrideKey] = val;
-                else delete d.toolOverrides[overrideKey];
+                if (val) d.toolOverrides[embed.docUrl] = val;
+                else delete d.toolOverrides[embed.docUrl];
               });
               render();
             }
@@ -3674,7 +3286,6 @@ export function Tool(handle, element, options) {
           img.alt = file.name || "image";
           img.loading = "lazy";
           loadBlobUrl(file.url).then(u => { if (u) img.src = u; });
-          img.addEventListener("click", () => { if (img.src) openLightbox(img.src, "image"); });
           wrap.appendChild(img);
           parent.appendChild(wrap);
         } else if (mime.startsWith("video/")) {
@@ -3685,10 +3296,6 @@ export function Tool(handle, element, options) {
           vid.controls = true;
           vid.preload = "metadata";
           loadBlobUrl(file.url).then(u => { if (u) vid.src = u; });
-          vid.addEventListener("click", (e) => {
-            if (e.target.paused !== undefined && !e.target.paused) return; // don't hijack play/pause clicks
-            if (vid.src) openLightbox(vid.src, "video");
-          });
           wrap.appendChild(vid);
           parent.appendChild(wrap);
         } else if (mime.startsWith("audio/")) {
@@ -3774,31 +3381,18 @@ export function Tool(handle, element, options) {
         if (!isFocused || document.hidden) {
           hasUnread = true;
           updateTitle();
-          if (soundEnabled) getNotificationSound().then(audio => { if (audio) { audio.currentTime = 0; audio.play().catch(() => {}); } });
+          getNotificationSound().then(audio => { if (audio) { audio.currentTime = 0; audio.play().catch(() => {}); } });
           // OS notification — find the last message from someone else for the notification body
           const lastOther = [...newEntries].reverse().find(e => {
             if (e.ref && e.url) { const c = msgDocCache.get(e.url); return c ? c.data.name !== myName : true; }
             return e.name !== myName;
           });
           if (lastOther) {
-            // Resolve the message doc if needed (it's likely a ref that hasn't been cached yet)
-            const notifyFrom = async () => {
-              let data = lastOther;
-              if (lastOther.ref && lastOther.url) {
-                const cached = msgDocCache.get(lastOther.url);
-                if (cached) { data = cached.data; }
-                else {
-                  const resolved = await resolveMessageDoc(lastOther.url);
-                  if (resolved) data = resolved.data;
-                }
-              }
-              const name = data.name || "Someone";
-              const text = data.text || "";
-              const avUrl = data.avatarUrl;
-              const avBlob = avUrl ? avatarCache.get(avUrl) : undefined;
-              showOSNotification(name, text, avBlob);
-            };
-            notifyFrom();
+            const name = lastOther.name || (lastOther.ref && lastOther.url && msgDocCache.get(lastOther.url)?.data?.name) || "Someone";
+            const text = lastOther.text || (lastOther.ref && lastOther.url && msgDocCache.get(lastOther.url)?.data?.text) || "";
+            const avUrl = lastOther.avatarUrl || (lastOther.ref && lastOther.url && msgDocCache.get(lastOther.url)?.data?.avatarUrl);
+            const avBlob = avUrl ? avatarCache.get(avUrl) : undefined;
+            showOSNotification(name, text, avBlob);
           }
         } else {
           // Focused — check if at bottom, if so mark read
@@ -3836,3 +3430,25 @@ export function Tool(handle, element, options) {
     style.remove();
   };
 }
+
+// ============================================================================
+// Plugin Exports
+// ============================================================================
+
+export const plugins = [
+  {
+    type: "patchwork:datatype",
+    id: "chat",
+    name: "Chat",
+    icon: "MessageCircle",
+    async load() { return ChatDatatype; },
+  },
+  {
+    type: "patchwork:tool",
+    id: "chat",
+    name: "Chat",
+    icon: "MessageCircle",
+    supportedDatatypes: ["chat"],
+    async load() { return Tool; },
+  },
+];
