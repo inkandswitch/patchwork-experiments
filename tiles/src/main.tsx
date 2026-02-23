@@ -5,7 +5,7 @@ import { RepoContext } from "@automerge/react";
 import "./main.css";
 
 function addStyles(textContent: string, element: HTMLElement = document.head) {
-  const id = "creature-sketch-styles";
+  const id = "tiles-styles";
   const el = element.querySelector(`#${id}`) ?? document.createElement("style");
   Object.assign(el, { textContent, id });
   element.append(el);
@@ -19,8 +19,8 @@ async function loadStyles() {
 export const plugins = [
   {
     type: "patchwork:datatype",
-    id: "creature-sketch",
-    name: "Creature Sketch",
+    id: "tiles",
+    name: "Tiles",
     icon: "PenLine",
     async load() {
       return (await import("./datatype.ts")).datatype;
@@ -28,18 +28,18 @@ export const plugins = [
   },
   {
     type: "patchwork:tool",
-    id: "creature-sketch",
-    name: "Creature Sketch",
-    supportedDatatypes: ["creature-sketch"],
+    id: "tiles",
+    name: "Tiles",
+    supportedDatatypes: ["tiles"],
     async load(): Promise<ToolImplementation> {
-      const { CreatureSketchTool } = await import("./tool.tsx");
+      const { TilesTool } = await import("./tool.tsx");
       const styles = await loadStyles();
       return (handle, element) => {
         const root = createRoot(element);
         addStyles(styles);
         root.render(
           <RepoContext.Provider value={element.repo}>
-            <CreatureSketchTool docUrl={handle.url} />
+            <TilesTool docUrl={handle.url} />
           </RepoContext.Provider>
         );
         return () => root.unmount();

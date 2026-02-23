@@ -2,10 +2,10 @@ import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import { useDocHandle, useDocument, useRepo } from "@automerge/react";
 import { Tldraw, useEditor, getMediaAssetInfoPartial, type VecLike, type TLContent, type TLAssetId, type TLAsset, type TLUiComponents } from "@tldraw/tldraw";
 import { useAutomergeStore, useAutomergePresence } from "./automerge/useAutomergeStore.ts";
-import type { CreatureSketchDoc } from "./datatype.ts";
+import type { TilesDoc } from "./datatype.ts";
 import { PatchworkTokenShapeUtil } from "./PatchworkTokenShape.tsx";
 import { PatchworkViewShapeUtil, PATCHWORK_VIEW_TYPE } from "./PatchworkViewShape.tsx";
-import { MonsterShapeUtil, MonsterShapeTool, monsterUiOverrides, monsterComponents } from "./monster/index.tsx";
+import { LLMProcessShapeUtil, LLMProcessShapeTool } from "./process/LLMProcessShape.tsx";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { UnixFileEntry } from "@inkandswitch/patchwork-filesystem";
 import { automergeUrlToServiceWorkerUrl } from "@inkandswitch/patchwork-filesystem";
@@ -59,18 +59,17 @@ function useContactInfo() {
 
 const VERSION = "0.3.0";
 
-const customShapeUtils = [PatchworkTokenShapeUtil, PatchworkViewShapeUtil, MonsterShapeUtil];
-const customTools = [MonsterShapeTool];
+const customShapeUtils = [PatchworkTokenShapeUtil, PatchworkViewShapeUtil, LLMProcessShapeUtil];
+const customTools: any[] = [LLMProcessShapeTool];
 
 const uiComponents: TLUiComponents = {
   PageMenu: null,
   QuickActions: null,
   ActionsMenu: null,
-  ...monsterComponents,
 };
 
-export function CreatureSketchTool({ docUrl }: { docUrl: AutomergeUrl }) {
-  const handle = useDocHandle<CreatureSketchDoc>(docUrl, { suspense: true });
+export function TilesTool({ docUrl }: { docUrl: AutomergeUrl }) {
+  const handle = useDocHandle<TilesDoc>(docUrl, { suspense: true });
   const contactInfo = useContactInfo();
   const store = useAutomergeStore({
     handle,
@@ -86,7 +85,7 @@ export function CreatureSketchTool({ docUrl }: { docUrl: AutomergeUrl }) {
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
-      <Tldraw inferDarkMode autoFocus store={store} shapeUtils={customShapeUtils} tools={customTools} overrides={monsterUiOverrides} components={uiComponents}>
+      <Tldraw inferDarkMode autoFocus store={store} shapeUtils={customShapeUtils} tools={customTools} components={uiComponents}>
         <TldrawInner docUrl={docUrl} />
       </Tldraw>
       <div
