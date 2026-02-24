@@ -8,7 +8,14 @@ import external from '@inkandswitch/patchwork-bootloader/externals';
 
 export default defineConfig({
   base: './',
-  plugins: [topLevelAwait(), wasm(), react(), cssInjectedByJsPlugin()],
+  plugins: [
+    topLevelAwait(),
+    wasm(),
+    react(),
+    cssInjectedByJsPlugin({
+      jsAssetsFilterFunction: (chunk) => chunk.fileName === 'mount.js',
+    }),
+  ],
 
   define: {
     'process.env.NODE_ENV': JSON.stringify('development'),
@@ -22,8 +29,10 @@ export default defineConfig({
       external,
       input: {
         main: './src/main.tsx',
-        tool: './src/tool.tsx',
-        datatype: './src/datatype.ts',
+        mount: './src/mount.tsx',
+        'mount-datatype': './src/mount-datatype.ts',
+        'mount-process': './src/process/mount.tsx',
+        'mount-process-datatype': './src/process/mount-datatype.ts',
       },
       output: {
         format: 'es',

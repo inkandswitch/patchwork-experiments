@@ -12,15 +12,22 @@
       "import": "./dist/main.js",
       "source": "./src/main.tsx"
     },
-    "./tool": {
-      "import": "./dist/tool.js",
-      "source": "./src/tool.tsx"
+    "./mount": {
+      "import": "./dist/mount.js",
+      "source": "./src/mount.tsx"
     },
-    "./datatype": {
-      "import": "./dist/datatype.js",
-      "source": "./src/datatype.ts"
+    "./mount-datatype": {
+      "import": "./dist/mount-datatype.js",
+      "source": "./src/mount-datatype.ts"
     },
-    "./style": "./dist/main.css"
+    "./mount-process": {
+      "import": "./dist/mount-process.js",
+      "source": "./src/process/mount.tsx"
+    },
+    "./mount-process-datatype": {
+      "import": "./dist/mount-process-datatype.js",
+      "source": "./src/process/mount-datatype.ts"
+    }
   },
   "scripts": {
     "build": "tsc && vite build",
@@ -29,8 +36,10 @@
   "dependencies": {
     "@automerge/automerge-repo-react-hooks": "2.5.0",
     "@automerge/react": "2.5.0",
-    "@inkandswitch/patchwork-filesystem": "^0.0.3",
-    "@inkandswitch/patchwork-plugins": "^0.0.2",
+    "@inkandswitch/patchwork-elements": "link:../../patchwork-next/packages/elements",
+    "@inkandswitch/patchwork-filesystem": "link:../../patchwork-next/packages/filesystem",
+    "@inkandswitch/patchwork-plugins": "link:../../patchwork-next/packages/plugins",
+    "@inkandswitch/patchwork-react": "link:../../patchwork-next/packages/react",
     "@tldraw/tldraw": "4.3.1",
     "@types/lodash": "^4.17.20",
     "lodash": "^4.17.21",
@@ -43,7 +52,7 @@
     "@automerge/automerge": "3.2.1",
     "@automerge/automerge-repo": "2.5.0",
     "@eslint/js": "^9.36.0",
-    "@inkandswitch/patchwork-bootloader": "^0.0.3",
+    "@inkandswitch/patchwork-bootloader": "link:../../patchwork-next/core/bootloader",
     "@types/node": "^24.6.0",
     "@types/react": "^18.3.23",
     "@types/react-dom": "^18.2.2",

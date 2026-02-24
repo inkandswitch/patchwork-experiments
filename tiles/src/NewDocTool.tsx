@@ -32,7 +32,6 @@ import {
   getRegistry,
   createDocOfDatatype2,
   type DatatypeDescription,
-  type LoadedDatatype,
   type ToolDescription,
 } from '@inkandswitch/patchwork-plugins';
 import { PATCHWORK_VIEW_TYPE } from './PatchworkViewShape.tsx';
@@ -69,10 +68,10 @@ function getListedDatatypeDescriptions(): DatatypeDescription[] {
   }
 }
 
-async function loadDatatype(id: string): Promise<LoadedDatatype | undefined> {
+function getDatatypeDescription(id: string): DatatypeDescription | undefined {
   try {
     const registry = getRegistry<DatatypeDescription>('patchwork:datatype');
-    return (await registry.load(id)) as unknown as LoadedDatatype | undefined;
+    return registry.get(id);
   } catch {
     return undefined;
   }
@@ -221,12 +220,12 @@ export class NewDocShapeTool extends StateNode {
 
     (async () => {
       try {
-        const datatype = await loadDatatype(datatypeId);
+        const datatype = getDatatypeDescription(datatypeId);
         if (!datatype) {
-          throw new Error(`Could not load datatype: ${datatypeId}`);
+          throw new Error(`Could not find datatype: ${datatypeId}`);
         }
 
-        const docHandle = await (createDocOfDatatype2 as any)(datatype, repo);
+        const docHandle = await createDocOfDatatype2(datatype, repo);
         const docUrl = docHandle.url;
         const toolId = findToolForDatatype(datatypeId);
 
