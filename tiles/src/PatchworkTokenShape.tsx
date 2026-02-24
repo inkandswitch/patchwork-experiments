@@ -9,6 +9,7 @@ import {
   type TLShape,
 } from "@tldraw/tldraw";
 import type { Repo } from "@automerge/automerge-repo";
+import { getRegistry, type ToolDescription } from "@inkandswitch/patchwork-plugins";
 import type { LLMProcessDoc, WorkspaceDoc, WorkspaceEntry } from "./process/types";
 
 let _repo: Repo | null = null;
@@ -49,6 +50,51 @@ export const previewOriginals = new Map<
   string,
   { docUrl: string; docName: string; toolId: string }
 >();
+
+const _docTypeCache = new Map<string, string>();
+
+function resolveDocTypeAsync(docUrl: string): void {
+  if (_docTypeCache.has(docUrl) || !_repo) return;
+  _docTypeCache.set(docUrl, "");
+  (_repo as any).find(docUrl).then((handle: any) => {
+    const doc = handle.doc();
+    const type: string = doc?.["@patchwork"]?.type ?? "";
+    _docTypeCache.set(docUrl, type);
+    console.log("[tiles] resolveDocType: async resolved", { docUrl, type });
+  }).catch(() => {});
+}
+
+export function isToolCompatibleWithDocType(toolId: string, docType: string, docUrl?: string): boolean {
+  if (!toolId) return true;
+
+  let resolved = docType;
+  if (!resolved && docUrl) {
+    resolveDocTypeAsync(docUrl);
+    resolved = _docTypeCache.get(docUrl) ?? "";
+  }
+
+  if (!resolved) {
+    console.log("[tiles] isToolCompatibleWithDocType: unknown doc type, blocking", { toolId, docUrl });
+    return false;
+  }
+
+  try {
+    const registry = getRegistry<ToolDescription>("patchwork:tool");
+    const matches = registry.filter((t) => t.id === toolId);
+    if (matches.length === 0) {
+      console.log("[tiles] isToolCompatibleWithDocType: tool not in registry", { toolId, docType: resolved });
+      return true;
+    }
+    const tool = matches[0];
+    const compatible = tool.supportedDatatypes === "*"
+      || (Array.isArray(tool.supportedDatatypes) && tool.supportedDatatypes.includes(resolved));
+    console.log("[tiles] isToolCompatibleWithDocType:", { toolId, docType: resolved, supportedDatatypes: tool.supportedDatatypes, compatible });
+    return compatible;
+  } catch (err) {
+    console.log("[tiles] isToolCompatibleWithDocType: registry error", err);
+    return true;
+  }
+}
 
 export function parseTokenData(data: string): {
   item: PatchworkDndItem;
@@ -260,6 +306,24 @@ export class PatchworkTokenShapeUtil extends ShapeUtil<PatchworkTokenShape> {
     return <rect width={w} height={h} rx={6} ry={6} />;
   }
 
+  private consumeOrCopyToken(
+    editor: PatchworkTokenShapeUtil["editor"],
+    shape: PatchworkTokenShape,
+    initial: PatchworkTokenShape,
+  ) {
+    const shiftHeld = editor.inputs.shiftKey;
+    if (shiftHeld) {
+      editor.updateShape({
+        id: shape.id,
+        type: PATCHWORK_TOKEN_TYPE,
+        x: initial.x,
+        y: initial.y,
+      });
+    } else {
+      editor.deleteShape(shape.id);
+    }
+  }
+
   override onTranslateEnd(
     _initial: PatchworkTokenShape,
     shape: PatchworkTokenShape,
@@ -293,22 +357,50 @@ export class PatchworkTokenShapeUtil extends ShapeUtil<PatchworkTokenShape> {
       const repo = _repo;
       const processDocUrl = view.props.docUrl;
 
+      console.log("[tiles] token→llm-process drop:", {
+        tokenData: { name: item.name, url: item.url, type: item.type },
+        isDoc,
+        isTool,
+        processDocUrl,
+        viewShapeId: view.id,
+      });
+
       (async () => {
         try {
           const processHandle = await repo.find<LLMProcessDoc>(processDocUrl);
           const processDoc = processHandle.doc();
-          if (!processDoc?.workspaceUrl) return;
+          console.log("[tiles] processDoc loaded:", {
+            hasDoc: !!processDoc,
+            workspaceUrl: processDoc?.workspaceUrl,
+            keys: processDoc ? Object.keys(processDoc) : [],
+          });
+          if (!processDoc?.workspaceUrl) {
+            console.warn("[tiles] processDoc has no workspaceUrl, aborting");
+            return;
+          }
 
           const wsHandle = await repo.find<WorkspaceDoc>(processDoc.workspaceUrl);
+          const wsBefore = wsHandle.doc();
+          console.log("[tiles] workspace before change:", {
+            entryCount: wsBefore?.entries?.length ?? 0,
+            entries: wsBefore?.entries?.map((e: WorkspaceEntry) => ({ name: e.name, url: e.url, type: e.type })),
+          });
+
           wsHandle.change((ws: any) => {
             if (!ws.entries) ws.entries = [];
 
             const exists = ws.entries.some(
               (e: WorkspaceEntry) => e.name === item.name && e.url === item.url,
             );
-            if (exists) return;
+            if (exists) {
+              console.log("[tiles] entry already exists, skipping:", item.name);
+              return;
+            }
 
-            if (item.type && item.type !== "raw" && !item.url) return;
+            if (item.type && item.type !== "raw" && !item.url) {
+              console.log("[tiles] skipping tool-only token with no url:", item);
+              return;
+            }
 
             const isToolEntry =
               item.type &&
@@ -316,33 +408,36 @@ export class PatchworkTokenShapeUtil extends ShapeUtil<PatchworkTokenShape> {
               item.type !== "file" &&
               item.type !== "folder";
 
-            if (isToolEntry) {
-              ws.entries.push({
-                name: item.name || item.type,
-                url: item.url,
-                path: "tool.js",
-                type: "tool",
-              });
-            } else {
-              ws.entries.push({
-                name: item.name || "Untitled",
-                url: item.url,
-                type: "document",
-              });
-            }
+            const entry = isToolEntry
+              ? { name: item.name || item.type, url: item.url, path: "tool.js", type: "tool" as const }
+              : { name: item.name || "Untitled", url: item.url, type: "document" as const };
+
+            console.log("[tiles] pushing entry:", entry);
+            ws.entries.push(entry);
+          });
+
+          const wsAfter = wsHandle.doc();
+          console.log("[tiles] workspace after change:", {
+            entryCount: wsAfter?.entries?.length ?? 0,
+            entries: wsAfter?.entries?.map((e: WorkspaceEntry) => ({ name: e.name, url: e.url, type: e.type })),
           });
         } catch (err) {
           console.error("[tiles] token→llm-process bridge failed:", err);
         }
       })();
 
-      editor.deleteShape(shape.id);
+      this.consumeOrCopyToken(editor, shape, _initial);
       previewOriginals.delete(view.id);
       return;
     }
     // -----------------------------------------------------------------------
     // END TEMPORARY
     // -----------------------------------------------------------------------
+
+    if (isDoc && !isToolCompatibleWithDocType(view.props?.toolId, item.type, item.url)) {
+      previewOriginals.delete(view.id);
+      return;
+    }
 
     const updates: Record<string, string> = {};
     if (isDoc) {
@@ -359,7 +454,7 @@ export class PatchworkTokenShapeUtil extends ShapeUtil<PatchworkTokenShape> {
       props: updates,
     });
 
-    editor.deleteShape(shape.id);
+    this.consumeOrCopyToken(editor, shape, _initial);
     previewOriginals.delete(view.id);
   }
 }

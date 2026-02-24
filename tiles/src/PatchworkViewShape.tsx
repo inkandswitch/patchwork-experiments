@@ -13,6 +13,7 @@ import {
 
   TOOL_SLOT_W,
   parseTokenData,
+  isToolCompatibleWithDocType,
   measureDocTokenWidth,
   measureToolTokenWidth,
   ToolTokenSvg,
@@ -78,6 +79,19 @@ export class PatchworkViewShapeUtil extends BaseBoxShapeUtil<PatchworkViewShape>
     const token = tokens[0] as PatchworkTokenShape;
     const info = parseTokenData(token.props.data);
     if (!info) return;
+
+    console.log("[tiles] onDragShapesIn:", {
+      isDoc: info.isDoc,
+      isTool: info.isTool,
+      itemType: info.item.type,
+      itemName: info.item.name,
+      itemUrl: info.item.url,
+      viewToolId: shape.props.toolId,
+    });
+
+    if (info.isDoc && shape.props.toolId) {
+      if (!isToolCompatibleWithDocType(shape.props.toolId, info.item.type, info.item.url)) return;
+    }
 
     if (!previewOriginals.has(shape.id)) {
       previewOriginals.set(shape.id, {
