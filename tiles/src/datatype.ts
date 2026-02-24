@@ -1,18 +1,15 @@
 import type { DatatypeImplementation } from "@inkandswitch/patchwork-plugins";
-import { createTLStore, defaultShapeUtils, type SerializedSchema, type SerializedStore, type TLPage, type TLPageId, type TLRecord, type TLShapeId } from "@tldraw/tldraw";
+import { createTLStore, defaultShapeUtils, type SerializedSchema, type SerializedStore, type TLPage, type TLPageId, type TLRecord } from "@tldraw/tldraw";
 
 import { tldrawValueToAutomergeValue } from "./automerge/TLStoreToAutomerge.ts";
 import { PatchworkTokenShapeUtil } from "./PatchworkTokenShape.tsx";
 import { PatchworkViewShapeUtil } from "./PatchworkViewShape.tsx";
-import { LLMProcessShapeUtil } from "./process/LLMProcessShape.tsx";
 
 // SCHEMA
 export type TilesDoc = {
   store: SerializedStore<TLRecord>;
   schema: SerializedSchema;
 };
-
-export type TilesDocAnchor = TLShapeId;
 
 const pageKey = "page:page" as TLPageId;
 
@@ -31,7 +28,7 @@ export const init = (doc: TilesDoc) => {
     doc,
     tldrawValueToAutomergeValue(
       createTLStore({
-        shapeUtils: [...defaultShapeUtils, PatchworkTokenShapeUtil, PatchworkViewShapeUtil, LLMProcessShapeUtil],
+        shapeUtils: [...defaultShapeUtils, PatchworkTokenShapeUtil, PatchworkViewShapeUtil],
       }).getStoreSnapshot()
     )
   );

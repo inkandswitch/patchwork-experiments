@@ -1,3 +1,4 @@
+import { useRef, useEffect } from "react";
 import {
   BaseBoxShapeUtil,
   HTMLContainer,
@@ -40,6 +41,28 @@ declare module "@tldraw/tldraw" {
 export type PatchworkViewShape = TLShape<typeof PATCHWORK_VIEW_TYPE>;
 
 const HEADER_HEIGHT = 36;
+
+const SHIELD_EVENTS = [
+  "pointerdown", "pointermove", "pointerup",
+  "wheel", "keydown", "keyup",
+] as const;
+
+/** Stops all interactive events from propagating to tldraw when active. */
+function ViewBody({ active, children }: { active: boolean; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !active) return;
+    const stop = (e: Event) => e.stopPropagation();
+    for (const type of SHIELD_EVENTS) el.addEventListener(type, stop);
+    return () => { for (const type of SHIELD_EVENTS) el.removeEventListener(type, stop); };
+  }, [active]);
+  return (
+    <div ref={ref} style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+      {children}
+    </div>
+  );
+}
 
 export class PatchworkViewShapeUtil extends BaseBoxShapeUtil<PatchworkViewShape> {
   static override type = PATCHWORK_VIEW_TYPE as string;
@@ -330,8 +353,8 @@ export class PatchworkViewShapeUtil extends BaseBoxShapeUtil<PatchworkViewShape>
           )}
         </div>
 
-        {/* Body: only patchwork-view when both present, empty otherwise */}
-        <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+        {/* Body: ViewBody shields events from tldraw when editing */}
+        <ViewBody active={isEditing}>
           {hasDoc && hasTool ? (
             // @ts-expect-error Custom element from patchwork-elements
             <patchwork-view
@@ -339,13 +362,13 @@ export class PatchworkViewShapeUtil extends BaseBoxShapeUtil<PatchworkViewShape>
               tool-id={toolId}
               style={{
                 display: "block",
-                width: "100%",
-                height: "100%",
+                position: "absolute",
+                inset: 0,
                 pointerEvents: isEditing ? "all" : "none",
               }}
             />
           ) : null}
-        </div>
+        </ViewBody>
       </HTMLContainer>
     );
   }

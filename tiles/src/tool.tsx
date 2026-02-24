@@ -5,7 +5,6 @@ import { useAutomergeStore, useAutomergePresence } from "./automerge/useAutomerg
 import type { TilesDoc } from "./datatype.ts";
 import { PatchworkTokenShapeUtil, setTokenShapeRepo } from "./PatchworkTokenShape.tsx";
 import { PatchworkViewShapeUtil, PATCHWORK_VIEW_TYPE } from "./PatchworkViewShape.tsx";
-import { LLMProcessShapeUtil, LLMProcessShapeTool } from "./process/LLMProcessShape.tsx";
 import { NewDocShapeTool, newDocUiOverrides, NewDocToolbar, setNewDocToolContext } from "./NewDocTool.tsx";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { UnixFileEntry } from "@inkandswitch/patchwork-filesystem";
@@ -58,10 +57,10 @@ function useContactInfo() {
   };
 }
 
-const VERSION = "0.3.4";
+const VERSION = "0.3.6";
 
-const customShapeUtils = [PatchworkTokenShapeUtil, PatchworkViewShapeUtil, LLMProcessShapeUtil];
-const customTools: any[] = [LLMProcessShapeTool, NewDocShapeTool];
+const customShapeUtils = [PatchworkTokenShapeUtil, PatchworkViewShapeUtil];
+const customTools: any[] = [NewDocShapeTool];
 
 const uiComponents: TLUiComponents = {
   PageMenu: null,
