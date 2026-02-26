@@ -35,33 +35,6 @@ function escapeHtml(str) {
 
 const URL_RE = /https?:\/\/[^\s<>]+/g;
 
-// Format for input preview — keeps delimiters visible so cursor stays aligned
-function formatTextPreview(text) {
-  const parts = text.split(/(`[^`]+`)/g);
-  let out = "";
-  for (let i = 0; i < parts.length; i++) {
-    if (i % 2 === 1) {
-      const inner = escapeHtml(parts[i]);
-      out += "<code>" + inner + "</code>";
-      continue;
-    }
-    let s = escapeHtml(parts[i]);
-    // Wrap content AND delimiters in the styled element
-    s = s.replace(/\._([^_]+?)_\./g, '<sub>._$1_.</sub>');
-    s = s.replace(/\.\^([^^]+?)\^\./g, '<sup>.^$1^.</sup>');
-    s = s.replace(/___([^_]+?)___/g, '<u><em>___$1___</em></u>');
-    s = s.replace(/__([^_]+?)__/g, '<u>__$1__</u>');
-    s = s.replace(/(?<![_])_([^_]+?)_(?![_.])/g, '<em>_$1_</em>');
-    s = s.replace(/\*([^*]+?)\*/g, '<strong>*$1*</strong>');
-    s = s.replace(/\|\|([^|]+?)\|\|/g, '<span class="chat-spoiler revealed">||$1||</span>');
-    s = s.replace(/&lt;&gt;(.+?)&lt;&gt;/g, '<span style="color:var(--accent)">&lt;&gt;$1&lt;&gt;</span>');
-    s = s.replace(/%%([^%]+?)%%/g, '<span class="chat-inverted">%%$1%%</span>');
-    s = s.replace(/~~([^~]+?)~~/g, '<s>~~$1~~</s>');
-    out += s;
-  }
-  return out;
-}
-
 function formatText(text, emoticonBlobUrls) {
   // Split by code spans first to avoid formatting inside them
   const parts = text.split(/(`[^`]+`)/g);
@@ -73,6 +46,24 @@ function formatText(text, emoticonBlobUrls) {
       continue;
     }
     let s = escapeHtml(parts[i]);
+    // Extract :emoticon: tokens before underscore formatting can mangle them
+    const emoticonSlots = [];
+    s = s.replace(/:([a-zA-Z0-9_+-]+):/g, (match, name) => {
+      const placeholder = '\x00EMO' + emoticonSlots.length + '\x00';
+      // Custom emoticon first
+      if (emoticonBlobUrls) {
+        const blobUrl = emoticonBlobUrls[name];
+        if (blobUrl) { emoticonSlots.push('<img class="chat-emoticon-inline" src="' + blobUrl + '" alt=":' + escapeHtml(name) + ':" title=":' + escapeHtml(name) + ':">'); return placeholder; }
+      }
+      // Shortcode alias (e.g. :+1: :tada: :heart:)
+      const aliasLower = name.toLowerCase();
+      if (EMOJI_ALIASES[aliasLower]) { emoticonSlots.push('<span title=":' + escapeHtml(name) + ':">' + EMOJI_ALIASES[aliasLower] + '</span>'); return placeholder; }
+      // Unicode emoji by full name
+      const lower = aliasLower.replace(/[-_]/g, " ");
+      const found = EMOJI_DATA.find(e => e.name.toLowerCase() === lower);
+      if (found) { emoticonSlots.push('<span title=":' + escapeHtml(name) + ':">' + found.emoji + '</span>'); return placeholder; }
+      return match;
+    });
     // Order matters: specific delimiters first
     // ._text_. → subscript
     s = s.replace(/\._([^_]+?)_\./g, '<sub>$1</sub>');
@@ -83,7 +74,7 @@ function formatText(text, emoticonBlobUrls) {
     // __text__ → underline
     s = s.replace(/__([^_]+?)__/g, '<u>$1</u>');
     // _text_ → italic
-    s = s.replace(/(?<![_])_([^_]+?)_(?![_.])/g, '<em>$1</em>');
+    s = s.replace(/(?<![_\w])_([^_]+?)_(?![_.\w])/g, '<em>$1</em>');
     // *text* → bold
     s = s.replace(/\*([^*]+?)\*/g, '<strong>$1</strong>');
     // ||text|| → spoiler
@@ -94,13 +85,9 @@ function formatText(text, emoticonBlobUrls) {
     s = s.replace(/%%([^%]+?)%%/g, '<span class="chat-inverted">$1</span>');
     // ~~text~~ → strikethrough
     s = s.replace(/~~([^~]+?)~~/g, '<s>$1</s>');
-    // :emoticon: → inline image (if blob URL available)
-    if (emoticonBlobUrls) {
-      s = s.replace(/:([a-zA-Z0-9_-]+):/g, (match, name) => {
-        const blobUrl = emoticonBlobUrls[name];
-        if (blobUrl) return '<img class="chat-emoticon-inline" src="' + blobUrl + '" alt=":' + escapeHtml(name) + ':" title=":' + escapeHtml(name) + ':">';
-        return match;
-      });
+    // Restore emoticon placeholders
+    for (let j = 0; j < emoticonSlots.length; j++) {
+      s = s.replace('\x00EMO' + j + '\x00', emoticonSlots[j]);
     }
     // URLs → clickable links
     s = s.replace(URL_RE, (url) => '<a href="' + url + '" target="_blank" rel="noopener">' + url + '</a>');
@@ -112,7 +99,7 @@ function formatText(text, emoticonBlobUrls) {
 function isEmojiOnly(text) {
   // Strip :custom: emoticon tokens and unicode emoji, see if anything non-whitespace remains
   const stripped = text
-    .replace(/:[a-zA-Z0-9_-]+:/g, "")
+    .replace(/:[a-zA-Z0-9_+\-]+:/g, "")
     .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}\u200d\ufe0f\ufe0e\u20e3\u{1f3fb}-\u{1f3ff}\u{e0061}-\u{e007a}\u{e007f}]/gu, "")
     .trim();
   return stripped.length === 0 && text.trim().length > 0;
@@ -144,9 +131,10 @@ function createStyles() {
       --accent-hover: oklch(0.45 0.15 270);
       --accent-soft: oklch(0.55 0.18 270 / 0.15);
       --accent-fg:   oklch(1 0 0);
-      --text-primary:   oklch(0.93 0.01 0);
-      --text-secondary: oklch(0.68 0.01 0);
-      --text-muted:     oklch(0.55 0.01 0);
+      --text-primary:   oklch(1 0 0);
+      --text-secondary: oklch(1 0 0 / 0.6);
+      --text-muted:     oklch(1 0 0 / 0.4);
+      --link:           oklch(0.75 0.15 250);
     }
 
     /* ---- Reset ---- */
@@ -159,15 +147,17 @@ function createStyles() {
       overflow:hidden; user-select:text; -webkit-user-select:text;
     }
     .chat-root *, .chat-root *::before, .chat-root *::after { box-sizing:border-box; }
+    .chat-root a { color:var(--link); text-decoration:underline; }
+    .chat-root a:hover { text-decoration:none; }
 
     /* Theme button */
     .chat-theme-btn {
-      background:none; border:none; color:var(--text-secondary); cursor:pointer;
+      background:none; border:none; color:var(--text-muted); cursor:pointer;
       font-size:16px; padding:2px 6px; border-radius:4px; position:relative; margin-left:auto;
     }
     .chat-theme-btn:hover, .chat-notify-btn:hover { background:var(--bg-hover); color:var(--text-primary); }
     .chat-notify-btn {
-      background:none; border:none; color:var(--text-secondary); cursor:pointer;
+      background:none; border:none; color:var(--text-muted); cursor:pointer;
       padding:2px 4px; border-radius:4px; display:flex; align-items:center;
       position:relative;
     }
@@ -270,7 +260,7 @@ function createStyles() {
       background:var(--bg-hover); padding:1px 4px; border-radius:3px;
       font-family:ui-monospace,monospace; font-size:0.9em;
     }
-    .chat-msg-text a { color:var(--accent); text-decoration:underline; }
+    .chat-msg-text a { color:var(--link); text-decoration:underline; }
     .chat-msg-text a:hover { text-decoration:none; }
     .chat-spoiler {
       background:var(--text-primary); color:transparent; border-radius:3px;
@@ -288,25 +278,11 @@ function createStyles() {
     .chat-msg-action .chat-msg-action-name { font-weight:600; color:var(--text-primary); }
     .chat-time-gap { margin-top:16px; }
 
-    /* Input preview overlay */
+    /* Input */
     .chat-input-wrap { position:relative; flex:1; min-width:0; }
-    .chat-input-preview {
-      position:absolute; top:0; left:0; right:0; bottom:0; pointer-events:none;
-      white-space:pre-wrap; word-wrap:break-word; overflow:hidden;
-      padding:8px 12px; font-size:15px; line-height:1.4;
-      color:var(--text-primary); font-family:inherit;
-    }
-    .chat-input-preview code {
-      background:var(--bg-hover); padding:1px 4px; border-radius:3px;
-      font-family:ui-monospace,monospace; font-size:0.9em;
-    }
-    .chat-input-preview .chat-spoiler { background:var(--text-muted); }
-    .chat-input-preview .chat-inverted {
-      background:var(--text-primary); color:var(--bg-dark); padding:0 3px; border-radius:3px;
-    }
-    .chat-input-editing {
-      color:transparent !important; caret-color:var(--text-primary);
-    }
+    .chat-input-wrap .cm-editor { background:transparent; }
+    .chat-input-wrap .cm-editor .cm-content { max-height:120px; }
+    .chat-input-wrap .cm-editor .cm-scroller { max-height:120px; }
 
     /* Continuation messages */
     .chat-msg-continuation { padding:0 16px 0 68px; position:relative; }
@@ -478,9 +454,11 @@ function createStyles() {
       z-index:101; max-width:280px; width:280px; display:flex; flex-direction:column;
       max-height:320px;
     }
+    .chat-emoji-picker-scroll {
+      overflow-y:auto; overscroll-behavior:contain; min-height:0; flex:1;
+    }
     .chat-emoji-grid {
-      display:flex; flex-wrap:wrap; gap:2px; max-height:200px; overflow-y:auto; min-height:0;
-      overscroll-behavior:contain;
+      display:flex; flex-wrap:wrap; gap:2px;
     }
     .chat-emoji-grid button {
       background:none; border:none; font-size:22px; cursor:pointer; padding:4px;
@@ -496,7 +474,7 @@ function createStyles() {
     .chat-emoji-picker-search:focus { border-color:var(--accent); }
 
     /* Emoticon section in emoji picker */
-    .chat-emoticon-section { border-bottom:1px solid var(--border); padding-bottom:6px; margin-bottom:6px; flex-shrink:0; }
+    .chat-emoticon-section { border-bottom:1px solid var(--border); padding-bottom:6px; margin-bottom:6px; }
     .chat-emoticon-section-header {
       display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;
       font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px;
@@ -521,11 +499,13 @@ function createStyles() {
     }
     .chat-emoticon-grid button:hover .chat-emoticon-adopt { display:flex; }
     .chat-emoticon-remove {
-      position:absolute; top:-2px; right:-2px; width:14px; height:14px; border-radius:50%;
-      background:#ed4245; color:#fff; border:none; cursor:pointer;
+      position:absolute; top:-4px; right:-4px; width:16px; height:16px; border-radius:50%;
+      background:var(--bg-hover); color:var(--text-muted); border:1px solid var(--border); cursor:pointer;
       font-size:10px; display:none; align-items:center; justify-content:center; line-height:1;
     }
     .chat-emoticon-grid button:hover .chat-emoticon-remove { display:flex; }
+    .chat-emoticon-remove:hover { background:#ed4245 !important; color:#fff !important; border-color:#ed4245 !important; }
+    .chat-emoticon-remove.confirm { background:#ed4245; color:#fff; border-color:#ed4245; display:flex; }
 
     /* Inline emoticon in message text */
     .chat-emoticon-inline { height:1.5em; vertical-align:middle; display:inline; }
@@ -557,6 +537,49 @@ function createStyles() {
     .chat-emoticon-dialog .save-btn { background:var(--accent); color:var(--accent-fg); font-weight:600; }
     .chat-emoticon-dialog .save-btn:disabled { opacity:0.5; cursor:default; }
 
+    /* Font add dialog (reuses emoticon dialog overlay) */
+    .chat-font-dialog {
+      padding:8px; display:flex; flex-direction:column; gap:8px;
+    }
+    .chat-font-dialog input[type=text] {
+      width:100%; padding:6px 10px; background:var(--bg-input); border:1px solid var(--border);
+      border-radius:4px; color:var(--text-primary); font-size:14px; outline:none;
+    }
+    .chat-font-dialog input[type=text]:focus { border-color:var(--accent); }
+    .chat-font-dialog-preview {
+      padding:10px; border-radius:4px; background:var(--bg-hover);
+      text-align:center; font-size:18px; color:var(--text-primary);
+      min-height:48px; display:flex; align-items:center; justify-content:center;
+    }
+    .chat-font-dialog-filebtn {
+      background:none; border:1px dashed var(--border); color:var(--text-muted); cursor:pointer;
+      font-size:13px; padding:6px 12px; border-radius:4px; text-align:center;
+    }
+    .chat-font-dialog-filebtn:hover { border-color:var(--accent); color:var(--text-primary); }
+    .chat-font-dialog-btns { display:flex; gap:6px; justify-content:flex-end; }
+    .chat-font-dialog-btns button {
+      padding:4px 12px; border-radius:4px; font-size:13px; cursor:pointer; border:none;
+    }
+    .chat-font-dialog .cancel-btn { background:var(--bg-hover); color:var(--text-primary); }
+    .chat-font-dialog .save-btn { background:var(--accent); color:var(--accent-fg); font-weight:600; }
+    .chat-font-dialog .save-btn:disabled { opacity:0.5; cursor:default; }
+
+    /* Font list in font dialog */
+    .chat-font-list { display:flex; flex-direction:column; gap:2px; max-height:120px; overflow-y:auto; overscroll-behavior:contain; }
+    .chat-font-list-item {
+      display:flex; align-items:center; justify-content:space-between; padding:4px 8px;
+      border-radius:4px; font-size:13px; color:var(--text-primary);
+    }
+    .chat-font-list-item:hover { background:var(--bg-hover); }
+    .chat-font-list-item .font-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .chat-font-list-remove {
+      width:18px; height:18px; border-radius:50%; background:var(--bg-hover); color:var(--text-muted);
+      border:1px solid var(--border); cursor:pointer; font-size:10px;
+      display:flex; align-items:center; justify-content:center; flex-shrink:0;
+    }
+    .chat-font-list-remove:hover { background:#ed4245; color:#fff; border-color:#ed4245; }
+    .chat-font-list-remove.confirm { background:#ed4245; color:#fff; border-color:#ed4245; }
+
     /* Message context menu (... button) */
     .chat-msg-menu-wrap { position:relative; }
     .chat-msg-menu {
@@ -580,7 +603,28 @@ function createStyles() {
       padding:0 16px; min-height:22px; font-size:12px;
       color:var(--text-muted); font-style:italic; flex-shrink:0;
     }
-    .chat-input-wrapper { flex-shrink:0; padding:0 16px 16px; }
+    .chat-input-wrapper { flex-shrink:0; padding:0 16px 16px; position:relative; }
+
+    /* Emoji/emoticon autocomplete popup */
+    .chat-autocomplete {
+      display:none; position:absolute; bottom:100%; left:0; right:0;
+      background:var(--bg-darkest); border:1px solid var(--border); border-radius:8px;
+      max-height:200px; overflow-y:auto; overscroll-behavior:contain;
+      box-shadow:0 -4px 16px rgba(0,0,0,0.3); z-index:50; margin-bottom:4px;
+    }
+    .chat-autocomplete.show { display:block; }
+    .chat-autocomplete-item {
+      display:flex; align-items:center; gap:8px; padding:6px 12px; cursor:pointer;
+      font-size:14px; color:var(--text-primary);
+    }
+    .chat-autocomplete-item:hover, .chat-autocomplete-item.active {
+      background:var(--bg-hover);
+    }
+    .chat-autocomplete-item-emoji { font-size:20px; width:28px; text-align:center; flex-shrink:0; }
+    .chat-autocomplete-item-emoji img { width:24px; height:24px; object-fit:contain; }
+    .chat-autocomplete-item-name { color:var(--text-secondary); font-size:12px; }
+    .chat-autocomplete-item-desc { color:var(--text-muted); font-size:11px; margin-left:auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:50%; }
+    .chat-autocomplete-item-cmd { font-weight:600; font-size:14px; color:var(--text-primary); min-width:0; }
 
     .chat-reply-bar {
       display:none; padding:8px 12px; background:var(--bg-mid);
@@ -655,7 +699,7 @@ function createStyles() {
     .chat-input::placeholder { color:var(--text-muted); }
 
     .chat-input-btn {
-      width:36px; height:36px; background:none; border:none; color:var(--text-secondary);
+      width:36px; height:36px; background:none; border:none; color:var(--text-muted);
       cursor:pointer; font-size:20px; border-radius:4px;
       display:flex; align-items:center; justify-content:center; flex-shrink:0;
     }
@@ -697,7 +741,7 @@ function createStyles() {
     .chat-gif-toggle {
       width:36px; height:36px; border:none; cursor:pointer; border-radius:4px;
       display:flex; align-items:center; justify-content:center; flex-shrink:0;
-      background:none; color:var(--text-secondary); font-size:20px; position:relative;
+      background:none; color:var(--text-muted); font-size:20px; position:relative;
       overflow:hidden;
     }
     .chat-gif-toggle:hover { color:var(--text-primary); }
@@ -727,6 +771,7 @@ function createStyles() {
     }
     
     .chat-input-row.processing .chat-input,
+    .chat-input-row.processing .chat-input-wrap,
     .chat-input-row.processing .chat-input-btn { opacity:0.5; pointer-events:none; }
 
     .chat-empty {
@@ -757,6 +802,41 @@ function createStyles() {
 let EMOJI_DATA = []; // [{emoji, name, group}]
 let EMOJI_LOADED = false;
 
+// Common shortcode aliases (GitHub/Discord/Slack style)
+const EMOJI_ALIASES = {
+  "+1":"👍","-1":"👎","thumbsup":"👍","thumbsdown":"👎","heart":"❤️","broken_heart":"💔",
+  "smile":"😄","laughing":"😆","blush":"😊","smiley":"😃","grinning":"😀",
+  "wink":"😉","heart_eyes":"😍","kissing_heart":"😘","stuck_out_tongue":"😛",
+  "sweat_smile":"😅","joy":"😂","rofl":"🤣","sob":"😭","cry":"😢",
+  "rage":"😡","angry":"😠","thinking":"🤔","flushed":"😳","scream":"😱",
+  "pensive":"😔","confused":"😕","disappointed":"😞","worried":"😟",
+  "triumph":"😤","unamused":"😒","sweat":"😰","weary":"😩",
+  "sunglasses":"😎","nerd":"🤓","innocent":"😇","smirk":"😏","relieved":"😌",
+  "yum":"😋","drooling_face":"🤤","lying_face":"🤥","zipper_mouth":"🤐",
+  "nauseated_face":"🤢","sneezing_face":"🤧","cold_face":"🥶","hot_face":"🥵",
+  "exploding_head":"🤯","cowboy":"🤠","partying_face":"🥳","disguised_face":"🥸",
+  "ghost":"👻","skull":"💀","poop":"💩","clown":"🤡","alien":"👽","robot":"🤖",
+  "wave":"👋","ok_hand":"👌","pinched_fingers":"🤌","v":"✌️","crossed_fingers":"🤞",
+  "metal":"🤘","call_me":"🤙","muscle":"💪","pray":"🙏","handshake":"🤝",
+  "clap":"👏","raised_hands":"🙌","open_hands":"👐","palms_up":"🤲",
+  "fire":"🔥","tada":"🎉","sparkles":"✨","star":"⭐","zap":"⚡",
+  "100":"💯","boom":"💥","trophy":"🏆","medal":"🏅","crown":"👑",
+  "eyes":"👀","eye":"👁️","brain":"🧠","tongue":"👅","lips":"👄",
+  "baby":"👶","dog":"🐶","cat":"🐱","fox":"🦊","bear":"🐻",
+  "panda":"🐼","unicorn":"🦄","butterfly":"🦋","rainbow":"🌈",
+  "sun":"☀️","moon":"🌙","cloud":"☁️","umbrella":"☂️","snowflake":"❄️",
+  "pizza":"🍕","burger":"🍔","fries":"🍟","taco":"🌮","sushi":"🍣",
+  "coffee":"☕","beer":"🍺","wine":"🍷","cocktail":"🍸","cake":"🎂",
+  "rocket":"🚀","airplane":"✈️","car":"🚗","bike":"🚲","ship":"🚢",
+  "warning":"⚠️","no_entry":"⛔","x":"❌","white_check_mark":"✅","check":"✅",
+  "question":"❓","exclamation":"❗","bulb":"💡","bell":"🔔","mega":"📣",
+  "lock":"🔒","key":"🔑","link":"🔗","gem":"💎","gift":"🎁",
+  "memo":"📝","book":"📖","pen":"🖊️","scissors":"✂️","pushpin":"📌",
+  "calendar":"📅","chart":"📈","mailbox":"📬","package":"📦",
+  "hash":"#️⃣","keycap_star":"*️⃣","zero":"0️⃣","one":"1️⃣","two":"2️⃣",
+  "recycle":"♻️","peace":"☮️","atom":"⚛️","infinity":"♾️","yin_yang":"☯️",
+};
+
 // Fallback while loading
 const FALLBACK_EMOJIS = [
   "😀","😃","😄","😁","😆","😅","🤣","😂","🙂","😉","😊","😇","🥰","😍","🤩",
@@ -779,6 +859,14 @@ import("https://esm.sh/unicode-emoji-json@0.6.0").then(mod => {
   }));
   EMOJI_LOADED = true;
 }).catch(e => console.warn("[Chat] emoji load failed, using fallback:", e));
+
+// ============================================================================
+// CodeMirror 6 — available via importmap
+// ============================================================================
+const cmPromise = Promise.all([
+  import("@codemirror/view"),
+  import("@codemirror/state"),
+]).then(([viewMod, stateMod]) => ({ ...viewMod, ...stateMod }));
 
 // ============================================================================
 // GIF Encoder
@@ -1016,7 +1104,7 @@ export function Tool(handle, element, options) {
 
   function syncDraftToDoc() {
     if (!draftHandle) return;
-    const text = input.value;
+    const text = getInputValue();
     const current = draftHandle.doc()?.text || "";
     if (text === current) return;
     draftIsLocal = true;
@@ -1055,27 +1143,23 @@ export function Tool(handle, element, options) {
         d.drafts[chatUrl] = draftHandle.url;
       });
     }
-    // Restore draft into textarea
+    // Restore draft into editor
     const saved = draftHandle.doc()?.text;
-    if (saved && !input.value) {
-      input.value = saved;
-      input.style.height = "auto";
-      input.style.height = Math.min(input.scrollHeight, 120) + "px";
-      inputPreview.style.height = input.style.height;
-      updateInputPreview();
+    if (saved && !getInputValue()) {
+      setInputValue(saved);
     }
     // Listen for remote changes (other device editing the draft)
     draftHandle.on("change", () => {
       if (draftIsLocal) return;
       const remote = draftHandle.doc()?.text || "";
-      if (remote !== input.value) {
-        const pos = input.selectionStart;
-        input.value = remote;
-        input.selectionStart = input.selectionEnd = Math.min(pos, remote.length);
-        input.style.height = "auto";
-        input.style.height = Math.min(input.scrollHeight, 120) + "px";
-        inputPreview.style.height = input.style.height;
-        updateInputPreview();
+      if (remote !== getInputValue()) {
+        const pos = getInputCursor();
+        if (cmView) {
+          cmView.dispatch({
+            changes: { from: 0, to: cmView.state.doc.length, insert: remote },
+            selection: { anchor: Math.min(pos, remote.length) },
+          });
+        }
       }
     });
   }
@@ -1205,6 +1289,7 @@ export function Tool(handle, element, options) {
     }
     addEmoticonToChatDoc(name, url);
     broadcastPresence(false);
+    if (rebuildEmojiDecorations) rebuildEmojiDecorations();
     return url;
   }
 
@@ -1219,6 +1304,7 @@ export function Tool(handle, element, options) {
       if (d.emoticons) delete d.emoticons[name];
     });
     broadcastPresence(false);
+    if (rebuildEmojiDecorations) rebuildEmojiDecorations();
   }
 
   function adoptEmoticon(name, url) {
@@ -1231,6 +1317,87 @@ export function Tool(handle, element, options) {
       });
     }
     addEmoticonToChatDoc(name, url);
+    broadcastPresence(false);
+    if (rebuildEmojiDecorations) rebuildEmojiDecorations();
+  }
+
+  // ---- Custom Fonts ----
+  let myFonts = {}; // name → automerge url
+  const peerFonts = new Map(); // peerName → { name → automerge url }
+  const loadedFontFaces = new Set(); // font names already injected via FontFace
+
+  function getAllFonts() {
+    const all = {};
+    for (const [name, url] of Object.entries(myFonts)) {
+      all[name] = { url, owner: myName, mine: true };
+    }
+    for (const [peerName, fonts] of peerFonts) {
+      for (const [name, url] of Object.entries(fonts)) {
+        if (!all[name]) all[name] = { url, owner: peerName, mine: false };
+      }
+    }
+    return all;
+  }
+
+  async function ensureFontLoaded(fontName) {
+    if (loadedFontFaces.has(fontName)) return;
+    // Check own fonts, peer fonts, and chat doc fonts
+    const all = getAllFonts();
+    let url = all[fontName]?.url;
+    if (!url) {
+      const chatDocFonts = handle.doc()?.fonts;
+      if (chatDocFonts?.[fontName]?.url) url = chatDocFonts[fontName].url;
+    }
+    if (!url) return;
+    try {
+      const blobUrl = await loadBlobUrl(url);
+      if (!blobUrl) return;
+      const face = new FontFace(fontName, "url(" + blobUrl + ")");
+      await face.load();
+      document.fonts.add(face);
+      loadedFontFaces.add(fontName);
+    } catch (e) { console.warn("[Chat] font load failed:", fontName, e); }
+  }
+
+  async function addFont(name, file) {
+    const repo = window.repo; if (!repo) throw new Error("No repo");
+    const u8 = new Uint8Array(await file.arrayBuffer());
+    const fh = await repo.create2({ content: u8, extension: "woff2", mimeType: "font/woff2", name: name + ".woff2", "@patchwork": { type: "file" } });
+    const url = fh.url;
+    myFonts[name] = url;
+    if (chatProfileHandle) {
+      chatProfileHandle.change((d) => {
+        if (!d.fonts) d.fonts = {};
+        d.fonts[name] = url;
+      });
+    }
+    // Share in chat doc too
+    handle.change((d) => {
+      if (!d.fonts) d.fonts = {};
+      d.fonts[name] = { url, addedBy: myName };
+    });
+    broadcastPresence(false);
+    // Load immediately
+    loadedFontFaces.delete(name);
+    await ensureFontLoaded(name);
+    return url;
+  }
+
+  function removeFont(name) {
+    delete myFonts[name];
+    if (chatProfileHandle) {
+      chatProfileHandle.change((d) => {
+        if (d.fonts) delete d.fonts[name];
+      });
+    }
+    handle.change((d) => {
+      if (d.fonts) delete d.fonts[name];
+    });
+    // Remove from document.fonts
+    for (const face of document.fonts) {
+      if (face.family === name) { document.fonts.delete(face); break; }
+    }
+    loadedFontFaces.delete(name);
     broadcastPresence(false);
   }
 
@@ -1263,10 +1430,23 @@ export function Tool(handle, element, options) {
       const profile = chatProfileHandle.doc();
       if (profile?.font) {
         myFont = profile.font;
-        input.style.fontFamily = myFont;
+        if (cmView) cmView.dom.style.fontFamily = myFont;
       }
       if (profile?.emoticons) {
         myEmoticons = { ...profile.emoticons };
+      }
+      if (profile?.fonts) {
+        myFonts = { ...profile.fonts };
+        // Load all custom fonts
+        for (const name of Object.keys(myFonts)) ensureFontLoaded(name);
+      }
+
+      // Also load fonts shared in the chat doc
+      const chatDocFonts = handle.doc()?.fonts;
+      if (chatDocFonts) {
+        for (const [name, entry] of Object.entries(chatDocFonts)) {
+          if (entry?.url && !myFonts[name]) ensureFontLoaded(name);
+        }
       }
 
       if (cd.avatarUrl) {
@@ -1398,6 +1578,7 @@ export function Tool(handle, element, options) {
     try {
       const payload = { type:"presence", name:myName, typing:!!typing, avatarUrl:myAvatarUrl, color:myColor, active:isFocused, timestamp:Date.now() };
       if (Object.keys(myEmoticons).length > 0) payload.emoticons = myEmoticons;
+      if (Object.keys(myFonts).length > 0) payload.fonts = myFonts;
       handle.broadcast(payload);
     } catch(e) {}
   }
@@ -1406,7 +1587,14 @@ export function Tool(handle, element, options) {
     const msg = data.message;
     if (msg?.type === "presence") {
       presenceMap.set(msg.name, { timestamp:msg.timestamp, typing:msg.typing, avatarUrl:msg.avatarUrl, color:msg.color, active:msg.active });
-      if (msg.emoticons) peerEmoticons.set(msg.name, msg.emoticons);
+      if (msg.emoticons) {
+        peerEmoticons.set(msg.name, msg.emoticons);
+        if (rebuildEmojiDecorations) rebuildEmojiDecorations();
+      }
+      if (msg.fonts) {
+        peerFonts.set(msg.name, msg.fonts);
+        for (const name of Object.keys(msg.fonts)) ensureFontLoaded(name);
+      }
       renderPresence();
       renderTyping();
     }
@@ -1548,6 +1736,47 @@ export function Tool(handle, element, options) {
   chromaRow.appendChild(chromaNumber);
   themePopover.appendChild(chromaRow);
 
+  // Font size
+  let themeFontSize = 15;
+  try {
+    const saved = localStorage.getItem("chat-font-size");
+    if (saved) themeFontSize = parseInt(saved, 10) || 15;
+  } catch(e) {}
+
+  const fontSizeLabel = document.createElement("label");
+  fontSizeLabel.textContent = "Font Size";
+  themePopover.appendChild(fontSizeLabel);
+
+  const fontSizeRow = document.createElement("div");
+  fontSizeRow.className = "chat-theme-hue-row";
+  const fontSizeSlider = document.createElement("input");
+  fontSizeSlider.type = "range"; fontSizeSlider.min = "10"; fontSizeSlider.max = "24"; fontSizeSlider.value = String(themeFontSize);
+  const fontSizeNumber = document.createElement("input");
+  fontSizeNumber.type = "number"; fontSizeNumber.min = "10"; fontSizeNumber.max = "24"; fontSizeNumber.value = String(themeFontSize);
+
+  function applyFontSize(size) {
+    themeFontSize = size;
+    root.style.fontSize = size + "px";
+    try { localStorage.setItem("chat-font-size", String(size)); } catch(e) {}
+  }
+
+  fontSizeSlider.addEventListener("input", () => {
+    const v = parseInt(fontSizeSlider.value, 10);
+    fontSizeNumber.value = fontSizeSlider.value;
+    applyFontSize(v);
+  });
+  fontSizeNumber.addEventListener("input", () => {
+    const v = parseInt(fontSizeNumber.value, 10);
+    fontSizeSlider.value = fontSizeNumber.value;
+    applyFontSize(v);
+  });
+  fontSizeRow.appendChild(fontSizeSlider);
+  fontSizeRow.appendChild(fontSizeNumber);
+  themePopover.appendChild(fontSizeRow);
+
+  // Apply saved font size
+  if (themeFontSize !== 15) applyFontSize(themeFontSize);
+
   themeBtn.appendChild(themePopover);
   themeBtn.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -1586,13 +1815,20 @@ export function Tool(handle, element, options) {
     set("--border",      oklch(lerp(0.25, 0.85), sc * 1.3, H));
 
     // Text: always pure black or white for maximum contrast.
-    // bg-dark lightness determines which to use.
+    // Secondary and muted are the same base color with reduced opacity.
     const bgL = lerp(0.11, 0.98);
     const lightBg = bgL > 0.55;
     isLightBg = lightBg;
-    set("--text-primary",   lightBg ? "black" : "white");
-    set("--text-secondary", oklch(lightBg ? 0.35 : 0.68, 0, 0));
-    set("--text-muted",     oklch(lightBg ? 0.50 : 0.50, 0, 0));
+    const textL = lightBg ? 0 : 1;
+    set("--text-primary",   `oklch(${textL} 0 0)`);
+    set("--text-secondary", `oklch(${textL} 0 0 / 0.6)`);
+    set("--text-muted",     `oklch(${textL} 0 0 / 0.4)`);
+
+    // Link color: high-contrast, tinted toward theme hue
+    // On dark backgrounds use a bright link, on light backgrounds use a darker one
+    const linkL = lightBg ? 0.45 : 0.78;
+    const linkC = Math.max(C, 0.12);
+    set("--link", oklch(linkL, linkC, H));
 
     // Accent: ensure it contrasts with the background.
     // When chroma is very low OR luminosity is very low, the raw theme color
@@ -1766,32 +2002,449 @@ export function Tool(handle, element, options) {
     else stopGifCamera();
   });
 
-  // Text input with formatting preview
+  // Text input with CodeMirror 6 (inline emoji rendering)
   const inputWrap = document.createElement("div");
   inputWrap.className = "chat-input-wrap";
-  const input = document.createElement("textarea");
-  input.className = "chat-input";
-  input.rows = 1;
-  input.placeholder = "Message #Chat";
-  const inputPreview = document.createElement("div");
-  inputPreview.className = "chat-input-preview";
-  inputWrap.appendChild(input);
-  inputWrap.appendChild(inputPreview);
   inputRow.appendChild(inputWrap);
 
-  function updateInputPreview() {
-    const val = input.value;
-    if (!val || !/[_*`|<>%~^.]/.test(val)) {
-      // No formatting chars — hide preview, show normal text
-      input.classList.remove("chat-input-editing");
-      inputPreview.innerHTML = "";
-      return;
-    }
-    input.classList.add("chat-input-editing");
-    inputPreview.innerHTML = formatTextPreview(val);
-    inputPreview.style.fontFamily = input.style.fontFamily || "";
-    inputPreview.scrollTop = input.scrollTop;
+  // EditorView will be set once CodeMirror loads; until then, null
+  let cmView = null;
+
+  // Helper accessors that work once cmView is ready
+  function getInputValue() {
+    return cmView ? cmView.state.doc.toString() : "";
   }
+  function setInputValue(text) {
+    if (!cmView) return;
+    cmView.dispatch({ changes: { from: 0, to: cmView.state.doc.length, insert: text } });
+  }
+  function getInputCursor() {
+    return cmView ? cmView.state.selection.main.head : 0;
+  }
+  function focusInput() {
+    if (cmView) cmView.focus();
+  }
+
+  // Will be populated once CM loads; provides the decoration rebuild trigger
+  let rebuildEmojiDecorations = null;
+
+  // Track placeholder text so render() can update it
+  let placeholderText = "Message #Chat";
+  let cmPlaceholderFn = null; // set if CM's built-in placeholder is available
+  let cmPlaceholderCompartment = null; // Compartment for reconfiguring placeholder
+
+  // Initialize CodeMirror once loaded
+  cmPromise.then(cm => {
+    const { EditorView, keymap, Decoration, WidgetType, ViewPlugin, EditorState } = cm;
+
+    // Emoji/emoticon inline widget
+    class EmojiWidget extends WidgetType {
+      constructor(src, alt, isImage) { super(); this.src = src; this.alt = alt; this.isImage = isImage; }
+      eq(other) { return this.src === other.src; }
+      toDOM() {
+        if (this.isImage) {
+          const img = document.createElement("img");
+          img.className = "chat-emoticon-inline";
+          img.src = this.src;
+          img.alt = this.alt;
+          img.style.cssText = "height:1.3em;vertical-align:middle;display:inline;";
+          return img;
+        }
+        const span = document.createElement("span");
+        span.textContent = this.src;
+        span.title = this.alt;
+        return span;
+      }
+      ignoreEvent() { return false; }
+    }
+
+    // Formatting inline widget for bold/italic/etc preview
+    class FormattingWidget extends WidgetType {
+      constructor(html) { super(); this.html = html; }
+      eq(other) { return this.html === other.html; }
+      toDOM() {
+        const span = document.createElement("span");
+        span.innerHTML = this.html;
+        return span;
+      }
+      ignoreEvent() { return false; }
+    }
+
+    // Build emoji decorations from the document
+    // Returns { decos, ranges } where ranges is [{from, to}, ...] for overlap checks
+    function buildEmojiDecos(view) {
+      const decos = [];
+      const ranges = [];
+      const doc = view.state.doc;
+      const text = doc.toString();
+      const re = /:([a-zA-Z0-9_+-]+):/g;
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        const name = m[1];
+        let widget = null;
+        // Custom emoticon
+        const allEm = getAllEmoticons();
+        if (allEm[name]) {
+          const swUrl = "/" + encodeURIComponent(allEm[name].url) + "/";
+          widget = new EmojiWidget(swUrl, ":" + name + ":", true);
+        } else {
+          // Alias
+          const aliasLower = name.toLowerCase();
+          if (EMOJI_ALIASES[aliasLower]) {
+            widget = new EmojiWidget(EMOJI_ALIASES[aliasLower], ":" + name + ":", false);
+          } else {
+            // Full name lookup
+            const lower = name.toLowerCase().replace(/[-_]/g, " ");
+            const found = EMOJI_DATA.find(e => e.name.toLowerCase() === lower);
+            if (found) widget = new EmojiWidget(found.emoji, ":" + name + ":", false);
+          }
+        }
+        if (widget) {
+          decos.push(Decoration.replace({ widget }).range(m.index, m.index + m[0].length));
+          ranges.push({ from: m.index, to: m.index + m[0].length });
+        }
+      }
+      return { decos: Decoration.set(decos, true), ranges };
+    }
+
+    // Build formatting decorations (bold, italic, etc)
+    function buildFormatDecos(view, emojiRanges) {
+      const decos = [];
+      const text = view.state.doc.toString();
+      // Match formatting patterns and apply marks
+      const patterns = [
+        { re: /\*([^*]+?)\*/g, cls: "cm-fmt-bold" },
+        { re: /(?<![_\w])_([^_]+?)_(?![_.\w])/g, cls: "cm-fmt-italic" },
+        { re: /__([^_]+?)__/g, cls: "cm-fmt-underline" },
+        { re: /___([^_]+?)___/g, cls: "cm-fmt-underline-italic" },
+        { re: /~~([^~]+?)~~/g, cls: "cm-fmt-strike" },
+        { re: /`([^`]+)`/g, cls: "cm-fmt-code" },
+        { re: /\|\|([^|]+?)\|\|/g, cls: "cm-fmt-spoiler" },
+        { re: /%%([^%]+?)%%/g, cls: "cm-fmt-inverted" },
+      ];
+      // Skip formatting matches that overlap with emoji replacements
+      function overlapsEmoji(from, to) {
+        for (const r of emojiRanges) {
+          if (from < r.to && to > r.from) return true;
+        }
+        return false;
+      }
+      for (const { re, cls } of patterns) {
+        let m;
+        while ((m = re.exec(text)) !== null) {
+          if (!overlapsEmoji(m.index, m.index + m[0].length)) {
+            decos.push(Decoration.mark({ class: cls }).range(m.index, m.index + m[0].length));
+          }
+        }
+      }
+      return Decoration.set(decos.sort((a, b) => a.from - b.from), true);
+    }
+
+    const emojiPlugin = ViewPlugin.fromClass(class {
+      constructor(view) {
+        const result = buildEmojiDecos(view);
+        this.emojiDecos = result.decos;
+        this.emojiRanges = result.ranges;
+        this.formatDecos = buildFormatDecos(view, this.emojiRanges);
+      }
+      update(update) {
+        if (update.docChanged || update.viewportChanged || this._forceRebuild) {
+          const result = buildEmojiDecos(update.view);
+          this.emojiDecos = result.decos;
+          this.emojiRanges = result.ranges;
+          this.formatDecos = buildFormatDecos(update.view, this.emojiRanges);
+          this._forceRebuild = false;
+        }
+      }
+      rebuild() {
+        this._forceRebuild = true;
+      }
+    }, {
+      decorations: v => v.emojiDecos,
+      provide: plugin => [
+        EditorView.decorations.of(view => {
+          const inst = view.plugin(plugin);
+          return inst ? inst.formatDecos : Decoration.none;
+        }),
+        EditorView.atomicRanges.of(view => {
+          const inst = view.plugin(plugin);
+          return inst ? inst.emojiDecos : Decoration.none;
+        }),
+      ],
+    });
+
+    // Placeholder: use CM's built-in if available, otherwise manual
+    const cmPlaceholder = cm.placeholder;
+    const placeholderExt = cmPlaceholder
+      ? EditorState.transactionExtender.of(() => null) // dummy; we'll use compartment below
+      : ViewPlugin.fromClass(class {
+          constructor(view) { this.el = null; this._sync(view); }
+          update(update) { this._sync(update.view); }
+          _sync(view) {
+            const empty = view.state.doc.length === 0;
+            if (empty && !this.el) {
+              this.el = document.createElement("span");
+              this.el.className = "cm-placeholder";
+              this.el.textContent = placeholderText;
+              this.el.style.cssText = "pointer-events:none;position:absolute;top:8px;left:12px;color:var(--text-muted);";
+              view.dom.style.position = "relative";
+              view.dom.appendChild(this.el);
+            } else if (!empty && this.el) {
+              this.el.remove(); this.el = null;
+            } else if (this.el) {
+              this.el.textContent = placeholderText;
+            }
+          }
+          destroy() { if (this.el) this.el.remove(); }
+        });
+
+    // Compartment for reconfigurable placeholder (if using built-in)
+    const Compartment = cm.Compartment;
+    if (cmPlaceholder && Compartment) {
+      cmPlaceholderFn = cmPlaceholder;
+      cmPlaceholderCompartment = new Compartment();
+    }
+
+    // Create the editor
+    cmView = new EditorView({
+      parent: inputWrap,
+      state: EditorState.create({
+        doc: "",
+        extensions: [
+          (cmPlaceholderFn && cmPlaceholderCompartment)
+            ? cmPlaceholderCompartment.of(cmPlaceholderFn(placeholderText))
+            : placeholderExt,
+          emojiPlugin,
+          keymap.of([
+            {
+              key: "Enter",
+              run: () => {
+                if (autocomplete.classList.contains("show") && acItems.length > 0) {
+                  completeAutocomplete(acIndex >= 0 ? acIndex : 0);
+                } else {
+                  sendMessage();
+                }
+                return true;
+              },
+            },
+            {
+              key: "Shift-Enter",
+              run: (view) => {
+                view.dispatch(view.state.replaceSelection("\n"));
+                return true;
+              },
+            },
+            {
+              key: "Escape",
+              run: () => {
+                if (autocomplete.classList.contains("show")) {
+                  autocomplete.classList.remove("show");
+                  acItems = [];
+                  acIndex = -1;
+                  return true;
+                }
+                return false;
+              },
+            },
+            {
+              key: "ArrowDown",
+              run: () => {
+                if (autocomplete.classList.contains("show") && acItems.length > 0) {
+                  acIndex = (acIndex + 1) % acItems.length;
+                  updateAcHighlight();
+                  return true;
+                }
+                return false;
+              },
+            },
+            {
+              key: "ArrowUp",
+              run: () => {
+                if (autocomplete.classList.contains("show") && acItems.length > 0) {
+                  acIndex = (acIndex - 1 + acItems.length) % acItems.length;
+                  updateAcHighlight();
+                  return true;
+                }
+                return false;
+              },
+            },
+            {
+              key: "Ctrl-n",
+              run: () => {
+                if (autocomplete.classList.contains("show") && acItems.length > 0) {
+                  acIndex = (acIndex + 1) % acItems.length;
+                  updateAcHighlight();
+                  return true;
+                }
+                return false;
+              },
+            },
+            {
+              key: "Ctrl-p",
+              run: () => {
+                if (autocomplete.classList.contains("show") && acItems.length > 0) {
+                  acIndex = (acIndex - 1 + acItems.length) % acItems.length;
+                  updateAcHighlight();
+                  return true;
+                }
+                return false;
+              },
+            },
+            {
+              key: "Tab",
+              run: () => {
+                if (autocomplete.classList.contains("show") && acItems.length > 0) {
+                  completeAutocomplete(acIndex >= 0 ? acIndex : 0);
+                  return true;
+                }
+                return false;
+              },
+            },
+          ]),
+          EditorView.updateListener.of(update => {
+            if (update.docChanged) {
+              renderAutocomplete();
+              broadcastPresence(true);
+              scheduleDraftSync();
+            }
+          }),
+          EditorView.domEventHandlers({
+            paste: (e, view) => {
+              const items = e.clipboardData?.items;
+              if (!items) return false;
+              let handled = false;
+              for (const item of items) {
+                const file = item.getAsFile();
+                if (file) {
+                  if (!handled) { e.preventDefault(); handled = true; }
+                  addPendingFile(file, file.name || (item.type.split("/")[0] + "-" + Date.now() + "." + (item.type.split("/")[1] || "bin")), file.type || item.type || "application/octet-stream");
+                }
+              }
+              return handled;
+            },
+          }),
+          EditorView.theme({
+            "&": {
+              fontSize: "inherit",
+              lineHeight: "1.4",
+              fontFamily: "inherit",
+            },
+            ".cm-content": {
+              padding: "8px 12px",
+              minHeight: "1.4em",
+              maxHeight: "120px",
+              overflowY: "auto",
+              caretColor: "var(--text-primary)",
+            },
+            "&.cm-focused .cm-content": {
+              outline: "none",
+            },
+            "&.cm-focused": {
+              outline: "none",
+            },
+            ".cm-scroller": {
+              overflow: "auto",
+              fontFamily: "inherit",
+            },
+            ".cm-line": {
+              padding: "0",
+              color: "var(--text-primary)",
+            },
+            ".cm-placeholder": {
+              color: "var(--text-muted)",
+            },
+            ".cm-cursor": {
+              borderLeftColor: "var(--text-primary)",
+            },
+            // Formatting classes
+            ".cm-fmt-bold": { fontWeight: "bold" },
+            ".cm-fmt-italic": { fontStyle: "italic" },
+            ".cm-fmt-underline": { textDecoration: "underline" },
+            ".cm-fmt-underline-italic": { textDecoration: "underline", fontStyle: "italic" },
+            ".cm-fmt-strike": { textDecoration: "line-through" },
+            ".cm-fmt-code": {
+              background: "var(--bg-hover)",
+              padding: "1px 4px",
+              borderRadius: "3px",
+              fontFamily: "ui-monospace,monospace",
+              fontSize: "0.9em",
+            },
+            ".cm-fmt-spoiler": { background: "var(--text-muted)" },
+            ".cm-fmt-inverted": {
+              background: "var(--text-primary)",
+              color: "var(--bg-dark)",
+              padding: "0 3px",
+              borderRadius: "3px",
+            },
+          }),
+        ],
+      }),
+    });
+
+    // Expose rebuild trigger for when emoticons change
+    rebuildEmojiDecorations = () => {
+      if (!cmView) return;
+      const plugin = cmView.plugin(emojiPlugin);
+      if (plugin) {
+        plugin._forceRebuild = true;
+        // Force a viewport update to trigger decoration rebuild
+        cmView.dispatch();
+      }
+    };
+
+    // Set font if already known
+    if (myFont) {
+      cmView.dom.style.fontFamily = myFont;
+    }
+  }).catch(e => {
+    console.warn("[Chat] CodeMirror load failed, falling back to textarea:", e);
+    // Fallback: create a plain textarea
+    const input = document.createElement("textarea");
+    input.className = "chat-input";
+    input.rows = 1;
+    input.placeholder = "Message #Chat";
+    inputWrap.appendChild(input);
+    // Wire up basic accessors matching real CM API shape
+    cmView = {
+      get state() {
+        return {
+          doc: { toString: () => input.value, get length() { return input.value.length; } },
+          selection: { main: { get head() { return input.selectionStart; } } },
+        };
+      },
+      dispatch: (tr) => {
+        if (!tr) return;
+        if (tr.changes) { input.value = tr.changes.insert ?? ""; }
+        if (tr.selection) { input.selectionStart = input.selectionEnd = tr.selection.anchor ?? 0; }
+      },
+      focus: () => input.focus(),
+      dom: input,
+      plugin: () => null,
+      _fallbackInput: input,
+    };
+    input.addEventListener("input", () => { renderAutocomplete(); broadcastPresence(true); scheduleDraftSync(); });
+    input.addEventListener("keydown", (e) => {
+      if (autocomplete.classList.contains("show") && acItems.length > 0) {
+        if (e.key === "ArrowDown" || (e.ctrlKey && e.key === "n")) { e.preventDefault(); acIndex = (acIndex + 1) % acItems.length; updateAcHighlight(); return; }
+        if (e.key === "ArrowUp" || (e.ctrlKey && e.key === "p")) { e.preventDefault(); acIndex = (acIndex - 1 + acItems.length) % acItems.length; updateAcHighlight(); return; }
+        if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) { e.preventDefault(); completeAutocomplete(acIndex >= 0 ? acIndex : 0); return; }
+        if (e.key === "Escape") { e.preventDefault(); autocomplete.classList.remove("show"); acItems = []; acIndex = -1; return; }
+      }
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    });
+    input.addEventListener("paste", (e) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      let handled = false;
+      for (const item of items) {
+        const file = item.getAsFile();
+        if (file) {
+          if (!handled) { e.preventDefault(); handled = true; }
+          addPendingFile(file, file.name || (item.type.split("/")[0] + "-" + Date.now() + "." + (item.type.split("/")[1] || "bin")), file.type || item.type || "application/octet-stream");
+        }
+      }
+    });
+  });
 
   // Mic button
   const micBtn = document.createElement("button");
@@ -2017,6 +2670,10 @@ export function Tool(handle, element, options) {
     emojiPicker.appendChild(search);
     setTimeout(() => search.focus(), 0);
 
+    // Single scroll container for all content
+    const scrollWrap = document.createElement("div");
+    scrollWrap.className = "chat-emoji-picker-scroll";
+
     // Custom emoticons section
     const allEm = getAllEmoticons();
     const emNames = Object.keys(allEm);
@@ -2060,8 +2717,23 @@ export function Tool(handle, element, options) {
           removeBtn.title = "Remove this emoticon";
           removeBtn.addEventListener("click", (ev) => {
             ev.stopPropagation();
-            removeEmoticon(name);
-            renderEmojiPicker(filter);
+            if (removeBtn.classList.contains("confirm")) {
+              removeEmoticon(name);
+              renderEmojiPicker(filter);
+            } else {
+              // First click: enter confirm state
+              removeBtn.classList.add("confirm");
+              removeBtn.textContent = "?";
+              removeBtn.title = "Click again to delete";
+              // Reset after 3s if not confirmed
+              setTimeout(() => {
+                if (removeBtn.isConnected && removeBtn.classList.contains("confirm")) {
+                  removeBtn.classList.remove("confirm");
+                  removeBtn.textContent = "×";
+                  removeBtn.title = "Remove this emoticon";
+                }
+              }, 3000);
+            }
           });
           btn.appendChild(removeBtn);
         } else {
@@ -2080,12 +2752,13 @@ export function Tool(handle, element, options) {
         emGrid.appendChild(btn);
       }
       section.appendChild(emGrid);
-      emojiPicker.appendChild(section);
+      scrollWrap.appendChild(section);
     }
 
     const grid = document.createElement("div");
     grid.className = "chat-emoji-grid";
-    emojiPicker.appendChild(grid);
+    scrollWrap.appendChild(grid);
+    emojiPicker.appendChild(scrollWrap);
 
     let emojis;
     if (EMOJI_LOADED) {
@@ -2249,19 +2922,412 @@ export function Tool(handle, element, options) {
     fileInput.click();
   }
 
+  // ---- Font add dialog ----
+  function showFontAddDialog() {
+    emojiPicker.innerHTML = "";
+    emojiPickerTarget = null;
+
+    const dialog = document.createElement("div");
+    dialog.className = "chat-font-dialog";
+
+    const title = document.createElement("div");
+    title.style.cssText = "font-size:13px;font-weight:600;color:var(--text-primary);margin-bottom:2px;";
+    title.textContent = "Add Font";
+    dialog.appendChild(title);
+
+    // Show existing fonts
+    const existingFonts = Object.keys(myFonts);
+    if (existingFonts.length > 0) {
+      const listLabel = document.createElement("div");
+      listLabel.style.cssText = "font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;";
+      listLabel.textContent = "Your fonts";
+      dialog.appendChild(listLabel);
+
+      const list = document.createElement("div");
+      list.className = "chat-font-list";
+      for (const fname of existingFonts) {
+        const item = document.createElement("div");
+        item.className = "chat-font-list-item";
+        const nameSpan = document.createElement("span");
+        nameSpan.className = "font-name";
+        nameSpan.textContent = fname;
+        ensureFontLoaded(fname).then(() => { nameSpan.style.fontFamily = fname; });
+        item.appendChild(nameSpan);
+
+        const removeBtn = document.createElement("button");
+        removeBtn.className = "chat-font-list-remove";
+        removeBtn.textContent = "×";
+        removeBtn.title = "Remove font";
+        removeBtn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          if (removeBtn.classList.contains("confirm")) {
+            removeFont(fname);
+            showFontAddDialog(); // re-render
+          } else {
+            removeBtn.classList.add("confirm");
+            removeBtn.textContent = "?";
+            removeBtn.title = "Click again to delete";
+            setTimeout(() => {
+              if (removeBtn.isConnected && removeBtn.classList.contains("confirm")) {
+                removeBtn.classList.remove("confirm");
+                removeBtn.textContent = "×";
+                removeBtn.title = "Remove font";
+              }
+            }, 3000);
+          }
+        });
+        item.appendChild(removeBtn);
+        list.appendChild(item);
+      }
+      dialog.appendChild(list);
+    }
+
+    // Separator
+    const sep = document.createElement("div");
+    sep.style.cssText = "border-top:1px solid var(--border);margin:2px 0;";
+    dialog.appendChild(sep);
+
+    // Hidden file input
+    const fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.accept = ".woff2,.woff,.ttf,.otf,font/*";
+    fileInput.style.display = "none";
+    dialog.appendChild(fileInput);
+
+    let selectedFile = null;
+
+    // File button
+    const fileBtn = document.createElement("button");
+    fileBtn.className = "chat-font-dialog-filebtn";
+    fileBtn.textContent = "Choose .woff2 file…";
+    fileBtn.addEventListener("click", (ev) => { ev.stopPropagation(); fileInput.click(); });
+    dialog.appendChild(fileBtn);
+
+    // Name input
+    const nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.placeholder = "Font name (e.g. MyFont)";
+    nameInput.pattern = "[a-zA-Z0-9 _-]+";
+    dialog.appendChild(nameInput);
+
+    // Preview
+    const preview = document.createElement("div");
+    preview.className = "chat-font-dialog-preview";
+    preview.textContent = "";
+    preview.style.display = "none";
+    dialog.appendChild(preview);
+
+    function updateSaveBtn() {
+      const valid = selectedFile && nameInput.value.match(/^[a-zA-Z0-9][a-zA-Z0-9 _-]*$/);
+      saveBtn.disabled = !valid;
+    }
+
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+      selectedFile = file;
+      fileBtn.textContent = file.name;
+
+      // Auto-fill name from filename if empty
+      if (!nameInput.value) {
+        nameInput.value = file.name.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9 _-]/g, "").trim();
+      }
+
+      // Show live preview with the font
+      const previewName = "__font_preview_" + Date.now();
+      const blobUrl = URL.createObjectURL(file);
+      const face = new FontFace(previewName, "url(" + blobUrl + ")");
+      face.load().then(() => {
+        document.fonts.add(face);
+        preview.style.fontFamily = previewName;
+        preview.textContent = "The quick brown fox jumps over the lazy dog";
+        preview.style.display = "";
+      }).catch(() => {
+        preview.style.fontFamily = "";
+        preview.textContent = "Could not load font";
+        preview.style.display = "";
+      });
+
+      updateSaveBtn();
+      nameInput.focus();
+      nameInput.select();
+    });
+
+    nameInput.addEventListener("input", updateSaveBtn);
+
+    // Buttons
+    const btns = document.createElement("div");
+    btns.className = "chat-font-dialog-btns";
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.className = "cancel-btn";
+    cancelBtn.textContent = "Cancel";
+    cancelBtn.addEventListener("click", (ev) => { ev.stopPropagation(); closeEmojiPicker(); });
+
+    const saveBtn = document.createElement("button");
+    saveBtn.className = "save-btn";
+    saveBtn.textContent = "Add";
+    saveBtn.disabled = true;
+
+    saveBtn.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      if (!selectedFile || saveBtn.disabled) return;
+      saveBtn.disabled = true;
+      saveBtn.textContent = "…";
+      try {
+        await addFont(nameInput.value.trim(), selectedFile);
+        closeEmojiPicker();
+      } catch (e) {
+        console.error("[Chat] add font:", e);
+        saveBtn.textContent = "Error";
+        setTimeout(() => { saveBtn.textContent = "Add"; saveBtn.disabled = false; }, 2000);
+      }
+    });
+
+    btns.appendChild(cancelBtn);
+    btns.appendChild(saveBtn);
+    dialog.appendChild(btns);
+
+    emojiPicker.appendChild(dialog);
+
+    // Position the picker near the input area
+    emojiPicker.style.bottom = "60px";
+    emojiPicker.style.top = "auto";
+    emojiPicker.style.right = "16px";
+    emojiPicker.style.left = "auto";
+    emojiOverlay.classList.add("show");
+  }
+
   function closeEmojiPicker() { emojiOverlay.classList.remove("show"); emojiPickerTarget = null; }
   emojiOverlay.addEventListener("click", (e) => { if (e.target === emojiOverlay) closeEmojiPicker(); });
 
-  // ---- Auto-resize textarea ----
-  input.addEventListener("input", () => {
-    input.style.height = "auto";
-    input.style.height = Math.min(input.scrollHeight, 120) + "px";
-    inputPreview.style.height = input.style.height;
-    updateInputPreview();
-    broadcastPresence(true);
-    scheduleDraftSync();
-  });
-  input.addEventListener("scroll", () => { inputPreview.scrollTop = input.scrollTop; });
+  // ---- Slash command definitions ----
+  const SLASH_COMMANDS = [
+    { cmd: "/me", usage: "/me <message>", desc: "Send an action message (e.g. \"/me waves hello\")" },
+    { cmd: "/slap", usage: "/slap <name>", desc: "Slap someone with a large trout" },
+    { cmd: "/font", usage: "/font <name> <message>", desc: "Send a message in a specific font (e.g. \"/font Georgia hello\")" },
+    { cmd: "/colour", usage: "/colour <colour> <message>", desc: "Send a message in a specific colour" },
+    { cmd: "/face", usage: "/face <color> <font> <message>", desc: "Send with custom colour and font" },
+    { cmd: "/addfont", usage: "/addfont", desc: "Upload a .woff2 font file to use in chat" },
+  ];
+
+  // ---- Emoji/emoticon & slash command autocomplete ----
+  const autocomplete = document.createElement("div");
+  autocomplete.className = "chat-autocomplete";
+  inputWrapper.appendChild(autocomplete);
+  let acItems = []; // current autocomplete results
+  let acIndex = -1; // highlighted index
+  let acColonStart = -1; // position of the `:` that started the query
+  let acMode = null; // "emoji" or "slash"
+
+  function getSlashQuery() {
+    const val = getInputValue();
+    const cursor = getInputCursor();
+    // Only trigger at the very start of the input
+    if (!val.startsWith("/")) return null;
+    // Get text from `/` to cursor
+    const typed = val.slice(0, cursor);
+    // Must not contain a space yet (still typing the command name)
+    if (typed.includes(" ")) return null;
+    return typed.slice(1).toLowerCase(); // query without the leading /
+  }
+
+  function getAutocompleteQuery() {
+    const val = getInputValue();
+    const cursor = getInputCursor();
+    // Search backwards from cursor for a `:` that starts an incomplete emoji token
+    for (let i = cursor - 1; i >= 0; i--) {
+      const ch = val[i];
+      if (ch === ":") {
+        const query = val.slice(i + 1, cursor);
+        if (query.length < 2) return null;
+        // Check the char before `:` — should be start of string, whitespace, or another `:`
+        if (i > 0 && !/[\s:({[]/.test(val[i - 1])) return null;
+        acColonStart = i;
+        return query.toLowerCase();
+      }
+      // Allow alphanumeric, dash, underscore, plus in the query portion
+      if (!/[a-zA-Z0-9_+-]/.test(ch)) return null;
+    }
+    return null;
+  }
+
+  // Fuzzy match: query chars must appear in order in the target, ignoring -_spaces as separators
+  function fuzzyMatch(query, target) {
+    const tNorm = target.toLowerCase();
+    const qChars = query.replace(/[-_ ]/g, "");
+    if (qChars.length === 0) return true;
+    let qi = 0;
+    for (let ti = 0; ti < tNorm.length && qi < qChars.length; ti++) {
+      const tc = tNorm[ti];
+      if (tc === "-" || tc === "_" || tc === " ") continue;
+      if (tc === qChars[qi]) qi++;
+    }
+    return qi === qChars.length;
+  }
+
+  function fuzzyScore(query, target) {
+    // Prefer: starts-with > contains-substring > fuzzy-only
+    const tNorm = target.toLowerCase().replace(/[-_ ]/g, "");
+    const qNorm = query.replace(/[-_ ]/g, "");
+    if (tNorm.startsWith(qNorm)) return 0;
+    if (tNorm.includes(qNorm)) return 1;
+    return 2;
+  }
+
+  function searchEmoji(query) {
+    const results = [];
+    const maxResults = 12;
+    const seen = new Set(); // dedupe by emoji character
+    // Custom emoticons first
+    const allEm = getAllEmoticons();
+    for (const [name, info] of Object.entries(allEm)) {
+      if (fuzzyMatch(query, name)) {
+        results.push({ type: "emoticon", name, url: info.url, display: ":" + name + ":", score: fuzzyScore(query, name) });
+      }
+    }
+    // Shortcode aliases
+    for (const [alias, emoji] of Object.entries(EMOJI_ALIASES)) {
+      if (seen.has(emoji)) continue;
+      if (fuzzyMatch(query, alias)) {
+        seen.add(emoji);
+        results.push({ type: "emoji", emoji, name: alias, display: ":" + alias + ":", score: fuzzyScore(query, alias) });
+      }
+    }
+    // Unicode emoji by full name
+    if (EMOJI_LOADED) {
+      for (const e of EMOJI_DATA) {
+        if (seen.has(e.emoji)) continue;
+        if (fuzzyMatch(query, e.name)) {
+          seen.add(e.emoji);
+          results.push({ type: "emoji", emoji: e.emoji, name: e.name, display: ":" + e.name.replace(/\s+/g, "-") + ":", score: fuzzyScore(query, e.name) });
+        }
+      }
+    }
+    // Sort by score (starts-with first) then alphabetically, limit results
+    results.sort((a, b) => a.score - b.score || a.name.localeCompare(b.name));
+    return results.slice(0, maxResults);
+  }
+
+  function renderAutocomplete() {
+    // Check slash commands first
+    const slashQuery = getSlashQuery();
+    if (slashQuery !== null) {
+      const matches = SLASH_COMMANDS.filter(c => {
+        const name = c.cmd.slice(1); // strip leading /
+        return name.startsWith(slashQuery) || (slashQuery.length > 0 && name.includes(slashQuery));
+      });
+      if (matches.length > 0) {
+        acMode = "slash";
+        acItems = matches.map(c => ({ type: "slash", cmd: c.cmd, usage: c.usage, desc: c.desc }));
+        acIndex = 0;
+        autocomplete.innerHTML = "";
+        acItems.forEach((item, i) => {
+          const row = document.createElement("div");
+          row.className = "chat-autocomplete-item" + (i === 0 ? " active" : "");
+          const cmdEl = document.createElement("span");
+          cmdEl.className = "chat-autocomplete-item-cmd";
+          cmdEl.textContent = item.usage;
+          row.appendChild(cmdEl);
+          const descEl = document.createElement("span");
+          descEl.className = "chat-autocomplete-item-desc";
+          descEl.textContent = item.desc;
+          row.appendChild(descEl);
+          row.addEventListener("pointerdown", (e) => {
+            e.preventDefault();
+            completeAutocomplete(i);
+          });
+          autocomplete.appendChild(row);
+        });
+        autocomplete.classList.add("show");
+        return;
+      }
+    }
+
+    // Emoji/emoticon autocomplete
+    const query = getAutocompleteQuery();
+    if (!query) {
+      autocomplete.classList.remove("show");
+      acItems = [];
+      acIndex = -1;
+      acMode = null;
+      return;
+    }
+    acMode = "emoji";
+    acItems = searchEmoji(query);
+    if (acItems.length === 0) {
+      autocomplete.classList.remove("show");
+      acIndex = -1;
+      return;
+    }
+    acIndex = 0;
+    autocomplete.innerHTML = "";
+    acItems.forEach((item, i) => {
+      const row = document.createElement("div");
+      row.className = "chat-autocomplete-item" + (i === 0 ? " active" : "");
+      const emojiEl = document.createElement("span");
+      emojiEl.className = "chat-autocomplete-item-emoji";
+      if (item.type === "emoticon") {
+        const img = document.createElement("img");
+        img.src = "/" + encodeURIComponent(item.url) + "/";
+        emojiEl.appendChild(img);
+      } else {
+        emojiEl.textContent = item.emoji;
+      }
+      row.appendChild(emojiEl);
+      const nameEl = document.createElement("span");
+      nameEl.className = "chat-autocomplete-item-name";
+      nameEl.textContent = item.display;
+      row.appendChild(nameEl);
+      row.addEventListener("pointerdown", (e) => {
+        e.preventDefault(); // don't blur input
+        completeAutocomplete(i);
+      });
+      autocomplete.appendChild(row);
+    });
+    autocomplete.classList.add("show");
+  }
+
+  function completeAutocomplete(idx) {
+    const item = acItems[idx];
+    if (!item) return;
+
+    if (item.type === "slash") {
+      // Replace everything up to cursor with the command + space
+      const replacement = item.cmd + " ";
+      if (cmView) {
+        cmView.dispatch({
+          changes: { from: 0, to: cmView.state.doc.length, insert: replacement },
+          selection: { anchor: replacement.length },
+        });
+      }
+    } else {
+      // Emoji/emoticon completion
+      const val = getInputValue();
+      const cursor = getInputCursor();
+      const replacement = item.display;
+      const before = val.slice(0, acColonStart);
+      const after = val.slice(cursor);
+      const newText = before + replacement + " " + after;
+      const newCursor = before.length + replacement.length + 1;
+      if (cmView) {
+        cmView.dispatch({
+          changes: { from: 0, to: cmView.state.doc.length, insert: newText },
+          selection: { anchor: newCursor },
+        });
+      }
+    }
+    autocomplete.classList.remove("show");
+    acItems = [];
+    acIndex = -1;
+    acMode = null;
+  }
+
+  function updateAcHighlight() {
+    const items = autocomplete.querySelectorAll(".chat-autocomplete-item");
+    items.forEach((el, i) => el.classList.toggle("active", i === acIndex));
+    items[acIndex]?.scrollIntoView({ block: "nearest" });
+  }
 
   // ---- File staging (paste & drag-drop) ----
   function addPendingFile(blob, name, mimeType) {
@@ -2328,20 +3394,6 @@ export function Tool(handle, element, options) {
       addPendingFile(file, file.name, file.type || "application/octet-stream");
     }
   }
-
-  // Paste handler — any file type
-  input.addEventListener("paste", (e) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-    let handled = false;
-    for (const item of items) {
-      const file = item.getAsFile();
-      if (file) {
-        if (!handled) { e.preventDefault(); handled = true; }
-        addPendingFile(file, file.name || (item.type.split("/")[0] + "-" + Date.now() + "." + (item.type.split("/")[1] || "bin")), file.type || item.type || "application/octet-stream");
-      }
-    }
-  });
 
   // Drag and drop
   const dropOverlay = document.createElement("div");
@@ -2704,7 +3756,14 @@ export function Tool(handle, element, options) {
 
   // ---- Send ----
   async function sendMessage() {
-    const text = input.value.trim();
+    const text = getInputValue().trim();
+
+    // Handle /addfont command — opens dialog instead of sending
+    if (text === "/addfont" || text.startsWith("/addfont ")) {
+      setInputValue("");
+      showFontAddDialog();
+      return;
+    }
 
     // Upload all pending files
     let imageUrl = null, imageName = null;
@@ -2748,11 +3807,8 @@ export function Tool(handle, element, options) {
     try {
       await sendMsg(cleanText, imageUrl, imageName, null, null, gifUrl, patchworkLinks.length > 0 ? patchworkLinks : null, slashCmd?.action || false, slashCmd?.overrideFont || null, slashCmd?.overrideColor || null, slashCmd?.marquee || false, fileAttachments.length > 0 ? fileAttachments : null);
     } catch(e) { console.error("[Chat] sendMsg:", e); }
-    input.value = "";
-    input.style.height = "auto";
-    input.classList.remove("chat-input-editing");
-    inputPreview.innerHTML = "";
-    input.focus();
+    setInputValue("");
+    focusInput();
     clearDraft();
   }
 
@@ -2851,7 +3907,6 @@ export function Tool(handle, element, options) {
   }
 
   sendBtn.addEventListener("click", sendMessage);
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
 
   // ---- Reactions ----
   function toggleReaction(idx, emoji) {
@@ -2899,7 +3954,7 @@ export function Tool(handle, element, options) {
     }
     if (msg) replyBarText.textContent = msg.name + ": " + (msg.text || "(attachment)");
     replyBar.classList.add("show");
-    input.focus();
+    focusInput();
   }
 
   // ---- Load blobs ----
@@ -3077,7 +4132,7 @@ export function Tool(handle, element, options) {
       const row = document.createElement("div");
       row.className = "chat-msg-action" + (timeGap ? " chat-time-gap" : "");
       row.dataset.msgId = msg.id || "";
-      if (msg.font) row.style.fontFamily = msg.font;
+      if (msg.font) { row.style.fontFamily = msg.font; ensureFontLoaded(msg.font); }
       if (msg.color) row.style.color = resolveNamedColor(msg.color);
       const nameSpan = document.createElement("span");
       nameSpan.className = "chat-msg-action-name";
@@ -3150,7 +4205,7 @@ export function Tool(handle, element, options) {
         let html = formatText(msg.text, emoticonBlobUrls);
         if (msg.marquee) html = "<marquee>" + html + "</marquee>";
         textEl.innerHTML = html;
-        if (msg.font) textEl.style.fontFamily = msg.font;
+        if (msg.font) { textEl.style.fontFamily = msg.font; ensureFontLoaded(msg.font); }
         if (msg.color) textEl.style.color = resolveNamedColor(msg.color);
         // Wire up spoiler clicks
         textEl.querySelectorAll(".chat-spoiler").forEach(sp => {
@@ -3195,7 +4250,7 @@ export function Tool(handle, element, options) {
         let html = formatText(msg.text, emoticonBlobUrls);
         if (msg.marquee) html = "<marquee>" + html + "</marquee>";
         textEl.innerHTML = html;
-        if (msg.font) textEl.style.fontFamily = msg.font;
+        if (msg.font) { textEl.style.fontFamily = msg.font; ensureFontLoaded(msg.font); }
         if (msg.color) textEl.style.color = resolveNamedColor(msg.color);
         textEl.querySelectorAll(".chat-spoiler").forEach(sp => {
           sp.addEventListener("click", () => sp.classList.toggle("revealed"));
@@ -3215,7 +4270,16 @@ export function Tool(handle, element, options) {
     const doc = handle.doc();
     if (!doc) return;
 
-    input.placeholder = "Message " + (doc.title || "chat");
+    const newPlaceholder = "Message " + (doc.title || "chat");
+    if (newPlaceholder !== placeholderText) {
+      placeholderText = newPlaceholder;
+      // Update CM placeholder if using built-in compartment
+      if (cmView && cmPlaceholderCompartment && cmPlaceholderFn) {
+        try { cmView.dispatch({ effects: cmPlaceholderCompartment.reconfigure(cmPlaceholderFn(placeholderText)) }); } catch(e) {}
+      }
+      // Fallback textarea placeholder
+      if (cmView?._fallbackInput) cmView._fallbackInput.placeholder = placeholderText;
+    }
 
     const rawEntries = doc.messages || [];
 
@@ -3479,8 +4543,11 @@ export function Tool(handle, element, options) {
       const img = document.createElement("img");
       img.className = "chat-msg-image";
       img.alt = msg.imageName || "image";
-      img.loading = "lazy";
       loadBlobUrl(msg.imageUrl).then(u => { if (u) img.src = u; });
+      img.addEventListener("load", () => {
+        const atBottom = messagesArea.scrollHeight - messagesArea.scrollTop - messagesArea.clientHeight < 80;
+        if (atBottom) messagesArea.scrollTop = messagesArea.scrollHeight;
+      });
       img.addEventListener("click", () => { if (img.src) openLightbox(img.src, "image"); });
       wrap.appendChild(img);
       makeResizable(wrap, msg, "image");
@@ -3672,8 +4739,11 @@ export function Tool(handle, element, options) {
           const img = document.createElement("img");
           img.className = "chat-msg-image";
           img.alt = file.name || "image";
-          img.loading = "lazy";
           loadBlobUrl(file.url).then(u => { if (u) img.src = u; });
+          img.addEventListener("load", () => {
+            const atBottom = messagesArea.scrollHeight - messagesArea.scrollTop - messagesArea.clientHeight < 80;
+            if (atBottom) messagesArea.scrollTop = messagesArea.scrollHeight;
+          });
           img.addEventListener("click", () => { if (img.src) openLightbox(img.src, "image"); });
           wrap.appendChild(img);
           parent.appendChild(wrap);
