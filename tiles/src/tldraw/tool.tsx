@@ -57,7 +57,7 @@ function useContactInfo() {
   };
 }
 
-const VERSION = "0.3.6";
+const VERSION = "0.3.7";
 
 const customShapeUtils = [PatchworkTokenShapeUtil, PatchworkViewShapeUtil];
 const customTools: any[] = [NewDocShapeTool];
