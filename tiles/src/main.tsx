@@ -16,4 +16,18 @@ export const plugins = [
     supportedDatatypes: ["llm-process"],
     importPath: "./dist/process-tool.js",
   },
+  {
+    type: "patchwork:datatype",
+    id: "workspace",
+    name: "Workspace",
+    icon: "FolderOpen",
+    importPath: "./dist/workspace-datatype.js",
+  },
+  {
+    type: "patchwork:tool",
+    id: "workspace",
+    name: "Workspace",
+    supportedDatatypes: ["workspace"],
+    importPath: "./dist/workspace-tool.js",
+  },
 ];

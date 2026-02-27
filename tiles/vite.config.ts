@@ -33,6 +33,8 @@ export default defineConfig({
         'tldraw-datatype': './src/tldraw/mount-datatype.ts',
         'process-tool': './src/process/mount.tsx',
         'process-datatype': './src/process/mount-datatype.ts',
+        'workspace-tool': './src/workspace/mount.tsx',
+        'workspace-datatype': './src/workspace/mount-datatype.ts',
       },
       output: {
         format: 'es',

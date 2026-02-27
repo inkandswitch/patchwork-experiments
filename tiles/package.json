@@ -27,6 +27,14 @@
     "./process-datatype": {
       "import": "./dist/process-datatype.js",
       "source": "./src/process/mount-datatype.ts"
+    },
+    "./workspace-tool": {
+      "import": "./dist/workspace-tool.js",
+      "source": "./src/workspace/mount.tsx"
+    },
+    "./workspace-datatype": {
+      "import": "./dist/workspace-datatype.js",
+      "source": "./src/workspace/mount-datatype.ts"
     }
   },
   "scripts": {
