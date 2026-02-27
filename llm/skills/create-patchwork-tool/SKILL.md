@@ -8,7 +8,10 @@ description: Create a custom Patchwork tool — an interactive mini-app that liv
 A Patchwork tool is a self-contained interactive application that runs inside the Patchwork collaborative environment. Each tool consists of:
 
 1. **A document (data)** — an Automerge CRDT document with a specific schema and a `@patchwork` metadata block.
-2. **A tool package (code)** — a JavaScript module that defines a `Datatype` (schema lifecycle), a `Tool` (UI renderer), and a `plugins` array that registers them.
+2. **A module (code)** — a folder containing an entry file that defines plugins (plugin declarations with `importPath` references) and separate files for each datatype and tool implementation.
+   - A plugin can be a tool or a datatype.
+   - You may define only a datatype, or only a tool for an existing datatype.
+   - A single module can contain multiple tools and datatypes.
 
 ## Architecture Overview
 
@@ -20,17 +23,18 @@ A Patchwork tool is a self-contained interactive application that runs inside th
 │    ...app state...,         │
 │    "@patchwork": {          │
 │      type: "my-tool",       │  ← Links document to its tool type
-│      suggestedImportUrl:    │  ← Points to the tool package
+│      suggestedImportUrl:    │  ← Points to the module
 │        "automerge:..."      │
 │    }                        │
 │  }                          │
 └─────────────┬───────────────┘
               │ opened by
 ┌─────────────▼───────────────┐
-│  Tool Package (JS module)   │  ← The code: renders UI, handles interaction
-│  - Datatype (init, title)   │
-│  - Tool (render, events)    │
-│  - plugins[] (registration) │
+│  Module (folder)            │
+│  ├── running-tracker.js     │  ← Entry file: plugins[] with importPath refs
+│  ├── tracker-datatype.js    │  ← Datatype: default export (init, getTitle, …)
+│  ├── tracker-tool.js        │  ← Tool: default export (handle, element) → cleanup
+│  └── package.json           │  ← main points to entry file
 └─────────────────────────────┘
 ```
 
@@ -52,44 +56,64 @@ Decide what state your tool needs. This is a plain JSON-like object that will be
 }
 ```
 
-### Step 2: Write the Tool Module
+### Step 2: Write the Module Files
 
-Create a single JavaScript file (ES module) with three exports:
+A module has three kinds of files. Pick a descriptive module name (e.g., `running-tracker`) and use it as the entry file name.
 
-#### 2a. The Datatype Object
+#### 2a. The Entry File (`running-tracker.js`)
 
-The Datatype manages the document lifecycle. It **must** have these methods:
+The entry file exports a `plugins` array. Each plugin is a plain object with an `importPath` that points to the file containing the implementation. No `load()` functions, no SDK imports.
 
 ```javascript
-export const MyDatatype = {
-  // Called when a new document of this type is created.
-  // Initialize all fields with default values.
+export const plugins = [
+  {
+    type: "patchwork:datatype",
+    id: "running-tracker",
+    name: "Running Tracker",
+    icon: "Activity",
+    importPath: "./tracker-datatype.js",
+  },
+  {
+    type: "patchwork:tool",
+    id: "running-tracker",
+    name: "Running Tracker",
+    icon: "Activity",
+    supportedDatatypes: ["running-tracker"],
+    importPath: "./tracker-tool.js",
+  },
+];
+```
+
+A single module can define multiple datatypes and tools — just add more entries to the `plugins` array.
+
+#### 2b. The Datatype File (`tracker-datatype.js`)
+
+The datatype file has a **default export** that manages the document lifecycle. It **must** have these methods:
+
+```javascript
+export default {
   init(doc) {
-    doc.title = 'My Tool';
-    doc.someField = 'default';
-    // ... set all your schema fields
+    doc.title = "My Runs";
+    doc.runs = [];
   },
 
-  // Return the display title for this document.
   getTitle(doc) {
-    return doc.title || 'My Tool';
+    return doc.title || "Running Tracker";
   },
 
-  // Set the title.
   setTitle(doc, title) {
     doc.title = title;
   },
 
-  // Called when the document is duplicated.
   markCopy(doc) {
-    doc.title = 'Copy of ' + this.getTitle(doc);
+    doc.title = "Copy of " + (doc.title || "Running Tracker");
   },
 };
 ```
 
-#### 2b. The Tool Function
+#### 2c. The Tool File (`tracker-tool.js`)
 
-The Tool function renders the UI into a DOM element and reacts to document changes. It receives:
+The tool file has a **default export** — a function that renders the UI into a DOM element and reacts to document changes. It receives:
 
 - `handle` — an Automerge DocHandle for reading/writing the document
 - `element` — a DOM element to render into
@@ -101,38 +125,32 @@ Key handle methods:
 - `handle.on("change", fn)` — listen for document changes (including from other peers)
 - `handle.off("change", fn)` — remove listener
 
-The Tool function must **return a cleanup function** that removes event listeners and DOM elements.
+The tool function must **return a cleanup function** that removes event listeners and DOM elements.
 
 ```javascript
-export function Tool(handle, element) {
-  // 1. Add styles
+export default function Tool(handle, element) {
   const style = document.createElement("style");
   style.textContent = \`
-    .my-container { /* ... */ }
+    .tracker-container { /* ... */ }
   \`;
   element.appendChild(style);
 
-  // 2. Create root container
   const container = document.createElement("div");
-  container.className = "my-container";
+  container.className = "tracker-container";
   element.appendChild(container);
 
-  // 3. Define render function
   function render() {
     const doc = handle.doc();
     if (!doc) return;
 
     container.innerHTML = "";
-
     // ... build your UI using DOM APIs ...
     // ... attach event listeners that call handle.change() ...
   }
 
-  // 4. Initial render + subscribe to changes
   render();
   handle.on("change", render);
 
-  // 5. Return cleanup function
   return () => {
     handle.off("change", render);
     container.remove();
@@ -141,90 +159,101 @@ export function Tool(handle, element) {
 }
 ```
 
-#### 2c. The Plugins Array
-
-Register your datatype and tool with Patchwork via a `plugins` export:
-
-```javascript
-export const plugins = [
-  {
-    type: 'patchwork:datatype',
-    id: 'my-tool-type', // Unique identifier, must match @patchwork.type in documents
-    name: 'My Tool', // Human-readable name
-    icon: 'SomeIconName', // Icon name (from Lucide icons)
-    async load() {
-      return MyDatatype;
-    },
-  },
-  {
-    type: 'patchwork:tool',
-    id: 'my-tool-type', // Same identifier
-    name: 'My Tool',
-    icon: 'SomeIconName',
-    supportedDatatypes: ['my-tool-type'], // Which datatype(s) this tool can render
-    async load() {
-      return Tool;
-    },
-  },
-];
-```
-
 ### Step 3: Create the package.json
+
+The `main` field must point to the entry file (the one that exports `plugins`):
 
 ```json
 {
-  "name": "@patchwork/my-tool",
+  "name": "@patchwork/running-tracker",
   "version": "0.0.1",
-  "description": "Description of your tool",
+  "description": "Track your runs",
   "type": "module",
-  "main": "my-tool.js",
+  "main": "running-tracker.js",
   "exports": {
-    ".": "my-tool.js"
+    ".": "running-tracker.js"
   },
   "keywords": [],
   "author": ""
 }
 ```
 
-### Step 4: Create a Document Instance
+### Folder & File Conventions
 
-Tool documents have custom schemas beyond a simple text `content` field. Use `fs.writeFile()` to create a placeholder, then `fs.createOrGetDocHandle()` to get the Automerge handle and set the fields directly with `handle.change()`:
+Tools are stored as flat Automerge folder documents. A folder doc has a `docs[]` array of file links — no nested folders.
+
+```
+Folder doc: { docs: [{ name: "tool.js", type: "file", url: "automerge:..." }, ...] }
+File doc:   { content: "..." }
+```
+
+**Heads-in-URL convention:** URLs stored in `docs[]` entries include Automerge heads (e.g., `automerge:docId#heads=hash1,hash2`). When you need to **read or write** a file, strip the heads from its URL to get a bare URL, then use `repo.find(bareUrl)` to obtain a writable `DocHandle`.
+
+### The `getEditableModule()` Helper
+
+You MUST use `getEditableModule(repo, url)` when editing code modules.
+
+Import it from `./getEditableModule.js` (located alongside this skill file):
 
 ```javascript
-// Get the original automerge URL of the tool folder
-const toolUrl = await fs.getDocUrl("/my-tool");
+import { getEditableModule } from "./getEditableModule.js";
 
-await fs.writeFile("/my-tool/instance.json", "");
-const handle = await fs.createOrGetDocHandle("/my-tool/instance.json");
-handle.change(d => {
+const tool = getEditableModule(repo, folderUrl);
+```
+
+The implementation is in [`getEditableModule.js`](./getEditableModule.js). Always import it — do not copy the implementation inline.
+
+**Returned interface:**
+
+| Method | Description |
+|---|---|
+| `folderUrl` | The bare (writable) folder URL |
+| `folderHandle` | The writable `DocHandle` for the folder doc |
+| `listFiles()` | List files: `[{name, type, url}]` |
+| `readFile(name)` | Read a file's `content` as a string |
+| `addFile(name, content)` | Create a new file doc and add it to the folder |
+| `updateFile(name, content)` | Update an existing file's content |
+| `getDocHandle(name)` | Get a writable `DocHandle` for direct manipulation |
+
+### Step 4: Create a Document Instance
+
+Tool documents have custom schemas beyond a simple text `content` field. Use `getEditableModule()` to get the folder interface, add the file, then get its handle to set custom fields:
+
+```javascript
+import { getEditableModule } from "./getEditableModule.js";
+
+const tool = getEditableModule(repo, folderUrl);
+
+const fileHandle = await tool.addFile("instance", "");
+fileHandle.change(d => {
   d.title = "My Tool Instance";
   // ... set your schema fields ...
   d["@patchwork"] = {
     type: "my-tool-type",
-    suggestedImportUrl: toolUrl,
+    suggestedImportUrl: tool.folderUrl,
   };
 });
 ```
 
 ### Step 5: Generate an Example Document
 
-After creating the tool package, generate an example document instance pre-populated with realistic sample data. This lets the user immediately see the tool in action without having to manually set up state.
+After creating the module, generate an example document instance pre-populated with realistic sample data. This lets the user immediately see the tool in action without having to manually set up state.
 
+- If there is an existing example doc keep it unless the schema has changed. In that case, edit the existing example document.
 - Fill the document fields with plausible, non-trivial content (not just empty defaults).
 - The example should demonstrate the tool's key features and give a sense of how it looks when actively in use.
-- Include the `@patchwork` metadata block pointing to the tool package.
+- Include the `@patchwork` metadata block pointing to the module.
 
-To create the example document, first create a placeholder file, then use `fs.createOrGetDocHandle()` to get the Automerge handle and set the document fields directly with `handle.change()`. This is necessary because tool documents have custom schemas (not just a `content` string field).
+Use `addFile()` to create the file, then set custom fields via the returned handle:
 
 **Example** (tic-tac-toe — a game mid-progress):
 
 ```javascript
-// Get the original automerge URL of the tool folder (for suggestedImportUrl)
-const toolUrl = await fs.getDocUrl("/my-tool");
+import { getEditableModule } from "./getEditableModule.js";
 
-// Create a placeholder file, then get its handle to set custom fields
-await fs.writeFile("/my-tool/example.json", "");
-const handle = await fs.createOrGetDocHandle("/my-tool/example.json");
+const tool = getEditableModule(repo, folderUrl);
+
+const handle = await tool.addFile("example", "");
 handle.change(d => {
   d.title = "Tic Tac Toe — Example Game";
   d.board = ["X", "O", "X", null, "O", null, null, null, null];
@@ -233,36 +262,76 @@ handle.change(d => {
   d.winner = null;
   d["@patchwork"] = {
     type: "tic-tac-toe",
-    suggestedImportUrl: toolUrl,
+    suggestedImportUrl: tool.folderUrl,
   };
 });
 ```
 
 ## Complete Example: Tic Tac Toe
 
-Here is a full working example for reference:
+Here is a full working example for reference.
 
-**Document schema** (created via `createOrGetDocHandle` + `handle.change()`):
+**Entry file** (`tic-tac-toe.js`):
 
 ```javascript
-const toolUrl = await fs.getDocUrl("/tic-tac-toe");
+export const plugins = [
+  {
+    type: "patchwork:datatype",
+    id: "tic-tac-toe",
+    name: "Tic Tac Toe",
+    icon: "Grid3x3",
+    importPath: "./ttt-datatype.js",
+  },
+  {
+    type: "patchwork:tool",
+    id: "tic-tac-toe",
+    name: "Tic Tac Toe",
+    icon: "Grid3x3",
+    supportedDatatypes: ["tic-tac-toe"],
+    importPath: "./ttt-tool.js",
+  },
+];
+```
 
-await fs.writeFile("/tic-tac-toe/example.json", "");
-const handle = await fs.createOrGetDocHandle("/tic-tac-toe/example.json");
+**Datatype file** (`ttt-datatype.js`):
+
+```javascript
+export default {
+  init(doc) {
+    doc.title = "Tic Tac Toe";
+    doc.board = [null, null, null, null, null, null, null, null, null];
+    doc.currentPlayer = "X";
+    doc.status = "playing";
+    doc.winner = null;
+  },
+  getTitle(doc) { return doc.title || "Tic Tac Toe"; },
+  setTitle(doc, title) { doc.title = title; },
+  markCopy(doc) { doc.title = "Copy of " + (doc.title || "Tic Tac Toe"); },
+};
+```
+
+**Tool file** (`ttt-tool.js`): see the reference implementation at `automerge:442qEMJubfbNtu8bEikzX2j3Yyps`.
+
+**Creating an example document** (via build script):
+
+```javascript
+import { getEditableModule } from "./getEditableModule.js";
+
+const pkg = getEditableModule(repo, folderUrl);
+
+const handle = await pkg.addFile("example", "");
 handle.change(d => {
-  d.title = "Tic Tac Toe";
-  d.board = [null, null, null, null, null, null, null, null, null];
+  d.title = "Tic Tac Toe — Example Game";
+  d.board = ["X", "O", "X", null, "O", null, null, null, null];
   d.currentPlayer = "X";
   d.status = "playing";
   d.winner = null;
   d["@patchwork"] = {
     type: "tic-tac-toe",
-    suggestedImportUrl: toolUrl,
+    suggestedImportUrl: pkg.folderUrl,
   };
 });
 ```
-
-**Tool module** (`tic-tac-toe.js`): see the reference implementation at `automerge:442qEMJubfbNtu8bEikzX2j3Yyps`.
 
 ## Key Patterns & Best Practices
 
@@ -294,8 +363,9 @@ handle.change(d => {
 ### Naming Conventions
 
 - **Datatype id** and **Tool id**: use kebab-case (e.g., `tic-tac-toe`, `kanban-board`).
-- **Package name**: use `@patchwork/your-tool-name`.
-- **File name**: match the tool id (e.g., `tic-tac-toe.js`).
+- **Module NPM package name**: use `@patchwork/your-tool-name`.
+- **Entry file**: a descriptive name matching the module (e.g., `running-tracker.js`, `tic-tac-toe.js`).
+- **Implementation files**: use a short prefix + `-datatype.js` / `-tool.js` (e.g., `tracker-datatype.js`, `ttt-tool.js`).
 
 ### Icons
 
@@ -303,32 +373,48 @@ Icons come from the [Lucide](https://lucide.dev/icons/) icon set. Use the Pascal
 
 ## File Structure
 
-A minimal tool package looks like:
+A module folder contains an entry file, separate implementation files, and a package.json:
 
 ```
-my-tool/
-├── package.json          # Package metadata
-└── my-tool.js            # Datatype + Tool + plugins exports
+running-tracker/
+├── package.json              # main points to the entry file
+├── running-tracker.js        # Entry file: exports plugins[] with importPath refs
+├── tracker-datatype.js       # Datatype: default export (init, getTitle, …)
+└── tracker-tool.js           # Tool: default export (handle, element) → cleanup
 ```
 
-## Template
+For modules with multiple tools/datatypes, add more implementation files and reference them via `importPath` in the entry file's `plugins` array.
 
-Use this as a starting point for a new tool:
+## Templates
+
+Use these as a starting point. Replace all `{{PLACEHOLDERS}}`.
+
+### Entry file (`{{PACKAGE_NAME}}.js`)
 
 ```javascript
-/**
- * {{TOOL_NAME}} - Patchwork Tool
- *
- * @typedef {Object} {{TOOL_NAME}}Doc
- * @property {string} title
- * // ... your fields
- */
+export const plugins = [
+  {
+    type: "patchwork:datatype",
+    id: "{{TOOL_ID}}",
+    name: "{{TOOL_NAME}}",
+    icon: "{{ICON_NAME}}",
+    importPath: "./{{TOOL_ID}}-datatype.js",
+  },
+  {
+    type: "patchwork:tool",
+    id: "{{TOOL_ID}}",
+    name: "{{TOOL_NAME}}",
+    icon: "{{ICON_NAME}}",
+    supportedDatatypes: ["{{TOOL_ID}}"],
+    importPath: "./{{TOOL_ID}}-tool.js",
+  },
+];
+```
 
-// ============================================================================
-// Datatype
-// ============================================================================
+### Datatype file (`{{TOOL_ID}}-datatype.js`)
 
-export const {{DATATYPE_NAME}} = {
+```javascript
+export default {
   init(doc) {
     doc.title = "{{DEFAULT_TITLE}}";
     // ... initialize your fields
@@ -343,15 +429,15 @@ export const {{DATATYPE_NAME}} = {
   },
 
   markCopy(doc) {
-    doc.title = "Copy of " + this.getTitle(doc);
+    doc.title = "Copy of " + (doc.title || "{{DEFAULT_TITLE}}");
   },
 };
+```
 
-// ============================================================================
-// Tool
-// ============================================================================
+### Tool file (`{{TOOL_ID}}-tool.js`)
 
-function createStyles() {
+```javascript
+export default function Tool(handle, element) {
   const style = document.createElement("style");
   style.textContent = \`
     .{{PREFIX}}-container {
@@ -366,11 +452,6 @@ function createStyles() {
     }
     /* ... your styles ... */
   \`;
-  return style;
-}
-
-export function Tool(handle, element) {
-  const style = createStyles();
   element.appendChild(style);
 
   const container = document.createElement("div");
@@ -382,7 +463,6 @@ export function Tool(handle, element) {
     if (!doc) return;
 
     container.innerHTML = "";
-
     // ... build your UI ...
     // Use handle.change(d => { ... }) for mutations
   }
@@ -396,39 +476,14 @@ export function Tool(handle, element) {
     style.remove();
   };
 }
-
-// ============================================================================
-// Plugin Exports
-// ============================================================================
-
-export const plugins = [
-  {
-    type: "patchwork:datatype",
-    id: "{{TOOL_ID}}",
-    name: "{{TOOL_NAME}}",
-    icon: "{{ICON_NAME}}",
-    async load() {
-      return {{DATATYPE_NAME}};
-    },
-  },
-  {
-    type: "patchwork:tool",
-    id: "{{TOOL_ID}}",
-    name: "{{TOOL_NAME}}",
-    icon: "{{ICON_NAME}}",
-    supportedDatatypes: ["{{TOOL_ID}}"],
-    async load() {
-      return Tool;
-    },
-  },
-];
 ```
 
-Replace all `{{PLACEHOLDERS}}`:
+### Placeholders
 
-- `{{TOOL_NAME}}` — Human-readable name (e.g., "Kanban Board")
-- `{{DATATYPE_NAME}}` — JS export name (e.g., `KanbanDatatype`)
+- `{{PACKAGE_NAME}}` — Descriptive file name for the entry file (e.g., `running-tracker`)
+- `{{TOOL_NAME}}` — Human-readable name (e.g., "Running Tracker")
+- `{{TOOL_ID}}` — Kebab-case identifier (e.g., `running-tracker`)
 - `{{DEFAULT_TITLE}}` — Default document title
-- `{{PREFIX}}` — CSS class prefix (e.g., `kanban`)
-- `{{TOOL_ID}}` — Kebab-case identifier (e.g., `kanban-board`)
-- `{{ICON_NAME}}` — Lucide icon name (e.g., `"Columns"`)
+- `{{PREFIX}}` — CSS class prefix (e.g., `tracker`)
+- `{{ICON_NAME}}` — Lucide icon name (e.g., `"Activity"`)
+
