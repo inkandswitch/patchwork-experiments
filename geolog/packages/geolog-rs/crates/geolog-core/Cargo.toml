@@ -1,0 +1,16 @@
+[package]
+name = "geolog-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+uuid = { version = "1", features = ["v4"] }
+serde_json = "1"
+
+[dev-dependencies]
+criterion = "0.5"
+
+# Bench temporarily disabled during migration
+# [[bench]]
+# name = "axiom_checking"
+# harness = false

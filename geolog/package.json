@@ -1,0 +1,43 @@
+{
+  "name": "@patchwork/geolog",
+  "version": "0.0.1",
+  "description": "Geolog database tool for Patchwork",
+  "type": "module",
+  "exports": "./dist/index.js",
+  "scripts": {
+    "build": "tsc && vite build",
+    "sync": "pnpm build && pushwork sync"
+  },
+  "keywords": [],
+  "author": "Ink & Switch",
+  "dependencies": {
+    "@automerge/automerge": "3.2.1",
+    "@automerge/automerge-repo": "2.5.2-alpha.0",
+    "@automerge/automerge-repo-react-hooks": "2.5.2-alpha.0",
+    "@codemirror/language": "^6.12.1",
+    "@codemirror/lint": "^6.9.3",
+    "@inkandswitch/patchwork-plugins": "^0.0.2",
+    "@lezer/highlight": "^1.2.3",
+    "codemirror": "^6.0.2",
+    "geolog": "link:./packages/geolog-rs/crates/geolog-wasm",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@inkandswitch/patchwork-bootloader": "^0.0.3",
+    "@tailwindcss/vite": "^4.1.18",
+    "@types/react": "^18.3.23",
+    "@types/react-dom": "^18.2.2",
+    "@types/uuid": "^11.0.0",
+    "@vitejs/plugin-react": "^4.5.1",
+    "daisyui": "^5.5.13",
+    "pushwork": "^1.0.5",
+    "tailwindcss": "^4.1.18",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "vite-plugin-css-injected-by-js": "^3.5.2",
+    "vite-plugin-top-level-await": "^1.5.1",
+    "vite-plugin-wasm": "^3.4.1"
+  }
+}

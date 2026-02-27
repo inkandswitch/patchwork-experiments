@@ -1,0 +1,3 @@
+target
+crates/geolog-wasm/dist
+crates/geolog-wasm/pkg

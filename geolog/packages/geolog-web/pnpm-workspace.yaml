@@ -1,0 +1,2 @@
+overrides:
+  geolog: link:../geolog-rs/crates/geolog-wasm
