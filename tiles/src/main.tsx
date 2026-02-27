@@ -1,30 +1,19 @@
+import { plugins as tldrawPlugins } from "./tldraw/index.ts";
+
 export const plugins = [
-  {
-    type: "patchwork:datatype",
-    id: "tiles",
-    name: "Tiles",
-    icon: "PenLine",
-    importPath: "./dist/mount-datatype.js",
-  },
-  {
-    type: "patchwork:tool",
-    id: "tiles",
-    name: "Tiles",
-    supportedDatatypes: ["tiles"],
-    importPath: "./dist/mount.js",
-  },
+  ...tldrawPlugins,
   {
     type: "patchwork:datatype",
     id: "llm-process",
-    name: "LLM Process",
+    name: "LLM Chat",
     icon: "Cpu",
-    importPath: "./dist/mount-process-datatype.js",
+    importPath: "./dist/process-datatype.js",
   },
   {
     type: "patchwork:tool",
     id: "llm-process",
-    name: "LLM Process",
+    name: "LLM Chat",
     supportedDatatypes: ["llm-process"],
-    importPath: "./dist/mount-process.js",
+    importPath: "./dist/process-tool.js",
   },
 ];

@@ -13,7 +13,7 @@ export default defineConfig({
     wasm(),
     react(),
     cssInjectedByJsPlugin({
-      jsAssetsFilterFunction: (chunk) => chunk.fileName === 'mount.js',
+      jsAssetsFilterFunction: (chunk) => chunk.fileName === 'tldraw-tool.js',
     }),
   ],
 
@@ -29,10 +29,10 @@ export default defineConfig({
       external,
       input: {
         main: './src/main.tsx',
-        mount: './src/mount.tsx',
-        'mount-datatype': './src/mount-datatype.ts',
-        'mount-process': './src/process/mount.tsx',
-        'mount-process-datatype': './src/process/mount-datatype.ts',
+        'tldraw-tool': './src/tldraw/mount.tsx',
+        'tldraw-datatype': './src/tldraw/mount-datatype.ts',
+        'process-tool': './src/process/mount.tsx',
+        'process-datatype': './src/process/mount-datatype.ts',
       },
       output: {
         format: 'es',

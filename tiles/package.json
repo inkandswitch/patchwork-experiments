@@ -12,20 +12,20 @@
       "import": "./dist/main.js",
       "source": "./src/main.tsx"
     },
-    "./mount": {
-      "import": "./dist/mount.js",
-      "source": "./src/mount.tsx"
+    "./tldraw-tool": {
+      "import": "./dist/tldraw-tool.js",
+      "source": "./src/tldraw/mount.tsx"
     },
-    "./mount-datatype": {
-      "import": "./dist/mount-datatype.js",
-      "source": "./src/mount-datatype.ts"
+    "./tldraw-datatype": {
+      "import": "./dist/tldraw-datatype.js",
+      "source": "./src/tldraw/mount-datatype.ts"
     },
-    "./mount-process": {
-      "import": "./dist/mount-process.js",
+    "./process-tool": {
+      "import": "./dist/process-tool.js",
       "source": "./src/process/mount.tsx"
     },
-    "./mount-process-datatype": {
-      "import": "./dist/mount-process-datatype.js",
+    "./process-datatype": {
+      "import": "./dist/process-datatype.js",
       "source": "./src/process/mount-datatype.ts"
     }
   },
