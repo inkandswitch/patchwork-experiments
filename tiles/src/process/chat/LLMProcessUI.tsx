@@ -7,7 +7,6 @@ import { FilesView } from "./FilesView";
 import type {
   LLMProcessDoc,
   EntryReference,
-  Attachment,
   TaskRun,
   OutputBlock,
   CowChange,
@@ -29,9 +28,11 @@ type Tab = "chat" | "files";
 // ---------------------------------------------------------------------------
 
 export function LLMProcessInner({ processDocUrl }: { processDocUrl: AutomergeUrl }) {
+  const [doc, changeDoc] = useDocument<LLMProcessDoc>(processDocUrl, { suspense: true });
   const [activeTab, setActiveTab] = useState<Tab>("chat");
   const [cowChanges, setCowChanges] = useState<CowChanges | null>(null);
   const [changesList, setChangesList] = useState<CowChange[]>([]);
+  const [isRunning, setIsRunning] = useState(false);
 
   const refreshChanges = useCallback(() => {
     if (cowChanges) {
@@ -43,6 +44,21 @@ export function LLMProcessInner({ processDocUrl }: { processDocUrl: AutomergeUrl
     refreshChanges();
   }, [cowChanges]);
 
+  const entries = doc?.entries ?? [];
+  const runs = doc?.runs ?? [];
+  const hasContent = entries.length > 0 || runs.length > 0;
+
+  const handleClearContext = useCallback(() => {
+    if (isRunning) return;
+    if (!window.confirm("Clear all context? This will remove all files and chat history.")) return;
+    changeDoc((d) => {
+      d.entries = [] as any;
+      d.runs = [];
+    });
+    setCowChanges(null);
+    setChangesList([]);
+  }, [changeDoc, isRunning]);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", fontFamily: "sans-serif" }}>
       {/* Tab bar */}
@@ -50,15 +66,33 @@ export function LLMProcessInner({ processDocUrl }: { processDocUrl: AutomergeUrl
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 2,
           padding: "4px 8px",
           borderBottom: "1px solid #e0e0e0",
           background: "#f5f5f5",
           flexShrink: 0,
         }}
       >
-        <TabButton label="Chat" active={activeTab === "chat"} onClick={() => setActiveTab("chat")} />
-        <TabButton label="Files" active={activeTab === "files"} onClick={() => setActiveTab("files")} />
+        <div style={{ display: "flex", gap: 2 }}>
+          <TabButton label="Chat" active={activeTab === "chat"} onClick={() => setActiveTab("chat")} />
+          <TabButton label="Files" active={activeTab === "files"} onClick={() => setActiveTab("files")} />
+        </div>
+        <div style={{ flex: 1 }} />
+        {hasContent && !isRunning && (
+          <button
+            style={{
+              fontSize: 10,
+              color: "#aaa",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              padding: "3px 6px",
+            }}
+            onClick={handleClearContext}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            Clear
+          </button>
+        )}
       </div>
 
       {/* Tab content */}
@@ -71,10 +105,12 @@ export function LLMProcessInner({ processDocUrl }: { processDocUrl: AutomergeUrl
             }}
             changesList={changesList}
             onNavigateToFile={() => setActiveTab("files")}
+            onRunningChange={setIsRunning}
           />
         )}
         {activeTab === "files" && (
           <FilesView
+            entries={entries as EntryReference[]}
             changes={changesList}
             cowChanges={cowChanges}
             onMerged={refreshChanges}
@@ -115,17 +151,18 @@ function ChatTab({
   onRunComplete,
   changesList,
   onNavigateToFile,
+  onRunningChange,
 }: {
   processDocUrl: AutomergeUrl;
   onRunComplete: (result: RunResult) => void;
   changesList: CowChange[];
   onNavigateToFile: () => void;
+  onRunningChange: (running: boolean) => void;
 }) {
   const repo = useRepo();
   const [doc, changeDoc] = useDocument<LLMProcessDoc>(processDocUrl, { suspense: true });
 
   const [taskInput, setTaskInput] = useState("");
-  const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
   const [status, setStatus] = useState<"idle" | "running" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -162,32 +199,32 @@ function ChatTab({
     [changeDoc],
   );
 
+  const removeEntry = useCallback(
+    (url: AutomergeUrl) => {
+      changeDoc((d) => {
+        const idx = (d.entries as EntryReference[]).findIndex((e) => e.url === url);
+        if (idx >= 0) d.entries.splice(idx, 1);
+      });
+    },
+    [changeDoc],
+  );
+
   const handleRun = useCallback(async () => {
     if (!taskInput.trim() || isRunningRef.current) return;
 
-    const attachments = pendingAttachments.length > 0 ? [...pendingAttachments] : undefined;
-
-    if (pendingAttachments.length > 0) {
-      addEntries(
-        pendingAttachments.map((a) => ({ url: a.url, type: a.type, name: a.name })),
-      );
-    }
-
     changeDoc((d) => {
-      const run: any = {
+      d.runs.push({
         task: taskInput.trim(),
         output: [],
         timestamp: Date.now(),
-      };
-      if (attachments) run.attachments = attachments;
-      d.runs.push(run);
+      } as any);
     });
 
     setTaskInput("");
-    setPendingAttachments([]);
     setStatus("running");
     setErrorMsg(null);
     isRunningRef.current = true;
+    onRunningChange(true);
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -206,9 +243,10 @@ function ChatTab({
       }
     } finally {
       isRunningRef.current = false;
+      onRunningChange(false);
       abortRef.current = null;
     }
-  }, [taskInput, pendingAttachments, repo, processDocUrl, changeDoc, addEntries, onRunComplete]);
+  }, [taskInput, repo, processDocUrl, changeDoc, onRunComplete, onRunningChange]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
@@ -233,11 +271,6 @@ function ChatTab({
     },
     [handleRun],
   );
-
-  const handleClearContext = useCallback(() => {
-    if (isRunningRef.current) return;
-    changeDoc((d) => { d.runs = []; });
-  }, [changeDoc]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     if (e.dataTransfer.types.includes("text/x-patchwork-dnd")) {
@@ -265,25 +298,11 @@ function ChatTab({
     };
     if (!items?.length) return;
 
-    const newAttachments: Attachment[] = items
-      .filter((item) => item.url)
-      .map((item) => ({
-        url: item.url as AutomergeUrl,
-        name: item.name || "Untitled",
-        type: item.type || "document",
-      }));
-
-    setPendingAttachments((prev) => {
-      const existing = new Set(prev.map((a) => a.url));
-      return [...prev, ...newAttachments.filter((a) => !existing.has(a.url))];
-    });
-  }, []);
-
-  const removePendingAttachment = useCallback((url: AutomergeUrl) => {
-    setPendingAttachments((prev) => prev.filter((a) => a.url !== url));
-  }, []);
+    addEntries(items);
+  }, [addEntries]);
 
   const runs = doc?.runs ?? [];
+  const entries = doc?.entries ?? [];
   const isRunning = status === "running";
 
   return (
@@ -392,24 +411,24 @@ function ChatTab({
             rows={2}
           />
 
-          {/* Pending attachments */}
-          {pendingAttachments.length > 0 && (
+          {/* Context entries */}
+          {entries.length > 0 && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4, padding: "0 10px 6px" }}>
-              {pendingAttachments.map((att) => (
+              {(entries as EntryReference[]).map((entry) => (
                 <span
-                  key={att.url}
+                  key={entry.url}
                   style={{
                     fontSize: 10,
                     padding: "2px 6px",
                     borderRadius: 4,
-                    background: att.type === "tool" ? "#f3e8ff" : "#e0f2fe",
-                    color: att.type === "tool" ? "#7c3aed" : "#0369a1",
+                    background: entry.type === "tool" ? "#f3e8ff" : "#e0f2fe",
+                    color: entry.type === "tool" ? "#7c3aed" : "#0369a1",
                     display: "inline-flex",
                     alignItems: "center",
                     gap: 3,
                   }}
                 >
-                  {att.type === "tool" ? "◆" : "▪"} {att.name}
+                  {entry.type === "tool" ? "◆" : "▪"} {entry.name}
                   <button
                     style={{
                       border: "none",
@@ -421,7 +440,7 @@ function ChatTab({
                       padding: 0,
                       lineHeight: 1,
                     }}
-                    onClick={() => removePendingAttachment(att.url)}
+                    onClick={() => removeEntry(entry.url)}
                     onPointerDown={(e) => e.stopPropagation()}
                   >
                     ✕
@@ -432,7 +451,7 @@ function ChatTab({
           )}
 
           {/* Drop hint */}
-          {pendingAttachments.length === 0 && !taskInput && !isRunning && (
+          {entries.length === 0 && !taskInput && !isRunning && (
             <div style={{ padding: "0 10px 6px", fontSize: 10, color: "#ccc" }}>
               Drop documents or tools here
             </div>
@@ -448,42 +467,25 @@ function ChatTab({
               borderTop: "1px solid #f0f0f0",
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <select
-                style={{
-                  fontSize: 10,
-                  fontFamily: "monospace",
-                  background: "transparent",
-                  border: "none",
-                  color: "#999",
-                  outline: "none",
-                  cursor: "pointer",
-                }}
-                value={doc?.config.model || ""}
-                onChange={(e) => handleModelChange(e.target.value)}
-                onPointerDown={(e) => e.stopPropagation()}
-                disabled={isRunning}
-              >
-                {AVAILABLE_MODELS.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
-              {runs.length > 0 && !isRunning && (
-                <button
-                  style={{
-                    fontSize: 10,
-                    color: "#aaa",
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                  }}
-                  onClick={handleClearContext}
-                  onPointerDown={(e) => e.stopPropagation()}
-                >
-                  Clear context
-                </button>
-              )}
-            </div>
+            <select
+              style={{
+                fontSize: 10,
+                fontFamily: "monospace",
+                background: "transparent",
+                border: "none",
+                color: "#999",
+                outline: "none",
+                cursor: "pointer",
+              }}
+              value={doc?.config.model || ""}
+              onChange={(e) => handleModelChange(e.target.value)}
+              onPointerDown={(e) => e.stopPropagation()}
+              disabled={isRunning}
+            >
+              {AVAILABLE_MODELS.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
             <div>
               {isRunning ? (
                 <button
