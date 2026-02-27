@@ -8,9 +8,10 @@
 
 import type { Repo } from '@automerge/automerge-repo';
 import { updateText, type AutomergeUrl } from '@automerge/automerge-repo';
-import { AutomergeFS } from './fs';
+import type { FolderDoc, DocLink } from '@inkandswitch/patchwork-filesystem';
+import { getCopyOnWriteRepo } from './cow-repo';
 import { parseScriptBlocks } from './parser';
-import type { LLMProcessDoc, OutputBlock, WorkspaceDoc, WorkspaceEntry } from './types';
+import type { LLMProcessDoc, OutputBlock, EntryReference, ChatMessage, CowChanges } from './types';
 
 function stringifyArg(arg: any): string {
   if (typeof arg === 'string') return arg;
@@ -44,11 +45,15 @@ function createCapturedConsole() {
   };
 }
 
+export type RunResult = {
+  changes: CowChanges;
+};
+
 export async function runLLMProcess(
   repo: Repo,
   docUrl: AutomergeUrl,
   signal?: AbortSignal,
-): Promise<void> {
+): Promise<RunResult> {
   const handle = await repo.find<LLMProcessDoc>(docUrl);
   const doc = handle.doc();
 
@@ -56,19 +61,32 @@ export async function runLLMProcess(
     throw new Error('No task to run');
   }
 
-  const { apiUrl, model } = doc.config;
+  const { apiUrl, model, skillsFolderUrl } = doc.config;
   const apiKey = (import.meta as any).env?.VITE_LLM_API_KEY || '';
 
-  const workspaceHandle = await repo.find<WorkspaceDoc>(doc.workspaceUrl);
-  const fs = new AutomergeFS(repo, workspaceHandle);
+  const { cowRepo, changes } = getCopyOnWriteRepo(repo);
   const capturedConsole = createCapturedConsole();
 
-  (globalThis as any).fs = fs;
+  const skills = skillsFolderUrl
+    ? await discoverSkills(repo, skillsFolderUrl)
+    : [];
+
+  const loadSkill = async (name: string) => {
+    const skill = skills.find((s) => s.name === name);
+    if (!skill) {
+      const available = skills.map((s) => s.name).join(', ');
+      throw new Error(`Skill not found: "${name}". Available: [${available}]`);
+    }
+    return import(skill.importUrl);
+  };
+
+  (globalThis as any).repo = cowRepo;
+  (globalThis as any).loadSkill = loadSkill;
   (globalThis as any).__llmCapturedConsole = capturedConsole;
 
-  // Build workspace context for the system prompt
-  const entries = fs.listEntries();
-  const entryDescriptions = await buildEntryDescriptions(fs, entries);
+  const entries = doc.entries ?? [];
+  const entryDescriptions = buildEntryDescriptions(entries);
+  const skillDescriptions = buildSkillDescriptions(skills);
 
   const MAX_ITERATIONS = 20;
 
@@ -78,7 +96,7 @@ export async function runLLMProcess(
     const currentDoc = handle.doc();
     if (!currentDoc) break;
 
-    const messages = buildLLMMessages(currentDoc, entryDescriptions);
+    const messages = buildLLMMessages(currentDoc, entryDescriptions, skillDescriptions);
     const stream = streamChatCompletion(apiUrl, apiKey, model, messages, signal);
 
     let foundScript = false;
@@ -149,51 +167,126 @@ export async function runLLMProcess(
 
     if (!foundScript) break;
   }
+
+  return { changes };
 }
 
-// --- Workspace description for system prompt ---
+// --- Skill discovery ---
 
-async function buildEntryDescriptions(
-  fs: AutomergeFS,
-  entries: WorkspaceEntry[],
-): Promise<string> {
+type SkillInfo = {
+  name: string;
+  description: string;
+  importUrl: string;
+};
+
+async function discoverSkills(
+  repo: Repo,
+  skillsFolderUrl: AutomergeUrl,
+): Promise<SkillInfo[]> {
+  const skills: SkillInfo[] = [];
+
+  try {
+    const folderHandle = await repo.find<FolderDoc>(skillsFolderUrl);
+    const folderDoc = folderHandle.doc();
+    if (!folderDoc?.docs) return skills;
+
+    for (const link of folderDoc.docs) {
+      if (link.type !== 'folder') continue;
+
+      try {
+        const skillFolderHandle = await repo.find<FolderDoc>(link.url);
+        const skillFolderDoc = skillFolderHandle.doc();
+        if (!skillFolderDoc?.docs) continue;
+
+        const skillMd = skillFolderDoc.docs.find(
+          (d: DocLink) => d.name === 'SKILL.md',
+        );
+        if (!skillMd) continue;
+
+        const mdHandle = await repo.find(skillMd.url);
+        const mdDoc = mdHandle.doc() as any;
+        const content = typeof mdDoc?.content === 'string'
+          ? mdDoc.content
+          : mdDoc?.content instanceof Uint8Array
+            ? new TextDecoder().decode(mdDoc.content)
+            : '';
+
+        const frontmatter = parseFrontmatter(content);
+        if (!frontmatter.name) continue;
+
+        const indexFile = skillFolderDoc.docs.find(
+          (d: DocLink) => d.name === 'index.js',
+        );
+
+        skills.push({
+          name: frontmatter.name,
+          description: frontmatter.description || '',
+          importUrl: indexFile
+            ? `/${skillsFolderUrl}/${link.name}/${indexFile.name}`
+            : `/${skillsFolderUrl}/${link.name}`,
+        });
+      } catch {
+        // Skip inaccessible skill folders
+      }
+    }
+  } catch {
+    // Skills folder inaccessible
+  }
+
+  return skills;
+}
+
+function parseFrontmatter(content: string): Record<string, string> {
+  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return {};
+
+  const result: Record<string, string> = {};
+  for (const line of match[1].split('\n')) {
+    const colonIdx = line.indexOf(':');
+    if (colonIdx === -1) continue;
+    const key = line.slice(0, colonIdx).trim();
+    const value = line.slice(colonIdx + 1).trim();
+    result[key] = value;
+  }
+  return result;
+}
+
+// --- Entry descriptions for prompt ---
+
+function buildEntryDescriptions(entries: EntryReference[]): string {
+  if (!entries.length) return '';
+
   const lines: string[] = [];
-
   for (const entry of entries) {
     if (entry.type === 'document') {
       lines.push(`  [document] "${entry.name}" — ${entry.url}`);
     } else {
       lines.push(`  [tool] "${entry.name}" — folder: ${entry.url}, entry: ${entry.path}`);
-      try {
-        const contents = await fs.listFolder(entry.name);
-        for (const item of contents) {
-          lines.push(`    ${item.name} (${item.type})`);
-        }
-      } catch {
-        // Folder may not be accessible yet
-      }
     }
   }
-
   return lines.join('\n');
+}
+
+function buildSkillDescriptions(skills: SkillInfo[]): string {
+  if (!skills.length) return '';
+  return skills.map((s) => `  - ${s.name}: ${s.description}`).join('\n');
 }
 
 // --- LLM message building ---
 
-export type ChatMessage = {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
-};
-
 export function buildLLMMessages(
   doc: LLMProcessDoc,
   entryDescriptions: string,
+  skillDescriptions: string,
 ): ChatMessage[] {
   const messages: ChatMessage[] = [];
 
   let systemPrompt = SYSTEM_PROMPT;
+  if (skillDescriptions) {
+    systemPrompt += `\n\nAvailable skills:\n${skillDescriptions}`;
+  }
   if (entryDescriptions) {
-    systemPrompt += `\n\nWorkspace entries:\n${entryDescriptions}`;
+    systemPrompt += `\n\nAvailable documents and tools:\n${entryDescriptions}`;
   }
 
   messages.push({ role: 'system', content: systemPrompt });
@@ -248,57 +341,34 @@ function appendOutputMessages(messages: ChatMessage[], blocks: OutputBlock[]): v
   }
 }
 
-export const SYSTEM_PROMPT = `You are a coding agent with access to a workspace and the ability to execute JavaScript.
+export const SYSTEM_PROMPT = `You are a coding agent with access to a document repository and the ability to execute JavaScript.
 
 You can execute code by writing it inside <script> tags. Add a data-description attribute to briefly describe what the code does:
 
-<script data-description="List workspace entries">
-const entries = fs.listEntries()
-console.log(entries)
+<script data-description="List available documents">
+const handle = await repo.find("automerge:...")
+console.log(handle.doc())
 </script>
-
-The workspace contains documents and tools. Documents are Automerge documents (files or folders). Tools are references to JS files inside Automerge folder documents.
 
 Available APIs in your execution context:
 
-Top-level access:
-- fs.listEntries() — list all workspace entries (returns [{name, url, type, path?}])
-- fs.readDoc(name) — read a document's content as a string
-- fs.writeDoc(name, content) — write/overwrite a document's content (COW: clones on first write)
-- fs.patchDoc(name, oldStr, newStr) — replace first occurrence of oldStr with newStr in a document
+  repo.find(url)    — find a document by URL (async, returns a handle)
+  repo.create()     — create a new empty document
 
-Deep access (for folder documents and tool folders):
-- fs.readFile(name, path) — read a file at path within the named entry's folder
-- fs.writeFile(name, path, content) — write/create a file at path within the named entry's folder (deep COW: clones intermediate folders)
-- fs.patchFile(name, path, oldStr, newStr) — patch a file within a folder
-- fs.listFolder(name, path?) — list contents of a folder entry or subfolder (returns [{name, type, url}])
-- fs.createFolder(name, path) — create a subfolder within a folder entry
+  handle.url        — the document URL
+  handle.doc()      — get the current document state
+  handle.change(fn) — mutate the document
+  handle.heads()    — get the current heads
 
-Tool shortcuts:
-- fs.readToolSource(name) — read the JS source of a tool entry (shortcut for readFile with the tool's path)
-
-Snapshots:
-- fs.snapshot(name) — get a point-in-time URL for a document (URL with heads baked in)
-- fs.snapshotFolder(name) — create a deep snapshot of a folder (clones all contents recursively)
-
-Other:
-- fs.createOrGetDocHandle(name, path?) — get an Automerge DocHandle for direct manipulation
-- fs.getDocUrl(name) — get the original automerge URL for an entry
-- fs.importModule(name, path) — dynamically import a JS module from a folder entry
-- import("https://esm.sh/...") — import a module from a URL
-- console.log(...) — output text (captured and shown to you)
-- return value — return a value from the script (shown to you as output)
+  loadSkill(name)   — load a skill module by name
+  console.log(...)  — output text (captured and shown to you)
+  return value      — return a value from the script (shown to you as output)
 
 After each <script> block you will see the console output, return value, or any errors.
 Use this to inspect results and decide your next steps.
 
 Write text outside of script tags to explain your reasoning.
-Keep your code concise and focused on the task.
-
-Tips:
-- For editing existing files, prefer fs.patchDoc() or fs.patchFile() for targeted changes. This is more reliable and avoids issues with large content replacements.
-- Use \`return value\` to inspect values; it's the most reliable way to see output.
-- All writes are copy-on-write: originals are never modified. The workspace tracks clones in its mappings.`;
+Keep your code concise and focused on the task.`;
 
 // --- LLM streaming ---
 

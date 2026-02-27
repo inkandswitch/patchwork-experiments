@@ -1,6 +1,6 @@
 import type { AutomergeUrl } from '@automerge/automerge-repo';
 
-// --- Workspace entry types ---
+// --- Entry types ---
 
 export type DocReference = {
   name: string;
@@ -10,27 +10,12 @@ export type DocReference = {
 
 export type ToolReference = {
   name: string;
-  url: AutomergeUrl; // the folder doc containing the tool
-  path: string; // file within the folder, e.g. "tool.js"
+  url: AutomergeUrl;
+  path: string;
   type: 'tool';
 };
 
-export type WorkspaceEntry = DocReference | ToolReference;
-
-// --- COW overlay ---
-
-export type MappingEntry = {
-  cloneUrl: AutomergeUrl;
-  originalUrlWithHeads: AutomergeUrl;
-};
-
-// --- WorkspaceDoc schema ---
-
-export type WorkspaceDoc = {
-  entries: WorkspaceEntry[];
-  mappings: Record<string, MappingEntry>;
-  createdUrls: AutomergeUrl[];
-};
+export type EntryReference = DocReference | ToolReference;
 
 // --- LLMProcessDoc schema ---
 
@@ -39,13 +24,21 @@ export type LLMProcessDoc = {
   config: {
     apiUrl: string;
     model: string;
+    skillsFolderUrl?: AutomergeUrl;
   };
-  workspaceUrl: AutomergeUrl;
+  entries: EntryReference[];
   runs: TaskRun[];
+};
+
+export type Attachment = {
+  url: AutomergeUrl;
+  name: string;
+  type: string;
 };
 
 export type TaskRun = {
   task: string;
+  attachments?: Attachment[];
   output: OutputBlock[];
   timestamp: number;
 };
@@ -54,8 +47,32 @@ export type OutputBlock =
   | { type: 'text'; content: string }
   | { type: 'script'; code: string; description?: string; output?: string; error?: string };
 
+// --- COW change tracking ---
+
+export type CowChange = {
+  originalUrl: AutomergeUrl;
+  cloneUrl: AutomergeUrl;
+  changeType: 'modified' | 'added';
+  name: string;
+  path?: string;
+};
+
+export type CowChanges = {
+  getChanges(): CowChange[];
+  mergeAll(): Promise<void>;
+  mergeSingle(originalUrl: AutomergeUrl): Promise<void>;
+  revertSingle(originalUrl: AutomergeUrl): void;
+};
+
 // --- Parser types ---
 
 export type ParsedBlock =
   | { id: number; type: 'text'; content: string; complete: boolean }
   | { id: number; type: 'script'; code: string; description?: string; complete: boolean };
+
+// --- LLM message types ---
+
+export type ChatMessage = {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+};

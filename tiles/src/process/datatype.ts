@@ -1,22 +1,15 @@
 import type { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
-import type { Repo } from '@automerge/automerge-repo';
-import type { LLMProcessDoc, WorkspaceDoc } from './types';
+import type { LLMProcessDoc } from './llm/types';
 
 export const llmProcessDatatype: DatatypeImplementation<LLMProcessDoc> = {
-  init(doc: LLMProcessDoc, repo: Repo) {
-    const wsHandle = repo.create<WorkspaceDoc>();
-    wsHandle.change((ws: any) => {
-      ws.entries = [];
-      ws.mappings = {};
-      ws.createdUrls = [];
-    });
-
-    doc.title = 'LLM Process';
+  init(doc: LLMProcessDoc) {
+    doc.title = 'LLM Chat';
     doc.config = {
       apiUrl: 'https://openrouter.ai/api/v1',
       model: 'anthropic/claude-opus-4.6',
+      skillsFolderUrl: 'automerge:3dryb49P6WNaNEC54TFGpcGUZYJ2' as import('@automerge/automerge-repo').AutomergeUrl,
     };
-    doc.workspaceUrl = wsHandle.url;
+    doc.entries = [];
     doc.runs = [];
   },
 
