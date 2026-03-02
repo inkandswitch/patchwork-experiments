@@ -1,2 +1,2 @@
-import { llmProcessToolImpl } from "./tool-plugin.tsx";
-export default llmProcessToolImpl;
+import { processToolImpl } from './tool-plugin.tsx';
+export default processToolImpl;

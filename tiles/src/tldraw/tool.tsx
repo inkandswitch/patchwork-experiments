@@ -1,11 +1,8 @@
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import { useDocHandle, useDocument, useRepo } from "@automerge/react";
-import { Tldraw, useEditor, getMediaAssetInfoPartial, type VecLike, type TLContent, type TLAssetId, type TLAsset, type TLUiComponents } from "@tldraw/tldraw";
+import { Tldraw, useEditor, getMediaAssetInfoPartial, type VecLike, type TLContent, type TLAssetId, type TLAsset } from "@tldraw/tldraw";
 import { useAutomergeStore, useAutomergePresence } from "./automerge/useAutomergeStore.ts";
-import type { TilesDoc } from "./datatype.ts";
-import { PatchworkTokenShapeUtil, setTokenShapeRepo } from "./PatchworkTokenShape.tsx";
-import { PatchworkViewShapeUtil, PATCHWORK_VIEW_TYPE } from "./PatchworkViewShape.tsx";
-import { NewDocShapeTool, newDocUiOverrides, NewDocToolbar, setNewDocToolContext } from "./NewDocTool.tsx";
+import type { TLDrawDoc } from "./datatype.ts";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { UnixFileEntry } from "@inkandswitch/patchwork-filesystem";
 import { automergeUrlToServiceWorkerUrl } from "@inkandswitch/patchwork-filesystem";
@@ -57,26 +54,10 @@ function useContactInfo() {
   };
 }
 
-const VERSION = "0.3.7";
-
-const customShapeUtils = [PatchworkTokenShapeUtil, PatchworkViewShapeUtil];
-const customTools: any[] = [NewDocShapeTool];
-
-const uiComponents: TLUiComponents = {
-  PageMenu: null,
-  QuickActions: null,
-  ActionsMenu: null,
-  Toolbar: NewDocToolbar,
-};
-
-export function TilesTool({ docUrl }: { docUrl: AutomergeUrl }) {
-  const handle = useDocHandle<TilesDoc>(docUrl, { suspense: true });
+export function TldrawTool({ docUrl }: { docUrl: AutomergeUrl }) {
+  const handle = useDocHandle<TLDrawDoc>(docUrl, { suspense: true });
   const contactInfo = useContactInfo();
-  const store = useAutomergeStore({
-    handle,
-    userId: contactInfo.userId,
-    shapeUtils: customShapeUtils,
-  });
+  const store = useAutomergeStore({ handle, userId: contactInfo.userId });
 
   useAutomergePresence({
     handle: handle as DocHandle<any>,
@@ -85,25 +66,9 @@ export function TilesTool({ docUrl }: { docUrl: AutomergeUrl }) {
   });
 
   return (
-    <div style={{ position: "relative", width: "100%", height: "100%" }}>
-      <Tldraw inferDarkMode autoFocus store={store} shapeUtils={customShapeUtils} tools={customTools} components={uiComponents} overrides={newDocUiOverrides}>
-        <TldrawInner docUrl={docUrl} />
-      </Tldraw>
-      <div
-        style={{
-          position: "absolute",
-          top: 8,
-          right: 8,
-          fontSize: 11,
-          opacity: 0.4,
-          pointerEvents: "none",
-          fontFamily: "sans-serif",
-          zIndex: 9999,
-        }}
-      >
-        v{VERSION}
-      </div>
-    </div>
+    <Tldraw inferDarkMode autoFocus store={store}>
+      <TldrawInner docUrl={docUrl} />
+    </Tldraw>
   );
 }
 
@@ -112,11 +77,6 @@ function TldrawInner(props: { docUrl: AutomergeUrl }) {
 
   const editor = useEditor();
   const repo = useRepo();
-
-  useEffect(() => {
-    setNewDocToolContext(repo, editor);
-    setTokenShapeRepo(repo);
-  }, [repo, editor]);
 
   const onChange = useCallback(() => {
     if (!editor) return;
@@ -207,55 +167,5 @@ function TldrawInner(props: { docUrl: AutomergeUrl }) {
     editor.on("change", onChange);
     return () => void editor.off("change", onChange);
   }, [editor]);
-
-  useEffect(() => {
-    const container = editor.getContainer();
-
-    const handleDragOver = (e: DragEvent) => {
-      if (e.dataTransfer?.types.includes("text/x-patchwork-dnd")) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-      }
-    };
-
-    const handleDrop = (e: DragEvent) => {
-      const raw = e.dataTransfer?.getData("text/x-patchwork-dnd");
-      if (!raw) return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-
-      let parsed: { source?: string; items?: { url?: string; name?: string; type?: string }[] };
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        return;
-      }
-
-      const firstItem = parsed.items?.[0];
-      const point = editor.screenToPage({ x: e.clientX, y: e.clientY });
-
-      editor.markHistoryStoppingPoint("drop patchwork view");
-      editor.createShape({
-        type: PATCHWORK_VIEW_TYPE,
-        x: point.x - 200,
-        y: point.y - 150,
-        props: {
-          w: 400,
-          h: 300,
-          docUrl: firstItem?.url ?? "",
-          docName: firstItem?.name ?? "",
-          toolId: firstItem?.type || "raw",
-        },
-      });
-    };
-
-    container.addEventListener("dragover", handleDragOver, { capture: true });
-    container.addEventListener("drop", handleDrop, { capture: true });
-    return () => {
-      container.removeEventListener("dragover", handleDragOver, { capture: true });
-      container.removeEventListener("drop", handleDrop, { capture: true });
-    };
-  }, [editor]);
-
   return null;
 }

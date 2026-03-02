@@ -1,2 +1,1 @@
-import { datatype } from "./datatype.ts";
-export default datatype;
+export { datatype as default } from "./datatype.ts";

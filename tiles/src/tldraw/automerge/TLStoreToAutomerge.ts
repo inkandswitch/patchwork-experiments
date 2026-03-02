@@ -1,5 +1,5 @@
 import type { RecordsDiff, TLRecord } from "@tldraw/tldraw";
-import type { TilesDoc } from "../datatype.ts";
+import type { TLDrawDoc } from "../datatype.ts";
 import { isObject, forIn, isArray, mapValues } from "lodash";
 
 /** Prepares a value for storing in Automerge (deep recursively)
@@ -20,7 +20,7 @@ export function tldrawValueToAutomergeValue(value: any): any {
 }
 
 export function applyTLStoreChangesToAutomerge(
-  doc: TilesDoc,
+  doc: TLDrawDoc,
   changes: RecordsDiff<TLRecord>
 ) {
   Object.values(changes.added).forEach((record) => {

@@ -1,57 +1,51 @@
 /**
- * Search skill — recursively search file contents for a text or regex pattern.
- *
- * Uses the global `fs` object (available in the LLM eval context).
+ * Search skill — recursively search document contents for a text or regex pattern.
  */
 
 /**
- * Recursively search for a pattern across all files under startPath.
+ * Recursively search for a pattern across all documents under a folder URL.
  *
- * @param {object} fs - Filesystem object from the LLM eval context
- * @param {string | RegExp} pattern - Text or RegExp to search for (strings are case-insensitive)
- * @param {string} [startPath="/"] - Directory to start searching from
- * @returns {Promise<Array<{ file: string, line: string, lineNumber: number }>>}
+ * @param {object} repo - The automerge Repo (available as global `repo`)
+ * @param {string | RegExp} pattern - Text (case-insensitive) or RegExp to search for
+ * @param {string} startUrl - Automerge URL of the folder to start from
+ * @returns {Promise<Array<{ url: string, name: string, line: string, lineNumber: number }>>}
  */
-export async function search(fs, pattern, startPath = "/") {
+export async function search(repo, pattern, startUrl) {
   const results = [];
   const matcher =
     pattern instanceof RegExp
       ? (line) => pattern.test(line)
       : (line) => line.toLowerCase().includes(pattern.toLowerCase());
 
-  async function walk(dirPath) {
-    let entries;
-    try {
-      entries = await fs.listFolder(dirPath);
-    } catch {
-      return;
-    }
+  async function walk(url, name) {
+    const handle = repo.find(url);
+    await handle.whenReady();
+    const doc = handle.doc();
+    if (!doc) return;
 
-    for (const entry of entries) {
-      const fullPath = dirPath === "/" ? `/${entry.name}` : `${dirPath}/${entry.name}`;
-
-      if (entry.type === "folder") {
-        await walk(fullPath);
+    if (Array.isArray(doc.docs)) {
+      for (const entry of doc.docs) {
+        await walk(entry.url, entry.name);
+      }
+    } else {
+      let content;
+      if (typeof doc.content === "string") {
+        content = doc.content;
+      } else if (doc.content instanceof Uint8Array) {
+        content = new TextDecoder().decode(doc.content);
       } else {
-        try {
-          const content = await fs.readFile(fullPath);
-          const lines = content.split("\n");
-          for (let i = 0; i < lines.length; i++) {
-            if (matcher(lines[i])) {
-              results.push({
-                file: fullPath,
-                line: lines[i],
-                lineNumber: i + 1,
-              });
-            }
-          }
-        } catch {
-          // Skip unreadable files
+        return;
+      }
+
+      const lines = content.split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        if (matcher(lines[i])) {
+          results.push({ url, name: name || url, line: lines[i], lineNumber: i + 1 });
         }
       }
     }
   }
 
-  await walk(startPath);
+  await walk(startUrl, "");
   return results;
 }

@@ -1,2 +1,2 @@
-import { llmProcessDatatype } from "./datatype.ts";
-export default llmProcessDatatype;
+import { processDatatype } from './datatype.ts';
+export default processDatatype;

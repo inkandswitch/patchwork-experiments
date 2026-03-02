@@ -91,9 +91,15 @@ export async function runLLMProcess(
     });
   }
 
-  // Inject fs as a global. capturedConsole is stored under a private name
-  // and shadowed inside eval.
+  // Inject globals for the eval context.
   (globalThis as any).fs = fs;
+  (globalThis as any).repo = repo;
+  (globalThis as any).loadSkill = async (name: string) => {
+    return fs.readFile(`/skills/${name}/SKILL.md`);
+  };
+  (globalThis as any).loadSkillModule = async (name: string) => {
+    return fs.importModule(`/skills/${name}/index.js`);
+  };
   (globalThis as any).__llmCapturedConsole = capturedConsole;
 
   // Discover available skills
@@ -290,23 +296,43 @@ console.log(files)
 </script>
 
 Available APIs in your execution context:
+
+**Filesystem (fs)**
 - fs.readFile(path) — read a file as a string by filesystem path
 - fs.writeFile(path, content) — write/create a file (full replacement)
 - fs.patchFile(path, oldStr, newStr) — replace the first occurrence of oldStr with newStr in a file. Prefer this over writeFile for targeted edits to existing files — it's safer and more token-efficient.
 - fs.listFolder(path) — list folder contents (returns [{name, type, url}])
 - fs.createFolder(path) — create a folder
-- fs.copy(srcPath, destPath) — copy a file or folder to a new path (clones the document, preserving type and metadata; folders are copied recursively)
+- fs.copy(srcPath, destPath) — copy a file or folder to a new path
 - fs.move(srcPath, destPath) — move or rename a file or folder
 - fs.remove(path) — remove a file or folder
 - fs.linkDoc(path, automergeUrl) — link an existing automerge document into the filesystem at the given path
-- fs.getDocUrl(path) — get the original automerge URL for a document by filesystem path (not a clone URL; useful for referencing docs, e.g. as suggestedImportUrl)
+- fs.getDocUrl(path) — get the original automerge URL for a document by filesystem path
 - fs.createOrGetDocHandle(path) — get an Automerge DocHandle for a document by filesystem path
-- fs.importModule(path) — dynamically import a JS module from the filesystem (e.g. \`await fs.importModule("/skills/search/index.js")\`)
+
+**Document repo (repo)**
+- repo.find(url) — get a DocHandle for an automerge URL (synchronous, handle loads async)
+- repo.create() — create a new empty document
+- handle.whenReady() — await this before reading a freshly found handle
+- handle.doc() — get the current document state
+- handle.change(fn) — mutate the document
+
+**Skills**
+- loadSkill(name) — returns the SKILL.md text for a skill (read this first to learn the API)
+- loadSkillModule(name) — dynamically imports the skill's index.js and returns its exports
+
+Typical skill usage:
+\`\`\`js
+const docs = await loadSkill('markdown-file')   // read the docs
+const { getMarkdown } = await loadSkillModule('markdown-file')  // load the module
+\`\`\`
+
+**Other**
 - import("https://esm.sh/...") — import a module from a URL
 - console.log(...) — output text (captured and shown to you)
 - return value — return a value from the script (shown to you as output)
 
-IMPORTANT: All fs methods that read or access documents accept filesystem paths only — not raw automerge: URLs. To work with an automerge document, first link it into the filesystem with fs.linkDoc(path, automergeUrl), then access it by path.
+IMPORTANT: All fs methods accept filesystem paths only — not raw automerge: URLs. To work with an automerge document by path, first link it with fs.linkDoc(path, automergeUrl). Use repo.find(url) to work with automerge documents directly by URL.
 
 Patchwork URLs: If you see a URL like https://example.com/#doc=ABCDEF&type=folder&title=Something, extract the doc ID from the #doc= parameter. The automerge URL is automerge:ABCDEF. Use fs.linkDoc(path, automergeUrl) to link it, then read/browse by path. Bare automerge URLs (automerge:ABCDEF) in your task are automatically linked into the workspace.
 
@@ -317,7 +343,7 @@ Write text outside of script tags to explain your reasoning.
 Keep your code concise and focused on the task.
 
 Tips:
-- For editing existing files, prefer fs.patchFile() for targeted changes over fs.writeFile() for full rewrites. This is more reliable and avoids issues with large content replacements.
+- For editing existing files, prefer fs.patchFile() for targeted changes over fs.writeFile() for full rewrites.
 - Use \`return value\` to inspect values; it's the most reliable way to see output.`;
 
 function buildSkillsPromptSection(skills: SkillInfo[]): string {
@@ -326,13 +352,9 @@ function buildSkillsPromptSection(skills: SkillInfo[]): string {
 
 ## Available Skills
 
-Skills are reusable modules in /skills/. You MUST read a skill's SKILL.md before using it — it contains the API, required arguments, and import instructions:
+${lines.join('\n')}
 
-\`\`\`
-const instructions = await fs.readFile("/skills/<skill-name>/SKILL.md")
-\`\`\`
-
-${lines.join('\n')}`;
+Use \`loadSkill(name)\` to read a skill's documentation before using it, then \`loadSkillModule(name)\` to load its exports.`;
 }
 
 /**

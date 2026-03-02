@@ -1,16 +1,16 @@
 export const plugins = [
   {
     type: "patchwork:datatype",
-    id: "tiles",
-    name: "Tiles",
+    id: "tile-canvas",
+    name: "Tile Canvas",
     icon: "PenLine",
     importPath: "./dist/tldraw-datatype.js",
   },
   {
     type: "patchwork:tool",
-    id: "tiles",
-    name: "Tiles",
-    supportedDatatypes: ["tiles"],
+    id: "tile-canvas",
+    name: "Tile Canvas",
+    supportedDatatypes: ["tile-canvas"],
     importPath: "./dist/tldraw-tool.js",
   },
 ];

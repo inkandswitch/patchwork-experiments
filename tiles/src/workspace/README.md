@@ -1,37 +1,34 @@
-# Architecture: Workspace, LLM Process, and Chat
+# Architecture: Workspace, Process, Chat, and Worker
 
-This document describes the three-datatype architecture for the patchwork AI
+This document describes the four-datatype architecture for the patchwork AI
 tooling layer.
 
 ## Overview
 
 ```
-+------------------+
-|      Chat        |  High-level conversation interface.
-|                  |  Spawns an LLM Process per user prompt,
-|                  |  threading context from prior processes.
-+--------+---------+
-         |
-         | creates per prompt
-         v
-+------------------+
-|   LLM Process    |  Single execution run against a workspace.
-|                  |  Streams LLM responses, parses <script> blocks,
-|                  |  executes code, iterates until done.
-+--------+---------+
-         |
-         | references
-         v
-+------------------+
-|    Workspace     |  Collection of documents and tools with
-|                  |  per-entry access levels.
-+------------------+
++------------------+     +------------------+
+|      Chat        |     |     Worker       |
+|  (multi-turn)    |     |  (fixed prompt)  |
++--------+---------+     +--------+---------+
+         |                         |
+         | creates per prompt      | creates per click
+         v                         v
++------------------------------------------+
+|              ProcessDoc                   |
+|          (single LLM run)                 |
++--------------------+---------------------+
+                     |
+                     | uses at runtime
+                     v
++------------------------------------------+
+|            WorkspaceDoc                   |
+|  (documents + tools with access levels)  |
++------------------------------------------+
 ```
 
 ## Workspace
 
-A workspace is a flat list of document and tool references, each assigned an
-access level that controls how consumers interact with it.
+A flat list of document and tool references, each with an access level.
 
 ### Access levels (most restrictive first)
 
@@ -41,82 +38,109 @@ access level that controls how consumers interact with it.
 | `reviewed` | Yes  | COW clone; merge required  | Source code, config files       |
 | `full`     | Yes  | Direct to original         | Scratch files, logs             |
 
-### Entry types
-
-- **Document** (`type: 'document'`) -- any Automerge document (file, folder, etc.)
-- **Tool** (`type: 'tool'`) -- a tool module referenced by URL + path
-
 ### Options
 
-- `restrictToEntries` -- when `true`, `getWorkspaceRepo().find()` rejects any
-  URL not explicitly listed in the workspace entries. When `false`, unknown URLs
-  fall through to the underlying repo as read-only.
+- `restrictToEntries` -- when true, `getWorkspaceRepo().find()` rejects URLs
+  not in the workspace entries.
 
 ### Runtime: `getWorkspaceRepo()`
 
-`getWorkspaceRepo(repo, workspaceDoc)` returns `{ workspaceRepo, changes }`:
+Returns `{ workspaceRepo, changes }` where the repo wrapper enforces access
+levels and changes tracks reviewed modifications for merge/revert.
 
-- `workspaceRepo.find(url)` -- returns a handle wrapper whose `.change()`
-  behavior depends on the entry's access level.
-- `workspaceRepo.create()` -- creates a new document (tracked as an `added`
-  change).
-- `changes.getChanges()` -- lists all reviewed entries that were modified (COW
-  clones) plus any newly created documents.
-- `changes.mergeAll()` / `mergeSingle(url)` -- merges clones back into
-  originals.
-- `changes.revertSingle(url)` -- discards clone.
+## Process
+
+A single LLM execution run. One document = one prompt + one output sequence.
+
+### ProcessDoc schema
+
+- `prompt` -- the user's instruction
+- `history` -- optional serialized transcript of prior runs (set by chat)
+- `output` -- array of text and script output blocks
+- `workspaceUrl` -- reference to the workspace
+- `config` -- API URL, model, skills folder
+
+### Execution loop
+
+1. Load workspace, create `workspaceRepo` via `getWorkspaceRepo()`
+2. Build messages: system prompt + prompt + history + partial output
+3. Stream LLM completion, parse `<script>` blocks
+4. Execute scripts against `workspaceRepo`
+5. Feed results back; repeat until no scripts or max iterations
+
+## Chat
+
+Multi-turn conversation. Each user message spawns a new Process.
+
+### ChatDoc schema
+
+- `config` -- inherited by spawned processes
+- `workspaceUrl` -- shared workspace
+- `processUrls` -- ordered list of ProcessDoc URLs
+
+### History threading
+
+Before each new process, chat serializes all prior processes into a `history`
+string using `serializeProcess()` + `buildHistory()`. This gives each process
+full conversational context.
 
 ### UI
 
-The workspace editor groups entries into three buckets stacked
-most-restrictive-first (Read → Reviewed → Full Access). Dragging an entry
-between buckets changes its access level. New entries dropped from patchwork
-default to Read.
+Two tabs: Chat (process list + input) and Workspace (embedded WorkspaceUI).
 
-## LLM Process (planned)
+## Worker
 
-A single LLM execution run. References a workspace and executes an iterative
-agent loop:
+Repeatable single-prompt runner. Same prompt runs each time.
 
-1. Build messages from context (workspace entries, skills, task history)
-2. Stream LLM completion
-3. Parse `<script>` blocks from response
-4. Execute scripts against `workspaceRepo`
-5. Feed results back; repeat until done or max iterations
+### WorkerDoc schema
 
-The LLM process document stores:
-- Config (API URL, model, skills folder)
-- Reference to a workspace URL
-- Array of task runs (prompt + output blocks)
+- `prompt` -- the fixed prompt (editable, reused across runs)
+- `config`, `workspaceUrl`, `processUrls` -- same as chat
 
-## Chat (planned)
+### Key difference from Chat
 
-The chat datatype manages a multi-turn conversation. Each user prompt spawns a
-new LLM process that:
+Worker does NOT set `history` on spawned processes. Each run is independent.
 
-- Operates on the chat's workspace
-- Receives context from all prior LLM processes in the conversation (their
-  prompts, outputs, and script results)
+### UI
 
-This means the chat document stores:
-- Reference to a workspace URL
-- Ordered list of LLM process URLs (one per user message)
-- Config inherited by spawned processes (model, API URL, etc.)
+Two tabs: Worker (prompt editor + run history) and Workspace.
+Latest run is always expanded; previous runs are collapsed with click-to-expand.
 
 ## File layout
 
 ```
 tiles/src/
-  workspace/
-    types.ts            -- WorkspaceDoc, WorkspaceEntry, AccessLevel, change types
-    datatype.ts         -- init, getTitle, setTitle
-    workspace-repo.ts   -- getWorkspaceRepo() runtime wrapper
-    mount.tsx           -- tool mount
-    mount-datatype.ts   -- datatype mount
+  process/
+    types.ts              -- ProcessDoc, OutputBlock, ParsedBlock, ChatMessage
+    datatype.ts           -- init, getTitle, setTitle
+    llm-process.ts        -- execution engine
+    parser.ts             -- streaming script parser
+    mount.tsx / mount-datatype.ts / tool-plugin.tsx
     components/
-      WorkspaceUI.tsx   -- bucket-based entry management UI
-  process/              -- (existing) LLM process implementation
-    llm/                -- core engine: llm-process.ts, parser.ts, cow-repo.ts
-    chat/               -- chat UI: LLMProcessUI.tsx, FilesView.tsx
-  tldraw/               -- tldraw canvas integration
+      ProcessView.tsx     -- embeddable output renderer
+
+  chat/
+    types.ts              -- ChatDoc
+    datatype.ts           -- init (creates workspace), getTitle, setTitle
+    serialize-process.ts  -- serializeProcess() + buildHistory()
+    mount.tsx / mount-datatype.ts / tool-plugin.tsx
+    components/
+      ChatUI.tsx          -- Chat + Workspace tabs
+
+  worker/
+    types.ts              -- WorkerDoc
+    datatype.ts           -- init (creates workspace), getTitle, setTitle
+    mount.tsx / mount-datatype.ts / tool-plugin.tsx
+    components/
+      WorkerUI.tsx        -- Worker + Workspace tabs
+
+  workspace/
+    types.ts              -- WorkspaceDoc, WorkspaceEntry, AccessLevel
+    datatype.ts           -- init, getTitle, setTitle
+    workspace-repo.ts     -- getWorkspaceRepo() runtime wrapper
+    mount.tsx / mount-datatype.ts / tool-plugin.tsx
+    components/
+      WorkspaceUI.tsx     -- bucket-based entry management
+
+  tldraw/                 -- tldraw canvas integration (unchanged)
 ```

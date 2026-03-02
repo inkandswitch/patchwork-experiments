@@ -28,6 +28,22 @@
       "import": "./dist/process-datatype.js",
       "source": "./src/process/mount-datatype.ts"
     },
+    "./chat-tool": {
+      "import": "./dist/chat-tool.js",
+      "source": "./src/chat/mount.tsx"
+    },
+    "./chat-datatype": {
+      "import": "./dist/chat-datatype.js",
+      "source": "./src/chat/mount-datatype.ts"
+    },
+    "./worker-tool": {
+      "import": "./dist/worker-tool.js",
+      "source": "./src/worker/mount.tsx"
+    },
+    "./worker-datatype": {
+      "import": "./dist/worker-datatype.js",
+      "source": "./src/worker/mount-datatype.ts"
+    },
     "./workspace-tool": {
       "import": "./dist/workspace-tool.js",
       "source": "./src/workspace/mount.tsx"

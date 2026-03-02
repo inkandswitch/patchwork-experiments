@@ -3,20 +3,3 @@
 .tlui-layout {
   padding: 0px;
 }
-
-.patchwork-view-header {
-  border-radius: 8px 8px 0 0;
-}
-
-.patchwork-view-token {
-  transition: background 0.15s, box-shadow 0.15s;
-}
-
-.patchwork-view-token:hover {
-  box-shadow: 0 0 0 2px rgba(0, 120, 255, 0.3);
-}
-
-.patchwork-view-token:active {
-  cursor: grabbing;
-  opacity: 0.7;
-}
