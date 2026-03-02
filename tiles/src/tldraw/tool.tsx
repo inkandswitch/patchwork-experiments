@@ -54,7 +54,12 @@ function useContactInfo() {
   };
 }
 
+const VERSION = "0.0.1";
+
 export function TldrawTool({ docUrl }: { docUrl: AutomergeUrl }) {
+  useEffect(() => {
+    console.log("[tile-canvas] version", VERSION);
+  }, []);
   const handle = useDocHandle<TLDrawDoc>(docUrl, { suspense: true });
   const contactInfo = useContactInfo();
   const store = useAutomergeStore({ handle, userId: contactInfo.userId });
@@ -75,6 +80,13 @@ export function TldrawTool({ docUrl }: { docUrl: AutomergeUrl }) {
 function TldrawInner(props: { docUrl: AutomergeUrl }) {
   const key = useMemo(() => `${props.docUrl}-camera`, [props.docUrl]);
 
+  useEditorSetup(key);
+  usePatchworkDrop();
+
+  return null;
+}
+
+function useEditorSetup(key: string) {
   const editor = useEditor();
   const repo = useRepo();
 
@@ -82,7 +94,6 @@ function TldrawInner(props: { docUrl: AutomergeUrl }) {
     if (!editor) return;
     const camstate = editor.getCameraState();
     if (camstate == "moving") {
-      // todo debounce?
       localStorage.setItem(key, JSON.stringify(editor.getCamera()));
     }
   }, []);
@@ -96,17 +107,11 @@ function TldrawInner(props: { docUrl: AutomergeUrl }) {
       const isImage = file.type.startsWith("image/");
       const isVideo = file.type.startsWith("video/");
 
-      // Create a stable asset ID if one wasn't provided
       const id = assetId ?? (`asset:${crypto.randomUUID()}` as TLAssetId);
-
-      // Read the file bytes
       const bytes = new Uint8Array(await file.arrayBuffer());
-
-      // Determine extension and name
       const ext = extensionForMimeType(file.type);
       const name = file.name && file.name !== "image.png" ? file.name : `Pasted image on ${new Date().toLocaleDateString()}.${ext}`;
 
-      // Create an automerge doc for the file
       const fileHandle = repo.create<UnixFileEntry>();
       fileHandle.change((doc) => {
         doc.content = bytes;
@@ -115,12 +120,8 @@ function TldrawInner(props: { docUrl: AutomergeUrl }) {
         doc.name = name;
       });
 
-      // Build the asset using tldraw's helper to get dimensions etc.
       const asset = await getMediaAssetInfoPartial(file, id, isImage, isVideo);
-
-      // Point the asset's src at the service-worker URL for this doc
       asset.props.src = automergeUrlToServiceWorkerUrl(fileHandle.url);
-
       return asset as TLAsset;
     });
 
@@ -143,10 +144,7 @@ function TldrawInner(props: { docUrl: AutomergeUrl }) {
         // rather than failing on unknown future sequence versions.
         content.schema = editor.store.schema.serialize();
 
-        editor.putContentOntoCurrentPage(content, {
-          point,
-          select: true,
-        });
+        editor.putContentOntoCurrentPage(content, { point, select: true });
 
         const selectedBoundsAfter = editor.getSelectionPageBounds();
         if (selectionBoundsBefore && selectedBoundsAfter && selectionBoundsBefore.collides(selectedBoundsAfter)) {
@@ -158,8 +156,7 @@ function TldrawInner(props: { docUrl: AutomergeUrl }) {
     const existing = localStorage.getItem(key);
     if (existing) {
       try {
-        const cam = JSON.parse(existing);
-        editor.setCamera(cam);
+        editor.setCamera(JSON.parse(existing));
       } catch {
         localStorage.removeItem(key);
       }
@@ -167,5 +164,41 @@ function TldrawInner(props: { docUrl: AutomergeUrl }) {
     editor.on("change", onChange);
     return () => void editor.off("change", onChange);
   }, [editor]);
-  return null;
+}
+
+function usePatchworkDrop() {
+  const editor = useEditor();
+
+  useEffect(() => {
+    const container = editor.getContainer();
+
+    const handleDragEnter = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes("text/x-patchwork-urls")) {
+        e.preventDefault();
+      }
+    };
+
+    const handleDragOver = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes("text/x-patchwork-urls")) {
+        e.preventDefault();
+      }
+    };
+
+    const handleDrop = (e: DragEvent) => {
+      const urls = e.dataTransfer?.getData("text/x-patchwork-urls");
+      if (!urls) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      console.log("[patchwork-drop] text/x-patchwork-urls:", urls);
+    };
+
+    container.addEventListener("dragenter", handleDragEnter, { capture: true });
+    container.addEventListener("dragover", handleDragOver, { capture: true });
+    container.addEventListener("drop", handleDrop, { capture: true });
+    return () => {
+      container.removeEventListener("dragenter", handleDragEnter, { capture: true });
+      container.removeEventListener("dragover", handleDragOver, { capture: true });
+      container.removeEventListener("drop", handleDrop, { capture: true });
+    };
+  }, [editor]);
 }
