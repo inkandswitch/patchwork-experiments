@@ -197,6 +197,14 @@ TLDraw store ←──(remote patches)── applyAutomergePatchesToTLStore() �
 
 A `preventPatchApplications` flag prevents feedback loops. Collaborative presence (cursors) is synced via Automerge awareness.
 
+## Version number
+
+`tool.tsx` exports a `VERSION` constant (e.g. `"0.0.2"`) that is:
+- Logged to the console on mount (`[llm-canvas] version X.Y.Z`)
+- Displayed as a small badge in the bottom-left corner of the canvas via `InFrontOfTheCanvas`
+
+**Bump `VERSION` whenever you make a meaningful change** so it is easy to confirm which build is running in the host app.
+
 ## Build
 
 Vite builds a single entry point:

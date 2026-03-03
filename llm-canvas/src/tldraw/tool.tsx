@@ -57,7 +57,27 @@ function useContactInfo() {
   };
 }
 
-const VERSION = "0.0.1";
+const VERSION = "0.0.2";
+
+function VersionBadge() {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        bottom: "8px",
+        left: "8px",
+        fontSize: "10px",
+        color: "var(--color-text-3, #aaa)",
+        fontFamily: "monospace",
+        pointerEvents: "none",
+        userSelect: "none",
+        zIndex: 1,
+      }}
+    >
+      v{VERSION}
+    </div>
+  );
+}
 
 export function TldrawTool({ docUrl, element }: { docUrl: AutomergeUrl; element: ToolElement }) {
   useEffect(() => {
@@ -85,7 +105,7 @@ export function TldrawTool({ docUrl, element }: { docUrl: AutomergeUrl; element:
       shapeUtils={[EmbedShapeUtil]}
       tools={[EmbedShapeTool]}
       overrides={embedUiOverrides}
-      components={{ Toolbar: EmbedToolbar }}
+      components={{ Toolbar: EmbedToolbar, InFrontOfTheCanvas: VersionBadge }}
     >
       <TldrawInner docUrl={docUrl} element={element} />
     </Tldraw>
