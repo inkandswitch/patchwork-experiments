@@ -1,19 +1,19 @@
 export const plugins = [
   {
     type: "patchwork:datatype",
-    id: "tile-canvas",
-    name: "Tile Canvas",
-    icon: "PenLine",
+    id: "chat",
+    name: "Chat",
+    icon: "MessageCircle",
     async load() {
-      const { datatype } = await import("./datatype.ts");
-      return datatype;
+      const { chatDatatype } = await import("./datatype.ts");
+      return chatDatatype;
     },
   },
   {
     type: "patchwork:tool",
-    id: "tile-canvas",
-    name: "Tile Canvas",
-    supportedDatatypes: ["tile-canvas"],
+    id: "chat",
+    name: "Chat",
+    supportedDatatypes: ["chat"],
     async load() {
       const { default: mount } = await import("./mount.tsx");
       return mount;

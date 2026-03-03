@@ -1,61 +1,13 @@
 import { plugins as tldrawPlugins } from "./tldraw/index.ts";
+import { plugins as processPlugins } from "./process/index.ts";
+import { plugins as chatPlugins } from "./chat/index.ts";
+import { plugins as workerPlugins } from "./worker/index.ts";
+import { plugins as workspacePlugins } from "./workspace/index.ts";
 
 export const plugins = [
   ...tldrawPlugins,
-  {
-    type: "patchwork:datatype",
-    id: "process",
-    name: "Process",
-    icon: "Cpu",
-    importPath: "./dist/process-datatype.js",
-  },
-  {
-    type: "patchwork:tool",
-    id: "process",
-    name: "Process",
-    supportedDatatypes: ["process"],
-    importPath: "./dist/process-tool.js",
-  },
-  {
-    type: "patchwork:datatype",
-    id: "chat",
-    name: "Chat",
-    icon: "MessageCircle",
-    importPath: "./dist/chat-datatype.js",
-  },
-  {
-    type: "patchwork:tool",
-    id: "chat",
-    name: "Chat",
-    supportedDatatypes: ["chat"],
-    importPath: "./dist/chat-tool.js",
-  },
-  {
-    type: "patchwork:datatype",
-    id: "worker",
-    name: "Worker",
-    icon: "Repeat",
-    importPath: "./dist/worker-datatype.js",
-  },
-  {
-    type: "patchwork:tool",
-    id: "worker",
-    name: "Worker",
-    supportedDatatypes: ["worker"],
-    importPath: "./dist/worker-tool.js",
-  },
-  {
-    type: "patchwork:datatype",
-    id: "workspace",
-    name: "Workspace",
-    icon: "FolderOpen",
-    importPath: "./dist/workspace-datatype.js",
-  },
-  {
-    type: "patchwork:tool",
-    id: "workspace",
-    name: "Workspace",
-    supportedDatatypes: ["workspace"],
-    importPath: "./dist/workspace-tool.js",
-  },
+  ...processPlugins,
+  ...chatPlugins,
+  ...workerPlugins,
+  ...workspacePlugins,
 ];

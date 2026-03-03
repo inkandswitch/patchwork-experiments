@@ -1,19 +1,19 @@
 export const plugins = [
   {
     type: "patchwork:datatype",
-    id: "tile-canvas",
-    name: "Tile Canvas",
-    icon: "PenLine",
+    id: "worker",
+    name: "Worker",
+    icon: "Repeat",
     async load() {
-      const { datatype } = await import("./datatype.ts");
-      return datatype;
+      const { workerDatatype } = await import("./datatype.ts");
+      return workerDatatype;
     },
   },
   {
     type: "patchwork:tool",
-    id: "tile-canvas",
-    name: "Tile Canvas",
-    supportedDatatypes: ["tile-canvas"],
+    id: "worker",
+    name: "Worker",
+    supportedDatatypes: ["worker"],
     async load() {
       const { default: mount } = await import("./mount.tsx");
       return mount;
