@@ -6,6 +6,8 @@ import type { TLDrawDoc } from "./datatype.ts";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { UnixFileEntry } from "@inkandswitch/patchwork-filesystem";
 import { automergeUrlToServiceWorkerUrl } from "@inkandswitch/patchwork-filesystem";
+import type { ToolElement } from "@inkandswitch/patchwork-plugins";
+import { EmbedShapeUtil, EmbedShapeTool, embedUiOverrides, EmbedToolbar, setEmbedToolContext } from "./EmbedShape/index.ts";
 
 const MIME_TO_EXT: Record<string, string> = {
   "image/png": "png",
@@ -56,13 +58,17 @@ function useContactInfo() {
 
 const VERSION = "0.0.1";
 
-export function TldrawTool({ docUrl }: { docUrl: AutomergeUrl }) {
+export function TldrawTool({ docUrl, element }: { docUrl: AutomergeUrl; element: ToolElement }) {
   useEffect(() => {
     console.log("[tile-canvas] version", VERSION);
   }, []);
   const handle = useDocHandle<TLDrawDoc>(docUrl, { suspense: true });
   const contactInfo = useContactInfo();
-  const store = useAutomergeStore({ handle, userId: contactInfo.userId });
+  const store = useAutomergeStore({
+    handle,
+    userId: contactInfo.userId,
+    shapeUtils: [EmbedShapeUtil],
+  });
 
   useAutomergePresence({
     handle: handle as DocHandle<any>,
@@ -71,14 +77,27 @@ export function TldrawTool({ docUrl }: { docUrl: AutomergeUrl }) {
   });
 
   return (
-    <Tldraw inferDarkMode autoFocus store={store}>
-      <TldrawInner docUrl={docUrl} />
+    <Tldraw
+      inferDarkMode
+      autoFocus
+      store={store}
+      shapeUtils={[EmbedShapeUtil]}
+      tools={[EmbedShapeTool]}
+      overrides={embedUiOverrides}
+      components={{ Toolbar: EmbedToolbar }}
+    >
+      <TldrawInner docUrl={docUrl} element={element} />
     </Tldraw>
   );
 }
 
-function TldrawInner(props: { docUrl: AutomergeUrl }) {
+function TldrawInner(props: { docUrl: AutomergeUrl; element: ToolElement }) {
   const key = useMemo(() => `${props.docUrl}-camera`, [props.docUrl]);
+  const editor = useEditor();
+
+  useEffect(() => {
+    setEmbedToolContext(props.element, editor);
+  }, [props.element, editor]);
 
   useEditorSetup(key);
   usePatchworkDrop();

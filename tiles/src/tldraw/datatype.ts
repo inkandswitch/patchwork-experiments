@@ -2,6 +2,7 @@ import type { DatatypeImplementation } from "@inkandswitch/patchwork-plugins";
 import { createTLStore, defaultShapeUtils, type SerializedSchema, type SerializedStore, type TLPage, type TLPageId, type TLRecord, type TLShapeId } from "@tldraw/tldraw";
 
 import { tldrawValueToAutomergeValue } from "./automerge/TLStoreToAutomerge.ts";
+import { EmbedShapeUtil } from "./EmbedShape/index.ts";
 
 // SCHEMA
 export type TLDrawDoc = {
@@ -28,7 +29,7 @@ export const init = (doc: TLDrawDoc) => {
     doc,
     tldrawValueToAutomergeValue(
       createTLStore({
-        shapeUtils: defaultShapeUtils,
+        shapeUtils: [...defaultShapeUtils, EmbedShapeUtil],
       }).getStoreSnapshot()
     )
   );

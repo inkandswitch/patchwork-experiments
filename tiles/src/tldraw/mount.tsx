@@ -8,7 +8,7 @@ const mount: ToolImplementation = (handle, element) => {
   const root = createRoot(element);
   root.render(
     <RepoContext.Provider value={element.repo}>
-      <TldrawTool docUrl={handle.url} />
+      <TldrawTool docUrl={handle.url} element={element} />
     </RepoContext.Provider>
   );
   return () => root.unmount();
