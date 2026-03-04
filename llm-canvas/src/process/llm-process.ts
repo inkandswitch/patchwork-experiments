@@ -104,13 +104,21 @@ export async function runLLMProcess(
 
   const MAX_ITERATIONS = 20;
 
-  for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
-    if (signal?.aborted) break;
+  console.log(`[llm-process] starting run: model=${model}, apiUrl=${apiUrl}, prompt="${doc.prompt.slice(0, 80)}"`);
+
+  let iteration = 0;
+  for (; iteration < MAX_ITERATIONS; iteration++) {
+    if (signal?.aborted) {
+      console.log('[llm-process] aborted before iteration', iteration);
+      break;
+    }
 
     const currentDoc = handle.doc();
     if (!currentDoc) break;
 
     const messages = buildLLMMessages(currentDoc, entryDescriptions, skillDescriptions, options?.systemContextSuffix);
+    console.log(`[llm-process] iteration ${iteration}: sending ${messages.length} messages to ${model}`);
+
     const stream = streamChatCompletion(apiUrl, apiKey, model, messages, signal);
 
     let foundScript = false;
@@ -151,8 +159,10 @@ export async function runLLMProcess(
 
         if (block.complete) {
           foundScript = true;
+          console.log(`[llm-process] iteration ${iteration}: evaluating script (description="${block.description ?? ''}", ${block.code.length} chars)`);
 
           const result = await evalScript(block.code, capturedConsole);
+          console.log(`[llm-process] iteration ${iteration}: eval result`, result.error ? `ERROR: ${result.error}` : `output: ${result.output ?? '(none)'}`);
 
           handle.change((d) => {
             const outputIdx = d.output.length - 1;
@@ -173,9 +183,19 @@ export async function runLLMProcess(
       }
     }
 
-    if (!foundScript) break;
+    console.log(`[llm-process] iteration ${iteration}: stream complete, foundScript=${foundScript}`);
+
+    if (!foundScript) {
+      console.log('[llm-process] no script found — run complete');
+      break;
+    }
   }
 
+  if (iteration >= MAX_ITERATIONS) {
+    console.warn('[llm-process] reached max iterations limit');
+  }
+
+  console.log('[llm-process] run finished');
   return { changes };
 }
 
@@ -404,6 +424,7 @@ async function* streamChatCompletion(
 
   if (!response.ok) {
     const text = await response.text();
+    console.error(`[llm-process] API error ${response.status} from ${url}:`, text);
     throw new Error(`LLM API error (${response.status}): ${text}`);
   }
 

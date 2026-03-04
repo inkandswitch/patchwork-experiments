@@ -3,7 +3,7 @@ import { useDocHandle, useDocument, useRepo } from "@automerge/react";
 import { Tldraw, useEditor, getMediaAssetInfoPartial, createShapeId, type VecLike, type TLContent, type TLAssetId, type TLAsset } from "@tldraw/tldraw";
 import { useAutomergeStore, useAutomergePresence } from "./automerge/useAutomergeStore.ts";
 import type { TLDrawDoc } from "./datatype.ts";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { UnixFileEntry } from "@inkandswitch/patchwork-filesystem";
 import { automergeUrlToServiceWorkerUrl } from "@inkandswitch/patchwork-filesystem";
 import type { ToolElement } from "@inkandswitch/patchwork-plugins";
@@ -58,7 +58,7 @@ function useContactInfo() {
   };
 }
 
-const VERSION = "0.0.16";
+const VERSION = "0.0.18";
 
 function VersionBadge() {
   return (
@@ -98,18 +98,14 @@ export function TldrawTool({ docUrl, element }: { docUrl: AutomergeUrl; element:
     userMetadata: contactInfo,
   });
 
-  const containerRef = useRef<HTMLDivElement>(null);
-
   return (
-    <div ref={containerRef} style={{ width: "100%", height: "100%" }}>
-      <Tldraw inferDarkMode autoFocus store={store} shapeUtils={[EmbedShapeUtil, DocTokenShapeUtil, ToolTokenShapeUtil]} tools={[EmbedShapeTool]} overrides={embedUiOverrides} components={{ Toolbar: EmbedToolbar, InFrontOfTheCanvas: VersionBadge }}>
-        <TldrawInner docUrl={docUrl} element={element} containerRef={containerRef} />
-      </Tldraw>
-    </div>
+    <Tldraw inferDarkMode autoFocus store={store} shapeUtils={[EmbedShapeUtil, DocTokenShapeUtil, ToolTokenShapeUtil]} tools={[EmbedShapeTool]} overrides={embedUiOverrides} components={{ Toolbar: EmbedToolbar, InFrontOfTheCanvas: VersionBadge }}>
+      <TldrawInner docUrl={docUrl} element={element} />
+    </Tldraw>
   );
 }
 
-function TldrawInner(props: { docUrl: AutomergeUrl; element: ToolElement; containerRef: React.RefObject<HTMLDivElement> }) {
+function TldrawInner(props: { docUrl: AutomergeUrl; element: ToolElement }) {
   const key = useMemo(() => `${props.docUrl}-camera`, [props.docUrl]);
   const editor = useEditor();
 
@@ -118,7 +114,7 @@ function TldrawInner(props: { docUrl: AutomergeUrl; element: ToolElement; contai
   }, [props.element, editor]);
 
   useEditorSetup(key);
-  usePatchworkDrop(props.containerRef);
+  usePatchworkDrop(props.element);
 
   return null;
 }
@@ -203,18 +199,23 @@ function useEditorSetup(key: string) {
   }, [editor]);
 }
 
-function usePatchworkDrop(containerRef: React.RefObject<HTMLDivElement>) {
+function usePatchworkDrop(element: ToolElement) {
   const editor = useEditor();
   const repo = useRepo();
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    // If the drop target is inside a <patchwork-view> element let that element
-    // handle it. composedPath() pierces shadow DOM so we reliably detect this
-    // even when the workspace content is rendered inside a shadow root.
-    const isInsidePatchworkView = (e: DragEvent) => e.composedPath().some((el) => (el as Element).tagName?.toLowerCase() === "patchwork-view");
+    // If the drop lands inside an embedded <patchwork-view> tile, let that
+    // tile handle it. Walk composedPath() up to (but not including) element —
+    // any <patchwork-view> found before we reach element is an embedded tile.
+    // The outer <patchwork-view> that hosts the canvas itself appears at or
+    // after element in the path and must NOT trigger a bail-out.
+    const isInsideEmbeddedPatchworkView = (e: DragEvent) => {
+      for (const el of e.composedPath()) {
+        if (el === element) break;
+        if ((el as Element).tagName?.toLowerCase() === "patchwork-view") return true;
+      }
+      return false;
+    };
 
     const handleDragEnter = (e: DragEvent) => {
       if (e.dataTransfer && isPatchworkDrag(e.dataTransfer.types)) e.preventDefault();
@@ -228,7 +229,7 @@ function usePatchworkDrop(containerRef: React.RefObject<HTMLDivElement>) {
       if (!e.dataTransfer || !isPatchworkDrag(e.dataTransfer.types)) return;
       e.preventDefault();
 
-      if (isInsidePatchworkView(e)) return;
+      if (isInsideEmbeddedPatchworkView(e)) return;
       e.stopImmediatePropagation();
 
       const tokenItem = getDragData(e.dataTransfer);
@@ -300,13 +301,13 @@ function usePatchworkDrop(containerRef: React.RefObject<HTMLDivElement>) {
       });
     };
 
-    container.addEventListener("dragenter", handleDragEnter, { capture: true });
-    container.addEventListener("dragover", handleDragOver, { capture: true });
-    container.addEventListener("drop", handleDrop, { capture: true });
+    element.addEventListener("dragenter", handleDragEnter, { capture: true });
+    element.addEventListener("dragover", handleDragOver, { capture: true });
+    element.addEventListener("drop", handleDrop, { capture: true });
     return () => {
-      container.removeEventListener("dragenter", handleDragEnter, { capture: true });
-      container.removeEventListener("dragover", handleDragOver, { capture: true });
-      container.removeEventListener("drop", handleDrop, { capture: true });
+      element.removeEventListener("dragenter", handleDragEnter, { capture: true });
+      element.removeEventListener("dragover", handleDragOver, { capture: true });
+      element.removeEventListener("drop", handleDrop, { capture: true });
     };
-  }, [editor, repo, containerRef]);
+  }, [editor, repo, element]);
 }

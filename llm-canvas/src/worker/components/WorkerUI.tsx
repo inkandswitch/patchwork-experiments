@@ -302,33 +302,31 @@ export function WorkerInner({ workerDocUrl }: { workerDocUrl: AutomergeUrl }) {
         emptyHint="Drop documents here (read-only)"
       />
 
-      {/* Prompt */}
-      <textarea
-        style={{
-          ...(hasRuns
-            ? { flex: "0 0 auto", minHeight: 56, maxHeight: 120, resize: "none" }
-            : { flex: "1 1 60px", minHeight: 56, resize: "none" }),
-          border: "1px solid #ddd",
-          borderRadius: 6,
-          padding: "7px 9px",
-          fontSize: 12,
-          fontFamily: "sans-serif",
-          outline: "none",
-          background: "#fafafa",
-          boxSizing: "border-box",
-          color: "#222",
-        }}
-        placeholder="Enter a prompt…"
-        value={prompt}
-        onChange={(e) => handlePromptChange(e.target.value)}
-        onPointerDown={(e) => e.stopPropagation()}
-        onTouchStart={(e) => e.stopPropagation()}
-        disabled={isRunning}
-      />
-
-      {/* Streaming response — shown once at least one run has started */}
-      {activeProcessUrl && (
-        <RunOutput processUrl={activeProcessUrl} isActive={isRunning} />
+      {/* Prompt textarea OR live process preview, depending on run state */}
+      {isRunning && activeProcessUrl ? (
+        <RunOutput processUrl={activeProcessUrl} isActive={true} />
+      ) : (
+        <textarea
+          style={{
+            flex: "1 1 60px",
+            minHeight: 56,
+            resize: "none",
+            border: "1px solid #ddd",
+            borderRadius: 6,
+            padding: "7px 9px",
+            fontSize: 12,
+            fontFamily: "sans-serif",
+            outline: "none",
+            background: "#fafafa",
+            boxSizing: "border-box",
+            color: "#222",
+          }}
+          placeholder="Enter a prompt…"
+          value={prompt}
+          onChange={(e) => handlePromptChange(e.target.value)}
+          onPointerDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+        />
       )}
 
       {/* Output drop zone */}
