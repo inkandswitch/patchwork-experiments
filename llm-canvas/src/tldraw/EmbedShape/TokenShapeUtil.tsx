@@ -13,28 +13,13 @@ import { useCallback, useLayoutEffect, useRef } from 'react';
 import {
   DocChip,
   ToolChip,
-  setTokenDragData,
-  getTokenDragData,
-  PATCHWORK_TOKEN_MIME,
-  PATCHWORK_URLS_MIME,
   ToolIcon,
-  type PatchworkTokenData,
   type DocChipProps,
   type ToolChipProps,
 } from '../../shared/tokens.tsx';
 
-// Re-export everything from shared so existing callers via this file or
-// EmbedShape/index.ts continue to work without import path changes.
-export {
-  DocChip,
-  ToolChip,
-  ToolIcon,
-  setTokenDragData,
-  getTokenDragData,
-  PATCHWORK_TOKEN_MIME,
-  PATCHWORK_URLS_MIME,
-};
-export type { PatchworkTokenData, DocChipProps, ToolChipProps };
+export { DocChip, ToolChip, ToolIcon };
+export type { DocChipProps, ToolChipProps };
 
 // ---------------------------------------------------------------------------
 // DOM-driven sizing via EditorAtom + ResizeObserver
@@ -115,8 +100,9 @@ function DocTokenComponent({ shape }: { shape: DocTokenShape }) {
         docUrl={docUrl}
         name={name}
         chipRef={sizeRef}
+        dragEffect="move"
         onDragEnd={(e) => {
-          if (e.dataTransfer.dropEffect !== 'none') {
+          if (e.dataTransfer?.dropEffect !== 'none') {
             editor.deleteShapes([shape.id]);
           }
         }}
@@ -188,6 +174,7 @@ function ToolTokenComponent({ shape }: { shape: ToolTokenShape }) {
         name={name}
         path={path}
         chipRef={sizeRef}
+        dragEffect="move"
         onDragEnd={(e) => {
           if (e.dataTransfer.dropEffect !== 'none') {
             editor.deleteShapes([shape.id]);

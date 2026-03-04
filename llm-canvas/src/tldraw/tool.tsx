@@ -3,12 +3,13 @@ import { useDocHandle, useDocument, useRepo } from "@automerge/react";
 import { Tldraw, useEditor, getMediaAssetInfoPartial, createShapeId, type VecLike, type TLContent, type TLAssetId, type TLAsset } from "@tldraw/tldraw";
 import { useAutomergeStore, useAutomergePresence } from "./automerge/useAutomergeStore.ts";
 import type { TLDrawDoc } from "./datatype.ts";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { UnixFileEntry } from "@inkandswitch/patchwork-filesystem";
 import { automergeUrlToServiceWorkerUrl } from "@inkandswitch/patchwork-filesystem";
 import type { ToolElement } from "@inkandswitch/patchwork-plugins";
-import { EmbedShapeUtil, EmbedShapeTool, embedUiOverrides, EmbedToolbar, setEmbedToolContext, getDefaultToolId, loadDatatype, DocTokenShapeUtil, ToolTokenShapeUtil, DOC_TOKEN_SHAPE_TYPE, TOOL_TOKEN_SHAPE_TYPE, getTokenDragData } from "./EmbedShape/index.ts";
+import { EmbedShapeUtil, EmbedShapeTool, embedUiOverrides, EmbedToolbar, setEmbedToolContext, getDefaultToolId, loadDatatype, DocTokenShapeUtil, ToolTokenShapeUtil, DOC_TOKEN_SHAPE_TYPE, TOOL_TOKEN_SHAPE_TYPE } from "./EmbedShape/index.ts";
 import { EMBED_SHAPE_TYPE } from "./EmbedShape/EmbedShapeUtil.tsx";
+import { isPatchworkDrag, resolveDropItems, getDragData } from "../shared/dnd/index.ts";
 
 const MIME_TO_EXT: Record<string, string> = {
   "image/png": "png",
@@ -57,7 +58,7 @@ function useContactInfo() {
   };
 }
 
-const VERSION = "0.0.7";
+const VERSION = "0.0.16";
 
 function VersionBadge() {
   return (
@@ -97,14 +98,18 @@ export function TldrawTool({ docUrl, element }: { docUrl: AutomergeUrl; element:
     userMetadata: contactInfo,
   });
 
+  const containerRef = useRef<HTMLDivElement>(null);
+
   return (
-    <Tldraw inferDarkMode autoFocus store={store} shapeUtils={[EmbedShapeUtil, DocTokenShapeUtil, ToolTokenShapeUtil]} tools={[EmbedShapeTool]} overrides={embedUiOverrides} components={{ Toolbar: EmbedToolbar, InFrontOfTheCanvas: VersionBadge }}>
-      <TldrawInner docUrl={docUrl} element={element} />
-    </Tldraw>
+    <div ref={containerRef} style={{ width: "100%", height: "100%" }}>
+      <Tldraw inferDarkMode autoFocus store={store} shapeUtils={[EmbedShapeUtil, DocTokenShapeUtil, ToolTokenShapeUtil]} tools={[EmbedShapeTool]} overrides={embedUiOverrides} components={{ Toolbar: EmbedToolbar, InFrontOfTheCanvas: VersionBadge }}>
+        <TldrawInner docUrl={docUrl} element={element} containerRef={containerRef} />
+      </Tldraw>
+    </div>
   );
 }
 
-function TldrawInner(props: { docUrl: AutomergeUrl; element: ToolElement }) {
+function TldrawInner(props: { docUrl: AutomergeUrl; element: ToolElement; containerRef: React.RefObject<HTMLDivElement> }) {
   const key = useMemo(() => `${props.docUrl}-camera`, [props.docUrl]);
   const editor = useEditor();
 
@@ -113,7 +118,7 @@ function TldrawInner(props: { docUrl: AutomergeUrl; element: ToolElement }) {
   }, [props.element, editor]);
 
   useEditorSetup(key);
-  usePatchworkDrop();
+  usePatchworkDrop(props.containerRef);
 
   return null;
 }
@@ -198,70 +203,49 @@ function useEditorSetup(key: string) {
   }, [editor]);
 }
 
-function usePatchworkDrop() {
+function usePatchworkDrop(containerRef: React.RefObject<HTMLDivElement>) {
   const editor = useEditor();
   const repo = useRepo();
 
   useEffect(() => {
-    const container = editor.getContainer();
-
-    const isPatchworkDrop = (e: DragEvent) => e.dataTransfer?.types.includes("text/x-patchwork-urls") ?? false;
+    const container = containerRef.current;
+    if (!container) return;
 
     // If the drop target is inside a <patchwork-view> element let that element
     // handle it. composedPath() pierces shadow DOM so we reliably detect this
     // even when the workspace content is rendered inside a shadow root.
-    const isInsidePatchworkView = (e: DragEvent) =>
-      e.composedPath().some((el) => (el as Element).tagName?.toLowerCase() === "patchwork-view");
+    const isInsidePatchworkView = (e: DragEvent) => e.composedPath().some((el) => (el as Element).tagName?.toLowerCase() === "patchwork-view");
 
     const handleDragEnter = (e: DragEvent) => {
-      if (isInsidePatchworkView(e)) return;
-      if (isPatchworkDrop(e)) e.preventDefault();
+      if (e.dataTransfer && isPatchworkDrag(e.dataTransfer.types)) e.preventDefault();
     };
 
     const handleDragOver = (e: DragEvent) => {
-      if (isInsidePatchworkView(e)) return;
-      if (isPatchworkDrop(e)) e.preventDefault();
+      if (e.dataTransfer && isPatchworkDrag(e.dataTransfer.types)) e.preventDefault();
     };
 
     const handleDrop = (e: DragEvent) => {
-      if (isInsidePatchworkView(e)) return;
-      const raw = e.dataTransfer?.getData("text/x-patchwork-urls");
-      if (!raw) return;
+      if (!e.dataTransfer || !isPatchworkDrag(e.dataTransfer.types)) return;
       e.preventDefault();
+
+      if (isInsidePatchworkView(e)) return;
       e.stopImmediatePropagation();
 
-      let urls: string[];
-      try {
-        urls = JSON.parse(raw);
-      } catch {
-        console.warn("[patchwork-drop] failed to parse URLs:", raw);
-        return;
-      }
-
-      // Check if this is a token drag
-      const tokenData = e.dataTransfer ? getTokenDragData(e.dataTransfer) : null;
+      const tokenItem = getDragData(e.dataTransfer);
+      const items = resolveDropItems(e.dataTransfer);
+      if (items.length === 0) return;
 
       const dropPoint = editor.screenToPage({ x: e.clientX, y: e.clientY });
       const STAGGER = 20;
 
-      for (let i = 0; i < urls.length; i++) {
-        const docUrl = urls[i] as AutomergeUrl;
+      items.forEach((item, i) => {
+        const docUrl = item.url as AutomergeUrl;
         const x = dropPoint.x + i * STAGGER;
         const y = dropPoint.y + i * STAGGER;
 
-        if (tokenData) {
-          // --- Token drop ---
-          if (tokenData.type === "document") {
-            editor.createShape({
-              id: createShapeId(),
-              type: DOC_TOKEN_SHAPE_TYPE,
-              x,
-              y,
-              rotation: 0,
-              parentId: editor.getCurrentPageId(),
-              props: { docUrl, name: tokenData.name },
-            } as any);
-          } else {
+        if (tokenItem !== null) {
+          // Token drag (has metadata) → create a token shape on the canvas
+          if (item.type === "tool") {
             editor.createShape({
               id: createShapeId(),
               type: TOOL_TOKEN_SHAPE_TYPE,
@@ -269,11 +253,21 @@ function usePatchworkDrop() {
               y,
               rotation: 0,
               parentId: editor.getCurrentPageId(),
-              props: { docUrl, name: tokenData.name, path: tokenData.path ?? "" },
+              props: { docUrl, name: item.name, path: item.path },
+            } as any);
+          } else {
+            editor.createShape({
+              id: createShapeId(),
+              type: DOC_TOKEN_SHAPE_TYPE,
+              x,
+              y,
+              rotation: 0,
+              parentId: editor.getCurrentPageId(),
+              props: { docUrl, name: item.name },
             } as any);
           }
         } else {
-          // --- Embed drop (existing behaviour) ---
+          // Bare URL drop (e.g. from patchwork sidebar) → create an embed tile
           const shapeId = createShapeId();
           editor.createShape({
             id: shapeId,
@@ -282,14 +276,7 @@ function usePatchworkDrop() {
             y,
             rotation: 0,
             parentId: editor.getCurrentPageId(),
-            props: {
-              w: 640,
-              h: 480,
-              docUrl,
-              docName: "Loading\u2026",
-              docType: "",
-              toolId: "",
-            },
+            props: { w: 640, h: 480, docUrl, docName: "Loading\u2026", docType: "", toolId: "" },
           } as any);
 
           (async () => {
@@ -299,27 +286,18 @@ function usePatchworkDrop() {
               const datatypeId: string = doc?.["@patchwork"]?.type ?? "";
               const [datatype, toolId] = await Promise.all([datatypeId ? loadDatatype(datatypeId) : Promise.resolve(undefined), Promise.resolve(datatypeId ? getDefaultToolId(datatypeId) : "")]);
               const docName: string = (datatype as any)?.name ?? datatypeId ?? docUrl;
-
               if (editor.getShape(shapeId)) {
-                editor.updateShape({
-                  id: shapeId,
-                  type: EMBED_SHAPE_TYPE,
-                  props: { docUrl, docName, docType: datatypeId, toolId },
-                } as any);
+                editor.updateShape({ id: shapeId, type: EMBED_SHAPE_TYPE, props: { docUrl, docName, docType: datatypeId, toolId } } as any);
               }
             } catch (err) {
               console.error("[patchwork-drop] failed to resolve embed:", err);
               if (editor.getShape(shapeId)) {
-                editor.updateShape({
-                  id: shapeId,
-                  type: EMBED_SHAPE_TYPE,
-                  props: { docName: "Error" },
-                } as any);
+                editor.updateShape({ id: shapeId, type: EMBED_SHAPE_TYPE, props: { docName: "Error" } } as any);
               }
             }
           })();
         }
-      }
+      });
     };
 
     container.addEventListener("dragenter", handleDragEnter, { capture: true });
@@ -330,5 +308,5 @@ function usePatchworkDrop() {
       container.removeEventListener("dragover", handleDragOver, { capture: true });
       container.removeEventListener("drop", handleDrop, { capture: true });
     };
-  }, [editor, repo]);
+  }, [editor, repo, containerRef]);
 }

@@ -2,8 +2,8 @@ import { useCallback, useState } from 'react';
 import { useDocument } from '@automerge/automerge-repo-react-hooks';
 import type { AutomergeUrl } from '@automerge/automerge-repo';
 import type { AccessLevel, WorkspaceDoc, WorkspaceEntry } from '../types';
-import { DocChip, ToolChip, setTokenDragData } from '../../shared/tokens.tsx';
-import { TokenDropZone, type PatchworkDropItem } from '../../shared/TokenDropZone.tsx';
+import { DocChip, ToolChip } from '../../shared/tokens.tsx';
+import { TokenDropZone, setDragData, type PatchworkItem } from '../../shared/dnd/index.ts';
 
 const ACCESS_LEVELS: { level: AccessLevel; label: string }[] = [
   { level: 'read', label: 'Read-Only' },
@@ -50,7 +50,7 @@ export function WorkspaceUI({ docUrl }: { docUrl: AutomergeUrl }) {
   );
 
   const handleSectionDrop = useCallback(
-    (items: PatchworkDropItem[], level: AccessLevel) => {
+    (items: PatchworkItem[], level: AccessLevel) => {
       if (draggedEntry !== null) {
         // Internal move: splice out of current position, re-insert with new level
         const url = draggedEntry;
@@ -95,9 +95,10 @@ export function WorkspaceUI({ docUrl }: { docUrl: AutomergeUrl }) {
   );
 
   const handleInternalDragStart = useCallback((e: React.DragEvent, entry: WorkspaceEntry) => {
-    const tokenType = entry.type === 'tool' ? 'tool' : 'document';
-    const path = entry.type === 'tool' ? (entry as any).path ?? '' : undefined;
-    setTokenDragData(e.dataTransfer, entry.url, { type: tokenType, name: entry.name, path });
+    const item = entry.type === 'tool'
+      ? { type: 'tool' as const, url: entry.url, name: entry.name, path: (entry as any).path ?? '' }
+      : { type: 'document' as const, url: entry.url, name: entry.name };
+    setDragData(e.dataTransfer, item, 'move');
     setDraggedEntry(entry.url);
   }, []);
 
@@ -275,7 +276,6 @@ export function WorkspaceUI({ docUrl }: { docUrl: AutomergeUrl }) {
             Preview not available for tools
           </div>
         ) : selectedUrl ? (
-          // @ts-expect-error Custom element from @inkandswitch/patchwork-elements
           <patchwork-view
             doc-url={selectedUrl}
             style={{ display: 'block', width: '100%', height: '100%' }}

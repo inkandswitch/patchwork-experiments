@@ -50,10 +50,18 @@ export type RunResult = {
   changes: WorkspaceChanges;
 };
 
+export type LLMProcessOptions = {
+  /** Include the workspace document list in the system prompt. Defaults to false. */
+  includeWorkspaceContext?: boolean;
+  /** Extra context appended to the system prompt after skills/workspace sections. */
+  systemContextSuffix?: string;
+};
+
 export async function runLLMProcess(
   repo: Repo,
   docUrl: AutomergeUrl,
   signal?: AbortSignal,
+  options?: LLMProcessOptions,
 ): Promise<RunResult> {
   const handle = await repo.find<ProcessDoc>(docUrl);
   const doc = handle.doc();
@@ -69,7 +77,7 @@ export async function runLLMProcess(
   const wsDoc = wsHandle.doc();
   if (!wsDoc) throw new Error('Workspace document not found');
 
-  const { workspaceRepo, changes } = getWorkspaceRepo(repo, wsDoc);
+  const { workspaceRepo, changes } = getWorkspaceRepo(repo, wsHandle);
   const capturedConsole = createCapturedConsole();
 
   const skills = skillsFolderUrl
@@ -89,7 +97,9 @@ export async function runLLMProcess(
   (globalThis as any).loadSkill = loadSkill;
   (globalThis as any).__llmCapturedConsole = capturedConsole;
 
-  const entryDescriptions = buildEntryDescriptions(wsDoc.entries ?? []);
+  const entryDescriptions = (options?.includeWorkspaceContext ?? false)
+    ? buildEntryDescriptions(wsDoc.entries ?? [])
+    : '';
   const skillDescriptions = buildSkillDescriptions(skills);
 
   const MAX_ITERATIONS = 20;
@@ -100,7 +110,7 @@ export async function runLLMProcess(
     const currentDoc = handle.doc();
     if (!currentDoc) break;
 
-    const messages = buildLLMMessages(currentDoc, entryDescriptions, skillDescriptions);
+    const messages = buildLLMMessages(currentDoc, entryDescriptions, skillDescriptions, options?.systemContextSuffix);
     const stream = streamChatCompletion(apiUrl, apiKey, model, messages, signal);
 
     let foundScript = false;
@@ -276,6 +286,7 @@ export function buildLLMMessages(
   doc: ProcessDoc,
   entryDescriptions: string,
   skillDescriptions: string,
+  systemContextSuffix?: string,
 ): ChatMessage[] {
   const messages: ChatMessage[] = [];
 
@@ -285,6 +296,9 @@ export function buildLLMMessages(
   }
   if (entryDescriptions) {
     systemPrompt += `\n\nAvailable documents and tools:\n${entryDescriptions}`;
+  }
+  if (systemContextSuffix) {
+    systemPrompt += `\n\n${systemContextSuffix}`;
   }
 
   messages.push({ role: 'system', content: systemPrompt });

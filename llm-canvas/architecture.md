@@ -7,22 +7,26 @@ LLM Canvas is a TLDraw-based canvas where you can embed Patchwork documents as t
 ```
 llm-canvas/src/
 ├── main.tsx              Aggregates all plugin arrays and re-exports them
-├── tldraw/               TLDraw canvas (plugin id: "tile-canvas")
+├── shared/               Shared presentational components and drag-and-drop utilities
+│   ├── tokens.tsx        DocChip, ToolChip, icons, setTokenDragData/getTokenDragData, MIME constants
+│   └── TokenDropZone.tsx Generic drop-zone component (render-prop, resolves PatchworkDropItem)
+├── tldraw/               TLDraw canvas (plugin id: "llm-canvas")
 │   ├── index.ts          Plugin registration
 │   ├── datatype.ts       TLDrawDoc schema and init
 │   ├── mount.tsx         Tool mount — renders TldrawTool into a ToolElement
 │   ├── mount-datatype.ts Datatype mount
-│   ├── tool.tsx          TldrawTool component (Tldraw canvas wrapper)
+│   ├── tool.tsx          TldrawTool component (Tldraw canvas wrapper, VERSION badge)
 │   ├── main.css          Styles (tldraw overrides, injected by vite)
 │   ├── automerge/        Bidirectional TLDraw ↔ Automerge sync
 │   │   ├── useAutomergeStore.ts   React hook: creates TLDraw store synced to Automerge
 │   │   ├── AutomergeToTLStore.ts  Automerge patches → TLDraw store
 │   │   └── TLStoreToAutomerge.ts  TLDraw changes → Automerge doc
-│   └── EmbedShape/       Custom shape: embeds a Patchwork document as a tile
+│   └── EmbedShape/       Custom shapes: embedded document tile + token chips
 │       ├── EmbedShapeUtil.tsx   Shape geometry, component, tool picker
 │       ├── EmbedShapeTool.tsx   Draw-to-create tool + EmbedToolbar
 │       ├── EmbedShapeMenu.tsx   Datatype picker dropdown (portal)
-│       └── index.ts             Barrel exports
+│       ├── TokenShapeUtil.tsx   DocTokenShapeUtil, ToolTokenShapeUtil (imports chips from shared/)
+│       └── index.ts             Barrel exports (re-exports shared token utilities)
 ├── process/              LLM process (plugin id: "process")
 │   ├── index.ts
 │   ├── datatype.ts       ProcessDoc schema and init
@@ -51,8 +55,8 @@ llm-canvas/src/
     ├── datatype.ts
     ├── mount.tsx / mount-datatype.ts
     ├── tool-plugin.tsx
-    ├── types.ts           WorkspaceDoc, WorkspaceEntry, WorkspaceChanges
-    ├── workspace-repo.ts  getWorkspaceRepo — wraps repo with COW tracking
+    ├── types.ts           WorkspaceDoc, WorkspaceEntry, WorkspaceChange
+    ├── workspace-repo.ts  getWorkspaceRepo — wraps repo with COW tracking, persists mappings
     ├── README.md
     └── components/WorkspaceUI.tsx
 ```
@@ -139,9 +143,37 @@ ProcessDoc
 **WorkspaceDoc** — the set of documents accessible to an LLM agent:
 ```
 WorkspaceDoc
-├── entries: WorkspaceEntry[]          (documents and tools by name)
-└── restrictToEntries: boolean
+├── title: string
+├── entries: WorkspaceEntry[]          (documents and tools, each with accessLevel)
+├── restrictToEntries: boolean
+└── mappings?: WorkspaceChange[]       (clone/create records written by workspace-repo)
 ```
+
+Each `WorkspaceEntry` carries `{ type: 'document'|'tool', name, url, accessLevel: 'read'|'reviewed'|'full' }`.
+
+Each `WorkspaceChange` carries `{ originalUrl, cloneUrl, changeType: 'modified'|'added' }`. The UI joins against `entries` by `originalUrl` to resolve display names — `workspace-repo.ts` never stores names or paths.
+
+## Shared utilities (`shared/`)
+
+### `tokens.tsx`
+
+Presentational chip components and drag-and-drop primitives shared between the tldraw canvas and the workspace UI:
+
+- **`DocChip` / `ToolChip`** — pill-shaped chips with icons, names, and optional drag behaviour (`draggable?: boolean`, default `true`). When `draggable={false}` the parent element owns the drag (e.g. `EntryRow` in `WorkspaceUI`).
+- **`setTokenDragData` / `getTokenDragData`** — read/write `text/x-patchwork-token` (JSON-encoded `PatchworkTokenData`) and `text/x-patchwork-urls` on a `DataTransfer`.
+- **MIME constants**: `PATCHWORK_TOKEN_MIME`, `PATCHWORK_URLS_MIME`.
+
+### `TokenDropZone.tsx`
+
+A generic drop-zone wrapper component:
+
+- Detects `text/x-patchwork-urls` on `dragenter`/`dragover`/`dragleave`/`drop`.
+- Exposes `isDraggedOver` to children via render-prop: `children: (isDraggedOver: boolean) => ReactNode`.
+- On drop: reads `text/x-patchwork-urls` + optional `text/x-patchwork-token` and calls `onDrop(items: PatchworkDropItem[])` with normalized items:
+  - token present, type `'tool'` → `{ type: 'tool', url, name, path }`
+  - token present, type `'document'` → `{ type: 'document', url, name }`
+  - no token → `{ type: 'document', url, name: url }` (bare URL drop)
+- Uses a `dragCounterRef` counter to avoid `isDraggedOver` flickering on nested child enter/leave events.
 
 ## EmbedShape (`tldraw/EmbedShape/`)
 
@@ -158,6 +190,20 @@ A custom tldraw shape (`tile-embed`) that renders an embedded Patchwork document
 2. A placeholder `tile-embed` shape is created immediately
 3. `createDocOfDatatype2` runs async to create the actual doc
 4. The placeholder is replaced with the final shape; `toolId` is set to the first non-unlisted, type-specific tool for the chosen datatype (wildcards are deprioritised)
+
+## Workspace UI (`workspace/components/WorkspaceUI.tsx`)
+
+A split-pane panel: fixed ~260 px left sidebar (section list) and a `flex: 1` right preview pane.
+
+**Sections** — three always-visible gray rectangles for `read`, `reviewed`, and `full` access levels. Each section is wrapped in a `TokenDropZone` so external drops (from the patchwork sidebar or canvas token chips) are handled automatically.
+
+**Drag and drop** — two paths unified through the same `handleSectionDrop(items, level)` callback:
+- *Internal move*: when an `EntryRow` drag starts, `draggedEntry` state is set and the row sets `text/x-patchwork-urls` + token data so `TokenDropZone` detects it. On drop, if `draggedEntry !== null` the entry is spliced out of its current position and re-inserted with the new `accessLevel`.
+- *External drop*: if `draggedEntry` is null the resolved `PatchworkDropItem[]` from `TokenDropZone` are added as new entries.
+
+**Preview pane** — clicking an entry sets `selectedUrl`. If `selectedEntry.type === 'tool'` a placeholder is shown; otherwise `<patchwork-view doc-url={selectedUrl}>` renders the document.
+
+**Change indicators** — `doc.mappings` is read to build a `Map<url, 'modified'|'added'>`. Orange `●` marks modified entries; green `+` marks added ones.
 
 ## LLM process engine (`process/llm-process.ts`)
 
@@ -203,7 +249,7 @@ A `preventPatchApplications` flag prevents feedback loops. Collaborative presenc
 - Logged to the console on mount (`[llm-canvas] version X.Y.Z`)
 - Displayed as a small badge in the bottom-left corner of the canvas via `InFrontOfTheCanvas`
 
-**Bump `VERSION` whenever you make a meaningful change** so it is easy to confirm which build is running in the host app.
+**Bump `VERSION` whenever you make a meaningful change** so it is easy to confirm which build is running in the host app. Current version: `0.0.7`.
 
 ## Build
 

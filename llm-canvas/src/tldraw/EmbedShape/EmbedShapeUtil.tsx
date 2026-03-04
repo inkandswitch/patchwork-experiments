@@ -253,26 +253,25 @@ function EmbedShapeComponent({ shape }: { shape: EmbedShape }) {
             minHeight: 0,
             overflow: "hidden",
             position: "relative",
-            pointerEvents: isSelectTool ? "auto" : "none",
+            // Always auto so that drag events (dragover/drop) reach inner elements.
+            // Pointer events are stopped inline to preserve tldraw isolation.
+            pointerEvents: "auto",
             userSelect: isFocused ? "text" : "none",
           }}
-          onPointerDown={
-            isSelectTool
-              ? (e) => {
-                  e.stopPropagation();
-                  setIsFocused(true);
-                }
-              : undefined
-          }
-          onPointerUp={
-            isSelectTool
-              ? (e) => {
-                  e.stopPropagation();
-                  // Synthesize click for frameworks using document-level delegation (e.g. Solid.js).
-                  (e.target as HTMLElement)?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window, clientX: e.clientX, clientY: e.clientY }));
-                }
-              : undefined
-          }
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            if (isSelectTool) setIsFocused(true);
+          }}
+          onPointerUp={(e) => {
+            e.stopPropagation();
+            if (isSelectTool) {
+              // Synthesize click for frameworks using document-level delegation (e.g. Solid.js).
+              (e.target as HTMLElement)?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window, clientX: e.clientX, clientY: e.clientY }));
+            }
+          }}
+          onPointerMove={(e) => {
+            if (!isSelectTool) e.stopPropagation();
+          }}
         >
           {docUrl ? (
             // @ts-expect-error Custom element from @inkandswitch/patchwork-elements
