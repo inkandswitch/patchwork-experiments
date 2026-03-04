@@ -30,14 +30,14 @@ export const init = (doc: TLDrawDoc) => {
     tldrawValueToAutomergeValue(
       createTLStore({
         shapeUtils: [...defaultShapeUtils, EmbedShapeUtil],
-      }).getStoreSnapshot()
-    )
+      }).getStoreSnapshot(),
+    ),
   );
   doc.store[pageKey] = {
     meta: {},
     id: "page:page" as TLPageId,
     index: "a1" as TLPage["index"],
-    name: "New Tile Canvas",
+    name: "New LLM Canvas",
     typeName: "page",
   };
 };
