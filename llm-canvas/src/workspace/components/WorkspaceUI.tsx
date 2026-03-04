@@ -2,11 +2,12 @@ import { useCallback, useState } from 'react';
 import { useDocument } from '@automerge/automerge-repo-react-hooks';
 import type { AutomergeUrl } from '@automerge/automerge-repo';
 import type { AccessLevel, WorkspaceDoc, WorkspaceEntry } from '../types';
+import { DocChip, ToolChip } from '../../shared/tokens.tsx';
 
-const ACCESS_LEVELS: { level: AccessLevel; label: string; description: string }[] = [
-  { level: 'read', label: 'Read', description: 'Read-only access' },
-  { level: 'reviewed', label: 'Reviewed', description: 'Changes require review' },
-  { level: 'full', label: 'Full Access', description: 'Direct writes to original' },
+const ACCESS_LEVELS: { level: AccessLevel; label: string }[] = [
+  { level: 'read', label: 'Read-Only' },
+  { level: 'reviewed', label: 'Reviewed' },
+  { level: 'full', label: 'Full Access' },
 ];
 
 export function WorkspaceUI({ docUrl }: { docUrl: AutomergeUrl }) {
@@ -14,26 +15,29 @@ export function WorkspaceUI({ docUrl }: { docUrl: AutomergeUrl }) {
   const [draggedEntry, setDraggedEntry] = useState<AutomergeUrl | null>(null);
   const [dropTarget, setDropTarget] = useState<AccessLevel | null>(null);
   const [externalDragLevel, setExternalDragLevel] = useState<AccessLevel | null>(null);
+  const [selectedUrl, setSelectedUrl] = useState<AutomergeUrl | null>(null);
 
   const entries = doc?.entries ?? [];
 
-  const entriesByLevel = (level: AccessLevel) =>
-    entries.filter((e) => e.accessLevel === level);
+  // Build a lookup from originalUrl -> changeType for indicators
+  const changeMap = new Map<AutomergeUrl, 'modified' | 'added'>(
+    (doc?.mappings ?? []).map((m) => [m.originalUrl, m.changeType]),
+  );
+
+  const entriesByLevel = (level: AccessLevel) => entries.filter((e) => e.accessLevel === level);
+
+  const selectedEntry = selectedUrl ? entries.find((e) => e.url === selectedUrl) ?? null : null;
 
   const handleTitleChange = useCallback(
     (e: React.FocusEvent<HTMLHeadingElement>) => {
       const newTitle = e.currentTarget.textContent?.trim() || 'Workspace';
-      changeDoc((d) => {
-        d.title = newTitle;
-      });
+      changeDoc((d) => { d.title = newTitle; });
     },
     [changeDoc],
   );
 
   const handleRestrictToggle = useCallback(() => {
-    changeDoc((d) => {
-      d.restrictToEntries = !d.restrictToEntries;
-    });
+    changeDoc((d) => { d.restrictToEntries = !d.restrictToEntries; });
   }, [changeDoc]);
 
   const handleRemoveEntry = useCallback(
@@ -42,8 +46,9 @@ export function WorkspaceUI({ docUrl }: { docUrl: AutomergeUrl }) {
         const idx = d.entries.findIndex((e) => e.url === url);
         if (idx >= 0) d.entries.splice(idx, 1);
       });
+      if (selectedUrl === url) setSelectedUrl(null);
     },
-    [changeDoc],
+    [changeDoc, selectedUrl],
   );
 
   const handleMoveEntry = useCallback(
@@ -89,34 +94,28 @@ export function WorkspaceUI({ docUrl }: { docUrl: AutomergeUrl }) {
     [changeDoc],
   );
 
-  const handleInternalDragStart = useCallback(
-    (e: React.DragEvent, url: AutomergeUrl) => {
-      e.dataTransfer.setData('text/x-workspace-entry', url);
-      e.dataTransfer.effectAllowed = 'move';
-      setDraggedEntry(url);
-    },
-    [],
-  );
+  const handleInternalDragStart = useCallback((e: React.DragEvent, url: AutomergeUrl) => {
+    e.dataTransfer.setData('text/x-workspace-entry', url);
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggedEntry(url);
+  }, []);
 
   const handleInternalDragEnd = useCallback(() => {
     setDraggedEntry(null);
     setDropTarget(null);
   }, []);
 
-  const handleBucketDragOver = useCallback(
-    (e: React.DragEvent, level: AccessLevel) => {
-      if (e.dataTransfer.types.includes('text/x-workspace-entry')) {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        setDropTarget(level);
-      } else if (e.dataTransfer.types.includes('text/x-patchwork-dnd')) {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'copy';
-        setExternalDragLevel(level);
-      }
-    },
-    [],
-  );
+  const handleBucketDragOver = useCallback((e: React.DragEvent, level: AccessLevel) => {
+    if (e.dataTransfer.types.includes('text/x-workspace-entry')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      setDropTarget(level);
+    } else if (e.dataTransfer.types.includes('text/x-patchwork-dnd')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      setExternalDragLevel(level);
+    }
+  }, []);
 
   const handleBucketDragLeave = useCallback(
     (e: React.DragEvent, level: AccessLevel) => {
@@ -153,7 +152,6 @@ export function WorkspaceUI({ docUrl }: { docUrl: AutomergeUrl }) {
     [handleMoveEntry, handleAddEntries],
   );
 
-  // Global external drop (defaults to 'read')
   const handleGlobalDragOver = useCallback((e: React.DragEvent) => {
     if (e.dataTransfer.types.includes('text/x-patchwork-dnd')) {
       e.preventDefault();
@@ -177,144 +175,197 @@ export function WorkspaceUI({ docUrl }: { docUrl: AutomergeUrl }) {
 
   return (
     <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        padding: 12,
-        gap: 8,
-        overflow: 'auto',
-      }}
+      style={{ display: 'flex', flexDirection: 'row', height: '100%', overflow: 'hidden' }}
       onDragOver={handleGlobalDragOver}
       onDrop={handleGlobalDrop}
     >
-      {/* Title */}
-      <h2
-        contentEditable
-        suppressContentEditableWarning
-        onBlur={handleTitleChange}
-        onPointerDown={(e) => e.stopPropagation()}
+      {/* Left panel — file tree */}
+      <div
         style={{
-          fontSize: 16,
-          fontWeight: 600,
-          margin: 0,
-          padding: '4px 2px',
-          outline: 'none',
-          borderBottom: '1px solid transparent',
-          cursor: 'text',
-        }}
-        onFocus={(e) => {
-          (e.currentTarget.style.borderBottom = '1px solid #ddd');
-        }}
-        onBlurCapture={(e) => {
-          (e.currentTarget.style.borderBottom = '1px solid transparent');
-        }}
-      >
-        {doc?.title || 'Workspace'}
-      </h2>
-
-      {/* Restrict toggle */}
-      <label
-        style={{
+          width: 260,
+          flexShrink: 0,
           display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          fontSize: 11,
-          color: '#666',
-          cursor: 'pointer',
-          userSelect: 'none',
+          flexDirection: 'column',
+          borderRight: '1px solid #e5e7eb',
+          overflow: 'hidden',
         }}
-        onPointerDown={(e) => e.stopPropagation()}
       >
-        <input
-          type="checkbox"
-          checked={doc?.restrictToEntries ?? false}
-          onChange={handleRestrictToggle}
-          style={{ margin: 0 }}
-        />
-        Restrict to listed entries
-      </label>
-
-      {/* Buckets */}
-      {ACCESS_LEVELS.map(({ level, label, description }) => {
-        const levelEntries = entriesByLevel(level);
-        const isDropHere = dropTarget === level || externalDragLevel === level;
-
-        return (
-          <div
-            key={level}
+        {/* Header */}
+        <div style={{ padding: '10px 12px 6px', flexShrink: 0 }}>
+          <h2
+            contentEditable
+            suppressContentEditableWarning
+            onBlur={handleTitleChange}
+            onPointerDown={(e) => e.stopPropagation()}
             style={{
-              border: `1px solid ${isDropHere ? '#93c5fd' : '#e5e7eb'}`,
-              borderRadius: 8,
-              background: isDropHere ? '#eff6ff' : '#fafafa',
-              transition: 'border-color 0.15s, background 0.15s',
+              fontSize: 13,
+              fontWeight: 600,
+              margin: '0 0 6px',
+              padding: '2px 2px',
+              outline: 'none',
+              borderBottom: '1px solid transparent',
+              cursor: 'text',
             }}
-            onDragOver={(e) => handleBucketDragOver(e, level)}
-            onDragLeave={(e) => handleBucketDragLeave(e, level)}
-            onDrop={(e) => handleBucketDrop(e, level)}
+            onFocus={(e) => { e.currentTarget.style.borderBottom = '1px solid #ddd'; }}
+            onBlurCapture={(e) => { e.currentTarget.style.borderBottom = '1px solid transparent'; }}
           >
-            {/* Bucket header */}
+            {doc?.title || 'Workspace'}
+          </h2>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              fontSize: 10,
+              color: '#888',
+              cursor: 'pointer',
+              userSelect: 'none',
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <input
+              type="checkbox"
+              checked={doc?.restrictToEntries ?? false}
+              onChange={handleRestrictToggle}
+              style={{ margin: 0 }}
+            />
+            Restrict to listed entries
+          </label>
+        </div>
+
+        {/* Sections */}
+        <div style={{ flex: 1, overflow: 'auto', padding: '4px 8px 8px' }}>
+          {ACCESS_LEVELS.map(({ level, label }) => {
+            const levelEntries = entriesByLevel(level);
+            const isDropHere = dropTarget === level || externalDragLevel === level;
+
+            return (
+              <div
+                key={level}
+                style={{
+                  marginBottom: 8,
+                  background: isDropHere ? '#eff6ff' : '#f5f5f5',
+                  border: `1px solid ${isDropHere ? '#93c5fd' : '#e5e7eb'}`,
+                  borderRadius: 6,
+                  transition: 'background 0.15s, border-color 0.15s',
+                  overflow: 'hidden',
+                }}
+                onDragOver={(e) => handleBucketDragOver(e, level)}
+                onDragLeave={(e) => handleBucketDragLeave(e, level)}
+                onDrop={(e) => handleBucketDrop(e, level)}
+              >
+                {/* Section label */}
+                <div
+                  style={{
+                    padding: '5px 10px',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: '#6b7280',
+                    letterSpacing: '0.05em',
+                    textTransform: 'uppercase',
+                    borderBottom: levelEntries.length > 0 ? '1px solid #e5e7eb' : 'none',
+                    userSelect: 'none',
+                  }}
+                >
+                  {label}
+                  {levelEntries.length > 0 && (
+                    <span style={{ fontWeight: 400, marginLeft: 4, color: '#9ca3af' }}>
+                      {levelEntries.length}
+                    </span>
+                  )}
+                </div>
+
+                {/* Entry rows */}
+                {levelEntries.length > 0 && (
+                  <div style={{ padding: '4px 6px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {levelEntries.map((entry) => (
+                      <EntryRow
+                        key={entry.url}
+                        entry={entry}
+                        isDragging={draggedEntry === entry.url}
+                        isSelected={selectedUrl === entry.url}
+                        changeType={changeMap.get(entry.url) ?? null}
+                        onSelect={() => setSelectedUrl(entry.url)}
+                        onDragStart={(e) => handleInternalDragStart(e, entry.url)}
+                        onDragEnd={handleInternalDragEnd}
+                        onRemove={() => handleRemoveEntry(entry.url)}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {/* Empty drop hint */}
+                {levelEntries.length === 0 && (
+                  <div
+                    style={{
+                      padding: '6px 10px 8px',
+                      fontSize: 10,
+                      color: '#ccc',
+                      fontStyle: 'italic',
+                    }}
+                  >
+                    Drop items here
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {entries.length === 0 && (
             <div
               style={{
-                padding: '6px 10px',
-                borderBottom: levelEntries.length > 0 ? '1px solid #f0f0f0' : 'none',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
+                padding: '12px',
+                textAlign: 'center',
+                fontSize: 10,
+                color: '#bbb',
+                border: '1px dashed #e5e7eb',
+                borderRadius: 6,
               }}
             >
-              <span style={{ fontSize: 11, fontWeight: 600, color: '#555' }}>{label}</span>
-              <span style={{ fontSize: 10, color: '#aaa' }}>{description}</span>
+              Drop documents or tools to add them
             </div>
-
-            {/* Entry rows */}
-            {levelEntries.length > 0 && (
-              <div style={{ padding: '2px 0' }}>
-                {levelEntries.map((entry) => (
-                  <EntryRow
-                    key={entry.url}
-                    entry={entry}
-                    isDragging={draggedEntry === entry.url}
-                    onDragStart={(e) => handleInternalDragStart(e, entry.url)}
-                    onDragEnd={handleInternalDragEnd}
-                    onRemove={() => handleRemoveEntry(entry.url)}
-                  />
-                ))}
-              </div>
-            )}
-
-            {/* Empty state */}
-            {levelEntries.length === 0 && (
-              <div
-                style={{
-                  padding: '8px 10px',
-                  fontSize: 10,
-                  color: '#ccc',
-                  fontStyle: 'italic',
-                }}
-              >
-                Drop items here
-              </div>
-            )}
-          </div>
-        );
-      })}
-
-      {/* Global drop hint */}
-      {entries.length === 0 && (
-        <div
-          style={{
-            padding: '16px',
-            textAlign: 'center',
-            fontSize: 11,
-            color: '#bbb',
-            border: '1px dashed #ddd',
-            borderRadius: 8,
-          }}
-        >
-          Drop documents or tools to add them to this workspace
+          )}
         </div>
-      )}
+      </div>
+
+      {/* Right panel — preview */}
+      <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', position: 'relative' }}>
+        {selectedEntry?.type === 'tool' ? (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '100%',
+              fontSize: 11,
+              color: '#aaa',
+              fontFamily: 'system-ui, -apple-system, sans-serif',
+            }}
+          >
+            Preview not available for tools
+          </div>
+        ) : selectedUrl ? (
+          // @ts-expect-error Custom element from @inkandswitch/patchwork-elements
+          <patchwork-view
+            doc-url={selectedUrl}
+            style={{ display: 'block', width: '100%', height: '100%' }}
+          />
+        ) : (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '100%',
+              fontSize: 11,
+              color: '#ccc',
+              fontFamily: 'system-ui, -apple-system, sans-serif',
+            }}
+          >
+            Select an item to preview
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -322,12 +373,18 @@ export function WorkspaceUI({ docUrl }: { docUrl: AutomergeUrl }) {
 function EntryRow({
   entry,
   isDragging,
+  isSelected,
+  changeType,
+  onSelect,
   onDragStart,
   onDragEnd,
   onRemove,
 }: {
   entry: WorkspaceEntry;
   isDragging: boolean;
+  isSelected: boolean;
+  changeType: 'modified' | 'added' | null;
+  onSelect: () => void;
   onDragStart: (e: React.DragEvent) => void;
   onDragEnd: () => void;
   onRemove: () => void;
@@ -338,38 +395,56 @@ function EntryRow({
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onPointerDown={(e) => e.stopPropagation()}
+      onClick={onSelect}
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 6,
-        padding: '4px 10px',
-        fontSize: 11,
-        cursor: 'grab',
+        gap: 4,
+        padding: '1px 2px',
+        borderRadius: 4,
+        cursor: 'pointer',
         opacity: isDragging ? 0.4 : 1,
-        background: isDragging ? '#f0f4ff' : 'transparent',
-        transition: 'opacity 0.1s',
+        background: isSelected ? '#e8f0fe' : 'transparent',
+        transition: 'opacity 0.1s, background 0.1s',
+        outline: isSelected ? '1px solid #93c5fd' : 'none',
       }}
     >
-      <span
-        style={{
-          fontSize: 10,
-          color: entry.type === 'tool' ? '#7c3aed' : '#0369a1',
-          flexShrink: 0,
-        }}
-      >
-        {entry.type === 'tool' ? '◆' : '▪'}
-      </span>
-      <span
-        style={{
-          flex: 1,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          color: '#333',
-        }}
-      >
-        {entry.name}
-      </span>
+      {/* Chip renders the full visual token */}
+      <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+        {entry.type === 'tool' ? (
+          <ToolChip
+            docUrl={entry.url}
+            name={entry.name}
+            path={(entry as any).path}
+            draggable={false}
+          />
+        ) : (
+          <DocChip
+            docUrl={entry.url}
+            name={entry.name}
+            draggable={false}
+          />
+        )}
+      </div>
+
+      {/* Change indicators */}
+      {changeType === 'modified' && (
+        <span
+          title="Modified"
+          style={{ fontSize: 9, color: '#d97706', flexShrink: 0, lineHeight: 1 }}
+        >
+          ●
+        </span>
+      )}
+      {changeType === 'added' && (
+        <span
+          title="Added"
+          style={{ fontSize: 10, color: '#16a34a', flexShrink: 0, lineHeight: 1, fontWeight: 700 }}
+        >
+          +
+        </span>
+      )}
+
       <button
         style={{
           border: 'none',
@@ -381,7 +456,7 @@ function EntryRow({
           lineHeight: 1,
           flexShrink: 0,
         }}
-        onClick={onRemove}
+        onClick={(e) => { e.stopPropagation(); onRemove(); }}
         onPointerDown={(e) => e.stopPropagation()}
         title="Remove from workspace"
       >

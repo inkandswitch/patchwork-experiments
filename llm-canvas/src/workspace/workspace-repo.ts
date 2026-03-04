@@ -1,16 +1,12 @@
 import type { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo';
 import type { WorkspaceChange, WorkspaceChanges, WorkspaceDoc } from './types';
 
-type Mapping = {
-  originalUrl: AutomergeUrl;
-  cloneUrl: AutomergeUrl;
+type HandleCache = {
   originalHandle: DocHandle<any>;
   cloneHandle: DocHandle<any>;
-  name: string;
-  path?: string;
 };
 
-type HandleWrapper = {
+export type HandleWrapper = {
   readonly url: AutomergeUrl;
   doc(): any;
   change(fn: (doc: any) => void): void;
@@ -27,7 +23,7 @@ function createReadOnlyWrapper(handle: DocHandle<any>): HandleWrapper {
     doc() {
       return handle.doc();
     },
-    change() {
+    change(_fn: (doc: any) => void) {
       throw new Error('Document is read-only');
     },
     on(event: string, fn: (...args: any[]) => void) {
@@ -113,38 +109,51 @@ export type WorkspaceRepo = {
 
 export function getWorkspaceRepo(
   repo: Repo,
-  workspaceDoc: WorkspaceDoc,
+  workspaceHandle: DocHandle<WorkspaceDoc>,
 ): { workspaceRepo: WorkspaceRepo; changes: WorkspaceChanges } {
-  const mappings = new Map<AutomergeUrl, Mapping>();
-  const createdUrls: AutomergeUrl[] = [];
+  // In-memory cache of live handles, keyed by originalUrl
+  const handleCache = new Map<AutomergeUrl, HandleCache>();
 
-  const entryByUrl = new Map(
-    workspaceDoc.entries.map((e) => [e.url, e]),
-  );
+  const workspaceDoc = workspaceHandle.doc();
+  if (!workspaceDoc) throw new Error('Workspace document not ready');
 
-  function recordClone(
-    originalUrl: AutomergeUrl,
-    cloneHandle: DocHandle<any>,
-    originalHandle: DocHandle<any>,
-    name?: string,
-    path?: string,
-  ) {
-    if (mappings.has(originalUrl)) return;
-    mappings.set(originalUrl, {
-      originalUrl,
-      cloneUrl: cloneHandle.url,
-      originalHandle,
-      cloneHandle,
-      name: name ?? originalUrl,
-      path,
-    });
+  const entryByUrl = new Map(workspaceDoc.entries.map((e) => [e.url, e]));
+
+  // Pre-populate cache from persisted mappings so existing clones are reused
+  // Handles are resolved lazily when find() is called for that originalUrl.
+
+  function recordClone(originalUrl: AutomergeUrl, cloneHandle: DocHandle<any>, originalHandle: DocHandle<any>) {
+    if (handleCache.has(originalUrl)) return;
+    handleCache.set(originalUrl, { originalHandle, cloneHandle });
+    // Persist to workspace doc only if not already stored
+    const current = workspaceHandle.doc()?.mappings ?? [];
+    if (!current.some((m) => m.originalUrl === originalUrl)) {
+      workspaceHandle.change((d) => {
+        if (!d.mappings) d.mappings = [] as any;
+        (d.mappings as WorkspaceChange[]).push({
+          originalUrl,
+          cloneUrl: cloneHandle.url,
+          changeType: 'modified',
+        });
+      });
+    }
   }
 
   const workspaceRepo: WorkspaceRepo = {
     async find(url: AutomergeUrl) {
-      const existingMapping = mappings.get(url);
-      if (existingMapping) {
-        return createReviewedWrapper(repo, existingMapping.originalHandle, () => {});
+      // Check if we already have a live clone in the cache
+      const cached = handleCache.get(url);
+      if (cached) {
+        return createReviewedWrapper(repo, cached.originalHandle, () => {});
+      }
+
+      // Check if there's a persisted mapping for this url (from a previous session)
+      const persistedMapping = workspaceHandle.doc()?.mappings?.find((m) => m.originalUrl === url);
+      if (persistedMapping && persistedMapping.changeType === 'modified') {
+        const originalHandle = await repo.find(url);
+        const cloneHandle = await repo.find(persistedMapping.cloneUrl);
+        handleCache.set(url, { originalHandle, cloneHandle });
+        return createReviewedWrapper(repo, originalHandle, () => {});
       }
 
       const entry = entryByUrl.get(url);
@@ -158,7 +167,6 @@ export function getWorkspaceRepo(
       }
 
       const handle = await repo.find(url);
-      const entryPath = entry.type === 'tool' ? entry.path : undefined;
 
       switch (entry.accessLevel) {
         case 'read':
@@ -166,7 +174,7 @@ export function getWorkspaceRepo(
 
         case 'reviewed':
           return createReviewedWrapper(repo, handle, (origUrl, clone) => {
-            recordClone(origUrl, clone, handle, entry.name, entryPath);
+            recordClone(origUrl, clone, handle);
           });
 
         case 'full':
@@ -176,54 +184,71 @@ export function getWorkspaceRepo(
 
     create() {
       const handle = repo.create();
-      createdUrls.push(handle.url);
+      workspaceHandle.change((d) => {
+        if (!d.mappings) d.mappings = [] as any;
+        (d.mappings as WorkspaceChange[]).push({
+          originalUrl: handle.url,
+          cloneUrl: handle.url,
+          changeType: 'added',
+        });
+      });
       return handle;
     },
   };
 
   const changes: WorkspaceChanges = {
     getChanges(): WorkspaceChange[] {
-      const result: WorkspaceChange[] = [];
-
-      for (const m of mappings.values()) {
-        result.push({
-          originalUrl: m.originalUrl,
-          cloneUrl: m.cloneUrl,
-          changeType: 'modified',
-          name: m.name,
-          path: m.path,
-        });
-      }
-
-      for (const url of createdUrls) {
-        result.push({
-          originalUrl: url,
-          cloneUrl: url,
-          changeType: 'added',
-          name: url,
-        });
-      }
-
-      return result;
+      return workspaceHandle.doc()?.mappings ?? [];
     },
 
     async mergeAll() {
-      for (const m of mappings.values()) {
-        m.originalHandle.merge(m.cloneHandle);
+      const mappings = workspaceHandle.doc()?.mappings ?? [];
+      for (const m of mappings) {
+        if (m.changeType === 'modified') {
+          const cached = handleCache.get(m.originalUrl);
+          if (cached) {
+            cached.originalHandle.merge(cached.cloneHandle);
+          } else {
+            const originalHandle = await repo.find(m.originalUrl);
+            const cloneHandle = await repo.find(m.cloneUrl);
+            originalHandle.merge(cloneHandle);
+          }
+        }
       }
-      mappings.clear();
-      createdUrls.length = 0;
+      handleCache.clear();
+      workspaceHandle.change((d) => {
+        d.mappings = [] as any;
+      });
     },
 
     async mergeSingle(originalUrl: AutomergeUrl) {
-      const m = mappings.get(originalUrl);
-      if (!m) return;
-      m.originalHandle.merge(m.cloneHandle);
-      mappings.delete(originalUrl);
+      const mapping = workspaceHandle.doc()?.mappings?.find((m) => m.originalUrl === originalUrl);
+      if (!mapping || mapping.changeType !== 'modified') return;
+      const cached = handleCache.get(originalUrl);
+      if (cached) {
+        cached.originalHandle.merge(cached.cloneHandle);
+      } else {
+        const originalHandle = await repo.find(originalUrl);
+        const cloneHandle = await repo.find(mapping.cloneUrl);
+        originalHandle.merge(cloneHandle);
+      }
+      handleCache.delete(originalUrl);
+      workspaceHandle.change((d) => {
+        if (d.mappings) {
+          const idx = (d.mappings as WorkspaceChange[]).findIndex((m) => m.originalUrl === originalUrl);
+          if (idx >= 0) (d.mappings as WorkspaceChange[]).splice(idx, 1);
+        }
+      });
     },
 
     revertSingle(originalUrl: AutomergeUrl) {
-      mappings.delete(originalUrl);
+      handleCache.delete(originalUrl);
+      workspaceHandle.change((d) => {
+        if (d.mappings) {
+          const idx = (d.mappings as WorkspaceChange[]).findIndex((m) => m.originalUrl === originalUrl);
+          if (idx >= 0) (d.mappings as WorkspaceChange[]).splice(idx, 1);
+        }
+      });
     },
   };
 

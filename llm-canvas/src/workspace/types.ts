@@ -23,14 +23,13 @@ export type WorkspaceDoc = {
   title: string;
   entries: WorkspaceEntry[];
   restrictToEntries: boolean;
+  mappings?: WorkspaceChange[];
 };
 
 export type WorkspaceChange = {
   originalUrl: AutomergeUrl;
   cloneUrl: AutomergeUrl;
   changeType: 'modified' | 'added';
-  name: string;
-  path?: string;
 };
 
 export type WorkspaceChanges = {

@@ -6,6 +6,7 @@ export const workspaceDatatype: DatatypeImplementation<WorkspaceDoc> = {
     doc.title = 'Workspace';
     doc.entries = [];
     doc.restrictToEntries = false;
+    doc.mappings = [];
   },
 
   getTitle(doc: WorkspaceDoc) {
