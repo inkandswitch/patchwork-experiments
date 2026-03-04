@@ -38,9 +38,6 @@ importers:
       '@codemirror/view':
         specifier: ^6.38.0
         version: 6.39.16
-      '@inkandswitch/patchwork-elements':
-        specifier: 0.0.5
-        version: 0.0.5
       '@inkandswitch/patchwork-plugins':
         specifier: 0.0.4
         version: 0.0.4
@@ -63,6 +60,9 @@ importers:
       '@inkandswitch/patchwork-bootloader':
         specifier: ^0.0.4
         version: 0.0.4(@automerge/automerge-repo-keyhive@0.0.0-alpha.71)(@automerge/automerge-repo@2.5.2-alpha.0)(@automerge/automerge@3.2.4)(@automerge/vanillajs@2.5.0)(@keyhive/keyhive@0.0.0-alpha.40)
+      '@siglum/engine':
+        specifier: ^0.1.4
+        version: 0.1.4
       '@types/react':
         specifier: ^18.3.27
         version: 18.3.28
@@ -428,17 +428,11 @@ packages:
       '@automerge/vanillajs': 2.5.0
       '@keyhive/keyhive': 0.0.0-alpha.40
 
-  '@inkandswitch/patchwork-elements@0.0.5':
-    resolution: {integrity: sha512-4MugOD0opAXa5c3OgsUDVq/yVwp8xe/CEXYWHt2LGPyl5AhMLKQa3t8Rk8qEZe13qMUkfR4kVKp2YdIcI9ghjw==}
-
   '@inkandswitch/patchwork-filesystem@0.0.3':
     resolution: {integrity: sha512-x6yqX1Xyr05ug4YfRyfKJ7jSm/zjhMxU7g/e70nz4QbxfLmcG98LHB9qAkFI2zd+VvKLnTvSpPGu2UvJzXGciw==}
 
   '@inkandswitch/patchwork-plugins@0.0.4':
     resolution: {integrity: sha512-Rh/5sUWxflG08de9Qj1SjBmuID2OydxC3QhlDgYwG/yGkftogvZsSAqIuAD9VSJCgILPU1MJ2708hOkbPLzn3w==}
-
-  '@inkandswitch/patchwork-plugins@0.0.5':
-    resolution: {integrity: sha512-pQv5M7asDdN8J2moTmLoSnqA8FC/vcOuNJnKveL3MzjEhH0GQdIl6vV3k5jxs83ZpB8stwceE85Zsve/QRnVSA==}
 
   '@isaacs/cliui@8.0.2':
     resolution: {integrity: sha512-O8jcjabXaleOG9DQ0+ARXWZBTfnP4WNAqzuiJK7ll44AmxGKv/J2M4TPjxjY3znBCfvBXFzucm1twdyFybFqEA==}
@@ -618,6 +612,12 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@siglum/engine@0.1.4':
+    resolution: {integrity: sha512-m7RvhdTie64VWY727Yhz20PUMXTnRLiNkE2Z24hkXkNdX+k5m86krhB/LQXcqyH7C1plWl5vM1mxkiHPuCwXSQ==}
+
+  '@siglum/filesystem@0.2.1':
+    resolution: {integrity: sha512-c06BUHuURbYgUl71lJKeYXViofNDzxiGYeugGSna42NA5h40WAuBZK3j1ArGWzwhXHk8AJ6xsuk55uhE4biW3w==}
+
   '@swc/helpers@0.5.19':
     resolution: {integrity: sha512-QamiFeIK3txNjgUTNppE6MiG3p7TdninpZu0E0PbqVh1a9FNLT2FRhisaa4NcaX52XVhA5l7Pk58Ft7Sqi/2sA==}
 
@@ -698,6 +698,9 @@ packages:
     resolution: {integrity: sha512-lIyg0szRfYbiy67j9KN8IyeD7q7hcmqnJ1ddWmNt19ItGpNN64mnllmxUNFIOdOm6by97jlL6wfpTTJrmnjWAA==}
     engines: {node: '>=6.0.0'}
     hasBin: true
+
+  blake3-wasm@2.1.5:
+    resolution: {integrity: sha512-F1+K8EbfOZE49dtoPtmxUQrpXaBIl3ICvasLh+nJta0xkz+9kF/7uet9fLnwKqhDrmj6g+6K3Tw9yQPUg2ka5g==}
 
   brace-expansion@2.0.2:
     resolution: {integrity: sha512-Jt0vHyM+jmUBqojB7E1NIYadt0vI0Qxjxd2TErW94wDz+E2LAm5vKMXXwg6ZZBTHPuUlDgQHKXvjGBdfcF1ZDQ==}
@@ -1205,6 +1208,9 @@ packages:
   xstate@5.28.0:
     resolution: {integrity: sha512-Iaqq6ZrUzqeUtA3hC5LQKZfR8ZLzEFTImMHJM3jWEdVvXWdKvvVLXZEiNQWm3SCA9ZbEou/n5rcsna1wb9t28A==}
 
+  xzwasm@0.1.2:
+    resolution: {integrity: sha512-AhkIQcyCRTKQAlI+ENhQBB52AUZF7puNmNleawbpyGAzEyflbMbwIKlU5yN99cgiv5XVlXt0mIeYgQrdQghdsA==}
+
   yallist@3.1.1:
     resolution: {integrity: sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==}
 
@@ -1609,14 +1615,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@inkandswitch/patchwork-elements@0.0.5':
-    dependencies:
-      '@automerge/automerge-repo': 2.5.0
-      '@inkandswitch/patchwork-filesystem': 0.0.3
-      '@inkandswitch/patchwork-plugins': 0.0.5
-    transitivePeerDependencies:
-      - supports-color
-
   '@inkandswitch/patchwork-filesystem@0.0.3':
     dependencies:
       '@automerge/automerge': 3.2.1
@@ -1629,19 +1627,6 @@ snapshots:
       - supports-color
 
   '@inkandswitch/patchwork-plugins@0.0.4':
-    dependencies:
-      '@automerge/automerge': 3.2.1
-      '@automerge/automerge-repo': 2.5.0
-      '@inkandswitch/patchwork-filesystem': 0.0.3
-      '@types/debug': 4.1.12
-      '@types/node': 20.19.35
-      debug: 4.4.3
-      eventemitter3: 5.0.4
-      resolve.exports: 2.0.3
-    transitivePeerDependencies:
-      - supports-color
-
-  '@inkandswitch/patchwork-plugins@0.0.5':
     dependencies:
       '@automerge/automerge': 3.2.1
       '@automerge/automerge-repo': 2.5.0
@@ -1785,6 +1770,14 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.59.0':
     optional: true
 
+  '@siglum/engine@0.1.4':
+    dependencies:
+      '@siglum/filesystem': 0.2.1
+      blake3-wasm: 2.1.5
+      xzwasm: 0.1.2
+
+  '@siglum/filesystem@0.2.1': {}
+
   '@swc/helpers@0.5.19':
     dependencies:
       tslib: 2.8.1
@@ -1866,6 +1859,8 @@ snapshots:
   base64-js@1.5.1: {}
 
   baseline-browser-mapping@2.10.0: {}
+
+  blake3-wasm@2.1.5: {}
 
   brace-expansion@2.0.2:
     dependencies:
@@ -2361,5 +2356,7 @@ snapshots:
   ws@8.19.0: {}
 
   xstate@5.28.0: {}
+
+  xzwasm@0.1.2: {}
 
   yallist@3.1.1: {}

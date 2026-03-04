@@ -4,23 +4,61 @@ import {
 } from "@automerge/automerge-repo-react-hooks";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Download } from "lucide-react";
-import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightSpecialChars, drawSelection, dropCursor } from "@codemirror/view";
+import {
+  EditorView,
+  keymap,
+  lineNumbers,
+  highlightActiveLine,
+  highlightSpecialChars,
+  drawSelection,
+  dropCursor,
+} from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
-import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
-import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, indentOnInput } from "@codemirror/language";
-import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
+import {
+  defaultKeymap,
+  history,
+  historyKeymap,
+  indentWithTab,
+} from "@codemirror/commands";
+import {
+  syntaxHighlighting,
+  defaultHighlightStyle,
+  bracketMatching,
+  foldGutter,
+  indentOnInput,
+} from "@codemirror/language";
+import {
+  autocompletion,
+  completionKeymap,
+  closeBrackets,
+  closeBracketsKeymap,
+} from "@codemirror/autocomplete";
 import { highlightSelectionMatches } from "@codemirror/search";
 import { latex } from "codemirror-lang-latex";
 import { automergeSyncPlugin } from "@automerge/automerge-codemirror";
+import type { SiglumCompiler as SiglumCompilerType } from "@siglum/engine";
 import { toolify, ReactToolProps } from "./react-util";
-import { LaTeXDoc } from "./datatype";
+import { LaTeXDoc, getDocTitle } from "./datatype";
 import type { HtmlGenerator as HtmlGeneratorType } from "latex.js";
 import "./styles.css";
 
-const LATEX_JS_CDN = "https://cdn.jsdelivr.net/npm/latex.js/dist/";
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+const LATEXJS_BASE_URL = "https://cdn.jsdelivr.net/npm/latex.js/dist/";
+const SIGLUM_TEXLIVE_URL = "https://cdn.siglum.org/tl2025";
+
+// ---------------------------------------------------------------------------
+// LaTeX.js (HTML preview)
+// ---------------------------------------------------------------------------
 
 type LatexJsModule = typeof import("latex.js");
-
 let latexjsModule: LatexJsModule | null = null;
 
 async function loadLatexJs(): Promise<LatexJsModule> {
@@ -32,18 +70,74 @@ async function loadLatexJs(): Promise<LatexJsModule> {
 function renderLatexToHtml(content: string, mod: LatexJsModule): string {
   const generator = new mod.HtmlGenerator({ hyphenate: false });
   const parsed = mod.parse(content, { generator }) as HtmlGeneratorType;
-  const htmlDoc = parsed.htmlDocument(LATEX_JS_CDN);
+  const htmlDoc = parsed.htmlDocument(LATEXJS_BASE_URL);
   return "<!DOCTYPE html>\n" + htmlDoc.documentElement.outerHTML;
 }
+
+// ---------------------------------------------------------------------------
+// Siglum (PDF compilation) -- loaded from CDN to avoid WASM bundling issues
+// ---------------------------------------------------------------------------
+
+const SIGLUM_VERSION = "0.1.4";
+const SIGLUM_MODULE_URL = `https://esm.sh/@siglum/engine@${SIGLUM_VERSION}`;
+const SIGLUM_WORKER_URL = `https://cdn.jsdelivr.net/npm/@siglum/engine@${SIGLUM_VERSION}/src/worker.js`;
+
+async function fetchWorkerBlobUrl(): Promise<string> {
+  const resp = await fetch(SIGLUM_WORKER_URL);
+  const text = await resp.text();
+  const blob = new Blob([text], { type: "application/javascript" });
+  return URL.createObjectURL(blob);
+}
+
+let compilerInstance: SiglumCompilerType | null = null;
+
+async function getOrCreateCompiler(
+  onProgress?: (stage: string, detail: string) => void
+): Promise<SiglumCompilerType> {
+  if (compilerInstance?.isReady()) return compilerInstance;
+
+  if (compilerInstance) {
+    await compilerInstance.init();
+    return compilerInstance;
+  }
+
+  const [{ SiglumCompiler }, workerUrl] = await Promise.all([
+    import(/* @vite-ignore */ SIGLUM_MODULE_URL) as Promise<
+      typeof import("@siglum/engine")
+    >,
+    fetchWorkerBlobUrl(),
+  ]);
+
+  compilerInstance = new SiglumCompiler({
+    bundlesUrl: `${SIGLUM_TEXLIVE_URL}/bundles`,
+    wasmUrl: `${SIGLUM_TEXLIVE_URL}/busytex.wasm`,
+    workerUrl,
+    onProgress,
+    verbose: false,
+  });
+
+  await compilerInstance.init();
+  return compilerInstance;
+}
+
+// ---------------------------------------------------------------------------
+// CodeMirror themes
+// ---------------------------------------------------------------------------
 
 type PreviewMode = "html" | "pdf";
 
 const cmTheme = EditorView.theme({
   "&": { height: "100%", fontSize: "13px" },
-  ".cm-scroller": { overflow: "auto", fontFamily: "'SF Mono', Menlo, Monaco, Consolas, monospace" },
+  ".cm-scroller": {
+    overflow: "auto",
+    fontFamily: "'SF Mono', Menlo, Monaco, Consolas, monospace",
+  },
   ".cm-content": { padding: "12px 0" },
   ".cm-gutters": { border: "none", background: "transparent" },
-  ".cm-lineNumbers .cm-gutterElement": { padding: "0 8px 0 12px", minWidth: "32px" },
+  ".cm-lineNumbers .cm-gutterElement": {
+    padding: "0 8px 0 12px",
+    minWidth: "32px",
+  },
   "&.cm-focused": { outline: "none" },
 });
 
@@ -53,24 +147,45 @@ const cmDarkTheme = EditorView.theme(
     ".cm-cursor": { borderLeftColor: "#e5e5e5" },
     ".cm-activeLine": { backgroundColor: "#ffffff08" },
     ".cm-activeLineGutter": { backgroundColor: "#ffffff08" },
-    ".cm-selectionBackground": { backgroundColor: "#ffffff20 !important" },
+    ".cm-selectionBackground": {
+      backgroundColor: "#ffffff20 !important",
+    },
     ".cm-gutters": { color: "#555" },
   },
   { dark: true }
 );
 
-export const LaTeXEditor = ({ docUrl }: ReactToolProps) => {
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+export const LaTeXEditor: React.FC<ReactToolProps> = ({ docUrl }) => {
   const [doc] = useDocument<LaTeXDoc>(docUrl, { suspense: true });
   const handle = useDocHandle<LaTeXDoc>(docUrl, { suspense: true });
-  const editorContainerRef = useRef<HTMLDivElement>(null);
-  const editorViewRef = useRef<EditorView | null>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [latexjsMod, setLatexjsMod] = useState<LatexJsModule | null>(null);
-  const [previewMode, setPreviewMode] = useState<PreviewMode>("html");
-  const renderTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
-  const lastRenderedRef = useRef<string>("");
 
+  const editorContainerRef = useRef<HTMLDivElement>(null);
+
+  // Preview state
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [previewMode, setPreviewMode] = useState<PreviewMode>("html");
+  const [latexjsMod, setLatexjsMod] = useState<LatexJsModule | null>(null);
+
+  // HTML preview
+  const [htmlError, setHtmlError] = useState<string | null>(null);
+  const htmlRenderTimeout = useRef<ReturnType<typeof setTimeout>>();
+  const lastRenderedHtml = useRef("");
+
+  // PDF preview
+  const [pdfStatus, setPdfStatus] = useState<
+    "idle" | "init" | "compiling" | "ready" | "error" | "unsupported"
+  >("idle");
+  const [pdfMessage, setPdfMessage] = useState<string | null>(null);
+  const pdfBlobUrlRef = useRef<string | null>(null);
+  const pdfBytesRef = useRef<Uint8Array | null>(null);
+  const pdfCompileTimeout = useRef<ReturnType<typeof setTimeout>>();
+  const lastCompiledPdf = useRef("");
+
+  // Load LaTeX.js on mount
   useEffect(() => {
     loadLatexJs().then(setLatexjsMod);
   }, []);
@@ -117,82 +232,189 @@ export const LaTeXEditor = ({ docUrl }: ReactToolProps) => {
       parent: editorContainerRef.current,
     });
 
-    editorViewRef.current = view;
-
-    return () => {
-      view.destroy();
-      editorViewRef.current = null;
-    };
+    return () => view.destroy();
   }, [handle]);
 
-  // Render preview
-  const renderPreview = useCallback(
+  // ------ HTML preview ------
+
+  const renderHtmlPreview = useCallback(
     (content: string) => {
-      if (!latexjsMod) return;
-      if (content === lastRenderedRef.current) return;
-      lastRenderedRef.current = content;
+      if (!latexjsMod || previewMode !== "html") return;
+      if (content === lastRenderedHtml.current) return;
+      lastRenderedHtml.current = content;
 
       try {
         const html = renderLatexToHtml(content, latexjsMod);
         if (iframeRef.current) {
+          iframeRef.current.removeAttribute("src");
           iframeRef.current.srcdoc = html;
         }
-        setError(null);
+        setHtmlError(null);
       } catch (e: any) {
         const msg = e.location
           ? `Line ${e.location.start.line}, Col ${e.location.start.column}: ${e.message}`
           : e.message || "Failed to render LaTeX";
-        setError(msg);
+        setHtmlError(msg);
       }
     },
-    [latexjsMod]
+    [latexjsMod, previewMode]
   );
 
-  // Debounced preview updates
   useEffect(() => {
-    if (!doc?.content || !latexjsMod) return;
+    if (!doc?.content || !latexjsMod || previewMode !== "html") return;
 
-    if (renderTimeoutRef.current) clearTimeout(renderTimeoutRef.current);
-
-    renderTimeoutRef.current = setTimeout(() => {
-      renderPreview(doc.content);
+    if (htmlRenderTimeout.current) clearTimeout(htmlRenderTimeout.current);
+    htmlRenderTimeout.current = setTimeout(() => {
+      renderHtmlPreview(doc.content);
     }, 400);
 
     return () => {
-      if (renderTimeoutRef.current) clearTimeout(renderTimeoutRef.current);
+      if (htmlRenderTimeout.current) clearTimeout(htmlRenderTimeout.current);
     };
-  }, [doc?.content, latexjsMod, renderPreview]);
+  }, [doc?.content, latexjsMod, previewMode, renderHtmlPreview]);
+
+  // ------ PDF compilation ------
+
+  const compilePdf = useCallback(
+    async (content: string) => {
+      if (content === lastCompiledPdf.current) return;
+
+      if (typeof SharedArrayBuffer === "undefined") {
+        setPdfStatus("unsupported");
+        setPdfMessage(
+          "PDF compilation requires SharedArrayBuffer, which is not available. " +
+            "The server must send Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy headers."
+        );
+        return;
+      }
+
+      try {
+        setPdfStatus("init");
+        setPdfMessage("Loading TeX engine...");
+
+        const compiler = await getOrCreateCompiler((stage, detail) => {
+          setPdfMessage(`${stage}${detail ? `: ${detail}` : ""}`);
+        });
+
+        setPdfStatus("compiling");
+        setPdfMessage("Compiling...");
+
+        const result = await compiler.compile(content);
+
+        if (result.success && result.pdf) {
+          // Revoke previous blob
+          if (pdfBlobUrlRef.current) URL.revokeObjectURL(pdfBlobUrlRef.current);
+
+          // Copy into a plain ArrayBuffer so Blob accepts it
+          const buf = new ArrayBuffer(result.pdf.byteLength);
+          new Uint8Array(buf).set(result.pdf);
+
+          pdfBytesRef.current = new Uint8Array(buf);
+          const blob = new Blob([buf], { type: "application/pdf" });
+          const url = URL.createObjectURL(blob);
+          pdfBlobUrlRef.current = url;
+
+          if (iframeRef.current) {
+            iframeRef.current.removeAttribute("srcdoc");
+            iframeRef.current.src = url;
+          }
+
+          lastCompiledPdf.current = content;
+          setPdfStatus("ready");
+          setPdfMessage(null);
+        } else {
+          setPdfStatus("error");
+          setPdfMessage(result.error || result.log || "Compilation failed");
+        }
+      } catch (e: any) {
+        setPdfStatus("error");
+        setPdfMessage(e.message || "PDF compilation failed");
+      }
+    },
+    []
+  );
+
+  // Trigger PDF compilation on mode switch or content change
+  useEffect(() => {
+    if (!doc?.content || previewMode !== "pdf") return;
+
+    if (pdfCompileTimeout.current) clearTimeout(pdfCompileTimeout.current);
+    pdfCompileTimeout.current = setTimeout(() => {
+      compilePdf(doc.content);
+    }, 1500);
+
+    return () => {
+      if (pdfCompileTimeout.current) clearTimeout(pdfCompileTimeout.current);
+    };
+  }, [doc?.content, previewMode, compilePdf]);
+
+  // Switch preview content when mode changes
+  useEffect(() => {
+    if (previewMode === "html" && latexjsMod && doc?.content) {
+      lastRenderedHtml.current = "";
+      renderHtmlPreview(doc.content);
+    }
+    if (previewMode === "pdf" && pdfBlobUrlRef.current && iframeRef.current) {
+      iframeRef.current.removeAttribute("srcdoc");
+      iframeRef.current.src = pdfBlobUrlRef.current;
+    }
+  }, [previewMode]);
+
+  // Cleanup blob URLs on unmount
+  useEffect(() => {
+    return () => {
+      if (pdfBlobUrlRef.current) URL.revokeObjectURL(pdfBlobUrlRef.current);
+    };
+  }, []);
+
+  // ------ Download ------
 
   const downloadCurrent = useCallback(() => {
-    if (!doc?.content || !latexjsMod) return;
+    if (!doc?.content) return;
+    const title = getDocTitle(doc.content);
 
-    if (previewMode === "pdf") {
-      iframeRef.current?.contentWindow?.print();
-      return;
-    }
-
-    try {
-      const html = renderLatexToHtml(doc.content, latexjsMod);
-      const blob = new Blob([html], { type: "text/html" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "document.html";
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e: any) {
-      alert("Export failed: " + e.message);
+    if (previewMode === "html" && latexjsMod) {
+      try {
+        const html = renderLatexToHtml(doc.content, latexjsMod);
+        downloadBlob(new Blob([html], { type: "text/html" }), `${title}.html`);
+      } catch (e: any) {
+        alert("Export failed: " + e.message);
+      }
+    } else if (previewMode === "pdf" && pdfBytesRef.current) {
+      downloadBlob(
+        new Blob([pdfBytesRef.current.buffer as ArrayBuffer], {
+          type: "application/pdf",
+        }),
+        `${title}.pdf`
+      );
     }
   }, [doc?.content, latexjsMod, previewMode]);
 
+  // ------ Render ------
+
   if (!doc) return <div className="latex-loading">Loading...</div>;
+
+  const showError =
+    previewMode === "html"
+      ? htmlError
+      : pdfStatus === "error" || pdfStatus === "unsupported"
+        ? pdfMessage
+        : null;
+
+  const showProgress =
+    previewMode === "pdf" &&
+    (pdfStatus === "init" || pdfStatus === "compiling");
+
+  const canDownload =
+    (previewMode === "html" && latexjsMod) ||
+    (previewMode === "pdf" && pdfBytesRef.current);
 
   return (
     <div className="latex-container">
-      {error && (
+      {showError && (
         <div className="latex-error">
           <span className="latex-error-icon">!</span>
-          {error}
+          <span className="latex-error-text">{showError}</span>
         </div>
       )}
       <div className="latex-split">
@@ -218,19 +440,29 @@ export const LaTeXEditor = ({ docUrl }: ReactToolProps) => {
             <button
               onClick={downloadCurrent}
               className="latex-download-btn"
-              title={previewMode === "html" ? "Download HTML" : "Print / Save as PDF"}
+              disabled={!canDownload}
+              title={
+                previewMode === "html" ? "Download HTML" : "Download PDF"
+              }
             >
               <Download size={14} />
             </button>
           </div>
-          {!latexjsMod ? (
+
+          {showProgress && (
+            <div className="latex-progress">
+              <div className="latex-progress-spinner" />
+              <span>{pdfMessage}</span>
+            </div>
+          )}
+
+          {!latexjsMod && previewMode === "html" ? (
             <div className="latex-preview-loading">Loading renderer...</div>
           ) : (
             <iframe
               ref={iframeRef}
               className="latex-preview-iframe"
               title="LaTeX Preview"
-              sandbox="allow-same-origin allow-scripts allow-modals"
             />
           )}
         </div>

@@ -19,14 +19,18 @@ Hello, World!
 
 \\end{document}`;
 
+export function getDocTitle(content: string): string {
+  const match = content.match(/\\title\{([^}]*)\}/);
+  return match ? match[1] : "Untitled";
+}
+
 export const LaTeXDatatype: DatatypeImplementation<LaTeXDoc> = {
   init(doc: LaTeXDoc) {
     doc.content = DEFAULT_CONTENT;
   },
 
   getTitle(doc: LaTeXDoc) {
-    const match = doc.content.match(/\\title\{([^}]*)\}/);
-    return match ? match[1] : "Untitled";
+    return getDocTitle(doc.content);
   },
 
   setTitle(doc: LaTeXDoc, title: string) {
