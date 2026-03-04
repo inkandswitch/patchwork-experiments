@@ -2,7 +2,8 @@ import { useCallback, useState } from 'react';
 import { useDocument } from '@automerge/automerge-repo-react-hooks';
 import type { AutomergeUrl } from '@automerge/automerge-repo';
 import type { AccessLevel, WorkspaceDoc, WorkspaceEntry } from '../types';
-import { DocChip, ToolChip } from '../../shared/tokens.tsx';
+import { DocChip, ToolChip, setTokenDragData } from '../../shared/tokens.tsx';
+import { TokenDropZone, type PatchworkDropItem } from '../../shared/TokenDropZone.tsx';
 
 const ACCESS_LEVELS: { level: AccessLevel; label: string }[] = [
   { level: 'read', label: 'Read-Only' },
@@ -13,13 +14,10 @@ const ACCESS_LEVELS: { level: AccessLevel; label: string }[] = [
 export function WorkspaceUI({ docUrl }: { docUrl: AutomergeUrl }) {
   const [doc, changeDoc] = useDocument<WorkspaceDoc>(docUrl, { suspense: true });
   const [draggedEntry, setDraggedEntry] = useState<AutomergeUrl | null>(null);
-  const [dropTarget, setDropTarget] = useState<AccessLevel | null>(null);
-  const [externalDragLevel, setExternalDragLevel] = useState<AccessLevel | null>(null);
   const [selectedUrl, setSelectedUrl] = useState<AutomergeUrl | null>(null);
 
   const entries = doc?.entries ?? [];
 
-  // Build a lookup from originalUrl -> changeType for indicators
   const changeMap = new Map<AutomergeUrl, 'modified' | 'added'>(
     (doc?.mappings ?? []).map((m) => [m.originalUrl, m.changeType]),
   );
@@ -51,39 +49,41 @@ export function WorkspaceUI({ docUrl }: { docUrl: AutomergeUrl }) {
     [changeDoc, selectedUrl],
   );
 
-  const handleMoveEntry = useCallback(
-    (url: AutomergeUrl, newLevel: AccessLevel) => {
-      changeDoc((d) => {
-        const entry = d.entries.find((e) => e.url === url);
-        if (entry) entry.accessLevel = newLevel;
-      });
-    },
-    [changeDoc],
-  );
+  const handleSectionDrop = useCallback(
+    (items: PatchworkDropItem[], level: AccessLevel) => {
+      if (draggedEntry !== null) {
+        // Internal move: splice out of current position, re-insert with new level
+        const url = draggedEntry;
+        changeDoc((d) => {
+          const idx = d.entries.findIndex((e) => e.url === url);
+          if (idx >= 0) {
+            const [entry] = d.entries.splice(idx, 1);
+            entry.accessLevel = level;
+            d.entries.push(entry);
+          }
+        });
+        setDraggedEntry(null);
+        return;
+      }
 
-  const handleAddEntries = useCallback(
-    (items: { url: string; type: string; name: string }[], level: AccessLevel) => {
+      // External drop: add new entries
       changeDoc((d) => {
         if (!d.entries) d.entries = [] as any;
         for (const item of items) {
           const exists = d.entries.some((e) => e.url === item.url);
           if (exists) continue;
-
-          const isTool =
-            item.type && item.type !== 'raw' && item.type !== 'file' && item.type !== 'folder';
-
-          if (isTool) {
+          if (item.type === 'tool') {
             (d.entries as any[]).push({
               type: 'tool',
-              name: item.name || item.type,
+              name: item.name,
               url: item.url,
-              path: 'tool.js',
+              path: item.path,
               accessLevel: level,
             });
           } else {
             (d.entries as any[]).push({
               type: 'document',
-              name: item.name || 'Untitled',
+              name: item.name !== item.url ? item.name : 'Untitled',
               url: item.url,
               accessLevel: level,
             });
@@ -91,94 +91,22 @@ export function WorkspaceUI({ docUrl }: { docUrl: AutomergeUrl }) {
         }
       });
     },
-    [changeDoc],
+    [draggedEntry, changeDoc],
   );
 
-  const handleInternalDragStart = useCallback((e: React.DragEvent, url: AutomergeUrl) => {
-    e.dataTransfer.setData('text/x-workspace-entry', url);
-    e.dataTransfer.effectAllowed = 'move';
-    setDraggedEntry(url);
+  const handleInternalDragStart = useCallback((e: React.DragEvent, entry: WorkspaceEntry) => {
+    const tokenType = entry.type === 'tool' ? 'tool' : 'document';
+    const path = entry.type === 'tool' ? (entry as any).path ?? '' : undefined;
+    setTokenDragData(e.dataTransfer, entry.url, { type: tokenType, name: entry.name, path });
+    setDraggedEntry(entry.url);
   }, []);
 
   const handleInternalDragEnd = useCallback(() => {
     setDraggedEntry(null);
-    setDropTarget(null);
   }, []);
-
-  const handleBucketDragOver = useCallback((e: React.DragEvent, level: AccessLevel) => {
-    if (e.dataTransfer.types.includes('text/x-workspace-entry')) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      setDropTarget(level);
-    } else if (e.dataTransfer.types.includes('text/x-patchwork-dnd')) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'copy';
-      setExternalDragLevel(level);
-    }
-  }, []);
-
-  const handleBucketDragLeave = useCallback(
-    (e: React.DragEvent, level: AccessLevel) => {
-      if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-      if (dropTarget === level) setDropTarget(null);
-      if (externalDragLevel === level) setExternalDragLevel(null);
-    },
-    [dropTarget, externalDragLevel],
-  );
-
-  const handleBucketDrop = useCallback(
-    (e: React.DragEvent, level: AccessLevel) => {
-      e.preventDefault();
-
-      const entryUrl = e.dataTransfer.getData('text/x-workspace-entry');
-      if (entryUrl) {
-        handleMoveEntry(entryUrl as AutomergeUrl, level);
-        setDraggedEntry(null);
-        setDropTarget(null);
-        return;
-      }
-
-      const dndData = e.dataTransfer.getData('text/x-patchwork-dnd');
-      if (dndData) {
-        const { items } = JSON.parse(dndData) as {
-          source: string;
-          items: { url: string; type: string; name: string }[];
-        };
-        if (items?.length) handleAddEntries(items, level);
-        setExternalDragLevel(null);
-        return;
-      }
-    },
-    [handleMoveEntry, handleAddEntries],
-  );
-
-  const handleGlobalDragOver = useCallback((e: React.DragEvent) => {
-    if (e.dataTransfer.types.includes('text/x-patchwork-dnd')) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'copy';
-    }
-  }, []);
-
-  const handleGlobalDrop = useCallback(
-    (e: React.DragEvent) => {
-      const dndData = e.dataTransfer.getData('text/x-patchwork-dnd');
-      if (!dndData) return;
-      e.preventDefault();
-      const { items } = JSON.parse(dndData) as {
-        source: string;
-        items: { url: string; type: string; name: string }[];
-      };
-      if (items?.length) handleAddEntries(items, 'read');
-    },
-    [handleAddEntries],
-  );
 
   return (
-    <div
-      style={{ display: 'flex', flexDirection: 'row', height: '100%', overflow: 'hidden' }}
-      onDragOver={handleGlobalDragOver}
-      onDrop={handleGlobalDrop}
-    >
+    <div style={{ display: 'flex', flexDirection: 'row', height: '100%', overflow: 'hidden' }}>
       {/* Left panel — file tree */}
       <div
         style={{
@@ -237,77 +165,79 @@ export function WorkspaceUI({ docUrl }: { docUrl: AutomergeUrl }) {
         <div style={{ flex: 1, overflow: 'auto', padding: '4px 8px 8px' }}>
           {ACCESS_LEVELS.map(({ level, label }) => {
             const levelEntries = entriesByLevel(level);
-            const isDropHere = dropTarget === level || externalDragLevel === level;
 
             return (
-              <div
+              <TokenDropZone
                 key={level}
-                style={{
-                  marginBottom: 8,
-                  background: isDropHere ? '#eff6ff' : '#f5f5f5',
-                  border: `1px solid ${isDropHere ? '#93c5fd' : '#e5e7eb'}`,
-                  borderRadius: 6,
-                  transition: 'background 0.15s, border-color 0.15s',
-                  overflow: 'hidden',
-                }}
-                onDragOver={(e) => handleBucketDragOver(e, level)}
-                onDragLeave={(e) => handleBucketDragLeave(e, level)}
-                onDrop={(e) => handleBucketDrop(e, level)}
+                style={{ marginBottom: 8 }}
+                onDrop={(items) => handleSectionDrop(items, level)}
               >
-                {/* Section label */}
-                <div
-                  style={{
-                    padding: '5px 10px',
-                    fontSize: 10,
-                    fontWeight: 700,
-                    color: '#6b7280',
-                    letterSpacing: '0.05em',
-                    textTransform: 'uppercase',
-                    borderBottom: levelEntries.length > 0 ? '1px solid #e5e7eb' : 'none',
-                    userSelect: 'none',
-                  }}
-                >
-                  {label}
-                  {levelEntries.length > 0 && (
-                    <span style={{ fontWeight: 400, marginLeft: 4, color: '#9ca3af' }}>
-                      {levelEntries.length}
-                    </span>
-                  )}
-                </div>
-
-                {/* Entry rows */}
-                {levelEntries.length > 0 && (
-                  <div style={{ padding: '4px 6px', display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    {levelEntries.map((entry) => (
-                      <EntryRow
-                        key={entry.url}
-                        entry={entry}
-                        isDragging={draggedEntry === entry.url}
-                        isSelected={selectedUrl === entry.url}
-                        changeType={changeMap.get(entry.url) ?? null}
-                        onSelect={() => setSelectedUrl(entry.url)}
-                        onDragStart={(e) => handleInternalDragStart(e, entry.url)}
-                        onDragEnd={handleInternalDragEnd}
-                        onRemove={() => handleRemoveEntry(entry.url)}
-                      />
-                    ))}
-                  </div>
-                )}
-
-                {/* Empty drop hint */}
-                {levelEntries.length === 0 && (
+                {(isDraggedOver) => (
                   <div
                     style={{
-                      padding: '6px 10px 8px',
-                      fontSize: 10,
-                      color: '#ccc',
-                      fontStyle: 'italic',
+                      background: isDraggedOver ? '#eff6ff' : '#f5f5f5',
+                      border: `1px solid ${isDraggedOver ? '#93c5fd' : '#e5e7eb'}`,
+                      borderRadius: 6,
+                      transition: 'background 0.15s, border-color 0.15s',
+                      overflow: 'hidden',
                     }}
                   >
-                    Drop items here
+                    {/* Section label */}
+                    <div
+                      style={{
+                        padding: '5px 10px',
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: '#6b7280',
+                        letterSpacing: '0.05em',
+                        textTransform: 'uppercase',
+                        borderBottom: levelEntries.length > 0 ? '1px solid #e5e7eb' : 'none',
+                        userSelect: 'none',
+                      }}
+                    >
+                      {label}
+                      {levelEntries.length > 0 && (
+                        <span style={{ fontWeight: 400, marginLeft: 4, color: '#9ca3af' }}>
+                          {levelEntries.length}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Entry rows */}
+                    {levelEntries.length > 0 && (
+                      <div style={{ padding: '4px 6px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        {levelEntries.map((entry) => (
+                          <EntryRow
+                            key={entry.url}
+                            entry={entry}
+                            isDragging={draggedEntry === entry.url}
+                            isSelected={selectedUrl === entry.url}
+                            changeType={changeMap.get(entry.url) ?? null}
+                            onSelect={() => setSelectedUrl(entry.url)}
+                            onDragStart={(e) => handleInternalDragStart(e, entry)}
+                            onDragEnd={handleInternalDragEnd}
+                            onRemove={() => handleRemoveEntry(entry.url)}
+                          />
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Empty drop hint */}
+                    {levelEntries.length === 0 && (
+                      <div
+                        style={{
+                          padding: '6px 10px 8px',
+                          fontSize: 10,
+                          color: '#ccc',
+                          fontStyle: 'italic',
+                        }}
+                      >
+                        Drop items here
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
+              </TokenDropZone>
             );
           })}
 
@@ -409,7 +339,6 @@ function EntryRow({
         outline: isSelected ? '1px solid #93c5fd' : 'none',
       }}
     >
-      {/* Chip renders the full visual token */}
       <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
         {entry.type === 'tool' ? (
           <ToolChip
@@ -427,7 +356,6 @@ function EntryRow({
         )}
       </div>
 
-      {/* Change indicators */}
       {changeType === 'modified' && (
         <span
           title="Modified"
