@@ -1,124 +1,178 @@
-import { useDocument } from "@automerge/automerge-repo-react-hooks";
-import { updateText } from "@automerge/automerge";
+import {
+  useDocument,
+  useDocHandle,
+} from "@automerge/automerge-repo-react-hooks";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FileDown, FileText, Printer } from "lucide-react";
+import { Download } from "lucide-react";
+import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightSpecialChars, drawSelection, dropCursor } from "@codemirror/view";
+import { EditorState } from "@codemirror/state";
+import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, indentOnInput } from "@codemirror/language";
+import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
+import { highlightSelectionMatches } from "@codemirror/search";
+import { latex } from "codemirror-lang-latex";
+import { automergeSyncPlugin } from "@automerge/automerge-codemirror";
 import { toolify, ReactToolProps } from "./react-util";
 import { LaTeXDoc } from "./datatype";
+import type { HtmlGenerator as HtmlGeneratorType } from "latex.js";
 import "./styles.css";
 
 const LATEX_JS_CDN = "https://cdn.jsdelivr.net/npm/latex.js/dist/";
 
-type LatexJsModule = {
-  parse: (
-    input: string,
-    options: { generator: any }
-  ) => { htmlDocument: (baseURL?: string) => Document };
-  HtmlGenerator: new (options?: { hyphenate?: boolean }) => any;
-};
+type LatexJsModule = typeof import("latex.js");
 
 let latexjsModule: LatexJsModule | null = null;
 
 async function loadLatexJs(): Promise<LatexJsModule> {
   if (latexjsModule) return latexjsModule;
-  latexjsModule = (await import("latex.js")) as unknown as LatexJsModule;
+  latexjsModule = await import("latex.js");
   return latexjsModule;
 }
 
-function renderLatexToHtml(
-  content: string,
-  latexjs: LatexJsModule
-): string {
-  const generator = new latexjs.HtmlGenerator({ hyphenate: false });
-  const parsed = latexjs.parse(content, { generator });
+function renderLatexToHtml(content: string, mod: LatexJsModule): string {
+  const generator = new mod.HtmlGenerator({ hyphenate: false });
+  const parsed = mod.parse(content, { generator }) as HtmlGeneratorType;
   const htmlDoc = parsed.htmlDocument(LATEX_JS_CDN);
   return "<!DOCTYPE html>\n" + htmlDoc.documentElement.outerHTML;
 }
 
+type PreviewMode = "html" | "pdf";
+
+const cmTheme = EditorView.theme({
+  "&": { height: "100%", fontSize: "13px" },
+  ".cm-scroller": { overflow: "auto", fontFamily: "'SF Mono', Menlo, Monaco, Consolas, monospace" },
+  ".cm-content": { padding: "12px 0" },
+  ".cm-gutters": { border: "none", background: "transparent" },
+  ".cm-lineNumbers .cm-gutterElement": { padding: "0 8px 0 12px", minWidth: "32px" },
+  "&.cm-focused": { outline: "none" },
+});
+
+const cmDarkTheme = EditorView.theme(
+  {
+    "&": { backgroundColor: "#1a1a1a", color: "#e5e5e5" },
+    ".cm-cursor": { borderLeftColor: "#e5e5e5" },
+    ".cm-activeLine": { backgroundColor: "#ffffff08" },
+    ".cm-activeLineGutter": { backgroundColor: "#ffffff08" },
+    ".cm-selectionBackground": { backgroundColor: "#ffffff20 !important" },
+    ".cm-gutters": { color: "#555" },
+  },
+  { dark: true }
+);
+
 export const LaTeXEditor = ({ docUrl }: ReactToolProps) => {
-  const [doc, changeDoc] = useDocument<LaTeXDoc>(docUrl, { suspense: true });
+  const [doc] = useDocument<LaTeXDoc>(docUrl, { suspense: true });
+  const handle = useDocHandle<LaTeXDoc>(docUrl, { suspense: true });
+  const editorContainerRef = useRef<HTMLDivElement>(null);
+  const editorViewRef = useRef<EditorView | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [error, setError] = useState<string | null>(null);
-  const [rendering, setRendering] = useState(false);
-  const [latexjs, setLatexjs] = useState<LatexJsModule | null>(null);
+  const [latexjsMod, setLatexjsMod] = useState<LatexJsModule | null>(null);
+  const [previewMode, setPreviewMode] = useState<PreviewMode>("html");
   const renderTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const lastRenderedRef = useRef<string>("");
 
   useEffect(() => {
-    loadLatexJs().then(setLatexjs);
+    loadLatexJs().then(setLatexjsMod);
   }, []);
 
+  // Initialize CodeMirror
+  useEffect(() => {
+    if (!editorContainerRef.current || !handle) return;
+
+    const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+
+    const state = EditorState.create({
+      doc: handle.doc()?.content ?? "",
+      extensions: [
+        lineNumbers(),
+        highlightActiveLine(),
+        highlightSpecialChars(),
+        drawSelection(),
+        dropCursor(),
+        indentOnInput(),
+        bracketMatching(),
+        closeBrackets(),
+        foldGutter(),
+        autocompletion(),
+        highlightSelectionMatches(),
+        history(),
+        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+        keymap.of([
+          ...closeBracketsKeymap,
+          ...defaultKeymap,
+          ...historyKeymap,
+          ...completionKeymap,
+          indentWithTab,
+        ]),
+        latex(),
+        automergeSyncPlugin({ handle: handle as any, path: ["content"] }),
+        cmTheme,
+        ...(isDark ? [cmDarkTheme] : []),
+        EditorView.lineWrapping,
+      ],
+    });
+
+    const view = new EditorView({
+      state,
+      parent: editorContainerRef.current,
+    });
+
+    editorViewRef.current = view;
+
+    return () => {
+      view.destroy();
+      editorViewRef.current = null;
+    };
+  }, [handle]);
+
+  // Render preview
   const renderPreview = useCallback(
     (content: string) => {
-      if (!latexjs) return;
+      if (!latexjsMod) return;
       if (content === lastRenderedRef.current) return;
       lastRenderedRef.current = content;
 
-      setRendering(true);
       try {
-        const html = renderLatexToHtml(content, latexjs);
+        const html = renderLatexToHtml(content, latexjsMod);
         if (iframeRef.current) {
           iframeRef.current.srcdoc = html;
         }
         setError(null);
       } catch (e: any) {
-        const msg =
-          e.location
-            ? `Line ${e.location.start.line}, Col ${e.location.start.column}: ${e.message}`
-            : e.message || "Failed to render LaTeX";
+        const msg = e.location
+          ? `Line ${e.location.start.line}, Col ${e.location.start.column}: ${e.message}`
+          : e.message || "Failed to render LaTeX";
         setError(msg);
-      } finally {
-        setRendering(false);
       }
     },
-    [latexjs]
+    [latexjsMod]
   );
 
+  // Debounced preview updates
   useEffect(() => {
-    if (!doc?.content || !latexjs) return;
+    if (!doc?.content || !latexjsMod) return;
 
-    if (renderTimeoutRef.current) {
-      clearTimeout(renderTimeoutRef.current);
-    }
+    if (renderTimeoutRef.current) clearTimeout(renderTimeoutRef.current);
 
     renderTimeoutRef.current = setTimeout(() => {
       renderPreview(doc.content);
     }, 400);
 
     return () => {
-      if (renderTimeoutRef.current) {
-        clearTimeout(renderTimeoutRef.current);
-      }
+      if (renderTimeoutRef.current) clearTimeout(renderTimeoutRef.current);
     };
-  }, [doc?.content, latexjs, renderPreview]);
+  }, [doc?.content, latexjsMod, renderPreview]);
 
-  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newContent = e.target.value;
-    changeDoc((doc) => {
-      updateText(doc, ["content"], newContent);
-    });
-  };
+  const downloadCurrent = useCallback(() => {
+    if (!doc?.content || !latexjsMod) return;
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Tab") {
-      e.preventDefault();
-      const target = e.currentTarget;
-      const start = target.selectionStart;
-      const end = target.selectionEnd;
-      const newContent =
-        doc!.content.substring(0, start) + "  " + doc!.content.substring(end);
-      changeDoc((doc) => {
-        updateText(doc, ["content"], newContent);
-      });
-      requestAnimationFrame(() => {
-        target.selectionStart = target.selectionEnd = start + 2;
-      });
+    if (previewMode === "pdf") {
+      iframeRef.current?.contentWindow?.print();
+      return;
     }
-  };
 
-  const exportHTML = useCallback(() => {
-    if (!doc?.content || !latexjs) return;
     try {
-      const html = renderLatexToHtml(doc.content, latexjs);
+      const html = renderLatexToHtml(doc.content, latexjsMod);
       const blob = new Blob([html], { type: "text/html" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -129,39 +183,12 @@ export const LaTeXEditor = ({ docUrl }: ReactToolProps) => {
     } catch (e: any) {
       alert("Export failed: " + e.message);
     }
-  }, [doc?.content, latexjs]);
-
-  const exportPDF = useCallback(() => {
-    if (!iframeRef.current?.contentWindow) return;
-    iframeRef.current.contentWindow.print();
-  }, []);
+  }, [doc?.content, latexjsMod, previewMode]);
 
   if (!doc) return <div className="latex-loading">Loading...</div>;
 
   return (
     <div className="latex-container">
-      <div className="latex-toolbar">
-        <span className="latex-toolbar-label">LaTeX</span>
-        <div className="latex-toolbar-actions">
-          {rendering && <span className="latex-status">Rendering...</span>}
-          <button
-            onClick={exportHTML}
-            className="latex-btn"
-            title="Export as HTML"
-          >
-            <FileText size={14} />
-            <span>HTML</span>
-          </button>
-          <button
-            onClick={exportPDF}
-            className="latex-btn"
-            title="Print / Save as PDF"
-          >
-            <Printer size={14} />
-            <span>PDF</span>
-          </button>
-        </div>
-      </div>
       {error && (
         <div className="latex-error">
           <span className="latex-error-icon">!</span>
@@ -170,25 +197,40 @@ export const LaTeXEditor = ({ docUrl }: ReactToolProps) => {
       )}
       <div className="latex-split">
         <div className="latex-editor-pane">
-          <textarea
-            className="latex-textarea"
-            value={doc.content}
-            onChange={handleContentChange}
-            onKeyDown={handleKeyDown}
-            spellCheck={false}
-            autoCapitalize="off"
-            autoCorrect="off"
-          />
+          <div ref={editorContainerRef} className="latex-cm-container" />
         </div>
         <div className="latex-preview-pane">
-          {!latexjs ? (
+          <div className="latex-preview-controls">
+            <div className="latex-mode-toggle">
+              <button
+                className={`latex-mode-btn ${previewMode === "html" ? "active" : ""}`}
+                onClick={() => setPreviewMode("html")}
+              >
+                HTML
+              </button>
+              <button
+                className={`latex-mode-btn ${previewMode === "pdf" ? "active" : ""}`}
+                onClick={() => setPreviewMode("pdf")}
+              >
+                PDF
+              </button>
+            </div>
+            <button
+              onClick={downloadCurrent}
+              className="latex-download-btn"
+              title={previewMode === "html" ? "Download HTML" : "Print / Save as PDF"}
+            >
+              <Download size={14} />
+            </button>
+          </div>
+          {!latexjsMod ? (
             <div className="latex-preview-loading">Loading renderer...</div>
           ) : (
             <iframe
               ref={iframeRef}
               className="latex-preview-iframe"
               title="LaTeX Preview"
-              sandbox="allow-same-origin allow-scripts"
+              sandbox="allow-same-origin allow-scripts allow-modals"
             />
           )}
         </div>
