@@ -7,7 +7,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { UnixFileEntry } from "@inkandswitch/patchwork-filesystem";
 import { automergeUrlToServiceWorkerUrl } from "@inkandswitch/patchwork-filesystem";
 import type { ToolElement } from "@inkandswitch/patchwork-plugins";
-import { EmbedShapeUtil, EmbedShapeTool, embedUiOverrides, EmbedToolbar, setEmbedToolContext, getDefaultToolId, loadDatatype } from "./EmbedShape/index.ts";
+import {
+  EmbedShapeUtil, EmbedShapeTool, embedUiOverrides, EmbedToolbar, setEmbedToolContext,
+  getDefaultToolId, loadDatatype,
+  DocTokenShapeUtil, ToolTokenShapeUtil,
+  DOC_TOKEN_SHAPE_TYPE, TOOL_TOKEN_SHAPE_TYPE,
+  getTokenDragData,
+} from "./EmbedShape/index.ts";
 import { EMBED_SHAPE_TYPE } from "./EmbedShape/EmbedShapeUtil.tsx";
 
 const MIME_TO_EXT: Record<string, string> = {
@@ -57,14 +63,14 @@ function useContactInfo() {
   };
 }
 
-const VERSION = "0.0.2";
+const VERSION = "0.0.3";
 
 function VersionBadge() {
   return (
     <div
       style={{
         position: "absolute",
-        bottom: "8px",
+        bottom: "58px",
         left: "8px",
         fontSize: "10px",
         color: "var(--color-text-3, #aaa)",
@@ -88,7 +94,7 @@ export function TldrawTool({ docUrl, element }: { docUrl: AutomergeUrl; element:
   const store = useAutomergeStore({
     handle,
     userId: contactInfo.userId,
-    shapeUtils: [EmbedShapeUtil],
+    shapeUtils: [EmbedShapeUtil, DocTokenShapeUtil, ToolTokenShapeUtil],
   });
 
   useAutomergePresence({
@@ -102,7 +108,7 @@ export function TldrawTool({ docUrl, element }: { docUrl: AutomergeUrl; element:
       inferDarkMode
       autoFocus
       store={store}
-      shapeUtils={[EmbedShapeUtil]}
+      shapeUtils={[EmbedShapeUtil, DocTokenShapeUtil, ToolTokenShapeUtil]}
       tools={[EmbedShapeTool]}
       overrides={embedUiOverrides}
       components={{ Toolbar: EmbedToolbar, InFrontOfTheCanvas: VersionBadge }}
@@ -213,16 +219,15 @@ function usePatchworkDrop() {
   useEffect(() => {
     const container = editor.getContainer();
 
+    const isPatchworkDrop = (e: DragEvent) =>
+      e.dataTransfer?.types.includes("text/x-patchwork-urls") ?? false;
+
     const handleDragEnter = (e: DragEvent) => {
-      if (e.dataTransfer?.types.includes("text/x-patchwork-urls")) {
-        e.preventDefault();
-      }
+      if (isPatchworkDrop(e)) e.preventDefault();
     };
 
     const handleDragOver = (e: DragEvent) => {
-      if (e.dataTransfer?.types.includes("text/x-patchwork-urls")) {
-        e.preventDefault();
-      }
+      if (isPatchworkDrop(e)) e.preventDefault();
     };
 
     const handleDrop = (e: DragEvent) => {
@@ -239,63 +244,90 @@ function usePatchworkDrop() {
         return;
       }
 
+      // Check if this is a token drag
+      const tokenData = e.dataTransfer ? getTokenDragData(e.dataTransfer) : null;
+
       const dropPoint = editor.screenToPage({ x: e.clientX, y: e.clientY });
-      const DEFAULT_W = 640;
-      const DEFAULT_H = 480;
       const STAGGER = 20;
 
       for (let i = 0; i < urls.length; i++) {
         const docUrl = urls[i] as AutomergeUrl;
         const x = dropPoint.x + i * STAGGER;
         const y = dropPoint.y + i * STAGGER;
-        const shapeId = createShapeId();
 
-        editor.createShape({
-          id: shapeId,
-          type: EMBED_SHAPE_TYPE,
-          x,
-          y,
-          rotation: 0,
-          parentId: editor.getCurrentPageId(),
-          props: {
-            w: DEFAULT_W,
-            h: DEFAULT_H,
-            docUrl,
-            docName: "Loading\u2026",
-            docType: "",
-            toolId: "",
-          },
-        } as any);
-
-        (async () => {
-          try {
-            const handle = await repo.find(docUrl);
-            const doc = handle.doc() as any;
-            const datatypeId: string = doc?.["@patchwork"]?.type ?? "";
-            const [datatype, toolId] = await Promise.all([
-              datatypeId ? loadDatatype(datatypeId) : Promise.resolve(undefined),
-              Promise.resolve(datatypeId ? getDefaultToolId(datatypeId) : ""),
-            ]);
-            const docName: string = (datatype as any)?.name ?? datatypeId ?? docUrl;
-
-            if (editor.getShape(shapeId)) {
-              editor.updateShape({
-                id: shapeId,
-                type: EMBED_SHAPE_TYPE,
-                props: { docUrl, docName, docType: datatypeId, toolId },
-              } as any);
-            }
-          } catch (err) {
-            console.error("[patchwork-drop] failed to resolve embed:", err);
-            if (editor.getShape(shapeId)) {
-              editor.updateShape({
-                id: shapeId,
-                type: EMBED_SHAPE_TYPE,
-                props: { docName: "Error" },
-              } as any);
-            }
+        if (tokenData) {
+          // --- Token drop ---
+          if (tokenData.type === "document") {
+            editor.createShape({
+              id: createShapeId(),
+              type: DOC_TOKEN_SHAPE_TYPE,
+              x,
+              y,
+              rotation: 0,
+              parentId: editor.getCurrentPageId(),
+              props: { docUrl, name: tokenData.name },
+            } as any);
+          } else {
+            editor.createShape({
+              id: createShapeId(),
+              type: TOOL_TOKEN_SHAPE_TYPE,
+              x,
+              y,
+              rotation: 0,
+              parentId: editor.getCurrentPageId(),
+              props: { docUrl, name: tokenData.name, path: tokenData.path ?? "" },
+            } as any);
           }
-        })();
+        } else {
+          // --- Embed drop (existing behaviour) ---
+          const shapeId = createShapeId();
+          editor.createShape({
+            id: shapeId,
+            type: EMBED_SHAPE_TYPE,
+            x,
+            y,
+            rotation: 0,
+            parentId: editor.getCurrentPageId(),
+            props: {
+              w: 640,
+              h: 480,
+              docUrl,
+              docName: "Loading\u2026",
+              docType: "",
+              toolId: "",
+            },
+          } as any);
+
+          (async () => {
+            try {
+              const handle = await repo.find(docUrl);
+              const doc = handle.doc() as any;
+              const datatypeId: string = doc?.["@patchwork"]?.type ?? "";
+              const [datatype, toolId] = await Promise.all([
+                datatypeId ? loadDatatype(datatypeId) : Promise.resolve(undefined),
+                Promise.resolve(datatypeId ? getDefaultToolId(datatypeId) : ""),
+              ]);
+              const docName: string = (datatype as any)?.name ?? datatypeId ?? docUrl;
+
+              if (editor.getShape(shapeId)) {
+                editor.updateShape({
+                  id: shapeId,
+                  type: EMBED_SHAPE_TYPE,
+                  props: { docUrl, docName, docType: datatypeId, toolId },
+                } as any);
+              }
+            } catch (err) {
+              console.error("[patchwork-drop] failed to resolve embed:", err);
+              if (editor.getShape(shapeId)) {
+                editor.updateShape({
+                  id: shapeId,
+                  type: EMBED_SHAPE_TYPE,
+                  props: { docName: "Error" },
+                } as any);
+              }
+            }
+          })();
+        }
       }
     };
 

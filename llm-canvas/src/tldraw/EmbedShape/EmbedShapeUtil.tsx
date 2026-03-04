@@ -1,25 +1,11 @@
-import {
-  HTMLContainer,
-  Rectangle2d,
-  ShapeUtil,
-  T,
-  createShapeId,
-  resizeBox,
-  useEditor,
-  useValue,
-  type RecordProps,
-  type TLResizeInfo,
-  type TLShape,
-} from '@tldraw/tldraw';
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import {
-  getSupportedToolsForType,
-  type LoadedTool,
-} from '@inkandswitch/patchwork-plugins';
+import { HTMLContainer, Rectangle2d, ShapeUtil, T, createShapeId, resizeBox, useEditor, useValue, type RecordProps, type TLResizeInfo, type TLShape } from "@tldraw/tldraw";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { getSupportedToolsForType, type LoadedTool } from "@inkandswitch/patchwork-plugins";
+import { DocChip, ToolChip, ToolIcon } from "./TokenShapeUtil.tsx";
 
-export const EMBED_SHAPE_TYPE = 'tile-embed' as const;
+export const EMBED_SHAPE_TYPE = "tile-embed" as const;
 
-declare module '@tldraw/tldraw' {
+declare module "@tldraw/tldraw" {
   export interface TLGlobalShapePropsMap {
     [EMBED_SHAPE_TYPE]: {
       w: number;
@@ -35,7 +21,7 @@ declare module '@tldraw/tldraw' {
 export type EmbedShape = TLShape<typeof EMBED_SHAPE_TYPE>;
 
 export function makeEmbedShapeId(docUrl: string) {
-  return createShapeId(docUrl.replace(/[^a-zA-Z0-9]/g, '_'));
+  return createShapeId(docUrl.replace(/[^a-zA-Z0-9]/g, "_"));
 }
 
 export class EmbedShapeUtil extends ShapeUtil<EmbedShape> {
@@ -50,17 +36,23 @@ export class EmbedShapeUtil extends ShapeUtil<EmbedShape> {
     toolId: T.string,
   };
 
-  getDefaultProps(): EmbedShape['props'] {
-    return { w: 640, h: 480, docUrl: '', docName: 'Untitled', docType: '', toolId: '' };
+  getDefaultProps(): EmbedShape["props"] {
+    return { w: 640, h: 480, docUrl: "", docName: "Untitled", docType: "", toolId: "" };
   }
 
   getGeometry(shape: EmbedShape) {
     return new Rectangle2d({ width: shape.props.w, height: shape.props.h, isFilled: true });
   }
 
-  override canResize() { return true; }
-  override canEdit() { return false; }
-  override hideRotateHandle() { return true; }
+  override canResize() {
+    return true;
+  }
+  override canEdit() {
+    return false;
+  }
+  override hideRotateHandle() {
+    return true;
+  }
 
   override onResize(shape: any, info: TLResizeInfo<any>) {
     return resizeBox(shape, info);
@@ -76,18 +68,14 @@ export class EmbedShapeUtil extends ShapeUtil<EmbedShape> {
 }
 
 // Closes when a pointerdown lands outside `ref`, but only while `active`.
-function useOutsideClick(
-  ref: React.RefObject<Element | null>,
-  onClose: () => void,
-  active: boolean,
-) {
+function useOutsideClick(ref: React.RefObject<Element | null>, onClose: () => void, active: boolean) {
   useEffect(() => {
     if (!active) return;
     const handler = (e: PointerEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     };
-    window.addEventListener('pointerdown', handler, true);
-    return () => window.removeEventListener('pointerdown', handler, true);
+    window.addEventListener("pointerdown", handler, true);
+    return () => window.removeEventListener("pointerdown", handler, true);
   }, [ref, onClose, active]);
 }
 
@@ -106,11 +94,7 @@ function EmbedShapeComponent({ shape }: { shape: EmbedShape }) {
   const { docUrl, docName, docType, toolId } = shape.props;
   const editor = useEditor();
   const tools = useSupportedTools(docType);
-  const isSelectTool = useValue(
-    'is select tool',
-    () => editor.getCurrentToolId() === 'select',
-    [editor],
-  );
+  const isSelectTool = useValue("is select tool", () => editor.getCurrentToolId() === "select", [editor]);
 
   const [isFocused, setIsFocused] = useState(false);
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
@@ -119,8 +103,16 @@ function EmbedShapeComponent({ shape }: { shape: EmbedShape }) {
 
   const currentTool = tools.find((t) => t.id === toolId) ?? tools[0];
 
-  useOutsideClick(contentRef, useCallback(() => setIsFocused(false), []), isFocused);
-  useOutsideClick(toolMenuRef, useCallback(() => setToolMenuOpen(false), []), toolMenuOpen);
+  useOutsideClick(
+    contentRef,
+    useCallback(() => setIsFocused(false), []),
+    isFocused,
+  );
+  useOutsideClick(
+    toolMenuRef,
+    useCallback(() => setToolMenuOpen(false), []),
+    toolMenuOpen,
+  );
 
   // Block tldraw keyboard / wheel / pointer events from reaching the canvas
   // while the embedded content is focused.
@@ -130,24 +122,26 @@ function EmbedShapeComponent({ shape }: { shape: EmbedShape }) {
     if (!el) return;
 
     const stopKey = (e: KeyboardEvent) => e.stopPropagation();
-    const stopWheel = (e: WheelEvent) => { if (!e.ctrlKey) e.stopPropagation(); };
+    const stopWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) e.stopPropagation();
+    };
     const stopPointer = (e: PointerEvent) => e.stopPropagation();
 
-    el.addEventListener('keydown', stopKey);
-    el.addEventListener('keyup', stopKey);
-    el.addEventListener('keypress', stopKey);
-    el.addEventListener('wheel', stopWheel);
-    el.addEventListener('pointerdown', stopPointer, true);
-    el.addEventListener('pointermove', stopPointer, true);
-    el.addEventListener('pointerup', stopPointer, true);
+    el.addEventListener("keydown", stopKey);
+    el.addEventListener("keyup", stopKey);
+    el.addEventListener("keypress", stopKey);
+    el.addEventListener("wheel", stopWheel);
+    el.addEventListener("pointerdown", stopPointer, true);
+    el.addEventListener("pointermove", stopPointer, true);
+    el.addEventListener("pointerup", stopPointer, true);
     return () => {
-      el.removeEventListener('keydown', stopKey);
-      el.removeEventListener('keyup', stopKey);
-      el.removeEventListener('keypress', stopKey);
-      el.removeEventListener('wheel', stopWheel);
-      el.removeEventListener('pointerdown', stopPointer, true);
-      el.removeEventListener('pointermove', stopPointer, true);
-      el.removeEventListener('pointerup', stopPointer, true);
+      el.removeEventListener("keydown", stopKey);
+      el.removeEventListener("keyup", stopKey);
+      el.removeEventListener("keypress", stopKey);
+      el.removeEventListener("wheel", stopWheel);
+      el.removeEventListener("pointerdown", stopPointer, true);
+      el.removeEventListener("pointermove", stopPointer, true);
+      el.removeEventListener("pointerup", stopPointer, true);
     };
   }, [isFocused]);
 
@@ -163,92 +157,55 @@ function EmbedShapeComponent({ shape }: { shape: EmbedShape }) {
     <HTMLContainer>
       <div
         style={{
-          width: '100%',
-          height: '100%',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          border: '1px solid #e5e7eb',
-          borderRadius: '6px',
-          background: '#ffffff',
-          boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
-          pointerEvents: 'all',
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+          border: "1px solid #e5e7eb",
+          borderRadius: "6px",
+          background: "#ffffff",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
+          pointerEvents: "all",
         }}
       >
         {/* Titlebar */}
         <div
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            height: '28px',
-            padding: '0 10px',
-            borderBottom: '1px solid #e5e7eb',
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            height: "28px",
+            padding: "15px 5px",
+            borderBottom: "1px solid #e5e7eb",
             flexShrink: 0,
-            cursor: 'grab',
-            userSelect: 'none',
-            background: '#fafafa',
+            cursor: "grab",
+            userSelect: "none",
+            background: "#fafafa",
           }}
         >
-          {/* Doc name — left */}
-          <span
-            style={{
-              fontSize: '12px',
-              color: '#374151',
-              fontFamily: 'system-ui, -apple-system, sans-serif',
-              fontWeight: 500,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              maxWidth: '55%',
-            }}
-          >
-            {docName || 'Untitled'}
-          </span>
+          {/* Doc name — left (always-visible draggable chip) */}
+          <DocChip docUrl={docUrl} name={docName || "Untitled"} />
 
-          {/* Tool name — right */}
+          {/* Tool — right (always-visible draggable chip with dropdown) */}
           {currentTool && (
-            <div ref={toolMenuRef} style={{ position: 'relative', flexShrink: 0 }}>
-              <button
-                type="button"
-                title={tools.length > 1 ? 'Switch tool' : undefined}
-                onClick={(e) => { e.stopPropagation(); if (tools.length > 1) setToolMenuOpen((v) => !v); }}
-                onPointerDown={(e) => e.stopPropagation()}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '3px',
-                  fontSize: '11px',
-                  color: '#6b7280',
-                  fontFamily: 'system-ui, -apple-system, sans-serif',
-                  background: 'transparent',
-                  border: 'none',
-                  padding: 0,
-                  cursor: tools.length > 1 ? 'pointer' : 'default',
-                }}
-              >
-                {currentTool.name}
-                {tools.length > 1 && (
-                  <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
-                    <path d="M1 2.5L4 5.5L7 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                )}
-              </button>
+            <div ref={toolMenuRef} style={{ position: "relative", flexShrink: 0 }}>
+              <ToolChip docUrl={docUrl} name={currentTool.name} hasDropdown={tools.length > 1} onPickerOpen={() => setToolMenuOpen((v) => !v)} />
 
               {toolMenuOpen && tools.length > 1 && (
                 <div
                   onPointerDown={(e) => e.stopPropagation()}
                   style={{
-                    position: 'absolute',
-                    top: '100%',
+                    position: "absolute",
+                    top: "100%",
                     right: 0,
-                    marginTop: '4px',
-                    background: '#fff',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '6px',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.10)',
-                    padding: '4px',
-                    minWidth: '140px',
+                    marginTop: "4px",
+                    background: "#fff",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: "6px",
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.10)",
+                    padding: "4px",
+                    minWidth: "140px",
                     zIndex: 10000,
                   }}
                 >
@@ -256,22 +213,29 @@ function EmbedShapeComponent({ shape }: { shape: EmbedShape }) {
                     <button
                       key={t.id}
                       type="button"
-                      onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); handleToolChange(t.id); }}
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        handleToolChange(t.id);
+                      }}
                       style={{
-                        display: 'block',
-                        width: '100%',
-                        padding: '5px 10px',
-                        border: 'none',
-                        borderRadius: '4px',
-                        background: t.id === currentTool.id ? '#f0f4ff' : 'transparent',
-                        cursor: 'pointer',
-                        fontSize: '12px',
-                        fontFamily: 'system-ui, -apple-system, sans-serif',
-                        color: '#374151',
-                        textAlign: 'left',
-                        whiteSpace: 'nowrap',
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        width: "100%",
+                        padding: "15px 5px",
+                        border: "none",
+                        borderRadius: "4px",
+                        background: t.id === currentTool.id ? "#f0f4ff" : "transparent",
+                        cursor: "pointer",
+                        fontSize: "12px",
+                        fontFamily: "system-ui, -apple-system, sans-serif",
+                        color: "#374151",
+                        textAlign: "left",
+                        whiteSpace: "nowrap",
                       }}
                     >
+                      <ToolIcon />
                       {t.name}
                     </button>
                   ))}
@@ -287,32 +251,34 @@ function EmbedShapeComponent({ shape }: { shape: EmbedShape }) {
           style={{
             flex: 1,
             minHeight: 0,
-            overflow: 'hidden',
-            position: 'relative',
-            pointerEvents: isSelectTool ? 'auto' : 'none',
-            userSelect: isFocused ? 'text' : 'none',
+            overflow: "hidden",
+            position: "relative",
+            pointerEvents: isSelectTool ? "auto" : "none",
+            userSelect: isFocused ? "text" : "none",
           }}
-          onPointerDown={isSelectTool ? (e) => { e.stopPropagation(); setIsFocused(true); } : undefined}
-          onPointerUp={isSelectTool ? (e) => {
-            e.stopPropagation();
-            // Synthesize click for frameworks using document-level delegation (e.g. Solid.js).
-            (e.target as HTMLElement)?.dispatchEvent(
-              new MouseEvent('click', { bubbles: true, cancelable: true, view: window, clientX: e.clientX, clientY: e.clientY }),
-            );
-          } : undefined}
+          onPointerDown={
+            isSelectTool
+              ? (e) => {
+                  e.stopPropagation();
+                  setIsFocused(true);
+                }
+              : undefined
+          }
+          onPointerUp={
+            isSelectTool
+              ? (e) => {
+                  e.stopPropagation();
+                  // Synthesize click for frameworks using document-level delegation (e.g. Solid.js).
+                  (e.target as HTMLElement)?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window, clientX: e.clientX, clientY: e.clientY }));
+                }
+              : undefined
+          }
         >
           {docUrl ? (
             // @ts-expect-error Custom element from @inkandswitch/patchwork-elements
-            <patchwork-view
-              doc-url={docUrl}
-              {...(toolId ? { 'tool-id': toolId } : {})}
-              key={toolId || 'default'}
-              style={{ display: 'block', width: '100%', height: '100%' }}
-            />
+            <patchwork-view doc-url={docUrl} {...(toolId ? { "tool-id": toolId } : {})} key={toolId || "default"} style={{ display: "block", width: "100%", height: "100%" }} />
           ) : (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#9ca3af', fontSize: '12px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-              Creating…
-            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#9ca3af", fontSize: "12px", fontFamily: "system-ui, -apple-system, sans-serif" }}>Creating…</div>
           )}
         </div>
       </div>
