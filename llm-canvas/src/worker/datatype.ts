@@ -23,9 +23,7 @@ export const workerDatatype: DatatypeImplementation<WorkerDoc> = {
     doc.prompt = '';
     doc.processUrls = [];
     doc.runMode = 'manual';
-    doc.autoInterval = 30;
-    doc.inputTokens = [];
-    doc.outputTokens = [];
+    doc.autoInterval = 2;
   },
 
   getTitle(doc: WorkerDoc) {

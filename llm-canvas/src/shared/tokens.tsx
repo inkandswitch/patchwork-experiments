@@ -1,5 +1,85 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { setDragData } from "./dnd/helpers.ts";
+import "./tokens.css";
+
+// ---------------------------------------------------------------------------
+// Activity indicator
+// ---------------------------------------------------------------------------
+
+export type TokenActivity = "find" | "write";
+
+function MagnifyingGlassIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <circle cx="5.5" cy="5.5" r="3.5" stroke="#6366f1" strokeWidth="1.5" />
+      <line x1="8.5" y1="8.5" x2="12" y2="12" stroke="#6366f1" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function PencilIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <path
+        d="M2 10.5 L9 3.5 L11 5.5 L4 12.5 Z"
+        stroke="#f59e0b"
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+        fill="none"
+      />
+      <path d="M9 3.5 L10.5 2 L12 3.5 L11 5.5 Z" stroke="#f59e0b" strokeWidth="1.3" strokeLinejoin="round" fill="none" />
+      <line x1="2" y1="10.5" x2="1" y2="13" stroke="#f59e0b" strokeWidth="1" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ActivityIndicator({ activity }: { activity: TokenActivity }) {
+  // Start at 1 so the animation fires immediately on first render.
+  const [animKey, setAnimKey] = useState(1);
+  const [currentActivity, setCurrentActivity] = useState(activity);
+  const prevActivity = useRef(activity);
+
+  useEffect(() => {
+    if (activity !== prevActivity.current) {
+      prevActivity.current = activity;
+      setCurrentActivity(activity);
+    }
+    setAnimKey((k) => k + 1);
+  }, [activity]);
+
+  const isWrite = currentActivity === "write";
+
+  return (
+    <span
+      key={animKey}
+      style={{
+        position: "absolute",
+        left: 0,
+        top: "50%",
+        transform: "translateY(-50%)",
+        animation: "tokenActivityIn 1.3s ease forwards",
+        pointerEvents: "none",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <span
+        style={
+          isWrite
+            ? {
+                display: "flex",
+                animation: "tokenPencilWiggle 0.3s ease-in-out infinite",
+                animationDelay: "0.2s",
+              }
+            : { display: "flex" }
+        }
+      >
+        {isWrite ? <PencilIcon /> : <MagnifyingGlassIcon />}
+      </span>
+    </span>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Icons
@@ -43,9 +123,10 @@ export interface DocChipProps {
   dragEffect?: "copy" | "move";
   /** Set to false to disable the chip's own drag behaviour. Default: true. */
   draggable?: boolean;
+  activity?: TokenActivity;
 }
 
-export function DocChip({ docUrl, name, chipRef, onDragEnd, onDelete, dragEffect = "copy", draggable = true }: DocChipProps) {
+export function DocChip({ docUrl, name, chipRef, onDragEnd, onDelete, dragEffect = "copy", draggable = true, activity }: DocChipProps) {
   const ref = useCallback(
     (node: HTMLDivElement | null) => {
       if (typeof chipRef === "function") chipRef(node!);
@@ -64,33 +145,36 @@ export function DocChip({ docUrl, name, chipRef, onDragEnd, onDelete, dragEffect
   );
 
   return (
-    <div
-      ref={ref}
-      draggable={draggable}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: "5px",
-        height: "24px",
-        padding: onDelete ? "0 4px 0 10px" : "0 10px",
-        background: "#ffffff",
-        borderRadius: "12px",
-        border: "1px solid rgba(0,0,0,0.12)",
-        fontSize: "12px",
-        fontFamily: "system-ui, -apple-system, sans-serif",
-        fontWeight: 500,
-        color: "#374151",
-        cursor: draggable ? "grab" : "default",
-        userSelect: "none",
-        whiteSpace: "nowrap",
-        pointerEvents: "all",
-        boxSizing: "border-box",
-      }}
-    >
-      <DocIcon />
-      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
-      {onDelete && <DeleteButton onDelete={onDelete} />}
-    </div>
+    <span style={{ position: "relative", display: "inline-block" }}>
+      {activity && <ActivityIndicator activity={activity} />}
+      <div
+        ref={ref}
+        draggable={draggable}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "5px",
+          height: "24px",
+          padding: onDelete ? "0 4px 0 10px" : "0 10px",
+          background: "#ffffff",
+          borderRadius: "12px",
+          border: "1px solid rgba(0,0,0,0.12)",
+          fontSize: "12px",
+          fontFamily: "system-ui, -apple-system, sans-serif",
+          fontWeight: 500,
+          color: "#374151",
+          cursor: draggable ? "grab" : "default",
+          userSelect: "none",
+          whiteSpace: "nowrap",
+          pointerEvents: "all",
+          boxSizing: "border-box",
+        }}
+      >
+        <DocIcon />
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+        {onDelete && <DeleteButton onDelete={onDelete} />}
+      </div>
+    </span>
   );
 }
 
@@ -106,37 +190,40 @@ export interface ToolChipProps {
   onPickerOpen?: () => void;
   /** Set to false to disable the chip's own drag behaviour. Default: true. */
   draggable?: boolean;
+  activity?: TokenActivity;
 }
 
-export function ToolChip({ docUrl, name, path, chipRef, onDragEnd, onDelete, dragEffect = "copy", hasDropdown, onPickerOpen, draggable = true }: ToolChipProps) {
+export function ToolChip({ docUrl, name, path, chipRef, onDragEnd, onDelete, dragEffect = "copy", hasDropdown, onPickerOpen, draggable = true, activity }: ToolChipProps) {
   const paddingRight = hasDropdown ? "28px" : onDelete ? "4px" : "14px";
 
   return (
-    <div
-      ref={chipRef}
-      draggable={draggable}
-      onPointerDown={(e) => e.stopPropagation()}
-      onDragStart={
-        draggable
-          ? (e) => {
-              setDragData(e.dataTransfer, { type: "tool", url: docUrl, name, path: path ?? "" }, dragEffect);
-            }
-          : undefined
-      }
-      onDragEnd={onDragEnd}
-      style={{
-        position: "relative",
-        display: "inline-flex",
-        alignItems: "center",
-        height: "24px",
-        padding: `0 ${paddingRight} 0 14px`,
-        cursor: draggable ? "grab" : "default",
-        userSelect: "none",
-        whiteSpace: "nowrap",
-        pointerEvents: "all",
-        boxSizing: "border-box",
-      }}
-    >
+    <span style={{ position: "relative", display: "inline-block" }}>
+      {activity && <ActivityIndicator activity={activity} />}
+      <div
+        ref={chipRef}
+        draggable={draggable}
+        onPointerDown={(e) => e.stopPropagation()}
+        onDragStart={
+          draggable
+            ? (e) => {
+                setDragData(e.dataTransfer, { type: "tool", url: docUrl, name, path: path ?? "" }, dragEffect);
+              }
+            : undefined
+        }
+        onDragEnd={onDragEnd}
+        style={{
+          position: "relative",
+          display: "inline-flex",
+          alignItems: "center",
+          height: "24px",
+          padding: `0 ${paddingRight} 0 14px`,
+          cursor: draggable ? "grab" : "default",
+          userSelect: "none",
+          whiteSpace: "nowrap",
+          pointerEvents: "all",
+          boxSizing: "border-box",
+        }}
+      >
       {/* Rounded background */}
       <div
         style={{
@@ -204,7 +291,8 @@ export function ToolChip({ docUrl, name, path, chipRef, onDragEnd, onDelete, dra
           <DeleteButton onDelete={onDelete} />
         </div>
       )}
-    </div>
+      </div>
+    </span>
   );
 }
 
