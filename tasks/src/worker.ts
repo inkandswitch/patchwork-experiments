@@ -66,6 +66,9 @@ async function init(
   baseURI = _baseURI;
   setUpImportMap();
 
+  // Important: if I take out the `globalThis.` from the assignment below, it doesn't work.
+  // I get "ReferenceError: repo is not defined." This is probably b/c that variable only
+  // counts as declared once it exists as a property in globalThis.
   globalThis.repo = await getRepo(repoPort, `task-worker-${Math.round(Math.random() * 10_000)}`);
 
   // create the worker document
