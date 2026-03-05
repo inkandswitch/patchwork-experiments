@@ -151,22 +151,37 @@ function setUpImportMap() {
   console.log('worker: Import map configured from main thread', resolvedImportMap);
 }
 
+const tally = { numSuccesses: 0, numFailures: 0 };
+
+function logTally() {
+  const { numSuccesses, numFailures } = tally;
+  const total = numSuccesses + numFailures;
+  console.log('');
+  console.log(`Processed ${total} tasks so far.`);
+  console.log(`  ${numSuccesses} successes (${(numSuccesses / total) * 100 || 100}%)`);
+  console.log(`  ${numFailures} failures (${(numFailures / total) * 100 || 0}%)`);
+  console.log('');
+}
+
 async function processTask(taskUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
-  console.log('executing task:', taskUrl);
+  console.log('executing task', taskUrl);
   workerHandle.change((doc) => {
     doc.currentTask = { taskUrl, taskQueueUrl };
   });
-
   try {
     await execute(taskUrl);
     await moveToDone(taskUrl, taskQueueUrl);
+    tally.numSuccesses++;
+    console.log('task succeeded!');
   } catch (error) {
-    console.error('error while processing task:', error);
+    tally.numFailures++;
+    console.error('task failed:', error);
   } finally {
     workerHandle.change((doc) => {
       doc.currentTask = null;
     });
   }
+  logTally();
 }
 
 async function execute(taskUrl: AutomergeUrl) {
