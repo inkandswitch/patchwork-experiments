@@ -410,6 +410,7 @@ export class CanvasView {
       this.doc,
       this.selectedIds
     )
+    this.refreshHandles()
   }
 
   private setSelectedIds(ids: Set<string>) {
@@ -431,6 +432,7 @@ export class CanvasView {
         ms.updatePosition({ ...shape, x: pos.x, y: pos.y })
       }
     }
+    this.refreshHandles(moves)
   }
 
   private onResizePreview(id: string, next: Partial<CanvasShape>) {
@@ -440,20 +442,25 @@ export class CanvasView {
     if (ms && shape) {
       ms.updatePosition({ ...shape, ...next })
     }
-    this.refreshHandles()
+    this.refreshHandles(new Map([[id, next]]))
   }
 
   // -------------------------------------------------------------------------
   // Selection handles
   // -------------------------------------------------------------------------
 
-  private refreshHandles() {
+  private refreshHandles(overrides?: Map<string, Partial<CanvasShape>>) {
     this.handlesEl.innerHTML = ''
     if (this.selectedIds.size === 0) return
 
     const shapes = [...this.selectedIds]
-      .map(id => this.doc.shapes[id])
-      .filter(Boolean)
+      .map(id => {
+        const base = this.doc.shapes[id]
+        if (!base) return undefined
+        const ov = overrides?.get(id)
+        return ov ? { ...base, ...ov } : base
+      })
+      .filter((s): s is CanvasShape => s != null)
 
     if (shapes.length === 0) return
 
