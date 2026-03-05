@@ -3,8 +3,8 @@ import { useDocument, useRepo } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import { runLLMProcess } from "../../process/llm-process.ts";
 import type { ProcessDoc } from "../../process/types.ts";
-import type { WorkspaceDoc } from "../../workspace/types.ts";
-import type { WorkerDoc, WorkerToken } from "../types.ts";
+import type { WorkspaceDoc, WorkspaceEntry } from "../../workspace/types.ts";
+import type { WorkerDoc } from "../types.ts";
 import { TokenDropZone, type PatchworkItem } from "../../shared/dnd/index.ts";
 import { DocChip, ToolChip } from "../../shared/tokens.tsx";
 import { ProcessView } from "../../process/components/ProcessView.tsx";
@@ -17,49 +17,58 @@ const AVAILABLE_MODELS = [
   "google/gemini-2.5-pro-preview",
 ];
 
-/** Build the worker-specific system context describing input and output files. */
+/** Build the worker-specific system context describing read and write files. */
 function buildWorkerSystemContext(
-  inputTokens: WorkerToken[],
-  outputTokens: WorkerToken[],
+  readEntries: WorkspaceEntry[],
+  writeEntries: WorkspaceEntry[],
 ): string {
   const lines: string[] = [];
 
-  if (inputTokens.length > 0) {
-    lines.push("Input files (read-only — you may read these but must not modify them):");
-    for (const t of inputTokens) {
-      lines.push(`  - "${t.name}" — ${t.url}`);
+  if (readEntries.length > 0) {
+    lines.push("Read files (read-only — you may read these but must not modify them):");
+    for (const e of readEntries) {
+      lines.push(`  - "${e.name}" — ${e.url}`);
     }
   }
 
-  if (outputTokens.length > 0) {
-    lines.push("Output files (writable — you may read and write to these):");
-    for (const t of outputTokens) {
-      lines.push(`  - "${t.name}" — ${t.url}`);
+  if (writeEntries.length > 0) {
+    lines.push("Write files (writable — you may read and write to these):");
+    for (const e of writeEntries) {
+      lines.push(`  - "${e.name}" — ${e.url}`);
     }
   }
 
   return lines.join("\n");
 }
 
+function headsChanged(current: string[], known: string[]): boolean {
+  const s = (h: string[]) => [...h].sort().join(",");
+  return s(current) !== s(known);
+}
+
 export function WorkerInner({ workerDocUrl }: { workerDocUrl: AutomergeUrl }) {
   const repo = useRepo();
   const [doc, changeDoc] = useDocument<WorkerDoc>(workerDocUrl, { suspense: true });
+  const [wsDoc, changeWsDoc] = useDocument<WorkspaceDoc>(doc?.workspaceUrl);
 
   const [status, setStatus] = useState<"idle" | "running" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [activityByUrl, setActivityByUrl] = useState<Record<string, "find" | "write">>({});
   const isRunningRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
 
   // Stable ref so the auto-mode effect can always call the latest handleRun.
   const handleRunRef = useRef<() => Promise<void>>(async () => {});
 
+  // Heads snapshot taken at the start of each run.
+  const knownHeadsRef = useRef<Map<AutomergeUrl, string[]>>(new Map());
+
   const prompt = doc?.prompt ?? "";
   const runMode = doc?.runMode ?? "manual";
-  const autoInterval = doc?.autoInterval ?? 30;
-  const inputTokens = doc?.inputTokens ?? [];
-  const outputTokens = doc?.outputTokens ?? [];
+  const autoInterval = doc?.autoInterval ?? 2;
+  const readEntries: WorkspaceEntry[] = wsDoc?.entries.filter(e => e.accessLevel === "read") ?? [];
+  const writeEntries: WorkspaceEntry[] = wsDoc?.entries.filter(e => e.accessLevel === "full") ?? [];
   const isRunning = status === "running";
-  const hasRuns = (doc?.processUrls?.length ?? 0) > 0;
   const activeProcessUrl = doc?.processUrls?.at(-1) as AutomergeUrl | undefined;
 
   const handlePromptChange = useCallback(
@@ -99,82 +108,81 @@ export function WorkerInner({ workerDocUrl }: { workerDocUrl: AutomergeUrl }) {
     [changeDoc],
   );
 
-  const handleInputDrop = useCallback(
+  const handleReadDrop = useCallback(
     (items: PatchworkItem[]) => {
-      changeDoc((d) => {
+      changeWsDoc((ws) => {
         for (const item of items) {
           const url = item.url as AutomergeUrl;
-          const token: WorkerToken =
-            item.type === "tool"
-              ? { type: "tool", url, name: item.name, path: item.path }
-              : { type: "document", url, name: item.name };
-          if (!(d.inputTokens as WorkerToken[]).some((t) => t.url === url)) {
-            (d.inputTokens as WorkerToken[]).push(token);
+          if ((ws.entries as WorkspaceEntry[]).some((e) => e.url === url && e.accessLevel === "read")) continue;
+          if (item.type === "tool") {
+            (ws.entries as WorkspaceEntry[]).push({ type: "tool", url, name: item.name, path: item.path ?? "", accessLevel: "read" });
+          } else {
+            (ws.entries as WorkspaceEntry[]).push({ type: "document", url, name: item.name, accessLevel: "read" });
           }
         }
       });
     },
-    [changeDoc],
+    [changeWsDoc],
   );
 
-  const handleOutputDrop = useCallback(
+  const handleWriteDrop = useCallback(
     (items: PatchworkItem[]) => {
-      changeDoc((d) => {
+      changeWsDoc((ws) => {
         for (const item of items) {
           const url = item.url as AutomergeUrl;
-          const token: WorkerToken =
-            item.type === "tool"
-              ? { type: "tool", url, name: item.name, path: item.path }
-              : { type: "document", url, name: item.name };
-          if (!(d.outputTokens as WorkerToken[]).some((t) => t.url === url)) {
-            (d.outputTokens as WorkerToken[]).push(token);
+          if ((ws.entries as WorkspaceEntry[]).some((e) => e.url === url && e.accessLevel === "full")) continue;
+          if (item.type === "tool") {
+            (ws.entries as WorkspaceEntry[]).push({ type: "tool", url, name: item.name, path: item.path ?? "", accessLevel: "full" });
+          } else {
+            (ws.entries as WorkspaceEntry[]).push({ type: "document", url, name: item.name, accessLevel: "full" });
           }
         }
       });
     },
-    [changeDoc],
+    [changeWsDoc],
   );
 
-  const handleRemoveInput = useCallback(
+  const handleRemoveRead = useCallback(
     (url: AutomergeUrl) => {
-      changeDoc((d) => {
-        d.inputTokens = (d.inputTokens as WorkerToken[]).filter((t) => t.url !== url) as any;
+      changeWsDoc((ws) => {
+        const idx = (ws.entries as WorkspaceEntry[]).findIndex(
+          (e) => e.url === url && e.accessLevel === "read",
+        );
+        if (idx !== -1) (ws.entries as any).splice(idx, 1);
       });
     },
-    [changeDoc],
+    [changeWsDoc],
   );
 
-  const handleRemoveOutput = useCallback(
+  const handleRemoveWrite = useCallback(
     (url: AutomergeUrl) => {
-      changeDoc((d) => {
-        d.outputTokens = (d.outputTokens as WorkerToken[]).filter((t) => t.url !== url) as any;
+      changeWsDoc((ws) => {
+        const idx = (ws.entries as WorkspaceEntry[]).findIndex(
+          (e) => e.url === url && e.accessLevel === "full",
+        );
+        if (idx !== -1) (ws.entries as any).splice(idx, 1);
       });
     },
-    [changeDoc],
+    [changeWsDoc],
   );
 
   const handleRun = useCallback(async () => {
-    if (!prompt.trim() || isRunningRef.current || !doc) return;
+    if (!prompt.trim() || isRunningRef.current || !doc || !wsDoc) return;
 
-    // Populate workspace: inputs get read access, outputs get full access.
-    const wsHandle = await repo.find<WorkspaceDoc>(doc.workspaceUrl);
-    wsHandle.change((ws) => {
-      ws.entries = [] as any;
-      for (const t of doc.inputTokens as WorkerToken[]) {
-        if (t.type === "tool") {
-          (ws.entries as any[]).push({ type: "tool", url: t.url, name: t.name, path: t.path ?? "", accessLevel: "read" });
-        } else {
-          (ws.entries as any[]).push({ type: "document", url: t.url, name: t.name, accessLevel: "read" });
-        }
+    const currentReadEntries = wsDoc.entries.filter(e => e.accessLevel === "read");
+    const currentWriteEntries = wsDoc.entries.filter(e => e.accessLevel === "full");
+    const allEntries = [...currentReadEntries, ...currentWriteEntries];
+
+    // Snapshot heads of all entries before we start (the state we're about to process).
+    for (const entry of allEntries) {
+      try {
+        const h = await repo.find(entry.url as AutomergeUrl);
+        await h.whenReady();
+        knownHeadsRef.current.set(entry.url as AutomergeUrl, h.heads());
+      } catch {
+        // Skip documents that can't be found yet.
       }
-      for (const t of doc.outputTokens as WorkerToken[]) {
-        if (t.type === "tool") {
-          (ws.entries as any[]).push({ type: "tool", url: t.url, name: t.name, path: t.path ?? "", accessLevel: "full" });
-        } else {
-          (ws.entries as any[]).push({ type: "document", url: t.url, name: t.name, accessLevel: "full" });
-        }
-      }
-    });
+    }
 
     const processHandle = repo.create<ProcessDoc>();
     processHandle.change((d) => {
@@ -184,7 +192,6 @@ export function WorkerInner({ workerDocUrl }: { workerDocUrl: AutomergeUrl }) {
       d.prompt = prompt.trim();
       d.output = [] as any;
       d.timestamp = Date.now();
-      // No history: each worker run is independent, with no prior-run context.
     });
 
     changeDoc((d) => {
@@ -198,16 +205,18 @@ export function WorkerInner({ workerDocUrl }: { workerDocUrl: AutomergeUrl }) {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    // Tell the LLM explicitly which files it can read and which it can write.
-    const systemContextSuffix = buildWorkerSystemContext(
-      doc.inputTokens as WorkerToken[],
-      doc.outputTokens as WorkerToken[],
-    );
+    const systemContextSuffix = buildWorkerSystemContext(currentReadEntries, currentWriteEntries);
 
     try {
       await runLLMProcess(repo, processHandle.url, controller.signal, {
         includeWorkspaceContext: false,
         systemContextSuffix: systemContextSuffix || undefined,
+        onActivity: (event) => {
+          setActivityByUrl((prev) => ({
+            ...prev,
+            [event.url]: event.operation === "find" ? "find" : "write",
+          }));
+        },
       });
       setStatus("idle");
     } catch (err: any) {
@@ -221,8 +230,28 @@ export function WorkerInner({ workerDocUrl }: { workerDocUrl: AutomergeUrl }) {
     } finally {
       isRunningRef.current = false;
       abortRef.current = null;
+
+      // Check if any entry changed during the run relative to the pre-run snapshot.
+      if (runMode === "auto") {
+        let needsRerun = false;
+        for (const entry of allEntries) {
+          try {
+            const h = await repo.find(entry.url as AutomergeUrl);
+            const known = knownHeadsRef.current.get(entry.url as AutomergeUrl) ?? [];
+            if (headsChanged(h.heads(), known)) {
+              needsRerun = true;
+              break;
+            }
+          } catch {
+            // Skip documents that can't be found.
+          }
+        }
+        if (needsRerun) {
+          handleRunRef.current();
+        }
+      }
     }
-  }, [prompt, repo, doc, changeDoc]);
+  }, [prompt, repo, doc, wsDoc, changeDoc, runMode]);
 
   // Keep handleRunRef current so the auto-mode effect always calls the latest version.
   useEffect(() => {
@@ -233,8 +262,14 @@ export function WorkerInner({ workerDocUrl }: { workerDocUrl: AutomergeUrl }) {
     abortRef.current?.abort();
   }, []);
 
+  const handleRerun = useCallback(() => {
+    abortRef.current?.abort();
+    isRunningRef.current = false;
+    handleRunRef.current();
+  }, []);
+
   // ---------------------------------------------------------------------------
-  // Auto mode: subscribe to input document changes and re-run after a debounce.
+  // Auto mode: subscribe to all entry document changes and re-run after a debounce.
   // ---------------------------------------------------------------------------
   const autoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -244,7 +279,17 @@ export function WorkerInner({ workerDocUrl }: { workerDocUrl: AutomergeUrl }) {
     let mounted = true;
     const unsubscribers: Array<() => void> = [];
 
-    const scheduleRun = () => {
+    const allEntries = [...readEntries, ...writeEntries];
+
+    const scheduleRun = (url: AutomergeUrl) => async () => {
+      try {
+        const handle = await repo.find(url);
+        const known = knownHeadsRef.current.get(url) ?? [];
+        if (!headsChanged(handle.heads(), known)) return;
+      } catch {
+        return;
+      }
+      if (isRunningRef.current) return; // in-flight; finally block re-checks after
       if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
       autoTimerRef.current = setTimeout(() => {
         if (mounted && !isRunningRef.current) {
@@ -254,11 +299,12 @@ export function WorkerInner({ workerDocUrl }: { workerDocUrl: AutomergeUrl }) {
     };
 
     const setupSubscriptions = async () => {
-      for (const token of inputTokens) {
+      for (const entry of allEntries) {
         try {
-          const handle = await repo.find(token.url as AutomergeUrl);
-          handle.on("change", scheduleRun);
-          unsubscribers.push(() => handle.off("change", scheduleRun));
+          const handle = await repo.find(entry.url as AutomergeUrl);
+          const listener = scheduleRun(entry.url as AutomergeUrl);
+          handle.on("change", listener);
+          unsubscribers.push(() => handle.off("change", listener));
         } catch {
           // Skip documents that can't be found yet.
         }
@@ -275,9 +321,14 @@ export function WorkerInner({ workerDocUrl }: { workerDocUrl: AutomergeUrl }) {
       }
       for (const unsub of unsubscribers) unsub();
     };
-  // Re-subscribe whenever the input token set or the interval changes.
+  // Re-subscribe whenever the entry set or the interval changes.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runMode, JSON.stringify(inputTokens.map((t) => t.url)), autoInterval, repo]);
+  }, [
+    runMode,
+    JSON.stringify([...readEntries, ...writeEntries].map((e) => e.url)),
+    autoInterval,
+    repo,
+  ]);
 
   return (
     <div
@@ -293,13 +344,24 @@ export function WorkerInner({ workerDocUrl }: { workerDocUrl: AutomergeUrl }) {
         overflow: "hidden",
       }}
     >
-      {/* Input drop zone */}
+      {/* Read drop zone */}
       <TokenZone
-        label="Input"
-        tokens={inputTokens}
-        onDrop={handleInputDrop}
-        onRemove={handleRemoveInput}
+        label="Read"
+        entries={readEntries}
+        onDrop={handleReadDrop}
+        onRemove={handleRemoveRead}
         emptyHint="Drop documents here (read-only)"
+        activityByUrl={activityByUrl}
+      />
+
+      {/* Write drop zone */}
+      <TokenZone
+        label="Write"
+        entries={writeEntries}
+        onDrop={handleWriteDrop}
+        onRemove={handleRemoveWrite}
+        emptyHint="Drop documents here (writable)"
+        activityByUrl={activityByUrl}
       />
 
       {/* Prompt textarea OR live process preview, depending on run state */}
@@ -328,15 +390,6 @@ export function WorkerInner({ workerDocUrl }: { workerDocUrl: AutomergeUrl }) {
           onTouchStart={(e) => e.stopPropagation()}
         />
       )}
-
-      {/* Output drop zone */}
-      <TokenZone
-        label="Output"
-        tokens={outputTokens}
-        onDrop={handleOutputDrop}
-        onRemove={handleRemoveOutput}
-        emptyHint="Drop documents here (writable)"
-      />
 
       {/* Run configuration */}
       <div
@@ -409,23 +462,23 @@ export function WorkerInner({ workerDocUrl }: { workerDocUrl: AutomergeUrl }) {
                 </button>
               )
             ) : (
-              /* Auto mode: show interval picker and current status */
+              /* Auto mode */
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 {isRunning ? (
-                  <button style={stopBtnStyle} onClick={handleStop} onPointerDown={(e) => e.stopPropagation()}>
-                    Stop
+                  <button style={rerunBtnStyle} onClick={handleRerun} onPointerDown={(e) => e.stopPropagation()}>
+                    Rerun
                   </button>
                 ) : (
                   <>
                     <span style={{ fontSize: 10, color: "#888", fontStyle: "italic" }}>
-                      {inputTokens.length === 0 ? "no inputs" : "watching…"}
+                      {readEntries.length === 0 && writeEntries.length === 0 ? "no entries" : "watching…"}
                     </span>
                     <button
                       style={stopBtnStyle}
                       onClick={() => handleModeChange("manual")}
                       onPointerDown={(e) => e.stopPropagation()}
                     >
-                      Stop
+                      Stop auto
                     </button>
                   </>
                 )}
@@ -472,18 +525,19 @@ export function WorkerInner({ workerDocUrl }: { workerDocUrl: AutomergeUrl }) {
 }
 
 // ---------------------------------------------------------------------------
-// TokenZone — labeled drop target that displays chips for dropped items
+// TokenZone — labeled drop target that displays chips for dropped entries
 // ---------------------------------------------------------------------------
 
 interface TokenZoneProps {
   label: string;
-  tokens: WorkerToken[];
+  entries: WorkspaceEntry[];
   onDrop: (items: PatchworkItem[]) => void;
   onRemove: (url: AutomergeUrl) => void;
   emptyHint: string;
+  activityByUrl?: Record<string, "find" | "write">;
 }
 
-function TokenZone({ label, tokens, onDrop, onRemove, emptyHint }: TokenZoneProps) {
+function TokenZone({ label, entries, onDrop, onRemove, emptyHint, activityByUrl }: TokenZoneProps) {
   return (
     <TokenDropZone onDrop={onDrop} style={{ flexShrink: 0 }}>
       {(isDraggedOver) => (
@@ -513,15 +567,15 @@ function TokenZone({ label, tokens, onDrop, onRemove, emptyHint }: TokenZoneProp
             {label}
           </span>
 
-          {tokens.length === 0 ? (
+          {entries.length === 0 ? (
             <span style={{ fontSize: 11, color: "#ccc", paddingLeft: 2 }}>{emptyHint}</span>
           ) : (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-              {tokens.map((t) =>
-                t.type === "tool" ? (
-                  <ToolChip key={t.url} docUrl={t.url} name={t.name} path={t.path} draggable={false} onDelete={() => onRemove(t.url)} />
+              {entries.map((e) =>
+                e.type === "tool" ? (
+                  <ToolChip key={e.url} docUrl={e.url} name={e.name} path={e.path} draggable={false} onDelete={() => onRemove(e.url)} activity={activityByUrl?.[e.url]} />
                 ) : (
-                  <DocChip key={t.url} docUrl={t.url} name={t.name} draggable={false} onDelete={() => onRemove(t.url)} />
+                  <DocChip key={e.url} docUrl={e.url} name={e.name} draggable={false} onDelete={() => onRemove(e.url)} activity={activityByUrl?.[e.url]} />
                 ),
               )}
             </div>
@@ -616,5 +670,16 @@ const stopBtnStyle: React.CSSProperties = {
   border: "none",
   background: "#fde8e8",
   color: "#c33",
+  cursor: "pointer",
+};
+
+const rerunBtnStyle: React.CSSProperties = {
+  fontSize: 11,
+  fontWeight: 600,
+  padding: "4px 14px",
+  borderRadius: 6,
+  border: "none",
+  background: "#fff3e0",
+  color: "#e65100",
   cursor: "pointer",
 };
