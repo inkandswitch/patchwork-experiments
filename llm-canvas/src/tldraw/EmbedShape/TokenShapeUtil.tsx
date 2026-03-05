@@ -17,6 +17,7 @@ import {
   type DocChipProps,
   type ToolChipProps,
 } from '../../shared/tokens.tsx';
+import { consumeDrop } from '../../shared/dnd/helpers.ts';
 
 export { DocChip, ToolChip, ToolIcon };
 export type { DocChipProps, ToolChipProps };
@@ -102,7 +103,9 @@ function DocTokenComponent({ shape }: { shape: DocTokenShape }) {
         chipRef={sizeRef}
         dragEffect="move"
         onDragEnd={(e) => {
-          if (e.dataTransfer?.dropEffect !== 'none') {
+          const dropped = consumeDrop();
+          console.log('[token-drag] dragend dropEffect:', e.dataTransfer?.dropEffect, 'consumeDrop:', dropped);
+          if (dropped) {
             editor.deleteShapes([shape.id]);
           }
         }}
@@ -176,7 +179,9 @@ function ToolTokenComponent({ shape }: { shape: ToolTokenShape }) {
         chipRef={sizeRef}
         dragEffect="move"
         onDragEnd={(e) => {
-          if (e.dataTransfer.dropEffect !== 'none') {
+          const dropped = consumeDrop();
+          console.log('[token-drag] dragend dropEffect:', e.dataTransfer?.dropEffect, 'consumeDrop:', dropped);
+          if (dropped) {
             editor.deleteShapes([shape.id]);
           }
         }}

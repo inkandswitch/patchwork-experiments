@@ -1,4 +1,22 @@
 export const PATCHWORK_URLS_MIME = "text/x-patchwork-urls" as const;
+
+// ---------------------------------------------------------------------------
+// Drop consumed flag
+// The browser guarantees drop fires on the target before dragend fires on
+// the source, so this module-level flag is a reliable cross-component signal.
+// ---------------------------------------------------------------------------
+
+let _dropConsumed = false;
+
+export function markDropConsumed(): void {
+  _dropConsumed = true;
+}
+
+export function consumeDrop(): boolean {
+  const result = _dropConsumed;
+  _dropConsumed = false;
+  return result;
+}
 export const PATCHWORK_TOKEN_MIME = "text/x-patchwork-token" as const;
 
 export interface PatchworkDocItem {

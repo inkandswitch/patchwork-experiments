@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { isPatchworkDrag, resolveDropItems, type PatchworkItem } from "./helpers.ts";
+import { isPatchworkDrag, markDropConsumed, resolveDropItems, type PatchworkItem } from "./helpers.ts";
 
 interface TokenDropZoneProps {
   onDrop: (items: PatchworkItem[]) => void;
@@ -39,10 +39,15 @@ export function TokenDropZone({ onDrop, children, style, className }: TokenDropZ
     (e: React.DragEvent) => {
       if (!isPatchworkDrag(e.dataTransfer.types)) return;
       e.preventDefault();
+      console.log('[token-drag] drop fired, effectAllowed:', e.dataTransfer.effectAllowed);
       dragCounterRef.current = 0;
       setIsDraggedOver(false);
       const items = resolveDropItems(e.dataTransfer);
-      if (items.length > 0) onDrop(items);
+      console.log('[token-drag] resolved items:', items.length);
+      if (items.length > 0) {
+        markDropConsumed();
+        onDrop(items);
+      }
     },
     [onDrop],
   );
