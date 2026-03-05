@@ -69,7 +69,7 @@ async function init(
   globalThis.repo = await getRepo(repoPort, `task-worker-${Math.round(Math.random() * 10_000)}`);
 
   // create the worker document
-  workerHandle = self.repo.create<Worker>({
+  workerHandle = repo.create<Worker>({
     name: generateName().dashed,
     contactUrl: _contactUrl,
     currentTask: null,
@@ -167,7 +167,7 @@ async function processTask(taskUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
 }
 
 async function execute(taskUrl: AutomergeUrl) {
-  const taskHandle = await self.repo.find<Task<any, any>>(taskUrl);
+  const taskHandle = await repo.find<Task<any, any>>(taskUrl);
   const { importUrl, input } = taskHandle.doc();
 
   const log: [number, string][] = [];
@@ -216,7 +216,7 @@ async function execute(taskUrl: AutomergeUrl) {
 }
 
 async function moveToDone(taskUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
-  const taskQueueHandle = await self.repo.find<TaskQueue>(taskQueueUrl);
+  const taskQueueHandle = await repo.find<TaskQueue>(taskQueueUrl);
   taskQueueHandle.change((doc) => {
     const idx = doc.pending.indexOf(taskUrl);
     doc.pending.splice(idx, 1);
