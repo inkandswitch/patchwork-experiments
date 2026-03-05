@@ -168,10 +168,21 @@ self.onmessage = async (ev) => {
     try {
       self.postMessage({ type: "status", message: "Thinking…" });
       const t0 = Date.now();
+      let tokenCount = 0;
       const output = await generator(messages, {
         do_sample: true,
         temperature: 0.7,
         repetition_penalty: 1.1,
+        callback_function: (output) => {
+          tokenCount++;
+          // Send partial tokens every few tokens to avoid overwhelming
+          if (tokenCount % 3 === 0 || tokenCount < 5) {
+            try {
+              const partial = generator.tokenizer.decode(output[0].output_token_ids, { skip_special_tokens: true });
+              self.postMessage({ type: "token", id, text: partial });
+            } catch {}
+          }
+        },
       });
       console.log("[llm-worker] Generated in", Date.now() - t0, "ms");
       const text = output[0].generated_text.at(-1).content;

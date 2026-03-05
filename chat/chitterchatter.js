@@ -22,6 +22,9 @@ function generateId() {
 	return Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
 }
 
+const BUILD_TIME = new Date().toLocaleString()
+console.log("[Chat] loaded build:", BUILD_TIME)
+
 function formatTime(ts) {
 	return new Date(ts).toLocaleTimeString([], {
 		hour: "2-digit",
@@ -200,7 +203,7 @@ function createStyles() {
     /* Theme button */
     .chat-theme-btn {
       background:none; border:none; color:var(--text-muted); cursor:pointer;
-      font-size:16px; padding:2px 6px; border-radius:4px; position:relative; margin-left:auto;
+      font-size:16px; padding:2px 6px; border-radius:4px; position:relative;
     }
     .chat-theme-btn:hover, .chat-notify-btn:hover { background:var(--bg-hover); color:var(--text-primary); }
     .chat-notify-btn {
@@ -309,6 +312,17 @@ function createStyles() {
     }
     .chat-msg-text a { color:var(--link); text-decoration:underline; }
     .chat-msg-text a:hover { text-decoration:none; }
+    .chat-msg-text.streaming::after {
+      content:""; display:inline-block; width:6px; height:1em; background:var(--accent);
+      margin-left:2px; vertical-align:text-bottom; border-radius:1px;
+      animation: blink-cursor 0.8s step-end infinite;
+    }
+    @keyframes blink-cursor { 0%,100%{opacity:1;} 50%{opacity:0;} }
+    .chat-streaming-cancel {
+      margin-top:4px; padding:2px 10px; border-radius:4px; border:1px solid var(--border);
+      background:var(--bg-hover); color:var(--text-muted); cursor:pointer; font-size:11px;
+    }
+    .chat-streaming-cancel:hover { color:var(--text-primary); background:var(--bg-mid); }
     .chat-spoiler {
       background:var(--text-primary); color:transparent; border-radius:3px;
       padding:0 3px; cursor:pointer; transition:all 0.2s;
@@ -1583,7 +1597,6 @@ export function Tool(handle, element, options) {
 	let computerAutoMode = false
 	let computerFolderUrl = null
 	let lastComputerProcessedIndex = 0
-	let isComputerHost = false // true if THIS peer is running the LLM
 	const computerAvatarSrc = new URL("./computer.png", import.meta.url).href
 
 	// ---- Whisper transcription state ----
@@ -2186,7 +2199,6 @@ export function Tool(handle, element, options) {
 				active: isFocused,
 				timestamp: Date.now(),
 			}
-			if (isComputerHost) payload.isComputerHost = true
 			if (Object.keys(myEmoticons).length > 0) payload.emoticons = myEmoticons
 			if (Object.keys(myFonts).length > 0) payload.fonts = myFonts
 			handle.broadcast(payload)
@@ -2202,7 +2214,6 @@ export function Tool(handle, element, options) {
 				avatarUrl: msg.avatarUrl,
 				color: msg.color,
 				active: msg.active,
-				isComputerHost: msg.isComputerHost || false,
 			})
 			if (msg.emoticons) {
 				peerEmoticons.set(msg.name, msg.emoticons)
@@ -2238,7 +2249,6 @@ export function Tool(handle, element, options) {
 	themeBtn.title = "Theme"
 	themeBtn.innerHTML = SVG_ICONS.theme
 	themeBtn.style.position = "relative"
-	themeBtn.style.marginLeft = "auto"
 
 	const themePopover = document.createElement("div")
 	themePopover.className = "chat-theme-popover"
@@ -2538,6 +2548,7 @@ export function Tool(handle, element, options) {
 	// ---- Notification bell button with menu ----
 	notifyBtn = document.createElement("button")
 	notifyBtn.className = "chat-notify-btn"
+	notifyBtn.style.marginLeft = "auto"
 
 	const notifyMenu = document.createElement("div")
 	notifyMenu.className = "chat-notify-menu"
@@ -2610,6 +2621,7 @@ export function Tool(handle, element, options) {
 	// ---- Presence bar (with theme + notify + phone buttons) ----
 	const presenceBar = document.createElement("div")
 	presenceBar.className = "chat-presence-bar"
+	presenceBar.title = "built " + BUILD_TIME
 	const sidebarToggleBtn = document.createElement("button")
 	sidebarToggleBtn.className = "chat-sidebar-toggle-btn"
 	sidebarToggleBtn.title = "Toggle sidebar"
@@ -5575,6 +5587,7 @@ export function Tool(handle, element, options) {
 			if (msg.text) {
 				const textEl = document.createElement("div")
 				textEl.className = "chat-msg-text"
+				if (msg.streaming) textEl.classList.add("streaming")
 				if (isEmojiOnly(msg.text)) textEl.classList.add("emoji-only")
 				let html = formatText(msg.text, emoticonBlobUrls)
 				if (msg.marquee) html = "<marquee>" + html + "</marquee>"
@@ -5589,6 +5602,18 @@ export function Tool(handle, element, options) {
 					sp.addEventListener("click", () => sp.classList.toggle("revealed"))
 				})
 				body.appendChild(textEl)
+
+				// Cancel button for streaming messages
+				if (msg.streaming && activeAbortController) {
+					const cancelBtn = document.createElement("button")
+					cancelBtn.className = "chat-streaming-cancel"
+					cancelBtn.textContent = "Cancel"
+					cancelBtn.addEventListener("click", e => {
+						e.stopPropagation()
+						if (activeAbortController) activeAbortController.abort()
+					})
+					body.appendChild(cancelBtn)
+				}
 			}
 
 			renderAttachments(body, msg)
@@ -5624,6 +5649,7 @@ export function Tool(handle, element, options) {
 			if (msg.text) {
 				const textEl = document.createElement("div")
 				textEl.className = "chat-msg-text"
+				if (msg.streaming) textEl.classList.add("streaming")
 				if (isEmojiOnly(msg.text)) textEl.classList.add("emoji-only")
 				let html = formatText(msg.text, emoticonBlobUrls)
 				if (msg.marquee) html = "<marquee>" + html + "</marquee>"
@@ -5781,9 +5807,27 @@ export function Tool(handle, element, options) {
 			commonPrefix === newMsgIds.length &&
 			commonPrefix === renderedMsgOrder.length
 		) {
-			// Same messages — just update reactions in-place
+			// Same messages — update reactions and streaming text in-place
 			for (const msg of messages) {
 				updateMessageReactions(msg, msg._rawIdx, emoticonBlobUrls)
+				// Update streaming message text in-place
+				const el = renderedElements.get(msg.id)
+				if (el && msg.text) {
+					const textEl = el.querySelector(".chat-msg-text")
+					if (textEl) {
+						const newHtml = formatText(msg.text, emoticonBlobUrls)
+						if (textEl.innerHTML !== newHtml) {
+							textEl.innerHTML = msg.marquee ? "<marquee>" + newHtml + "</marquee>" : newHtml
+							// Re-wire spoiler clicks
+							textEl.querySelectorAll(".chat-spoiler").forEach(sp => {
+								sp.addEventListener("click", () => sp.classList.toggle("revealed"))
+							})
+						}
+						// Update streaming class
+						if (msg.streaming) textEl.classList.add("streaming")
+						else textEl.classList.remove("streaming")
+					}
+				}
 			}
 		} else {
 			// Structural change — remove from divergence point, re-render from there
@@ -6042,14 +6086,20 @@ export function Tool(handle, element, options) {
 			vn.appendChild(playBtn)
 			vn.appendChild(waveform)
 			vn.appendChild(dur)
-			// Show transcription if available
+			// Show transcription if available, in a collapsible details element
 			if (msg.transcription) {
-				const txn = document.createElement("div")
-				txn.className = "chat-voice-transcription"
-				txn.textContent = msg.transcription
-				txn.style.cssText =
-					"font-size:12px;color:var(--text-secondary);margin-top:4px;font-style:italic;"
-				vn.appendChild(txn)
+				const details = document.createElement("details")
+				details.className = "chat-voice-transcription"
+				details.style.cssText = "margin-top:4px;font-size:12px;color:var(--text-secondary);"
+				const summary = document.createElement("summary")
+				summary.style.cssText = "cursor:pointer;opacity:0.7;user-select:none;font-style:italic;list-style:none;"
+				summary.textContent = "Transcript"
+				const txnText = document.createElement("div")
+				txnText.style.cssText = "margin-top:2px;font-style:italic;padding-left:2px;"
+				txnText.textContent = msg.transcription
+				details.appendChild(summary)
+				details.appendChild(txnText)
+				vn.appendChild(details)
 			}
 			parent.appendChild(vn)
 		}
@@ -6664,6 +6714,17 @@ export function Tool(handle, element, options) {
 			})
 			toolbar.appendChild(fullscreenBtn)
 
+			// Refresh
+			const refreshBtn = document.createElement("button")
+			refreshBtn.title = "Refresh"
+			refreshBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>'
+			refreshBtn.addEventListener("click", e => {
+				e.stopPropagation()
+				const iframe = wrap.querySelector("iframe")
+				if (iframe?.contentWindow) iframe.contentWindow.location.reload()
+			})
+			toolbar.appendChild(refreshBtn)
+
 			// Unpin
 			const unpinBtn = document.createElement("button")
 			unpinBtn.title = "Unpin"
@@ -6805,6 +6866,9 @@ export function Tool(handle, element, options) {
 						cb.resolve(msg.text)
 						llmCallbacks.delete(msg.id)
 					}
+				} else if (msg.type === "token") {
+					const cb = llmCallbacks.get(msg.id)
+					if (cb?.onToken) cb.onToken(msg.text)
 				} else if (msg.type === "error") {
 					console.error("[Chat] LLM error:", msg.message)
 					updateLLMStatus(msg.message)
@@ -6840,19 +6904,34 @@ export function Tool(handle, element, options) {
 		setTimeout(() => updateLLMStatus(""), 2000)
 	}
 
-	async function generateLLM(messages) {
-		const provider = getActiveProvider()
-		if (provider === "openrouter") return generateOpenRouter(messages)
-		if (provider === "ollama") return generateOllama(messages)
-		return generateLocal(messages)
+	// Flatten multipart content messages to plain text (for models that don't support vision)
+	function flattenMessagesForText(messages) {
+		return messages.map(m => {
+			if (Array.isArray(m.content)) {
+				const text = m.content
+					.filter(p => p.type === "text")
+					.map(p => p.text)
+					.join("\n")
+				const hasImage = m.content.some(p => p.type === "image_url")
+				return {...m, content: text + (hasImage ? "\n[Image attached]" : "")}
+			}
+			return m
+		})
 	}
 
-	async function generateLocal(messages) {
+	async function generateLLM(messages, onToken, signal) {
+		const provider = getActiveProvider()
+		if (provider === "openrouter") return generateOpenRouter(messages, onToken, signal)
+		if (provider === "ollama") return generateOllama(messages, onToken, signal)
+		return generateLocal(flattenMessagesForText(messages), onToken, signal)
+	}
+
+	async function generateLocal(messages, onToken, signal) {
 		if (!llmWorker) await initLLMWorker()
 		if (!llmWorker) throw new Error("LLM not available")
 		const id = generateId()
 		return new Promise((resolve, reject) => {
-			llmCallbacks.set(id, {resolve, reject})
+			llmCallbacks.set(id, {resolve, reject, onToken})
 			llmWorker.postMessage({type: "generate", id, messages})
 			setTimeout(() => {
 				if (llmCallbacks.has(id)) {
@@ -6863,7 +6942,7 @@ export function Tool(handle, element, options) {
 		})
 	}
 
-	async function generateOpenRouter(messages) {
+	async function generateOpenRouter(messages, onToken, signal) {
 		if (!chatProfileHandle) throw new Error("No chat profile")
 		const profile = chatProfileHandle.doc()
 		const apiKey = profile?.openrouterApiKey
@@ -6880,20 +6959,45 @@ export function Tool(handle, element, options) {
 				body: JSON.stringify({
 					model,
 					messages,
+					stream: true,
 				}),
+				signal,
 			})
 			if (!res.ok) {
 				const err = await res.text()
 				throw new Error("OpenRouter: " + err)
 			}
-			const data = await res.json()
-			return data.choices[0].message.content
+			let full = ""
+			const reader = res.body.getReader()
+			const decoder = new TextDecoder()
+			let buf = ""
+			while (true) {
+				const {done, value} = await reader.read()
+				if (done) break
+				buf += decoder.decode(value, {stream: true})
+				const lines = buf.split("\n")
+				buf = lines.pop()
+				for (const line of lines) {
+					if (!line.startsWith("data: ")) continue
+					const data = line.slice(6).trim()
+					if (data === "[DONE]") continue
+					try {
+						const parsed = JSON.parse(data)
+						const delta = parsed.choices?.[0]?.delta?.content
+						if (delta) {
+							full += delta
+							if (onToken) onToken(full)
+						}
+					} catch {}
+				}
+			}
+			return full
 		} finally {
 			updateLLMStatus("")
 		}
 	}
 
-	async function generateOllama(messages) {
+	async function generateOllama(messages, onToken, signal) {
 		if (!chatProfileHandle) throw new Error("No chat profile")
 		const profile = chatProfileHandle.doc()
 		const model = profile?.ollamaModel || "llama3.2"
@@ -6906,12 +7010,34 @@ export function Tool(handle, element, options) {
 				body: JSON.stringify({
 					model,
 					messages,
-					stream: false,
+					stream: true,
 				}),
+				signal,
 			})
 			if (!res.ok) throw new Error("Ollama: " + (await res.text()))
-			const data = await res.json()
-			return data.message.content
+			let full = ""
+			const reader = res.body.getReader()
+			const decoder = new TextDecoder()
+			let buf = ""
+			while (true) {
+				const {done, value} = await reader.read()
+				if (done) break
+				buf += decoder.decode(value, {stream: true})
+				const lines = buf.split("\n")
+				buf = lines.pop()
+				for (const line of lines) {
+					if (!line.trim()) continue
+					try {
+						const parsed = JSON.parse(line)
+						const content = parsed.message?.content
+						if (content) {
+							full += content
+							if (onToken) onToken(full)
+						}
+					} catch {}
+				}
+			}
+			return full
 		} finally {
 			updateLLMStatus("")
 		}
@@ -7437,19 +7563,16 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 	}
 
 	async function inviteComputer() {
-		if (computerActive && isComputerHost) {
+		if (computerActive) {
 			await sendComputerMessage(
 				"I'm already here! Ask me anything or say '@computer build me a tool'."
 			)
 			return
 		}
 		computerActive = true
-		isComputerHost = true
 
-		// Mark the doc so other peers know Computer is here + who hosts it
 		handle.change(d => {
 			d.hasComputer = true
-			d.computerHostName = myName
 		})
 
 		// Init LLM worker and start model download immediately
@@ -7495,10 +7618,8 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		if (!computerActive) return
 		computerActive = false
 		computerAutoMode = false
-		isComputerHost = false
 		handle.change(d => {
 			d.hasComputer = false
-			delete d.computerHostName
 		})
 		// Remove from presence
 		presenceMap.delete("Computer")
@@ -7507,12 +7628,13 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		sendComputerMessage("Goodbye! Use `/computer` to invite me back.")
 	}
 
+	let computerResponding = false
+	const computerRespondedToIds = new Set()
+
 	function startComputerListener() {
-		// The onChange handler already fires on every doc change;
-		// we hook into it by checking messages in the render path.
-		// Instead, we add a dedicated listener.
 		const onComputerCheck = () => {
-			if (!computerActive || !isComputerHost) return
+			if (!computerActive) return
+			if (computerResponding) return // Don't process while already responding
 			const doc = handle.doc()
 			const msgs = doc?.messages || []
 			if (msgs.length <= lastComputerProcessedIndex) return
@@ -7521,6 +7643,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 				const entry = msgs[i]
 				const resolved = entry.ref ? msgDocCache.get(entry.url)?.data : entry
 				if (!resolved || resolved.isComputer) continue
+				if (computerRespondedToIds.has(resolved.id)) continue
 
 				const text = (resolved.text || "").toLowerCase()
 				const isReplyToComputer =
@@ -7531,7 +7654,15 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 					isReplyToComputer ||
 					computerAutoMode
 				) {
-					respondToUser(resolved)
+					computerRespondedToIds.add(resolved.id)
+					computerResponding = true
+					respondToUser(resolved).finally(() => {
+						computerResponding = false
+						// Re-check in case messages arrived while responding
+						onComputerCheck()
+					})
+					lastComputerProcessedIndex = msgs.length
+					return // Only respond to one message at a time
 				}
 			}
 			lastComputerProcessedIndex = msgs.length
@@ -7544,37 +7675,6 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		})
 	}
 
-	// Check if the computer host is still online; if not, this peer takes over
-	function checkComputerHostFailover() {
-		if (!computerActive || isComputerHost) return
-		const doc = handle.doc()
-		const hostName = doc?.computerHostName
-		if (!hostName) {
-			// No host recorded — claim it
-			claimComputerHost()
-			return
-		}
-		// Check if the host is still in presence
-		const hostPresence = presenceMap.get(hostName)
-		const now = Date.now()
-		const PRESENCE_TIMEOUT = 30000
-		if (!hostPresence || now - hostPresence.timestamp > PRESENCE_TIMEOUT) {
-			console.log("[Chat] Computer host", hostName, "went offline, taking over")
-			claimComputerHost()
-		}
-	}
-
-	async function claimComputerHost() {
-		isComputerHost = true
-		handle.change(d => { d.computerHostName = myName })
-		await initLLMWorker()
-		if (llmWorker) llmWorker.postMessage({type: "preload"})
-		broadcastComputerTyping(false)
-		console.log("[Chat] This peer is now the computer host")
-	}
-
-	// Run failover check every 15s
-	const hostFailoverInterval = setInterval(checkComputerHostFailover, 15000)
 
 	function broadcastComputerTyping(typing) {
 		handle.broadcast({
@@ -7793,10 +7893,15 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		return reports
 	}
 
+	let activeAbortController = null
+
 	async function respondToUser(userMsg) {
 		// Show typing (and keep it alive while thinking)
 		broadcastComputerTyping(true)
 		const typingInterval = setInterval(() => broadcastComputerTyping(true), 2000)
+
+		const abortController = new AbortController()
+		activeAbortController = abortController
 
 		const context = await assembleContext()
 		const messages = [
@@ -7805,12 +7910,82 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 			{role: "user", content: userMsg.text},
 		]
 
+		// Create a streaming message doc that we'll update live
+		const repo = window.repo
+		let streamingMsgHandle = null
+		const replyToId = userMsg.id // Computer replies to the triggering message
+
+		async function ensureStreamingMsg() {
+			if (streamingMsgHandle) return
+			const msgData = {
+				id: generateId(),
+				name: "Computer",
+				text: "…",
+				timestamp: Date.now(),
+				isComputer: true,
+				font: "monospace",
+				streaming: true,
+				replyTo: replyToId,
+			}
+			streamingMsgHandle = await repo.create2(msgData)
+
+			// Cache and subscribe so token updates trigger re-renders
+			const smUrl = streamingMsgHandle.url
+			msgDocCache.set(smUrl, {data: msgData, handle: streamingMsgHandle})
+			if (!msgDocSubscribed.has(smUrl)) {
+				msgDocSubscribed.add(smUrl)
+				streamingMsgHandle.on("change", () => {
+					const updated = streamingMsgHandle.doc()
+					if (updated) msgDocCache.set(smUrl, {data: updated, handle: streamingMsgHandle})
+					scheduleRender()
+				})
+			}
+
+			handle.change(d => {
+				if (!d.messages) d.messages = []
+				d.messages.push({ref: true, url: smUrl, timestamp: msgData.timestamp})
+			})
+
+		}
+
+		function onToken(fullText) {
+			if (!streamingMsgHandle) return
+			const clean = fullText.replace(/^\[Computer\]\s*/i, "")
+			console.log("[Chat] onToken:", clean.slice(0, 80))
+			streamingMsgHandle.change(d => {
+				d.text = clean
+			})
+			// Update cache and force re-render to show streaming text
+			const smUrl = streamingMsgHandle.url
+			const cached = msgDocCache.get(smUrl)
+			if (cached) {
+				cached.data = {...cached.data, text: clean}
+			}
+			scheduleRender(true)
+		}
+
+		// Throttle token updates to avoid excessive doc changes
+		let tokenThrottleTimer = null
+		let latestTokenText = ""
+		function onTokenThrottled(fullText) {
+			latestTokenText = fullText
+			if (!tokenThrottleTimer) {
+				tokenThrottleTimer = setTimeout(() => {
+					tokenThrottleTimer = null
+					onToken(latestTokenText)
+				}, 200)
+			}
+		}
+
 		try {
 			// Tool-use loop: let the LLM call tools up to 5 times
 			const MAX_TOOL_ROUNDS = 5
 			let madeChanges = false
 			for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-				let response = await generateLLM(messages)
+				await ensureStreamingMsg()
+				let response = await generateLLM(messages, onTokenThrottled, abortController.signal)
+				// Flush any pending throttled update
+				if (tokenThrottleTimer) { clearTimeout(tokenThrottleTimer); tokenThrottleTimer = null }
 				response = response.replace(/^\[Computer\]\s*/i, "")
 				const parsed = parseRichBlocks(response)
 
@@ -7819,6 +7994,32 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 				const otherBlocks = parsed.blocks.filter(b => b.type !== "tool-call")
 
 				if (toolCalls.length > 0) {
+					// Finalize streaming message with the text portion
+					if (otherBlocks.length > 0 || parsed.text.trim()) {
+						const partial = { blocks: otherBlocks, text: parsed.text }
+						const { text, opts } = await processRichBlocks(partial)
+						if (streamingMsgHandle) {
+							streamingMsgHandle.change(d => {
+								d.text = text || ""
+								delete d.streaming
+								if (opts?.embeds) d.embeds = opts.embeds
+							})
+							streamingMsgHandle = null
+
+						}
+						if (otherBlocks.some(b => b.type === "patchwork-tool" || b.type === "file")) madeChanges = true
+					} else {
+						// Mark streaming msg as tool-use in progress
+						if (streamingMsgHandle) {
+							streamingMsgHandle.change(d => {
+								d.text = "(using tools…)"
+								delete d.streaming
+							})
+							streamingMsgHandle = null
+
+						}
+					}
+
 					// Execute tool calls and feed results back
 					let toolResults = ""
 					for (const tc of toolCalls) {
@@ -7826,24 +8027,31 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 						const toolArgs = tc.content.trim().split("\n")[0]
 						toolResults += "\n[Tool result for " + toolArgs + "]\n" + result + "\n"
 					}
-					if (otherBlocks.length > 0 || parsed.text.trim()) {
-						const partial = { blocks: otherBlocks, text: parsed.text }
-						const { text, opts } = await processRichBlocks(partial)
-						if (text) await sendComputerMessage(text, opts)
-						if (otherBlocks.some(b => b.type === "patchwork-tool" || b.type === "file")) madeChanges = true
-					}
 					messages.push({role: "assistant", content: response})
 					messages.push({role: "user", content: "[Tool results]\n" + toolResults})
 					continue
 				}
 
-				// No tool calls — send the final response
+				// No tool calls — finalize the streaming message with final content
 				if (otherBlocks.length > 0) {
 					const { text, opts } = await processRichBlocks(parsed)
-					await sendComputerMessage(text || "Here you go!", opts)
+					if (streamingMsgHandle) {
+						streamingMsgHandle.change(d => {
+							d.text = text || "Here you go!"
+							delete d.streaming
+							if (opts?.embeds) d.embeds = opts.embeds
+						})
+						streamingMsgHandle = null
+					}
 					if (otherBlocks.some(b => b.type === "patchwork-tool" || b.type === "file")) madeChanges = true
 				} else {
-					await sendComputerMessage(response)
+					if (streamingMsgHandle) {
+						streamingMsgHandle.change(d => {
+							d.text = response
+							delete d.streaming
+						})
+						streamingMsgHandle = null
+					}
 				}
 
 				// After making changes, check pinned iframes for errors
@@ -7894,8 +8102,25 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 				break
 			}
 		} catch (err) {
-			await sendComputerMessage("Sorry, I hit an error: " + err.message)
+			if (abortController.signal.aborted) {
+				// User cancelled — finalize with whatever we have so far
+				if (streamingMsgHandle) {
+					streamingMsgHandle.change(d => {
+						d.text = d.text === "…" ? "(cancelled)" : d.text + "\n\n_(cancelled)_"
+						delete d.streaming
+					})
+				}
+			} else if (streamingMsgHandle) {
+				streamingMsgHandle.change(d => {
+					d.text = "Sorry, I hit an error: " + err.message
+					delete d.streaming
+				})
+			} else {
+				await sendComputerMessage("Sorry, I hit an error: " + err.message)
+			}
 		} finally {
+			if (tokenThrottleTimer) clearTimeout(tokenThrottleTimer)
+			activeAbortController = null
 			clearInterval(typingInterval)
 			broadcastComputerTyping(false)
 		}
@@ -8079,13 +8304,51 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		for (const entry of recent) {
 			const msg = entry.ref ? msgDocCache.get(entry.url)?.data : entry
 			if (!msg) continue
-			let content = msg.text || ""
+			let text = msg.text || ""
 			if (msg.transcription)
-				content += "\n[Voice note: " + msg.transcription + "]"
-			contextMessages.push({
-				role: msg.isComputer ? "assistant" : "user",
-				content: msg.isComputer ? content : `[${msg.name}] ${content}`,
-			})
+				text += "\n[Voice note transcription: " + msg.transcription + "]"
+			if (msg.voiceUrl && !msg.transcription)
+				text += "\n[Voice note attached, no transcription available]"
+
+			const role = msg.isComputer ? "assistant" : "user"
+			const prefix = msg.isComputer ? "" : `[${msg.name}] `
+
+			// If message has an image, build multipart content for vision models
+			if (msg.imageUrl && !msg.isComputer) {
+				const parts = []
+				parts.push({type: "text", text: prefix + text})
+				// Try to load the image as base64 data URL
+				try {
+					const repo = window.repo
+					if (repo) {
+						const fh = await repo.find(msg.imageUrl)
+						const fdoc = fh.doc()
+						if (fdoc?.content) {
+							const bytes = fdoc.content instanceof Uint8Array
+								? fdoc.content
+								: new Uint8Array(fdoc.content)
+							const mime = fdoc.mimeType || "image/png"
+							// Convert to base64
+							let binary = ""
+							for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+							const b64 = btoa(binary)
+							parts.push({
+								type: "image_url",
+								image_url: {url: `data:${mime};base64,${b64}`}
+							})
+						}
+					}
+				} catch (e) {
+					// If image loading fails, just note it in text
+					parts[0].text += "\n[Image attached: " + (msg.imageName || "image") + "]"
+				}
+				contextMessages.push({role, content: parts})
+			} else {
+				contextMessages.push({
+					role,
+					content: msg.isComputer ? text : prefix + text,
+				})
+			}
 		}
 
 		// Workspace file listing
@@ -8239,19 +8502,10 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		if (existingFolder) computerFolderUrl = existingFolder.url
 		lastComputerProcessedIndex = (handle.doc()?.messages?.length || 0)
 
-		// Restore host status if we are the recorded host (e.g. after page reload)
-		const recordedHost = handle.doc()?.computerHostName
-		if (recordedHost === myName) {
-			isComputerHost = true
-			initLLMWorker().then(() => {
-				if (llmWorker) llmWorker.postMessage({type: "preload"})
-			})
-			console.log("[Chat] Restored as computer host")
-		} else {
-			isComputerHost = false
-			// Wait longer before failover — presence broadcasts are every 10s
-			setTimeout(checkComputerHostFailover, 20000)
-		}
+		// Init LLM worker
+		initLLMWorker().then(() => {
+			if (llmWorker) llmWorker.postMessage({type: "preload"})
+		})
 
 		startComputerListener()
 		renderPresence()
@@ -8342,7 +8596,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		syncDraftToDoc() // flush any pending draft
 		if (draftHandle) draftHandle.removeAllListeners("change")
 		if (presenceInterval) clearInterval(presenceInterval)
-		clearInterval(hostFailoverInterval)
+
 		if (mediaRecorder && mediaRecorder.state !== "inactive") {
 			recSendOnStop = false
 			mediaRecorder.stop()
