@@ -1,0 +1,96 @@
+{
+  "name": "@patchwork/llm-canvas",
+  "pushwork": {
+    "url": "automerge:Qq3G9LB5bNHwSVJ6m29Tz8zgb4E"
+  },
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./dist/main.js",
+  "exports": {
+    ".": {
+      "import": "./dist/main.js",
+      "source": "./src/main.tsx"
+    },
+    "./tldraw-tool": {
+      "import": "./dist/tldraw-tool.js",
+      "source": "./src/tldraw/mount.tsx"
+    },
+    "./tldraw-datatype": {
+      "import": "./dist/tldraw-datatype.js",
+      "source": "./src/tldraw/mount-datatype.ts"
+    },
+    "./process-tool": {
+      "import": "./dist/process-tool.js",
+      "source": "./src/process/mount.tsx"
+    },
+    "./process-datatype": {
+      "import": "./dist/process-datatype.js",
+      "source": "./src/process/mount-datatype.ts"
+    },
+    "./chat-tool": {
+      "import": "./dist/chat-tool.js",
+      "source": "./src/chat/mount.tsx"
+    },
+    "./chat-datatype": {
+      "import": "./dist/chat-datatype.js",
+      "source": "./src/chat/mount-datatype.ts"
+    },
+    "./worker-tool": {
+      "import": "./dist/worker-tool.js",
+      "source": "./src/worker/mount.tsx"
+    },
+    "./worker-datatype": {
+      "import": "./dist/worker-datatype.js",
+      "source": "./src/worker/mount-datatype.ts"
+    },
+    "./workspace-tool": {
+      "import": "./dist/workspace-tool.js",
+      "source": "./src/workspace/mount.tsx"
+    },
+    "./workspace-datatype": {
+      "import": "./dist/workspace-datatype.js",
+      "source": "./src/workspace/mount-datatype.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc && vite build",
+    "sync": "pnpm build && pushwork sync"
+  },
+  "dependencies": {
+    "@automerge/automerge-repo-react-hooks": "2.5.0",
+    "@automerge/react": "2.5.0",
+    "@inkandswitch/patchwork-elements": "link:../../patchwork-next/packages/elements",
+    "@inkandswitch/patchwork-filesystem": "link:../../patchwork-next/packages/filesystem",
+    "@inkandswitch/patchwork-plugins": "link:../../patchwork-next/packages/plugins",
+    "@inkandswitch/patchwork-react": "link:../../patchwork-next/packages/react",
+    "@tldraw/tldraw": "4.3.1",
+    "@types/lodash": "^4.17.20",
+    "lodash": "^4.17.21",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "tldraw": "^4.3.1"
+  },
+  "devDependencies": {
+    "@automerge/automerge": "3.2.1",
+    "@automerge/automerge-repo": "2.5.0",
+    "@eslint/js": "^9.36.0",
+    "@inkandswitch/patchwork-bootloader": "link:../../patchwork-next/core/bootloader",
+    "@types/node": "^24.6.0",
+    "@types/react": "^18.3.23",
+    "@types/react-dom": "^18.2.2",
+    "@vitejs/plugin-react": "^4.5.1",
+    "babel-plugin-react-compiler": "19.1.0-rc.3",
+    "eslint": "^9.36.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.22",
+    "globals": "^16.4.0",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.45.0",
+    "vite": "^6.3.5",
+    "vite-plugin-css-injected-by-js": "^3.5.2",
+    "vite-plugin-top-level-await": "^1.5.0",
+    "vite-plugin-wasm": "^3.4.1"
+  }
+}
