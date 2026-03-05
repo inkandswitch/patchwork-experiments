@@ -1,0 +1,16 @@
+{
+  "name": "@patchwork/spatial-canvas",
+  "version": "0.0.1",
+  "description": "Spatial canvas tool for Patchwork",
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build",
+    "sync": "vite build && pushwork sync"
+  },
+  "devDependencies": {
+    "typescript": "latest",
+    "vite": "latest"
+  }
+}
