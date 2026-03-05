@@ -1,0 +1,28 @@
+{
+  "id": "7bf27658f48cf4ac9358d066f30454ec",
+  "root_directory_id": "GyuTkDCKHzGDJbehEfQdEq4sRLsVB4EwaQ6hRJ44Ycz3",
+  "ignore": [
+    ".git/",
+    "target/",
+    "node_modules/",
+    ".darn-staging-*/",
+    ".env"
+  ],
+  "attributes": {
+    "binary": [
+      "*.js.map",
+      "*.css.map",
+      "*.map",
+      "*.min.js",
+      "*.min.css",
+      "*.lock",
+      "package-lock.json",
+      "pnpm-lock.yaml",
+      "yarn.lock",
+      "Cargo.lock",
+      "Gemfile.lock",
+      "poetry.lock",
+      "composer.lock"
+    ]
+  }
+}
