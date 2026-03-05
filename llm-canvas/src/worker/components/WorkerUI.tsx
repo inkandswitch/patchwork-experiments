@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { RotateCcw } from "lucide-react";
 import { useDocument, useRepo } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import { runLLMProcess } from "../../process/llm-process.ts";
@@ -464,30 +465,12 @@ export function WorkerInner({ workerDocUrl }: { workerDocUrl: AutomergeUrl }) {
             ) : (
               /* Auto mode */
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                {isRunning ? (
-                  <button style={rerunBtnStyle} onClick={handleRerun} onPointerDown={(e) => e.stopPropagation()}>
-                    Rerun
-                  </button>
-                ) : (
-                  <>
-                    <span style={{ fontSize: 10, color: "#888", fontStyle: "italic" }}>
-                      {readEntries.length === 0 && writeEntries.length === 0 ? "no entries" : "watching…"}
-                    </span>
-                    <button
-                      style={stopBtnStyle}
-                      onClick={() => handleModeChange("manual")}
-                      onPointerDown={(e) => e.stopPropagation()}
-                    >
-                      Stop auto
-                    </button>
-                  </>
-                )}
-                <span style={{ fontSize: 11, color: "#777" }}>idle for</span>
+                <span style={{ fontSize: 11, color: "#777" }}>rerun after idle for</span>
                 <input
                   type="number"
                   min={1}
                   style={{
-                    width: 52,
+                    width: 40,
                     fontSize: 11,
                     padding: "2px 5px",
                     border: "1px solid #ddd",
@@ -501,6 +484,21 @@ export function WorkerInner({ workerDocUrl }: { workerDocUrl: AutomergeUrl }) {
                   onPointerDown={(e) => e.stopPropagation()}
                 />
                 <span style={{ fontSize: 11, color: "#777" }}>sec</span>
+                {isRunning && (
+                  <button style={stopBtnStyle} onClick={handleStop} onPointerDown={(e) => e.stopPropagation()}>
+                    Stop
+                  </button>
+                )}
+                {isRunning && (
+                  <button
+                    style={iconBtnStyle}
+                    onClick={handleRerun}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    title="Rerun"
+                  >
+                    <RotateCcw size={13} />
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -673,13 +671,17 @@ const stopBtnStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
-const rerunBtnStyle: React.CSSProperties = {
-  fontSize: 11,
-  fontWeight: 600,
-  padding: "4px 14px",
-  borderRadius: 6,
+const iconBtnStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: 24,
+  height: 24,
+  borderRadius: 5,
   border: "none",
-  background: "#fff3e0",
-  color: "#e65100",
+  background: "#f0f0f0",
+  color: "#555",
   cursor: "pointer",
+  padding: 0,
+  flexShrink: 0,
 };
