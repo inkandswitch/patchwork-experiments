@@ -1,5 +1,7 @@
 import type { AutomergeUrl } from '@automerge/automerge-repo';
 
+export type { ActivityEvent } from '../workspace/types';
+
 export type ProcessDoc = {
   title: string;
   config: {

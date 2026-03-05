@@ -1,5 +1,10 @@
 import type { AutomergeUrl } from '@automerge/automerge-repo';
 
+export type ActivityEvent =
+  | { operation: 'find'; url: AutomergeUrl }
+  | { operation: 'change'; url: AutomergeUrl }
+  | { operation: 'create'; url: AutomergeUrl };
+
 export type AccessLevel = 'read' | 'reviewed' | 'full';
 
 export type WorkspaceDocEntry = {

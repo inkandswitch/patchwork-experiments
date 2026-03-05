@@ -12,7 +12,7 @@ import type { FolderDoc, DocLink } from '@inkandswitch/patchwork-filesystem';
 import { getWorkspaceRepo } from '../workspace/workspace-repo';
 import type { WorkspaceDoc, WorkspaceEntry, WorkspaceChanges } from '../workspace/types';
 import { parseScriptBlocks } from './parser';
-import type { ProcessDoc, OutputBlock, ChatMessage } from './types';
+import type { ProcessDoc, OutputBlock, ChatMessage, ActivityEvent } from './types';
 
 function stringifyArg(arg: any): string {
   if (typeof arg === 'string') return arg;
@@ -55,6 +55,8 @@ export type LLMProcessOptions = {
   includeWorkspaceContext?: boolean;
   /** Extra context appended to the system prompt after skills/workspace sections. */
   systemContextSuffix?: string;
+  /** Called whenever a document operation is observed (find/change/create), including speculative detections from streaming script code. */
+  onActivity?: (event: ActivityEvent) => void;
 };
 
 export async function runLLMProcess(
@@ -77,7 +79,7 @@ export async function runLLMProcess(
   const wsDoc = wsHandle.doc();
   if (!wsDoc) throw new Error('Workspace document not found');
 
-  const { workspaceRepo, changes } = getWorkspaceRepo(repo, wsHandle);
+  const { workspaceRepo, changes } = getWorkspaceRepo(repo, wsHandle, { onActivity: options?.onActivity });
   const capturedConsole = createCapturedConsole();
 
   const skills = skillsFolderUrl

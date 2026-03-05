@@ -1,5 +1,5 @@
 import type { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo';
-import type { WorkspaceChange, WorkspaceChanges, WorkspaceDoc } from './types';
+import type { ActivityEvent, WorkspaceChange, WorkspaceChanges, WorkspaceDoc } from './types';
 
 type HandleCache = {
   originalHandle: DocHandle<any>;
@@ -42,6 +42,7 @@ function createReviewedWrapper(
   repo: Repo,
   originalHandle: DocHandle<any>,
   onClone: (originalUrl: AutomergeUrl, cloneHandle: DocHandle<any>) => void,
+  onActivity?: (event: ActivityEvent) => void,
 ): HandleWrapper {
   let cloneHandle: DocHandle<any> | null = null;
 
@@ -65,6 +66,7 @@ function createReviewedWrapper(
       return activeHandle().doc();
     },
     change(fn: (doc: any) => void) {
+      onActivity?.({ operation: 'change', url: originalHandle.url });
       ensureClone().change(fn);
     },
     on(event: string, fn: (...args: any[]) => void) {
@@ -79,7 +81,7 @@ function createReviewedWrapper(
   };
 }
 
-function createFullAccessWrapper(handle: DocHandle<any>): HandleWrapper {
+function createFullAccessWrapper(handle: DocHandle<any>, onActivity?: (event: ActivityEvent) => void): HandleWrapper {
   return {
     get url() {
       return handle.url;
@@ -88,6 +90,7 @@ function createFullAccessWrapper(handle: DocHandle<any>): HandleWrapper {
       return handle.doc();
     },
     change(fn: (doc: any) => void) {
+      onActivity?.({ operation: 'change', url: handle.url });
       handle.change(fn);
     },
     on(event: string, fn: (...args: any[]) => void) {
@@ -107,10 +110,16 @@ export type WorkspaceRepo = {
   create(): DocHandle<any>;
 };
 
+export type WorkspaceRepoConfig = {
+  onActivity?: (event: ActivityEvent) => void;
+};
+
 export function getWorkspaceRepo(
   repo: Repo,
   workspaceHandle: DocHandle<WorkspaceDoc>,
+  config?: WorkspaceRepoConfig,
 ): { workspaceRepo: WorkspaceRepo; changes: WorkspaceChanges } {
+  const { onActivity } = config ?? {};
   // In-memory cache of live handles, keyed by originalUrl
   const handleCache = new Map<AutomergeUrl, HandleCache>();
 
@@ -141,10 +150,12 @@ export function getWorkspaceRepo(
 
   const workspaceRepo: WorkspaceRepo = {
     async find(url: AutomergeUrl) {
+      onActivity?.({ operation: 'find', url });
+
       // Check if we already have a live clone in the cache
       const cached = handleCache.get(url);
       if (cached) {
-        return createReviewedWrapper(repo, cached.originalHandle, () => {});
+        return createReviewedWrapper(repo, cached.originalHandle, () => {}, onActivity);
       }
 
       // Check if there's a persisted mapping for this url (from a previous session)
@@ -153,7 +164,7 @@ export function getWorkspaceRepo(
         const originalHandle = await repo.find(url);
         const cloneHandle = await repo.find(persistedMapping.cloneUrl);
         handleCache.set(url, { originalHandle, cloneHandle });
-        return createReviewedWrapper(repo, originalHandle, () => {});
+        return createReviewedWrapper(repo, originalHandle, () => {}, onActivity);
       }
 
       const entry = entryByUrl.get(url);
@@ -175,15 +186,16 @@ export function getWorkspaceRepo(
         case 'reviewed':
           return createReviewedWrapper(repo, handle, (origUrl, clone) => {
             recordClone(origUrl, clone, handle);
-          });
+          }, onActivity);
 
         case 'full':
-          return createFullAccessWrapper(handle);
+          return createFullAccessWrapper(handle, onActivity);
       }
     },
 
     create() {
       const handle = repo.create();
+      onActivity?.({ operation: 'create', url: handle.url });
       workspaceHandle.change((d) => {
         if (!d.mappings) d.mappings = [] as any;
         (d.mappings as WorkspaceChange[]).push({
