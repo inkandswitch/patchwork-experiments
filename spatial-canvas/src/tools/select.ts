@@ -72,7 +72,11 @@ export function createSelectTool(ctx: SelectToolContext) {
     const clientY = (pageY + camera.y) * camera.zoom + canvasBounds.top
     const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null
     if (!el) return null
-    return (el.dataset.edge || el.dataset.corner || null) as HandleEdge | null
+    // elementFromPoint returns the innermost element (e.g. .sc-handle-visual).
+    // Walk up to find the ancestor that carries data-edge or data-corner.
+    const handle = el.closest('[data-edge],[data-corner]') as HTMLElement | null
+    if (!handle) return null
+    return (handle.dataset.edge || handle.dataset.corner) as HandleEdge
   }
 
   function startTranslateSession(info: PointerInfo) {

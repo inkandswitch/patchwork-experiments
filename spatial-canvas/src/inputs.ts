@@ -12,8 +12,12 @@ export class Inputs {
   /** Current bounding rect of the canvas element — updated by CanvasView. */
   bounds: DOMRect = new DOMRect(0, 0, 0, 0)
 
-  private lastX = 0
-  private lastY = 0
+  // Stored in screen space (raw clientX/Y) so that camera changes between
+  // frames (during pan) do not invalidate the delta. If we stored in page
+  // space, a pan that updates camera.x would make the next frame's pageX equal
+  // to lastPageX, yielding dx=0 every other frame and causing 2× speed lag.
+  private lastScreenX = 0
+  private lastScreenY = 0
   private origin: Vec2 = { x: 0, y: 0 }
 
   updateBounds(rect: DOMRect) {
@@ -29,8 +33,8 @@ export class Inputs {
 
   onPointerDown(e: PointerEvent, camera: Camera): PointerInfo {
     const page = this.screenToPage(e.clientX, e.clientY, camera)
-    this.lastX = page.x
-    this.lastY = page.y
+    this.lastScreenX = e.clientX
+    this.lastScreenY = e.clientY
     this.origin = { x: page.x, y: page.y }
 
     return {
@@ -52,8 +56,8 @@ export class Inputs {
     const info: PointerInfo = {
       x: page.x,
       y: page.y,
-      dx: page.x - this.lastX,
-      dy: page.y - this.lastY,
+      dx: (e.clientX - this.lastScreenX) / camera.zoom,
+      dy: (e.clientY - this.lastScreenY) / camera.zoom,
       origin: this.origin,
       pointerId: e.pointerId,
       buttons: e.buttons,
@@ -61,8 +65,8 @@ export class Inputs {
       metaKey: e.metaKey,
       altKey: e.altKey,
     }
-    this.lastX = page.x
-    this.lastY = page.y
+    this.lastScreenX = e.clientX
+    this.lastScreenY = e.clientY
     return info
   }
 
@@ -71,8 +75,8 @@ export class Inputs {
     const info: PointerInfo = {
       x: page.x,
       y: page.y,
-      dx: page.x - this.lastX,
-      dy: page.y - this.lastY,
+      dx: (e.clientX - this.lastScreenX) / camera.zoom,
+      dy: (e.clientY - this.lastScreenY) / camera.zoom,
       origin: this.origin,
       pointerId: e.pointerId,
       buttons: e.buttons,
@@ -80,8 +84,8 @@ export class Inputs {
       metaKey: e.metaKey,
       altKey: e.altKey,
     }
-    this.lastX = page.x
-    this.lastY = page.y
+    this.lastScreenX = e.clientX
+    this.lastScreenY = e.clientY
     return info
   }
 }
