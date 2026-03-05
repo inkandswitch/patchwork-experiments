@@ -22,7 +22,7 @@ let status: 'not initialized' | 'initializing' | 'ready' = 'not initialized';
 declare global {
   // Declare `repo` like this to prevent its name from getting mangled by the TS compiler.
   // This makes it possible for the task code to access this variable by name.
-  let repo: Repo;
+  var repo: Repo;
 }
 
 let importMap: any;
@@ -30,9 +30,8 @@ let baseURI: string;
 
 let workerHandle: DocHandle<Worker>;
 
-console.log('I am worker, hear me roar!');
-
 self.addEventListener('connect', (e: any) => {
+  console.log('got a connection!');
   const port = e.ports[0];
   port.onmessage = (e: any) => {
     const msg: MessageToWorker = e.data;
@@ -67,10 +66,10 @@ async function init(
   baseURI = _baseURI;
   setUpImportMap();
 
-  repo = await getRepo(repoPort, `task-worker-${Math.round(Math.random() * 10_000)}`);
+  globalThis.repo = await getRepo(repoPort, `task-worker-${Math.round(Math.random() * 10_000)}`);
 
   // create the worker document
-  workerHandle = repo.create<Worker>({
+  workerHandle = self.repo.create<Worker>({
     name: generateName().dashed,
     contactUrl: _contactUrl,
     currentTask: null,
@@ -98,6 +97,7 @@ async function init(
   });
 
   console.log('ready', { workerUrl: workerHandle.url });
+  console.log('hola, me llamo', workerHandle.doc().name);
 }
 
 function setUpImportMap() {
@@ -167,7 +167,7 @@ async function processTask(taskUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
 }
 
 async function execute(taskUrl: AutomergeUrl) {
-  const taskHandle = await repo.find<Task<any, any>>(taskUrl);
+  const taskHandle = await self.repo.find<Task<any, any>>(taskUrl);
   const { importUrl, input } = taskHandle.doc();
 
   const log: [number, string][] = [];
@@ -216,7 +216,7 @@ async function execute(taskUrl: AutomergeUrl) {
 }
 
 async function moveToDone(taskUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
-  const taskQueueHandle = await repo.find<TaskQueue>(taskQueueUrl);
+  const taskQueueHandle = await self.repo.find<TaskQueue>(taskQueueUrl);
   taskQueueHandle.change((doc) => {
     const idx = doc.pending.indexOf(taskUrl);
     doc.pending.splice(idx, 1);
