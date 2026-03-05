@@ -23,6 +23,7 @@
     "@inkandswitch/patchwork-elements": "^0.0.3",
     "@inkandswitch/patchwork-plugins": "^0.0.2",
     "@patchwork/sdk": "file:../../patchwork/sdk",
+    "@awarth/tasklib": "^0.0.3",
     "boring-name-generator": "^1.0.3",
     "es-module-shims": "^2.8.0",
     "react": "^18.3.1",

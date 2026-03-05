@@ -2,7 +2,7 @@ import type { AutomergeUrl } from '@automerge/automerge-repo';
 import type { MessageToRouter, MessageToWorker, MessageToWorkerPool } from './protocol';
 
 import { MessageChannelNetworkAdapter, Repo } from '@automerge/vanillajs';
-import { getAccountHandle, getTaskQueues, TaskQueues } from './helpers';
+import { getAccountHandle, getTaskQueues, type TaskQueues } from './helpers';
 
 import WorkerPool from './worker-pool.ts?sharedworker';
 import TaskWorker from './worker.ts?sharedworker';
@@ -37,7 +37,11 @@ export class WorkerPoolProxy {
     // initialize it (it doesn't matter if this message is sent more than once)
     const repoPort = (window as any).getRepoChannel();
     workerPool.port.postMessage(
-      { type: 'init', contactUrl: this.contactUrl, repoPort: repoPort } satisfies MessageToWorkerPool,
+      {
+        type: 'init',
+        contactUrl: this.contactUrl,
+        repoPort: repoPort,
+      } satisfies MessageToWorkerPool,
       [repoPort],
     );
     return workerPool;

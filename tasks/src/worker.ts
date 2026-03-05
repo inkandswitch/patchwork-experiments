@@ -19,7 +19,12 @@ try {
 
 let status: 'not initialized' | 'initializing' | 'ready' = 'not initialized';
 
-let repo: Repo;
+declare global {
+  // Declare `repo` like this to prevent its name from getting mangled by the TS compiler.
+  // This makes it possible for the task code to access this variable by name.
+  let repo: Repo;
+}
+
 let importMap: any;
 let baseURI: string;
 
@@ -35,13 +40,7 @@ self.addEventListener('connect', (e: any) => {
     try {
       switch (msg.type) {
         case 'init':
-          init(
-            port,
-            msg.repoPort,
-            msg.contactUrl,
-            msg.importMap,
-            msg.baseURI,
-          );
+          init(port, msg.repoPort, msg.contactUrl, msg.importMap, msg.baseURI);
           break;
       }
     } catch (error) {
@@ -94,7 +93,9 @@ async function init(
     }
   });
 
-  workerHandle.change((doc) => { doc.currentTask = null; });
+  workerHandle.change((doc) => {
+    doc.currentTask = null;
+  });
 
   console.log('ready', { workerUrl: workerHandle.url });
 }
@@ -223,4 +224,4 @@ async function moveToDone(taskUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
   });
 }
 
-export { }; // to ensure this is a module
+export {}; // to ensure this is a module

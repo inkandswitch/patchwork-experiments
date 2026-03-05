@@ -30,7 +30,7 @@ export const plugins: Plugin<any>[] = [
     icon: 'Square',
     supportedDatatypes: '*',
     unlisted: true,
-    forTitleBar: true,
+    tags: ['titlebar-tool'],
     async load() {
       const { TitlebarTool } = await import('./titlebar-tool');
       return TitlebarTool;
