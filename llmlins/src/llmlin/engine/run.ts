@@ -153,13 +153,24 @@ function stripFrontmatter(content: string): string {
 // Message construction
 // ============================================================================
 
+type DocEntry = {
+  url: AutomergeUrl
+  content: unknown
+}
+
+type RunContext = {
+  skills: SkillInfo[]
+  readDocs: DocEntry[]
+  writeDocs: DocEntry[]
+}
+
 const SYSTEM_PROMPT = `You are a coding agent with access to a document repository and the ability to execute JavaScript.
 
 You can execute code by writing it inside <script> tags. Add a data-description attribute to briefly describe what the code does:
 
-<script data-description="List available documents">
+<script data-description="Describe what you're doing">
 const handle = await repo.find("automerge:...")
-console.log(handle.doc())
+handle.change(doc => { doc.foo = "bar" })
 </script>
 
 Available APIs in your execution context:
@@ -182,20 +193,32 @@ Use this to inspect results and decide your next steps.
 Write text outside of script tags to explain your reasoning.
 Keep your code concise and focused on the task.`
 
+function formatDocEntry(entry: DocEntry): string {
+  return `${entry.url}\n${JSON.stringify(entry.content, null, 2)}`
+}
+
 function buildMessages(
   prompt: string,
   output: OutputBlock[],
-  skillDescriptions: string,
-  readDocDescriptions: string,
+  context: RunContext,
 ): ChatMessage[] {
   const messages: ChatMessage[] = []
 
   let systemPrompt = SYSTEM_PROMPT
-  if (skillDescriptions) {
+
+  if (context.skills.length > 0) {
+    const skillDescriptions = context.skills.map(s => `### ${s.name}\n${s.content}`).join('\n\n')
     systemPrompt += `\n\n---\nAvailable skills (load with loadSkill(name)):\n\n${skillDescriptions}`
   }
-  if (readDocDescriptions) {
-    systemPrompt += `\n\nRead-only documents available via repo.find(url):\n${readDocDescriptions}`
+
+  if (context.readDocs.length > 0) {
+    const entries = context.readDocs.map(formatDocEntry).join('\n\n')
+    systemPrompt += `\n\n---\nRead-only documents:\n\n${entries}`
+  }
+
+  if (context.writeDocs.length > 0) {
+    const entries = context.writeDocs.map(formatDocEntry).join('\n\n')
+    systemPrompt += `\n\n---\nWritable documents (use handle.change(fn) to mutate):\n\n${entries}`
   }
 
   messages.push({ role: 'system', content: systemPrompt })
@@ -372,15 +395,24 @@ export async function runLLMlin(
   ;(globalThis as any).loadSkill      = loadSkill
   ;(globalThis as any).__llmCapturedConsole = capturedConsole
 
-  const skillDescriptions = skills.length
-    ? skills.map(s => `### ${s.name}\n${s.content}`).join('\n\n')
-    : ''
-
-  // Describe plain read docs (non-skill)
+  // Fetch current content for plain read docs (non-skill) and write docs
   const plainReadUrls = readDocUrls.filter(u => !skillUrls.has(u))
-  const readDocDescriptions = plainReadUrls.length
-    ? plainReadUrls.map(u => `  ${u}`).join('\n')
-    : ''
+
+  async function fetchDocEntry(url: AutomergeUrl): Promise<DocEntry> {
+    try {
+      const handle = await repo.find(url)
+      return { url, content: handle.doc() }
+    } catch {
+      return { url, content: null }
+    }
+  }
+
+  const [readDocs, writeDocs] = await Promise.all([
+    Promise.all(plainReadUrls.map(fetchDocEntry)),
+    Promise.all(writeDocUrls.map(fetchDocEntry)),
+  ])
+
+  const context: RunContext = { skills, readDocs, writeDocs }
 
   const MAX_ITERATIONS = 20
   const output: OutputBlock[] = []
@@ -390,7 +422,7 @@ export async function runLLMlin(
   for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
     if (signal?.aborted) break
 
-    const messages = buildMessages(prompt, output, skillDescriptions, readDocDescriptions)
+    const messages = buildMessages(prompt, output, context)
     const stream = streamChatCompletion(apiUrl, apiKey, model, messages, signal)
 
     let foundScript = false
