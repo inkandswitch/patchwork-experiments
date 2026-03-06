@@ -9,17 +9,31 @@
   width: 100%;
   height: 100%;
   box-sizing: border-box;
-  background: #f7f8fa;
-  border: 1.5px solid #d0d4dc;
+  background: #1b1e2e;
+  border: 1.5px solid #2a2e46;
   border-radius: 8px;
   overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 13px;
-  color: #1a1a2e;
+  color: #c4c9de;
 }
 
 /* ============================================================
-   Header — drop zones + eye button
+   Eye bar — sits above the drop-zone header, eye right-aligned
+   ============================================================ */
+
+.ll-eyebar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 5px 8px;
+  background: #13151f;
+  border-bottom: 1px solid #20233a;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   Header — drop zones
    ============================================================ */
 
 .ll-header {
@@ -27,10 +41,9 @@
   align-items: stretch;
   gap: 0;
   padding: 8px 10px;
-  border-bottom: 1px solid #e0e3ea;
-  background: #fff;
-  min-height: 48px;
-  position: relative;
+  border-bottom: 1px solid #20233a;
+  background: #13151f;
+  min-height: 52px;
 }
 
 .ll-zone {
@@ -39,9 +52,9 @@
   flex-direction: column;
   gap: 4px;
   padding: 6px 8px;
-  border: 1.5px dashed #c8cdd8;
+  border: 1.5px dashed #2c3050;
   border-radius: 6px;
-  background: #f0f2f7;
+  background: #1e2138;
   transition: background 0.15s, border-color 0.15s;
   min-width: 0;
   overflow: visible;
@@ -52,21 +65,24 @@
 }
 
 .ll-zone.ll-drag-over {
-  background: #e8f0ff;
-  border-color: #5580f7;
+  background: #1d2448;
+  border-color: #6b8fff;
 }
 
 .ll-zone-label {
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  color: #7a82a0;
+  letter-spacing: 0.05em;
+  color: #46507a;
   text-transform: uppercase;
   user-select: none;
   pointer-events: none;
 }
 
-/* Token pile — tokens overlap horizontally */
+/* ============================================================
+   Token pile
+   ============================================================ */
+
 .ll-tokens {
   display: flex;
   flex-direction: row;
@@ -86,78 +102,116 @@
   gap: 5px;
   padding: 3px 8px;
   border-radius: 12px;
-  background: #fff;
-  border: 1.5px solid #c8cdd8;
+  background: #252840;
+  border: 1.5px solid #38405e;
   font-size: 11px;
   font-weight: 500;
-  color: #3a4060;
+  color: #a8b0cc;
   white-space: nowrap;
   cursor: default;
   user-select: none;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-  transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s, opacity 0.2s, filter 0.2s;
   position: relative;
   z-index: 1;
 }
 
-/* Stagger/overlap: every token after the first overlaps slightly */
 .ll-token + .ll-token {
   margin-left: -10px;
 }
 
-/* Lift the hovered one to top */
 .ll-token:hover {
   z-index: 10;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.14);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
   transform: translateY(-1px);
 }
 
-/* Eye-mode: token is selectable */
+/* Eye-mode: tokens are clickable */
 .ll-root.ll-eye-mode .ll-token {
   cursor: pointer;
 }
 
+/* Watched token */
 .ll-token.ll-token-watched {
-  border-color: #5580f7;
-  background: #eef1ff;
-  box-shadow: 0 0 0 2px rgba(85, 128, 247, 0.2);
+  border-color: #6b8fff;
+  background: #1d2448;
+  color: #c0d0ff;
+  box-shadow: 0 0 0 2px rgba(107, 143, 255, 0.22);
   z-index: 5;
 }
 
-/* Small colored dot prefix per bucket */
-.ll-zone[data-bucket="read"]  .ll-token { border-left: 3px solid #5580f7; }
-.ll-zone[data-bucket="write"] .ll-token { border-left: 3px solid #f76055; }
+/* Dim/gray-out tokens not watched in eye mode */
+.ll-token.ll-token-dim {
+  opacity: 0.3;
+  filter: saturate(0.2);
+}
+
+.ll-token.ll-token-dim:hover {
+  opacity: 0.55;
+  filter: saturate(0.5);
+}
+
+/* Bucket accent stripe */
+.ll-zone[data-bucket="read"]  .ll-token { border-left: 3px solid #6b8fff; }
+.ll-zone[data-bucket="write"] .ll-token { border-left: 3px solid #ff6b8a; }
 
 /* ============================================================
    Eye button
    ============================================================ */
 
 .ll-eye-btn {
-  position: absolute;
-  top: 8px;
-  right: 10px;
-  width: 30px;
-  height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1.5px solid #d0d4dc;
-  border-radius: 6px;
-  background: #fff;
+  width: 50px;
+  height: 38px;
+  border: 1.5px solid #2c3050;
+  border-radius: 8px;
+  background: #1e2138;
   cursor: pointer;
-  color: #9aa0b8;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  color: #4e5878;
+  transition: color 0.15s, border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  flex-shrink: 0;
 }
 
 .ll-eye-btn:hover {
-  color: #5580f7;
-  border-color: #5580f7;
+  color: #7b97ff;
+  border-color: #4a5f9f;
+  background: #1d2040;
 }
 
 .ll-root.ll-eye-mode .ll-eye-btn {
-  color: #5580f7;
-  border-color: #5580f7;
-  background: #eef1ff;
+  color: #7b97ff;
+  border-color: #6b8fff;
+  background: #1d2448;
+  box-shadow: 0 0 10px rgba(107, 143, 255, 0.25);
+}
+
+/* ============================================================
+   Eye SVG internals
+   ============================================================ */
+
+/* By default: show closed eye, hide open */
+.ll-eye-open-group   { display: none; }
+.ll-eye-closed-group { display: block; }
+
+/* In eye mode: show open eye, hide closed */
+.ll-root.ll-eye-mode .ll-eye-open-group   { display: block; }
+.ll-root.ll-eye-mode .ll-eye-closed-group { display: none; }
+
+.ll-eye-iris {
+  fill: rgba(107, 143, 255, 0.18);
+  stroke: currentColor;
+  stroke-width: 1.2;
+}
+
+.ll-eye-pupil {
+  fill: currentColor;
+}
+
+.ll-eye-highlight {
+  fill: rgba(220, 230, 255, 0.65);
+  pointer-events: none;
 }
 
 /* ============================================================
@@ -169,6 +223,7 @@
   display: flex;
   padding: 10px;
   min-height: 0;
+  background: #1b1e2e;
 }
 
 .ll-prompt {
@@ -177,25 +232,25 @@
   min-height: 80px;
   box-sizing: border-box;
   resize: none;
-  border: 1.5px solid #d0d4dc;
+  border: 1.5px solid #2c3050;
   border-radius: 6px;
   padding: 8px 10px;
   font-family: inherit;
   font-size: 13px;
-  color: #1a1a2e;
-  background: #fff;
+  color: #c4c9de;
+  background: #181b2a;
   outline: none;
   line-height: 1.5;
   transition: border-color 0.15s;
 }
 
 .ll-prompt:focus {
-  border-color: #5580f7;
-  box-shadow: 0 0 0 2px rgba(85, 128, 247, 0.15);
+  border-color: #6b8fff;
+  box-shadow: 0 0 0 2px rgba(107, 143, 255, 0.14);
 }
 
 .ll-prompt::placeholder {
-  color: #b0b8cc;
+  color: #353a58;
 }
 
 /* ============================================================
@@ -207,8 +262,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 8px 10px;
-  border-top: 1px solid #e0e3ea;
-  background: #fff;
+  border-top: 1px solid #20233a;
+  background: #13151f;
 }
 
 .ll-model {
@@ -216,20 +271,21 @@
   max-width: 220px;
   appearance: none;
   -webkit-appearance: none;
-  background: #f0f2f7 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%239aa0b8' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 10px center;
-  border: 1.5px solid #d0d4dc;
+  color-scheme: dark;
+  background: #1e2138 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%234e5878' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 10px center;
+  border: 1.5px solid #2c3050;
   border-radius: 6px;
   padding: 5px 28px 5px 10px;
   font-family: inherit;
   font-size: 12px;
-  color: #3a4060;
+  color: #8890b4;
   cursor: pointer;
   outline: none;
   transition: border-color 0.15s;
 }
 
 .ll-model:focus {
-  border-color: #5580f7;
+  border-color: #6b8fff;
 }
 
 .ll-play {
@@ -240,7 +296,7 @@
   justify-content: center;
   border: none;
   border-radius: 8px;
-  background: #1a1a2e;
+  background: #3a5fff;
   color: #fff;
   cursor: pointer;
   transition: background 0.15s, transform 0.1s;
@@ -248,7 +304,7 @@
 }
 
 .ll-play:hover {
-  background: #5580f7;
+  background: #6b8fff;
   transform: scale(1.05);
 }
 
@@ -257,7 +313,7 @@
 }
 
 /* ============================================================
-   Eye-mode SVG overlay
+   Eye-mode SVG overlay — trapezoids
    ============================================================ */
 
 .ll-overlay {
@@ -269,9 +325,10 @@
 }
 
 .ll-trap {
-  fill: rgba(85, 128, 247, 0.08);
-  stroke: rgba(85, 128, 247, 0.45);
-  stroke-width: 1.5;
+  fill: rgba(107, 143, 255, 0.07);
+  stroke: rgba(107, 143, 255, 0.4);
+  stroke-width: 1;
+  stroke-linejoin: round;
 }
 
 /* ============================================================
@@ -286,13 +343,13 @@
   height: 100%;
   padding: 6px 12px;
   box-sizing: border-box;
-  background: #fff;
-  border: 1.5px solid #c8cdd8;
+  background: #252840;
+  border: 1.5px solid #38405e;
   border-radius: 12px;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 12px;
   font-weight: 500;
-  color: #3a4060;
+  color: #a8b0cc;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
