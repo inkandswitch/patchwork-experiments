@@ -1,6 +1,7 @@
 import type {
   Camera, Rect, CanvasDoc, CanvasShape, DocHandle, Disposer
 } from './types.js'
+import { newId, nextZIndex } from './commands.js'
 import { updateCamera, zoomCamera } from './camera.js'
 import { createShapeTree, type ContentMounter } from './shape-tree.js'
 import { Inputs } from './inputs.js'
@@ -8,6 +9,8 @@ import { createSelectTool } from './tools/select.js'
 import { createPanTool } from './tools/pan.js'
 import { createPlaceTool } from './tools/place.js'
 import { PerformanceMode, applyPerformanceMode } from './performance.js'
+import { mountEmbed, type ToolOption } from './embed.js'
+import { mountToken } from './token.js'
 
 import canvasCss  from './css/canvas.css?inline'
 import shapesCss  from './css/shapes.css?inline'
@@ -23,9 +26,15 @@ export interface CanvasViewOptions {
   createChildDoc: (toolId: string) => string
   /**
    * Called to mount content into a shape container.
-   * Defaults to creating a <patchwork-view> element.
+   * Defaults to dispatching on shapeType: 'embed' → mountEmbed, 'token' → mountToken.
    */
   mountContent?: ContentMounter
+  /**
+   * Optional tool list supplier for embed shapes.
+   * Given a docUrl, resolves to the list of tools that can render that document.
+   * If absent, the tool <select> shows only the currently active toolId.
+   */
+  getTools?: (docUrl: string) => Promise<ToolOption[]>
 }
 
 /**
@@ -131,12 +140,13 @@ export class CanvasView {
     // fires onViewport → refreshViewport → shapeTree.updateViewport()
     const mountContent: ContentMounter = options.mountContent ??
       ((el, shape) => {
-        const pw = document.createElement('patchwork-view') as HTMLElement
-        pw.setAttribute('doc-url', shape.docUrl)
-        pw.setAttribute('tool-id', shape.toolId)
-        pw.style.cssText = 'width:100%;height:100%;display:block;pointer-events:auto;'
-        el.appendChild(pw)
-        return () => pw.remove()
+        if (shape.shapeType === 'token') return mountToken(el, shape)
+        return mountEmbed(
+          el,
+          shape,
+          (newToolId) => handle.change(doc => { doc.shapes[shape.id].toolId = newToolId }),
+          options.getTools
+        )
       })
 
     this.shapeTree = createShapeTree(this.shapesEl, mountContent)
@@ -343,11 +353,92 @@ export class CanvasView {
       }
     }
 
+    // -----------------------------------------------------------------------
+    // Drag-and-drop — accept text/x-patchwork-urls drops
+    // -----------------------------------------------------------------------
+
+    const onDragOver = (e: DragEvent) => {
+      if (!e.dataTransfer) return
+      // Only accept drops that carry our custom MIME type
+      if ([...e.dataTransfer.types].includes('text/x-patchwork-urls')) {
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'copy'
+      }
+    }
+
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault()
+      if (!e.dataTransfer) return
+
+      const raw = e.dataTransfer.getData('text/x-patchwork-urls')
+      if (!raw) return
+
+      let parsed: unknown
+      try { parsed = JSON.parse(raw) } catch { return }
+      if (!Array.isArray(parsed) || parsed.length === 0) return
+
+      const docUrls = (parsed as unknown[]).filter((u): u is string => typeof u === 'string')
+      if (docUrls.length === 0) return
+
+      // Convert the screen-space drop point to page coordinates
+      const rect = this.inputs.bounds
+      const dropX = (e.clientX - rect.left) / this.camera.zoom - this.camera.x
+      const dropY = (e.clientY - rect.top)  / this.camera.zoom - this.camera.y
+
+      const W = 640
+      const H = 480
+      const GAP = 16
+
+      // Create all shapes immediately with an empty toolId so the user sees
+      // something on the canvas right away. toolIds are patched in below once
+      // getTools resolves asynchronously.
+      const baseZ = nextZIndex(this.doc)
+      const ids: string[] = docUrls.map(() => newId())
+
+      this.handle.change(doc => {
+        docUrls.forEach((docUrl, i) => {
+          doc.shapes[ids[i]] = {
+            id:        ids[i],
+            x:         dropX + i * (W + GAP),
+            y:         dropY,
+            width:     W,
+            height:    H,
+            rotation:  0,
+            zIndex:    baseZ + i,
+            docUrl,
+            toolId:    '',
+            shapeType: 'embed',
+          }
+        })
+      })
+
+      // Resolve the best default tool for each dropped document and update
+      // the shape once known. getTools returns tools ordered by preference;
+      // we pick the first one, mirroring getDefaultToolId in EmbedShapeTool.
+      if (this.options.getTools) {
+        docUrls.forEach((docUrl, i) => {
+          const id = ids[i]
+          this.options.getTools!(docUrl)
+            .then(tools => {
+              const toolId = tools[0]?.id ?? ''
+              if (toolId) {
+                this.handle.change(doc => {
+                  if (doc.shapes[id]) doc.shapes[id].toolId = toolId
+                })
+              }
+            })
+            .catch(() => { /* leave toolId as '' — patchwork-view picks its own default */ })
+        })
+      }
+    }
+
     canvas.addEventListener('pointerdown',  onPointerDown)
     canvas.addEventListener('pointermove',  onPointerMove)
     canvas.addEventListener('pointerup',    onPointerUp)
     canvas.addEventListener('pointercancel', onPointerCancel)
     canvas.addEventListener('wheel',        onWheel as EventListener, { passive: false })
+    canvas.addEventListener('dragover',     onDragOver)
+    canvas.addEventListener('drop',         onDrop)
     window.addEventListener('keydown',      onKeyDown)
     window.addEventListener('keyup',        onKeyUp)
 
@@ -366,6 +457,8 @@ export class CanvasView {
       canvas.removeEventListener('pointerup',     onPointerUp)
       canvas.removeEventListener('pointercancel', onPointerCancel)
       canvas.removeEventListener('wheel',         onWheel as EventListener)
+      canvas.removeEventListener('dragover',      onDragOver)
+      canvas.removeEventListener('drop',          onDrop)
       window.removeEventListener('keydown',       onKeyDown)
       window.removeEventListener('keyup',         onKeyUp)
       // @ts-ignore
@@ -484,9 +577,10 @@ export class CanvasView {
     box.style.cssText = `left:${minX}px;top:${minY}px;width:${maxX-minX}px;height:${maxY-minY}px;`
     this.handlesEl.appendChild(box)
 
-    // Resize handles only for single selection
+    // Resize handles only for single selection, and not for token shapes
     if (this.selectedIds.size !== 1) return
     const s = shapes[0]
+    if (s.shapeType === 'token') return
 
     const screenW = s.width * this.camera.zoom
     const screenH = s.height * this.camera.zoom
@@ -546,7 +640,7 @@ export class CanvasView {
   private buildToolbar() {
     const buttons: { tool: ActiveTool; label: string; title: string }[] = [
       { tool: 'select', label: '↖', title: 'Select (V)' },
-      { tool: 'place',  label: '□', title: 'Place rectangle (R)' },
+      { tool: 'place',  label: '□', title: 'Place embed (R)' },
       { tool: 'pan',    label: '✋', title: 'Pan (H)' },
     ]
 

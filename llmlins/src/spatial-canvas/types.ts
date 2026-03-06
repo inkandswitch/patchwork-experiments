@@ -14,6 +14,7 @@ export interface CanvasShape {
   zIndex: number
   docUrl: AutomergeUrl
   toolId: string
+  shapeType: 'embed' | 'token'
 }
 
 export interface CanvasDoc {

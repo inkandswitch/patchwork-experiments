@@ -6,7 +6,7 @@ import type { CanvasShape, MountedShape, Disposer } from './types.js'
  * DOM structure created:
  *   .sc-shape
  *     .sc-positioned         ← carries transform + size
- *       .sc-shape-content    ← patchwork-view or rectangle tool renders here
+ *       .sc-shape-content    ← embed or token content renders here
  *
  * Position updates write directly to element.style — no framework involved.
  */
@@ -32,7 +32,7 @@ export function mountShape(
   shapeEl.appendChild(positioned)
   shapesContainer.appendChild(shapeEl)
 
-  // Mount content (patchwork-view or rectangle tool)
+  // Mount content
   let disposeContent = mountContent(content, shape)
   let currentDocUrl = shape.docUrl
   let currentToolId = shape.toolId

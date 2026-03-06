@@ -46,6 +46,7 @@ interface CanvasShape {
   zIndex: number
   docUrl: AutomergeUrl // the patchwork document to render inside this shape
   toolId: string       // which patchwork tool to use for rendering
+  shapeType: 'embed' | 'token'  // controls chrome and resize behaviour
 }
 
 interface CanvasDoc {
@@ -212,35 +213,74 @@ function mountShape(shape: CanvasShape, el: HTMLElement): MountedShape {
 
 ---
 
-## Patchwork-View Integration
+## Shape Types
 
-Each visible shape mounts a `patchwork-view` custom element (or equivalent mounting API) inside
-its `.sc-positioned` container:
+`shapeType` controls how a shape's content area is rendered. There are two types:
+
+### `'embed'` — framed card with chrome
+
+```
+┌─────────────────────────────────────┐
+│ [doc-name]              [tool ▾]    │  ← titlebar
+├─────────────────────────────────────┤
+│                                     │
+│   <patchwork-view>                  │
+│                                     │
+└─────────────────────────────────────┘
+```
+
+Implemented in `embed.ts` → `mountEmbed(container, shape, onToolChange, getTools?)`.
+
+- The titlebar doc-name area is `pointer-events: none` so dragging it moves the shape
+- The tool `<select>` is `pointer-events: auto`; choosing a value calls `onToolChange(newToolId)`,
+  which writes the new toolId back to the Automerge document
+- If `getTools` is provided (via `CanvasViewOptions`), the select is populated asynchronously with
+  the list of tools compatible with the document; otherwise it shows only the current toolId
+- Once the user clicks inside the content area, pointer/keyboard/wheel events are stopped from
+  reaching the canvas so the embedded tool receives them unimpeded. Clicking outside the card
+  returns event routing to the canvas.
+- Embed shapes are **resizable** — resize handles are shown when selected
+
+### `'token'` — bare patchwork-view, no chrome
+
+Implemented in `token.ts` → `mountToken(container, shape)`.
+
+- Mounts `<patchwork-view doc-url="..." tool-id="...">` directly filling the container
+- No border, no titlebar, no background
+- Token shapes are **not resizable** — resize handles are suppressed when a token is selected
+  (the selection outline is still drawn)
+
+### Content mounter dispatch
+
+The default `ContentMounter` in `canvas.ts` dispatches on `shapeType`:
 
 ```typescript
-function mountPatchworkView(
-  container: HTMLElement,
-  docUrl: AutomergeUrl,
-  toolId: string
-): Disposer {
-  const el = document.createElement('patchwork-view')
-  el.setAttribute('doc-url', docUrl)
-  el.setAttribute('tool-id', toolId)
-  el.style.cssText = 'width: 100%; height: 100%; display: block; pointer-events: auto;'
-  container.appendChild(el)
-  return () => el.remove()
+(container, shape) => {
+  if (shape.shapeType === 'token') return mountToken(container, shape)
+  return mountEmbed(container, shape,
+    newToolId => handle.change(doc => { doc.shapes[shape.id].toolId = newToolId }),
+    options.getTools
+  )
 }
 ```
 
-patchwork-view handles all its own internal rendering and reactivity. The spatial canvas only
-controls:
+Host applications can override this entirely via `CanvasViewOptions.mountContent`.
+
+---
+
+## Patchwork-View Integration
+
+Each visible shape mounts a `patchwork-view` custom element inside its `.sc-shape-content`
+container. The spatial canvas controls:
 1. **Whether** the element is mounted (viewport culling)
 2. **Where** it appears on screen (the `.sc-positioned` transform)
 3. **Which doc + tool** it renders (from the `CanvasShape` data in Automerge)
 
-When the `docUrl` or `toolId` of a shape changes in Automerge, the old patchwork-view is unmounted
-and a new one is mounted. Position-only changes never touch the patchwork-view element at all —
-they only update the CSS transform of the containing `.sc-positioned` div.
+patchwork-view handles all its own internal rendering and reactivity.
+
+When the `docUrl` or `toolId` of a shape changes in Automerge, the old content is unmounted and
+new content is mounted. Position-only changes never touch the content element at all — they only
+update the CSS transform of the containing `.sc-positioned` div.
 
 ---
 
@@ -539,6 +579,11 @@ const showCorners = screenMin > 20
 The `.sc-handles` element is counter-scaled to keep handle rendering sharp regardless of the
 layer's CSS zoom transform.
 
+**Token shapes suppress resize handles.** When the single selected shape has
+`shapeType === 'token'`, `refreshHandles()` renders the selection outline but returns before
+adding corner or edge handles. The shape's position and zIndex can still be changed; only resizing
+is disabled.
+
 ---
 
 ## Module Structure
@@ -547,20 +592,21 @@ layer's CSS zoom transform.
 src/
   index.ts             — package entry point: re-exports all plugins and public API
   spatial-canvas/
-    index.ts           — plugin exports: SpatialCanvasDatatype, Tool, plugins, rectanglePlugins
+    index.ts           — plugin exports: SpatialCanvasDatatype, Tool, plugins
     canvas.ts          — main entry: CanvasView class, mounts/unmounts everything
     inputs.ts          — Inputs class: event normalization, screen↔page coordinate transform
     camera.ts          — camera state + updateCamera(); viewport computation
     shape-tree.ts      — viewport culling + keyed DOM reconciler
-    shape-mount.ts     — mounts a single shape: updatePosition() + patchwork-view lifecycle
+    shape-mount.ts     — mounts a single shape: updatePosition() + content lifecycle
+    embed.ts           — mountEmbed(): framed card with titlebar + tool <select> + patchwork-view
+    token.ts           — mountToken(): bare patchwork-view, no chrome
     types.ts           — shared TypeScript types: CanvasDoc, CanvasShape, Camera, Disposer, etc.
     performance.ts     — PerformanceMode enum + applyPerformanceMode(); GPU layer promotion
-    rectangle.ts       — Rectangle datatype, tool, and plugin exports (built-in shape type)
     commands.ts        — Command factories: createShape, deleteShapes, translateShapes, resizeShape
     tools/
       select.ts        — SelectTool: pointer routing for move/resize/rotate/brush
       pan.ts           — PanTool: middle-click and space+drag panning
-      place.ts         — PlaceTool: click to place a new patchwork-view shape
+      place.ts         — PlaceTool: drag to place a new embed shape
     sessions/
       translate.ts     — TranslateSession: drag to move selected shapes
       resize.ts        — ResizeSession: drag corner/edge handles to resize
@@ -590,4 +636,6 @@ src/
 | **`will-change` via CSS variables** | One `setProperty` on `.sc-container` promotes/demotes every shape simultaneously |
 | **`overflow: clip` not `overflow: hidden`** | Avoids creating a scroll container, which breaks compositing and `position: fixed` |
 | **Tool/Session separation** | Tools are persistent event routers; sessions own transient drag state |
-| **patchwork-view remount only on docUrl/toolId change** | Position changes never touch the patchwork-view element — only its CSS transform wrapper |
+| **Content remount only on docUrl/toolId change** | Position changes never touch the content element — only its CSS transform wrapper |
+| **`shapeType` field drives chrome and resize behaviour** | Embed shapes get a titlebar + tool picker and are resizable; token shapes are chrome-free and non-resizable |
+| **Tool picker is a plain `<select>`** | No dependency on patchwork-plugins; tools supplied via optional `getTools` callback on `CanvasViewOptions`; falls back to showing the current toolId |

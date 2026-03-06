@@ -12,9 +12,8 @@ export interface PlaceToolContext {
   getPlacePreviewEl(): HTMLElement
 }
 
-const DEFAULT_WIDTH  = 200
-const DEFAULT_HEIGHT = 150
-const DEFAULT_TOOL   = 'rectangle'
+const DEFAULT_WIDTH  = 400
+const DEFAULT_HEIGHT = 300
 const MIN_SIZE       = 16
 // Must exceed this screen-pixel distance to be treated as a drag
 const DRAG_THRESHOLD = 4
@@ -29,7 +28,7 @@ function computeRect(x1: number, y1: number, x2: number, y2: number) {
 }
 
 /**
- * PlaceTool — drag on the canvas to draw out a new rectangle shape.
+ * PlaceTool — drag on the canvas to draw out a new embed shape.
  * Shows a live dashed-border preview while dragging; commits to Automerge
  * on pointer-up. A simple click (below DRAG_THRESHOLD) places a default-
  * sized shape centred on the click point.
@@ -62,17 +61,18 @@ export function createPlaceTool(ctx: PlaceToolContext) {
     hidePreview()
     const doc    = ctx.getDoc()
     const handle = ctx.getHandle()
-    const docUrl = ctx.createChildDoc(DEFAULT_TOOL)
+    const docUrl = ctx.createChildDoc('embed')
     createShape(handle, {
-      id:       newId(),
-      x:        rect.x,
-      y:        rect.y,
-      width:    rect.width,
-      height:   rect.height,
-      rotation: 0,
-      zIndex:   nextZIndex(doc),
+      id:        newId(),
+      x:         rect.x,
+      y:         rect.y,
+      width:     rect.width,
+      height:    rect.height,
+      rotation:  0,
+      zIndex:    nextZIndex(doc),
       docUrl,
-      toolId:   DEFAULT_TOOL,
+      toolId:    '',
+      shapeType: 'embed',
     })
     ctx.onPlaced()
   }
