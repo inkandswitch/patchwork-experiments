@@ -1,0 +1,300 @@
+/* ============================================================
+   LLMlin root
+   ============================================================ */
+
+.ll-root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  background: #f7f8fa;
+  border: 1.5px solid #d0d4dc;
+  border-radius: 8px;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+  color: #1a1a2e;
+}
+
+/* ============================================================
+   Header — drop zones + eye button
+   ============================================================ */
+
+.ll-header {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e0e3ea;
+  background: #fff;
+  min-height: 48px;
+  position: relative;
+}
+
+.ll-zone {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1.5px dashed #c8cdd8;
+  border-radius: 6px;
+  background: #f0f2f7;
+  transition: background 0.15s, border-color 0.15s;
+  min-width: 0;
+  overflow: visible;
+}
+
+.ll-zone + .ll-zone {
+  margin-left: 6px;
+}
+
+.ll-zone.ll-drag-over {
+  background: #e8f0ff;
+  border-color: #5580f7;
+}
+
+.ll-zone-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #7a82a0;
+  text-transform: uppercase;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* Token pile — tokens overlap horizontally */
+.ll-tokens {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: nowrap;
+  overflow: visible;
+  min-height: 22px;
+}
+
+/* ============================================================
+   Document token pill
+   ============================================================ */
+
+.ll-token {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1.5px solid #c8cdd8;
+  font-size: 11px;
+  font-weight: 500;
+  color: #3a4060;
+  white-space: nowrap;
+  cursor: default;
+  user-select: none;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+  position: relative;
+  z-index: 1;
+}
+
+/* Stagger/overlap: every token after the first overlaps slightly */
+.ll-token + .ll-token {
+  margin-left: -10px;
+}
+
+/* Lift the hovered one to top */
+.ll-token:hover {
+  z-index: 10;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.14);
+  transform: translateY(-1px);
+}
+
+/* Eye-mode: token is selectable */
+.ll-root.ll-eye-mode .ll-token {
+  cursor: pointer;
+}
+
+.ll-token.ll-token-watched {
+  border-color: #5580f7;
+  background: #eef1ff;
+  box-shadow: 0 0 0 2px rgba(85, 128, 247, 0.2);
+  z-index: 5;
+}
+
+/* Small colored dot prefix per bucket */
+.ll-zone[data-bucket="read"]  .ll-token { border-left: 3px solid #5580f7; }
+.ll-zone[data-bucket="write"] .ll-token { border-left: 3px solid #f76055; }
+
+/* ============================================================
+   Eye button
+   ============================================================ */
+
+.ll-eye-btn {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid #d0d4dc;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  color: #9aa0b8;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.ll-eye-btn:hover {
+  color: #5580f7;
+  border-color: #5580f7;
+}
+
+.ll-root.ll-eye-mode .ll-eye-btn {
+  color: #5580f7;
+  border-color: #5580f7;
+  background: #eef1ff;
+}
+
+/* ============================================================
+   Body — prompt textarea
+   ============================================================ */
+
+.ll-body {
+  flex: 1;
+  display: flex;
+  padding: 10px;
+  min-height: 0;
+}
+
+.ll-prompt {
+  width: 100%;
+  height: 100%;
+  min-height: 80px;
+  box-sizing: border-box;
+  resize: none;
+  border: 1.5px solid #d0d4dc;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  color: #1a1a2e;
+  background: #fff;
+  outline: none;
+  line-height: 1.5;
+  transition: border-color 0.15s;
+}
+
+.ll-prompt:focus {
+  border-color: #5580f7;
+  box-shadow: 0 0 0 2px rgba(85, 128, 247, 0.15);
+}
+
+.ll-prompt::placeholder {
+  color: #b0b8cc;
+}
+
+/* ============================================================
+   Footer — model picker + play button
+   ============================================================ */
+
+.ll-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-top: 1px solid #e0e3ea;
+  background: #fff;
+}
+
+.ll-model {
+  flex: 1;
+  max-width: 220px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: #f0f2f7 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%239aa0b8' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 10px center;
+  border: 1.5px solid #d0d4dc;
+  border-radius: 6px;
+  padding: 5px 28px 5px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  color: #3a4060;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.ll-model:focus {
+  border-color: #5580f7;
+}
+
+.ll-play {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  background: #1a1a2e;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  flex-shrink: 0;
+}
+
+.ll-play:hover {
+  background: #5580f7;
+  transform: scale(1.05);
+}
+
+.ll-play:active {
+  transform: scale(0.97);
+}
+
+/* ============================================================
+   Eye-mode SVG overlay
+   ============================================================ */
+
+.ll-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 20;
+}
+
+.ll-trap {
+  fill: rgba(85, 128, 247, 0.08);
+  stroke: rgba(85, 128, 247, 0.45);
+  stroke-width: 1.5;
+}
+
+/* ============================================================
+   DocumentToken standalone tool (full-size pill)
+   ============================================================ */
+
+.dt-root {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 6px 12px;
+  box-sizing: border-box;
+  background: #fff;
+  border: 1.5px solid #c8cdd8;
+  border-radius: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  color: #3a4060;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+}
