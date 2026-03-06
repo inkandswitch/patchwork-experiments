@@ -47,6 +47,24 @@ pw-doc-token[watched] {
   z-index: 5;
 }
 
+/* Close button — only rendered when onclose property is set */
+.pw-doc-token-close {
+  margin-left: 4px;
+  padding: 0 3px;
+  line-height: 1;
+  font-size: 12px;
+  opacity: 0.5;
+  cursor: pointer;
+  background: none;
+  border: none;
+  color: inherit;
+  flex-shrink: 0;
+}
+
+.pw-doc-token-close:hover {
+  opacity: 1;
+}
+
 /* ============================================================
    DocumentToken standalone tool wrapper (fills patchwork-view)
    ============================================================ */

@@ -162,11 +162,15 @@ function renderOutputBlocks(container: HTMLElement, blocks: OutputBlock[]) {
 // Token pill helpers
 // ============================================================================
 
-function makeTokenPill(docUrl: AutomergeUrl, bucket: "read" | "write", repo: Repo | undefined, watched: boolean, onToggleWatch: (url: AutomergeUrl) => void, onDragStart: (e: DragEvent, url: AutomergeUrl, bucket: "read" | "write") => void, onHoverIn: (pill: HTMLElement) => void, onHoverOut: () => void): HTMLElement {
+function makeTokenPill(docUrl: AutomergeUrl, bucket: "read" | "write", repo: Repo | undefined, watched: boolean, onToggleWatch: (url: AutomergeUrl) => void, onDragStart: (e: DragEvent, url: AutomergeUrl, bucket: "read" | "write") => void, onHoverIn: (pill: HTMLElement) => void, onHoverOut: () => void, onClose?: (url: AutomergeUrl, bucket: "read" | "write") => void): HTMLElement {
   const token = document.createElement("pw-doc-token") as PwDocToken;
   token.setAttribute("doc-url", docUrl);
   if (watched) token.setAttribute("watched", "");
   token.repo = repo;
+
+  if (onClose) {
+    token.onClose = () => onClose(docUrl, bucket);
+  }
 
   // The component sets text/x-patchwork-urls; add the llmlin-specific bucket here
   token.addEventListener("dragstart", (e) => {
@@ -180,10 +184,10 @@ function makeTokenPill(docUrl: AutomergeUrl, bucket: "read" | "write", repo: Rep
   return token;
 }
 
-function renderTokens(container: HTMLElement, urls: AutomergeUrl[], bucket: "read" | "write", watchedSet: Set<AutomergeUrl>, onToggleWatch: (url: AutomergeUrl) => void, onDragStart: (e: DragEvent, url: AutomergeUrl, bucket: "read" | "write") => void, onHoverIn: (pill: HTMLElement) => void, onHoverOut: () => void, repo: Repo | undefined) {
+function renderTokens(container: HTMLElement, urls: AutomergeUrl[], bucket: "read" | "write", watchedSet: Set<AutomergeUrl>, onToggleWatch: (url: AutomergeUrl) => void, onDragStart: (e: DragEvent, url: AutomergeUrl, bucket: "read" | "write") => void, onHoverIn: (pill: HTMLElement) => void, onHoverOut: () => void, repo: Repo | undefined, onClose?: (url: AutomergeUrl, bucket: "read" | "write") => void) {
   container.innerHTML = "";
   for (const url of urls) {
-    container.appendChild(makeTokenPill(url, bucket, repo, watchedSet.has(url), onToggleWatch, onDragStart, onHoverIn, onHoverOut));
+    container.appendChild(makeTokenPill(url, bucket, repo, watchedSet.has(url), onToggleWatch, onDragStart, onHoverIn, onHoverOut, onClose));
   }
 }
 
@@ -502,8 +506,16 @@ export function LLMlinTool(handle: DocHandle<LLMlinDoc>, element: ToolElement): 
       e.dataTransfer?.setData("text/x-llmlin-source", bucket);
     };
 
-    renderTokens(readTokens, doc.readDocUrls, "read", watchedSet, onToggleWatch, onDragStart, onHoverIn, onHoverOut, repo);
-    renderTokens(writeTokens, doc.writeDocUrls, "write", watchedSet, onToggleWatch, onDragStart, onHoverIn, onHoverOut, repo);
+    const onClose = (url: AutomergeUrl, bucket: "read" | "write") => {
+      handle.change((d) => {
+        const arr = bucket === "read" ? d.readDocUrls : d.writeDocUrls;
+        const idx = arr.indexOf(url);
+        if (idx !== -1) arr.splice(idx, 1);
+      });
+    };
+
+    renderTokens(readTokens, doc.readDocUrls, "read", watchedSet, onToggleWatch, onDragStart, onHoverIn, onHoverOut, repo, onClose);
+    renderTokens(writeTokens, doc.writeDocUrls, "write", watchedSet, onToggleWatch, onDragStart, onHoverIn, onHoverOut, repo, onClose);
 
     if (doc.running) {
       textarea.style.display = "none";

@@ -26,9 +26,11 @@ function injectStyles() {
 // Properties:
 //   repo     — set this to an Automerge Repo instance so the component can
 //              resolve the document title. Can be set after insertion.
+//   onClose  — optional callback; when set, a × button is rendered inside
+//              the pill. Clicking it calls onClose() without triggering click.
 //
 // Events (all native, bubble normally):
-//   click        — user clicked the token
+//   click        — user clicked the token (not fired when × is clicked)
 //   mouseenter   — pointer entered
 //   mouseleave   — pointer left
 //   dragstart    — native drag start; component pre-fills
@@ -41,6 +43,9 @@ export class PwDocToken extends HTMLElement {
 
   private _repo: Repo | undefined;
   private _unsubscribe: (() => void) | null = null;
+  private _labelEl: HTMLSpanElement | null = null;
+  private _closeBtn: HTMLButtonElement | null = null;
+  private _onClose: (() => void) | undefined;
 
   get repo(): Repo | undefined {
     return this._repo;
@@ -51,9 +56,31 @@ export class PwDocToken extends HTMLElement {
     this._resolveTitle();
   }
 
+  get onClose(): (() => void) | undefined {
+    return this._onClose;
+  }
+
+  set onClose(fn: (() => void) | undefined) {
+    this._onClose = fn;
+    if (fn && !this._closeBtn) {
+      const btn = document.createElement("button");
+      btn.className = "pw-doc-token-close";
+      btn.textContent = "×";
+      btn.addEventListener("click", (e) => { e.stopPropagation(); this._onClose?.(); });
+      btn.addEventListener("pointerdown", (e) => e.stopPropagation());
+      btn.addEventListener("dragstart", (e) => e.stopPropagation());
+      this.appendChild(btn);
+      this._closeBtn = btn;
+    } else if (!fn && this._closeBtn) {
+      this._closeBtn.remove();
+      this._closeBtn = null;
+    }
+  }
+
   connectedCallback() {
     injectStyles();
     this.draggable = true;
+    this._ensureLabelEl();
     this.addEventListener("dragstart", this._onDragStart);
     this._resolveTitle();
   }
@@ -75,6 +102,20 @@ export class PwDocToken extends HTMLElement {
   // Title resolution
   // -------------------------------------------------------------------------
 
+  private _ensureLabelEl(): HTMLSpanElement {
+    if (!this._labelEl) {
+      this._labelEl = document.createElement("span");
+      this._labelEl.className = "pw-doc-token-label";
+      // Insert before close button if present, otherwise just append
+      if (this._closeBtn) {
+        this.insertBefore(this._labelEl, this._closeBtn);
+      } else {
+        this.appendChild(this._labelEl);
+      }
+    }
+    return this._labelEl;
+  }
+
   private _teardown() {
     this._unsubscribe?.();
     this._unsubscribe = null;
@@ -83,22 +124,23 @@ export class PwDocToken extends HTMLElement {
   private _resolveTitle() {
     this._teardown();
 
+    const label = this._ensureLabelEl();
     const docUrl = this.getAttribute("doc-url");
 
     if (!docUrl || !this._repo) {
-      if (this.textContent === "Loading…" || this.textContent === "") {
-        this.textContent = "Untitled Doc";
+      if (label.textContent === "Loading…" || label.textContent === "") {
+        label.textContent = "Untitled Doc";
       }
       return;
     }
 
-    this.textContent = "Loading…";
+    label.textContent = "Loading…";
 
     const capturedUrl = docUrl;
 
     const applyTitle = (title: string) => {
       if (this.getAttribute("doc-url") === capturedUrl) {
-        this.textContent = title;
+        label.textContent = title;
       }
     };
 
