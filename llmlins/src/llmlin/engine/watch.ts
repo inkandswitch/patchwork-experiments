@@ -2,14 +2,14 @@
  * Watch mode for LLMlin.
  *
  * Subscribes to Automerge change events on all watchedDocUrls.
- * When a watched document changes due to an external edit (not caused by the
- * LLMlin run itself), calls onTrigger() after a short debounce.
+ * When a watched document changes and no run is in progress, calls onTrigger()
+ * after a short debounce.
  *
- * Own-write detection:
- *   Before each run the caller should call watcher.snapshotBeforeRun() and
- *   after the run call watcher.recordOwnWrites(). Any change whose new heads
- *   match the post-run heads of a write doc is treated as an own write and
- *   will not trigger a re-run.
+ * Own-write suppression:
+ *   The caller sets isRunning=true via snapshotBeforeRun() at the start of a
+ *   run and isRunning=false via recordOwnWrites() after it finishes. While
+ *   isRunning is true, all change events are ignored, preventing the LLMlin's
+ *   own writes from triggering a re-run.
  */
 
 import type { Repo } from '@automerge/automerge-repo'
@@ -19,9 +19,9 @@ import type { LLMlinDoc } from '../types.js'
 export type Disposer = () => void
 
 export type Watcher = {
-  /** Call this just before a run starts to prime own-write detection. */
+  /** Call this just before a run starts to suppress change events during the run. */
   snapshotBeforeRun(): void
-  /** Call this after a run completes to record which heads came from own writes. */
+  /** Call this after a run completes to re-enable change event triggering. */
   recordOwnWrites(): Promise<void>
   /** Stop watching and clean up all subscriptions. */
   dispose(): void
@@ -34,8 +34,8 @@ export function createWatcher(
   handle: DocHandle<LLMlinDoc>,
   onTrigger: () => void,
 ): Watcher {
-  // Map from url → set of heads strings we produced ourselves
-  const ownHeads = new Map<AutomergeUrl, Set<string>>()
+  // While true, all change events on watched docs are ignored
+  let isRunning = false
 
   // The urls we are currently subscribed to
   let watchedUrls: AutomergeUrl[] = []
@@ -45,10 +45,6 @@ export function createWatcher(
 
   // Debounce timer handle
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
-
-  function headsKey(heads: string[]): string {
-    return [...heads].sort().join(',')
-  }
 
   function scheduleRun() {
     if (debounceTimer !== null) clearTimeout(debounceTimer)
@@ -63,14 +59,7 @@ export function createWatcher(
 
     repo.find(url).then(docHandle => {
       const onChange = () => {
-        const heads = docHandle.heads() as string[]
-        const key = headsKey(heads)
-        const known = ownHeads.get(url)
-        if (known?.has(key)) {
-          // This change came from our own run — ignore
-          known.delete(key)
-          return
-        }
+        if (isRunning) return
         scheduleRun()
       }
 
@@ -87,7 +76,6 @@ export function createWatcher(
       disposer()
       urlDisposers.delete(url)
     }
-    ownHeads.delete(url)
   }
 
   function syncSubscriptions(newUrls: AutomergeUrl[]) {
@@ -118,40 +106,13 @@ export function createWatcher(
   const initialDoc = handle.doc()
   if (initialDoc) syncSubscriptions(initialDoc.watchedDocUrls ?? [])
 
-  // ---- Own-write detection helpers ----
-
-  // Heads snapshot taken just before the run, keyed by write doc url
-  let preRunHeads = new Map<AutomergeUrl, string>()
-
   const watcher: Watcher = {
     snapshotBeforeRun() {
-      const doc = handle.doc()
-      if (!doc) return
-      preRunHeads = new Map()
-      for (const url of doc.writeDocUrls ?? []) {
-        repo.find(url).then(h => {
-          preRunHeads.set(url, headsKey(h.heads() as string[]))
-        }).catch(() => {})
-      }
+      isRunning = true
     },
 
     async recordOwnWrites() {
-      const doc = handle.doc()
-      if (!doc) return
-      for (const url of doc.writeDocUrls ?? []) {
-        try {
-          const h = await repo.find(url)
-          const newKey = headsKey(h.heads() as string[])
-          const oldKey = preRunHeads.get(url)
-          if (oldKey !== undefined && newKey !== oldKey) {
-            if (!ownHeads.has(url)) ownHeads.set(url, new Set())
-            ownHeads.get(url)!.add(newKey)
-          }
-        } catch {
-          // skip
-        }
-      }
-      preRunHeads.clear()
+      isRunning = false
     },
 
     dispose() {

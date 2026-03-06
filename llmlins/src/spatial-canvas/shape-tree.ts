@@ -62,10 +62,7 @@ export function createShapeTree(
     }
 
     // Mount new or update existing visible shapes
-    // Sort by zIndex so DOM order matches z-order
-    const visibleShapes = all
-      .filter(s => visible.has(s.id))
-      .sort((a, b) => a.zIndex - b.zIndex)
+    const visibleShapes = all.filter(s => visible.has(s.id))
 
     for (const shape of visibleShapes) {
       const existing = mounted.get(shape.id)

@@ -21,7 +21,6 @@ export function getToolsForType(datatypeId: string): ToolPlugin[] {
   return (getRegistry('patchwork:tool').all() as ToolPlugin[]).filter(t =>
     !t.unlisted &&
     !t.forTitleBar &&
-    'module' in t &&
     (t.supportedDatatypes === '*' ||
       (Array.isArray(t.supportedDatatypes) && t.supportedDatatypes.includes(datatypeId)))
   )
@@ -51,13 +50,14 @@ export function mountEmbed(
   shape: CanvasShape,
   onToolChange: (newToolId: string) => void,
   onDocCreate: (newDocUrl: AutomergeUrl) => void,
+  onDelete: () => void,
   repo?: Repo
 ): Disposer {
   // -------------------------------------------------------------------------
   // Empty state — no docUrl yet: show "Create new" type picker
   // -------------------------------------------------------------------------
   if (!shape.docUrl) {
-    return mountTypePicker(container, onDocCreate, repo)
+    return mountTypePicker(container, onDocCreate, onDelete, repo)
   }
 
   // -------------------------------------------------------------------------
@@ -70,6 +70,7 @@ export function mountEmbed(
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
+    border: 1px solid var(--pw-border, #ddd5c4);
     border-radius: 6px;
     background: #ffffff;
     overflow: hidden;
@@ -117,14 +118,16 @@ export function mountEmbed(
   select.style.cssText = `
     pointer-events: auto;
     flex-shrink: 0;
+    margin-left: auto;
     appearance: none;
     -webkit-appearance: none;
     font-size: 11px;
     font-family: system-ui, -apple-system, sans-serif;
     color: var(--pw-text-label, #a89880);
-    background: transparent;
+    background: var(--pw-surface, #ede8de);
     border: none;
-    padding: 2px 18px 2px 4px;
+    border-radius: 4px;
+    padding: 2px 18px 2px 6px;
     cursor: pointer;
     outline: none;
     max-width: 120px;
@@ -183,8 +186,26 @@ export function mountEmbed(
   select.addEventListener('pointerdown', (e) => e.stopPropagation())
   select.addEventListener('pointerup',   (e) => e.stopPropagation())
 
+  const closeBtn = document.createElement('button')
+  closeBtn.textContent = '×'
+  closeBtn.style.cssText = `
+    pointer-events: auto;
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--pw-text-label, #a89880);
+    padding: 0 4px;
+    line-height: 1;
+  `
+  closeBtn.addEventListener('click', (e) => { e.stopPropagation(); onDelete() })
+  closeBtn.addEventListener('pointerdown', (e) => e.stopPropagation())
+  closeBtn.addEventListener('pointerup', (e) => e.stopPropagation())
+
   titlebar.appendChild(docName)
   titlebar.appendChild(select)
+  titlebar.appendChild(closeBtn)
 
   // -------------------------------------------------------------------------
   // Content area
@@ -223,6 +244,7 @@ export function mountEmbed(
 function mountTypePicker(
   container: HTMLElement,
   onDocCreate: (newDocUrl: AutomergeUrl) => void,
+  onDelete: () => void,
   repo?: Repo
 ): Disposer {
   const card = document.createElement('div')
@@ -239,7 +261,27 @@ function mountTypePicker(
     pointer-events: all;
     padding: 12px;
     font-family: system-ui, -apple-system, sans-serif;
+    position: relative;
   `
+
+  const closeBtn = document.createElement('button')
+  closeBtn.textContent = '×'
+  closeBtn.style.cssText = `
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 14px;
+    color: #9ca3af;
+    padding: 0 4px;
+    line-height: 1;
+  `
+  closeBtn.addEventListener('click', (e) => { e.stopPropagation(); onDelete() })
+  closeBtn.addEventListener('pointerdown', (e) => e.stopPropagation())
+  closeBtn.addEventListener('pointerup', (e) => e.stopPropagation())
+  card.appendChild(closeBtn)
 
   const list = document.createElement('div')
   list.style.cssText = `

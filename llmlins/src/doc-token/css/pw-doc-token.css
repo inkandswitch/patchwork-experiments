@@ -19,7 +19,10 @@ pw-doc-token {
   cursor: pointer;
   user-select: none;
   box-shadow: 0 1px 3px rgba(80, 50, 20, 0.1);
-  transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    transform 0.1s;
   position: relative;
   z-index: 1;
 }

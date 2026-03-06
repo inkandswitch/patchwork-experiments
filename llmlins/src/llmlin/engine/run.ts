@@ -48,6 +48,7 @@ type SkillInfo = {
   name: string
   description: string
   importUrl: string
+  content: string
 }
 
 async function discoverSkills(repo: Repo, readUrls: AutomergeUrl[]): Promise<SkillInfo[]> {
@@ -79,6 +80,7 @@ async function discoverSkills(repo: Repo, readUrls: AutomergeUrl[]): Promise<Ski
             name: frontmatter.name,
             description: frontmatter.description ?? '',
             importUrl: indexFile ? `/${url}/${indexFile.name}` : `/${url}`,
+            content: stripFrontmatter(content),
           })
         } catch {
           // skip unreadable SKILL.md
@@ -115,6 +117,7 @@ async function discoverSkills(repo: Repo, readUrls: AutomergeUrl[]): Promise<Ski
             importUrl: indexFile
               ? `/${link.url}/${indexFile.name}`
               : `/${link.url}`,
+            content: stripFrontmatter(content),
           })
         } catch {
           // skip inaccessible skill folder
@@ -140,6 +143,10 @@ function parseFrontmatter(content: string): Record<string, string> {
     result[key] = value
   }
   return result
+}
+
+function stripFrontmatter(content: string): string {
+  return content.replace(/^---\n[\s\S]*?\n---\n?/, '').trim()
 }
 
 // ============================================================================
@@ -185,7 +192,7 @@ function buildMessages(
 
   let systemPrompt = SYSTEM_PROMPT
   if (skillDescriptions) {
-    systemPrompt += `\n\nAvailable skills (call via loadSkill(name)):\n${skillDescriptions}`
+    systemPrompt += `\n\n---\nAvailable skills (load with loadSkill(name)):\n\n${skillDescriptions}`
   }
   if (readDocDescriptions) {
     systemPrompt += `\n\nRead-only documents available via repo.find(url):\n${readDocDescriptions}`
@@ -338,7 +345,7 @@ export async function runLLMlin(
   options?: RunLLMlinOptions,
 ): Promise<void> {
   const { apiUrl, model, prompt, readDocUrls, writeDocUrls } = doc
-  const apiKey = (import.meta as any).env?.VITE_LLM_API_KEY ?? ''
+  const apiKey = import.meta.env.VITE_LLM_API_KEY ?? ''
 
   if (!prompt?.trim()) throw new Error('No prompt to run')
   if (!apiUrl)         throw new Error('No API URL configured')
@@ -366,7 +373,7 @@ export async function runLLMlin(
   ;(globalThis as any).__llmCapturedConsole = capturedConsole
 
   const skillDescriptions = skills.length
-    ? skills.map(s => `  - ${s.name}: ${s.description}`).join('\n')
+    ? skills.map(s => `### ${s.name}\n${s.content}`).join('\n\n')
     : ''
 
   // Describe plain read docs (non-skill)

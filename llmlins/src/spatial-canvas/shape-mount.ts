@@ -38,6 +38,7 @@ export function mountShape(
   let currentToolId = shape.toolId
 
   function updatePosition(s: CanvasShape) {
+    shapeEl.style.zIndex = String(s.zIndex)
     positioned.style.setProperty(
       'transform',
       `translate(` +
@@ -79,6 +80,7 @@ export function mountShape(
       disposeContent()
       shapeEl.remove()
     },
+    getElement() { return shapeEl },
   }
 }
 

@@ -11,6 +11,7 @@ export type HandleWrapper = {
   on(event: string, fn: (...args: any[]) => void): void
   off(event: string, fn: (...args: any[]) => void): void
   heads(): any
+  whenReady(): Promise<void>
 }
 
 export type LLMlinRepo = {
@@ -32,6 +33,7 @@ function createReadOnlyWrapper(handle: DocHandle<any>): HandleWrapper {
     on(event: string, fn: (...args: any[]) => void) { handle.on(event as any, fn) },
     off(event: string, fn: (...args: any[]) => void) { handle.off(event as any, fn) },
     heads() { return handle.heads() },
+    whenReady() { return handle.whenReady() },
   }
 }
 
@@ -43,6 +45,7 @@ function createFullAccessWrapper(handle: DocHandle<any>): HandleWrapper {
     on(event: string, fn: (...args: any[]) => void) { handle.on(event as any, fn) },
     off(event: string, fn: (...args: any[]) => void) { handle.off(event as any, fn) },
     heads() { return handle.heads() },
+    whenReady() { return handle.whenReady() },
   }
 }
 

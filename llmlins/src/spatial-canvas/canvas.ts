@@ -153,6 +153,7 @@ export class CanvasView {
         shape,
         (newToolId) => handle.change(doc => { doc.shapes[shape.id].toolId = newToolId }),
         (newDocUrl) => handle.change(doc => { doc.shapes[shape.id].docUrl = newDocUrl }),
+        () => handle.change(doc => { delete doc.shapes[shape.id] }),
         this.repo
       )
     })
@@ -569,9 +570,24 @@ export class CanvasView {
   }
 
   private setSelectedIds(ids: Set<string>) {
+    const prev = this.selectedIds
     this.selectedIds = ids
     this.shapeTree.syncSelection(ids)
     this.refreshHandles()
+
+    // Bring newly selected shapes to the front in the doc
+    const newlySelected = [...ids].filter(id => !prev.has(id))
+    if (newlySelected.length > 0) {
+      this.handle.change(doc => {
+        let topZ = nextZIndex(doc) - 1
+        for (const id of newlySelected) {
+          if (doc.shapes[id]) {
+            topZ += 1
+            doc.shapes[id].zIndex = topZ
+          }
+        }
+      })
+    }
   }
 
   // -------------------------------------------------------------------------

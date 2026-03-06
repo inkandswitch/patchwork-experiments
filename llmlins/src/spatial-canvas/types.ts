@@ -67,6 +67,7 @@ export interface MountedShape {
   updatePosition(shape: CanvasShape): void
   setSelected(selected: boolean): void
   unmount(): void
+  getElement(): HTMLElement
 }
 
 export type Disposer = () => void
