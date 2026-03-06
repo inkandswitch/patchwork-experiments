@@ -1,0 +1,18 @@
+/* Shared patchwork beige palette — injected once by each tool that uses it */
+:root {
+  --pw-bg:              #f5f0e8;
+  --pw-bg-input:        #faf7f2;
+  --pw-surface:         #ede8de;
+  --pw-header-bg:       #ede7db;
+  --pw-border:          #ddd5c4;
+  --pw-border-zone:     #d0c8b8;
+  --pw-text:            #3d3530;
+  --pw-text-secondary:  #6b7280;
+  --pw-text-label:      #a89880;
+  --pw-token-bg:        #fff8f0;
+  --pw-token-border:    #d5c8b4;
+  --pw-token-text:      #5a4a38;
+  --pw-accent:          #b87d3a;
+  --pw-accent-hover:    #9a6428;
+  --pw-accent-muted:    rgba(184, 125, 58, 0.12);
+}

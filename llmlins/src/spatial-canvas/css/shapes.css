@@ -25,6 +25,9 @@
 
 .sc-positioned.selected {
   will-change: var(--sc-perf-selected);
+  filter:
+    drop-shadow(0 calc(3px * var(--sc-scale)) calc(16px * var(--sc-scale)) rgba(0, 0, 0, 0.28))
+    drop-shadow(0 calc(1px * var(--sc-scale)) calc(4px * var(--sc-scale)) rgba(0, 0, 0, 0.14));
 }
 
 

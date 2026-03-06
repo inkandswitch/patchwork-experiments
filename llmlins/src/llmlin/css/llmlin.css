@@ -1,5 +1,17 @@
 /* ============================================================
-   LLMlin root
+   LLMlin wrapper — full shape area, reserves padding-top for eye
+   ============================================================ */
+
+.ll-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding-top: 38px;
+  box-sizing: border-box;
+}
+
+/* ============================================================
+   LLMlin root — the visible card, fills wrapper content area
    ============================================================ */
 
 .ll-root {
@@ -9,26 +21,26 @@
   width: 100%;
   height: 100%;
   box-sizing: border-box;
-  background: #f5f0e8;
-  border: 1.5px solid #ddd5c4;
+  background: var(--pw-bg, #f5f0e8);
+  border: 1.5px solid var(--pw-border, #ddd5c4);
   border-radius: 8px;
-  overflow: visible;        /* allow eye to float above the top edge */
+  overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 13px;
-  color: #3d3530;
+  color: var(--pw-text, #3d3530);
 }
 
 /* ============================================================
-   Eye — absolutely positioned, floating above the top-center
+   Eye — absolutely positioned at top-center of wrapper
    ============================================================ */
 
 .ll-eye-btn {
   position: absolute;
-  top: -38px;               /* float above the box; bottom ~17px overlaps top border */
+  top: 0;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 25;              /* above overlay (z-index:15) */
-  pointer-events: none;     /* eye is decorative, not interactive */
+  z-index: 25;
+  pointer-events: none;
   line-height: 0;
 }
 
@@ -49,6 +61,21 @@
   pointer-events: none;
 }
 
+.ll-eye-svg {
+  transition: transform 0.35s ease;
+  transform-box: fill-box;
+  transform-origin: center center;
+}
+
+.ll-running .ll-eye-svg {
+  animation: ll-squint 1.8s ease-in-out infinite;
+}
+
+@keyframes ll-squint {
+  0%, 100% { transform: scaleY(0.42); }
+  50%       { transform: scaleY(0.30); }
+}
+
 /* ============================================================
    Header — drop zones
    ============================================================ */
@@ -58,8 +85,8 @@
   align-items: stretch;
   gap: 0;
   padding: 8px 10px;
-  border-bottom: 1px solid #ddd5c4;
-  background: #ede7db;
+  border-bottom: 1px solid var(--pw-border, #ddd5c4);
+  background: var(--pw-header-bg, #ede7db);
   min-height: 52px;
 }
 
@@ -69,9 +96,9 @@
   flex-direction: column;
   gap: 4px;
   padding: 6px 8px;
-  border: 1px solid #d0c8b8;
+  border: 1px solid var(--pw-border-zone, #d0c8b8);
   border-radius: 6px;
-  background: #ede8de;
+  background: var(--pw-surface, #ede8de);
   transition: background 0.15s, border-color 0.15s;
   min-width: 0;
   overflow: visible;
@@ -90,7 +117,7 @@
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.05em;
-  color: #a89880;
+  color: var(--pw-text-label, #a89880);
   text-transform: uppercase;
   user-select: none;
   pointer-events: none;
@@ -119,11 +146,11 @@
   gap: 5px;
   padding: 3px 8px;
   border-radius: 12px;
-  background: #fff8f0;
-  border: 1.5px solid #d5c8b4;
+  background: var(--pw-token-bg, #fff8f0);
+  border: 1.5px solid var(--pw-token-border, #d5c8b4);
   font-size: 11px;
   font-weight: 500;
-  color: #5a4a38;
+  color: var(--pw-token-text, #5a4a38);
   white-space: nowrap;
   cursor: pointer;
   user-select: none;
@@ -157,11 +184,17 @@
    ============================================================ */
 
 .ll-body {
-  flex: 1;
+  flex: 0 0 auto;
   display: flex;
   padding: 10px;
-  min-height: 0;
-  background: #f5f0e8;
+  max-height: 800px;
+  overflow: hidden;
+  background: var(--pw-bg, #f5f0e8);
+  transition: max-height 0.35s ease;
+}
+
+.ll-running .ll-body {
+  max-height: 70px;
 }
 
 .ll-prompt {
@@ -170,16 +203,16 @@
   min-height: 80px;
   box-sizing: border-box;
   resize: none;
-  border: 1px solid #d5ccbe;
+  border: 1px solid var(--pw-border-zone, #d0c8b8);
   border-radius: 6px;
   padding: 8px 10px;
   font-family: inherit;
   font-size: 13px;
-  color: #3d3530;
-  background: #faf7f2;
+  color: var(--pw-text, #3d3530);
+  background: var(--pw-bg-input, #faf7f2);
   outline: none;
   line-height: 1.5;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, opacity 0.2s;
 }
 
 .ll-prompt:focus {
@@ -189,6 +222,12 @@
 
 .ll-prompt::placeholder {
   color: #c0b4a0;
+}
+
+.ll-prompt:disabled {
+  opacity: 0.5;
+  cursor: default;
+  color: var(--pw-text-label, #a89880);
 }
 
 /* ============================================================
@@ -202,21 +241,71 @@
   padding: 8px 10px;
   border-top: 1px solid #ddd5c4;
   background: #f9f5ee;
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
   font-size: 12px;
   line-height: 1.5;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  transition: flex 0.35s ease, max-height 0.35s ease;
 }
 
 .ll-output:empty {
   display: none;
 }
 
+.ll-running .ll-output {
+  flex: 1 1 0;
+  max-height: none;
+}
+
 .ll-output-text {
   color: #3d3530;
-  white-space: pre-wrap;
   word-break: break-word;
+}
+
+.ll-output-text p {
+  margin: 0 0 0.5em;
+}
+
+.ll-output-text p:last-child {
+  margin-bottom: 0;
+}
+
+.ll-output-text h1,
+.ll-output-text h2,
+.ll-output-text h3,
+.ll-output-text h4 {
+  margin: 0.6em 0 0.3em;
+  font-size: 1em;
+  font-weight: 700;
+}
+
+.ll-output-text ul,
+.ll-output-text ol {
+  margin: 0.3em 0;
+  padding-left: 1.4em;
+}
+
+.ll-output-text code {
+  background: rgba(0,0,0,0.06);
+  border-radius: 3px;
+  padding: 0 3px;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.95em;
+}
+
+.ll-output-text pre {
+  background: rgba(0,0,0,0.06);
+  border-radius: 4px;
+  padding: 6px 8px;
+  overflow: auto;
+  margin: 0.4em 0;
+}
+
+.ll-output-text pre code {
+  background: none;
+  padding: 0;
 }
 
 .ll-output-script {
@@ -278,28 +367,8 @@
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  border-top: 1px solid #ddd5c4;
-  background: #ede7db;
-}
-
-.ll-api-url {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  background: transparent;
-  font-family: inherit;
-  font-size: 11px;
-  color: #8a7f72;
-  outline: none;
-  padding: 4px 0;
-}
-
-.ll-api-url::placeholder {
-  color: #c0b4a0;
-}
-
-.ll-api-url:focus {
-  color: #3d3530;
+  border-top: 1px solid var(--pw-border, #ddd5c4);
+  background: var(--pw-header-bg, #ede7db);
 }
 
 /* Minimal text-style select — no border, no box */
@@ -312,7 +381,7 @@
   padding: 4px 20px 4px 0;
   font-family: inherit;
   font-size: 11px;
-  color: #8a7f72;
+  color: var(--pw-text-label, #a89880);
   cursor: pointer;
   outline: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238a7f72' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
@@ -321,10 +390,11 @@
 }
 
 .ll-model:hover {
-  color: #5a4a38;
+  color: var(--pw-token-text, #5a4a38);
 }
 
 .ll-play {
+  margin-left: auto;
   width: 32px;
   height: 32px;
   display: flex;
@@ -332,7 +402,7 @@
   justify-content: center;
   border: none;
   border-radius: 8px;
-  background: #b87d3a;
+  background: var(--pw-accent, #b87d3a);
   color: #fff;
   cursor: pointer;
   transition: background 0.15s, transform 0.1s;
@@ -340,7 +410,7 @@
 }
 
 .ll-play:hover {
-  background: #9a6428;
+  background: var(--pw-accent-hover, #9a6428);
   transform: scale(1.05);
 }
 

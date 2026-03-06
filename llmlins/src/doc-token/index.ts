@@ -1,22 +1,8 @@
 import type { AutomergeUrl, DocumentTokenDoc, DocHandle, Disposer } from '../llmlin/types.js'
-import { getRegistry } from '@inkandswitch/patchwork-plugins'
 import type { Repo } from '@automerge/automerge-repo'
-import docTokenCss from './css/doc-token.css?inline'
+import { PwDocToken } from './pw-doc-token.js'
 
 type ToolElement = HTMLElement & { repo: Repo }
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-let styleInjected = false
-function injectStyles() {
-  if (styleInjected) return
-  styleInjected = true
-  const style = document.createElement('style')
-  style.textContent = docTokenCss
-  document.head.appendChild(style)
-}
 
 // ============================================================================
 // Datatype
@@ -36,65 +22,47 @@ export const DocumentTokenDatatype = {
 }
 
 // ============================================================================
-// Tool — renders a single doc reference as a styled pill
+// Tool — renders the referenced document as a centred pw-doc-token pill
 // ============================================================================
 
 export function DocumentTokenTool(
   handle: DocHandle<DocumentTokenDoc>,
   element: ToolElement
 ): Disposer {
-  injectStyles()
+  const wrapper = document.createElement('div')
+  wrapper.className = 'pw-doc-token-tool'
 
-  const root = document.createElement('div')
-  root.className = 'dt-root'
-  root.textContent = 'Loading…'
-  element.appendChild(root)
+  const token = document.createElement('pw-doc-token') as PwDocToken
+  token.repo = element.repo
+  wrapper.appendChild(token)
+  element.appendChild(wrapper)
 
-  let unsubscribe: (() => void) | null = null
-
-  async function loadTitle(doc: DocumentTokenDoc) {
-    if (!doc.docUrl) {
-      root.textContent = 'Untitled Doc'
-      return
+  function applyDoc(doc: DocumentTokenDoc) {
+    if (doc.docUrl) {
+      token.setAttribute('doc-url', doc.docUrl)
+    } else {
+      token.removeAttribute('doc-url')
+      token.textContent = 'Untitled Doc'
     }
-
-    const registry = getRegistry('patchwork:datatype')
-
-    const resolve = async () => {
-      try {
-        const datatype = await registry.load(doc.toolId) as { getTitle?: (d: unknown) => string } | null
-        if (datatype?.getTitle) {
-          const docHandle = await element.repo.find(doc.docUrl)
-          const innerDoc = docHandle?.doc()
-          root.textContent = innerDoc ? datatype.getTitle(innerDoc) : 'Untitled Doc'
-        } else {
-          root.textContent = 'Untitled Doc'
-        }
-      } catch {
-        root.textContent = 'Untitled Doc'
-      }
-    }
-
-    unsubscribe = registry.on('changed', resolve)
-    await resolve()
   }
 
   const doc = handle.doc()
-  if (doc) loadTitle(doc)
+  if (doc) applyDoc(doc)
 
-  const onChange = ({ doc }: { doc: DocumentTokenDoc }) => loadTitle(doc)
+  const onChange = ({ doc }: { doc: DocumentTokenDoc }) => applyDoc(doc)
   handle.on('change', onChange)
 
   return () => {
     handle.off('change', onChange)
-    unsubscribe?.()
-    root.remove()
+    wrapper.remove()
   }
 }
 
 // ============================================================================
 // Plugin exports
 // ============================================================================
+
+export { PwDocToken } from './pw-doc-token.js'
 
 export const documentTokenPlugins = [
   {

@@ -2,11 +2,29 @@ import type { AutomergeUrl, CanvasShape, Disposer } from './types.js'
 import type { Repo } from '@automerge/automerge-repo'
 import { createDocOfDatatype2, getRegistry } from '@inkandswitch/patchwork-plugins'
 import type { LoadedDatatypePlugin } from '@inkandswitch/patchwork-plugins'
-import { resolveDocTitle } from '../shared/resolve-doc-title.js'
+import { PwDocToken } from '../doc-token/pw-doc-token.js'
 
-export interface ToolOption {
+// ---------------------------------------------------------------------------
+// Tool-registry helpers
+// ---------------------------------------------------------------------------
+
+type ToolPlugin = {
   id: string
   name: string
+  supportedDatatypes: '*' | string[]
+  unlisted?: boolean
+  forTitleBar?: boolean
+  module?: unknown
+}
+
+export function getToolsForType(datatypeId: string): ToolPlugin[] {
+  return (getRegistry('patchwork:tool').all() as ToolPlugin[]).filter(t =>
+    !t.unlisted &&
+    !t.forTitleBar &&
+    'module' in t &&
+    (t.supportedDatatypes === '*' ||
+      (Array.isArray(t.supportedDatatypes) && t.supportedDatatypes.includes(datatypeId)))
+  )
 }
 
 /**
@@ -33,7 +51,6 @@ export function mountEmbed(
   shape: CanvasShape,
   onToolChange: (newToolId: string) => void,
   onDocCreate: (newDocUrl: AutomergeUrl) => void,
-  getTools?: (docUrl: string) => Promise<ToolOption[]>,
   repo?: Repo
 ): Disposer {
   // -------------------------------------------------------------------------
@@ -68,56 +85,55 @@ export function mountEmbed(
     align-items: center;
     justify-content: space-between;
     height: 28px;
-    padding: 0 8px;
-    border-bottom: 1px solid #e5e7eb;
+    padding: 0 6px;
+    border-bottom: 1px solid var(--pw-border, #ddd5c4);
     flex-shrink: 0;
     cursor: grab;
     user-select: none;
-    background: #fafafa;
+    background: var(--pw-header-bg, #ede7db);
     pointer-events: none;
+    gap: 4px;
   `
 
-  // Doc name — passes drag events through (pointer-events: none inherited)
-  const docName = document.createElement('span')
+  // Doc name — pw-doc-token pill (draggable, resolves title automatically)
+  const docName = document.createElement('pw-doc-token') as PwDocToken
   docName.style.cssText = `
-    font-size: 11px;
-    font-family: system-ui, -apple-system, sans-serif;
-    color: #6b7280;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1;
+    flex: 0 1 auto;
     min-width: 0;
+    max-width: 60%;
+    pointer-events: auto;
   `
-  if (shape.docUrl && repo) {
-    docName.textContent = 'Loading…'
-    repo.find<Record<string, unknown>>(shape.docUrl)
-      .then(h => resolveDocTitle(h))
-      .then(title => { docName.textContent = title })
-      .catch(() => { docName.textContent = 'Untitled' })
-  } else {
-    docName.textContent = 'Untitled'
+  if (shape.docUrl) {
+    docName.setAttribute('doc-url', shape.docUrl)
   }
+  if (repo) {
+    docName.repo = repo
+  }
+  docName.addEventListener('pointerdown', (e) => e.stopPropagation())
+  docName.addEventListener('pointerup',   (e) => e.stopPropagation())
 
-  // Tool picker — <select> with pointer-events restored
+  // Tool picker — borderless select, styled like ll-model
   const select = document.createElement('select')
   select.style.cssText = `
     pointer-events: auto;
+    flex-shrink: 0;
+    appearance: none;
+    -webkit-appearance: none;
     font-size: 11px;
     font-family: system-ui, -apple-system, sans-serif;
-    color: #374151;
+    color: var(--pw-text-label, #a89880);
     background: transparent;
-    border: 1px solid #d1d5db;
-    border-radius: 4px;
-    padding: 1px 4px;
+    border: none;
+    padding: 2px 18px 2px 4px;
     cursor: pointer;
-    flex-shrink: 0;
+    outline: none;
     max-width: 120px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238a7f72' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 2px center;
   `
 
-  // Seed the select with the current toolId immediately, then refresh if
-  // getTools resolves with a richer list
-  function populateSelect(tools: ToolOption[], currentToolId: string) {
+  function populateSelect(tools: ToolPlugin[], currentToolId: string) {
     select.innerHTML = ''
     const seen = new Set<string>()
     for (const t of tools) {
@@ -128,20 +144,33 @@ export function mountEmbed(
       opt.selected = t.id === currentToolId
       select.appendChild(opt)
     }
-    // Ensure the current toolId always appears even if missing from the list
-    if (!seen.has(currentToolId)) {
+    // Ensure the current toolId always appears even if not yet loaded in the registry
+    if (currentToolId && !seen.has(currentToolId)) {
       const opt = document.createElement('option')
       opt.value = currentToolId
-      opt.textContent = currentToolId || '(default)'
+      opt.textContent = currentToolId
       opt.selected = true
       select.appendChild(opt)
     }
   }
 
+  // Seed immediately with just the current toolId; registry fill happens below
   populateSelect([], shape.toolId ?? '')
 
-  if (getTools && shape.docUrl) {
-    getTools(shape.docUrl).then(tools => populateSelect(tools, shape.toolId ?? '')).catch(() => {})
+  let unsubscribeRegistry: (() => void) | null = null
+
+  // Resolve the document's datatype, then wire up live registry queries
+  if (repo && shape.docUrl) {
+    repo.find<Record<string, unknown>>(shape.docUrl).then(async handle => {
+      await handle.whenReady()
+      const doc = handle.doc()
+      const patchwork = doc?.['@patchwork'] as { type?: string } | undefined
+      const datatypeId = patchwork?.type ?? ''
+
+      const refresh = () => populateSelect(getToolsForType(datatypeId), shape.toolId ?? '')
+      refresh()
+      unsubscribeRegistry = getRegistry('patchwork:tool').on('changed', refresh)
+    }).catch(() => {})
   }
 
   select.addEventListener('change', (e) => {
@@ -167,6 +196,7 @@ export function mountEmbed(
     overflow: hidden;
     position: relative;
     pointer-events: auto;
+    user-select: text;
   `
 
   // Mount patchwork-view inside content
@@ -181,6 +211,7 @@ export function mountEmbed(
   container.appendChild(card)
 
   return () => {
+    unsubscribeRegistry?.()
     card.remove()
   }
 }

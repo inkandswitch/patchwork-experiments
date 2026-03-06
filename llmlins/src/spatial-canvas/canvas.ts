@@ -3,13 +3,13 @@ import type {
 } from './types.js'
 import { newId, nextZIndex } from './commands.js'
 import { updateCamera, zoomCamera } from './camera.js'
-import { createShapeTree, type ContentMounter } from './shape-tree.js'
+import { createShapeTree } from './shape-tree.js'
 import { Inputs } from './inputs.js'
 import { createSelectTool } from './tools/select.js'
 import { createPanTool } from './tools/pan.js'
 import { createPlaceTool } from './tools/place.js'
 import { PerformanceMode, applyPerformanceMode } from './performance.js'
-import { mountEmbed, type ToolOption } from './embed.js'
+import { mountEmbed, getToolsForType } from './embed.js'
 import { mountToken } from './token.js'
 import type { Repo } from '@automerge/automerge-repo'
 import { createDocOfDatatype2, getRegistry } from '@inkandswitch/patchwork-plugins'
@@ -18,61 +18,11 @@ import type { LoadedDatatypePlugin } from '@inkandswitch/patchwork-plugins'
 import canvasCss  from './css/canvas.css?inline'
 import shapesCss  from './css/shapes.css?inline'
 import handlesCss from './css/handles.css?inline'
+import colorsCss  from '../shared/colors.css?inline'
 
 declare const __BUILD_VERSION__: string
 
 type ActiveTool = 'select' | 'pan' | 'place'
-
-export interface DatatypeOption {
-  id: string
-  name: string
-}
-
-export interface QuickPlaceButton {
-  /** Unique id used to identify the button in the toolbar. */
-  id: string
-  /** HTML content for the button (can include inline SVG). */
-  label: string
-  /** Tooltip text. */
-  title: string
-  /** Datatype id to use when creating the document. */
-  datatypeId: string
-  /** Shape type to create on the canvas. */
-  shapeType: CanvasShape['shapeType']
-}
-
-export interface CanvasViewOptions {
-  /**
-   * Called when the PlaceTool needs a new child Automerge document.
-   * Receives the selected datatypeId (e.g. 'llmlin', 'spatial-canvas').
-   * Returns an AutomergeUrl for the newly created doc, or undefined to leave the
-   * docUrl unset (the embed will show a type picker).
-   */
-  createChildDoc?: (datatypeId: string) => AutomergeUrl | undefined
-  /**
-   * Called to mount content into a shape container.
-   * Defaults to dispatching on shapeType: 'embed' → mountEmbed, 'token' → mountToken.
-   */
-  mountContent?: ContentMounter
-  /**
-   * Optional tool list supplier for embed shapes.
-   * Given a docUrl, resolves to the list of tools that can render that document.
-   * If absent, the tool <select> shows only the currently active toolId.
-   */
-  getTools?: (docUrl: string) => Promise<ToolOption[]>
-  /**
-   * Datatypes the user can choose to create via the PlaceTool.
-   * Shown as a <select> in the toolbar next to the place button.
-   * If omitted the PlaceTool creates documents with an empty datatypeId.
-   * @deprecated Use the "+" toolbar popup instead.
-   */
-  datatypes?: DatatypeOption[]
-  /**
-   * Quick-place buttons rendered in the toolbar.
-   * Each button pre-creates a doc of the given datatype and activates place mode.
-   */
-  quickPlaceButtons?: QuickPlaceButton[]
-}
 
 /**
  * Normalize WheelEvent delta to pixels regardless of deltaMode.
@@ -127,8 +77,7 @@ export class CanvasView {
 
   constructor(
     private handle: DocHandle<CanvasDoc>,
-    mountPoint: HTMLElement,
-    private options: CanvasViewOptions
+    mountPoint: HTMLElement
   ) {
     injectStyles()
 
@@ -196,21 +145,17 @@ export class CanvasView {
 
     // Shape tree must be initialized before updateCamera, which immediately
     // fires onViewport → refreshViewport → shapeTree.updateViewport()
-    const mountContent: ContentMounter = options.mountContent ??
-      ((el, shape) => {
-        if (shape.shapeType === 'token') return mountToken(el, shape)
-        if (shape.shapeType === 'bare') return mountToken(el, shape)
-        return mountEmbed(
-          el,
-          shape,
-          (newToolId) => handle.change(doc => { doc.shapes[shape.id].toolId = newToolId }),
-          (newDocUrl) => handle.change(doc => { doc.shapes[shape.id].docUrl = newDocUrl }),
-          options.getTools,
-          this.repo
-        )
-      })
-
-    this.shapeTree = createShapeTree(this.shapesEl, mountContent)
+    this.shapeTree = createShapeTree(this.shapesEl, (el, shape) => {
+      if (shape.shapeType === 'token') return mountToken(el, shape)
+      if (shape.shapeType === 'bare') return mountToken(el, shape)
+      return mountEmbed(
+        el,
+        shape,
+        (newToolId) => handle.change(doc => { doc.shapes[shape.id].toolId = newToolId }),
+        (newDocUrl) => handle.change(doc => { doc.shapes[shape.id].docUrl = newDocUrl }),
+        this.repo
+      )
+    })
 
     // Initialize camera (writes CSS variables to DOM)
     this.camera = updateCamera(
@@ -247,10 +192,10 @@ export class CanvasView {
       getDoc:             () => this.doc,
       getHandle:          () => this.handle,
       onPlaced:           () => this.setActiveTool('select'),
-      createChildDoc:     (datatypeId) => {
+      createChildDoc:     (_datatypeId) => {
         const url = this.pendingDocUrl
         this.pendingDocUrl = undefined
-        return url ?? options.createChildDoc?.(datatypeId)
+        return url
       },
       getDatatypeId:      () => this.selectedDatatypeId,
       getShapeType:       () => this.pendingShapeType,
@@ -298,6 +243,7 @@ export class CanvasView {
   private captureActivePointer() {
     if (this.activePointerId !== null) {
       this.canvasEl.setPointerCapture(this.activePointerId)
+      this.container.classList.add('sc-translating')
     }
   }
 
@@ -359,6 +305,7 @@ export class CanvasView {
     const onPointerUp = (e: PointerEvent) => {
       if (e.pointerId !== this.activePointerId) return
       this.activePointerId = null
+      this.container.classList.remove('sc-translating')
       const info = this.inputs.onPointerUp(e, this.camera)
       if (this.isPanning) {
         this.isPanning = false
@@ -375,6 +322,7 @@ export class CanvasView {
       if (e.pointerId !== this.activePointerId) return
       this.activePointerId = null
       this.isPanning = false
+      this.container.classList.remove('sc-translating')
       canvas.style.cursor = this.spaceDown ? 'grab' : ''
       if (this.selectTool) this.selectTool.cancel()
       this.panTool.cancel()
@@ -510,23 +458,32 @@ export class CanvasView {
       })
 
       // Resolve the best default tool for each dropped document and update
-      // the shape once known. getTools returns tools ordered by preference;
-      // we pick the first one, mirroring getDefaultToolId in EmbedShapeTool.
-      if (this.options.getTools) {
+      // the shape once known.  We look up the doc's @patchwork.type and pick
+      // the first compatible tool from the registry.
+      if (this.repo) {
         docUrls.forEach((docUrl, i) => {
           const id = ids[i]
-          this.options.getTools!(docUrl)
-            .then(tools => {
-              const toolId = tools[0]?.id ?? ''
-              if (toolId) {
-                this.handle.change(doc => {
-                  if (doc.shapes[id]) doc.shapes[id].toolId = toolId
-                })
-              }
-            })
-            .catch(() => { /* leave toolId as '' — patchwork-view picks its own default */ })
+          this.repo!.find<Record<string, unknown>>(docUrl).then(async handle => {
+            await handle.whenReady()
+            const doc = handle.doc()
+            const patchwork = doc?.['@patchwork'] as { type?: string } | undefined
+            const datatypeId = patchwork?.type ?? ''
+            const tools = getToolsForType(datatypeId)
+            const toolId = tools[0]?.id ?? ''
+            if (toolId) {
+              this.handle.change(doc => {
+                if (doc.shapes[id]) doc.shapes[id].toolId = toolId
+              })
+            }
+          }).catch(() => { /* leave toolId as '' — patchwork-view picks its own default */ })
         })
       }
+    }
+
+    // When text selection starts inside a patchwork-view, cancel any pending
+    // shape translate so the browser's native text selection wins.
+    const onSelectStart = (e: Event) => {
+      if (isInsidePatchworkView(e)) this.selectTool.cancel()
     }
 
     canvas.addEventListener('pointerdown',  onPointerDown)
@@ -536,6 +493,7 @@ export class CanvasView {
     canvas.addEventListener('wheel',        onWheel as EventListener, { passive: false })
     canvas.addEventListener('dragover',     onDragOver)
     canvas.addEventListener('drop',         onDrop)
+    canvas.addEventListener('selectstart',  onSelectStart)
     window.addEventListener('keydown',      onKeyDown)
     window.addEventListener('keyup',        onKeyUp)
 
@@ -556,6 +514,7 @@ export class CanvasView {
       canvas.removeEventListener('wheel',         onWheel as EventListener)
       canvas.removeEventListener('dragover',      onDragOver)
       canvas.removeEventListener('drop',          onDrop)
+      canvas.removeEventListener('selectstart',   onSelectStart)
       window.removeEventListener('keydown',       onKeyDown)
       window.removeEventListener('keyup',         onKeyUp)
       // @ts-ignore
@@ -667,9 +626,12 @@ export class CanvasView {
           maxX = Math.max(maxX, s.x + s.width)
           maxY = Math.max(maxY, s.y + s.height)
         }
+        // Expand by 2 screen pixels so the ring sits outside the shape content
+        // rather than being swallowed by full-bleed embeds (e.g. bare/llmlin).
+        const EXPAND = 2 / this.camera.zoom
         const box = document.createElement('div')
         box.className = 'sc-selection-box'
-        box.style.cssText = `left:${minX}px;top:${minY}px;width:${maxX-minX}px;height:${maxY-minY}px;`
+        box.style.cssText = `left:${minX - EXPAND}px;top:${minY - EXPAND}px;width:${maxX - minX + EXPAND * 2}px;height:${maxY - minY + EXPAND * 2}px;`
         this.handlesEl.appendChild(box)
       }
     }
@@ -774,7 +736,7 @@ export class CanvasView {
   // Toolbar
   // -------------------------------------------------------------------------
 
-  private datatypeSelect: HTMLSelectElement | null = null
+
 
   private buildToolbar() {
     const navButtons: { tool: ActiveTool; label: string; title: string }[] = [
@@ -792,21 +754,17 @@ export class CanvasView {
       this.toolbarEl.appendChild(btn)
     }
 
-    // Quick place buttons (e.g. LLMlin)
-    if (this.options.quickPlaceButtons) {
-      for (const qb of this.options.quickPlaceButtons) {
-        const btn = document.createElement('button')
-        btn.className = 'sc-tool-btn sc-quick-place-btn'
-        btn.dataset.quickPlaceId = qb.id
-        btn.innerHTML = qb.label
-        btn.title = qb.title
-        btn.addEventListener('click', () => {
-          this.closePlusPopup()
-          this.selectForPlace(qb.datatypeId, qb.shapeType)
-        })
-        this.toolbarEl.appendChild(btn)
-      }
-    }
+    // LLMlin quick-place button — always 'bare' shape, not available via "+" popup
+    const llmlinIcon = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5" stroke="currentColor" stroke-width="1.25"/><path d="M3.5 8 C5 5.5 11 5.5 12.5 8 C11 10.5 5 10.5 3.5 8Z" stroke="currentColor" stroke-width="1.1" fill="none"/><circle cx="8" cy="8" r="1.5" fill="currentColor"/></svg>`
+    const llmlinBtn = document.createElement('button')
+    llmlinBtn.className = 'sc-tool-btn sc-quick-place-btn'
+    llmlinBtn.innerHTML = llmlinIcon
+    llmlinBtn.title = 'Create LLMlin'
+    llmlinBtn.addEventListener('click', () => {
+      this.closePlusPopup()
+      this.selectForPlace('llmlin', 'bare')
+    })
+    this.toolbarEl.appendChild(llmlinBtn)
 
     // "+" button — opens a popup to pick any datatype to draw as an embed
     const plusBtn = document.createElement('button')
@@ -832,7 +790,7 @@ export class CanvasView {
     const popup = document.createElement('div')
     popup.className = 'sc-plus-popup'
     popup.style.cssText = `
-      position: fixed;
+      position: absolute;
       min-width: 180px;
       background: #fff;
       border: 1px solid #e5e7eb;
@@ -842,6 +800,7 @@ export class CanvasView {
       z-index: 1000;
       font-family: system-ui, -apple-system, sans-serif;
       font-size: 13px;
+      overflow-y: auto;
     `
 
     const renderList = () => {
@@ -888,13 +847,18 @@ export class CanvasView {
     renderList()
     const unsub = getRegistry('patchwork:datatype').on('changed', renderList)
 
-    // Position using fixed coords from the anchor button so the popup never
-    // disturbs the toolbar layout.
-    const anchorRect = anchor.getBoundingClientRect()
-    popup.style.bottom = `${window.innerHeight - anchorRect.top + 6}px`
-    popup.style.left   = `${anchorRect.left}px`
+    // Position relative to the container so the popup stays in the same
+    // stacking context and never triggers a body-level layout reflow.
+    const containerRect = this.container.getBoundingClientRect()
+    const anchorRect    = anchor.getBoundingClientRect()
+    const bottomOffset  = containerRect.bottom - anchorRect.top + 6
+    const leftOffset    = anchorRect.left - containerRect.left
+    const maxH          = anchorRect.top - containerRect.top - 16
+    popup.style.bottom    = `${bottomOffset}px`
+    popup.style.left      = `${leftOffset}px`
+    popup.style.maxHeight = `${Math.max(maxH, 80)}px`
 
-    document.body.appendChild(popup)
+    this.container.appendChild(popup)
     this.plusPopupEl = popup
 
     // Close on outside pointerdown
@@ -950,10 +914,6 @@ export class CanvasView {
       }
     }
 
-    // Show the datatype picker only while the place tool is active
-    if (this.datatypeSelect) {
-      this.datatypeSelect.style.display = this.activeTool === 'place' ? '' : 'none'
-    }
   }
 
   // -------------------------------------------------------------------------
@@ -978,6 +938,6 @@ function injectStyles() {
   stylesInjected = true
 
   const style = document.createElement('style')
-  style.textContent = canvasCss + shapesCss + handlesCss
+  style.textContent = colorsCss + canvasCss + shapesCss + handlesCss
   document.head.appendChild(style)
 }

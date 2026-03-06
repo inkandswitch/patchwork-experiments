@@ -12,11 +12,10 @@
   height: 0;
 }
 
-/* Selection bounding box outline */
+/* Selection bounding box — visual indicator is handled by filter on .sc-positioned.selected */
 .sc-selection-box {
   position: absolute;
   pointer-events: none;
-  border: calc(1.5px * var(--sc-scale)) solid #1a73e8;
   box-sizing: border-box;
 }
 

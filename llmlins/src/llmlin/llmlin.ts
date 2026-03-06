@@ -2,24 +2,32 @@ import type { LLMlinDoc, AutomergeUrl, DocHandle, Disposer, OutputBlock } from '
 import type { Repo } from '@automerge/automerge-repo'
 import { updateText } from '@automerge/automerge'
 import { runLLMlin, createWatcher } from './engine/index.js'
+import { marked } from 'marked'
 
 type ToolElement = HTMLElement & { repo: Repo }
 import llmlinCss from './css/llmlin.css?inline'
-import { resolveDocTitle } from '../shared/resolve-doc-title.js'
+import colorsCss from '../shared/colors.css?inline'
+import { PwDocToken } from '../doc-token/pw-doc-token.js'
 
 // ============================================================================
 // Constants
 // ============================================================================
 
 const MODELS = [
-  { id: 'gpt-4o',              label: 'GPT-4o' },
-  { id: 'gpt-4o-mini',         label: 'GPT-4o mini' },
-  { id: 'claude-opus-4-5',     label: 'Claude Opus 4.5' },
-  { id: 'claude-sonnet-4-5',   label: 'Claude Sonnet 4.5' },
-  { id: 'gemini-2.0-flash',    label: 'Gemini 2.0 Flash' },
+  { id: 'anthropic/claude-sonnet-4.6',      label: 'Claude Sonnet 4.6' },
+  { id: 'anthropic/claude-sonnet-4.5',      label: 'Claude Sonnet 4.5' },
+  { id: 'anthropic/claude-opus-4.6',        label: 'Claude Opus 4.6' },
+  { id: 'anthropic/claude-haiku-4.5',       label: 'Claude Haiku 4.5' },
+  { id: 'openai/gpt-5.2',                   label: 'GPT-5.2' },
+  { id: 'openai/gpt-5-nano',                label: 'GPT-5 Nano' },
+  { id: 'google/gemini-3.1-pro-preview',    label: 'Gemini 3.1 Pro Preview' },
+  { id: 'google/gemini-3-flash-preview',    label: 'Gemini 3 Flash Preview' },
+  { id: 'google/gemini-2.5-flash',          label: 'Gemini 2.5 Flash' },
+  { id: 'google/gemini-2.5-flash-lite',     label: 'Gemini 2.5 Flash Lite' },
+  { id: 'minimax/minimax-m2.5',             label: 'MiniMax M2.5' },
 ]
 
-const DEFAULT_MODEL = 'claude-sonnet-4-5'
+const DEFAULT_MODEL = 'anthropic/claude-sonnet-4.6'
 
 // ============================================================================
 // Datatype
@@ -27,11 +35,11 @@ const DEFAULT_MODEL = 'claude-sonnet-4-5'
 
 export const LLMlinDatatype = {
   init(doc: LLMlinDoc) {
-    doc.readDocUrls    = []
+    doc.readDocUrls    = ['automerge:2J12X8sUQ2ShNUHXG9QD4ezdRoby' as AutomergeUrl]
     doc.writeDocUrls   = []
     doc.prompt         = ''
     doc.model          = DEFAULT_MODEL
-    doc.apiUrl         = ''
+    doc.apiUrl         = 'https://openrouter.ai/api/v1'
     doc.watchedDocUrls = []
     doc.output         = []
     doc.running        = false
@@ -53,7 +61,7 @@ function injectStyles() {
   if (styleInjected) return
   styleInjected = true
   const style = document.createElement('style')
-  style.textContent = llmlinCss
+  style.textContent = colorsCss + llmlinCss
   document.head.appendChild(style)
 }
 
@@ -103,7 +111,7 @@ function renderOutputBlocks(container: HTMLElement, blocks: OutputBlock[]) {
     if (block.type === 'text') {
       const el = document.createElement('div')
       el.className = 'll-output-text'
-      el.textContent = block.content
+      el.innerHTML = marked.parse(block.content) as string
       container.appendChild(el)
     } else {
       const el = document.createElement('div')
@@ -147,25 +155,21 @@ function makeTokenPill(
   onHoverIn: (pill: HTMLElement) => void,
   onHoverOut: () => void,
 ): HTMLElement {
-  const pill = document.createElement('div')
-  pill.className = watched ? 'll-token ll-token-watched' : 'll-token'
-  pill.dataset.docUrl = docUrl
-  pill.textContent = 'Untitled Doc'
-  pill.draggable = true
+  const token = document.createElement('pw-doc-token') as PwDocToken
+  token.setAttribute('doc-url', docUrl)
+  if (watched) token.setAttribute('watched', '')
+  token.repo = repo
 
-  if (repo) {
-    repo.find<Record<string, unknown>>(docUrl)
-      .then(h => resolveDocTitle(h))
-      .then(title => { pill.textContent = title })
-      .catch(() => {})
-  }
+  // The component sets text/x-patchwork-urls; add the llmlin-specific bucket here
+  token.addEventListener('dragstart', (e) => {
+    onDragStart(e as DragEvent, docUrl, bucket)
+    ;(e as DragEvent).dataTransfer?.setData('text/x-llmlin-source', bucket)
+  })
+  token.addEventListener('click', () => onToggleWatch(docUrl))
+  token.addEventListener('mouseenter', () => onHoverIn(token))
+  token.addEventListener('mouseleave', onHoverOut)
 
-  pill.addEventListener('click', () => onToggleWatch(docUrl))
-  pill.addEventListener('dragstart', e => onDragStart(e, docUrl, bucket))
-  pill.addEventListener('mouseenter', () => onHoverIn(pill))
-  pill.addEventListener('mouseleave', onHoverOut)
-
-  return pill
+  return token
 }
 
 function renderTokens(
@@ -222,7 +226,7 @@ function redrawOverlay(
   const { srcCX, srcY, halfSrc, rootRect } = getEyeSource(root, eyeBtn)
 
   for (const url of watchedUrls) {
-    const pill = root.querySelector<HTMLElement>(`.ll-token[data-doc-url="${url}"]`)
+    const pill = root.querySelector<HTMLElement>(`pw-doc-token[doc-url="${url}"]`)
     if (!pill) continue
 
     const pillRect = pill.getBoundingClientRect()
@@ -252,10 +256,14 @@ export function LLMlinTool(
 
   // ---- Build DOM ----
 
+  // Wrapper — fills the full shape area, reserves padding-top for the eye
+  const wrapper = document.createElement('div')
+  wrapper.className = 'll-wrapper'
+
   const root = document.createElement('div')
   root.className = 'll-root'
 
-  // Eye — absolutely positioned at top-center, floating above the box
+  // Eye — absolutely positioned at top-center of wrapper, visible above the box
   const eyeBtn = document.createElement('div')
   eyeBtn.className = 'll-eye-btn'
   eyeBtn.innerHTML = EYE_SVG
@@ -312,11 +320,6 @@ export function LLMlinTool(
   const footer = document.createElement('div')
   footer.className = 'll-footer'
 
-  const apiUrlInput = document.createElement('input')
-  apiUrlInput.type = 'text'
-  apiUrlInput.className = 'll-api-url'
-  apiUrlInput.placeholder = 'API URL'
-
   const modelSelect = document.createElement('select')
   modelSelect.className = 'll-model'
   for (const m of MODELS) {
@@ -331,7 +334,6 @@ export function LLMlinTool(
   playBtn.innerHTML = PLAY_SVG
   playBtn.setAttribute('title', 'Run')
 
-  footer.appendChild(apiUrlInput)
   footer.appendChild(modelSelect)
   footer.appendChild(playBtn)
 
@@ -346,13 +348,21 @@ export function LLMlinTool(
   root.appendChild(outputPanel)
   root.appendChild(footer)
   root.appendChild(overlay)
-  root.appendChild(eyeBtn)   // eye on top of overlay but absolutely positioned
-  element.appendChild(root)
+
+  wrapper.appendChild(eyeBtn)
+  wrapper.appendChild(root)
+  element.appendChild(wrapper)
 
   // ---- State ----
 
   let returnAnim: number | null = null
   let abortController: AbortController | null = null
+  let userScrolled = false
+  let programmaticScroll = false
+
+  outputPanel.addEventListener('scroll', () => {
+    if (!programmaticScroll) userScrolled = true
+  })
 
   // ---- Pupil return-to-center animation ----
 
@@ -503,14 +513,11 @@ export function LLMlinTool(
     if (document.activeElement !== textarea) {
       textarea.value = doc.prompt ?? ''
     }
-
-    if (document.activeElement !== apiUrlInput) {
-      apiUrlInput.value = doc.apiUrl ?? ''
-    }
+    textarea.disabled = !!doc.running
 
     modelSelect.value = doc.model ?? DEFAULT_MODEL
 
-    // Toggle play/stop button based on running state
+    // Toggle play/stop button and squint state based on running state
     if (doc.running) {
       playBtn.innerHTML = STOP_SVG
       playBtn.setAttribute('title', 'Stop')
@@ -520,9 +527,17 @@ export function LLMlinTool(
       playBtn.setAttribute('title', 'Run')
       playBtn.classList.remove('ll-play-running')
     }
+    root.classList.toggle('ll-running', !!doc.running)
 
     // Render output blocks
     renderOutputBlocks(outputPanel, doc.output ?? [])
+
+    // Auto-scroll to bottom unless user has manually scrolled up
+    if (doc.running && !userScrolled) {
+      programmaticScroll = true
+      outputPanel.scrollTop = outputPanel.scrollHeight
+      requestAnimationFrame(() => { programmaticScroll = false })
+    }
 
     // Always redraw the static watched-token beams
     requestAnimationFrame(() => {
@@ -592,12 +607,6 @@ export function LLMlinTool(
     })
   })
 
-  apiUrlInput.addEventListener('input', () => {
-    handle.change(doc => {
-      doc.apiUrl = apiUrlInput.value
-    })
-  })
-
   modelSelect.addEventListener('change', () => {
     handle.change(doc => {
       doc.model = modelSelect.value
@@ -610,6 +619,7 @@ export function LLMlinTool(
     const doc = handle.doc()
     if (!doc || doc.running) return
 
+    userScrolled = false
     abortController = new AbortController()
     watcher.snapshotBeforeRun()
 
@@ -673,7 +683,7 @@ export function LLMlinTool(
     if (returnAnim !== null) cancelAnimationFrame(returnAnim)
     watcher.dispose()
     abortController?.abort()
-    root.remove()
+    wrapper.remove()
   }
 }
 
@@ -687,6 +697,7 @@ export const llmlinPlugins = [
     id: 'llmlin',
     name: 'LLMlin',
     icon: 'Cpu',
+    unlisted: true,
     async load() {
       return LLMlinDatatype
     },

@@ -1,0 +1,65 @@
+/* ============================================================
+   <pw-doc-token> — inline draggable document pill
+   ============================================================ */
+
+pw-doc-token {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 12px;
+  background: var(--pw-token-bg, #fff8f0);
+  border: 1.5px solid var(--pw-token-border, #d5c8b4);
+  font-size: 11px;
+  font-weight: 500;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--pw-token-text, #5a4a38);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  user-select: none;
+  box-shadow: 0 1px 3px rgba(80, 50, 20, 0.1);
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+  position: relative;
+  z-index: 1;
+}
+
+pw-doc-token:hover {
+  z-index: 10;
+  box-shadow: 0 2px 6px rgba(80, 50, 20, 0.18);
+  transform: translateY(-1px);
+}
+
+/* Stacking — successive pills overlap like fanned cards */
+pw-doc-token + pw-doc-token {
+  margin-left: -10px;
+}
+
+/* Watched state */
+pw-doc-token[watched] {
+  border-color: var(--pw-accent, #b87d3a);
+  background: #fef5e7;
+  color: #7a4a18;
+  box-shadow: 0 0 0 2px var(--pw-accent-muted, rgba(184, 125, 58, 0.2));
+  z-index: 5;
+}
+
+/* ============================================================
+   DocumentToken standalone tool wrapper (fills patchwork-view)
+   ============================================================ */
+
+.pw-doc-token-tool {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 6px 12px;
+  box-sizing: border-box;
+}
+
+.pw-doc-token-tool pw-doc-token {
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 12px;
+}

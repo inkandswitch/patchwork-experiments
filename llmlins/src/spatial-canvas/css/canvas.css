@@ -126,6 +126,11 @@
   color: #1a73e8;
 }
 
+/* Suppress text selection in embedded views while a shape drag is active */
+.sc-container.sc-translating patchwork-view {
+  user-select: none;
+}
+
 .sc-build-info {
   position: absolute;
   bottom: 6px;
