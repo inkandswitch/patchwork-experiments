@@ -43,6 +43,8 @@ export const LLMlinDatatype = {
     doc.model = DEFAULT_MODEL;
     doc.apiUrl = "https://openrouter.ai/api/v1";
     doc.watchedDocUrls = [];
+    doc.watchDebounceMs = 2000;
+    doc.watchMaxIntervalMs = 0;
     doc.runUrls = [];
     doc.running = false;
   },
@@ -115,6 +117,20 @@ const EYE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" class="ll-eye-svg"
 const STOP_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
   fill="currentColor">
   <rect x="4" y="4" width="16" height="16" rx="2"/>
+</svg>`;
+
+const GEAR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+  fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="3"/>
+  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06
+    a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09
+    A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06
+    A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09
+    A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06
+    A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09
+    a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06
+    A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09
+    a1.65 1.65 0 0 0-1.51 1z"/>
 </svg>`;
 
 
@@ -316,8 +332,60 @@ export function LLMlinTool(handle: DocHandle<LLMlinDoc>, element: ToolElement): 
   const footer = document.createElement("div");
   footer.className = "ll-footer";
 
+  const gearBtn = document.createElement("button");
+  gearBtn.className = "ll-gear";
+  gearBtn.innerHTML = GEAR_SVG;
+  gearBtn.setAttribute("title", "Settings");
+
+  const playBtn = document.createElement("button");
+  playBtn.className = "ll-play";
+  playBtn.innerHTML = PLAY_SVG;
+  playBtn.setAttribute("title", "Run");
+
+  footer.appendChild(gearBtn);
+  footer.appendChild(playBtn);
+
+  // Settings panel — slides up from above the footer when gear is clicked
+  const settingsPanel = document.createElement("div");
+  settingsPanel.className = "ll-settings";
+
+  const settingsInner = document.createElement("div");
+  settingsInner.className = "ll-settings-inner";
+
+  function makeSettingGroup(label: string, ...controls: HTMLElement[]): HTMLElement {
+    const group = document.createElement("div");
+    group.className = "ll-setting-group";
+    const lbl = document.createElement("span");
+    lbl.className = "ll-setting-label";
+    lbl.textContent = label;
+    group.appendChild(lbl);
+    for (const c of controls) group.appendChild(c);
+    return group;
+  }
+
+  function makeNumberInput(min: string, step: string, title: string, placeholder = ""): HTMLInputElement {
+    const inp = document.createElement("input");
+    inp.type = "number";
+    inp.className = "ll-setting-input";
+    inp.min = min;
+    inp.step = step;
+    inp.title = title;
+    if (placeholder) inp.placeholder = placeholder;
+    return inp;
+  }
+
+  function makeSuffix(text: string): HTMLSpanElement {
+    const s = document.createElement("span");
+    s.className = "ll-setting-suffix";
+    s.textContent = text;
+    return s;
+  }
+
+  const waitInput = makeNumberInput("0.1", "0.5", "Idle time after last edit before auto-run");
+  const everyInput = makeNumberInput("1", "1", "Max interval between runs when edits keep coming", "off");
+
   const modelSelect = document.createElement("select");
-  modelSelect.className = "ll-model";
+  modelSelect.className = "ll-setting-model";
   for (const m of MODELS) {
     const opt = document.createElement("option");
     opt.value = m.id;
@@ -325,13 +393,13 @@ export function LLMlinTool(handle: DocHandle<LLMlinDoc>, element: ToolElement): 
     modelSelect.appendChild(opt);
   }
 
-  const playBtn = document.createElement("button");
-  playBtn.className = "ll-play";
-  playBtn.innerHTML = PLAY_SVG;
-  playBtn.setAttribute("title", "Run");
+  settingsInner.appendChild(makeSettingGroup("Wait", waitInput, makeSuffix("s")));
+  settingsInner.appendChild(document.createElement("div")).className = "ll-setting-sep";
+  settingsInner.appendChild(makeSettingGroup("Every", everyInput, makeSuffix("s")));
+  settingsInner.appendChild(document.createElement("div")).className = "ll-setting-sep";
+  settingsInner.appendChild(makeSettingGroup("Model", modelSelect));
 
-  footer.appendChild(modelSelect);
-  footer.appendChild(playBtn);
+  settingsPanel.appendChild(settingsInner);
 
   // SVG overlay — behind the eye, full-root coverage
   const overlay = document.createElementNS(SVG_NS, "svg");
@@ -342,6 +410,7 @@ export function LLMlinTool(handle: DocHandle<LLMlinDoc>, element: ToolElement): 
   root.appendChild(header);
   root.appendChild(body);
   root.appendChild(outputPanel);
+  root.appendChild(settingsPanel);
   root.appendChild(footer);
   root.appendChild(overlay);
 
@@ -531,6 +600,14 @@ export function LLMlinTool(handle: DocHandle<LLMlinDoc>, element: ToolElement): 
 
     modelSelect.value = doc.model ?? DEFAULT_MODEL;
 
+    if (document.activeElement !== waitInput) {
+      waitInput.value = ((doc.watchDebounceMs ?? 2000) / 1000).toString();
+    }
+    if (document.activeElement !== everyInput) {
+      const maxMs = doc.watchMaxIntervalMs ?? 0;
+      everyInput.value = maxMs > 0 ? (maxMs / 1000).toString() : "";
+    }
+
     // Toggle play/stop button and squint state
     if (doc.running) {
       playBtn.innerHTML = STOP_SVG;
@@ -631,9 +708,25 @@ export function LLMlinTool(handle: DocHandle<LLMlinDoc>, element: ToolElement): 
   });
 
   modelSelect.addEventListener("change", () => {
+    handle.change((doc) => { doc.model = modelSelect.value; });
+  });
+
+  waitInput.addEventListener("change", () => {
+    const secs = parseFloat(waitInput.value);
+    if (!isFinite(secs) || secs < 0.1) return;
+    handle.change((doc) => { doc.watchDebounceMs = Math.round(secs * 1000); });
+  });
+
+  everyInput.addEventListener("change", () => {
+    const secs = parseFloat(everyInput.value);
     handle.change((doc) => {
-      doc.model = modelSelect.value;
+      doc.watchMaxIntervalMs = isFinite(secs) && secs > 0 ? Math.round(secs * 1000) : 0;
     });
+  });
+
+  gearBtn.addEventListener("click", () => {
+    settingsPanel.classList.toggle("ll-settings-open");
+    gearBtn.classList.toggle("ll-gear-active");
   });
 
   // ---- Run / Stop ----
@@ -705,9 +798,12 @@ export function LLMlinTool(handle: DocHandle<LLMlinDoc>, element: ToolElement): 
 
   // ---- Watch mode ----
 
-  const watcher = createWatcher(repo, handle, () => {
-    startRun();
-  });
+  const watcher = createWatcher(
+    repo, handle,
+    () => startRun(),
+    () => handle.doc()?.watchDebounceMs ?? 2000,
+    () => handle.doc()?.watchMaxIntervalMs ?? 0,
+  );
 
   // ---- Subscribe to doc changes ----
 

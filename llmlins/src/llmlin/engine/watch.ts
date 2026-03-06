@@ -27,12 +27,14 @@ export type Watcher = {
   dispose(): void
 }
 
-const DEBOUNCE_MS = 2000
+const DEFAULT_DEBOUNCE_MS = 2000
 
 export function createWatcher(
   repo: Repo,
   handle: DocHandle<LLMlinDoc>,
   onTrigger: () => void,
+  getDebounceMs: () => number = () => DEFAULT_DEBOUNCE_MS,
+  getMaxIntervalMs: () => number = () => 0,
 ): Watcher {
   // While true, all change events on watched docs are ignored
   let isRunning = false
@@ -43,15 +45,36 @@ export function createWatcher(
   // Per-url cleanup callbacks
   const urlDisposers = new Map<AutomergeUrl, () => void>()
 
-  // Debounce timer handle
+  // Debounce timer: fires after N ms of silence
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
+  // Max-interval timer: fires after N ms even if edits keep coming
+  let maxIntervalTimer: ReturnType<typeof setTimeout> | null = null
+
+  function clearAllTimers() {
+    if (debounceTimer !== null) { clearTimeout(debounceTimer); debounceTimer = null }
+    if (maxIntervalTimer !== null) { clearTimeout(maxIntervalTimer); maxIntervalTimer = null }
+  }
 
   function scheduleRun() {
+    if (isRunning) return
+
+    // Reset debounce
     if (debounceTimer !== null) clearTimeout(debounceTimer)
     debounceTimer = setTimeout(() => {
       debounceTimer = null
+      if (maxIntervalTimer !== null) { clearTimeout(maxIntervalTimer); maxIntervalTimer = null }
       onTrigger()
-    }, DEBOUNCE_MS)
+    }, getDebounceMs())
+
+    // Start max-interval timer only once per "edit burst"
+    const maxMs = getMaxIntervalMs()
+    if (maxMs > 0 && maxIntervalTimer === null) {
+      maxIntervalTimer = setTimeout(() => {
+        maxIntervalTimer = null
+        if (debounceTimer !== null) { clearTimeout(debounceTimer); debounceTimer = null }
+        onTrigger()
+      }, maxMs)
+    }
   }
 
   function subscribeToUrl(url: AutomergeUrl) {
@@ -109,6 +132,7 @@ export function createWatcher(
   const watcher: Watcher = {
     snapshotBeforeRun() {
       isRunning = true
+      clearAllTimers()
     },
 
     async recordOwnWrites() {
@@ -117,7 +141,7 @@ export function createWatcher(
 
     dispose() {
       handle.off('change', onLLMlinChange)
-      if (debounceTimer !== null) clearTimeout(debounceTimer)
+      clearAllTimers()
       for (const url of [...urlDisposers.keys()]) unsubscribeFromUrl(url)
     },
   }

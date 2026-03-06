@@ -410,30 +410,8 @@
   background: var(--pw-header-bg, #ede7db);
 }
 
-/* Minimal text-style select — no border, no box */
-.ll-model {
-  flex-shrink: 0;
-  appearance: none;
-  -webkit-appearance: none;
-  background: transparent;
-  border: none;
-  padding: 4px 20px 4px 0;
-  font-family: inherit;
-  font-size: 11px;
-  color: var(--pw-text-label, #a89880);
-  cursor: pointer;
-  outline: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238a7f72' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 2px center;
-}
-
-.ll-model:hover {
-  color: var(--pw-token-text, #5a4a38);
-}
 
 .ll-play {
-  margin-left: auto;
   width: 32px;
   height: 32px;
   display: flex;
@@ -465,6 +443,146 @@
 
 .ll-play.ll-play-running:hover {
   background: #6e2020;
+}
+
+/* Gear button — opens settings panel */
+.ll-gear {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--pw-text-label, #a89880);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, transform 0.3s ease;
+  flex-shrink: 0;
+}
+
+.ll-gear:hover {
+  background: rgba(0, 0, 0, 0.07);
+  color: var(--pw-token-text, #5a4a38);
+}
+
+.ll-gear.ll-gear-active {
+  color: #b87d3a;
+  transform: rotate(45deg);
+}
+
+/* ============================================================
+   Settings panel — slides up from above the footer
+   ============================================================ */
+
+.ll-settings {
+  position: absolute;
+  bottom: 44px;
+  left: 0;
+  right: 0;
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 0.22s ease, opacity 0.18s ease;
+  z-index: 5;
+}
+
+.ll-settings.ll-settings-open {
+  max-height: 52px;
+  opacity: 1;
+}
+
+.ll-settings-inner {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0;
+  padding: 7px 10px;
+  background: var(--pw-header-bg, #ede7db);
+  border-top: 1px solid var(--pw-border, #ddd5c4);
+}
+
+.ll-setting-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.ll-setting-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--pw-text-label, #a89880);
+  text-transform: uppercase;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.ll-setting-input {
+  width: 40px;
+  appearance: textfield;
+  -moz-appearance: textfield;
+  background: var(--pw-bg-input, #faf7f2);
+  border: 1px solid var(--pw-border-zone, #d0c8b8);
+  border-radius: 5px;
+  padding: 3px 5px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--pw-token-text, #5a4a38);
+  text-align: right;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.ll-setting-input::-webkit-inner-spin-button,
+.ll-setting-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+}
+
+.ll-setting-input:focus {
+  border-color: #b87d3a;
+  box-shadow: 0 0 0 2px rgba(184, 125, 58, 0.12);
+}
+
+.ll-setting-suffix {
+  font-size: 11px;
+  color: var(--pw-text-label, #a89880);
+  user-select: none;
+}
+
+.ll-setting-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--pw-border-zone, #d0c8b8);
+  margin: 0 8px;
+  flex-shrink: 0;
+}
+
+/* Model select inside settings panel */
+.ll-setting-model {
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--pw-bg-input, #faf7f2);
+  border: 1px solid var(--pw-border-zone, #d0c8b8);
+  border-radius: 5px;
+  padding: 3px 18px 3px 6px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--pw-token-text, #5a4a38);
+  cursor: pointer;
+  outline: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238a7f72' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 4px center;
+  max-width: 130px;
+  transition: border-color 0.15s;
+}
+
+.ll-setting-model:focus {
+  border-color: #b87d3a;
+  box-shadow: 0 0 0 2px rgba(184, 125, 58, 0.12);
 }
 
 /* ============================================================
