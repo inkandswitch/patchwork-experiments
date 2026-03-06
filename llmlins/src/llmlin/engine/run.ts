@@ -8,13 +8,14 @@
  * - Calls onOutput for each new or updated OutputBlock
  */
 
-import type { Repo } from '@automerge/automerge-repo'
+import type { Repo, DocHandle } from '@automerge/automerge-repo'
 import type { AutomergeUrl } from '@automerge/automerge-repo'
 import type { FolderDoc, DocLink } from '@inkandswitch/patchwork-filesystem'
 import type { LLMlinDoc } from '../types.js'
 import type { OutputBlock, ChatMessage } from './types.js'
 import { parseScriptBlocks } from './parser.js'
 import { createLLMlinRepo } from './workspace-repo.js'
+import { resolveDocTitle } from '../../shared/resolve-doc-title.js'
 
 // ============================================================================
 // Console capture
@@ -51,8 +52,14 @@ type SkillInfo = {
   content: string
 }
 
-async function discoverSkills(repo: Repo, readUrls: AutomergeUrl[]): Promise<SkillInfo[]> {
+type DiscoverSkillsResult = {
+  skills: SkillInfo[]
+  sourceUrls: Set<AutomergeUrl>
+}
+
+async function discoverSkills(repo: Repo, readUrls: AutomergeUrl[]): Promise<DiscoverSkillsResult> {
   const skills: SkillInfo[] = []
+  const sourceUrls = new Set<AutomergeUrl>()
 
   for (const url of readUrls) {
     try {
@@ -82,6 +89,7 @@ async function discoverSkills(repo: Repo, readUrls: AutomergeUrl[]): Promise<Ski
             importUrl: indexFile ? `/${url}/${indexFile.name}` : `/${url}`,
             content: stripFrontmatter(content),
           })
+          sourceUrls.add(url)
         } catch {
           // skip unreadable SKILL.md
         }
@@ -89,6 +97,7 @@ async function discoverSkills(repo: Repo, readUrls: AutomergeUrl[]): Promise<Ski
       }
 
       // Otherwise check each subfolder for SKILL.md (skills folder containing multiple skills)
+      let foundAny = false
       for (const link of doc.docs as DocLink[]) {
         if (link.type !== 'folder') continue
         try {
@@ -119,16 +128,18 @@ async function discoverSkills(repo: Repo, readUrls: AutomergeUrl[]): Promise<Ski
               : `/${link.url}`,
             content: stripFrontmatter(content),
           })
+          foundAny = true
         } catch {
           // skip inaccessible skill folder
         }
       }
+      if (foundAny) sourceUrls.add(url)
     } catch {
       // skip inaccessible read doc
     }
   }
 
-  return skills
+  return { skills, sourceUrls }
 }
 
 function parseFrontmatter(content: string): Record<string, string> {
@@ -155,7 +166,8 @@ function stripFrontmatter(content: string): string {
 
 type DocEntry = {
   url: AutomergeUrl
-  content: unknown
+  title: string
+  type: string
 }
 
 type RunContext = {
@@ -194,7 +206,8 @@ Write text outside of script tags to explain your reasoning.
 Keep your code concise and focused on the task.`
 
 function formatDocEntry(entry: DocEntry): string {
-  return `${entry.url}\n${JSON.stringify(entry.content, null, 2)}`
+  const label = [entry.title, entry.type ? `(${entry.type})` : ''].filter(Boolean).join(' ')
+  return label ? `${label} — ${entry.url}` : entry.url
 }
 
 function buildMessages(
@@ -207,8 +220,8 @@ function buildMessages(
   let systemPrompt = SYSTEM_PROMPT
 
   if (context.skills.length > 0) {
-    const skillDescriptions = context.skills.map(s => `### ${s.name}\n${s.content}`).join('\n\n')
-    systemPrompt += `\n\n---\nAvailable skills (load with loadSkill(name)):\n\n${skillDescriptions}`
+    const skillList = context.skills.map(s => `- ${s.name}: ${s.description}`).join('\n')
+    systemPrompt += `\n\n---\nAvailable skills (load with loadSkill(name) to get full documentation and code):\n\n${skillList}`
   }
 
   if (context.readDocs.length > 0) {
@@ -345,6 +358,38 @@ async function evalScript(
 }
 
 // ============================================================================
+// Shared helpers
+// ============================================================================
+
+async function fetchDocEntry(repo: Repo, url: AutomergeUrl): Promise<DocEntry> {
+  try {
+    const handle = await repo.find(url)
+    const title = await resolveDocTitle(handle as DocHandle<Record<string, unknown>>)
+    const doc = handle.doc() as any
+    const type = (doc?.['@patchwork']?.type as string) ?? ''
+    return { url, title, type }
+  } catch {
+    return { url, title: '', type: '' }
+  }
+}
+
+async function buildContext(repo: Repo, readDocUrls: AutomergeUrl[], writeDocUrls: AutomergeUrl[]): Promise<RunContext> {
+  const { skills, sourceUrls } = await discoverSkills(repo, readDocUrls)
+  const plainReadUrls = readDocUrls.filter(u => !sourceUrls.has(u))
+  const [readDocs, writeDocs] = await Promise.all([
+    Promise.all(plainReadUrls.map(url => fetchDocEntry(repo, url))),
+    Promise.all(writeDocUrls.map(url => fetchDocEntry(repo, url))),
+  ])
+  return { skills, readDocs, writeDocs }
+}
+
+export async function buildSystemPromptPreview(repo: Repo, doc: LLMlinDoc): Promise<string> {
+  const context = await buildContext(repo, doc.readDocUrls ?? [], doc.writeDocUrls ?? [])
+  const messages = buildMessages('', [], context)
+  return messages[0]?.content ?? ''
+}
+
+// ============================================================================
 // Main entry point
 // ============================================================================
 
@@ -373,14 +418,10 @@ export async function runLLMlin(
   if (!prompt?.trim()) throw new Error('No prompt to run')
   if (!apiUrl)         throw new Error('No API URL configured')
 
-  const llmlinRepo  = createLLMlinRepo(repo, readDocUrls, writeDocUrls)
+  const llmlinRepo      = createLLMlinRepo(repo, readDocUrls, writeDocUrls)
   const capturedConsole = createCapturedConsole()
-  const skills      = await discoverSkills(repo, readDocUrls)
-  const skillUrls   = new Set(skills.map(s => {
-    // extract the base url from importUrl "/{url}/..."
-    const parts = s.importUrl.split('/')
-    return parts[1] as AutomergeUrl
-  }))
+  const context         = await buildContext(repo, readDocUrls, writeDocUrls)
+  const { skills }      = context
 
   const loadSkill = async (name: string) => {
     const skill = skills.find(s => s.name === name)
@@ -394,25 +435,6 @@ export async function runLLMlin(
   ;(globalThis as any).repo           = llmlinRepo
   ;(globalThis as any).loadSkill      = loadSkill
   ;(globalThis as any).__llmCapturedConsole = capturedConsole
-
-  // Fetch current content for plain read docs (non-skill) and write docs
-  const plainReadUrls = readDocUrls.filter(u => !skillUrls.has(u))
-
-  async function fetchDocEntry(url: AutomergeUrl): Promise<DocEntry> {
-    try {
-      const handle = await repo.find(url)
-      return { url, content: handle.doc() }
-    } catch {
-      return { url, content: null }
-    }
-  }
-
-  const [readDocs, writeDocs] = await Promise.all([
-    Promise.all(plainReadUrls.map(fetchDocEntry)),
-    Promise.all(writeDocUrls.map(fetchDocEntry)),
-  ])
-
-  const context: RunContext = { skills, readDocs, writeDocs }
 
   const MAX_ITERATIONS = 20
   const output: OutputBlock[] = []

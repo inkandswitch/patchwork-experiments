@@ -1,7 +1,7 @@
 import type { LLMlinDoc, LlmlinRunDoc, AutomergeUrl, DocHandle, Disposer, OutputBlock } from "./types.js";
 import type { Repo } from "@automerge/automerge-repo";
 import { updateText } from "@automerge/automerge";
-import { runLLMlin, createWatcher } from "./engine/index.js";
+import { runLLMlin, createWatcher, buildSystemPromptPreview } from "./engine/index.js";
 import { marked } from "marked";
 
 type ToolElement = HTMLElement & { repo: Repo };
@@ -609,6 +609,13 @@ export function LLMlinTool(handle: DocHandle<LLMlinDoc>, element: ToolElement): 
     handle.change((doc) => {
       updateText(doc, ["prompt"], textarea.value);
     });
+  });
+
+  textarea.addEventListener("dblclick", async () => {
+    const doc = handle.doc();
+    if (!doc) return;
+    const prompt = await buildSystemPromptPreview(repo, doc);
+    console.log("[llmlin] system prompt:\n", prompt);
   });
 
   modelSelect.addEventListener("change", () => {
