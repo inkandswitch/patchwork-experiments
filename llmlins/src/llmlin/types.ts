@@ -2,7 +2,8 @@
 // Automerge document types
 // ============================================================================
 
-export type AutomergeUrl = string
+import type { AutomergeUrl, DocHandle } from '@automerge/automerge-repo'
+export type { AutomergeUrl, DocHandle }
 
 export type Disposer = () => void
 
@@ -27,14 +28,3 @@ export interface DocumentTokenDoc {
   toolId: string
 }
 
-// ============================================================================
-// DocHandle — minimal interface matching Automerge's DocHandle API
-// ============================================================================
-
-export interface DocHandle<T> {
-  doc(): T | undefined
-  on(event: 'change', callback: (payload: { doc: T }) => void): void
-  off(event: 'change', callback: (payload: { doc: T }) => void): void
-  change(fn: (doc: T) => void): void
-  url: AutomergeUrl
-}

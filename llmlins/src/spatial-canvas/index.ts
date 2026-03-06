@@ -1,5 +1,8 @@
-import type { CanvasDoc, DocHandle, Disposer } from './types.js'
+import type { AutomergeUrl, CanvasDoc, DocHandle, Disposer } from './types.js'
+import type { Repo } from '@automerge/automerge-repo'
 import { CanvasView } from './canvas.js'
+
+type ToolElement = HTMLElement & { repo: Repo }
 
 export type { CanvasDoc, CanvasShape } from './types.js'
 
@@ -34,12 +37,12 @@ export const SpatialCanvasDatatype = {
 
 export function Tool(
   handle: DocHandle<CanvasDoc>,
-  element: HTMLElement
+  element: ToolElement
 ): Disposer {
   // In a real patchwork environment, createChildDoc would call the platform
   // API to create a new synced Automerge document.
-  const createChildDoc = (_toolId: string): string => {
-    return `automerge:${Math.random().toString(36).slice(2)}`
+  const createChildDoc = (_toolId: string): AutomergeUrl => {
+    return `automerge:${Math.random().toString(36).slice(2)}` as AutomergeUrl
   }
 
   const view = new CanvasView(handle, element, { createChildDoc })
@@ -74,3 +77,4 @@ export const plugins = [
 
 export { mountEmbed, type ToolOption } from './embed.js'
 export { mountToken } from './token.js'
+export type { DatatypeOption } from './canvas.js'

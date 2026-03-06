@@ -12,5 +12,11 @@
   "devDependencies": {
     "typescript": "latest",
     "vite": "latest"
+  },
+  "dependencies": {
+    "@automerge/automerge": "^3.2.1",
+    "@automerge/automerge-repo": "^2.5.0",
+    "@inkandswitch/patchwork-filesystem": "^0.0.3",
+    "@inkandswitch/patchwork-plugins": "^0.0.2"
   }
 }

@@ -1,5 +1,8 @@
 import type { LLMlinDoc, AutomergeUrl, DocHandle, Disposer } from './types.js'
+import type { Repo } from '@automerge/automerge-repo'
 import { updateText } from '@automerge/automerge'
+
+type ToolElement = HTMLElement & { repo: Repo }
 import llmlinCss from './css/llmlin.css?inline'
 import { resolveDocTitle } from '../shared/resolve-doc-title.js'
 
@@ -73,6 +76,7 @@ const PLAY_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
 /** Build a single token pill element (async title loading). */
 function makeTokenPill(
   docUrl: AutomergeUrl,
+  repo: Repo | undefined,
   watched: boolean,
   eyeMode: boolean,
   onToggleWatch: (url: AutomergeUrl) => void
@@ -82,9 +86,12 @@ function makeTokenPill(
   pill.dataset.docUrl = docUrl
   pill.textContent = 'Untitled Doc'
 
-  resolveDocTitle(docUrl).then(title => {
-    pill.textContent = title
-  })
+  if (repo) {
+    repo.find<Record<string, unknown>>(docUrl)
+      .then(h => resolveDocTitle(h))
+      .then(title => { pill.textContent = title })
+      .catch(() => {})
+  }
 
   if (eyeMode) {
     pill.addEventListener('click', () => onToggleWatch(docUrl))
@@ -99,11 +106,12 @@ function renderTokens(
   urls: AutomergeUrl[],
   watchedSet: Set<AutomergeUrl>,
   eyeMode: boolean,
-  onToggleWatch: (url: AutomergeUrl) => void
+  onToggleWatch: (url: AutomergeUrl) => void,
+  repo: Repo | undefined
 ) {
   container.innerHTML = ''
   for (const url of urls) {
-    container.appendChild(makeTokenPill(url, watchedSet.has(url), eyeMode, onToggleWatch))
+    container.appendChild(makeTokenPill(url, repo, watchedSet.has(url), eyeMode, onToggleWatch))
   }
 }
 
@@ -160,9 +168,11 @@ function redrawOverlay(
 
 export function LLMlinTool(
   handle: DocHandle<LLMlinDoc>,
-  element: HTMLElement
+  element: ToolElement
 ): Disposer {
   injectStyles()
+
+  const repo = element.repo
 
   // ---- Build DOM ----
 
@@ -273,8 +283,8 @@ export function LLMlinTool(
       })
     }
 
-    renderTokens(readTokens,  doc.readDocUrls,  watchedSet, eyeMode, onToggleWatch)
-    renderTokens(writeTokens, doc.writeDocUrls, watchedSet, eyeMode, onToggleWatch)
+    renderTokens(readTokens,  doc.readDocUrls,  watchedSet, eyeMode, onToggleWatch, repo)
+    renderTokens(writeTokens, doc.writeDocUrls, watchedSet, eyeMode, onToggleWatch, repo)
 
     // Sync textarea (avoid fighting the user while typing)
     if (document.activeElement !== textarea) {
@@ -319,9 +329,9 @@ export function LLMlinTool(
       const raw = e.dataTransfer?.getData('text/x-patchwork-urls')
       if (!raw) return
 
-      let urls: string[]
+      let urls: AutomergeUrl[]
       try {
-        urls = JSON.parse(raw) as string[]
+        urls = JSON.parse(raw) as AutomergeUrl[]
       } catch {
         return
       }

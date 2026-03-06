@@ -1,5 +1,8 @@
-import type { DocumentTokenDoc, DocHandle, Disposer } from './types.js'
+import type { AutomergeUrl, DocumentTokenDoc, DocHandle, Disposer } from './types.js'
 import { getRegistry } from '@inkandswitch/patchwork-plugins'
+import type { Repo } from '@automerge/automerge-repo'
+
+type ToolElement = HTMLElement & { repo: Repo }
 
 // ============================================================================
 // Datatype
@@ -7,7 +10,7 @@ import { getRegistry } from '@inkandswitch/patchwork-plugins'
 
 export const DocumentTokenDatatype = {
   init(doc: DocumentTokenDoc) {
-    doc.docUrl = ''
+    doc.docUrl = '' as AutomergeUrl
     doc.toolId = ''
   },
 
@@ -24,7 +27,7 @@ export const DocumentTokenDatatype = {
 
 export function DocumentTokenTool(
   handle: DocHandle<DocumentTokenDoc>,
-  element: HTMLElement
+  element: ToolElement
 ): Disposer {
   const root = document.createElement('div')
   root.className = 'dt-root'
@@ -45,7 +48,7 @@ export function DocumentTokenTool(
       try {
         const datatype = await registry.load(doc.toolId) as { getTitle?: (d: unknown) => string } | null
         if (datatype?.getTitle) {
-          const docHandle = await (registry as unknown as { repo?: { find(url: string): Promise<{ doc(): unknown }> } }).repo?.find(doc.docUrl)
+          const docHandle = await element.repo.find(doc.docUrl)
           const innerDoc = docHandle?.doc()
           root.textContent = innerDoc ? datatype.getTitle(innerDoc) : 'Untitled Doc'
         } else {

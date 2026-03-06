@@ -1,4 +1,4 @@
-import type { PointerInfo, CanvasDoc, DocHandle } from '../types.js'
+import type { AutomergeUrl, PointerInfo, CanvasDoc, DocHandle } from '../types.js'
 import { createShape, newId, nextZIndex } from '../commands.js'
 
 export interface PlaceToolContext {
@@ -7,7 +7,9 @@ export interface PlaceToolContext {
   /** Called after placing to switch back to select tool. */
   onPlaced(): void
   /** Create a new child Automerge document and return its URL. */
-  createChildDoc(toolId: string): string
+  createChildDoc(datatypeId: string): AutomergeUrl
+  /** Returns the currently selected datatype id to create on place. */
+  getDatatypeId(): string
   /** Overlay element (inside the layer) used to show the drag preview. */
   getPlacePreviewEl(): HTMLElement
 }
@@ -61,7 +63,7 @@ export function createPlaceTool(ctx: PlaceToolContext) {
     hidePreview()
     const doc    = ctx.getDoc()
     const handle = ctx.getHandle()
-    const docUrl = ctx.createChildDoc('embed')
+    const docUrl = ctx.createChildDoc(ctx.getDatatypeId())
     createShape(handle, {
       id:        newId(),
       x:         rect.x,

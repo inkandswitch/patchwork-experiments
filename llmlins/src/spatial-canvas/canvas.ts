@@ -1,5 +1,5 @@
 import type {
-  Camera, Rect, CanvasDoc, CanvasShape, DocHandle, Disposer
+  AutomergeUrl, Camera, Rect, CanvasDoc, CanvasShape, DocHandle, Disposer
 } from './types.js'
 import { newId, nextZIndex } from './commands.js'
 import { updateCamera, zoomCamera } from './camera.js'
@@ -11,6 +11,7 @@ import { createPlaceTool } from './tools/place.js'
 import { PerformanceMode, applyPerformanceMode } from './performance.js'
 import { mountEmbed, type ToolOption } from './embed.js'
 import { mountToken } from './token.js'
+import type { Repo } from '@automerge/automerge-repo'
 
 import canvasCss  from './css/canvas.css?inline'
 import shapesCss  from './css/shapes.css?inline'
@@ -18,12 +19,18 @@ import handlesCss from './css/handles.css?inline'
 
 type ActiveTool = 'select' | 'pan' | 'place'
 
+export interface DatatypeOption {
+  id: string
+  name: string
+}
+
 export interface CanvasViewOptions {
   /**
    * Called when the PlaceTool needs a new child Automerge document.
+   * Receives the selected datatypeId (e.g. 'llmlin', 'spatial-canvas').
    * Must return an AutomergeUrl for the newly created doc.
    */
-  createChildDoc: (toolId: string) => string
+  createChildDoc: (datatypeId: string) => AutomergeUrl
   /**
    * Called to mount content into a shape container.
    * Defaults to dispatching on shapeType: 'embed' → mountEmbed, 'token' → mountToken.
@@ -35,6 +42,12 @@ export interface CanvasViewOptions {
    * If absent, the tool <select> shows only the currently active toolId.
    */
   getTools?: (docUrl: string) => Promise<ToolOption[]>
+  /**
+   * Datatypes the user can choose to create via the PlaceTool.
+   * Shown as a <select> in the toolbar next to the place button.
+   * If omitted the PlaceTool creates documents with an empty datatypeId.
+   */
+  datatypes?: DatatypeOption[]
 }
 
 /**
@@ -78,6 +91,7 @@ export class CanvasView {
   private spaceDown = false
   private activePointerId: number | null = null
   private isPanning = false   // true while a pan drag is active
+  private selectedDatatypeId = ''
 
   private disposers: Disposer[] = []
 
@@ -126,6 +140,8 @@ export class CanvasView {
     this.container.appendChild(this.toolbarEl)
     mountPoint.appendChild(this.container)
 
+    const repo = (mountPoint as unknown as { repo?: Repo }).repo
+
     // Seed bounds and screenBounds immediately after mounting so the first
     // viewport computation uses real dimensions rather than {0,0,0,0}.
     const initialRect = this.canvasEl.getBoundingClientRect()
@@ -145,7 +161,8 @@ export class CanvasView {
           el,
           shape,
           (newToolId) => handle.change(doc => { doc.shapes[shape.id].toolId = newToolId }),
-          options.getTools
+          options.getTools,
+          repo
         )
       })
 
@@ -185,7 +202,8 @@ export class CanvasView {
       getDoc:             () => this.doc,
       getHandle:          () => this.handle,
       onPlaced:           () => this.setActiveTool('select'),
-      createChildDoc:     (toolId) => options.createChildDoc(toolId),
+      createChildDoc:     (datatypeId) => options.createChildDoc(datatypeId),
+      getDatatypeId:      () => this.selectedDatatypeId,
       getPlacePreviewEl:  () => this.placePreviewEl,
     })
 
@@ -377,7 +395,7 @@ export class CanvasView {
       try { parsed = JSON.parse(raw) } catch { return }
       if (!Array.isArray(parsed) || parsed.length === 0) return
 
-      const docUrls = (parsed as unknown[]).filter((u): u is string => typeof u === 'string')
+      const docUrls = (parsed as unknown[]).filter((u): u is AutomergeUrl => typeof u === 'string')
       if (docUrls.length === 0) return
 
       // Convert the screen-space drop point to page coordinates
@@ -637,10 +655,12 @@ export class CanvasView {
   // Toolbar
   // -------------------------------------------------------------------------
 
+  private datatypeSelect: HTMLSelectElement | null = null
+
   private buildToolbar() {
     const buttons: { tool: ActiveTool; label: string; title: string }[] = [
       { tool: 'select', label: '↖', title: 'Select (V)' },
-      { tool: 'place',  label: '□', title: 'Place embed (R)' },
+      { tool: 'place',  label: '□', title: 'Place (R)' },
       { tool: 'pan',    label: '✋', title: 'Pan (H)' },
     ]
 
@@ -654,6 +674,33 @@ export class CanvasView {
       this.toolbarEl.appendChild(btn)
     }
 
+    // Datatype picker — only rendered when datatypes are configured
+    if (this.options.datatypes && this.options.datatypes.length > 0) {
+      const sel = document.createElement('select')
+      sel.className = 'sc-datatype-select'
+      sel.title = 'Document type to create'
+
+      for (const dt of this.options.datatypes) {
+        const opt = document.createElement('option')
+        opt.value = dt.id
+        opt.textContent = dt.name
+        sel.appendChild(opt)
+      }
+
+      // Seed the tracked state from the first entry
+      this.selectedDatatypeId = this.options.datatypes[0].id
+
+      sel.addEventListener('change', () => {
+        this.selectedDatatypeId = sel.value
+        // Picking a datatype implicitly activates the place tool
+        this.setActiveTool('place')
+      })
+
+      sel.style.display = 'none'
+      this.datatypeSelect = sel
+      this.toolbarEl.appendChild(sel)
+    }
+
     this.updateToolbarActive()
   }
 
@@ -661,6 +708,11 @@ export class CanvasView {
     const btns = Array.from(this.toolbarEl.querySelectorAll<HTMLElement>('.sc-tool-btn'))
     for (const btn of btns) {
       btn.classList.toggle('active', btn.dataset.toolTarget === this.activeTool)
+    }
+
+    // Show the datatype picker only while the place tool is active
+    if (this.datatypeSelect) {
+      this.datatypeSelect.style.display = this.activeTool === 'place' ? '' : 'none'
     }
   }
 

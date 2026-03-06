@@ -1,4 +1,5 @@
 import type { CanvasShape, Disposer } from './types.js'
+import type { Repo } from '@automerge/automerge-repo'
 import { resolveDocTitle } from '../shared/resolve-doc-title.js'
 
 export interface ToolOption {
@@ -37,7 +38,8 @@ export function mountEmbed(
   container: HTMLElement,
   shape: CanvasShape,
   onToolChange: (newToolId: string) => void,
-  getTools?: (docUrl: string) => Promise<ToolOption[]>
+  getTools?: (docUrl: string) => Promise<ToolOption[]>,
+  repo?: Repo
 ): Disposer {
   let focused = false
   let stopPointerCleanup: (() => void) | null = null
@@ -90,9 +92,12 @@ export function mountEmbed(
     flex: 1;
     min-width: 0;
   `
-  docName.textContent = 'Loading…'
-  if (shape.docUrl) {
-    resolveDocTitle(shape.docUrl).then(title => { docName.textContent = title })
+  if (shape.docUrl && repo) {
+    docName.textContent = 'Loading…'
+    repo.find<Record<string, unknown>>(shape.docUrl)
+      .then(h => resolveDocTitle(h))
+      .then(title => { docName.textContent = title })
+      .catch(() => { docName.textContent = 'Untitled' })
   } else {
     docName.textContent = 'Untitled'
   }
