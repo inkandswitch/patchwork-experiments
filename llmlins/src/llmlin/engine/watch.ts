@@ -27,7 +27,7 @@ export type Watcher = {
   dispose(): void
 }
 
-const DEBOUNCE_MS = 150
+const DEBOUNCE_MS = 2000
 
 export function createWatcher(
   repo: Repo,

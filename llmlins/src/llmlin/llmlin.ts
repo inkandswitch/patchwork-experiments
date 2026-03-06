@@ -221,12 +221,12 @@ function redrawOverlay(svg: SVGSVGElement, root: HTMLElement, eyeBtn: HTMLElemen
     if (!pill) continue;
 
     const pillRect = pill.getBoundingClientRect();
-    const tgtY = pillRect.bottom - rootRect.top;
+    const tgtMidY = (pillRect.top + pillRect.bottom) / 2 - rootRect.top;
     const tgtX1 = pillRect.left - rootRect.left;
     const tgtX2 = pillRect.right - rootRect.left;
 
     const poly = document.createElementNS(SVG_NS, "polygon");
-    poly.setAttribute("points", `${srcCX - halfSrc},${srcY} ${tgtX1},${tgtY} ${tgtX2},${tgtY} ${srcCX + halfSrc},${srcY}`);
+    poly.setAttribute("points", `${srcCX - halfSrc},${srcY} ${tgtX1},${tgtMidY} ${tgtX2},${tgtMidY} ${srcCX + halfSrc},${srcY}`);
     poly.setAttribute("class", "ll-trap");
     svg.appendChild(poly);
   }
@@ -453,9 +453,9 @@ export function LLMlinTool(handle: DocHandle<LLMlinDoc>, element: ToolElement): 
     const pillRect = pill.getBoundingClientRect();
     const tgtX1 = pillRect.left - rootRect.left;
     const tgtX2 = pillRect.right - rootRect.left;
-    const tgtY = pillRect.bottom - rootRect.top;
+    const tgtMidY = (pillRect.top + pillRect.bottom) / 2 - rootRect.top;
 
-    ray.setAttribute("points", `${srcCX - halfSrc},${srcY} ${tgtX1},${tgtY} ${tgtX2},${tgtY} ${srcCX + halfSrc},${srcY}`);
+    ray.setAttribute("points", `${srcCX - halfSrc},${srcY} ${tgtX1},${tgtMidY} ${tgtX2},${tgtMidY} ${srcCX + halfSrc},${srcY}`);
   }
 
   function clearRay() {

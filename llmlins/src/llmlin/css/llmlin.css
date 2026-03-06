@@ -477,21 +477,23 @@
   inset: 0;
   pointer-events: none;
   overflow: visible;
-  z-index: 15;
+  z-index: 0;
 }
 
 /* Permanent watched-token beam */
 .ll-trap {
-  fill: rgba(220, 160, 60, 0.22);
-  stroke: none;
-  filter: blur(4px);
+  fill: rgba(220, 160, 60, 0.18);
+  stroke: rgba(220, 160, 60, 0.45);
+  stroke-width: 1;
+  filter: none;
 }
 
 /* Hover ray — emits from eye center toward the hovered token */
 .ll-ray {
-  fill: rgba(220, 160, 60, 0.38);
-  stroke: none;
-  filter: blur(6px);
+  fill: rgba(220, 160, 60, 0.30);
+  stroke: rgba(220, 160, 60, 0.65);
+  stroke-width: 1;
+  filter: none;
 }
 
 /* ============================================================

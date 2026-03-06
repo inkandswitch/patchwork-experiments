@@ -10,9 +10,26 @@
   contain: layout style size;
   width: 0;
   height: 0;
+  z-index: 9999;
 }
 
-/* Selection bounding box — visual indicator is handled by filter on .sc-positioned.selected */
+/*
+ * Selection overlay — OUTSIDE .sc-layer, sibling inside .sc-canvas.
+ * Gets the same camera transform applied in JS so coordinates match.
+ * Sits above all shape compositor layers because it's later in the DOM
+ * and outside any shape stacking context.
+ */
+.sc-selection-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  transform-origin: 0 0;
+}
+
+/* Selection bounding box — no border; selected shapes show via drop-shadow on .sc-positioned.selected */
 .sc-selection-box {
   position: absolute;
   pointer-events: none;

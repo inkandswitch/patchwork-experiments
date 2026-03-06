@@ -45,6 +45,7 @@ export class CanvasView {
   private layer: HTMLElement
   private shapesEl: HTMLElement
   private handlesEl: HTMLElement
+  private selectionOverlayEl: HTMLElement
   private brushEl: HTMLElement
   private placePreviewEl: HTMLElement
   private cursorsEl: HTMLElement
@@ -103,6 +104,9 @@ export class CanvasView {
     this.placePreviewEl = document.createElement('div')
     this.placePreviewEl.className = 'sc-place-preview'
 
+    this.selectionOverlayEl = document.createElement('div')
+    this.selectionOverlayEl.className = 'sc-selection-overlay'
+
     this.cursorsEl = document.createElement('div')
     this.cursorsEl.className = 'sc-cursors'
 
@@ -114,6 +118,7 @@ export class CanvasView {
     this.layer.appendChild(this.brushEl)
     this.layer.appendChild(this.placePreviewEl)
     this.canvasEl.appendChild(this.layer)
+    this.canvasEl.appendChild(this.selectionOverlayEl)
     this.canvasEl.appendChild(this.cursorsEl)
     this.buildInfoEl = document.createElement('div')
     this.buildInfoEl.className = 'sc-build-info'
@@ -556,6 +561,10 @@ export class CanvasView {
 
   private onViewport(camera: Camera) {
     this.camera = camera
+    this.selectionOverlayEl.style.setProperty(
+      'transform',
+      `scale(${camera.zoom}) translateX(${camera.x}px) translateY(${camera.y}px)`
+    )
     this.refreshViewport()
   }
 
@@ -622,8 +631,9 @@ export class CanvasView {
 
   private refreshHandles(overrides?: Map<string, Partial<CanvasShape>>) {
     this.handlesEl.innerHTML = ''
+    this.selectionOverlayEl.innerHTML = ''
 
-    // Selection box for all selected shapes (bounding box)
+    // Selection box rendered in the overlay (above all shape compositor layers)
     if (this.selectedIds.size > 0) {
       const selectedShapes = [...this.selectedIds]
         .map(id => {
@@ -648,7 +658,7 @@ export class CanvasView {
         const box = document.createElement('div')
         box.className = 'sc-selection-box'
         box.style.cssText = `left:${minX - EXPAND}px;top:${minY - EXPAND}px;width:${maxX - minX + EXPAND * 2}px;height:${maxY - minY + EXPAND * 2}px;`
-        this.handlesEl.appendChild(box)
+        this.selectionOverlayEl.appendChild(box)
       }
     }
 
