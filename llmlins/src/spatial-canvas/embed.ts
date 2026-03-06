@@ -43,9 +43,6 @@ export function mountEmbed(
     return mountTypePicker(container, onDocCreate, repo)
   }
 
-  let focused = false
-  let stopPointerCleanup: (() => void) | null = null
-
   // -------------------------------------------------------------------------
   // Outer card
   // -------------------------------------------------------------------------
@@ -172,60 +169,7 @@ export function mountEmbed(
     overflow: hidden;
     position: relative;
     pointer-events: auto;
-    user-select: none;
   `
-
-  // Click inside the content area focuses the embed — from that point on,
-  // pointer / keyboard / wheel events are stopped so the canvas doesn't
-  // interfere with the embedded tool
-  function attachFocusListeners() {
-    const stopKey = (e: KeyboardEvent) => e.stopPropagation()
-    const stopWheel = (e: WheelEvent) => { if (!e.ctrlKey) e.stopPropagation() }
-    const stopPointer = (e: PointerEvent) => e.stopPropagation()
-
-    content.addEventListener('keydown',     stopKey)
-    content.addEventListener('keyup',       stopKey)
-    content.addEventListener('keypress',    stopKey)
-    content.addEventListener('wheel',       stopWheel as EventListener)
-    content.addEventListener('pointerdown', stopPointer, true)
-    content.addEventListener('pointermove', stopPointer, true)
-    content.addEventListener('pointerup',   stopPointer, true)
-
-    return () => {
-      content.removeEventListener('keydown',     stopKey)
-      content.removeEventListener('keyup',       stopKey)
-      content.removeEventListener('keypress',    stopKey)
-      content.removeEventListener('wheel',       stopWheel as EventListener)
-      content.removeEventListener('pointerdown', stopPointer, true)
-      content.removeEventListener('pointermove', stopPointer, true)
-      content.removeEventListener('pointerup',   stopPointer, true)
-    }
-  }
-
-  content.addEventListener('pointerdown', (e) => {
-    e.stopPropagation()
-    if (!focused) {
-      focused = true
-      content.style.userSelect = 'text'
-      stopPointerCleanup = attachFocusListeners()
-      // Synthesize a click for frameworks that use document-level delegation
-      ;(e.target as HTMLElement)?.dispatchEvent(
-        new MouseEvent('click', { bubbles: true, cancelable: true, view: window, clientX: e.clientX, clientY: e.clientY })
-      )
-    }
-  })
-
-  // Clicking outside the card unfocuses the embed
-  const onOutsidePointerDown = (e: PointerEvent) => {
-    if (!focused) return
-    if (!card.contains(e.target as Node)) {
-      focused = false
-      content.style.userSelect = 'none'
-      stopPointerCleanup?.()
-      stopPointerCleanup = null
-    }
-  }
-  window.addEventListener('pointerdown', onOutsidePointerDown, true)
 
   // Mount patchwork-view inside content
   const pw = document.createElement('patchwork-view') as HTMLElement
@@ -239,8 +183,6 @@ export function mountEmbed(
   container.appendChild(card)
 
   return () => {
-    stopPointerCleanup?.()
-    window.removeEventListener('pointerdown', onOutsidePointerDown, true)
     card.remove()
   }
 }
@@ -261,10 +203,9 @@ function mountTypePicker(
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
-    border: 1px solid #e5e7eb;
-    border-radius: 6px;
-    background: #ffffff;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    border: 1.5px dashed #9ca3af;
+    border-radius: 4px;
+    background: #f3f4f6;
     overflow: hidden;
     pointer-events: all;
     padding: 12px;

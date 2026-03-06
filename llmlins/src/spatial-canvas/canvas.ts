@@ -264,7 +264,19 @@ export class CanvasView {
   private bindEvents() {
     const canvas = this.canvasEl
 
+    const isInsidePatchworkView = (e: Event): boolean => {
+      for (const el of e.composedPath()) {
+        if (el === canvas) break
+        if (el instanceof Element && el.tagName.toLowerCase() === 'patchwork-view') return true
+      }
+      return false
+    }
+
+    const isKeyboardFocusInPatchworkView = (): boolean =>
+      !!(document.activeElement?.closest('patchwork-view'))
+
     const onPointerDown = (e: PointerEvent) => {
+      if (isInsidePatchworkView(e)) return
       // Middle click or space+any button → pan
       if (e.button === 1 || this.spaceDown) {
         canvas.setPointerCapture(e.pointerId)
@@ -321,6 +333,7 @@ export class CanvasView {
     }
 
     const onWheel = (e: WheelEvent) => {
+      if (isInsidePatchworkView(e)) return
       e.preventDefault()
 
       const [rawDx, rawDy] = normalizeDelta(e)
@@ -353,6 +366,7 @@ export class CanvasView {
     }
 
     const onKeyDown = (e: KeyboardEvent) => {
+      if (isKeyboardFocusInPatchworkView()) return
       if (e.code === 'Space' && !e.repeat) {
         this.spaceDown = true
         if (!this.isPanning) canvas.style.cursor = 'grab'
@@ -366,6 +380,7 @@ export class CanvasView {
     }
 
     const onKeyUp = (e: KeyboardEvent) => {
+      if (isKeyboardFocusInPatchworkView()) return
       if (e.code === 'Space') {
         this.spaceDown = false
         if (!this.isPanning) canvas.style.cursor = ''

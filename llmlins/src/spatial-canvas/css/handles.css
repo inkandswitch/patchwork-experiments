@@ -27,13 +27,9 @@
   box-sizing: border-box;
 }
 
-/* Visual square */
+/* Visual square — hidden; resize intent is indicated by cursor only */
 .sc-handle-visual {
-  position: absolute;
-  inset: 0;
-  background: white;
-  border: calc(1.5px * var(--sc-scale)) solid #1a73e8;
-  border-radius: calc(2px * var(--sc-scale));
+  display: none;
 }
 
 /* Corner handles */
@@ -48,12 +44,9 @@
 .sc-handle[data-edge="s"]  { cursor: s-resize; }
 .sc-handle[data-edge="w"]  { cursor: w-resize; }
 
-/* Rotate handle */
+/* Rotate handle — no visual, cursor only */
 .sc-handle[data-rotate] {
   cursor: grab;
-  background: white;
-  border: calc(1.5px * var(--sc-scale)) solid #1a73e8;
-  border-radius: 50%;
 }
 
 .sc-handle[data-rotate]:active {

@@ -1,8 +1,22 @@
-import type { AutomergeUrl, DocumentTokenDoc, DocHandle, Disposer } from './types.js'
+import type { AutomergeUrl, DocumentTokenDoc, DocHandle, Disposer } from '../llmlin/types.js'
 import { getRegistry } from '@inkandswitch/patchwork-plugins'
 import type { Repo } from '@automerge/automerge-repo'
+import docTokenCss from './css/doc-token.css?inline'
 
 type ToolElement = HTMLElement & { repo: Repo }
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+let styleInjected = false
+function injectStyles() {
+  if (styleInjected) return
+  styleInjected = true
+  const style = document.createElement('style')
+  style.textContent = docTokenCss
+  document.head.appendChild(style)
+}
 
 // ============================================================================
 // Datatype
@@ -29,6 +43,8 @@ export function DocumentTokenTool(
   handle: DocHandle<DocumentTokenDoc>,
   element: ToolElement
 ): Disposer {
+  injectStyles()
+
   const root = document.createElement('div')
   root.className = 'dt-root'
   root.textContent = 'Loading…'
