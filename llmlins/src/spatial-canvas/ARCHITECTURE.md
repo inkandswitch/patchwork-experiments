@@ -545,29 +545,34 @@ layer's CSS zoom transform.
 
 ```
 src/
-  canvas.ts          — main entry: CanvasView class, mounts/unmounts everything
-  inputs.ts          — Inputs class: event normalization, screen↔page coordinate transform
-  camera.ts          — camera state + updateCamera(); viewport computation
-  shape-tree.ts      — viewport culling + keyed DOM reconciler
-  shape-mount.ts     — mounts a single shape: updatePosition() + patchwork-view lifecycle
-  tools/
-    select.ts        — SelectTool: pointer routing for move/resize/rotate/brush
-    pan.ts           — PanTool: middle-click and space+drag panning
-    place.ts         — PlaceTool: click to place a new patchwork-view shape
-  sessions/
-    translate.ts     — TranslateSession: drag to move selected shapes
-    resize.ts        — ResizeSession: drag corner/edge handles to resize
-    pan.ts           — PanSession: drag to pan the camera (ephemeral, no undo)
-    brush.ts         — BrushSession: drag to marquee-select shapes
-  commands.ts        — Command factories: createShape, deleteShapes, translateShapes, resizeShape
-  undo-stack.ts      — UndoStack: push/undo/redo over Automerge via before/after patches
-  math/
-    vec.ts           — 2D vector math (add, sub, scale, dist, rotate, lerp)
-    rect.ts          — Rect utilities (intersect, contain, AABB from points)
-  css/
-    canvas.css       — .sc-container, .sc-canvas, .sc-layer, contain rules, CSS variables
-    shapes.css       — .sc-shape, .sc-positioned, will-change rules
-    handles.css      — .sc-handles, counter-scale, handle sizing
+  index.ts             — package entry point: re-exports all plugins and public API
+  spatial-canvas/
+    index.ts           — plugin exports: SpatialCanvasDatatype, Tool, plugins, rectanglePlugins
+    canvas.ts          — main entry: CanvasView class, mounts/unmounts everything
+    inputs.ts          — Inputs class: event normalization, screen↔page coordinate transform
+    camera.ts          — camera state + updateCamera(); viewport computation
+    shape-tree.ts      — viewport culling + keyed DOM reconciler
+    shape-mount.ts     — mounts a single shape: updatePosition() + patchwork-view lifecycle
+    types.ts           — shared TypeScript types: CanvasDoc, CanvasShape, Camera, Disposer, etc.
+    performance.ts     — PerformanceMode enum + applyPerformanceMode(); GPU layer promotion
+    rectangle.ts       — Rectangle datatype, tool, and plugin exports (built-in shape type)
+    commands.ts        — Command factories: createShape, deleteShapes, translateShapes, resizeShape
+    tools/
+      select.ts        — SelectTool: pointer routing for move/resize/rotate/brush
+      pan.ts           — PanTool: middle-click and space+drag panning
+      place.ts         — PlaceTool: click to place a new patchwork-view shape
+    sessions/
+      translate.ts     — TranslateSession: drag to move selected shapes
+      resize.ts        — ResizeSession: drag corner/edge handles to resize
+      pan.ts           — PanSession: drag to pan the camera (ephemeral, no undo)
+      brush.ts         — BrushSession: drag to marquee-select shapes
+    math/
+      vec.ts           — 2D vector math (add, sub, scale, dist, rotate, lerp)
+      rect.ts          — Rect utilities (intersect, contain, AABB from points)
+    css/
+      canvas.css       — .sc-container, .sc-canvas, .sc-layer, contain rules, CSS variables
+      shapes.css       — .sc-shape, .sc-positioned, will-change rules
+      handles.css      — .sc-handles, counter-scale, handle sizing
 ```
 
 ---

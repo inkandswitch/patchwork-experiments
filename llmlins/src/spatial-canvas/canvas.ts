@@ -50,6 +50,7 @@ export class CanvasView {
   private shapesEl: HTMLElement
   private handlesEl: HTMLElement
   private brushEl: HTMLElement
+  private placePreviewEl: HTMLElement
   private cursorsEl: HTMLElement
   private toolbarEl: HTMLElement
 
@@ -97,6 +98,9 @@ export class CanvasView {
     this.brushEl = document.createElement('div')
     this.brushEl.className = 'sc-brush'
 
+    this.placePreviewEl = document.createElement('div')
+    this.placePreviewEl.className = 'sc-place-preview'
+
     this.cursorsEl = document.createElement('div')
     this.cursorsEl.className = 'sc-cursors'
 
@@ -106,6 +110,7 @@ export class CanvasView {
     this.layer.appendChild(this.shapesEl)
     this.layer.appendChild(this.handlesEl)
     this.layer.appendChild(this.brushEl)
+    this.layer.appendChild(this.placePreviewEl)
     this.canvasEl.appendChild(this.layer)
     this.canvasEl.appendChild(this.cursorsEl)
     this.container.appendChild(this.canvasEl)
@@ -167,10 +172,11 @@ export class CanvasView {
     })
 
     this.placeTool = createPlaceTool({
-      getDoc:          () => this.doc,
-      getHandle:       () => this.handle,
-      onPlaced:        () => this.setActiveTool('select'),
-      createChildDoc:  (toolId) => options.createChildDoc(toolId),
+      getDoc:             () => this.doc,
+      getHandle:          () => this.handle,
+      onPlaced:           () => this.setActiveTool('select'),
+      createChildDoc:     (toolId) => options.createChildDoc(toolId),
+      getPlacePreviewEl:  () => this.placePreviewEl,
     })
 
     // Toolbar
