@@ -41,8 +41,8 @@ export const QUALITY_PRESETS = {
 };
 export const QUALITY_LEVELS = ["high", "medium", "low", "potato"];
 
-const WHISPER_SAMPLE_RATE = 16000;
-const SEND_INTERVAL_MS = 5000;
+const TARGET_SAMPLE_RATE = 16000;
+const WORKER_BUFFER_SIZE = 4096;
 
 const COORD_CHANNEL = "patchwork-call-coordination";
 const COORD_PING_MS = 3000;
@@ -119,9 +119,8 @@ export class CallSession extends EventTarget {
     this._whisperWorker = null;
     this._audioContext = null;
     this._scriptProcessor = null;
-    this._audioBuffer = [];
-    this._audioBufferLength = 0;
-    this._sendInterval = null;
+    this._prefixCursor = null; // cursor anchored to last char of prefix (the space)
+    this._currentInterimLength = 0;
 
     // Intervals
     this._heartbeatInterval = null;
@@ -1017,79 +1016,164 @@ export class CallSession extends EventTarget {
 
   // ---- Transcription ----
 
-  _startTranscription() {
-    if (!this.localStream) return;
+  async _startTranscription() {
+    console.log("[transcription] _startTranscription called");
+    if (!this.localStream) {
+      console.warn("[transcription] No localStream, aborting");
+      return;
+    }
     const audioTrack = this.localStream.getAudioTracks()[0];
-    if (!audioTrack) return;
+    if (!audioTrack) {
+      console.warn("[transcription] No audio track found in localStream");
+      return;
+    }
+    console.log("[transcription] Audio track:", audioTrack.label, "enabled:", audioTrack.enabled, "readyState:", audioTrack.readyState);
 
     const workerUrl = new URL("./worker.js", import.meta.url);
-    this._whisperWorker = new Worker(workerUrl, { type: "module" });
+    console.log("[transcription] Loading worker from:", workerUrl.href);
+    // Workers loaded from service-worker-served URLs (automerge:) can fail as
+    // modules. Fetch the script and create a blob worker instead.
+    try {
+      const res = await fetch(workerUrl);
+      const src = await res.text();
+      const blob = new Blob([src], { type: "application/javascript" });
+      this._whisperWorker = new Worker(URL.createObjectURL(blob), { type: "module" });
+      console.log("[transcription] Worker created via blob URL");
+    } catch (blobErr) {
+      console.warn("[transcription] Blob worker failed, trying direct URL:", blobErr);
+      this._whisperWorker = new Worker(workerUrl, { type: "module" });
+    }
 
     this._whisperWorker.onmessage = (e) => {
       const { type, text, message } = e.data;
+      console.log("[transcription] Worker message:", type, text || message || "");
+
       if (type === "status") {
         this._emit("transcription-status", { message });
       } else if (type === "ready") {
         this._emit("transcription-status", { message: null });
-      } else if (type === "result") {
+      } else if (type === "recording_start") {
+        // Speech started — insert speaker prefix and anchor cursor to its last char
         this.handle.change((doc) => {
-          const line = `<${this.myName}> ${text}\n`;
-          Automerge.splice(doc, ["content"], doc.content.length, 0, line);
+          const prefix = `<${this.myName}> `;
+          Automerge.splice(doc, ["content"], doc.content.length, 0, prefix);
+          // Cursor on the space char at end of prefix — this char is stable
+          // and survives concurrent edits from other speakers
+          this._prefixCursor = Automerge.getCursor(
+            doc,
+            ["content"],
+            doc.content.length - 1
+          );
+          this._currentInterimLength = 0;
         });
+      } else if (type === "interim") {
+        // Interim transcription — replace previous interim text after the prefix cursor
+        if (this._prefixCursor != null) {
+          this.handle.change((doc) => {
+            const anchorPos = Automerge.getCursorPosition(
+              doc,
+              ["content"],
+              this._prefixCursor
+            );
+            // Interim text starts right after the anchor char (the space)
+            const insertPos = anchorPos + 1;
+            Automerge.splice(
+              doc,
+              ["content"],
+              insertPos,
+              this._currentInterimLength,
+              text
+            );
+            this._currentInterimLength = text.length;
+          });
+          this._emit("transcript", { text, speaker: this.myName, interim: true });
+        }
+      } else if (type === "final") {
+        // Final transcription — replace interim text with final + newline
+        if (this._prefixCursor != null) {
+          this.handle.change((doc) => {
+            const anchorPos = Automerge.getCursorPosition(
+              doc,
+              ["content"],
+              this._prefixCursor
+            );
+            const insertPos = anchorPos + 1;
+            Automerge.splice(
+              doc,
+              ["content"],
+              insertPos,
+              this._currentInterimLength,
+              text + "\n"
+            );
+          });
+          this._prefixCursor = null;
+          this._currentInterimLength = 0;
+          this._emit("transcript", { text, speaker: this.myName });
+        }
+      } else if (type === "recording_end") {
+        // Speech ended without a final (e.g. too short) — clean up prefix
+        if (this._prefixCursor != null) {
+          const prefixLen = `<${this.myName}> `.length;
+          this.handle.change((doc) => {
+            const anchorPos = Automerge.getCursorPosition(
+              doc,
+              ["content"],
+              this._prefixCursor
+            );
+            // Delete prefix + any leftover interim text
+            const startPos = anchorPos - (prefixLen - 1);
+            Automerge.splice(
+              doc,
+              ["content"],
+              startPos,
+              prefixLen + this._currentInterimLength,
+              ""
+            );
+          });
+          this._prefixCursor = null;
+          this._currentInterimLength = 0;
+        }
       }
     };
 
+    this._whisperWorker.onerror = (err) => {
+      console.error("[transcription] Worker error:", err.message, err);
+    };
+
     this._audioContext = new AudioContext();
+    console.log("[transcription] AudioContext created, sampleRate:", this._audioContext.sampleRate, "state:", this._audioContext.state);
     const source = this._audioContext.createMediaStreamSource(
       new MediaStream([audioTrack])
     );
-    this._scriptProcessor = this._audioContext.createScriptProcessor(4096, 1, 1);
+    this._scriptProcessor = this._audioContext.createScriptProcessor(
+      WORKER_BUFFER_SIZE,
+      1,
+      1
+    );
 
     this._scriptProcessor.onaudioprocess = (e) => {
       if (!this.micEnabled) return;
       const input = e.inputBuffer.getChannelData(0);
-      const copy = new Float32Array(input.length);
-      copy.set(input);
-      this._audioBuffer.push(copy);
-      this._audioBufferLength += copy.length;
+      const resampled = resample(
+        input,
+        this._audioContext.sampleRate,
+        TARGET_SAMPLE_RATE
+      );
+      const copy = new Float32Array(resampled.length);
+      copy.set(resampled);
+      this._whisperWorker.postMessage(
+        { type: "audio", buffer: copy },
+        [copy.buffer]
+      );
     };
 
     source.connect(this._scriptProcessor);
     this._scriptProcessor.connect(this._audioContext.destination);
 
-    this._sendInterval = setInterval(() => this._sendAudioToWorker(), SEND_INTERVAL_MS);
-  }
-
-  _sendAudioToWorker() {
-    if (!this._whisperWorker || this._audioBufferLength === 0) return;
-
-    const fullBuffer = new Float32Array(this._audioBufferLength);
-    let offset = 0;
-    for (const chunk of this._audioBuffer) {
-      fullBuffer.set(chunk, offset);
-      offset += chunk.length;
-    }
-
-    this._audioBuffer = [];
-    this._audioBufferLength = 0;
-
-    const resampled = resample(
-      fullBuffer,
-      this._audioContext.sampleRate,
-      WHISPER_SAMPLE_RATE
-    );
-
-    this._whisperWorker.postMessage(
-      { type: "transcribe", audio: resampled },
-      [resampled.buffer]
-    );
+    console.log("[transcription] Setup complete, streaming audio chunks to worker");
   }
 
   _stopTranscription() {
-    if (this._sendInterval) {
-      clearInterval(this._sendInterval);
-      this._sendInterval = null;
-    }
     if (this._whisperWorker) {
       this._whisperWorker.terminate();
       this._whisperWorker = null;
@@ -1102,8 +1186,8 @@ export class CallSession extends EventTarget {
       this._audioContext.close();
       this._audioContext = null;
     }
-    this._audioBuffer = [];
-    this._audioBufferLength = 0;
+    this._prefixCursor = null;
+    this._currentInterimLength = 0;
   }
 
   // ---- Event helpers ----

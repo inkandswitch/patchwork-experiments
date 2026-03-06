@@ -201,6 +201,39 @@ export default function CallTitlebarTool(handle, element) {
       popover.appendChild(goToCallBtn);
     }
 
+    // Copy automerge URL
+    const copyAmBtn = document.createElement("button");
+    copyAmBtn.textContent = "\u{1F4CB} Copy automerge URL";
+    copyAmBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      navigator.clipboard.writeText(session.callUrl).then(() => {
+        copyAmBtn.textContent = "\u{2705} Copied!";
+        setTimeout(() => { copyAmBtn.textContent = "\u{1F4CB} Copy automerge URL"; }, 1500);
+      });
+    });
+    popover.appendChild(copyAmBtn);
+
+    // Copy tiny patchwork URL
+    const copyTinyBtn = document.createElement("button");
+    copyTinyBtn.textContent = "\u{1F517} Copy tiny URL";
+    copyTinyBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const docId = session.callUrl.replace(/^automerge:/, "");
+      const doc = session.handle.doc();
+      const title = doc?.title || "Call";
+      const params = new URLSearchParams();
+      params.set("doc", docId);
+      params.set("title", title);
+      params.set("tool", "telephone");
+      params.set("type", "call");
+      const tinyUrl = `https://tiny.patchwork.inkandswitch.com/#${params.toString()}`;
+      navigator.clipboard.writeText(tinyUrl).then(() => {
+        copyTinyBtn.textContent = "\u{2705} Copied!";
+        setTimeout(() => { copyTinyBtn.textContent = "\u{1F517} Copy tiny URL"; }, 1500);
+      });
+    });
+    popover.appendChild(copyTinyBtn);
+
     const hangUpBtn = document.createElement("button");
     hangUpBtn.className = "hangup";
     hangUpBtn.textContent = "\u{260E}\u{FE0F} Hang up";
