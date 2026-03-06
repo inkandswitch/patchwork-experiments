@@ -27,16 +27,6 @@
   will-change: var(--sc-perf-selected);
 }
 
-/* Selection outline — drawn via box-shadow so it doesn't affect layout */
-.sc-positioned.selected::after {
-  content: '';
-  position: absolute;
-  inset: var(--sc-padding);
-  pointer-events: none;
-  outline: calc(2px * var(--sc-scale)) solid #1a73e8;
-  outline-offset: calc(2px * var(--sc-scale));
-  border-radius: calc(2px * var(--sc-scale));
-}
 
 /* The patchwork-view (or rectangle tool) fills its positioned container */
 .sc-shape-content {

@@ -1,4 +1,4 @@
-import type { AutomergeUrl, PointerInfo, CanvasDoc, DocHandle } from '../types.js'
+import type { AutomergeUrl, PointerInfo, CanvasDoc, DocHandle, CanvasShape } from '../types.js'
 import { createShape, newId, nextZIndex } from '../commands.js'
 
 export interface PlaceToolContext {
@@ -10,13 +10,19 @@ export interface PlaceToolContext {
   createChildDoc(datatypeId: string): AutomergeUrl | undefined
   /** Returns the currently selected datatype id to create on place. */
   getDatatypeId(): string
+  /** Returns the shape type to use for the placed shape. */
+  getShapeType(): CanvasShape['shapeType']
   /** Overlay element (inside the layer) used to show the drag preview. */
   getPlacePreviewEl(): HTMLElement
+  /** Take pointer capture when drag is confirmed. */
+  capturePointer(): void
 }
 
-const DEFAULT_WIDTH  = 400
-const DEFAULT_HEIGHT = 300
-const MIN_SIZE       = 16
+const DEFAULT_WIDTH      = 400
+const DEFAULT_HEIGHT     = 300
+const DEFAULT_BARE_SIZE  = 350
+const MIN_BARE_SIZE      = 350
+const MIN_SIZE           = 16
 // Must exceed this screen-pixel distance to be treated as a drag
 const DRAG_THRESHOLD = 4
 
@@ -72,7 +78,7 @@ export function createPlaceTool(ctx: PlaceToolContext) {
       height:    rect.height,
       rotation:  0,
       zIndex:    nextZIndex(doc),
-      shapeType: 'embed',
+      shapeType: ctx.getShapeType(),
     }
     if (docUrl !== undefined) shape.docUrl = docUrl
     createShape(handle, shape)
@@ -89,7 +95,10 @@ export function createPlaceTool(ctx: PlaceToolContext) {
 
     onPointerMove(info: PointerInfo) {
       if (!origin) return
-      isDragging = true
+      if (!isDragging) {
+        isDragging = true
+        ctx.capturePointer()
+      }
       const rect = computeRect(origin.x, origin.y, info.x, info.y)
       showPreview(rect.x, rect.y, rect.width, rect.height)
     },
@@ -98,17 +107,25 @@ export function createPlaceTool(ctx: PlaceToolContext) {
       if (!origin) return
       const start = origin
       origin     = null
+      const isBare = ctx.getShapeType() === 'bare'
 
       if (isDragging) {
         isDragging = false
-        commit(computeRect(start.x, start.y, info.x, info.y))
+        const rect = computeRect(start.x, start.y, info.x, info.y)
+        if (isBare) {
+          rect.width  = Math.max(rect.width,  MIN_BARE_SIZE)
+          rect.height = Math.max(rect.height, MIN_BARE_SIZE)
+        }
+        commit(rect)
       } else {
         // Simple click → default-sized shape centred on cursor
+        const w = isBare ? DEFAULT_BARE_SIZE : DEFAULT_WIDTH
+        const h = isBare ? DEFAULT_BARE_SIZE : DEFAULT_HEIGHT
         commit({
-          x:      info.x - DEFAULT_WIDTH  / 2,
-          y:      info.y - DEFAULT_HEIGHT / 2,
-          width:  DEFAULT_WIDTH,
-          height: DEFAULT_HEIGHT,
+          x:      info.x - w / 2,
+          y:      info.y - h / 2,
+          width:  w,
+          height: h,
         })
       }
     },

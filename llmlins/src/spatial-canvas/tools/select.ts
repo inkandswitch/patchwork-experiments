@@ -27,6 +27,8 @@ export interface SelectToolContext {
   getCanvasBounds(): DOMRect
   onTranslatePreview(moves: Map<string, { x: number; y: number }>): void
   onResizePreview(id: string, next: Partial<CanvasShape>): void
+  /** Take pointer capture when a drag is confirmed (lazy capture for embed compatibility). */
+  capturePointer(): void
 }
 
 /**
@@ -63,7 +65,7 @@ export function createSelectTool(ctx: SelectToolContext) {
     return null
   }
 
-  function hitTestHandle(pageX: number, pageY: number, camera: Camera): HandleEdge | null {
+  function hitTestHandle(pageX: number, pageY: number, camera: Camera): { edge: HandleEdge; shapeId: string } | null {
     const canvasBounds = ctx.getCanvasBounds()
     // Convert page coords → client (viewport) coords so elementFromPoint works
     // regardless of where the canvas element sits in the page.
@@ -76,10 +78,16 @@ export function createSelectTool(ctx: SelectToolContext) {
     // Walk up to find the ancestor that carries data-edge or data-corner.
     const handle = el.closest('[data-edge],[data-corner]') as HTMLElement | null
     if (!handle) return null
-    return (handle.dataset.edge || handle.dataset.corner) as HandleEdge
+    const shapeId = handle.dataset.shapeId
+    if (!shapeId) return null
+    return {
+      edge: (handle.dataset.edge || handle.dataset.corner) as HandleEdge,
+      shapeId,
+    }
   }
 
   function startTranslateSession(info: PointerInfo) {
+    ctx.capturePointer()
     const doc = ctx.getDoc()
     const handle = ctx.getHandle()
     applyPerformanceMode(PerformanceMode.TranslateSelected, ctx.getContainer())
@@ -97,13 +105,18 @@ export function createSelectTool(ctx: SelectToolContext) {
       const selectedIds = ctx.getSelectedIds()
 
       // 1. Handle hit → ResizeSession (immediate, no dead zone)
-      const edge = hitTestHandle(info.x, info.y, camera)
-      if (edge && selectedIds.size === 1) {
-        const [id] = selectedIds
+      // Works for any shape — selects it first if needed, then starts resize.
+      const handleHit = hitTestHandle(info.x, info.y, camera)
+      if (handleHit) {
+        const { edge, shapeId } = handleHit
+        if (!selectedIds.has(shapeId)) {
+          ctx.setSelectedIds(new Set([shapeId]))
+        }
+        ctx.capturePointer()
         const doc = ctx.getDoc()
         const handle = ctx.getHandle()
         applyPerformanceMode(PerformanceMode.TransformSelected, ctx.getContainer())
-        session = createResizeSession(id, edge, doc, handle, ctx.onResizePreview)
+        session = createResizeSession(shapeId, edge, doc, handle, ctx.onResizePreview)
         return
       }
 

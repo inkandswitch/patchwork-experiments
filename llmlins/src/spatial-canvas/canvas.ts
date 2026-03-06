@@ -12,6 +12,8 @@ import { PerformanceMode, applyPerformanceMode } from './performance.js'
 import { mountEmbed, type ToolOption } from './embed.js'
 import { mountToken } from './token.js'
 import type { Repo } from '@automerge/automerge-repo'
+import { createDocOfDatatype2, getRegistry } from '@inkandswitch/patchwork-plugins'
+import type { LoadedDatatypePlugin } from '@inkandswitch/patchwork-plugins'
 
 import canvasCss  from './css/canvas.css?inline'
 import shapesCss  from './css/shapes.css?inline'
@@ -26,6 +28,19 @@ export interface DatatypeOption {
   name: string
 }
 
+export interface QuickPlaceButton {
+  /** Unique id used to identify the button in the toolbar. */
+  id: string
+  /** HTML content for the button (can include inline SVG). */
+  label: string
+  /** Tooltip text. */
+  title: string
+  /** Datatype id to use when creating the document. */
+  datatypeId: string
+  /** Shape type to create on the canvas. */
+  shapeType: CanvasShape['shapeType']
+}
+
 export interface CanvasViewOptions {
   /**
    * Called when the PlaceTool needs a new child Automerge document.
@@ -33,7 +48,7 @@ export interface CanvasViewOptions {
    * Returns an AutomergeUrl for the newly created doc, or undefined to leave the
    * docUrl unset (the embed will show a type picker).
    */
-  createChildDoc: (datatypeId: string) => AutomergeUrl | undefined
+  createChildDoc?: (datatypeId: string) => AutomergeUrl | undefined
   /**
    * Called to mount content into a shape container.
    * Defaults to dispatching on shapeType: 'embed' → mountEmbed, 'token' → mountToken.
@@ -49,8 +64,14 @@ export interface CanvasViewOptions {
    * Datatypes the user can choose to create via the PlaceTool.
    * Shown as a <select> in the toolbar next to the place button.
    * If omitted the PlaceTool creates documents with an empty datatypeId.
+   * @deprecated Use the "+" toolbar popup instead.
    */
   datatypes?: DatatypeOption[]
+  /**
+   * Quick-place buttons rendered in the toolbar.
+   * Each button pre-creates a doc of the given datatype and activates place mode.
+   */
+  quickPlaceButtons?: QuickPlaceButton[]
 }
 
 /**
@@ -96,6 +117,11 @@ export class CanvasView {
   private activePointerId: number | null = null
   private isPanning = false   // true while a pan drag is active
   private selectedDatatypeId = ''
+  private pendingDocUrl: AutomergeUrl | undefined = undefined
+  private pendingShapeType: CanvasShape['shapeType'] = 'embed'
+
+  private repo: Repo | undefined
+  private plusPopupEl: HTMLElement | null = null
 
   private disposers: Disposer[] = []
 
@@ -156,7 +182,7 @@ export class CanvasView {
       setTimeout(() => this.buildInfoEl.classList.remove('sc-build-info--new'), 5000)
     }
 
-    const repo = (mountPoint as unknown as { repo?: Repo }).repo
+    this.repo = (mountPoint as unknown as { repo?: Repo }).repo
 
     // Seed bounds and screenBounds immediately after mounting so the first
     // viewport computation uses real dimensions rather than {0,0,0,0}.
@@ -173,13 +199,14 @@ export class CanvasView {
     const mountContent: ContentMounter = options.mountContent ??
       ((el, shape) => {
         if (shape.shapeType === 'token') return mountToken(el, shape)
+        if (shape.shapeType === 'bare') return mountToken(el, shape)
         return mountEmbed(
           el,
           shape,
           (newToolId) => handle.change(doc => { doc.shapes[shape.id].toolId = newToolId }),
           (newDocUrl) => handle.change(doc => { doc.shapes[shape.id].docUrl = newDocUrl }),
           options.getTools,
-          repo
+          this.repo
         )
       })
 
@@ -205,6 +232,7 @@ export class CanvasView {
       getCanvasBounds:  () => this.inputs.bounds,
       onTranslatePreview: (moves) => this.onTranslatePreview(moves),
       onResizePreview:    (id, next) => this.onResizePreview(id, next),
+      capturePointer:   () => this.captureActivePointer(),
     })
 
     this.panTool = createPanTool({
@@ -219,9 +247,15 @@ export class CanvasView {
       getDoc:             () => this.doc,
       getHandle:          () => this.handle,
       onPlaced:           () => this.setActiveTool('select'),
-      createChildDoc:     (datatypeId) => options.createChildDoc(datatypeId),
+      createChildDoc:     (datatypeId) => {
+        const url = this.pendingDocUrl
+        this.pendingDocUrl = undefined
+        return url ?? options.createChildDoc?.(datatypeId)
+      },
       getDatatypeId:      () => this.selectedDatatypeId,
+      getShapeType:       () => this.pendingShapeType,
       getPlacePreviewEl:  () => this.placePreviewEl,
+      capturePointer:     () => this.captureActivePointer(),
     })
 
     // Toolbar
@@ -258,6 +292,16 @@ export class CanvasView {
   }
 
   // -------------------------------------------------------------------------
+  // Pointer capture (lazy — called by tools when drag is confirmed)
+  // -------------------------------------------------------------------------
+
+  private captureActivePointer() {
+    if (this.activePointerId !== null) {
+      this.canvasEl.setPointerCapture(this.activePointerId)
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // Event binding
   // -------------------------------------------------------------------------
 
@@ -276,8 +320,8 @@ export class CanvasView {
       !!(document.activeElement?.closest('patchwork-view'))
 
     const onPointerDown = (e: PointerEvent) => {
-      if (isInsidePatchworkView(e)) return
-      // Middle click or space+any button → pan
+      const insidePW = isInsidePatchworkView(e)
+      // Middle click or space+any button → pan (always capture immediately)
       if (e.button === 1 || this.spaceDown) {
         canvas.setPointerCapture(e.pointerId)
         this.activePointerId = e.pointerId
@@ -289,8 +333,13 @@ export class CanvasView {
       }
       if (e.button !== 0) return
 
-      canvas.setPointerCapture(e.pointerId)
       this.activePointerId = e.pointerId
+      if (!insidePW) {
+        // Immediate capture for clicks directly on the canvas surface or handles.
+        canvas.setPointerCapture(e.pointerId)
+      }
+      // Inside patchwork-view: skip immediate capture so the embed receives
+      // pointerup for plain clicks. Tools call capturePointer() if drag detected.
       const info = this.inputs.onPointerDown(e, this.camera)
       this.currentTool().onPointerDown(info)
     }
@@ -598,86 +647,126 @@ export class CanvasView {
 
   private refreshHandles(overrides?: Map<string, Partial<CanvasShape>>) {
     this.handlesEl.innerHTML = ''
-    if (this.selectedIds.size === 0) return
 
-    const shapes = [...this.selectedIds]
-      .map(id => {
-        const base = this.doc.shapes[id]
-        if (!base) return undefined
-        const ov = overrides?.get(id)
-        return ov ? { ...base, ...ov } : base
-      })
-      .filter((s): s is CanvasShape => s != null)
+    // Selection box for all selected shapes (bounding box)
+    if (this.selectedIds.size > 0) {
+      const selectedShapes = [...this.selectedIds]
+        .map(id => {
+          const base = this.doc.shapes[id]
+          if (!base) return undefined
+          const ov = overrides?.get(id)
+          return ov ? { ...base, ...ov } : base
+        })
+        .filter((s): s is CanvasShape => s != null)
 
-    if (shapes.length === 0) return
-
-    // Compute bounding box of all selected shapes
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-    for (const s of shapes) {
-      minX = Math.min(minX, s.x)
-      minY = Math.min(minY, s.y)
-      maxX = Math.max(maxX, s.x + s.width)
-      maxY = Math.max(maxY, s.y + s.height)
+      if (selectedShapes.length > 0) {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+        for (const s of selectedShapes) {
+          minX = Math.min(minX, s.x)
+          minY = Math.min(minY, s.y)
+          maxX = Math.max(maxX, s.x + s.width)
+          maxY = Math.max(maxY, s.y + s.height)
+        }
+        const box = document.createElement('div')
+        box.className = 'sc-selection-box'
+        box.style.cssText = `left:${minX}px;top:${minY}px;width:${maxX-minX}px;height:${maxY-minY}px;`
+        this.handlesEl.appendChild(box)
+      }
     }
 
-    const box = document.createElement('div')
-    box.className = 'sc-selection-box'
-    box.style.cssText = `left:${minX}px;top:${minY}px;width:${maxX-minX}px;height:${maxY-minY}px;`
-    this.handlesEl.appendChild(box)
+    // Render resize handle hit areas for ALL non-token shapes (cursor feedback always on)
+    for (const shape of Object.values(this.doc.shapes)) {
+      if (shape.shapeType === 'token') continue
+      const ov = overrides?.get(shape.id)
+      const s = ov ? { ...shape, ...ov } : shape
+      this.renderShapeHandles(s)
+    }
+  }
 
-    // Resize handles only for single selection, and not for token shapes
-    if (this.selectedIds.size !== 1) return
-    const s = shapes[0]
-    if (s.shapeType === 'token') return
-
+  private renderShapeHandles(s: CanvasShape) {
     const screenW = s.width * this.camera.zoom
     const screenH = s.height * this.camera.zoom
     const showCorners = Math.min(screenW, screenH) > 20
     const showEdges   = Math.min(screenW, screenH) > 24
 
-    const HANDLE = 8 / this.camera.zoom
-    // Double hit area on mobile-sized viewports for finger-sized targets
     const isMobile = this.screenBounds.width < 768
-    const HIT = (isMobile ? 32 : 16) / this.camera.zoom
+    const CORNER_HIT = (isMobile ? 32 : 16) / this.camera.zoom
+    const EDGE_HIT   = (isMobile ? 20 : 10) / this.camera.zoom
 
-    const corners = showCorners ? [
-      { corner: 'nw', lx: s.x,            ly: s.y },
-      { corner: 'ne', lx: s.x + s.width,  ly: s.y },
-      { corner: 'se', lx: s.x + s.width,  ly: s.y + s.height },
-      { corner: 'sw', lx: s.x,            ly: s.y + s.height },
-    ] : []
+    if (showCorners) {
+      const corners = [
+        { corner: 'nw', lx: s.x,           ly: s.y },
+        { corner: 'ne', lx: s.x + s.width,  ly: s.y },
+        { corner: 'se', lx: s.x + s.width,  ly: s.y + s.height },
+        { corner: 'sw', lx: s.x,            ly: s.y + s.height },
+      ]
+      for (const h of corners) {
+        const el = document.createElement('div')
+        el.className = 'sc-handle'
+        el.dataset.corner = h.corner
+        el.dataset.shapeId = s.id
+        el.style.cssText = [
+          `left:${h.lx - CORNER_HIT/2}px`,
+          `top:${h.ly - CORNER_HIT/2}px`,
+          `width:${CORNER_HIT}px`,
+          `height:${CORNER_HIT}px`,
+          'pointer-events:auto',
+          'position:absolute',
+        ].join(';')
+        this.handlesEl.appendChild(el)
+      }
+    }
 
-    const edges = showEdges ? [
-      { edge: 'n', lx: s.x + s.width/2, ly: s.y },
-      { edge: 'e', lx: s.x + s.width,   ly: s.y + s.height/2 },
-      { edge: 's', lx: s.x + s.width/2, ly: s.y + s.height },
-      { edge: 'w', lx: s.x,             ly: s.y + s.height/2 },
-    ] : []
-
-    for (const h of [...corners, ...edges]) {
-      const el = document.createElement('div')
-      el.className = 'sc-handle'
-      if ('corner' in h) el.dataset.corner = h.corner as string
-      if ('edge'   in h) el.dataset.edge   = h.edge   as string
-      el.style.cssText = [
-        `left:${h.lx - HIT/2}px`,
-        `top:${h.ly - HIT/2}px`,
-        `width:${HIT}px`,
-        `height:${HIT}px`,
-        'pointer-events:auto',
-        'position:absolute',
-      ].join(';')
-
-      const vis = document.createElement('div')
-      vis.className = 'sc-handle-visual'
-      vis.style.cssText = [
-        `left:${(HIT-HANDLE)/2}px`,
-        `top:${(HIT-HANDLE)/2}px`,
-        `width:${HANDLE}px`,
-        `height:${HANDLE}px`,
-      ].join(';')
-      el.appendChild(vis)
-      this.handlesEl.appendChild(el)
+    if (showEdges) {
+      // Full-edge hit areas: N/S span full width, E/W span full height
+      // Inset by CORNER_HIT/2 so corners take priority at the ends
+      const inset = CORNER_HIT / 2
+      const edges = [
+        {
+          edge: 'n',
+          cssText: [
+            `left:${s.x + inset}px`,
+            `top:${s.y - EDGE_HIT/2}px`,
+            `width:${Math.max(s.width - inset*2, 0)}px`,
+            `height:${EDGE_HIT}px`,
+          ].join(';'),
+        },
+        {
+          edge: 'e',
+          cssText: [
+            `left:${s.x + s.width - EDGE_HIT/2}px`,
+            `top:${s.y + inset}px`,
+            `width:${EDGE_HIT}px`,
+            `height:${Math.max(s.height - inset*2, 0)}px`,
+          ].join(';'),
+        },
+        {
+          edge: 's',
+          cssText: [
+            `left:${s.x + inset}px`,
+            `top:${s.y + s.height - EDGE_HIT/2}px`,
+            `width:${Math.max(s.width - inset*2, 0)}px`,
+            `height:${EDGE_HIT}px`,
+          ].join(';'),
+        },
+        {
+          edge: 'w',
+          cssText: [
+            `left:${s.x - EDGE_HIT/2}px`,
+            `top:${s.y + inset}px`,
+            `width:${EDGE_HIT}px`,
+            `height:${Math.max(s.height - inset*2, 0)}px`,
+          ].join(';'),
+        },
+      ]
+      for (const h of edges) {
+        const el = document.createElement('div')
+        el.className = 'sc-handle'
+        el.dataset.edge = h.edge
+        el.dataset.shapeId = s.id
+        el.style.cssText = h.cssText + ';pointer-events:auto;position:absolute;'
+        this.handlesEl.appendChild(el)
+      }
     }
   }
 
@@ -688,13 +777,12 @@ export class CanvasView {
   private datatypeSelect: HTMLSelectElement | null = null
 
   private buildToolbar() {
-    const buttons: { tool: ActiveTool; label: string; title: string }[] = [
+    const navButtons: { tool: ActiveTool; label: string; title: string }[] = [
       { tool: 'select', label: '↖', title: 'Select (V)' },
-      { tool: 'place',  label: '□', title: 'Place (R)' },
       { tool: 'pan',    label: '✋', title: 'Pan (H)' },
     ]
 
-    for (const { tool, label, title } of buttons) {
+    for (const { tool, label, title } of navButtons) {
       const btn = document.createElement('button')
       btn.className = 'sc-tool-btn'
       btn.dataset.toolTarget = tool
@@ -704,40 +792,162 @@ export class CanvasView {
       this.toolbarEl.appendChild(btn)
     }
 
-    // Datatype picker — only rendered when datatypes are configured
-    if (this.options.datatypes && this.options.datatypes.length > 0) {
-      const sel = document.createElement('select')
-      sel.className = 'sc-datatype-select'
-      sel.title = 'Document type to create'
-
-      for (const dt of this.options.datatypes) {
-        const opt = document.createElement('option')
-        opt.value = dt.id
-        opt.textContent = dt.name
-        sel.appendChild(opt)
+    // Quick place buttons (e.g. LLMlin)
+    if (this.options.quickPlaceButtons) {
+      for (const qb of this.options.quickPlaceButtons) {
+        const btn = document.createElement('button')
+        btn.className = 'sc-tool-btn sc-quick-place-btn'
+        btn.dataset.quickPlaceId = qb.id
+        btn.innerHTML = qb.label
+        btn.title = qb.title
+        btn.addEventListener('click', () => {
+          this.closePlusPopup()
+          this.selectForPlace(qb.datatypeId, qb.shapeType)
+        })
+        this.toolbarEl.appendChild(btn)
       }
-
-      // Seed the tracked state from the first entry
-      this.selectedDatatypeId = this.options.datatypes[0].id
-
-      sel.addEventListener('change', () => {
-        this.selectedDatatypeId = sel.value
-        // Picking a datatype implicitly activates the place tool
-        this.setActiveTool('place')
-      })
-
-      sel.style.display = 'none'
-      this.datatypeSelect = sel
-      this.toolbarEl.appendChild(sel)
     }
 
+    // "+" button — opens a popup to pick any datatype to draw as an embed
+    const plusBtn = document.createElement('button')
+    plusBtn.className = 'sc-tool-btn sc-plus-btn'
+    plusBtn.textContent = '+'
+    plusBtn.title = 'Create new embed'
+    plusBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      if (this.plusPopupEl) {
+        this.closePlusPopup()
+      } else {
+        this.openPlusPopup(plusBtn)
+      }
+    })
+    this.toolbarEl.appendChild(plusBtn)
+
     this.updateToolbarActive()
+  }
+
+  private openPlusPopup(anchor: HTMLElement) {
+    this.closePlusPopup()
+
+    const popup = document.createElement('div')
+    popup.className = 'sc-plus-popup'
+    popup.style.cssText = `
+      position: fixed;
+      min-width: 180px;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+      padding: 6px 0;
+      z-index: 1000;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 13px;
+    `
+
+    const renderList = () => {
+      popup.innerHTML = ''
+      const registry = getRegistry('patchwork:datatype')
+      const datatypes = (registry.all() as LoadedDatatypePlugin[]).filter(p => {
+        const p2 = p as LoadedDatatypePlugin & { unlisted?: boolean; hidden?: boolean }
+        return !p2.unlisted && !p2.hidden
+      })
+
+      if (datatypes.length === 0) {
+        const empty = document.createElement('div')
+        empty.textContent = 'No types available'
+        empty.style.cssText = 'padding: 8px 14px; color: #9ca3af;'
+        popup.appendChild(empty)
+        return
+      }
+
+      for (const plugin of datatypes) {
+        const item = document.createElement('button')
+        item.style.cssText = `
+          display: block;
+          width: 100%;
+          padding: 7px 14px;
+          border: none;
+          background: transparent;
+          text-align: left;
+          cursor: pointer;
+          color: #111827;
+          font-size: 13px;
+          font-family: inherit;
+        `
+        item.textContent = plugin.name
+        item.addEventListener('mouseenter', () => { item.style.background = '#f3f4f6' })
+        item.addEventListener('mouseleave', () => { item.style.background = 'transparent' })
+        item.addEventListener('click', () => {
+          this.closePlusPopup()
+          this.selectForPlace(plugin.id, 'embed')
+        })
+        popup.appendChild(item)
+      }
+    }
+
+    renderList()
+    const unsub = getRegistry('patchwork:datatype').on('changed', renderList)
+
+    // Position using fixed coords from the anchor button so the popup never
+    // disturbs the toolbar layout.
+    const anchorRect = anchor.getBoundingClientRect()
+    popup.style.bottom = `${window.innerHeight - anchorRect.top + 6}px`
+    popup.style.left   = `${anchorRect.left}px`
+
+    document.body.appendChild(popup)
+    this.plusPopupEl = popup
+
+    // Close on outside pointerdown
+    const onOutside = (e: PointerEvent) => {
+      if (!popup.contains(e.target as Node) && e.target !== anchor) {
+        this.closePlusPopup()
+      }
+    }
+    document.addEventListener('pointerdown', onOutside, { capture: true })
+
+    // Store cleanup
+    ;(popup as HTMLElement & { _cleanup?: () => void })._cleanup = () => {
+      unsub()
+      document.removeEventListener('pointerdown', onOutside, { capture: true })
+    }
+  }
+
+  private closePlusPopup() {
+    if (!this.plusPopupEl) return
+    const el = this.plusPopupEl as HTMLElement & { _cleanup?: () => void }
+    el._cleanup?.()
+    el.remove()
+    this.plusPopupEl = null
+  }
+
+  private async selectForPlace(datatypeId: string, shapeType: CanvasShape['shapeType']) {
+    this.selectedDatatypeId = datatypeId
+    this.pendingShapeType = shapeType
+    this.pendingDocUrl = undefined
+    this.setActiveTool('place')
+
+    // Pre-create the doc so it's ready when the user finishes drawing
+    if (this.repo) {
+      try {
+        const registry = getRegistry('patchwork:datatype')
+        const loaded = await registry.load(datatypeId) as LoadedDatatypePlugin | null
+        if (loaded) {
+          const docHandle = await createDocOfDatatype2(loaded, this.repo)
+          this.pendingDocUrl = docHandle.url as AutomergeUrl
+        }
+      } catch (err) {
+        console.error('[spatial-canvas] doc pre-creation failed:', err)
+      }
+    }
   }
 
   private updateToolbarActive() {
     const btns = Array.from(this.toolbarEl.querySelectorAll<HTMLElement>('.sc-tool-btn'))
     for (const btn of btns) {
-      btn.classList.toggle('active', btn.dataset.toolTarget === this.activeTool)
+      const target = btn.dataset.toolTarget
+      if (target) {
+        btn.classList.toggle('active', target === this.activeTool)
+      }
     }
 
     // Show the datatype picker only while the place tool is active

@@ -1,6 +1,7 @@
-import type { LLMlinDoc, AutomergeUrl, DocHandle, Disposer } from './types.js'
+import type { LLMlinDoc, AutomergeUrl, DocHandle, Disposer, OutputBlock } from './types.js'
 import type { Repo } from '@automerge/automerge-repo'
 import { updateText } from '@automerge/automerge'
+import { runLLMlin, createWatcher } from './engine/index.js'
 
 type ToolElement = HTMLElement & { repo: Repo }
 import llmlinCss from './css/llmlin.css?inline'
@@ -30,7 +31,10 @@ export const LLMlinDatatype = {
     doc.writeDocUrls   = []
     doc.prompt         = ''
     doc.model          = DEFAULT_MODEL
+    doc.apiUrl         = ''
     doc.watchedDocUrls = []
+    doc.output         = []
+    doc.running        = false
   },
 
   getTitle(_doc: LLMlinDoc): string {
@@ -64,22 +68,70 @@ const PLAY_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
   <polygon points="5,3 19,12 5,21"/>
 </svg>`
 
-// Cartoon eye — always open.
-// Bold oval outline, large off-center iris/pupil, small highlight dot.
-// ViewBox: -22 -16 44 32  (44×32 units, center at origin).
-// Pupil cx/cy are animated by JS when eyeMode is active.
+// Cartoon eye — always open, always watching.
+// ViewBox extended upward to include the floating eyebrow.
+// Eye oval center = (0,0). Eyebrow arcs at y ≈ -19 to -24.
+// Pupil cx/cy animated by JS toward hovered tokens.
 const EYE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" class="ll-eye-svg"
-  viewBox="-22 -16 44 32" width="52" height="38">
+  viewBox="-22 -28 44 46" width="52" height="55">
+  <!-- Eyebrow — floating arc above the eye -->
+  <path d="M -11 -19 Q 1 -25 11 -19"
+    stroke="#2a2420" stroke-width="2.2" fill="none" stroke-linecap="round"/>
   <!-- Outer oval (white of eye) -->
   <ellipse cx="0" cy="0" rx="20" ry="14"
     fill="#fffef8" stroke="#2a2420" stroke-width="2.5"/>
   <!-- Iris + pupil (one large dark circle) -->
-  <circle class="ll-eye-iris" cx="-4" cy="-2" r="9"/>
+  <circle class="ll-eye-iris" cx="0" cy="0" r="9"/>
   <!-- Pupil darker core -->
-  <circle class="ll-eye-pupil" cx="-4" cy="-2" r="6"/>
+  <circle class="ll-eye-pupil" cx="0" cy="0" r="6"/>
   <!-- Specular highlight -->
-  <circle class="ll-eye-highlight" cx="-7" cy="-5" r="2.2"/>
+  <circle class="ll-eye-highlight" cx="-3" cy="-3" r="2.2"/>
 </svg>`
+
+const STOP_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+  fill="currentColor">
+  <rect x="4" y="4" width="16" height="16" rx="2"/>
+</svg>`
+
+// ============================================================================
+// Output rendering helpers
+// ============================================================================
+
+function renderOutputBlocks(container: HTMLElement, blocks: OutputBlock[]) {
+  container.innerHTML = ''
+  for (const block of blocks) {
+    if (block.type === 'text') {
+      const el = document.createElement('div')
+      el.className = 'll-output-text'
+      el.textContent = block.content
+      container.appendChild(el)
+    } else {
+      const el = document.createElement('div')
+      el.className = 'll-output-script'
+
+      if (block.description) {
+        const desc = document.createElement('div')
+        desc.className = 'll-output-script-desc'
+        desc.textContent = block.description
+        el.appendChild(desc)
+      }
+
+      const code = document.createElement('pre')
+      code.className = 'll-output-code'
+      code.textContent = block.code
+      el.appendChild(code)
+
+      if (block.output !== undefined || block.error !== undefined) {
+        const result = document.createElement('div')
+        result.className = block.error ? 'll-output-error' : 'll-output-result'
+        result.textContent = block.error ? `Error: ${block.error}` : (block.output || '(done)')
+        el.appendChild(result)
+      }
+
+      container.appendChild(el)
+    }
+  }
+}
 
 // ============================================================================
 // Token pill helpers
@@ -90,15 +142,13 @@ function makeTokenPill(
   bucket: 'read' | 'write',
   repo: Repo | undefined,
   watched: boolean,
-  eyeMode: boolean,
   onToggleWatch: (url: AutomergeUrl) => void,
-  onDragStart: (e: DragEvent, url: AutomergeUrl, bucket: 'read' | 'write') => void
+  onDragStart: (e: DragEvent, url: AutomergeUrl, bucket: 'read' | 'write') => void,
+  onHoverIn: (pill: HTMLElement) => void,
+  onHoverOut: () => void,
 ): HTMLElement {
   const pill = document.createElement('div')
-  const classes = ['ll-token']
-  if (watched)             classes.push('ll-token-watched')
-  if (eyeMode && !watched) classes.push('ll-token-dim')
-  pill.className = classes.join(' ')
+  pill.className = watched ? 'll-token ll-token-watched' : 'll-token'
   pill.dataset.docUrl = docUrl
   pill.textContent = 'Untitled Doc'
   pill.draggable = true
@@ -110,11 +160,10 @@ function makeTokenPill(
       .catch(() => {})
   }
 
-  if (eyeMode) {
-    pill.addEventListener('click', () => onToggleWatch(docUrl))
-  }
-
+  pill.addEventListener('click', () => onToggleWatch(docUrl))
   pill.addEventListener('dragstart', e => onDragStart(e, docUrl, bucket))
+  pill.addEventListener('mouseenter', () => onHoverIn(pill))
+  pill.addEventListener('mouseleave', onHoverOut)
 
   return pill
 }
@@ -124,44 +173,53 @@ function renderTokens(
   urls: AutomergeUrl[],
   bucket: 'read' | 'write',
   watchedSet: Set<AutomergeUrl>,
-  eyeMode: boolean,
   onToggleWatch: (url: AutomergeUrl) => void,
   onDragStart: (e: DragEvent, url: AutomergeUrl, bucket: 'read' | 'write') => void,
-  repo: Repo | undefined
+  onHoverIn: (pill: HTMLElement) => void,
+  onHoverOut: () => void,
+  repo: Repo | undefined,
 ) {
   container.innerHTML = ''
   for (const url of urls) {
     container.appendChild(
-      makeTokenPill(url, bucket, repo, watchedSet.has(url), eyeMode, onToggleWatch, onDragStart)
+      makeTokenPill(url, bucket, repo, watchedSet.has(url), onToggleWatch, onDragStart, onHoverIn, onHoverOut)
     )
   }
 }
 
 // ============================================================================
-// Trapezoid overlay
+// Overlay geometry helpers
 // ============================================================================
 
 /**
- * Draws light-beam trapezoids from the eye (top-left, above header) downward
- * to each watched token pill. Fans out from the eye's bottom edge to the
- * full width of the token pill.
+ * Returns the eye's center and half-source-width in root-local coordinates.
+ * The ray emits from the eye center, and the source width is half the eye width.
+ */
+function getEyeSource(root: HTMLElement, eyeBtn: HTMLElement) {
+  const rootRect = root.getBoundingClientRect()
+  const eyeRect  = eyeBtn.getBoundingClientRect()
+  return {
+    srcCX:    (eyeRect.left + eyeRect.right)  / 2 - rootRect.left,
+    srcY:     (eyeRect.top  + eyeRect.bottom) / 2 - rootRect.top,
+    halfSrc:  eyeRect.width / 4,   // total source width = half the eye width
+    rootRect,
+  }
+}
+
+/**
+ * Draws permanent light-beam trapezoids for all watched tokens.
+ * Emits from the eye center, always visible.
  */
 function redrawOverlay(
   svg: SVGSVGElement,
   root: HTMLElement,
   eyeBtn: HTMLElement,
-  watchedUrls: AutomergeUrl[]
+  watchedUrls: AutomergeUrl[],
 ) {
-  svg.innerHTML = ''
+  svg.querySelectorAll('.ll-trap').forEach(el => el.remove())
   if (watchedUrls.length === 0) return
 
-  const rootRect = root.getBoundingClientRect()
-  const eyeRect  = eyeBtn.getBoundingClientRect()
-
-  // Source: bottom-center of the eye, narrow spread
-  const srcCX  = (eyeRect.left + eyeRect.right) / 2 - rootRect.left
-  const srcY   = eyeRect.bottom - rootRect.top
-  const halfSrc = Math.max(eyeRect.width * 0.18, 4)
+  const { srcCX, srcY, halfSrc, rootRect } = getEyeSource(root, eyeBtn)
 
   for (const url of watchedUrls) {
     const pill = root.querySelector<HTMLElement>(`.ll-token[data-doc-url="${url}"]`)
@@ -173,10 +231,8 @@ function redrawOverlay(
     const tgtX2 = pillRect.right  - rootRect.left
 
     const poly = document.createElementNS(SVG_NS, 'polygon')
-    poly.setAttribute(
-      'points',
-      `${srcCX - halfSrc},${srcY} ${tgtX1},${tgtY} ${tgtX2},${tgtY} ${srcCX + halfSrc},${srcY}`
-    )
+    poly.setAttribute('points',
+      `${srcCX - halfSrc},${srcY} ${tgtX1},${tgtY} ${tgtX2},${tgtY} ${srcCX + halfSrc},${srcY}`)
     poly.setAttribute('class', 'll-trap')
     svg.appendChild(poly)
   }
@@ -199,15 +255,10 @@ export function LLMlinTool(
   const root = document.createElement('div')
   root.className = 'll-root'
 
-  // Eye bar — top-left, above the drop-zone header
-  const eyebar = document.createElement('div')
-  eyebar.className = 'll-eyebar'
-
+  // Eye — absolutely positioned at top-center, floating above the box
   const eyeBtn = document.createElement('div')
   eyeBtn.className = 'll-eye-btn'
   eyeBtn.innerHTML = EYE_SVG
-  eyeBtn.setAttribute('title', 'Toggle view mode')
-  eyebar.appendChild(eyeBtn)
 
   // Header — drop zones; label rendered BELOW the token row
   const header = document.createElement('div')
@@ -224,8 +275,8 @@ export function LLMlinTool(
   readLabel.className = 'll-zone-label'
   readLabel.textContent = 'Read'
 
-  readZone.appendChild(readTokens)  // tokens first
-  readZone.appendChild(readLabel)   // label below
+  readZone.appendChild(readTokens)
+  readZone.appendChild(readLabel)
 
   const writeZone = document.createElement('div')
   writeZone.className = 'll-zone'
@@ -238,8 +289,8 @@ export function LLMlinTool(
   writeLabel.className = 'll-zone-label'
   writeLabel.textContent = 'Write'
 
-  writeZone.appendChild(writeTokens) // tokens first
-  writeZone.appendChild(writeLabel)  // label below
+  writeZone.appendChild(writeTokens)
+  writeZone.appendChild(writeLabel)
 
   header.appendChild(readZone)
   header.appendChild(writeZone)
@@ -253,9 +304,18 @@ export function LLMlinTool(
   textarea.placeholder = 'Write your prompt here…'
   body.appendChild(textarea)
 
+  // Output panel
+  const outputPanel = document.createElement('div')
+  outputPanel.className = 'll-output'
+
   // Footer
   const footer = document.createElement('div')
   footer.className = 'll-footer'
+
+  const apiUrlInput = document.createElement('input')
+  apiUrlInput.type = 'text'
+  apiUrlInput.className = 'll-api-url'
+  apiUrlInput.placeholder = 'API URL'
 
   const modelSelect = document.createElement('select')
   modelSelect.className = 'll-model'
@@ -271,33 +331,76 @@ export function LLMlinTool(
   playBtn.innerHTML = PLAY_SVG
   playBtn.setAttribute('title', 'Run')
 
+  footer.appendChild(apiUrlInput)
   footer.appendChild(modelSelect)
   footer.appendChild(playBtn)
 
-  // SVG overlay (full-root, pointer-events: none)
+  // SVG overlay — behind the eye, full-root coverage
   const overlay = document.createElementNS(SVG_NS, 'svg')
   overlay.setAttribute('class', 'll-overlay')
   overlay.setAttribute('width', '100%')
   overlay.setAttribute('height', '100%')
 
-  root.appendChild(eyebar)
   root.appendChild(header)
   root.appendChild(body)
+  root.appendChild(outputPanel)
   root.appendChild(footer)
   root.appendChild(overlay)
+  root.appendChild(eyeBtn)   // eye on top of overlay but absolutely positioned
   element.appendChild(root)
 
   // ---- State ----
 
-  let eyeMode = false
+  let returnAnim: number | null = null
+  let abortController: AbortController | null = null
 
-  // ---- Pupil mouse tracking (only active in eye mode) ----
+  // ---- Pupil return-to-center animation ----
 
-  const onMouseMove = (e: MouseEvent) => {
-    if (!eyeMode) return
+  function animateToCenter() {
+    const iris      = eyeBtn.querySelector<SVGCircleElement>('.ll-eye-iris')
+    const pupil     = eyeBtn.querySelector<SVGCircleElement>('.ll-eye-pupil')
+    const highlight = eyeBtn.querySelector<SVGCircleElement>('.ll-eye-highlight')
+    if (!iris || !pupil) { returnAnim = null; return }
 
-    // The iris and pupil share the same offset from the SVG center.
-    // We move both together so the dark circle tracks as one unit.
+    const cx = parseFloat(iris.getAttribute('cx') ?? '0')
+    const cy = parseFloat(iris.getAttribute('cy') ?? '0')
+
+    const newCx = cx * (1 - 0.12)
+    const newCy = cy * (1 - 0.12)
+
+    iris.setAttribute('cx',  String(newCx))
+    iris.setAttribute('cy',  String(newCy))
+    pupil.setAttribute('cx', String(newCx))
+    pupil.setAttribute('cy', String(newCy))
+    highlight?.setAttribute('cx', String(newCx - 3))
+    highlight?.setAttribute('cy', String(newCy - 3))
+
+    if (Math.abs(newCx) > 0.1 || Math.abs(newCy) > 0.1) {
+      returnAnim = requestAnimationFrame(animateToCenter)
+    } else {
+      iris.setAttribute('cx',  '0')
+      iris.setAttribute('cy',  '0')
+      pupil.setAttribute('cx', '0')
+      pupil.setAttribute('cy', '0')
+      highlight?.setAttribute('cx', '-3')
+      highlight?.setAttribute('cy', '-3')
+      returnAnim = null
+    }
+  }
+
+  function startReturnAnim() {
+    if (returnAnim !== null) cancelAnimationFrame(returnAnim)
+    returnAnim = requestAnimationFrame(animateToCenter)
+  }
+
+  // ---- Pupil focus ----
+
+  function focusPupilOn(pageX: number, pageY: number) {
+    if (returnAnim !== null) {
+      cancelAnimationFrame(returnAnim)
+      returnAnim = null
+    }
+
     const iris      = eyeBtn.querySelector<SVGCircleElement>('.ll-eye-iris')
     const pupil     = eyeBtn.querySelector<SVGCircleElement>('.ll-eye-pupil')
     const highlight = eyeBtn.querySelector<SVGCircleElement>('.ll-eye-highlight')
@@ -307,35 +410,19 @@ export function LLMlinTool(
     const eyeCx   = eyeRect.left + eyeRect.width  / 2
     const eyeCy   = eyeRect.top  + eyeRect.height / 2
 
-    const dx   = e.clientX - eyeCx
-    const dy   = e.clientY - eyeCy
+    const dx   = pageX - eyeCx
+    const dy   = pageY - eyeCy
     const dist = Math.sqrt(dx * dx + dy * dy)
+    if (dist < 1) return
 
-    // Resting offset (iris starts at -4, -2 in the SVG)
-    const restX = -4
-    const restY = -2
-
-    if (dist < 1) {
-      iris.setAttribute('cx',  String(restX))
-      iris.setAttribute('cy',  String(restY))
-      pupil.setAttribute('cx', String(restX))
-      pupil.setAttribute('cy', String(restY))
-      highlight?.setAttribute('cx', String(restX - 3))
-      highlight?.setAttribute('cy', String(restY - 3))
-      return
-    }
-
-    // ViewBox is 44 units wide rendered at eyeRect.width px.
-    // Iris radius = 9, max travel = ~5 SVG units from rest position.
     const svgUnitsPerPx = 44 / eyeRect.width
     const MAX_TRAVEL    = 5
-
     const normX  = dx / dist
     const normY  = dy / dist
     const travel = Math.min(dist * svgUnitsPerPx, MAX_TRAVEL)
 
-    const cx = restX + normX * travel
-    const cy = restY + normY * travel
+    const cx = normX * travel
+    const cy = normY * travel
 
     iris.setAttribute('cx',  String(cx))
     iris.setAttribute('cy',  String(cy))
@@ -345,7 +432,46 @@ export function LLMlinTool(
     highlight?.setAttribute('cy', String(cy - 3))
   }
 
-  document.addEventListener('mousemove', onMouseMove)
+  // ---- Hover ray ----
+
+  function showRayTo(pill: HTMLElement) {
+    let ray = overlay.querySelector<SVGPolygonElement>('.ll-ray')
+    if (!ray) {
+      ray = document.createElementNS(SVG_NS, 'polygon')
+      ray.setAttribute('class', 'll-ray')
+      // Insert before traps so it's rendered below them (or keep above — let CSS handle opacity)
+      overlay.insertBefore(ray, overlay.firstChild)
+    }
+
+    const { srcCX, srcY, halfSrc, rootRect } = getEyeSource(root, eyeBtn)
+    const pillRect = pill.getBoundingClientRect()
+    const tgtX1 = pillRect.left   - rootRect.left
+    const tgtX2 = pillRect.right  - rootRect.left
+    const tgtY  = pillRect.bottom - rootRect.top
+
+    ray.setAttribute('points',
+      `${srcCX - halfSrc},${srcY} ${tgtX1},${tgtY} ${tgtX2},${tgtY} ${srcCX + halfSrc},${srcY}`)
+  }
+
+  function clearRay() {
+    const ray = overlay.querySelector('.ll-ray')
+    if (ray) ray.remove()
+  }
+
+  // ---- Token hover callbacks ----
+
+  const onHoverIn = (pill: HTMLElement) => {
+    const pillRect = pill.getBoundingClientRect()
+    const cx = (pillRect.left + pillRect.right)  / 2
+    const cy = (pillRect.top  + pillRect.bottom) / 2
+    focusPupilOn(cx, cy)
+    showRayTo(pill)
+  }
+
+  const onHoverOut = () => {
+    clearRay()
+    startReturnAnim()
+  }
 
   // ---- Render function ----
 
@@ -371,24 +497,37 @@ export function LLMlinTool(
       e.dataTransfer?.setData('text/x-llmlin-source', bucket)
     }
 
-    renderTokens(readTokens,  doc.readDocUrls,  'read',  watchedSet, eyeMode, onToggleWatch, onDragStart, repo)
-    renderTokens(writeTokens, doc.writeDocUrls, 'write', watchedSet, eyeMode, onToggleWatch, onDragStart, repo)
+    renderTokens(readTokens,  doc.readDocUrls,  'read',  watchedSet, onToggleWatch, onDragStart, onHoverIn, onHoverOut, repo)
+    renderTokens(writeTokens, doc.writeDocUrls, 'write', watchedSet, onToggleWatch, onDragStart, onHoverIn, onHoverOut, repo)
 
     if (document.activeElement !== textarea) {
       textarea.value = doc.prompt ?? ''
     }
 
+    if (document.activeElement !== apiUrlInput) {
+      apiUrlInput.value = doc.apiUrl ?? ''
+    }
+
     modelSelect.value = doc.model ?? DEFAULT_MODEL
 
-    root.classList.toggle('ll-eye-mode', eyeMode)
-
-    if (eyeMode) {
-      requestAnimationFrame(() => {
-        redrawOverlay(overlay, root, eyeBtn, doc.watchedDocUrls)
-      })
+    // Toggle play/stop button based on running state
+    if (doc.running) {
+      playBtn.innerHTML = STOP_SVG
+      playBtn.setAttribute('title', 'Stop')
+      playBtn.classList.add('ll-play-running')
     } else {
-      overlay.innerHTML = ''
+      playBtn.innerHTML = PLAY_SVG
+      playBtn.setAttribute('title', 'Run')
+      playBtn.classList.remove('ll-play-running')
     }
+
+    // Render output blocks
+    renderOutputBlocks(outputPanel, doc.output ?? [])
+
+    // Always redraw the static watched-token beams
+    requestAnimationFrame(() => {
+      redrawOverlay(overlay, root, eyeBtn, doc.watchedDocUrls)
+    })
   }
 
   // ---- Drop handlers ----
@@ -429,12 +568,10 @@ export function LLMlinTool(
         const source = bucket === 'read' ? doc.writeDocUrls : doc.readDocUrls
 
         for (const url of urls) {
-          // Add to target if not already there
           if (!target.includes(url)) {
             target.push(url)
           }
 
-          // If dragged from the other bucket within this component, remove from source
           if (sourceBucket && sourceBucket !== bucket) {
             const idx = source.indexOf(url)
             if (idx !== -1) source.splice(idx, 1)
@@ -455,19 +592,71 @@ export function LLMlinTool(
     })
   })
 
+  apiUrlInput.addEventListener('input', () => {
+    handle.change(doc => {
+      doc.apiUrl = apiUrlInput.value
+    })
+  })
+
   modelSelect.addEventListener('change', () => {
     handle.change(doc => {
       doc.model = modelSelect.value
     })
   })
 
+  // ---- Run / Stop ----
+
+  async function startRun() {
+    const doc = handle.doc()
+    if (!doc || doc.running) return
+
+    abortController = new AbortController()
+    watcher.snapshotBeforeRun()
+
+    handle.change(d => {
+      d.running = true
+      d.output  = []
+    })
+
+    try {
+      await runLLMlin(repo, handle.doc()!, abortController.signal, {
+        onOutput: (blocks) => {
+          handle.change(d => {
+            d.output = blocks as any
+          })
+        },
+      })
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') {
+        handle.change(d => {
+          if (!d.output) d.output = []
+          d.output.push({ type: 'text', content: `\n[Error: ${err.message ?? String(err)}]` })
+        })
+      }
+    } finally {
+      abortController = null
+      handle.change(d => { d.running = false })
+      await watcher.recordOwnWrites()
+    }
+  }
+
+  function stopRun() {
+    abortController?.abort()
+  }
+
   playBtn.addEventListener('click', () => {
-    console.log('[LLMlin] Run:', handle.doc()?.prompt)
+    const doc = handle.doc()
+    if (doc?.running) {
+      stopRun()
+    } else {
+      startRun()
+    }
   })
 
-  eyeBtn.addEventListener('click', () => {
-    eyeMode = !eyeMode
-    render()
+  // ---- Watch mode ----
+
+  const watcher = createWatcher(repo, handle, () => {
+    startRun()
   })
 
   // ---- Subscribe to doc changes ----
@@ -481,7 +670,9 @@ export function LLMlinTool(
 
   return () => {
     handle.off('change', onChange)
-    document.removeEventListener('mousemove', onMouseMove)
+    if (returnAnim !== null) cancelAnimationFrame(returnAnim)
+    watcher.dispose()
+    abortController?.abort()
     root.remove()
   }
 }

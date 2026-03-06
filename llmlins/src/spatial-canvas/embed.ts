@@ -53,10 +53,8 @@ export function mountEmbed(
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
-    border: 1px solid #e5e7eb;
     border-radius: 6px;
     background: #ffffff;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
     overflow: hidden;
     pointer-events: all;
   `
@@ -211,22 +209,6 @@ function mountTypePicker(
     padding: 12px;
     font-family: system-ui, -apple-system, sans-serif;
   `
-
-  const heading = document.createElement('div')
-  heading.textContent = 'Create new'
-  heading.style.cssText = `
-    font-size: 11px;
-    font-weight: 600;
-    color: #6b7280;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-bottom: 8px;
-    flex-shrink: 0;
-    user-select: none;
-    cursor: grab;
-    pointer-events: none;
-  `
-  card.appendChild(heading)
 
   const list = document.createElement('div')
   list.style.cssText = `
