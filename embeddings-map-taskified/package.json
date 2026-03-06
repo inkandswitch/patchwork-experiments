@@ -1,0 +1,46 @@
+{
+  "name": "@patchwork/embeddings-map",
+  "version": "0.0.1",
+  "description": "2D embedding map for Patchwork folders",
+  "type": "module",
+  "exports": "./dist/index.js",
+  "scripts": {
+    "build": "tsc && vite build",
+    "sync": "pnpm build && npx pushwork sync"
+  },
+  "keywords": [],
+  "author": "Ink & Switch",
+  "dependencies": {
+    "@automerge/automerge": "3.2.1",
+    "@automerge/automerge-repo": "2.5.0",
+    "@automerge/automerge-repo-react-hooks": "2.5.0",
+    "@awarth/tasklib": "^0.0.7",
+    "@huggingface/transformers": "^3.8.1",
+    "@inkandswitch/patchwork-filesystem": "^0.0.3",
+    "@inkandswitch/patchwork-plugins": "^0.0.2",
+    "deck.gl": "^9.2.5",
+    "density-clustering": "^1.3.0",
+    "jsonpath-plus": "^10.3.0",
+    "ml-pca": "^4.1.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "umap-js": "^1.4.0"
+  },
+  "devDependencies": {
+    "@inkandswitch/patchwork-bootloader": "^0.0.3",
+    "@tailwindcss/vite": "^4.1.18",
+    "@types/density-clustering": "^1.3.3",
+    "@types/react": "^18.3.23",
+    "@types/react-dom": "^18.2.2",
+    "@vitejs/plugin-react": "^4.5.1",
+    "daisyui": "^5.5.13",
+    "pushwork": "^1.0.5",
+    "tailwindcss": "^4.1.18",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "vite-plugin-css-injected-by-js": "^3.5.2",
+    "vite-plugin-top-level-await": "^1.5.0",
+    "vite-plugin-wasm": "^3.4.1"
+  },
+  "packageManager": "pnpm@8.15.9+sha512.499434c9d8fdd1a2794ebf4552b3b25c0a633abcee5bb15e7b5de90f32f47b513aca98cd5cfd001c31f0db454bc3804edccd578501e4ca293a6816166bbd9f81"
+}
