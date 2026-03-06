@@ -114,7 +114,7 @@ async function collectLeafDocs(
             results.push({ doc: docLink, path });
             taskQueue.addTask<AutomergeUrl, void>({
               input: docLink.url,
-              importUrl: new URL('./task.js?' + Math.random(), import.meta.url),
+              importUrl: new URL(/* @vite-ignore */ '../task.js', import.meta.url),
             });
           }
         } catch (e) {
