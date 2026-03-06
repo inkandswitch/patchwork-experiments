@@ -14,6 +14,13 @@ export type Disposer = () => void
 import type { OutputBlock } from './engine/types.js'
 export type { OutputBlock }
 
+export interface LlmlinRunDoc {
+  prompt: string        // snapshot of prompt at run time
+  output: OutputBlock[] // streaming output blocks
+  startedAt: number
+  completedAt?: number
+}
+
 export interface LLMlinDoc {
   readDocUrls: AutomergeUrl[]
   writeDocUrls: AutomergeUrl[]
@@ -21,7 +28,7 @@ export interface LLMlinDoc {
   model: string
   apiUrl: string        // LLM API endpoint, e.g. "https://openrouter.ai/api/v1"
   watchedDocUrls: AutomergeUrl[]  // which tokens trigger watch-mode reruns
-  output: OutputBlock[] // live-streaming output from the current run
+  runUrls: AutomergeUrl[] // URLs of past LlmlinRunDoc documents
   running: boolean      // true while a run is in progress
 }
 

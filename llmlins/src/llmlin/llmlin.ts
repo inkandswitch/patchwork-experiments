@@ -1,4 +1,4 @@
-import type { LLMlinDoc, AutomergeUrl, DocHandle, Disposer, OutputBlock } from "./types.js";
+import type { LLMlinDoc, LlmlinRunDoc, AutomergeUrl, DocHandle, Disposer, OutputBlock } from "./types.js";
 import type { Repo } from "@automerge/automerge-repo";
 import { updateText } from "@automerge/automerge";
 import { runLLMlin, createWatcher } from "./engine/index.js";
@@ -43,7 +43,7 @@ export const LLMlinDatatype = {
     doc.model = DEFAULT_MODEL;
     doc.apiUrl = "https://openrouter.ai/api/v1";
     doc.watchedDocUrls = [];
-    doc.output = [];
+    doc.runUrls = [];
     doc.running = false;
   },
 
@@ -52,6 +52,20 @@ export const LLMlinDatatype = {
   },
 
   markCopy(_doc: LLMlinDoc) {},
+};
+
+export const LlmlinRunDatatype = {
+  init(doc: LlmlinRunDoc) {
+    doc.prompt = "";
+    doc.output = [];
+    doc.startedAt = Date.now();
+  },
+
+  getTitle(_doc: LlmlinRunDoc): string {
+    return "LLMlin Run";
+  },
+
+  markCopy(_doc: LlmlinRunDoc) {},
 };
 
 // ============================================================================
@@ -102,6 +116,7 @@ const STOP_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
   fill="currentColor">
   <rect x="4" y="4" width="16" height="16" rx="2"/>
 </svg>`;
+
 
 // ============================================================================
 // Output rendering helpers
@@ -336,6 +351,7 @@ export function LLMlinTool(handle: DocHandle<LLMlinDoc>, element: ToolElement): 
   let abortController: AbortController | null = null;
   let userScrolled = false;
   let programmaticScroll = false;
+  let currentRunHandle: DocHandle<LlmlinRunDoc> | null = null;
 
   outputPanel.addEventListener("scroll", () => {
     if (!programmaticScroll) userScrolled = true;
@@ -503,7 +519,7 @@ export function LLMlinTool(handle: DocHandle<LLMlinDoc>, element: ToolElement): 
 
     modelSelect.value = doc.model ?? DEFAULT_MODEL;
 
-    // Toggle play/stop button and squint state based on running state
+    // Toggle play/stop button and squint state
     if (doc.running) {
       playBtn.innerHTML = STOP_SVG;
       playBtn.setAttribute("title", "Stop");
@@ -515,10 +531,10 @@ export function LLMlinTool(handle: DocHandle<LLMlinDoc>, element: ToolElement): 
     }
     root.classList.toggle("ll-running", !!doc.running);
 
-    // Render output blocks
-    renderOutputBlocks(outputPanel, doc.output ?? []);
+    // Render output from the current run doc
+    renderOutputBlocks(outputPanel, currentRunHandle?.doc()?.output ?? []);
 
-    // Auto-scroll to bottom unless user has manually scrolled up
+    // Auto-scroll to bottom while running (streaming)
     if (doc.running && !userScrolled) {
       programmaticScroll = true;
       outputPanel.scrollTop = outputPanel.scrollHeight;
@@ -611,27 +627,42 @@ export function LLMlinTool(handle: DocHandle<LLMlinDoc>, element: ToolElement): 
     abortController = new AbortController();
     watcher.snapshotBeforeRun();
 
+    // Create a fresh run document
+    const runHandle = repo.create<LlmlinRunDoc>();
+    runHandle.change((d) => {
+      LlmlinRunDatatype.init(d);
+      d.prompt = doc.prompt;
+    });
+    const runUrl = runHandle.url;
+
+    currentRunHandle = runHandle;
+
     handle.change((d) => {
+      if (!d.runUrls) d.runUrls = [];
+      d.runUrls.push(runUrl);
       d.running = true;
-      d.output = [];
     });
 
     try {
       await runLLMlin(repo, handle.doc()!, abortController.signal, {
         onOutput: (blocks) => {
-          handle.change((d) => {
+          runHandle.change((d) => {
             d.output = blocks as any;
           });
+          render();
         },
       });
     } catch (err: any) {
       if (err?.name !== "AbortError") {
-        handle.change((d) => {
+        runHandle.change((d) => {
           if (!d.output) d.output = [];
           d.output.push({ type: "text", content: `\n[Error: ${err.message ?? String(err)}]` });
         });
       }
     } finally {
+      runHandle.change((d) => {
+        d.completedAt = Date.now();
+      });
       abortController = null;
       handle.change((d) => {
         d.running = false;
@@ -690,6 +721,15 @@ export const llmlinPlugins = [
     unlisted: true,
     async load() {
       return LLMlinDatatype;
+    },
+  },
+  {
+    type: "patchwork:datatype" as const,
+    id: "llmlin-run",
+    name: "LLMlin Run",
+    unlisted: true,
+    async load() {
+      return LlmlinRunDatatype;
     },
   },
   {
