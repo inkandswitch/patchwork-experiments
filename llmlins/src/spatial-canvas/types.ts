@@ -13,8 +13,8 @@ export interface CanvasShape {
   height: number
   rotation: number  // radians
   zIndex: number
-  docUrl: AutomergeUrl
-  toolId: string
+  docUrl?: AutomergeUrl
+  toolId?: string
   shapeType: 'embed' | 'token'
 }
 

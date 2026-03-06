@@ -6,8 +6,8 @@ export interface PlaceToolContext {
   getHandle(): DocHandle<CanvasDoc>
   /** Called after placing to switch back to select tool. */
   onPlaced(): void
-  /** Create a new child Automerge document and return its URL. */
-  createChildDoc(datatypeId: string): AutomergeUrl
+  /** Create a new child Automerge document and return its URL, or undefined to leave unset. */
+  createChildDoc(datatypeId: string): AutomergeUrl | undefined
   /** Returns the currently selected datatype id to create on place. */
   getDatatypeId(): string
   /** Overlay element (inside the layer) used to show the drag preview. */
@@ -64,7 +64,7 @@ export function createPlaceTool(ctx: PlaceToolContext) {
     const doc    = ctx.getDoc()
     const handle = ctx.getHandle()
     const docUrl = ctx.createChildDoc(ctx.getDatatypeId())
-    createShape(handle, {
+    const shape: Parameters<typeof createShape>[1] = {
       id:        newId(),
       x:         rect.x,
       y:         rect.y,
@@ -72,10 +72,10 @@ export function createPlaceTool(ctx: PlaceToolContext) {
       height:    rect.height,
       rotation:  0,
       zIndex:    nextZIndex(doc),
-      docUrl,
-      toolId:    '',
       shapeType: 'embed',
-    })
+    }
+    if (docUrl !== undefined) shape.docUrl = docUrl
+    createShape(handle, shape)
     ctx.onPlaced()
   }
 

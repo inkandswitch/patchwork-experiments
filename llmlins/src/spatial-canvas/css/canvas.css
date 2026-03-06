@@ -125,3 +125,22 @@
   background: #e8f0fe;
   color: #1a73e8;
 }
+
+.sc-build-info {
+  position: absolute;
+  bottom: 6px;
+  right: 8px;
+  font-size: 10px;
+  font-family: monospace;
+  color: #aaa;
+  pointer-events: none;
+  z-index: 1000;
+  transition: color 0.3s, background 0.3s;
+}
+
+.sc-build-info--new {
+  color: #fff;
+  background: #f59e0b;
+  border-radius: 3px;
+  padding: 1px 4px;
+}

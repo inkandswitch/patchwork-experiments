@@ -17,6 +17,8 @@ import canvasCss  from './css/canvas.css?inline'
 import shapesCss  from './css/shapes.css?inline'
 import handlesCss from './css/handles.css?inline'
 
+declare const __BUILD_VERSION__: string
+
 type ActiveTool = 'select' | 'pan' | 'place'
 
 export interface DatatypeOption {
@@ -28,9 +30,10 @@ export interface CanvasViewOptions {
   /**
    * Called when the PlaceTool needs a new child Automerge document.
    * Receives the selected datatypeId (e.g. 'llmlin', 'spatial-canvas').
-   * Must return an AutomergeUrl for the newly created doc.
+   * Returns an AutomergeUrl for the newly created doc, or undefined to leave the
+   * docUrl unset (the embed will show a type picker).
    */
-  createChildDoc: (datatypeId: string) => AutomergeUrl
+  createChildDoc: (datatypeId: string) => AutomergeUrl | undefined
   /**
    * Called to mount content into a shape container.
    * Defaults to dispatching on shapeType: 'embed' → mountEmbed, 'token' → mountToken.
@@ -75,6 +78,7 @@ export class CanvasView {
   private placePreviewEl: HTMLElement
   private cursorsEl: HTMLElement
   private toolbarEl: HTMLElement
+  private buildInfoEl: HTMLElement
 
   private camera: Camera = { x: 0, y: 0, zoom: 1 }
   private screenBounds: Rect = { x: 0, y: 0, width: 0, height: 0 }
@@ -136,9 +140,21 @@ export class CanvasView {
     this.layer.appendChild(this.placePreviewEl)
     this.canvasEl.appendChild(this.layer)
     this.canvasEl.appendChild(this.cursorsEl)
+    this.buildInfoEl = document.createElement('div')
+    this.buildInfoEl.className = 'sc-build-info'
+    this.buildInfoEl.textContent = __BUILD_VERSION__
+
     this.container.appendChild(this.canvasEl)
     this.container.appendChild(this.toolbarEl)
+    this.container.appendChild(this.buildInfoEl)
     mountPoint.appendChild(this.container)
+
+    const lastVersion = localStorage.getItem('sc-build-version')
+    if (lastVersion !== __BUILD_VERSION__) {
+      this.buildInfoEl.classList.add('sc-build-info--new')
+      localStorage.setItem('sc-build-version', __BUILD_VERSION__)
+      setTimeout(() => this.buildInfoEl.classList.remove('sc-build-info--new'), 5000)
+    }
 
     const repo = (mountPoint as unknown as { repo?: Repo }).repo
 
@@ -161,6 +177,7 @@ export class CanvasView {
           el,
           shape,
           (newToolId) => handle.change(doc => { doc.shapes[shape.id].toolId = newToolId }),
+          (newDocUrl) => handle.change(doc => { doc.shapes[shape.id].docUrl = newDocUrl }),
           options.getTools,
           repo
         )
@@ -407,8 +424,7 @@ export class CanvasView {
       const H = 480
       const GAP = 16
 
-      // Create all shapes immediately with an empty toolId so the user sees
-      // something on the canvas right away. toolIds are patched in below once
+      // Create all shapes immediately; toolIds are patched in below once
       // getTools resolves asynchronously.
       const baseZ = nextZIndex(this.doc)
       const ids: string[] = docUrls.map(() => newId())
@@ -424,7 +440,6 @@ export class CanvasView {
             rotation:  0,
             zIndex:    baseZ + i,
             docUrl,
-            toolId:    '',
             shapeType: 'embed',
           }
         })

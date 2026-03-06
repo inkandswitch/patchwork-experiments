@@ -41,8 +41,8 @@ export function Tool(
 ): Disposer {
   // In a real patchwork environment, createChildDoc would call the platform
   // API to create a new synced Automerge document.
-  const createChildDoc = (_toolId: string): AutomergeUrl => {
-    return `automerge:${Math.random().toString(36).slice(2)}` as AutomergeUrl
+  const createChildDoc = (_datatypeId: string): AutomergeUrl | undefined => {
+    return undefined
   }
 
   const view = new CanvasView(handle, element, { createChildDoc })

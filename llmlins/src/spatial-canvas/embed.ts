@@ -1,5 +1,7 @@
-import type { CanvasShape, Disposer } from './types.js'
+import type { AutomergeUrl, CanvasShape, Disposer } from './types.js'
 import type { Repo } from '@automerge/automerge-repo'
+import { createDocOfDatatype2, getRegistry } from '@inkandswitch/patchwork-plugins'
+import type { LoadedDatatypePlugin } from '@inkandswitch/patchwork-plugins'
 import { resolveDocTitle } from '../shared/resolve-doc-title.js'
 
 export interface ToolOption {
@@ -8,39 +10,39 @@ export interface ToolOption {
 }
 
 /**
- * Mount an embed shape — a framed card with a titlebar and a <patchwork-view>
- * content area.
+ * Mount an embed shape.
  *
- * Layout:
- *
+ * When shape.docUrl is set:
  *   ┌─────────────────────────────────────┐
  *   │ [doc-name]              [tool ▾]    │  ← titlebar
  *   ├─────────────────────────────────────┤
- *   │                                     │
  *   │   <patchwork-view>                  │
- *   │                                     │
  *   └─────────────────────────────────────┘
  *
- * - The doc-name span is pointer-events: none so drag-to-move falls through
- *   to the canvas.
- * - The tool <select> is pointer-events: auto so the user can pick a tool
- *   without starting a canvas drag.
- * - The content area blocks pointer events from reaching the canvas while
- *   the embed is focused, matching tldraw's embedded-content isolation.
- *
- * @param container    - The .sc-shape-content div created by mountShape()
- * @param shape        - The CanvasShape data
- * @param onToolChange - Called with the new toolId when the user picks a tool
- * @param getTools     - Optional async supplier of available tools for the doc.
- *                       If omitted the <select> shows only the current toolId.
+ * When shape.docUrl is not set (newly placed empty shape):
+ *   ┌─────────────────────────────────────┐
+ *   │  Create new                         │
+ *   │  · Essay                            │
+ *   │  · Spatial Canvas  …               │
+ *   └─────────────────────────────────────┘
+ *   Clicking a type calls createDocOfDatatype2 then onDocCreate(url),
+ *   which updates the shape in Automerge and triggers a re-mount.
  */
 export function mountEmbed(
   container: HTMLElement,
   shape: CanvasShape,
   onToolChange: (newToolId: string) => void,
+  onDocCreate: (newDocUrl: AutomergeUrl) => void,
   getTools?: (docUrl: string) => Promise<ToolOption[]>,
   repo?: Repo
 ): Disposer {
+  // -------------------------------------------------------------------------
+  // Empty state — no docUrl yet: show "Create new" type picker
+  // -------------------------------------------------------------------------
+  if (!shape.docUrl) {
+    return mountTypePicker(container, onDocCreate, repo)
+  }
+
   let focused = false
   let stopPointerCleanup: (() => void) | null = null
 
@@ -141,10 +143,10 @@ export function mountEmbed(
     }
   }
 
-  populateSelect([], shape.toolId)
+  populateSelect([], shape.toolId ?? '')
 
-  if (getTools) {
-    getTools(shape.docUrl).then(tools => populateSelect(tools, shape.toolId)).catch(() => {})
+  if (getTools && shape.docUrl) {
+    getTools(shape.docUrl).then(tools => populateSelect(tools, shape.toolId ?? '')).catch(() => {})
   }
 
   select.addEventListener('change', (e) => {
@@ -227,7 +229,7 @@ export function mountEmbed(
 
   // Mount patchwork-view inside content
   const pw = document.createElement('patchwork-view') as HTMLElement
-  pw.setAttribute('doc-url', shape.docUrl)
+  pw.setAttribute('doc-url', shape.docUrl ?? '')
   if (shape.toolId) pw.setAttribute('tool-id', shape.toolId)
   pw.style.cssText = 'display: block; width: 100%; height: 100%;'
   content.appendChild(pw)
@@ -239,6 +241,128 @@ export function mountEmbed(
   return () => {
     stopPointerCleanup?.()
     window.removeEventListener('pointerdown', onOutsidePointerDown, true)
+    card.remove()
+  }
+}
+
+// ============================================================================
+// Type picker — shown when a shape has no docUrl yet
+// ============================================================================
+
+function mountTypePicker(
+  container: HTMLElement,
+  onDocCreate: (newDocUrl: AutomergeUrl) => void,
+  repo?: Repo
+): Disposer {
+  const card = document.createElement('div')
+  card.style.cssText = `
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    background: #ffffff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    overflow: hidden;
+    pointer-events: all;
+    padding: 12px;
+    font-family: system-ui, -apple-system, sans-serif;
+  `
+
+  const heading = document.createElement('div')
+  heading.textContent = 'Create new'
+  heading.style.cssText = `
+    font-size: 11px;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+    flex-shrink: 0;
+    user-select: none;
+    cursor: grab;
+    pointer-events: none;
+  `
+  card.appendChild(heading)
+
+  const list = document.createElement('div')
+  list.style.cssText = `
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow-y: auto;
+    flex: 1;
+  `
+  card.appendChild(list)
+  container.appendChild(card)
+
+  let creating = false
+
+  function renderList() {
+    list.innerHTML = ''
+    const registry = getRegistry('patchwork:datatype')
+    const datatypes = (registry.all() as LoadedDatatypePlugin[]).filter(p => !(p as LoadedDatatypePlugin & { unlisted?: boolean }).unlisted)
+
+    if (datatypes.length === 0) {
+      const empty = document.createElement('div')
+      empty.textContent = 'No document types available'
+      empty.style.cssText = 'font-size: 12px; color: #9ca3af; padding: 4px 0;'
+      list.appendChild(empty)
+      return
+    }
+
+    for (const plugin of datatypes) {
+      const btn = document.createElement('button')
+      btn.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        padding: 6px 8px;
+        border: none;
+        border-radius: 4px;
+        background: transparent;
+        cursor: pointer;
+        text-align: left;
+        font-size: 13px;
+        font-family: inherit;
+        color: #111827;
+        transition: background 0.1s;
+      `
+      btn.addEventListener('mouseenter', () => { btn.style.background = '#f3f4f6' })
+      btn.addEventListener('mouseleave', () => { btn.style.background = 'transparent' })
+
+      const name = document.createElement('span')
+      name.textContent = plugin.name
+      btn.appendChild(name)
+
+      btn.addEventListener('click', async () => {
+        if (creating || !repo) return
+        creating = true
+        btn.style.opacity = '0.5'
+        try {
+          const loaded = await registry.load(plugin.id) as LoadedDatatypePlugin | null
+          if (!loaded) return
+          const handle = await createDocOfDatatype2(loaded, repo)
+          onDocCreate(handle.url)
+        } catch (err) {
+          console.error('[spatial-canvas] failed to create doc:', err)
+          creating = false
+          btn.style.opacity = '1'
+        }
+      })
+
+      list.appendChild(btn)
+    }
+  }
+
+  renderList()
+  const unsubscribe = getRegistry('patchwork:datatype').on('changed', renderList)
+
+  return () => {
+    unsubscribe()
     card.remove()
   }
 }

@@ -8,7 +8,7 @@ import type { CanvasShape, Disposer } from './types.js'
  */
 export function mountToken(container: HTMLElement, shape: CanvasShape): Disposer {
   const el = document.createElement('patchwork-view') as HTMLElement
-  el.setAttribute('doc-url', shape.docUrl)
+  el.setAttribute('doc-url', shape.docUrl ?? '')
   if (shape.toolId) el.setAttribute('tool-id', shape.toolId)
   el.style.cssText = 'width: 100%; height: 100%; display: block; pointer-events: auto;'
   container.appendChild(el)
