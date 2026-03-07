@@ -2,7 +2,12 @@
   "permissions": {
     "allow": [
       "Bash(pnpm build:*)",
-      "Bash(pushwork sync:*)"
+      "Bash(pushwork sync:*)",
+      "Bash(pnpm install:*)",
+      "Bash(node esbuild/build.js:*)",
+      "Bash(echo:*)",
+      "Bash(npx esbuild:*)",
+      "Bash(node -e:*)"
     ]
   }
 }
