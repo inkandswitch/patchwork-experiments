@@ -23,7 +23,7 @@ export const addTodoAction: Plugin<any> = {
   id: 'todo-add',
   name: 'Add Todo',
   icon: 'Plus',
-  supportedDataTypes: ['todo'],
+  supportedDatatypes: ['todo'],
   module: {
     argsSchema: () => {
       return z.object({
@@ -38,7 +38,7 @@ export const addTodoAction: Plugin<any> = {
     default: (
       handle: DocHandle<TodoDoc>,
       _repo: any,
-      args: { description: string; done?: boolean }
+      args: { description: string; done?: boolean },
     ) => {
       const id = crypto.randomUUID();
 
@@ -65,7 +65,7 @@ export const markTodoDoneAction: Plugin<any> = {
   id: 'todo-complete',
   name: 'Mark Todo Done',
   icon: 'CheckSquare2',
-  supportedDataTypes: ['todo'],
+  supportedDatatypes: ['todo'],
   module: {
     argsSchema: (doc: TodoDoc) => {
       const todoOptions = (doc.todos || []).filter((todo) => !todo.done).map((todo) => todo.id);
@@ -104,7 +104,7 @@ export const listTodoItemsAction: Plugin<any> = {
   id: 'todo-complete',
   name: 'List Todo Items',
   icon: 'CheckSquare2',
-  supportedDataTypes: ['todo'],
+  supportedDatatypes: ['todo'],
   module: {
     isApplicable: () => true,
     default: (handle: DocHandle<TodoDoc>, _repo: any) => {
@@ -119,7 +119,7 @@ export const toggleTodoAction: Plugin<any> = {
   id: 'todo-toggle',
   name: 'Toggle Todo',
   icon: 'CheckSquare',
-  supportedDataTypes: ['todo'],
+  supportedDatatypes: ['todo'],
   module: {
     argsSchema: (doc: TodoDoc) => {
       // Get list of todo IDs for the enum
@@ -151,7 +151,7 @@ export const deleteTodoAction: Plugin<any> = {
   id: 'todo-delete',
   name: 'Delete Todo',
   icon: 'Trash2',
-  supportedDataTypes: ['todo'],
+  supportedDatatypes: ['todo'],
   module: {
     argsSchema: (doc: TodoDoc) => {
       // Get list of todo IDs for the enum
@@ -183,7 +183,7 @@ export const updateTodoDescriptionAction: Plugin<any> = {
   id: 'todo-update-description',
   name: 'Update Todo Description',
   icon: 'Edit',
-  supportedDataTypes: ['todo'],
+  supportedDatatypes: ['todo'],
   module: {
     argsSchema: (doc: TodoDoc) => {
       const todoOptions = (doc.todos || []).map((todo) => todo.id);
@@ -201,7 +201,7 @@ export const updateTodoDescriptionAction: Plugin<any> = {
     default: (
       handle: DocHandle<TodoDoc>,
       _repo: any,
-      args: { todoId: string; description: string }
+      args: { todoId: string; description: string },
     ) => {
       handle.change((doc) => {
         const todo = doc.todos.find((t) => t.id === args.todoId);
@@ -219,7 +219,7 @@ export const clearCompletedTodosAction: Plugin<any> = {
   id: 'todo-clear-completed',
   name: 'Clear Completed Todos',
   icon: 'Eraser',
-  supportedDataTypes: ['todo'],
+  supportedDatatypes: ['todo'],
   module: {
     isApplicable: (doc: TodoDoc) => {
       return doc.todos && doc.todos.some((todo) => todo.done);
@@ -238,7 +238,7 @@ export const markAllCompleteAction: Plugin<any> = {
   id: 'todo-mark-all-complete',
   name: 'Mark All Complete',
   icon: 'CheckCheck',
-  supportedDataTypes: ['todo'],
+  supportedDatatypes: ['todo'],
   module: {
     isApplicable: (doc: TodoDoc) => {
       return doc.todos && doc.todos.some((todo) => !todo.done);
@@ -259,7 +259,7 @@ export const markAllIncompleteAction: Plugin<any> = {
   id: 'todo-mark-all-incomplete',
   name: 'Mark All Incomplete',
   icon: 'Square',
-  supportedDataTypes: ['todo'],
+  supportedDatatypes: ['todo'],
   module: {
     isApplicable: (doc: TodoDoc) => {
       return doc.todos && doc.todos.some((todo) => todo.done);
@@ -279,7 +279,7 @@ export const completeTodoAction: Plugin<any> = {
   id: 'todo-complete',
   name: 'Complete Todo',
   icon: 'Check',
-  supportedDataTypes: ['todo'],
+  supportedDatatypes: ['todo'],
   module: {
     argsSchema: () => ({
       todoId: {
@@ -307,7 +307,7 @@ export const updateMarkdownContentAction: Plugin<any> = {
   id: 'markdown-update-content',
   name: 'Update Markdown Content',
   icon: 'FileText',
-  supportedDataTypes: ['markdown'],
+  supportedDatatypes: ['markdown'],
   module: {
     argsSchema: () => {
       return z.object({
@@ -343,7 +343,7 @@ export const viewFileAction: Plugin<any> = {
   id: 'file-view',
   name: 'View File',
   icon: 'Eye',
-  supportedDataTypes: ['file'],
+  supportedDatatypes: ['file'],
   module: {
     isApplicable: () => true,
     default: (handle: DocHandle<FileDoc>) => {
@@ -358,7 +358,7 @@ export const replaceFileContentAction: Plugin<any> = {
   id: 'file-replace-content',
   name: 'Replace File Content',
   icon: 'FileEdit',
-  supportedDataTypes: ['file'],
+  supportedDatatypes: ['file'],
   module: {
     argsSchema: () => {
       return z.object({

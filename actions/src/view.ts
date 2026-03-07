@@ -7,7 +7,7 @@ export const viewAction: Plugin<any> = {
   id: "view",
   name: "View",
   icon: "Eye",
-  supportedDataTypes: ["*"],
+  supportedDatatypes: ["*"],
   module: {
     isApplicable: () => true,
     default: async (handle: DocHandle<unknown>, _repo: Repo) => {

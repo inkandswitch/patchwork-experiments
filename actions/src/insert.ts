@@ -7,17 +7,37 @@ export const insertAction: Plugin<any> = {
   id: "insert",
   name: "Insert",
   icon: "Plus",
-  supportedDataTypes: ["*"],
+  supportedDatatypes: ["*"],
   module: {
     argsSchema: () => {
       return z.object({
-        path: z.string().describe("The path where to insert (for arrays, use the array path like 'items'; for objects, use the full property path like 'user.email')"),
-        value: z.any().describe("The value to insert (can be any JSON-compatible type)"),
-        position: z.enum(["start", "end", "before", "after"]).optional().describe("For arrays: where to insert the item. 'before'/'after' require index parameter"),
-        index: z.number().int().min(0).optional().describe("For 'before'/'after' positions: the reference index"),
+        path: z
+          .string()
+          .describe(
+            "The path where to insert (for arrays, use the array path like 'items'; for objects, use the full property path like 'user.email')"
+          ),
+        value: z
+          .any()
+          .describe("The value to insert (can be any JSON-compatible type)"),
+        position: z
+          .enum(["start", "end", "before", "after"])
+          .optional()
+          .describe(
+            "For arrays: where to insert the item. 'before'/'after' require index parameter"
+          ),
+        index: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe("For 'before'/'after' positions: the reference index"),
       });
     },
-    default: (handle: DocHandle<any>, _repo: any, args: { path: string; value: any; position?: string; index?: number }) => {
+    default: (
+      handle: DocHandle<any>,
+      _repo: any,
+      args: { path: string; value: any; position?: string; index?: number }
+    ) => {
       handle.change((doc) => {
         // Parse path
         const pathRegex = /([^.\[\]]+)|\[(\d+)\]/g;
@@ -60,7 +80,9 @@ export const insertAction: Plugin<any> = {
         const finalKey = pathParts[pathParts.length - 1];
 
         if (typeof finalKey === "number") {
-          throw new Error("Cannot insert at an array index. Use the array path itself and specify position.");
+          throw new Error(
+            "Cannot insert at an array index. Use the array path itself and specify position."
+          );
         }
 
         // Handle insertion
@@ -106,7 +128,9 @@ export const insertAction: Plugin<any> = {
         } else {
           // Property exists and is not an array - overwrite or error?
           if (args.position) {
-            throw new Error(`Property "${args.path}" exists but is not an array. Cannot use position parameter.`);
+            throw new Error(
+              `Property "${args.path}" exists but is not an array. Cannot use position parameter.`
+            );
           }
           current[finalKey] = args.value;
         }

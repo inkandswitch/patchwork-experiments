@@ -7,7 +7,7 @@ export const deleteAction: Plugin<any> = {
   id: "delete",
   name: "Delete",
   icon: "Trash",
-  supportedDataTypes: ["*"],
+  supportedDatatypes: ["*"],
   module: {
     argsSchema: () => {
       return z.object({

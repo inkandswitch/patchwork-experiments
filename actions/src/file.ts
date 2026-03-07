@@ -12,7 +12,7 @@ export const viewFileAction: Plugin<any> = {
   id: "file-view",
   name: "View File",
   icon: "Eye",
-  supportedDataTypes: ["*"],
+  supportedDatatypes: ["*"],
   module: {
     isApplicable: () => true,
     default: (handle: DocHandle<FileDoc>) => {
@@ -27,7 +27,7 @@ export const replaceFileContentAction: Plugin<any> = {
   id: "file-replace-content",
   name: "Replace File Content",
   icon: "FileEdit",
-  supportedDataTypes: ["*"],
+  supportedDatatypes: ["*"],
   module: {
     argsSchema: () => {
       return z.object({
