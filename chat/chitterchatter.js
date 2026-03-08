@@ -388,10 +388,10 @@ function createStyles() {
     /* Patchwork doc embed */
     .chat-msg-embed {
       margin-top:6px; border:1px solid var(--border); border-radius:8px;
-      overflow:hidden; width:100%; height:300px; position:relative;
+      width:100%; height:300px; position:relative;
       background:var(--bg-surface); display:flex; flex-direction:column;
     }
-    .chat-msg-embed patchwork-view { width:100%; flex:1; min-height:0; display:block; }
+    .chat-msg-embed patchwork-view { width:100%; flex:1; min-height:0; display:block; overflow:hidden; }
     .chat-msg-embed-title {
       padding:0 8px 0 0; font-weight:500; color:var(--text-primary);
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex-shrink:1; min-width:0;
@@ -417,7 +417,7 @@ function createStyles() {
       width:120px;
     }
     .chat-embed-tool-menu {
-      position:absolute; bottom:100%; left:0; z-index:20;
+      position:absolute; top:100%; left:0; z-index:20;
       background:var(--bg-surface); border:1px solid var(--border); border-radius:6px;
       padding:2px; box-shadow:0 2px 8px rgba(0,0,0,0.3); white-space:nowrap;
       min-width:140px; max-height:200px; overflow-y:auto;
@@ -438,7 +438,7 @@ function createStyles() {
     }
     .chat-embed-tool-menu .tool-menu-input-row input:focus { border-color:var(--accent); }
     .chat-embed-url-menu {
-      position:absolute; bottom:100%; left:0; z-index:20;
+      position:absolute; top:100%; left:0; z-index:20;
       background:var(--bg-surface); border:1px solid var(--border); border-radius:6px;
       padding:2px; box-shadow:0 2px 8px rgba(0,0,0,0.3); white-space:nowrap;
     }
@@ -908,6 +908,17 @@ function createStyles() {
       overflow:hidden; position:relative;
     }
     .chat-sidebar.visible { display:flex; }
+    .chat-sidebar.drop-target {
+      display:flex; min-width:60px; width:60px;
+      align-items:center; justify-content:center;
+      border:2px dashed var(--accent); background:color-mix(in oklch, var(--accent) 10%, var(--bg-darkest));
+    }
+    .chat-sidebar.drop-target::after {
+      content:"Pin"; font-size:11px; color:var(--accent); font-weight:600;
+      pointer-events:none;
+    }
+    .chat-sidebar.visible.drop-target { width:40%; min-width:15%; }
+    .chat-sidebar.visible.drop-target::after { display:none; }
     .chat-sidebar.collapsed { width:0!important; min-width:0!important; border-left:none; overflow:hidden; }
     .chat-root.sidebar-left { flex-direction:row-reverse; }
     .chat-root.sidebar-left .chat-sidebar { border-left:none; border-right:1px solid var(--border); }
@@ -2768,10 +2779,14 @@ export function Tool(handle, element, options) {
 		e.preventDefault()
 		e.stopPropagation()
 		dragCounter = 0
+		sidebar.classList.remove("drop-target")
 		for (const item of items) {
 			if (!item.url) continue
 			pinDoc(item.url, item.toolId || "default", item.name || "doc")
 		}
+	})
+	sidebar.addEventListener("dragleave", e => {
+		if (!sidebar.contains(e.relatedTarget)) sidebar.classList.remove("drop-target")
 	})
 
 	const sidebarStatus = document.createElement("div")
@@ -4670,8 +4685,12 @@ export function Tool(handle, element, options) {
 	root.addEventListener("dragenter", e => {
 		e.preventDefault()
 		dragCounter++
-		if (e.dataTransfer?.types?.includes("Files") && !hasPatchworkDrop(e.dataTransfer))
+		if (hasPatchworkDrop(e.dataTransfer)) {
+			// Show sidebar as drop target during patchwork drags
+			sidebar.classList.add("drop-target")
+		} else if (e.dataTransfer?.types?.includes("Files")) {
 			dropOverlay.classList.add("show")
+		}
 	})
 	root.addEventListener("dragleave", e => {
 		e.preventDefault()
@@ -4679,6 +4698,7 @@ export function Tool(handle, element, options) {
 		if (dragCounter <= 0) {
 			dragCounter = 0
 			dropOverlay.classList.remove("show")
+			sidebar.classList.remove("drop-target")
 		}
 	})
 	root.addEventListener("dragover", e => {
@@ -4688,6 +4708,7 @@ export function Tool(handle, element, options) {
 		e.preventDefault()
 		dragCounter = 0
 		dropOverlay.classList.remove("show")
+		sidebar.classList.remove("drop-target")
 		// Handle patchwork DnD drops (from sideboard or internal drag)
 		const patchworkItems = parsePatchworkDrop(e.dataTransfer)
 		if (patchworkItems) {
@@ -5899,7 +5920,7 @@ export function Tool(handle, element, options) {
 
 	function render() {
 		// Don't rebuild messages while user is editing a tool selector input
-		if (document.activeElement?.classList?.contains("chat-embed-tool-input")) return
+		if (document.activeElement?.closest?.(".chat-embed-tool-menu")) return
 
 		const doc = handle.doc()
 		if (!doc) return
@@ -6410,9 +6431,10 @@ export function Tool(handle, element, options) {
 					infobar.appendChild(titleEl)
 				}
 
-				// Tool pill (clickable → editable)
+				// Tool pill (clickable → tool selector menu)
 				const toolPill = document.createElement("span")
 				toolPill.className = "chat-embed-pill clickable"
+				toolPill.style.position = "relative"
 				toolPill.title = "Change tool"
 				const toolLabel = document.createElement("span")
 				toolLabel.className = "chat-embed-pill-label"
@@ -6426,48 +6448,104 @@ export function Tool(handle, element, options) {
 				})
 				toolPill.addEventListener("click", e => {
 					e.stopPropagation()
-					const inp = document.createElement("input")
-					inp.className = "chat-embed-tool-input"
-					inp.type = "text"
-					inp.placeholder = "tool id"
-					inp.value = toolId
-					inp.addEventListener("pointerdown", e => {
-						e.stopPropagation()
+					// Toggle existing menu
+					const existing = toolPill.querySelector(".chat-embed-tool-menu")
+					if (existing) { existing.remove(); return }
+
+					const menu = document.createElement("div")
+					menu.className = "chat-embed-tool-menu"
+
+					function applyTool(newToolId) {
+						handle.change(d => {
+							if (!d.toolOverrides) d.toolOverrides = {}
+							if (newToolId) d.toolOverrides[overrideKey] = newToolId
+							else delete d.toolOverrides[overrideKey]
+						})
+						// Update the patchwork-view directly so it reloads immediately
+						if (pv) {
+							if (newToolId) pv.setAttribute("tool-id", newToolId)
+							else pv.removeAttribute("tool-id")
+						}
+						menu.remove()
+						document.removeEventListener("click", closeMenu, true)
+						render()
+					}
+
+					// "default" option (clear override)
+					const defaultBtn = document.createElement("button")
+					defaultBtn.textContent = "default"
+					if (!toolId) defaultBtn.className = "active"
+					defaultBtn.addEventListener("click", ev => {
+						ev.stopPropagation()
+						applyTool("")
 					})
-					let committed = false
+					menu.appendChild(defaultBtn)
+
+					// Load compatible tools for this doc's datatype
+					;(async () => {
+						try {
+							const {getRegistry} = await import("@inkandswitch/patchwork-plugins")
+							const toolReg = getRegistry("patchwork:tool")
+							// Try to determine the doc's datatype from the embed or by loading the doc
+							let docType = embed.type || ""
+							if (!docType && embed.docUrl) {
+								try {
+									const dh = await window.repo.find(embed.docUrl)
+									const dd = dh.doc()
+									docType = dd?.["@patchwork"]?.type || ""
+								} catch {}
+							}
+							const allTools = toolReg.all()
+							for (const t of allTools) {
+								if (!t.id || t.id === "default") continue
+								const supports = t.supportedDatatypes
+								const matches = supports === "*" || (Array.isArray(supports) && docType && supports.includes(docType))
+								if (!matches) continue
+								const btn = document.createElement("button")
+								btn.textContent = t.id + (t.name && t.name !== t.id ? " (" + t.name + ")" : "")
+								if (t.id === toolId) btn.className = "active"
+								btn.addEventListener("click", ev => {
+									ev.stopPropagation()
+									applyTool(t.id)
+								})
+								menu.appendChild(btn)
+							}
+						} catch {}
+					})()
+
+					// Free-text input row at bottom
+					const inputRow = document.createElement("div")
+					inputRow.className = "tool-menu-input-row"
+					const inp = document.createElement("input")
+					inp.type = "text"
+					inp.placeholder = "custom tool id"
+					inp.value = toolId
+					inp.addEventListener("pointerdown", e => e.stopPropagation())
+					inp.addEventListener("click", e => e.stopPropagation())
 					inp.addEventListener("keydown", ev => {
 						ev.stopPropagation()
 						if (ev.key === "Enter") {
-							committed = true
-							const val = inp.value.trim()
-							handle.change(d => {
-								if (!d.toolOverrides) d.toolOverrides = {}
-								if (val) d.toolOverrides[overrideKey] = val
-								else delete d.toolOverrides[overrideKey]
-							})
-							inp.blur()
-							render()
+							applyTool(inp.value.trim())
 						} else if (ev.key === "Escape") {
-							committed = true
-							inp.blur()
-							render()
+							menu.remove()
+							document.removeEventListener("click", closeMenu, true)
 						}
 					})
-					inp.addEventListener("blur", () => {
-						if (committed) return
-						const val = inp.value.trim()
-						if (val !== toolId) {
-							handle.change(d => {
-								if (!d.toolOverrides) d.toolOverrides = {}
-								if (val) d.toolOverrides[overrideKey] = val
-								else delete d.toolOverrides[overrideKey]
-							})
-							render()
-						}
-					})
-					toolPill.replaceWith(inp)
+					inputRow.appendChild(inp)
+					menu.appendChild(inputRow)
+
+					toolPill.appendChild(menu)
 					inp.focus()
 					inp.select()
+
+					// Close on outside click
+					const closeMenu = ev => {
+						if (!menu.contains(ev.target) && ev.target !== toolPill) {
+							menu.remove()
+							document.removeEventListener("click", closeMenu, true)
+						}
+					}
+					setTimeout(() => document.addEventListener("click", closeMenu, true), 0)
 				})
 				infobar.appendChild(toolPill)
 
