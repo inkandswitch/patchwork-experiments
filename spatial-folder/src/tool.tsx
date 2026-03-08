@@ -1,18 +1,7 @@
-// Side-effect dynamic imports to coax esbuild into chunking packages separately
+// Side-effect dynamic imports to coax esbuild into chunking large packages separately
 import('react');
 import('react-dom/client');
 import('@tldraw/editor');
-import('@tldraw/state');
-import('@tldraw/state-react');
-import('@tldraw/store');
-import('@tldraw/tlschema');
-import('@tldraw/utils');
-import('@tldraw/validate');
-import('@tiptap/core');
-import('@tiptap/pm/state');
-import('@tiptap/pm/view');
-import('@tiptap/pm/model');
-import('@tiptap/react');
 
 import {
   Tldraw,
@@ -36,9 +25,9 @@ import {
   react,
   sortById,
   createBookmarkFromUrl,
+  toRichText,
 } from 'tldraw';
 import type { VecLike } from 'tldraw';
-import 'tldraw/tldraw.css';
 import { DocHandle, type AutomergeUrl, type DocHandleChangePayload } from '@automerge/automerge-repo';
 import { useDocument, useLocalAwareness, useRemoteAwareness, RepoContext } from '@automerge/automerge-repo-react-hooks';
 import { createRoot } from 'react-dom/client';
@@ -60,11 +49,11 @@ import '@inkandswitch/patchwork-elements';
 
 // ---- Logging ----------------------------------------------------------------
 
-const LOG = '[spatial-folder]';
+const LOG = '[space]';
 
 // ---- Types ------------------------------------------------------------------
 
-type SpatialFolderDoc = FolderDoc & {
+type SpaceDoc = FolderDoc & {
   /**
    * Automerge URL pointing at a dedicated tldraw document.
    * Legacy: may be a `{ [recordId: string]: any }` object — migrated on first load.
@@ -196,7 +185,7 @@ function useContactInfo() {
 }
 
 function usePresence(
-  handle: DocHandle<SpatialFolderDoc>,
+  handle: DocHandle<SpaceDoc>,
   editorRef: React.MutableRefObject<Editor | null>,
 ) {
   const { userId, name, color } = useContactInfo();
@@ -269,12 +258,21 @@ function usePresence(
 
 // ---- Tool entry point -------------------------------------------------------
 
-export const SpatialFolderTool: ToolRender = (handle, element) => {
+export const SpaceTool: ToolRender = (handle, element) => {
+  // Load tldraw CSS at runtime via <link>
+  if (!document.querySelector('link[data-space-tldraw-css]')) {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = new URL("./tldraw.css", import.meta.url).href;
+    link.setAttribute('data-space-tldraw-css', '');
+    document.head.appendChild(link);
+  }
+
   const repo = element.repo;
   const root = createRoot(element);
   root.render(
     <RepoContext.Provider value={repo}>
-      <SpatialFolderCanvas handle={handle as DocHandle<SpatialFolderDoc>} element={element} />
+      <SpaceCanvas handle={handle as DocHandle<SpaceDoc>} element={element} />
     </RepoContext.Provider>,
   );
   return () => {
@@ -285,17 +283,17 @@ export const SpatialFolderTool: ToolRender = (handle, element) => {
 
 // ---- React component --------------------------------------------------------
 
-function SpatialFolderCanvas({
+function SpaceCanvas({
   handle,
   element,
 }: {
-  handle: DocHandle<SpatialFolderDoc>;
+  handle: DocHandle<SpaceDoc>;
   element: ToolElement;
 }) {
   // useDocument is ONLY used to derive the folder-doc list key and for
   // the loading overlay.  We never pass the reactive `doc` into any
   // tldraw-touching code-path — that caused the previous unmount/flicker bug.
-  const [doc] = useDocument<SpatialFolderDoc>(handle.url);
+  const [doc] = useDocument<SpaceDoc>(handle.url);
 
   const editorRef = useRef<Editor | null>(null);
   const initializedRef = useRef(false);
@@ -381,12 +379,14 @@ function SpatialFolderCanvas({
     return () => { stale = true; };
   }, [docUrlsKey, handle, element.repo]);
 
-  // ---- patchwork:open-document → pan/zoom to matching shape -----------------
-  // Only handle events originating from the sideboard panel; let others bubble.
+  // ---- patchwork:open-document → always stop, optionally zoom ---------------
   const sideboardRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const handler = (e: Event) => {
-      // Only intercept events from inside the sideboard panel
+      // Never let open-document events escape the space
+      e.stopPropagation();
+
+      // If the event came from inside the sideboard, zoom to the shape
       const sideboardEl = sideboardRef.current;
       if (!sideboardEl) return;
       const path = e.composedPath();
@@ -397,7 +397,6 @@ function SpatialFolderCanvas({
       const detail = (e as CustomEvent).detail as { url?: string };
       if (!detail?.url) return;
 
-      // Find the shape whose docUrl matches the requested URL
       const targetId = makeShapeId(detail.url);
       const shape = editor.getShape(targetId);
       if (!shape) {
@@ -405,17 +404,15 @@ function SpatialFolderCanvas({
         return;
       }
 
-      // Stop the event from bubbling further — we're handling it
-      e.stopPropagation();
-
-      // Select the shape and zoom to it with some padding
       editor.setSelectedShapes([targetId]);
       editor.zoomToSelection({ animation: { duration: 300 } });
       console.log(LOG, 'open-document: zoomed to shape for', detail.url);
     };
 
     element.addEventListener('patchwork:open-document', handler);
-    return () => element.removeEventListener('patchwork:open-document', handler);
+    return () => {
+      element.removeEventListener('patchwork:open-document', handler);
+    };
   }, [element]);
 
   // ---- Cleanup on unmount ---------------------------------------------------
@@ -441,23 +438,23 @@ function SpatialFolderCanvas({
 
   return (
     <div
-      className="spatial-folder-root"
+      className="pw-space-root"
       style={{ width: '100%', height: '100%', position: 'relative' }}
     >
       <style>{`
-        .spatial-folder-root > .tl-container .tl-background {
+        .pw-space-root > .tl-container .tl-background {
           background: #e6ddf0 !important;
         }
         /* Make embed iframes (YouTube, etc.) always interactive */
-        .spatial-folder-root .tl-embed-container iframe.tl-embed {
+        .pw-space-root .tl-embed-container iframe.tl-embed {
           pointer-events: auto !important;
           z-index: auto !important;
         }
         /* Titlebar for embed shapes so they can be dragged */
-        .spatial-folder-root .tl-embed-container {
+        .pw-space-root .tl-embed-container {
           position: relative;
         }
-        .spatial-folder-root .tl-embed-container::before {
+        .pw-space-root .tl-embed-container::before {
           content: '';
           position: absolute;
           top: 0;
@@ -478,7 +475,7 @@ function SpatialFolderCanvas({
           pointer-events: auto;
           cursor: grab;
         }
-        .spatial-folder-root .tl-embed-container iframe.tl-embed {
+        .pw-space-root .tl-embed-container iframe.tl-embed {
           margin-top: 18px !important;
           height: calc(100% - 18px) !important;
           border-radius: 0 0 8px 8px !important;
@@ -487,7 +484,7 @@ function SpatialFolderCanvas({
         /* ---- Move all UI panels to the bottom ---- */
 
         /* Remove the top section from grid flow so it doesn't push the toolbar down */
-        .spatial-folder-root .tlui-layout__top {
+        .pw-space-root .tlui-layout__top {
           position: absolute;
           width: 0;
           height: 0;
@@ -496,12 +493,12 @@ function SpatialFolderCanvas({
         }
 
         /* Keep the toolbar centered by not sharing a grid row with __top */
-        .spatial-folder-root .tlui-layout__bottom {
+        .pw-space-root .tlui-layout__bottom {
           grid-row: 5;
         }
 
         /* Fixed-position hamburger in the bottom-left */
-        .spatial-folder-root .tlui-menu-zone {
+        .pw-space-root .tlui-menu-zone {
           position: fixed;
           bottom: 12px;
           left: 12px;
@@ -512,7 +509,7 @@ function SpatialFolderCanvas({
         }
 
         /* ---- Replace hamburger icon with bold semicolon ---- */
-        .spatial-folder-root .tlui-menu-zone [data-testid="main-menu.button"] .tlui-icon {
+        .pw-space-root .tlui-menu-zone [data-testid="main-menu.button"] .tlui-icon {
           mask: none !important;
           -webkit-mask: none !important;
           background-color: transparent !important;
@@ -520,7 +517,7 @@ function SpatialFolderCanvas({
           align-items: center;
           justify-content: center;
         }
-        .spatial-folder-root .tlui-menu-zone [data-testid="main-menu.button"] .tlui-icon::after {
+        .pw-space-root .tlui-menu-zone [data-testid="main-menu.button"] .tlui-icon::after {
           content: ";";
           font-weight: 900;
           font-size: 18px;
@@ -671,7 +668,7 @@ function SideboardPanel({ containerRef, docUrl, title }: { containerRef: React.R
 // =============================================================================
 
 async function resolveTldrawHandle(
-  handle: DocHandle<SpatialFolderDoc>,
+  handle: DocHandle<SpaceDoc>,
   repo: any,
 ): Promise<DocHandle<TldrawDoc>> {
   const doc = handle.doc();
@@ -759,7 +756,7 @@ async function resolveTldrawHandle(
 
 async function initializeSync(
   editor: Editor,
-  handle: DocHandle<SpatialFolderDoc>,
+  handle: DocHandle<SpaceDoc>,
   repo: any,
   preventPatchApplicationsRef: React.MutableRefObject<boolean>,
   isReconcilingRef: React.MutableRefObject<boolean>,
@@ -806,10 +803,25 @@ async function initializeSync(
 
       preventPatchApplicationsRef.current = true;
       try {
-        // Persist tldraw records to the dedicated tldraw doc.
-        tldrawHandle.change((d: any) => {
-          applyTLStoreChangesToAutomerge(d, changes);
-        });
+        // Filter out ephemeral shapes (e.g. transcript crawl) before persisting.
+        const isEphemeral = (r: any) => r.meta?.ephemeral === true;
+        const filteredChanges = {
+          added: Object.fromEntries(Object.entries(changes.added).filter(([, r]) => !isEphemeral(r))),
+          updated: Object.fromEntries(Object.entries(changes.updated).filter(([, [, after]]: any) => !isEphemeral(after))),
+          removed: Object.fromEntries(Object.entries(changes.removed).filter(([, r]) => !isEphemeral(r))),
+        };
+
+        // Only persist if there are non-ephemeral changes.
+        const hasChanges = Object.keys(filteredChanges.added).length > 0 ||
+          Object.keys(filteredChanges.updated).length > 0 ||
+          Object.keys(filteredChanges.removed).length > 0;
+
+        if (hasChanges) {
+          // Persist tldraw records to the dedicated tldraw doc.
+          tldrawHandle.change((d: any) => {
+            applyTLStoreChangesToAutomerge(d, filteredChanges);
+          });
+        }
 
         // When patchwork-doc shapes are deleted, remove from the folder doc list.
         // When patchwork-doc shapes are added (e.g. undo), re-insert into the folder doc list.
@@ -1124,6 +1136,152 @@ async function initializeSync(
   );
 
   // ------------------------------------------------------------------
+  // 3b-3. Handle drops with text/x-patchwork-urls
+  // ------------------------------------------------------------------
+
+  const container = editor.getContainer();
+
+  const handlePatchworkDrop = async (e: DragEvent) => {
+    const raw = e.dataTransfer?.getData('text/x-patchwork-urls');
+    if (!raw) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    let urls: string[];
+    try {
+      urls = JSON.parse(raw);
+      if (!Array.isArray(urls)) return;
+    } catch {
+      return;
+    }
+
+    const dropPoint = editor.screenToPage({ x: e.clientX, y: e.clientY });
+
+    for (let i = 0; i < urls.length; i++) {
+      const url = urls[i] as AutomergeUrl;
+      const shapeId = makeShapeId(url);
+
+      let docName = '';
+      let docType = '';
+      try {
+        const docHandle = await repo.find(url);
+        const doc = docHandle.doc();
+        if (doc) {
+          docType = doc['@patchwork']?.type || '';
+          docName = doc.title || doc.name || '';
+        }
+      } catch {
+        // Proceed with empty metadata
+      }
+
+      handle.change((d: any) => {
+        if (!d.docs) d.docs = [];
+        d.docs.push({ name: docName, type: docType, url });
+      });
+
+      editor.createShape({
+        id: shapeId,
+        type: PATCHWORK_DOC_SHAPE_TYPE,
+        x: dropPoint.x + i * 30 - DEFAULT_W / 2,
+        y: dropPoint.y + i * 30 - DEFAULT_H / 2,
+        props: {
+          w: DEFAULT_W,
+          h: DEFAULT_H,
+          docUrl: url,
+          docName,
+          docType,
+          toolId: '',
+        },
+      } as any);
+
+      console.log(LOG, 'dropped patchwork doc:', url, docName);
+    }
+  };
+
+  const handleDragOver = (e: DragEvent) => {
+    if (e.dataTransfer?.types.includes('text/x-patchwork-urls')) {
+      e.preventDefault();
+    }
+  };
+
+  // Use capture phase so we intercept before tldraw's handlers
+  container.addEventListener('drop', handlePatchworkDrop, true);
+  container.addEventListener('dragover', handleDragOver, true);
+  cleanupFnsRef.current.push(() => {
+    container.removeEventListener('drop', handlePatchworkDrop, true);
+    container.removeEventListener('dragover', handleDragOver, true);
+  });
+
+  // ------------------------------------------------------------------
+  // 3b-4. Star Wars transcript crawl — chee:text-stream listener
+  // ------------------------------------------------------------------
+
+  const CRAWL_LINE_HEIGHT = 32;
+  const CRAWL_MAX_LINES = 30;
+
+  const handleTextStream = (e: Event) => {
+    const { text, speaker, sourceUrl } = (e as CustomEvent).detail;
+    if (!sourceUrl) return;
+
+    // Find the patchwork-doc shape whose docUrl matches sourceUrl
+    const allShapes = editor.getCurrentPageShapes();
+    const sourceShape = allShapes.find(
+      (s: any) => s.type === PATCHWORK_DOC_SHAPE_TYPE && s.props?.docUrl === sourceUrl,
+    );
+    if (!sourceShape) return;
+
+    // Gather existing crawl shapes for this source
+    const crawlShapes = allShapes
+      .filter((s: any) => s.meta?.ephemeral && s.meta?.crawlSource === sourceUrl)
+      .sort((a, b) => b.y - a.y); // newest (lowest y, closest to source) first
+
+    // Shift all existing crawl shapes up by one line
+    for (const shape of crawlShapes) {
+      editor.updateShape({
+        id: shape.id,
+        type: shape.type,
+        y: shape.y - CRAWL_LINE_HEIGHT,
+      });
+    }
+
+    // Remove oldest shapes if over the cap
+    if (crawlShapes.length >= CRAWL_MAX_LINES) {
+      const toRemove = crawlShapes.slice(CRAWL_MAX_LINES - 1);
+      editor.deleteShapes(toRemove.map((s) => s.id));
+    }
+
+    // Create a new text shape just above the source shape
+    const sourceBounds = editor.getShapePageBounds(sourceShape);
+    if (!sourceBounds) return;
+    const sourceCenterX = sourceBounds.x + sourceBounds.w / 2;
+
+    const label = speaker ? `${speaker}: ${text}` : text;
+
+    editor.createShape({
+      id: createShapeId(),
+      type: 'text',
+      x: sourceCenterX - 150,
+      y: sourceBounds.y - CRAWL_LINE_HEIGHT - 8,
+      props: {
+        richText: toRichText(label),
+        autoSize: true,
+        size: 's',
+        w: 300,
+      },
+      meta: {
+        ephemeral: true,
+        crawlSource: sourceUrl,
+      },
+    });
+  };
+
+  container.addEventListener('chee:text-stream', handleTextStream);
+  cleanupFnsRef.current.push(() => {
+    container.removeEventListener('chee:text-stream', handleTextStream);
+  });
+
+  // ------------------------------------------------------------------
   // 3c. Ensure patchwork-doc shapes exist for every folder item
   //     These are created as *user* changes so the store listener
   //     (step 1) persists them to automerge automatically.
@@ -1145,7 +1303,7 @@ async function initializeSync(
   // 5.  Restore camera from localStorage, or zoom to fit
   // ------------------------------------------------------------------
 
-  const cameraKey = `spatial-folder-camera:${handle.url}`;
+  const cameraKey = `space-camera:${handle.url}`;
 
   const shapeCount = editor.getCurrentPageShapes().length;
   const savedCamera = (() => {
@@ -1209,7 +1367,7 @@ async function initializeSync(
   // and send the "listening" handshake so they post state-change events.
   const initYTIframes = () => {
     const iframes = document.querySelectorAll(
-      '.spatial-folder-root .tl-embed-container iframe.tl-embed',
+      '.pw-space-root .tl-embed-container iframe.tl-embed',
     ) as NodeListOf<HTMLIFrameElement>;
     for (const iframe of iframes) {
       if (!iframe.src.includes('youtube.com/embed/')) continue;
@@ -1260,7 +1418,7 @@ async function initializeSync(
     // Find the videoId of the iframe that sent this message.
     const findVideoId = (): string | null => {
       const iframes = document.querySelectorAll(
-        '.spatial-folder-root .tl-embed-container iframe.tl-embed',
+        '.pw-space-root .tl-embed-container iframe.tl-embed',
       ) as NodeListOf<HTMLIFrameElement>;
       // Try matching by event.source first
       for (const iframe of iframes) {
@@ -1330,7 +1488,7 @@ async function initializeSync(
 
     ytSuppressBroadcast = true;
     const iframes = document.querySelectorAll(
-      '.spatial-folder-root .tl-embed-container iframe.tl-embed',
+      '.pw-space-root .tl-embed-container iframe.tl-embed',
     ) as NodeListOf<HTMLIFrameElement>;
 
     for (const iframe of iframes) {

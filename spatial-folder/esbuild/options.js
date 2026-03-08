@@ -1,4 +1,5 @@
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, rmSync, copyFileSync, mkdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import process from 'node:process';
 import { execSync } from 'node:child_process';
 import externals from '@inkandswitch/patchwork-bootloader/externals';
@@ -13,6 +14,18 @@ const plugins = [
       build.onStart(() => {
         const { outdir } = build.initialOptions;
         if (outdir && existsSync(outdir)) rmSync(outdir, { recursive: true });
+      });
+    },
+  },
+  {
+    name: 'copy-tldraw-css',
+    setup(build) {
+      build.onEnd(() => {
+        const require = createRequire(import.meta.url);
+        const src = require.resolve('tldraw/tldraw.css');
+        const { outdir } = build.initialOptions;
+        mkdirSync(outdir, { recursive: true });
+        copyFileSync(src, `${outdir}/tldraw.css`);
       });
     },
   },

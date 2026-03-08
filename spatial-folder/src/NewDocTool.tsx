@@ -35,7 +35,7 @@ import { PATCHWORK_DOC_SHAPE_TYPE } from './PatchworkDocShape';
 import { makeShapeId as makeDeterministicShapeId } from './tool';
 
 // ---------------------------------------------------------------------------
-// Per-editor context — keyed by editor instance so nested spatial-folders
+// Per-editor context — keyed by editor instance so nested spaces
 // (subfolders rendered inside a parent) don't overwrite each other.
 // ---------------------------------------------------------------------------
 
@@ -179,14 +179,14 @@ export class NewDocShapeTool extends StateNode {
 
     const ctx = _contextByEditor.get(this.editor);
     if (!ctx) {
-      console.warn('[spatial-folder] NewDocTool: context not set for this editor');
+      console.warn('[space] NewDocTool: context not set for this editor');
       this.editor.setCurrentTool('select');
       return;
     }
 
     const datatypeId = _selectedDatatypeId;
     if (!datatypeId) {
-      console.warn('[spatial-folder] NewDocTool: no datatype selected');
+      console.warn('[space] NewDocTool: no datatype selected');
       this.editor.setCurrentTool('select');
       return;
     }
@@ -277,9 +277,9 @@ export class NewDocShapeTool extends StateNode {
         }
 
         editor.setSelectedShapes([deterministicId]);
-        console.log('[spatial-folder] new doc created:', datatypeId, docUrl);
+        console.log('[space] new doc created:', datatypeId, docUrl);
       } catch (err) {
-        console.error('[spatial-folder] new doc creation failed:', err);
+        console.error('[space] new doc creation failed:', err);
         editor.updateShape({
           id: shapeId,
           type: PATCHWORK_DOC_SHAPE_TYPE,

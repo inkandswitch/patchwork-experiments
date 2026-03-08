@@ -1,4 +1,4 @@
-# Spatial Folder
+# Space
 
 A tldraw-based spatial folder viewer for Patchwork. Renders folder contents as draggable, resizable windows on an infinite canvas with a Mac OS System 7.5 aesthetic.
 
@@ -15,8 +15,8 @@ Always build before syncing. Use `pushwork sync` (not `npx pushwork sync`).
 
 ### Source Files
 
-- **`src/index.ts`** — Plugin entry point. Registers "spatial-folder-viewer" tool for "folder" datatype.
-- **`src/tool.tsx`** — Main component (`SpatialFolderCanvas`). Manages:
+- **`src/index.ts`** — Plugin entry point. Registers "space" tool for "folder" datatype.
+- **`src/tool.tsx`** — Main component (`SpaceCanvas`). Manages:
   - Tldraw editor setup and automerge sync (bidirectional)
   - Folder doc list reconciliation (docs array <-> tldraw shapes)
   - Presence/cursors for collaboration
@@ -29,7 +29,7 @@ Always build before syncing. Use `pushwork sync` (not `npx pushwork sync`).
 
 ### Document Structure
 
-The folder doc (`SpatialFolderDoc`) extends `FolderDoc` with:
+The folder doc (`SpaceDoc`) extends `FolderDoc` with:
 
 ```ts
 {

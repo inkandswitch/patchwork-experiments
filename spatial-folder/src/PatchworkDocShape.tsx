@@ -501,7 +501,7 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
   const handleOpenDocument = useCallback(() => {
     const el = containerRef.current;
     if (!el || !docUrl) return;
-    console.log('[spatial-folder] patchwork:open-document', { url: docUrl, toolId: toolId || undefined });
+    console.log('[space] patchwork:open-document', { url: docUrl, toolId: toolId || undefined });
     openDocument(el, docUrl as AutomergeUrl, toolId || undefined);
   }, [docUrl, toolId]);
 
@@ -581,6 +581,11 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
       {sparkling && <Sparkles />}
       {/* ---- Mac OS 7.5 Titlebar ---- */}
       <div
+        onPointerDown={() => {
+          if (isEditingShape) {
+            editor.setEditingShape(null);
+          }
+        }}
         style={{
           position: 'relative',
           display: 'flex',
