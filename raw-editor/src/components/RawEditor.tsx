@@ -9,7 +9,6 @@ import {
   useDocHandle,
   RepoContext,
 } from "@automerge/automerge-repo-react-hooks";
-import type { OpenDocumentEventDetail } from "@inkandswitch/patchwork-elements";
 import ReactJson, { InteractionProps } from "@microlink/react-json-view";
 import { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -44,13 +43,9 @@ function usePrefersDarkMode() {
   return isDark;
 }
 
-function createOpenEvent(detail: OpenDocumentEventDetail) {
-  const openEvent = new CustomEvent("patchwork:open-document", {
-    detail,
-    bubbles: true,
-    composed: true,
-  });
-  return openEvent;
+function automergeUrlToHashUrl(url: string): string {
+  const id = url.replace(/^automerge:/, "");
+  return `/#doc=${id}&tool=raw`;
 }
 
 export const RawEditor = ({
@@ -73,35 +68,34 @@ export const RawEditor = ({
   useEffect(() => {
     if (!containerNode) return;
 
-    const markAutomergeUrls = () => {
+    const wrapAutomergeUrls = () => {
       const stringElements = containerNode.querySelectorAll(".string-value");
       stringElements.forEach((el) => {
+        if (el.querySelector("a.automerge-url")) return;
         const text = el.textContent || "";
-        if (
-          isValidAutomergeUrl(text.slice(1, -1)) &&
-          !el.classList.contains("automerge-url")
-        ) {
-          el.classList.add("automerge-url");
+        const url = text.slice(1, -1); // strip quotes
+        if (isValidAutomergeUrl(url)) {
+          el.textContent = "";
+          el.appendChild(document.createTextNode('"'));
+          const a = document.createElement("a");
+          a.href = automergeUrlToHashUrl(url);
+          a.textContent = url;
+          a.className = "automerge-url";
+          el.appendChild(a);
+          el.appendChild(document.createTextNode('"'));
         }
       });
     };
 
-    // Initial mark
-    markAutomergeUrls();
+    // Initial pass
+    wrapAutomergeUrls();
 
     // Watch for DOM changes (e.g., when editing and canceling in react-json-view)
-    const observer = new MutationObserver(markAutomergeUrls);
+    const observer = new MutationObserver(wrapAutomergeUrls);
     observer.observe(containerNode, { childList: true, subtree: true });
 
     return () => observer.disconnect();
   }, [containerNode, doc]);
-
-  const onSelectAutomergeUrl = useCallback(
-    (url: AutomergeUrl) => {
-      element.dispatchEvent(createOpenEvent({ url, toolId: "raw" }));
-    },
-    [element],
-  );
 
   const onEdit = useCallback(
     ({ namespace, new_value, name }: InteractionProps) => {
@@ -155,22 +149,6 @@ export const RawEditor = ({
     [changeDoc],
   );
 
-  const onSelect = useCallback(function (arg: unknown) {
-    if (typeof arg !== "object" || arg === null || !("value" in arg)) {
-      return;
-    }
-    const { value } = arg;
-    if (!(typeof value === "string")) {
-      return;
-    }
-
-    if (isValidAutomergeUrl(value)) {
-      onSelectAutomergeUrl(value);
-      // } else if (isServiceWorkerUrl(value)) {
-      //   onSelectAutomergeUrl(parseServiceWorkerUrl(value));
-    }
-  }, []);
-
   // lifted from https://gist.github.com/davalapar/d0a5ba7cce4bc599f54800da22926da2
   const onDownloadDoc = useCallback(
     function () {
@@ -215,7 +193,6 @@ export const RawEditor = ({
           onEdit={onEdit}
           onAdd={onAdd}
           onDelete={onDelete}
-          onSelect={onSelect}
           theme={isDark ? "monokai" : "rjv-default"}
           style={{ backgroundColor: "transparent" }}
         />
