@@ -1,0 +1,344 @@
+import {
+	For,
+	Show,
+	createSignal,
+	createMemo,
+	createEffect,
+	onMount,
+	onCleanup,
+	batch,
+} from "solid-js"
+import type {AutomergeUrl} from "@automerge/automerge-repo"
+import {useChat} from "../context/ChatContext"
+import {useIdentity} from "../context/IdentityContext"
+import {usePresence} from "../context/PresenceContext"
+import type {ChatMessage, ChatMessageRef} from "../types"
+import {MessageRow} from "./MessageRow"
+import {formatTimeGap} from "../lib/helpers"
+
+export function MessageList(props: {
+	replyToId: string | null
+	onReply: (msgId: string) => void
+	onReact: (idx: number, anchorEl: HTMLElement) => void
+}) {
+	let messagesRef!: HTMLDivElement
+	const {handle, doc, repo} = useChat()
+	const {myName} = useIdentity()
+	const {peerEmoticons} = usePresence()
+
+	// Message doc cache (for ref messages)
+	const [msgDocCache, setMsgDocCache] = createSignal(
+		new Map<string, {data: ChatMessage; handle: any}>()
+	)
+
+	// Track which URLs we've started resolving — prevents duplicate async calls
+	const pendingResolves = new Set<string>()
+	const subscribedUrls = new Set<string>()
+	const subscriptions: {handle: any; cb: () => void}[] = []
+
+	onCleanup(() => {
+		for (const sub of subscriptions) {
+			try { sub.handle.off("change", sub.cb) } catch {}
+		}
+		subscriptions.length = 0
+	})
+
+	async function resolveMessageDoc(url: AutomergeUrl) {
+		if (pendingResolves.has(url)) return
+		pendingResolves.add(url)
+		try {
+			const mh = await repo.find(url)
+			const data = mh.doc() as ChatMessage
+			if (data) {
+				setMsgDocCache(prev => {
+					const next = new Map(prev)
+					next.set(url, {data, handle: mh})
+					return next
+				})
+			}
+			if (!subscribedUrls.has(url)) {
+				subscribedUrls.add(url)
+				const cb = () => {
+					const updated = mh.doc() as ChatMessage
+					if (updated) {
+						setMsgDocCache(prev => {
+							const next = new Map(prev)
+							next.set(url, {data: updated, handle: mh})
+							return next
+						})
+					}
+				}
+				mh.on("change", cb)
+				subscriptions.push({handle: mh, cb})
+			}
+		} catch (e) {
+			console.warn("[Chat] resolve msg doc:", e)
+		}
+	}
+
+	// Effect to load uncached message refs — separated from the memo to avoid
+	// triggering side effects inside a computation
+	createEffect(() => {
+		const d = doc()
+		if (!d) return
+		const rawEntries = d.messages || []
+		const cache = msgDocCache()
+
+		for (const entry of rawEntries as any[]) {
+			if (entry.ref && entry.url && !cache.has(entry.url) && !pendingResolves.has(entry.url)) {
+				resolveMessageDoc(entry.url)
+			}
+		}
+	})
+
+	// Stable message object cache — prevents <For> from remounting items
+	// when the memo re-evaluates but the message data hasn't changed
+	const stableMessages = new Map<string, ChatMessage>()
+
+	// Resolve messages from doc entries (pure computation, no side effects)
+	const messages = createMemo(() => {
+		const d = doc()
+		if (!d) return []
+		const rawEntries = d.messages || []
+		const cache = msgDocCache()
+		const result: ChatMessage[] = []
+		const usedKeys = new Set<string>()
+
+		for (let ri = 0; ri < rawEntries.length; ri++) {
+			const entry = rawEntries[ri] as any
+			if (entry.ref && entry.url) {
+				const cached = cache.get(entry.url)
+				if (cached) {
+					const key = entry.url
+					usedKeys.add(key)
+					const prev = stableMessages.get(key)
+					// Reuse the same object reference if data hasn't changed
+					if (prev && prev._rawIdx === ri &&
+						prev.id === cached.data.id &&
+						prev.timestamp === cached.data.timestamp &&
+						prev.text === cached.data.text &&
+						prev.streaming === cached.data.streaming &&
+						prev.richBlocks?.length === cached.data.richBlocks?.length &&
+						reactionsEqual(prev.reactions, cached.data.reactions)) {
+						result.push(prev)
+					} else {
+						const msg = {...cached.data, _rawIdx: ri, _ref: entry}
+						// Clear stale streaming flag (>2 min old)
+						if (msg.streaming && msg.timestamp && Date.now() - msg.timestamp > 120000) {
+							msg.streaming = false
+						}
+						stableMessages.set(key, msg)
+						result.push(msg)
+					}
+				} else {
+					const key = "_loading_" + entry.url
+					usedKeys.add(key)
+					const prev = stableMessages.get(key)
+					if (prev) {
+						result.push(prev)
+					} else {
+						const msg: ChatMessage = {
+							_loading: true,
+							_rawIdx: ri,
+							id: key,
+							timestamp: entry.timestamp || 0,
+							name: "",
+							text: "",
+						}
+						stableMessages.set(key, msg)
+						result.push(msg)
+					}
+				}
+			} else {
+				// Inline message — use index as key
+				const key = "_inline_" + ri
+				usedKeys.add(key)
+				const msg = {...entry, _rawIdx: ri}
+				stableMessages.set(key, msg)
+				result.push(msg)
+			}
+		}
+
+		// Clean up stale entries
+		for (const key of stableMessages.keys()) {
+			if (!usedKeys.has(key)) stableMessages.delete(key)
+		}
+
+		return result
+	})
+
+	// Message map for reply lookups
+	const msgMap = createMemo(() => {
+		const map = new Map<string, ChatMessage>()
+		for (const m of messages()) {
+			if (m.id) map.set(m.id, m)
+		}
+		return map
+	})
+
+	// Resolve emoticon URLs for rendering
+	const emoticonBlobUrls = createMemo(() => {
+		const urls: Record<string, string> = {}
+		for (const [, emoticons] of peerEmoticons()) {
+			for (const [name, url] of Object.entries(emoticons)) {
+				if (!urls[name]) urls[name] = "/" + encodeURIComponent(url) + "/"
+			}
+		}
+		for (const msg of messages()) {
+			if (msg.emoticons) {
+				for (const [name, url] of Object.entries(msg.emoticons)) {
+					if (!urls[name]) urls[name] = "/" + encodeURIComponent(url) + "/"
+				}
+			}
+		}
+		return urls
+	})
+
+	// Auto-scroll to bottom
+	const [wasAtBottom, setWasAtBottom] = createSignal(true)
+
+	function checkScroll() {
+		if (!messagesRef) return
+		const atBottom =
+			messagesRef.scrollHeight - messagesRef.scrollTop - messagesRef.clientHeight < 40
+		setWasAtBottom(atBottom)
+	}
+
+	createEffect(() => {
+		const _msgs = messages()
+		if (wasAtBottom() && messagesRef) {
+			requestAnimationFrame(() => {
+				messagesRef.scrollTop = messagesRef.scrollHeight
+			})
+		}
+	})
+
+	// Continuation logic
+	function isContinuation(msg: ChatMessage, prevMsg: ChatMessage | undefined): boolean {
+		if (!prevMsg) return false
+		if (msg.replyTo) return false
+		if (msg.name !== prevMsg.name) return false
+		if (msg.timestamp - prevMsg.timestamp > 5 * 60 * 1000) return false
+		return true
+	}
+
+	// Pre-compute per-message display metadata so <For> callback doesn't read messages()
+	const messagesMeta = createMemo(() => {
+		const msgs = messages()
+		return msgs.map((msg, i) => {
+			const prev = i > 0 ? msgs[i - 1] : undefined
+			return {
+				isContinuation: isContinuation(msg, prev),
+				showTimeGap: prev ? msg.timestamp - prev.timestamp >= 120000 : false,
+			}
+		})
+	})
+
+	function toggleReaction(idx: number, emoji: string) {
+		const d = doc()
+		const entry = d?.messages?.[idx] as any
+		if (!entry) return
+		const name = myName()
+
+		if (entry.ref && entry.url) {
+			const cached = msgDocCache().get(entry.url)
+			if (!cached) return
+			cached.handle.change((d: any) => {
+				if (!d.reactions) d.reactions = {}
+				if (!d.reactions[emoji]) d.reactions[emoji] = []
+				const arr = d.reactions[emoji]
+				const i = arr.indexOf(name)
+				if (i >= 0) {
+					arr.splice(i, 1)
+					if (arr.length === 0) delete d.reactions[emoji]
+				} else arr.push(name)
+			})
+		} else {
+			handle.change((d: any) => {
+				const msg = d.messages[idx]
+				if (!msg) return
+				if (!msg.reactions) msg.reactions = {}
+				if (!msg.reactions[emoji]) msg.reactions[emoji] = []
+				const arr = msg.reactions[emoji]
+				const i = arr.indexOf(name)
+				if (i >= 0) {
+					arr.splice(i, 1)
+					if (arr.length === 0) delete msg.reactions[emoji]
+				} else arr.push(name)
+			})
+		}
+	}
+
+	function deleteMessage(idx: number) {
+		handle.change((d: any) => {
+			if (!d.messages || idx < 0 || idx >= d.messages.length) return
+			d.messages.splice(idx, 1)
+		})
+	}
+
+	function scrollToMsg(msgId: string) {
+		const el = messagesRef?.querySelector(`[data-msg-id="${msgId}"]`)
+		if (el) {
+			el.scrollIntoView({behavior: "smooth", block: "center"})
+			el.classList.add("chat-msg-highlight")
+			setTimeout(() => el.classList.remove("chat-msg-highlight"), 1500)
+		}
+	}
+
+	return (
+		<div
+			ref={messagesRef}
+			class="chat-messages"
+			onScroll={checkScroll}
+		>
+			<Show
+				when={messages().length > 0}
+				fallback={<div class="chat-empty">no messages yet. say hello</div>}
+			>
+				<For each={messages()}>
+					{(msg, i) => {
+						const meta = () => messagesMeta()[i()]
+						return (
+						<div data-msg-id={msg.id}>
+							{meta()?.showTimeGap && (
+								<div class="chat-time-gap">{formatTimeGap(msg.timestamp)}</div>
+							)}
+							<MessageRow
+								msg={msg}
+								isContinuation={meta()?.isContinuation ?? false}
+								replyToMsg={msg.replyTo ? msgMap().get(msg.replyTo) : undefined}
+								emoticonBlobUrls={emoticonBlobUrls()}
+								onReply={props.onReply}
+								onReact={props.onReact}
+								onToggleReaction={toggleReaction}
+								onDelete={deleteMessage}
+								onScrollToMsg={scrollToMsg}
+							/>
+						</div>
+						)
+					}}
+				</For>
+			</Show>
+		</div>
+	)
+}
+
+function reactionsEqual(
+	a: Record<string, string[]> | undefined,
+	b: Record<string, string[]> | undefined
+): boolean {
+	if (a === b) return true
+	if (!a || !b) return false
+	const ka = Object.keys(a)
+	const kb = Object.keys(b)
+	if (ka.length !== kb.length) return false
+	for (const k of ka) {
+		const va = a[k]
+		const vb = b[k]
+		if (!vb || va.length !== vb.length) return false
+		for (let i = 0; i < va.length; i++) {
+			if (va[i] !== vb[i]) return false
+		}
+	}
+	return true
+}

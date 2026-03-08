@@ -1,0 +1,1456 @@
+import {createSignal, createEffect, Show, onMount, onCleanup} from "solid-js"
+import type {DocHandle, AutomergeUrl} from "@automerge/automerge-repo"
+import type {ChatDoc} from "../types"
+import {ChatProvider, useChat} from "../context/ChatContext"
+import {IdentityProvider, useIdentity} from "../context/IdentityContext"
+import {ThemeProvider} from "../context/ThemeContext"
+import {PresenceProvider, usePresence} from "../context/PresenceContext"
+import {PresenceBar} from "./PresenceBar"
+import {MessageList} from "./MessageList"
+import {TypingBar} from "./TypingBar"
+import {InputArea} from "./InputArea"
+import {EmojiPicker} from "./EmojiPicker"
+import {EmoticonAddDialog} from "./EmoticonAddDialog"
+import {FontAddDialog} from "./FontAddDialog"
+import {Sidebar} from "./Sidebar"
+import {Lightbox} from "./Lightbox"
+import {ModelDialog} from "./ModelDialog"
+import {generateId} from "../lib/helpers"
+import {getNotificationSound, showOSNotification, setFaviconUnread} from "../lib/notifications"
+import {loadBlobUrl} from "../lib/blob-cache"
+import "../styles/chat.css"
+
+export function ChatRoot(props: {
+	handle: DocHandle<ChatDoc>
+	element: HTMLElement
+}) {
+	let rootRef!: HTMLDivElement
+
+	// Emoji picker state
+	const [emojiPickerState, setEmojiPickerState] = createSignal<{
+		open: boolean
+		targetIdx: number | null
+		anchorEl: HTMLElement | null
+	}>({open: false, targetIdx: null, anchorEl: null})
+
+	// Reply state
+	const [replyToId, setReplyToId] = createSignal<string | null>(null)
+
+	// Dialog state
+	const [showEmoticonDialog, setShowEmoticonDialog] = createSignal(false)
+	const [showFontDialog, setShowFontDialog] = createSignal(false)
+
+	// Sidebar state
+	const [sidebarVisible, setSidebarVisible] = createSignal(false)
+
+	// Model dialog state
+	const [showModelDialog, setShowModelDialog] = createSignal(false)
+
+	// Drop state
+	const [showDropOverlay, setShowDropOverlay] = createSignal(false)
+	const [pendingFiles, setPendingFiles] = createSignal<
+		{blob: Blob; dataUrl?: string; name: string; mimeType: string}[]
+	>([])
+	const [pendingEmbeds, setPendingEmbeds] = createSignal<
+		{url: string; toolId?: string; name?: string; type?: string}[]
+	>([])
+	let dragCounter = 0
+
+	// Computer/LLM state
+	const [computerActive, setComputerActive] = createSignal(false)
+	const [computerAutoMode, setComputerAutoMode] = createSignal(false)
+	let llmWorker: SharedWorker | null = null
+	let llmReady = false
+	const llmCallbacks = new Map<string, {resolve: (v: string) => void; reject: (e: any) => void; onToken?: (t: string) => void}>()
+	const computerRespondedToIds = new Set<string>()
+	let computerResponding = false
+	let computerListenerActive = false
+	let computerListenerCleanup: (() => void) | null = null
+	// Single-host: only one tab should respond as Computer
+	const myInstanceId = generateId()
+	let heartbeatInterval: any = null
+
+	function openEmojiPicker(idx: number, anchorEl: HTMLElement) {
+		setEmojiPickerState({open: true, targetIdx: idx, anchorEl})
+	}
+
+	function closeEmojiPicker() {
+		setEmojiPickerState({open: false, targetIdx: null, anchorEl: null})
+	}
+
+	function toggleSidebar() {
+		setSidebarVisible(!sidebarVisible())
+	}
+
+	// Close modals on Escape
+	function handleKeyDown(e: KeyboardEvent) {
+		if (e.key !== "Escape") return
+		if (lightboxSrc()) { setLightboxSrc(null); return }
+		if (emojiPickerState().open) { closeEmojiPicker(); return }
+		if (showModelDialog()) { setShowModelDialog(false); return }
+		if (showEmoticonDialog()) { setShowEmoticonDialog(false); return }
+		if (showFontDialog()) { setShowFontDialog(false); return }
+	}
+	onMount(() => document.addEventListener("keydown", handleKeyDown))
+	onCleanup(() => document.removeEventListener("keydown", handleKeyDown))
+
+	// ---- Computer / LLM ----
+	const TOOL_ADJECTIVES = [
+		"tiny", "sparkly", "cozy", "fuzzy", "wiggly", "bouncy", "snappy",
+		"zippy", "dizzy", "poppy", "bubbly", "chirpy", "jolly", "perky",
+		"zappy", "scruffy",
+	]
+	const TOOL_NOUNS = [
+		"kitten", "bunny", "otter", "panda", "robin", "gecko", "ferret",
+		"hedgehog", "hamster", "duckling", "fawn", "cub", "owlet", "piglet",
+		"lamb", "angel", "ermine", "white-weasel",
+	]
+	function randomToolName() {
+		const adj = TOOL_ADJECTIVES[Math.floor(Math.random() * TOOL_ADJECTIVES.length)]
+		const noun = TOOL_NOUNS[Math.floor(Math.random() * TOOL_NOUNS.length)]
+		return adj + "-" + noun
+	}
+
+	let computerFolderUrl: AutomergeUrl | null = null
+
+	const COMPUTER_SYSTEM_PROMPT = `You are Computer, an AI assistant participating in a Patchwork collaborative chat.
+
+IMPORTANT: Never prefix your messages with [Computer] or your name. Other users' messages are shown as [Name] message but that's just context formatting — you must NOT imitate it. Just respond naturally with your message content.
+
+## What You Can Do
+- Answer questions and have conversations
+- Build interactive Patchwork tools (vanilla JS mini-apps that run in the browser)
+- Read and edit Automerge documents directly
+- Inspect pinned tools (iframes) for errors and DOM state
+- Run code inside pinned tool iframes
+
+## Patchwork Architecture
+Patchwork is a collaborative document system built on Automerge (JSON-like CRDTs synced peer-to-peer).
+
+Key concepts:
+- \`const handle = await window.repo.find("automerge:XXXXX")\` — find a document by URL
+- \`handle.doc()\` — read current document state (synchronous, returns snapshot)
+- \`handle.change(doc => { doc.field = value })\` — mutate document
+- \`handle.on("change", fn)\` — listen for local and remote changes
+- \`import { splice } from "@automerge/automerge"\` — use splice for efficient text edits on collaborative strings
+- Documents sync automatically across peers via Automerge
+
+## Tools
+You have access to tools. To use a tool, output a fenced block tagged \`\`\`tool-call:
+\`\`\`tool-call
+tool: tool_name
+arg1: value1
+arg2: value2
+\`\`\`
+
+After you use a tool, you'll receive the result and can continue reasoning. You can use multiple tools in sequence.
+
+Available tools:
+
+### read_doc
+Read the contents of an Automerge document.
+\`\`\`tool-call
+tool: read_doc
+url: automerge:XXXXX
+\`\`\`
+
+### edit_doc
+Edit an Automerge document by setting a field. The value is parsed as JSON.
+\`\`\`tool-call
+tool: edit_doc
+url: automerge:XXXXX
+field: title
+value: "New Title"
+\`\`\`
+
+### inspect_iframe
+Get the DOM HTML and any console errors from a pinned tool iframe.
+\`\`\`tool-call
+tool: inspect_iframe
+url: automerge:XXXXX
+\`\`\`
+
+### eval_in_iframe
+Run JavaScript code inside a pinned tool's iframe and get the result.
+\`\`\`tool-call
+tool: eval_in_iframe
+url: automerge:XXXXX
+code: document.querySelector('.my-element')?.textContent
+\`\`\`
+
+When you need information before answering (e.g. checking what a doc contains, or inspecting an error), use a tool first. After receiving the tool result, respond to the user.
+
+## Building a Patchwork Tool
+When asked to build something, output the COMPLETE JavaScript module in a fenced code block tagged \`\`\`patchwork-tool.
+
+Your tool MUST export these three things:
+
+1. **Datatype** — manages document lifecycle:
+\`\`\`js
+export const MyDatatype = {
+  init(doc) { doc.title = "My Tool"; /* set defaults */ },
+  getTitle(doc) { return doc.title || "My Tool"; },
+  setTitle(doc, title) { doc.title = title; },
+};
+\`\`\`
+
+2. **Tool function** — renders UI, returns cleanup:
+\`\`\`js
+export function Tool(handle, element) {
+  const style = document.createElement("style");
+  style.textContent = \\\`.prefix-container { ... }\\\`;
+  element.appendChild(style);
+  const container = document.createElement("div");
+  container.className = "prefix-container";
+  element.appendChild(container);
+
+  function render() {
+    const doc = handle.doc();
+    if (!doc) return;
+    container.innerHTML = "";
+    // Build UI with DOM APIs, attach click handlers that call handle.change()
+  }
+  render();
+  handle.on("change", render);
+  return () => { handle.off("change", render); container.remove(); style.remove(); };
+}
+\`\`\`
+
+3. **plugins array** — registers both:
+\`\`\`js
+export const plugins = [
+  { type: "patchwork:datatype", id: "TOOL_ID", name: "TOOL_NAME", async load() { return MyDatatype; } },
+  { type: "patchwork:tool", id: "TOOL_ID", name: "TOOL_NAME", supportedDatatypes: ["TOOL_ID"], async load() { return Tool; } },
+];
+\`\`\`
+
+Rules:
+- Use vanilla DOM APIs only (createElement, innerHTML, etc.) — NO frameworks
+- Scope ALL CSS classes with a unique prefix to avoid conflicts
+- The tool id and datatype id MUST match
+- Keep it self-contained in one file
+- Automerge docs cannot contain \`undefined\` — use \`null\` or \`delete\`
+- Strings in Automerge are collaborative text; use \`splice()\` for efficient editing, or just assign for simple values
+
+## Updating Files
+When you update files in a tool folder (e.g. updating JS source via edit_doc or patchwork-tool), you MUST also update the \`lastSyncAt\` field on the root folder doc with the current epoch timestamp (\`Date.now()\`). This triggers the module system to reload.
+
+## Rich Messages
+You can include \`\`\`file blocks to create and embed files, \`\`\`embed blocks for existing docs.
+
+Keep responses concise. When you create a tool, explain briefly what it does.`
+
+	// ---- LLM Worker (local model only) ----
+	async function initLLMWorker() {
+		if (llmWorker) return
+		try {
+			const workerUrl = new URL(/* @vite-ignore */ "../llm-worker.js", import.meta.url).href
+			llmWorker = new SharedWorker(workerUrl, {type: "module", name: "llm-chat"})
+			llmWorker.port.onmessage = (e: any) => {
+				const msg = e.data
+				if (msg.type === "ready") llmReady = true
+				else if (msg.type === "result") {
+					const cb = llmCallbacks.get(msg.id)
+					if (cb) { cb.resolve(msg.text); llmCallbacks.delete(msg.id) }
+				} else if (msg.type === "token") {
+					const cb = llmCallbacks.get(msg.id)
+					if (cb?.onToken) cb.onToken(msg.text)
+				} else if (msg.type === "error") {
+					const cb = llmCallbacks.get(msg.id)
+					if (cb) { cb.reject(new Error(msg.message)); llmCallbacks.delete(msg.id) }
+				}
+			}
+			llmWorker.port.start()
+		} catch (e) {
+			console.warn("[Chat] LLM worker init:", e)
+		}
+	}
+
+	function getActiveProvider(): string {
+		try {
+			const adh = (window as any).accountDocHandle
+			if (!adh) return "local"
+			const ad = adh.doc()
+			if (!ad?.chatProfileUrl) return "local"
+			// Can't await here, use sync access - profile should be loaded already
+			return "local" // Will be read async in generateLLM
+		} catch { return "local" }
+	}
+
+	async function getProfileDoc(): Promise<any> {
+		const repo = (window as any).repo
+		const adh = (window as any).accountDocHandle
+		if (!adh || !repo) return null
+		const ad = adh.doc()
+		if (!ad?.chatProfileUrl) return null
+		const ph = await repo.find(ad.chatProfileUrl)
+		return ph.doc()
+	}
+
+	async function generateLLM(
+		messages: any[],
+		onToken: (text: string) => void,
+		signal?: AbortSignal
+	): Promise<string> {
+		const profile = await getProfileDoc()
+		const provider = profile?.llmProvider || "local"
+
+		if (provider === "openrouter") return generateOpenRouter(messages, onToken, profile, signal)
+		if (provider === "ollama") return generateOllama(messages, onToken, profile, signal)
+		return generateLocal(messages, onToken)
+	}
+
+	async function generateLocal(messages: any[], onToken: (text: string) => void): Promise<string> {
+		if (!llmWorker) await initLLMWorker()
+		if (!llmWorker) throw new Error("LLM not available")
+		const id = generateId()
+		return new Promise((resolve, reject) => {
+			llmCallbacks.set(id, {resolve, reject, onToken})
+			llmWorker!.port.postMessage({type: "generate", id, chatUrl: props.handle.url, provider: "local", messages, config: {}})
+			setTimeout(() => {
+				if (llmCallbacks.has(id)) { llmCallbacks.delete(id); reject(new Error("LLM timeout")) }
+			}, 300000)
+		})
+	}
+
+	async function generateOpenRouter(
+		messages: any[], onToken: (text: string) => void, profile: any, signal?: AbortSignal
+	): Promise<string> {
+		const apiKey = profile?.openrouterApiKey
+		if (!apiKey) throw new Error("No OpenRouter API key. Use /model to set one.")
+		const model = profile?.openrouterModel || "anthropic/claude-sonnet-4"
+		const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+			method: "POST",
+			headers: {"Authorization": "Bearer " + apiKey, "Content-Type": "application/json"},
+			body: JSON.stringify({model, messages, stream: true, max_tokens: 128000}),
+			signal,
+		})
+		if (!res.ok) throw new Error("OpenRouter: " + (await res.text()))
+		let full = ""
+		const reader = res.body!.getReader()
+		const decoder = new TextDecoder()
+		let buf = ""
+		while (true) {
+			const {done, value} = await reader.read()
+			if (done) break
+			buf += decoder.decode(value, {stream: true})
+			const lines = buf.split("\n")
+			buf = lines.pop()!
+			for (const line of lines) {
+				if (!line.startsWith("data: ")) continue
+				const data = line.slice(6).trim()
+				if (data === "[DONE]") continue
+				try {
+					const parsed = JSON.parse(data)
+					const delta = parsed.choices?.[0]?.delta?.content
+					if (delta) { full += delta; onToken(full) }
+				} catch {}
+			}
+		}
+		return full
+	}
+
+	async function generateOllama(
+		messages: any[], onToken: (text: string) => void, profile: any, signal?: AbortSignal
+	): Promise<string> {
+		const baseUrl = (profile?.ollamaUrl || "http://localhost:11434").replace(/\/$/, "")
+		const model = profile?.ollamaModel || "llama3.2"
+		const res = await fetch(baseUrl + "/api/chat", {
+			method: "POST",
+			headers: {"Content-Type": "application/json"},
+			body: JSON.stringify({model, messages, stream: true}),
+			signal,
+		})
+		if (!res.ok) throw new Error("Ollama: " + (await res.text()))
+		let full = ""
+		const reader = res.body!.getReader()
+		const decoder = new TextDecoder()
+		let buf = ""
+		while (true) {
+			const {done, value} = await reader.read()
+			if (done) break
+			buf += decoder.decode(value, {stream: true})
+			const lines = buf.split("\n")
+			buf = lines.pop()!
+			for (const line of lines) {
+				if (!line.trim()) continue
+				try {
+					const parsed = JSON.parse(line)
+					const content = parsed.message?.content
+					if (content) { full += content; onToken(full) }
+				} catch {}
+			}
+		}
+		return full
+	}
+
+	// ---- Rich block parsing ----
+	function parseRichBlocks(response: string) {
+		const blocks: {type: string; meta: string; content: string; fullMatch: string}[] = []
+		let remaining = response
+		const blockRe = /```(patchwork-tool|file|embed|tool-call|image)([ \t]+[^\n]*)?\n([\s\S]*?)```/g
+		let match
+		while ((match = blockRe.exec(response)) !== null) {
+			blocks.push({type: match[1], meta: (match[2] || "").trim(), content: match[3], fullMatch: match[0]})
+			remaining = remaining.replace(match[0], "")
+		}
+		return {blocks, text: remaining.trim()}
+	}
+
+	function parseMeta(meta: string): Record<string, string> {
+		const result: Record<string, string> = {}
+		const re = /(\w+)=(\S+)/g
+		let m
+		while ((m = re.exec(meta)) !== null) result[m[1]] = m[2]
+		return result
+	}
+
+	async function processRichBlocks(parsed: {blocks: any[]; text: string}) {
+		const repo = (window as any).repo
+		const encoder = new TextEncoder()
+		const embeds: any[] = []
+		let extraText = ""
+		for (const block of parsed.blocks) {
+			if (block.type === "patchwork-tool") {
+				const result = await createAndPinTool(block.content)
+				extraText += result?.updated
+					? "\n\n*Updated tool **" + result.toolName + "**.*"
+					: "\n\n*Created tool **" + (result?.toolName || "tool") + "** and pinned it in the sidebar.*"
+			} else if (block.type === "file") {
+				const meta = parseMeta(block.meta)
+				const name = meta.name || "file.txt"
+				const mimeType = meta.mimeType || "text/plain"
+				const isText = mimeType.startsWith("text/") || mimeType === "application/javascript" || mimeType === "application/json"
+				const content = isText ? block.content : encoder.encode(block.content)
+				const ext = name.includes(".") ? "." + name.split(".").pop() : ""
+				const fileHandle = await repo.create2({content, name, extension: ext, mimeType, "@patchwork": {type: "file"}})
+				embeds.push({docUrl: fileHandle.url, title: name})
+			} else if (block.type === "image") {
+				const meta = parseMeta(block.meta)
+				const name = meta.name || "image.png"
+				const mimeType = meta.mimeType || "image/png"
+				// Decode base64 image content
+				try {
+					const binary = atob(block.content.trim())
+					const bytes = new Uint8Array(binary.length)
+					for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+					const ext = name.includes(".") ? "." + name.split(".").pop() : ".png"
+					const fileHandle = await repo.create2({content: bytes, name, extension: ext, mimeType, "@patchwork": {type: "file"}})
+					embeds.push({docUrl: fileHandle.url, title: name})
+				} catch (e) {
+					console.warn("[Chat] image block decode:", e)
+				}
+			} else if (block.type === "embed") {
+				const lines = block.content.trim().split("\n")
+				let docUrl = "", title = ""
+				for (const line of lines) {
+					const kv = line.match(/^\s*(\w+)\s*:\s*(.+)$/)
+					if (kv) {
+						if (kv[1] === "docUrl") docUrl = kv[2].trim()
+						else if (kv[1] === "title") title = kv[2].trim()
+					}
+				}
+				if (docUrl) embeds.push({docUrl, title})
+			}
+		}
+		const opts: any = {}
+		if (embeds.length > 0) opts.embeds = embeds
+		return {text: (parsed.text + extraText).trim(), opts}
+	}
+
+	// ---- Tool execution ----
+	async function executeToolCall(block: any): Promise<string> {
+		const lines = block.content.trim().split("\n")
+		const args: Record<string, string> = {}
+		let currentKey: string | null = null
+		for (const line of lines) {
+			const kv = line.match(/^\s*(\w+)\s*:\s*(.*)$/)
+			if (kv) { currentKey = kv[1]; args[currentKey] = kv[2].trim() }
+			else if (currentKey) args[currentKey] += "\n" + line
+		}
+		const toolName = args.tool
+		const repo = (window as any).repo
+		try {
+			if (toolName === "read_doc") {
+				const h = await repo.find(args.url)
+				return JSON.stringify(h.doc(), null, 2) || "null"
+			} else if (toolName === "edit_doc") {
+				const h = await repo.find(args.url)
+				let val: any
+				try { val = JSON.parse(args.value) } catch { val = args.value }
+				h.change((d: any) => { d[args.field] = val })
+				return "OK — set " + args.field + " on " + args.url
+			} else if (toolName === "inspect_iframe") {
+				// Find pinned iframe in sidebar
+				const targetUrl = args.url
+				const iframes = document.querySelectorAll(".chat-sidebar-pinned-wrap iframe") as NodeListOf<HTMLIFrameElement>
+				for (const iframe of iframes) {
+					if (targetUrl) {
+						// Match by doc param in iframe src
+						try {
+							const hash = (iframe.src || "").split("#")[1] || ""
+							const params = new URLSearchParams(hash)
+							const docId = params.get("doc") || ""
+							if (!targetUrl.includes(docId) && docId !== targetUrl.replace(/^automerge:/, "")) continue
+						} catch { continue }
+					}
+					try {
+						const body = iframe.contentDocument?.body
+						const errors: string[] = []
+						const errorEls = body?.querySelectorAll(".error, [class*='error'], [class*='Error']")
+						if (errorEls) {
+							for (const el of errorEls) errors.push(el.textContent?.slice(0, 500) || "")
+						}
+						let result = "DOM:\n" + (body?.innerHTML?.slice(0, 3000) || "(empty)")
+						if (errors.length > 0) result += "\n\nErrors:\n" + errors.join("\n")
+						return result
+					} catch { return "DOM: (cross-origin, cannot access)" }
+				}
+				return "No pinned iframe found. " + iframes.length + " iframes in sidebar total."
+			} else if (toolName === "eval_in_iframe") {
+				const targetUrl = args.url
+				const iframes = document.querySelectorAll(".chat-sidebar-pinned-wrap iframe") as NodeListOf<HTMLIFrameElement>
+				for (const iframe of iframes) {
+					if (targetUrl) {
+						try {
+							const hash = (iframe.src || "").split("#")[1] || ""
+							const params = new URLSearchParams(hash)
+							const docId = params.get("doc") || ""
+							if (!targetUrl.includes(docId) && docId !== targetUrl.replace(/^automerge:/, "")) continue
+						} catch { continue }
+					}
+					try {
+						const result = iframe.contentWindow?.eval(args.code)
+						return String(result) ?? "undefined"
+					} catch (e: any) { return "eval error: " + e.message }
+				}
+				return "No pinned iframe found. " + iframes.length + " iframes in sidebar total."
+			}
+			return "Unknown tool: " + toolName
+		} catch (e: any) { return "Tool error: " + e.message }
+	}
+
+	async function createAndPinTool(code: string): Promise<any> {
+		const repo = (window as any).repo
+		const doc = props.handle.doc() as any
+
+		// Check for existing pinned tool to update
+		const existingPinned = (doc?.docs || []).find((d: any) => d.pin)
+		if (existingPinned) {
+			try {
+				const folderHandle = await repo.find(existingPinned.url)
+				const folderDoc = folderHandle.doc()
+				const suggestedUrl = folderDoc?.["@patchwork"]?.suggestedImportUrl
+				if (suggestedUrl) {
+					const toolFolder = await repo.find(suggestedUrl)
+					const toolFolderDoc = toolFolder.doc()
+					const jsEntry = toolFolderDoc?.docs?.find((d: any) => d.name?.endsWith(".js"))
+					if (jsEntry) {
+						const existingToolId = existingPinned.pin || existingPinned.type
+						const patchedCode = code.replace(/id:\s*["'][^"']+["']/g, 'id: "' + existingToolId + '"')
+						const jsHandle = await repo.find(jsEntry.url)
+						jsHandle.change((d: any) => { d.content = patchedCode })
+						toolFolder.change((d: any) => { d.lastSyncAt = Date.now() })
+						if ((window as any).patchwork?.modules?.loadModules) {
+							await (window as any).patchwork.modules.loadModules([suggestedUrl])
+						}
+						// Reload iframe after update
+						const iframes = document.querySelectorAll(".chat-sidebar-pinned-wrap patchwork-view iframe") as NodeListOf<HTMLIFrameElement>
+						for (const iframe of iframes) {
+							try { iframe.src = iframe.src } catch {}
+						}
+						return {toolName: existingPinned.name || existingToolId, toolId: existingToolId, updated: true}
+					}
+				}
+			} catch (e) { console.warn("[Chat] Could not update existing tool:", e) }
+		}
+
+		// Create new tool
+		const toolName = randomToolName()
+		const encoder = new TextEncoder()
+		const jsFileName = "tool.js"
+		const patchedCode = code.replace(/id:\s*["'][^"']+["']/g, 'id: "' + toolName + '"')
+		const jsHandle = await repo.create2({content: patchedCode, name: jsFileName, extension: ".js", mimeType: "application/javascript", "@patchwork": {type: "file"}})
+
+		// Create package.json
+		const pkgContent = encoder.encode(JSON.stringify({
+			name: "@patchwork/" + toolName,
+			type: "module",
+			main: jsFileName,
+			exports: {".": jsFileName},
+		}, null, 2))
+		const pkgHandle = await repo.create2({content: pkgContent, name: "package.json", extension: ".json", mimeType: "application/json", "@patchwork": {type: "file"}})
+
+		const folderHandle = await repo.create2({
+			title: toolName,
+			docs: [
+				{url: jsHandle.url, type: "application/javascript", name: jsFileName},
+				{url: pkgHandle.url, type: "application/json", name: "package.json"},
+			],
+			lastSyncAt: Date.now(),
+		})
+
+		// Create instance doc
+		const instanceHandle = await repo.create2({title: toolName, "@patchwork": {type: toolName, suggestedImportUrl: folderHandle.url}})
+
+		// Try to auto-initialize with datatype.init()
+		try {
+			const blob = new Blob([patchedCode], {type: "application/javascript"})
+			const blobUrl = URL.createObjectURL(blob)
+			const mod = await import(/* @vite-ignore */ blobUrl)
+			URL.revokeObjectURL(blobUrl)
+			const dt = mod.default?.init
+				? mod.default
+				: Object.values(mod).find((v: any) => v && typeof v === "object" && typeof (v as any).init === "function") as any
+			if (dt) {
+				instanceHandle.change((d: any) => { dt.init(d) })
+			}
+		} catch (e) {
+			console.warn("[Chat] Could not auto-init tool doc:", e)
+		}
+
+		// Pin it
+		props.handle.change((d: any) => {
+			if (!d.docs) d.docs = []
+			d.docs.push({url: instanceHandle.url, type: toolName, name: toolName, pin: toolName})
+		})
+		setSidebarVisible(true)
+
+		// Load module
+		if ((window as any).patchwork?.modules?.loadModules) {
+			await (window as any).patchwork.modules.loadModules([folderHandle.url])
+		}
+
+		return {toolName, toolId: toolName, updated: false}
+	}
+
+	// ---- Context assembly ----
+	async function assembleContext(): Promise<any[]> {
+		const repo = (window as any).repo
+		const doc = props.handle.doc() as any
+		const msgs = doc?.messages || []
+		const contextMessages: any[] = []
+
+		const recent = msgs.slice(-50)
+		for (const entry of recent) {
+			if (!entry?.ref || !entry?.url) continue
+			try {
+				const mh = await repo.find(entry.url)
+				const msg = mh.doc() as any
+				if (!msg) continue
+				let text = msg.text || ""
+				const role = msg.isComputer ? "assistant" : "user"
+				const prefix = msg.isComputer ? "" : `[${msg.name}] `
+
+				// Include voice note transcription
+				if (msg.voiceUrl) {
+					try {
+						const rh = await repo.find(msg.voiceUrl)
+						const rd = rh.doc() as any
+						if (rd?.transcription) {
+							text += "\n[Voice note transcription: " + rd.transcription + "]"
+						}
+					} catch {}
+				}
+
+				contextMessages.push({role, content: msg.isComputer ? text : prefix + text})
+			} catch {}
+		}
+
+		// Add context info
+		const logParts: string[] = []
+
+		// Chat shared files
+		if (doc?.docs?.length > 0) {
+			const fileList = doc.docs.map((d: any) => `- ${d.name} (${d.type || "unknown"}) url=${d.url}${d.pin ? " [PINNED]" : ""}`).join("\n")
+			logParts.push("Chat shared files:\n" + fileList)
+		}
+
+		// Pinned iframe status (DOM + errors)
+		const iframeStatus = gatherPinnedIframeStatus()
+		if (iframeStatus.length > 0) {
+			let iframeContext = "Pinned tool iframes:\n"
+			for (const s of iframeStatus) {
+				iframeContext += "\n### " + s.name + "\n"
+				if (s.errors.length > 0) iframeContext += "Errors:\n" + s.errors.join("\n") + "\n"
+				if (s.domSnippet !== "(cross-origin)") {
+					iframeContext += "DOM snippet:\n" + s.domSnippet.slice(0, 1500) + "\n"
+				}
+			}
+			logParts.push(iframeContext)
+		}
+
+		// Call transcript
+		if (doc?.callUrl) {
+			try {
+				const ch = await repo.find(doc.callUrl)
+				const cd = ch.doc() as any
+				if (cd?.content && typeof cd.content === "string" && cd.content.length > 0) {
+					const transcript = cd.content.slice(-4000)
+					logParts.push("Call transcript (last 4000 chars):\n" + transcript)
+				}
+			} catch {}
+		}
+
+		if (logParts.length > 0) {
+			contextMessages.push({role: "user", content: "[Context]\n" + logParts.join("\n\n")})
+		}
+
+		return contextMessages
+	}
+
+	function sendComputerMessage(text: string, replyTo?: string, opts?: any) {
+		const repo = (window as any).repo
+		if (!repo) return
+		const msgData: any = {
+			id: generateId(),
+			name: "Computer",
+			text: text || "",
+			timestamp: Date.now(),
+			isComputer: true,
+			font: "monospace",
+		}
+		if (replyTo) msgData.replyTo = replyTo
+		if (opts?.embeds) msgData.embeds = opts.embeds
+		repo.create2(msgData).then((msgHandle: any) => {
+			props.handle.change((d: any) => {
+				if (!d.messages) d.messages = []
+				d.messages.push({ref: true, url: msgHandle.url, timestamp: msgData.timestamp})
+			})
+		})
+	}
+
+	async function handleComputerCommand(sub: string) {
+		if (sub === "kick") {
+			if (!computerActive()) { sendComputerMessage("Computer is not active."); return }
+			setComputerActive(false)
+			setComputerAutoMode(false)
+			if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null }
+			props.handle.change((d: any) => { d.hasComputer = false; delete d.computerInstanceId; delete d.computerHeartbeat })
+			sendComputerMessage("Computer has left the chat.")
+			return
+		}
+		if (sub === "nosey" || sub === "auto") {
+			if (!computerActive()) { sendComputerMessage("Computer is not active. Use /computer invite first."); return }
+			setComputerAutoMode(!computerAutoMode())
+			sendComputerMessage("Auto-respond mode: " + (computerAutoMode() ? "ON" : "OFF"))
+			return
+		}
+		// Default: invite — claim this tab as the computer host
+		if (computerActive()) { sendComputerMessage("Computer is already here!"); return }
+		setComputerActive(true)
+		claimComputerHost()
+		sendComputerMessage("Hello! I'm Computer, an AI assistant. Mention @computer or reply to my messages and I'll respond. Use /computer nosey to make me respond to everything.")
+		startComputerListener()
+	}
+
+	function claimComputerHost() {
+		props.handle.change((d: any) => {
+			d.hasComputer = true
+			d.computerInstanceId = myInstanceId
+			d.computerHeartbeat = Date.now()
+		})
+		if (heartbeatInterval) clearInterval(heartbeatInterval)
+		heartbeatInterval = setInterval(() => {
+			const d = props.handle.doc() as any
+			if (d?.computerInstanceId === myInstanceId) {
+				props.handle.change((dd: any) => { dd.computerHeartbeat = Date.now() })
+			}
+		}, 15000)
+	}
+
+	function isComputerHost(): boolean {
+		const d = props.handle.doc() as any
+		return d?.computerInstanceId === myInstanceId
+	}
+
+	function startComputerListener() {
+		if (computerListenerActive) return
+		computerListenerActive = true
+		let lastCheckedIdx = (props.handle.doc() as any)?.messages?.length || 0
+		const pendingQueue: string[] = []
+		let processing = false
+
+		async function processQueue() {
+			if (processing) return
+			processing = true
+			const repo = (window as any).repo
+			while (pendingQueue.length > 0) {
+				const url = pendingQueue.shift()!
+				if (computerRespondedToIds.has(url) || !repo) continue
+				try {
+					const mh = await repo.find(url)
+					const msg = mh.doc() as any
+					if (!msg || msg.name === "Computer" || msg.isComputer) continue
+					if (computerRespondedToIds.has(url)) continue
+
+					// Check if already claimed by another instance
+					if (msg.computerClaimedBy) {
+						computerRespondedToIds.add(url)
+						continue
+					}
+
+					// Check if this is a reply to a Computer message
+					let isReplyToComputer = false
+					if (msg.replyTo) {
+						const allMsgs = (props.handle.doc() as any)?.messages || []
+						for (const entry of allMsgs) {
+							if (!entry?.ref || !entry?.url) continue
+							try {
+								const rh = await repo.find(entry.url)
+								const rd = rh.doc() as any
+								if (rd?.id === msg.replyTo && (rd?.isComputer || rd?.name === "Computer")) {
+									isReplyToComputer = true
+									break
+								}
+							} catch {}
+						}
+					}
+					const shouldRespond = computerAutoMode() ||
+						msg.text?.toLowerCase().includes("@computer") ||
+						isReplyToComputer
+					if (shouldRespond) {
+						// Claim this message before responding
+						mh.change((d: any) => { d.computerClaimedBy = myInstanceId })
+						// Brief delay for CRDT sync
+						await new Promise(r => setTimeout(r, 300))
+						// Re-check claim after sync
+						const fresh = mh.doc() as any
+						if (fresh.computerClaimedBy !== myInstanceId) {
+							computerRespondedToIds.add(url)
+							continue // Another instance won
+						}
+						computerRespondedToIds.add(url)
+						await respondToUser(msg)
+					}
+				} catch (e) { console.warn("[Chat] computer resolve:", e) }
+			}
+			processing = false
+		}
+
+		const onDocChange = () => {
+			if (!computerActive() || !isComputerHost()) return
+			const d = props.handle.doc() as any
+			if (!d?.messages) return
+			const msgs = d.messages
+			if (msgs.length <= lastCheckedIdx) return
+			for (let i = lastCheckedIdx; i < msgs.length; i++) {
+				const entry = msgs[i]
+				if (!entry?.ref || !entry?.url) continue
+				if (computerRespondedToIds.has(entry.url)) continue
+				pendingQueue.push(entry.url)
+			}
+			lastCheckedIdx = msgs.length
+			processQueue()
+		}
+		props.handle.on("change", onDocChange)
+		computerListenerCleanup = () => {
+			props.handle.off("change", onDocChange)
+		}
+	}
+
+	function gatherPinnedIframeStatus(): {name: string; url: string; errors: string[]; domSnippet: string}[] {
+		const results: {name: string; url: string; errors: string[]; domSnippet: string}[] = []
+		const pinnedWraps = document.querySelectorAll(".chat-sidebar-pinned-wrap")
+		for (const wrap of pinnedWraps) {
+			const iframe = wrap.querySelector("iframe") as HTMLIFrameElement | null
+			const title = iframe?.title || "unknown"
+			// Extract URL from iframe src params
+			let docUrl = ""
+			try {
+				const src = iframe?.src || ""
+				const hash = src.split("#")[1] || ""
+				const params = new URLSearchParams(hash)
+				docUrl = params.get("doc") || ""
+			} catch {}
+			if (!iframe) {
+				results.push({name: title, url: docUrl, errors: ["No iframe found"], domSnippet: "(empty)"})
+				continue
+			}
+			try {
+				const iframeDoc = iframe.contentDocument
+				const body = iframeDoc?.body
+				const domSnippet = body?.innerHTML || "(empty)"
+				const errors: string[] = []
+				const errorEls = body?.querySelectorAll(".error, [class*='error'], [class*='Error']")
+				if (errorEls) {
+					for (const el of errorEls) {
+						errors.push(el.textContent?.slice(0, 500) || "")
+					}
+				}
+				// Also check for console errors captured on the window
+				try {
+					const win = iframe.contentWindow as any
+					if (win?.__chatErrors) {
+						for (const err of win.__chatErrors) errors.push(String(err))
+					}
+				} catch {}
+				results.push({name: title, url: docUrl, errors, domSnippet: domSnippet.slice(0, 2000)})
+			} catch {
+				results.push({name: title, url: docUrl, errors: ["Cross-origin, cannot access"], domSnippet: "(cross-origin)"})
+			}
+		}
+		return results
+	}
+
+	async function respondToUser(userMsg: any) {
+		const repo = (window as any).repo
+		if (!repo || computerResponding) return
+		computerResponding = true
+
+		const context = await assembleContext()
+		const messages = [
+			{role: "system", content: COMPUTER_SYSTEM_PROMPT},
+			...context,
+			{role: "user", content: userMsg.text},
+		]
+
+		// Create streaming message — use `let` so we can reassign
+		const streamMsgData: any = {
+			id: generateId(), name: "Computer", text: "", timestamp: Date.now(),
+			isComputer: true, font: "monospace", streaming: true, replyTo: userMsg.id,
+		}
+		let currentStreamHandle = await repo.create2(streamMsgData)
+		props.handle.change((dd: any) => {
+			if (!dd.messages) dd.messages = []
+			dd.messages.push({ref: true, url: currentStreamHandle.url, timestamp: streamMsgData.timestamp})
+		})
+
+		let tokenThrottleTimer: any = null
+		let latestTokenText = ""
+		function onToken(fullText: string) {
+			latestTokenText = fullText.replace(/^\[Computer\]\s*/i, "")
+			if (!tokenThrottleTimer) {
+				tokenThrottleTimer = setTimeout(() => {
+					tokenThrottleTimer = null
+					currentStreamHandle.change((d: any) => { d.text = latestTokenText })
+				}, 200)
+			}
+		}
+
+		try {
+			const MAX_TOOL_ROUNDS = 5
+			let madeChanges = false
+			for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+				let response = await generateLLM(messages, onToken)
+				if (tokenThrottleTimer) { clearTimeout(tokenThrottleTimer); tokenThrottleTimer = null }
+				response = response.replace(/^\[Computer\]\s*/i, "")
+				const parsed = parseRichBlocks(response)
+
+				const toolCalls = parsed.blocks.filter((b: any) => b.type === "tool-call")
+				const otherBlocks = parsed.blocks.filter((b: any) => b.type !== "tool-call")
+				const hasPatchworkTool = parsed.blocks.some((b: any) => b.type === "patchwork-tool")
+
+				if (toolCalls.length > 0 || hasPatchworkTool) {
+					// Process non-tool-call blocks (patchwork-tool, file, embed, image)
+					if (otherBlocks.length > 0 || parsed.text.trim()) {
+						const partial = {blocks: otherBlocks, text: parsed.text}
+						const {text, opts} = await processRichBlocks(partial)
+						if (hasPatchworkTool) madeChanges = true
+
+						// Store rich blocks for UI display
+						const displayBlocks = parsed.blocks
+							.filter((b: any) => b.type === "tool-call" || b.type === "patchwork-tool")
+							.map((b: any) => ({type: b.type, content: b.content, meta: b.meta || ""}))
+
+						currentStreamHandle.change((d: any) => {
+							d.text = text || ""
+							d.streaming = false
+							if (opts?.embeds) d.embeds = opts.embeds
+							if (displayBlocks.length > 0) {
+								if (!d.richBlocks) d.richBlocks = []
+								for (const bl of displayBlocks) d.richBlocks.push(bl)
+							}
+						})
+						// Create new streaming message for next round
+						const nextMsgData: any = {
+							id: generateId(), name: "Computer", text: "", timestamp: Date.now(),
+							isComputer: true, font: "monospace", streaming: true,
+						}
+						currentStreamHandle = await repo.create2(nextMsgData)
+						props.handle.change((dd: any) => {
+							if (!dd.messages) dd.messages = []
+							dd.messages.push({ref: true, url: currentStreamHandle.url, timestamp: nextMsgData.timestamp})
+						})
+					} else {
+						// Store rich blocks even when no text
+						const displayBlocks = parsed.blocks
+							.filter((b: any) => b.type === "tool-call" || b.type === "patchwork-tool")
+							.map((b: any) => ({type: b.type, content: b.content, meta: b.meta || ""}))
+						currentStreamHandle.change((d: any) => {
+							d.text = ""
+							d.streaming = true
+							if (displayBlocks.length > 0) {
+								if (!d.richBlocks) d.richBlocks = []
+								for (const bl of displayBlocks) d.richBlocks.push(bl)
+							}
+						})
+					}
+
+					// Execute tool calls and store results
+					let toolResults = ""
+					for (const tc of toolCalls) {
+						const result = await executeToolCall(tc)
+						const toolArgs = tc.content.trim().split("\n")[0]
+						toolResults += "\n[Tool result for " + toolArgs + "]\n" + result + "\n"
+						// Store result on the corresponding rich block
+						currentStreamHandle.change((d: any) => {
+							if (d.richBlocks) {
+								const matching = [...d.richBlocks].reverse().find((b: any) => b.type === "tool-call" && !b.result)
+								if (matching) matching.result = result.slice(0, 2000)
+							}
+						})
+					}
+					if (toolCalls.length > 0) {
+						messages.push({role: "assistant", content: response})
+						messages.push({role: "user", content: "[Tool results]\n" + toolResults})
+					}
+
+					// Self-check: after making changes, check pinned iframes for errors
+					if (madeChanges) {
+						await new Promise(r => setTimeout(r, 2000))
+						const status = gatherPinnedIframeStatus()
+						const hasErrors = status.some(s => s.errors.length > 0)
+						const isEmpty = status.some(s => s.domSnippet === "(empty)" || s.domSnippet.trim().length < 10)
+
+						if (hasErrors || isEmpty) {
+							// Try reloading iframes if empty
+							if (isEmpty) {
+								const iframes = document.querySelectorAll(".chat-sidebar-pinned-wrap patchwork-view iframe") as NodeListOf<HTMLIFrameElement>
+								for (const iframe of iframes) {
+									try { iframe.src = iframe.src } catch {}
+								}
+								await new Promise(r => setTimeout(r, 2500))
+							}
+
+							const freshStatus = gatherPinnedIframeStatus()
+							const stillBroken = freshStatus.some(s => s.errors.length > 0 || s.domSnippet === "(empty)" || s.domSnippet.trim().length < 10)
+
+							if (stillBroken) {
+								let selfCheck = "[Self-check] After your changes, I inspected the pinned iframes:\n\n"
+								for (const s of freshStatus) {
+									selfCheck += "### " + s.name + "\n"
+									if (s.errors.length > 0) selfCheck += "Errors:\n" + s.errors.join("\n") + "\n"
+									if (s.domSnippet === "(empty)" || s.domSnippet.trim().length < 10) {
+										selfCheck += "DOM is empty or nearly empty \u2014 the tool may not be rendering.\n"
+									} else {
+										selfCheck += "DOM snippet:\n" + s.domSnippet.slice(0, 1500) + "\n"
+									}
+									selfCheck += "\n"
+								}
+								selfCheck += "Please fix the issues. If there are errors, update the tool code. Output a ```patchwork-tool block with the corrected code."
+								messages.push({role: "assistant", content: response})
+								messages.push({role: "user", content: selfCheck})
+								madeChanges = false
+								continue
+							}
+						}
+					}
+
+					if (toolCalls.length > 0) continue
+				}
+
+				// No tool calls — finalize
+				const finalDisplayBlocks = parsed.blocks
+					.filter((b: any) => b.type === "patchwork-tool")
+					.map((b: any) => ({type: b.type, content: b.content, meta: b.meta || ""}))
+				if (otherBlocks.length > 0) {
+					const {text, opts} = await processRichBlocks(parsed)
+					currentStreamHandle.change((d: any) => {
+						d.text = text || "Here you go!"
+						d.streaming = false
+						if (opts?.embeds) d.embeds = opts.embeds
+						if (finalDisplayBlocks.length > 0) {
+							if (!d.richBlocks) d.richBlocks = []
+							for (const bl of finalDisplayBlocks) d.richBlocks.push(bl)
+						}
+					})
+				} else {
+					currentStreamHandle.change((d: any) => { d.text = response; d.streaming = false })
+				}
+				break
+			}
+		} catch (err: any) {
+			currentStreamHandle.change((d: any) => {
+				d.text = d.text || "Sorry, I hit an error: " + err.message
+				d.streaming = false
+			})
+		} finally {
+			if (tokenThrottleTimer) clearTimeout(tokenThrottleTimer)
+			computerResponding = false
+		}
+	}
+
+	// Check if computer was previously active — only claim if host is stale (>30s)
+	onMount(() => {
+		const d = props.handle.doc() as any
+		if (d?.hasComputer) {
+			setComputerActive(true)
+			const heartbeat = d.computerHeartbeat || 0
+			const instanceId = d.computerInstanceId
+			if (!instanceId || (Date.now() - heartbeat) > 30000) {
+				// Previous host is gone, claim the role
+				claimComputerHost()
+				startComputerListener()
+			}
+			// If there IS a live host (another tab), don't start listener — just show the indicator
+		}
+	})
+
+	onCleanup(() => {
+		if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null }
+		if (computerListenerCleanup) { computerListenerCleanup(); computerListenerCleanup = null }
+	})
+
+	// ---- Call ----
+	async function handleCallCommand() {
+		const repo = (window as any).repo
+		if (!repo) return
+		const d = props.handle.doc() as any
+		let callUrl = d?.callUrl
+		if (!callUrl) {
+			const title = (d?.title || "Chat") + " Call"
+			const callHandle = await repo.create2({title, content: ""})
+			callUrl = callHandle.url
+			props.handle.change((dd: any) => { dd.callUrl = callUrl })
+		}
+		// Pin it
+		pinDoc(callUrl, "telephone", (d?.title || "Chat") + " Call")
+	}
+
+	// ---- Lightbox ----
+	const [lightboxSrc, setLightboxSrc] = createSignal<string | null>(null)
+	const [lightboxType, setLightboxType] = createSignal<"image" | "video">("image")
+
+	function openLightbox(src: string, type: "image" | "video" = "image") {
+		setLightboxSrc(src)
+		setLightboxType(type)
+	}
+
+	// ---- Pin ----
+	function handlePinCommand(arg: string) {
+		if (!arg) return
+
+		if (arg.toLowerCase() === "transcript") {
+			const d = props.handle.doc() as any
+			if (d?.callUrl) {
+				pinDoc(d.callUrl, "teleprint", "Teleprint")
+			}
+			return
+		}
+
+		// Try as automerge URL
+		if (arg.startsWith("automerge:")) {
+			pinDoc(arg as AutomergeUrl, undefined, arg.slice(0, 20) + "...")
+			return
+		}
+	}
+
+	function pinDoc(url: AutomergeUrl, toolId?: string, name?: string) {
+		props.handle.change((d: any) => {
+			if (!d.docs) d.docs = []
+			const existing = d.docs.find((dl: any) => dl.url === url)
+			if (existing) {
+				if (existing.pin) {
+					existing.pin = false
+				} else {
+					existing.pin = toolId || true
+				}
+			} else {
+				d.docs.push({url, type: "unknown", name: name || "doc", pin: toolId || true})
+			}
+		})
+		setSidebarVisible(true)
+	}
+
+	// ---- Drag and Drop ----
+	function hasPatchworkDrop(dt: DataTransfer | null): boolean {
+		return dt?.types?.includes("text/x-patchwork-dnd") || dt?.types?.includes("text/x-patchwork-urls") || false
+	}
+
+	function parsePatchworkDrop(dt: DataTransfer): {url: string; type?: string; name?: string; toolId?: string}[] | null {
+		const dndData = dt.getData("text/x-patchwork-dnd")
+		if (dndData) {
+			try {
+				const parsed = JSON.parse(dndData)
+				if (parsed.items?.length) return parsed.items.map((it: any) => ({url: it.url, type: it.type, name: it.name, toolId: it.toolId}))
+			} catch {}
+		}
+		const urlsData = dt.getData("text/x-patchwork-urls")
+		if (urlsData) {
+			try {
+				const urls = JSON.parse(urlsData)
+				if (Array.isArray(urls) && urls.length) return urls.map((u: string) => ({url: u}))
+			} catch {}
+		}
+		return null
+	}
+
+	function handleDragEnter(e: DragEvent) {
+		e.preventDefault()
+		dragCounter++
+		if (hasPatchworkDrop(e.dataTransfer)) {
+			// Could show sidebar as drop target
+		} else if (e.dataTransfer?.types?.includes("Files")) {
+			setShowDropOverlay(true)
+		}
+	}
+
+	function handleDragLeave(e: DragEvent) {
+		e.preventDefault()
+		dragCounter--
+		if (dragCounter <= 0) {
+			dragCounter = 0
+			setShowDropOverlay(false)
+		}
+	}
+
+	function handleDragOver(e: DragEvent) {
+		e.preventDefault()
+		if (e.dataTransfer) e.dataTransfer.dropEffect = "copy"
+	}
+
+	function handleRootDrop(e: DragEvent) {
+		e.preventDefault()
+		dragCounter = 0
+		setShowDropOverlay(false)
+
+		// Handle patchwork doc drops
+		if (e.dataTransfer) {
+			const patchworkItems = parsePatchworkDrop(e.dataTransfer)
+			if (patchworkItems) {
+				for (const item of patchworkItems) {
+					if (!item.url) continue
+					if (pendingEmbeds().some(pe => pe.url === item.url)) continue
+					setPendingEmbeds(prev => [...prev, item])
+				}
+				return
+			}
+		}
+
+		// Handle file drops
+		const files = e.dataTransfer?.files
+		if (files && files.length > 0) {
+			for (const f of Array.from(files)) {
+				const reader = new FileReader()
+				reader.onload = () => {
+					setPendingFiles(prev => [...prev, {
+						blob: f,
+						dataUrl: f.type.startsWith("image/") ? reader.result as string : undefined,
+						name: f.name,
+						mimeType: f.type,
+					}])
+				}
+				reader.readAsDataURL(f)
+			}
+		}
+	}
+
+	function handleRootClick(e: MouseEvent) {
+		const target = e.target as HTMLElement
+		// Open lightbox on image/video clicks within messages
+		if (target.tagName === "IMG" && target.closest(".chat-msg-image-wrap")) {
+			openLightbox((target as HTMLImageElement).src, "image")
+		} else if (target.tagName === "VIDEO" && target.closest(".chat-msg-video-wrap")) {
+			e.preventDefault()
+			openLightbox((target as HTMLVideoElement).src, "video")
+		}
+	}
+
+	return (
+		<div
+			ref={rootRef}
+			class="chat-root"
+			classList={{"sidebar-left": localStorage.getItem("chat-sidebar-side") === "left"}}
+			onClick={handleRootClick}
+			onDragEnter={handleDragEnter}
+			onDragLeave={handleDragLeave}
+			onDragOver={handleDragOver}
+			onDrop={handleRootDrop}
+		>
+			<div class="chat-drop-overlay" classList={{show: showDropOverlay()}}>Drop here</div>
+			<ChatProvider handle={props.handle} element={props.element}>
+				<IdentityProvider>
+					<ThemeProvider rootEl={rootRef}>
+						<PresenceProvider handle={props.handle}>
+							<div class="chat-main">
+								<PresenceBar onToggleSidebar={toggleSidebar} onCallCommand={handleCallCommand} computerActive={computerActive()} />
+								<MessageList
+									replyToId={replyToId()}
+									onReply={setReplyToId}
+									onReact={openEmojiPicker}
+								/>
+								<TypingBar />
+								<InputArea
+									replyToId={replyToId()}
+									onClearReply={() => setReplyToId(null)}
+									onReply={setReplyToId}
+									onShowFontDialog={() => setShowFontDialog(true)}
+									onShowEmoticonDialog={() => setShowEmoticonDialog(true)}
+									onToggleSidebar={toggleSidebar}
+									onComputerCommand={handleComputerCommand}
+									onCallCommand={handleCallCommand}
+									onModelCommand={() => setShowModelDialog(true)}
+									onPinCommand={handlePinCommand}
+									pendingFiles={pendingFiles()}
+									setPendingFiles={setPendingFiles}
+									pendingEmbeds={pendingEmbeds()}
+									setPendingEmbeds={setPendingEmbeds}
+								/>
+							</div>
+							<Sidebar
+								visible={sidebarVisible()}
+								onVisibilityChange={setSidebarVisible}
+							/>
+							<Show when={emojiPickerState().open}>
+								<EmojiPicker
+									targetIdx={emojiPickerState().targetIdx}
+									anchorEl={emojiPickerState().anchorEl}
+									onClose={closeEmojiPicker}
+								/>
+							</Show>
+							<Show when={showEmoticonDialog()}>
+								<div class="chat-dialog-overlay" onClick={() => setShowEmoticonDialog(false)}>
+									<EmoticonAddDialog onClose={() => setShowEmoticonDialog(false)} />
+								</div>
+							</Show>
+							<Show when={showFontDialog()}>
+								<div class="chat-dialog-overlay" onClick={() => setShowFontDialog(false)}>
+									<FontAddDialog onClose={() => setShowFontDialog(false)} />
+								</div>
+							</Show>
+							<Show when={showModelDialog()}>
+								<ModelDialog onClose={() => setShowModelDialog(false)} />
+							</Show>
+							<NotificationManager handle={props.handle} />
+							<Lightbox
+								src={lightboxSrc()}
+								type={lightboxType()}
+								onClose={() => setLightboxSrc(null)}
+							/>
+						</PresenceProvider>
+					</ThemeProvider>
+				</IdentityProvider>
+			</ChatProvider>
+		</div>
+	)
+}
+
+/** Watches for new messages and triggers sound/OS notifications + title updates */
+function NotificationManager(props: {handle: DocHandle<ChatDoc>}) {
+	const {doc} = useChat()
+	const {myName, chatProfileHandle} = useIdentity()
+	const {isFocused, typingUsers} = usePresence()
+
+	let lastMsgCount = 0
+	let hasUnread = false
+	const soundEnabled = () => localStorage.getItem("chat-sound-enabled") !== "false"
+	const notificationsEnabled = () => localStorage.getItem("chat-notifications-enabled") === "true"
+
+	function updateTitle() {
+		const d = doc()
+		const baseTitle = d?.title || "Chat"
+		const typers = typingUsers()
+		let title = baseTitle
+		if (typers.length > 0) {
+			title = typers.join(", ") + " is typing\u2026 \u2014 " + baseTitle
+		}
+		if (hasUnread) title = "* " + title
+		document.title = title
+		setFaviconUnread(hasUnread)
+	}
+
+	function markReadIfVisible() {
+		if (!isFocused()) return
+		const d = doc()
+		if (!d?.messages?.length) return
+		const lastMsg = d.messages[d.messages.length - 1] as any
+		const ts = lastMsg?.timestamp || Date.now()
+		hasUnread = false
+		updateTitle()
+
+		const ph = chatProfileHandle()
+		if (ph) {
+			ph.change((p: any) => {
+				if (!p.readPositions) p.readPositions = {}
+				p.readPositions[props.handle.url] = ts
+			})
+		}
+	}
+
+	onMount(() => {
+		const d = doc()
+		lastMsgCount = d?.messages?.length || 0
+
+		// Check initial unread state
+		const ph = chatProfileHandle()
+		if (ph) {
+			const profile = ph.doc() as any
+			const lastRead = profile?.readPositions?.[props.handle.url] || 0
+			if (d?.messages?.length) {
+				const lastMsg = d.messages[d.messages.length - 1] as any
+				if ((lastMsg?.timestamp || 0) > lastRead) {
+					hasUnread = true
+				}
+			}
+		}
+		updateTitle()
+	})
+
+	// Watch for new messages
+	createEffect(() => {
+		const d = doc()
+		if (!d?.messages) return
+		const count = d.messages.length
+		if (count > lastMsgCount && lastMsgCount > 0) {
+			// New message(s) arrived
+			const lastEntry = d.messages[count - 1] as any
+			if (lastEntry?.ref && lastEntry?.url) {
+				const repo = (window as any).repo
+				if (repo) {
+					repo.find(lastEntry.url).then(async (mh: any) => {
+						const msg = mh.doc()
+						if (!msg || msg.name === myName()) return
+
+						// Play sound
+						if (soundEnabled() && !isFocused()) {
+							const audio = await getNotificationSound()
+							if (audio) {
+								audio.currentTime = 0
+								audio.play().catch(() => {})
+							}
+						}
+
+						// OS notification
+						if (notificationsEnabled() && !isFocused()) {
+							let avatarBlobUrl: string | undefined
+							if (msg.avatarUrl) {
+								try { avatarBlobUrl = await loadBlobUrl(msg.avatarUrl) || undefined } catch {}
+							}
+							showOSNotification(msg.name, msg.text, avatarBlobUrl, props.handle.url)
+						}
+
+						if (!isFocused()) {
+							hasUnread = true
+							updateTitle()
+						}
+					})
+				}
+			}
+		}
+		lastMsgCount = count
+	})
+
+	// Update title when typing users change
+	createEffect(() => {
+		typingUsers() // track
+		updateTitle()
+	})
+
+	// Mark read when focused
+	createEffect(() => {
+		if (isFocused()) markReadIfVisible()
+	})
+
+	return null
+}
