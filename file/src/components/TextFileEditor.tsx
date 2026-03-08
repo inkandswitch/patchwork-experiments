@@ -1,4 +1,7 @@
-import {createSignal, onCleanup} from "solid-js"
+import {onCleanup} from "solid-js"
+import {EditorView} from "@codemirror/view"
+import {minimalSetup} from "codemirror"
+import {automergeSyncPlugin} from "@automerge/automerge-codemirror"
 import type {FileDoc} from "../types"
 
 export const isTextFile = (doc: FileDoc) => {
@@ -10,49 +13,38 @@ export const isTextFile = (doc: FileDoc) => {
 }
 
 export function TextFileEditor(props: {doc: FileDoc; handle: any}) {
-	const [content, setContent] = createSignal(
-		props.doc.content?.toString() || ""
-	)
+	let container!: HTMLDivElement
 
-	const handleInput = (e: InputEvent) => {
-		const target = e.target as HTMLTextAreaElement
-		const newContent = target.value
-		setContent(newContent)
-
-		// Update document through handle
-		props.handle.change((doc: FileDoc) => {
-			doc.content = newContent
-		})
-	}
-
-	// Listen for external changes
-	const updateFromDoc = () => {
-		const doc = props.handle.doc()
-		if (doc) {
-			setContent(doc.content?.toString() || "")
-		}
-	}
-
-	props.handle.on("change", updateFromDoc)
+	const view = new EditorView({
+		doc: props.doc.content?.toString() || "",
+		extensions: [
+			minimalSetup,
+			EditorView.lineWrapping,
+			EditorView.theme({
+				"&": {height: "100%", fontSize: "16px"},
+				".cm-scroller": {
+					overflow: "auto",
+					fontFamily: "monospace",
+				},
+			}),
+			automergeSyncPlugin({handle: props.handle, path: ["content"]}),
+		],
+	})
 
 	onCleanup(() => {
-		props.handle.off("change", updateFromDoc)
+		view.destroy()
 	})
 
 	return (
-		<textarea
+		<div
+			ref={(el) => {
+				container = el
+				el.appendChild(view.dom)
+			}}
 			style={{
 				width: "100%",
 				height: "100%",
-				padding: "0.25em",
-				border: 0,
-				"font-family": "monospace",
-				"font-size": "16px",
-				outline: "none",
 			}}
-			value={content()}
-			onInput={handleInput}
-			placeholder="Enter text content..."
 		/>
 	)
 }
