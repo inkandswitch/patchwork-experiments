@@ -1,7 +1,7 @@
 /**
- * Whisper transcription Web Worker
+ * Moonshine transcription Web Worker
  *
- * Loads whisper-small.en with WebGPU via transformers.js and transcribes
+ * Loads moonshine-base-ONNX with WebGPU via transformers.js and transcribes
  * audio chunks sent from the main thread.
  *
  * Messages IN:  { type: "transcribe", audio: Float32Array, _msgUrl?: string }
@@ -13,6 +13,7 @@
 let pipeline, env;
 let transcriber = null;
 let loading = false;
+const pendingQueue = [];
 
 async function loadTransformers() {
   const mod = await import(
@@ -38,7 +39,7 @@ async function loadModel() {
     try {
       transcriber = await pipeline(
         "automatic-speech-recognition",
-        "onnx-community/whisper-small.en",
+        "onnx-community/moonshine-base-ONNX",
         {
           device: "webgpu",
           dtype: {
@@ -50,10 +51,11 @@ async function loadModel() {
       self.postMessage({ type: "status", message: "Transcription ready (WebGPU)" });
       self.postMessage({ type: "ready" });
       loading = false;
+      drainQueue();
       return;
     } catch (err) {
       console.warn(
-        "[whisper worker] WebGPU failed, falling back to WASM:",
+        "[moonshine worker] WebGPU failed, falling back to WASM:",
         err,
       );
       self.postMessage({
@@ -71,16 +73,17 @@ async function loadModel() {
   try {
     transcriber = await pipeline(
       "automatic-speech-recognition",
-      "onnx-community/whisper-small.en",
+      "onnx-community/moonshine-base-ONNX",
       {
         dtype: {
           encoder_model: "fp32",
-          decoder_model_merged: "q4",
+          decoder_model_merged: "q8",
         },
       },
     );
     self.postMessage({ type: "status", message: "Transcription ready (WASM)" });
     self.postMessage({ type: "ready" });
+    drainQueue();
   } catch (err) {
     self.postMessage({
       type: "status",
@@ -88,6 +91,26 @@ async function loadModel() {
     });
   } finally {
     loading = false;
+  }
+}
+
+async function transcribe(audio, _msgUrl) {
+  try {
+    const result = await transcriber(audio);
+    const text = result.text.trim();
+    const junk = ["[BLANK_AUDIO]", "[ Silence ]", "(keyboard clacking)"];
+    if (text && !junk.some((j) => text.includes(j))) {
+      self.postMessage({ type: "result", text, _msgUrl });
+    }
+  } catch (err) {
+    console.error("[moonshine worker] transcription error:", err);
+  }
+}
+
+async function drainQueue() {
+  while (pendingQueue.length > 0) {
+    const { audio, _msgUrl } = pendingQueue.shift();
+    await transcribe(audio, _msgUrl);
   }
 }
 
@@ -99,17 +122,11 @@ self.onmessage = async (e) => {
 
   if (type === "transcribe") {
     if (!transcriber) {
+      console.log("[moonshine worker] Model not ready, queuing transcription for", _msgUrl);
+      pendingQueue.push({ audio, _msgUrl });
       return;
     }
 
-    try {
-      const result = await transcriber(audio);
-      const text = result.text.trim();
-      if (text && text !== "" && text !== "[BLANK_AUDIO]") {
-        self.postMessage({ type: "result", text, _msgUrl });
-      }
-    } catch (err) {
-      console.error("[whisper worker] transcription error:", err);
-    }
+    await transcribe(audio, _msgUrl);
   }
 };
