@@ -73,21 +73,6 @@ async function applyQuality(pc, quality) {
   }
 }
 
-function resample(inputSamples, inputRate, outputRate) {
-  if (inputRate === outputRate) return inputSamples;
-  const ratio = inputRate / outputRate;
-  const outputLength = Math.round(inputSamples.length / ratio);
-  const output = new Float32Array(outputLength);
-  for (let i = 0; i < outputLength; i++) {
-    const srcIndex = i * ratio;
-    const low = Math.floor(srcIndex);
-    const high = Math.min(low + 1, inputSamples.length - 1);
-    const frac = srcIndex - low;
-    output[i] = inputSamples[low] * (1 - frac) + inputSamples[high] * frac;
-  }
-  return output;
-}
-
 export class CallSession extends EventTarget {
   constructor(handle, repo) {
     super();
@@ -117,8 +102,8 @@ export class CallSession extends EventTarget {
 
     // Transcription
     this._whisperWorker = null;
-    this._audioContext = null;
-    this._scriptProcessor = null;
+    this._trackReader = null;
+    this._trackReaderRunning = false;
     this._prefixCursor = null; // cursor anchored to last char of prefix (the space)
     this._currentInterimLength = 0;
 
@@ -1140,37 +1125,80 @@ export class CallSession extends EventTarget {
       console.error("[transcription] Worker error:", err.message, err);
     };
 
-    this._audioContext = new AudioContext();
-    console.log("[transcription] AudioContext created, sampleRate:", this._audioContext.sampleRate, "state:", this._audioContext.state);
-    const source = this._audioContext.createMediaStreamSource(
-      new MediaStream([audioTrack])
-    );
-    this._scriptProcessor = this._audioContext.createScriptProcessor(
-      WORKER_BUFFER_SIZE,
-      1,
-      1
-    );
+    // Use MediaStreamTrackProcessor to read audio frames directly from the
+    // microphone track. This bypasses AudioContext entirely — the browser
+    // keeps the media track alive for WebRTC even when the page/browser
+    // loses focus, so transcription continues in the background.
+    const trackProcessor = new MediaStreamTrackProcessor({ track: audioTrack });
+    const reader = trackProcessor.readable.getReader();
+    this._trackReader = reader;
+    this._trackReaderRunning = true;
 
-    this._scriptProcessor.onaudioprocess = (e) => {
-      if (!this.micEnabled) return;
-      const input = e.inputBuffer.getChannelData(0);
-      const resampled = resample(
-        input,
-        this._audioContext.sampleRate,
-        TARGET_SAMPLE_RATE
-      );
-      const copy = new Float32Array(resampled.length);
-      copy.set(resampled);
-      this._whisperWorker.postMessage(
-        { type: "audio", buffer: copy },
-        [copy.buffer]
-      );
+    let resampleBuffer = new Float32Array(0);
+
+    const pumpFrames = async () => {
+      while (this._trackReaderRunning) {
+        let result;
+        try {
+          result = await reader.read();
+        } catch (err) {
+          if (this._trackReaderRunning) {
+            console.warn("[transcription] Track reader error:", err);
+          }
+          break;
+        }
+        if (result.done) break;
+
+        const frame = result.value;
+        if (!this.micEnabled) {
+          frame.close();
+          continue;
+        }
+
+        // Extract raw PCM samples from the AudioData frame
+        const srcRate = frame.sampleRate;
+        const numSamples = frame.numberOfFrames;
+        const raw = new Float32Array(numSamples);
+        frame.copyTo(raw, { planeIndex: 0 });
+        frame.close();
+
+        // Resample to TARGET_SAMPLE_RATE
+        let samples;
+        if (srcRate === TARGET_SAMPLE_RATE) {
+          samples = raw;
+        } else {
+          const ratio = srcRate / TARGET_SAMPLE_RATE;
+          const outLen = Math.round(numSamples / ratio);
+          samples = new Float32Array(outLen);
+          for (let i = 0; i < outLen; i++) {
+            const srcIdx = i * ratio;
+            const lo = Math.floor(srcIdx);
+            const hi = Math.min(lo + 1, numSamples - 1);
+            const frac = srcIdx - lo;
+            samples[i] = raw[lo] * (1 - frac) + raw[hi] * frac;
+          }
+        }
+
+        // Accumulate and send in WORKER_BUFFER_SIZE chunks
+        const combined = new Float32Array(resampleBuffer.length + samples.length);
+        combined.set(resampleBuffer);
+        combined.set(samples, resampleBuffer.length);
+
+        let offset = 0;
+        while (offset + WORKER_BUFFER_SIZE <= combined.length) {
+          const chunk = combined.slice(offset, offset + WORKER_BUFFER_SIZE);
+          this._whisperWorker.postMessage(
+            { type: "audio", buffer: chunk },
+            [chunk.buffer]
+          );
+          offset += WORKER_BUFFER_SIZE;
+        }
+        resampleBuffer = combined.slice(offset);
+      }
     };
 
-    source.connect(this._scriptProcessor);
-    this._scriptProcessor.connect(this._audioContext.destination);
-
-    console.log("[transcription] Setup complete, streaming audio chunks to worker");
+    pumpFrames();
+    console.log("[transcription] Setup complete (MediaStreamTrackProcessor), streaming audio to worker");
   }
 
   _stopTranscription() {
@@ -1178,13 +1206,10 @@ export class CallSession extends EventTarget {
       this._whisperWorker.terminate();
       this._whisperWorker = null;
     }
-    if (this._scriptProcessor) {
-      this._scriptProcessor.disconnect();
-      this._scriptProcessor = null;
-    }
-    if (this._audioContext) {
-      this._audioContext.close();
-      this._audioContext = null;
+    this._trackReaderRunning = false;
+    if (this._trackReader) {
+      this._trackReader.cancel().catch(() => {});
+      this._trackReader = null;
     }
     this._prefixCursor = null;
     this._currentInterimLength = 0;

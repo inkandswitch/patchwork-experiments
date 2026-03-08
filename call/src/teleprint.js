@@ -93,6 +93,23 @@ function inlineMarkdown(text) {
 export default function TeleprintTool(handle, element) {
   let summaryWorker = null;
   let summaryVisible = false;
+  let chatProfileHandle = null;
+
+  // Try to load chat profile for reusing OpenRouter settings
+  const repo = element.repo;
+  async function loadChatProfile() {
+    try {
+      const adh = window.accountDocHandle;
+      if (!adh) return;
+      const ad = adh.doc();
+      if (ad?.chatProfileUrl) {
+        chatProfileHandle = await repo.find(ad.chatProfileUrl);
+      }
+    } catch (err) {
+      console.warn("[teleprint] Could not load chat profile:", err);
+    }
+  }
+  const chatProfileReady = loadChatProfile();
 
   const container = document.createElement("div");
   container.style.cssText =
@@ -253,6 +270,35 @@ export default function TeleprintTool(handle, element) {
     .tp-summary-content {
       margin-top: 4px;
     }
+    .tp-settings-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+      font-family: "Chicago", "ChicagoFLF", Geneva, system-ui, sans-serif;
+      font-size: 11px;
+      color: #000;
+    }
+    .tp-settings-row label {
+      white-space: nowrap;
+    }
+    .tp-settings-row input,
+    .tp-settings-row select {
+      font-family: Geneva, system-ui, sans-serif;
+      font-size: 11px;
+      border: 2px inset #c0c0c0;
+      background: #fff;
+      color: #000;
+      padding: 1px 4px;
+    }
+    .tp-settings-row input[type="password"] {
+      flex: 1;
+      min-width: 0;
+    }
+    .tp-settings-row select {
+      flex: 1;
+      min-width: 0;
+    }
   `;
   element.appendChild(style);
 
@@ -344,6 +390,107 @@ export default function TeleprintTool(handle, element) {
 
   summaryPanel.appendChild(actionsRow);
 
+  // ---- OpenRouter settings row ----
+  const settingsRow = document.createElement("div");
+  settingsRow.className = "tp-settings-row";
+
+  const keyLabel = document.createElement("label");
+  keyLabel.textContent = "Key:";
+  settingsRow.appendChild(keyLabel);
+
+  const keyInput = document.createElement("input");
+  keyInput.type = "password";
+  keyInput.placeholder = "sk-or-v1-…";
+  settingsRow.appendChild(keyInput);
+
+  const modelLabel = document.createElement("label");
+  modelLabel.textContent = "Model:";
+  settingsRow.appendChild(modelLabel);
+
+  const modelSelect = document.createElement("select");
+  settingsRow.appendChild(modelSelect);
+
+  summaryPanel.appendChild(settingsRow);
+
+  const DEFAULT_MODEL = "anthropic/claude-sonnet-4";
+  const MODEL_DISPLAY_NAMES = {
+    "google/gemini-2.5-flash-preview": "Gemini 2.5 Flash",
+  };
+
+  function getOpenRouterKey() {
+    return keyInput.value.trim() || chatProfileHandle?.doc()?.openrouterApiKey || "";
+  }
+
+  function getOpenRouterModel() {
+    return modelSelect.value || chatProfileHandle?.doc()?.openrouterModel || DEFAULT_MODEL;
+  }
+
+  function populateModelSelect(currentModel) {
+    modelSelect.innerHTML = "";
+    const opt = document.createElement("option");
+    opt.value = currentModel;
+    opt.textContent = MODEL_DISPLAY_NAMES[currentModel] || currentModel;
+    opt.selected = true;
+    modelSelect.appendChild(opt);
+  }
+
+  function fetchModels(apiKey) {
+    if (!apiKey) return;
+    const lo = document.createElement("option");
+    lo.disabled = true;
+    lo.textContent = "Loading…";
+    modelSelect.innerHTML = "";
+    modelSelect.appendChild(lo);
+    const currentModel = getOpenRouterModel();
+    fetch("https://openrouter.ai/api/v1/models", {
+      headers: { "Authorization": "Bearer " + apiKey },
+    }).then(r => r.json()).then(data => {
+      modelSelect.innerHTML = "";
+      const models = (data.data || []).sort((a, b) => (a.id || "").localeCompare(b.id || ""));
+      for (const m of models) {
+        const opt = document.createElement("option");
+        opt.value = m.id;
+        opt.textContent = MODEL_DISPLAY_NAMES[m.id] || m.name || m.id;
+        if (m.id === currentModel) opt.selected = true;
+        modelSelect.appendChild(opt);
+      }
+    }).catch(() => {
+      populateModelSelect(currentModel);
+    });
+  }
+
+  // Initialize settings from chat profile when it loads
+  chatProfileReady.then(() => {
+    const profile = chatProfileHandle?.doc();
+    if (profile?.openrouterApiKey && !keyInput.value) {
+      keyInput.value = profile.openrouterApiKey;
+    }
+    const model = profile?.openrouterModel || DEFAULT_MODEL;
+    populateModelSelect(model);
+    if (profile?.openrouterApiKey) {
+      fetchModels(profile.openrouterApiKey);
+    }
+  });
+
+  keyInput.addEventListener("change", () => {
+    const k = keyInput.value.trim();
+    if (k) fetchModels(k);
+  });
+
+  // Save key/model back to chat profile on change
+  function saveSettingsToProfile() {
+    if (!chatProfileHandle) return;
+    const key = keyInput.value.trim();
+    const model = modelSelect.value;
+    chatProfileHandle.change((d) => {
+      if (key) d.openrouterApiKey = key;
+      if (model) d.openrouterModel = model;
+      if (key) d.llmProvider = "openrouter";
+    });
+  }
+  keyInput.addEventListener("change", saveSettingsToProfile);
+  modelSelect.addEventListener("change", saveSettingsToProfile);
+
   const summaryContent = document.createElement("div");
   summaryContent.className = "tp-summary-content";
   summaryPanel.appendChild(summaryContent);
@@ -378,7 +525,135 @@ export default function TeleprintTool(handle, element) {
   handle.on("change", onDocChange);
 
   // ---- Generate action ----
-  generateBtn.addEventListener("click", (e) => {
+
+  function extractSpeakers(text) {
+    const names = new Set();
+    for (const match of text.matchAll(/^<([^>]+)>/gm)) {
+      names.add(match[1]);
+    }
+    return [...names];
+  }
+
+  function buildSummaryPrompt(transcript) {
+    const MAX_INPUT_CHARS = 8000;
+    let text = transcript;
+    if (text.length > MAX_INPUT_CHARS) {
+      text = text.slice(-MAX_INPUT_CHARS);
+      const nl = text.indexOf("\n");
+      if (nl !== -1) text = text.slice(nl + 1);
+    }
+    const speakers = extractSpeakers(text);
+    const speakerList = speakers.length > 0 ? `\nParticipants: ${speakers.join(", ")}` : "";
+    return [
+      {
+        role: "system",
+        content:
+          "You are a meeting notes assistant. You receive call transcripts " +
+          "where each line is formatted as `<Speaker Name> what they said`. " +
+          "Produce clear, structured meeting notes in markdown.\n\n" +
+          "Include these sections:\n" +
+          "# Meeting Notes\n" +
+          "- A **one-sentence summary** of what the meeting was about\n" +
+          "- **Participants** list\n" +
+          "- **Key Discussion Points** as bullet points\n" +
+          "- **Decisions** (if any were made)\n" +
+          "- **Action Items** (if any, with who is responsible)\n" +
+          "- A brief **Per-Participant Summary** section with a short " +
+          "paragraph for each speaker describing their main contributions\n\n" +
+          "Be concise but thorough. Use markdown formatting with headers. " +
+          "Do not include the raw transcript in your output.",
+      },
+      {
+        role: "user",
+        content:
+          `Here is the meeting transcript:${speakerList}\n\n${text}\n\n` +
+          "Please generate the meeting notes.",
+      },
+    ];
+  }
+
+  async function generateViaOpenRouter(content) {
+    const apiKey = getOpenRouterKey();
+    const model = getOpenRouterModel();
+    const messages = buildSummaryPrompt(content);
+
+    statusEl.textContent = "Summarizing via " + (MODEL_DISPLAY_NAMES[model] || model) + "…";
+    generateBtn.disabled = true;
+
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer " + apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ model, messages, stream: true }),
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error("OpenRouter: " + err);
+    }
+
+    let full = "";
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const data = line.slice(6).trim();
+        if (data === "[DONE]") continue;
+        try {
+          const parsed = JSON.parse(data);
+          const delta = parsed.choices?.[0]?.delta?.content;
+          if (delta) {
+            full += delta;
+            // Live-update the summary as tokens stream in
+            summaryContent.innerHTML = renderMarkdown(full);
+          }
+        } catch {}
+      }
+    }
+    return full;
+  }
+
+  function generateViaWorker(content) {
+    return new Promise((resolve, reject) => {
+      if (!summaryWorker) {
+        const workerUrl = new URL("./summary-worker.js", import.meta.url);
+        summaryWorker = new Worker(workerUrl, { type: "module" });
+
+        summaryWorker.onerror = (err) => {
+          console.error("[teleprint] Summary worker error:", err);
+          summaryWorker.terminate();
+          summaryWorker = null;
+          reject(err);
+        };
+      }
+
+      summaryWorker.onmessage = (ev) => {
+        const { type, message, summary } = ev.data;
+        if (type === "status") {
+          statusEl.textContent = message;
+        } else if (type === "ready") {
+          // model loaded, generation will follow
+        } else if (type === "result") {
+          resolve(summary);
+        }
+      };
+
+      statusEl.textContent = "Summarizing…";
+      generateBtn.disabled = true;
+      summaryWorker.postMessage({ type: "summarize", text: content });
+    });
+  }
+
+  generateBtn.addEventListener("click", async (e) => {
     e.stopPropagation();
     const content = handle.doc()?.content;
     if (!content || content.trim().length === 0) {
@@ -387,42 +662,28 @@ export default function TeleprintTool(handle, element) {
       return;
     }
 
-    if (!summaryWorker) {
-      const workerUrl = new URL("./summary-worker.js", import.meta.url);
-      summaryWorker = new Worker(workerUrl, { type: "module" });
-
-      summaryWorker.onmessage = (ev) => {
-        const { type, message, summary } = ev.data;
-        if (type === "status") {
-          statusEl.textContent = message;
-          generateBtn.disabled = true;
-        } else if (type === "ready") {
-          statusEl.textContent = "";
-          generateBtn.disabled = false;
-        } else if (type === "result") {
-          statusEl.textContent = "";
-          generateBtn.disabled = false;
-          generateBtn.textContent = "Regenerate";
-          handle.change((doc) => {
-            doc.summary = summary;
-          });
-          renderSummaryContent();
-        }
-      };
-
-      summaryWorker.onerror = (err) => {
-        console.error("[teleprint] Summary worker error:", err);
-        statusEl.textContent = "Summary worker crashed";
-        generateBtn.disabled = false;
-        // Kill the broken worker so a fresh one is created next time
-        summaryWorker.terminate();
-        summaryWorker = null;
-      };
-    }
-
-    statusEl.textContent = "Summarizing\u2026";
     generateBtn.disabled = true;
-    summaryWorker.postMessage({ type: "summarize", text: content });
+
+    try {
+      let summary;
+      if (getOpenRouterKey()) {
+        summary = await generateViaOpenRouter(content);
+      } else {
+        summary = await generateViaWorker(content);
+      }
+
+      statusEl.textContent = "";
+      generateBtn.disabled = false;
+      generateBtn.textContent = "Regenerate";
+      handle.change((doc) => {
+        doc.summary = summary;
+      });
+      renderSummaryContent();
+    } catch (err) {
+      console.error("[teleprint] Summary error:", err);
+      statusEl.textContent = "Error: " + (err.message || err);
+      generateBtn.disabled = false;
+    }
   });
 
   return () => {
