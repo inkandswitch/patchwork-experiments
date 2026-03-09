@@ -29,6 +29,9 @@ importers:
       maplibre-gl:
         specifier: ^5.19.0
         version: 5.19.0
+      ohm-js:
+        specifier: ^17.5.0
+        version: 17.5.0
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -1130,6 +1133,10 @@ packages:
 
   node-releases@2.0.27:
     resolution: {integrity: sha512-nmh3lCkYZ3grZvqcCH+fjmQ7X+H0OeZgP40OierEaAptX4XofMh5kwNbWh7lBduUzCcV/8kZ+NDLCwm2iorIlA==}
+
+  ohm-js@17.5.0:
+    resolution: {integrity: sha512-l4Sa7026+6jsvYbt0PXKmL+f+ML32fD++IznLgxDhx2t9Cx6NC7zwRqblCujPHGGmkQerHoeBzRutdxaw/S72g==}
+    engines: {node: '>=0.12.1'}
 
   onetime@5.1.2:
     resolution: {integrity: sha512-kbpaSSGJTWdAY5KPVeMOKXSrPtr8C8C7wodJbcsd51jRnmD+GZu8Y0VoU6Dm5Z4vWr0Ig/1NKuWRKf7j5aaYSg==}
@@ -2490,6 +2497,8 @@ snapshots:
     optional: true
 
   node-releases@2.0.27: {}
+
+  ohm-js@17.5.0: {}
 
   onetime@5.1.2:
     dependencies:

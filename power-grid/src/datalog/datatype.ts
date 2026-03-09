@@ -1,6 +1,5 @@
 import type { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
-import { DEFAULT_FACTS, DEFAULT_RULES } from './defaults';
-import { serializeFacts, serializeRules } from './datalog';
+import { DEFAULT_FACTS_TEXT, DEFAULT_RULES_TEXT } from './defaults';
 
 export type DatalogDoc = {
   '@patchwork': { type: 'datalog' };
@@ -10,8 +9,8 @@ export type DatalogDoc = {
 
 export const DatalogDatatype: DatatypeImplementation<DatalogDoc> = {
   init(doc: DatalogDoc) {
-    doc.factsText = serializeFacts(DEFAULT_FACTS);
-    doc.rulesText = serializeRules(DEFAULT_RULES);
+    doc.factsText = DEFAULT_FACTS_TEXT;
+    doc.rulesText = DEFAULT_RULES_TEXT;
   },
   getTitle(_doc: DatalogDoc) {
     return 'Datalog Database';

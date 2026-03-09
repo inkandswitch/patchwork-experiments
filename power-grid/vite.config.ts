@@ -10,7 +10,12 @@ export default defineConfig({
   base: "./",
   plugins: [topLevelAwait(), wasm(), react(), cssInjectedByJsPlugin()],
 
+  esbuild: {
+    target: 'es2022',
+  },
+
   build: {
+    target: 'es2022',
     rollupOptions: {
       external,
       input: "./src/index.ts",

@@ -1,11 +1,13 @@
+import * as ohm from 'ohm-js';
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type Constant = string | number;
 
-// Term used in rule atoms. Convention (stored as plain string):
+// Term in a rule atom (stored as plain string):
 //   starts with uppercase letter → variable  e.g. "X", "Cap"
 //   "_"                          → wildcard
-//   otherwise                    → constant   e.g. "north", "500" or number
+//   otherwise                    → constant   e.g. "north", "500" or a number
 export type Term = string;
 
 export type StoredFact = { pred: string; args: Constant[] };
@@ -21,18 +23,16 @@ export type ParseResult = {
 // ─── Key derivation ───────────────────────────────────────────────────────────
 
 function serializeConstant(c: Constant): string {
-  return typeof c === 'number' ? String(c) : c;
-}
-
-function serializeTerm(t: Term): string {
-  return t;
+  return String(c);
 }
 
 function serializeAtom(a: StoredAtom): string {
-  return `${a.pred}(${a.args.map(serializeTerm).join(', ')})`;
+  if (a.args.length === 0) return a.pred;
+  return `${a.pred}(${a.args.join(', ')})`;
 }
 
 function serializeFactAtom(f: StoredFact): string {
+  if (f.args.length === 0) return f.pred;
   return `${f.pred}(${f.args.map(serializeConstant).join(', ')})`;
 }
 
@@ -54,7 +54,145 @@ export function serializeRules(rules: StoredRule[]): string {
   return rules.map(r => ruleKey(r) + '.').join('\n');
 }
 
-// ─── Parsing (text → structure) ───────────────────────────────────────────────
+// ─── ohm.js grammar ───────────────────────────────────────────────────────────
+
+const GRAMMAR_SRC = String.raw`
+Datalog {
+  Program     = Statement*
+
+  Statement   = Rule "."   -- rule
+              | Fact "."   -- fact
+
+  Rule        = Atom ":-" NonemptyListOf<BodyLit, ",">
+
+  Fact        = Atom
+
+  BodyLit     = SumLit
+              | Atom
+
+  SumLit      = "sum" "(" Term "," Atom "," Term ")"
+
+  Atom        = ident "(" ListOf<Term, ","> ")"  -- args
+              | ident                             -- bare
+
+  Term        = "_"      -- wildcard
+              | number   -- num
+              | ident    -- name
+
+  ident       = ~reserved letter (alnum | "_")*
+  reserved    = "sum" ~(alnum | "_")
+
+  number      = "-"? digit+ ("." digit+)?
+
+  comment     = ("%" | "//") (~"\n" any)* ("\n" | end)
+  space      += comment
+}
+`;
+
+const grammar = ohm.grammar(GRAMMAR_SRC);
+
+// ─── Semantics ────────────────────────────────────────────────────────────────
+
+type ParseOutput = {
+  facts: StoredFact[];
+  rules: StoredRule[];
+  errors: ParseResult['errors'];
+};
+
+const semantics = grammar.createSemantics();
+
+semantics.addOperation<any>('toAST', {
+  Program(stmts) {
+    const output: ParseOutput = { facts: [], rules: [], errors: [] };
+    for (const s of stmts.children) {
+      const r = s.toAST();
+      if (r.kind === 'fact') output.facts.push(r.fact);
+      else if (r.kind === 'rule') output.rules.push(r.rule);
+    }
+    return output;
+  },
+
+  // Statement_rule body is: Rule "."  → arity 2
+  Statement_rule(rule, _dot) {
+    return rule.toAST();
+  },
+
+  // Rule = Atom ":-" NonemptyListOf<BodyLit, ",">  → arity 3
+  Rule(atom, _arrow, bodyList) {
+    const head: StoredAtom = atom.toAST();
+    const body: StoredAtom[] = bodyList.asIteration().children.map((b: any) => b.toAST());
+    return { kind: 'rule', rule: { head, body } };
+  },
+
+  // Statement_fact body is: Fact "."  → arity 2
+  Statement_fact(fact, _dot) {
+    const a: StoredAtom = fact.toAST();
+    const args: Constant[] = [];
+    for (const t of a.args) {
+      if (isVariable(t) || isWildcard(t)) {
+        return { kind: 'error', message: `Fact contains variable: ${t}` };
+      }
+      args.push(parseConstant(t));
+    }
+    return { kind: 'fact', fact: { pred: a.pred, args } };
+  },
+
+  // Fact = Atom  → arity 1
+  Fact(atom) {
+    return atom.toAST();
+  },
+
+  // BodyLit = SumLit | Atom  → arity 1 (non-inline alternation)
+  BodyLit(child) {
+    return child.toAST();
+  },
+
+  SumLit(_, _lp, aggVar, _c1, pattern, _c2, outVar, _rp) {
+    const patAtom: StoredAtom = pattern.toAST();
+    // Serialize the inner atom back to a string so the evaluator can re-parse it
+    const patStr = serializeAtom(patAtom);
+    return {
+      pred: 'sum',
+      args: [aggVar.toAST() as string, patStr, outVar.toAST() as string],
+    } as StoredAtom;
+  },
+
+  Atom_args(pred, _lp, argList, _rp) {
+    const args: Term[] = argList.asIteration().children.map((t: any) => t.toAST() as string);
+    return { pred: pred.sourceString, args } as StoredAtom;
+  },
+
+  Atom_bare(pred) {
+    return { pred: pred.sourceString, args: [] } as StoredAtom;
+  },
+
+  Term_wildcard(_) {
+    return '_';
+  },
+
+  // Term_num body is: number  → arity 1
+  Term_num(num) {
+    return num.sourceString.trim();
+  },
+
+  Term_name(id) {
+    return id.sourceString;
+  },
+
+  ident(_first, _rest) {
+    return this.sourceString;
+  },
+
+  _iter(...children) {
+    return children.map(c => c.toAST());
+  },
+
+  _terminal() {
+    return this.sourceString;
+  },
+});
+
+// ─── Public parse function ────────────────────────────────────────────────────
 
 function isVariable(t: string): boolean {
   return t.length > 0 && t[0] >= 'A' && t[0] <= 'Z';
@@ -64,127 +202,50 @@ function isWildcard(t: string): boolean {
   return t === '_';
 }
 
-function parseConstant(s: string): Constant {
+export function parseConstant(s: string): Constant {
   const n = Number(s);
   return isNaN(n) ? s : n;
 }
 
-// Parse a single atom string like "pred(arg1, arg2)" into a StoredAtom.
-// Returns null on failure.
-function parseAtomStr(s: string): StoredAtom | null {
-  s = s.trim();
-  const match = s.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\)\s*$/);
-  if (!match) {
-    // Also allow 0-arity atoms: "pred"
-    const bare = s.match(/^([a-zA-Z_][a-zA-Z0-9_]*)$/);
-    if (bare) return { pred: bare[1], args: [] };
-    return null;
-  }
-  const pred = match[1];
-  const argsStr = match[2].trim();
-  const args: Term[] = argsStr === '' ? [] : argsStr.split(',').map(a => a.trim());
-  return { pred, args };
-}
-
-function atomToFact(atom: StoredAtom): StoredFact | null {
-  const args: Constant[] = [];
-  for (const a of atom.args) {
-    if (isVariable(a) || isWildcard(a)) return null; // has unbound terms
-    args.push(parseConstant(a));
-  }
-  return { pred: atom.pred, args };
-}
-
 export function parseProgram(text: string): ParseResult {
-  const facts: StoredFact[] = [];
-  const rules: StoredRule[] = [];
   const errors: ParseResult['errors'] = [];
 
-  const lines = text.split('\n');
+  // Try parsing the whole program
+  const matchResult = grammar.match(text);
 
-  for (let i = 0; i < lines.length; i++) {
-    // Strip comments and trailing dots/whitespace
-    let line = lines[i].replace(/\/\/.*$/, '').replace(/%.*$/, '').trim();
-    if (line.endsWith('.')) line = line.slice(0, -1).trim();
-    if (!line) continue;
-
-    if (line.includes(':-')) {
-      // Rule
-      const sepIdx = line.indexOf(':-');
-      const headStr = line.slice(0, sepIdx).trim();
-      const bodyStr = line.slice(sepIdx + 2).trim();
-
-      const head = parseAtomStr(headStr);
-      if (!head) {
-        errors.push({ line: i + 1, text: lines[i], message: `Invalid rule head: "${headStr}"` });
-        continue;
-      }
-
-      const bodyAtoms: StoredAtom[] = [];
-      let parseError = false;
-
-      // Split body on commas, but respect parentheses
-      const bodyParts = splitOnComma(bodyStr);
-      for (const part of bodyParts) {
-        const atom = parseAtomStr(part.trim());
-        if (!atom) {
-          errors.push({ line: i + 1, text: lines[i], message: `Invalid body atom: "${part.trim()}"` });
-          parseError = true;
-          break;
-        }
-        bodyAtoms.push(atom);
-      }
-
-      if (!parseError) {
-        rules.push({ head, body: bodyAtoms });
-      }
-    } else {
-      // Fact
-      const atom = parseAtomStr(line);
-      if (!atom) {
-        errors.push({ line: i + 1, text: lines[i], message: `Invalid fact: "${line}"` });
-        continue;
-      }
-      const fact = atomToFact(atom);
-      if (!fact) {
-        errors.push({ line: i + 1, text: lines[i], message: `Fact contains variables: "${line}"` });
-        continue;
-      }
-      facts.push(fact);
-    }
+  if (matchResult.failed()) {
+    // Return a single error for the whole program; include position hint from ohm
+    const msg = matchResult.message ?? 'Parse error';
+    // Compute approximate line number from offset
+    const offset = (matchResult as any).getRightmostFailurePosition?.() ?? 0;
+    const line = text.slice(0, offset).split('\n').length;
+    errors.push({ line, text: '', message: msg });
+    return { facts: [], rules: [], errors };
   }
 
-  return { facts, rules, errors };
+  const output: ParseOutput = semantics(matchResult).toAST();
+
+  // Collect any fact-level variable errors that came back
+  return {
+    facts: output.facts,
+    rules: output.rules,
+    errors: [...errors, ...output.errors],
+  };
 }
 
-// Split a comma-separated list respecting parentheses depth.
-function splitOnComma(s: string): string[] {
-  const parts: string[] = [];
-  let depth = 0;
-  let current = '';
-  for (const ch of s) {
-    if (ch === '(') { depth++; current += ch; }
-    else if (ch === ')') { depth--; current += ch; }
-    else if (ch === ',' && depth === 0) {
-      parts.push(current);
-      current = '';
-    } else {
-      current += ch;
-    }
-  }
-  if (current.trim()) parts.push(current);
-  return parts;
+// Parse a single atom string (used by sum evaluator)
+export function parseAtom(s: string): StoredAtom | null {
+  // Wrap in a dummy fact statement for parsing
+  const m = grammar.match(s.trim() + '.', 'Fact');
+  if (m.failed()) return null;
+  return semantics(m).toAST();
 }
 
 // ─── Evaluator ────────────────────────────────────────────────────────────────
 
 type Bindings = Map<string, Constant>;
 
-function matchAtom(
-  atom: StoredAtom,
-  fact: StoredFact,
-  bindings: Bindings
-): Bindings | null {
+function matchAtom(atom: StoredAtom, fact: StoredFact, bindings: Bindings): Bindings | null {
   if (atom.pred !== fact.pred || atom.args.length !== fact.args.length) return null;
   const b = new Map(bindings);
   for (let i = 0; i < atom.args.length; i++) {
@@ -199,9 +260,7 @@ function matchAtom(
         b.set(t, v);
       }
     } else {
-      // constant — must match exactly
-      const c = parseConstant(t);
-      if (c !== v) return null;
+      if (parseConstant(t) !== v) return null;
     }
   }
   return b;
@@ -220,7 +279,7 @@ function evalBuiltin(atom: StoredAtom, bindings: Bindings): Bindings | null {
   if ((pred === 'eq' || pred === 'neq') && args.length === 2) {
     const a = resolve(args[0]);
     const b = resolve(args[1]);
-    if (a === undefined || b === undefined) return null; // unbound
+    if (a === undefined || b === undefined) return null;
     const equal = a === b;
     return (pred === 'eq' ? equal : !equal) ? bindings : null;
   }
@@ -235,9 +294,8 @@ function evalBuiltin(atom: StoredAtom, bindings: Bindings): Bindings | null {
   if (pred in CMP && args.length === 2) {
     const a = resolve(args[0]);
     const b = resolve(args[1]);
-    if (a === undefined || b === undefined) return null; // unbound
-    if (CMP[pred](Number(a), Number(b))) return bindings;
-    return null;
+    if (a === undefined || b === undefined) return null;
+    return CMP[pred](Number(a), Number(b)) ? bindings : null;
   }
 
   // Arithmetic built-ins (3 args: input, input, output)
@@ -250,7 +308,7 @@ function evalBuiltin(atom: StoredAtom, bindings: Bindings): Bindings | null {
   if (pred in ARITH && args.length === 3) {
     const a = resolve(args[0]);
     const b = resolve(args[1]);
-    if (a === undefined || b === undefined) return null; // unbound inputs
+    if (a === undefined || b === undefined) return null;
     const result = ARITH[pred](Number(a), Number(b));
     const outTerm = args[2];
     if (isWildcard(outTerm)) return bindings;
@@ -261,29 +319,139 @@ function evalBuiltin(atom: StoredAtom, bindings: Bindings): Bindings | null {
       b2.set(outTerm, result);
       return b2;
     }
-    // constant: check equality
     return parseConstant(outTerm) === result ? bindings : null;
   }
 
-  return null; // unknown built-in
+  return null;
 }
 
-const BUILTIN_PREDS = new Set(['lt', 'lte', 'gt', 'gte', 'eq', 'neq', 'add', 'sub', 'mul', 'div']);
+// Evaluate sum(aggVar, patternStr, outVar) against the current DB.
+// Groups matches by all variables in the pattern except aggVar.
+// Returns one bindings extension per group.
+function evalSum(atom: StoredAtom, db: StoredFact[], bindings: Bindings): Bindings[] {
+  const [aggVarTerm, patternStr, outTerm] = atom.args;
 
-function matchBody(
-  body: StoredAtom[],
-  db: StoredFact[],
-  bindings: Bindings
-): Bindings[] {
+  const pattern = parseAtom(String(patternStr));
+  if (!pattern) return [];
+
+  // Substitute current bindings into pattern terms
+  const substitutedPattern: StoredAtom = {
+    pred: pattern.pred,
+    args: pattern.args.map(t => {
+      if (isWildcard(t)) return t;
+      if (isVariable(t)) {
+        const v = bindings.get(t);
+        return v !== undefined ? String(v) : t;
+      }
+      return t;
+    }),
+  };
+
+  // Find all matches of the substituted pattern in DB
+  type Match = { groupKey: string; groupBindings: Bindings; aggValue: number };
+  const matches: Match[] = [];
+
+  for (const fact of db) {
+    const b = matchAtom(substitutedPattern, fact, new Map());
+    if (b === null) continue;
+
+    // Determine aggregate value
+    let aggValue: number;
+    if (isWildcard(aggVarTerm)) {
+      aggValue = 1; // count mode
+    } else if (isVariable(aggVarTerm)) {
+      const v = b.get(aggVarTerm);
+      if (v === undefined) continue; // aggVar not bound — skip
+      aggValue = Number(v);
+    } else {
+      aggValue = Number(parseConstant(aggVarTerm));
+    }
+
+    // Group key = all bound variables in this match EXCEPT aggVar
+    // (these become the "output" keys for grouping)
+    const groupBindings = new Map(b);
+    if (isVariable(aggVarTerm)) groupBindings.delete(aggVarTerm);
+
+    const groupKey = JSON.stringify([...groupBindings.entries()].sort());
+    matches.push({ groupKey, groupBindings, aggValue });
+  }
+
+  // Handle the no-matches case: zero groups → no results normally.
+  // Special case: if pattern has no free group variables, produce a single
+  // group with sum=0 so rules like `sum(G, generates(_, G), Total)` that
+  // have an empty DB still fire (Total=0).
+  if (matches.length === 0) {
+    // Check if there are no group variables at all (global aggregation)
+    const hasGroupVars = substitutedPattern.args.some(
+      t => isVariable(t) && t !== aggVarTerm
+    );
+    if (!hasGroupVars) {
+      // Yield a single result with sum=0
+      return [bindOut(bindings, outTerm, 0)].filter(Boolean) as Bindings[];
+    }
+    return [];
+  }
+
+  // Aggregate: group by groupKey, sum aggValues
+  const groups = new Map<string, { groupBindings: Bindings; total: number }>();
+  for (const m of matches) {
+    if (groups.has(m.groupKey)) {
+      groups.get(m.groupKey)!.total += m.aggValue;
+    } else {
+      groups.set(m.groupKey, { groupBindings: m.groupBindings, total: m.aggValue });
+    }
+  }
+
+  // Produce result bindings
+  const results: Bindings[] = [];
+  for (const { groupBindings, total } of groups.values()) {
+    // Merge group bindings into current bindings
+    const merged = new Map(bindings);
+    for (const [k, v] of groupBindings) {
+      merged.set(k, v);
+    }
+    const extended = bindOut(merged, outTerm, total);
+    if (extended) results.push(extended);
+  }
+  return results;
+}
+
+function bindOut(bindings: Bindings, outTerm: Term, value: number): Bindings | null {
+  if (isWildcard(outTerm)) return bindings;
+  if (isVariable(outTerm)) {
+    const existing = bindings.get(outTerm);
+    if (existing !== undefined && existing !== value) return null;
+    const b = new Map(bindings);
+    b.set(outTerm, value);
+    return b;
+  }
+  // constant: check equality
+  return parseConstant(outTerm) === value ? bindings : null;
+}
+
+const SIMPLE_BUILTINS = new Set(['lt', 'lte', 'gt', 'gte', 'eq', 'neq', 'add', 'sub', 'mul', 'div']);
+
+function matchBody(body: StoredAtom[], db: StoredFact[], bindings: Bindings): Bindings[] {
   if (body.length === 0) return [bindings];
   const [first, ...rest] = body;
 
-  if (BUILTIN_PREDS.has(first.pred)) {
+  // sum aggregation
+  if (first.pred === 'sum') {
+    const results: Bindings[] = [];
+    for (const b of evalSum(first, db, bindings)) {
+      results.push(...matchBody(rest, db, b));
+    }
+    return results;
+  }
+
+  // simple built-ins
+  if (SIMPLE_BUILTINS.has(first.pred)) {
     const b = evalBuiltin(first, bindings);
     if (b === null) return [];
     return matchBody(rest, db, b);
   }
 
+  // regular DB lookup
   const results: Bindings[] = [];
   for (const fact of db) {
     const b = matchAtom(first, fact, bindings);
@@ -297,10 +465,10 @@ function matchBody(
 function substituteHead(head: StoredAtom, bindings: Bindings): StoredFact | null {
   const args: Constant[] = [];
   for (const t of head.args) {
-    if (isWildcard(t)) return null; // wildcards in head are invalid
+    if (isWildcard(t)) return null;
     if (isVariable(t)) {
       const v = bindings.get(t);
-      if (v === undefined) return null; // unbound variable in head
+      if (v === undefined) return null;
       args.push(v);
     } else {
       args.push(parseConstant(t));
