@@ -49,7 +49,7 @@ utilization(X, Y, Pct) :- edge(X, Y, C), flow(X, Y, F), div(F, C, Pct).
 underutilized(X, Y) :- utilization(X, Y, Pct), lt(Pct, 0.5).
 
 % --- Node conservation ---
-node_balanced(N) :- inflow(N, In), outflow(N, Out), generates(N, G), consumes(N, C), add(In, G, Supply), add(Out, C, Demand), gte(Supply, Demand).
+node_balanced(N) :- generates(N, G), consumes(N, C), sum(F, flow(_, N, F), In), sum(F, flow(N, _, F), Out), add(In, G, Supply), add(Out, C, Demand), gte(Supply, Demand).
 
 % --- Global balance ---
 grid_balanced :- sum(G, generates(_, G), TotalGen), sum(C, consumes(_, C), TotalCon), gte(TotalGen, TotalCon).
@@ -58,7 +58,7 @@ grid_balanced :- sum(G, generates(_, G), TotalGen), sum(C, consumes(_, C), Total
 net_balance(N, B) :- generates(N, G), consumes(N, C), sub(G, C, B).
 
 % --- Node flow conservation (inflow + generation - outflow - consumption) ---
-node_flow_balance(N, Net) :- inflow(N, In), outflow(N, Out), generates(N, G), consumes(N, C), add(In, G, Supply), add(Out, C, Demand), sub(Supply, Demand, Net).
+node_flow_balance(N, Net) :- generates(N, G), consumes(N, C), sum(F, flow(_, N, F), In), sum(F, flow(N, _, F), Out), add(In, G, Supply), add(Out, C, Demand), sub(Supply, Demand, Net).
 `.trim();
 
 export const DEFAULT_CONSTRAINTS_TEXT = `

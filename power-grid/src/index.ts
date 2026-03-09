@@ -1,7 +1,5 @@
 import type { Plugin } from '@inkandswitch/patchwork-plugins';
 
-console.log('version 5 of index.ts');
-
 export const plugins: Plugin<any>[] = [
   {
     type: 'patchwork:tool',
