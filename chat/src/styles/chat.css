@@ -359,6 +359,15 @@
       width:100%; font-size:13px; color:var(--text-secondary); font-style:italic;
       padding-left:2px; margin-top:2px;
     }
+    .chat-voice-transcribing {
+      opacity:0.5; animation:chat-pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes chat-pulse { 0%,100%{opacity:0.5} 50%{opacity:0.3} }
+    .chat-voice-transcribe-btn {
+      background:none; border:none; color:var(--text-muted); font-size:11px;
+      cursor:pointer; padding:2px 4px; opacity:0.6; font-style:italic;
+    }
+    .chat-voice-transcribe-btn:hover { opacity:1; text-decoration:underline; }
     .chat-voice-play-btn {
       width:32px; height:32px; border-radius:50%; background:var(--accent); color:var(--accent-fg);
       border:none; font-size:14px; cursor:pointer; display:flex; align-items:center;

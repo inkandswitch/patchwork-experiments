@@ -1,12 +1,10 @@
 import {
-	For,
+	Index,
 	Show,
 	createSignal,
 	createMemo,
 	createEffect,
-	onMount,
 	onCleanup,
-	batch,
 } from "solid-js"
 import type {AutomergeUrl} from "@automerge/automerge-repo"
 import {useChat} from "../context/ChatContext"
@@ -91,10 +89,6 @@ export function MessageList(props: {
 		}
 	})
 
-	// Stable message object cache — prevents <For> from remounting items
-	// when the memo re-evaluates but the message data hasn't changed
-	const stableMessages = new Map<string, ChatMessage>()
-
 	// Resolve messages from doc entries (pure computation, no side effects)
 	const messages = createMemo(() => {
 		const d = doc()
@@ -102,66 +96,32 @@ export function MessageList(props: {
 		const rawEntries = d.messages || []
 		const cache = msgDocCache()
 		const result: ChatMessage[] = []
-		const usedKeys = new Set<string>()
 
 		for (let ri = 0; ri < rawEntries.length; ri++) {
 			const entry = rawEntries[ri] as any
 			if (entry.ref && entry.url) {
 				const cached = cache.get(entry.url)
 				if (cached) {
-					const key = entry.url
-					usedKeys.add(key)
-					const prev = stableMessages.get(key)
-					// Reuse the same object reference if data hasn't changed
-					if (prev && prev._rawIdx === ri &&
-						prev.id === cached.data.id &&
-						prev.timestamp === cached.data.timestamp &&
-						prev.text === cached.data.text &&
-						prev.streaming === cached.data.streaming &&
-						prev.richBlocks?.length === cached.data.richBlocks?.length &&
-						reactionsEqual(prev.reactions, cached.data.reactions)) {
-						result.push(prev)
-					} else {
-						const msg = {...cached.data, _rawIdx: ri, _ref: entry}
-						// Clear stale streaming flag (>2 min old)
-						if (msg.streaming && msg.timestamp && Date.now() - msg.timestamp > 120000) {
-							msg.streaming = false
-						}
-						stableMessages.set(key, msg)
-						result.push(msg)
+					const msg = {...cached.data, _rawIdx: ri, _ref: entry}
+					// Clear stale streaming flag (>2 min old)
+					if (msg.streaming && msg.timestamp && Date.now() - msg.timestamp > 120000) {
+						msg.streaming = false
 					}
+					result.push(msg)
 				} else {
-					const key = "_loading_" + entry.url
-					usedKeys.add(key)
-					const prev = stableMessages.get(key)
-					if (prev) {
-						result.push(prev)
-					} else {
-						const msg: ChatMessage = {
-							_loading: true,
-							_rawIdx: ri,
-							id: key,
-							timestamp: entry.timestamp || 0,
-							name: "",
-							text: "",
-						}
-						stableMessages.set(key, msg)
-						result.push(msg)
-					}
+					result.push({
+						_loading: true,
+						_rawIdx: ri,
+						id: "_loading_" + entry.url,
+						timestamp: entry.timestamp || 0,
+						name: "",
+						text: "",
+					})
 				}
 			} else {
-				// Inline message — use index as key
-				const key = "_inline_" + ri
-				usedKeys.add(key)
-				const msg = {...entry, _rawIdx: ri}
-				stableMessages.set(key, msg)
-				result.push(msg)
+				// Inline message
+				result.push({...entry, _rawIdx: ri})
 			}
-		}
-
-		// Clean up stale entries
-		for (const key of stableMessages.keys()) {
-			if (!usedKeys.has(key)) stableMessages.delete(key)
 		}
 
 		return result
@@ -295,18 +255,18 @@ export function MessageList(props: {
 				when={messages().length > 0}
 				fallback={<div class="chat-empty">no messages yet. say hello</div>}
 			>
-				<For each={messages()}>
+				<Index each={messages()}>
 					{(msg, i) => {
-						const meta = () => messagesMeta()[i()]
+						const meta = () => messagesMeta()[i]
 						return (
-						<div data-msg-id={msg.id}>
-							{meta()?.showTimeGap && (
-								<div class="chat-time-gap">{formatTimeGap(msg.timestamp)}</div>
-							)}
+						<div data-msg-id={msg().id}>
+							<Show when={meta()?.showTimeGap}>
+								<div class="chat-time-gap">{formatTimeGap(msg().timestamp)}</div>
+							</Show>
 							<MessageRow
-								msg={msg}
+								msg={msg()}
 								isContinuation={meta()?.isContinuation ?? false}
-								replyToMsg={msg.replyTo ? msgMap().get(msg.replyTo) : undefined}
+								replyToMsg={msg().replyTo ? msgMap().get(msg().replyTo!) : undefined}
 								emoticonBlobUrls={emoticonBlobUrls()}
 								onReply={props.onReply}
 								onReact={props.onReact}
@@ -317,28 +277,8 @@ export function MessageList(props: {
 						</div>
 						)
 					}}
-				</For>
+				</Index>
 			</Show>
 		</div>
 	)
-}
-
-function reactionsEqual(
-	a: Record<string, string[]> | undefined,
-	b: Record<string, string[]> | undefined
-): boolean {
-	if (a === b) return true
-	if (!a || !b) return false
-	const ka = Object.keys(a)
-	const kb = Object.keys(b)
-	if (ka.length !== kb.length) return false
-	for (const k of ka) {
-		const va = a[k]
-		const vb = b[k]
-		if (!vb || va.length !== vb.length) return false
-		for (let i = 0; i < va.length; i++) {
-			if (va[i] !== vb[i]) return false
-		}
-	}
-	return true
 }

@@ -35,7 +35,7 @@ export function InputArea(props: {
 	let inputRowRef!: HTMLDivElement
 	let gifVideoRef!: HTMLVideoElement
 	let recBarsRef!: HTMLDivElement
-	let cmView: any = null
+	const [cmView, setCmView] = createSignal<any>(null)
 	const {handle, doc, repo} = useChat()
 	const {myName, myFont, myAvatarUrl, myEmoticons, myFonts, chatProfileHandle} = useIdentity()
 	const {broadcastPresence, peerFonts} = usePresence()
@@ -82,24 +82,27 @@ export function InputArea(props: {
 	}
 
 	function getInputValue(): string {
-		return cmView ? cmView.state.doc.toString() : ""
+		const cm = cmView()
+		return cm ? cm.state.doc.toString() : ""
 	}
 
 	function setInputValue(text: string) {
-		if (!cmView) return
-		cmView.dispatch({
-			changes: {from: 0, to: cmView.state.doc.length, insert: text},
+		const cm = cmView()
+		if (!cm) return
+		cm.dispatch({
+			changes: {from: 0, to: cm.state.doc.length, insert: text},
 		})
 	}
 
 	function focusInput() {
-		if (cmView) cmView.focus()
+		cmView()?.focus()
 	}
 
 	function updateInputState() {
-		if (!cmView) return
-		setInputText(cmView.state.doc.toString())
-		setCursorPos(cmView.state.selection.main.head)
+		const cm = cmView()
+		if (!cm) return
+		setInputText(cm.state.doc.toString())
+		setCursorPos(cm.state.selection.main.head)
 	}
 
 	// ---- GIF Camera ----
@@ -381,7 +384,7 @@ export function InputArea(props: {
 			const {EditorView, keymap} = cm
 			const placeholderText = "Message " + (doc()?.title || "chat")
 
-			cmView = new EditorView({
+			setCmView(new EditorView({
 				doc: "",
 				extensions: [
 					EditorView.theme({
@@ -394,11 +397,12 @@ export function InputArea(props: {
 							fontSize: "15px",
 							padding: "8px 12px",
 						},
-						".cm-scroller": {maxHeight: "120px"},
+						".cm-scroller": {maxHeight: "120px", overflow: "auto"},
 						".cm-line": {padding: "0"},
 						"&.cm-focused": {outline: "none"},
 						".cm-placeholder": {color: "var(--text-muted)"},
 					}),
+					EditorView.lineWrapping,
 					EditorView.contentAttributes.of({"aria-label": placeholderText}),
 					keymap.of([
 						{
@@ -424,7 +428,7 @@ export function InputArea(props: {
 					}),
 				],
 				parent: inputWrapRef,
-			})
+			}))
 
 			// Initialize draft sync after CodeMirror is ready
 			initDraftDoc()
@@ -436,13 +440,44 @@ export function InputArea(props: {
 	// Keep input font in sync with user's chosen font
 	createEffect(() => {
 		const font = myFont()
-		if (cmView) {
+		const cm = cmView()
+		if (cm) {
 			if (font) {
 				ensureFontLoaded(font, myFonts(), peerFonts())
 			}
-			cmView.dom.style.fontFamily = font || ""
+			const contentEl = cm.contentDOM as HTMLElement
+			if (contentEl) contentEl.style.fontFamily = font || ""
 		}
 	})
+
+	// ---- Patchwork URL parsing ----
+	const TINY_PW_RE = /https?:\/\/tiny\.patchwork\.inkandswitch\.com\/#[^\s]+/g
+	function parsePatchworkLinks(text: string): {docUrl: string; title: string; type: string; toolId: string; originalUrl: string}[] {
+		const links: {docUrl: string; title: string; type: string; toolId: string; originalUrl: string}[] = []
+		let match
+		while ((match = TINY_PW_RE.exec(text)) !== null) {
+			try {
+				const parsed = new URL(match[0])
+				if (parsed.hash) {
+					const params = new URLSearchParams(parsed.hash.slice(1))
+					const docId = params.get("doc")
+					if (docId) {
+						links.push({
+							docUrl: "automerge:" + docId,
+							title: params.get("title")
+								? decodeURIComponent(params.get("title")!.replace(/\+/g, " "))
+								: "",
+							type: params.get("type") || "",
+							toolId: params.get("tool") || "",
+							originalUrl: match[0],
+						})
+					}
+				}
+			} catch {}
+		}
+		TINY_PW_RE.lastIndex = 0
+		return links
+	}
 
 	// ---- Send ----
 	async function sendMessage() {
@@ -516,10 +551,20 @@ export function InputArea(props: {
 		}
 
 		const slashCmd = parseSlashCommand(text)
-		const msgText = slashCmd ? slashCmd.text : text
+		const sourceText = slashCmd ? slashCmd.text : text
 
-		// Collect pending embeds before building msgData
-		const embeds = pendingEmbeds()
+		// Extract patchwork doc links from text and strip them
+		const patchworkLinks = parsePatchworkLinks(sourceText)
+		let msgText = sourceText
+		for (const link of patchworkLinks) {
+			msgText = msgText.replace(link.originalUrl, "").trim()
+		}
+
+		// Merge patchwork links + pending embeds
+		const allEmbeds = [
+			...patchworkLinks.map(l => ({url: l.docUrl, toolId: l.toolId, name: l.title, type: l.type})),
+			...pendingEmbeds(),
+		]
 
 		const msgData: any = {
 			id: generateId(),
@@ -543,16 +588,16 @@ export function InputArea(props: {
 		if (slashCmd?.overrideColor) msgData.color = slashCmd.overrideColor
 		if (fileAttachments.length > 0) msgData.files = fileAttachments
 
-		// Add pending embeds
-		if (embeds.length > 0) {
-			msgData.embeds = embeds.map(e => ({
+		// Add embeds (from patchwork links in text + pending embeds from drag/drop)
+		if (allEmbeds.length > 0) {
+			msgData.embeds = allEmbeds.map(e => ({
 				docUrl: e.url,
 				toolId: e.toolId,
 				title: e.name,
 				type: e.type,
 			}))
 			// Also add to chat docs list
-			for (const e of embeds) {
+			for (const e of allEmbeds) {
 				handle.change((d: any) => {
 					if (!d.docs) d.docs = []
 					if (!d.docs.find((dl: any) => dl.url === e.url)) {
@@ -563,7 +608,7 @@ export function InputArea(props: {
 			setPendingEmbeds(() => [])
 		}
 
-		if (!msgText && !imageUrl && !gifSelfieUrl && fileAttachments.length === 0 && !msgData.embeds?.length) return
+		if (!msgText && !imageUrl && !gifSelfieUrl && fileAttachments.length === 0 && allEmbeds.length === 0) return
 
 		// Embed emoticon URLs referenced in text
 		const usedEmoticons: Record<string, string> = {}
@@ -588,16 +633,17 @@ export function InputArea(props: {
 	}
 
 	function handleAutocomplete(item: AutocompleteItem, colonStart: number) {
-		if (!cmView) return
+		const cm = cmView()
+		if (!cm) return
 		if (item.isCommand) {
-			cmView.dispatch({
-				changes: {from: 0, to: cmView.state.doc.length, insert: item.display},
+			cm.dispatch({
+				changes: {from: 0, to: cm.state.doc.length, insert: item.display},
 				selection: {anchor: item.display.length},
 			})
 		} else {
-			const cursor = cmView.state.selection.main.head
+			const cursor = cm.state.selection.main.head
 			const replacement = item.display + " "
-			cmView.dispatch({
+			cm.dispatch({
 				changes: {from: colonStart, to: cursor, insert: replacement},
 				selection: {anchor: colonStart + replacement.length},
 			})

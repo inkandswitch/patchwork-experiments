@@ -1,4 +1,5 @@
 import type {AutomergeUrl} from "@automerge/automerge-repo"
+import moonshineWorkerUrl from "../workers/moonshine-worker.js?worker&url"
 
 let worker: Worker | null = null
 let ready = false
@@ -8,8 +9,7 @@ const resultCallbacks = new Map<string, (text: string) => void>()
 function initWorker() {
 	if (worker) return
 	try {
-		const workerUrl = new URL("../../moonshine-worker.js", import.meta.url).href
-		worker = new Worker(workerUrl, {type: "module"})
+		worker = new Worker(moonshineWorkerUrl, {type: "module"})
 		worker.onmessage = (e) => {
 			const msg = e.data
 			if (msg.type === "ready") {

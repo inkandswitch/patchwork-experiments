@@ -18,6 +18,7 @@ import {ModelDialog} from "./ModelDialog"
 import {generateId} from "../lib/helpers"
 import {getNotificationSound, showOSNotification, setFaviconUnread} from "../lib/notifications"
 import {loadBlobUrl} from "../lib/blob-cache"
+import {transcribeVoiceNote} from "../lib/transcription"
 import "../styles/chat.css"
 
 export function ChatRoot(props: {
@@ -69,6 +70,11 @@ export function ChatRoot(props: {
 	// Single-host: only one tab should respond as Computer
 	const myInstanceId = generateId()
 	let heartbeatInterval: any = null
+	let stalenessWatchInterval: any = null
+	const HEARTBEAT_INTERVAL = 15000
+	const STALE_THRESHOLD = 45000 // 3 missed heartbeats = stale
+	const PING_TIMEOUT = 2000 // wait 2s for pong before claiming
+	const RESPONSE_TIMEOUT = 8000 // wait 8s for computer to start responding
 
 	function openEmojiPicker(idx: number, anchorEl: HTMLElement) {
 		setEmojiPickerState({open: true, targetIdx: idx, anchorEl})
@@ -646,9 +652,23 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 				if (msg.voiceUrl) {
 					try {
 						const rh = await repo.find(msg.voiceUrl)
-						const rd = rh.doc() as any
+						let rd = rh.doc() as any
 						if (rd?.transcription) {
 							text += "\n[Voice note transcription: " + rd.transcription + "]"
+						} else {
+							// Trigger transcription and wait briefly for it
+							const transcription = await new Promise<string | null>((resolve) => {
+								const timeout = setTimeout(() => resolve(null), 5000)
+								transcribeVoiceNote(msg.voiceUrl, (result) => {
+									clearTimeout(timeout)
+									resolve(result)
+								})
+							})
+							if (transcription) {
+								text += "\n[Voice note transcription: " + transcription + "]"
+							} else {
+								text += "\n[Voice note attached, transcription not yet available]"
+							}
 						}
 					} catch {}
 				}
@@ -726,6 +746,8 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 			setComputerActive(false)
 			setComputerAutoMode(false)
 			if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null }
+			if (computerListenerCleanup) { computerListenerCleanup(); computerListenerCleanup = null }
+			computerListenerActive = false
 			props.handle.change((d: any) => { d.hasComputer = false; delete d.computerInstanceId; delete d.computerHeartbeat })
 			sendComputerMessage("Computer has left the chat.")
 			return
@@ -750,13 +772,15 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 			d.computerInstanceId = myInstanceId
 			d.computerHeartbeat = Date.now()
 		})
+		// We're the host now, stop watching for staleness
+		if (stalenessWatchInterval) { clearInterval(stalenessWatchInterval); stalenessWatchInterval = null }
 		if (heartbeatInterval) clearInterval(heartbeatInterval)
 		heartbeatInterval = setInterval(() => {
 			const d = props.handle.doc() as any
 			if (d?.computerInstanceId === myInstanceId) {
 				props.handle.change((dd: any) => { dd.computerHeartbeat = Date.now() })
 			}
-		}, 15000)
+		}, HEARTBEAT_INTERVAL)
 	}
 
 	function isComputerHost(): boolean {
@@ -806,10 +830,14 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 							} catch {}
 						}
 					}
+					const lowerText = msg.text?.toLowerCase() || ""
+					const mentionsComputer = lowerText.includes("@computer") || lowerText.includes("@momcomputer")
 					const shouldRespond = computerAutoMode() ||
-						msg.text?.toLowerCase().includes("@computer") ||
+						mentionsComputer ||
 						isReplyToComputer
 					if (shouldRespond) {
+						// Signal to other tabs that we're handling this
+						props.handle.broadcast({type: "computer-responding", from: myInstanceId})
 						// Claim this message before responding
 						mh.change((d: any) => { d.computerClaimedBy = myInstanceId })
 						// Brief delay for CRDT sync
@@ -826,6 +854,8 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 				} catch (e) { console.warn("[Chat] computer resolve:", e) }
 			}
 			processing = false
+			// Items may have arrived while we were processing — drain again
+			if (pendingQueue.length > 0) processQueue()
 		}
 
 		const onDocChange = () => {
@@ -1081,25 +1111,150 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		}
 	}
 
-	// Check if computer was previously active — only claim if host is stale (>30s)
+	// Non-host tabs watch for @computer messages going unanswered
+	let watchMsgCount = 0
+	function onDocChangeWatchdog() {
+		if (isComputerHost()) return // host handles its own responses
+		const d = props.handle.doc() as any
+		if (!d?.hasComputer || !d?.messages) return
+		const msgs = d.messages
+		if (msgs.length <= watchMsgCount) { watchMsgCount = msgs.length; return }
+		// Check new messages for @computer mentions
+		const repo = (window as any).repo
+		if (!repo) return
+		for (let i = watchMsgCount; i < msgs.length; i++) {
+			const entry = msgs[i]
+			if (!entry?.url) continue
+			repo.find(entry.url).then((mh: any) => {
+				const msg = mh.doc()
+				if (!msg || msg.name === "Computer" || msg.isComputer) return
+				const lowerText = msg.text?.toLowerCase() || ""
+				const mentionsComputer = lowerText.includes("@computer") || lowerText.includes("@momcomputer")
+				if (mentionsComputer || computerAutoMode()) {
+					watchForResponse()
+				}
+			}).catch(() => {})
+		}
+		watchMsgCount = msgs.length
+	}
+
+	// Check if computer was previously active — ping to verify host is alive
 	onMount(() => {
+		props.handle.on("ephemeral-message", handleComputerEphemeral)
+		props.handle.on("change", onDocChangeWatchdog)
+		watchMsgCount = (props.handle.doc() as any)?.messages?.length || 0
+
 		const d = props.handle.doc() as any
 		if (d?.hasComputer) {
 			setComputerActive(true)
 			const heartbeat = d.computerHeartbeat || 0
 			const instanceId = d.computerInstanceId
-			if (!instanceId || (Date.now() - heartbeat) > 30000) {
-				// Previous host is gone, claim the role
+			if (!instanceId || (Date.now() - heartbeat) > STALE_THRESHOLD) {
+				// Previous host is obviously gone, claim immediately
 				claimComputerHost()
 				startComputerListener()
+			} else {
+				// Another host looks alive — ping to verify, fall back to staleness watch
+				pingComputerHost().then(alive => {
+					if (!alive && !isComputerHost()) {
+						claimComputerHost()
+						startComputerListener()
+					} else {
+						startStalenessWatch()
+					}
+				})
 			}
-			// If there IS a live host (another tab), don't start listener — just show the indicator
 		}
 	})
 
+	// Watch for the current computer host going stale and auto-claim
+	function startStalenessWatch() {
+		if (stalenessWatchInterval) return
+		stalenessWatchInterval = setInterval(() => {
+			const d = props.handle.doc() as any
+			if (!d?.hasComputer) {
+				clearInterval(stalenessWatchInterval); stalenessWatchInterval = null
+				return
+			}
+			// If we're already the host, no need to watch
+			if (d.computerInstanceId === myInstanceId) {
+				clearInterval(stalenessWatchInterval); stalenessWatchInterval = null
+				return
+			}
+			const heartbeat = d.computerHeartbeat || 0
+			if (Date.now() - heartbeat > STALE_THRESHOLD) {
+				clearInterval(stalenessWatchInterval); stalenessWatchInterval = null
+				claimComputerHost()
+				startComputerListener()
+			}
+		}, HEARTBEAT_INTERVAL)
+	}
+
+	// Ping/pong liveness: actively verify the computer host is alive
+	let pingResolve: ((alive: boolean) => void) | null = null
+
+	function pingComputerHost(): Promise<boolean> {
+		return new Promise((resolve) => {
+			pingResolve = resolve
+			props.handle.broadcast({type: "computer-ping", from: myInstanceId})
+			setTimeout(() => {
+				if (pingResolve === resolve) {
+					pingResolve = null
+					resolve(false)
+				}
+			}, PING_TIMEOUT)
+		})
+	}
+
+	function handleComputerEphemeral(data: {message: any}) {
+		const msg = data.message
+		if (!msg || typeof msg !== "object") return
+
+		// Host responds to pings
+		if (msg.type === "computer-ping" && msg.from !== myInstanceId && isComputerHost() && computerListenerActive) {
+			props.handle.broadcast({type: "computer-pong", from: myInstanceId})
+		}
+
+		// Non-host receives pong — the host is alive
+		if (msg.type === "computer-pong" && msg.from !== myInstanceId && pingResolve) {
+			const resolve = pingResolve
+			pingResolve = null
+			resolve(true)
+		}
+
+		// Watch for @computer messages going unanswered (any non-host tab monitors this)
+		if (msg.type === "computer-responding" && msg.from !== myInstanceId) {
+			// The host signalled it's handling a message — cancel any response watchdog
+			if (responseWatchdog) { clearTimeout(responseWatchdog); responseWatchdog = null }
+		}
+	}
+
+	// Response watchdog: if an @computer message isn't picked up, reclaim
+	let responseWatchdog: any = null
+
+	function watchForResponse() {
+		if (isComputerHost()) return // we're the host, we'll handle it
+		if (responseWatchdog) clearTimeout(responseWatchdog)
+		responseWatchdog = setTimeout(async () => {
+			responseWatchdog = null
+			const d = props.handle.doc() as any
+			if (!d?.hasComputer || d.computerInstanceId === myInstanceId) return
+			// Ping to verify — maybe the host is just slow
+			const alive = await pingComputerHost()
+			if (!alive) {
+				claimComputerHost()
+				startComputerListener()
+			}
+		}, RESPONSE_TIMEOUT)
+	}
+
 	onCleanup(() => {
 		if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null }
+		if (stalenessWatchInterval) { clearInterval(stalenessWatchInterval); stalenessWatchInterval = null }
 		if (computerListenerCleanup) { computerListenerCleanup(); computerListenerCleanup = null }
+		if (responseWatchdog) { clearTimeout(responseWatchdog); responseWatchdog = null }
+		props.handle.off("ephemeral-message", handleComputerEphemeral)
+		props.handle.off("change", onDocChangeWatchdog)
 	})
 
 	// ---- Call ----
@@ -1143,6 +1298,25 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		if (arg.startsWith("automerge:")) {
 			pinDoc(arg as AutomergeUrl, undefined, arg.slice(0, 20) + "...")
 			return
+		}
+
+		// Try as tiny patchwork URL
+		const tinyMatch = arg.match(/https?:\/\/tiny\.patchwork\.inkandswitch\.com\/#[^\s]+/)
+		if (tinyMatch) {
+			try {
+				const parsed = new URL(tinyMatch[0])
+				const params = new URLSearchParams(parsed.hash.slice(1))
+				const docId = params.get("doc")
+				if (docId) {
+					const docUrl = "automerge:" + docId
+					const toolId = params.get("tool") || undefined
+					const title = params.get("title")
+						? decodeURIComponent(params.get("title")!.replace(/\+/g, " "))
+						: docId.slice(0, 8) + "..."
+					pinDoc(docUrl as AutomergeUrl, toolId, title)
+					return
+				}
+			} catch {}
 		}
 	}
 

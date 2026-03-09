@@ -4,6 +4,7 @@ import cssInjectedByJsPlugin from "vite-plugin-css-injected-by-js"
 import external from "@inkandswitch/patchwork-bootloader/externals"
 
 export default defineConfig({
+	base: "./",
 	plugins: [solidPlugin(), cssInjectedByJsPlugin()],
 	build: {
 		lib: {
