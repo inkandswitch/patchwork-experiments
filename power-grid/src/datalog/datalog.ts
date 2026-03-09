@@ -71,7 +71,17 @@ export function serializeFacts(facts: StoredFact[]): string {
 }
 
 export function serializeRules(rules: StoredRule[]): string {
-  return rules.map(r => ruleKey(r) + '.').join('\n');
+  return rules.map(r => {
+    const head = serializeAtom(r.head);
+    if (r.body.length <= 1) {
+      return `${head} :- ${r.body.map(serializeAtom).join(', ')}.`;
+    }
+    const bodyLines = r.body.map((a, i) => {
+      const isLast = i === r.body.length - 1;
+      return `    ${serializeAtom(a)}${isLast ? '.' : ','}`;
+    });
+    return `${head} :-\n${bodyLines.join('\n')}`;
+  }).join('\n');
 }
 
 export function serializeConstraints(constraints: StoredConstraint[]): string {
@@ -276,8 +286,7 @@ export function parseProgram(text: string): ParseResult {
 
 // Parse a single atom string (used by sum evaluator)
 export function parseAtom(s: string): StoredAtom | null {
-  // Wrap in a dummy fact statement for parsing
-  const m = grammar.match(s.trim() + '.', 'Fact');
+  const m = grammar.match(s.trim(), 'Fact');
   if (m.failed()) return null;
   return semantics(m).toAST();
 }

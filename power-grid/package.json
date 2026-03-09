@@ -6,7 +6,9 @@
   "exports": "./dist/index.js",
   "scripts": {
     "build": "tsc && vite build",
-    "sync": "pnpm build && pushwork sync"
+    "sync": "pnpm build && pushwork sync",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [],
   "author": "Ink & Switch",
@@ -35,6 +37,7 @@
     "vite": "^6.3.5",
     "vite-plugin-css-injected-by-js": "^3.5.2",
     "vite-plugin-top-level-await": "^1.5.0",
-    "vite-plugin-wasm": "^3.4.1"
+    "vite-plugin-wasm": "^3.4.1",
+    "vitest": "^4.0.18"
   }
 }
