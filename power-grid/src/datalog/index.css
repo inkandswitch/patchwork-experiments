@@ -1,0 +1,133 @@
+@layer patchwork, tool, user;
+
+@layer tool {
+  .pg-root {
+    display: flex;
+    height: 100%;
+    overflow: hidden;
+    font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace;
+    font-size: 12px;
+  }
+
+  .pg-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #888;
+  }
+
+  /* ── Left column ── */
+  .pg-editors {
+    display: flex;
+    flex-direction: column;
+    width: 50%;
+    min-width: 0;
+    border-right: 1px solid var(--color-border, #e2e8f0);
+    overflow: hidden;
+  }
+
+  .pg-section {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    padding: 8px;
+    border-bottom: 1px solid var(--color-border, #e2e8f0);
+  }
+
+  .pg-section:last-child {
+    border-bottom: none;
+  }
+
+  .pg-section-title {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #64748b;
+    margin: 0 0 6px 0;
+  }
+
+  .pg-editor-wrap {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid var(--color-border, #e2e8f0);
+    border-radius: 4px;
+  }
+
+  .pg-cm-container {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .pg-cm-container .cm-editor {
+    height: 100%;
+  }
+
+  .pg-cm-container .cm-editor.cm-focused {
+    outline: none;
+    border-color: #94a3b8;
+  }
+
+  .pg-errors {
+    margin: 4px 0 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .pg-errors li {
+    color: #dc2626;
+    font-size: 11px;
+    padding: 2px 0;
+  }
+
+  /* ── Right column ── */
+  .pg-derived {
+    display: flex;
+    flex-direction: column;
+    width: 50%;
+    min-width: 0;
+    padding: 8px;
+    overflow: hidden;
+  }
+
+  .pg-derived-scroll {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+  }
+
+  .pg-empty {
+    color: #94a3b8;
+    margin: 16px 0;
+  }
+
+  .pg-pred-group {
+    margin-bottom: 12px;
+  }
+
+  .pg-pred-name {
+    font-weight: 700;
+    color: #334155;
+    margin-bottom: 3px;
+    padding-bottom: 2px;
+    border-bottom: 1px solid var(--color-border, #e2e8f0);
+  }
+
+  .pg-fact {
+    padding: 2px 4px;
+    border-radius: 3px;
+    line-height: 1.7;
+  }
+
+  .pg-fact-base {
+    color: #475569;
+  }
+
+  .pg-fact-derived {
+    color: #0369a1;
+    background: #f0f9ff;
+  }
+}
