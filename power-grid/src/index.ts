@@ -31,4 +31,14 @@ export const plugins: Plugin<any>[] = [
       return DatalogDatatype;
     },
   },
+  {
+    type: 'patchwork:tool',
+    id: 'power-grid:history',
+    name: 'Branch History',
+    supportedDatatypes: '*',
+    async load() {
+      const { HistoryTool } = await import('./history/tool');
+      return HistoryTool;
+    },
+  },
 ];

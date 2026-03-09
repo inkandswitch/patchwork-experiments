@@ -17,6 +17,7 @@
     "@automerge/automerge-repo-react-hooks": "2.5.0",
     "@inkandswitch/patchwork-plugins": "^0.0.2",
     "codemirror": "^6.0.2",
+    "lucide-react": "^0.577.0",
     "maplibre-gl": "^5.19.0",
     "ohm-js": "^17.5.0",
     "react": "^18.3.1",
