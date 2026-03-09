@@ -14,22 +14,38 @@
 }
 
 /*
- * Selection overlay — OUTSIDE .sc-layer, sibling inside .sc-canvas.
- * Gets the same camera transform applied in JS so coordinates match.
- * Sits above all shape compositor layers because it's later in the DOM
- * and outside any shape stacking context.
+
+ * * Selection overlay — OUTSIDE .sc-layer, sioverlay — OUTSIDE .sc-layer, sibling inside .sc-canvas.
+ * Gets the same camera transfling inside .sc-canvas.
+ * Gets the same camera transform applied irm applied in JS so coor JS so coordinatesates match.
+ * Sits amatch.
+ * Sits aboveve allall shape composshape compositor layertor layers bec because it's use it's laterater in the DOM
+ * an the DOM
+ * and outs outside de any shape sny shape stacking cacking context.
  */
-.sc-selection-overlay {
-  position: absolute;
+.sc-selection-oventext.
+ */
+.sc-selection-overlaylay {
+  pos{
+  position: abtion: absolute;
+olute;
   top: 0;
   left: 0;
+  widt top: 0;
+  left: 0;
   width: 0;
+  height: 0;
+  pointer-events: none;
+  tr: 0;
   height: 0;
   pointer-events: none;
   transform-origin: 0 0;
 }
 
-/* Selection bounding box — no border; selected shapes show via drop-shadow on .sc-positioned.selected */
+/* Sesform-origin: 0 0;
+}
+
+/* Selection bounction boundinging boxox — no border; se— no border; selecected shapes show via dd shapes show via drop-shadowop-shadow on .sc-positioned.selected */
 .sc-selection-box {
   position: absolute;
   pointer-events: none;

@@ -190,10 +190,12 @@ function makeTokenPill(docUrl: AutomergeUrl, bucket: "read" | "write", repo: Rep
 
   // The component sets text/x-patchwork-urls; add the llmlin-specific bucket here
   token.addEventListener("dragstart", (e) => {
+    e.stopPropagation();
     onDragStart(e as DragEvent, docUrl, bucket);
     (e as DragEvent).dataTransfer?.setData("text/x-llmlin-source", bucket);
   });
-  token.addEventListener("click", () => onToggleWatch(docUrl));
+  token.addEventListener("pointerdown", (e) => e.stopPropagation());
+  token.addEventListener("click", (e) => { e.stopPropagation(); onToggleWatch(docUrl); });
   token.addEventListener("mouseenter", () => onHoverIn(token));
   token.addEventListener("mouseleave", onHoverOut);
 
@@ -212,38 +214,38 @@ function renderTokens(container: HTMLElement, urls: AutomergeUrl[], bucket: "rea
 // ============================================================================
 
 /**
- * Returns the eye's center and half-source-width in root-local coordinates.
- * The ray emits from the eye center, and the source width is half the eye width.
+ * Returns the eye's center and half-source-width in containerEl-local coordinates.
+ * containerEl should be ll-wrapper so the eye (which sits above ll-root) is in-bounds.
  */
-function getEyeSource(root: HTMLElement, eyeBtn: HTMLElement) {
-  const rootRect = root.getBoundingClientRect();
+function getEyeSource(containerEl: HTMLElement, eyeBtn: HTMLElement) {
+  const containerRect = containerEl.getBoundingClientRect();
   const eyeRect = eyeBtn.getBoundingClientRect();
   return {
-    srcCX: (eyeRect.left + eyeRect.right) / 2 - rootRect.left,
-    srcY: (eyeRect.top + eyeRect.bottom) / 2 - rootRect.top,
-    halfSrc: eyeRect.width / 4, // total source width = half the eye width
-    rootRect,
+    srcCX: (eyeRect.left + eyeRect.right) / 2 - containerRect.left,
+    srcY: (eyeRect.top + eyeRect.bottom) / 2 - containerRect.top,
+    halfSrc: eyeRect.width / 4,
+    containerRect,
   };
 }
 
 /**
  * Draws permanent light-beam trapezoids for all watched tokens.
- * Emits from the eye center, always visible.
+ * containerEl (ll-wrapper) is the SVG coordinate reference; root is used for DOM queries.
  */
-function redrawOverlay(svg: SVGSVGElement, root: HTMLElement, eyeBtn: HTMLElement, watchedUrls: AutomergeUrl[]) {
+function redrawOverlay(svg: SVGSVGElement, containerEl: HTMLElement, root: HTMLElement, eyeBtn: HTMLElement, watchedUrls: AutomergeUrl[]) {
   svg.querySelectorAll(".ll-trap").forEach((el) => el.remove());
   if (watchedUrls.length === 0) return;
 
-  const { srcCX, srcY, halfSrc, rootRect } = getEyeSource(root, eyeBtn);
+  const { srcCX, srcY, halfSrc, containerRect } = getEyeSource(containerEl, eyeBtn);
 
   for (const url of watchedUrls) {
     const pill = root.querySelector<HTMLElement>(`pw-doc-token[doc-url="${url}"]`);
     if (!pill) continue;
 
     const pillRect = pill.getBoundingClientRect();
-    const tgtMidY = (pillRect.top + pillRect.bottom) / 2 - rootRect.top;
-    const tgtX1 = pillRect.left - rootRect.left;
-    const tgtX2 = pillRect.right - rootRect.left;
+    const tgtMidY = (pillRect.top + pillRect.bottom) / 2 - containerRect.top;
+    const tgtX1 = pillRect.left - containerRect.left;
+    const tgtX2 = pillRect.right - containerRect.left;
 
     const poly = document.createElementNS(SVG_NS, "polygon");
     poly.setAttribute("points", `${srcCX - halfSrc},${srcY} ${tgtX1},${tgtMidY} ${tgtX2},${tgtMidY} ${srcCX + halfSrc},${srcY}`);
@@ -412,10 +414,10 @@ export function LLMlinTool(handle: DocHandle<LLMlinDoc>, element: ToolElement): 
   root.appendChild(outputPanel);
   root.appendChild(settingsPanel);
   root.appendChild(footer);
-  root.appendChild(overlay);
 
   wrapper.appendChild(eyeBtn);
   wrapper.appendChild(root);
+  wrapper.appendChild(overlay); // in wrapper so it can reach the eye above ll-root
   element.appendChild(wrapper);
 
   // ---- State ----
@@ -522,11 +524,11 @@ export function LLMlinTool(handle: DocHandle<LLMlinDoc>, element: ToolElement): 
       overlay.insertBefore(ray, overlay.firstChild);
     }
 
-    const { srcCX, srcY, halfSrc, rootRect } = getEyeSource(root, eyeBtn);
+    const { srcCX, srcY, halfSrc, containerRect } = getEyeSource(wrapper, eyeBtn);
     const pillRect = pill.getBoundingClientRect();
-    const tgtX1 = pillRect.left - rootRect.left;
-    const tgtX2 = pillRect.right - rootRect.left;
-    const tgtMidY = (pillRect.top + pillRect.bottom) / 2 - rootRect.top;
+    const tgtX1 = pillRect.left - containerRect.left;
+    const tgtX2 = pillRect.right - containerRect.left;
+    const tgtMidY = (pillRect.top + pillRect.bottom) / 2 - containerRect.top;
 
     ray.setAttribute("points", `${srcCX - halfSrc},${srcY} ${tgtX1},${tgtMidY} ${tgtX2},${tgtMidY} ${srcCX + halfSrc},${srcY}`);
   }
@@ -634,7 +636,7 @@ export function LLMlinTool(handle: DocHandle<LLMlinDoc>, element: ToolElement): 
 
     // Always redraw the static watched-token beams
     requestAnimationFrame(() => {
-      redrawOverlay(overlay, root, eyeBtn, doc.watchedDocUrls);
+      redrawOverlay(overlay, wrapper, root, eyeBtn, doc.watchedDocUrls);
     });
   }
 
