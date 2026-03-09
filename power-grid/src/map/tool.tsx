@@ -6,7 +6,7 @@ import { createRoot } from 'react-dom/client';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { AutomergeUrl } from '@automerge/automerge-repo';
 import type { DatalogDoc, MapStyle, PredicateStyle } from '../datalog/datatype';
-import { type StoredFact, parseProgram, evaluate } from '../datalog/datalog';
+import { type StoredFact, evaluate } from '../datalog/datalog';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Settings } from 'lucide-react';
 import { StyleSidebar } from './style-sidebar';
@@ -316,9 +316,9 @@ function MapViewer({ docUrl }: { docUrl: AutomergeUrl }) {
 
   const derivedFacts = useMemo<StoredFact[]>(() => {
     if (!doc) return [];
-    const fp = parseProgram(doc.factsText ?? '');
-    const rp = parseProgram(doc.rulesText ?? '');
-    try { return evaluate(fp.facts, rp.rules); } catch { return fp.facts; }
+    const facts = doc.facts ?? [];
+    const rules = doc.rules ?? [];
+    try { return evaluate(facts, rules); } catch { return facts; }
   }, [doc]);
 
   derivedFactsRef.current = derivedFacts;

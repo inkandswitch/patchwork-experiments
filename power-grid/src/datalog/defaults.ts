@@ -1,3 +1,6 @@
+import { parseProgram, serializeFacts, serializeRules, serializeConstraints } from './datalog';
+import type { StoredFact, StoredRule, StoredConstraint } from './datalog';
+
 export const DEFAULT_FACTS_TEXT = `
 % --- Topology ---
 node(north, generator).
@@ -38,7 +41,7 @@ reachable(X, Y) :- edge(X, Y, _).
 reachable(X, Z) :- reachable(X, Y), edge(Y, Z, _).
 
 % --- Capacity constraints ---
-valid_edge(X, Y) :- edge(X, Y, C), flow(X, Y, F), lte(F, C).
+within_capacity(X, Y) :- edge(X, Y, C), flow(X, Y, F), lte(F, C).
 overloaded(X, Y) :- edge(X, Y, C), flow(X, Y, F), gt(F, C).
 
 % --- Utilization ---
@@ -51,6 +54,27 @@ node_balanced(N) :- inflow(N, In), outflow(N, Out), generates(N, G), consumes(N,
 % --- Global balance ---
 grid_balanced :- sum(G, generates(_, G), TotalGen), sum(C, consumes(_, C), TotalCon), gte(TotalGen, TotalCon).
 
-% --- Net balance at a node ---
+% --- Net balance at a node (generation minus consumption, ignoring flows) ---
 net_balance(N, B) :- generates(N, G), consumes(N, C), sub(G, C, B).
+
+% --- Node flow conservation (inflow + generation - outflow - consumption) ---
+node_flow_balance(N, Net) :- inflow(N, In), outflow(N, Out), generates(N, G), consumes(N, C), add(In, G, Supply), add(Out, C, Demand), sub(Supply, Demand, Net).
 `.trim();
+
+export const DEFAULT_CONSTRAINTS_TEXT = `
+% Transmission lines must never carry more than their rated capacity
+:- overloaded(X, Y).
+
+% Node conservation: inflow + generation must equal outflow + consumption at every node
+:- node_flow_balance(N, Net), neq(Net, 0).
+`.trim();
+
+export const DEFAULT_FACTS: StoredFact[] = parseProgram(DEFAULT_FACTS_TEXT).facts;
+export const DEFAULT_RULES: StoredRule[] = parseProgram(DEFAULT_RULES_TEXT).rules;
+export const DEFAULT_CONSTRAINTS: StoredConstraint[] = parseProgram(DEFAULT_CONSTRAINTS_TEXT).constraints;
+export const DEFAULT_PROGRAM_TEXT: string =
+  serializeFacts(DEFAULT_FACTS) +
+  '\n\n' +
+  serializeRules(DEFAULT_RULES) +
+  '\n\n' +
+  serializeConstraints(DEFAULT_CONSTRAINTS);

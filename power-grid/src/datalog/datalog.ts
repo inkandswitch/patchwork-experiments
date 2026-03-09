@@ -14,9 +14,29 @@ export type StoredFact = { pred: string; args: Constant[] };
 export type StoredAtom = { pred: string; args: Term[] };
 export type StoredRule = { head: StoredAtom; body: StoredAtom[] };
 
+export type StoredConstraint = { body: StoredAtom[] };
+
+export type ProvenanceEntry = { rule: StoredRule; groundBody: StoredFact[] };
+export type ProvenanceMap = Map<string, ProvenanceEntry>;
+
+export type GroundBodyStep =
+  | { kind: 'fact'; fact: StoredFact; isBase: boolean; derivedBy?: ProvenanceEntry }
+  | { kind: 'builtin'; atom: StoredAtom; resolvedArgs: Constant[] };
+
+export type WitnessTrace = {
+  bindings: Record<string, Constant>;
+  steps: GroundBodyStep[];
+};
+
+export type ConstraintViolation = {
+  constraint: StoredConstraint;
+  witnesses: WitnessTrace[];
+};
+
 export type ParseResult = {
   facts: StoredFact[];
   rules: StoredRule[];
+  constraints: StoredConstraint[];
   errors: { line: number; text: string; message: string }[];
 };
 
@@ -54,16 +74,23 @@ export function serializeRules(rules: StoredRule[]): string {
   return rules.map(r => ruleKey(r) + '.').join('\n');
 }
 
+export function serializeConstraints(constraints: StoredConstraint[]): string {
+  return constraints.map(c => ':- ' + c.body.map(serializeAtom).join(', ') + '.').join('\n');
+}
+
 // ─── ohm.js grammar ───────────────────────────────────────────────────────────
 
 const GRAMMAR_SRC = String.raw`
 Datalog {
   Program     = Statement*
 
-  Statement   = Rule "."   -- rule
-              | Fact "."   -- fact
+  Statement   = Rule "."        -- rule
+              | Constraint "."  -- constraint
+              | Fact "."        -- fact
 
   Rule        = Atom ":-" NonemptyListOf<BodyLit, ",">
+
+  Constraint  = ":-" NonemptyListOf<BodyLit, ",">
 
   Fact        = Atom
 
@@ -96,6 +123,7 @@ const grammar = ohm.grammar(GRAMMAR_SRC);
 type ParseOutput = {
   facts: StoredFact[];
   rules: StoredRule[];
+  constraints: StoredConstraint[];
   errors: ParseResult['errors'];
 };
 
@@ -103,11 +131,12 @@ const semantics = grammar.createSemantics();
 
 semantics.addOperation<any>('toAST', {
   Program(stmts) {
-    const output: ParseOutput = { facts: [], rules: [], errors: [] };
+    const output: ParseOutput = { facts: [], rules: [], constraints: [], errors: [] };
     for (const s of stmts.children) {
       const r = s.toAST();
       if (r.kind === 'fact') output.facts.push(r.fact);
       else if (r.kind === 'rule') output.rules.push(r.rule);
+      else if (r.kind === 'constraint') output.constraints.push(r.constraint);
     }
     return output;
   },
@@ -115,6 +144,17 @@ semantics.addOperation<any>('toAST', {
   // Statement_rule body is: Rule "."  → arity 2
   Statement_rule(rule, _dot) {
     return rule.toAST();
+  },
+
+  // Statement_constraint body is: Constraint "."  → arity 2
+  Statement_constraint(constraint, _dot) {
+    return constraint.toAST();
+  },
+
+  // Constraint = ":-" NonemptyListOf<BodyLit, ",">  → arity 2
+  Constraint(_arrow, bodyList) {
+    const body: StoredAtom[] = bodyList.asIteration().children.map((b: any) => b.toAST());
+    return { kind: 'constraint', constraint: { body } };
   },
 
   // Rule = Atom ":-" NonemptyListOf<BodyLit, ",">  → arity 3
@@ -220,7 +260,7 @@ export function parseProgram(text: string): ParseResult {
     const offset = (matchResult as any).getRightmostFailurePosition?.() ?? 0;
     const line = text.slice(0, offset).split('\n').length;
     errors.push({ line, text: '', message: msg });
-    return { facts: [], rules: [], errors };
+    return { facts: [], rules: [], constraints: [], errors };
   }
 
   const output: ParseOutput = semantics(matchResult).toAST();
@@ -229,6 +269,7 @@ export function parseProgram(text: string): ParseResult {
   return {
     facts: output.facts,
     rules: output.rules,
+    constraints: output.constraints,
     errors: [...errors, ...output.errors],
   };
 }
@@ -500,4 +541,108 @@ export function evaluate(facts: StoredFact[], rules: StoredRule[]): StoredFact[]
   }
 
   return db;
+}
+
+// ─── Tracked matching (builds GroundBodyStep[] alongside bindings) ────────────
+
+type TrackedResult = { bindings: Bindings; steps: GroundBodyStep[] };
+
+function matchBodyTracked(
+  body: StoredAtom[],
+  db: StoredFact[],
+  bindings: Bindings,
+  steps: GroundBodyStep[],
+): TrackedResult[] {
+  if (body.length === 0) return [{ bindings, steps }];
+  const [first, ...rest] = body;
+
+  // sum aggregation: treat like a builtin — contribute bindings but no fact step
+  if (first.pred === 'sum') {
+    const results: TrackedResult[] = [];
+    for (const b of evalSum(first, db, bindings)) {
+      results.push(...matchBodyTracked(rest, db, b, steps));
+    }
+    return results;
+  }
+
+  // simple built-ins
+  if (SIMPLE_BUILTINS.has(first.pred)) {
+    const b = evalBuiltin(first, bindings);
+    if (b === null) return [];
+    const resolve = (t: Term): Constant => {
+      if (isWildcard(t)) return '_';
+      if (isVariable(t)) return b.get(t) ?? bindings.get(t) ?? t;
+      return parseConstant(t);
+    };
+    const step: GroundBodyStep = { kind: 'builtin', atom: first, resolvedArgs: first.args.map(resolve) };
+    return matchBodyTracked(rest, db, b, [...steps, step]);
+  }
+
+  // regular DB lookup
+  const results: TrackedResult[] = [];
+  for (const fact of db) {
+    const b = matchAtom(first, fact, bindings);
+    if (b !== null) {
+      const step: GroundBodyStep = { kind: 'fact', fact, isBase: false };
+      results.push(...matchBodyTracked(rest, db, b, [...steps, step]));
+    }
+  }
+  return results;
+}
+
+export function evaluateWithProvenance(
+  facts: StoredFact[],
+  rules: StoredRule[],
+): { db: StoredFact[]; provenance: ProvenanceMap } {
+  const db: StoredFact[] = [...facts];
+  const seen = new Set<string>(facts.map(factKey));
+  const provenance: ProvenanceMap = new Map();
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const rule of rules) {
+      for (const { bindings, steps } of matchBodyTracked(rule.body, db, new Map(), [])) {
+        const derived = substituteHead(rule.head, bindings);
+        if (!derived) continue;
+        const key = factKey(derived);
+        if (!seen.has(key)) {
+          seen.add(key);
+          db.push(derived);
+          changed = true;
+          const groundBody = steps
+            .filter((s): s is Extract<GroundBodyStep, { kind: 'fact' }> => s.kind === 'fact')
+            .map(s => s.fact);
+          provenance.set(key, { rule, groundBody });
+        }
+      }
+    }
+  }
+
+  return { db, provenance };
+}
+
+export function checkConstraints(
+  db: StoredFact[],
+  constraints: StoredConstraint[],
+  provenance: ProvenanceMap,
+  baseFacts: Set<string>,
+): ConstraintViolation[] {
+  const violations: ConstraintViolation[] = [];
+  for (const constraint of constraints) {
+    const tracked = matchBodyTracked(constraint.body, db, new Map(), []);
+    if (tracked.length === 0) continue;
+    const witnesses: WitnessTrace[] = tracked.map(({ bindings, steps }) => ({
+      bindings: Object.fromEntries(bindings.entries()) as Record<string, Constant>,
+      steps: steps.map(step => {
+        if (step.kind === 'builtin') return step;
+        const key = factKey(step.fact);
+        const isBase = baseFacts.has(key);
+        const derivedBy = provenance.get(key);
+        return { kind: 'fact' as const, fact: step.fact, isBase, derivedBy };
+      }),
+    }));
+    violations.push({ constraint, witnesses });
+  }
+  return violations;
 }

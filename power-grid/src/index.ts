@@ -1,4 +1,6 @@
-import type { Plugin, Tool, Datatype } from '@inkandswitch/patchwork-plugins';
+import type { Plugin } from '@inkandswitch/patchwork-plugins';
+
+console.log('version 5 of index.ts');
 
 export const plugins: Plugin<any>[] = [
   {
@@ -29,16 +31,6 @@ export const plugins: Plugin<any>[] = [
     async load() {
       const { DatalogDatatype } = await import('./datalog/datatype');
       return DatalogDatatype;
-    },
-  },
-  {
-    type: 'patchwork:tool',
-    id: 'power-grid:history',
-    name: 'Branch History',
-    supportedDatatypes: '*',
-    async load() {
-      const { HistoryTool } = await import('./history/tool');
-      return HistoryTool;
     },
   },
 ];

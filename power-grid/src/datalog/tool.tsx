@@ -5,10 +5,22 @@ import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { AutomergeUrl, DocHandle } from '@automerge/automerge-repo';
 import { automergeSyncPlugin } from '@automerge/automerge-codemirror';
 import { basicSetup } from 'codemirror';
-import { EditorView } from '@codemirror/view';
+import { EditorView, keymap } from '@codemirror/view';
 import type { DatalogDoc } from './datatype';
-import { type StoredFact, parseProgram, factKey, evaluate } from './datalog';
-import { useEffect, useMemo, useRef } from 'react';
+import {
+  type StoredFact,
+  type StoredConstraint,
+  type WitnessTrace,
+  parseProgram,
+  factKey,
+  ruleKey,
+  evaluateWithProvenance,
+  checkConstraints,
+  serializeFacts,
+  serializeRules,
+  serializeConstraints,
+} from './datalog';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import './index.css';
 
 export const DatalogTool: ToolRender = (handle, element) => {
@@ -22,6 +34,19 @@ export const DatalogTool: ToolRender = (handle, element) => {
   return () => root.unmount();
 };
 
+function formatAtom(atom: { pred: string; args: string[] }): string {
+  if (atom.args.length === 0) return atom.pred;
+  return `${atom.pred}(${atom.args.join(', ')})`;
+}
+
+function programText(doc: DatalogDoc): string {
+  const facts = serializeFacts(doc.facts ?? []);
+  const rules = serializeRules(doc.rules ?? []);
+  const constraints = serializeConstraints(doc.constraints ?? []);
+  const parts = [facts, rules, constraints].filter(Boolean);
+  return parts.join('\n\n');
+}
+
 function DatalogViewer({
   docUrl,
   handle,
@@ -30,28 +55,36 @@ function DatalogViewer({
   handle: DocHandle<DatalogDoc>;
 }) {
   const [doc] = useDocument<DatalogDoc>(docUrl);
+  const [isEditing, setIsEditing] = useState(false);
 
-  const { derivedFacts, baseFacts, factsErrors, rulesErrors } = useMemo(() => {
-    if (!doc)
-      return { derivedFacts: [], baseFacts: new Set<string>(), factsErrors: [], rulesErrors: [] };
+  const savedText = doc ? programText(doc) : '';
+  const draftText = doc?.draftText ?? savedText;
+  const isDirty = isEditing && draftText !== savedText;
 
-    const fp = parseProgram(doc.factsText ?? '');
-    const rp = parseProgram(doc.rulesText ?? '');
+  const sourceText = isEditing ? draftText : savedText;
+  const { facts: sourceFacts, rules: sourceRules, constraints: sourceConstraints } = useMemo(
+    () => parseProgram(sourceText),
+    [sourceText],
+  );
 
-    let derived: StoredFact[] = [];
+  const { derivedFacts, baseFacts, violations } = useMemo(() => {
+    const facts = isEditing ? sourceFacts : (doc?.facts ?? []);
+    const rules = isEditing ? sourceRules : (doc?.rules ?? []);
+    const constraints: StoredConstraint[] = isEditing ? sourceConstraints : (doc?.constraints ?? []);
+    const baseFactKeys = new Set(facts.map(factKey));
+    let db: StoredFact[] = facts;
+    let provenance = new Map();
     try {
-      derived = evaluate(fp.facts, rp.rules);
+      ({ db, provenance } = evaluateWithProvenance(facts, rules));
     } catch {
-      derived = fp.facts;
+      db = facts;
     }
-
     return {
-      derivedFacts: derived,
-      baseFacts: new Set(fp.facts.map(factKey)),
-      factsErrors: fp.errors.map((e) => `Line ${e.line}: ${e.message}`),
-      rulesErrors: rp.errors.map((e) => `Line ${e.line}: ${e.message}`),
+      derivedFacts: db,
+      baseFacts: baseFactKeys,
+      violations: checkConstraints(db, constraints, provenance, baseFactKeys),
     };
-  }, [doc]);
+  }, [doc, isEditing, sourceFacts, sourceRules, sourceConstraints]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, StoredFact[]>();
@@ -62,39 +95,100 @@ function DatalogViewer({
     return map;
   }, [derivedFacts]);
 
+  const parseErrors = useMemo(() => {
+    if (!isEditing) return [];
+    return parseProgram(draftText).errors.map((e) => `Line ${e.line}: ${e.message}`);
+  }, [isEditing, draftText]);
+
+  function handleEdit() {
+    const current = handle.doc();
+    if (!current) return;
+    handle.change((d) => {
+      d.draftText = programText(current);
+    });
+    setIsEditing(true);
+  }
+
+  function handleSave() {
+    const current = handle.doc();
+    if (!current) return;
+    const { facts, rules, constraints } = parseProgram(current.draftText ?? '');
+    handle.change((d) => {
+      d.facts = facts;
+      d.rules = rules;
+      d.constraints = constraints;
+    });
+    setIsEditing(false);
+  }
+
+  function handleCancel() {
+    const current = handle.doc();
+    if (!current) return;
+    handle.change((d) => {
+      d.draftText = programText(current);
+    });
+    setIsEditing(false);
+  }
+
   if (!doc) {
     return <div className="pg-loading">Loading…</div>;
   }
 
   return (
     <div className="pg-root">
-      <div className="pg-editors">
-        <section className="pg-section">
-          <h2 className="pg-section-title">Base Facts</h2>
-          <div className="pg-editor-wrap">
-            <CodeMirrorEditor handle={handle} path={['factsText']} />
-          </div>
-          {factsErrors.length > 0 && (
-            <ul className="pg-errors">
-              {factsErrors.map((e, i) => <li key={i}>{e}</li>)}
-            </ul>
+      <div className="pg-editor-col">
+        <div className="pg-toolbar">
+          {isEditing ? (
+            <>
+              {isDirty && <span className="pg-dirty-badge">● Unsaved</span>}
+              <button className="pg-btn pg-btn-primary" onClick={handleSave}>
+                Save
+              </button>
+              <button className="pg-btn" onClick={handleCancel}>
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button className="pg-btn" onClick={handleEdit}>
+              Edit
+            </button>
           )}
-        </section>
+        </div>
 
-        <section className="pg-section">
-          <h2 className="pg-section-title">Rules</h2>
-          <div className="pg-editor-wrap">
-            <CodeMirrorEditor handle={handle} path={['rulesText']} />
-          </div>
-          {rulesErrors.length > 0 && (
-            <ul className="pg-errors">
-              {rulesErrors.map((e, i) => <li key={i}>{e}</li>)}
-            </ul>
+        <div className="pg-editor-wrap">
+          {isEditing ? (
+            <ProgramEditor handle={handle} onSave={handleSave} />
+          ) : (
+            <pre className="pg-program-view">{savedText}</pre>
           )}
-        </section>
+        </div>
+
+        {parseErrors.length > 0 && (
+          <ul className="pg-errors">
+            {parseErrors.map((e, i) => (
+              <li key={i}>{e}</li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <div className="pg-derived">
+        {violations.length > 0 && (
+          <div className="pg-violations">
+            <h2 className="pg-section-title pg-violations-title">Constraint Violations</h2>
+            {violations.map((v, i) => (
+              <div key={i} className="pg-violation">
+                <div className="pg-violation-constraint">
+                  {':- ' + v.constraint.body.map(formatAtom).join(', ') + '.'}
+                </div>
+                {v.witnesses.map((w, j) => (
+                  <WitnessTraceView key={j} witness={w} baseFacts={baseFacts} />
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+
         <h2 className="pg-section-title">Derived Facts</h2>
         <div className="pg-derived-scroll">
           {grouped.size === 0 ? (
@@ -123,20 +217,94 @@ function DatalogViewer({
   );
 }
 
-function CodeMirrorEditor({ handle, path }: { handle: DocHandle<DatalogDoc>; path: string[] }) {
+function WitnessTraceView({
+  witness,
+  baseFacts,
+}: {
+  witness: WitnessTrace;
+  baseFacts: Set<string>;
+}) {
+  const bindingSummary = Object.entries(witness.bindings)
+    .map(([k, v]) => `${k}=${v}`)
+    .join(', ');
+
+  return (
+    <div className="pg-witness">
+      {bindingSummary && (
+        <div className="pg-witness-bindings">{bindingSummary}</div>
+      )}
+      <div className="pg-witness-steps">
+        {witness.steps.map((step, i) => {
+          if (step.kind === 'builtin') {
+            return (
+              <div key={i} className="pg-trace-step pg-trace-step-builtin">
+                {step.atom.pred}({step.resolvedArgs.join(', ')})
+                <span className="pg-trace-tag"> [builtin]</span>
+              </div>
+            );
+          }
+          const key = factKey(step.fact);
+          return (
+            <div key={i} className="pg-trace-step">
+              <div className={step.isBase ? 'pg-trace-fact-base' : 'pg-trace-fact-derived'}>
+                {key}
+                <span className="pg-trace-tag"> [{step.isBase ? 'base' : 'derived'}]</span>
+              </div>
+              {!step.isBase && step.derivedBy && (
+                <div className="pg-trace-derivation">
+                  <div className="pg-trace-rule">via {ruleKey(step.derivedBy.rule)}</div>
+                  {step.derivedBy.groundBody.map((pf, j) => {
+                    const pfKey = factKey(pf);
+                    const pfIsBase = baseFacts.has(pfKey);
+                    return (
+                      <div
+                        key={j}
+                        className={pfIsBase ? 'pg-trace-premise-base' : 'pg-trace-premise-derived'}
+                      >
+                        {pfKey}
+                        <span className="pg-trace-tag"> [{pfIsBase ? 'base' : 'derived'}]</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ProgramEditor({
+  handle,
+  onSave,
+}: {
+  handle: DocHandle<DatalogDoc>;
+  onSave: () => void;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
 
     const currentDoc = handle.doc();
-    const initialText = path.reduce((obj: any, key) => obj?.[key], currentDoc) ?? '';
+    const initialText = currentDoc?.draftText ?? '';
 
     const view = new EditorView({
       doc: initialText,
       extensions: [
         basicSetup,
-        automergeSyncPlugin({ handle, path }),
+        automergeSyncPlugin({ handle, path: ['draftText'] }),
+        keymap.of([
+          {
+            key: 'Mod-s',
+            run() {
+              onSave();
+              return true;
+            },
+          },
+        ]),
         EditorView.theme({
           '&': { height: '100%', fontSize: '12px' },
           '.cm-scroller': {

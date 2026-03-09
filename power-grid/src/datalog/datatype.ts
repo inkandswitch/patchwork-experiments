@@ -1,5 +1,6 @@
 import type { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
-import { DEFAULT_FACTS_TEXT, DEFAULT_RULES_TEXT } from './defaults';
+import type { StoredFact, StoredRule, StoredConstraint } from './datalog';
+import { DEFAULT_FACTS, DEFAULT_RULES, DEFAULT_CONSTRAINTS, DEFAULT_PROGRAM_TEXT } from './defaults';
 
 export type PredicateStyle = {
   color: string | null;
@@ -13,15 +14,19 @@ export type MapStyle = {
 
 export type DatalogDoc = {
   '@patchwork': { type: 'datalog' };
-  factsText: string;
-  rulesText: string;
+  facts: StoredFact[];
+  rules: StoredRule[];
+  constraints: StoredConstraint[];
+  draftText: string;
   mapStyle: MapStyle;
 };
 
 export const DatalogDatatype: DatatypeImplementation<DatalogDoc> = {
   init(doc: DatalogDoc) {
-    doc.factsText = DEFAULT_FACTS_TEXT;
-    doc.rulesText = DEFAULT_RULES_TEXT;
+    doc.facts = DEFAULT_FACTS;
+    doc.rules = DEFAULT_RULES;
+    doc.constraints = DEFAULT_CONSTRAINTS;
+    doc.draftText = DEFAULT_PROGRAM_TEXT;
     doc.mapStyle = { lines: {}, properties: {} };
   },
   getTitle(_doc: DatalogDoc) {
