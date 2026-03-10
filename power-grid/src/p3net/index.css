@@ -1,6 +1,8 @@
 @layer patchwork, tool, user;
 
 @layer tool {
+  /* ── Shared ──────────────────────────────────────────────────────── */
+
   .p3n-root {
     display: flex;
     height: 100%;
@@ -8,6 +10,18 @@
     font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace;
     font-size: 12px;
     background: #f8fafc;
+  }
+
+  .p3n-pane {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    display: block;
+    border-right: 1px solid #e2e8f0;
+  }
+
+  .p3n-pane:last-child {
+    border-right: none;
   }
 
   .p3n-loading {
@@ -54,47 +68,6 @@
     cursor: default;
   }
 
-  /* ── Left column: source editor ──────────────────────────────────── */
-
-  .p3n-editor-col {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    border-right: 1px solid #e2e8f0;
-    min-width: 0;
-  }
-
-  .p3n-editor-wrap {
-    flex: 1;
-    overflow: hidden;
-    display: flex;
-  }
-
-  .p3n-source-textarea {
-    flex: 1;
-    width: 100%;
-    padding: 12px;
-    border: none;
-    outline: none;
-    resize: none;
-    font-family: inherit;
-    font-size: inherit;
-    line-height: 1.6;
-    background: #fff;
-    color: #1e293b;
-    tab-size: 2;
-  }
-
-  /* ── Right column: step panel ────────────────────────────────────── */
-
-  .p3n-step-col {
-    width: 260px;
-    flex-shrink: 0;
-    display: flex;
-    flex-direction: column;
-    background: #f8fafc;
-  }
-
   .p3n-step-btn {
     padding: 4px 12px;
     font-size: 11px;
@@ -126,56 +99,66 @@
     word-break: break-all;
   }
 
-  /* ── Token state display ─────────────────────────────────────────── */
+  /* ── Simulation tool ─────────────────────────────────────────────── */
 
-  .p3n-places {
-    flex: 1;
-    overflow-y: auto;
-    padding: 8px 0;
-  }
-
-  .p3n-place {
-    padding: 6px 10px;
-    border-bottom: 1px solid #e2e8f0;
-  }
-
-  .p3n-place-name {
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-    color: #64748b;
-    margin-bottom: 4px;
-  }
-
-  .p3n-empty {
-    color: #cbd5e1;
-    font-size: 11px;
-    padding: 2px 0;
-  }
-
-  .p3n-token {
+  .p3n-sim-root {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    background: #fff;
-    border: 1px solid #e2e8f0;
-    border-radius: 4px;
-    padding: 5px 8px;
-    margin-bottom: 4px;
+    height: 100%;
+    overflow: hidden;
+    background: #f8fafc;
   }
 
-  .p3n-token-id {
-    font-size: 10px;
-    color: #94a3b8;
+  .p3n-graph-wrap {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    position: relative;
   }
 
-  .p3n-token-state {
-    margin: 0;
-    font-family: inherit;
+  /* ── SVG canvas ──────────────────────────────────────────────────── */
+
+  .p3n-svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  .p3n-place-circle {
+    fill: #fff;
+    stroke: #64748b;
+    stroke-width: 2;
+  }
+
+  .p3n-place-circle.p3n-place-active {
+    stroke: #3b82f6;
+    fill: #eff6ff;
+  }
+
+  .p3n-transition-rect {
+    fill: #e2e8f0;
+    stroke: #94a3b8;
+    stroke-width: 1.5;
+  }
+
+  .p3n-label {
+    font-family: ui-monospace, 'Cascadia Code', Menlo, monospace;
     font-size: 11px;
-    color: #334155;
-    white-space: pre-wrap;
-    word-break: break-all;
+    fill: #475569;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .p3n-token-dot {
+    fill: #1e40af;
+  }
+
+  .p3n-token-count {
+    font-family: ui-monospace, 'Cascadia Code', Menlo, monospace;
+    font-size: 18px;
+    font-weight: 700;
+    fill: #1e40af;
+    pointer-events: none;
+    user-select: none;
   }
 }
