@@ -201,11 +201,11 @@ const ITaskQueueBrowserTool: React.FC<any> = ({ docUrl }) => {
         </div>
         <div className="mb-4">
           <div className="text-2xl">{doc.pending.length} pending:</div>
-          {renderTasks(doc.pending.toReversed())}
+          {renderTasks(doc.pending.toReversed().slice(20))}
         </div>
         <div className="mb-4">
           <div className="text-2xl">{doc.done.length} done:</div>
-          {renderTasks(doc.done.toReversed())}
+          {renderTasks(doc.done.toReversed().slice(20))}
         </div>
       </div>
     </div>
