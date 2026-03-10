@@ -68,26 +68,41 @@
     cursor: default;
   }
 
-  .p3n-step-btn {
+  .p3n-step-btn,
+  .p3n-reset-btn {
     padding: 4px 12px;
     font-size: 11px;
     font-weight: 600;
     font-family: inherit;
-    background: #3b82f6;
-    color: #fff;
     border: none;
     border-radius: 4px;
     cursor: pointer;
     letter-spacing: 0.04em;
   }
 
-  .p3n-step-btn:disabled {
-    background: #cbd5e1;
+  .p3n-step-btn {
+    background: #3b82f6;
+    color: #fff;
+  }
+
+  .p3n-reset-btn {
+    background: #f1f5f9;
+    color: #475569;
+  }
+
+  .p3n-step-btn:disabled,
+  .p3n-reset-btn:disabled {
+    background: #f1f5f9;
+    color: #cbd5e1;
     cursor: default;
   }
 
   .p3n-step-btn:not(:disabled):hover {
     background: #2563eb;
+  }
+
+  .p3n-reset-btn:not(:disabled):hover {
+    background: #e2e8f0;
   }
 
   .p3n-load-error {

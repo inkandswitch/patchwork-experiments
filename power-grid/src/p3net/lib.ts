@@ -47,6 +47,8 @@ export interface PetriNet {
    * Multiple to-places also duplicate the output token.
    */
   step(): void;
+  /** Reset all tokens back to def.initial (clears everything if no initial state). */
+  reset(): void;
 }
 
 // ─── P3NetDoc shape (minimal, matches the Patchwork doc) ─────────────────────
@@ -92,6 +94,20 @@ function createPetriNet(def: NetDef, handle: DocHandle<P3NetDoc>): PetriNet {
 
   return {
     def,
+
+    reset() {
+      handle.change((d) => {
+        d.tokens = {} as NetState;
+        if (def.initial) {
+          for (const [placeId, tokens] of Object.entries(def.initial)) {
+            d.tokens[placeId] = tokens.map((t) => ({
+              id: t.id,
+              state: deepCloneState(t.state),
+            }));
+          }
+        }
+      });
+    },
 
     step() {
       // All reading and writing happens inside a single handle.change so we

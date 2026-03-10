@@ -28,6 +28,7 @@ function P3NetSimulation({ handle }: { handle: DocHandle<P3NetDoc> }) {
   const { net, loadError } = useP3Net(handle, doc?.sourceUrl);
 
   const handleStep = useCallback(() => net?.step(), [net]);
+  const handleReset = useCallback(() => net?.reset(), [net]);
 
   if (!doc) {
     return <div className="p3n-loading">Loading…</div>;
@@ -41,6 +42,13 @@ function P3NetSimulation({ handle }: { handle: DocHandle<P3NetDoc> }) {
         {loadError && (
           <span className="p3n-error-badge" title={loadError}>Error</span>
         )}
+        <button
+          className="p3n-reset-btn"
+          onClick={handleReset}
+          disabled={!net}
+        >
+          Reset
+        </button>
         <button
           className="p3n-step-btn"
           onClick={handleStep}
