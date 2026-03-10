@@ -1,0 +1,235 @@
+@layer patchwork, tool, user;
+
+@layer tool {
+  /* ── Root layout ─────────────────────────────────────────────────── */
+
+  .pn-root {
+    display: flex;
+    height: 100%;
+    overflow: hidden;
+    font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace;
+    font-size: 12px;
+    background: #f8fafc;
+  }
+
+  .pn-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #94a3b8;
+    font-size: 13px;
+  }
+
+  /* ── Toolbar ─────────────────────────────────────────────────────── */
+
+  .pn-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 8px;
+    border-bottom: 1px solid #e2e8f0;
+    flex-shrink: 0;
+    background: #fff;
+    min-height: 34px;
+  }
+
+  .pn-toolbar-spacer {
+    flex: 1;
+  }
+
+  .pn-section-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #94a3b8;
+  }
+
+  /* ── Left column: source editor ──────────────────────────────────── */
+
+  .pn-editor-col {
+    display: flex;
+    flex-direction: column;
+    width: 280px;
+    min-width: 200px;
+    border-right: 1px solid #e2e8f0;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .pn-editor-wrap {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .pn-source-textarea {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 8px 10px;
+    box-sizing: border-box;
+    border: none;
+    outline: none;
+    resize: none;
+    font-family: ui-monospace, 'Cascadia Code', Menlo, monospace;
+    font-size: 11.5px;
+    line-height: 1.7;
+    color: #334155;
+    background: #fff;
+    overflow: auto;
+  }
+
+  .pn-parse-error {
+    padding: 6px 10px;
+    font-size: 10.5px;
+    color: #dc2626;
+    background: #fef2f2;
+    border-top: 1px solid #fecaca;
+    flex-shrink: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* ── Right column: graph ─────────────────────────────────────────── */
+
+  .pn-graph-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+    background: #f8fafc;
+  }
+
+  .pn-graph-wrap {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* ── SVG canvas ──────────────────────────────────────────────────── */
+
+  .pn-svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  /* Places */
+  .pn-place-circle {
+    fill: #fff;
+    stroke: #64748b;
+    stroke-width: 2;
+  }
+
+  .pn-place:hover .pn-place-circle {
+    stroke: #475569;
+  }
+
+  /* Transitions */
+  .pn-transition-rect {
+    fill: #e2e8f0;
+    stroke: #94a3b8;
+    stroke-width: 1.5;
+  }
+
+  /* Labels */
+  .pn-label {
+    font-family: ui-monospace, 'Cascadia Code', Menlo, monospace;
+    font-size: 11px;
+    fill: #475569;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  /* ── Editor tool ─────────────────────────────────────────────────── */
+
+  .pne-root {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    font-size: 13px;
+    background: #f8fafc;
+  }
+
+  .pne-tabbar {
+    display: flex;
+    align-items: stretch;
+    border-bottom: 1px solid #e2e8f0;
+    background: #fff;
+    flex-shrink: 0;
+    padding: 0 8px;
+    gap: 2px;
+  }
+
+  .pne-tab {
+    padding: 8px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: inherit;
+    color: #64748b;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    margin-bottom: -1px;
+    transition: color 100ms, border-color 100ms;
+    line-height: 1.4;
+  }
+
+  .pne-tab:hover {
+    color: #1e293b;
+  }
+
+  .pne-tab-active {
+    color: #0f172a;
+    border-bottom-color: #0f172a;
+  }
+
+  .pne-content {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .pne-source-textarea {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    padding: 12px 14px;
+    box-sizing: border-box;
+    border: none;
+    outline: none;
+    resize: none;
+    font-family: ui-monospace, 'Cascadia Code', Menlo, monospace;
+    font-size: 12px;
+    line-height: 1.7;
+    color: #334155;
+    background: #fff;
+    overflow: auto;
+  }
+
+  .pne-patchwork-view {
+    flex: 1;
+    min-height: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .pne-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #94a3b8;
+    font-size: 13px;
+  }
+}

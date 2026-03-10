@@ -31,4 +31,34 @@ export const plugins: Plugin<any>[] = [
       return DatalogDatatype;
     },
   },
+  {
+    type: 'patchwork:tool',
+    id: 'petrinet-editor',
+    name: 'Petri Net Editor',
+    supportedDatatypes: ['petrinet'],
+    async load() {
+      const { PetrinetEditorTool } = await import('./petrinet/editor-tool');
+      return PetrinetEditorTool;
+    },
+  },
+  {
+    type: 'patchwork:tool',
+    id: 'petrinet',
+    name: 'Petri Net',
+    supportedDatatypes: ['petrinet'],
+    async load() {
+      const { PetrinetTool } = await import('./petrinet/tool');
+      return PetrinetTool;
+    },
+  },
+  {
+    type: 'patchwork:datatype',
+    id: 'petrinet',
+    name: 'Petri Net',
+    icon: 'CircleDot',
+    async load() {
+      const { PetrinetDatatype } = await import('./petrinet/datatype');
+      return PetrinetDatatype;
+    },
+  },
 ];
