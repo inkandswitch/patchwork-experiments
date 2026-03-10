@@ -454,6 +454,24 @@
     word-break: break-all;
   }
 
+  .p3n-prop-patchwork-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+  }
+
+  .p3n-prop-patchwork-link {
+    font-size: 11px;
+    color: #6366f1;
+    text-decoration: none;
+    align-self: flex-end;
+  }
+
+  .p3n-prop-patchwork-link:hover {
+    text-decoration: underline;
+  }
+
   .p3n-prop-patchwork {
     display: block;
     width: 100%;

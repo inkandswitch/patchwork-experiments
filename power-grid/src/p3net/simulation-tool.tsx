@@ -320,11 +320,19 @@ function PropEditor({
   }
 
   if (typeof value === 'string' && value.startsWith('automerge:')) {
+    const docId = value.replace('automerge:', '');
     return (
-      <patchwork-view
-        doc-url={value}
-        class="p3n-prop-patchwork"
-      />
+      <div className="p3n-prop-patchwork-wrap">
+        <a
+          className="p3n-prop-patchwork-link"
+          href={`/#doc=${docId}`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Open ↗
+        </a>
+        <patchwork-view doc-url={value} class="p3n-prop-patchwork" />
+      </div>
     );
   }
 

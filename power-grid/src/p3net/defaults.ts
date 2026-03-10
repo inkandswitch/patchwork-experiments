@@ -29,11 +29,11 @@ export default (handle, repo) => defineNet({
         const promptHandle = await repo.find(prompts.state.prompt)
         const promptText = promptHandle.doc()?.content ?? ''
 
-        // Create a copy of the solution document (copyOf links back to the original)
+        // Create a copy of the solution document for the LLM to edit
         const solutionHandle = await repo.find(solutions.state.document)
         const copyHandle = repo.create()
         copyHandle.change(d => {
-          d['@patchwork'] = { type: 'essay', copyOf: solutions.state.document }
+          d['@patchwork'] = { type: 'markdown', copyOf: solutions.state.document }
           d.content = solutionHandle.doc()?.content ?? ''
         })
 
@@ -53,7 +53,7 @@ export default (handle, repo) => defineNet({
           processHandle.change(d => { d.done = true })
         })
 
-        produce({ type: 'llm-process', llmProcess: processHandle.url }, 'running')
+        produce({ type: 'llm-process', llmProcess: processHandle.url, prompt: prompts.state.prompt }, 'running')
       },
     },
 
@@ -69,15 +69,8 @@ export default (handle, repo) => defineNet({
         const processHandle = await repo.find(running.state.llmProcess)
         const processDoc = processHandle?.doc()
 
-        // The edited solution document (the copy that was worked on) becomes the new solution
-        // Create a new empty prompt document for the next iteration
-        const newPromptHandle = repo.create()
-        newPromptHandle.change(d => {
-          d['@patchwork'] = { type: 'essay' }
-          d.content = '# Next prompt\\n\\nDescribe the next task here.'
-        })
-
-        produce({ type: 'prompt', prompt: newPromptHandle.url }, 'prompts')
+        // Return the original prompt token unchanged; the edited copy becomes the new solution
+        produce({ type: 'prompt', prompt: running.state.prompt }, 'prompts')
         produce({ type: 'solution', document: processDoc?.docUrl }, 'solutions')
       },
     },
