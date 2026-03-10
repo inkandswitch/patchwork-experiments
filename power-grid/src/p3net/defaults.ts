@@ -24,13 +24,13 @@ export default (handle, repo) => defineNet({
       id: 'start_process',
       from: ['prompts', 'solutions'],
       to: ['running'],
-      onTokens({ prompts, solutions }, produce, repo) {
+      async onTokens({ prompts, solutions }, produce, repo) {
         // Read the prompt text from the linked markdown document
-        const promptHandle = repo.find(prompts.state.prompt)
+        const promptHandle = await repo.find(prompts.state.prompt)
         const promptText = promptHandle.doc()?.content ?? ''
 
         // Create a copy of the solution document (copyOf links back to the original)
-        const solutionHandle = repo.find(solutions.state.document)
+        const solutionHandle = await repo.find(solutions.state.document)
         const copyHandle = repo.create()
         copyHandle.change(d => {
           d['@patchwork'] = { type: 'essay', copyOf: solutions.state.document }
@@ -40,7 +40,8 @@ export default (handle, repo) => defineNet({
         // Create the LLM process document
         const processHandle = repo.create()
         processHandle.change(d => {
-          d.config = { apiUrl: 'https://api.openai.com/v1', model: 'gpt-4o' }
+          d['@patchwork'] = { type: 'petrinet-llm-process' }
+          d.config = { apiUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o' }
           d.prompt = promptText
           d.docUrl = copyHandle.url
           d.output = []
@@ -60,13 +61,12 @@ export default (handle, repo) => defineNet({
       id: 'complete',
       from: ['running'],
       to: ['prompts', 'solutions'],
-      guard({ running }) {
-        // repo is captured from the outer (handle, repo) closure
-        const processHandle = repo.find(running.state.llmProcess)
+      async guard({ running }) {
+        const processHandle = await repo.find(running.state.llmProcess)
         return processHandle?.doc()?.done === true
       },
-      onTokens({ running }, produce, repo) {
-        const processHandle = repo.find(running.state.llmProcess)
+      async onTokens({ running }, produce, repo) {
+        const processHandle = await repo.find(running.state.llmProcess)
         const processDoc = processHandle?.doc()
 
         // The edited solution document (the copy that was worked on) becomes the new solution
@@ -88,22 +88,35 @@ export default (handle, repo) => defineNet({
       id: 'prompt',
       label: 'Prompt',
       color: '#7c3aed',
-      initialState() {
-        return { type: 'prompt', prompt: null }
+      create(repo) {
+        const doc = repo.create()
+        doc.change(d => {
+          d['@patchwork'] = { type: 'markdown', suggestedImportUrl: 'automerge:dhkuYMpSttbRJPBJ7J5XST28bu7' }
+          d.content = '# Untitled'
+        })
+        return { type: 'prompt', prompt: doc.url }
       },
     },
     {
       id: 'solution',
       label: 'Solution',
       color: '#0891b2',
-      initialState() {
-        return { type: 'solution', document: null }
+      create(repo) {
+        const doc = repo.create()
+        doc.change(d => {
+          d['@patchwork'] = { type: 'markdown', suggestedImportUrl: 'automerge:dhkuYMpSttbRJPBJ7J5XST28bu7' }
+          d.content = '# Untitled'
+        })
+        return { type: 'solution', document: doc.url }
       },
     },
     {
       id: 'llm-process',
       label: 'LLM Process',
       color: '#d97706',
+      create() {
+        return { type: 'llm-process' }
+      },
     },
   ],
 

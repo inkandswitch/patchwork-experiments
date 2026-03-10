@@ -1,6 +1,7 @@
 import type { AutomergeUrl } from '@automerge/automerge-repo';
 
 export type PetrinetLLMDoc = {
+  '@patchwork': { type: 'petrinet-llm-process' };
   config: {
     apiUrl: string;
     model: string;

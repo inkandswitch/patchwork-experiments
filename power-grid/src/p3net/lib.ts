@@ -16,13 +16,15 @@ export type NetState = {
 
 /**
  * A token type definition used for the palette.
- * The type identifier is written into state.type when creating from the palette.
+ * create() is called when a token is dragged from the palette — receives repo
+ * so it can create automerge documents and return the full initial state.
+ * The type identifier is written into state.type automatically.
  */
 export type TokenTypeDef = {
   id: string;
   label: string;
   color: string; // palette chip colour only
-  initialState?: TokenState | (() => TokenState);
+  create: (repo: Repo) => TokenState;
 };
 
 /**
@@ -51,15 +53,16 @@ export type TransitionDef = {
   id: string;
   from: string[];
   to: string[];
-  /** Return false to prevent this transition from firing for these tokens. */
-  guard?: (tokens: Tokens) => boolean;
+  /** Return false (or a Promise resolving to false) to prevent this transition from firing. */
+  guard?: (tokens: Tokens) => boolean | Promise<boolean>;
   /**
-   * Called when the transition fires.
+   * Called when the transition fires. May be async.
    * Mutate/destroy input tokens and/or call produce() to emit new tokens.
    * If produce() is never called, non-destroyed input tokens are forwarded
    * to all to-places (default single-input behaviour).
+   * produce() can be called at any point — including after awaits.
    */
-  onTokens?: (tokens: Tokens, produce: ProduceFn, repo: Repo) => void;
+  onTokens?: (tokens: Tokens, produce: ProduceFn, repo: Repo) => void | Promise<void>;
 };
 
 export type NetDef = {
@@ -73,13 +76,13 @@ export type NetDef = {
 export interface PetriNet {
   readonly def: NetDef;
   /**
-   * Advance the net one step (synchronous).
+   * Advance the net one step. Returns a Promise because onTokens/guard may be async.
    * For each fireable transition (all from-places have ≥1 token, guard passes):
-   *   - Calls onTokens with one token per from-place
-   *   - Commits all consumed/produced tokens atomically
+   *   - Awaits onTokens with one token per from-place
+   *   - Commits all consumed/produced tokens atomically after all onTokens settle
    * Multi-input transitions use join semantics.
    */
-  step(): void;
+  step(): Promise<void>;
   /** Clear all tokens from places and canvas. */
   reset(): void;
 }
@@ -104,11 +107,7 @@ function deepClone(s: TokenState): TokenState {
 
 // ─── Runtime implementation ───────────────────────────────────────────────────
 
-function createPetriNet(
-  def: NetDef,
-  handle: DocHandle<P3NetDoc>,
-  repo: Repo,
-): PetriNet {
+function createPetriNet(def: NetDef, handle: DocHandle<P3NetDoc>, repo: Repo): PetriNet {
   return {
     def,
 
@@ -119,7 +118,7 @@ function createPetriNet(
       });
     },
 
-    step() {
+    async step() {
       const doc = handle.doc();
       if (!doc) return;
 
@@ -137,44 +136,45 @@ function createPetriNet(
 
       type FiredTransition = {
         transition: TransitionDef;
-        // placeId → mutable snapshot token
         inputTokens: { [placeId: string]: { id: string; state: TokenState; destroyed: boolean } };
         produced: { state: TokenState; toPlace?: string }[];
+        tokens: Tokens;
+        produce: ProduceFn;
       };
 
-      const fired: FiredTransition[] = [];
+      // ── 2. Find all fireable transitions (sync, guards may be async) ────────
+      const toFire: FiredTransition[] = [];
 
-      // ── 2. Find all fireable transitions ───────────────────────────────────
       for (const transition of def.transitions) {
         // Join semantics: every from-place must have ≥1 unreserved token
         const candidates: { [placeId: string]: TokenInstance } = {};
         let canFire = true;
 
         for (const placeId of transition.from) {
-          const available = (snapshot[placeId] ?? []).find(
-            (t) => !reserved.has(t.id),
-          );
+          const available = (snapshot[placeId] ?? []).find((t) => !reserved.has(t.id));
           if (!available) { canFire = false; break; }
           candidates[placeId] = available;
         }
         if (!canFire) continue;
 
-        // Build readonly guard tokens
+        // Build readonly guard tokens and evaluate guard (may be async)
         const guardTokens: Tokens = {};
         for (const [placeId, t] of Object.entries(candidates)) {
           guardTokens[placeId] = makeToken(t.id, deepClone(t.state));
         }
+        if (transition.guard && !(await transition.guard(guardTokens))) continue;
 
-        if (transition.guard && !transition.guard(guardTokens)) continue;
-
-        // Build mutable input tokens for onTokens
+        // Reserve tokens and build mutable input tokens for onTokens
         const inputTokens: FiredTransition['inputTokens'] = {};
         for (const [placeId, t] of Object.entries(candidates)) {
           inputTokens[placeId] = { id: t.id, state: deepClone(t.state), destroyed: false };
           reserved.add(t.id);
         }
 
-        const produced: { state: TokenState; toPlace?: string }[] = [];
+        const produced: FiredTransition['produced'] = [];
+        const produce: ProduceFn = (state, toPlace) => {
+          produced.push({ state: deepClone(state), toPlace });
+        };
 
         const tokens: Tokens = {};
         for (const [placeId, entry] of Object.entries(inputTokens)) {
@@ -186,25 +186,26 @@ function createPetriNet(
           };
         }
 
-        const produce: ProduceFn = (state, toPlace) => {
-          produced.push({ state: deepClone(state), toPlace });
-        };
-
-        transition.onTokens?.(tokens, produce, repo);
-
-        fired.push({ transition, inputTokens, produced });
+        toFire.push({ transition, inputTokens, produced, tokens, produce });
       }
 
-      if (fired.length === 0) return;
+      if (toFire.length === 0) return;
 
-      // ── 3. Commit atomically ───────────────────────────────────────────────
+      // ── 3. Call onTokens for all fired transitions (may be async) ──────────
+      await Promise.all(
+        toFire.map(({ transition, tokens, produce }) =>
+          transition.onTokens?.(tokens, produce, repo),
+        ),
+      );
+
+      // ── 4. Commit atomically ───────────────────────────────────────────────
       handle.change((d) => {
         if (!d.tokens) d.tokens = {} as NetState;
         for (const p of def.places) {
           if (!d.tokens[p]) d.tokens[p] = [];
         }
 
-        for (const { transition, inputTokens, produced } of fired) {
+        for (const { transition, inputTokens, produced } of toFire) {
           // Remove consumed tokens from their source places
           for (const [placeId, entry] of Object.entries(inputTokens)) {
             const arr = d.tokens[placeId];
@@ -241,8 +242,12 @@ function makeToken(id: string, state: TokenState): Token {
   return {
     id,
     state,
-    change(fn) { fn(state); },
-    destroy() { /* no-op for guard tokens */ },
+    change(fn) {
+      fn(state);
+    },
+    destroy() {
+      /* no-op for guard tokens */
+    },
   };
 }
 
@@ -256,8 +261,6 @@ function makeToken(id: string, state: TokenState): Token {
  * export default defineNet({ places, transitions, tokenTypes, getColor })
  * // In tool: const net = factory(handle, repo)
  */
-export function defineNet(
-  def: NetDef,
-): (handle: DocHandle<P3NetDoc>, repo: Repo) => PetriNet {
+export function defineNet(def: NetDef): (handle: DocHandle<P3NetDoc>, repo: Repo) => PetriNet {
   return (handle, repo) => createPetriNet(def, handle, repo);
 }

@@ -59,7 +59,7 @@ export async function runLLMProcess(
   }
 
   const { apiUrl, model } = doc.config;
-  const apiKey = (import.meta as any).env?.VITE_LLM_API_KEY || '';
+  const apiKey = (import.meta as any).env?.VITE_OPENAI_API_KEY || '';
 
   const targetHandle = await repo.find(doc.docUrl);
   const capturedConsole = createCapturedConsole();
@@ -251,6 +251,8 @@ async function* streamChatCompletion(
     headers: {
       'Content-Type': 'application/json',
       ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+      'HTTP-Referer': globalThis.location?.origin ?? 'http://localhost',
+      'X-Title': 'Patchwork',
     },
     body: JSON.stringify({ model, messages, stream: true }),
     signal,

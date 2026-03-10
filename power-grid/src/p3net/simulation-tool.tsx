@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client';
-import { RepoContext, useDocument } from '@automerge/automerge-repo-react-hooks';
+import { RepoContext, useDocument, useRepo } from '@automerge/automerge-repo-react-hooks';
 import { useState, useCallback } from 'react';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle } from '@automerge/automerge-repo';
@@ -62,14 +62,6 @@ function findAndUpdateToken(
   if (ct) fn(ct.state);
 }
 
-function resolveInitialState(typeDef: TokenTypeDef): TokenState {
-  const base = typeof typeDef.initialState === 'function'
-    ? typeDef.initialState()
-    : (typeDef.initialState ?? {});
-  // Stamp state.type with the type's id so getColor and other functions can see it
-  return { type: typeDef.id, ...base };
-}
-
 function makeId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -78,10 +70,11 @@ function makeId(): string {
 
 function P3NetSimulation({ handle }: { handle: DocHandle<P3NetDoc> }) {
   const [doc] = useDocument<P3NetDoc>(handle.url);
+  const repo = useRepo();
   const { net, loadError } = useP3Net(handle, doc?.sourceUrl);
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
 
-  const handleStep = useCallback(() => net?.step(), [net]);
+  const handleStep = useCallback(() => net?.step().catch(console.error), [net]);
   const handleReset = useCallback(() => {
     net?.reset();
     setSelectedTokenId(null);
@@ -89,58 +82,53 @@ function P3NetSimulation({ handle }: { handle: DocHandle<P3NetDoc> }) {
 
   const handleDropOnPlace = useCallback(
     (payload: DragPayload, placeId: string) => {
+      if (payload.kind === 'palette') {
+        const typeDef = net?.def.tokenTypes.find((t) => t.id === payload.typeId);
+        if (!typeDef) return;
+        const state = { type: typeDef.id, ...typeDef.create(repo) };
+        handle.change((d) => {
+          if (!d.tokens[placeId]) d.tokens[placeId] = [];
+          d.tokens[placeId].push({ id: makeId(), state: JSON.parse(JSON.stringify(state)) });
+        });
+        return;
+      }
+
       handle.change((d) => {
         if (!d.tokens[placeId]) d.tokens[placeId] = [];
-
-        if (payload.kind === 'palette') {
-          const typeDef = net?.def.tokenTypes.find((t) => t.id === payload.typeId);
-          if (!typeDef) return;
-          d.tokens[placeId].push({
-            id: makeId(),
-            state: JSON.parse(JSON.stringify(resolveInitialState(typeDef))),
-          });
-        } else {
-          const inst = readTokenInstance(d as unknown as P3NetDoc, payload.tokenId);
-          if (!inst) return;
-          removeToken(d as unknown as P3NetDoc, payload.tokenId);
-          d.tokens[placeId].push({
-            id: payload.tokenId,
-            state: JSON.parse(JSON.stringify(inst.state)),
-          });
-        }
+        const inst = readTokenInstance(d as unknown as P3NetDoc, payload.tokenId);
+        if (!inst) return;
+        removeToken(d as unknown as P3NetDoc, payload.tokenId);
+        d.tokens[placeId].push({
+          id: payload.tokenId,
+          state: JSON.parse(JSON.stringify(inst.state)),
+        });
       });
     },
-    [handle, net],
+    [handle, net, repo],
   );
 
   const handleDropOnCanvas = useCallback(
     (payload: DragPayload, x: number, y: number) => {
+      if (payload.kind === 'palette') {
+        const typeDef = net?.def.tokenTypes.find((t) => t.id === payload.typeId);
+        if (!typeDef) return;
+        const state = { type: typeDef.id, ...typeDef.create(repo) };
+        handle.change((d) => {
+          if (!d.canvas) d.canvas = [];
+          d.canvas.push({ id: makeId(), state: JSON.parse(JSON.stringify(state)), x, y });
+        });
+        return;
+      }
+
       handle.change((d) => {
         if (!d.canvas) d.canvas = [];
-
-        if (payload.kind === 'palette') {
-          const typeDef = net?.def.tokenTypes.find((t) => t.id === payload.typeId);
-          if (!typeDef) return;
-          d.canvas.push({
-            id: makeId(),
-            state: JSON.parse(JSON.stringify(resolveInitialState(typeDef))),
-            x,
-            y,
-          });
-        } else {
-          const inst = readTokenInstance(d as unknown as P3NetDoc, payload.tokenId);
-          if (!inst) return;
-          removeToken(d as unknown as P3NetDoc, payload.tokenId);
-          d.canvas.push({
-            id: payload.tokenId,
-            state: JSON.parse(JSON.stringify(inst.state)),
-            x,
-            y,
-          });
-        }
+        const inst = readTokenInstance(d as unknown as P3NetDoc, payload.tokenId);
+        if (!inst) return;
+        removeToken(d as unknown as P3NetDoc, payload.tokenId);
+        d.canvas.push({ id: payload.tokenId, state: JSON.parse(JSON.stringify(inst.state)), x, y });
       });
     },
-    [handle, net],
+    [handle, net, repo],
   );
 
   const handleDelete = useCallback(
