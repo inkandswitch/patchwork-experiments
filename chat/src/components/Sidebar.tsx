@@ -208,9 +208,9 @@ export function Sidebar(props: {
 				collapsed: collapsed(),
 				"drop-target": dropTarget(),
 			}}
-			onDragOver={handleDragOver}
-			onDragLeave={handleDragLeave}
-			onDrop={handleDrop}
+			on:dragover={handleDragOver}
+			on:dragleave={handleDragLeave}
+			on:drop={handleDrop}
 		>
 			<div ref={resizeRef} class="chat-sidebar-resize" />
 			<div class="chat-sidebar-header">
@@ -220,13 +220,13 @@ export function Sidebar(props: {
 						class="chat-sidebar-collapse-btn"
 						title="Swap side"
 						innerHTML={SVG_ICONS.swap}
-						onClick={swapSide}
+						on:click={swapSide}
 					/>
 					<button
 						class="chat-sidebar-collapse-btn"
 						title="Close sidebar"
 						innerHTML={SVG_ICONS.sidebar}
-						onClick={() => {
+						on:click={() => {
 							setCollapsed(true)
 							props.onVisibilityChange?.(false)
 						}}
@@ -323,17 +323,17 @@ function PinnedDocWrap(props: {
 	return (
 		<div class="chat-sidebar-pinned-wrap">
 			{/* Toolbar */}
-			<div class="chat-sidebar-pinned-toolbar" onPointerDown={(e) => e.stopPropagation()}>
-				<button title="Open in tab" innerHTML={SVG_ICONS.externalLink} onClick={props.onOpenInTab} />
-				<button title="Open as frame" innerHTML={SVG_ICONS.monitor} onClick={props.onOpenAsFrame} />
-				<button title="Fullscreen" innerHTML={SVG_ICONS.fullscreen} onClick={goFullscreen} />
-				<button title="Refresh" innerHTML={SVG_ICONS.refresh} onClick={refreshIframe} />
-				<button title="Unpin" innerHTML={SVG_ICONS.close} onClick={props.onUnpin} />
+			<div class="chat-sidebar-pinned-toolbar" on:pointerdown={(e) => e.stopPropagation()}>
+				<button title="Open in tab" innerHTML={SVG_ICONS.externalLink} on:click={props.onOpenInTab} />
+				<button title="Open as frame" innerHTML={SVG_ICONS.monitor} on:click={props.onOpenAsFrame} />
+				<button title="Fullscreen" innerHTML={SVG_ICONS.fullscreen} on:click={goFullscreen} />
+				<button title="Refresh" innerHTML={SVG_ICONS.refresh} on:click={refreshIframe} />
+				<button title="Unpin" innerHTML={SVG_ICONS.close} on:click={props.onUnpin} />
 			</div>
 
 			{/* Info bar */}
 			<div class="chat-sidebar-pinned-info">
-				<div class="chat-sidebar-pinned-info-main" onClick={() => setInfoCollapsed(!infoCollapsed())}>
+				<div class="chat-sidebar-pinned-info-main" on:click={() => setInfoCollapsed(!infoCollapsed())}>
 					<span class="chat-sidebar-pinned-info-title">{props.dl.name || "doc"}</span>
 					<span class="chat-sidebar-pinned-info-chevron" classList={{open: !infoCollapsed()}}>&#9656;</span>
 				</div>
@@ -344,7 +344,7 @@ function PinnedDocWrap(props: {
 							<span
 								class="chat-sidebar-pinned-info-value chat-sidebar-pinned-info-url"
 								title={props.dl.url}
-								onClick={() => navigator.clipboard?.writeText(props.dl.url)}
+								on:click={() => navigator.clipboard?.writeText(props.dl.url)}
 							>
 								{truncatedUrl()}
 							</span>
@@ -354,7 +354,7 @@ function PinnedDocWrap(props: {
 							<Show when={editingToolId()} fallback={
 								<span
 									class="chat-sidebar-pinned-info-value chat-sidebar-pinned-info-editable"
-									onClick={() => setEditingToolId(true)}
+									on:click={() => setEditingToolId(true)}
 								>
 									{typeof props.dl.pin === "string" ? props.dl.pin : "(auto)"}
 								</span>
@@ -362,12 +362,12 @@ function PinnedDocWrap(props: {
 								<input
 									class="chat-sidebar-pinned-info-input"
 									value={toolIdValue()}
-									onInput={(e) => setToolIdValue(e.currentTarget.value)}
-									onKeyDown={(e) => {
+									on:input={(e) => setToolIdValue(e.currentTarget.value)}
+									on:keydown={(e) => {
 										if (e.key === "Enter") saveToolId()
 										if (e.key === "Escape") setEditingToolId(false)
 									}}
-									onBlur={saveToolId}
+									on:blur={saveToolId}
 									ref={(el) => setTimeout(() => el.focus(), 0)}
 								/>
 							</Show>

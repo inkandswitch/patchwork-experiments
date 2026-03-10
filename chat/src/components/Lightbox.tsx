@@ -13,7 +13,7 @@ export function Lightbox(props: {
 		<div
 			class="chat-lightbox"
 			classList={{show: !!props.src}}
-			onClick={handleClick}
+			on:click={handleClick}
 		>
 			<Show when={props.src}>
 				<Show

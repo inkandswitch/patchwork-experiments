@@ -49,11 +49,24 @@ self.addEventListener("unhandledrejection", (e) => {
 
 console.log("[llm-worker] SharedWorker starting...")
 
-// ---- Local model (Phi-3.5) ----
-const MODEL_ID = "onnx-community/Phi-3.5-mini-instruct-onnx-web"
+// ---- Local models ----
+const LOCAL_MODELS = [
+  { id: "onnx-community/Qwen3-4B-ONNX", name: "Qwen3 4B (best)", dtype: "q4f16" },
+  { id: "onnx-community/Qwen3-1.7B-ONNX", name: "Qwen3 1.7B", dtype: "q4f16" },
+  { id: "onnx-community/Qwen3-0.6B-ONNX", name: "Qwen3 0.6B (fast)", dtype: "q4f16" },
+  { id: "onnx-community/Llama-3.2-1B-Instruct-ONNX", name: "Llama 3.2 1B", dtype: "q4f16" },
+  { id: "onnx-community/Phi-3.5-mini-instruct-onnx-web", name: "Phi 3.5 Mini", dtype: "q4f16" },
+  { id: "onnx-community/SmolLM2-1.7B-Instruct-ONNX", name: "SmolLM2 1.7B", dtype: "q4f16" },
+]
+const DEFAULT_MODEL_ID = LOCAL_MODELS[1].id
+
+let currentModelId = DEFAULT_MODEL_ID
 let pipelineFn = null
 let generator = null
 let loading = false
+let loadingPromise = null // resolves when current load completes
+// Track which models have been compiled this session (browser caches shaders between sessions)
+const compiledModels = new Set()
 
 function withTimeout(promise, ms, label) {
   return Promise.race([
@@ -64,9 +77,20 @@ function withTimeout(promise, ms, label) {
   ])
 }
 
-async function loadModel() {
-  if (generator || loading) return
+async function loadModel(modelId) {
+  modelId = modelId || DEFAULT_MODEL_ID
+  // If we already have a different model loaded, unload it
+  if (generator && currentModelId !== modelId) {
+    generator = null
+  }
+  if (generator) return
+  // If already loading, wait for the existing load to finish
+  if (loading && loadingPromise) return loadingPromise
+  currentModelId = modelId
   loading = true
+  let resolveLoading
+  loadingPromise = new Promise(r => { resolveLoading = r })
+  const modelDef = LOCAL_MODELS.find(m => m.id === modelId) || { dtype: "q4f16" }
 
   try {
     console.log("[llm-worker] Importing transformers.js...")
@@ -80,6 +104,8 @@ async function loadModel() {
     console.error("[llm-worker] Failed to load transformers.js:", err.message || err)
     // Don't broadcast — this only matters for local provider
     loading = false
+    loadingPromise = null
+    resolveLoading()
     return
   }
 
@@ -87,22 +113,55 @@ async function loadModel() {
 
   if (hasWebGPU) {
     try {
-      broadcast({ type: "status", message: "Compiling model for WebGPU… (this can take a minute)" })
+      const isFirstCompile = !compiledModels.has(modelId)
+      let compilePhase = false
+      let compileStart = 0
+      let compileTimer = null
+
+      // Show elapsed time during shader compilation so users know it's alive
+      function startCompileTimer() {
+        compilePhase = true
+        compileStart = Date.now()
+        const prefix = isFirstCompile
+          ? "⚠️ Compiling shaders for WebGPU (first time — might freeze for a bit)"
+          : "Compiling shaders for WebGPU"
+        broadcast({ type: "status", message: prefix + "…" })
+        compileTimer = setInterval(() => {
+          const elapsed = Math.round((Date.now() - compileStart) / 1000)
+          broadcast({ type: "status", message: `${prefix}… ${elapsed}s` })
+        }, 2000)
+      }
+
+      function stopCompileTimer() {
+        compilePhase = false
+        if (compileTimer) { clearInterval(compileTimer); compileTimer = null }
+      }
+
       generator = await withTimeout(
-        pipelineFn("text-generation", MODEL_ID, {
-          dtype: "q4f16", device: "webgpu",
+        pipelineFn("text-generation", modelId, {
+          dtype: modelDef.dtype, device: "webgpu",
           progress_callback: (p) => {
-            if (p.status === "progress" && p.progress != null)
+            if (p.status === "progress" && p.progress != null) {
+              stopCompileTimer()
               broadcast({ type: "status", message: `Downloading model… ${Math.round(p.progress)}%` })
-            else if (p.status === "initiate")
+            } else if (p.status === "initiate") {
+              stopCompileTimer()
               broadcast({ type: "status", message: "Initializing " + (p.file || "model") + "…" })
+            } else if (p.status === "done" && !compilePhase) {
+              // Download/init finished — compilation phase starts
+              startCompileTimer()
+            }
           },
         }),
-        90000, "WebGPU pipeline"
+        180000, "WebGPU pipeline"
       )
+      stopCompileTimer()
+      compiledModels.add(modelId)
       broadcast({ type: "status", message: "Model ready (WebGPU)" })
       broadcast({ type: "ready" })
       loading = false
+      loadingPromise = null
+      resolveLoading()
       return
     } catch (err) {
       console.warn("[llm-worker] WebGPU failed:", err.message || err)
@@ -111,19 +170,48 @@ async function loadModel() {
   }
 
   try {
-    broadcast({ type: "status", message: "Compiling model for WASM…" })
+    const isFirstCompile = !compiledModels.has(modelId)
+    let compilePhase = false
+    let compileStart = 0
+    let compileTimer = null
+
+    function startCompileTimer() {
+      compilePhase = true
+      compileStart = Date.now()
+      const prefix = isFirstCompile
+        ? "⚠️ Compiling model for WASM (first time — might freeze for a bit)"
+        : "Compiling model for WASM"
+      broadcast({ type: "status", message: prefix + "…" })
+      compileTimer = setInterval(() => {
+        const elapsed = Math.round((Date.now() - compileStart) / 1000)
+        broadcast({ type: "status", message: `${prefix}… ${elapsed}s` })
+      }, 2000)
+    }
+
+    function stopCompileTimer() {
+      compilePhase = false
+      if (compileTimer) { clearInterval(compileTimer); compileTimer = null }
+    }
+
     generator = await withTimeout(
-      pipelineFn("text-generation", MODEL_ID, {
-        dtype: "q4f16",
+      pipelineFn("text-generation", modelId, {
+        dtype: modelDef.dtype,
         progress_callback: (p) => {
-          if (p.status === "progress" && p.progress != null)
+          if (p.status === "progress" && p.progress != null) {
+            stopCompileTimer()
             broadcast({ type: "status", message: `Downloading model… ${Math.round(p.progress)}%` })
-          else if (p.status === "initiate")
+          } else if (p.status === "initiate") {
+            stopCompileTimer()
             broadcast({ type: "status", message: "Initializing " + (p.file || "model") + "…" })
+          } else if (p.status === "done" && !compilePhase) {
+            startCompileTimer()
+          }
         },
       }),
-      120000, "WASM pipeline"
+      180000, "WASM pipeline"
     )
+    stopCompileTimer()
+    compiledModels.add(modelId)
     broadcast({ type: "status", message: "Model ready (WASM)" })
     broadcast({ type: "ready" })
   } catch (err) {
@@ -131,6 +219,8 @@ async function loadModel() {
     // Don't broadcast — this only matters for local provider
   } finally {
     loading = false
+    loadingPromise = null
+    resolveLoading()
   }
 }
 
@@ -140,10 +230,15 @@ function handleMessage(port, data) {
   const { type, id, chatUrl } = data
   console.log("[llm-worker] Received:", type, id || "", chatUrl || "")
 
+  if (type === "list-local-models") {
+    port.postMessage({ type: "local-models", models: LOCAL_MODELS })
+    return
+  }
+
   if (type === "preload") {
     // Only preload local model if explicitly requested
     if (data.provider === "local") {
-      if (!generator && !loading) loadModel()
+      if (!generator && !loading) loadModel(data.config?.model)
       if (generator) port.postMessage({ type: "ready" })
     } else {
       // Non-local providers are always ready
@@ -189,8 +284,11 @@ function handleMessage(port, data) {
       doGenerateOllama(chatUrl, gen, messages, config)
     } else {
       // local
-      if (!generator) {
-        loadModel().then(() => {
+      const requestedModel = config?.model || DEFAULT_MODEL_ID
+      const needsReload = !generator || currentModelId !== requestedModel
+      if (needsReload) {
+        if (currentModelId !== requestedModel) generator = null
+        loadModel(requestedModel).then(() => {
           if (!generator) {
             port.postMessage({ type: "error", id, message: "Model not loaded" })
             activeGenerations.delete(chatUrl)
@@ -220,8 +318,11 @@ async function doGenerateLocal(chatUrl, gen, messages) {
         if (tokenCount % 3 === 0 || tokenCount < 5) {
           try {
             const partial = generator.tokenizer.decode(output[0].output_token_ids, { skip_special_tokens: true })
-            gen.fullText = partial
-            try { gen.port.postMessage({ type: "token", id: gen.id, text: partial }) } catch {}
+            const stripped = stripThinkTags(partial)
+            gen.fullText = stripped
+            if (stripped) {
+              try { gen.port.postMessage({ type: "token", id: gen.id, text: stripped }) } catch {}
+            }
           } catch {}
         }
       },
@@ -362,9 +463,21 @@ async function doGenerateOllama(chatUrl, gen, messages, config) {
   }
 }
 
+// ---- Strip Qwen3 <think> blocks ----
+
+function stripThinkTags(text) {
+  if (!text) return text
+  // Remove complete <think>...</think> blocks (including across newlines)
+  text = text.replace(/<think>[\s\S]*?<\/think>\s*/g, "")
+  // Remove unclosed <think> at the start (model still "thinking")
+  text = text.replace(/^<think>[\s\S]*$/, "")
+  return text.trim()
+}
+
 // ---- Shared finalization ----
 
 function finalize(chatUrl, gen, text) {
+  text = stripThinkTags(text)
   console.log("[llm-worker] Generation complete, length:", text.length)
   gen.done = true
   gen.finalText = text

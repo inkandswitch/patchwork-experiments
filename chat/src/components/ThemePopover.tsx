@@ -28,7 +28,7 @@ export function ThemePopover(props: {onClose: () => void; anchorRect: DOMRect}) 
 	return (
 		<div
 			class="chat-theme-popover show"
-			onClick={(e) => e.stopPropagation()}
+			on:click={(e) => e.stopPropagation()}
 			style={{
 				position: "fixed",
 				top: (props.anchorRect.bottom + 4) + "px",
@@ -44,7 +44,7 @@ export function ThemePopover(props: {onClose: () => void; anchorRect: DOMRect}) 
 							class="chat-theme-preset"
 							style={{background: preset.color}}
 							title={preset.name}
-							onClick={() => {
+							on:click={() => {
 								const p = parseOklch(preset.color)
 								setHue(p.H)
 								setLum(Math.round(p.L * 100))
@@ -63,7 +63,7 @@ export function ThemePopover(props: {onClose: () => void; anchorRect: DOMRect}) 
 					min="0"
 					max="360"
 					value={hue()}
-					onInput={(e) => {
+					on:input={(e) => {
 						setHue(parseFloat(e.currentTarget.value))
 						updateFromSliders()
 					}}
@@ -73,7 +73,7 @@ export function ThemePopover(props: {onClose: () => void; anchorRect: DOMRect}) 
 					min="0"
 					max="360"
 					value={hue()}
-					onInput={(e) => {
+					on:input={(e) => {
 						setHue(parseFloat(e.currentTarget.value))
 						updateFromSliders()
 					}}
@@ -87,7 +87,7 @@ export function ThemePopover(props: {onClose: () => void; anchorRect: DOMRect}) 
 					min="0"
 					max="100"
 					value={lum()}
-					onInput={(e) => {
+					on:input={(e) => {
 						setLum(parseFloat(e.currentTarget.value))
 						updateFromSliders()
 					}}
@@ -97,7 +97,7 @@ export function ThemePopover(props: {onClose: () => void; anchorRect: DOMRect}) 
 					min="0"
 					max="100"
 					value={lum()}
-					onInput={(e) => {
+					on:input={(e) => {
 						setLum(parseFloat(e.currentTarget.value))
 						updateFromSliders()
 					}}
@@ -111,7 +111,7 @@ export function ThemePopover(props: {onClose: () => void; anchorRect: DOMRect}) 
 					min="0"
 					max="40"
 					value={chroma()}
-					onInput={(e) => {
+					on:input={(e) => {
 						setChroma(parseFloat(e.currentTarget.value))
 						updateFromSliders()
 					}}
@@ -121,7 +121,7 @@ export function ThemePopover(props: {onClose: () => void; anchorRect: DOMRect}) 
 					min="0"
 					max="40"
 					value={chroma()}
-					onInput={(e) => {
+					on:input={(e) => {
 						setChroma(parseFloat(e.currentTarget.value))
 						updateFromSliders()
 					}}
@@ -135,14 +135,14 @@ export function ThemePopover(props: {onClose: () => void; anchorRect: DOMRect}) 
 					min="10"
 					max="24"
 					value={fontSize()}
-					onInput={(e) => setFontSize(parseInt(e.currentTarget.value, 10))}
+					on:input={(e) => setFontSize(parseInt(e.currentTarget.value, 10))}
 				/>
 				<input
 					type="number"
 					min="10"
 					max="24"
 					value={fontSize()}
-					onInput={(e) => setFontSize(parseInt(e.currentTarget.value, 10))}
+					on:input={(e) => setFontSize(parseInt(e.currentTarget.value, 10))}
 				/>
 			</div>
 		</div>

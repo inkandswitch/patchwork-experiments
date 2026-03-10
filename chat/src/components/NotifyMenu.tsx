@@ -40,16 +40,16 @@ export function NotifyMenu(props: {onClose: () => void; anchorRect: DOMRect}) {
 				right: (window.innerWidth - props.anchorRect.right) + "px",
 				"z-index": "200",
 			}}
-			onClick={(e) => e.stopPropagation()}
+			on:click={(e) => e.stopPropagation()}
 		>
-			<div class="chat-notify-menu-row" onClick={toggleSound}>
+			<div class="chat-notify-menu-row" on:click={toggleSound}>
 				Sound
 				<button
 					class="chat-notify-toggle"
 					classList={{on: soundEnabled()}}
 				/>
 			</div>
-			<div class="chat-notify-menu-row" onClick={toggleNotifications}>
+			<div class="chat-notify-menu-row" on:click={toggleNotifications}>
 				Desktop notifications
 				<button
 					class="chat-notify-toggle"

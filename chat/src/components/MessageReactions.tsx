@@ -25,7 +25,7 @@ export function MessageReactions(props: {
 						<button
 							class="chat-reaction"
 							classList={{mine: users.includes(myName())}}
-							onClick={() => props.onToggleReaction(props.rawIdx, emoji)}
+							on:click={() => props.onToggleReaction(props.rawIdx, emoji)}
 						>
 							{emoji}
 							<span class="chat-reaction-count">{users.length}</span>
@@ -34,7 +34,7 @@ export function MessageReactions(props: {
 				</For>
 				<button
 					class="chat-reaction-add"
-					onClick={(e) => props.onAddReaction(props.rawIdx, e.currentTarget)}
+					on:click={(e) => props.onAddReaction(props.rawIdx, e.currentTarget)}
 					innerHTML={SVG_ICONS.plus}
 				/>
 			</div>

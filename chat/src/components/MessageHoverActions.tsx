@@ -16,7 +16,7 @@ export function MessageHoverActions(props: {
 					class="chat-msg-action-btn"
 					title="Reply"
 					innerHTML={SVG_ICONS.reply}
-					onClick={(e) => {
+					on:click={(e) => {
 						e.stopPropagation()
 						props.onReply(props.msg.id)
 					}}
@@ -26,7 +26,7 @@ export function MessageHoverActions(props: {
 				class="chat-msg-action-btn"
 				title="Add reaction"
 				innerHTML={SVG_ICONS.react}
-				onClick={(e) => {
+				on:click={(e) => {
 					e.stopPropagation()
 					props.onReact(props.rawIdx, e.currentTarget)
 				}}
@@ -35,7 +35,7 @@ export function MessageHoverActions(props: {
 				class="chat-msg-action-btn"
 				title="Delete"
 				innerHTML={SVG_ICONS.trash}
-				onClick={(e) => {
+				on:click={(e) => {
 					e.stopPropagation()
 					props.onDelete(props.rawIdx)
 				}}

@@ -686,7 +686,7 @@ export function InputArea(props: {
 					<button
 						class="chat-reply-bar-close"
 						innerHTML={SVG_ICONS.close}
-						onClick={props.onClearReply}
+						on:click={props.onClearReply}
 					/>
 				</div>
 			</Show>
@@ -708,7 +708,7 @@ export function InputArea(props: {
 					<button
 						class="chat-paste-preview-close"
 						innerHTML={SVG_ICONS.close}
-						onClick={() => setPendingFiles(() => [])}
+						on:click={() => setPendingFiles(() => [])}
 					/>
 				</div>
 			</Show>
@@ -723,7 +723,7 @@ export function InputArea(props: {
 								<button
 									class="chat-paste-embed-remove"
 									innerHTML={SVG_ICONS.close}
-									onClick={() => setPendingEmbeds(prev => prev.filter((_, j) => j !== i))}
+									on:click={() => setPendingEmbeds(prev => prev.filter((_, j) => j !== i))}
 								/>
 							</div>
 						)}
@@ -731,7 +731,7 @@ export function InputArea(props: {
 					<button
 						class="chat-paste-preview-close"
 						innerHTML={SVG_ICONS.close}
-						onClick={() => setPendingEmbeds(() => [])}
+						on:click={() => setPendingEmbeds(() => [])}
 					/>
 				</div>
 			</Show>
@@ -756,8 +756,8 @@ export function InputArea(props: {
 							<div class="chat-recording-viz-bar" />
 						))}
 					</div>
-					<button class="chat-recording-cancel" onClick={cancelRecording}>Cancel</button>
-					<button class="chat-recording-send" onClick={stopAndSendRecording}>
+					<button class="chat-recording-cancel" on:click={cancelRecording}>Cancel</button>
+					<button class="chat-recording-send" on:click={stopAndSendRecording}>
 						<span innerHTML={SVG_ICONS.send} />
 					</button>
 				</div>
@@ -769,13 +769,13 @@ export function InputArea(props: {
 				class="chat-input-row"
 				classList={{processing: gifCapturing()}}
 				style={{display: isRecording() ? "none" : undefined}}
-				onPaste={handlePaste}
+				on:paste={handlePaste}
 			>
 				<button
 					class="chat-gif-toggle"
 					classList={{active: gifModeEnabled(), recording: gifCapturing()}}
 					title="Toggle GIF selfie mode"
-					onClick={() => setGifModeEnabled(!gifModeEnabled())}
+					on:click={() => setGifModeEnabled(!gifModeEnabled())}
 				>
 					<span class="chat-gif-icon" innerHTML={SVG_ICONS.camera} />
 					<video ref={gifVideoRef} muted playsinline />
@@ -796,11 +796,11 @@ export function InputArea(props: {
 				<div
 				ref={inputWrapRef}
 				class="chat-input-wrap"
-				onDragOver={(e) => {
+				on:dragover={(e) => {
 					e.preventDefault()
 					if (e.dataTransfer) e.dataTransfer.dropEffect = "copy"
 				}}
-				onDrop={(e) => {
+				on:drop={(e) => {
 					const dt = e.dataTransfer
 					if (!dt) return
 					const dndData = dt.getData("text/x-patchwork-dnd")
@@ -837,13 +837,13 @@ export function InputArea(props: {
 					classList={{recording: isRecording()}}
 					title={isRecording() ? "Stop recording" : "Record voice"}
 					innerHTML={isRecording() ? SVG_ICONS.micStop : SVG_ICONS.mic}
-					onClick={toggleRecording}
+					on:click={toggleRecording}
 				/>
 				<button
 					class="chat-input-btn"
 					title="Send"
 					innerHTML={SVG_ICONS.send}
-					onClick={sendMessage}
+					on:click={sendMessage}
 				/>
 			</div>
 		</div>

@@ -106,7 +106,7 @@ export function MessageBody(props: {
 					innerHTML={props.msg.text
 						? (props.msg.marquee ? "<marquee>" + html() + "</marquee>" : html())
 						: ""}
-					onClick={(e) => {
+					on:click={(e) => {
 						// Handle spoiler reveals
 						const target = e.target as HTMLElement
 						if (target.classList.contains("chat-spoiler")) {

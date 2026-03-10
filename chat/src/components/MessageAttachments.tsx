@@ -1,6 +1,6 @@
-import {Show, For, createResource, createSignal, onMount} from "solid-js"
+import {Show, For, createMemo, createSignal, onMount} from "solid-js"
 import type {ChatMessage, DocEmbed} from "../types"
-import {loadBlobUrl} from "../lib/blob-cache"
+import {automergeUrlToServiceWorkerUrl} from "@inkandswitch/patchwork-filesystem"
 import {useChat} from "../context/ChatContext"
 import {SVG_ICONS} from "../lib/svg-icons"
 
@@ -71,7 +71,7 @@ function ResizeHandle(props: {
 	}
 
 	return (
-		<div class="chat-resize-handle" onPointerDown={handlePointerDown}>
+		<div class="chat-resize-handle" on:pointerdown={handlePointerDown}>
 			<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5">
 				<path d="M9 1L1 9M9 5L5 9M9 8L8 9" />
 			</svg>
@@ -102,10 +102,7 @@ function ImageAttachment(props: {
 	sizeKey: string
 }) {
 	let wrapRef!: HTMLDivElement
-	const [blobUrl] = createResource(
-		() => props.imageUrl,
-		(url) => loadBlobUrl(url as any)
-	)
+	const src = createMemo(() => automergeUrlToServiceWorkerUrl(props.imageUrl as any))
 
 	return (
 		<div
@@ -117,10 +114,10 @@ function ImageAttachment(props: {
 				position: "relative",
 			}}
 		>
-			<Show when={blobUrl()}>
+			<Show when={src()}>
 				<img
 					class="chat-msg-image"
-					src={blobUrl()!}
+					src={src()!}
 					alt={props.imageName || "image"}
 				/>
 				<ResizeHandle containerRef={wrapRef} msg={props.msg} sizeKey={props.sizeKey} />
@@ -130,34 +127,31 @@ function ImageAttachment(props: {
 }
 
 function FileAttachment(props: {url: string; name: string; mimeType: string}) {
-	const [blobUrl] = createResource(
-		() => props.url,
-		(url) => loadBlobUrl(url as any)
-	)
+	const src = createMemo(() => automergeUrlToServiceWorkerUrl(props.url as any))
 
 	const isImage = () => props.mimeType?.startsWith("image/")
 	const isVideo = () => props.mimeType?.startsWith("video/")
 
 	return (
 		<Show
-			when={isImage() && blobUrl()}
+			when={isImage() && src()}
 			fallback={
 				<Show
-					when={isVideo() && blobUrl()}
+					when={isVideo() && src()}
 					fallback={
-						<a class="chat-msg-file" href={blobUrl() || "#"} download={props.name}>
+						<a class="chat-msg-file" href={src() || "#"} download={props.name}>
 							{props.name}
 						</a>
 					}
 				>
 					<div class="chat-msg-video-wrap">
-						<video class="chat-msg-video" src={blobUrl()!} controls />
+						<video class="chat-msg-video" src={src()!} controls />
 					</div>
 				</Show>
 			}
 		>
 			<div class="chat-msg-image-wrap" style="width:350px">
-				<img class="chat-msg-image" src={blobUrl()!} alt={props.name} />
+				<img class="chat-msg-image" src={src()!} alt={props.name} />
 			</div>
 		</Show>
 	)
@@ -219,11 +213,11 @@ function DocEmbedView(props: {embed: DocEmbed; msg: ChatMessage; embedIndex: num
 					classList={{pinned: isPinned()}}
 					title={isPinned() ? "Unpin from sidebar" : "Pin to sidebar"}
 					innerHTML={SVG_ICONS.pin}
-					onClick={(e) => {
+					on:click={(e) => {
 						e.stopPropagation()
 						togglePin()
 					}}
-					onPointerDown={(e) => e.stopPropagation()}
+					on:pointerdown={(e) => e.stopPropagation()}
 				/>
 			</div>
 			<ResizeHandle containerRef={wrapRef} msg={props.msg} sizeKey={"embed_" + props.embedIndex} />

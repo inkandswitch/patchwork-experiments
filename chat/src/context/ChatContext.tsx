@@ -1,12 +1,10 @@
-import {createContext, useContext, type ParentComponent, type Accessor, type Resource} from "solid-js"
-import {useDocument} from "@automerge/automerge-repo-solid-primitives"
+import {createContext, useContext, createSignal, createEffect, onCleanup, type ParentComponent, type Accessor, type Resource} from "solid-js"
 import type {DocHandle, Repo, Doc} from "@automerge/automerge-repo"
 import type {ChatDoc} from "../types"
 
 interface ChatContextValue {
 	handle: DocHandle<ChatDoc>
 	doc: Accessor<Doc<ChatDoc> | undefined>
-	handleResource: Resource<DocHandle<ChatDoc> | undefined>
 	repo: Repo
 	element: HTMLElement
 	chatUrl: string
@@ -19,14 +17,33 @@ export const ChatProvider: ParentComponent<{
 	element: HTMLElement
 }> = (props) => {
 	const repo = (window as any).repo as Repo
-	const [doc, handleResource] = useDocument<ChatDoc>(props.handle.url, {repo})
+
+	// Manual doc signal — subscribes directly to handle changes.
+	// This is more reliable than useDocument on reload since it doesn't
+	// depend on the repo re-finding the handle.
+	const [doc, setDoc] = createSignal<Doc<ChatDoc> | undefined>(props.handle.doc() as Doc<ChatDoc> | undefined)
+
+	const onChange = () => {
+		const d = props.handle.doc() as Doc<ChatDoc> | undefined
+		if (d) setDoc(() => d)
+	}
+
+	// If doc wasn't ready synchronously, wait for it
+	if (!doc()) {
+		repo.find(props.handle.url).then((h: DocHandle<ChatDoc>) => {
+			const d = h.doc() as Doc<ChatDoc> | undefined
+			if (d) setDoc(() => d)
+		}).catch(() => {})
+	}
+
+	props.handle.on("change", onChange)
+	onCleanup(() => props.handle.off("change", onChange))
 
 	return (
 		<ChatCtx.Provider
 			value={{
 				handle: props.handle,
 				doc,
-				handleResource,
 				repo,
 				element: props.element,
 				chatUrl: props.handle.url,

@@ -134,10 +134,10 @@ export function FontAddDialog(props: {
 	}
 
 	return (
-		<div class="chat-font-dialog" onClick={(e) => e.stopPropagation()}>
+		<div class="chat-font-dialog" on:click={(e) => e.stopPropagation()}>
 			<div class="chat-font-dialog-header">
 				<span>Manage Fonts</span>
-				<button class="chat-font-dialog-close" onClick={props.onClose}>&times;</button>
+				<button class="chat-font-dialog-close" on:click={props.onClose}>&times;</button>
 			</div>
 
 			<div class="chat-font-dialog-body">
@@ -150,7 +150,7 @@ export function FontAddDialog(props: {
 									<span style={`font-family:'${name}',sans-serif`}>{name}</span>
 									<button
 										class="chat-font-dialog-remove"
-										onClick={() => removeFont(name)}
+										on:click={() => removeFont(name)}
 										title="Remove font"
 									>
 										{confirmRemove() === name ? "?" : "\u00d7"}
@@ -167,11 +167,11 @@ export function FontAddDialog(props: {
 					type="file"
 					accept=".woff2,.woff,.ttf,.otf,font/*"
 					style="display:none"
-					onChange={handleFileSelect}
+					on:change={handleFileSelect}
 				/>
 				<button
 					class="chat-font-dialog-choose"
-					onClick={() => fileInputRef.click()}
+					on:click={() => fileInputRef.click()}
 				>
 					{selectedFile() ? selectedFile()!.name : "Choose .woff2 file..."}
 				</button>
@@ -181,7 +181,7 @@ export function FontAddDialog(props: {
 						class="chat-font-dialog-name"
 						placeholder="Font name"
 						value={fontName()}
-						onInput={(e) => setFontName(e.currentTarget.value)}
+						on:input={(e) => setFontName(e.currentTarget.value)}
 						pattern="[a-zA-Z0-9][a-zA-Z0-9 _-]*"
 					/>
 
@@ -197,11 +197,11 @@ export function FontAddDialog(props: {
 			</div>
 
 			<div class="chat-font-dialog-footer">
-				<button onClick={props.onClose}>Cancel</button>
+				<button on:click={props.onClose}>Cancel</button>
 				<button
 					class="chat-font-dialog-save"
 					disabled={!isValid() || saving()}
-					onClick={save}
+					on:click={save}
 				>
 					{saving() ? "..." : "Add Font"}
 				</button>

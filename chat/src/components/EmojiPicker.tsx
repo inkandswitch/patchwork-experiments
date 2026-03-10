@@ -1,8 +1,8 @@
-import {createSignal, createResource, For, Show, createMemo} from "solid-js"
+import {createSignal, For, Show, createMemo} from "solid-js"
 import {useChat} from "../context/ChatContext"
 import {useIdentity} from "../context/IdentityContext"
 import {usePresence} from "../context/PresenceContext"
-import {loadBlobUrl} from "../lib/blob-cache"
+import {automergeUrlToServiceWorkerUrl} from "@inkandswitch/patchwork-filesystem"
 import type {AutomergeUrl} from "@automerge/automerge-repo"
 import {
 	EMOJI_DATA,
@@ -137,18 +137,18 @@ export function EmojiPicker(props: {
 	return (
 		<div
 			class="chat-emoji-picker-overlay show"
-			onClick={props.onClose}
+			on:click={props.onClose}
 		>
 			<div
 				class="chat-emoji-picker"
 				style={style()}
-				onClick={(e) => e.stopPropagation()}
+				on:click={(e) => e.stopPropagation()}
 			>
 				<input
 					class="chat-emoji-picker-search"
 					placeholder="Search emoji..."
 					value={filter()}
-					onInput={(e) => setFilter(e.currentTarget.value)}
+					on:input={(e) => setFilter(e.currentTarget.value)}
 					autofocus
 				/>
 
@@ -157,7 +157,7 @@ export function EmojiPicker(props: {
 					<div class="chat-emoji-grid" style="margin-bottom:6px">
 						<For each={QUICK_EMOJIS}>
 							{(emoji) => (
-								<button onClick={() => selectEmoji(emoji)}>{emoji}</button>
+								<button on:click={() => selectEmoji(emoji)}>{emoji}</button>
 							)}
 						</For>
 					</div>
@@ -170,7 +170,7 @@ export function EmojiPicker(props: {
 						<div class="chat-emoji-grid chat-emoticon-grid">
 							<For each={ownEmoticonEntries()}>
 								{([name, url]) => (
-									<EmoticonButton name={name} url={url} onClick={() => selectEmoji(":" + name + ":")} />
+									<EmoticonButton name={name} url={url} on:click={() => selectEmoji(":" + name + ":")} />
 								)}
 							</For>
 						</div>
@@ -185,7 +185,7 @@ export function EmojiPicker(props: {
 									<EmoticonButton
 										name={entry.name}
 										url={entry.url}
-										onClick={() => selectEmoji(":" + entry.name + ":")}
+										on:click={() => selectEmoji(":" + entry.name + ":")}
 										onAdopt={() => adoptEmoticon(entry.name, entry.url)}
 									/>
 								)}
@@ -197,7 +197,7 @@ export function EmojiPicker(props: {
 					<div class="chat-emoji-grid">
 						<For each={emojis()}>
 							{(emoji) => (
-								<button onClick={() => selectEmoji(emoji)}>
+								<button on:click={() => selectEmoji(emoji)}>
 									{typeof emoji === "string" ? emoji : (emoji as any).emoji || emoji}
 								</button>
 							)}
@@ -215,24 +215,21 @@ function EmoticonButton(props: {
 	onClick: () => void
 	onAdopt?: () => void
 }) {
-	const [blobUrl] = createResource(
-		() => props.url,
-		(url) => loadBlobUrl(url)
-	)
+	const src = createMemo(() => automergeUrlToServiceWorkerUrl(props.url))
 
 	return (
-		<button class="chat-emoticon-btn" onClick={props.onClick} title={":" + props.name + ":"}>
-			<Show when={blobUrl()}>
-				<img src={blobUrl()!} alt={props.name} class="chat-emoticon-img" />
+		<button class="chat-emoticon-btn" on:click={props.onClick} title={":" + props.name + ":"}>
+			<Show when={src()}>
+				<img src={src()!} alt={props.name} class="chat-emoticon-img" />
 			</Show>
 			<Show when={props.onAdopt}>
 				<span
 					class="chat-emoticon-adopt"
-					onClick={(e) => {
+					on:click={(e) => {
 						e.stopPropagation()
 						props.onAdopt!()
 					}}
-					onPointerDown={(e) => e.stopPropagation()}
+					on:pointerdown={(e) => e.stopPropagation()}
 					title={"Adopt :" + props.name + ":"}
 				>+</span>
 			</Show>

@@ -69,10 +69,21 @@ export function MessageList(props: {
 				mh.on("change", cb)
 				subscriptions.push({handle: mh, cb})
 			}
+			// If doc() was null (not synced yet), the "change" listener above
+			// will update the cache when it arrives. But make sure we're not stuck.
+			if (!data) {
+				// Remove from pending so the effect can retry if needed
+				pendingResolves.delete(url)
+			}
 		} catch (e) {
 			console.warn("[Chat] resolve msg doc:", e)
+			// Allow retry on failure
+			pendingResolves.delete(url)
 		}
 	}
+
+	// Retry counter signal — bump to trigger re-resolution of failed message docs
+	const [retryTick, setRetryTick] = createSignal(0)
 
 	// Effect to load uncached message refs — separated from the memo to avoid
 	// triggering side effects inside a computation
@@ -81,11 +92,21 @@ export function MessageList(props: {
 		if (!d) return
 		const rawEntries = d.messages || []
 		const cache = msgDocCache()
+		const _tick = retryTick() // subscribe to retry ticks
 
+		let hasUnresolved = false
 		for (const entry of rawEntries as any[]) {
-			if (entry.ref && entry.url && !cache.has(entry.url) && !pendingResolves.has(entry.url)) {
-				resolveMessageDoc(entry.url)
+			if (entry.ref && entry.url && !cache.has(entry.url)) {
+				if (!pendingResolves.has(entry.url)) {
+					resolveMessageDoc(entry.url)
+				}
+				hasUnresolved = true
 			}
+		}
+
+		// If there are still unresolved messages, schedule a retry
+		if (hasUnresolved) {
+			setTimeout(() => setRetryTick(t => t + 1), 2000)
 		}
 	})
 

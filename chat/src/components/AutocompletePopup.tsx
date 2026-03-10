@@ -122,7 +122,7 @@ export function AutocompletePopup(props: {
 	onHandle?: (handle: AutocompleteHandle) => void
 }) {
 	const {myEmoticons} = useIdentity()
-	const {peerEmoticons} = usePresence()
+	const {peerEmoticons, presenceMap} = usePresence()
 	let listRef!: HTMLDivElement
 	const [activeIndex, setActiveIndex] = createSignal(0)
 
@@ -148,12 +148,38 @@ export function AutocompletePopup(props: {
 			}
 		}
 
-		// Emoji/emoticon trigger
+		// @mention autocomplete
 		const before = text.slice(0, pos)
-		const match = before.match(/(^|[\s:{\[(])(:([a-zA-Z0-9_+-]+))$/)
-		if (match && match[3].length >= 1) {
-			const query = match[3]
-			const colonStart = before.length - match[2].length
+		const mentionMatch = before.match(/(^|[\s])(@([a-zA-Z0-9_-]*))$/)
+		if (mentionMatch) {
+			const query = mentionMatch[3].toLowerCase()
+			const mentionStart = before.length - mentionMatch[2].length
+			const names = new Set<string>()
+			// Add presence users
+			for (const [name] of presenceMap()) names.add(name)
+			// Always include "computer"
+			names.add("computer")
+			const items: AutocompleteItem[] = []
+			for (const name of names) {
+				if (name.toLowerCase().startsWith(query) || fuzzyMatch(query, name)) {
+					items.push({
+						display: "@" + name,
+						label: "@" + name,
+						desc: name === "computer" ? "AI assistant" : "user",
+					})
+				}
+			}
+			items.sort((a, b) => fuzzyScore(query, a.label.slice(1)) - fuzzyScore(query, b.label.slice(1)))
+			if (items.length > 0) {
+				return {mode: "mention" as const, items: items.slice(0, 8), colonStart: mentionStart}
+			}
+		}
+
+		// Emoji/emoticon trigger
+		const emojiMatch = before.match(/(^|[\s:{\[(])(:([a-zA-Z0-9_+-]+))$/)
+		if (emojiMatch && emojiMatch[3].length >= 1) {
+			const query = emojiMatch[3]
+			const colonStart = before.length - emojiMatch[2].length
 			const items = searchEmoji(query, myEmoticons(), Object.fromEntries(peerEmoticons()))
 			if (items.length > 0) {
 				return {mode: "emoji" as const, items, colonStart}
@@ -225,11 +251,11 @@ export function AutocompletePopup(props: {
 						<div
 							class="chat-autocomplete-item"
 							classList={{active: idx() === activeIndex()}}
-							onPointerDown={(e) => {
+							on:pointerdown={(e) => {
 								e.preventDefault()
 								selectItem(idx())
 							}}
-							onPointerEnter={() => setActiveIndex(idx())}
+							on:pointerenter={() => setActiveIndex(idx())}
 						>
 							{item.isCommand ? (
 								<>

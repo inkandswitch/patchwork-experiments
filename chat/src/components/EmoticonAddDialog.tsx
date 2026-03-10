@@ -140,10 +140,10 @@ export function EmoticonAddDialog(props: {
 	}
 
 	return (
-		<div class="chat-emoticon-dialog" onClick={(e) => e.stopPropagation()}>
+		<div class="chat-emoticon-dialog" on:click={(e) => e.stopPropagation()}>
 			<div class="chat-emoticon-dialog-header">
 				<span>Add Emoticon</span>
-				<button class="chat-emoticon-dialog-close" onClick={props.onClose}>&times;</button>
+				<button class="chat-emoticon-dialog-close" on:click={props.onClose}>&times;</button>
 			</div>
 
 			<div class="chat-emoticon-dialog-body">
@@ -153,12 +153,12 @@ export function EmoticonAddDialog(props: {
 					accept="image/*"
 					multiple
 					style="display:none"
-					onChange={handleFileSelect}
+					on:change={handleFileSelect}
 				/>
 
 				<div
 					class="chat-emoticon-dialog-preview"
-					onClick={() => fileInputRef.click()}
+					on:click={() => fileInputRef.click()}
 					title="Click to choose image"
 				>
 					<Show
@@ -172,14 +172,14 @@ export function EmoticonAddDialog(props: {
 				<Show when={entries().length > 1}>
 					<div class="chat-emoticon-dialog-nav">
 						<button
-							onClick={() => setCurrentIdx(i => Math.max(0, i - 1))}
+							on:click={() => setCurrentIdx(i => Math.max(0, i - 1))}
 							disabled={currentIdx() === 0}
 						>
 							&#8249; Prev
 						</button>
 						<span>{currentIdx() + 1} / {entries().length}</span>
 						<button
-							onClick={() => setCurrentIdx(i => Math.min(entries().length - 1, i + 1))}
+							on:click={() => setCurrentIdx(i => Math.min(entries().length - 1, i + 1))}
 							disabled={currentIdx() >= entries().length - 1}
 						>
 							Next &#8250;
@@ -192,18 +192,18 @@ export function EmoticonAddDialog(props: {
 						class="chat-emoticon-dialog-name"
 						placeholder="emoticon_name"
 						value={current()!.name}
-						onInput={(e) => updateName(e.currentTarget.value)}
+						on:input={(e) => updateName(e.currentTarget.value)}
 						pattern="[a-zA-Z0-9_-]+"
 					/>
 				</Show>
 			</div>
 
 			<div class="chat-emoticon-dialog-footer">
-				<button onClick={props.onClose}>Cancel</button>
+				<button on:click={props.onClose}>Cancel</button>
 				<button
 					class="chat-emoticon-dialog-save"
 					disabled={!isValid() || saving()}
-					onClick={save}
+					on:click={save}
 				>
 					{saving() ? "..." : entries().length > 1 ? `Add ${entries().length}` : "Add"}
 				</button>

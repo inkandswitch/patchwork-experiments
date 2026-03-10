@@ -1,11 +1,11 @@
-import {For, Show, createSignal, createMemo, createEffect, onMount, onCleanup} from "solid-js"
+import {For, Show, createSignal, createMemo, onMount, onCleanup} from "solid-js"
 import {useChat} from "../context/ChatContext"
 import {useIdentity} from "../context/IdentityContext"
 import {usePresence} from "../context/PresenceContext"
 import {SVG_ICONS} from "../lib/svg-icons"
 import {ThemePopover} from "./ThemePopover"
 import {NotifyMenu} from "./NotifyMenu"
-import {loadBlobUrl} from "../lib/blob-cache"
+import {automergeUrlToServiceWorkerUrl} from "@inkandswitch/patchwork-filesystem"
 
 const computerPngUrl = new URL("../../computer.png", import.meta.url).href
 
@@ -15,7 +15,7 @@ export function PresenceBar(props: {
 	computerActive?: boolean
 }) {
 	const {doc} = useChat()
-	const {myName, myAvatarBlobUrl} = useIdentity()
+	const {myName, myAvatarUrl} = useIdentity()
 	const {presenceMap, isFocused} = usePresence()
 
 	const [showTheme, setShowTheme] = createSignal(false)
@@ -25,55 +25,27 @@ export function PresenceBar(props: {
 	let themeBtnRef!: HTMLButtonElement
 	let notifyBtnRef!: HTMLButtonElement
 
-	// Cache for peer avatar blob URLs
-	const [peerAvatarCache, setPeerAvatarCache] = createSignal<Map<string, string>>(new Map())
-	const resolving = new Set<string>()
-
-	function resolvePeerAvatar(avatarUrl: string) {
-		if (resolving.has(avatarUrl) || peerAvatarCache().has(avatarUrl)) return
-		resolving.add(avatarUrl)
-		loadBlobUrl(avatarUrl as any).then(blobUrl => {
-			if (blobUrl) {
-				setPeerAvatarCache(prev => {
-					const next = new Map(prev)
-					next.set(avatarUrl, blobUrl)
-					return next
-				})
-			}
-		})
-	}
-
-	// Trigger avatar resolution as a side effect, separate from the memo
-	createEffect(() => {
-		const cache = peerAvatarCache()
-		for (const [, info] of presenceMap()) {
-			if (info.avatarUrl && !cache.has(info.avatarUrl)) {
-				resolvePeerAvatar(info.avatarUrl)
-			}
-		}
-	})
-
 	const presenceUsers = createMemo(() => {
-		const result: {name: string; avatarBlobUrl?: string; active: boolean; isComputer?: boolean}[] = []
+		const result: {name: string; avatarSrc?: string; active: boolean; isComputer?: boolean}[] = []
 		// Self
+		const myAvUrl = myAvatarUrl()
 		result.push({
 			name: myName(),
-			avatarBlobUrl: myAvatarBlobUrl() || undefined,
+			avatarSrc: myAvUrl ? automergeUrlToServiceWorkerUrl(myAvUrl) : undefined,
 			active: isFocused(),
 		})
 		// Peers
-		const cache = peerAvatarCache()
 		for (const [name, info] of presenceMap()) {
 			if (name === myName()) continue
-			let avatarBlobUrl: string | undefined
-			if (info.avatarUrl) {
-				avatarBlobUrl = cache.get(info.avatarUrl)
-			}
-			result.push({name, active: info.active, avatarBlobUrl})
+			result.push({
+				name,
+				active: info.active,
+				avatarSrc: info.avatarUrl ? automergeUrlToServiceWorkerUrl(info.avatarUrl as any) : undefined,
+			})
 		}
 		// Computer
 		if (props.computerActive) {
-			result.push({name: "Computer", active: true, avatarBlobUrl: computerPngUrl, isComputer: true})
+			result.push({name: "computer", active: true, avatarSrc: computerPngUrl, isComputer: true})
 		}
 		return result
 	})
@@ -116,8 +88,8 @@ export function PresenceBar(props: {
 				{(user) => (
 					<div class="chat-presence-user" classList={{away: !user.active}}>
 						<span class="chat-presence-avatar">
-							<Show when={user.avatarBlobUrl} fallback={(user.name || "?")[0].toUpperCase()}>
-								<img src={user.avatarBlobUrl} />
+							<Show when={user.avatarSrc} fallback={(user.name || "?")[0].toUpperCase()}>
+								<img src={user.avatarSrc} />
 							</Show>
 						</span>
 						{user.name}
@@ -128,7 +100,7 @@ export function PresenceBar(props: {
 				<button
 					ref={notifyBtnRef}
 					class="chat-notify-btn"
-					onClick={toggleNotify}
+					on:click={toggleNotify}
 					innerHTML={SVG_ICONS.bellOutline}
 				/>
 				<Show when={showNotify() && notifyRect()}>
@@ -141,7 +113,7 @@ export function PresenceBar(props: {
 					ref={themeBtnRef}
 					class="chat-theme-btn"
 					title="Theme"
-					onClick={toggleTheme}
+					on:click={toggleTheme}
 					innerHTML={SVG_ICONS.theme}
 				/>
 				<Show when={showTheme() && themeRect()}>
@@ -153,13 +125,13 @@ export function PresenceBar(props: {
 				<button
 					class="chat-theme-btn"
 					title="Call"
-					onClick={() => props.onCallCommand?.()}
+					on:click={() => props.onCallCommand?.()}
 					innerHTML={SVG_ICONS.phone}
 				/>
 				<button
 					class="chat-sidebar-toggle-btn"
 					title="Toggle sidebar"
-					onClick={() => props.onToggleSidebar?.()}
+					on:click={() => props.onToggleSidebar?.()}
 					innerHTML={SVG_ICONS.sidebar}
 				/>
 			</div>

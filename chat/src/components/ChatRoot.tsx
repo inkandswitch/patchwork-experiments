@@ -1,5 +1,6 @@
 import {createSignal, createEffect, Show, onMount, onCleanup} from "solid-js"
 import type {DocHandle, AutomergeUrl} from "@automerge/automerge-repo"
+import {updateText, splice} from "@automerge/automerge"
 import type {ChatDoc} from "../types"
 import {ChatProvider, useChat} from "../context/ChatContext"
 import {IdentityProvider, useIdentity} from "../context/IdentityContext"
@@ -17,7 +18,7 @@ import {Lightbox} from "./Lightbox"
 import {ModelDialog} from "./ModelDialog"
 import {generateId} from "../lib/helpers"
 import {getNotificationSound, showOSNotification, setFaviconUnread} from "../lib/notifications"
-import {loadBlobUrl} from "../lib/blob-cache"
+import {automergeUrlToServiceWorkerUrl} from "@inkandswitch/patchwork-filesystem"
 import {transcribeVoiceNote} from "../lib/transcription"
 import "../styles/chat.css"
 
@@ -62,7 +63,7 @@ export function ChatRoot(props: {
 	const [computerAutoMode, setComputerAutoMode] = createSignal(false)
 	let llmWorker: SharedWorker | null = null
 	let llmReady = false
-	const llmCallbacks = new Map<string, {resolve: (v: string) => void; reject: (e: any) => void; onToken?: (t: string) => void}>()
+	const llmCallbacks = new Map<string, {resolve: (v: string) => void; reject: (e: any) => void; onToken?: (t: string) => void; onStatus?: (s: string) => void}>()
 	const computerRespondedToIds = new Set<string>()
 	let computerResponding = false
 	let computerListenerActive = false
@@ -161,12 +162,24 @@ url: automerge:XXXXX
 \`\`\`
 
 ### edit_doc
-Edit an Automerge document by setting a field. The value is parsed as JSON.
+Edit an Automerge document by setting a field. The value is parsed as JSON. For string fields, this uses collaborative text diffing (updateText) so only the changed parts are modified.
+**IMPORTANT:** Both edit_doc and splice_doc return the CURRENT value of the field after the edit. You MUST read this returned value carefully — it shows what the document actually contains now. Use it to update your mental model before making further edits. If the result doesn't look right, use read_doc to get the full current state before trying again.
 \`\`\`tool-call
 tool: edit_doc
 url: automerge:XXXXX
 field: title
 value: "New Title"
+\`\`\`
+
+### splice_doc
+Splice text in a string field of an Automerge document. Specify the field, the index to start at, how many characters to delete, and the text to insert. Use this for targeted text changes when you know the exact position. Always use read_doc first to get the current content and calculate correct indices.
+\`\`\`tool-call
+tool: splice_doc
+url: automerge:XXXXX
+field: content
+index: 42
+deleteCount: 10
+insert: replacement text here
 \`\`\`
 
 ### inspect_iframe
@@ -185,6 +198,10 @@ code: document.querySelector('.my-element')?.textContent
 \`\`\`
 
 When you need information before answering (e.g. checking what a doc contains, or inspecting an error), use a tool first. After receiving the tool result, respond to the user.
+
+**IMPORTANT: If you need to ask the user a question, do NOT use any tools in the same response.** Just ask your question as plain text and stop. Tool results and self-check messages are NOT user answers — only actual chat messages from users are answers. If you ask a question while also using tools, the tool results will be fed back to you and you may mistake them for the user's reply.
+
+**CRITICAL: Before editing code or text with edit_doc or splice_doc, ALWAYS use read_doc first** to see the current state of the document. After any edit, carefully read the returned current value to verify your changes were applied correctly. Never assume the document content matches what you last saw — other peers may have changed it.
 
 ## Building a Patchwork Tool
 When asked to build something, output the COMPLETE JavaScript module in a fenced code block tagged \`\`\`patchwork-tool.
@@ -225,15 +242,15 @@ export function Tool(handle, element) {
 3. **plugins array** — registers both:
 \`\`\`js
 export const plugins = [
-  { type: "patchwork:datatype", id: "TOOL_ID", name: "TOOL_NAME", async load() { return MyDatatype; } },
-  { type: "patchwork:tool", id: "TOOL_ID", name: "TOOL_NAME", supportedDatatypes: ["TOOL_ID"], async load() { return Tool; } },
+  { type: "patchwork:datatype", id: "my-datatype-id", name: "My Tool Name", async load() { return MyDatatype; } },
+  { type: "patchwork:tool", id: "my-tool-id", name: "My Tool Name", supportedDatatypes: ["my-datatype-id"], async load() { return Tool; } },
 ];
 \`\`\`
 
 Rules:
 - Use vanilla DOM APIs only (createElement, innerHTML, etc.) — NO frameworks
 - Scope ALL CSS classes with a unique prefix to avoid conflicts
-- The tool id and datatype id MUST match
+- The datatype id and supportedDatatypes must match. The tool id can be different — a tool can support an existing datatype. When creating a new self-contained tool, use the suggested tool ID for both.
 - Keep it self-contained in one file
 - Automerge docs cannot contain \`undefined\` — use \`null\` or \`delete\`
 - Strings in Automerge are collaborative text; use \`splice()\` for efficient editing, or just assign for simple values
@@ -264,6 +281,11 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 				} else if (msg.type === "error") {
 					const cb = llmCallbacks.get(msg.id)
 					if (cb) { cb.reject(new Error(msg.message)); llmCallbacks.delete(msg.id) }
+				} else if (msg.type === "status" && msg.message) {
+					// Forward model loading status to any active generation's onStatus
+					for (const cb of llmCallbacks.values()) {
+						if (cb.onStatus) cb.onStatus(msg.message)
+					}
 				}
 			}
 			llmWorker.port.start()
@@ -296,26 +318,29 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 	async function generateLLM(
 		messages: any[],
 		onToken: (text: string) => void,
-		signal?: AbortSignal
+		signal?: AbortSignal,
+		onStatus?: (status: string) => void
 	): Promise<string> {
 		const profile = await getProfileDoc()
 		const provider = profile?.llmProvider || "local"
 
 		if (provider === "openrouter") return generateOpenRouter(messages, onToken, profile, signal)
 		if (provider === "ollama") return generateOllama(messages, onToken, profile, signal)
-		return generateLocal(messages, onToken)
+		return generateLocal(messages, onToken, onStatus)
 	}
 
-	async function generateLocal(messages: any[], onToken: (text: string) => void): Promise<string> {
+	async function generateLocal(messages: any[], onToken: (text: string) => void, onStatus?: (status: string) => void): Promise<string> {
 		if (!llmWorker) await initLLMWorker()
 		if (!llmWorker) throw new Error("LLM not available")
+		const profile = await getProfileDoc()
+		const localModel = profile?.localModel || undefined
 		const id = generateId()
 		return new Promise((resolve, reject) => {
-			llmCallbacks.set(id, {resolve, reject, onToken})
-			llmWorker!.port.postMessage({type: "generate", id, chatUrl: props.handle.url, provider: "local", messages, config: {}})
+			llmCallbacks.set(id, {resolve, reject, onToken, onStatus})
+			llmWorker!.port.postMessage({type: "generate", id, chatUrl: props.handle.url, provider: "local", messages, config: {model: localModel}})
 			setTimeout(() => {
 				if (llmCallbacks.has(id)) { llmCallbacks.delete(id); reject(new Error("LLM timeout")) }
-			}, 300000)
+			}, 600000)
 		})
 	}
 
@@ -484,8 +509,29 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 				const h = await repo.find(args.url)
 				let val: any
 				try { val = JSON.parse(args.value) } catch { val = args.value }
-				h.change((d: any) => { d[args.field] = val })
-				return "OK — set " + args.field + " on " + args.url
+				h.change((d: any) => {
+					if (typeof val === "string" && typeof d[args.field] === "string") {
+						updateText(d, [args.field], val)
+					} else {
+						d[args.field] = val
+					}
+				})
+				const after = h.doc() as any
+				const current = after?.[args.field]
+				const preview = typeof current === "string" ? "\nCurrent value of " + args.field + ":\n" + current : ""
+				return "OK — set " + args.field + " on " + args.url + preview
+			} else if (toolName === "splice_doc") {
+				const h = await repo.find(args.url)
+				const index = parseInt(args.index, 10)
+				const deleteCount = parseInt(args.deleteCount || "0", 10)
+				const insert = args.insert || ""
+				h.change((d: any) => {
+					splice(d, [args.field], index, deleteCount, insert)
+				})
+				const after = h.doc() as any
+				const current = after?.[args.field]
+				const preview = typeof current === "string" ? "\nCurrent value of " + args.field + ":\n" + current : ""
+				return "OK — spliced " + args.field + " at " + index + " (deleted " + deleteCount + ", inserted " + insert.length + " chars)" + preview
 			} else if (toolName === "inspect_iframe") {
 				// Find pinned iframe in sidebar
 				const targetUrl = args.url
@@ -536,9 +582,25 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		} catch (e: any) { return "Tool error: " + e.message }
 	}
 
+	function extractDatatypeId(code: string): string | null {
+		// Look for id in a patchwork:datatype plugin entry
+		const dtMatch = code.match(/type:\s*["']patchwork:datatype["'][^}]*?id:\s*["']([^"']+)["']/)
+		if (dtMatch) return dtMatch[1]
+		// Fallback: first id: "..." in a plugins array
+		const fallback = code.match(/plugins\s*=\s*\[[\s\S]*?id:\s*["']([^"']+)["']/)
+		return fallback ? fallback[1] : null
+	}
+
 	async function createAndPinTool(code: string): Promise<any> {
 		const repo = (window as any).repo
 		const doc = props.handle.doc() as any
+
+		// Extract the datatype ID from the code — this is what the instance doc type must match
+		const datatypeId = extractDatatypeId(code)
+		if (!datatypeId) {
+			console.warn("[Chat] Could not extract datatype ID from code")
+			return null
+		}
 
 		// Check for existing pinned tool to update
 		const existingPinned = (doc?.docs || []).find((d: any) => d.pin)
@@ -552,10 +614,14 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 					const toolFolderDoc = toolFolder.doc()
 					const jsEntry = toolFolderDoc?.docs?.find((d: any) => d.name?.endsWith(".js"))
 					if (jsEntry) {
-						const existingToolId = existingPinned.pin || existingPinned.type
-						const patchedCode = code.replace(/id:\s*["'][^"']+["']/g, 'id: "' + existingToolId + '"')
+						const existingDatatypeId = existingPinned.pin || existingPinned.type
+						// If the LLM used a different datatype ID than the existing one, patch it
+						let finalCode = code
+						if (datatypeId !== existingDatatypeId) {
+							finalCode = code.replace(new RegExp('(["\'])' + datatypeId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\1', 'g'), '"' + existingDatatypeId + '"')
+						}
 						const jsHandle = await repo.find(jsEntry.url)
-						jsHandle.change((d: any) => { d.content = patchedCode })
+						jsHandle.change((d: any) => { updateText(d, ["content"], finalCode) })
 						toolFolder.change((d: any) => { d.lastSyncAt = Date.now() })
 						if ((window as any).patchwork?.modules?.loadModules) {
 							await (window as any).patchwork.modules.loadModules([suggestedUrl])
@@ -565,22 +631,20 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 						for (const iframe of iframes) {
 							try { iframe.src = iframe.src } catch {}
 						}
-						return {toolName: existingPinned.name || existingToolId, toolId: existingToolId, updated: true}
+						return {toolName: existingPinned.name || existingDatatypeId, toolId: existingDatatypeId, updated: true}
 					}
 				}
 			} catch (e) { console.warn("[Chat] Could not update existing tool:", e) }
 		}
 
-		// Create new tool
-		const toolName = randomToolName()
+		// Create new tool — use the IDs the LLM chose
 		const encoder = new TextEncoder()
 		const jsFileName = "tool.js"
-		const patchedCode = code.replace(/id:\s*["'][^"']+["']/g, 'id: "' + toolName + '"')
-		const jsHandle = await repo.create2({content: patchedCode, name: jsFileName, extension: ".js", mimeType: "application/javascript", "@patchwork": {type: "file"}})
+		const jsHandle = await repo.create2({content: code, name: jsFileName, extension: ".js", mimeType: "application/javascript", "@patchwork": {type: "file"}})
 
 		// Create package.json
 		const pkgContent = encoder.encode(JSON.stringify({
-			name: "@patchwork/" + toolName,
+			name: "@patchwork/" + datatypeId,
 			type: "module",
 			main: jsFileName,
 			exports: {".": jsFileName},
@@ -588,7 +652,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		const pkgHandle = await repo.create2({content: pkgContent, name: "package.json", extension: ".json", mimeType: "application/json", "@patchwork": {type: "file"}})
 
 		const folderHandle = await repo.create2({
-			title: toolName,
+			title: datatypeId,
 			docs: [
 				{url: jsHandle.url, type: "application/javascript", name: jsFileName},
 				{url: pkgHandle.url, type: "application/json", name: "package.json"},
@@ -596,12 +660,12 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 			lastSyncAt: Date.now(),
 		})
 
-		// Create instance doc
-		const instanceHandle = await repo.create2({title: toolName, "@patchwork": {type: toolName, suggestedImportUrl: folderHandle.url}})
+		// Create instance doc — type must match the datatype id
+		const instanceHandle = await repo.create2({title: datatypeId, "@patchwork": {type: datatypeId, suggestedImportUrl: folderHandle.url}})
 
 		// Try to auto-initialize with datatype.init()
 		try {
-			const blob = new Blob([patchedCode], {type: "application/javascript"})
+			const blob = new Blob([code], {type: "application/javascript"})
 			const blobUrl = URL.createObjectURL(blob)
 			const mod = await import(/* @vite-ignore */ blobUrl)
 			URL.revokeObjectURL(blobUrl)
@@ -615,10 +679,10 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 			console.warn("[Chat] Could not auto-init tool doc:", e)
 		}
 
-		// Pin it
+		// Pin it — pin value is the datatype id so we can match it for updates
 		props.handle.change((d: any) => {
 			if (!d.docs) d.docs = []
-			d.docs.push({url: instanceHandle.url, type: toolName, name: toolName, pin: toolName})
+			d.docs.push({url: instanceHandle.url, type: datatypeId, name: datatypeId, pin: datatypeId})
 		})
 		setSidebarVisible(true)
 
@@ -627,7 +691,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 			await (window as any).patchwork.modules.loadModules([folderHandle.url])
 		}
 
-		return {toolName, toolId: toolName, updated: false}
+		return {toolName: toolId, toolId, updated: false}
 	}
 
 	// ---- Context assembly ----
@@ -724,7 +788,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		if (!repo) return
 		const msgData: any = {
 			id: generateId(),
-			name: "Computer",
+			name: "computer",
 			text: text || "",
 			timestamp: Date.now(),
 			isComputer: true,
@@ -742,27 +806,31 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 
 	async function handleComputerCommand(sub: string) {
 		if (sub === "kick") {
-			if (!computerActive()) { sendComputerMessage("Computer is not active."); return }
+			if (!computerActive()) { sendComputerMessage("computer is not active."); return }
 			setComputerActive(false)
 			setComputerAutoMode(false)
 			if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null }
 			if (computerListenerCleanup) { computerListenerCleanup(); computerListenerCleanup = null }
 			computerListenerActive = false
 			props.handle.change((d: any) => { d.hasComputer = false; delete d.computerInstanceId; delete d.computerHeartbeat })
-			sendComputerMessage("Computer has left the chat.")
+			sendComputerMessage("computer has left the chat.")
 			return
 		}
 		if (sub === "nosey" || sub === "auto") {
-			if (!computerActive()) { sendComputerMessage("Computer is not active. Use /computer invite first."); return }
+			if (!computerActive()) { sendComputerMessage("computer is not active. Use /computer invite first."); return }
 			setComputerAutoMode(!computerAutoMode())
 			sendComputerMessage("Auto-respond mode: " + (computerAutoMode() ? "ON" : "OFF"))
 			return
 		}
+		if (sub === "model") {
+			setShowModelDialog(true)
+			return
+		}
 		// Default: invite — claim this tab as the computer host
-		if (computerActive()) { sendComputerMessage("Computer is already here!"); return }
+		if (computerActive()) { sendComputerMessage("computer is already here!"); return }
 		setComputerActive(true)
 		claimComputerHost()
-		sendComputerMessage("Hello! I'm Computer, an AI assistant. Mention @computer or reply to my messages and I'll respond. Use /computer nosey to make me respond to everything.")
+		sendComputerMessage("hello! i'm computer, an AI assistant. mention @computer or reply to my messages and i'll respond. use /computer nosey to make me respond to everything.")
 		startComputerListener()
 	}
 
@@ -799,13 +867,17 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 			if (processing) return
 			processing = true
 			const repo = (window as any).repo
+			try {
 			while (pendingQueue.length > 0) {
 				const url = pendingQueue.shift()!
 				if (computerRespondedToIds.has(url) || !repo) continue
 				try {
 					const mh = await repo.find(url)
 					const msg = mh.doc() as any
-					if (!msg || msg.name === "Computer" || msg.isComputer) continue
+					if (!msg || msg.name?.toLowerCase() === "computer" || msg.isComputer) {
+						console.log("[Computer] skipping message from", msg?.name, "isComputer=" + msg?.isComputer)
+						continue
+					}
 					if (computerRespondedToIds.has(url)) continue
 
 					// Check if already claimed by another instance
@@ -823,15 +895,44 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 							try {
 								const rh = await repo.find(entry.url)
 								const rd = rh.doc() as any
-								if (rd?.id === msg.replyTo && (rd?.isComputer || rd?.name === "Computer")) {
+								if (rd?.id === msg.replyTo && (rd?.isComputer || rd?.name?.toLowerCase() === "computer")) {
 									isReplyToComputer = true
 									break
 								}
 							} catch {}
 						}
 					}
-					const lowerText = msg.text?.toLowerCase() || ""
-					const mentionsComputer = lowerText.includes("@computer") || lowerText.includes("@momcomputer")
+					let lowerText = msg.text?.toLowerCase() || ""
+					// Check voice note transcription for computer mentions
+					if (msg.voiceUrl) {
+						try {
+							const rh = await repo.find(msg.voiceUrl)
+							const rd = rh.doc() as any
+							if (rd?.transcription) {
+								lowerText += " " + rd.transcription.toLowerCase()
+							} else {
+								// Transcription not ready — watch for it and re-queue
+								transcribeVoiceNote(msg.voiceUrl)
+								const voiceUrl = url
+								const cb = () => {
+									const fresh = rh.doc() as any
+									if (fresh?.transcription) {
+										rh.off("change", cb)
+										if (!computerRespondedToIds.has(voiceUrl)) {
+											pendingQueue.push(voiceUrl)
+											processQueue()
+										}
+									}
+								}
+								rh.on("change", cb)
+								setTimeout(() => rh.off("change", cb), 30000)
+								continue // skip for now, will re-check when transcription arrives
+							}
+						} catch {}
+					}
+					const mentionsComputer = lowerText.includes("@computer") || lowerText.includes("@momcomputer") || lowerText.includes("@momputer") ||
+						lowerText.includes("computer,") || lowerText.includes("computer.") ||
+						(msg.voiceUrl && lowerText.trimStart().startsWith("computer"))
 					const shouldRespond = computerAutoMode() ||
 						mentionsComputer ||
 						isReplyToComputer
@@ -849,13 +950,26 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 							continue // Another instance won
 						}
 						computerRespondedToIds.add(url)
-						await respondToUser(msg)
+						console.log("[Computer] responding to:", msg.text?.slice(0, 50))
+						try {
+							await respondToUser(msg)
+						} catch (e) {
+							console.warn("[Computer] respondToUser error:", e)
+						}
+						console.log("[Computer] finished responding, queue has", pendingQueue.length, "items")
+					} else {
+						console.log("[Computer] not responding to:", msg.text?.slice(0, 50), "shouldRespond=" + shouldRespond)
 					}
 				} catch (e) { console.warn("[Chat] computer resolve:", e) }
 			}
-			processing = false
+			} finally {
+				processing = false
+			}
 			// Items may have arrived while we were processing — drain again
-			if (pendingQueue.length > 0) processQueue()
+			if (pendingQueue.length > 0) {
+				console.log("[Computer] draining", pendingQueue.length, "remaining items")
+				processQueue()
+			}
 		}
 
 		const onDocChange = () => {
@@ -863,15 +977,20 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 			const d = props.handle.doc() as any
 			if (!d?.messages) return
 			const msgs = d.messages
-			if (msgs.length <= lastCheckedIdx) return
+			if (msgs.length <= lastCheckedIdx) { lastCheckedIdx = msgs.length; return }
+			let queued = 0
 			for (let i = lastCheckedIdx; i < msgs.length; i++) {
 				const entry = msgs[i]
 				if (!entry?.ref || !entry?.url) continue
 				if (computerRespondedToIds.has(entry.url)) continue
 				pendingQueue.push(entry.url)
+				queued++
 			}
 			lastCheckedIdx = msgs.length
-			processQueue()
+			if (queued > 0) {
+				console.log("[Computer] onChange: queued " + queued + " new msgs" + (processing ? " (will process after current response)" : ""))
+				processQueue()
+			}
 		}
 		props.handle.on("change", onDocChange)
 		computerListenerCleanup = () => {
@@ -928,27 +1047,54 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		if (!repo || computerResponding) return
 		computerResponding = true
 
+		const abortController = new AbortController()
+		// Inactivity timeout: abort if no tokens received for 30s
+		let inactivityTimer: any = null
+		const INACTIVITY_TIMEOUT = 90000
+		function resetInactivityTimer() {
+			if (inactivityTimer) clearTimeout(inactivityTimer)
+			inactivityTimer = setTimeout(() => {
+				console.warn("[Computer] aborting: no output for " + (INACTIVITY_TIMEOUT / 1000) + "s")
+				abortController.abort()
+			}, INACTIVITY_TIMEOUT)
+		}
+		resetInactivityTimer()
+
+		let currentStreamHandle: any = null
+		let tokenThrottleTimer: any = null
+
+		try {
+
 		const context = await assembleContext()
+		resetInactivityTimer()
+		const isMomputer = (userMsg.text || "").toLowerCase().includes("@momputer")
+		// Generate a tool name for this response — the LLM uses it if it builds a tool
+		const suggestedToolName = randomToolName()
+		let systemPrompt = COMPUTER_SYSTEM_PROMPT + "\n\n## Your Tool ID\nIf you build a patchwork tool in this response, use `\"" + suggestedToolName + "\"` as the id for both the datatype and tool plugins, and in supportedDatatypes."
+		if (isMomputer) {
+			systemPrompt += "\n\n## Special Mode: Momputer\nThe user addressed you as @momputer. Be warm, nurturing, and motherly in your response. Use gentle encouragement, express care and concern, and be supportive like a loving mom would be. You can use pet names like \"sweetie\", \"honey\", \"dear\", etc. Still be helpful and knowledgeable, but with a cozy maternal energy."
+		}
 		const messages = [
-			{role: "system", content: COMPUTER_SYSTEM_PROMPT},
+			{role: "system", content: systemPrompt},
 			...context,
 			{role: "user", content: userMsg.text},
 		]
 
 		// Create streaming message — use `let` so we can reassign
 		const streamMsgData: any = {
-			id: generateId(), name: "Computer", text: "", timestamp: Date.now(),
-			isComputer: true, font: "monospace", streaming: true, replyTo: userMsg.id,
+			id: generateId(), name: isMomputer ? "momputer" : "computer", text: "", timestamp: Date.now(),
+			isComputer: true, font: isMomputer ? "Comic Sans MS, cursive" : "monospace", streaming: true, replyTo: userMsg.id,
 		}
-		let currentStreamHandle = await repo.create2(streamMsgData)
+		currentStreamHandle = await repo.create2(streamMsgData)
 		props.handle.change((dd: any) => {
 			if (!dd.messages) dd.messages = []
 			dd.messages.push({ref: true, url: currentStreamHandle.url, timestamp: streamMsgData.timestamp})
 		})
-
-		let tokenThrottleTimer: any = null
 		let latestTokenText = ""
+		let showingStatus = false
 		function onToken(fullText: string) {
+			showingStatus = false
+			resetInactivityTimer()
 			latestTokenText = fullText.replace(/^\[Computer\]\s*/i, "")
 			if (!tokenThrottleTimer) {
 				tokenThrottleTimer = setTimeout(() => {
@@ -957,12 +1103,18 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 				}, 200)
 			}
 		}
+		function onStatus(status: string) {
+			if (!status || latestTokenText) return // don't overwrite real tokens
+			showingStatus = true
+			resetInactivityTimer()
+			currentStreamHandle.change((d: any) => { d.text = status })
+		}
 
-		try {
-			const MAX_TOOL_ROUNDS = 5
+		const MAX_TOOL_ROUNDS = 5
 			let madeChanges = false
 			for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-				let response = await generateLLM(messages, onToken)
+				let response = await generateLLM(messages, onToken, abortController.signal, onStatus)
+				resetInactivityTimer()
 				if (tokenThrottleTimer) { clearTimeout(tokenThrottleTimer); tokenThrottleTimer = null }
 				response = response.replace(/^\[Computer\]\s*/i, "")
 				const parsed = parseRichBlocks(response)
@@ -972,8 +1124,16 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 				const hasPatchworkTool = parsed.blocks.some((b: any) => b.type === "patchwork-tool")
 
 				if (toolCalls.length > 0 || hasPatchworkTool) {
+					// If the LLM wrote text that ends with a question, it's asking the user.
+					// Finalize this message and stop looping — don't feed tool results as if they're the answer.
+					const trimmedText = parsed.text.trim()
+					const endsWithQuestion = trimmedText.length > 0 && (
+						trimmedText.endsWith("?") ||
+						/\b(what|which|how|should|would|do you|can you|could you|shall|prefer)\b/i.test(trimmedText.slice(-200))
+					)
+
 					// Process non-tool-call blocks (patchwork-tool, file, embed, image)
-					if (otherBlocks.length > 0 || parsed.text.trim()) {
+					if (otherBlocks.length > 0 || trimmedText) {
 						const partial = {blocks: otherBlocks, text: parsed.text}
 						const {text, opts} = await processRichBlocks(partial)
 						if (hasPatchworkTool) madeChanges = true
@@ -992,9 +1152,19 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 								for (const bl of displayBlocks) d.richBlocks.push(bl)
 							}
 						})
+
+						// If asking a question, stop here — don't loop
+						if (endsWithQuestion) {
+							// Still execute tool calls so side effects happen, but don't feed results back
+							for (const tc of toolCalls) {
+								await executeToolCall(tc)
+							}
+							break
+						}
+
 						// Create new streaming message for next round
 						const nextMsgData: any = {
-							id: generateId(), name: "Computer", text: "", timestamp: Date.now(),
+							id: generateId(), name: "computer", text: "", timestamp: Date.now(),
 							isComputer: true, font: "monospace", streaming: true,
 						}
 						currentStreamHandle = await repo.create2(nextMsgData)
@@ -1021,6 +1191,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 					let toolResults = ""
 					for (const tc of toolCalls) {
 						const result = await executeToolCall(tc)
+						resetInactivityTimer()
 						const toolArgs = tc.content.trim().split("\n")[0]
 						toolResults += "\n[Tool result for " + toolArgs + "]\n" + result + "\n"
 						// Store result on the corresponding rich block
@@ -1039,6 +1210,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 					// Self-check: after making changes, check pinned iframes for errors
 					if (madeChanges) {
 						await new Promise(r => setTimeout(r, 2000))
+						resetInactivityTimer()
 						const status = gatherPinnedIframeStatus()
 						const hasErrors = status.some(s => s.errors.length > 0)
 						const isEmpty = status.some(s => s.domSnippet === "(empty)" || s.domSnippet.trim().length < 10)
@@ -1051,6 +1223,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 									try { iframe.src = iframe.src } catch {}
 								}
 								await new Promise(r => setTimeout(r, 2500))
+								resetInactivityTimer()
 							}
 
 							const freshStatus = gatherPinnedIframeStatus()
@@ -1101,12 +1274,26 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 				break
 			}
 		} catch (err: any) {
-			currentStreamHandle.change((d: any) => {
-				d.text = d.text || "Sorry, I hit an error: " + err.message
-				d.streaming = false
-			})
+			if (currentStreamHandle) {
+				try {
+					currentStreamHandle.change((d: any) => {
+						d.text = d.text || "Sorry, I hit an error: " + err.message
+						d.streaming = false
+					})
+				} catch {}
+			}
 		} finally {
+			if (inactivityTimer) clearTimeout(inactivityTimer)
 			if (tokenThrottleTimer) clearTimeout(tokenThrottleTimer)
+			// Always ensure streaming is cleared on the final message
+			if (currentStreamHandle) {
+				try {
+					const finalDoc = currentStreamHandle.doc() as any
+					if (finalDoc?.streaming) {
+						currentStreamHandle.change((d: any) => { d.streaming = false })
+					}
+				} catch {}
+			}
 			computerResponding = false
 		}
 	}
@@ -1127,9 +1314,9 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 			if (!entry?.url) continue
 			repo.find(entry.url).then((mh: any) => {
 				const msg = mh.doc()
-				if (!msg || msg.name === "Computer" || msg.isComputer) return
+				if (!msg || msg.name?.toLowerCase() === "computer" || msg.isComputer) return
 				const lowerText = msg.text?.toLowerCase() || ""
-				const mentionsComputer = lowerText.includes("@computer") || lowerText.includes("@momcomputer")
+				const mentionsComputer = lowerText.includes("@computer") || lowerText.includes("@momcomputer") || lowerText.includes("@momputer")
 				if (mentionsComputer || computerAutoMode()) {
 					watchForResponse()
 				}
@@ -1154,12 +1341,14 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 				claimComputerHost()
 				startComputerListener()
 			} else {
-				// Another host looks alive — ping to verify, fall back to staleness watch
+				// Another host might be alive — ping to verify
+				// Start listener immediately so we don't miss messages during ping wait
+				claimComputerHost()
+				startComputerListener()
 				pingComputerHost().then(alive => {
-					if (!alive && !isComputerHost()) {
-						claimComputerHost()
-						startComputerListener()
-					} else {
+					if (alive && !isComputerHost()) {
+						// Another tab answered and is the real host — stand down
+						// (they would have reclaimed via their heartbeat)
 						startStalenessWatch()
 					}
 				})
@@ -1436,11 +1625,11 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 			ref={rootRef}
 			class="chat-root"
 			classList={{"sidebar-left": localStorage.getItem("chat-sidebar-side") === "left"}}
-			onClick={handleRootClick}
-			onDragEnter={handleDragEnter}
-			onDragLeave={handleDragLeave}
-			onDragOver={handleDragOver}
-			onDrop={handleRootDrop}
+			on:click={handleRootClick}
+			on:dragenter={handleDragEnter}
+			on:dragleave={handleDragLeave}
+			on:dragover={handleDragOver}
+			on:drop={handleRootDrop}
 		>
 			<div class="chat-drop-overlay" classList={{show: showDropOverlay()}}>Drop here</div>
 			<ChatProvider handle={props.handle} element={props.element}>
@@ -1484,12 +1673,12 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 								/>
 							</Show>
 							<Show when={showEmoticonDialog()}>
-								<div class="chat-dialog-overlay" onClick={() => setShowEmoticonDialog(false)}>
+								<div class="chat-dialog-overlay" on:click={() => setShowEmoticonDialog(false)}>
 									<EmoticonAddDialog onClose={() => setShowEmoticonDialog(false)} />
 								</div>
 							</Show>
 							<Show when={showFontDialog()}>
-								<div class="chat-dialog-overlay" onClick={() => setShowFontDialog(false)}>
+								<div class="chat-dialog-overlay" on:click={() => setShowFontDialog(false)}>
 									<FontAddDialog onClose={() => setShowFontDialog(false)} />
 								</div>
 							</Show>
@@ -1597,11 +1786,8 @@ function NotificationManager(props: {handle: DocHandle<ChatDoc>}) {
 
 						// OS notification
 						if (notificationsEnabled() && !isFocused()) {
-							let avatarBlobUrl: string | undefined
-							if (msg.avatarUrl) {
-								try { avatarBlobUrl = await loadBlobUrl(msg.avatarUrl) || undefined } catch {}
-							}
-							showOSNotification(msg.name, msg.text, avatarBlobUrl, props.handle.url)
+							const avatarIcon = msg.avatarUrl ? automergeUrlToServiceWorkerUrl(msg.avatarUrl as any) : undefined
+							showOSNotification(msg.name, msg.text, avatarIcon, props.handle.url)
 						}
 
 						if (!isFocused()) {

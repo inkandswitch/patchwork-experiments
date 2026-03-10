@@ -44,7 +44,7 @@ export const PresenceProvider: ParentComponent<{
 		const typers: string[] = []
 		const name = myName()
 		for (const [n, info] of presenceMap()) {
-			if (n === name || n === "Computer") continue
+			if (n === name || n.toLowerCase() === "computer") continue
 			if (info.typing && now - info.timestamp < TYPING_TIMEOUT) {
 				typers.push(n)
 			}

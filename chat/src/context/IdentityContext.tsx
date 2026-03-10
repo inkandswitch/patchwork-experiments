@@ -2,21 +2,18 @@ import {
 	createContext,
 	useContext,
 	createSignal,
-	createResource,
 	onMount,
 	onCleanup,
 	type ParentComponent,
 	type Accessor,
 } from "solid-js"
 import type {DocHandle, AutomergeUrl} from "@automerge/automerge-repo"
-import {loadBlobUrl} from "../lib/blob-cache"
 import type {ChatProfileDoc} from "../types"
 
 interface IdentityContextValue {
 	myName: Accessor<string>
 	myFont: Accessor<string | null>
 	myAvatarUrl: Accessor<AutomergeUrl | null>
-	myAvatarBlobUrl: Accessor<string | null>
 	myColor: Accessor<string | null>
 	chatProfileHandle: Accessor<DocHandle<ChatProfileDoc> | null>
 	contactHandle: Accessor<DocHandle<any> | null>
@@ -32,7 +29,6 @@ export const IdentityProvider: ParentComponent = (props) => {
 	const [myName, setMyName] = createSignal("Anonymous")
 	const [myFont, setMyFont] = createSignal<string | null>(null)
 	const [myAvatarUrl, setMyAvatarUrl] = createSignal<AutomergeUrl | null>(null)
-	const [myAvatarBlobUrl, setMyAvatarBlobUrl] = createSignal<string | null>(null)
 	const [myColor, setMyColor] = createSignal<string | null>(null)
 	const [chatProfileHandle, setChatProfileHandle] = createSignal<DocHandle<ChatProfileDoc> | null>(null)
 	const [contactHandle, setContactHandle] = createSignal<DocHandle<any> | null>(null)
@@ -45,7 +41,10 @@ export const IdentityProvider: ParentComponent = (props) => {
 			if (!repo) return
 			const adh = (window as any).accountDocHandle
 			if (!adh) return
-			const ad = adh.doc()
+
+			// Wait for account doc to be ready (may not be loaded from storage yet on reload)
+			const readyAdh = await repo.find(adh.url)
+			const ad = readyAdh.doc()
 			if (!ad?.contactUrl) return
 
 			const ch = await repo.find(ad.contactUrl)
@@ -85,8 +84,6 @@ export const IdentityProvider: ParentComponent = (props) => {
 
 			if (cd.avatarUrl) {
 				setMyAvatarUrl(cd.avatarUrl)
-				const blobUrl = await loadBlobUrl(cd.avatarUrl)
-				if (blobUrl) setMyAvatarBlobUrl(blobUrl)
 			}
 			if (cd.color) setMyColor(cd.color)
 
@@ -97,9 +94,6 @@ export const IdentityProvider: ParentComponent = (props) => {
 				if (updated.name) setMyName(updated.name)
 				if (updated.avatarUrl && updated.avatarUrl !== myAvatarUrl()) {
 					setMyAvatarUrl(updated.avatarUrl)
-					loadBlobUrl(updated.avatarUrl).then(blobUrl => {
-						if (blobUrl) setMyAvatarBlobUrl(blobUrl)
-					})
 				}
 				if (updated.color) setMyColor(updated.color)
 			}
@@ -130,7 +124,6 @@ export const IdentityProvider: ParentComponent = (props) => {
 				myName,
 				myFont,
 				myAvatarUrl,
-				myAvatarBlobUrl,
 				myColor,
 				chatProfileHandle,
 				contactHandle,

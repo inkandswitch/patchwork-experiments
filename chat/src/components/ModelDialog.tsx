@@ -5,6 +5,16 @@ type Tab = "local" | "openrouter" | "ollama"
 
 const BENS_MODEL_ID = "google/gemini-3.1-flash-lite-preview"
 
+const LOCAL_MODELS = [
+	{ id: "onnx-community/Qwen3-4B-ONNX", name: "Qwen3 4B", canUseTool: true },
+	{ id: "onnx-community/Qwen3-1.7B-ONNX", name: "Qwen3 1.7B", canUseTool: true },
+	{ id: "onnx-community/Qwen3-0.6B-ONNX", name: "Qwen3 0.6B", canUseTool: true },
+	{ id: "onnx-community/Llama-3.2-1B-Instruct-ONNX", name: "Llama 3.2 1B", canUseTool: true },
+	{ id: "onnx-community/Phi-3.5-mini-instruct-onnx-web", name: "Phi 3.5 Mini", canUseTool: false },
+	{ id: "onnx-community/SmolLM2-1.7B-Instruct-ONNX", name: "SmolLM2 1.7B", canUseTool: false },
+]
+const DEFAULT_LOCAL_MODEL = LOCAL_MODELS[1].id
+
 function modelDisplayName(m: {id: string; name: string}): string {
 	if (m.id === BENS_MODEL_ID) return "ben's new model"
 	return m.name
@@ -13,6 +23,9 @@ function modelDisplayName(m: {id: string; name: string}): string {
 export function ModelDialog(props: {onClose: () => void}) {
 	const {chatProfileHandle} = useIdentity()
 	const [tab, setTab] = createSignal<Tab>("local")
+
+	// Local model state
+	const [localModel, setLocalModel] = createSignal(DEFAULT_LOCAL_MODEL)
 
 	// OpenRouter state
 	const [orApiKey, setOrApiKey] = createSignal("")
@@ -40,6 +53,7 @@ export function ModelDialog(props: {onClose: () => void}) {
 		else if (profile.llmProvider === "ollama") setTab("ollama")
 		else setTab("local")
 
+		if (profile.localModel) setLocalModel(profile.localModel)
 		if (profile.openrouterApiKey) setOrApiKey(profile.openrouterApiKey)
 		if (profile.openrouterModel) setOrModel(profile.openrouterModel)
 		if (profile.ollamaUrl) setOllamaUrl(profile.ollamaUrl)
@@ -115,6 +129,7 @@ export function ModelDialog(props: {onClose: () => void}) {
 		if (!ph) return
 		ph.change((p: any) => {
 			p.llmProvider = tab()
+			p.localModel = localModel()
 			p.openrouterApiKey = orApiKey()
 			p.openrouterModel = orModel()
 			p.ollamaUrl = ollamaUrl()
@@ -128,32 +143,49 @@ export function ModelDialog(props: {onClose: () => void}) {
 		if (!ph) return
 		ph.change((p: any) => {
 			p.llmProvider = "local"
+			p.localModel = DEFAULT_LOCAL_MODEL
 			delete p.openrouterApiKey
 			delete p.openrouterModel
 			delete p.ollamaUrl
 			delete p.ollamaModel
 		})
 		setTab("local")
+		setLocalModel(DEFAULT_LOCAL_MODEL)
 	}
 
 	return (
-		<div class="chat-dialog-overlay" onClick={props.onClose}>
-			<div class="chat-model-dialog" onClick={(e) => e.stopPropagation()}>
+		<div class="chat-dialog-overlay" on:click={props.onClose}>
+			<div class="chat-model-dialog" on:click={(e) => e.stopPropagation()}>
 				<div class="chat-model-dialog-header">
 					<span>AI Model Configuration</span>
-					<button class="chat-model-dialog-close" onClick={props.onClose}>&times;</button>
+					<button class="chat-model-dialog-close" on:click={props.onClose}>&times;</button>
 				</div>
 
 				<div class="chat-model-dialog-tabs">
-					<button classList={{active: tab() === "local"}} onClick={() => setTab("local")}>Local</button>
-					<button classList={{active: tab() === "openrouter"}} onClick={() => setTab("openrouter")}>OpenRouter</button>
-					<button classList={{active: tab() === "ollama"}} onClick={() => setTab("ollama")}>Ollama</button>
+					<button classList={{active: tab() === "local"}} on:click={() => setTab("local")}>Local</button>
+					<button classList={{active: tab() === "openrouter"}} on:click={() => setTab("openrouter")}>OpenRouter</button>
+					<button classList={{active: tab() === "ollama"}} on:click={() => setTab("ollama")}>Ollama</button>
 				</div>
 
 				<div class="chat-model-dialog-body">
 					<Show when={tab() === "local"}>
+						<label class="chat-model-dialog-label">
+							Model
+							<select
+								class="chat-model-dialog-input"
+								on:change={(e) => setLocalModel(e.currentTarget.value)}
+							>
+								<For each={LOCAL_MODELS}>
+									{(m) => (
+										<option value={m.id} selected={m.id === localModel()}>
+											{m.name}{m.canUseTool ? " (can use tools)" : ""}
+										</option>
+									)}
+								</For>
+							</select>
+						</label>
 						<p style="color:var(--text-secondary);font-size:13px;margin:8px 0">
-							Uses Phi-3.5 mini via WebGPU. Requires a compatible browser and will download the model on first use (~2GB).
+							Runs via WebGPU in your browser. The model will be downloaded on first use. Larger models are more capable but use more memory. Heads up: compiling a model for the first time might freeze your computer for a bit!
 						</p>
 					</Show>
 
@@ -164,7 +196,7 @@ export function ModelDialog(props: {onClose: () => void}) {
 								type="password"
 								class="chat-model-dialog-input"
 								value={orApiKey()}
-								onInput={(e) => setOrApiKey(e.currentTarget.value)}
+								on:input={(e) => setOrApiKey(e.currentTarget.value)}
 								placeholder="sk-or-..."
 							/>
 						</label>
@@ -174,7 +206,7 @@ export function ModelDialog(props: {onClose: () => void}) {
 								<select
 									ref={orSelectRef}
 									class="chat-model-dialog-input"
-									onChange={(e) => setOrModel(e.currentTarget.value)}
+									on:change={(e) => setOrModel(e.currentTarget.value)}
 								>
 									<Show when={orModels().length === 0}>
 										<option value={orModel()}>{orLoading() ? "Loading..." : selectedModelDisplay()}</option>
@@ -185,7 +217,7 @@ export function ModelDialog(props: {onClose: () => void}) {
 								</select>
 								<button
 									class="chat-model-dialog-btn"
-									onClick={fetchOrModels}
+									on:click={fetchOrModels}
 									disabled={orLoading()}
 								>
 									{orLoading() ? "..." : "Refresh"}
@@ -201,12 +233,12 @@ export function ModelDialog(props: {onClose: () => void}) {
 								<input
 									class="chat-model-dialog-input"
 									value={ollamaUrl()}
-									onInput={(e) => setOllamaUrl(e.currentTarget.value)}
+									on:input={(e) => setOllamaUrl(e.currentTarget.value)}
 									placeholder="http://localhost:11434"
 								/>
 								<button
 									class="chat-model-dialog-btn"
-									onClick={probeOllama}
+									on:click={probeOllama}
 									disabled={ollamaLoading()}
 								>
 									{ollamaLoading() ? "..." : "Refresh"}
@@ -218,7 +250,7 @@ export function ModelDialog(props: {onClose: () => void}) {
 							<select
 								ref={ollamaSelectRef}
 								class="chat-model-dialog-input"
-								onChange={(e) => setOllamaModel(e.currentTarget.value)}
+								on:change={(e) => setOllamaModel(e.currentTarget.value)}
 							>
 								<Show when={ollamaModels().length === 0}>
 									<option value={ollamaModel()}>{ollamaLoading() ? "Loading..." : ollamaModel()}</option>
@@ -232,9 +264,9 @@ export function ModelDialog(props: {onClose: () => void}) {
 				</div>
 
 				<div class="chat-model-dialog-footer">
-					<button class="chat-model-dialog-btn" onClick={props.onClose}>Cancel</button>
-					<button class="chat-model-dialog-btn" onClick={clearToLocal}>Clear (Local)</button>
-					<button class="chat-model-dialog-btn primary" onClick={save}>Save</button>
+					<button class="chat-model-dialog-btn" on:click={props.onClose}>Cancel</button>
+					<button class="chat-model-dialog-btn" on:click={clearToLocal}>Clear (Local)</button>
+					<button class="chat-model-dialog-btn primary" on:click={save}>Save</button>
 				</div>
 			</div>
 		</div>

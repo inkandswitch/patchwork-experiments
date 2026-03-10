@@ -1,4 +1,4 @@
-import {Show, Switch, Match, createResource, createMemo} from "solid-js"
+import {Show, Switch, Match, createMemo} from "solid-js"
 import type {ChatMessage} from "../types"
 import {Avatar} from "./Avatar"
 import {MessageBody} from "./MessageBody"
@@ -6,7 +6,7 @@ import {MessageReplyRef} from "./MessageReplyRef"
 import {MessageReactions} from "./MessageReactions"
 import {MessageHoverActions} from "./MessageHoverActions"
 import {formatTime} from "../lib/helpers"
-import {loadBlobUrl} from "../lib/blob-cache"
+import {automergeUrlToServiceWorkerUrl} from "@inkandswitch/patchwork-filesystem"
 import {resolveNamedColor} from "../lib/named-colors"
 import {useTheme} from "../context/ThemeContext"
 
@@ -98,7 +98,7 @@ export function MessageRow(props: {
 					<Show when={props.msg.replyTo && props.replyToMsg}>
 						<MessageReplyRef
 							replyToMsg={props.replyToMsg}
-							onClick={() => props.onScrollToMsg?.(props.msg.replyTo!)}
+							on:click={() => props.onScrollToMsg?.(props.msg.replyTo!)}
 						/>
 					</Show>
 					<div class="chat-msg-group">
@@ -145,15 +145,12 @@ export function MessageRow(props: {
 
 /** Inline GIF thumbnail for continuation rows */
 function GifInlineThumbnail(props: {gifSelfieUrl: string}) {
-	const [blobUrl] = createResource(
-		() => props.gifSelfieUrl,
-		(url) => loadBlobUrl(url as any)
-	)
+	const src = createMemo(() => automergeUrlToServiceWorkerUrl(props.gifSelfieUrl as any))
 
 	return (
 		<div class="chat-avatar-col">
-			<Show when={blobUrl()}>
-				<img class="chat-msg-gif-inline" src={blobUrl()!} alt="selfie" />
+			<Show when={src()}>
+				<img class="chat-msg-gif-inline" src={src()!} alt="selfie" />
 			</Show>
 		</div>
 	)

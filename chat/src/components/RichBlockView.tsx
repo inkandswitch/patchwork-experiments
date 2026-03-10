@@ -49,7 +49,7 @@ function RichBlockView(props: {block: RichBlock}) {
 		<div class="chat-rich-block" classList={{open: open()}}>
 			<button
 				class="chat-rich-block-header"
-				onClick={() => setOpen(!open())}
+				on:click={() => setOpen(!open())}
 			>
 				<svg class="chat-rich-block-chevron" viewBox="0 0 10 10" width="10" height="10">
 					<path d="M3 2L7 5L3 8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />

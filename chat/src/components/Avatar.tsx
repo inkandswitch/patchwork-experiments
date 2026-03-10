@@ -1,7 +1,7 @@
-import {Show, createResource} from "solid-js"
+import {Show, createResource, createMemo} from "solid-js"
 import {createSignal} from "solid-js"
 import type {AutomergeUrl} from "@automerge/automerge-repo"
-import {loadBlobUrl} from "../lib/blob-cache"
+import {automergeUrlToServiceWorkerUrl} from "@inkandswitch/patchwork-filesystem"
 
 const computerPngUrl = new URL("../../computer.png", import.meta.url).href
 
@@ -27,10 +27,10 @@ export function Avatar(props: {
 }) {
 	const size = () => props.size || 40
 
-	const [blobUrl] = createResource(
-		() => props.gifSelfieUrl || props.avatarUrl,
-		async (url) => (url ? loadBlobUrl(url) : null)
-	)
+	const imgUrl = createMemo(() => {
+		const url = props.gifSelfieUrl || props.avatarUrl
+		return url ? automergeUrlToServiceWorkerUrl(url) : null
+	})
 
 	const isGif = () => !!props.gifSelfieUrl
 
@@ -43,20 +43,20 @@ export function Avatar(props: {
 				"computer": props.isComputer,
 			}}
 			style={{width: size() + "px", height: size() + "px"}}
-			onClick={() => {
+			on:click={() => {
 				toggleCatEars(props.name)
 				props.onClick?.()
 			}}
 		>
 			<Show
-				when={blobUrl()}
+				when={imgUrl()}
 				fallback={
 					<Show when={props.isComputer} fallback={(props.name || "?")[0].toUpperCase()}>
 						<img src={computerPngUrl} alt="Computer" />
 					</Show>
 				}
 			>
-				<img src={blobUrl()!} alt={props.name} />
+				<img src={imgUrl()!} alt={props.name} />
 			</Show>
 		</div>
 	)

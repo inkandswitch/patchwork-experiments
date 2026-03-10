@@ -71,7 +71,7 @@ export function VoiceNote(props: {voiceUrl: AutomergeUrl; duration: number}) {
 		<div class="chat-voice-note">
 			<button
 				class="chat-voice-play-btn"
-				onClick={togglePlay}
+				on:click={togglePlay}
 				innerHTML={playing() ? SVG_ICONS.pause : SVG_ICONS.play}
 			/>
 			<div class="chat-voice-waveform">
@@ -90,7 +90,7 @@ export function VoiceNote(props: {voiceUrl: AutomergeUrl; duration: number}) {
 				<div class="chat-voice-transcription">{transcription()}</div>
 			</Show>
 			<Show when={!transcription() && !transcribing()}>
-				<button class="chat-voice-transcribe-btn" onClick={startTranscription}>transcribe</button>
+				<button class="chat-voice-transcribe-btn" on:click={startTranscription}>transcribe</button>
 			</Show>
 		</div>
 	)
