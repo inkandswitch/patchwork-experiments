@@ -1,6 +1,7 @@
 // Type declarations for patchwork custom elements
 // lifted from https://github.com/inkandswitch/patchwork-next/blob/main/core/elements/src/elements.d.ts
 
+
 import 'react';
 
 declare module 'react' {

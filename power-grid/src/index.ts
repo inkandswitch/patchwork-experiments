@@ -61,4 +61,24 @@ export const plugins: Plugin<any>[] = [
       return PetrinetDatatype;
     },
   },
+  {
+    type: 'patchwork:tool',
+    id: 'p3net',
+    name: 'P3 Net',
+    supportedDatatypes: ['p3net'],
+    async load() {
+      const { P3NetTool } = await import('./p3net/tool');
+      return P3NetTool;
+    },
+  },
+  {
+    type: 'patchwork:datatype',
+    id: 'p3net',
+    name: 'P3 Net',
+    icon: 'Workflow',
+    async load() {
+      const { P3NetDatatype } = await import('./p3net/datatype');
+      return P3NetDatatype;
+    },
+  },
 ];
