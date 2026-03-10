@@ -33,36 +33,6 @@ export const plugins: Plugin<any>[] = [
   },
   {
     type: 'patchwork:tool',
-    id: 'petrinet-editor',
-    name: 'Petri Net Editor',
-    supportedDatatypes: ['petrinet'],
-    async load() {
-      const { PetrinetEditorTool } = await import('./petrinet/editor-tool');
-      return PetrinetEditorTool;
-    },
-  },
-  {
-    type: 'patchwork:tool',
-    id: 'petrinet',
-    name: 'Petri Net',
-    supportedDatatypes: ['petrinet'],
-    async load() {
-      const { PetrinetTool } = await import('./petrinet/tool');
-      return PetrinetTool;
-    },
-  },
-  {
-    type: 'patchwork:datatype',
-    id: 'petrinet',
-    name: 'Petri Net',
-    icon: 'CircleDot',
-    async load() {
-      const { PetrinetDatatype } = await import('./petrinet/datatype');
-      return PetrinetDatatype;
-    },
-  },
-  {
-    type: 'patchwork:tool',
     id: 'p3net',
     name: 'P3 Net',
     supportedDatatypes: ['p3net'],
@@ -89,6 +59,16 @@ export const plugins: Plugin<any>[] = [
     async load() {
       const { P3NetDatatype } = await import('./p3net/datatype');
       return P3NetDatatype;
+    },
+  },
+  {
+    type: 'patchwork:tool',
+    id: 'doc-history',
+    name: 'Doc History',
+    supportedDatatypes: ['*'],
+    async load() {
+      const { DocHistoryTool } = await import('./doc-history/tool');
+      return DocHistoryTool;
     },
   },
 ];

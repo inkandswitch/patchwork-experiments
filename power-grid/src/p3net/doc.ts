@@ -1,7 +1,14 @@
 import type { AutomergeUrl } from '@automerge/automerge-repo';
-import type { NetState } from './lib';
+import type { NetState, TokenState, TokenInstance } from './lib';
 
-export type { NetState };
+export type { NetState, TokenState, TokenInstance };
+
+export type CanvasToken = {
+  id: string;
+  state: TokenState;
+  x: number;
+  y: number;
+};
 
 export type P3NetDoc = {
   '@patchwork': {
@@ -9,7 +16,8 @@ export type P3NetDoc = {
     suggestedImportUrl?: string;
   };
   sourceUrl: AutomergeUrl;
-  tokens: NetState;
+  tokens: NetState;       // place-indexed; participates in step/reset
+  canvas: CanvasToken[];  // floating tokens; do not fire transitions
 };
 
 export type SourceDoc = {

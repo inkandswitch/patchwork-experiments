@@ -1,17 +1,34 @@
-import type { DocHandle } from '@automerge/automerge-repo';
+import type { DocHandle, Repo } from '@automerge/automerge-repo';
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
 export type TokenState = Record<string, unknown>;
 
+/** A single token instance stored in the doc. Type is encoded in state.type. */
+export type TokenInstance = {
+  id: string;
+  state: TokenState;
+};
+
 export type NetState = {
-  [placeId: string]: { id: string; state: TokenState }[];
+  [placeId: string]: TokenInstance[];
+};
+
+/**
+ * A token type definition used for the palette.
+ * The type identifier is written into state.type when creating from the palette.
+ */
+export type TokenTypeDef = {
+  id: string;
+  label: string;
+  color: string; // palette chip colour only
+  initialState?: TokenState | (() => TokenState);
 };
 
 /**
  * Imperative handle scoped to a single token during a transition.
  * Call change() to mutate the token's state, or destroy() to consume
- * the token without producing output for this transition.
+ * the token without forwarding it to output places.
  */
 export interface Token {
   readonly id: string;
@@ -20,34 +37,50 @@ export interface Token {
   destroy(): void;
 }
 
+/** Map of placeId → Token, one entry per from-place. */
+export type Tokens = { [placeId: string]: Token };
+
+/**
+ * Produce a new token into the output.
+ * If `toPlace` is given, deposits only into that specific output place.
+ * If omitted, deposits into all `to` places of the transition.
+ */
+export type ProduceFn = (state: TokenState, toPlace?: string) => void;
+
 export type TransitionDef = {
   id: string;
   from: string[];
   to: string[];
-  /** Return false to skip this transition for this token. */
-  guard?: (token: Token) => boolean;
-  /** Called after guard passes. Mutate or destroy the token. */
-  onToken?: (token: Token) => void;
+  /** Return false to prevent this transition from firing for these tokens. */
+  guard?: (tokens: Tokens) => boolean;
+  /**
+   * Called when the transition fires.
+   * Mutate/destroy input tokens and/or call produce() to emit new tokens.
+   * If produce() is never called, non-destroyed input tokens are forwarded
+   * to all to-places (default single-input behaviour).
+   */
+  onTokens?: (tokens: Tokens, produce: ProduceFn, repo: Repo) => void;
 };
 
 export type NetDef = {
   places: string[];
   transitions: TransitionDef[];
-  initial?: NetState;
+  tokenTypes: TokenTypeDef[];
+  /** Single colour function for all tokens. Receives the full state. */
+  getColor?: (state: TokenState) => string;
 };
 
 export interface PetriNet {
   readonly def: NetDef;
   /**
-   * Advance all tokens one step.
-   * For each token, find all eligible transitions (guard passes).
-   *   0 eligible → token stays
-   *   1 eligible → token moves through it (onToken called)
-   *   N eligible → token duplicated, one copy per eligible transition
-   * Multiple to-places also duplicate the output token.
+   * Advance the net one step (synchronous).
+   * For each fireable transition (all from-places have ≥1 token, guard passes):
+   *   - Calls onTokens with one token per from-place
+   *   - Commits all consumed/produced tokens atomically
+   * Multi-input transitions use join semantics.
    */
   step(): void;
-  /** Reset all tokens back to def.initial (clears everything if no initial state). */
+  /** Clear all tokens from places and canvas. */
   reset(): void;
 }
 
@@ -56,6 +89,7 @@ export interface PetriNet {
 export type P3NetDoc = {
   '@patchwork': { type: 'p3net'; suggestedImportUrl?: string };
   tokens: NetState;
+  canvas: { id: string; state: TokenState; x: number; y: number }[];
 };
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
@@ -64,140 +98,138 @@ function makeTokenId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
-function deepCloneState(s: TokenState): TokenState {
+function deepClone(s: TokenState): TokenState {
   return JSON.parse(JSON.stringify(s));
 }
 
 // ─── Runtime implementation ───────────────────────────────────────────────────
 
-function createPetriNet(def: NetDef, handle: DocHandle<P3NetDoc>): PetriNet {
-  // Seed initial token state if the doc is empty
-  if (def.initial) {
-    const doc = handle.doc();
-    if (doc) {
-      const hasTokens = Object.values(doc.tokens ?? {}).some(
-        (ts) => ts.length > 0,
-      );
-      if (!hasTokens) {
-        handle.change((d) => {
-          if (!d.tokens) d.tokens = {} as NetState;
-          for (const [placeId, tokens] of Object.entries(def.initial!)) {
-            d.tokens[placeId] = tokens.map((t) => ({
-              id: t.id,
-              state: deepCloneState(t.state),
-            }));
-          }
-        });
-      }
-    }
-  }
-
+function createPetriNet(
+  def: NetDef,
+  handle: DocHandle<P3NetDoc>,
+  repo: Repo,
+): PetriNet {
   return {
     def,
 
     reset() {
       handle.change((d) => {
         d.tokens = {} as NetState;
-        if (def.initial) {
-          for (const [placeId, tokens] of Object.entries(def.initial)) {
-            d.tokens[placeId] = tokens.map((t) => ({
-              id: t.id,
-              state: deepCloneState(t.state),
-            }));
-          }
-        }
+        d.canvas = [];
       });
     },
 
     step() {
-      // All reading and writing happens inside a single handle.change so we
-      // never need docSync (deprecated) and the mutation is atomic.
+      const doc = handle.doc();
+      if (!doc) return;
+
+      // ── 1. Snapshot current token positions ────────────────────────────────
+      const snapshot: NetState = {};
+      for (const placeId of def.places) {
+        snapshot[placeId] = (doc.tokens?.[placeId] ?? []).map((t) => ({
+          id: t.id,
+          state: deepClone(t.state),
+        }));
+      }
+
+      // Track which token IDs have already been reserved by an earlier transition
+      const reserved = new Set<string>();
+
+      type FiredTransition = {
+        transition: TransitionDef;
+        // placeId → mutable snapshot token
+        inputTokens: { [placeId: string]: { id: string; state: TokenState; destroyed: boolean } };
+        produced: { state: TokenState; toPlace?: string }[];
+      };
+
+      const fired: FiredTransition[] = [];
+
+      // ── 2. Find all fireable transitions ───────────────────────────────────
+      for (const transition of def.transitions) {
+        // Join semantics: every from-place must have ≥1 unreserved token
+        const candidates: { [placeId: string]: TokenInstance } = {};
+        let canFire = true;
+
+        for (const placeId of transition.from) {
+          const available = (snapshot[placeId] ?? []).find(
+            (t) => !reserved.has(t.id),
+          );
+          if (!available) { canFire = false; break; }
+          candidates[placeId] = available;
+        }
+        if (!canFire) continue;
+
+        // Build readonly guard tokens
+        const guardTokens: Tokens = {};
+        for (const [placeId, t] of Object.entries(candidates)) {
+          guardTokens[placeId] = makeToken(t.id, deepClone(t.state));
+        }
+
+        if (transition.guard && !transition.guard(guardTokens)) continue;
+
+        // Build mutable input tokens for onTokens
+        const inputTokens: FiredTransition['inputTokens'] = {};
+        for (const [placeId, t] of Object.entries(candidates)) {
+          inputTokens[placeId] = { id: t.id, state: deepClone(t.state), destroyed: false };
+          reserved.add(t.id);
+        }
+
+        const produced: { state: TokenState; toPlace?: string }[] = [];
+
+        const tokens: Tokens = {};
+        for (const [placeId, entry] of Object.entries(inputTokens)) {
+          tokens[placeId] = {
+            get id() { return entry.id; },
+            get state() { return entry.state; },
+            change(fn) { fn(entry.state); },
+            destroy() { entry.destroyed = true; },
+          };
+        }
+
+        const produce: ProduceFn = (state, toPlace) => {
+          produced.push({ state: deepClone(state), toPlace });
+        };
+
+        transition.onTokens?.(tokens, produce, repo);
+
+        fired.push({ transition, inputTokens, produced });
+      }
+
+      if (fired.length === 0) return;
+
+      // ── 3. Commit atomically ───────────────────────────────────────────────
       handle.change((d) => {
         if (!d.tokens) d.tokens = {} as NetState;
-
-        // Ensure all places exist in the map
         for (const p of def.places) {
           if (!d.tokens[p]) d.tokens[p] = [];
         }
 
-        // Snapshot current token positions (plain objects, not Automerge proxies)
-        type Entry = { placeId: string; id: string; state: TokenState };
-        const tokenEntries: Entry[] = [];
-        for (const placeId of def.places) {
-          for (const t of d.tokens[placeId] ?? []) {
-            tokenEntries.push({
-              placeId,
-              id: t.id,
-              state: deepCloneState(t.state),
-            });
-          }
-        }
-
-        // For each token, find eligible transitions
-        type Move = {
-          sourcePlace: string;
-          sourceId: string;
-          transition: TransitionDef;
-          outputState: TokenState | null; // null = destroyed
-        };
-
-        const moves: Move[] = [];
-
-        for (const entry of tokenEntries) {
-          const eligible = def.transitions.filter(
-            (t) =>
-              t.from.includes(entry.placeId) &&
-              (t.guard == null ||
-                t.guard(makeReadonlyToken(entry.id, entry.state))),
-          );
-
-          if (eligible.length === 0) continue;
-
-          for (const transition of eligible) {
-            const branchState = deepCloneState(entry.state);
-            let destroyed = false;
-
-            const token: Token = {
-              get id() { return entry.id; },
-              get state() { return branchState; },
-              change(fn) { fn(branchState); },
-              destroy() { destroyed = true; },
-            };
-
-            transition.onToken?.(token);
-
-            moves.push({
-              sourcePlace: entry.placeId,
-              sourceId: entry.id,
-              transition,
-              outputState: destroyed ? null : branchState,
-            });
-          }
-        }
-
-        if (moves.length === 0) return;
-
-        // Consume source tokens (each unique source consumed once)
-        const consumed = new Set<string>();
-        for (const mv of moves) {
-          const key = `${mv.sourcePlace}:${mv.sourceId}`;
-          if (!consumed.has(key)) {
-            consumed.add(key);
-            const arr = d.tokens[mv.sourcePlace];
-            const idx = arr.findIndex((t) => t.id === mv.sourceId);
+        for (const { transition, inputTokens, produced } of fired) {
+          // Remove consumed tokens from their source places
+          for (const [placeId, entry] of Object.entries(inputTokens)) {
+            const arr = d.tokens[placeId];
+            const idx = arr.findIndex((t) => t.id === entry.id);
             if (idx !== -1) arr.splice(idx, 1);
           }
-        }
 
-        // Deposit output tokens
-        for (const mv of moves) {
-          if (mv.outputState === null) continue;
-          for (const toPlace of mv.transition.to) {
-            if (!d.tokens[toPlace]) d.tokens[toPlace] = [];
-            d.tokens[toPlace].push({
-              id: makeTokenId(),
-              state: mv.outputState,
-            });
+          if (produced.length > 0) {
+            // Explicit produce() calls determine output
+            for (const { state, toPlace } of produced) {
+              const targets = toPlace ? [toPlace] : transition.to;
+              for (const p of targets) {
+                if (!d.tokens[p]) d.tokens[p] = [];
+                d.tokens[p].push({ id: makeTokenId(), state });
+              }
+            }
+          } else {
+            // Default: forward non-destroyed input tokens to all to-places
+            for (const entry of Object.values(inputTokens)) {
+              if (entry.destroyed) continue;
+              for (const p of transition.to) {
+                if (!d.tokens[p]) d.tokens[p] = [];
+                d.tokens[p].push({ id: makeTokenId(), state: entry.state });
+              }
+            }
           }
         }
       });
@@ -205,12 +237,12 @@ function createPetriNet(def: NetDef, handle: DocHandle<P3NetDoc>): PetriNet {
   };
 }
 
-function makeReadonlyToken(id: string, state: TokenState): Token {
+function makeToken(id: string, state: TokenState): Token {
   return {
     id,
     state,
-    change() { /* no-op for guard */ },
-    destroy() { /* no-op for guard */ },
+    change(fn) { fn(state); },
+    destroy() { /* no-op for guard tokens */ },
   };
 }
 
@@ -218,14 +250,14 @@ function makeReadonlyToken(id: string, state: TokenState): Token {
 
 /**
  * defineNet(def) returns a factory.
- * Call the factory with a DocHandle<P3NetDoc> to get a bound PetriNet instance.
+ * Call the factory with a DocHandle and Repo to get a bound PetriNet instance.
  *
  * @example
- * export default defineNet({ places, transitions, initial })
- * // In tool: const net = factory(handle)
+ * export default defineNet({ places, transitions, tokenTypes, getColor })
+ * // In tool: const net = factory(handle, repo)
  */
 export function defineNet(
   def: NetDef,
-): (handle: DocHandle<P3NetDoc>) => PetriNet {
-  return (handle) => createPetriNet(def, handle);
+): (handle: DocHandle<P3NetDoc>, repo: Repo) => PetriNet {
+  return (handle, repo) => createPetriNet(def, handle, repo);
 }

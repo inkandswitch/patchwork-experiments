@@ -97,13 +97,8 @@
     cursor: default;
   }
 
-  .p3n-step-btn:not(:disabled):hover {
-    background: #2563eb;
-  }
-
-  .p3n-reset-btn:not(:disabled):hover {
-    background: #e2e8f0;
-  }
+  .p3n-step-btn:not(:disabled):hover { background: #2563eb; }
+  .p3n-reset-btn:not(:disabled):hover { background: #e2e8f0; }
 
   .p3n-load-error {
     padding: 12px;
@@ -114,7 +109,56 @@
     word-break: break-all;
   }
 
-  /* ── Simulation tool ─────────────────────────────────────────────── */
+  /* ── Palette ──────────────────────────────────────────────────────── */
+
+  .p3n-palette {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 10px;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+
+  .p3n-palette-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #94a3b8;
+    margin-right: 4px;
+  }
+
+  .p3n-palette-chip {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px 3px 5px;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    cursor: grab;
+    user-select: none;
+    font-size: 11px;
+    color: #334155;
+    transition: border-color 0.1s, box-shadow 0.1s;
+  }
+
+  .p3n-palette-chip:hover {
+    border-color: #94a3b8;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+
+  .p3n-palette-chip:active { cursor: grabbing; }
+
+  .p3n-palette-chip-label {
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  /* ── Simulation layout ───────────────────────────────────────────── */
 
   .p3n-sim-root {
     display: flex;
@@ -124,56 +168,298 @@
     background: #f8fafc;
   }
 
-  .p3n-graph-wrap {
+  .p3n-sim-body {
     flex: 1;
     min-height: 0;
+    display: flex;
     overflow: hidden;
+  }
+
+  .p3n-graph-wrap {
+    flex: 1;
+    min-width: 0;
+    overflow: auto;
     position: relative;
   }
 
-  /* ── SVG canvas ──────────────────────────────────────────────────── */
+  /* ── Net container ───────────────────────────────────────────────── */
 
-  .p3n-svg {
-    width: 100%;
-    height: 100%;
-    display: block;
+  .p3n-net-container {
+    position: relative;
+    flex-shrink: 0;
   }
 
-  .p3n-place-circle {
-    fill: #fff;
-    stroke: #64748b;
-    stroke-width: 2;
+  .p3n-arc-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
   }
 
-  .p3n-place-circle.p3n-place-active {
-    stroke: #3b82f6;
-    fill: #eff6ff;
+  /* ── Places ──────────────────────────────────────────────────────── */
+
+  .p3n-place {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    border: 2px solid #64748b;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    z-index: 1;
   }
 
-  .p3n-transition-rect {
-    fill: #e2e8f0;
-    stroke: #94a3b8;
-    stroke-width: 1.5;
+  .p3n-place.p3n-place-active {
+    border-color: #3b82f6;
+    background: #eff6ff;
   }
 
-  .p3n-label {
+  .p3n-place-tokens {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 6px;
+    pointer-events: none;
+  }
+
+  .p3n-place-label {
+    position: absolute;
+    transform: translateX(-50%);
     font-family: ui-monospace, 'Cascadia Code', Menlo, monospace;
     font-size: 11px;
-    fill: #475569;
+    color: #475569;
+    white-space: nowrap;
     pointer-events: none;
     user-select: none;
+    z-index: 1;
   }
 
-  .p3n-token-dot {
-    fill: #1e40af;
-  }
+  /* ── Transitions ─────────────────────────────────────────────────── */
 
-  .p3n-token-count {
+  .p3n-transition {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    width: 52px;
+    height: 32px;
+    border-radius: 4px;
+    border: 1.5px solid #94a3b8;
+    background: #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     font-family: ui-monospace, 'Cascadia Code', Menlo, monospace;
-    font-size: 18px;
-    font-weight: 700;
-    fill: #1e40af;
+    font-size: 11px;
+    color: #475569;
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  /* ── Token dot (same everywhere) ─────────────────────────────────── */
+
+  .p3n-token {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(255,255,255,0.5);
+    cursor: grab;
+    flex-shrink: 0;
+    pointer-events: all;
+    box-sizing: border-box;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  }
+
+  .p3n-token:active { cursor: grabbing; }
+
+  /* Non-interactive token (palette preview, sidebar header) */
+  .p3n-token-static {
+    cursor: default;
+    pointer-events: none;
+  }
+
+  .p3n-token-selected {
+    outline: 3px solid #f59e0b;
+    outline-offset: 2px;
+  }
+
+  /* ── Canvas token wrapper (floating, absolutely positioned) ──────── */
+
+  .p3n-canvas-token-wrap {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    z-index: 2;
+  }
+
+  .p3n-canvas-token-label {
+    font-family: ui-monospace, 'Cascadia Code', Menlo, monospace;
+    font-size: 9px;
+    color: #475569;
+    white-space: nowrap;
     pointer-events: none;
     user-select: none;
+  }
+
+  /* ── Token inspector sidebar ─────────────────────────────────────── */
+
+  .p3n-sidebar {
+    width: 240px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid #e2e8f0;
+    background: #fff;
+    overflow: hidden;
+  }
+
+  .p3n-sidebar-header {
+    display: flex;
+    align-items: center;
+    padding: 8px 10px;
+    border-bottom: 1px solid #e2e8f0;
+    gap: 8px;
+    flex-shrink: 0;
+    min-height: 40px;
+  }
+
+  .p3n-sidebar-title-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .p3n-sidebar-type {
+    font-size: 12px;
+    font-weight: 700;
+    color: #1e293b;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .p3n-sidebar-id {
+    font-size: 10px;
+    color: #94a3b8;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .p3n-sidebar-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 12px;
+    color: #94a3b8;
+    padding: 2px 4px;
+    border-radius: 3px;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+
+  .p3n-sidebar-close:hover { background: #f1f5f9; color: #475569; }
+
+  .p3n-sidebar-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+  }
+
+  .p3n-sidebar-empty {
+    padding: 10px 12px;
+    color: #94a3b8;
+    font-size: 11px;
+  }
+
+  .p3n-sidebar-footer {
+    padding: 8px 10px;
+    border-top: 1px solid #f1f5f9;
+    flex-shrink: 0;
+  }
+
+  .p3n-delete-btn {
+    width: 100%;
+    padding: 5px 0;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    background: #fff1f2;
+    color: #e11d48;
+    border: 1px solid #fecdd3;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .p3n-delete-btn:hover { background: #ffe4e6; }
+
+  /* ── Property rows ───────────────────────────────────────────────── */
+
+  .p3n-prop-row {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 6px 12px;
+    border-bottom: 1px solid #f1f5f9;
+  }
+
+  .p3n-prop-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .p3n-prop-input {
+    font-family: inherit;
+    font-size: 12px;
+    padding: 4px 6px;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    background: #f8fafc;
+    color: #1e293b;
+    outline: none;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .p3n-prop-input:focus { border-color: #3b82f6; background: #fff; }
+
+  .p3n-prop-checkbox {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: #3b82f6;
+  }
+
+  .p3n-prop-json {
+    font-family: inherit;
+    font-size: 11px;
+    color: #475569;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    padding: 4px 6px;
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  .p3n-prop-patchwork {
+    display: block;
+    width: 100%;
+    height: 120px;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    overflow: hidden;
   }
 }

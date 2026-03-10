@@ -26,6 +26,7 @@ export default defineConfig({
       input: {
         index: "./src/index.ts",
         "p3net/index": "./src/p3net/lib.ts",
+        "petrinet-llm-process/index": "./src/petrinet-llm-process/index.ts",
       },
       output: {
         format: "es",
