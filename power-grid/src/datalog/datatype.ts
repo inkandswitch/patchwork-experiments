@@ -2,9 +2,13 @@ import type { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
 import type { StoredFact, StoredRule, StoredConstraint } from './datalog';
 import { DEFAULT_FACTS, DEFAULT_RULES, DEFAULT_CONSTRAINTS, DEFAULT_PROGRAM_TEXT } from './defaults';
 
+export type ColorScale = 'red-green' | 'green-red' | 'red-gray-green' | 'blue-red' | 'cool' | 'plasma';
+
 export type PredicateStyle = {
   color: string | null;
-  showLabel: boolean;
+  enabled: boolean;
+  direction: 'none' | 'forward' | 'backward';
+  scale: ColorScale | null;
 };
 
 export type MapStyle = {
@@ -17,7 +21,7 @@ export type DatalogDoc = {
   facts: StoredFact[];
   rules: StoredRule[];
   constraints: StoredConstraint[];
-  draftText: string;
+  draftText?: string;
   mapStyle: MapStyle;
 };
 

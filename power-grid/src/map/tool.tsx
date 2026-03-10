@@ -5,11 +5,11 @@ import { RepoContext } from '@automerge/automerge-repo-react-hooks';
 import { createRoot } from 'react-dom/client';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { AutomergeUrl } from '@automerge/automerge-repo';
-import type { DatalogDoc, MapStyle, PredicateStyle } from '../datalog/datatype';
+import type { ColorScale, DatalogDoc, MapStyle, PredicateStyle } from '../datalog/datatype';
 import { type StoredFact, evaluate } from '../datalog/datalog';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Settings } from 'lucide-react';
-import { StyleSidebar } from './style-sidebar';
+import { StyleSidebar, PALETTE } from './style-sidebar';
 
 export const MapTool: ToolRender = (handle, element) => {
   const repo = element.repo;
@@ -29,31 +29,144 @@ export const MapTool: ToolRender = (handle, element) => {
 function categorisePredicates(
   facts: StoredFact[],
   geopos: Map<string, [number, number]>,
-): { linePredicates: string[]; propertyPredicates: string[] } {
+): {
+  linePredicates: string[];
+  unaryPredicates: string[];
+  numericPredicates: string[];
+  textPredicates: string[];
+} {
   const linePreds = new Set<string>();
+  const unaryPreds = new Set<string>();
+  // Track which non-line property predicates have at least one numeric value
+  const hasNumericValue = new Set<string>();
   const propPreds = new Set<string>();
+
   for (const f of facts) {
     if (f.pred === 'geopos') continue;
-    if (f.args.length < 2) continue;
-    if (!geopos.has(String(f.args[0]))) continue;
-    if (geopos.has(String(f.args[1]))) {
-      linePreds.add(f.pred);
-    } else {
-      propPreds.add(f.pred);
+    const first = String(f.args[0]);
+    if (!geopos.has(first)) continue;
+
+    if (f.args.length === 1) {
+      unaryPreds.add(f.pred);
+    } else if (f.args.length >= 2) {
+      if (geopos.has(String(f.args[1]))) {
+        linePreds.add(f.pred);
+      } else {
+        propPreds.add(f.pred);
+        if (typeof f.args[1] === 'number') {
+          hasNumericValue.add(f.pred);
+        }
+      }
     }
   }
-  return { linePredicates: [...linePreds].sort(), propertyPredicates: [...propPreds].sort() };
+
+  const numericPreds = [...propPreds].filter((p) => hasNumericValue.has(p));
+  const textPreds = [...propPreds].filter((p) => !hasNumericValue.has(p));
+
+  return {
+    linePredicates: [...linePreds].sort(),
+    unaryPredicates: [...unaryPreds].sort(),
+    numericPredicates: numericPreds.sort(),
+    textPredicates: textPreds.sort(),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Arc / Bézier helpers
+// ---------------------------------------------------------------------------
+
+function buildArcs(
+  from: [number, number],
+  to: [number, number],
+  n: number,
+  spacing = 0.04,
+): [number, number][][] {
+  const dx = to[0] - from[0];
+  const dy = to[1] - from[1];
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (len === 0) return Array.from({ length: n }, () => [from, to]);
+
+  const px = -dy / len;
+  const py = dx / len;
+
+  const arcs: [number, number][][] = [];
+  for (let i = 0; i < n; i++) {
+    const offset = n === 1 ? 0 : (i - (n - 1) / 2) * spacing;
+    const cx = (from[0] + to[0]) / 2 + px * offset;
+    const cy = (from[1] + to[1]) / 2 + py * offset;
+
+    const pts: [number, number][] = [];
+    const steps = 20;
+    for (let t = 0; t <= steps; t++) {
+      const u = t / steps;
+      const x = (1 - u) * (1 - u) * from[0] + 2 * (1 - u) * u * cx + u * u * to[0];
+      const y = (1 - u) * (1 - u) * from[1] + 2 * (1 - u) * u * cy + u * u * to[1];
+      pts.push([x, y]);
+    }
+    arcs.push(pts);
+  }
+  return arcs;
+}
+
+function bearing(a: [number, number], b: [number, number]): number {
+  const dLng = (b[0] - a[0]) * (Math.PI / 180);
+  const lat1 = a[1] * (Math.PI / 180);
+  const lat2 = b[1] * (Math.PI / 180);
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+// ---------------------------------------------------------------------------
+// Color scale interpolation
+// ---------------------------------------------------------------------------
+
+type RGB = [number, number, number];
+
+const SCALE_STOPS: Record<ColorScale, RGB[]> = {
+  'red-green':      [[239, 68, 68],  [234, 179, 8],  [34, 197, 94]],
+  'green-red':      [[34, 197, 94],  [234, 179, 8],  [239, 68, 68]],
+  'red-gray-green': [[239, 68, 68],  [156, 163, 175], [34, 197, 94]],
+  'blue-red':       [[59, 130, 246], [6, 182, 212],  [234, 179, 8], [239, 68, 68]],
+  'cool':           [[59, 130, 246], [6, 182, 212]],
+  'plasma':         [[109, 40, 217], [190, 24, 93],  [245, 158, 11]],
+};
+
+function applyScale(t: number, scale: ColorScale): string {
+  const stops = SCALE_STOPS[scale];
+  const n = stops.length - 1;
+  const pos = Math.max(0, Math.min(1, t)) * n;
+  const i = Math.min(Math.floor(pos), n - 1);
+  const f = pos - i;
+  const [r1, g1, b1] = stops[i];
+  const [r2, g2, b2] = stops[i + 1];
+  const r = Math.round(r1 + (r2 - r1) * f);
+  const g = Math.round(g1 + (g2 - g1) * f);
+  const b = Math.round(b1 + (b2 - b1) * f);
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
+function formatArg(v: unknown): string {
+  if (typeof v === 'number') {
+    return Number.isInteger(v) ? String(v) : v.toFixed(2);
+  }
+  return String(v);
 }
 
 // ---------------------------------------------------------------------------
 // buildGeoData
 // ---------------------------------------------------------------------------
 
+const NEUTRAL_NODE_COLOR = '#1e40af';
+
 function buildGeoData(
   facts: StoredFact[],
   mapStyle: MapStyle | undefined,
   linePredicates: Set<string>,
-  propertyPredicates: Set<string>,
+  unaryPredicates: Set<string>,
+  numericPredicates: Set<string>,
+  allPropertyPredicates: Set<string>,
+  hoveredPredicates: Set<string>,
 ) {
   const style = mapStyle ?? { lines: {}, properties: {} };
 
@@ -66,33 +179,86 @@ function buildGeoData(
     }
   }
 
-  // ── Node label details (showLabel properties only) ────────────────────────
-  const nodeFacts = new Map<string, string[]>();
-  for (const id of geopos.keys()) nodeFacts.set(id, []);
-  for (const f of facts) {
-    if (f.pred === 'geopos') continue;
-    if (!propertyPredicates.has(f.pred)) continue;
-    if (!(style.properties[f.pred]?.showLabel ?? false)) continue;
-    const first = String(f.args[0]);
-    if (!nodeFacts.has(first)) continue;
-    const argStr = f.args.slice(1).join(', ');
-    nodeFacts.get(first)!.push(argStr.length > 0 ? `${f.pred}(${argStr})` : f.pred);
-  }
+  // ── Collect active colors per node from unary and numeric predicates ──────
 
-  // ── Node ring colors ───────────────────────────────────────────────────────
-  const nodeRingColors = new Map<string, string[]>();
-  for (const id of geopos.keys()) nodeRingColors.set(id, []);
-  for (const pred of [...propertyPredicates].sort()) {
-    const color = style.properties[pred]?.color ?? null;
+  const nodeActiveColors = new Map<string, string[]>();
+  for (const id of geopos.keys()) nodeActiveColors.set(id, []);
+
+  // Unary predicates → fixed color (skip if no color assigned)
+  const unaryArr = [...unaryPredicates].sort();
+  for (const pred of unaryArr) {
+    const ps = style.properties[pred];
+    if (!(ps?.enabled || hoveredPredicates.has(pred))) continue;
+    const color = ps?.color;
     if (!color) continue;
     for (const f of facts) {
       if (f.pred !== pred) continue;
       const nodeId = String(f.args[0]);
-      if (!nodeRingColors.has(nodeId)) continue;
-      if (!nodeRingColors.get(nodeId)!.includes(color)) {
-        nodeRingColors.get(nodeId)!.push(color);
+      if (!nodeActiveColors.has(nodeId)) continue;
+      nodeActiveColors.get(nodeId)!.push(color);
+    }
+  }
+
+  // Numeric predicates with a scale → interpolated color
+  for (const pred of numericPredicates) {
+    const ps = style.properties[pred];
+    if (!(ps?.enabled || hoveredPredicates.has(pred))) continue;
+    if (!ps?.scale) continue;
+
+    const nodeValues = new Map<string, number>();
+    for (const f of facts) {
+      if (f.pred !== pred) continue;
+      const nodeId = String(f.args[0]);
+      if (!nodeActiveColors.has(nodeId)) continue;
+      if (typeof f.args[1] === 'number') nodeValues.set(nodeId, f.args[1] as number);
+    }
+    if (nodeValues.size === 0) continue;
+
+    const vals = [...nodeValues.values()];
+    const minV = Math.min(...vals);
+    const maxV = Math.max(...vals);
+    const range = maxV - minV || 1;
+
+    for (const [nodeId, val] of nodeValues) {
+      nodeActiveColors.get(nodeId)!.push(applyScale((val - minV) / range, ps.scale));
+    }
+  }
+
+  // ── Determine per-node color and ring features ─────────────────────────────
+  const nodeColorMap = new Map<string, string>();
+  const ringFeatures: GeoJSON.Feature[] = [];
+
+  for (const [id, coords] of geopos) {
+    const colors = nodeActiveColors.get(id) ?? [];
+    if (colors.length === 0) {
+      nodeColorMap.set(id, NEUTRAL_NODE_COLOR);
+    } else if (colors.length === 1) {
+      nodeColorMap.set(id, colors[0]);
+    } else {
+      nodeColorMap.set(id, NEUTRAL_NODE_COLOR);
+      // Rings: largest first so smaller ones overlap on top
+      for (let i = colors.length - 1; i >= 0; i--) {
+        ringFeatures.push({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: coords },
+          properties: { color: colors[i], radius: 8 + (i + 1) * 5 },
+        });
       }
     }
+  }
+
+  // ── Node label details (enabled/hovered property predicates) ──────────────
+  const nodeFacts = new Map<string, string[]>();
+  for (const id of geopos.keys()) nodeFacts.set(id, []);
+  for (const f of facts) {
+    if (f.pred === 'geopos') continue;
+    if (!allPropertyPredicates.has(f.pred)) continue;
+    const ps = style.properties[f.pred];
+    if (!(ps?.enabled || hoveredPredicates.has(f.pred))) continue;
+    const first = String(f.args[0]);
+    if (!nodeFacts.has(first)) continue;
+    const argStr = f.args.slice(1).map(formatArg).join(', ');
+    nodeFacts.get(first)!.push(argStr.length > 0 ? `${f.pred}(${argStr})` : f.pred);
   }
 
   // ── Node features ──────────────────────────────────────────────────────────
@@ -102,29 +268,21 @@ function buildGeoData(
     nodeFeatures.push({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: coords },
-      properties: { id, details, label: details.length > 0 ? `${id}\n${details}` : id },
+      properties: {
+        id,
+        details,
+        label: details.length > 0 ? `${id}\n${details}` : id,
+        nodeColor: nodeColorMap.get(id) ?? NEUTRAL_NODE_COLOR,
+      },
     });
   }
 
-  // ── Ring features (largest radius first = renders behind smaller rings) ────
-  const ringFeatures: GeoJSON.Feature[] = [];
-  for (const [id, coords] of geopos) {
-    const colors = nodeRingColors.get(id) ?? [];
-    for (let i = colors.length - 1; i >= 0; i--) {
-      ringFeatures.push({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: coords },
-        properties: { color: colors[i], radius: 8 + (i + 1) * 5 },
-      });
-    }
-  }
-
-  // ── Edge features (straight lines, dashed for multi-predicate pairs) ───────
-  // Track which predicates appear per canonical pair
+  // ── Collect visible predicates per canonical pair ─────────────────────────
   const pairPreds = new Map<string, string[]>();
   for (const f of facts) {
     if (!linePredicates.has(f.pred)) continue;
-    if (!(style.lines[f.pred]?.color)) continue;
+    const ls = style.lines[f.pred];
+    if (!(ls?.enabled || hoveredPredicates.has(f.pred))) continue;
     const a = String(f.args[0]);
     const b = String(f.args[1]);
     if (!geopos.has(a) || !geopos.has(b)) continue;
@@ -134,14 +292,23 @@ function buildGeoData(
     pairPreds.set(key, existing);
   }
 
+  // ── Pre-compute arcs per pair ──────────────────────────────────────────────
+  const pairArcs = new Map<string, [number, number][][]>();
+  for (const [key, preds] of pairPreds) {
+    const [aId, bId] = key.split('|');
+    pairArcs.set(key, buildArcs(geopos.get(aId)!, geopos.get(bId)!, preds.length));
+  }
+
+  // ── Edge features ─────────────────────────────────────────────────────────
   const edgeFeatures: GeoJSON.Feature[] = [];
-  // Per-pair label accumulator: pairKey → { mid, texts[] }
-  const pairLabelMap = new Map<string, { mid: [number, number]; texts: string[] }>();
+  const edgeLabelFeatures: GeoJSON.Feature[] = [];
+  const arrowFeatures: GeoJSON.Feature[] = [];
 
   for (const f of facts) {
     if (!linePredicates.has(f.pred)) continue;
-    const lineStyle = style.lines[f.pred];
-    if (!lineStyle?.color) continue;
+    const ls = style.lines[f.pred];
+    const isHovered = hoveredPredicates.has(f.pred);
+    if (!(ls?.enabled || isHovered)) continue;
 
     const fromKey = String(f.args[0]);
     const toKey = String(f.args[1]);
@@ -152,44 +319,54 @@ function buildGeoData(
     const pairKey = [fromKey, toKey].sort().join('|');
     const predsForPair = pairPreds.get(pairKey) ?? [f.pred];
     const predIndex = predsForPair.indexOf(f.pred);
-    const dashed = predIndex > 0;
+    const arcCoordsRaw = pairArcs.get(pairKey)![predIndex];
+    const [sortedA] = pairKey.split('|');
+    const arcCoords = sortedA === fromKey ? arcCoordsRaw : [...arcCoordsRaw].reverse();
 
+    const color = ls?.color ?? PALETTE[0];
+    const opacity = isHovered && !ls?.enabled ? 0.35 : 0.85;
     const extraArgs = f.args.slice(2);
-    const label = extraArgs.length > 0 ? `${f.pred}(${extraArgs.join(', ')})` : f.pred;
+    const labelText = extraArgs.length > 0
+      ? `${f.pred}: ${extraArgs.map(formatArg).join(', ')}`
+      : f.pred;
 
     edgeFeatures.push({
       type: 'Feature',
-      geometry: { type: 'LineString', coordinates: [fromCoords, toCoords] },
+      geometry: { type: 'LineString', coordinates: arcCoords },
       properties: {
         pred: f.pred,
-        label,
-        color: lineStyle.color,
+        label: `${f.pred}(${f.args.map(formatArg).join(', ')})`,
+        color,
         width: Math.min(2 + f.args.length, 6),
-        dashed,
+        opacity,
       },
     });
 
-    // Accumulate labels for this pair
-    if (lineStyle.showLabel) {
-      const mid: [number, number] = [
-        (fromCoords[0] + toCoords[0]) / 2,
-        (fromCoords[1] + toCoords[1]) / 2,
-      ];
-      if (!pairLabelMap.has(pairKey)) {
-        pairLabelMap.set(pairKey, { mid, texts: [] });
-      }
-      pairLabelMap.get(pairKey)!.texts.push(label);
-    }
-  }
-
-  // One combined label Point feature per pair
-  const edgeLabelFeatures: GeoJSON.Feature[] = [];
-  for (const { mid, texts } of pairLabelMap.values()) {
     edgeLabelFeatures.push({
       type: 'Feature',
-      geometry: { type: 'Point', coordinates: mid },
-      properties: { label: texts.join('\n') },
+      geometry: { type: 'LineString', coordinates: arcCoords },
+      properties: { label: labelText, color },
     });
+
+    const direction = ls?.direction ?? 'none';
+    if (direction !== 'none') {
+      const n = arcCoords.length;
+      let arrowBearing: number;
+      let arrowPos: [number, number];
+      if (direction === 'forward') {
+        // Place one step before the destination so the node circle doesn't hide the arrow
+        arrowBearing = bearing(arcCoords[n - 2] as [number, number], arcCoords[n - 1] as [number, number]);
+        arrowPos = arcCoords[n - 2] as [number, number];
+      } else {
+        arrowBearing = bearing(arcCoords[1] as [number, number], arcCoords[0] as [number, number]);
+        arrowPos = arcCoords[1] as [number, number];
+      }
+      arrowFeatures.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: arrowPos },
+        properties: { bearing: arrowBearing, color },
+      });
+    }
   }
 
   return {
@@ -197,6 +374,7 @@ function buildGeoData(
     rings: { type: 'FeatureCollection' as const, features: ringFeatures },
     edges: { type: 'FeatureCollection' as const, features: edgeFeatures },
     edgeLabels: { type: 'FeatureCollection' as const, features: edgeLabelFeatures },
+    arrows: { type: 'FeatureCollection' as const, features: arrowFeatures },
     geopos,
   };
 }
@@ -215,15 +393,31 @@ const WORLD_POLYGON: GeoJSON.Feature = {
 };
 
 // ---------------------------------------------------------------------------
+// Arrow image — SDF white triangle so icon-color can tint it
+// ---------------------------------------------------------------------------
+
+function createArrowImage(size = 24): { width: number; height: number; data: Uint8ClampedArray } {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const half = size / 2;
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.moveTo(half, 2);
+  ctx.lineTo(size - 4, size - 3);
+  ctx.lineTo(4, size - 3);
+  ctx.closePath();
+  ctx.fill();
+  const imgData = ctx.getImageData(0, 0, size, size);
+  return { width: size, height: size, data: imgData.data };
+}
+
+// ---------------------------------------------------------------------------
 // NodeHoverPopup
 // ---------------------------------------------------------------------------
 
-interface HoverNodeInfo {
-  nodeId: string;
-  x: number;
-  y: number;
-  facts: string[];
-}
+interface HoverNodeInfo { nodeId: string; x: number; y: number; facts: string[] }
 
 function NodeHoverPopup({ info }: { info: HoverNodeInfo }) {
   return (
@@ -263,11 +457,7 @@ function NodeHoverPopup({ info }: { info: HoverNodeInfo }) {
 // EdgeHoverPopup
 // ---------------------------------------------------------------------------
 
-interface HoverEdgeInfo {
-  label: string;
-  x: number;
-  y: number;
-}
+interface HoverEdgeInfo { label: string; x: number; y: number }
 
 function EdgeHoverPopup({ info }: { info: HoverEdgeInfo }) {
   return (
@@ -306,9 +496,10 @@ function MapViewer({ docUrl }: { docUrl: AutomergeUrl }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [hoveredNode, setHoveredNode] = useState<HoverNodeInfo | null>(null);
   const [hoveredEdge, setHoveredEdge] = useState<HoverEdgeInfo | null>(null);
+  const [hoveredSidebarPred, setHoveredSidebarPred] = useState<string | null>(null);
 
   const derivedFactsRef = useRef<StoredFact[]>([]);
-  const propertyPredicatesRef = useRef<Set<string>>(new Set());
+  const allPropertyPredicatesRef = useRef<Set<string>>(new Set());
   const changeDocRef = useRef(changeDoc);
   changeDocRef.current = changeDoc;
 
@@ -325,7 +516,7 @@ function MapViewer({ docUrl }: { docUrl: AutomergeUrl }) {
 
   // ── Predicate classification ───────────────────────────────────────────────
 
-  const { linePredicates, propertyPredicates, geopos } = useMemo(() => {
+  const { linePredicates, unaryPredicates, numericPredicates, textPredicates, geopos } = useMemo(() => {
     const gp = new Map<string, [number, number]>();
     for (const f of derivedFacts) {
       if (f.pred === 'geopos' && f.args.length === 3) {
@@ -333,34 +524,73 @@ function MapViewer({ docUrl }: { docUrl: AutomergeUrl }) {
         gp.set(String(node), [Number(lng), Number(lat)]);
       }
     }
-    const { linePredicates: lp, propertyPredicates: pp } = categorisePredicates(derivedFacts, gp);
-    return { linePredicates: lp, propertyPredicates: pp, geopos: gp };
+    const cats = categorisePredicates(derivedFacts, gp);
+    return { ...cats, geopos: gp };
   }, [derivedFacts]);
 
-  const linePredicatesSet = useMemo(() => new Set(linePredicates), [linePredicates]);
-  const propertyPredicatesSet = useMemo(() => new Set(propertyPredicates), [propertyPredicates]);
-  propertyPredicatesRef.current = propertyPredicatesSet;
+  const allPropertyPredicates = useMemo(
+    () => [...unaryPredicates, ...numericPredicates, ...textPredicates],
+    [unaryPredicates, numericPredicates, textPredicates],
+  );
 
-  // Auto-init new predicates in the document
+  const linePredicatesSet = useMemo(() => new Set(linePredicates), [linePredicates]);
+  const unaryPredicatesSet = useMemo(() => new Set(unaryPredicates), [unaryPredicates]);
+  const numericPredicatesSet = useMemo(() => new Set(numericPredicates), [numericPredicates]);
+  const allPropertyPredicatesSet = useMemo(() => new Set(allPropertyPredicates), [allPropertyPredicates]);
+  allPropertyPredicatesRef.current = allPropertyPredicatesSet;
+
+  // Auto-init new predicates
   useEffect(() => {
     if (!doc?.mapStyle) return;
     const newLines = linePredicates.filter((p) => !(p in doc.mapStyle.lines));
-    const newProps = propertyPredicates.filter((p) => !(p in doc.mapStyle.properties));
+    const newProps = allPropertyPredicates.filter((p) => !(p in doc.mapStyle.properties));
     if (newLines.length === 0 && newProps.length === 0) return;
     changeDoc((d) => {
       if (!d.mapStyle) d.mapStyle = { lines: {}, properties: {} };
-      for (const p of newLines) d.mapStyle.lines[p] = { color: null, showLabel: false };
-      for (const p of newProps) d.mapStyle.properties[p] = { color: null, showLabel: false };
+      for (const p of newLines) {
+        const idx = linePredicates.indexOf(p);
+        d.mapStyle.lines[p] = {
+          color: PALETTE[idx % PALETTE.length],
+          enabled: false,
+          direction: 'none',
+          scale: null,
+        };
+      }
+      for (const p of newProps) {
+        const isUnary = unaryPredicates.includes(p);
+        const idx = isUnary ? unaryPredicates.indexOf(p) : 0;
+        d.mapStyle.properties[p] = {
+          color: isUnary ? PALETTE[idx % PALETTE.length] : null,
+          enabled: false,
+          direction: 'none',
+          scale: null,
+        };
+      }
     });
-  }, [linePredicates, propertyPredicates, doc?.mapStyle, changeDoc]);
+  }, [linePredicates, allPropertyPredicates, unaryPredicates, doc?.mapStyle, changeDoc]);
 
   const mapStyle = doc?.mapStyle ?? { lines: {}, properties: {} };
+
+  // ── Sidebar hover → hovered predicates set ────────────────────────────────
+
+  const hoveredPredicates = useMemo(
+    () => new Set(hoveredSidebarPred ? [hoveredSidebarPred] : []),
+    [hoveredSidebarPred],
+  );
 
   // ── GeoJSON data ───────────────────────────────────────────────────────────
 
   const geoData = useMemo(
-    () => buildGeoData(derivedFacts, mapStyle, linePredicatesSet, propertyPredicatesSet),
-    [derivedFacts, mapStyle, linePredicatesSet, propertyPredicatesSet],
+    () => buildGeoData(
+      derivedFacts,
+      mapStyle,
+      linePredicatesSet,
+      unaryPredicatesSet,
+      numericPredicatesSet,
+      allPropertyPredicatesSet,
+      hoveredPredicates,
+    ),
+    [derivedFacts, mapStyle, linePredicatesSet, unaryPredicatesSet, numericPredicatesSet, allPropertyPredicatesSet, hoveredPredicates],
   );
 
   const geoDataRef = useRef(geoData);
@@ -386,7 +616,11 @@ function MapViewer({ docUrl }: { docUrl: AutomergeUrl }) {
 
     map.on('load', () => {
       try {
-        // ── Fade overlay (washes out base map) ────────────────────────────
+        // Register arrow as SDF image so icon-color works
+        const arrowImg = createArrowImage(24);
+        map.addImage('arrow-head', arrowImg, { sdf: true });
+
+        // ── Fade overlay ──────────────────────────────────────────────────
         map.addSource('fade', { type: 'geojson', data: WORLD_POLYGON });
         map.addLayer({
           id: 'map-fade',
@@ -401,32 +635,18 @@ function MapViewer({ docUrl }: { docUrl: AutomergeUrl }) {
           data: { type: 'FeatureCollection', features: [] },
         });
         map.addLayer({
-          id: 'edges-solid',
+          id: 'edges-line',
           type: 'line',
           source: 'edges',
-          filter: ['!', ['get', 'dashed']],
           layout: { 'line-join': 'round', 'line-cap': 'round' },
           paint: {
             'line-color': ['get', 'color'],
             'line-width': ['get', 'width'],
-            'line-opacity': 0.85,
-          },
-        });
-        map.addLayer({
-          id: 'edges-dashed',
-          type: 'line',
-          source: 'edges',
-          filter: ['get', 'dashed'],
-          layout: { 'line-join': 'round', 'line-cap': 'round' },
-          paint: {
-            'line-color': ['get', 'color'],
-            'line-width': ['get', 'width'],
-            'line-opacity': 0.85,
-            'line-dasharray': [6, 4],
+            'line-opacity': ['get', 'opacity'],
           },
         });
 
-        // ── Edge labels (combined per pair, Point source) ──────────────────
+        // ── Edge labels (on-line, rotated with the arc) ────────────────────
         map.addSource('edge-labels', {
           type: 'geojson',
           data: { type: 'FeatureCollection', features: [] },
@@ -436,20 +656,22 @@ function MapViewer({ docUrl }: { docUrl: AutomergeUrl }) {
           type: 'symbol',
           source: 'edge-labels',
           layout: {
+            'symbol-placement': 'line-center',
             'text-field': ['get', 'label'],
-            'text-size': 13,
+            'text-size': 12,
             'text-font': ['Noto Sans Regular'],
-            'text-anchor': 'center',
+            'text-rotation-alignment': 'map',
+            'text-pitch-alignment': 'viewport',
             'text-allow-overlap': false,
           },
           paint: {
-            'text-color': '#1e293b',
+            'text-color': ['get', 'color'],
             'text-halo-color': '#fff',
             'text-halo-width': 2,
           },
         });
 
-        // ── Rings (behind nodes) ───────────────────────────────────────────
+        // ── Rings (behind nodes, only for 2+ active colors) ────────────────
         map.addSource('rings', {
           type: 'geojson',
           data: { type: 'FeatureCollection', features: [] },
@@ -476,7 +698,7 @@ function MapViewer({ docUrl }: { docUrl: AutomergeUrl }) {
           source: 'nodes',
           paint: {
             'circle-radius': 8,
-            'circle-color': '#1e40af',
+            'circle-color': ['get', 'nodeColor'],
             'circle-stroke-color': '#fff',
             'circle-stroke-width': 2,
           },
@@ -506,12 +728,36 @@ function MapViewer({ docUrl }: { docUrl: AutomergeUrl }) {
           },
         });
 
+        // ── Arrow heads (on top of nodes so they're not hidden) ────────────
+        map.addSource('edge-arrows', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        });
+        map.addLayer({
+          id: 'edge-arrows-symbol',
+          type: 'symbol',
+          source: 'edge-arrows',
+          layout: {
+            'icon-image': 'arrow-head',
+            'icon-size': 0.8,
+            'icon-rotate': ['get', 'bearing'],
+            'icon-rotation-alignment': 'map',
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
+          },
+          paint: {
+            'icon-color': ['get', 'color'],
+            'icon-opacity': 0.9,
+          },
+        });
+
         // Push initial data
         const d = geoDataRef.current;
         (map.getSource('nodes') as maplibregl.GeoJSONSource).setData(d.nodes);
         (map.getSource('rings') as maplibregl.GeoJSONSource).setData(d.rings);
         (map.getSource('edges') as maplibregl.GeoJSONSource).setData(d.edges);
         (map.getSource('edge-labels') as maplibregl.GeoJSONSource).setData(d.edgeLabels);
+        (map.getSource('edge-arrows') as maplibregl.GeoJSONSource).setData(d.arrows);
 
         if (d.geopos.size > 0) {
           fittedRef.current = true;
@@ -525,13 +771,13 @@ function MapViewer({ docUrl }: { docUrl: AutomergeUrl }) {
           if (!e.features?.length) return;
           const nodeId = e.features[0].properties?.id as string;
           if (!nodeId) return;
-          const propPreds = propertyPredicatesRef.current;
+          const propPreds = allPropertyPredicatesRef.current;
           const allFacts = derivedFactsRef.current;
           const factStrs: string[] = [];
           for (const f of allFacts) {
             if (!propPreds.has(f.pred)) continue;
             if (String(f.args[0]) !== nodeId) continue;
-            const argStr = f.args.slice(1).join(', ');
+            const argStr = f.args.slice(1).map(formatArg).join(', ');
             factStrs.push(argStr.length > 0 ? `${f.pred}(${argStr})` : f.pred);
           }
           setHoveredNode({ nodeId, x: e.point.x, y: e.point.y, facts: factStrs });
@@ -556,10 +802,8 @@ function MapViewer({ docUrl }: { docUrl: AutomergeUrl }) {
           setHoveredEdge(null);
           map.getCanvas().style.cursor = '';
         };
-        map.on('mousemove', 'edges-solid', onEdgeMove);
-        map.on('mouseleave', 'edges-solid', onEdgeLeave);
-        map.on('mousemove', 'edges-dashed', onEdgeMove);
-        map.on('mouseleave', 'edges-dashed', onEdgeLeave);
+        map.on('mousemove', 'edges-line', onEdgeMove);
+        map.on('mouseleave', 'edges-line', onEdgeLeave);
       } catch (err) {
         console.error('[MapTool] Error adding sources/layers:', err);
       }
@@ -581,6 +825,7 @@ function MapViewer({ docUrl }: { docUrl: AutomergeUrl }) {
     (map.getSource('rings') as maplibregl.GeoJSONSource | undefined)?.setData(geoData.rings);
     (map.getSource('edges') as maplibregl.GeoJSONSource | undefined)?.setData(geoData.edges);
     (map.getSource('edge-labels') as maplibregl.GeoJSONSource | undefined)?.setData(geoData.edgeLabels);
+    (map.getSource('edge-arrows') as maplibregl.GeoJSONSource | undefined)?.setData(geoData.arrows);
     if (!fittedRef.current && geoData.geopos.size > 0) {
       fittedRef.current = true;
       const bounds = new maplibregl.LngLatBounds();
@@ -594,7 +839,9 @@ function MapViewer({ docUrl }: { docUrl: AutomergeUrl }) {
   const handleUpdateLine = (pred: string, patch: Partial<PredicateStyle>) => {
     changeDoc((d) => {
       if (!d.mapStyle) d.mapStyle = { lines: {}, properties: {} };
-      if (!d.mapStyle.lines[pred]) d.mapStyle.lines[pred] = { color: null, showLabel: false };
+      if (!d.mapStyle.lines[pred]) {
+        d.mapStyle.lines[pred] = { color: PALETTE[0], enabled: false, direction: 'none', scale: null };
+      }
       Object.assign(d.mapStyle.lines[pred], patch);
     });
   };
@@ -602,7 +849,9 @@ function MapViewer({ docUrl }: { docUrl: AutomergeUrl }) {
   const handleUpdateProperty = (pred: string, patch: Partial<PredicateStyle>) => {
     changeDoc((d) => {
       if (!d.mapStyle) d.mapStyle = { lines: {}, properties: {} };
-      if (!d.mapStyle.properties[pred]) d.mapStyle.properties[pred] = { color: null, showLabel: false };
+      if (!d.mapStyle.properties[pred]) {
+        d.mapStyle.properties[pred] = { color: null, enabled: false, direction: 'none', scale: null };
+      }
       Object.assign(d.mapStyle.properties[pred], patch);
     });
   };
@@ -613,7 +862,6 @@ function MapViewer({ docUrl }: { docUrl: AutomergeUrl }) {
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={mapContainerRef} style={{ width: '100%', height: '100%' }} />
 
-      {/* Gear button */}
       <button
         onClick={() => setSidebarOpen((o) => !o)}
         title="Map style settings"
@@ -638,21 +886,20 @@ function MapViewer({ docUrl }: { docUrl: AutomergeUrl }) {
         <Settings size={16} />
       </button>
 
-      {/* Style sidebar */}
       <StyleSidebar
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         mapStyle={mapStyle}
         linePredicates={linePredicates}
-        propertyPredicates={propertyPredicates}
+        unaryPredicates={unaryPredicates}
+        numericPredicates={numericPredicates}
+        textPredicates={textPredicates}
         onUpdateLine={handleUpdateLine}
         onUpdateProperty={handleUpdateProperty}
+        onHoverPred={setHoveredSidebarPred}
       />
 
-      {/* Node hover popup */}
       {hoveredNode && <NodeHoverPopup info={hoveredNode} />}
-
-      {/* Edge hover popup */}
       {hoveredEdge && <EdgeHoverPopup info={hoveredEdge} />}
     </div>
   );
