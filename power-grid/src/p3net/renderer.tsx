@@ -71,10 +71,11 @@ function edgePoint(
   }
   const hw = TRANSITION_W / 2;
   const hh = TRANSITION_H / 2;
-  const tScale = Math.min(
-    Math.abs(ux) > 0.001 ? hw / Math.abs(ux) : Infinity,
-    Math.abs(uy) > 0.001 ? hh / Math.abs(uy) : Infinity,
-  );
+  const scaleX = Math.abs(ux) > 0.001 ? hw / Math.abs(ux) : Infinity;
+  const scaleY = Math.abs(uy) > 0.001 ? hh / Math.abs(uy) : Infinity;
+  const tScale = Math.min(scaleX, scaleY);
+  // Guard against Infinity when both components are near zero (same-position nodes)
+  if (!isFinite(tScale)) return [cx, cy];
   return [cx + ux * (tScale + extra), cy + uy * (tScale + extra)];
 }
 
