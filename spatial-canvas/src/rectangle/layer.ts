@@ -1,16 +1,20 @@
 import type { CanvasDoc, DocHandle } from '../core/types.js'
 import type { RectangleShape } from './rectangle.js'
 
+/** Mix color with white by `t` (0 = original, 1 = white). */
+function lightenColor(hex: string, t = 0.72): string {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  const lr = Math.round(r + (255 - r) * t)
+  const lg = Math.round(g + (255 - g) * t)
+  const lb = Math.round(b + (255 - b) * t)
+  return `rgb(${lr},${lg},${lb})`
+}
+
 /**
  * RectangleLayer — renders all shapes with type === 'rectangle' as
  * positioned divs inside the provided container element.
- *
- * The container lives inside .sc-layer which already has the camera CSS
- * transform applied, so shapes only need translate(x, y) positioning.
- * The container itself has no z-index, so it does not create a stacking
- * context — each shape element's own z-index (from shape.zIndex) is
- * compared directly against elements from other layers, enabling true
- * cross-layer z-ordering.
  */
 export default function RectangleLayer(
   handle: DocHandle<CanvasDoc>,
@@ -45,12 +49,22 @@ export default function RectangleLayer(
         mounted.set(rect.id, el)
       }
 
+      const color = rect.color ?? '#4f8ef7'
+      const fill = rect.fill ?? 'filled'
+
       el.style.transform = `translate(${rect.x}px, ${rect.y}px)`
       el.style.width = `${rect.width}px`
       el.style.height = `${rect.height}px`
       el.style.zIndex = String(rect.zIndex)
-      el.style.background = '#4f8ef7'
-      el.style.border = '1.5px solid #2255cc'
+      el.style.border = `1.5px solid ${color}`
+
+      if (fill === 'transparent') {
+        el.style.background = 'transparent'
+      } else if (fill === 'white') {
+        el.style.background = 'white'
+      } else {
+        el.style.background = lightenColor(color)
+      }
     }
   }
 

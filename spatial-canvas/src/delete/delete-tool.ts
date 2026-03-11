@@ -36,16 +36,12 @@ function spawnTrail(canvasX: number, canvasY: number, layer: HTMLElement) {
 }
 
 // ============================================================================
-// Button indicator — classic eraser shape
+// Button indicator — Lucide Eraser icon (inline SVG)
 // ============================================================================
 
 function mountEraserButton(btn: HTMLElement): () => void {
   const prev = btn.innerHTML;
-  btn.innerHTML = `<svg width="18" height="14" viewBox="0 0 18 14" fill="none">
-    <rect x="1" y="1" width="16" height="12" rx="1.5" fill="white" stroke="#ccc" stroke-width="1"/>
-    <rect x="1" y="7" width="16" height="6" rx="1.5" fill="#f08080"/>
-    <line x1="1" y1="7" x2="17" y2="7" stroke="#ccc" stroke-width="0.75"/>
-  </svg>`;
+  btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg>`;
   return () => {
     btn.innerHTML = prev;
   };

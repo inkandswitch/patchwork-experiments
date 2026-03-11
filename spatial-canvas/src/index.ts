@@ -11,7 +11,11 @@ export type { CanvasDoc, CanvasShape } from './core/types.js'
 export const SpatialCanvasDatatype = {
   init(doc: CanvasDoc) {
     doc.shapes = {}
-    doc.selectionByUser = {}
+    doc.stateByUser = {}
+    doc.panels = {
+      'spatial-canvas-panel-toolbar':    { position: ['bottom', 'center'] },
+      'spatial-canvas-panel-properties': { position: ['top', 'right'] },
+    }
   },
 
   getTitle(_doc: CanvasDoc): string {
@@ -43,9 +47,7 @@ export const plugins = [
     id: 'spatial-canvas',
     name: 'Spatial Canvas',
     icon: 'Globe',
-    async load() {
-      return SpatialCanvasDatatype
-    },
+    async load() { return SpatialCanvasDatatype },
   },
   {
     type: 'patchwork:tool' as const,
@@ -53,21 +55,17 @@ export const plugins = [
     name: 'Spatial Canvas',
     icon: 'Globe',
     supportedDatatypes: ['spatial-canvas'],
-    async load() {
-      return Tool
-    },
+    async load() { return Tool },
   },
   ...rectanglePlugins,
   // -------------------------------------------------------------------------
   // Canvas tools (tag: spatial-canvas-tool)
-  // Mounted onto toolbar button elements. Listen for spatial-canvas:pointer*
-  // CustomEvents and write shapes into the canvas doc directly.
   // -------------------------------------------------------------------------
   {
     type: 'patchwork:tool' as const,
     id: 'spatial-canvas-tool-place-rectangle',
     name: 'Rectangle',
-    icon: '□',
+    icon: 'Square',
     tags: ['spatial-canvas-tool'],
     supportedDatatypes: ['spatial-canvas'],
     async load() {
@@ -76,42 +74,20 @@ export const plugins = [
   },
   {
     type: 'patchwork:tool' as const,
-    id: 'spatial-canvas-tool-pen-black',
-    name: 'Pen (Black)',
-    icon: '✒',
+    id: 'spatial-canvas-tool-pen',
+    name: 'Pen',
+    icon: 'Pen',
     tags: ['spatial-canvas-tool'],
     supportedDatatypes: ['spatial-canvas'],
     async load() {
-      return (await import('./pen/pen-tool.js')).PenBlackTool
-    },
-  },
-  {
-    type: 'patchwork:tool' as const,
-    id: 'spatial-canvas-tool-pen-blue',
-    name: 'Pen (Blue)',
-    icon: '✒',
-    tags: ['spatial-canvas-tool'],
-    supportedDatatypes: ['spatial-canvas'],
-    async load() {
-      return (await import('./pen/pen-tool.js')).PenBlueTool
-    },
-  },
-  {
-    type: 'patchwork:tool' as const,
-    id: 'spatial-canvas-tool-pen-red',
-    name: 'Pen (Red)',
-    icon: '✒',
-    tags: ['spatial-canvas-tool'],
-    supportedDatatypes: ['spatial-canvas'],
-    async load() {
-      return (await import('./pen/pen-tool.js')).PenRedTool
+      return (await import('./pen/pen-tool.js')).PenTool
     },
   },
   {
     type: 'patchwork:tool' as const,
     id: 'spatial-canvas-tool-select',
     name: 'Select',
-    icon: '⬚',
+    icon: 'MousePointer',
     tags: ['spatial-canvas-tool'],
     supportedDatatypes: ['spatial-canvas'],
     async load() {
@@ -122,23 +98,32 @@ export const plugins = [
     type: 'patchwork:tool' as const,
     id: 'spatial-canvas-tool-delete',
     name: 'Delete',
-    icon: '⌫',
+    icon: 'Eraser',
     tags: ['spatial-canvas-tool'],
     supportedDatatypes: ['spatial-canvas'],
     async load() {
       return (await import('./delete/delete-tool.js')).default
     },
   },
+  {
+    type: 'patchwork:tool' as const,
+    id: 'spatial-canvas-tool-embed',
+    name: 'Embed',
+    icon: 'Layers',
+    tags: ['spatial-canvas-tool'],
+    supportedDatatypes: ['spatial-canvas'],
+    async load() {
+      return (await import('./embed/place-tool.js')).default
+    },
+  },
   // -------------------------------------------------------------------------
   // Render layers (tag: spatial-canvas-layer)
-  // Mounted into z-index:auto divs inside .sc-layer. Each layer
-  // self-subscribes to handle changes and renders its own element types.
   // -------------------------------------------------------------------------
   {
     type: 'patchwork:tool' as const,
     id: 'spatial-canvas-layer-rectangles',
     name: 'Rectangle Layer',
-    icon: '□',
+    icon: 'Square',
     tags: ['spatial-canvas-layer'],
     supportedDatatypes: ['spatial-canvas'],
     async load() {
@@ -149,7 +134,7 @@ export const plugins = [
     type: 'patchwork:tool' as const,
     id: 'spatial-canvas-layer-pen',
     name: 'Pen Layer',
-    icon: '✒',
+    icon: 'Pen',
     tags: ['spatial-canvas-layer'],
     supportedDatatypes: ['spatial-canvas'],
     async load() {
@@ -160,36 +145,45 @@ export const plugins = [
     type: 'patchwork:tool' as const,
     id: 'spatial-canvas-layer-selection',
     name: 'Selection Layer',
-    icon: '⬚',
+    icon: 'MousePointer',
     tags: ['spatial-canvas-layer'],
     supportedDatatypes: ['spatial-canvas'],
     async load() {
       return (await import('./select/layer.js')).default
     },
   },
-  // -------------------------------------------------------------------------
-  // Embed tool + layer
-  // -------------------------------------------------------------------------
-  {
-    type: 'patchwork:tool' as const,
-    id: 'spatial-canvas-tool-embed',
-    name: 'Embed',
-    icon: '⊞',
-    tags: ['spatial-canvas-tool'],
-    supportedDatatypes: ['spatial-canvas'],
-    async load() {
-      return (await import('./embed/place-tool.js')).default
-    },
-  },
   {
     type: 'patchwork:tool' as const,
     id: 'spatial-canvas-layer-embed',
     name: 'Embed Layer',
-    icon: '⊞',
+    icon: 'Layers',
     tags: ['spatial-canvas-layer'],
     supportedDatatypes: ['spatial-canvas'],
     async load() {
       return (await import('./embed/layer.js')).default
+    },
+  },
+  // -------------------------------------------------------------------------
+  // Panels (tag: spatial-canvas-panel)
+  // -------------------------------------------------------------------------
+  {
+    type: 'patchwork:tool' as const,
+    id: 'spatial-canvas-panel-toolbar',
+    name: 'Toolbar',
+    tags: ['spatial-canvas-panel'],
+    supportedDatatypes: ['spatial-canvas'],
+    async load() {
+      return (await import('./core/toolbar.js')).default
+    },
+  },
+  {
+    type: 'patchwork:tool' as const,
+    id: 'spatial-canvas-panel-properties',
+    name: 'Properties',
+    tags: ['spatial-canvas-panel'],
+    supportedDatatypes: ['spatial-canvas'],
+    async load() {
+      return (await import('./properties/panel.js')).default
     },
   },
 ]

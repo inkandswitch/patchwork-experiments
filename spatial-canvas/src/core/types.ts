@@ -16,9 +16,29 @@ export interface CanvasShape {
   type: string
 }
 
+export interface UserState {
+  selection: { [shapeId: string]: true }
+  color: string
+  fill?: 'transparent' | 'white' | 'filled'
+}
+
+/**
+ * Panel position as a [side, align] tuple.
+ * For top/bottom sides align is 'left' | 'center' | 'right'.
+ * For left/right sides align is 'top' | 'center' | 'bottom'.
+ * Examples: ['bottom', 'center'], ['top', 'right'], ['left', 'top']
+ */
+export interface PanelEntry {
+  position: [
+    side: 'top' | 'bottom' | 'left' | 'right',
+    align: 'left' | 'center' | 'right' | 'top' | 'bottom',
+  ]
+}
+
 export interface CanvasDoc {
   shapes: Record<string, CanvasShape>
-  selectionByUser: { [contactUrl: string]: { [shapeId: string]: true } }
+  stateByUser: { [contactUrl: string]: UserState }
+  panels: { [panelId: string]: PanelEntry }
 }
 
 // ============================================================================

@@ -1,7 +1,7 @@
 import type { CanvasDoc, DocHandle, Disposer } from '../core/types.js'
 
 /**
- * SelectionLayer — reads `doc.selectionByUser[contactUrl]` and applies a
+ * SelectionLayer — reads `doc.stateByUser[contactUrl].selection` and applies a
  * drop-shadow CSS filter to the DOM elements of selected shapes.
  *
  * Only the current user's selection is highlighted. The original filter value
@@ -21,7 +21,7 @@ export default function SelectionLayer(
   }
 
   function render({ doc }: { doc: CanvasDoc }) {
-    const mySelection = doc.selectionByUser?.[contactUrl] ?? {}
+    const mySelection = doc.stateByUser?.[contactUrl]?.selection ?? {}
     const newSelected = new Set(Object.keys(mySelection))
 
     // Remove highlight from shapes no longer selected

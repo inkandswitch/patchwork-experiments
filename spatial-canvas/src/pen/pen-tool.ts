@@ -37,7 +37,7 @@ function computePath(points: [number, number, number][]): string {
 
 function makeSvg(): SVGSVGElement {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-  svg.style.cssText = 'position:absolute;top:0;left:0;overflow:visible;pointer-events:none;'
+  svg.style.cssText = 'position:absolute;top:0;left:0;overflow:visible;pointer-events:none;z-index:2147483647;'
   return svg
 }
 
@@ -47,19 +47,8 @@ function makePath(color: string): SVGPathElement {
   return path
 }
 
-// Render a filled circle into the button to represent the pen color + size
-function mountButtonIndicator(btn: HTMLElement, color: string): () => void {
-  const prev = btn.innerHTML
-  const r = Math.ceil(PEN_SIZE / 2)
-  const size = r * 2 + 4
-  btn.innerHTML = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-    <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="${color}"/>
-  </svg>`
-  return () => { btn.innerHTML = prev }
-}
-
 // ============================================================================
-// Factory
+// Tool
 // ============================================================================
 
 interface PointerDetail {
@@ -67,97 +56,115 @@ interface PointerDetail {
   canvasY: number
 }
 
-function createPenTool(color: string) {
-  return function (handle: DocHandle<CanvasDoc>, buttonEl: HTMLElement): Disposer {
-    let points: [number, number, number][] = []
-    let previewSvg: SVGSVGElement | null = null
-    let previewPath: SVGPathElement | null = null
+const DEFAULT_COLOR = '#1a1a1a'
 
-    const removeIndicator = mountButtonIndicator(buttonEl, color)
+export function PenTool(handle: DocHandle<CanvasDoc>, buttonEl: HTMLElement): Disposer {
+  const contactUrl = window.accountDocHandle?.doc()?.contactUrl ?? 'local'
 
-    function getLayer(): HTMLElement | null {
-      return buttonEl.closest('.sc-container')?.querySelector<HTMLElement>('.sc-layer') ?? null
-    }
+  let points: [number, number, number][] = []
+  let previewSvg: SVGSVGElement | null = null
+  let previewPath: SVGPathElement | null = null
 
-    function onPointerDown(e: Event) {
-      const { canvasX, canvasY } = (e as CustomEvent<PointerDetail>).detail
-      points = [[canvasX, canvasY, 0.5]]
-
-      previewSvg = makeSvg()
-      previewPath = makePath(color)
-      previewSvg.appendChild(previewPath)
-      getLayer()?.appendChild(previewSvg)
-    }
-
-    function onPointerMove(e: Event) {
-      if (!previewPath) return
-      const { canvasX, canvasY } = (e as CustomEvent<PointerDetail>).detail
-      points.push([canvasX, canvasY, 0.5])
-      previewPath.setAttribute('d', computePath(points))
-    }
-
-    function onPointerUp(e: Event) {
-      if (points.length === 0) return
-      const { canvasX, canvasY } = (e as CustomEvent<PointerDetail>).detail
-      points.push([canvasX, canvasY, 0.5])
-
-      if (points.length > 1) {
-        const doc = handle.doc()
-        const zIndex = doc ? nextZIndex(doc) : 0
-        const shape: PenShape = {
-          id: newId(),
-          type: 'pen',
-          x: 0,
-          y: 0,
-          zIndex,
-          color,
-          points,
-        }
-        createShape(handle, shape)
-      }
-
-      cleanup()
-    }
-
-    function onCancel() {
-      cleanup()
-    }
-
-    function cleanup() {
-      previewSvg?.remove()
-      previewSvg = null
-      previewPath = null
-      points = []
-    }
-
-    buttonEl.addEventListener('spatial-canvas:pointerdown', onPointerDown)
-    buttonEl.addEventListener('spatial-canvas:pointermove', onPointerMove)
-    buttonEl.addEventListener('spatial-canvas:pointerup',   onPointerUp)
-    buttonEl.addEventListener('spatial-canvas:cancel',      onCancel)
-
-    return () => {
-      buttonEl.removeEventListener('spatial-canvas:pointerdown', onPointerDown)
-      buttonEl.removeEventListener('spatial-canvas:pointermove', onPointerMove)
-      buttonEl.removeEventListener('spatial-canvas:pointerup',   onPointerUp)
-      buttonEl.removeEventListener('spatial-canvas:cancel',      onCancel)
-      removeIndicator()
-      cleanup()
-    }
+  function getColor(): string {
+    return handle.doc()?.stateByUser?.[contactUrl]?.color ?? DEFAULT_COLOR
   }
-}
 
-// ============================================================================
-// Exports — three pens, each closes over its color
-// ============================================================================
+  function getLayer(): HTMLElement | null {
+    return buttonEl.closest('.sc-container')?.querySelector<HTMLElement>('.sc-layer') ?? null
+  }
 
-export function PenBlackTool(handle: DocHandle<CanvasDoc>, btn: HTMLElement): Disposer {
-  return createPenTool('#1a1a1a')(handle, btn)
-}
+  // Button indicator — Lucide Pen icon in the current color
+  const indicatorSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  indicatorSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+  indicatorSvg.setAttribute('width', '22')
+  indicatorSvg.setAttribute('height', '22')
+  indicatorSvg.setAttribute('viewBox', '0 0 24 24')
+  indicatorSvg.setAttribute('fill', 'none')
+  indicatorSvg.setAttribute('stroke-linecap', 'round')
+  indicatorSvg.setAttribute('stroke-linejoin', 'round')
+  indicatorSvg.setAttribute('stroke-width', '2')
+  indicatorSvg.style.pointerEvents = 'none'
+  // Pen path (Lucide Pen2)
+  const penPath1 = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+  penPath1.setAttribute('d', 'M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z')
+  const penPath2 = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+  penPath2.setAttribute('d', 'm15 5 4 4')
+  indicatorSvg.appendChild(penPath1)
+  indicatorSvg.appendChild(penPath2)
+  buttonEl.innerHTML = ''
+  buttonEl.appendChild(indicatorSvg)
 
-export function PenBlueTool(handle: DocHandle<CanvasDoc>, btn: HTMLElement): Disposer {
-  return createPenTool('#1a6edb')(handle, btn)
-}
+  function updateIndicator() {
+    const color = getColor()
+    indicatorSvg.setAttribute('stroke', color)
+  }
 
-export function PenRedTool(handle: DocHandle<CanvasDoc>, btn: HTMLElement): Disposer {
-  return createPenTool('#e03131')(handle, btn)
+  updateIndicator()
+  handle.on('change', updateIndicator)
+
+  function onPointerDown(e: Event) {
+    const { canvasX, canvasY } = (e as CustomEvent<PointerDetail>).detail
+    points = [[canvasX, canvasY, 0.5]]
+
+    const color = getColor()
+    previewSvg = makeSvg()
+    previewPath = makePath(color)
+    previewSvg.appendChild(previewPath)
+    getLayer()?.appendChild(previewSvg)
+  }
+
+  function onPointerMove(e: Event) {
+    if (!previewPath) return
+    const { canvasX, canvasY } = (e as CustomEvent<PointerDetail>).detail
+    points.push([canvasX, canvasY, 0.5])
+    previewPath.setAttribute('d', computePath(points))
+  }
+
+  function onPointerUp(e: Event) {
+    if (points.length === 0) return
+    const { canvasX, canvasY } = (e as CustomEvent<PointerDetail>).detail
+    points.push([canvasX, canvasY, 0.5])
+
+    if (points.length > 1) {
+      const doc = handle.doc()
+      const zIndex = doc ? nextZIndex(doc) : 0
+      const shape: PenShape = {
+        id: newId(),
+        type: 'pen',
+        x: 0,
+        y: 0,
+        zIndex,
+        color: getColor(),
+        points,
+      }
+      createShape(handle, shape)
+    }
+
+    cleanup()
+  }
+
+  function onCancel() {
+    cleanup()
+  }
+
+  function cleanup() {
+    previewSvg?.remove()
+    previewSvg = null
+    previewPath = null
+    points = []
+  }
+
+  buttonEl.addEventListener('spatial-canvas:pointerdown', onPointerDown)
+  buttonEl.addEventListener('spatial-canvas:pointermove', onPointerMove)
+  buttonEl.addEventListener('spatial-canvas:pointerup',   onPointerUp)
+  buttonEl.addEventListener('spatial-canvas:cancel',      onCancel)
+
+  return () => {
+    buttonEl.removeEventListener('spatial-canvas:pointerdown', onPointerDown)
+    buttonEl.removeEventListener('spatial-canvas:pointermove', onPointerMove)
+    buttonEl.removeEventListener('spatial-canvas:pointerup',   onPointerUp)
+    buttonEl.removeEventListener('spatial-canvas:cancel',      onCancel)
+    handle.off('change', updateIndicator)
+    cleanup()
+  }
 }

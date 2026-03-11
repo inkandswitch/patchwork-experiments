@@ -63,11 +63,23 @@ function shapeIdNear(
 
 function mountSelectButton(btn: HTMLElement): () => void {
   const prev = btn.innerHTML
-  btn.innerHTML = `<svg width="18" height="16" viewBox="0 0 18 16" fill="none">
-    <rect x="1.5" y="1.5" width="15" height="13" rx="1"
-      stroke="#444" stroke-width="1.5" stroke-dasharray="3 2"/>
-  </svg>`
+  // Lucide MousePointer2
+  btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/></svg>`
   return () => { btn.innerHTML = prev }
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+function ensureUserState(d: CanvasDoc, contactUrl: string) {
+  if (!d.stateByUser) d.stateByUser = {}
+  if (!d.stateByUser[contactUrl]) {
+    d.stateByUser[contactUrl] = { selection: {}, color: '#1a1a1a' }
+  }
+  if (!d.stateByUser[contactUrl].selection) {
+    d.stateByUser[contactUrl].selection = {}
+  }
 }
 
 // ============================================================================
@@ -100,27 +112,26 @@ export default function SelectTool(
   // ---- selection helpers ----
 
   function getMyIds(): string[] {
-    return Object.keys(handle.doc()?.selectionByUser?.[contactUrl] ?? {})
+    return Object.keys(handle.doc()?.stateByUser?.[contactUrl]?.selection ?? {})
   }
 
   function isSelected(id: string): boolean {
-    return handle.doc()?.selectionByUser?.[contactUrl]?.[id] === true
+    return handle.doc()?.stateByUser?.[contactUrl]?.selection?.[id] === true
   }
 
   function clearSelection() {
     handle.change(d => {
-      if (!d.selectionByUser) d.selectionByUser = {}
-      d.selectionByUser[contactUrl] = {}
+      ensureUserState(d, contactUrl)
+      d.stateByUser[contactUrl].selection = {}
     })
   }
 
   function addToSelectionBatch(ids: string[]) {
     if (ids.length === 0) return
     handle.change(d => {
-      if (!d.selectionByUser) d.selectionByUser = {}
-      if (!d.selectionByUser[contactUrl]) d.selectionByUser[contactUrl] = {}
+      ensureUserState(d, contactUrl)
       for (const id of ids) {
-        d.selectionByUser[contactUrl][id] = true
+        d.stateByUser[contactUrl].selection[id] = true
       }
     })
   }
@@ -275,7 +286,11 @@ export default function SelectTool(
     buttonEl.removeEventListener('spatial-canvas:pointermove', onPointerMove)
     buttonEl.removeEventListener('spatial-canvas:pointerup',   onPointerUp)
     buttonEl.removeEventListener('spatial-canvas:cancel',      onCancel)
-    handle.change(d => { if (d.selectionByUser) delete d.selectionByUser[contactUrl] })
+    handle.change(d => {
+      if (d.stateByUser?.[contactUrl]) {
+        d.stateByUser[contactUrl].selection = {}
+      }
+    })
     removeLine()
     removeIndicator()
   }

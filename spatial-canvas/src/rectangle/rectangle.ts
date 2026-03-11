@@ -4,10 +4,14 @@ import type { CanvasShape, Disposer } from '../core/types.js'
 // Shape type
 // ============================================================================
 
+export type RectangleFill = 'transparent' | 'white' | 'filled'
+
 export interface RectangleShape extends CanvasShape {
   type: 'rectangle'
   width: number
   height: number
+  color?: string
+  fill?: RectangleFill  // default: 'filled'
 }
 
 // ============================================================================

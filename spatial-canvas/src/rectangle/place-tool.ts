@@ -1,22 +1,53 @@
 import type { CanvasDoc, DocHandle, Disposer } from '../core/types.js'
 import { createShape, nextZIndex, newId } from '../core/commands.js'
-import type { RectangleShape } from './rectangle.js'
+import type { RectangleFill, RectangleShape } from './rectangle.js'
 
 interface PointerDetail {
   canvasX: number
   canvasY: number
 }
 
+const DEFAULT_COLOR = '#4f8ef7'
+const DEFAULT_FILL: RectangleFill = 'filled'
+
+const SQUARE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>`
+
+/** Mix hex color toward white by factor t (0 = original, 1 = white). */
+function lightenColor(hex: string, t = 0.72): string {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `rgb(${Math.round(r + (255 - r) * t)},${Math.round(g + (255 - g) * t)},${Math.round(b + (255 - b) * t)})`
+}
+
 export default function PlaceRectangleTool(
   handle: DocHandle<CanvasDoc>,
-  buttonEl: HTMLElement
+  element: HTMLElement
 ): Disposer {
+  const contactUrl = window.accountDocHandle?.doc()?.contactUrl ?? 'local'
+
+  const prevHTML = element.innerHTML
+  element.innerHTML = SQUARE_ICON
+
   let origin: { x: number; y: number } | null = null
   let preview: HTMLDivElement | null = null
 
-  // buttonEl lives in .sc-toolbar; .sc-layer is a sibling inside .sc-container
+  function getColor(): string {
+    return handle.doc()?.stateByUser?.[contactUrl]?.color ?? DEFAULT_COLOR
+  }
+
+  function getFill(): RectangleFill {
+    return handle.doc()?.stateByUser?.[contactUrl]?.fill ?? DEFAULT_FILL
+  }
+
   function getLayer(): HTMLElement | null {
-    return buttonEl.closest('.sc-container')?.querySelector<HTMLElement>('.sc-layer') ?? null
+    return element.closest('.sc-container')?.querySelector<HTMLElement>('.sc-layer') ?? null
+  }
+
+  function previewBackground(color: string, fill: RectangleFill): string {
+    if (fill === 'transparent') return 'transparent'
+    if (fill === 'white') return 'white'
+    return lightenColor(color)
   }
 
   function updatePreview(ax: number, ay: number, bx: number, by: number) {
@@ -33,6 +64,8 @@ export default function PlaceRectangleTool(
   function onPointerDown(e: Event) {
     const { canvasX, canvasY } = (e as CustomEvent<PointerDetail>).detail
     origin = { x: canvasX, y: canvasY }
+    const color = getColor()
+    const fill = getFill()
 
     preview = document.createElement('div')
     preview.style.cssText = [
@@ -41,8 +74,9 @@ export default function PlaceRectangleTool(
       'left:0',
       'box-sizing:border-box',
       'pointer-events:none',
-      'background:rgba(79,142,247,0.15)',
-      'border:1.5px dashed #4f8ef7',
+      'z-index:2147483647',
+      `background:${previewBackground(color, fill)}`,
+      `border:1.5px solid ${color}`,
     ].join(';')
 
     updatePreview(canvasX, canvasY, canvasX, canvasY)
@@ -74,6 +108,8 @@ export default function PlaceRectangleTool(
         width,
         height,
         zIndex,
+        color: getColor(),
+        fill: getFill(),
       }
       createShape(handle, shape)
     }
@@ -91,16 +127,17 @@ export default function PlaceRectangleTool(
     origin = null
   }
 
-  buttonEl.addEventListener('spatial-canvas:pointerdown', onPointerDown)
-  buttonEl.addEventListener('spatial-canvas:pointermove', onPointerMove)
-  buttonEl.addEventListener('spatial-canvas:pointerup',   onPointerUp)
-  buttonEl.addEventListener('spatial-canvas:cancel',      onCancel)
+  element.addEventListener('spatial-canvas:pointerdown', onPointerDown)
+  element.addEventListener('spatial-canvas:pointermove', onPointerMove)
+  element.addEventListener('spatial-canvas:pointerup',   onPointerUp)
+  element.addEventListener('spatial-canvas:cancel',      onCancel)
 
   return () => {
-    buttonEl.removeEventListener('spatial-canvas:pointerdown', onPointerDown)
-    buttonEl.removeEventListener('spatial-canvas:pointermove', onPointerMove)
-    buttonEl.removeEventListener('spatial-canvas:pointerup',   onPointerUp)
-    buttonEl.removeEventListener('spatial-canvas:cancel',      onCancel)
+    element.removeEventListener('spatial-canvas:pointerdown', onPointerDown)
+    element.removeEventListener('spatial-canvas:pointermove', onPointerMove)
+    element.removeEventListener('spatial-canvas:pointerup',   onPointerUp)
+    element.removeEventListener('spatial-canvas:cancel',      onCancel)
+    element.innerHTML = prevHTML
     cleanup()
   }
 }

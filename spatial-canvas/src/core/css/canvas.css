@@ -36,35 +36,72 @@
   transform-origin: 0 0;
 }
 
-/* Toolbar overlay */
-.sc-toolbar {
+/* ============================================================================
+ * Panel overlay — 3×3 grid, inset 16px from container edges.
+ * Corner cells are empty but claim space so adjacent side strips never overlap.
+ * ========================================================================== */
+.sc-panel-overlay {
   position: absolute;
-  bottom: 16px;
-  left: 50%;
-  transform: translateX(-50%);
+  inset: 16px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas:
+    "tl  top    tr"
+    "left  .  right"
+    "bl  bottom  br";
+  pointer-events: none;
+  z-index: 100;
+}
+
+/* Side strips — each occupies its grid area and stacks panels as a flex row/column */
+.sc-side {
   display: flex;
-  gap: 4px;
+  gap: 8px;
+}
+
+.sc-side--top    { grid-area: top;    flex-direction: row;    align-items: flex-start; }
+.sc-side--bottom { grid-area: bottom; flex-direction: row;    align-items: flex-end; }
+.sc-side--left   { grid-area: left;   flex-direction: column; align-items: flex-start; }
+.sc-side--right  { grid-area: right;  flex-direction: column; align-items: flex-end; }
+
+/* Alignment groups within a side */
+.sc-side-group {
+  display: flex;
+  flex-direction: inherit;
+  gap: 8px;
+}
+
+.sc-side-group--center { margin: auto; }
+.sc-side-group--end    { margin-top: auto; margin-left: auto; }
+
+/* Individual panel card */
+.sc-panel {
+  pointer-events: auto;
   background: white;
   border: 1px solid #e0e0e0;
   border-radius: 8px;
   padding: 4px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.12);
-  z-index: 100;
 }
 
+/* Tool buttons — applied to <patchwork-view> elements in the toolbar */
 .sc-tool-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 32px;
   height: 32px;
   border: none;
   border-radius: 5px;
   background: transparent;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   font-size: 16px;
   color: #444;
   transition: background 0.1s;
+  /* custom elements are inline by default */
+  box-sizing: border-box;
+  flex-shrink: 0;
 }
 
 .sc-tool-btn:hover {
@@ -72,6 +109,5 @@
 }
 
 .sc-tool-btn.active {
-  background: #e8f0fe;
-  color: #1a73e8;
+  background: #e8e8e8;
 }
