@@ -12,10 +12,10 @@ import type { PenShape } from "./pen-tool.js";
  * pen strokes to interleave freely with shapes from other layers via zIndex.
  */
 export default function PenLayer(handle: DocHandle<CanvasDoc>, element: HTMLElement): () => void {
-  element.style.cssText = "position:absolute;inset:0;pointer-events:none;";
+  element.style.cssText = "position:absolute;inset:0;";
 
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.style.cssText = "position:absolute;top:0;left:0;overflow:visible;pointer-events:none;";
+  svg.style.cssText = "position:absolute;top:0;left:0;overflow:visible;";
   element.appendChild(svg);
 
   const mounted = new Map<string, SVGPathElement>();
@@ -52,6 +52,7 @@ export default function PenLayer(handle: DocHandle<CanvasDoc>, element: HTMLElem
       let path = mounted.get(pen.id);
       if (!path) {
         path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.dataset.shapeId = pen.id;
         svg.appendChild(path);
         mounted.set(pen.id, path);
       }

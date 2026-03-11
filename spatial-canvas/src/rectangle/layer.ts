@@ -40,6 +40,7 @@ export default function RectangleLayer(
       if (!el) {
         el = document.createElement('div')
         el.style.cssText = 'position:absolute;top:0;left:0;box-sizing:border-box;'
+        el.dataset.shapeId = rect.id
         element.appendChild(el)
         mounted.set(rect.id, el)
       }

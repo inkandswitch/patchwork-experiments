@@ -106,6 +106,17 @@ export const plugins = [
       return (await import('./pen/pen-tool.js')).PenRedTool
     },
   },
+  {
+    type: 'patchwork:tool' as const,
+    id: 'spatial-canvas-tool-delete',
+    name: 'Delete',
+    icon: '⌫',
+    tags: ['spatial-canvas-tool'],
+    supportedDatatypes: ['spatial-canvas'],
+    async load() {
+      return (await import('./delete/delete-tool.js')).default
+    },
+  },
   // -------------------------------------------------------------------------
   // Render layers (tag: spatial-canvas-layer)
   // Mounted into z-index:auto divs inside .sc-layer. Each layer
