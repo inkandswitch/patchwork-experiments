@@ -30,6 +30,11 @@ function broadcast(msg) {
   }
 }
 
+function log(...args) {
+  console.log(...args)
+  broadcast({ type: "log", args: args.map(a => typeof a === "string" ? a : JSON.stringify(a)) })
+}
+
 // Track active generations: chatUrl -> { id, port, fullText, done, finalText, abort? }
 const activeGenerations = new Map()
 
@@ -47,7 +52,7 @@ self.addEventListener("unhandledrejection", (e) => {
   broadcast({ type: "status", message: "Worker error: " + msg })
 })
 
-console.log("[llm-worker] SharedWorker starting...")
+log("[llm-worker] SharedWorker starting...")
 
 // ---- Local models ----
 const LOCAL_MODELS = [
@@ -62,6 +67,7 @@ const DEFAULT_MODEL_ID = LOCAL_MODELS[1].id
 
 let currentModelId = DEFAULT_MODEL_ID
 let pipelineFn = null
+let transformersModule = null
 let generator = null
 let loading = false
 let loadingPromise = null // resolves when current load completes
@@ -93,13 +99,43 @@ async function loadModel(modelId) {
   const modelDef = LOCAL_MODELS.find(m => m.id === modelId) || { dtype: "q4f16" }
 
   try {
-    console.log("[llm-worker] Importing transformers.js...")
+    log("[llm-worker] Importing transformers.js...")
     broadcast({ type: "status", message: "Loading transformers.js…" })
     const mod = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3")
+    transformersModule = mod
     pipelineFn = mod.pipeline
     mod.env.allowLocalModels = false
     mod.env.useBrowserCache = true
-    console.log("[llm-worker] transformers.js loaded, cache:", typeof caches !== "undefined")
+    // Request persistent storage so browser won't evict our model cache
+    if (navigator.storage?.persist) {
+      const persisted = await navigator.storage.persist()
+      log("[llm-worker] Storage persist requested:", persisted)
+    }
+    // Debug: check cache state
+    if (typeof caches !== "undefined") {
+      const names = await caches.keys()
+      log("[llm-worker] Existing caches:", names)
+      // Show what's in transformers-cache specifically
+      if (names.includes("transformers-cache")) {
+        const cache = await caches.open("transformers-cache")
+        const keys = await cache.keys()
+        log("[llm-worker] transformers-cache has", keys.length, "entries:")
+        // Log all URLs to see which model(s) are cached
+        const urls = keys.map(k => {
+          const u = new URL(k.url)
+          return u.pathname
+        })
+        // Group by model
+        for (const url of urls) {
+          log("[llm-worker]   cached:", url)
+        }
+      }
+      if (navigator.storage?.estimate) {
+        const est = await navigator.storage.estimate()
+        log("[llm-worker] Storage usage:", Math.round((est.usage || 0) / 1024 / 1024) + "MB / " + Math.round((est.quota || 0) / 1024 / 1024) + "MB")
+      }
+    }
+    log("[llm-worker] transformers.js loaded, useBrowserCache:", mod.env.useBrowserCache, "cache API available:", typeof caches !== "undefined")
   } catch (err) {
     console.error("[llm-worker] Failed to load transformers.js:", err.message || err)
     // Don't broadcast — this only matters for local provider
@@ -110,53 +146,60 @@ async function loadModel(modelId) {
   }
 
   const hasWebGPU = typeof navigator !== "undefined" && !!navigator.gpu
+  const isFirstCompile = !compiledModels.has(modelId)
+
+  function makeProgressCallback(backend) {
+    const fileProgress = new Map() // file -> { loaded, total }
+    const doneFiles = new Set()
+    return (p) => {
+      if (p.status === "progress" && p.progress != null && p.file) {
+        fileProgress.set(p.file, { loaded: p.loaded || 0, total: p.total || 0 })
+        // Show per-file progress for the currently downloading file
+        const shortName = p.file.split("/").pop() || p.file
+        const filePct = Math.round(p.progress)
+        // Also show overall progress
+        let totalLoaded = 0, totalSize = 0
+        for (const f of fileProgress.values()) { totalLoaded += f.loaded; totalSize += f.total }
+        const overallPct = totalSize > 0 ? Math.round(100 * totalLoaded / totalSize) : filePct
+        broadcast({ type: "status", message: `Downloading ${shortName}… ${filePct}% (overall ${overallPct}%)` })
+      } else if (p.status === "done" && p.file) {
+        doneFiles.add(p.file)
+        const shortName = p.file.split("/").pop() || p.file
+        log("[llm-worker] Downloaded:", shortName)
+      } else if (p.status === "initiate" && p.file) {
+        const shortName = p.file.split("/").pop() || p.file
+        broadcast({ type: "status", message: `Loading ${shortName}…` })
+      } else if (p.status === "ready") {
+        const prefix = isFirstCompile
+          ? `⚠️ Compiling shaders for ${backend} (first time — might freeze for a bit)`
+          : `Compiling shaders for ${backend}`
+        broadcast({ type: "status", message: prefix + "…" })
+      }
+    }
+  }
 
   if (hasWebGPU) {
     try {
-      const isFirstCompile = !compiledModels.has(modelId)
-      let compilePhase = false
-      let compileStart = 0
-      let compileTimer = null
-
-      // Show elapsed time during shader compilation so users know it's alive
-      function startCompileTimer() {
-        compilePhase = true
-        compileStart = Date.now()
-        const prefix = isFirstCompile
-          ? "⚠️ Compiling shaders for WebGPU (first time — might freeze for a bit)"
-          : "Compiling shaders for WebGPU"
-        broadcast({ type: "status", message: prefix + "…" })
-        compileTimer = setInterval(() => {
-          const elapsed = Math.round((Date.now() - compileStart) / 1000)
-          broadcast({ type: "status", message: `${prefix}… ${elapsed}s` })
-        }, 2000)
-      }
-
-      function stopCompileTimer() {
-        compilePhase = false
-        if (compileTimer) { clearInterval(compileTimer); compileTimer = null }
-      }
-
+      log("[llm-worker] Starting pipeline load for", modelId, "dtype:", modelDef.dtype, "device: webgpu")
+      log("[llm-worker] env.useBrowserCache:", pipelineFn ? "pipeline loaded" : "no pipeline", "cacheDir:", typeof caches !== "undefined")
       generator = await withTimeout(
         pipelineFn("text-generation", modelId, {
           dtype: modelDef.dtype, device: "webgpu",
-          progress_callback: (p) => {
-            if (p.status === "progress" && p.progress != null) {
-              stopCompileTimer()
-              broadcast({ type: "status", message: `Downloading model… ${Math.round(p.progress)}%` })
-            } else if (p.status === "initiate") {
-              stopCompileTimer()
-              broadcast({ type: "status", message: "Initializing " + (p.file || "model") + "…" })
-            } else if (p.status === "done" && !compilePhase) {
-              // Download/init finished — compilation phase starts
-              startCompileTimer()
-            }
-          },
+          progress_callback: makeProgressCallback("WebGPU"),
         }),
         180000, "WebGPU pipeline"
       )
-      stopCompileTimer()
       compiledModels.add(modelId)
+      // Check cache after load
+      if (typeof caches !== "undefined") {
+        const names = await caches.keys()
+        log("[llm-worker] Post-load caches:", names)
+        for (const name of names) {
+          const cache = await caches.open(name)
+          const keys = await cache.keys()
+          log("[llm-worker] Post-load cache '" + name + "':", keys.length, "entries")
+        }
+      }
       broadcast({ type: "status", message: "Model ready (WebGPU)" })
       broadcast({ type: "ready" })
       loading = false
@@ -170,47 +213,13 @@ async function loadModel(modelId) {
   }
 
   try {
-    const isFirstCompile = !compiledModels.has(modelId)
-    let compilePhase = false
-    let compileStart = 0
-    let compileTimer = null
-
-    function startCompileTimer() {
-      compilePhase = true
-      compileStart = Date.now()
-      const prefix = isFirstCompile
-        ? "⚠️ Compiling model for WASM (first time — might freeze for a bit)"
-        : "Compiling model for WASM"
-      broadcast({ type: "status", message: prefix + "…" })
-      compileTimer = setInterval(() => {
-        const elapsed = Math.round((Date.now() - compileStart) / 1000)
-        broadcast({ type: "status", message: `${prefix}… ${elapsed}s` })
-      }, 2000)
-    }
-
-    function stopCompileTimer() {
-      compilePhase = false
-      if (compileTimer) { clearInterval(compileTimer); compileTimer = null }
-    }
-
     generator = await withTimeout(
       pipelineFn("text-generation", modelId, {
         dtype: modelDef.dtype,
-        progress_callback: (p) => {
-          if (p.status === "progress" && p.progress != null) {
-            stopCompileTimer()
-            broadcast({ type: "status", message: `Downloading model… ${Math.round(p.progress)}%` })
-          } else if (p.status === "initiate") {
-            stopCompileTimer()
-            broadcast({ type: "status", message: "Initializing " + (p.file || "model") + "…" })
-          } else if (p.status === "done" && !compilePhase) {
-            startCompileTimer()
-          }
-        },
+        progress_callback: makeProgressCallback("WASM"),
       }),
       180000, "WASM pipeline"
     )
-    stopCompileTimer()
     compiledModels.add(modelId)
     broadcast({ type: "status", message: "Model ready (WASM)" })
     broadcast({ type: "ready" })
@@ -228,7 +237,7 @@ async function loadModel(modelId) {
 
 function handleMessage(port, data) {
   const { type, id, chatUrl } = data
-  console.log("[llm-worker] Received:", type, id || "", chatUrl || "")
+  log("[llm-worker] Received:", type, id || "", chatUrl || "")
 
   if (type === "list-local-models") {
     port.postMessage({ type: "local-models", models: LOCAL_MODELS })
@@ -250,11 +259,11 @@ function handleMessage(port, data) {
   if (type === "resume") {
     const gen = activeGenerations.get(chatUrl)
     if (gen && !gen.done) {
-      console.log("[llm-worker] Resuming generation for", chatUrl)
+      log("[llm-worker] Resuming generation for", chatUrl)
       gen.port = port
       port.postMessage({ type: "resumed", id: gen.id, text: gen.fullText })
     } else if (gen && gen.done) {
-      console.log("[llm-worker] Generation already done for", chatUrl)
+      log("[llm-worker] Generation already done for", chatUrl)
       port.postMessage({ type: "resume-result", id: gen.id, text: gen.finalText })
       activeGenerations.delete(chatUrl)
     } else {
@@ -266,7 +275,7 @@ function handleMessage(port, data) {
   if (type === "abort") {
     const gen = activeGenerations.get(chatUrl)
     if (gen && !gen.done && gen.abortController) {
-      console.log("[llm-worker] Aborting generation for", chatUrl)
+      log("[llm-worker] Aborting generation for", chatUrl)
       gen.abortController.abort()
       activeGenerations.delete(chatUrl)
     }
@@ -308,26 +317,34 @@ function handleMessage(port, data) {
 async function doGenerateLocal(chatUrl, gen, messages) {
   try {
     broadcast({ type: "status", message: "Thinking…" })
+    log("[llm-worker] Starting local generation, model:", currentModelId)
+    log("[llm-worker] Messages:", JSON.stringify(messages.map(m => ({ role: m.role, length: m.content?.length }))))
+    const startTime = Date.now()
+    let fullText = ""
     let tokenCount = 0
     const output = await generator(messages, {
+      max_new_tokens: 32768,
       do_sample: true,
       temperature: 0.7,
       repetition_penalty: 1.1,
-      callback_function: (output) => {
-        tokenCount++
-        if (tokenCount % 3 === 0 || tokenCount < 5) {
-          try {
-            const partial = generator.tokenizer.decode(output[0].output_token_ids, { skip_special_tokens: true })
-            const stripped = stripThinkTags(partial)
-            gen.fullText = stripped
-            if (stripped) {
-              try { gen.port.postMessage({ type: "token", id: gen.id, text: stripped }) } catch {}
-            }
-          } catch {}
-        }
-      },
+      streamer: new transformersModule.TextStreamer(generator.tokenizer, {
+        skip_prompt: true,
+        skip_special_tokens: true,
+        callback_function: (text) => {
+          tokenCount++
+          fullText += text
+          if (tokenCount === 1) {
+            log("[llm-worker] First token after", Date.now() - startTime, "ms")
+          }
+          gen.fullText = fullText
+          try { gen.port.postMessage({ type: "token", id: gen.id, text: fullText }) } catch {}
+        },
+      }),
     })
-    const text = output[0].generated_text.at(-1).content
+    log("[llm-worker] Generation done, tokens:", tokenCount, "time:", Date.now() - startTime, "ms")
+    log("[llm-worker] Output length:", fullText.length, "preview:", JSON.stringify(fullText.slice(0, 300)))
+    // Use the streamed text directly — it's already decoded
+    const text = fullText || (output[0].generated_text.at(-1)?.content || "")
     finalize(chatUrl, gen, text)
   } catch (err) {
     error(chatUrl, gen, err.message || String(err))
@@ -463,22 +480,10 @@ async function doGenerateOllama(chatUrl, gen, messages, config) {
   }
 }
 
-// ---- Strip Qwen3 <think> blocks ----
-
-function stripThinkTags(text) {
-  if (!text) return text
-  // Remove complete <think>...</think> blocks (including across newlines)
-  text = text.replace(/<think>[\s\S]*?<\/think>\s*/g, "")
-  // Remove unclosed <think> at the start (model still "thinking")
-  text = text.replace(/^<think>[\s\S]*$/, "")
-  return text.trim()
-}
-
 // ---- Shared finalization ----
 
 function finalize(chatUrl, gen, text) {
-  text = stripThinkTags(text)
-  console.log("[llm-worker] Generation complete, length:", text.length)
+  log("[llm-worker] Generation complete, length:", text.length)
   gen.done = true
   gen.finalText = text
   try { gen.port.postMessage({ type: "result", id: gen.id, text }) } catch {}
@@ -498,10 +503,10 @@ function error(chatUrl, gen, msg) {
 self.onconnect = (e) => {
   const port = e.ports[0]
   ports.add(port)
-  console.log("[llm-worker] Client connected, total:", ports.size)
+  log("[llm-worker] Client connected, total:", ports.size)
   port.onmessage = (ev) => handleMessage(port, ev.data)
   if (generator) port.postMessage({ type: "ready" })
   port.start()
 }
 
-console.log("[llm-worker] Waiting for connections...")
+log("[llm-worker] Waiting for connections...")

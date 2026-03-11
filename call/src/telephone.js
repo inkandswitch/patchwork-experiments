@@ -923,13 +923,6 @@ export default function TelephoneTool(handle, element) {
     on(session, "local-status", onLocalStatus);
     on(session, "peer-status", onPeerStatus);
     on(session, "transcription-status", onTranscriptionStatus);
-    on(session, "transcript", (e) => {
-      element.dispatchEvent(new CustomEvent("chee:text-stream", {
-        detail: { text: e.detail.text, speaker: e.detail.speaker, sourceUrl: handle.url },
-        bubbles: true,
-        composed: true,
-      }));
-    });
     on(session, "destroyed", onDestroyed);
   }
 

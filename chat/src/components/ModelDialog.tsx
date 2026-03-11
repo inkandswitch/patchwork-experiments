@@ -32,12 +32,14 @@ export function ModelDialog(props: {onClose: () => void}) {
 	const [orModel, setOrModel] = createSignal("openai/gpt-3.5-turbo")
 	const [orModels, setOrModels] = createSignal<{id: string; name: string}[]>([])
 	const [orLoading, setOrLoading] = createSignal(false)
+	const [orProbed, setOrProbed] = createSignal(false)
 
 	// Ollama state
 	const [ollamaUrl, setOllamaUrl] = createSignal("http://localhost:11434")
 	const [ollamaModel, setOllamaModel] = createSignal("llama3.2")
 	const [ollamaModels, setOllamaModels] = createSignal<string[]>([])
 	const [ollamaLoading, setOllamaLoading] = createSignal(false)
+	const [ollamaProbed, setOllamaProbed] = createSignal(false)
 
 	let orSelectRef!: HTMLSelectElement
 	let ollamaSelectRef!: HTMLSelectElement
@@ -63,9 +65,9 @@ export function ModelDialog(props: {onClose: () => void}) {
 	// Auto-fetch models when switching to a tab
 	createEffect(() => {
 		const t = tab()
-		if (t === "openrouter" && orModels().length === 0 && !orLoading()) {
+		if (t === "openrouter" && !orProbed() && !orLoading()) {
 			fetchOrModels()
-		} else if (t === "ollama" && ollamaModels().length === 0 && !ollamaLoading()) {
+		} else if (t === "ollama" && !ollamaProbed() && !ollamaLoading()) {
 			probeOllama()
 		}
 	})
@@ -88,6 +90,7 @@ export function ModelDialog(props: {onClose: () => void}) {
 
 	async function fetchOrModels() {
 		setOrLoading(true)
+		setOrProbed(true)
 		try {
 			const resp = await fetch("https://openrouter.ai/api/v1/models")
 			const data = await resp.json()
@@ -104,6 +107,7 @@ export function ModelDialog(props: {onClose: () => void}) {
 
 	async function probeOllama() {
 		setOllamaLoading(true)
+		setOllamaProbed(true)
 		try {
 			const resp = await fetch(ollamaUrl().replace(/\/$/, "") + "/api/tags")
 			const data = await resp.json()

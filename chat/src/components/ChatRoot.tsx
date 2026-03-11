@@ -281,6 +281,8 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 				} else if (msg.type === "error") {
 					const cb = llmCallbacks.get(msg.id)
 					if (cb) { cb.reject(new Error(msg.message)); llmCallbacks.delete(msg.id) }
+				} else if (msg.type === "log") {
+					console.log("[llm-worker]", ...msg.args)
 				} else if (msg.type === "status" && msg.message) {
 					// Forward model loading status to any active generation's onStatus
 					for (const cb of llmCallbacks.values()) {
