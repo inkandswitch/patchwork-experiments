@@ -90,8 +90,8 @@ const ITaskBrowserTool: React.FC<any> = ({ docUrl }) => {
             {run.log && run.log.length > 0 && (
               <details>
                 <summary>logs</summary>
-                {run.log.map(([timestamp, msg]) => (
-                  <div key={timestamp}>
+                {run.log.map(([timestamp, msg], idx) => (
+                  <div key={idx}>
                     {new Date(timestamp).toLocaleString()}: {msg}
                   </div>
                 ))}
@@ -113,7 +113,8 @@ const Run: React.FC<any> = ({ run }: { run: RunInfo<any> }) => {
     <div>
       <div>
         {doc.contactUrl && <patchwork-view doc-url={doc.contactUrl} tool-id="contact-inline" />} /{' '}
-        {doc.name} → {status === 'succeeded' ? result : '✗'} ({timeAgo})
+        {doc.name} {status === 'succeeded' ? (result === undefined ? '' : '→ ' + result) : '✗'} (
+        {timeAgo})
       </div>
     </div>
   );
@@ -137,6 +138,7 @@ const ITaskQueueBrowserTool: React.FC<any> = ({ docUrl }) => {
     const messageHandler = (m: any) => {
       const msg = m.message as MessageToTaskQueueChannel;
       if (msg) {
+        console.log('received router heartbeat', msg);
         setWorkers(msg.workerUrls);
       }
     };
