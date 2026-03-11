@@ -167,4 +167,29 @@ export const plugins = [
       return (await import('./select/layer.js')).default
     },
   },
+  // -------------------------------------------------------------------------
+  // Embed tool + layer
+  // -------------------------------------------------------------------------
+  {
+    type: 'patchwork:tool' as const,
+    id: 'spatial-canvas-tool-embed',
+    name: 'Embed',
+    icon: '⊞',
+    tags: ['spatial-canvas-tool'],
+    supportedDatatypes: ['spatial-canvas'],
+    async load() {
+      return (await import('./embed/place-tool.js')).default
+    },
+  },
+  {
+    type: 'patchwork:tool' as const,
+    id: 'spatial-canvas-layer-embed',
+    name: 'Embed Layer',
+    icon: '⊞',
+    tags: ['spatial-canvas-layer'],
+    supportedDatatypes: ['spatial-canvas'],
+    async load() {
+      return (await import('./embed/layer.js')).default
+    },
+  },
 ]

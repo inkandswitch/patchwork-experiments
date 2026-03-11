@@ -10,6 +10,8 @@
     "sync": "vite build && pushwork sync"
   },
   "devDependencies": {
+    "@automerge/automerge-repo": "^2.5.3",
+    "@inkandswitch/patchwork-plugins": "^0.0.5",
     "typescript": "latest",
     "vite": "latest"
   },

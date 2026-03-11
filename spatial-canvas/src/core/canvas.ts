@@ -39,6 +39,8 @@ export class CanvasView {
   private screenBounds: Rect = { x: 0, y: 0, width: 0, height: 0 }
   private activeTool: string = ''
   private activePointerId: number | null = null
+  /** repo extracted from the ToolElement, passed through to inner tools */
+  private repo: unknown = undefined
 
   private inputs = new Inputs()
   private disposers: Disposer[] = []
@@ -47,6 +49,7 @@ export class CanvasView {
     private handle: DocHandle<CanvasDoc>,
     mountPoint: HTMLElement,
   ) {
+    this.repo = (mountPoint as any).repo
     injectStyles()
 
     // Build DOM scaffold
@@ -253,7 +256,7 @@ export class CanvasView {
   private buildToolbar() {
     const registry = getRegistry('patchwork:tool')
     const toolDescs = registry.filter(
-      p => (p.tags as string[] | undefined)?.includes('spatial-canvas-tool')
+      p => (p.tags as string[] | undefined)?.includes('spatial-canvas-tool') === true
     )
 
     for (const desc of toolDescs) {
@@ -268,10 +271,11 @@ export class CanvasView {
       // Mount the tool's implementation onto the button element.
       // The implementation listens for spatial-canvas:pointer* events on the
       // button and calls handle.change() directly.
+      // repo is passed as an optional third arg for tools that need to create docs.
       registry.load(desc.id).then(loaded => {
         if (!loaded) return
-        const dispose = (loaded.module as (h: DocHandle<CanvasDoc>, el: HTMLElement) => Disposer)(
-          this.handle, btn
+        const dispose = (loaded.module as (h: DocHandle<CanvasDoc>, el: HTMLElement, repo: unknown) => Disposer)(
+          this.handle, btn, this.repo
         )
         this.disposers.push(dispose)
       })
@@ -293,7 +297,7 @@ export class CanvasView {
   private mountLayers() {
     const registry = getRegistry('patchwork:tool')
     const layerDescs = registry.filter(
-      p => (p.tags as string[] | undefined)?.includes('spatial-canvas-layer')
+      p => (p.tags as string[] | undefined)?.includes('spatial-canvas-layer') === true
     )
 
     for (const desc of layerDescs) {
@@ -306,8 +310,8 @@ export class CanvasView {
 
       registry.load(desc.id).then(loaded => {
         if (!loaded) return
-        const dispose = (loaded.module as (h: DocHandle<CanvasDoc>, el: HTMLElement) => Disposer)(
-          this.handle, div
+        const dispose = (loaded.module as (h: DocHandle<CanvasDoc>, el: HTMLElement, repo: unknown) => Disposer)(
+          this.handle, div, this.repo
         )
         this.disposers.push(dispose)
       })
