@@ -3,22 +3,18 @@ import type { CanvasDoc, DocHandle } from "../core/types.js";
 import type { PenShape } from "./pen-tool.js";
 
 /**
- * PenLayer — renders all shapes with type === 'pen' as SVG paths inside a
- * single <svg> element.
+ * PenLayer — renders each 'pen' shape as its own <svg> element so that CSS
+ * z-index on the SVG participates in the same stacking context as the
+ * rectangle <div> elements from other layers.
  *
- * The SVG sits at top:0; left:0 with overflow:visible inside the camera-
- * transformed .sc-layer, so all stroke coordinates are already in canvas space.
- * The container has no z-index and does not form a stacking context, allowing
- * pen strokes to interleave freely with shapes from other layers via zIndex.
+ * A single shared <svg> would make all pen paths a single stacking unit,
+ * preventing cross-layer z-index interleaving. One SVG per stroke fixes this.
  */
 export default function PenLayer(handle: DocHandle<CanvasDoc>, element: HTMLElement): () => void {
   element.style.cssText = "position:absolute;inset:0;";
 
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.style.cssText = "position:absolute;top:0;left:0;overflow:visible;";
-  element.appendChild(svg);
-
-  const mounted = new Map<string, SVGPathElement>();
+  /** shapeId → the <svg> wrapper element for that stroke */
+  const mounted = new Map<string, { svg: SVGSVGElement; path: SVGPathElement }>();
 
   function toSvgPath(pts: number[][]): string {
     if (pts.length < 2) return "";
@@ -38,9 +34,9 @@ export default function PenLayer(handle: DocHandle<CanvasDoc>, element: HTMLElem
       if (shape.type === "pen") currentIds.add(shape.id);
     }
 
-    for (const [id, path] of mounted) {
+    for (const [id, { svg }] of mounted) {
       if (!currentIds.has(id)) {
-        path.remove();
+        svg.remove();
         mounted.delete(id);
       }
     }
@@ -49,20 +45,27 @@ export default function PenLayer(handle: DocHandle<CanvasDoc>, element: HTMLElem
       if (shape.type !== "pen") continue;
       const pen = shape as PenShape;
 
-      let path = mounted.get(pen.id);
-      if (!path) {
-        path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      let entry = mounted.get(pen.id);
+      if (!entry) {
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.style.cssText = "position:absolute;top:0;left:0;overflow:visible;";
+
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
         path.dataset.shapeId = pen.id;
-        path.style.pointerEvents = 'fill';
+        path.style.pointerEvents = "fill";
         svg.appendChild(path);
-        mounted.set(pen.id, path);
+        element.appendChild(svg);
+
+        entry = { svg, path };
+        mounted.set(pen.id, entry);
       }
 
+      const { svg, path } = entry;
       const outline = getStroke(pen.points, { size: 6, thinning: 0.5, smoothing: 0.5, streamline: 0.5 });
       path.setAttribute("d", toSvgPath(outline));
       path.setAttribute("fill", pen.color);
       path.setAttribute("transform", `translate(${pen.x},${pen.y})`);
-      path.style.zIndex = String(pen.zIndex);
+      svg.style.zIndex = String(pen.zIndex);
     }
   }
 
@@ -72,7 +75,7 @@ export default function PenLayer(handle: DocHandle<CanvasDoc>, element: HTMLElem
 
   return () => {
     handle.off("change", render);
-    svg.remove();
+    for (const { svg } of mounted.values()) svg.remove();
     mounted.clear();
   };
 }
