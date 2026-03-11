@@ -1,8 +1,8 @@
-import type { CanvasDoc, DocHandle, Disposer } from './types.js'
-import { CanvasView } from './canvas.js'
-import { RectangleDatatype, RectangleTool, rectanglePlugins } from './rectangle.js'
+import type { CanvasDoc, DocHandle, Disposer } from './core/types.js'
+import { CanvasView } from './core/canvas.js'
+import { rectanglePlugins } from './rectangle/rectangle.js'
 
-export type { CanvasDoc, CanvasShape } from './types.js'
+export type { CanvasDoc, CanvasShape } from './core/types.js'
 
 // ============================================================================
 // Spatial Canvas Datatype
@@ -17,67 +17,18 @@ export const SpatialCanvasDatatype = {
     return 'Spatial Canvas'
   },
 
-  markCopy(_doc: CanvasDoc) {
-    // Canvas has no meaningful title to prefix
-  },
+  markCopy(_doc: CanvasDoc) {},
 }
 
 // ============================================================================
 // Spatial Canvas Tool
-//
-// The tool function receives a DocHandle<CanvasDoc> and a mount element.
-// It constructs a CanvasView, wiring up the rectangle tool as the default
-// content renderer and shape-creation target.
-//
-// createChildDoc is not provided by the patchwork platform in this stub —
-// it falls back to creating a simple in-memory rectangle doc.
 // ============================================================================
 
 export function Tool(
   handle: DocHandle<CanvasDoc>,
   element: HTMLElement
 ): Disposer {
-  // In a real patchwork environment, createChildDoc would call the platform
-  // API to create a new synced Automerge document. Here we provide a minimal
-  // fallback that creates a local doc handle.
-  const createChildDoc = (_toolId: string): string => {
-    const fakeUrl = `automerge:${Math.random().toString(36).slice(2)}`
-    return fakeUrl
-  }
-
-  // Wire the rectangle tool as the content renderer for shapes
-  const mountContent = (container: HTMLElement, shape: { docUrl: string; toolId: string }) => {
-    if (shape.toolId === 'rectangle') {
-      // Create a minimal in-memory doc handle for the rectangle
-      let rectDoc = { color: '#4f8ef7', label: '' }
-      RectangleDatatype.init(rectDoc)
-
-      type ChangeListener = (p: { doc: typeof rectDoc }) => void
-      const listeners = new Set<ChangeListener>()
-
-      const rectHandle = {
-        doc: () => rectDoc,
-        on:  (_ev: 'change', cb: ChangeListener) => { listeners.add(cb) },
-        off: (_ev: 'change', cb: ChangeListener) => { listeners.delete(cb) },
-        change: (fn: (d: typeof rectDoc) => void) => {
-          fn(rectDoc)
-          for (const cb of listeners) cb({ doc: rectDoc })
-        },
-      }
-
-      return RectangleTool(rectHandle, container)
-    }
-
-    // Default: <patchwork-view>
-    const pw = document.createElement('patchwork-view') as HTMLElement
-    pw.setAttribute('doc-url', shape.docUrl)
-    pw.setAttribute('tool-id', shape.toolId)
-    pw.style.cssText = 'width:100%;height:100%;display:block;pointer-events:auto;'
-    container.appendChild(pw)
-    return () => pw.remove()
-  }
-
-  const view = new CanvasView(handle, element, { createChildDoc, mountContent })
+  const view = new CanvasView(handle, element)
   return () => view.dispose()
 }
 
@@ -106,6 +57,36 @@ export const plugins = [
     },
   },
   ...rectanglePlugins,
+  // -------------------------------------------------------------------------
+  // Render layers (tag: spatial-canvas-layer)
+  // Mounted into z-index:auto divs inside .sc-layer. Each layer
+  // self-subscribes to handle changes and renders its own element types.
+  // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // Canvas tools (tag: spatial-canvas-tool)
+  // Mounted onto toolbar button elements. Listen for spatial-canvas:pointer*
+  // CustomEvents and write shapes into the canvas doc directly.
+  // -------------------------------------------------------------------------
+  {
+    type: 'patchwork:tool' as const,
+    id: 'spatial-canvas-tool-place-rectangle',
+    name: 'Rectangle',
+    icon: '□',
+    tags: ['spatial-canvas-tool'],
+    supportedDatatypes: ['spatial-canvas'],
+    async load() {
+      return (await import('./rectangle/place-tool.js')).default
+    },
+  },
+  {
+    type: 'patchwork:tool' as const,
+    id: 'spatial-canvas-layer-rectangles',
+    name: 'Rectangle Layer',
+    icon: '□',
+    tags: ['spatial-canvas-layer'],
+    supportedDatatypes: ['spatial-canvas'],
+    async load() {
+      return (await import('./rectangle/layer.js')).default
+    },
+  },
 ]
-
-export { RectangleDatatype, RectangleTool }

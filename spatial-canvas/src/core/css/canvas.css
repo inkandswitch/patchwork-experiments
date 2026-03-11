@@ -1,14 +1,5 @@
-/* CSS variable cascade — set on .sc-container so all descendants inherit */
+/* Prevent browser from hijacking pointer gestures */
 .sc-container {
-  --sc-zoom: 1;
-  --sc-scale: calc(1 / var(--sc-zoom));
-  --sc-padding: calc(64px * max(1, var(--sc-scale)));
-
-  /* Performance mode defaults — overwritten by applyPerformanceMode() */
-  --sc-perf-all: auto;
-  --sc-perf-selected: auto;
-
-  /* Prevent browser from hijacking pointer gestures */
   touch-action: none;
   overscroll-behavior: none;
   user-select: none;
@@ -43,47 +34,6 @@
   height: 0;
   contain: layout style size;
   transform-origin: 0 0;
-}
-
-/* Selection brush rectangle */
-.sc-brush {
-  position: absolute;
-  pointer-events: none;
-  border: 1.5px solid #1a73e8;
-  background: rgba(26, 115, 232, 0.08);
-  contain: layout style size;
-  display: none;
-}
-
-.sc-brush.visible {
-  display: block;
-}
-
-/* Multiplayer cursors — in screen space, OUTSIDE .sc-layer */
-.sc-cursors {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  overflow: hidden;
-}
-
-.sc-cursor {
-  position: absolute;
-  pointer-events: none;
-  transform: translate(-2px, -2px);
-}
-
-.sc-cursor-label {
-  position: absolute;
-  top: 16px;
-  left: 4px;
-  background: var(--cursor-color, #1a73e8);
-  color: white;
-  font-size: 11px;
-  font-family: system-ui, sans-serif;
-  padding: 1px 5px;
-  border-radius: 3px;
-  white-space: nowrap;
 }
 
 /* Toolbar overlay */

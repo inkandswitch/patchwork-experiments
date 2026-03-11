@@ -1,4 +1,4 @@
-import type { Disposer } from './types.js'
+import type { Disposer } from '../core/types.js'
 
 // ============================================================================
 // Data model
