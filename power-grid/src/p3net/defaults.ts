@@ -48,12 +48,16 @@ export default (handle, repo) => defineNet({
           d.done = false
         })
 
-        // Start the process; mark done when it resolves
+        // Start the process; mark done on both the process doc and the running token when it resolves
         runLLMProcess(repo, processHandle.url).then(() => {
           processHandle.change(d => { d.done = true })
+          handle.change(d => {
+            const t = (d.tokens?.running ?? []).find(t => t.state.llmProcess === processHandle.url)
+            if (t) t.state.done = true
+          })
         })
 
-        produce({ type: 'llm-process', llmProcess: processHandle.url, prompt: prompts.state.prompt }, 'running')
+        produce({ type: 'llm-process', llmProcess: processHandle.url, prompt: prompts.state.prompt, done: false }, 'running')
       },
     },
 
@@ -116,7 +120,7 @@ export default (handle, repo) => defineNet({
   getColor(state) {
     if (state.type === 'prompt') return '#7c3aed'
     if (state.type === 'solution') return '#0891b2'
-    if (state.type === 'llm-process') return '#d97706'
+    if (state.type === 'llm-process') return state.done ? '#16a34a' : '#d97706'
     return '#6b7280'
   },
 
