@@ -11,6 +11,7 @@ export type { CanvasDoc, CanvasShape } from './core/types.js'
 export const SpatialCanvasDatatype = {
   init(doc: CanvasDoc) {
     doc.shapes = {}
+    doc.selectionByUser = {}
   },
 
   getTitle(_doc: CanvasDoc): string {
@@ -108,6 +109,17 @@ export const plugins = [
   },
   {
     type: 'patchwork:tool' as const,
+    id: 'spatial-canvas-tool-select',
+    name: 'Select',
+    icon: '⬚',
+    tags: ['spatial-canvas-tool'],
+    supportedDatatypes: ['spatial-canvas'],
+    async load() {
+      return (await import('./select/select-tool.js')).default
+    },
+  },
+  {
+    type: 'patchwork:tool' as const,
     id: 'spatial-canvas-tool-delete',
     name: 'Delete',
     icon: '⌫',
@@ -142,6 +154,17 @@ export const plugins = [
     supportedDatatypes: ['spatial-canvas'],
     async load() {
       return (await import('./pen/layer.js')).default
+    },
+  },
+  {
+    type: 'patchwork:tool' as const,
+    id: 'spatial-canvas-layer-selection',
+    name: 'Selection Layer',
+    icon: '⬚',
+    tags: ['spatial-canvas-layer'],
+    supportedDatatypes: ['spatial-canvas'],
+    async load() {
+      return (await import('./select/layer.js')).default
     },
   },
 ]

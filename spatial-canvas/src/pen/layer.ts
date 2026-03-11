@@ -53,6 +53,7 @@ export default function PenLayer(handle: DocHandle<CanvasDoc>, element: HTMLElem
       if (!path) {
         path = document.createElementNS("http://www.w3.org/2000/svg", "path");
         path.dataset.shapeId = pen.id;
+        path.style.pointerEvents = 'fill';
         svg.appendChild(path);
         mounted.set(pen.id, path);
       }
@@ -60,6 +61,7 @@ export default function PenLayer(handle: DocHandle<CanvasDoc>, element: HTMLElem
       const outline = getStroke(pen.points, { size: 6, thinning: 0.5, smoothing: 0.5, streamline: 0.5 });
       path.setAttribute("d", toSvgPath(outline));
       path.setAttribute("fill", pen.color);
+      path.setAttribute("transform", `translate(${pen.x},${pen.y})`);
       path.style.zIndex = String(pen.zIndex);
     }
   }

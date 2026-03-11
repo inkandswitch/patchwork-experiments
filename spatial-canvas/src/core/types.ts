@@ -18,6 +18,7 @@ export interface CanvasShape {
 
 export interface CanvasDoc {
   shapes: Record<string, CanvasShape>
+  selectionByUser: { [contactUrl: string]: { [shapeId: string]: true } }
 }
 
 // ============================================================================

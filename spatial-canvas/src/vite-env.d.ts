@@ -1,5 +1,9 @@
 /// <reference types="vite/client" />
 
+interface Window {
+  accountDocHandle?: { doc(): { contactUrl: string } | undefined }
+}
+
 declare module '*.css?inline' {
   const content: string
   export default content
