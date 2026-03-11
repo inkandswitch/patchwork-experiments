@@ -4,16 +4,16 @@
 
 export type AutomergeUrl = string
 
+/**
+ * Minimal base shape stored in the canvas doc.
+ * Each tool extends this with its own fields (e.g. RectangleShape, PenShape).
+ */
 export interface CanvasShape {
   id: string
   x: number
   y: number
-  width: number
-  height: number
-  rotation: number  // radians
   zIndex: number
-  docUrl: AutomergeUrl
-  toolId: string
+  type: string
 }
 
 export interface CanvasDoc {
@@ -53,18 +53,6 @@ export interface PointerInfo {
   shiftKey: boolean
   metaKey: boolean
   altKey: boolean
-}
-
-export interface Session {
-  update(info: PointerInfo): void
-  complete(info: PointerInfo): void
-  cancel(): void
-}
-
-export interface MountedShape {
-  updatePosition(shape: CanvasShape): void
-  setSelected(selected: boolean): void
-  unmount(): void
 }
 
 export type Disposer = () => void

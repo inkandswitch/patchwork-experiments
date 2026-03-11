@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      perfect-freehand:
+        specifier: ^1.2.3
+        version: 1.2.3
     devDependencies:
       typescript:
         specifier: latest
@@ -325,6 +329,9 @@ packages:
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
+  perfect-freehand@1.2.3:
+    resolution: {integrity: sha512-bHZSfqDHGNlPpgH2yxXgPHlQSPpEbo+qg7li0M78J9vNAi2yjwLeA4x79BEQhX44lEWpCLSFCeRZwpw0niiXPA==}
+
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
 
@@ -588,6 +595,8 @@ snapshots:
     optional: true
 
   nanoid@3.3.11: {}
+
+  perfect-freehand@1.2.3: {}
 
   picocolors@1.1.1: {}
 

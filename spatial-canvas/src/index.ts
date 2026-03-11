@@ -58,11 +58,6 @@ export const plugins = [
   },
   ...rectanglePlugins,
   // -------------------------------------------------------------------------
-  // Render layers (tag: spatial-canvas-layer)
-  // Mounted into z-index:auto divs inside .sc-layer. Each layer
-  // self-subscribes to handle changes and renders its own element types.
-  // -------------------------------------------------------------------------
-  // -------------------------------------------------------------------------
   // Canvas tools (tag: spatial-canvas-tool)
   // Mounted onto toolbar button elements. Listen for spatial-canvas:pointer*
   // CustomEvents and write shapes into the canvas doc directly.
@@ -80,6 +75,44 @@ export const plugins = [
   },
   {
     type: 'patchwork:tool' as const,
+    id: 'spatial-canvas-tool-pen-black',
+    name: 'Pen (Black)',
+    icon: '✒',
+    tags: ['spatial-canvas-tool'],
+    supportedDatatypes: ['spatial-canvas'],
+    async load() {
+      return (await import('./pen/pen-tool.js')).PenBlackTool
+    },
+  },
+  {
+    type: 'patchwork:tool' as const,
+    id: 'spatial-canvas-tool-pen-blue',
+    name: 'Pen (Blue)',
+    icon: '✒',
+    tags: ['spatial-canvas-tool'],
+    supportedDatatypes: ['spatial-canvas'],
+    async load() {
+      return (await import('./pen/pen-tool.js')).PenBlueTool
+    },
+  },
+  {
+    type: 'patchwork:tool' as const,
+    id: 'spatial-canvas-tool-pen-red',
+    name: 'Pen (Red)',
+    icon: '✒',
+    tags: ['spatial-canvas-tool'],
+    supportedDatatypes: ['spatial-canvas'],
+    async load() {
+      return (await import('./pen/pen-tool.js')).PenRedTool
+    },
+  },
+  // -------------------------------------------------------------------------
+  // Render layers (tag: spatial-canvas-layer)
+  // Mounted into z-index:auto divs inside .sc-layer. Each layer
+  // self-subscribes to handle changes and renders its own element types.
+  // -------------------------------------------------------------------------
+  {
+    type: 'patchwork:tool' as const,
     id: 'spatial-canvas-layer-rectangles',
     name: 'Rectangle Layer',
     icon: '□',
@@ -87,6 +120,17 @@ export const plugins = [
     supportedDatatypes: ['spatial-canvas'],
     async load() {
       return (await import('./rectangle/layer.js')).default
+    },
+  },
+  {
+    type: 'patchwork:tool' as const,
+    id: 'spatial-canvas-layer-pen',
+    name: 'Pen Layer',
+    icon: '✒',
+    tags: ['spatial-canvas-layer'],
+    supportedDatatypes: ['spatial-canvas'],
+    async load() {
+      return (await import('./pen/layer.js')).default
     },
   },
 ]

@@ -1,5 +1,6 @@
 import type { CanvasDoc, DocHandle, Disposer } from '../core/types.js'
 import { createShape, nextZIndex, newId } from '../core/commands.js'
+import type { RectangleShape } from './rectangle.js'
 
 interface PointerDetail {
   canvasX: number
@@ -65,17 +66,16 @@ export default function PlaceRectangleTool(
     if (width > 4 && height > 4) {
       const doc = handle.doc()
       const zIndex = doc ? nextZIndex(doc) : 0
-      createShape(handle, {
+      const shape: RectangleShape = {
         id: newId(),
+        type: 'rectangle',
         x,
         y,
         width,
         height,
-        rotation: 0,
         zIndex,
-        docUrl: '',
-        toolId: 'rectangle',
-      })
+      }
+      createShape(handle, shape)
     }
 
     cleanup()

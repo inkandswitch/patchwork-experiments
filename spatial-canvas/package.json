@@ -12,5 +12,8 @@
   "devDependencies": {
     "typescript": "latest",
     "vite": "latest"
+  },
+  "dependencies": {
+    "perfect-freehand": "^1.2.3"
   }
 }

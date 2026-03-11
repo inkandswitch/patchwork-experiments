@@ -1,4 +1,14 @@
-import type { Disposer } from '../core/types.js'
+import type { CanvasShape, Disposer } from '../core/types.js'
+
+// ============================================================================
+// Shape type
+// ============================================================================
+
+export interface RectangleShape extends CanvasShape {
+  type: 'rectangle'
+  width: number
+  height: number
+}
 
 // ============================================================================
 // Data model

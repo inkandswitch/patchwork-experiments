@@ -1,7 +1,8 @@
 import type { CanvasDoc, DocHandle } from '../core/types.js'
+import type { RectangleShape } from './rectangle.js'
 
 /**
- * RectangleLayer — renders all shapes with toolId === 'rectangle' as
+ * RectangleLayer — renders all shapes with type === 'rectangle' as
  * positioned divs inside the provided container element.
  *
  * The container lives inside .sc-layer which already has the camera CSS
@@ -19,13 +20,11 @@ export default function RectangleLayer(
   element.style.cssText = 'position:absolute;inset:0;'
 
   function render({ doc }: { doc: CanvasDoc }) {
-    // Collect ids of rectangle shapes currently in the doc
     const currentIds = new Set<string>()
     for (const shape of Object.values(doc.shapes)) {
-      if (shape.toolId === 'rectangle') currentIds.add(shape.id)
+      if (shape.type === 'rectangle') currentIds.add(shape.id)
     }
 
-    // Remove elements for shapes that are gone or changed type
     for (const [id, el] of mounted) {
       if (!currentIds.has(id)) {
         el.remove()
@@ -33,22 +32,22 @@ export default function RectangleLayer(
       }
     }
 
-    // Add or update elements for current rectangle shapes
     for (const shape of Object.values(doc.shapes)) {
-      if (shape.toolId !== 'rectangle') continue
+      if (shape.type !== 'rectangle') continue
+      const rect = shape as RectangleShape
 
-      let el = mounted.get(shape.id)
+      let el = mounted.get(rect.id)
       if (!el) {
         el = document.createElement('div')
         el.style.cssText = 'position:absolute;top:0;left:0;box-sizing:border-box;'
         element.appendChild(el)
-        mounted.set(shape.id, el)
+        mounted.set(rect.id, el)
       }
 
-      el.style.transform = `translate(${shape.x}px, ${shape.y}px)`
-      el.style.width = `${shape.width}px`
-      el.style.height = `${shape.height}px`
-      el.style.zIndex = String(shape.zIndex)
+      el.style.transform = `translate(${rect.x}px, ${rect.y}px)`
+      el.style.width = `${rect.width}px`
+      el.style.height = `${rect.height}px`
+      el.style.zIndex = String(rect.zIndex)
       el.style.background = '#4f8ef7'
       el.style.border = '1.5px solid #2255cc'
     }
