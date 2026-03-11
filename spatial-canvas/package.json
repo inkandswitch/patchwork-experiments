@@ -16,6 +16,7 @@
     "vite": "latest"
   },
   "dependencies": {
+    "@automerge/automerge": "^3.2.4",
     "lucide": "^0.577.0",
     "perfect-freehand": "^1.2.3"
   }

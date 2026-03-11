@@ -107,6 +107,17 @@ export const plugins = [
   },
   {
     type: 'patchwork:tool' as const,
+    id: 'spatial-canvas-tool-text',
+    name: 'Text',
+    icon: 'Type',
+    tags: ['spatial-canvas-tool'],
+    supportedDatatypes: ['spatial-canvas'],
+    async load() {
+      return (await import('./text/place-tool.js')).default
+    },
+  },
+  {
+    type: 'patchwork:tool' as const,
     id: 'spatial-canvas-tool-embed',
     name: 'Embed',
     icon: 'Layers',
@@ -150,6 +161,28 @@ export const plugins = [
     supportedDatatypes: ['spatial-canvas'],
     async load() {
       return (await import('./select/layer.js')).default
+    },
+  },
+  {
+    type: 'patchwork:tool' as const,
+    id: 'spatial-canvas-layer-text',
+    name: 'Text Layer',
+    icon: 'Type',
+    tags: ['spatial-canvas-layer'],
+    supportedDatatypes: ['spatial-canvas'],
+    async load() {
+      return (await import('./text/layer.js')).default
+    },
+  },
+  {
+    type: 'patchwork:tool' as const,
+    id: 'spatial-canvas-layer-image',
+    name: 'Image Layer',
+    icon: 'Image',
+    tags: ['spatial-canvas-layer'],
+    supportedDatatypes: ['spatial-canvas'],
+    async load() {
+      return (await import('./image/layer.js')).default
     },
   },
   {

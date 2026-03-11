@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@automerge/automerge':
+        specifier: ^3.2.4
+        version: 3.2.4
       lucide:
         specifier: ^0.577.0
         version: 0.577.0
@@ -529,7 +532,7 @@ snapshots:
 
   '@automerge/automerge-repo@2.5.0':
     dependencies:
-      '@automerge/automerge': 3.2.1
+      '@automerge/automerge': 3.2.4
       bs58check: 3.0.1
       cbor-x: 1.6.4
       debug: 4.4.3

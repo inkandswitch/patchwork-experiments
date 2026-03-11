@@ -43,7 +43,7 @@ export default function RectangleLayer(
       let el = mounted.get(rect.id)
       if (!el) {
         el = document.createElement('div')
-        el.style.cssText = 'position:absolute;top:0;left:0;box-sizing:border-box;'
+        el.style.cssText = 'position:absolute;top:0;left:0;box-sizing:border-box;border-radius:8px;'
         el.dataset.shapeId = rect.id
         element.appendChild(el)
         mounted.set(rect.id, el)
@@ -56,7 +56,7 @@ export default function RectangleLayer(
       el.style.width = `${rect.width}px`
       el.style.height = `${rect.height}px`
       el.style.zIndex = String(rect.zIndex)
-      el.style.border = `1.5px solid ${color}`
+      el.style.border = `2.5px solid ${color}`
 
       if (fill === 'transparent') {
         el.style.background = 'transparent'

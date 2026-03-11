@@ -1,5 +1,6 @@
 import type { CanvasDoc, DocHandle, Disposer } from '../core/types.js'
 import type { RectangleFill } from '../rectangle/rectangle.js'
+import type { TextShape } from '../text/text.js'
 
 const COLORS = [
   '#1a1a1a', '#9ca3af', '#c084fc', '#7c3aed',
@@ -147,10 +148,65 @@ export default function PropertiesPanel(
     fillRow.appendChild(btn)
   }
 
+  // ---- Divider ----
+  const divider2 = document.createElement('div')
+  divider2.style.cssText = 'height:1px;background:#e0e0e0;margin:0 -2px;'
+  element.appendChild(divider2)
+
+  // ---- Font size row ----
+  const fontSizeRow = document.createElement('div')
+  fontSizeRow.style.cssText = 'display:flex;gap:4px;justify-content:center;'
+  element.appendChild(fontSizeRow)
+
+  const FONT_SIZES: { label: string; value: number }[] = [
+    { label: 'S',  value: 14 },
+    { label: 'M',  value: 18 },
+    { label: 'L',  value: 24 },
+    { label: 'XL', value: 36 },
+  ]
+  const fontSizeBtns = new Map<number, HTMLButtonElement>()
+
+  function getCurrentFontSize(): number {
+    return handle.doc()?.stateByUser?.[contactUrl]?.fontSize ?? 18
+  }
+
+  function setFontSizeActive(size: number) {
+    for (const [v, btn] of fontSizeBtns) {
+      btn.style.background = v === size ? '#e8e8e8' : 'transparent'
+    }
+  }
+
+  function applyFontSize(newSize: number) {
+    handle.change(d => {
+      if (!d.stateByUser) d.stateByUser = {}
+      if (!d.stateByUser[contactUrl]) {
+        d.stateByUser[contactUrl] = { selection: {}, color: DEFAULT_COLOR, fontSize: newSize }
+      } else {
+        d.stateByUser[contactUrl].fontSize = newSize
+      }
+      const selection = d.stateByUser[contactUrl].selection ?? {}
+      for (const shapeId of Object.keys(selection)) {
+        const shape = d.shapes[shapeId]
+        if (shape?.type === 'text') (shape as unknown as TextShape).fontSize = newSize
+      }
+    })
+  }
+
+  for (const { label, value } of FONT_SIZES) {
+    const btn = document.createElement('button')
+    btn.style.cssText = 'width:32px;height:32px;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;border-radius:5px;transition:background 0.1s;font:13px/1 system-ui,sans-serif;font-weight:500;color:#444;'
+    btn.textContent = label
+    btn.title = `Font size ${value}px`
+    btn.addEventListener('click', () => applyFontSize(value))
+    fontSizeBtns.set(value, btn)
+    fontSizeRow.appendChild(btn)
+  }
+
   // ---- Sync on doc change ----
   function onDocChange() {
     setColorActive(getCurrentColor())
     setFillActive(getCurrentFill())
+    setFontSizeActive(getCurrentFontSize())
   }
 
   handle.on('change', onDocChange)

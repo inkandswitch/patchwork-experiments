@@ -23,8 +23,10 @@ export function updateCamera(
     zoom: clampZoom(next.zoom),
   }
 
-  // 1. CSS variable — flows to --sc-scale and --sc-padding throughout the tree
+  // 1. CSS variables — read by layers that need coordinate conversion
   container.style.setProperty('--sc-zoom', camera.zoom.toString())
+  container.style.setProperty('--sc-x', camera.x.toString())
+  container.style.setProperty('--sc-y', camera.y.toString())
 
   // 2. Layer transform — scale then translate (CSS composes right-to-left,
   //    so translate executes first in page coordinates, then scale)

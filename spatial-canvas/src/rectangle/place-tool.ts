@@ -73,10 +73,11 @@ export default function PlaceRectangleTool(
       'top:0',
       'left:0',
       'box-sizing:border-box',
+      'border-radius:8px',
       'pointer-events:none',
       'z-index:2147483647',
       `background:${previewBackground(color, fill)}`,
-      `border:1.5px solid ${color}`,
+      `border:2.5px solid ${color}`,
     ].join(';')
 
     updatePreview(canvasX, canvasY, canvasX, canvasY)

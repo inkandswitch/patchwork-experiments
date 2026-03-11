@@ -20,6 +20,7 @@ export interface UserState {
   selection: { [shapeId: string]: true }
   color: string
   fill?: 'transparent' | 'white' | 'filled'
+  fontSize?: number
 }
 
 /**
