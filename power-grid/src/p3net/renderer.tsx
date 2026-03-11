@@ -1,7 +1,8 @@
-import React, { useMemo, useRef, useCallback } from 'react';
+import React, { useMemo, useRef, useCallback, useEffect } from 'react';
 import { computeLayout } from './layout';
 import type { NetLayout } from './layout';
 import type { NetDef, NetState, TokenTypeDef, TokenState, TokenInstance } from './lib';
+import type { TransitionFiring, AnimTokenInfo } from './lib';
 import type { CanvasToken } from './doc';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -12,6 +13,7 @@ const TRANSITION_H = 32;
 const ARC_CURVE = 30;
 const CANVAS_PAD = 200;
 const LAYOUT_PAD = 80;
+const ANIM_SPEED = 300; // px/s — constant token travel speed
 
 // ─── Layout net conversion ────────────────────────────────────────────────────
 
@@ -93,7 +95,6 @@ export function resolveTokenColor(
   def: NetDef,
 ): string {
   if (def.getColor) return def.getColor(state);
-  // Fallback: look up palette chip color by state.type
   const typeDef = def.tokenTypes.find((t) => t.id === state.type);
   return typeDef?.color ?? '#6b7280';
 }
@@ -131,6 +132,192 @@ function TokenDot({ token, def, selected, onDragStart, onClick }: TokenDotProps)
   );
 }
 
+// ─── Animation helpers ────────────────────────────────────────────────────────
+
+function dist2d(ax: number, ay: number, bx: number, by: number): number {
+  return Math.sqrt((bx - ax) ** 2 + (by - ay) ** 2);
+}
+
+/** Returns a Promise that resolves when the Animation finishes. */
+function animateEl(
+  el: HTMLElement,
+  keyframes: Keyframe[],
+  durationMs: number,
+): Promise<void> {
+  return new Promise((resolve) => {
+    const anim = el.animate(keyframes, {
+      duration: durationMs,
+      fill: 'forwards',
+      easing: 'ease-in-out',
+    });
+    anim.onfinish = () => resolve();
+    anim.oncancel = () => resolve();
+  });
+}
+
+/** Creates a flying-token div at the given center (x, y) in the container. */
+function createFlyingToken(
+  container: HTMLElement,
+  color: string,
+  cx: number,
+  cy: number,
+  opacity = 1,
+): HTMLElement {
+  const el = document.createElement('div');
+  el.className = 'p3n-flying-token';
+  el.style.cssText = `background:${color};opacity:${opacity};transform:translate(${cx - 7}px,${cy - 7}px)`;
+  container.appendChild(el);
+  return el;
+}
+
+/** Creates a hull circle centred at (cx, cy) with given radius. */
+function createHull(container: HTMLElement, cx: number, cy: number, r: number): HTMLElement {
+  const el = document.createElement('div');
+  el.className = 'p3n-token-hull';
+  const size = r * 2;
+  el.style.cssText = `width:${size}px;height:${size}px;transform:translate(${cx - r}px,${cy - r}px);opacity:0`;
+  container.appendChild(el);
+  return el;
+}
+
+// ─── Animation layer ──────────────────────────────────────────────────────────
+
+interface AnimationLayerProps {
+  firings: TransitionFiring[];
+  layout: NetLayout;
+  offsetX: number;
+  offsetY: number;
+  def: NetDef;
+  onRemoveInputs: () => void;
+  onAddOutput: (id: string) => void;
+  onComplete: () => void;
+}
+
+function AnimationLayer({
+  firings,
+  layout,
+  offsetX,
+  offsetY,
+  def,
+  onRemoveInputs,
+  onAddOutput,
+  onComplete,
+}: AnimationLayerProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Stable refs so the effect doesn't need to re-run when callbacks change
+  const onRemoveInputsRef = useRef(onRemoveInputs);
+  const onAddOutputRef = useRef(onAddOutput);
+  const onCompleteRef = useRef(onComplete);
+  useEffect(() => { onRemoveInputsRef.current = onRemoveInputs; }, [onRemoveInputs]);
+  useEffect(() => { onAddOutputRef.current = onAddOutput; }, [onAddOutput]);
+  useEffect(() => { onCompleteRef.current = onComplete; }, [onComplete]);
+
+  useEffect(() => {
+    const container: HTMLElement | null = containerRef.current;
+    if (!container || firings.length === 0) return;
+    // Capture as non-null for use inside async callbacks
+    const c = container;
+
+    let cancelled = false;
+    const created: HTMLElement[] = [];
+
+    function make(el: HTMLElement): HTMLElement {
+      created.push(el);
+      return el;
+    }
+
+    async function animateFiring(firing: TransitionFiring): Promise<void> {
+      const tPos = layout.get(firing.transitionId);
+      if (!tPos) return;
+      const tx = tPos.x + offsetX;
+      const ty = tPos.y + offsetY;
+
+      // ── Phase 1: input tokens fly to transition center ──────────────────
+      const inputEls = firing.inputs.map((inp) => {
+        const srcPos = layout.get(inp.placeId);
+        const sx = srcPos ? srcPos.x + offsetX : tx;
+        const sy = srcPos ? srcPos.y + offsetY : ty;
+        const color = resolveTokenColor(inp.state, def);
+        return { el: make(createFlyingToken(c, color, sx, sy)), sx, sy };
+      });
+
+      onRemoveInputsRef.current();
+
+      await Promise.all(
+        inputEls.map(({ el, sx, sy }) => {
+          const d = dist2d(sx, sy, tx, ty);
+          const duration = Math.max(200, (d / ANIM_SPEED) * 1000);
+          return animateEl(el, [
+            { transform: `translate(${sx - 7}px,${sy - 7}px)` },
+            { transform: `translate(${tx - 7}px,${ty - 7}px)` },
+          ], duration);
+        }),
+      );
+
+      if (cancelled) return;
+
+      // ── Phase 2: hull fades in ──────────────────────────────────────────
+      const HULL_R = 20;
+      const hull = make(createHull(c, tx, ty, HULL_R));
+      await animateEl(hull, [{ opacity: 0, transform: `translate(${tx - HULL_R * 0.7}px,${ty - HULL_R * 0.7}px) scale(0.7)` }, { opacity: 1, transform: `translate(${tx - HULL_R}px,${ty - HULL_R}px) scale(1)` }], 200);
+
+      if (cancelled) return;
+
+      // ── Phase 3: inputs fade out, outputs fade in ───────────────────────
+      const outputEls = firing.outputs.map((out) => {
+        const color = resolveTokenColor(out.state, def);
+        return { el: make(createFlyingToken(c, color, tx, ty, 0)), out };
+      });
+
+      await Promise.all([
+        ...inputEls.map(({ el }) =>
+          animateEl(el, [{ opacity: 1 }, { opacity: 0 }], 200),
+        ),
+        ...outputEls.map(({ el }) =>
+          animateEl(el, [{ opacity: 0 }, { opacity: 1 }], 200),
+        ),
+      ]);
+
+      if (cancelled) return;
+
+      // ── Phase 4: hull fades out ─────────────────────────────────────────
+      await animateEl(hull, [{ opacity: 1 }, { opacity: 0 }], 150);
+
+      if (cancelled) return;
+
+      // ── Phase 5: output tokens fly to destinations ──────────────────────
+      await Promise.all(
+        outputEls.map(({ el, out }) => {
+          const dstPos = layout.get(out.placeId);
+          const dx = dstPos ? dstPos.x + offsetX : tx;
+          const dy = dstPos ? dstPos.y + offsetY : ty;
+          const d = dist2d(tx, ty, dx, dy);
+          const duration = Math.max(200, (d / ANIM_SPEED) * 1000);
+          return animateEl(el, [
+            { transform: `translate(${tx - 7}px,${ty - 7}px)` },
+            { transform: `translate(${dx - 7}px,${dy - 7}px)` },
+          ], duration).then(() => {
+            if (!cancelled) onAddOutputRef.current(out.id);
+          });
+        }),
+      );
+    }
+
+    Promise.all(firings.map((f) => animateFiring(f))).then(() => {
+      if (!cancelled) onCompleteRef.current();
+    });
+
+    return () => {
+      cancelled = true;
+      for (const el of created) el.remove();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firings]);
+
+  return <div ref={containerRef} className="p3n-anim-layer" />;
+}
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 export interface RendererProps {
@@ -141,6 +328,16 @@ export interface RendererProps {
   onSelectToken: (id: string | null) => void;
   onDropOnPlace: (payload: DragPayload, placeId: string) => void;
   onDropOnCanvas: (payload: DragPayload, x: number, y: number) => void;
+  /** Token IDs to hide in their places during animation. */
+  hiddenTokenIds?: Set<string>;
+  /** Firings currently being animated. */
+  animatingFirings?: TransitionFiring[];
+  /** Called when the animation layer removes input tokens from the doc. */
+  onAnimRemoveInputs?: () => void;
+  /** Called when each output token lands at its destination. */
+  onAnimAddOutput?: (id: string) => void;
+  /** Called when all firing animations have completed. */
+  onAnimComplete?: () => void;
 }
 
 // ─── Renderer ─────────────────────────────────────────────────────────────────
@@ -153,6 +350,11 @@ export function P3NetRenderer({
   onSelectToken,
   onDropOnPlace,
   onDropOnCanvas,
+  hiddenTokenIds,
+  animatingFirings,
+  onAnimRemoveInputs,
+  onAnimAddOutput,
+  onAnimComplete,
 }: RendererProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const layoutNet = useMemo(() => toLayoutNet(def), [def]);
@@ -227,6 +429,10 @@ export function P3NetRenderer({
     [offsetX, offsetY, onDropOnCanvas],
   );
 
+  // Stable no-op fallbacks so AnimationLayer always gets real functions
+  const noop = useCallback(() => {}, []);
+  const noopId = useCallback((_id: string) => {}, []);
+
   return (
     <div
       ref={containerRef}
@@ -275,7 +481,9 @@ export function P3NetRenderer({
       {def.places.map((placeId) => {
         const pos = layout.get(placeId);
         if (!pos) return null;
-        const placeTokens = tokens[placeId] ?? [];
+        const placeTokens = (tokens[placeId] ?? []).filter(
+          (t) => !hiddenTokenIds?.has(t.id),
+        );
 
         return (
           <div
@@ -327,6 +535,19 @@ export function P3NetRenderer({
             key={t.id}
             className="p3n-transition"
             style={{ left: pos.x + offsetX, top: pos.y + offsetY }}
+          />
+        );
+      })}
+
+      {/* ── Transition labels ─────────────────────────────────────────────── */}
+      {def.transitions.map((t) => {
+        const pos = layout.get(t.id);
+        if (!pos) return null;
+        return (
+          <div
+            key={`tlbl-${t.id}`}
+            className="p3n-transition-label"
+            style={{ left: pos.x + offsetX, top: pos.y + offsetY + TRANSITION_H / 2 + 8 }}
           >
             {t.id}
           </div>
@@ -357,6 +578,20 @@ export function P3NetRenderer({
           </div>
         );
       })}
+
+      {/* ── Animation layer ──────────────────────────────────────────────── */}
+      {animatingFirings && animatingFirings.length > 0 && (
+        <AnimationLayer
+          firings={animatingFirings}
+          layout={layout}
+          offsetX={offsetX}
+          offsetY={offsetY}
+          def={def}
+          onRemoveInputs={onAnimRemoveInputs ?? noop}
+          onAddOutput={onAnimAddOutput ?? noopId}
+          onComplete={onAnimComplete ?? noop}
+        />
+      )}
     </div>
   );
 }

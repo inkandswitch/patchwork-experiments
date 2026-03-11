@@ -27,42 +27,40 @@ export type TokenTypeDef = {
   create: (repo: Repo) => TokenState;
 };
 
-/**
- * Imperative handle scoped to a single token during a transition.
- * Call change() to mutate the token's state, or destroy() to consume
- * the token without forwarding it to output places.
- */
-export interface Token {
-  readonly id: string;
-  readonly state: TokenState;
-  change(fn: (state: TokenState) => void): void;
-  destroy(): void;
-}
+/** Readonly view of a single input token passed to guard and onTokens. */
+export type ReadonlyToken = { readonly id: string; readonly state: TokenState };
 
-/** Map of placeId → Token, one entry per from-place. */
-export type Tokens = { [placeId: string]: Token };
+/** Map of placeId → ReadonlyToken, one entry per from-place. */
+export type ReadonlyTokens = { [placeId: string]: ReadonlyToken };
 
 /**
- * Produce a new token into the output.
- * If `toPlace` is given, deposits only into that specific output place.
- * If omitted, deposits into all `to` places of the transition.
+ * Declarative description of what a transition should do with its input tokens.
+ *
+ * - `destroy`: placeId keys whose tokens should be consumed (not forwarded).
+ * - `produce`: explicit new tokens to emit into output places.
+ *   - If `produce` is non-empty: all non-destroyed inputs are also consumed
+ *     (not forwarded). Only the listed tokens go to output.
+ *   - If `produce` is absent/empty: non-destroyed inputs are forwarded to all
+ *     to-places unchanged.
  */
-export type ProduceFn = (state: TokenState, toPlace?: string) => void;
+export type TokensResult = {
+  destroy?: string[];
+  produce?: { state: TokenState; toPlace?: string }[];
+};
 
 export type TransitionDef = {
   id: string;
   from: string[];
   to: string[];
   /** Return false (or a Promise resolving to false) to prevent this transition from firing. */
-  guard?: (tokens: Tokens) => boolean | Promise<boolean>;
+  guard?: (tokens: ReadonlyTokens) => boolean | Promise<boolean>;
   /**
-   * Called when the transition fires. May be async.
-   * Mutate/destroy input tokens and/or call produce() to emit new tokens.
-   * If produce() is never called, non-destroyed input tokens are forwarded
-   * to all to-places (default single-input behaviour).
-   * produce() can be called at any point — including after awaits.
+   * Called when the transition fires. Returns a declarative description of
+   * what should happen to the tokens. May be async.
+   *
+   * If omitted, all input tokens are forwarded unchanged to all to-places.
    */
-  onTokens?: (tokens: Tokens, produce: ProduceFn, repo: Repo) => void | Promise<void>;
+  onTokens?: (tokens: ReadonlyTokens, repo: Repo) => TokensResult | Promise<TokensResult>;
 };
 
 export type NetDef = {
@@ -73,16 +71,46 @@ export type NetDef = {
   getColor?: (state: TokenState) => string;
 };
 
+// ─── Animation + incremental doc-mutation types ───────────────────────────────
+
+/** Info about a single token involved in an animation. */
+export type AnimTokenInfo = {
+  id: string;
+  placeId: string;
+  state: TokenState;
+};
+
+/** Describes one transition firing — used to drive animation. */
+export type TransitionFiring = {
+  transitionId: string;
+  /** Tokens being consumed (still in doc until removeInputs() is called). */
+  inputs: AnimTokenInfo[];
+  /** Tokens to produce (pre-generated IDs, not yet in doc). */
+  outputs: AnimTokenInfo[];
+};
+
+/**
+ * Returned by prepareStep(). Holds the animation data and two callbacks that
+ * apply the doc mutations incrementally as the animation plays.
+ */
+export type PendingStep = {
+  firings: TransitionFiring[];
+  /** Remove all input tokens from the doc. Call at the start of Phase 1. */
+  removeInputs(): void;
+  /** Add a single output token to the doc. Call as each animated token lands. */
+  addOutput(id: string): void;
+};
+
 export interface PetriNet {
   readonly def: NetDef;
   /**
-   * Advance the net one step. Returns a Promise because onTokens/guard may be async.
-   * For each fireable transition (all from-places have ≥1 token, guard passes):
-   *   - Awaits onTokens with one token per from-place
-   *   - Commits all consumed/produced tokens atomically after all onTokens settle
-   * Multi-input transitions use join semantics.
+   * Compute what the next step would do. Runs guards and onTokens (may be
+   * async). Does NOT touch the doc. Returns null if nothing can fire.
+   *
+   * The caller is responsible for animating the firings and calling
+   * removeInputs() / addOutput() at the appropriate animation moments.
    */
-  step(): Promise<void>;
+  prepareStep(): Promise<PendingStep | null>;
   /** Clear all tokens from places and canvas. */
   reset(): void;
 }
@@ -118,11 +146,11 @@ function createPetriNet(def: NetDef, handle: DocHandle<P3NetDoc>, repo: Repo): P
       });
     },
 
-    async step() {
+    async prepareStep(): Promise<PendingStep | null> {
       const doc = handle.doc();
-      if (!doc) return;
+      if (!doc) return null;
 
-      // ── 1. Snapshot current token positions ────────────────────────────────
+      // ── 1. Snapshot current token positions ──────────────────────────────
       const snapshot: NetState = {};
       for (const placeId of def.places) {
         snapshot[placeId] = (doc.tokens?.[placeId] ?? []).map((t) => ({
@@ -131,22 +159,18 @@ function createPetriNet(def: NetDef, handle: DocHandle<P3NetDoc>, repo: Repo): P
         }));
       }
 
-      // Track which token IDs have already been reserved by an earlier transition
       const reserved = new Set<string>();
 
-      type FiredTransition = {
+      type PreparedFiring = {
         transition: TransitionDef;
-        inputTokens: { [placeId: string]: { id: string; state: TokenState; destroyed: boolean } };
-        produced: { state: TokenState; toPlace?: string }[];
-        tokens: Tokens;
-        produce: ProduceFn;
+        inputs: AnimTokenInfo[];
+        outputs: AnimTokenInfo[];
       };
 
-      // ── 2. Find all fireable transitions (sync, guards may be async) ────────
-      const toFire: FiredTransition[] = [];
+      // ── 2. Find all fireable transitions ─────────────────────────────────
+      const prepared: PreparedFiring[] = [];
 
       for (const transition of def.transitions) {
-        // Join semantics: every from-place must have ≥1 unreserved token
         const candidates: { [placeId: string]: TokenInstance } = {};
         let canFire = true;
 
@@ -157,96 +181,103 @@ function createPetriNet(def: NetDef, handle: DocHandle<P3NetDoc>, repo: Repo): P
         }
         if (!canFire) continue;
 
-        // Build readonly guard tokens and evaluate guard (may be async)
-        const guardTokens: Tokens = {};
+        // Build readonly tokens for guard + onTokens
+        const readonlyTokens: ReadonlyTokens = {};
         for (const [placeId, t] of Object.entries(candidates)) {
-          guardTokens[placeId] = makeToken(t.id, deepClone(t.state));
+          readonlyTokens[placeId] = { id: t.id, state: deepClone(t.state) };
         }
-        if (transition.guard && !(await transition.guard(guardTokens))) continue;
 
-        // Reserve tokens and build mutable input tokens for onTokens
-        const inputTokens: FiredTransition['inputTokens'] = {};
-        for (const [placeId, t] of Object.entries(candidates)) {
-          inputTokens[placeId] = { id: t.id, state: deepClone(t.state), destroyed: false };
+        if (transition.guard && !(await transition.guard(readonlyTokens))) continue;
+
+        // Reserve input tokens
+        for (const t of Object.values(candidates)) {
           reserved.add(t.id);
         }
 
-        const produced: FiredTransition['produced'] = [];
-        const produce: ProduceFn = (state, toPlace) => {
-          produced.push({ state: deepClone(state), toPlace });
-        };
+        // Build inputs list
+        const inputs: AnimTokenInfo[] = Object.entries(candidates).map(([placeId, t]) => ({
+          id: t.id,
+          placeId,
+          state: deepClone(t.state),
+        }));
 
-        const tokens: Tokens = {};
-        for (const [placeId, entry] of Object.entries(inputTokens)) {
-          tokens[placeId] = {
-            get id() { return entry.id; },
-            get state() { return entry.state; },
-            change(fn) { fn(entry.state); },
-            destroy() { entry.destroyed = true; },
-          };
+        // ── 3. Call onTokens to get declarative result ──────────────────────
+        let result: TokensResult = {};
+        if (transition.onTokens) {
+          result = (await transition.onTokens(readonlyTokens, repo)) ?? {};
         }
 
-        toFire.push({ transition, inputTokens, produced, tokens, produce });
+        // ── 4. Pre-generate output tokens ───────────────────────────────────
+        const outputs: AnimTokenInfo[] = [];
+        const destroySet = new Set(result.destroy ?? []);
+
+        if (result.produce && result.produce.length > 0) {
+          // Explicit produce: generate outputs from produce list.
+          // All non-destroyed inputs are consumed (not forwarded).
+          for (const { state, toPlace } of result.produce) {
+            const targets = toPlace ? [toPlace] : transition.to;
+            for (const p of targets) {
+              outputs.push({ id: makeTokenId(), placeId: p, state: deepClone(state) });
+            }
+          }
+        } else {
+          // Default forward: non-destroyed inputs → all to-places
+          for (const input of inputs) {
+            if (destroySet.has(input.placeId)) continue;
+            for (const p of transition.to) {
+              outputs.push({ id: makeTokenId(), placeId: p, state: deepClone(input.state) });
+            }
+          }
+        }
+
+        prepared.push({ transition, inputs, outputs });
       }
 
-      if (toFire.length === 0) return;
+      if (prepared.length === 0) return null;
 
-      // ── 3. Call onTokens for all fired transitions (may be async) ──────────
-      await Promise.all(
-        toFire.map(({ transition, tokens, produce }) =>
-          transition.onTokens?.(tokens, produce, repo),
-        ),
+      // ── 5. Build PendingStep ──────────────────────────────────────────────
+      const firings: TransitionFiring[] = prepared.map(({ transition, inputs, outputs }) => ({
+        transitionId: transition.id,
+        inputs,
+        outputs,
+      }));
+
+      // Index for addOutput() lookups
+      const outputMap = new Map<string, AnimTokenInfo>();
+      for (const { outputs } of prepared) {
+        for (const out of outputs) {
+          outputMap.set(out.id, out);
+        }
+      }
+
+      const inputsToRemove = prepared.flatMap(({ inputs }) =>
+        inputs.map((inp) => ({ placeId: inp.placeId, tokenId: inp.id })),
       );
 
-      // ── 4. Commit atomically ───────────────────────────────────────────────
-      handle.change((d) => {
-        if (!d.tokens) d.tokens = {} as NetState;
-        for (const p of def.places) {
-          if (!d.tokens[p]) d.tokens[p] = [];
-        }
+      return {
+        firings,
 
-        for (const { transition, inputTokens, produced } of toFire) {
-          // Remove consumed tokens from their source places
-          for (const [placeId, entry] of Object.entries(inputTokens)) {
-            const arr = d.tokens[placeId];
-            const idx = arr.findIndex((t) => t.id === entry.id);
-            if (idx !== -1) arr.splice(idx, 1);
-          }
-
-          if (produced.length > 0) {
-            // Explicit produce() calls determine output
-            for (const { state, toPlace } of produced) {
-              const targets = toPlace ? [toPlace] : transition.to;
-              for (const p of targets) {
-                if (!d.tokens[p]) d.tokens[p] = [];
-                d.tokens[p].push({ id: makeTokenId(), state });
-              }
+        removeInputs() {
+          handle.change((d) => {
+            for (const { placeId, tokenId } of inputsToRemove) {
+              const arr = d.tokens?.[placeId];
+              if (!arr) continue;
+              const idx = arr.findIndex((t) => t.id === tokenId);
+              if (idx !== -1) arr.splice(idx, 1);
             }
-          } else {
-            // Default: forward non-destroyed input tokens to all to-places
-            for (const entry of Object.values(inputTokens)) {
-              if (entry.destroyed) continue;
-              for (const p of transition.to) {
-                if (!d.tokens[p]) d.tokens[p] = [];
-                d.tokens[p].push({ id: makeTokenId(), state: entry.state });
-              }
-            }
-          }
-        }
-      });
-    },
-  };
-}
+          });
+        },
 
-function makeToken(id: string, state: TokenState): Token {
-  return {
-    id,
-    state,
-    change(fn) {
-      fn(state);
-    },
-    destroy() {
-      /* no-op for guard tokens */
+        addOutput(id: string) {
+          const out = outputMap.get(id);
+          if (!out) return;
+          handle.change((d) => {
+            if (!d.tokens) d.tokens = {} as NetState;
+            if (!d.tokens[out.placeId]) d.tokens[out.placeId] = [];
+            d.tokens[out.placeId].push({ id: out.id, state: deepClone(out.state) });
+          });
+        },
+      };
     },
   };
 }

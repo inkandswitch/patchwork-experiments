@@ -24,7 +24,7 @@ export default (handle, repo) => defineNet({
       id: 'start_process',
       from: ['prompts', 'solutions'],
       to: ['running'],
-      async onTokens({ prompts, solutions }, produce, repo) {
+      async onTokens({ prompts, solutions }, repo) {
         // Read the prompt text from the linked markdown document
         const promptHandle = await repo.find(prompts.state.prompt)
         const promptText = promptHandle.doc()?.content ?? ''
@@ -57,7 +57,9 @@ export default (handle, repo) => defineNet({
           })
         })
 
-        produce({ type: 'llm-process', llmProcess: processHandle.url, prompt: prompts.state.prompt, done: false }, 'running')
+        return {
+          produce: [{ state: { type: 'llm-process', llmProcess: processHandle.url, prompt: prompts.state.prompt, done: false }, toPlace: 'running' }],
+        }
       },
     },
 
@@ -69,13 +71,17 @@ export default (handle, repo) => defineNet({
         const processHandle = await repo.find(running.state.llmProcess)
         return processHandle?.doc()?.done === true
       },
-      async onTokens({ running }, produce, repo) {
+      async onTokens({ running }, repo) {
         const processHandle = await repo.find(running.state.llmProcess)
         const processDoc = processHandle?.doc()
 
         // Return the original prompt token unchanged; the edited copy becomes the new solution
-        produce({ type: 'prompt', prompt: running.state.prompt }, 'prompts')
-        produce({ type: 'solution', document: processDoc?.docUrl }, 'solutions')
+        return {
+          produce: [
+            { state: { type: 'prompt', prompt: running.state.prompt }, toPlace: 'prompts' },
+            { state: { type: 'solution', document: processDoc?.docUrl }, toPlace: 'solutions' },
+          ],
+        }
       },
     },
   ],

@@ -1,11 +1,11 @@
 import { createRoot } from 'react-dom/client';
 import { RepoContext, useDocument, useRepo } from '@automerge/automerge-repo-react-hooks';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle } from '@automerge/automerge-repo';
 
 import type { P3NetDoc, CanvasToken } from './doc';
-import type { TokenState, TokenInstance, TokenTypeDef } from './lib';
+import type { TokenState, TokenInstance, TokenTypeDef, TransitionFiring, PendingStep } from './lib';
 import { useP3Net } from './use-p3net';
 import { P3NetRenderer, DRAG_KEY, resolveTokenColor } from './renderer';
 import type { DragPayload } from './renderer';
@@ -68,16 +68,53 @@ function makeId(): string {
 
 // ─── Simulation view ──────────────────────────────────────────────────────────
 
+type AnimState = {
+  hiddenIds: Set<string>;
+  firings: TransitionFiring[];
+  pending: PendingStep;
+};
+
 function P3NetSimulation({ handle }: { handle: DocHandle<P3NetDoc> }) {
   const [doc] = useDocument<P3NetDoc>(handle.url);
   const repo = useRepo();
   const { net, loadError } = useP3Net(handle, doc?.sourceUrl);
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
+  const [animState, setAnimState] = useState<AnimState | null>(null);
+  // Prevent overlapping steps while an animation or async prepare is running
+  const steppingRef = useRef(false);
 
-  const handleStep = useCallback(() => net?.step().catch(console.error), [net]);
+  const handleStep = useCallback(async () => {
+    if (!net || steppingRef.current) return;
+    steppingRef.current = true;
+    try {
+      const pending = await net.prepareStep();
+      if (!pending || pending.firings.length === 0) return;
+      const hiddenIds = new Set(pending.firings.flatMap((f) => f.inputs.map((i) => i.id)));
+      setAnimState({ hiddenIds, firings: pending.firings, pending });
+    } catch (err) {
+      console.error(err);
+      steppingRef.current = false;
+    }
+  }, [net]);
+
+  const handleAnimRemoveInputs = useCallback(() => {
+    animState?.pending.removeInputs();
+  }, [animState]);
+
+  const handleAnimAddOutput = useCallback((id: string) => {
+    animState?.pending.addOutput(id);
+  }, [animState]);
+
+  const handleAnimComplete = useCallback(() => {
+    setAnimState(null);
+    steppingRef.current = false;
+  }, []);
+
   const handleReset = useCallback(() => {
     net?.reset();
     setSelectedTokenId(null);
+    setAnimState(null);
+    steppingRef.current = false;
   }, [net]);
 
   const handleDropOnPlace = useCallback(
@@ -160,7 +197,7 @@ function P3NetSimulation({ handle }: { handle: DocHandle<P3NetDoc> }) {
         <button className="p3n-reset-btn" onClick={handleReset} disabled={!net}>
           Reset
         </button>
-        <button className="p3n-step-btn" onClick={handleStep} disabled={!net}>
+        <button className="p3n-step-btn" onClick={handleStep} disabled={!net || steppingRef.current}>
           Step
         </button>
       </div>
@@ -182,6 +219,11 @@ function P3NetSimulation({ handle }: { handle: DocHandle<P3NetDoc> }) {
               onSelectToken={setSelectedTokenId}
               onDropOnPlace={handleDropOnPlace}
               onDropOnCanvas={handleDropOnCanvas}
+              hiddenTokenIds={animState?.hiddenIds}
+              animatingFirings={animState?.firings}
+              onAnimRemoveInputs={handleAnimRemoveInputs}
+              onAnimAddOutput={handleAnimAddOutput}
+              onAnimComplete={handleAnimComplete}
             />
           </div>
         ) : (
