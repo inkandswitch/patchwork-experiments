@@ -349,6 +349,27 @@
     .chat-msg-text .shiki code { white-space:pre; display:block; }
     .chat-rich-block-code .shiki { margin:0; border-radius:0; }
 
+    /* Think blocks (Qwen3 reasoning) */
+    .chat-think-block {
+      background:var(--bg-darkest); border-radius:6px; margin:6px 0;
+      font-size:13px; overflow:hidden;
+    }
+    .chat-think-block summary {
+      cursor:pointer; padding:5px 10px; color:var(--text-secondary);
+      font-family:ui-monospace, monospace; font-size:12px;
+      user-select:none; list-style:none;
+    }
+    .chat-think-block summary::before {
+      content:"▶ "; display:inline; font-size:10px;
+    }
+    .chat-think-block[open] summary::before { content:"▼ "; }
+    .chat-think-block summary:hover { background:var(--bg-hover); color:var(--text-primary); }
+    .chat-think-content {
+      padding:8px 12px; white-space:pre-wrap; color:var(--text-secondary);
+      font-family:ui-monospace, monospace; border-top:1px solid var(--bg-hover);
+      max-height:300px; overflow-y:auto;
+    }
+
     /* Voice note */
     .chat-voice-note {
       display:flex; align-items:center; gap:8px; margin-top:4px; padding:8px 12px;
