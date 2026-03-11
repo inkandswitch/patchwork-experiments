@@ -5,8 +5,9 @@
  * blocks from the response, evals them, feeds results back, and repeats.
  * All output is written to the PetrinetLLMDoc via Automerge handle.change().
  *
- * The LLM has direct access to a single target document exposed as `handle`
- * in the eval context. No skills, no workspace COW, no multi-doc repo.
+ * The LLM accesses the target document exclusively through the API object
+ * returned by the skill module at config.api. The raw document handle is
+ * never exposed to eval context.
  */
 
 import type { Repo } from '@automerge/automerge-repo';
@@ -58,13 +59,17 @@ export async function runLLMProcess(
     throw new Error('No prompt to run');
   }
 
-  const { apiUrl, model } = doc.config;
+  const { apiUrl, model, api: apiModuleUrl } = doc.config;
   const apiKey = (import.meta as any).env?.VITE_OPENAI_API_KEY || '';
 
   const targetHandle = await repo.find(doc.docUrl);
   const capturedConsole = createCapturedConsole();
 
-  (globalThis as any).handle = targetHandle;
+  const skillMod = await import(/* @vite-ignore */ apiModuleUrl);
+  const skillApi = skillMod.default(targetHandle);
+  const skillDescription: string | undefined = skillMod.apiDescription;
+
+  (globalThis as any).api = skillApi;
   (globalThis as any).__llmCapturedConsole = capturedConsole;
 
   const MAX_ITERATIONS = 20;
@@ -81,7 +86,7 @@ export async function runLLMProcess(
     const currentDoc = handle.doc();
     if (!currentDoc) break;
 
-    const messages = buildLLMMessages(currentDoc);
+    const messages = buildLLMMessages(currentDoc, skillDescription);
     console.log(`[petrinet-llm] iteration ${iteration}: sending ${messages.length} messages to ${model}`);
 
     const stream = streamChatCompletion(apiUrl, apiKey, model, messages, signal);
@@ -165,10 +170,10 @@ export async function runLLMProcess(
 
 // --- LLM message building ---
 
-export function buildLLMMessages(doc: PetrinetLLMDoc): ChatMessage[] {
+export function buildLLMMessages(doc: PetrinetLLMDoc, apiDescription?: string): ChatMessage[] {
   const messages: ChatMessage[] = [];
 
-  messages.push({ role: 'system', content: SYSTEM_PROMPT });
+  messages.push({ role: 'system', content: buildSystemPrompt(apiDescription) });
   messages.push({ role: 'user', content: doc.prompt });
 
   if (doc.output.length > 0) {
@@ -212,19 +217,21 @@ function appendOutputMessages(messages: ChatMessage[], blocks: OutputBlock[]): v
   }
 }
 
-export const SYSTEM_PROMPT = `You are a coding agent with direct access to an Automerge document and the ability to execute JavaScript.
+const FALLBACK_API_DESCRIPTION = `  api   — the document API provided by the skill module`;
+
+export function buildSystemPrompt(apiDescription?: string): string {
+  const apiSection = apiDescription ?? FALLBACK_API_DESCRIPTION;
+  return `You are a coding agent with the ability to execute JavaScript against a document API.
 
 You can execute code by writing it inside <script> tags. Add a data-description attribute to briefly describe what the code does:
 
-<script data-description="Inspect the current document state">
-console.log(handle.doc())
+<script data-description="Inspect current state">
+console.log(api.query())
 </script>
 
-Available APIs in your execution context:
+Available in your execution context:
 
-  handle.url        — the document URL
-  handle.doc()      — get the current document state
-  handle.change(fn) — mutate the document
+${apiSection}
 
   console.log(...)  — output text (captured and shown to you)
   return value      — return a value from the script (shown to you as output)
@@ -234,6 +241,10 @@ Use this to inspect results and decide your next steps.
 
 Write text outside of script tags to explain your reasoning.
 Keep your code concise and focused on the task.`;
+}
+
+/** @deprecated use buildSystemPrompt() */
+export const SYSTEM_PROMPT = buildSystemPrompt();
 
 // --- LLM streaming ---
 
@@ -270,30 +281,34 @@ async function* streamChatCompletion(
   const decoder = new TextDecoder();
   let buffer = '';
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-    buffer += decoder.decode(value, { stream: true });
+      buffer += decoder.decode(value, { stream: true });
 
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
 
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || !trimmed.startsWith('data: ')) continue;
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data: ')) continue;
 
-      const data = trimmed.slice(6);
-      if (data === '[DONE]') return;
+        const data = trimmed.slice(6);
+        if (data === '[DONE]') return;
 
-      try {
-        const parsed = JSON.parse(data);
-        const content = parsed.choices?.[0]?.delta?.content;
-        if (content) yield content;
-      } catch {
-        // Skip malformed JSON
+        try {
+          const parsed = JSON.parse(data);
+          const content = parsed.choices?.[0]?.delta?.content;
+          if (content) yield content;
+        } catch {
+          // Skip malformed JSON
+        }
       }
     }
+  } finally {
+    reader.cancel().catch(() => {});
   }
 }
 

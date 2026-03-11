@@ -1,6 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import { RepoContext, useDocument, useRepo } from '@automerge/automerge-repo-react-hooks';
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle } from '@automerge/automerge-repo';
 
@@ -80,15 +80,22 @@ function P3NetSimulation({ handle }: { handle: DocHandle<P3NetDoc> }) {
   const { net, loadError } = useP3Net(handle, doc?.sourceUrl);
   const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
   const [animState, setAnimState] = useState<AnimState | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
   // Prevent overlapping steps while an animation or async prepare is running
   const steppingRef = useRef(false);
+  // Shadow ref so async callbacks can read isPlaying without stale closures
+  const isPlayingRef = useRef(false);
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
 
   const handleStep = useCallback(async () => {
     if (!net || steppingRef.current) return;
     steppingRef.current = true;
     try {
       const pending = await net.prepareStep();
-      if (!pending || pending.firings.length === 0) return;
+      if (!pending || pending.firings.length === 0) {
+        steppingRef.current = false;
+        return;
+      }
       const hiddenIds = new Set(pending.firings.flatMap((f) => f.inputs.map((i) => i.id)));
       setAnimState({ hiddenIds, firings: pending.firings, pending });
     } catch (err) {
@@ -96,6 +103,20 @@ function P3NetSimulation({ handle }: { handle: DocHandle<P3NetDoc> }) {
       steppingRef.current = false;
     }
   }, [net]);
+
+  // When playing and nothing is currently stepping, retry every 200ms so we
+  // pick up transitions whose guards become true asynchronously (e.g. LLM done).
+  useEffect(() => {
+    if (!isPlaying) return;
+    const id = setInterval(() => {
+      if (!steppingRef.current) handleStep();
+    }, 200);
+    return () => clearInterval(id);
+  }, [isPlaying, handleStep]);
+
+  const handlePlayPause = useCallback(() => {
+    setIsPlaying((p) => !p);
+  }, []);
 
   const handleAnimRemoveInputs = useCallback(() => {
     animState?.pending.removeInputs();
@@ -108,12 +129,14 @@ function P3NetSimulation({ handle }: { handle: DocHandle<P3NetDoc> }) {
   const handleAnimComplete = useCallback(() => {
     setAnimState(null);
     steppingRef.current = false;
-  }, []);
+    if (isPlayingRef.current) handleStep();
+  }, [handleStep]);
 
   const handleReset = useCallback(() => {
     net?.reset();
     setSelectedTokenId(null);
     setAnimState(null);
+    setIsPlaying(false);
     steppingRef.current = false;
   }, [net]);
 
@@ -197,8 +220,15 @@ function P3NetSimulation({ handle }: { handle: DocHandle<P3NetDoc> }) {
         <button className="p3n-reset-btn" onClick={handleReset} disabled={!net}>
           Reset
         </button>
-        <button className="p3n-step-btn" onClick={handleStep} disabled={!net || steppingRef.current}>
+        <button className="p3n-step-btn" onClick={handleStep} disabled={!net || isPlaying || steppingRef.current}>
           Step
+        </button>
+        <button
+          className={`p3n-play-btn${isPlaying ? ' p3n-play-btn-active' : ''}`}
+          onClick={handlePlayPause}
+          disabled={!net}
+        >
+          {isPlaying ? 'Pause' : 'Play'}
         </button>
       </div>
 

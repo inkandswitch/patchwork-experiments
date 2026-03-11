@@ -9,9 +9,12 @@ function toSwPath(automergeUrl: string): string {
 export function makeDefaultSource(): string {
   const libUrl = `${toSwPath(__ROOT_DIR_URL__)}/dist/p3net/index.js`;
   const llmProcessUrl = `${toSwPath(__ROOT_DIR_URL__)}/dist/petrinet-llm-process/index.js`;
+  const markdownSkillUrl = `${toSwPath(__ROOT_DIR_URL__)}/dist/skills/markdown/index.js`;
 
   return `import { defineNet } from '${libUrl}'
 import { runLLMProcess } from '${llmProcessUrl}'
+
+const markdownSkillUrl = '${markdownSkillUrl}'
 
 // Export a factory function (handle, repo) => PetriNet.
 // Using a closure lets guard + onTokens capture 'repo' for repo.find() / repo.create().
@@ -41,7 +44,7 @@ export default (handle, repo) => defineNet({
         const processHandle = repo.create()
         processHandle.change(d => {
           d['@patchwork'] = { type: 'petrinet-llm-process' }
-          d.config = { apiUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o' }
+          d.config = { apiUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o', api: markdownSkillUrl }
           d.prompt = promptText
           d.docUrl = copyHandle.url
           d.output = []

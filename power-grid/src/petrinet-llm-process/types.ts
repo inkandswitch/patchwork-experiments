@@ -5,6 +5,7 @@ export type PetrinetLLMDoc = {
   config: {
     apiUrl: string;
     model: string;
+    api: string;
   };
   docUrl: AutomergeUrl;
   prompt: string;
