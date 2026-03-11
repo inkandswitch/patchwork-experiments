@@ -8,7 +8,7 @@
     ".": "./dist/index.js"
   },
   "scripts": {
-    "build": "vite build",
+    "build": "VITE_BUILD_ID=$(date +%s) vite build",
     "push": "pushwork sync",
     "watch": "nodemon --watch src -e js,tsx,ts,tsx,css,json --exec 'pnpm build && pnpm push'"
   },

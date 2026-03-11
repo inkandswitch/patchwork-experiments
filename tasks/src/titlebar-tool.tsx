@@ -26,7 +26,9 @@ const TitlebarToolComponent: React.FC<{ element: HTMLElement }> = ({ element }) 
         }
       }
 
-      setWorkerPool(new WorkerPoolProxy(selfContactUrl, importMap as any, document.baseURI));
+      const proxy = new WorkerPoolProxy(selfContactUrl, importMap as any, document.baseURI);
+      console.log('titlebar-tool created worker pool proxy', proxy);
+      setWorkerPool(proxy);
     }
   }, [selfContactUrl]);
 

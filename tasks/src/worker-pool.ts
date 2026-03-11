@@ -24,6 +24,7 @@ const taskQueueState = new Map<AutomergeUrl, TaskQueueState>();
 console.log('hi there, I am the worker pool!');
 
 self.addEventListener('connect', (e: any) => {
+  console.log('got a connection!');
   const port = e.ports[0];
   port.onmessage = (e: any) => {
     const msg: MessageToWorkerPool = e.data;
@@ -85,7 +86,9 @@ async function join(taskQueueUrl: AutomergeUrl) {
 
   async function setTaskQueueState(taskQueue: TaskQueue) {
     try {
-      const activeRouterHandle = taskQueue.router ? await repo.find<Router>(taskQueue.router) : null;
+      const activeRouterHandle = taskQueue.router
+        ? await repo.find<Router>(taskQueue.router)
+        : null;
       taskQueueState.set(taskQueueUrl, { activeRouterHandle });
     } catch (error) {
       console.error('error finding doc for active router', { taskQueueUrl, error });
@@ -98,9 +101,11 @@ async function join(taskQueueUrl: AutomergeUrl) {
 async function addWorker(sharedWorkerName: string, workerUrl: AutomergeUrl) {
   if (sharedWorkerNames.has(sharedWorkerName)) {
     // already added!
+    console.log('addWorker: already know about', sharedWorkerName);
     return;
   } else if (status !== 'ready') {
     // haven't initialized yet, so save this for later
+    console.log('addWorker: will add', sharedWorkerName, 'after init');
     toDoAfterInit.push(() => addWorker(sharedWorkerName, workerUrl));
     return;
   }
@@ -144,4 +149,4 @@ const seconds = async (s: number) =>
     setTimeout(resolve, s * 1_000);
   });
 
-export { }; // to ensure this is a module
+export {}; // to ensure this is a module

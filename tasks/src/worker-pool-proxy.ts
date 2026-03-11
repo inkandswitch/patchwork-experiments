@@ -8,6 +8,8 @@ import WorkerPool from './worker-pool.ts?sharedworker';
 import TaskWorker from './worker.ts?sharedworker';
 import TaskRouter from './router.ts?sharedworker';
 
+const BUILD_ID = import.meta.env.VITE_BUILD_ID ?? 'dev';
+
 const NUM_WORKERS = 2;
 
 export class WorkerPoolProxy {
@@ -30,12 +32,12 @@ export class WorkerPoolProxy {
 
   private createAndInitializeWorkerPool() {
     // create the shared worker
-    const workerPool = new WorkerPool({ name: `task-worker-pool` });
-    workerPool.onerror = (error) => console.error('worker pool error:', error);
-    workerPool.port.start();
+    const workerPool = new WorkerPool({ name: `task-worker-pool-${BUILD_ID}` });
+    workerPool.onerror = (error) => log(error);
 
     // initialize it (it doesn't matter if this message is sent more than once)
     const repoPort = (window as any).getRepoChannel();
+    log('sending init to worker pool');
     workerPool.port.postMessage(
       {
         type: 'init',
@@ -49,11 +51,28 @@ export class WorkerPoolProxy {
 
   private createAndInitializeWorker(id: number, importMap: any, baseURI: string) {
     // create the shared worker
-    const worker = new TaskWorker({ name: `task-worker-${id}` });
-    worker.onerror = (error) => console.error(`worker ${id} error:`, error);
-    worker.port.start();
+    const name = `task-worker-${BUILD_ID}-${id}`;
+    log('creating and initializing worker', name);
+    const worker = new TaskWorker({ name });
+    worker.onerror = (error) => log(`worker ${id} error:`, error);
+
+    // forward messages from the worker (type 'add worker') to the worker pool
+    worker.port.onmessage = (e: any) => {
+      log(
+        'received message from worker that i will forward to the pool',
+        e.data,
+      );
+      this.workerPool.port.postMessage(e.data);
+    };
+
+    worker.port.onmessageerror = (e) => {
+      log('message error from worker', name, e);
+    };
+
+    (worker.port as any).start?.();
 
     // initialize it (it doesn't matter if this message is sent more than once)
+    log('sending init message to', name);
     const repoPort = (window as any).getRepoChannel();
     worker.port.postMessage(
       {
@@ -65,11 +84,6 @@ export class WorkerPoolProxy {
       } satisfies MessageToWorker,
       [repoPort],
     );
-
-    // forward messages from the worker (type 'add worker')to the worker pool
-    worker.port.onmessage = (e: any) => {
-      this.workerPool.port.postMessage(e.data);
-    };
 
     return worker;
   }
@@ -86,6 +100,7 @@ export class WorkerPoolProxy {
     // terminate routers for the task queues we're no longer interested in
     for (const [taskQueueUrl, router] of this.routers.entries()) {
       if (!taskQueues[taskQueueUrl as any]) {
+        log('terminating router for task queue', taskQueueUrl);
         this.routers.delete(taskQueueUrl);
         router.port.postMessage({
           type: 'terminate',
@@ -97,6 +112,7 @@ export class WorkerPoolProxy {
     for (const url of Object.keys(taskQueues)) {
       const taskQueueUrl = url as AutomergeUrl;
 
+      log('joining task queue', taskQueueUrl);
       this.workerPool.port.postMessage({
         type: 'join',
         taskQueueUrl,
@@ -104,13 +120,15 @@ export class WorkerPoolProxy {
 
       // Create a router (SharedWorker) for this task queue if our browser doesn't have one already.
       // (If another window or tab already created one, we'll just get that one.)
-      const router = new TaskRouter({ name: `task-router-${taskQueueUrl}` });
+      const name = `task-router-${BUILD_ID}-${taskQueueUrl}`;
+      const router = new TaskRouter({ name });
       this.routers.set(taskQueueUrl, router);
 
       // Initialize the router -- this is OK even if the `new TaskRouter(...)` above didn't create a new one.
       const repoPort = (window as any).getRepoChannel();
       const contactUrl = this.contactUrl;
-      router.port.start();
+      // router.port.start();
+      log('sending init message to router', name);
       router.port.postMessage(
         {
           type: 'init',
@@ -132,4 +150,8 @@ export class WorkerPoolProxy {
     }
     return this._repo;
   }
+}
+
+function log(...args: any) {
+  console.log('worker pool proxy:', ...args);
 }

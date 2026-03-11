@@ -14,9 +14,11 @@ export type Task<Input, Result> = {
 
 export type TaskDoc<Input, Result> = Task<Input, Result>;
 
+export type Status = 'succeeded' | 'failed';
+
 export type RunInfo<Result> = {
   workerUrl: AutomergeUrl;
-  status: 'succeeded' | 'failed';
+  status: Status;
   result?: Result; // only if status === 'succeeded'
   log?: [number, string][];
   startTime: number;

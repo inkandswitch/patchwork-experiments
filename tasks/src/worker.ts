@@ -1,21 +1,15 @@
 /* eslint-env worker */
 
-import type { Task, TaskQueue, Worker } from './datatype';
+console.log('task worker script starting; self.name =', (self as any).name);
+
+import type { Status, Task, TaskQueue, Worker } from './datatype';
 import type { MessageToWorker, MessageToWorkerChannel, MessageToWorkerPool } from './protocol';
 import type { Repo, AutomergeUrl, DocHandle } from '@automerge/vanillajs/slim';
 
 import generateName from 'boring-name-generator';
 import { getRepo } from './webworker-lib';
 
-// import 'es-module-shims/wasm';
 const shimCodeUrl = 'https://ga.jspm.io/npm:es-module-shims@1.6.2/dist/es-module-shims.wasm.js';
-try {
-  console.log('importing es-module-shims...');
-  await import(shimCodeUrl);
-  console.log('yay');
-} catch (error) {
-  console.error('failed to import es-module-shims:', error);
-}
 
 let status: 'not initialized' | 'initializing' | 'ready' = 'not initialized';
 
@@ -30,7 +24,7 @@ let baseURI: string;
 
 let workerHandle: DocHandle<Worker>;
 
-self.addEventListener('connect', (e: any) => {
+function handleConnect(e: any) {
   console.log('got a connection!');
   const port = e.ports[0];
   port.onmessage = (e: any) => {
@@ -43,10 +37,14 @@ self.addEventListener('connect', (e: any) => {
           break;
       }
     } catch (error) {
-      console.error('uh-oh, error handling message in worker', { msg, error });
+      console.error('uh-oh, error handling message', { msg, error });
     }
   };
-});
+  (port as any).start?.();
+}
+
+(self as any).onconnect = handleConnect;
+self.addEventListener('connect', handleConnect as any);
 
 async function init(
   workerPoolProxyPort: MessagePort,
@@ -61,6 +59,14 @@ async function init(
 
   console.log('initializing...');
   status = 'initializing';
+
+  try {
+    console.log('importing es-module-shims...');
+    await import(shimCodeUrl);
+    console.log('done');
+  } catch (error) {
+    console.error('failed to import es-module-shims:', error);
+  }
 
   importMap = _importMap;
   baseURI = _baseURI;
@@ -148,7 +154,7 @@ function setUpImportMap() {
   }
 
   (self as any).importShim.addImportMap(resolvedImportMap);
-  console.log('worker: Import map configured from main thread', resolvedImportMap);
+  console.log('Import map configured from main thread', resolvedImportMap);
 }
 
 const tally = { numSuccesses: 0, numFailures: 0 };
@@ -163,19 +169,28 @@ function logTally() {
   console.log('');
 }
 
+const MAX_TRIES = 3;
+
 async function processTask(taskUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
   console.log('executing task', taskUrl);
   workerHandle.change((doc) => {
     doc.currentTask = { taskUrl, taskQueueUrl };
   });
+  const taskHandle = await repo.find<Task<any, any>>(taskUrl);
   try {
-    await execute(taskUrl);
-    await moveToDone(taskUrl, taskQueueUrl);
-    tally.numSuccesses++;
-    console.log('task succeeded!');
+    const status = await execute(taskHandle);
+    if (status === 'succeeded') {
+      console.log('task succeeded!');
+      tally.numSuccesses++;
+    } else {
+      console.error('task failed');
+      tally.numFailures++;
+    }
+    if (status === 'succeeded' || failedTooManyTimes(taskHandle)) {
+      await moveToDone(taskUrl, taskQueueUrl);
+    }
   } catch (error) {
-    tally.numFailures++;
-    console.error('task failed:', error);
+    console.error('impossible error:', error);
   } finally {
     workerHandle.change((doc) => {
       doc.currentTask = null;
@@ -184,13 +199,16 @@ async function processTask(taskUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
   logTally();
 }
 
-async function execute(taskUrl: AutomergeUrl) {
-  const taskHandle = await repo.find<Task<any, any>>(taskUrl);
+function failedTooManyTimes(taskHandle: DocHandle<Task<any, any>>) {
+  return taskHandle.doc().runs.filter(({ status }) => status === 'failed').length >= MAX_TRIES;
+}
+
+async function execute(taskHandle: DocHandle<Task<any, any>>) {
   const { importUrl, input } = taskHandle.doc();
 
   const log: [number, string][] = [];
   const startTime = Date.now();
-  let status: 'succeeded' | 'failed' = 'succeeded';
+  let status: Status = 'succeeded';
   let result: any;
   try {
     // Dynamic import of the task module using importShim for import map support
@@ -208,7 +226,6 @@ async function execute(taskUrl: AutomergeUrl) {
           log.push([timestamp, message]);
           console.log('Task log:', message);
         },
-        repo,
       },
       input,
     );
@@ -231,6 +248,8 @@ async function execute(taskUrl: AutomergeUrl) {
       log,
     });
   });
+
+  return status;
 }
 
 async function moveToDone(taskUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
@@ -242,4 +261,4 @@ async function moveToDone(taskUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
   });
 }
 
-export {}; // to ensure this is a module
+export { }; // to ensure this is a module

@@ -27,10 +27,11 @@ let activeRouter: { url: AutomergeUrl; lastTimestamp: number } | null = null;
 const workers = new Map<AutomergeUrl, WorkerState>();
 
 self.addEventListener('connect', (e: any) => {
+  console.log('got a connection!');
   const port = e.ports[0];
   port.onmessage = (e: any) => {
     const msg: MessageToRouter = e.data;
-    console.log('router: received message', e.data);
+    console.log('received message', e.data);
     try {
       switch (msg.type) {
         case 'init':
@@ -38,18 +39,18 @@ self.addEventListener('connect', (e: any) => {
           break;
       }
     } catch (error) {
-      console.error('uh-oh, error handling message in router', { msg, error });
+      console.error('uh-oh, error handling message', { msg, error });
     }
   };
 });
 
 async function init(repoPort: MessagePort, _contactUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
   if (repo) {
-    console.log('router: Already initialized');
+    console.log('already initialized');
     return;
   }
 
-  console.log('router: Initializing');
+  console.log('initializing');
 
   repo = await getRepo(
     repoPort,
@@ -86,7 +87,7 @@ async function init(repoPort: MessagePort, _contactUrl: AutomergeUrl, taskQueueU
   pTakeOverWhenActiveRouterDropsOut();
   pDropStaleWorkerInfos();
 
-  console.log('router: started!', thisRouterHandle.url);
+  console.log('ready!', thisRouterHandle.url);
   console.log('hola, me llamo', thisRouterHandle.doc().name);
 }
 
@@ -98,7 +99,7 @@ async function pHeartbeat() {
         routerUrl: thisRouterHandle.url,
         workerUrls: [...workers.keys()],
       } satisfies MessageToTaskQueueChannel;
-      // console.log('router: Sending heartbeat to task queue', heartbeat);
+      // console.log('Sending heartbeat to task queue', heartbeat);
       taskQueueHandle.broadcast(heartbeat);
     }
     await seconds(1);
@@ -121,7 +122,7 @@ async function pTakeOverWhenActiveRouterDropsOut() {
 async function pTakeOver() {
   workers.clear();
 
-  console.log('router: Attempting takeover!');
+  console.log('attempting takeover!');
   taskQueueHandle.change((doc) => {
     doc.router = thisRouterHandle.url;
   });
@@ -131,6 +132,10 @@ async function pTakeOver() {
   // - it also gives the change to the task queue doc (to set the active router) a chance to propagate
   await seconds(3);
 
+  if (thisIsTheActiveRouter()) {
+    console.log('I am now the router for this task queue!');
+  }
+
   // note that we check that this router is active every time around the loop
   // this is to avoid a situation where we *thought* we successfully promoted ourselves
   // when another router got there later and updated the doc.
@@ -138,7 +143,7 @@ async function pTakeOver() {
     const pendingTasks = taskQueueHandle.doc().pending.filter(isReallyPending);
     const idleWorkers = [...workers.values()].filter((w) => w.currentTaskUrl == null);
     if (pendingTasks.length > 0 && idleWorkers.length === 0) {
-      console.log(`router: ${pendingTasks.length} pending tasks but no idle workers!`);
+      console.log(`${pendingTasks.length} pending tasks but no idle workers!`);
     }
     while (pendingTasks.length > 0 && idleWorkers.length > 0) {
       const taskUrl = pendingTasks.shift()!;
@@ -149,7 +154,7 @@ async function pTakeOver() {
         taskQueueUrl: taskQueueHandle.url,
       };
       console.log(
-        'router: Telling',
+        'telling',
         worker.handle.url,
         'to work on',
         taskUrl,
@@ -226,4 +231,4 @@ const seconds = async (s: number) =>
     setTimeout(resolve, s * 1_000);
   });
 
-export {}; // to ensure this is a module
+export { }; // to ensure this is a module
