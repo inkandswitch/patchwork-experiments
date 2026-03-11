@@ -6,6 +6,8 @@ import {
   type LoadedDatatype,
 } from '@inkandswitch/patchwork-plugins'
 import { createShape, patchShape, newId, nextZIndex } from '../core/commands.js'
+import { createElement, Link, type IconNode } from 'lucide'
+import * as icons from 'lucide'
 import type { EmbedShape } from './types.js'
 
 interface PointerDetail {
@@ -14,10 +16,6 @@ interface PointerDetail {
   screenX: number
   screenY: number
 }
-
-// ============================================================================
-// Datatype menu
-// ============================================================================
 
 function openDatatypeMenu(
   anchorEl: HTMLElement,
@@ -54,7 +52,11 @@ function openDatatypeMenu(
       'text-align:left',
       'font:inherit',
     ].join(';')
-    item.innerHTML = `<span style="font-size:16px">${dt.icon ?? ''}</span><span>${dt.name}</span>`
+    const iconData = dt.icon ? (icons as unknown as Record<string, IconNode | undefined>)[dt.icon] : undefined
+    if (iconData) item.appendChild(createElement(iconData, { width: 16, height: 16, style: 'pointer-events:none;flex-shrink:0' }))
+    const label = document.createElement('span')
+    label.textContent = dt.name
+    item.appendChild(label)
     item.addEventListener('pointerdown', e => {
       e.stopPropagation()
       onSelect(dt.id)
@@ -98,9 +100,8 @@ export default function PlaceEmbedTool(
   buttonEl: HTMLElement,
   repo: unknown,
 ): Disposer {
-  const prevHTML = buttonEl.innerHTML
-  // Lucide Link
-  buttonEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`
+  const icon = createElement(Link, { width: 22, height: 22, style: 'pointer-events:none' })
+  buttonEl.appendChild(icon)
   buttonEl.title = 'Embed'
 
   let pendingDatatypeId: string | null = null
@@ -231,6 +232,6 @@ export default function PlaceEmbedTool(
     buttonEl.removeEventListener('spatial-canvas:cancel',      onCancel)
     closeMenu?.()
     cleanup()
-    buttonEl.innerHTML = prevHTML
+    icon.remove()
   }
 }

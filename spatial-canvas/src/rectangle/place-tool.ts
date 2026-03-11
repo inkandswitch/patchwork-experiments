@@ -1,6 +1,7 @@
 import type { CanvasDoc, DocHandle, Disposer } from '../core/types.js'
 import { createShape, nextZIndex, newId } from '../core/commands.js'
 import type { RectangleFill, RectangleShape } from './rectangle.js'
+import { createElement, Square } from 'lucide'
 
 interface PointerDetail {
   canvasX: number
@@ -10,7 +11,6 @@ interface PointerDetail {
 const DEFAULT_COLOR = '#4f8ef7'
 const DEFAULT_FILL: RectangleFill = 'filled'
 
-const SQUARE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>`
 
 /** Mix hex color toward white by factor t (0 = original, 1 = white). */
 function lightenColor(hex: string, t = 0.72): string {
@@ -26,8 +26,8 @@ export default function PlaceRectangleTool(
 ): Disposer {
   const contactUrl = window.accountDocHandle?.doc()?.contactUrl ?? 'local'
 
-  const prevHTML = element.innerHTML
-  element.innerHTML = SQUARE_ICON
+  const icon = createElement(Square, { width: 22, height: 22, style: 'pointer-events:none' })
+  element.appendChild(icon)
 
   let origin: { x: number; y: number } | null = null
   let preview: HTMLDivElement | null = null
@@ -137,7 +137,7 @@ export default function PlaceRectangleTool(
     element.removeEventListener('spatial-canvas:pointermove', onPointerMove)
     element.removeEventListener('spatial-canvas:pointerup',   onPointerUp)
     element.removeEventListener('spatial-canvas:cancel',      onCancel)
-    element.innerHTML = prevHTML
+    icon.remove()
     cleanup()
   }
 }

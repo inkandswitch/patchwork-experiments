@@ -1,5 +1,6 @@
 import type { CanvasDoc, DocHandle, Disposer } from '../core/types.js'
 import { translateShapes, nextZIndex } from '../core/commands.js'
+import { createElement, MousePointer2 } from 'lucide'
 
 /** Maximum screen-space gap (px) between hit-test samples during line-draw sweep. */
 const MAX_HIT_GAP = 4
@@ -62,10 +63,9 @@ function shapeIdNear(
 // ============================================================================
 
 function mountSelectButton(btn: HTMLElement): () => void {
-  const prev = btn.innerHTML
-  // Lucide MousePointer2
-  btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/></svg>`
-  return () => { btn.innerHTML = prev }
+  const icon = createElement(MousePointer2, { width: 22, height: 22, style: 'pointer-events:none' })
+  btn.appendChild(icon)
+  return () => { icon.remove() }
 }
 
 // ============================================================================

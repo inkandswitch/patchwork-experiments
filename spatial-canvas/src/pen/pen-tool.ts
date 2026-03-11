@@ -1,6 +1,7 @@
 import { getStroke } from 'perfect-freehand'
 import type { CanvasDoc, CanvasShape, DocHandle, Disposer } from '../core/types.js'
 import { createShape, nextZIndex, newId } from '../core/commands.js'
+import { createElement, Pen } from 'lucide'
 
 // ============================================================================
 // Shape type
@@ -73,34 +74,7 @@ export function PenTool(handle: DocHandle<CanvasDoc>, buttonEl: HTMLElement): Di
     return buttonEl.closest('.sc-container')?.querySelector<HTMLElement>('.sc-layer') ?? null
   }
 
-  // Button indicator — Lucide Pen icon in the current color
-  const indicatorSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-  indicatorSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
-  indicatorSvg.setAttribute('width', '22')
-  indicatorSvg.setAttribute('height', '22')
-  indicatorSvg.setAttribute('viewBox', '0 0 24 24')
-  indicatorSvg.setAttribute('fill', 'none')
-  indicatorSvg.setAttribute('stroke-linecap', 'round')
-  indicatorSvg.setAttribute('stroke-linejoin', 'round')
-  indicatorSvg.setAttribute('stroke-width', '2')
-  indicatorSvg.style.pointerEvents = 'none'
-  // Pen path (Lucide Pen2)
-  const penPath1 = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-  penPath1.setAttribute('d', 'M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z')
-  const penPath2 = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-  penPath2.setAttribute('d', 'm15 5 4 4')
-  indicatorSvg.appendChild(penPath1)
-  indicatorSvg.appendChild(penPath2)
-  buttonEl.innerHTML = ''
-  buttonEl.appendChild(indicatorSvg)
-
-  function updateIndicator() {
-    const color = getColor()
-    indicatorSvg.setAttribute('stroke', color)
-  }
-
-  updateIndicator()
-  handle.on('change', updateIndicator)
+  buttonEl.appendChild(createElement(Pen, { width: 22, height: 22, style: 'pointer-events:none' }))
 
   function onPointerDown(e: Event) {
     const { canvasX, canvasY } = (e as CustomEvent<PointerDetail>).detail
@@ -164,7 +138,6 @@ export function PenTool(handle: DocHandle<CanvasDoc>, buttonEl: HTMLElement): Di
     buttonEl.removeEventListener('spatial-canvas:pointermove', onPointerMove)
     buttonEl.removeEventListener('spatial-canvas:pointerup',   onPointerUp)
     buttonEl.removeEventListener('spatial-canvas:cancel',      onCancel)
-    handle.off('change', updateIndicator)
     cleanup()
   }
 }

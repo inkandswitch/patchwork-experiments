@@ -1,5 +1,6 @@
 import type { CanvasDoc, DocHandle, Disposer } from "../core/types.js";
 import { deleteShapes } from "../core/commands.js";
+import { createElement, Eraser } from 'lucide';
 
 /** Maximum screen-space distance (px) between hit-test samples during a sweep. */
 const MAX_HIT_GAP = 4;
@@ -40,11 +41,9 @@ function spawnTrail(canvasX: number, canvasY: number, layer: HTMLElement) {
 // ============================================================================
 
 function mountEraserButton(btn: HTMLElement): () => void {
-  const prev = btn.innerHTML;
-  btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg>`;
-  return () => {
-    btn.innerHTML = prev;
-  };
+  const icon = createElement(Eraser, { width: 22, height: 22, style: 'pointer-events:none' });
+  btn.appendChild(icon);
+  return () => { icon.remove(); };
 }
 
 // ============================================================================

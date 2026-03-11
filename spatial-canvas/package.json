@@ -16,6 +16,7 @@
     "vite": "latest"
   },
   "dependencies": {
+    "lucide": "^0.577.0",
     "perfect-freehand": "^1.2.3"
   }
 }
