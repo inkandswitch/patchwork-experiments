@@ -11,15 +11,21 @@ function clampSize(w: number, h: number): { width: number; height: number } {
   return { width: Math.round(w * scale), height: Math.round(h * scale) }
 }
 
-/** Read image dimensions from a File without adding it to the DOM. */
-function imageDimensions(file: File): Promise<{ w: number; h: number }> {
+/** Read image dimensions from bytes by loading a temporary in-memory Image. */
+function imageDimensions(bytes: Uint8Array, mimeType: string): Promise<{ w: number; h: number }> {
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file)
-    const img = new Image()
-    img.onload  = () => { URL.revokeObjectURL(url); resolve({ w: img.naturalWidth,  h: img.naturalHeight }) }
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not load image')) }
+    const blob = new Blob([bytes.buffer as ArrayBuffer], { type: mimeType })
+    const url  = URL.createObjectURL(blob)
+    const img  = new Image()
+    img.onload  = () => { URL.revokeObjectURL(url); resolve({ w: img.naturalWidth, h: img.naturalHeight }) }
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not load image for dimension check')) }
     img.src = url
   })
+}
+
+/** Convert an automerge URL to a service-worker-served HTTP URL. */
+function automergeToHttpUrl(automergeUrl: string): string {
+  return `/${encodeURIComponent(automergeUrl)}`
 }
 
 export default function ImageLayer(
@@ -28,38 +34,12 @@ export default function ImageLayer(
 ): () => void {
   element.style.cssText = 'position:absolute;inset:0;'
 
-  const repo = (element.closest('.sc-container') as any)?.repo
+  const repo     = (element.closest('.sc-container') as any)?.repo
   const canvasEl = element.closest('.sc-canvas') as HTMLElement | null
 
   // ---- Rendering -------------------------------------------------------
 
-  /** Per-shape blob URLs — revoked when the shape is removed. */
-  const blobUrls  = new Map<string, string>()
-  const mounted   = new Map<string, HTMLImageElement>()
-
-  function setBlobSrc(img: HTMLImageElement, shape: ImageShape) {
-    if (blobUrls.has(shape.id)) return  // already resolved
-    if (!repo) return
-
-    const fileHandle = repo.find(shape.fileUrl)
-
-    function tryLoad() {
-      const doc = fileHandle.doc()
-      if (!doc) return
-      const content = doc.content as Uint8Array | undefined
-      if (!content) return
-      const blob = new Blob([content], { type: doc.mimeType ?? 'image/png' })
-      const url  = URL.createObjectURL(blob)
-      blobUrls.set(shape.id, url)
-      img.src = url
-      fileHandle.off('change', tryLoad)
-    }
-
-    tryLoad()
-    if (!blobUrls.has(shape.id)) {
-      fileHandle.on('change', tryLoad)
-    }
-  }
+  const mounted = new Map<string, HTMLImageElement>()
 
   function render({ doc }: { doc: CanvasDoc }) {
     const currentIds = new Set<string>()
@@ -70,31 +50,31 @@ export default function ImageLayer(
     for (const [id, el] of mounted) {
       if (!currentIds.has(id)) {
         el.remove()
-        const url = blobUrls.get(id)
-        if (url) { URL.revokeObjectURL(url); blobUrls.delete(id) }
         mounted.delete(id)
       }
     }
 
     for (const shape of Object.values(doc.shapes)) {
       if (shape.type !== 'image') continue
-      const img_shape = shape as ImageShape
+      const s = shape as ImageShape
 
-      let img = mounted.get(img_shape.id)
+      let img = mounted.get(s.id)
       if (!img) {
         img = document.createElement('img')
         img.style.cssText = 'position:absolute;top:0;left:0;display:block;'
-        img.dataset.shapeId = img_shape.id
+        img.dataset.shapeId = s.id
         img.draggable = false
+        img.onload  = () => console.log('[image-layer] img loaded', s.id, img!.naturalWidth, 'x', img!.naturalHeight)
+        img.onerror = (e) => console.error('[image-layer] img failed to load', s.id, automergeToHttpUrl(s.fileUrl), e)
+        img.src = automergeToHttpUrl(s.fileUrl)
         element.appendChild(img)
-        mounted.set(img_shape.id, img)
-        setBlobSrc(img, img_shape)
+        mounted.set(s.id, img)
       }
 
-      img.style.transform = `translate(${img_shape.x}px,${img_shape.y}px)`
-      img.style.width     = `${img_shape.width}px`
-      img.style.height    = `${img_shape.height}px`
-      img.style.zIndex    = String(img_shape.zIndex)
+      img.style.transform = `translate(${s.x}px,${s.y}px)`
+      img.style.width     = `${s.width}px`
+      img.style.height    = `${s.height}px`
+      img.style.zIndex    = String(s.zIndex)
     }
   }
 
@@ -112,23 +92,31 @@ export default function ImageLayer(
 
   async function onDrop(e: DragEvent) {
     e.preventDefault()
+    console.log('[image-layer] drop event', { hasTransfer: !!e.dataTransfer, hasRepo: !!repo, hasCanvas: !!canvasEl })
     if (!e.dataTransfer || !repo || !canvasEl) return
 
-    const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'))
-    if (!files.length) return
+    const allFiles = Array.from(e.dataTransfer.files)
+    console.log('[image-layer] dropped files:', allFiles.map(f => `${f.name} (${f.type})`))
+
+    const files = allFiles.filter(f => f.type.startsWith('image/'))
+    if (!files.length) { console.warn('[image-layer] no image files in drop'); return }
 
     const pos = screenToCanvas(canvasEl, e.clientX, e.clientY)
+    console.log('[image-layer] canvas position:', pos)
 
     for (const file of files) {
-      const buf = await file.arrayBuffer()
+      console.log('[image-layer] processing', file.name, file.type, file.size, 'bytes')
+      const buf   = await file.arrayBuffer()
       const bytes = new Uint8Array(buf)
 
-      const { w, h } = await imageDimensions(file)
+      const { w, h } = await imageDimensions(bytes, file.type)
       const { width, height } = clampSize(w, h)
+      console.log('[image-layer] dimensions:', w, 'x', h, '→', width, 'x', height)
 
       const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.') + 1) : ''
 
       const fileHandle = repo.create()
+      console.log('[image-layer] created file doc', fileHandle.url)
       fileHandle.change((d: any) => {
         d.content   = bytes
         d.mimeType  = file.type
@@ -147,6 +135,7 @@ export default function ImageLayer(
         width,
         height,
       }
+      console.log('[image-layer] creating shape', shape)
       createShape(handle, shape)
     }
   }
@@ -159,8 +148,6 @@ export default function ImageLayer(
     canvasEl?.removeEventListener('dragover', onDragOver)
     canvasEl?.removeEventListener('drop', onDrop)
     for (const el of mounted.values()) el.remove()
-    for (const url of blobUrls.values()) URL.revokeObjectURL(url)
     mounted.clear()
-    blobUrls.clear()
   }
 }

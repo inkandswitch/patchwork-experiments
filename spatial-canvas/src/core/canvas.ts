@@ -51,6 +51,7 @@ export class CanvasView {
     // Build DOM scaffold
     this.container = document.createElement("div");
     this.container.className = "sc-container";
+    (this.container as any).repo = this.repo;
 
     this.canvasEl = document.createElement("div");
     this.canvasEl.className = "sc-canvas";

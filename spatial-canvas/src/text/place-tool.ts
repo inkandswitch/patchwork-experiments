@@ -1,7 +1,6 @@
 import { createElement, Type } from 'lucide'
 import type { CanvasDoc, DocHandle, Disposer } from '../core/types.js'
 import { createShape, nextZIndex, newId } from '../core/commands.js'
-import { openEditor, DEFAULT_FONT_SIZE } from './layer.js'
 import type { TextShape } from './text.js'
 
 interface PointerDetail {
@@ -27,11 +26,7 @@ export default function PlaceTextTool(
 
   function getFontSize(): number {
     const contactUrl = window.accountDocHandle?.doc()?.contactUrl ?? 'local'
-    return handle.doc()?.stateByUser?.[contactUrl]?.fontSize ?? DEFAULT_FONT_SIZE
-  }
-
-  function getLayer(): HTMLElement | null {
-    return buttonEl.closest('.sc-container')?.querySelector<HTMLElement>('.sc-layer') ?? null
+    return handle.doc()?.stateByUser?.[contactUrl]?.fontSize ?? 18
   }
 
   function onPointerDown(e: Event) {
@@ -44,37 +39,26 @@ export default function PlaceTextTool(
     const { canvasX, canvasY } = (e as CustomEvent<PointerDetail>).detail
     const dx = canvasX - downAt.canvasX
     const dy = canvasY - downAt.canvasY
-    const dist = Math.sqrt(dx * dx + dy * dy)
 
-    // Only treat as a click (not a drag)
-    if (dist <= 4) {
+    if (Math.sqrt(dx * dx + dy * dy) <= 4) {
       const doc = handle.doc()
-      const zIndex = doc ? nextZIndex(doc) : 0
-      const id = newId()
       const shape: TextShape = {
-        id,
+        id: newId(),
         type: 'text',
         x: downAt.canvasX,
         y: downAt.canvasY,
-        zIndex,
+        zIndex: doc ? nextZIndex(doc) : 0,
         text: '',
         color: getColor(),
         fontSize: getFontSize(),
       }
       createShape(handle, shape)
-
-      const layer = getLayer()
-      if (layer) {
-        openEditor(handle, layer, id)
-      }
     }
 
     downAt = null
   }
 
-  function onCancel() {
-    downAt = null
-  }
+  function onCancel() { downAt = null }
 
   buttonEl.addEventListener('spatial-canvas:pointerdown', onPointerDown)
   buttonEl.addEventListener('spatial-canvas:pointerup',   onPointerUp)
