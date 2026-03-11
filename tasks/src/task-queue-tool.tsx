@@ -29,13 +29,11 @@ const IWorker: React.FC<any> = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     <div className="m-4 p-2">
       <div>
         {doc.contactUrl && <patchwork-view doc-url={doc.contactUrl} tool-id="contact-inline" />} /{' '}
-        {doc.name}
-      </div>
-      <div>
+        {doc.name}{' '}
         {doc.currentTask ? (
           <TaskBrowserTool docUrl={doc.currentTask.taskUrl} docPath={[]} />
         ) : (
-          'idle'
+          '(idle)'
         )}
       </div>
     </div>
