@@ -98,8 +98,8 @@ function openDatatypeMenu(
 export default function PlaceEmbedTool(
   handle: DocHandle<CanvasDoc>,
   buttonEl: HTMLElement,
-  repo: unknown,
 ): Disposer {
+  const repo = (buttonEl as any).repo
   const icon = createElement(Link, { width: 22, height: 22, style: 'pointer-events:none' })
   buttonEl.appendChild(icon)
   buttonEl.title = 'Embed'

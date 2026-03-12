@@ -85,7 +85,8 @@ function subscribeTitle(repo: any, docUrl: string, docType: string, onTitle: (ti
 // Layer
 // ============================================================================
 
-export default function EmbedLayer(handle: DocHandle<CanvasDoc>, element: HTMLElement, repo: unknown): () => void {
+export default function EmbedLayer(handle: DocHandle<CanvasDoc>, element: HTMLElement): () => void {
+  const repo = (element.closest(".sc-container") as any)?.repo;
   element.style.cssText = "position:absolute;inset:0;";
 
   const mounted = new Map<string, HTMLElement>();

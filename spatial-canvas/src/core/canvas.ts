@@ -16,6 +16,67 @@ function normalizeDelta(e: WheelEvent): [number, number] {
 }
 
 /**
+ * Returns true only when the pointer is directly over a rendered text glyph
+ * inside an editable context (contenteditable, textarea, input).
+ *
+ * caretRangeFromPoint always snaps to the nearest character, so we must also
+ * verify the click lands inside the character's actual bounding rect, not just
+ * nearby empty space. We additionally gate on "inside an editable element" so
+ * non-editable text on shapes is never intercepted.
+ */
+function isTextUnderPointer(x: number, y: number, target: Element | null): boolean {
+  // textarea / input are native widgets — any click inside them should pass through
+  let el: Element | null = target
+  while (el && !el.classList.contains('sc-canvas')) {
+    if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') return true
+    el = el.parentElement
+  }
+
+  // Find the text node + offset at the pointer position
+  let textNode: Text | null = null
+  let charOffset = 0
+
+  if (document.caretRangeFromPoint) {
+    const r = document.caretRangeFromPoint(x, y)
+    if (r?.startContainer.nodeType === Node.TEXT_NODE) {
+      textNode = r.startContainer as Text
+      charOffset = r.startOffset
+    }
+  } else if ((document as any).caretPositionFromPoint) {
+    const pos = (document as any).caretPositionFromPoint(x, y)
+    if (pos?.offsetNode?.nodeType === Node.TEXT_NODE) {
+      textNode = pos.offsetNode as Text
+      charOffset = pos.offset as number
+    }
+  }
+
+  if (!textNode) return false
+
+  // Only intercept when inside a contenteditable element
+  let node: Element | null = textNode.parentElement
+  let insideEditable = false
+  while (node && !node.classList.contains('sc-canvas')) {
+    if ((node as HTMLElement).isContentEditable) { insideEditable = true; break }
+    node = node.parentElement
+  }
+  if (!insideEditable) return false
+
+  // Verify the click actually lands on the glyph's rect, not snapped empty space
+  try {
+    const charRange = document.createRange()
+    charRange.setStart(textNode, charOffset)
+    charRange.setEnd(textNode, Math.min(charOffset + 1, textNode.length))
+    const rect = charRange.getBoundingClientRect()
+    const SLOP = 2
+    return rect.width > 0
+      && x >= rect.left - SLOP && x <= rect.right  + SLOP
+      && y >= rect.top  - SLOP && y <= rect.bottom + SLOP
+  } catch {
+    return false
+  }
+}
+
+/**
  * CanvasView — the core spatial canvas host.
  *
  * Responsibilities:
@@ -100,6 +161,9 @@ export class CanvasView {
 
     const onPointerDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
+      // If the pointer landed on actual text let the browser handle it natively
+      // (text cursor / selection) instead of starting a canvas drag.
+      if (isTextUnderPointer(e.clientX, e.clientY, e.target as Element)) return;
       canvas.setPointerCapture(e.pointerId);
       this.activePointerId = e.pointerId;
       this.dispatchToActiveTool("spatial-canvas:pointerdown", e);
