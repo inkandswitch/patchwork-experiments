@@ -40,16 +40,22 @@ export default function ToolbarPanel(
     views.push(view)
   }
 
-  const onToolChanged = (e: Event) => {
-    const toolId = (e as CustomEvent<{ toolId: string }>).detail.toolId
+  const contactUrl = (window as any).accountDocHandle?.doc()?.contactUrl ?? 'local'
+
+  function applyActiveTool(toolId: string | undefined) {
     for (const view of views) {
       view.classList.toggle('active', view.getAttribute('tool-id') === toolId)
     }
   }
 
-  container?.addEventListener('spatial-canvas:tool-changed', onToolChanged)
+  applyActiveTool(handle.doc()?.stateByUser?.[contactUrl]?.selectedTool)
+
+  const onDocChange = ({ doc }: { doc: CanvasDoc }) => {
+    applyActiveTool(doc.stateByUser?.[contactUrl]?.selectedTool)
+  }
+  handle.on('change', onDocChange)
 
   return () => {
-    container?.removeEventListener('spatial-canvas:tool-changed', onToolChanged)
+    handle.off('change', onDocChange)
   }
 }

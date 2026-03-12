@@ -6,89 +6,15 @@ import {
   type LoadedDatatype,
 } from '@inkandswitch/patchwork-plugins'
 import { createShape, patchShape, newId, nextZIndex } from '../core/commands.js'
-import { createElement, Link, type IconNode } from 'lucide'
-import * as icons from 'lucide'
+import { createElement, Link } from 'lucide'
 import type { EmbedShape } from './types.js'
+import { openMenu } from './menu.js'
 
 interface PointerDetail {
   canvasX: number
   canvasY: number
   screenX: number
   screenY: number
-}
-
-function openDatatypeMenu(
-  anchorEl: HTMLElement,
-  onSelect: (id: string) => void,
-): () => void {
-  const registry = getRegistry<DatatypeDescription>('patchwork:datatype')
-  const datatypes = registry.filter(d => !d.unlisted)
-
-  const menu = document.createElement('div')
-  menu.style.cssText = [
-    'position:fixed',
-    'z-index:99999',
-    'background:#fff',
-    'border:1px solid #ddd',
-    'border-radius:8px',
-    'box-shadow:0 4px 16px rgba(0,0,0,0.15)',
-    'padding:4px',
-    'min-width:160px',
-    'font:13px/1.4 system-ui,sans-serif',
-  ].join(';')
-
-  for (const dt of datatypes) {
-    const item = document.createElement('button')
-    item.style.cssText = [
-      'display:flex',
-      'align-items:center',
-      'gap:8px',
-      'width:100%',
-      'padding:6px 10px',
-      'border:none',
-      'background:none',
-      'border-radius:5px',
-      'cursor:pointer',
-      'text-align:left',
-      'font:inherit',
-    ].join(';')
-    const iconData = dt.icon ? (icons as unknown as Record<string, IconNode | undefined>)[dt.icon] : undefined
-    if (iconData) item.appendChild(createElement(iconData, { width: 16, height: 16, style: 'pointer-events:none;flex-shrink:0' }))
-    const label = document.createElement('span')
-    label.textContent = dt.name
-    item.appendChild(label)
-    item.addEventListener('pointerdown', e => {
-      e.stopPropagation()
-      onSelect(dt.id)
-      close()
-    })
-    item.addEventListener('mouseover', () => { item.style.background = '#f0f0f0' })
-    item.addEventListener('mouseout', () => { item.style.background = '' })
-    menu.appendChild(item)
-  }
-
-  // Position below the anchor button
-  // Append hidden to measure height, then position above the anchor
-  menu.style.visibility = 'hidden'
-  document.body.appendChild(menu)
-  const rect = anchorEl.getBoundingClientRect()
-  const menuH = menu.offsetHeight
-  menu.style.left = `${rect.left}px`
-  menu.style.top = `${rect.top - menuH - 4}px`
-  menu.style.visibility = ''
-
-  function close() {
-    menu.remove()
-    document.removeEventListener('pointerdown', onOutside)
-  }
-
-  function onOutside(e: PointerEvent) {
-    if (!menu.contains(e.target as Node)) close()
-  }
-  // Delay so the click that opened the menu doesn't immediately close it
-  setTimeout(() => document.addEventListener('pointerdown', onOutside), 0)
-
-  return close
 }
 
 // ============================================================================
@@ -137,10 +63,13 @@ export default function PlaceEmbedTool(
 
   function onButtonClick() {
     closeMenu?.()
-    closeMenu = openDatatypeMenu(buttonEl, id => {
-      pendingDatatypeId = id
-      closeMenu = null
-    })
+    const registry = getRegistry<DatatypeDescription>('patchwork:datatype')
+    const datatypes = registry.filter(d => !d.unlisted)
+    closeMenu = openMenu(
+      buttonEl,
+      datatypes.map(dt => ({ id: dt.id, name: dt.name, icon: dt.icon })),
+      id => { pendingDatatypeId = id; closeMenu = null },
+    )
   }
 
   buttonEl.addEventListener('click', onButtonClick)
@@ -182,6 +111,13 @@ export default function PlaceEmbedTool(
     cleanup()
 
     if (width <= 4 || height <= 4 || !pendingDatatypeId) return
+
+    const contactUrl = (window as any).accountDocHandle?.doc()?.contactUrl ?? 'local'
+    handle.change(d => {
+      if (!d.stateByUser) d.stateByUser = {}
+      if (!d.stateByUser[contactUrl]) d.stateByUser[contactUrl] = { selection: {}, color: '#1a1a1a' }
+      d.stateByUser[contactUrl].selectedTool = 'spatial-canvas-tool-select'
+    })
 
     const datatypeId = pendingDatatypeId
     const doc = handle.doc()

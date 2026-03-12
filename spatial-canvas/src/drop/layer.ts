@@ -68,18 +68,27 @@ export default function DropLayer(
       try { urls = JSON.parse(patchworkRaw) } catch { urls = [] }
 
       for (let i = 0; i < urls.length; i++) {
-        const docUrl = urls[i]
-        let docType = ''
+        const raw = urls[i]
 
-        let toolId = ''
+        // Parse optional &tool= suffix added by embed layer drag-out
+        let cleanUrl = raw
+        let toolIdFromUrl = ''
+        if (raw.includes('&tool=')) {
+          const idx = raw.indexOf('&tool=')
+          cleanUrl      = raw.slice(0, idx)
+          toolIdFromUrl = raw.slice(idx + 6)
+        }
+
+        let docType = ''
+        let toolId = toolIdFromUrl
         try {
-          const fileHandle = repo.find(docUrl)
+          const fileHandle = repo.find(cleanUrl)
           const doc = (fileHandle as any).doc() as any
           docType = doc?.['@patchwork']?.type ?? ''
-          toolId  = resolveToolId(docType)
-          console.log('[drop-layer] patchwork url:', docUrl, '→ docType:', docType || '(empty)', '→ toolId:', toolId || '(none)')
+          if (!toolId) toolId = resolveToolId(docType)
+          console.log('[drop-layer] patchwork url:', cleanUrl, '→ docType:', docType || '(empty)', '→ toolId:', toolId || '(none)', toolIdFromUrl ? '(from url)' : '')
         } catch (err) {
-          console.warn('[drop-layer] could not read @patchwork.type for', docUrl, err)
+          console.warn('[drop-layer] could not read @patchwork.type for', cleanUrl, err)
         }
 
         const canvasDoc = handle.doc()
@@ -89,7 +98,7 @@ export default function DropLayer(
           x:       pos.x,
           y:       pos.y + i * (DEFAULT_EMBED_HEIGHT + EMBED_GAP),
           zIndex:  canvasDoc ? nextZIndex(canvasDoc) : 0,
-          docUrl,
+          docUrl:  cleanUrl,
           docType,
           toolId,
           width:   DEFAULT_EMBED_WIDTH,

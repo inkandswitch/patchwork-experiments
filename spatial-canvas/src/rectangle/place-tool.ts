@@ -112,6 +112,11 @@ export default function PlaceRectangleTool(
         fill: getFill(),
       }
       createShape(handle, shape)
+      handle.change(d => {
+        if (!d.stateByUser) d.stateByUser = {}
+        if (!d.stateByUser[contactUrl]) d.stateByUser[contactUrl] = { selection: {}, color: '#1a1a1a' }
+        d.stateByUser[contactUrl].selectedTool = 'spatial-canvas-tool-select'
+      })
     }
 
     cleanup()

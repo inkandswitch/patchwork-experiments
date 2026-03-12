@@ -21,6 +21,7 @@ export interface UserState {
   color: string
   fill?: 'transparent' | 'white' | 'filled'
   fontSize?: number
+  selectedTool?: string
 }
 
 /**

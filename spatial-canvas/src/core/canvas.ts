@@ -150,6 +150,18 @@ export class CanvasView {
     this.disposers.push(() => ro.disconnect());
 
     this.bindEvents();
+
+    const contactUrl = (window as any).accountDocHandle?.doc()?.contactUrl ?? 'local'
+    const onDocChange = ({ doc }: { doc: CanvasDoc }) => {
+      const tool = doc.stateByUser?.[contactUrl]?.selectedTool
+      if (tool && tool !== this.activeTool) this.setActiveTool(tool)
+    }
+    this.handle.on('change', onDocChange)
+    this.disposers.push(() => this.handle.off('change', onDocChange))
+
+    const initialTool = this.handle.doc()?.stateByUser?.[contactUrl]?.selectedTool
+      ?? 'spatial-canvas-tool-select'
+    this.setActiveTool(initialTool)
   }
 
   // ---------------------------------------------------------------------------
@@ -269,6 +281,19 @@ export class CanvasView {
         })
       }
 
+      // TODO: find a proper place for tool shortcuts
+      const toolKeys: Record<string, string> = {
+        v: 'spatial-canvas-tool-select',
+        r: 'spatial-canvas-tool-place-rectangle',
+        t: 'spatial-canvas-tool-text',
+        p: 'spatial-canvas-tool-pen',
+        e: 'spatial-canvas-tool-embed',
+      }
+      if (!isMod && e.key in toolKeys) {
+        e.preventDefault()
+        this.setActiveTool(toolKeys[e.key])
+      }
+
       if (e.key === 'd' && isMod) {
         const doc = this.handle.doc()
         if (!doc) return
@@ -344,6 +369,15 @@ export class CanvasView {
     oldBtn?.dispatchEvent(new CustomEvent("spatial-canvas:cancel", { bubbles: false }));
     this.activeTool = tool;
     this.canvasEl.dataset.tool = tool;
+    const contactUrl = (window as any).accountDocHandle?.doc()?.contactUrl ?? 'local'
+    const current = this.handle.doc()?.stateByUser?.[contactUrl]?.selectedTool
+    if (current !== tool) {
+      this.handle.change(d => {
+        if (!d.stateByUser) d.stateByUser = {}
+        if (!d.stateByUser[contactUrl]) d.stateByUser[contactUrl] = { selection: {}, color: '#1a1a1a' }
+        d.stateByUser[contactUrl].selectedTool = tool
+      })
+    }
     // Notify all toolbar panels so they can update active button state
     this.container.dispatchEvent(
       new CustomEvent("spatial-canvas:tool-changed", {
