@@ -198,6 +198,17 @@ export const plugins = [
   },
   {
     type: 'patchwork:tool' as const,
+    id: 'spatial-canvas-layer-resize',
+    name: 'Resize Layer',
+    icon: 'Maximize2',
+    tags: ['spatial-canvas-layer'],
+    supportedDatatypes: ['spatial-canvas'],
+    async load() {
+      return (await import('./resize/layer.js')).default
+    },
+  },
+  {
+    type: 'patchwork:tool' as const,
     id: 'spatial-canvas-layer-drop',
     name: 'Drop Layer',
     icon: 'Download',

@@ -17,7 +17,7 @@ export default function SelectionLayer(
   const appliedFilters = new Map<string, string>()
 
   function applyHighlight(el: HTMLElement) {
-    el.style.filter = 'drop-shadow(0 0 4px #1a73e8) drop-shadow(0 0 8px rgba(26,115,232,0.5))'
+    el.style.filter = 'drop-shadow(0 0 3px rgba(0,0,0,0.35)) drop-shadow(0 0 6px rgba(0,0,0,0.2))'
   }
 
   function render({ doc }: { doc: CanvasDoc }) {
