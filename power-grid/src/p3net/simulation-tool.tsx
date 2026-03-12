@@ -110,7 +110,7 @@ function P3NetSimulation({ handle }: { handle: DocHandle<P3NetDoc> }) {
     if (!isPlaying) return;
     const id = setInterval(() => {
       if (!steppingRef.current) handleStep();
-    }, 200);
+    }, 100);
     return () => clearInterval(id);
   }, [isPlaying, handleStep]);
 
@@ -127,10 +127,12 @@ function P3NetSimulation({ handle }: { handle: DocHandle<P3NetDoc> }) {
   }, [animState]);
 
   const handleAnimComplete = useCallback(() => {
+    const pending = animState?.pending;
     setAnimState(null);
     steppingRef.current = false;
+    pending?.runSideEffects(); // all output tokens are now in the doc
     if (isPlayingRef.current) handleStep();
-  }, [handleStep]);
+  }, [animState, handleStep]);
 
   const handleReset = useCallback(() => {
     net?.reset();

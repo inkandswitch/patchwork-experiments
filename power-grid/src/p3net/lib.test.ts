@@ -354,9 +354,9 @@ describe('guard wait (token waits until guard becomes true)', () => {
   });
 });
 
-// ─── onTokens: produce ────────────────────────────────────────────────────────
+// ─── onConsumedTokens: produce ───────────────────────────────────────────────
 
-describe('onTokens: produce', () => {
+describe('onConsumedTokens: produce', () => {
   it('produces explicit output tokens instead of forwarding', async () => {
     const def: NetDef = {
       places: ['src', 'dst'],
@@ -365,7 +365,7 @@ describe('onTokens: produce', () => {
           id: 't',
           from: ['src'],
           to: ['dst'],
-          onTokens: () => ({
+          onConsumedTokens: () => ({
             produce: [{ state: { type: 'result', value: 'new' } }],
           }),
         },
@@ -393,7 +393,7 @@ describe('onTokens: produce', () => {
           id: 't',
           from: ['src'],
           to: ['out1', 'out2'],
-          onTokens: () => ({
+          onConsumedTokens: () => ({
             produce: [
               { state: { type: 'a' }, toPlace: 'out1' },
               { state: { type: 'b' }, toPlace: 'out2' },
@@ -418,7 +418,7 @@ describe('onTokens: produce', () => {
     expect(tokenStates(handle, 'out2')).toEqual([{ type: 'b' }]);
   });
 
-  it('async onTokens is awaited before building outputs', async () => {
+  it('async onConsumedTokens is awaited before building outputs', async () => {
     const def: NetDef = {
       places: ['in', 'out'],
       transitions: [
@@ -426,7 +426,7 @@ describe('onTokens: produce', () => {
           id: 't',
           from: ['in'],
           to: ['out'],
-          onTokens: async ({ in: inp }) => {
+          onConsumedTokens: async ({ in: inp }) => {
             const computed = (inp.state.n as number) * 2;
             return { produce: [{ state: { result: computed } }] };
           },
@@ -445,9 +445,9 @@ describe('onTokens: produce', () => {
   });
 });
 
-// ─── onTokens: destroy ────────────────────────────────────────────────────────
+// ─── onConsumedTokens: destroy ───────────────────────────────────────────────
 
-describe('onTokens: destroy', () => {
+describe('onConsumedTokens: destroy', () => {
   it('destroys one input and forwards the other', async () => {
     const def: NetDef = {
       places: ['a', 'b', 'out'],
@@ -456,7 +456,7 @@ describe('onTokens: destroy', () => {
           id: 't',
           from: ['a', 'b'],
           to: ['out'],
-          onTokens: () => ({ destroy: ['b'] }),
+          onConsumedTokens: () => ({ destroy: ['b'] }),
         },
       ],
       tokenTypes: [],

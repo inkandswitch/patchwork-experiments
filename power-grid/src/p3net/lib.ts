@@ -55,12 +55,19 @@ export type TransitionDef = {
   /** Return false (or a Promise resolving to false) to prevent this transition from firing. */
   guard?: (tokens: ReadonlyTokens) => boolean | Promise<boolean>;
   /**
-   * Called when the transition fires. Returns a declarative description of
-   * what should happen to the tokens. May be async.
+   * Called when the transition fires (before animation). Returns a declarative
+   * description of what should happen to the tokens. May be async.
    *
    * If omitted, all input tokens are forwarded unchanged to all to-places.
    */
-  onTokens?: (tokens: ReadonlyTokens, repo: Repo) => TokensResult | Promise<TokensResult>;
+  onConsumedTokens?: (tokens: ReadonlyTokens, repo: Repo) => TokensResult | Promise<TokensResult>;
+  /**
+   * Called after the animation completes and all output tokens have landed in
+   * their destination places. Use for side effects (e.g. launching async work)
+   * that depend on the output tokens being present in the doc. May be async;
+   * errors are caught and logged.
+   */
+  onProducedToken?: (token: AnimTokenInfo) => void | Promise<void>;
 };
 
 export type NetDef = {
@@ -90,7 +97,7 @@ export type TransitionFiring = {
 };
 
 /**
- * Returned by prepareStep(). Holds the animation data and two callbacks that
+ * Returned by prepareStep(). Holds the animation data and callbacks that
  * apply the doc mutations incrementally as the animation plays.
  */
 export type PendingStep = {
@@ -99,6 +106,11 @@ export type PendingStep = {
   removeInputs(): void;
   /** Add a single output token to the doc. Call as each animated token lands. */
   addOutput(id: string): void;
+  /**
+   * Invoke all onProducedToken callbacks. Call after the animation is fully
+   * complete and all output tokens are in the doc. Fire-and-forget.
+   */
+  runSideEffects(): void;
 };
 
 export interface PetriNet {
@@ -201,10 +213,10 @@ function createPetriNet(def: NetDef, handle: DocHandle<P3NetDoc>, repo: Repo): P
           state: deepClone(t.state),
         }));
 
-        // ── 3. Call onTokens to get declarative result ──────────────────────
+        // ── 3. Call onConsumedTokens to get declarative result ──────────────
         let result: TokensResult = {};
-        if (transition.onTokens) {
-          result = (await transition.onTokens(readonlyTokens, repo)) ?? {};
+        if (transition.onConsumedTokens) {
+          result = (await transition.onConsumedTokens(readonlyTokens, repo)) ?? {};
         }
 
         // ── 4. Pre-generate output tokens ───────────────────────────────────
@@ -276,6 +288,17 @@ function createPetriNet(def: NetDef, handle: DocHandle<P3NetDoc>, repo: Repo): P
             if (!d.tokens[out.placeId]) d.tokens[out.placeId] = [];
             d.tokens[out.placeId].push({ id: out.id, state: deepClone(out.state) });
           });
+        },
+
+        runSideEffects() {
+          for (const { transition, outputs } of prepared) {
+            if (!transition.onProducedToken) continue;
+            for (const token of outputs) {
+              Promise.resolve(transition.onProducedToken(token)).catch(
+                (err) => console.error(`[p3net] onProducedToken error in "${transition.id}":`, err),
+              );
+            }
+          }
         },
       };
     },

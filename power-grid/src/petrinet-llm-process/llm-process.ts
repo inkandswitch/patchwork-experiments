@@ -67,7 +67,7 @@ export async function runLLMProcess(
 
   const skillMod = await import(/* @vite-ignore */ apiModuleUrl);
   const skillApi = skillMod.default(targetHandle);
-  const skillDescription: string | undefined = skillMod.apiDescription;
+  const skillSystemPrompt: string | undefined = skillMod.systemPrompt;
 
   (globalThis as any).api = skillApi;
   (globalThis as any).__llmCapturedConsole = capturedConsole;
@@ -86,7 +86,7 @@ export async function runLLMProcess(
     const currentDoc = handle.doc();
     if (!currentDoc) break;
 
-    const messages = buildLLMMessages(currentDoc, skillDescription);
+    const messages = buildLLMMessages(currentDoc, skillSystemPrompt);
     console.log(`[petrinet-llm] iteration ${iteration}: sending ${messages.length} messages to ${model}`);
 
     const stream = streamChatCompletion(apiUrl, apiKey, model, messages, signal);
@@ -170,10 +170,12 @@ export async function runLLMProcess(
 
 // --- LLM message building ---
 
-export function buildLLMMessages(doc: PetrinetLLMDoc, apiDescription?: string): ChatMessage[] {
+const FALLBACK_SYSTEM_PROMPT = `You are a coding agent that edits a document via a JavaScript API. Use <script> tags to run code. Use \`return\` to see a value in output.`;
+
+export function buildLLMMessages(doc: PetrinetLLMDoc, systemPrompt?: string): ChatMessage[] {
   const messages: ChatMessage[] = [];
 
-  messages.push({ role: 'system', content: buildSystemPrompt(apiDescription) });
+  messages.push({ role: 'system', content: systemPrompt ?? FALLBACK_SYSTEM_PROMPT });
   messages.push({ role: 'user', content: doc.prompt });
 
   if (doc.output.length > 0) {
@@ -217,34 +219,6 @@ function appendOutputMessages(messages: ChatMessage[], blocks: OutputBlock[]): v
   }
 }
 
-const FALLBACK_API_DESCRIPTION = `  api   — the document API provided by the skill module`;
-
-export function buildSystemPrompt(apiDescription?: string): string {
-  const apiSection = apiDescription ?? FALLBACK_API_DESCRIPTION;
-  return `You are a coding agent with the ability to execute JavaScript against a document API.
-
-You can execute code by writing it inside <script> tags. Add a data-description attribute to briefly describe what the code does:
-
-<script data-description="Inspect current state">
-console.log(api.query())
-</script>
-
-Available in your execution context:
-
-${apiSection}
-
-  console.log(...)  — output text (captured and shown to you)
-  return value      — return a value from the script (shown to you as output)
-
-After each <script> block you will see the console output, return value, or any errors.
-Use this to inspect results and decide your next steps.
-
-Write text outside of script tags to explain your reasoning.
-Keep your code concise and focused on the task.`;
-}
-
-/** @deprecated use buildSystemPrompt() */
-export const SYSTEM_PROMPT = buildSystemPrompt();
 
 // --- LLM streaming ---
 
