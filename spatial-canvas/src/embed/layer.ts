@@ -82,6 +82,25 @@ function subscribeTitle(repo: any, docUrl: string, docType: string, onTitle: (ti
 }
 
 // ============================================================================
+// Helpers
+// ============================================================================
+
+/**
+ * Returns true if `el` or any ancestor up to (but not including) `boundary`
+ * is a scrollable element (overflow:auto/scroll with actual overflow content).
+ */
+function isInsideScrollable(el: Element | null, boundary: Element): boolean {
+  while (el && el !== boundary) {
+    const { overflowY, overflowX } = getComputedStyle(el)
+    const scrollableY = (overflowY === 'auto' || overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 1
+    const scrollableX = (overflowX === 'auto' || overflowX === 'scroll') && el.scrollWidth  > el.clientWidth  + 1
+    if (scrollableY || scrollableX) return true
+    el = el.parentElement
+  }
+  return false
+}
+
+// ============================================================================
 // Layer
 // ============================================================================
 
@@ -164,12 +183,35 @@ export default function EmbedLayer(handle: DocHandle<CanvasDoc>, element: HTMLEl
     // buttons, inputs, and scrollable areas work natively.
     // The header above still propagates, keeping drag-to-move on embeds working.
     content.addEventListener('pointerdown', e => e.stopPropagation());
-    // Plain scroll stays inside the embed; zoom gestures (ctrlKey = pinch/
-    // ctrl+scroll) propagate up to the canvas's non-passive handler so it can
-    // call preventDefault (blocking browser zoom) and run its custom zoom logic.
+    // Zoom gestures (ctrlKey = pinch/ctrl+scroll) always propagate to the
+    // canvas's non-passive handler so it can preventDefault browser zoom and
+    // run its custom zoom logic.
+    // For plain scroll, decide once at gesture-start whether we're inside a
+    // scrollable element and hold that decision for the whole gesture (even
+    // when hitting the top/bottom limit) to avoid unintended canvas panning.
+    let gestureAbsorb: boolean | null = null
+    let gestureEndTimer: ReturnType<typeof setTimeout> | null = null
+
+    function resetGesture() {
+      gestureAbsorb = null
+      if (gestureEndTimer) { clearTimeout(gestureEndTimer); gestureEndTimer = null }
+    }
+
     content.addEventListener('wheel', e => {
-      if (!e.ctrlKey) e.stopPropagation()
-    }, { passive: true });
+      if (e.ctrlKey) return
+      if (gestureAbsorb === null) {
+        gestureAbsorb = isInsideScrollable(e.target as Element, content)
+      }
+      if (gestureAbsorb) e.stopPropagation()
+      // Debounce reset — pointermove resets immediately, this catches
+      // the case where the user stops moving before the next scroll.
+      if (gestureEndTimer) clearTimeout(gestureEndTimer)
+      gestureEndTimer = setTimeout(resetGesture, 150)
+    }, { passive: true })
+
+    // Pointer move resets immediately so the next scroll gesture re-evaluates
+    // from the new cursor position without waiting for the debounce.
+    content.addEventListener('pointermove', resetGesture, { passive: true });
     wrapper.appendChild(content);
 
     // Title subscription (empty docUrl at creation — re-subscribed in updateWrapper)
