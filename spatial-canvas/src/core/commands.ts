@@ -51,6 +51,39 @@ export function patchShape(
   })
 }
 
+/**
+ * Duplicate the given shapes, offset by (dx, dy), and give them new ids at
+ * the top of the z-stack.
+ */
+export function duplicateShapes(
+  handle: DocHandle<CanvasDoc>,
+  ids: Iterable<string>,
+  dx: number,
+  dy: number,
+): string[] {
+  // Snapshot plain values outside the change callback so we never hand
+  // Automerge proxy objects back into the document.
+  const snapshots: CanvasShape[] = []
+  const currentDoc = handle.doc()
+  if (!currentDoc) return []
+  for (const id of ids) {
+    const src = currentDoc.shapes[id]
+    if (!src) continue
+    snapshots.push(JSON.parse(JSON.stringify(src)))
+  }
+  if (snapshots.length === 0) return []
+
+  const newIds = snapshots.map(() => newId())
+  handle.change(doc => {
+    const base = nextZIndex(doc)
+    snapshots.forEach((snap, i) => {
+      const copy = { ...snap, id: newIds[i], x: snap.x + dx, y: snap.y + dy, zIndex: base + i }
+      doc.shapes[copy.id] = copy
+    })
+  })
+  return newIds
+}
+
 /** Generate a short random id for new shapes. */
 export function newId(): string {
   return Math.random().toString(36).slice(2, 10)

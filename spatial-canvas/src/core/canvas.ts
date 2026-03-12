@@ -2,6 +2,7 @@ import type { Camera, Rect, CanvasDoc, DocHandle, Disposer } from "./types.js";
 import { updateCamera, zoomCamera } from "./camera.js";
 import { Inputs } from "./inputs.js";
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { deleteShapes, duplicateShapes } from "./commands.js";
 
 import canvasCss from "./css/canvas.css?inline";
 
@@ -182,6 +183,56 @@ export class CanvasView {
     canvas.addEventListener("touchstart", preventEdgeSwipe, { passive: false });
     this.container.addEventListener("spatial-canvas:set-tool", onSetTool);
 
+    const onKeyDown = (e: KeyboardEvent) => {
+      // Ignore shortcuts when focus is inside a text input / contenteditable
+      const target = e.target as HTMLElement
+      if (target.isContentEditable || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return
+
+      const isMod = e.metaKey || e.ctrlKey
+
+      if (e.key === 'Backspace' && !isMod) {
+        const doc = this.handle.doc()
+        if (!doc) return
+        const contactUrl = (window as any).accountDocHandle?.doc()?.contactUrl ?? 'local'
+        const selection = doc.stateByUser?.[contactUrl]?.selection ?? {}
+        const ids = Object.keys(selection)
+        if (ids.length === 0) return
+        e.preventDefault()
+        deleteShapes(this.handle, ids)
+        // Clear selection
+        this.handle.change(d => {
+          if (d.stateByUser?.[contactUrl]) d.stateByUser[contactUrl].selection = {}
+        })
+      }
+
+      if (e.key === 'd' && isMod) {
+        const doc = this.handle.doc()
+        if (!doc) return
+        const contactUrl = (window as any).accountDocHandle?.doc()?.contactUrl ?? 'local'
+        const selection = doc.stateByUser?.[contactUrl]?.selection ?? {}
+        const ids = Object.keys(selection)
+        if (ids.length === 0) return
+        e.preventDefault()
+        // Offset: if any selected shape has a width, shift right by that width + gap,
+        // otherwise shift diagonally by 10px.
+        const shapes = ids.map(id => doc.shapes[id]).filter(Boolean)
+        const hasWidth = shapes.some(s => 'width' in s && (s as any).width > 0)
+        const dx = hasWidth ? Math.max(...shapes.map(s => ((s as any).width ?? 0))) + 16 : 10
+        const dy = hasWidth ? 0 : 10
+        const newIds = duplicateShapes(this.handle, ids, dx, dy)
+        // Select the duplicates
+        this.handle.change(d => {
+          if (!d.stateByUser) d.stateByUser = {}
+          if (!d.stateByUser[contactUrl]) d.stateByUser[contactUrl] = { selection: {}, color: '#1a1a1a' }
+          const sel: Record<string, true> = {}
+          for (const id of newIds) sel[id] = true
+          d.stateByUser[contactUrl].selection = sel
+        })
+      }
+    }
+
+    document.addEventListener("keydown", onKeyDown)
+
     this.disposers.push(() => {
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
@@ -196,6 +247,7 @@ export class CanvasView {
       canvas.removeEventListener("gestureend", preventGesture);
       canvas.removeEventListener("touchstart", preventEdgeSwipe);
       this.container.removeEventListener("spatial-canvas:set-tool", onSetTool);
+      document.removeEventListener("keydown", onKeyDown);
     });
   }
 

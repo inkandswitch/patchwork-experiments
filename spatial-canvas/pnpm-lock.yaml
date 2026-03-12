@@ -11,6 +11,9 @@ importers:
       '@automerge/automerge':
         specifier: ^3.2.4
         version: 3.2.4
+      '@inkandswitch/patchwork-elements':
+        specifier: ^0.0.5
+        version: 0.0.5
       lucide:
         specifier: ^0.577.0
         version: 0.577.0
@@ -225,6 +228,9 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@inkandswitch/patchwork-elements@0.0.5':
+    resolution: {integrity: sha512-4MugOD0opAXa5c3OgsUDVq/yVwp8xe/CEXYWHt2LGPyl5AhMLKQa3t8Rk8qEZe13qMUkfR4kVKp2YdIcI9ghjw==}
 
   '@inkandswitch/patchwork-filesystem@0.0.3':
     resolution: {integrity: sha512-x6yqX1Xyr05ug4YfRyfKJ7jSm/zjhMxU7g/e70nz4QbxfLmcG98LHB9qAkFI2zd+VvKLnTvSpPGu2UvJzXGciw==}
@@ -652,6 +658,14 @@ snapshots:
 
   '@esbuild/win32-x64@0.27.3':
     optional: true
+
+  '@inkandswitch/patchwork-elements@0.0.5':
+    dependencies:
+      '@automerge/automerge-repo': 2.5.0
+      '@inkandswitch/patchwork-filesystem': 0.0.3
+      '@inkandswitch/patchwork-plugins': 0.0.5
+    transitivePeerDependencies:
+      - supports-color
 
   '@inkandswitch/patchwork-filesystem@0.0.3':
     dependencies:
