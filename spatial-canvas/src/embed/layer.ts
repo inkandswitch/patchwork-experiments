@@ -160,6 +160,16 @@ export default function EmbedLayer(handle: DocHandle<CanvasDoc>, element: HTMLEl
     const content = document.createElement("div");
     content.style.cssText = "flex:1;overflow:hidden;min-height:0;position:relative;";
     content.dataset.embedContent = embed.id;
+    // Prevent canvas pointer-capture and scroll-hijacking so embedded
+    // buttons, inputs, and scrollable areas work natively.
+    // The header above still propagates, keeping drag-to-move on embeds working.
+    content.addEventListener('pointerdown', e => e.stopPropagation());
+    // Plain scroll stays inside the embed; zoom gestures (ctrlKey = pinch/
+    // ctrl+scroll) propagate up to the canvas's non-passive handler so it can
+    // call preventDefault (blocking browser zoom) and run its custom zoom logic.
+    content.addEventListener('wheel', e => {
+      if (!e.ctrlKey) e.stopPropagation()
+    }, { passive: true });
     wrapper.appendChild(content);
 
     // Title subscription (empty docUrl at creation — re-subscribed in updateWrapper)
