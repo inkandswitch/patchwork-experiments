@@ -9,17 +9,17 @@
     "build": "vite build",
     "sync": "vite build && pushwork sync"
   },
-  "devDependencies": {
-    "@inkandswitch/patchwork-plugins": "^0.0.5",
-    "typescript": "latest",
-    "vite": "latest"
-  },
   "dependencies": {
-    "@automerge/automerge": "*",
-    "@automerge/automerge-repo": "*",
-    "@inkandswitch/patchwork-elements": "^0.0.5",
-    "@inkandswitch/patchwork-filesystem": "^0.0.3",
+    "@automerge/automerge": "latest",
+    "@automerge/automerge-repo": "latest",
+    "@inkandswitch/patchwork-elements": "latest",
+    "@inkandswitch/patchwork-filesystem": "latest",
+    "@inkandswitch/patchwork-plugins": "latest",
     "lucide": "^0.577.0",
     "perfect-freehand": "^1.2.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^8.0.0"
   }
 }
