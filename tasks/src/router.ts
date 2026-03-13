@@ -50,20 +50,30 @@ self.addEventListener('connect', (e: any) => {
 });
 
 async function init(repoPort: MessagePort, _contactUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
-  if (repo) {
+  if (repo && thisRouterHandle) {
     console.log('already initialized');
     return;
   }
 
   console.log('initializing');
 
-  repo = await getRepo(
-    repoPort,
-    `task-router-${taskQueueUrl}-${Math.round(Math.random() * 10_000)}`,
-  );
   contactUrl = _contactUrl;
 
-  taskQueueHandle = await repo.find<TaskQueue>(taskQueueUrl);
+  if (!repo) {
+    repo = await getRepo(
+      repoPort,
+      `task-router-${taskQueueUrl}-${Math.round(Math.random() * 10_000)}`,
+    );
+  }
+
+  try {
+    taskQueueHandle = await repo.find<TaskQueue>(taskQueueUrl);
+  } catch (error) {
+    console.error('FATAL: unable to get doc handle for task queue', { taskQueueUrl, error });
+    self.close();
+    return;
+  }
+
   taskQueueHandle.on('ephemeral-message', (payload) => {
     const msg: MessageToTaskQueueChannel = payload.message as any;
     switch (msg.type) {
@@ -209,12 +219,16 @@ async function processWorkerHeartbeat(
     state.currentTaskUrl = currentTaskUrl;
     state.lastTimestamp = lastTimestamp;
   } else {
-    workers.set(workerUrl, {
-      workerUrl,
-      currentTaskUrl,
-      lastTimestamp,
-      handle: await repo.find(workerUrl),
-    });
+    try {
+      workers.set(workerUrl, {
+        workerUrl,
+        currentTaskUrl,
+        lastTimestamp,
+        handle: await repo.find(workerUrl),
+      });
+    } catch (error) {
+      console.error('error getting doc handlefor worker', { workerUrl, error });
+    }
   }
 }
 

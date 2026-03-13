@@ -78,11 +78,18 @@ async function join(taskQueueUrl: AutomergeUrl) {
 
   console.log('joining task queue', taskQueueUrl);
 
-  taskQueueUrls.add(taskQueueUrl);
+  let taskQueueHandle: DocHandle<TaskQueue>;
+  try {
+    taskQueueHandle = await repo.find<TaskQueue>(taskQueueUrl);
+  } catch (error) {
+    console.error('did not join task queue, unable to get its doc handle', { taskQueueUrl, error });
+    return;
+  }
 
-  const taskQueueHandle = await repo.find<TaskQueue>(taskQueueUrl);
   taskQueueHandle.on('change', (payload) => setTaskQueueState(payload.doc));
   await setTaskQueueState(taskQueueHandle.doc());
+
+  taskQueueUrls.add(taskQueueUrl);
 
   async function setTaskQueueState(taskQueue: TaskQueue) {
     try {
@@ -114,9 +121,14 @@ async function addWorker(sharedWorkerName: string, workerUrl: AutomergeUrl) {
 
   sharedWorkerNames.add(sharedWorkerName);
 
-  const workerHandle = await repo.find<Worker>(workerUrl);
-  workerHandle.on('change', (payload) => workerByUrl.set(workerUrl, payload.doc));
-  workerByUrl.set(workerUrl, workerHandle.doc());
+  try {
+    const workerHandle = await repo.find<Worker>(workerUrl);
+    workerHandle.on('change', (payload) => workerByUrl.set(workerUrl, payload.doc));
+    workerByUrl.set(workerUrl, workerHandle.doc());
+  } catch (error) {
+    console.error('did not add worker, unable to get its doc handle', { workerUrl, error });
+    return;
+  }
 }
 
 async function pSendWorkerStatuses() {
@@ -149,4 +161,4 @@ const seconds = async (s: number) =>
     setTimeout(resolve, s * 1_000);
   });
 
-export {}; // to ensure this is a module
+export { }; // to ensure this is a module

@@ -157,15 +157,16 @@ function setUpImportMap() {
   console.log('Import map configured from main thread', resolvedImportMap);
 }
 
-const tally = { numSuccesses: 0, numFailures: 0 };
+const tally = { numSuccesses: 0, numFailures: 0, numBails: 0 };
 
 function logTally() {
-  const { numSuccesses, numFailures } = tally;
-  const total = numSuccesses + numFailures;
+  const { numSuccesses, numFailures, numBails } = tally;
+  const total = numSuccesses + numFailures + numBails;
   console.log('');
   console.log(`Processed ${total} tasks so far.`);
   console.log(`  ${numSuccesses} successes (${(numSuccesses / total) * 100 || 100}%)`);
   console.log(`  ${numFailures} failures (${(numFailures / total) * 100 || 0}%)`);
+  console.log(`  ${numBails} bails (${(numBails / total) * 100 || 0}%)`);
   console.log('');
 }
 
@@ -173,10 +174,44 @@ const MAX_TRIES = 3;
 
 async function processTask(taskUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
   console.log('executing task', taskUrl);
+
   workerHandle.change((doc) => {
     doc.currentTask = { taskUrl, taskQueueUrl };
   });
-  const taskHandle = await repo.find<Task<any, any>>(taskUrl);
+
+  let ok = true;
+
+  let taskHandle: DocHandle<Task<any, any>>;
+  try {
+    taskHandle = await repo.find<Task<any, any>>(taskUrl);
+  } catch (error) {
+    console.error('unable to get doc handle for task', { taskUrl, error });
+    ok = false;
+  }
+
+  let taskQueueHandle: DocHandle<TaskQueue>;
+  if (ok) {
+    try {
+      taskQueueHandle = await getTaskQueueHandle(taskQueueUrl);
+    } catch (error) {
+      console.error('unable to get doc handle for task queue', { taskQueueUrl, error });
+      ok = false;
+    }
+  }
+
+  if (!ok) {
+    console.log('bailing on task', taskUrl);
+    tally.numBails++;
+    workerHandle.change((doc) => {
+      doc.currentTask = null;
+    });
+    logTally();
+    return;
+  }
+
+  taskHandle = taskHandle!;
+  taskQueueHandle = taskQueueHandle!;
+
   try {
     const status = await execute(taskHandle);
     if (status === 'succeeded') {
@@ -187,7 +222,7 @@ async function processTask(taskUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
       tally.numFailures++;
     }
     if (status === 'succeeded' || failedTooManyTimes(taskHandle)) {
-      await moveToDone(taskUrl, taskQueueUrl);
+      moveToDone(taskUrl, taskQueueHandle);
     }
   } catch (error) {
     console.error('impossible error:', error);
@@ -252,13 +287,24 @@ async function execute(taskHandle: DocHandle<Task<any, any>>) {
   return status;
 }
 
-async function moveToDone(taskUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
-  const taskQueueHandle = await repo.find<TaskQueue>(taskQueueUrl);
+function moveToDone(taskUrl: AutomergeUrl, taskQueueHandle: DocHandle<TaskQueue>) {
   taskQueueHandle.change((doc) => {
     const idx = doc.pending.indexOf(taskUrl);
     doc.pending.splice(idx, 1);
     doc.done.push(taskUrl);
   });
+}
+
+const taskQueueHandles = new Map<AutomergeUrl, DocHandle<TaskQueue>>();
+
+async function getTaskQueueHandle(taskQueueUrl: AutomergeUrl) {
+  if (taskQueueHandles.has(taskQueueUrl)) {
+    return taskQueueHandles.get(taskQueueUrl)!;
+  }
+
+  const handle = await repo.find<TaskQueue>(taskQueueUrl);
+  taskQueueHandles.set(taskQueueUrl, handle);
+  return handle;
 }
 
 export { }; // to ensure this is a module
