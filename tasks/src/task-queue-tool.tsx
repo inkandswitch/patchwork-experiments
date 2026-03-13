@@ -216,7 +216,7 @@ const ITaskQueueBrowserTool: React.FC<any> = ({ docUrl }) => {
       <div className="text-gray-400">(none)</div>
     ) : (
       <ul>
-        {urls.map((url) => (
+        {[...new Set(urls)].map((url) => (
           <li key={url}>
             <TaskBrowserTool docUrl={url} docPath={[]} />
           </li>

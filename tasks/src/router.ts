@@ -19,11 +19,13 @@ interface WorkerState {
   handle: DocHandle<TaskWorker>;
 }
 
+const BUILD_ID = import.meta.env.VITE_BUILD_ID ?? 'dev';
+
 let repo: Repo;
 let contactUrl: AutomergeUrl;
 let taskQueueHandle: DocHandle<TaskQueue>;
 let thisRouterHandle: DocHandle<Router>;
-let activeRouter: { url: AutomergeUrl; lastTimestamp: number } | null = null;
+const lastTimestampFromRouter = new Map<AutomergeUrl, number>();
 const workers = new Map<AutomergeUrl, WorkerState>();
 
 self.addEventListener('connect', (e: any) => {
@@ -36,6 +38,9 @@ self.addEventListener('connect', (e: any) => {
       switch (msg.type) {
         case 'init':
           init(msg.repoPort, msg.contactUrl, msg.taskQueueUrl);
+          break;
+        case 'terminate':
+          self.close();
           break;
       }
     } catch (error) {
@@ -59,7 +64,6 @@ async function init(repoPort: MessagePort, _contactUrl: AutomergeUrl, taskQueueU
   contactUrl = _contactUrl;
 
   taskQueueHandle = await repo.find<TaskQueue>(taskQueueUrl);
-  taskQueueHandle.on('change', (payload) => updateActiveRouter(payload.doc));
   taskQueueHandle.on('ephemeral-message', (payload) => {
     const msg: MessageToTaskQueueChannel = payload.message as any;
     switch (msg.type) {
@@ -68,7 +72,6 @@ async function init(repoPort: MessagePort, _contactUrl: AutomergeUrl, taskQueueU
         break;
     }
   });
-  updateActiveRouter(taskQueueHandle.doc());
 
   thisRouterHandle = repo.create<Router>({
     name: generateName().dashed,
@@ -96,9 +99,10 @@ async function pHeartbeat() {
     if (thisIsTheActiveRouter()) {
       const heartbeat = {
         type: 'router heartbeat',
+        buildId: BUILD_ID,
         routerUrl: thisRouterHandle.url,
         workerUrls: [...workers.keys()],
-      } satisfies MessageToTaskQueueChannel;
+      } satisfies MessageToTaskQueueChannel & { buildId: string };
       // console.log('Sending heartbeat to task queue', heartbeat);
       taskQueueHandle.broadcast(heartbeat);
     }
@@ -108,10 +112,10 @@ async function pHeartbeat() {
 
 async function pTakeOverWhenActiveRouterDropsOut() {
   while (true) {
-    if (
-      !thisIsTheActiveRouter() &&
-      (activeRouter == null || Date.now() - activeRouter.lastTimestamp > 3 * 1_000)
-    ) {
+    const activeRouterUrl = taskQueueHandle?.doc().router;
+    const lastTimestamp = activeRouterUrl && lastTimestampFromRouter.has(activeRouterUrl) ? lastTimestampFromRouter.get(activeRouterUrl)! : 0;
+    const shouldTakeOver = lastTimestamp < Date.now() - 3 * 1_000;
+    if (shouldTakeOver) {
       await pTakeOver();
     } else {
       await seconds(1);
@@ -191,18 +195,8 @@ async function pDropStaleWorkerInfos() {
   }
 }
 
-function updateActiveRouter({ router }: TaskQueue) {
-  if (router == null && activeRouter != null) {
-    activeRouter = null;
-  } else if (router != null && router !== activeRouter?.url) {
-    activeRouter = { url: router, lastTimestamp: Date.now() };
-  }
-}
-
 function processRouterHeartbeat(routerUrl: AutomergeUrl) {
-  if (routerUrl === activeRouter?.url) {
-    activeRouter.lastTimestamp = Date.now();
-  }
+  lastTimestampFromRouter.set(routerUrl, Date.now());
 }
 
 async function processWorkerHeartbeat(
@@ -224,7 +218,8 @@ async function processWorkerHeartbeat(
   }
 }
 
-const thisIsTheActiveRouter = () => activeRouter?.url === thisRouterHandle.url;
+const thisIsTheActiveRouter = () =>
+  taskQueueHandle?.doc().router === thisRouterHandle?.url;
 
 const seconds = async (s: number) =>
   new Promise((resolve) => {
