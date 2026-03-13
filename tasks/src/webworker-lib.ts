@@ -8,8 +8,12 @@ export async function getRepo(port: MessagePort, peerId: string) {
   await Automerge.initializeBase64Wasm(automergeWasmBase64);
   console.log('Automerge WASM initialized');
 
-  return new Repo({
+  const repo = new Repo({
     network: [new MessageChannelNetworkAdapter(port)],
     peerId: peerId as any,
   });
+
+  await repo.networkSubsystem.whenReady()
+
+  return repo;
 }
