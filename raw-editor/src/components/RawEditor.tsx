@@ -1,15 +1,8 @@
 import * as Automerge from "@automerge/automerge";
-import {
-  AutomergeUrl,
-  DocHandle,
-  isValidAutomergeUrl,
-} from "@automerge/automerge-repo";
-import {
-  useDocument,
-  useDocHandle,
-  RepoContext,
-} from "@automerge/automerge-repo-react-hooks";
+import { AutomergeUrl, DocHandle, isValidAutomergeUrl } from "@automerge/automerge-repo";
+import { useDocument, useDocHandle, RepoContext } from "@automerge/automerge-repo-react-hooks";
 import ReactJson, { InteractionProps } from "@microlink/react-json-view";
+import { OpenDocumentEvent } from "@inkandswitch/patchwork-elements";
 import { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "../rawEditor.css";
@@ -29,8 +22,7 @@ export const TinyTool = (handle: DocHandle<unknown>, element: HTMLElement) => {
 };
 
 function usePrefersDarkMode() {
-  const getPref = () =>
-    window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const getPref = () => window.matchMedia("(prefers-color-scheme: dark)").matches;
   const [isDark, setIsDark] = useState(getPref);
 
   useEffect(() => {
@@ -48,22 +40,26 @@ function automergeUrlToHashUrl(url: string): string {
   return `/#doc=${id}&tool=raw`;
 }
 
-export const RawEditor = ({
-  docUrl,
-  element,
-}: {
-  docUrl: AutomergeUrl;
-  element: HTMLElement;
-}) => {
+export const RawEditor = ({ docUrl, element }: { docUrl: AutomergeUrl; element: HTMLElement }) => {
   const [doc, changeDoc] = useDocument(docUrl);
   const handle = useDocHandle(docUrl);
 
   const isDark = usePrefersDarkMode();
 
-  // Mark automerge URLs with a class for styling
-  const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(
-    null,
+  const onSelectAutomergeUrl = useCallback(
+    (url: AutomergeUrl) => {
+      element.dispatchEvent(
+        new OpenDocumentEvent({
+          url,
+          toolId: "raw",
+        }),
+      );
+    },
+    [element],
   );
+
+  // Mark automerge URLs with a class for styling
+  const [containerNode, setContainerNode] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!containerNode) return;
@@ -94,8 +90,26 @@ export const RawEditor = ({
     const observer = new MutationObserver(wrapAutomergeUrls);
     observer.observe(containerNode, { childList: true, subtree: true });
 
-    return () => observer.disconnect();
-  }, [containerNode, doc]);
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const urlEl = target.closest(".automerge-url");
+      if (!urlEl) return;
+      const text = urlEl.textContent || "";
+      const url = text.slice(1, -1); // strip surrounding quotes rendered by react-json-view
+      if (isValidAutomergeUrl(url)) {
+        e.preventDefault();
+        e.stopPropagation();
+        onSelectAutomergeUrl(url);
+      }
+    };
+
+    containerNode.addEventListener("click", handleClick);
+
+    return () => {
+      observer.disconnect();
+      containerNode.removeEventListener("click", handleClick);
+    };
+  }, [containerNode, doc, onSelectAutomergeUrl]);
 
   const onEdit = useCallback(
     ({ namespace, new_value, name }: InteractionProps) => {
@@ -157,9 +171,7 @@ export const RawEditor = ({
       }
       const data = Automerge.save(doc);
       const filename = `${handle.documentId}.automerge`;
-      const blobURL = URL.createObjectURL(
-        new Blob([data as BlobPart], { type: "application/octet-stream" }),
-      );
+      const blobURL = URL.createObjectURL(new Blob([data as BlobPart], { type: "application/octet-stream" }));
 
       const tempLink = document.createElement("a");
       tempLink.style.display = "none";
@@ -187,15 +199,7 @@ export const RawEditor = ({
   return (
     <div className="raw-editor-container">
       <div ref={setContainerNode}>
-        <ReactJson
-          collapsed={3}
-          src={doc}
-          onEdit={onEdit}
-          onAdd={onAdd}
-          onDelete={onDelete}
-          theme={isDark ? "monokai" : "rjv-default"}
-          style={{ backgroundColor: "transparent" }}
-        />
+        <ReactJson collapsed={3} src={doc} onEdit={onEdit} onAdd={onAdd} onDelete={onDelete} theme={isDark ? "monokai" : "rjv-default"} style={{ backgroundColor: "transparent" }} />
       </div>
     </div>
   );
