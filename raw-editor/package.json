@@ -9,7 +9,7 @@
   "exports": "./dist/index.js",
   "scripts": {
     "build": "tsc && vite build",
-    "push": "pushwork sync"
+    "sync": "pnpm build && pushwork sync"
   },
   "keywords": [],
   "author": "Ink & Switch",
