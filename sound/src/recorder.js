@@ -257,12 +257,37 @@ export default function RecorderTool(handle, element) {
 	}
 }
 
+// ─── Recording worklet ───
+
+const RECORDER_WORKLET_SRC = `
+class RecorderProcessor extends AudioWorkletProcessor {
+	constructor() {
+		super()
+		this.recording = true
+		this.port.onmessage = (e) => {
+			if (e.data.type === "stop") this.recording = false
+		}
+	}
+	process(inputs) {
+		if (!this.recording) return false
+		const input = inputs[0]
+		if (input && input[0]) {
+			const samples = new Float32Array(input[0])
+			this.port.postMessage({ type: "chunk", samples }, [samples.buffer])
+		}
+		return true
+	}
+}
+registerProcessor("recorder-processor", RecorderProcessor)
+`
+
 // ─── Recording mode ───
 
 function renderRecording(root, handle) {
 	let stream = null
 	let audioContext = null
 	let analyser = null
+	let recorderNode = null
 	let animFrame = null
 	let isRecording = false
 	let allChunks = []
@@ -376,13 +401,20 @@ function renderRecording(root, handle) {
 		analyser.fftSize = 8192
 		source.connect(analyser)
 
-		const processor = audioContext.createScriptProcessor(4096, 1, 1)
+		const blob = new Blob([RECORDER_WORKLET_SRC], {type: "application/javascript"})
+		const workletUrl = URL.createObjectURL(blob)
+		await audioContext.audioWorklet.addModule(workletUrl)
+		URL.revokeObjectURL(workletUrl)
+
+		recorderNode = new AudioWorkletNode(audioContext, "recorder-processor")
 		allChunks = []
-		processor.onaudioprocess = e => {
-			allChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)))
+		recorderNode.port.onmessage = e => {
+			if (e.data.type === "chunk") {
+				allChunks.push(e.data.samples)
+			}
 		}
-		source.connect(processor)
-		processor.connect(audioContext.destination)
+		source.connect(recorderNode)
+		recorderNode.connect(audioContext.destination)
 
 		isRecording = true
 		root.classList.add("active", "recording")
@@ -394,6 +426,11 @@ function renderRecording(root, handle) {
 		root.classList.remove("recording")
 		if (animFrame) cancelAnimationFrame(animFrame)
 
+		if (recorderNode) {
+			recorderNode.port.postMessage({type: "stop"})
+			recorderNode.disconnect()
+			recorderNode = null
+		}
 		if (stream) {
 			for (const track of stream.getTracks()) track.stop()
 			stream = null
@@ -418,6 +455,19 @@ function renderRecording(root, handle) {
 			offset += chunk.length
 		}
 		allChunks = []
+
+		// Normalize to full volume
+		let peak = 0
+		for (let i = 0; i < pcmData.length; i++) {
+			const abs = Math.abs(pcmData[i])
+			if (abs > peak) peak = abs
+		}
+		if (peak > 0 && peak < 1) {
+			const gain = 1 / peak
+			for (let i = 0; i < pcmData.length; i++) {
+				pcmData[i] *= gain
+			}
+		}
 
 		let encoded = await encodeFlac(pcmData, sampleRate)
 		if (!encoded) encoded = encodeWav(pcmData, sampleRate)
@@ -444,6 +494,10 @@ function renderRecording(root, handle) {
 	return () => {
 		destroyed = true
 		if (animFrame) cancelAnimationFrame(animFrame)
+		if (recorderNode) {
+			recorderNode.port.postMessage({type: "stop"})
+			recorderNode.disconnect()
+		}
 		if (stream) for (const track of stream.getTracks()) track.stop()
 		if (audioContext && audioContext.state !== "closed") audioContext.close()
 	}

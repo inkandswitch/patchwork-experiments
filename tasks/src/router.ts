@@ -87,6 +87,7 @@ async function init(repoPort: MessagePort, _contactUrl: AutomergeUrl, taskQueueU
   pDropStaleWorkerInfos();
 
   console.log('router: started!', thisRouterHandle.url);
+  console.log('hola, me llamo', thisRouterHandle.doc().name);
 }
 
 async function pHeartbeat() {
@@ -225,4 +226,4 @@ const seconds = async (s: number) =>
     setTimeout(resolve, s * 1_000);
   });
 
-export { }; // to ensure this is a module
+export {}; // to ensure this is a module

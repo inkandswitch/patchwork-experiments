@@ -43,7 +43,7 @@ if (pushworking) {
 
 /** @type {import("esbuild").BuildOptions} */
 export default {
-  entryPoints: ["src/recording.js", "src/recorder.js"],
+  entryPoints: ["src/recording.js", "src/recorder.js", "src/sound-editor.js"],
   outdir: "dist",
   bundle: true,
   platform: "browser",

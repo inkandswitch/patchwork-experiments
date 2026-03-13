@@ -41,8 +41,8 @@ export const QUALITY_PRESETS = {
 };
 export const QUALITY_LEVELS = ["high", "medium", "low", "potato"];
 
-const WHISPER_SAMPLE_RATE = 16000;
-const SEND_INTERVAL_MS = 5000;
+const TARGET_SAMPLE_RATE = 16000;
+const WORKER_BUFFER_SIZE = 4096;
 
 const COORD_CHANNEL = "patchwork-call-coordination";
 const COORD_PING_MS = 3000;
@@ -71,21 +71,6 @@ async function applyQuality(pc, quality) {
       console.warn("[call] setParameters failed:", err);
     }
   }
-}
-
-function resample(inputSamples, inputRate, outputRate) {
-  if (inputRate === outputRate) return inputSamples;
-  const ratio = inputRate / outputRate;
-  const outputLength = Math.round(inputSamples.length / ratio);
-  const output = new Float32Array(outputLength);
-  for (let i = 0; i < outputLength; i++) {
-    const srcIndex = i * ratio;
-    const low = Math.floor(srcIndex);
-    const high = Math.min(low + 1, inputSamples.length - 1);
-    const frac = srcIndex - low;
-    output[i] = inputSamples[low] * (1 - frac) + inputSamples[high] * frac;
-  }
-  return output;
 }
 
 export class CallSession extends EventTarget {
@@ -117,11 +102,10 @@ export class CallSession extends EventTarget {
 
     // Transcription
     this._whisperWorker = null;
-    this._audioContext = null;
-    this._scriptProcessor = null;
-    this._audioBuffer = [];
-    this._audioBufferLength = 0;
-    this._sendInterval = null;
+    this._trackReader = null;
+    this._trackReaderRunning = false;
+    this._prefixCursor = null; // cursor anchored to last char of prefix (the space)
+    this._currentInterimLength = 0;
 
     // Intervals
     this._heartbeatInterval = null;
@@ -1017,93 +1001,218 @@ export class CallSession extends EventTarget {
 
   // ---- Transcription ----
 
-  _startTranscription() {
-    if (!this.localStream) return;
+  async _startTranscription() {
+    console.log("[transcription] _startTranscription called");
+    if (!this.localStream) {
+      console.warn("[transcription] No localStream, aborting");
+      return;
+    }
     const audioTrack = this.localStream.getAudioTracks()[0];
-    if (!audioTrack) return;
+    if (!audioTrack) {
+      console.warn("[transcription] No audio track found in localStream");
+      return;
+    }
+    console.log("[transcription] Audio track:", audioTrack.label, "enabled:", audioTrack.enabled, "readyState:", audioTrack.readyState);
 
     const workerUrl = new URL("./worker.js", import.meta.url);
-    this._whisperWorker = new Worker(workerUrl, { type: "module" });
+    console.log("[transcription] Loading worker from:", workerUrl.href);
+    // Workers loaded from service-worker-served URLs (automerge:) can fail as
+    // modules. Fetch the script and create a blob worker instead.
+    try {
+      const res = await fetch(workerUrl);
+      const src = await res.text();
+      const blob = new Blob([src], { type: "application/javascript" });
+      this._whisperWorker = new Worker(URL.createObjectURL(blob), { type: "module" });
+      console.log("[transcription] Worker created via blob URL");
+    } catch (blobErr) {
+      console.warn("[transcription] Blob worker failed, trying direct URL:", blobErr);
+      this._whisperWorker = new Worker(workerUrl, { type: "module" });
+    }
 
     this._whisperWorker.onmessage = (e) => {
       const { type, text, message } = e.data;
+      console.log("[transcription] Worker message:", type, text || message || "");
+
       if (type === "status") {
         this._emit("transcription-status", { message });
       } else if (type === "ready") {
         this._emit("transcription-status", { message: null });
-      } else if (type === "result") {
+      } else if (type === "recording_start") {
+        // Speech started — insert speaker prefix and anchor cursor to its last char
         this.handle.change((doc) => {
-          const line = `<${this.myName}> ${text}\n`;
-          Automerge.splice(doc, ["content"], doc.content.length, 0, line);
+          const prefix = `<${this.myName}> `;
+          Automerge.splice(doc, ["content"], doc.content.length, 0, prefix);
+          // Cursor on the space char at end of prefix — this char is stable
+          // and survives concurrent edits from other speakers
+          this._prefixCursor = Automerge.getCursor(
+            doc,
+            ["content"],
+            doc.content.length - 1
+          );
+          this._currentInterimLength = 0;
         });
+      } else if (type === "interim") {
+        // Interim transcription — replace previous interim text after the prefix cursor
+        if (this._prefixCursor != null) {
+          this.handle.change((doc) => {
+            const anchorPos = Automerge.getCursorPosition(
+              doc,
+              ["content"],
+              this._prefixCursor
+            );
+            // Interim text starts right after the anchor char (the space)
+            const insertPos = anchorPos + 1;
+            Automerge.splice(
+              doc,
+              ["content"],
+              insertPos,
+              this._currentInterimLength,
+              text
+            );
+            this._currentInterimLength = text.length;
+          });
+          this._emit("transcript", { text, speaker: this.myName, interim: true });
+        }
+      } else if (type === "final") {
+        // Final transcription — replace interim text with final + newline
+        if (this._prefixCursor != null) {
+          this.handle.change((doc) => {
+            const anchorPos = Automerge.getCursorPosition(
+              doc,
+              ["content"],
+              this._prefixCursor
+            );
+            const insertPos = anchorPos + 1;
+            Automerge.splice(
+              doc,
+              ["content"],
+              insertPos,
+              this._currentInterimLength,
+              text + "\n"
+            );
+          });
+          this._prefixCursor = null;
+          this._currentInterimLength = 0;
+          this._emit("transcript", { text, speaker: this.myName });
+        }
+      } else if (type === "recording_end") {
+        // Speech ended without a final (e.g. too short) — clean up prefix
+        if (this._prefixCursor != null) {
+          const prefixLen = `<${this.myName}> `.length;
+          this.handle.change((doc) => {
+            const anchorPos = Automerge.getCursorPosition(
+              doc,
+              ["content"],
+              this._prefixCursor
+            );
+            // Delete prefix + any leftover interim text
+            const startPos = anchorPos - (prefixLen - 1);
+            Automerge.splice(
+              doc,
+              ["content"],
+              startPos,
+              prefixLen + this._currentInterimLength,
+              ""
+            );
+          });
+          this._prefixCursor = null;
+          this._currentInterimLength = 0;
+        }
       }
     };
 
-    this._audioContext = new AudioContext();
-    const source = this._audioContext.createMediaStreamSource(
-      new MediaStream([audioTrack])
-    );
-    this._scriptProcessor = this._audioContext.createScriptProcessor(4096, 1, 1);
-
-    this._scriptProcessor.onaudioprocess = (e) => {
-      if (!this.micEnabled) return;
-      const input = e.inputBuffer.getChannelData(0);
-      const copy = new Float32Array(input.length);
-      copy.set(input);
-      this._audioBuffer.push(copy);
-      this._audioBufferLength += copy.length;
+    this._whisperWorker.onerror = (err) => {
+      console.error("[transcription] Worker error:", err.message, err);
     };
 
-    source.connect(this._scriptProcessor);
-    this._scriptProcessor.connect(this._audioContext.destination);
+    // Use MediaStreamTrackProcessor to read audio frames directly from the
+    // microphone track. This bypasses AudioContext entirely — the browser
+    // keeps the media track alive for WebRTC even when the page/browser
+    // loses focus, so transcription continues in the background.
+    const trackProcessor = new MediaStreamTrackProcessor({ track: audioTrack });
+    const reader = trackProcessor.readable.getReader();
+    this._trackReader = reader;
+    this._trackReaderRunning = true;
 
-    this._sendInterval = setInterval(() => this._sendAudioToWorker(), SEND_INTERVAL_MS);
-  }
+    let resampleBuffer = new Float32Array(0);
 
-  _sendAudioToWorker() {
-    if (!this._whisperWorker || this._audioBufferLength === 0) return;
+    const pumpFrames = async () => {
+      while (this._trackReaderRunning) {
+        let result;
+        try {
+          result = await reader.read();
+        } catch (err) {
+          if (this._trackReaderRunning) {
+            console.warn("[transcription] Track reader error:", err);
+          }
+          break;
+        }
+        if (result.done) break;
 
-    const fullBuffer = new Float32Array(this._audioBufferLength);
-    let offset = 0;
-    for (const chunk of this._audioBuffer) {
-      fullBuffer.set(chunk, offset);
-      offset += chunk.length;
-    }
+        const frame = result.value;
+        if (!this.micEnabled) {
+          frame.close();
+          continue;
+        }
 
-    this._audioBuffer = [];
-    this._audioBufferLength = 0;
+        // Extract raw PCM samples from the AudioData frame
+        const srcRate = frame.sampleRate;
+        const numSamples = frame.numberOfFrames;
+        const raw = new Float32Array(numSamples);
+        frame.copyTo(raw, { planeIndex: 0 });
+        frame.close();
 
-    const resampled = resample(
-      fullBuffer,
-      this._audioContext.sampleRate,
-      WHISPER_SAMPLE_RATE
-    );
+        // Resample to TARGET_SAMPLE_RATE
+        let samples;
+        if (srcRate === TARGET_SAMPLE_RATE) {
+          samples = raw;
+        } else {
+          const ratio = srcRate / TARGET_SAMPLE_RATE;
+          const outLen = Math.round(numSamples / ratio);
+          samples = new Float32Array(outLen);
+          for (let i = 0; i < outLen; i++) {
+            const srcIdx = i * ratio;
+            const lo = Math.floor(srcIdx);
+            const hi = Math.min(lo + 1, numSamples - 1);
+            const frac = srcIdx - lo;
+            samples[i] = raw[lo] * (1 - frac) + raw[hi] * frac;
+          }
+        }
 
-    this._whisperWorker.postMessage(
-      { type: "transcribe", audio: resampled },
-      [resampled.buffer]
-    );
+        // Accumulate and send in WORKER_BUFFER_SIZE chunks
+        const combined = new Float32Array(resampleBuffer.length + samples.length);
+        combined.set(resampleBuffer);
+        combined.set(samples, resampleBuffer.length);
+
+        let offset = 0;
+        while (offset + WORKER_BUFFER_SIZE <= combined.length) {
+          const chunk = combined.slice(offset, offset + WORKER_BUFFER_SIZE);
+          this._whisperWorker.postMessage(
+            { type: "audio", buffer: chunk },
+            [chunk.buffer]
+          );
+          offset += WORKER_BUFFER_SIZE;
+        }
+        resampleBuffer = combined.slice(offset);
+      }
+    };
+
+    pumpFrames();
+    console.log("[transcription] Setup complete (MediaStreamTrackProcessor), streaming audio to worker");
   }
 
   _stopTranscription() {
-    if (this._sendInterval) {
-      clearInterval(this._sendInterval);
-      this._sendInterval = null;
-    }
     if (this._whisperWorker) {
       this._whisperWorker.terminate();
       this._whisperWorker = null;
     }
-    if (this._scriptProcessor) {
-      this._scriptProcessor.disconnect();
-      this._scriptProcessor = null;
+    this._trackReaderRunning = false;
+    if (this._trackReader) {
+      this._trackReader.cancel().catch(() => {});
+      this._trackReader = null;
     }
-    if (this._audioContext) {
-      this._audioContext.close();
-      this._audioContext = null;
-    }
-    this._audioBuffer = [];
-    this._audioBufferLength = 0;
+    this._prefixCursor = null;
+    this._currentInterimLength = 0;
   }
 
   // ---- Event helpers ----

@@ -42,4 +42,15 @@ export const plugins = [
       return RecorderTool;
     },
   },
+  {
+    type: "patchwork:tool",
+    id: "sound-editor",
+    name: "Sound Editor",
+    icon: "AudioWaveform",
+    supportedDatatypes: ["recording"],
+    async load() {
+      const { default: SoundEditorTool } = await import("./sound-editor.js");
+      return SoundEditorTool;
+    },
+  },
 ];

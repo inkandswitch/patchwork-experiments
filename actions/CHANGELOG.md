@@ -3,11 +3,13 @@
 ## New Features - General-Purpose Actions
 
 ### Overview
-Added a suite of general-purpose actions that work with any document type (`supportedDataTypes: ["*"]`). These actions provide common document manipulation capabilities that can be used across all datatypes in the Patchwork system.
+
+Added a suite of general-purpose actions that work with any document type (`supportedDatatypes: ["*"]`). These actions provide common document manipulation capabilities that can be used across all datatypes in the Patchwork system.
 
 ### New Actions
 
 #### 1. Create Document (`create-document`)
+
 - **Icon:** FilePlus
 - **Purpose:** Creates a new document of any available datatype
 - **Arguments:**
@@ -20,6 +22,7 @@ Added a suite of general-purpose actions that work with any document type (`supp
   - Tracks creation timestamp
 
 #### 2. Set Property (`set-property`)
+
 - **Icon:** Edit
 - **Purpose:** Sets a property value in a document with support for nested paths
 - **Arguments:**
@@ -32,6 +35,7 @@ Added a suite of general-purpose actions that work with any document type (`supp
   - Validates values based on type
 
 #### 3. Delete Property (`delete-property`)
+
 - **Icon:** Trash
 - **Purpose:** Removes a property from a document
 - **Arguments:**
@@ -42,6 +46,7 @@ Added a suite of general-purpose actions that work with any document type (`supp
   - Provides clear error messages
 
 #### 4. Add to Array (`add-to-array`)
+
 - **Icon:** Plus
 - **Purpose:** Adds an item to an array property
 - **Arguments:**
@@ -56,6 +61,7 @@ Added a suite of general-purpose actions that work with any document type (`supp
   - Supports multiple value types
 
 #### 5. Remove from Array (`remove-from-array`)
+
 - **Icon:** Minus
 - **Purpose:** Removes an item from an array by index
 - **Arguments:**
@@ -86,22 +92,25 @@ satisfaction/
 ### Integration Points
 
 All actions are:
+
 - Registered in `src/index.ts` as plugins
 - Compatible with the Satisfaction UI tool
 - Available to the AI prompt system
 - Type-safe using Zod schemas
-- Work with any document type (supportedDataTypes: ["*"])
+- Work with any document type (supportedDatatypes: ["*"])
 
 ### Usage Examples
 
 #### Via UI
+
 Open any document with the Satisfaction tool to see all applicable actions with expandable forms for entering arguments.
 
 #### Via AI
+
 ```
 User: "Create a new counter called 'Tasks' and set its count to 5"
 
-AI: 
+AI:
 <edit>
 [
   {
@@ -124,6 +133,7 @@ AI:
 ```
 
 #### Programmatically
+
 ```typescript
 import { getLoadedPlugin } from "@patchwork/sdk";
 
@@ -131,7 +141,7 @@ const plugin = await getLoadedPlugin("patchwork:action", "set-property");
 plugin.module.default(handle, repo, {
   path: "title",
   value: "My New Title",
-  valueType: "string"
+  valueType: "string",
 });
 ```
 
@@ -155,6 +165,7 @@ plugin.module.default(handle, repo, {
 ### Future Enhancements
 
 Potential additions:
+
 - Bulk operations (set multiple properties at once)
 - Query/filter operations
 - Copy/move operations between documents
@@ -177,4 +188,3 @@ None - this is a new feature addition that doesn't modify existing functionality
   - Error handling examples
   - Best practices
   - AI integration examples
-

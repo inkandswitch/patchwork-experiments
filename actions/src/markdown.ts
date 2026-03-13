@@ -11,7 +11,7 @@ export const markdownActions: Plugin<any> = {
   id: "replaceMarkdown",
   name: "Replace Markdown",
   icon: "FileText",
-  supportedDataTypes: ["markdown"],
+  supportedDatatypes: ["markdown"],
   module: {
     argsSchema: () => {
       return z.object({

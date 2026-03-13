@@ -16,7 +16,7 @@ export const createDocumentAction: Plugin<any> = {
   id: "create-document",
   name: "Create Document in Folder",
   icon: "FilePlus",
-  supportedDataTypes: ["folder"], // Only available on folders
+  supportedDatatypes: ["folder"], // Only available on folders
   module: {
     argsSchema: () => {
       const availableTypes = getAvailableDatatypes();

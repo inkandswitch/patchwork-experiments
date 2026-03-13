@@ -422,6 +422,29 @@ function createStyles() {
     .call-other-tab button:hover {
       background: #2563eb;
     }
+
+    .call-teleprint-panel {
+      position: absolute;
+      bottom: 60px;
+      right: 12px;
+      width: 380px;
+      height: 420px;
+      background: #1a1a2e;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 12px;
+      overflow: hidden;
+      z-index: 25;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      resize: both;
+    }
+
+    .call-teleprint-panel patchwork-view {
+      flex: 1;
+      min-height: 0;
+    }
+
   `;
   return style;
 }
@@ -761,9 +784,35 @@ export default function TelephoneTool(handle, element) {
     }
   });
 
+  // Teleprint (transcript) toggle button
+  const teleprintBtn = document.createElement("button");
+  teleprintBtn.className = "call-btn";
+  teleprintBtn.textContent = "\u{1F4DD}";
+  teleprintBtn.title = "Toggle transcript";
+
+  let teleprintPanel = null;
+
+  teleprintBtn.addEventListener("click", () => {
+    if (teleprintPanel) {
+      teleprintPanel.remove();
+      teleprintPanel = null;
+      teleprintBtn.className = "call-btn";
+    } else {
+      teleprintPanel = document.createElement("div");
+      teleprintPanel.className = "call-teleprint-panel";
+      const view = document.createElement("patchwork-view");
+      view.setAttribute("doc-url", handle.url);
+      view.setAttribute("tool-id", "teleprint");
+      teleprintPanel.appendChild(view);
+      container.appendChild(teleprintPanel);
+      teleprintBtn.className = "call-btn off";
+    }
+  });
+
   localBar.appendChild(camBtn);
   localBar.appendChild(micBtn);
   localBar.appendChild(screenBtn);
+  localBar.appendChild(teleprintBtn);
   localBar.appendChild(qualityAnchor);
   localBar.appendChild(renegotiateBtn);
   localBar.appendChild(hangUpBtn);
@@ -874,6 +923,13 @@ export default function TelephoneTool(handle, element) {
     on(session, "local-status", onLocalStatus);
     on(session, "peer-status", onPeerStatus);
     on(session, "transcription-status", onTranscriptionStatus);
+    on(session, "transcript", (e) => {
+      element.dispatchEvent(new CustomEvent("chee:text-stream", {
+        detail: { text: e.detail.text, speaker: e.detail.speaker, sourceUrl: handle.url },
+        bubbles: true,
+        composed: true,
+      }));
+    });
     on(session, "destroyed", onDestroyed);
   }
 
@@ -1122,6 +1178,12 @@ export default function TelephoneTool(handle, element) {
     if (lobbyStream) {
       for (const track of lobbyStream.getTracks()) track.stop();
       lobbyStream = null;
+    }
+
+    // Remove teleprint panel
+    if (teleprintPanel) {
+      teleprintPanel.remove();
+      teleprintPanel = null;
     }
 
     // Remove DOM

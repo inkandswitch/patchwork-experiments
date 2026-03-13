@@ -22,6 +22,9 @@ function generateId() {
 	return Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
 }
 
+const BUILD_TIME = new Date().toLocaleString()
+console.log("[Chat] loaded build:", BUILD_TIME)
+
 function formatTime(ts) {
 	return new Date(ts).toLocaleTimeString([], {
 		hour: "2-digit",
@@ -200,7 +203,7 @@ function createStyles() {
     /* Theme button */
     .chat-theme-btn {
       background:none; border:none; color:var(--text-muted); cursor:pointer;
-      font-size:16px; padding:2px 6px; border-radius:4px; position:relative; margin-left:auto;
+      font-size:16px; padding:2px 6px; border-radius:4px; position:relative;
     }
     .chat-theme-btn:hover, .chat-notify-btn:hover { background:var(--bg-hover); color:var(--text-primary); }
     .chat-notify-btn {
@@ -309,6 +312,17 @@ function createStyles() {
     }
     .chat-msg-text a { color:var(--link); text-decoration:underline; }
     .chat-msg-text a:hover { text-decoration:none; }
+    .chat-msg-text.streaming::after {
+      content:""; display:inline-block; width:6px; height:1em; background:var(--accent);
+      margin-left:2px; vertical-align:text-bottom; border-radius:1px;
+      animation: blink-cursor 0.8s step-end infinite;
+    }
+    @keyframes blink-cursor { 0%,100%{opacity:1;} 50%{opacity:0;} }
+    .chat-streaming-cancel {
+      margin-top:4px; padding:2px 10px; border-radius:4px; border:1px solid var(--border);
+      background:var(--bg-hover); color:var(--text-muted); cursor:pointer; font-size:11px;
+    }
+    .chat-streaming-cancel:hover { color:var(--text-primary); background:var(--bg-mid); }
     .chat-spoiler {
       background:var(--text-primary); color:transparent; border-radius:3px;
       padding:0 3px; cursor:pointer; transition:all 0.2s;
@@ -374,10 +388,10 @@ function createStyles() {
     /* Patchwork doc embed */
     .chat-msg-embed {
       margin-top:6px; border:1px solid var(--border); border-radius:8px;
-      overflow:hidden; width:100%; height:300px; position:relative;
+      width:100%; height:300px; position:relative;
       background:var(--bg-surface); display:flex; flex-direction:column;
     }
-    .chat-msg-embed patchwork-view { width:100%; flex:1; min-height:0; display:block; }
+    .chat-msg-embed patchwork-view { width:100%; flex:1; min-height:0; display:block; overflow:hidden; }
     .chat-msg-embed-title {
       padding:0 8px 0 0; font-weight:500; color:var(--text-primary);
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex-shrink:1; min-width:0;
@@ -402,8 +416,29 @@ function createStyles() {
       color:var(--text-primary); font-size:10px; padding:1px 8px; outline:none;
       width:120px;
     }
+    .chat-embed-tool-menu {
+      position:absolute; top:100%; left:0; z-index:20;
+      background:var(--bg-surface); border:1px solid var(--border); border-radius:6px;
+      padding:2px; box-shadow:0 2px 8px rgba(0,0,0,0.3); white-space:nowrap;
+      min-width:140px; max-height:200px; overflow-y:auto;
+    }
+    .chat-embed-tool-menu button {
+      display:block; width:100%; text-align:left; background:none; border:none;
+      color:var(--text-secondary); font-size:11px; padding:4px 8px; cursor:pointer;
+      border-radius:4px;
+    }
+    .chat-embed-tool-menu button:hover { background:var(--bg-hover); color:var(--text-primary); }
+    .chat-embed-tool-menu button.active { color:var(--accent); font-weight:600; }
+    .chat-embed-tool-menu .tool-menu-input-row {
+      display:flex; gap:4px; padding:4px; border-top:1px solid var(--border); margin-top:2px;
+    }
+    .chat-embed-tool-menu .tool-menu-input-row input {
+      flex:1; background:var(--bg-darkest); border:1px solid var(--border); border-radius:4px;
+      color:var(--text-primary); font-size:10px; padding:2px 6px; outline:none; min-width:0;
+    }
+    .chat-embed-tool-menu .tool-menu-input-row input:focus { border-color:var(--accent); }
     .chat-embed-url-menu {
-      position:absolute; bottom:100%; left:0; z-index:20;
+      position:absolute; top:100%; left:0; z-index:20;
       background:var(--bg-surface); border:1px solid var(--border); border-radius:6px;
       padding:2px; box-shadow:0 2px 8px rgba(0,0,0,0.3); white-space:nowrap;
     }
@@ -702,6 +737,27 @@ function createStyles() {
       padding:0; display:flex; align-items:center;
     }
     .chat-paste-file-remove:hover { color:var(--text-primary); }
+    .chat-paste-embed {
+      display:flex; align-items:center; gap:6px; background:var(--bg-hover);
+      border-radius:6px; padding:4px 8px; font-size:12px; color:var(--text-secondary);
+      max-width:200px;
+    }
+    .chat-paste-embed-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .chat-paste-embed-remove {
+      background:none; border:none; cursor:pointer; color:var(--text-secondary);
+      padding:0; display:flex; align-items:center;
+    }
+    .chat-paste-embed-remove:hover { color:var(--text-primary); }
+    .chat-sidebar-pinned-wrap { position:relative; }
+    .chat-sidebar-pinned-wrap[data-drop-position="above"]::before {
+      content:""; position:absolute; top:-2px; left:4px; right:4px;
+      height:2px; background:var(--accent); border-radius:1px; z-index:10;
+    }
+    .chat-sidebar-pinned-wrap[data-drop-position="below"]::after {
+      content:""; position:absolute; bottom:-2px; left:4px; right:4px;
+      height:2px; background:var(--accent); border-radius:1px; z-index:10;
+    }
+    .chat-sidebar-pinned-wrap.dragging { opacity:0.4; }
     .chat-drop-overlay {
       display:none; position:absolute; inset:0; z-index:100;
       background:color-mix(in oklch, var(--theme) 20%, black 60%);
@@ -852,6 +908,17 @@ function createStyles() {
       overflow:hidden; position:relative;
     }
     .chat-sidebar.visible { display:flex; }
+    .chat-sidebar.drop-target {
+      display:flex; min-width:60px; width:60px;
+      align-items:center; justify-content:center;
+      border:2px dashed var(--accent); background:color-mix(in oklch, var(--accent) 10%, var(--bg-darkest));
+    }
+    .chat-sidebar.drop-target::after {
+      content:"Pin"; font-size:11px; color:var(--accent); font-weight:600;
+      pointer-events:none;
+    }
+    .chat-sidebar.visible.drop-target { width:40%; min-width:15%; }
+    .chat-sidebar.visible.drop-target::after { display:none; }
     .chat-sidebar.collapsed { width:0!important; min-width:0!important; border-left:none; overflow:hidden; }
     .chat-root.sidebar-left { flex-direction:row-reverse; }
     .chat-root.sidebar-left .chat-sidebar { border-left:none; border-right:1px solid var(--border); }
@@ -872,26 +939,6 @@ function createStyles() {
       display:flex; align-items:center;
     }
     .chat-sidebar-collapse-btn:hover { color:var(--text-primary); }
-    .chat-sidebar-videos-top {
-      display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr));
-      gap:4px; padding:4px; flex-shrink:0;
-    }
-    .chat-sidebar-videos-top:empty { display:none; }
-    .chat-sidebar-video-wrap {
-      position:relative; border-radius:4px; overflow:hidden; background:var(--bg-mid);
-      aspect-ratio:4/3; cursor:pointer;
-    }
-    .chat-sidebar-video-wrap video {
-      width:100%; height:100%; object-fit:cover; display:block;
-    }
-    .chat-sidebar-video-wrap .video-name {
-      position:absolute; bottom:2px; left:4px; font-size:10px; color:white;
-      text-shadow:0 1px 3px rgba(0,0,0,0.7); pointer-events:none;
-    }
-    .chat-sidebar-videos-top.focused .chat-sidebar-video-wrap { display:none; }
-    .chat-sidebar-videos-top.focused .chat-sidebar-video-wrap.focused {
-      display:block; grid-column:1/-1;
-    }
     .chat-sidebar-pinned {
       flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:4px; padding:4px;
     }
@@ -914,14 +961,6 @@ function createStyles() {
     .chat-sidebar-pinned iframe {
       width:100%; flex:1; border:none; border-radius:4px; min-height:200px;
       background:var(--bg-mid);
-    }
-    .chat-sidebar-self-video {
-      padding:4px; border-top:1px solid var(--border); flex-shrink:0;
-    }
-    .chat-sidebar-self-video:empty { display:none; }
-    .chat-sidebar-self-video video {
-      width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:4px;
-      background:var(--bg-mid); display:block; transform:scaleX(-1);
     }
     .chat-sidebar-status {
       padding:4px 8px; font-size:11px; color:var(--text-muted); text-align:center;
@@ -1524,6 +1563,8 @@ const SVG_ICONS = {
 		'</svg>',
 	phone:
 		'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
+	externalLink:
+		'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>',
 }
 
 export function Tool(handle, element, options) {
@@ -1558,6 +1599,7 @@ export function Tool(handle, element, options) {
 	let isLightBg = false
 	let replyToId = null
 	let pendingFiles = [] // { blob, dataUrl?, name, mimeType }
+	let pendingEmbeds = [] // { docUrl, toolId?, title?, type? }
 	let isRecording = false
 	let mediaRecorder = null
 	let recordingChunks = []
@@ -1567,14 +1609,10 @@ export function Tool(handle, element, options) {
 	let catEarsSet = new Set()
 	const avatarCache = new Map()
 
-	// ---- Sidebar state ----
-	let callSession = null
-	let focusedPeerId = null
-	const callListeners = [] // {target, event, handler} for cleanup
-
 	// ---- Pinned docs state ----
 	const pinnedDocLogs = new Map() // url -> [{level, args, ts}]
 	const pinnedIframes = new Map() // url -> iframe element
+	const cleanupListeners = [] // {target, event, handler} for teardown
 
 	// ---- LLM state ----
 	let llmReady = false
@@ -1583,13 +1621,46 @@ export function Tool(handle, element, options) {
 	let computerAutoMode = false
 	let computerFolderUrl = null
 	let lastComputerProcessedIndex = 0
-	let isComputerHost = false // true if THIS peer is running the LLM
 	const computerAvatarSrc = new URL("./computer.png", import.meta.url).href
 
-	// ---- Whisper transcription state ----
+	// ---- Moonshine transcription state ----
 	let whisperWorker = null
 	let whisperReady = false
-	const pendingTranscriptions = new Map() // msgUrl -> true
+	const pendingTranscriptions = new Map() // recordingUrl -> true
+
+	// ---- Recording doc cache (for transcription) ----
+	const recordingDocCache = new Map() // recordingUrl -> { data, handle }
+	const recordingDocSubscribed = new Set()
+
+	async function resolveRecordingDoc(url) {
+		if (recordingDocCache.has(url)) return recordingDocCache.get(url)
+		try {
+			const repo = window.repo
+			if (!repo) return null
+			const rh = await repo.find(url)
+			const data = rh.doc()
+			if (data) recordingDocCache.set(url, {data, handle: rh})
+			if (!recordingDocSubscribed.has(url)) {
+				recordingDocSubscribed.add(url)
+				rh.on("change", () => {
+					const prev = recordingDocCache.get(url)
+					const updated = rh.doc()
+					if (updated) {
+						recordingDocCache.set(url, {data: updated, handle: rh})
+						// Only re-render if transcription changed
+						if (updated.transcription !== prev?.data?.transcription) {
+							scheduleRender()
+						}
+					}
+				})
+			}
+			// Re-render now that we have the recording doc loaded
+			scheduleRender()
+			return recordingDocCache.get(url)
+		} catch (e) {
+			return null
+		}
+	}
 
 	const PRESENCE_TIMEOUT = 30000
 	const TYPING_TIMEOUT = 3000
@@ -2186,7 +2257,6 @@ export function Tool(handle, element, options) {
 				active: isFocused,
 				timestamp: Date.now(),
 			}
-			if (isComputerHost) payload.isComputerHost = true
 			if (Object.keys(myEmoticons).length > 0) payload.emoticons = myEmoticons
 			if (Object.keys(myFonts).length > 0) payload.fonts = myFonts
 			handle.broadcast(payload)
@@ -2202,7 +2272,6 @@ export function Tool(handle, element, options) {
 				avatarUrl: msg.avatarUrl,
 				color: msg.color,
 				active: msg.active,
-				isComputerHost: msg.isComputerHost || false,
 			})
 			if (msg.emoticons) {
 				peerEmoticons.set(msg.name, msg.emoticons)
@@ -2238,7 +2307,6 @@ export function Tool(handle, element, options) {
 	themeBtn.title = "Theme"
 	themeBtn.innerHTML = SVG_ICONS.theme
 	themeBtn.style.position = "relative"
-	themeBtn.style.marginLeft = "auto"
 
 	const themePopover = document.createElement("div")
 	themePopover.className = "chat-theme-popover"
@@ -2538,6 +2606,7 @@ export function Tool(handle, element, options) {
 	// ---- Notification bell button with menu ----
 	notifyBtn = document.createElement("button")
 	notifyBtn.className = "chat-notify-btn"
+	notifyBtn.style.marginLeft = "auto"
 
 	const notifyMenu = document.createElement("div")
 	notifyMenu.className = "chat-notify-menu"
@@ -2610,6 +2679,7 @@ export function Tool(handle, element, options) {
 	// ---- Presence bar (with theme + notify + phone buttons) ----
 	const presenceBar = document.createElement("div")
 	presenceBar.className = "chat-presence-bar"
+	presenceBar.title = "built " + BUILD_TIME
 	const sidebarToggleBtn = document.createElement("button")
 	sidebarToggleBtn.className = "chat-sidebar-toggle-btn"
 	sidebarToggleBtn.title = "Toggle sidebar"
@@ -2631,6 +2701,11 @@ export function Tool(handle, element, options) {
 	// ---- Messages area ----
 	const messagesArea = document.createElement("div")
 	messagesArea.className = "chat-messages"
+
+	// Hidden holding pen for patchwork-view elements during re-renders (keeps them in DOM to avoid teardown)
+	const pvHoldingPen = document.createElement("div")
+	pvHoldingPen.style.display = "none"
+	messagesArea.appendChild(pvHoldingPen)
 
 	// ---- Typing bar (at the bottom, above input) ----
 	const typingBar = document.createElement("div")
@@ -2690,17 +2765,29 @@ export function Tool(handle, element, options) {
 	sidebarHeader.appendChild(headerBtns)
 	sidebar.appendChild(sidebarHeader)
 
-	const sidebarVideosTop = document.createElement("div")
-	sidebarVideosTop.className = "chat-sidebar-videos-top"
-	sidebar.appendChild(sidebarVideosTop)
-
 	const sidebarPinned = document.createElement("div")
 	sidebarPinned.className = "chat-sidebar-pinned"
 	sidebar.appendChild(sidebarPinned)
 
-	const sidebarSelfVideo = document.createElement("div")
-	sidebarSelfVideo.className = "chat-sidebar-self-video"
-	sidebar.appendChild(sidebarSelfVideo)
+	// Accept patchwork drops anywhere on the sidebar → pin the doc
+	sidebar.addEventListener("dragover", e => {
+		if (hasPatchworkDrop(e.dataTransfer)) e.preventDefault()
+	})
+	sidebar.addEventListener("drop", e => {
+		const items = parsePatchworkDrop(e.dataTransfer)
+		if (!items || !items.length) return
+		e.preventDefault()
+		e.stopPropagation()
+		dragCounter = 0
+		sidebar.classList.remove("drop-target")
+		for (const item of items) {
+			if (!item.url) continue
+			pinDoc(item.url, item.toolId || "default", item.name || "doc")
+		}
+	})
+	sidebar.addEventListener("dragleave", e => {
+		if (!sidebar.contains(e.relatedTarget)) sidebar.classList.remove("drop-target")
+	})
 
 	const sidebarStatus = document.createElement("div")
 	sidebarStatus.className = "chat-sidebar-status"
@@ -4180,6 +4267,11 @@ export function Tool(handle, element, options) {
 			desc: "Configure the AI model and provider",
 			aliases: ["/or", "/openrouter", "/ollama", "/provider"],
 		},
+		{
+			cmd: "/pin",
+			usage: "/pin <url|transcript>",
+			desc: "Pin a document to the sidebar (automerge URL, tiny patchwork URL, or \"transcript\")",
+		},
 	]
 
 	// ---- Emoji/emoticon & slash command autocomplete ----
@@ -4450,11 +4542,35 @@ export function Tool(handle, element, options) {
 
 	function renderPendingFiles() {
 		pasteFilesContainer.innerHTML = ""
-		if (pendingFiles.length === 0) {
+		if (pendingFiles.length === 0 && pendingEmbeds.length === 0) {
 			pastePreview.classList.remove("show")
 			return
 		}
 		pastePreview.classList.add("show")
+		// Render pending embeds
+		pendingEmbeds.forEach((em, i) => {
+			const chip = document.createElement("div")
+			chip.className = "chat-paste-embed"
+			const icon = document.createElement("span")
+			icon.className = "chat-msg-file-icon"
+			icon.innerHTML = SVG_ICONS.pin || "\u{1F4CC}"
+			chip.appendChild(icon)
+			const nameEl = document.createElement("span")
+			nameEl.className = "chat-paste-embed-name"
+			nameEl.textContent = em.title || em.docUrl.replace("automerge:", "").slice(0, 8) + "…"
+			chip.appendChild(nameEl)
+			const removeBtn = document.createElement("button")
+			removeBtn.className = "chat-paste-embed-remove"
+			removeBtn.innerHTML = SVG_ICONS.close
+			removeBtn.addEventListener("click", e => {
+				e.stopPropagation()
+				pendingEmbeds.splice(i, 1)
+				renderPendingFiles()
+			})
+			chip.appendChild(removeBtn)
+			pasteFilesContainer.appendChild(chip)
+		})
+		// Render pending files
 		pendingFiles.forEach((f, i) => {
 			if (f.mimeType.startsWith("image/")) {
 				const img = document.createElement("img")
@@ -4496,6 +4612,7 @@ export function Tool(handle, element, options) {
 			if (f.dataUrl) URL.revokeObjectURL(f.dataUrl)
 		}
 		pendingFiles = []
+		pendingEmbeds = []
 		pastePreview.classList.remove("show")
 		pasteFilesContainer.innerHTML = ""
 	}
@@ -4506,18 +4623,74 @@ export function Tool(handle, element, options) {
 		}
 	}
 
+	// ---- Patchwork DnD helpers ----
+	function setupDragSource(element, url, type, name, toolId) {
+		element.draggable = true
+		element.addEventListener("dragstart", e => {
+			e.stopPropagation()
+			e.dataTransfer.effectAllowed = "copyMove"
+			const item = {id: url, url, type: type || "unknown", name: name || "doc", source: "chat"}
+			if (toolId) item.toolId = toolId
+			e.dataTransfer.items.add(JSON.stringify([url]), "text/x-patchwork-urls")
+			e.dataTransfer.items.add(JSON.stringify({source: "chat", items: [item]}), "text/x-patchwork-dnd")
+			const preview = document.createElement("div")
+			preview.style.cssText = "position:absolute;top:-1000px;background:var(--bg-mid);padding:4px 8px;border-radius:4px;font-size:12px;color:var(--text-primary);"
+			preview.textContent = name || url.replace("automerge:", "").slice(0, 12)
+			document.body.appendChild(preview)
+			e.dataTransfer.setDragImage(preview, 10, 10)
+			setTimeout(() => preview.remove(), 0)
+		})
+	}
+
+	function parsePatchworkDrop(dataTransfer) {
+		// Returns array of {url, type?, name?, toolId?} or null
+		const dndData = dataTransfer.getData("text/x-patchwork-dnd")
+		if (dndData) {
+			try {
+				const parsed = JSON.parse(dndData)
+				if (parsed.items?.length) {
+					return parsed.items.map(it => ({
+						url: it.url,
+						type: it.type,
+						name: it.name,
+						toolId: it.toolId,
+					}))
+				}
+			} catch {}
+		}
+		const urlsData = dataTransfer.getData("text/x-patchwork-urls")
+		if (urlsData) {
+			try {
+				const urls = JSON.parse(urlsData)
+				if (Array.isArray(urls) && urls.length) {
+					return urls.map(u => ({url: u}))
+				}
+			} catch {}
+		}
+		return null
+	}
+
+	function hasPatchworkDrop(dataTransfer) {
+		return dataTransfer?.types?.includes("text/x-patchwork-dnd") ||
+			dataTransfer?.types?.includes("text/x-patchwork-urls")
+	}
+
 	// Drag and drop
 	const dropOverlay = document.createElement("div")
 	dropOverlay.className = "chat-drop-overlay"
-	dropOverlay.textContent = "Drop files here"
+	dropOverlay.textContent = "Drop here"
 	root.appendChild(dropOverlay)
 
 	let dragCounter = 0
 	root.addEventListener("dragenter", e => {
 		e.preventDefault()
 		dragCounter++
-		if (e.dataTransfer?.types?.includes("Files"))
+		if (hasPatchworkDrop(e.dataTransfer)) {
+			// Show sidebar as drop target during patchwork drags
+			sidebar.classList.add("drop-target")
+		} else if (e.dataTransfer?.types?.includes("Files")) {
 			dropOverlay.classList.add("show")
+		}
 	})
 	root.addEventListener("dragleave", e => {
 		e.preventDefault()
@@ -4525,6 +4698,7 @@ export function Tool(handle, element, options) {
 		if (dragCounter <= 0) {
 			dragCounter = 0
 			dropOverlay.classList.remove("show")
+			sidebar.classList.remove("drop-target")
 		}
 	})
 	root.addEventListener("dragover", e => {
@@ -4534,6 +4708,25 @@ export function Tool(handle, element, options) {
 		e.preventDefault()
 		dragCounter = 0
 		dropOverlay.classList.remove("show")
+		sidebar.classList.remove("drop-target")
+		// Handle patchwork DnD drops (from sideboard or internal drag)
+		const patchworkItems = parsePatchworkDrop(e.dataTransfer)
+		if (patchworkItems) {
+			for (const item of patchworkItems) {
+				if (!item.url) continue
+				// Don't add duplicates
+				if (pendingEmbeds.some(pe => pe.docUrl === item.url)) continue
+				pendingEmbeds.push({
+					docUrl: item.url,
+					toolId: item.toolId,
+					title: item.name,
+					type: item.type,
+				})
+			}
+			renderPendingFiles()
+			focusInput()
+			return
+		}
 		if (e.dataTransfer?.files?.length) addFilesFromList(e.dataTransfer.files)
 	})
 
@@ -4721,7 +4914,8 @@ export function Tool(handle, element, options) {
 						})
 					})
 					sendMsg(null, null, null, url, dur)
-					// Transcribe the voice note in background
+					// Pre-cache the recording doc and transcribe
+					resolveRecordingDoc(url)
 					transcribeVoiceNote(blob, url)
 				} catch (e) {
 					console.error("[Chat] voice:", e)
@@ -4861,6 +5055,7 @@ export function Tool(handle, element, options) {
 								? decodeURIComponent(params.get("title").replace(/\+/g, " "))
 								: "",
 							type: params.get("type") || "",
+							toolId: params.get("tool") || "",
 							originalUrl: match[0],
 						})
 					}
@@ -4994,6 +5189,52 @@ export function Tool(handle, element, options) {
 			return
 		}
 
+		// Handle /pin — pin a doc to the sidebar
+		if (text.toLowerCase().startsWith("/pin ") || text.toLowerCase() === "/pin") {
+			setInputValue("")
+			const arg = text.slice(5).trim()
+			if (!arg) {
+				updateLLMStatus("Usage: /pin <automerge-url|tiny-patchwork-url|transcript>")
+				setTimeout(() => updateLLMStatus(""), 3000)
+				return
+			}
+			if (arg.toLowerCase() === "transcript") {
+				const doc = handle.doc()
+				const callUrl = doc?.callUrl
+				if (!callUrl) {
+					updateLLMStatus("No call to pin — start a call first with /call")
+					setTimeout(() => updateLLMStatus(""), 3000)
+					return
+				}
+				pinDoc(callUrl, "teleprint", "Teleprint")
+				return
+			}
+			if (arg.startsWith("automerge:")) {
+				pinDoc(arg, "", arg.replace("automerge:", "").slice(0, 8) + "…")
+				return
+			}
+			const tinyMatch = arg.match(/https?:\/\/tiny\.patchwork\.inkandswitch\.com\/#[^\s]+/)
+			if (tinyMatch) {
+				try {
+					const parsed = new URL(tinyMatch[0])
+					const params = new URLSearchParams(parsed.hash.slice(1))
+					const docId = params.get("doc")
+					if (docId) {
+						const docUrl = "automerge:" + docId
+						const toolId = params.get("tool") || ""
+						const title = params.get("title")
+							? decodeURIComponent(params.get("title").replace(/\+/g, " "))
+							: docId.slice(0, 8) + "…"
+						pinDoc(docUrl, toolId, title)
+						return
+					}
+				} catch {}
+			}
+			updateLLMStatus("Unrecognized URL — use an automerge: URL, tiny patchwork URL, or \"transcript\"")
+			setTimeout(() => updateLLMStatus(""), 3000)
+			return
+		}
+
 		// Handle /model (and aliases /or, /openrouter, /ollama, /provider)
 		const lc = text.toLowerCase()
 		if (lc === "/model" || lc === "/openrouter" || lc.startsWith("/openrouter ") || lc === "/or" || lc.startsWith("/or ") || lc === "/ollama" || lc.startsWith("/provider")) {
@@ -5040,11 +5281,26 @@ export function Tool(handle, element, options) {
 			cleanText = cleanText.replace(link.originalUrl, "").trim()
 		}
 
+		// Merge pending embeds into patchwork links
+		const allEmbeds = [...patchworkLinks]
+		for (const pe of pendingEmbeds) {
+			allEmbeds.push({
+				docUrl: pe.docUrl,
+				toolId: pe.toolId || "",
+				title: pe.title || "",
+				type: pe.type || "",
+			})
+		}
+		if (pendingEmbeds.length > 0) {
+			pendingEmbeds = []
+			renderPendingFiles()
+		}
+
 		if (
 			!cleanText &&
 			!imageUrl &&
 			fileAttachments.length === 0 &&
-			patchworkLinks.length === 0
+			allEmbeds.length === 0
 		)
 			return
 
@@ -5065,7 +5321,7 @@ export function Tool(handle, element, options) {
 				null,
 				null,
 				gifUrl,
-				patchworkLinks.length > 0 ? patchworkLinks : null,
+				allEmbeds.length > 0 ? allEmbeds : null,
 				slashCmd?.action || false,
 				slashCmd?.overrideFont || null,
 				slashCmd?.overrideColor || null,
@@ -5418,7 +5674,8 @@ export function Tool(handle, element, options) {
 		prevName,
 		prevTime,
 		msgMap,
-		emoticonBlobUrls
+		emoticonBlobUrls,
+		salvaged
 	) {
 		// Loading placeholder for unresolved ref messages
 		if (msg._loading) {
@@ -5575,6 +5832,7 @@ export function Tool(handle, element, options) {
 			if (msg.text) {
 				const textEl = document.createElement("div")
 				textEl.className = "chat-msg-text"
+				if (msg.streaming) textEl.classList.add("streaming")
 				if (isEmojiOnly(msg.text)) textEl.classList.add("emoji-only")
 				let html = formatText(msg.text, emoticonBlobUrls)
 				if (msg.marquee) html = "<marquee>" + html + "</marquee>"
@@ -5589,9 +5847,21 @@ export function Tool(handle, element, options) {
 					sp.addEventListener("click", () => sp.classList.toggle("revealed"))
 				})
 				body.appendChild(textEl)
+
+				// Cancel button for streaming messages
+				if (msg.streaming && activeAbortController) {
+					const cancelBtn = document.createElement("button")
+					cancelBtn.className = "chat-streaming-cancel"
+					cancelBtn.textContent = "Cancel"
+					cancelBtn.addEventListener("click", e => {
+						e.stopPropagation()
+						if (activeAbortController) activeAbortController.abort()
+					})
+					body.appendChild(cancelBtn)
+				}
 			}
 
-			renderAttachments(body, msg)
+			renderAttachments(body, msg, salvaged)
 			renderReactions(body, msg, rawIdx, emoticonBlobUrls)
 			row.appendChild(body)
 			messagesArea.appendChild(row)
@@ -5624,6 +5894,7 @@ export function Tool(handle, element, options) {
 			if (msg.text) {
 				const textEl = document.createElement("div")
 				textEl.className = "chat-msg-text"
+				if (msg.streaming) textEl.classList.add("streaming")
 				if (isEmojiOnly(msg.text)) textEl.classList.add("emoji-only")
 				let html = formatText(msg.text, emoticonBlobUrls)
 				if (msg.marquee) html = "<marquee>" + html + "</marquee>"
@@ -5639,7 +5910,7 @@ export function Tool(handle, element, options) {
 				contBody.appendChild(textEl)
 			}
 
-			renderAttachments(contBody, msg)
+			renderAttachments(contBody, msg, salvaged)
 			renderReactions(contBody, msg, rawIdx, emoticonBlobUrls)
 			row.appendChild(contBody)
 			messagesArea.appendChild(row)
@@ -5648,6 +5919,9 @@ export function Tool(handle, element, options) {
 	}
 
 	function render() {
+		// Don't rebuild messages while user is editing a tool selector input
+		if (document.activeElement?.closest?.(".chat-embed-tool-menu")) return
+
 		const doc = handle.doc()
 		if (!doc) return
 
@@ -5726,6 +6000,9 @@ export function Tool(handle, element, options) {
 
 		const newMsgIds = messages.map(m => m.id)
 
+		// Map for salvaging patchwork-view elements across re-renders to avoid teardown/remount flicker
+		const salvaged = new Map() // "docUrl|toolId" -> patchwork-view element
+
 		// Find common prefix with currently rendered messages
 		let commonPrefix = 0
 		while (
@@ -5770,7 +6047,8 @@ export function Tool(handle, element, options) {
 					prevName,
 					prevTime,
 					msgMap,
-					emoticonBlobUrls
+					emoticonBlobUrls,
+					salvaged
 				)
 				prevName = messages[i].name
 				prevTime = messages[i].timestamp
@@ -5781,16 +6059,45 @@ export function Tool(handle, element, options) {
 			commonPrefix === newMsgIds.length &&
 			commonPrefix === renderedMsgOrder.length
 		) {
-			// Same messages — just update reactions in-place
+			// Same messages — update reactions and streaming text in-place
 			for (const msg of messages) {
 				updateMessageReactions(msg, msg._rawIdx, emoticonBlobUrls)
+				// Update streaming message text in-place
+				const el = renderedElements.get(msg.id)
+				if (el && msg.text) {
+					const textEl = el.querySelector(".chat-msg-text")
+					if (textEl) {
+						const newHtml = formatText(msg.text, emoticonBlobUrls)
+						if (textEl.innerHTML !== newHtml) {
+							textEl.innerHTML = msg.marquee ? "<marquee>" + newHtml + "</marquee>" : newHtml
+							// Re-wire spoiler clicks
+							textEl.querySelectorAll(".chat-spoiler").forEach(sp => {
+								sp.addEventListener("click", () => sp.classList.toggle("revealed"))
+							})
+						}
+						// Update streaming class
+						if (msg.streaming) textEl.classList.add("streaming")
+						else textEl.classList.remove("streaming")
+					}
+				}
 			}
 		} else {
 			// Structural change — remove from divergence point, re-render from there
+			// Salvage patchwork-view elements so they aren't torn down and remounted
 			for (let i = commonPrefix; i < renderedMsgOrder.length; i++) {
 				const id = renderedMsgOrder[i]
 				const el = renderedElements.get(id)
-				if (el) el.remove()
+				if (el) {
+					// Move patchwork-views to holding pen before removing parent to avoid teardown
+					if (typeof Element.prototype.moveBefore === "function") {
+						for (const pv of [...el.querySelectorAll("patchwork-view")]) {
+							const key = (pv.getAttribute("doc-url") || "") + "|" + (pv.getAttribute("tool-id") || "")
+							pvHoldingPen.moveBefore(pv, null)
+							salvaged.set(key, pv)
+						}
+					}
+					el.remove()
+				}
 				renderedElements.delete(id)
 				const replyRef = messagesArea.querySelector(
 					'[data-reply-for="' + id + '"]'
@@ -5806,7 +6113,8 @@ export function Tool(handle, element, options) {
 					prevName,
 					prevTime,
 					msgMap,
-					emoticonBlobUrls
+					emoticonBlobUrls,
+					salvaged
 				)
 				prevName = messages[i].name
 				prevTime = messages[i].timestamp
@@ -5816,6 +6124,11 @@ export function Tool(handle, element, options) {
 		}
 
 		renderedMsgOrder = newMsgIds
+
+		// Clean up any unsalvaged patchwork-views left in the holding pen
+		for (const pv of salvaged.values()) pv.remove()
+		// Also clear any strays in the holding pen (shouldn't happen, but be safe)
+		while (pvHoldingPen.firstChild) pvHoldingPen.firstChild.remove()
 
 		// Scroll to bottom reliably
 		if (wasAtBottom || messagesArea.children.length <= 1) {
@@ -5876,6 +6189,22 @@ export function Tool(handle, element, options) {
 		moreBtn.title = "More"
 		const menu = document.createElement("div")
 		menu.className = "chat-msg-menu"
+
+		if (msg.voiceUrl) {
+			const openItem = document.createElement("button")
+			openItem.className = "chat-msg-menu-item"
+			openItem.innerHTML = SVG_ICONS.externalLink + " Open recording"
+			openItem.addEventListener("click", e => {
+				e.stopPropagation()
+				menu.classList.remove("show")
+				row.dispatchEvent(new CustomEvent("patchwork:open-document", {
+					detail: {url: msg.voiceUrl},
+					bubbles: true,
+					composed: true,
+				}))
+			})
+			menu.appendChild(openItem)
+		}
 
 		const deleteItem = document.createElement("button")
 		deleteItem.className = "chat-msg-menu-item danger"
@@ -5967,7 +6296,7 @@ export function Tool(handle, element, options) {
 		})
 	}
 
-	function renderAttachments(parent, msg) {
+	function renderAttachments(parent, msg, salvaged) {
 		if (msg.imageUrl) {
 			const wrap = document.createElement("div")
 			wrap.className = "chat-msg-image-wrap"
@@ -5993,6 +6322,7 @@ export function Tool(handle, element, options) {
 				if (img.src) openLightbox(img.src, "image")
 			})
 			wrap.appendChild(img)
+			setupDragSource(wrap, msg.imageUrl, "file", msg.imageName || "image")
 			makeResizable(wrap, msg, "image")
 			parent.appendChild(wrap)
 		}
@@ -6042,15 +6372,18 @@ export function Tool(handle, element, options) {
 			vn.appendChild(playBtn)
 			vn.appendChild(waveform)
 			vn.appendChild(dur)
-			// Show transcription if available
-			if (msg.transcription) {
-				const txn = document.createElement("div")
-				txn.className = "chat-voice-transcription"
-				txn.textContent = msg.transcription
-				txn.style.cssText =
-					"font-size:12px;color:var(--text-secondary);margin-top:4px;font-style:italic;"
-				vn.appendChild(txn)
+			// Show transcription from the recording doc
+			const recCached = recordingDocCache.get(msg.voiceUrl)
+			if (recCached?.data?.transcription) {
+				const txnText = document.createElement("div")
+				txnText.style.cssText = "margin-top:4px;font-size:13px;color:var(--text-secondary);font-style:italic;padding-left:2px;"
+				txnText.textContent = recCached.data.transcription
+				vn.appendChild(txnText)
+			} else {
+				// Kick off loading the recording doc so we get transcription on next render
+				resolveRecordingDoc(msg.voiceUrl)
 			}
+			setupDragSource(vn, msg.voiceUrl, "recording", "Voice note")
 			parent.appendChild(vn)
 		}
 		if (msg.embeds) {
@@ -6064,14 +6397,27 @@ export function Tool(handle, element, options) {
 					wrap.style.height = msg["embed_" + ei + "Height"] + "px"
 
 				// Resolve tool override from chat doc (per-embed, keyed by msgId:embedIndex)
+				// Falls back to toolId from the embed itself (e.g. from &tool= in tiny patchwork URL)
 				const chatDoc = handle.doc()
 				const overrideKey = msg.id + ":" + ei
-				const toolId = chatDoc?.toolOverrides?.[overrideKey] || ""
+				const toolId = chatDoc?.toolOverrides?.[overrideKey] || embed.toolId || ""
 
-				const pv = document.createElement("patchwork-view")
-				pv.setAttribute("doc-url", embed.docUrl)
-				if (toolId) pv.setAttribute("tool-id", toolId)
-				wrap.appendChild(pv)
+				const pvKey = (embed.docUrl || "") + "|" + (toolId || "")
+				let pv = salvaged.get(pvKey)
+				if (pv) {
+					salvaged.delete(pvKey)
+					// Use moveBefore to reattach without teardown/init cycle
+					if (typeof wrap.moveBefore === "function") {
+						wrap.moveBefore(pv, null)
+					} else {
+						wrap.appendChild(pv)
+					}
+				} else {
+					pv = document.createElement("patchwork-view")
+					pv.setAttribute("doc-url", embed.docUrl)
+					if (toolId) pv.setAttribute("tool-id", toolId)
+					wrap.appendChild(pv)
+				}
 
 				// Info bar under the embed
 				const infobar = document.createElement("div")
@@ -6085,9 +6431,10 @@ export function Tool(handle, element, options) {
 					infobar.appendChild(titleEl)
 				}
 
-				// Tool pill (clickable → editable)
+				// Tool pill (clickable → tool selector menu)
 				const toolPill = document.createElement("span")
 				toolPill.className = "chat-embed-pill clickable"
+				toolPill.style.position = "relative"
 				toolPill.title = "Change tool"
 				const toolLabel = document.createElement("span")
 				toolLabel.className = "chat-embed-pill-label"
@@ -6101,42 +6448,104 @@ export function Tool(handle, element, options) {
 				})
 				toolPill.addEventListener("click", e => {
 					e.stopPropagation()
-					const inp = document.createElement("input")
-					inp.className = "chat-embed-tool-input"
-					inp.type = "text"
-					inp.placeholder = "tool id"
-					inp.value = toolId
-					inp.addEventListener("pointerdown", e => {
-						e.stopPropagation()
+					// Toggle existing menu
+					const existing = toolPill.querySelector(".chat-embed-tool-menu")
+					if (existing) { existing.remove(); return }
+
+					const menu = document.createElement("div")
+					menu.className = "chat-embed-tool-menu"
+
+					function applyTool(newToolId) {
+						handle.change(d => {
+							if (!d.toolOverrides) d.toolOverrides = {}
+							if (newToolId) d.toolOverrides[overrideKey] = newToolId
+							else delete d.toolOverrides[overrideKey]
+						})
+						// Update the patchwork-view directly so it reloads immediately
+						if (pv) {
+							if (newToolId) pv.setAttribute("tool-id", newToolId)
+							else pv.removeAttribute("tool-id")
+						}
+						menu.remove()
+						document.removeEventListener("click", closeMenu, true)
+						render()
+					}
+
+					// "default" option (clear override)
+					const defaultBtn = document.createElement("button")
+					defaultBtn.textContent = "default"
+					if (!toolId) defaultBtn.className = "active"
+					defaultBtn.addEventListener("click", ev => {
+						ev.stopPropagation()
+						applyTool("")
 					})
+					menu.appendChild(defaultBtn)
+
+					// Load compatible tools for this doc's datatype
+					;(async () => {
+						try {
+							const {getRegistry} = await import("@inkandswitch/patchwork-plugins")
+							const toolReg = getRegistry("patchwork:tool")
+							// Try to determine the doc's datatype from the embed or by loading the doc
+							let docType = embed.type || ""
+							if (!docType && embed.docUrl) {
+								try {
+									const dh = await window.repo.find(embed.docUrl)
+									const dd = dh.doc()
+									docType = dd?.["@patchwork"]?.type || ""
+								} catch {}
+							}
+							const allTools = toolReg.all()
+							for (const t of allTools) {
+								if (!t.id || t.id === "default") continue
+								const supports = t.supportedDatatypes
+								const matches = supports === "*" || (Array.isArray(supports) && docType && supports.includes(docType))
+								if (!matches) continue
+								const btn = document.createElement("button")
+								btn.textContent = t.id + (t.name && t.name !== t.id ? " (" + t.name + ")" : "")
+								if (t.id === toolId) btn.className = "active"
+								btn.addEventListener("click", ev => {
+									ev.stopPropagation()
+									applyTool(t.id)
+								})
+								menu.appendChild(btn)
+							}
+						} catch {}
+					})()
+
+					// Free-text input row at bottom
+					const inputRow = document.createElement("div")
+					inputRow.className = "tool-menu-input-row"
+					const inp = document.createElement("input")
+					inp.type = "text"
+					inp.placeholder = "custom tool id"
+					inp.value = toolId
+					inp.addEventListener("pointerdown", e => e.stopPropagation())
+					inp.addEventListener("click", e => e.stopPropagation())
 					inp.addEventListener("keydown", ev => {
 						ev.stopPropagation()
 						if (ev.key === "Enter") {
-							const val = inp.value.trim()
-							handle.change(d => {
-								if (!d.toolOverrides) d.toolOverrides = {}
-								if (val) d.toolOverrides[overrideKey] = val
-								else delete d.toolOverrides[overrideKey]
-							})
-							render()
+							applyTool(inp.value.trim())
 						} else if (ev.key === "Escape") {
-							render()
+							menu.remove()
+							document.removeEventListener("click", closeMenu, true)
 						}
 					})
-					inp.addEventListener("blur", () => {
-						const val = inp.value.trim()
-						if (val !== toolId) {
-							handle.change(d => {
-								if (!d.toolOverrides) d.toolOverrides = {}
-								if (val) d.toolOverrides[overrideKey] = val
-								else delete d.toolOverrides[overrideKey]
-							})
-							render()
-						}
-					})
-					toolPill.replaceWith(inp)
+					inputRow.appendChild(inp)
+					menu.appendChild(inputRow)
+
+					toolPill.appendChild(menu)
 					inp.focus()
 					inp.select()
+
+					// Close on outside click
+					const closeMenu = ev => {
+						if (!menu.contains(ev.target) && ev.target !== toolPill) {
+							menu.remove()
+							document.removeEventListener("click", closeMenu, true)
+						}
+					}
+					setTimeout(() => document.addEventListener("click", closeMenu, true), 0)
 				})
 				infobar.appendChild(toolPill)
 
@@ -6235,6 +6644,7 @@ export function Tool(handle, element, options) {
 				infobar.appendChild(pinBtn)
 
 				wrap.appendChild(infobar)
+				setupDragSource(wrap, embed.docUrl, embed.type || "embed", embed.title || "Embed", toolId)
 				makeResizable(wrap, msg, "embed_" + ei)
 				parent.appendChild(wrap)
 			}
@@ -6264,6 +6674,7 @@ export function Tool(handle, element, options) {
 						if (img.src) openLightbox(img.src, "image")
 					})
 					wrap.appendChild(img)
+					setupDragSource(wrap, file.url, "file", file.name || "image")
 					parent.appendChild(wrap)
 				} else if (mime.startsWith("video/")) {
 					const wrap = document.createElement("div")
@@ -6280,6 +6691,7 @@ export function Tool(handle, element, options) {
 						if (vid.src) openLightbox(vid.src, "video")
 					})
 					wrap.appendChild(vid)
+					setupDragSource(wrap, file.url, "file", file.name || "video")
 					parent.appendChild(wrap)
 				} else if (mime.startsWith("audio/")) {
 					const aud = document.createElement("audio")
@@ -6289,6 +6701,7 @@ export function Tool(handle, element, options) {
 					loadBlobUrl(file.url).then(u => {
 						if (u) aud.src = u
 					})
+					setupDragSource(aud, file.url, "file", file.name || "audio")
 					parent.appendChild(aud)
 				} else {
 					const link = document.createElement("a")
@@ -6305,6 +6718,7 @@ export function Tool(handle, element, options) {
 							link.download = file.name || "file"
 						}
 					})
+					setupDragSource(link, file.url, "file", file.name || "file")
 					parent.appendChild(link)
 				}
 			}
@@ -6360,166 +6774,22 @@ export function Tool(handle, element, options) {
 	render()
 
 	// ============================================================================
-	// SIDEBAR: Video (Call Integration)
+	// SIDEBAR
 	// ============================================================================
 
 	function updateSidebarVisibility() {
 		const doc = handle.doc()
 		const hasPinned = doc?.docs?.some(d => d.pin)
-		const hasCall = callSession && callSession.joined && !callSession.destroyed
-		const shouldShow = hasPinned || hasCall
-		if (shouldShow) {
+		if (hasPinned) {
 			sidebar.classList.add("visible")
-			// If collapsed, show the expand button
-			if (sidebar.classList.contains("collapsed")) {
-				// sidebar toggle is in the presence bar now
-			}
 		} else {
 			sidebar.classList.remove("visible")
 			sidebar.classList.remove("collapsed")
-			// sidebar toggle is in the presence bar now
 		}
 	}
-
-	function renderPeerVideos() {
-		if (!callSession || !callSession.joined || callSession.destroyed) {
-			sidebarVideosTop.innerHTML = ""
-			return
-		}
-
-		const existing = new Map()
-		for (const child of [...sidebarVideosTop.children]) {
-			existing.set(child.dataset.peerId, child)
-		}
-
-		const activePeerIds = new Set()
-		for (const [peerId, peer] of callSession.peers) {
-			activePeerIds.add(peerId)
-			let wrap = existing.get(peerId)
-			if (!wrap) {
-				wrap = document.createElement("div")
-				wrap.className = "chat-sidebar-video-wrap"
-				wrap.dataset.peerId = peerId
-				const vid = document.createElement("video")
-				vid.autoplay = true
-				vid.muted = true
-				vid.playsInline = true
-				wrap.appendChild(vid)
-				const nameLabel = document.createElement("span")
-				nameLabel.className = "video-name"
-				wrap.appendChild(nameLabel)
-				wrap.addEventListener("click", () => {
-					if (focusedPeerId === peerId) {
-						focusedPeerId = null
-						sidebarVideosTop.classList.remove("focused")
-						wrap.classList.remove("focused")
-					} else {
-						focusedPeerId = peerId
-						sidebarVideosTop.classList.add("focused")
-						for (const c of sidebarVideosTop.children)
-							c.classList.remove("focused")
-						wrap.classList.add("focused")
-					}
-				})
-				sidebarVideosTop.appendChild(wrap)
-			}
-			const vid = wrap.querySelector("video")
-			if (vid.srcObject !== peer.stream) vid.srcObject = peer.stream
-			const nameLabel = wrap.querySelector(".video-name")
-			nameLabel.textContent = peer.name || peerId.slice(0, 6)
-		}
-
-		// Remove stale peers
-		for (const [peerId, el] of existing) {
-			if (!activePeerIds.has(peerId)) el.remove()
-		}
-	}
-
-	function renderSelfVideo() {
-		if (!callSession || !callSession.localStream) {
-			sidebarSelfVideo.innerHTML = ""
-			return
-		}
-		let vid = sidebarSelfVideo.querySelector("video")
-		if (!vid) {
-			vid = document.createElement("video")
-			vid.autoplay = true
-			vid.muted = true
-			vid.playsInline = true
-			sidebarSelfVideo.appendChild(vid)
-		}
-		if (vid.srcObject !== callSession.localStream) {
-			vid.srcObject = callSession.localStream
-		}
-	}
-
-	function bindCallSession(session) {
-		callSession = session
-		if (!session) return
-		const handlers = [
-			[
-				"peers-changed",
-				() => {
-					renderPeerVideos()
-					updateSidebarVisibility()
-				},
-			],
-			[
-				"media-changed",
-				() => {
-					renderSelfVideo()
-				},
-			],
-			[
-				"state-changed",
-				() => {
-					renderPeerVideos()
-					renderSelfVideo()
-					updateSidebarVisibility()
-				},
-			],
-			[
-				"destroyed",
-				() => {
-					callSession = null
-					sidebarVideosTop.innerHTML = ""
-					sidebarSelfVideo.innerHTML = ""
-					updateSidebarVisibility()
-				},
-			],
-		]
-		for (const [evt, fn] of handlers) {
-			session.addEventListener(evt, fn)
-			callListeners.push({target: session, event: evt, handler: fn})
-		}
-	}
-
-	function onCallSessionChanged() {
-		const session = window.__patchworkCallSession
-		if (session && session.joined && !session.destroyed) {
-			if (session !== callSession) {
-				callSession = null
-				bindCallSession(session)
-			}
-			renderPeerVideos()
-			renderSelfVideo()
-		} else {
-			callSession = null
-			sidebarVideosTop.innerHTML = ""
-			sidebarSelfVideo.innerHTML = ""
-		}
-		updateSidebarVisibility()
-	}
-
-	window.addEventListener(
-		"patchwork-call-session-changed",
-		onCallSessionChanged
-	)
-	onCallSessionChanged() // check on init
 
 	// ---- Check if call module is available (for phone button) ----
 	let callModuleAvailable = false
-	let telephonePV = null // patchwork-view for telephone lobby
 	async function checkCallModule() {
 		try {
 			const {getRegistry} = await import("@inkandswitch/patchwork-plugins")
@@ -6545,14 +6815,6 @@ export function Tool(handle, element, options) {
 			return
 		}
 
-		// Check if already in a call
-		const existing = window.__patchworkCallSession
-		if (existing && existing.joined && !existing.destroyed) {
-			// Already in a call — just make sure sidebar is visible
-			sidebar.classList.add("visible")
-			return
-		}
-
 		// Check if chat already has a call doc
 		const doc = handle.doc()
 		let callUrl = doc?.callUrl
@@ -6567,28 +6829,13 @@ export function Tool(handle, element, options) {
 			})
 		}
 
-		// Render <patchwork-view> with telephone tool in the sidebar
-		if (telephonePV) telephonePV.remove()
-		telephonePV = document.createElement("patchwork-view")
-		telephonePV.setAttribute("doc-url", callUrl)
-		telephonePV.setAttribute("tool-id", "telephone")
-		telephonePV.style.cssText = "width:100%;flex:1;display:block;min-height:300px;"
-		sidebarPinned.prepend(telephonePV)
-		sidebar.classList.add("visible")
-	}
-
-	// When a call session starts, remove the telephone patchwork-view and show compact video
-	const origOnCallSessionChanged = onCallSessionChanged
-	function onCallSessionChangedWithTelephone() {
-		origOnCallSessionChanged()
-		const session = window.__patchworkCallSession
-		if (session && session.joined && !session.destroyed && telephonePV) {
-			telephonePV.remove()
-			telephonePV = null
+		// Pin the call doc with the telephone tool in the sidebar
+		if (!isDocPinned(callUrl)) {
+			pinDoc(callUrl, "telephone", (doc?.title || "Chat") + " Call")
+		} else {
+			sidebar.classList.add("visible")
 		}
 	}
-	window.removeEventListener("patchwork-call-session-changed", onCallSessionChanged)
-	window.addEventListener("patchwork-call-session-changed", onCallSessionChangedWithTelephone)
 
 	// ============================================================================
 	// SIDEBAR: Pinned Docs (iframe rendering + log capture)
@@ -6613,6 +6860,72 @@ export function Tool(handle, element, options) {
 			if (pinnedIframes.has(dl.url)) continue
 			const wrap = document.createElement("div")
 			wrap.className = "chat-sidebar-pinned-wrap"
+
+			// Make draggable for reorder + cross-tool DnD
+			setupDragSource(wrap, dl.url, dl.type, dl.name, dl.pin)
+			wrap.addEventListener("dragstart", () => wrap.classList.add("dragging"))
+			wrap.addEventListener("dragend", () => wrap.classList.remove("dragging"))
+
+			// Drop zone for reorder
+			wrap.addEventListener("dragover", e => {
+				e.preventDefault()
+				e.stopPropagation()
+				if (!hasPatchworkDrop(e.dataTransfer) && !e.dataTransfer?.types?.includes("Files")) return
+				const rect = wrap.getBoundingClientRect()
+				const mid = rect.top + rect.height / 2
+				wrap.setAttribute("data-drop-position", e.clientY < mid ? "above" : "below")
+			})
+			wrap.addEventListener("dragleave", () => {
+				wrap.removeAttribute("data-drop-position")
+			})
+			wrap.addEventListener("drop", e => {
+				e.preventDefault()
+				e.stopPropagation()
+				dragCounter = 0
+				dropOverlay.classList.remove("show")
+				const pos = wrap.getAttribute("data-drop-position")
+				wrap.removeAttribute("data-drop-position")
+				const items = parsePatchworkDrop(e.dataTransfer)
+				if (!items || !items.length) return
+				const doc = handle.doc()
+				const allDocs = doc?.docs || []
+				for (const item of items) {
+					if (!item.url) continue
+					const sourceIdx = allDocs.findIndex(d => d.url === item.url && d.pin)
+					const targetIdx = allDocs.findIndex(d => d.url === dl.url)
+					if (sourceIdx >= 0 && targetIdx >= 0 && sourceIdx !== targetIdx) {
+						// Reorder: move source to target position
+						handle.change(d => {
+							const [moved] = d.docs.splice(sourceIdx, 1)
+							const newTargetIdx = d.docs.findIndex(dd => dd.url === dl.url)
+							const insertIdx = pos === "below" ? newTargetIdx + 1 : newTargetIdx
+							d.docs.splice(insertIdx, 0, moved)
+						})
+					} else if (sourceIdx < 0) {
+						// New item — pin it at the target position
+						handle.change(d => {
+							if (!d.docs) d.docs = []
+							const existing = d.docs.find(dd => dd.url === item.url)
+							if (existing) {
+								existing.pin = item.toolId || "default"
+								if (item.name) existing.name = item.name
+							} else {
+								const newDoc = {
+									url: item.url,
+									type: item.type || "unknown",
+									name: item.name || "doc",
+									pin: item.toolId || "default",
+								}
+								const ti = d.docs.findIndex(dd => dd.url === dl.url)
+								const ii = pos === "below" ? ti + 1 : ti
+								d.docs.splice(ii, 0, newDoc)
+							}
+						})
+					}
+				}
+				renderPinnedDocs()
+				updateSidebarVisibility()
+			})
 
 			// Build URL params for the iframe
 			const urlParams = new URLSearchParams()
@@ -6663,6 +6976,17 @@ export function Tool(handle, element, options) {
 				else if (iframe?.webkitRequestFullscreen) iframe.webkitRequestFullscreen()
 			})
 			toolbar.appendChild(fullscreenBtn)
+
+			// Refresh
+			const refreshBtn = document.createElement("button")
+			refreshBtn.title = "Refresh"
+			refreshBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>'
+			refreshBtn.addEventListener("click", e => {
+				e.stopPropagation()
+				const iframe = wrap.querySelector("iframe")
+				if (iframe?.contentWindow) iframe.contentWindow.location.reload()
+			})
+			toolbar.appendChild(refreshBtn)
 
 			// Unpin
 			const unpinBtn = document.createElement("button")
@@ -6805,6 +7129,9 @@ export function Tool(handle, element, options) {
 						cb.resolve(msg.text)
 						llmCallbacks.delete(msg.id)
 					}
+				} else if (msg.type === "token") {
+					const cb = llmCallbacks.get(msg.id)
+					if (cb?.onToken) cb.onToken(msg.text)
 				} else if (msg.type === "error") {
 					console.error("[Chat] LLM error:", msg.message)
 					updateLLMStatus(msg.message)
@@ -6840,19 +7167,34 @@ export function Tool(handle, element, options) {
 		setTimeout(() => updateLLMStatus(""), 2000)
 	}
 
-	async function generateLLM(messages) {
-		const provider = getActiveProvider()
-		if (provider === "openrouter") return generateOpenRouter(messages)
-		if (provider === "ollama") return generateOllama(messages)
-		return generateLocal(messages)
+	// Flatten multipart content messages to plain text (for models that don't support vision)
+	function flattenMessagesForText(messages) {
+		return messages.map(m => {
+			if (Array.isArray(m.content)) {
+				const text = m.content
+					.filter(p => p.type === "text")
+					.map(p => p.text)
+					.join("\n")
+				const hasImage = m.content.some(p => p.type === "image_url")
+				return {...m, content: text + (hasImage ? "\n[Image attached]" : "")}
+			}
+			return m
+		})
 	}
 
-	async function generateLocal(messages) {
+	async function generateLLM(messages, onToken, signal) {
+		const provider = getActiveProvider()
+		if (provider === "openrouter") return generateOpenRouter(messages, onToken, signal)
+		if (provider === "ollama") return generateOllama(messages, onToken, signal)
+		return generateLocal(flattenMessagesForText(messages), onToken, signal)
+	}
+
+	async function generateLocal(messages, onToken, signal) {
 		if (!llmWorker) await initLLMWorker()
 		if (!llmWorker) throw new Error("LLM not available")
 		const id = generateId()
 		return new Promise((resolve, reject) => {
-			llmCallbacks.set(id, {resolve, reject})
+			llmCallbacks.set(id, {resolve, reject, onToken})
 			llmWorker.postMessage({type: "generate", id, messages})
 			setTimeout(() => {
 				if (llmCallbacks.has(id)) {
@@ -6863,7 +7205,7 @@ export function Tool(handle, element, options) {
 		})
 	}
 
-	async function generateOpenRouter(messages) {
+	async function generateOpenRouter(messages, onToken, signal) {
 		if (!chatProfileHandle) throw new Error("No chat profile")
 		const profile = chatProfileHandle.doc()
 		const apiKey = profile?.openrouterApiKey
@@ -6880,20 +7222,45 @@ export function Tool(handle, element, options) {
 				body: JSON.stringify({
 					model,
 					messages,
+					stream: true,
 				}),
+				signal,
 			})
 			if (!res.ok) {
 				const err = await res.text()
 				throw new Error("OpenRouter: " + err)
 			}
-			const data = await res.json()
-			return data.choices[0].message.content
+			let full = ""
+			const reader = res.body.getReader()
+			const decoder = new TextDecoder()
+			let buf = ""
+			while (true) {
+				const {done, value} = await reader.read()
+				if (done) break
+				buf += decoder.decode(value, {stream: true})
+				const lines = buf.split("\n")
+				buf = lines.pop()
+				for (const line of lines) {
+					if (!line.startsWith("data: ")) continue
+					const data = line.slice(6).trim()
+					if (data === "[DONE]") continue
+					try {
+						const parsed = JSON.parse(data)
+						const delta = parsed.choices?.[0]?.delta?.content
+						if (delta) {
+							full += delta
+							if (onToken) onToken(full)
+						}
+					} catch {}
+				}
+			}
+			return full
 		} finally {
 			updateLLMStatus("")
 		}
 	}
 
-	async function generateOllama(messages) {
+	async function generateOllama(messages, onToken, signal) {
 		if (!chatProfileHandle) throw new Error("No chat profile")
 		const profile = chatProfileHandle.doc()
 		const model = profile?.ollamaModel || "llama3.2"
@@ -6906,12 +7273,34 @@ export function Tool(handle, element, options) {
 				body: JSON.stringify({
 					model,
 					messages,
-					stream: false,
+					stream: true,
 				}),
+				signal,
 			})
 			if (!res.ok) throw new Error("Ollama: " + (await res.text()))
-			const data = await res.json()
-			return data.message.content
+			let full = ""
+			const reader = res.body.getReader()
+			const decoder = new TextDecoder()
+			let buf = ""
+			while (true) {
+				const {done, value} = await reader.read()
+				if (done) break
+				buf += decoder.decode(value, {stream: true})
+				const lines = buf.split("\n")
+				buf = lines.pop()
+				for (const line of lines) {
+					if (!line.trim()) continue
+					try {
+						const parsed = JSON.parse(line)
+						const content = parsed.message?.content
+						if (content) {
+							full += content
+							if (onToken) onToken(full)
+						}
+					} catch {}
+				}
+			}
+			return full
 		} finally {
 			updateLLMStatus("")
 		}
@@ -7437,19 +7826,16 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 	}
 
 	async function inviteComputer() {
-		if (computerActive && isComputerHost) {
+		if (computerActive) {
 			await sendComputerMessage(
 				"I'm already here! Ask me anything or say '@computer build me a tool'."
 			)
 			return
 		}
 		computerActive = true
-		isComputerHost = true
 
-		// Mark the doc so other peers know Computer is here + who hosts it
 		handle.change(d => {
 			d.hasComputer = true
-			d.computerHostName = myName
 		})
 
 		// Init LLM worker and start model download immediately
@@ -7495,10 +7881,8 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		if (!computerActive) return
 		computerActive = false
 		computerAutoMode = false
-		isComputerHost = false
 		handle.change(d => {
 			d.hasComputer = false
-			delete d.computerHostName
 		})
 		// Remove from presence
 		presenceMap.delete("Computer")
@@ -7507,12 +7891,13 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		sendComputerMessage("Goodbye! Use `/computer` to invite me back.")
 	}
 
+	let computerResponding = false
+	const computerRespondedToIds = new Set()
+
 	function startComputerListener() {
-		// The onChange handler already fires on every doc change;
-		// we hook into it by checking messages in the render path.
-		// Instead, we add a dedicated listener.
 		const onComputerCheck = () => {
-			if (!computerActive || !isComputerHost) return
+			if (!computerActive) return
+			if (computerResponding) return // Don't process while already responding
 			const doc = handle.doc()
 			const msgs = doc?.messages || []
 			if (msgs.length <= lastComputerProcessedIndex) return
@@ -7521,6 +7906,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 				const entry = msgs[i]
 				const resolved = entry.ref ? msgDocCache.get(entry.url)?.data : entry
 				if (!resolved || resolved.isComputer) continue
+				if (computerRespondedToIds.has(resolved.id)) continue
 
 				const text = (resolved.text || "").toLowerCase()
 				const isReplyToComputer =
@@ -7531,50 +7917,27 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 					isReplyToComputer ||
 					computerAutoMode
 				) {
-					respondToUser(resolved)
+					computerRespondedToIds.add(resolved.id)
+					computerResponding = true
+					respondToUser(resolved).finally(() => {
+						computerResponding = false
+						// Re-check in case messages arrived while responding
+						onComputerCheck()
+					})
+					lastComputerProcessedIndex = msgs.length
+					return // Only respond to one message at a time
 				}
 			}
 			lastComputerProcessedIndex = msgs.length
 		}
 		handle.on("change", onComputerCheck)
-		callListeners.push({
+		cleanupListeners.push({
 			target: handle,
 			event: "change",
 			handler: onComputerCheck,
 		})
 	}
 
-	// Check if the computer host is still online; if not, this peer takes over
-	function checkComputerHostFailover() {
-		if (!computerActive || isComputerHost) return
-		const doc = handle.doc()
-		const hostName = doc?.computerHostName
-		if (!hostName) {
-			// No host recorded — claim it
-			claimComputerHost()
-			return
-		}
-		// Check if the host is still in presence
-		const hostPresence = presenceMap.get(hostName)
-		const now = Date.now()
-		const PRESENCE_TIMEOUT = 30000
-		if (!hostPresence || now - hostPresence.timestamp > PRESENCE_TIMEOUT) {
-			console.log("[Chat] Computer host", hostName, "went offline, taking over")
-			claimComputerHost()
-		}
-	}
-
-	async function claimComputerHost() {
-		isComputerHost = true
-		handle.change(d => { d.computerHostName = myName })
-		await initLLMWorker()
-		if (llmWorker) llmWorker.postMessage({type: "preload"})
-		broadcastComputerTyping(false)
-		console.log("[Chat] This peer is now the computer host")
-	}
-
-	// Run failover check every 15s
-	const hostFailoverInterval = setInterval(checkComputerHostFailover, 15000)
 
 	function broadcastComputerTyping(typing) {
 		handle.broadcast({
@@ -7793,10 +8156,15 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		return reports
 	}
 
+	let activeAbortController = null
+
 	async function respondToUser(userMsg) {
 		// Show typing (and keep it alive while thinking)
 		broadcastComputerTyping(true)
 		const typingInterval = setInterval(() => broadcastComputerTyping(true), 2000)
+
+		const abortController = new AbortController()
+		activeAbortController = abortController
 
 		const context = await assembleContext()
 		const messages = [
@@ -7805,12 +8173,82 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 			{role: "user", content: userMsg.text},
 		]
 
+		// Create a streaming message doc that we'll update live
+		const repo = window.repo
+		let streamingMsgHandle = null
+		const replyToId = userMsg.id // Computer replies to the triggering message
+
+		async function ensureStreamingMsg() {
+			if (streamingMsgHandle) return
+			const msgData = {
+				id: generateId(),
+				name: "Computer",
+				text: "…",
+				timestamp: Date.now(),
+				isComputer: true,
+				font: "monospace",
+				streaming: true,
+				replyTo: replyToId,
+			}
+			streamingMsgHandle = await repo.create2(msgData)
+
+			// Cache and subscribe so token updates trigger re-renders
+			const smUrl = streamingMsgHandle.url
+			msgDocCache.set(smUrl, {data: msgData, handle: streamingMsgHandle})
+			if (!msgDocSubscribed.has(smUrl)) {
+				msgDocSubscribed.add(smUrl)
+				streamingMsgHandle.on("change", () => {
+					const updated = streamingMsgHandle.doc()
+					if (updated) msgDocCache.set(smUrl, {data: updated, handle: streamingMsgHandle})
+					scheduleRender()
+				})
+			}
+
+			handle.change(d => {
+				if (!d.messages) d.messages = []
+				d.messages.push({ref: true, url: smUrl, timestamp: msgData.timestamp})
+			})
+
+		}
+
+		function onToken(fullText) {
+			if (!streamingMsgHandle) return
+			const clean = fullText.replace(/^\[Computer\]\s*/i, "")
+			console.log("[Chat] onToken:", clean.slice(0, 80))
+			streamingMsgHandle.change(d => {
+				d.text = clean
+			})
+			// Update cache and force re-render to show streaming text
+			const smUrl = streamingMsgHandle.url
+			const cached = msgDocCache.get(smUrl)
+			if (cached) {
+				cached.data = {...cached.data, text: clean}
+			}
+			scheduleRender(true)
+		}
+
+		// Throttle token updates to avoid excessive doc changes
+		let tokenThrottleTimer = null
+		let latestTokenText = ""
+		function onTokenThrottled(fullText) {
+			latestTokenText = fullText
+			if (!tokenThrottleTimer) {
+				tokenThrottleTimer = setTimeout(() => {
+					tokenThrottleTimer = null
+					onToken(latestTokenText)
+				}, 200)
+			}
+		}
+
 		try {
 			// Tool-use loop: let the LLM call tools up to 5 times
 			const MAX_TOOL_ROUNDS = 5
 			let madeChanges = false
 			for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-				let response = await generateLLM(messages)
+				await ensureStreamingMsg()
+				let response = await generateLLM(messages, onTokenThrottled, abortController.signal)
+				// Flush any pending throttled update
+				if (tokenThrottleTimer) { clearTimeout(tokenThrottleTimer); tokenThrottleTimer = null }
 				response = response.replace(/^\[Computer\]\s*/i, "")
 				const parsed = parseRichBlocks(response)
 
@@ -7819,6 +8257,32 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 				const otherBlocks = parsed.blocks.filter(b => b.type !== "tool-call")
 
 				if (toolCalls.length > 0) {
+					// Finalize streaming message with the text portion
+					if (otherBlocks.length > 0 || parsed.text.trim()) {
+						const partial = { blocks: otherBlocks, text: parsed.text }
+						const { text, opts } = await processRichBlocks(partial)
+						if (streamingMsgHandle) {
+							streamingMsgHandle.change(d => {
+								d.text = text || ""
+								delete d.streaming
+								if (opts?.embeds) d.embeds = opts.embeds
+							})
+							streamingMsgHandle = null
+
+						}
+						if (otherBlocks.some(b => b.type === "patchwork-tool" || b.type === "file")) madeChanges = true
+					} else {
+						// Mark streaming msg as tool-use in progress
+						if (streamingMsgHandle) {
+							streamingMsgHandle.change(d => {
+								d.text = "(using tools…)"
+								delete d.streaming
+							})
+							streamingMsgHandle = null
+
+						}
+					}
+
 					// Execute tool calls and feed results back
 					let toolResults = ""
 					for (const tc of toolCalls) {
@@ -7826,24 +8290,31 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 						const toolArgs = tc.content.trim().split("\n")[0]
 						toolResults += "\n[Tool result for " + toolArgs + "]\n" + result + "\n"
 					}
-					if (otherBlocks.length > 0 || parsed.text.trim()) {
-						const partial = { blocks: otherBlocks, text: parsed.text }
-						const { text, opts } = await processRichBlocks(partial)
-						if (text) await sendComputerMessage(text, opts)
-						if (otherBlocks.some(b => b.type === "patchwork-tool" || b.type === "file")) madeChanges = true
-					}
 					messages.push({role: "assistant", content: response})
 					messages.push({role: "user", content: "[Tool results]\n" + toolResults})
 					continue
 				}
 
-				// No tool calls — send the final response
+				// No tool calls — finalize the streaming message with final content
 				if (otherBlocks.length > 0) {
 					const { text, opts } = await processRichBlocks(parsed)
-					await sendComputerMessage(text || "Here you go!", opts)
+					if (streamingMsgHandle) {
+						streamingMsgHandle.change(d => {
+							d.text = text || "Here you go!"
+							delete d.streaming
+							if (opts?.embeds) d.embeds = opts.embeds
+						})
+						streamingMsgHandle = null
+					}
 					if (otherBlocks.some(b => b.type === "patchwork-tool" || b.type === "file")) madeChanges = true
 				} else {
-					await sendComputerMessage(response)
+					if (streamingMsgHandle) {
+						streamingMsgHandle.change(d => {
+							d.text = response
+							delete d.streaming
+						})
+						streamingMsgHandle = null
+					}
 				}
 
 				// After making changes, check pinned iframes for errors
@@ -7894,8 +8365,25 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 				break
 			}
 		} catch (err) {
-			await sendComputerMessage("Sorry, I hit an error: " + err.message)
+			if (abortController.signal.aborted) {
+				// User cancelled — finalize with whatever we have so far
+				if (streamingMsgHandle) {
+					streamingMsgHandle.change(d => {
+						d.text = d.text === "…" ? "(cancelled)" : d.text + "\n\n_(cancelled)_"
+						delete d.streaming
+					})
+				}
+			} else if (streamingMsgHandle) {
+				streamingMsgHandle.change(d => {
+					d.text = "Sorry, I hit an error: " + err.message
+					delete d.streaming
+				})
+			} else {
+				await sendComputerMessage("Sorry, I hit an error: " + err.message)
+			}
 		} finally {
+			if (tokenThrottleTimer) clearTimeout(tokenThrottleTimer)
+			activeAbortController = null
 			clearInterval(typingInterval)
 			broadcastComputerTyping(false)
 		}
@@ -8079,13 +8567,54 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		for (const entry of recent) {
 			const msg = entry.ref ? msgDocCache.get(entry.url)?.data : entry
 			if (!msg) continue
-			let content = msg.text || ""
-			if (msg.transcription)
-				content += "\n[Voice note: " + msg.transcription + "]"
-			contextMessages.push({
-				role: msg.isComputer ? "assistant" : "user",
-				content: msg.isComputer ? content : `[${msg.name}] ${content}`,
-			})
+			let text = msg.text || ""
+			if (msg.voiceUrl) {
+				const recCached = recordingDocCache.get(msg.voiceUrl)
+				if (recCached?.data?.transcription)
+					text += "\n[Voice note transcription: " + recCached.data.transcription + "]"
+				else
+					text += "\n[Voice note attached, no transcription available]"
+			}
+
+			const role = msg.isComputer ? "assistant" : "user"
+			const prefix = msg.isComputer ? "" : `[${msg.name}] `
+
+			// If message has an image, build multipart content for vision models
+			if (msg.imageUrl && !msg.isComputer) {
+				const parts = []
+				parts.push({type: "text", text: prefix + text})
+				// Try to load the image as base64 data URL
+				try {
+					const repo = window.repo
+					if (repo) {
+						const fh = await repo.find(msg.imageUrl)
+						const fdoc = fh.doc()
+						if (fdoc?.content) {
+							const bytes = fdoc.content instanceof Uint8Array
+								? fdoc.content
+								: new Uint8Array(fdoc.content)
+							const mime = fdoc.mimeType || "image/png"
+							// Convert to base64
+							let binary = ""
+							for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+							const b64 = btoa(binary)
+							parts.push({
+								type: "image_url",
+								image_url: {url: `data:${mime};base64,${b64}`}
+							})
+						}
+					}
+				} catch (e) {
+					// If image loading fails, just note it in text
+					parts[0].text += "\n[Image attached: " + (msg.imageName || "image") + "]"
+				}
+				contextMessages.push({role, content: parts})
+			} else {
+				contextMessages.push({
+					role,
+					content: msg.isComputer ? text : prefix + text,
+				})
+			}
 		}
 
 		// Workspace file listing
@@ -8142,9 +8671,11 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		}
 
 		// Call transcript
-		if (callSession && callSession.handle) {
+		const callUrl = handle.doc()?.callUrl
+		if (callUrl) {
 			try {
-				const callDoc = callSession.handle.doc()
+				const callHandle = await repo.find(callUrl)
+				const callDoc = callHandle.doc()
 				if (callDoc?.content) {
 					logParts.push("Call transcript:\n" + callDoc.content.slice(-4000))
 				}
@@ -8162,25 +8693,31 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 	}
 
 	// ============================================================================
-	// Voice Note Transcription (Whisper)
+	// Voice Note Transcription (Moonshine)
 	// ============================================================================
 
 	async function initWhisperWorker() {
 		if (whisperWorker) return
 		try {
-			const workerUrl = new URL("./whisper-worker.js", import.meta.url)
+			const workerUrl = new URL("./moonshine-worker.js", import.meta.url)
+			console.log("[Chat] Loading moonshine worker from:", workerUrl.href)
+			// Workers loaded from service-worker-served URLs (automerge:) can fail as
+			// modules. Fetch the script and create a blob worker instead.
 			let w
 			try {
-				w = new Worker(workerUrl, {type: "module"})
-			} catch {
 				const res = await fetch(workerUrl)
 				const src = await res.text()
 				const blob = new Blob([src], {type: "application/javascript"})
 				w = new Worker(URL.createObjectURL(blob), {type: "module"})
+				console.log("[Chat] Moonshine worker created via blob URL")
+			} catch (blobErr) {
+				console.warn("[Chat] Blob worker failed, trying direct URL:", blobErr)
+				w = new Worker(workerUrl, {type: "module"})
 			}
 			whisperWorker = w
 			whisperWorker.onmessage = e => {
 				const msg = e.data
+				console.log("[Chat] Moonshine worker message:", msg.type, msg.text || msg.message || "")
 				if (msg.type === "ready") {
 					whisperReady = true
 				} else if (msg.type === "result" && msg._msgUrl) {
@@ -8189,8 +8726,11 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 					// Could show in UI
 				}
 			}
+			whisperWorker.onerror = e => {
+				console.error("[Chat] Moonshine worker error:", e)
+			}
 		} catch (err) {
-			console.warn("[Chat] Whisper worker init failed:", err)
+			console.warn("[Chat] Moonshine worker init failed:", err)
 		}
 	}
 
@@ -8215,22 +8755,34 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		}
 	}
 
-	function handleTranscriptionResult(text, msgUrl) {
-		pendingTranscriptions.delete(msgUrl)
-		// Update the message doc with transcription
-		const cached = msgDocCache.get(msgUrl)
+	function handleTranscriptionResult(text, recordingUrl) {
+		pendingTranscriptions.delete(recordingUrl)
+		// Update the recording doc with transcription
+		const cached = recordingDocCache.get(recordingUrl)
 		if (cached && cached.handle) {
 			cached.handle.change(d => {
 				d.transcription = text
 			})
+		} else {
+			// Recording doc not cached yet, resolve and update
+			resolveRecordingDoc(recordingUrl).then(c => {
+				if (c && c.handle) {
+					c.handle.change(d => {
+						d.transcription = text
+					})
+				}
+			})
 		}
-		render() // re-render to show transcription
+		render()
 	}
 
 	// ============================================================================
 	// Wire pinned docs rendering into the change cycle
 	// ============================================================================
 	renderPinnedDocs()
+
+	// Start loading the moonshine transcription worker eagerly
+	initWhisperWorker()
 
 	// Auto-join computer if the doc has one
 	if (handle.doc()?.hasComputer && !computerActive) {
@@ -8239,19 +8791,10 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		if (existingFolder) computerFolderUrl = existingFolder.url
 		lastComputerProcessedIndex = (handle.doc()?.messages?.length || 0)
 
-		// Restore host status if we are the recorded host (e.g. after page reload)
-		const recordedHost = handle.doc()?.computerHostName
-		if (recordedHost === myName) {
-			isComputerHost = true
-			initLLMWorker().then(() => {
-				if (llmWorker) llmWorker.postMessage({type: "preload"})
-			})
-			console.log("[Chat] Restored as computer host")
-		} else {
-			isComputerHost = false
-			// Wait longer before failover — presence broadcasts are every 10s
-			setTimeout(checkComputerHostFailover, 20000)
-		}
+		// Init LLM worker
+		initLLMWorker().then(() => {
+			if (llmWorker) llmWorker.postMessage({type: "preload"})
+		})
 
 		startComputerListener()
 		renderPresence()
@@ -8342,7 +8885,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		syncDraftToDoc() // flush any pending draft
 		if (draftHandle) draftHandle.removeAllListeners("change")
 		if (presenceInterval) clearInterval(presenceInterval)
-		clearInterval(hostFailoverInterval)
+
 		if (mediaRecorder && mediaRecorder.state !== "inactive") {
 			recSendOnStop = false
 			mediaRecorder.stop()
@@ -8352,16 +8895,12 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		document.removeEventListener("visibilitychange", onVisible)
 		window.removeEventListener("focus", onFocus)
 		window.removeEventListener("blur", onBlur)
-		window.removeEventListener(
-			"patchwork-call-session-changed",
-			onCallSessionChangedWithTelephone
-		)
-		// Clean up call session listeners
-		for (const {target, event, handler} of callListeners) {
+		// Clean up registered listeners
+		for (const {target, event, handler} of cleanupListeners) {
 			if (target.removeEventListener) target.removeEventListener(event, handler)
 			else if (target.off) target.off(event, handler)
 		}
-		callListeners.length = 0
+		cleanupListeners.length = 0
 		// Clean up pinned doc iframes
 		for (const [, iframe] of pinnedIframes) iframe.remove()
 		pinnedIframes.clear()

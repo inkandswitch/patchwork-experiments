@@ -7,7 +7,7 @@ export const updateAction: Plugin<any> = {
   id: "update",
   name: "Update",
   icon: "Edit",
-  supportedDataTypes: ["*"],
+  supportedDatatypes: ["*"],
   module: {
     argsSchema: () => {
       return z.object({

@@ -19,15 +19,19 @@ try {
 
 let status: 'not initialized' | 'initializing' | 'ready' = 'not initialized';
 
-let repo: Repo;
+declare global {
+  // Declare `repo` like this to prevent its name from getting mangled by the TS compiler.
+  // This makes it possible for the task code to access this variable by name.
+  var repo: Repo;
+}
+
 let importMap: any;
 let baseURI: string;
 
 let workerHandle: DocHandle<Worker>;
 
-console.log('I am worker, hear me roar!');
-
 self.addEventListener('connect', (e: any) => {
+  console.log('got a connection!');
   const port = e.ports[0];
   port.onmessage = (e: any) => {
     const msg: MessageToWorker = e.data;
@@ -35,13 +39,7 @@ self.addEventListener('connect', (e: any) => {
     try {
       switch (msg.type) {
         case 'init':
-          init(
-            port,
-            msg.repoPort,
-            msg.contactUrl,
-            msg.importMap,
-            msg.baseURI,
-          );
+          init(port, msg.repoPort, msg.contactUrl, msg.importMap, msg.baseURI);
           break;
       }
     } catch (error) {
@@ -68,7 +66,10 @@ async function init(
   baseURI = _baseURI;
   setUpImportMap();
 
-  repo = await getRepo(repoPort, `task-worker-${Math.round(Math.random() * 10_000)}`);
+  // Important: if I take out the `globalThis.` from the assignment below, it doesn't work.
+  // I get "ReferenceError: repo is not defined." This is probably b/c that variable only
+  // counts as declared once it exists as a property in globalThis.
+  globalThis.repo = await getRepo(repoPort, `task-worker-${Math.round(Math.random() * 10_000)}`);
 
   // create the worker document
   workerHandle = repo.create<Worker>({
@@ -94,9 +95,12 @@ async function init(
     }
   });
 
-  workerHandle.change((doc) => { doc.currentTask = null; });
+  workerHandle.change((doc) => {
+    doc.currentTask = null;
+  });
 
   console.log('ready', { workerUrl: workerHandle.url });
+  console.log('hola, me llamo', workerHandle.doc().name);
 }
 
 function setUpImportMap() {
@@ -147,22 +151,37 @@ function setUpImportMap() {
   console.log('worker: Import map configured from main thread', resolvedImportMap);
 }
 
+const tally = { numSuccesses: 0, numFailures: 0 };
+
+function logTally() {
+  const { numSuccesses, numFailures } = tally;
+  const total = numSuccesses + numFailures;
+  console.log('');
+  console.log(`Processed ${total} tasks so far.`);
+  console.log(`  ${numSuccesses} successes (${(numSuccesses / total) * 100 || 100}%)`);
+  console.log(`  ${numFailures} failures (${(numFailures / total) * 100 || 0}%)`);
+  console.log('');
+}
+
 async function processTask(taskUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
-  console.log('executing task:', taskUrl);
+  console.log('executing task', taskUrl);
   workerHandle.change((doc) => {
     doc.currentTask = { taskUrl, taskQueueUrl };
   });
-
   try {
     await execute(taskUrl);
     await moveToDone(taskUrl, taskQueueUrl);
+    tally.numSuccesses++;
+    console.log('task succeeded!');
   } catch (error) {
-    console.error('error while processing task:', error);
+    tally.numFailures++;
+    console.error('task failed:', error);
   } finally {
     workerHandle.change((doc) => {
       doc.currentTask = null;
     });
   }
+  logTally();
 }
 
 async function execute(taskUrl: AutomergeUrl) {
@@ -223,4 +242,4 @@ async function moveToDone(taskUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
   });
 }
 
-export { }; // to ensure this is a module
+export {}; // to ensure this is a module
