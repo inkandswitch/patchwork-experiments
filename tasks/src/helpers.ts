@@ -1,4 +1,4 @@
-import { AutomergeUrl, isValidAutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo/slim';
+import { AutomergeUrl, isValidAutomergeUrl, DocHandle, type Repo } from '@automerge/automerge-repo/slim';
 
 export const TASK_QUEUE_URLS_FIELD_NAME = '__taskQueues__';
 

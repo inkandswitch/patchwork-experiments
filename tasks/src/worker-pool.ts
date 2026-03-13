@@ -127,7 +127,7 @@ async function addWorker(sharedWorkerName: string, workerUrl: AutomergeUrl) {
     workerByUrl.set(workerUrl, workerHandle.doc());
   } catch (error) {
     console.error('did not add worker, unable to get its doc handle', { workerUrl, error });
-    return;
+    sharedWorkerNames.delete(sharedWorkerName);
   }
 }
 

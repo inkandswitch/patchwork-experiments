@@ -89,7 +89,7 @@ export class WorkerPoolProxy {
   }
 
   private async initializeRouters() {
-    const accountHandle = await getAccountHandle(this.repo as any);
+    const accountHandle = await getAccountHandle(await this.getRepo() as any);
     accountHandle.on('change', (payload) =>
       this.updateRouters(getTaskQueues(payload.handle.doc())),
     );
@@ -141,12 +141,13 @@ export class WorkerPoolProxy {
     }
   }
 
-  get repo(): Repo {
+  async getRepo() {
     if (!this._repo) {
       this._repo = new Repo({
         network: [new MessageChannelNetworkAdapter((window as any).getRepoChannel())],
         peerId: `worker-pool-proxy-${Math.round(Math.random() * 10_000)}` as any,
       });
+      await this._repo.networkSubsystem.whenReady();
     }
     return this._repo;
   }
