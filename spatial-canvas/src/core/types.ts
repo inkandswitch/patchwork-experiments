@@ -19,21 +19,33 @@ export interface UserState {
 }
 
 /**
- * Panel position as a [side, align] tuple.
- * For top/bottom sides align is 'left' | 'center' | 'right'.
- * For left/right sides align is 'top' | 'center' | 'bottom'.
- * 'stretch' fills the remaining space on the side and is always placed last.
- * Examples: ['bottom', 'center'], ['top', 'right'], ['right', 'stretch']
+ * Floating card — positioned at a [side, align] point in the 3×3 grid overlay.
+ * Has card chrome (border, border-radius, shadow).
+ * Examples: { kind: 'panel', position: ['bottom', 'center'] }
  */
-export interface PanelEntry {
-  position: [side: "top" | "bottom" | "left" | "right", align: "left" | "center" | "right" | "top" | "bottom" | "stretch"];
-}
+export type FloatingPanel = {
+  kind: "panel";
+  position: [side: "top" | "bottom" | "left" | "right", align: "left" | "center" | "right" | "top" | "bottom"];
+};
+
+/**
+ * Full-side bar — pushes the canvas in from one side.
+ * Left/right bars are flex siblings in the row container.
+ * Top/bottom bars are flex siblings in the column wrapper.
+ * The bar plugin controls its own width/height via inline styles.
+ * Examples: { kind: 'bar', side: 'right' }
+ */
+export type Bar = {
+  kind: "bar";
+  side: "top" | "bottom" | "left" | "right";
+};
+
+export type LayoutEntry = FloatingPanel | Bar;
 
 export interface CanvasDoc {
   shapes: Record<string, CanvasShape>;
   stateByUser: { [contactUrl: string]: UserState };
-  panels: { [panelId: string]: PanelEntry };
-  llmSketchUrl?: string;
+  layout: { [toolId: string]: LayoutEntry };
 }
 
 // ============================================================================

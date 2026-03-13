@@ -14,10 +14,9 @@ export const SpatialCanvasDatatype = {
   init(doc: CanvasDoc) {
     doc.shapes = {};
     doc.stateByUser = {};
-    doc.panels = {
-      "spatial-canvas-panel-toolbar": { position: ["bottom", "center"] },
-      "spatial-canvas-panel-properties": { position: ["top", "left"] },
-      "spatial-canvas-panel-sketch": { position: ["right", "stretch"] },
+    doc.layout = {
+      "spatial-canvas-panel-toolbar":    { kind: "panel", position: ["bottom", "center"] },
+      "spatial-canvas-panel-properties": { kind: "panel", position: ["top",    "left"  ] },
     };
   },
 
@@ -232,16 +231,6 @@ export const plugins = [
     supportedDatatypes: ["spatial-canvas"],
     async load() {
       return (await import("./properties/panel.js")).default;
-    },
-  },
-  {
-    type: "patchwork:tool" as const,
-    id: "spatial-canvas-panel-sketch",
-    name: "Sketch",
-    tags: ["spatial-canvas-panel"],
-    supportedDatatypes: ["spatial-canvas"],
-    async load() {
-      return (await import("./sketch/panel.js")).default;
     },
   },
 ];

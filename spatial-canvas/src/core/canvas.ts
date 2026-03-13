@@ -94,6 +94,7 @@ function isTextUnderPointer(x: number, y: number, target: Element | null): boole
  */
 export class CanvasView {
   private container: HTMLElement;
+  private columnWrapper: HTMLElement;
   private canvasWrapper: HTMLElement;
   private canvasEl: HTMLElement;
   private layer: HTMLElement;
@@ -112,12 +113,22 @@ export class CanvasView {
   ) {
     injectStyles();
 
-    // Build DOM scaffold
+    // Build DOM scaffold:
+    //
+    //   .sc-container  (flex row)
+    //     .sc-bar--left / .sc-bar--right   ← left/right bars inserted here by mountLayout
+    //     .sc-column-wrapper  (flex column, flex:1)
+    //       .sc-bar--top / .sc-bar--bottom ← top/bottom bars inserted here by mountLayout
+    //       .sc-canvas-wrapper  (flex:1)
+    //         .sc-canvas
+    //         .sc-panel-overlay  ← floating panel grid
+    //
     this.container = document.createElement("div");
     this.container.className = "sc-container";
 
-    // Wrapper takes flex:1 inside the row container; hosts the canvas + overlay.
-    // Stretch panels are direct siblings of this wrapper in .sc-container.
+    this.columnWrapper = document.createElement("div");
+    this.columnWrapper.className = "sc-column-wrapper";
+
     this.canvasWrapper = document.createElement("div");
     this.canvasWrapper.className = "sc-canvas-wrapper";
 
@@ -129,7 +140,8 @@ export class CanvasView {
 
     this.canvasEl.appendChild(this.layer);
     this.canvasWrapper.appendChild(this.canvasEl);
-    this.container.appendChild(this.canvasWrapper);
+    this.columnWrapper.appendChild(this.canvasWrapper);
+    this.container.appendChild(this.columnWrapper);
     mountPoint.appendChild(this.container);
 
     // Seed bounds immediately after mounting so the first coordinate
@@ -143,9 +155,9 @@ export class CanvasView {
       this.camera = cam;
     });
 
-    // Mount layers and panels from the patchwork registry
+    // Mount layers and layout entries from the patchwork registry
     this.mountLayers();
-    this.mountPanels();
+    this.mountLayout();
 
     // ResizeObserver — keeps coordinate transforms correct when the canvas resizes
     const ro = new ResizeObserver(() => {
@@ -417,33 +429,19 @@ export class CanvasView {
   }
 
   // ---------------------------------------------------------------------------
-  // Panels — 3×3 grid overlay, positions read from doc.panels
+  // Layout — floating panels (3×3 grid) + bars (push the canvas from any side)
   // ---------------------------------------------------------------------------
 
-  private mountPanels() {
+  private mountLayout() {
     const doc = this.handle.doc();
-    if (!doc?.panels) return;
+    if (!doc?.layout) return;
 
-    // Separate stretch panels from card panels.
-    // Card panels go into the 3×3 grid overlay inside .sc-canvas-wrapper.
-    // Stretch panels go directly into .sc-container as flex siblings of
-    // .sc-canvas-wrapper — their width:% resolves against the container's
-    // definite width, and height:100% works because they're flex children.
-    const cardPanels: { panelId: string; side: string; align: string }[] = [];
-    const stretchPanels: string[] = [];
+    // ── Floating panels → 3×3 grid overlay inside .sc-canvas-wrapper ────────
 
-    for (const [panelId, entry] of Object.entries(doc.panels)) {
-      const [side, align] = entry.position;
-      if (align === "stretch") {
-        stretchPanels.push(panelId);
-      } else {
-        cardPanels.push({ panelId, side, align });
-      }
-    }
+    const panelEntries = Object.entries(doc.layout).filter(([, e]) => e.kind === "panel") as
+      [string, import("./types.js").FloatingPanel][];
 
-    // ── Card panels: 3×3 grid overlay inside canvasWrapper ─────────────────
-
-    if (cardPanels.length > 0) {
+    if (panelEntries.length > 0) {
       const overlay = document.createElement("div");
       overlay.className = "sc-panel-overlay";
       this.canvasWrapper.appendChild(overlay);
@@ -458,12 +456,13 @@ export class CanvasView {
       type Align = "start" | "center" | "end";
       const grouped = new Map<Side, Map<Align, string[]>>();
 
-      for (const { panelId, side, align } of cardPanels) {
+      for (const [toolId, entry] of panelEntries) {
+        const [side, align] = entry.position;
         const normAlign = toAlignClass(align);
-        if (!grouped.has(side as Side)) grouped.set(side as Side, new Map());
-        const sideMap = grouped.get(side as Side)!;
+        if (!grouped.has(side)) grouped.set(side, new Map());
+        const sideMap = grouped.get(side)!;
         if (!sideMap.has(normAlign)) sideMap.set(normAlign, []);
-        sideMap.get(normAlign)!.push(panelId);
+        sideMap.get(normAlign)!.push(toolId);
       }
 
       for (const [side, alignMap] of grouped) {
@@ -471,15 +470,15 @@ export class CanvasView {
         sideEl.className = `sc-side sc-side--${side}`;
         overlay.appendChild(sideEl);
 
-        for (const [align, panelIds] of alignMap) {
+        for (const [align, toolIds] of alignMap) {
           const groupEl = document.createElement("div");
           groupEl.className = `sc-side-group sc-side-group--${align}`;
           sideEl.appendChild(groupEl);
 
-          for (const panelId of panelIds) {
+          for (const toolId of toolIds) {
             const view = document.createElement("patchwork-view");
             view.setAttribute("doc-url", this.handle.url);
-            view.setAttribute("tool-id", panelId);
+            view.setAttribute("tool-id", toolId);
             view.className = "sc-panel";
             groupEl.appendChild(view);
           }
@@ -487,14 +486,38 @@ export class CanvasView {
       }
     }
 
-    // ── Stretch panels: direct flex children of .sc-container ───────────────
+    // ── Bars → flex siblings that push the canvas ────────────────────────────
+    //
+    // Left/right bars: direct children of .sc-container (flex row).
+    //   width:% resolves against .sc-container's definite width.
+    // Top/bottom bars: direct children of .sc-column-wrapper (flex column).
+    //   height:% resolves against .sc-column-wrapper's definite height.
+    //
+    // Bars on each side are inserted in DOM order so that:
+    //   left bars → before .sc-column-wrapper
+    //   right bars → after .sc-column-wrapper
+    //   top bars → before .sc-canvas-wrapper
+    //   bottom bars → after .sc-canvas-wrapper
 
-    for (const panelId of stretchPanels) {
+    const barEntries = Object.entries(doc.layout).filter(([, e]) => e.kind === "bar") as
+      [string, import("./types.js").Bar][];
+
+    for (const [toolId, entry] of barEntries) {
       const view = document.createElement("patchwork-view");
       view.setAttribute("doc-url", this.handle.url);
-      view.setAttribute("tool-id", panelId);
-      view.className = "sc-stretch-panel";
-      this.container.appendChild(view);
+      view.setAttribute("tool-id", toolId);
+      view.className = `sc-bar sc-bar--${entry.side}`;
+
+      if (entry.side === "left") {
+        this.container.insertBefore(view, this.columnWrapper);
+      } else if (entry.side === "right") {
+        this.container.appendChild(view);
+      } else if (entry.side === "top") {
+        this.columnWrapper.insertBefore(view, this.canvasWrapper);
+      } else {
+        // bottom
+        this.columnWrapper.appendChild(view);
+      }
     }
   }
 

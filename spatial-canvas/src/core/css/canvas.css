@@ -17,20 +17,34 @@
   flex-direction: row;
 }
 
-/* Takes all space not claimed by stretch panels; hosts the canvas + overlay */
+/* Flex column between left/right bars and the canvas; hosts top/bottom bars */
+.sc-column-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* Takes all space not claimed by bars; hosts the canvas + floating panel overlay */
 .sc-canvas-wrapper {
   flex: 1;
   position: relative;
   overflow: hidden;
   min-width: 0;
+  min-height: 0;
 }
 
-/* Stretch panels — direct flex children of .sc-container.
- * The panel plugin controls width and transition via inline styles. */
-.sc-stretch-panel {
+/* Bars — flex siblings that push the canvas.
+ * Left/right: children of .sc-container (flex row).
+ * Top/bottom: children of .sc-column-wrapper (flex column).
+ * The bar plugin controls its own width/height + transition via inline styles. */
+.sc-bar {
   flex-shrink: 0;
-  height: 100%;
 }
+.sc-bar--left,
+.sc-bar--right  { height: 100%; }
+.sc-bar--top,
+.sc-bar--bottom { width: 100%; }
 
 /* Viewport — clips content without creating a scroll container */
 .sc-canvas {
