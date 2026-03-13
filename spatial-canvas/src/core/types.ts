@@ -22,16 +22,18 @@ export interface UserState {
  * Panel position as a [side, align] tuple.
  * For top/bottom sides align is 'left' | 'center' | 'right'.
  * For left/right sides align is 'top' | 'center' | 'bottom'.
- * Examples: ['bottom', 'center'], ['top', 'right'], ['left', 'top']
+ * 'stretch' fills the remaining space on the side and is always placed last.
+ * Examples: ['bottom', 'center'], ['top', 'right'], ['right', 'stretch']
  */
 export interface PanelEntry {
-  position: [side: "top" | "bottom" | "left" | "right", align: "left" | "center" | "right" | "top" | "bottom"];
+  position: [side: "top" | "bottom" | "left" | "right", align: "left" | "center" | "right" | "top" | "bottom" | "stretch"];
 }
 
 export interface CanvasDoc {
   shapes: Record<string, CanvasShape>;
   stateByUser: { [contactUrl: string]: UserState };
   panels: { [panelId: string]: PanelEntry };
+  llmSketchUrl?: string;
 }
 
 // ============================================================================

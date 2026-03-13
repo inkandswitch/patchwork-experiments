@@ -34,7 +34,9 @@ export default function ToolbarPanel(
     view.addEventListener('click', () => {
       container?.dispatchEvent(new CustomEvent('spatial-canvas:set-tool', {
         detail: { toolId: desc.id },
-        bubbles: false,
+        // bubbles:true so tool selections from a nested sketch canvas propagate
+        // up to the outer canvas container, keeping both in sync.
+        bubbles: true,
       }))
     })
 

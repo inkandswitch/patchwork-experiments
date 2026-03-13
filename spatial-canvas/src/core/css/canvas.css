@@ -10,6 +10,26 @@
   height: 100%;
   overflow: hidden;
   background: #f8f8f8;
+
+  /* Flex row so stretch panels can be direct siblings of the canvas wrapper.
+   * Their width:% resolves against this container's definite width. */
+  display: flex;
+  flex-direction: row;
+}
+
+/* Takes all space not claimed by stretch panels; hosts the canvas + overlay */
+.sc-canvas-wrapper {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* Stretch panels — direct flex children of .sc-container.
+ * The panel plugin controls width and transition via inline styles. */
+.sc-stretch-panel {
+  flex-shrink: 0;
+  height: 100%;
 }
 
 /* Viewport — clips content without creating a scroll container */
@@ -74,6 +94,7 @@
 
 .sc-side-group--center { margin: auto; }
 .sc-side-group--end    { margin-top: auto; margin-left: auto; }
+
 
 /* Individual panel card */
 .sc-panel {

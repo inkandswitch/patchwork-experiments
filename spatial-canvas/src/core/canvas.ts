@@ -94,6 +94,7 @@ function isTextUnderPointer(x: number, y: number, target: Element | null): boole
  */
 export class CanvasView {
   private container: HTMLElement;
+  private canvasWrapper: HTMLElement;
   private canvasEl: HTMLElement;
   private layer: HTMLElement;
 
@@ -115,6 +116,11 @@ export class CanvasView {
     this.container = document.createElement("div");
     this.container.className = "sc-container";
 
+    // Wrapper takes flex:1 inside the row container; hosts the canvas + overlay.
+    // Stretch panels are direct siblings of this wrapper in .sc-container.
+    this.canvasWrapper = document.createElement("div");
+    this.canvasWrapper.className = "sc-canvas-wrapper";
+
     this.canvasEl = document.createElement("div");
     this.canvasEl.className = "sc-canvas";
 
@@ -122,7 +128,8 @@ export class CanvasView {
     this.layer.className = "sc-layer";
 
     this.canvasEl.appendChild(this.layer);
-    this.container.appendChild(this.canvasEl);
+    this.canvasWrapper.appendChild(this.canvasEl);
+    this.container.appendChild(this.canvasWrapper);
     mountPoint.appendChild(this.container);
 
     // Seed bounds immediately after mounting so the first coordinate
@@ -239,7 +246,9 @@ export class CanvasView {
       }
     };
 
-    // Tool selection via custom events (panel plugins dispatch these)
+    // Tool selection via custom events (panel plugins dispatch these).
+    // Events from the toolbar are dispatched with bubbles:true so they also
+    // propagate from a nested sketch canvas up to the outer canvas container.
     const onSetTool = (e: Event) => {
       this.setActiveTool((e as CustomEvent<{ toolId: string }>).detail.toolId);
     };
@@ -415,50 +424,77 @@ export class CanvasView {
     const doc = this.handle.doc();
     if (!doc?.panels) return;
 
-    // Build the 3×3 grid overlay
-    const overlay = document.createElement("div");
-    overlay.className = "sc-panel-overlay";
-    this.container.appendChild(overlay);
-
-    // Normalize directional align names → CSS group modifier names
-    function toAlignClass(align: string): "start" | "center" | "end" {
-      if (align === "right" || align === "bottom") return "end";
-      if (align === "center") return "center";
-      return "start";
-    }
-
-    // Group panel IDs by side, then by normalized align
-    type Side = "top" | "bottom" | "left" | "right";
-    type Align = "start" | "center" | "end";
-    const grouped = new Map<Side, Map<Align, string[]>>();
+    // Separate stretch panels from card panels.
+    // Card panels go into the 3×3 grid overlay inside .sc-canvas-wrapper.
+    // Stretch panels go directly into .sc-container as flex siblings of
+    // .sc-canvas-wrapper — their width:% resolves against the container's
+    // definite width, and height:100% works because they're flex children.
+    const cardPanels: { panelId: string; side: string; align: string }[] = [];
+    const stretchPanels: string[] = [];
 
     for (const [panelId, entry] of Object.entries(doc.panels)) {
-      const [side, rawAlign] = entry.position;
-      const align = toAlignClass(rawAlign);
-      if (!grouped.has(side)) grouped.set(side, new Map());
-      const sideMap = grouped.get(side)!;
-      if (!sideMap.has(align)) sideMap.set(align, []);
-      sideMap.get(align)!.push(panelId);
+      const [side, align] = entry.position;
+      if (align === "stretch") {
+        stretchPanels.push(panelId);
+      } else {
+        cardPanels.push({ panelId, side, align });
+      }
     }
 
-    for (const [side, alignMap] of grouped) {
-      const sideEl = document.createElement("div");
-      sideEl.className = `sc-side sc-side--${side}`;
-      overlay.appendChild(sideEl);
+    // ── Card panels: 3×3 grid overlay inside canvasWrapper ─────────────────
 
-      for (const [align, panelIds] of alignMap) {
-        const groupEl = document.createElement("div");
-        groupEl.className = `sc-side-group sc-side-group--${align}`;
-        sideEl.appendChild(groupEl);
+    if (cardPanels.length > 0) {
+      const overlay = document.createElement("div");
+      overlay.className = "sc-panel-overlay";
+      this.canvasWrapper.appendChild(overlay);
 
-        for (const panelId of panelIds) {
-          const view = document.createElement("patchwork-view");
-          view.setAttribute("doc-url", this.handle.url);
-          view.setAttribute("tool-id", panelId);
-          view.className = "sc-panel";
-          groupEl.appendChild(view);
+      function toAlignClass(align: string): "start" | "center" | "end" {
+        if (align === "right" || align === "bottom") return "end";
+        if (align === "center") return "center";
+        return "start";
+      }
+
+      type Side = "top" | "bottom" | "left" | "right";
+      type Align = "start" | "center" | "end";
+      const grouped = new Map<Side, Map<Align, string[]>>();
+
+      for (const { panelId, side, align } of cardPanels) {
+        const normAlign = toAlignClass(align);
+        if (!grouped.has(side as Side)) grouped.set(side as Side, new Map());
+        const sideMap = grouped.get(side as Side)!;
+        if (!sideMap.has(normAlign)) sideMap.set(normAlign, []);
+        sideMap.get(normAlign)!.push(panelId);
+      }
+
+      for (const [side, alignMap] of grouped) {
+        const sideEl = document.createElement("div");
+        sideEl.className = `sc-side sc-side--${side}`;
+        overlay.appendChild(sideEl);
+
+        for (const [align, panelIds] of alignMap) {
+          const groupEl = document.createElement("div");
+          groupEl.className = `sc-side-group sc-side-group--${align}`;
+          sideEl.appendChild(groupEl);
+
+          for (const panelId of panelIds) {
+            const view = document.createElement("patchwork-view");
+            view.setAttribute("doc-url", this.handle.url);
+            view.setAttribute("tool-id", panelId);
+            view.className = "sc-panel";
+            groupEl.appendChild(view);
+          }
         }
       }
+    }
+
+    // ── Stretch panels: direct flex children of .sc-container ───────────────
+
+    for (const panelId of stretchPanels) {
+      const view = document.createElement("patchwork-view");
+      view.setAttribute("doc-url", this.handle.url);
+      view.setAttribute("tool-id", panelId);
+      view.className = "sc-stretch-panel";
+      this.container.appendChild(view);
     }
   }
 
