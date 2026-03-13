@@ -1,5 +1,7 @@
-import type { CanvasDoc, DocHandle, Disposer } from './types.js'
+import type { DocHandle } from '@automerge/automerge-repo'
+import type { CanvasDoc, Disposer } from './types.js'
 import { getRegistry } from '@inkandswitch/patchwork-plugins'
+import type { PatchworkViewElement } from '@inkandswitch/patchwork-elements'
 
 /**
  * ToolbarPanel — renders one patchwork-view per spatial-canvas-tool plugin.
@@ -10,7 +12,7 @@ import { getRegistry } from '@inkandswitch/patchwork-plugins'
  */
 export default function ToolbarPanel(
   handle: DocHandle<CanvasDoc>,
-  element: HTMLElement,
+  element: PatchworkViewElement,
 ): Disposer {
   const registry = getRegistry('patchwork:tool')
   const toolDescs = registry.filter(

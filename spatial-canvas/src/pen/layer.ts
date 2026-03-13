@@ -1,6 +1,8 @@
 import { getStroke } from "perfect-freehand";
-import type { CanvasDoc, DocHandle } from "../core/types.js";
+import type { DocHandle } from "@automerge/automerge-repo";
+import type { CanvasDoc } from "../core/types.js";
 import type { PenShape } from "./pen-tool.js";
+import type { PatchworkViewElement } from "@inkandswitch/patchwork-elements";
 
 /**
  * PenLayer — renders each 'pen' shape as its own <svg> element so that CSS
@@ -10,7 +12,7 @@ import type { PenShape } from "./pen-tool.js";
  * A single shared <svg> would make all pen paths a single stacking unit,
  * preventing cross-layer z-index interleaving. One SVG per stroke fixes this.
  */
-export default function PenLayer(handle: DocHandle<CanvasDoc>, element: HTMLElement): () => void {
+export default function PenLayer(handle: DocHandle<CanvasDoc>, element: PatchworkViewElement): () => void {
   element.style.cssText = "position:absolute;inset:0;";
 
   /** shapeId → the <svg> wrapper element for that stroke */

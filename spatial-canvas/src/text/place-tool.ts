@@ -1,5 +1,7 @@
 import { createElement, Type } from 'lucide'
-import type { CanvasDoc, DocHandle, Disposer } from '../core/types.js'
+import type { DocHandle } from '@automerge/automerge-repo'
+import type { CanvasDoc, Disposer } from '../core/types.js'
+import type { PatchworkViewElement } from '@inkandswitch/patchwork-elements'
 import { createShape, nextZIndex, newId } from '../core/commands.js'
 import type { TextShape } from './text.js'
 
@@ -12,7 +14,7 @@ const DEFAULT_COLOR = '#1a1a1a'
 
 export default function PlaceTextTool(
   handle: DocHandle<CanvasDoc>,
-  buttonEl: HTMLElement,
+  buttonEl: PatchworkViewElement,
 ): Disposer {
   const icon = createElement(Type, { width: 22, height: 22, style: 'pointer-events:none' })
   buttonEl.appendChild(icon)

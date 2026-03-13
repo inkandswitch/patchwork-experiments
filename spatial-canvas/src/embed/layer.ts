@@ -1,8 +1,10 @@
 import { getRegistry, getSupportedToolsForType } from "@inkandswitch/patchwork-plugins";
-import type { CanvasDoc, DocHandle } from "../core/types.js";
+import type { DocHandle } from "@automerge/automerge-repo";
+import type { CanvasDoc } from "../core/types.js";
 import { patchShape, deleteShapes, createShape, newId, nextZIndex } from "../core/commands.js";
 import type { EmbedShape } from "./types.js";
 import { openMenu } from "./menu.js";
+import type { PatchworkViewElement } from "@inkandswitch/patchwork-elements";
 
 const HEADER_H = 30;
 
@@ -105,8 +107,8 @@ function isInsideScrollable(el: Element | null, boundary: Element): boolean {
 // Layer
 // ============================================================================
 
-export default function EmbedLayer(handle: DocHandle<CanvasDoc>, element: HTMLElement): () => void {
-  const repo = (element.closest(".sc-container") as any)?.repo;
+export default function EmbedLayer(handle: DocHandle<CanvasDoc>, element: PatchworkViewElement): () => void {
+  const repo = element.repo;
   element.style.cssText = "position:absolute;inset:0;";
 
   const mounted = new Map<string, HTMLElement>();

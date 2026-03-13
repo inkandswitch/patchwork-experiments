@@ -1,10 +1,12 @@
-import type { CanvasDoc, DocHandle, Disposer } from '../core/types.js'
+import type { DocHandle } from '@automerge/automerge-repo'
+import type { CanvasDoc, Disposer } from '../core/types.js'
 import {
   getRegistry,
   createDocOfDatatype2,
   type DatatypeDescription,
   type LoadedDatatype,
 } from '@inkandswitch/patchwork-plugins'
+import type { PatchworkViewElement } from '@inkandswitch/patchwork-elements'
 import { createShape, patchShape, newId, nextZIndex } from '../core/commands.js'
 import { createElement, Link } from 'lucide'
 import type { EmbedShape } from './types.js'
@@ -23,9 +25,9 @@ interface PointerDetail {
 
 export default function PlaceEmbedTool(
   handle: DocHandle<CanvasDoc>,
-  buttonEl: HTMLElement,
+  buttonEl: PatchworkViewElement,
 ): Disposer {
-  const repo = (buttonEl as any).repo
+  const repo = buttonEl.repo
   const icon = createElement(Link, { width: 22, height: 22, style: 'pointer-events:none' })
   buttonEl.appendChild(icon)
   buttonEl.title = 'Embed'

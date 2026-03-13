@@ -1,5 +1,7 @@
 import * as Automerge from '@automerge/automerge'
-import type { CanvasDoc, DocHandle } from '../core/types.js'
+import type { DocHandle } from '@automerge/automerge-repo'
+import type { CanvasDoc } from '../core/types.js'
+import type { PatchworkViewElement } from '@inkandswitch/patchwork-elements'
 import { deleteShapes } from '../core/commands.js'
 import type { TextShape } from './text.js'
 
@@ -28,7 +30,7 @@ interface Entry {
 
 export default function TextLayer(
   handle: DocHandle<CanvasDoc>,
-  element: HTMLElement,
+  element: PatchworkViewElement,
 ): () => void {
   ensureFont()
   element.style.cssText = 'position:absolute;inset:0;'

@@ -1,5 +1,7 @@
 import { getStroke } from 'perfect-freehand'
-import type { CanvasDoc, CanvasShape, DocHandle, Disposer } from '../core/types.js'
+import type { DocHandle } from '@automerge/automerge-repo'
+import type { CanvasDoc, CanvasShape, Disposer } from '../core/types.js'
+import type { PatchworkViewElement } from '@inkandswitch/patchwork-elements'
 import { createShape, nextZIndex, newId } from '../core/commands.js'
 import { createElement, Pen } from 'lucide'
 
@@ -59,7 +61,7 @@ interface PointerDetail {
 
 const DEFAULT_COLOR = '#1a1a1a'
 
-export function PenTool(handle: DocHandle<CanvasDoc>, buttonEl: HTMLElement): Disposer {
+export function PenTool(handle: DocHandle<CanvasDoc>, buttonEl: PatchworkViewElement): Disposer {
   const contactUrl = window.accountDocHandle?.doc()?.contactUrl ?? 'local'
 
   let points: [number, number, number][] = []

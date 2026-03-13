@@ -1,4 +1,6 @@
-import type { CanvasDoc, DocHandle, Disposer } from "../core/types.js";
+import type { DocHandle } from "@automerge/automerge-repo";
+import type { CanvasDoc, Disposer } from "../core/types.js";
+import type { PatchworkViewElement } from "@inkandswitch/patchwork-elements";
 import { deleteShapes } from "../core/commands.js";
 import { createElement, Eraser } from 'lucide';
 
@@ -59,7 +61,7 @@ interface PointerDetail {
 
 type Vec2 = { x: number; y: number };
 
-export default function DeleteTool(handle: DocHandle<CanvasDoc>, buttonEl: HTMLElement): Disposer {
+export default function DeleteTool(handle: DocHandle<CanvasDoc>, buttonEl: PatchworkViewElement): Disposer {
   const removeIndicator = mountEraserButton(buttonEl);
 
   let prevScreen: Vec2 | null = null;

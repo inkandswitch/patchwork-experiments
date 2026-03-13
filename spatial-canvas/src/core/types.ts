@@ -1,27 +1,21 @@
-// ============================================================================
-// Automerge document types
-// ============================================================================
-
-export type AutomergeUrl = string
-
 /**
  * Minimal base shape stored in the canvas doc.
  * Each tool extends this with its own fields (e.g. RectangleShape, PenShape).
  */
 export interface CanvasShape {
-  id: string
-  x: number
-  y: number
-  zIndex: number
-  type: string
+  id: string;
+  x: number;
+  y: number;
+  zIndex: number;
+  type: string;
 }
 
 export interface UserState {
-  selection: { [shapeId: string]: true }
-  color: string
-  fill?: 'transparent' | 'white' | 'filled'
-  fontSize?: number
-  selectedTool?: string
+  selection: { [shapeId: string]: true };
+  color: string;
+  fill?: "transparent" | "white" | "filled";
+  fontSize?: number;
+  selectedTool?: string;
 }
 
 /**
@@ -31,16 +25,13 @@ export interface UserState {
  * Examples: ['bottom', 'center'], ['top', 'right'], ['left', 'top']
  */
 export interface PanelEntry {
-  position: [
-    side: 'top' | 'bottom' | 'left' | 'right',
-    align: 'left' | 'center' | 'right' | 'top' | 'bottom',
-  ]
+  position: [side: "top" | "bottom" | "left" | "right", align: "left" | "center" | "right" | "top" | "bottom"];
 }
 
 export interface CanvasDoc {
-  shapes: Record<string, CanvasShape>
-  stateByUser: { [contactUrl: string]: UserState }
-  panels: { [panelId: string]: PanelEntry }
+  shapes: Record<string, CanvasShape>;
+  stateByUser: { [contactUrl: string]: UserState };
+  panels: { [panelId: string]: PanelEntry };
 }
 
 // ============================================================================
@@ -48,46 +39,34 @@ export interface CanvasDoc {
 // ============================================================================
 
 export interface Camera {
-  x: number
-  y: number
-  zoom: number
+  x: number;
+  y: number;
+  zoom: number;
 }
 
 export interface Rect {
-  x: number
-  y: number
-  width: number
-  height: number
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface Vec2 {
-  x: number
-  y: number
+  x: number;
+  y: number;
 }
 
 export interface PointerInfo {
-  x: number          // page coordinates
-  y: number
-  dx: number         // delta from last event
-  dy: number
-  origin: Vec2       // page coordinates at pointer-down
-  pointerId: number
-  buttons: number
-  shiftKey: boolean
-  metaKey: boolean
-  altKey: boolean
+  x: number; // page coordinates
+  y: number;
+  dx: number; // delta from last event
+  dy: number;
+  origin: Vec2; // page coordinates at pointer-down
+  pointerId: number;
+  buttons: number;
+  shiftKey: boolean;
+  metaKey: boolean;
+  altKey: boolean;
 }
 
-export type Disposer = () => void
-
-// ============================================================================
-// DocHandle — minimal interface matching Automerge's DocHandle API
-// ============================================================================
-
-export interface DocHandle<T> {
-  doc(): T | undefined
-  on(event: 'change', callback: (payload: { doc: T }) => void): void
-  off(event: 'change', callback: (payload: { doc: T }) => void): void
-  change(fn: (doc: T) => void): void
-  url: AutomergeUrl
-}
+export type Disposer = () => void;

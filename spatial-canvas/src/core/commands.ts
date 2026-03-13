@@ -1,4 +1,5 @@
-import type { CanvasShape, CanvasDoc, DocHandle } from './types.js'
+import type { DocHandle } from '@automerge/automerge-repo'
+import type { CanvasShape, CanvasDoc } from './types.js'
 
 /**
  * Direct Automerge mutation helpers.

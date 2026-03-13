@@ -1,4 +1,6 @@
-import type { CanvasDoc, DocHandle, Disposer } from '../core/types.js'
+import type { DocHandle } from '@automerge/automerge-repo'
+import type { CanvasDoc, Disposer } from '../core/types.js'
+import type { PatchworkViewElement } from '@inkandswitch/patchwork-elements'
 import { translateShapes, nextZIndex } from '../core/commands.js'
 import { createElement, MousePointer2 } from 'lucide'
 
@@ -88,7 +90,7 @@ function ensureUserState(d: CanvasDoc, contactUrl: string) {
 
 export default function SelectTool(
   handle: DocHandle<CanvasDoc>,
-  buttonEl: HTMLElement
+  buttonEl: PatchworkViewElement
 ): Disposer {
   const removeIndicator = mountSelectButton(buttonEl)
 

@@ -1,5 +1,7 @@
-import type { CanvasDoc, DocHandle } from '../core/types.js'
+import type { DocHandle } from '@automerge/automerge-repo'
+import type { CanvasDoc } from '../core/types.js'
 import type { RectangleShape } from './rectangle.js'
+import type { PatchworkViewElement } from '@inkandswitch/patchwork-elements'
 
 /** Mix color with white by `t` (0 = original, 1 = white). */
 function lightenColor(hex: string, t = 0.72): string {
@@ -18,7 +20,7 @@ function lightenColor(hex: string, t = 0.72): string {
  */
 export default function RectangleLayer(
   handle: DocHandle<CanvasDoc>,
-  element: HTMLElement
+  element: PatchworkViewElement
 ): () => void {
   const mounted = new Map<string, HTMLElement>()
   element.style.cssText = 'position:absolute;inset:0;'

@@ -1,4 +1,6 @@
-import type { Camera, Rect, CanvasDoc, DocHandle, Disposer } from "./types.js";
+import type { DocHandle } from "@automerge/automerge-repo";
+import type { Camera, Rect, CanvasDoc, Disposer } from "./types.js";
+import type { PatchworkViewElement } from "@inkandswitch/patchwork-elements";
 import { updateCamera, zoomCamera } from "./camera.js";
 import { Inputs } from "./inputs.js";
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
@@ -26,53 +28,54 @@ function normalizeDelta(e: WheelEvent): [number, number] {
  */
 function isTextUnderPointer(x: number, y: number, target: Element | null): boolean {
   // textarea / input are native widgets — any click inside them should pass through
-  let el: Element | null = target
-  while (el && !el.classList.contains('sc-canvas')) {
-    if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') return true
-    el = el.parentElement
+  let el: Element | null = target;
+  while (el && !el.classList.contains("sc-canvas")) {
+    if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") return true;
+    el = el.parentElement;
   }
 
   // Find the text node + offset at the pointer position
-  let textNode: Text | null = null
-  let charOffset = 0
+  let textNode: Text | null = null;
+  let charOffset = 0;
 
   if (document.caretRangeFromPoint) {
-    const r = document.caretRangeFromPoint(x, y)
+    const r = document.caretRangeFromPoint(x, y);
     if (r?.startContainer.nodeType === Node.TEXT_NODE) {
-      textNode = r.startContainer as Text
-      charOffset = r.startOffset
+      textNode = r.startContainer as Text;
+      charOffset = r.startOffset;
     }
   } else if ((document as any).caretPositionFromPoint) {
-    const pos = (document as any).caretPositionFromPoint(x, y)
+    const pos = (document as any).caretPositionFromPoint(x, y);
     if (pos?.offsetNode?.nodeType === Node.TEXT_NODE) {
-      textNode = pos.offsetNode as Text
-      charOffset = pos.offset as number
+      textNode = pos.offsetNode as Text;
+      charOffset = pos.offset as number;
     }
   }
 
-  if (!textNode) return false
+  if (!textNode) return false;
 
   // Only intercept when inside a contenteditable element
-  let node: Element | null = textNode.parentElement
-  let insideEditable = false
-  while (node && !node.classList.contains('sc-canvas')) {
-    if ((node as HTMLElement).isContentEditable) { insideEditable = true; break }
-    node = node.parentElement
+  let node: Element | null = textNode.parentElement;
+  let insideEditable = false;
+  while (node && !node.classList.contains("sc-canvas")) {
+    if ((node as HTMLElement).isContentEditable) {
+      insideEditable = true;
+      break;
+    }
+    node = node.parentElement;
   }
-  if (!insideEditable) return false
+  if (!insideEditable) return false;
 
   // Verify the click actually lands on the glyph's rect, not snapped empty space
   try {
-    const charRange = document.createRange()
-    charRange.setStart(textNode, charOffset)
-    charRange.setEnd(textNode, Math.min(charOffset + 1, textNode.length))
-    const rect = charRange.getBoundingClientRect()
-    const SLOP = 2
-    return rect.width > 0
-      && x >= rect.left - SLOP && x <= rect.right  + SLOP
-      && y >= rect.top  - SLOP && y <= rect.bottom + SLOP
+    const charRange = document.createRange();
+    charRange.setStart(textNode, charOffset);
+    charRange.setEnd(textNode, Math.min(charOffset + 1, textNode.length));
+    const rect = charRange.getBoundingClientRect();
+    const SLOP = 2;
+    return rect.width > 0 && x >= rect.left - SLOP && x <= rect.right + SLOP && y >= rect.top - SLOP && y <= rect.bottom + SLOP;
   } catch {
-    return false
+    return false;
   }
 }
 
@@ -98,22 +101,19 @@ export class CanvasView {
   private screenBounds: Rect = { x: 0, y: 0, width: 0, height: 0 };
   private activeTool: string = "";
   private activePointerId: number | null = null;
-  private repo: unknown = undefined;
 
   private inputs = new Inputs();
   private disposers: Disposer[] = [];
 
   constructor(
     private handle: DocHandle<CanvasDoc>,
-    mountPoint: HTMLElement,
+    mountPoint: PatchworkViewElement,
   ) {
-    this.repo = (mountPoint as any).repo;
     injectStyles();
 
     // Build DOM scaffold
     this.container = document.createElement("div");
     this.container.className = "sc-container";
-    (this.container as any).repo = this.repo;
 
     this.canvasEl = document.createElement("div");
     this.canvasEl.className = "sc-canvas";
@@ -151,17 +151,16 @@ export class CanvasView {
 
     this.bindEvents();
 
-    const contactUrl = (window as any).accountDocHandle?.doc()?.contactUrl ?? 'local'
+    const contactUrl = (window as any).accountDocHandle?.doc()?.contactUrl ?? "local";
     const onDocChange = ({ doc }: { doc: CanvasDoc }) => {
-      const tool = doc.stateByUser?.[contactUrl]?.selectedTool
-      if (tool && tool !== this.activeTool) this.setActiveTool(tool)
-    }
-    this.handle.on('change', onDocChange)
-    this.disposers.push(() => this.handle.off('change', onDocChange))
+      const tool = doc.stateByUser?.[contactUrl]?.selectedTool;
+      if (tool && tool !== this.activeTool) this.setActiveTool(tool);
+    };
+    this.handle.on("change", onDocChange);
+    this.disposers.push(() => this.handle.off("change", onDocChange));
 
-    const initialTool = this.handle.doc()?.stateByUser?.[contactUrl]?.selectedTool
-      ?? 'spatial-canvas-tool-select'
-    this.setActiveTool(initialTool)
+    const initialTool = this.handle.doc()?.stateByUser?.[contactUrl]?.selectedTool ?? "spatial-canvas-tool-select";
+    this.setActiveTool(initialTool);
   }
 
   // ---------------------------------------------------------------------------
@@ -261,66 +260,66 @@ export class CanvasView {
 
     const onKeyDown = (e: KeyboardEvent) => {
       // Ignore shortcuts when focus is inside a text input / contenteditable
-      const target = e.target as HTMLElement
-      if (target.isContentEditable || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return
+      const target = e.target as HTMLElement;
+      if (target.isContentEditable || target.tagName === "INPUT" || target.tagName === "TEXTAREA") return;
 
-      const isMod = e.metaKey || e.ctrlKey
+      const isMod = e.metaKey || e.ctrlKey;
 
-      if (e.key === 'Backspace' && !isMod) {
-        const doc = this.handle.doc()
-        if (!doc) return
-        const contactUrl = (window as any).accountDocHandle?.doc()?.contactUrl ?? 'local'
-        const selection = doc.stateByUser?.[contactUrl]?.selection ?? {}
-        const ids = Object.keys(selection)
-        if (ids.length === 0) return
-        e.preventDefault()
-        deleteShapes(this.handle, ids)
+      if (e.key === "Backspace" && !isMod) {
+        const doc = this.handle.doc();
+        if (!doc) return;
+        const contactUrl = (window as any).accountDocHandle?.doc()?.contactUrl ?? "local";
+        const selection = doc.stateByUser?.[contactUrl]?.selection ?? {};
+        const ids = Object.keys(selection);
+        if (ids.length === 0) return;
+        e.preventDefault();
+        deleteShapes(this.handle, ids);
         // Clear selection
-        this.handle.change(d => {
-          if (d.stateByUser?.[contactUrl]) d.stateByUser[contactUrl].selection = {}
-        })
+        this.handle.change((d) => {
+          if (d.stateByUser?.[contactUrl]) d.stateByUser[contactUrl].selection = {};
+        });
       }
 
       // TODO: find a proper place for tool shortcuts
       const toolKeys: Record<string, string> = {
-        v: 'spatial-canvas-tool-select',
-        r: 'spatial-canvas-tool-place-rectangle',
-        t: 'spatial-canvas-tool-text',
-        p: 'spatial-canvas-tool-pen',
-        e: 'spatial-canvas-tool-embed',
-      }
+        v: "spatial-canvas-tool-select",
+        r: "spatial-canvas-tool-place-rectangle",
+        t: "spatial-canvas-tool-text",
+        p: "spatial-canvas-tool-pen",
+        e: "spatial-canvas-tool-embed",
+      };
       if (!isMod && e.key in toolKeys) {
-        e.preventDefault()
-        this.setActiveTool(toolKeys[e.key])
+        e.preventDefault();
+        this.setActiveTool(toolKeys[e.key]);
       }
 
-      if (e.key === 'd' && isMod) {
-        const doc = this.handle.doc()
-        if (!doc) return
-        const contactUrl = (window as any).accountDocHandle?.doc()?.contactUrl ?? 'local'
-        const selection = doc.stateByUser?.[contactUrl]?.selection ?? {}
-        const ids = Object.keys(selection)
-        if (ids.length === 0) return
-        e.preventDefault()
+      if (e.key === "d" && isMod) {
+        const doc = this.handle.doc();
+        if (!doc) return;
+        const contactUrl = (window as any).accountDocHandle?.doc()?.contactUrl ?? "local";
+        const selection = doc.stateByUser?.[contactUrl]?.selection ?? {};
+        const ids = Object.keys(selection);
+        if (ids.length === 0) return;
+        e.preventDefault();
         // Offset: if any selected shape has a width, shift right by that width + gap,
         // otherwise shift diagonally by 10px.
-        const shapes = ids.map(id => doc.shapes[id]).filter(Boolean)
-        const hasWidth = shapes.some(s => 'width' in s && (s as any).width > 0)
-        const dx = hasWidth ? Math.max(...shapes.map(s => ((s as any).width ?? 0))) + 16 : 10
-        const dy = hasWidth ? 0 : 10
-        const newIds = duplicateShapes(this.handle, ids, dx, dy)
+        const shapes = ids.map((id) => doc.shapes[id]).filter(Boolean);
+        const hasWidth = shapes.some((s) => "width" in s && (s as any).width > 0);
+        const dx = hasWidth ? Math.max(...shapes.map((s) => (s as any).width ?? 0)) + 16 : 10;
+        const dy = hasWidth ? 0 : 10;
+        const newIds = duplicateShapes(this.handle, ids, dx, dy);
         // Select the duplicates
-        this.handle.change(d => {
-          if (!d.stateByUser) d.stateByUser = {}
-          if (!d.stateByUser[contactUrl]) d.stateByUser[contactUrl] = { selection: {}, color: '#1a1a1a' }
-          const sel: Record<string, true> = {}
-          for (const id of newIds) sel[id] = true
-          d.stateByUser[contactUrl].selection = sel
-        })
+        this.handle.change((d) => {
+          if (!d.stateByUser) d.stateByUser = {};
+          if (!d.stateByUser[contactUrl]) d.stateByUser[contactUrl] = { selection: {}, color: "#1a1a1a" };
+          const sel: Record<string, true> = {};
+          for (const id of newIds) sel[id] = true;
+          d.stateByUser[contactUrl].selection = sel;
+        });
       }
-    }
+    };
 
-    document.addEventListener("keydown", onKeyDown)
+    document.addEventListener("keydown", onKeyDown);
 
     this.disposers.push(() => {
       canvas.removeEventListener("pointerdown", onPointerDown);
@@ -369,14 +368,14 @@ export class CanvasView {
     oldBtn?.dispatchEvent(new CustomEvent("spatial-canvas:cancel", { bubbles: false }));
     this.activeTool = tool;
     this.canvasEl.dataset.tool = tool;
-    const contactUrl = (window as any).accountDocHandle?.doc()?.contactUrl ?? 'local'
-    const current = this.handle.doc()?.stateByUser?.[contactUrl]?.selectedTool
+    const contactUrl = (window as any).accountDocHandle?.doc()?.contactUrl ?? "local";
+    const current = this.handle.doc()?.stateByUser?.[contactUrl]?.selectedTool;
     if (current !== tool) {
-      this.handle.change(d => {
-        if (!d.stateByUser) d.stateByUser = {}
-        if (!d.stateByUser[contactUrl]) d.stateByUser[contactUrl] = { selection: {}, color: '#1a1a1a' }
-        d.stateByUser[contactUrl].selectedTool = tool
-      })
+      this.handle.change((d) => {
+        if (!d.stateByUser) d.stateByUser = {};
+        if (!d.stateByUser[contactUrl]) d.stateByUser[contactUrl] = { selection: {}, color: "#1a1a1a" };
+        d.stateByUser[contactUrl].selectedTool = tool;
+      });
     }
     // Notify all toolbar panels so they can update active button state
     this.container.dispatchEvent(
@@ -396,18 +395,15 @@ export class CanvasView {
     const layerDescs = registry.filter((p) => !!(p.tags as string[] | undefined)?.includes("spatial-canvas-layer"));
 
     for (const desc of layerDescs) {
-      const div = document.createElement("div");
-      // No z-index on the container — a positioned element with z-index:auto
-      // does NOT form a new stacking context, so elements rendered by different
-      // layers interleave freely via their own shape.zIndex values.
-      div.style.cssText = "position:absolute;inset:0;pointer-events:none;";
-      this.layer.appendChild(div);
-
-      registry.load(desc.id).then((loaded) => {
-        if (!loaded) return;
-        const dispose = (loaded.module as (h: DocHandle<CanvasDoc>, el: HTMLElement) => Disposer)(this.handle, div);
-        this.disposers.push(dispose);
-      });
+      // Use patchwork-view so the framework provides a proper PatchworkViewElement
+      // (with repo set, handle wired up, etc.) — the same way tool buttons and panels
+      // are mounted. No z-index: a z-index:auto element does NOT form a new stacking
+      // context, so shapes from different layers interleave via their own zIndex values.
+      const view = document.createElement("patchwork-view");
+      view.setAttribute("doc-url", this.handle.url);
+      view.setAttribute("tool-id", desc.id);
+      view.style.cssText = "position:absolute;inset:0;pointer-events:none;";
+      this.layer.appendChild(view);
     }
   }
 
@@ -418,8 +414,6 @@ export class CanvasView {
   private mountPanels() {
     const doc = this.handle.doc();
     if (!doc?.panels) return;
-
-    const registry = getRegistry("patchwork:tool");
 
     // Build the 3×3 grid overlay
     const overlay = document.createElement("div");
@@ -458,15 +452,11 @@ export class CanvasView {
         sideEl.appendChild(groupEl);
 
         for (const panelId of panelIds) {
-          const panelEl = document.createElement("div");
-          panelEl.className = "sc-panel";
-          groupEl.appendChild(panelEl);
-
-          registry.load(panelId).then((loaded) => {
-            if (!loaded) return;
-            const dispose = (loaded.module as (h: DocHandle<CanvasDoc>, el: HTMLElement, repo: unknown) => Disposer)(this.handle, panelEl, this.repo);
-            this.disposers.push(dispose);
-          });
+          const view = document.createElement("patchwork-view");
+          view.setAttribute("doc-url", this.handle.url);
+          view.setAttribute("tool-id", panelId);
+          view.className = "sc-panel";
+          groupEl.appendChild(view);
         }
       }
     }

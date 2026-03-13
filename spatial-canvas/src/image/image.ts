@@ -1,4 +1,5 @@
-import type { CanvasShape, AutomergeUrl } from '../core/types.js'
+import type { AutomergeUrl } from '@automerge/automerge-repo'
+import type { CanvasShape } from '../core/types.js'
 
 export interface ImageShape extends CanvasShape {
   type: 'image'
