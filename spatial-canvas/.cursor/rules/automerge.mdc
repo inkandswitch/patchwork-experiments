@@ -1,0 +1,55 @@
+---
+description: Automerge usage patterns for spatial-canvas
+globs: **/*.ts
+alwaysApply: false
+---
+
+# Automerge Usage
+
+## repo.find is async
+
+`repo.find()` is async and always returns a valid handle — no need to null-check.
+
+```ts
+// ✅ GOOD
+const handle = await repo.find(url);
+
+// ❌ BAD
+const handle = repo.find(url); // missing await
+```
+
+## Use repo.doc, not repo.docSync
+
+`docSync` is deprecated. Always use the async `repo.doc`.
+
+```ts
+// ✅ GOOD
+const doc = await handle.doc();
+
+// ❌ BAD
+const doc = handle.docSync();
+```
+
+## Delete properties instead of assigning undefined
+
+Automerge does not support `undefined` values. Delete the property instead.
+
+```ts
+// ✅ GOOD
+repo.change(handle, (doc) => { delete doc.foo; });
+
+// ❌ BAD
+repo.change(handle, (doc) => { doc.foo = undefined; });
+```
+
+## Assign clean objects, not automerge objects
+
+Never reassign objects that came from an automerge document — they carry internal metadata. Spread or reconstruct a plain object first.
+
+```ts
+// ✅ GOOD
+doc.target = { x: other.x, y: other.y };
+
+// ❌ BAD
+doc.target = other; // other is an automerge proxy object
+```
