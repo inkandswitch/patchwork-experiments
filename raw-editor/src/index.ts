@@ -1,8 +1,4 @@
-import type {
-  LoadablePlugin,
-  ToolDescription,
-  ToolImplementation,
-} from "@inkandswitch/patchwork-plugins";
+import type { LoadablePlugin, ToolDescription, ToolImplementation } from "@inkandswitch/patchwork-plugins";
 
 export const plugins: LoadablePlugin<any>[] = [
   {
