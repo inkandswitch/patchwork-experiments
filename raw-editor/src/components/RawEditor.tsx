@@ -1,6 +1,5 @@
-import * as Automerge from "@automerge/automerge";
 import { AutomergeUrl, DocHandle, isValidAutomergeUrl } from "@automerge/automerge-repo";
-import { useDocument, useDocHandle, RepoContext } from "@automerge/automerge-repo-react-hooks";
+import { useDocument, RepoContext } from "@automerge/automerge-repo-react-hooks";
 import ReactJson, { InteractionProps } from "@microlink/react-json-view";
 import { OpenDocumentEvent } from "@inkandswitch/patchwork-elements";
 import { useCallback, useEffect, useState } from "react";
@@ -35,14 +34,8 @@ function usePrefersDarkMode() {
   return isDark;
 }
 
-function automergeUrlToHashUrl(url: string): string {
-  const id = url.replace(/^automerge:/, "");
-  return `/#doc=${id}&tool=raw`;
-}
-
 export const RawEditor = ({ docUrl, element }: { docUrl: AutomergeUrl; element: HTMLElement }) => {
   const [doc, changeDoc] = useDocument(docUrl);
-  const handle = useDocHandle(docUrl);
 
   const isDark = usePrefersDarkMode();
 
@@ -64,30 +57,20 @@ export const RawEditor = ({ docUrl, element }: { docUrl: AutomergeUrl; element: 
   useEffect(() => {
     if (!containerNode) return;
 
-    const wrapAutomergeUrls = () => {
+    const markAutomergeUrls = () => {
       const stringElements = containerNode.querySelectorAll(".string-value");
       stringElements.forEach((el) => {
-        if (el.querySelector("a.automerge-url")) return;
         const text = el.textContent || "";
-        const url = text.slice(1, -1); // strip quotes
-        if (isValidAutomergeUrl(url)) {
-          el.textContent = "";
-          el.appendChild(document.createTextNode('"'));
-          const a = document.createElement("a");
-          a.href = automergeUrlToHashUrl(url);
-          a.textContent = url;
-          a.className = "automerge-url";
-          el.appendChild(a);
-          el.appendChild(document.createTextNode('"'));
+        if (isValidAutomergeUrl(text.slice(1, -1)) && !el.classList.contains("automerge-url")) {
+          el.classList.add("automerge-url");
         }
       });
     };
 
-    // Initial pass
-    wrapAutomergeUrls();
+    markAutomergeUrls();
 
     // Watch for DOM changes (e.g., when editing and canceling in react-json-view)
-    const observer = new MutationObserver(wrapAutomergeUrls);
+    const observer = new MutationObserver(markAutomergeUrls);
     observer.observe(containerNode, { childList: true, subtree: true });
 
     const handleClick = (e: MouseEvent) => {
@@ -109,7 +92,7 @@ export const RawEditor = ({ docUrl, element }: { docUrl: AutomergeUrl; element: 
       observer.disconnect();
       containerNode.removeEventListener("click", handleClick);
     };
-  }, [containerNode, doc, onSelectAutomergeUrl]);
+  }, [containerNode, onSelectAutomergeUrl]);
 
   const onEdit = useCallback(
     ({ namespace, new_value, name }: InteractionProps) => {
@@ -161,35 +144,6 @@ export const RawEditor = ({ docUrl, element }: { docUrl: AutomergeUrl; element: 
       });
     },
     [changeDoc],
-  );
-
-  // lifted from https://gist.github.com/davalapar/d0a5ba7cce4bc599f54800da22926da2
-  const onDownloadDoc = useCallback(
-    function () {
-      if (!doc || !handle) {
-        throw new Error("No document or handle found");
-      }
-      const data = Automerge.save(doc);
-      const filename = `${handle.documentId}.automerge`;
-      const blobURL = URL.createObjectURL(new Blob([data as BlobPart], { type: "application/octet-stream" }));
-
-      const tempLink = document.createElement("a");
-      tempLink.style.display = "none";
-      tempLink.href = blobURL;
-      tempLink.setAttribute("download", filename);
-
-      if (typeof tempLink.download === "undefined") {
-        tempLink.setAttribute("target", "_blank");
-      }
-
-      document.body.appendChild(tempLink);
-      tempLink.click();
-      document.body.removeChild(tempLink);
-      setTimeout(() => {
-        window.URL.revokeObjectURL(blobURL);
-      }, 100);
-    },
-    [doc],
   );
 
   if (!doc) {
