@@ -23,6 +23,9 @@ importers:
       '@inkandswitch/patchwork-plugins':
         specifier: latest
         version: 0.0.5
+      '@zumer/snapdom':
+        specifier: ^2.1.0
+        version: 2.1.0
       lucide:
         specifier: ^0.577.0
         version: 0.577.0
@@ -34,7 +37,7 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
       vite:
-        specifier: ^8.0.0
+        specifier: '8'
         version: 8.0.0(@types/node@20.19.37)(esbuild@0.27.3)
 
 packages:
@@ -367,6 +370,9 @@ packages:
 
   '@types/node@20.19.37':
     resolution: {integrity: sha512-8kzdPJ3FsNsVIurqBs7oodNnCEVbni9yUEkaHbgptDACOPW04jimGagZ51E6+lXUwJjgnBw+hyko/lkFWCldqw==}
+
+  '@zumer/snapdom@2.1.0':
+    resolution: {integrity: sha512-ZMU7O57xffeNNKwr2kMaeg6Z9b1y3v4UuvggIjgZbTSDa5lpuoiPoqwHrtj3UtoolFKCF49hwS8i2NDXzLFyhA==}
 
   base-x@4.0.1:
     resolution: {integrity: sha512-uAZ8x6r6S3aUM9rbHGVOIsR15U/ZSc82b3ymnCPsT45Gk1DDvhDPdIgB5MrhirZWt+5K0EEPQH985kNqZgNPFw==}
@@ -848,6 +854,8 @@ snapshots:
   '@types/node@20.19.37':
     dependencies:
       undici-types: 6.21.0
+
+  '@zumer/snapdom@2.1.0': {}
 
   base-x@4.0.1: {}
 
