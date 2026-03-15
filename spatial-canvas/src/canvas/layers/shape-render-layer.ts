@@ -162,7 +162,4 @@ export class ShapeRenderLayer {
 // ---------------------------------------------------------------------------
 
 const rectsIntersect = (a: Rect | DOMRect, b: Rect | DOMRect): boolean =>
-  a.x < b.x + b.width &&
-  a.x + a.width > b.x &&
-  a.y < b.y + b.height &&
-  a.y + a.height > b.y;
+  a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;

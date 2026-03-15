@@ -796,4 +796,3 @@ async function runBuildProcess(
     if (!foundScript) break;
   }
 }
-
