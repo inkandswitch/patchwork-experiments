@@ -39,24 +39,4 @@ export const canvasPlugins = [
       return (await import("./canvas.js")).default;
     },
   },
-  {
-    type: "patchwork:tool" as const,
-    id: "spatial-canvas-panel-toolbar",
-    name: "Toolbar",
-    tags: ["spatial-canvas-panel"],
-    supportedDatatypes: ["spatial-canvas"],
-    async load() {
-      return (await import("./toolbar.js")).default;
-    },
-  },
-  {
-    type: "patchwork:tool" as const,
-    id: "spatial-canvas-panel-keyboard",
-    name: "Keyboard Shortcuts",
-    tags: ["spatial-canvas-panel"],
-    supportedDatatypes: ["spatial-canvas"],
-    async load() {
-      return (await import("./keyboard-panel.js")).default;
-    },
-  },
 ];

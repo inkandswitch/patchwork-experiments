@@ -10,72 +10,9 @@ const STROKE_COLOR = "rgba(80,80,80,0.55)";
 const STROKE_WIDTH = 12;
 
 type Vec2 = { x: number; y: number };
-
-// ---------------------------------------------------------------------------
-// Eraser trail (freehand SVG path that fades out on release)
-// ---------------------------------------------------------------------------
-
-const makeEraserTrail = (layer: HTMLElement) => {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.style.cssText = "position:absolute;top:0;left:0;pointer-events:none;overflow:visible;";
-
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("fill", "none");
-  path.setAttribute("stroke", STROKE_COLOR);
-  path.setAttribute("stroke-width", String(STROKE_WIDTH));
-  path.setAttribute("stroke-linecap", "round");
-  path.setAttribute("stroke-linejoin", "round");
-  svg.appendChild(path);
-  layer.appendChild(svg);
-
-  let points: Vec2[] = [];
-  let fadeTimer: ReturnType<typeof setTimeout> | null = null;
-
-  const buildPath = (): string => {
-    if (points.length === 0) return "";
-    if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
-    let d = `M ${points[0].x} ${points[0].y}`;
-    for (let i = 1; i < points.length - 1; i++) {
-      const mx = (points[i].x + points[i + 1].x) / 2;
-      const my = (points[i].y + points[i + 1].y) / 2;
-      d += ` Q ${points[i].x} ${points[i].y} ${mx} ${my}`;
-    }
-    d += ` L ${points[points.length - 1].x} ${points[points.length - 1].y}`;
-    return d;
-  };
-
-  return {
-    addPoint(p: Vec2) {
-      if (fadeTimer) {
-        clearTimeout(fadeTimer);
-        fadeTimer = null;
-      }
-      svg.style.opacity = "1";
-      svg.style.transition = "";
-      points.push(p);
-      path.setAttribute("d", buildPath());
-    },
-    finish() {
-      fadeTimer = setTimeout(() => {
-        svg.style.transition = "opacity 0.4s ease-out";
-        svg.style.opacity = "0";
-        setTimeout(() => svg.remove(), 420);
-      }, 80);
-    },
-    dispose() {
-      if (fadeTimer) clearTimeout(fadeTimer);
-      svg.remove();
-    },
-  };
-};
-
 type EraserTrail = ReturnType<typeof makeEraserTrail>;
 
-// ---------------------------------------------------------------------------
-// Tool
-// ---------------------------------------------------------------------------
-
-const DeleteTool = (handle: DocHandle<CanvasDoc>, buttonEl: PatchworkViewElement): Disposer => {
+function DeleteTool(handle: DocHandle<CanvasDoc>, buttonEl: PatchworkViewElement): Disposer {
   const icon = createElement(Eraser, { width: 22, height: 22, style: "pointer-events:none" });
   buttonEl.appendChild(icon);
 
@@ -160,6 +97,60 @@ const DeleteTool = (handle: DocHandle<CanvasDoc>, buttonEl: PatchworkViewElement
     trail?.dispose();
     trail = null;
   };
-};
+}
 
 export default DeleteTool;
+
+function makeEraserTrail(layer: HTMLElement) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.style.cssText = "position:absolute;top:0;left:0;pointer-events:none;overflow:visible;";
+
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke", STROKE_COLOR);
+  path.setAttribute("stroke-width", String(STROKE_WIDTH));
+  path.setAttribute("stroke-linecap", "round");
+  path.setAttribute("stroke-linejoin", "round");
+  svg.appendChild(path);
+  layer.appendChild(svg);
+
+  let points: Vec2[] = [];
+  let fadeTimer: ReturnType<typeof setTimeout> | null = null;
+
+  return {
+    addPoint(p: Vec2) {
+      if (fadeTimer) {
+        clearTimeout(fadeTimer);
+        fadeTimer = null;
+      }
+      svg.style.opacity = "1";
+      svg.style.transition = "";
+      points.push(p);
+      path.setAttribute("d", buildPath());
+    },
+    finish() {
+      fadeTimer = setTimeout(() => {
+        svg.style.transition = "opacity 0.4s ease-out";
+        svg.style.opacity = "0";
+        setTimeout(() => svg.remove(), 420);
+      }, 80);
+    },
+    dispose() {
+      if (fadeTimer) clearTimeout(fadeTimer);
+      svg.remove();
+    },
+  };
+
+  function buildPath(): string {
+    if (points.length === 0) return "";
+    if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+    let d = `M ${points[0].x} ${points[0].y}`;
+    for (let i = 1; i < points.length - 1; i++) {
+      const mx = (points[i].x + points[i + 1].x) / 2;
+      const my = (points[i].y + points[i + 1].y) / 2;
+      d += ` Q ${points[i].x} ${points[i].y} ${mx} ${my}`;
+    }
+    d += ` L ${points[points.length - 1].x} ${points[points.length - 1].y}`;
+    return d;
+  }
+}

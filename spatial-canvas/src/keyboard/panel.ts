@@ -1,11 +1,8 @@
 import type { DocHandle } from "@automerge/automerge-repo";
-import type { CanvasDoc, Disposer } from "./types.js";
-import { deleteShapes, duplicateShapes } from "./commands.js";
+import type { CanvasDoc, Disposer } from "../canvas/types.js";
+import { deleteShapes, duplicateShapes } from "../canvas/commands.js";
 
-/**
- * KeyboardPanel — invisible panel that handles canvas keyboard shortcuts.
- */
-const KeyboardPanel = (handle: DocHandle<CanvasDoc>, element: HTMLElement): Disposer => {
+function KeyboardPanel(handle: DocHandle<CanvasDoc>, element: HTMLElement): Disposer {
   element.style.display = "none";
 
   const onKeyDown = (e: KeyboardEvent) => {
@@ -20,13 +17,9 @@ const KeyboardPanel = (handle: DocHandle<CanvasDoc>, element: HTMLElement): Disp
   return () => {
     document.removeEventListener("keydown", onKeyDown);
   };
-};
+}
 
 export default KeyboardPanel;
-
-// ---------------------------------------------------------------------------
-// Built-in shortcuts (run only if no panel consumed the event)
-// ---------------------------------------------------------------------------
 
 const TOOL_KEYS: Record<string, string> = {
   v: "spatial-canvas-tool-select",
@@ -36,7 +29,7 @@ const TOOL_KEYS: Record<string, string> = {
   e: "spatial-canvas-tool-embed",
 };
 
-const handleBuiltInShortcuts = (e: KeyboardEvent, handle: DocHandle<CanvasDoc>) => {
+function handleBuiltInShortcuts(e: KeyboardEvent, handle: DocHandle<CanvasDoc>) {
   const isMod = e.metaKey || e.ctrlKey;
   const contactUrl = (window as any).accountDocHandle?.doc()?.contactUrl ?? "local";
 
@@ -84,4 +77,4 @@ const handleBuiltInShortcuts = (e: KeyboardEvent, handle: DocHandle<CanvasDoc>) 
       d.stateByUser[contactUrl].selection = sel;
     });
   }
-};
+}

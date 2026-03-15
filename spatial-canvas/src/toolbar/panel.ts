@@ -1,15 +1,9 @@
 import type { DocHandle } from "@automerge/automerge-repo";
-import type { CanvasDoc, Disposer } from "./types.js";
+import type { CanvasDoc, Disposer } from "../canvas/types.js";
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import type { PatchworkViewElement } from "@inkandswitch/patchwork-elements";
 
-/**
- * ToolbarPanel — renders one <patchwork-view> per spatial-canvas-tool plugin.
- *
- * Writes the selected tool directly to the doc's stateByUser. The
- * <spatial-canvas> element reacts to the doc change and updates its own state.
- */
-const ToolbarPanel = (handle: DocHandle<CanvasDoc>, element: PatchworkViewElement): Disposer => {
+function ToolbarPanel(handle: DocHandle<CanvasDoc>, element: PatchworkViewElement): Disposer {
   const registry = getRegistry("patchwork:tool");
   const toolDescs = registry.filter(
     (p) => !!(p.tags as string[] | undefined)?.includes("spatial-canvas-tool"),
@@ -56,6 +50,6 @@ const ToolbarPanel = (handle: DocHandle<CanvasDoc>, element: PatchworkViewElemen
   return () => {
     handle.off("change", onDocChange);
   };
-};
+}
 
 export default ToolbarPanel;
