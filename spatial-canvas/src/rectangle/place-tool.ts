@@ -61,14 +61,14 @@ export default function PlaceRectangleTool(
 
   function onPointerDown(e: Event) {
     const pe = e as PointerEvent;
-    const pos = getCanvas(e.target as Element)?.screenToPage(pe.clientX, pe.clientY);
-    if (!pos) return;
+    const canvas = getCanvas(e.target as Element);
+    if (!canvas) return;
+    const pos = canvas.screenToPage(pe.clientX, pe.clientY);
     const { x: canvasX, y: canvasY } = pos;
     const color = getColor();
     const fill = getFill();
 
     origin = { x: canvasX, y: canvasY };
-
     preview = document.createElement("div");
     preview.style.cssText = [
       "position:absolute",

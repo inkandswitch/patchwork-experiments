@@ -41,8 +41,9 @@ export function PenTool(handle: DocHandle<CanvasDoc>, buttonEl: PatchworkViewEle
 
   function onPointerDown(e: Event) {
     const pe = e as PointerEvent;
-    const pos = getCanvas(e.target as Element)?.screenToPage(pe.clientX, pe.clientY);
-    if (!pos) return;
+    const canvas = getCanvas(e.target as Element);
+    if (!canvas) return;
+    const pos = canvas.screenToPage(pe.clientX, pe.clientY);
     points = [[pos.x, pos.y, 0.5]];
 
     const color = getColor();

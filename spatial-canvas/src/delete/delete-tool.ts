@@ -51,8 +51,9 @@ function DeleteTool(handle: DocHandle<CanvasDoc>, buttonEl: PatchworkViewElement
   const onPointerDown = (e: Event) => {
     const pe = e as PointerEvent;
     const canvas = getCanvas(e.target as Element);
+    if (!canvas) return;
     const cur: Vec2 = { x: pe.clientX, y: pe.clientY };
-    const curC = canvas?.screenToPage(pe.clientX, pe.clientY) ?? cur;
+    const curC = canvas.screenToPage(pe.clientX, pe.clientY) ?? cur;
 
     const layer = getLayer();
     if (layer) {

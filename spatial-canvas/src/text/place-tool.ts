@@ -32,8 +32,9 @@ export default function PlaceTextTool(
 
   function onPointerDown(e: Event) {
     const pe = e as PointerEvent;
-    const pos = getCanvas(e)?.screenToPage(pe.clientX, pe.clientY);
-    if (!pos) return;
+    const canvas = getCanvas(e.target as Element);
+    if (!canvas) return;
+    const pos = canvas.screenToPage(pe.clientX, pe.clientY);
     downAt = pos;
   }
 

@@ -6,13 +6,13 @@ import { selectPlugins } from "./select/plugins.js";
 import { deletePlugins } from "./delete/plugins.js";
 import { resizePlugins } from "./resize/plugins.js";
 import { dropPlugins } from "./drop/plugins.js";
-import { canvasPlugins } from "./canvas/plugins.js";
+import { canvasPlugins } from "./canvas/index.js";
 import { propertiesPlugins } from "./properties/plugins.js";
 import { buildPlugins } from "./build/plugins.js";
 import { toolbarPlugins } from "./toolbar/plugins.js";
 import { keyboardPlugins } from "./keyboard/plugins.js";
 
-export type { CanvasDoc, CanvasShape } from "./canvas/types.js";
+export type { CanvasDoc, CanvasShape } from "./canvas/index.js";
 
 export const plugins = [
   ...canvasPlugins,

@@ -36,7 +36,17 @@ export const canvasPlugins = [
     icon: "Globe",
     supportedDatatypes: ["spatial-canvas"],
     async load() {
-      return (await import("./canvas.js")).default;
+      return (await import("./layout.js")).default;
+    },
+  },
+  {
+    type: "patchwork:tool" as const,
+    id: "spatial-canvas-view",
+    name: "Spatial Canvas View",
+    unlisted: true,
+    supportedDatatypes: ["spatial-canvas"],
+    async load() {
+      return (await import("./view.js")).default;
     },
   },
 ];

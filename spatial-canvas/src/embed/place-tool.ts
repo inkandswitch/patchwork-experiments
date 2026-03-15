@@ -35,9 +35,7 @@ export default function PlaceEmbedTool(
 
   // ---- helpers ----
 
-  const getCanvas = (e: Event) => getCanvas(e.target as Element);
-
-  function getLayer(): HTMLElement | null {
+function getLayer(): HTMLElement | null {
     return buttonEl.closest(".sc-container")?.querySelector<HTMLElement>(".sc-layer") ?? null;
   }
 
@@ -80,8 +78,9 @@ export default function PlaceEmbedTool(
 
   function onPointerDown(e: Event) {
     const pe = e as PointerEvent;
-    const pos = getCanvas(e)?.screenToPage(pe.clientX, pe.clientY);
-    if (!pos) return;
+    const canvas = getCanvas(e.target as Element);
+    if (!canvas) return;
+    const pos = canvas.screenToPage(pe.clientX, pe.clientY);
     origin = { x: pos.x, y: pos.y };
 
     preview = document.createElement("div");
@@ -102,7 +101,7 @@ export default function PlaceEmbedTool(
   function onPointerMove(e: Event) {
     if (!origin) return;
     const pe = e as PointerEvent;
-    const pos = getCanvas(e)?.screenToPage(pe.clientX, pe.clientY);
+    const pos = getCanvas(e.target as Element)?.screenToPage(pe.clientX, pe.clientY);
     if (!pos) return;
     updatePreview(origin.x, origin.y, pos.x, pos.y);
   }
@@ -110,7 +109,7 @@ export default function PlaceEmbedTool(
   function onPointerUp(e: Event) {
     if (!origin) return;
     const pe = e as PointerEvent;
-    const pos = getCanvas(e)?.screenToPage(pe.clientX, pe.clientY);
+    const pos = getCanvas(e.target as Element)?.screenToPage(pe.clientX, pe.clientY);
     if (!pos) return;
     const x = Math.min(origin.x, pos.x);
     const y = Math.min(origin.y, pos.y);

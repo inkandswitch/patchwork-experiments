@@ -169,8 +169,9 @@ export default function SelectTool(
   function onPointerDown(e: Event) {
     const pe = e as PointerEvent;
     const canvas = getCanvas(e.target as Element);
-    const hitId = canvas?.shapesAtPoint(pe.clientX, pe.clientY)[0]?.id ?? null;
-    const pos = canvas?.screenToPage(pe.clientX, pe.clientY);
+    if (!canvas) return;
+    const hitId = canvas.shapesAtPoint(pe.clientX, pe.clientY)[0]?.id ?? null;
+    const pos = canvas.screenToPage(pe.clientX, pe.clientY);
 
     if (hitId) {
       if (!isSelected(hitId)) {
