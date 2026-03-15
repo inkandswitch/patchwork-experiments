@@ -1,7 +1,8 @@
 import type { DocHandle } from "@automerge/automerge-repo";
 import type { CanvasDoc, Disposer } from "../canvas/types.js";
 import type { PatchworkViewElement } from "@inkandswitch/patchwork-elements";
-import type { SpatialCanvasHost } from "../canvas/spatial-canvas-element.js";
+import type { SpatialCanvas } from "../canvas/canvas.js";
+import { getCanvas } from "../canvas/canvas.js";
 import { createShape, nextZIndex, newId } from "../canvas/commands.js";
 import type { RectangleFill, RectangleShape } from "./rectangle.js";
 import { createElement, Square } from "lucide";
@@ -58,16 +59,9 @@ export default function PlaceRectangleTool(
     preview.style.height = `${h}px`;
   }
 
-  function getCanvas(e: Event) {
-    return (
-      (e.target as Element).closest<SpatialCanvasHost>('patchwork-view[tool-id="spatial-canvas"]')
-        ?.spatialCanvas ?? null
-    );
-  }
-
   function onPointerDown(e: Event) {
     const pe = e as PointerEvent;
-    const pos = getCanvas(e)?.screenToPage(pe.clientX, pe.clientY);
+    const pos = getCanvas(e.target as Element)?.screenToPage(pe.clientX, pe.clientY);
     if (!pos) return;
     const { x: canvasX, y: canvasY } = pos;
     const color = getColor();
@@ -94,7 +88,7 @@ export default function PlaceRectangleTool(
   function onPointerMove(e: Event) {
     if (!origin || !preview) return;
     const pe = e as PointerEvent;
-    const pos = getCanvas(e)?.screenToPage(pe.clientX, pe.clientY);
+    const pos = getCanvas(e.target as Element)?.screenToPage(pe.clientX, pe.clientY);
     if (!pos) return;
     updatePreview(origin.x, origin.y, pos.x, pos.y);
   }
@@ -102,7 +96,7 @@ export default function PlaceRectangleTool(
   function onPointerUp(e: Event) {
     if (!origin) return;
     const pe = e as PointerEvent;
-    const pos = getCanvas(e)?.screenToPage(pe.clientX, pe.clientY);
+    const pos = getCanvas(e.target as Element)?.screenToPage(pe.clientX, pe.clientY);
     if (!pos) return;
     const { x: canvasX, y: canvasY } = pos;
     const x = Math.min(origin.x, canvasX);

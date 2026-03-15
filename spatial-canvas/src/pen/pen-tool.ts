@@ -1,10 +1,10 @@
-import { getStroke } from "perfect-freehand";
 import type { DocHandle } from "@automerge/automerge-repo";
-import type { CanvasDoc, CanvasShape, Disposer } from "../canvas/types.js";
 import type { PatchworkViewElement } from "@inkandswitch/patchwork-elements";
-import type { SpatialCanvasHost } from "../canvas/spatial-canvas-element.js";
-import { createShape, nextZIndex, newId } from "../canvas/commands.js";
 import { createElement, Pen } from "lucide";
+import { getStroke } from "perfect-freehand";
+import { getCanvas } from "../canvas/canvas.js";
+import { createShape, newId, nextZIndex } from "../canvas/commands.js";
+import type { CanvasDoc, CanvasShape, Disposer } from "../canvas/types.js";
 
 // ============================================================================
 // Shape type
@@ -39,16 +39,9 @@ export function PenTool(handle: DocHandle<CanvasDoc>, buttonEl: PatchworkViewEle
 
   buttonEl.appendChild(createElement(Pen, { width: 22, height: 22, style: "pointer-events:none" }));
 
-  function getCanvas(e: Event) {
-    return (
-      (e.target as Element).closest<SpatialCanvasHost>('patchwork-view[tool-id="spatial-canvas"]')
-        ?.spatialCanvas ?? null
-    );
-  }
-
   function onPointerDown(e: Event) {
     const pe = e as PointerEvent;
-    const pos = getCanvas(e)?.screenToPage(pe.clientX, pe.clientY);
+    const pos = getCanvas(e.target as Element)?.screenToPage(pe.clientX, pe.clientY);
     if (!pos) return;
     points = [[pos.x, pos.y, 0.5]];
 
@@ -62,7 +55,7 @@ export function PenTool(handle: DocHandle<CanvasDoc>, buttonEl: PatchworkViewEle
   function onPointerMove(e: Event) {
     if (!previewPath) return;
     const pe = e as PointerEvent;
-    const pos = getCanvas(e)?.screenToPage(pe.clientX, pe.clientY);
+    const pos = getCanvas(e.target as Element)?.screenToPage(pe.clientX, pe.clientY);
     if (!pos) return;
     points.push([pos.x, pos.y, 0.5]);
     previewPath.setAttribute("d", computePath(points));
@@ -71,7 +64,7 @@ export function PenTool(handle: DocHandle<CanvasDoc>, buttonEl: PatchworkViewEle
   function onPointerUp(e: Event) {
     if (points.length === 0) return;
     const pe = e as PointerEvent;
-    const pos = getCanvas(e)?.screenToPage(pe.clientX, pe.clientY);
+    const pos = getCanvas(e.target as Element)?.screenToPage(pe.clientX, pe.clientY);
     if (pos) points.push([pos.x, pos.y, 0.5]);
 
     if (points.length > 1) {

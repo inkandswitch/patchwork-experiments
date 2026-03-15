@@ -1,506 +1,402 @@
 import type { DocHandle } from "@automerge/automerge-repo";
-import type { Camera, Rect, CanvasDoc, Disposer } from "./types.js";
+import type { Camera, Rect, CanvasDoc, Disposer, Vec2, FloatingPanel, Bar } from "./types.js";
 import type { PatchworkViewElement } from "@inkandswitch/patchwork-elements";
 import { updateCamera, zoomCamera } from "./camera.js";
-import { Inputs } from "./inputs.js";
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
-import { deleteShapes, duplicateShapes } from "./commands.js";
-
-import canvasCss from "./css/canvas.css?inline";
+import { ShapeRenderLayer } from "./layers/shapes-layer.js";
+import canvasCss from "./canvas.css?inline";
 
 /**
- * CanvasView — the core spatial canvas host.
- *
- * Responsibilities:
- *  - Build the DOM scaffold (container, canvas, layer, panel overlay)
- *  - Own the camera (wheel zoom + scroll pan)
- *  - Discover panel plugins from the patchwork registry (tag: spatial-canvas-panel)
- *    and mount them into the 3×3 grid overlay at positions read from doc.panels
- *  - Discover render layers from the registry (tag: spatial-canvas-layer)
- *    and mount each layer into the transform layer
- *  - Dispatch spatial-canvas:pointer* CustomEvents to the active tool's button
- *  - Listen for spatial-canvas:set-tool events and dispatch spatial-canvas:tool-changed
+ * A PatchworkViewElement augmented with the spatial canvas public API.
+ * Cast the root canvas patchwork-view to this type to access canvas methods.
  */
-export class CanvasView {
-  private container: HTMLElement;
-  private columnWrapper: HTMLElement;
-  private canvasWrapper: HTMLElement;
-  private canvasEl: HTMLElement;
-  private layer: HTMLElement;
+export type SpatialCanvas = PatchworkViewElement & {
+  screenToPage(screenX: number, screenY: number): Vec2;
+  pageToScreen(x: number, y: number): Vec2;
+  shapesAtPoint(screenX: number, screenY: number): { id: string }[];
+  shapesOverlapping(screenRect: Rect): { id: string }[];
+};
 
-  private camera: Camera = { x: 0, y: 0, zoom: 1 };
-  private screenBounds: Rect = { x: 0, y: 0, width: 0, height: 0 };
-  private activeTool: string = "";
-  private activePointerId: number | null = null;
-
-  private inputs = new Inputs();
-  private disposers: Disposer[] = [];
-
-  constructor(
-    private handle: DocHandle<CanvasDoc>,
-    mountPoint: PatchworkViewElement,
-  ) {
-    injectStyles();
-
-    // Build DOM scaffold:
-    //
-    //   .sc-container  (flex row)
-    //     .sc-bar--left / .sc-bar--right   ← left/right bars inserted here by mountLayout
-    //     .sc-column-wrapper  (flex column, flex:1)
-    //       .sc-bar--top / .sc-bar--bottom ← top/bottom bars inserted here by mountLayout
-    //       .sc-canvas-wrapper  (flex:1)
-    //         .sc-canvas
-    //         .sc-panel-overlay  ← floating panel grid
-    //
-    this.container = document.createElement("div");
-    this.container.className = "sc-container";
-
-    this.columnWrapper = document.createElement("div");
-    this.columnWrapper.className = "sc-column-wrapper";
-
-    this.canvasWrapper = document.createElement("div");
-    this.canvasWrapper.className = "sc-canvas-wrapper";
-
-    this.canvasEl = document.createElement("div");
-    this.canvasEl.className = "sc-canvas";
-
-    this.layer = document.createElement("div");
-    this.layer.className = "sc-layer";
-
-    this.canvasEl.appendChild(this.layer);
-    this.canvasWrapper.appendChild(this.canvasEl);
-    this.columnWrapper.appendChild(this.canvasWrapper);
-    this.container.appendChild(this.columnWrapper);
-    mountPoint.appendChild(this.container);
-
-    // Seed bounds immediately after mounting so the first coordinate
-    // transforms use real dimensions rather than {0,0,0,0}.
-    const initialRect = this.canvasEl.getBoundingClientRect();
-    this.inputs.updateBounds(initialRect);
-    this.screenBounds = { x: 0, y: 0, width: initialRect.width, height: initialRect.height };
-
-    // Initialize camera (writes CSS variables to DOM)
-    this.camera = updateCamera({ x: 0, y: 0, zoom: 1 }, this.layer);
-
-    // Mount layers and layout entries from the patchwork registry
-    this.mountLayers();
-    this.mountLayout();
-
-    // ResizeObserver — keeps coordinate transforms correct when the canvas resizes
-    const ro = new ResizeObserver(() => {
-      const rect = this.canvasEl.getBoundingClientRect();
-      this.inputs.updateBounds(rect);
-      this.screenBounds = { x: 0, y: 0, width: rect.width, height: rect.height };
-    });
-    ro.observe(this.canvasEl);
-    this.disposers.push(() => ro.disconnect());
-
-    this.bindEvents();
-
-    const contactUrl = (window as any).accountDocHandle?.doc()?.contactUrl ?? "local";
-    const onDocChange = ({ doc }: { doc: CanvasDoc }) => {
-      const tool = doc.stateByUser?.[contactUrl]?.selectedTool;
-      if (tool && tool !== this.activeTool) this.setActiveTool(tool);
-    };
-    this.handle.on("change", onDocChange);
-    this.disposers.push(() => this.handle.off("change", onDocChange));
-
-    const initialTool =
-      this.handle.doc()?.stateByUser?.[contactUrl]?.selectedTool ?? "spatial-canvas-tool-select";
-    this.setActiveTool(initialTool);
+/** Walk up the DOM to find the nearest SpatialCanvasHost by checking .toolId property. */
+export function getCanvas(el: Element | null): SpatialCanvas | null {
+  let node = el?.parentElement ?? null;
+  while (node) {
+    if ((node as any).toolId === "spatial-canvas") return node as unknown as SpatialCanvas;
+    node = node.parentElement;
   }
+  return null;
+}
+
+/**
+ * SpatialCanvas — the core spatial canvas host.
+ *
+ * A plain function that mounts its DOM into a PatchworkViewElement and attaches
+ * the public API methods directly onto that element so nested tool views can
+ * reach them via:
+ *
+ *   const host = (e.target as Element)
+ *     .closest('patchwork-view[data-spatial-canvas]') as SpatialCanvasHost
+ *   host.shapesAtPoint(e.clientX, e.clientY)
+ */
+export default function SpatialCanvas(
+  handle: DocHandle<CanvasDoc>,
+  element: PatchworkViewElement,
+): Disposer {
+  injectStyles();
+
+  const canvas = element as SpatialCanvas;
+
+  const container = document.createElement("div");
+  container.className = "sc-container";
+
+  const columnWrapper = document.createElement("div");
+  columnWrapper.className = "sc-column-wrapper";
+
+  const canvasWrapper = document.createElement("div");
+  canvasWrapper.className = "sc-canvas-wrapper";
+
+  const canvasEl = document.createElement("div");
+  canvasEl.className = "sc-canvas";
+
+  const layer = document.createElement("div");
+  layer.className = "sc-layer";
+
+  canvasEl.appendChild(layer);
+  canvasWrapper.appendChild(canvasEl);
+  columnWrapper.appendChild(canvasWrapper);
+  container.appendChild(columnWrapper);
+  element.appendChild(container);
+
+  let camera: Camera = updateCamera({ x: 0, y: 0, zoom: 1 }, layer);
+  let screenBounds: { width: number; height: number } = { width: 0, height: 0 };
+
+  const initialRect = canvasEl.getBoundingClientRect();
+  screenBounds = { width: initialRect.width, height: initialRect.height };
+
+  mountLayers(handle, layer);
+  mountLayout(handle, container, columnWrapper, canvasWrapper);
+
+  const shapeLayerEl = document.createElement("div");
+  shapeLayerEl.style.cssText = "position:absolute;inset:0;";
+  layer.appendChild(shapeLayerEl);
+  const shapeRenderLayer = new ShapeRenderLayer(handle, shapeLayerEl, (element as any).repo);
+
+  const ro = new ResizeObserver(() => {
+    const rect = canvasEl.getBoundingClientRect();
+    screenBounds = { width: rect.width, height: rect.height };
+  });
+  ro.observe(canvasEl);
+
+  // Sync active tool from doc changes (visual state only)
+  let activeTool = "";
+  const applyActiveTool = (toolId: string) => {
+    activeTool = toolId;
+    canvasEl.dataset.tool = toolId;
+  };
+
+  const contactUrl = (window as any).accountDocHandle?.doc()?.contactUrl ?? "local";
+  const onDocChange = ({ doc }: { doc: CanvasDoc }) => {
+    const tool = doc.stateByUser?.[contactUrl]?.selectedTool;
+    if (tool && tool !== activeTool) applyActiveTool(tool);
+  };
+  handle.on("change", onDocChange);
+
+  const initialTool =
+    handle.doc()?.stateByUser?.[contactUrl]?.selectedTool ?? "spatial-canvas-tool-select";
+  applyActiveTool(initialTool);
+
+  // ---------------------------------------------------------------------------
+  // Public API — attached directly onto the element
+  // ---------------------------------------------------------------------------
+
+  canvas.screenToPage = (screenX: number, screenY: number): Vec2 => {
+    const rect = canvasEl.getBoundingClientRect();
+    return {
+      x: (screenX - rect.left) / camera.zoom - camera.x,
+      y: (screenY - rect.top) / camera.zoom - camera.y,
+    };
+  };
+
+  canvas.pageToScreen = (x: number, y: number): Vec2 => {
+    const rect = canvasEl.getBoundingClientRect();
+    return {
+      x: (x + camera.x) * camera.zoom + rect.left,
+      y: (y + camera.y) * camera.zoom + rect.top,
+    };
+  };
+
+  canvas.shapesAtPoint = (screenX: number, screenY: number) =>
+    shapeRenderLayer.shapesAtPoint(screenX, screenY) ?? [];
+
+  canvas.shapesOverlapping = (screenRect: Rect) =>
+    shapeRenderLayer.shapesOverlapping(screenRect) ?? [];
+
+  // ---------------------------------------------------------------------------
+  // Pointer event relay
+  // ---------------------------------------------------------------------------
+
+  let activePointerId: number | null = null;
+
+  const relayPointerEvent = (type: string, e: PointerEvent) => {
+    const makeClone = () =>
+      new PointerEvent(type, {
+        bubbles: true,
+        cancelable: e.cancelable,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        movementX: e.movementX,
+        movementY: e.movementY,
+        pointerId: e.pointerId,
+        pointerType: e.pointerType,
+        pressure: e.pressure,
+        button: e.button,
+        buttons: e.buttons,
+        shiftKey: e.shiftKey,
+        metaKey: e.metaKey,
+        altKey: e.altKey,
+        ctrlKey: e.ctrlKey,
+      });
+
+    const activeBtn = container.querySelector<HTMLElement>(
+      `patchwork-view[tool-id="${activeTool}"]`,
+    );
+    if (activeBtn) activeBtn.dispatchEvent(makeClone());
+
+    for (const panel of orderedPanels(container)) {
+      const clone = makeClone();
+
+      let stopped = false;
+      const origStop = clone.stopPropagation.bind(clone);
+      clone.stopPropagation = () => {
+        stopped = true;
+        origStop();
+      };
+      const origStopImmediate = clone.stopImmediatePropagation.bind(clone);
+      clone.stopImmediatePropagation = () => {
+        stopped = true;
+        origStopImmediate();
+      };
+
+      panel.dispatchEvent(clone);
+      if (stopped) break;
+    }
+  };
 
   // ---------------------------------------------------------------------------
   // Event binding
   // ---------------------------------------------------------------------------
 
-  private bindEvents() {
-    const canvas = this.canvasEl;
+  const onPointerDown = (e: PointerEvent) => {
+    if (e.button !== 0) return;
+    if (isTextUnderPointer(e.clientX, e.clientY, e.target as Element)) return;
+    canvasEl.setPointerCapture(e.pointerId);
+    activePointerId = e.pointerId;
+    relayPointerEvent("pointerdown", e);
+  };
 
-    const onPointerDown = (e: PointerEvent) => {
-      if (e.button !== 0) return;
-      // If the pointer landed on actual text let the browser handle it natively
-      // (text cursor / selection) instead of starting a canvas drag.
-      if (isTextUnderPointer(e.clientX, e.clientY, e.target as Element)) return;
-      canvas.setPointerCapture(e.pointerId);
-      this.activePointerId = e.pointerId;
-      this.dispatchToActiveTool("spatial-canvas:pointerdown", e);
-    };
+  const onPointerMove = (e: PointerEvent) => {
+    if (activePointerId !== null && e.pointerId !== activePointerId) return;
+    if (activePointerId !== null) relayPointerEvent("pointermove", e);
+  };
 
-    const onPointerMove = (e: PointerEvent) => {
-      if (this.activePointerId !== null && e.pointerId !== this.activePointerId) return;
-      if (this.activePointerId !== null) {
-        this.dispatchToActiveTool("spatial-canvas:pointermove", e);
-      }
-    };
+  const onPointerUp = (e: PointerEvent) => {
+    if (e.pointerId !== activePointerId) return;
+    activePointerId = null;
+    relayPointerEvent("pointerup", e);
+  };
 
-    const onPointerUp = (e: PointerEvent) => {
-      if (e.pointerId !== this.activePointerId) return;
-      this.activePointerId = null;
-      this.dispatchToActiveTool("spatial-canvas:pointerup", e);
-    };
+  const onPointerCancel = (e: PointerEvent) => {
+    if (e.pointerId !== activePointerId) return;
+    activePointerId = null;
+    relayPointerEvent("pointercancel", e);
+  };
 
-    const onPointerCancel = (e: PointerEvent) => {
-      if (e.pointerId !== this.activePointerId) return;
-      this.activePointerId = null;
-      const btn = this.container.querySelector<HTMLElement>(
-        `patchwork-view[tool-id="${this.activeTool}"]`,
-      );
-      btn?.dispatchEvent(new CustomEvent("spatial-canvas:cancel", { bubbles: false }));
-    };
+  const onWheel = (e: WheelEvent) => {
+    e.preventDefault();
+    const [rawDx, rawDy] = normalizeDelta(e);
+    if (rawDx === 0 && rawDy === 0) return;
 
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const [rawDx, rawDy] = normalizeDelta(e);
-      if (rawDx === 0 && rawDy === 0) return;
+    const rect = canvasEl.getBoundingClientRect();
 
-      if ((e.ctrlKey || e.altKey) && e.buttons === 0) {
-        // Zoom — ctrl+scroll or trackpad pinch-to-zoom (ctrlKey=true)
-        const rect = this.inputs.bounds;
-        const next = zoomCamera(this.camera, e.clientX - rect.left, e.clientY - rect.top, rawDy);
-        this.camera = updateCamera(next, this.layer);
-      } else {
-        // Pan — trackpads produce X+Y deltas, mice produce Y only
-        const dx = e.shiftKey ? rawDy : rawDx;
-        const dy = e.shiftKey ? 0 : rawDy;
-        const next: Camera = {
-          ...this.camera,
-          x: this.camera.x - dx / this.camera.zoom,
-          y: this.camera.y - dy / this.camera.zoom,
-        };
-        this.camera = updateCamera(next, this.layer);
-      }
-    };
-
-    // iOS Safari: prevent proprietary gesture events from triggering native zoom
-    const preventGesture = (e: Event) => e.preventDefault();
-
-    // iOS edge-swipe navigation prevention
-    const preventEdgeSwipe = (e: TouchEvent) => {
-      const x = e.touches[0].pageX;
-      const r = e.touches[0].radiusX || 0;
-      if (x - r < 10 || x + r > this.screenBounds.width - 10) {
-        e.preventDefault();
-      }
-    };
-
-    // Tool selection via custom events (panel plugins dispatch these).
-    // Events from the toolbar are dispatched with bubbles:true so they also
-    // propagate from a nested sketch canvas up to the outer canvas container.
-    const onSetTool = (e: Event) => {
-      this.setActiveTool((e as CustomEvent<{ toolId: string }>).detail.toolId);
-    };
-
-    canvas.addEventListener("pointerdown", onPointerDown);
-    canvas.addEventListener("pointermove", onPointerMove);
-    canvas.addEventListener("pointerup", onPointerUp);
-    canvas.addEventListener("pointercancel", onPointerCancel);
-    canvas.addEventListener("wheel", onWheel as EventListener, { passive: false });
-    // @ts-ignore — gesturestart/gesturechange/gestureend are WebKit-proprietary
-    document.addEventListener("gesturestart", preventGesture);
-    // @ts-ignore
-    document.addEventListener("gesturechange", preventGesture);
-    // @ts-ignore
-    canvas.addEventListener("gestureend", preventGesture);
-    canvas.addEventListener("touchstart", preventEdgeSwipe, { passive: false });
-    this.container.addEventListener("spatial-canvas:set-tool", onSetTool);
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      // Ignore shortcuts when focus is inside a text input / contenteditable
-      const target = e.target as HTMLElement;
-      if (target.isContentEditable || target.tagName === "INPUT" || target.tagName === "TEXTAREA")
-        return;
-
-      const isMod = e.metaKey || e.ctrlKey;
-
-      if (e.key === "Backspace" && !isMod) {
-        const doc = this.handle.doc();
-        if (!doc) return;
-        const contactUrl = (window as any).accountDocHandle?.doc()?.contactUrl ?? "local";
-        const selection = doc.stateByUser?.[contactUrl]?.selection ?? {};
-        const ids = Object.keys(selection);
-        if (ids.length === 0) return;
-        e.preventDefault();
-        deleteShapes(this.handle, ids);
-        // Clear selection
-        this.handle.change((d) => {
-          if (d.stateByUser?.[contactUrl]) d.stateByUser[contactUrl].selection = {};
-        });
-      }
-
-      // TODO: find a proper place for tool shortcuts
-      const toolKeys: Record<string, string> = {
-        v: "spatial-canvas-tool-select",
-        r: "spatial-canvas-tool-place-rectangle",
-        t: "spatial-canvas-tool-text",
-        p: "spatial-canvas-tool-pen",
-        e: "spatial-canvas-tool-embed",
+    if ((e.ctrlKey || e.altKey) && e.buttons === 0) {
+      const next = zoomCamera(camera, e.clientX - rect.left, e.clientY - rect.top, rawDy);
+      camera = updateCamera(next, layer);
+    } else {
+      const dx = e.shiftKey ? rawDy : rawDx;
+      const dy = e.shiftKey ? 0 : rawDy;
+      const next: Camera = {
+        ...camera,
+        x: camera.x - dx / camera.zoom,
+        y: camera.y - dy / camera.zoom,
       };
-      if (!isMod && e.key in toolKeys) {
-        e.preventDefault();
-        this.setActiveTool(toolKeys[e.key]);
-      }
-
-      if (e.key === "d" && isMod) {
-        const doc = this.handle.doc();
-        if (!doc) return;
-        const contactUrl = (window as any).accountDocHandle?.doc()?.contactUrl ?? "local";
-        const selection = doc.stateByUser?.[contactUrl]?.selection ?? {};
-        const ids = Object.keys(selection);
-        if (ids.length === 0) return;
-        e.preventDefault();
-        // Offset: if any selected shape has a width, shift right by that width + gap,
-        // otherwise shift diagonally by 10px.
-        const shapes = ids.map((id) => doc.shapes[id]).filter(Boolean);
-        const hasWidth = shapes.some((s) => "width" in s && (s as any).width > 0);
-        const dx = hasWidth ? Math.max(...shapes.map((s) => (s as any).width ?? 0)) + 16 : 10;
-        const dy = hasWidth ? 0 : 10;
-        const newIds = duplicateShapes(this.handle, ids, dx, dy);
-        // Select the duplicates
-        this.handle.change((d) => {
-          if (!d.stateByUser) d.stateByUser = {};
-          if (!d.stateByUser[contactUrl])
-            d.stateByUser[contactUrl] = { selection: {}, color: "#1a1a1a" };
-          const sel: Record<string, true> = {};
-          for (const id of newIds) sel[id] = true;
-          d.stateByUser[contactUrl].selection = sel;
-        });
-      }
-    };
-
-    document.addEventListener("keydown", onKeyDown);
-
-    this.disposers.push(() => {
-      canvas.removeEventListener("pointerdown", onPointerDown);
-      canvas.removeEventListener("pointermove", onPointerMove);
-      canvas.removeEventListener("pointerup", onPointerUp);
-      canvas.removeEventListener("pointercancel", onPointerCancel);
-      canvas.removeEventListener("wheel", onWheel as EventListener);
-      // @ts-ignore
-      document.removeEventListener("gesturestart", preventGesture);
-      // @ts-ignore
-      document.removeEventListener("gesturechange", preventGesture);
-      // @ts-ignore
-      canvas.removeEventListener("gestureend", preventGesture);
-      canvas.removeEventListener("touchstart", preventEdgeSwipe);
-      this.container.removeEventListener("spatial-canvas:set-tool", onSetTool);
-      document.removeEventListener("keydown", onKeyDown);
-    });
-  }
-
-  // ---------------------------------------------------------------------------
-  // Active tool dispatch
-  // ---------------------------------------------------------------------------
-
-  private dispatchToActiveTool(type: string, e: PointerEvent) {
-    const btn = this.container.querySelector<HTMLElement>(
-      `patchwork-view[tool-id="${this.activeTool}"]`,
-    );
-    if (!btn) return;
-    const page = this.inputs.screenToPage(e.clientX, e.clientY, this.camera);
-    btn.dispatchEvent(
-      new CustomEvent(type, {
-        detail: {
-          canvasX: page.x,
-          canvasY: page.y,
-          screenX: e.clientX,
-          screenY: e.clientY,
-          shiftKey: e.shiftKey,
-          metaKey: e.metaKey,
-          altKey: e.altKey,
-        },
-        bubbles: false,
-      }),
-    );
-  }
-
-  setActiveTool(tool: string) {
-    const oldBtn = this.container.querySelector<HTMLElement>(
-      `patchwork-view[tool-id="${this.activeTool}"]`,
-    );
-    oldBtn?.dispatchEvent(new CustomEvent("spatial-canvas:cancel", { bubbles: false }));
-    this.activeTool = tool;
-    this.canvasEl.dataset.tool = tool;
-    const contactUrl = (window as any).accountDocHandle?.doc()?.contactUrl ?? "local";
-    const current = this.handle.doc()?.stateByUser?.[contactUrl]?.selectedTool;
-    if (current !== tool) {
-      this.handle.change((d) => {
-        if (!d.stateByUser) d.stateByUser = {};
-        if (!d.stateByUser[contactUrl])
-          d.stateByUser[contactUrl] = { selection: {}, color: "#1a1a1a" };
-        d.stateByUser[contactUrl].selectedTool = tool;
-      });
+      camera = updateCamera(next, layer);
     }
-    // Notify all toolbar panels so they can update active button state
-    this.container.dispatchEvent(
-      new CustomEvent("spatial-canvas:tool-changed", {
-        detail: { toolId: tool },
-        bubbles: false,
-      }),
-    );
-  }
+    shapeRenderLayer.notifyCameraChanged();
+  };
 
-  // ---------------------------------------------------------------------------
-  // Layers — discovered from the patchwork registry by tag
-  // ---------------------------------------------------------------------------
+  const preventGesture = (e: Event) => e.preventDefault();
 
-  private mountLayers() {
-    const registry = getRegistry("patchwork:tool");
-    const layerDescs = registry.filter(
-      (p) => !!(p.tags as string[] | undefined)?.includes("spatial-canvas-layer"),
-    );
+  const preventEdgeSwipe = (e: TouchEvent) => {
+    const x = e.touches[0].pageX;
+    const r = e.touches[0].radiusX || 0;
+    if (x - r < 10 || x + r > screenBounds.width - 10) e.preventDefault();
+  };
 
-    for (const desc of layerDescs) {
-      // Use patchwork-view so the framework provides a proper PatchworkViewElement
-      // (with repo set, handle wired up, etc.) — the same way tool buttons and panels
-      // are mounted. No z-index: a z-index:auto element does NOT form a new stacking
-      // context, so shapes from different layers interleave via their own zIndex values.
-      const view = document.createElement("patchwork-view");
-      view.setAttribute("doc-url", this.handle.url);
-      view.setAttribute("tool-id", desc.id);
-      view.style.cssText = "position:absolute;inset:0;pointer-events:none;";
-      this.layer.appendChild(view);
-    }
-  }
+  canvasEl.addEventListener("pointerdown", onPointerDown);
+  canvasEl.addEventListener("pointermove", onPointerMove);
+  canvasEl.addEventListener("pointerup", onPointerUp);
+  canvasEl.addEventListener("pointercancel", onPointerCancel);
+  canvasEl.addEventListener("wheel", onWheel as EventListener, { passive: false });
+  // @ts-ignore — gesturestart/gesturechange/gestureend are WebKit-proprietary
+  document.addEventListener("gesturestart", preventGesture);
+  // @ts-ignore
+  document.addEventListener("gesturechange", preventGesture);
+  // @ts-ignore
+  canvasEl.addEventListener("gestureend", preventGesture);
+  canvasEl.addEventListener("touchstart", preventEdgeSwipe, { passive: false });
 
-  // ---------------------------------------------------------------------------
-  // Layout — floating panels (3×3 grid) + bars (push the canvas from any side)
-  // ---------------------------------------------------------------------------
-
-  private mountLayout() {
-    const doc = this.handle.doc();
-    if (!doc?.layout) return;
-
-    // ── Floating panels → 3×3 grid overlay inside .sc-canvas-wrapper ────────
-
-    const panelEntries = Object.entries(doc.layout).filter(([, e]) => e.kind === "panel") as [
-      string,
-      import("./types.js").FloatingPanel,
-    ][];
-
-    if (panelEntries.length > 0) {
-      const overlay = document.createElement("div");
-      overlay.className = "sc-panel-overlay";
-      this.canvasWrapper.appendChild(overlay);
-
-      function toAlignClass(align: string): "start" | "center" | "end" {
-        if (align === "right" || align === "bottom") return "end";
-        if (align === "center") return "center";
-        return "start";
-      }
-
-      type Side = "top" | "bottom" | "left" | "right";
-      type Align = "start" | "center" | "end";
-      const grouped = new Map<Side, Map<Align, string[]>>();
-
-      for (const [toolId, entry] of panelEntries) {
-        const [side, align] = entry.position;
-        const normAlign = toAlignClass(align);
-        if (!grouped.has(side)) grouped.set(side, new Map());
-        const sideMap = grouped.get(side)!;
-        if (!sideMap.has(normAlign)) sideMap.set(normAlign, []);
-        sideMap.get(normAlign)!.push(toolId);
-      }
-
-      for (const [side, alignMap] of grouped) {
-        const sideEl = document.createElement("div");
-        sideEl.className = `sc-side sc-side--${side}`;
-        overlay.appendChild(sideEl);
-
-        for (const [align, toolIds] of alignMap) {
-          const groupEl = document.createElement("div");
-          groupEl.className = `sc-side-group sc-side-group--${align}`;
-          sideEl.appendChild(groupEl);
-
-          for (const toolId of toolIds) {
-            const view = document.createElement("patchwork-view");
-            view.setAttribute("doc-url", this.handle.url);
-            view.setAttribute("tool-id", toolId);
-            view.className = "sc-panel";
-            groupEl.appendChild(view);
-          }
-        }
-      }
-    }
-
-    // ── Bars → flex siblings that push the canvas ────────────────────────────
-    //
-    // Left/right bars: direct children of .sc-container (flex row).
-    //   width:% resolves against .sc-container's definite width.
-    // Top/bottom bars: direct children of .sc-column-wrapper (flex column).
-    //   height:% resolves against .sc-column-wrapper's definite height.
-    //
-    // Bars on each side are inserted in DOM order so that:
-    //   left bars → before .sc-column-wrapper
-    //   right bars → after .sc-column-wrapper
-    //   top bars → before .sc-canvas-wrapper
-    //   bottom bars → after .sc-canvas-wrapper
-
-    const barEntries = Object.entries(doc.layout).filter(([, e]) => e.kind === "bar") as [
-      string,
-      import("./types.js").Bar,
-    ][];
-
-    for (const [toolId, entry] of barEntries) {
-      const view = document.createElement("patchwork-view");
-      view.setAttribute("doc-url", this.handle.url);
-      view.setAttribute("tool-id", toolId);
-      view.className = `sc-bar sc-bar--${entry.side}`;
-
-      if (entry.side === "left") {
-        this.container.insertBefore(view, this.columnWrapper);
-      } else if (entry.side === "right") {
-        this.container.appendChild(view);
-      } else if (entry.side === "top") {
-        this.columnWrapper.insertBefore(view, this.canvasWrapper);
-      } else {
-        // bottom
-        this.columnWrapper.appendChild(view);
-      }
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Cleanup
-  // ---------------------------------------------------------------------------
-
-  dispose() {
-    for (const d of this.disposers) d();
-    this.container.remove();
-  }
+  return () => {
+    handle.off("change", onDocChange);
+    ro.disconnect();
+    shapeRenderLayer.dispose();
+    canvasEl.removeEventListener("pointerdown", onPointerDown);
+    canvasEl.removeEventListener("pointermove", onPointerMove);
+    canvasEl.removeEventListener("pointerup", onPointerUp);
+    canvasEl.removeEventListener("pointercancel", onPointerCancel);
+    canvasEl.removeEventListener("wheel", onWheel as EventListener);
+    // @ts-ignore
+    document.removeEventListener("gesturestart", preventGesture);
+    // @ts-ignore
+    document.removeEventListener("gesturechange", preventGesture);
+    // @ts-ignore
+    canvasEl.removeEventListener("gestureend", preventGesture);
+    canvasEl.removeEventListener("touchstart", preventEdgeSwipe);
+    delete (canvas as any).screenToPage;
+    delete (canvas as any).pageToScreen;
+    delete (canvas as any).shapesAtPoint;
+    delete (canvas as any).shapesOverlapping;
+    delete (canvas as any).relayKeyboardEvent;
+    container.remove();
+  };
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Normalize WheelEvent delta to pixels regardless of deltaMode.
- * deltaMode 0 = pixels (pass through), 1 = lines (~17px), 2 = pages (~400px).
- */
-function normalizeDelta(e: WheelEvent): [number, number] {
-  const factor = e.deltaMode === 1 ? 17 : e.deltaMode === 2 ? 400 : 1;
-  return [e.deltaX * factor, e.deltaY * factor];
+function orderedPanels(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>(".sc-panel, .sc-bar"));
 }
 
-/**
- * Returns true only when the pointer is directly over a rendered text glyph
- * inside an editable context (contenteditable, textarea, input).
- *
- * caretRangeFromPoint always snaps to the nearest character, so we must also
- * verify the click lands inside the character's actual bounding rect, not just
- * nearby empty space. We additionally gate on "inside an editable element" so
- * non-editable text on shapes is never intercepted.
- */
-function isTextUnderPointer(x: number, y: number, target: Element | null): boolean {
-  // textarea / input are native widgets — any click inside them should pass through
+function mountLayers(handle: DocHandle<CanvasDoc>, layer: HTMLElement) {
+  const registry = getRegistry("patchwork:tool");
+  const layerDescs = registry.filter(
+    (p) => !!(p.tags as string[] | undefined)?.includes("spatial-canvas-layer"),
+  );
+
+  for (const desc of layerDescs) {
+    const view = document.createElement("patchwork-view");
+    view.setAttribute("doc-url", handle.url);
+    view.setAttribute("tool-id", desc.id);
+    view.style.cssText = "position:absolute;inset:0;pointer-events:none;";
+    layer.appendChild(view);
+  }
+}
+
+function mountLayout(
+  handle: DocHandle<CanvasDoc>,
+  container: HTMLElement,
+  columnWrapper: HTMLElement,
+  canvasWrapper: HTMLElement,
+) {
+  const doc = handle.doc();
+  if (!doc?.layout) return;
+
+  const panelEntries = Object.entries(doc.layout).filter(([, e]) => e.kind === "panel") as [
+    string,
+    FloatingPanel,
+  ][];
+
+  if (panelEntries.length > 0) {
+    const overlay = document.createElement("div");
+    overlay.className = "sc-panel-overlay";
+    canvasWrapper.appendChild(overlay);
+
+    type Side = "top" | "bottom" | "left" | "right";
+    type Align = "start" | "center" | "end";
+    const grouped = new Map<Side, Map<Align, string[]>>();
+
+    for (const [toolId, entry] of panelEntries) {
+      const [side, align] = entry.position;
+      const normAlign = toAlignClass(align);
+      if (!grouped.has(side)) grouped.set(side, new Map());
+      const sideMap = grouped.get(side)!;
+      if (!sideMap.has(normAlign)) sideMap.set(normAlign, []);
+      sideMap.get(normAlign)!.push(toolId);
+    }
+
+    for (const [side, alignMap] of grouped) {
+      const sideEl = document.createElement("div");
+      sideEl.className = `sc-side sc-side--${side}`;
+      overlay.appendChild(sideEl);
+
+      for (const [align, toolIds] of alignMap) {
+        const groupEl = document.createElement("div");
+        groupEl.className = `sc-side-group sc-side-group--${align}`;
+        sideEl.appendChild(groupEl);
+
+        for (const toolId of toolIds) {
+          const view = document.createElement("patchwork-view");
+          view.setAttribute("doc-url", handle.url);
+          view.setAttribute("tool-id", toolId);
+          view.className = "sc-panel";
+          groupEl.appendChild(view);
+        }
+      }
+    }
+  }
+
+  const barEntries = Object.entries(doc.layout).filter(([, e]) => e.kind === "bar") as [
+    string,
+    Bar,
+  ][];
+
+  for (const [toolId, entry] of barEntries) {
+    const view = document.createElement("patchwork-view");
+    view.setAttribute("doc-url", handle.url);
+    view.setAttribute("tool-id", toolId);
+    view.className = `sc-bar sc-bar--${entry.side}`;
+
+    if (entry.side === "left") {
+      container.insertBefore(view, columnWrapper);
+    } else if (entry.side === "right") {
+      container.appendChild(view);
+    } else if (entry.side === "top") {
+      columnWrapper.insertBefore(view, canvasWrapper);
+    } else {
+      columnWrapper.appendChild(view);
+    }
+  }
+}
+
+const toAlignClass = (align: string): "start" | "center" | "end" => {
+  if (align === "right" || align === "bottom") return "end";
+  if (align === "center") return "center";
+  return "start";
+};
+
+const normalizeDelta = (e: WheelEvent): [number, number] => {
+  const factor = e.deltaMode === 1 ? 17 : e.deltaMode === 2 ? 400 : 1;
+  return [e.deltaX * factor, e.deltaY * factor];
+};
+
+const isTextUnderPointer = (x: number, y: number, target: Element | null): boolean => {
   let el: Element | null = target;
   while (el && !el.classList.contains("sc-canvas")) {
     if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") return true;
     el = el.parentElement;
   }
 
-  // Find the text node + offset at the pointer position
   let textNode: Text | null = null;
   let charOffset = 0;
 
@@ -520,7 +416,6 @@ function isTextUnderPointer(x: number, y: number, target: Element | null): boole
 
   if (!textNode) return false;
 
-  // Only intercept when inside a contenteditable element
   let node: Element | null = textNode.parentElement;
   let insideEditable = false;
   while (node && !node.classList.contains("sc-canvas")) {
@@ -532,7 +427,6 @@ function isTextUnderPointer(x: number, y: number, target: Element | null): boole
   }
   if (!insideEditable) return false;
 
-  // Verify the click actually lands on the glyph's rect, not snapped empty space
   try {
     const charRange = document.createRange();
     charRange.setStart(textNode, charOffset);
@@ -549,18 +443,14 @@ function isTextUnderPointer(x: number, y: number, target: Element | null): boole
   } catch {
     return false;
   }
-}
-
-// ---------------------------------------------------------------------------
-// Style injection (once per document)
-// ---------------------------------------------------------------------------
+};
 
 let stylesInjected = false;
 
-function injectStyles() {
+const injectStyles = () => {
   if (stylesInjected) return;
   stylesInjected = true;
   const style = document.createElement("style");
   style.textContent = canvasCss;
   document.head.appendChild(style);
-}
+};

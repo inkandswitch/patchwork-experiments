@@ -7,7 +7,8 @@ import {
   type LoadedDatatype,
 } from "@inkandswitch/patchwork-plugins";
 import type { PatchworkViewElement } from "@inkandswitch/patchwork-elements";
-import type { SpatialCanvasHost } from "../canvas/spatial-canvas-element.js";
+import type { SpatialCanvas } from "../canvas/canvas.js";
+import { getCanvas } from "../canvas/canvas.js";
 import { createShape, patchShape, newId, nextZIndex } from "../canvas/commands.js";
 import { createElement, Link } from "lucide";
 import type { EmbedShape } from "./types.js";
@@ -34,9 +35,7 @@ export default function PlaceEmbedTool(
 
   // ---- helpers ----
 
-  const getCanvas = (e: Event) =>
-    (e.target as Element).closest<SpatialCanvasHost>('patchwork-view[tool-id="spatial-canvas"]')
-      ?.spatialCanvas ?? null;
+  const getCanvas = (e: Event) => getCanvas(e.target as Element);
 
   function getLayer(): HTMLElement | null {
     return buttonEl.closest(".sc-container")?.querySelector<HTMLElement>(".sc-layer") ?? null;

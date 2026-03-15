@@ -1,7 +1,8 @@
 import type { DocHandle } from "@automerge/automerge-repo";
 import type { CanvasDoc, Disposer } from "../canvas/types.js";
 import type { PatchworkViewElement } from "@inkandswitch/patchwork-elements";
-import type { SpatialCanvasHost } from "../canvas/spatial-canvas-element.js";
+import type { SpatialCanvas } from "../canvas/canvas.js";
+import { getCanvas } from "../canvas/canvas.js";
 import { patchShape } from "../canvas/commands.js";
 
 const MIN_SIZE = 10;
@@ -109,9 +110,7 @@ export default function ResizeLayer(
 
   function onPointerMove(e: PointerEvent) {
     if (!drag || e.pointerId !== (drag as any).pointerId) return;
-    const canvas = drag.handleEl.closest<SpatialCanvasHost>(
-      'patchwork-view[tool-id="spatial-canvas"]',
-    )?.spatialCanvas;
+    const canvas = getCanvas(drag.handleEl);
     if (!canvas) return;
     const pos = canvas.screenToPage(e.clientX, e.clientY);
     const dx = pos.x - drag.originCanvas.x;
@@ -191,9 +190,7 @@ export default function ResizeLayer(
         const shape = doc.shapes[shapeId] as any;
         if (!shape) return;
 
-        const canvas = h.closest<SpatialCanvasHost>(
-          'patchwork-view[tool-id="spatial-canvas"]',
-        )?.spatialCanvas;
+        const canvas = getCanvas(h);
         if (!canvas) return;
         const originCanvas = canvas.screenToPage(e.clientX, e.clientY);
 

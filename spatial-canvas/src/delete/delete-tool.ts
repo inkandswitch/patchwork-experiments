@@ -1,7 +1,8 @@
 import type { DocHandle } from "@automerge/automerge-repo";
 import type { CanvasDoc, Disposer } from "../canvas/types.js";
 import type { PatchworkViewElement } from "@inkandswitch/patchwork-elements";
-import type { SpatialCanvasElement, SpatialCanvasHost } from "../canvas/spatial-canvas-element.js";
+import type { SpatialCanvas } from "../canvas/canvas.js";
+import { getCanvas } from "../canvas/canvas.js";
 import { deleteShapes } from "../canvas/commands.js";
 import { createElement, Eraser } from "lucide";
 
@@ -85,17 +86,13 @@ const DeleteTool = (handle: DocHandle<CanvasDoc>, buttonEl: PatchworkViewElement
   const getLayer = (): HTMLElement | null =>
     buttonEl.closest(".sc-container")?.querySelector<HTMLElement>(".sc-layer") ?? null;
 
-  const getCanvas = (e: Event): SpatialCanvasElement | null =>
-    (e.target as Element).closest<SpatialCanvasHost>('patchwork-view[tool-id="spatial-canvas"]')
-      ?.spatialCanvas ?? null;
-
-  const tryDelete = (canvas: SpatialCanvasElement, sx: number, sy: number) => {
+  const tryDelete = (canvas: SpatialCanvas, sx: number, sy: number) => {
     const id = canvas.shapesAtPoint(sx, sy)[0]?.id ?? null;
     if (id) deleteShapes(handle, [id]);
   };
 
   const sweep = (
-    canvas: SpatialCanvasElement,
+    canvas: SpatialCanvas,
     fromScreen: Vec2,
     toScreen: Vec2,
     fromCanvas: Vec2,
@@ -116,7 +113,7 @@ const DeleteTool = (handle: DocHandle<CanvasDoc>, buttonEl: PatchworkViewElement
 
   const onPointerDown = (e: Event) => {
     const pe = e as PointerEvent;
-    const canvas = getCanvas(e);
+    const canvas = getCanvas(e.target as Element);
     const cur: Vec2 = { x: pe.clientX, y: pe.clientY };
     const curC = canvas?.screenToPage(pe.clientX, pe.clientY) ?? cur;
 
@@ -134,7 +131,7 @@ const DeleteTool = (handle: DocHandle<CanvasDoc>, buttonEl: PatchworkViewElement
 
   const onPointerMove = (e: Event) => {
     const pe = e as PointerEvent;
-    const canvas = getCanvas(e);
+    const canvas = getCanvas(e.target as Element);
     const cur: Vec2 = { x: pe.clientX, y: pe.clientY };
     const curC = canvas?.screenToPage(pe.clientX, pe.clientY) ?? cur;
     if (canvas) sweep(canvas, prevScreen ?? cur, cur, prevCanvas ?? curC, curC);

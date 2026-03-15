@@ -1,7 +1,8 @@
 import type { DocHandle } from "@automerge/automerge-repo";
 import type { CanvasDoc, Disposer } from "../canvas/types.js";
 import type { PatchworkViewElement } from "@inkandswitch/patchwork-elements";
-import type { SpatialCanvasElement, SpatialCanvasHost } from "../canvas/spatial-canvas-element.js";
+import type { SpatialCanvas } from "../canvas/canvas.js";
+import { getCanvas } from "../canvas/canvas.js";
 import { translateShapes, nextZIndex } from "../canvas/commands.js";
 import { createElement, MousePointer2 } from "lucide";
 
@@ -138,7 +139,7 @@ export default function SelectTool(
   // ---- sweep interpolation ----
 
   function sweep(
-    canvas: SpatialCanvasElement,
+    canvas: SpatialCanvas,
     fromScreen: Vec2,
     toScreen: Vec2,
     fromCanvas: Vec2,
@@ -167,9 +168,7 @@ export default function SelectTool(
 
   function onPointerDown(e: Event) {
     const pe = e as PointerEvent;
-    const canvas =
-      (e.target as Element).closest<SpatialCanvasHost>('patchwork-view[tool-id="spatial-canvas"]')
-        ?.spatialCanvas ?? null;
+    const canvas = getCanvas(e.target as Element);
     const hitId = canvas?.shapesAtPoint(pe.clientX, pe.clientY)[0]?.id ?? null;
     const pos = canvas?.screenToPage(pe.clientX, pe.clientY);
 
@@ -202,9 +201,7 @@ export default function SelectTool(
 
   function onPointerMove(e: Event) {
     const pe = e as PointerEvent;
-    const canvas =
-      (e.target as Element).closest<SpatialCanvasHost>('patchwork-view[tool-id="spatial-canvas"]')
-        ?.spatialCanvas ?? null;
+    const canvas = getCanvas(e.target as Element);
     const pos = canvas?.screenToPage(pe.clientX, pe.clientY);
 
     if (mode === "drag" && dragStartCanvas && pos) {

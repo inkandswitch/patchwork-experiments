@@ -1,30 +1,17 @@
 import type { DocHandle } from "@automerge/automerge-repo";
 import type { CanvasDoc, Disposer } from "./types.js";
-import type { SpatialCanvasHost } from "./spatial-canvas-element.js";
 import { deleteShapes, duplicateShapes } from "./commands.js";
 
 /**
- * KeyboardPanel — invisible panel that registers keyboard shortcuts and relays
- * KeyboardEvents through all panels via canvas.relayKeyboardEvent().
- *
- * Panels can handle keys by listening for KeyboardEvents and calling
- * stopPropagation() to consume them. After the relay, unhandled keys fall
- * through to the built-in shortcuts below.
+ * KeyboardPanel — invisible panel that handles canvas keyboard shortcuts.
  */
 const KeyboardPanel = (handle: DocHandle<CanvasDoc>, element: HTMLElement): Disposer => {
   element.style.display = "none";
 
   const onKeyDown = (e: KeyboardEvent) => {
-    if ((e as any)._scRelayed) return;
     const target = e.target as HTMLElement;
     if (target.isContentEditable || target.tagName === "INPUT" || target.tagName === "TEXTAREA")
       return;
-
-    const host = element.closest<SpatialCanvasHost>('patchwork-view[tool-id="spatial-canvas"]');
-    if (!host?.spatialCanvas) return;
-
-    host.spatialCanvas.relayKeyboardEvent(e);
-    if (e.defaultPrevented) return;
 
     handleBuiltInShortcuts(e, handle);
   };

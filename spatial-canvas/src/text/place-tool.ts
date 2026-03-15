@@ -2,7 +2,8 @@ import { createElement, Type } from "lucide";
 import type { DocHandle } from "@automerge/automerge-repo";
 import type { CanvasDoc, Disposer } from "../canvas/types.js";
 import type { PatchworkViewElement } from "@inkandswitch/patchwork-elements";
-import type { SpatialCanvasHost } from "../canvas/spatial-canvas-element.js";
+import type { SpatialCanvas } from "../canvas/canvas.js";
+import { getCanvas } from "../canvas/canvas.js";
 import { createShape, nextZIndex, newId } from "../canvas/commands.js";
 import type { TextShape } from "./text.js";
 
@@ -17,9 +18,7 @@ export default function PlaceTextTool(
 
   let downAt: { x: number; y: number } | null = null;
 
-  const getCanvas = (e: Event) =>
-    (e.target as Element).closest<SpatialCanvasHost>('patchwork-view[tool-id="spatial-canvas"]')
-      ?.spatialCanvas ?? null;
+  const getCanvas = (e: Event) => getCanvas(e.target as Element);
 
   function getColor(): string {
     const contactUrl = window.accountDocHandle?.doc()?.contactUrl ?? "local";

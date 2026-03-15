@@ -1,6 +1,4 @@
-import type { DocHandle } from "@automerge/automerge-repo";
-import type { CanvasDoc, Disposer } from "./types.js";
-import type { PatchworkViewElement } from "@inkandswitch/patchwork-elements";
+import type { CanvasDoc } from "./types.js";
 
 const SpatialCanvasDatatype = {
   init(doc: CanvasDoc) {
@@ -38,16 +36,7 @@ export const canvasPlugins = [
     icon: "Globe",
     supportedDatatypes: ["spatial-canvas"],
     async load() {
-      const { SpatialCanvasElement } = await import("./spatial-canvas-element.js");
-      return (handle: DocHandle<CanvasDoc>, element: PatchworkViewElement): Disposer => {
-        const canvas = new SpatialCanvasElement();
-        canvas.init(handle, element);
-        (element as any).spatialCanvas = canvas;
-        return () => {
-          canvas.dispose();
-          delete (element as any).spatialCanvas;
-        };
-      };
+      return (await import("./canvas.js")).default;
     },
   },
   {
