@@ -134,7 +134,7 @@ export class ShapeRenderLayer {
     for (const id of currentIds) {
       if (!this.#views.has(id)) {
         const view = document.createElement("patchwork-ref-view") as PatchworkRefViewElement;
-        view.style.cssText = "position:absolute;top:0;left:0;";
+        view.style.cssText = "position:absolute;top:0;left:0;pointer-events:auto;";
         view.dataset.shapeId = id;
         view.repo = this.#repo;
         view.setAttribute("ref-url", `${this.#handle.url}/shapes/${id}`);

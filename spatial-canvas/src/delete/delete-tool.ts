@@ -23,7 +23,7 @@ class EraserTrail {
     this.layer = layer;
 
     this.svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    this.svg.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible;";
+    this.svg.style.cssText = "position:absolute;top:0;left:0;pointer-events:none;overflow:visible;";
 
     this.path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     this.path.setAttribute("fill", "none");
