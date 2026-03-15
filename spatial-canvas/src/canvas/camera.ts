@@ -52,7 +52,6 @@ export function zoomCamera(
 ): Camera {
   const factor = 1 - delta * 0.01;
   const nextZoom = clampZoom(camera.zoom * factor);
-  const ratio = nextZoom / camera.zoom;
 
   // Keep the page point under the pointer stationary
   return {
@@ -60,9 +59,4 @@ export function zoomCamera(
     x: screenX / nextZoom - (screenX / camera.zoom - camera.x),
     y: screenY / nextZoom - (screenY / camera.zoom - camera.y),
   };
-  // Simplified form:
-  // x' = (screenX / zoom' ) - (screenX/zoom - x)
-  //    = screenX*(1/zoom' - 1/zoom) + x
-  //    = screenX*(ratio-1)/zoom' + x  (after algebra)
-  void ratio; // unused after simplification above
 }
