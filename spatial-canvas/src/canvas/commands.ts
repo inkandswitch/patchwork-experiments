@@ -10,8 +10,9 @@ export function createShape(
   handle: DocHandle<CanvasDoc>,
   shape: CanvasShape
 ): void {
+  const clean = JSON.parse(JSON.stringify(shape)) as CanvasShape
   handle.change(doc => {
-    doc.shapes[shape.id] = shape
+    doc.shapes[clean.id] = clean
   })
 }
 
@@ -45,9 +46,10 @@ export function patchShape(
   id: string,
   patch: Partial<Record<string, unknown>>
 ): void {
+  const clean = JSON.parse(JSON.stringify(patch)) as Partial<Record<string, unknown>>
   handle.change(doc => {
     if (doc.shapes[id]) {
-      Object.assign(doc.shapes[id], patch)
+      Object.assign(doc.shapes[id], clean)
     }
   })
 }

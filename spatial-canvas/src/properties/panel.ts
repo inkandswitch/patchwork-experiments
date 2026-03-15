@@ -1,5 +1,5 @@
 import type { DocHandle } from '@automerge/automerge-repo'
-import type { CanvasDoc, Disposer } from '../core/types.js'
+import type { CanvasDoc, Disposer } from '../canvas/types.js'
 import type { PatchworkViewElement } from '@inkandswitch/patchwork-elements'
 import type { RectangleFill } from '../rectangle/rectangle.js'
 import type { TextShape } from '../text/text.js'

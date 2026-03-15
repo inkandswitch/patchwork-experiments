@@ -58,7 +58,6 @@
  * THE TRANSFORM LAYER
  * Zero-sized element; all shapes overflow out of it.
  * Its transform is the sole camera transform applied to page-space content.
- * contain:size on a zero-sized element means the browser never measures its children.
  */
 .sc-layer {
   position: absolute;
@@ -66,7 +65,6 @@
   left: 0;
   width: 0;
   height: 0;
-  contain: layout style size;
   transform-origin: 0 0;
 }
 

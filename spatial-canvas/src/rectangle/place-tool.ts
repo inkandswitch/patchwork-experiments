@@ -1,14 +1,10 @@
 import type { DocHandle } from '@automerge/automerge-repo'
-import type { CanvasDoc, Disposer } from '../core/types.js'
+import type { CanvasDoc, Disposer } from '../canvas/types.js'
 import type { PatchworkViewElement } from '@inkandswitch/patchwork-elements'
-import { createShape, nextZIndex, newId } from '../core/commands.js'
+import type { SpatialCanvasHost } from '../canvas/spatial-canvas-element.js'
+import { createShape, nextZIndex, newId } from '../canvas/commands.js'
 import type { RectangleFill, RectangleShape } from './rectangle.js'
 import { createElement, Square } from 'lucide'
-
-interface PointerDetail {
-  canvasX: number
-  canvasY: number
-}
 
 const DEFAULT_COLOR = '#4f8ef7'
 const DEFAULT_FILL: RectangleFill = 'filled'
@@ -63,11 +59,19 @@ export default function PlaceRectangleTool(
     preview.style.height = `${h}px`
   }
 
+  function getCanvas(e: Event) {
+    return (e.target as Element).closest<SpatialCanvasHost>('patchwork-view[tool-id="spatial-canvas"]')?.spatialCanvas ?? null
+  }
+
   function onPointerDown(e: Event) {
-    const { canvasX, canvasY } = (e as CustomEvent<PointerDetail>).detail
-    origin = { x: canvasX, y: canvasY }
+    const pe = e as PointerEvent
+    const pos = getCanvas(e)?.screenToPage(pe.clientX, pe.clientY)
+    if (!pos) return
+    const { x: canvasX, y: canvasY } = pos
     const color = getColor()
     const fill = getFill()
+
+    origin = { x: canvasX, y: canvasY }
 
     preview = document.createElement('div')
     preview.style.cssText = [
@@ -87,13 +91,18 @@ export default function PlaceRectangleTool(
 
   function onPointerMove(e: Event) {
     if (!origin || !preview) return
-    const { canvasX, canvasY } = (e as CustomEvent<PointerDetail>).detail
-    updatePreview(origin.x, origin.y, canvasX, canvasY)
+    const pe = e as PointerEvent
+    const pos = getCanvas(e)?.screenToPage(pe.clientX, pe.clientY)
+    if (!pos) return
+    updatePreview(origin.x, origin.y, pos.x, pos.y)
   }
 
   function onPointerUp(e: Event) {
     if (!origin) return
-    const { canvasX, canvasY } = (e as CustomEvent<PointerDetail>).detail
+    const pe = e as PointerEvent
+    const pos = getCanvas(e)?.screenToPage(pe.clientX, pe.clientY)
+    if (!pos) return
+    const { x: canvasX, y: canvasY } = pos
     const x = Math.min(origin.x, canvasX)
     const y = Math.min(origin.y, canvasY)
     const width  = Math.abs(canvasX - origin.x)
@@ -134,16 +143,16 @@ export default function PlaceRectangleTool(
     origin = null
   }
 
-  element.addEventListener('spatial-canvas:pointerdown', onPointerDown)
-  element.addEventListener('spatial-canvas:pointermove', onPointerMove)
-  element.addEventListener('spatial-canvas:pointerup',   onPointerUp)
-  element.addEventListener('spatial-canvas:cancel',      onCancel)
+  element.addEventListener('pointerdown', onPointerDown)
+  element.addEventListener('pointermove', onPointerMove)
+  element.addEventListener('pointerup',   onPointerUp)
+  element.addEventListener('pointercancel', onCancel)
 
   return () => {
-    element.removeEventListener('spatial-canvas:pointerdown', onPointerDown)
-    element.removeEventListener('spatial-canvas:pointermove', onPointerMove)
-    element.removeEventListener('spatial-canvas:pointerup',   onPointerUp)
-    element.removeEventListener('spatial-canvas:cancel',      onCancel)
+    element.removeEventListener('pointerdown', onPointerDown)
+    element.removeEventListener('pointermove', onPointerMove)
+    element.removeEventListener('pointerup',   onPointerUp)
+    element.removeEventListener('pointercancel', onCancel)
     icon.remove()
     cleanup()
   }

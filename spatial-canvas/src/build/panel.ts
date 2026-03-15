@@ -13,7 +13,7 @@
  */
 
 import type { DocHandle } from "@automerge/automerge-repo";
-import type { CanvasDoc, CanvasShape, Disposer } from "../core/types.js";
+import type { CanvasDoc, CanvasShape, Disposer } from "../canvas/types.js";
 import type { PatchworkViewElement } from "@inkandswitch/patchwork-elements";
 
 // =============================================================================

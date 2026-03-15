@@ -1,8 +1,8 @@
 import type { DocHandle } from '@automerge/automerge-repo'
-import type { CanvasDoc, Disposer } from '../core/types.js'
+import type { CanvasDoc, Disposer } from '../canvas/types.js'
 import type { PatchworkViewElement } from '@inkandswitch/patchwork-elements'
-import { patchShape } from '../core/commands.js'
-import { screenToCanvas } from '../core/inputs.js'
+import { patchShape } from '../canvas/commands.js'
+import { screenToCanvas } from '../canvas/inputs.js'
 
 const MIN_SIZE = 10
 

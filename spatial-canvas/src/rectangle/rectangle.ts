@@ -1,4 +1,5 @@
-import type { CanvasShape, Disposer } from '../core/types.js'
+import type { Ref } from '@automerge/automerge-repo'
+import type { CanvasShape, Disposer } from '../canvas/types.js'
 
 // ============================================================================
 // Shape type
@@ -22,13 +23,6 @@ export interface RectangleDoc {
   color: string
 }
 
-interface RectangleDocHandle {
-  doc(): RectangleDoc | undefined
-  on(event: 'change', cb: (p: { doc: RectangleDoc }) => void): void
-  off(event: 'change', cb: (p: { doc: RectangleDoc }) => void): void
-  change(fn: (doc: RectangleDoc) => void): void
-}
-
 // ============================================================================
 // Datatype
 // ============================================================================
@@ -49,7 +43,7 @@ export const RectangleDatatype = {
 // Tool — plain DOM, no framework
 // ============================================================================
 
-export function RectangleTool(handle: RectangleDocHandle, element: HTMLElement): Disposer {
+export function RectangleTool(ref: Ref<RectangleDoc>, element: HTMLElement): Disposer {
   const root = document.createElement('div')
   root.style.cssText = `
     width: 100%;
@@ -60,13 +54,20 @@ export function RectangleTool(handle: RectangleDocHandle, element: HTMLElement):
     border: 2px solid #4f8ef7;
   `
 
-  element.appendChild(root)
+  function render() {
+    const doc = ref.value()
+    if (!doc) return
+    root.style.background = doc.color
+    root.style.borderColor = doc.color
+  }
 
-  const onChange = () => {}
-  handle.on('change', onChange)
+  element.appendChild(root)
+  render()
+
+  const unsubscribe = ref.onChange(render)
 
   return () => {
-    handle.off('change', onChange)
+    unsubscribe()
     root.remove()
   }
 }
@@ -93,6 +94,26 @@ export const rectanglePlugins = [
     supportedDatatypes: ['rectangle'],
     async load() {
       return RectangleTool
+    },
+  },
+  {
+    type: 'patchwork:tool' as const,
+    id: 'spatial-canvas-tool-place-rectangle',
+    name: 'Rectangle',
+    icon: 'Square',
+    tags: ['spatial-canvas-tool'],
+    supportedDatatypes: ['spatial-canvas'],
+    async load() {
+      return (await import('./place-tool.js')).default
+    },
+  },
+  {
+    type: 'patchwork:tool' as const,
+    id: 'canvas-rectangle',
+    name: 'Rectangle Shape',
+    supportedDatatypes: ['spatial-canvas'],
+    async load() {
+      return (await import('./canvas-tool.js')).default
     },
   },
 ]

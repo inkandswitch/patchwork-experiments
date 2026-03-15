@@ -9,7 +9,7 @@
  */
 
 import type { DocHandle } from '@automerge/automerge-repo'
-import type { Disposer } from '../core/types.js'
+import type { Disposer } from '../canvas/types.js'
 
 // Mirrored from llm-canvas/src/process/types.ts
 type OutputBlock =

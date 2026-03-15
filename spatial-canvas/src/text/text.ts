@@ -1,4 +1,4 @@
-import type { CanvasShape } from '../core/types.js'
+import type { CanvasShape } from '../canvas/types.js'
 
 export interface TextShape extends CanvasShape {
   type: 'text'

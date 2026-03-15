@@ -1,14 +1,10 @@
 import { createElement, Type } from 'lucide'
 import type { DocHandle } from '@automerge/automerge-repo'
-import type { CanvasDoc, Disposer } from '../core/types.js'
+import type { CanvasDoc, Disposer } from '../canvas/types.js'
 import type { PatchworkViewElement } from '@inkandswitch/patchwork-elements'
-import { createShape, nextZIndex, newId } from '../core/commands.js'
+import type { SpatialCanvasHost } from '../canvas/spatial-canvas-element.js'
+import { createShape, nextZIndex, newId } from '../canvas/commands.js'
 import type { TextShape } from './text.js'
-
-interface PointerDetail {
-  canvasX: number
-  canvasY: number
-}
 
 const DEFAULT_COLOR = '#1a1a1a'
 
@@ -19,7 +15,10 @@ export default function PlaceTextTool(
   const icon = createElement(Type, { width: 22, height: 22, style: 'pointer-events:none' })
   buttonEl.appendChild(icon)
 
-  let downAt: { canvasX: number; canvasY: number } | null = null
+  let downAt: { x: number; y: number } | null = null
+
+  const getCanvas = (e: Event) =>
+    (e.target as Element).closest<SpatialCanvasHost>('patchwork-view[tool-id="spatial-canvas"]')?.spatialCanvas ?? null
 
   function getColor(): string {
     const contactUrl = window.accountDocHandle?.doc()?.contactUrl ?? 'local'
@@ -32,23 +31,27 @@ export default function PlaceTextTool(
   }
 
   function onPointerDown(e: Event) {
-    const { canvasX, canvasY } = (e as CustomEvent<PointerDetail>).detail
-    downAt = { canvasX, canvasY }
+    const pe = e as PointerEvent
+    const pos = getCanvas(e)?.screenToPage(pe.clientX, pe.clientY)
+    if (!pos) return
+    downAt = pos
   }
 
   function onPointerUp(e: Event) {
     if (!downAt) return
-    const { canvasX, canvasY } = (e as CustomEvent<PointerDetail>).detail
-    const dx = canvasX - downAt.canvasX
-    const dy = canvasY - downAt.canvasY
+    const pe = e as PointerEvent
+    const pos = getCanvas(e)?.screenToPage(pe.clientX, pe.clientY)
+    if (!pos) return
+    const dx = pos.x - downAt.x
+    const dy = pos.y - downAt.y
 
     if (Math.sqrt(dx * dx + dy * dy) <= 4) {
       const doc = handle.doc()
       const shape: TextShape = {
         id: newId(),
         type: 'text',
-        x: downAt.canvasX,
-        y: downAt.canvasY,
+        x: downAt.x,
+        y: downAt.y,
         zIndex: doc ? nextZIndex(doc) : 0,
         text: '',
         color: getColor(),
@@ -62,14 +65,14 @@ export default function PlaceTextTool(
 
   function onCancel() { downAt = null }
 
-  buttonEl.addEventListener('spatial-canvas:pointerdown', onPointerDown)
-  buttonEl.addEventListener('spatial-canvas:pointerup',   onPointerUp)
-  buttonEl.addEventListener('spatial-canvas:cancel',      onCancel)
+  buttonEl.addEventListener('pointerdown', onPointerDown)
+  buttonEl.addEventListener('pointerup',   onPointerUp)
+  buttonEl.addEventListener('pointercancel', onCancel)
 
   return () => {
-    buttonEl.removeEventListener('spatial-canvas:pointerdown', onPointerDown)
-    buttonEl.removeEventListener('spatial-canvas:pointerup',   onPointerUp)
-    buttonEl.removeEventListener('spatial-canvas:cancel',      onCancel)
+    buttonEl.removeEventListener('pointerdown', onPointerDown)
+    buttonEl.removeEventListener('pointerup',   onPointerUp)
+    buttonEl.removeEventListener('pointercancel', onCancel)
     icon.remove()
   }
 }

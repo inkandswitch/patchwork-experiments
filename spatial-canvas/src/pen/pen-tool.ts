@@ -1,8 +1,9 @@
 import { getStroke } from 'perfect-freehand'
 import type { DocHandle } from '@automerge/automerge-repo'
-import type { CanvasDoc, CanvasShape, Disposer } from '../core/types.js'
+import type { CanvasDoc, CanvasShape, Disposer } from '../canvas/types.js'
 import type { PatchworkViewElement } from '@inkandswitch/patchwork-elements'
-import { createShape, nextZIndex, newId } from '../core/commands.js'
+import type { SpatialCanvasHost } from '../canvas/spatial-canvas-element.js'
+import { createShape, nextZIndex, newId } from '../canvas/commands.js'
 import { createElement, Pen } from 'lucide'
 
 // ============================================================================
@@ -54,11 +55,6 @@ function makePath(color: string): SVGPathElement {
 // Tool
 // ============================================================================
 
-interface PointerDetail {
-  canvasX: number
-  canvasY: number
-}
-
 const DEFAULT_COLOR = '#1a1a1a'
 
 export function PenTool(handle: DocHandle<CanvasDoc>, buttonEl: PatchworkViewElement): Disposer {
@@ -78,9 +74,15 @@ export function PenTool(handle: DocHandle<CanvasDoc>, buttonEl: PatchworkViewEle
 
   buttonEl.appendChild(createElement(Pen, { width: 22, height: 22, style: 'pointer-events:none' }))
 
+  function getCanvas(e: Event) {
+    return (e.target as Element).closest<SpatialCanvasHost>('patchwork-view[tool-id="spatial-canvas"]')?.spatialCanvas ?? null
+  }
+
   function onPointerDown(e: Event) {
-    const { canvasX, canvasY } = (e as CustomEvent<PointerDetail>).detail
-    points = [[canvasX, canvasY, 0.5]]
+    const pe = e as PointerEvent
+    const pos = getCanvas(e)?.screenToPage(pe.clientX, pe.clientY)
+    if (!pos) return
+    points = [[pos.x, pos.y, 0.5]]
 
     const color = getColor()
     previewSvg = makeSvg()
@@ -91,15 +93,18 @@ export function PenTool(handle: DocHandle<CanvasDoc>, buttonEl: PatchworkViewEle
 
   function onPointerMove(e: Event) {
     if (!previewPath) return
-    const { canvasX, canvasY } = (e as CustomEvent<PointerDetail>).detail
-    points.push([canvasX, canvasY, 0.5])
+    const pe = e as PointerEvent
+    const pos = getCanvas(e)?.screenToPage(pe.clientX, pe.clientY)
+    if (!pos) return
+    points.push([pos.x, pos.y, 0.5])
     previewPath.setAttribute('d', computePath(points))
   }
 
   function onPointerUp(e: Event) {
     if (points.length === 0) return
-    const { canvasX, canvasY } = (e as CustomEvent<PointerDetail>).detail
-    points.push([canvasX, canvasY, 0.5])
+    const pe = e as PointerEvent
+    const pos = getCanvas(e)?.screenToPage(pe.clientX, pe.clientY)
+    if (pos) points.push([pos.x, pos.y, 0.5])
 
     if (points.length > 1) {
       const doc = handle.doc()
@@ -130,16 +135,16 @@ export function PenTool(handle: DocHandle<CanvasDoc>, buttonEl: PatchworkViewEle
     points = []
   }
 
-  buttonEl.addEventListener('spatial-canvas:pointerdown', onPointerDown)
-  buttonEl.addEventListener('spatial-canvas:pointermove', onPointerMove)
-  buttonEl.addEventListener('spatial-canvas:pointerup',   onPointerUp)
-  buttonEl.addEventListener('spatial-canvas:cancel',      onCancel)
+  buttonEl.addEventListener('pointerdown', onPointerDown)
+  buttonEl.addEventListener('pointermove', onPointerMove)
+  buttonEl.addEventListener('pointerup',   onPointerUp)
+  buttonEl.addEventListener('pointercancel', onCancel)
 
   return () => {
-    buttonEl.removeEventListener('spatial-canvas:pointerdown', onPointerDown)
-    buttonEl.removeEventListener('spatial-canvas:pointermove', onPointerMove)
-    buttonEl.removeEventListener('spatial-canvas:pointerup',   onPointerUp)
-    buttonEl.removeEventListener('spatial-canvas:cancel',      onCancel)
+    buttonEl.removeEventListener('pointerdown', onPointerDown)
+    buttonEl.removeEventListener('pointermove', onPointerMove)
+    buttonEl.removeEventListener('pointerup',   onPointerUp)
+    buttonEl.removeEventListener('pointercancel', onCancel)
     cleanup()
   }
 }

@@ -1,8 +1,8 @@
 import { getSupportedToolsForType } from "@inkandswitch/patchwork-plugins";
-import type { CanvasDoc } from "../core/types.js";
+import type { CanvasDoc } from "../canvas/types.js";
 import type { DocHandle, AutomergeUrl } from "@automerge/automerge-repo";
-import { createShape, nextZIndex, newId } from "../core/commands.js";
-import { screenToCanvas } from "../core/inputs.js";
+import { createShape, nextZIndex, newId } from "../canvas/commands.js";
+import { screenToCanvas } from "../canvas/inputs.js";
 import type { ImageShape } from "../image/image.js";
 import type { EmbedShape } from "../embed/types.js";
 import type { HasPatchworkMetadata } from "@inkandswitch/patchwork-filesystem";

@@ -1,5 +1,5 @@
 import type { DocHandle } from '@automerge/automerge-repo'
-import type { CanvasDoc, Disposer } from '../core/types.js'
+import type { CanvasDoc, Disposer } from '../canvas/types.js'
 import {
   getRegistry,
   createDocOfDatatype2,
@@ -7,17 +7,11 @@ import {
   type LoadedDatatype,
 } from '@inkandswitch/patchwork-plugins'
 import type { PatchworkViewElement } from '@inkandswitch/patchwork-elements'
-import { createShape, patchShape, newId, nextZIndex } from '../core/commands.js'
+import type { SpatialCanvasHost } from '../canvas/spatial-canvas-element.js'
+import { createShape, patchShape, newId, nextZIndex } from '../canvas/commands.js'
 import { createElement, Link } from 'lucide'
 import type { EmbedShape } from './types.js'
 import { openMenu } from './menu.js'
-
-interface PointerDetail {
-  canvasX: number
-  canvasY: number
-  screenX: number
-  screenY: number
-}
 
 // ============================================================================
 // Tool
@@ -39,6 +33,9 @@ export default function PlaceEmbedTool(
   let preview: HTMLElement | null = null
 
   // ---- helpers ----
+
+  const getCanvas = (e: Event) =>
+    (e.target as Element).closest<SpatialCanvasHost>('patchwork-view[tool-id="spatial-canvas"]')?.spatialCanvas ?? null
 
   function getLayer(): HTMLElement | null {
     return buttonEl.closest('.sc-container')?.querySelector<HTMLElement>('.sc-layer') ?? null
@@ -79,8 +76,10 @@ export default function PlaceEmbedTool(
   // ---- canvas pointer events ----
 
   function onPointerDown(e: Event) {
-    const { canvasX, canvasY } = (e as CustomEvent<PointerDetail>).detail
-    origin = { x: canvasX, y: canvasY }
+    const pe = e as PointerEvent
+    const pos = getCanvas(e)?.screenToPage(pe.clientX, pe.clientY)
+    if (!pos) return
+    origin = { x: pos.x, y: pos.y }
 
     preview = document.createElement('div')
     preview.style.cssText = [
@@ -93,23 +92,27 @@ export default function PlaceEmbedTool(
       'border:1.5px dashed #6464c8',
       'border-radius:6px',
     ].join(';')
-    updatePreview(canvasX, canvasY, canvasX, canvasY)
+    updatePreview(pos.x, pos.y, pos.x, pos.y)
     getLayer()?.appendChild(preview)
   }
 
   function onPointerMove(e: Event) {
     if (!origin) return
-    const { canvasX, canvasY } = (e as CustomEvent<PointerDetail>).detail
-    updatePreview(origin.x, origin.y, canvasX, canvasY)
+    const pe = e as PointerEvent
+    const pos = getCanvas(e)?.screenToPage(pe.clientX, pe.clientY)
+    if (!pos) return
+    updatePreview(origin.x, origin.y, pos.x, pos.y)
   }
 
   function onPointerUp(e: Event) {
     if (!origin) return
-    const { canvasX, canvasY } = (e as CustomEvent<PointerDetail>).detail
-    const x = Math.min(origin.x, canvasX)
-    const y = Math.min(origin.y, canvasY)
-    const width  = Math.abs(canvasX - origin.x)
-    const height = Math.abs(canvasY - origin.y)
+    const pe = e as PointerEvent
+    const pos = getCanvas(e)?.screenToPage(pe.clientX, pe.clientY)
+    if (!pos) return
+    const x = Math.min(origin.x, pos.x)
+    const y = Math.min(origin.y, pos.y)
+    const width  = Math.abs(pos.x - origin.x)
+    const height = Math.abs(pos.y - origin.y)
     cleanup()
 
     if (width <= 4 || height <= 4 || !pendingDatatypeId) return
@@ -157,17 +160,17 @@ export default function PlaceEmbedTool(
     cleanup()
   }
 
-  buttonEl.addEventListener('spatial-canvas:pointerdown', onPointerDown)
-  buttonEl.addEventListener('spatial-canvas:pointermove', onPointerMove)
-  buttonEl.addEventListener('spatial-canvas:pointerup',   onPointerUp)
-  buttonEl.addEventListener('spatial-canvas:cancel',      onCancel)
+  buttonEl.addEventListener('pointerdown', onPointerDown)
+  buttonEl.addEventListener('pointermove', onPointerMove)
+  buttonEl.addEventListener('pointerup',   onPointerUp)
+  buttonEl.addEventListener('pointercancel', onCancel)
 
   return () => {
     buttonEl.removeEventListener('click', onButtonClick)
-    buttonEl.removeEventListener('spatial-canvas:pointerdown', onPointerDown)
-    buttonEl.removeEventListener('spatial-canvas:pointermove', onPointerMove)
-    buttonEl.removeEventListener('spatial-canvas:pointerup',   onPointerUp)
-    buttonEl.removeEventListener('spatial-canvas:cancel',      onCancel)
+    buttonEl.removeEventListener('pointerdown', onPointerDown)
+    buttonEl.removeEventListener('pointermove', onPointerMove)
+    buttonEl.removeEventListener('pointerup',   onPointerUp)
+    buttonEl.removeEventListener('pointercancel', onCancel)
     closeMenu?.()
     cleanup()
     icon.remove()

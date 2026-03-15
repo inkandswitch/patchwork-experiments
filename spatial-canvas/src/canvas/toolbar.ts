@@ -4,16 +4,15 @@ import { getRegistry } from '@inkandswitch/patchwork-plugins'
 import type { PatchworkViewElement } from '@inkandswitch/patchwork-elements'
 
 /**
- * ToolbarPanel — renders one patchwork-view per spatial-canvas-tool plugin.
+ * ToolbarPanel — renders one <patchwork-view> per spatial-canvas-tool plugin.
  *
- * Each view IS the button: it carries .sc-tool-btn for styling, receives native
- * click events, and is also the direct target for canvas pointer CustomEvents
- * (dispatched by canvas.ts via `patchwork-view[tool-id="..."]`).
+ * Writes the selected tool directly to the doc's stateByUser. The
+ * <spatial-canvas> element reacts to the doc change and updates its own state.
  */
-export default function ToolbarPanel(
+const ToolbarPanel = (
   handle: DocHandle<CanvasDoc>,
   element: PatchworkViewElement,
-): Disposer {
+): Disposer => {
   const registry = getRegistry('patchwork:tool')
   const toolDescs = registry.filter(
     p => !!((p.tags as string[] | undefined)?.includes('spatial-canvas-tool'))
@@ -21,8 +20,8 @@ export default function ToolbarPanel(
 
   element.style.cssText = 'display:flex;gap:4px;'
 
+  const contactUrl = (window as any).accountDocHandle?.doc()?.contactUrl ?? 'local'
   const views: HTMLElement[] = []
-  const container = element.closest('.sc-container')
 
   for (const desc of toolDescs) {
     const view = document.createElement('patchwork-view')
@@ -32,21 +31,18 @@ export default function ToolbarPanel(
     view.title = desc.name
 
     view.addEventListener('click', () => {
-      container?.dispatchEvent(new CustomEvent('spatial-canvas:set-tool', {
-        detail: { toolId: desc.id },
-        // bubbles:true so tool selections from a nested sketch canvas propagate
-        // up to the outer canvas container, keeping both in sync.
-        bubbles: true,
-      }))
+      handle.change(d => {
+        if (!d.stateByUser) d.stateByUser = {}
+        if (!d.stateByUser[contactUrl]) d.stateByUser[contactUrl] = { selection: {}, color: '#1a1a1a' }
+        d.stateByUser[contactUrl].selectedTool = desc.id
+      })
     })
 
     element.appendChild(view)
     views.push(view)
   }
 
-  const contactUrl = (window as any).accountDocHandle?.doc()?.contactUrl ?? 'local'
-
-  function applyActiveTool(toolId: string | undefined) {
+  const applyActiveTool = (toolId: string | undefined) => {
     for (const view of views) {
       view.classList.toggle('active', view.getAttribute('tool-id') === toolId)
     }
@@ -63,3 +59,5 @@ export default function ToolbarPanel(
     handle.off('change', onDocChange)
   }
 }
+
+export default ToolbarPanel
