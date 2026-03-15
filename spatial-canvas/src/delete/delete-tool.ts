@@ -3,94 +3,80 @@ import type { CanvasDoc, Disposer } from "../canvas/types.js";
 import type { PatchworkViewElement } from "@inkandswitch/patchwork-elements";
 import type { SpatialCanvasElement, SpatialCanvasHost } from "../canvas/spatial-canvas-element.js";
 import { deleteShapes } from "../canvas/commands.js";
-import { createElement, Eraser } from 'lucide';
-
-// ============================================================================
-// SVG stroke trail
-// ============================================================================
+import { createElement, Eraser } from "lucide";
 
 const STROKE_COLOR = "rgba(80,80,80,0.55)";
 const STROKE_WIDTH = 12;
 
-class EraserTrail {
-  private svg: SVGSVGElement;
-  private path: SVGPathElement;
-  private points: { x: number; y: number }[] = [];
-  private layer: HTMLElement;
-  private fadeTimer: ReturnType<typeof setTimeout> | null = null;
-
-  constructor(layer: HTMLElement) {
-    this.layer = layer;
-
-    this.svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    this.svg.style.cssText = "position:absolute;top:0;left:0;pointer-events:none;overflow:visible;";
-
-    this.path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    this.path.setAttribute("fill", "none");
-    this.path.setAttribute("stroke", STROKE_COLOR);
-    this.path.setAttribute("stroke-width", String(STROKE_WIDTH));
-    this.path.setAttribute("stroke-linecap", "round");
-    this.path.setAttribute("stroke-linejoin", "round");
-    this.svg.appendChild(this.path);
-    layer.appendChild(this.svg);
-  }
-
-  addPoint(x: number, y: number) {
-    if (this.fadeTimer) { clearTimeout(this.fadeTimer); this.fadeTimer = null; }
-    this.svg.style.opacity = "1";
-    this.svg.style.transition = "";
-    this.points.push({ x, y });
-    this.path.setAttribute("d", this.buildPath());
-  }
-
-  private buildPath(): string {
-    const pts = this.points;
-    if (pts.length === 0) return "";
-    if (pts.length === 1) return `M ${pts[0].x} ${pts[0].y}`;
-
-    let d = `M ${pts[0].x} ${pts[0].y}`;
-    for (let i = 1; i < pts.length - 1; i++) {
-      const mx = (pts[i].x + pts[i + 1].x) / 2;
-      const my = (pts[i].y + pts[i + 1].y) / 2;
-      d += ` Q ${pts[i].x} ${pts[i].y} ${mx} ${my}`;
-    }
-    const last = pts[pts.length - 1];
-    d += ` L ${last.x} ${last.y}`;
-    return d;
-  }
-
-  finish() {
-    this.fadeTimer = setTimeout(() => {
-      this.svg.style.transition = "opacity 0.4s ease-out";
-      this.svg.style.opacity = "0";
-      setTimeout(() => this.svg.remove(), 420);
-    }, 80);
-  }
-
-  dispose() {
-    if (this.fadeTimer) clearTimeout(this.fadeTimer);
-    this.svg.remove();
-  }
-}
-
-// ============================================================================
-// Button indicator — Lucide Eraser icon (inline SVG)
-// ============================================================================
-
-const mountEraserButton = (btn: HTMLElement): () => void => {
-  const icon = createElement(Eraser, { width: 22, height: 22, style: 'pointer-events:none' });
-  btn.appendChild(icon);
-  return () => { icon.remove(); };
-};
-
-// ============================================================================
-// Tool
-// ============================================================================
-
 type Vec2 = { x: number; y: number };
 
+// ---------------------------------------------------------------------------
+// Eraser trail (freehand SVG path that fades out on release)
+// ---------------------------------------------------------------------------
+
+const makeEraserTrail = (layer: HTMLElement) => {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.style.cssText = "position:absolute;top:0;left:0;pointer-events:none;overflow:visible;";
+
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke", STROKE_COLOR);
+  path.setAttribute("stroke-width", String(STROKE_WIDTH));
+  path.setAttribute("stroke-linecap", "round");
+  path.setAttribute("stroke-linejoin", "round");
+  svg.appendChild(path);
+  layer.appendChild(svg);
+
+  let points: Vec2[] = [];
+  let fadeTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const buildPath = (): string => {
+    if (points.length === 0) return "";
+    if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+    let d = `M ${points[0].x} ${points[0].y}`;
+    for (let i = 1; i < points.length - 1; i++) {
+      const mx = (points[i].x + points[i + 1].x) / 2;
+      const my = (points[i].y + points[i + 1].y) / 2;
+      d += ` Q ${points[i].x} ${points[i].y} ${mx} ${my}`;
+    }
+    d += ` L ${points[points.length - 1].x} ${points[points.length - 1].y}`;
+    return d;
+  };
+
+  return {
+    addPoint(p: Vec2) {
+      if (fadeTimer) {
+        clearTimeout(fadeTimer);
+        fadeTimer = null;
+      }
+      svg.style.opacity = "1";
+      svg.style.transition = "";
+      points.push(p);
+      path.setAttribute("d", buildPath());
+    },
+    finish() {
+      fadeTimer = setTimeout(() => {
+        svg.style.transition = "opacity 0.4s ease-out";
+        svg.style.opacity = "0";
+        setTimeout(() => svg.remove(), 420);
+      }, 80);
+    },
+    dispose() {
+      if (fadeTimer) clearTimeout(fadeTimer);
+      svg.remove();
+    },
+  };
+};
+
+type EraserTrail = ReturnType<typeof makeEraserTrail>;
+
+// ---------------------------------------------------------------------------
+// Tool
+// ---------------------------------------------------------------------------
+
 const DeleteTool = (handle: DocHandle<CanvasDoc>, buttonEl: PatchworkViewElement): Disposer => {
-  const removeIndicator = mountEraserButton(buttonEl);
+  const icon = createElement(Eraser, { width: 22, height: 22, style: "pointer-events:none" });
+  buttonEl.appendChild(icon);
 
   let prevScreen: Vec2 | null = null;
   let prevCanvas: Vec2 | null = null;
@@ -99,36 +85,46 @@ const DeleteTool = (handle: DocHandle<CanvasDoc>, buttonEl: PatchworkViewElement
   const getLayer = (): HTMLElement | null =>
     buttonEl.closest(".sc-container")?.querySelector<HTMLElement>(".sc-layer") ?? null;
 
-  const tryDelete = (canvas: SpatialCanvasElement, clientX: number, clientY: number) => {
-    const id = canvas.shapesAtPoint(clientX, clientY)[0]?.id ?? null;
+  const getCanvas = (e: Event): SpatialCanvasElement | null =>
+    (e.target as Element).closest<SpatialCanvasHost>('patchwork-view[tool-id="spatial-canvas"]')
+      ?.spatialCanvas ?? null;
+
+  const tryDelete = (canvas: SpatialCanvasElement, sx: number, sy: number) => {
+    const id = canvas.shapesAtPoint(sx, sy)[0]?.id ?? null;
     if (id) deleteShapes(handle, [id]);
   };
 
-  const sweep = (canvas: SpatialCanvasElement, fromScreen: Vec2, toScreen: Vec2, fromCanvas: Vec2, toCanvas: Vec2) => {
+  const sweep = (
+    canvas: SpatialCanvasElement,
+    fromScreen: Vec2,
+    toScreen: Vec2,
+    fromCanvas: Vec2,
+    toCanvas: Vec2,
+  ) => {
     const dx = toScreen.x - fromScreen.x;
     const dy = toScreen.y - fromScreen.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const steps = Math.max(1, Math.ceil(dist));
-
+    const steps = Math.max(1, Math.ceil(Math.sqrt(dx * dx + dy * dy)));
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
-      const sx = fromScreen.x + dx * t;
-      const sy = fromScreen.y + dy * t;
-      tryDelete(canvas, sx, sy);
+      tryDelete(canvas, fromScreen.x + dx * t, fromScreen.y + dy * t);
+      trail?.addPoint({
+        x: fromCanvas.x + (toCanvas.x - fromCanvas.x) * t,
+        y: fromCanvas.y + (toCanvas.y - fromCanvas.y) * t,
+      });
     }
   };
 
   const onPointerDown = (e: Event) => {
     const pe = e as PointerEvent;
-    const canvas = (e.target as Element).closest<SpatialCanvasHost>('patchwork-view[tool-id="spatial-canvas"]')?.spatialCanvas ?? null;
+    const canvas = getCanvas(e);
     const cur: Vec2 = { x: pe.clientX, y: pe.clientY };
     const curC = canvas?.screenToPage(pe.clientX, pe.clientY) ?? cur;
 
     const layer = getLayer();
     if (layer) {
       trail?.dispose();
-      trail = new EraserTrail(layer);
-      trail.addPoint(curC.x, curC.y);
+      trail = makeEraserTrail(layer);
+      trail.addPoint(curC);
     }
 
     prevScreen = cur;
@@ -138,15 +134,10 @@ const DeleteTool = (handle: DocHandle<CanvasDoc>, buttonEl: PatchworkViewElement
 
   const onPointerMove = (e: Event) => {
     const pe = e as PointerEvent;
-    const canvas = (e.target as Element).closest<SpatialCanvasHost>('patchwork-view[tool-id="spatial-canvas"]')?.spatialCanvas ?? null;
+    const canvas = getCanvas(e);
     const cur: Vec2 = { x: pe.clientX, y: pe.clientY };
     const curC = canvas?.screenToPage(pe.clientX, pe.clientY) ?? cur;
-    const from = prevScreen ?? cur;
-    const fromC = prevCanvas ?? curC;
-
-    trail?.addPoint(curC.x, curC.y);
-    if (canvas) sweep(canvas, from, cur, fromC, curC);
-
+    if (canvas) sweep(canvas, prevScreen ?? cur, cur, prevCanvas ?? curC, curC);
     prevScreen = cur;
     prevCanvas = curC;
   };
@@ -168,11 +159,9 @@ const DeleteTool = (handle: DocHandle<CanvasDoc>, buttonEl: PatchworkViewElement
     buttonEl.removeEventListener("pointermove", onPointerMove);
     buttonEl.removeEventListener("pointerup", reset);
     buttonEl.removeEventListener("pointercancel", reset);
-    removeIndicator();
+    icon.remove();
     trail?.dispose();
     trail = null;
-    prevScreen = null;
-    prevCanvas = null;
   };
 };
 

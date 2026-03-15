@@ -194,8 +194,12 @@ function buildHeader() {
     "flex-shrink:0",
     "overflow:hidden",
   ].join(";");
-  toolBtn.addEventListener("mouseover", () => { toolBtn.style.background = "rgba(0,0,0,0.07)"; });
-  toolBtn.addEventListener("mouseout", () => { toolBtn.style.background = "transparent"; });
+  toolBtn.addEventListener("mouseover", () => {
+    toolBtn.style.background = "rgba(0,0,0,0.07)";
+  });
+  toolBtn.addEventListener("mouseout", () => {
+    toolBtn.style.background = "transparent";
+  });
   toolBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
 
   const toolLabel = document.createElement("span");
@@ -226,8 +230,14 @@ function buildHeader() {
     "justify-content:center",
     "padding:0",
   ].join(";");
-  closeBtn.addEventListener("mouseover", () => { closeBtn.style.background = "rgba(0,0,0,0.07)"; closeBtn.style.color = "#333"; });
-  closeBtn.addEventListener("mouseout", () => { closeBtn.style.background = "transparent"; closeBtn.style.color = "#888"; });
+  closeBtn.addEventListener("mouseover", () => {
+    closeBtn.style.background = "rgba(0,0,0,0.07)";
+    closeBtn.style.color = "#333";
+  });
+  closeBtn.addEventListener("mouseout", () => {
+    closeBtn.style.background = "transparent";
+    closeBtn.style.color = "#888";
+  });
   closeBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
   el.appendChild(closeBtn);
 
@@ -245,18 +255,25 @@ function buildContent(handle: DocHandle<CanvasDoc>, boundary: HTMLElement, shape
 
   function resetGesture() {
     gestureAbsorb = null;
-    if (gestureEndTimer) { clearTimeout(gestureEndTimer); gestureEndTimer = null; }
+    if (gestureEndTimer) {
+      clearTimeout(gestureEndTimer);
+      gestureEndTimer = null;
+    }
   }
 
-  el.addEventListener("wheel", (e) => {
-    if (e.ctrlKey) return;
-    if (gestureAbsorb === null) {
-      gestureAbsorb = isInsideScrollable(e.target as Element, el);
-    }
-    if (gestureAbsorb) e.stopPropagation();
-    if (gestureEndTimer) clearTimeout(gestureEndTimer);
-    gestureEndTimer = setTimeout(resetGesture, 150);
-  }, { passive: true });
+  el.addEventListener(
+    "wheel",
+    (e) => {
+      if (e.ctrlKey) return;
+      if (gestureAbsorb === null) {
+        gestureAbsorb = isInsideScrollable(e.target as Element, el);
+      }
+      if (gestureAbsorb) e.stopPropagation();
+      if (gestureEndTimer) clearTimeout(gestureEndTimer);
+      gestureEndTimer = setTimeout(resetGesture, 150);
+    },
+    { passive: true },
+  );
 
   el.addEventListener("pointermove", resetGesture, { passive: true });
 
@@ -309,14 +326,19 @@ function subscribeTitle(
     }
   })();
 
-  return () => { cancelled = true; offChange?.(); };
+  return () => {
+    cancelled = true;
+    offChange?.();
+  };
 }
 
 function isInsideScrollable(el: Element | null, boundary: Element): boolean {
   while (el && el !== boundary) {
     const { overflowY, overflowX } = getComputedStyle(el);
-    const scrollableY = (overflowY === "auto" || overflowY === "scroll") && el.scrollHeight > el.clientHeight + 1;
-    const scrollableX = (overflowX === "auto" || overflowX === "scroll") && el.scrollWidth > el.clientWidth + 1;
+    const scrollableY =
+      (overflowY === "auto" || overflowY === "scroll") && el.scrollHeight > el.clientHeight + 1;
+    const scrollableX =
+      (overflowX === "auto" || overflowX === "scroll") && el.scrollWidth > el.clientWidth + 1;
     if (scrollableY || scrollableX) return true;
     el = el.parentElement;
   }

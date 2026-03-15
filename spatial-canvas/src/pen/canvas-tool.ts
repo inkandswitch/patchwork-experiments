@@ -38,9 +38,22 @@ export default function CanvasPenTool(
 
     // Guard against any NaN/undefined values that could produce invalid SVG
     const cleanPoints = shape.points.filter(
-      p => Array.isArray(p) && p.length >= 2 && p[0] != null && p[1] != null && isFinite(p[0]) && isFinite(p[1])
+      (p) =>
+        Array.isArray(p) &&
+        p.length >= 2 &&
+        p[0] != null &&
+        p[1] != null &&
+        isFinite(p[0]) &&
+        isFinite(p[1]),
     ) as [number, number, number][];
-    console.log("[canvas-pen] render: points total", shape.points.length, "clean", cleanPoints.length, "first:", cleanPoints[0]);
+    console.log(
+      "[canvas-pen] render: points total",
+      shape.points.length,
+      "clean",
+      cleanPoints.length,
+      "first:",
+      cleanPoints[0],
+    );
     if (cleanPoints.length < 2) return;
 
     const outline = getStroke(cleanPoints, {
@@ -50,8 +63,15 @@ export default function CanvasPenTool(
       streamline: 0.5,
     });
 
-    const cleanOutline = outline.filter(p => isFinite(p[0]) && isFinite(p[1]));
-    console.log("[canvas-pen] render: outline points total", outline.length, "clean", cleanOutline.length, "first:", cleanOutline[0]);
+    const cleanOutline = outline.filter((p) => isFinite(p[0]) && isFinite(p[1]));
+    console.log(
+      "[canvas-pen] render: outline points total",
+      outline.length,
+      "clean",
+      cleanOutline.length,
+      "first:",
+      cleanOutline[0],
+    );
     if (cleanOutline.length < 2) return;
     const d = toSvgPath(cleanOutline);
     console.log("[canvas-pen] render: path d (first 80 chars):", d.slice(0, 80));

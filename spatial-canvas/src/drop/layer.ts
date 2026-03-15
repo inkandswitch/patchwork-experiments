@@ -53,7 +53,10 @@ function resolveToolId(docType: string): string {
   return specific?.id ?? tools[0]?.id ?? "";
 }
 
-export default function DropLayer(handle: DocHandle<CanvasDoc>, element: PatchworkViewElement): () => void {
+export default function DropLayer(
+  handle: DocHandle<CanvasDoc>,
+  element: PatchworkViewElement,
+): () => void {
   const repo = element.repo;
   const canvasEl = element.closest(".sc-canvas") as HTMLElement | null;
 
@@ -69,7 +72,9 @@ export default function DropLayer(handle: DocHandle<CanvasDoc>, element: Patchwo
     e.preventDefault();
     if (!e.dataTransfer || !repo || !canvasEl) return;
 
-    const canvas = canvasEl.closest<SpatialCanvasHost>('patchwork-view[tool-id="spatial-canvas"]')?.spatialCanvas;
+    const canvas = canvasEl.closest<SpatialCanvasHost>(
+      'patchwork-view[tool-id="spatial-canvas"]',
+    )?.spatialCanvas;
     if (!canvas) return;
     const pos = canvas.screenToPage(e.clientX, e.clientY);
 
@@ -105,7 +110,15 @@ export default function DropLayer(handle: DocHandle<CanvasDoc>, element: Patchwo
           const doc = fileHandle.doc();
           docType = doc?.["@patchwork"]?.type ?? "";
           if (!toolId) toolId = resolveToolId(docType);
-          console.log("[drop-layer] patchwork url:", cleanUrl, "→ docType:", docType || "(empty)", "→ toolId:", toolId || "(none)", toolIdFromUrl ? "(from url)" : "");
+          console.log(
+            "[drop-layer] patchwork url:",
+            cleanUrl,
+            "→ docType:",
+            docType || "(empty)",
+            "→ toolId:",
+            toolId || "(none)",
+            toolIdFromUrl ? "(from url)" : "",
+          );
         } catch (err) {
           console.warn("[drop-layer] could not read @patchwork.type for", cleanUrl, err);
         }

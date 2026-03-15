@@ -2,21 +2,21 @@
  * Minimal base shape stored in the canvas doc.
  * Each tool extends this with its own fields (e.g. RectangleShape, PenShape).
  */
-export interface CanvasShape {
+export type CanvasShape = {
   id: string;
   x: number;
   y: number;
   zIndex: number;
   type: string;
-}
+};
 
-export interface UserState {
+export type UserState = {
   selection: { [shapeId: string]: true };
   color: string;
   fill?: "transparent" | "white" | "filled";
   fontSize?: number;
   selectedTool?: string;
-}
+};
 
 /**
  * Floating card — positioned at a [side, align] point in the 3×3 grid overlay.
@@ -25,7 +25,10 @@ export interface UserState {
  */
 export type FloatingPanel = {
   kind: "panel";
-  position: [side: "top" | "bottom" | "left" | "right", align: "left" | "center" | "right" | "top" | "bottom"];
+  position: [
+    side: "top" | "bottom" | "left" | "right",
+    align: "left" | "center" | "right" | "top" | "bottom",
+  ];
 };
 
 /**
@@ -42,35 +45,35 @@ export type Bar = {
 
 export type LayoutEntry = FloatingPanel | Bar;
 
-export interface CanvasDoc {
+export type CanvasDoc = {
   shapes: Record<string, CanvasShape>;
   stateByUser: { [contactUrl: string]: UserState };
   layout: { [toolId: string]: LayoutEntry };
-}
+};
 
 // ============================================================================
 // Ephemeral / runtime types
 // ============================================================================
 
-export interface Camera {
+export type Camera = {
   x: number;
   y: number;
   zoom: number;
-}
+};
 
-export interface Rect {
+export type Rect = {
   x: number;
   y: number;
   width: number;
   height: number;
-}
+};
 
-export interface Vec2 {
+export type Vec2 = {
   x: number;
   y: number;
-}
+};
 
-export interface PointerInfo {
+export type PointerInfo = {
   x: number; // page coordinates
   y: number;
   dx: number; // delta from last event
@@ -81,6 +84,6 @@ export interface PointerInfo {
   shiftKey: boolean;
   metaKey: boolean;
   altKey: boolean;
-}
+};
 
 export type Disposer = () => void;

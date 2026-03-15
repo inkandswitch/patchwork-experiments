@@ -1,9 +1,9 @@
 import type { DocHandle } from "@automerge/automerge-repo";
-import type { Camera, Rect, CanvasDoc, Disposer, Vec2 } from "./types.js";
+import type { Camera, Rect, CanvasDoc, Disposer, Vec2, FloatingPanel, Bar } from "./types.js";
 import type { PatchworkViewElement } from "@inkandswitch/patchwork-elements";
 import { updateCamera, zoomCamera } from "./camera.js";
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
-import { ShapeRenderLayer } from "./layers/shape-render-layer.js";
+import { ShapeRenderLayer } from "./layers/shapes-layer.js";
 import canvasCss from "./canvas.css?inline";
 
 /**
@@ -92,7 +92,8 @@ export class SpatialCanvasElement {
     handle.on("change", onDocChange);
     this.#disposers.push(() => handle.off("change", onDocChange));
 
-    const initialTool = handle.doc()?.stateByUser?.[contactUrl]?.selectedTool ?? "spatial-canvas-tool-select";
+    const initialTool =
+      handle.doc()?.stateByUser?.[contactUrl]?.selectedTool ?? "spatial-canvas-tool-select";
     this.#applyActiveTool(initialTool);
   }
 
@@ -158,12 +159,21 @@ export class SpatialCanvasElement {
 
       let stopped = false;
       const origStop = clone.stopPropagation.bind(clone);
-      clone.stopPropagation = () => { stopped = true; origStop(); };
+      clone.stopPropagation = () => {
+        stopped = true;
+        origStop();
+      };
       const origStopImmediate = clone.stopImmediatePropagation.bind(clone);
-      clone.stopImmediatePropagation = () => { stopped = true; origStopImmediate(); };
+      clone.stopImmediatePropagation = () => {
+        stopped = true;
+        origStopImmediate();
+      };
 
       panel.dispatchEvent(clone);
-      if (stopped) { consumed = true; break; }
+      if (stopped) {
+        consumed = true;
+        break;
+      }
     }
     if (consumed) e.preventDefault();
   }
@@ -186,26 +196,29 @@ export class SpatialCanvasElement {
   // ---------------------------------------------------------------------------
 
   #relayPointerEvent(type: string, e: PointerEvent) {
-    const makeClone = () => new PointerEvent(type, {
-      bubbles: true,
-      cancelable: e.cancelable,
-      clientX: e.clientX,
-      clientY: e.clientY,
-      movementX: e.movementX,
-      movementY: e.movementY,
-      pointerId: e.pointerId,
-      pointerType: e.pointerType,
-      pressure: e.pressure,
-      button: e.button,
-      buttons: e.buttons,
-      shiftKey: e.shiftKey,
-      metaKey: e.metaKey,
-      altKey: e.altKey,
-      ctrlKey: e.ctrlKey,
-    });
+    const makeClone = () =>
+      new PointerEvent(type, {
+        bubbles: true,
+        cancelable: e.cancelable,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        movementX: e.movementX,
+        movementY: e.movementY,
+        pointerId: e.pointerId,
+        pointerType: e.pointerType,
+        pressure: e.pressure,
+        button: e.button,
+        buttons: e.buttons,
+        shiftKey: e.shiftKey,
+        metaKey: e.metaKey,
+        altKey: e.altKey,
+        ctrlKey: e.ctrlKey,
+      });
 
     // Dispatch to the active tool button directly (primary path for tools)
-    const activeBtn = this.#container.querySelector<HTMLElement>(`patchwork-view[tool-id="${this.#activeTool}"]`);
+    const activeBtn = this.#container.querySelector<HTMLElement>(
+      `patchwork-view[tool-id="${this.#activeTool}"]`,
+    );
     if (activeBtn) {
       activeBtn.dispatchEvent(makeClone());
     }
@@ -216,9 +229,15 @@ export class SpatialCanvasElement {
 
       let stopped = false;
       const origStop = clone.stopPropagation.bind(clone);
-      clone.stopPropagation = () => { stopped = true; origStop(); };
+      clone.stopPropagation = () => {
+        stopped = true;
+        origStop();
+      };
       const origStopImmediate = clone.stopImmediatePropagation.bind(clone);
-      clone.stopImmediatePropagation = () => { stopped = true; origStopImmediate(); };
+      clone.stopImmediatePropagation = () => {
+        stopped = true;
+        origStopImmediate();
+      };
 
       panel.dispatchEvent(clone);
       if (stopped) break;
@@ -329,7 +348,9 @@ export class SpatialCanvasElement {
 
   #mountLayers(handle: DocHandle<CanvasDoc>) {
     const registry = getRegistry("patchwork:tool");
-    const layerDescs = registry.filter((p) => !!(p.tags as string[] | undefined)?.includes("spatial-canvas-layer"));
+    const layerDescs = registry.filter(
+      (p) => !!(p.tags as string[] | undefined)?.includes("spatial-canvas-layer"),
+    );
 
     for (const desc of layerDescs) {
       const view = document.createElement("patchwork-view");
@@ -348,8 +369,10 @@ export class SpatialCanvasElement {
     const doc = handle.doc();
     if (!doc?.layout) return;
 
-    const panelEntries = Object.entries(doc.layout).filter(([, e]) => e.kind === "panel") as
-      [string, import("./types.js").FloatingPanel][];
+    const panelEntries = Object.entries(doc.layout).filter(([, e]) => e.kind === "panel") as [
+      string,
+      FloatingPanel,
+    ][];
 
     if (panelEntries.length > 0) {
       const overlay = document.createElement("div");
@@ -390,8 +413,10 @@ export class SpatialCanvasElement {
       }
     }
 
-    const barEntries = Object.entries(doc.layout).filter(([, e]) => e.kind === "bar") as
-      [string, import("./types.js").Bar][];
+    const barEntries = Object.entries(doc.layout).filter(([, e]) => e.kind === "bar") as [
+      string,
+      Bar,
+    ][];
 
     for (const [toolId, entry] of barEntries) {
       const view = document.createElement("patchwork-view");
@@ -420,7 +445,7 @@ if (!customElements.get("spatial-canvas")) {
  * A PatchworkViewElement augmented with a spatialCanvas instance.
  * Cast the root canvas patchwork-view to this type to access canvas methods.
  */
-export type SpatialCanvasHost = PatchworkViewElement & { spatialCanvas: SpatialCanvasElement }
+export type SpatialCanvasHost = PatchworkViewElement & { spatialCanvas: SpatialCanvasElement };
 
 // ---------------------------------------------------------------------------
 // Module-level helpers
@@ -476,7 +501,10 @@ const isTextUnderPointer = (x: number, y: number, target: Element | null): boole
   let node: Element | null = textNode.parentElement;
   let insideEditable = false;
   while (node && !node.classList.contains("sc-canvas")) {
-    if ((node as HTMLElement).isContentEditable) { insideEditable = true; break; }
+    if ((node as HTMLElement).isContentEditable) {
+      insideEditable = true;
+      break;
+    }
     node = node.parentElement;
   }
   if (!insideEditable) return false;
@@ -487,7 +515,13 @@ const isTextUnderPointer = (x: number, y: number, target: Element | null): boole
     charRange.setEnd(textNode, Math.min(charOffset + 1, textNode.length));
     const rect = charRange.getBoundingClientRect();
     const SLOP = 2;
-    return rect.width > 0 && x >= rect.left - SLOP && x <= rect.right + SLOP && y >= rect.top - SLOP && y <= rect.bottom + SLOP;
+    return (
+      rect.width > 0 &&
+      x >= rect.left - SLOP &&
+      x <= rect.right + SLOP &&
+      y >= rect.top - SLOP &&
+      y <= rect.bottom + SLOP
+    );
   } catch {
     return false;
   }

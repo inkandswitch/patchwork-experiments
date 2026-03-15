@@ -7,10 +7,10 @@ const SpatialCanvasDatatype = {
     doc.shapes = {};
     doc.stateByUser = {};
     doc.layout = {
-      "spatial-canvas-panel-toolbar":    { kind: "panel", position: ["bottom", "center"] },
-      "spatial-canvas-panel-properties": { kind: "panel", position: ["top",    "left"  ] },
-      "spatial-canvas-panel-build":      { kind: "panel", position: ["top",    "right"  ] },
-      "spatial-canvas-panel-keyboard":   { kind: "panel", position: ["bottom", "center"] },
+      "spatial-canvas-panel-toolbar": { kind: "panel", position: ["bottom", "center"] },
+      "spatial-canvas-panel-properties": { kind: "panel", position: ["top", "left"] },
+      "spatial-canvas-panel-build": { kind: "panel", position: ["top", "right"] },
+      "spatial-canvas-panel-keyboard": { kind: "panel", position: ["bottom", "center"] },
     };
   },
 
@@ -42,7 +42,7 @@ export const canvasPlugins = [
       return (handle: DocHandle<CanvasDoc>, element: PatchworkViewElement): Disposer => {
         const canvas = new SpatialCanvasElement();
         canvas.init(handle, element);
-        ;(element as any).spatialCanvas = canvas;
+        (element as any).spatialCanvas = canvas;
         return () => {
           canvas.dispose();
           delete (element as any).spatialCanvas;

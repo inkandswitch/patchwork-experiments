@@ -20,16 +20,22 @@ import type { PatchworkViewElement } from "@inkandswitch/patchwork-elements";
 // Types — mirrored from llm-canvas/src/process/types.ts
 // =============================================================================
 
-type OutputBlock = { type: "text"; content: string } | { type: "script"; code: string; description?: string; output?: string; error?: string };
+type OutputBlock =
+  | { type: "text"; content: string }
+  | { type: "script"; code: string; description?: string; output?: string; error?: string };
 
-type ContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
 
 type ChatMessage = {
   role: "system" | "user" | "assistant";
   content: string | ContentPart[];
 };
 
-type ParsedBlock = { id: number; type: "text"; content: string; complete: boolean } | { id: number; type: "script"; code: string; description?: string; complete: boolean };
+type ParsedBlock =
+  | { id: number; type: "text"; content: string; complete: boolean }
+  | { id: number; type: "script"; code: string; description?: string; complete: boolean };
 
 // Shape of ProcessDoc — mirrored from llm-canvas/src/process/types.ts
 type ProcessDoc = {
@@ -66,7 +72,12 @@ async function* parseScriptBlocks(stream: AsyncIterable<string>): AsyncGenerator
           const afterPrefixIdx = scriptIdx + SCRIPT_PREFIX.length;
           if (afterPrefixIdx >= buffer.length) {
             if (scriptIdx > 0) {
-              yield { id: blockId, type: "text", content: buffer.slice(0, scriptIdx), complete: true };
+              yield {
+                id: blockId,
+                type: "text",
+                content: buffer.slice(0, scriptIdx),
+                complete: true,
+              };
               buffer = buffer.slice(scriptIdx);
             }
             break;
@@ -74,7 +85,12 @@ async function* parseScriptBlocks(stream: AsyncIterable<string>): AsyncGenerator
 
           const afterChar = buffer[afterPrefixIdx];
           if (afterChar !== ">" && afterChar !== " " && afterChar !== "\t" && afterChar !== "\n") {
-            yield { id: blockId, type: "text", content: buffer.slice(0, afterPrefixIdx), complete: true };
+            yield {
+              id: blockId,
+              type: "text",
+              content: buffer.slice(0, afterPrefixIdx),
+              complete: true,
+            };
             buffer = buffer.slice(afterPrefixIdx);
             continue;
           }
@@ -85,7 +101,12 @@ async function* parseScriptBlocks(stream: AsyncIterable<string>): AsyncGenerator
             const descMatch = openingTag.match(/data-description="([^"]*)"/);
             currentDescription = descMatch ? descMatch[1] : undefined;
             if (scriptIdx > 0) {
-              yield { id: blockId, type: "text", content: buffer.slice(0, scriptIdx), complete: true };
+              yield {
+                id: blockId,
+                type: "text",
+                content: buffer.slice(0, scriptIdx),
+                complete: true,
+              };
             }
             buffer = buffer.slice(tagEndIdx + 1);
             state = "script";
@@ -93,7 +114,12 @@ async function* parseScriptBlocks(stream: AsyncIterable<string>): AsyncGenerator
             blockId++;
           } else {
             if (scriptIdx > 0) {
-              yield { id: blockId, type: "text", content: buffer.slice(0, scriptIdx), complete: true };
+              yield {
+                id: blockId,
+                type: "text",
+                content: buffer.slice(0, scriptIdx),
+                complete: true,
+              };
               buffer = buffer.slice(scriptIdx);
             }
             break;
@@ -102,7 +128,12 @@ async function* parseScriptBlocks(stream: AsyncIterable<string>): AsyncGenerator
           const partialIdx = findPartialTag(buffer, SCRIPT_PREFIX);
           if (partialIdx < buffer.length) {
             if (partialIdx > 0) {
-              yield { id: blockId, type: "text", content: buffer.slice(0, partialIdx), complete: true };
+              yield {
+                id: blockId,
+                type: "text",
+                content: buffer.slice(0, partialIdx),
+                complete: true,
+              };
             }
             buffer = buffer.slice(partialIdx);
           } else {
@@ -117,7 +148,13 @@ async function* parseScriptBlocks(stream: AsyncIterable<string>): AsyncGenerator
         const closeIdx = buffer.indexOf(CLOSE_TAG);
         if (closeIdx !== -1) {
           scriptBuffer += buffer.slice(0, closeIdx);
-          yield { id: blockId, type: "script", code: scriptBuffer, description: currentDescription, complete: true };
+          yield {
+            id: blockId,
+            type: "script",
+            code: scriptBuffer,
+            description: currentDescription,
+            complete: true,
+          };
           buffer = buffer.slice(closeIdx + CLOSE_TAG.length);
           state = "text";
           scriptBuffer = "";
@@ -133,7 +170,13 @@ async function* parseScriptBlocks(stream: AsyncIterable<string>): AsyncGenerator
             buffer = "";
           }
           if (scriptBuffer.length > 0) {
-            yield { id: blockId, type: "script", code: scriptBuffer, description: currentDescription, complete: false };
+            yield {
+              id: blockId,
+              type: "script",
+              code: scriptBuffer,
+              description: currentDescription,
+              complete: false,
+            };
           }
           break;
         }
@@ -145,7 +188,8 @@ async function* parseScriptBlocks(stream: AsyncIterable<string>): AsyncGenerator
     if (buffer.length > 0) yield { id: blockId, type: "text", content: buffer, complete: true };
   } else {
     scriptBuffer += buffer;
-    if (scriptBuffer.length > 0) yield { id: blockId, type: "text", content: `<script>${scriptBuffer}`, complete: true };
+    if (scriptBuffer.length > 0)
+      yield { id: blockId, type: "text", content: `<script>${scriptBuffer}`, complete: true };
   }
 }
 
@@ -160,7 +204,13 @@ function findPartialTag(buffer: string, tag: string): number {
 // LLM streaming — copied from llm-canvas/src/process/llm-process.ts
 // =============================================================================
 
-async function* streamChatCompletion(apiUrl: string, apiKey: string, model: string, messages: ChatMessage[], signal?: AbortSignal): AsyncGenerator<string> {
+async function* streamChatCompletion(
+  apiUrl: string,
+  apiKey: string,
+  model: string,
+  messages: ChatMessage[],
+  signal?: AbortSignal,
+): AsyncGenerator<string> {
   const url = `${apiUrl.replace(/\/$/, "")}/chat/completions`;
   const response = await fetch(url, {
     method: "POST",
@@ -236,7 +286,10 @@ function createCapturedConsole() {
   };
 }
 
-async function evalScript(code: string, capturedConsole: ReturnType<typeof createCapturedConsole>): Promise<{ output?: string; error?: string }> {
+async function evalScript(
+  code: string,
+  capturedConsole: ReturnType<typeof createCapturedConsole>,
+): Promise<{ output?: string; error?: string }> {
   capturedConsole.flush();
   (globalThis as any).__llmCapturedConsole = capturedConsole;
   try {
@@ -251,7 +304,10 @@ async function evalScript(code: string, capturedConsole: ReturnType<typeof creat
     return result;
   } catch (err: any) {
     const consoleOutput = capturedConsole.flush();
-    return { error: err.message || String(err), ...(consoleOutput ? { output: consoleOutput } : {}) };
+    return {
+      error: err.message || String(err),
+      ...(consoleOutput ? { output: consoleOutput } : {}),
+    };
   }
 }
 
@@ -299,7 +355,12 @@ async function discoverSkills(repo: any, skillsFolderUrl: string): Promise<Skill
 
         const mdHandle = await repo.find(skillMd.url);
         const mdDoc = mdHandle.doc() as any;
-        const content = typeof mdDoc?.content === "string" ? mdDoc.content : mdDoc?.content instanceof Uint8Array ? new TextDecoder().decode(mdDoc.content) : "";
+        const content =
+          typeof mdDoc?.content === "string"
+            ? mdDoc.content
+            : mdDoc?.content instanceof Uint8Array
+              ? new TextDecoder().decode(mdDoc.content)
+              : "";
 
         const frontmatter = parseFrontmatter(content);
         if (!frontmatter.name) continue;
@@ -308,7 +369,9 @@ async function discoverSkills(repo: any, skillsFolderUrl: string): Promise<Skill
         skills.push({
           name: frontmatter.name,
           description: frontmatter.description || "",
-          importUrl: indexFile ? `/${skillsFolderUrl}/${link.name}/${indexFile.name}` : `/${skillsFolderUrl}/${link.name}`,
+          importUrl: indexFile
+            ? `/${skillsFolderUrl}/${link.name}/${indexFile.name}`
+            : `/${skillsFolderUrl}/${link.name}`,
         });
       } catch {
         /* skip inaccessible skill folders */
@@ -359,7 +422,9 @@ async function captureCanvas(): Promise<string | null> {
       dataUrl = captured.toDataURL("image/png");
     }
 
-    console.log(`[BuildPanel] captured ${Math.round(width * scale)}×${Math.round(height * scale)}, length=${dataUrl.length}`);
+    console.log(
+      `[BuildPanel] captured ${Math.round(width * scale)}×${Math.round(height * scale)}, length=${dataUrl.length}`,
+    );
     return dataUrl;
   } catch (err) {
     console.error("[BuildPanel] snapdom capture failed:", err);
@@ -432,7 +497,14 @@ function buildCanvasSummary(embedShapes: CanvasShape[], textContent: string): st
   return parts.join("\n\n");
 }
 
-async function runBuildProcess(repo: any, processHandle: DocHandle<ProcessDoc>, canvasDocUrl: string, shapes: CanvasShape[], signal: AbortSignal, imageDataUrl?: string): Promise<void> {
+async function runBuildProcess(
+  repo: any,
+  processHandle: DocHandle<ProcessDoc>,
+  canvasDocUrl: string,
+  shapes: CanvasShape[],
+  signal: AbortSignal,
+  imageDataUrl?: string,
+): Promise<void> {
   (globalThis as any).repo = repo;
   (globalThis as any).canvasDocUrl = canvasDocUrl;
 
@@ -448,7 +520,8 @@ async function runBuildProcess(repo: any, processHandle: DocHandle<ProcessDoc>, 
   const summary = buildCanvasSummary(embedShapes, textContent);
   const userPrompt = `${summary}\n\nBuild this.`;
 
-  const apiUrl: string = (import.meta as any).env?.VITE_LLM_API_URL ?? "https://openrouter.ai/api/v1";
+  const apiUrl: string =
+    (import.meta as any).env?.VITE_LLM_API_URL ?? "https://openrouter.ai/api/v1";
   const apiKey: string = (import.meta as any).env?.VITE_LLM_API_KEY ?? "";
   const model: string = (import.meta as any).env?.VITE_LLM_MODEL ?? "anthropic/claude-opus-4-5";
 
@@ -499,14 +572,20 @@ async function runBuildProcess(repo: any, processHandle: DocHandle<ProcessDoc>, 
       if (block.type === "text") {
         assistantParts.push(block.content);
       } else if (block.type === "script") {
-        const tag = block.description ? `<script data-description="${block.description}">\n${block.code}\n</script>` : `<script>\n${block.code}\n</script>`;
+        const tag = block.description
+          ? `<script data-description="${block.description}">\n${block.code}\n</script>`
+          : `<script>\n${block.code}\n</script>`;
         assistantParts.push(tag);
         if (block.output !== undefined) {
           messages.push({ role: "assistant", content: assistantParts.join("\n") });
           assistantParts = [];
           messages.push({
             role: "user",
-            content: block.error ? `[Error: ${block.error}]` : block.output ? `[Output: ${block.output}]` : "[Done]",
+            content: block.error
+              ? `[Error: ${block.error}]`
+              : block.output
+                ? `[Output: ${block.output}]`
+                : "[Done]",
           });
         }
       }
@@ -567,14 +646,22 @@ async function runBuildProcess(repo: any, processHandle: DocHandle<ProcessDoc>, 
 // Panel DOM
 // =============================================================================
 
-export default function BuildPanel(handle: DocHandle<CanvasDoc>, element: PatchworkViewElement): Disposer {
+export default function BuildPanel(
+  handle: DocHandle<CanvasDoc>,
+  element: PatchworkViewElement,
+): Disposer {
   const repo = element.repo;
 
   let abortController: AbortController | null = null;
   let processViewEl: HTMLElement | null = null;
 
   // Panel: fixed header + scrollable body
-  element.style.cssText = ["display:flex", "flex-direction:column", "min-width:200px", "max-width:340px"].join(";");
+  element.style.cssText = [
+    "display:flex",
+    "flex-direction:column",
+    "min-width:200px",
+    "max-width:340px",
+  ].join(";");
 
   // ---- Fixed header (button only, never scrolls) ----
   const header = document.createElement("div");
@@ -583,7 +670,17 @@ export default function BuildPanel(handle: DocHandle<CanvasDoc>, element: Patchw
 
   const buildBtn = document.createElement("button");
   buildBtn.textContent = "Build It";
-  buildBtn.style.cssText = ["width:100%", "padding:6px 14px", "font:600 13px/1 system-ui,sans-serif", "background:#1a1a1a", "color:#fff", "border:none", "border-radius:6px", "cursor:pointer", "transition:background 0.15s"].join(";");
+  buildBtn.style.cssText = [
+    "width:100%",
+    "padding:6px 14px",
+    "font:600 13px/1 system-ui,sans-serif",
+    "background:#1a1a1a",
+    "color:#fff",
+    "border:none",
+    "border-radius:6px",
+    "cursor:pointer",
+    "transition:background 0.15s",
+  ].join(";");
   buildBtn.addEventListener("mouseenter", () => {
     if (!buildBtn.disabled) buildBtn.style.background = "#333";
   });
@@ -594,12 +691,26 @@ export default function BuildPanel(handle: DocHandle<CanvasDoc>, element: Patchw
 
   // ---- Scrollable body (image preview + process view) ----
   const body = document.createElement("div");
-  body.style.cssText = ["flex:1", "overflow-y:auto", "max-height:55vh", "display:flex", "flex-direction:column", "gap:6px", "padding:0 8px 8px"].join(";");
+  body.style.cssText = [
+    "flex:1",
+    "overflow-y:auto",
+    "max-height:55vh",
+    "display:flex",
+    "flex-direction:column",
+    "gap:6px",
+    "padding:0 8px 8px",
+  ].join(";");
   element.appendChild(body);
 
   // ---- Image preview (shown after capture) ----
   const imgPreview = document.createElement("img");
-  imgPreview.style.cssText = ["display:none", "width:100%", "border-radius:4px", "border:1px solid #e0e0e0", "object-fit:contain"].join(";");
+  imgPreview.style.cssText = [
+    "display:none",
+    "width:100%",
+    "border-radius:4px",
+    "border:1px solid #e0e0e0",
+    "object-fit:contain",
+  ].join(";");
   body.appendChild(imgPreview);
 
   // ---- Click handler ----
@@ -628,7 +739,8 @@ export default function BuildPanel(handle: DocHandle<CanvasDoc>, element: Patchw
     const shapes: CanvasShape[] = Object.values(doc.shapes);
 
     // Create a fresh ProcessDoc for this run
-    const apiUrl: string = (import.meta as any).env?.VITE_LLM_API_URL ?? "https://openrouter.ai/api/v1";
+    const apiUrl: string =
+      (import.meta as any).env?.VITE_LLM_API_URL ?? "https://openrouter.ai/api/v1";
     const model: string = (import.meta as any).env?.VITE_LLM_MODEL ?? "anthropic/claude-opus-4-5";
 
     const processHandle = repo.create() as unknown as DocHandle<ProcessDoc>;
@@ -657,7 +769,14 @@ export default function BuildPanel(handle: DocHandle<CanvasDoc>, element: Patchw
     scrollObserver.observe(view, { childList: true, subtree: true, characterData: true });
 
     try {
-      await runBuildProcess(repo, processHandle, handle.url, shapes, abortController.signal, imageDataUrl ?? undefined);
+      await runBuildProcess(
+        repo,
+        processHandle,
+        handle.url,
+        shapes,
+        abortController.signal,
+        imageDataUrl ?? undefined,
+      );
     } catch (err: any) {
       if (err?.name !== "AbortError") {
         processHandle.change((d: any) => {

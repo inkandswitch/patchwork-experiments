@@ -73,7 +73,13 @@ function isTextUnderPointer(x: number, y: number, target: Element | null): boole
     charRange.setEnd(textNode, Math.min(charOffset + 1, textNode.length));
     const rect = charRange.getBoundingClientRect();
     const SLOP = 2;
-    return rect.width > 0 && x >= rect.left - SLOP && x <= rect.right + SLOP && y >= rect.top - SLOP && y <= rect.bottom + SLOP;
+    return (
+      rect.width > 0 &&
+      x >= rect.left - SLOP &&
+      x <= rect.right + SLOP &&
+      y >= rect.top - SLOP &&
+      y <= rect.bottom + SLOP
+    );
   } catch {
     return false;
   }
@@ -176,7 +182,8 @@ export class CanvasView {
     this.handle.on("change", onDocChange);
     this.disposers.push(() => this.handle.off("change", onDocChange));
 
-    const initialTool = this.handle.doc()?.stateByUser?.[contactUrl]?.selectedTool ?? "spatial-canvas-tool-select";
+    const initialTool =
+      this.handle.doc()?.stateByUser?.[contactUrl]?.selectedTool ?? "spatial-canvas-tool-select";
     this.setActiveTool(initialTool);
   }
 
@@ -213,7 +220,9 @@ export class CanvasView {
     const onPointerCancel = (e: PointerEvent) => {
       if (e.pointerId !== this.activePointerId) return;
       this.activePointerId = null;
-      const btn = this.container.querySelector<HTMLElement>(`patchwork-view[tool-id="${this.activeTool}"]`);
+      const btn = this.container.querySelector<HTMLElement>(
+        `patchwork-view[tool-id="${this.activeTool}"]`,
+      );
       btn?.dispatchEvent(new CustomEvent("spatial-canvas:cancel", { bubbles: false }));
     };
 
@@ -276,7 +285,8 @@ export class CanvasView {
     const onKeyDown = (e: KeyboardEvent) => {
       // Ignore shortcuts when focus is inside a text input / contenteditable
       const target = e.target as HTMLElement;
-      if (target.isContentEditable || target.tagName === "INPUT" || target.tagName === "TEXTAREA") return;
+      if (target.isContentEditable || target.tagName === "INPUT" || target.tagName === "TEXTAREA")
+        return;
 
       const isMod = e.metaKey || e.ctrlKey;
 
@@ -326,7 +336,8 @@ export class CanvasView {
         // Select the duplicates
         this.handle.change((d) => {
           if (!d.stateByUser) d.stateByUser = {};
-          if (!d.stateByUser[contactUrl]) d.stateByUser[contactUrl] = { selection: {}, color: "#1a1a1a" };
+          if (!d.stateByUser[contactUrl])
+            d.stateByUser[contactUrl] = { selection: {}, color: "#1a1a1a" };
           const sel: Record<string, true> = {};
           for (const id of newIds) sel[id] = true;
           d.stateByUser[contactUrl].selection = sel;
@@ -359,7 +370,9 @@ export class CanvasView {
   // ---------------------------------------------------------------------------
 
   private dispatchToActiveTool(type: string, e: PointerEvent) {
-    const btn = this.container.querySelector<HTMLElement>(`patchwork-view[tool-id="${this.activeTool}"]`);
+    const btn = this.container.querySelector<HTMLElement>(
+      `patchwork-view[tool-id="${this.activeTool}"]`,
+    );
     if (!btn) return;
     const page = this.inputs.screenToPage(e.clientX, e.clientY, this.camera);
     btn.dispatchEvent(
@@ -379,7 +392,9 @@ export class CanvasView {
   }
 
   setActiveTool(tool: string) {
-    const oldBtn = this.container.querySelector<HTMLElement>(`patchwork-view[tool-id="${this.activeTool}"]`);
+    const oldBtn = this.container.querySelector<HTMLElement>(
+      `patchwork-view[tool-id="${this.activeTool}"]`,
+    );
     oldBtn?.dispatchEvent(new CustomEvent("spatial-canvas:cancel", { bubbles: false }));
     this.activeTool = tool;
     this.canvasEl.dataset.tool = tool;
@@ -388,7 +403,8 @@ export class CanvasView {
     if (current !== tool) {
       this.handle.change((d) => {
         if (!d.stateByUser) d.stateByUser = {};
-        if (!d.stateByUser[contactUrl]) d.stateByUser[contactUrl] = { selection: {}, color: "#1a1a1a" };
+        if (!d.stateByUser[contactUrl])
+          d.stateByUser[contactUrl] = { selection: {}, color: "#1a1a1a" };
         d.stateByUser[contactUrl].selectedTool = tool;
       });
     }
@@ -407,7 +423,9 @@ export class CanvasView {
 
   private mountLayers() {
     const registry = getRegistry("patchwork:tool");
-    const layerDescs = registry.filter((p) => !!(p.tags as string[] | undefined)?.includes("spatial-canvas-layer"));
+    const layerDescs = registry.filter(
+      (p) => !!(p.tags as string[] | undefined)?.includes("spatial-canvas-layer"),
+    );
 
     for (const desc of layerDescs) {
       // Use patchwork-view so the framework provides a proper PatchworkViewElement
@@ -432,8 +450,10 @@ export class CanvasView {
 
     // ── Floating panels → 3×3 grid overlay inside .sc-canvas-wrapper ────────
 
-    const panelEntries = Object.entries(doc.layout).filter(([, e]) => e.kind === "panel") as
-      [string, import("./types.js").FloatingPanel][];
+    const panelEntries = Object.entries(doc.layout).filter(([, e]) => e.kind === "panel") as [
+      string,
+      import("./types.js").FloatingPanel,
+    ][];
 
     if (panelEntries.length > 0) {
       const overlay = document.createElement("div");
@@ -493,8 +513,10 @@ export class CanvasView {
     //   top bars → before .sc-canvas-wrapper
     //   bottom bars → after .sc-canvas-wrapper
 
-    const barEntries = Object.entries(doc.layout).filter(([, e]) => e.kind === "bar") as
-      [string, import("./types.js").Bar][];
+    const barEntries = Object.entries(doc.layout).filter(([, e]) => e.kind === "bar") as [
+      string,
+      import("./types.js").Bar,
+    ][];
 
     for (const [toolId, entry] of barEntries) {
       const view = document.createElement("patchwork-view");

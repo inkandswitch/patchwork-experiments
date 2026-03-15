@@ -42,9 +42,13 @@
   flex-shrink: 0;
 }
 .sc-bar--left,
-.sc-bar--right  { height: 100%; }
+.sc-bar--right {
+  height: 100%;
+}
 .sc-bar--top,
-.sc-bar--bottom { width: 100%; }
+.sc-bar--bottom {
+  width: 100%;
+}
 
 /* Viewport — clips content without creating a scroll container */
 .sc-canvas {
@@ -92,10 +96,26 @@
   gap: 8px;
 }
 
-.sc-side--top    { grid-area: top;    flex-direction: row;    align-items: flex-start; }
-.sc-side--bottom { grid-area: bottom; flex-direction: row;    align-items: flex-end; }
-.sc-side--left   { grid-area: left;   flex-direction: column; align-items: flex-start; }
-.sc-side--right  { grid-area: right;  flex-direction: column; align-items: flex-end; }
+.sc-side--top {
+  grid-area: top;
+  flex-direction: row;
+  align-items: flex-start;
+}
+.sc-side--bottom {
+  grid-area: bottom;
+  flex-direction: row;
+  align-items: flex-end;
+}
+.sc-side--left {
+  grid-area: left;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.sc-side--right {
+  grid-area: right;
+  flex-direction: column;
+  align-items: flex-end;
+}
 
 /* Alignment groups within a side */
 .sc-side-group {
@@ -104,9 +124,13 @@
   gap: 8px;
 }
 
-.sc-side-group--center { margin: auto; }
-.sc-side-group--end    { margin-top: auto; margin-left: auto; }
-
+.sc-side-group--center {
+  margin: auto;
+}
+.sc-side-group--end {
+  margin-top: auto;
+  margin-left: auto;
+}
 
 /* Individual panel card */
 .sc-panel {
@@ -115,7 +139,7 @@
   border: 1px solid #e0e0e0;
   border-radius: 8px;
   padding: 4px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
 /* Tool buttons — applied to <patchwork-view> elements in the toolbar */
