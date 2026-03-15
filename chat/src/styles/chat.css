@@ -616,6 +616,19 @@
       padding:0 16px; min-height:22px; font-size:12px;
       color:var(--text-muted); font-style:italic; flex-shrink:0;
     }
+    .chat-llm-status {
+      padding:0 16px; min-height:22px; font-size:12px;
+      color:var(--text-muted); font-style:italic; flex-shrink:0;
+      font-family:monospace;
+    }
+    .chat-stop-btn {
+      display:inline-flex; align-items:center; gap:4px;
+      padding:2px 10px; border:1px solid var(--border); border-radius:4px;
+      background:var(--bg-mid); color:var(--text-secondary);
+      font-size:12px; font-family:inherit; cursor:pointer;
+      font-style:normal;
+    }
+    .chat-stop-btn:hover { background:var(--bg-hover); color:var(--text-primary); }
     .chat-input-wrapper { flex-shrink:0; padding:0 16px 16px; position:relative; }
 
     /* Emoji/emoticon autocomplete popup */
@@ -1069,7 +1082,7 @@
       content:''; position:absolute; left:20%; right:20%; top:50%;
       border-top:1px solid var(--border); z-index:0;
     }
-    .chat-time-gap span, .chat-time-gap {
+    .chat-time-gap span {
       position:relative; z-index:1; background:var(--bg-dark); padding:0 8px;
     }
 
@@ -1125,4 +1138,96 @@
     .chat-model-dialog-footer {
       display:flex; gap:8px; justify-content:flex-end;
       padding:12px 16px; border-top:1px solid var(--border);
+    }
+
+    /* ================================================================
+       MOBILE / NARROW SCREEN
+       ================================================================ */
+    @media (max-width: 600px) {
+      /* Stack sidebar above chat instead of side-by-side */
+      .chat-root {
+        flex-direction:column-reverse !important;
+      }
+      .chat-root.sidebar-left { flex-direction:column-reverse !important; }
+
+      .chat-sidebar {
+        width:100% !important; min-width:0 !important;
+        border-left:none !important; border-right:none !important;
+        border-bottom:1px solid var(--border);
+        max-height:50%;
+      }
+      .chat-sidebar.visible { max-height:50%; }
+      .chat-sidebar.drop-target { width:100% !important; min-width:0 !important; height:60px; }
+      .chat-sidebar.visible.drop-target { width:100% !important; }
+      .chat-sidebar-resize { display:none; }
+
+      /* Tighter message padding */
+      .chat-msg-group { padding:2px 10px; gap:8px; }
+      .chat-msg-continuation { padding:0 10px 0 48px; }
+      .chat-msg-continuation.has-gif { padding-left:10px; }
+      .chat-msg-action { padding:4px 10px; }
+
+      /* Smaller avatars */
+      .chat-avatar-col { width:30px; }
+      .chat-avatar { width:30px; height:30px; font-size:14px; }
+      .chat-msg-gif-inline { width:30px; height:30px; }
+
+      /* Presence bar */
+      .chat-presence-bar { padding:4px 10px; gap:6px; flex-wrap:wrap; }
+
+      /* Input area */
+      .chat-input-wrapper { padding:0 8px 8px; }
+      .chat-input { padding:6px 8px; font-size:14px; }
+      .chat-input-btn { width:32px; height:32px; font-size:18px; }
+      .chat-gif-toggle { width:32px; height:32px; font-size:18px; }
+
+      /* Reply bar */
+      .chat-reply-bar { padding:6px 8px; font-size:12px; }
+      .chat-msg-reply-ref { padding-left:24px; font-size:12px; }
+      .chat-msg-reply-ref::before { left:12px; }
+      .chat-msg-reply-ref-text { max-width:180px; }
+
+      /* Voice notes */
+      .chat-voice-note { max-width:100%; }
+
+      /* Embeds */
+      .chat-msg-embed { height:200px; }
+      .chat-msg-video-wrap { max-width:100%; }
+      .chat-msg-image-wrap { max-width:100%; }
+
+      /* Code blocks don't overflow */
+      .chat-code-block code { font-size:12px; }
+      .shiki { font-size:12px !important; }
+
+      /* Emoji picker */
+      .chat-emoji-picker { max-width:260px; width:260px; }
+
+      /* Dialogs */
+      .chat-emoticon-dialog, .chat-font-dialog {
+        min-width:0; max-width:calc(100vw - 24px); width:calc(100vw - 24px);
+      }
+      .chat-model-dialog { width:calc(100vw - 24px); }
+
+      /* Theme popover */
+      .chat-theme-popover { min-width:180px; }
+
+      /* Autocomplete */
+      .chat-autocomplete-item { padding:6px 8px; font-size:13px; }
+
+      /* Typing bar */
+      .chat-typing-bar { padding:0 10px; }
+      .chat-llm-status { padding:0 10px; }
+
+      /* Recording bar */
+      .chat-recording-bar { padding:6px 8px; }
+
+      /* Sidebar pinned items */
+      .chat-sidebar-pinned-wrap { min-height:120px; }
+
+      /* Rotate sidebar icon to suggest vertical stacking */
+      .chat-sidebar-toggle-btn svg,
+      .chat-sidebar-collapse-btn svg { transform:rotate(90deg); }
+
+      /* Time gap lines */
+      .chat-time-gap::before { left:10%; right:10%; }
     }

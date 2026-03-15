@@ -61,6 +61,8 @@ export function ChatRoot(props: {
 	// Computer/LLM state
 	const [computerActive, setComputerActive] = createSignal(false)
 	const [computerAutoMode, setComputerAutoMode] = createSignal(false)
+	const [llmStatus, setLlmStatus] = createSignal("")
+	const [computerAbort, setComputerAbort] = createSignal<AbortController | null>(null)
 	let llmWorker: SharedWorker | null = null
 	let llmReady = false
 	const llmCallbacks = new Map<string, {resolve: (v: string) => void; reject: (e: any) => void; onToken?: (t: string) => void; onStatus?: (s: string) => void}>()
@@ -352,10 +354,27 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		const apiKey = profile?.openrouterApiKey
 		if (!apiKey) throw new Error("No OpenRouter API key. Use /model to set one.")
 		const model = profile?.openrouterModel || "anthropic/claude-sonnet-4"
+		const contextLength = profile?.openrouterModelContextLength
+		const maxCompletionTokens = profile?.openrouterModelMaxCompletionTokens
+		// Estimate input tokens (~4 chars per token) and leave room for output
+		const inputEstimate = Math.ceil(JSON.stringify(messages).length / 4)
+		let maxTokens: number | undefined
+		if (contextLength) {
+			// Use the model's max completion tokens if known, otherwise default to 8192
+			const maxOutput = maxCompletionTokens || 8192
+			// Ensure we don't exceed context: max_tokens <= contextLength - inputEstimate
+			const available = Math.max(1024, contextLength - inputEstimate - 256)
+			maxTokens = Math.min(maxOutput, available)
+		} else {
+			// No model info stored — omit max_tokens and let OpenRouter decide
+			maxTokens = undefined
+		}
+		const body: any = {model, messages, stream: true}
+		if (maxTokens !== undefined) body.max_tokens = maxTokens
 		const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
 			method: "POST",
 			headers: {"Authorization": "Bearer " + apiKey, "Content-Type": "application/json"},
-			body: JSON.stringify({model, messages, stream: true, max_tokens: 128000}),
+			body: JSON.stringify(body),
 			signal,
 		})
 		if (!res.ok) throw new Error("OpenRouter: " + (await res.text()))
@@ -693,7 +712,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 			await (window as any).patchwork.modules.loadModules([folderHandle.url])
 		}
 
-		return {toolName: toolId, toolId, updated: false}
+		return {toolName: datatypeId, toolId: datatypeId, updated: false}
 	}
 
 	// ---- Context assembly ----
@@ -704,7 +723,21 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		const contextMessages: any[] = []
 
 		const recent = msgs.slice(-50)
-		for (const entry of recent) {
+
+		// Find the latest context-clear marker and only include messages after it
+		let startIdx = 0
+		for (let i = recent.length - 1; i >= 0; i--) {
+			const entry = recent[i]
+			if (!entry?.ref || !entry?.url) continue
+			try {
+				const mh = await repo.find(entry.url)
+				const msg = mh.doc() as any
+				if (msg?.contextClear) { startIdx = i + 1; break }
+			} catch {}
+		}
+
+		for (let ri = startIdx; ri < recent.length; ri++) {
+			const entry = recent[ri]
 			if (!entry?.ref || !entry?.url) continue
 			try {
 				const mh = await repo.find(entry.url)
@@ -798,6 +831,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		}
 		if (replyTo) msgData.replyTo = replyTo
 		if (opts?.embeds) msgData.embeds = opts.embeds
+		if (opts?.contextClear) msgData.contextClear = true
 		repo.create2(msgData).then((msgHandle: any) => {
 			props.handle.change((d: any) => {
 				if (!d.messages) d.messages = []
@@ -822,6 +856,11 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 			if (!computerActive()) { sendComputerMessage("computer is not active. Use /computer invite first."); return }
 			setComputerAutoMode(!computerAutoMode())
 			sendComputerMessage("Auto-respond mode: " + (computerAutoMode() ? "ON" : "OFF"))
+			return
+		}
+		if (sub === "clear") {
+			if (!computerActive()) { sendComputerMessage("computer is not active."); return }
+			sendComputerMessage("context cleared. i'll only consider messages from this point forward.", undefined, {contextClear: true})
 			return
 		}
 		if (sub === "model") {
@@ -1050,6 +1089,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		computerResponding = true
 
 		const abortController = new AbortController()
+		setComputerAbort(abortController)
 		// Inactivity timeout: abort if no tokens received for 30s
 		let inactivityTimer: any = null
 		const INACTIVITY_TIMEOUT = 90000
@@ -1096,6 +1136,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		let showingStatus = false
 		function onToken(fullText: string) {
 			showingStatus = false
+			setLlmStatus("")
 			resetInactivityTimer()
 			latestTokenText = fullText.replace(/^\[Computer\]\s*/i, "")
 			if (!tokenThrottleTimer) {
@@ -1109,7 +1150,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 			if (!status || latestTokenText) return // don't overwrite real tokens
 			showingStatus = true
 			resetInactivityTimer()
-			currentStreamHandle.change((d: any) => { d.text = status })
+			setLlmStatus(status)
 		}
 
 		const MAX_TOOL_ROUNDS = 5
@@ -1135,58 +1176,32 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 					)
 
 					// Process non-tool-call blocks (patchwork-tool, file, embed, image)
-					if (otherBlocks.length > 0 || trimmedText) {
-						const partial = {blocks: otherBlocks, text: parsed.text}
-						const {text, opts} = await processRichBlocks(partial)
-						if (hasPatchworkTool) madeChanges = true
+					const partial = {blocks: otherBlocks, text: parsed.text}
+					const {text, opts} = await processRichBlocks(partial)
+					if (hasPatchworkTool) madeChanges = true
 
-						// Store rich blocks for UI display
-						const displayBlocks = parsed.blocks
-							.filter((b: any) => b.type === "tool-call" || b.type === "patchwork-tool")
-							.map((b: any) => ({type: b.type, content: b.content, meta: b.meta || ""}))
+					// Store rich blocks for UI display
+					const displayBlocks = parsed.blocks
+						.filter((b: any) => b.type === "tool-call" || b.type === "patchwork-tool")
+						.map((b: any) => ({type: b.type, content: b.content, meta: b.meta || ""}))
 
-						currentStreamHandle.change((d: any) => {
-							d.text = text || ""
-							d.streaming = false
-							if (opts?.embeds) d.embeds = opts.embeds
-							if (displayBlocks.length > 0) {
-								if (!d.richBlocks) d.richBlocks = []
-								for (const bl of displayBlocks) d.richBlocks.push(bl)
-							}
-						})
-
-						// If asking a question, stop here — don't loop
-						if (endsWithQuestion) {
-							// Still execute tool calls so side effects happen, but don't feed results back
-							for (const tc of toolCalls) {
-								await executeToolCall(tc)
-							}
-							break
+					currentStreamHandle.change((d: any) => {
+						d.text = text || ""
+						d.streaming = false
+						if (opts?.embeds) d.embeds = opts.embeds
+						if (displayBlocks.length > 0) {
+							if (!d.richBlocks) d.richBlocks = []
+							for (const bl of displayBlocks) d.richBlocks.push(bl)
 						}
+					})
 
-						// Create new streaming message for next round
-						const nextMsgData: any = {
-							id: generateId(), name: "computer", text: "", timestamp: Date.now(),
-							isComputer: true, font: "monospace", streaming: true,
+					// If asking a question, stop here — don't loop
+					if (endsWithQuestion) {
+						// Still execute tool calls so side effects happen, but don't feed results back
+						for (const tc of toolCalls) {
+							await executeToolCall(tc)
 						}
-						currentStreamHandle = await repo.create2(nextMsgData)
-						props.handle.change((dd: any) => {
-							if (!dd.messages) dd.messages = []
-							dd.messages.push({ref: true, url: currentStreamHandle.url, timestamp: nextMsgData.timestamp})
-						})
-					} else {
-						// Store rich blocks even when no text
-						const displayBlocks = parsed.blocks
-							.filter((b: any) => b.type === "tool-call" || b.type === "patchwork-tool")
-							.map((b: any) => ({type: b.type, content: b.content, meta: b.meta || ""}))
-						currentStreamHandle.change((d: any) => {
-							d.text = ""
-							d.streaming = true
-							if (displayBlocks.length > 0) {
-								if (!d.richBlocks) d.richBlocks = []
-								for (const bl of displayBlocks) d.richBlocks.push(bl)
-							}
-						})
+						break
 					}
 
 					// Execute tool calls and store results
@@ -1204,12 +1219,9 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 							}
 						})
 					}
-					if (toolCalls.length > 0) {
-						messages.push({role: "assistant", content: response})
-						messages.push({role: "user", content: "[Tool results]\n" + toolResults})
-					}
 
 					// Self-check: after making changes, check pinned iframes for errors
+					let needsNextRound = toolCalls.length > 0
 					if (madeChanges) {
 						await new Promise(r => setTimeout(r, 2000))
 						resetInactivityTimer()
@@ -1247,19 +1259,38 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 								messages.push({role: "assistant", content: response})
 								messages.push({role: "user", content: selfCheck})
 								madeChanges = false
-								continue
+								needsNextRound = true
 							}
 						}
 					}
 
-					if (toolCalls.length > 0) continue
+					if (needsNextRound) {
+						if (toolCalls.length > 0) {
+							messages.push({role: "assistant", content: response})
+							messages.push({role: "user", content: "[Tool results]\n" + toolResults})
+						}
+						// Create new streaming message for next round
+						const nextMsgData: any = {
+							id: generateId(), name: "computer", text: "", timestamp: Date.now(),
+							isComputer: true, font: "monospace", streaming: true,
+						}
+						currentStreamHandle = await repo.create2(nextMsgData)
+						props.handle.change((dd: any) => {
+							if (!dd.messages) dd.messages = []
+							dd.messages.push({ref: true, url: currentStreamHandle.url, timestamp: nextMsgData.timestamp})
+						})
+						continue
+					}
+
+					// No more rounds needed — done
+					break
 				}
 
-				// No tool calls — finalize
+				// No tool calls or patchwork-tool — finalize with plain text
 				const finalDisplayBlocks = parsed.blocks
 					.filter((b: any) => b.type === "patchwork-tool")
 					.map((b: any) => ({type: b.type, content: b.content, meta: b.meta || ""}))
-				if (otherBlocks.length > 0) {
+				if (parsed.blocks.length > 0) {
 					const {text, opts} = await processRichBlocks(parsed)
 					currentStreamHandle.change((d: any) => {
 						d.text = text || "Here you go!"
@@ -1285,6 +1316,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 				} catch {}
 			}
 		} finally {
+			setComputerAbort(null)
 			if (inactivityTimer) clearTimeout(inactivityTimer)
 			if (tokenThrottleTimer) clearTimeout(tokenThrottleTimer)
 			// Always ensure streaming is cleared on the final message
@@ -1297,6 +1329,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 				} catch {}
 			}
 			computerResponding = false
+			setLlmStatus("")
 		}
 	}
 
@@ -1646,6 +1679,24 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 									onReact={openEmojiPicker}
 								/>
 								<TypingBar />
+								<Show when={computerAbort()}>
+									<div class="chat-llm-status" style="display:flex;align-items:center;gap:8px;">
+										<Show when={llmStatus()}>
+											<span>{llmStatus()}</span>
+										</Show>
+										<button
+											class="chat-stop-btn"
+											on:pointerdown={(e: PointerEvent) => {
+												e.preventDefault()
+												e.stopPropagation()
+												computerAbort()?.abort()
+											}}
+										>
+											<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+											Stop
+										</button>
+									</div>
+								</Show>
 								<InputArea
 									replyToId={replyToId()}
 									onClearReply={() => setReplyToId(null)}

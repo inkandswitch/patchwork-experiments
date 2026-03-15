@@ -30,7 +30,7 @@ export function ModelDialog(props: {onClose: () => void}) {
 	// OpenRouter state
 	const [orApiKey, setOrApiKey] = createSignal("")
 	const [orModel, setOrModel] = createSignal("openai/gpt-3.5-turbo")
-	const [orModels, setOrModels] = createSignal<{id: string; name: string}[]>([])
+	const [orModels, setOrModels] = createSignal<{id: string; name: string; context_length?: number; max_completion_tokens?: number}[]>([])
 	const [orLoading, setOrLoading] = createSignal(false)
 	const [orProbed, setOrProbed] = createSignal(false)
 
@@ -96,7 +96,12 @@ export function ModelDialog(props: {onClose: () => void}) {
 			const data = await resp.json()
 			const models = (data.data || [])
 				.filter((m: any) => m.id)
-				.map((m: any) => ({id: m.id, name: m.name || m.id}))
+				.map((m: any) => ({
+					id: m.id,
+					name: m.name || m.id,
+					context_length: m.context_length || m.top_provider?.context_length,
+					max_completion_tokens: m.top_provider?.max_completion_tokens,
+				}))
 				.sort((a: any, b: any) => a.name.localeCompare(b.name))
 			setOrModels(models)
 		} catch (e) {
@@ -131,11 +136,14 @@ export function ModelDialog(props: {onClose: () => void}) {
 	function save() {
 		const ph = chatProfileHandle()
 		if (!ph) return
+		const selectedModel = orModels().find(m => m.id === orModel())
 		ph.change((p: any) => {
 			p.llmProvider = tab()
 			p.localModel = localModel()
 			p.openrouterApiKey = orApiKey()
 			p.openrouterModel = orModel()
+			p.openrouterModelContextLength = selectedModel?.context_length || null
+			p.openrouterModelMaxCompletionTokens = selectedModel?.max_completion_tokens || null
 			p.ollamaUrl = ollamaUrl()
 			p.ollamaModel = ollamaModel()
 		})

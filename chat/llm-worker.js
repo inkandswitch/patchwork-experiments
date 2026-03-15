@@ -353,6 +353,24 @@ async function doGenerateLocal(chatUrl, gen, messages) {
 
 // ---- OpenRouter generation (SSE streaming) ----
 
+function buildOpenRouterBody(config, messages) {
+  const body = {
+    model: config.model || "anthropic/claude-sonnet-4",
+    messages,
+    stream: true,
+    /** @type {number|undefined} */ max_tokens: undefined,
+  }
+  const contextLength = config.contextLength
+  const maxCompletionTokens = config.maxCompletionTokens
+  if (contextLength) {
+    const inputEstimate = Math.ceil(JSON.stringify(messages).length / 4)
+    const maxOutput = maxCompletionTokens || 8192
+    const available = Math.max(1024, contextLength - inputEstimate - 256)
+    body.max_tokens = Math.min(maxOutput, available)
+  }
+  return body
+}
+
 async function doGenerateOpenRouter(chatUrl, gen, messages, config) {
   try {
     broadcast({ type: "status", message: "Thinking…" })
@@ -362,12 +380,7 @@ async function doGenerateOpenRouter(chatUrl, gen, messages, config) {
         "Authorization": "Bearer " + config.apiKey,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        model: config.model || "anthropic/claude-sonnet-4",
-        messages,
-        stream: true,
-        max_tokens: 128000,
-      }),
+      body: JSON.stringify(buildOpenRouterBody(config, messages)),
       signal: gen.abortController.signal,
     })
     if (!res.ok) throw new Error("OpenRouter: " + (await res.text()))

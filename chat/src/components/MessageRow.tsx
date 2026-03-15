@@ -61,6 +61,13 @@ export function MessageRow(props: {
 						<div class="chat-skeleton-line short" />
 						<div class="chat-skeleton-line" />
 					</div>
+					<MessageHoverActions
+						msg={props.msg}
+						rawIdx={props.msg._rawIdx!}
+						onReply={props.onReply}
+						onReact={props.onReact}
+						onDelete={props.onDelete}
+					/>
 				</div>
 			</Match>
 

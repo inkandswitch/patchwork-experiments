@@ -19,7 +19,7 @@ interface ThemeContextValue {
 const ThemeCtx = createContext<ThemeContextValue>()
 
 export const ThemeProvider: ParentComponent<{rootEl: HTMLElement}> = (props) => {
-	const [themeColor, setThemeColorSignal] = createSignal("oklch(0.55 0.18 270)")
+	const [themeColor, setThemeColorSignal] = createSignal("oklch(0.80 0.12 350)")
 	const [isLightBg, setIsLightBg] = createSignal(false)
 	const [fontSize, setFontSizeSignal] = createSignal(15)
 

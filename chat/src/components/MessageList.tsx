@@ -32,6 +32,8 @@ export function MessageList(props: {
 	// Track which URLs we've started resolving — prevents duplicate async calls
 	const pendingResolves = new Set<string>()
 	const subscribedUrls = new Set<string>()
+	const retryCounts = new Map<string, number>()
+	const MAX_RETRIES = 5
 	const subscriptions: {handle: any; cb: () => void}[] = []
 
 	onCleanup(() => {
@@ -97,7 +99,10 @@ export function MessageList(props: {
 		let hasUnresolved = false
 		for (const entry of rawEntries as any[]) {
 			if (entry.ref && entry.url && !cache.has(entry.url)) {
+				const tries = retryCounts.get(entry.url) || 0
+				if (tries >= MAX_RETRIES) continue // give up on permanently unavailable
 				if (!pendingResolves.has(entry.url)) {
+					retryCounts.set(entry.url, tries + 1)
 					resolveMessageDoc(entry.url)
 				}
 				hasUnresolved = true
@@ -274,7 +279,7 @@ export function MessageList(props: {
 		>
 			<Show
 				when={messages().length > 0}
-				fallback={<div class="chat-empty">no messages yet. say hello</div>}
+				fallback={<div class="chat-empty">no chitter nor chatter yet. say {Math.random() < 0.1 ? "howdy 🤠" : "hiya 🥰"}</div>}
 			>
 				<Index each={messages()}>
 					{(msg, i) => {
@@ -282,7 +287,7 @@ export function MessageList(props: {
 						return (
 						<div data-msg-id={msg().id}>
 							<Show when={meta()?.showTimeGap}>
-								<div class="chat-time-gap">{formatTimeGap(msg().timestamp)}</div>
+								<div class="chat-time-gap"><span>{formatTimeGap(msg().timestamp)}</span></div>
 							</Show>
 							<MessageRow
 								msg={msg()}

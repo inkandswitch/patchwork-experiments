@@ -267,8 +267,10 @@ export function AutocompletePopup(props: {
 									<span class="chat-autocomplete-item-emoji">
 										{item.url ? (
 											<img src={emoticonImgSrc(item.url)} style="width:24px;height:24px" />
+										) : item.emoji ? (
+											item.emoji
 										) : (
-											item.emoji || item.display
+											<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
 										)}
 									</span>
 									<span class="chat-autocomplete-item-name">{item.label}</span>
