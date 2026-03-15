@@ -2,7 +2,7 @@ import { getSupportedToolsForType } from "@inkandswitch/patchwork-plugins";
 import type { CanvasDoc } from "../canvas/types.js";
 import type { DocHandle, AutomergeUrl } from "@automerge/automerge-repo";
 import { createShape, nextZIndex, newId } from "../canvas/commands.js";
-import { screenToCanvas } from "../canvas/inputs.js";
+import type { SpatialCanvasHost } from "../canvas/spatial-canvas-element.js";
 import type { ImageShape } from "../image/image.js";
 import type { EmbedShape } from "../embed/types.js";
 import type { HasPatchworkMetadata } from "@inkandswitch/patchwork-filesystem";
@@ -69,7 +69,9 @@ export default function DropLayer(handle: DocHandle<CanvasDoc>, element: Patchwo
     e.preventDefault();
     if (!e.dataTransfer || !repo || !canvasEl) return;
 
-    const pos = screenToCanvas(canvasEl, e.clientX, e.clientY);
+    const canvas = canvasEl.closest<SpatialCanvasHost>('patchwork-view[tool-id="spatial-canvas"]')?.spatialCanvas;
+    if (!canvas) return;
+    const pos = canvas.screenToPage(e.clientX, e.clientY);
 
     // ---- Patchwork URL drops -------------------------------------------
 

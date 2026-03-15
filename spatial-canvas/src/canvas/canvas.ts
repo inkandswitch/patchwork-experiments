@@ -151,9 +151,7 @@ export class CanvasView {
     this.screenBounds = { x: 0, y: 0, width: initialRect.width, height: initialRect.height };
 
     // Initialize camera (writes CSS variables to DOM)
-    this.camera = updateCamera({ x: 0, y: 0, zoom: 1 }, this.container, this.layer, (cam) => {
-      this.camera = cam;
-    });
+    this.camera = updateCamera({ x: 0, y: 0, zoom: 1 }, this.layer);
 
     // Mount layers and layout entries from the patchwork registry
     this.mountLayers();
@@ -228,9 +226,7 @@ export class CanvasView {
         // Zoom — ctrl+scroll or trackpad pinch-to-zoom (ctrlKey=true)
         const rect = this.inputs.bounds;
         const next = zoomCamera(this.camera, e.clientX - rect.left, e.clientY - rect.top, rawDy);
-        this.camera = updateCamera(next, this.container, this.layer, (cam) => {
-          this.camera = cam;
-        });
+        this.camera = updateCamera(next, this.layer);
       } else {
         // Pan — trackpads produce X+Y deltas, mice produce Y only
         const dx = e.shiftKey ? rawDy : rawDx;
@@ -240,9 +236,7 @@ export class CanvasView {
           x: this.camera.x - dx / this.camera.zoom,
           y: this.camera.y - dy / this.camera.zoom,
         };
-        this.camera = updateCamera(next, this.container, this.layer, (cam) => {
-          this.camera = cam;
-        });
+        this.camera = updateCamera(next, this.layer);
       }
     };
 

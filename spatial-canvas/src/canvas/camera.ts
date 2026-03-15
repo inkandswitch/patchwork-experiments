@@ -9,13 +9,11 @@ export function clampZoom(zoom: number): number {
 
 /**
  * Apply a new camera state directly to the DOM — no framework, no reconciler.
- * Two style.setProperty calls are the only work done here.
+ * Returns the clamped camera that was applied.
  */
 export function updateCamera(
   next: Camera,
-  container: HTMLElement,
   layer: HTMLElement,
-  onViewport: (camera: Camera) => void
 ): Camera {
   const camera: Camera = {
     x: next.x,
@@ -23,19 +21,13 @@ export function updateCamera(
     zoom: clampZoom(next.zoom),
   }
 
-  // 1. CSS variables — read by layers that need coordinate conversion
-  container.style.setProperty('--sc-zoom', camera.zoom.toString())
-  container.style.setProperty('--sc-x', camera.x.toString())
-  container.style.setProperty('--sc-y', camera.y.toString())
-
-  // 2. Layer transform — scale then translate (CSS composes right-to-left,
-  //    so translate executes first in page coordinates, then scale)
+  // Layer transform — scale then translate (CSS composes right-to-left,
+  // so translate executes first in page coordinates, then scale)
   layer.style.setProperty(
     'transform',
     `scale(${camera.zoom}) translateX(${camera.x}px) translateY(${camera.y}px)`
   )
 
-  onViewport(camera)
   return camera
 }
 

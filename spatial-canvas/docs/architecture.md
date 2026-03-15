@@ -27,7 +27,7 @@ Key CSS rules (see `src/core/css/canvas.css`):
 
 | Class | Role |
 |-------|------|
-| `.sc-container` | fills the mount point; holds CSS camera variables (`--sc-zoom`, `--sc-x`, `--sc-y`); `touch-action:none` |
+| `.sc-container` | fills the mount point; `touch-action:none` |
 | `.sc-canvas` | viewport; `overflow:clip` so shapes can extend beyond it without causing scroll |
 | `.sc-layer` | **zero-sized** (`width:0;height:0`); receives `transform: translate/scale`; `contain:layout style size` so the browser never measures its children |
 | `.sc-panel-overlay` | 3×3 grid of panel slots, `pointer-events:none` (individual panels opt back in) |
@@ -52,7 +52,12 @@ canvasX = (clientX - canvasRect.left) / zoom - cameraX
 canvasY = (clientY - canvasRect.top)  / zoom - cameraY
 ```
 
-`screenToCanvas(element, clientX, clientY)` in `src/core/inputs.ts` does this from any element inside `.sc-container` by reading the `--sc-zoom`, `--sc-x`, `--sc-y` CSS variables from `.sc-container`.
+`screenToPage(clientX, clientY)` on the `SpatialCanvasElement` instance does this conversion. From any element inside the canvas DOM, the instance is accessible via:
+
+```ts
+const canvas = element.closest<SpatialCanvasHost>('patchwork-view[tool-id="spatial-canvas"]')?.spatialCanvas
+const pos = canvas?.screenToPage(clientX, clientY)
+```
 
 Shape `x`/`y` are always in canvas space. The layer renders them with:
 

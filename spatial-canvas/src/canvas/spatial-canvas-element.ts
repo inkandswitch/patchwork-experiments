@@ -3,8 +3,8 @@ import type { Camera, Rect, CanvasDoc, Disposer, Vec2 } from "./types.js";
 import type { PatchworkViewElement } from "@inkandswitch/patchwork-elements";
 import { updateCamera, zoomCamera } from "./camera.js";
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
-import { ShapeRenderLayer } from "./shape-render-layer.js";
-import canvasCss from "./css/canvas.css?inline";
+import { ShapeRenderLayer } from "./layers/shape-render-layer.js";
+import canvasCss from "./canvas.css?inline";
 
 /**
  * SpatialCanvas — the core spatial canvas host.
@@ -61,9 +61,7 @@ export class SpatialCanvasElement {
     const initialRect = this.#canvasEl.getBoundingClientRect();
     this.#screenBounds = { x: 0, y: 0, width: initialRect.width, height: initialRect.height };
 
-    this.#camera = updateCamera({ x: 0, y: 0, zoom: 1 }, this.#container, this.#layer, (cam) => {
-      this.#camera = cam;
-    });
+    this.#camera = updateCamera({ x: 0, y: 0, zoom: 1 }, this.#layer);
 
     this.#mountLayers(handle);
     this.#mountLayout(handle);
@@ -274,7 +272,7 @@ export class SpatialCanvasElement {
 
       if ((e.ctrlKey || e.altKey) && e.buttons === 0) {
         const next = zoomCamera(this.#camera, e.clientX - rect.left, e.clientY - rect.top, rawDy);
-        this.#camera = updateCamera(next, this.#container, this.#layer, (cam) => { this.#camera = cam; });
+        this.#camera = updateCamera(next, this.#layer);
       } else {
         const dx = e.shiftKey ? rawDy : rawDx;
         const dy = e.shiftKey ? 0 : rawDy;
@@ -283,7 +281,7 @@ export class SpatialCanvasElement {
           x: this.#camera.x - dx / this.#camera.zoom,
           y: this.#camera.y - dy / this.#camera.zoom,
         };
-        this.#camera = updateCamera(next, this.#container, this.#layer, (cam) => { this.#camera = cam; });
+        this.#camera = updateCamera(next, this.#layer);
       }
       this.#shapeRenderLayer?.notifyCameraChanged();
     };

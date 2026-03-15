@@ -1,6 +1,6 @@
 import type { DocHandle, Repo } from "@automerge/automerge-repo";
-import type { CanvasDoc, CanvasShape, Rect } from "./types.js";
-import { PatchworkRefViewElement } from "./patchwork-ref-view.js";
+import type { CanvasDoc, CanvasShape, Rect } from "../types.js";
+import { PatchworkRefViewElement } from "../patchwork-ref-view.js";
 
 export class ShapeRenderLayer {
   #handle: DocHandle<CanvasDoc>;
