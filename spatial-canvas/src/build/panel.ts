@@ -48,6 +48,161 @@ type ProcessDoc = {
 };
 
 // =============================================================================
+// Panel DOM
+// =============================================================================
+
+export default function BuildPanel(
+  handle: DocHandle<CanvasDoc>,
+  element: PatchworkViewElement,
+): Disposer {
+  const repo = element.repo;
+
+  let abortController: AbortController | null = null;
+  let processViewEl: HTMLElement | null = null;
+
+  // Panel: fixed header + scrollable body
+  element.style.cssText = [
+    "display:flex",
+    "flex-direction:column",
+    "min-width:200px",
+    "max-width:340px",
+  ].join(";");
+
+  // ---- Fixed header (button only, never scrolls) ----
+  const header = document.createElement("div");
+  header.style.cssText = "flex-shrink:0;padding:8px 8px 6px;";
+  element.appendChild(header);
+
+  const buildBtn = document.createElement("button");
+  buildBtn.textContent = "Build It";
+  buildBtn.style.cssText = [
+    "width:100%",
+    "padding:6px 14px",
+    "font:600 13px/1 system-ui,sans-serif",
+    "background:#1a1a1a",
+    "color:#fff",
+    "border:none",
+    "border-radius:6px",
+    "cursor:pointer",
+    "transition:background 0.15s",
+  ].join(";");
+  buildBtn.addEventListener("mouseenter", () => {
+    if (!buildBtn.disabled) buildBtn.style.background = "#333";
+  });
+  buildBtn.addEventListener("mouseleave", () => {
+    if (!buildBtn.disabled) buildBtn.style.background = "#1a1a1a";
+  });
+  header.appendChild(buildBtn);
+
+  // ---- Scrollable body (image preview + process view) ----
+  const body = document.createElement("div");
+  body.style.cssText = [
+    "flex:1",
+    "overflow-y:auto",
+    "max-height:55vh",
+    "display:flex",
+    "flex-direction:column",
+    "gap:6px",
+    "padding:0 8px 8px",
+  ].join(";");
+  element.appendChild(body);
+
+  // ---- Image preview (shown after capture) ----
+  const imgPreview = document.createElement("img");
+  imgPreview.style.cssText = [
+    "display:none",
+    "width:100%",
+    "border-radius:4px",
+    "border:1px solid #e0e0e0",
+    "object-fit:contain",
+  ].join(";");
+  body.appendChild(imgPreview);
+
+  // ---- Click handler ----
+  buildBtn.addEventListener("click", async () => {
+    abortController?.abort();
+    abortController = new AbortController();
+
+    const doc = handle.doc();
+    if (!doc) return;
+
+    buildBtn.disabled = true;
+    buildBtn.textContent = "Capturing…";
+    buildBtn.style.background = "#888";
+
+    // Always capture a fresh screenshot before building
+    const imageDataUrl = await captureCanvas();
+    if (imageDataUrl) {
+      imgPreview.src = imageDataUrl;
+      imgPreview.style.display = "block";
+    } else {
+      imgPreview.style.display = "none";
+    }
+
+    buildBtn.textContent = "Building…";
+
+    const shapes: CanvasShape[] = Object.values(doc.shapes);
+
+    // Create a fresh ProcessDoc for this run
+    const apiUrl: string =
+      (import.meta as any).env?.VITE_LLM_API_URL ?? "https://openrouter.ai/api/v1";
+    const model: string = (import.meta as any).env?.VITE_LLM_MODEL ?? "anthropic/claude-opus-4-5";
+
+    const processHandle = repo.create() as unknown as DocHandle<ProcessDoc>;
+    processHandle.change((d: any) => {
+      d.title = "Build";
+      d.config = { apiUrl, model };
+      d.workspaceUrl = "";
+      d.prompt = "";
+      d.output = [];
+      d.timestamp = Date.now();
+    });
+
+    // Replace previous process view with a fresh patchwork-view
+    processViewEl?.remove();
+    const view = document.createElement("patchwork-view");
+    view.setAttribute("doc-url", processHandle.url);
+    view.setAttribute("tool-id", "process");
+    view.style.cssText = "display:block;width:100%;";
+    body.appendChild(view);
+    processViewEl = view;
+
+    // Auto-scroll the body as content streams in
+    const scrollObserver = new MutationObserver(() => {
+      body.scrollTop = body.scrollHeight;
+    });
+    scrollObserver.observe(view, { childList: true, subtree: true, characterData: true });
+
+    try {
+      await runBuildProcess(
+        repo,
+        processHandle,
+        handle.url,
+        shapes,
+        abortController.signal,
+        imageDataUrl ?? undefined,
+      );
+    } catch (err: any) {
+      if (err?.name !== "AbortError") {
+        processHandle.change((d: any) => {
+          d.output.push({ type: "text", content: `Error: ${err?.message ?? String(err)}` });
+        });
+      }
+    } finally {
+      scrollObserver.disconnect();
+      buildBtn.disabled = false;
+      buildBtn.textContent = "Build It";
+      buildBtn.style.background = "#1a1a1a";
+    }
+  });
+
+  return () => {
+    abortController?.abort();
+    element.innerHTML = "";
+  };
+}
+
+// =============================================================================
 // Streaming <script> block parser — copied from llm-canvas/src/process/parser.ts
 // =============================================================================
 
@@ -642,157 +797,3 @@ async function runBuildProcess(
   }
 }
 
-// =============================================================================
-// Panel DOM
-// =============================================================================
-
-export default function BuildPanel(
-  handle: DocHandle<CanvasDoc>,
-  element: PatchworkViewElement,
-): Disposer {
-  const repo = element.repo;
-
-  let abortController: AbortController | null = null;
-  let processViewEl: HTMLElement | null = null;
-
-  // Panel: fixed header + scrollable body
-  element.style.cssText = [
-    "display:flex",
-    "flex-direction:column",
-    "min-width:200px",
-    "max-width:340px",
-  ].join(";");
-
-  // ---- Fixed header (button only, never scrolls) ----
-  const header = document.createElement("div");
-  header.style.cssText = "flex-shrink:0;padding:8px 8px 6px;";
-  element.appendChild(header);
-
-  const buildBtn = document.createElement("button");
-  buildBtn.textContent = "Build It";
-  buildBtn.style.cssText = [
-    "width:100%",
-    "padding:6px 14px",
-    "font:600 13px/1 system-ui,sans-serif",
-    "background:#1a1a1a",
-    "color:#fff",
-    "border:none",
-    "border-radius:6px",
-    "cursor:pointer",
-    "transition:background 0.15s",
-  ].join(";");
-  buildBtn.addEventListener("mouseenter", () => {
-    if (!buildBtn.disabled) buildBtn.style.background = "#333";
-  });
-  buildBtn.addEventListener("mouseleave", () => {
-    if (!buildBtn.disabled) buildBtn.style.background = "#1a1a1a";
-  });
-  header.appendChild(buildBtn);
-
-  // ---- Scrollable body (image preview + process view) ----
-  const body = document.createElement("div");
-  body.style.cssText = [
-    "flex:1",
-    "overflow-y:auto",
-    "max-height:55vh",
-    "display:flex",
-    "flex-direction:column",
-    "gap:6px",
-    "padding:0 8px 8px",
-  ].join(";");
-  element.appendChild(body);
-
-  // ---- Image preview (shown after capture) ----
-  const imgPreview = document.createElement("img");
-  imgPreview.style.cssText = [
-    "display:none",
-    "width:100%",
-    "border-radius:4px",
-    "border:1px solid #e0e0e0",
-    "object-fit:contain",
-  ].join(";");
-  body.appendChild(imgPreview);
-
-  // ---- Click handler ----
-  buildBtn.addEventListener("click", async () => {
-    abortController?.abort();
-    abortController = new AbortController();
-
-    const doc = handle.doc();
-    if (!doc) return;
-
-    buildBtn.disabled = true;
-    buildBtn.textContent = "Capturing…";
-    buildBtn.style.background = "#888";
-
-    // Always capture a fresh screenshot before building
-    const imageDataUrl = await captureCanvas();
-    if (imageDataUrl) {
-      imgPreview.src = imageDataUrl;
-      imgPreview.style.display = "block";
-    } else {
-      imgPreview.style.display = "none";
-    }
-
-    buildBtn.textContent = "Building…";
-
-    const shapes: CanvasShape[] = Object.values(doc.shapes);
-
-    // Create a fresh ProcessDoc for this run
-    const apiUrl: string =
-      (import.meta as any).env?.VITE_LLM_API_URL ?? "https://openrouter.ai/api/v1";
-    const model: string = (import.meta as any).env?.VITE_LLM_MODEL ?? "anthropic/claude-opus-4-5";
-
-    const processHandle = repo.create() as unknown as DocHandle<ProcessDoc>;
-    processHandle.change((d: any) => {
-      d.title = "Build";
-      d.config = { apiUrl, model };
-      d.workspaceUrl = "";
-      d.prompt = "";
-      d.output = [];
-      d.timestamp = Date.now();
-    });
-
-    // Replace previous process view with a fresh patchwork-view
-    processViewEl?.remove();
-    const view = document.createElement("patchwork-view");
-    view.setAttribute("doc-url", processHandle.url);
-    view.setAttribute("tool-id", "process");
-    view.style.cssText = "display:block;width:100%;";
-    body.appendChild(view);
-    processViewEl = view;
-
-    // Auto-scroll the body as content streams in
-    const scrollObserver = new MutationObserver(() => {
-      body.scrollTop = body.scrollHeight;
-    });
-    scrollObserver.observe(view, { childList: true, subtree: true, characterData: true });
-
-    try {
-      await runBuildProcess(
-        repo,
-        processHandle,
-        handle.url,
-        shapes,
-        abortController.signal,
-        imageDataUrl ?? undefined,
-      );
-    } catch (err: any) {
-      if (err?.name !== "AbortError") {
-        processHandle.change((d: any) => {
-          d.output.push({ type: "text", content: `Error: ${err?.message ?? String(err)}` });
-        });
-      }
-    } finally {
-      scrollObserver.disconnect();
-      buildBtn.disabled = false;
-      buildBtn.textContent = "Build It";
-      buildBtn.style.background = "#1a1a1a";
-    }
-  });
-
-  return () => {
-    abortController?.abort();
-    element.innerHTML = "";
-  };
-}

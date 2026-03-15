@@ -10,52 +10,11 @@ import { createElement, Pen } from "lucide";
 // Shape type
 // ============================================================================
 
-export interface PenShape extends CanvasShape {
+export type PenShape = CanvasShape & {
   type: "pen";
   points: [number, number, number][]; // [x, y, pressure] in canvas-space
   color: string;
-}
-
-// ============================================================================
-// SVG helpers
-// ============================================================================
-
-const PEN_SIZE = 6;
-
-function toSvgPath(pts: number[][]): string {
-  if (pts.length < 2) return "";
-  let d = `M ${pts[0][0]},${pts[0][1]}`;
-  for (let i = 1; i < pts.length - 1; i++) {
-    const mx = (pts[i][0] + pts[i + 1][0]) / 2;
-    const my = (pts[i][1] + pts[i + 1][1]) / 2;
-    d += ` Q ${pts[i][0]},${pts[i][1]} ${mx},${my}`;
-  }
-  d += ` Z`;
-  return d;
-}
-
-function computePath(points: [number, number, number][]): string {
-  const outline = getStroke(points, {
-    size: PEN_SIZE,
-    thinning: 0.5,
-    smoothing: 0.5,
-    streamline: 0.5,
-  });
-  return toSvgPath(outline);
-}
-
-function makeSvg(): SVGSVGElement {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.style.cssText =
-    "position:absolute;top:0;left:0;overflow:visible;pointer-events:none;z-index:2147483647;";
-  return svg;
-}
-
-function makePath(color: string): SVGPathElement {
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("fill", color);
-  return path;
-}
+};
 
 // ============================================================================
 // Tool
@@ -156,4 +115,45 @@ export function PenTool(handle: DocHandle<CanvasDoc>, buttonEl: PatchworkViewEle
     buttonEl.removeEventListener("pointercancel", onCancel);
     cleanup();
   };
+}
+
+// ============================================================================
+// SVG helpers
+// ============================================================================
+
+const PEN_SIZE = 6;
+
+function toSvgPath(pts: number[][]): string {
+  if (pts.length < 2) return "";
+  let d = `M ${pts[0][0]},${pts[0][1]}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const mx = (pts[i][0] + pts[i + 1][0]) / 2;
+    const my = (pts[i][1] + pts[i + 1][1]) / 2;
+    d += ` Q ${pts[i][0]},${pts[i][1]} ${mx},${my}`;
+  }
+  d += ` Z`;
+  return d;
+}
+
+function computePath(points: [number, number, number][]): string {
+  const outline = getStroke(points, {
+    size: PEN_SIZE,
+    thinning: 0.5,
+    smoothing: 0.5,
+    streamline: 0.5,
+  });
+  return toSvgPath(outline);
+}
+
+function makeSvg(): SVGSVGElement {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.style.cssText =
+    "position:absolute;top:0;left:0;overflow:visible;pointer-events:none;z-index:2147483647;";
+  return svg;
+}
+
+function makePath(color: string): SVGPathElement {
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("fill", color);
+  return path;
 }

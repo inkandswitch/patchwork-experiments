@@ -7,21 +7,21 @@ import type { CanvasShape, Disposer } from "../canvas/types.js";
 
 export type RectangleFill = "transparent" | "white" | "filled";
 
-export interface RectangleShape extends CanvasShape {
+export type RectangleShape = CanvasShape & {
   type: "rectangle";
   width: number;
   height: number;
   color?: string;
   fill?: RectangleFill; // default: 'filled'
-}
+};
 
 // ============================================================================
 // Data model
 // ============================================================================
 
-export interface RectangleDoc {
+export type RectangleDoc = {
   color: string;
-}
+};
 
 // ============================================================================
 // Datatype

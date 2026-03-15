@@ -8,11 +8,11 @@ const MIN_SIZE = 10;
 
 type HandleType = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 
-interface HandleDef {
+type HandleDef = {
   type: HandleType;
   cursor: string;
   style: string;
-}
+};
 
 const H = 12; // handle size in px — fully outside the bounding box
 
@@ -45,7 +45,7 @@ const HANDLES: HandleDef[] = [
   { type: "e", cursor: "ew-resize", style: `top:0;bottom:0;right:-${H}px;width:${H}px;` },
 ];
 
-interface DragState {
+type DragState = {
   shapeId: string;
   handleType: HandleType;
   origX: number;
@@ -54,7 +54,7 @@ interface DragState {
   origH: number;
   originCanvas: { x: number; y: number };
   handleEl: HTMLElement;
-}
+};
 
 function computeResize(
   type: HandleType,

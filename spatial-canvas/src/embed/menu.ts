@@ -1,12 +1,12 @@
 import { createElement, type IconNode } from "lucide";
 import * as icons from "lucide";
 
-export interface MenuItem {
+export type MenuItem = {
   id: string;
   name: string;
   icon?: string;
   onDragStart?: (e: DragEvent) => void;
-}
+};
 
 const ITEM_CSS = [
   "display:flex",

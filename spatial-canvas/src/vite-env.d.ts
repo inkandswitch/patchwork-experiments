@@ -10,42 +10,42 @@ declare module "*.css?inline" {
 }
 
 declare module "@inkandswitch/patchwork-plugins" {
-  export interface PluginDescription {
+  export type PluginDescription = {
     id: string;
     type: string;
     name: string;
     icon?: string;
     tags?: string[];
     [key: string]: unknown;
-  }
+  };
 
-  export interface LoadedPlugin<D extends PluginDescription, I> extends PluginDescription {
+  export type LoadedPlugin<D extends PluginDescription, I> = PluginDescription & {
     module: I;
-  }
+  };
 
-  export interface PluginRegistry<D extends PluginDescription, I = any> {
+  export type PluginRegistry<D extends PluginDescription, I = any> = {
     all(): D[];
     filter(fn: (plugin: D) => boolean): D[];
     load(id: string): Promise<LoadedPlugin<D, I> | undefined>;
     on(event: string, callback: (...args: any[]) => void): () => void;
     off(event: string, callback: (...args: any[]) => void): void;
-  }
+  };
 
   export function getRegistry<D extends PluginDescription>(type: string): PluginRegistry<D>;
   export function registerPlugins(plugins: PluginDescription[], importUrl: string): void;
 
   // Datatype / tool helpers (from @inkandswitch/patchwork-plugins real types)
-  export interface DatatypeDescription extends PluginDescription {
+  export type DatatypeDescription = PluginDescription & {
     type: "patchwork:datatype";
     icon: string;
     unlisted?: boolean;
-  }
+  };
 
-  export interface ToolDescription extends PluginDescription {
+  export type ToolDescription = PluginDescription & {
     type: "patchwork:tool";
     supportedDatatypes: "*" | string[];
     unlisted?: boolean;
-  }
+  };
 
   export type LoadedDatatype<D = unknown> = LoadedPlugin<
     DatatypeDescription,
