@@ -17,7 +17,7 @@ export default function paperViewport(
 
 // ─── Viewport UI ──────────────────────────────────────────────────────────────
 
-function ViewportUI(props: { handle: DocHandle<PaperDoc> }) {
+export function ViewportUI(props: { handle: DocHandle<PaperDoc> }) {
   const doc = makeDocumentProjection<PaperDoc>(props.handle);
   const [camera, setCamera] = createSignal<Camera>({ x: 0, y: 0, z: 1 });
 

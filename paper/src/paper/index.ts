@@ -17,7 +17,7 @@ export const plugins: Plugin<any>[] = [
     name: 'Paper',
     supportedDatatypes: ['paper'],
     async load() {
-      return (await import('./viewport.js')).default;
+      return (await import('./paper-tool.js')).default;
     },
   },
 ];

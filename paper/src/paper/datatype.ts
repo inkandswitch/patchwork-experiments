@@ -5,6 +5,15 @@ export const PaperDatatype: DatatypeImplementation<PaperDoc> = {
   init(doc) {
     doc.title = 'Paper';
     doc.shapes = {};
+    doc.panels = [
+      { id: 'panel-top-left', toolId: 'paper-panel', position: 'top-left' },
+      { id: 'panel-top-center', toolId: 'paper-panel', position: 'top-center' },
+      { id: 'panel-top-right', toolId: 'paper-panel', position: 'top-right' },
+      { id: 'panel-bottom-left', toolId: 'paper-panel', position: 'bottom-left' },
+      { id: 'panel-bottom-right', toolId: 'paper-panel', position: 'bottom-right' },
+      { id: 'panel-left', toolId: 'paper-panel', position: 'left-top' },
+      { id: 'panel-right', toolId: 'paper-panel', position: 'right-center' },
+    ];
 
     const shapes = [
       [
@@ -105,6 +114,18 @@ export const PaperDatatype: DatatypeImplementation<PaperDoc> = {
           stroke: '#f97316',
           strokeWidth: 3,
           zIndex: 6,
+        },
+      ],
+      [
+        'shape-embed',
+        {
+          type: 'embed',
+          x: 200,
+          y: -200,
+          docUrl: 'automerge:dhkuYMpSttbRJPBJ7J5XST28bu7',
+          width: 400,
+          height: 300,
+          zIndex: 7,
         },
       ],
     ] as const;
