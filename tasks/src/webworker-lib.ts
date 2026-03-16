@@ -13,7 +13,7 @@ export async function getRepo(port: MessagePort, peerId: string) {
     peerId: peerId as any,
   });
 
-  await repo.networkSubsystem.whenReady()
+  await repo.networkSubsystem.whenReady();
 
   return repo;
 }
