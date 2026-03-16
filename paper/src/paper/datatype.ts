@@ -1,10 +1,10 @@
-import type { DatatypeImplementation } from '@inkandswitch/patchwork-plugins'
-import type { LineShape, PaperDoc, RectangleShape } from './types.js'
+import type { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
+import type { LineShape, PaperDoc, RectangleShape } from './types.js';
 
 export const PaperDatatype: DatatypeImplementation<PaperDoc> = {
   init(doc) {
-    doc.title = 'Paper'
-    doc.shapes = {}
+    doc.title = 'Paper';
+    doc.shapes = {};
 
     const shapes: Array<[string, Omit<RectangleShape, 'id'> | Omit<LineShape, 'id'>]> = [
       [
@@ -90,18 +90,18 @@ export const PaperDatatype: DatatypeImplementation<PaperDoc> = {
           zIndex: 5,
         },
       ],
-    ]
+    ];
 
     for (const [id, shape] of shapes) {
-      doc.shapes[id] = { ...shape, id }
+      doc.shapes[id] = { ...shape, id };
     }
   },
 
   getTitle(doc) {
-    return doc.title ?? 'Paper'
+    return doc.title ?? 'Paper';
   },
 
   setTitle(doc, title) {
-    doc.title = title
+    doc.title = title;
   },
-}
+};

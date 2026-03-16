@@ -1,23 +1,20 @@
-import { Plugin } from '@inkandswitch/patchwork-plugins'
+import { plugins as paperPlugins } from './paper/index.js';
+import {
+  plugins as refViewPlugins,
+  registerPatchworkRefViewElement,
+} from './patchwork-ref-view/index.js';
 
-export const plugins: Plugin<any>[] = [
-  {
-    type: 'patchwork:datatype' as const,
-    id: 'paper',
-    name: 'Paper',
-    icon: 'PenLine',
-    async load() {
-      const { PaperDatatype } = await import('./datatype.js')
-      return PaperDatatype
-    },
-  },
-  {
-    type: 'patchwork:tool' as const,
-    id: 'paper',
-    name: 'Paper',
-    supportedDatatypes: ['paper'],
-    async load() {
-      return (await import('./viewport.js')).default
-    },
-  },
-]
+export const plugins = [...paperPlugins, ...refViewPlugins];
+
+// TODO: hack — patchwork-view and patchwork-ref-view should eventually be unified
+// so the host registers both element types with the repo in one place.
+registerPatchworkRefViewElement({ repo: (window as any).repo });
+
+export { registerPatchworkRefViewElement } from './patchwork-ref-view/index.js';
+export type {
+  RefToolDescription,
+  RefTool,
+  LoadedRefTool,
+  RefToolImplementation,
+  RegisterPatchworkRefViewElementParams,
+} from './patchwork-ref-view/index.js';
