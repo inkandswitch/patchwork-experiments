@@ -1,0 +1,39 @@
+.paper-viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  touch-action: none;
+  contain: strict;
+  background: #f8fafc;
+  cursor: default;
+  user-select: none;
+  outline: none;
+}
+
+.paper-scene {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  contain: layout style size;
+  transform-origin: 0 0;
+}
+
+.paper-shape {
+  position: absolute;
+  transform-origin: top left;
+  contain: size layout;
+}
+
+.paper-shape-rect {
+  overflow: visible;
+}
+
+.paper-shape-line {
+  overflow: visible;
+  position: absolute;
+  top: 0;
+  left: 0;
+}

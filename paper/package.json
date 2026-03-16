@@ -1,0 +1,29 @@
+{
+  "name": "@patchwork/paper",
+  "version": "0.0.1",
+  "description": "paper tool",
+  "type": "module",
+  "exports": "./dist/index.js",
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "sync": "pnpm build && pushwork sync",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\""
+  },
+  "keywords": [],
+  "author": "Ink & Switch",
+  "dependencies": {
+    "@automerge/automerge-repo": "2.5.3",
+    "@automerge/automerge-repo-solid-primitives": "^2.5.3",
+    "@inkandswitch/patchwork-plugins": "^0.0.2",
+    "solid-js": "^1.9.11"
+  },
+  "devDependencies": {
+    "@inkandswitch/patchwork-bootloader": "^0.0.3",
+    "pushwork": "^1.0.5",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "vite-plugin-css-injected-by-js": "^3.5.2",
+    "vite-plugin-solid": "^2.11.11"
+  }
+}
