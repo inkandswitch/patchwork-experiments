@@ -48,11 +48,7 @@ function LineView(props: { lineRef: Ref<LineShape> }) {
   return (
     <>
       {shape() && (
-        <svg
-          width={w()}
-          height={h()}
-          style={{ overflow: 'visible' }}
-        >
+        <svg width={w()} height={h()} style={{ overflow: 'visible' }}>
           <line
             x1={shape()!.x1 - x()}
             y1={shape()!.y1 - y()}

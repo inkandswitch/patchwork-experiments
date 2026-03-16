@@ -15,6 +15,7 @@
   "dependencies": {
     "@automerge/automerge-repo": "2.5.3",
     "@automerge/automerge-repo-solid-primitives": "^2.5.3",
+    "@inkandswitch/patchwork-filesystem": "^0.0.3",
     "@inkandswitch/patchwork-plugins": "^0.0.2",
     "solid-js": "^1.9.11",
     "zod": "^3.24.0"
