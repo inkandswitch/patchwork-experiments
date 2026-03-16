@@ -1,6 +1,7 @@
 import type { Repo } from "@automerge/automerge-repo";
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
-import type { CanvasShape } from "./types.js";
+import type { CanvasShape } from "../canvas/types.js";
+import type { PatchworkViewElement } from "@inkandswitch/patchwork-elements";
 
 /**
  * <patchwork-ref-view> — custom element that mounts a canvas shape tool.
@@ -13,7 +14,16 @@ import type { CanvasShape } from "./types.js";
 export class PatchworkRefViewElement extends HTMLElement {
   static observedAttributes = ["ref-url"];
 
-  repo: Repo | null = null;
+  #repo: Repo | null = null;
+
+  get repo(): Repo | null {
+    return this.#repo;
+  }
+
+  set repo(value: Repo | null) {
+    this.#repo = value;
+    if (value) this.#mount();
+  }
 
   #refUrl: string | null = null;
   #cleanup: (() => void) | null = null;
@@ -36,13 +46,13 @@ export class PatchworkRefViewElement extends HTMLElement {
 
   async #mount() {
     this.#teardown();
-    if (!this.#refUrl || !this.repo) return;
+    if (!this.#refUrl || !this.#repo) return;
 
     const parsed = parseRefUrl(this.#refUrl);
     if (!parsed) return;
 
     const { docId, path } = parsed;
-    const handle = await this.repo.find(docId as any);
+    const handle = await this.#repo.find(docId as any);
 
     if (!this.#refUrl) return; // teardown was called while awaiting
 
@@ -77,7 +87,7 @@ export class PatchworkRefViewElement extends HTMLElement {
     const loaded = await registry.load(toolId);
     if (!loaded?.module) return;
 
-    const cleanup = (loaded.module as any)(handle, this);
+    const cleanup = (loaded.module as any)(handle, this, this.#refUrl);
     if (typeof cleanup === "function") this.#cleanup = cleanup;
   }
 
@@ -93,6 +103,24 @@ export class PatchworkRefViewElement extends HTMLElement {
 
 if (!customElements.get("patchwork-ref-view")) {
   customElements.define("patchwork-ref-view", PatchworkRefViewElement);
+}
+
+declare module "solid-js" {
+  namespace JSX {
+    interface IntrinsicElements {
+      "patchwork-ref-view": Omit<Partial<PatchworkRefViewElement>, "style"> & {
+        style?: string;
+        [key: string]: unknown;
+      };
+      "patchwork-view": Omit<Partial<PatchworkViewElement>, "style"> & {
+        style?: string;
+        class?: string;
+        "doc-url"?: string;
+        "tool-id"?: string;
+        [key: string]: unknown;
+      };
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

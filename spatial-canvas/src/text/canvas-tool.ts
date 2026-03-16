@@ -30,7 +30,7 @@ export default function CanvasTextTool(
   element: HTMLElement,
 ): Disposer {
   ensureFont();
-  const shapeId = element.dataset.shapeId ?? "";
+  const shapeId = decodeURIComponent(element.getAttribute("ref-url")?.split("/").pop() ?? "");
 
   const size = DEFAULT_FONT_SIZE;
   const color = "#1a1a1a";
@@ -38,7 +38,6 @@ export default function CanvasTextTool(
   const textarea = document.createElement("textarea");
   textarea.spellcheck = false;
   textarea.rows = 1;
-  textarea.dataset.shapeId = shapeId;
 
   const baseStyles = [
     "position:absolute",

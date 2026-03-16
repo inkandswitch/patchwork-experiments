@@ -17,8 +17,9 @@ const HEADER_H = 30;
 export default function CanvasEmbedTool(
   handle: DocHandle<CanvasDoc>,
   element: HTMLElement,
+  refUrl: string,
 ): Disposer {
-  const shapeId = element.dataset.shapeId ?? "";
+  const shapeId = decodeURIComponent(refUrl.split("/").pop() ?? "");
   const repo = (element as any).repo ?? null;
 
   element.style.boxSizing = "border-box";

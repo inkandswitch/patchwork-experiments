@@ -17,8 +17,9 @@ const PEN_SIZE = 6;
 export default function CanvasPenTool(
   handle: DocHandle<CanvasDoc>,
   element: HTMLElement,
+  refUrl: string,
 ): Disposer {
-  const shapeId = element.dataset.shapeId ?? "";
+  const shapeId = decodeURIComponent(refUrl.split("/").pop() ?? "");
   console.log("[canvas-pen] mounted for shapeId:", shapeId);
 
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");

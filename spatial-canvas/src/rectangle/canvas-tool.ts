@@ -15,8 +15,8 @@ const lightenColor = (hex: string, t = 0.72): string => {
  * Layout (position, size, zIndex) is applied by <patchwork-ref-view> before
  * this tool is mounted. This tool only sets visual styles.
  */
-const CanvasRectangleTool = (handle: DocHandle<CanvasDoc>, element: HTMLElement): Disposer => {
-  const shapeId = element.dataset.shapeId ?? "";
+const CanvasRectangleTool = (handle: DocHandle<CanvasDoc>, element: HTMLElement, refUrl: string): Disposer => {
+  const shapeId = decodeURIComponent(refUrl.split("/").pop() ?? "");
 
   element.style.borderRadius = "8px";
   element.style.boxSizing = "border-box";

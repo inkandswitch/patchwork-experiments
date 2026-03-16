@@ -18,8 +18,6 @@ export default function PlaceTextTool(
 
   let downAt: { x: number; y: number } | null = null;
 
-  const getCanvas = (e: Event) => getCanvas(e.target as Element);
-
   function getColor(): string {
     const contactUrl = window.accountDocHandle?.doc()?.contactUrl ?? "local";
     return handle.doc()?.stateByUser?.[contactUrl]?.color ?? DEFAULT_COLOR;
@@ -41,7 +39,7 @@ export default function PlaceTextTool(
   function onPointerUp(e: Event) {
     if (!downAt) return;
     const pe = e as PointerEvent;
-    const pos = getCanvas(e)?.screenToPage(pe.clientX, pe.clientY);
+    const pos = getCanvas(e.target as Element)?.screenToPage(pe.clientX, pe.clientY);
     if (!pos) return;
     const dx = pos.x - downAt.x;
     const dy = pos.y - downAt.y;

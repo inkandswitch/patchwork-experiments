@@ -1,3 +1,4 @@
+import "./patchwork-ref-view/index.js";
 import { rectanglePlugins } from "./rectangle/rectangle.js";
 import { penPlugins } from "./pen/plugins.js";
 import { textPlugins } from "./text/plugins.js";

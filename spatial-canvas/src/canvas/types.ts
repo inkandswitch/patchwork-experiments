@@ -87,3 +87,15 @@ export type PointerInfo = {
 };
 
 export type Disposer = () => void;
+
+declare global {
+  interface Window {
+    accountDocHandle?: { doc(): { contactUrl: string } | undefined };
+  }
+}
+
+declare module "@inkandswitch/patchwork-plugins" {
+  interface PluginDescription {
+    tags?: string[];
+  }
+}
