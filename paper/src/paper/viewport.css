@@ -20,20 +20,3 @@
   contain: layout style size;
   transform-origin: 0 0;
 }
-
-.paper-shape {
-  position: absolute;
-  transform-origin: top left;
-  contain: size layout;
-}
-
-.paper-shape-rect {
-  overflow: visible;
-}
-
-.paper-shape-line {
-  overflow: visible;
-  position: absolute;
-  top: 0;
-  left: 0;
-}

@@ -3,8 +3,10 @@ import {
   plugins as refViewPlugins,
   registerPatchworkRefViewElement,
 } from './patchwork-ref-view/index.js';
+import { plugins as rectanglePlugins } from './shapes/rectangle/index.js';
+import { plugins as linePlugins } from './shapes/line/index.js';
 
-export const plugins = [...paperPlugins, ...refViewPlugins];
+export const plugins = [...paperPlugins, ...refViewPlugins, ...rectanglePlugins, ...linePlugins];
 
 // TODO: hack — patchwork-view and patchwork-ref-view should eventually be unified
 // so the host registers both element types with the repo in one place.

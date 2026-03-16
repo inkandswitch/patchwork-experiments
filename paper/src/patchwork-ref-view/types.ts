@@ -20,3 +20,11 @@ export type RegisterPatchworkRefViewElementParams = {
   repo: Repo;
   name?: string;
 };
+
+declare module 'solid-js' {
+  namespace JSX {
+    interface IntrinsicElements {
+      'patchwork-ref-view': { ref?: HTMLElement | ((el: HTMLElement) => void); 'ref-url'?: string; class?: string; style?: string };
+    }
+  }
+}

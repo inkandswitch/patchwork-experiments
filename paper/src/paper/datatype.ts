@@ -1,12 +1,12 @@
 import type { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
-import type { LineShape, PaperDoc, RectangleShape } from './types.js';
+import type { PaperDoc } from './types.js';
 
 export const PaperDatatype: DatatypeImplementation<PaperDoc> = {
   init(doc) {
     doc.title = 'Paper';
     doc.shapes = {};
 
-    const shapes: Array<[string, Omit<RectangleShape, 'id'> | Omit<LineShape, 'id'>]> = [
+    const shapes = [
       [
         'shape-center',
         {
@@ -81,6 +81,8 @@ export const PaperDatatype: DatatypeImplementation<PaperDoc> = {
         'shape-line',
         {
           type: 'line',
+          x: -1000,
+          y: 0,
           x1: -1000,
           y1: 0,
           x2: 1100,
@@ -90,7 +92,22 @@ export const PaperDatatype: DatatypeImplementation<PaperDoc> = {
           zIndex: 5,
         },
       ],
-    ];
+      [
+        'shape-line-diagonal',
+        {
+          type: 'line',
+          x: -600,
+          y: -600,
+          x1: -600,
+          y1: -600,
+          x2: 600,
+          y2: 600,
+          stroke: '#f97316',
+          strokeWidth: 3,
+          zIndex: 6,
+        },
+      ],
+    ] as const;
 
     for (const [id, shape] of shapes) {
       doc.shapes[id] = { ...shape, id };

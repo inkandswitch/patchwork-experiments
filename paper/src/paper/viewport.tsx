@@ -1,18 +1,9 @@
-import type { DocHandle } from '@automerge/automerge-repo';
+import type { DocHandle, Ref } from '@automerge/automerge-repo';
 import { makeDocumentProjection } from '@automerge/automerge-repo-solid-primitives';
-import {
-  For,
-  Match,
-  Switch,
-  createEffect,
-  createMemo,
-  createSignal,
-  onCleanup,
-  onMount,
-} from 'solid-js';
+import { For, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js';
 import type { Accessor } from 'solid-js';
 import { render } from 'solid-js/web';
-import type { Camera, LineShape, PaperDoc, RectangleShape, Shape } from './types.js';
+import type { BaseShape, Camera, PaperDoc } from './types.js';
 import './viewport.css';
 
 // ─── Entry point (called by the plugin loader) ────────────────────────────────
@@ -44,7 +35,7 @@ function ViewportUI(props: { handle: DocHandle<PaperDoc> }) {
     const { x, y, z } = camera();
     sceneEl.style.setProperty(
       'transform',
-      `scale(${toDomPrecision(z)}) translate(${toDomPrecision(x)}px, ${toDomPrecision(y)}px)`,
+      `scale(${+z.toFixed(4)}) translate(${+x.toFixed(4)}px, ${+y.toFixed(4)}px)`,
     );
     sceneEl.style.setProperty('--paper-zoom', String(z));
   });
@@ -155,7 +146,12 @@ function ViewportUI(props: { handle: DocHandle<PaperDoc> }) {
     >
       <div ref={sceneEl} class="paper-scene">
         <For each={sortedIds()}>
-          {(id) => <ShapeNode id={id} shape={() => doc.shapes?.[id] as Shape} />}
+          {(id) => (
+            <ShapeNode
+              refUrl={props.handle.ref('shapes', id).url}
+              shape={() => doc.shapes?.[id] as BaseShape}
+            />
+          )}
         </For>
       </div>
     </div>
@@ -164,82 +160,24 @@ function ViewportUI(props: { handle: DocHandle<PaperDoc> }) {
 
 // ─── Shape node ───────────────────────────────────────────────────────────────
 
-function ShapeNode(props: { id: string; shape: Accessor<Shape> }) {
-  let el!: HTMLDivElement;
+function ShapeNode(props: { shape: Accessor<BaseShape>; refUrl: string }) {
+  let el!: HTMLElement;
+
+  onMount(() => {
+    el.style.setProperty('position', 'absolute');
+    el.style.setProperty('transform-origin', 'top left');
+  });
 
   createEffect(() => {
     const s = props.shape();
-    if (s.type === 'rectangle') {
-      el.style.setProperty('transform', shapeToCss(s.x, s.y, s.rotation ?? 0));
-      el.style.setProperty('width', toDomPrecision(s.w) + 'px');
-      el.style.setProperty('height', toDomPrecision(s.h) + 'px');
-      el.style.setProperty('z-index', String(s.zIndex));
-    } else {
-      const x = Math.min(s.x1, s.x2);
-      const y = Math.min(s.y1, s.y2);
-      const w = Math.abs(s.x2 - s.x1) || 1;
-      const h = Math.abs(s.y2 - s.y1) || 1;
-      el.style.setProperty('transform', shapeToCss(x, y));
-      el.style.setProperty('width', toDomPrecision(w) + 'px');
-      el.style.setProperty('height', toDomPrecision(h) + 'px');
-      el.style.setProperty('z-index', String(s.zIndex));
-    }
+    if (!s) return;
+    const x = s.x.toFixed(4);
+    const y = s.y.toFixed(4);
+    el.style.setProperty('transform', `translate(${x}px, ${y}px)`);
+    el.style.setProperty('z-index', String(s.zIndex));
   });
 
-  return (
-    <div ref={el} class="paper-shape">
-      <Switch>
-        <Match when={props.shape().type === 'rectangle'}>
-          <RectangleShapeView shape={props.shape as Accessor<RectangleShape>} />
-        </Match>
-        <Match when={props.shape().type === 'line'}>
-          <LineShapeView shape={props.shape as Accessor<LineShape>} />
-        </Match>
-      </Switch>
-    </div>
-  );
-}
-
-// ─── Shape renderers ──────────────────────────────────────────────────────────
-
-function RectangleShapeView(props: { shape: Accessor<RectangleShape> }) {
-  return (
-    <svg width={props.shape().w} height={props.shape().h} class="paper-shape-rect">
-      <rect
-        x={0}
-        y={0}
-        width={props.shape().w}
-        height={props.shape().h}
-        fill={props.shape().fill}
-        stroke={props.shape().stroke}
-        stroke-width={props.shape().strokeWidth}
-        rx={4}
-      />
-    </svg>
-  );
-}
-
-function LineShapeView(props: { shape: Accessor<LineShape> }) {
-  const s = props.shape;
-  const x = () => Math.min(s().x1, s().x2);
-  const y = () => Math.min(s().y1, s().y2);
-  const w = () => Math.abs(s().x2 - s().x1) || 1;
-  const h = () => Math.abs(s().y2 - s().y1) || 1;
-
-  return (
-    <svg width={w()} height={h()} class="paper-shape-line">
-      <line
-        x1={s().x1 - x()}
-        y1={s().y1 - y()}
-        x2={s().x2 - x()}
-        y2={s().y2 - y()}
-        stroke={s().stroke}
-        stroke-width={s().strokeWidth}
-        stroke-linecap="round"
-        stroke-dasharray="8 4"
-      />
-    </svg>
-  );
+  return <patchwork-ref-view ref={el} ref-url={props.refUrl} />;
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
@@ -266,15 +204,4 @@ function normalizeWheelDelta(e: WheelEvent): { dx: number; dy: number } {
   }
 
   return { dx, dy };
-}
-
-function shapeToCss(x: number, y: number, rotation = 0): string {
-  if (rotation === 0) return `translate(${toDomPrecision(x)}px, ${toDomPrecision(y)}px)`;
-  const cos = Math.cos(rotation);
-  const sin = Math.sin(rotation);
-  return `matrix(${toDomPrecision(cos)},${toDomPrecision(sin)},${toDomPrecision(-sin)},${toDomPrecision(cos)},${toDomPrecision(x)},${toDomPrecision(y)})`;
-}
-
-function toDomPrecision(v: number): string {
-  return +v.toFixed(4) + '';
 }
