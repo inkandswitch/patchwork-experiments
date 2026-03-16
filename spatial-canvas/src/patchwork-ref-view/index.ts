@@ -1,15 +1,15 @@
-import type { Repo } from "@automerge/automerge-repo";
+import { findRef } from "@automerge/automerge-repo";
+import type { Repo, Ref, RefUrl } from "@automerge/automerge-repo";
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
-import type { CanvasShape } from "../canvas/types.js";
 import type { PatchworkViewElement } from "@inkandswitch/patchwork-elements";
+import type { RefToolDescription, LoadedRefTool } from "../canvas/ref-tool.js";
 
 /**
- * <patchwork-ref-view> — custom element that mounts a canvas shape tool.
+ * <patchwork-ref-view> — custom element that mounts a ref-tool for an automerge ref.
  *
- * Accepts a `ref-url` attribute in the format `automerge:docId/path` pointing
- * to a shape entry inside a CanvasDoc. On each doc change it:
- *  1. Applies x, y, width, height, zIndex as inline layout styles.
- *  2. Looks up `canvas-{shape.type}` in the tool registry and mounts it.
+ * Accepts a `ref-url` attribute (automerge:docId/path). Resolves the ref, reads
+ * its value, and finds the first registered `patchwork:ref-tool` whose schema
+ * matches that value.
  */
 export class PatchworkRefViewElement extends HTMLElement {
   static observedAttributes = ["ref-url"];
@@ -27,17 +27,33 @@ export class PatchworkRefViewElement extends HTMLElement {
 
   #refUrl: string | null = null;
   #cleanup: (() => void) | null = null;
-  #unsubscribe: (() => void) | null = null;
+
+  get refUrl(): string | null {
+    return this.#refUrl;
+  }
+
+  set refUrl(value: string | null) {
+    if (this.#refUrl === value) return;
+    this.#refUrl = value;
+    const attr = this.getAttribute("ref-url");
+    if (attr === value) return;
+    if (value) {
+      this.setAttribute("ref-url", value);
+    } else {
+      this.removeAttribute("ref-url");
+    }
+  }
 
   attributeChangedCallback(name: string, _old: string | null, value: string | null) {
     if (name === "ref-url") {
-      this.#refUrl = value;
+      this.refUrl = value;
       this.#mount();
     }
   }
 
   connectedCallback() {
-    if (this.#refUrl) this.#mount();
+    this.refUrl = this.getAttribute("ref-url");
+    this.#mount();
   }
 
   disconnectedCallback() {
@@ -48,57 +64,57 @@ export class PatchworkRefViewElement extends HTMLElement {
     this.#teardown();
     if (!this.#refUrl || !this.#repo) return;
 
-    const parsed = parseRefUrl(this.#refUrl);
-    if (!parsed) return;
+    const refUrl = this.#refUrl;
 
-    const { docId, path } = parsed;
-    const handle = await this.#repo.find(docId as any);
+    const ref = await findRef(this.#repo, refUrl as RefUrl);
+    if (this.#refUrl !== refUrl) return;
 
-    if (!this.#refUrl) return; // teardown was called while awaiting
+    const tool = await this.#findTool(ref, refUrl);
+    if (!tool) return;
+    if (!tool.module) {
+      console.warn("[patchwork-ref-view] tool resolved but has no module", { refUrl });
+      return;
+    }
+    if (this.#refUrl !== refUrl) return;
 
-    const update = () => {
-      const doc = handle.doc() as Record<string, any> | undefined;
-      if (!doc) return;
-
-      const shape = resolvePathInDoc(doc, path) as CanvasShape | undefined;
-      if (!shape || typeof shape !== "object") return;
-
-      applyLayout(this, shape);
-
-      const toolId = `canvas-${shape.type}`;
-      if (this.getAttribute("data-mounted-tool") !== toolId) {
-        this.#mountTool(handle as any, toolId);
-        this.setAttribute("data-mounted-tool", toolId);
-      }
-    };
-
-    handle.on("change", update);
-    this.#unsubscribe = () => handle.off("change", update);
-
-    if (handle.doc()) update();
+    this.innerHTML = "";
+    const cleanup = (tool.module as (ref: Ref<unknown>, element: HTMLElement) => unknown)(
+      ref,
+      this,
+    );
+    if (typeof cleanup === "function") this.#cleanup = cleanup as () => void;
   }
 
-  async #mountTool(handle: any, toolId: string) {
-    this.#cleanup?.();
-    this.#cleanup = null;
-    this.innerHTML = "";
+  async #findTool(ref: Ref<unknown>, refUrl: string): Promise<LoadedRefTool | undefined> {
+    const value = ref.value() ?? (await waitForValue(ref));
+    if (this.#refUrl !== refUrl) return undefined;
 
-    const registry = getRegistry("patchwork:tool");
-    const loaded = await registry.load(toolId);
-    if (!loaded?.module) return;
+    const registry = getRegistry<RefToolDescription>("patchwork:ref-tool");
+    const match = registry.all().find((entry) => entry.schema.safeParse(value).success);
+    if (!match) {
+      console.warn("[patchwork-ref-view] no registered ref-tool matched value", { refUrl, value });
+      return undefined;
+    }
 
-    const cleanup = (loaded.module as any)(handle, this, this.#refUrl);
-    if (typeof cleanup === "function") this.#cleanup = cleanup;
+    return registry.load(match.id) as Promise<LoadedRefTool | undefined>;
   }
 
   #teardown() {
     this.#cleanup?.();
     this.#cleanup = null;
-    this.#unsubscribe?.();
-    this.#unsubscribe = null;
     this.innerHTML = "";
-    this.removeAttribute("data-mounted-tool");
   }
+}
+
+function waitForValue(ref: Ref<unknown>): Promise<unknown> {
+  return new Promise((resolve) => {
+    const unsubscribe = ref.onChange((value) => {
+      if (value !== undefined) {
+        unsubscribe();
+        resolve(value);
+      }
+    });
+  });
 }
 
 if (!customElements.get("patchwork-ref-view")) {
@@ -122,43 +138,3 @@ declare module "solid-js" {
     }
   }
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-const parseRefUrl = (refUrl: string): { docId: string; path: string[] } | null => {
-  const withoutHeads = refUrl.split("#")[0];
-  if (!withoutHeads.startsWith("automerge:")) return null;
-
-  const rest = withoutHeads.slice("automerge:".length);
-  const slashIdx = rest.indexOf("/");
-  if (slashIdx === -1) return null;
-
-  const docId = "automerge:" + rest.slice(0, slashIdx);
-  const path = rest
-    .slice(slashIdx + 1)
-    .split("/")
-    .map(decodeURIComponent)
-    .filter(Boolean);
-  return { docId, path };
-};
-
-const resolvePathInDoc = (doc: Record<string, any>, path: string[]): unknown => {
-  let cur: any = doc;
-  for (const seg of path) {
-    if (cur === null || typeof cur !== "object") return undefined;
-    cur = cur[seg];
-  }
-  return cur;
-};
-
-const applyLayout = (el: HTMLElement, shape: Partial<CanvasShape> & Record<string, any>) => {
-  el.style.position = "absolute";
-  el.style.top = "0";
-  el.style.left = "0";
-  el.style.transform = `translate(${shape.x ?? 0}px, ${shape.y ?? 0}px)`;
-  el.style.zIndex = shape.zIndex != null ? String(shape.zIndex) : "0";
-  el.style.width = shape.width != null ? `${shape.width}px` : "";
-  el.style.height = shape.height != null ? `${shape.height}px` : "";
-};
