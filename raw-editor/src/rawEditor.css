@@ -1,22 +1,22 @@
 :root {
   --re-border: rgba(0, 0, 0, 0.12);
   --re-btn-hover: rgba(0, 0, 0, 0.07);
-  --re-url-color: #0969da;
-  --re-url-hover: #0550ae;
   --re-badge-bg: rgba(0, 0, 0, 0.07);
   --re-dump-bg: rgba(0, 0, 0, 0.04);
   --re-mode-active-bg: rgba(0, 0, 0, 0.12);
+  --re-link: #0969da;
+  --re-link-hover: #0550ae;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --re-border: rgba(255, 255, 255, 0.13);
     --re-btn-hover: rgba(255, 255, 255, 0.09);
-    --re-url-color: #58a6ff;
-    --re-url-hover: #79c0ff;
     --re-badge-bg: rgba(255, 255, 255, 0.1);
     --re-dump-bg: rgba(255, 255, 255, 0.05);
     --re-mode-active-bg: rgba(255, 255, 255, 0.15);
+    --re-link: #58a6ff;
+    --re-link-hover: #79c0ff;
   }
 }
 
@@ -107,12 +107,10 @@
 
 /* ── json-edit-react overrides ── */
 
-/* Remove collapse animation */
 .re-content .jer-collection-inner {
   transition: none !important;
 }
 
-/* Icon hover: consistent scale for all action icons */
 .re-content .jer-edit-buttons svg,
 .re-content .jer-confirm-buttons svg,
 .re-content .jer-input-buttons svg {
@@ -125,25 +123,24 @@
   opacity: 0.9;
 }
 
-/* Spacing before the type-picker select */
 .re-content .jer-select-types {
   margin-left: 0.5em !important;
 }
 
-/* Collection edit: buttons under the editor, not far right */
 .re-content .jer-collection-input-button-row {
   justify-content: flex-start !important;
 }
 
-/* ── Dark mode: select dropdown + input borders ── */
-@media (prefers-color-scheme: dark) {
-  .re-content {
-    --jer-select-border: #4c566a;
-    --jer-select-focus: #81a1c1;
-    --jer-select-arrow: #d8dee9;
-    --jer-form-border: 1px solid #4c566a;
-  }
+/* Light mode input borders */
+.re-content .jer-form-border {
+  border-color: rgba(0, 0, 0, 0.15) !important;
+}
+.re-content .jer-form-border-focus {
+  border-color: #5e81ac !important;
+}
 
+/* ── Dark mode: inputs, selects, textareas ── */
+@media (prefers-color-scheme: dark) {
   .re-content .jer-select {
     background-color: #3b4252 !important;
     background-image: none !important;
@@ -165,21 +162,8 @@
     border-color: #81a1c1 !important;
   }
 
-  .re-content .jer-input-text,
-  .re-content .jer-input-number,
-  .re-content .jer-key-edit,
-  .re-content input {
-    background-color: #3b4252 !important;
-    color: #d8dee9 !important;
-    border-color: #4c566a !important;
-  }
-
-  .re-content textarea {
-    background-color: #3b4252 !important;
-    color: #d8dee9 !important;
-    border-color: #4c566a !important;
-  }
-
+  .re-content input,
+  .re-content textarea,
   .re-content .jer-collection-text-area {
     background-color: #3b4252 !important;
     color: #d8dee9 !important;
@@ -189,31 +173,31 @@
   .re-content .jer-form-border {
     border-color: #4c566a !important;
   }
-
   .re-content .jer-form-border-focus {
     border-color: #81a1c1 !important;
   }
 }
 
-/* Light mode: softer input borders */
-.re-content .jer-form-border {
-  border-color: rgba(0, 0, 0, 0.15) !important;
-}
-.re-content .jer-form-border-focus {
-  border-color: #5e81ac !important;
-}
-
 /* ── Automerge URL links ── */
 .re-automerge-url {
-  color: var(--re-url-color) !important;
+  color: var(--re-link) !important;
   cursor: pointer !important;
   text-decoration: underline;
 }
 .re-automerge-url:hover {
-  color: var(--re-url-hover) !important;
+  color: var(--re-link-hover) !important;
 }
 
-/* ── Uint8Array node ── */
+/* ── Binary data hint (disabled edit icon) ── */
+.re-binary-hint {
+  opacity: 0.25;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 2px;
+}
+
+/* ── Uint8Array inspector ── */
 .u8-node {
   display: inline-flex;
   align-items: baseline;
@@ -223,7 +207,6 @@
 
 .u8-badge {
   display: inline-block;
-  font-family: ui-monospace, monospace;
   font-size: 0.72em;
   padding: 0.05em 0.4em;
   border-radius: 0.25em;
@@ -232,7 +215,6 @@
 }
 
 .u8-size {
-  font-family: ui-monospace, monospace;
   font-size: 0.75em;
   opacity: 0.55;
 }
@@ -257,7 +239,6 @@
   padding: 0.4em 0.6em;
   border-radius: 0.3em;
   background: var(--re-dump-bg);
-  font-family: ui-monospace, monospace;
   font-size: 0.72em;
   line-height: 1.6;
   overflow-x: auto;

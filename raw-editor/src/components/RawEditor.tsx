@@ -59,6 +59,27 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Walk a nested object/array, calling `fn` on each value.
+ * If `fn` returns a non-undefined result, that replaces the value.
+ * Otherwise the walk recurses into arrays/objects.
+ */
+function deepMapValues(
+  value: unknown,
+  fn: (v: unknown) => unknown | undefined,
+): unknown {
+  const mapped = fn(value);
+  if (mapped !== undefined) return mapped;
+  if (Array.isArray(value)) return value.map((v) => deepMapValues(v, fn));
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value))
+      out[k] = deepMapValues(v, fn);
+    return out;
+  }
+  return value;
+}
+
 function getAtPath(obj: any, path: (string | number)[]): unknown {
   let node = obj;
   for (const key of path) {
@@ -70,19 +91,17 @@ function getAtPath(obj: any, path: (string | number)[]): unknown {
 
 // ─── Uint8Array display ──────────────────────────────────────────────────────
 
-/** Sentinel value replacing Uint8Arrays in display data */
 const U8_SENTINEL = "\x00__uint8array__\x00";
 
-function prepareForDisplay(value: unknown): unknown {
-  if (value instanceof Uint8Array) return U8_SENTINEL;
-  if (Array.isArray(value)) return value.map(prepareForDisplay);
-  if (value !== null && typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) out[k] = prepareForDisplay(v);
-    return out;
-  }
-  return value;
-}
+const prepareForDisplay = (value: unknown): unknown =>
+  deepMapValues(value, (v) =>
+    v instanceof Uint8Array ? U8_SENTINEL : undefined,
+  );
+
+const prepareForJson = (value: unknown): unknown =>
+  deepMapValues(value, (v) =>
+    v instanceof Uint8Array ? Array.from(v) : undefined,
+  );
 
 function containsSentinel(value: unknown): boolean {
   if (value === U8_SENTINEL) return true;
@@ -94,17 +113,8 @@ function containsSentinel(value: unknown): boolean {
   return false;
 }
 
-/** Convert Uint8Arrays to plain number arrays for JSON export */
-function prepareForJson(value: unknown): unknown {
-  if (value instanceof Uint8Array) return Array.from(value);
-  if (Array.isArray(value)) return value.map(prepareForJson);
-  if (value !== null && typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) out[k] = prepareForJson(v);
-    return out;
-  }
-  return value;
-}
+const restrictEditFilter = ({ value }: any) =>
+  value && typeof value === "object" ? containsSentinel(value) : false;
 
 // ─── Custom nodes for json-edit-react ─────────────────────────────────────────
 
@@ -138,14 +148,8 @@ function BinaryDataHint({ nodeData }: { nodeData: any }) {
   if (!containsSentinel(nodeData.value)) return null;
   return (
     <span
+      className="re-binary-hint"
       title="Contains binary data — text editing disabled"
-      style={{
-        opacity: 0.25,
-        cursor: "pointer",
-        display: "inline-flex",
-        alignItems: "center",
-        marginLeft: 2,
-      }}
       onClick={(e) => {
         e.stopPropagation();
         alert(
@@ -160,22 +164,27 @@ function BinaryDataHint({ nodeData }: { nodeData: any }) {
 
 // ─── Automerge doc mutation helpers ───────────────────────────────────────────
 
-function applyAtPath(doc: any, path: (string | number)[], value: unknown) {
+function walkToParent(
+  doc: any,
+  path: (string | number)[],
+): [parent: any, key: string | number] | null {
   let node = doc;
   for (let i = 0; i < path.length - 1; i++) {
     node = node[path[i]];
-    if (node == null) return;
+    if (node == null) return null;
   }
-  node[path[path.length - 1]] = value;
+  return [node, path[path.length - 1]];
+}
+
+function applyAtPath(doc: any, path: (string | number)[], value: unknown) {
+  const target = walkToParent(doc, path);
+  if (target) target[0][target[1]] = value;
 }
 
 function deleteAtPath(doc: any, path: (string | number)[]) {
-  let node = doc;
-  for (let i = 0; i < path.length - 1; i++) {
-    node = node[path[i]];
-    if (node == null) return;
-  }
-  const key = path[path.length - 1];
+  const target = walkToParent(doc, path);
+  if (!target) return;
+  const [node, key] = target;
   if (Array.isArray(node) && typeof key === "number") {
     node.splice(key, 1);
   } else {
@@ -195,7 +204,35 @@ type UndoEntry =
   | { type: "delete"; path: (string | number)[]; oldValue: unknown }
   | { type: "add"; path: (string | number)[]; newValue: unknown };
 
-function useUndoRedo() {
+function applyUndoEntry(d: any, entry: UndoEntry) {
+  switch (entry.type) {
+    case "edit":
+      applyAtPath(d, entry.path, entry.oldValue);
+      break;
+    case "delete":
+      applyAtPath(d, entry.path, entry.oldValue);
+      break;
+    case "add":
+      deleteAtPath(d, entry.path);
+      break;
+  }
+}
+
+function applyRedoEntry(d: any, entry: UndoEntry) {
+  switch (entry.type) {
+    case "edit":
+      applyAtPath(d, entry.path, entry.newValue);
+      break;
+    case "delete":
+      deleteAtPath(d, entry.path);
+      break;
+    case "add":
+      applyAtPath(d, entry.path, entry.newValue);
+      break;
+  }
+}
+
+function useUndoRedo(changeDoc: (fn: (d: any) => void) => void) {
   const [past, setPast] = useState<UndoEntry[]>([]);
   const [future, setFuture] = useState<UndoEntry[]>([]);
 
@@ -204,10 +241,29 @@ function useUndoRedo() {
     setFuture([]);
   }, []);
 
-  const canUndo = past.length > 0;
-  const canRedo = future.length > 0;
+  const undo = useCallback(() => {
+    if (past.length === 0) return;
+    const entry = past[past.length - 1];
+    setPast((p) => p.slice(0, -1));
+    setFuture((f) => [...f, entry]);
+    changeDoc((d: any) => applyUndoEntry(d, entry));
+  }, [past, changeDoc]);
 
-  return { push, past, setPast, future, setFuture, canUndo, canRedo };
+  const redo = useCallback(() => {
+    if (future.length === 0) return;
+    const entry = future[future.length - 1];
+    setFuture((f) => f.slice(0, -1));
+    setPast((p) => [...p, entry]);
+    changeDoc((d: any) => applyRedoEntry(d, entry));
+  }, [future, changeDoc]);
+
+  return {
+    push,
+    undo,
+    redo,
+    canUndo: past.length > 0,
+    canRedo: future.length > 0,
+  };
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -226,8 +282,8 @@ export const RawEditor = ({
   const [editorData, setEditorData] = useState<any>({});
   const contentRef = useRef<HTMLDivElement>(null);
 
-  const { push: pushUndo, past, setPast, future, setFuture, canUndo, canRedo } =
-    useUndoRedo();
+  const { push: pushUndo, undo, redo, canUndo, canRedo } =
+    useUndoRedo(changeDoc);
 
   const displayDoc = useMemo(() => {
     if (!doc) return null;
@@ -238,88 +294,43 @@ export const RawEditor = ({
     if (displayDoc) setEditorData(displayDoc);
   }, [displayDoc]);
 
-  // Global Escape handler to cancel edit even when blurred
+  // Stable refs for keyboard handler
+  const undoRef = useRef(undo);
+  const redoRef = useRef(redo);
+  useEffect(() => {
+    undoRef.current = undo;
+  }, [undo]);
+  useEffect(() => {
+    redoRef.current = redo;
+  }, [redo]);
+
+  // Single document-level keyboard handler: Escape to cancel, Cmd+Z to undo/redo
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      const el = contentRef.current;
-      if (!el) return;
-      const cancelBtn = el.querySelector(
-        ".jer-confirm-buttons > div:last-child",
-      ) as HTMLElement | null;
-      if (cancelBtn) {
+      if (e.key === "Escape") {
+        const cancelBtn = contentRef.current?.querySelector(
+          ".jer-confirm-buttons > div:last-child",
+        ) as HTMLElement | null;
+        if (cancelBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          cancelBtn.click();
+        }
+        return;
+      }
+
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key.toLowerCase() === "z") {
         e.preventDefault();
-        e.stopPropagation();
-        cancelBtn.click();
+        if (e.shiftKey) {
+          redoRef.current();
+        } else {
+          undoRef.current();
+        }
       }
     };
     document.addEventListener("keydown", handler, true);
     return () => document.removeEventListener("keydown", handler, true);
-  }, []);
-
-  const handleUndo = useCallback(() => {
-    if (past.length === 0) return;
-    const entry = past[past.length - 1];
-    setPast((p) => p.slice(0, -1));
-    setFuture((f) => [...f, entry]);
-    changeDoc((d: any) => {
-      switch (entry.type) {
-        case "edit":
-          applyAtPath(d, entry.path, entry.oldValue);
-          break;
-        case "delete":
-          applyAtPath(d, entry.path, entry.oldValue);
-          break;
-        case "add":
-          deleteAtPath(d, entry.path);
-          break;
-      }
-    });
-  }, [past, setPast, setFuture, changeDoc]);
-
-  const handleRedo = useCallback(() => {
-    if (future.length === 0) return;
-    const entry = future[future.length - 1];
-    setFuture((f) => f.slice(0, -1));
-    setPast((p) => [...p, entry]);
-    changeDoc((d: any) => {
-      switch (entry.type) {
-        case "edit":
-          applyAtPath(d, entry.path, entry.newValue);
-          break;
-        case "delete":
-          deleteAtPath(d, entry.path);
-          break;
-        case "add":
-          applyAtPath(d, entry.path, entry.newValue);
-          break;
-      }
-    });
-  }, [future, setPast, setFuture, changeDoc]);
-
-  // Undo/Redo keyboard shortcuts — refs keep the document listener stable
-  const handleUndoRef = useRef(handleUndo);
-  const handleRedoRef = useRef(handleRedo);
-  useEffect(() => {
-    handleUndoRef.current = handleUndo;
-  }, [handleUndo]);
-  useEffect(() => {
-    handleRedoRef.current = handleRedo;
-  }, [handleRedo]);
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey;
-      if (!mod || e.key.toLowerCase() !== "z") return;
-      e.preventDefault();
-      if (e.shiftKey) {
-        handleRedoRef.current();
-      } else {
-        handleUndoRef.current();
-      }
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
   }, []);
 
   const theme = isDark ? nordDarkTheme : nordLightTheme;
@@ -355,11 +366,6 @@ export const RawEditor = ({
     () => [{ Element: BinaryDataHint, onClick: () => {} }],
     [],
   );
-
-  const restrictEditFn = useCallback(({ value }: any) => {
-    if (value && typeof value === "object") return containsSentinel(value);
-    return false;
-  }, []);
 
   const onEdit = useCallback(
     ({ path, newValue, currentValue }: any) => {
@@ -436,7 +442,7 @@ export const RawEditor = ({
         <div className="re-actions">
           <button
             className="re-btn"
-            onClick={handleUndo}
+            onClick={undo}
             disabled={!canUndo}
             title="Undo (Ctrl+Z)"
           >
@@ -444,7 +450,7 @@ export const RawEditor = ({
           </button>
           <button
             className="re-btn"
-            onClick={handleRedo}
+            onClick={redo}
             disabled={!canRedo}
             title="Redo (Ctrl+Shift+Z)"
           >
@@ -487,7 +493,7 @@ export const RawEditor = ({
           maxWidth="100%"
           customNodeDefinitions={customNodeDefs}
           customButtons={customButtons}
-          restrictEdit={restrictEditFn}
+          restrictEdit={restrictEditFilter}
           onEdit={onEdit}
           onDelete={onDelete}
           onAdd={onAdd}

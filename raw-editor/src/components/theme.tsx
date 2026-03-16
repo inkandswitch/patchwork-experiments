@@ -57,6 +57,7 @@ export function makeIcons(c: IconColors) {
   };
 }
 
+// json-edit-react theme property style: dim array indices, color object keys
 const darkPropertyStyle = (({ parentData }: any) =>
   Array.isArray(parentData)
     ? { color: "rgba(216, 222, 233, 0.3)" }
@@ -66,6 +67,18 @@ const lightPropertyStyle = (({ parentData }: any) =>
   Array.isArray(parentData)
     ? { color: "rgba(0, 0, 0, 0.3)" }
     : { color: "#5e81ac" }) as any;
+
+function iconStyles(c: IconColors) {
+  return {
+    iconCollection: c.collection,
+    iconEdit: c.edit,
+    iconDelete: c.delete,
+    iconAdd: c.add,
+    iconCopy: c.copy,
+    iconOk: c.ok,
+    iconCancel: c.cancel,
+  };
+}
 
 export const nordDarkTheme = {
   displayName: "Nord Dark",
@@ -100,13 +113,7 @@ export const nordDarkTheme = {
       color: "#bf616a",
       fontWeight: "bold" as const,
     },
-    iconCollection: "#81a1c1",
-    iconEdit: "#ebcb8b",
-    iconDelete: "#bf616a",
-    iconAdd: "#a3be8c",
-    iconCopy: "#88c0d0",
-    iconOk: "#a3be8c",
-    iconCancel: "#bf616a",
+    ...iconStyles(darkIconColors),
   },
 };
 
@@ -143,12 +150,6 @@ export const nordLightTheme = {
       color: "#c62828",
       fontWeight: "bold" as const,
     },
-    iconCollection: "#4c566a",
-    iconEdit: "#f9a825",
-    iconDelete: "#c62828",
-    iconAdd: "#2e7d32",
-    iconCopy: "#0277bd",
-    iconOk: "#2e7d32",
-    iconCancel: "#c62828",
+    ...iconStyles(lightIconColors),
   },
 };
