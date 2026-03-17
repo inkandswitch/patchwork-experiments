@@ -13,16 +13,15 @@ export default function paperTool(handle: DocHandle<PaperDoc>, element: HTMLElem
 
 function PaperToolUI(props: { handle: DocHandle<PaperDoc> }) {
   let viewportEl!: ViewportElement;
-  let containerEl!: HTMLDivElement;
 
   onMount(() => {
-    for (const type of ['pointerdown', 'pointermove', 'pointerup'] as const) {
-      viewportEl.addEventListener(type, (e) => delegatePointerEvent(e, viewportEl, containerEl));
+    for (const type of ['paper:pointerdown', 'paper:pointermove', 'paper:pointerup'] as const) {
+      viewportEl.addEventListener(type, (e) => delegatePointerEvent(e, viewportEl));
     }
   });
 
   return (
-    <div ref={containerEl} style="position:relative;width:100%;height:100%;">
+    <div style="position:relative;width:100%;height:100%;">
       <ViewportUI handle={props.handle} onViewportMount={(el) => { viewportEl = el; }} />
       <PanelLayout handle={props.handle} />
     </div>
@@ -32,24 +31,18 @@ function PaperToolUI(props: { handle: DocHandle<PaperDoc> }) {
 // ─── Event delegation ─────────────────────────────────────────────────────────
 
 function delegatePointerEvent(
-  e: PointerEvent,
+  e: CustomEvent<PaperPointerEventDetail>,
   viewport: ViewportElement,
-  container: HTMLDivElement,
 ): void {
-  const detail: PaperPointerEventDetail = {
-    x: e.clientX,
-    y: e.clientY,
-    pointerId: e.pointerId,
-    pointerType: e.pointerType,
-    buttons: e.buttons,
-    viewport,
-  };
+  const container = viewport.parentElement;
+  const targets = [
+    ...container?.querySelectorAll<HTMLElement>('.paper-panel-slot') ?? [],
+    ...viewport.querySelectorAll<HTMLElement>('.paper-layer'),
+  ];
 
-  const slots = container.querySelectorAll<HTMLElement>('.paper-panel-slot');
-
-  for (const slot of slots) {
-    const forwarded = new CustomEvent(topaperEventType(e.type), {
-      detail,
+  for (const target of targets) {
+    const forwarded = new CustomEvent(e.type, {
+      detail: e.detail,
       bubbles: true,
       cancelable: true,
     });
@@ -58,15 +51,7 @@ function delegatePointerEvent(
     const originalStop = forwarded.stopPropagation.bind(forwarded);
     forwarded.stopPropagation = () => { handled = true; originalStop(); };
 
-    slot.dispatchEvent(forwarded);
+    target.dispatchEvent(forwarded);
     if (handled) return;
   }
-
-  container.dispatchEvent(
-    new CustomEvent(topaperEventType(e.type), { detail, bubbles: true, cancelable: true }),
-  );
-}
-
-function topaperEventType(type: string): keyof HTMLElementEventMap {
-  return `paper:${type}` as keyof HTMLElementEventMap;
 }

@@ -50,6 +50,7 @@ export type Camera = {
 export type ViewportElement = HTMLDivElement & {
   getShapesInRect(rect: Rect): BaseShape[];
   screenToCanvas(x: number, y: number): Vec2;
+  getCamera(): Camera;
 };
 
 // ─── Paper pointer events ─────────────────────────────────────────────────────

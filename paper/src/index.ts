@@ -29,3 +29,5 @@ export type {
   RefToolImplementation,
   RegisterPatchworkRefViewElementParams,
 } from './patchwork-ref-view/index.js';
+
+export { getPaperViewport } from './paper/get-paper-viewport.js';

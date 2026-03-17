@@ -1,10 +1,12 @@
-import type { DocHandle, Ref } from '@automerge/automerge-repo';
+import type { DocHandle } from '@automerge/automerge-repo';
 import { makeDocumentProjection } from '@automerge/automerge-repo-solid-primitives';
 import { For, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js';
 import type { Accessor } from 'solid-js';
 import { render } from 'solid-js/web';
+import { getRegistry } from '@inkandswitch/patchwork-plugins';
+import type { ToolDescription } from '@inkandswitch/patchwork-plugins';
 import { rectsOverlap } from './geometry.js';
-import type { BaseShape, Camera, PaperDoc, Rect, ViewportElement } from './types.js';
+import type { BaseShape, Camera, PaperDoc, PaperPointerEventDetail, Rect, ViewportElement } from './types.js';
 import './viewport.css';
 
 // ─── Entry point (called by the plugin loader) ────────────────────────────────
@@ -18,7 +20,10 @@ export default function paperViewport(
 
 // ─── Viewport UI ──────────────────────────────────────────────────────────────
 
-export function ViewportUI(props: { handle: DocHandle<PaperDoc>; onViewportMount?: (el: ViewportElement) => void }) {
+export function ViewportUI(props: {
+  handle: DocHandle<PaperDoc>;
+  onViewportMount?: (el: ViewportElement) => void;
+}) {
   const doc = makeDocumentProjection<PaperDoc>(props.handle);
   const [camera, setCamera] = createSignal<Camera>({ x: 0, y: 0, z: 1 });
 
@@ -40,6 +45,13 @@ export function ViewportUI(props: { handle: DocHandle<PaperDoc>; onViewportMount
   });
 
   onCleanup(() => shapeResizeObserver.disconnect());
+
+  // All registered paper-layer tools
+  const layers = createMemo(() =>
+    getRegistry<ToolDescription>('patchwork:tool')
+      .all()
+      .filter((t) => (t as { tags?: string[] }).tags?.includes('paper-layer')),
+  );
 
   // Sorted shape IDs by zIndex
   const sortedIds = createMemo(() => {
@@ -88,7 +100,26 @@ export function ViewportUI(props: { handle: DocHandle<PaperDoc>; onViewportMount
   let lastX = 0;
   let lastY = 0;
 
+  function dispatchPaperPointerEvent(e: PointerEvent) {
+    const detail: PaperPointerEventDetail = {
+      x: e.clientX,
+      y: e.clientY,
+      pointerId: e.pointerId,
+      pointerType: e.pointerType,
+      buttons: e.buttons,
+      viewport: canvasEl as ViewportElement,
+    };
+    canvasEl.dispatchEvent(
+      new CustomEvent(`paper:${e.type}` as keyof HTMLElementEventMap, {
+        detail,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  }
+
   function handlePointerDown(e: PointerEvent) {
+    dispatchPaperPointerEvent(e);
     if (e.button === 1 || e.button === 0) {
       dragging = true;
       lastX = e.clientX;
@@ -99,6 +130,7 @@ export function ViewportUI(props: { handle: DocHandle<PaperDoc>; onViewportMount
   }
 
   function handlePointerMove(e: PointerEvent) {
+    dispatchPaperPointerEvent(e);
     if (!dragging) return;
     const dx = e.clientX - lastX;
     const dy = e.clientY - lastY;
@@ -109,6 +141,7 @@ export function ViewportUI(props: { handle: DocHandle<PaperDoc>; onViewportMount
   }
 
   function handlePointerUp(e: PointerEvent) {
+    dispatchPaperPointerEvent(e);
     if (dragging) {
       dragging = false;
       canvasEl.releasePointerCapture(e.pointerId);
@@ -134,6 +167,8 @@ export function ViewportUI(props: { handle: DocHandle<PaperDoc>; onViewportMount
       const { x: camX, y: camY, z } = camera();
       return { x: (x - rect.left) / z - camX, y: (y - rect.top) / z - camY };
     };
+
+    viewport.getCamera = () => camera();
 
     props.onViewportMount?.(viewport);
 
@@ -180,6 +215,15 @@ export function ViewportUI(props: { handle: DocHandle<PaperDoc>; onViewportMount
       onPointerUp={handlePointerUp}
     >
       <div ref={sceneEl} class="paper-scene">
+        <For each={layers()}>
+          {(desc) => (
+            <patchwork-view
+              class="paper-layer"
+              attr:doc-url={props.handle.url}
+              attr:tool-id={desc.id}
+            />
+          )}
+        </For>
         <For each={sortedIds()}>
           {(id) => {
             let shapeEl: HTMLElement | undefined;
