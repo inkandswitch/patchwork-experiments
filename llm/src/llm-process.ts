@@ -1,9 +1,9 @@
 /**
- * Simplified LLM process loop for Petri net documents.
+ * LLM process loop.
  *
  * Runs a single process: calls LLM streaming endpoint, parses <script>
  * blocks from the response, evals them, feeds results back, and repeats.
- * All output is written to the PetrinetLLMDoc via Automerge handle.change().
+ * All output is written to the LLMDoc via Automerge handle.change().
  *
  * The LLM accesses the target document exclusively through the API object
  * returned by the skill module at config.api. The raw document handle is
@@ -13,7 +13,7 @@
 import type { Repo } from '@automerge/automerge-repo';
 import { updateText, type AutomergeUrl } from '@automerge/automerge-repo';
 import { parseScriptBlocks } from './parser';
-import type { PetrinetLLMDoc, OutputBlock, ChatMessage } from './types';
+import type { LLMDoc, OutputBlock, ChatMessage } from './types';
 
 function stringifyArg(arg: any): string {
   if (typeof arg === 'string') return arg;
@@ -52,8 +52,8 @@ export async function runLLMProcess(
   processDocUrl: AutomergeUrl,
   signal?: AbortSignal,
 ): Promise<void> {
-  const handle = await repo.find<PetrinetLLMDoc>(processDocUrl);
-  const doc = handle.doc();
+  const handle = await repo.find<LLMDoc>(processDocUrl);
+  const doc = await handle.doc();
 
   if (!doc?.prompt) {
     throw new Error('No prompt to run');
@@ -62,32 +62,36 @@ export async function runLLMProcess(
   const { apiUrl, model, api: apiModuleUrl } = doc.config;
   const apiKey = (import.meta as any).env?.VITE_OPENAI_API_KEY || '';
 
-  const targetHandle = await repo.find(doc.docUrl);
   const capturedConsole = createCapturedConsole();
 
-  const skillMod = await import(/* @vite-ignore */ apiModuleUrl);
-  const skillApi = skillMod.default(targetHandle);
-  const skillSystemPrompt: string | undefined = skillMod.systemPrompt;
+  let skillSystemPrompt: string | undefined;
 
-  (globalThis as any).api = skillApi;
+  if (apiModuleUrl && doc.docUrl) {
+    const targetHandle = await repo.find(doc.docUrl);
+    const skillMod = await import(/* @vite-ignore */ apiModuleUrl);
+    const skillApi = skillMod.default(targetHandle);
+    skillSystemPrompt = skillMod.systemPrompt;
+    (globalThis as any).api = skillApi;
+  }
+
   (globalThis as any).__llmCapturedConsole = capturedConsole;
 
   const MAX_ITERATIONS = 20;
 
-  console.log(`[petrinet-llm] starting run: model=${model}, apiUrl=${apiUrl}, prompt="${doc.prompt.slice(0, 80)}"`);
+  console.log(`[llm] starting run: model=${model}, apiUrl=${apiUrl}, prompt="${doc.prompt.slice(0, 80)}"`);
 
   let iteration = 0;
   for (; iteration < MAX_ITERATIONS; iteration++) {
     if (signal?.aborted) {
-      console.log('[petrinet-llm] aborted before iteration', iteration);
+      console.log('[llm] aborted before iteration', iteration);
       break;
     }
 
-    const currentDoc = handle.doc();
+    const currentDoc = await handle.doc();
     if (!currentDoc) break;
 
     const messages = buildLLMMessages(currentDoc, skillSystemPrompt);
-    console.log(`[petrinet-llm] iteration ${iteration}: sending ${messages.length} messages to ${model}`);
+    console.log(`[llm] iteration ${iteration}: sending ${messages.length} messages to ${model}`);
 
     const stream = streamChatCompletion(apiUrl, apiKey, model, messages, signal);
 
@@ -129,10 +133,10 @@ export async function runLLMProcess(
 
         if (block.complete) {
           foundScript = true;
-          console.log(`[petrinet-llm] iteration ${iteration}: evaluating script (description="${block.description ?? ''}", ${block.code.length} chars)`);
+          console.log(`[llm] iteration ${iteration}: evaluating script (description="${block.description ?? ''}", ${block.code.length} chars)`);
 
           const result = await evalScript(block.code, capturedConsole);
-          console.log(`[petrinet-llm] iteration ${iteration}: eval result`, result.error ? `ERROR: ${result.error}` : `output: ${result.output ?? '(none)'}`);
+          console.log(`[llm] iteration ${iteration}: eval result`, result.error ? `ERROR: ${result.error}` : `output: ${result.output ?? '(none)'}`);
 
           handle.change((d) => {
             const outputIdx = d.output.length - 1;
@@ -153,29 +157,42 @@ export async function runLLMProcess(
       }
     }
 
-    console.log(`[petrinet-llm] iteration ${iteration}: stream complete, foundScript=${foundScript}`);
+    console.log(`[llm] iteration ${iteration}: stream complete, foundScript=${foundScript}`);
 
     if (!foundScript) {
-      console.log('[petrinet-llm] no script found — run complete');
+      console.log('[llm] no script found — run complete');
       break;
     }
   }
 
   if (iteration >= MAX_ITERATIONS) {
-    console.warn('[petrinet-llm] reached max iterations limit');
+    console.warn('[llm] reached max iterations limit');
   }
 
-  console.log('[petrinet-llm] run finished');
+  handle.change((d) => {
+    d.done = true;
+  });
+
+  console.log('[llm] run finished');
 }
 
 // --- LLM message building ---
 
 const FALLBACK_SYSTEM_PROMPT = `You are a coding agent that edits a document via a JavaScript API. Use <script> tags to run code. Use \`return\` to see a value in output.`;
 
-export function buildLLMMessages(doc: PetrinetLLMDoc, systemPrompt?: string): ChatMessage[] {
+export function buildLLMMessages(doc: LLMDoc, systemPrompt?: string): ChatMessage[] {
   const messages: ChatMessage[] = [];
 
   messages.push({ role: 'system', content: systemPrompt ?? FALLBACK_SYSTEM_PROMPT });
+
+  if (doc.previousMessages) {
+    for (const msg of doc.previousMessages) {
+      if (msg.role !== 'system') {
+        messages.push({ role: msg.role, content: msg.content });
+      }
+    }
+  }
+
   messages.push({ role: 'user', content: doc.prompt });
 
   if (doc.output.length > 0) {
@@ -245,7 +262,7 @@ async function* streamChatCompletion(
 
   if (!response.ok) {
     const text = await response.text();
-    console.error(`[petrinet-llm] API error ${response.status} from ${url}:`, text);
+    console.error(`[llm] API error ${response.status} from ${url}:`, text);
     throw new Error(`LLM API error (${response.status}): ${text}`);
   }
 

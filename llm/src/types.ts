@@ -1,17 +1,28 @@
 import type { AutomergeUrl } from '@automerge/automerge-repo';
 
-export type PetrinetLLMDoc = {
-  '@patchwork': { type: 'petrinet-llm-process' };
+export type LLMDoc = {
+  '@patchwork': { type: 'llm' };
   config: {
     apiUrl: string;
     model: string;
-    api: string;
+    api?: string;
   };
-  docUrl: AutomergeUrl;
+  docUrl?: AutomergeUrl;
   prompt: string;
   output: OutputBlock[];
+  previousMessages?: ChatMessage[];
   /** Set to true by the caller when runLLMProcess() resolves. */
   done?: boolean;
+};
+
+export type LLMChatDoc = {
+  '@patchwork': { type: 'llm-chat' };
+  config: {
+    apiUrl: string;
+    model: string;
+    api?: string;
+  };
+  runs: AutomergeUrl[];
 };
 
 export type OutputBlock =

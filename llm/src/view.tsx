@@ -4,17 +4,17 @@ import { RepoContext, useDocument, useRepo } from '@automerge/automerge-repo-sol
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle } from '@automerge/automerge-repo';
 
-import type { PetrinetLLMDoc, OutputBlock } from './types';
+import type { LLMDoc, OutputBlock } from './types';
 import { runLLMProcess } from './llm-process';
 import './view.css';
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
-export const PetrinetLLMTool: ToolRender = (handle, element) => {
+export const LLMTool: ToolRender = (handle, element) => {
   const dispose = render(
     () => (
       <RepoContext.Provider value={element.repo}>
-        <PetrinetLLMView handle={handle as DocHandle<PetrinetLLMDoc>} />
+        <LLMView handle={handle as DocHandle<LLMDoc>} />
       </RepoContext.Provider>
     ),
     element,
@@ -24,8 +24,8 @@ export const PetrinetLLMTool: ToolRender = (handle, element) => {
 
 // ─── Main view ────────────────────────────────────────────────────────────────
 
-function PetrinetLLMView(props: { handle: DocHandle<PetrinetLLMDoc> }) {
-  const [doc] = useDocument<PetrinetLLMDoc>(() => props.handle.url);
+export function LLMView(props: { handle: DocHandle<LLMDoc> }) {
+  const [doc] = useDocument<LLMDoc>(() => props.handle.url);
   const repo = useRepo();
   const [isRunning, setIsRunning] = createSignal(false);
   const [runError, setRunError] = createSignal<string | null>(null);
@@ -56,6 +56,7 @@ function PetrinetLLMView(props: { handle: DocHandle<PetrinetLLMDoc> }) {
   function handleClear() {
     props.handle.change((d) => {
       d.output = [];
+      delete d.done;
     });
     setRunError(null);
   }
@@ -64,8 +65,8 @@ function PetrinetLLMView(props: { handle: DocHandle<PetrinetLLMDoc> }) {
     <Show
       when={doc()}
       fallback={
-        <div class="pln-root">
-          <div class="pln-empty">Loading…</div>
+        <div class="llm-root">
+          <div class="llm-empty">Loading…</div>
         </div>
       }
     >
@@ -73,12 +74,12 @@ function PetrinetLLMView(props: { handle: DocHandle<PetrinetLLMDoc> }) {
         const output = () => currentDoc().output ?? [];
 
         return (
-          <div class="pln-root">
-            <div class="pln-toolbar">
-              <span class="pln-section-label">LLM Process</span>
-              <span class="pln-toolbar-spacer" />
+          <div class="llm-root">
+            <div class="llm-toolbar">
+              <span class="llm-section-label">LLM Process</span>
+              <span class="llm-toolbar-spacer" />
               <button
-                class="pln-clear-btn"
+                class="llm-clear-btn"
                 onClick={handleClear}
                 disabled={isRunning() || output().length === 0}
               >
@@ -88,7 +89,7 @@ function PetrinetLLMView(props: { handle: DocHandle<PetrinetLLMDoc> }) {
                 when={isRunning()}
                 fallback={
                   <button
-                    class="pln-run-btn"
+                    class="llm-run-btn"
                     onClick={handleRun}
                     disabled={!currentDoc().prompt}
                   >
@@ -96,15 +97,15 @@ function PetrinetLLMView(props: { handle: DocHandle<PetrinetLLMDoc> }) {
                   </button>
                 }
               >
-                <button class="pln-stop-btn" onClick={handleStop}>
+                <button class="llm-stop-btn" onClick={handleStop}>
                   Stop
                 </button>
               </Show>
             </div>
 
-            <div class="pln-body">
+            <div class="llm-body">
               <Show when={currentDoc().prompt}>
-                <div class="pln-prompt">{currentDoc().prompt}</div>
+                <div class="llm-prompt">{currentDoc().prompt}</div>
               </Show>
 
               <Show
@@ -112,25 +113,25 @@ function PetrinetLLMView(props: { handle: DocHandle<PetrinetLLMDoc> }) {
                 fallback={
                   <Show
                     when={isRunning()}
-                    fallback={<div class="pln-empty">Press Run to start</div>}
+                    fallback={<div class="llm-empty">Press Run to start</div>}
                   >
-                    <div class="pln-thinking">Thinking…</div>
+                    <div class="llm-thinking">Thinking…</div>
                   </Show>
                 }
               >
-                <div class="pln-output">
+                <div class="llm-output">
                   <For each={output()}>
                     {(block) => <OutputBlockView block={block} />}
                   </For>
                   <Show when={isRunning()}>
-                    <div class="pln-thinking">Thinking…</div>
+                    <div class="llm-thinking">Thinking…</div>
                   </Show>
                 </div>
               </Show>
             </div>
 
             <Show when={runError()}>
-              {(err) => <div class="pln-run-error">{err()}</div>}
+              {(err) => <div class="llm-run-error">{err()}</div>}
             </Show>
           </div>
         );
@@ -145,7 +146,7 @@ function OutputBlockView(props: { block: OutputBlock }) {
   return (
     <Show
       when={props.block.type === 'script'}
-      fallback={<div class="pln-text-block">{(props.block as Extract<OutputBlock, { type: 'text' }>).content}</div>}
+      fallback={<div class="llm-text-block">{(props.block as Extract<OutputBlock, { type: 'text' }>).content}</div>}
     >
       <ScriptBlockView block={props.block as Extract<OutputBlock, { type: 'script' }>} />
     </Show>
@@ -162,35 +163,35 @@ function ScriptBlockView(props: { block: Extract<OutputBlock, { type: 'script' }
   const label = () => props.block.description || 'Code';
 
   return (
-    <div class="pln-script-block">
-      <div class="pln-script-header" onClick={() => setOpen((o) => !o)}>
-        <span class={`pln-script-chevron${open() ? ' open' : ''}`}>▶</span>
-        <span class="pln-script-label">{label()}</span>
+    <div class="llm-script-block">
+      <div class="llm-script-header" onClick={() => setOpen((o) => !o)}>
+        <span class={`llm-script-chevron${open() ? ' open' : ''}`}>▶</span>
+        <span class="llm-script-label">{label()}</span>
         <Show when={hasCompleted() && !hasError()}>
-          <span class="pln-status-ok">✓</span>
+          <span class="llm-status-ok">✓</span>
         </Show>
         <Show when={hasError()}>
-          <span class="pln-status-err">✗</span>
+          <span class="llm-status-err">✗</span>
         </Show>
         <Show when={!hasCompleted()}>
-          <span class="pln-status-pending">⋯</span>
+          <span class="llm-status-pending">⋯</span>
         </Show>
       </div>
 
       <Show when={open()}>
-        <div class="pln-script-body">
-          <pre class="pln-code">{props.block.code}</pre>
+        <div class="llm-script-body">
+          <pre class="llm-code">{props.block.code}</pre>
 
           <Show when={hasCompleted()}>
-            <div class="pln-script-result">
+            <div class="llm-script-result">
               <Show when={props.block.output}>
-                <pre class="pln-output-text">{props.block.output}</pre>
+                <pre class="llm-output-text">{props.block.output}</pre>
               </Show>
               <Show when={props.block.error}>
-                <pre class="pln-error-text">{props.block.error}</pre>
+                <pre class="llm-error-text">{props.block.error}</pre>
               </Show>
               <Show when={!props.block.output && !props.block.error}>
-                <span class="pln-no-output">No output</span>
+                <span class="llm-no-output">No output</span>
               </Show>
             </div>
           </Show>

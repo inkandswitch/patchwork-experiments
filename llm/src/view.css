@@ -3,7 +3,7 @@
 @layer tool {
   /* ── Root ────────────────────────────────────────────────────────── */
 
-  .pln-root {
+  .llm-root {
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -16,7 +16,7 @@
 
   /* ── Toolbar ─────────────────────────────────────────────────────── */
 
-  .pln-toolbar {
+  .llm-toolbar {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -27,11 +27,11 @@
     min-height: 34px;
   }
 
-  .pln-toolbar-spacer {
+  .llm-toolbar-spacer {
     flex: 1;
   }
 
-  .pln-section-label {
+  .llm-section-label {
     font-size: 10px;
     font-weight: 600;
     letter-spacing: 0.08em;
@@ -39,9 +39,9 @@
     color: #94a3b8;
   }
 
-  .pln-run-btn,
-  .pln-stop-btn,
-  .pln-clear-btn {
+  .llm-run-btn,
+  .llm-stop-btn,
+  .llm-clear-btn {
     padding: 4px 12px;
     font-size: 11px;
     font-weight: 600;
@@ -52,47 +52,47 @@
     letter-spacing: 0.04em;
   }
 
-  .pln-run-btn {
+  .llm-run-btn {
     background: #3b82f6;
     color: #fff;
   }
 
-  .pln-run-btn:not(:disabled):hover {
+  .llm-run-btn:not(:disabled):hover {
     background: #2563eb;
   }
 
-  .pln-run-btn:disabled {
+  .llm-run-btn:disabled {
     background: #f1f5f9;
     color: #cbd5e1;
     cursor: default;
   }
 
-  .pln-stop-btn {
+  .llm-stop-btn {
     background: #fee2e2;
     color: #dc2626;
   }
 
-  .pln-stop-btn:not(:disabled):hover {
+  .llm-stop-btn:not(:disabled):hover {
     background: #fecaca;
   }
 
-  .pln-clear-btn {
+  .llm-clear-btn {
     background: #f1f5f9;
     color: #475569;
   }
 
-  .pln-clear-btn:not(:disabled):hover {
+  .llm-clear-btn:not(:disabled):hover {
     background: #e2e8f0;
   }
 
-  .pln-clear-btn:disabled {
+  .llm-clear-btn:disabled {
     color: #cbd5e1;
     cursor: default;
   }
 
   /* ── Body ────────────────────────────────────────────────────────── */
 
-  .pln-body {
+  .llm-body {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
@@ -104,7 +104,7 @@
 
   /* ── Prompt display ──────────────────────────────────────────────── */
 
-  .pln-prompt {
+  .llm-prompt {
     padding: 7px 10px;
     background: #f0f4ff;
     border: 1px solid #c7d7fe;
@@ -118,13 +118,13 @@
 
   /* ── Output blocks ───────────────────────────────────────────────── */
 
-  .pln-output {
+  .llm-output {
     display: flex;
     flex-direction: column;
     gap: 4px;
   }
 
-  .pln-text-block {
+  .llm-text-block {
     font-size: 12px;
     color: #334155;
     line-height: 1.6;
@@ -133,14 +133,14 @@
 
   /* ── Script block ────────────────────────────────────────────────── */
 
-  .pln-script-block {
+  .llm-script-block {
     border: 1px solid #e2e8f0;
     border-radius: 5px;
     overflow: hidden;
     background: #fff;
   }
 
-  .pln-script-header {
+  .llm-script-header {
     display: flex;
     align-items: center;
     gap: 5px;
@@ -153,22 +153,22 @@
     color: #64748b;
   }
 
-  .pln-script-header:hover {
+  .llm-script-header:hover {
     background: #f1f5f9;
   }
 
-  .pln-script-chevron {
+  .llm-script-chevron {
     font-size: 8px;
     color: #94a3b8;
     transition: transform 0.15s;
     flex-shrink: 0;
   }
 
-  .pln-script-chevron.open {
+  .llm-script-chevron.open {
     transform: rotate(90deg);
   }
 
-  .pln-script-label {
+  .llm-script-label {
     flex: 1;
     min-width: 0;
     font-weight: 500;
@@ -177,32 +177,32 @@
     white-space: nowrap;
   }
 
-  .pln-status-ok {
+  .llm-status-ok {
     font-size: 9px;
     color: #22c55e;
     flex-shrink: 0;
   }
 
-  .pln-status-err {
+  .llm-status-err {
     font-size: 9px;
     color: #ef4444;
     flex-shrink: 0;
   }
 
-  .pln-status-pending {
+  .llm-status-pending {
     font-size: 9px;
     color: #94a3b8;
     flex-shrink: 0;
   }
 
-  .pln-script-body {
+  .llm-script-body {
     padding: 8px;
     display: flex;
     flex-direction: column;
     gap: 6px;
   }
 
-  .pln-code {
+  .llm-code {
     margin: 0;
     font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace;
     font-size: 10px;
@@ -216,7 +216,7 @@
     border-radius: 4px;
   }
 
-  .pln-script-result {
+  .llm-script-result {
     border-top: 1px solid #f1f5f9;
     padding-top: 6px;
     display: flex;
@@ -224,7 +224,7 @@
     gap: 2px;
   }
 
-  .pln-output-text {
+  .llm-output-text {
     margin: 0;
     font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace;
     font-size: 10px;
@@ -234,7 +234,7 @@
     overflow: auto;
   }
 
-  .pln-error-text {
+  .llm-error-text {
     margin: 0;
     font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace;
     font-size: 10px;
@@ -244,7 +244,7 @@
     overflow: auto;
   }
 
-  .pln-no-output {
+  .llm-no-output {
     font-size: 10px;
     color: #cbd5e1;
     font-style: italic;
@@ -252,7 +252,7 @@
 
   /* ── Thinking indicator ──────────────────────────────────────────── */
 
-  .pln-thinking {
+  .llm-thinking {
     font-size: 11px;
     color: #94a3b8;
     padding: 4px 0;
@@ -260,7 +260,7 @@
 
   /* ── Empty state ─────────────────────────────────────────────────── */
 
-  .pln-empty {
+  .llm-empty {
     flex: 1;
     display: flex;
     align-items: center;
@@ -271,7 +271,7 @@
 
   /* ── Error banner ────────────────────────────────────────────────── */
 
-  .pln-run-error {
+  .llm-run-error {
     padding: 6px 10px;
     background: #fee2e2;
     border-top: 1px solid #fecaca;

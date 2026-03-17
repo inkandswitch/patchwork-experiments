@@ -1,0 +1,132 @@
+@layer patchwork, tool, user;
+
+@layer tool {
+  /* ── Root ────────────────────────────────────────────────────────── */
+
+  .llm-chat-root {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    background: #f8fafc;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    font-size: 12px;
+    color: #1e293b;
+  }
+
+  /* ── Runs list ───────────────────────────────────────────────────── */
+
+  .llm-chat-runs {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Empty state ─────────────────────────────────────────────────── */
+
+  .llm-chat-empty {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #cbd5e1;
+    font-size: 12px;
+    padding: 24px;
+    text-align: center;
+  }
+
+  .llm-chat-loading {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #cbd5e1;
+    font-size: 12px;
+  }
+
+  /* ── Individual run ──────────────────────────────────────────────── */
+
+  .llm-chat-run {
+    border-bottom: 1px solid #e2e8f0;
+    flex-shrink: 0;
+    min-height: 120px;
+    max-height: 480px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .llm-chat-run > * {
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* ── Input bar ───────────────────────────────────────────────────── */
+
+  .llm-chat-input-bar {
+    display: flex;
+    gap: 8px;
+    padding: 10px 12px;
+    border-top: 1px solid #e2e8f0;
+    background: #fff;
+    flex-shrink: 0;
+    align-items: flex-end;
+  }
+
+  .llm-chat-textarea {
+    flex: 1;
+    resize: none;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    font-size: 12px;
+    color: #1e293b;
+    background: #f8fafc;
+    line-height: 1.5;
+    outline: none;
+    min-height: 56px;
+  }
+
+  .llm-chat-textarea:focus {
+    border-color: #93c5fd;
+    background: #fff;
+  }
+
+  .llm-chat-textarea:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .llm-chat-textarea::placeholder {
+    color: #94a3b8;
+  }
+
+  .llm-chat-send-btn {
+    padding: 7px 16px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: inherit;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    background: #3b82f6;
+    color: #fff;
+    flex-shrink: 0;
+    align-self: flex-end;
+    height: 34px;
+  }
+
+  .llm-chat-send-btn:not(:disabled):hover {
+    background: #2563eb;
+  }
+
+  .llm-chat-send-btn:disabled {
+    background: #f1f5f9;
+    color: #cbd5e1;
+    cursor: default;
+  }
+}
