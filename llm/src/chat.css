@@ -14,6 +14,48 @@
     color: #1e293b;
   }
 
+  /* ── Tab bar ─────────────────────────────────────────────────────── */
+
+  .llm-chat-tabs {
+    display: flex;
+    border-bottom: 1px solid #e2e8f0;
+    background: #fff;
+    flex-shrink: 0;
+  }
+
+  .llm-chat-tab {
+    padding: 7px 14px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: inherit;
+    border: none;
+    border-bottom: 2px solid transparent;
+    background: none;
+    color: #94a3b8;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    margin-bottom: -1px;
+  }
+
+  .llm-chat-tab:hover {
+    color: #475569;
+  }
+
+  .llm-chat-tab.active {
+    color: #3b82f6;
+    border-bottom-color: #3b82f6;
+  }
+
+  /* ── Workspace panel ─────────────────────────────────────────────── */
+
+  .llm-chat-workspace-panel {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
   /* ── Runs list ───────────────────────────────────────────────────── */
 
   .llm-chat-runs {

@@ -1,11 +1,10 @@
 import { render } from 'solid-js/web';
 import { createSignal, For, Show } from 'solid-js';
-import { RepoContext, useDocument, useRepo } from '@automerge/automerge-repo-solid-primitives';
+import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primitives';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle } from '@automerge/automerge-repo';
 
 import type { LLMDoc, OutputBlock } from './types';
-import { runLLMProcess } from './llm-process';
 import './view.css';
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
@@ -26,40 +25,6 @@ export const LLMTool: ToolRender = (handle, element) => {
 
 export function LLMView(props: { handle: DocHandle<LLMDoc> }) {
   const [doc] = useDocument<LLMDoc>(() => props.handle.url);
-  const repo = useRepo();
-  const [isRunning, setIsRunning] = createSignal(false);
-  const [runError, setRunError] = createSignal<string | null>(null);
-  let abortController: AbortController | null = null;
-
-  async function handleRun() {
-    if (isRunning()) return;
-    const controller = new AbortController();
-    abortController = controller;
-    setIsRunning(true);
-    setRunError(null);
-    try {
-      await runLLMProcess(repo, props.handle.url, controller.signal);
-    } catch (err: any) {
-      if (err?.name !== 'AbortError') {
-        setRunError(err?.message ?? String(err));
-      }
-    } finally {
-      setIsRunning(false);
-      abortController = null;
-    }
-  }
-
-  function handleStop() {
-    abortController?.abort();
-  }
-
-  function handleClear() {
-    props.handle.change((d) => {
-      d.output = [];
-      delete d.done;
-    });
-    setRunError(null);
-  }
 
   return (
     <Show
@@ -75,34 +40,6 @@ export function LLMView(props: { handle: DocHandle<LLMDoc> }) {
 
         return (
           <div class="llm-root">
-            <div class="llm-toolbar">
-              <span class="llm-section-label">LLM Process</span>
-              <span class="llm-toolbar-spacer" />
-              <button
-                class="llm-clear-btn"
-                onClick={handleClear}
-                disabled={isRunning() || output().length === 0}
-              >
-                Clear
-              </button>
-              <Show
-                when={isRunning()}
-                fallback={
-                  <button
-                    class="llm-run-btn"
-                    onClick={handleRun}
-                    disabled={!currentDoc().prompt}
-                  >
-                    Run
-                  </button>
-                }
-              >
-                <button class="llm-stop-btn" onClick={handleStop}>
-                  Stop
-                </button>
-              </Show>
-            </div>
-
             <div class="llm-body">
               <Show when={currentDoc().prompt}>
                 <div class="llm-prompt">{currentDoc().prompt}</div>
@@ -110,29 +47,18 @@ export function LLMView(props: { handle: DocHandle<LLMDoc> }) {
 
               <Show
                 when={output().length > 0}
-                fallback={
-                  <Show
-                    when={isRunning()}
-                    fallback={<div class="llm-empty">Press Run to start</div>}
-                  >
-                    <div class="llm-thinking">Thinking…</div>
-                  </Show>
-                }
+                fallback={<div class="llm-thinking">Thinking…</div>}
               >
                 <div class="llm-output">
                   <For each={output()}>
                     {(block) => <OutputBlockView block={block} />}
                   </For>
-                  <Show when={isRunning()}>
+                  <Show when={!currentDoc().done}>
                     <div class="llm-thinking">Thinking…</div>
                   </Show>
                 </div>
               </Show>
             </div>
-
-            <Show when={runError()}>
-              {(err) => <div class="llm-run-error">{err()}</div>}
-            </Show>
           </div>
         );
       }}

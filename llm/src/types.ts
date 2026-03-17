@@ -8,6 +8,8 @@ export type LLMDoc = {
     api?: string;
   };
   docUrl?: AutomergeUrl;
+  workspaceUrl?: AutomergeUrl;
+  skillsFolderUrl?: AutomergeUrl;
   prompt: string;
   output: OutputBlock[];
   previousMessages?: ChatMessage[];
@@ -22,7 +24,14 @@ export type LLMChatDoc = {
     model: string;
     api?: string;
   };
+  workspaceUrl?: AutomergeUrl;
   runs: AutomergeUrl[];
+};
+
+export type LLMWorkspaceDoc = {
+  '@patchwork': { type: 'llm-workspace' };
+  title: string;
+  urls: AutomergeUrl[];
 };
 
 export type OutputBlock =

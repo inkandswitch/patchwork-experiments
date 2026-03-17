@@ -5,15 +5,31 @@
  * blocks from the response, evals them, feeds results back, and repeats.
  * All output is written to the LLMDoc via Automerge handle.change().
  *
- * The LLM accesses the target document exclusively through the API object
- * returned by the skill module at config.api. The raw document handle is
- * never exposed to eval context.
+ * Skills are discovered from the skills folder URL (baked in via __SKILLS_DIR_URL__
+ * at build time, or overridden per-doc via doc.skillsFolderUrl). Each skill's
+ * SKILL.md frontmatter provides its name and description for the system prompt.
+ * The LLM loads skills at runtime via globalThis.loadSkill(name).
  */
 
 import type { Repo } from '@automerge/automerge-repo';
 import { updateText, type AutomergeUrl } from '@automerge/automerge-repo';
 import { parseScriptBlocks } from './parser';
 import type { LLMDoc, OutputBlock, ChatMessage } from './types';
+
+// Inline folder doc type — avoids requiring @inkandswitch/patchwork-filesystem
+type FolderDoc = {
+  docs: { type: string; name: string; url: AutomergeUrl }[];
+};
+
+type SkillInfo = {
+  name: string;
+  description: string;
+  importUrl: string;
+};
+
+function swPath(automergeUrl: string): string {
+  return automergeUrl.replace('automerge:', 'automerge%3A');
+}
 
 function stringifyArg(arg: any): string {
   if (typeof arg === 'string') return arg;
@@ -74,6 +90,20 @@ export async function runLLMProcess(
     (globalThis as any).api = skillApi;
   }
 
+  const skillsFolderUrl = (doc.skillsFolderUrl ?? __SKILLS_DIR_URL__) as AutomergeUrl;
+  const skills = skillsFolderUrl ? await discoverSkills(repo, skillsFolderUrl) : [];
+  const skillDescriptions = buildSkillDescriptions(skills);
+
+  const loadSkill = async (name: string) => {
+    const skill = skills.find((s) => s.name === name);
+    if (!skill) {
+      const available = skills.map((s) => s.name).join(', ');
+      throw new Error(`Skill not found: "${name}". Available: [${available}]`);
+    }
+    return import(/* @vite-ignore */ skill.importUrl);
+  };
+
+  (globalThis as any).loadSkill = loadSkill;
   (globalThis as any).__llmCapturedConsole = capturedConsole;
 
   const MAX_ITERATIONS = 20;
@@ -90,7 +120,7 @@ export async function runLLMProcess(
     const currentDoc = await handle.doc();
     if (!currentDoc) break;
 
-    const messages = buildLLMMessages(currentDoc, skillSystemPrompt);
+    const messages = buildLLMMessages(currentDoc, skillDescriptions, skillSystemPrompt);
     console.log(`[llm] iteration ${iteration}: sending ${messages.length} messages to ${model}`);
 
     const stream = streamChatCompletion(apiUrl, apiKey, model, messages, signal);
@@ -176,14 +206,122 @@ export async function runLLMProcess(
   console.log('[llm] run finished');
 }
 
+// --- Skill discovery ---
+
+async function discoverSkills(repo: Repo, skillsFolderUrl: AutomergeUrl): Promise<SkillInfo[]> {
+  const skills: SkillInfo[] = [];
+
+  try {
+    const folderHandle = await repo.find<FolderDoc>(skillsFolderUrl);
+    const folderDoc = await folderHandle.doc();
+    if (!folderDoc?.docs) return skills;
+
+    for (const link of folderDoc.docs) {
+      if (link.type !== 'folder') continue;
+
+      try {
+        const skillFolderHandle = await repo.find<FolderDoc>(link.url);
+        const skillFolderDoc = await skillFolderHandle.doc();
+        if (!skillFolderDoc?.docs) continue;
+
+        const skillMdEntry = skillFolderDoc.docs.find((d) => d.name === 'SKILL.md');
+        if (!skillMdEntry) continue;
+
+        const mdHandle = await repo.find(skillMdEntry.url);
+        const mdDoc = await mdHandle.doc() as any;
+        const content =
+          typeof mdDoc?.content === 'string'
+            ? mdDoc.content
+            : mdDoc?.content instanceof Uint8Array
+              ? new TextDecoder().decode(mdDoc.content)
+              : '';
+
+        const frontmatter = parseFrontmatter(content);
+        if (!frontmatter.name) continue;
+
+        const indexEntry = skillFolderDoc.docs.find((d) => d.name === 'index.js');
+
+        skills.push({
+          name: frontmatter.name,
+          description: frontmatter.description || '',
+          importUrl: indexEntry
+            ? `/${swPath(link.url)}/${indexEntry.name}`
+            : `/${swPath(link.url)}/index.js`,
+        });
+      } catch {
+        // Skip inaccessible skill folders
+      }
+    }
+  } catch {
+    // Skills folder inaccessible
+  }
+
+  return skills;
+}
+
+function parseFrontmatter(content: string): Record<string, string> {
+  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return {};
+
+  const result: Record<string, string> = {};
+  for (const line of match[1].split('\n')) {
+    const colonIdx = line.indexOf(':');
+    if (colonIdx === -1) continue;
+    const key = line.slice(0, colonIdx).trim();
+    const value = line.slice(colonIdx + 1).trim();
+    result[key] = value;
+  }
+  return result;
+}
+
+function buildSkillDescriptions(skills: SkillInfo[]): string {
+  if (!skills.length) return '';
+  return skills.map((s) => `  - ${s.name}: ${s.description}`).join('\n');
+}
+
 // --- LLM message building ---
 
-const FALLBACK_SYSTEM_PROMPT = `You are a coding agent that edits a document via a JavaScript API. Use <script> tags to run code. Use \`return\` to see a value in output.`;
+export const SYSTEM_PROMPT = `You are a coding agent that can execute JavaScript to accomplish tasks.
 
-export function buildLLMMessages(doc: LLMDoc, systemPrompt?: string): ChatMessage[] {
+Execute code by writing it inside <script> tags with a data-description attribute:
+
+<script data-description="Brief description of what this code does">
+// your code here
+</script>
+
+Available APIs in your execution context:
+
+  repo.find(url)      — find a document by Automerge URL (async, returns a handle)
+  repo.create()       — create a new empty document
+
+  handle.url          — the document URL
+  handle.doc()        — get the current document state (async)
+  handle.change(fn)   — mutate the document
+
+  loadSkill(name)     — load a skill module by name (async, returns the skill's exports)
+
+  console.log(...)    — captured and shown as output
+  return <value>      — return value is shown as output
+
+Rules:
+- Write one <script> block per iteration; wait for its output before continuing.
+- Use \`return\` to inspect values.
+- Skills provide high-level APIs for specific document types — prefer them over direct doc manipulation.`;
+
+export function buildLLMMessages(
+  doc: LLMDoc,
+  skillDescriptions?: string,
+  systemPromptOverride?: string,
+): ChatMessage[] {
   const messages: ChatMessage[] = [];
 
-  messages.push({ role: 'system', content: systemPrompt ?? FALLBACK_SYSTEM_PROMPT });
+  let systemPrompt = systemPromptOverride ?? SYSTEM_PROMPT;
+
+  if (skillDescriptions) {
+    systemPrompt += `\n\nAvailable skills:\n${skillDescriptions}`;
+  }
+
+  messages.push({ role: 'system', content: systemPrompt });
 
   if (doc.previousMessages) {
     for (const msg of doc.previousMessages) {

@@ -5,6 +5,7 @@ import wasm from 'vite-plugin-wasm';
 import cssInjectedByJsPlugin from 'vite-plugin-css-injected-by-js';
 
 import external from '@inkandswitch/patchwork-bootloader/externals';
+import skillsSnapshot from '../llm-skills/.pushwork/snapshot.json';
 
 export default defineConfig({
   base: './',
@@ -14,6 +15,10 @@ export default defineConfig({
     solid(),
     cssInjectedByJsPlugin(),
   ],
+
+  define: {
+    __SKILLS_DIR_URL__: JSON.stringify(skillsSnapshot.rootDirectoryUrl),
+  },
 
   esbuild: {
     target: 'es2022',

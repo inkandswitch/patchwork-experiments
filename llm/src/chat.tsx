@@ -8,6 +8,7 @@ import type { AutomergeUrl } from '@automerge/automerge-repo';
 import type { LLMChatDoc, LLMDoc } from './types';
 import { buildLLMMessages, runLLMProcess } from './llm-process';
 import { LLMView } from './view';
+import { LLMWorkspaceView } from './workspace';
 import './chat.css';
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
@@ -31,6 +32,7 @@ function LLMChatView(props: { handle: DocHandle<LLMChatDoc> }) {
   const repo = useRepo();
   const [prompt, setPrompt] = createSignal('');
   const [isSubmitting, setIsSubmitting] = createSignal(false);
+  const [activeTab, setActiveTab] = createSignal<'chat' | 'workspace'>('chat');
 
   async function handleSubmit() {
     const text = prompt().trim();
@@ -49,6 +51,8 @@ function LLMChatView(props: { handle: DocHandle<LLMChatDoc> }) {
         d.config = { ...currentDoc.config };
         d.prompt = text;
         d.output = [];
+        if (currentDoc.workspaceUrl) d.workspaceUrl = currentDoc.workspaceUrl;
+        d.skillsFolderUrl = __SKILLS_DIR_URL__ as AutomergeUrl;
         if (previousMessages.length > 0) {
           d.previousMessages = previousMessages;
         }
@@ -84,39 +88,67 @@ function LLMChatView(props: { handle: DocHandle<LLMChatDoc> }) {
     >
       {(currentDoc) => (
         <div class="llm-chat-root">
-          <div class="llm-chat-runs">
-            <Show
-              when={currentDoc().runs.length > 0}
-              fallback={
-                <div class="llm-chat-empty">
-                  Start a conversation by typing a prompt below.
-                </div>
-              }
-            >
-              <For each={currentDoc().runs}>
-                {(url) => <LLMRunView url={url} />}
-              </For>
-            </Show>
-          </div>
-
-          <div class="llm-chat-input-bar">
-            <textarea
-              class="llm-chat-textarea"
-              placeholder="Enter a prompt… (⌘↵ to send)"
-              value={prompt()}
-              onInput={(e) => setPrompt(e.currentTarget.value)}
-              onKeyDown={handleKeyDown}
-              disabled={isSubmitting()}
-              rows={3}
-            />
+          <div class="llm-chat-tabs">
             <button
-              class="llm-chat-send-btn"
-              onClick={handleSubmit}
-              disabled={isSubmitting() || !prompt().trim()}
+              class={`llm-chat-tab${activeTab() === 'chat' ? ' active' : ''}`}
+              onClick={() => setActiveTab('chat')}
             >
-              {isSubmitting() ? 'Running…' : 'Send'}
+              Chat
+            </button>
+            <button
+              class={`llm-chat-tab${activeTab() === 'workspace' ? ' active' : ''}`}
+              onClick={() => setActiveTab('workspace')}
+            >
+              Workspace
             </button>
           </div>
+
+          <Show when={activeTab() === 'chat'}>
+            <div class="llm-chat-runs">
+              <Show
+                when={currentDoc().runs.length > 0}
+                fallback={
+                  <div class="llm-chat-empty">
+                    Start a conversation by typing a prompt below.
+                  </div>
+                }
+              >
+                <For each={currentDoc().runs}>
+                  {(url) => <LLMRunView url={url} />}
+                </For>
+              </Show>
+            </div>
+
+            <div class="llm-chat-input-bar">
+              <textarea
+                class="llm-chat-textarea"
+                placeholder="Enter a prompt… (⌘↵ to send)"
+                value={prompt()}
+                onInput={(e) => setPrompt(e.currentTarget.value)}
+                onKeyDown={handleKeyDown}
+                disabled={isSubmitting()}
+                rows={3}
+              />
+              <button
+                class="llm-chat-send-btn"
+                onClick={handleSubmit}
+                disabled={isSubmitting() || !prompt().trim()}
+              >
+                {isSubmitting() ? 'Running…' : 'Send'}
+              </button>
+            </div>
+          </Show>
+
+          <Show when={activeTab() === 'workspace'}>
+            <div class="llm-chat-workspace-panel">
+              <Show
+                when={currentDoc().workspaceUrl}
+                fallback={<div class="llm-chat-empty">No workspace attached to this chat.</div>}
+              >
+                {(wsUrl) => <LLMWorkspaceView url={wsUrl()} />}
+              </Show>
+            </div>
+          </Show>
         </div>
       )}
     </Show>

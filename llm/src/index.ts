@@ -41,8 +41,29 @@ export const plugins: Plugin<any>[] = [
       return LLMChatTool;
     },
   },
+  {
+    type: 'patchwork:datatype',
+    id: 'llm-workspace',
+    name: 'LLM Workspace',
+    icon: 'FolderOpen',
+    async load() {
+      const { LLMWorkspaceDatatype } = await import('./datatype');
+      return LLMWorkspaceDatatype;
+    },
+  },
+  {
+    type: 'patchwork:tool',
+    id: 'llm-workspace',
+    name: 'LLM Workspace',
+    supportedDatatypes: ['llm-workspace'],
+    async load() {
+      const { LLMWorkspaceTool } = await import('./workspace');
+      return LLMWorkspaceTool;
+    },
+  },
 ];
 
-export { runLLMProcess, buildLLMMessages } from './llm-process';
+export { runLLMProcess, buildLLMMessages, SYSTEM_PROMPT } from './llm-process';
 export { LLMTool, LLMView } from './view';
-export type { LLMDoc, LLMChatDoc, OutputBlock, ParsedBlock, ChatMessage } from './types';
+export { LLMWorkspaceTool, LLMWorkspaceView } from './workspace';
+export type { LLMDoc, LLMChatDoc, LLMWorkspaceDoc, OutputBlock, ParsedBlock, ChatMessage } from './types';
