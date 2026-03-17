@@ -21,9 +21,14 @@ type FolderDoc = {
   docs: { type: string; name: string; url: AutomergeUrl }[];
 };
 
+type WorkspaceDoc = {
+  urls: AutomergeUrl[];
+};
+
 type SkillInfo = {
   name: string;
   description: string;
+  content: string;
   importUrl: string;
 };
 
@@ -94,21 +99,28 @@ export async function runLLMProcess(
   const skills = skillsFolderUrl ? await discoverSkills(repo, skillsFolderUrl) : [];
   const skillDescriptions = buildSkillDescriptions(skills);
 
+  const workspaceContext = doc.workspaceUrl
+    ? await buildWorkspaceContext(repo, doc.workspaceUrl)
+    : undefined;
+
   const loadSkill = async (name: string) => {
     const skill = skills.find((s) => s.name === name);
     if (!skill) {
       const available = skills.map((s) => s.name).join(', ');
       throw new Error(`Skill not found: "${name}". Available: [${available}]`);
     }
-    return import(/* @vite-ignore */ skill.importUrl);
+    const mod = await import(/* @vite-ignore */ skill.importUrl);
+    return { ...mod, docs: skill.content };
   };
 
   (globalThis as any).loadSkill = loadSkill;
   (globalThis as any).__llmCapturedConsole = capturedConsole;
+  (globalThis as any).repo = wrapRepoForLLM(repo, doc.workspaceUrl);
 
   const MAX_ITERATIONS = 20;
 
-  console.log(`[llm] starting run: model=${model}, apiUrl=${apiUrl}, prompt="${doc.prompt.slice(0, 80)}"`);
+  console.log(`[llm] starting run: model=${model}, apiUrl=${apiUrl}`);
+  console.log(`[llm] prompt:\n${doc.prompt}`);
 
   let iteration = 0;
   for (; iteration < MAX_ITERATIONS; iteration++) {
@@ -120,7 +132,10 @@ export async function runLLMProcess(
     const currentDoc = await handle.doc();
     if (!currentDoc) break;
 
-    const messages = buildLLMMessages(currentDoc, skillDescriptions, skillSystemPrompt);
+    const messages = buildLLMMessages(currentDoc, skillDescriptions, skillSystemPrompt, workspaceContext);
+    if (iteration === 0) {
+      console.log(`[llm] system prompt:\n${messages[0]?.content}`);
+    }
     console.log(`[llm] iteration ${iteration}: sending ${messages.length} messages to ${model}`);
 
     const stream = streamChatCompletion(apiUrl, apiKey, model, messages, signal);
@@ -244,6 +259,7 @@ async function discoverSkills(repo: Repo, skillsFolderUrl: AutomergeUrl): Promis
         skills.push({
           name: frontmatter.name,
           description: frontmatter.description || '',
+          content,
           importUrl: indexEntry
             ? `/${swPath(link.url)}/${indexEntry.name}`
             : `/${swPath(link.url)}/index.js`,
@@ -274,9 +290,71 @@ function parseFrontmatter(content: string): Record<string, string> {
   return result;
 }
 
+function wrapRepoForLLM(repo: Repo, workspaceUrl: AutomergeUrl | undefined): Repo {
+  if (!workspaceUrl) return repo;
+
+  return new Proxy(repo, {
+    get(target, prop) {
+      if (prop === 'create') {
+        return (...args: Parameters<Repo['create']>) => {
+          const newHandle = target.create(...args);
+          // Defer workspace update to avoid any sync/async confusion with DocHandle
+          queueMicrotask(async () => {
+            try {
+              const wsHandle = await target.find<WorkspaceDoc>(workspaceUrl);
+              wsHandle.change((d) => {
+                if (!d.urls.includes(newHandle.url as AutomergeUrl)) {
+                  d.urls.push(newHandle.url as AutomergeUrl);
+                }
+              });
+            } catch {
+              // ignore — workspace add is best-effort
+            }
+          });
+          return newHandle;
+        };
+      }
+      const value = (target as any)[prop];
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
+
 function buildSkillDescriptions(skills: SkillInfo[]): string {
   if (!skills.length) return '';
-  return skills.map((s) => `  - ${s.name}: ${s.description}`).join('\n');
+  return skills.map((s) => `- ${s.name}: ${s.description}`).join('\n');
+}
+
+async function buildWorkspaceContext(repo: Repo, workspaceUrl: AutomergeUrl): Promise<string> {
+  try {
+    const wsHandle = await repo.find<WorkspaceDoc>(workspaceUrl);
+    const wsDoc = await wsHandle.doc();
+    if (!wsDoc?.urls?.length) return '';
+
+    const lines: string[] = [];
+    for (const url of wsDoc.urls) {
+      try {
+        const docHandle = await repo.find<any>(url);
+        const doc = await docHandle.doc();
+
+        // Skip folder documents (skills folders, directory listings, etc.)
+        if (Array.isArray(doc?.docs)) continue;
+
+        const title =
+          doc?.title ||
+          doc?.name ||
+          doc?.['@patchwork']?.type ||
+          'document';
+        lines.push(`  - ${title}: ${url}`);
+      } catch {
+        // Skip inaccessible documents silently
+      }
+    }
+
+    return lines.join('\n');
+  } catch {
+    return '';
+  }
 }
 
 // --- LLM message building ---
@@ -289,36 +367,30 @@ Execute code by writing it inside <script> tags with a data-description attribut
 // your code here
 </script>
 
-Available APIs in your execution context:
-
-  repo.find(url)      — find a document by Automerge URL (async, returns a handle)
-  repo.create()       — create a new empty document
-
-  handle.url          — the document URL
-  handle.doc()        — get the current document state (async)
-  handle.change(fn)   — mutate the document
-
-  loadSkill(name)     — load a skill module by name (async, returns the skill's exports)
-
-  console.log(...)    — captured and shown as output
-  return <value>      — return value is shown as output
-
 Rules:
 - Write one <script> block per iteration; wait for its output before continuing.
-- Use \`return\` to inspect values.
-- Skills provide high-level APIs for specific document types — prefer them over direct doc manipulation.`;
+- Use \`return\` to inspect values and \`console.log\` for intermediate output.
+- Load a skill with \`const skill = await loadSkill('name')\` to access its API.
+- Use skill APIs rather than manipulating documents directly.`;
 
 export function buildLLMMessages(
   doc: LLMDoc,
   skillDescriptions?: string,
   systemPromptOverride?: string,
+  workspaceContext?: string,
 ): ChatMessage[] {
   const messages: ChatMessage[] = [];
 
   let systemPrompt = systemPromptOverride ?? SYSTEM_PROMPT;
 
+  if (workspaceContext) {
+    systemPrompt += `\n\nDocuments in the workspace (this list is exhaustive — no other documents exist unless you create them):\n${workspaceContext}\nUse repo.find(url) to open a document. If no suitable document exists, create one using the appropriate skill.`;
+  } else {
+    systemPrompt += `\n\nThere are no documents in the workspace yet. Create any documents you need using the appropriate skill.`;
+  }
+
   if (skillDescriptions) {
-    systemPrompt += `\n\nAvailable skills:\n${skillDescriptions}`;
+    systemPrompt += `\n\nAvailable skills (load with \`await loadSkill('name')\` — returns exports + \`docs\` string with full API reference):\n${skillDescriptions}`;
   }
 
   messages.push({ role: 'system', content: systemPrompt });

@@ -18,6 +18,29 @@ function factKey(f) {
 }
 
 /**
+ * Create a new empty Datalog database document.
+ *
+ * repo.create() is SYNCHRONOUS — do NOT await it.
+ *
+ * @param {object} repo - The automerge Repo (global `repo`)
+ * @param {string} [title] - Optional title stored in the document
+ * @returns {{ handle: object, url: string }} The new doc handle and its URL
+ */
+export function createDatalog(repo, title) {
+  const handle = repo.create();
+  handle.change((d) => {
+    d['@patchwork'] = { type: 'datalog' };
+    d.facts = [];
+    d.rules = [];
+    d.constraints = [];
+    d.draftText = '';
+    d.mapStyle = { lines: {}, properties: {} };
+    if (title) d.title = title;
+  });
+  return { handle, url: handle.url };
+}
+
+/**
  * Get a read/write interface for a Datalog database document.
  *
  * @param {object} repo - The automerge Repo (global `repo`)

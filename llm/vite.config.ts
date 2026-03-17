@@ -6,6 +6,14 @@ import cssInjectedByJsPlugin from 'vite-plugin-css-injected-by-js';
 
 import external from '@inkandswitch/patchwork-bootloader/externals';
 import skillsSnapshot from '../llm-skills/.pushwork/snapshot.json';
+import snapshot from './.pushwork/snapshot.json';
+
+const skillDirUrls: string[] = (snapshot.directories as [string, { url: string }][])
+  .filter(([path]) => /^src\/skills\/[^/]+$/.test(path))
+  .map(([, { url }]) => url);
+
+const skillsFolderUrl: string = (snapshot.directories as [string, { url: string }][])
+  .find(([path]) => path === 'src/skills')![1].url;
 
 export default defineConfig({
   base: './',
@@ -18,6 +26,8 @@ export default defineConfig({
 
   define: {
     __SKILLS_DIR_URL__: JSON.stringify(skillsSnapshot.rootDirectoryUrl),
+    __SKILL_URLS__: JSON.stringify(skillDirUrls),
+    __SKILLS_FOLDER_URL__: JSON.stringify(skillsFolderUrl),
   },
 
   esbuild: {

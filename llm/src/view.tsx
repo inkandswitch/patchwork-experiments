@@ -3,6 +3,7 @@ import { createSignal, For, Show } from 'solid-js';
 import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primitives';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle } from '@automerge/automerge-repo';
+import { SolidMarkdown } from 'solid-markdown';
 
 import type { LLMDoc, OutputBlock } from './types';
 import './view.css';
@@ -72,7 +73,11 @@ function OutputBlockView(props: { block: OutputBlock }) {
   return (
     <Show
       when={props.block.type === 'script'}
-      fallback={<div class="llm-text-block">{(props.block as Extract<OutputBlock, { type: 'text' }>).content}</div>}
+      fallback={
+        <div class="llm-text-block">
+          <SolidMarkdown>{(props.block as Extract<OutputBlock, { type: 'text' }>).content}</SolidMarkdown>
+        </div>
+      }
     >
       <ScriptBlockView block={props.block as Extract<OutputBlock, { type: 'script' }>} />
     </Show>

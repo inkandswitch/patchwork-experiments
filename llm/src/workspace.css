@@ -45,7 +45,15 @@
     padding: 8px 10px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 8px;
+    transition: background 0.1s;
+  }
+
+  .llm-ws-list.drag-over {
+    background: #eff6ff;
+    outline: 2px dashed #93c5fd;
+    outline-offset: -4px;
+    border-radius: 4px;
   }
 
   .llm-ws-empty {
@@ -59,28 +67,68 @@
     text-align: center;
   }
 
-  /* ── URL row ─────────────────────────────────────────────────────── */
+  .llm-ws-drop-hint {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #cbd5e1;
+    font-size: 12px;
+    padding: 24px;
+    text-align: center;
+    flex: 1;
+  }
 
-  .llm-ws-row {
+  .llm-ws-drop-hint.active {
+    color: #3b82f6;
+  }
+
+  /* ── Document card ───────────────────────────────────────────────── */
+
+  .llm-ws-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .llm-ws-card-header {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 5px 8px;
-    background: #fff;
-    border: 1px solid #e2e8f0;
-    border-radius: 5px;
+    padding: 6px 8px;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
     min-width: 0;
   }
 
-  .llm-ws-row-url {
-    flex: 1;
-    min-width: 0;
-    font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace;
-    font-size: 10px;
-    color: #475569;
+  .llm-ws-card-title {
+    font-size: 12px;
+    font-weight: 500;
+    color: #1e293b;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    flex-shrink: 0;
+    max-width: 200px;
+  }
+
+  .llm-ws-card-url {
+    font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace;
+    font-size: 9px;
+    color: #94a3b8;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .llm-ws-card-body {
+    height: 300px;
+    overflow: hidden;
+    position: relative;
   }
 
   .llm-ws-remove-btn {
@@ -131,6 +179,7 @@
   .llm-ws-add-input::placeholder {
     color: #94a3b8;
     font-family: ui-sans-serif, system-ui, sans-serif;
+    font-size: 11px;
   }
 
   .llm-ws-add-btn {

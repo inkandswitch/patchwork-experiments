@@ -10,10 +10,22 @@ Read and write a Datalog database document using `repo`.
 ## Import
 
 ```javascript
-const { getDatalog } = await loadSkill('datalog');
+const { createDatalog, getDatalog } = await loadSkill('datalog');
 ```
 
 ## API
+
+### `createDatalog(repo, title?)`
+
+Creates a new, properly initialised DatalogDoc. Returns `{ handle, url }`.
+
+**`repo.create()` is synchronous — this function must NOT be awaited.**
+
+```javascript
+const { createDatalog } = await loadSkill('datalog');
+const { handle, url } = createDatalog(repo, 'My Power Grid');
+// url is the Automerge URL — share it or use getDatalog(repo, url) to edit
+```
 
 ### `getDatalog(repo, url)`
 
@@ -31,7 +43,13 @@ Returns a read/write interface for the DatalogDoc at `url`.
 ## Examples
 
 ```javascript
-const { getDatalog } = await loadSkill('datalog');
+const { createDatalog, getDatalog } = await loadSkill('datalog');
+
+// Create a new document
+const { url } = createDatalog(repo, 'Power Grid');
+const db = getDatalog(repo, url);
+
+// Or open an existing one
 const db = getDatalog(repo, 'automerge:abc123');
 
 // Read the full program

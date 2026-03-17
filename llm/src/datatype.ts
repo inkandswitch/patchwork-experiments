@@ -33,7 +33,7 @@ export const LLMChatDatatype: DatatypeImplementation<LLMChatDoc> = {
     wsHandle.change((ws) => {
       ws['@patchwork'] = { type: 'llm-workspace' };
       ws.title = 'Workspace';
-      ws.urls = [__SKILLS_DIR_URL__ as any];
+      ws.urls = [__SKILLS_FOLDER_URL__ as any];
     });
     doc.workspaceUrl = wsHandle.url;
     doc.runs = [];
