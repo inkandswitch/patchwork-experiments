@@ -46,8 +46,8 @@ export function createDatalog(repo, title) {
  * @param {object} repo - The automerge Repo (global `repo`)
  * @param {string} url - Automerge URL of the DatalogDoc
  */
-export function getDatalog(repo, url) {
-  const handle = repo.find(url);
+export async function getDatalog(repo, url) {
+  const handle = await repo.find(url);
 
   return {
     /**
@@ -55,43 +55,8 @@ export function getDatalog(repo, url) {
      * Optionally filter by predicate name.
      */
     async getFacts(pred) {
-      await handle.whenReady();
       const facts = handle.doc()?.facts ?? [];
       return pred ? facts.filter((f) => f.pred === pred) : [...facts];
-    },
-
-    /**
-     * Return base facts serialized as Datalog text.
-     * e.g. "node(north).\nflow(north, central, 500)."
-     * Optionally filter by predicate name.
-     */
-    async getFactsText(pred) {
-      await handle.whenReady();
-      const facts = handle.doc()?.facts ?? [];
-      const filtered = pred ? facts.filter((f) => f.pred === pred) : facts;
-      return filtered.map(serializeFact).join('\n');
-    },
-
-    /**
-     * Return the draft program text (facts + rules + constraints as typed in
-     * the editor). This is the most complete view of the database logic.
-     */
-    async getDraftText() {
-      await handle.whenReady();
-      return handle.doc()?.draftText ?? '';
-    },
-
-    /**
-     * Replace the draft program text. Use this to propose edits to rules,
-     * constraints, or bulk fact changes. The text should be valid Datalog:
-     *   fact(arg1, arg2).
-     *   head(X) :- body(X, Y), ...
-     *   :- constraint_body(X).
-     */
-    setDraftText(text) {
-      handle.change((d) => {
-        d.draftText = text;
-      });
     },
 
     /**
