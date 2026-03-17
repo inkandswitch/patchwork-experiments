@@ -1,3 +1,7 @@
+// ─── Geometry ─────────────────────────────────────────────────────────────────
+
+export type Rect = { x: number; y: number; w: number; h: number };
+
 // ─── Shapes ───────────────────────────────────────────────────────────────────
 
 export type BaseShape = {
@@ -38,4 +42,10 @@ export type Camera = {
   x: number;
   y: number;
   z: number;
+};
+
+// ─── Viewport ─────────────────────────────────────────────────────────────────
+
+export type ViewportElement = HTMLDivElement & {
+  getShapesInRect(rect: Rect): BaseShape[];
 };

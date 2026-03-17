@@ -3,7 +3,8 @@ import { makeDocumentProjection } from '@automerge/automerge-repo-solid-primitiv
 import { For, createEffect, createMemo, createSignal, onCleanup, onMount } from 'solid-js';
 import type { Accessor } from 'solid-js';
 import { render } from 'solid-js/web';
-import type { BaseShape, Camera, PaperDoc } from './types.js';
+import { rectsOverlap } from './geometry.js';
+import type { BaseShape, Camera, PaperDoc, Rect, ViewportElement } from './types.js';
 import './viewport.css';
 
 // ─── Entry point (called by the plugin loader) ────────────────────────────────
@@ -23,6 +24,22 @@ export function ViewportUI(props: { handle: DocHandle<PaperDoc> }) {
 
   let canvasEl!: HTMLDivElement;
   let sceneEl!: HTMLDivElement;
+
+  const bboxIndex = new Map<string, Rect>();
+
+  // One shared observer for all shape elements — far cheaper than one per shape.
+  // Each element carries its shape id in dataset.shapeId for O(1) lookup here.
+  const shapeResizeObserver = new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      const el = entry.target as HTMLElement;
+      const id = el.dataset.shapeId;
+      if (!id) continue;
+      const prev = bboxIndex.get(id);
+      bboxIndex.set(id, { x: prev?.x ?? 0, y: prev?.y ?? 0, w: el.offsetWidth, h: el.offsetHeight });
+    }
+  });
+
+  onCleanup(() => shapeResizeObserver.disconnect());
 
   // Sorted shape IDs by zIndex
   const sortedIds = createMemo(() => {
@@ -102,6 +119,14 @@ export function ViewportUI(props: { handle: DocHandle<PaperDoc> }) {
   // ── Event listeners scoped to the viewport element ─────────────────────────
 
   onMount(() => {
+    (canvasEl as ViewportElement).getShapesInRect = (rect) => {
+      const shapes = doc.shapes ?? {};
+      return Object.values(shapes).filter((s) => {
+        const bbox = bboxIndex.get(s.id);
+        return bbox != null && rectsOverlap(bbox, rect);
+      });
+    };
+
     // Wheel: must be non-passive to call preventDefault()
     canvasEl.addEventListener('wheel', handleWheel, { passive: false });
 
@@ -146,12 +171,33 @@ export function ViewportUI(props: { handle: DocHandle<PaperDoc> }) {
     >
       <div ref={sceneEl} class="paper-scene">
         <For each={sortedIds()}>
-          {(id) => (
-            <ShapeNode
-              refUrl={props.handle.ref('shapes', id).url}
-              shape={() => doc.shapes?.[id] as BaseShape}
-            />
-          )}
+          {(id) => {
+            let shapeEl: HTMLElement | undefined;
+
+            createEffect(() => {
+              const s = doc.shapes?.[id] as BaseShape;
+              if (!s) return;
+              const prev = bboxIndex.get(id);
+              bboxIndex.set(id, { x: s.x, y: s.y, w: prev?.w ?? 0, h: prev?.h ?? 0 });
+            });
+
+            onCleanup(() => {
+              if (shapeEl) shapeResizeObserver.unobserve(shapeEl);
+              bboxIndex.delete(id);
+            });
+
+            return (
+              <ShapeNode
+                refUrl={props.handle.ref('shapes', id).url}
+                shape={() => doc.shapes?.[id] as BaseShape}
+                onElement={(el) => {
+                  shapeEl = el;
+                  el.dataset.shapeId = id;
+                  shapeResizeObserver.observe(el);
+                }}
+              />
+            );
+          }}
         </For>
       </div>
     </div>
@@ -160,20 +206,23 @@ export function ViewportUI(props: { handle: DocHandle<PaperDoc> }) {
 
 // ─── Shape node ───────────────────────────────────────────────────────────────
 
-function ShapeNode(props: { shape: Accessor<BaseShape>; refUrl: string }) {
+function ShapeNode(props: {
+  shape: Accessor<BaseShape>;
+  refUrl: string;
+  onElement: (el: HTMLElement) => void;
+}) {
   let el!: HTMLElement;
 
   onMount(() => {
     el.style.setProperty('position', 'absolute');
     el.style.setProperty('transform-origin', 'top left');
+    props.onElement(el);
   });
 
   createEffect(() => {
     const s = props.shape();
     if (!s) return;
-    const x = s.x.toFixed(4);
-    const y = s.y.toFixed(4);
-    el.style.setProperty('transform', `translate(${x}px, ${y}px)`);
+    el.style.setProperty('transform', `translate(${s.x.toFixed(4)}px, ${s.y.toFixed(4)}px)`);
     el.style.setProperty('z-index', String(s.zIndex));
   });
 
