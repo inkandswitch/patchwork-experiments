@@ -9,6 +9,7 @@ import { plugins as embedPlugins } from './shapes/embed/index.js';
 import { plugins as panelPlugins } from './panels/panel/index.js';
 import { plugins as toolPanelPlugins } from './panels/tool-panel/index.js';
 import { plugins as dropHandlerPlugins } from './panels/drop-handler/index.js';
+import { plugins as resizePlugins } from './panels/resize/index.js';
 import { plugins as rectangleDrawPlugins } from './tools/rectangle-draw/index.js';
 import { plugins as lineDrawPlugins } from './tools/line-draw/index.js';
 import { plugins as selectPlugins } from './tools/select/index.js';
@@ -23,6 +24,7 @@ export const plugins = [
   ...panelPlugins,
   ...toolPanelPlugins,
   ...dropHandlerPlugins,
+  ...resizePlugins,
   ...rectangleDrawPlugins,
   ...lineDrawPlugins,
   ...selectPlugins,
@@ -45,4 +47,4 @@ export type {
 export { getPaperViewport } from './paper/get-paper-viewport.js';
 export type { UserState } from './paper/types.js';
 
-console.log('paper version', 4);
+console.log('paper version', 5);

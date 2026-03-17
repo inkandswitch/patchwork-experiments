@@ -8,9 +8,12 @@ import type { PaperDoc, PaperPointerEventDetail, Rect, Vec2, ViewportElement } f
 import './select.css';
 
 const TOOL_ID = 'paper-select';
+const HIT_SIZE = 8;
 
 const SELECTION_FILTER =
   'drop-shadow(0 0 2px rgba(26,115,232,0.9)) drop-shadow(0 0 5px rgba(26,115,232,0.4))';
+
+type DragMode = 'marquee' | 'move' | null;
 
 // ─── Select layer entry point ─────────────────────────────────────────────────
 
@@ -29,7 +32,9 @@ function SelectLayer(props: { handle: DocHandle<PaperDoc>; element: HTMLElement 
     return url ? doc.userState?.[url]?.selectedTool === TOOL_ID : false;
   };
 
+  let dragMode: DragMode = null;
   let startCanvas: Vec2 | undefined;
+  let shapeOrigins = new Map<string, Vec2>();
   const [dragRect, setDragRect] = createSignal<Rect | null>(null);
 
   // ── Highlight selected shapes imperatively ─────────────────────────────────
@@ -74,11 +79,69 @@ function SelectLayer(props: { handle: DocHandle<PaperDoc>; element: HTMLElement 
     if (!isActive()) return;
     e.stopPropagation();
 
-    const { viewport, x, y } = e.detail;
-    startCanvas = viewport.screenToCanvas(x, y);
-    setDragRect({ x: startCanvas.x, y: startCanvas.y, w: 1, h: 1 });
-
+    const { viewport, x, y, shiftKey } = e.detail;
+    const canvasPos = viewport.screenToCanvas(x, y);
     const url = contactUrl();
+    const selection = url ? doc.userState?.[url]?.selection ?? {} : {};
+
+    const hitRect: Rect = {
+      x: canvasPos.x - HIT_SIZE / 2,
+      y: canvasPos.y - HIT_SIZE / 2,
+      w: HIT_SIZE,
+      h: HIT_SIZE,
+    };
+    const shapesAtPoint = viewport.getShapesInRect(hitRect);
+    const hitShape = shapesAtPoint.at(-1); // last = highest zIndex
+    const hitId = hitShape?.dataset.shapeId;
+
+    if (shiftKey && hitId) {
+      // Toggle the hit shape in/out of the existing selection — no drag
+      props.handle.change((d) => {
+        if (!d.userState) d.userState = {};
+        if (!d.userState[url!]) d.userState[url!] = {};
+        const sel = d.userState[url!].selection ?? {};
+        if (sel[hitId]) {
+          delete sel[hitId];
+        } else {
+          sel[hitId] = true;
+        }
+        d.userState[url!].selection = sel;
+      });
+      dragMode = null;
+      return;
+    }
+
+    if (hitId && selection[hitId]) {
+      // Clicked inside current selection → move all selected shapes
+      dragMode = 'move';
+      startCanvas = canvasPos;
+      shapeOrigins.clear();
+      for (const id of Object.keys(selection)) {
+        const s = doc.shapes?.[id];
+        if (s) shapeOrigins.set(id, { x: s.x, y: s.y });
+      }
+      return;
+    }
+
+    if (hitId) {
+      // Clicked an unselected shape → select it alone and start moving it
+      dragMode = 'move';
+      startCanvas = canvasPos;
+      shapeOrigins.clear();
+      const s = doc.shapes?.[hitId];
+      if (s) shapeOrigins.set(hitId, { x: s.x, y: s.y });
+      props.handle.change((d) => {
+        if (!d.userState) d.userState = {};
+        if (!d.userState[url!]) d.userState[url!] = {};
+        d.userState[url!].selection = { [hitId]: true };
+      });
+      return;
+    }
+
+    // Clicked empty space → clear selection and start marquee
+    dragMode = 'marquee';
+    startCanvas = canvasPos;
+    setDragRect({ x: canvasPos.x, y: canvasPos.y, w: 1, h: 1 });
     if (url) {
       props.handle.change((d) => {
         if (!d.userState) d.userState = {};
@@ -94,11 +157,25 @@ function SelectLayer(props: { handle: DocHandle<PaperDoc>; element: HTMLElement 
 
     const { viewport, x, y } = e.detail;
     const current = viewport.screenToCanvas(x, y);
+
+    if (dragMode === 'move') {
+      const dx = current.x - startCanvas.x;
+      const dy = current.y - startCanvas.y;
+      props.handle.change((d) => {
+        for (const [id, orig] of shapeOrigins) {
+          if (d.shapes[id]) {
+            d.shapes[id].x = orig.x + dx;
+            d.shapes[id].y = orig.y + dy;
+          }
+        }
+      });
+      return;
+    }
+
     const rx = Math.min(startCanvas.x, current.x);
     const ry = Math.min(startCanvas.y, current.y);
     const rw = Math.max(1, Math.abs(current.x - startCanvas.x));
     const rh = Math.max(1, Math.abs(current.y - startCanvas.y));
-
     setDragRect({ x: rx, y: ry, w: rw, h: rh });
   }
 
@@ -106,21 +183,37 @@ function SelectLayer(props: { handle: DocHandle<PaperDoc>; element: HTMLElement 
     if (!isActive()) return;
     if (startCanvas) e.stopPropagation();
 
-    const rect = dragRect();
-    const { viewport } = e.detail;
-    const url = contactUrl();
-
-    if (rect && url) {
-      const newSelection = computeSelection(rect, viewport);
-      props.handle.change((d) => {
-        if (!d.userState) d.userState = {};
-        if (!d.userState[url]) d.userState[url] = {};
-        d.userState[url].selection = newSelection;
-      });
+    if (dragMode === 'marquee') {
+      const rect = dragRect();
+      const { viewport } = e.detail;
+      const url = contactUrl();
+      if (rect && url) {
+        const newSelection = computeSelection(rect, viewport);
+        props.handle.change((d) => {
+          if (!d.userState) d.userState = {};
+          if (!d.userState[url]) d.userState[url] = {};
+          d.userState[url].selection = newSelection;
+        });
+      }
     }
 
+    dragMode = null;
     startCanvas = undefined;
+    shapeOrigins.clear();
     setDragRect(null);
+  }
+
+  function onKeyDown(e: KeyboardEvent) {
+    if (!isActive()) return;
+    if (e.key !== 'Backspace' && e.key !== 'Delete') return;
+    const url = contactUrl();
+    const selection = url ? doc.userState?.[url]?.selection ?? {} : {};
+    if (Object.keys(selection).length === 0) return;
+    e.preventDefault();
+    props.handle.change((d) => {
+      for (const id of Object.keys(selection)) delete d.shapes[id];
+      if (url && d.userState?.[url]) d.userState[url].selection = {};
+    });
   }
 
   onMount(() => {
@@ -130,11 +223,13 @@ function SelectLayer(props: { handle: DocHandle<PaperDoc>; element: HTMLElement 
     viewport.addEventListener('paper:pointerdown', onPointerDown as EventListener);
     viewport.addEventListener('paper:pointermove', onPointerMove as EventListener);
     viewport.addEventListener('paper:pointerup', onPointerUp as EventListener);
+    viewport.addEventListener('keydown', onKeyDown);
 
     onCleanup(() => {
       viewport.removeEventListener('paper:pointerdown', onPointerDown as EventListener);
       viewport.removeEventListener('paper:pointermove', onPointerMove as EventListener);
       viewport.removeEventListener('paper:pointerup', onPointerUp as EventListener);
+      viewport.removeEventListener('keydown', onKeyDown);
     });
   });
 

@@ -118,6 +118,7 @@ export function ViewportUI(props: {
           pointerId: e.pointerId,
           pointerType: e.pointerType,
           buttons: e.buttons,
+          shiftKey: e.shiftKey,
           viewport: canvasEl as ViewportElement,
         },
         bubbles: true,

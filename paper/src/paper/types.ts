@@ -71,6 +71,7 @@ export type PaperPointerEventDetail = {
   pointerId: number;
   pointerType: string;
   buttons: number;
+  shiftKey: boolean;
   viewport: ViewportElement;
 };
 
