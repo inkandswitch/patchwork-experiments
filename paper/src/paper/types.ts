@@ -1,5 +1,6 @@
 // ─── Geometry ─────────────────────────────────────────────────────────────────
 
+export type Vec2 = { x: number; y: number };
 export type Rect = { x: number; y: number; w: number; h: number };
 
 // ─── Shapes ───────────────────────────────────────────────────────────────────
@@ -48,4 +49,24 @@ export type Camera = {
 
 export type ViewportElement = HTMLDivElement & {
   getShapesInRect(rect: Rect): BaseShape[];
+  screenToCanvas(x: number, y: number): Vec2;
 };
+
+// ─── Paper pointer events ─────────────────────────────────────────────────────
+
+export type PaperPointerEventDetail = {
+  x: number;
+  y: number;
+  pointerId: number;
+  pointerType: string;
+  buttons: number;
+  viewport: ViewportElement;
+};
+
+declare global {
+  interface HTMLElementEventMap {
+    'paper:pointerdown': CustomEvent<PaperPointerEventDetail>;
+    'paper:pointermove': CustomEvent<PaperPointerEventDetail>;
+    'paper:pointerup': CustomEvent<PaperPointerEventDetail>;
+  }
+}

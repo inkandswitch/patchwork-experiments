@@ -18,7 +18,7 @@ export default function paperViewport(
 
 // ─── Viewport UI ──────────────────────────────────────────────────────────────
 
-export function ViewportUI(props: { handle: DocHandle<PaperDoc> }) {
+export function ViewportUI(props: { handle: DocHandle<PaperDoc>; onViewportMount?: (el: ViewportElement) => void }) {
   const doc = makeDocumentProjection<PaperDoc>(props.handle);
   const [camera, setCamera] = createSignal<Camera>({ x: 0, y: 0, z: 1 });
 
@@ -119,13 +119,23 @@ export function ViewportUI(props: { handle: DocHandle<PaperDoc> }) {
   // ── Event listeners scoped to the viewport element ─────────────────────────
 
   onMount(() => {
-    (canvasEl as ViewportElement).getShapesInRect = (rect) => {
+    const viewport = canvasEl as ViewportElement;
+
+    viewport.getShapesInRect = (rect) => {
       const shapes = doc.shapes ?? {};
       return Object.values(shapes).filter((s) => {
         const bbox = bboxIndex.get(s.id);
         return bbox != null && rectsOverlap(bbox, rect);
       });
     };
+
+    viewport.screenToCanvas = (x, y) => {
+      const rect = canvasEl.getBoundingClientRect();
+      const { x: camX, y: camY, z } = camera();
+      return { x: (x - rect.left) / z - camX, y: (y - rect.top) / z - camY };
+    };
+
+    props.onViewportMount?.(viewport);
 
     // Wheel: must be non-passive to call preventDefault()
     canvasEl.addEventListener('wheel', handleWheel, { passive: false });
