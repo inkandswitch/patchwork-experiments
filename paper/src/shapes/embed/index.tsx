@@ -15,7 +15,7 @@ export const schema = z.object({
   x: z.number(),
   y: z.number(),
   zIndex: z.number(),
-  docUrl: z.string(),
+  docUrl: z.string().optional(),
   docType: z.string().optional(),
   toolId: z.string().optional(),
   width: z.number(),
@@ -89,39 +89,48 @@ function EmbedView(props: { embedRef: Ref<EmbedShape> }) {
   return (
     <>
       {shape() && (
-        <div
-          class="embed-card"
-          style={{ width: `${shape()!.width}px`, height: `${shape()!.height}px` }}
-        >
-          <div class="embed-header">
-            <span class="embed-title">{title()}</span>
-            {tools().length > 0 && (
-              <button
-                class="embed-tool-btn"
-                onClick={handleToolBtnClick}
-                onPointerDown={(e) => e.stopPropagation()}
-              >
-                <span class="embed-tool-btn-label">{activeToolName()}</span>
-                <span class="embed-tool-btn-caret">▾</span>
-              </button>
-            )}
-            <button
-              class="embed-close-btn"
-              onClick={handleClose}
-              onPointerDown={(e) => e.stopPropagation()}
-              title="Close"
+        shape()!.docUrl
+          ? (
+            <div
+              class="embed-card"
+              style={{ width: `${shape()!.width}px`, height: `${shape()!.height}px` }}
             >
-              ×
-            </button>
-          </div>
-          <div class="embed-content" onPointerDown={(e) => e.stopPropagation()}>
-            <patchwork-view
-              attr:doc-url={shape()!.docUrl}
-              attr:tool-id={effectiveToolId() || undefined}
-              style="display:block;width:100%;height:100%;"
+              <div class="embed-header">
+                <span class="embed-title">{title()}</span>
+                {tools().length > 0 && (
+                  <button
+                    class="embed-tool-btn"
+                    onClick={handleToolBtnClick}
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    <span class="embed-tool-btn-label">{activeToolName()}</span>
+                    <span class="embed-tool-btn-caret">▾</span>
+                  </button>
+                )}
+                <button
+                  class="embed-close-btn"
+                  onClick={handleClose}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  title="Close"
+                >
+                  ×
+                </button>
+              </div>
+              <div class="embed-content" onPointerDown={(e) => e.stopPropagation()}>
+                <patchwork-view
+                  attr:doc-url={shape()!.docUrl}
+                  attr:tool-id={effectiveToolId() || undefined}
+                  style="display:block;width:100%;height:100%;"
+                />
+              </div>
+            </div>
+          )
+          : (
+            <div
+              class="embed-pending"
+              style={{ width: `${shape()!.width}px`, height: `${shape()!.height}px` }}
             />
-          </div>
-        </div>
+          )
       )}
     </>
   );
@@ -142,7 +151,11 @@ function useDocMetadata(
     dt ? getRegistry('patchwork:datatype').load(dt) : Promise.resolve(null),
   );
 
-  const title = () => datatype()?.module?.getTitle?.(doc()) || 'Untitled';
+  const title = () => {
+    const d = doc();
+    if (!d) return 'Untitled';
+    return datatype()?.module?.getTitle?.(d) || 'Untitled';
+  };
 
   return { title, docType };
 }

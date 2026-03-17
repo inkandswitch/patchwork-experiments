@@ -94,3 +94,11 @@
   min-height: 0;
   position: relative;
 }
+
+.embed-pending {
+  border: 1.5px dashed #6464c8;
+  background: rgba(100, 100, 200, 0.06);
+  border-radius: 6px;
+  box-sizing: border-box;
+  pointer-events: none;
+}
