@@ -6,7 +6,14 @@ import { render } from 'solid-js/web';
 import { getRegistry } from '@inkandswitch/patchwork-plugins';
 import type { ToolDescription } from '@inkandswitch/patchwork-plugins';
 import { rectsOverlap } from './geometry.js';
-import type { BaseShape, Camera, PaperDoc, PaperPointerEventDetail, Rect, ViewportElement } from './types.js';
+import type {
+  BaseShape,
+  Camera,
+  PaperDoc,
+  PaperPointerEventDetail,
+  Rect,
+  ViewportElement,
+} from './types.js';
 import './viewport.css';
 
 // ─── Entry point (called by the plugin loader) ────────────────────────────────
@@ -22,7 +29,7 @@ export default function paperViewport(
 
 export function ViewportUI(props: {
   handle: DocHandle<PaperDoc>;
-  onViewportMount?: (el: ViewportElement) => void;
+  ref?: (el: ViewportElement) => void;
 }) {
   const doc = makeDocumentProjection<PaperDoc>(props.handle);
   const [camera, setCamera] = createSignal<Camera>({ x: 0, y: 0, z: 1 });
@@ -40,7 +47,12 @@ export function ViewportUI(props: {
       const id = el.dataset.shapeId;
       if (!id) continue;
       const prev = bboxIndex.get(id);
-      bboxIndex.set(id, { x: prev?.x ?? 0, y: prev?.y ?? 0, w: el.offsetWidth, h: el.offsetHeight });
+      bboxIndex.set(id, {
+        x: prev?.x ?? 0,
+        y: prev?.y ?? 0,
+        w: el.offsetWidth,
+        h: el.offsetHeight,
+      });
     }
   });
 
@@ -94,13 +106,9 @@ export function ViewportUI(props: {
     }
   }
 
-  // ── Pointer drag pan ───────────────────────────────────────────────────────
+  // ── Pointer events → paper:pointer* custom events ──────────────────────────
 
-  let dragging = false;
-  let lastX = 0;
-  let lastY = 0;
-
-  function dispatchPaperPointerEvent(e: PointerEvent) {
+  function handlePointerEvent(e: PointerEvent) {
     const detail: PaperPointerEventDetail = {
       x: e.clientX,
       y: e.clientY,
@@ -116,37 +124,6 @@ export function ViewportUI(props: {
         cancelable: true,
       }),
     );
-  }
-
-  function handlePointerDown(e: PointerEvent) {
-    dispatchPaperPointerEvent(e);
-    if (e.button === 1 || e.button === 0) {
-      dragging = true;
-      lastX = e.clientX;
-      lastY = e.clientY;
-      canvasEl.setPointerCapture(e.pointerId);
-      canvasEl.style.cursor = 'grabbing';
-    }
-  }
-
-  function handlePointerMove(e: PointerEvent) {
-    dispatchPaperPointerEvent(e);
-    if (!dragging) return;
-    const dx = e.clientX - lastX;
-    const dy = e.clientY - lastY;
-    lastX = e.clientX;
-    lastY = e.clientY;
-    const { z } = camera();
-    setCamera((c) => ({ ...c, x: c.x + dx / z, y: c.y + dy / z }));
-  }
-
-  function handlePointerUp(e: PointerEvent) {
-    dispatchPaperPointerEvent(e);
-    if (dragging) {
-      dragging = false;
-      canvasEl.releasePointerCapture(e.pointerId);
-      canvasEl.style.cursor = 'default';
-    }
   }
 
   // ── Event listeners scoped to the viewport element ─────────────────────────
@@ -169,8 +146,6 @@ export function ViewportUI(props: {
     };
 
     viewport.getCamera = () => camera();
-
-    props.onViewportMount?.(viewport);
 
     // Wheel: must be non-passive to call preventDefault()
     canvasEl.addEventListener('wheel', handleWheel, { passive: false });
@@ -207,12 +182,15 @@ export function ViewportUI(props: {
 
   return (
     <div
-      ref={canvasEl}
+      ref={(el) => {
+        canvasEl = el;
+        props.ref?.(el as ViewportElement);
+      }}
       class="paper-viewport"
       tabIndex={0}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
+      onPointerDown={handlePointerEvent}
+      onPointerMove={handlePointerEvent}
+      onPointerUp={handlePointerEvent}
     >
       <div ref={sceneEl} class="paper-scene">
         <For each={layers()}>

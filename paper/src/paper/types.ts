@@ -33,10 +33,15 @@ export type PanelEntry = {
   position: PanelPosition;
 };
 
+export type UserState = {
+  selectedTool?: string;
+};
+
 export type PaperDoc = {
   title: string;
   shapes: Record<string, BaseShape>;
   panels: PanelEntry[];
+  userState?: Record<string, UserState>;
 };
 
 export type Camera = {
