@@ -10,7 +10,6 @@ import type {
   BaseShape,
   Camera,
   PaperDoc,
-  PaperPointerEventDetail,
   Rect,
   ShapeElement,
   ViewportElement,
@@ -108,20 +107,36 @@ export function ViewportUI(props: {
     }
   }
 
-  // ── Pointer events → paper:pointer* custom events ──────────────────────────
+  // ── Pointer + drag events → paper:* custom events ─────────────────────────
 
   function handlePointerEvent(e: PointerEvent) {
-    const detail: PaperPointerEventDetail = {
-      x: e.clientX,
-      y: e.clientY,
-      pointerId: e.pointerId,
-      pointerType: e.pointerType,
-      buttons: e.buttons,
-      viewport: canvasEl as ViewportElement,
-    };
     canvasEl.dispatchEvent(
       new CustomEvent(`paper:${e.type}` as keyof HTMLElementEventMap, {
-        detail,
+        detail: {
+          x: e.clientX,
+          y: e.clientY,
+          pointerId: e.pointerId,
+          pointerType: e.pointerType,
+          buttons: e.buttons,
+          viewport: canvasEl as ViewportElement,
+        },
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  }
+
+  function handleDragEvent(e: DragEvent) {
+    e.preventDefault();
+    // DataTransfer.getData() is only valid while the original event is on the
+    // call stack. All downstream dispatching is synchronous so the reference
+    // in the detail remains readable by listeners.
+    const viewport = canvasEl as ViewportElement;
+    const { x: canvasX, y: canvasY } = viewport.screenToCanvas(e.clientX, e.clientY);
+    const patchworkUrls = e.type === 'drop' ? parsePatchworkUrls(e.dataTransfer) : null;
+    canvasEl.dispatchEvent(
+      new CustomEvent(`paper:${e.type}` as keyof HTMLElementEventMap, {
+        detail: { canvasX, canvasY, dataTransfer: e.dataTransfer, patchworkUrls, viewport },
         bubbles: true,
         cancelable: true,
       }),
@@ -180,6 +195,11 @@ export function ViewportUI(props: {
     canvasEl.addEventListener('touchstart', blockTouch, { passive: false });
     canvasEl.addEventListener('touchend', blockTouch, { passive: false });
 
+    // Drag events — must be non-passive so preventDefault() is honoured
+    for (const type of ['dragover', 'dragenter', 'dragleave', 'drop']) {
+      canvasEl.addEventListener(type, handleDragEvent as EventListener);
+    }
+
     onCleanup(() => {
       canvasEl.removeEventListener('wheel', handleWheel);
       canvasEl.removeEventListener('keydown', blockKeys);
@@ -188,6 +208,9 @@ export function ViewportUI(props: {
       }
       canvasEl.removeEventListener('touchstart', blockTouch);
       canvasEl.removeEventListener('touchend', blockTouch);
+      for (const type of ['dragover', 'dragenter', 'dragleave', 'drop']) {
+        canvasEl.removeEventListener(type, handleDragEvent as EventListener);
+      }
     });
   });
 
@@ -275,6 +298,17 @@ function ShapeNode(props: {
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
+
+function parsePatchworkUrls(dataTransfer: DataTransfer | null): string[] | null {
+  const raw = dataTransfer?.getData('text/x-patchwork-urls');
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(String) : null;
+  } catch {
+    return null;
+  }
+}
 
 function normalizeWheelDelta(e: WheelEvent): { dx: number; dy: number } {
   let dx = e.deltaX;

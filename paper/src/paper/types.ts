@@ -74,10 +74,25 @@ export type PaperPointerEventDetail = {
   viewport: ViewportElement;
 };
 
+// ─── Paper drag events ────────────────────────────────────────────────────────
+
+export type PaperDragEventDetail = {
+  canvasX: number;
+  canvasY: number;
+  dataTransfer: DataTransfer | null;
+  // Pre-decoded from text/x-patchwork-urls — only populated for paper:drop, null otherwise.
+  patchworkUrls: string[] | null;
+  viewport: ViewportElement;
+};
+
 declare global {
   interface HTMLElementEventMap {
     'paper:pointerdown': CustomEvent<PaperPointerEventDetail>;
     'paper:pointermove': CustomEvent<PaperPointerEventDetail>;
     'paper:pointerup': CustomEvent<PaperPointerEventDetail>;
+    'paper:dragover': CustomEvent<PaperDragEventDetail>;
+    'paper:dragenter': CustomEvent<PaperDragEventDetail>;
+    'paper:dragleave': CustomEvent<PaperDragEventDetail>;
+    'paper:drop': CustomEvent<PaperDragEventDetail>;
   }
 }
