@@ -31,6 +31,7 @@ declare module 'solid-js' {
         style?: string;
       };
       'patchwork-view': { 'doc-url'?: string; 'tool-id'?: string; style?: string; class?: string };
+      'patchwork-view-with-tool-url': { 'doc-url'?: string; 'tool-url'?: string; style?: string; class?: string };
     }
   }
 }

@@ -18,6 +18,7 @@ export const schema = z.object({
   docUrl: z.string().optional(),
   docType: z.string().optional(),
   toolId: z.string().optional(),
+  toolUrl: z.string().optional(),
   width: z.number(),
   height: z.number(),
 });
@@ -44,7 +45,10 @@ function EmbedView(props: { embedRef: Ref<EmbedShape> }) {
     () => shape()?.docType,
   );
 
+  const usingToolUrl = () => !!shape()?.toolUrl;
+
   const tools = () => {
+    if (usingToolUrl()) return [];
     const dt = docType();
     if (!dt) return [];
     return getSupportedToolsForType(dt).filter((t) => !(t as any).unlisted);
@@ -52,7 +56,7 @@ function EmbedView(props: { embedRef: Ref<EmbedShape> }) {
 
   const effectiveToolId = () => {
     const s = shape();
-    if (!s) return '';
+    if (!s || usingToolUrl()) return '';
     if (s.toolId) return s.toolId;
     const tls = tools();
     const concrete = tls.find((t) => {
@@ -97,7 +101,7 @@ function EmbedView(props: { embedRef: Ref<EmbedShape> }) {
             >
               <div class="embed-header">
                 <span class="embed-title">{title()}</span>
-                {tools().length > 0 && (
+                {!usingToolUrl() && tools().length > 0 && (
                   <button
                     class="embed-tool-btn"
                     onClick={handleToolBtnClick}
@@ -117,11 +121,21 @@ function EmbedView(props: { embedRef: Ref<EmbedShape> }) {
                 </button>
               </div>
               <div class="embed-content" onPointerDown={(e) => e.stopPropagation()}>
-                <patchwork-view
-                  attr:doc-url={shape()!.docUrl}
-                  attr:tool-id={effectiveToolId() || undefined}
-                  style="display:block;width:100%;height:100%;"
-                />
+                {usingToolUrl()
+                  ? (
+                    <patchwork-view-with-tool-url
+                      attr:doc-url={shape()!.docUrl}
+                      attr:tool-url={shape()!.toolUrl}
+                      style="display:block;width:100%;height:100%;"
+                    />
+                  )
+                  : (
+                    <patchwork-view
+                      attr:doc-url={shape()!.docUrl}
+                      attr:tool-id={effectiveToolId() || undefined}
+                      style="display:block;width:100%;height:100%;"
+                    />
+                  )}
               </div>
             </div>
           )

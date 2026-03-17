@@ -3,6 +3,7 @@ import {
   plugins as refViewPlugins,
   registerPatchworkRefViewElement,
 } from './patchwork-ref-view/index.js';
+import { registerPatchworkViewWithToolUrlElement } from './patchwork-view-with-tool-url/index.js';
 import { plugins as rectanglePlugins } from './shapes/rectangle/index.js';
 import { plugins as linePlugins } from './shapes/line/index.js';
 import { plugins as embedPlugins } from './shapes/embed/index.js';
@@ -34,6 +35,7 @@ export const plugins = [
 // TODO: hack — patchwork-view and patchwork-ref-view should eventually be unified
 // so the host registers both element types with the repo in one place.
 registerPatchworkRefViewElement({ repo: (window as any).repo });
+registerPatchworkViewWithToolUrlElement({ repo: (window as any).repo });
 
 export { registerPatchworkRefViewElement } from './patchwork-ref-view/index.js';
 export type {
@@ -43,6 +45,9 @@ export type {
   RefToolImplementation,
   RegisterPatchworkRefViewElementParams,
 } from './patchwork-ref-view/index.js';
+
+export { registerPatchworkViewWithToolUrlElement } from './patchwork-view-with-tool-url/index.js';
+export type { RegisterPatchworkViewWithToolUrlElementParams } from './patchwork-view-with-tool-url/index.js';
 
 export { getPaperViewport } from './paper/get-paper-viewport.js';
 export type { UserState } from './paper/types.js';
