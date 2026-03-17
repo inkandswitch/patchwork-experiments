@@ -10,6 +10,7 @@ import { plugins as panelPlugins } from './panels/panel/index.js';
 import { plugins as toolPanelPlugins } from './panels/tool-panel/index.js';
 import { plugins as rectangleDrawPlugins } from './tools/rectangle-draw/index.js';
 import { plugins as lineDrawPlugins } from './tools/line-draw/index.js';
+import { plugins as selectPlugins } from './tools/select/index.js';
 
 export const plugins = [
   ...paperPlugins,
@@ -21,6 +22,7 @@ export const plugins = [
   ...toolPanelPlugins,
   ...rectangleDrawPlugins,
   ...lineDrawPlugins,
+  ...selectPlugins,
 ];
 
 // TODO: hack — patchwork-view and patchwork-ref-view should eventually be unified
@@ -39,4 +41,4 @@ export type {
 export { getPaperViewport } from './paper/get-paper-viewport.js';
 export type { UserState } from './paper/types.js';
 
-console.log('paper version', 3);
+console.log('paper version', 4);

@@ -35,6 +35,11 @@ export type PanelEntry = {
 
 export type UserState = {
   selectedTool?: string;
+  selection?: Record<string, true>;
+};
+
+export type ShapeElement = HTMLElement & {
+  doesShapeOverlapWith?(rect: Rect): boolean;
 };
 
 export type PaperDoc = {
@@ -53,7 +58,7 @@ export type Camera = {
 // ─── Viewport ─────────────────────────────────────────────────────────────────
 
 export type ViewportElement = HTMLDivElement & {
-  getShapesInRect(rect: Rect): BaseShape[];
+  getShapesInRect(rect: Rect): ShapeElement[];
   screenToCanvas(x: number, y: number): Vec2;
   getCamera(): Camera;
 };

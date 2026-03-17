@@ -1,10 +1,10 @@
 import type { DocHandle } from '@automerge/automerge-repo';
 import { makeDocumentProjection } from '@automerge/automerge-repo-solid-primitives';
 import type { Plugin } from '@inkandswitch/patchwork-plugins';
-import { Minus } from 'lucide-solid';
+import { Pencil } from 'lucide-solid';
 import { onCleanup, onMount } from 'solid-js';
 import { render } from 'solid-js/web';
-import type { PaperDoc, PaperPointerEventDetail, Vec2, ViewportElement } from '../../paper/types.js';
+import type { PaperDoc, PaperPointerEventDetail, ViewportElement } from '../../paper/types.js';
 
 const TOOL_ID = 'paper-line-draw';
 
@@ -26,26 +26,24 @@ function LineDrawLayer(props: { handle: DocHandle<PaperDoc>; element: HTMLElemen
   };
 
   let dragShapeId: string | undefined;
-  let startCanvas: Vec2 | undefined;
+  let localPoints: [number, number][] = [];
 
   function onPointerDown(e: CustomEvent<PaperPointerEventDetail>) {
     if (!isActive()) return;
     e.stopPropagation();
 
     const { viewport, x, y } = e.detail;
-    startCanvas = viewport.screenToCanvas(x, y);
+    const pt = viewport.screenToCanvas(x, y);
     dragShapeId = `line-${Date.now()}`;
+    localPoints = [[pt.x, pt.y]];
 
     props.handle.change((d) => {
       d.shapes[dragShapeId!] = {
         id: dragShapeId!,
         type: 'line',
-        x: startCanvas!.x,
-        y: startCanvas!.y,
-        x1: startCanvas!.x,
-        y1: startCanvas!.y,
-        x2: startCanvas!.x,
-        y2: startCanvas!.y,
+        x: pt.x,
+        y: pt.y,
+        points: [[pt.x, pt.y]],
         stroke: '#475569',
         strokeWidth: 2,
         zIndex: Object.keys(d.shapes).length,
@@ -54,19 +52,19 @@ function LineDrawLayer(props: { handle: DocHandle<PaperDoc>; element: HTMLElemen
   }
 
   function onPointerMove(e: CustomEvent<PaperPointerEventDetail>) {
-    if (!isActive() || !dragShapeId || !startCanvas) return;
+    if (!isActive() || !dragShapeId) return;
     e.stopPropagation();
 
     const { viewport, x, y } = e.detail;
-    const current = viewport.screenToCanvas(x, y);
+    const pt = viewport.screenToCanvas(x, y);
+    localPoints.push([pt.x, pt.y]);
 
     props.handle.change((d) => {
       const s = d.shapes[dragShapeId!];
       if (!s) return;
-      s.x = Math.min(startCanvas!.x, current.x);
-      s.y = Math.min(startCanvas!.y, current.y);
-      (s as any).x2 = current.x;
-      (s as any).y2 = current.y;
+      (s as any).points.push([pt.x, pt.y]);
+      s.x = Math.min(s.x, pt.x);
+      s.y = Math.min(s.y, pt.y);
     });
   }
 
@@ -74,20 +72,12 @@ function LineDrawLayer(props: { handle: DocHandle<PaperDoc>; element: HTMLElemen
     if (!isActive()) return;
     if (dragShapeId) e.stopPropagation();
 
-    if (dragShapeId && startCanvas) {
-      const shapes = props.handle.docSync()?.shapes;
-      const s = shapes?.[dragShapeId];
-      if (s) {
-        const dx = (s as any).x2 - startCanvas.x;
-        const dy = (s as any).y2 - startCanvas.y;
-        if (Math.sqrt(dx * dx + dy * dy) < 4) {
-          props.handle.change((d) => { delete d.shapes[dragShapeId!]; });
-        }
-      }
+    if (dragShapeId && localPoints.length < 3) {
+      props.handle.change((d) => { delete d.shapes[dragShapeId!]; });
     }
 
     dragShapeId = undefined;
-    startCanvas = undefined;
+    localPoints = [];
   }
 
   onMount(() => {
@@ -111,7 +101,7 @@ function LineDrawLayer(props: { handle: DocHandle<PaperDoc>; element: HTMLElemen
 // ─── Button entry point ───────────────────────────────────────────────────────
 
 function lineButtonTool(_handle: DocHandle<PaperDoc>, element: HTMLElement): () => void {
-  return render(() => <Minus size={16} />, element);
+  return render(() => <Pencil size={16} />, element);
 }
 
 // ─── Plugins ──────────────────────────────────────────────────────────────────

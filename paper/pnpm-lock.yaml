@@ -23,6 +23,9 @@ importers:
       lucide-solid:
         specifier: ^0.577.0
         version: 0.577.0(solid-js@1.9.11)
+      perfect-freehand:
+        specifier: ^1.2.3
+        version: 1.2.3
       solid-js:
         specifier: ^1.9.11
         version: 1.9.11
@@ -949,6 +952,9 @@ packages:
   path-scurry@1.11.1:
     resolution: {integrity: sha512-Xa4Nw17FS9ApQFJ9umLiJS4orGjm7ZzwUrwamcGQuHSzDyth9boKDaycYdDcZDuqYATXw4HFXgaqWTctW/v1HA==}
     engines: {node: '>=16 || 14 >=14.18'}
+
+  perfect-freehand@1.2.3:
+    resolution: {integrity: sha512-bHZSfqDHGNlPpgH2yxXgPHlQSPpEbo+qg7li0M78J9vNAi2yjwLeA4x79BEQhX44lEWpCLSFCeRZwpw0niiXPA==}
 
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
@@ -2088,6 +2094,8 @@ snapshots:
     dependencies:
       lru-cache: 10.4.3
       minipass: 7.1.2
+
+  perfect-freehand@1.2.3: {}
 
   picocolors@1.1.1: {}
 

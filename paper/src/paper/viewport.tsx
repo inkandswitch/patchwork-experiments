@@ -12,6 +12,7 @@ import type {
   PaperDoc,
   PaperPointerEventDetail,
   Rect,
+  ShapeElement,
   ViewportElement,
 } from './types.js';
 import './viewport.css';
@@ -38,6 +39,7 @@ export function ViewportUI(props: {
   let sceneEl!: HTMLDivElement;
 
   const bboxIndex = new Map<string, Rect>();
+  const shapeElementMap = new Map<string, ShapeElement>();
 
   // One shared observer for all shape elements — far cheaper than one per shape.
   // Each element carries its shape id in dataset.shapeId for O(1) lookup here.
@@ -133,10 +135,19 @@ export function ViewportUI(props: {
 
     viewport.getShapesInRect = (rect) => {
       const shapes = doc.shapes ?? {};
-      return Object.values(shapes).filter((s) => {
-        const bbox = bboxIndex.get(s.id);
-        return bbox != null && rectsOverlap(bbox, rect);
-      });
+      return Object.values(shapes)
+        .filter((s) => {
+          const bbox = bboxIndex.get(s.id);
+          return bbox != null && rectsOverlap(bbox, rect);
+        })
+        .map((s) => shapeElementMap.get(s.id))
+        .filter((el): el is ShapeElement => {
+          if (el == null) return false;
+          if (typeof el.doesShapeOverlapWith === 'function') {
+            return el.doesShapeOverlapWith(rect);
+          }
+          return true;
+        });
     };
 
     viewport.screenToCanvas = (x, y) => {
@@ -216,6 +227,7 @@ export function ViewportUI(props: {
             onCleanup(() => {
               if (shapeEl) shapeResizeObserver.unobserve(shapeEl);
               bboxIndex.delete(id);
+              shapeElementMap.delete(id);
             });
 
             return (
@@ -225,6 +237,7 @@ export function ViewportUI(props: {
                 onElement={(el) => {
                   shapeEl = el;
                   el.dataset.shapeId = id;
+                  shapeElementMap.set(id, el as ShapeElement);
                   shapeResizeObserver.observe(el);
                 }}
               />
