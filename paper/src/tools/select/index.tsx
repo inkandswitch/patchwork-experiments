@@ -214,6 +214,11 @@ function SelectLayer(props: { handle: DocHandle<PaperDoc>; element: HTMLElement 
   function onKeyDown(e: KeyboardEvent) {
     if (!isActive()) return;
     if (e.key !== 'Backspace' && e.key !== 'Delete') return;
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement) {
+      const tag = focused.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || focused.isContentEditable) return;
+    }
     const url = contactUrl();
     const selection = url ? (doc.userState?.[url]?.selection ?? {}) : {};
     if (Object.keys(selection).length === 0) return;

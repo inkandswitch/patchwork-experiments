@@ -8,8 +8,8 @@
  * The fix adds an object branch that calls `delete parent[prop]` for map key
  * deletions before falling through to the error.
  */
-import { isAutomerge, isCounter, mark, splice, unmark } from "@automerge/automerge/slim"
-import type { Doc, Patch, Prop } from "@automerge/automerge/slim"
+import { isAutomerge, isCounter, mark, splice, unmark } from "@automerge/automerge"
+import type { Counter, Doc, Patch, Prop } from "@automerge/automerge"
 
 type ResolvedPathElem = {
   obj: unknown
@@ -120,7 +120,7 @@ function applyIncPatch(doc: unknown, path: ResolvedPath, patch: Extract<Patch, {
     if (!isCounter(counter)) {
       throw new RangeError(`target is not a counter for patch`)
     }
-    counter.increment(patch.value)
+    ;(counter as Counter).increment(patch.value)
   } else {
     if (typeof counter !== "number") {
       throw new RangeError(`target is not a number for patch`)

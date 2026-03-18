@@ -6,7 +6,7 @@ import type {
 } from "@automerge/automerge-repo/slim"
 import autoproduce from "./autoproduce.js"
 import { createStore, produce, reconcile, type Store } from "solid-js/store"
-import { diff, getHeads } from "@automerge/automerge/slim"
+import { diff, getHeads } from "@automerge/automerge"
 import { applyPatches } from "./apply_patches.js"
 
 const cache = new WeakMap<
