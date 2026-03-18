@@ -11,7 +11,7 @@ export const plugins: LoadablePlugin<any>[] = [
     name: "Raw2",
     supportedDatatypes: "*",
     async load() {
-      console.log("Loading Raw v2 29");
+      console.log("Loading Raw v2 30");
       const { TinyTool } = await import("./components/RawEditor");
       return TinyTool;
     },

@@ -80,7 +80,7 @@ function deepMapValues(
   return value;
 }
 
-function getAtPath(obj: any, path: (string | number)[]): unknown {
+function getAtPath(obj: any, path: Automerge.Prop[]): unknown {
   let node = obj;
   for (const key of path) {
     if (node == null) return undefined;
@@ -166,7 +166,7 @@ function BinaryDataHint({ nodeData }: { nodeData: any }) {
 
 function walkToParent(
   doc: any,
-  path: (string | number)[],
+  path: Automerge.Prop[],
 ): [parent: any, key: string | number] | null {
   let node = doc;
   for (let i = 0; i < path.length - 1; i++) {
@@ -176,12 +176,22 @@ function walkToParent(
   return [node, path[path.length - 1]];
 }
 
-function applyAtPath(doc: any, path: (string | number)[], value: unknown) {
+function applyAtPath(doc: any, path: Automerge.Prop[], value: unknown) {
   const target = walkToParent(doc, path);
-  if (target) target[0][target[1]] = value;
+  if (!target) return;
+  const [node, key] = target;
+  if (
+    typeof value === "string" &&
+    typeof node[key] === "string" &&
+    !Automerge.isImmutableString(node[key])
+  ) {
+    Automerge.updateText(doc, path, value);
+  } else {
+    node[key] = value;
+  }
 }
 
-function deleteAtPath(doc: any, path: (string | number)[]) {
+function deleteAtPath(doc: any, path: Automerge.Prop[]) {
   const target = walkToParent(doc, path);
   if (!target) return;
   const [node, key] = target;
@@ -197,12 +207,12 @@ function deleteAtPath(doc: any, path: (string | number)[]) {
 type UndoEntry =
   | {
       type: "edit";
-      path: (string | number)[];
+      path: Automerge.Prop[];
       oldValue: unknown;
       newValue: unknown;
     }
-  | { type: "delete"; path: (string | number)[]; oldValue: unknown }
-  | { type: "add"; path: (string | number)[]; newValue: unknown };
+  | { type: "delete"; path: Automerge.Prop[]; oldValue: unknown }
+  | { type: "add"; path: Automerge.Prop[]; newValue: unknown };
 
 function applyUndoEntry(d: any, entry: UndoEntry) {
   switch (entry.type) {
