@@ -1,6 +1,6 @@
 {
   "name": "@patchwork/raw-editor",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "A raw view and editor for any Automerge document",
   "pushwork": {
     "url": "automerge:2c1R47RtNU6rmWMZ6LePNfC7FUe2"
@@ -9,7 +9,7 @@
   "exports": "./dist/index.js",
   "scripts": {
     "build": "tsc && vite build",
-    "sync": "pnpm build && pushwork sync"
+    "push": "pnpm build && pushwork sync"
   },
   "keywords": [],
   "author": "Ink & Switch",
@@ -20,7 +20,8 @@
     "@inkandswitch/patchwork-bootloader": "^0.0.3",
     "@inkandswitch/patchwork-elements": "^0.0.5",
     "@inkandswitch/patchwork-plugins": "^0.0.2",
-    "@microlink/react-json-view": "^1.26.2",
+    "json-edit-react": "^1.29.0",
+    "lucide-react": "^0.400.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
@@ -32,8 +33,6 @@
     "pushwork": "^1.0.5",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
-    "vite-plugin-css-injected-by-js": "^3.5.2",
-    "vite-plugin-top-level-await": "^1.5.0",
-    "vite-plugin-wasm": "^3.4.1"
+    "vite-plugin-css-injected-by-js": "^3.5.2"
   }
 }
