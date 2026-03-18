@@ -7,11 +7,10 @@ import type {
 export const plugins: LoadablePlugin<any>[] = [
   {
     type: "patchwork:tool",
-    id: "raw2",
-    name: "Raw2",
+    id: "raw",
+    name: "Raw",
     supportedDatatypes: "*",
     async load() {
-      console.log("Loading Raw v2 30");
       const { TinyTool } = await import("./components/RawEditor");
       return TinyTool;
     },
