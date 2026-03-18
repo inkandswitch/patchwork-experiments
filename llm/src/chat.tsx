@@ -52,7 +52,6 @@ function LLMChatView(props: { handle: DocHandle<LLMChatDoc> }) {
         d.prompt = text;
         d.output = [];
         if (currentDoc.workspaceUrl) d.workspaceUrl = currentDoc.workspaceUrl;
-        d.skillsFolderUrl = __SKILLS_DIR_URL__ as AutomergeUrl;
         if (previousMessages.length > 0) {
           d.previousMessages = previousMessages;
         }

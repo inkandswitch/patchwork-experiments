@@ -12,6 +12,7 @@ import type {
 import { LayoutGrid } from 'lucide-solid';
 import { createEffect, onCleanup, onMount } from 'solid-js';
 import { render } from 'solid-js/web';
+import { getPaperViewport } from '../../paper/get-paper-viewport.js';
 import type { PaperDoc, PaperPointerEventDetail, Vec2 } from '../../paper/types.js';
 import { openMenu } from '../../shapes/embed/menu.js';
 
@@ -175,14 +176,16 @@ function EmbedDrawLayer(props: { handle: DocHandle<PaperDoc>; element: HTMLEleme
   }
 
   onMount(() => {
-    props.element.addEventListener('paper:pointerdown', onPointerDown as EventListener);
-    props.element.addEventListener('paper:pointermove', onPointerMove as EventListener);
-    props.element.addEventListener('paper:pointerup', onPointerUp as EventListener);
+    const viewport = getPaperViewport(props.element);
+    if (!viewport) return;
+    viewport.addEventListener('paper:pointerdown', onPointerDown as EventListener);
+    viewport.addEventListener('paper:pointermove', onPointerMove as EventListener);
+    viewport.addEventListener('paper:pointerup', onPointerUp as EventListener);
 
     onCleanup(() => {
-      props.element.removeEventListener('paper:pointerdown', onPointerDown as EventListener);
-      props.element.removeEventListener('paper:pointermove', onPointerMove as EventListener);
-      props.element.removeEventListener('paper:pointerup', onPointerUp as EventListener);
+      viewport.removeEventListener('paper:pointerdown', onPointerDown as EventListener);
+      viewport.removeEventListener('paper:pointermove', onPointerMove as EventListener);
+      viewport.removeEventListener('paper:pointerup', onPointerUp as EventListener);
     });
   });
 

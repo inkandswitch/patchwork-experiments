@@ -1,6 +1,6 @@
 import type { Ref } from '@automerge/automerge-repo';
 import type { Plugin } from '@inkandswitch/patchwork-plugins';
-import { createEffect, createSignal } from 'solid-js';
+import { type Accessor, createSignal, onCleanup } from 'solid-js';
 import { render } from 'solid-js/web';
 import { z } from 'zod';
 
@@ -32,16 +32,7 @@ export default function rectangleRefTool(
 // ─── Renderer ─────────────────────────────────────────────────────────────────
 
 function RectangleView(props: { rectangleRef: Ref<RectangleShape> }) {
-  const [shape, setShape] = createSignal<RectangleShape | undefined>(
-    props.rectangleRef.value() as RectangleShape | undefined,
-  );
-
-  const cleanup = props.rectangleRef.onChange((value) => {
-    setShape(value as RectangleShape | undefined);
-  });
-
-  // Unsubscribe when the Solid tree is torn down
-  createEffect(() => cleanup);
+  const [shape, change] = useRef(props.rectangleRef);
 
   return (
     <>
@@ -61,6 +52,14 @@ function RectangleView(props: { rectangleRef: Ref<RectangleShape> }) {
       )}
     </>
   );
+}
+
+// ─── Hooks ────────────────────────────────────────────────────────────────────
+
+function useRef<T>(ref: Ref<T>): [Accessor<T | undefined>, Ref<T>['change']] {
+  const [value, setValue] = createSignal<T | undefined>(ref.value());
+  onCleanup(ref.onChange((val) => setValue(() => val)));
+  return [value, ref.change.bind(ref)];
 }
 
 // ─── Plugins ──────────────────────────────────────────────────────────────────

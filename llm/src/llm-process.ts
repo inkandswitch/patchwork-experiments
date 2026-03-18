@@ -15,6 +15,7 @@ import type { Repo } from "@automerge/automerge-repo";
 import { updateText, type AutomergeUrl } from "@automerge/automerge-repo";
 import { parseScriptBlocks } from "./parser";
 import type { LLMDoc, LLMWorkspaceDoc, OutputBlock, ChatMessage } from "./types";
+import { SYSTEM_PROMPT } from "./system-prompt";
 
 // Inline folder doc type — avoids requiring @inkandswitch/patchwork-filesystem
 type FolderDoc = {
@@ -29,7 +30,7 @@ type SkillInfo = {
   name: string;
   description: string;
   content: string;
-  importUrl: string;
+  importUrl?: string;
 };
 
 function swPath(automergeUrl: string): string {
@@ -76,37 +77,39 @@ export async function runLLMProcess(repo: Repo, processDocUrl: AutomergeUrl, sig
     throw new Error("No prompt to run");
   }
 
-  const { apiUrl, model, api: apiModuleUrl } = doc.config;
+  const { apiUrl, model } = doc.config;
   const apiKey = (import.meta as any).env?.VITE_OPENAI_API_KEY || "";
 
   const capturedConsole = createCapturedConsole();
-
-  let skillSystemPrompt: string | undefined;
-
-  if (apiModuleUrl && doc.docUrl) {
-    const targetHandle = await repo.find(doc.docUrl);
-    const skillMod = await import(/* @vite-ignore */ apiModuleUrl);
-    const skillApi = skillMod.default(targetHandle);
-    skillSystemPrompt = skillMod.systemPrompt;
-    (globalThis as any).api = skillApi;
-  }
 
   const skills = doc.workspaceUrl ? await discoverSkillsFromWorkspace(repo, doc.workspaceUrl) : [];
   const skillDescriptions = buildSkillDescriptions(skills);
 
   const workspaceContext = doc.workspaceUrl ? await buildWorkspaceContext(repo, doc.workspaceUrl) : undefined;
 
-  const loadSkill = async (name: string) => {
+  const loadSkillDocs = async (name: string): Promise<string> => {
     const skill = skills.find((s) => s.name === name);
     if (!skill) {
       const available = skills.map((s) => s.name).join(", ");
       throw new Error(`Skill not found: "${name}". Available: [${available}]`);
     }
-    const mod = await import(/* @vite-ignore */ skill.importUrl);
-    return { ...mod, docs: skill.content };
+    return skill.content;
   };
 
-  (globalThis as any).loadSkill = loadSkill;
+  const importSkillApi = async (name: string): Promise<Record<string, unknown>> => {
+    const skill = skills.find((s) => s.name === name);
+    if (!skill) {
+      const available = skills.map((s) => s.name).join(", ");
+      throw new Error(`Skill not found: "${name}". Available: [${available}]`);
+    }
+    if (!skill.importUrl) {
+      throw new Error(`Skill "${name}" has no importable API module. Use loadSkillDocs("${name}") to read its documentation.`);
+    }
+    return await import(/* @vite-ignore */ skill.importUrl);
+  };
+
+  (globalThis as any).loadSkillDocs = loadSkillDocs;
+  (globalThis as any).importSkillApi = importSkillApi;
   (globalThis as any).__llmCapturedConsole = capturedConsole;
   (globalThis as any).repo = wrapRepoForLLM(repo, doc.workspaceUrl);
 
@@ -125,7 +128,7 @@ export async function runLLMProcess(repo: Repo, processDocUrl: AutomergeUrl, sig
     const currentDoc = await handle.doc();
     if (!currentDoc) break;
 
-    const messages = buildLLMMessages(currentDoc, skillDescriptions, skillSystemPrompt, workspaceContext);
+    const messages = buildLLMMessages(currentDoc, skillDescriptions, workspaceContext);
     if (iteration === 0) {
       console.log(`[llm] system prompt:\n${messages[0]?.content}`);
     }
@@ -228,7 +231,7 @@ async function discoverSkillsFromWorkspace(repo: Repo, workspaceUrl: AutomergeUr
 
         // This workspace entry is a folder — look for skill subfolders inside it
         for (const link of doc.docs) {
-          if (link.type !== 'folder') continue;
+          if (link.type !== "folder") continue;
           await discoverSkillInFolder(repo, link.url, skills);
         }
       } catch {
@@ -248,29 +251,22 @@ async function discoverSkillInFolder(repo: Repo, folderUrl: AutomergeUrl, skills
     const folderDoc = await folderHandle.doc();
     if (!folderDoc?.docs) return;
 
-    const skillMdEntry = folderDoc.docs.find((d) => d.name === 'SKILL.md');
+    const skillMdEntry = folderDoc.docs.find((d) => d.name === "SKILL.md");
     if (!skillMdEntry) return;
 
     const mdHandle = await repo.find(skillMdEntry.url);
-    const mdDoc = await mdHandle.doc() as any;
-    const content =
-      typeof mdDoc?.content === 'string'
-        ? mdDoc.content
-        : mdDoc?.content instanceof Uint8Array
-          ? new TextDecoder().decode(mdDoc.content)
-          : '';
+    const mdDoc = (await mdHandle.doc()) as any;
+    const content = typeof mdDoc?.content === "string" ? mdDoc.content : mdDoc?.content instanceof Uint8Array ? new TextDecoder().decode(mdDoc.content) : "";
 
     const frontmatter = parseFrontmatter(content);
     if (!frontmatter.name) return;
 
-    const indexEntry = folderDoc.docs.find((d) => d.name === 'index.js');
+    const indexEntry = folderDoc.docs.find((d) => d.name === "index.js");
     skills.push({
       name: frontmatter.name,
-      description: frontmatter.description || '',
+      description: frontmatter.description || "",
       content,
-      importUrl: indexEntry
-        ? `/${swPath(folderUrl)}/${indexEntry.name}`
-        : `/${swPath(folderUrl)}/index.js`,
+      importUrl: indexEntry ? `/${swPath(folderUrl)}/${indexEntry.name}` : undefined,
     });
   } catch {
     // Skip inaccessible skill folder
@@ -357,24 +353,10 @@ async function buildWorkspaceContext(repo: Repo, workspaceUrl: AutomergeUrl): Pr
 
 // --- LLM message building ---
 
-export const SYSTEM_PROMPT = `You are a coding agent that can execute JavaScript to accomplish tasks.
-
-Execute code by writing it inside <script> tags with a data-description attribute:
-
-<script data-description="Brief description of what this code does">
-// your code here
-</script>
-
-Rules:
-- Write one <script> block per iteration; wait for its output before continuing.
-- Use \`return\` to inspect values and \`console.log\` for intermediate output.
-- Load a skill with \`const skill = await loadSkill('name')\` to access its API.
-- Use skill APIs rather than manipulating documents directly.`;
-
-export function buildLLMMessages(doc: LLMDoc, skillDescriptions?: string, systemPromptOverride?: string, workspaceContext?: string): ChatMessage[] {
+export function buildLLMMessages(doc: LLMDoc, skillDescriptions?: string, workspaceContext?: string): ChatMessage[] {
   const messages: ChatMessage[] = [];
 
-  let systemPrompt = systemPromptOverride ?? SYSTEM_PROMPT;
+  let systemPrompt = SYSTEM_PROMPT;
 
   if (workspaceContext) {
     systemPrompt += `\n\nDocuments in the workspace (this list is exhaustive — no other documents exist unless you create them):\n${workspaceContext}\nUse repo.find(url) to open a document. If no suitable document exists, create one using the appropriate skill.`;
@@ -383,7 +365,7 @@ export function buildLLMMessages(doc: LLMDoc, skillDescriptions?: string, system
   }
 
   if (skillDescriptions) {
-    systemPrompt += `\n\nAvailable skills (load with \`await loadSkill('name')\` — returns exports + \`docs\` string with full API reference):\n${skillDescriptions}`;
+    systemPrompt += `\n\nAvailable skills:\n${skillDescriptions}\n\nUse \`await loadSkillDocs('name')\` to read a skill's documentation. Use \`await importSkillApi('name')\` to import its runtime API.`;
   }
 
   messages.push({ role: "system", content: systemPrompt });

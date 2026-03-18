@@ -6,7 +6,7 @@ import {
   useRepo,
 } from '@automerge/automerge-repo-solid-primitives';
 import type { Plugin } from '@inkandswitch/patchwork-plugins';
-import { buildLLMMessages, runLLMProcess, SYSTEM_PROMPT } from '@patchwork/llm';
+import { buildLLMMessages, runLLMProcess } from '@patchwork/llm';
 import type { ChatMessage, ContentPart, LLMDoc, LLMWorkspaceDoc } from '@patchwork/llm';
 import { domToDataUrl } from 'modern-screenshot';
 import { For, Show, createSignal } from 'solid-js';
@@ -94,10 +94,11 @@ function BuildPanelUI(props: { handle: DocHandle<PaperDoc>; element: HTMLElement
 
       const previousMessages = await buildContextMessages(repo, buildRuns() as AutomergeUrl[]);
 
+      const paperUrl = props.handle.url;
       const contextContent: ContentPart[] = [
         {
           type: 'text',
-          text: `Current paper canvas (doc URL: ${props.handle.url})\n\nShapes:\n\`\`\`json\n${JSON.stringify(contextShapes, null, 2)}\n\`\`\``,
+          text: buildCanvasContextText(paperUrl, contextShapes),
         },
       ];
       if (screenshotDataUrl) {
@@ -106,15 +107,13 @@ function BuildPanelUI(props: { handle: DocHandle<PaperDoc>; element: HTMLElement
 
       const contextMessage: ChatMessage = { role: 'user', content: contextContent };
 
-      const paperUrl = props.handle.url;
-      const systemPrompt = buildPaperSystemPrompt(paperUrl);
-
       const workspaceHandle = repo.create<LLMWorkspaceDoc>();
       workspaceHandle.change((d) => {
         d['@patchwork'] = { type: 'llm-workspace' };
         d.title = 'Paper build workspace';
-        d.urls = [paperUrl];
+        d.urls = [paperUrl, __SKILLS_FOLDER_URL__ as AutomergeUrl];
       });
+
 
       const runHandle = repo.create<LLMDoc>();
       runHandle.change((d) => {

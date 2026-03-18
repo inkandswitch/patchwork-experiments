@@ -9,6 +9,11 @@
     "noEmit": true,
     "jsx": "preserve",
     "jsxImportSource": "solid-js",
+    "paths": {
+      "@automerge/automerge-repo-solid-primitives": [
+        "./src/automerge-repo-solid-primitives/index.ts"
+      ]
+    }
   },
   "include": ["src"],
   "exclude": ["node_modules"]

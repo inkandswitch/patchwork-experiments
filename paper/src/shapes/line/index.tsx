@@ -25,7 +25,8 @@ export default function lineRefTool(ref: Ref<LineShape>, element: HTMLElement): 
   (element as ShapeElement).doesShapeOverlapWith = (rect: Rect) => {
     const shape = ref.value() as LineShape | undefined;
     if (!shape) return false;
-    return strokeOverlapsRect(shape.points, rect);
+    const localRect = { x: rect.x - shape.x, y: rect.y - shape.y, w: rect.w, h: rect.h };
+    return strokeOverlapsRect(shape.points, localRect);
   };
   return render(() => <LineView lineRef={ref} />, element);
 }
@@ -43,25 +44,22 @@ function LineView(props: { lineRef: Ref<LineShape> }) {
 
   createEffect(() => cleanup);
 
-  const minX = () => shape()?.x ?? 0;
-  const minY = () => shape()?.y ?? 0;
-
   const w = () => {
     const pts = shape()?.points;
     if (!pts?.length) return 1;
-    return Math.max(1, Math.max(...pts.map((p) => p[0])) - minX());
+    return Math.max(1, Math.max(...pts.map((p) => p[0])) - Math.min(...pts.map((p) => p[0])));
   };
 
   const h = () => {
     const pts = shape()?.points;
     if (!pts?.length) return 1;
-    return Math.max(1, Math.max(...pts.map((p) => p[1])) - minY());
+    return Math.max(1, Math.max(...pts.map((p) => p[1])) - Math.min(...pts.map((p) => p[1])));
   };
 
   const pathData = () => {
     const s = shape();
     if (!s?.points.length) return '';
-    const relativePoints = s.points.map(([px, py]) => [px - minX(), py - minY()]);
+    const relativePoints = s.points.map(([px, py]) => [px, py]);
     const outlinePoints = getStroke(relativePoints, {
       size: s.strokeWidth * 3,
       thinning: 0.5,

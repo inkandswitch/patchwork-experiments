@@ -1,24 +1,39 @@
-import { defineConfig } from "vite";
-import solidPlugin from "vite-plugin-solid";
-import cssInjectedByJsPlugin from "vite-plugin-css-injected-by-js";
+import { defineConfig } from 'vite';
+import solidPlugin from 'vite-plugin-solid';
+import cssInjectedByJsPlugin from 'vite-plugin-css-injected-by-js';
+import { resolve } from 'path';
 
-import external from "@inkandswitch/patchwork-bootloader/externals";
+import external from '@inkandswitch/patchwork-bootloader/externals';
+import skillsSnapshot from '../formal-sketch-skills/.pushwork/snapshot.json';
 
 export default defineConfig({
-  base: "./",
+  base: './',
   plugins: [solidPlugin(), cssInjectedByJsPlugin()],
+
+  resolve: {
+    alias: {
+      '@automerge/automerge-repo-solid-primitives': resolve(
+        __dirname,
+        'src/automerge-repo-solid-primitives/index.ts',
+      ),
+    },
+  },
+
+  define: {
+    __SKILLS_FOLDER_URL__: JSON.stringify(skillsSnapshot.rootDirectoryUrl),
+  },
 
   build: {
     rollupOptions: {
       external,
-      input: "./src/index.ts",
+      input: './src/index.ts',
       output: {
-        format: "es",
-        entryFileNames: "[name].js",
-        chunkFileNames: "assets/[name]-[hash].js",
-        assetFileNames: "assets/[name][extname]",
+        format: 'es',
+        entryFileNames: '[name].js',
+        chunkFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name][extname]',
       },
-      preserveEntrySignatures: "strict",
+      preserveEntrySignatures: 'strict',
     },
   },
 });

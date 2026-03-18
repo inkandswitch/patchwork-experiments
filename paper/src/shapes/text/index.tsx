@@ -94,12 +94,16 @@ function TextShapeView(props: { shapeRef: Ref<TextShape>; hostElement: HTMLEleme
         onInput={(e) => {
           resizeMirror();
           console.log('input', textareaEl.value);
-          // props.shapeRef.docHandle.change((d) => {
-          //   updateText(d as Doc<unknown>, ['shapes', shapeId, 'text'], textareaEl.value);
-          // });
+          props.shapeRef.docHandle.change((d) => {
+            updateText(d as Doc<unknown>, ['shapes', shapeId, 'text'], textareaEl.value);
+          });
         }}
         onBlur={() => {
-          if (!textareaEl.value.trim()) props.shapeRef.remove();
+          if (!textareaEl.value.trim()) {
+            // props.shapeRef.docHandle.change((d) => {
+            //   delete d.shapes[shapeId];
+            // });
+          }
         }}
         onKeyDown={(e: KeyboardEvent) => {
           if (e.key === 'Escape') textareaEl.blur();

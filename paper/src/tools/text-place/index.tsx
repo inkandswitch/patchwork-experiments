@@ -1,8 +1,10 @@
 import type { DocHandle } from '@automerge/automerge-repo';
+import { makeDocumentProjection } from '@automerge/automerge-repo-solid-primitives';
 import type { Plugin } from '@inkandswitch/patchwork-plugins';
 import { Type } from 'lucide-solid';
 import { onCleanup, onMount } from 'solid-js';
 import { render } from 'solid-js/web';
+import { getPaperViewport } from '../../paper/get-paper-viewport.js';
 import type { PaperDoc, PaperPointerEventDetail } from '../../paper/types.js';
 
 const TOOL_ID = 'paper-text-place';
@@ -16,7 +18,16 @@ function textButtonTool(handle: DocHandle<PaperDoc>, element: HTMLElement): () =
 // ─── Button UI ────────────────────────────────────────────────────────────────
 
 function TextButtonUI(props: { handle: DocHandle<PaperDoc>; element: HTMLElement }) {
+  const doc = makeDocumentProjection<PaperDoc>(props.handle);
+  const contactUrl = () =>
+    (window as any).accountDocHandle?.doc()?.contactUrl as string | undefined;
+  const isActive = () => {
+    const url = contactUrl();
+    return url ? doc.userState?.[url]?.selectedTool === TOOL_ID : false;
+  };
+
   function onPointerDown(e: CustomEvent<PaperPointerEventDetail>) {
+    if (!isActive()) return;
     e.stopPropagation();
 
     const { viewport, x, y } = e.detail;
@@ -36,9 +47,11 @@ function TextButtonUI(props: { handle: DocHandle<PaperDoc>; element: HTMLElement
   }
 
   onMount(() => {
-    props.element.addEventListener('paper:pointerdown', onPointerDown as EventListener);
+    const viewport = getPaperViewport(props.element);
+    if (!viewport) return;
+    viewport.addEventListener('paper:pointerdown', onPointerDown as EventListener);
     onCleanup(() => {
-      props.element.removeEventListener('paper:pointerdown', onPointerDown as EventListener);
+      viewport.removeEventListener('paper:pointerdown', onPointerDown as EventListener);
     });
   });
 

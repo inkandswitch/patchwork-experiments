@@ -222,6 +222,7 @@ export function ViewportUI(props: {
         props.ref?.(el as ViewportElement);
       }}
       class="paper-viewport"
+      data-paper-viewport
       tabIndex={0}
       onPointerDown={handlePointerEvent}
       onPointerMove={handlePointerEvent}

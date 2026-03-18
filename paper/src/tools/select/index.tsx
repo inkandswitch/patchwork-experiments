@@ -4,7 +4,14 @@ import type { Plugin } from '@inkandswitch/patchwork-plugins';
 import { MousePointer } from 'lucide-solid';
 import { Show, createEffect, createSignal, onCleanup, onMount } from 'solid-js';
 import { render } from 'solid-js/web';
-import type { PaperDoc, PaperPointerEventDetail, Rect, Vec2, ViewportElement } from '../../paper/types.js';
+import { getPaperViewport } from '../../paper/get-paper-viewport.js';
+import type {
+  PaperDoc,
+  PaperPointerEventDetail,
+  Rect,
+  Vec2,
+  ViewportElement,
+} from '../../paper/types.js';
 import './select.css';
 
 const TOOL_ID = 'paper-select';
@@ -26,7 +33,8 @@ function selectTool(handle: DocHandle<PaperDoc>, element: HTMLElement): () => vo
 function SelectLayer(props: { handle: DocHandle<PaperDoc>; element: HTMLElement }) {
   const doc = makeDocumentProjection<PaperDoc>(props.handle);
 
-  const contactUrl = () => (window as any).accountDocHandle?.doc()?.contactUrl as string | undefined;
+  const contactUrl = () =>
+    (window as any).accountDocHandle?.doc()?.contactUrl as string | undefined;
   const isActive = () => {
     const url = contactUrl();
     return url ? doc.userState?.[url]?.selectedTool === TOOL_ID : false;
@@ -43,7 +51,7 @@ function SelectLayer(props: { handle: DocHandle<PaperDoc>; element: HTMLElement 
 
   createEffect(() => {
     const url = contactUrl();
-    const selection = url ? doc.userState?.[url]?.selection ?? {} : {};
+    const selection = url ? (doc.userState?.[url]?.selection ?? {}) : {};
     const selected = new Set(Object.keys(selection));
 
     for (const [id, origFilter] of appliedFilters) {
@@ -82,7 +90,7 @@ function SelectLayer(props: { handle: DocHandle<PaperDoc>; element: HTMLElement 
     const { viewport, x, y, shiftKey } = e.detail;
     const canvasPos = viewport.screenToCanvas(x, y);
     const url = contactUrl();
-    const selection = url ? doc.userState?.[url]?.selection ?? {} : {};
+    const selection = url ? (doc.userState?.[url]?.selection ?? {}) : {};
 
     const hitRect: Rect = {
       x: canvasPos.x - HIT_SIZE / 2,
@@ -207,7 +215,7 @@ function SelectLayer(props: { handle: DocHandle<PaperDoc>; element: HTMLElement 
     if (!isActive()) return;
     if (e.key !== 'Backspace' && e.key !== 'Delete') return;
     const url = contactUrl();
-    const selection = url ? doc.userState?.[url]?.selection ?? {} : {};
+    const selection = url ? (doc.userState?.[url]?.selection ?? {}) : {};
     if (Object.keys(selection).length === 0) return;
     e.preventDefault();
     props.handle.change((d) => {
@@ -217,15 +225,17 @@ function SelectLayer(props: { handle: DocHandle<PaperDoc>; element: HTMLElement 
   }
 
   onMount(() => {
-    props.element.addEventListener('paper:pointerdown', onPointerDown as EventListener);
-    props.element.addEventListener('paper:pointermove', onPointerMove as EventListener);
-    props.element.addEventListener('paper:pointerup', onPointerUp as EventListener);
+    const viewport = getPaperViewport(props.element);
+    if (!viewport) return;
+    viewport.addEventListener('paper:pointerdown', onPointerDown as EventListener);
+    viewport.addEventListener('paper:pointermove', onPointerMove as EventListener);
+    viewport.addEventListener('paper:pointerup', onPointerUp as EventListener);
     window.addEventListener('keydown', onKeyDown);
 
     onCleanup(() => {
-      props.element.removeEventListener('paper:pointerdown', onPointerDown as EventListener);
-      props.element.removeEventListener('paper:pointermove', onPointerMove as EventListener);
-      props.element.removeEventListener('paper:pointerup', onPointerUp as EventListener);
+      viewport.removeEventListener('paper:pointerdown', onPointerDown as EventListener);
+      viewport.removeEventListener('paper:pointermove', onPointerMove as EventListener);
+      viewport.removeEventListener('paper:pointerup', onPointerUp as EventListener);
       window.removeEventListener('keydown', onKeyDown);
     });
   });

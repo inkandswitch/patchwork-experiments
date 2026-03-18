@@ -1,56 +1,41 @@
-import solid from 'vite-plugin-solid';
-import { defineConfig } from 'vite';
-import topLevelAwait from 'vite-plugin-top-level-await';
-import wasm from 'vite-plugin-wasm';
-import cssInjectedByJsPlugin from 'vite-plugin-css-injected-by-js';
+import { defineConfig } from "vite";
+import cssInjectedByJsPlugin from "vite-plugin-css-injected-by-js";
+import solid from "vite-plugin-solid";
+import topLevelAwait from "vite-plugin-top-level-await";
+import wasm from "vite-plugin-wasm";
 
-import external from '@inkandswitch/patchwork-bootloader/externals';
-import skillsSnapshot from '../llm-skills/.pushwork/snapshot.json';
-import snapshot from './.pushwork/snapshot.json';
-
-const skillDirUrls: string[] = (snapshot.directories as [string, { url: string }][])
-  .filter(([path]) => /^src\/skills\/[^/]+$/.test(path))
-  .map(([, { url }]) => url);
-
-const skillsFolderUrl: string = (snapshot.directories as [string, { url: string }][])
-  .find(([path]) => path === 'src/skills')![1].url;
+import external from "@inkandswitch/patchwork-bootloader/externals";
+import formalSketchSkillsSnapshot from "../formal-sketch-skills/.pushwork/snapshot.json";
 
 export default defineConfig({
-  base: './',
-  plugins: [
-    topLevelAwait(),
-    wasm(),
-    solid(),
-    cssInjectedByJsPlugin(),
-  ],
+  base: "./",
+  plugins: [topLevelAwait(), wasm(), solid(), cssInjectedByJsPlugin()],
 
   define: {
-    __SKILLS_DIR_URL__: JSON.stringify(skillsSnapshot.rootDirectoryUrl),
-    __SKILL_URLS__: JSON.stringify(skillDirUrls),
-    __SKILLS_FOLDER_URL__: JSON.stringify(skillsFolderUrl),
+    __FORMAL_SKETCH_SKILLS_FOLDER_URL__: JSON.stringify(formalSketchSkillsSnapshot.rootDirectoryUrl),
   },
 
   esbuild: {
-    target: 'es2022',
+    target: "es2022",
   },
 
   build: {
-    target: 'es2022',
+    target: "es2022",
     emptyOutDir: true,
     minify: false,
     sourcemap: true,
     rollupOptions: {
       external,
       input: {
-        index: './src/index.ts',
+        index: "./src/index.ts",
       },
       output: {
-        format: 'es',
-        entryFileNames: '[name].js',
-        chunkFileNames: 'assets/[name]-[hash].js',
-        assetFileNames: 'assets/[name][extname]',
+        format: "es",
+        entryFileNames: "[name].js",
+        chunkFileNames: "assets/[name]-[hash].js",
+        assetFileNames: "assets/[name][extname]",
       },
-      preserveEntrySignatures: 'strict',
+      preserveEntrySignatures: "strict",
     },
   },
 });
