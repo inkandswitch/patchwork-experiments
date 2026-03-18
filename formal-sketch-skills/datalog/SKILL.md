@@ -10,7 +10,7 @@ Read and write a Datalog database document using `repo`. Also supports rule eval
 ## Import
 
 ```javascript
-const { createDatalog, getDatalog, queryDatalog, checkConflicts } = await loadSkill("datalog");
+const { createDatalog, getDatalog, queryDatalog, checkConflicts } = await importSkillApi("datalog");
 ```
 
 ## API
@@ -22,7 +22,7 @@ Creates a new, properly initialised DatalogDoc. Returns `{ handle, url }`.
 **`repo.create()` is synchronous — this function must NOT be awaited.**
 
 ```javascript
-const { createDatalog } = await loadSkill("datalog");
+const { createDatalog } = await importSkillApi("datalog");
 const { handle, url } = createDatalog(repo, "My Power Grid");
 // url is the Automerge URL — share it or use getDatalog(repo, url) to edit
 ```
@@ -87,7 +87,7 @@ if (violations.length === 0) {
 ## Examples
 
 ```javascript
-const { createDatalog, getDatalog, queryDatalog, checkConflicts } = await loadSkill("datalog");
+const { createDatalog, getDatalog, queryDatalog, checkConflicts } = await importSkillApi("datalog");
 
 // Create a new document
 const { url } = createDatalog(repo, "Power Grid");

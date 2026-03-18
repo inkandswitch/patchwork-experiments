@@ -10,7 +10,7 @@ Place and manage shapes on a Paper document using `repo`.
 ## Import
 
 ```javascript
-const { getPaper, findFreePosition } = await loadSkill('paper');
+const { getPaper, findFreePosition } = await importSkillApi('paper');
 ```
 
 ## API
@@ -64,7 +64,7 @@ All shapes share `id`, `x`, `y`, `zIndex`.
 ### Place a single embed
 
 ```javascript
-const { getPaper } = await loadSkill('paper');
+const { getPaper } = await importSkillApi('paper');
 const paper = getPaper(repo, 'automerge:paper123');
 
 // Place a markdown document on the canvas; auto-finds empty space
@@ -78,7 +78,7 @@ await paper.placeEmbed('automerge:doc789', 'datalog', { width: 700, height: 500 
 ### Place multiple embeds in a batch
 
 ```javascript
-const { getPaper } = await loadSkill('paper');
+const { getPaper } = await importSkillApi('paper');
 const paper = getPaper(repo, 'automerge:paper123');
 
 const ids = await paper.placeEmbeds([

@@ -68,7 +68,7 @@ Write a `.js` file. The file will be served at a URL; that URL is passed as `too
 Use the `paper` skill to place an embed pointing to your file:
 
 ```javascript
-const { getPaper } = await loadSkill("paper");
+const { getPaper } = await importSkillApi("paper");
 const paper = getPaper(repo, paperDocUrl);
 
 await paper.placeEmbed(docUrl, "my-datatype", {
