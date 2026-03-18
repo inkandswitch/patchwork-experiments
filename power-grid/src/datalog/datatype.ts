@@ -21,6 +21,7 @@ export type DatalogDoc = {
   facts: StoredFact[];
   rules: StoredRule[];
   constraints: StoredConstraint[];
+  derivedFacts?: StoredFact[];
   draftText?: string;
   mapStyle: MapStyle;
 };

@@ -86,6 +86,21 @@ function DatalogViewer({
     };
   }, [doc, isEditing, sourceFacts, sourceRules, sourceConstraints]);
 
+  const derivedOnlyFacts = useMemo(
+    () => derivedFacts.filter((f) => !baseFacts.has(factKey(f))),
+    [derivedFacts, baseFacts],
+  );
+
+  useEffect(() => {
+    if (isEditing) return;
+    const newKeys = derivedOnlyFacts.map(factKey).sort().join('\n');
+    const oldKeys = (handle.doc()?.derivedFacts ?? []).map(factKey).sort().join('\n');
+    if (newKeys === oldKeys) return;
+    handle.change((d) => {
+      d.derivedFacts = derivedOnlyFacts.map((f) => ({ pred: f.pred, args: [...f.args] }));
+    });
+  }, [derivedOnlyFacts, isEditing, handle]);
+
   const grouped = useMemo(() => {
     const map = new Map<string, StoredFact[]>();
     for (const f of derivedFacts) {
