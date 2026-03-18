@@ -7,14 +7,17 @@ import { registerPatchworkViewWithToolUrlElement } from './patchwork-view-with-t
 import { plugins as rectanglePlugins } from './shapes/rectangle/index.js';
 import { plugins as linePlugins } from './shapes/line/index.js';
 import { plugins as embedPlugins } from './shapes/embed/index.js';
+import { plugins as textPlugins } from './shapes/text/index.js';
 import { plugins as panelPlugins } from './panels/panel/index.js';
 import { plugins as toolPanelPlugins } from './panels/tool-panel/index.js';
+import { plugins as buildPanelPlugins } from './panels/build-panel/index.js';
 import { plugins as dropHandlerPlugins } from './panels/drop-handler/index.js';
 import { plugins as resizePlugins } from './panels/resize/index.js';
 import { plugins as rectangleDrawPlugins } from './tools/rectangle-draw/index.js';
 import { plugins as lineDrawPlugins } from './tools/line-draw/index.js';
 import { plugins as selectPlugins } from './tools/select/index.js';
 import { plugins as embedDrawPlugins } from './tools/embed-draw/index.js';
+import { plugins as textPlacePlugins } from './tools/text-place/index.js';
 
 export const plugins = [
   ...paperPlugins,
@@ -22,14 +25,17 @@ export const plugins = [
   ...rectanglePlugins,
   ...linePlugins,
   ...embedPlugins,
+  ...textPlugins,
   ...panelPlugins,
   ...toolPanelPlugins,
+  ...buildPanelPlugins,
   ...dropHandlerPlugins,
   ...resizePlugins,
   ...rectangleDrawPlugins,
   ...lineDrawPlugins,
   ...selectPlugins,
   ...embedDrawPlugins,
+  ...textPlacePlugins,
 ];
 
 // TODO: hack — patchwork-view and patchwork-ref-view should eventually be unified

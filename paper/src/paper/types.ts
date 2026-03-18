@@ -36,6 +36,7 @@ export type PanelEntry = {
 export type UserState = {
   selectedTool?: string;
   selection?: Record<string, true>;
+  buildRuns?: string[];
 };
 
 export type ShapeElement = HTMLElement & {

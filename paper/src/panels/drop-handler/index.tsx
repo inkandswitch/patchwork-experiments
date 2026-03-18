@@ -31,7 +31,7 @@ function DropHandlerLayer(props: { handle: DocHandle<PaperDoc>; element: HTMLEle
         -1,
       );
       for (let i = 0; i < patchworkUrls.length; i++) {
-        const id = `embed-${Date.now()}-${i}`;
+        const id = crypto.randomUUID();
         d.shapes[id] = {
           id,
           type: 'embed',

@@ -8,7 +8,7 @@
     "skipLibCheck": true,
     "noEmit": true,
     "jsx": "preserve",
-    "jsxImportSource": "solid-js"
+    "jsxImportSource": "solid-js",
   },
   "include": ["src"],
   "exclude": ["node_modules"]

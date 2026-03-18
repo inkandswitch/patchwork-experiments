@@ -4,7 +4,7 @@ import type { Plugin } from '@inkandswitch/patchwork-plugins';
 import { Square } from 'lucide-solid';
 import { createSignal, onCleanup, onMount } from 'solid-js';
 import { render } from 'solid-js/web';
-import type { PaperDoc, PaperPointerEventDetail, Vec2, ViewportElement } from '../../paper/types.js';
+import type { PaperDoc, PaperPointerEventDetail, Vec2 } from '../../paper/types.js';
 
 const TOOL_ID = 'paper-rectangle-draw';
 
@@ -35,7 +35,7 @@ function RectangleDrawLayer(props: { handle: DocHandle<PaperDoc>; element: HTMLE
 
     const { viewport, x, y } = e.detail;
     startCanvas = viewport.screenToCanvas(x, y);
-    dragShapeId = `rect-${Date.now()}`;
+    dragShapeId = crypto.randomUUID();
 
     props.handle.change((d) => {
       d.shapes[dragShapeId!] = {
@@ -95,17 +95,14 @@ function RectangleDrawLayer(props: { handle: DocHandle<PaperDoc>; element: HTMLE
   }
 
   onMount(() => {
-    const viewport = props.element.closest('.paper-viewport') as ViewportElement | null;
-    if (!viewport) return;
-
-    viewport.addEventListener('paper:pointerdown', onPointerDown as EventListener);
-    viewport.addEventListener('paper:pointermove', onPointerMove as EventListener);
-    viewport.addEventListener('paper:pointerup', onPointerUp as EventListener);
+    props.element.addEventListener('paper:pointerdown', onPointerDown as EventListener);
+    props.element.addEventListener('paper:pointermove', onPointerMove as EventListener);
+    props.element.addEventListener('paper:pointerup', onPointerUp as EventListener);
 
     onCleanup(() => {
-      viewport.removeEventListener('paper:pointerdown', onPointerDown as EventListener);
-      viewport.removeEventListener('paper:pointermove', onPointerMove as EventListener);
-      viewport.removeEventListener('paper:pointerup', onPointerUp as EventListener);
+      props.element.removeEventListener('paper:pointerdown', onPointerDown as EventListener);
+      props.element.removeEventListener('paper:pointermove', onPointerMove as EventListener);
+      props.element.removeEventListener('paper:pointerup', onPointerUp as EventListener);
     });
   });
 

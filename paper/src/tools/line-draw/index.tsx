@@ -4,7 +4,7 @@ import type { Plugin } from '@inkandswitch/patchwork-plugins';
 import { Pencil } from 'lucide-solid';
 import { onCleanup, onMount } from 'solid-js';
 import { render } from 'solid-js/web';
-import type { PaperDoc, PaperPointerEventDetail, ViewportElement } from '../../paper/types.js';
+import type { PaperDoc, PaperPointerEventDetail } from '../../paper/types.js';
 
 const TOOL_ID = 'paper-line-draw';
 
@@ -34,7 +34,7 @@ function LineDrawLayer(props: { handle: DocHandle<PaperDoc>; element: HTMLElemen
 
     const { viewport, x, y } = e.detail;
     const pt = viewport.screenToCanvas(x, y);
-    dragShapeId = `line-${Date.now()}`;
+    dragShapeId = crypto.randomUUID();
     localPoints = [[pt.x, pt.y]];
 
     props.handle.change((d) => {
@@ -81,17 +81,14 @@ function LineDrawLayer(props: { handle: DocHandle<PaperDoc>; element: HTMLElemen
   }
 
   onMount(() => {
-    const viewport = props.element.closest('.paper-viewport') as ViewportElement | null;
-    if (!viewport) return;
-
-    viewport.addEventListener('paper:pointerdown', onPointerDown as EventListener);
-    viewport.addEventListener('paper:pointermove', onPointerMove as EventListener);
-    viewport.addEventListener('paper:pointerup', onPointerUp as EventListener);
+    props.element.addEventListener('paper:pointerdown', onPointerDown as EventListener);
+    props.element.addEventListener('paper:pointermove', onPointerMove as EventListener);
+    props.element.addEventListener('paper:pointerup', onPointerUp as EventListener);
 
     onCleanup(() => {
-      viewport.removeEventListener('paper:pointerdown', onPointerDown as EventListener);
-      viewport.removeEventListener('paper:pointermove', onPointerMove as EventListener);
-      viewport.removeEventListener('paper:pointerup', onPointerUp as EventListener);
+      props.element.removeEventListener('paper:pointerdown', onPointerDown as EventListener);
+      props.element.removeEventListener('paper:pointermove', onPointerMove as EventListener);
+      props.element.removeEventListener('paper:pointerup', onPointerUp as EventListener);
     });
   });
 

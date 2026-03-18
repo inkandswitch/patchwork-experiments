@@ -217,19 +217,16 @@ function SelectLayer(props: { handle: DocHandle<PaperDoc>; element: HTMLElement 
   }
 
   onMount(() => {
-    const viewport = props.element.closest('.paper-viewport') as ViewportElement | null;
-    if (!viewport) return;
-
-    viewport.addEventListener('paper:pointerdown', onPointerDown as EventListener);
-    viewport.addEventListener('paper:pointermove', onPointerMove as EventListener);
-    viewport.addEventListener('paper:pointerup', onPointerUp as EventListener);
-    viewport.addEventListener('keydown', onKeyDown);
+    props.element.addEventListener('paper:pointerdown', onPointerDown as EventListener);
+    props.element.addEventListener('paper:pointermove', onPointerMove as EventListener);
+    props.element.addEventListener('paper:pointerup', onPointerUp as EventListener);
+    window.addEventListener('keydown', onKeyDown);
 
     onCleanup(() => {
-      viewport.removeEventListener('paper:pointerdown', onPointerDown as EventListener);
-      viewport.removeEventListener('paper:pointermove', onPointerMove as EventListener);
-      viewport.removeEventListener('paper:pointerup', onPointerUp as EventListener);
-      viewport.removeEventListener('keydown', onKeyDown);
+      props.element.removeEventListener('paper:pointerdown', onPointerDown as EventListener);
+      props.element.removeEventListener('paper:pointermove', onPointerMove as EventListener);
+      props.element.removeEventListener('paper:pointerup', onPointerUp as EventListener);
+      window.removeEventListener('keydown', onKeyDown);
     });
   });
 

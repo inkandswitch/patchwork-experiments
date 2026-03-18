@@ -7,6 +7,7 @@ export const PaperDatatype: DatatypeImplementation<PaperDoc> = {
     doc.userState = {};
     doc.panels = [
       { id: 'tool-panel', toolId: 'paper-tool-panel', position: 'bottom-center' },
+      { id: 'build-panel', toolId: 'paper-build-panel', position: 'top-right' },
     ];
     doc.shapes = {
       'shape-center': {

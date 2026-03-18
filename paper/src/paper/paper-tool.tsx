@@ -54,12 +54,15 @@ function PaperToolUI(props: { handle: DocHandle<PaperDoc> }) {
 // Any target can call stopPropagation() to claim the event and stop further dispatch.
 
 function delegateCanvasEvent(e: CustomEvent, viewport: ViewportElement): void {
-  const panelSlots = Array.from(
-    viewport.parentElement?.querySelectorAll<HTMLElement>('.paper-panel-slot') ?? [],
+  const panelViews = Array.from(
+    viewport.parentElement?.querySelectorAll<HTMLElement>('.paper-panel-slot > patchwork-view') ??
+      [],
   );
-  const layers = Array.from(viewport.querySelectorAll<HTMLElement>('.paper-layer'));
+  const layers = Array.from(
+    viewport.querySelectorAll<HTMLElement>('.paper-layer > patchwork-view'),
+  );
 
-  for (const target of [...panelSlots, ...layers]) {
+  for (const target of [...panelViews, ...layers]) {
     const forwarded = new CustomEvent(e.type, {
       detail: e.detail,
       bubbles: true,

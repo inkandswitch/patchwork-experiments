@@ -1,0 +1,33 @@
+@import url('https://fonts.googleapis.com/css2?family=Cutive+Mono&display=swap');
+
+.paper-text-textarea {
+  position: absolute;
+  top: 0;
+  left: 0;
+  resize: none;
+  overflow: hidden;
+  border: none;
+  outline: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  white-space: pre;
+  cursor: text;
+  line-height: 1.4;
+  font-family: 'Cutive Mono', 'Courier New', Courier, monospace;
+  font-size: var(--paper-text-size, 18px);
+  color: var(--paper-text-color, #1a1a1a);
+  field-sizing: content;
+}
+
+.paper-text-mirror {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: pre;
+  top: 0;
+  left: 0;
+  line-height: 1.4;
+  font-family: 'Cutive Mono', 'Courier New', Courier, monospace;
+  font-size: var(--paper-text-size, 18px);
+}
