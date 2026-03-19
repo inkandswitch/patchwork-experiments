@@ -1,6 +1,6 @@
 ---
 name: datalog
-description: Read and write a Datalog database document (DatalogDoc) by Automerge URL. Use when working with Datalog facts, rules, or constraints — asserting or retracting facts, reading the current database state, editing the program text, running queries, or checking for constraint violations/conflicts.
+description: Read and write a Datalog database document (DatalogDoc) by Automerge URL. Use when working with Datalog facts, rules, or constraints — asserting or retracting facts, reading the current database state, running queries, or checking for constraint violations/conflicts.
 ---
 
 # Datalog Skill
@@ -11,6 +11,21 @@ Read and write a Datalog database document using `repo`. Also supports rule eval
 
 ```javascript
 const { createDatalog, getDatalog, queryDatalog, checkConflicts } = await importSkillApi("datalog");
+```
+
+## Types
+
+Facts, rules, and constraints all support an optional `comment` field. When present it is serialized as a `//` line immediately before the statement, and it is re-parsed and associated automatically when reading back text.
+
+```javascript
+// StoredFact
+{ pred: string, args: (string|number)[], comment?: string }
+
+// StoredRule
+{ head: StoredAtom, body: StoredAtom[], comment?: string }
+
+// StoredConstraint
+{ body: StoredAtom[], comment?: string }
 ```
 
 ## API
@@ -31,17 +46,17 @@ const { handle, url } = createDatalog(repo, "My Power Grid");
 
 Returns a read/write interface for the DatalogDoc at `url`. Must be awaited.
 
-| Method                          | Description                                                                          |
-| ------------------------------- | ------------------------------------------------------------------------------------ |
-| `getFacts(pred?)`               | Async. Returns base facts as `{ pred, args }[]`, optionally filtered by predicate.   |
-| `assertFact(pred, args)`        | Adds a ground fact if it doesn't exist.                                              |
-| `retractFact(pred, args)`       | Removes all facts matching `pred` and the given args prefix.                         |
-| `getRules(pred?)`               | Async. Returns stored rules as `{ head, body }[]`, optionally filtered by head pred. |
-| `assertRule(rule)`              | Adds a rule if it doesn't already exist (compared by key).                           |
-| `retractRule(rule)`             | Removes all rules matching the given rule (by key equality).                         |
-| `getConstraints()`              | Async. Returns all stored constraints as `{ body }[]`.                               |
-| `assertConstraint(constraint)`  | Adds a constraint if it doesn't already exist (compared by key).                     |
-| `retractConstraint(constraint)` | Removes all constraints matching the given constraint (by key equality).             |
+| Method                               | Description                                                                          |
+| ------------------------------------ | ------------------------------------------------------------------------------------ |
+| `getFacts(pred?)`                    | Async. Returns base facts as `{ pred, args }[]`, optionally filtered by predicate.   |
+| `assertFact(pred, args, comment?)`   | Adds a ground fact if it doesn't exist. Optional `comment` is stored on the fact.   |
+| `retractFact(pred, args)`            | Removes all facts matching `pred` and the given args prefix.                         |
+| `getRules(pred?)`                    | Async. Returns stored rules as `{ head, body }[]`, optionally filtered by head pred. |
+| `assertRule(rule)`                   | Adds a rule if it doesn't already exist (compared by key). Pass `comment` on the rule object. |
+| `retractRule(rule)`                  | Removes all rules matching the given rule (by key equality).                         |
+| `getConstraints()`                   | Async. Returns all stored constraints as `{ body }[]`.                               |
+| `assertConstraint(constraint)`       | Adds a constraint if it doesn't already exist (compared by key). Pass `comment` on the constraint object. |
+| `retractConstraint(constraint)`      | Removes all constraints matching the given constraint (by key equality).             |
 
 ### `queryDatalog(repo, url, pred?)` (async)
 
@@ -100,9 +115,9 @@ const db = await getDatalog(repo, "automerge:abc123");
 const flows = await db.getFacts("flow");
 console.log(flows); // [{ pred: 'flow', args: ['north', 'central', 500] }, ...]
 
-// Add a fact
+// Add a fact (optional third argument is a comment)
 db.assertFact("node", ["east"]);
-db.assertFact("flow", ["north", "east", 300]);
+db.assertFact("flow", ["north", "east", 300], "eastern inter-node flow");
 
 // Remove a fact (exact match)
 db.retractFact("flow", ["north", "east", 300]);
@@ -145,6 +160,33 @@ const capacities = await queryDatalog(repo, url, "capacity");
 // Check for constraint violations
 const violations = await checkConflicts(repo, url);
 ```
+
+## Comments
+
+Each fact, rule, or constraint can carry an optional `comment` string. When serialized to text the comment appears as a `//` line immediately before the statement. When text is parsed back, the preceding `//` or `%` line is automatically associated with the next statement.
+
+```javascript
+// Fact with a comment
+db.assertFact("node", ["north"], "northern generation hub");
+// serializes as:
+// // northern generation hub
+// node(north).
+
+// Rule with a comment — pass comment on the rule object
+db.assertRule({
+  head: { pred: "connected", args: ["X", "Y"] },
+  body: [{ pred: "flow", args: ["X", "Y", "_"] }],
+  comment: "two nodes are connected if there is any flow between them",
+});
+
+// Constraint with a comment
+db.assertConstraint({
+  body: [{ pred: "flow", args: ["X", "X", "_"] }],
+  comment: "no self-loops allowed",
+});
+```
+
+Parsing round-trips correctly — comments survive `parseProgram` → `serializeFacts/serializeRules/serializeConstraints` → `parseProgram`.
 
 ## Built-in predicates (available in rules and constraints)
 

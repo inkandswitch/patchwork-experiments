@@ -119,20 +119,15 @@ export function findFreePosition(shapes, width, height, opts = {}) {
  * @param {object} repo - The automerge Repo (global `repo`)
  * @param {string} url  - Automerge URL of the PaperDoc
  */
-export function getPaper(repo, url) {
-  const handle = repo.find(url);
-
-  async function currentDoc() {
-    await handle.whenReady();
-    return handle.doc();
-  }
+export async function getPaper(repo, url) {
+  const handle = await repo.find(url);
 
   return {
     /**
      * Return all shapes on the paper canvas as an array.
      */
     async getShapes() {
-      const doc = await currentDoc();
+      const doc = handle.doc();
       return Object.values(doc?.shapes ?? {});
     },
 
@@ -157,7 +152,7 @@ export function getPaper(repo, url) {
      * @returns {string} The new shape ID
      */
     async placeEmbed(docUrl, docType, opts = {}) {
-      const doc = await currentDoc();
+      const doc = handle.doc();
       const { width = 480, height = 320, toolId, toolUrl, padding = 24, startX = 0, startY = 0 } = opts;
 
       const { x, y } = (opts.x != null && opts.y != null)
@@ -185,7 +180,7 @@ export function getPaper(repo, url) {
      * @returns {string[]} Array of new shape IDs
      */
     async placeEmbeds(items, opts = {}) {
-      const doc = await currentDoc();
+      const doc = handle.doc();
       const { startX = 0, startY = 0, padding = 24 } = opts;
       const ids = [];
 
@@ -241,7 +236,7 @@ export function getPaper(repo, url) {
      * @returns {string} The new shape ID
      */
     async placeText(text, opts = {}) {
-      const doc = await currentDoc();
+      const doc = handle.doc();
       const { color = '#1a1a1a', fontSize = 18, padding = 24, startX = 0, startY = 0 } = opts;
 
       const estimatedW = Math.min(text.length * (fontSize * 0.6), 600);
@@ -277,7 +272,7 @@ export function getPaper(repo, url) {
      * @returns {string} The new shape ID
      */
     async placeRectangle(w, h, opts = {}) {
-      const doc = await currentDoc();
+      const doc = handle.doc();
       const {
         fill = '#e2e8f0',
         stroke = '#475569',

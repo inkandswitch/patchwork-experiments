@@ -15,9 +15,9 @@ const { getPaper, findFreePosition } = await importSkillApi('paper');
 
 ## API
 
-### `getPaper(repo, url)` — work with a paper doc
+### `getPaper(repo, url)` (async) — work with a paper doc
 
-Returns a read/write interface for the PaperDoc at `url`.
+Returns a read/write interface for the PaperDoc at `url`. Must be awaited.
 
 | Method | Description |
 |--------|-------------|
@@ -65,7 +65,7 @@ All shapes share `id`, `x`, `y`, `zIndex`.
 
 ```javascript
 const { getPaper } = await importSkillApi('paper');
-const paper = getPaper(repo, 'automerge:paper123');
+const paper = await getPaper(repo, 'automerge:paper123');
 
 // Place a markdown document on the canvas; auto-finds empty space
 const shapeId = await paper.placeEmbed('automerge:doc456', 'markdown');
@@ -79,7 +79,7 @@ await paper.placeEmbed('automerge:doc789', 'datalog', { width: 700, height: 500 
 
 ```javascript
 const { getPaper } = await importSkillApi('paper');
-const paper = getPaper(repo, 'automerge:paper123');
+const paper = await getPaper(repo, 'automerge:paper123');
 
 const ids = await paper.placeEmbeds([
   { docUrl: 'automerge:doc1', docType: 'markdown', width: 400, height: 280 },
@@ -115,7 +115,7 @@ await paper.placeRectangle(300, 200, {
 ### Place a text label then an embed below it
 
 ```javascript
-const paper = getPaper(repo, 'automerge:paper123');
+const paper = await getPaper(repo, 'automerge:paper123');
 const labelId = await paper.placeText('Results', { startX: 0, startY: 0 });
 const embedId = await paper.placeEmbed('automerge:results', 'markdown', { startX: 0, startY: 40 });
 ```

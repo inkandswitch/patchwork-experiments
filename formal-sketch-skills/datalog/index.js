@@ -4,10 +4,10 @@
  * DatalogDoc shape:
  *   { facts: StoredFact[], rules: StoredRule[], constraints: StoredConstraint[], draftText?: string }
  *
- * StoredFact:      { pred: string, args: (string|number)[] }
+ * StoredFact:      { pred: string, args: (string|number)[], comment?: string }
  * StoredAtom:      { pred: string, args: string[] }
- * StoredRule:      { head: StoredAtom, body: StoredAtom[] }
- * StoredConstraint:{ body: StoredAtom[] }
+ * StoredRule:      { head: StoredAtom, body: StoredAtom[], comment?: string }
+ * StoredConstraint:{ body: StoredAtom[], comment?: string }
  */
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -413,12 +413,17 @@ export async function getDatalog(repo, url) {
      * Assert a ground fact. No-op if an identical fact already exists.
      * @param {string} pred - Predicate name, e.g. 'node', 'flow'
      * @param {Array<string|number>} args - Arguments, e.g. ['north'] or ['north', 'central', 500]
+     * @param {string} [comment] - Optional comment shown above this fact when serialized
      */
-    assertFact(pred, args) {
+    assertFact(pred, args, comment) {
       const key = factKey({ pred, args });
       handle.change((d) => {
         const exists = (d.facts ?? []).some((f) => factKey(f) === key);
-        if (!exists) d.facts.push({ pred, args });
+        if (!exists) {
+          const fact = { pred, args };
+          if (comment !== undefined) fact.comment = comment;
+          d.facts.push(fact);
+        }
       });
     },
 
