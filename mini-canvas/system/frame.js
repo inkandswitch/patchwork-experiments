@@ -1,24 +1,15 @@
 /**
- * Default export for &lt;ref-view&gt; (see tool README). Renders mini-canvas UI for the document ref.
+ * Default export for &lt;ref-view&gt; (see system README).
  *
- * @param {object} ref Ref object from `findRef` / `createRef` (`.ref()`, `.get()`, …)
- * @param {HTMLElement} element Host element (&lt;ref-view&gt;)
+ * @param {object} ref — world doc root ref
+ * @param {HTMLElement} element — &lt;ref-view&gt; host (`element.filesystem` for system files)
  * @returns {() => void}
  */
-export default function mountMiniCanvasFrame(ref, element) {
-  const wrap = document.createElement('div');
-  wrap.className = 'mini-canvas-root';
-  const card = document.createElement('div');
-  card.className = 'mini-canvas-card';
-  const h1 = document.createElement('h1');
-  h1.textContent = 'Hello, world';
-  const p = document.createElement('p');
-  const folderUrl = ref.ref('sourceFolder').get();
-  p.textContent = folderUrl
-    ? `sourceFolder (via ref): ${folderUrl}`
-    : 'mini-canvas — empty starter tool';
-  card.append(h1, p);
-  wrap.appendChild(card);
-  element.appendChild(wrap);
-  return () => wrap.remove();
+export default function mountMiniCanvasFrame(_ref, element) {
+  const div = document.createElement('div');
+  div.textContent = 'hello world';
+  div.style.cssText =
+    'font-family: system-ui, sans-serif; font-size: 1rem; padding: 0.75rem; color: #18181b;';
+  element.appendChild(div);
+  return () => div.remove();
 }
