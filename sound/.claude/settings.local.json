@@ -7,7 +7,12 @@
       "Bash(node esbuild/build.js:*)",
       "Bash(echo:*)",
       "Bash(npx esbuild:*)",
-      "Bash(node -e:*)"
+      "Bash(node -e:*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:www.elementary.audio)",
+      "WebFetch(domain:faustdoc.grame.fr)",
+      "WebFetch(domain:faustlibraries.grame.fr)"
     ]
   }
 }
