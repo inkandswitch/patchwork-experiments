@@ -1,16 +1,22 @@
 import miniCanvasSheet from './index.css' with { type: 'css' };
 import { createRef } from './ref.js';
 import { registerRefView } from './ref-view.js';
+import { createFilesystem } from './filesystem.js';
 
 const DEFAULT_SOURCE_FOLDER = 'automerge:4FwenFcEMbsmjGxvYAuT5U8mLi8m';
+
+/** Root {@link import('@inkandswitch/patchwork-filesystem').FolderDoc} for the `system` tree (Pushwork folder). */
+const SYSTEM_FOLDER_URL = DEFAULT_SOURCE_FOLDER;
 
 /** Module URL for `frame.js` (see README). */
 const FRAME_TOOL_URL = '/automerge:4FwenFcEMbsmjGxvYAuT5U8mLi8m/frame.js';
 
 export { createRef, findRef, encodeRefToURL, parseRefURL } from './ref.js';
 export { registerRefView } from './ref-view.js';
+export { createFilesystem } from './filesystem.js';
 
-registerRefView(globalThis.repo);
+const miniCanvasFilesystem = createFilesystem(globalThis.repo, SYSTEM_FOLDER_URL);
+registerRefView(globalThis.repo, miniCanvasFilesystem);
 
 function ensureMiniCanvasStyles() {
   if (document.adoptedStyleSheets.includes(miniCanvasSheet)) return;

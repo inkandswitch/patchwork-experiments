@@ -16,13 +16,19 @@ const ATTR_REF = 'ref-url';
 
 /** @type {any} */
 let refViewRepo;
+/** @type {any} */
+let refViewFilesystem = null;
 
 /**
  * Registers the &lt;ref-view&gt; custom element. Keeps a repo reference for resolving ref-url.
+ * Optional Patchwork filesystem is exposed on each host as read-only {@link RefViewElement#filesystem}.
+ *
  * @param {any} [repo] defaults to `globalThis.repo`
+ * @param {any | null} [filesystem] from {@link import('./filesystem.js').createFilesystem}; pass `null` to clear. Omitted = leave previous value.
  */
-export function registerRefView(repo = globalThis.repo) {
+export function registerRefView(repo = globalThis.repo, filesystem) {
   refViewRepo = repo;
+  if (arguments.length >= 2) refViewFilesystem = filesystem;
   if (customElements.get('ref-view')) return;
   customElements.define('ref-view', RefViewElement);
 }
@@ -32,6 +38,11 @@ class RefViewElement extends HTMLElement {
   #cleanup = null;
   /** @type {AbortController | null} */
   #mountAbort = null;
+
+  /** Patchwork filesystem passed to {@link registerRefView} (for use in frame `mount(ref, element)`). */
+  get filesystem() {
+    return refViewFilesystem ?? undefined;
+  }
 
   static get observedAttributes() {
     return [ATTR_TOOL, ATTR_REF];
