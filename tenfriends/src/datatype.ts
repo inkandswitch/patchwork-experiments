@@ -1,18 +1,18 @@
 export interface TenfriendDoc {
-	user: string
+	name: string
 	"@patchwork": {type: string}
 }
 
 export const TenfriendDatatype = {
 	init(doc: TenfriendDoc) {
-		doc.user = ""
+		doc.name = ""
 	},
 
 	getTitle(doc: TenfriendDoc) {
-		return doc.user || "New Tenfriend"
+		return doc.name || "New Tenfriend"
 	},
 
 	setTitle(doc: TenfriendDoc, title: string) {
-		doc.user = title
+		doc.name = title
 	},
 }

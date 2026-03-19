@@ -193,7 +193,7 @@ function NewTenfriendPrompt(props: {
 				}
 				d["@patchwork"].type = "inkandswitch/tenfold"
 				d.tenfolder = tenfolderUrl
-				d.user = name
+				d.name = name
 			})
 		} catch (err) {
 			console.error("Failed to create tenfriend:", err)
