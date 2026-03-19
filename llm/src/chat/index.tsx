@@ -5,11 +5,12 @@ import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle } from '@automerge/automerge-repo';
 import type { AutomergeUrl } from '@automerge/automerge-repo';
 
-import type { LLMChatDoc, LLMDoc } from './types';
-import { buildLLMMessages, runLLMProcess } from './llm-process';
-import { LLMView } from './view';
-import { LLMWorkspaceView } from './workspace';
+import type { LLMChatDoc, LLMDoc } from '../types';
+import { buildLLMMessages, runLLMProcess } from '../llm-process';
+import { LLMView } from '../view';
+import { LLMWorkspaceView } from '../workspace';
 import './chat.css';
+
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 

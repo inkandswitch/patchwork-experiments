@@ -424,6 +424,9 @@ function appendOutputMessages(messages: ChatMessage[], blocks: OutputBlock[]): v
 async function* streamChatCompletion(apiUrl: string, apiKey: string, model: string, messages: ChatMessage[], signal?: AbortSignal): AsyncGenerator<string> {
   const url = `${apiUrl.replace(/\/$/, "")}/chat/completions`;
 
+  const t0 = performance.now();
+  console.log(`[llm:stream] fetch → ${url}`);
+
   const response = await fetch(url, {
     method: "POST",
     headers: {
@@ -436,6 +439,8 @@ async function* streamChatCompletion(apiUrl: string, apiKey: string, model: stri
     signal,
   });
 
+  console.log(`[llm:stream] response headers received +${(performance.now() - t0).toFixed(0)}ms status=${response.status}`);
+
   if (!response.ok) {
     const text = await response.text();
     console.error(`[llm] API error ${response.status} from ${url}:`, text);
@@ -447,6 +452,8 @@ async function* streamChatCompletion(apiUrl: string, apiKey: string, model: stri
 
   const decoder = new TextDecoder();
   let buffer = "";
+  let chunkIndex = 0;
+  let tokenCount = 0;
 
   try {
     while (true) {
@@ -458,21 +465,34 @@ async function* streamChatCompletion(apiUrl: string, apiKey: string, model: stri
       const lines = buffer.split("\n");
       buffer = lines.pop() || "";
 
+      let tokensInChunk = 0;
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed || !trimmed.startsWith("data: ")) continue;
 
         const data = trimmed.slice(6);
-        if (data === "[DONE]") return;
+        if (data === "[DONE]") {
+          console.log(`[llm:stream] [DONE] after ${tokenCount} tokens, total time +${(performance.now() - t0).toFixed(0)}ms`);
+          return;
+        }
 
         try {
           const parsed = JSON.parse(data);
           const content = parsed.choices?.[0]?.delta?.content;
-          if (content) yield content;
+          if (content) {
+            tokensInChunk++;
+            tokenCount++;
+            yield content;
+          }
         } catch {
           // Skip malformed JSON
         }
       }
+
+      if (tokensInChunk > 0) {
+        console.log(`[llm:stream] chunk #${chunkIndex} +${(performance.now() - t0).toFixed(0)}ms → ${tokensInChunk} token(s), total=${tokenCount}`);
+      }
+      chunkIndex++;
     }
   } finally {
     reader.cancel().catch(() => {});
