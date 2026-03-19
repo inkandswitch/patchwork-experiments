@@ -1,5 +1,7 @@
 import type { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
+import type { Repo } from '@automerge/automerge-repo';
 import type { LLMPetriNetDoc } from './types';
+import { DEFAULT_OPTIMIZER_SYSTEM_PROMPT, DEFAULT_EVALUATOR_SYSTEM_PROMPT } from './net';
 
 // ─── Character prompts ────────────────────────────────────────────────────────
 
@@ -61,27 +63,35 @@ function makeId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
+function createMarkdownDoc(repo: Repo, content: string): string {
+  const h = repo.create<Record<string, unknown>>();
+  h.change((d: Record<string, unknown>) => {
+    d['@patchwork'] = { type: 'markdown' };
+    d.content = content;
+  });
+  return h.url as string;
+}
+
 export const LLMPetriNetDatatype: DatatypeImplementation<LLMPetriNetDoc> = {
   init(doc, repo) {
-    const storyHandle = repo.create<Record<string, unknown>>();
-    storyHandle.change((d) => {
-      d['@patchwork'] = { type: 'markdown' };
-      d.content = OPENING_SCENE;
-    });
-
     doc.tokens = {
       problems: [
-        { id: makeId(), state: { type: 'problem', documentUrl: storyHandle.url as string } },
+        { id: makeId(), state: { type: 'problem', documentUrl: createMarkdownDoc(repo, OPENING_SCENE) } },
       ],
       optimizer: [
-        { id: makeId(), state: { type: 'optimizer', prompt: ELEANOR_PROMPT, documentUrl: '' } },
-        { id: makeId(), state: { type: 'optimizer', prompt: DANTE_PROMPT, documentUrl: '' } },
-        { id: makeId(), state: { type: 'optimizer', prompt: MIRA_PROMPT, documentUrl: '' } },
+        { id: makeId(), state: { type: 'optimizer', documentUrl: createMarkdownDoc(repo, ELEANOR_PROMPT) } },
+        { id: makeId(), state: { type: 'optimizer', documentUrl: createMarkdownDoc(repo, DANTE_PROMPT) } },
+        { id: makeId(), state: { type: 'optimizer', documentUrl: createMarkdownDoc(repo, MIRA_PROMPT) } },
       ],
       evaluators: [
-        { id: makeId(), state: { type: 'evaluator', prompt: EVALUATOR_PROMPT, documentUrl: '' } },
+        { id: makeId(), state: { type: 'evaluator', documentUrl: createMarkdownDoc(repo, EVALUATOR_PROMPT) } },
       ],
       solutions: [],
+    };
+
+    doc.systemPromptUrls = {
+      optimizer: createMarkdownDoc(repo, DEFAULT_OPTIMIZER_SYSTEM_PROMPT),
+      evaluator: createMarkdownDoc(repo, DEFAULT_EVALUATOR_SYSTEM_PROMPT),
     };
   },
 

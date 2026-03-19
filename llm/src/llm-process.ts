@@ -113,10 +113,73 @@ export async function runLLMProcess(repo: Repo, processDocUrl: AutomergeUrl, sig
   (globalThis as any).__llmCapturedConsole = capturedConsole;
   (globalThis as any).repo = wrapRepoForLLM(repo, doc.workspaceUrl);
 
-  const MAX_ITERATIONS = 20;
-
   console.log(`[llm] starting run: model=${model}, apiUrl=${apiUrl}`);
   console.log(`[llm] prompt:\n${doc.prompt}`);
+
+  await runLoop(
+    handle,
+    (currentDoc) => buildLLMMessages(currentDoc, skillDescriptions, workspaceContext),
+    apiUrl,
+    apiKey,
+    model,
+    capturedConsole,
+    signal,
+  );
+}
+
+/**
+ * Run an LLM process without skill discovery or workspace context.
+ * The process doc must have `systemPrompt` set — it is used verbatim as the
+ * system message with no additions. Suitable for self-contained prompts that
+ * embed all necessary code and context directly.
+ */
+export async function runLLMProcessRaw(repo: Repo, processDocUrl: AutomergeUrl, signal?: AbortSignal): Promise<void> {
+  const handle = await repo.find<LLMDoc>(processDocUrl);
+  const doc = await handle.doc();
+
+  if (!doc?.prompt) {
+    throw new Error("No prompt to run");
+  }
+  if (!doc?.systemPrompt) {
+    throw new Error("runLLMProcessRaw requires doc.systemPrompt to be set");
+  }
+
+  const { apiUrl, model } = doc.config;
+  const apiKey = (import.meta as any).env?.VITE_OPENAI_API_KEY || "";
+
+  const capturedConsole = createCapturedConsole();
+
+  (globalThis as any).loadSkillDocs = undefined;
+  (globalThis as any).importSkillApi = undefined;
+  (globalThis as any).__llmCapturedConsole = capturedConsole;
+  (globalThis as any).repo = repo;
+
+  console.log(`[llm] starting raw run: model=${model}, apiUrl=${apiUrl}`);
+  console.log(`[llm] prompt:\n${doc.prompt}`);
+
+  await runLoop(
+    handle,
+    (currentDoc) => buildRawMessages(currentDoc),
+    apiUrl,
+    apiKey,
+    model,
+    capturedConsole,
+    signal,
+  );
+}
+
+// ─── Shared iteration loop ────────────────────────────────────────────────────
+
+async function runLoop(
+  handle: import("@automerge/automerge-repo").DocHandle<LLMDoc>,
+  buildMessages: (doc: LLMDoc) => ChatMessage[],
+  apiUrl: string,
+  apiKey: string,
+  model: string,
+  capturedConsole: ReturnType<typeof createCapturedConsole>,
+  signal?: AbortSignal,
+): Promise<void> {
+  const MAX_ITERATIONS = 20;
 
   let iteration = 0;
   for (; iteration < MAX_ITERATIONS; iteration++) {
@@ -128,7 +191,7 @@ export async function runLLMProcess(repo: Repo, processDocUrl: AutomergeUrl, sig
     const currentDoc = await handle.doc();
     if (!currentDoc) break;
 
-    const messages = buildLLMMessages(currentDoc, skillDescriptions, workspaceContext);
+    const messages = buildMessages(currentDoc);
     if (iteration === 0) {
       console.log(`[llm] system prompt:\n${messages[0]?.content}`);
     }
@@ -352,6 +415,17 @@ async function buildWorkspaceContext(repo: Repo, workspaceUrl: AutomergeUrl): Pr
 }
 
 // --- LLM message building ---
+
+function buildRawMessages(doc: LLMDoc): ChatMessage[] {
+  const messages: ChatMessage[] = [
+    { role: "system", content: doc.systemPrompt! },
+    { role: "user", content: doc.prompt },
+  ];
+  if (doc.output.length > 0) {
+    appendOutputMessages(messages, doc.output);
+  }
+  return messages;
+}
 
 export function buildLLMMessages(doc: LLMDoc, skillDescriptions?: string, workspaceContext?: string): ChatMessage[] {
   const messages: ChatMessage[] = [];

@@ -65,7 +65,7 @@ export const plugins: Plugin<any>[] = [
   },
 ];
 
-export { runLLMProcess, buildLLMMessages } from "./llm-process";
+export { runLLMProcess, runLLMProcessRaw, buildLLMMessages } from "./llm-process";
 export { SYSTEM_PROMPT } from "./system-prompt";
 export { LLMTool, LLMView } from "./view";
 export { LLMWorkspaceTool, LLMWorkspaceView } from "./workspace";

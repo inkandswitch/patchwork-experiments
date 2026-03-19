@@ -257,10 +257,10 @@ function TokenSidebar(props: {
         <button class="p3n-sidebar-close" onClick={props.onClose} aria-label="Close">✕</button>
       </div>
       <div class="p3n-sidebar-body">
-        <Show when={Object.keys(props.state).length === 0}>
+        <Show when={Object.keys(props.state).filter((k) => k !== 'type').length === 0}>
           <div class="p3n-sidebar-empty">No properties</div>
         </Show>
-        {Object.entries(props.state).map(([key, value]) => (
+        {Object.entries(props.state).filter(([key]) => key !== 'type').map(([key, value]) => (
           <div class="p3n-prop-row">
             <label class="p3n-prop-label">{key}</label>
             <PropEditor propKey={key} value={value} onChange={(v) => props.onChange(key, v)} />

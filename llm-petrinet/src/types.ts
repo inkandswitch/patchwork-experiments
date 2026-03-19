@@ -7,4 +7,8 @@ export type LLMPetriNetDoc = {
     optimizer?: string;
     evaluator?: string;
   };
+  systemPromptUrls?: {
+    optimizer?: string;
+    evaluator?: string;
+  };
 };

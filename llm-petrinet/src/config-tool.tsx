@@ -1,12 +1,22 @@
 import { render } from 'solid-js/web';
-import { createSignal, For, Show } from 'solid-js';
+import { createEffect, createSignal, For, Show, useContext } from 'solid-js';
 import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primitives';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle } from '@automerge/automerge-repo';
 
 import type { LLMPetriNetDoc } from './types';
-import { DEFAULT_OPTIMIZER_SYSTEM_PROMPT, DEFAULT_EVALUATOR_SYSTEM_PROMPT } from './net';
+import {
+  DEFAULT_OPTIMIZER_SYSTEM_PROMPT,
+  DEFAULT_EVALUATOR_SYSTEM_PROMPT,
+  DEFAULT_OPTIMIZER_PROMPT,
+  DEFAULT_EVALUATOR_PROMPT,
+  createMarkdownCopy,
+} from './net';
 import './index.css';
+
+// ─── Token type ───────────────────────────────────────────────────────────────
+
+type DocToken = { id: string; state: { type: string; documentUrl: string } };
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
@@ -28,16 +38,39 @@ function makeId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
-function autoResize(el: HTMLTextAreaElement) {
-  el.style.height = 'auto';
-  el.style.height = `${el.scrollHeight}px`;
-}
-
 // ─── Config view ──────────────────────────────────────────────────────────────
 
 function LLMPetriNetConfig({ handle }: { handle: DocHandle<LLMPetriNetDoc> }) {
+  const repo = useContext(RepoContext);
   const [doc] = useDocument<LLMPetriNetDoc>(() => handle.url);
-  const [activeTab, setActiveTab] = createSignal<'optimizer' | 'evaluators'>('optimizer');
+  const [activeTab, setActiveTab] = createSignal<'optimizer' | 'evaluators' | 'problem'>('optimizer');
+
+  // Lazily create system prompt docs for old docs that only have inline strings
+  const initializingPrompts = new Set<string>();
+  createEffect(() => {
+    const d = doc();
+    if (!d || !repo) return;
+    if (!d.systemPromptUrls?.optimizer && !initializingPrompts.has('optimizer')) {
+      initializingPrompts.add('optimizer');
+      const content = d.systemPrompts?.optimizer ?? DEFAULT_OPTIMIZER_SYSTEM_PROMPT;
+      createMarkdownCopy(repo, content).then(({ url }) => {
+        handle.change((dd) => {
+          if (!dd.systemPromptUrls) dd.systemPromptUrls = {};
+          if (!dd.systemPromptUrls.optimizer) dd.systemPromptUrls.optimizer = url;
+        });
+      }).catch(console.error);
+    }
+    if (!d.systemPromptUrls?.evaluator && !initializingPrompts.has('evaluator')) {
+      initializingPrompts.add('evaluator');
+      const content = d.systemPrompts?.evaluator ?? DEFAULT_EVALUATOR_SYSTEM_PROMPT;
+      createMarkdownCopy(repo, content).then(({ url }) => {
+        handle.change((dd) => {
+          if (!dd.systemPromptUrls) dd.systemPromptUrls = {};
+          if (!dd.systemPromptUrls.evaluator) dd.systemPromptUrls.evaluator = url;
+        });
+      }).catch(console.error);
+    }
+  });
 
   return (
     <div class="p3n-config-root">
@@ -54,6 +87,12 @@ function LLMPetriNetConfig({ handle }: { handle: DocHandle<LLMPetriNetDoc> }) {
         >
           Evaluator
         </button>
+        <button
+          class={`p3n-config-tab${activeTab() === 'problem' ? ' active' : ''}`}
+          onClick={() => setActiveTab('problem')}
+        >
+          Problem
+        </button>
       </div>
 
       <div class="p3n-config-body">
@@ -62,75 +101,54 @@ function LLMPetriNetConfig({ handle }: { handle: DocHandle<LLMPetriNetDoc> }) {
             <Show
               when={activeTab() === 'optimizer'}
               fallback={
-                <>
-                  <SystemPromptCard
-                    value={currentDoc().systemPrompts?.evaluator ?? DEFAULT_EVALUATOR_SYSTEM_PROMPT}
-                    variables="$PROMPT, $SOLUTION_URLS, $TARGET_URL"
-                    onChange={(val) => {
-                      handle.change((d) => {
-                        if (!d.systemPrompts) d.systemPrompts = {};
-                        d.systemPrompts.evaluator = val;
-                      });
-                    }}
-                  />
-                  <TokenList
-                    label="Evaluator"
-                    tokens={(currentDoc().tokens?.evaluators ?? []) as Token[]}
-                    color="#d97706"
-                    addLabel="Add evaluator"
-                    onAdd={() => {
-                      handle.change((d) => {
-                        if (!d.tokens.evaluators) d.tokens.evaluators = [];
-                        d.tokens.evaluators.push({
-                          id: makeId(),
-                          state: { type: 'evaluator', prompt: 'Favour the version that introduces the most chilling new revelation or casts suspicion onto a fresh suspect.', documentUrl: '' },
+                <Show
+                  when={activeTab() === 'evaluators'}
+                  fallback={<ProblemTab doc={currentDoc()} handle={handle} />}
+                >
+                  <>
+                    <SystemPromptView
+                      url={currentDoc().systemPromptUrls?.evaluator}
+                      variables="$PROMPT, $SOLUTION_URLS, $TARGET_URL"
+                    />
+                    <TokenList
+                      label="Evaluator"
+                      tokens={(currentDoc().tokens?.evaluators ?? []) as DocToken[]}
+                      color="#d97706"
+                      addLabel="Add evaluator"
+                      onAdd={async () => {
+                        if (!repo) return;
+                        const { url } = await createMarkdownCopy(repo, DEFAULT_EVALUATOR_PROMPT);
+                        handle.change((d) => {
+                          if (!d.tokens.evaluators) d.tokens.evaluators = [];
+                          d.tokens.evaluators.push({ id: makeId(), state: { type: 'evaluator', documentUrl: url } });
                         });
-                      });
-                    }}
-                    onUpdatePrompt={(idx, prompt) => {
-                      handle.change((d) => {
-                        const t = d.tokens.evaluators?.[idx];
-                        if (t) t.state.prompt = prompt;
-                      });
-                    }}
-                    onDelete={(idx) => {
-                      handle.change((d) => {
-                        d.tokens.evaluators?.splice(idx, 1);
-                      });
-                    }}
-                  />
-                </>
+                      }}
+                      onDelete={(idx) => {
+                        handle.change((d) => {
+                          d.tokens.evaluators?.splice(idx, 1);
+                        });
+                      }}
+                    />
+                  </>
+                </Show>
               }
             >
               <>
-                <SystemPromptCard
-                  value={currentDoc().systemPrompts?.optimizer ?? DEFAULT_OPTIMIZER_SYSTEM_PROMPT}
+                <SystemPromptView
+                  url={currentDoc().systemPromptUrls?.optimizer}
                   variables="$PROMPT, $DOC_URL"
-                  onChange={(val) => {
-                    handle.change((d) => {
-                      if (!d.systemPrompts) d.systemPrompts = {};
-                      d.systemPrompts.optimizer = val;
-                    });
-                  }}
                 />
                 <TokenList
                   label="Optimizer"
-                  tokens={(currentDoc().tokens?.optimizer ?? []) as Token[]}
+                  tokens={(currentDoc().tokens?.optimizer ?? []) as DocToken[]}
                   color="#0891b2"
                   addLabel="Add optimizer"
-                  onAdd={() => {
+                  onAdd={async () => {
+                    if (!repo) return;
+                    const { url } = await createMarkdownCopy(repo, DEFAULT_OPTIMIZER_PROMPT);
                     handle.change((d) => {
                       if (!d.tokens.optimizer) d.tokens.optimizer = [];
-                      d.tokens.optimizer.push({
-                        id: makeId(),
-                        state: { type: 'optimizer', prompt: 'The nervous butler who discovered the body and is hiding something.', documentUrl: '' },
-                      });
-                    });
-                  }}
-                  onUpdatePrompt={(idx, prompt) => {
-                    handle.change((d) => {
-                      const t = d.tokens.optimizer?.[idx];
-                      if (t) t.state.prompt = prompt;
+                      d.tokens.optimizer.push({ id: makeId(), state: { type: 'optimizer', documentUrl: url } });
                     });
                   }}
                   onDelete={(idx) => {
@@ -148,9 +166,95 @@ function LLMPetriNetConfig({ handle }: { handle: DocHandle<LLMPetriNetDoc> }) {
   );
 }
 
-// ─── System prompt card ───────────────────────────────────────────────────────
+// ─── Problem tab ──────────────────────────────────────────────────────────────
 
-function SystemPromptCard(props: { value: string; variables: string; onChange: (val: string) => void }) {
+function ProblemTab(props: { doc: LLMPetriNetDoc; handle: DocHandle<LLMPetriNetDoc> }) {
+  const [isDraggingOver, setIsDraggingOver] = createSignal(false);
+  let dragCounter = 0;
+
+  const problems = () => (props.doc.tokens?.problems ?? []) as DocToken[];
+
+  function handleDragEnter(e: DragEvent) {
+    if (!e.dataTransfer?.types.includes('text/x-patchwork-urls')) return;
+    dragCounter++;
+    setIsDraggingOver(true);
+  }
+
+  function handleDragLeave() {
+    dragCounter--;
+    if (dragCounter <= 0) { dragCounter = 0; setIsDraggingOver(false); }
+  }
+
+  function handleDragOver(e: DragEvent) {
+    if (e.dataTransfer?.types.includes('text/x-patchwork-urls')) e.preventDefault();
+  }
+
+  function handleDrop(e: DragEvent) {
+    e.preventDefault();
+    dragCounter = 0;
+    setIsDraggingOver(false);
+    const data = e.dataTransfer?.getData('text/x-patchwork-urls');
+    if (!data) return;
+    let urls: string[];
+    try { urls = JSON.parse(data); } catch { return; }
+    if (!urls.length) return;
+    props.handle.change((d) => {
+      if (!d.tokens.problems) d.tokens.problems = [];
+      for (const url of urls) {
+        d.tokens.problems.push({ id: makeId(), state: { type: 'problem', documentUrl: url } });
+      }
+    });
+  }
+
+  return (
+    <div
+      class={`p3n-problem-tab${isDraggingOver() ? ' p3n-problem-tab-over' : ''}`}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      <Show when={problems().length === 0}>
+        <div class="p3n-drop-hint">Drop documents here to add problems</div>
+      </Show>
+      <For each={problems()}>
+        {(token, idx) => (
+          <div class="p3n-problem-card">
+            <div class="p3n-token-card-header">
+              <div class="p3n-token-dot" style={{ background: '#7c3aed' }} />
+              <span class="p3n-token-card-label">Problem {idx() + 1}</span>
+              <div
+                class="p3n-drag-handle"
+                draggable={true}
+                onDragStart={(e) => e.dataTransfer?.setData('text/x-patchwork-urls', JSON.stringify([token.state.documentUrl]))}
+                title="Drag to open"
+              >
+                ⠿
+              </div>
+              <button
+                class="p3n-token-delete-btn"
+                onClick={() => props.handle.change((d) => { d.tokens.problems?.splice(idx(), 1); })}
+                title="Remove"
+              >
+                ✕
+              </button>
+            </div>
+            <patchwork-view doc-url={token.state.documentUrl} tool-id="codemirror-base" class="p3n-problem-view" />
+          </div>
+        )}
+      </For>
+      <Show when={problems().length > 0}>
+        <div class={`p3n-drop-zone${isDraggingOver() ? ' p3n-drop-zone-active' : ''}`}>
+          Drop documents here
+        </div>
+      </Show>
+    </div>
+  );
+}
+
+// ─── System prompt view ───────────────────────────────────────────────────────
+
+function SystemPromptView(props: { url: string | undefined; variables: string }) {
   return (
     <div class="p3n-system-prompt-card">
       <div class="p3n-system-prompt-header">
@@ -159,30 +263,26 @@ function SystemPromptCard(props: { value: string; variables: string; onChange: (
           Variables: <code>{props.variables}</code>
         </span>
       </div>
-      <textarea
-        class="p3n-system-prompt-textarea"
-        value={props.value}
-        ref={(el) => requestAnimationFrame(() => autoResize(el))}
-        onInput={(e) => {
-          autoResize(e.currentTarget);
-          props.onChange(e.currentTarget.value);
-        }}
-      />
+      <Show
+        when={props.url}
+        fallback={<div class="p3n-loading" style={{ height: '120px' }}>Initializing…</div>}
+      >
+        {(url) => (
+          <patchwork-view doc-url={url()} tool-id="codemirror-base" class="p3n-system-prompt-view" />
+        )}
+      </Show>
     </div>
   );
 }
 
 // ─── Token list ───────────────────────────────────────────────────────────────
 
-type Token = { id: string; state: { type: string; prompt: string; documentUrl: string; [key: string]: string } };
-
 function TokenList(props: {
   label: string;
-  tokens: Token[];
+  tokens: DocToken[];
   color: string;
   addLabel: string;
   onAdd: () => void;
-  onUpdatePrompt: (idx: number, prompt: string) => void;
   onDelete: (idx: number) => void;
 }) {
   return (
@@ -193,6 +293,14 @@ function TokenList(props: {
             <div class="p3n-token-card-header">
               <div class="p3n-token-dot" style={{ background: props.color }} />
               <span class="p3n-token-card-label">{props.label} {idx() + 1}</span>
+              <div
+                class="p3n-drag-handle"
+                draggable={true}
+                onDragStart={(e) => e.dataTransfer?.setData('text/x-patchwork-urls', JSON.stringify([token.state.documentUrl]))}
+                title="Drag to open"
+              >
+                ⠿
+              </div>
               <button
                 class="p3n-token-delete-btn"
                 onClick={() => props.onDelete(idx())}
@@ -201,16 +309,7 @@ function TokenList(props: {
                 ✕
               </button>
             </div>
-            <textarea
-              class="p3n-token-prompt"
-              value={token.state.prompt ?? ''}
-              ref={(el) => requestAnimationFrame(() => autoResize(el))}
-              onInput={(e) => {
-                autoResize(e.currentTarget);
-                props.onUpdatePrompt(idx(), e.currentTarget.value);
-              }}
-              placeholder="Character description, motivation, secret…"
-            />
+            <patchwork-view doc-url={token.state.documentUrl} tool-id="codemirror-base" class="p3n-token-doc-view" />
           </div>
         )}
       </For>

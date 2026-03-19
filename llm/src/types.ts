@@ -7,6 +7,8 @@ export type LLMDoc = {
     model: string;
   };
   workspaceUrl?: AutomergeUrl;
+  /** When set, used as the system prompt verbatim (no skills/workspace appended). Used by runLLMProcessRaw. */
+  systemPrompt?: string;
   prompt: string;
   output: OutputBlock[];
   previousMessages?: ChatMessage[];

@@ -2,7 +2,7 @@ import type { DocHandle, Repo } from '@automerge/automerge-repo';
 import { getRegistry } from '@inkandswitch/patchwork-plugins';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function createMarkdownCopy(repo: Repo, content: string): Promise<{ url: string }> {
+export async function createMarkdownCopy(repo: Repo, content: string): Promise<{ url: string }> {
   const { createDocOfDatatype2 } = await import('@inkandswitch/patchwork-plugins');
   const markdownDatatype = (await getRegistry('patchwork:datatype').load('markdown')) as any;
   const h = await createDocOfDatatype2(markdownDatatype, repo, (d: Record<string, unknown>) => {
@@ -12,7 +12,34 @@ async function createMarkdownCopy(repo: Repo, content: string): Promise<{ url: s
 }
 import type { NetDef, ReadonlyToken } from './lib';
 import type { LLMPetriNetDoc } from './types';
-import { runLLMProcess } from '../../llm/src/llm-process';
+import { runLLMProcessRaw } from '../../llm/src/llm-process';
+
+// ─── Default prompt content ───────────────────────────────────────────────────
+
+export const DEFAULT_OPTIMIZER_PROMPT = 'The nervous butler who discovered the body and is hiding something.';
+export const DEFAULT_EVALUATOR_PROMPT = 'Favour the version that introduces the most chilling new revelation or casts suspicion onto a fresh suspect.';
+
+// ─── Petri net script-execution system prompt (no skills, no workspace) ───────
+
+export const PETRINET_SYSTEM_PROMPT = [
+  'You are a coding agent that can execute JavaScript to accomplish tasks.',
+  '',
+  'Execute code by writing it inside <script> tags with a data-description attribute:',
+  '',
+  '<script data-description="Brief description of what this code does">',
+  '// your code here',
+  '</script>',
+  '',
+  'Rules:',
+  '- Write one <script> block per iteration; wait for its output before continuing.',
+  '- Use `return` to inspect values and `console.log` for intermediate output.',
+  '',
+  'Working with Automerge documents:',
+  '- `repo.find(url)` is async — always `await` it',
+  '- Read a document with `await handle.doc()`',
+  '- Mutate documents with `handle.change()`',
+  '- Use `updateText` from `@automerge/automerge-repo` for text content mutations',
+].join('\n');
 
 // ─── Default system prompt templates ──────────────────────────────────────────
 
@@ -65,14 +92,8 @@ export const DEFAULT_EVALUATOR_SYSTEM_PROMPT = [
   'return reads.map(r => `--- ${r.url} ---\\n${r.content}`).join("\\n\\n")',
   '```',
   '',
-  'Step 2: Identify which continuation best deepens the mystery or casts the most compelling suspicion. Then write the winning content to the target document.',
-  '```',
-  'const { updateText } = await import("@automerge/automerge-repo")',
-  '// Replace WINNING_URL with the url of the version you chose',
-  'const winner = reads.find(r => r.url === "WINNING_URL")',
-  'const target = await repo.find("$TARGET_URL")',
-  'target.change(d => updateText(d, ["content"], winner.content))',
-  '```',
+  'Step 2: Identify which continuation best deepens the mystery or casts the most compelling suspicion.',
+  'Respond with ONLY the URL of the winning solution — a single line, nothing else.',
 ].join('\n');
 
 // ─── Net definition ───────────────────────────────────────────────────────────
@@ -89,25 +110,32 @@ export function createNet(repo: Repo, handle: DocHandle<LLMPetriNetDoc>): NetDef
         to: ['solutions', 'optimizer'],
 
         async onConsumedTokens({ problems }, { optimizer }, repo) {
-          const storyContent = await readStoryContent(repo, problems.state.documentUrl);
+          const storyContent = await readDocContent(repo, problems.state.documentUrl);
           const doc = await handle.doc();
-          const systemTemplate = doc?.systemPrompts?.optimizer ?? DEFAULT_OPTIMIZER_SYSTEM_PROMPT;
+          const systemPromptUrl = doc?.systemPromptUrls?.optimizer;
+          const systemTemplate = systemPromptUrl
+            ? await readDocContent(repo, systemPromptUrl)
+            : (doc?.systemPrompts?.optimizer ?? DEFAULT_OPTIMIZER_SYSTEM_PROMPT);
           const produce = [];
+          const processUrls: string[] = [];
+
+          console.log(`[llm-petrinet] optimizing: problem doc=${problems.state.documentUrl}, story length=${storyContent.length}, optimizers=${optimizer.length}`);
 
           for (const opt of optimizer) {
-            const { copyUrl, processUrl } = await launchOptimizerRun(repo, storyContent, opt, systemTemplate);
-            produce.push({ state: { type: 'solution', documentUrl: copyUrl, processUrl }, toPlace: 'solutions' });
+            const charPrompt = await readDocContent(repo, opt.state.documentUrl);
+            const { copyUrl, processUrl } = await launchOptimizerRun(repo, storyContent, charPrompt, systemTemplate);
+            console.log(`[llm-petrinet] optimizer ${opt.id}: charPrompt doc=${opt.state.documentUrl}, copyUrl=${copyUrl}, processUrl=${processUrl}`);
+            produce.push({ state: { type: 'solution', documentUrl: copyUrl }, toPlace: 'solutions' });
             produce.push({ state: opt.state, toPlace: 'optimizer' });
+            processUrls.push(processUrl);
+          }
+
+          for (const processUrl of processUrls) {
+            runLLMProcessRaw(repo, processUrl as unknown as import('@automerge/automerge-repo').AutomergeUrl)
+              .catch((e) => console.error('[llm-petrinet] optimizer runLLMProcess error', e));
           }
 
           return { produce };
-        },
-
-        onProducedToken(token, _handle, repo) {
-          if (token.placeId === 'solutions' && token.state.processUrl) {
-            runLLMProcess(repo, token.state.processUrl as unknown as import('@automerge/automerge-repo').AutomergeUrl)
-              .catch((e) => console.error('[llm-petrinet] optimizer runLLMProcess error', e));
-          }
         },
       },
 
@@ -123,22 +151,41 @@ export function createNet(repo: Repo, handle: DocHandle<LLMPetriNetDoc>): NetDef
 
         async onConsumedTokens({ evaluators }, { solutions }, repo) {
           const doc = await handle.doc();
-          const systemTemplate = doc?.systemPrompts?.evaluator ?? DEFAULT_EVALUATOR_SYSTEM_PROMPT;
-          const { newProblemUrl, processUrl } = await launchEvaluatorRun(repo, solutions, evaluators.state.prompt, systemTemplate);
+          const systemPromptUrl = doc?.systemPromptUrls?.evaluator;
+          const systemTemplate = systemPromptUrl
+            ? await readDocContent(repo, systemPromptUrl)
+            : (doc?.systemPrompts?.evaluator ?? DEFAULT_EVALUATOR_SYSTEM_PROMPT);
+          const evalPrompt = await readDocContent(repo, evaluators.state.documentUrl);
+          const solutionUrls = solutions.map((s) => s.state.documentUrl);
+          console.log(`[llm-petrinet] evaluating: ${solutionUrls.length} solutions:`, solutionUrls);
+
+          const { processUrl } = await launchEvaluatorRun(repo, solutions, evalPrompt, systemTemplate);
+          console.log(`[llm-petrinet] evaluating: processUrl=${processUrl}`);
+
+          await runLLMProcessRaw(repo, processUrl as unknown as import('@automerge/automerge-repo').AutomergeUrl)
+            .catch((e) => console.error('[llm-petrinet] evaluator runLLMProcess error', e));
+
+          const processHandle = await repo.find(processUrl as unknown as import('@automerge/automerge-repo').AutomergeUrl);
+          const processDoc = await processHandle.doc() as { output?: Array<{ type: string; content?: string }> } | null;
+          const outputText = (processDoc?.output ?? [])
+            .filter((b) => b.type === 'text')
+            .map((b) => b.content ?? '')
+            .join('\n');
+
+          console.log(`[llm-petrinet] evaluating: LLM output text:\n${outputText}`);
+
+          const winnerUrl = solutionUrls.find((url) => outputText.includes(url)) ?? solutionUrls[0] ?? '';
+          console.log(`[llm-petrinet] evaluating: winnerUrl=${winnerUrl} (fallback=${!solutionUrls.find((url) => outputText.includes(url))})`);
 
           return {
             produce: [
               { state: evaluators.state, toPlace: 'evaluators' },
-              { state: { type: 'problem', documentUrl: newProblemUrl, processUrl }, toPlace: 'problems' },
+              { state: { type: 'problem', documentUrl: winnerUrl }, toPlace: 'problems' },
+              ...solutions
+                .filter((s) => s.state.documentUrl !== winnerUrl)
+                .map((s) => ({ state: s.state, toPlace: 'solutions' })),
             ],
           };
-        },
-
-        onProducedToken(token, _handle, repo) {
-          if (token.placeId === 'problems' && token.state.processUrl) {
-            runLLMProcess(repo, token.state.processUrl as unknown as import('@automerge/automerge-repo').AutomergeUrl)
-              .catch((e) => console.error('[llm-petrinet] evaluator runLLMProcess error', e));
-          }
         },
       },
     ],
@@ -158,7 +205,8 @@ export function createNet(repo: Repo, handle: DocHandle<LLMPetriNetDoc>): NetDef
         label: 'Optimizer',
         color: '#0891b2',
         async create() {
-          return { type: 'optimizer', prompt: 'The nervous butler who discovered the body and is hiding something.', documentUrl: '' };
+          const { url } = await createMarkdownCopy(repo, DEFAULT_OPTIMIZER_PROMPT);
+          return { type: 'optimizer', documentUrl: url };
         },
       },
       {
@@ -166,7 +214,8 @@ export function createNet(repo: Repo, handle: DocHandle<LLMPetriNetDoc>): NetDef
         label: 'Evaluator',
         color: '#d97706',
         async create() {
-          return { type: 'evaluator', prompt: 'Favour the version that introduces the most chilling new revelation or casts suspicion onto a fresh suspect.', documentUrl: '' };
+          const { url } = await createMarkdownCopy(repo, DEFAULT_EVALUATOR_PROMPT);
+          return { type: 'evaluator', documentUrl: url };
         },
       },
       {
@@ -191,7 +240,7 @@ export function createNet(repo: Repo, handle: DocHandle<LLMPetriNetDoc>): NetDef
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function readStoryContent(repo: Repo, documentUrl: string): Promise<string> {
+async function readDocContent(repo: Repo, documentUrl: string): Promise<string> {
   if (!documentUrl) return '';
   const handle = await repo.find(documentUrl as import('@automerge/automerge-repo').AutomergeUrl);
   const doc = await handle.doc() as { content?: string } | null;
@@ -201,16 +250,18 @@ async function readStoryContent(repo: Repo, documentUrl: string): Promise<string
 async function launchOptimizerRun(
   repo: Repo,
   storyContent: string,
-  optimizer: ReadonlyToken,
+  charPrompt: string,
   systemTemplate: string,
 ): Promise<{ copyUrl: string; processUrl: string }> {
   const { url: copyUrl } = await createMarkdownCopy(repo, storyContent);
-  const prompt = buildOptimizerPrompt(systemTemplate, optimizer.state.prompt, copyUrl);
+  console.log(`[llm-petrinet] launchOptimizerRun: created copy=${copyUrl}, storyContent length=${storyContent.length}`);
+  const prompt = buildOptimizerPrompt(systemTemplate, charPrompt, copyUrl);
 
   const processHandle = repo.create<Record<string, unknown>>();
   processHandle.change((d) => {
     d['@patchwork'] = { type: 'llm' };
     d.config = { apiUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o' };
+    d.systemPrompt = PETRINET_SYSTEM_PROMPT;
     d.prompt = prompt;
     d.output = [];
   });
@@ -223,20 +274,20 @@ async function launchEvaluatorRun(
   solutions: ReadonlyToken[],
   evaluatorPrompt: string,
   systemTemplate: string,
-): Promise<{ newProblemUrl: string; processUrl: string }> {
-  const { url: newProblemUrl } = await createMarkdownCopy(repo, '');
+): Promise<{ processUrl: string }> {
   const solutionUrls = solutions.map((s) => s.state.documentUrl).filter(Boolean);
-  const prompt = buildEvaluatorPrompt(systemTemplate, evaluatorPrompt, solutionUrls, newProblemUrl);
+  const prompt = buildEvaluatorPrompt(systemTemplate, evaluatorPrompt, solutionUrls);
 
   const processHandle = repo.create<Record<string, unknown>>();
   processHandle.change((d) => {
     d['@patchwork'] = { type: 'llm' };
     d.config = { apiUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o' };
+    d.systemPrompt = PETRINET_SYSTEM_PROMPT;
     d.prompt = prompt;
     d.output = [];
   });
 
-  return { newProblemUrl, processUrl: processHandle.url as string };
+  return { processUrl: processHandle.url as string };
 }
 
 function buildOptimizerPrompt(systemPrompt: string, characterPrompt: string, docUrl: string): string {
@@ -249,11 +300,9 @@ function buildEvaluatorPrompt(
   systemPrompt: string,
   evaluatorPrompt: string,
   solutionUrls: string[],
-  targetUrl: string,
 ): string {
   const urlsArray = JSON.stringify(solutionUrls, null, 2);
   return systemPrompt
     .replace(/\$PROMPT/g, evaluatorPrompt)
-    .replace(/\$SOLUTION_URLS/g, urlsArray)
-    .replace(/\$TARGET_URL/g, targetUrl);
+    .replace(/\$SOLUTION_URLS/g, urlsArray);
 }
