@@ -1,0 +1,36 @@
+.mini-canvas-root {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: 1.5rem;
+}
+
+.mini-canvas-card {
+  width: 100%;
+  max-width: 28rem;
+  padding: 1.5rem 1.75rem;
+  border-radius: 12px;
+  background: #f4f4f5;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.08),
+    0 8px 24px rgba(0, 0, 0, 0.06);
+  text-align: center;
+}
+
+.mini-canvas-card h1 {
+  margin: 0 0 0.5rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.25;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.mini-canvas-card p {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  color: #52525b;
+  font-family: system-ui, -apple-system, sans-serif;
+}

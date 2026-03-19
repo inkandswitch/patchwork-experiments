@@ -1,0 +1,1 @@
+The Mini Canvas **system** folder holds Pushwork/sync metadata. The runnable tool (including **`ref-view`**, **`frame.js`**, and **`MiniCanvasTool`**) lives in [`../tool/README.md`](../tool/README.md).

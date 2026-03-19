@@ -1,0 +1,14 @@
+{
+  "name": "@patchwork/mini-canvas-tool",
+  "type": "module",
+  "dependencies": {
+    "@automerge/automerge": "3.2.1"
+  },
+  "exports": {
+    ".": "./index.js"
+  },
+  "scripts": {
+    "sync": "pushwork sync"
+  },
+  "pushwork": {}
+}
