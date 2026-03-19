@@ -58,4 +58,4 @@ export type { RegisterPatchworkViewWithToolUrlElementParams } from './patchwork-
 export { getPaperViewport } from './paper/get-paper-viewport.js';
 export type { UserState } from './paper/types.js';
 
-console.log('paper version', 6);
+console.log('paper version', 8);

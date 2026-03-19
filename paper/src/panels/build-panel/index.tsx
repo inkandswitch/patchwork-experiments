@@ -1,5 +1,6 @@
 import type { DocHandle, Repo } from '@automerge/automerge-repo';
 import type { AutomergeUrl } from '@automerge/automerge-repo';
+import { buildCanvasContextText, resolveEmbedMetadata } from './context.js';
 import {
   makeDocumentProjection,
   RepoContext,
@@ -95,10 +96,11 @@ function BuildPanelUI(props: { handle: DocHandle<PaperDoc>; element: HTMLElement
       const previousMessages = await buildContextMessages(repo, buildRuns() as AutomergeUrl[]);
 
       const paperUrl = props.handle.url;
+      const embedMeta = await resolveEmbedMetadata(repo, contextShapes);
       const contextContent: ContentPart[] = [
         {
           type: 'text',
-          text: buildCanvasContextText(paperUrl, contextShapes),
+          text: buildCanvasContextText(paperUrl, contextShapes, embedMeta),
         },
       ];
       if (screenshotDataUrl) {
@@ -114,13 +116,11 @@ function BuildPanelUI(props: { handle: DocHandle<PaperDoc>; element: HTMLElement
         d.urls = [paperUrl, __SKILLS_FOLDER_URL__ as AutomergeUrl];
       });
 
-
       const runHandle = repo.create<LLMDoc>();
       runHandle.change((d) => {
         d['@patchwork'] = { type: 'llm' };
         d.config = { apiUrl: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-opus-4-5' };
         d.workspaceUrl = workspaceHandle.url;
-        d.systemPrompt = systemPrompt;
         d.prompt = text;
         d.output = [];
         const messages: ChatMessage[] = [...previousMessages, contextMessage];
@@ -206,28 +206,6 @@ function BuildPanelUI(props: { handle: DocHandle<PaperDoc>; element: HTMLElement
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function buildPaperSystemPrompt(paperDocUrl: string): string {
-  return (
-    SYSTEM_PROMPT +
-    `
-
-You are operating on a spatial canvas called **Paper** (Automerge URL: \`${paperDocUrl}\`).
-
-Interpret every user request in the context of this canvas. Use the \`paper\` skill to read and modify it:
-
-\`\`\`javascript
-const { getPaper } = await loadSkill('paper');
-const paper = getPaper(repo, '${paperDocUrl}');
-\`\`\`
-
-Key rules for this canvas:
-- When you create new documents (markdown, notes, data, etc.) in response to the user's request, always place them on the canvas immediately using \`paper.placeEmbed(newDocUrl, docType)\` so they appear in the user's view.
-- Use \`paper.getShapes()\` to understand what is already on the canvas before making changes.
-- Prefer adding and arranging content visually over returning plain text answers.
-- Use smart placement (no explicit x/y) so new shapes never overlap existing ones.`
-  );
-}
 
 function findViewport(el: HTMLElement): HTMLElement | null {
   let cur: HTMLElement | null = el;

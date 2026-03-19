@@ -213,12 +213,23 @@ function SelectLayer(props: { handle: DocHandle<PaperDoc>; element: HTMLElement 
 
   function onKeyDown(e: KeyboardEvent) {
     if (!isActive()) return;
-    if (e.key !== 'Backspace' && e.key !== 'Delete') return;
-    const focused = document.activeElement;
-    if (focused instanceof HTMLElement) {
-      const tag = focused.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || focused.isContentEditable) return;
+
+    if ((e.metaKey || e.ctrlKey) && e.key === 'd') {
+      e.preventDefault();
+      duplicateSelection();
+      return;
     }
+
+    const focused = document.activeElement;
+    const inInput =
+      focused instanceof HTMLElement &&
+      (focused.tagName === 'INPUT' ||
+        focused.tagName === 'TEXTAREA' ||
+        focused.tagName === 'SELECT' ||
+        focused.isContentEditable);
+    if (inInput) return;
+
+    if (e.key !== 'Backspace' && e.key !== 'Delete') return;
     const url = contactUrl();
     const selection = url ? (doc.userState?.[url]?.selection ?? {}) : {};
     if (Object.keys(selection).length === 0) return;
@@ -226,6 +237,43 @@ function SelectLayer(props: { handle: DocHandle<PaperDoc>; element: HTMLElement 
     props.handle.change((d) => {
       for (const id of Object.keys(selection)) delete d.shapes[id];
       if (url && d.userState?.[url]) d.userState[url].selection = {};
+    });
+  }
+
+  function duplicateSelection() {
+    const url = contactUrl();
+    const selection = url ? (doc.userState?.[url]?.selection ?? {}) : {};
+    const selectedIds = Object.keys(selection);
+    if (selectedIds.length === 0) return;
+
+    const newIds: string[] = [];
+    props.handle.change((d) => {
+      for (const id of selectedIds) {
+        const shape = d.shapes[id];
+        if (!shape) continue;
+
+        const newId = crypto.randomUUID();
+        newIds.push(newId);
+
+        const copy = JSON.parse(JSON.stringify(shape)) as Record<string, unknown>;
+
+        const w = (copy.w as number | undefined) ?? (copy.width as number | undefined);
+        const h = (copy.h as number | undefined) ?? (copy.height as number | undefined);
+
+        if (w != null && h != null) {
+          copy.x = (copy.x as number) + w + 16;
+        } else {
+          copy.y = (copy.y as number) + 20;
+        }
+
+        copy.id = newId;
+        copy.zIndex = Object.keys(d.shapes).length;
+        d.shapes[newId] = copy as any;
+      }
+
+      if (url && d.userState?.[url]) {
+        d.userState[url].selection = Object.fromEntries(newIds.map((nid) => [nid, true]));
+      }
     });
   }
 
