@@ -1,0 +1,30 @@
+{
+	"name": "@patchwork/tenfriends",
+	"version": "0.0.1",
+	"description": "Tenfriend datatype and creation tool for Patchwork",
+	"type": "module",
+	"main": "src/index.ts",
+	"exports": {
+		".": "./dist/index.js"
+	},
+	"pushwork": {
+		"url": "automerge:3quNZA1scyMBi8iXRdxzoo1tj9jE"
+	},
+	"scripts": {
+		"build": "vite build",
+		"dev": "vite build --watch",
+		"push": "pnpm build && pushwork sync"
+	},
+	"dependencies": {
+		"@automerge/automerge-repo": "^2.5.0",
+		"@inkandswitch/patchwork-elements": "^0.0.5",
+		"@inkandswitch/patchwork-filesystem": "^0.0.3",
+		"@inkandswitch/patchwork-plugins": "^0.0.1",
+		"solid-js": "^1.9.11"
+	},
+	"devDependencies": {
+		"typescript": "^5.8.3",
+		"vite": "^5.4.19",
+		"vite-plugin-solid": "^2.10.0"
+	}
+}
