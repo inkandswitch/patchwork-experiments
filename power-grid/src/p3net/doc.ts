@@ -20,6 +20,7 @@ export type P3NetDoc = {
   canvas: CanvasToken[];  // floating tokens; do not fire transitions
 };
 
+// Individual file inside the source FolderDoc
 export type SourceDoc = {
   name: string;
   extension: string;

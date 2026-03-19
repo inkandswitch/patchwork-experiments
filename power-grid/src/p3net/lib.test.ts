@@ -42,6 +42,10 @@ function tokenStates(handle: DocHandle<P3NetDoc>, place: string): TokenState[] {
   return (handle.doc()?.tokens?.[place] ?? []).map((t) => t.state);
 }
 
+function tok(extra: Record<string, unknown> = {}): TokenState {
+  return { type: 'test', documentUrl: '', ...extra } as TokenState;
+}
+
 // ─── Basic firing ─────────────────────────────────────────────────────────────
 
 describe('basic firing', () => {
@@ -51,7 +55,7 @@ describe('basic firing', () => {
       transitions: [{ id: 't1', from: ['a'], to: ['b'] }],
       tokenTypes: [],
     };
-    const handle = makeHandle({ a: [{ id: 'tok1', state: { type: 'x' } }], b: [] });
+    const handle = makeHandle({ a: [{ id: 'tok1', state: tok({ type: 'x' }) }], b: [] });
     const net = defineNet(def)(handle, makeRepo());
 
     const step = await net.prepareStep();
@@ -66,7 +70,7 @@ describe('basic firing', () => {
       step!.addOutput(out.id);
     }
     expect(handle.doc()!.tokens.b).toHaveLength(1);
-    expect(handle.doc()!.tokens.b[0].state).toEqual({ type: 'x' });
+    expect(handle.doc()!.tokens.b[0].state).toEqual(tok({ type: 'x' }));
   });
 
   it('returns null when no tokens are in input places', async () => {
@@ -88,7 +92,7 @@ describe('basic firing', () => {
       transitions: [{ id: 't', from: ['src'], to: ['dst'] }],
       tokenTypes: [],
     };
-    const richState = { type: 'data', value: 42, nested: { x: true } };
+    const richState = tok({ type: 'data', value: 42, nested: { x: true } });
     const handle = makeHandle({ src: [{ id: 'tok', state: richState }], dst: [] });
     const net = defineNet(def)(handle, makeRepo());
 
@@ -106,7 +110,7 @@ describe('basic firing', () => {
       transitions: [{ id: 't', from: ['a'], to: ['b'] }],
       tokenTypes: [],
     };
-    const handle = makeHandle({ a: [{ id: 'original', state: {} }], b: [] });
+    const handle = makeHandle({ a: [{ id: 'original', state: tok() }], b: [] });
     const net = defineNet(def)(handle, makeRepo());
 
     const step = await net.prepareStep();
@@ -134,7 +138,7 @@ describe('guards', () => {
       ],
       tokenTypes: [],
     };
-    const handle = makeHandle({ a: [{ id: 'tok', state: {} }], b: [] });
+    const handle = makeHandle({ a: [{ id: 'tok', state: tok() }], b: [] });
     const net = defineNet(def)(handle, makeRepo());
 
     const step = await net.prepareStep();
@@ -149,7 +153,7 @@ describe('guards', () => {
       transitions: [{ id: 't', from: ['a'], to: ['b'], guard: () => true }],
       tokenTypes: [],
     };
-    const handle = makeHandle({ a: [{ id: 'tok', state: {} }], b: [] });
+    const handle = makeHandle({ a: [{ id: 'tok', state: tok() }], b: [] });
     const net = defineNet(def)(handle, makeRepo());
 
     const step = await net.prepareStep();
@@ -164,7 +168,7 @@ describe('guards', () => {
       ],
       tokenTypes: [],
     };
-    const handle = makeHandle({ a: [{ id: 'tok', state: {} }], b: [] });
+    const handle = makeHandle({ a: [{ id: 'tok', state: tok() }], b: [] });
     const net = defineNet(def)(handle, makeRepo());
 
     expect(await net.prepareStep()).toBeNull();
@@ -178,7 +182,7 @@ describe('guards', () => {
       ],
       tokenTypes: [],
     };
-    const handle = makeHandle({ a: [{ id: 'tok', state: {} }], b: [] });
+    const handle = makeHandle({ a: [{ id: 'tok', state: tok() }], b: [] });
     const net = defineNet(def)(handle, makeRepo());
 
     expect(await net.prepareStep()).not.toBeNull();
@@ -201,12 +205,12 @@ describe('guards', () => {
       ],
       tokenTypes: [],
     };
-    const handle = makeHandle({ a: [{ id: 'tok', state: { value: 99 } }], b: [] });
+    const handle = makeHandle({ a: [{ id: 'tok', state: tok({ value: 99 }) }], b: [] });
     const net = defineNet(def)(handle, makeRepo());
 
     await net.prepareStep();
     expect(guardTokens).toHaveLength(1);
-    expect(guardTokens[0].a.state.value).toBe(99);
+    expect((guardTokens[0].a.state as Record<string, unknown>).value).toBe(99);
   });
 });
 
@@ -229,7 +233,7 @@ describe('guard wait (token waits until guard becomes true)', () => {
       tokenTypes: [],
     };
     const handle = makeHandle({
-      waiting: [{ id: 'w1', state: { type: 'job' } }],
+      waiting: [{ id: 'w1', state: tok({ type: 'job' }) }],
       done: [],
     });
     const net = defineNet(def)(handle, makeRepo());
@@ -256,13 +260,13 @@ describe('guard wait (token waits until guard becomes true)', () => {
 
     for (const out of step3!.firings[0].outputs) step3!.addOutput(out.id);
     expect(handle.doc()!.tokens.done).toHaveLength(1);
-    expect(handle.doc()!.tokens.done[0].state).toEqual({ type: 'job' });
+    expect(handle.doc()!.tokens.done[0].state).toEqual(tok({ type: 'job' }));
   });
 
   it('async guard reads external state (simulating async document lookup)', async () => {
     // Simulate a token that carries a reference, and the guard checks whether
     // some "external document" is marked done — mimicking the real LLM process
-    // guard that does `await repo.find(token.state.processUrl)`.
+    // guard that does `await repo.find(token.state.documentUrl)`.
     const externalDocs = new Map<string, { done: boolean }>();
     externalDocs.set('doc-abc', { done: false });
 
@@ -274,7 +278,7 @@ describe('guard wait (token waits until guard becomes true)', () => {
           from: ['running'],
           to: ['completed'],
           guard: async ({ running }) => {
-            const ref = running.state.processUrl as string;
+            const ref = running.state.documentUrl;
             const extDoc = externalDocs.get(ref);
             return extDoc?.done === true;
           },
@@ -283,7 +287,7 @@ describe('guard wait (token waits until guard becomes true)', () => {
       tokenTypes: [],
     };
     const handle = makeHandle({
-      running: [{ id: 'r1', state: { type: 'process', processUrl: 'doc-abc' } }],
+      running: [{ id: 'r1', state: { type: 'process', documentUrl: 'doc-abc' } }],
       completed: [],
     });
     const net = defineNet(def)(handle, makeRepo());
@@ -321,8 +325,8 @@ describe('guard wait (token waits until guard becomes true)', () => {
     };
     const handle = makeHandle({
       queue: [
-        { id: 'tok-ready', state: { label: 'first' } },
-        { id: 'tok-waiting', state: { label: 'second' } },
+        { id: 'tok-ready', state: tok({ label: 'first' }) },
+        { id: 'tok-waiting', state: tok({ label: 'second' }) },
       ],
       out: [],
     });
@@ -366,13 +370,13 @@ describe('onConsumedTokens: produce', () => {
           from: ['src'],
           to: ['dst'],
           onConsumedTokens: () => ({
-            produce: [{ state: { type: 'result', value: 'new' } }],
+            produce: [{ state: tok({ type: 'result', value: 'new' }) }],
           }),
         },
       ],
       tokenTypes: [],
     };
-    const handle = makeHandle({ src: [{ id: 'tok', state: { type: 'input' } }], dst: [] });
+    const handle = makeHandle({ src: [{ id: 'tok', state: tok({ type: 'input' }) }], dst: [] });
     const net = defineNet(def)(handle, makeRepo());
 
     const step = await net.prepareStep();
@@ -380,7 +384,7 @@ describe('onConsumedTokens: produce', () => {
     for (const out of step!.firings[0].outputs) step!.addOutput(out.id);
 
     expect(handle.doc()!.tokens.dst).toHaveLength(1);
-    expect(handle.doc()!.tokens.dst[0].state).toEqual({ type: 'result', value: 'new' });
+    expect(handle.doc()!.tokens.dst[0].state).toEqual(tok({ type: 'result', value: 'new' }));
     // Input was consumed, not forwarded
     expect(handle.doc()!.tokens.src).toHaveLength(0);
   });
@@ -395,8 +399,8 @@ describe('onConsumedTokens: produce', () => {
           to: ['out1', 'out2'],
           onConsumedTokens: () => ({
             produce: [
-              { state: { type: 'a' }, toPlace: 'out1' },
-              { state: { type: 'b' }, toPlace: 'out2' },
+              { state: tok({ type: 'a' }), toPlace: 'out1' },
+              { state: tok({ type: 'b' }), toPlace: 'out2' },
             ],
           }),
         },
@@ -404,7 +408,7 @@ describe('onConsumedTokens: produce', () => {
       tokenTypes: [],
     };
     const handle = makeHandle({
-      src: [{ id: 'tok', state: {} }],
+      src: [{ id: 'tok', state: tok() }],
       out1: [],
       out2: [],
     });
@@ -414,8 +418,8 @@ describe('onConsumedTokens: produce', () => {
     step!.removeInputs();
     for (const out of step!.firings[0].outputs) step!.addOutput(out.id);
 
-    expect(tokenStates(handle, 'out1')).toEqual([{ type: 'a' }]);
-    expect(tokenStates(handle, 'out2')).toEqual([{ type: 'b' }]);
+    expect(tokenStates(handle, 'out1')).toEqual([tok({ type: 'a' })]);
+    expect(tokenStates(handle, 'out2')).toEqual([tok({ type: 'b' })]);
   });
 
   it('async onConsumedTokens is awaited before building outputs', async () => {
@@ -427,21 +431,22 @@ describe('onConsumedTokens: produce', () => {
           from: ['in'],
           to: ['out'],
           onConsumedTokens: async ({ in: inp }) => {
-            const computed = (inp.state.n as number) * 2;
-            return { produce: [{ state: { result: computed } }] };
+            const n = (inp.state as unknown as Record<string, number>).n;
+            const computed = n * 2;
+            return { produce: [{ state: tok({ result: computed }) }] };
           },
         },
       ],
       tokenTypes: [],
     };
-    const handle = makeHandle({ in: [{ id: 'tok', state: { n: 21 } }], out: [] });
+    const handle = makeHandle({ in: [{ id: 'tok', state: tok({ n: 21 }) }], out: [] });
     const net = defineNet(def)(handle, makeRepo());
 
     const step = await net.prepareStep();
     step!.removeInputs();
     for (const out of step!.firings[0].outputs) step!.addOutput(out.id);
 
-    expect(handle.doc()!.tokens.out[0].state.result).toBe(42);
+    expect((handle.doc()!.tokens.out[0].state as unknown as Record<string, unknown>).result).toBe(42);
   });
 });
 
@@ -462,8 +467,8 @@ describe('onConsumedTokens: destroy', () => {
       tokenTypes: [],
     };
     const handle = makeHandle({
-      a: [{ id: 'tokA', state: { type: 'keeper' } }],
-      b: [{ id: 'tokB', state: { type: 'consumed' } }],
+      a: [{ id: 'tokA', state: tok({ type: 'keeper' }) }],
+      b: [{ id: 'tokB', state: tok({ type: 'consumed' }) }],
       out: [],
     });
     const net = defineNet(def)(handle, makeRepo());
@@ -491,7 +496,7 @@ describe('token reservation', () => {
       tokenTypes: [],
     };
     const handle = makeHandle({
-      shared: [{ id: 'tok', state: {} }],
+      shared: [{ id: 'tok', state: tok() }],
       dst1: [],
       dst2: [],
     });
@@ -518,8 +523,8 @@ describe('token reservation', () => {
       tokenTypes: [],
     };
     const handle = makeHandle({
-      a: [{ id: 'tokA', state: { label: 'A' } }],
-      b: [{ id: 'tokB', state: { label: 'B' } }],
+      a: [{ id: 'tokA', state: tok({ label: 'A' }) }],
+      b: [{ id: 'tokB', state: tok({ label: 'B' }) }],
       outA: [],
       outB: [],
     });
@@ -548,11 +553,11 @@ describe('reset()', () => {
       tokenTypes: [],
     };
     const handle = makeHandle({
-      a: [{ id: 'tok1', state: {} }],
-      b: [{ id: 'tok2', state: {} }],
+      a: [{ id: 'tok1', state: tok() }],
+      b: [{ id: 'tok2', state: tok() }],
     });
     // Manually put something on canvas too
-    handle.change((d) => { d.canvas = [{ id: 'c1', state: {}, x: 0, y: 0 }]; });
+    handle.change((d) => { d.canvas = [{ id: 'c1', state: tok(), x: 0, y: 0 }]; });
 
     const net = defineNet(def)(handle, makeRepo());
     net.reset();
@@ -573,12 +578,12 @@ describe('join transitions (multiple inputs)', () => {
     };
 
     // Only p1 has a token
-    const handle = makeHandle({ p1: [{ id: 'a', state: {} }], p2: [], joined: [] });
+    const handle = makeHandle({ p1: [{ id: 'a', state: tok() }], p2: [], joined: [] });
     const net = defineNet(def)(handle, makeRepo());
     expect(await net.prepareStep()).toBeNull();
 
     // Add token to p2
-    handle.doc()!.tokens.p2 = [{ id: 'b', state: {} }];
+    handle.doc()!.tokens.p2 = [{ id: 'b', state: tok() }];
     const step = await net.prepareStep();
     expect(step).not.toBeNull();
 
@@ -607,8 +612,8 @@ describe('join transitions (multiple inputs)', () => {
       tokenTypes: [],
     };
     const handle = makeHandle({
-      p1: [{ id: 'a', state: {} }],
-      p2: [{ id: 'b', state: {} }],
+      p1: [{ id: 'a', state: tok() }],
+      p2: [{ id: 'b', state: tok() }],
       out: [],
     });
     const net = defineNet(def)(handle, makeRepo());
@@ -635,7 +640,7 @@ describe('PendingStep doc mutations', () => {
       transitions: [{ id: 't', from: ['a'], to: ['b'] }],
       tokenTypes: [],
     };
-    const handle = makeHandle({ a: [{ id: 'tok', state: {} }], b: [] });
+    const handle = makeHandle({ a: [{ id: 'tok', state: tok() }], b: [] });
     const net = defineNet(def)(handle, makeRepo());
 
     const step = await net.prepareStep();
@@ -650,7 +655,7 @@ describe('PendingStep doc mutations', () => {
       transitions: [{ id: 't', from: ['a'], to: ['b'] }],
       tokenTypes: [],
     };
-    const handle = makeHandle({ a: [{ id: 'tok', state: {} }], b: [] });
+    const handle = makeHandle({ a: [{ id: 'tok', state: tok() }], b: [] });
     const net = defineNet(def)(handle, makeRepo());
 
     const step = await net.prepareStep();
@@ -674,7 +679,7 @@ describe('PendingStep doc mutations', () => {
       ],
       tokenTypes: [],
     };
-    const handle = makeHandle({ a: [{ id: 'tok', state: { val: 1 } }], b: [] });
+    const handle = makeHandle({ a: [{ id: 'tok', state: tok({ val: 1 }) }], b: [] });
     const net = defineNet(def)(handle, makeRepo());
 
     await net.prepareStep();

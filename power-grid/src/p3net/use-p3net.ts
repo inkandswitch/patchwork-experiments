@@ -1,11 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useRepo } from '@automerge/automerge-repo-react-hooks';
-import type { DocHandle } from '@automerge/automerge-repo';
+import type { AutomergeUrl, DocHandle } from '@automerge/automerge-repo';
+import { getRegistry, createDocOfDatatype2 } from '@inkandswitch/patchwork-plugins';
+import { importModuleFromFolderDocUrl } from '@inkandswitch/patchwork-filesystem';
 import type { P3NetDoc } from './doc';
-import type { PetriNet } from './lib';
+import { defineNet } from './lib';
+import type { NetApi, PetriNet } from './lib';
+import { runLLMProcess } from '../../../llm/src/llm-process';
 
 /**
- * Loads the p3net factory from the linked source doc via the service worker,
+ * Loads the p3net factory from the source folder via the service worker,
  * binds it to the given handle + repo, and returns the live PetriNet instance.
  */
 export function useP3Net(
@@ -21,17 +25,20 @@ export function useP3Net(
     if (!sourceUrl) return;
     if (sourceUrl === loadedSourceUrl) return;
 
-    // "automerge:abc123" → "/automerge%3Aabc123" for the service worker
-    const swUrl = sourceUrl.replace('automerge:', '/automerge%3A');
+    const api: NetApi = {
+      datatypes: getRegistry('patchwork:datatype'),
+      createDocOfDatatype2,
+      runLLMProcess,
+    };
 
-    import(/* @vite-ignore */ swUrl)
+    importModuleFromFolderDocUrl(sourceUrl as AutomergeUrl)
       .then((mod) => {
         const factory = mod.default;
         if (typeof factory !== 'function') {
-          setLoadError('Source must export a defineNet() result as default export.');
+          setLoadError('Source must default-export a function (repo, api) => NetDef.');
           return;
         }
-        setNet(factory(handle, repo));
+        setNet(defineNet(factory(repo, api))(handle, repo));
         setLoadedSourceUrl(sourceUrl);
         setLoadError(null);
       })

@@ -143,11 +143,11 @@ function P3NetSimulation({ handle }: { handle: DocHandle<P3NetDoc> }) {
   }, [net]);
 
   const handleDropOnPlace = useCallback(
-    (payload: DragPayload, placeId: string) => {
+    async (payload: DragPayload, placeId: string) => {
       if (payload.kind === 'palette') {
         const typeDef = net?.def.tokenTypes.find((t) => t.id === payload.typeId);
         if (!typeDef) return;
-        const state = { type: typeDef.id, ...typeDef.create(repo) };
+        const state = await typeDef.create();
         handle.change((d) => {
           if (!d.tokens[placeId]) d.tokens[placeId] = [];
           d.tokens[placeId].push({ id: makeId(), state: JSON.parse(JSON.stringify(state)) });
@@ -170,11 +170,11 @@ function P3NetSimulation({ handle }: { handle: DocHandle<P3NetDoc> }) {
   );
 
   const handleDropOnCanvas = useCallback(
-    (payload: DragPayload, x: number, y: number) => {
+    async (payload: DragPayload, x: number, y: number) => {
       if (payload.kind === 'palette') {
         const typeDef = net?.def.tokenTypes.find((t) => t.id === payload.typeId);
         if (!typeDef) return;
-        const state = { type: typeDef.id, ...typeDef.create(repo) };
+        const state = await typeDef.create();
         handle.change((d) => {
           if (!d.canvas) d.canvas = [];
           d.canvas.push({ id: makeId(), state: JSON.parse(JSON.stringify(state)), x, y });
@@ -274,7 +274,7 @@ function P3NetSimulation({ handle }: { handle: DocHandle<P3NetDoc> }) {
                 findAndUpdateToken(
                   d as unknown as P3NetDoc,
                   selectedTokenId,
-                  (s) => { s[key] = value; },
+                  (s) => { (s as Record<string, unknown>)[key] = value; },
                 );
               });
             }}

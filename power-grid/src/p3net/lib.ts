@@ -1,8 +1,11 @@
-import type { DocHandle, Repo } from '@automerge/automerge-repo';
+import type { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo';
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
-export type TokenState = Record<string, unknown>;
+export type TokenState = {
+  type: string;
+  documentUrl: string;
+};
 
 /** A single token instance stored in the doc. Type is encoded in state.type. */
 export type TokenInstance = {
@@ -15,16 +18,25 @@ export type NetState = {
 };
 
 /**
+ * API object passed as second argument to the net factory (repo, api) => NetDef.
+ * Provides runtime services so net source JS needs no imports.
+ */
+export type NetApi = {
+  datatypes: { load(id: string): Promise<any> };
+  createDocOfDatatype2: (datatype: any, repo: Repo, change?: (doc: any) => void) => Promise<DocHandle<any>>;
+  runLLMProcess: (repo: Repo, url: AutomergeUrl) => Promise<void>;
+};
+
+/**
  * A token type definition used for the palette.
- * create() is called when a token is dragged from the palette — receives repo
- * so it can create automerge documents and return the full initial state.
- * The type identifier is written into state.type automatically.
+ * create() is called when a token is dragged from the palette — returns the
+ * initial state for the token. May be async (e.g. to create a backing document).
  */
 export type TokenTypeDef = {
   id: string;
   label: string;
   color: string; // palette chip colour only
-  create: (repo: Repo) => TokenState;
+  create: () => TokenState | Promise<TokenState>;
 };
 
 /** Readonly view of a single input token passed to guard and onTokens. */
@@ -53,7 +65,7 @@ export type TransitionDef = {
   from: string[];
   to: string[];
   /** Return false (or a Promise resolving to false) to prevent this transition from firing. */
-  guard?: (tokens: ReadonlyTokens) => boolean | Promise<boolean>;
+  guard?: (tokens: ReadonlyTokens, repo: Repo) => boolean | Promise<boolean>;
   /**
    * Called when the transition fires (before animation). Returns a declarative
    * description of what should happen to the tokens. May be async.
@@ -66,8 +78,11 @@ export type TransitionDef = {
    * their destination places. Use for side effects (e.g. launching async work)
    * that depend on the output tokens being present in the doc. May be async;
    * errors are caught and logged.
+   *
+   * Receives the net's handle and repo so token state can be updated without
+   * closing over them in the factory.
    */
-  onProducedToken?: (token: AnimTokenInfo) => void | Promise<void>;
+  onProducedToken?: (token: AnimTokenInfo, handle: DocHandle<P3NetDoc>, repo: Repo) => void | Promise<void>;
 };
 
 export type NetDef = {
@@ -199,7 +214,7 @@ function createPetriNet(def: NetDef, handle: DocHandle<P3NetDoc>, repo: Repo): P
           readonlyTokens[placeId] = { id: t.id, state: deepClone(t.state) };
         }
 
-        if (transition.guard && !(await transition.guard(readonlyTokens))) continue;
+        if (transition.guard && !(await transition.guard(readonlyTokens, repo))) continue;
 
         // Reserve input tokens
         for (const t of Object.values(candidates)) {
@@ -294,7 +309,7 @@ function createPetriNet(def: NetDef, handle: DocHandle<P3NetDoc>, repo: Repo): P
           for (const { transition, outputs } of prepared) {
             if (!transition.onProducedToken) continue;
             for (const token of outputs) {
-              Promise.resolve(transition.onProducedToken(token)).catch(
+              Promise.resolve(transition.onProducedToken(token, handle, repo)).catch(
                 (err) => console.error(`[p3net] onProducedToken error in "${transition.id}":`, err),
               );
             }

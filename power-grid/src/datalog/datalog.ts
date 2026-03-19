@@ -10,11 +10,11 @@ export type Constant = string | number;
 //   otherwise                    → constant   e.g. "north", "500" or a number
 export type Term = string;
 
-export type StoredFact = { pred: string; args: Constant[] };
+export type StoredFact = { pred: string; args: Constant[]; comment?: string };
 export type StoredAtom = { pred: string; args: Term[] };
-export type StoredRule = { head: StoredAtom; body: StoredAtom[] };
+export type StoredRule = { head: StoredAtom; body: StoredAtom[]; comment?: string };
 
-export type StoredConstraint = { body: StoredAtom[] };
+export type StoredConstraint = { body: StoredAtom[]; comment?: string };
 
 export type ProvenanceEntry = { rule: StoredRule; groundBody: StoredFact[] };
 export type ProvenanceMap = Map<string, ProvenanceEntry>;
@@ -67,25 +67,63 @@ export function ruleKey(r: StoredRule): string {
 // ─── Serialization (structure → text) ─────────────────────────────────────────
 
 export function serializeFacts(facts: StoredFact[]): string {
-  return facts.map(f => serializeFactAtom(f) + '.').join('\n');
+  return facts.map(f => {
+    const line = serializeFactAtom(f) + '.';
+    return f.comment !== undefined ? `// ${f.comment}\n${line}` : line;
+  }).join('\n');
 }
 
 export function serializeRules(rules: StoredRule[]): string {
   return rules.map(r => {
     const head = serializeAtom(r.head);
+    let body: string;
     if (r.body.length <= 1) {
-      return `${head} :- ${r.body.map(serializeAtom).join(', ')}.`;
+      body = `${head} :- ${r.body.map(serializeAtom).join(', ')}.`;
+    } else {
+      const bodyLines = r.body.map((a, i) => {
+        const isLast = i === r.body.length - 1;
+        return `    ${serializeAtom(a)}${isLast ? '.' : ','}`;
+      });
+      body = `${head} :-\n${bodyLines.join('\n')}`;
     }
-    const bodyLines = r.body.map((a, i) => {
-      const isLast = i === r.body.length - 1;
-      return `    ${serializeAtom(a)}${isLast ? '.' : ','}`;
-    });
-    return `${head} :-\n${bodyLines.join('\n')}`;
+    return r.comment !== undefined ? `// ${r.comment}\n${body}` : body;
   }).join('\n');
 }
 
 export function serializeConstraints(constraints: StoredConstraint[]): string {
-  return constraints.map(c => ':- ' + c.body.map(serializeAtom).join(', ') + '.').join('\n');
+  return constraints.map(c => {
+    const line = ':- ' + c.body.map(serializeAtom).join(', ') + '.';
+    return c.comment !== undefined ? `// ${c.comment}\n${line}` : line;
+  }).join('\n');
+}
+
+// ─── Comment extraction ───────────────────────────────────────────────────────
+
+// Looks one line backward from `pos` in the full source text. If that
+// line is a comment (starts with `//` or `%` after trimming), returns
+// the comment body text (stripped of the prefix). Otherwise returns undefined.
+function extractPrecedingComment(src: string, pos: number): string | undefined {
+  let p = pos - 1;
+
+  // Skip spaces/tabs on the statement's own line (before the first token)
+  while (p >= 0 && (src[p] === ' ' || src[p] === '\t')) p--;
+
+  // Must be at a newline (statement starts on its own line)
+  if (p < 0 || src[p] !== '\n') return undefined;
+  p--; // skip \n
+  if (p >= 0 && src[p] === '\r') p--; // skip optional \r
+
+  // Find the start of the preceding line
+  const lineEnd = p;
+  while (p >= 0 && src[p] !== '\n') p--;
+  const lineStart = p + 1;
+
+  const line = src.slice(lineStart, lineEnd + 1).trim();
+  if (line === '') return undefined; // blank line — no comment
+
+  if (line.startsWith('//')) return line.slice(2).trim();
+  if (line.startsWith('%')) return line.slice(1).trim();
+  return undefined;
 }
 
 // ─── ohm.js grammar ───────────────────────────────────────────────────────────
@@ -153,12 +191,18 @@ semantics.addOperation<any>('toAST', {
 
   // Statement_rule body is: Rule "."  → arity 2
   Statement_rule(rule, _dot) {
-    return rule.toAST();
+    const result = rule.toAST();
+    const comment = extractPrecedingComment(this.source.sourceString, this.source.startIdx);
+    if (comment !== undefined) result.rule.comment = comment;
+    return result;
   },
 
   // Statement_constraint body is: Constraint "."  → arity 2
   Statement_constraint(constraint, _dot) {
-    return constraint.toAST();
+    const result = constraint.toAST();
+    const comment = extractPrecedingComment(this.source.sourceString, this.source.startIdx);
+    if (comment !== undefined) result.constraint.comment = comment;
+    return result;
   },
 
   // Constraint = ":-" NonemptyListOf<BodyLit, ",">  → arity 2
@@ -184,7 +228,10 @@ semantics.addOperation<any>('toAST', {
       }
       args.push(parseConstant(t));
     }
-    return { kind: 'fact', fact: { pred: a.pred, args } };
+    const comment = extractPrecedingComment(this.source.sourceString, this.source.startIdx);
+    const storedFact: StoredFact = { pred: a.pred, args };
+    if (comment !== undefined) storedFact.comment = comment;
+    return { kind: 'fact', fact: storedFact };
   },
 
   // Fact = Atom  → arity 1

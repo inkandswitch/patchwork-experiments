@@ -1,11 +1,7 @@
-import { defineNet } from '__LIB_URL__'
-import { runLLMProcess } from '__LLM_PROCESS_URL__'
+// Export a factory (repo, api) => NetDef. The runtime wraps this with defineNet automatically.
+// api provides: datatypes, createDocOfDatatype2, runLLMProcess — no imports needed.
 
-const markdownSkillUrl = '__MARKDOWN_SKILL_URL__'
-
-// Export a factory function (handle, repo) => PetriNet.
-// Using a closure lets guard + onConsumedTokens/onProducedToken capture 'repo' and 'handle'.
-export default (handle, repo) => defineNet({
+export default (repo, api) => ({
 
   places: ['prompts', 'solutions', 'running'],
 
@@ -15,52 +11,63 @@ export default (handle, repo) => defineNet({
       from: ['prompts', 'solutions'],
       to: ['running'],
       async onConsumedTokens({ prompts, solutions }, repo) {
-        // Read the prompt text from the linked markdown document
-        const promptHandle = await repo.find(prompts.state.prompt)
-        const promptText = promptHandle.doc()?.content ?? ''
+        const markdown = await api.datatypes.load('markdown')
 
-        // Create a copy of the solution document for the LLM to edit
-        const solutionHandle = await repo.find(solutions.state.document)
-        const copyHandle = repo.create()
-        copyHandle.change(d => {
-          d['@patchwork'] = { type: 'markdown', copyOf: solutions.state.document }
+        const solutionHandle = await repo.find(solutions.state.documentUrl)
+        const copyHandle = await api.createDocOfDatatype2(markdown, repo, d => {
           d.content = solutionHandle.doc()?.content ?? ''
         })
 
-        // Create the LLM process document
+        const promptHandle = await repo.find(prompts.state.documentUrl)
+        const characterCard = promptHandle.doc()?.content ?? ''
+
+        const workspaceHandle = repo.create()
+        workspaceHandle.change(d => {
+          d['@patchwork'] = { type: 'llm-workspace' }
+          d.title = 'net process'
+          d.urls = [copyHandle.url, prompts.state.documentUrl]
+        })
+
+        const instruction = [
+          'You are editing a collaborative story document.',
+          '',
+          'Your character instructions are:',
+          characterCard,
+          '',
+          'The repo variable is already available as a global — do not import it.',
+          '',
+          'Story document URL: ' + copyHandle.url,
+          'Character card URL: ' + prompts.state.documentUrl,
+          '',
+          'Step 1: Read the story document:',
+          '  const handle = await repo.find(storyUrl)',
+          '  const content = handle.doc().content',
+          '  return content',
+          '',
+          'Step 2: Think about the story and what your character would say next.',
+          'Then append a single new line of dialog using updateText:',
+          '  const { updateText } = await import("@automerge/automerge-repo")',
+          '  handle.change(d => updateText(d, ["content"], d.content + "\\nCharacterName: dialog here"))',
+          '',
+          'Write only the dialog line, no stage directions. Do not overwrite existing content.',
+        ].join('\n')
+
         const processHandle = repo.create()
         processHandle.change(d => {
-          d['@patchwork'] = { type: 'petrinet-llm-process' }
-          d.config = { apiUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o', api: markdownSkillUrl }
-          d.prompt = promptText
-          d.docUrl = copyHandle.url
+          d['@patchwork'] = { type: 'llm' }
+          d.config = { apiUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o' }
+          d.workspaceUrl = workspaceHandle.url
+          d.prompt = instruction
           d.output = []
-          d.done = false
         })
 
         return {
-          produce: [{ state: { type: 'llm-process', llmProcess: processHandle.url, prompt: prompts.state.prompt, done: false }, toPlace: 'running' }],
+          produce: [{ state: { type: 'llm-process', documentUrl: processHandle.url }, toPlace: 'running' }],
         }
       },
 
-      async onProducedToken(token) {
-        // The token is now guaranteed to be in the running place.
-        // Launch the LLM and mark the token done when it finishes.
-        const processUrl = token.state.llmProcess
-
-        setTimeout(() => {
-          processHandle.change(d => { d.done = true })
-        }, 1000)
-        const processHandle = await repo.find(processUrl)
-        // runLLMProcess(repo, processUrl).then(() => {
-        //   processHandle.change(d => { d.done = true })
-        //   handle.change(d => {
-        //     const tok = (d.tokens?.running ?? []).find(t => t.state.llmProcess === processUrl)
-        //     if (tok) tok.state.done = true
-        //   })
-        // }).catch(err => {
-        //   console.error('[p3net] runLLMProcess FAILED for', processUrl, err)
-        // })
+      async onProducedToken(token, handle, repo) {
+        api.runLLMProcess(repo, token.state.documentUrl)
       },
     },
 
@@ -68,20 +75,20 @@ export default (handle, repo) => defineNet({
       id: 'complete',
       from: ['running'],
       to: ['prompts', 'solutions'],
-      async guard({ running }) {
-        // Check the token's own done flag, which is set by onProducedToken
-        // only after the token has landed in the running place.
-        return running.state.done === true
+      async guard({ running }, repo) {
+        const h = await repo.find(running.state.documentUrl)
+        return h.doc()?.done === true
       },
       async onConsumedTokens({ running }, repo) {
-        const processHandle = await repo.find(running.state.llmProcess)
-        const processDoc = processHandle?.doc()
+        const processHandle = await repo.find(running.state.documentUrl)
+        const processDoc = processHandle.doc()
+        const wsHandle = await repo.find(processDoc.workspaceUrl)
+        const wsDoc = wsHandle.doc()
 
-        // Return the original prompt token unchanged; the edited copy becomes the new solution
         return {
           produce: [
-            { state: { type: 'prompt', prompt: running.state.prompt }, toPlace: 'prompts' },
-            { state: { type: 'solution', document: processDoc?.docUrl }, toPlace: 'solutions' },
+            { state: { type: 'prompt', documentUrl: wsDoc.urls[1] }, toPlace: 'prompts' },
+            { state: { type: 'solution', documentUrl: wsDoc.urls[0] }, toPlace: 'solutions' },
           ],
         }
       },
@@ -93,35 +100,27 @@ export default (handle, repo) => defineNet({
       id: 'prompt',
       label: 'Prompt',
       color: '#7c3aed',
-      create(repo) {
-        const doc = repo.create()
-        doc.change(d => {
-          d['@patchwork'] = { type: 'markdown', suggestedImportUrl: 'automerge:dhkuYMpSttbRJPBJ7J5XST28bu7' }
-          d.content = '# Untitled'
-        })
-        return { type: 'prompt', prompt: doc.url }
+      async create() {
+        const markdown = await api.datatypes.load('markdown')
+        const h = await api.createDocOfDatatype2(markdown, repo)
+        return { type: 'prompt', documentUrl: h.url }
       },
     },
     {
       id: 'solution',
       label: 'Solution',
       color: '#0891b2',
-      create(repo) {
-        const doc = repo.create()
-        doc.change(d => {
-          d['@patchwork'] = { type: 'markdown', suggestedImportUrl: 'automerge:dhkuYMpSttbRJPBJ7J5XST28bu7' }
-          d.content = '# Untitled'
-        })
-        return { type: 'solution', document: doc.url }
+      async create() {
+        const markdown = await api.datatypes.load('markdown')
+        const h = await api.createDocOfDatatype2(markdown, repo)
+        return { type: 'solution', documentUrl: h.url }
       },
     },
     {
       id: 'llm-process',
       label: 'LLM Process',
       color: '#d97706',
-      create() {
-        return { type: 'llm-process' }
-      },
+      create() { return { type: 'llm-process', documentUrl: '' } },
     },
   ],
 
@@ -132,4 +131,4 @@ export default (handle, repo) => defineNet({
     return '#6b7280'
   },
 
-})(handle, repo)
+})

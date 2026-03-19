@@ -65,9 +65,13 @@ export async function runLLMProcess(
   const targetHandle = await repo.find(doc.docUrl);
   const capturedConsole = createCapturedConsole();
 
-  const skillMod = await import(/* @vite-ignore */ apiModuleUrl);
-  const skillApi = skillMod.default(targetHandle);
-  const skillSystemPrompt: string | undefined = skillMod.systemPrompt;
+  let skillApi: unknown = undefined;
+  let skillSystemPrompt: string | undefined = undefined;
+  if (apiModuleUrl) {
+    const skillMod = await import(/* @vite-ignore */ apiModuleUrl);
+    skillApi = skillMod.default(targetHandle);
+    skillSystemPrompt = skillMod.systemPrompt;
+  }
 
   (globalThis as any).api = skillApi;
   (globalThis as any).__llmCapturedConsole = capturedConsole;
