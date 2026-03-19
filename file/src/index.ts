@@ -3,6 +3,8 @@
 
 import {FileDatatype} from "./datatype"
 import {FileTool} from "./tool"
+import {NewFileDatatype} from "./new-file-datatype"
+import {NewFileTool} from "./new-file-tool"
 
 export * from "./types"
 export * from "./datatype"
@@ -27,6 +29,25 @@ export const plugins = [
 		supportedDatatypes: ["file"],
 		async load() {
 			return FileTool
+		},
+	},
+	{
+		type: "patchwork:datatype",
+		id: "new-file",
+		name: "New File",
+		icon: "FilePlus",
+		async load() {
+			return NewFileDatatype
+		},
+	},
+	{
+		type: "patchwork:tool",
+		id: "new-file",
+		name: "New File",
+		icon: "FilePlus",
+		supportedDatatypes: ["new-file"],
+		async load() {
+			return NewFileTool
 		},
 	},
 ]
