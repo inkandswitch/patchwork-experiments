@@ -69,5 +69,5 @@ export { runLLMProcess, runLLMProcessRaw, buildLLMMessages } from "./llm-process
 export { SYSTEM_PROMPT } from "./system-prompt";
 export { LLMTool, LLMView } from "./view";
 export { LLMWorkspaceTool, LLMWorkspaceView } from "./workspace";
-export type { LLMDoc, LLMChatDoc, LLMWorkspaceDoc, OutputBlock, ParsedBlock, ChatMessage, ContentPart } from "./types";
+export type { LLMDoc, LLMChatDoc, LLMWorkspaceDoc, WorkspaceEntry, OutputBlock, ParsedBlock, ChatMessage, ContentPart } from "./types";
 

@@ -1,5 +1,5 @@
 import type { DatatypeImplementation } from "@inkandswitch/patchwork-plugins";
-import type { Repo } from "@automerge/automerge-repo";
+import type { Repo, AutomergeUrl } from "@automerge/automerge-repo";
 import type { LLMDoc, LLMChatDoc, LLMWorkspaceDoc } from "./types";
 
 export const LLMDatatype: DatatypeImplementation<LLMDoc> = {
@@ -29,11 +29,24 @@ export const LLMChatDatatype: DatatypeImplementation<LLMChatDoc> = {
       model: "anthropic/claude-opus-4-5",
     };
 
+    const skillsFolderUrl: AutomergeUrl = __FORMAL_SKETCH_SKILLS_FOLDER_URL__ as any;
     const wsHandle = repo.create<LLMWorkspaceDoc>();
     wsHandle.change((ws) => {
       ws["@patchwork"] = { type: "llm-workspace" };
       ws.title = "Workspace";
-      ws.urls = [__FORMAL_SKETCH_SKILLS_FOLDER_URL__ as any];
+      ws.entries = {};
+      ws.entries[skillsFolderUrl] = { addedAt: [] };
+    });
+    queueMicrotask(async () => {
+      try {
+        const h = await repo.find(skillsFolderUrl);
+        await h.whenReady();
+        wsHandle.change((ws) => {
+          if (ws.entries[skillsFolderUrl]) {
+            ws.entries[skillsFolderUrl].addedAt = [...h.heads()];
+          }
+        });
+      } catch { /* best-effort */ }
     });
     doc.workspaceUrl = wsHandle.url;
     doc.runs = [];
@@ -48,7 +61,7 @@ export const LLMWorkspaceDatatype: DatatypeImplementation<LLMWorkspaceDoc> = {
   init(doc: LLMWorkspaceDoc, _repo: Repo) {
     doc["@patchwork"] = { type: "llm-workspace" };
     doc.title = "Workspace";
-    doc.urls = [];
+    doc.entries = {};
   },
 
   getTitle(doc: LLMWorkspaceDoc) {

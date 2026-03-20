@@ -22,10 +22,6 @@ type FolderDoc = {
   docs: { type: string; name: string; url: AutomergeUrl }[];
 };
 
-type WorkspaceDoc = {
-  urls: AutomergeUrl[];
-};
-
 type SkillInfo = {
   name: string;
   description: string;
@@ -284,9 +280,9 @@ async function discoverSkillsFromWorkspace(repo: Repo, workspaceUrl: AutomergeUr
   try {
     const wsHandle = await repo.find<LLMWorkspaceDoc>(workspaceUrl);
     const wsDoc = await wsHandle.doc();
-    if (!wsDoc?.urls?.length) return skills;
+    if (!wsDoc?.entries || !Object.keys(wsDoc.entries).length) return skills;
 
-    for (const url of wsDoc.urls) {
+    for (const url of Object.keys(wsDoc.entries) as AutomergeUrl[]) {
       try {
         const docHandle = await repo.find<FolderDoc>(url);
         const doc = await docHandle.doc();
@@ -353,24 +349,45 @@ function parseFrontmatter(content: string): Record<string, string> {
 
 function wrapRepoForLLM(repo: Repo, workspaceUrl: AutomergeUrl | undefined): Repo {
   if (!workspaceUrl) return repo;
+  const wsUrl: AutomergeUrl = workspaceUrl;
+
+  function recordInWorkspace(url: AutomergeUrl, heads: string[]) {
+    queueMicrotask(async () => {
+      try {
+        const wsHandle = await repo.find<LLMWorkspaceDoc>(wsUrl);
+        wsHandle.change((d) => {
+          if (!(url in d.entries)) {
+            d.entries[url] = { addedAt: [...heads] };
+          }
+        });
+      } catch { /* best-effort */ }
+    });
+  }
 
   return new Proxy(repo, {
     get(target, prop) {
+      if (prop === "find") {
+        return async (url: AutomergeUrl) => {
+          const handle = await target.find(url);
+          if (url !== wsUrl) {
+            queueMicrotask(async () => {
+              try {
+                await handle.whenReady();
+                recordInWorkspace(url, handle.heads());
+              } catch { /* skip inaccessible docs */ }
+            });
+          }
+          return handle;
+        };
+      }
       if (prop === "create") {
         return (...args: Parameters<Repo["create"]>) => {
           const newHandle = target.create(...args);
-          // Defer workspace update to avoid any sync/async confusion with DocHandle
           queueMicrotask(async () => {
             try {
-              const wsHandle = await target.find<WorkspaceDoc>(workspaceUrl);
-              wsHandle.change((d) => {
-                if (!d.urls.includes(newHandle.url as AutomergeUrl)) {
-                  d.urls.push(newHandle.url as AutomergeUrl);
-                }
-              });
-            } catch {
-              // ignore — workspace add is best-effort
-            }
+              await newHandle.whenReady();
+              recordInWorkspace(newHandle.url as AutomergeUrl, newHandle.heads());
+            } catch { /* best-effort */ }
           });
           return newHandle;
         };
@@ -388,12 +405,12 @@ function buildSkillDescriptions(skills: SkillInfo[]): string {
 
 async function buildWorkspaceContext(repo: Repo, workspaceUrl: AutomergeUrl): Promise<string> {
   try {
-    const wsHandle = await repo.find<WorkspaceDoc>(workspaceUrl);
+    const wsHandle = await repo.find<LLMWorkspaceDoc>(workspaceUrl);
     const wsDoc = await wsHandle.doc();
-    if (!wsDoc?.urls?.length) return "";
+    if (!wsDoc?.entries || !Object.keys(wsDoc.entries).length) return "";
 
     const lines: string[] = [];
-    for (const url of wsDoc.urls) {
+    for (const url of Object.keys(wsDoc.entries) as AutomergeUrl[]) {
       try {
         const docHandle = await repo.find<any>(url);
         const doc = await docHandle.doc();

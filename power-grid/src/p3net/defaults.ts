@@ -26,7 +26,9 @@ export default (repo, api) => ({
         workspaceHandle.change(d => {
           d['@patchwork'] = { type: 'llm-workspace' }
           d.title = 'net process'
-          d.urls = [copyHandle.url, prompts.state.documentUrl]
+          d.entries = {}
+          d.entries[copyHandle.url] = { addedAt: [] }
+          d.entries[prompts.state.documentUrl] = { addedAt: [] }
         })
 
         const instruction = [
@@ -88,8 +90,8 @@ export default (repo, api) => ({
 
         return {
           produce: [
-            { state: { type: 'prompt', documentUrl: wsDoc.urls[1] }, toPlace: 'prompts' },
-            { state: { type: 'solution', documentUrl: wsDoc.urls[0] }, toPlace: 'solutions' },
+            { state: { type: 'prompt', documentUrl: Object.keys(wsDoc.entries)[1] }, toPlace: 'prompts' },
+            { state: { type: 'solution', documentUrl: Object.keys(wsDoc.entries)[0] }, toPlace: 'solutions' },
           ],
         }
       },

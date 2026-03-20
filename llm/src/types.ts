@@ -27,10 +27,14 @@ export type LLMChatDoc = {
   runs: AutomergeUrl[];
 };
 
+export type WorkspaceEntry = {
+  addedAt: string[];
+};
+
 export type LLMWorkspaceDoc = {
   '@patchwork': { type: 'llm-workspace' };
   title: string;
-  urls: AutomergeUrl[];
+  entries: Record<string, WorkspaceEntry>;
 };
 
 export type OutputBlock =

@@ -113,7 +113,9 @@ function BuildPanelUI(props: { handle: DocHandle<PaperDoc>; element: HTMLElement
       workspaceHandle.change((d) => {
         d['@patchwork'] = { type: 'llm-workspace' };
         d.title = 'Paper build workspace';
-        d.urls = [paperUrl, __SKILLS_FOLDER_URL__ as AutomergeUrl];
+        d.entries = {};
+        d.entries[paperUrl] = { addedAt: [] };
+        d.entries[__SKILLS_FOLDER_URL__ as AutomergeUrl] = { addedAt: [] };
       });
 
       const runHandle = repo.create<LLMDoc>();
