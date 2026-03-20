@@ -104,8 +104,21 @@ export async function runLLMProcess(repo: Repo, processDocUrl: AutomergeUrl, sig
     return await import(/* @vite-ignore */ skill.importUrl);
   };
 
+  const getSkillURL = (name: string): string => {
+    const skill = skills.find((s) => s.name === name);
+    if (!skill) {
+      const available = skills.map((s) => s.name).join(", ");
+      throw new Error(`Skill not found: "${name}". Available: [${available}]`);
+    }
+    if (!skill.importUrl) {
+      throw new Error(`Skill "${name}" has no importable API module.`);
+    }
+    return skill.importUrl;
+  };
+
   (globalThis as any).loadSkillDocs = loadSkillDocs;
   (globalThis as any).importSkillApi = importSkillApi;
+  (globalThis as any).getSkillURL = getSkillURL;
   (globalThis as any).__llmCapturedConsole = capturedConsole;
   (globalThis as any).repo = wrapRepoForLLM(repo, doc.workspaceUrl);
 
@@ -147,6 +160,7 @@ export async function runLLMProcessRaw(repo: Repo, processDocUrl: AutomergeUrl, 
 
   (globalThis as any).loadSkillDocs = undefined;
   (globalThis as any).importSkillApi = undefined;
+  (globalThis as any).getSkillURL = undefined;
   (globalThis as any).__llmCapturedConsole = capturedConsole;
   (globalThis as any).repo = repo;
 
@@ -351,17 +365,40 @@ function wrapRepoForLLM(repo: Repo, workspaceUrl: AutomergeUrl | undefined): Rep
   if (!workspaceUrl) return repo;
   const wsUrl: AutomergeUrl = workspaceUrl;
 
-  function recordInWorkspace(url: AutomergeUrl, heads: string[]) {
+  function ensureEntryExists(url: AutomergeUrl) {
     queueMicrotask(async () => {
       try {
         const wsHandle = await repo.find<LLMWorkspaceDoc>(wsUrl);
+        await wsHandle.whenReady();
         wsHandle.change((d) => {
           if (!(url in d.entries)) {
-            d.entries[url] = { addedAt: [...heads] };
+            d.entries[url] = { url, changedAt: null };
           }
         });
       } catch { /* best-effort */ }
     });
+  }
+
+  function wrapHandle(handle: import("@automerge/automerge-repo").DocHandle<any>, url: AutomergeUrl) {
+    return {
+      url: handle.url,
+      doc: () => handle.doc(),
+      change: (fn: (doc: any) => void) => {
+        const preHeads = handle.heads();
+        handle.change(fn);
+        queueMicrotask(async () => {
+          try {
+            const wsHandle = await repo.find<LLMWorkspaceDoc>(wsUrl);
+            await wsHandle.whenReady();
+            wsHandle.change((d) => {
+              if (d.entries[url]?.changedAt === null) {
+                d.entries[url].changedAt = preHeads;
+              }
+            });
+          } catch { /* best-effort */ }
+        });
+      },
+    };
   }
 
   return new Proxy(repo, {
@@ -369,27 +406,17 @@ function wrapRepoForLLM(repo: Repo, workspaceUrl: AutomergeUrl | undefined): Rep
       if (prop === "find") {
         return async (url: AutomergeUrl) => {
           const handle = await target.find(url);
-          if (url !== wsUrl) {
-            queueMicrotask(async () => {
-              try {
-                await handle.whenReady();
-                recordInWorkspace(url, handle.heads());
-              } catch { /* skip inaccessible docs */ }
-            });
-          }
-          return handle;
+          if (url === wsUrl) return handle;
+          ensureEntryExists(url);
+          return wrapHandle(handle, url);
         };
       }
       if (prop === "create") {
         return (...args: Parameters<Repo["create"]>) => {
           const newHandle = target.create(...args);
-          queueMicrotask(async () => {
-            try {
-              await newHandle.whenReady();
-              recordInWorkspace(newHandle.url as AutomergeUrl, newHandle.heads());
-            } catch { /* best-effort */ }
-          });
-          return newHandle;
+          const url = newHandle.url as AutomergeUrl;
+          ensureEntryExists(url);
+          return wrapHandle(newHandle, url);
         };
       }
       const value = (target as any)[prop];
@@ -456,7 +483,7 @@ export function buildLLMMessages(doc: LLMDoc, skillDescriptions?: string, worksp
   }
 
   if (skillDescriptions) {
-    systemPrompt += `\n\nAvailable skills:\n${skillDescriptions}\n\nUse \`await loadSkillDocs('name')\` to read a skill's documentation. Use \`await importSkillApi('name')\` to import its runtime API.`;
+    systemPrompt += `\n\nAvailable skills:\n${skillDescriptions}\n\nUse \`await loadSkillDocs('name')\` to read a skill's documentation. Use \`await importSkillApi('name')\` to import its runtime API. Use \`getSkillURL('name')\` to get a skill's import URL for embedding in prompts.`;
   }
 
   messages.push({ role: "system", content: systemPrompt });

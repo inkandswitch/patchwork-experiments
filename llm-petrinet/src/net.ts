@@ -1,8 +1,9 @@
-import type { DocHandle, Repo } from '@automerge/automerge-repo';
+import * as Automerge from '@automerge/automerge';
+import type { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo';
 import { getRegistry } from '@inkandswitch/patchwork-plugins';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function createMarkdownCopy(repo: Repo, content: string): Promise<{ url: string }> {
+export async function createMarkdownDoc(repo: Repo, content: string): Promise<{ url: string }> {
   const { createDocOfDatatype2 } = await import('@inkandswitch/patchwork-plugins');
   const markdownDatatype = (await getRegistry('patchwork:datatype').load('markdown')) as any;
   const h = await createDocOfDatatype2(markdownDatatype, repo, (d: Record<string, unknown>) => {
@@ -10,14 +11,49 @@ export async function createMarkdownCopy(repo: Repo, content: string): Promise<{
   });
   return { url: h.url as string };
 }
+
+export async function createDocumentCopy(
+  repo: Repo,
+  sourceHandle: DocHandle<Record<string, unknown>>,
+): Promise<DocHandle<Record<string, unknown>>> {
+  const doc = await sourceHandle.doc();
+  if (!doc) throw new Error('Source document is empty');
+
+  const newHandle = repo.import(Automerge.save(Automerge.clone(doc))) as DocHandle<Record<string, unknown>>;
+
+  newHandle.change((d) => {
+    const meta = d['@patchwork'] as Record<string, unknown> | undefined;
+    if (meta) {
+      meta['copyOf'] = sourceHandle.url;
+      delete meta['copies'];
+    } else {
+      d['@patchwork'] = { copyOf: sourceHandle.url };
+    }
+  });
+
+  sourceHandle.change((d) => {
+    const meta = d['@patchwork'] as Record<string, unknown> | undefined;
+    if (meta) {
+      if (Array.isArray(meta['copies'])) {
+        (meta['copies'] as unknown[]).push(newHandle.url);
+      } else {
+        meta['copies'] = [newHandle.url];
+      }
+    } else {
+      d['@patchwork'] = { copies: [newHandle.url] };
+    }
+  });
+
+  return newHandle;
+}
 import type { NetDef, ReadonlyToken } from './lib';
 import type { LLMPetriNetDoc } from './types';
 import { runLLMProcessRaw } from '../../llm/src/llm-process';
 
 // ─── Default prompt content ───────────────────────────────────────────────────
 
-export const DEFAULT_OPTIMIZER_PROMPT = 'The nervous butler who discovered the body and is hiding something.';
-export const DEFAULT_EVALUATOR_PROMPT = 'Favour the version that introduces the most chilling new revelation or casts suspicion onto a fresh suspect.';
+export const DEFAULT_OPTIMIZER_PROMPT = 'TODO: describe the optimizer approach';
+export const DEFAULT_EVALUATOR_PROMPT = 'TODO: describe the evaluation criteria';
 
 // ─── Petri net script-execution system prompt (no skills, no workspace) ───────
 
@@ -44,46 +80,30 @@ export const PETRINET_SYSTEM_PROMPT = [
 // ─── Default system prompt templates ──────────────────────────────────────────
 
 export const DEFAULT_OPTIMIZER_SYSTEM_PROMPT = [
-  'You are a suspect in a murder mystery. Here is your character:',
+  'Task: $PROMPT',
   '',
-  '$PROMPT',
+  'Document: $DOC_URL',
   '',
-  '---',
-  '',
-  'The case file you are contributing to is at: $DOC_URL',
-  '',
-  "Your task: Read the current account, then append exactly ONE new beat — a single line of dialogue or action — that your character would say or do next. Think about what you know, what you're hiding, and what you might let slip.",
-  '',
-  'Step 1: Read the case file.',
+  'Step 1: Read the document.',
   '```',
   'const handle = await repo.find("$DOC_URL")',
   'const doc = await handle.doc()',
-  'const content = doc.content',
-  'return content',
+  'return doc.content',
   '```',
   '',
-  'Step 2: Decide what your character does next. Then append it.',
+  'Step 2: Write your solution to the document using the raw Automerge API:',
   '```',
   'const { updateText } = await import("@automerge/automerge-repo")',
   'const handle = await repo.find("$DOC_URL")',
   'const doc = await handle.doc()',
-  'const myLine = "\\n[CharacterName]: [what they say or do]"',
-  'handle.change(d => updateText(d, ["content"], doc.content + myLine))',
+  'handle.change(d => updateText(d, ["content"], "your improved content here"))',
   '```',
-  '',
-  "Replace [CharacterName] with your character's name. Write only the single line — no stage directions, no narration, no explanation.",
 ].join('\n');
 
 export const DEFAULT_EVALUATOR_SYSTEM_PROMPT = [
-  'You are the lead detective sifting through witness accounts. Here is your approach:',
+  'Criteria: $PROMPT',
   '',
-  '$PROMPT',
-  '',
-  '---',
-  '',
-  'Each suspect has contributed a line to the case file. Here are the resulting versions:',
-  '',
-  'Step 1: Read all versions.',
+  'Step 1: Read all solution documents.',
   '```',
   'const urls = $SOLUTION_URLS',
   'const reads = await Promise.all(urls.map(url =>',
@@ -92,7 +112,7 @@ export const DEFAULT_EVALUATOR_SYSTEM_PROMPT = [
   'return reads.map(r => `--- ${r.url} ---\\n${r.content}`).join("\\n\\n")',
   '```',
   '',
-  'Step 2: Identify which continuation best deepens the mystery or casts the most compelling suspicion.',
+  'Step 2: Pick the best version based on the criteria above.',
   'Respond with ONLY the URL of the winning solution — a single line, nothing else.',
 ].join('\n');
 
@@ -110,7 +130,7 @@ export function createNet(repo: Repo, handle: DocHandle<LLMPetriNetDoc>): NetDef
         to: ['solutions', 'optimizer'],
 
         async onConsumedTokens({ problems }, { optimizer }, repo) {
-          const storyContent = await readDocContent(repo, problems.state.documentUrl);
+          const sourceHandle = await repo.find(problems.state.documentUrl as AutomergeUrl) as DocHandle<Record<string, unknown>>;
           const doc = await handle.doc();
           const systemPromptUrl = doc?.systemPromptUrls?.optimizer;
           const systemTemplate = systemPromptUrl
@@ -119,11 +139,11 @@ export function createNet(repo: Repo, handle: DocHandle<LLMPetriNetDoc>): NetDef
           const produce = [];
           const processUrls: string[] = [];
 
-          console.log(`[llm-petrinet] optimizing: problem doc=${problems.state.documentUrl}, story length=${storyContent.length}, optimizers=${optimizer.length}`);
+          console.log(`[llm-petrinet] optimizing: problem doc=${problems.state.documentUrl}, optimizers=${optimizer.length}`);
 
           for (const opt of optimizer) {
             const charPrompt = await readDocContent(repo, opt.state.documentUrl);
-            const { copyUrl, processUrl } = await launchOptimizerRun(repo, storyContent, charPrompt, systemTemplate);
+            const { copyUrl, processUrl } = await launchOptimizerRun(repo, sourceHandle, charPrompt, systemTemplate);
             console.log(`[llm-petrinet] optimizer ${opt.id}: charPrompt doc=${opt.state.documentUrl}, copyUrl=${copyUrl}, processUrl=${processUrl}`);
             produce.push({ state: { type: 'solution', documentUrl: copyUrl }, toPlace: 'solutions' });
             produce.push({ state: opt.state, toPlace: 'optimizer' });
@@ -196,7 +216,7 @@ export function createNet(repo: Repo, handle: DocHandle<LLMPetriNetDoc>): NetDef
         label: 'Problem',
         color: '#7c3aed',
         async create() {
-          const { url } = await createMarkdownCopy(repo, '# The Scene of the Crime\n\n');
+          const { url } = await createMarkdownDoc(repo, '# The Scene of the Crime\n\n');
           return { type: 'problem', documentUrl: url };
         },
       },
@@ -205,7 +225,7 @@ export function createNet(repo: Repo, handle: DocHandle<LLMPetriNetDoc>): NetDef
         label: 'Optimizer',
         color: '#0891b2',
         async create() {
-          const { url } = await createMarkdownCopy(repo, DEFAULT_OPTIMIZER_PROMPT);
+          const { url } = await createMarkdownDoc(repo, DEFAULT_OPTIMIZER_PROMPT);
           return { type: 'optimizer', documentUrl: url };
         },
       },
@@ -214,7 +234,7 @@ export function createNet(repo: Repo, handle: DocHandle<LLMPetriNetDoc>): NetDef
         label: 'Evaluator',
         color: '#d97706',
         async create() {
-          const { url } = await createMarkdownCopy(repo, DEFAULT_EVALUATOR_PROMPT);
+          const { url } = await createMarkdownDoc(repo, DEFAULT_EVALUATOR_PROMPT);
           return { type: 'evaluator', documentUrl: url };
         },
       },
@@ -249,12 +269,13 @@ async function readDocContent(repo: Repo, documentUrl: string): Promise<string> 
 
 async function launchOptimizerRun(
   repo: Repo,
-  storyContent: string,
+  sourceHandle: DocHandle<Record<string, unknown>>,
   charPrompt: string,
   systemTemplate: string,
 ): Promise<{ copyUrl: string; processUrl: string }> {
-  const { url: copyUrl } = await createMarkdownCopy(repo, storyContent);
-  console.log(`[llm-petrinet] launchOptimizerRun: created copy=${copyUrl}, storyContent length=${storyContent.length}`);
+  const copyHandle = await createDocumentCopy(repo, sourceHandle);
+  const copyUrl = copyHandle.url as string;
+  console.log(`[llm-petrinet] launchOptimizerRun: created copy=${copyUrl}`);
   const prompt = buildOptimizerPrompt(systemTemplate, charPrompt, copyUrl);
 
   const processHandle = repo.create<Record<string, unknown>>();
@@ -290,7 +311,11 @@ async function launchEvaluatorRun(
   return { processUrl: processHandle.url as string };
 }
 
-function buildOptimizerPrompt(systemPrompt: string, characterPrompt: string, docUrl: string): string {
+function buildOptimizerPrompt(
+  systemPrompt: string,
+  characterPrompt: string,
+  docUrl: string,
+): string {
   return systemPrompt
     .replace(/\$PROMPT/g, characterPrompt)
     .replace(/\$DOC_URL/g, docUrl);

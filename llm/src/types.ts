@@ -1,4 +1,5 @@
 import type { AutomergeUrl } from '@automerge/automerge-repo';
+import type { Heads } from '@automerge/automerge';
 
 export type LLMDoc = {
   '@patchwork': { type: 'llm' };
@@ -28,7 +29,8 @@ export type LLMChatDoc = {
 };
 
 export type WorkspaceEntry = {
-  addedAt: string[];
+  url: AutomergeUrl;
+  changedAt: Heads | null;
 };
 
 export type LLMWorkspaceDoc = {

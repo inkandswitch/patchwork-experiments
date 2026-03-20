@@ -35,18 +35,7 @@ export const LLMChatDatatype: DatatypeImplementation<LLMChatDoc> = {
       ws["@patchwork"] = { type: "llm-workspace" };
       ws.title = "Workspace";
       ws.entries = {};
-      ws.entries[skillsFolderUrl] = { addedAt: [] };
-    });
-    queueMicrotask(async () => {
-      try {
-        const h = await repo.find(skillsFolderUrl);
-        await h.whenReady();
-        wsHandle.change((ws) => {
-          if (ws.entries[skillsFolderUrl]) {
-            ws.entries[skillsFolderUrl].addedAt = [...h.heads()];
-          }
-        });
-      } catch { /* best-effort */ }
+      ws.entries[skillsFolderUrl] = { url: skillsFolderUrl, changedAt: null };
     });
     doc.workspaceUrl = wsHandle.url;
     doc.runs = [];

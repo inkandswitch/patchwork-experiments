@@ -10,7 +10,7 @@ import {
   DEFAULT_EVALUATOR_SYSTEM_PROMPT,
   DEFAULT_OPTIMIZER_PROMPT,
   DEFAULT_EVALUATOR_PROMPT,
-  createMarkdownCopy,
+  createMarkdownDoc,
 } from './net';
 import './index.css';
 
@@ -53,7 +53,7 @@ function LLMPetriNetConfig({ handle }: { handle: DocHandle<LLMPetriNetDoc> }) {
     if (!d.systemPromptUrls?.optimizer && !initializingPrompts.has('optimizer')) {
       initializingPrompts.add('optimizer');
       const content = d.systemPrompts?.optimizer ?? DEFAULT_OPTIMIZER_SYSTEM_PROMPT;
-      createMarkdownCopy(repo, content).then(({ url }) => {
+      createMarkdownDoc(repo, content).then(({ url }) => {
         handle.change((dd) => {
           if (!dd.systemPromptUrls) dd.systemPromptUrls = {};
           if (!dd.systemPromptUrls.optimizer) dd.systemPromptUrls.optimizer = url;
@@ -63,7 +63,7 @@ function LLMPetriNetConfig({ handle }: { handle: DocHandle<LLMPetriNetDoc> }) {
     if (!d.systemPromptUrls?.evaluator && !initializingPrompts.has('evaluator')) {
       initializingPrompts.add('evaluator');
       const content = d.systemPrompts?.evaluator ?? DEFAULT_EVALUATOR_SYSTEM_PROMPT;
-      createMarkdownCopy(repo, content).then(({ url }) => {
+      createMarkdownDoc(repo, content).then(({ url }) => {
         handle.change((dd) => {
           if (!dd.systemPromptUrls) dd.systemPromptUrls = {};
           if (!dd.systemPromptUrls.evaluator) dd.systemPromptUrls.evaluator = url;
@@ -98,42 +98,8 @@ function LLMPetriNetConfig({ handle }: { handle: DocHandle<LLMPetriNetDoc> }) {
       <div class="p3n-config-body">
         <Show when={doc()}>
           {(currentDoc) => (
-            <Show
-              when={activeTab() === 'optimizer'}
-              fallback={
-                <Show
-                  when={activeTab() === 'evaluators'}
-                  fallback={<ProblemTab doc={currentDoc()} handle={handle} />}
-                >
-                  <>
-                    <SystemPromptView
-                      url={currentDoc().systemPromptUrls?.evaluator}
-                      variables="$PROMPT, $SOLUTION_URLS, $TARGET_URL"
-                    />
-                    <TokenList
-                      label="Evaluator"
-                      tokens={(currentDoc().tokens?.evaluators ?? []) as DocToken[]}
-                      color="#d97706"
-                      addLabel="Add evaluator"
-                      onAdd={async () => {
-                        if (!repo) return;
-                        const { url } = await createMarkdownCopy(repo, DEFAULT_EVALUATOR_PROMPT);
-                        handle.change((d) => {
-                          if (!d.tokens.evaluators) d.tokens.evaluators = [];
-                          d.tokens.evaluators.push({ id: makeId(), state: { type: 'evaluator', documentUrl: url } });
-                        });
-                      }}
-                      onDelete={(idx) => {
-                        handle.change((d) => {
-                          d.tokens.evaluators?.splice(idx, 1);
-                        });
-                      }}
-                    />
-                  </>
-                </Show>
-              }
-            >
-              <>
+            <>
+              <Show when={activeTab() === 'optimizer'}>
                 <SystemPromptView
                   url={currentDoc().systemPromptUrls?.optimizer}
                   variables="$PROMPT, $DOC_URL"
@@ -145,7 +111,7 @@ function LLMPetriNetConfig({ handle }: { handle: DocHandle<LLMPetriNetDoc> }) {
                   addLabel="Add optimizer"
                   onAdd={async () => {
                     if (!repo) return;
-                    const { url } = await createMarkdownCopy(repo, DEFAULT_OPTIMIZER_PROMPT);
+                    const { url } = await createMarkdownDoc(repo, DEFAULT_OPTIMIZER_PROMPT);
                     handle.change((d) => {
                       if (!d.tokens.optimizer) d.tokens.optimizer = [];
                       d.tokens.optimizer.push({ id: makeId(), state: { type: 'optimizer', documentUrl: url } });
@@ -157,8 +123,36 @@ function LLMPetriNetConfig({ handle }: { handle: DocHandle<LLMPetriNetDoc> }) {
                     });
                   }}
                 />
-              </>
-            </Show>
+              </Show>
+              <Show when={activeTab() === 'evaluators'}>
+                <SystemPromptView
+                  url={currentDoc().systemPromptUrls?.evaluator}
+                  variables="$PROMPT, $SOLUTION_URLS, $TARGET_URL"
+                />
+                <TokenList
+                  label="Evaluator"
+                  tokens={(currentDoc().tokens?.evaluators ?? []) as DocToken[]}
+                  color="#d97706"
+                  addLabel="Add evaluator"
+                  onAdd={async () => {
+                    if (!repo) return;
+                    const { url } = await createMarkdownDoc(repo, DEFAULT_EVALUATOR_PROMPT);
+                    handle.change((d) => {
+                      if (!d.tokens.evaluators) d.tokens.evaluators = [];
+                      d.tokens.evaluators.push({ id: makeId(), state: { type: 'evaluator', documentUrl: url } });
+                    });
+                  }}
+                  onDelete={(idx) => {
+                    handle.change((d) => {
+                      d.tokens.evaluators?.splice(idx, 1);
+                    });
+                  }}
+                />
+              </Show>
+              <Show when={activeTab() === 'problem'}>
+                <ProblemTab doc={currentDoc()} handle={handle} />
+              </Show>
+            </>
           )}
         </Show>
       </div>

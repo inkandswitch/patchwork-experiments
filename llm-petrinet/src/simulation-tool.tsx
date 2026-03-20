@@ -35,6 +35,15 @@ function readTokenInstance(doc: LLMPetriNetDoc, tokenId: string): TokenInstance 
   return undefined;
 }
 
+function readPlaceSiblingIds(doc: LLMPetriNetDoc, tokenId: string): string[] {
+  for (const placeTokens of Object.values(doc.tokens ?? {})) {
+    if (placeTokens.some((t) => t.id === tokenId)) {
+      return placeTokens.map((t) => t.id);
+    }
+  }
+  return [tokenId];
+}
+
 function removeTokenFromDoc(doc: LLMPetriNetDoc, tokenId: string): void {
   for (const placeId of Object.keys(doc.tokens ?? {})) {
     const arr = doc.tokens[placeId];
@@ -202,6 +211,12 @@ function LLMPetriNetSimulation({ handle }: { handle: DocHandle<LLMPetriNetDoc> }
               if (!d || !id) return undefined;
               return readTokenInstance(d, id);
             };
+            const siblingIds = () => {
+              const d = doc();
+              const id = selectedTokenId();
+              if (!d || !id) return [id ?? ''];
+              return readPlaceSiblingIds(d, id);
+            };
             return (
               <Show when={inst()}>
                 {(token) => (
@@ -209,6 +224,8 @@ function LLMPetriNetSimulation({ handle }: { handle: DocHandle<LLMPetriNetDoc> }
                     tokenId={selectedTokenId()!}
                     state={token().state}
                     def={net()?.def}
+                    siblingIds={siblingIds()}
+                    onNavigate={setSelectedTokenId}
                     onClose={() => setSelectedTokenId(null)}
                     onDelete={() => handleDelete(selectedTokenId()!)}
                     onChange={(key, value) => {
@@ -238,6 +255,8 @@ function TokenSidebar(props: {
   tokenId: string;
   state: TokenState;
   def: import('./lib').NetDef | undefined;
+  siblingIds: string[];
+  onNavigate: (id: string) => void;
   onClose: () => void;
   onDelete: () => void;
   onChange: (key: string, value: unknown) => void;
@@ -246,14 +265,35 @@ function TokenSidebar(props: {
   const typeLabel = () =>
     props.def?.tokenTypes.find((t) => t.id === props.state.type)?.label ?? String(props.state.type ?? props.tokenId);
 
+  const currentIndex = () => props.siblingIds.indexOf(props.tokenId);
+
+  function navigatePrev() {
+    const idx = currentIndex();
+    const prev = props.siblingIds[(idx - 1 + props.siblingIds.length) % props.siblingIds.length];
+    props.onNavigate(prev);
+  }
+
+  function navigateNext() {
+    const idx = currentIndex();
+    const next = props.siblingIds[(idx + 1) % props.siblingIds.length];
+    props.onNavigate(next);
+  }
+
   return (
     <div class="p3n-sidebar">
       <div class="p3n-sidebar-header">
-        <div class="p3n-token p3n-token-static" style={{ background: color(), 'flex-shrink': '0' }} />
+        <div class="p3n-token p3n-token-static" style={{ background: color() }} />
         <div class="p3n-sidebar-title-wrap">
           <span class="p3n-sidebar-type">{typeLabel()}</span>
           <span class="p3n-sidebar-id">{props.tokenId}</span>
         </div>
+        <Show when={props.siblingIds.length > 1}>
+          <div class="p3n-sidebar-stepper">
+            <button class="p3n-sidebar-stepper-btn" onClick={navigatePrev} aria-label="Previous">‹</button>
+            <span class="p3n-sidebar-stepper-count">{currentIndex() + 1} / {props.siblingIds.length}</span>
+            <button class="p3n-sidebar-stepper-btn" onClick={navigateNext} aria-label="Next">›</button>
+          </div>
+        </Show>
         <button class="p3n-sidebar-close" onClick={props.onClose} aria-label="Close">✕</button>
       </div>
       <div class="p3n-sidebar-body">

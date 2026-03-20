@@ -4,7 +4,6 @@ import {
   RepoContext,
   useDocument,
   useDocHandle,
-  useRepo,
   createDocumentProjection,
 } from '@automerge/automerge-repo-solid-primitives';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
@@ -31,29 +30,18 @@ export const LLMWorkspaceTool: ToolRender = (handle, element) => {
 // ─── Workspace view ───────────────────────────────────────────────────────────
 
 export function LLMWorkspaceView(props: { url: AutomergeUrl }) {
-  const repo = useRepo();
   const [doc, handle] = useDocument<LLMWorkspaceDoc>(() => props.url);
   const [newUrl, setNewUrl] = createSignal('');
   const [isDragOver, setIsDragOver] = createSignal(false);
 
-  async function addUrls(urls: string[]) {
+  function addUrls(urls: string[]) {
     const entries = doc()?.entries ?? {};
     const toAdd = urls.filter((u) => u.startsWith('automerge:') && !(u in entries));
     if (toAdd.length === 0) return;
 
-    const headsMap = new Map<string, string[]>();
-    for (const u of toAdd) {
-      try {
-        const h = await repo.find(u as AutomergeUrl);
-        await h.whenReady();
-        headsMap.set(u, h.heads());
-      } catch { /* skip inaccessible docs */ }
-    }
-
     handle()?.change((d) => {
       for (const u of toAdd) {
-        const heads = headsMap.get(u);
-        d.entries[u] = { addedAt: heads ? [...heads] : [] };
+        d.entries[u] = { url: u as AutomergeUrl, changedAt: null };
       }
     });
   }

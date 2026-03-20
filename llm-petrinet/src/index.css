@@ -133,15 +133,14 @@
     z-index: 1;
   }
 
-  .p3n-place.p3n-place-active { border-color: #3b82f6; background: #eff6ff; }
 
   .p3n-place-tokens {
+    position: relative;
+    width: 100%;
+    height: 100%;
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
     justify-content: center;
-    gap: 3px;
-    padding: 6px;
     pointer-events: none;
   }
 
@@ -186,20 +185,20 @@
   /* ── Token dot ───────────────────────────────────────────────────── */
 
   .p3n-token {
+    position: absolute;
     width: 14px;
     height: 14px;
     border-radius: 50%;
     border: 1.5px solid rgba(255, 255, 255, 0.5);
     cursor: grab;
-    flex-shrink: 0;
     pointer-events: all;
     box-sizing: border-box;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
   }
 
   .p3n-token:active { cursor: grabbing; }
-  .p3n-token-static { cursor: default; pointer-events: none; }
-  .p3n-token-selected { outline: 3px solid #f59e0b; outline-offset: 2px; }
+  .p3n-token-static { position: static; flex-shrink: 0; cursor: default; pointer-events: none; }
+  .p3n-token-selected { outline: 3px solid #94a3b8; outline-offset: 2px; }
 
   /* ── Sidebar ─────────────────────────────────────────────────────── */
 
@@ -235,6 +234,16 @@
     border-radius: 3px; line-height: 1; flex-shrink: 0;
   }
   .p3n-sidebar-close:hover { background: #f1f5f9; color: #475569; }
+
+  .p3n-sidebar-stepper {
+    display: flex; align-items: center; gap: 2px; flex-shrink: 0;
+  }
+  .p3n-sidebar-stepper-btn {
+    background: none; border: none; cursor: pointer; padding: 1px 5px;
+    font-size: 14px; color: #64748b; border-radius: 3px; line-height: 1;
+  }
+  .p3n-sidebar-stepper-btn:hover { background: #f1f5f9; color: #1e293b; }
+  .p3n-sidebar-stepper-count { font-size: 11px; color: #94a3b8; white-space: nowrap; }
 
   .p3n-sidebar-body { flex: 1; overflow-y: auto; padding: 8px 0; }
   .p3n-sidebar-empty { padding: 10px 12px; color: #94a3b8; font-size: 11px; }
@@ -343,17 +352,22 @@
 
   .p3n-config-body {
     flex: 1;
-    overflow-y: auto;
+    min-height: 0;
+    overflow: hidden;
     padding: 12px;
     display: flex;
     flex-direction: column;
     gap: 12px;
+    box-sizing: border-box;
   }
 
   .p3n-token-list {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    flex-shrink: 0;
+    overflow-y: auto;
+    max-height: calc(100% - 80px - 12px);
   }
 
   .p3n-token-card {
@@ -445,6 +459,22 @@
   }
   .p3n-add-token-btn:hover { border-color: #94a3b8; color: #334155; background: #f8fafc; }
 
+  .p3n-skill-name-input {
+    flex: 1;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    color: #1e293b;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    padding: 2px 4px;
+    outline: none;
+    min-width: 0;
+  }
+  .p3n-skill-name-input:hover { border-color: #e2e8f0; background: #fff; }
+  .p3n-skill-name-input:focus { border-color: #3b82f6; background: #fff; }
+
   /* ── System prompt card ──────────────────────────────────────────── */
 
   .p3n-system-prompt-card {
@@ -452,6 +482,10 @@
     border: 1px solid #e2e8f0;
     border-radius: 6px;
     overflow: hidden;
+    flex: 1;
+    min-height: 80px;
+    display: flex;
+    flex-direction: column;
   }
 
   .p3n-system-prompt-header {
@@ -487,7 +521,8 @@
   .p3n-system-prompt-view {
     display: block;
     width: 100%;
-    height: 280px;
+    flex: 1;
+    min-height: 0;
     border: none;
   }
 

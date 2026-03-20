@@ -89,6 +89,25 @@ export type DragPayload =
 
 export const DRAG_KEY = 'application/p3n-token';
 
+// ─── Token jitter ─────────────────────────────────────────────────────────────
+
+const TOKEN_R = 7;
+const JITTER_R = 10;
+
+function docOffset(documentUrl: string | undefined): { dx: number; dy: number } {
+  if (!documentUrl) return { dx: 0, dy: 0 };
+  let h = 0;
+  for (let i = 0; i < documentUrl.length; i++) {
+    h = (h * 31 + documentUrl.charCodeAt(i)) >>> 0;
+  }
+  const angle = ((h % 10000) / 10000) * Math.PI * 2;
+  const r = (((h >>> 16) % 100) / 100) * JITTER_R;
+  return {
+    dx: Math.round(Math.cos(angle) * r),
+    dy: Math.round(Math.sin(angle) * r),
+  };
+}
+
 // ─── Animation helpers ────────────────────────────────────────────────────────
 
 function dist2d(ax: number, ay: number, bx: number, by: number): number {
@@ -106,7 +125,7 @@ function animateEl(el: HTMLElement, keyframes: Keyframe[], durationMs: number): 
 function createFlyingToken(container: HTMLElement, color: string, cx: number, cy: number, opacity = 1): HTMLElement {
   const el = document.createElement('div');
   el.className = 'p3n-flying-token';
-  el.style.cssText = `background:${color};opacity:${opacity};transform:translate(${cx - 7}px,${cy - 7}px)`;
+  el.style.cssText = `background:${color};opacity:${opacity};transform:translate(${cx - TOKEN_R}px,${cy - TOKEN_R}px)`;
   container.appendChild(el);
   return el;
 }
@@ -152,8 +171,11 @@ function AnimationLayer(props: AnimLayerProps) {
 
       const inputEls = firing.inputs.map((inp) => {
         const srcPos = props.layout.get(inp.placeId);
-        const sx = srcPos ? srcPos.x + props.offsetX : tx;
-        const sy = srcPos ? srcPos.y + props.offsetY : ty;
+        const baseX = srcPos ? srcPos.x + props.offsetX : tx;
+        const baseY = srcPos ? srcPos.y + props.offsetY : ty;
+        const { dx, dy } = docOffset(inp.state.documentUrl);
+        const sx = baseX + dx;
+        const sy = baseY + dy;
         return { el: make(createFlyingToken(c, resolveTokenColor(inp.state, props.def), sx, sy)), sx, sy };
       });
 
@@ -164,8 +186,8 @@ function AnimationLayer(props: AnimLayerProps) {
           const d = dist2d(sx, sy, tx, ty);
           const duration = Math.max(200, (d / ANIM_SPEED) * 1000);
           return animateEl(el, [
-            { transform: `translate(${sx - 7}px,${sy - 7}px)` },
-            { transform: `translate(${tx - 7}px,${ty - 7}px)` },
+            { transform: `translate(${sx - TOKEN_R}px,${sy - TOKEN_R}px)` },
+            { transform: `translate(${tx - TOKEN_R}px,${ty - TOKEN_R}px)` },
           ], duration);
         }),
       );
@@ -181,10 +203,18 @@ function AnimationLayer(props: AnimLayerProps) {
 
       if (cancelled) return;
 
-      const outputEls = firing.outputs.map((out) => ({
-        el: make(createFlyingToken(c, resolveTokenColor(out.state, props.def), tx, ty, 0)),
-        out,
-      }));
+      const outputEls = firing.outputs.map((out) => {
+        const dstPos = props.layout.get(out.placeId);
+        const baseX = dstPos ? dstPos.x + props.offsetX : tx;
+        const baseY = dstPos ? dstPos.y + props.offsetY : ty;
+        const { dx, dy } = docOffset(out.state.documentUrl);
+        return {
+          el: make(createFlyingToken(c, resolveTokenColor(out.state, props.def), tx, ty, 0)),
+          out,
+          finalX: baseX + dx,
+          finalY: baseY + dy,
+        };
+      });
 
       await Promise.all([
         ...inputEls.map(({ el }) => animateEl(el, [{ opacity: 1 }, { opacity: 0 }], 200)),
@@ -198,15 +228,12 @@ function AnimationLayer(props: AnimLayerProps) {
       if (cancelled) return;
 
       await Promise.all(
-        outputEls.map(({ el, out }) => {
-          const dstPos = props.layout.get(out.placeId);
-          const dx = dstPos ? dstPos.x + props.offsetX : tx;
-          const dy = dstPos ? dstPos.y + props.offsetY : ty;
-          const d = dist2d(tx, ty, dx, dy);
+        outputEls.map(({ el, out, finalX, finalY }) => {
+          const d = dist2d(tx, ty, finalX, finalY);
           const duration = Math.max(200, (d / ANIM_SPEED) * 1000);
           return animateEl(el, [
-            { transform: `translate(${tx - 7}px,${ty - 7}px)` },
-            { transform: `translate(${dx - 7}px,${dy - 7}px)` },
+            { transform: `translate(${tx - TOKEN_R}px,${ty - TOKEN_R}px)` },
+            { transform: `translate(${finalX - TOKEN_R}px,${finalY - TOKEN_R}px)` },
           ], duration).then(() => {
             if (!cancelled) props.onAddOutput(out.id);
           });
@@ -318,23 +345,31 @@ export function P3NetRenderer(props: RendererProps) {
             <Show when={pos()}>
               {(p) => (
                 <div
-                  class={`p3n-place${placeTokens().length > 0 ? ' p3n-place-active' : ''}`}
+                  class="p3n-place"
                   style={{ left: `${p().x + dims().offsetX}px`, top: `${p().y + dims().offsetY}px` }}
                   onDragOver={(e) => { if (e.dataTransfer!.types.includes(DRAG_KEY)) { e.preventDefault(); e.stopPropagation(); } }}
                   onDrop={(e) => handlePlaceDrop(e, placeId)}
                 >
                   <div class="p3n-place-tokens">
                     <For each={placeTokens()}>
-                      {(t) => (
-                        <div
-                          class={`p3n-token${t.id === props.selectedTokenId ? ' p3n-token-selected' : ''}`}
-                          style={{ background: resolveTokenColor(t.state, props.def) }}
-                          draggable
-                          onDragStart={(e) => handleTokenDragStart(e, { kind: 'place', tokenId: t.id, placeId })}
-                          onClick={(e) => { e.stopPropagation(); props.onSelectToken(t.id); }}
-                          title={t.id}
-                        />
-                      )}
+                      {(t) => {
+                        const offset = () => docOffset(t.state.documentUrl);
+                        return (
+                          <div
+                            class={`p3n-token${t.id === props.selectedTokenId ? ' p3n-token-selected' : ''}`}
+                            style={{
+                              background: resolveTokenColor(t.state, props.def),
+                              left: '50%',
+                              top: '50%',
+                              transform: `translate(calc(-50% + ${offset().dx}px), calc(-50% + ${offset().dy}px))`,
+                            }}
+                            draggable
+                            onDragStart={(e) => handleTokenDragStart(e, { kind: 'place', tokenId: t.id, placeId })}
+                            onClick={(e) => { e.stopPropagation(); props.onSelectToken(t.id); }}
+                            title={t.id}
+                          />
+                        );
+                      }}
                     </For>
                   </div>
                 </div>
