@@ -14,6 +14,26 @@ export const plugins: Plugin<any>[] = [
     },
   },
   {
+    type: 'patchwork:datatype',
+    id: 'llm-petrinet-dialogue-example',
+    name: 'LLM Petri Net — Dialogue Example',
+    icon: 'GitBranch',
+    async load() {
+      const { LLMPetriNetDialogueExampleDatatype } = await import('./dialogue-example');
+      return LLMPetriNetDialogueExampleDatatype;
+    },
+  },
+  {
+    type: 'patchwork:tool',
+    id: 'llm-petrinet-dialogue-example',
+    name: 'LLM Petri Net — Dialogue Example',
+    supportedDatatypes: ['llm-petrinet-dialogue-example'],
+    async load() {
+      const { LLMPetriNetDialogueExampleTool } = await import('./dialogue-example');
+      return LLMPetriNetDialogueExampleTool;
+    },
+  },
+  {
     type: 'patchwork:tool',
     id: 'llm-petrinet',
     name: 'LLM Petri Net',
