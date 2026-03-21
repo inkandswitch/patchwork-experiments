@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For } from "solid-js"
+import { createMemo, createSignal, For, Show } from "solid-js"
 
 type InspectMode = "hex" | "decimal" | "utf8" | "base64"
 
@@ -61,7 +61,7 @@ export function Uint8ArrayInspector(props: { bytes: Uint8Array }) {
       >
         {expanded() ? "hide" : "inspect"}
       </span>
-      {expanded() && (
+      <Show when={expanded()}>
         <span class="u8-dump">
           <span class="u8-mode-bar">
             <For each={INSPECT_MODES}>
@@ -80,7 +80,7 @@ export function Uint8ArrayInspector(props: { bytes: Uint8Array }) {
           </span>
           <pre class="u8-pre">{content()}</pre>
         </span>
-      )}
+      </Show>
     </span>
   )
 }

@@ -12,7 +12,7 @@ export const plugins: LoadablePlugin<any>[] = [
     supportedDatatypes: "*",
     async load() {
       const { TinyTool } = await import("./components/RawEditor");
-      console.log("RAW SOLID 4");
+      console.log("RAW SOLID 8");
       return TinyTool;
     },
   } satisfies LoadablePlugin<ToolDescription, ToolImplementation>,

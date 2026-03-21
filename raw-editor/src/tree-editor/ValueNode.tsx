@@ -1,9 +1,9 @@
-import { createEffect, createMemo, createSignal, Show } from "solid-js"
+import { createMemo, createSignal, Show } from "solid-js"
 import { useEditor } from "./context"
 import { toPathString } from "./helpers"
 import { EditActionButtons, ConfirmButtons } from "./EditButtons"
 import type { TEInput } from "./IsolatedInput"
-import type { CollectionKey, CustomRenderer } from "./types"
+import type { CollectionKey, CustomRenderer, NodeData } from "./types"
 
 export function ValueNode(props: {
   key: CollectionKey
@@ -19,10 +19,6 @@ export function ValueNode(props: {
 
   const [draft, setDraft] = createSignal("")
 
-  createEffect(() => {
-    if (amEditing()) setDraft(String(props.value ?? ""))
-  })
-
   const canEdit = createMemo(() => {
     if (props.customRenderer && props.customRenderer.showEditTools === false)
       return false
@@ -32,23 +28,18 @@ export function ValueNode(props: {
     )
   })
 
-  const nodeData = createMemo(() => ({
+  const nodeData = (): NodeData => ({
     key: props.key,
     path: props.path,
     level: props.level,
     value: props.value,
     size: null,
     parentData: props.parentData,
-  }))
+  })
 
   const startEdit = () => {
     setDraft(String(props.value ?? ""))
-    ctx.startEditing({
-      pathString,
-      path: props.path,
-      value: props.value,
-      nodeData: nodeData(),
-    })
+    ctx.startEditing(pathString)
   }
 
   const confirmEdit = () => {

@@ -282,6 +282,7 @@ function RawEditor(props: {
 
   const [urlCopied, setUrlCopied] = createSignal(false)
   let urlCopyTimeout: ReturnType<typeof setTimeout>
+  onCleanup(() => clearTimeout(urlCopyTimeout))
   const copyUrl = () => {
     navigator.clipboard.writeText(docUrl).then(() => {
       setUrlCopied(true)

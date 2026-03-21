@@ -1,16 +1,9 @@
 import { createContext, createSelector, createSignal, useContext } from "solid-js"
 import type { CollectionKey, CustomRenderer, NodeData } from "./types"
 
-export interface EditingInfo {
-  pathString: string
-  path: CollectionKey[]
-  value: unknown
-  nodeData: NodeData
-}
-
 export interface EditorContext {
   isEditing: (pathString: string) => boolean
-  startEditing: (info: EditingInfo) => void
+  startEditing: (pathString: string) => void
   stopEditing: () => void
 
   onEdit: (value: unknown, path: CollectionKey[]) => void
@@ -36,8 +29,8 @@ export function createEditingState() {
 
   return {
     isEditing,
-    startEditing(info: EditingInfo) {
-      setEditingPath(info.pathString)
+    startEditing(pathString: string) {
+      setEditingPath(pathString)
     },
     stopEditing() {
       setEditingPath(null)

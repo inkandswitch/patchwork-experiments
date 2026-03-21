@@ -27,7 +27,7 @@ export function CollectionNode(props: {
       path: props.path,
       level: props.level,
       value: props.value,
-      size: Object.keys(props.value).length,
+      size: size(),
       parentData: props.parentData,
     })
   )
@@ -42,19 +42,7 @@ export function CollectionNode(props: {
 
   const startEdit = () => {
     setDraft(ctx.jsonStringify(props.value))
-    ctx.startEditing({
-      pathString,
-      path: props.path,
-      value: props.value,
-      nodeData: {
-        key: props.key,
-        path: props.path,
-        level: props.level,
-        value: props.value,
-        size: size(),
-        parentData: props.parentData,
-      },
-    })
+    ctx.startEditing(pathString)
   }
 
   const confirmEdit = () => {
