@@ -16,7 +16,6 @@ export interface EditorContext {
   showArrayIndices: boolean
   enableClipboard: boolean
   customRenderers: CustomRenderer[]
-  jsonStringify: (data: unknown) => string
 }
 
 const Ctx = createContext<EditorContext>()

@@ -19,7 +19,7 @@ export function EditActionButtons(props: {
           title="Copy"
           onClick={(e) => {
             e.stopPropagation()
-            props.onCopy!()
+            props.onCopy?.()
           }}
         >
           <CopyIcon />
@@ -31,7 +31,7 @@ export function EditActionButtons(props: {
           title="Edit"
           onClick={(e) => {
             e.stopPropagation()
-            props.onEdit!()
+            props.onEdit?.()
           }}
         >
           <EditIcon />
@@ -43,7 +43,7 @@ export function EditActionButtons(props: {
           title="Add"
           onClick={(e) => {
             e.stopPropagation()
-            props.onAdd!()
+            props.onAdd?.()
           }}
         >
           <AddIcon />
@@ -55,7 +55,7 @@ export function EditActionButtons(props: {
           title="Delete"
           onClick={(e) => {
             e.stopPropagation()
-            props.onDelete!()
+            props.onDelete?.()
           }}
         >
           <DeleteIcon />

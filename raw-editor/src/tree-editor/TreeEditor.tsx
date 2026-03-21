@@ -10,19 +10,20 @@ import "./style.css"
 export function TreeEditor(props: EditorProps) {
   const editing = createEditingState()
 
+  props.ref?.({ stopEditing: editing.stopEditing })
+
   const ctx: EditorContext = {
     ...editing,
     get onEdit() { return props.onEdit },
     get onDelete() { return props.onDelete },
     get onAdd() { return props.onAdd },
-    collapse: props.collapse ?? (() => false),
-    indent: props.indent ?? 3,
-    showStringQuotes: props.showStringQuotes ?? true,
-    showCollectionCount: props.showCollectionCount ?? true,
-    showArrayIndices: props.showArrayIndices ?? true,
-    enableClipboard: props.enableClipboard ?? true,
-    customRenderers: props.customRenderers ?? [],
-    jsonStringify: props.jsonStringify ?? ((d) => JSON.stringify(d, null, 2)),
+    get collapse() { return props.collapse ?? (() => false) },
+    get indent() { return props.indent ?? 3 },
+    get showStringQuotes() { return props.showStringQuotes ?? true },
+    get showCollectionCount() { return props.showCollectionCount ?? true },
+    get showArrayIndices() { return props.showArrayIndices ?? true },
+    get enableClipboard() { return props.enableClipboard ?? true },
+    get customRenderers() { return props.customRenderers ?? [] },
   }
 
   return (

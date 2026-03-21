@@ -1,6 +1,6 @@
 import { createMemo, createSignal, For, Show } from "solid-js"
 import { useEditor } from "./context"
-import { isCollection, toPathString } from "./helpers"
+import { isCollection, toPathString, serializeForClipboard, containsUint8Array } from "./helpers"
 import { ValueNode } from "./ValueNode"
 import { EditActionButtons, ConfirmButtons } from "./EditButtons"
 import { ChevronIcon } from "./Icons"
@@ -34,6 +34,7 @@ export function CollectionNode(props: {
 
   const amEditing = () => ctx.isEditing(pathString)
   const [draft, setDraft] = createSignal("")
+  const [parseError, setParseError] = createSignal(false)
   const [addingKey, setAddingKey] = createSignal(false)
   const [newKey, setNewKey] = createSignal("")
 
@@ -43,17 +44,23 @@ export function CollectionNode(props: {
   })
 
   const startEdit = () => {
-    setDraft(ctx.jsonStringify(props.value))
+    if (containsUint8Array(props.value)) {
+      alert("This collection contains binary data (Uint8Array) and cannot be edited as JSON.")
+      return
+    }
+    setDraft(JSON.stringify(props.value, null, 2))
+    setParseError(false)
     ctx.startEditing(pathString)
   }
 
   const confirmEdit = () => {
     try {
       const parsed = JSON.parse(draft())
+      setParseError(false)
       ctx.onEdit(parsed, props.path)
       ctx.stopEditing()
     } catch {
-      // invalid JSON — ignore
+      setParseError(true)
     }
   }
 
@@ -85,7 +92,7 @@ export function CollectionNode(props: {
   }
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(ctx.jsonStringify(props.value))
+    navigator.clipboard.writeText(serializeForClipboard(props.value))
   }
 
   const brackets = createMemo(() =>
@@ -150,13 +157,16 @@ export function CollectionNode(props: {
 
       <Show when={!collapsed()}>
         <Show when={amEditing()}>
-          <div class="te-collection-edit">
+          <div class={`te-collection-edit${parseError() ? " te-parse-error" : ""}`}>
             <te-textarea
               ref={(el: TETextarea) => {
                 const ta = el.textarea
                 ta.value = draft()
                 setTimeout(() => ta.focus(), 0)
-                ta.addEventListener("input", () => setDraft(ta.value))
+                ta.addEventListener("input", () => {
+                  setDraft(ta.value)
+                  setParseError(false)
+                })
                 ta.addEventListener("keydown", (e) => {
                   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                     e.preventDefault()
@@ -167,6 +177,9 @@ export function CollectionNode(props: {
               }}
             />
             <div class="te-collection-edit-actions">
+              <Show when={parseError()}>
+                <span class="te-parse-error-label">Invalid JSON</span>
+              </Show>
               <ConfirmButtons onOk={confirmEdit} onCancel={cancelEdit} />
             </div>
           </div>

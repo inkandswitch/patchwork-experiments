@@ -11,11 +11,16 @@ export interface NodeData {
   parentData: object | null
 }
 
+export interface TreeEditorHandle {
+  stopEditing: () => void
+}
+
 export interface EditorProps {
   data: unknown
   onEdit: (value: unknown, path: CollectionKey[]) => void
   onDelete: (value: unknown, path: CollectionKey[]) => void
   onAdd: (value: unknown, path: CollectionKey[]) => void
+  ref?: (handle: TreeEditorHandle) => void
   collapse?: (nodeData: NodeData) => boolean
   indent?: number
   showStringQuotes?: boolean
@@ -23,7 +28,6 @@ export interface EditorProps {
   enableClipboard?: boolean
   showArrayIndices?: boolean
   customRenderers?: CustomRenderer[]
-  jsonStringify?: (data: unknown) => string
 }
 
 export interface CustomRenderer {

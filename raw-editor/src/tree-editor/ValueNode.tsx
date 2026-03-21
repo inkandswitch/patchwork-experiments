@@ -1,6 +1,6 @@
 import { createSignal, onCleanup, Show } from "solid-js"
 import { useEditor } from "./context"
-import { toPathString } from "./helpers"
+import { toPathString, serializeForClipboard } from "./helpers"
 import { EditActionButtons, ConfirmButtons } from "./EditButtons"
 import { TypeCards, parseableTypes, coerceDraft, typeOfValue, type ValueType } from "./TypeCards"
 import type { TEInput } from "./IsolatedInput"
@@ -59,7 +59,7 @@ export function ValueNode(props: {
   const cancelEdit = () => ctx.stopEditing()
   const handleDelete = () => ctx.onDelete(props.value, props.path)
   const handleCopy = () => {
-    navigator.clipboard.writeText(ctx.jsonStringify(props.value))
+    navigator.clipboard.writeText(serializeForClipboard(props.value))
   }
 
   const indent = () =>

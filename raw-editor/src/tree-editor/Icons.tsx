@@ -3,7 +3,7 @@ import type { JSX } from "solid-js"
 const S = 15
 const W = 2
 
-function Svg(props: { children: JSX.Element; class?: string; size?: number }) {
+function Svg(props: { children: JSX.Element; class?: string; size?: number; strokeWidth?: number }) {
   return (
     <svg
       width={props.size ?? S}
@@ -11,7 +11,7 @@ function Svg(props: { children: JSX.Element; class?: string; size?: number }) {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      stroke-width={W}
+      stroke-width={props.strokeWidth ?? W}
       stroke-linecap="round"
       stroke-linejoin="round"
       class={props.class}
@@ -78,19 +78,9 @@ export function CancelIcon() {
 
 export function ChevronIcon(props: { collapsed: boolean }) {
   return (
-    <svg
-      width={15}
-      height={15}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width={2.5}
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      class={props.collapsed ? "te-chevron-rotated" : undefined}
-    >
+    <Svg strokeWidth={2.5} class={props.collapsed ? "te-chevron-rotated" : undefined}>
       <path d="m6 9 6 6 6-6" />
-    </svg>
+    </Svg>
   )
 }
 

@@ -62,17 +62,16 @@ export class TEInput extends HTMLElement {
 
 export class TETextarea extends HTMLElement {
   textarea: HTMLTextAreaElement
-  private _shadow: ShadowRoot
 
   constructor() {
     super()
-    this._shadow = this.attachShadow({ mode: "closed" })
+    const shadow = this.attachShadow({ mode: "closed" })
     const style = document.createElement("style")
     style.textContent = styles
-    this._shadow.appendChild(style)
+    shadow.appendChild(style)
     this.textarea = document.createElement("textarea")
     this.textarea.addEventListener("input", () => this.autoSize())
-    this._shadow.appendChild(this.textarea)
+    shadow.appendChild(this.textarea)
   }
 
   connectedCallback() {

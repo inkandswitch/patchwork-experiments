@@ -302,12 +302,25 @@ te-input {
   line-height: 1.1em;
 }
 
+.te-collection-edit.te-parse-error te-textarea {
+  outline: 2px solid var(--te-icon-cancel);
+  border-radius: 0.35em;
+}
+
+.te-parse-error-label {
+  font-size: 0.75em;
+  color: var(--te-icon-cancel);
+  font-weight: 500;
+}
+
 te-textarea {
   display: block;
 }
 
 .te-collection-edit-actions {
   display: flex;
+  align-items: center;
+  gap: 0.4em;
 }
 
 /* ── Inline add-key ── */
@@ -347,7 +360,7 @@ te-textarea {
   gap: 0.4em;
   margin-left: 0.5em;
   opacity: 0;
-  height: 1em;
+  height: 1.1em;
 }
 
 .te-confirm-buttons {

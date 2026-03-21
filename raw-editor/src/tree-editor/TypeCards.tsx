@@ -50,7 +50,10 @@ export function coerceDraft(draft: string, type: ValueType): unknown {
   switch (type) {
     case "null": return null
     case "boolean": return draft.trim().toLowerCase() === "true"
-    case "number": return Number(draft.trim()) || 0
+    case "number": {
+      const n = Number(draft.trim())
+      return Number.isFinite(n) ? n : 0
+    }
     case "array":
     case "object":
       try { return JSON.parse(draft.trim()) } catch { return DEFAULT_VALUES[type] }
@@ -84,6 +87,7 @@ export function TypeCards(props: {
         {(type) => (
           <span
             class={`te-seg${type === props.selected ? " te-seg-active" : ""}`}
+            title={`Parse as ${type}`}
             onClick={(e) => {
               e.stopPropagation()
               setDropdownOpen(false)
@@ -98,6 +102,7 @@ export function TypeCards(props: {
       <Show when={unparseable().length > 0}>
         <span
           class={`te-seg te-seg-more${dropdownOpen() ? " te-seg-active" : ""}`}
+          title="Cast to another type"
           onClick={(e) => {
             e.stopPropagation()
             setDropdownOpen((v) => !v)
@@ -113,6 +118,7 @@ export function TypeCards(props: {
             {(type) => (
               <span
                 class="te-seg-dropdown-item"
+                title={`Cast to ${type}`}
                 onClick={(e) => {
                   e.stopPropagation()
                   setDropdownOpen(false)

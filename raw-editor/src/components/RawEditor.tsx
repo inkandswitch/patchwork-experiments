@@ -7,9 +7,11 @@ import {
 import { OpenDocumentEvent } from "@inkandswitch/patchwork-elements"
 import { createSignal, onCleanup, Show } from "solid-js"
 import { render } from "solid-js/web"
-import { TreeEditor, type CollectionKey } from "../tree-editor"
+import { TreeEditor, type CollectionKey, type TreeEditorHandle } from "../tree-editor"
 import { Uint8ArrayInspector } from "./Uint8ArrayInspector"
 import { UndoIcon, RedoIcon, DownloadIcon } from "../tree-editor/Icons"
+import { applyAtPath, deleteAtPath } from "../automerge-helpers"
+import { createUndoRedo } from "../undo-redo"
 import "../rawEditor.css"
 
 // ─── TinyTool mount point ─────────────────────────────────────────────────────
@@ -30,27 +32,6 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url)
 }
 
-const UINT8_PLACEHOLDER = '"<Uint8Array>"'
-
-function jsonStringifyWithUint8(data: unknown): string {
-  let hasUint8 = false
-  const result = JSON.stringify(
-    data,
-    (_key, value) => {
-      if (value instanceof Uint8Array) {
-        hasUint8 = true
-        return UINT8_PLACEHOLDER
-      }
-      return value
-    },
-    2
-  )
-  if (hasUint8) {
-    return `⚠ Contains binary data (Uint8Array) — editing disabled.\n\n${result}`
-  }
-  return result
-}
-
 function prepareForJson(value: unknown): unknown {
   if (value instanceof Uint8Array) return Array.from(value)
   if (Array.isArray(value)) return value.map(prepareForJson)
@@ -62,108 +43,12 @@ function prepareForJson(value: unknown): unknown {
   return value
 }
 
-// ─── Automerge doc mutation helpers ───────────────────────────────────────────
-
-function walkToParent(
-  doc: any,
-  path: Automerge.Prop[]
-): [parent: any, key: string | number] | null {
-  let node = doc
-  for (let i = 0; i < path.length - 1; i++) {
-    node = node[path[i]]
-    if (node == null) return null
-  }
-  return [node, path[path.length - 1]]
-}
-
-function applyAtPath(doc: any, path: Automerge.Prop[], value: unknown) {
-  const target = walkToParent(doc, path)
-  if (!target) return
-  const [node, key] = target
-  if (
-    typeof value === "string" &&
-    typeof node[key] === "string" &&
-    !Automerge.isImmutableString(node[key])
-  ) {
-    Automerge.updateText(doc, path, value)
-  } else {
-    node[key] = value
-  }
-}
-
-function deleteAtPath(doc: any, path: Automerge.Prop[]) {
-  const target = walkToParent(doc, path)
-  if (!target) return
-  const [node, key] = target
-  if (Array.isArray(node) && typeof key === "number") {
-    node.splice(key, 1)
-  } else {
-    delete node[key]
-  }
-}
-
-// ─── Undo / Redo ─────────────────────────────────────────────────────────────
-
-type UndoEntry =
-  | { type: "edit"; path: Automerge.Prop[]; oldValue: unknown; newValue: unknown }
-  | { type: "delete"; path: Automerge.Prop[]; oldValue: unknown }
-  | { type: "add"; path: Automerge.Prop[]; newValue: unknown }
-
-function applyUndoEntry(d: any, entry: UndoEntry) {
-  switch (entry.type) {
-    case "edit":
-      applyAtPath(d, entry.path, entry.oldValue)
-      break
-    case "delete":
-      applyAtPath(d, entry.path, entry.oldValue)
-      break
-    case "add":
-      deleteAtPath(d, entry.path)
-      break
-  }
-}
-
-function applyRedoEntry(d: any, entry: UndoEntry) {
-  switch (entry.type) {
-    case "edit":
-      applyAtPath(d, entry.path, entry.newValue)
-      break
-    case "delete":
-      deleteAtPath(d, entry.path)
-      break
-    case "add":
-      applyAtPath(d, entry.path, entry.newValue)
-      break
-  }
-}
-
-function createUndoRedo(changeDoc: (fn: (d: any) => void) => void) {
-  const [past, setPast] = createSignal<UndoEntry[]>([])
-  const [future, setFuture] = createSignal<UndoEntry[]>([])
-
-  return {
-    canUndo: () => past().length > 0,
-    canRedo: () => future().length > 0,
-    push(entry: UndoEntry) {
-      setPast((p) => [...p, entry])
-      setFuture([])
-    },
-    undo() {
-      const p = past()
-      if (p.length === 0) return
-      const entry = p[p.length - 1]
-      setPast(p.slice(0, -1))
-      setFuture((f) => [...f, entry])
-      changeDoc((d: any) => applyUndoEntry(d, entry))
-    },
-    redo() {
-      const f = future()
-      if (f.length === 0) return
-      const entry = f[f.length - 1]
-      setFuture(f.slice(0, -1))
-      setPast((p) => [...p, entry])
-      changeDoc((d: any) => applyRedoEntry(d, entry))
-    },
+function cloneValue(value: unknown): unknown {
+  if (value === null || typeof value !== "object") return value
+  try {
+    return structuredClone(value)
+  } catch {
+    return JSON.parse(JSON.stringify(value))
   }
 }
 
@@ -242,19 +127,19 @@ function RawEditor(props: {
     undoRedo.push({
       type: "edit",
       path: path as Automerge.Prop[],
-      oldValue: currentValue,
-      newValue: value,
+      oldValue: cloneValue(currentValue),
+      newValue: cloneValue(value),
     })
     changeDoc((d: any) => applyAtPath(d, path as Automerge.Prop[], value))
   }
 
   const onDelete = (value: unknown, path: CollectionKey[]) => {
-    undoRedo.push({ type: "delete", path: path as Automerge.Prop[], oldValue: value })
+    undoRedo.push({ type: "delete", path: path as Automerge.Prop[], oldValue: cloneValue(value) })
     changeDoc((d: any) => deleteAtPath(d, path as Automerge.Prop[]))
   }
 
   const onAdd = (value: unknown, path: CollectionKey[]) => {
-    undoRedo.push({ type: "add", path: path as Automerge.Prop[], newValue: value })
+    undoRedo.push({ type: "add", path: path as Automerge.Prop[], newValue: cloneValue(value) })
     changeDoc((d: any) => applyAtPath(d, path as Automerge.Prop[], value))
   }
 
@@ -291,17 +176,11 @@ function RawEditor(props: {
     })
   }
 
-  // Keyboard handler: Cmd+Z undo, Cmd+Shift+Z redo, Escape cancel
+  let treeHandle: TreeEditorHandle | undefined
+
   const keyHandler = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
-      const cancelBtn = props.element.querySelector(
-        ".te-confirm-buttons .te-icon-cancel"
-      ) as HTMLElement | null
-      if (cancelBtn) {
-        e.preventDefault()
-        e.stopPropagation()
-        cancelBtn.click()
-      }
+      treeHandle?.stopEditing()
       return
     }
     const mod = e.metaKey || e.ctrlKey
@@ -311,11 +190,9 @@ function RawEditor(props: {
       else undoRedo.undo()
     }
   }
-  document.addEventListener("keydown", keyHandler, true)
-  onCleanup(() => document.removeEventListener("keydown", keyHandler, true))
 
   return (
-    <div class="raw-editor-wrapper">
+    <div class="raw-editor-wrapper" tabIndex={-1} onKeyDown={keyHandler}>
       <Show
         when={doc()}
         fallback={
@@ -368,6 +245,7 @@ function RawEditor(props: {
 
             <div class="re-content">
               <TreeEditor
+                ref={(h) => { treeHandle = h }}
                 data={loadedDoc()}
                 onEdit={onEdit}
                 onDelete={onDelete}
@@ -378,7 +256,6 @@ function RawEditor(props: {
                 showCollectionCount="when-closed"
                 enableClipboard
                 customRenderers={customRenderers}
-                jsonStringify={jsonStringifyWithUint8}
               />
             </div>
           </>
