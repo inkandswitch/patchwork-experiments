@@ -1,7 +1,8 @@
-import { createMemo, createSignal, Show } from "solid-js"
+import { createSignal, onCleanup, Show } from "solid-js"
 import { useEditor } from "./context"
 import { toPathString } from "./helpers"
 import { EditActionButtons, ConfirmButtons } from "./EditButtons"
+import { TypeCards, parseableTypes, coerceDraft, typeOfValue, type ValueType } from "./TypeCards"
 import type { TEInput } from "./IsolatedInput"
 import type { CollectionKey, CustomRenderer, NodeData } from "./types"
 
@@ -18,15 +19,16 @@ export function ValueNode(props: {
   const amEditing = () => ctx.isEditing(pathString)
 
   const [draft, setDraft] = createSignal("")
+  const [selectedType, setSelectedType] = createSignal(typeOfValue(props.value))
 
-  const canEdit = createMemo(() => {
+  const canEdit = () => {
     if (props.customRenderer && props.customRenderer.showEditTools === false)
       return false
     return (
       typeof props.value !== "function" &&
       !(props.value instanceof Uint8Array)
     )
-  })
+  }
 
   const nodeData = (): NodeData => ({
     key: props.key,
@@ -38,28 +40,27 @@ export function ValueNode(props: {
   })
 
   const startEdit = () => {
-    setDraft(String(props.value ?? ""))
+    const v = props.value
+    if (typeof v === "boolean") setDraft(String(v))
+    else if (v === null) setDraft("null")
+    else setDraft(String(v ?? ""))
+    setSelectedType(typeOfValue(v))
     ctx.startEditing(pathString)
   }
 
   const confirmEdit = () => {
-    let newValue: unknown = draft()
-    if (typeof props.value === "number") {
-      const n = Number(draft())
-      newValue = isNaN(n) ? 0 : n
-    } else if (typeof props.value === "boolean") {
-      newValue = draft() === "true"
-    } else if (props.value === null && draft() === "null") {
-      newValue = null
-    }
-    ctx.onEdit(newValue, props.path)
+    const value = coerceDraft(draft(), selectedType())
+    ctx.onEdit(value, props.path)
+    ctx.stopEditing()
+  }
+
+  const handleCast = (_type: ValueType, defaultValue: unknown) => {
+    ctx.onEdit(defaultValue, props.path)
     ctx.stopEditing()
   }
 
   const cancelEdit = () => ctx.stopEditing()
-
   const handleDelete = () => ctx.onDelete(props.value, props.path)
-
   const handleCopy = () => {
     navigator.clipboard.writeText(ctx.jsonStringify(props.value))
   }
@@ -74,28 +75,24 @@ export function ValueNode(props: {
     return true
   }
 
-  const displayText = createMemo(() => {
+  const displayText = () => {
     const v = props.value
     if (v === null) return "null"
     if (typeof v === "string")
       return ctx.showStringQuotes ? `"${v}"` : v
     return String(v)
-  })
+  }
 
-  const valueClass = createMemo(() => {
+  const valueClass = () => {
     const v = props.value
     if (v === null) return "te-value-display te-null"
     switch (typeof v) {
-      case "string":
-        return "te-value-display te-string"
-      case "number":
-        return "te-value-display te-number"
-      case "boolean":
-        return "te-value-display te-boolean"
-      default:
-        return "te-value-display te-invalid"
+      case "string": return "te-value-display te-string"
+      case "number": return "te-value-display te-number"
+      case "boolean": return "te-value-display te-boolean"
+      default: return "te-value-display te-invalid"
     }
-  })
+  }
 
   return (
     <div class="te-value" style={{ "margin-left": indent() }}>
@@ -108,7 +105,6 @@ export function ValueNode(props: {
         </Show>
 
         <div class="te-value-and-buttons">
-          {/* View mode content */}
           <Show when={!amEditing()}>
             <Show
               when={props.customRenderer}
@@ -124,50 +120,18 @@ export function ValueNode(props: {
             </Show>
           </Show>
 
-          {/* Edit mode input */}
           <Show when={amEditing()}>
-            <Show
-              when={typeof props.value === "boolean"}
-              fallback={
-                <te-input
-                  ref={(el: TEInput) => {
-                    const input = el.input
-                    input.value = draft()
-                    setTimeout(() => {
-                      input.focus()
-                      input.select()
-                    }, 0)
-                    input.addEventListener("input", () =>
-                      setDraft(input.value)
-                    )
-                    input.addEventListener("keydown", (e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault()
-                        confirmEdit()
-                      }
-                      if (e.key === "Escape") cancelEdit()
-                    })
-                  }}
-                />
-              }
-            >
-              <span
-                class="te-bool-label"
-                onClick={() => {
-                  setDraft(draft() === "true" ? "false" : "true")
-                }}
-              >
-                {draft() === "true" ? "true" : "false"}
-              </span>
-            </Show>
+            <EditingUI
+              draft={draft()}
+              setDraft={setDraft}
+              selectedType={selectedType()}
+              setSelectedType={setSelectedType}
+              onConfirm={confirmEdit}
+              onCancel={cancelEdit}
+              onCast={handleCast}
+            />
           </Show>
 
-          {/* Edit mode OK/Cancel */}
-          <Show when={amEditing()}>
-            <ConfirmButtons onOk={confirmEdit} onCancel={cancelEdit} />
-          </Show>
-
-          {/* View mode action buttons */}
           <Show when={!amEditing()}>
             <EditActionButtons
               canEdit={canEdit()}
@@ -182,5 +146,66 @@ export function ValueNode(props: {
         </div>
       </div>
     </div>
+  )
+}
+
+function EditingUI(props: {
+  draft: string
+  setDraft: (v: string) => void
+  selectedType: ValueType
+  setSelectedType: (t: ValueType) => void
+  onConfirm: () => void
+  onCancel: () => void
+  onCast: (type: ValueType, defaultValue: unknown) => void
+}) {
+  const [parseable, setParseable] = createSignal<ValueType[]>(
+    parseableTypes(props.draft)
+  )
+  let debounceTimer: ReturnType<typeof setTimeout>
+  onCleanup(() => clearTimeout(debounceTimer))
+
+  const onInput = (value: string) => {
+    props.setDraft(value)
+    clearTimeout(debounceTimer)
+    debounceTimer = setTimeout(() => {
+      const types = parseableTypes(value)
+      setParseable(types)
+      if (!types.includes(props.selectedType)) {
+        props.setSelectedType(types[0])
+      }
+    }, 150)
+  }
+
+  return (
+    <>
+      <te-input
+        ref={(el: TEInput) => {
+          const input = el.input
+          input.value = props.draft
+          setTimeout(() => {
+            input.focus()
+            input.select()
+          }, 0)
+          input.addEventListener("input", () => onInput(input.value))
+          input.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+              e.preventDefault()
+              props.onConfirm()
+            }
+            if (e.key === "Escape") props.onCancel()
+          })
+        }}
+      />
+
+      <TypeCards
+        parseable={parseable()}
+        selected={props.selectedType}
+        draft={props.draft}
+        onSelect={props.setSelectedType}
+        onCast={props.onCast}
+      />
+
+      <ConfirmButtons onOk={props.onConfirm} onCancel={props.onCancel} />
+    </>
   )
 }

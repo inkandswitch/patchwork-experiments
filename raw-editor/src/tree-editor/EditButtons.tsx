@@ -13,6 +13,18 @@ export function EditActionButtons(props: {
 }) {
   return (
     <div class="te-edit-buttons">
+      <Show when={props.canCopy && props.onCopy}>
+        <span
+          class="te-icon te-icon-copy"
+          title="Copy"
+          onClick={(e) => {
+            e.stopPropagation()
+            props.onCopy!()
+          }}
+        >
+          <CopyIcon />
+        </span>
+      </Show>
       <Show when={props.canEdit && props.onEdit}>
         <span
           class="te-icon te-icon-edit"
@@ -49,18 +61,6 @@ export function EditActionButtons(props: {
           <DeleteIcon />
         </span>
       </Show>
-      <Show when={props.canCopy && props.onCopy}>
-        <span
-          class="te-icon te-icon-copy"
-          title="Copy"
-          onClick={(e) => {
-            e.stopPropagation()
-            props.onCopy!()
-          }}
-        >
-          <CopyIcon />
-        </span>
-      </Show>
     </div>
   )
 }
@@ -72,16 +72,6 @@ export function ConfirmButtons(props: {
   return (
     <div class="te-confirm-buttons">
       <span
-        class="te-icon te-icon-ok"
-        title="Confirm"
-        onClick={(e) => {
-          e.stopPropagation()
-          props.onOk()
-        }}
-      >
-        <OkIcon />
-      </span>
-      <span
         class="te-icon te-icon-cancel"
         title="Cancel"
         onClick={(e) => {
@@ -90,6 +80,16 @@ export function ConfirmButtons(props: {
         }}
       >
         <CancelIcon />
+      </span>
+      <span
+        class="te-icon te-icon-ok"
+        title="Confirm"
+        onClick={(e) => {
+          e.stopPropagation()
+          props.onOk()
+        }}
+      >
+        <OkIcon />
       </span>
     </div>
   )

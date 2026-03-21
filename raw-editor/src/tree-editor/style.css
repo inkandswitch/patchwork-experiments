@@ -1,4 +1,4 @@
-/* ── Theme variables (Nord light) ── */
+/* ── Theme variables (light) ── */
 .te-container {
   --te-string: #2e7d32;
   --te-number: #6a1b9a;
@@ -8,11 +8,16 @@
   --te-property: #5e81ac;
   --te-property-array: rgba(0, 0, 0, 0.3);
   --te-item-count: rgba(0, 0, 0, 0.35);
-  --te-input-bg: rgba(0, 0, 0, 0.04);
+  --te-input-bg: oklch(0.95 0.005 250);
   --te-input-color: #2e3440;
-  --te-input-border: rgba(0, 0, 0, 0.15);
-  --te-input-border-focus: #5e81ac;
-  --te-highlight: #b3d8ff;
+  --te-input-border: oklch(0.82 0.01 250);
+  --te-input-border-focus: oklch(0.55 0.1 250);
+  --te-highlight: oklch(0.85 0.08 250);
+  --te-ctrl-bg: oklch(0.93 0.007 250);
+  --te-ctrl-hover: oklch(0.88 0.01 250);
+  --te-ctrl-active-bg: oklch(0.55 0.1 250);
+  --te-ctrl-active-text: oklch(0.98 0.005 250);
+  --te-dropdown-bg: oklch(0.96 0.005 250);
   --te-icon-edit: #f9a825;
   --te-icon-delete: #c62828;
   --te-icon-add: #2e7d32;
@@ -31,7 +36,7 @@
   text-align: left;
 }
 
-/* ── Theme variables (Nord dark) ── */
+/* ── Theme variables (dark) ── */
 @media (prefers-color-scheme: dark) {
   .te-container {
     --te-string: #a3be8c;
@@ -42,11 +47,16 @@
     --te-property: #88c0d0;
     --te-property-array: rgba(216, 222, 233, 0.3);
     --te-item-count: rgba(216, 222, 233, 0.4);
-    --te-input-bg: #3b4252;
+    --te-input-bg: oklch(0.28 0.01 250);
     --te-input-color: #d8dee9;
-    --te-input-border: #4c566a;
-    --te-input-border-focus: #81a1c1;
-    --te-highlight: #434c5e;
+    --te-input-border: oklch(0.38 0.015 250);
+    --te-input-border-focus: oklch(0.65 0.1 250);
+    --te-highlight: oklch(0.35 0.05 250);
+    --te-ctrl-bg: oklch(0.27 0.012 250);
+    --te-ctrl-hover: oklch(0.32 0.015 250);
+    --te-ctrl-active-bg: oklch(0.45 0.08 250);
+    --te-ctrl-active-text: oklch(0.95 0.01 250);
+    --te-dropdown-bg: oklch(0.25 0.012 250);
     --te-icon-edit: #ebcb8b;
     --te-icon-delete: #bf616a;
     --te-icon-add: #a3be8c;
@@ -148,7 +158,7 @@
 .te-chevron {
   position: absolute;
   left: -1.2em;
-  top: 0.35em;
+  top: 0.4em;
   cursor: pointer;
   color: var(--te-icon-collection);
   user-select: none;
@@ -190,27 +200,108 @@ te-input {
   display: inline-block;
 }
 
-.te-bool-label {
+/* ── Segmented type control ── */
+.te-segmented {
+  display: inline-flex;
+  align-items: stretch;
+  background: var(--te-ctrl-bg);
+  border-radius: 0.35em;
+  position: relative;
+  flex-shrink: 0;
+  height: 1.44em;
+  gap: 1px;
+}
+
+.te-seg {
   display: inline-flex;
   align-items: center;
-  gap: 0.3em;
-  color: var(--te-boolean);
+  font-size: 0.65em;
+  padding: 0 0.6em;
   cursor: pointer;
-  padding: 0.15em 0.5em;
-  border: 1px solid var(--te-input-border);
-  border-radius: 0.3em;
-  background-color: var(--te-input-bg);
   user-select: none;
+  opacity: 0.5;
+  border-radius: 0;
+  white-space: nowrap;
 }
 
-.te-bool-label:hover {
-  border-color: var(--te-input-border-focus);
+.te-segmented > :first-child {
+  border-radius: 0.35em 0 0 0.35em;
 }
 
+.te-segmented > span:last-of-type {
+  border-radius: 0 0.35em 0.35em 0;
+}
+
+.te-segmented > :first-child:last-of-type {
+  border-radius: 0.35em;
+}
+
+.te-seg:hover {
+  opacity: 0.8;
+  background: var(--te-ctrl-hover);
+}
+
+.te-seg-active {
+  opacity: 1;
+  font-weight: 600;
+  background: var(--te-ctrl-active-bg);
+  color: var(--te-ctrl-active-text);
+}
+
+.te-seg-more {
+  padding: 0 0.4em;
+  font-size: 0.7em;
+  opacity: 0.4;
+}
+
+.te-seg-more:hover {
+  opacity: 0.75;
+}
+
+.te-seg-warn {
+  opacity: 0.65;
+  box-shadow: inset 0 -2px 0 var(--te-icon-cancel);
+}
+
+.te-seg-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  border-radius: 0.35em;
+  overflow: hidden;
+  background: var(--te-dropdown-bg);
+  border: 1px solid var(--te-input-border);
+  box-shadow: 0 4px 12px oklch(0 0 0 / 0.15);
+}
+
+@media (prefers-color-scheme: dark) {
+  .te-seg-dropdown {
+    box-shadow: 0 4px 12px oklch(0 0 0 / 0.5);
+  }
+}
+
+.te-seg-dropdown-item {
+  font-size: 0.7em;
+  padding: 0.45em 0.75em;
+  cursor: pointer;
+  user-select: none;
+  opacity: 0.6;
+  white-space: nowrap;
+}
+
+.te-seg-dropdown-item:hover {
+  opacity: 1;
+  background: var(--te-ctrl-hover);
+}
+
+/* ── Collection editing ── */
 .te-collection-edit {
   display: flex;
   flex-direction: column;
-  gap: 0.3em;
+  gap: 0.4em;
   align-items: flex-start;
   line-height: 1.1em;
 }
@@ -222,21 +313,29 @@ te-textarea {
 .te-collection-edit-actions {
   display: flex;
   justify-content: flex-start;
-  width: 100%;
-  font-size: 150%;
-  margin-top: 0.4em;
+}
+
+/* ── Inline add-key ── */
+.te-add-key {
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+  padding-top: 0.25em;
+  min-height: 1.7em;
 }
 
 /* ── Icon buttons ── */
 .te-icon {
   cursor: pointer;
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: transform 0.12s ease, opacity 0.12s ease;
 }
 
 .te-icon:hover {
   opacity: 0.85;
-  transform: scale(1.2);
+  transform: scale(1.1);
 }
 
 .te-icon-edit { color: var(--te-icon-edit); }
@@ -246,25 +345,57 @@ te-textarea {
 .te-icon-ok { color: var(--te-icon-ok); }
 .te-icon-cancel { color: var(--te-icon-cancel); }
 
-.te-edit-buttons,
-.te-confirm-buttons {
+/* ── Action button groups ── */
+.te-edit-buttons {
   display: flex;
   align-items: center;
-  cursor: pointer;
-  height: 1em;
-}
-
-.te-edit-buttons {
   gap: 0.4em;
   margin-left: 0.5em;
   opacity: 0;
+  height: 1em;
 }
 
 .te-confirm-buttons {
-  gap: 0.2em;
-  margin-left: 0.4em;
+  display: inline-flex;
+  align-items: stretch;
+  gap: 3px;
+  height: 1.44em;
+  flex-shrink: 0;
 }
 
+.te-confirm-buttons .te-icon {
+  width: 1.5em;
+  border-radius: 0.3em;
+}
+
+.te-confirm-buttons svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 2.5;
+}
+
+.te-confirm-buttons .te-icon-ok {
+  background: color-mix(in oklab, var(--te-icon-ok) 15%, transparent);
+}
+
+.te-confirm-buttons .te-icon-cancel {
+  background: color-mix(in oklab, var(--te-icon-cancel) 12%, transparent);
+}
+
+.te-confirm-buttons .te-icon:hover {
+  transform: none;
+  opacity: 1;
+}
+
+.te-confirm-buttons .te-icon-ok:hover {
+  background: color-mix(in oklab, var(--te-icon-ok) 25%, transparent);
+}
+
+.te-confirm-buttons .te-icon-cancel:hover {
+  background: color-mix(in oklab, var(--te-icon-cancel) 20%, transparent);
+}
+
+/* ── Hover-reveal for edit buttons ── */
 .te-edit-buttons:hover {
   opacity: 1;
 }

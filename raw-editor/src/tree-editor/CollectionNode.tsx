@@ -4,7 +4,7 @@ import { isCollection, toPathString } from "./helpers"
 import { ValueNode } from "./ValueNode"
 import { EditActionButtons, ConfirmButtons } from "./EditButtons"
 import { ChevronIcon } from "./Icons"
-import type { TETextarea } from "./IsolatedInput"
+import type { TEInput, TETextarea } from "./IsolatedInput"
 import type { CollectionKey, CustomRenderer } from "./types"
 
 export function CollectionNode(props: {
@@ -34,6 +34,8 @@ export function CollectionNode(props: {
 
   const amEditing = () => ctx.isEditing(pathString)
   const [draft, setDraft] = createSignal("")
+  const [addingKey, setAddingKey] = createSignal(false)
+  const [newKey, setNewKey] = createSignal("")
 
   const showCount = createMemo(() => {
     if (ctx.showCollectionCount === "when-closed") return collapsed()
@@ -62,12 +64,21 @@ export function CollectionNode(props: {
       const arr = props.value as unknown[]
       ctx.onAdd(null, [...props.path, arr.length])
     } else {
-      const key = window.prompt("New key:")
-      if (key === null || key === "") return
-      if (key in (props.value as Record<string, unknown>)) return
-      ctx.onAdd(null, [...props.path, key])
+      setNewKey("")
+      setAddingKey(true)
+      setCollapsed(false)
     }
   }
+
+  const confirmAddKey = () => {
+    const key = newKey().trim()
+    if (key === "") return
+    if (key in (props.value as Record<string, unknown>)) return
+    ctx.onAdd(null, [...props.path, key])
+    setAddingKey(false)
+  }
+
+  const cancelAddKey = () => setAddingKey(false)
 
   const handleDelete = () => {
     if (props.path.length > 0) ctx.onDelete(props.value, props.path)
@@ -141,40 +152,62 @@ export function CollectionNode(props: {
       </div>
 
       <Show when={!collapsed()}>
-        <div class="te-collection-children">
-          <Show when={amEditing()}>
-            <div class="te-collection-edit">
-              <te-textarea
-                ref={(el: TETextarea) => {
-                  const ta = el.textarea
-                  ta.value = draft()
-                  setTimeout(() => ta.focus(), 0)
-                  ta.addEventListener("input", () => setDraft(ta.value))
-                  ta.addEventListener("keydown", (e) => {
-                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        <Show when={amEditing()}>
+          <div class="te-collection-edit">
+            <te-textarea
+              ref={(el: TETextarea) => {
+                const ta = el.textarea
+                ta.value = draft()
+                setTimeout(() => ta.focus(), 0)
+                ta.addEventListener("input", () => setDraft(ta.value))
+                ta.addEventListener("keydown", (e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault()
+                    confirmEdit()
+                  }
+                  if (e.key === "Escape") cancelEdit()
+                })
+              }}
+            />
+            <div class="te-collection-edit-actions">
+              <ConfirmButtons onOk={confirmEdit} onCancel={cancelEdit} />
+            </div>
+          </div>
+        </Show>
+
+        <div
+          class="te-collection-children"
+          style={{ display: amEditing() ? "none" : undefined }}
+        >
+          <For each={keys()}>
+            {(childKey) => <ChildEntry
+              parentValue={props.value}
+              parentPath={props.path}
+              parentLevel={props.level}
+              childKey={childKey}
+              isParentArray={isArray()}
+            />}
+          </For>
+
+          <Show when={addingKey()}>
+            <div class="te-add-key" style={{ "margin-left": `${ctx.indent / 2}em` }}>
+              <te-input
+                ref={(el: TEInput) => {
+                  const input = el.input
+                  input.placeholder = "key name"
+                  setTimeout(() => input.focus(), 0)
+                  input.addEventListener("input", () => setNewKey(input.value))
+                  input.addEventListener("keydown", (e) => {
+                    if (e.key === "Enter") {
                       e.preventDefault()
-                      confirmEdit()
+                      confirmAddKey()
                     }
-                    if (e.key === "Escape") cancelEdit()
+                    if (e.key === "Escape") cancelAddKey()
                   })
                 }}
               />
-              <div class="te-collection-edit-actions">
-                <ConfirmButtons onOk={confirmEdit} onCancel={cancelEdit} />
-              </div>
+              <ConfirmButtons onOk={confirmAddKey} onCancel={cancelAddKey} />
             </div>
-          </Show>
-
-          <Show when={!amEditing()}>
-            <For each={keys()}>
-              {(childKey) => <ChildEntry
-                parentValue={props.value}
-                parentPath={props.path}
-                parentLevel={props.level}
-                childKey={childKey}
-                isParentArray={isArray()}
-              />}
-            </For>
           </Show>
         </div>
 
