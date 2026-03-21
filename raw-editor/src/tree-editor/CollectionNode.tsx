@@ -97,11 +97,8 @@ export function CollectionNode(props: {
   const isArrayChild = () =>
     props.parentData !== null && Array.isArray(props.parentData)
 
-  const showKey = () => {
-    if (props.path.length === 0) return false
-    if (isArrayChild() && !ctx.showArrayIndices) return false
-    return true
-  }
+  const showKey = () =>
+    props.path.length > 0 && (!isArrayChild() || ctx.showArrayIndices)
 
   return (
     <div class="te-collection" style={{ "margin-left": indent() }}>

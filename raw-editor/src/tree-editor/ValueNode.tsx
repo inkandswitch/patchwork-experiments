@@ -40,11 +40,8 @@ export function ValueNode(props: {
   })
 
   const startEdit = () => {
-    const v = props.value
-    if (typeof v === "boolean") setDraft(String(v))
-    else if (v === null) setDraft("null")
-    else setDraft(String(v ?? ""))
-    setSelectedType(typeOfValue(v))
+    setDraft(String(props.value))
+    setSelectedType(typeOfValue(props.value))
     ctx.startEditing(pathString)
   }
 
@@ -70,10 +67,7 @@ export function ValueNode(props: {
 
   const isArrayChild = () => Array.isArray(props.parentData)
 
-  const showKey = () => {
-    if (isArrayChild() && !ctx.showArrayIndices) return false
-    return true
-  }
+  const showKey = () => !isArrayChild() || ctx.showArrayIndices
 
   const displayText = () => {
     const v = props.value
@@ -105,7 +99,20 @@ export function ValueNode(props: {
         </Show>
 
         <div class="te-value-and-buttons">
-          <Show when={!amEditing()}>
+          <Show
+            when={!amEditing()}
+            fallback={
+              <EditingUI
+                draft={draft()}
+                setDraft={setDraft}
+                selectedType={selectedType()}
+                setSelectedType={setSelectedType}
+                onConfirm={confirmEdit}
+                onCancel={cancelEdit}
+                onCast={handleCast}
+              />
+            }
+          >
             <Show
               when={props.customRenderer}
               fallback={
@@ -118,21 +125,7 @@ export function ValueNode(props: {
                 renderer().render({ value: props.value, nodeData: nodeData() })
               }
             </Show>
-          </Show>
 
-          <Show when={amEditing()}>
-            <EditingUI
-              draft={draft()}
-              setDraft={setDraft}
-              selectedType={selectedType()}
-              setSelectedType={setSelectedType}
-              onConfirm={confirmEdit}
-              onCancel={cancelEdit}
-              onCast={handleCast}
-            />
-          </Show>
-
-          <Show when={!amEditing()}>
             <EditActionButtons
               canEdit={canEdit()}
               canDelete={true}
@@ -177,7 +170,7 @@ function EditingUI(props: {
   }
 
   return (
-    <>
+    <div class="te-editing-row">
       <te-input
         ref={(el: TEInput) => {
           const input = el.input
@@ -200,12 +193,11 @@ function EditingUI(props: {
       <TypeCards
         parseable={parseable()}
         selected={props.selectedType}
-        draft={props.draft}
         onSelect={props.setSelectedType}
         onCast={props.onCast}
       />
 
       <ConfirmButtons onOk={props.onConfirm} onCancel={props.onCancel} />
-    </>
+    </div>
   )
 }

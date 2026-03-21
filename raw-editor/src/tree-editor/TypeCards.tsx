@@ -1,8 +1,8 @@
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js"
 
-export type ValueType = "null" | "boolean" | "number" | "array" | "object" | "url" | "string"
+export type ValueType = "null" | "boolean" | "number" | "array" | "object" | "string"
 
-const ALL_TYPES: ValueType[] = ["null", "boolean", "number", "array", "object", "url", "string"]
+const ALL_TYPES: ValueType[] = ["null", "boolean", "number", "array", "object", "string"]
 
 const DEFAULT_VALUES: Record<ValueType, unknown> = {
   null: null,
@@ -10,18 +10,7 @@ const DEFAULT_VALUES: Record<ValueType, unknown> = {
   number: 0,
   array: [],
   object: {},
-  url: "automerge:",
   string: "",
-}
-
-const TYPE_LABELS: Partial<Record<ValueType, string>> = {
-  url: "url (string)",
-}
-
-const AM_URL_RE = /^automerge:[1-9A-HJ-NP-Za-km-z]+$/
-
-function isAutomergeUrl(s: string): boolean {
-  return s.startsWith("automerge:")
 }
 
 export function typeOfValue(value: unknown): ValueType {
@@ -30,7 +19,7 @@ export function typeOfValue(value: unknown): ValueType {
   switch (typeof value) {
     case "boolean": return "boolean"
     case "number": return "number"
-    case "string": return isAutomergeUrl(value) ? "url" : "string"
+    case "string": return "string"
     case "object": return "object"
     default: return "string"
   }
@@ -53,8 +42,6 @@ export function parseableTypes(draft: string): ValueType[] {
     } catch {}
   }
 
-  if (isAutomergeUrl(trimmed)) types.push("url")
-
   types.push("string")
   return types
 }
@@ -67,7 +54,6 @@ export function coerceDraft(draft: string, type: ValueType): unknown {
     case "array":
     case "object":
       try { return JSON.parse(draft.trim()) } catch { return DEFAULT_VALUES[type] }
-    case "url":
     case "string": return draft
   }
 }
@@ -75,7 +61,6 @@ export function coerceDraft(draft: string, type: ValueType): unknown {
 export function TypeCards(props: {
   parseable: ValueType[]
   selected: ValueType
-  draft?: string
   onSelect: (type: ValueType) => void
   onCast: (type: ValueType, defaultValue: unknown) => void
 }) {
@@ -93,27 +78,19 @@ export function TypeCards(props: {
   onMount(() => document.addEventListener("click", closeDropdown, true))
   onCleanup(() => document.removeEventListener("click", closeDropdown, true))
 
-  const segClass = (type: ValueType) => {
-    let cls = "te-seg"
-    if (type === props.selected) cls += " te-seg-active"
-    if (type === "url" && props.draft && !AM_URL_RE.test(props.draft.trim()))
-      cls += " te-seg-warn"
-    return cls
-  }
-
   return (
     <span class="te-segmented" ref={containerRef}>
       <For each={props.parseable}>
         {(type) => (
           <span
-            class={segClass(type)}
+            class={`te-seg${type === props.selected ? " te-seg-active" : ""}`}
             onClick={(e) => {
               e.stopPropagation()
               setDropdownOpen(false)
               props.onSelect(type)
             }}
           >
-            {TYPE_LABELS[type] ?? type}
+            {type}
           </span>
         )}
       </For>
@@ -142,7 +119,7 @@ export function TypeCards(props: {
                   props.onCast(type, DEFAULT_VALUES[type])
                 }}
               >
-                {TYPE_LABELS[type] ?? type}
+                {type}
               </span>
             )}
           </For>
