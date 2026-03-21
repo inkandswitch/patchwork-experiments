@@ -38,6 +38,15 @@ export function CollectionNode(props: {
   const [addingKey, setAddingKey] = createSignal(false)
   const [newKey, setNewKey] = createSignal("")
 
+  const PAGE_SIZE = 100
+  const [visibleCount, setVisibleCount] = createSignal(PAGE_SIZE)
+  const visibleKeys = createMemo(() =>
+    isArray() ? keys().slice(0, visibleCount()) : keys()
+  )
+  const remaining = createMemo(() =>
+    isArray() ? Math.max(0, size() - visibleCount()) : 0
+  )
+
   const showCount = createMemo(() => {
     if (ctx.showCollectionCount === "when-closed") return collapsed()
     return ctx.showCollectionCount
@@ -189,7 +198,7 @@ export function CollectionNode(props: {
           class="te-collection-children"
           style={{ display: amEditing() ? "none" : undefined }}
         >
-          <For each={keys()}>
+          <For each={visibleKeys()}>
             {(childKey) => <ChildEntry
               parentValue={props.value}
               parentPath={props.path}
@@ -198,6 +207,29 @@ export function CollectionNode(props: {
               isParentArray={isArray()}
             />}
           </For>
+
+          <Show when={remaining() > 0}>
+            <span class="te-show-more-row" style={{ "margin-left": `${ctx.indent / 2}em` }}>
+              <span
+                class="te-show-more"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setVisibleCount((c) => c + PAGE_SIZE)
+                }}
+              >
+                show more ({visibleCount()} – {Math.min(visibleCount() + PAGE_SIZE, size())} of {size()})
+              </span>
+              <span
+                class="te-show-more te-show-all"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setVisibleCount(size())
+                }}
+              >
+                show all
+              </span>
+            </span>
+          </Show>
 
           <Show when={addingKey()}>
             <div class="te-add-key" style={{ "margin-left": `${ctx.indent / 2}em` }}>

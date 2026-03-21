@@ -103,22 +103,23 @@
 .re-font-trigger {
   display: inline-flex;
   align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 0.3rem;
   font-size: 0.68rem;
   font-weight: 500;
-  opacity: 0.3;
   cursor: pointer;
-  user-select: none;
-  font-style: italic;
-  transition: opacity 0.1s, background 0.1s;
-  padding: 0.2rem 0.45rem;
-  letter-spacing: -0.03em;
   border: 1px solid var(--re-border);
-  border-radius: 0.3rem;
+  background: transparent;
+  color: inherit;
+  opacity: 0.7;
+  transition: opacity 0.1s, background 0.1s;
   white-space: nowrap;
+  user-select: none;
 }
 
 .re-font-trigger:hover {
-  opacity: 0.7;
+  opacity: 1;
   background: var(--re-btn-hover);
 }
 
