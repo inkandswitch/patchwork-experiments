@@ -28,7 +28,7 @@
 
   position: relative;
   font-size: 16px;
-  font-family: ui-monospace, monospace;
+  font-family: inherit;
   line-height: 1;
   padding: 1em;
   padding-left: 2em;

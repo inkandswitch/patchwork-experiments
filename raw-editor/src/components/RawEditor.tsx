@@ -12,6 +12,7 @@ import { Uint8ArrayInspector } from "./Uint8ArrayInspector"
 import { UndoIcon, RedoIcon, DownloadIcon } from "../tree-editor/Icons"
 import { applyAtPath, deleteAtPath } from "../automerge-helpers"
 import { createUndoRedo } from "../undo-redo"
+import { createFontState, FontPicker } from "../font-picker"
 import "../rawEditor.css"
 
 // ─── TinyTool mount point ─────────────────────────────────────────────────────
@@ -176,6 +177,8 @@ function RawEditor(props: {
     })
   }
 
+  const font = createFontState()
+
   let treeHandle: TreeEditorHandle | undefined
 
   const keyHandler = (e: KeyboardEvent) => {
@@ -192,7 +195,7 @@ function RawEditor(props: {
   }
 
   return (
-    <div class="raw-editor-wrapper" tabIndex={-1} onKeyDown={keyHandler}>
+    <div class="raw-editor-wrapper" tabIndex={-1} onKeyDown={keyHandler} style={{ "font-family": font.fontFamily() }}>
       <Show
         when={doc()}
         fallback={
@@ -241,6 +244,7 @@ function RawEditor(props: {
                   <DownloadIcon /> .automerge
                 </button>
               </div>
+              <FontPicker fontId={font.fontId} onSelect={font.selectFont} />
             </div>
 
             <div class="re-content">

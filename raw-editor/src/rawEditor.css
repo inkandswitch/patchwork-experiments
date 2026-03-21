@@ -94,6 +94,77 @@
   cursor: default;
 }
 
+/* ── Font picker ── */
+.re-font-picker {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.re-font-trigger {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.68rem;
+  font-weight: 500;
+  opacity: 0.3;
+  cursor: pointer;
+  user-select: none;
+  font-style: italic;
+  transition: opacity 0.1s, background 0.1s;
+  padding: 0.2rem 0.45rem;
+  letter-spacing: -0.03em;
+  border: 1px solid var(--re-border);
+  border-radius: 0.3rem;
+  white-space: nowrap;
+}
+
+.re-font-trigger:hover {
+  opacity: 0.7;
+  background: var(--re-btn-hover);
+}
+
+.re-font-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 10rem;
+  border-radius: 0.35rem;
+  overflow: hidden;
+  background: var(--re-dump-bg);
+  border: 1px solid var(--re-border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(12px);
+}
+
+@media (prefers-color-scheme: dark) {
+  .re-font-dropdown {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  }
+}
+
+.re-font-option {
+  font-size: 0.72rem;
+  padding: 0.4rem 0.6rem;
+  cursor: pointer;
+  opacity: 0.6;
+  white-space: nowrap;
+  transition: opacity 0.1s, background 0.1s;
+  user-select: none;
+}
+
+.re-font-option:hover {
+  opacity: 1;
+  background: var(--re-btn-hover);
+}
+
+.re-font-option--active {
+  opacity: 1;
+  font-weight: 600;
+  background: var(--re-mode-active-bg);
+}
+
 /* ── Content ── */
 .re-content {
   flex: 1;
