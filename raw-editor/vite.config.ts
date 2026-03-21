@@ -1,11 +1,11 @@
-import react from "@vitejs/plugin-react"
+import solid from "vite-plugin-solid"
 import { defineConfig } from "vite"
 import cssInjectedByJsPlugin from "vite-plugin-css-injected-by-js"
 import external from "@inkandswitch/patchwork-bootloader/externals"
 
 export default defineConfig({
   base: "./",
-  plugins: [react(), cssInjectedByJsPlugin()],
+  plugins: [solid(), cssInjectedByJsPlugin()],
 
   build: {
     rollupOptions: {

@@ -1,88 +1,86 @@
-import { useMemo, useState } from "react";
+import { createMemo, createSignal, For } from "solid-js"
 
-type InspectMode = "hex" | "decimal" | "utf8" | "base64";
+type InspectMode = "hex" | "decimal" | "utf8" | "base64"
 
 const INSPECT_MODES: { key: InspectMode; label: string }[] = [
   { key: "hex", label: "Hex" },
   { key: "decimal", label: "Decimal" },
   { key: "utf8", label: "UTF-8" },
   { key: "base64", label: "Base64" },
-];
+]
 
 function renderInspectContent(bytes: Uint8Array, mode: InspectMode): string {
   if (mode === "base64") {
-    let binary = "";
+    let binary = ""
     for (let i = 0; i < bytes.length; i++)
-      binary += String.fromCharCode(bytes[i]);
-    return btoa(binary);
+      binary += String.fromCharCode(bytes[i])
+    return btoa(binary)
   }
   if (mode === "utf8") {
-    return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+    return new TextDecoder("utf-8", { fatal: false }).decode(bytes)
   }
   if (mode === "decimal") {
-    const lines = [];
+    const lines = []
     for (let i = 0; i < bytes.length; i += 16) {
-      const slice = bytes.slice(i, i + 16);
+      const slice = bytes.slice(i, i + 16)
       lines.push(
         Array.from(slice)
           .map((b) => b.toString().padStart(3, " "))
-          .join(" "),
-      );
+          .join(" ")
+      )
     }
-    return lines.join("\n");
+    return lines.join("\n")
   }
-  const lines = [];
+  const lines = []
   for (let i = 0; i < bytes.length; i += 16) {
-    const slice = bytes.slice(i, i + 16);
+    const slice = bytes.slice(i, i + 16)
     lines.push(
       Array.from(slice)
         .map((b) => b.toString(16).padStart(2, "0"))
-        .join(" "),
-    );
+        .join(" ")
+    )
   }
-  return lines.join("\n");
+  return lines.join("\n")
 }
 
-export function Uint8ArrayInspector({ bytes }: { bytes: Uint8Array }) {
-  const [expanded, setExpanded] = useState(false);
-  const [mode, setMode] = useState<InspectMode>("hex");
-  const content = useMemo(
-    () => renderInspectContent(bytes, mode),
-    [bytes, mode],
-  );
+export function Uint8ArrayInspector(props: { bytes: Uint8Array }) {
+  const [expanded, setExpanded] = createSignal(false)
+  const [mode, setMode] = createSignal<InspectMode>("hex")
+  const content = createMemo(() => renderInspectContent(props.bytes, mode()))
 
   return (
-    <span className="u8-node">
-      <span className="u8-badge">Uint8Array</span>
-      <span className="u8-size">{bytes.byteLength} bytes</span>
+    <span class="u8-node">
+      <span class="u8-badge">Uint8Array</span>
+      <span class="u8-size">{props.bytes.byteLength} bytes</span>
       <span
-        className="u8-toggle"
+        class="u8-toggle"
         onClick={(e) => {
-          e.stopPropagation();
-          setExpanded((v) => !v);
+          e.stopPropagation()
+          setExpanded((v) => !v)
         }}
       >
-        {expanded ? "hide" : "inspect"}
+        {expanded() ? "hide" : "inspect"}
       </span>
-      {expanded && (
-        <span className="u8-dump">
-          <span className="u8-mode-bar">
-            {INSPECT_MODES.map((m) => (
-              <span
-                key={m.key}
-                className={`u8-mode-btn${mode === m.key ? " u8-mode-btn--active" : ""}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setMode(m.key);
-                }}
-              >
-                {m.label}
-              </span>
-            ))}
+      {expanded() && (
+        <span class="u8-dump">
+          <span class="u8-mode-bar">
+            <For each={INSPECT_MODES}>
+              {(m) => (
+                <span
+                  class={`u8-mode-btn${mode() === m.key ? " u8-mode-btn--active" : ""}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setMode(m.key)
+                  }}
+                >
+                  {m.label}
+                </span>
+              )}
+            </For>
           </span>
-          <pre className="u8-pre">{content}</pre>
+          <pre class="u8-pre">{content()}</pre>
         </span>
       )}
     </span>
-  );
+  )
 }

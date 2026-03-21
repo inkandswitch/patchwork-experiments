@@ -1,0 +1,282 @@
+/* ── Theme variables (Nord light) ── */
+.te-container {
+  --te-string: #2e7d32;
+  --te-number: #6a1b9a;
+  --te-boolean: #0277bd;
+  --te-null: #c62828;
+  --te-bracket: rgba(0, 0, 0, 0.3);
+  --te-property: #5e81ac;
+  --te-property-array: rgba(0, 0, 0, 0.3);
+  --te-item-count: rgba(0, 0, 0, 0.35);
+  --te-input-bg: rgba(0, 0, 0, 0.04);
+  --te-input-color: #2e3440;
+  --te-input-border: rgba(0, 0, 0, 0.15);
+  --te-input-border-focus: #5e81ac;
+  --te-highlight: #b3d8ff;
+  --te-icon-edit: #f9a825;
+  --te-icon-delete: #c62828;
+  --te-icon-add: #2e7d32;
+  --te-icon-copy: #0277bd;
+  --te-icon-ok: #2e7d32;
+  --te-icon-cancel: #c62828;
+  --te-icon-collection: #4c566a;
+
+  position: relative;
+  font-size: 16px;
+  font-family: ui-monospace, monospace;
+  line-height: 1;
+  padding: 1em;
+  padding-left: 2em;
+  border-radius: 0.5em;
+  text-align: left;
+}
+
+/* ── Theme variables (Nord dark) ── */
+@media (prefers-color-scheme: dark) {
+  .te-container {
+    --te-string: #a3be8c;
+    --te-number: #b48ead;
+    --te-boolean: #81a1c1;
+    --te-null: #bf616a;
+    --te-bracket: rgba(216, 222, 233, 0.35);
+    --te-property: #88c0d0;
+    --te-property-array: rgba(216, 222, 233, 0.3);
+    --te-item-count: rgba(216, 222, 233, 0.4);
+    --te-input-bg: #3b4252;
+    --te-input-color: #d8dee9;
+    --te-input-border: #4c566a;
+    --te-input-border-focus: #81a1c1;
+    --te-highlight: #434c5e;
+    --te-icon-edit: #ebcb8b;
+    --te-icon-delete: #bf616a;
+    --te-icon-add: #a3be8c;
+    --te-icon-copy: #88c0d0;
+    --te-icon-ok: #a3be8c;
+    --te-icon-cancel: #bf616a;
+    --te-icon-collection: #81a1c1;
+  }
+}
+
+/* ── Selection highlight ── */
+.te-container ::selection {
+  background-color: var(--te-highlight);
+}
+
+/* ── Key ── */
+.te-key {
+  color: var(--te-property);
+  word-break: break-word;
+  line-height: 1.3em;
+  white-space: pre-wrap;
+  flex-shrink: 0;
+}
+
+.te-key-array {
+  color: var(--te-property-array);
+}
+
+.te-colon {
+  color: var(--te-bracket);
+  margin-right: 0.3em;
+  flex-shrink: 0;
+}
+
+/* ── Values ── */
+.te-string {
+  color: var(--te-string);
+  line-height: 1.3em;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.te-number {
+  color: var(--te-number);
+}
+
+.te-boolean {
+  color: var(--te-boolean);
+}
+
+.te-null {
+  color: var(--te-null);
+  font-variant: small-caps;
+  font-weight: bold;
+}
+
+.te-invalid {
+  opacity: 0.5;
+  font-style: italic;
+}
+
+/* ── Brackets ── */
+.te-bracket {
+  color: var(--te-bracket);
+}
+
+.te-bracket-closing {
+  display: block;
+  padding-left: 0.5em;
+}
+
+/* ── Item count ── */
+.te-item-count {
+  color: var(--te-item-count);
+  font-style: italic;
+  margin-left: 0.3em;
+}
+
+/* ── Collection ── */
+.te-collection {
+  position: relative;
+}
+
+.te-collection-header {
+  display: flex;
+  min-height: 1.7em;
+  gap: 0.3em;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  padding-top: 0.25em;
+}
+
+.te-collection-children {
+  position: relative;
+}
+
+/* ── Chevron ── */
+.te-chevron {
+  position: absolute;
+  left: -1.2em;
+  top: 0.35em;
+  cursor: pointer;
+  color: var(--te-icon-collection);
+  user-select: none;
+}
+
+.te-chevron-rotated {
+  transform: rotate(-90deg);
+}
+
+/* ── Value row ── */
+.te-value {
+  position: relative;
+}
+
+.te-value-row {
+  display: flex;
+  min-height: 1.7em;
+  gap: 0;
+  align-items: flex-start;
+  padding-top: 0.25em;
+}
+
+.te-value-and-buttons {
+  display: flex;
+  justify-content: flex-start;
+  align-items: flex-start;
+  padding-left: 0.5em;
+  gap: 0.3em;
+  min-width: 0;
+  flex: 1;
+}
+
+.te-value-display {
+  line-height: 1.3em;
+}
+
+/* ── Isolated inputs (shadow DOM custom elements) ── */
+te-input {
+  display: inline-block;
+}
+
+.te-bool-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  color: var(--te-boolean);
+  cursor: pointer;
+  padding: 0.15em 0.5em;
+  border: 1px solid var(--te-input-border);
+  border-radius: 0.3em;
+  background-color: var(--te-input-bg);
+  user-select: none;
+}
+
+.te-bool-label:hover {
+  border-color: var(--te-input-border-focus);
+}
+
+.te-collection-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+  align-items: flex-start;
+  line-height: 1.1em;
+}
+
+te-textarea {
+  display: block;
+}
+
+.te-collection-edit-actions {
+  display: flex;
+  justify-content: flex-start;
+  width: 100%;
+  font-size: 150%;
+  margin-top: 0.4em;
+}
+
+/* ── Icon buttons ── */
+.te-icon {
+  cursor: pointer;
+  display: inline-flex;
+  transition: transform 0.12s ease, opacity 0.12s ease;
+}
+
+.te-icon:hover {
+  opacity: 0.85;
+  transform: scale(1.2);
+}
+
+.te-icon-edit { color: var(--te-icon-edit); }
+.te-icon-delete { color: var(--te-icon-delete); }
+.te-icon-add { color: var(--te-icon-add); }
+.te-icon-copy { color: var(--te-icon-copy); }
+.te-icon-ok { color: var(--te-icon-ok); }
+.te-icon-cancel { color: var(--te-icon-cancel); }
+
+.te-edit-buttons,
+.te-confirm-buttons {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  height: 1em;
+}
+
+.te-edit-buttons {
+  gap: 0.4em;
+  margin-left: 0.5em;
+  opacity: 0;
+}
+
+.te-confirm-buttons {
+  gap: 0.2em;
+  margin-left: 0.4em;
+}
+
+.te-edit-buttons:hover {
+  opacity: 1;
+}
+
+.te-collection-header:hover > .te-edit-buttons {
+  opacity: 1;
+}
+
+.te-value-row:hover > .te-value-and-buttons > .te-edit-buttons {
+  opacity: 1;
+}
+
+.te-value-and-buttons:hover > .te-edit-buttons {
+  opacity: 1;
+}
