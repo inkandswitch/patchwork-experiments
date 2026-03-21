@@ -188,15 +188,6 @@
   color: var(--re-link-hover) !important;
 }
 
-/* ── Binary data hint (disabled edit icon) ── */
-.re-binary-hint {
-  opacity: 0.25;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  margin-left: 2px;
-}
-
 /* ── Uint8Array inspector ── */
 .u8-node {
   display: inline-flex;
