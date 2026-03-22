@@ -1,5 +1,4 @@
-import { findRef } from "./ref";
-import type { Ref } from "./ref";
+import { findRef, Ref } from "./ref";
 import type { Schema } from "./schema";
 import type { MiniCanvasFilesystem } from "./filesystem";
 import type { Repo } from "@automerge/automerge-repo";
@@ -30,6 +29,8 @@ export function registerRefView(repo: Repo, filesystem: MiniCanvasFilesystem): v
     #cleanup: (() => void) | null = null;
     #mountAbort: AbortController | null = null;
     #ref: Ref | null = null;
+    #toolRef: Ref<string> | null = null;
+    #toolUnsub: (() => void) | null = null;
 
     get filesystem(): MiniCanvasFilesystem {
       return filesystem;
@@ -53,7 +54,14 @@ export function registerRefView(repo: Repo, filesystem: MiniCanvasFilesystem): v
       return this.getAttribute(ATTR_TOOL) ?? "";
     }
 
-    set toolUrl(value: string | null | undefined) {
+    set toolUrl(value: string | Ref<string> | null | undefined) {
+      if (value instanceof Ref) {
+        this.#toolRef = value as Ref<string>;
+        this.removeAttribute(ATTR_TOOL);
+        if (this.isConnected) this.#scheduleMount();
+        return;
+      }
+      this.#toolRef = null;
       const v = value == null ? "" : String(value);
       const cur = this.getAttribute(ATTR_TOOL) ?? "";
       if (v === cur) return;
@@ -101,6 +109,10 @@ export function registerRefView(repo: Repo, filesystem: MiniCanvasFilesystem): v
 
     #teardown(): void {
       this.#ref = null;
+      if (this.#toolUnsub) {
+        this.#toolUnsub();
+        this.#toolUnsub = null;
+      }
       if (this.#cleanup) {
         try {
           this.#cleanup();
@@ -117,11 +129,35 @@ export function registerRefView(repo: Repo, filesystem: MiniCanvasFilesystem): v
 
     async #mount(signal: AbortSignal): Promise<void> {
       this.#teardown();
-      const toolUrl = this.toolUrl;
       const refUrl = this.refUrl;
-      if (!toolUrl || !refUrl) {
+      if (!refUrl) {
         this.replaceChildren();
         return;
+      }
+
+      let toolUrl: string;
+      if (this.#toolRef) {
+        const val = this.#toolRef.value();
+        if (typeof val !== "string" || !val) {
+          this.replaceChildren();
+          return;
+        }
+        toolUrl = val;
+
+        let current = toolUrl;
+        this.#toolUnsub = this.#toolRef.subscribe((newVal) => {
+          const newUrl = typeof newVal === "string" ? newVal : "";
+          if (newUrl && newUrl !== current) {
+            current = newUrl;
+            this.#scheduleMount();
+          }
+        });
+      } else {
+        toolUrl = this.toolUrl;
+        if (!toolUrl) {
+          this.replaceChildren();
+          return;
+        }
       }
 
       this.replaceChildren();
