@@ -5,16 +5,6 @@ import type { Repo } from "@automerge/automerge-repo";
 
 const g = globalThis as typeof globalThis & { repo?: Repo };
 
-function decodeAttr(raw: string): string {
-  const t = raw.trim();
-  if (!t) return t;
-  try {
-    return decodeURIComponent(t);
-  } catch {
-    return t;
-  }
-}
-
 const ATTR_TOOL = "tool-url";
 const ATTR_REF = "ref-url";
 
@@ -111,8 +101,8 @@ export function registerRefView(repo: Repo | undefined = g.repo, filesystem: Min
 
     async #mount(signal: AbortSignal): Promise<void> {
       this.#teardown();
-      const toolUrl = decodeAttr(this.toolUrl);
-      const refUrl = decodeAttr(this.refUrl);
+      const toolUrl = this.toolUrl;
+      const refUrl = this.refUrl;
       if (!toolUrl || !refUrl) {
         this.replaceChildren();
         return;
