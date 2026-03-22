@@ -1,11 +1,21 @@
+import { z } from 'https://esm.sh/zod@4.3';
+
+const FrameSchema = z.object({});
+
+export const schema = {
+  init() {
+    return FrameSchema.parse({});
+  },
+  parse(value) {
+    return FrameSchema.parse(value);
+  },
+};
+
 /**
- * Default export for &lt;ref-view&gt; (see system README).
- *
- * @param {object} ref — world doc root ref
- * @param {HTMLElement} element — &lt;ref-view&gt; host (`element.filesystem` for system files)
+ * @param {HTMLElement} element — <ref-view> host (use element.ref for data access)
  * @returns {() => void}
  */
-export default function mountMiniCanvasFrame(_ref, element) {
+export default function mount(element) {
   const div = document.createElement('div');
   div.textContent = 'hello world';
   div.style.cssText =

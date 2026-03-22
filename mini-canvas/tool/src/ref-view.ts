@@ -1,5 +1,5 @@
 import { findRef } from "./ref";
-import type { Ref } from "./ref";
+import type { Ref, Schema } from "./ref";
 import type { MiniCanvasFilesystem } from "./filesystem";
 import type { Repo } from "@automerge/automerge-repo";
 
@@ -8,23 +8,27 @@ const g = globalThis as typeof globalThis & { repo?: Repo };
 const ATTR_TOOL = "tool-url";
 const ATTR_REF = "ref-url";
 
-export interface RefViewHostElement extends HTMLElement {
-  filesystem?: MiniCanvasFilesystem;
-}
+export type RefViewHostElement = HTMLElement & {
+  readonly ref: Ref;
+  readonly parent: RefViewHostElement | null;
+  readonly filesystem: MiniCanvasFilesystem;
+};
 
 type MountModule = {
-  default: (ref: Ref, element: RefViewHostElement) => void | (() => void);
+  default: (element: RefViewHostElement) => void | (() => void);
+  schema?: Schema<unknown>;
 };
 
 /**
  * Defines **`ref-view`** once, with `repo` and optional default `filesystem` closed over.
  */
-export function registerRefView(repo: Repo | undefined = g.repo, filesystem: MiniCanvasFilesystem): void {
+export function registerRefView(repo: Repo, filesystem: MiniCanvasFilesystem): void {
   if (customElements.get("ref-view")) return;
 
   class RefViewElement extends HTMLElement implements RefViewHostElement {
     #cleanup: (() => void) | null = null;
     #mountAbort: AbortController | null = null;
+    #ref: Ref | null = null;
 
     get filesystem(): MiniCanvasFilesystem {
       return filesystem;
@@ -32,6 +36,16 @@ export function registerRefView(repo: Repo | undefined = g.repo, filesystem: Min
 
     static get observedAttributes(): string[] {
       return [ATTR_TOOL, ATTR_REF];
+    }
+
+    get ref(): Ref {
+      if (!this.#ref) throw new Error("ref-view: ref not ready (called before mount resolved)");
+      return this.#ref;
+    }
+
+    get parent(): RefViewElement | null {
+      const host = this.parentElement?.closest("ref-view");
+      return (host as RefViewElement | null) ?? null;
     }
 
     get toolUrl(): string {
@@ -85,6 +99,7 @@ export function registerRefView(repo: Repo | undefined = g.repo, filesystem: Min
     }
 
     #teardown(): void {
+      this.#ref = null;
       if (this.#cleanup) {
         try {
           this.#cleanup();
@@ -108,29 +123,23 @@ export function registerRefView(repo: Repo | undefined = g.repo, filesystem: Min
         return;
       }
 
-      const activeRepo = repo ?? g.repo;
-      if (!activeRepo || typeof activeRepo.find !== "function") {
-        this.replaceChildren();
-        const msg = document.createTextNode("ref-view: no repo (pass repo into registerRefView or set window.repo)");
-        this.appendChild(msg);
-        return;
-      }
-
       this.replaceChildren();
 
       try {
-        const ref = await findRef(activeRepo, refUrl);
+        const ref = await findRef(repo, refUrl);
         if (this.#stale(signal)) return;
+
+        this.#ref = ref;
 
         const mod = (await import(/* @vite-ignore */ toolUrl)) as MountModule;
         if (this.#stale(signal)) return;
 
         const fn = mod.default;
         if (typeof fn !== "function") {
-          throw new TypeError("module default export must be a function (ref, element) => cleanup?");
+          throw new TypeError("module default export must be a function (element) => cleanup?");
         }
 
-        const dispose = fn(ref, this);
+        const dispose = fn(this);
         if (this.#stale(signal)) {
           if (typeof dispose === "function") dispose();
           return;
@@ -142,7 +151,8 @@ export function registerRefView(repo: Repo | undefined = g.repo, filesystem: Min
         if (!this.isConnected) return;
         const pre = document.createElement("pre");
         pre.style.whiteSpace = "pre-wrap";
-        pre.textContent = err instanceof Error ? `ref-view: ${err.message}` : `ref-view: ${String(err)}`;
+        pre.textContent =
+          err instanceof Error ? `ref-view: ${err.message}` : `ref-view: ${String(err)}`;
         this.appendChild(pre);
       }
     }

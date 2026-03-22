@@ -31,13 +31,13 @@ function mimeFromExtension(ext: string): string {
   return m[ext] || "text/plain";
 }
 
-export interface MiniCanvasFilesystem {
+export type MiniCanvasFilesystem = {
   readFile(path: string): Promise<string>;
   writeFile(path: string, content: string): Promise<void>;
   listFiles(path?: string): Promise<DocLink[]>;
   importFile(path: string): Promise<unknown>;
   getUrlOfFile(path?: string): string;
-}
+};
 
 function isFolderDoc(d: unknown): d is FolderDoc {
   return typeof d === "object" && d !== null && "docs" in d;
@@ -97,7 +97,8 @@ export function createFilesystem(repo: Repo, rootFolderUrl: AutomergeUrl): MiniC
   }
 
   function buildFetchUrl(relativePath = ""): string {
-    const baseHref = new URL(automergeUrlToServiceWorkerUrl(rootFolderUrl), window.location.origin).href;
+    const baseHref = new URL(automergeUrlToServiceWorkerUrl(rootFolderUrl), window.location.origin)
+      .href;
     if (!relativePath || !String(relativePath).trim()) return baseHref;
     const suffix = splitPath(relativePath).map(encodeURIComponent).join("/");
     return new URL(suffix, baseHref).href;
