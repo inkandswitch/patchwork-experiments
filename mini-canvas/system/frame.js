@@ -17,6 +17,7 @@ export const schema = {
       shapes: {
         selectionButton: { x: 10, y: 10, toolUrl: new URL('./selection-button.js', import.meta.url).href },
         rectButton: { x: 50, y: 10, toolUrl: new URL('./rectangle-button.js', import.meta.url).href },
+        lineButton: { x: 90, y: 10, toolUrl: new URL('./line-button.js', import.meta.url).href },
       },
     };
   },
