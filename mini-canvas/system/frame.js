@@ -1,25 +1,53 @@
 import { z } from 'https://esm.sh/zod@4.3';
+import { from } from 'https://esm.sh/solid-js@1.9';
+import { render } from 'https://esm.sh/solid-js@1.9/web';
+import html from 'https://esm.sh/solid-js@1.9/html';
 
-const FrameSchema = z.object({});
+const ShapeSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  toolUrl: z.string(),
+});
+
+const FrameSchema = z.object({
+  shapes: z.record(z.string(), ShapeSchema.passthrough()),
+});
 
 export const schema = {
   init() {
-    return FrameSchema.parse({});
+    return {
+      shapes: {
+        rect1: { x: 50, y: 50, toolUrl: new URL('./rectangle.js', import.meta.url).href, width: 200, height: 120 },
+      },
+    };
   },
   parse(value) {
     return FrameSchema.parse(value);
   },
 };
 
-/**
- * @param {HTMLElement} element — <ref-view> host (use element.ref for data access)
- * @returns {() => void}
- */
 export default function mount(element) {
-  const div = document.createElement('div');
-  div.textContent = 'hello world';
-  div.style.cssText =
-    'font-family: system-ui, sans-serif; font-size: 1rem; padding: 0.75rem; color: #18181b;';
-  element.appendChild(div);
-  return () => div.remove();
+  const ref = element.ref.as(schema);
+  const shapes = from(ref.at('shapes'));
+
+  return render(
+    () =>
+      html`<div style=${{ position: 'relative', width: '100%', height: '100%' }}>
+        ${() => {
+          const entries = Object.entries(shapes() ?? {});
+          return entries.map(
+            ([id, shape]) =>
+              html`<div
+                style=${{ position: 'absolute', left: `${shape.x}px`, top: `${shape.y}px` }}
+              >
+                <ref-view
+                  tool-url=${shape.toolUrl}
+                  ref-url=${ref.at('shapes', id).url}
+                />
+              </div>`,
+          );
+        }}
+      </div>`,
+    element,
+  );
 }

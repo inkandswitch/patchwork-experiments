@@ -20,7 +20,7 @@ The **`element`** is the `<ref-view>` DOM node. Access data through `element.ref
 - `element.ref.value()` — read the current value at this ref's path.
 - `element.ref.at('fieldName')` — navigate to a sub-field, returning a new `Ref`.
 - `element.ref.change(fn)` — mutate: called as `fn(current)` to mutate in place, or `fn(() => newValue)` to replace a scalar. String fields are diffed with `updateText` automatically.
-- `element.ref.toURL()` — serialise this ref to a string (useful for passing to another `<ref-view>`).
+- `element.ref.url` — the ref serialised as a string (useful for passing to another `<ref-view>`).
 
 ### Schema validation
 
@@ -57,6 +57,19 @@ export const schema = {
 
 - **`init()`** — returns the initial value for new documents. Used by the tool when creating a world doc.
 - **`parse(value)`** — validates a value against the schema. Returns the value if valid, throws if not.
+
+### Reactive subscriptions with SolidJS
+
+`Ref` implements the observable protocol (`subscribe`), so SolidJS's `from()` can turn any ref into a reactive signal:
+
+```js
+import { from } from 'https://esm.sh/solid-js@1.9';
+
+const data = from(element.ref.as(schema));
+// data() is now a reactive signal that updates when the ref's data changes
+```
+
+`ref.subscribe(fn)` calls `fn` immediately with the current value, then again whenever a change affects the ref's path. It returns `{ unsubscribe() }`.
 
 ### Parent traversal
 
