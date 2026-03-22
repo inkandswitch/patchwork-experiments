@@ -1,23 +1,79 @@
 import { updateText } from "@automerge/automerge";
-import type { Doc } from "@automerge/automerge";
-import type { AnyDocumentId, DocHandle, Repo } from "@automerge/automerge-repo";
+import type { Doc, Patch, Prop } from "@automerge/automerge";
+import type { AnyDocumentId, DocHandle, DocHandleChangePayload, Repo } from "@automerge/automerge-repo";
+import type { Schema } from "./schema";
 
 export type RefPathSegment = string | number;
 
-export type Schema<T> = {
-  init(): T;
-  parse(value: unknown): T;
-};
+export class Ref<T = unknown> {
+  #handle: DocHandle<unknown>;
+  #path: RefPathSegment[];
+  #schema?: Schema<unknown>;
 
-export type Ref<T = unknown> = {
-  at(...segments: RefPathSegment[]): Ref<unknown>;
-  value(): T;
-  toURL(): string;
-  change(fn: ((current: T) => void) | (() => T)): void;
-  as<U>(schema: Schema<U>): Ref<U>;
-};
+  constructor(handle: DocHandle<unknown>, path: RefPathSegment[], schema?: Schema<unknown>) {
+    this.#handle = handle;
+    this.#path = path;
+    this.#schema = schema;
+  }
 
-export function encodeRefToURL(docUrl: string, path: RefPathSegment[]): string {
+  at(...segments: RefPathSegment[]): Ref<unknown> {
+    return new Ref(this.#handle, this.#path.concat(segments));
+  }
+
+  get url(): string {
+    return encodeRefToURL(this.#handle.url, this.#path);
+  }
+
+  value(): T {
+    const raw = getAtPath(this.#handle.doc(), this.#path);
+    return (this.#schema ? this.#schema.parse(raw) : raw) as T;
+  }
+
+  change(fn: ((current: T) => void) | (() => T)): void {
+    if (typeof fn !== "function") {
+      throw new TypeError("ref.change expects a function");
+    }
+    const path = this.#path;
+    this.#handle.change((doc) => {
+      if (fn.length === 0) {
+        const replacer = fn as () => unknown;
+        if (path.length === 0) {
+          throw new Error("Ref.change: cannot replace root document with change(() => value)");
+        }
+        const prev = getAtPath(doc, path);
+        const next = replacer();
+        if (typeof next === "string" && typeof prev === "string") {
+          updateText(doc as Doc<unknown>, path, next);
+        } else {
+          setAtPath(doc, path, next);
+        }
+      } else {
+        (fn as (current: unknown) => void)(getAtPath(doc, path));
+      }
+    });
+  }
+
+  as<U>(schema: Schema<U>): Ref<U> {
+    return new Ref(this.#handle, this.#path, schema as Schema<unknown>) as unknown as Ref<U>;
+  }
+
+  subscribe(fn: (value: T) => void): { unsubscribe(): void } {
+    fn(this.value());
+    const handler = (payload: DocHandleChangePayload<unknown>) => {
+      if (patchAffectsPath(payload.patches, this.#path)) {
+        fn(this.value());
+      }
+    };
+    this.#handle.on("change", handler);
+    return {
+      unsubscribe: () => {
+        this.#handle.off("change", handler);
+      },
+    };
+  }
+}
+
+function encodeRefToURL(docUrl: string, path: RefPathSegment[]): string {
   if (!path.length) return docUrl;
   const suffix = path.map((s) => encodeURIComponent(String(s))).join("/");
   return `${docUrl}/${suffix}`;
@@ -44,71 +100,23 @@ export function parseRefURL(urlString: string): { docUrl: string; path: RefPathS
 export async function findRef(repo: Repo, urlString: string): Promise<Ref> {
   const { docUrl, path } = parseRefURL(urlString);
   const handle = await repo.find(docUrl as AnyDocumentId);
-  return makeRef(handle, path);
+  return new Ref(handle, path);
 }
 
-function wrapWithSchema<U>(ref: Ref, schema: Schema<U>): Ref<U> {
-  return {
-    at(...segments: RefPathSegment[]) {
-      return ref.at(...segments);
-    },
-    value() {
-      return schema.parse(ref.value());
-    },
-    toURL() {
-      return ref.toURL();
-    },
-    change(fn: ((current: U) => void) | (() => U)) {
-      ref.change(fn as ((current: unknown) => void) | (() => unknown));
-    },
-    as<V>(s: Schema<V>): Ref<V> {
-      return wrapWithSchema(ref, s);
-    },
-  };
+export function createRef<T = unknown>(handle: DocHandle<T>): Ref<T> {
+  return new Ref(handle as DocHandle<unknown>, []) as Ref<T>;
 }
 
-function makeRef(handle: DocHandle<unknown>, path: RefPathSegment[]): Ref {
-  return {
-    at(...segments: RefPathSegment[]) {
-      return makeRef(handle, path.concat(segments));
-    },
+function pathsOverlap(patchPath: Prop[], refPath: RefPathSegment[]): boolean {
+  const minLength = Math.min(patchPath.length, refPath.length);
+  for (let i = 0; i < minLength; i++) {
+    if (String(patchPath[i]) !== String(refPath[i])) return false;
+  }
+  return true;
+}
 
-    value() {
-      const doc = handle.doc();
-      return getAtPath(doc, path);
-    },
-
-    toURL() {
-      return encodeRefToURL(handle.url, path);
-    },
-
-    change(fn: ((current: unknown) => void) | (() => unknown)) {
-      if (typeof fn !== "function") {
-        throw new TypeError("ref.change expects a function");
-      }
-      handle.change((doc) => {
-        if (fn.length === 0) {
-          const replacer = fn as () => unknown;
-          if (path.length === 0) {
-            throw new Error("createRef: cannot replace root document with change(() => value)");
-          }
-          const prev = getAtPath(doc, path);
-          const next = replacer();
-          if (typeof next === "string" && typeof prev === "string") {
-            updateText(doc as Doc<unknown>, path, next);
-          } else {
-            setAtPath(doc, path, next);
-          }
-        } else {
-          (fn as (current: unknown) => void)(getAtPath(doc, path));
-        }
-      });
-    },
-
-    as<U>(schema: Schema<U>): Ref<U> {
-      return wrapWithSchema(this, schema);
-    },
-  };
+function patchAffectsPath(patches: Patch[], refPath: RefPathSegment[]): boolean {
+  return patches.some((patch) => pathsOverlap(patch.path, refPath));
 }
 
 function getAtPath(obj: unknown, path: RefPathSegment[]): unknown {
@@ -135,10 +143,3 @@ function setAtPath(root: unknown, path: RefPathSegment[], value: unknown) {
   const last = path[path.length - 1]!;
   (cur as Record<string | number, unknown>)[last] = value;
 }
-
-export const createRef = Object.assign(
-  function createRefFn<T = unknown>(handle: DocHandle<T>): Ref<T> {
-    return makeRef(handle as DocHandle<unknown>, []) as Ref<T>;
-  },
-  { find: findRef },
-);

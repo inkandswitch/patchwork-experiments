@@ -1,5 +1,6 @@
 import { findRef } from "./ref";
-import type { Ref, Schema } from "./ref";
+import type { Ref } from "./ref";
+import type { Schema } from "./schema";
 import type { MiniCanvasFilesystem } from "./filesystem";
 import type { Repo } from "@automerge/automerge-repo";
 

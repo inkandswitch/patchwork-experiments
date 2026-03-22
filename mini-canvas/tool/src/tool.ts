@@ -1,4 +1,4 @@
-import { createRef, findRef } from "./ref";
+import { findRef } from "./ref";
 import { registerRefView } from "./ref-view";
 import { createFilesystem } from "./filesystem";
 import type { AutomergeUrl, DocHandle, Repo } from "@automerge/automerge-repo";
@@ -35,7 +35,7 @@ export function MiniCanvasTool(
       const frameRef = await findRef(repo, frameDocUrl);
       const rv = document.createElement("ref-view") as RefViewHostElement;
       rv.setAttribute("tool-url", FRAME_TOOL_URL);
-      rv.setAttribute("ref-url", frameRef.toURL());
+      rv.setAttribute("ref-url", frameRef.url);
       rv.style.cssText = "display:block;width:100%;height:100%;min-height:0;";
       element.appendChild(rv);
       child = rv;

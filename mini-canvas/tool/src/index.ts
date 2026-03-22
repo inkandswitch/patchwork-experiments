@@ -1,8 +1,9 @@
-export { createRef, findRef, encodeRefToURL, parseRefURL } from "./ref";
+export { createRef, findRef, parseRefURL } from "./ref";
 export { registerRefView } from "./ref-view";
 export { createFilesystem } from "./filesystem";
 export type { MiniCanvasFilesystem } from "./filesystem";
-export type { Ref, RefPathSegment, Schema } from "./ref";
+export type { Ref, RefPathSegment } from "./ref";
+export type { Schema } from "./schema";
 export type { RefViewHostElement } from "./ref-view";
 
 export type MiniCanvasDoc = {
