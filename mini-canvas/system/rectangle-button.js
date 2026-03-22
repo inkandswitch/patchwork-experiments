@@ -90,9 +90,13 @@ export default function mount(element) {
       const shape = canvas.ref.at('shapes', dragId).value();
       console.log('[rect-button] final shape', dragId, shape);
       if (shape.width < 2 && shape.height < 2) {
-        console.log('[rect-button] removing tiny shape', dragId);
-        canvas.ref.at('shapes').change((shapes) => {
-          delete shapes[dragId];
+        const defaultWidth = 100;
+        const defaultHeight = 80;
+        canvas.ref.at('shapes', dragId).change((s) => {
+          s.x = startX - defaultWidth / 2;
+          s.y = startY - defaultHeight / 2;
+          s.width = defaultWidth;
+          s.height = defaultHeight;
         });
       }
     }

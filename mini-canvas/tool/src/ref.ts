@@ -1,6 +1,11 @@
 import { updateText } from "@automerge/automerge";
 import type { Doc, Patch, Prop } from "@automerge/automerge";
-import type { AnyDocumentId, DocHandle, DocHandleChangePayload, Repo } from "@automerge/automerge-repo";
+import type {
+  AnyDocumentId,
+  DocHandle,
+  DocHandleChangePayload,
+  Repo,
+} from "@automerge/automerge-repo";
 import type { Schema } from "./schema";
 
 export type RefPathSegment = string | number;
@@ -69,6 +74,8 @@ export class Ref<T = unknown> {
     fn(this.value());
     const handler = (payload: DocHandleChangePayload<unknown>) => {
       if (patchAffectsPath(payload.patches, this.#path)) {
+        const raw = getAtPath(this.#handle.doc(), this.#path);
+        if (raw === undefined && this.#path.length > 0) return;
         fn(this.value());
       }
     };

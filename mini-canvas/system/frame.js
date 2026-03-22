@@ -15,7 +15,8 @@ export const schema = {
   init() {
     return {
       shapes: {
-        rectButton: { x: 10, y: 10, toolUrl: new URL('./rectangle-button.js', import.meta.url).href },
+        selectionButton: { x: 10, y: 10, toolUrl: new URL('./selection-button.js', import.meta.url).href },
+        rectButton: { x: 50, y: 10, toolUrl: new URL('./rectangle-button.js', import.meta.url).href },
       },
     };
   },
@@ -27,13 +28,19 @@ export const schema = {
 export default function mount(element) {
   const ref = element.ref.as(schema);
   const shapes = useRef(ref.at('shapes'));
+  const selectedShapes = useRef(ref.at('selectedShapes'));
 
   return render(
     () =>
       html`<div style=${{ position: 'relative', width: '100%', height: '100%' }}>
         <${For} each=${() => Object.keys(shapes)}>${(id) =>
           html`<div
-            style=${() => ({ position: 'absolute', left: `${shapes[id]?.x}px`, top: `${shapes[id]?.y}px` })}
+            style=${() => ({
+              position: 'absolute',
+              left: `${shapes[id]?.x}px`,
+              top: `${shapes[id]?.y}px`,
+              filter: selectedShapes[id] ? 'drop-shadow(0 0 3px rgba(0,0,0,0.4))' : 'none',
+            })}
           >
             <ref-view
               tool-url=${() => shapes[id]?.toolUrl}
