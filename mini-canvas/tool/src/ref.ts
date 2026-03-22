@@ -26,7 +26,15 @@ export class Ref<T = unknown> {
 
   value(): T {
     const raw = getAtPath(this.#handle.doc(), this.#path);
-    return (this.#schema ? this.#schema.parse(raw) : raw) as T;
+    if (this.#schema) {
+      if (raw === undefined) {
+        const initial = this.#schema.init();
+        this.change((() => initial) as () => T);
+        return initial as T;
+      }
+      return this.#schema.parse(raw) as T;
+    }
+    return raw as T;
   }
 
   change(fn: ((current: T) => void) | (() => T)): void {
@@ -57,7 +65,7 @@ export class Ref<T = unknown> {
     return new Ref(this.#handle, this.#path, schema as Schema<unknown>) as unknown as Ref<U>;
   }
 
-  subscribe(fn: (value: T) => void): { unsubscribe(): void } {
+  subscribe(fn: (value: T) => void): () => void {
     fn(this.value());
     const handler = (payload: DocHandleChangePayload<unknown>) => {
       if (patchAffectsPath(payload.patches, this.#path)) {
@@ -65,10 +73,8 @@ export class Ref<T = unknown> {
       }
     };
     this.#handle.on("change", handler);
-    return {
-      unsubscribe: () => {
-        this.#handle.off("change", handler);
-      },
+    return () => {
+      this.#handle.off("change", handler);
     };
   }
 }

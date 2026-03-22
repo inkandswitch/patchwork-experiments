@@ -1,7 +1,5 @@
 import { z } from 'https://esm.sh/zod@4.3';
-import { from } from 'https://esm.sh/solid-js@1.9';
-import { render } from 'https://esm.sh/solid-js@1.9/web';
-import html from 'https://esm.sh/solid-js@1.9/html';
+import { useRef, For, render, html } from './solid.js';
 
 const ShapeSchema = z.object({
   x: z.number(),
@@ -17,7 +15,7 @@ export const schema = {
   init() {
     return {
       shapes: {
-        rect1: { x: 50, y: 50, toolUrl: new URL('./rectangle.js', import.meta.url).href, width: 200, height: 120 },
+        rectButton: { x: 10, y: 10, toolUrl: new URL('./rectangle-button.js', import.meta.url).href },
       },
     };
   },
@@ -28,25 +26,21 @@ export const schema = {
 
 export default function mount(element) {
   const ref = element.ref.as(schema);
-  const shapes = from(ref.at('shapes'));
+  const shapes = useRef(ref.at('shapes'));
 
   return render(
     () =>
       html`<div style=${{ position: 'relative', width: '100%', height: '100%' }}>
-        ${() => {
-          const entries = Object.entries(shapes() ?? {});
-          return entries.map(
-            ([id, shape]) =>
-              html`<div
-                style=${{ position: 'absolute', left: `${shape.x}px`, top: `${shape.y}px` }}
-              >
-                <ref-view
-                  tool-url=${shape.toolUrl}
-                  ref-url=${ref.at('shapes', id).url}
-                />
-              </div>`,
-          );
-        }}
+        <${For} each=${() => Object.keys(shapes)}>${(id) =>
+          html`<div
+            style=${() => ({ position: 'absolute', left: `${shapes[id]?.x}px`, top: `${shapes[id]?.y}px` })}
+          >
+            <ref-view
+              tool-url=${() => shapes[id]?.toolUrl}
+              ref-url=${ref.at('shapes', id).url}
+            />
+          </div>`
+        }</>
       </div>`,
     element,
   );

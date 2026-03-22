@@ -1,7 +1,5 @@
 import { z } from 'https://esm.sh/zod@4.3';
-import { from } from 'https://esm.sh/solid-js@1.9';
-import { render } from 'https://esm.sh/solid-js@1.9/web';
-import html from 'https://esm.sh/solid-js@1.9/html';
+import { from, render, html } from './solid.js';
 
 const RectangleSchema = z.object({
   x: z.number(),
@@ -28,10 +26,10 @@ export default function mount(element) {
     () =>
       html`<div
         style=${() => ({
-          width: `${data()?.width ?? 100}px`,
-          height: `${data()?.height ?? 100}px`,
+          width: `${data()?.width}px`,
+          height: `${data()?.height}px`,
           background: '#3b82f6',
-          borderRadius: '4px',
+          'border-radius': '4px',
         })}
       ></div>`,
     element,
