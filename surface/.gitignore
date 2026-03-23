@@ -1,3 +1,4 @@
 node_modules
 .pushwork
 .DS_Store
+.env
