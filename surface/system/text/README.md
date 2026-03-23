@@ -1,23 +1,68 @@
 ---
 name: text
-description: For LLM agents editing the text tool—click on canvas creates shape; `shape.js` syncs `ref.at('text')` with a textarea and autosizing (`field-sizing` or mirror fallback).
+description: Plain text on the canvas—anchored position and a single editable string synced with the document.
 ---
 
 # Text
 
-You are editing text placement (`button.js`) and collaborative editing UI (`shape.js`). The Automerge field `text` is the source of truth; the textarea is a view that must not fight remote updates while focused.
+Use this shape when you need **labels or notes** as plain text: one string field, positioned on the frame. The editor keeps the document as source of truth while the user types.
 
-**Model of the code**
+## Types
 
-- `button.js`: When `selectedTool` is `text`, pointer down on canvas creates a new shape with `text: ''` and positions `x`/`y` from client coordinates.
-- `shape.js`: Subscribes to `textRef`; on input calls `textRef.change`; on subscription updates, skips overwriting if the textarea is `document.activeElement`. `resizeMirror` supports browsers without `field-sizing: content`.
+Each text shape lives under the canvas `shapes` map.
+
+```ts
+type TextShape = {
+  x: number;
+  y: number;
+  toolUrl: string;
+  text: string;
+};
+```
+
+Runtime parsing lives in Zod in `shape.js` (`TextSchema`); keep types and schema in sync when fields change.
+
+## Programmatic usage
+
+```js
+const textShapeUrl = new URL('./shape.js', import.meta.url).href;
+
+canvas.ref.at('shapes', 'note_1').change(() => ({
+  x: 120,
+  y: 40,
+  toolUrl: textShapeUrl,
+  text: 'Hello',
+}));
+```
+
+Update copy:
+
+```js
+canvas.ref.at('shapes', 'note_1').change((shape) => {
+  shape.text = 'Updated';
+});
+```
+
+Empty template (`schema.init()` from `shape.js`):
+
+```js
+const empty = {
+  x: 0,
+  y: 0,
+  toolUrl: new URL('./shape.js', import.meta.url).href,
+  text: '',
+};
+```
+
+## Model of the code
+
+- **`shape.js`** — Binds the `text` ref to a textarea; applies remote updates without clobbering the field while it is focused; sizes the control when the host cannot rely on content-based field sizing.
 
 ## Examples
 
-- **Add rich text or markdown:** You must extend `TextSchema`, migration, and rendering; the current stack assumes a plain string field.
+- **Rich text or markdown:** Extend `TextSchema`, migrations, and rendering together; the current contract is a single plain string.
 
 ## Guidelines
 
-- Keep `TextSchema` fields (`x`, `y`, `toolUrl`, `text`) consistent across `init()`, `parse()`, button, and shape.
-- Match other tools’ rule: only start placement when the event’s relevant `ref-view` is the canvas, not a nested tool.
-- If you add subscriptions or timers, ensure teardown (unsubscribe/cleanup) on unmount matches Solid lifecycle patterns already in the file.
+- Keep `init()`, `parse()`, and any code that creates shapes aligned on the same fields.
+- When adding async work or subscriptions, tear them down on unmount the same way as existing Solid cleanup in `shape.js`.

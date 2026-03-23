@@ -1,35 +1,30 @@
 ---
 name: line
-description: Freehand line strokes—`selectedTool` `line`, pointer drag records `[x, y, pressure]` points; SVG path from perfect-freehand `getStroke`. Schema and how to create strokes.
+description: Freehand pen strokes—organic lines from drag gestures, with optional pressure along the path.
 ---
 
 # Line
 
-The line shape is for **freehand drawing**: users (or code) record a polyline of samples with optional pen pressure, and the renderer turns that into a smooth, variable-width stroke using [perfect-freehand](https://github.com/steveruizok/perfect-freehand). It is the right tool when you want organic, hand-drawn lines rather than straight segments between two clicks.
+The line shape is for **freehand drawing**: you record a sequence of samples with optional pen pressure, and the renderer turns that into a smooth, variable-width stroke. Use it when you want hand-drawn lines rather than straight segments between two clicks.
 
-## Schema (`LineSchema`)
+## Types
 
-Each line is a ref-backed object validated by Zod in `shape.js`:
+Stroke payload (each line entry under the canvas `shapes` map). `points` are offsets relative to `(x, y)`; pressure is often `0..1` (call sites may default). First sample is usually `[0, 0, pressure]` at pointer-down; moves append `[relX, relY, pressure]`.
 
-| Field     | Type | Meaning |
-|-----------|------|---------|
-| `x`       | `number` | Canvas X of the stroke **origin** (top-left anchor of the shape). |
-| `y`       | `number` | Canvas Y of the same origin. |
-| `toolUrl` | `string` | Absolute URL of `shape.js` for this package (used to load the renderer). |
-| `points`  | `Array<[number, number, number]>` | Samples **relative to** `(x, y)`. Each tuple is `[offsetX, offsetY, pressure]`. Pressure is typically `0..1`; missing pressure can be defaulted (e.g. `0.5`). |
+```ts
+type LinePoint = [offsetX: number, offsetY: number, pressure: number];
 
-The first sample is usually `[0, 0, pressure]` at the pointer-down position; move events append `[relX, relY, pressure]` where `relX` / `relY` are cursor position minus the shape’s `x` / `y`.
+type LineShape = {
+  x: number;
+  y: number;
+  toolUrl: string;
+  points: LinePoint[];
+};
+```
 
-Minimum useful length: the UI discards strokes with fewer than **3** points (see `button.js`).
+Runtime parsing lives in Zod in `shape.js`; keep types and `LineSchema` in sync when fields change.
 
-## Creating a line
-
-### In the UI
-
-1. Set the canvas `selectedTool` ref to `'line'` (the line toolbar button does this).
-2. Pointer **down** on the canvas `ref-view` (not on chrome) starts a shape; **move** appends to `points`; **up** finalizes. Strokes with fewer than three points are removed.
-
-### Programmatically
+## Programmatic usage
 
 Write a new entry under the canvas `shapes` map with a unique id. Match `toolUrl` to this package’s `shape.js` and keep `points` in shape-local coordinates:
 
@@ -50,7 +45,7 @@ canvas.ref.at('shapes', strokeId).change(() => ({
 }));
 ```
 
-To mirror the interactive tool, extend the same ref on move (append tuples):
+To extend a stroke as the pointer moves, append tuples on the same ref:
 
 ```js
 canvas.ref.at('shapes', strokeId).change((shape) => {
@@ -72,16 +67,13 @@ const emptyLine = {
 
 ## Model of the code
 
-- `button.js`: When `selectedTool` is `line`, pointer down on the canvas starts a new shape; move/up append/update `points` on that shape’s ref.
-- `shape.js`: Maps `points` through `getStroke` and fills an SVG `path`. Layout uses a minimal absolute SVG box with `overflow: visible`.
+- **`shape.js`** — Turns `points` into the drawn stroke; layout keeps the stroke visible around its anchor.
 
 ## Examples
 
-- **Adjust stroke feel:** Change `getStroke` options (`size`, `thinning`, `smoothing`, `streamline`) or `path` `fill` in `shape.js`; do not change tuple arity without updating `LineSchema` and any migration.
-- **Fix accidental strokes from toolbar:** Ensure pointer handlers return early unless the hit target is the canvas `ref-view`, matching sibling tools.
+- **Adjust stroke feel:** Tweak width and smoothing parameters in `shape.js`; keep each point a three-number tuple unless you change parsing and all writers of `points` together.
 
 ## Guidelines
 
-- Preserve `LineSchema` shape when editing; if you add fields, update `init()`, `parse()`, button creation, and renderer together.
-- Keep `TOOL_NAME` as `line` and consistent with `paper/paper.js` registration semantics for `selectedTool`.
-- Avoid enabling pointer events on the SVG if hits should pass through to the canvas for other tools.
+- Keep the line shape’s fields aligned across `init()`, `parse()`, and the renderer when you extend the model.
+- Avoid letting the stroke layer capture hits that should reach the canvas for other tools.

@@ -1,24 +1,79 @@
 ---
 name: embed
-description: For LLM agents editing the embed tool—`button.js` placement/repo usage, `shape.js` chrome and nested `ref-view`, schema fields `embedDocUrl` / `embedToolUrl` / dimensions.
+description: Embedded sub-surfaces in the frame—boxed size, optional inner tool URL, and optional linked document URL.
 ---
 
 # Embed
 
-You are editing embed placement (`button.js`) and embed rendering (`shape.js`). Assume the frame holds canvas shapes; embed adds child shapes that host another document or tool via `ref-view`.
+Use this shape when the canvas should host **another tool or document** inside a bounded area: width, height, and URLs that tell the host what to load. Extra persisted fields are allowed (`EmbedSchema` uses `passthrough`).
 
-**Model of the code**
+## Types
 
-- `button.js`: Toggles `selectedTool === 'embed'`. On pointer down on the canvas (not nested `ref-view`), creates a new shape and may create linked documents through `globalThis.repo` (requires `repo.create` or equivalent—log or throw clearly if missing).
-- `shape.js`: Validates with Zod, renders layout (`width`, `height`, styling), wires `embedToolUrl` and `embedDocUrl` into nested `ref-view` when present.
+Each embed is an entry under the canvas `shapes` map.
+
+```ts
+type EmbedShape = {
+  x: number;
+  y: number;
+  toolUrl: string;
+  embedToolUrl: string;
+  width: number;
+  height: number;
+  embedDocUrl: string;
+} & Record<string, unknown>;
+```
+
+`embedDocUrl` defaults to `''` when missing in parse. Runtime parsing lives in Zod in `shape.js`; keep types and schema in sync when fields change.
+
+## Programmatic usage
+
+```js
+const embedShapeUrl = new URL('./shape.js', import.meta.url).href;
+const innerToolUrl = new URL('../llm/shape.js', import.meta.url).href;
+
+canvas.ref.at('shapes', 'embed_1').change(() => ({
+  x: 20,
+  y: 80,
+  toolUrl: embedShapeUrl,
+  embedToolUrl: innerToolUrl,
+  embedDocUrl: '', // set when you have a document URL from your repo or loader
+  width: 320,
+  height: 240,
+}));
+```
+
+Adjust layout or targets:
+
+```js
+canvas.ref.at('shapes', 'embed_1').change((shape) => {
+  shape.width = 400;
+  shape.embedDocUrl = docUrl;
+});
+```
+
+Empty template (`schema.init()` from `shape.js`):
+
+```js
+const empty = {
+  x: 0,
+  y: 0,
+  toolUrl: new URL('./shape.js', import.meta.url).href,
+  embedToolUrl: '',
+  width: 200,
+  height: 150,
+  embedDocUrl: '',
+};
+```
+
+## Model of the code
+
+- **`shape.js`** — Layout and chrome for the box; wires `embedToolUrl` / `embedDocUrl` into the nested host when set.
 
 ## Examples
 
-- **Resize or retarget programmatically:** Mutate the shape ref’s `width`, `height`, `embedDocUrl`, or `embedToolUrl` consistently with `schema.parse` so persisted documents stay valid.
-- **Debug missing embed content:** Trace whether `embedDocUrl` is set and whether the nested `ref-view` receives the expected `tool-url` / `ref-url` attributes.
+- **Programmatic resize or retarget:** Mutate `width`, `height`, `embedDocUrl`, and `embedToolUrl` through the shape ref so stored documents stay valid under `parse`.
 
 ## Guidelines
 
-- Keep Zod schemas in `button.js` / `shape.js` aligned: any new persisted field must appear in `init()`, `parse()`, and the UI that reads it.
-- If you introduce new repo calls, guard on `globalThis.repo` the same way as existing code; do not assume repo exists in tests or static contexts.
-- When linking to LLM documents, stay compatible with `../llm/shape.js` schema expectations for URLs and handles.
+- Any new persisted field must appear in `init()`, `parse()`, and every reader that depends on it.
+- Code paths that create linked documents expect a repo (or equivalent) on the host; guard when that is absent instead of failing silently.

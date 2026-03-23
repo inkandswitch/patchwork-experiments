@@ -1,23 +1,46 @@
 ---
 name: selection
-description: For LLM agents editing the selection tool—sets `selectedTool` to `selection`, maintains `selectedShapes` on the frame ref, derives ids from child `ref-view` `ref-url`.
+description: Highlights which canvas shapes are selected—frame-level map from shape id to a truthy flag.
 ---
 
 # Selection
 
-You are editing hit-testing and selection state (`button.js`). The frame ref field `selectedShapes` is an object map used by `paper/paper.js` for toolbar highlighting; clearing behavior is tied to deactivating this tool.
+This package drives **selection state** on the paper frame: which shape ids are considered selected for highlighting and tool behavior. It does not define a drawable shape payload; it reads pointer hits and updates shared frame fields.
 
-**Model of the code**
+## Types
 
-- `shapeIdFromEvent`: Walks from `event.target` to a child `ref-view`, reads `ref-url`, returns the last path segment as shape id; returns null for canvas or missing url.
-- Deactivating the tool clears `selectedShapes` in the same flow that toggles `selectedTool` off.
+Selection state lives on the **canvas / frame** ref, not on a per-shape record:
+
+```ts
+type SelectedShapes = Record<string, boolean>;
+```
+
+`selectedTool` is a separate string on the same ref (convention: tool name `selection` when this mode is active). Parsing for `selectedShapes` accepts any object and normalizes to `{}` when invalid (`button.js`).
+
+## Programmatic usage
+
+Highlight one shape by id (pattern used by the built-in tool):
+
+```js
+const shapeId = 'line_123';
+canvas.ref.at('selectedShapes').change(() => ({ [shapeId]: true }));
+```
+
+Clear:
+
+```js
+canvas.ref.at('selectedShapes').change(() => ({}));
+```
+
+## Model of the code
+
+- **`button.js`** — Resolves shape id from pointer targets under the canvas, toggles `selectedTool`, and reads/writes `selectedShapes`.
 
 ## Examples
 
-- **Multi-select:** Extend `selectedShapesSchema` parsing, update pointer logic to merge/toggle keys, and update `paper/paper.js` if highlight semantics change (e.g. multiple keys).
+- **Multi-select:** Extend parsing and pointer logic together, and update any UI (e.g. paper chrome) that interprets `selectedShapes` keys.
 
 ## Guidelines
 
-- Keep `TOOL_NAME` as `selection` to match `selectedTool` comparisons elsewhere.
-- Do not treat toolbar `ref-view` nodes as selectable canvas children—mirror the existing closest-ref-view vs canvas checks.
-- Any change to `selectedShapes` shape must be reflected wherever the frame or tools read it.
+- Keep the active tool string aligned with other packages that compare `selectedTool`.
+- Only treat child `ref-view` elements under the canvas as selectable targets; do not use toolbar `ref-view` nodes as shape hits.

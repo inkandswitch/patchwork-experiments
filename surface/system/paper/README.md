@@ -1,24 +1,57 @@
 ---
 name: paper
-description: For LLM agents editing the Paper canvas tool—`paper.js` lazy-inits `shapes` / `selectedTool` / `selectedShapes`, renders the toolbar `ref-view`s, and owns default button URLs.
+description: Interactive surface—toolbar shape layout, active tool id, and which shapes are highlighted.
 ---
 
-# Paper canvas (`paper/paper.js`)
+# Paper
 
-You are editing the frame document’s interactive surface. The host `ref-view` loads `bootstrap.js`, which nests another `ref-view` pointing here with the **same** `ref-url`, so `element.ref` is still the frame Automerge document.
+`paper.js` is a **surface module** you can mount on any `ref-view` whose ref should carry a `shapes` map plus `selectedTool` and `selectedShapes`. It lays out each `shapes` entry and reflects selection highlights; draw tools on the same ref read and write those paths.
 
-**Model of the code**
+## Types
 
-- `ensurePaperDocument(ref)` calls `ref.at('shapes').as(shapesSchema).value()`, then `selectedTool`, then `selectedShapes`. Each call may persist defaults the first time that path is missing (`Ref.value()` behavior).
-- `mount` then `useRef(ref.at('shapes'))` and `useRef(ref.at('selectedShapes'))` and renders the `For` over toolbar entries (positioned `ref-view`s per shape).
+Toolbar entries and user shapes share one map; each value must include position and `toolUrl`. Built-in toolbar defaults may add fields such as `isLocked`.
+
+```ts
+type PaperShapeEntry = {
+  x: number;
+  y: number;
+  toolUrl: string;
+} & Record<string, unknown>;
+
+type PaperShapesMap = Record<string, PaperShapeEntry>;
+
+type SelectedShapes = Record<string, boolean>;
+```
+
+`selectedTool` is a string (`''` when none). Runtime parsing: `shapes` values go through Zod in `paper.js` (`ShapeSchema.passthrough()` per entry, wrapped in `z.record`); `selectedTool` and `selectedShapes` use small inline `{ init, parse }` schemas in the same file.
+
+## Programmatic usage
+
+Read and write `shapes`, `selectedTool`, and `selectedShapes` on the **same ref** the `ref-view` uses (same pattern other system tools use).
+
+Add a toolbar control (paths relative to `paper/paper.js`):
+
+```js
+ref.at('shapes', 'myButton').change(() => ({
+  x: 210,
+  y: 10,
+  isLocked: true,
+  toolUrl: new URL('../mytool/button.js', import.meta.url).href,
+}));
+```
+
+For extra fields on that ref, define `{ init, parse }` and use `ref.at('myKey').as(mySchema)` from the code that owns those reads and writes.
+
+## Model of the code
+
+- **`paper.js`** — Renders each `shapes` entry as a positioned `ref-view`; applies selection styling from `selectedShapes`.
 
 ## Examples
 
-- **Add a toolbar tool:** Add a key in `shapesSchema.init()` with `toolUrl: new URL('../yourtool/button.js', import.meta.url).href` (paths are relative to `paper/paper.js`).
-- **Add frame-level state:** Define a small `{ init, parse }` schema, call `ref.at('yourKey').as(yourSchema).value()` inside `ensurePaperDocument`, and read it from tools via `canvas.ref.at('yourKey')`.
+- **New toolbar tool:** Register a stable `shapes` key with `toolUrl` pointing at that tool’s `button.js` (see default keys in `shapesSchema.init()` for path style).
 
 ## Guidelines
 
-- Keep `TOOL_NAME` strings in sibling `*/button.js` files aligned with `selectedTool` comparisons (`line`, `rectangle`, `selection`, etc.).
-- After changing `shapesSchema` or Zod shapes, ensure existing documents still `parse` or provide tolerant `parse` implementations.
-- Selection highlight uses `selectedShapes[id]`; changing that contract requires updating `selection/button.js` and this renderer together.
+- Keep `selectedTool` string values aligned with `TOOL_NAME` constants in sibling `*/button.js` files.
+- After changing `shapes` parsing, ensure older documents still parse or widen `parse` tolerantly.
+- `selectedShapes[id]` drives highlight; changing its meaning requires updating the selection tool and this renderer together.

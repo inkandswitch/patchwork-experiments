@@ -111,7 +111,7 @@ export function safeDocsBasename(filename) {
 }
 
 /**
- * @param {{ readFile: (path: string) => Promise<string> }} filesystem
+ * @param {{ readFile: (path: string) => Promise<string>, listEntries?: (path?: string) => Promise<unknown[]> }} filesystem
  * @param {string} filename
  */
 export async function readDocFromFilesystem(filesystem, filename) {
@@ -122,22 +122,27 @@ export async function readDocFromFilesystem(filesystem, filename) {
 /**
  * @param {ReturnType<typeof createCapturedConsole>} capturedConsole
  * @param {string} code
- * @param {{ canvas: unknown, readDoc: (f: string) => Promise<string>, repo?: unknown }} evalGlobals
+ * @param {{ element: unknown, readDoc: (f: string) => Promise<string>, repo?: unknown }} evalBindings
  */
-export async function evalScript(code, capturedConsole, evalGlobals) {
+export async function evalScript(code, capturedConsole, evalBindings) {
   capturedConsole.flush();
-  globalThis.__llmCapturedConsole = capturedConsole;
-  globalThis.__paperLlmEvalGlobals = evalGlobals;
+  /** @type {Record<string, unknown>} */
+  const bindings = {
+    console: capturedConsole,
+    ...evalBindings,
+  };
 
   try {
-    const wrappedCode = `(async () => {
-  const console = globalThis.__llmCapturedConsole;
-  const canvas = globalThis.__paperLlmEvalGlobals.canvas;
-  const readDoc = globalThis.__paperLlmEvalGlobals.readDoc;
-  const repo = globalThis.__paperLlmEvalGlobals.repo;
+    // `new Function` bodies are non-strict by default, so `with` is permitted; unqualified names resolve against `bindings`.
+    const run = new Function(
+      '__bindings',
+      `return (async () => {
+  with (__bindings) {
 ${code}
-})()`;
-    const returnValue = await eval(wrappedCode);
+  }
+})();`,
+    );
+    const returnValue = await run(bindings);
 
     const consoleOutput = capturedConsole.flush();
     const parts = [];
@@ -154,8 +159,6 @@ ${code}
     };
     if (consoleOutput) result.output = consoleOutput;
     return result;
-  } finally {
-    delete globalThis.__paperLlmEvalGlobals;
   }
 }
 
@@ -214,17 +217,17 @@ export function buildChatMessages(systemPrompt, runs) {
  * @param {() => { prompt: string, output: unknown[] }[]} options.getRuns
  * @param {(fn: (panel: { runs: { prompt: string, output: unknown[], done?: boolean }[] }) => void) => void} options.mutatePanel
  * @param {() => { apiUrl: string, model: string, apiKey: string }} options.getConfig
- * @param {HTMLElement} options.canvasElement - frame ref-view
- * @param {{ readFile: (path: string) => Promise<string> }} options.filesystem
+ * @param {HTMLElement} options.element - outermost frame \`ref-view\` (script \`element\` binding via \`with\`)
+ * @param {{ readFile: (path: string) => Promise<string>, listEntries?: (path?: string) => Promise<unknown[]> }} options.filesystem
  * @param {AbortSignal} [options.signal]
  */
 export async function runLlmTurns(options) {
-  const { systemPrompt, getRuns, mutatePanel, getConfig, canvasElement, filesystem, signal } = options;
+  const { systemPrompt, getRuns, mutatePanel, getConfig, element, filesystem, signal } = options;
 
   const readDoc = async (filename) => readDocFromFilesystem(filesystem, filename);
 
-  const evalGlobals = {
-    canvas: canvasElement,
+  const evalBindings = {
+    element,
     readDoc,
     repo: globalThis.repo,
   };
@@ -279,7 +282,7 @@ export async function runLlmTurns(options) {
         if (block.complete) {
           foundScript = true;
           const codeToEval = block.code;
-          const result = await evalScript(codeToEval, capturedConsole, evalGlobals);
+          const result = await evalScript(codeToEval, capturedConsole, evalBindings);
 
           mutatePanel((panel) => {
             const run = panel.runs[panel.runs.length - 1];

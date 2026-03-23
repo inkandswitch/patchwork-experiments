@@ -1,6 +1,6 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, render, html, For, createSignal } from '../solid.js';
-import { SYSTEM_PROMPT } from './system-prompt.js';
+import { buildSystemPrompt } from './system-prompt.js';
 import { runLlmTurns } from './process.js';
 
 const OutputBlockSchema = z.union([
@@ -94,8 +94,10 @@ export default function mount(element) {
       });
       setPrompt('');
 
+      const systemPrompt = await buildSystemPrompt(element.filesystem);
+
       await runLlmTurns({
-        systemPrompt: SYSTEM_PROMPT,
+        systemPrompt,
         getRuns: () => {
           const runs = ref.value().runs;
           return JSON.parse(JSON.stringify(runs));
@@ -109,7 +111,7 @@ export default function mount(element) {
             apiKey: getApiKey(),
           };
         },
-        canvasElement: frameRefView,
+        element: frameRefView,
         filesystem: element.filesystem,
         signal,
       });

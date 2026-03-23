@@ -35,6 +35,8 @@ export type PaperFilesystem = {
   readFile(path: string): Promise<string>;
   writeFile(path: string, content: string): Promise<void>;
   listFiles(path?: string): Promise<DocLink[]>;
+  /** All entries in a folder (files and subfolders). */
+  listEntries(path?: string): Promise<DocLink[]>;
   importFile(path: string): Promise<unknown>;
   getUrlOfFile(path?: string): string;
 };
@@ -177,6 +179,15 @@ export function createFilesystem(repo: Repo, rootFolderUrl: AutomergeUrl): Paper
         throw new Error(`listFiles: ${path || "."}: not a folder`);
       }
       return doc.docs.filter((link) => link.type !== "folder");
+    },
+
+    async listEntries(path = ""): Promise<DocLink[]> {
+      const h = path.trim() === "" ? await rootFolder() : await resolvePath(path);
+      const doc = h.doc();
+      if (!isFolderDoc(doc)) {
+        throw new Error(`listEntries: ${path || "."}: not a folder`);
+      }
+      return doc.docs ?? [];
     },
 
     async importFile(path: string): Promise<unknown> {
