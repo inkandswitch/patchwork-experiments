@@ -1,0 +1,10 @@
+{
+  "name": "embed",
+  "private": true,
+  "type": "module",
+  "description": "LLM chat embed: toolbar button + frame shape",
+  "exports": {
+    "./button": "./button.js",
+    "./shape": "./shape.js"
+  }
+}

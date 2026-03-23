@@ -1,0 +1,10 @@
+{
+  "name": "rectangle",
+  "private": true,
+  "type": "module",
+  "description": "Rectangle drawing tool",
+  "exports": {
+    "./button": "./button.js",
+    "./shape": "./shape.js"
+  }
+}

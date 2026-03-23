@@ -1,0 +1,10 @@
+{
+  "name": "system",
+  "private": true,
+  "type": "module",
+  "description": "Surface system: bootstrap entry, paper canvas tool, shared Solid helpers",
+  "exports": {
+    "./bootstrap": "./bootstrap.js",
+    "./solid": "./solid.js"
+  }
+}

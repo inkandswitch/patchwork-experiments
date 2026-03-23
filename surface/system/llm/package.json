@@ -1,0 +1,12 @@
+{
+  "name": "llm",
+  "private": true,
+  "type": "module",
+  "description": "LLM chat panel (OpenRouter), script eval loop, and prompts",
+  "exports": {
+    "./shape": "./shape.js",
+    "./process": "./process.js",
+    "./parser": "./parser.js",
+    "./system-prompt": "./system-prompt.js"
+  }
+}

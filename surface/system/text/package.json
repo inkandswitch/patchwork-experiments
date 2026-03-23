@@ -1,0 +1,10 @@
+{
+  "name": "text",
+  "private": true,
+  "type": "module",
+  "description": "Text shape tool",
+  "exports": {
+    "./button": "./button.js",
+    "./shape": "./shape.js"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "selection",
+  "private": true,
+  "type": "module",
+  "description": "Selection / move shapes tool",
+  "exports": {
+    "./button": "./button.js"
+  }
+}

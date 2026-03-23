@@ -1,0 +1,10 @@
+{
+  "name": "line",
+  "private": true,
+  "type": "module",
+  "description": "Line drawing tool",
+  "exports": {
+    "./button": "./button.js",
+    "./shape": "./shape.js"
+  }
+}
