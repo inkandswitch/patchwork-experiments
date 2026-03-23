@@ -1,8 +1,8 @@
 import { z } from 'https://esm.sh/zod@4.3';
-import { from, render, html } from './solid.js';
+import { from, render, html } from '../solid.js';
 
 const TOOL_NAME = 'text';
-const textToolUrl = new URL('./text.js', import.meta.url).href;
+const textToolUrl = new URL('./shape.js', import.meta.url).href;
 
 const ButtonShapeSchema = z.object({
   x: z.number(),
@@ -12,7 +12,7 @@ const ButtonShapeSchema = z.object({
 
 export const schema = {
   init() {
-    return { x: 0, y: 0, toolUrl: new URL('./text-button.js', import.meta.url).href };
+    return { x: 0, y: 0, toolUrl: new URL('./button.js', import.meta.url).href };
   },
   parse(value) {
     return ButtonShapeSchema.parse(value);

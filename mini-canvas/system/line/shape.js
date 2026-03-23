@@ -1,6 +1,6 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { getStroke } from 'https://esm.sh/perfect-freehand';
-import { from, render, html } from './solid.js';
+import { from, render, html } from '../solid.js';
 
 const LineSchema = z.object({
   x: z.number(),
@@ -11,7 +11,7 @@ const LineSchema = z.object({
 
 export const schema = {
   init() {
-    return { x: 0, y: 0, toolUrl: new URL('./line.js', import.meta.url).href, points: [] };
+    return { x: 0, y: 0, toolUrl: new URL('./shape.js', import.meta.url).href, points: [] };
   },
   parse(value) {
     return LineSchema.parse(value);

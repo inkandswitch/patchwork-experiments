@@ -1,8 +1,8 @@
 import { z } from 'https://esm.sh/zod@4.3';
-import { from, render, html } from './solid.js';
+import { from, render, html } from '../solid.js';
 
-const TOOL_NAME = 'line';
-const lineToolUrl = new URL('./line.js', import.meta.url).href;
+const TOOL_NAME = 'rectangle';
+const rectangleToolUrl = new URL('./shape.js', import.meta.url).href;
 
 const ButtonShapeSchema = z.object({
   x: z.number(),
@@ -12,7 +12,7 @@ const ButtonShapeSchema = z.object({
 
 export const schema = {
   init() {
-    return { x: 0, y: 0, toolUrl: new URL('./line-button.js', import.meta.url).href };
+    return { x: 0, y: 0, toolUrl: new URL('./button.js', import.meta.url).href };
   },
   parse(value) {
     return ButtonShapeSchema.parse(value);
@@ -29,7 +29,9 @@ const selectedToolSchema = {
 };
 
 export default function mount(element) {
+  console.log('[rect-button] mount', element);
   const canvas = element.parent;
+  console.log('[rect-button] canvas parent', canvas);
   const selectedToolRef = canvas.ref.at('selectedTool').as(selectedToolSchema);
   const selectedTool = from(selectedToolRef);
 
@@ -37,25 +39,29 @@ export default function mount(element) {
 
   function toggleTool() {
     const next = active() ? '' : TOOL_NAME;
+    console.log('[rect-button] toggleTool', { was: selectedTool(), next });
     selectedToolRef.change(() => next);
   }
 
   let dragId = null;
-  let originX = 0;
-  let originY = 0;
+  let startX = 0;
+  let startY = 0;
 
   function onPointerDown(event) {
+    console.log('[rect-button] pointerdown', { active: active(), target: event.target });
     if (!active()) return;
     if (event.target.closest('ref-view') !== canvas) return;
     const rect = canvas.getBoundingClientRect();
-    originX = event.clientX - rect.left;
-    originY = event.clientY - rect.top;
-    dragId = `line_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    startX = event.clientX - rect.left;
+    startY = event.clientY - rect.top;
+    dragId = `rect_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    console.log('[rect-button] creating shape', dragId, { x: startX, y: startY });
     canvas.ref.at('shapes', dragId).change(() => ({
-      x: originX,
-      y: originY,
-      toolUrl: lineToolUrl,
-      points: [[0, 0, event.pressure || 0.5]],
+      x: startX,
+      y: startY,
+      toolUrl: rectangleToolUrl,
+      width: 0,
+      height: 0,
     }));
     canvas.setPointerCapture(event.pointerId);
   }
@@ -63,19 +69,34 @@ export default function mount(element) {
   function onPointerMove(event) {
     if (!dragId) return;
     const rect = canvas.getBoundingClientRect();
-    const relX = event.clientX - rect.left - originX;
-    const relY = event.clientY - rect.top - originY;
+    const currentX = event.clientX - rect.left;
+    const currentY = event.clientY - rect.top;
+    const width = Math.abs(currentX - startX);
+    const height = Math.abs(currentY - startY);
+    const x = Math.min(startX, currentX);
+    const y = Math.min(startY, currentY);
+    console.log('[rect-button] pointermove', dragId, { x, y, width, height });
     canvas.ref.at('shapes', dragId).change((shape) => {
-      shape.points.push([relX, relY, event.pressure || 0.5]);
+      shape.x = x;
+      shape.y = y;
+      shape.width = width;
+      shape.height = height;
     });
   }
 
   function onPointerUp() {
+    console.log('[rect-button] pointerup', { dragId });
     if (dragId) {
       const shape = canvas.ref.at('shapes', dragId).value();
-      if (shape.points.length < 3) {
-        canvas.ref.at('shapes').change((shapes) => {
-          delete shapes[dragId];
+      console.log('[rect-button] final shape', dragId, shape);
+      if (shape.width < 2 && shape.height < 2) {
+        const defaultWidth = 100;
+        const defaultHeight = 80;
+        canvas.ref.at('shapes', dragId).change((s) => {
+          s.x = startX - defaultWidth / 2;
+          s.y = startY - defaultHeight / 2;
+          s.width = defaultWidth;
+          s.height = defaultHeight;
         });
       }
     }
@@ -105,7 +126,7 @@ export default function mount(element) {
         })}
       >
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <path d="M3 13 Q6 5 9 8 Q12 11 13 3" stroke=${() => (active() ? '#3b82f6' : '#71717a')} stroke-width="1.5" fill="none" stroke-linecap="round" />
+          <rect x="2" y="4" width="12" height="8" rx="1" stroke=${() => (active() ? '#3b82f6' : '#71717a')} stroke-width="1.5" fill="none" />
         </svg>
       </button>`,
     element,
