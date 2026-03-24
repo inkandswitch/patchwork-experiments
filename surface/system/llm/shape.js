@@ -1,68 +1,9 @@
-import { z } from 'https://esm.sh/zod@4.3';
 import { from, render, html, For, createSignal } from '../solid.js';
 import { buildSystemPrompt } from './system-prompt.js';
 import { runLlmTurns } from './process.js';
+import { schema } from './schema.js';
 
-const OutputBlockSchema = z.union([
-  z.object({ type: z.literal('text'), content: z.string() }),
-  z.object({
-    type: z.literal('script'),
-    code: z.string(),
-    description: z.string().optional(),
-    output: z.string().optional(),
-    error: z.string().optional(),
-  }),
-]);
-
-const RunSchema = z.object({
-  prompt: z.string(),
-  output: z.array(OutputBlockSchema),
-  done: z.boolean().optional(),
-});
-
-const LlmContentSchema = z.object({
-  config: z.object({
-    apiUrl: z.string(),
-    model: z.string(),
-  }),
-  runs: z.array(RunSchema),
-});
-
-export const schema = {
-  init() {
-    return {
-      config: {
-        apiUrl: 'https://openrouter.ai/api/v1',
-        model: 'openai/gpt-4o-mini',
-      },
-      runs: [],
-    };
-  },
-  parse(value) {
-    const v =
-      typeof value === 'object' && value !== null && !Array.isArray(value) ? value : {};
-    return LlmContentSchema.parse({
-      config: {
-        apiUrl: typeof v.config?.apiUrl === 'string' ? v.config.apiUrl : 'https://openrouter.ai/api/v1',
-        model: typeof v.config?.model === 'string' ? v.config.model : 'openai/gpt-4o-mini',
-      },
-      runs: Array.isArray(v.runs) ? v.runs : [],
-    });
-  },
-};
-
-function rootRefView(host) {
-  let current = host;
-  while (current.parent) {
-    current = current.parent;
-  }
-  return current;
-}
-
-function getApiKey() {
-  if (typeof window === 'undefined') return '';
-  return window.__PAPER_LLM_API_KEY__ ?? '';
-}
+export { schema };
 
 export default function mount(element) {
   const frameRefView = rootRefView(element);
@@ -78,6 +19,42 @@ export default function mount(element) {
   const [prompt, setPrompt] = createSignal('');
   const [submitting, setSubmitting] = createSignal(false);
   let abortController = null;
+
+  function getRuns() {
+    return data()?.runs ?? [];
+  }
+
+  function hasRuns() {
+    return getRuns().length > 0;
+  }
+
+  function getApiUrl() {
+    return data()?.config?.apiUrl ?? '';
+  }
+
+  function getModel() {
+    return data()?.config?.model ?? '';
+  }
+
+  function setApiUrl(value) {
+    ref.change((p) => { p.config.apiUrl = value; });
+  }
+
+  function setModel(value) {
+    ref.change((p) => { p.config.model = value; });
+  }
+
+  function isDisabled() {
+    return submitting() || !prompt().trim();
+  }
+
+  function buttonLabel() {
+    return submitting() ? 'Running…' : 'Send';
+  }
+
+  function buttonCursor() {
+    return submitting() ? 'wait' : 'pointer';
+  }
 
   async function handleSubmit() {
     const text = prompt().trim();
@@ -137,6 +114,18 @@ export default function mount(element) {
     }
   }
 
+  function onApiUrlInput(e) {
+    setApiUrl(e.currentTarget.value);
+  }
+
+  function onModelInput(e) {
+    setModel(e.currentTarget.value);
+  }
+
+  function onPromptInput(e) {
+    setPrompt(e.currentTarget.value);
+  }
+
   const dispose = render(
     () =>
       html`<div
@@ -178,65 +167,8 @@ export default function mount(element) {
           }}
         >
           ${() =>
-            (data()?.runs?.length ?? 0) > 0
-              ? html`<${For} each=${() => data()?.runs ?? []}>${(run) =>
-                  html`<div style=${{ display: 'flex', 'flex-direction': 'column', gap: '6px' }}>
-                    <div
-                      style=${{
-                        'align-self': 'flex-end',
-                        'max-width': '95%',
-                        padding: '6px 8px',
-                        background: '#e0e7ff',
-                        'border-radius': '8px',
-                        font: '12px/1.4 system-ui, sans-serif',
-                        'white-space': 'pre-wrap',
-                        'word-break': 'break-word',
-                      }}
-                    >
-                      ${() => run.prompt}
-                    </div>
-                    <${For} each=${() => run.output ?? []}>${(block) =>
-                      html`${() =>
-                        block.type === 'text'
-                          ? html`<div
-                              style=${{
-                                font: '12px/1.4 system-ui, sans-serif',
-                                'white-space': 'pre-wrap',
-                                'word-break': 'break-word',
-                              }}
-                            >
-                              ${() => block.content}
-                            </div>`
-                          : html`<div
-                              style=${() => ({
-                                font: '11px/1.4 ui-monospace, monospace',
-                                background: '#fff',
-                                border: '1px solid #e4e4e7',
-                                'border-radius': '6px',
-                                padding: '6px',
-                              })}
-                            >
-                              <div style=${{ color: '#52525b', 'margin-bottom': '4px' }}>
-                                ${() => block.description || 'script'}
-                              </div>
-                              <pre style=${{ margin: '0', overflow: 'auto' }}>${() => block.code}</pre>
-                              ${() =>
-                                block.output != null || block.error != null
-                                  ? html`<pre
-                                      style=${() => ({
-                                        margin: '6px 0 0',
-                                        padding: '6px',
-                                        background: block.error ? '#fef2f2' : '#f0fdf4',
-                                        'border-radius': '4px',
-                                      })}
-                                    >${() =>
-                                      block.error ? `Error: ${block.error}` : block.output || ''}</pre>`
-                                  : null}
-                            </div>`
-                      }`
-                    }</>
-                  </div>`
-                }</>`
+            hasRuns()
+              ? html`<${For} each=${getRuns}>${(run) => renderRun(run)}<//>`
               : html`<div style=${{ font: '12px system-ui', color: '#71717a' }}>Send a message to start.</div>`}
         </div>
         <div
@@ -254,13 +186,8 @@ export default function mount(element) {
               <span style=${{ font: '10px', color: '#71717a' }}>API URL</span>
               <input
                 type="text"
-                value=${() => data()?.config?.apiUrl ?? ''}
-                onInput=${(e) => {
-                  const v = e.currentTarget.value;
-                  ref.change((p) => {
-                    p.config.apiUrl = v;
-                  });
-                }}
+                value=${getApiUrl}
+                onInput=${onApiUrlInput}
                 style=${{ font: '11px', padding: '4px', width: '100%', 'box-sizing': 'border-box' }}
               />
             </label>
@@ -268,13 +195,8 @@ export default function mount(element) {
               <span style=${{ font: '10px', color: '#71717a' }}>Model</span>
               <input
                 type="text"
-                value=${() => data()?.config?.model ?? ''}
-                onInput=${(e) => {
-                  const v = e.currentTarget.value;
-                  ref.change((p) => {
-                    p.config.model = v;
-                  });
-                }}
+                value=${getModel}
+                onInput=${onModelInput}
                 style=${{ font: '11px', padding: '4px', width: '100%', 'box-sizing': 'border-box' }}
               />
             </label>
@@ -282,7 +204,7 @@ export default function mount(element) {
           <textarea
             placeholder="Message… (⌘↵ to send)"
             value=${prompt}
-            onInput=${(e) => setPrompt(e.currentTarget.value)}
+            onInput=${onPromptInput}
             onKeyDown=${onKeyDown}
             disabled=${submitting}
             rows=${3}
@@ -296,16 +218,16 @@ export default function mount(element) {
           />
           <button
             type="button"
-            onClick=${() => void handleSubmit()}
-            disabled=${() => submitting() || !prompt().trim()}
-            style=${{
+            onClick=${(e) => void handleSubmit()}
+            disabled=${isDisabled}
+            style=${() => ({
               padding: '6px 12px',
               font: '12px system-ui',
-              cursor: submitting() ? 'wait' : 'pointer',
+              cursor: buttonCursor(),
               'align-self': 'flex-end',
-            }}
+            })}
           >
-            ${() => (submitting() ? 'Running…' : 'Send')}
+            ${buttonLabel}
           </button>
         </div>
       </div>`,
@@ -316,4 +238,87 @@ export default function mount(element) {
     abortController?.abort();
     dispose();
   };
+}
+
+function rootRefView(host) {
+  let current = host;
+  while (current.parent) {
+    current = current.parent;
+  }
+  return current;
+}
+
+function getApiKey() {
+  return globalThis.VITE_OPENROUTER_API_KEY ?? '';
+}
+
+function renderRun(run) {
+  const getPrompt = () => run.prompt;
+  const getOutput = () => run.output ?? [];
+
+  return html`<div style=${{ display: 'flex', 'flex-direction': 'column', gap: '6px' }}>
+    <div
+      style=${{
+        'align-self': 'flex-end',
+        'max-width': '95%',
+        padding: '6px 8px',
+        background: '#e0e7ff',
+        'border-radius': '8px',
+        font: '12px/1.4 system-ui, sans-serif',
+        'white-space': 'pre-wrap',
+        'word-break': 'break-word',
+      }}
+    >
+      ${getPrompt}
+    </div>
+    <${For} each=${getOutput}>${(block) => renderOutputBlock(block)}<//>
+  </div>`;
+}
+
+function renderOutputBlock(block) {
+  if (block.type === 'text') {
+    const getContent = () => block.content;
+    return html`<div
+      style=${{
+        font: '12px/1.4 system-ui, sans-serif',
+        'white-space': 'pre-wrap',
+        'word-break': 'break-word',
+      }}
+    >
+      ${getContent}
+    </div>`;
+  }
+
+  const getDescription = () => block.description || 'script';
+  const getCode = () => block.code;
+  const hasResult = () => block.output != null || block.error != null;
+  const resultBackground = () => block.error ? '#fef2f2' : '#f0fdf4';
+  const resultText = () =>
+    block.error ? `Error: ${block.error}` : block.output || '';
+
+  return html`<div
+    style=${{
+      font: '11px/1.4 ui-monospace, monospace',
+      background: '#fff',
+      border: '1px solid #e4e4e7',
+      'border-radius': '6px',
+      padding: '6px',
+    }}
+  >
+    <div style=${{ color: '#52525b', 'margin-bottom': '4px' }}>
+      ${getDescription}
+    </div>
+    <pre style=${{ margin: '0', overflow: 'auto' }}>${getCode}</pre>
+    ${() =>
+      hasResult()
+        ? html`<pre
+            style=${() => ({
+              margin: '6px 0 0',
+              padding: '6px',
+              background: resultBackground(),
+              'border-radius': '4px',
+            })}
+          >${resultText}</pre>`
+        : null}
+  </div>`;
 }

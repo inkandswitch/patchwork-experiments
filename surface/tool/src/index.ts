@@ -1,16 +1,13 @@
 export { createRef, findRef, parseRefURL } from "./ref";
 export { registerRefView } from "./ref-view";
 export { createFilesystem } from "./filesystem";
-export type { PaperFilesystem } from "./filesystem";
+export { createPluginRegistry } from "./plugins";
+export type { Filesystem } from "./filesystem";
 export type { Ref, RefPathSegment } from "./ref";
 export type { Schema } from "./schema";
+export type { Subscribable } from "./subscribable";
+export type { Plugin, PluginRegistry } from "./plugins";
 export type { RefViewHostElement } from "./ref-view";
-
-export type PaperDoc = {
-  title: string;
-  frameDocUrl: string;
-  sourceFolderUrl: string;
-};
 
 export const plugins = [
   {
@@ -19,8 +16,8 @@ export const plugins = [
     name: "Surface",
     supportedDatatypes: ["surface"],
     async load() {
-      const { PaperTool } = await import("./tool");
-      return PaperTool;
+      const { SurfaceTool } = await import("./tool");
+      return SurfaceTool;
     },
   },
   {
@@ -29,8 +26,8 @@ export const plugins = [
     name: "Surface",
     icon: "LayoutTemplate",
     async load() {
-      const { PaperDatatype } = await import("./datatype");
-      return PaperDatatype;
+      const { SurfaceDatatype } = await import("./datatype");
+      return SurfaceDatatype;
     },
   },
 ];

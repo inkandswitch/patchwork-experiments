@@ -1,0 +1,10 @@
+{
+  "plugins": [
+    {
+      "type": "tool",
+      "name": "Selection",
+      "description": "Toolbar button for the selection and move tool",
+      "toolUrl": "./button.js"
+    }
+  ]
+}

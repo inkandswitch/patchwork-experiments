@@ -1,0 +1,23 @@
+{
+  "plugins": [
+    {
+      "type": "tool",
+      "name": "Text",
+      "description": "Renders an editable text field on the canvas",
+      "toolUrl": "./shape.js",
+      "schemaUrl": "./schema.js"
+    },
+    {
+      "type": "tool",
+      "name": "Text Button",
+      "description": "Toolbar button for the text placement tool",
+      "toolUrl": "./button.js"
+    },
+    {
+      "type": "schema",
+      "name": "Text Schema",
+      "description": "Text shape data schema (x, y, text)",
+      "source": "./schema.js"
+    }
+  ]
+}

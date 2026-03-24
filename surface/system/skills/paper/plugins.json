@@ -1,0 +1,10 @@
+{
+  "plugins": [
+    {
+      "type": "skill",
+      "name": "Paper Skill",
+      "description": "Describes how to create and manipulate shapes on the canvas (rectangles, lines, text, embeds)",
+      "source": "./SKILL.md"
+    }
+  ]
+}

@@ -3,12 +3,14 @@ export { from, For, Show, createSignal } from 'https://esm.sh/solid-js@1.9';
 export { render } from 'https://esm.sh/solid-js@1.9/web';
 export { default as html } from 'https://esm.sh/solid-js@1.9/html';
 
-export function useRef(ref) {
+export function useSubscribable(subscribable) {
   const [store, setStore] = createStore({});
-  ref.subscribe((value) => {
-    console.log('[useRef] reconcile incoming', JSON.parse(JSON.stringify(value ?? {})));
-    // I'm sorry chee
+  subscribable.subscribe((value) => {
     setStore(reconcile(value ?? {}));
   });
   return store;
+}
+
+export function useRef(ref) {
+  return useSubscribable(ref);
 }

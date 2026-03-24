@@ -7,10 +7,11 @@ import type {
   Repo,
 } from "@automerge/automerge-repo";
 import type { Schema } from "./schema";
+import type { Subscribable } from "./subscribable";
 
 export type RefPathSegment = string | number;
 
-export class Ref<T = unknown> {
+export class Ref<T = unknown> implements Subscribable<T> {
   #handle: DocHandle<unknown>;
   #path: RefPathSegment[];
   #schema?: Schema<unknown>;

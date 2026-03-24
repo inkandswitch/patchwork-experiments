@@ -1,16 +1,34 @@
 import { z } from 'https://esm.sh/zod@4.3';
-import { from, render, html } from '../solid.js';
+import { from, createSignal, render, html } from '../solid.js';
 
 const TOOL_NAME = 'embed';
 const embedToolUrl = new URL('./shape.js', import.meta.url).href;
-const llmShapeUrl = new URL('../llm/shape.js', import.meta.url).href;
 
-function createLlmEmbedDoc(repo) {
-  return repo.create({
-    config: { apiUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' },
-    runs: [],
-  });
-}
+const EMBED_TYPES = [
+  {
+    id: 'llm',
+    label: 'LLM Chat',
+    toolUrl: new URL('../llm/shape.js', import.meta.url).href,
+    defaultWidth: 320,
+    defaultHeight: 400,
+    createDoc(repo) {
+      return repo.create({
+        config: { apiUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' },
+        runs: [],
+      });
+    },
+  },
+  {
+    id: 'datalog',
+    label: 'Datalog',
+    toolUrl: new URL('../datalog/shape.js', import.meta.url).href,
+    defaultWidth: 800,
+    defaultHeight: 500,
+    createDoc(repo) {
+      return repo.create({});
+    },
+  },
+];
 
 const ButtonShapeSchema = z.object({
   x: z.number(),
@@ -43,12 +61,26 @@ export default function mount(element) {
 
   const active = () => selectedTool() === TOOL_NAME;
 
+  const [menuOpen, setMenuOpen] = createSignal(false);
+  const [selectedType, setSelectedType] = createSignal(EMBED_TYPES[0]);
+
   let dragId = null;
   let startX = 0;
   let startY = 0;
 
-  function toggleTool() {
-    selectedToolRef.change(() => (active() ? '' : TOOL_NAME));
+  function toggleMenu() {
+    if (active()) {
+      selectedToolRef.change(() => '');
+      setMenuOpen(false);
+    } else {
+      setMenuOpen(!menuOpen());
+    }
+  }
+
+  function selectType(embedType) {
+    setSelectedType(embedType);
+    setMenuOpen(false);
+    selectedToolRef.change(() => TOOL_NAME);
   }
 
   function onPointerDown(event) {
@@ -61,7 +93,8 @@ export default function mount(element) {
       return;
     }
 
-    const embedHandle = createLlmEmbedDoc(repo);
+    const embedType = selectedType();
+    const embedHandle = embedType.createDoc(repo);
     const embedDocUrl = embedHandle.url;
 
     const rect = canvas.getBoundingClientRect();
@@ -73,7 +106,7 @@ export default function mount(element) {
       x: startX,
       y: startY,
       toolUrl: embedToolUrl,
-      embedToolUrl: llmShapeUrl,
+      embedToolUrl: embedType.toolUrl,
       embedDocUrl,
       width: 0,
       height: 0,
@@ -102,13 +135,12 @@ export default function mount(element) {
     if (dragId) {
       const shape = canvas.ref.at('shapes', dragId).value();
       if (shape.width < 4 && shape.height < 4) {
-        const defaultWidth = 320;
-        const defaultHeight = 400;
+        const embedType = selectedType();
         canvas.ref.at('shapes', dragId).change((s) => {
-          s.x = startX - defaultWidth / 2;
-          s.y = startY - defaultHeight / 2;
-          s.width = defaultWidth;
-          s.height = defaultHeight;
+          s.x = startX - embedType.defaultWidth / 2;
+          s.y = startY - embedType.defaultHeight / 2;
+          s.width = embedType.defaultWidth;
+          s.height = embedType.defaultHeight;
         });
       }
     }
@@ -121,30 +153,73 @@ export default function mount(element) {
 
   const dispose = render(
     () =>
-      html`<button
+      html`<div
+        style=${{ position: 'relative' }}
         onPointerDown=${(e) => e.stopPropagation()}
-        onClick=${toggleTool}
-        style=${() => ({
-          width: '32px',
-          height: '32px',
-          border: active() ? '2px solid #3b82f6' : '1px solid #d4d4d8',
-          'border-radius': '6px',
-          background: active() ? '#eff6ff' : '#fff',
-          cursor: 'pointer',
-          display: 'flex',
-          'align-items': 'center',
-          'justify-content': 'center',
-          padding: '0',
-        })}
-        title="LLM chat embed"
       >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <rect x="1" y="1" width="6" height="6" rx="1" stroke=${() => (active() ? '#3b82f6' : '#71717a')} stroke-width="1.2" fill="none" />
-          <rect x="9" y="1" width="6" height="6" rx="1" stroke=${() => (active() ? '#3b82f6' : '#71717a')} stroke-width="1.2" fill="none" />
-          <rect x="1" y="9" width="6" height="6" rx="1" stroke=${() => (active() ? '#3b82f6' : '#71717a')} stroke-width="1.2" fill="none" />
-          <rect x="9" y="9" width="6" height="6" rx="1" stroke=${() => (active() ? '#3b82f6' : '#71717a')} stroke-width="1.2" fill="none" />
-        </svg>
-      </button>`,
+        <button
+          onClick=${toggleMenu}
+          style=${() => ({
+            width: '32px',
+            height: '32px',
+            border: active() ? '2px solid #3b82f6' : '1px solid #d4d4d8',
+            'border-radius': '6px',
+            background: active() ? '#eff6ff' : '#fff',
+            cursor: 'pointer',
+            display: 'flex',
+            'align-items': 'center',
+            'justify-content': 'center',
+            padding: '0',
+          })}
+          title="Embed"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <rect x="1" y="1" width="6" height="6" rx="1" stroke=${() => (active() ? '#3b82f6' : '#71717a')} stroke-width="1.2" fill="none" />
+            <rect x="9" y="1" width="6" height="6" rx="1" stroke=${() => (active() ? '#3b82f6' : '#71717a')} stroke-width="1.2" fill="none" />
+            <rect x="1" y="9" width="6" height="6" rx="1" stroke=${() => (active() ? '#3b82f6' : '#71717a')} stroke-width="1.2" fill="none" />
+            <rect x="9" y="9" width="6" height="6" rx="1" stroke=${() => (active() ? '#3b82f6' : '#71717a')} stroke-width="1.2" fill="none" />
+          </svg>
+        </button>
+        ${() =>
+          menuOpen()
+            ? html`<div
+                style=${{
+                  position: 'absolute',
+                  top: '36px',
+                  left: '0',
+                  background: '#fff',
+                  border: '1px solid #d4d4d8',
+                  'border-radius': '6px',
+                  'box-shadow': '0 4px 12px rgba(0,0,0,0.12)',
+                  'z-index': '100',
+                  'min-width': '120px',
+                  overflow: 'hidden',
+                }}
+              >
+                ${EMBED_TYPES.map(
+                  (embedType) =>
+                    html`<button
+                      onClick=${() => selectType(embedType)}
+                      style=${{
+                        display: 'block',
+                        width: '100%',
+                        padding: '6px 12px',
+                        border: 'none',
+                        background: 'transparent',
+                        cursor: 'pointer',
+                        font: '12px/1.5 system-ui, sans-serif',
+                        color: '#334155',
+                        'text-align': 'left',
+                      }}
+                      onMouseEnter=${(e) => (e.target.style.background = '#f1f5f9')}
+                      onMouseLeave=${(e) => (e.target.style.background = 'transparent')}
+                    >
+                      ${embedType.label}
+                    </button>`,
+                )}
+              </div>`
+            : ''}
+      </div>`,
     element,
   );
 

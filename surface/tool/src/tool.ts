@@ -1,24 +1,28 @@
 import { findRef } from "./ref";
 import { registerRefView } from "./ref-view";
 import { createFilesystem } from "./filesystem";
+import { createPluginRegistry } from "./plugins";
 import type { AutomergeUrl, DocHandle, Repo } from "@automerge/automerge-repo";
 import type { RefViewHostElement } from "./ref-view";
-import type { PaperDoc } from "./index";
+import type { SurfaceDoc } from "./datatype";
 
 const DEFAULT_SOURCE_FOLDER = "automerge:4FwenFcEMbsmjGxvYAuT5U8mLi8m" as AutomergeUrl;
 const BOOTSTRAP_TOOL_URL = "/automerge:4FwenFcEMbsmjGxvYAuT5U8mLi8m/bootstrap.js";
 
 const repo = (globalThis as any).repo;
-registerRefView(repo, createFilesystem(repo, DEFAULT_SOURCE_FOLDER));
+(globalThis as any).VITE_OPENROUTER_API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY;
+const filesystem = createFilesystem(repo, DEFAULT_SOURCE_FOLDER);
+const pluginRegistry = createPluginRegistry(filesystem);
+registerRefView(repo, filesystem, pluginRegistry);
 
-export function PaperTool(
-  handle: DocHandle<PaperDoc>,
+export function SurfaceTool(
+  handle: DocHandle<SurfaceDoc>,
   element: RefViewHostElement & { repo?: Repo },
 ): () => void {
   const repo = element.repo ?? (globalThis as any).repo;
   if (!repo) {
     const pre = document.createElement("pre");
-    pre.textContent = "paper: no repo (set element.repo or window.repo)";
+    pre.textContent = "surface: no repo (set element.repo or window.repo)";
     element.appendChild(pre);
     return () => pre.remove();
   }
@@ -31,9 +35,6 @@ export function PaperTool(
       if (disposed) return;
 
       const { frameDocUrl } = handle.doc();
-
-      window.__PAPER_LLM_API_KEY__ =
-        import.meta.env.VITE_OPENROUTER_API_KEY ?? import.meta.env.VITE_OPENAI_API_KEY ?? "";
 
       const frameRef = await findRef(repo, frameDocUrl);
       const rv = document.createElement("ref-view") as RefViewHostElement;

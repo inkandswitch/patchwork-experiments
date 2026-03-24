@@ -1,9 +1,8 @@
 import { findRef, Ref } from "./ref";
 import type { Schema } from "./schema";
-import type { PaperFilesystem } from "./filesystem";
+import type { Filesystem } from "./filesystem";
+import type { PluginRegistry } from "./plugins";
 import type { Repo } from "@automerge/automerge-repo";
-
-const g = globalThis as typeof globalThis & { repo?: Repo };
 
 const ATTR_TOOL = "tool-url";
 const ATTR_REF = "ref-url";
@@ -11,7 +10,8 @@ const ATTR_REF = "ref-url";
 export type RefViewHostElement = HTMLElement & {
   readonly ref: Ref;
   readonly parent: RefViewHostElement | null;
-  readonly filesystem: PaperFilesystem;
+  readonly filesystem: Filesystem;
+  readonly plugins: PluginRegistry;
 };
 
 type MountModule = {
@@ -22,7 +22,7 @@ type MountModule = {
 /**
  * Defines **`ref-view`** once, with `repo` and optional default `filesystem` closed over.
  */
-export function registerRefView(repo: Repo, filesystem: PaperFilesystem): void {
+export function registerRefView(repo: Repo, filesystem: Filesystem, pluginRegistry: PluginRegistry): void {
   if (customElements.get("ref-view")) return;
 
   class RefViewElement extends HTMLElement implements RefViewHostElement {
@@ -32,8 +32,12 @@ export function registerRefView(repo: Repo, filesystem: PaperFilesystem): void {
     #toolRef: Ref<string> | null = null;
     #toolUnsub: (() => void) | null = null;
 
-    get filesystem(): PaperFilesystem {
+    get filesystem(): Filesystem {
       return filesystem;
+    }
+
+    get plugins(): PluginRegistry {
+      return pluginRegistry;
     }
 
     static get observedAttributes(): string[] {

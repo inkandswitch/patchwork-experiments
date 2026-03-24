@@ -36,28 +36,21 @@ const selectedShapesSchema = {
   },
 };
 
-function shapeIdFromEvent(event, canvas) {
-  const childRefView = event.target.closest('ref-view');
-  if (!childRefView || childRefView === canvas) return null;
-  const refUrl = childRefView.getAttribute('ref-url');
-  if (!refUrl) return null;
-  const parts = refUrl.split('/');
-  return parts[parts.length - 1];
-}
-
 export default function mount(element) {
   const canvas = element.parent;
   const selectedToolRef = canvas.ref.at('selectedTool').as(selectedToolSchema);
   const selectedTool = from(selectedToolRef);
   const selectedShapesRef = canvas.ref.at('selectedShapes').as(selectedShapesSchema);
 
-  const active = () => selectedTool() === TOOL_NAME;
+  function isSelectionToolActive() {
+    return selectedTool() === TOOL_NAME;
+  }
 
   function toggleTool() {
-    if (active()) {
+    if (isSelectionToolActive()) {
       selectedShapesRef.change(() => ({}));
     }
-    selectedToolRef.change(() => (active() ? '' : TOOL_NAME));
+    selectedToolRef.change(() => (isSelectionToolActive() ? '' : TOOL_NAME));
   }
 
   let dragShapeId = null;
@@ -67,7 +60,7 @@ export default function mount(element) {
   let startShapeY = 0;
 
   function onPointerDown(event) {
-    if (!active()) return;
+    if (!isSelectionToolActive()) return;
 
     const shapeId = shapeIdFromEvent(event, canvas);
     if (!shapeId) {
@@ -103,12 +96,13 @@ export default function mount(element) {
   }
 
   function onKeyDown(event) {
-    if (!active()) return;
+    if (!isSelectionToolActive()) return;
     if (event.key !== 'Backspace' && event.key !== 'Delete') return;
+    if (isFocusedTextEditingTarget()) return;
     const selected = selectedShapesRef.value();
-    const ids = Object.keys(selected).filter((id) => {
-      const s = canvas.ref.at('shapes', id).value();
-      return !s.isLocked;
+    const ids = Object.keys(selected).filter((shapeId) => {
+      const shapeEntry = canvas.ref.at('shapes', shapeId).value();
+      return !shapeEntry.isLocked;
     });
     if (!ids.length) return;
     event.preventDefault();
@@ -133,9 +127,9 @@ export default function mount(element) {
         style=${() => ({
           width: '32px',
           height: '32px',
-          border: active() ? '2px solid #3b82f6' : '1px solid #d4d4d8',
+          border: isSelectionToolActive() ? '2px solid #3b82f6' : '1px solid #d4d4d8',
           'border-radius': '6px',
-          background: active() ? '#eff6ff' : '#fff',
+          background: isSelectionToolActive() ? '#eff6ff' : '#fff',
           cursor: 'pointer',
           display: 'flex',
           'align-items': 'center',
@@ -144,7 +138,7 @@ export default function mount(element) {
         })}
       >
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <path d="M3 2l8 6-4 1-2 4-2-11z" stroke=${() => (active() ? '#3b82f6' : '#71717a')} stroke-width="1.5" fill="none" stroke-linejoin="round" />
+          <path d="M3 2l8 6-4 1-2 4-2-11z" stroke=${() => (isSelectionToolActive() ? '#3b82f6' : '#71717a')} stroke-width="1.5" fill="none" stroke-linejoin="round" />
         </svg>
       </button>`,
     element,
@@ -157,4 +151,49 @@ export default function mount(element) {
     document.removeEventListener('keydown', onKeyDown);
     dispose();
   };
+}
+
+function shapeIdFromEvent(event, canvas) {
+  const childRefView = event.target.closest('ref-view');
+  if (!childRefView || childRefView === canvas) return null;
+  const refUrl = childRefView.getAttribute('ref-url');
+  if (!refUrl) return null;
+  const parts = refUrl.split('/');
+  return parts[parts.length - 1];
+}
+
+function isFocusedTextEditingTarget() {
+  const activeElement = document.activeElement;
+  if (!activeElement || !(activeElement instanceof HTMLElement)) return false;
+  if (activeElement.isContentEditable) return true;
+  if (
+    activeElement.closest(
+      '[contenteditable="true"], [contenteditable="plaintext-only"], [contenteditable=""]',
+    )
+  ) {
+    return true;
+  }
+  if (activeElement instanceof HTMLTextAreaElement) {
+    return !activeElement.readOnly && !activeElement.disabled;
+  }
+  if (activeElement instanceof HTMLInputElement) {
+    if (activeElement.readOnly || activeElement.disabled) return false;
+    const textEditingTypes = new Set([
+      '',
+      'text',
+      'search',
+      'url',
+      'tel',
+      'email',
+      'password',
+      'number',
+      'date',
+      'time',
+      'datetime-local',
+      'month',
+      'week',
+    ]);
+    return textEditingTypes.has(activeElement.type);
+  }
+  return false;
 }

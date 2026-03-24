@@ -1,0 +1,17 @@
+{
+  "plugins": [
+    {
+      "type": "tool",
+      "name": "LLM Chat",
+      "description": "LLM chat panel with script evaluation loop",
+      "toolUrl": "./shape.js",
+      "schemaUrl": "./schema.js"
+    },
+    {
+      "type": "schema",
+      "name": "LLM Schema",
+      "description": "LLM panel data schema (config, runs with output blocks)",
+      "source": "./schema.js"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "plugins": [
+    {
+      "type": "tool",
+      "name": "Embed",
+      "description": "Renders an embedded sub-surface on the canvas",
+      "toolUrl": "./shape.js",
+      "schemaUrl": "./schema.js"
+    },
+    {
+      "type": "tool",
+      "name": "Embed Button",
+      "description": "Toolbar button for the embed drawing tool",
+      "toolUrl": "./button.js"
+    },
+    {
+      "type": "schema",
+      "name": "Embed Schema",
+      "description": "Embed shape data schema (x, y, width, height, embedToolUrl, embedDocUrl)",
+      "source": "./schema.js"
+    }
+  ]
+}

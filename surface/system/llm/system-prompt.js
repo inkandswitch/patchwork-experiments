@@ -22,11 +22,10 @@ Rules:
 export async function buildSystemPrompt(filesystem) {
   const systemRoot = await detectSystemRoot(filesystem);
   const rootReadme = await filesystem.readFile(joinPath(systemRoot, 'README.md'));
-  const rows = await collectPackageReadmeRows(filesystem, systemRoot);
-  const toc = formatPackageToc(rows);
+  const skillBodies = await collectSkillBodies(filesystem, systemRoot);
   const readmeBlock = rootReadme.trim() ? `${rootReadme.trim()}\n` : '';
-  const tocBlock = toc ? `${toc}\n` : '';
-  return `${PROMPT_PREFIX}${readmeBlock}${tocBlock}`;
+  const skillsBlock = skillBodies.length > 0 ? skillBodies.join('\n') + '\n' : '';
+  return `${PROMPT_PREFIX}${readmeBlock}${skillsBlock}`;
 }
 
 /**
@@ -45,53 +44,44 @@ async function detectSystemRoot(filesystem) {
   throw new Error('Could not locate system README.md (tried surface/system, system, and repo root)');
 }
 
+function joinPath(...parts) {
+  return parts
+    .flatMap((p) => String(p).split('/'))
+    .filter((s) => s.length > 0)
+    .join('/');
+}
+
 /**
  * @param {{ readFile: (path: string) => Promise<string>, listEntries?: (path?: string) => Promise<{ name: string, type?: string }[]> }} filesystem
  * @param {string} systemRoot
  */
-async function collectPackageReadmeRows(filesystem, systemRoot) {
+async function collectSkillBodies(filesystem, systemRoot) {
   if (typeof filesystem.listEntries !== 'function') {
     return [];
   }
-  const links = await filesystem.listEntries(systemRoot);
-  const rows = [];
+  const skillsDir = joinPath(systemRoot, 'skills');
+  let links;
+  try {
+    links = await filesystem.listEntries(skillsDir);
+  } catch {
+    return [];
+  }
+  const bodies = [];
   for (const link of links) {
     if (link.type !== 'folder') continue;
-    const readmePath = joinPath(systemRoot, link.name, 'README.md');
+    const skillPath = joinPath(skillsDir, link.name, 'SKILL.md');
     let raw;
     try {
-      raw = await filesystem.readFile(readmePath);
+      raw = await filesystem.readFile(skillPath);
     } catch {
       continue;
     }
-    const { front } = parseFrontMatter(raw);
-    const name = typeof front.name === 'string' ? front.name : link.name;
-    const description = typeof front.description === 'string' ? front.description : '';
-    rows.push({
-      path: joinPath(systemRoot, link.name),
-      name,
-      description,
-    });
+    const { body } = parseFrontMatter(raw);
+    if (body.trim()) {
+      bodies.push(body.trim());
+    }
   }
-  rows.sort((a, b) => a.path.localeCompare(b.path));
-  return rows;
-}
-
-/**
- * @param {{ path: string, name: string, description: string }[]} rows
- */
-function formatPackageToc(rows) {
-  if (rows.length === 0) {
-    return '';
-  }
-  return rows
-    .map((r) => {
-      const path = escapePlainLine(r.path);
-      const name = escapePlainLine(r.name);
-      const description = escapePlainLine(r.description);
-      return `- \`${path}\` (${name}): ${description}`;
-    })
-    .join('\n');
+  return bodies;
 }
 
 /**
@@ -114,27 +104,16 @@ function parseFrontMatter(markdown) {
   /** @type {Record<string, string>} */
   const front = {};
   for (const line of raw.split(/\r?\n/)) {
-    const m = /^([\w-]+):\s*(.*)$/.exec(line);
-    if (!m) continue;
-    let value = m[2].trim();
+    const match = /^([\w-]+):\s*(.*)$/.exec(line);
+    if (!match) continue;
+    let value = match[2].trim();
     if (
       (value.startsWith('"') && value.endsWith('"')) ||
       (value.startsWith("'") && value.endsWith("'"))
     ) {
       value = value.slice(1, -1);
     }
-    front[m[1]] = value;
+    front[match[1]] = value;
   }
   return { front, body };
-}
-
-function joinPath(...parts) {
-  return parts
-    .flatMap((p) => String(p).split('/'))
-    .filter((s) => s.length > 0)
-    .join('/');
-}
-
-function escapePlainLine(value) {
-  return String(value).replace(/\r?\n/g, ' ');
 }
