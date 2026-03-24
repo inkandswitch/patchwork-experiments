@@ -4,6 +4,8 @@ import type { Filesystem } from "./filesystem";
 import type { PluginRegistry } from "./plugins";
 import type { Repo } from "@automerge/automerge-repo";
 
+console.log("ref-view.ts loaded");
+
 const ATTR_TOOL = "tool-url";
 const ATTR_REF = "ref-url";
 
@@ -22,7 +24,11 @@ type MountModule = {
 /**
  * Defines **`ref-view`** once, with `repo` and optional default `filesystem` closed over.
  */
-export function registerRefView(repo: Repo, filesystem: Filesystem, pluginRegistry: PluginRegistry): void {
+export function registerRefView(
+  repo: Repo,
+  filesystem: Filesystem,
+  pluginRegistry: PluginRegistry,
+): void {
   if (customElements.get("ref-view")) return;
 
   class RefViewElement extends HTMLElement implements RefViewHostElement {
@@ -131,6 +137,14 @@ export function registerRefView(repo: Repo, filesystem: Filesystem, pluginRegist
       return signal.aborted || !this.isConnected;
     }
 
+    #showError(err: unknown): void {
+      const pre = document.createElement("pre");
+      pre.style.whiteSpace = "pre-wrap";
+      pre.textContent =
+        err instanceof Error ? `ref-view: ${err.message}` : `ref-view: ${String(err)}`;
+      this.appendChild(pre);
+    }
+
     async #mount(signal: AbortSignal): Promise<void> {
       this.#teardown();
       const refUrl = this.refUrl;
@@ -188,13 +202,8 @@ export function registerRefView(repo: Repo, filesystem: Filesystem, pluginRegist
 
         this.#cleanup = typeof dispose === "function" ? dispose : null;
       } catch (err) {
-        if (signal.aborted) return;
-        if (!this.isConnected) return;
-        const pre = document.createElement("pre");
-        pre.style.whiteSpace = "pre-wrap";
-        pre.textContent =
-          err instanceof Error ? `ref-view: ${err.message}` : `ref-view: ${String(err)}`;
-        this.appendChild(pre);
+        if (this.#stale(signal)) return;
+        this.#showError(err);
       }
     }
   }

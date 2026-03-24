@@ -99,6 +99,7 @@ export default function mount(element) {
           s.height = defaultHeight;
         });
       }
+      selectedToolRef.change(() => '');
     }
     dragId = null;
   }

@@ -15,6 +15,7 @@ export default defineConfig({
     topLevelAwait(),
   ],
   build: {
+    minify: false,
     rollupOptions: {
       external,
       input: "./src/index.ts",

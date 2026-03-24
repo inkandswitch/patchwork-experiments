@@ -1,5 +1,8 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, createSignal, render, html } from '../solid.js';
+import styles from './button.css' with { type: 'css' };
+
+document.adoptedStyleSheets = [...document.adoptedStyleSheets, styles];
 
 const TOOL_NAME = 'embed';
 const embedToolUrl = new URL('./shape.js', import.meta.url).href;
@@ -143,6 +146,7 @@ export default function mount(element) {
           s.height = embedType.defaultHeight;
         });
       }
+      selectedToolRef.change(() => '');
     }
     dragId = null;
   }
@@ -154,65 +158,29 @@ export default function mount(element) {
   const dispose = render(
     () =>
       html`<div
-        style=${{ position: 'relative' }}
+        class="embed-btn-wrap"
         onPointerDown=${(e) => e.stopPropagation()}
       >
         <button
           onClick=${toggleMenu}
-          style=${() => ({
-            width: '32px',
-            height: '32px',
-            border: active() ? '2px solid #3b82f6' : '1px solid #d4d4d8',
-            'border-radius': '6px',
-            background: active() ? '#eff6ff' : '#fff',
-            cursor: 'pointer',
-            display: 'flex',
-            'align-items': 'center',
-            'justify-content': 'center',
-            padding: '0',
-          })}
+          class=${() => `embed-btn${active() ? ' active' : ''}`}
           title="Embed"
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <rect x="1" y="1" width="6" height="6" rx="1" stroke=${() => (active() ? '#3b82f6' : '#71717a')} stroke-width="1.2" fill="none" />
-            <rect x="9" y="1" width="6" height="6" rx="1" stroke=${() => (active() ? '#3b82f6' : '#71717a')} stroke-width="1.2" fill="none" />
-            <rect x="1" y="9" width="6" height="6" rx="1" stroke=${() => (active() ? '#3b82f6' : '#71717a')} stroke-width="1.2" fill="none" />
-            <rect x="9" y="9" width="6" height="6" rx="1" stroke=${() => (active() ? '#3b82f6' : '#71717a')} stroke-width="1.2" fill="none" />
+            <rect x="1" y="1" width="6" height="6" rx="1" stroke-width="1.2" fill="none" />
+            <rect x="9" y="1" width="6" height="6" rx="1" stroke-width="1.2" fill="none" />
+            <rect x="1" y="9" width="6" height="6" rx="1" stroke-width="1.2" fill="none" />
+            <rect x="9" y="9" width="6" height="6" rx="1" stroke-width="1.2" fill="none" />
           </svg>
         </button>
         ${() =>
           menuOpen()
-            ? html`<div
-                style=${{
-                  position: 'absolute',
-                  top: '36px',
-                  left: '0',
-                  background: '#fff',
-                  border: '1px solid #d4d4d8',
-                  'border-radius': '6px',
-                  'box-shadow': '0 4px 12px rgba(0,0,0,0.12)',
-                  'z-index': '100',
-                  'min-width': '120px',
-                  overflow: 'hidden',
-                }}
-              >
+            ? html`<div class="embed-menu">
                 ${EMBED_TYPES.map(
                   (embedType) =>
                     html`<button
                       onClick=${() => selectType(embedType)}
-                      style=${{
-                        display: 'block',
-                        width: '100%',
-                        padding: '6px 12px',
-                        border: 'none',
-                        background: 'transparent',
-                        cursor: 'pointer',
-                        font: '12px/1.5 system-ui, sans-serif',
-                        color: '#334155',
-                        'text-align': 'left',
-                      }}
-                      onMouseEnter=${(e) => (e.target.style.background = '#f1f5f9')}
-                      onMouseLeave=${(e) => (e.target.style.background = 'transparent')}
+                      class="embed-menu-item"
                     >
                       ${embedType.label}
                     </button>`,
