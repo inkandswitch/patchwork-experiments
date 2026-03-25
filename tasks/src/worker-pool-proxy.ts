@@ -1,7 +1,7 @@
 import type { AutomergeUrl } from '@automerge/automerge-repo';
 import type { MessageToRouter, MessageToWorker, MessageToWorkerPool } from './protocol';
 
-import { MessageChannelNetworkAdapter, Repo } from '@automerge/vanillajs';
+import { IndexedDBStorageAdapter, MessageChannelNetworkAdapter, Repo } from '@automerge/vanillajs';
 import { getAccountHandle, getTaskQueues, type TaskQueues } from './helpers';
 
 import WorkerPool from './worker-pool.ts?sharedworker';
@@ -144,6 +144,7 @@ export class WorkerPoolProxy {
   async getRepo() {
     if (!this._repo) {
       this._repo = new Repo({
+        storage: new IndexedDBStorageAdapter(),
         network: [new MessageChannelNetworkAdapter((window as any).getRepoChannel())],
         peerId: `worker-pool-proxy-${Math.round(Math.random() * 10_000)}` as any,
       });

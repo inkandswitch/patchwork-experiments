@@ -1,5 +1,5 @@
 import { automergeWasmBase64 } from '@automerge/automerge/automerge.wasm.base64';
-import { Repo, Automerge, MessageChannelNetworkAdapter } from '@automerge/vanillajs/slim';
+import { Repo, Automerge, MessageChannelNetworkAdapter, IndexedDBStorageAdapter } from '@automerge/vanillajs/slim';
 
 // TODO: can we get rid of the base64 thing?
 // (can we just initializeWasm?)
@@ -10,6 +10,7 @@ export async function getRepo(port: MessagePort, peerId: string) {
 
   const repo = new Repo({
     network: [new MessageChannelNetworkAdapter(port)],
+    storage: new IndexedDBStorageAdapter(),
     peerId: peerId as any,
   });
 
