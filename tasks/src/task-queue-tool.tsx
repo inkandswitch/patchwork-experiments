@@ -82,11 +82,11 @@ const ITaskBrowserTool: React.FC<any> = ({ docUrl }) => {
         hasntRun ? 'border-l-gray-500' : failed ? 'border-l-red-500' : 'border-l-lime-500'
       } border-l-8 m`}
     >
-      {doc.runs.map((run: RunInfo<any>) => (
-        <div key={run.startTime} className="bg-black text-white pl-2 mb-2">
+      {doc.runs.map((run: RunInfo<any>, idx) => (
+        <div key={idx} className="bg-black text-white pl-2 mb-2">
           <div className="align-text-top">
             {JSON.stringify(doc.input)}
-            <Run key={run.startTime} run={run} />
+            <Run run={run} />
             {run.log && run.log.length > 0 && (
               <details>
                 <summary>logs</summary>
