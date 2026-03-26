@@ -82,7 +82,7 @@ export function formatText(
 				return placeholder
 			}
 			const lower = aliasLower.replace(/[-_]/g, " ")
-			const found = EMOJI_DATA.find(e => e.name.toLowerCase() === lower)
+			const found = EMOJI_DATA().find(e => e.name.toLowerCase() === lower)
 			if (found) {
 				emoticonSlots.push(
 					'<span title=":' + escapeHtml(name) + ':">' + found.emoji + "</span>"
@@ -246,7 +246,7 @@ function formatInlineHtml(
 				return placeholder
 			}
 			const lower = aliasLower.replace(/[-_]/g, " ")
-			const found = EMOJI_DATA.find(e => e.name.toLowerCase() === lower)
+			const found = EMOJI_DATA().find(e => e.name.toLowerCase() === lower)
 			if (found) {
 				emoticonSlots.push(
 					'<span title=":' + escapeHtml(name) + ':">' + found.emoji + "</span>"

@@ -33,12 +33,33 @@ export function MessageList(props: {
 	const pendingResolves = new Set<string>()
 	const subscribedUrls = new Set<string>()
 	const retryCounts = new Map<string, number>()
-	const MAX_RETRIES = 5
+	const nextRetryAt = new Map<string, number>()
+	const FAST_RETRY_LIMIT = 5
 	const subscriptions: {handle: any; cb: () => void}[] = []
+	let warnedBadRepo = false
+
+	function getActiveRepo(): any | null {
+		const ctxRepo = repo as any
+		if (ctxRepo && typeof ctxRepo.find === "function") return ctxRepo
+		const globalRepo = (window as any).repo
+		if (globalRepo && typeof globalRepo.find === "function") return globalRepo
+		if (!warnedBadRepo) {
+			warnedBadRepo = true
+			console.warn("[Chat] MessageList: repo unavailable or invalid", {
+				typeofCtxRepo: typeof ctxRepo,
+				typeofCtxFind: typeof ctxRepo?.find,
+				typeofGlobalRepo: typeof globalRepo,
+				typeofGlobalFind: typeof globalRepo?.find,
+			})
+		}
+		return null
+	}
 
 	onCleanup(() => {
 		for (const sub of subscriptions) {
-			try { sub.handle.off("change", sub.cb) } catch {}
+			try {
+				sub.handle.off("change", sub.cb)
+			} catch {}
 		}
 		subscriptions.length = 0
 	})
@@ -47,9 +68,16 @@ export function MessageList(props: {
 		if (pendingResolves.has(url)) return
 		pendingResolves.add(url)
 		try {
-			const mh = await repo.find(url)
+			const activeRepo = getActiveRepo()
+			if (!activeRepo) {
+				pendingResolves.delete(url)
+				return
+			}
+			const mh = await activeRepo.find(url)
 			const data = mh.doc() as ChatMessage
 			if (data) {
+				retryCounts.delete(url)
+				nextRetryAt.delete(url)
 				setMsgDocCache(prev => {
 					const next = new Map(prev)
 					next.set(url, {data, handle: mh})
@@ -99,10 +127,22 @@ export function MessageList(props: {
 		let hasUnresolved = false
 		for (const entry of rawEntries as any[]) {
 			if (entry.ref && entry.url && !cache.has(entry.url)) {
+				const now = Date.now()
+				const earliestRetry = nextRetryAt.get(entry.url) || 0
+				if (now < earliestRetry) {
+					hasUnresolved = true
+					continue
+				}
+
 				const tries = retryCounts.get(entry.url) || 0
-				if (tries >= MAX_RETRIES) continue // give up on permanently unavailable
 				if (!pendingResolves.has(entry.url)) {
-					retryCounts.set(entry.url, tries + 1)
+					const nextTry = tries + 1
+					retryCounts.set(entry.url, nextTry)
+					// Fast retries first, then keep a slower retry cadence forever.
+					nextRetryAt.set(
+						entry.url,
+						now + (nextTry <= FAST_RETRY_LIMIT ? 2000 : 15000)
+					)
 					resolveMessageDoc(entry.url)
 				}
 				hasUnresolved = true
@@ -130,7 +170,11 @@ export function MessageList(props: {
 				if (cached) {
 					const msg = {...cached.data, _rawIdx: ri, _ref: entry}
 					// Clear stale streaming flag (>2 min old)
-					if (msg.streaming && msg.timestamp && Date.now() - msg.timestamp > 120000) {
+					if (
+						msg.streaming &&
+						msg.timestamp &&
+						Date.now() - msg.timestamp > 120000
+					) {
 						msg.streaming = false
 					}
 					result.push(msg)
@@ -186,7 +230,10 @@ export function MessageList(props: {
 	function checkScroll() {
 		if (!messagesRef) return
 		const atBottom =
-			messagesRef.scrollHeight - messagesRef.scrollTop - messagesRef.clientHeight < 40
+			messagesRef.scrollHeight -
+				messagesRef.scrollTop -
+				messagesRef.clientHeight <
+			40
 		setWasAtBottom(atBottom)
 	}
 
@@ -200,7 +247,10 @@ export function MessageList(props: {
 	})
 
 	// Continuation logic
-	function isContinuation(msg: ChatMessage, prevMsg: ChatMessage | undefined): boolean {
+	function isContinuation(
+		msg: ChatMessage,
+		prevMsg: ChatMessage | undefined
+	): boolean {
 		if (!prevMsg) return false
 		if (msg.replyTo) return false
 		if (msg.name !== prevMsg.name) return false
@@ -272,35 +322,39 @@ export function MessageList(props: {
 	}
 
 	return (
-		<div
-			ref={messagesRef}
-			class="chat-messages"
-			onScroll={checkScroll}
-		>
+		<div ref={messagesRef} class="chat-messages" onScroll={checkScroll}>
 			<Show
 				when={messages().length > 0}
-				fallback={<div class="chat-empty">no chitter nor chatter yet. say {Math.random() < 0.1 ? "howdy 🤠" : "hiya 🥰"}</div>}
-			>
+				fallback={
+					<div class="chat-empty">
+						no chitter nor chatter yet. say{" "}
+						{Math.random() < 0.1 ? "howdy 🤠" : "hiya 🥰"}
+					</div>
+				}>
 				<Index each={messages()}>
 					{(msg, i) => {
 						const meta = () => messagesMeta()[i]
 						return (
-						<div data-msg-id={msg().id}>
-							<Show when={meta()?.showTimeGap}>
-								<div class="chat-time-gap"><span>{formatTimeGap(msg().timestamp)}</span></div>
-							</Show>
-							<MessageRow
-								msg={msg()}
-								isContinuation={meta()?.isContinuation ?? false}
-								replyToMsg={msg().replyTo ? msgMap().get(msg().replyTo!) : undefined}
-								emoticonBlobUrls={emoticonBlobUrls()}
-								onReply={props.onReply}
-								onReact={props.onReact}
-								onToggleReaction={toggleReaction}
-								onDelete={deleteMessage}
-								onScrollToMsg={scrollToMsg}
-							/>
-						</div>
+							<div data-msg-id={msg().id}>
+								<Show when={meta()?.showTimeGap}>
+									<div class="chat-time-gap">
+										<span>{formatTimeGap(msg().timestamp)}</span>
+									</div>
+								</Show>
+								<MessageRow
+									msg={msg()}
+									isContinuation={meta()?.isContinuation ?? false}
+									replyToMsg={
+										msg().replyTo ? msgMap().get(msg().replyTo!) : undefined
+									}
+									emoticonBlobUrls={emoticonBlobUrls()}
+									onReply={props.onReply}
+									onReact={props.onReact}
+									onToggleReaction={toggleReaction}
+									onDelete={deleteMessage}
+									onScrollToMsg={scrollToMsg}
+								/>
+							</div>
 						)
 					}}
 				</Index>

@@ -63,7 +63,7 @@ const LOCAL_MODELS = [
   { id: "onnx-community/Phi-3.5-mini-instruct-onnx-web", name: "Phi 3.5 Mini", dtype: "q4f16" },
   { id: "onnx-community/SmolLM2-1.7B-Instruct-ONNX", name: "SmolLM2 1.7B", dtype: "q4f16" },
 ]
-const DEFAULT_MODEL_ID = LOCAL_MODELS[1].id
+const DEFAULT_MODEL_ID = LOCAL_MODELS[2].id
 
 let currentModelId = DEFAULT_MODEL_ID
 let pipelineFn = null

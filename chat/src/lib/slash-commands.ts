@@ -50,7 +50,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 		cmd: "/model",
 		usage: "/model",
 		desc: "Configure the AI model and provider",
-		aliases: ["/or", "/openrouter", "/ollama", "/provider"],
+		aliases: ["/or", "/openrouter", "/ollama", "/provider", "/models"],
 	},
 	{
 		cmd: "/pin",

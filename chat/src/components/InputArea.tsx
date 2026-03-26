@@ -507,7 +507,7 @@ export function InputArea(props: {
 			props.onCallCommand?.()
 			return
 		}
-		if (lc === "/model" || lc === "/or" || lc === "/openrouter" || lc === "/ollama" ||
+		if (lc === "/model" || lc === "/models" || lc === "/or" || lc === "/openrouter" || lc === "/ollama" ||
 			lc.startsWith("/openrouter ") || lc.startsWith("/or ") || lc.startsWith("/provider")) {
 			setInputValue("")
 			props.onModelCommand?.()
