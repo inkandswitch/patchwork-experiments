@@ -1,4 +1,4 @@
-export type MenuItem = { id: string; name: string };
+export type MenuItem = { id: string; name: string; dragData?: string };
 
 const MENU_CSS = [
   'position:fixed',
@@ -50,6 +50,13 @@ export function openMenu(
       onSelect(item.id);
       close();
     });
+    if (item.dragData) {
+      row.draggable = true;
+      row.addEventListener('dragstart', (e) => {
+        e.dataTransfer!.setData('text/x-patchwork-urls', item.dragData!);
+        close();
+      });
+    }
     menu.appendChild(row);
   }
 

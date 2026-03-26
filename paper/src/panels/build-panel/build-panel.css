@@ -160,3 +160,70 @@
 .paper-build-btn--stop:hover {
   background: #dc2626;
 }
+
+/* ─── Changes review ─────────────────────────────────────────────────────── */
+
+.paper-build-changes {
+  border-top: 1px solid #f1f5f9;
+  padding: 8px;
+  flex-shrink: 0;
+}
+
+.paper-build-changes-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+
+.paper-build-change-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+}
+
+.paper-build-change-url {
+  flex: 1;
+  font-size: 11px;
+  color: #64748b;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paper-build-accept-btn,
+.paper-build-reject-btn {
+  padding: 2px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s,
+    border-color 0.12s;
+}
+
+.paper-build-accept-btn {
+  color: #16a34a;
+}
+
+.paper-build-accept-btn:hover {
+  background: #dcfce7;
+  border-color: #86efac;
+}
+
+.paper-build-reject-btn {
+  color: #dc2626;
+}
+
+.paper-build-reject-btn:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}

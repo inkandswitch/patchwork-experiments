@@ -59,12 +59,6 @@
   white-space: nowrap;
 }
 
-.embed-tool-btn-caret {
-  flex-shrink: 0;
-  font-size: 9px;
-  opacity: 0.6;
-}
-
 .embed-close-btn {
   flex-shrink: 0;
   width: 20px;

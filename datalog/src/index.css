@@ -209,6 +209,7 @@
   .pg-fact {
     padding: 2px 4px;
     border-radius: 3px;
+    border-left: 3px solid transparent;
     line-height: 1.7;
   }
 

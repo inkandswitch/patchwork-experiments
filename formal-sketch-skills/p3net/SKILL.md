@@ -9,10 +9,18 @@ API for creating, configuring, and inspecting an LLM Petri Net. A Petri net runs
 
 ## How the system works
 
+The net has six places and four transitions:
+
 1. A **problem** token holds a document URL — this is what needs to be solved or improved.
-2. Multiple **optimizer** tokens each hold a prompt describing an approach to the problem.
-3. When the net fires, each optimizer gets a *copy* of the problem document and an LLM process runs with its prompt. The results land in the **solutions** place.
-4. An **evaluator** reads all solutions and picks the best one. That winner becomes the new problem for the next round.
+2. Multiple **optimizer** tokens sit in `optimizer_idle`, each holding a prompt describing an approach.
+3. **start_optimizing** fires: each optimizer gets a *copy* of the problem document, an LLM process is launched, and `llm-process` tokens move into `optimizer_running` while solution tokens land in `solutions`.
+4. **finish_optimizing** fires (per token, once the LLM is done): the `llm-process` token is consumed and the original optimizer token is recreated in `optimizer_idle`.
+5. **start_evaluating** fires: the evaluator reads all solutions, launches an LLM process, and a `llm-process` token moves into `evaluator_running`.
+6. **finish_evaluating** fires (once the LLM is done): the winner becomes the new problem, non-winners go back to `solutions`, and the evaluator returns to `evaluator_idle`.
+
+## Requirements
+
+When setting up a net, always create **at least one optimizer** and **at least one evaluator**. A net without both cannot run a complete optimization cycle.
 
 ## Key constraint — you are writing prompts for other LLMs
 
@@ -128,6 +136,8 @@ Your angle: $PROMPT
 
 Document: $DOC_URL
 
+\`repo\` is available as a global variable — it is an Automerge Repo instance you can use to find and change documents.
+
 Step 1 — read the current document:
 <script data-description="Read document">
 const handle = await repo.find("$DOC_URL")
@@ -155,6 +165,8 @@ This template is given to the evaluator child LLM. It uses `$PROMPT` (the judgin
 await p3net.setEvaluatorSystemPrompt(repo, netUrl, `You are an editor choosing the best version of a product description.
 
 Criteria: $PROMPT
+
+\`repo\` is available as a global variable — it is an Automerge Repo instance you can use to find and change documents.
 
 Step 1 — read all candidate versions:
 <script data-description="Read all solutions">
@@ -205,10 +217,11 @@ await p3net.addProblem(repo, netUrl, problemDocUrl)
 
 ### What happens at runtime
 
-1. The net fires the **optimizing** transition. Each optimizer gets a copy of the problem document. Three child LLMs run in parallel, each rewriting the copy from their angle.
-2. Three solution documents land in the **solutions** place.
-3. The net fires the **evaluating** transition. The evaluator LLM reads all three solutions, picks the best URL, and that becomes the new problem.
-4. The cycle repeats — the optimizers now improve the winning version further.
+1. **start_optimizing** fires. Each optimizer token moves from `optimizer_idle` to `optimizer_running` (as an `llm-process` token). Each gets a copy of the problem document. Three child LLMs run in parallel, each rewriting the copy from their angle. Three solution tokens land in `solutions`.
+2. As each LLM finishes, **finish_optimizing** fires for that token, moving the optimizer back to `optimizer_idle`.
+3. Once all optimizers are idle and an evaluator is available, **start_evaluating** fires. The evaluator token moves from `evaluator_idle` to `evaluator_running` (as an `llm-process` token). The evaluator LLM reads all solutions and picks the best URL.
+4. When the evaluator LLM finishes, **finish_evaluating** fires. The winner becomes the new problem, non-winners return to `solutions`, and the evaluator returns to `evaluator_idle`.
+5. The cycle repeats — the optimizers now improve the winning version further.
 
 ## Notes
 

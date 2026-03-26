@@ -7,6 +7,7 @@ Execute code by writing it inside <script> tags with a data-description attribut
 </script>
 
 Rules:
+- Always start by reading the documentation for each available skill using \`loadSkillDocs('name')\`. Do this before writing any other code.
 - Write one <script> block per iteration; wait for its output before continuing.
 - Use \`return\` to inspect values and \`console.log\` for intermediate output.
 - Prefer using a skill's API over manipulating document handles directly. Only read or write doc handles directly when no skill covers the task.

@@ -5,9 +5,11 @@ export const LLMPetriNetDatatype: DatatypeImplementation<LLMPetriNetDoc> = {
   init(doc) {
     doc.tokens = {
       problems: [],
-      optimizer: [],
-      evaluators: [],
+      optimizer_idle: [],
+      optimizer_running: [],
       solutions: [],
+      evaluator_idle: [],
+      evaluator_running: [],
     };
     // TODO: create default system prompt docs once the generic task shape is known
   },

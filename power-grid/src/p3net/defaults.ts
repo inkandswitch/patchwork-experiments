@@ -27,8 +27,8 @@ export default (repo, api) => ({
           d['@patchwork'] = { type: 'llm-workspace' }
           d.title = 'net process'
           d.entries = {}
-          d.entries[copyHandle.url] = { addedAt: [] }
-          d.entries[prompts.state.documentUrl] = { addedAt: [] }
+          d.entries[copyHandle.url] = { url: copyHandle.url, changedAt: null }
+          d.entries[prompts.state.documentUrl] = { url: prompts.state.documentUrl, changedAt: null }
         })
 
         const instruction = [

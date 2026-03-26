@@ -80,15 +80,17 @@ export const LLMPetriNetDialogueExampleDatatype: DatatypeImplementation<LLMPetri
       problems: [
         { id: makeId(), state: { type: 'problem', documentUrl: createMarkdownDoc(repo, OPENING_SCENE) } },
       ],
-      optimizer: [
+      optimizer_idle: [
         { id: makeId(), state: { type: 'optimizer', documentUrl: createMarkdownDoc(repo, ELEANOR_PROMPT) } },
         { id: makeId(), state: { type: 'optimizer', documentUrl: createMarkdownDoc(repo, DANTE_PROMPT) } },
         { id: makeId(), state: { type: 'optimizer', documentUrl: createMarkdownDoc(repo, MIRA_PROMPT) } },
       ],
-      evaluators: [
+      optimizer_running: [],
+      solutions: [],
+      evaluator_idle: [
         { id: makeId(), state: { type: 'evaluator', documentUrl: createMarkdownDoc(repo, EVALUATOR_PROMPT) } },
       ],
-      solutions: [],
+      evaluator_running: [],
     };
 
     doc.systemPromptUrls = {

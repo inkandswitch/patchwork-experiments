@@ -46,7 +46,7 @@ export async function createDocumentCopy(
 
   return newHandle;
 }
-import type { NetDef, ReadonlyToken } from './lib';
+import type { NetDef, ReadonlyToken, TokenState } from './lib';
 import type { LLMPetriNetDoc } from './types';
 import { runLLMProcessRaw } from '../../llm/src/llm-process';
 
@@ -120,16 +120,16 @@ export const DEFAULT_EVALUATOR_SYSTEM_PROMPT = [
 
 export function createNet(repo: Repo, handle: DocHandle<LLMPetriNetDoc>): NetDef {
   return {
-    places: ['problems', 'optimizer', 'solutions', 'evaluators'],
+    places: ['problems', 'optimizer_idle', 'optimizer_running', 'solutions', 'evaluator_idle', 'evaluator_running'],
 
     transitions: [
       {
-        id: 'optimizing',
+        id: 'start_optimizing',
         from: ['problems'],
-        fromAll: ['optimizer'],
-        to: ['solutions', 'optimizer'],
+        fromAll: ['optimizer_idle'],
+        to: ['optimizer_running', 'solutions'],
 
-        async onConsumedTokens({ problems }, { optimizer }, repo) {
+        async onConsumedTokens({ problems }, { optimizer_idle }, repo) {
           const sourceHandle = await repo.find(problems.state.documentUrl as AutomergeUrl) as DocHandle<Record<string, unknown>>;
           const doc = await handle.doc();
           const systemPromptUrl = doc?.systemPromptUrls?.optimizer;
@@ -137,73 +137,129 @@ export function createNet(repo: Repo, handle: DocHandle<LLMPetriNetDoc>): NetDef
             ? await readDocContent(repo, systemPromptUrl)
             : (doc?.systemPrompts?.optimizer ?? DEFAULT_OPTIMIZER_SYSTEM_PROMPT);
           const produce = [];
-          const processUrls: string[] = [];
 
-          console.log(`[llm-petrinet] optimizing: problem doc=${problems.state.documentUrl}, optimizers=${optimizer.length}`);
+          console.log(`[llm-petrinet] start_optimizing: problem doc=${problems.state.documentUrl}, optimizers=${optimizer_idle.length}`);
 
-          for (const opt of optimizer) {
+          for (const opt of optimizer_idle) {
             const charPrompt = await readDocContent(repo, opt.state.documentUrl);
             const { copyUrl, processUrl } = await launchOptimizerRun(repo, sourceHandle, charPrompt, systemTemplate);
             console.log(`[llm-petrinet] optimizer ${opt.id}: charPrompt doc=${opt.state.documentUrl}, copyUrl=${copyUrl}, processUrl=${processUrl}`);
-            produce.push({ state: { type: 'solution', documentUrl: copyUrl }, toPlace: 'solutions' });
-            produce.push({ state: opt.state, toPlace: 'optimizer' });
-            processUrls.push(processUrl);
-          }
-
-          for (const processUrl of processUrls) {
-            runLLMProcessRaw(repo, processUrl as unknown as import('@automerge/automerge-repo').AutomergeUrl)
-              .catch((e) => console.error('[llm-petrinet] optimizer runLLMProcess error', e));
+            produce.push({
+              state: { type: 'llm-process', documentUrl: processUrl, optimizerUrl: opt.state.documentUrl } as TokenState,
+              toPlace: 'optimizer_running',
+            });
+            produce.push({ state: { type: 'solution', documentUrl: copyUrl } as TokenState, toPlace: 'solutions' });
           }
 
           return { produce };
         },
+
+        onProducedToken(token, _handle, repo) {
+          if (token.placeId === 'optimizer_running') {
+            runLLMProcessRaw(repo, token.state.documentUrl as unknown as AutomergeUrl)
+              .catch((e) => console.error('[llm-petrinet] optimizer runLLMProcess error', e));
+          }
+        },
       },
 
       {
-        id: 'evaluating',
-        from: ['evaluators'],
+        id: 'finish_optimizing',
+        from: ['optimizer_running'],
+        to: ['optimizer_idle'],
+
+        async guard({ optimizer_running }, _allTokens, repo) {
+          const h = await repo.find(optimizer_running.state.documentUrl as AutomergeUrl);
+          const doc = await h.doc() as { done?: boolean } | null;
+          return doc?.done === true;
+        },
+
+        async onConsumedTokens({ optimizer_running }) {
+          return {
+            produce: [
+              { state: { type: 'optimizer', documentUrl: optimizer_running.state.optimizerUrl }, toPlace: 'optimizer_idle' },
+            ],
+          };
+        },
+      },
+
+      {
+        id: 'start_evaluating',
+        from: ['evaluator_idle'],
         fromAll: ['solutions'],
-        to: ['problems', 'evaluators'],
+        to: ['evaluator_running'],
 
         async guard(_tokens, { solutions }) {
           return solutions.length > 0;
         },
 
-        async onConsumedTokens({ evaluators }, { solutions }, repo) {
+        async onConsumedTokens({ evaluator_idle }, { solutions }, repo) {
           const doc = await handle.doc();
           const systemPromptUrl = doc?.systemPromptUrls?.evaluator;
           const systemTemplate = systemPromptUrl
             ? await readDocContent(repo, systemPromptUrl)
             : (doc?.systemPrompts?.evaluator ?? DEFAULT_EVALUATOR_SYSTEM_PROMPT);
-          const evalPrompt = await readDocContent(repo, evaluators.state.documentUrl);
+          const evalPrompt = await readDocContent(repo, evaluator_idle.state.documentUrl);
           const solutionUrls = solutions.map((s) => s.state.documentUrl);
-          console.log(`[llm-petrinet] evaluating: ${solutionUrls.length} solutions:`, solutionUrls);
+          console.log(`[llm-petrinet] start_evaluating: ${solutionUrls.length} solutions:`, solutionUrls);
 
           const { processUrl } = await launchEvaluatorRun(repo, solutions, evalPrompt, systemTemplate);
-          console.log(`[llm-petrinet] evaluating: processUrl=${processUrl}`);
+          console.log(`[llm-petrinet] start_evaluating: processUrl=${processUrl}`);
 
-          await runLLMProcessRaw(repo, processUrl as unknown as import('@automerge/automerge-repo').AutomergeUrl)
-            .catch((e) => console.error('[llm-petrinet] evaluator runLLMProcess error', e));
+          return {
+            produce: [
+              {
+                state: {
+                  type: 'llm-process',
+                  documentUrl: processUrl,
+                  evaluatorUrl: evaluator_idle.state.documentUrl,
+                  solutionUrls: JSON.stringify(solutionUrls),
+                },
+                toPlace: 'evaluator_running',
+              },
+            ],
+          };
+        },
 
-          const processHandle = await repo.find(processUrl as unknown as import('@automerge/automerge-repo').AutomergeUrl);
+        onProducedToken(token, _handle, repo) {
+          if (token.placeId === 'evaluator_running') {
+            runLLMProcessRaw(repo, token.state.documentUrl as unknown as AutomergeUrl)
+              .catch((e) => console.error('[llm-petrinet] evaluator runLLMProcess error', e));
+          }
+        },
+      },
+
+      {
+        id: 'finish_evaluating',
+        from: ['evaluator_running'],
+        to: ['evaluator_idle', 'problems'],
+
+        async guard({ evaluator_running }, _allTokens, repo) {
+          const h = await repo.find(evaluator_running.state.documentUrl as AutomergeUrl);
+          const doc = await h.doc() as { done?: boolean } | null;
+          return doc?.done === true;
+        },
+
+        async onConsumedTokens({ evaluator_running }, _allTokens, repo) {
+          const processHandle = await repo.find(evaluator_running.state.documentUrl as AutomergeUrl);
           const processDoc = await processHandle.doc() as { output?: Array<{ type: string; content?: string }> } | null;
           const outputText = (processDoc?.output ?? [])
             .filter((b) => b.type === 'text')
             .map((b) => b.content ?? '')
             .join('\n');
 
-          console.log(`[llm-petrinet] evaluating: LLM output text:\n${outputText}`);
+          const solutionUrls: string[] = JSON.parse(evaluator_running.state.solutionUrls);
+          console.log(`[llm-petrinet] finish_evaluating: LLM output text:\n${outputText}`);
 
           const winnerUrl = solutionUrls.find((url) => outputText.includes(url)) ?? solutionUrls[0] ?? '';
-          console.log(`[llm-petrinet] evaluating: winnerUrl=${winnerUrl} (fallback=${!solutionUrls.find((url) => outputText.includes(url))})`);
+          console.log(`[llm-petrinet] finish_evaluating: winnerUrl=${winnerUrl}`);
 
           return {
             produce: [
-              { state: evaluators.state, toPlace: 'evaluators' },
+              { state: { type: 'evaluator', documentUrl: evaluator_running.state.evaluatorUrl }, toPlace: 'evaluator_idle' },
               { state: { type: 'problem', documentUrl: winnerUrl }, toPlace: 'problems' },
-              ...solutions
-                .filter((s) => s.state.documentUrl !== winnerUrl)
-                .map((s) => ({ state: s.state, toPlace: 'solutions' })),
+              ...solutionUrls
+                .filter((url) => url !== winnerUrl)
+                .map((url) => ({ state: { type: 'solution', documentUrl: url }, toPlace: 'solutions' })),
             ],
           };
         },
@@ -246,6 +302,14 @@ export function createNet(repo: Repo, handle: DocHandle<LLMPetriNetDoc>): NetDef
           return { type: 'solution', documentUrl: '' };
         },
       },
+      {
+        id: 'llm-process',
+        label: 'LLM Process',
+        color: '#f59e0b',
+        create() {
+          return { type: 'llm-process', documentUrl: '' };
+        },
+      },
     ],
 
     getColor(state) {
@@ -253,6 +317,7 @@ export function createNet(repo: Repo, handle: DocHandle<LLMPetriNetDoc>): NetDef
       if (state.type === 'optimizer') return '#0891b2';
       if (state.type === 'evaluator') return '#d97706';
       if (state.type === 'solution') return '#16a34a';
+      if (state.type === 'llm-process') return '#f59e0b';
       return '#6b7280';
     },
   };

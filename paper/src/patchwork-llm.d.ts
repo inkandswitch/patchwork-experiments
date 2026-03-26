@@ -27,7 +27,8 @@ declare module '@patchwork/llm' {
   };
 
   export type WorkspaceEntry = {
-    addedAt: string[];
+    url: AutomergeUrl;
+    changedAt: string[] | null;
   };
 
   export type LLMWorkspaceDoc = {

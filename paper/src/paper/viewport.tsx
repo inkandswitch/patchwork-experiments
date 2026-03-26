@@ -85,6 +85,7 @@ export function ViewportUI(props: {
   // ── Pan / zoom ──────────────────────────────────────────────────────────────
 
   function handleWheel(e: WheelEvent) {
+    if (!e.ctrlKey && !e.metaKey && isOverScrollable(e)) return;
     e.preventDefault();
     const { dx, dy } = normalizeWheelDelta(e);
 
@@ -105,6 +106,22 @@ export function ViewportUI(props: {
       const { z } = camera();
       setCamera((c) => ({ ...c, x: c.x - dx / z, y: c.y - dy / z }));
     }
+  }
+
+  function isOverScrollable(e: WheelEvent): boolean {
+    let el = e.target as Element | null;
+    while (el && el !== canvasEl) {
+      const style = getComputedStyle(el);
+      const canScrollV =
+        (style.overflowY === 'scroll' || style.overflowY === 'auto') &&
+        el.scrollHeight > el.clientHeight;
+      const canScrollH =
+        (style.overflowX === 'scroll' || style.overflowX === 'auto') &&
+        el.scrollWidth > el.clientWidth;
+      if (canScrollV || canScrollH) return true;
+      el = el.parentElement;
+    }
+    return false;
   }
 
   // ── Pointer + drag events → paper:* custom events ─────────────────────────

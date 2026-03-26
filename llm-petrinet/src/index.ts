@@ -34,6 +34,26 @@ export const plugins: Plugin<any>[] = [
     },
   },
   {
+    type: 'patchwork:datatype',
+    id: 'llm-petrinet-power-grid-example',
+    name: 'LLM Petri Net — Power Grid Example',
+    icon: 'GitBranch',
+    async load() {
+      const { LLMPetriNetPowerGridExampleDatatype } = await import('./power-grid-example');
+      return LLMPetriNetPowerGridExampleDatatype;
+    },
+  },
+  {
+    type: 'patchwork:tool',
+    id: 'llm-petrinet-power-grid-example',
+    name: 'LLM Petri Net — Power Grid Example',
+    supportedDatatypes: ['llm-petrinet-power-grid-example'],
+    async load() {
+      const { LLMPetriNetPowerGridExampleTool } = await import('./power-grid-example');
+      return LLMPetriNetPowerGridExampleTool;
+    },
+  },
+  {
     type: 'patchwork:tool',
     id: 'llm-petrinet',
     name: 'LLM Petri Net',

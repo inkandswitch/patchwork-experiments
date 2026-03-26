@@ -2,6 +2,7 @@ import type { Ref } from '@automerge/automerge-repo';
 import { createDocumentProjection, useDocHandle } from '@automerge/automerge-repo-solid-primitives';
 import type { Plugin } from '@inkandswitch/patchwork-plugins';
 import { getRegistry, getSupportedToolsForType } from '@inkandswitch/patchwork-plugins';
+import { ChevronDown } from 'lucide-solid';
 import { type Accessor, createResource, createSignal, onCleanup } from 'solid-js';
 import { render } from 'solid-js/web';
 import { z } from 'zod';
@@ -75,9 +76,14 @@ function EmbedView(props: { embedRef: Ref<EmbedShape> }) {
     e.stopPropagation();
     const tls = tools();
     if (tls.length === 0) return;
+    const docUrl = shape()?.docUrl;
     openMenu(
       e.currentTarget as HTMLElement,
-      tls.map((t) => ({ id: t.id, name: t.name })),
+      tls.map((t) => ({
+        id: t.id,
+        name: t.name,
+        dragData: docUrl ? JSON.stringify([`${docUrl}?tool=${t.id}`]) : undefined,
+      })),
       (toolId) =>
         props.embedRef.change((s) => {
           (s as EmbedShape).toolId = toolId;
@@ -108,7 +114,7 @@ function EmbedView(props: { embedRef: Ref<EmbedShape> }) {
                     onPointerDown={(e) => e.stopPropagation()}
                   >
                     <span class="embed-tool-btn-label">{activeToolName()}</span>
-                    <span class="embed-tool-btn-caret">▾</span>
+                    <ChevronDown size={10} />
                   </button>
                 )}
                 <button

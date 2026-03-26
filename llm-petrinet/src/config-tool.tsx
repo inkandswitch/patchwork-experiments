@@ -106,20 +106,20 @@ function LLMPetriNetConfig({ handle }: { handle: DocHandle<LLMPetriNetDoc> }) {
                 />
                 <TokenList
                   label="Optimizer"
-                  tokens={(currentDoc().tokens?.optimizer ?? []) as DocToken[]}
+                  tokens={(currentDoc().tokens?.optimizer_idle ?? []) as DocToken[]}
                   color="#0891b2"
                   addLabel="Add optimizer"
                   onAdd={async () => {
                     if (!repo) return;
                     const { url } = await createMarkdownDoc(repo, DEFAULT_OPTIMIZER_PROMPT);
                     handle.change((d) => {
-                      if (!d.tokens.optimizer) d.tokens.optimizer = [];
-                      d.tokens.optimizer.push({ id: makeId(), state: { type: 'optimizer', documentUrl: url } });
+                      if (!d.tokens.optimizer_idle) d.tokens.optimizer_idle = [];
+                      d.tokens.optimizer_idle.push({ id: makeId(), state: { type: 'optimizer', documentUrl: url } });
                     });
                   }}
                   onDelete={(idx) => {
                     handle.change((d) => {
-                      d.tokens.optimizer?.splice(idx, 1);
+                      d.tokens.optimizer_idle?.splice(idx, 1);
                     });
                   }}
                 />
@@ -131,20 +131,20 @@ function LLMPetriNetConfig({ handle }: { handle: DocHandle<LLMPetriNetDoc> }) {
                 />
                 <TokenList
                   label="Evaluator"
-                  tokens={(currentDoc().tokens?.evaluators ?? []) as DocToken[]}
+                  tokens={(currentDoc().tokens?.evaluator_idle ?? []) as DocToken[]}
                   color="#d97706"
                   addLabel="Add evaluator"
                   onAdd={async () => {
                     if (!repo) return;
                     const { url } = await createMarkdownDoc(repo, DEFAULT_EVALUATOR_PROMPT);
                     handle.change((d) => {
-                      if (!d.tokens.evaluators) d.tokens.evaluators = [];
-                      d.tokens.evaluators.push({ id: makeId(), state: { type: 'evaluator', documentUrl: url } });
+                      if (!d.tokens.evaluator_idle) d.tokens.evaluator_idle = [];
+                      d.tokens.evaluator_idle.push({ id: makeId(), state: { type: 'evaluator', documentUrl: url } });
                     });
                   }}
                   onDelete={(idx) => {
                     handle.change((d) => {
-                      d.tokens.evaluators?.splice(idx, 1);
+                      d.tokens.evaluator_idle?.splice(idx, 1);
                     });
                   }}
                 />

@@ -33,7 +33,7 @@ export function createNet(repo) {
   const handle = repo.create();
   handle.change((d) => {
     d['@patchwork'] = { type: 'llm-petrinet' };
-    d.tokens = { problems: [], optimizer: [], evaluators: [], solutions: [] };
+    d.tokens = { problems: [], optimizer_idle: [], optimizer_running: [], solutions: [], evaluator_idle: [], evaluator_running: [] };
   });
   return handle.url;
 }
@@ -64,8 +64,8 @@ export async function addOptimizer(repo, netUrl, promptText) {
   const url = await createDoc(repo, promptText);
   const { handle } = await getNetDoc(repo, netUrl);
   handle.change((d) => {
-    if (!d.tokens.optimizer) d.tokens.optimizer = [];
-    d.tokens.optimizer.push({ id: makeId(), state: { type: 'optimizer', documentUrl: url } });
+    if (!d.tokens.optimizer_idle) d.tokens.optimizer_idle = [];
+    d.tokens.optimizer_idle.push({ id: makeId(), state: { type: 'optimizer', documentUrl: url } });
   });
   return url;
 }
@@ -74,8 +74,8 @@ export async function addEvaluator(repo, netUrl, criteriaText) {
   const url = await createDoc(repo, criteriaText);
   const { handle } = await getNetDoc(repo, netUrl);
   handle.change((d) => {
-    if (!d.tokens.evaluators) d.tokens.evaluators = [];
-    d.tokens.evaluators.push({ id: makeId(), state: { type: 'evaluator', documentUrl: url } });
+    if (!d.tokens.evaluator_idle) d.tokens.evaluator_idle = [];
+    d.tokens.evaluator_idle.push({ id: makeId(), state: { type: 'evaluator', documentUrl: url } });
   });
   return url;
 }
@@ -102,7 +102,7 @@ export async function getEvaluatorSystemPrompt(repo, netUrl) {
 
 export async function getOptimizers(repo, netUrl) {
   const { doc } = await getNetDoc(repo, netUrl);
-  const tokens = doc.tokens?.optimizer ?? [];
+  const tokens = doc.tokens?.optimizer_idle ?? [];
   return Promise.all(tokens.map(async (t) => ({
     id: t.id,
     prompt: await readDocContent(repo, t.state.documentUrl),
@@ -111,7 +111,7 @@ export async function getOptimizers(repo, netUrl) {
 
 export async function getEvaluators(repo, netUrl) {
   const { doc } = await getNetDoc(repo, netUrl);
-  const tokens = doc.tokens?.evaluators ?? [];
+  const tokens = doc.tokens?.evaluator_idle ?? [];
   return Promise.all(tokens.map(async (t) => ({
     id: t.id,
     prompt: await readDocContent(repo, t.state.documentUrl),

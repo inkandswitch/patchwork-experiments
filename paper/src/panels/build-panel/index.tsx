@@ -1,18 +1,36 @@
 import type { DocHandle, Repo } from '@automerge/automerge-repo';
+import { decodeHeads } from '@automerge/automerge-repo';
 import type { AutomergeUrl } from '@automerge/automerge-repo';
+import { diff, getHeads } from '@automerge/automerge';
+import { AnnotationSet } from '@inkandswitch/annotations';
+import { annotations as globalAnnotations } from '@inkandswitch/annotations-context';
+import { diffAnnotationsOfDoc } from '@inkandswitch/annotations-diff';
 import { buildCanvasContextText, resolveEmbedMetadata } from './context.js';
 import {
+  createDocumentProjection,
   makeDocumentProjection,
   RepoContext,
+  useDocHandle,
+  useDocument,
   useRepo,
 } from '@automerge/automerge-repo-solid-primitives';
 import type { Plugin } from '@inkandswitch/patchwork-plugins';
+import { getRegistry } from '@inkandswitch/patchwork-plugins';
 import { buildLLMMessages, runLLMProcess } from '@patchwork/llm';
 import type { ChatMessage, ContentPart, LLMDoc, LLMWorkspaceDoc } from '@patchwork/llm';
 import { domToDataUrl } from 'modern-screenshot';
-import { For, Show, createSignal } from 'solid-js';
+import {
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  For,
+  onCleanup,
+  Show,
+} from 'solid-js';
 import { render } from 'solid-js/web';
 import type { PaperDoc } from '../../paper/types.js';
+import { applyPatches } from '../../automerge-repo-solid-primitives/apply_patches.js';
 import './build-panel.css';
 
 const VERSION = '1.2.0';
@@ -46,6 +64,133 @@ function BuildPanelUI(props: { handle: DocHandle<PaperDoc>; element: HTMLElement
     const url = contactUrl();
     return url ? (doc.userState?.[url]?.buildRuns ?? []) : [];
   };
+
+  const lastRunUrl = () => {
+    const runs = buildRuns() as AutomergeUrl[];
+    return runs.length > 0 ? runs[runs.length - 1] : undefined;
+  };
+
+  const [lastRunDoc] = useDocument<LLMDoc>(lastRunUrl);
+  const workspaceUrl = () => lastRunDoc()?.workspaceUrl;
+  const [workspaceDoc] = useDocument<LLMWorkspaceDoc>(workspaceUrl);
+
+  const embedDocUrls = createMemo(() => {
+    const shapes = doc.shapes ?? {};
+    const urls = new Set<string>();
+    for (const shape of Object.values(shapes)) {
+      if (shape.type === 'embed' && (shape as any).docUrl) {
+        urls.add((shape as any).docUrl as string);
+      }
+    }
+    return urls;
+  });
+
+  const changedEntries = createMemo(() => {
+    const ws = workspaceDoc();
+    if (!ws?.entries) return [];
+    const embeds = embedDocUrls();
+    return Object.entries(ws.entries)
+      .filter(([url, entry]) => entry.changedAt !== null && embeds.has(url))
+      .map(([url]) => url as AutomergeUrl);
+  });
+
+  // ── Diff annotations ────────────────────────────────────────────────────────
+
+  const diffAnnotationSet = new AnnotationSet();
+  globalAnnotations.add(diffAnnotationSet);
+  console.log('[build-panel] registered diff annotation set with global annotations');
+  onCleanup(() => {
+    globalAnnotations.remove(diffAnnotationSet);
+    console.log('[build-panel] removed diff annotation set from global annotations');
+  });
+
+  const [diffVersion, setDiffVersion] = createSignal(0);
+
+  createEffect(() => {
+    const entries = changedEntries();
+    console.log('[build-panel] subscribing to doc changes for', entries.length, 'entries');
+    const handleCleanups: (() => void)[] = [];
+    for (const url of entries) {
+      repo.find(url).then((handle) => {
+        const listener = () => setDiffVersion((v) => v + 1);
+        handle.on('change', listener);
+        handleCleanups.push(() => handle.off('change', listener));
+      });
+    }
+    onCleanup(() => handleCleanups.forEach((fn) => fn()));
+  });
+
+  createEffect(() => {
+    const entries = changedEntries();
+    const ws = workspaceDoc();
+    const version = diffVersion();
+
+    const toCompute = entries
+      .map((url) => ({ url, changedAt: ws?.entries[url]?.changedAt }))
+      .filter(
+        (e): e is { url: AutomergeUrl; changedAt: NonNullable<typeof e.changedAt> } =>
+          e.changedAt != null,
+      );
+
+    console.log(
+      '[build-panel] recomputing diffs: entries=%d, toCompute=%d, version=%d',
+      entries.length,
+      toCompute.length,
+      version,
+    );
+
+    if (toCompute.length === 0) {
+      diffAnnotationSet.change(() => diffAnnotationSet.clear());
+      return;
+    }
+
+    Promise.all(
+      toCompute.map(async ({ url, changedAt }) => {
+        const handle = await repo.find(url);
+        const set = diffAnnotationsOfDoc(handle, decodeHeads(changedAt as any));
+        console.log('[build-panel] computed diff for', url.slice(0, 20));
+        return set;
+      }),
+    ).then((sets) => {
+      diffAnnotationSet.change(() => {
+        diffAnnotationSet.clear();
+        for (const set of sets) diffAnnotationSet.add(set);
+      });
+      console.log('[build-panel] published %d diff annotation sets', sets.length);
+    });
+  });
+
+  async function handleAccept(url: AutomergeUrl) {
+    const wsUrl = workspaceUrl();
+    if (!wsUrl) return;
+    const wsHandle = await repo.find<LLMWorkspaceDoc>(wsUrl);
+    wsHandle.change((d) => {
+      if (d.entries[url]) d.entries[url].changedAt = null;
+    });
+  }
+
+  async function handleReject(url: AutomergeUrl) {
+    const wsUrl = workspaceUrl();
+    if (!wsUrl) return;
+
+    const wsHandle = await repo.find<LLMWorkspaceDoc>(wsUrl);
+    const wsDoc = await wsHandle.doc();
+    const entry = wsDoc?.entries[url];
+    if (!entry?.changedAt) return;
+
+    const docHandle = await repo.find(url);
+    const docValue = await docHandle.doc();
+    if (!docValue) return;
+    const reversePatches = diff(docValue, getHeads(docValue), entry.changedAt);
+
+    docHandle.change((d) => {
+      applyPatches(d, reversePatches);
+    });
+
+    wsHandle.change((d) => {
+      if (d.entries[url]) d.entries[url].changedAt = null;
+    });
+  }
 
   function handleStop() {
     abortController()?.abort();
@@ -109,14 +254,11 @@ function BuildPanelUI(props: { handle: DocHandle<PaperDoc>; element: HTMLElement
 
       const contextMessage: ChatMessage = { role: 'user', content: contextContent };
 
-      const workspaceHandle = repo.create<LLMWorkspaceDoc>();
-      workspaceHandle.change((d) => {
-        d['@patchwork'] = { type: 'llm-workspace' };
-        d.title = 'Paper build workspace';
-        d.entries = {};
-        d.entries[paperUrl] = { addedAt: [] };
-        d.entries[__SKILLS_FOLDER_URL__ as AutomergeUrl] = { addedAt: [] };
-      });
+      const workspaceHandle = await getOrCreateWorkspace(
+        repo,
+        buildRuns() as AutomergeUrl[],
+        paperUrl,
+      );
 
       const runHandle = repo.create<LLMDoc>();
       runHandle.change((d) => {
@@ -180,6 +322,21 @@ function BuildPanelUI(props: { handle: DocHandle<PaperDoc>; element: HTMLElement
         </div>
       </Show>
 
+      <Show when={changedEntries().length > 0}>
+        <div class="paper-build-changes">
+          <div class="paper-build-changes-header">Changes</div>
+          <For each={changedEntries()}>
+            {(entryUrl) => (
+              <ChangeRow
+                url={entryUrl}
+                onAccept={() => handleAccept(entryUrl)}
+                onReject={() => handleReject(entryUrl)}
+              />
+            )}
+          </For>
+        </div>
+      </Show>
+
       <div class="paper-build-input-bar">
         <textarea
           class="paper-build-textarea"
@@ -207,7 +364,61 @@ function BuildPanelUI(props: { handle: DocHandle<PaperDoc>; element: HTMLElement
   );
 }
 
+// ─── Change row ──────────────────────────────────────────────────────────────
+
+function ChangeRow(props: { url: AutomergeUrl; onAccept: () => void; onReject: () => void }) {
+  const handle = useDocHandle<any>(() => props.url);
+  const docProjection = createDocumentProjection<any>(handle);
+  const docType = () => (docProjection() as any)?.['@patchwork']?.type ?? '';
+  const [datatype] = createResource(docType, (dt) =>
+    dt ? getRegistry('patchwork:datatype').load(dt) : Promise.resolve(null),
+  );
+  const title = () =>
+    (datatype()?.module as any)?.getTitle?.(docProjection()) ??
+    props.url.replace('automerge:', '').slice(0, 12) + '\u2026';
+
+  return (
+    <div class="paper-build-change-row">
+      <span class="paper-build-change-url" title={props.url}>
+        {title()}
+      </span>
+      <button class="paper-build-accept-btn" onClick={props.onAccept}>
+        Accept
+      </button>
+      <button class="paper-build-reject-btn" onClick={props.onReject}>
+        Reject
+      </button>
+    </div>
+  );
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+async function getOrCreateWorkspace(
+  repo: Repo,
+  runUrls: AutomergeUrl[],
+  paperUrl: AutomergeUrl,
+): Promise<DocHandle<LLMWorkspaceDoc>> {
+  if (runUrls.length > 0) {
+    const lastRun = await repo.find<LLMDoc>(runUrls[runUrls.length - 1]);
+    const lastRunDoc = await lastRun.doc();
+    if (lastRunDoc?.workspaceUrl) {
+      return await repo.find<LLMWorkspaceDoc>(lastRunDoc.workspaceUrl);
+    }
+  }
+  const wsHandle = repo.create<LLMWorkspaceDoc>();
+  wsHandle.change((d) => {
+    d['@patchwork'] = { type: 'llm-workspace' };
+    d.title = 'Paper build workspace';
+    d.entries = {};
+    d.entries[paperUrl] = { url: paperUrl, changedAt: null };
+    d.entries[__SKILLS_FOLDER_URL__ as AutomergeUrl] = {
+      url: __SKILLS_FOLDER_URL__ as AutomergeUrl,
+      changedAt: null,
+    };
+  });
+  return wsHandle;
+}
 
 function findViewport(el: HTMLElement): HTMLElement | null {
   let cur: HTMLElement | null = el;

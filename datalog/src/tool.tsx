@@ -99,11 +99,26 @@ function DatalogViewer({
 
   useEffect(() => {
     if (isEditing) return;
-    const newKeys = derivedOnlyFacts.map(factKey).sort().join('\n');
-    const oldKeys = (handle.doc()?.derivedFacts ?? []).map(factKey).sort().join('\n');
-    if (newKeys === oldKeys) return;
+    const newKeySet = new Set(derivedOnlyFacts.map(factKey));
+    const stored = handle.doc()?.derivedFacts ?? [];
+    const existingKeySet = new Set(stored.map(factKey));
+
+    const same = newKeySet.size === existingKeySet.size && [...newKeySet].every((k) => existingKeySet.has(k));
+    if (same) return;
+
     handle.change((d) => {
-      d.derivedFacts = derivedOnlyFacts.map((f) => ({ pred: f.pred, args: [...f.args] }));
+      if (!d.derivedFacts) d.derivedFacts = [];
+      for (let i = d.derivedFacts.length - 1; i >= 0; i--) {
+        if (!newKeySet.has(factKey(d.derivedFacts[i]))) {
+          d.derivedFacts.splice(i, 1);
+        }
+      }
+      const remaining = new Set(d.derivedFacts.map(factKey));
+      for (const f of derivedOnlyFacts) {
+        if (!remaining.has(factKey(f))) {
+          d.derivedFacts.push({ pred: f.pred, args: [...f.args] });
+        }
+      }
     });
   }, [derivedOnlyFacts, isEditing, handle]);
 
@@ -115,6 +130,22 @@ function DatalogViewer({
     }
     return map;
   }, [derivedFacts]);
+
+  const factKeyToIndex = useMemo(() => {
+    const map = new Map<string, number>();
+    for (let i = 0; i < (doc?.facts ?? []).length; i++) {
+      map.set(factKey((doc?.facts ?? [])[i]), i);
+    }
+    return map;
+  }, [doc]);
+
+  const derivedKeyToIndex = useMemo(() => {
+    const map = new Map<string, number>();
+    for (let i = 0; i < (doc?.derivedFacts ?? []).length; i++) {
+      map.set(factKey((doc?.derivedFacts ?? [])[i]), i);
+    }
+    return map;
+  }, [doc]);
 
   const parseErrors = useMemo(() => {
     if (!isEditing) return [];
@@ -290,13 +321,16 @@ function DatalogViewer({
                 <div className="pg-pred-name">{pred}</div>
                 {facts.map((f) => {
                   const key = factKey(f);
+                  const isBase = baseFacts.has(key);
                   return (
-                    <div
+                    <DerivedFactRow
                       key={key}
-                      className={`pg-fact ${baseFacts.has(key) ? 'pg-fact-base' : 'pg-fact-derived'}`}
-                    >
-                      {key}
-                    </div>
+                      handle={handle}
+                      fact={key}
+                      isBase={isBase}
+                      baseIndex={factKeyToIndex.get(key) ?? -1}
+                      derivedIndex={derivedKeyToIndex.get(key) ?? -1}
+                    />
                   );
                 })}
               </div>
@@ -338,6 +372,27 @@ function DeletedProgramItem({
   const diffType = useDiffType(handle, collection, index);
   if (diffType !== 'deleted') return null;
   return <div className="pg-program-item pg-diff-deleted">{text}</div>;
+}
+
+function DerivedFactRow({
+  handle,
+  fact,
+  isBase,
+  baseIndex,
+  derivedIndex,
+}: {
+  handle: DocHandle<DatalogDoc>;
+  fact: string;
+  isBase: boolean;
+  baseIndex: number;
+  derivedIndex: number;
+}) {
+  const baseDiff = useDiffType(handle, 'facts', baseIndex);
+  const derivedDiff = useDiffType(handle, 'derivedFacts', derivedIndex);
+  const diffType = isBase ? baseDiff : derivedDiff;
+  const diffClass = diffType ? `pg-diff-${diffType}` : '';
+  const kindClass = isBase ? 'pg-fact-base' : 'pg-fact-derived';
+  return <div className={`pg-fact ${kindClass} ${diffClass}`}>{fact}</div>;
 }
 
 function WitnessTraceView({

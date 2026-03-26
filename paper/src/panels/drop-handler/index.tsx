@@ -33,7 +33,7 @@ function DropHandlerLayer(props: { handle: DocHandle<PaperDoc>; element: Patchwo
   async function onDrop(e: CustomEvent<PaperDragEventDetail>) {
     const { canvasX, canvasY, patchworkUrls, dataTransfer } = e.detail;
 
-    const urlsToEmbed: AutomergeUrl[] = patchworkUrls ? [...(patchworkUrls as AutomergeUrl[])] : [];
+    const urlsToEmbed: string[] = patchworkUrls ? [...patchworkUrls] : [];
 
     // Create a file document for each dropped OS file
     const files = dataTransfer?.files ? Array.from(dataTransfer.files) : [];
@@ -61,6 +61,7 @@ function DropHandlerLayer(props: { handle: DocHandle<PaperDoc>; element: Patchwo
         -1,
       );
       for (let i = 0; i < urlsToEmbed.length; i++) {
+        const { docUrl, toolId } = parseDropUrl(urlsToEmbed[i]);
         const id = crypto.randomUUID();
         d.shapes[id] = {
           id,
@@ -70,12 +71,21 @@ function DropHandlerLayer(props: { handle: DocHandle<PaperDoc>; element: Patchwo
           width: DEFAULT_WIDTH,
           height: DEFAULT_HEIGHT,
           zIndex: maxZIndex + 1 + i,
-          docUrl: urlsToEmbed[i],
+          docUrl: docUrl as AutomergeUrl,
+          ...(toolId ? { toolId } : {}),
         };
       }
     });
   }
   return null;
+}
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
+
+function parseDropUrl(raw: string): { docUrl: string; toolId?: string } {
+  const idx = raw.indexOf('?tool=');
+  if (idx === -1) return { docUrl: raw };
+  return { docUrl: raw.slice(0, idx), toolId: raw.slice(idx + 6) };
 }
 
 // ─── Plugin ───────────────────────────────────────────────────────────────────
