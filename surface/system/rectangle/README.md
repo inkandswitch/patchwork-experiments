@@ -26,7 +26,7 @@ Runtime parsing lives in Zod in `shape.js` (`RectangleSchema`); keep types and s
 ## Programmatic usage
 
 ```js
-const rectShapeUrl = new URL('./shape.js', import.meta.url).href;
+const rectShapeUrl = getToolUrl('./shape.js', import.meta.url);
 
 canvas.ref.at('shapes', 'rect_1').change(() => ({
   x: 50,
@@ -52,7 +52,7 @@ Empty template (`schema.init()` from `shape.js`):
 const empty = {
   x: 0,
   y: 0,
-  toolUrl: new URL('./shape.js', import.meta.url).href,
+  toolUrl: getToolUrl('./shape.js', import.meta.url),
   width: 100,
   height: 100,
 };

@@ -29,7 +29,7 @@ Runtime parsing lives in Zod in `shape.js`; keep types and `LineSchema` in sync 
 Write a new entry under the canvas `shapes` map with a unique id. Match `toolUrl` to this package’s `shape.js` and keep `points` in shape-local coordinates:
 
 ```js
-const lineShapeUrl = new URL('./shape.js', import.meta.url).href;
+const lineShapeUrl = getToolUrl('./shape.js', import.meta.url);
 
 const strokeId = `line_${Date.now()}`;
 canvas.ref.at('shapes', strokeId).change(() => ({
@@ -60,7 +60,7 @@ canvas.ref.at('shapes', strokeId).change((shape) => {
 const emptyLine = {
   x: 0,
   y: 0,
-  toolUrl: new URL('./shape.js', import.meta.url).href,
+  toolUrl: getToolUrl('./shape.js', import.meta.url),
   points: [],
 };
 ```

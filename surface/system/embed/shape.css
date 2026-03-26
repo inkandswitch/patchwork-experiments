@@ -29,6 +29,19 @@
   color: #333;
 }
 
+.embed-tool-select {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 50%;
+  border: none;
+  background: transparent;
+  font: 12px/1 system-ui, sans-serif;
+  color: #666;
+  cursor: pointer;
+  padding: 2px 0;
+  outline: none;
+}
+
 .embed-shape-body {
   flex: 1;
   overflow: hidden;

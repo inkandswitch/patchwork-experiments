@@ -28,8 +28,8 @@ type EmbedShape = {
 ## Programmatic usage
 
 ```js
-const embedShapeUrl = new URL('./shape.js', import.meta.url).href;
-const innerToolUrl = new URL('../llm/shape.js', import.meta.url).href;
+const embedShapeUrl = getToolUrl('./shape.js', import.meta.url);
+const innerToolUrl = getToolUrl('../llm/shape.js', import.meta.url);
 
 canvas.ref.at('shapes', 'embed_1').change(() => ({
   x: 20,
@@ -57,7 +57,7 @@ Empty template (`schema.init()` from `shape.js`):
 const empty = {
   x: 0,
   y: 0,
-  toolUrl: new URL('./shape.js', import.meta.url).href,
+  toolUrl: getToolUrl('./shape.js', import.meta.url),
   embedToolUrl: '',
   width: 200,
   height: 150,

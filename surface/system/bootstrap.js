@@ -1,6 +1,7 @@
 import { render, html } from './solid.js';
+import { getToolUrl } from './url.js';
 
-const paperToolUrl = new URL('./paper/paper.js', import.meta.url).href;
+const paperToolUrl = getToolUrl('./paper/paper.js', import.meta.url);
 
 export default function mount(element) {
   const refUrl = element.ref.url;

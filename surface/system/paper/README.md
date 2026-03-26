@@ -36,7 +36,7 @@ ref.at('shapes', 'myButton').change(() => ({
   x: 210,
   y: 10,
   isLocked: true,
-  toolUrl: new URL('../mytool/button.js', import.meta.url).href,
+  toolUrl: getToolUrl('../mytool/button.js', import.meta.url),
 }));
 ```
 

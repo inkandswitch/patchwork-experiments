@@ -1,4 +1,5 @@
 import { z } from 'https://esm.sh/zod@4.3';
+import { getToolUrl } from '../url.js';
 
 const ShapeSchema = z.object({
   x: z.number(),
@@ -13,31 +14,31 @@ export const shapesSchema = {
         x: 10,
         y: 10,
         isLocked: true,
-        toolUrl: new URL('../selection/button.js', import.meta.url).href,
+        toolUrl: getToolUrl('../selection/button.js', import.meta.url),
       },
       rectButton: {
         x: 50,
         y: 10,
         isLocked: true,
-        toolUrl: new URL('../rectangle/button.js', import.meta.url).href,
+        toolUrl: getToolUrl('../rectangle/button.js', import.meta.url),
       },
       lineButton: {
         x: 90,
         y: 10,
         isLocked: true,
-        toolUrl: new URL('../line/button.js', import.meta.url).href,
+        toolUrl: getToolUrl('../line/button.js', import.meta.url),
       },
       textButton: {
         x: 130,
         y: 10,
         isLocked: true,
-        toolUrl: new URL('../text/button.js', import.meta.url).href,
+        toolUrl: getToolUrl('../text/button.js', import.meta.url),
       },
       embedButton: {
         x: 170,
         y: 10,
         isLocked: true,
-        toolUrl: new URL('../embed/button.js', import.meta.url).href,
+        toolUrl: getToolUrl('../embed/button.js', import.meta.url),
       },
     };
   },

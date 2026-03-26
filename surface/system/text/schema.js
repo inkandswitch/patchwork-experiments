@@ -1,4 +1,5 @@
 import { z } from 'https://esm.sh/zod@4.3';
+import { getToolUrl } from '../url.js';
 
 const TextSchema = z.object({
   x: z.number(),
@@ -9,7 +10,7 @@ const TextSchema = z.object({
 
 export const schema = {
   init() {
-    return { x: 0, y: 0, toolUrl: new URL('./shape.js', import.meta.url).href, text: '' };
+    return { x: 0, y: 0, toolUrl: getToolUrl('./shape.js', import.meta.url), text: '' };
   },
   parse(value) {
     return TextSchema.parse(value);

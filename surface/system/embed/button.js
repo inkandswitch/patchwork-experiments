@@ -1,17 +1,18 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, createSignal, render, html } from '../solid.js';
+import { getToolUrl } from '../url.js';
 import styles from './button.css' with { type: 'css' };
 
 document.adoptedStyleSheets = [...document.adoptedStyleSheets, styles];
 
 const TOOL_NAME = 'embed';
-const embedToolUrl = new URL('./shape.js', import.meta.url).href;
+const embedToolUrl = getToolUrl('./shape.js', import.meta.url);
 
 const EMBED_TYPES = [
   {
     id: 'llm',
     label: 'LLM Chat',
-    toolUrl: new URL('../llm/shape.js', import.meta.url).href,
+    toolUrl: getToolUrl('../llm/shape.js', import.meta.url),
     defaultWidth: 320,
     defaultHeight: 400,
     createDoc(repo) {
@@ -21,16 +22,7 @@ const EMBED_TYPES = [
       });
     },
   },
-  {
-    id: 'datalog',
-    label: 'Datalog',
-    toolUrl: new URL('../datalog/shape.js', import.meta.url).href,
-    defaultWidth: 800,
-    defaultHeight: 500,
-    createDoc(repo) {
-      return repo.create({});
-    },
-  },
+
 ];
 
 const ButtonShapeSchema = z.object({
@@ -41,7 +33,7 @@ const ButtonShapeSchema = z.object({
 
 export const schema = {
   init() {
-    return { x: 0, y: 0, toolUrl: new URL('./button.js', import.meta.url).href };
+    return { x: 0, y: 0, toolUrl: getToolUrl('./button.js', import.meta.url) };
   },
   parse(value) {
     return ButtonShapeSchema.parse(value);
@@ -177,14 +169,14 @@ export default function mount(element) {
           menuOpen()
             ? html`<div class="embed-menu">
                 ${EMBED_TYPES.map(
-                  (embedType) =>
-                    html`<button
+              (embedType) =>
+                html`<button
                       onClick=${() => selectType(embedType)}
                       class="embed-menu-item"
                     >
                       ${embedType.label}
                     </button>`,
-                )}
+            )}
               </div>`
             : ''}
       </div>`,

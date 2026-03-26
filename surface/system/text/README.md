@@ -25,7 +25,7 @@ Runtime parsing lives in Zod in `shape.js` (`TextSchema`); keep types and schema
 ## Programmatic usage
 
 ```js
-const textShapeUrl = new URL('./shape.js', import.meta.url).href;
+const textShapeUrl = getToolUrl('./shape.js', import.meta.url);
 
 canvas.ref.at('shapes', 'note_1').change(() => ({
   x: 120,
@@ -49,7 +49,7 @@ Empty template (`schema.init()` from `shape.js`):
 const empty = {
   x: 0,
   y: 0,
-  toolUrl: new URL('./shape.js', import.meta.url).href,
+  toolUrl: getToolUrl('./shape.js', import.meta.url),
   text: '',
 };
 ```

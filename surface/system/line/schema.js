@@ -1,4 +1,5 @@
 import { z } from 'https://esm.sh/zod@4.3';
+import { getToolUrl } from '../url.js';
 
 const LineSchema = z.object({
   x: z.number(),
@@ -9,7 +10,7 @@ const LineSchema = z.object({
 
 export const schema = {
   init() {
-    return { x: 0, y: 0, toolUrl: new URL('./shape.js', import.meta.url).href, points: [] };
+    return { x: 0, y: 0, toolUrl: getToolUrl('./shape.js', import.meta.url), points: [] };
   },
   parse(value) {
     return LineSchema.parse(value);

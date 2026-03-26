@@ -1,4 +1,5 @@
 import { z } from 'https://esm.sh/zod@4.3';
+import { getToolUrl } from '../url.js';
 
 const EmbedSchema = z
   .object({
@@ -17,7 +18,7 @@ export const schema = {
     return {
       x: 0,
       y: 0,
-      toolUrl: new URL('./shape.js', import.meta.url).href,
+      toolUrl: getToolUrl('./shape.js', import.meta.url),
       embedToolUrl: '',
       width: 200,
       height: 150,

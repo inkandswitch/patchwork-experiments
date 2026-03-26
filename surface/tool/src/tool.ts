@@ -10,6 +10,7 @@ const DEFAULT_SOURCE_FOLDER = "automerge:4FwenFcEMbsmjGxvYAuT5U8mLi8m" as Autome
 const BOOTSTRAP_TOOL_URL = "/automerge:4FwenFcEMbsmjGxvYAuT5U8mLi8m/bootstrap.js";
 
 const repo = (globalThis as any).repo;
+(globalThis as any).findRef = findRef;
 (globalThis as any).VITE_OPENROUTER_API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY;
 const filesystem = createFilesystem(repo, DEFAULT_SOURCE_FOLDER);
 const pluginRegistry = createPluginRegistry(filesystem);
