@@ -1,0 +1,8 @@
+.paper-selection-drag {
+  position: absolute;
+  border: 1px solid #1a73e8;
+  background: rgba(26, 115, 232, 0.08);
+  border-radius: 2px;
+  pointer-events: none;
+  box-sizing: border-box;
+}

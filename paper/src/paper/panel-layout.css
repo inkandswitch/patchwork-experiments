@@ -1,0 +1,104 @@
+.paper-panel-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: row;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* ── Left / Right columns ──────────────────────────────────────────────────── */
+
+.paper-panel-col {
+  display: flex;
+  flex-direction: column;
+  width: fit-content;
+  pointer-events: none;
+}
+
+.paper-panel-col--left {
+  align-items: flex-start;
+}
+
+.paper-panel-col--right {
+  align-items: flex-end;
+}
+
+/* Groups inside left/right columns stack vertically */
+.paper-panel-col .paper-panel-group {
+  flex-direction: column;
+  align-items: flex-start;
+  width: fit-content;
+}
+
+.paper-panel-col--right .paper-panel-group {
+  align-items: flex-end;
+}
+
+/* Within a column, start/center/end control vertical alignment.
+   Center grows to fill remaining height so start/end reach their edges. */
+.paper-panel-col .paper-panel-group--center {
+  flex: 1;
+  justify-content: center;
+}
+
+.paper-panel-col .paper-panel-group--start {
+  justify-content: flex-start;
+}
+
+.paper-panel-col .paper-panel-group--end {
+  justify-content: flex-end;
+}
+
+/* ── Middle column ─────────────────────────────────────────────────────────── */
+
+.paper-panel-middle {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  pointer-events: none;
+}
+
+.paper-panel-canvas-slot {
+  flex: 1;
+}
+
+/* ── Top / Bottom bars ─────────────────────────────────────────────────────── */
+/* Bars only carry center panels — corners live in the left/right columns */
+
+.paper-panel-bar {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  width: 100%;
+  pointer-events: none;
+}
+
+.paper-panel-group {
+  display: flex;
+  flex-direction: row;
+  gap: 4px;
+  padding: 4px;
+  pointer-events: none;
+}
+
+/* Only the center group grows — start/end stay natural size at their edge */
+.paper-panel-group--center {
+  flex: 1;
+  justify-content: center;
+}
+
+.paper-panel-group--start {
+  justify-content: flex-start;
+}
+
+.paper-panel-group--end {
+  justify-content: flex-end;
+}
+
+/* ── Individual panel slots ────────────────────────────────────────────────── */
+
+.paper-panel-slot {
+  pointer-events: auto;
+}

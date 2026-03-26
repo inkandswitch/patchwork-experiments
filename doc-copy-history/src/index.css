@@ -1,0 +1,167 @@
+/* ─── Root layout ──────────────────────────────────────────────────────────── */
+
+.dh-root {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  background: #ffffff;
+  color: #111827;
+}
+
+/* ─── Left panel ───────────────────────────────────────────────────────────── */
+
+.dh-left {
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  min-width: 240px;
+  max-width: 480px;
+  border-right: 1px solid #e5e7eb;
+  overflow: hidden;
+  background: #fafafa;
+}
+
+.dh-left-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #e5e7eb;
+  flex-shrink: 0;
+}
+
+.dh-label {
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+
+.dh-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: #9ca3af;
+  background: #f3f4f6;
+  border-radius: 10px;
+  padding: 1px 7px;
+}
+
+/* ─── Tree graph ───────────────────────────────────────────────────────────── */
+
+.dh-graph {
+  display: block;
+  flex: 1;
+  width: 100%;
+  overflow: visible;
+  cursor: default;
+}
+
+.dh-edge {
+  stroke: #d1d5db;
+  stroke-width: 1.5;
+}
+
+.dh-arrowhead {
+  fill: #d1d5db;
+}
+
+/* Node groups */
+
+.dh-node {
+  cursor: pointer;
+  outline: none;
+}
+
+.dh-node-circle {
+  fill: #ffffff;
+  stroke: #9ca3af;
+  stroke-width: 1.5;
+  transition: fill 0.1s, stroke 0.1s;
+}
+
+.dh-node:hover .dh-node-circle {
+  fill: #f3f4f6;
+  stroke: #6b7280;
+}
+
+/* Root node */
+
+.dh-node--root .dh-node-circle {
+  fill: #eff6ff;
+  stroke: #3b82f6;
+  stroke-width: 2;
+}
+
+/* Selected node — fill with accent, no extra outline ring */
+
+.dh-node--selected .dh-node-circle {
+  fill: #3b82f6;
+  stroke: #2563eb;
+  stroke-width: 2;
+}
+
+.dh-node--root.dh-node--selected .dh-node-circle {
+  fill: #2563eb;
+  stroke: #1d4ed8;
+}
+
+.dh-node-label {
+  font-size: 10px;
+  fill: #9ca3af;
+  text-anchor: middle;
+  pointer-events: none;
+  user-select: none;
+}
+
+.dh-node:hover .dh-node-label,
+.dh-node--selected .dh-node-label {
+  fill: #374151;
+}
+
+/* ─── Right panel ──────────────────────────────────────────────────────────── */
+
+.dh-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  background: #ffffff;
+}
+
+.dh-patchwork {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+/* ─── Empty state ──────────────────────────────────────────────────────────── */
+
+.dh-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 100%;
+  color: #d1d5db;
+}
+
+.dh-empty-icon {
+  font-size: 32px;
+  line-height: 1;
+  opacity: 0.5;
+}
+
+.dh-empty-text {
+  font-size: 13px;
+  color: #9ca3af;
+  text-align: center;
+  max-width: 200px;
+  line-height: 1.5;
+}

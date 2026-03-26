@@ -1,0 +1,403 @@
+@layer patchwork, tool, user;
+
+@layer tool {
+  /* ── Root ─────────────────────────────────────────────────────────── */
+
+  .ec-root {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    background: #f8fafc;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    font-size: 13px;
+    color: #1e293b;
+  }
+
+  /* ── Messages area ───────────────────────────────────────────────── */
+
+  .ec-messages {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 12px 0;
+  }
+
+  /* ── Empty / loading states ──────────────────────────────────────── */
+
+  .ec-empty,
+  .ec-loading {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #94a3b8;
+    font-size: 12px;
+    padding: 32px;
+    text-align: center;
+  }
+
+  /* ── Individual message ──────────────────────────────────────────── */
+
+  .ec-message {
+    display: flex;
+    flex-direction: column;
+    padding: 10px 16px;
+    gap: 4px;
+  }
+
+  .ec-message:hover .ec-edit-btn {
+    opacity: 1;
+  }
+
+  .ec-message-user {
+    align-items: flex-end;
+  }
+
+  .ec-message-assistant {
+    align-items: flex-start;
+  }
+
+  /* ── Message header (role label + edit button) ───────────────────── */
+
+  .ec-message-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 18px;
+  }
+
+  .ec-message-role {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #94a3b8;
+  }
+
+  .ec-message-user .ec-message-role {
+    color: #60a5fa;
+  }
+
+  .ec-edit-btn {
+    font-size: 10px;
+    font-weight: 600;
+    font-family: inherit;
+    padding: 1px 7px;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    background: #fff;
+    color: #64748b;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.1s, background 0.1s;
+  }
+
+  .ec-edit-btn:hover {
+    background: #f1f5f9;
+    color: #334155;
+  }
+
+  .ec-edit-hint {
+    font-size: 10px;
+    color: #94a3b8;
+  }
+
+  /* ── Message body ────────────────────────────────────────────────── */
+
+  .ec-message-body {
+    max-width: 80%;
+    border-radius: 10px;
+    padding: 8px 12px;
+    line-height: 1.6;
+  }
+
+  .ec-message-user .ec-message-body {
+    background: #3b82f6;
+    color: #fff;
+    border-bottom-right-radius: 3px;
+  }
+
+  .ec-message-assistant .ec-message-body {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-bottom-left-radius: 3px;
+    color: #1e293b;
+  }
+
+  .ec-message-body--editable {
+    cursor: pointer;
+  }
+
+  .ec-message-body--editable:hover {
+    border-color: #93c5fd;
+    box-shadow: 0 0 0 2px #eff6ff;
+  }
+
+  /* ── User text ───────────────────────────────────────────────────── */
+
+  .ec-user-text {
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* ── Markdown rendering ──────────────────────────────────────────── */
+
+  .ec-markdown {
+    min-width: 0;
+    word-break: break-word;
+  }
+
+  .ec-markdown p {
+    margin: 0 0 0.6em;
+  }
+
+  .ec-markdown p:last-child {
+    margin-bottom: 0;
+  }
+
+  .ec-markdown h1,
+  .ec-markdown h2,
+  .ec-markdown h3 {
+    margin: 0.8em 0 0.3em;
+    font-weight: 700;
+    line-height: 1.3;
+  }
+
+  .ec-markdown h1 { font-size: 1.15em; }
+  .ec-markdown h2 { font-size: 1.05em; }
+  .ec-markdown h3 { font-size: 1em; }
+
+  .ec-markdown ul,
+  .ec-markdown ol {
+    margin: 0.4em 0;
+    padding-left: 1.4em;
+  }
+
+  .ec-markdown li {
+    margin: 0.15em 0;
+  }
+
+  .ec-markdown code {
+    font-family: ui-monospace, monospace;
+    font-size: 0.88em;
+    background: #f1f5f9;
+    border-radius: 3px;
+    padding: 1px 4px;
+  }
+
+  .ec-markdown pre {
+    background: #1e293b;
+    color: #e2e8f0;
+    border-radius: 6px;
+    padding: 10px 12px;
+    overflow-x: auto;
+    margin: 0.5em 0;
+  }
+
+  .ec-markdown pre code {
+    background: none;
+    padding: 0;
+    color: inherit;
+    font-size: 0.85em;
+  }
+
+  .ec-markdown blockquote {
+    border-left: 3px solid #e2e8f0;
+    margin: 0.4em 0;
+    padding-left: 10px;
+    color: #64748b;
+  }
+
+  .ec-markdown strong { font-weight: 700; }
+  .ec-markdown em { font-style: italic; }
+
+  /* ── Streaming cursor ────────────────────────────────────────────── */
+
+  .ec-cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    background: #3b82f6;
+    border-radius: 1px;
+    margin-left: 2px;
+    vertical-align: middle;
+    animation: ec-blink 0.9s step-end infinite;
+  }
+
+  @keyframes ec-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  .ec-thinking {
+    color: #94a3b8;
+    font-style: italic;
+    font-size: 12px;
+  }
+
+  /* ── Edit textarea ───────────────────────────────────────────────── */
+
+  .ec-edit-textarea {
+    width: 100%;
+    min-height: 120px;
+    resize: vertical;
+    border: 2px solid #3b82f6;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+    color: #1e293b;
+    background: #fff;
+    line-height: 1.6;
+    outline: none;
+    box-sizing: border-box;
+    box-shadow: 0 0 0 3px #eff6ff;
+  }
+
+  .ec-edit-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+    padding: 0 2px;
+  }
+
+  .ec-save-btn,
+  .ec-cancel-btn {
+    font-size: 11px;
+    font-weight: 600;
+    font-family: inherit;
+    padding: 4px 12px;
+    border-radius: 5px;
+    border: none;
+    cursor: pointer;
+    letter-spacing: 0.03em;
+  }
+
+  .ec-save-btn {
+    background: #3b82f6;
+    color: #fff;
+  }
+
+  .ec-save-btn:hover {
+    background: #2563eb;
+  }
+
+  .ec-cancel-btn {
+    background: #f1f5f9;
+    color: #64748b;
+    border: 1px solid #e2e8f0;
+  }
+
+  .ec-cancel-btn:hover {
+    background: #e2e8f0;
+  }
+
+  /* ── Input bar ───────────────────────────────────────────────────── */
+
+  .ec-input-bar {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 12px 10px;
+    border-top: 1px solid #e2e8f0;
+    background: #fff;
+    flex-shrink: 0;
+  }
+
+  .ec-input-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .ec-model-select {
+    font-size: 11px;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    font-weight: 500;
+    color: #475569;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 3px 24px 3px 8px;
+    outline: none;
+    cursor: pointer;
+    appearance: auto;
+    max-width: 180px;
+    transition: border-color 0.1s, box-shadow 0.1s;
+  }
+
+  .ec-model-select:hover {
+    border-color: #93c5fd;
+  }
+
+  .ec-model-select:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px #eff6ff;
+  }
+
+  .ec-input-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+  }
+
+  .ec-input-textarea {
+    flex: 1;
+    resize: none;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    font-size: 13px;
+    color: #1e293b;
+    background: #f8fafc;
+    line-height: 1.5;
+    outline: none;
+    min-height: 58px;
+  }
+
+  .ec-input-textarea:focus {
+    border-color: #93c5fd;
+    background: #fff;
+    box-shadow: 0 0 0 2px #eff6ff;
+  }
+
+  .ec-input-textarea:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .ec-input-textarea::placeholder {
+    color: #94a3b8;
+  }
+
+  .ec-send-btn {
+    padding: 8px 18px;
+    font-size: 12px;
+    font-weight: 700;
+    font-family: inherit;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    background: #3b82f6;
+    color: #fff;
+    flex-shrink: 0;
+    align-self: flex-end;
+    height: 36px;
+  }
+
+  .ec-send-btn:not(:disabled):hover {
+    background: #2563eb;
+  }
+
+  .ec-send-btn:disabled {
+    background: #f1f5f9;
+    color: #cbd5e1;
+    cursor: default;
+  }
+}

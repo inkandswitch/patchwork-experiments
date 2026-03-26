@@ -1,0 +1,76 @@
+import type { Plugin } from '@inkandswitch/patchwork-plugins';
+
+console.log('llm-petrinet version', 1);
+
+export const plugins: Plugin<any>[] = [
+  {
+    type: 'patchwork:datatype',
+    id: 'llm-petrinet',
+    name: 'LLM Petri Net',
+    icon: 'GitBranch',
+    async load() {
+      const { LLMPetriNetDatatype } = await import('./datatype');
+      return LLMPetriNetDatatype;
+    },
+  },
+  {
+    type: 'patchwork:datatype',
+    id: 'llm-petrinet-dialogue-example',
+    name: 'LLM Petri Net — Dialogue Example',
+    icon: 'GitBranch',
+    async load() {
+      const { LLMPetriNetDialogueExampleDatatype } = await import('./dialogue-example');
+      return LLMPetriNetDialogueExampleDatatype;
+    },
+  },
+  {
+    type: 'patchwork:tool',
+    id: 'llm-petrinet-dialogue-example',
+    name: 'LLM Petri Net — Dialogue Example',
+    supportedDatatypes: ['llm-petrinet-dialogue-example'],
+    async load() {
+      const { LLMPetriNetDialogueExampleTool } = await import('./dialogue-example');
+      return LLMPetriNetDialogueExampleTool;
+    },
+  },
+  {
+    type: 'patchwork:datatype',
+    id: 'llm-petrinet-power-grid-example',
+    name: 'LLM Petri Net — Power Grid Example',
+    icon: 'GitBranch',
+    async load() {
+      const { LLMPetriNetPowerGridExampleDatatype } = await import('./power-grid-example');
+      return LLMPetriNetPowerGridExampleDatatype;
+    },
+  },
+  {
+    type: 'patchwork:tool',
+    id: 'llm-petrinet-power-grid-example',
+    name: 'LLM Petri Net — Power Grid Example',
+    supportedDatatypes: ['llm-petrinet-power-grid-example'],
+    async load() {
+      const { LLMPetriNetPowerGridExampleTool } = await import('./power-grid-example');
+      return LLMPetriNetPowerGridExampleTool;
+    },
+  },
+  {
+    type: 'patchwork:tool',
+    id: 'llm-petrinet',
+    name: 'LLM Petri Net',
+    supportedDatatypes: ['llm-petrinet'],
+    async load() {
+      const { LLMPetriNetSimulationTool } = await import('./simulation-tool');
+      return LLMPetriNetSimulationTool;
+    },
+  },
+  {
+    type: 'patchwork:tool',
+    id: 'llm-petrinet-config',
+    name: 'LLM Petri Net Config',
+    supportedDatatypes: ['llm-petrinet'],
+    async load() {
+      const { LLMPetriNetConfigTool } = await import('./config-tool');
+      return LLMPetriNetConfigTool;
+    },
+  },
+];
