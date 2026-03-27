@@ -8,6 +8,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type PointerEvent as DomPointerEvent,
@@ -276,32 +277,6 @@ function doCatchingErrors(fn: () => void) {
   }
 }
 
-const doItKeymap = Prec.highest(
-  keymap.of([
-    {
-      key: 'Mod-d',
-      run: (view) => {
-        doIt(view);
-        return true;
-      },
-    },
-    {
-      key: 'Mod-p',
-      run: (view) => {
-        doIt(view, true);
-        return true;
-      },
-    },
-    {
-      key: 'Mod-s',
-      run: () => {
-        doCatchingErrors(save);
-        return true;
-      },
-    },
-  ]),
-);
-
 export const PyonpyonEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   docHandle = useDocHandle<PyonpyonDoc>(docUrl)!;
   (window as any).handle = docHandle; // needed for historical reasons, will go away once we update alldefs
@@ -315,10 +290,15 @@ export const PyonpyonEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   const [drawerExpanded, setDrawerExpanded] = useState(false);
   const [drawerHeight, setDrawerHeight] = useState(DEFAULT_DRAWER_HEIGHT);
   const [dragging, setDragging] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [showSaveSuccess, setShowSaveSuccess] = useState(false);
 
   const editorMountRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
   const openRafRef = useRef<number | null>(null);
+  const saveInFlightRef = useRef(false);
+  const saveSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveHandlerRef = useRef<() => void>(() => {});
   /** Synced every render — transitionend must read current expanded state (avoid stale closure unmounting after open). */
   const drawerExpandedRef = useRef(drawerExpanded);
   drawerExpandedRef.current = drawerExpanded;
@@ -365,6 +345,36 @@ export const PyonpyonEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     };
   }, [drawerInDom]);
 
+  const editorKeymap = useMemo(
+    () =>
+      Prec.highest(
+        keymap.of([
+          {
+            key: 'Mod-d',
+            run: (view) => {
+              doIt(view);
+              return true;
+            },
+          },
+          {
+            key: 'Mod-p',
+            run: (view) => {
+              doIt(view, true);
+              return true;
+            },
+          },
+          {
+            key: 'Mod-s',
+            run: () => {
+              saveHandlerRef.current();
+              return true;
+            },
+          },
+        ]),
+      ),
+    [],
+  );
+
   useLayoutEffect(() => {
     if (!drawerInDom) return;
 
@@ -374,7 +384,7 @@ export const PyonpyonEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     const view = new EditorView({
       state: EditorState.create({
         doc: '',
-        extensions: [basicSetup, javascript(), codeMirrorTheme, doItKeymap],
+        extensions: [basicSetup, javascript(), codeMirrorTheme, editorKeymap],
       }),
       parent,
     });
@@ -382,7 +392,7 @@ export const PyonpyonEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     return () => {
       view.destroy();
     };
-  }, [drawerInDom]);
+  }, [drawerInDom, editorKeymap]);
 
   useEffect(() => {
     if (!alreadyInitialized) {
@@ -439,18 +449,45 @@ export const PyonpyonEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
         clearTimeout(closeFallbackTimerRef.current);
         closeFallbackTimerRef.current = null;
       }
+      if (saveSuccessTimerRef.current != null) {
+        clearTimeout(saveSuccessTimerRef.current);
+        saveSuccessTimerRef.current = null;
+      }
     },
     [],
   );
 
-  const handleSave = useCallback(() => {
-    try {
-      save();
-    } catch (error) {
-      console.error('error saving', error);
-      debugger;
+  const showSaveSuccessNotice = useCallback(() => {
+    setShowSaveSuccess(true);
+    if (saveSuccessTimerRef.current != null) {
+      clearTimeout(saveSuccessTimerRef.current);
     }
+    saveSuccessTimerRef.current = setTimeout(() => {
+      saveSuccessTimerRef.current = null;
+      setShowSaveSuccess(false);
+    }, 1600);
   }, []);
+
+  const handleSave = useCallback(() => {
+    if (saveInFlightRef.current) {
+      return;
+    }
+    saveInFlightRef.current = true;
+    setIsSaving(true);
+    window.requestAnimationFrame(() => {
+      try {
+        save();
+        showSaveSuccessNotice();
+      } catch (error) {
+        console.error('error saving', error);
+        debugger;
+      } finally {
+        saveInFlightRef.current = false;
+        setIsSaving(false);
+      }
+    });
+  }, [showSaveSuccessNotice]);
+  saveHandlerRef.current = handleSave;
 
   const onDrawerTransitionEnd = useCallback(
     (e: TransitionEvent<HTMLDivElement>) => {
@@ -493,10 +530,27 @@ export const PyonpyonEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   }, []);
 
   const drawerShellHeight = drawerInDom && drawerExpanded ? drawerHeight : 0;
+  const collapsedSaveButtonClass = `btn btn-sm border-base-300 text-black shadow-sm ${
+    isSaving ? 'bg-base-300 hover:bg-base-300' : 'bg-white hover:bg-white'
+  }`;
+  const expandedSaveButtonClass = `btn btn-ghost btn-xs shrink-0 ${
+    isSaving ? 'bg-base-300 hover:bg-base-300' : ''
+  }`;
 
   return (
     <div className="relative h-full min-h-0 flex-1 overflow-hidden bg-base-100">
       <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full" />
+      <div className="pointer-events-none absolute bottom-3 right-3 z-30">
+        <div
+          className={`rounded-md bg-success px-2 py-1 text-xs font-medium text-success-content shadow-sm transition-opacity duration-200 ${
+            showSaveSuccess ? 'opacity-100' : 'opacity-0'
+          }`}
+          role="status"
+          aria-live="polite"
+        >
+          Save succeeded
+        </div>
+      </div>
 
       {!drawerInDom && (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center pb-2">
@@ -511,8 +565,10 @@ export const PyonpyonEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
             </button>
             <button
               type="button"
-              className="btn btn-sm border-base-300 bg-white text-black shadow-sm hover:bg-white"
+              className={collapsedSaveButtonClass}
               onClick={handleSave}
+              disabled={isSaving}
+              aria-busy={isSaving}
             >
               Save
             </button>
@@ -556,9 +612,11 @@ export const PyonpyonEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
                 </button>
                 <button
                   type="button"
-                  className="btn btn-ghost btn-xs shrink-0"
+                  className={expandedSaveButtonClass}
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={handleSave}
+                  disabled={isSaving}
+                  aria-busy={isSaving}
                 >
                   Save
                 </button>
