@@ -18,7 +18,7 @@ export const schema = {
     return {
       x: 0,
       y: 0,
-      toolUrl: getToolUrl('./shape.js', import.meta.url),
+      toolUrl: getToolUrl('./tool.js', import.meta.url),
       embedToolUrl: '',
       width: 200,
       height: 150,

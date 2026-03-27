@@ -3,7 +3,7 @@ import { from, render, html } from '../solid.js';
 import { getToolUrl } from '../url.js';
 
 const TOOL_NAME = 'rectangle';
-const rectangleToolUrl = getToolUrl('./shape.js', import.meta.url);
+const rectangleToolUrl = getToolUrl('./tool.js', import.meta.url);
 
 const ButtonShapeSchema = z.object({
   x: z.number(),

@@ -8,7 +8,7 @@ description: Take a screenshot of the canvas (or a region) and get an <img> elem
 Returns an `<img>` element (PNG data URL, max 1024x1024). Return it from the script to pass the image back as a vision input.
 
 ```js
-const { screenshot } = await importModule('skills/screenshot/screenshot.js');
+const { screenshot } = await filesystem.import('skills/screenshot/screenshot.js');
 const img = await screenshot(element);
 return img;
 ```

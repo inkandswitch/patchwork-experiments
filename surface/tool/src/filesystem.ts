@@ -39,7 +39,7 @@ export type Filesystem = {
   listFiles(path?: string): Promise<DocLink[]>;
   /** All entries in a folder (files and subfolders). */
   listEntries(path?: string): Promise<DocLink[]>;
-  importFile(path: string): Promise<unknown>;
+  import(path: string): Promise<unknown>;
   getUrlOfFile(path?: string): string;
   /** Watch files matching a glob pattern. Calls `fn` on initial match and whenever the matched set or file contents change. */
   watch(pattern: string, fn: (matches: string[]) => void): () => void;
@@ -228,7 +228,7 @@ export function createFilesystem(repo: Repo, rootFolderUrl: AutomergeUrl): Files
       return doc.docs ?? [];
     },
 
-    async importFile(path: string): Promise<unknown> {
+    async import(path: string): Promise<unknown> {
       const url = buildFetchUrl(path);
       return import(/* @vite-ignore */ url);
     },

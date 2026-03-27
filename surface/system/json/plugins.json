@@ -4,14 +4,15 @@
       "type": "tool",
       "name": "JSON Viewer",
       "description": "Renders the document value as formatted JSON",
-      "toolUrl": "./shape.js",
+      "toolUrl": "./tool.js",
       "schemaUrl": "./schema.js"
     },
     {
       "type": "schema",
       "name": "JSON Schema",
       "description": "Passthrough schema that accepts any object",
-      "source": "./schema.js"
+      "source": "./schema.js",
+      "unlisted": true
     }
   ]
 }

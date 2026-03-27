@@ -5,6 +5,6 @@
   "description": "Text shape tool",
   "exports": {
     "./button": "./button.js",
-    "./shape": "./shape.js"
+    "./tool": "./tool.js"
   }
 }

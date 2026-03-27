@@ -4,7 +4,7 @@
   "type": "module",
   "description": "LLM chat panel (OpenRouter), script eval loop, and prompts",
   "exports": {
-    "./shape": "./shape.js",
+    "./tool": "./tool.js",
     "./process": "./process.js",
     "./parser": "./parser.js",
     "./system-prompt": "./system-prompt.js"

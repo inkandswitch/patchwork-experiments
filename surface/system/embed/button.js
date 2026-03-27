@@ -6,24 +6,7 @@ import styles from './button.css' with { type: 'css' };
 document.adoptedStyleSheets = [...document.adoptedStyleSheets, styles];
 
 const TOOL_NAME = 'embed';
-const embedToolUrl = getToolUrl('./shape.js', import.meta.url);
-
-const EMBED_TYPES = [
-  {
-    id: 'llm',
-    label: 'LLM Chat',
-    toolUrl: getToolUrl('../llm/shape.js', import.meta.url),
-    defaultWidth: 320,
-    defaultHeight: 400,
-    createDoc(repo) {
-      return repo.create({
-        config: { apiUrl: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-opus-4.6' },
-        runs: [],
-      });
-    },
-  },
-
-];
+const embedToolUrl = getToolUrl('./tool.js', import.meta.url);
 
 const ButtonShapeSchema = z.object({
   x: z.number(),
@@ -49,15 +32,31 @@ const selectedToolSchema = {
   },
 };
 
+const schemaCache = new Map();
+
+async function loadSchema(url) {
+  if (schemaCache.has(url)) return schemaCache.get(url);
+  const mod = await import(url);
+  schemaCache.set(url, mod.schema);
+  return mod.schema;
+}
+
 export default function mount(element) {
   const canvas = element.parent;
   const selectedToolRef = canvas.ref.at('selectedTool').as(selectedToolSchema);
   const selectedTool = from(selectedToolRef);
 
+  const schemaPlugins = from(element.plugins.byType('schema'));
+  const toolPlugins = from(element.plugins.byType('tool'));
+
+  function embedTypes() {
+    return (schemaPlugins() ?? []).filter((p) => !p.unlisted);
+  }
+
   const active = () => selectedTool() === TOOL_NAME;
 
   const [menuOpen, setMenuOpen] = createSignal(false);
-  const [selectedType, setSelectedType] = createSignal(EMBED_TYPES[0]);
+  const [selectedPlugin, setSelectedPlugin] = createSignal(null);
 
   let dragId = null;
   let startX = 0;
@@ -72,13 +71,13 @@ export default function mount(element) {
     }
   }
 
-  function selectType(embedType) {
-    setSelectedType(embedType);
+  function selectType(plugin) {
+    setSelectedPlugin(plugin);
     setMenuOpen(false);
     selectedToolRef.change(() => TOOL_NAME);
   }
 
-  function onPointerDown(event) {
+  async function onPointerDown(event) {
     if (!active()) return;
     if (event.target.closest('ref-view') !== canvas) return;
 
@@ -88,9 +87,15 @@ export default function mount(element) {
       return;
     }
 
-    const embedType = selectedType();
-    const embedHandle = embedType.createDoc(repo);
+    const plugin = selectedPlugin();
+    if (!plugin) return;
+
+    const pluginSchema = await loadSchema(plugin.source);
+    const initData = pluginSchema.init();
+    const embedHandle = repo.create(initData);
     const embedDocUrl = embedHandle.url;
+
+    const matchedToolUrl = await findMatchingTool(initData);
 
     const rect = canvas.getBoundingClientRect();
     startX = event.clientX - rect.left;
@@ -101,12 +106,30 @@ export default function mount(element) {
       x: startX,
       y: startY,
       toolUrl: embedToolUrl,
-      embedToolUrl: embedType.toolUrl,
+      embedToolUrl: matchedToolUrl,
       embedDocUrl,
       width: 0,
       height: 0,
     }));
     canvas.setPointerCapture(event.pointerId);
+  }
+
+  async function findMatchingTool(value) {
+    const tools = (toolPlugins() ?? []).filter((p) => p.schemaUrl);
+    const matches = [];
+    for (const tool of tools) {
+      try {
+        const toolSchema = await loadSchema(tool.schemaUrl);
+        toolSchema.parse(value);
+        const initKeys = Object.keys(toolSchema.init?.() ?? {});
+        matches.push({ tool, fieldCount: initKeys.length });
+      } catch {
+        // schema incompatible
+      }
+    }
+    // Prefer tools with more specific schemas (more init fields) over passthrough schemas like JSON Viewer
+    matches.sort((a, b) => b.fieldCount - a.fieldCount);
+    return matches[0]?.tool.source ?? '';
   }
 
   function onPointerMove(event) {
@@ -130,12 +153,11 @@ export default function mount(element) {
     if (dragId) {
       const shape = canvas.ref.at('shapes', dragId).value();
       if (shape.width < 4 && shape.height < 4) {
-        const embedType = selectedType();
         canvas.ref.at('shapes', dragId).change((s) => {
-          s.x = startX - embedType.defaultWidth / 2;
-          s.y = startY - embedType.defaultHeight / 2;
-          s.width = embedType.defaultWidth;
-          s.height = embedType.defaultHeight;
+          s.x = startX - 160;
+          s.y = startY - 120;
+          s.width = 320;
+          s.height = 240;
         });
       }
       selectedToolRef.change(() => '');
@@ -168,13 +190,13 @@ export default function mount(element) {
         ${() =>
           menuOpen()
             ? html`<div class="embed-menu">
-                ${EMBED_TYPES.map(
-              (embedType) =>
+                ${embedTypes().map(
+              (plugin) =>
                 html`<button
-                      onClick=${() => selectType(embedType)}
+                      onClick=${() => selectType(plugin)}
                       class="embed-menu-item"
                     >
-                      ${embedType.label}
+                      ${plugin.name}
                     </button>`,
             )}
               </div>`

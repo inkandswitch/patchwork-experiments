@@ -4,8 +4,9 @@
       "type": "tool",
       "name": "Text",
       "description": "Renders an editable text field on the canvas",
-      "toolUrl": "./shape.js",
-      "schemaUrl": "./schema.js"
+      "toolUrl": "./tool.js",
+      "schemaUrl": "./schema.js",
+      "unlisted": true
     },
     {
       "type": "tool",
@@ -17,7 +18,8 @@
       "type": "schema",
       "name": "Text Schema",
       "description": "Text shape data schema (x, y, text)",
-      "source": "./schema.js"
+      "source": "./schema.js",
+      "unlisted": true
     }
   ]
 }

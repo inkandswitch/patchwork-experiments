@@ -4,8 +4,9 @@
       "type": "tool",
       "name": "Line",
       "description": "Renders a freehand line stroke on the canvas",
-      "toolUrl": "./shape.js",
-      "schemaUrl": "./schema.js"
+      "toolUrl": "./tool.js",
+      "schemaUrl": "./schema.js",
+      "unlisted": true
     },
     {
       "type": "tool",
@@ -17,7 +18,8 @@
       "type": "schema",
       "name": "Line Schema",
       "description": "Line shape data schema (x, y, points)",
-      "source": "./schema.js"
+      "source": "./schema.js",
+      "unlisted": true
     }
   ]
 }

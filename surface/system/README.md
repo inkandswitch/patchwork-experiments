@@ -4,7 +4,7 @@ This tree is the **surface system**: the collaborative layer where people work i
 
 ## What you are looking at
 
-You work in an environment where you can **create and edit documents** (persistent, mergeable state) and **evolve the system** (how those documents are shown and edited) in the same spirit: the implementation is part of the same world you inspect. To understand a feature, **read the source** next to this README -- typically `shape.js` for how a piece of state is drawn, `button.js` when there is a toolbar tool, and `plugins.json` for the tool's metadata.
+You work in an environment where you can **create and edit documents** (persistent, mergeable state) and **evolve the system** (how those documents are shown and edited) in the same spirit: the implementation is part of the same world you inspect. To understand a feature, **read the source** next to this README -- typically `tool.js` for how a piece of state is rendered, and `plugins.json` for the tool's metadata.
 
 ## Folder layout
 
@@ -12,7 +12,7 @@ You work in an environment where you can **create and edit documents** (persiste
 |------|------|
 | **`bootstrap.js`** | Default entry: mounts the paper surface on the frame's ref (nested `ref-view` so the document ref stays the frame). |
 | **`paper/`** | Lays out the `shapes` map, active tool, and selection highlights. |
-| **`line/`, `rectangle/`, `text/`, `embed/`, `selection/`, `llm/`** | One folder per capability: renderer (`shape.js`), optional toolbar wiring (`button.js`), `schema.js` (data shape), and `plugins.json` (metadata). |
+| **`line/`, `rectangle/`, `text/`, `embed/`, `selection/`, `llm/`** | One folder per capability: renderer (`tool.js`), `schema.js` (data shape), and `plugins.json` (metadata). |
 | **`skills/`** | Skill modules for the LLM. Each subfolder has a `SKILL.md` and optional `.js` helpers (e.g. `skills/paper/`, `skills/screenshot/`). The LLM prompt lists skill names and paths; the LLM reads them on demand. |
 | **`solid.js`** | Shared Solid helpers (`render`, `html`, `useRef`, ...) used across tools. |
 

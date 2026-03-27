@@ -4,12 +4,12 @@
       "type": "tool",
       "name": "LLM Chat",
       "description": "LLM chat panel with script evaluation loop",
-      "toolUrl": "./shape.js",
+      "toolUrl": "./tool.js",
       "schemaUrl": "./schema.js"
     },
     {
       "type": "schema",
-      "name": "LLM Schema",
+      "name": "LLM",
       "description": "LLM panel data schema (config, runs with output blocks)",
       "source": "./schema.js"
     }

@@ -46,7 +46,7 @@ function toolUrl(relativePath) {
 }
 ```
 
-Then use `toolUrl('rectangle/shape.js')`, `toolUrl('line/shape.js')`, etc.
+Then use `toolUrl('rectangle/tool.js')`, `toolUrl('line/tool.js')`, etc.
 
 ## Rectangle
 
@@ -66,7 +66,7 @@ Create:
 element.ref.at('shapes', 'rect_1').change(() => ({
   x: 50,
   y: 50,
-  toolUrl: toolUrl('rectangle/shape.js'),
+  toolUrl: toolUrl('rectangle/tool.js'),
   width: 200,
   height: 120,
 }));
@@ -103,7 +103,7 @@ const strokeId = `line_${Date.now()}`;
 element.ref.at('shapes', strokeId).change(() => ({
   x: 100,
   y: 80,
-  toolUrl: toolUrl('line/shape.js'),
+  toolUrl: toolUrl('line/tool.js'),
   points: [
     [0, 0, 0.5],
     [12, 4, 0.55],
@@ -137,7 +137,7 @@ Create:
 element.ref.at('shapes', 'note_1').change(() => ({
   x: 120,
   y: 40,
-  toolUrl: toolUrl('text/shape.js'),
+  toolUrl: toolUrl('text/tool.js'),
   text: 'Hello',
 }));
 ```
@@ -177,8 +177,8 @@ const embedDoc = repo.create({
 element.ref.at('shapes', 'embed_1').change(() => ({
   x: 20,
   y: 80,
-  toolUrl: toolUrl('embed/shape.js'),
-  embedToolUrl: toolUrl('llm/shape.js'),
+  toolUrl: toolUrl('embed/tool.js'),
+  embedToolUrl: toolUrl('llm/tool.js'),
   embedDocUrl: embedDoc.url,
   width: 320,
   height: 400,

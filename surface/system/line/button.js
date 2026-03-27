@@ -3,7 +3,7 @@ import { from, render, html } from '../solid.js';
 import { getToolUrl } from '../url.js';
 
 const TOOL_NAME = 'line';
-const lineToolUrl = getToolUrl('./shape.js', import.meta.url);
+const lineToolUrl = getToolUrl('./tool.js', import.meta.url);
 
 const ButtonShapeSchema = z.object({
   x: z.number(),

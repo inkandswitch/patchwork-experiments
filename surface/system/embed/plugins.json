@@ -4,7 +4,7 @@
       "type": "tool",
       "name": "Embed",
       "description": "Renders an embedded sub-surface on the canvas",
-      "toolUrl": "./shape.js",
+      "toolUrl": "./tool.js",
       "schemaUrl": "./schema.js"
     },
     {
@@ -17,7 +17,8 @@
       "type": "schema",
       "name": "Embed Schema",
       "description": "Embed shape data schema (x, y, width, height, embedToolUrl, embedDocUrl)",
-      "source": "./schema.js"
+      "source": "./schema.js",
+      "unlisted": true
     }
   ]
 }

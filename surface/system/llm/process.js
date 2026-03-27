@@ -242,8 +242,8 @@ export async function runLlmTurns(options) {
 
   const evalBindings = {
     element,
+    filesystem: element.filesystem,
     repo: globalThis.repo,
-    importModule: (path) => import(element.filesystem.getUrlOfFile(path)),
   };
 
   const capturedConsole = createCapturedConsole();

@@ -4,8 +4,9 @@
       "type": "tool",
       "name": "Rectangle",
       "description": "Renders a rectangle on the canvas",
-      "toolUrl": "./shape.js",
-      "schemaUrl": "./schema.js"
+      "toolUrl": "./tool.js",
+      "schemaUrl": "./schema.js",
+      "unlisted": true
     },
     {
       "type": "tool",
@@ -17,7 +18,8 @@
       "type": "schema",
       "name": "Rectangle Schema",
       "description": "Rectangle shape data schema (x, y, width, height)",
-      "source": "./schema.js"
+      "source": "./schema.js",
+      "unlisted": true
     }
   ]
 }
