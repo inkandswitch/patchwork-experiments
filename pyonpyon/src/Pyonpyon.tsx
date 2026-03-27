@@ -1,5 +1,5 @@
-import type { AutomergeUrl } from '@automerge/automerge-repo';
-import { useDocument } from '@automerge/automerge-repo-react-hooks';
+import type { AutomergeUrl, DocHandle } from '@automerge/automerge-repo';
+import { useDocHandle } from '@automerge/automerge-repo-react-hooks';
 import { javascript } from '@codemirror/lang-javascript';
 import { EditorState, Prec } from '@codemirror/state';
 import { keymap } from '@codemirror/view';
@@ -14,8 +14,207 @@ import {
   type TransitionEvent,
 } from 'react';
 import { toolify } from './react-util';
-import type { PyonpyonDoc } from './types';
+import type {
+  Obj,
+  ObjectTable,
+  PyonpyonDoc,
+  Ref,
+  SArr,
+  SFun,
+  SMap,
+  SObj,
+  SSet,
+  SVal,
+} from './types';
 import './styles.css';
+import { updateObject } from './am-updates';
+
+let docHandle: DocHandle<PyonpyonDoc>;
+let objProto = Object.create(null);
+let w = Object.create(objProto);
+let alreadyInitialized = false;
+
+function newObj(prototype?: Obj) {
+  return Object.create(prototype ?? objProto);
+}
+(window as any).newObj = newObj;
+
+function save() {
+  let nextId = 0;
+  let objProtoId = -1;
+  let wId = -1;
+  let objectTable: ObjectTable = {};
+  const objectIds = new Map<Obj, number>();
+  console.log('serializing state...');
+  serialize(w);
+  // console.log('pre save');
+  // console.log('objProto', objProto);
+  // console.log('w', w);
+  // console.log('during save');
+  // console.log('objProtoId', objProtoId);
+  // console.log('wId', wId);
+  // console.log('objectTable', objectTable);
+  console.log('calling doc.change...');
+  docHandle.change((doc) => {
+    // Never run "replace/delete missing keys" logic on the root doc,
+    // or we'll remove required metadata like "@patchwork".
+    doc.objProtoId = objProtoId;
+    doc.wId = wId;
+    updateObject(doc.objectTable as Record<string, any>, objectTable as Record<string, any>);
+  });
+  console.log('save done.');
+
+  function serialize(v: any): SVal {
+    if (objectIds.has(v)) {
+      return { type: 'ref', id: objectIds.get(v)! };
+    }
+
+    switch (typeof v) {
+      case 'number':
+      case 'boolean':
+      case 'string':
+        return v;
+      case 'function': {
+        const id = nextId++;
+        objectTable[id] = { type: 'fun', id, code: v.toString() };
+        objectIds.set(v, id);
+        return { type: 'ref', id };
+      }
+      case 'object':
+        if (Array.isArray(v)) {
+          const id = nextId++;
+          const sobj: SArr = (objectTable[id] = { type: 'arr', id, elements: [] });
+          objectIds.set(v, id);
+          for (const e of v) {
+            sobj.elements.push(serialize(e));
+          }
+          return { type: 'ref', id };
+        } else if (v instanceof Set) {
+          const id = nextId++;
+          const sobj: SSet = (objectTable[id] = { type: 'set', id, elements: [] });
+          objectIds.set(v, id);
+          for (const e of v) {
+            sobj.elements.push(serialize(e));
+          }
+          return { type: 'ref', id };
+        } else if (v instanceof Map) {
+          const id = nextId++;
+          const sobj: SMap = (objectTable[id] = { type: 'map', id, keys: [], values: [] });
+          objectIds.set(v, id);
+          for (const [key, val] of v) {
+            sobj.keys.push(serialize(key));
+            sobj.values.push(serialize(val));
+          }
+          return { type: 'ref', id };
+        } else if ((v && v === objProto) || Object.prototype.isPrototypeOf.call(objProto!, v)) {
+          const id = nextId++;
+          const sobj: SObj = (objectTable[id] = { type: 'obj', id, props: {} });
+          objectIds.set(v, id);
+
+          // If this is not the obj prototype, serialize its prototype and write that guy's id to sobj
+          if (v !== objProto) {
+            sobj.protoId = (serialize(Object.getPrototypeOf(v)) as Ref).id;
+          }
+
+          // If this is one of the two "special objects", update doc to keep track of its id
+          if (v === objProto) {
+            objProtoId = id;
+          } else if (v === w) {
+            wId = id;
+          }
+
+          // Serialize this object's properties
+          for (const [p, pv] of Object.entries(v)) {
+            sobj.props[p] = serialize(pv);
+          }
+          return { type: 'ref', id };
+        } else {
+          return null;
+        }
+      default:
+        return null;
+    }
+  }
+}
+
+function load() {
+  const { objProtoId, wId, objectTable } = docHandle.doc();
+  const objById = new Map<number, any>();
+  // console.log('load');
+  // console.log('objProtoId', objProtoId);
+  // console.log('wId', wId);
+  // console.log('objectTable', objectTable);
+  console.log('deserializing...');
+  deserialize(objectTable[wId]);
+  // console.log('objProto', objProto);
+  // console.log('w', w);
+  // if (w?.init) {
+  //   console.log('calling init...');
+  //   w.init();
+  // }
+  console.log('load done.');
+
+  function deserialize(s: SVal | SObj | SArr | SSet | SMap | SFun) {
+    // console.log('deserializing', s);
+    if (typeof s === 'number' || typeof s === 'boolean' || typeof s === 'string' || s === null) {
+      return s;
+    } else if (objById.has(s.id)) {
+      return objById.get(s.id)!;
+    } else if (s.type === 'ref') {
+      return deserialize(objectTable[s.id]);
+    } else if (s.type === 'arr') {
+      const obj: any[] = [];
+      objById.set(s.id, obj);
+      for (const e of s.elements) {
+        obj.push(deserialize(e));
+      }
+      return obj;
+    } else if (s.type === 'set') {
+      const obj = new Set();
+      objById.set(s.id, obj);
+      for (const e of s.elements) {
+        obj.add(deserialize(e));
+      }
+      return obj;
+    } else if (s.type === 'map') {
+      const obj = new Map();
+      objById.set(s.id, obj);
+      for (let idx = 0; idx < s.keys.length; idx++) {
+        const k = deserialize(s.keys[idx]);
+        const v = deserialize(s.values[idx]);
+        obj.set(k, v);
+      }
+      return obj;
+    } else if (s.type === 'fun') {
+      const obj = doCatchingErrors(() => eval(`(${s.code})`));
+      objById.set(s.id, obj);
+      return obj;
+    } else if (s.type === 'obj') {
+      let obj: Obj;
+      if (s.protoId === undefined) {
+        if (s.id !== objProtoId) {
+          throw new Error('whaaaa?!?!');
+        }
+        obj = objProto = Object.create(null);
+      } else {
+        const pobj = deserialize(objectTable[s.protoId]);
+        obj = Object.create(pobj);
+        if (s.id === wId) {
+          // console.log('just created a new w');
+          w = obj;
+        }
+      }
+      objById.set(s.id, obj);
+      for (const [p, pv] of Object.entries(s.props)) {
+        obj[p] = deserialize(pv);
+      }
+      return obj;
+    } else {
+      console.error('fatal: invalid argument to _deserialize', s);
+      throw new Error('see console');
+    }
+  }
+}
 
 const DEFAULT_DRAWER_HEIGHT = 250;
 const MIN_DRAWER_HEIGHT = 120;
@@ -29,7 +228,9 @@ const codeMirrorTheme = EditorView.theme({
   '&': { height: '100%', fontSize: '13px' },
   '.cm-editor': { height: '100%' },
   '.cm-editor.cm-focused': { outline: 'none' },
-  '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' },
+  '.cm-scroller': {
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+  },
 });
 
 function doIt(view: EditorView, print = false) {
@@ -50,6 +251,7 @@ function doIt(view: EditorView, print = false) {
     console.log('result', result);
   } catch (error) {
     result = `{ERROR: ${String(error)}}`;
+    console.error('error', error);
   }
 
   if (!print) {
@@ -64,6 +266,14 @@ function doIt(view: EditorView, print = false) {
   view.dispatch({
     selection: { anchor: to, head: to + insert.length },
   });
+}
+
+function doCatchingErrors(fn: () => void) {
+  try {
+    return fn();
+  } catch (error) {
+    console.error('error', error);
+  }
 }
 
 const doItKeymap = Prec.highest(
@@ -82,12 +292,21 @@ const doItKeymap = Prec.highest(
         return true;
       },
     },
+    {
+      key: 'Mod-s',
+      run: () => {
+        doCatchingErrors(save);
+        return true;
+      },
+    },
   ]),
 );
 
 export const PyonpyonEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
-  const [doc] = useDocument<PyonpyonDoc>(docUrl, { suspense: true });
-  const title = doc.title?.trim() || 'Pyonpyon';
+  docHandle = useDocHandle<PyonpyonDoc>(docUrl)!;
+  (window as any).handle = docHandle; // needed for historical reasons, will go away once we update alldefs
+
+  const title = docHandle.doc().title.trim() || 'Pyonpyon';
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   /** Shell stays mounted during close height animation; cleared after transition ends. */
@@ -111,32 +330,25 @@ export const PyonpyonEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const draw = () => {
-      const dpr = window.devicePixelRatio ?? 1;
+    const syncCanvasSize = () => {
       const { width, height } = canvas.getBoundingClientRect();
-      const w = Math.max(1, Math.floor(width * dpr));
-      const h = Math.max(1, Math.floor(height * dpr));
+      const w = Math.max(1, Math.floor(width));
+      const h = Math.max(1, Math.floor(height));
       if (canvas.width !== w || canvas.height !== h) {
         canvas.width = w;
         canvas.height = h;
       }
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, width, height);
-      ctx.fillStyle = '#000000';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.font = '16px system-ui, sans-serif';
-      ctx.fillText(title, width / 2, height / 2);
     };
 
-    draw();
-    const ro = new ResizeObserver(draw);
+    syncCanvasSize();
+    const ro = new ResizeObserver(syncCanvasSize);
     ro.observe(canvas);
-    return () => ro.disconnect();
-  }, [title]);
+    window.addEventListener('resize', syncCanvasSize);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', syncCanvasSize);
+    };
+  }, []);
 
   useLayoutEffect(() => {
     if (!drawerInDom) return;
@@ -171,6 +383,19 @@ export const PyonpyonEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
       view.destroy();
     };
   }, [drawerInDom]);
+
+  useEffect(() => {
+    if (!alreadyInitialized) {
+      load();
+      // if (typeof w?.init === 'function') {
+      //   w.init('clean start');
+      // }
+      if (typeof w?.initUI === 'function') {
+        w.initUI();
+      }
+      alreadyInitialized = true;
+    }
+  }, [docUrl]);
 
   useEffect(() => {
     const onResize = () => setDrawerHeight((h) => clampDrawerHeight(h));
@@ -219,23 +444,34 @@ export const PyonpyonEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   );
 
   const handleSave = useCallback(() => {
-    // Wire to Automerge / workspace persistence when the doc shape supports it.
+    try {
+      save();
+    } catch (error) {
+      console.error('error saving', error);
+      debugger;
+    }
   }, []);
 
-  const onDrawerTransitionEnd = useCallback((e: TransitionEvent<HTMLDivElement>) => {
-    if (e.target !== e.currentTarget || e.propertyName !== 'height') return;
-    // Must use ref: when the *open* height transition ends, a stale closure can still see expanded=false and tear the drawer down.
-    if (!drawerExpandedRef.current) {
-      finalizeDrawerShellRemoval();
-    }
-  }, [finalizeDrawerShellRemoval]);
+  const onDrawerTransitionEnd = useCallback(
+    (e: TransitionEvent<HTMLDivElement>) => {
+      if (e.target !== e.currentTarget || e.propertyName !== 'height') return;
+      // Must use ref: when the *open* height transition ends, a stale closure can still see expanded=false and tear the drawer down.
+      if (!drawerExpandedRef.current) {
+        finalizeDrawerShellRemoval();
+      }
+    },
+    [finalizeDrawerShellRemoval],
+  );
 
-  const onHandlePointerDown = useCallback((e: DomPointerEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    dragRef.current = { startY: e.clientY, startHeight: drawerHeight };
-    setDragging(true);
-  }, [drawerHeight]);
+  const onHandlePointerDown = useCallback(
+    (e: DomPointerEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      dragRef.current = { startY: e.clientY, startHeight: drawerHeight };
+      setDragging(true);
+    },
+    [drawerHeight],
+  );
 
   const onHandlePointerMove = useCallback((e: DomPointerEvent<HTMLDivElement>) => {
     if (!dragRef.current) return;
@@ -265,11 +501,19 @@ export const PyonpyonEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
       {!drawerInDom && (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center pb-2">
           <div className="pointer-events-auto flex items-center gap-2">
-            <button type="button" className="btn btn-sm btn-ghost gap-1 shadow-sm" onClick={openDrawer}>
+            <button
+              type="button"
+              className="btn btn-sm gap-1 border-base-300 bg-white text-black shadow-sm hover:bg-white"
+              onClick={openDrawer}
+            >
               <span className="text-base leading-none">▲</span>
               Workspace
             </button>
-            <button type="button" className="btn btn-sm btn-ghost shadow-sm" onClick={handleSave}>
+            <button
+              type="button"
+              className="btn btn-sm border-base-300 bg-white text-black shadow-sm hover:bg-white"
+              onClick={handleSave}
+            >
               Save
             </button>
           </div>
