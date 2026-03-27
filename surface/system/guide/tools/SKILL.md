@@ -153,7 +153,7 @@ function toolUrl(relativePath) {
 Then create a shape directly:
 
 ```js
-const systemBase = filesystem.getUrlOfFile('');
+const systemBase = filesystem.getUrlOfFile("");
 function toolUrl(relativePath) {
   return new URL(relativePath, systemBase).href;
 }
