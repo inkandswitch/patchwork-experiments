@@ -1,0 +1,72 @@
+import { LayerNoSamples } from "./types";
+
+const MASTER_GAIN = 0;
+const CHANNEL_TO_RECORD = 1;
+const LATENCY_OFFSET = 2;
+const PLAYHEAD = 3;
+const RECORDING = 4;
+const RECORDING_FRAME_OFFSET = 5;
+
+export default class SharedState {
+  static new() {
+    return new SharedState(new Float32Array<any>(new SharedArrayBuffer(128 * 4)));
+  }
+
+  static from(state: Float32Array<any>) {
+    return new SharedState(state);
+  }
+
+
+  readonly samplesByLayerId = new Map<number, Float32Array<any>>();
+  layers: LayerNoSamples[] = [];
+
+  private constructor(readonly _state: Float32Array<any>) { }
+
+  get masterGain() {
+    return this._state[MASTER_GAIN];
+  }
+
+  set masterGain(value: number) {
+    this._state[MASTER_GAIN] = value;
+  }
+
+  get channelToRecord() {
+    return this._state[CHANNEL_TO_RECORD];
+  }
+
+  set channelToRecord(value: number) {
+    this._state[CHANNEL_TO_RECORD] = value;
+  }
+
+  get latencyOffset() {
+    return this._state[LATENCY_OFFSET];
+  }
+
+  set latencyOffset(value: number) {
+    this._state[LATENCY_OFFSET] = value;
+  }
+
+  get playhead() {
+    return this._state[PLAYHEAD];
+  }
+
+  set playhead(value: number) {
+    this._state[PLAYHEAD] = value;
+  }
+
+  get recording() {
+    return this._state[RECORDING] === 1;
+  }
+
+  set recording(value: boolean) {
+    this._state[RECORDING] = value ? 1 : 0;
+  }
+
+  get recordingFrameOffset() {
+    return this._state[RECORDING_FRAME_OFFSET];
+  }
+
+  set recordingFrameOffset(value: number) {
+    this._state[RECORDING_FRAME_OFFSET] = value;
+  }
+}

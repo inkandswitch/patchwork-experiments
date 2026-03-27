@@ -5,6 +5,7 @@ export const LooperDatatype: DatatypeImplementation<LooperDoc> = {
   init(doc: LooperDoc) {
     doc['@patchwork'] = { type: 'looper' };
     doc.title = 'Untitled';
+    doc.layers = [];
   },
   getTitle(doc: LooperDoc) {
     return doc.title?.trim() || 'Looper';

@@ -30,6 +30,9 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.1.18
         version: 4.2.2(vite@7.3.1(@types/node@20.19.37)(jiti@2.6.1)(lightningcss@1.32.0))
+      '@types/audioworklet':
+        specifier: ^0.0.72
+        version: 0.0.72
       '@types/react':
         specifier: ^18.3.27
         version: 18.3.28
@@ -644,6 +647,9 @@ packages:
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7 || ^8
 
+  '@types/audioworklet@0.0.72':
+    resolution: {integrity: sha512-qrsjMZxB0k5DJSLpcDXlX/OYa5iDEAc9dgEwCZO1op5jka7Jgc/fMEGq8LuHO+8MmpOInqco6hET1gawCTVeEg==}
+
   '@types/babel__core@7.20.5':
     resolution: {integrity: sha512-qoQprZvz5wQFJwMDqeseRXWv3rqMvhgpbXFfVyWhbx9X47POIA6i/+dXefEmZKoAgOaTdaIgNSMqMIU61yRyzA==}
 
@@ -1133,7 +1139,7 @@ snapshots:
 
   '@automerge/automerge-repo@2.5.0-alpha.2':
     dependencies:
-      '@automerge/automerge': 3.2.1
+      '@automerge/automerge': 3.2.5
       bs58check: 3.0.1
       cbor-x: 1.6.4
       debug: 4.4.3
@@ -1587,6 +1593,8 @@ snapshots:
       '@tailwindcss/oxide': 4.2.2
       tailwindcss: 4.2.2
       vite: 7.3.1(@types/node@20.19.37)(jiti@2.6.1)(lightningcss@1.32.0)
+
+  '@types/audioworklet@0.0.72': {}
 
   '@types/babel__core@7.20.5':
     dependencies:
