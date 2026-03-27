@@ -1,50 +1,21 @@
 ---
 name: screenshot
-description: Take a screenshot of the canvas and get a data URL.
+description: Take a screenshot of the canvas (or a region) and get an <img> element.
 ---
 
 # Screenshot
 
-Capture the current frame as a PNG data URL using `modern-screenshot`.
-
-## Quick usage (inline)
+Returns an `<img>` element (PNG data URL, max 1024x1024). Return it from the script to pass the image back as a vision input.
 
 ```js
-const { domToPng } = await import('https://esm.sh/modern-screenshot');
-const dataUrl = await domToPng(element);
-console.log(dataUrl);
+const { screenshot } = await importModule('skills/screenshot/screenshot.js');
+const img = await screenshot(element);
+return img;
 ```
 
-`element` is the frame `ref-view` available in the script scope.
-
-## Using the helper module
-
-A bundled helper is available at `skills/screenshot/screenshot.js` relative to the system root:
+Crop to a region with `{ x, y, width, height }` in pixels (all optional, relative to the element):
 
 ```js
-const screenshotUrl = element.filesystem.getUrlOfFile('skills/screenshot/screenshot.js');
-const { screenshot } = await import(screenshotUrl);
-const dataUrl = await screenshot(element);
-```
-
-## Displaying the image
-
-Create an embed shape that shows the screenshot, or insert it as a data URL in an `<img>`:
-
-```js
-const img = document.createElement('img');
-img.src = dataUrl;
-element.appendChild(img);
-```
-
-## Options
-
-`domToPng` accepts an optional second argument for render options:
-
-```js
-const dataUrl = await domToPng(element, {
-  width: 800,
-  height: 600,
-  scale: 2, // retina
-});
+const img = await screenshot(element, { x: 100, y: 50, width: 300, height: 200 });
+return img;
 ```

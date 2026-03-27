@@ -1,9 +1,27 @@
 import { from, render, html, For, createSignal } from '../solid.js';
+import { marked } from 'https://esm.sh/marked@15';
 import { buildSystemPrompt } from './system-prompt.js';
 import { runLlmTurns } from './process.js';
 import { schema } from './schema.js';
+import styles from './shape.css' with { type: 'css' };
+
+document.adoptedStyleSheets = [...document.adoptedStyleSheets, styles];
 
 export { schema };
+
+const MODELS = [
+  { id: 'anthropic/claude-opus-4.6', name: 'Claude Opus 4.6' },
+  { id: 'anthropic/claude-sonnet-4.6', name: 'Claude Sonnet 4.6' },
+  { id: 'anthropic/claude-opus-4.5', name: 'Claude Opus 4.5' },
+  { id: 'anthropic/claude-sonnet-4', name: 'Claude Sonnet 4' },
+  { id: 'anthropic/claude-haiku-3.5', name: 'Claude Haiku 3.5' },
+  { id: 'openai/gpt-4.1', name: 'GPT-4.1' },
+  { id: 'openai/gpt-4.1-nano', name: 'GPT-4.1 Nano' },
+  { id: 'openai/o4-mini', name: 'o4-mini' },
+  { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini' },
+  { id: 'google/gemini-2.5-pro-preview', name: 'Gemini 2.5 Pro' },
+  { id: 'google/gemini-2.5-flash-preview', name: 'Gemini 2.5 Flash' },
+];
 
 export default function mount(element) {
   const frameRefView = rootRefView(element);
@@ -18,6 +36,8 @@ export default function mount(element) {
   const data = from(ref);
   const [prompt, setPrompt] = createSignal('');
   const [submitting, setSubmitting] = createSignal(false);
+  const [tab, setTab] = createSignal('chat');
+  const [systemPromptText, setSystemPromptText] = createSignal('');
   let abortController = null;
 
   function getRuns() {
@@ -28,16 +48,8 @@ export default function mount(element) {
     return getRuns().length > 0;
   }
 
-  function getApiUrl() {
-    return data()?.config?.apiUrl ?? '';
-  }
-
   function getModel() {
     return data()?.config?.model ?? '';
-  }
-
-  function setApiUrl(value) {
-    ref.change((p) => { p.config.apiUrl = value; });
   }
 
   function setModel(value) {
@@ -48,12 +60,19 @@ export default function mount(element) {
     return submitting() || !prompt().trim();
   }
 
-  function buttonLabel() {
-    return submitting() ? 'Running…' : 'Send';
+  function onModelChange(e) {
+    setModel(e.currentTarget.value);
   }
 
-  function buttonCursor() {
-    return submitting() ? 'wait' : 'pointer';
+  function onPromptInput(e) {
+    setPrompt(e.currentTarget.value);
+  }
+
+  function onKeyDown(e) {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      void handleSubmit();
+    }
   }
 
   async function handleSubmit() {
@@ -71,7 +90,8 @@ export default function mount(element) {
       });
       setPrompt('');
 
-      const systemPrompt = await buildSystemPrompt(element.filesystem);
+      let systemPrompt = await buildSystemPrompt(element.filesystem);
+      systemPrompt += await buildContextSection(element, frameRefView);
 
       await runLlmTurns({
         systemPrompt,
@@ -89,7 +109,6 @@ export default function mount(element) {
           };
         },
         element: frameRefView,
-        filesystem: element.filesystem,
         signal,
       });
     } catch (err) {
@@ -107,129 +126,69 @@ export default function mount(element) {
     }
   }
 
-  function onKeyDown(e) {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      void handleSubmit();
+  async function showPromptTab() {
+    setTab('prompt');
+    try {
+      let text = await buildSystemPrompt(element.filesystem);
+      text += await buildContextSection(element, frameRefView);
+      setSystemPromptText(text);
+    } catch (err) {
+      setSystemPromptText(`Error building prompt: ${err?.message || err}`);
     }
-  }
-
-  function onApiUrlInput(e) {
-    setApiUrl(e.currentTarget.value);
-  }
-
-  function onModelInput(e) {
-    setModel(e.currentTarget.value);
-  }
-
-  function onPromptInput(e) {
-    setPrompt(e.currentTarget.value);
   }
 
   const dispose = render(
     () =>
-      html`<div
-        style=${{
-          display: 'flex',
-          'flex-direction': 'column',
-          width: '100%',
-          height: '100%',
-          background: '#fafafa',
-          'border-radius': '6px',
-          'box-shadow': '0 1px 6px rgba(0,0,0,0.14)',
-          overflow: 'hidden',
-          'box-sizing': 'border-box',
-        }}
-      >
-        <div
-          style=${{
-            height: '32px',
-            'flex-shrink': '0',
-            display: 'flex',
-            'align-items': 'center',
-            gap: '8px',
-            padding: '0 8px',
-            background: 'rgba(0,0,0,0.04)',
-            'border-bottom': '1px solid rgba(0,0,0,0.1)',
-          }}
-        >
-          <span style=${{ font: '12px/1 system-ui, sans-serif', color: '#333', 'font-weight': '600' }}>LLM</span>
-        </div>
-        <div
-          style=${{
-            flex: '1',
-            'min-height': '0',
-            overflow: 'auto',
-            padding: '8px',
-            display: 'flex',
-            'flex-direction': 'column',
-            gap: '10px',
-          }}
-        >
-          ${() =>
-            hasRuns()
-              ? html`<${For} each=${getRuns}>${(run) => renderRun(run)}<//>`
-              : html`<div style=${{ font: '12px system-ui', color: '#71717a' }}>Send a message to start.</div>`}
-        </div>
-        <div
-          style=${{
-            padding: '8px',
-            'border-top': '1px solid rgba(0,0,0,0.08)',
-            display: 'flex',
-            'flex-direction': 'column',
-            gap: '6px',
-            'flex-shrink': '0',
-          }}
-        >
-          <div style=${{ display: 'flex', gap: '6px', 'flex-wrap': 'wrap' }}>
-            <label style=${{ display: 'flex', 'flex-direction': 'column', gap: '2px', flex: '1', 'min-width': '120px' }}>
-              <span style=${{ font: '10px', color: '#71717a' }}>API URL</span>
-              <input
-                type="text"
-                value=${getApiUrl}
-                onInput=${onApiUrlInput}
-                style=${{ font: '11px', padding: '4px', width: '100%', 'box-sizing': 'border-box' }}
-              />
-            </label>
-            <label style=${{ display: 'flex', 'flex-direction': 'column', gap: '2px', width: '120px' }}>
-              <span style=${{ font: '10px', color: '#71717a' }}>Model</span>
-              <input
-                type="text"
-                value=${getModel}
-                onInput=${onModelInput}
-                style=${{ font: '11px', padding: '4px', width: '100%', 'box-sizing': 'border-box' }}
-              />
-            </label>
-          </div>
-          <textarea
-            placeholder="Message… (⌘↵ to send)"
-            value=${prompt}
-            onInput=${onPromptInput}
-            onKeyDown=${onKeyDown}
-            disabled=${submitting}
-            rows=${3}
-            style=${{
-              width: '100%',
-              'box-sizing': 'border-box',
-              resize: 'vertical',
-              font: '12px system-ui',
-              padding: '6px',
-            }}
-          />
+      html`<div class="llm-panel">
+        <div class="llm-header">
           <button
-            type="button"
-            onClick=${(e) => void handleSubmit()}
-            disabled=${isDisabled}
-            style=${() => ({
-              padding: '6px 12px',
-              font: '12px system-ui',
-              cursor: buttonCursor(),
-              'align-self': 'flex-end',
-            })}
+            class=${() => tab() === 'chat' ? 'llm-tab-active' : 'llm-tab'}
+            onClick=${() => setTab('chat')}
+          >Chat</button>
+          <button
+            class=${() => tab() === 'prompt' ? 'llm-tab-active' : 'llm-tab'}
+            onClick=${showPromptTab}
+          >Prompt</button>
+          <div class="llm-header-spacer" />
+          <select
+            class="llm-model-select"
+            onChange=${onModelChange}
+            onPointerDown=${(e) => e.stopPropagation()}
           >
-            ${buttonLabel}
-          </button>
+            ${MODELS.map((m) =>
+              html`<option value=${m.id} selected=${m.id === getModel()}>${m.name}</option>`,
+            )}
+          </select>
         </div>
+        ${() => tab() === 'chat'
+          ? html`<div class="llm-body">
+              ${() =>
+                hasRuns()
+                  ? html`<${For} each=${getRuns}>${(run) => renderRun(run)}<//>`
+                  : html`<div class="llm-empty">Send a message to start.</div>`}
+            </div>
+            <div class="llm-compose">
+              <textarea
+                class="llm-textarea"
+                placeholder="Message… (⌘↵ to send)"
+                value=${prompt}
+                onInput=${onPromptInput}
+                onKeyDown=${onKeyDown}
+                disabled=${submitting}
+                rows=${3}
+              />
+              <button
+                class="llm-send"
+                type="button"
+                onClick=${() => void handleSubmit()}
+                disabled=${isDisabled}
+              >
+                ${() => submitting() ? 'Running…' : 'Send'}
+              </button>
+            </div>`
+          : html`<div class="llm-prompt-view">
+              <pre class="llm-prompt-pre">${systemPromptText}</pre>
+            </div>`}
       </div>`,
     element,
   );
@@ -252,73 +211,149 @@ function getApiKey() {
   return globalThis.VITE_OPENROUTER_API_KEY ?? '';
 }
 
+const schemaCache = new Map();
+
+async function loadSchema(schemaUrl) {
+  if (schemaCache.has(schemaUrl)) return schemaCache.get(schemaUrl);
+  try {
+    const mod = await import(schemaUrl);
+    schemaCache.set(schemaUrl, mod.schema);
+    return mod.schema;
+  } catch {
+    return null;
+  }
+}
+
+async function buildContextSection(element, frameRefView) {
+  const lines = ['\n## Current context\n'];
+
+  let current = element;
+  let depth = 0;
+  while (current) {
+    const value = safeRefValue(current);
+    if (value) {
+      const label = depth === 0 ? 'Element 0 (LLM panel)' : `Element ${depth}`;
+      lines.push(`### ${label}\n${summarizeValue(value, label)}\n`);
+    }
+    current = current.parent;
+    depth++;
+  }
+
+  const frameValue = safeRefValue(frameRefView);
+  const compatibleNames = await findCompatibleSchemas(element, frameValue);
+  if (compatibleNames.length > 0) {
+    lines.push(`### Compatible schemas for frame\n${compatibleNames.join(', ')}\n`);
+  }
+
+  return lines.join('\n');
+}
+
+function safeRefValue(el) {
+  try {
+    if (!el?.ref) return null;
+    if (typeof el.ref.value === 'function') return el.ref.value();
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function summarizeValue(value, label) {
+  try {
+    const clone = JSON.parse(JSON.stringify(value));
+    if (clone.runs) {
+      clone.runs = `[${clone.runs.length} run(s)]`;
+    }
+    if (clone.shapes) {
+      const keys = Object.keys(clone.shapes);
+      clone.shapes = `{${keys.length} shape(s): ${keys.join(', ')}}`;
+    }
+    return '```json\n' + JSON.stringify(clone, null, 2) + '\n```';
+  } catch {
+    return `(could not serialize ${label})`;
+  }
+}
+
+async function findCompatibleSchemas(element, frameValue) {
+  if (!frameValue || !element?.plugins?.byType) return [];
+  try {
+    const plugins = element.plugins.byType('tool');
+    const pluginList = typeof plugins?.value === 'function' ? plugins.value() : [];
+    if (!Array.isArray(pluginList)) return [];
+
+    const names = [];
+    for (const plugin of pluginList) {
+      if (!plugin.schemaUrl) continue;
+      const pluginSchema = await loadSchema(plugin.schemaUrl);
+      if (!pluginSchema) continue;
+      try {
+        pluginSchema.parse(frameValue);
+        names.push(plugin.name);
+      } catch {
+        // not compatible
+      }
+    }
+    return names;
+  } catch {
+    return [];
+  }
+}
+
 function renderRun(run) {
   const getPrompt = () => run.prompt;
   const getOutput = () => run.output ?? [];
 
-  return html`<div style=${{ display: 'flex', 'flex-direction': 'column', gap: '6px' }}>
-    <div
-      style=${{
-        'align-self': 'flex-end',
-        'max-width': '95%',
-        padding: '6px 8px',
-        background: '#e0e7ff',
-        'border-radius': '8px',
-        font: '12px/1.4 system-ui, sans-serif',
-        'white-space': 'pre-wrap',
-        'word-break': 'break-word',
-      }}
-    >
-      ${getPrompt}
-    </div>
+  return html`<div class="llm-run">
+    <div class="llm-bubble-user">${getPrompt}</div>
     <${For} each=${getOutput}>${(block) => renderOutputBlock(block)}<//>
   </div>`;
 }
 
 function renderOutputBlock(block) {
   if (block.type === 'text') {
-    const getContent = () => block.content;
-    return html`<div
-      style=${{
-        font: '12px/1.4 system-ui, sans-serif',
-        'white-space': 'pre-wrap',
-        'word-break': 'break-word',
-      }}
-    >
-      ${getContent}
-    </div>`;
+    const getHtml = () => {
+      try {
+        return marked.parse(block.content || '');
+      } catch {
+        return block.content || '';
+      }
+    };
+    return html`<div class="llm-markdown" innerHTML=${getHtml} />`;
   }
 
   const getDescription = () => block.description || 'script';
   const getCode = () => block.code;
   const hasResult = () => block.output != null || block.error != null;
-  const resultBackground = () => block.error ? '#fef2f2' : '#f0fdf4';
-  const resultText = () =>
-    block.error ? `Error: ${block.error}` : block.output || '';
 
-  return html`<div
-    style=${{
-      font: '11px/1.4 ui-monospace, monospace',
-      background: '#fff',
-      border: '1px solid #e4e4e7',
-      'border-radius': '6px',
-      padding: '6px',
-    }}
-  >
-    <div style=${{ color: '#52525b', 'margin-bottom': '4px' }}>
-      ${getDescription}
-    </div>
-    <pre style=${{ margin: '0', overflow: 'auto' }}>${getCode}</pre>
-    ${() =>
-      hasResult()
-        ? html`<pre
-            style=${() => ({
-              margin: '6px 0 0',
-              padding: '6px',
-              background: resultBackground(),
-              'border-radius': '4px',
-            })}
-          >${resultText}</pre>`
-        : null}
+  return html`<div class="llm-script-block">
+    <div class="llm-script-desc">${getDescription}</div>
+    <pre class="llm-script-code">${getCode}</pre>
+    ${() => hasResult() ? renderScriptResult(block) : null}
+  </div>`;
+}
+
+const DATA_URL_REGEX = /data:image\/[a-zA-Z0-9+.-]+;base64,[a-zA-Z0-9+/=]+/g;
+
+function renderScriptResult(block) {
+  if (block.error) {
+    return html`<pre class="llm-script-result llm-script-result-err">${() => `Error: ${block.error}`}</pre>`;
+  }
+
+  const output = block.output || '';
+  const dataUrls = output.match(DATA_URL_REGEX);
+
+  if (!dataUrls) {
+    return html`<pre class="llm-script-result llm-script-result-ok">${output}</pre>`;
+  }
+
+  let textOutput = output;
+  for (const url of dataUrls) {
+    textOutput = textOutput.replace(url, '');
+  }
+  textOutput = textOutput.trim();
+
+  return html`<div class="llm-script-result llm-script-result-ok">
+    ${textOutput ? html`<pre style="margin:0">${textOutput}</pre>` : null}
+    ${dataUrls.map((url) => html`<img class="llm-script-image" src=${url} />`)}
   </div>`;
 }

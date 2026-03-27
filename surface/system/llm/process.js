@@ -3,12 +3,25 @@ import { parseScriptBlocks } from './parser.js';
 const MAX_ITERATIONS = 20;
 
 function stringifyArg(arg) {
+  if (arg instanceof HTMLImageElement) return imageToDataUrl(arg);
   if (typeof arg === 'string') return arg;
   try {
     return JSON.stringify(arg, null, 2);
   } catch {
     return '[object]';
   }
+}
+
+function imageToDataUrl(img) {
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
+  if (!w || !h) return img.src || '[empty image]';
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  return canvas.toDataURL('image/png');
 }
 
 export function createCapturedConsole() {
@@ -100,29 +113,9 @@ export async function* streamChatCompletion(apiUrl, apiKey, model, messages, sig
 }
 
 /**
- * @param {string} filename
- */
-export function safeDocsBasename(filename) {
-  const base = String(filename).replace(/\\/g, '/').split('/').pop() ?? '';
-  if (!base || base.includes('..') || base.includes('/')) {
-    throw new Error(`Invalid doc name: ${filename}`);
-  }
-  return base;
-}
-
-/**
- * @param {{ readFile: (path: string) => Promise<string>, listEntries?: (path?: string) => Promise<unknown[]> }} filesystem
- * @param {string} filename
- */
-export async function readDocFromFilesystem(filesystem, filename) {
-  const base = safeDocsBasename(filename);
-  return await filesystem.readFile(`docs/${base}`);
-}
-
-/**
  * @param {ReturnType<typeof createCapturedConsole>} capturedConsole
  * @param {string} code
- * @param {{ element: unknown, readDoc: (f: string) => Promise<string>, repo?: unknown }} evalBindings
+ * @param {{ element: unknown, repo?: unknown }} evalBindings
  */
 export async function evalScript(code, capturedConsole, evalBindings) {
   capturedConsole.flush();
@@ -184,11 +177,35 @@ export function appendOutputMessages(messages, blocks) {
           messages.push({ role: 'assistant', content: assistantParts.join('\n') });
           assistantParts = [];
         }
-        let resultText;
-        if (block.error) resultText = `[Error: ${block.error}]`;
-        else if (block.output) resultText = `[Output: ${block.output}]`;
-        else resultText = '[Done]';
-        messages.push({ role: 'user', content: resultText });
+        
+        if (block.error) {
+          messages.push({ role: 'user', content: `[Error: ${block.error}]` });
+        } else if (block.output) {
+          const dataUrlRegex = /data:image\/[a-zA-Z0-9+.-]+;base64,[a-zA-Z0-9+/=]+/g;
+          const dataUrls = block.output.match(dataUrlRegex);
+          if (dataUrls) {
+            let textOutput = block.output;
+            for (const url of dataUrls) {
+              textOutput = textOutput.replace(url, '[Image omitted from text]');
+            }
+            
+            const contentArray = [];
+            if (textOutput.trim()) {
+              contentArray.push({ type: 'text', text: `[Output:\n${textOutput}]` });
+            } else {
+              contentArray.push({ type: 'text', text: `[Output: <image>]` });
+            }
+            
+            for (const url of dataUrls) {
+              contentArray.push({ type: 'image_url', image_url: { url } });
+            }
+            messages.push({ role: 'user', content: contentArray });
+          } else {
+            messages.push({ role: 'user', content: `[Output: ${block.output}]` });
+          }
+        } else {
+          messages.push({ role: 'user', content: '[Done]' });
+        }
       }
     }
   }
@@ -218,18 +235,15 @@ export function buildChatMessages(systemPrompt, runs) {
  * @param {(fn: (panel: { runs: { prompt: string, output: unknown[], done?: boolean }[] }) => void) => void} options.mutatePanel
  * @param {() => { apiUrl: string, model: string, apiKey: string }} options.getConfig
  * @param {HTMLElement} options.element - outermost frame \`ref-view\` (script \`element\` binding via \`with\`)
- * @param {{ readFile: (path: string) => Promise<string>, listEntries?: (path?: string) => Promise<unknown[]> }} options.filesystem
  * @param {AbortSignal} [options.signal]
  */
 export async function runLlmTurns(options) {
-  const { systemPrompt, getRuns, mutatePanel, getConfig, element, filesystem, signal } = options;
-
-  const readDoc = async (filename) => readDocFromFilesystem(filesystem, filename);
+  const { systemPrompt, getRuns, mutatePanel, getConfig, element, signal } = options;
 
   const evalBindings = {
     element,
-    readDoc,
     repo: globalThis.repo,
+    importModule: (path) => import(element.filesystem.getUrlOfFile(path)),
   };
 
   const capturedConsole = createCapturedConsole();
