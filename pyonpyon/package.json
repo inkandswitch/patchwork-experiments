@@ -5,14 +5,18 @@
   "private": true,
   "main": "./dist/index.js",
   "scripts": {
-    "dev": "pushwork watch . --dir src --verbose --script \"pnpm build\"",
+    "dev": "pushwork watch . --dir src --verbose --script \"pnpm run build\"",
     "build": "vite build",
-    "sync": "vite build && pushwork sync"
+    "sync": "pnpm run build && pushwork sync"
   },
   "dependencies": {
     "@automerge/automerge-repo": "2.5.2-alpha.0",
     "@automerge/automerge-repo-react-hooks": "2.5.2-alpha.0",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/state": "^6.6.0",
+    "@codemirror/view": "^6.40.0",
     "@inkandswitch/patchwork-plugins": "0.0.4",
+    "codemirror": "^6.0.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
