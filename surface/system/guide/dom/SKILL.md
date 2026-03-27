@@ -40,6 +40,11 @@ if (shapeElement) {
 If you just added a shape via `element.ref.at(...).change(...)`, it might take a moment to render reactively in the DOM. You may need to wait for the next animation frame or use a short delay before querying:
 
 ```js
+const systemBase = filesystem.getUrlOfFile('');
+function toolUrl(relativePath) {
+  return new URL(relativePath, systemBase).href;
+}
+
 element.ref.at('shapes', 'my_new_shape').change(() => ({
   x: 100, y: 100, toolUrl: toolUrl('text/tool.js'), text: 'Hello'
 }));

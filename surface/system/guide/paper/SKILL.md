@@ -29,9 +29,9 @@ Find all text shapes:
 
 ```js
 const doc = element.ref.value();
-const textShapes = Object.entries(doc.shapes || {})
-  .filter(([, s]) => s.text !== undefined);
-console.log(textShapes);
+const shapes = doc.shapes || {};
+const textKeys = Object.keys(shapes).filter(id => shapes[id].text !== undefined);
+console.log(textKeys);
 ```
 
 ## Resolving tool URLs
@@ -39,7 +39,7 @@ console.log(textShapes);
 Tool modules live under the system tree. Build absolute URLs from the filesystem:
 
 ```js
-const systemBase = element.filesystem.getUrlOfFile('');
+const systemBase = filesystem.getUrlOfFile('');
 
 function toolUrl(relativePath) {
   return new URL(relativePath, systemBase).href;
@@ -63,6 +63,11 @@ type RectangleShape = {
 Create:
 
 ```js
+const systemBase = filesystem.getUrlOfFile('');
+function toolUrl(relativePath) {
+  return new URL(relativePath, systemBase).href;
+}
+
 element.ref.at('shapes', 'rect_1').change(() => ({
   x: 50,
   y: 50,
@@ -99,6 +104,11 @@ type LineShape = {
 Create:
 
 ```js
+const systemBase = filesystem.getUrlOfFile('');
+function toolUrl(relativePath) {
+  return new URL(relativePath, systemBase).href;
+}
+
 const strokeId = `line_${Date.now()}`;
 element.ref.at('shapes', strokeId).change(() => ({
   x: 100,
@@ -115,6 +125,8 @@ element.ref.at('shapes', strokeId).change(() => ({
 Extend a stroke:
 
 ```js
+const strokeId = 'line_1';
+const relX = 42, relY = 10, pressure = 0.6;
 element.ref.at('shapes', strokeId).change((shape) => {
   shape.points.push([relX, relY, pressure]);
 });
@@ -134,6 +146,11 @@ type TextShape = {
 Create:
 
 ```js
+const systemBase = filesystem.getUrlOfFile('');
+function toolUrl(relativePath) {
+  return new URL(relativePath, systemBase).href;
+}
+
 element.ref.at('shapes', 'note_1').change(() => ({
   x: 120,
   y: 40,
@@ -169,6 +186,11 @@ type EmbedShape = {
 Create (with an LLM panel inside):
 
 ```js
+const systemBase = filesystem.getUrlOfFile('');
+function toolUrl(relativePath) {
+  return new URL(relativePath, systemBase).href;
+}
+
 const embedDoc = repo.create({
   config: { apiUrl: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-opus-4.6' },
   runs: [],
@@ -188,6 +210,7 @@ element.ref.at('shapes', 'embed_1').change(() => ({
 Resize or retarget:
 
 ```js
+const newDocUrl = 'automerge:abc123';
 element.ref.at('shapes', 'embed_1').change((shape) => {
   shape.width = 400;
   shape.embedDocUrl = newDocUrl;
