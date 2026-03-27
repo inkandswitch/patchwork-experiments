@@ -259,26 +259,26 @@ export const PyonpyonEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   const drawerShellHeight = drawerInDom && drawerExpanded ? drawerHeight : 0;
 
   return (
-    <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-base-100">
-      <div className="relative min-h-0 flex-1 overflow-hidden">
-        <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full" />
-      </div>
+    <div className="relative h-full min-h-0 flex-1 overflow-hidden bg-base-100">
+      <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full" />
 
       {!drawerInDom && (
-        <div className="sticky bottom-0 z-10 flex shrink-0 items-center justify-center gap-2 border-t border-base-300/50 bg-base-100 py-2 shadow-[0_-2px_12px_rgba(0,0,0,0.06)]">
-          <button type="button" className="btn btn-sm btn-ghost gap-1 shadow-sm" onClick={openDrawer}>
-            <span className="text-base leading-none">▲</span>
-            Workspace
-          </button>
-          <button type="button" className="btn btn-sm btn-ghost shadow-sm" onClick={handleSave}>
-            Save
-          </button>
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center pb-2">
+          <div className="pointer-events-auto flex items-center gap-2">
+            <button type="button" className="btn btn-sm btn-ghost gap-1 shadow-sm" onClick={openDrawer}>
+              <span className="text-base leading-none">▲</span>
+              Workspace
+            </button>
+            <button type="button" className="btn btn-sm btn-ghost shadow-sm" onClick={handleSave}>
+              Save
+            </button>
+          </div>
         </div>
       )}
 
       {drawerInDom && (
         <div
-          className="flex shrink-0 flex-col overflow-hidden border-t border-base-300 bg-base-200 shadow-[0_-4px_24px_rgba(0,0,0,0.08)]"
+          className="absolute inset-x-0 bottom-0 z-20 flex flex-col overflow-hidden border-t border-base-300 bg-base-200 shadow-[0_-4px_24px_rgba(0,0,0,0.08)]"
           style={{
             height: drawerShellHeight,
             transition: dragging ? 'none' : 'height 0.32s cubic-bezier(0.32, 0.72, 0, 1)',
