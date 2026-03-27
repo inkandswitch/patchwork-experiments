@@ -17,7 +17,7 @@ const EMBED_TYPES = [
     defaultHeight: 400,
     createDoc(repo) {
       return repo.create({
-        config: { apiUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' },
+        config: { apiUrl: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-opus-4.6' },
         runs: [],
       });
     },

@@ -34,6 +34,8 @@ function mimeFromExtension(ext: string): string {
 export type Filesystem = {
   readFile(path: string): Promise<string>;
   writeFile(path: string, content: string): Promise<void>;
+  /** Create a folder (and any missing intermediate folders) at the given path. */
+  createFolder(path: string): Promise<void>;
   listFiles(path?: string): Promise<DocLink[]>;
   /** All entries in a folder (files and subfolders). */
   listEntries(path?: string): Promise<DocLink[]>;
@@ -172,6 +174,40 @@ export function createFilesystem(repo: Repo, rootFolderUrl: AutomergeUrl): Files
           url: newHandle.url,
         });
       });
+    },
+
+    async createFolder(path: string): Promise<void> {
+      const parts = splitPath(path);
+      if (!parts.length) throw new Error("createFolder: path must not be empty");
+
+      let current = await rootFolder();
+      for (const segment of parts) {
+        const doc = current.doc();
+        const existing = doc.docs?.find((d) => d.name === segment);
+        if (existing) {
+          const handle = await repo.find(existing.url as AutomergeUrl);
+          if (typeof handle.whenReady === "function") await handle.whenReady();
+          const childDoc = handle.doc();
+          if (!isFolderDoc(childDoc)) {
+            throw new Error(`createFolder: ${segment} exists but is not a directory`);
+          }
+          current = handle as unknown as DocHandle<FolderDoc>;
+        } else {
+          const newFolder = repo.create() as DocHandle<FolderDoc>;
+          newFolder.change((d) => {
+            (d as FolderDoc).docs = [];
+          });
+          current.change((folder) => {
+            if (!folder.docs) folder.docs = [];
+            folder.docs.push({
+              name: segment,
+              type: "folder",
+              url: newFolder.url,
+            } as DocLink);
+          });
+          current = newFolder;
+        }
+      }
     },
 
     async listFiles(path = ""): Promise<DocLink[]> {

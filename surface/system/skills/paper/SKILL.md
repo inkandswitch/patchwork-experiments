@@ -7,6 +7,33 @@ description: Create and manipulate shapes on the canvas—rectangles, lines, tex
 
 Every visible object on the canvas is an entry in the `shapes` map on the frame ref. To create one, write a shape record under a unique id with at least `x`, `y`, and `toolUrl`. The `toolUrl` tells the host which module renders that shape.
 
+## Reading shapes
+
+Get a snapshot of all shapes:
+
+```js
+const doc = element.ref.value();
+const shapes = doc.shapes || {};
+console.log(Object.keys(shapes));
+```
+
+Read a specific shape:
+
+```js
+const doc = element.ref.value();
+const shape = doc.shapes?.['rect_1'];
+console.log(shape);
+```
+
+Find all text shapes:
+
+```js
+const doc = element.ref.value();
+const textShapes = Object.entries(doc.shapes || {})
+  .filter(([, s]) => s.text !== undefined);
+console.log(textShapes);
+```
+
 ## Resolving tool URLs
 
 Tool modules live under the system tree. Build absolute URLs from the filesystem:
@@ -143,7 +170,7 @@ Create (with an LLM panel inside):
 
 ```js
 const embedDoc = repo.create({
-  config: { apiUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' },
+  config: { apiUrl: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-opus-4.6' },
   runs: [],
 });
 

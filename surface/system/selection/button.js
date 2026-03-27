@@ -63,7 +63,13 @@ export default function mount(element) {
   function onPointerDown(event) {
     if (!isSelectionToolActive()) return;
 
-    const shapeId = shapeIdFromEvent(event, canvas);
+    let shapeId = shapeIdFromEvent(event, canvas);
+    if (!shapeId) {
+      shapeId = probeNearbyShapes(event, canvas);
+    }
+    if (!shapeId) {
+      shapeId = findNearbyLine(event, canvas);
+    }
     if (!shapeId) {
       selectedShapesRef.change(() => ({}));
       return;
@@ -98,8 +104,15 @@ export default function mount(element) {
 
   function onKeyDown(event) {
     if (!isSelectionToolActive()) return;
-    if (event.key !== 'Backspace' && event.key !== 'Delete') return;
     if (isFocusedTextEditingTarget()) return;
+
+    if (event.metaKey && event.key === 'd') {
+      event.preventDefault();
+      duplicateSelection();
+      return;
+    }
+
+    if (event.key !== 'Backspace' && event.key !== 'Delete') return;
     const selected = selectedShapesRef.value();
     const ids = Object.keys(selected).filter((shapeId) => {
       const shapeEntry = canvas.ref.at('shapes', shapeId).value();
@@ -113,6 +126,29 @@ export default function mount(element) {
       }
     });
     selectedShapesRef.change(() => ({}));
+  }
+
+  function duplicateSelection() {
+    const selected = selectedShapesRef.value();
+    const ids = Object.keys(selected).filter((id) => selected[id]);
+    if (!ids.length) return;
+
+    const newSelection = {};
+    for (const id of ids) {
+      const shape = canvas.ref.at('shapes', id).value();
+      if (!shape || shape.isLocked) continue;
+      const newId = `dup_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const clone = structuredClone(shape);
+      if (typeof clone.width === 'number' && typeof clone.height === 'number') {
+        clone.x += clone.width;
+      } else {
+        clone.x += 10;
+        clone.y += 10;
+      }
+      canvas.ref.at('shapes', newId).change(() => clone);
+      newSelection[newId] = true;
+    }
+    selectedShapesRef.change(() => newSelection);
   }
 
   canvas.addEventListener('pointerdown', onPointerDown);
@@ -161,6 +197,67 @@ function shapeIdFromEvent(event, canvas) {
   if (!refUrl) return null;
   const parts = refUrl.split('/');
   return parts[parts.length - 1];
+}
+
+const PROBE_OFFSETS = [
+  [6, 0], [-6, 0], [0, 6], [0, -6],
+  [6, 6], [-6, -6], [6, -6], [-6, 6],
+  [10, 0], [-10, 0], [0, 10], [0, -10],
+];
+
+function probeNearbyShapes(event, canvas) {
+  for (const [dx, dy] of PROBE_OFFSETS) {
+    const el = document.elementFromPoint(event.clientX + dx, event.clientY + dy);
+    if (!el) continue;
+    const refView = el.closest('ref-view');
+    if (!refView || refView === canvas) continue;
+    const refUrl = refView.getAttribute('ref-url');
+    if (!refUrl) continue;
+    const parts = refUrl.split('/');
+    return parts[parts.length - 1];
+  }
+  return null;
+}
+
+function findNearbyLine(event, canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const cursorX = event.clientX - rect.left;
+  const cursorY = event.clientY - rect.top;
+  const shapes = canvas.ref.at('shapes').value();
+  const threshold = 10;
+
+  let closestId = null;
+  let closestDist = threshold;
+
+  for (const [id, shape] of Object.entries(shapes)) {
+    if (!shape.points || shape.points.length < 2) continue;
+    if (shape.isLocked) continue;
+
+    for (let i = 0; i < shape.points.length - 1; i++) {
+      const segStartX = shape.x + shape.points[i][0];
+      const segStartY = shape.y + shape.points[i][1];
+      const segEndX = shape.x + shape.points[i + 1][0];
+      const segEndY = shape.y + shape.points[i + 1][1];
+      const dist = distanceToSegment(cursorX, cursorY, segStartX, segStartY, segEndX, segEndY);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestId = id;
+      }
+    }
+  }
+
+  return closestId;
+}
+
+function distanceToSegment(px, py, ax, ay, bx, by) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared === 0) return Math.hypot(px - ax, py - ay);
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lengthSquared));
+  const projX = ax + t * dx;
+  const projY = ay + t * dy;
+  return Math.hypot(px - projX, py - projY);
 }
 
 function isFocusedTextEditingTarget() {

@@ -30,7 +30,7 @@ export const schema = {
     return {
       config: {
         apiUrl: 'https://openrouter.ai/api/v1',
-        model: 'openai/gpt-4o-mini',
+        model: 'anthropic/claude-opus-4.6',
       },
       runs: [],
     };
@@ -41,7 +41,7 @@ export const schema = {
     return LlmContentSchema.parse({
       config: {
         apiUrl: typeof v.config?.apiUrl === 'string' ? v.config.apiUrl : 'https://openrouter.ai/api/v1',
-        model: typeof v.config?.model === 'string' ? v.config.model : 'openai/gpt-4o-mini',
+        model: typeof v.config?.model === 'string' ? v.config.model : 'anthropic/claude-opus-4.6',
       },
       runs: Array.isArray(v.runs) ? v.runs : [],
     });
