@@ -1,14 +1,8 @@
 import { AutomergeUrl } from '@automerge/automerge-repo';
-import { useDocument, useDocHandle } from '@automerge/automerge-repo-react-hooks';
-import { automergeSyncPlugin } from '@automerge/automerge-codemirror';
-import { EditorState } from '@codemirror/state';
-import { EditorView, keymap, lineWrapping, drawSelection, highlightActiveLine } from '@codemirror/view';
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
-import { languages } from '@codemirror/language-data';
+import { useDocument } from '@automerge/automerge-repo-react-hooks';
 import { Marked } from 'marked';
 import { Eye, Pencil, Plus, X } from 'lucide-react';
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { toolify } from './react-util';
 import { NoteDoc } from './types';
 import './styles.css';
@@ -25,47 +19,8 @@ function formatDate(iso: string): string {
 
 const NoteEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   const [doc, changeDoc] = useDocument<NoteDoc>(docUrl, { suspense: true });
-  const handle = useDocHandle<NoteDoc>(docUrl, { suspense: true });
   const [mode, setMode] = useState<'edit' | 'preview'>('edit');
   const [tagInput, setTagInput] = useState('');
-  const editorContainerRef = useRef<HTMLDivElement>(null);
-  const editorViewRef = useRef<EditorView | null>(null);
-
-  // Set up CodeMirror
-  useEffect(() => {
-    if (mode !== 'edit' || !editorContainerRef.current || !handle) return;
-
-    const state = EditorState.create({
-      doc: handle.doc()?.body ?? '',
-      extensions: [
-        highlightActiveLine(),
-        drawSelection(),
-        history(),
-        keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
-        markdown({ base: markdownLanguage, codeLanguages: languages }),
-        automergeSyncPlugin({ handle: handle as any, path: ['body'] }),
-        lineWrapping,
-        EditorView.theme({
-          '&': { height: '100%', fontSize: '15px' },
-          '.cm-scroller': { overflow: 'auto', fontFamily: 'inherit' },
-          '.cm-content': { padding: '8px 0' },
-          '&.cm-focused': { outline: 'none' },
-        }),
-      ],
-    });
-
-    const view = new EditorView({
-      state,
-      parent: editorContainerRef.current,
-    });
-
-    editorViewRef.current = view;
-
-    return () => {
-      view.destroy();
-      editorViewRef.current = null;
-    };
-  }, [mode, handle]);
 
   const addTag = useCallback(() => {
     const tag = tagInput.trim();
@@ -142,7 +97,12 @@ const NoteEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
 
       <div className="notes-body">
         {mode === 'edit' ? (
-          <div className="notes-cm-container" ref={editorContainerRef} />
+          <textarea
+            className="notes-textarea"
+            value={doc.body}
+            onChange={(e) => changeDoc((d) => { d.body = e.target.value; })}
+            placeholder="Write something..."
+          />
         ) : (
           <div
             className="markdown-body"
