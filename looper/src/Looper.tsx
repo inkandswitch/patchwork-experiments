@@ -815,48 +815,63 @@ function renderLayers() {
 
   function renderLayer(layer: LayerNoSamples, addlInfo: AddlLayerInfo, isRecording = false) {
     const alpha = layer.muted ? 0.25 : 1;
-
-    // draw samples
     const rgb = isRecording ? '220, 90, 70' : layer.soloed ? '50, 75, 117' : '100, 149, 237';
-    const sampleColor = `rgba(${rgb}, ${alpha})`;
-    ctx.strokeStyle = sampleColor;
-    ctx.lineWidth = NUM_FRAMES_PER_CHUNK * pixelsPerFrame;
-    let y = top;
+    const chunkW = NUM_FRAMES_PER_CHUNK * pixelsPerFrame;
+    const nChunks = addlInfo.maxAmplitudesInChunks.length;
+    const peakMax = Math.max(addlInfo.maxAmplitudeInLayer, 1e-9);
+    const bandHalf = layerHeightInPixels * 0.46;
+
     let x = x0 + ((layer.frameOffset + loopLen) % loopLen) * pixelsPerFrame;
-    for (let chunkIdx = 0; chunkIdx < addlInfo.maxAmplitudesInChunks.length; chunkIdx++) {
+    const rows: { cx: number; raw: number }[][] = [];
+    let current: { cx: number; raw: number }[] = [];
+
+    for (let chunkIdx = 0; chunkIdx < nChunks; chunkIdx++) {
       if (x >= x1) {
+        if (current.length > 0) {
+          rows.push(current);
+        }
+        current = [];
         x = x0;
-        y += layerHeightInPixels;
       }
-      const amplitude =
-        (((addlInfo.maxAmplitudesInChunks[
-          layer.backwards ? addlInfo.maxAmplitudesInChunks.length - chunkIdx - 1 : chunkIdx
-        ] /
-          addlInfo.maxAmplitudeInLayer) *
-          layerHeightInPixels) /
-          2) *
-        layer.gain;
-      ctx.beginPath();
-      ctx.moveTo(x, y - amplitude / 2);
-      ctx.lineTo(x, y + amplitude / 2);
-      ctx.stroke();
-      x += NUM_FRAMES_PER_CHUNK * pixelsPerFrame;
+      const raw =
+        addlInfo.maxAmplitudesInChunks[layer.backwards ? nChunks - 1 - chunkIdx : chunkIdx];
+      current.push({ cx: x + chunkW / 2, raw });
+      x += chunkW;
+    }
+    if (current.length > 0) {
+      rows.push(current);
     }
 
+    for (let r = 0; r < rows.length; r++) {
+      const pts = rows[r];
+      const centerY = top + r * layerHeightInPixels;
+      renderWaveform(
+        pts.map((p) => p.cx),
+        pts.map((p) => p.raw),
+        peakMax,
+        centerY,
+        bandHalf,
+        chunkW,
+        rgb,
+        alpha,
+        layer.gain,
+      );
+    }
+
+    const lastCenterY = rows.length > 0 ? top + (rows.length - 1) * layerHeightInPixels : top;
     const centerX = GAIN_NUBBIN_SPACING / 2;
-    const centerY = (top + y) / 2;
+    const gainNubbinCenterY = rows.length > 0 ? (top + lastCenterY) / 2 : top;
 
-    addlInfo.gainNubbinCenterPosition = { x: centerX, y: centerY };
+    addlInfo.gainNubbinCenterPosition = { x: centerX, y: gainNubbinCenterY };
     addlInfo.topY = top - layerHeightInPixels / 2;
-    addlInfo.bottomY = y + layerHeightInPixels / 2;
+    addlInfo.bottomY = lastCenterY + layerHeightInPixels / 2;
 
-    // draw gain nubbin
     ctx.fillStyle = `rgba(${rgb}, ${alpha / 4})`;
     ctx.beginPath();
-    ctx.arc(centerX, centerY, layer.gain * unitGainNubbinRadius, 0, 2 * Math.PI);
+    ctx.arc(centerX, gainNubbinCenterY, layer.gain * unitGainNubbinRadius, 0, 2 * Math.PI);
     ctx.fill();
 
-    top = y + layerHeightInPixels * 1.15;
+    top = lastCenterY + layerHeightInPixels * 1.15;
   }
 
   for (const layer of state.layers) {
@@ -878,7 +893,7 @@ function renderLayers() {
     }
     const addlInfo: AddlLayerInfo = {
       maxAmplitudesInChunks,
-      maxAmplitudeInLayer: Math.max(...maxAmplitudesInChunks),
+      maxAmplitudeInLayer: Math.max(1e-9, ...maxAmplitudesInChunks),
       gainNubbinCenterPosition: { x: 0, y: 0 },
       topY: 0,
       bottomY: 0,
@@ -894,6 +909,112 @@ function renderLayers() {
   ctx.moveTo(playheadX, layerHeightInPixels);
   ctx.lineTo(playheadX, top);
   ctx.stroke();
+}
+
+function renderWaveform(
+  centersX: number[],
+  rawPeaks: number[],
+  peakMax: number,
+  centerY: number,
+  bandHalfMax: number,
+  chunkWidthPx: number,
+  rgb: string,
+  alpha: number,
+  gain: number,
+) {
+  const n = centersX.length;
+  if (n === 0) {
+    return;
+  }
+
+  const pm = Math.max(peakMax, 1e-9);
+  const heights = smoothPeaksBox(
+    rawPeaks.map((v) => (v / pm) * gain * bandHalfMax),
+    3,
+    2,
+  ).map((h) => clamp(h, 0, bandHalfMax));
+
+  const topY = (i: number) => centerY - heights[i];
+  const botY = (i: number) => centerY + heights[i];
+
+  if (n === 1) {
+    const w = Math.max(3, chunkWidthPx * 0.9);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(centersX[0], topY(0));
+    ctx.lineTo(centersX[0], botY(0));
+    ctx.strokeStyle = `rgba(${rgb}, ${alpha * 0.42})`;
+    ctx.lineWidth = w;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(centersX[0], topY(0));
+    ctx.lineTo(centersX[0], botY(0));
+    ctx.strokeStyle = `rgba(${rgb}, ${alpha * 0.95})`;
+    ctx.lineWidth = 1.35;
+    ctx.stroke();
+    return;
+  }
+
+  ctx.beginPath();
+  ctx.moveTo(centersX[0], centerY + 0.5);
+  ctx.lineTo(centersX[n - 1], centerY + 0.5);
+  ctx.strokeStyle = `rgba(${rgb}, ${alpha * 0.1})`;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(centersX[0], centerY);
+  ctx.lineTo(centersX[0], topY(0));
+  for (let i = 0; i < n - 1; i++) {
+    const mx = (centersX[i] + centersX[i + 1]) / 2;
+    const my = (topY(i) + topY(i + 1)) / 2;
+    ctx.quadraticCurveTo(centersX[i], topY(i), mx, my);
+  }
+  ctx.quadraticCurveTo(centersX[n - 1], topY(n - 1), centersX[n - 1], topY(n - 1));
+  ctx.lineTo(centersX[n - 1], centerY);
+  ctx.lineTo(centersX[n - 1], botY(n - 1));
+  for (let i = n - 1; i > 0; i--) {
+    const mx = (centersX[i] + centersX[i - 1]) / 2;
+    const my = (botY(i) + botY(i - 1)) / 2;
+    ctx.quadraticCurveTo(centersX[i], botY(i), mx, my);
+  }
+  ctx.quadraticCurveTo(centersX[0], botY(0), centersX[0], botY(0));
+  ctx.lineTo(centersX[0], centerY);
+  ctx.closePath();
+
+  ctx.fillStyle = `rgba(${rgb}, ${alpha * 0.36})`;
+  ctx.fill();
+  ctx.strokeStyle = `rgba(${rgb}, ${alpha * 0.9})`;
+  ctx.lineWidth = 1.2;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.stroke();
+}
+
+/** box blur for chunk peak envelopes. */
+function smoothPeaksBox(peaks: number[], radius: number, passes: number): number[] {
+  if (peaks.length === 0) {
+    return peaks;
+  }
+  let a = peaks.slice();
+  const n = a.length;
+  for (let p = 0; p < passes; p++) {
+    const next = new Array<number>(n);
+    for (let i = 0; i < n; i++) {
+      let sum = 0;
+      let c = 0;
+      for (let d = -radius; d <= radius; d++) {
+        const j = i + d;
+        if (j >= 0 && j < n) {
+          sum += a[j];
+          c++;
+        }
+      }
+      next[i] = sum / c;
+    }
+    a = next;
+  }
+  return a;
 }
 
 function renderMasterGainSlider() {
