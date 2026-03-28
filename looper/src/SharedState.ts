@@ -9,7 +9,13 @@ const RECORDING_FRAME_OFFSET = 5;
 
 export default class SharedState {
   static new() {
-    return new SharedState(new Float32Array<any>(new SharedArrayBuffer(128 * 4)));
+    const s = new SharedState(new Float32Array<any>(new SharedArrayBuffer(128 * 4)));
+    s.masterGain = 1;
+    s.channelToRecord = 0;
+    s.latencyOffset = 20;
+    s.playhead = 0;
+    s.recording = false;
+    return s;
   }
 
   static from(state: Float32Array<any>) {

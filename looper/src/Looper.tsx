@@ -12,10 +12,17 @@ import {
   writeStoredInputDeviceId,
   type MicConnection,
 } from './audio';
-import { SAMPLE_RATE } from './constants';
+import { NUM_FRAMES_PER_CHUNK, SAMPLE_RATE } from './constants';
 import { toolify } from './react-util';
-import type { LooperDoc, MessageFromWorklet, MessageToWorklet } from './types';
-import { uint8ToSharedArrayBuffer } from './helpers';
+import type {
+  Layer,
+  LayerNoSamples,
+  LooperDoc,
+  MessageFromWorklet,
+  MessageToWorklet,
+  Position,
+} from './types';
+import { getLengthInFrames, uint8ToSharedArrayBuffer } from './helpers';
 import './styles.css';
 
 // @ts-ignore -- not a real error, see https://v3.vitejs.dev/guide/assets.html
@@ -29,7 +36,6 @@ const context = new AudioContext({
 });
 await context.audioWorklet.addModule(workletUrl);
 const looper = new AudioWorkletNode(context, 'looper');
-looper.connect(context.destination);
 
 type InputGatePhase =
   | { kind: 'loading' }
@@ -37,9 +43,9 @@ type InputGatePhase =
   | { kind: 'pick'; devices: MediaDeviceInfo[]; storedId: string | null };
 
 const state = SharedState.new();
-let initialized = false;
 
-function initializeWorklet(handle: DocHandle<LooperDoc>) {
+/** Wire doc ↔ worklet; returns cleanup (removes listener). Caller must disconnect the node to stop audio. */
+function initializeWorklet(handle: DocHandle<LooperDoc>): () => void {
   console.log('### initializeWorklet');
 
   const sendToWorklet = (m: MessageToWorklet) => {
@@ -53,13 +59,10 @@ function initializeWorklet(handle: DocHandle<LooperDoc>) {
         const samples = new Float32Array(msg.samples);
         const layer = msg.layer;
         handle.change((doc) => {
-          doc.layers = [
-            ...(doc.layers ?? []),
-            {
-              ...layer,
-              samples: new Uint8Array(samples.buffer),
-            },
-          ];
+          doc.layers.push({
+            ...layer,
+            samples: new Uint8Array(samples.buffer),
+          });
         });
         break;
       }
@@ -71,8 +74,8 @@ function initializeWorklet(handle: DocHandle<LooperDoc>) {
     }
   };
 
-  handle.on('change', (payload) => {
-    const layers = payload.doc.layers ?? [];
+  function onChange(doc: LooperDoc) {
+    const layers = doc.layers;
 
     state.layers = layers.map(copyWithoutSamples);
     sendToWorklet({
@@ -90,9 +93,12 @@ function initializeWorklet(handle: DocHandle<LooperDoc>) {
         });
       }
     }
-  });
+  }
 
-  const layers = handle.doc().layers ?? [];
+  handle.on('change', (payload) => onChange(payload.doc));
+  onChange(handle.doc());
+
+  const layers = handle.doc().layers;
   sendToWorklet({
     command: 'init',
     state: state._state.buffer,
@@ -102,6 +108,10 @@ function initializeWorklet(handle: DocHandle<LooperDoc>) {
       samples: uint8ToSharedArrayBuffer(layer.samples),
     })),
   });
+
+  return () => {
+    handle.off('change', (payload) => onChange(payload.doc));
+  };
 }
 
 export const LooperEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
@@ -152,11 +162,14 @@ export const LooperEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   }, [docUrl, refreshDevices]);
 
   useEffect(() => {
-    if (!initialized) {
-      initialized = true;
-      initializeWorklet(handle);
-    }
-  }, [docUrl]);
+    looper.connect(context.destination);
+    const stopDocSync = initializeWorklet(handle);
+    return () => {
+      stopDocSync();
+      looper.port.onmessage = null;
+      looper.disconnect();
+    };
+  }, [handle]);
 
   const connectWithDeviceId = useCallback(
     async (deviceId: string) => {
@@ -187,6 +200,39 @@ export const LooperEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     },
     [refreshDevices],
   );
+
+  /** Canvas is not focusable by default; keyboard events only fire after focus (Tab or click). */
+  const onCanvasKeyDown = useCallback((e: React.KeyboardEvent<HTMLCanvasElement>) => {
+    if (e.repeat) {
+      return;
+    }
+
+    switch (e.key) {
+      case ' ':
+        state.recording = true;
+        break;
+    }
+  }, []);
+
+  const onCanvasKeyUp = useCallback((e: React.KeyboardEvent<HTMLCanvasElement>) => {
+    if (e.repeat) {
+      return;
+    }
+
+    switch (e.key) {
+      case ' ':
+        state.recording = false;
+        break;
+    }
+  }, []);
+
+  const onCanvasPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    // Optional: e.currentTarget.setPointerCapture(e.pointerId) so move/up fire even if pointer leaves canvas
+  }, []);
+
+  const onCanvasPointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {}, []);
+
+  const onCanvasPointerUp = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {}, []);
 
   useEffect(() => {
     return () => {
@@ -222,17 +268,31 @@ export const LooperEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
       render(ctx, title, width, height);
     };
 
-    draw();
-    const ro = new ResizeObserver(draw);
-    ro.observe(canvas);
-    return () => ro.disconnect();
+    let rafId = 0;
+    const loop = () => {
+      draw();
+      rafId = requestAnimationFrame(loop);
+    };
+    rafId = requestAnimationFrame(loop);
+
+    return () => cancelAnimationFrame(rafId);
   }, [title]);
 
   const showInputOverlay = !audioReady;
 
   return (
     <div className="relative h-full min-h-0 flex-1 overflow-hidden bg-base-100">
-      <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full" />
+      <canvas
+        ref={canvasRef}
+        tabIndex={0}
+        aria-label="Looper"
+        className="absolute inset-0 block h-full w-full touch-none outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-base-100"
+        onKeyDown={onCanvasKeyDown}
+        onKeyUp={onCanvasKeyUp}
+        onPointerDown={onCanvasPointerDown}
+        onPointerMove={onCanvasPointerMove}
+        onPointerUp={onCanvasPointerUp}
+      />
 
       {showInputOverlay ? (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-base-100/85 p-4 backdrop-blur-md">
@@ -384,12 +444,172 @@ export const LooperEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   );
 };
 
-function render(ctx: CanvasRenderingContext2D, title: string, width: number, height: number) {
-  ctx.fillStyle = '#000000';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.font = '16px system-ui, sans-serif';
-  ctx.fillText(title, width / 2, height / 2);
+// --- UI-related info for each layer ---
+interface AddlLayerInfo {
+  maxAmplitudesInChunks: number[];
+  maxAmplitudeInLayer: number;
+  gainNubbinCenterPosition: Position;
+  topY: number;
+  bottomY: number;
 }
+
+const addlLayerInfoById = new Map<number, AddlLayerInfo>();
+
+function getAddlInfo(layer: LayerNoSamples) {
+  let addlInfo = addlLayerInfoById.get(layer.id);
+  if (addlInfo) {
+    return addlInfo;
+  }
+
+  const samples = state.samplesByLayerId.get(layer.id);
+  if (!samples) {
+    return null;
+  }
+
+  const maxAmplitudesInChunks: number[] = [];
+  let maxAmplitudeInLayer = 0;
+  let sampleIdx = 0;
+  while (sampleIdx < samples.length) {
+    let maxAmplitudeInChunk = 0;
+    for (let f = 0; f < NUM_FRAMES_PER_CHUNK; f++) {
+      for (let c = 0; c < layer.numChannels; c++) {
+        if (sampleIdx > samples.length) {
+          throw new Error('uh-oh: not enough samples in layer w/ id ' + layer.id);
+        }
+        maxAmplitudeInChunk = Math.max(maxAmplitudeInChunk, Math.abs(samples[sampleIdx++]));
+      }
+    }
+    maxAmplitudesInChunks.push(maxAmplitudeInChunk);
+    maxAmplitudeInLayer = Math.max(maxAmplitudeInLayer, maxAmplitudeInChunk);
+  }
+
+  addlInfo = {
+    maxAmplitudesInChunks,
+    maxAmplitudeInLayer,
+    gainNubbinCenterPosition: { x: 0, y: 0 },
+    topY: 0,
+    bottomY: 0,
+  };
+  addlLayerInfoById.set(layer.id, addlInfo);
+  return addlInfo;
+}
+
+// --- rendering ---
+
+const GAIN_NUBBIN_SPACING = 100;
+const LAYER_HEIGHT_IN_PIXELS = 30;
+const MASTER_GAIN_SLIDER_WIDTH = 10;
+
+let lengthInFrames: number | null = null;
+let pixelsPerFrame = 1;
+let layerHeightInPixels = 32;
+let unitGainNubbinRadius = layerHeightInPixels / 2;
+
+function render(ctx: CanvasRenderingContext2D, title: string, width: number, height: number) {
+  // TODO: calculate this based on the layers: how many are there? how tall is each?
+  layerHeightInPixels = LAYER_HEIGHT_IN_PIXELS;
+  unitGainNubbinRadius = Math.ceil(layerHeightInPixels / 2);
+  lengthInFrames = getLengthInFrames(state.layers);
+  if (lengthInFrames !== null) {
+    pixelsPerFrame = (width - 2 * GAIN_NUBBIN_SPACING) / lengthInFrames;
+  }
+
+  renderLayers();
+  renderMasterGainSlider();
+  // renderLogs();
+  // renderStatus();
+
+  function renderLayers() {
+    if (lengthInFrames === null) {
+      return;
+    }
+
+    let top = LAYER_HEIGHT_IN_PIXELS;
+    const x0 = GAIN_NUBBIN_SPACING;
+    const x1 = x0 + lengthInFrames * pixelsPerFrame;
+    for (const layer of state.layers) {
+      const addlInfo = getAddlInfo(layer);
+      if (!addlInfo) {
+        continue;
+      }
+
+      const alpha = layer.muted ? 0.25 : 1;
+
+      // draw samples
+      const rgb = layer.soloed ? `50, 75, 117` : `100, 149, 237`;
+      const sampleColor = `rgba(${rgb}, ${alpha})`;
+      ctx.strokeStyle = sampleColor;
+      ctx.lineWidth = NUM_FRAMES_PER_CHUNK * pixelsPerFrame;
+      let y = top;
+      let x = x0 + ((layer.frameOffset + lengthInFrames) % lengthInFrames) * pixelsPerFrame;
+      for (let chunkIdx = 0; chunkIdx < addlInfo.maxAmplitudesInChunks.length; chunkIdx++) {
+        if (x >= x1) {
+          x = x0;
+          y += layerHeightInPixels;
+        }
+        const amplitude =
+          (((addlInfo.maxAmplitudesInChunks[
+            layer.backwards ? addlInfo.maxAmplitudesInChunks.length - chunkIdx - 1 : chunkIdx
+          ] /
+            addlInfo.maxAmplitudeInLayer) *
+            layerHeightInPixels) /
+            2) *
+          layer.gain;
+        ctx.beginPath();
+        ctx.moveTo(x, y - amplitude / 2);
+        ctx.lineTo(x, y + amplitude / 2);
+        ctx.stroke();
+        x += NUM_FRAMES_PER_CHUNK * pixelsPerFrame;
+      }
+
+      const centerX = GAIN_NUBBIN_SPACING / 2;
+      const centerY = (top + y) / 2;
+
+      addlInfo.gainNubbinCenterPosition = { x: centerX, y: centerY };
+      addlInfo.topY = top - layerHeightInPixels / 2;
+      addlInfo.bottomY = y + layerHeightInPixels / 2;
+
+      // draw gain nubbin
+      ctx.fillStyle = `rgba(${rgb}, ${alpha / 4})`;
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, layer.gain * unitGainNubbinRadius, 0, 2 * Math.PI);
+      ctx.fill();
+
+      top = y + layerHeightInPixels * 1.15;
+    }
+
+    // draw playhead
+    const playheadX = GAIN_NUBBIN_SPACING + state.playhead * pixelsPerFrame;
+    ctx.strokeStyle = '#999';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(playheadX, layerHeightInPixels);
+    ctx.lineTo(playheadX, top);
+    ctx.stroke();
+  }
+
+  function renderMasterGainSlider() {
+    const h = state.masterGain * height;
+    ctx.fillStyle = 'rgba(100, 149, 237, .25)';
+    ctx.fillRect(width - MASTER_GAIN_SLIDER_WIDTH, height - h, MASTER_GAIN_SLIDER_WIDTH, h);
+    ctx.fill();
+  }
+}
+
+// function displayRecordingHelp() {
+//   clearLogs();
+//   if (recording) {
+//     log({ color: 'cornflowerblue', text: 'SPACE' }, ' to ', { color: '#888', text: '■' });
+//   } else {
+//     log(
+//       { color: 'cornflowerblue', text: 'SPACE' },
+//       ' to ',
+//       { color: 'red', text: '●' },
+//       ` channel ${channelToRecord}`,
+//     );
+//   }
+
+//   log({ color: 'cornflowerblue', text: 'H' }, ' for help');
+// }
 
 export const renderLooperEditor = toolify(LooperEditor);

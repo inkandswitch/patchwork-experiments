@@ -31,11 +31,9 @@ class Looper extends AudioWorkletProcessor implements AudioWorkletProcessorImpl 
         this.init(msg.state, msg.layers, msg.layerSamples);
         break;
       case 'update layers':
-        console.log('update layers');
         this.layers = msg.layers;
         break;
       case 'set layer samples':
-        console.log('set layer samples');
         this.samplesByLayerId.set(msg.id, new Float32Array(msg.samples));
         break;
       default:
