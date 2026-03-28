@@ -1,5 +1,9 @@
 import type { Layer, LayerNoSamples } from './types';
 
+export function clamp(v: number, min: number, max: number) {
+  return Math.max(min, Math.min(v, max));
+}
+
 export function getLengthInFrames(layers: LayerNoSamples[]) {
   if (layers.length === 0) {
     return null;

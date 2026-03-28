@@ -15,14 +15,13 @@ import {
 import { NUM_FRAMES_PER_CHUNK, SAMPLE_RATE } from './constants';
 import { toolify } from './react-util';
 import type {
-  Layer,
   LayerNoSamples,
   LooperDoc,
   MessageFromWorklet,
   MessageToWorklet,
   Position,
 } from './types';
-import { getLengthInFrames, uint8ToSharedArrayBuffer } from './helpers';
+import { clamp, getLengthInFrames, uint8ToSharedArrayBuffer } from './helpers';
 import './styles.css';
 
 // @ts-ignore -- not a real error, see https://v3.vitejs.dev/guide/assets.html
@@ -44,6 +43,9 @@ type InputGatePhase =
 
 const state = SharedState.new();
 let docHandle: DocHandle<LooperDoc> | null = null;
+let ctx: CanvasRenderingContext2D;
+let canvasWidth = 0;
+let canvasHeight = 0;
 
 /** Wire doc ↔ worklet; returns cleanup (removes listener). Caller must disconnect the node to stop audio. */
 function initializeWorklet(handle: DocHandle<LooperDoc>): () => void {
@@ -281,7 +283,7 @@ export const LooperEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   }, []);
 
   const onCanvasPointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
-    onPointerMove(e.clientX, e.clientY);
+    onPointerMove(e.nativeEvent.offsetX, e.nativeEvent.offsetY);
   }, []);
 
   const onCanvasPointerUp = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -305,8 +307,10 @@ export const LooperEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const _ctx = canvas.getContext('2d')!;
+    if (!_ctx) return;
+
+    ctx = _ctx;
 
     const draw = () => {
       const dpr = window.devicePixelRatio ?? 1;
@@ -319,7 +323,9 @@ export const LooperEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, width, height);
-      render(ctx, title, width, height);
+      canvasWidth = width;
+      canvasHeight = height;
+      render();
     };
 
     let rafId = 0;
@@ -572,7 +578,7 @@ function onControl(control: 'down' | 'up') {
     return;
   }
 
-  if (pointerPos.x >= innerWidth - MASTER_GAIN_SLIDER_WIDTH) {
+  if (pointerPos.x >= canvasWidth - MASTER_GAIN_SLIDER_WIDTH) {
     changingMasterGain = true;
     setMasterGain();
     return;
@@ -658,18 +664,15 @@ function onPointerMove(x: number, y: number) {
 }
 
 function movePlayhead() {
-  const frameIdx = Math.max(
+  state.playhead = clamp(
+    Math.round((pointerPos.x - GAIN_NUBBIN_SPACING) / pixelsPerFrame),
     0,
-    Math.min(
-      Math.round((pointerPos.x - GAIN_NUBBIN_SPACING) / pixelsPerFrame),
-      lengthInFrames! - 1,
-    ),
+    lengthInFrames! - 1,
   );
-  state.playhead = frameIdx;
 }
 
 function setMasterGain() {
-  state.masterGain = (innerHeight - pointerPos.y) / innerHeight;
+  state.masterGain = (canvasHeight - pointerPos.y) / canvasHeight;
 }
 
 function layerAtPointer() {
@@ -747,121 +750,126 @@ let pixelsPerFrame = 1;
 let layerHeightInPixels = 32;
 let unitGainNubbinRadius = layerHeightInPixels / 2;
 
-function render(ctx: CanvasRenderingContext2D, title: string, width: number, height: number) {
+function render() {
   // TODO: calculate this based on the layers: how many are there? how tall is each?
   layerHeightInPixels = LAYER_HEIGHT_IN_PIXELS;
   unitGainNubbinRadius = Math.ceil(layerHeightInPixels / 2);
   lengthInFrames = getLengthInFrames(state.layers);
   if (lengthInFrames !== null) {
-    pixelsPerFrame = (width - 2 * GAIN_NUBBIN_SPACING) / lengthInFrames;
+    pixelsPerFrame = (canvasWidth - 2 * GAIN_NUBBIN_SPACING) / lengthInFrames;
   }
 
   renderLayers();
   renderMasterGainSlider();
   renderLogs();
   renderStatus();
+}
 
-  function renderLayers() {
-    if (lengthInFrames === null) {
-      return;
+function renderLayers() {
+  if (lengthInFrames === null) {
+    return;
+  }
+
+  let top = LAYER_HEIGHT_IN_PIXELS;
+  const x0 = GAIN_NUBBIN_SPACING;
+  const x1 = x0 + lengthInFrames * pixelsPerFrame;
+  for (const layer of state.layers) {
+    const addlInfo = getAddlInfo(layer);
+    if (!addlInfo) {
+      continue;
     }
 
-    let top = LAYER_HEIGHT_IN_PIXELS;
-    const x0 = GAIN_NUBBIN_SPACING;
-    const x1 = x0 + lengthInFrames * pixelsPerFrame;
-    for (const layer of state.layers) {
-      const addlInfo = getAddlInfo(layer);
-      if (!addlInfo) {
-        continue;
+    const alpha = layer.muted ? 0.25 : 1;
+
+    // draw samples
+    const rgb = layer.soloed ? `50, 75, 117` : `100, 149, 237`;
+    const sampleColor = `rgba(${rgb}, ${alpha})`;
+    ctx.strokeStyle = sampleColor;
+    ctx.lineWidth = NUM_FRAMES_PER_CHUNK * pixelsPerFrame;
+    let y = top;
+    let x = x0 + ((layer.frameOffset + lengthInFrames) % lengthInFrames) * pixelsPerFrame;
+    for (let chunkIdx = 0; chunkIdx < addlInfo.maxAmplitudesInChunks.length; chunkIdx++) {
+      if (x >= x1) {
+        x = x0;
+        y += layerHeightInPixels;
       }
-
-      const alpha = layer.muted ? 0.25 : 1;
-
-      // draw samples
-      const rgb = layer.soloed ? `50, 75, 117` : `100, 149, 237`;
-      const sampleColor = `rgba(${rgb}, ${alpha})`;
-      ctx.strokeStyle = sampleColor;
-      ctx.lineWidth = NUM_FRAMES_PER_CHUNK * pixelsPerFrame;
-      let y = top;
-      let x = x0 + ((layer.frameOffset + lengthInFrames) % lengthInFrames) * pixelsPerFrame;
-      for (let chunkIdx = 0; chunkIdx < addlInfo.maxAmplitudesInChunks.length; chunkIdx++) {
-        if (x >= x1) {
-          x = x0;
-          y += layerHeightInPixels;
-        }
-        const amplitude =
-          (((addlInfo.maxAmplitudesInChunks[
-            layer.backwards ? addlInfo.maxAmplitudesInChunks.length - chunkIdx - 1 : chunkIdx
-          ] /
-            addlInfo.maxAmplitudeInLayer) *
-            layerHeightInPixels) /
-            2) *
-          layer.gain;
-        ctx.beginPath();
-        ctx.moveTo(x, y - amplitude / 2);
-        ctx.lineTo(x, y + amplitude / 2);
-        ctx.stroke();
-        x += NUM_FRAMES_PER_CHUNK * pixelsPerFrame;
-      }
-
-      const centerX = GAIN_NUBBIN_SPACING / 2;
-      const centerY = (top + y) / 2;
-
-      addlInfo.gainNubbinCenterPosition = { x: centerX, y: centerY };
-      addlInfo.topY = top - layerHeightInPixels / 2;
-      addlInfo.bottomY = y + layerHeightInPixels / 2;
-
-      // draw gain nubbin
-      ctx.fillStyle = `rgba(${rgb}, ${alpha / 4})`;
+      const amplitude =
+        (((addlInfo.maxAmplitudesInChunks[
+          layer.backwards ? addlInfo.maxAmplitudesInChunks.length - chunkIdx - 1 : chunkIdx
+        ] /
+          addlInfo.maxAmplitudeInLayer) *
+          layerHeightInPixels) /
+          2) *
+        layer.gain;
       ctx.beginPath();
-      ctx.arc(centerX, centerY, layer.gain * unitGainNubbinRadius, 0, 2 * Math.PI);
-      ctx.fill();
-
-      top = y + layerHeightInPixels * 1.15;
+      ctx.moveTo(x, y - amplitude / 2);
+      ctx.lineTo(x, y + amplitude / 2);
+      ctx.stroke();
+      x += NUM_FRAMES_PER_CHUNK * pixelsPerFrame;
     }
 
-    // draw playhead
-    const playheadX = GAIN_NUBBIN_SPACING + state.playhead * pixelsPerFrame;
-    ctx.strokeStyle = '#999';
-    ctx.lineWidth = 4;
+    const centerX = GAIN_NUBBIN_SPACING / 2;
+    const centerY = (top + y) / 2;
+
+    addlInfo.gainNubbinCenterPosition = { x: centerX, y: centerY };
+    addlInfo.topY = top - layerHeightInPixels / 2;
+    addlInfo.bottomY = y + layerHeightInPixels / 2;
+
+    // draw gain nubbin
+    ctx.fillStyle = `rgba(${rgb}, ${alpha / 4})`;
     ctx.beginPath();
-    ctx.moveTo(playheadX, layerHeightInPixels);
-    ctx.lineTo(playheadX, top);
-    ctx.stroke();
-  }
-
-  function renderMasterGainSlider() {
-    const h = state.masterGain * height;
-    ctx.fillStyle = 'rgba(100, 149, 237, .25)';
-    ctx.fillRect(width - MASTER_GAIN_SLIDER_WIDTH, height - h, MASTER_GAIN_SLIDER_WIDTH, h);
+    ctx.arc(centerX, centerY, layer.gain * unitGainNubbinRadius, 0, 2 * Math.PI);
     ctx.fill();
+
+    top = y + layerHeightInPixels * 1.15;
   }
 
-  function renderStatus() {
-    ctx.font = '20px Monaco';
-    ctx.fillStyle = statusColor;
-    const statusWidth = ctx.measureText(status).width;
-    ctx.fillText(
-      status,
-      width - LEFT_MARGIN_FOR_TEXT - statusWidth,
-      height - BOTTOM_MARGIN_FOR_TEXT,
-    );
-  }
+  // draw playhead
+  const playheadX = GAIN_NUBBIN_SPACING + state.playhead * pixelsPerFrame;
+  ctx.strokeStyle = '#999';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(playheadX, layerHeightInPixels);
+  ctx.lineTo(playheadX, top);
+  ctx.stroke();
+}
 
-  function renderLogs() {
-    ctx.font = '20px Monaco';
-    let y = height - BOTTOM_MARGIN_FOR_TEXT;
-    const x0 = LEFT_MARGIN_FOR_TEXT;
-    for (const line of logs) {
-      let x = x0;
-      for (const part of line) {
-        const text = typeof part === 'string' ? part : part.text;
-        ctx.fillStyle = typeof part === 'string' ? 'black' : part.color;
-        ctx.fillText(text, x, y);
-        x += ctx.measureText(text).width;
-      }
-      y -= 25;
+function renderMasterGainSlider() {
+  const h = state.masterGain * canvasHeight;
+  ctx.fillStyle = 'rgba(100, 149, 237, .25)';
+  ctx.fillRect(
+    canvasWidth - MASTER_GAIN_SLIDER_WIDTH,
+    canvasHeight - h,
+    MASTER_GAIN_SLIDER_WIDTH,
+    h,
+  );
+  ctx.fill();
+}
+
+function renderStatus() {
+  ctx.font = '20px Monaco';
+  ctx.fillStyle = statusColor;
+  const statusWidth = ctx.measureText(status).width;
+  ctx.fillText(
+    status,
+    canvasWidth - LEFT_MARGIN_FOR_TEXT - statusWidth,
+    canvasHeight - BOTTOM_MARGIN_FOR_TEXT,
+  );
+}
+
+function renderLogs() {
+  ctx.font = '20px Monaco';
+  let y = canvasHeight - BOTTOM_MARGIN_FOR_TEXT;
+  const x0 = LEFT_MARGIN_FOR_TEXT;
+  for (const line of logs) {
+    let x = x0;
+    for (const part of line) {
+      const text = typeof part === 'string' ? part : part.text;
+      ctx.fillStyle = typeof part === 'string' ? 'black' : part.color;
+      ctx.fillText(text, x, y);
+      x += ctx.measureText(text).width;
     }
+    y -= 25;
   }
 }
 
