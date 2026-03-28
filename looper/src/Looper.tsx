@@ -72,7 +72,7 @@ function initializeWorklet(handle: DocHandle<LooperDoc>): () => void {
         break;
       }
       case 'log':
-        console.log(msg.payload);
+        displayStatus(msg.payload);
         break;
       default:
         console.error('unsupported message from worklet', msg);
@@ -102,13 +102,15 @@ function initializeWorklet(handle: DocHandle<LooperDoc>): () => void {
     displayRecordingHelp();
   }
 
-  handle.on('change', (payload) => onChange(payload.doc));
+  const onDocChange = (payload: { doc: LooperDoc }) => onChange(payload.doc);
+  handle.on('change', onDocChange);
   onChange(handle.doc());
 
   const layers = handle.doc().layers;
   sendToWorklet({
     command: 'init',
     state: state._state.buffer,
+    recordingBuffer: state._recordingBuffer.buffer,
     layers: layers.map(copyWithoutSamples),
     layerSamples: layers.map((layer) => ({
       id: layer.id,
@@ -117,7 +119,7 @@ function initializeWorklet(handle: DocHandle<LooperDoc>): () => void {
   });
 
   return () => {
-    handle.off('change', (payload) => onChange(payload.doc));
+    handle.off('change', onDocChange);
   };
 }
 

@@ -31,6 +31,7 @@ export type MessageToWorklet =
   | {
     command: 'init';
     state: SharedArrayBuffer;
+    recordingBuffer: SharedArrayBuffer;
     layers: LayerNoSamples[];
     layerSamples: { id: number; samples: SharedArrayBuffer }[];
   }
@@ -40,7 +41,8 @@ export type MessageToWorklet =
 
 export type MessageFromWorklet =
   | { event: 'finished recording'; layer: LayerNoSamples; samples: SharedArrayBuffer }
-  | { event: 'log'; payload: any };
+  | { event: 'log'; payload: any }
+  ;
 
 export interface InputDeviceInfo {
   id: string;

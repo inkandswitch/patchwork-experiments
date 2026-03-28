@@ -3,8 +3,6 @@ import { getLengthInFrames } from './helpers';
 import SharedState from './SharedState';
 import { LayerNoSamples, MessageFromWorklet, MessageToWorklet } from './types';
 
-const MAX_FRAMES_PER_CHANNEL = 1_000_000 * NUM_FRAMES_PER_CHUNK;
-
 class Looper extends AudioWorkletProcessor implements AudioWorkletProcessorImpl {
   state!: SharedState;
   prevState!: SharedState;
@@ -28,7 +26,7 @@ class Looper extends AudioWorkletProcessor implements AudioWorkletProcessorImpl 
   onMessage(msg: MessageToWorklet) {
     switch (msg.command) {
       case 'init':
-        this.init(msg.state, msg.layers, msg.layerSamples);
+        this.init(msg.state, msg.recordingBuffer, msg.layers, msg.layerSamples);
         break;
       case 'update layers':
         this.layers = msg.layers;
@@ -42,12 +40,12 @@ class Looper extends AudioWorkletProcessor implements AudioWorkletProcessorImpl 
     }
   }
 
-  init(state: SharedArrayBuffer, layers: LayerNoSamples[], layerSamples: { id: number; samples: SharedArrayBuffer }[]) {
+  init(state: SharedArrayBuffer, recordingBuffer: SharedArrayBuffer, layers: LayerNoSamples[], layerSamples: { id: number; samples: SharedArrayBuffer }[]) {
     this.layers = layers;
     for (const { id, samples } of layerSamples) {
       this.samplesByLayerId.set(id, new Float32Array(samples));
     }
-    this.state = SharedState.from(new Float32Array(state));
+    this.state = SharedState.from(new Float32Array(state), new Float32Array(recordingBuffer));
     this.prevState = SharedState.new();
   }
 
@@ -67,7 +65,9 @@ class Looper extends AudioWorkletProcessor implements AudioWorkletProcessorImpl 
       backwards: false,
       gain: 1,
     };
-    this.samplesByLayerId.set(this.recordingLayer.id, new Float32Array(MAX_FRAMES_PER_CHANNEL));
+    this.state._recordingBuffer.fill(0);
+    this.state.numFramesRecorded = 0;
+    this.samplesByLayerId.set(this.recordingLayer.id, this.state._recordingBuffer);
     this.say('started recording');
   }
 
@@ -83,12 +83,12 @@ class Looper extends AudioWorkletProcessor implements AudioWorkletProcessorImpl 
     if (this.layers.length === 0) {
       this.state.playhead = this.state.latencyOffset * NUM_FRAMES_PER_CHUNK;
     }
-    const samples = this.samplesByLayerId
-      .get(this.recordingLayer.id)!
-      .slice(0, this.recordingLayer.numFramesRecorded * this.recordingLayer.numChannels).buffer as any;
-    this.sendMessage({ event: 'finished recording', layer: this.recordingLayer, samples });
+    const samples = this.state._recordingBuffer.slice(0, this.state.numFramesRecorded * this.recordingLayer.numChannels);
+    this.samplesByLayerId.set(this.recordingLayer.id, samples);
+    this.sendMessage({ event: 'finished recording', layer: this.recordingLayer, samples: samples.buffer as any });
     this.layers.push(this.recordingLayer);
     this.recordingLayer = null;
+    this.say('stopped recording');
   }
 
   process(inputs: Float32Array[][], [output]: Float32Array[][], _parameters: any) {
@@ -205,6 +205,7 @@ class Looper extends AudioWorkletProcessor implements AudioWorkletProcessorImpl 
     const samples = this.samplesByLayerId.get(this.recordingLayer.id)!;
     // TODO: let the user record more than one channel if they want to
     samples[sampleIdx++] = input[this.state.channelToRecord][frameIdx];
+    this.state.numFramesRecorded++;
   }
 
   advancePlayhead() {
