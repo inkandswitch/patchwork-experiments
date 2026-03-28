@@ -902,7 +902,8 @@ function renderLayers() {
   }
 
   // draw playhead
-  const playheadX = GAIN_NUBBIN_SPACING + state.playhead * pixelsPerFrame;
+  const playheadX =
+    GAIN_NUBBIN_SPACING + (lengthInFrames === null ? loopLen : state.playhead) * pixelsPerFrame;
   ctx.strokeStyle = '#999';
   ctx.lineWidth = 4;
   ctx.beginPath();
