@@ -67,6 +67,7 @@ class Looper extends AudioWorkletProcessor implements AudioWorkletProcessorImpl 
     };
     this.state._recordingBuffer.fill(0);
     this.state.numFramesRecorded = 0;
+    this.state.recordingFrameOffset = this.recordingLayer.frameOffset;
     this.samplesByLayerId.set(this.recordingLayer.id, this.state._recordingBuffer);
     this.say('started recording');
   }

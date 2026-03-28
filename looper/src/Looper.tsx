@@ -715,19 +715,17 @@ function getAddlInfo(layer: LayerNoSamples) {
 
   const maxAmplitudesInChunks: number[] = [];
   let maxAmplitudeInLayer = 0;
-  let sampleIdx = 0;
-  while (sampleIdx < samples.length) {
-    let maxAmplitudeInChunk = 0;
-    for (let f = 0; f < NUM_FRAMES_PER_CHUNK; f++) {
-      for (let c = 0; c < layer.numChannels; c++) {
-        if (sampleIdx > samples.length) {
-          throw new Error('uh-oh: not enough samples in layer w/ id ' + layer.id);
-        }
-        maxAmplitudeInChunk = Math.max(maxAmplitudeInChunk, Math.abs(samples[sampleIdx++]));
-      }
-    }
+  let frameIdx = 0;
+  while (frameIdx < layer.numFramesRecorded) {
+    const maxAmplitudeInChunk = getMaxAmplitudeInChunk(
+      samples,
+      layer.numChannels,
+      layer.numFramesRecorded,
+      frameIdx,
+    );
     maxAmplitudesInChunks.push(maxAmplitudeInChunk);
     maxAmplitudeInLayer = Math.max(maxAmplitudeInLayer, maxAmplitudeInChunk);
+    frameIdx += NUM_FRAMES_PER_CHUNK;
   }
 
   addlInfo = {
@@ -741,6 +739,28 @@ function getAddlInfo(layer: LayerNoSamples) {
   return addlInfo;
 }
 
+function getMaxAmplitudeInChunk(
+  samples: Float32Array<any>,
+  numChannels: number,
+  numFramesRecorded: number,
+  chunkStartFrameIdx: number,
+) {
+  let maxAmplitude = 0;
+  let frameIdx = chunkStartFrameIdx;
+  let sampleIdx = frameIdx * numChannels;
+  for (let f = 0; f < NUM_FRAMES_PER_CHUNK; f++) {
+    if (frameIdx >= numFramesRecorded) {
+      break;
+    }
+
+    for (let c = 0; c < numChannels; c++) {
+      maxAmplitude = Math.max(maxAmplitude, Math.abs(samples[sampleIdx++]));
+    }
+    frameIdx++;
+  }
+  return maxAmplitude;
+}
+
 // --- rendering ---
 
 const GAIN_NUBBIN_SPACING = 100;
@@ -748,6 +768,8 @@ const LAYER_HEIGHT_IN_PIXELS = 30;
 const MASTER_GAIN_SLIDER_WIDTH = 10;
 
 let lengthInFrames: number | null = null;
+/** Horizontal extent of the loop in frames (grows during first-layer recording). */
+let timelineFrames: number | null = null;
 let pixelsPerFrame = 1;
 let layerHeightInPixels = 32;
 let unitGainNubbinRadius = layerHeightInPixels / 2;
@@ -757,8 +779,10 @@ function render() {
   layerHeightInPixels = LAYER_HEIGHT_IN_PIXELS;
   unitGainNubbinRadius = Math.ceil(layerHeightInPixels / 2);
   lengthInFrames = getLengthInFrames(state.layers);
-  if (lengthInFrames !== null) {
-    pixelsPerFrame = (canvasWidth - 2 * GAIN_NUBBIN_SPACING) / lengthInFrames;
+  timelineFrames =
+    lengthInFrames ?? (state.recording ? Math.max(state.numFramesRecorded, 1) : null);
+  if (timelineFrames !== null) {
+    pixelsPerFrame = (canvasWidth - 2 * GAIN_NUBBIN_SPACING) / timelineFrames;
   }
 
   renderLayers();
@@ -767,29 +791,38 @@ function render() {
   renderStatus();
 }
 
+const pretendLayerForRecording: LayerNoSamples = {
+  id: -1,
+  lengthInFrames: 0, // <- loopLen
+  frameOffset: 0, // <- state.recordingFrameOffset
+  numChannels: 1,
+  numFramesRecorded: 0, // <- state.numFramesRecorded
+  soloed: false,
+  muted: false,
+  backwards: false,
+  gain: 1,
+};
+
 function renderLayers() {
-  if (lengthInFrames === null) {
+  if (timelineFrames === null) {
     return;
   }
 
+  const loopLen = timelineFrames;
   let top = LAYER_HEIGHT_IN_PIXELS;
   const x0 = GAIN_NUBBIN_SPACING;
-  const x1 = x0 + lengthInFrames * pixelsPerFrame;
-  for (const layer of state.layers) {
-    const addlInfo = getAddlInfo(layer);
-    if (!addlInfo) {
-      continue;
-    }
+  const x1 = x0 + loopLen * pixelsPerFrame;
 
+  function renderLayer(layer: LayerNoSamples, addlInfo: AddlLayerInfo, isRecording = false) {
     const alpha = layer.muted ? 0.25 : 1;
 
     // draw samples
-    const rgb = layer.soloed ? `50, 75, 117` : `100, 149, 237`;
+    const rgb = isRecording ? '220, 90, 70' : layer.soloed ? '50, 75, 117' : '100, 149, 237';
     const sampleColor = `rgba(${rgb}, ${alpha})`;
     ctx.strokeStyle = sampleColor;
     ctx.lineWidth = NUM_FRAMES_PER_CHUNK * pixelsPerFrame;
     let y = top;
-    let x = x0 + ((layer.frameOffset + lengthInFrames) % lengthInFrames) * pixelsPerFrame;
+    let x = x0 + ((layer.frameOffset + loopLen) % loopLen) * pixelsPerFrame;
     for (let chunkIdx = 0; chunkIdx < addlInfo.maxAmplitudesInChunks.length; chunkIdx++) {
       if (x >= x1) {
         x = x0;
@@ -824,6 +857,33 @@ function renderLayers() {
     ctx.fill();
 
     top = y + layerHeightInPixels * 1.15;
+  }
+
+  for (const layer of state.layers) {
+    const addlInfo = getAddlInfo(layer);
+    if (addlInfo) {
+      renderLayer(layer, addlInfo);
+    }
+  }
+
+  if (state.recording && state.numFramesRecorded > 0) {
+    pretendLayerForRecording.lengthInFrames = loopLen;
+    pretendLayerForRecording.frameOffset = state.recordingFrameOffset;
+    pretendLayerForRecording.numFramesRecorded = state.numFramesRecorded;
+    const maxAmplitudesInChunks: number[] = [];
+    for (let i = 0; i < state.numFramesRecorded; i += NUM_FRAMES_PER_CHUNK) {
+      maxAmplitudesInChunks.push(
+        getMaxAmplitudeInChunk(state._recordingBuffer, 1, state.numFramesRecorded, i),
+      );
+    }
+    const addlInfo: AddlLayerInfo = {
+      maxAmplitudesInChunks,
+      maxAmplitudeInLayer: Math.max(...maxAmplitudesInChunks),
+      gainNubbinCenterPosition: { x: 0, y: 0 },
+      topY: 0,
+      bottomY: 0,
+    };
+    renderLayer(pretendLayerForRecording, addlInfo, true);
   }
 
   // draw playhead
