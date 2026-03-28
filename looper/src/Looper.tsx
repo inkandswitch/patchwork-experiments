@@ -43,10 +43,13 @@ type InputGatePhase =
   | { kind: 'pick'; devices: MediaDeviceInfo[]; storedId: string | null };
 
 const state = SharedState.new();
+let docHandle: DocHandle<LooperDoc> | null = null;
 
 /** Wire doc ↔ worklet; returns cleanup (removes listener). Caller must disconnect the node to stop audio. */
 function initializeWorklet(handle: DocHandle<LooperDoc>): () => void {
   console.log('### initializeWorklet');
+
+  docHandle = handle;
 
   const sendToWorklet = (m: MessageToWorklet) => {
     looper.port.postMessage(m);
@@ -93,6 +96,8 @@ function initializeWorklet(handle: DocHandle<LooperDoc>): () => void {
         });
       }
     }
+
+    displayRecordingHelp();
   }
 
   handle.on('change', (payload) => onChange(payload.doc));
@@ -211,6 +216,45 @@ export const LooperEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
       case ' ':
         state.recording = true;
         break;
+      case 'Backspace':
+        deleteLayer();
+        break;
+      case 'd':
+        duplicateLayer();
+        break;
+      case 's':
+        toggleSoloed();
+        break;
+      case 'm':
+        toggleMuted();
+        break;
+      case 'b':
+        toggleBackwards();
+        break;
+      case 'Shift':
+        onShift('down');
+        break;
+      case 'Control':
+        onControl('down');
+        break;
+      case 'ArrowUp':
+      case 'ArrowDown':
+        state.latencyOffset += e.key === 'ArrowUp' ? 1 : -1;
+        displayStatus(`latency offset = ${state.latencyOffset}`);
+        break;
+      case 'ArrowLeft':
+      case 'ArrowRight':
+        state.channelToRecord = Math.max(
+          0,
+          Math.min(
+            state.channelToRecord + (e.key === 'ArrowLeft' ? -1 : 1),
+            micRef.current!.stream.getAudioTracks()[0].getSettings().channelCount! - 1,
+          ),
+        );
+        break;
+      case 'h':
+        toggleFullHelp();
+        break;
     }
   }, []);
 
@@ -223,16 +267,26 @@ export const LooperEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
       case ' ':
         state.recording = false;
         break;
+      case 'Shift':
+        onShift('up');
+        break;
+      case 'Control':
+        onControl('up');
+        break;
     }
   }, []);
 
   const onCanvasPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
-    // Optional: e.currentTarget.setPointerCapture(e.pointerId) so move/up fire even if pointer leaves canvas
+    onPointerDown();
   }, []);
 
-  const onCanvasPointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {}, []);
+  const onCanvasPointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    onPointerMove(e.clientX, e.clientY);
+  }, []);
 
-  const onCanvasPointerUp = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {}, []);
+  const onCanvasPointerUp = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    onPointerUp();
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -444,7 +498,195 @@ export const LooperEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   );
 };
 
+// --- operations triggered by the mouse / keyboard ---
+
+function deleteLayer() {
+  const id = layerAtPointer();
+  if (id !== null) {
+    docHandle!.change((doc) => {
+      const idx = doc.layers.findIndex((layer) => layer.id === id);
+      if (idx >= 0) {
+        doc.layers.splice(idx, 1);
+      }
+    });
+  }
+}
+
+function duplicateLayer() {
+  const id = layerAtPointer();
+  if (id !== null) {
+    docHandle!.change((doc) => {
+      const idx = doc.layers.findIndex((layer) => layer.id === id);
+      if (idx < 0) {
+        return;
+      }
+      const layer = doc.layers[idx];
+      doc.layers.splice(idx, 0, { ...layer, id: Math.random() });
+    });
+  }
+}
+
+function toggleSoloed() {
+  const id = layerAtPointer();
+  if (id !== null) {
+    docHandle!.change((doc) => {
+      const layer = doc.layers.find((layer) => layer.id === id);
+      if (layer) {
+        layer.soloed = !layer.soloed;
+      }
+    });
+  }
+}
+
+function toggleMuted() {
+  const id = layerAtPointer();
+  if (id !== null) {
+    docHandle!.change((doc) => {
+      const layer = doc.layers.find((layer) => layer.id === id);
+      if (layer) {
+        layer.muted = !layer.muted;
+      }
+    });
+  }
+}
+
+function toggleBackwards() {
+  const id = layerAtPointer();
+  if (id !== null) {
+    docHandle!.change((doc) => {
+      const layer = doc.layers.find((layer) => layer.id === id);
+      if (layer) {
+        layer.backwards = !layer.backwards;
+      }
+    });
+  }
+}
+
+let gainChangeLayerInfo: { id: number; origGain: number; origPos: Position } | null = null;
+let changingMasterGain = false;
+
+function onControl(control: 'down' | 'up') {
+  if (control === 'up') {
+    changingMasterGain = false;
+    gainChangeLayerInfo = null;
+    return;
+  }
+
+  if (pointerPos.x >= innerWidth - MASTER_GAIN_SLIDER_WIDTH) {
+    changingMasterGain = true;
+    setMasterGain();
+    return;
+  }
+
+  const id = layerAtPointer();
+  if (id === null) {
+    gainChangeLayerInfo = null;
+    return;
+  }
+
+  const layer = state.layers.find((layer) => layer.id === id)!;
+  gainChangeLayerInfo = { id, origGain: layer.gain, origPos: { ...pointerPos } };
+}
+
+let offsetChangeLayerInfo: { id: number; origOffset: number; origPos: Position } | null = null;
+
+function onShift(shift: 'down' | 'up') {
+  if (shift === 'up') {
+    offsetChangeLayerInfo = null;
+    return;
+  }
+
+  const id = layerAtPointer();
+  if (id === null) {
+    offsetChangeLayerInfo = null;
+    return;
+  }
+
+  const layer = state.layers.find((layer) => layer.id === id)!;
+  offsetChangeLayerInfo = { id, origOffset: layer.frameOffset, origPos: { ...pointerPos } };
+}
+
+// --- mouse controls ---
+
+const pointerPos = { x: -Infinity, y: -Infinity };
+let movingPlayhead = false;
+
+function onPointerDown() {
+  if (lengthInFrames !== null) {
+    movingPlayhead = true;
+    movePlayhead();
+  }
+}
+
+function onPointerUp() {
+  movingPlayhead = false;
+}
+
+function onPointerMove(x: number, y: number) {
+  pointerPos.x = x;
+  pointerPos.y = y;
+
+  if (movingPlayhead) {
+    movePlayhead();
+  }
+
+  if (changingMasterGain) {
+    setMasterGain();
+  }
+
+  if (gainChangeLayerInfo !== null) {
+    const { id, origPos, origGain } = gainChangeLayerInfo;
+    docHandle!.change((doc) => {
+      const layer = doc.layers.find((layer) => layer.id === id);
+      if (layer) {
+        const change = -(pointerPos.y - origPos.y);
+        layer.gain = Math.max(0, Math.min(origGain + change / unitGainNubbinRadius, 2));
+      }
+    });
+  }
+
+  if (offsetChangeLayerInfo !== null) {
+    const { id, origPos, origOffset } = offsetChangeLayerInfo;
+    docHandle!.change((doc) => {
+      const layer = doc.layers.find((layer) => layer.id === id);
+      if (layer) {
+        const change = pointerPos.x - origPos.x;
+        layer.frameOffset = Math.round(origOffset + change / pixelsPerFrame);
+      }
+    });
+  }
+}
+
+function movePlayhead() {
+  const frameIdx = Math.max(
+    0,
+    Math.min(
+      Math.round((pointerPos.x - GAIN_NUBBIN_SPACING) / pixelsPerFrame),
+      lengthInFrames! - 1,
+    ),
+  );
+  state.playhead = frameIdx;
+}
+
+function setMasterGain() {
+  state.masterGain = (innerHeight - pointerPos.y) / innerHeight;
+}
+
+function layerAtPointer() {
+  for (const l of state.layers) {
+    const addlInfo = getAddlInfo(l);
+    if (!addlInfo) {
+      continue;
+    }
+    if (addlInfo.topY <= pointerPos.y && pointerPos.y <= addlInfo.bottomY) {
+      return l.id;
+    }
+  }
+  return null;
+}
+
 // --- UI-related info for each layer ---
+
 interface AddlLayerInfo {
   maxAmplitudesInChunks: number[];
   maxAmplitudeInLayer: number;
@@ -516,8 +758,8 @@ function render(ctx: CanvasRenderingContext2D, title: string, width: number, hei
 
   renderLayers();
   renderMasterGainSlider();
-  // renderLogs();
-  // renderStatus();
+  renderLogs();
+  renderStatus();
 
   function renderLayers() {
     if (lengthInFrames === null) {
@@ -594,22 +836,129 @@ function render(ctx: CanvasRenderingContext2D, title: string, width: number, hei
     ctx.fillRect(width - MASTER_GAIN_SLIDER_WIDTH, height - h, MASTER_GAIN_SLIDER_WIDTH, h);
     ctx.fill();
   }
+
+  function renderStatus() {
+    ctx.font = '20px Monaco';
+    ctx.fillStyle = statusColor;
+    const statusWidth = ctx.measureText(status).width;
+    ctx.fillText(
+      status,
+      width - LEFT_MARGIN_FOR_TEXT - statusWidth,
+      height - BOTTOM_MARGIN_FOR_TEXT,
+    );
+  }
+
+  function renderLogs() {
+    ctx.font = '20px Monaco';
+    let y = height - BOTTOM_MARGIN_FOR_TEXT;
+    const x0 = LEFT_MARGIN_FOR_TEXT;
+    for (const line of logs) {
+      let x = x0;
+      for (const part of line) {
+        const text = typeof part === 'string' ? part : part.text;
+        ctx.fillStyle = typeof part === 'string' ? 'black' : part.color;
+        ctx.fillText(text, x, y);
+        x += ctx.measureText(text).width;
+      }
+      y -= 25;
+    }
+  }
 }
 
-// function displayRecordingHelp() {
-//   clearLogs();
-//   if (recording) {
-//     log({ color: 'cornflowerblue', text: 'SPACE' }, ' to ', { color: '#888', text: '■' });
-//   } else {
-//     log(
-//       { color: 'cornflowerblue', text: 'SPACE' },
-//       ' to ',
-//       { color: 'red', text: '●' },
-//       ` channel ${channelToRecord}`,
-//     );
-//   }
+// --- statuses ---
 
-//   log({ color: 'cornflowerblue', text: 'H' }, ' for help');
-// }
+let status = '';
+let statusColor = 'cornflowerblue';
+let statusClearTimeMillis = 0;
+
+const LEFT_MARGIN_FOR_TEXT = 40;
+const BOTTOM_MARGIN_FOR_TEXT = 40;
+
+function displayStatus(newStatus: string, color = 'cornflowerblue', timeMillis = 3_000) {
+  status = newStatus;
+  statusColor = color;
+  statusClearTimeMillis = Date.now() + timeMillis;
+  setTimeout(() => {
+    if (Date.now() >= statusClearTimeMillis) {
+      status = '';
+    }
+  }, timeMillis);
+}
+
+function displayRecordingHelp() {
+  clearLogs();
+  if (state.recording) {
+    log({ color: 'cornflowerblue', text: 'SPACE' }, ' to ', { color: '#888', text: '■' });
+  } else {
+    log(
+      { color: 'cornflowerblue', text: 'SPACE' },
+      ' to ',
+      { color: 'red', text: '●' },
+      ` channel ${state.channelToRecord}`,
+    );
+  }
+
+  log({ color: 'cornflowerblue', text: 'H' }, ' for help');
+}
+
+// --- logs ---
+
+type LoggedLinePart = { color: string; text: string } | string;
+type LoggedLine = LoggedLinePart[];
+const logs: LoggedLine[] = [];
+
+function log(...line: LoggedLinePart[]) {
+  logs.unshift(line);
+}
+
+function clearLogs() {
+  logs.length = 0;
+}
+
+// --- help ---
+
+let displayingFullHelp = false;
+
+function toggleFullHelp() {
+  if (displayingFullHelp) {
+    displayRecordingHelp();
+  } else {
+    displayFullHelp();
+  }
+  displayingFullHelp = !displayingFullHelp;
+}
+
+function displayFullHelp() {
+  clearLogs();
+  log('To start recording a new layer, press ', b('SPACE'), '.');
+  log('To stop recording, press ', b('SPACE'), ' again.');
+  log('');
+  log('If you point at a layer,');
+  log('- hold down ', b('SHIFT'), ' and move mouse left/right to slide layer in time');
+  log(
+    '- hold down ',
+    b('CONTROL'),
+    " and move mouse up/down to change the layer's gain (louder/softer)",
+  );
+  log('- press ', b('BACKSPACE'), ' to delete the layer');
+  log('- press ', b('M'), ' to toggle mute');
+  log('- press ', b('S'), ' to toggle solo');
+  log('- press ', b('B'), ' to toggle backwards');
+  log('- press ', b('D'), ' to duplicate the layer');
+  log('');
+  log('The blue bar at the right margin is the master volume slider.');
+  log('Point at it, hold down ', b('CONTROL'), ' and move mouse up/down to adjust it.');
+  log();
+  log('Press ', b('LEFT'), '/', b('RIGHT'), " to change the channel you're recording from.");
+  log();
+  log('Press ', b('UP'), '/', b('DOWN'), ' to adjust the latency offset.');
+  log('(The right setting depends on your input device and computer -- see what works best!)');
+  log();
+  log('Press ', b('H'), ' to make this help go away.');
+
+  function b(text: string) {
+    return { color: 'cornflowerblue', text };
+  }
+}
 
 export const renderLooperEditor = toolify(LooperEditor);
