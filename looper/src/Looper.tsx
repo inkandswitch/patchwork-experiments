@@ -1,6 +1,5 @@
-import type { AutomergeUrl } from '@automerge/automerge-repo';
+import type { AutomergeUrl, DocHandle } from '@automerge/automerge-repo';
 import { useDocHandle } from '@automerge/automerge-repo-react-hooks';
-import type { DocHandle } from '@automerge/automerge-repo';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   clearStoredInputDeviceId,
@@ -13,6 +12,13 @@ import {
   type MicConnection,
 } from './audio';
 import { NUM_FRAMES_PER_CHUNK, SAMPLE_RATE } from './constants';
+import {
+  LATENCY_OFFSET_DEFAULT_CHUNKS,
+  LATENCY_OFFSET_MAX_CHUNKS,
+  LATENCY_OFFSET_MIN_CHUNKS,
+  readStoredLatencyOffsetChunks,
+  writeStoredLatencyOffsetChunks,
+} from './latency';
 import { toolify } from './react-util';
 import type {
   LayerNoSamples,
@@ -189,6 +195,8 @@ export const LooperEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
         micRef.current = connection;
         connection.source.connect(looper);
         writeStoredInputDeviceId(deviceId);
+        state.latencyOffset = readStoredLatencyOffsetChunks() ?? LATENCY_OFFSET_DEFAULT_CHUNKS;
+        displayStatus(`latency offset = ${state.latencyOffset} chunks`);
         setAudioReady(true);
       } catch (e) {
         const name = e instanceof DOMException ? e.name : '';
@@ -218,7 +226,9 @@ export const LooperEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
 
     switch (e.key) {
       case ' ':
-        state.recording = true;
+        state.recording = !state.recording;
+        displayRecordingHelp();
+        e.preventDefault();
         break;
       case 'Backspace':
         deleteLayer();
@@ -243,8 +253,13 @@ export const LooperEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
         break;
       case 'ArrowUp':
       case 'ArrowDown':
-        state.latencyOffset += e.key === 'ArrowUp' ? 1 : -1;
-        displayStatus(`latency offset = ${state.latencyOffset}`);
+        state.latencyOffset = clamp(
+          state.latencyOffset + (e.key === 'ArrowUp' ? 1 : -1),
+          LATENCY_OFFSET_MIN_CHUNKS,
+          LATENCY_OFFSET_MAX_CHUNKS,
+        );
+        writeStoredLatencyOffsetChunks(state.latencyOffset);
+        displayStatus(`latency offset = ${state.latencyOffset} chunks`);
         break;
       case 'ArrowLeft':
       case 'ArrowRight':
@@ -255,6 +270,7 @@ export const LooperEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
             micRef.current!.stream.getAudioTracks()[0].getSettings().channelCount! - 1,
           ),
         );
+        displayRecordingHelp();
         break;
       case 'h':
         toggleFullHelp();
@@ -268,9 +284,6 @@ export const LooperEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     }
 
     switch (e.key) {
-      case ' ':
-        state.recording = false;
-        break;
       case 'Shift':
         onShift('up');
         break;
@@ -812,6 +825,12 @@ function renderLayers() {
   let top = LAYER_HEIGHT_IN_PIXELS;
   const x0 = GAIN_NUBBIN_SPACING;
   const x1 = x0 + loopLen * pixelsPerFrame;
+  const firstLayerFrameOffset =
+    state.layers.length > 0
+      ? state.layers[0].frameOffset
+      : state.recording && state.numFramesRecorded > 0
+        ? -state.latencyOffset * NUM_FRAMES_PER_CHUNK
+        : 0;
 
   function renderLayer(layer: LayerNoSamples, addlInfo: AddlLayerInfo, isRecording = false) {
     const alpha = layer.muted ? 0.25 : 1;
@@ -821,7 +840,7 @@ function renderLayers() {
     const peakMax = Math.max(addlInfo.maxAmplitudeInLayer, 1e-9);
     const bandHalf = layerHeightInPixels * 0.46;
 
-    let x = x0 + ((layer.frameOffset + loopLen) % loopLen) * pixelsPerFrame;
+    let x = x0 + ((layer.frameOffset - firstLayerFrameOffset + loopLen) % loopLen) * pixelsPerFrame;
     const rows: { cx: number; raw: number }[][] = [];
     let current: { cx: number; raw: number }[] = [];
 
@@ -1144,7 +1163,6 @@ function displayFullHelp() {
   log('Press ', b('LEFT'), '/', b('RIGHT'), " to change the channel you're recording from.");
   log();
   log('Press ', b('UP'), '/', b('DOWN'), ' to adjust the latency offset.');
-  log('(The right setting depends on your input device and computer -- see what works best!)');
   log();
   log('Press ', b('H'), ' to make this help go away.');
 

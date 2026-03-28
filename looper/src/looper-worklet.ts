@@ -54,6 +54,8 @@ class Looper extends AudioWorkletProcessor implements AudioWorkletProcessorImpl 
       return;
     }
 
+    // frameOffset is where this layer sits on the shared loop timeline so it stays in sync
+    // with the others (getSampleAt uses frameIdx - frameOffset).
     this.recordingLayer = {
       id: Math.random(),
       lengthInFrames: getLengthInFrames(this.layers) ?? -1,
@@ -65,7 +67,6 @@ class Looper extends AudioWorkletProcessor implements AudioWorkletProcessorImpl 
       backwards: false,
       gain: 1,
     };
-    this.state._recordingBuffer.fill(0);
     this.state.numFramesRecorded = 0;
     this.state.recordingFrameOffset = this.recordingLayer.frameOffset;
     this.samplesByLayerId.set(this.recordingLayer.id, this.state._recordingBuffer);
@@ -82,6 +83,11 @@ class Looper extends AudioWorkletProcessor implements AudioWorkletProcessorImpl 
       this.recordingLayer.lengthInFrames = this.recordingLayer.numFramesRecorded;
     }
     if (this.layers.length === 0) {
+      // Inter-layer timing is entirely frameOffset; this playhead bump is separate. After
+      // the first layer, output still goes through DAC/OS delay while live voice does not,
+      // so immediate playback can feel late. Starting playhead at L advances which samples
+      // hit the bus first (e.g. buffer[2L] vs buffer[L] when L < N) so the first heard loop
+      // doesn't break the rhythm with someone who keeps playing.
       this.state.playhead = this.state.latencyOffset * NUM_FRAMES_PER_CHUNK;
     }
     const samples = this.state._recordingBuffer.slice(0, this.state.numFramesRecorded * this.recordingLayer.numChannels);
@@ -160,6 +166,7 @@ class Looper extends AudioWorkletProcessor implements AudioWorkletProcessorImpl 
 
   /**
    * Returns the layer's contribution to `channel` for the specified frame.
+   * frameIdx is the position on the shared loop; frameOffset shifts this layer relative to it.
    * @param frameIdx a value between 0 and lengthInFrames
    */
   getSampleAt(layer: LayerNoSamples, channel: number, frameIdx: number) {
