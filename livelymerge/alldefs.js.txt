@@ -1,0 +1,2890 @@
+console.log('\n\nVersion 6/15 2pm');
+/* Handy snippets...
+world.initUI();
+world.HaloMorph.test();
+world.populateLively();
+world.PanelMorph.test();
+world.Lively.initHand()
+world.Lively.verifyMorphs();
+world.SliderMorph.test();
+world.TextMorph.test();
+world.Lively.addMorph(world.Lively.submorphs.first().morphCopy());
+world.initLively(); world.browseLively();
+
+world.buttonTest()
+world.choiceTest()
+
+world.methodMorph.rotateBy(Math.PI/4);
+world.methodMorph.startStepping("rotateBy",Math.PI/4,300);
+world.methodMorph.stopStepping();
+*/
+
+//  Bugz...
+//  [ ] Bracket match for a line ending ' { \n '
+//      Select to right of \n should match that line (not the one below
+//      Select to right of { should match the matching bracket
+//  [ ] When using hands, menus and text get dragged
+//  [ ] Change methodWindow back to smaller text size
+//  [ ] Make a window for populate that is editable text
+//      with doit and printit of course
+//  [ ] Implement repeated replace
+//  [ ] In populateLively, I set up a MenuMorph to control dropshadows.
+//      I set it up with the following function:
+//      function (choice) {world.Lively.showDropShadows = (choice != 'Not')};
+//      This works, but I would prefer to say 'this.world()' over 'world.Lively',
+//      which does NOT work.  The function block should be evaluated with 'this'
+//      being bound to the menuMorph in its 'onPointerUp' method, and
+//      'this.world()' should work for every morph.  What's the problem??
+//  [ ] Note: this may be the same problem (bug?) as SliderMorph actionFn behavior
+//
+// Yet to do...
+// [X] Add PolyLine to graphics classes
+// [X]    compute bounds, show bounds
+// [X]    drag needs hitPoint instead of offset
+// [X] implement List.forEach(), map()
+// [X] Use it for poly.render and Rectangle.includePts
+// [X] Make simple TextBox with list of lines
+// [X] Define Morph
+// [X] Define WorldMoph
+// [X] Install a WorldMorph as the sole child of global 'world'
+// [X] (cleanup) Change Circle to Ellipse and make examples do ovals
+// [X] (cleanup) Make Rectangle, Ellipse, PolyLine, TextLine/Box be Shapes
+// [X] (cleanup) Clean up shape fill and border Colors
+// [X] (cleanup) Change List.first->firstNode, first.value->first()
+// [X] (cleanup) Add List.removeFirst(), addLast(), last(), select()
+// [X] Make a star, and use it in a Morph
+// [X] Put coordinate transformations into Morph
+// [X] ... into render methods
+// [ ] ... into pointer events
+// [X] Put ticking logic into WorldMorph
+// [ ] Make the star spin by ticking rotateBy()
+// [X] Make simple Menu for Browse class
+// [X] ... class methods
+// [ ] ... recent edits
+// [X] Make a method edit window
+// [X] Get selection working
+// [X] Get typing working
+// [X] Throw in matching brackets
+// [X] Do copy, cut, paste, do-it, print-it
+// [ ] Someday: find, replace-again, ...
+// [X] Break long lines based on measureText
+// [ ] Offer centered text for menus etc
+// [X] Make a workspace for worlds with variable names
+// [ ] add name to morphs - optional 2nd arg to addMorph
+// [ ] add $ syntax or get/put for named access
+// [X] Make ScrollBar
+// [X] Make ListPane, TextPane
+// [X] Make Browser (System, Class, and recent)
+// [X] Make HandMorph
+// [X] Test multiple hands
+// [X] Add dropShadows for dragged morphs
+// [X] Rework populateLively() to run down the left side
+// [X] Define morphCopy to copy morphic structure
+// [X] Implement copy as shift-drag
+// [X] Clear textbox selection when set new text
+// [ ] Save paneSpec in PaneMorphs for reframing
+// [ ] Use transforms to implement morph-local coordinates
+// [X] Localize pointer events to work with morph-local coordinates
+//      (so far only scrollPanes)
+
+// Regressions
+// [X] Check that populateLively all still works
+// [ ] Check that Hand works in populate and browser (esp txt editing)
+// [ ] Check that browser morphCopy works
+
+// Cleanups...
+// [ ] Rename MenuMorph to ListMorph - list leaves selection on
+// [X] Clamp scrolling of short list content
+// [X] Reset transform (scollToTop?) when load new list
+// [ ] make nicer hand images
+
+// For "Barcelona" release...
+// [X] Clamp scrolling of short content
+// [X] Fix text editing of cmd-X, C, V [ctrl-D, P work!]
+// [X] Put in ctrl-S or cmd-S for eval in browser (with menu confirm)
+// [X] Fix halo deleting all other morphs
+// [X] Make an inspector
+// [ ] Check that all works with hands
+// [X] Make a UI for morphs - halo?  Use cmd-click
+//    [X] Make a "quick-click" detector
+//    [ ] Hook halos up to "quick-click" detector for iPad
+//    [X] Put in actions for copy, drag, remove, help
+// [X] Make a UI for scrollPanes - menu button?
+// [X] Make a UI for code editor - or just cmd-keys and scrollPane UI?
+// [ ] Track changes and chackpoint in AutoMerge
+
+world.initUI = function () {
+  window.actorId = Automerge.getActorId(handle.doc());
+
+  // pointer events
+  world.onPointerDown = function (p, e) {
+    // Note: we hesitate a bit here to detect "quick" clicks ( < 150ms)
+    /*world.clickTime = e.timeStamp;
+    world.pdFnp = p;
+    world.pdFn = () => {
+      world.onPointerDownNow(p, e);
+    };
+    world.clickPending = world.setTimeout(world.pdFn, 150);*/
+    this.topLevelMorph.onPointerDown(p, e);
+  };
+  world.onPointerDownNow = function (p, e) {
+    console.log('pointerdownnow', p, e);
+    // think of this as the fall-through if it's not a "quickClick"
+    this.topLevelMorph.onPointerDown(p, e);
+  };
+  world.onPointerUp = function (p, e) {
+    let clickDuration = e.timeStamp - world.clickTime;
+    /*console.log('Click duration = ' + clickDuration);
+    if (clickDuration < 150) {
+      // Special "quickClick" event for, eg, halo access
+      clearTimeout(world.clickPending);
+      world.onQuickClick(p, e);
+      return;
+    } */
+    // console.log("pu", x, y);
+    this.topLevelMorph.onPointerUp(p, e);
+  };
+  world.onPointerMove = function (p, e) {
+    // console.log("pm", x, y, e.button, e.buttons, e.offsetX, e.offsetY);
+    this.topLevelMorph.onPointerMove(p, e);
+  };
+  world.onQuickClick = function (p, e) {
+    // console.log("pm", x, y, e.button, e.buttons, e.offsetX, e.offsetY);
+    this.topLevelMorph.onQuickClick(p, e);
+  };
+
+  // keyboard events
+  world.onKeyPress = function (e) {
+    // console.log('TODO(dan): handle key onKeyPress event', e);
+    // this.topLevelMorph.onKeyPress(e);
+  };
+  world.onKeyDown = function (e) {
+    // console.log('TODO(dan): handle key press event', e);
+    // if (e.key == 'Meta') return; // ignore; check evt.metaKey on simple chars
+    this.topLevelMorph.onKeyDown(e);
+  };
+  world.onKeyUp = function (e) {
+    // console.log('TODO(dan): handle key up event', e);
+    //this.topLevelMorph.onKeyUp(e);
+  };
+
+  let canvasEvents = [];
+  const canvas = document.querySelector('canvas');
+  canvas.addEventListener('pointerdown', (e) => canvasEvents.push(e));
+  canvas.addEventListener('pointerup', (e) => canvasEvents.push(e));
+  canvas.addEventListener('pointermove', (e) => canvasEvents.push(e));
+  canvas.tabIndex = 1;
+  canvas.addEventListener('keydown', (e) => canvasEvents.push(e));
+  canvas.addEventListener('keypress', (e) => canvasEvents.push(e));
+  canvas.addEventListener('keyup', (e) => canvasEvents.push(e));
+
+  window.renderContinually = true;
+
+  window.renderOnce = () => {
+    impl.change(() => {
+      processEvents();
+      world.render();
+    });
+  };
+
+  function onFrame() {
+    if (renderContinually) {
+      renderOnce();
+    }
+    requestAnimationFrame(onFrame);
+  }
+
+  requestAnimationFrame(onFrame);
+
+  function processEvents() {
+    for (const e of canvasEvents) {
+      e.actorId = window.actorId;
+      // console.log('processing', e);
+      // TODO: rethink this wrt world.pt
+      switch (e.type) {
+        case 'pointerdown': {
+          const pt = world.pt(e.offsetX, e.offsetY);
+          console.log('pointer down point is', pt._id);
+          world.onPointerDown(pt, e);
+          break;
+        }
+        case 'pointerup': {
+          const pt = world.pt(e.offsetX, e.offsetY);
+          // console.log('pointer up point is', pt._id);
+          world.onPointerUp(pt, e);
+          break;
+        }
+        case 'pointermove': {
+          const pt = world.pt(e.offsetX, e.offsetY);
+          // console.log('pointer move point is', pt._id);
+          world.onPointerMove(pt, e);
+          break;
+        }
+        case 'keydown':
+          world.onKeyDown(e);
+          break;
+        case 'keypress':
+          world.onKeyPress(e);
+          break;
+        case 'keyup':
+          world.onKeyUp(e);
+          break;
+        default:
+          console.error('unsupported even type', e.type);
+      }
+    }
+    canvasEvents = [];
+  }
+};
+console.log('initUI loaded');
+
+// setInterval, setTimeout
+
+world.setInterval = function (fn, interval) {
+  return setInterval(() => impl.change(fn), interval);
+};
+
+world.setTimeout = function (fn, t) {
+  return setTimeout(() => impl.change(fn), t);
+};
+
+// Classes
+
+world.classProto = newObj();
+
+window.newObjectLog = new Map();
+
+world.classProto.new = function () {
+  const obj = newObj(this.proto);
+  window.newObjectLog.set(obj._id, `making a new ${this.name}, proto is ${this.proto._id}`);
+  obj.className = this.name;
+  obj.initialize(...arguments);
+  return obj;
+};
+
+world.newClass = function (name) {
+  const cls = newObj(world.classProto);
+  cls.proto = newObj();
+  cls.name = name;
+  console.log('Defining ' + name + '...');
+  return cls;
+};
+
+world.classProto.subclass = function (name) {
+  const cls = world.newClass(name);
+  cls.proto = newObj(this.proto);
+  return cls;
+};
+
+// world methods, etc.
+
+world.render = function () {
+  const canvas = document.querySelector('canvas');
+  if (!canvas) {
+    return;
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  world.topLevelMorph.render(ctx);
+};
+world.canvas = () => document.querySelector('canvas');
+world.getBounds = function () {
+  const canvas = world.canvas();
+  if (!canvas) {
+    return;
+  }
+  return world.rect(0, 0, canvas.width, canvas.height);
+};
+
+// Graphics
+
+world.Point = world.newClass('Point');
+world.Point.proto.initialize = function (x, y) {
+  this.x = x;
+  this.y = y;
+};
+world.Point.proto.copy = function () {
+  return world.pt(this.x, this.y);
+};
+world.Point.proto.addPt = function (p) {
+  return world.pt(this.x + p.x, this.y + p.y);
+};
+world.Point.proto.subPt = function (p) {
+  return world.pt(this.x - p.x, this.y - p.y);
+};
+world.Point.proto.lePt = function (p) {
+  return this.x <= p.x && this.y <= p.y;
+};
+world.Point.proto.moveBy = function (p) {
+  // ** why are we side-effecting here, but copying in other methods?
+  this.x += p.x;
+  this.y += p.y;
+};
+world.Point.proto.scaleBy = function (s) {
+  const sp = typeof s === 'number' ? world.pt(s, s) : s;
+  return world.pt(this.x * sp.x, this.y * sp.y);
+};
+world.Point.proto.asString = function () {
+  return `pt(${this.x.toFixed(2)}, ${this.y.toFixed(2)})`;
+};
+world.Point.proto.toString = function () {
+  return this.asString();
+};
+world.Point.proto.minPt = function (p) {
+  return world.Point.new(Math.min(this.x, p.x), Math.min(this.y, p.y));
+};
+world.Point.proto.maxPt = function (p) {
+  return world.Point.new(Math.max(this.x, p.x), Math.max(this.y, p.y));
+};
+world.Point.proto.extent = function (ext) {
+  // Make a rectangle
+  return world.Rectangle.new(this, ext);
+};
+world.Point.proto.dist = function (p) {
+  var dx = p.x - this.x;
+  var dy = p.y - this.y;
+  return Math.sqrt(dx * dx + dy * dy);
+};
+world.Point.proto.polarAngle = function () {
+  return Math.atan2(this.x, this.y);
+};
+world.Point.proto.rotatedBy = function (radians, pivotPt) {
+  let v = this.subPt(pivotPt);
+  let polarDist = Math.sqrt(v.x * v.x + v.y * v.y);
+  let rot = world.ptPolar(polarDist, v.polarAngle() + radians);
+  return rot.addPt(pivotPt);
+};
+world.Point.proto.render = function (ctx) {
+  // ctx.beginPath();
+  ctx.fillStyle = world.Color.black.fillStyle;
+  ctx.arc(this.x, this.y, 8, 0, 2 * Math.PI);
+  ctx.fill();
+};
+
+world.Rectangle = world.newClass('Rectangle');
+world.Rectangle.proto.initialize = function (p, ext) {
+  this.topLeft = p;
+  this.extent = ext;
+};
+world.Rectangle.proto.copy = function () {
+  return this.topLeft.copy().extent(this.extent.copy());
+};
+world.Rectangle.proto.bottomLeft = function () {
+  return this.topLeft.addPt(world.pt(0, this.height()));
+};
+world.Rectangle.proto.topRight = function () {
+  return this.topLeft.addPt(world.pt(this.width(), 0));
+};
+world.Rectangle.proto.bottomRight = function () {
+  return this.topLeft.addPt(this.extent);
+};
+world.Rectangle.proto.moveBy = function (p) {
+  //NOTE: this does not return a copy, but *changes this rect*
+  this.topLeft = this.topLeft.addPt(p);
+};
+world.Rectangle.proto.movedBy = function (p) {
+  //NOTE: this *does* return a copy, and doesnt change this rect
+  return this.topLeft.addPt(p).extent(this.extent.copy());
+};
+world.Rectangle.proto.asString = function () {
+  return `${this.topLeft.asString()}.extent(${this.extent.asString()})`;
+};
+world.Rectangle.proto.toString = function () {
+  return this.asString();
+};
+world.Rectangle.proto.renderOn = function (ctx) {
+  //console.log('rendering rectangle', this._id);
+  // this.render(ctx, 'white', 1, 'black')
+};
+world.Rectangle.proto.render = function (ctx, fillColor, borderWidth, borderColor) {
+  if (fillColor) {
+    ctx.fillStyle = fillColor.fillStyle;
+    ctx.fillRect(this.topLeft.x, this.topLeft.y, this.extent.x, this.extent.y);
+  }
+  if (borderWidth) {
+    borderColor = borderColor ? borderColor : world.Color.black;
+    ctx.fillStyle = borderColor.fillStyle;
+    ctx.lineWidth = borderWidth ? borderWidth : 2;
+    ctx.strokeRect(this.topLeft.x, this.topLeft.y, this.extent.x, this.extent.y);
+  }
+};
+world.Rectangle.proto.center = function (p) {
+  return this.topLeft.addPt(world.pt(this.extent.x / 2, this.extent.y / 2));
+};
+world.Rectangle.proto.insetBy = function (numOrPt) {
+  const inset = typeof numOrPt === 'number' ? world.pt(numOrPt, numOrPt) : numOrPt;
+  return this.topLeft.addPt(inset).extent(this.extent.subPt(inset).subPt(inset));
+};
+world.Rectangle.proto.width = function () {
+  return this.extent.x;
+};
+world.Rectangle.proto.height = function () {
+  return this.extent.y;
+};
+world.Rectangle.proto.setBounds = function (rect) {
+  this.topLeft = rect.topLeft;
+  this.extent = rect.extent;
+};
+world.Rectangle.proto.getBounds = function () {
+  return world.Rectangle.new(this.topLeft, this.extent);
+};
+world.Rectangle.proto.includesPt = function (p) {
+  return this.topLeft.lePt(p) && p.lePt(this.bottomRight());
+};
+world.Rectangle.proto.scaleRect = function (spec) {
+  // spec is a rectangle giving a relative placement of, eg a browser pane
+  let topLeft = this.topLeft.addPt(spec.topLeft.scaleBy(this.extent));
+  let extent = this.extent.scaleBy(spec.extent);
+  return topLeft.extent(extent);
+};
+world.Rectangle.proto.onPointerDown = function (p, e) {
+  if (this.actorId != null && this.actorId != window.actorId) return false;
+  if (this.includesPt(p)) {
+    this.hitPoint = p;
+    this.actorId = e.actorId;
+    return true;
+  }
+  return false;
+};
+world.Rectangle.proto.onPointerMove = function (p, e) {
+  if (this.actorId != null && this.actorId != window.actorId) return;
+  if (this.hitPoint) {
+    this.moveBy(p.subPt(this.hitPoint));
+    this.hitPoint = p;
+  }
+};
+world.Rectangle.proto.onPointerUp = function (p) {
+  if (this.actorId != null && this.actorId != window.actorId) return;
+  this.actorId = null;
+  delete this.hitPoint;
+};
+world.Rectangle.unionPts = function (points) {
+  // points is a List
+  let tl = points.first();
+  let br = points.first();
+  points.forEach((each) => {
+    tl = tl.minPt(each);
+    br = br.maxPt(each);
+  });
+  return world.Rectangle.new(tl, br.subPt(tl));
+};
+
+//Some useful helper functions
+world.pt = (x, y) => {
+  return world.Point.new(x, y); // make-a-point
+};
+world.ptPolar = (r, theta) => {
+  return world.Point.new(r * Math.sin(theta), r * Math.cos(theta));
+};
+world.rect = (x, y, width, height) => {
+  return world.Rectangle.new(world.pt(x, y), world.pt(width, height)); // make-a-point
+};
+
+// Basic shapes...
+world.Shape = world.Rectangle.subclass('Shape');
+world.Shape.proto.initialize = function (shapeType, bounds, color, borderWidth, borderColor) {
+  if (world.traceMe) console.log('log ', 5);
+  world.Rectangle.proto.initialize.call(this, bounds.topLeft, bounds.extent);
+  this.shapeType = shapeType;
+  this.setStyles(color, borderWidth, borderColor);
+  if (world.traceMe) console.log('log ', 6);
+};
+world.Shape.proto.setStyles = function (color, borderWidth, borderColor) {
+  this.fillColor = color || null;
+  this.borderWidth = borderWidth || 0;
+  this.borderColor = borderColor || null;
+};
+world.Shape.proto.copy = function (color) {
+  return world.Shape.new(
+    this.shapeType,
+    this.getBounds(),
+    this.fillColor ? this.fillColor.copy() : null,
+    this.borderWidth,
+    this.borderColor ? this.borderColor.copy() : null
+  );
+};
+world.Shape.proto.setColor = function (color) {
+  this.fillColor = color;
+};
+world.Shape.proto.setBorderWidth = function (width) {
+  this.borderWidth = width;
+};
+world.Shape.proto.setBorderColor = function (color) {
+  this.borderColor = color;
+};
+world.Shape.proto.renderOn = function (ctx) {
+  // renderOn() is the morphic call;
+  // Shape subclasses should override...
+  //console.log('rendering Shape', this._id);
+  this.getBounds().render(ctx, this.fillColor, 1, this.borderColor);
+};
+world.Shape.proto.asString = function () {
+  return 'a ' + this.className + ' (' + this.shapeType + ' at ' + this.getBounds().asString() + ')';
+};
+
+world.PolyLine = world.Shape.subclass('PolyLine');
+world.PolyLine.proto.initialize = function (verts, width, color) {
+  this.vertices = verts;
+  let bounds = world.Rectangle.unionPts(verts);
+  console.log('Polyline bounds = ', bounds.asString());
+  world.Shape.proto.initialize.call(this, 'PolyLine', bounds, null, width, color);
+};
+world.PolyLine.proto.copy = function () {
+  let copy = world.PolyLine.new(this.vertices.copy(), this.borderWidth, this.borderColor);
+  copy.setStyles(this.fillColor, this.borderWidth, this.borderColor);
+  return copy;
+};
+world.PolyLine.proto.asString = function () {
+  return `PolyLine at ${this.topLeft.asString()} with size ${this.extent}`;
+};
+world.PolyLine.proto.render = function (ctx) {
+  ctx.beginPath();
+  let first = true;
+  this.vertices.forEach((vert) => {
+    if (first) {
+      ctx.moveTo(vert.x, vert.y);
+      first = false;
+    } else {
+      ctx.lineTo(vert.x, vert.y);
+    }
+  });
+  if (this.fillColor !== null) {
+    ctx.fillStyle = this.fillColor.fillStyle;
+    ctx.fill();
+  }
+  if (this.borderColor !== null) {
+    ctx.lineWidth = this.borderWidth;
+    ctx.strokeStyle = this.borderColor.fillStyle;
+    ctx.stroke();
+  }
+  ctx.closePath();
+};
+world.PolyLine.proto.renderOn = function (ctx) {
+  // console.log('rendering Shape', this.shapeType);
+  this.render(ctx);
+};
+world.PolyLine.proto.moveBy = function (d) {
+  world.Shape.proto.moveBy.call(this, d); // moves the bounds
+  this.vertices = this.vertices.map((vert) => vert.addPt(d));
+};
+world.PolyLine.proto.onPointerMove = function (p) {
+  if (this.actorId != null && this.actorId != window.actorId) {
+    return;
+  }
+  if (this.hitPoint) {
+    const d = p.subPt(this.hitPoint);
+    // *** isn't this just this.moveBy??
+    this.moveBy(d); // moves the bounds
+    this.vertices = this.vertices.map((vert) => vert.addPt(d));
+    this.hitPoint = p;
+  }
+};
+world.PolyLine.proto.rotateBy = function (radians, pivotPt) {
+  let pivot = pivotPt ? pivotPt : this.center();
+  this.vertices = this.vertices.map((vert) => {
+    return vert.rotatedBy(radians, pivot);
+  });
+};
+
+// Just for fun
+world.Pen = world.newClass('Pen');
+world.Pen.proto.initialize = function () {
+  this.location = world.getBounds().center();
+  this.startingLocation = this.location;
+  this.penWidth = 2;
+  this.penColor = world.Color.blue;
+  this.fillColor = null;
+  this.heading = 0;
+  this.vertices = world.List.new(this.location);
+};
+world.Pen.proto.setPenColor = function (color) {
+  this.penColor = color;
+};
+world.Pen.proto.setPenWidth = function (size) {
+  this.penWidth = size;
+};
+world.Pen.proto.turn = function (degrees) {
+  this.heading += degrees;
+};
+world.Pen.proto.go = function (dist) {
+  // debugger;
+  this.location = this.location.addPt(world.ptPolar(dist, (this.heading / 180) * Math.PI));
+  // console.log("vertices = ", this.vertices, ", location = ", this.location);
+  this.vertices.push(this.location);
+  // console.log("After push, vertices = ", this.vertices,", location = ",this.location);
+};
+world.Pen.proto.polyLine = function () {
+  console.log(
+    'Pen polyline, vertices = ',
+    this.vertices,
+    ', wid,color = ',
+    this.penWidth,
+    this.penColor
+  );
+  return world.PolyLine.new(this.vertices, this.penWidth, this.penColor);
+};
+world.Pen.proto.makeMorph = function () {
+  var morph = world.Morph.new(null, this.polyLine());
+  return morph;
+};
+world.Pen.proto.fillLines = function (color) {
+  this.fillColor = color;
+  this.drawLines();
+};
+
+world.Pen.proto.makeHandShape = function (location, color) {
+  this.setPenColor(color);
+  this.location = location;
+  this.vertices = world.List.new(this.location);
+  for (let i = 1; i <= 3; i++) {
+    this.go(20);
+    this.turn(120);
+  }
+  let handShape = this.polyLine();
+  handShape.setColor(color);
+  handShape.setBorderWidth(1);
+  handShape.setBorderColor(world.Color.black);
+  return handShape;
+};
+world.Pen.proto.spiral = function (n, d, a) {
+  this.setPenColor(world.Color.red);
+  for (let i = 1; i <= n; i++) {
+    this.go(d * i);
+    this.turn(a);
+  }
+  return this.polyLine();
+};
+world.Pen.proto.star = function (nVerts, radius, colr) {
+  // Really belongs in PolyLine
+  let vertices = world.List.new();
+  for (let i = 0; i <= nVerts; i++) {
+    var angle = ((2 * Math.PI) / nVerts) * i;
+    var p = world.ptPolar(radius, angle);
+    if (i % 2 == 0) p = p.scaleBy(0.39);
+    vertices.push(p.addPt(this.location));
+  }
+  return world.PolyLine.new(vertices, 2, world.Color.black);
+};
+
+// RGB Colors...
+world.Color = world.newClass('Color');
+world.Color.proto.initialize = function (cr, cg, cb) {
+  this.r = cr;
+  this.g = cg;
+  this.b = cb;
+  this.fillStyle = this.computeFillStyle(this.r, this.g, this.b);
+  //console.log('new color fillStyle = ', this.fillStyle);
+};
+world.Color.proto.copy = function () {
+  return world.Color.new(this.r, this.g, this.b);
+};
+world.Color.proto.computeFillStyle = function (r, g, b) {
+  var s = '#';
+  s += Math.floor(r * 255.999)
+    .toString(16)
+    .padStart(2, '0');
+  s += Math.floor(g * 255.999)
+    .toString(16)
+    .padStart(2, '0');
+  s += Math.floor(b * 255.999)
+    .toString(16)
+    .padStart(2, '0');
+  return s;
+};
+world.Color.proto.mixedWith = function (other, proportion) {
+  // Mix with another color
+  var p = proportion;
+  var q = 1.0 - p;
+  return world.Color.new(
+    this.r * p + other.r * q,
+    this.g * p + other.g * q,
+    this.b * p + other.b * q
+  );
+};
+world.Color.proto.darker = function () {
+  return this.mixedWith(world.Color.black, 0.5);
+};
+world.Color.proto.lighter = function () {
+  return this.mixedWith(world.Color.white, 0.5);
+};
+world.Color.proto.asString = function () {
+  return 'Color.new(' + [this.r, this.g, this.b].toString() + ')';
+};
+world.Color.black = world.Color.new(0, 0, 0);
+world.Color.white = world.Color.new(1, 1, 1);
+world.Color.gray = world.Color.new(0.8, 0.8, 0.8);
+world.Color.darkGray = world.Color.gray.darker();
+world.Color.lightGray = world.Color.gray.lighter();
+world.Color.veryLightGray = world.Color.lightGray.lighter();
+world.Color.red = world.Color.new(0.8, 0, 0);
+world.Color.orange = world.Color.new(0.8, 0.52, 0);
+world.Color.yellow = world.Color.new(0.8, 0.8, 0);
+world.Color.green = world.Color.new(0, 0.8, 0);
+world.Color.blue = world.Color.new(0, 0, 0.8);
+world.Color.random = function () {
+  return world.Color.new(Math.random(), Math.random(), Math.random());
+};
+
+// Ellipse
+
+world.Ellipse = world.Shape.subclass('Ellipse');
+world.Ellipse.proto.initialize = function (center, rn) {
+  this.p = center;
+  this.r = typeof rn === 'number' ? world.pt(rn, rn) : rn;
+  world.Shape.proto.initialize.call(
+    this,
+    'Ellipse',
+    world.rect(this.p.x - this.r.x, this.p.y - this.r.y, this.r.x * 2, this.r.y * 2)
+  );
+  if (this.fillColor == null) this.fillColor = world.Color.blue;
+};
+world.Ellipse.proto.copy = function () {
+  let copy = world.Ellipse.new(this.p, this.r);
+  copy.setStyles(this.fillColor, this.borderWidth, this.borderColor);
+  return copy;
+};
+world.Ellipse.proto.moveBy = function (delta) {
+  world.Shape.proto.moveBy.call(this, delta);
+  this.p = this.p.addPt(delta);
+};
+world.Ellipse.proto.asString = function () {
+  return `Ellipse at ${this.p.asString()} with radius ${this.r}`;
+};
+world.Ellipse.proto.render = function (ctx) {
+  ctx.ellipse(this.p.x, this.p.y, this.r.x, this.r.y, 0, 0, Math.PI * 2);
+  if (this.borderWidth > 0) {
+    ctx.lineWidth = this.borderWidth;
+    ctx.strokeStyle = this.borderColor.fillStyle;
+    ctx.stroke();
+  }
+  if (this.fillColor) {
+    ctx.fillStyle = this.fillColor.fillStyle;
+    ctx.fill();
+  }
+};
+world.Ellipse.proto.renderOn = function (ctx) {
+  this.render(ctx);
+};
+world.Ellipse.proto.includesPt = function (q) {
+  let dx = (q.x - this.p.x) / this.r.x;
+  let dy = (q.y - this.p.y) / this.r.y;
+  return dx * dx + dy * dy <= 1;
+};
+
+// Lists
+
+world.ListNode = world.newClass('ListNode');
+world.ListNode.proto.initialize = function (value, next = null) {
+  this.value = value;
+  this.next = next;
+};
+world.List = world.newClass('List');
+world.List.proto.initialize = function () {
+  // console.log('inside list initialize');
+  this.firstNode = null;
+  for (let idx = arguments.length - 1; idx >= 0; idx--) {
+    this.unshift(arguments[idx]);
+  }
+};
+world.List.fromArray = (a) => {
+  // static method
+  const list = world.List.new();
+  for (let i = 0; i < a.length; i++) list.push(a[i]);
+  return list;
+};
+world.List.proto.first = function () {
+  if (this.firstNode == null) return null;
+  return this.firstNode.value;
+};
+world.List.proto.unshift = function (x) {
+  // think "addFirst()"
+  this.firstNode = world.ListNode.new(x, this.firstNode);
+};
+world.List.proto.removeFirst = function () {
+  if (this.firstNode == null) return null; // should be an error
+  ans = this.firstNode.value;
+  this.firstNode = this.firstNode.next;
+  return ans;
+};
+world.List.proto.push = function (x) {
+  // think "addLast()"
+  if (this.firstNode == null) {
+    this.firstNode = world.ListNode.new(x, null);
+    return this;
+  }
+  let node = this.firstNode;
+  while (node.next != null) {
+    node = node.next;
+  }
+  node.next = world.ListNode.new(x, null);
+};
+world.List.proto.length = function () {
+  let ans = 0;
+  this.forEach(() => ans++);
+  return ans;
+};
+world.List.proto.last = function () {
+  let ans = null;
+  this.forEach((item) => (ans = item));
+  return ans;
+};
+world.List.proto.forEach = function (func) {
+  let curr = this.firstNode;
+  while (curr) {
+    func.call(this, curr.value);
+    curr = curr.next;
+  }
+};
+world.List.proto.forEachWithIndex = function (fn) {
+  let curr = this.firstNode;
+  let idx = 0;
+  while (curr) {
+    fn.call(this, curr.value, idx);
+    curr = curr.next;
+    idx++;
+  }
+};
+world.List.proto.reversed = function () {
+  let ans = world.List.new(); // terribly inefficient one-liner
+  this.forEach((item) => ans.unshift(item));
+  return ans;
+};
+// simple test of forEach...
+world.List.proto.asString = function () {
+  let ans = '';
+  this.forEach((str) => {
+    ans = (ans.length === 0 ? '' : ans + ' -> ') + str;
+  });
+  return ans;
+};
+world.List.proto.map = function (fn) {
+  let ans = world.List.new();
+  this.forEach((each) => {
+    ans.push(fn(each));
+  });
+  return ans;
+};
+world.List.proto.copy = function () {
+  return this.map((x) => x); // shallow copy
+};
+world.List.proto.itemSuchThat = function (fn) {
+  // returns the (last) matching item; not its index
+  let ans = null;
+  this.forEach((each) => {
+    if (fn(each)) ans = each;
+  });
+  return ans;
+};
+world.List.proto.select = function (selectFn) {
+  // Returns a copy with all items for which selectFn is true
+  let ans = world.List.new();
+  let curr = this.firstNode;
+  while (curr) {
+    if (selectFn.call(this, curr.value)) ans.push(curr.value);
+    curr = curr.next;
+  }
+  return ans;
+};
+world.List.proto.promote = function (item) {
+  // Return a new list with item being the last (frontMost in UI) element
+  let ans = world.List.new();
+  this.forEach((each) => {
+    if (each !== item) ans.push(each);
+  });
+  ans.push(item);
+  return ans;
+};
+// at and atPut are currently unused
+// They can be made dramatically faster for the
+// frequent use cases by cacheing the most recent index/node pair.
+world.List.proto.at = function (i) {
+  let ans = null;
+  let idx = 0;
+  this.forEach((each) => {
+    if (idx == i) ans = each;
+    idx++;
+  });
+  return ans;
+};
+/*world.List.proto.atPut = function (idx, value) {
+  // needs checks for null list and out of range
+  let curr = this.firstNode;
+  let ans = 0;
+  while (curr) {
+    if(ans == idx) {curr.value = value; return }
+    ans++;
+    curr = curr.next;
+  }
+  return ans;
+};
+*/
+
+/* List Tests...
+world.aaa = world.List.new();
+world.List.new(1, 2, 3, 4, 5).asString()
+world.aaa.push(1);
+world.aaa.push(5);
+world.aaa.asString();
+world.aaa.map((each) => {return each*each}).asString();
+*/
+
+// Text...
+
+world.TextLine = world.Shape.subclass('TextLine');
+world.TextLine.proto.initialize = function (p, ext, str, ft, fillColor, outlined) {
+  let bounds = p.extent(ext);
+  world.Shape.proto.initialize.call(
+    this,
+    'TextLine',
+    bounds,
+    world.Color.orange,
+    2,
+    world.Color.black
+  );
+  this.string = str;
+  this.font = ft ? ft : '24px serif';
+  this.fill = fillColor;
+  this.outline = null; //outlined ? outlined : null;  // Unless true, use normal solid strokes
+};
+world.TextLine.proto.render = function (ctx) {
+  ctx.fillStyle = world.Color.orange.fillStyle;
+  ctx.fillRect(this.topLeft.x, this.topLeft.y, this.extent.x, this.extent.y);
+  ctx.fillStyle = this.fill.fillStyle;
+  ctx.font = this.font;
+  ctx.textBaseline = 'hanging';
+  ctx.fillText(this.string, this.topLeft.x, this.topLeft.y, this.extent.x);
+};
+
+world.TextCharSpec = world.newClass('ListNode');
+world.TextCharSpec.proto.initialize = function (lineNo, lineY, charX, strIx) {
+  this.lineNo = lineNo;
+  this.lineY = lineY;
+  this.charX = charX;
+  this.strIx = strIx;
+};
+world.TextCharSpec.proto.asString = function () {
+  return `spec: lineNo=${this.lineNo}, lineY=${this.lineY}, charX=${this.charX}, strIx = ${this.strIx}`;
+};
+
+world.TextBox = world.Shape.subclass('TextBox');
+world.TextBox.proto.initialize = function (
+  bounds,
+  str,
+  brk,
+  lineHeight,
+  fontSpec,
+  textColr,
+  boxColr,
+  selColr
+) {
+  //let bounds = p.extent(ext);
+  world.Shape.proto.initialize.call(this, 'TextBox', bounds, boxColr, 2, world.Color.black);
+  this.string = str;
+  this.breakChar = brk;
+  this.lineHeight = lineHeight;
+  this.font = fontSpec;
+  this.textColor = textColr ? textColr : world.Color.black;
+  this.boxColor = boxColr ? boxColr : world.Color.veryLightGray;
+  this.selectionColor = selColr ? selColr : world.Color.green.lighter().lighter();
+  this.fill = this.boxColor; // figure this out
+  this.hang = 4; // vert offset of top line from bounds
+  this.setText(str);
+  this.clearTyping();
+  this.workspaceObj = newObj(); // used for doit and printit
+  // Why did the Menu get confused?  It had a low bottomY ;-)
+};
+world.TextBox.proto.copy = function () {
+  let copy = world.TextBox.new(
+    this.getBounds().copy(),
+    this.string,
+    this.breakChar,
+    this.lineHeight,
+    this.font,
+    this.textColor,
+    this.boxColor,
+    this.selectionColor
+  );
+  return copy;
+};
+world.TextBox.proto.setText = function (str) {
+  this.string = str;
+  let bottomY = this.compose();
+  this.extent.y = bottomY - this.topLeft.y;
+  this.scrollY = 0;
+  this.setNullSelection();
+};
+world.TextBox.proto.setNullSelection = function () {
+  this.selectedLineIndex = 0; // means no selection (for menus, lists, etc)
+  this.selStart = this.selStop = world.TextCharSpec.new(0, this.topLeft.y + this.hang, 0, 0);
+  this.priorNullSelection = 0; // -1 if none (we start with selection at char 0)
+  this.selStartIndex = this.selStopIndex = 0; // indices into this.string
+};
+world.TextBox.proto.compose = function () {
+  // This version will break not only at newLines, but also
+  // at any alphanumeric preceded by a non-alphanumeric.
+  // That covers normal 'word-breaks', but also, eg, long JS epressions.
+  // I'm sure regex magic could help, but this is readable
+  this.lines = world.List.new();
+  this.lineStarts = world.List.new();
+  let ctx = this.getTextContext(this.font);
+  let str = this.string;
+  let lineStart = 0;
+  let newline = 13;
+  let lineFeed = 10;
+  let lineTopLeft = this.topLeft.addPt(world.pt(2, 2));
+  let lineNo = 0;
+  let inAlpha = false; // means we are in middle of an identifier
+  let alphaBreak = 0; // most recent start of an identifier
+  for (let idx = 0; idx < str.length; idx++) {
+    let c = str[idx];
+    let isAlpha = /^[a-zA-Z0-9]*$/.test(c);
+    // console.log(`str[idx] = ${str[idx]}; charCode = ${c}`)
+    if (c == '\n' || c == '\r' || idx == str.length - 1) {
+      // Break after newLine (also end of string)
+      let thisLine = world.TextLine.new(
+        lineTopLeft,
+        world.pt(this.extent.x, this.lineHeight),
+        str.slice(lineStart, idx + 1),
+        this.font,
+        world.Color.blue
+      );
+      this.lines.push(thisLine);
+      this.lineStarts.push(lineStart);
+      lineNo++;
+      lineTopLeft = lineTopLeft.addPt(world.pt(0, this.lineHeight));
+      lineStart = idx + 1;
+    } else {
+      if (!inAlpha && isAlpha) {
+        // This is a 'word break'.  Check if we're out of bounds...
+        let maybeLine = str.slice(lineStart, idx + 1); // leaves off the newline
+        let metrics = ctx.measureText(maybeLine);
+        if (metrics.width >= this.extent.x) {
+          // We're out of bounds; Need to issue a line up to previous break
+          let thisLine = world.TextLine.new(
+            lineTopLeft,
+            world.pt(this.extent.x, this.lineHeight),
+            str.slice(lineStart, alphaBreak),
+            this.font,
+            world.Color.blue
+          );
+          this.lines.push(thisLine);
+          this.lineStarts.push(lineStart);
+          lineNo++;
+          lineTopLeft = lineTopLeft.addPt(world.pt(0, this.lineHeight));
+          lineStart = alphaBreak;
+        }
+        alphaBreak = idx; // Note this break and carry on
+        inAlpha = true;
+      }
+      inAlpha = isAlpha; // Track when we are 'in' an identifier
+    }
+  }
+  return lineTopLeft.y + 2;
+};
+world.TextBox.proto.getTextContext = function (font) {
+  const canvas = document.querySelector('canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  ctx.font = font;
+  return ctx;
+};
+world.TextBox.proto.xValuesForLine = function (lineNo) {
+  // NOTE:  this should receive a line (this.lines.at(lineNo)), insteaad of lineNo
+  const canvas = document.querySelector('canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  ctx.font = this.font;
+  let txt = this.lines.at(lineNo).string;
+  let xVals = world.List.new(0.0);
+  //let s = 'x-values for line ' + lineNo + ': ';
+  for (let i = 0; i < txt.length; i++) {
+    let metrics = ctx.measureText(txt.slice(0, i + 1));
+    //s += ', ' + metrics.width.toFixed(1);
+    xVals.push(metrics.width);
+  }
+  //console.log(s);
+  return xVals;
+};
+world.TextBox.proto.charSpecForPt = function (worldPt) {
+  //if (!this.includesPt(p)) return world.TextCharSpec.new(0, 0, 0, 0);
+  let p = worldPt.subPt(this.topLeft);
+  let lineIndex = Math.floor((p.y - this.hang) / this.lineHeight);
+  let lineY = this.topLeft.y + this.hang + lineIndex * this.lineHeight;
+  let xVals = this.xValuesForLine(lineIndex);
+  let minDist = 999;
+  let xBest = 0;
+  let iBest = 0;
+  let i = 0;
+  xVals.forEach((xVal) => {
+    // Find closest x-value
+    if (Math.abs(xVal - p.x) < minDist) {
+      //Find nearest character x
+      xBest = xVal;
+      iBest = i;
+      minDist = Math.abs(xVal - p.x);
+    }
+    i++;
+  });
+  return world.TextCharSpec.new(lineIndex, lineY, xBest + 1, this.lineStarts.at(lineIndex) + iBest);
+};
+world.TextBox.proto.charSpecForIndex = function (ix) {
+  let charSpec = null;
+  let lineY = this.topLeft.y + this.hang;
+  let lineNo = 0;
+  let lineStartslength = this.lineStarts.length();
+  // console.log('charSpecForIndex ' + ix + '; lineStartslength = ' + lineStartslength);
+  this.lineStarts.forEach((lineStart) => {
+    if (
+      lineNo == lineStartslength - 1 ||
+      (ix >= lineStart && ix < this.lineStarts.at(Math.min(lineNo + 1, lineStartslength - 1)))
+    ) {
+      let xVals = this.xValuesForLine(lineNo);
+      let xBest = xVals.at(ix - lineStart);
+      charSpec = world.TextCharSpec.new(lineNo, lineY - 2, xBest + 1, ix);
+    }
+    lineNo += 1;
+    lineY += this.lineHeight;
+  });
+  if (charSpec == null) return world.TextCharSpec.new(0, 0, 0, 0);
+  return charSpec;
+};
+world.TextBox.proto.selectLineAt = function (p) {
+  if (!this.includesPt(p)) return (this.selectedLineIndex = 0);
+  // Note line index is 1...N; 0 means no selection
+  this.selectedLineIndex = Math.floor((p.y - (this.topLeft.y + this.hang)) / this.lineHeight + 1);
+};
+world.TextBox.proto.codeSnippets = function () {
+  alert('3 + 4 = ' + (3 + 4));
+  world.methodMorph.rotateBy(Math.PI / 4);
+  world.methodMorph.startStepping('rotateBy', Math.PI / 4, 300);
+};
+world.TextBox.proto.startSelectionAt = function (p) {
+  let spec = this.charSpecForPt(p);
+  this.selStart = this.selStop = spec;
+  // console.log("After startSelectionAt" + spec.asString());
+};
+world.TextBox.proto.extendSelectionTo = function (p) {
+  let spec = this.charSpecForPt(p);
+  this.selStop = spec;
+  // console.log("After extendSelectionTo" + spec.asString());
+};
+world.TextBox.proto.selectedTextString = function () {
+  if (this.selectedLineIndex > 0) return this.lines.at(this.selectedLineIndex).string;
+  if (this.selStart != null) return this.string.slice(this.selStart.strIx, this.selStop.strIx);
+  return null;
+};
+world.TextBox.proto.setSelectedTextString = function (str) {
+  let idx = 0;
+  this.lines.forEachWithIndex((line, index) => {
+    if (world.dropNewline(line.string) == str) idx = index;
+  });
+  return (this.selectedLineIndex = idx + 1);
+};
+world.TextBox.proto.acceptKeyboardInput = function (evt) {
+  // ** Note selStart and stop may be reversed!
+  if (world.copyPasteBuffer == null) world.keybardBuffer = '';
+  if (evt.key == 'Shift') return; // redundant keyDown names
+  if (evt.key == 'Control') return;
+  if (evt.key == 'Alt') return;
+  if (evt.key == 'Enter') {
+    this.paste(String.fromCharCode(evt.keyCode));
+    return;
+  }
+  if (evt.metaKey || evt.ctrlKey || evt.addLastKey) return this.handleKeyboardShortcuts(evt);
+
+  if (evt.key == 'Backspace') {
+    // backspace
+    if (this.selectedTextString().length > 0) this.paste(''); // first BS deletes
+    else {
+      if (this.selStart.strIx >= 1) {
+        // subsequent BS deletes backwards
+        this.setSelectionRange([this.selStart.strIx - 1, this.selStart.strIx - 1]);
+        this.paste('');
+      }
+    }
+    return;
+  }
+  console.log('calling paste on ' + evt.key);
+  this.paste(evt.key); // plain old typing
+};
+world.TextBox.proto.handleKeyboardShortcuts = function (evt) {
+  console.log(evt);
+  if ('xcvazdps'.indexOf(evt.key) < 0) return; // so as to not prevent default for some useful cases??
+  if (evt.key == 'a') this.setSelectionRange([0, this.string.length - 1]); // SELECT ALL
+  if (evt.key == 'c') return (world.copyPasteBuffer = this.selectedTextString()); // COPY
+  if (evt.key == 'x') {
+    world.copyPasteBuffer = this.selectedTextString(); // CUT
+    this.paste('');
+  }
+  if (evt.key == 'v') {
+    if (world.copyPasteBuffer == null) this.paste('??'); // PASTE
+    else this.paste(world.copyPasteBuffer);
+  }
+  if (evt.key == 'z') this.undoReplacement; // UNDO
+  if (evt.key == 'd') this.wsEval.call(this.workspaceObj, this.selectedTextString()); // DO IT
+  if (evt.key == 's') this.wsEval.call(this.workspaceObj, this.string); // SAVE (eval all)
+  if (evt.key == 'p') {
+    this.string =
+      this.string.slice(0, this.selStop.strIx) +
+      this.wsEval.call(this.workspaceObj, this.selectedTextString()).toString() + // PRINT IT
+      this.string.slice(this.selStop.strIx);
+    this.compose();
+  }
+  evt.preventDefault();
+};
+// About replacement...
+// There are two states: duringTyping = false or true
+// It gets set to false by clicks. It becomes, and remains true after any keystroke
+// We save enough state to (a) undo a simple type-over or cmd-V paste,
+// ... or (b) repeat the next possible similar repcalement.
+world.TextBox.proto.clearTyping = function () {
+  this.duringTyping = false;
+};
+world.TextBox.proto.noteReplacement = function (str) {
+  // Copied logic of paste() to save state
+  console.log('noteReplacement');
+  if (this.duringTyping) {
+    this.stringPutIn += str;
+    return;
+  }
+  this.selStartStrix = this.selStart.strIx;
+  this.selStopStrix = this.selStop.strIx;
+  this.stringTakenOut = this.string.slice(this.selStartStrix, this.selStopStrix);
+  this.stringPutIn = str.slice(0);
+  this.duringTyping = true;
+};
+world.TextBox.proto.undoReplacement = function () {
+  console.log('undoReplacement');
+  // Recreate selection range
+  this.selStart = this.charSpecForIndex(this.selStop.strIx - this.stringPutIn.length);
+  this.paste(this.stringTakenOut);
+  this.selStart = this.charSpecForIndex(this.selStop.strIx - this.stringTakenOut.length);
+  this.clearTyping();
+};
+world.TextBox.proto.redoReplacement = function (str) {
+  console.log('redoReplacement');
+  // Copied logic of paste() to save state
+  this.setStartStrix = this.selStart.strIx;
+  this.setStopStrix = this.selStop.strIx;
+  this.stringTakenOut = this.string.slice(this.selStart.strIx, this.selStop.strIx);
+  this.stringPutIn = str.slice(0);
+};
+world.TextBox.proto.paste = function (str) {
+  // Paste the string over the current selection
+  if (!this.duringTyping) this.noteReplacement(str); // copied logic to save state
+  let before = this.string.slice(0, this.selStart.strIx);
+  let after = this.string.slice(this.selStop.strIx, this.string.length);
+  this.string = before + str + after;
+  this.compose();
+  this.selStart = this.selStop = this.charSpecForIndex(this.selStart.strIx + str.length);
+};
+world.TextBox.proto.wsEval = function (str) {
+  // By putting eval here, a remote call can point 'this' at workspaceObj
+  return eval(str);
+};
+world.TextBox.proto.asString = function () {
+  return `TextBox[${this.string.slice(0, 4) + '...'}] at ${this.getBounds().asString()}`;
+};
+world.TextBox.proto.renderOn = function (ctx) {
+  // console.log('rendering Shape', this.shapeType);
+  this.render(ctx);
+};
+world.TextBox.proto.render = function (ctx) {
+  ctx.save();
+  ctx.fillStyle = this.boxColor.fillStyle;
+  ctx.fill();
+  ctx.rect(this.topLeft.x, this.topLeft.y, this.extent.x, this.extent.y);
+  if (this.borderWidth > 0) {
+    ctx.fillStyle = this.borderColor.fillStyle;
+    ctx.stroke();
+  }
+  ctx.clip(); // clip to this rectangle
+  // -- turn dropshadows off for the text part of this render
+  ctx.shadowColor = 'transparent'; //
+  ctx.shadowBlur = 0; //
+  ctx.shadowOffsetX = 0; //
+  ctx.shadowOffsetY = 0; //
+  ctx.fillStyle = this.textColor.fillStyle;
+  ctx.font = this.font;
+  ctx.textBaseline = 'hanging';
+  let lineY = this.topLeft.y + this.hang;
+  let nLines = this.lines.length();
+  for (let lineNo = 0; lineNo < nLines; lineNo++) {
+    ctx.fillStyle = this.selectionColor.fillStyle;
+    // *** move this all to a helper function renderSelection()
+    let selY = lineY - 2; // selection looks better a bit higher
+    if (lineNo == this.selectedLineIndex - 1) {
+      // line selection for lists and menus
+      ctx.fillRect(this.topLeft.x, selY, this.extent.x, this.lineHeight);
+    }
+    if (this.selStart != null) {
+      // character selection for editing - egad...
+      let spec1 = this.selStart;
+      let spec2 = this.selStop;
+      // Flip stop and start if selection was drawn backwards
+      if (
+        spec1.lineNo > spec2.lineNo ||
+        (spec1.lineNo == spec2.lineNo && spec1.charX > spec2.charX)
+      ) {
+        spec1 = this.selStop;
+        spec2 = this.selStart;
+      }
+      if (spec1.charX < 1) spec1.charX = 1; // Selection was overwriting border??
+      if (spec2.charX < 1) spec2.charX = 1;
+      if (lineNo == spec1.lineNo) {
+        if (lineNo == spec2.lineNo) {
+          // starts and ends on this line
+          let hairline = spec2.charX - spec1.charX == 0 ? 2 : 0; // show null selection
+          ctx.fillRect(
+            spec1.charX + this.topLeft.x,
+            selY,
+            spec2.charX - spec1.charX + hairline,
+            this.lineHeight
+          );
+        } else {
+          // starts here but continues
+          ctx.fillRect(
+            spec1.charX + this.topLeft.x,
+            selY,
+            this.extent.x - spec1.charX,
+            this.lineHeight
+          );
+        }
+      } else {
+        if (lineNo > spec1.lineNo) {
+          if (lineNo == spec2.lineNo) {
+            // starts above and ends on this line
+            ctx.fillRect(this.topLeft.x, selY, spec2.charX, this.lineHeight);
+          } else {
+            if (lineNo < spec2.lineNo) {
+              // starts above and continues
+              ctx.fillRect(this.topLeft.x, selY, this.extent.x, this.lineHeight);
+            }
+          }
+        }
+      }
+    }
+    ctx.fillStyle = this.textColor.fillStyle;
+    ctx.fillText(this.lines.at(lineNo).string, this.topLeft.x + 2, lineY, 500);
+    lineY += this.lineHeight;
+  }
+  ctx.restore();
+};
+world.TextBox.proto.finSelection = function () {
+  //  If we were selecting backward, now rectify so selStart < selStop
+  if (this.selStart.strIx > this.selStop.strIx) {
+    let swap = this.selStart;
+    this.selStart = this.selStop;
+    this.selStop = swap;
+  }
+  // A chance to notice null selections for selectWord
+  console.log('finSelection; prior null selection is ' + this.priorNullSelection);
+  if (this.selStart.strIx == this.selStop.strIx) {
+    console.log('now null selection at ' + this.selStop.strIx);
+    //debugger;
+    if (this.priorNullSelection == this.selStop.strIx) this.handleSelectWord();
+    else this.priorNullSelection = this.selStop.strIx;
+  } else {
+    this.priorNullSelection = -1;
+  }
+  this.clearTyping();
+};
+world.TextBox.proto.handleSelectWord = function () {
+  // A chance to notice null selections for selectWord
+  //  console.log('handling select word at ' + this.selStart.strIx);
+  // debugger;
+  let pair = this.selectWord(this.string, this.selStart.strIx);
+  console.log('selectWord pair is ' + pair);
+  // debugger;
+  this.setSelectionRange(pair);
+};
+world.TextBox.proto.setSelectionRange = function (pair) {
+  this.selStart = this.charSpecForIndex(pair[0]);
+  this.selStop = this.charSpecForIndex(pair[1] + 1);
+  // console.log('setSelectionRange() = ' + pair)
+  this.priorNullSelection = -1;
+};
+world.TextBox.proto.selectWord = function (str, i1) {
+  // Selection caret before char i1
+  if (!str) return i1;
+  // Dan's super bracket matching feature
+  if (i1 == 0 || i1 == str.length) return [0, str.length - 1]; // select entire string
+  var rightBrackets = '*)}]>\'"';
+  var leftBrackets = '*({[<\'"';
+  function isWhiteSpace(c) {
+    return c === '\t' || c === ' ';
+  }
+  function isAlpha(s) {
+    var regEx = /^[a-zA-Z0-9\-]+$/;
+    return (s || '').match(regEx);
+  }
+  function periodWithDigit(c, prev) {
+    // return true iff c is a period and prev is a digit
+    if (c != '.') return false;
+    return '0123456789'.indexOf(prev) >= 0;
+  }
+  function matchBrackets(str, chin, chout, start, dir) {
+    var i = start;
+    var depth = 1;
+    while (dir < 0 ? i - 1 >= 0 : i + 1 < str.length) {
+      i += dir;
+      if (str[i] == chin && chin != chout) depth++;
+      if (str[i] == chout) depth--;
+      if (depth == 0) return i;
+    }
+    return i;
+  }
+  function findLine(str, start, dir, endChar) {
+    // start points to a CR or LF (== endChar)
+    var i = start;
+    while (dir < 0 ? i - 1 >= 0 : i + 1 < str.length) {
+      i += dir;
+      if (str[i] == endChar) return dir > 0 ? [start, i] : [i + 1, start];
+    }
+    return dir > 0 ? [start + 1, str.length - 1] : [0, start];
+  }
+  var i2 = i1 - 1;
+  if (i1 > 0) {
+    // look left for open backets
+    if (str[i1 - 1] == '\n' || str[i1 - 1] == '\r') {
+      return findLine(str, i1, -1, str[i1]);
+    }
+    var i = leftBrackets.indexOf(str[i1 - 1]);
+    if (str[i1 - 1] == '*' && (i1 - 2 < 0 || str[i1 - 2] != '/')) i = -1; // spl check for /*
+    if (i >= 0) {
+      var i2 = matchBrackets(str, leftBrackets[i], rightBrackets[i], i1 - 1, 1);
+      return [i1, i2 - 1];
+    }
+  }
+  if (i1 < str.length) {
+    // look right for close brackets
+    if (str[i1] == '\n' || str[i1] == '\r') return findLine(str, i1, -1, str[i1]);
+    var i = rightBrackets.indexOf(str[i1]);
+    if (str[i1] == '*' && (i1 + 1 >= str.length || str[i1 + 1] != '/')) i = -1; // spl check for */
+    if (i >= 0) {
+      i1 = matchBrackets(str, rightBrackets[i], leftBrackets[i], i1, -1);
+      return [i1 + 1, i2];
+    }
+  }
+  // is a '//' left of me?
+  if (str[i1 - 1] === '/' && str[i1 - 2] === '/') {
+    while (i2 + 1 < str.length && str[i2 + 1] !== '\n' && str[i2 + 1] !== '\r') {
+      i2++;
+    }
+    return [i1, i2];
+  }
+  // inside of whitespaces?
+  var myI1 = i1;
+  var myI2 = i2;
+  while (myI1 - 1 >= 0 && isWhiteSpace(str[myI1 - 1])) myI1--;
+  while (myI2 < str.length && isWhiteSpace(str[myI2 + 1])) myI2++;
+  if (myI2 - myI1 >= 1) return [myI1, myI2];
+
+  var prev = i1 < str.length ? str[i1] : '';
+  while (i1 - 1 >= 0 && (isAlpha(str[i1 - 1]) || periodWithDigit(str[i1 - 1], prev))) {
+    prev = str[i1 - 1];
+    i1--;
+  }
+  while (i2 + 1 < str.length && (isAlpha(str[i2 + 1]) || periodWithDigit(str[i2 + 1], prev))) {
+    prev = str[i2 + 1];
+    i2++;
+  }
+  return [i1, i2];
+};
+console.log('Shapes and Text loaded');
+
+/* Shape Tests...
+// TODO: get these working again now that children -> topLevelMorph
+world.children = [world.Ellipse.new(world.pt(30, 40), world.pt(20,50)), world.Rectangle.new(world.pt(70, 40), world.pt(80, 40))];
+world.children = [world.TextLine.new(world.pt(30, 30), world.pt(170, 30),
+  "a TextLine in blue", "24px serif", world.Color.blue)];
+world.children = [world.TextBox.new(world.rect(30, 30, 60, 90),
+  "Three blind mice", " ", 24, "24px serif", world.Color.blue)];
+Object.getOwnPropertyNames(world) //Good list for a browser
+world.children = [world.Pen.new().spiral(50, 2, 60)];
+world.Star = world.Pen.new().star(10, 50, world.Color.yellow);
+world.children = [world.Star];
+world.Star.rotateBy(0.05, world.getBounds().center());
+world.Spiral = world.Pen.new().spiral(50, 2, 60);
+world.children = [world.Spiral];
+world.Spinner = setInterval(() => world.Star.rotateBy(0.05,world.getBounds().center()), 200);
+clearTimeout(world.Spinner);
+*/
+
+world.SimpleTransform = world.newClass('SimpleTransform');
+world.SimpleTransform.proto.initialize = function (trans, rot, scale) {
+  this.translation = trans; // a point
+  this.rotation = rot; // radians
+  this.scale = scale; // a point
+};
+world.SimpleTransform.proto.copy = function () {
+  return world.SimpleTransform.new(this.translation, this.rotation, this.scale);
+};
+world.SimpleTransform.proto.asString = function () {
+  return (
+    'translation = ' +
+    this.translation.asString() +
+    ';\n rotation = ' +
+    this.rotation +
+    '; scale = ' +
+    this.scale.asString()
+  );
+};
+
+// Morphs are the graphical nodes in a tree display structure
+world.Morph = world.newClass('Morph');
+world.Morph.proto.initialize = function (bounds, shape) {
+  // If shape is omitted it will be a Rectangle
+  // If bounds is omitted, it will be taken from the shape
+  if (world.traceMe) console.log('log ', 1);
+  this.owner = null; //another morph (or null in the case of a root Morph)
+  this.shape = shape
+    ? shape
+    : world.Shape.new('Rectangle', bounds, world.Color.green, 1, world.Color.black);
+  //console.log('shape = ', this.shape.asString());
+  this.fullBounds = this.shape.getBounds(); //a Rectangle in owner coordinates
+  this.submorphs = world.List.new(); //an array of Morphs in Z-order -- first is frontmost
+  this.transform = this.nullTransformation(); // a transform object with trans/rot/scale
+  this.steppingSpec = null;
+  this.hasChanged = true; //some call on changed() says we need to rerender
+  if (world.traceMe) console.log('log ', 2);
+};
+// Theory of copying morphs:
+// A simple morph is copied by a copy of all its instance variables.
+// But morphs in general comprise a tree of their submorphs
+// So a morphCopy is a simpleCopy with its submorph list being a *map*
+// of morphs to morphCopies
+world.Morph.proto.morphCopy = function () {
+  let copy = world.Morph.new(this.fullBounds, this.shape.copy());
+  copy.owner = this.owner;
+  copy.transform = this.transform.copy(); // may not need to copy
+  copy.steppingSpec = this.steppingSpec ? this.steppingSpec.copy() : null;
+  copy.submorphs = this.submorphs.map((m) => m.morphCopy());
+  return copy;
+};
+world.Morph.proto.position = function () {
+  return this.getBounds().topLeft;
+};
+world.Morph.proto.getBounds = function () {
+  // NOTE for now this does not include any protruding submorphs ("stickouts")
+  return this.shape.getBounds();
+  // this incudes the shape as well as any submorphs
+  // cached here and lazily computed
+  if (this.fullBounds != null) return this.fullBounds;
+  this.fullBounds = this.shape.getBounds(); // outerBounds??
+  if (this.submorphs == null) return this.fullBounds;
+  this.submorphs.forEach((each) => {
+    this.fullBounds = this.fullBounds.union(each.getBounds());
+  });
+  return this.fullBounds;
+};
+world.Morph.proto.subBounds = function (paneSpec) {
+  // returns a subrectangle of bounds for, eg, subPanes
+  return this.getBounds().scaleRect(paneSpec);
+};
+world.Morph.proto.setBounds = function (rect) {
+  return this.shape.setBounds(rect);
+};
+world.Morph.proto.nullTransformation = function () {
+  return world.SimpleTransform.new(world.pt(0, 0), 0, world.pt(1, 1));
+};
+world.Morph.proto.translateBy = function (pt) {
+  this.transform.translation = this.transform.translation.addPt(pt);
+};
+world.Morph.proto.rotateBy = function (angle) {
+  this.transform.rotation += angle;
+};
+world.Morph.proto.scaleBy = function (scale) {
+  const scalePt = typeof scale === 'number' ? world.pt(scale, scale) : scale;
+  this.transform.scale = this.transform.scale.scaleBy(scalePt);
+};
+world.Morph.proto.renderOn = function (ctx) {
+  this.renderMeOn(ctx);
+  this.submorphs.forEach((each) => {
+    ctx.save();
+    if (
+      each.inaHand() ||
+      (this.world().pointerFocus === each && each.shape.shapeType != 'TextBox')
+    ) {
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.7)'; // Semi-transparent black
+      ctx.shadowBlur = 5;
+      ctx.shadowOffsetX = 5;
+      ctx.shadowOffsetY = 5;
+    }
+    // ctx.transform(each.getTransform);
+    const tfm = each.transform;
+    ctx.translate(tfm.translation.x, tfm.translation.y);
+    ctx.rotate(tfm.rotation);
+    ctx.scale(tfm.scale.x, tfm.scale.y);
+    each.renderOn(ctx);
+    ctx.restore();
+  });
+};
+world.Morph.proto.world = function () {
+  // Note this gets used also to find the
+  // root morph -- which could be a hand
+  if (this.owner == null) return this;
+  return this.owner.world();
+};
+world.Morph.proto.isaHand = function () {
+  return false;
+};
+world.Morph.proto.inaHand = function () {
+  if (this.owner == null) return false;
+  if (this.owner.isaHand()) return true;
+  return this.owner.inaHand();
+};
+world.Morph.proto.changed = function () {
+  // Means we have to redraw due to altered content
+  this.hasChanged = true;
+};
+world.Morph.proto.includesPt = function (p) {
+  return this.shape.includesPt(p);
+};
+world.Morph.proto.renderMeOn = function (ctx) {
+  if (!this.hasChanged) return;
+  ctx.beginPath();
+  this.shape.renderOn(ctx);
+  ctx.closePath();
+};
+//Submorph access
+world.Morph.proto.addMorph = function (morph) {
+  return this.addMorphFront(morph);
+};
+world.Morph.proto.addMorphBack = function (morph) {
+  if (morph.owner) morph.owner.removeMorph(morph);
+  if (this.submorphs == null) this.submorphs = world.List.new();
+  this.submorphs.unshift(morph);
+  morph.owner = this;
+  morph.changed();
+  this.layoutChanged();
+  return morph;
+};
+world.Morph.proto.addMorphFront = function (morph) {
+  if (morph.owner) morph.owner.removeMorph(morph);
+  if (this.submorphs == null) this.submorphs = world.List.new();
+  this.submorphs.push(morph);
+  morph.owner = this;
+  morph.changed();
+  this.layoutChanged();
+  return morph;
+};
+world.Morph.proto.removeMorph = function (submorph) {
+  submorph.changed();
+  this.submorphs = this.submorphs.select((each) => !each.eq(submorph));
+  this.changed();
+};
+world.Morph.proto.forEverySubmorph = function (fn) {
+  // Exhaustvely call fn on this and every submorph
+  this.submorphs.forEach((sub) => {
+    fn.call(this, sub);
+    sub.forEverySubmorph(fn);
+  });
+};
+world.Morph.proto.everySubmorphAt = function (pt) {
+  // *** Should be updated to localize(pt) to work with transforms
+  let subs = world.List.new();
+  this.forEverySubmorph((sub) => {
+    if (sub.containsPt(pt)) subs.addLast(sub);
+  });
+};
+world.Morph.proto.eq = function (morph) {
+  // eq tests don't work on objs
+  return this._id == morph._id;
+};
+world.Morph.proto.layoutChanged = function (submorph) {
+  // ** code goes here
+};
+world.Morph.proto.hasSubmorphs = function () {
+  if (this.submorphs == null) return false;
+  return this.submorphs.length() > 0;
+};
+world.Morph.proto.promote = function (submorph) {
+  if (submorph === this.submorphs[0]) return; //already first
+  this.removeMorph(submorph);
+  this.addMorphFront(submorph);
+};
+world.Morph.proto.remove = function () {
+  this.stopStepping();
+  this.owner.removeMorph(this);
+  // this.owner = null;      // Not strictly necess and may be causing
+  //               a problem of morphs losing the chain to this.world()
+};
+world.Morph.proto.setStyles = function (fillColor, borderWidth, borderColor) {
+  this.shape.setStyles(fillColor, borderWidth, borderColor);
+};
+world.Morph.proto.setColor = function (color) {
+  this.shape.setColor(color);
+};
+world.Morph.proto.setBorderWidth = function (width) {
+  this.shape.setBorderWidth(width);
+};
+world.Morph.proto.setBorderColor = function (color) {
+  this.shape.setBorderColor(color);
+};
+world.Morph.proto.moveBy = function (delta) {
+  // Soon we will have a local transformation to handle this
+  console.log('dragging by ' + delta.asString());
+  this.fullBounds.moveBy(delta);
+  this.shape.moveBy(delta);
+};
+world.Morph.proto.worldTab = function () {
+  // returns a 'tab' string proportional to 'worldLevel'
+  return '  '.repeat(this.worldLevel());
+};
+world.Morph.proto.worldLevel = function () {
+  // returns depth of this morph in the scene graph
+  if (this.owner) return 1 + this.owner.worldLevel();
+  return 0;
+};
+world.Morph.proto.onPointerDown = function (p, evt) {
+  console.log('Morph.opd', p, evt);
+  // If any submorph responds, then we're done
+  // debugger;
+  if (evt.metaKey) {
+    let maybeHit = this.world().hitMorphAt(p);
+    if (maybeHit) maybeHit.showHalo();
+    return false;
+  }
+  let eventConsumed = false;
+  this.submorphs.forEachWithIndex(
+    /*  (sub, idx) => {
+      if (!eventConsumed) {
+        console.log(sub.worldTab() + '['+idx+']' + sub.className + '.onPointerDown-includesPt = ' + sub.includesPt(p));
+        eventConsumed = sub.onPointerDown(p, evt);
+        if (eventConsumed) console.log(sub.worldTab() + '['+idx+']' + sub.className + ' has consumed onPointerDown');
+        }}); */
+    (sub, idx) => {
+      let localP = sub.localize(p);
+      console.log('localized', p._id, 'is', localP._id);
+      if (sub.includesPt(localP)) {
+        console.log(
+          sub.worldTab() + 'pointerDown(' + localP.asString() + ') hits in ' + sub.asString()
+        );
+        eventConsumed = sub.onPointerDown(localP, evt);
+      }
+    }
+  );
+  if (eventConsumed) return true;
+
+  // console.log(this.shape.shapeType + 'onPointerDown 1');
+  if (this.actorId != null && this.actorId != window.actorId) return false;
+  // console.log(this.shape.shapeType + 'onPointerDown 2');
+  if (!this.includesPt(p)) return false;
+  // console.log(this.shape.shapeType + 'onPointerDown 3');
+  // console.log('Morph evt.shiftKey = ' + evt.shiftKey);
+  // console.log('Morph.world().shiftKeyDown = ' + this.world().shiftKeyDown);
+  if (evt.shiftKey) {
+    // shift drag means copy
+    let copy = this.world().addMorph(this.morphCopy());
+    copy.hitPoint = p;
+    copy.actorId = evt.actorId;
+    this.world().setPointerFocus(copy);
+    return true; // could merge code
+  }
+  this.hitPoint = p;
+  this.actorId = evt.actorId;
+  this.world().setPointerFocus(this);
+  return true;
+};
+world.Morph.proto.dragFrom = function (p, evt) {
+  this.hitPoint = p;
+  this.actorId = evt.actorId;
+  this.world().setPointerFocus(this);
+};
+world.Morph.proto.onPointerMove = function (p, evt) {
+  // If any submorph responds, then we're done
+  let eventConsumed = false;
+  this.submorphs.forEachWithIndex(
+    /*    (sub) => {if (!eventConsumed) eventConsumed = sub.onPointerMove(p, evt)}); */
+    (sub, idx) => {
+      let localP = sub.localize(p);
+      if (sub.includesPt(localP)) eventConsumed = sub.onPointerMove(localP, evt);
+    }
+  );
+  if (eventConsumed) return true;
+
+  if (this.actorId != null && this.actorId != window.actorId) return false;
+  if (!this.hitPoint) return false;
+  console.log('dragging ' + this.shape.shapeType);
+  this.moveBy(p.subPt(this.hitPoint));
+  this.hitPoint = p;
+  return true;
+};
+world.Morph.proto.onPointerUp = function (p, evt) {
+  // If any submorph responds true, then we're done
+  let eventConsumed = false;
+  this.submorphs.forEachWithIndex(
+    /*    (sub, idx) => {
+      if (!eventConsumed) {
+        console.log(sub.worldTab() + '['+idx+']' + sub.className + '.onPointerUp-includesPt = ' + sub.includesPt(p));
+        eventConsumed = sub.onPointerUp(p, evt);
+        if (eventConsumed) console.log(sub.worldTab() + '['+idx+']' + sub.className + ' has consumed onPointerUp');
+        }}); */
+    (sub, idx) => {
+      let localP = sub.localize(p);
+      if (sub.includesPt(localP)) eventConsumed = sub.onPointerUp(localP, evt);
+    }
+  );
+  if (eventConsumed) return true;
+
+  if (this.actorId != null && this.actorId != window.actorId) return false;
+  this.actorId = null;
+  this.hitPoint = null;
+  this.world().setPointerFocus(null);
+  return true;
+};
+/* world.Morph.proto.onKeyDown = function (evt) {
+  // Needs fancy code for submorphs
+  this.shape.acceptKeyboardInput(evt)
+}; */
+world.Morph.proto.localize = function (pt) {
+  return pt.subPt(this.transform.translation); // Only translation for now */
+};
+world.Morph.proto.startStepping = function (method, argIfAny, msTime) {
+  this.world().startSteppingSpec(
+    world.StepSpec.new(this, method, argIfAny, msTime, Date.now() + msTime)
+  );
+};
+world.Morph.proto.stopStepping = function () {
+  this.world().stopSteppingMorph(this);
+};
+world.Morph.proto.asString = function () {
+  return 'a ' + this.className + ' (' + this.shape.asString() + ')';
+};
+world.Morph.proto.toString = function () {
+  return this.asString();
+};
+world.Morph.proto.verifyMorphs = function (level) {
+  // world.Lively.verifyMorphs()
+  if (!level) level = 0;
+  let str =
+    '\n' +
+    '  '.repeat(level) +
+    this.asString() +
+    ' [' +
+    this.localize(world.pt(100, 100)).asString() +
+    ']';
+  this.submorphs.forEach((morph) => {
+    if (!morph.owner)
+      str += '\n' + '  '.repeat(level + 1) + '*** owner failure in this ' + morph.className + ':';
+    str += morph.verifyMorphs(level + 1, str);
+  });
+  return str;
+};
+world.Morph.proto.logOwnerChain = function () {
+  let obj = this;
+  console.log('Owner chain...');
+  while (obj) {
+    console.log('obj = ' + obj.asString());
+    obj = obj.owner;
+  }
+  console.log('owner = ' + obj);
+};
+console.log('Morph loaded');
+
+world.WorldMorph = world.Morph.subclass('WorldMorph');
+world.WorldMorph.proto.initialize = function (bounds) {
+  if (world.traceMe) console.log('log ', 3);
+  world.Morph.proto.initialize.call(this, bounds, null);
+  this.setColor(world.Color.green.lighter().lighter());
+  if (world.traceMe) console.log('log ', 4);
+  this.stepList = world.List.new();
+  this.pointerFocus = null;
+  this.keyboardFocus = null;
+  this.shiftKeyDown = false; // maintained here
+  this.hands = null;
+  this.pointerLocation = bounds.topLeft;
+};
+world.WorldMorph.proto.world = function () {
+  // Note should be cleaner -- see other implementations
+  return this;
+};
+world.WorldMorph.proto.render = function (ctx) {
+  this.handleStepList();
+  this.renderOn(ctx);
+  if (this.hands) this.hands.forEach((hand) => hand.renderOn(ctx));
+};
+world.WorldMorph.proto.setPointerFocus = function (morphOrNull) {
+  this.pointerFocus = morphOrNull;
+  if (morphOrNull) console.log('setting pointerFocus to ' + morphOrNull.asString());
+  else console.log('setting pointerFocus to null ');
+};
+world.WorldMorph.proto.onQuickClick = function (pt, evt) {
+  let maybeTop = this.topMorphAt(pt);
+  if (maybeTop) {
+    console.log('onQuickClick, found a ' + maybeTop.className);
+    maybeTop.showHalo();
+  }
+};
+world.WorldMorph.proto.hitMorphAt = function (pt) {
+  // Find the closest hit
+  // Actually, just get the first-levelhit
+  return this.submorphs.itemSuchThat((morph) => morph.includesPt(pt));
+  /*let minDist = 999; 
+  let hitMorph = null;
+  this.forEverySubmorph((morph) => {
+    let d = pt.dist(morph.getBounds().center());
+    if (d < minDist) {
+      minDist = d; hitMorph = morph;
+      console.log('hitMorph at dist ' + minDist + ': ' + hitMorph.asString()) }
+    });
+  console.log('hitMorph ' + hitMorph.asString() + '/n at ' + pt.asString());
+  return hitMorph; */
+};
+world.WorldMorph.proto.topMorphAt = function (pt) {
+  // ***This finds submorphs on top of their owners,
+  // but I think it incorrectly finds first submorphs on top of later ones
+  // when in fact later ones appear on top
+  // See also: Morph.proto.everySubmorphAt
+  let maybeTop = null;
+  this.forEverySubmorph((morph) => {
+    console.log('topMoph ' + morph.asString() + '/n at ' + pt.asString());
+    if (morph.includesPt(pt)) maybeTop = morph;
+  });
+  return maybeTop;
+};
+world.WorldMorph.proto.topMorphAtX = function (pt) {
+  // Variant of topMorphAt()
+  let maybeTop = this.everySubmorphAt(pt).last();
+  return maybeTop;
+};
+world.WorldMorph.proto.initHand = function () {
+  let color = world.Color.blue;
+  if (!this.hands) this.hands = world.List.new();
+  else color = world.Color.green;
+  this.addHand(world.HandMorph.new(window.actorId, this.pointerLocation, color));
+};
+world.WorldMorph.proto.addHand = function (handMorph) {
+  // maybe should check for duplicate adds
+  if (!this.hands) this.hands = world.List.new();
+  this.hands.push(handMorph);
+  handMorph.owner = this;
+  this.render(world.canvas().getContext('2d')); // hand should now appear
+};
+world.WorldMorph.proto.removeHand = function (handMorph) {
+  this.hands = this.hands.select((m) => m !== handMorph);
+};
+world.WorldMorph.proto.myHand = function () {
+  if (this.hands == null) return null;
+  return this.hands.itemSuchThat((hand) => hand.actorId == window.actorId);
+};
+world.WorldMorph.proto.onPointerDown = function (p, evt) {
+  if (evt.metaKey) return this.world().hitMorphAt(p).showHalo();
+  console.log('wm.opd', p, evt);
+  // this.removeExistingHalos();  // OK here?
+  if (evt.shiftKey) this.shiftKeyDown = true;
+  if (this.myHand()) {
+    this.myHand().onPointerDown(p, evt);
+    return true;
+  }
+  console.log('WorldMorph evt.shiftKey = ' + evt.shiftKey);
+  console.log('World.shiftKeyDown = ' + this.shiftKeyDown);
+  let hit = false; // return of true stops at top morph
+  this.submorphs.reversed().forEach((morph) => {
+    if (!hit) hit = morph.onPointerDown(p, evt);
+  });
+  return hit;
+};
+world.WorldMorph.proto.onPointerMove = function (p, evt) {
+  this.pointerLocation = p;
+  if (this.myHand()) this.myHand().onPointerMove(p, evt);
+  else this.submorphs.forEach((morph) => morph.onPointerMove(p, evt));
+};
+world.WorldMorph.proto.onPointerUp = function (p, evt) {
+  if (!evt.shiftKey) this.shiftKeyDown = false;
+  if (this.myHand()) this.myHand().onPointerUp(p, evt);
+  else this.submorphs.forEach((morph) => morph.onPointerUp(p, evt));
+};
+/* ***?
+world.WorldMorph.proto.onQuickClick = function (p, evt) {
+  if (!evt.shiftKey) this.shiftKeyDown = false;
+  if (this.myHand()) this.myHand().onQuickClick(p, evt);
+  else this.submorphs.forEach((morph) => morph.onQuickClick(p, evt));
+}; */
+world.WorldMorph.proto.onKeyPress = function (evt) {
+  if (evt.shiftKey || evt.key == 'Shift') this.shiftKeyDown = true;
+  if (this.keyboardFocus != null && this.keyboardFocus.world() != null) {
+    this.keyboardFocus.onKeyPress(evt);
+  }
+};
+world.WorldMorph.proto.onKeyDown = function (evt) {
+  // Extract shift-key state from other event logic
+  // debugger
+  if (evt.shiftKey || evt.key == 'Shift') this.shiftKeyDown = true;
+  if (!this.keyboardFocus) this.keyboardFocus = this.world().topMorphAt(this.pointerLocation);
+  if (this.keyboardFocus.onKeyDown) return this.keyboardFocus.onKeyDown(evt);
+};
+world.WorldMorph.proto.onKeyUp = function (evt) {
+  if (evt.key == 'Shift') this.shiftKeyDown = false;
+  return world.Morph.proto.onKeyUp.call(this, evt);
+};
+world.WorldMorph.proto.startSteppingSpec = function (spec) {
+  this.stepList.push(spec);
+};
+world.WorldMorph.proto.stopSteppingMorph = function (morph) {
+  this.stepList = this.stepList.select((spec) => !spec.stepMorph.eq(morph));
+};
+world.WorldMorph.proto.handleStepList = function () {
+  // Note this may fire several morphs, not in order if all are due
+  // Also (nice) if an error occurs, the morph will be out of stepList
+  this.stepList.forEach((spec) => {
+    if (spec.nextStepTime < Date.now()) {
+      this.stepList = this.stepList.select((s) => s._id != spec._id);
+      spec.nextStepTime = Date.now() + spec.stepPeriod;
+      if (spec.arg) spec.stepMorph[spec.methodName](spec.arg);
+      else spec.stepMorph[spec.methodName]();
+      this.stepList.push(spec);
+    }
+  });
+};
+world.WorldMorph.proto.showWorldMenuAt = function (pt) {
+  let theMenu = world.Lively.addMorph(
+    world.MenuMorph.new(
+      pt.extent(world.pt(100, 99)),
+      world.List.fromArray(['Morphic help', 'Halo help', 'Text help']),
+      (item) => {
+        if (item == 'Morphic help') {
+          this.world().showMorphicHelp();
+          theMenu.remove();
+        }
+        if (item == 'Halo help') {
+          this.world().showHaloHelp();
+          theMenu.remove();
+        }
+        if (item == 'Text help') {
+          this.world().showTextHelp();
+          theMenu.remove();
+        }
+      }
+    )
+  );
+};
+world.WorldMorph.proto.showMorphicHelp = function () {
+  world.Lively.addMorph(
+    world.TextMorph.new(
+      world.rect(20, 230, 500, 99),
+      `Welcome to LivelyMerge!
+This is an experimental implementation of a Lively/Squeak-like system
+whose object memory is embedded in AutoMerge, a multi-user database.
+The graphics model is Morphic, and the UI is taken very closely from Squeak and Lively.
+All objects ("morphs") on the screen are in a tree of morphs (owners) and submorphs,
+similar to the parent/children structure of HTML.  The root of this tree is a
+WorldMorph, and any morph can access it with the method "world()".
+Each user is associated with a "hand" that can pick up any morph (removing it
+from its prior owner (may be the "world")), and drop it on another object
+that then becomes its new owner. The hand is the sole source of pointer and keyboard
+events.
+Every morph has a 2-D coordinate transform between its bounds (in its owner's
+coordinate system) and its submorphs and other graphical content))`
+    )
+  );
+};
+world.WorldMorph.proto.showHaloHelp = function () {
+  world.Lively.addMorph(
+    world.TextMorph.new(
+      world.rect(20, 230, 500, 99),
+      `The current UI offers an object manipulation "halo" if you make a "quick click"
+(ie, click down and up in less than 150ms) on any object.  The halo provides
+ten "handles" labelled with a single letter and offering the following functions...
+'R' - Rotate: Drag the handle to rotate the target object
+'S' - Style: Open a style editor to choose fill and border color and border width
+'C' - Copy: Make a copy of this object, attached to the hand for dragging
+'M' - Menu: Bring up a menu of commands for this object
+'G' - Grab: Pluck this object out of its owner, and drop it elsewhere
+'D' - Drag: Drag this object without removing it from its current owner
+'X' - Delete: Delete this object
+'B' - Browse: Open a browser to edit the code for this object
+'I' - Inspect: Open an inspector on this object
+'Z' - Scale: Drag the handle to resize the object.`
+    )
+  );
+};
+world.WorldMorph.proto.showTextHelp = function () {
+  world.Lively.addMorph(
+    world.TextMorph.new(
+      world.rect(20, 230, 500, 99),
+      `Text editing in this system is very simple - there are no automatic
+pop-ups or type-aheads.  The following command-keys provide basic edits:
+  cmd-A: select the entire string
+  cmd-X: cut the surrent selection
+  cmd-C: copy the surrent selection to a paste buffer
+  cmd-V: paste the contents of the paste buffer
+  cmd-D: evaluate the current selection (more aobut scope etc)
+  cmd-P: paste the result of evaluating the current selection
+  cmd-S: evaluate the entire string (ie save in browser methohd pane)`
+    )
+  );
+};
+console.log('WorldMorph loaded');
+
+// Ticking
+// Simple ticking will just send step(clock) to every morph and let them handle it
+// Nicer is for any morph to be able to say startTicking(msRate, method, argsIfAny)
+// This gets held as a StepSpec that also includes a nextStepTime.
+// A dumb handler can run through all checking the nextStepTimes,
+// and a smart one can sort the list and only check the first one
+
+world.StepSpec = world.newClass('StepSpec');
+world.StepSpec.proto.initialize = function (morph, method, argIfAny, msTime) {
+  this.stepMorph = morph;
+  this.methodName = method;
+  this.arg = argIfAny;
+  this.stepPeriod = msTime;
+  this.nextStepTime = Date.now();
+};
+world.StepSpec.proto.copyForMorph = function (morph) {
+  return world.StepSpec.new(
+    morph,
+    this.methodName,
+    (this.arg = argIfAny),
+    this.stepPeriod,
+    this.nextStepTime
+  );
+};
+
+world.HandMorph = world.Morph.subclass('HandMorph');
+world.HandMorph.proto.initialize = function (id, location, color) {
+  this.actorId = id;
+  world.Morph.proto.initialize.call(this, null, world.Pen.new().makeHandShape(location, color));
+};
+world.HandMorph.proto.isaHand = function () {
+  return true;
+};
+world.HandMorph.proto.location = function () {
+  return this.getBounds().topLeft;
+};
+world.HandMorph.proto.onPointerDown = function (p, evt) {
+  this.hitPoint = p;
+  if (evt.shiftKey) {
+    // shift drag means copy
+    if (this.hasSubmorphs()) return false; // no sense to copy if laden
+    else this.addMorph(this.world().topMorphAt(p).morphCopy());
+  } else {
+    if (this.hasSubmorphs()) this.dropMorph();
+    else this.grabMorph();
+  }
+  return true; // not needed for hands
+};
+world.HandMorph.proto.onPointerMove = function (p, evt) {
+  // debugger;
+  let d = p.subPt(this.location()); // position instead of topLeft?  ***
+  this.moveBy(d);
+  // When we enable transforms, all sybmorphs will simply move with me
+  this.forEverySubmorph((m) => m.moveBy(d));
+};
+world.HandMorph.proto.onPointerUp = function (p, evt) {
+  if (this.hasSubmorphs() && this.hitPoint.dist(p) > 2) this.dropMorph();
+};
+world.HandMorph.proto.grabMorph = function (p, evt) {
+  let morphUnder = this.world().topMorphAt(this.location());
+  if (morphUnder) this.addMorph(morphUnder); // will remove it from world
+};
+world.HandMorph.proto.dropMorph = function (p, evt) {
+  let morphUnder = this.world().topMorphAt(this.location());
+  this.submorphs.forEach((morphToDrop) => {
+    if (morphUnder) morphUnder.addMorph(morphToDrop);
+    else this.world().addMorph(morphToDrop);
+  });
+};
+
+world.TextMorph = world.Morph.subclass('TextMorph');
+world.TextMorph.proto.initialize = function (bounds, str) {
+  world.Morph.proto.initialize.call(
+    this,
+    bounds,
+    world.TextBox.new(
+      bounds,
+      str,
+      '\n',
+      16,
+      '14px sans-serif',
+      world.Color.black,
+      world.Color.veryLightGray,
+      world.Color.green.lighter()
+    )
+  );
+};
+world.TextMorph.proto.setText = function (str) {
+  this.shape.setText(str); // *** should probably adjust bounds due to recompose
+};
+world.TextMorph.proto.dragFrom = function (p, evt) {
+  this.textDragHack = true;
+  return world.Morph.proto.dragFrom.call(this, p, evt);
+};
+world.TextMorph.proto.onPointerDown = function (p, evt) {
+  if (this.actorId != null && this.actorId != window.actorId) return false;
+  if (!this.shape.includesPt(p)) return false;
+  console.log('TextMorph.onPointerDown');
+  if (evt.shiftKey) {
+    world.Morph.proto.onPointerDown.call(this, p, evt);
+    return true;
+  }
+  this.hitPoint = p;
+  this.actorId = evt.actorId;
+  this.shape.startSelectionAt(p);
+  this.world().keyboardFocus = this;
+  this.world().setPointerFocus(this);
+  return true;
+};
+world.TextMorph.proto.onPointerMove = function (p, evt) {
+  // event handling should go to the shape (text); while morph ops to morph(super)...
+  // *** If event focus is working right, we should be able to drop pointer events
+  //     here, and just let them be handled in superclass Morph
+  if (this.textDragHack) return world.Morph.proto.onPointerMove.call(this, p, evt);
+
+  // console.log('TextMorph.onPointerMove - 0');
+  if (this.actorId != null && this.actorId != window.actorId) return false;
+  // console.log('TextMorph.onPointerMove - 1');
+  if (!this.shape.includesPt(p)) return false;
+  // console.log('TextMorph.onPointerMove - 2');
+  if (evt.shiftKey) return world.Morph.proto.onPointerMove.call(this, p, evt);
+  if (this.hitPoint) {
+    // console.log('TextMorph.onPointerMove - 3');
+    this.shape.extendSelectionTo(p);
+  }
+  return true;
+};
+world.TextMorph.proto.onPointerUp = function (p, evt) {
+  // event handling should go to the shape (text); while morph ops to morph(super)...
+  if (this.textDragHack) {
+    this.textDragHack = false;
+    return world.Morph.proto.onPointerUp.call(this, p, evt);
+  }
+
+  if (this.actorId != null && this.actorId != window.actorId) return false;
+  if (!this.shape.includesPt(p)) return false;
+  console.log('TextMorph.onPointerUp');
+  console.log('1: world() = ' + this.world().asString());
+  this.shape.finSelection(); // A chance to notice selectWord click
+  console.log('2: world() = ' + this.world().asString());
+  this.actorId = null;
+  this.hitPoint = null;
+  console.log('3: world() = ' + this.world().asString());
+  this.world().setPointerFocus(null);
+  console.log('TextMorph.shape.selectedTextString() = ' + this.shape.selectedTextString());
+  return true;
+};
+world.TextMorph.proto.onKeyDown = function (evt) {
+  console.log(`onKeyDown keyCode=${evt.keyCode}, evt.key=${evt.key},
+        evt.metaKey=${evt.metaKey}, evt.ctrlKey=${evt.ctrlKey}`);
+  this.shape.acceptKeyboardInput(evt);
+};
+world.TextMorph.test = function () {
+  // world.TextMorph.test();
+  // Quick setup for testing TextMorph...
+  world.Lively = world.WorldMorph.new(world.getBounds()); // make up a morphic world
+  world.topLevelMorph = world.Lively; // 'install' the morphic world in patchwork world
+  world.methodMorph = null; // so vestigial morph won't try to remove (badly)
+  world.showMethod('Pen', 'star');
+  world.methodMorph.moveBy(world.pt(0, -200));
+};
+
+world.MenuMorph = world.Morph.subclass('MenuMorph');
+world.MenuMorph.proto.initialize = function (initialBounds, list, actionFn) {
+  world.Morph.proto.initialize.call(
+    this,
+    initialBounds,
+    world.TextBox.new(
+      initialBounds,
+      'text',
+      ' ',
+      16,
+      '14px sans-serif',
+      world.Color.black,
+      world.Color.veryLightGray,
+      world.Color.green.lighter()
+    )
+  );
+  this.setList(list);
+  this.setSelectFn(actionFn);
+  console.log(
+    `*** new MenuMorph.getBounds = ${this.getBounds().asString()},  shape.getBounds = ${this.shape
+      .getBounds()
+      .asString()}`
+  );
+};
+world.MenuMorph.proto.setList = function (list) {
+  // console.log('MenuMorph.setList ' + list);
+  this.itemList = list;
+  let itemText = '';
+  this.itemList.forEach((item) => (itemText += item + '\n'));
+  this.shape.setText(itemText);
+};
+world.MenuMorph.proto.setSelectFn = function (actionFn) {
+  this.actionFn = actionFn;
+};
+world.MenuMorph.proto.onPointerDown = function (p, evt) {
+  if (this.actorId != null && this.actorId != window.actorId) return false;
+  if (!this.includesPt(p)) return false;
+  console.log('MenuMorph (' + this.itemList.first() + '...) onPointerDown()');
+  if (evt.shiftKey) {
+    world.Morph.proto.onPointerDown.call(this, p, evt);
+    return true;
+  }
+  this.hitPoint = p;
+  this.actorId = evt.actorId;
+  this.shape.selectLineAt(p);
+  //this.logOwnerChain();
+  this.world().setPointerFocus(this);
+  return true;
+};
+world.MenuMorph.proto.onPointerMove = function (p, evt) {
+  if (this.actorId != null && this.actorId != window.actorId) return false;
+  if (!this.includesPt(p)) return false;
+  console.log('MenuMorph (' + this.itemList.first() + '...) onPointerMove()');
+  if (evt.shiftKey) return world.Morph.proto.onPointerMove.call(this, p, evt);
+  if (this.hitPoint) {
+    this.shape.selectLineAt(p);
+  }
+};
+world.MenuMorph.proto.onPointerUp = function (p, evt) {
+  console.log('MenuMorph.onPointerUp - 0');
+  if (this.actorId != null && this.actorId != window.actorId) return false;
+  if (!this.includesPt(p)) return false;
+  console.log('MenuMorph (' + this.itemList.first() + '...) onPointerUp()');
+  console.log('p = ' + p.asString() + ', this.getBounds() = ' + this.getBounds().asString());
+  console.log(`this.includesPt(p) = ${this.includesPt(p)}`);
+  if (!this.includesPt(p)) return false;
+  console.log('MenuMorph (' + this.itemList.first() + '...) onPointerUp()');
+  console.log('MenuMorph.onPointerUp - 2');
+  // if (evt.shiftKey) return world.Morph.proto.onPointerUp.call(this, p, evt);
+  this.actorId = null;
+  this.hitPoint = null;
+  let selectionIndex = this.shape.selectedLineIndex;
+  // *** Use following statement for menus
+  //this.shape.selectLineAt(world.pt(-1, -1));  // turn off the selection
+  this.world().setPointerFocus(null);
+  console.log('MenuMorph.onPointerUp - 3');
+  console.log('MenuMorph selectionIndex = ' + selectionIndex);
+  if (selectionIndex > 0)
+    console.log(
+      '**** Selected: ' + world.dropNewline(this.shape.lines.at(selectionIndex - 1).string)
+    );
+  if (selectionIndex > 0)
+    this.actionFn.call(this, world.dropNewline(this.shape.lines.at(selectionIndex - 1).string));
+  return true;
+};
+world.MenuMorph.proto.setSelectionString = function (str) {
+  console.log('***menuMorph.setSelectionString: ' + str);
+  let selectionIndex = this.shape.setSelectedTextString(str);
+  console.log('selectionIndex = ' + selectionIndex);
+  if (selectionIndex > 0)
+    this.actionFn.call(this, world.dropNewline(this.shape.lines.at(selectionIndex - 1).string));
+};
+world.dropNewline = function (str) {
+  if (str.charCodeAt(str.length - 1) == 10) return str.slice(0, -1); // drop newline
+  if (str.charCodeAt(str.length - 1) == 13) return str.slice(0, -1);
+  return str;
+};
+console.log('Morph, world and Menus loaded');
+
+world.initLively = function () {
+  // world.initLively();
+  world.Lively = world.WorldMorph.new(world.getBounds()); // make up a morphic world
+  world.topLevelMorph = world.Lively; // 'install' the morphic world in patchwork world
+  return world.Lively;
+};
+world.populateLively = function () {
+  // world.populateLively()
+  world.initLively(); // build a simple world with a single rectangle morph
+  let rect = world.Lively.addMorph(world.Morph.new(world.rect(20, 20, 60, 30)));
+  let oval = world.Lively.addMorph(
+    world.Morph.new(null, world.Ellipse.new(world.pt(50, 75), world.pt(30, 15)))
+  );
+  oval.setStyles(world.Color.green.lighter(), 2, world.Color.black);
+  // world.Lively.addMorph(world.Morph.new(null , world.Pen.new().spiral(26, 2, 60)));
+  let star = world.Lively.addMorph(
+    world.Morph.new(null, world.Pen.new().star(10, 30, world.Color.black))
+  );
+  star.setColor(world.Color.yellow);
+  star.moveBy(world.pt(20, 100).subPt(star.getBounds().topLeft));
+  world.Lively.addMorph(
+    world.MenuMorph.new(
+      world.rect(20, 165, 100, 99),
+      world.List.fromArray(['Make hand', 'Make browser', 'Close browser']),
+      (item) => {
+        if (item == 'Make hand') world.Lively.initHand();
+        if (item == 'Make browser') world.Browser = world.PanelMorph.test();
+        if (item == 'Close browser') world.Browser.remove();
+      }
+    )
+  );
+  Text;
+  world.Lively.addMorph(
+    world.TextMorph.new(
+      world.rect(20, 230, 500, 99), // *** was 500
+      `Here are some simple shapes in LivelyMerge.  You can drag them around and copy 
+    them with shift-drag.  This text is editable with meta-C, X, and V for copy, cut,
+    paste.  Use ctrl-D and P for doi-it and print-it.  You can also use 'this.name'
+    to write and read workspace variables.  Knock yourself out :-).`
+    )
+  );
+};
+world.showMethod = function (className, methodName) {
+  if (world.methodMorph != null) world.methodMorph.remove();
+  let methodString = world[className].proto[methodName].toString();
+  world.methodMorph = world.Lively.addMorph(
+    world.TextMorph.new(
+      world.rect(140, 380, 500, 99), // *** was 500
+      className + '.proto.' + methodName + ' = ' + methodString
+    )
+  );
+};
+world.classNamesList = function () {
+  // world.classNamesList()
+  let names = Object.getOwnPropertyNames(world);
+  let list = [];
+  for (let i = 0; i < names.length; i++) {
+    if (
+      world[names[i]] != null &&
+      Object.getOwnPropertyNames(world[names[i]]).indexOf('proto') >= 0
+    )
+      list.push(names[i]);
+  }
+  return world.List.fromArray(list);
+};
+
+// get something going
+world.initUI();
+console.log('initUI()...');
+world.topLevelMorph = world.Ellipse.new(world.pt(30, 40), 8);
+
+world.PanelMorph = world.Morph.subclass('PanelMorph');
+// A simple panel for option panels and paned browsers
+// submorphs are typically PaneMorphs or buttons
+world.PanelMorph.proto.initialize = function (initialBounds) {
+  world.Morph.proto.initialize.call(this, initialBounds);
+};
+world.PanelMorph.proto.moveBy = function (pt) {
+  world.Morph.proto.moveBy.call(this, pt); // super
+  this.forEverySubmorph((morph) => morph.moveBy(pt));
+};
+world.PanelMorph.proto.buildBrowser = function () {
+  this.classPane = this.addMorph(
+    world.ListPane.new(this.subBounds(world.rect(0.0, 0.0, 0.5, 0.6)))
+  );
+  console.log('PanelMorph.classPane.setList world.classNamesList()...');
+  this.classPane.setList(world.classNamesList());
+  this.classPane.onSelect((classSelection) => {
+    console.log('this.selectedClass = ' + classSelection);
+    this.selectedClass = classSelection;
+    this.messagePane.setList(
+      world.List.fromArray(Object.getOwnPropertyNames(world[this.selectedClass].proto))
+    );
+  });
+  this.messagePane = this.addMorph(
+    world.ListPane.new(this.subBounds(world.rect(0.5, 0.0, 0.5, 0.6)))
+  );
+  console.log('PanelMorph.messagePane.setList (["message names"])...');
+  this.messagePane.setList(world.List.new('message names'));
+  this.messagePane.onSelect((methodSelection) => {
+    console.log('this.selectedMethod = ' + methodSelection);
+    this.selectedMethod = methodSelection;
+    let methodString = world[this.selectedClass].proto[this.selectedMethod].toString();
+    let headerString = 'world.' + this.selectedClass + '.proto.' + this.selectedMethod + ' = ';
+    this.methodPane.setText(headerString + methodString);
+  });
+  this.methodPane = this.addMorph(
+    world.TextPane.new(this.subBounds(world.rect(0.0, 0.6, 1.0, 0.4)))
+  );
+  this.methodPane.setText('Method text');
+};
+world.PanelMorph.test = function () {
+  // world.PanelMorph.test()
+  if (!world.Lively) world.initLively(); // build a simple world with a single rectangle morph
+  let browser = world.Lively.addMorph(world.PanelMorph.new(world.rect(400, 60, 400, 300)));
+  browser.buildBrowser();
+  console.log('browser = ' + browser.asString());
+  return browser;
+};
+world.PanelMorph.proto.buildInspector = function (target) {
+  this.target = target;
+  this.varValue = null;
+  this.varsPane = this.addMorph(world.ListPane.new(this.subBounds(world.rect(0.0, 0.0, 0.3, 0.6))));
+  this.varsPane.setList(world.List.fromArray(Object.getOwnPropertyNames(this.target)));
+  this.varsPane.onSelect((varName) => {
+    this.varValue = this.target[varName];
+    this.printPane.setText(world.inspectString(this.varValue));
+  });
+  this.printPane = this.addMorph(
+    world.TextPane.new(this.subBounds(world.rect(0.3, 0.0, 0.7, 0.6)))
+  );
+  this.printPane.setText('Var value asString()');
+  this.evalPane = this.addMorph(world.TextPane.new(this.subBounds(world.rect(0.0, 0.6, 1.0, 0.4))));
+  this.evalPane.setText('Var value asString()');
+  this.evalPane.setText('Eval here with this bound to this ' + this.target.className);
+};
+world.Morph.proto.inspect = function () {
+  // world.Lively.submorphs.first().inspect()
+  return world.Lively.addMorph(world.PanelMorph.new(world.rect(500, 100, 300, 300))).buildInspector(
+    this
+  );
+};
+world.inspectString = function (obj) {
+  let typeStr = typeof obj;
+  if (typeStr == 'number') return typeStr + ': ' + obj.toString();
+  if (typeStr == 'boolean') return typeStr + ': ' + obj.toString();
+  if (typeStr == 'string') return typeStr + ': ' + obj.toString();
+  try {
+    typeStr = typeStr + ': a' + obj.className;
+  } catch (err) {
+    typeStr = typeStr + ': ' + err;
+  }
+  return typeStr;
+};
+
+world.SliderMorph = world.Morph.subclass('SliderMorph');
+world.SliderMorph.proto.initialize = function (initialBounds, valueFn) {
+  world.Morph.proto.initialize.call(this, initialBounds);
+  this.value = 0.5; // By convention, my value ranges from 0.0 to 1.0
+  this.valExtent = 0.1; // for when showing a range
+  this.slider = this.addMorph(world.Morph.new(world.rect(0, 0, 10, 10)));
+  this.styleSlider();
+  this.slider.onPointerDown = function () {
+    return false;
+  }; // ignore blipper
+  this.emitValueFunction = valueFn;
+  console.log(`slider value = ${this.value}, slider = ${this.slider.asString()},
+    function = ${this.emitValueFunction}`);
+  this.adjustForNewBounds();
+};
+world.SliderMorph.proto.styleSlider = function () {
+  this.slider.setColor(world.Color.red);
+};
+world.SliderMorph.proto.isVertical = function () {
+  var bnds = this.shape.getBounds();
+  return bnds.height() > bnds.width();
+};
+world.SliderMorph.proto.setValueTarget = function (target, msgName) {
+  this.valueTarget = target;
+  this.valueMessage = msgName;
+};
+world.SliderMorph.proto.adjustForNewBounds = function () {
+  // This method adjusts the slider for changes in value as well as geometry
+  var bnds = this.shape.getBounds();
+  var ext = this.valExtent;
+  if (this.isVertical()) {
+    // more vertical...
+    var elevPix = Math.max(ext * bnds.height(), 6); // height of elevator in pixels
+    var topLeft = world.pt(0, (bnds.height() - elevPix) * this.value);
+    var sliderExt = world.pt(bnds.width(), elevPix);
+  } else {
+    // more horizontal...
+    var elevPix = Math.max(ext * bnds.width(), 6); // thickness of elevator in pixels
+    var topLeft = world.pt((bnds.width() - elevPix) * this.value, 0);
+    var sliderExt = world.pt(elevPix, bnds.height());
+  }
+  console.log('isVertical =  ' + this.isVertical());
+  var bb = bnds.topLeft.addPt(topLeft).extent(sliderExt);
+  console.log('adjust bounds ' + bb.asString());
+  this.slider.setBounds(bnds.topLeft.addPt(topLeft).extent(sliderExt));
+  console.log('adjust done');
+};
+world.SliderMorph.proto.onPointerDown = function (pt, evt) {
+  //	Note: want setMouseFocus to also cache the transform and record the hitPoint.
+  //	Ideally thereafter only have to say, eg, morph moveTo: evt.hand.adjustedMousePoint
+  if (this.actorId != null && this.actorId != window.actorId) return false;
+  if (!this.includesPt(pt)) return false;
+  this.hitPoint = pt;
+  this.world().setPointerFocus(this);
+  return true;
+};
+world.SliderMorph.proto.onPointerUp = function (pt, evt) {
+  if (this.actorId != null && this.actorId != window.actorId) return false;
+  if (!this.includesPt(pt)) return false;
+  this.hitPoint = null;
+  this.world().setPointerFocus(null);
+  return true;
+};
+world.SliderMorph.proto.onPointerMove = function (pt, evt) {
+  if (this.actorId != null && this.actorId != window.actorId) return false;
+  if (!this.hitPoint) return false;
+  if (!this.includesPt(pt)) return false;
+  // Compute a new value from a new mouse point, and emit it
+  console.log('----pointerMove-----');
+  var bnds = this.shape.getBounds();
+  let ext = this.valExtent; // for now...
+  let p = pt.subPt(bnds.topLeft);
+  if (this.isVertical()) {
+    // more vertical...
+    var elevPix = Math.max(ext * bnds.height(), 6); // thickness of elevator in pixels
+    var newValue = (p.y - elevPix / 2) / (bnds.height() - elevPix);
+  } else {
+    // more horizontal...
+    var elevPix = Math.max(ext * bnds.width(), 6); // thickness of elevator in pixels
+    var newValue = (p.x - elevPix / 2) / (bnds.width() - elevPix);
+  }
+  console.log('this.emitValueFunction.call(this, newValue' + newValue);
+  //debugger;
+  this.value = this.clipValue(newValue);
+  // *** Note that emitValueFunction is not binding the right target
+  if (this.valueTarget) this.valueTarget[this.valueMessage](this.value);
+  else this.emitValueFunction.call(this.owner, this.value);
+  console.log("moving slider's owner is " + this.owner.asString());
+  if (this.owner.className == 'ListPane') {
+    console.log('... whose list = ' + this.owner.contentPane.itemList.first() + '...');
+  }
+  this.adjustForNewBounds();
+  return true;
+};
+world.SliderMorph.proto.handlesMouseDown = function (evt) {
+  return true;
+};
+world.SliderMorph.proto.clipValue = function (val) {
+  return Math.min(1.0, Math.max(0, 0, val)).toFixed(3);
+};
+world.SliderMorph.test = function () {
+  // world.SliderMorph.test()
+  // Quick setup for testing SliderMorph...
+  world.Lively = world.WorldMorph.new(world.getBounds()); // make up a morphic world
+  world.topLevelMorph = world.Lively; // 'install' the morphic world in patchwork world
+  console.log('sliderTest 1');
+  this.readOut = world.Lively.addMorph(
+    world.TextMorph.new(world.rect(100, 300, 300, 100), 'slider values')
+  );
+  this.readOut.setColor(world.Color.blue);
+  console.log('sliderTest 2');
+  let sliderH = world.Lively.addMorph(
+    world.SliderMorph.new(world.rect(50, 100, 10, 200), (value) =>
+      this.readOut.setText('sliderH = ' + sliderH.value.toFixed(2))
+    )
+  );
+  console.log('sliderTest 3');
+  let sliderV = world.Lively.addMorph(
+    world.SliderMorph.new(world.rect(100, 50, 200, 10), (value) =>
+      this.readOut.setText('sliderV = ' + sliderV.value.toFixed(2))
+    )
+  );
+};
+
+world.ScrollPane = world.Morph.subclass('ScrollPane');
+world.ScrollPane.proto.initialize = function (initialBounds) {
+  world.Morph.proto.initialize.call(this, initialBounds);
+  this.contentPane = null; // filled in by subclasses
+  this.scrollBar = null; // filled in by subclasses
+};
+world.ScrollPane.proto.renderOn = function (ctx) {
+  let bnds = this.getBounds();
+  ctx.save();
+  ctx.rect(bnds.topLeft.x, bnds.topLeft.y, bnds.extent.x, bnds.extent.y);
+  ctx.clip(); // clip to this pane rectangle
+  world.Morph.proto.renderOn.call(this, ctx);
+  ctx.restore();
+};
+world.ScrollPane.proto.getScrollPosition = function () {
+  var ht = this.contentPane.getBounds().height;
+  var slideRoom = ht - this.getBounds().height;
+  return -this.contentPane.transform.translation.y / slideRoom;
+};
+world.ScrollPane.proto.setScrollPosition = function (scrollPos) {
+  var ht = this.contentPane.getBounds().height();
+  var slideRoom = ht - this.getBounds().height();
+  console.log(this.contentPane.asString() + 'ScrollPane.proto.setScrollPosition = ' + scrollPos);
+  this.contentPane.transform.translation.y = Math.min(0, -slideRoom * scrollPos);
+};
+world.ScrollPane.proto.getVisibleExtent = function (scrollPos) {
+  return Math.min(1, this.getBounds().height / Math.max(10, this.contentPane.getBounds().height));
+};
+world.ScrollPane.proto.scrollToTop = function () {
+  this.setScrollPosition(0);
+  this.scrollBar.adjustForNewBounds();
+};
+
+world.ListPane = world.ScrollPane.subclass('ListPane');
+world.ListPane.proto.initialize = function (initialBounds) {
+  world.ScrollPane.proto.initialize.call(this, initialBounds);
+  // aaaaaa
+  this.contentPane = this.addMorph(
+    world.MenuMorph.new(this.subBounds(world.rect(0, 0, 0.9, 1)), world.List.new(), null)
+  );
+  this.scrollBar = this.addMorph(
+    world.SliderMorph.new(this.subBounds(world.rect(0.9, 0, 0.1, 1)), (scrollPos) => {
+      console.log('scrollBar scrollPos = ' + scrollPos);
+      console.log('In slider valueFn, "this" = ' + this.asString());
+      console.log('this.contentPane = ' + this.contentPane.asString());
+      this.setScrollPosition(scrollPos);
+    })
+  );
+  // *** note the following will override the failing CALL binding
+  this.scrollBar.setValueTarget(this, 'setScrollPosition');
+};
+/* ***next 3 methods only for console debugging */
+/*
+world.ListPane.proto.onPointerDown = function (pt, evt) {
+  console.log('ListPane.proto.onPointerDown');
+  return world.Morph.proto.onPointerDown.call(this, pt, evt);
+};
+world.ListPane.proto.onPointerMove = function (pt, evt) {
+  console.log('ListPane.proto.onPointerMove');
+  return world.Morph.proto.onPointerMove.call(this, pt, evt);
+};
+world.ListPane.proto.onPointerUp = function (pt, evt) {
+  console.log('ListPane.proto.onPointerUp');
+  return world.Morph.proto.onPointerUp.call(this, pt, evt);
+};
+*/
+world.ListPane.proto.setList = function (list) {
+  this.contentPane.setList(list);
+  this.scrollToTop();
+};
+world.ListPane.proto.setSelectionString = function (str) {
+  this.contentPane.setSelectionString(str);
+  // ** Needs scrollSelectionIntoView
+};
+world.ListPane.proto.onSelect = function (selectFn) {
+  this.contentPane.setSelectFn(selectFn);
+};
+/*
+world.ListPane.proto.setScrollPosition = function(scrollPos) { 
+  // *** Note: copied down from ScrollPane to prevent multiple targetting ??
+  var ht = this.contentPane.getBounds().height();
+  var slideRoom = ht - this.getBounds().height();
+  console.log(this.contentPane.asString() + 'ScrollPane.proto.setScrollPosition = ' + scrollPos); 
+  this.contentPane.transform.translation.y = -slideRoom*scrollPos; 
+};
+*/
+
+world.TextPane = world.ScrollPane.subclass('TextPane');
+world.TextPane.proto.initialize = function (initialBounds) {
+  world.ScrollPane.proto.initialize.call(this, initialBounds);
+  this.contentPane = this.addMorph(
+    world.TextMorph.new(this.subBounds(world.rect(0, 0, 0.95, 1)), 'Text pane')
+  );
+  this.scrollBar = this.addMorph(
+    world.SliderMorph.new(this.subBounds(world.rect(0.95, 0, 0.05, 1)), (scrollPos) => {
+      console.log(this.className + ' scrollPos = ' + scrollPos);
+      this.setScrollPosition(scrollPos);
+    })
+  );
+};
+world.TextPane.proto.setText = function (text) {
+  this.contentPane.setText(text);
+  this.scrollToTop();
+};
+console.log('Panel and Panes loaded');
+
+// Our halos will show bounds and preset a number of handles for control
+world.HaloMorph = world.Morph.subclass('HaloMorph');
+world.HaloMorph.proto.initialize = function (targetMorph) {
+  this.target = targetMorph;
+  world.Morph.proto.initialize.call(this, targetMorph.getBounds().insetBy(-10));
+  this.shape.setStyles(null, 1, world.Color.green);
+  this.rotateHandle = this.addMorph(world.HaloHandle.new(1, 'R', 'Rotate', this));
+  this.styleHandle = this.addMorph(world.HaloHandle.new(2, 'S', 'Style', this));
+  this.copyHandle = this.addMorph(world.HaloHandle.new(3, 'C', 'Copy', this));
+  this.menuHandle = this.addMorph(world.HaloHandle.new(4, 'M', 'Menu', this));
+  this.grabHandle = this.addMorph(world.HaloHandle.new(5, 'G', 'Grab', this));
+  this.dragHandle = this.addMorph(world.HaloHandle.new(6, 'D', 'Drag', this));
+  this.deleteHandle = this.addMorph(world.HaloHandle.new(7, 'X', 'Delete', this));
+  this.codeHandle = this.addMorph(world.HaloHandle.new(8, 'B', 'Browse', this));
+  this.inspectHandle = this.addMorph(world.HaloHandle.new(9, 'I', 'Inspect', this));
+  this.resizeHandle = this.addMorph(world.HaloHandle.new(10, 'Z', 'Scale', this));
+};
+world.HaloMorph.test = function () {
+  //world.initLively(); // build a simple world with a single rectangle morph
+  let rect = world.Lively.addMorph(world.Morph.new(world.rect(200, 150, 60, 30)));
+  rect.showHalo();
+};
+world.HaloMorph.proto.pointerDownOnHandle = function (handle, pt, evt) {
+  switch (handle.handleName) {
+    case 'Rotate':
+      this.target.rotateFrom(handle.hitPoint);
+      break;
+    case 'Style':
+      this.target().restyle();
+      break;
+    case 'Copy':
+      let m = this.world().addMorph(this.target.morphCopy());
+      m.moveBy(world.pt(20, -20));
+      m.showHalo();
+      break;
+    case 'Menu':
+      this.world().showWorldMenuAt(handle.getBounds().center());
+      break;
+    case 'Grab':
+      this.target.owner.submorphs = this.target.owner.submorphs.promote(this.target);
+      this.target.dragFrom(pt, evt);
+      break;
+    case 'Drag':
+      this.target.dragFrom(pt, evt);
+      break;
+    case 'Delete':
+      this.target.remove();
+      break;
+    case 'Browse':
+      let browser = world.PanelMorph.test();
+      browser.classPane.setSelectionString(this.target.className);
+      break;
+    case 'Inspect':
+      this.target.inspect();
+      break;
+    case 'Scale':
+      this.target.resizeFrom(handle.hitPoint);
+      break;
+    default:
+      console.log('Invalid halo handle name??');
+  }
+  this.remove();
+};
+world.Morph.proto.showHalo = function () {
+  this.world().removeExistingHalos();
+  // console.log('showHalo() on ' + this.asString());
+  this.world().addMorph(world.HaloMorph.new(this));
+};
+world.WorldMorph.proto.showHalo = function () {
+  this.world().removeExistingHalos();
+  console.log('showHalo() on ' + this.asString());
+  this.world().addMorph(world.HaloMorph.new(this));
+};
+world.WorldMorph.proto.removeExistingHalos = function () {
+  this.submorphs.forEach((morph) => {
+    if (morph.className == 'HaloMorph') morph.remove();
+  });
+};
+
+world.HaloHandle = world.Morph.subclass('HaloHandle');
+world.HaloHandle.proto.initialize = function (index, iconLetter, handleName, halo) {
+  world.Morph.proto.initialize.call(this, null, this.makeHandleShape(index, iconLetter, halo));
+  this.halo = halo;
+  this.handleName = handleName;
+  let letterMorph = this.addMorph(
+    world.TextMorph.new(this.getBounds().movedBy(world.pt(3, 0)), iconLetter)
+  );
+  letterMorph.shape.setStyles(null, 0, null);
+};
+world.HaloHandle.proto.makeHandleShape = function (index, iconLetter, halo) {
+  let w = 20; // handle width
+  let frame = halo.getBounds().insetBy(0 - w);
+  let p1 = frame.bottomLeft().subPt(world.pt(0, w));
+  let p2 = frame.topLeft;
+  let p3 = frame.topRight().subPt(world.pt(w, 0));
+  let p4 = frame.bottomRight().subPt(world.pt(w, w));
+  let c1,
+    c2,
+    d = null;
+  if (index <= 4) {
+    c1 = p1;
+    c2 = p2;
+    d = (4 - index) / 3;
+  } else if (index <= 7) {
+    c1 = p2;
+    c2 = p3;
+    d = (7 - index) / 3;
+  } else {
+    c1 = p3;
+    c2 = p4;
+    d = (10 - index) / 3;
+  }
+  let handleLoc = c2.addPt(c1.subPt(c2).scaleBy(d));
+  let radius = w / 2;
+  let handleShape = world.Ellipse.new(handleLoc.addPt(world.pt(radius, radius)), radius);
+  handleShape.setStyles(null, 1, world.Color.blue);
+  return handleShape;
+};
+world.HaloHandle.proto.onPointerDown = function (pt, evt) {
+  this.halo.pointerDownOnHandle(this, pt, evt);
+};
+console.log('Halos loaded');
+console.log('End of all-defs.\n\n');
+
