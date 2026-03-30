@@ -46,6 +46,7 @@ const vanillaImpl: Impl = {
   _change(fn: () => void): void {
     if (!world) {
       world = Object.create(null);
+      (window as any).world = world;
       world.proto = null;
       world._protoId = null;
       world._id = 0;
@@ -78,6 +79,7 @@ const automergeImpl: Impl = {
     proxies = null;
     this._change(() => {
       world = proxify(doc.objectTable[0]);
+      (window as any).world = world;
       try {
         fn();
       } catch (e) {
@@ -107,6 +109,7 @@ let impl = automergeImpl;
 function newObj(prototype?: Obj) {
   return impl.newObj(prototype);
 }
+(window as any).newObj = newObj;
 
 // objects
 
@@ -487,13 +490,8 @@ export const LivelymergeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
 
   useEffect(() => {
     if (!alreadyInitialized) {
-      // TODO: write the equivalent of this stuff for Livelymerge
-      /*
-      load();
-      if (typeof w?.initUI === 'function') {
-        w.initUI();
-      }
-      */
+      // TODO: why doesn't this work at load time?
+      // world.initUI?.();
       alreadyInitialized = true;
     }
   }, [docUrl]);

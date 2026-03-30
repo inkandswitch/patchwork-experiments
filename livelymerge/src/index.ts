@@ -1,6 +1,6 @@
 import type { Plugin } from '@inkandswitch/patchwork-plugins';
 
-console.log('livelymerge', 1);
+console.log('livelymerge', 2);
 
 export const plugins: Plugin<any>[] = [
   {
