@@ -1,0 +1,45 @@
+# LLM Chat
+
+## Fresh chat
+
+An empty LLM chat with default configuration.
+
+```json
+{
+  "tool": "llm/tool.js",
+  "value": {
+    "config": {
+      "apiUrl": "https://openrouter.ai/api/v1",
+      "model": "anthropic/claude-opus-4.6"
+    },
+    "runs": []
+  },
+  "width": 400,
+  "height": 300
+}
+```
+
+## Chat with prompt
+
+A chat session with a pre-filled prompt and response.
+
+```json
+{
+  "tool": "llm/tool.js",
+  "value": {
+    "config": {
+      "apiUrl": "https://openrouter.ai/api/v1",
+      "model": "anthropic/claude-opus-4.6"
+    },
+    "runs": [
+      {
+        "prompt": "What is 2 + 2?",
+        "output": [{ "type": "text", "content": "2 + 2 equals 4." }],
+        "done": true
+      }
+    ]
+  },
+  "width": 400,
+  "height": 300
+}
+```

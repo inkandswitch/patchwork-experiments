@@ -55,6 +55,13 @@ export default function mount(element) {
       toolUrl: textToolUrl,
       text: '',
     }));
+    selectedToolRef.change(() => '');
+    const shapeUrl = canvas.ref.at('shapes', id).url;
+    requestAnimationFrame(() => {
+      const refView = canvas.querySelector(`ref-view[ref-url="${shapeUrl}"]`);
+      const textarea = refView?.querySelector('textarea');
+      textarea?.focus();
+    });
   }
 
   canvas.addEventListener('pointerdown', onPointerDown);

@@ -62,9 +62,6 @@ export default function mount(element) {
             const initial = ref.value();
             textareaEl.value = initial?.text ?? '';
             resizeMirror();
-            if (!initial?.text) {
-              requestAnimationFrame(() => textareaEl.focus());
-            }
           }}
           spellcheck=${false}
           rows=${1}
