@@ -7,7 +7,7 @@
  * StoredFact:      { pred: string, args: (string|number)[], comment?: string }
  * StoredAtom:      { pred: string, args: string[] }
  * StoredRule:      { head: StoredAtom, body: StoredAtom[], comment?: string }
- * StoredConstraint:{ body: StoredAtom[], comment?: string }
+ * StoredConstraint:{ name: string, body: StoredAtom[], comment?: string }
  */
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -345,7 +345,7 @@ function evaluateWithProvenance(facts, rules) {
   return { db, provenance };
 }
 
-function checkConstraints(db, constraints, provenance, baseFacts) {
+function runCheckConstraints(db, constraints, provenance, baseFacts) {
   const violations = [];
   for (const constraint of constraints) {
     const tracked = matchBodyTracked(constraint.body, db, new Map(), []);
@@ -365,19 +365,160 @@ function checkConstraints(db, constraints, provenance, baseFacts) {
   return violations;
 }
 
+// ─── Datalog class (read-only, for evaluation) ───────────────────────────────
+
+export class Datalog {
+  constructor(facts, rules, constraints) {
+    this._facts = facts;
+    this._rules = rules;
+    this._constraints = constraints;
+  }
+
+  get facts() {
+    return this._facts;
+  }
+
+  get rules() {
+    return this._rules;
+  }
+
+  get constraints() {
+    return this._constraints;
+  }
+
+  query(pred) {
+    const db = evaluate(this.facts, this.rules);
+    return pred ? db.filter((f) => f.pred === pred) : db;
+  }
+
+  checkConflicts(constraintName) {
+    let constraints = this.constraints;
+    if (constraintName) {
+      constraints = constraints.filter((c) => c.name === constraintName);
+    }
+    if (constraints.length === 0) return [];
+
+    const { db, provenance } = evaluateWithProvenance(this.facts, this.rules);
+    const baseFacts = new Set(this.facts.map(factKey));
+    return runCheckConstraints(db, constraints, provenance, baseFacts);
+  }
+}
+
+// ─── DocDatalog class (read/write, backed by Automerge doc) ──────────────────
+
+export class DocDatalog extends Datalog {
+  constructor(handle) {
+    super([], [], []);
+    this._handle = handle;
+  }
+
+  get url() {
+    return this._handle.url;
+  }
+
+  get facts() {
+    return this._handle.doc()?.facts ?? [];
+  }
+
+  get rules() {
+    return this._handle.doc()?.rules ?? [];
+  }
+
+  get constraints() {
+    return this._handle.doc()?.constraints ?? [];
+  }
+
+  getFacts(pred) {
+    const facts = this.facts;
+    return pred ? facts.filter((f) => f.pred === pred) : [...facts];
+  }
+
+  getRules(pred) {
+    const rules = this.rules;
+    return pred ? rules.filter((r) => r.head.pred === pred) : [...rules];
+  }
+
+  getConstraints() {
+    return [...this.constraints];
+  }
+
+  assertFact(pred, args, comment) {
+    const key = factKey({ pred, args });
+    this._handle.change((d) => {
+      const exists = (d.facts ?? []).some((f) => factKey(f) === key);
+      if (!exists) {
+        const fact = { pred, args };
+        if (comment !== undefined) fact.comment = comment;
+        d.facts.push(fact);
+      }
+    });
+  }
+
+  retractFact(pred, args) {
+    this._handle.change((d) => {
+      const keep = (d.facts ?? []).filter((f) => {
+        if (f.pred !== pred) return true;
+        return !args.every((a, i) => String(f.args[i]) === String(a));
+      });
+      d.facts.splice(0, d.facts.length, ...keep);
+    });
+  }
+
+  assertRule(rule) {
+    const key = ruleKey(rule);
+    this._handle.change((d) => {
+      const exists = (d.rules ?? []).some((r) => ruleKey(r) === key);
+      if (!exists) {
+        d.rules.push({
+          head: { pred: rule.head.pred, args: [...rule.head.args] },
+          body: rule.body.map((a) => ({ pred: a.pred, args: [...a.args] })),
+        });
+      }
+    });
+  }
+
+  retractRule(rule) {
+    const key = ruleKey(rule);
+    this._handle.change((d) => {
+      const keep = (d.rules ?? []).filter((r) => ruleKey(r) !== key);
+      d.rules.splice(0, d.rules.length, ...keep);
+    });
+  }
+
+  assertConstraint(name, constraint) {
+    const key = constraintKey(constraint);
+    this._handle.change((d) => {
+      const exists = (d.constraints ?? []).some((c) => constraintKey(c) === key);
+      if (!exists) {
+        d.constraints.push({
+          name,
+          body: constraint.body.map((a) => ({ pred: a.pred, args: [...a.args] })),
+        });
+      }
+    });
+  }
+
+  retractConstraint(name) {
+    this._handle.change((d) => {
+      const keep = (d.constraints ?? []).filter((c) => c.name !== name);
+      d.constraints.splice(0, d.constraints.length, ...keep);
+    });
+  }
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
  * Create a new empty Datalog database document.
  *
- * repo.create() is SYNCHRONOUS — do NOT await it.
+ * workspace.createDoc() is SYNCHRONOUS — do NOT await it.
  *
- * @param {object} repo - The automerge Repo (global `repo`)
+ * @param {object} workspace - The workspace object (global `workspace`)
  * @param {string} [title] - Optional title stored in the document
- * @returns {{ handle: object, url: string }} The new doc handle and its URL
+ * @returns {DocDatalog} A document-backed Datalog instance
  */
-export function createDatalog(repo, title) {
-  const handle = repo.create();
+export function createDatalog(workspace, title) {
+  const handle = workspace.createDoc();
   handle.change((d) => {
     d['@patchwork'] = { type: 'datalog' };
     d.facts = [];
@@ -387,171 +528,39 @@ export function createDatalog(repo, title) {
     d.mapStyle = { lines: {}, properties: {} };
     if (title) d.title = title;
   });
-  return { handle, url: handle.url };
+  return new DocDatalog(handle);
 }
 
 /**
- * Get a read/write interface for a Datalog database document.
+ * Get a read/write interface for an existing Datalog database document.
  *
- * @param {object} repo - The automerge Repo (global `repo`)
+ * @param {object} workspace - The workspace object (global `workspace`)
  * @param {string} url - Automerge URL of the DatalogDoc
+ * @returns {Promise<DocDatalog>} A document-backed Datalog instance
  */
-export async function getDatalog(repo, url) {
-  const handle = await repo.find(url);
-
-  return {
-    /**
-     * Return all base facts as StoredFact[].
-     * Optionally filter by predicate name.
-     */
-    async getFacts(pred) {
-      const facts = handle.doc()?.facts ?? [];
-      return pred ? facts.filter((f) => f.pred === pred) : [...facts];
-    },
-
-    /**
-     * Assert a ground fact. No-op if an identical fact already exists.
-     * @param {string} pred - Predicate name, e.g. 'node', 'flow'
-     * @param {Array<string|number>} args - Arguments, e.g. ['north'] or ['north', 'central', 500]
-     * @param {string} [comment] - Optional comment shown above this fact when serialized
-     */
-    assertFact(pred, args, comment) {
-      const key = factKey({ pred, args });
-      handle.change((d) => {
-        const exists = (d.facts ?? []).some((f) => factKey(f) === key);
-        if (!exists) {
-          const fact = { pred, args };
-          if (comment !== undefined) fact.comment = comment;
-          d.facts.push(fact);
-        }
-      });
-    },
-
-    /**
-     * Retract all facts matching pred and an args prefix.
-     * Pass all args for an exact match; fewer for a partial match.
-     * e.g. retractFact('flow', ['north', 'central']) removes flow(north, central, *).
-     * e.g. retractFact('node', ['north']) removes node(north).
-     */
-    retractFact(pred, args) {
-      handle.change((d) => {
-        const keep = (d.facts ?? []).filter((f) => {
-          if (f.pred !== pred) return true;
-          return !args.every((a, i) => String(f.args[i]) === String(a));
-        });
-        d.facts.splice(0, d.facts.length, ...keep);
-      });
-    },
-
-    /**
-     * Return all stored rules. Optionally filter by head predicate.
-     */
-    async getRules(pred) {
-      const rules = handle.doc()?.rules ?? [];
-      return pred ? rules.filter((r) => r.head.pred === pred) : [...rules];
-    },
-
-    /**
-     * Assert a rule. No-op if an identical rule already exists.
-     * @param {{ head: StoredAtom, body: StoredAtom[] }} rule
-     */
-    assertRule(rule) {
-      const key = ruleKey(rule);
-      handle.change((d) => {
-        const exists = (d.rules ?? []).some((r) => ruleKey(r) === key);
-        if (!exists) d.rules.push({ head: { pred: rule.head.pred, args: [...rule.head.args] }, body: rule.body.map((a) => ({ pred: a.pred, args: [...a.args] })) });
-      });
-    },
-
-    /**
-     * Retract all rules matching the given rule (by key equality).
-     * @param {{ head: StoredAtom, body: StoredAtom[] }} rule
-     */
-    retractRule(rule) {
-      const key = ruleKey(rule);
-      handle.change((d) => {
-        const keep = (d.rules ?? []).filter((r) => ruleKey(r) !== key);
-        d.rules.splice(0, d.rules.length, ...keep);
-      });
-    },
-
-    /**
-     * Return all stored constraints.
-     */
-    async getConstraints() {
-      return [...(handle.doc()?.constraints ?? [])];
-    },
-
-    /**
-     * Assert a constraint. No-op if an identical constraint already exists.
-     * @param {{ body: StoredAtom[] }} constraint
-     */
-    assertConstraint(constraint) {
-      const key = constraintKey(constraint);
-      handle.change((d) => {
-        const exists = (d.constraints ?? []).some((c) => constraintKey(c) === key);
-        if (!exists) d.constraints.push({ body: constraint.body.map((a) => ({ pred: a.pred, args: [...a.args] })) });
-      });
-    },
-
-    /**
-     * Retract all constraints matching the given constraint (by key equality).
-     * @param {{ body: StoredAtom[] }} constraint
-     */
-    retractConstraint(constraint) {
-      const key = constraintKey(constraint);
-      handle.change((d) => {
-        const keep = (d.constraints ?? []).filter((c) => constraintKey(c) !== key);
-        d.constraints.splice(0, d.constraints.length, ...keep);
-      });
-    },
-  };
+export async function getDatalog(workspace, url) {
+  const handle = await workspace.find(url);
+  return new DocDatalog(handle);
 }
 
 /**
- * Evaluate all rules against the stored facts and return all derived facts.
- * Optionally filter by predicate name.
+ * Merge multiple Datalog documents into a single read-only in-memory instance.
+ * No Automerge document is created — the result is purely for evaluation.
  *
- * @param {object} repo - The automerge Repo (global `repo`)
- * @param {string} url - Automerge URL of the DatalogDoc
- * @param {string} [pred] - Optional predicate to filter results
- * @returns {Promise<StoredFact[]>} All derived (and base) facts after rule evaluation
+ * @param {object} workspace - The workspace object (global `workspace`)
+ * @param {string[]} urls - Automerge URLs of DatalogDocs to merge
+ * @returns {Promise<Datalog>} A read-only Datalog with only query() and checkConflicts()
  */
-export async function queryDatalog(repo, url, pred) {
-  const handle = await repo.find(url);
-  const doc = handle.doc();
-  const facts = doc?.facts ?? [];
-  const rules = doc?.rules ?? [];
-
-  const db = evaluate(facts, rules);
-  return pred ? db.filter((f) => f.pred === pred) : db;
-}
-
-/**
- * Run constraint checking against the stored facts + rules and return any violations.
- *
- * Each violation has:
- *   - `constraint`: the violated StoredConstraint
- *   - `witnesses`: array of { bindings, steps } traces explaining why it fired
- *     Each step is either:
- *       { kind: 'fact', fact, isBase, derivedBy? }  — a ground fact used in the match
- *       { kind: 'builtin', atom, resolvedArgs }      — a built-in comparison/arithmetic
- *
- * @param {object} repo - The automerge Repo (global `repo`)
- * @param {string} url - Automerge URL of the DatalogDoc
- * @returns {Promise<ConstraintViolation[]>} Array of violations (empty if none)
- */
-export async function checkConflicts(repo, url) {
-  const handle = await repo.find(url);
-  const doc = handle.doc();
-  const facts = doc?.facts ?? [];
-  const rules = doc?.rules ?? [];
-  const constraints = doc?.constraints ?? [];
-
-  if (constraints.length === 0) return [];
-
-  const { db, provenance } = evaluateWithProvenance(facts, rules);
-  const baseFacts = new Set(facts.map(factKey));
-
-  return checkConstraints(db, constraints, provenance, baseFacts);
+export async function mergeDatalog(workspace, urls) {
+  const facts = [];
+  const rules = [];
+  const constraints = [];
+  for (const srcUrl of urls) {
+    const handle = await workspace.find(srcUrl);
+    const doc = handle.doc();
+    for (const f of doc?.facts ?? []) facts.push(f);
+    for (const r of doc?.rules ?? []) rules.push(r);
+    for (const c of doc?.constraints ?? []) constraints.push(c);
+  }
+  return new Datalog(facts, rules, constraints);
 }

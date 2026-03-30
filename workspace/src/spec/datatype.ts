@@ -1,18 +1,18 @@
 import type { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
-import type { SpecDoc } from '../types';
+import type { SpecCollectionDoc } from '../types';
 
-export type { SpecDoc, Verification } from '../types';
+export type { SpecCollectionDoc, SpecDoc, Verification } from '../types';
 
-export const SpecDatatype: DatatypeImplementation<SpecDoc> = {
-  init(doc: SpecDoc) {
-    doc.name = 'Untitled Spec';
-    doc.documents = {} as any;
-    doc.verifications = [];
+export const SpecDatatype: DatatypeImplementation<SpecCollectionDoc> = {
+  init(doc: SpecCollectionDoc) {
+    doc.specs = [];
   },
-  getTitle(doc: SpecDoc) {
-    return doc.name || 'Untitled Spec';
+  getTitle(doc: SpecCollectionDoc) {
+    return doc.specs?.[0]?.goal || 'Spec Collection';
   },
-  setTitle(doc: SpecDoc, title: string) {
-    doc.name = title;
+  setTitle(doc: SpecCollectionDoc, title: string) {
+    if (doc.specs?.[0]) {
+      doc.specs[0].goal = title;
+    }
   },
 };

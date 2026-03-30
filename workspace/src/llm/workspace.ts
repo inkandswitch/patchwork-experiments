@@ -8,6 +8,8 @@ type FolderDoc = {
 };
 
 export type Workspace = {
+  createDoc(): DocHandle<any>;
+  find(url: AutomergeUrl): Promise<DocHandle<any>>;
   getHandle(path: string): Promise<DocHandle<any>>;
   import(path: string): Promise<Record<string, unknown>>;
   readDoc(path: string): Promise<string>;
@@ -21,6 +23,8 @@ export function createWorkspace(
   const cloneMap = new Map<AutomergeUrl, DocHandle<any>>();
 
   return {
+    createDoc: () => repo.create(),
+    find: (url) => findByUrl(repo, workspaceHandle, cloneMap, url),
     getHandle: (path) => resolveAndMaybeClone(repo, workspaceHandle, rootFolderUrl, cloneMap, path),
     import: (path) => importByPath(repo, rootFolderUrl, cloneMap, path),
     readDoc: (path) => readDocByPath(repo, rootFolderUrl, cloneMap, path),
@@ -42,6 +46,20 @@ async function resolveAndMaybeClone(
 
   const originalHandle = await repo.find(url);
   return wrapWithCloneOnWrite(repo, workspaceHandle, cloneMap, url, originalHandle);
+}
+
+async function findByUrl(
+  repo: Repo,
+  workspaceHandle: DocHandle<WorkspaceDoc>,
+  cloneMap: Map<AutomergeUrl, DocHandle<any>>,
+  url: AutomergeUrl,
+): Promise<DocHandle<any>> {
+  if (cloneMap.has(url)) {
+    return cloneMap.get(url)!;
+  }
+
+  const handle = await repo.find(url);
+  return wrapWithCloneOnWrite(repo, workspaceHandle, cloneMap, url, handle);
 }
 
 function wrapWithCloneOnWrite(
@@ -68,8 +86,8 @@ function wrapWithCloneOnWrite(
           cloneMap.set(originalUrl, clonedHandle);
 
           workspaceHandle.change((ws) => {
-            if (!ws.documents) ws.documents = {} as any;
-            (ws.documents as any)[originalUrl] = {
+            if (!ws.documents) ws.documents = {};
+            ws.documents[originalUrl] = {
               cloneUrl: clonedHandle.url,
               originalHeads: heads,
             };

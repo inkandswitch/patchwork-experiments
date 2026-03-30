@@ -1,99 +1,147 @@
 ---
 name: spec
-description: Manage a Spec document — set its goal, link a Datalog database, and add/remove/run JavaScript verification snippets that must return true to pass.
+description: Manage a Spec Collection — a single document containing multiple specs, each with a goal, named document references, and JavaScript verification scripts.
 ---
 
 # Spec Skill
 
-Manage a Spec document (SpecDoc) that pairs a goal with a Datalog database and a set of JavaScript verification scripts.
+Manage a Spec Collection (SpecCollectionDoc) that groups multiple specs into a single document. Each spec has a goal, named document references, and verification scripts.
 
 ## Import
 
 ```javascript
-const { getSpec } = await importSkillApi("spec");
+const { createSpecCollection, getSpecCollection } = await workspace.import("skills/spec/index.js");
 ```
 
 ## Types
 
 ```javascript
-// Verification
-{ name: string, script: string }
-
-// SpecDoc shape (for reference — use the API, don't write fields directly)
+// SpecCollectionDoc shape
 {
-  title: string,
+  specs: SpecDoc[]
+}
+
+// SpecDoc (embedded within the collection)
+{
   goal: string,
-  datalogUrl?: AutomergeUrl,   // points to a DatalogDoc
+  docs: Record<string, AutomergeUrl>,
   verifications: Verification[]
 }
+
+// Verification
+{ name: string, script: string, documentUrls: Record<string, AutomergeUrl> }
 ```
 
 ## API
 
-### `getSpec(repo, url)` (async)
+### `createSpecCollection(workspace)` (sync)
 
-Returns a read/write interface for the SpecDoc at `url`. Must be awaited.
+Creates a new, empty SpecCollectionDoc. **Do NOT await** — `workspace.createDoc()` is synchronous.
 
-| Method                          | Description                                                                  |
-| ------------------------------- | ---------------------------------------------------------------------------- |
-| `getGoal()`                     | Returns the current goal string.                                             |
-| `setGoal(goal)`                 | Sets the spec's goal.                                                        |
-| `getTitle()`                    | Returns the current title.                                                   |
-| `setTitle(title)`               | Sets the spec's title.                                                       |
-| `getDatalogUrl()`               | Returns the linked DatalogDoc URL, or undefined.                             |
-| `setDatalogUrl(url)`            | Links a DatalogDoc to this spec.                                             |
-| `getVerifications()`            | Returns all verifications as `{ name, script }[]`.                           |
-| `addVerification(name, script)` | Adds a verification. The script should `return true` to pass.                |
-| `removeVerification(name)`      | Removes the first verification matching `name`.                              |
-| `runVerifications(repo)`        | Async. Evals each script, returns `{ name, passed, error? }[]`.             |
+Returns `{ handle, url }`.
+
+```javascript
+const { createSpecCollection } = await workspace.import("skills/spec/index.js");
+const { url } = createSpecCollection(workspace);
+```
+
+### `getSpecCollection(workspace, url)` (async)
+
+Returns a read/write interface for the SpecCollectionDoc at `url`. Must be awaited.
+
+#### Collection methods
+
+| Method                          | Description                                                              |
+| ------------------------------- | ------------------------------------------------------------------------ |
+| `getSpecs()`                    | Returns a shallow copy of the specs array.                               |
+| `addSpec(goal)`                 | Adds a new spec with the given goal. Returns a **spec handle**.          |
+| `getSpec(index)`                | Returns a spec handle for the spec at `index`.                           |
+| `removeSpec(index)`             | Removes the spec at `index`.                                             |
+| `runAllVerifications(workspace)` | Runs verifications for every spec. Returns `{ specIndex, name, passed, error? }[]`. |
+
+#### Spec handle methods
+
+A spec handle is returned by `addSpec()` or `getSpec()`. All mutations apply to the collection document.
+
+| Method                                          | Description                                                       |
+| ------------------------------------------------ | ----------------------------------------------------------------- |
+| `getGoal()`                                      | Returns the spec's goal string.                                   |
+| `setGoal(goal)`                                  | Sets the spec's goal.                                             |
+| `getDocs()`                                      | Returns a copy of the spec's `docs` record.                       |
+| `setDoc(name, url)`                              | Sets a named document reference.                                  |
+| `removeDoc(name)`                                | Removes a named document reference.                               |
+| `getVerifications()`                             | Returns verifications as `{ name, script, documentUrls }[]`.      |
+| `addVerification(name, script, documentUrls?)`   | Adds a verification with optional named document URLs.             |
+| `removeVerification(name)`                       | Removes the first verification matching `name`.                   |
+| `runVerifications(workspace)`                    | Async. Evals each script, returns `{ specIndex, name, passed, error? }[]`. |
 
 ## Verification Scripts
 
 Each verification is a JavaScript snippet that has access to:
 
-- `repo` — the Automerge repo (use `await repo.find(url)` to read documents)
-- `specUrl` — the URL of this spec document
-- `datalogUrl` — the URL of the linked Datalog document (may be undefined)
+- `workspace` — the workspace object
+- **Named document URLs** — any keys from `documentUrls` are injected as variables (e.g. `{ spec: url1, schedule: url2 }` makes `spec` and `schedule` available)
 
 The script must **return `true`** to pass. Any other return value or thrown error counts as a failure.
 
+### Verification script pattern
+
+Verification scripts should be short orchestration — merge relevant Datalog documents and check for constraint violations:
+
 ```javascript
-// Example verification script:
-const handle = await repo.find(datalogUrl);
-const doc = await handle.doc();
-const hasAuth = doc.facts.some(f => f.pred === "requirement" && f.args[0] === "auth_required");
-return hasAuth;
+const { mergeDatalog } = await workspace.import("skills/datalog/index.js")
+const merged = await mergeDatalog(workspace, [spec, schedule, staff])
+return merged.checkConflicts('my_constraint_name').length === 0
 ```
 
 ## Examples
 
+### Creating a spec collection
+
 ```javascript
-const { getSpec } = await importSkillApi("spec");
-const spec = await getSpec(repo, specUrl);
+const { createSpecCollection, getSpecCollection } = await workspace.import("skills/spec/index.js");
+const { createDatalog } = await workspace.import("skills/datalog/index.js");
 
-// Set the goal
-spec.setGoal("Define requirements for the authentication system");
-spec.setTitle("Auth Spec");
+// Create the collection
+const { url: collUrl } = createSpecCollection(workspace);
+const coll = await getSpecCollection(workspace, collUrl);
 
-// Link a datalog document
-spec.setDatalogUrl(datalogUrl);
+// Create shared Datalog docs
+const hospitalStaff = createDatalog(workspace, "Hospital Staff");
+hospitalStaff.assertFact("staff", ["dr_chen", "doctor", "attending"]);
+hospitalStaff.assertFact("staff", ["nurse_kim", "nurse", "senior"]);
 
-// Add verifications
-spec.addVerification("has auth requirement", `
-  const handle = await repo.find(datalogUrl);
-  const doc = await handle.doc();
-  return doc.facts.some(f => f.pred === "requirement" && f.args[0] === "auth_required");
-`);
+const shiftConfig = createDatalog(workspace, "Shift Config");
+shiftConfig.assertFact("shift", ["morning"]);
+shiftConfig.assertFact("shift", ["afternoon"]);
 
-spec.addVerification("no constraint violations", `
-  const { checkConflicts } = await importSkillApi("datalog");
-  const violations = await checkConflicts(repo, datalogUrl);
-  return violations.length === 0;
-`);
+// Create department Datalog docs
+const erSpec = createDatalog(workspace, "ER Spec");
+erSpec.assertFact("dept_shift_hours", ["er", "morning", 8]);
+erSpec.assertConstraint("er_no_junior_night", {
+  body: [
+    { pred: "assigned", args: ["P", "er", "night"] },
+    { pred: "staff", args: ["P", "_", "junior"] },
+  ],
+});
+const erSchedule = createDatalog(workspace, "ER Schedule");
 
-// Run all verifications
-const results = await spec.runVerifications(repo);
+// Add a spec to the collection — returns a spec handle
+const erHandle = coll.addSpec("ER staffing rules are satisfied");
+erHandle.setDoc("spec", erSpec.url);
+erHandle.setDoc("schedule", erSchedule.url);
+erHandle.setDoc("staff", hospitalStaff.url);
+erHandle.setDoc("shifts", shiftConfig.url);
+
+erHandle.addVerification("no junior night shifts", `
+  const { mergeDatalog } = await workspace.import("skills/datalog/index.js")
+  const merged = await mergeDatalog(workspace, [spec, schedule, staff])
+  return merged.checkConflicts('er_no_junior_night').length === 0
+`, { spec: erSpec.url, schedule: erSchedule.url, staff: hospitalStaff.url });
+
+// Run all verifications across the collection
+const results = await coll.runAllVerifications(workspace);
 for (const r of results) {
-  console.log(r.name, r.passed ? "PASSED" : "FAILED", r.error ?? "");
+  console.log(`[spec ${r.specIndex}] ${r.name}: ${r.passed ? "PASSED" : "FAILED"}`, r.error ?? "");
 }
 ```

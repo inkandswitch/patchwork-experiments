@@ -64,53 +64,30 @@ export async function runWorkspaceLLM(
 
   const systemText = buildSystemPrompt(systemPrompt, skillDescriptions, documentList);
 
-  const loadSkillDocs = async (name: string): Promise<string> => {
-    const skill = skills.find((s) => s.name === name);
-    if (!skill) {
-      const available = skills.map((s) => s.name).join(', ');
-      throw new Error(`Skill not found: "${name}". Available: [${available}]`);
-    }
-    return skill.content;
-  };
-
-  const importSkillApi = async (name: string): Promise<Record<string, unknown>> => {
-    const skill = skills.find((s) => s.name === name);
-    if (!skill) {
-      const available = skills.map((s) => s.name).join(', ');
-      throw new Error(`Skill not found: "${name}". Available: [${available}]`);
-    }
-    if (!skill.importUrl) {
-      throw new Error(
-        `Skill "${name}" has no importable API module. Use loadSkillDocs("${name}") to read its documentation.`,
-      );
-    }
-    return await import(/* @vite-ignore */ skill.importUrl);
-  };
-
-  const getSkillURL = (name: string): string => {
-    const skill = skills.find((s) => s.name === name);
-    if (!skill) {
-      const available = skills.map((s) => s.name).join(', ');
-      throw new Error(`Skill not found: "${name}". Available: [${available}]`);
-    }
-    if (!skill.importUrl) {
-      throw new Error(`Skill "${name}" has no importable API module.`);
-    }
-    return skill.importUrl;
-  };
-
   const workspace = createWorkspace(repo, wsHandle, doc.llmConfigFolderUrl);
 
-  (globalThis as any).loadSkillDocs = loadSkillDocs;
-  (globalThis as any).importSkillApi = importSkillApi;
-  (globalThis as any).getSkillURL = getSkillURL;
   (globalThis as any).__llmCapturedConsole = capturedConsole;
-  (globalThis as any).repo = repo;
   (globalThis as any).workspace = workspace;
 
   console.log(`[workspace-llm] starting run: model=${model}, apiUrl=${apiUrl}`);
 
   await runLoop(handle, systemText, apiUrl, apiKey, model, capturedConsole, signal);
+}
+
+export async function buildFullSystemPrompt(
+  repo: Repo,
+  configFolderUrl: AutomergeUrl,
+  workspaceUrl: AutomergeUrl,
+): Promise<string> {
+  const wsHandle = await repo.find<WorkspaceDoc>(workspaceUrl);
+  const wsDoc = await wsHandle.doc();
+
+  const agentPrompt = await loadAgentPrompt(repo, configFolderUrl);
+  const skills = await discoverSkills(repo, configFolderUrl);
+  const skillDescriptions = buildSkillDescriptions(skills);
+  const documentList = wsDoc ? buildDocumentList(wsDoc) : '';
+
+  return buildSystemPrompt(agentPrompt, skillDescriptions, documentList);
 }
 
 // ─── Agent prompt loading ─────────────────────────────────────────────────────
@@ -145,10 +122,8 @@ function buildSystemPrompt(
 
   if (skillDescriptions) {
     prompt +=
-      `\n\nAvailable skills:\n${skillDescriptions}\n\n` +
-      "Use `await loadSkillDocs('name')` to read a skill's documentation. " +
-      "Use `await importSkillApi('name')` to import its runtime API. " +
-      "Use `getSkillURL('name')` to get a skill's import URL for embedding in prompts.";
+      '\n\nAvailable skills (use workspace.readDoc to read docs, workspace.import to load API):\n\n' +
+      skillDescriptions;
   }
 
   if (documentList) {
@@ -472,7 +447,16 @@ function parseFrontmatter(content: string): Record<string, string> {
 
 function buildSkillDescriptions(skills: SkillInfo[]): string {
   if (!skills.length) return '';
-  return skills.map((s) => `- ${s.name}: ${s.description}`).join('\n');
+  return skills
+    .map((s) => {
+      const capitalized = s.name.charAt(0).toUpperCase() + s.name.slice(1);
+      return [
+        `${capitalized}: ${s.description}`,
+        `- docs: skills/${s.name}/SKILL.md`,
+        `- api: skills/${s.name}/index.js`,
+      ].join('\n');
+    })
+    .join('\n\n');
 }
 
 function swPath(automergeUrl: string): string {

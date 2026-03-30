@@ -62,3 +62,5 @@ export const plugins: Plugin<any>[] = [
     },
   } as Datatype,
 ];
+
+console.log('load workspace plugins', 3);

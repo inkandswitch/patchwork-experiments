@@ -1,19 +1,9 @@
 import type { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
-import type { Repo } from '@automerge/automerge-repo';
-import type { WorkspaceChatDoc, SpecDoc } from '../types';
+import type { WorkspaceChatDoc } from '../types';
 
 export const WorkspaceChatDatatype: DatatypeImplementation<WorkspaceChatDoc> = {
-  init(doc: WorkspaceChatDoc, repo: Repo) {
+  init(doc: WorkspaceChatDoc) {
     doc.prompt = '';
-
-    const wsHandle = repo.create<SpecDoc>();
-    wsHandle.change((d) => {
-      (d as any)['@patchwork'] = { type: 'spec' };
-      d.name = 'Untitled Spec';
-      d.documents = {} as any;
-      d.verifications = [];
-    });
-    doc.workspaceUrl = wsHandle.url;
   },
 
   getTitle(doc: WorkspaceChatDoc) {

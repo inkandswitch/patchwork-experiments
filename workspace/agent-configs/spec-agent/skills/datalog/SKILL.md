@@ -5,17 +5,17 @@ description: Read and write a Datalog database document (DatalogDoc) by Automerg
 
 # Datalog Skill
 
-Read and write a Datalog database document using `repo`. Supports rule evaluation (queries) and constraint checking.
+Read and write a Datalog database document. Supports rule evaluation (queries) and constraint checking.
 
 ## Import
 
 ```javascript
-const { createDatalog, getDatalog, queryDatalog, checkConflicts } = await importSkillApi("datalog");
+const { createDatalog, getDatalog, mergeDatalog } = await workspace.import("skills/datalog/index.js");
 ```
 
 ## Types
 
-Facts, rules, and constraints all support an optional `comment` field. When present it is serialized as a `//` line immediately before the statement.
+Facts, rules, and constraints all support an optional `comment` field. When present it is serialized as a `//` line immediately before the statement. Constraints have a required `name` field for filtering.
 
 ```javascript
 // StoredFact
@@ -28,75 +28,79 @@ Facts, rules, and constraints all support an optional `comment` field. When pres
 { head: StoredAtom, body: StoredAtom[], comment?: string }
 
 // StoredConstraint
-{ body: StoredAtom[], comment?: string }
+{ name: string, body: StoredAtom[], comment?: string }
 ```
+
+## Classes
+
+### `Datalog` (read-only, for evaluation)
+
+Returned by `mergeDatalog`. Only supports evaluation — no mutation methods.
+
+| Property / Method            | Description                                                       |
+| ---------------------------- | ----------------------------------------------------------------- |
+| `query(pred?)`               | Evaluate rules, return all derived facts. Optionally filter by predicate. |
+| `checkConflicts(constraintName?)` | Evaluate rules + check constraints. Optionally filter by constraint name. Returns violations array (empty if none). |
+
+### `DocDatalog` (read/write, extends Datalog)
+
+Returned by `createDatalog` and `getDatalog`. Full read/write backed by an Automerge document.
+
+| Property / Method                  | Description                                                                        |
+| ---------------------------------- | ---------------------------------------------------------------------------------- |
+| `url`                              | The Automerge URL of the backing document.                                         |
+| `query(pred?)`                     | Inherited from Datalog.                                                            |
+| `checkConflicts(constraintName?)`  | Inherited from Datalog.                                                            |
+| `getFacts(pred?)`                  | Returns base facts as `{ pred, args }[]`, optionally filtered by predicate.        |
+| `assertFact(pred, args, comment?)` | Adds a ground fact if it doesn't exist. Optional comment stored on the fact.       |
+| `retractFact(pred, args)`          | Removes all facts matching `pred` and the given args prefix.                       |
+| `getRules(pred?)`                  | Returns stored rules, optionally filtered by head predicate.                       |
+| `assertRule(rule)`                 | Adds a rule if it doesn't already exist. Pass `comment` on the rule object.        |
+| `retractRule(rule)`                | Removes all rules matching the given rule.                                         |
+| `getConstraints()`                 | Returns all stored constraints.                                                    |
+| `assertConstraint(name, constraint)` | Adds a named constraint if it doesn't already exist.                             |
+| `retractConstraint(name)`          | Removes the constraint with the given name.                                        |
 
 ## API
 
-### `createDatalog(repo, title?)`
+### `createDatalog(workspace, title?)`
 
-Creates a new, properly initialised DatalogDoc. Returns `{ handle, url }`.
+Creates a new, properly initialised DatalogDoc. Returns a `DocDatalog` instance.
 
-**`repo.create()` is synchronous — this function must NOT be awaited.**
+**`workspace.createDoc()` is synchronous — this function must NOT be awaited.**
 
 ```javascript
-const { createDatalog } = await importSkillApi("datalog");
-const { handle, url } = createDatalog(repo, "My Spec Database");
+const { createDatalog } = await workspace.import("skills/datalog/index.js");
+const db = createDatalog(workspace, "My Spec Database");
+console.log(db.url); // Automerge URL
 ```
 
-### `getDatalog(repo, url)` (async)
+### `getDatalog(workspace, url)` (async)
 
-Returns a read/write interface for the DatalogDoc at `url`. Must be awaited.
-
-| Method                             | Description                                                                        |
-| ---------------------------------- | ---------------------------------------------------------------------------------- |
-| `getFacts(pred?)`                  | Async. Returns base facts as `{ pred, args }[]`, optionally filtered by predicate. |
-| `assertFact(pred, args, comment?)` | Adds a ground fact if it doesn't exist. Optional comment stored on the fact.       |
-| `retractFact(pred, args)`          | Removes all facts matching `pred` and the given args prefix.                       |
-| `getRules(pred?)`                  | Async. Returns stored rules, optionally filtered by head predicate.                |
-| `assertRule(rule)`                 | Adds a rule if it doesn't already exist. Pass `comment` on the rule object.        |
-| `retractRule(rule)`                | Removes all rules matching the given rule.                                         |
-| `getConstraints()`                 | Async. Returns all stored constraints.                                             |
-| `assertConstraint(constraint)`     | Adds a constraint if it doesn't already exist.                                     |
-| `retractConstraint(constraint)`    | Removes all constraints matching the given constraint.                             |
-
-### `queryDatalog(repo, url, pred?)` (async)
-
-Evaluates all stored rules against facts (bottom-up fixpoint) and returns the full derived database. Optionally filter to a single predicate.
+Returns a `DocDatalog` for the DatalogDoc at `url`. Must be awaited.
 
 ```javascript
-const derived = await queryDatalog(repo, url);
-const totals = await queryDatalog(repo, url, "total_flow");
+const { getDatalog } = await workspace.import("skills/datalog/index.js");
+const db = await getDatalog(workspace, url);
 ```
 
-### `checkConflicts(repo, url)` (async)
+### `mergeDatalog(workspace, urls)` (async)
 
-Runs rule evaluation then checks all stored constraints. Returns an array of violations — empty if the database is consistent.
-
-Each violation has:
-
-- `constraint` — the `StoredConstraint` that fired
-- `witnesses` — array of `{ bindings, steps }` traces
+Merges multiple DatalogDocs into a single read-only in-memory `Datalog` instance. No document is created — purely for evaluation.
 
 ```javascript
-const violations = await checkConflicts(repo, url);
-if (violations.length === 0) {
-  console.log("No conflicts.");
-} else {
-  for (const v of violations) {
-    console.log("Constraint violated:", v.constraint.body.map((a) => `${a.pred}(${a.args.join(", ")})`).join(", "));
-  }
-}
+const { mergeDatalog } = await workspace.import("skills/datalog/index.js");
+const merged = await mergeDatalog(workspace, [specUrl, configUrl]);
+const violations = merged.checkConflicts('my_constraint');
 ```
 
 ## Examples
 
 ```javascript
-const { createDatalog, getDatalog, queryDatalog, checkConflicts } = await importSkillApi("datalog");
+const { createDatalog, mergeDatalog } = await workspace.import("skills/datalog/index.js");
 
 // Create a new document
-const { url } = createDatalog(repo, "Spec Database");
-const db = await getDatalog(repo, url);
+const db = createDatalog(workspace, "Spec Database");
 
 // Add facts with optional comments
 db.assertFact("requirement", ["auth_required"], "users must authenticate");
@@ -112,20 +116,28 @@ db.assertRule({
   comment: "a requirement is secure when implemented",
 });
 
-// Add a constraint: every requirement must have a verification
-db.assertConstraint({
+// Add a named constraint
+db.assertConstraint("all_requirements_named", {
   body: [
     { pred: "requirement", args: ["X"] },
     { pred: "neq", args: ["X", "_"] },
   ],
-  comment: "all requirements must be named",
 });
 
 // Query derived facts
-const allFacts = await queryDatalog(repo, url);
+const allFacts = db.query();
+const secureFacts = db.query("secure");
 
 // Check for constraint violations
-const violations = await checkConflicts(repo, url);
+const violations = db.checkConflicts();
+const specific = db.checkConflicts("all_requirements_named");
+
+// Merge multiple docs and check
+const config = createDatalog(workspace, "Config");
+config.assertFact("implemented", ["auth_required"]);
+
+const merged = await mergeDatalog(workspace, [db.url, config.url]);
+const result = merged.checkConflicts("all_requirements_named");
 ```
 
 ## Built-in predicates (available in rules and constraints)
@@ -148,3 +160,5 @@ const violations = await checkConflicts(repo, url);
 
 - `assertFact` / `retractFact` update the stored `facts` array directly.
 - `retractFact` matches by prefix: `retractFact('flow', ['north'])` removes all `flow(north, ...)` facts.
+- `assertConstraint` requires a name as the first argument. Use `checkConflicts(name)` to check a specific constraint.
+- `mergeDatalog` returns a read-only `Datalog` — it has no mutation methods, only `query()` and `checkConflicts()`.

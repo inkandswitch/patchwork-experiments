@@ -5,13 +5,9 @@ export type { WorkspaceDoc };
 
 export const WorkspaceDatatype: DatatypeImplementation<WorkspaceDoc> = {
   init(doc: WorkspaceDoc) {
-    doc.name = 'Untitled Workspace';
-    doc.documents = {} as any;
+    doc.documents = {};
   },
-  getTitle(doc: WorkspaceDoc) {
-    return doc.name || 'Untitled Workspace';
-  },
-  setTitle(doc: WorkspaceDoc, title: string) {
-    doc.name = title;
+  getTitle() {
+    return 'Workspace';
   },
 };
