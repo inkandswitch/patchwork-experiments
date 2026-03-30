@@ -42,6 +42,28 @@
   outline: none;
 }
 
+.embed-close-btn {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  font: 13px/1 system-ui, sans-serif;
+  color: #999;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.embed-close-btn:hover {
+  background: rgba(0, 0, 0, 0.1);
+  color: #e11d48;
+}
+
 .embed-shape-body {
   flex: 1;
   overflow: hidden;

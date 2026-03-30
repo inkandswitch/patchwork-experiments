@@ -36,15 +36,7 @@ export const schema = {
     };
   },
   parse(value) {
-    const v =
-      typeof value === 'object' && value !== null && !Array.isArray(value) ? value : {};
-    return LlmContentSchema.parse({
-      config: {
-        apiUrl: typeof v.config?.apiUrl === 'string' ? v.config.apiUrl : 'https://openrouter.ai/api/v1',
-        model: typeof v.config?.model === 'string' ? v.config.model : 'anthropic/claude-opus-4.6',
-      },
-      runs: Array.isArray(v.runs) ? v.runs : [],
-    });
+    return LlmContentSchema.parse(value);
   },
   toJSONSchema() {
     return z.toJSONSchema(LlmContentSchema);

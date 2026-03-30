@@ -1,0 +1,17 @@
+{
+  "plugins": [
+    {
+      "type": "tool",
+      "name": "File Browser",
+      "description": "A file browser that lists files and folders in the system tree",
+      "toolUrl": "./tool.js",
+      "schemaUrl": "./schema.js"
+    },
+    {
+      "type": "schema",
+      "name": "File Browser",
+      "description": "Data schema for the file browser tool",
+      "source": "./schema.js"
+    }
+  ]
+}

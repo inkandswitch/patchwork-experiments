@@ -3,7 +3,9 @@ export const schema = {
     return {};
   },
   parse(value) {
-    if (value && typeof value === 'object') return value;
-    return {};
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error('expected an object');
+    }
+    return value;
   },
 };

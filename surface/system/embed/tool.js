@@ -16,6 +16,35 @@ async function loadSchema(schemaUrl) {
   return mod.schema;
 }
 
+function findParentShapeInfo(element) {
+  // Walk up from the embed's ref-view to find the parent frame
+  // The embed ref-view is inside a positioned div, inside the paper's div, inside the paper's ref-view
+  let node = element.parentElement;
+  while (node) {
+    if (node.tagName === 'REF-VIEW' && node.ref) {
+      // This might be the parent frame - check if it has shapes
+      try {
+        const val = node.ref.value();
+        if (val && val.shapes) {
+          // Found the parent paper frame - now find which shape key we are
+          const myRefUrl = element.ref.url;
+          const shapes = val.shapes;
+          for (const [id, shape] of Object.entries(shapes)) {
+            const shapeRefUrl = node.ref.at('shapes', id).url;
+            if (shapeRefUrl === myRefUrl) {
+              return { parentRef: node.ref, shapeId: id };
+            }
+          }
+        }
+      } catch (e) {
+        // not the right parent, keep looking
+      }
+    }
+    node = node.parentElement;
+  }
+  return null;
+}
+
 export default function mount(element) {
   const ref = element.ref.as(schema);
   const data = from(ref);
@@ -85,6 +114,17 @@ export default function mount(element) {
     }
   }
 
+  function onClose(event) {
+    event.stopPropagation();
+    event.preventDefault();
+    const info = findParentShapeInfo(element);
+    if (info) {
+      info.parentRef.at('shapes').change((shapes) => {
+        delete shapes[info.shapeId];
+      });
+    }
+  }
+
   function title() {
     const d = data();
     if (d?.title) return d.title;
@@ -122,6 +162,7 @@ export default function mount(element) {
             class="embed-tool-select"
             onChange=${onToolChange}
             onPointerDown=${(e) => e.stopPropagation()}
+            value=${embedToolUrl}
           >
             ${() =>
               checkAndUpdate().map(
@@ -132,6 +173,12 @@ export default function mount(element) {
                   >${p.name}</option>`,
               )}
           </select>
+          <button
+            class="embed-close-btn"
+            onClick=${onClose}
+            onPointerDown=${(e) => e.stopPropagation()}
+            title="Close"
+          >✕</button>
         </div>
         <div
           class="embed-shape-body"

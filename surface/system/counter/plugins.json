@@ -1,0 +1,17 @@
+{
+  "plugins": [
+    {
+      "type": "tool",
+      "name": "Counter",
+      "description": "A simple counter with increment, decrement, and reset",
+      "toolUrl": "./tool.js",
+      "schemaUrl": "./schema.js"
+    },
+    {
+      "type": "schema",
+      "name": "Counter",
+      "description": "Data schema for counter tool",
+      "source": "./schema.js"
+    }
+  ]
+}

@@ -13,7 +13,7 @@ You work in an environment where you can **create and edit documents** (persiste
 | **`bootstrap.js`** | Default entry: mounts the paper surface on the frame's ref (nested `ref-view` so the document ref stays the frame). |
 | **`paper/`** | Lays out the `shapes` map, active tool, and selection highlights. |
 | **`line/`, `rectangle/`, `text/`, `embed/`, `selection/`, `llm/`** | One folder per capability: renderer (`tool.js`), `schema.js` (data shape), and `plugins.json` (metadata). |
-| **`skills/`** | Skill modules for the LLM. Each subfolder has a `SKILL.md` and optional `.js` helpers (e.g. `skills/paper/`, `skills/screenshot/`). The LLM prompt lists skill names and paths; the LLM reads them on demand. |
+| **`guide/`** | LLM guide: `README.md` is the system prompt; each subfolder is a skill with a `SKILL.md` and optional `.js` helpers (e.g. `guide/paper/`, `guide/screenshot/`). The LLM prompt lists skill names and paths; the LLM reads them on demand. |
 | **`solid.js`** | Shared Solid helpers (`render`, `html`, `useRef`, ...) used across tools. |
 
 Paths are normal files on disk (or in your checkout). **Access** them like any other repo tree: open the file, follow imports, and use each tool folder's source as the contract for what gets stored in the document.
@@ -37,11 +37,12 @@ The tool is responsible for interpreting that ref's shape (validation, defaults,
 
 Scripts run inside a `with` scope (not as globals on `globalThis`) with:
 
-- **`element`** -- the outermost frame `ref-view`; `element.ref` is the frame document (shapes, `selectedTool`, etc.). The LLM panel's own `ref-view` is not exposed to scripts. `element.filesystem` provides `readFile`, `writeFile`, `createFolder`, `listEntries`, etc.
+- **`element`** -- the outermost frame `ref-view`; `element.ref` is the frame document (shapes, `selectedTool`, etc.). The LLM panel's own `ref-view` is not exposed to scripts.
+- **`filesystem`** -- alias for `element.filesystem`. Provides `readFile`, `writeFile`, `createFolder`, `listEntries`, `getUrlOfFile`, and `import`.
 - **`repo`** -- Automerge repo when present (see below).
 - **`console`** -- captured logger for panel output.
 
-Skill documentation lives under `skills/` -- the LLM prompt lists skill names and paths so the LLM can read them on demand with `element.filesystem.readFile(path)`.
+Skill documentation lives under `guide/` -- the LLM prompt lists skill names and paths so the LLM can read them on demand with `filesystem.readFile(path)`.
 
 ## Working with Automerge
 

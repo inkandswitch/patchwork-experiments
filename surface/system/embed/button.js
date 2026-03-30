@@ -1,6 +1,6 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, createSignal, render, html } from '../solid.js';
-import { getToolUrl } from '../url.js';
+import { getToolUrl, toToolPath } from '../url.js';
 import styles from './button.css' with { type: 'css' };
 
 document.adoptedStyleSheets = [...document.adoptedStyleSheets, styles];
@@ -129,7 +129,7 @@ export default function mount(element) {
     }
     // Prefer tools with more specific schemas (more init fields) over passthrough schemas like JSON Viewer
     matches.sort((a, b) => b.fieldCount - a.fieldCount);
-    return matches[0]?.tool.source ?? '';
+    return matches[0]?.tool.source ? toToolPath(matches[0].tool.source) : '';
   }
 
   function onPointerMove(event) {
