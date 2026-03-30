@@ -15,10 +15,298 @@ import {
   type TransitionEvent,
 } from 'react';
 import { toolify } from './react-util';
-import type { LivelymergeDoc } from './types';
+import type { LivelymergeDoc, Obj } from './types';
 import './styles.css';
 
+// TODO: why doesn't toString work when it's a method on Objs? (something to do w/ Proxy)
+// TODO: move workspace contents to an Obj (shouldn't be special state)
+
+interface Impl {
+  change(fn: () => void): void;
+  _change(fn: () => void): void;
+  newObj(prototype?: Obj): Obj;
+}
+
+const vanillaImpl: Impl = {
+  newObj(prototype?: Obj) {
+    let obj: Obj;
+    if (prototype) {
+      obj = Object.create(prototype);
+      obj.proto = prototype;
+      obj._protoId = obj._id;
+    } else {
+      obj = Object.create(null);
+    }
+    obj._id = Math.random();
+    return obj;
+  },
+  change(fn: () => void): void {
+    return this._change(fn);
+  },
+  _change(fn: () => void): void {
+    if (!world) {
+      world = Object.create(null);
+      world.proto = null;
+      world._protoId = null;
+      world._id = 0;
+    }
+    return fn();
+  },
+};
+
 let docHandle: DocHandle<LivelymergeDoc>;
+let doc: LivelymergeDoc;
+let newObjects: Map<number, Obj> | null = null;
+let proxies: Map<number, Obj> | null = null;
+let world: any;
+
+const automergeImpl: Impl = {
+  newObj(prototype?: Obj): Obj {
+    if (newObjects == null) {
+      newObjects = new Map();
+    }
+    const obj: Obj = { type: 'obj', _id: Math.random() };
+    if (prototype !== undefined) {
+      obj._protoId = prototype[UNWRAPPED as any]._id;
+    }
+    newObjects.set(obj._id, obj);
+    return proxify(obj);
+  },
+  change(fn: () => void) {
+    let exception: any;
+    newObjects = null;
+    proxies = null;
+    this._change(() => {
+      world = proxify(doc.objectTable[0]);
+      try {
+        fn();
+      } catch (e) {
+        exception = e;
+      } finally {
+        gc();
+      }
+    });
+    if (exception) {
+      console.error(exception);
+      if (exception instanceof Error) {
+        console.error(exception.stack);
+      }
+      throw exception;
+    }
+  },
+  _change(fn: () => void) {
+    docHandle.change((_doc) => {
+      doc = _doc;
+      fn();
+    });
+  },
+};
+
+let impl = automergeImpl;
+
+function newObj(prototype?: Obj) {
+  return impl.newObj(prototype);
+}
+
+// objects
+
+type ObjRef = {
+  type: 'obj ref';
+  id: number; // obj._id
+};
+
+function isObj(value: any): value is Obj {
+  return typeof value === 'object' && value?.type === 'obj';
+}
+
+function isObjRef(value: any): value is ObjRef {
+  return typeof value === 'object' && value?.type === 'obj ref';
+}
+
+function toObjRef(obj: Obj): ObjRef {
+  // console.log("creating ref to", obj, "with id", obj._id);
+  return {
+    type: 'obj ref',
+    id: obj._id,
+  };
+}
+
+// functions
+
+type Func = {
+  type: 'func';
+  code: string; // stringified function
+};
+
+function isFunc(value: any): value is Func {
+  return typeof value === 'object' && value?.type === 'func';
+}
+
+const functionCache = new Map<string, () => any>();
+
+function toFunc(f: () => void): Func {
+  const code = `(${f.toString()})`;
+  functionCache.set(code, f);
+  return { type: 'func', code };
+}
+
+// serialization / deserialization
+
+const UNWRAPPED = Symbol('proxy-target');
+
+function _serialize(value: any): any {
+  if (typeof value === 'function') {
+    return toFunc(value);
+  } else if (isObj(value)) {
+    return toObjRef(value);
+  } else if (Array.isArray(value)) {
+    return value.map(_serialize);
+  } else if (typeof value === 'object' && value && value[UNWRAPPED]) {
+    return value[UNWRAPPED];
+  } else {
+    return value;
+  }
+}
+
+function _deserizalize(serializedValue: any): any {
+  if (isFunc(serializedValue)) {
+    const cached = functionCache.get(serializedValue.code);
+    if (cached) {
+      return cached;
+    }
+    const f = eval(serializedValue.code) as () => any;
+    functionCache.set(serializedValue.code, f);
+    return f;
+  } else if (isObjRef(serializedValue)) {
+    return proxify(objById(serializedValue.id));
+  } else if (Array.isArray(serializedValue)) {
+    return proxify(serializedValue);
+  } else {
+    return serializedValue;
+  }
+}
+
+function objById(id: number) {
+  return newObjects?.has(id) ? newObjects.get(id)! : doc.objectTable[id];
+}
+
+// the proxy
+
+function proxify(value: any) {
+  if (isObj(value) && proxies?.has(value._id)) {
+    return proxies.get(value._id)!;
+  }
+
+  const proxy = new Proxy(value, {
+    set(obj, prop, value) {
+      const sv = _serialize(value);
+      obj[prop] = sv;
+      // console.log(
+      //   "proxy set",
+      //   obj._id,
+      //   ".",
+      //   prop,
+      //   "to",
+      //   value,
+      //   sv,
+      //   doc.objectTable[obj._id]
+      // );
+      return true;
+    },
+    get(target, prop, receiver) {
+      if (prop === UNWRAPPED) {
+        return target;
+      }
+      // console.log("looking for", prop, "in", target._id);
+      let obj = target;
+      while (true) {
+        if (prop in obj) {
+          // console.log("found", prop, "in", target._id, "ancestor", obj._id);
+          return _deserizalize(obj[prop]);
+        } else if ('_protoId' in obj) {
+          // console.log(
+          //   "didnt find",
+          //   prop,
+          //   "in",
+          //   obj._id,
+          //   "so looking for it in",
+          //   obj._protoId
+          // );
+          obj = objById(obj._protoId);
+        } else {
+          // console.log(
+          //   "bottomed out while looking for",
+          //   prop,
+          //   "in",
+          //   target._id,
+          //   obj._id
+          // );
+          return undefined;
+        }
+      }
+    },
+  });
+
+  if (isObj(value)) {
+    if (!proxies) {
+      proxies = new Map();
+    }
+    proxies.set(value._id, proxy);
+  }
+
+  return proxy;
+}
+
+function gc() {
+  // console.log("doing gc");
+  const visited = {} as any;
+  function visit(id: number) {
+    if (visited[id]) {
+      return;
+    }
+    // console.log("visited", id);
+    visited[id] = true;
+
+    // if it's a new object, put it in the OT
+    if (newObjects?.has(id)) {
+      doc.objectTable[id] = newObjects.get(id)!;
+    }
+
+    const obj = doc.objectTable[id];
+    if (!obj) {
+      console.log('BAD: object with id', id, 'not found');
+      console.log('   newObjects: ', newObjects);
+      return;
+    }
+    for (const v of Object.values(obj)) {
+      lookAt(v);
+    }
+  }
+  function lookAt(v: any) {
+    // console.log("looking at", v);
+    if (Array.isArray(v)) {
+      console.log('REALLY BAD: a JS array is referenced by one of our objects', v);
+      // v.forEach(lookAt);
+    } else if (isObjRef(v)) {
+      visit(v.id);
+    }
+  }
+
+  visit(0);
+  // console.log("visited", visited);
+  let numReclaimed = 0;
+  for (const id of Object.keys(doc.objectTable)) {
+    if (!visited[id]) {
+      delete doc.objectTable[id];
+      numReclaimed++;
+    }
+  }
+  newObjects = null;
+  if ((window as any).debugGC) {
+    console.log('reclaimed', numReclaimed, 'objects');
+  }
+}
+
 /*
 // TODO: Livelymerge equivalent...
 let objProto = Object.create(null);
@@ -58,6 +346,11 @@ function doIt(view: EditorView, print = false) {
   let result: any;
   try {
     result = eval(code);
+    impl.change(() => {
+      console.log('evaluating', code);
+      result = eval(code);
+      (window as any).result = result;
+    });
     console.log('result', result);
   } catch (error) {
     result = `{ERROR: ${String(error)}}`;

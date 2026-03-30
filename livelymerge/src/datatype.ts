@@ -4,8 +4,8 @@ import type { LivelymergeDoc } from './types';
 export const LivelymergeDatatype: DatatypeImplementation<LivelymergeDoc> = {
   init(doc: LivelymergeDoc) {
     doc['@patchwork'] = { type: 'livelymerge' };
-    doc.title = 'Untitled';
-    // TODO: Livelymerge default doc
+    doc.title = 'Untitled Livelymerge';
+    doc.objectTable = { 0: { type: "obj", _id: 0 } };
   },
   getTitle(doc: LivelymergeDoc) {
     return doc.title?.trim() || 'Livelymerge';
