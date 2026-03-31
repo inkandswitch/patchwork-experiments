@@ -1,7 +1,7 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { getToolUrl } from '../url.js';
 
-const ExampleGallerySchema = z.object({
+const PartsBinSchema = z.object({
   x: z.number(),
   y: z.number(),
   toolUrl: z.string(),
@@ -20,6 +20,6 @@ export const schema = {
     };
   },
   parse(value) {
-    return ExampleGallerySchema.parse(value);
+    return PartsBinSchema.parse(value);
   },
 };

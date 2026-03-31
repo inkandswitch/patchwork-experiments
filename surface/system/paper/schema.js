@@ -40,11 +40,11 @@ export const shapesSchema = {
         isLocked: true,
         toolUrl: getToolUrl('../embed/button.js', import.meta.url),
       },
-      exampleGallery: {
+      partsBin: {
         x: 10,
         y: 50,
         isLocked: true,
-        toolUrl: getToolUrl('../example-gallery/tool.js', import.meta.url),
+        toolUrl: getToolUrl('../parts-bin/tool.js', import.meta.url),
         width: 280,
         height: 800,
       },

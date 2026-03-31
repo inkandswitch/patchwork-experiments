@@ -57,9 +57,14 @@ The toolbar button that activates the sparkle marker drawing tool.
 
 ```json
 {
-  "tool": "sparkle-marker/button.js",
-  "value": { "x": 0, "y": 0, "toolUrl": "sparkle-marker/button.js" },
-  "width": 32,
-  "height": 32
+  "tool": "paper/paper.js",
+  "value": {
+    "shapes": {
+      "btn": { "x": 10, "y": 10, "toolUrl": "sparkle-marker/button.js" }
+    }
+  },
+  "width": 200,
+  "height": 80,
+  "create": "shapes.btn"
 }
 ```

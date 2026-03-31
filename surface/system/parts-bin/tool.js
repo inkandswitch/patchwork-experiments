@@ -1,5 +1,4 @@
 import { createExamples } from '../examples.js';
-import { createMemoryRef } from './memory-ref.js';
 import { getToolUrl } from '../url.js';
 import { schema } from './schema.js';
 
@@ -13,8 +12,6 @@ const DEFAULT_HEIGHT = 200;
 export default function mount(element) {
   const fs = element.filesystem;
   const registry = createExamples(fs);
-  const cleanups = [];
-  let placeCount = 0;
 
   let allExamples = [];
   let searchTerm = '';
@@ -28,7 +25,7 @@ export default function mount(element) {
 
   const header = document.createElement('div');
   header.style.cssText = 'padding:12px 16px;background:linear-gradient(135deg,#10b981 0%,#059669 100%);color:white;display:flex;align-items:center;gap:10px;flex-shrink:0;';
-  header.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span style="font-weight:600;font-size:14px">Examples</span>';
+  header.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span style="font-weight:600;font-size:14px">Parts Bin</span>';
   root.appendChild(header);
 
   const searchBar = document.createElement('div');
@@ -41,7 +38,7 @@ export default function mount(element) {
   searchInput.addEventListener('blur', () => { searchInput.style.borderColor = '#d1d5db'; });
   searchInput.addEventListener('input', () => {
     searchTerm = searchInput.value.toLowerCase();
-    void renderFiltered();
+    renderFiltered();
   });
   searchBar.appendChild(searchInput);
   root.appendChild(searchBar);
@@ -56,13 +53,6 @@ export default function mount(element) {
   root.appendChild(footer);
 
   element.appendChild(root);
-
-  function teardownCards() {
-    for (const fn of cleanups) {
-      try { fn(); } catch { /* ignore */ }
-    }
-    cleanups.length = 0;
-  }
 
   function filterExamples(examples) {
     if (!searchTerm) return examples;
@@ -87,9 +77,8 @@ export default function mount(element) {
     return groups;
   }
 
-  async function renderFiltered() {
+  function renderFiltered() {
     const filtered = filterExamples(allExamples);
-    teardownCards();
     listArea.innerHTML = '';
 
     if (filtered.length === 0) {
@@ -106,7 +95,7 @@ export default function mount(element) {
       listArea.appendChild(groupHeader);
 
       for (const example of group.examples) {
-        const card = await makeCard(example);
+        const card = makeCard(example);
         listArea.appendChild(card);
       }
     }
@@ -119,13 +108,26 @@ export default function mount(element) {
     if (!canvas?.ref) return;
 
     const currentData = element.ref.as(schema).value();
-    const toolPath = getToolUrl('../' + example.tool, import.meta.url);
-    const newWidth = example.width || DEFAULT_WIDTH;
-    const newHeight = example.height || DEFAULT_HEIGHT;
+
+    let createValue = example.value;
+    let createTool = example.tool;
+    if (example.create) {
+      const extracted = getAtDotPath(example.value, example.create);
+      if (extracted && typeof extracted === 'object') {
+        createValue = extracted;
+        if (typeof extracted.toolUrl === 'string') {
+          createTool = extracted.toolUrl;
+        }
+      }
+    }
+
+    const toolPath = getToolUrl('../' + createTool, import.meta.url);
+    const newWidth = createValue.width || example.width || DEFAULT_WIDTH;
+    const newHeight = createValue.height || example.height || DEFAULT_HEIGHT;
 
     const shapeId = `example_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     canvas.ref.at('shapes', shapeId).change(() => ({
-      ...structuredClone(example.value),
+      ...structuredClone(createValue),
       x: (currentData.x || 0) + (currentData.width || 280) + 20,
       y: currentData.y || 0,
       toolUrl: toolPath,
@@ -134,7 +136,7 @@ export default function mount(element) {
     }));
   }
 
-  async function makeCard(example) {
+  function makeCard(example) {
     const card = document.createElement('div');
     card.style.cssText = 'border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;flex-shrink:0;';
 
@@ -156,19 +158,12 @@ export default function mount(element) {
     }
     cardHeader.appendChild(nameEl);
 
-    const memRef = createMemoryRef(example.value);
-
     const btnGroup = document.createElement('div');
     btnGroup.style.cssText = 'display:flex;gap:4px;flex-shrink:0;';
 
     const resetBtn = document.createElement('button');
     resetBtn.textContent = 'Reset';
     resetBtn.style.cssText = 'background:#f1f5f9;border:1px solid #d1d5db;border-radius:4px;padding:2px 8px;font-size:11px;color:#64748b;cursor:pointer;';
-    resetBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      memRef.reset(example.value);
-    });
     btnGroup.appendChild(resetBtn);
 
     const createBtn = document.createElement('button');
@@ -192,35 +187,50 @@ export default function mount(element) {
     outer.style.cssText = `width:${nativeWidth * scale}px;height:${nativeHeight * scale}px;overflow:hidden;position:relative;`;
     outer.addEventListener('pointerdown', (e) => e.stopPropagation());
 
-    const inner = document.createElement('div');
-    inner.style.cssText = `width:${nativeWidth}px;height:${nativeHeight}px;transform:scale(${scale});transform-origin:top left;`;
+    const repo = globalThis.repo;
+    const resolved = resolveToolUrls(structuredClone(example.value), fs);
+    const handle = repo.create(resolved);
+    const toolUrl = fs.getUrlOfFile(example.tool);
+
+    const inner = document.createElement('ref-view');
+    inner.style.cssText = `display:block;width:${nativeWidth}px;height:${nativeHeight}px;transform:scale(${scale});transform-origin:top left;`;
+    inner.setAttribute('ref-url', handle.url);
+    inner.setAttribute('tool-url', toolUrl);
     outer.appendChild(inner);
     card.appendChild(outer);
 
-    const toolUrl = fs.getUrlOfFile(example.tool);
-    try {
-      const mod = await import(toolUrl);
-      if (typeof mod.default === 'function') {
-        Object.defineProperty(inner, 'ref', { value: memRef, configurable: true });
-        Object.defineProperty(inner, 'filesystem', { value: fs, configurable: true });
-        Object.defineProperty(inner, 'plugins', { value: element.plugins, configurable: true });
-        const dispose = mod.default(inner);
-        if (typeof dispose === 'function') cleanups.push(dispose);
-      }
-    } catch (err) {
-      inner.innerHTML = `<div style="padding:12px;color:#ef4444;font-size:11px">Failed to load: ${err.message}</div>`;
-    }
+    resetBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const fresh = repo.create(resolveToolUrls(structuredClone(example.value), fs));
+      inner.setAttribute('ref-url', fresh.url);
+    });
 
     return card;
   }
 
   registry.all().subscribe((list) => {
     allExamples = list;
-    void renderFiltered();
+    renderFiltered();
   });
 
   return () => {
-    teardownCards();
     root.remove();
   };
+}
+
+function getAtDotPath(obj, dotPath) {
+  return dotPath.split('.').reduce((cur, seg) => cur?.[seg], obj);
+}
+
+function resolveToolUrls(value, filesystem) {
+  if (!value || typeof value !== 'object') return value;
+  for (const key of Object.keys(value)) {
+    if (key === 'toolUrl' && typeof value[key] === 'string') {
+      value[key] = filesystem.getUrlOfFile(value[key]);
+    } else if (typeof value[key] === 'object' && value[key] !== null) {
+      resolveToolUrls(value[key], filesystem);
+    }
+  }
+  return value;
 }

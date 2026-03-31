@@ -1,5 +1,5 @@
 /**
- * @typedef {{ name: string, description: string, tool: string, value: object, source: string, package: string, width?: number, height?: number }} Example
+ * @typedef {{ name: string, description: string, tool: string, value: object, source: string, package: string, width?: number, height?: number, create?: string }} Example
  * @typedef {{ value(): Example[], subscribe(fn: (value: Example[]) => void): () => void }} ExampleSubscribable
  * @typedef {{ readFile: (path: string) => Promise<string>, watch: (pattern: string, fn: (matches: string[]) => void) => () => void }} ExampleFilesystem
  */
@@ -129,6 +129,7 @@ function tryParseExample(json, name, description, source, packageName) {
       const example = { name: name || 'Untitled', description, tool: parsed.tool, value: parsed.value, source, package: packageName };
       if (typeof parsed.width === 'number') example.width = parsed.width;
       if (typeof parsed.height === 'number') example.height = parsed.height;
+      if (typeof parsed.create === 'string') example.create = parsed.create;
       return example;
     }
   } catch {

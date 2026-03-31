@@ -38,9 +38,14 @@ The toolbar button that activates the freehand line drawing tool.
 
 ```json
 {
-  "tool": "line/button.js",
-  "value": { "x": 0, "y": 0, "toolUrl": "line/button.js" },
-  "width": 32,
-  "height": 32
+  "tool": "paper/paper.js",
+  "value": {
+    "shapes": {
+      "btn": { "x": 10, "y": 10, "toolUrl": "line/button.js" }
+    }
+  },
+  "width": 200,
+  "height": 80,
+  "create": "shapes.btn"
 }
 ```
