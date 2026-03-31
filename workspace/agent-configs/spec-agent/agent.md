@@ -136,7 +136,6 @@ A captured console. Use `console.log(...)` to produce output that you will see a
 6. For each spec: create Datalog databases for rules/constraints and base data, populate facts/rules, add named constraints.
 7. Add each spec to the collection via `addSpec(goal)`, then attach `docs` references and verification scripts.
 8. For cross-cutting concerns, add a spec that merges data from multiple domain specs.
-9. Run `checkConflicts` and verifications to confirm the spec is well-formed.
 
 ## Spec Collections
 
@@ -204,27 +203,26 @@ erSpec.assertConstraint("er_min_staff_per_shift", {
   ],
 });
 
-// Empty schedule document — assignments added later
-const erSchedule = createDatalog(workspace, "ER Schedule");
-
 // Add a spec to the collection — returns a handle
 const erHandle = coll.addSpec("ER staffing rules are satisfied");
 erHandle.setDoc("spec", erSpec.url);
-erHandle.setDoc("schedule", erSchedule.url);
 erHandle.setDoc("staff", hospitalStaff.url);
 erHandle.setDoc("shifts", shiftConfig.url);
+
+// Declare that a "schedule" document must be provided by the plan
+erHandle.addRequiredDoc("schedule");
 
 erHandle.addVerification("no junior night shifts", `
   const { mergeDatalog } = await workspace.import("skills/datalog/index.js")
   const merged = await mergeDatalog(workspace, [spec, schedule, staff])
   return merged.checkConflicts('er_no_junior_night').length === 0
-`, { spec: erSpec.url, schedule: erSchedule.url, staff: hospitalStaff.url });
+`, { spec: erSpec.url, staff: hospitalStaff.url });
 
 erHandle.addVerification("minimum 2 staff per shift", `
   const { mergeDatalog } = await workspace.import("skills/datalog/index.js")
   const merged = await mergeDatalog(workspace, [spec, schedule, shifts])
   return merged.checkConflicts('er_min_staff_per_shift').length === 0
-`, { spec: erSpec.url, schedule: erSchedule.url, shifts: shiftConfig.url });
+`, { spec: erSpec.url, shifts: shiftConfig.url });
 </script>
 ```
 
@@ -261,10 +259,12 @@ globalSpec.assertConstraint("max_total_staff_hours", {
 const globalHandle = coll.addSpec("Cross-department aggregate constraints hold");
 globalHandle.setDoc("global", globalSpec.url);
 globalHandle.setDoc("erSpec", erSpec.url);
-globalHandle.setDoc("erSchedule", erSchedule.url);
 globalHandle.setDoc("icuSpec", icuSpec.url);
-globalHandle.setDoc("icuSchedule", icuSchedule.url);
 globalHandle.setDoc("staff", hospitalStaff.url);
+
+// The plan must provide schedule documents for each department
+globalHandle.addRequiredDoc("erSchedule");
+globalHandle.addRequiredDoc("icuSchedule");
 
 globalHandle.addVerification("no person exceeds 20 hours", `
   const { mergeDatalog } = await workspace.import("skills/datalog/index.js")
@@ -272,10 +272,16 @@ globalHandle.addVerification("no person exceeds 20 hours", `
   return merged.checkConflicts('max_hours_per_person').length === 0
 `, {
   global: globalSpec.url,
-  erSpec: erSpec.url, erSchedule: erSchedule.url,
-  icuSpec: icuSpec.url, icuSchedule: icuSchedule.url,
+  erSpec: erSpec.url,
+  icuSpec: icuSpec.url,
   staff: hospitalStaff.url,
 });
+
+// Plan executor runs with provided schedules:
+// const results = await globalHandle.runVerifications(workspace, {
+//   erSchedule: erScheduleUrl,
+//   icuSchedule: icuScheduleUrl,
+// });
 </script>
 ```
 
@@ -292,6 +298,12 @@ const { mergeDatalog } = await workspace.import("skills/datalog/index.js")
 const merged = await mergeDatalog(workspace, [spec, schedule, staff])
 return merged.checkConflicts('my_constraint_name').length === 0
 ```
+
+Variables in the script come from two sources:
+- `documentUrls` passed to `addVerification` — for docs that exist at spec creation time
+- `providedDocs` passed to `runVerifications` / `runAllVerifications` — for required docs provided by the plan executor
+
+Both are injected as named variables. If a name appears in both, `documentUrls` takes precedence.
 
 Domain logic belongs in Datalog rules and constraints, not in verification scripts.
 
@@ -312,6 +324,7 @@ Every constraint must have a descriptive name via `assertConstraint(name, { body
 - Decompose complex specs into a collection of specs with clean interface predicates.
 - Write verification scripts as short orchestration (merge + check), not complex domain logic.
 - Give every constraint a descriptive name.
-- Always run `checkConflicts` after adding constraints to confirm no immediate violations.
-- Always run verifications to confirm the spec is internally consistent.
+- **Do NOT run `checkConflicts` or verifications after building the spec.** Just create the spec collection and stop. Verification will happen later when a plan provides the required documents.
 - If the user's request is ambiguous, state your assumptions clearly rather than guessing silently.
+- **Never create throwaway or test documents/specs for debugging.** Build the real spec directly. If you encounter an error, re-read the skill documentation or review your code instead of creating test artifacts.
+- **Use `addRequiredDoc(name)` for result documents.** Documents that a plan must produce (e.g. a schedule or solution) should be declared as required docs, not created as empty placeholders. The plan executor will create these documents and pass their URLs when running verifications via `providedDocs`.

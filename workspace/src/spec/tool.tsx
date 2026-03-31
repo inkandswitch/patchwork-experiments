@@ -48,6 +48,7 @@ function SpecCollectionView(props: { url: AutomergeUrl }) {
 
 function SpecCard(props: { spec: SpecDoc }) {
   const docEntries = () => Object.entries(props.spec.docs ?? {}) as [string, AutomergeUrl][];
+  const requiredDocs = () => props.spec.requiredDocs ?? [];
   const verifications = () => props.spec.verifications ?? [];
 
   return (
@@ -60,6 +61,17 @@ function SpecCard(props: { spec: SpecDoc }) {
           <div class="spec-doc-list">
             <For each={docEntries()}>
               {([name, url]) => <DocCard name={name} url={url} />}
+            </For>
+          </div>
+        </div>
+      </Show>
+
+      <Show when={requiredDocs().length > 0}>
+        <div class="spec-section">
+          <div class="spec-section-label">Required Documents</div>
+          <div class="spec-required-docs">
+            <For each={requiredDocs()}>
+              {(name) => <div class="spec-required-doc">{name}</div>}
             </For>
           </div>
         </div>

@@ -19,6 +19,7 @@ export type SpecCollectionDoc = {
 export type SpecDoc = {
   goal: string;
   docs: Record<string, AutomergeUrl>;
+  requiredDocs: string[];
   verifications: Verification[];
 };
 

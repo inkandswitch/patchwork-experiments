@@ -5,7 +5,7 @@
  *   { specs: SpecDoc[] }
  *
  * SpecDoc shape (embedded):
- *   { goal: string, docs: Record<string, AutomergeUrl>, verifications: Verification[] }
+ *   { goal: string, docs: Record<string, AutomergeUrl>, requiredDocs: string[], verifications: Verification[] }
  *
  * Verification:
  *   { name: string, script: string, documentUrls: Record<string, AutomergeUrl> }
@@ -47,7 +47,7 @@ export async function getSpecCollection(workspace, url) {
       handle.change((d) => {
         if (!d.specs) d.specs = [];
         index = d.specs.length;
-        d.specs.push({ goal: goal || '', docs: {}, verifications: [] });
+        d.specs.push({ goal: goal || '', docs: {}, requiredDocs: [], verifications: [] });
       });
       return createSpecHandle(handle, index);
     },
@@ -64,11 +64,11 @@ export async function getSpecCollection(workspace, url) {
       });
     },
 
-    async runAllVerifications(workspace) {
+    async runAllVerifications(workspace, providedDocs) {
       const specs = handle.doc()?.specs ?? [];
       const results = [];
       for (let i = 0; i < specs.length; i++) {
-        const specResults = await runSpecVerifications(workspace, specs[i], i);
+        const specResults = await runSpecVerifications(workspace, specs[i], i, providedDocs);
         results.push(...specResults);
       }
       return results;
@@ -110,6 +110,30 @@ function createSpecHandle(handle, index) {
       });
     },
 
+    getRequiredDocs() {
+      return [...(handle.doc()?.specs?.[index]?.requiredDocs ?? [])];
+    },
+
+    addRequiredDoc(name) {
+      handle.change((d) => {
+        const spec = d.specs?.[index];
+        if (!spec) return;
+        if (!spec.requiredDocs) spec.requiredDocs = [];
+        if (!spec.requiredDocs.includes(name)) {
+          spec.requiredDocs.push(name);
+        }
+      });
+    },
+
+    removeRequiredDoc(name) {
+      handle.change((d) => {
+        const rd = d.specs?.[index]?.requiredDocs;
+        if (!rd) return;
+        const idx = rd.indexOf(name);
+        if (idx !== -1) rd.splice(idx, 1);
+      });
+    },
+
     getVerifications() {
       return [...(handle.doc()?.specs?.[index]?.verifications ?? [])];
     },
@@ -134,23 +158,24 @@ function createSpecHandle(handle, index) {
       });
     },
 
-    async runVerifications(workspace) {
+    async runVerifications(workspace, providedDocs) {
       const spec = handle.doc()?.specs?.[index];
       if (!spec) return [];
-      return runSpecVerifications(workspace, spec, index);
+      return runSpecVerifications(workspace, spec, index, providedDocs);
     },
   };
 }
 
-async function runSpecVerifications(workspace, spec, specIndex) {
+async function runSpecVerifications(workspace, spec, specIndex, providedDocs) {
   const verifications = spec.verifications ?? [];
   const results = [];
 
   for (const v of verifications) {
     try {
-      const docUrlEntries = Object.entries(v.documentUrls ?? {});
-      const paramNames = ['workspace', ...docUrlEntries.map(([k]) => k)];
-      const paramValues = [workspace, ...docUrlEntries.map(([, u]) => u)];
+      const allDocs = { ...(providedDocs ?? {}), ...(v.documentUrls ?? {}) };
+      const docEntries = Object.entries(allDocs);
+      const paramNames = ['workspace', ...docEntries.map(([k]) => k)];
+      const paramValues = [workspace, ...docEntries.map(([, u]) => u)];
       const fn = new Function(...paramNames, `return (async () => {\n${v.script}\n})();`);
       const result = await fn(...paramValues);
       results.push({ specIndex, name: v.name, passed: result === true, error: undefined });

@@ -417,4 +417,103 @@
     color: #94a3b8;
     cursor: default;
   }
+
+  .ws-chat-stop-btn {
+    padding: 8px 18px;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: inherit;
+    border: 1.5px solid #ef4444;
+    border-radius: 8px;
+    cursor: pointer;
+    background: #fff;
+    color: #ef4444;
+    flex-shrink: 0;
+    height: 40px;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .ws-chat-stop-btn:hover {
+    background: #fef2f2;
+  }
+
+  /* Spec view (state 2: spec exists) */
+
+  .ws-spec-view {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    margin: 16px;
+    background: #fff;
+  }
+
+  .ws-spec-actions {
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+    border-top: 1px solid #e2e8f0;
+    background: #fff;
+    flex-shrink: 0;
+  }
+
+  .ws-spec-btn {
+    padding: 8px 18px;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: inherit;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+  .ws-spec-btn-change {
+    background: #fff;
+    color: #1e293b;
+    border: 1.5px solid #cbd5e1;
+  }
+
+  .ws-spec-btn-change:hover {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+  }
+
+  .ws-spec-btn-plan {
+    background: #f1f5f9;
+    color: #94a3b8;
+    border: 1.5px solid #e2e8f0;
+    cursor: default;
+  }
+
+  .ws-spec-btn-plan:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  /* Change spec editing (state 3) */
+
+  .ws-spec-edit {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 16px;
+    border-top: 1px solid #e2e8f0;
+    background: #f1f5f9;
+    flex-shrink: 0;
+  }
+
+  .ws-spec-edit-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+  }
+
+  .ws-spec-edit-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+  }
 }

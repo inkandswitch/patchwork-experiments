@@ -25,6 +25,7 @@ const { createSpecCollection, getSpecCollection } = await workspace.import("skil
 {
   goal: string,
   docs: Record<string, AutomergeUrl>,
+  requiredDocs: string[],
   verifications: Verification[]
 }
 
@@ -57,7 +58,7 @@ Returns a read/write interface for the SpecCollectionDoc at `url`. Must be await
 | `addSpec(goal)`                 | Adds a new spec with the given goal. Returns a **spec handle**.          |
 | `getSpec(index)`                | Returns a spec handle for the spec at `index`.                           |
 | `removeSpec(index)`             | Removes the spec at `index`.                                             |
-| `runAllVerifications(workspace)` | Runs verifications for every spec. Returns `{ specIndex, name, passed, error? }[]`. |
+| `runAllVerifications(workspace, providedDocs?)` | Runs verifications for every spec. `providedDocs` is `Record<string, AutomergeUrl>` supplying URLs for required docs. Returns `{ specIndex, name, passed, error? }[]`. |
 
 #### Spec handle methods
 
@@ -70,17 +71,36 @@ A spec handle is returned by `addSpec()` or `getSpec()`. All mutations apply to 
 | `getDocs()`                                      | Returns a copy of the spec's `docs` record.                       |
 | `setDoc(name, url)`                              | Sets a named document reference.                                  |
 | `removeDoc(name)`                                | Removes a named document reference.                               |
+| `getRequiredDocs()`                              | Returns the `requiredDocs` array (document names the plan must provide). |
+| `addRequiredDoc(name)`                           | Adds a required document name (no-op if already present).         |
+| `removeRequiredDoc(name)`                        | Removes a required document name.                                 |
 | `getVerifications()`                             | Returns verifications as `{ name, script, documentUrls }[]`.      |
 | `addVerification(name, script, documentUrls?)`   | Adds a verification with optional named document URLs.             |
 | `removeVerification(name)`                       | Removes the first verification matching `name`.                   |
-| `runVerifications(workspace)`                    | Async. Evals each script, returns `{ specIndex, name, passed, error? }[]`. |
+| `runVerifications(workspace, providedDocs?)`     | Async. `providedDocs` is `Record<string, AutomergeUrl>` supplying URLs for required docs. Evals each script, returns `{ specIndex, name, passed, error? }[]`. |
+
+## Required Documents
+
+`requiredDocs` declares document names that the spec needs but that don't exist yet. A plan executor creates these documents and passes their URLs via the `providedDocs` argument when running verifications.
+
+```javascript
+// During spec creation — declare what's needed
+const handle = coll.addSpec("ER staffing rules are satisfied");
+handle.addRequiredDoc("schedule");
+
+// During plan execution — provide the actual document
+const results = await handle.runVerifications(workspace, { schedule: scheduleUrl });
+```
+
+`providedDocs` entries are merged with each verification's `documentUrls`. If both define the same key, `documentUrls` takes precedence.
 
 ## Verification Scripts
 
 Each verification is a JavaScript snippet that has access to:
 
 - `workspace` — the workspace object
-- **Named document URLs** — any keys from `documentUrls` are injected as variables (e.g. `{ spec: url1, schedule: url2 }` makes `spec` and `schedule` available)
+- **Named document URLs** — any keys from `documentUrls` are injected as variables (e.g. `{ spec: url1 }` makes `spec` available)
+- **Provided documents** — any keys from `providedDocs` passed to `runVerifications` / `runAllVerifications` (e.g. `{ schedule: url2 }` makes `schedule` available)
 
 The script must **return `true`** to pass. Any other return value or thrown error counts as a failure.
 
@@ -124,24 +144,25 @@ erSpec.assertConstraint("er_no_junior_night", {
     { pred: "staff", args: ["P", "_", "junior"] },
   ],
 });
-const erSchedule = createDatalog(workspace, "ER Schedule");
 
 // Add a spec to the collection — returns a spec handle
 const erHandle = coll.addSpec("ER staffing rules are satisfied");
 erHandle.setDoc("spec", erSpec.url);
-erHandle.setDoc("schedule", erSchedule.url);
 erHandle.setDoc("staff", hospitalStaff.url);
 erHandle.setDoc("shifts", shiftConfig.url);
+
+// Declare that a "schedule" document must be provided by the plan
+erHandle.addRequiredDoc("schedule");
 
 erHandle.addVerification("no junior night shifts", `
   const { mergeDatalog } = await workspace.import("skills/datalog/index.js")
   const merged = await mergeDatalog(workspace, [spec, schedule, staff])
   return merged.checkConflicts('er_no_junior_night').length === 0
-`, { spec: erSpec.url, schedule: erSchedule.url, staff: hospitalStaff.url });
+`, { spec: erSpec.url, staff: hospitalStaff.url });
 
-// Run all verifications across the collection
-const results = await coll.runAllVerifications(workspace);
-for (const r of results) {
-  console.log(`[spec ${r.specIndex}] ${r.name}: ${r.passed ? "PASSED" : "FAILED"}`, r.error ?? "");
-}
+// After the plan creates a schedule document, run verifications with it:
+// const results = await coll.runAllVerifications(workspace, { schedule: scheduleUrl });
+// for (const r of results) {
+//   console.log(`[spec ${r.specIndex}] ${r.name}: ${r.passed ? "PASSED" : "FAILED"}`, r.error ?? "");
+// }
 ```

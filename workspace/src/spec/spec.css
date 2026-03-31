@@ -95,6 +95,27 @@
     overflow: auto;
   }
 
+  /* Required document pills */
+
+  .spec-required-docs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .spec-required-doc {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    color: #64748b;
+    background: #fff;
+    border: 1.5px dashed #cbd5e1;
+    border-radius: 6px;
+    font-family: ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
+  }
+
   /* Expandable verification cards */
 
   .spec-verification-list {

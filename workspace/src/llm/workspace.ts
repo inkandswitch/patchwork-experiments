@@ -23,7 +23,14 @@ export function createWorkspace(
   const cloneMap = new Map<AutomergeUrl, DocHandle<any>>();
 
   return {
-    createDoc: () => repo.create(),
+    createDoc: () => {
+      const handle = repo.create();
+      workspaceHandle.change((ws) => {
+        if (!ws.documents) ws.documents = {};
+        ws.documents[handle.url] = { cloneUrl: handle.url };
+      });
+      return handle;
+    },
     find: (url) => findByUrl(repo, workspaceHandle, cloneMap, url),
     getHandle: (path) => resolveAndMaybeClone(repo, workspaceHandle, rootFolderUrl, cloneMap, path),
     import: (path) => importByPath(repo, rootFolderUrl, cloneMap, path),
