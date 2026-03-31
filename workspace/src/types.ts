@@ -23,9 +23,14 @@ export type SpecDoc = {
   verifications: Verification[];
 };
 
+export type PlanDoc = {
+  tasks: TaskDoc[];
+};
+
 export type TaskDoc = {
+  goal: string;
   dependsOn: AutomergeUrl[];
-  docs: Record<string, AutomergeUrl>;
+  artifacts: Record<string, AutomergeUrl>;
   specDocUrl: AutomergeUrl;
 };
 

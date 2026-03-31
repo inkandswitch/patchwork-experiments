@@ -140,6 +140,7 @@ const erSpecDoc: SpecDoc = {
     staff: hospitalStaff.url,
     shifts: shiftConfig.url,
   },
+  requiredDocs: ['schedule'],
   verifications: [
     {
       name: 'no junior night shifts',
@@ -174,6 +175,7 @@ const icuSpecDoc: SpecDoc = {
     staff: hospitalStaff.url,
     shifts: shiftConfig.url,
   },
+  requiredDocs: ['schedule'],
   verifications: [
     {
       name: 'no trainees in ICU',
@@ -210,6 +212,7 @@ const globalSpecDoc: SpecDoc = {
     icuSchedule: icuSchedule.url,
     staff: hospitalStaff.url,
   },
+  requiredDocs: [],
   verifications: [
     {
       name: 'no person exceeds 20 hours',
