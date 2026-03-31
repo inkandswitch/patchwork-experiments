@@ -80,6 +80,19 @@ export default function mount(element) {
 
     selectedShapesRef.change(() => ({ [shapeId]: true }));
 
+    // Bring selected shape to top z-index
+    const allShapes = canvas.ref.at('shapes').value();
+    let maxZ = 0;
+    for (const [sid, s] of Object.entries(allShapes)) {
+      if (typeof s.z === 'number' && s.z > maxZ) maxZ = s.z;
+    }
+    const currentZ = shape.z ?? 0;
+    if (currentZ < maxZ || maxZ === 0) {
+      canvas.ref.at('shapes', shapeId).change((s) => {
+        s.z = maxZ + 1;
+      });
+    }
+
     dragShapeId = shapeId;
     startPointerX = event.clientX;
     startPointerY = event.clientY;

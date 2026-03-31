@@ -1,11 +1,14 @@
 export function getToolUrl(relativePath, baseUrl) {
   const url = new URL(relativePath, baseUrl);
-  return url.pathname.replace(/%23[^/]*/, '');
+  const parts = url.pathname.split('/').filter(Boolean);
+  return parts.slice(1).map(decodeURIComponent).join('/');
 }
 
 export function toToolPath(absoluteUrl) {
   try {
-    return new URL(absoluteUrl).pathname.replace(/%23[^/]*/, '');
+    const url = new URL(absoluteUrl);
+    const parts = url.pathname.split('/').filter(Boolean);
+    return parts.slice(1).map(decodeURIComponent).join('/');
   } catch {
     return absoluteUrl;
   }

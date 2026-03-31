@@ -72,8 +72,8 @@ export default function mount(element) {
     const statusText = () => {
       const w = winner();
       if (w === 'draw') return "It's a draw!";
-      if (w) return `${w} wins! 🎉`;
-      return `${currentPlayer()}'s turn`;
+      if (w) return `${w === 'X' ? '🐱 Cat' : '🐶 Dog'} wins! 🎉`;
+      return `${currentPlayer() === 'X' ? '🐱 Cat' : '🐶 Dog'}'s turn`;
     };
 
     const cellStyle = (i) => {
@@ -82,8 +82,8 @@ export default function mount(element) {
       return {
         width: '76px',
         height: '76px',
-        border: '2px solid #c4b5fd',
-        background: isWinCell ? '#ede9fe' : (board()[i] ? '#faf5ff' : '#fff'),
+        border: '2px solid #93c5fd',
+        background: isWinCell ? '#dbeafe' : (board()[i] ? '#eff6ff' : '#fff'),
         'border-radius': '10px',
         cursor: (!gameOver() && !board()[i]) ? 'pointer' : 'default',
         display: 'flex',
@@ -91,9 +91,9 @@ export default function mount(element) {
         'justify-content': 'center',
         'font-size': '32px',
         'font-weight': 'bold',
-        color: board()[i] === 'X' ? '#7c3aed' : '#ec4899',
+        color: board()[i] === 'X' ? '#2563eb' : '#0ea5e9',
         transition: 'all 0.15s ease',
-        'box-shadow': isWinCell ? '0 0 12px rgba(139, 92, 246, 0.4)' : 'none',
+        'box-shadow': isWinCell ? '0 0 12px rgba(37, 99, 235, 0.4)' : 'none',
       };
     };
 
@@ -101,7 +101,7 @@ export default function mount(element) {
       style=${{
         width: '100%',
         height: '100%',
-        background: 'linear-gradient(135deg, #faf5ff 0%, #f0e7fe 50%, #ede9fe 100%)',
+        background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 50%, #bfdbfe 100%)',
         'border-radius': '16px',
         padding: '16px',
         'box-sizing': 'border-box',
@@ -110,8 +110,8 @@ export default function mount(element) {
         'align-items': 'center',
         gap: '12px',
         'font-family': 'system-ui, -apple-system, sans-serif',
-        'box-shadow': '0 4px 20px rgba(139, 92, 246, 0.15)',
-        border: '1px solid #ddd6fe',
+        'box-shadow': '0 4px 20px rgba(37, 99, 235, 0.15)',
+        border: '1px solid #93c5fd',
       }}
       onPointerDown=${(e) => e.stopPropagation()}
     >
@@ -119,19 +119,19 @@ export default function mount(element) {
       <div style=${{
         'font-size': '18px',
         'font-weight': '700',
-        color: '#6d28d9',
+        color: '#1d4ed8',
         'letter-spacing': '0.5px',
-      }}>✨ Tic Tac Toe ✨</div>
+      }}>🐱 Cats vs Dogs 🐶</div>
 
       <!-- Status -->
       <div style=${{
         'font-size': '15px',
         'font-weight': '600',
-        color: () => winner() ? '#7c3aed' : '#8b5cf6',
-        background: '#f5f3ff',
+        color: () => winner() ? '#2563eb' : '#3b82f6',
+        background: '#eff6ff',
         padding: '6px 16px',
         'border-radius': '20px',
-        border: '1px solid #ddd6fe',
+        border: '1px solid #93c5fd',
       }}>${statusText}</div>
 
       <!-- Board -->
@@ -146,17 +146,17 @@ export default function mount(element) {
             onClick=${() => handleClick(i)}
             onMouseEnter=${(e) => {
               if (!gameOver() && !board()[i]) {
-                e.target.style.background = '#f5f3ff';
+                e.target.style.background = '#eff6ff';
                 e.target.style.transform = 'scale(1.05)';
               }
             }}
             onMouseLeave=${(e) => {
               const wl = winLine();
               const isWin = wl && wl.includes(i);
-              e.target.style.background = isWin ? '#ede9fe' : (board()[i] ? '#faf5ff' : '#fff');
+              e.target.style.background = isWin ? '#dbeafe' : (board()[i] ? '#eff6ff' : '#fff');
               e.target.style.transform = 'scale(1)';
             }}
-          >${() => board()[i]}</div>`
+          >${() => board()[i] === 'X' ? '🐱' : board()[i] === 'O' ? '🐶' : ''}</div>`
         )}
       </div>
 
@@ -165,23 +165,23 @@ export default function mount(element) {
         onClick=${resetGame}
         style=${{
           padding: '8px 24px',
-          background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+          background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
           color: 'white',
           border: 'none',
           'border-radius': '20px',
           'font-size': '13px',
           'font-weight': '600',
           cursor: 'pointer',
-          'box-shadow': '0 2px 8px rgba(124, 58, 237, 0.3)',
+          'box-shadow': '0 2px 8px rgba(37, 99, 235, 0.3)',
           transition: 'all 0.15s ease',
         }}
         onMouseEnter=${(e) => {
           e.target.style.transform = 'scale(1.05)';
-          e.target.style.boxShadow = '0 4px 12px rgba(124, 58, 237, 0.4)';
+          e.target.style.boxShadow = '0 4px 12px rgba(37, 99, 235, 0.4)';
         }}
         onMouseLeave=${(e) => {
           e.target.style.transform = 'scale(1)';
-          e.target.style.boxShadow = '0 2px 8px rgba(124, 58, 237, 0.3)';
+          e.target.style.boxShadow = '0 2px 8px rgba(37, 99, 235, 0.3)';
         }}
       >New Game</button>
     </div>`;

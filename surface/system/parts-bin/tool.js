@@ -188,21 +188,18 @@ export default function mount(element) {
     outer.addEventListener('pointerdown', (e) => e.stopPropagation());
 
     const repo = globalThis.repo;
-    const resolved = resolveToolUrls(structuredClone(example.value), fs);
-    const handle = repo.create(resolved);
-    const toolUrl = fs.getUrlOfFile(example.tool);
-
+    const handle = repo.create(structuredClone(example.value));
     const inner = document.createElement('ref-view');
     inner.style.cssText = `display:block;width:${nativeWidth}px;height:${nativeHeight}px;transform:scale(${scale});transform-origin:top left;`;
     inner.setAttribute('ref-url', handle.url);
-    inner.setAttribute('tool-url', toolUrl);
+    inner.setAttribute('tool-url', example.tool);
     outer.appendChild(inner);
     card.appendChild(outer);
 
     resetBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       e.preventDefault();
-      const fresh = repo.create(resolveToolUrls(structuredClone(example.value), fs));
+      const fresh = repo.create(structuredClone(example.value));
       inner.setAttribute('ref-url', fresh.url);
     });
 
@@ -223,14 +220,3 @@ function getAtDotPath(obj, dotPath) {
   return dotPath.split('.').reduce((cur, seg) => cur?.[seg], obj);
 }
 
-function resolveToolUrls(value, filesystem) {
-  if (!value || typeof value !== 'object') return value;
-  for (const key of Object.keys(value)) {
-    if (key === 'toolUrl' && typeof value[key] === 'string') {
-      value[key] = filesystem.getUrlOfFile(value[key]);
-    } else if (typeof value[key] === 'object' && value[key] !== null) {
-      resolveToolUrls(value[key], filesystem);
-    }
-  }
-  return value;
-}

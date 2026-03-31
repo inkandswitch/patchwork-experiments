@@ -1,0 +1,17 @@
+{
+  "plugins": [
+    {
+      "type": "tool",
+      "name": "Inspector",
+      "description": "Inspect tools on the canvas - hover to see names, click to view source",
+      "toolUrl": "./tool.js",
+      "schemaUrl": "./schema.js"
+    },
+    {
+      "type": "schema",
+      "name": "Inspector",
+      "description": "Data schema for the inspector tool",
+      "source": "./schema.js"
+    }
+  ]
+}

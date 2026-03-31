@@ -193,8 +193,40 @@ export default function mount(element) {
     element,
   );
 
+
+
+  // Auto-scroll: watch for new content in .llm-body and scroll to bottom
+  const bodyObserver = new MutationObserver(() => {
+    const body = element.querySelector('.llm-body');
+    if (body) {
+      body.scrollTop = body.scrollHeight;
+    }
+  });
+  // Start observing once the DOM is ready
+  requestAnimationFrame(() => {
+    const body = element.querySelector('.llm-body');
+    if (body) {
+      body.scrollTop = body.scrollHeight;
+      bodyObserver.observe(body, { childList: true, subtree: true, characterData: true });
+    }
+    // Also observe the panel itself in case .llm-body gets re-created (tab switch)
+    const panel = element.querySelector('.llm-panel');
+    if (panel) {
+      const panelObserver = new MutationObserver(() => {
+        const b = element.querySelector('.llm-body');
+        if (b) {
+          b.scrollTop = b.scrollHeight;
+          bodyObserver.disconnect();
+          bodyObserver.observe(b, { childList: true, subtree: true, characterData: true });
+        }
+      });
+      panelObserver.observe(panel, { childList: true });
+    }
+  });
+
   return () => {
     abortController?.abort();
+    bodyObserver.disconnect();
     dispose();
   };
 }

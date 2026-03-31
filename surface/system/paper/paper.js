@@ -23,6 +23,7 @@ export default function mount(element) {
               position: 'absolute',
               left: `${shapes[id]?.x}px`,
               top: `${shapes[id]?.y}px`,
+              'z-index': shapes[id]?.z ?? 0,
               filter: selectedShapes[id] ? 'drop-shadow(0 0 3px rgba(0,0,0,0.4))' : 'none',
             })}
           >

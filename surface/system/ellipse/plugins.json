@@ -1,0 +1,25 @@
+{
+  "plugins": [
+    {
+      "type": "tool",
+      "name": "Ellipse",
+      "description": "Renders an ellipse on the canvas",
+      "toolUrl": "./tool.js",
+      "schemaUrl": "./schema.js",
+      "unlisted": true
+    },
+    {
+      "type": "tool",
+      "name": "Ellipse Button",
+      "description": "Toolbar button for the ellipse drawing tool",
+      "toolUrl": "./button.js"
+    },
+    {
+      "type": "schema",
+      "name": "Ellipse Schema",
+      "description": "Ellipse shape data schema (x, y, width, height)",
+      "source": "./schema.js",
+      "unlisted": true
+    }
+  ]
+}

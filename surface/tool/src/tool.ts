@@ -7,7 +7,7 @@ import type { RefViewHostElement } from "./ref-view";
 import type { SurfaceDoc } from "./datatype";
 
 const DEFAULT_SOURCE_FOLDER = "automerge:4FwenFcEMbsmjGxvYAuT5U8mLi8m" as AutomergeUrl;
-const BOOTSTRAP_TOOL_URL = "/automerge:4FwenFcEMbsmjGxvYAuT5U8mLi8m/bootstrap.js";
+const BOOTSTRAP_TOOL_URL = "bootstrap.js";
 
 const repo = (globalThis as any).repo;
 (globalThis as any).findRef = findRef;
