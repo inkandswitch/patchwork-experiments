@@ -1,13 +1,13 @@
 import { render } from 'solid-js/web';
-import { createSignal, createResource, For, Show, createEffect } from 'solid-js';
+import { createSignal, For, Show, createEffect } from 'solid-js';
 import { RepoContext, useDocument, useRepo } from '@automerge/automerge-repo-solid-primitives';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle, Repo } from '@automerge/automerge-repo';
 import type { AutomergeUrl } from '@automerge/automerge-repo';
 
 import type { WorkspaceChatDoc, WorkspaceDoc, DocumentEntry } from '../types';
-import type { LLMProcessDoc, ChatMessage, ChatMessagePart } from '../llm/types';
-import { runWorkspaceLLM, buildFullSystemPrompt } from '../llm/llm-process';
+import type { LLMProcessDoc, ChatMessagePart } from '../llm/types';
+import { runWorkspaceLLM } from '../llm/llm-process';
 import './chat.css';
 
 const MODELS = [
@@ -26,9 +26,18 @@ const MODELS = [
 
 const DEFAULT_MODEL = 'anthropic/claude-sonnet-4.6';
 
-async function findSpecCollectionUrl(
+type Stage = 'spec' | 'plan' | 'artifact';
+
+const STAGES: { id: Stage; label: string }[] = [
+  { id: 'spec', label: 'Spec' },
+  { id: 'plan', label: 'Plan' },
+  { id: 'artifact', label: 'Artifact' },
+];
+
+async function findDocUrlByType(
   repo: Repo,
   wsHandle: DocHandle<WorkspaceDoc>,
+  patchworkType: string,
 ): Promise<AutomergeUrl | undefined> {
   const wsDoc = await wsHandle.doc();
   if (!wsDoc?.documents) return undefined;
@@ -36,7 +45,7 @@ async function findSpecCollectionUrl(
   for (const [, entry] of Object.entries(wsDoc.documents)) {
     const handle = await repo.find((entry as DocumentEntry).cloneUrl);
     const d = await handle.doc();
-    if ((d as any)?.['@patchwork']?.type === 'spec') {
+    if ((d as any)?.['@patchwork']?.type === patchworkType) {
       return (entry as DocumentEntry).cloneUrl;
     }
   }
@@ -61,14 +70,22 @@ function WorkspaceChatView(props: { handle: DocHandle<WorkspaceChatDoc> }) {
   const [prompt, setPrompt] = createSignal('');
   const [selectedModel, setSelectedModel] = createSignal(DEFAULT_MODEL);
   const [isSubmitting, setIsSubmitting] = createSignal(false);
-  const [editing, setEditing] = createSignal(false);
-  const [activeTab, setActiveTab] = createSignal<'chat' | 'prompt' | 'workspace'>('chat');
+  const [stage, setStage] = createSignal<Stage>('spec');
   const [abortController, setAbortController] = createSignal<AbortController | null>(null);
 
   const [processDoc] = useDocument<LLMProcessDoc>(() => doc()?.llmProcessUrl);
 
   const hasSpec = () => !!doc()?.specCollectionDocUrl;
+  const hasPlan = () => !!doc()?.planDocUrl;
   const isRunning = () => !!doc()?.llmProcessUrl && processDoc() !== undefined && !processDoc()!.done;
+
+  function stageState(id: Stage): 'active' | 'completed' | 'future' {
+    const current = stage();
+    if (id === current) return 'active';
+    if (id === 'spec' && hasSpec()) return 'completed';
+    if (id === 'plan' && hasPlan()) return 'completed';
+    return 'future';
+  }
 
   async function handleSubmit() {
     const text = prompt().trim();
@@ -106,7 +123,7 @@ function WorkspaceChatView(props: { handle: DocHandle<WorkspaceChatDoc> }) {
 
       await runWorkspaceLLM(repo, processHandle.url, controller.signal);
 
-      const specUrl = await findSpecCollectionUrl(repo, wsHandle);
+      const specUrl = await findDocUrlByType(repo, wsHandle, 'spec');
       if (specUrl) {
         props.handle.change((d) => {
           d.specCollectionDocUrl = specUrl;
@@ -118,17 +135,14 @@ function WorkspaceChatView(props: { handle: DocHandle<WorkspaceChatDoc> }) {
     }
   }
 
-  async function handleChangeSpec() {
-    const text = prompt().trim();
-    if (!text || isSubmitting()) return;
-
+  async function handleTurnIntoPlan() {
     const currentDoc = doc();
-    if (!currentDoc?.llmProcessUrl) return;
+    if (!currentDoc?.specCollectionDocUrl || !currentDoc?.llmProcessUrl) return;
+    if (isSubmitting()) return;
 
     const controller = new AbortController();
     setAbortController(controller);
     setIsSubmitting(true);
-    setEditing(false);
     try {
       const oldProcessHandle = await repo.find<LLMProcessDoc>(currentDoc.llmProcessUrl);
       const oldProcess = await oldProcessHandle.doc();
@@ -136,37 +150,37 @@ function WorkspaceChatView(props: { handle: DocHandle<WorkspaceChatDoc> }) {
 
       const wsHandle = await repo.find<WorkspaceDoc>(oldProcess.workspaceUrl);
 
-      const prevMessages = JSON.parse(JSON.stringify(oldProcess.messages)) as ChatMessage[];
-
       const processHandle = repo.create<LLMProcessDoc>();
       processHandle.change((d) => {
         d.config = {
           apiUrl: 'https://openrouter.ai/api/v1',
           model: selectedModel(),
         };
-        d.llmConfigFolderUrl = __SPEC_AGENT_FOLDER_URL__ as AutomergeUrl;
+        d.llmConfigFolderUrl = __PLAN_AGENT_FOLDER_URL__ as AutomergeUrl;
         d.workspaceUrl = oldProcess.workspaceUrl;
-        d.messages = [
-          ...prevMessages,
-          { role: 'user', content: [{ type: 'text', text }] },
-        ];
+        d.messages = [{
+          role: 'user',
+          content: [{
+            type: 'text',
+            text: `Create a plan from the spec collection at: ${currentDoc.specCollectionDocUrl}`,
+          }],
+        }];
         d.done = false;
       });
 
       props.handle.change((d) => {
         d.llmProcessUrl = processHandle.url;
-        delete d.specCollectionDocUrl;
+        delete d.planDocUrl;
       });
-
-      setPrompt('');
 
       await runWorkspaceLLM(repo, processHandle.url, controller.signal);
 
-      const specUrl = await findSpecCollectionUrl(repo, wsHandle);
-      if (specUrl) {
+      const planUrl = await findDocUrlByType(repo, wsHandle, 'plan');
+      if (planUrl) {
         props.handle.change((d) => {
-          d.specCollectionDocUrl = specUrl;
+          d.planDocUrl = planUrl;
         });
+        setStage('plan');
       }
     } finally {
       setAbortController(null);
@@ -181,87 +195,89 @@ function WorkspaceChatView(props: { handle: DocHandle<WorkspaceChatDoc> }) {
   function handleKeyDown(e: KeyboardEvent) {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
-      if (hasSpec() && editing()) handleChangeSpec();
-      else if (!hasSpec() && !isRunning()) handleSubmit();
+      if (!hasSpec() && !isRunning()) handleSubmit();
     }
   }
 
   return (
     <div class="ws-chat-root">
-      <div class="ws-chat-tabs">
-        <button
-          class={`ws-chat-tab${activeTab() === 'chat' ? ' active' : ''}`}
-          onClick={() => setActiveTab('chat')}
-        >
-          Chat
-        </button>
-        <button
-          class={`ws-chat-tab${activeTab() === 'prompt' ? ' active' : ''}`}
-          onClick={() => setActiveTab('prompt')}
-        >
-          Prompt
-        </button>
-        <button
-          class={`ws-chat-tab${activeTab() === 'workspace' ? ' active' : ''}`}
-          onClick={() => setActiveTab('workspace')}
-        >
-          Workspace
-        </button>
-      </div>
+      <Show when={hasSpec()}>
+        <div class="ws-stage-bar">
+          <For each={STAGES}>
+            {(s, i) => (
+              <>
+                <Show when={i() > 0}>
+                  <span class="ws-stage-chevron">{'>'}</span>
+                </Show>
+                <button
+                  class={`ws-stage-item ${stageState(s.id)}`}
+                  onClick={() => {
+                    const state = stageState(s.id);
+                    if (state === 'completed' || state === 'active') setStage(s.id);
+                  }}
+                  disabled={stageState(s.id) === 'future'}
+                >
+                  {s.label}
+                </button>
+              </>
+            )}
+          </For>
+        </div>
+      </Show>
 
       <Show when={doc()}>
         {(currentDoc) => (
           <>
-            <Show when={activeTab() === 'chat'}>
-              <Show when={!hasSpec() || isRunning()}>
-                <div class="ws-chat-input-bar">
-                  <div class="ws-chat-input-top">
-                    <select
-                      class="ws-chat-model-select"
-                      value={selectedModel()}
-                      onChange={(e) => setSelectedModel(e.currentTarget.value)}
-                      disabled={isSubmitting() || isRunning()}
-                    >
-                      <For each={MODELS}>
-                        {(m) => <option value={m.id}>{m.name}</option>}
-                      </For>
-                    </select>
-                  </div>
-                  <div class="ws-chat-input-row">
-                    <textarea
-                      class="ws-chat-textarea"
-                      placeholder="I want… (⌘↵ to send)"
-                      value={prompt()}
-                      onInput={(e) => setPrompt(e.currentTarget.value)}
-                      onKeyDown={handleKeyDown}
-                      disabled={isSubmitting() || isRunning()}
-                      rows={3}
-                    />
-                    <Show
-                      when={isRunning()}
-                      fallback={
-                        <button
-                          class="ws-chat-send-btn"
-                          onClick={handleSubmit}
-                          disabled={isSubmitting() || !prompt().trim()}
-                        >
-                          {isSubmitting() ? 'Running…' : 'Send'}
-                        </button>
-                      }
-                    >
-                      <button class="ws-chat-stop-btn" onClick={handleStop}>
-                        Stop
-                      </button>
-                    </Show>
-                  </div>
+            <Show when={!hasSpec()}>
+              <div class="ws-chat-input-bar">
+                <div class="ws-chat-input-top">
+                  <select
+                    class="ws-chat-model-select"
+                    value={selectedModel()}
+                    onChange={(e) => setSelectedModel(e.currentTarget.value)}
+                    disabled={isSubmitting() || isRunning()}
+                  >
+                    <For each={MODELS}>
+                      {(m) => <option value={m.id}>{m.name}</option>}
+                    </For>
+                  </select>
                 </div>
-              </Show>
+                <div class="ws-chat-input-row">
+                  <textarea
+                    class="ws-chat-textarea"
+                    placeholder="I want… (⌘↵ to send)"
+                    value={prompt()}
+                    onInput={(e) => setPrompt(e.currentTarget.value)}
+                    onKeyDown={handleKeyDown}
+                    disabled={isSubmitting() || isRunning()}
+                    rows={3}
+                  />
+                  <Show
+                    when={isRunning()}
+                    fallback={
+                      <button
+                        class="ws-chat-send-btn"
+                        onClick={handleSubmit}
+                        disabled={isSubmitting() || !prompt().trim()}
+                      >
+                        {isSubmitting() ? 'Running…' : 'Send'}
+                      </button>
+                    }
+                  >
+                    <button class="ws-chat-stop-btn" onClick={handleStop}>
+                      Stop
+                    </button>
+                  </Show>
+                </div>
+              </div>
+            </Show>
 
-              <Show when={isRunning() && currentDoc().llmProcessUrl}>
-                {(processUrl) => <LLMProcessView url={processUrl()} />}
-              </Show>
+            <Show when={isRunning() && currentDoc().llmProcessUrl}>
+              {(processUrl) => <LLMProcessView url={processUrl()} />}
+            </Show>
 
-              <Show when={!isRunning() && hasSpec() && currentDoc().specCollectionDocUrl}>
+            <Show when={!isRunning() && hasSpec()}>
+              <Show when={stage() === 'spec' && currentDoc().specCollectionDocUrl}>
                 {(specUrl) => (
                   <>
                     <div class="ws-spec-view">
@@ -270,146 +286,38 @@ function WorkspaceChatView(props: { handle: DocHandle<WorkspaceChatDoc> }) {
                         style="display:block;width:100%;height:100%;"
                       />
                     </div>
-
-                    <Show
-                      when={editing()}
-                      fallback={
-                        <div class="ws-spec-actions">
-                          <button
-                            class="ws-spec-btn ws-spec-btn-change"
-                            onClick={() => setEditing(true)}
-                          >
-                            Change Spec
-                          </button>
-                          <button class="ws-spec-btn ws-spec-btn-plan" disabled>
-                            Turn into plan
-                          </button>
-                        </div>
-                      }
-                    >
-                      <div class="ws-spec-edit">
-                        <div class="ws-spec-edit-label">Change spec</div>
-                        <div class="ws-spec-edit-row">
-                          <textarea
-                            class="ws-chat-textarea"
-                            placeholder="Describe what to change… (⌘↵ to send)"
-                            value={prompt()}
-                            onInput={(e) => setPrompt(e.currentTarget.value)}
-                            onKeyDown={handleKeyDown}
-                            disabled={isSubmitting()}
-                            rows={3}
-                          />
-                          <button
-                            class="ws-chat-send-btn"
-                            onClick={handleChangeSpec}
-                            disabled={isSubmitting() || !prompt().trim()}
-                          >
-                            {isSubmitting() ? 'Running…' : 'Send'}
-                          </button>
-                        </div>
-                      </div>
-                    </Show>
+                    <div class="ws-spec-actions">
+                      <button
+                        class="ws-spec-btn ws-spec-btn-plan"
+                        onClick={handleTurnIntoPlan}
+                        disabled={isSubmitting() || hasPlan()}
+                      >
+                        {hasPlan() ? 'Plan created' : 'Turn into plan'}
+                      </button>
+                    </div>
                   </>
                 )}
               </Show>
-            </Show>
 
-            <Show when={activeTab() === 'prompt'}>
-              <PromptDebugView processUrl={currentDoc().llmProcessUrl} />
-            </Show>
+              <Show when={stage() === 'plan' && currentDoc().planDocUrl}>
+                {(planUrl) => (
+                  <div class="ws-spec-view">
+                    <patchwork-view
+                      attr:doc-url={planUrl()}
+                      style="display:block;width:100%;height:100%;"
+                    />
+                  </div>
+                )}
+              </Show>
 
-            <Show when={activeTab() === 'workspace'}>
-              <WorkspaceDocumentsView processUrl={currentDoc().llmProcessUrl} />
+              <Show when={stage() === 'artifact'}>
+                <div class="ws-stage-placeholder">
+                  Artifact execution is not yet implemented.
+                </div>
+              </Show>
             </Show>
           </>
         )}
-      </Show>
-    </div>
-  );
-}
-
-function PromptDebugView(props: { processUrl?: AutomergeUrl }) {
-  const repo = useRepo();
-  const configFolderUrl = __SPEC_AGENT_FOLDER_URL__ as AutomergeUrl;
-  const [processDoc] = useDocument<LLMProcessDoc>(() => props.processUrl);
-
-  const [systemPrompt, { refetch }] = createResource(
-    () => processDoc()?.workspaceUrl,
-    (wsUrl) => buildFullSystemPrompt(repo, configFolderUrl, wsUrl),
-  );
-
-  return (
-    <div class="ws-chat-prompt-debug">
-      <div class="ws-chat-prompt-debug-header">
-        <span>System Prompt Preview</span>
-        <button class="ws-chat-prompt-refresh-btn" onClick={refetch}>
-          Refresh
-        </button>
-      </div>
-      <Show when={!props.processUrl}>
-        <div class="ws-chat-prompt-debug-loading">No LLM process yet — send a message first.</div>
-      </Show>
-      <Show when={systemPrompt.loading}>
-        <div class="ws-chat-prompt-debug-loading">Loading prompt…</div>
-      </Show>
-      <Show when={systemPrompt()}>
-        {(text) => (
-          <pre class="ws-chat-prompt-debug-content">{text()}</pre>
-        )}
-      </Show>
-      <Show when={systemPrompt.error}>
-        <div class="ws-chat-prompt-debug-error">
-          Error: {String(systemPrompt.error)}
-        </div>
-      </Show>
-    </div>
-  );
-}
-
-function WorkspaceDocumentsView(props: { processUrl?: AutomergeUrl }) {
-  const [processDoc] = useDocument<LLMProcessDoc>(() => props.processUrl);
-  const workspaceUrl = () => processDoc()?.workspaceUrl;
-  const [wsDoc] = useDocument<WorkspaceDoc>(() => workspaceUrl());
-
-  return (
-    <div class="ws-workspace-view">
-      <Show
-        when={wsDoc()}
-        fallback={
-          <div class="ws-workspace-empty">
-            {props.processUrl ? 'Loading workspace…' : 'No workspace yet — send a message first.'}
-          </div>
-        }
-      >
-        {(ws) => {
-          const entries = () => Object.entries(ws().documents ?? {});
-          return (
-            <Show
-              when={entries().length > 0}
-              fallback={
-                <div class="ws-workspace-empty">
-                  No documents in the workspace yet.
-                </div>
-              }
-            >
-              <div class="ws-workspace-docs">
-                <For each={entries()}>
-                  {([originalUrl, info]) => (
-                    <div class="ws-workspace-doc-card">
-                      <div class="ws-workspace-doc-header">{(info as DocumentEntry).cloneUrl}</div>
-                      <div class="ws-workspace-doc-body">
-                        <patchwork-view
-                          attr:doc-url={(info as DocumentEntry).cloneUrl}
-                          style="display:block;width:100%;height:100%;"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </For>
-              </div>
-            </Show>
-          );
-        }}
       </Show>
     </div>
   );
@@ -456,7 +364,7 @@ function LLMProcessView(props: { url: AutomergeUrl }) {
   );
 }
 
-function MessageView(props: { message: ChatMessage }) {
+function MessageView(props: { message: { role: string; content: ChatMessagePart[] } }) {
   const roleClass = () => {
     switch (props.message.role) {
       case 'user': return 'ws-chat-msg ws-chat-msg-user';

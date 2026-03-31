@@ -22,6 +22,7 @@
 import type { SpecDoc, SpecCollectionDoc, PlanDoc, TaskDoc } from './types';
 
 const { createDatalog } = await workspace.import('skills/datalog/index.js');
+const { createPlan, getPlan } = await workspace.import('skills/plan/index.js');
 
 // ════════════════════════════════════════════════════════════════════
 // SHARED DATA — hospital staff roster and shift structure
@@ -261,29 +262,15 @@ const hospitalSpecs: SpecCollectionDoc = {
 // department schedules to be produced before validating aggregate
 // constraints.
 
-const erTask = workspace.create('task', {
-  goal: 'Generate ER department schedule',
-  dependsOn: [],
-  artifacts: { schedule: erSchedule.url },
-  specDocUrl: erSpecDoc.url,
-} satisfies TaskDoc);
+const { url: planUrl } = createPlan(workspace);
+const plan = await getPlan(workspace, planUrl);
 
-const icuTask = workspace.create('task', {
-  goal: 'Generate ICU department schedule',
-  dependsOn: [],
-  artifacts: { schedule: icuSchedule.url },
-  specDocUrl: icuSpecDoc.url,
-} satisfies TaskDoc);
+const erTask = plan.addTask('Generate ER department schedule', erSpecDoc.url);
+erTask.setArtifact('schedule', erSchedule.url);
 
-const globalTask = workspace.create('task', {
-  goal: 'Validate cross-department constraints',
-  dependsOn: [erTask.url, icuTask.url],
-  artifacts: {},
-  specDocUrl: globalSpecDoc.url,
-} satisfies TaskDoc);
+const icuTask = plan.addTask('Generate ICU department schedule', icuSpecDoc.url);
+icuTask.setArtifact('schedule', icuSchedule.url);
 
-// ── Plan ────────────────────────────────────────────────────────────
-
-const hospitalPlan: PlanDoc = {
-  tasks: [erTask, icuTask, globalTask],
-};
+const globalTask = plan.addTask('Validate cross-department constraints', globalSpecDoc.url);
+globalTask.addDependency(erTask.url);
+globalTask.addDependency(icuTask.url);

@@ -43,6 +43,26 @@ export const plugins: Plugin<any>[] = [
   } as Datatype,
   {
     type: 'patchwork:tool',
+    id: 'plan-viewer',
+    name: 'Plan Viewer',
+    supportedDatatypes: ['plan'],
+    async load() {
+      const { PlanTool } = await import('./plan/tool');
+      return PlanTool;
+    },
+  } satisfies Tool,
+  {
+    type: 'patchwork:datatype',
+    id: 'plan',
+    name: 'Plan',
+    icon: 'ListChecks',
+    async load() {
+      const { PlanDatatype } = await import('./plan/datatype');
+      return PlanDatatype;
+    },
+  } as Datatype,
+  {
+    type: 'patchwork:tool',
     id: 'workspace-chat',
     name: 'Workspace Chat',
     supportedDatatypes: ['workspace-chat'],

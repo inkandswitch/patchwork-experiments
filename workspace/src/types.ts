@@ -24,7 +24,7 @@ export type SpecDoc = {
 };
 
 export type PlanDoc = {
-  tasks: TaskDoc[];
+  tasks: AutomergeUrl[];
 };
 
 export type TaskDoc = {

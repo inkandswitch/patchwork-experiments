@@ -22,6 +22,9 @@ export default defineConfig({
     __SPEC_AGENT_FOLDER_URL__: JSON.stringify(
       findDirectoryUrl(workspaceSnapshot, 'agent-configs/spec-agent'),
     ),
+    __PLAN_AGENT_FOLDER_URL__: JSON.stringify(
+      findDirectoryUrl(workspaceSnapshot, 'agent-configs/plan-agent'),
+    ),
   },
 
   build: {
