@@ -37,6 +37,7 @@ export function registerRefView(
     #ref: Ref | null = null;
     #toolRef: Ref<string> | null = null;
     #toolUnsub: (() => void) | null = null;
+    #folderCleanup: (() => void) | null = null;
 
     get filesystem(): Filesystem {
       return filesystem;
@@ -123,6 +124,10 @@ export function registerRefView(
         this.#toolUnsub();
         this.#toolUnsub = null;
       }
+      if (this.#folderCleanup) {
+        this.#folderCleanup();
+        this.#folderCleanup = null;
+      }
       if (this.#cleanup) {
         try {
           this.#cleanup();
@@ -186,7 +191,45 @@ export function registerRefView(
 
         this.#ref = ref;
 
-        const mod = (await import(/* @vite-ignore */ toolUrl)) as MountModule;
+        console.log("[ref-view] resolving toolUrl:", toolUrl);
+        const resolvedToolUrl = await filesystem.resolveToolUrl(toolUrl);
+        if (this.#stale(signal)) return;
+        console.log("[ref-view] resolved →", resolvedToolUrl);
+
+        const toolParts = toolUrl.split("/");
+        const watchPath = toolParts.length > 1 ? toolParts[0] : toolUrl;
+        const folderHandle = await filesystem.getDocHandle(watchPath);
+        if (this.#stale(signal)) return;
+
+        let lastResolvedUrl = resolvedToolUrl;
+        let lastHeads = folderHandle.heads().join("|");
+        console.log("[ref-view] watching folder for", toolUrl, "path:", watchPath || "(root)", "heads:", lastHeads);
+        const onFolderChange = () => {
+          const newHeads = folderHandle.heads().join("|");
+          const headsChanged = newHeads !== lastHeads;
+          console.log("[ref-view] folder change event for", toolUrl, "headsChanged:", headsChanged, "old:", lastHeads.slice(0, 12), "new:", newHeads.slice(0, 12));
+          if (!headsChanged) return;
+          lastHeads = newHeads;
+          void (async () => {
+            try {
+              const newUrl = await filesystem.resolveToolUrl(toolUrl);
+              if (newUrl !== lastResolvedUrl) {
+                console.log("[ref-view] remounting", toolUrl, "URL changed");
+                lastResolvedUrl = newUrl;
+                this.#scheduleMount();
+              } else {
+                console.log("[ref-view] skipping remount for", toolUrl, "URL unchanged");
+              }
+            } catch {
+              // ignore resolution errors during change detection
+            }
+          })();
+        };
+        folderHandle.on("change", onFolderChange);
+        this.#folderCleanup = () => folderHandle.off("change", onFolderChange);
+
+        console.log("[ref-view] importing:", resolvedToolUrl);
+        const mod = (await import(/* @vite-ignore */ resolvedToolUrl)) as MountModule;
         if (this.#stale(signal)) return;
 
         const fn = mod.default;

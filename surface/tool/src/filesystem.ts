@@ -41,6 +41,10 @@ export type Filesystem = {
   listEntries(path?: string): Promise<DocLink[]>;
   import(path: string): Promise<unknown>;
   getUrlOfFile(path?: string): string;
+  /** Resolve a system-relative tool path to a head-versioned service worker URL. */
+  resolveToolUrl(path: string): Promise<string>;
+  /** Return the DocHandle for any system-relative path (file or folder). */
+  getDocHandle(path: string): Promise<DocHandle<unknown>>;
   /** Watch files matching a glob pattern. Calls `fn` on initial match and whenever the matched set or file contents change. */
   watch(pattern: string, fn: (matches: string[]) => void): () => void;
 };
@@ -109,6 +113,57 @@ export function createFilesystem(repo: Repo, rootFolderUrl: AutomergeUrl): Files
     const suffix = splitPath(relativePath).map(encodeURIComponent).join("/");
     return new URL(suffix, baseHref).href;
   }
+
+  function normalizeToolPath(path: string): string {
+    if (path.startsWith("/")) {
+      const parts = path.split("/").filter(Boolean);
+      return parts.slice(1).map(decodeURIComponent).join("/");
+    }
+    if (path.startsWith("http://") || path.startsWith("https://")) {
+      try {
+        const url = new URL(path);
+        const parts = url.pathname.split("/").filter(Boolean);
+        return parts.slice(1).map(decodeURIComponent).join("/");
+      } catch {
+        return path;
+      }
+    }
+    return path;
+  }
+
+  async function findDirectFolder(
+    systemPath: string,
+  ): Promise<{ folderHandle: DocHandle<FolderDoc>; rest: string }> {
+    const parts = splitPath(systemPath);
+    const root = await rootFolder();
+    if (parts.length <= 1) {
+      console.log("[fs] findDirectFolder: root-level path", systemPath);
+      return { folderHandle: root, rest: parts.join("/") };
+    }
+    const folderName = parts[0];
+    const rootDoc = root.doc();
+    const folderLink = rootDoc.docs?.find(
+      (d) => d.name === folderName && d.type === "folder",
+    );
+    if (!folderLink) {
+      console.warn("[fs] findDirectFolder: folder not found in root doc:", folderName, "available:", rootDoc.docs?.map((d) => d.name));
+      return { folderHandle: root, rest: parts.join("/") };
+    }
+    console.log("[fs] findDirectFolder:", folderName, "→", folderLink.url);
+    const handle = await repo.find(folderLink.url as AutomergeUrl);
+    if (typeof handle.whenReady === "function") await handle.whenReady();
+    const doc = handle.doc();
+    if (!isFolderDoc(doc)) {
+      console.warn("[fs] findDirectFolder:", folderName, "is not a folder doc");
+      return { folderHandle: root, rest: parts.join("/") };
+    }
+    return {
+      folderHandle: handle as unknown as DocHandle<FolderDoc>,
+      rest: parts.slice(1).join("/"),
+    };
+  }
+
+  startChangeTracking(repo, rootFolder);
 
   return {
     async readFile(path: string): Promise<string> {
@@ -235,6 +290,31 @@ export function createFilesystem(repo: Repo, rootFolderUrl: AutomergeUrl): Files
 
     getUrlOfFile(path?: string): string {
       return buildFetchUrl(path);
+    },
+
+    async resolveToolUrl(path: string): Promise<string> {
+      const normalized = normalizeToolPath(path);
+      console.log("[fs] resolveToolUrl:", path, "→ normalized:", normalized);
+      const baseUrl = buildFetchUrl(normalized);
+      const parts = splitPath(normalized);
+
+      let versionHandle: DocHandle<unknown>;
+      if (parts.length <= 1) {
+        versionHandle = await resolvePath(normalized);
+      } else {
+        const { folderHandle } = await findDirectFolder(normalized);
+        versionHandle = folderHandle;
+      }
+
+      const versionParam = versionHandle.heads().join("|");
+      const result = baseUrl + "?v=" + encodeURIComponent(versionParam);
+      console.log("[fs] resolveToolUrl result:", result);
+      return result;
+    },
+
+    async getDocHandle(path: string): Promise<DocHandle<unknown>> {
+      const normalized = normalizeToolPath(path);
+      return resolvePath(normalized);
     },
 
     watch(pattern: string, fn: (matches: string[]) => void): () => void {
@@ -440,4 +520,129 @@ function buildGlobTest(patternSegments: string[]): (path: string) => boolean {
     }
     return true;
   };
+}
+
+function startChangeTracking(
+  repo: Repo,
+  rootFolder: () => Promise<DocHandle<FolderDoc>>,
+): void {
+  const folderWatchers = new Map<string, () => void>();
+  const fileWatchers = new Map<string, () => void>();
+  let rebuildScheduled = false;
+
+  function scheduleRebuild(): void {
+    if (rebuildScheduled) return;
+    rebuildScheduled = true;
+    queueMicrotask(() => {
+      rebuildScheduled = false;
+      void rebuild();
+    });
+  }
+
+  async function rebuild(): Promise<void> {
+    const root = await rootFolder();
+    const discoveredFolders = new Map<string, DocHandle<FolderDoc>>();
+    const discoveredFiles = new Map<string, { url: string; ancestors: DocHandle<FolderDoc>[] }>();
+
+    await walkTree(repo, root, "", [root], discoveredFolders, discoveredFiles);
+
+    reconcileTrackingFolderWatchers(discoveredFolders, folderWatchers, scheduleRebuild);
+    reconcileTrackingFileWatchers(repo, discoveredFiles, fileWatchers);
+  }
+
+  void (async () => {
+    const root = await rootFolder();
+    root.on("change", () => {
+      console.log("[fs] ROOT folder changed! heads:", root.heads().join("|").slice(0, 20), "trace:", new Error().stack?.split("\n").slice(1, 4).join(" | "));
+    });
+  })();
+
+  scheduleRebuild();
+}
+
+async function walkTree(
+  repo: Repo,
+  folder: DocHandle<FolderDoc>,
+  prefix: string,
+  ancestors: DocHandle<FolderDoc>[],
+  folders: Map<string, DocHandle<FolderDoc>>,
+  files: Map<string, { url: string; ancestors: DocHandle<FolderDoc>[] }>,
+): Promise<void> {
+  folders.set(prefix, folder);
+  const doc = folder.doc();
+  if (!doc?.docs) return;
+
+  for (const link of doc.docs) {
+    const childPath = prefix ? `${prefix}/${link.name}` : link.name;
+    if (link.type === "folder") {
+      try {
+        const handle = await repo.find(link.url as AutomergeUrl);
+        if (typeof handle.whenReady === "function") await handle.whenReady();
+        const childDoc = handle.doc();
+        if (isFolderDoc(childDoc)) {
+          const childFolder = handle as unknown as DocHandle<FolderDoc>;
+          await walkTree(repo, childFolder, childPath, [...ancestors, childFolder], folders, files);
+        }
+      } catch {
+        // skip inaccessible folders
+      }
+    } else {
+      files.set(childPath, { url: link.url, ancestors: [...ancestors] });
+    }
+  }
+}
+
+function reconcileTrackingFolderWatchers(
+  discovered: Map<string, DocHandle<FolderDoc>>,
+  watchers: Map<string, () => void>,
+  onFolderChange: () => void,
+): void {
+  for (const [path, cleanup] of watchers) {
+    if (!discovered.has(path)) {
+      cleanup();
+      watchers.delete(path);
+    }
+  }
+  for (const [path, handle] of discovered) {
+    if (!watchers.has(path)) {
+      const handler = () => onFolderChange();
+      handle.on("change", handler);
+      watchers.set(path, () => handle.off("change", handler));
+    }
+  }
+}
+
+function reconcileTrackingFileWatchers(
+  repo: Repo,
+  discovered: Map<string, { url: string; ancestors: DocHandle<FolderDoc>[] }>,
+  watchers: Map<string, () => void>,
+): void {
+  for (const [path, cleanup] of watchers) {
+    if (!discovered.has(path)) {
+      cleanup();
+      watchers.delete(path);
+    }
+  }
+  for (const [path, info] of discovered) {
+    if (watchers.has(path)) continue;
+    void (async () => {
+      try {
+        const handle = await repo.find(info.url as AutomergeUrl);
+        const handler = () => {
+          const now = Date.now();
+          const startIdx = info.ancestors.length > 1 ? 1 : 0;
+          console.log("[fs] file changed:", path, "ancestors:", info.ancestors.length, "startIdx:", startIdx, "updating:", info.ancestors.slice(startIdx).map((a) => a.documentId));
+          for (let i = startIdx; i < info.ancestors.length; i++) {
+            info.ancestors[i].change((d) => {
+              (d as FolderDoc & { lastSyncAt: number }).lastSyncAt = now;
+            });
+          }
+        };
+        handle.on("change", handler);
+        watchers.set(path, () => handle.off("change", handler));
+      } catch {
+        // skip inaccessible files
+      }
+    })();
+  }
 }
