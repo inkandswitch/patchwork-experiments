@@ -5,7 +5,7 @@ import type { AutomergeUrl, Repo } from '@automerge/automerge-repo';
 import type { HasPatchworkMetadata } from '@inkandswitch/patchwork-filesystem';
 
 export function useTitle(url: Accessor<AutomergeUrl | undefined>): Accessor<string> {
-  const [doc] = useDocument<HasPatchworkMetadata>(() => url());
+  const [doc] = useDocument<HasPatchworkMetadata & { title?: string }>(() => url());
 
   const docType = () => doc()?.['@patchwork']?.type ?? '';
 
@@ -16,6 +16,7 @@ export function useTitle(url: Accessor<AutomergeUrl | undefined>): Accessor<stri
   return () => {
     const d = doc();
     if (!d) return 'Untitled';
+    if (d.title) return d.title;
     return (datatype()?.module as any)?.getTitle?.(d) || 'Untitled';
   };
 }
