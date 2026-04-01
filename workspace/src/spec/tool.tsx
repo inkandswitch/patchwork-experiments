@@ -1,17 +1,17 @@
 import { render } from 'solid-js/web';
-import { For, Show } from 'solid-js';
+import { For, Show, createSignal } from 'solid-js';
 import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primitives';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
-import type { DocHandle } from '@automerge/automerge-repo';
-import type { AutomergeUrl } from '@automerge/automerge-repo';
-import type { SpecCollectionDoc, SpecDoc, Verification } from '../types';
+import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
+import type { SpecDoc, Spec } from '../workflow/types';
+import { useTitle } from '../hooks/useTitle';
 import './spec.css';
 
 export const SpecTool: ToolRender = (handle, element) => {
   const dispose = render(
     () => (
       <RepoContext.Provider value={element.repo}>
-        <SpecCollectionView url={(handle as DocHandle<SpecCollectionDoc>).url} />
+        <SpecView handle={handle as DocHandle<SpecDoc>} />
       </RepoContext.Provider>
     ),
     element,
@@ -19,100 +19,136 @@ export const SpecTool: ToolRender = (handle, element) => {
   return () => dispose();
 };
 
-function SpecCollectionView(props: { url: AutomergeUrl }) {
-  const [doc] = useDocument<SpecCollectionDoc>(() => props.url);
+function SpecView(props: { handle: DocHandle<SpecDoc> }) {
+  const [doc] = useDocument<SpecDoc>(() => props.handle.url);
+  const [selectedVerificationUrl, setSelectedVerificationUrl] = createSignal<AutomergeUrl | null>(
+    null,
+  );
 
   return (
     <div class="spec-root">
-      <Show when={doc()} fallback={<div class="spec-loading">Loading specs…</div>}>
-        {(currentDoc) => {
-          const specs = () => currentDoc().specs ?? [];
+      <Show when={doc()} fallback={<div class="spec-loading">Loading spec…</div>}>
+        {(currentDoc) => (
+          <div class="spec-container">
+            <div class="spec-tree">
+              <Show
+                when={currentDoc().spec}
+                fallback={<div class="spec-empty">No spec defined.</div>}
+              >
+                {(spec) => (
+                  <SpecNode
+                    spec={spec()}
+                    depth={0}
+                    selectedVerificationUrl={selectedVerificationUrl()}
+                    onSelectVerification={setSelectedVerificationUrl}
+                  />
+                )}
+              </Show>
+            </div>
 
-          return (
-            <Show
-              when={specs().length > 0}
-              fallback={<div class="spec-empty">No specs in this collection.</div>}
-            >
-              <div class="spec-collection">
-                <For each={specs()}>
-                  {(spec) => <SpecCard spec={spec} />}
-                </For>
-              </div>
-            </Show>
-          );
-        }}
+            <div class="spec-preview">
+              <Show
+                when={selectedVerificationUrl()}
+                fallback={
+                  <div class="spec-preview-empty">Select a verification to inspect</div>
+                }
+              >
+                {(url) => (
+                  <patchwork-view
+                    attr:doc-url={url()}
+                    style="display:block;width:100%;height:100%;"
+                  />
+                )}
+              </Show>
+            </div>
+          </div>
+        )}
       </Show>
     </div>
   );
 }
 
-function SpecCard(props: { spec: SpecDoc }) {
-  const docEntries = () => Object.entries(props.spec.docs ?? {}) as [string, AutomergeUrl][];
-  const requiredDocs = () => props.spec.requiredDocs ?? [];
-  const verifications = () => props.spec.verifications ?? [];
+function SpecNode(props: {
+  spec: Spec;
+  depth: number;
+  selectedVerificationUrl: AutomergeUrl | null;
+  onSelectVerification: (url: AutomergeUrl | null) => void;
+}) {
+  const hasSubSpecs = () => (props.spec.subSpecUrls?.length ?? 0) > 0;
+  const hasVerifications = () => (props.spec.verificationUrls?.length ?? 0) > 0;
 
   return (
-    <div class="spec-card">
-      <div class="spec-card-goal">{props.spec.goal || 'Untitled spec'}</div>
-
-      <Show when={docEntries().length > 0}>
-        <div class="spec-section">
-          <div class="spec-section-label">Documents</div>
-          <div class="spec-doc-list">
-            <For each={docEntries()}>
-              {([name, url]) => <DocCard name={name} url={url} />}
+    <div class="spec-node">
+      <div class="spec-node-box">
+        <div class="spec-node-goal">{props.spec.goal || 'Untitled spec'}</div>
+        <Show when={hasVerifications()}>
+          <div class="spec-verifications">
+            <For each={props.spec.verificationUrls}>
+              {(url) => (
+                <VerificationItem
+                  url={url}
+                  selected={props.selectedVerificationUrl === url}
+                  onSelect={() =>
+                    props.onSelectVerification(props.selectedVerificationUrl === url ? null : url)
+                  }
+                />
+              )}
             </For>
           </div>
-        </div>
-      </Show>
-
-      <Show when={requiredDocs().length > 0}>
-        <div class="spec-section">
-          <div class="spec-section-label">Required Documents</div>
-          <div class="spec-required-docs">
-            <For each={requiredDocs()}>
-              {(name) => <div class="spec-required-doc">{name}</div>}
-            </For>
-          </div>
-        </div>
-      </Show>
-
-      <Show when={verifications().length > 0}>
-        <div class="spec-section">
-          <div class="spec-section-label">Verifications</div>
-          <div class="spec-verification-list">
-            <For each={verifications()}>
-              {(v) => <VerificationCard verification={v} />}
-            </For>
-          </div>
-        </div>
-      </Show>
-    </div>
-  );
-}
-
-function DocCard(props: { name: string; url: AutomergeUrl }) {
-  return (
-    <div class="spec-doc-card">
-      <div class="spec-doc-card-label">{props.name}</div>
-      <div class="spec-doc-card-view">
-        <patchwork-view
-          attr:doc-url={props.url}
-          style="display:block;width:100%;height:100%;"
-        />
+        </Show>
       </div>
+
+      <Show when={hasSubSpecs()}>
+        <div class="spec-subspecs">
+          <For each={props.spec.subSpecUrls}>
+            {(url) => (
+              <SubSpecNode
+                url={url}
+                depth={props.depth + 1}
+                selectedVerificationUrl={props.selectedVerificationUrl}
+                onSelectVerification={props.onSelectVerification}
+              />
+            )}
+          </For>
+        </div>
+      </Show>
     </div>
   );
 }
 
-function VerificationCard(props: { verification: Verification }) {
+function SubSpecNode(props: {
+  url: AutomergeUrl;
+  depth: number;
+  selectedVerificationUrl: AutomergeUrl | null;
+  onSelectVerification: (url: AutomergeUrl | null) => void;
+}) {
+  const [doc] = useDocument<SpecDoc>(() => props.url);
+
   return (
-    <details class="spec-verification-card">
-      <summary class="spec-verification-summary">
-        <div class="spec-verification-icon" />
-        <span class="spec-verification-name">{props.verification.name}</span>
-      </summary>
-      <pre class="spec-verification-script">{props.verification.script.trim()}</pre>
-    </details>
+    <Show when={doc()?.spec}>
+      {(spec) => (
+        <SpecNode
+          spec={spec()}
+          depth={props.depth}
+          selectedVerificationUrl={props.selectedVerificationUrl}
+          onSelectVerification={props.onSelectVerification}
+        />
+      )}
+    </Show>
+  );
+}
+
+function VerificationItem(props: { url: AutomergeUrl; selected: boolean; onSelect: () => void }) {
+  const title = useTitle(() => props.url);
+
+  return (
+    <button
+      class="spec-verification-item"
+      classList={{ selected: props.selected }}
+      onClick={props.onSelect}
+    >
+      <span class="spec-verification-circle" />
+      <span class="spec-verification-name">{title()}</span>
+    </button>
   );
 }

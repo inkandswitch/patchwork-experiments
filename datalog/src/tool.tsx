@@ -1,11 +1,9 @@
+import * as Automerge from '@automerge/automerge';
 import { useDocument } from '@automerge/automerge-repo-react-hooks';
 import { RepoContext } from '@automerge/automerge-repo-react-hooks';
 import { createRoot } from 'react-dom/client';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { AutomergeUrl, DocHandle } from '@automerge/automerge-repo';
-import { automergeSyncPlugin } from '@automerge/automerge-codemirror';
-import { basicSetup } from 'codemirror';
-import { EditorView, keymap } from '@codemirror/view';
 import { annotations } from '@inkandswitch/annotations-context';
 import { Diff } from '@inkandswitch/annotations-diff';
 import { ref, Ref } from '@inkandswitch/patchwork-refs';
@@ -13,22 +11,14 @@ import { useSubscribe } from '@inkandswitch/subscribables-react';
 import type { DatalogDoc } from './datatype';
 import {
   type StoredFact,
-  type StoredRule,
-  type StoredConstraint,
-  type WitnessTrace,
   parseProgram,
   factKey,
-  ruleKey,
   evaluateWithProvenance,
-  checkConstraints,
-  serializeFact,
-  serializeRule,
-  serializeConstraint,
   serializeFacts,
   serializeRules,
   serializeConstraints,
 } from './datalog';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import './index.css';
 
 export const DatalogTool: ToolRender = (handle, element) => {
@@ -50,10 +40,7 @@ function programText(doc: DatalogDoc): string {
   return parts.join('\n\n');
 }
 
-function formatAtom(atom: { pred: string; args: string[] }): string {
-  if (atom.args.length === 0) return atom.pred;
-  return `${atom.pred}(${atom.args.join(', ')})`;
-}
+type ViewTab = 'source' | 'derived';
 
 function DatalogViewer({
   docUrl,
@@ -63,34 +50,31 @@ function DatalogViewer({
   handle: DocHandle<DatalogDoc>;
 }) {
   const [doc] = useDocument<DatalogDoc>(docUrl);
-  const [isEditing, setIsEditing] = useState(false);
+  const [activeTab, setActiveTab] = useState<ViewTab>('source');
 
-  const draftText = doc?.draftText ?? '';
-  const isDirty = isEditing && doc ? draftText !== programText(doc) : false;
+  const hasDraft = doc?.draftText != null;
+  const currentText = hasDraft ? doc!.draftText! : (doc ? programText(doc) : '');
 
-  const { facts: parsedFacts, rules: parsedRules, constraints: parsedConstraints } = useMemo(
-    () => (isEditing ? parseProgram(draftText) : { facts: [], rules: [], constraints: [], errors: [] }),
-    [isEditing, draftText],
+  const { facts: parsedFacts, rules: parsedRules } = useMemo(
+    () => (hasDraft ? parseProgram(doc!.draftText!) : { facts: [], rules: [] }),
+    [hasDraft, doc],
   );
 
-  const { derivedFacts, baseFacts, violations } = useMemo(() => {
-    const facts = isEditing ? parsedFacts : (doc?.facts ?? []);
-    const rules = isEditing ? parsedRules : (doc?.rules ?? []);
-    const constraints: StoredConstraint[] = isEditing ? parsedConstraints : (doc?.constraints ?? []);
+  const { derivedFacts, baseFacts } = useMemo(() => {
+    const facts = hasDraft ? parsedFacts : (doc?.facts ?? []);
+    const rules = hasDraft ? parsedRules : (doc?.rules ?? []);
     const baseFactKeys = new Set(facts.map(factKey));
     let db: StoredFact[] = facts;
-    let provenance = new Map();
     try {
-      ({ db, provenance } = evaluateWithProvenance(facts, rules));
+      ({ db } = evaluateWithProvenance(facts, rules));
     } catch {
       db = facts;
     }
     return {
       derivedFacts: db,
       baseFacts: baseFactKeys,
-      violations: checkConstraints(db, constraints, provenance, baseFactKeys),
     };
-  }, [doc, isEditing, parsedFacts, parsedRules, parsedConstraints]);
+  }, [doc, hasDraft, parsedFacts, parsedRules]);
 
   const derivedOnlyFacts = useMemo(
     () => derivedFacts.filter((f) => !baseFacts.has(factKey(f))),
@@ -98,7 +82,7 @@ function DatalogViewer({
   );
 
   useEffect(() => {
-    if (isEditing) return;
+    if (hasDraft) return;
     const newKeySet = new Set(derivedOnlyFacts.map(factKey));
     const stored = handle.doc()?.derivedFacts ?? [];
     const existingKeySet = new Set(stored.map(factKey));
@@ -120,7 +104,7 @@ function DatalogViewer({
         }
       }
     });
-  }, [derivedOnlyFacts, isEditing, handle]);
+  }, [derivedOnlyFacts, hasDraft, handle]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, StoredFact[]>();
@@ -148,230 +132,128 @@ function DatalogViewer({
   }, [doc]);
 
   const parseErrors = useMemo(() => {
-    if (!isEditing) return [];
-    return parseProgram(draftText).errors.map((e) => `Line ${e.line}: ${e.message}`);
-  }, [isEditing, draftText]);
+    if (!hasDraft) return [];
+    return parseProgram(doc!.draftText!).errors.map((e) => `Line ${e.line}: ${e.message}`);
+  }, [hasDraft, doc]);
 
-  function handleEdit() {
+  const hasParseErrors = parseErrors.length > 0;
+
+  function handleTextChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const newValue = e.target.value;
     const current = handle.doc();
     if (!current) return;
+
     handle.change((d) => {
-      d.draftText = programText(current);
+      if (d.draftText == null) {
+        d.draftText = programText(current);
+      }
+      Automerge.updateText(d, ['draftText'], newValue);
     });
-    setIsEditing(true);
   }
 
   function handleSave() {
     const current = handle.doc();
-    if (!current) return;
-    const { facts, rules, constraints } = parseProgram(current.draftText ?? '');
+    if (!current || current.draftText == null) return;
+    const { facts, rules, constraints, errors } = parseProgram(current.draftText);
+    if (errors.length > 0) return;
     handle.change((d) => {
       d.facts = facts;
       d.rules = rules;
       d.constraints = constraints;
       delete d.draftText;
     });
-    setIsEditing(false);
   }
 
-  function handleCancel() {
-    handle.change((d) => {
-      delete d.draftText;
-    });
-    setIsEditing(false);
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+      e.preventDefault();
+      handleSave();
+    }
   }
 
   if (!doc) {
     return <div className="pg-loading">Loading…</div>;
   }
 
-  const facts = doc.facts ?? [];
-  const rules = doc.rules ?? [];
-  const constraints = doc.constraints ?? [];
-
   return (
     <div className="pg-root">
-      <div className="pg-editor-col">
-        <div className="pg-toolbar">
-          {isEditing ? (
-            <>
-              {isDirty && <span className="pg-dirty-badge">● Unsaved</span>}
-              <button className="pg-btn pg-btn-primary" onClick={handleSave}>
+      <div className="pg-tabs">
+        <button
+          className={`pg-tab ${activeTab === 'source' ? 'pg-tab-active' : ''}`}
+          onClick={() => setActiveTab('source')}
+        >
+          Source
+        </button>
+        <button
+          className={`pg-tab ${activeTab === 'derived' ? 'pg-tab-active' : ''}`}
+          onClick={() => setActiveTab('derived')}
+        >
+          Derived Facts
+        </button>
+      </div>
+
+      {activeTab === 'source' && (
+        <div className="pg-editor-col">
+          <div className="pg-editor-wrapper">
+            <textarea
+              className="pg-textarea"
+              value={currentText}
+              onChange={handleTextChange}
+              onKeyDown={handleKeyDown}
+              spellCheck={false}
+            />
+            {hasDraft && (
+              <button
+                className={`pg-save-btn ${hasParseErrors ? 'pg-save-btn-disabled' : ''}`}
+                disabled={hasParseErrors}
+                onClick={handleSave}
+              >
                 Save
               </button>
-              <button className="pg-btn" onClick={handleCancel}>
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button className="pg-btn" onClick={handleEdit}>
-              Edit
-            </button>
-          )}
-        </div>
-
-        <div className="pg-editor-wrap">
-          {isEditing ? (
-            <ProgramEditor handle={handle} onSave={handleSave} />
-          ) : (
-            <div className="pg-program-view">
-              {facts.map((f, i) => (
-                <ProgramItemView
-                  key={`fact-${i}`}
-                  handle={handle}
-                  collection="facts"
-                  index={i}
-                  text={serializeFact(f)}
-                />
-              ))}
-              {facts.length > 0 && (rules.length > 0 || constraints.length > 0) && (
-                <div className="pg-program-separator" />
-              )}
-              {rules.map((r, i) => (
-                <ProgramItemView
-                  key={`rule-${i}`}
-                  handle={handle}
-                  collection="rules"
-                  index={i}
-                  text={serializeRule(r)}
-                />
-              ))}
-              {rules.length > 0 && constraints.length > 0 && (
-                <div className="pg-program-separator" />
-              )}
-              {constraints.map((c, i) => (
-                <ProgramItemView
-                  key={`constraint-${i}`}
-                  handle={handle}
-                  collection="constraints"
-                  index={i}
-                  text={serializeConstraint(c)}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-
-        {parseErrors.length > 0 && (
-          <ul className="pg-errors">
-            {parseErrors.map((e, i) => (
-              <li key={i}>{e}</li>
-            ))}
-          </ul>
-        )}
-
-        {!isEditing && (
-          <div className="pg-deleted-section">
-            <h2 className="pg-section-title pg-deleted-title">Deleted</h2>
-            {facts.map((f, i) => (
-              <DeletedProgramItem
-                key={`fact-${i}`}
-                handle={handle}
-                collection="facts"
-                index={i}
-                text={serializeFact(f)}
-              />
-            ))}
-            {rules.map((r, i) => (
-              <DeletedProgramItem
-                key={`rule-${i}`}
-                handle={handle}
-                collection="rules"
-                index={i}
-                text={serializeRule(r)}
-              />
-            ))}
-            {constraints.map((c, i) => (
-              <DeletedProgramItem
-                key={`constraint-${i}`}
-                handle={handle}
-                collection="constraints"
-                index={i}
-                text={serializeConstraint(c)}
-              />
-            ))}
+            )}
           </div>
-        )}
-      </div>
+          {parseErrors.length > 0 && (
+            <ul className="pg-errors">
+              {parseErrors.map((e, i) => (
+                <li key={i}>{e}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
-      <div className="pg-derived">
-        {violations.length > 0 && (
-          <div className="pg-violations">
-            <h2 className="pg-section-title pg-violations-title">Constraint Violations</h2>
-            {violations.map((v, i) => (
-              <div key={i} className="pg-violation">
-                <div className="pg-violation-constraint">
-                  {':- ' + v.constraint.body.map(formatAtom).join(', ') + '.'}
+      {activeTab === 'derived' && (
+        <div className="pg-derived">
+          <h2 className="pg-section-title">Derived Facts</h2>
+          <div className="pg-derived-scroll">
+            {grouped.size === 0 ? (
+              <p className="pg-empty">No facts derived.</p>
+            ) : (
+              Array.from(grouped.entries()).map(([pred, facts]) => (
+                <div key={pred} className="pg-pred-group">
+                  <div className="pg-pred-name">{pred}</div>
+                  {facts.map((f) => {
+                    const key = factKey(f);
+                    const isBase = baseFacts.has(key);
+                    return (
+                      <DerivedFactRow
+                        key={key}
+                        handle={handle}
+                        fact={key}
+                        isBase={isBase}
+                        baseIndex={factKeyToIndex.get(key) ?? -1}
+                        derivedIndex={derivedKeyToIndex.get(key) ?? -1}
+                      />
+                    );
+                  })}
                 </div>
-                {v.witnesses.map((w, j) => (
-                  <WitnessTraceView key={j} witness={w} baseFacts={baseFacts} />
-                ))}
-              </div>
-            ))}
+              ))
+            )}
           </div>
-        )}
-
-        <h2 className="pg-section-title">Derived Facts</h2>
-        <div className="pg-derived-scroll">
-          {grouped.size === 0 ? (
-            <p className="pg-empty">No facts derived.</p>
-          ) : (
-            Array.from(grouped.entries()).map(([pred, facts]) => (
-              <div key={pred} className="pg-pred-group">
-                <div className="pg-pred-name">{pred}</div>
-                {facts.map((f) => {
-                  const key = factKey(f);
-                  const isBase = baseFacts.has(key);
-                  return (
-                    <DerivedFactRow
-                      key={key}
-                      handle={handle}
-                      fact={key}
-                      isBase={isBase}
-                      baseIndex={factKeyToIndex.get(key) ?? -1}
-                      derivedIndex={derivedKeyToIndex.get(key) ?? -1}
-                    />
-                  );
-                })}
-              </div>
-            ))
-          )}
         </div>
-      </div>
+      )}
     </div>
   );
-}
-
-function ProgramItemView({
-  handle,
-  collection,
-  index,
-  text,
-}: {
-  handle: DocHandle<DatalogDoc>;
-  collection: string;
-  index: number;
-  text: string;
-}) {
-  const diffType = useDiffType(handle, collection, index);
-  const diffClass = diffType ? `pg-diff-${diffType}` : '';
-  return <div className={`pg-program-item ${diffClass}`}>{text}</div>;
-}
-
-function DeletedProgramItem({
-  handle,
-  collection,
-  index,
-  text,
-}: {
-  handle: DocHandle<DatalogDoc>;
-  collection: string;
-  index: number;
-  text: string;
-}) {
-  const diffType = useDiffType(handle, collection, index);
-  if (diffType !== 'deleted') return null;
-  return <div className="pg-program-item pg-diff-deleted">{text}</div>;
 }
 
 function DerivedFactRow({
@@ -393,113 +275,6 @@ function DerivedFactRow({
   const diffClass = diffType ? `pg-diff-${diffType}` : '';
   const kindClass = isBase ? 'pg-fact-base' : 'pg-fact-derived';
   return <div className={`pg-fact ${kindClass} ${diffClass}`}>{fact}</div>;
-}
-
-function WitnessTraceView({
-  witness,
-  baseFacts,
-}: {
-  witness: WitnessTrace;
-  baseFacts: Set<string>;
-}) {
-  const bindingSummary = Object.entries(witness.bindings)
-    .map(([k, v]) => `${k}=${v}`)
-    .join(', ');
-
-  return (
-    <div className="pg-witness">
-      {bindingSummary && (
-        <div className="pg-witness-bindings">{bindingSummary}</div>
-      )}
-      <div className="pg-witness-steps">
-        {witness.steps.map((step, i) => {
-          if (step.kind === 'builtin') {
-            return (
-              <div key={i} className="pg-trace-step pg-trace-step-builtin">
-                {step.atom.pred}({step.resolvedArgs.join(', ')})
-                <span className="pg-trace-tag"> [builtin]</span>
-              </div>
-            );
-          }
-          const key = factKey(step.fact);
-          return (
-            <div key={i} className="pg-trace-step">
-              <div className={step.isBase ? 'pg-trace-fact-base' : 'pg-trace-fact-derived'}>
-                {key}
-                <span className="pg-trace-tag"> [{step.isBase ? 'base' : 'derived'}]</span>
-              </div>
-              {!step.isBase && step.derivedBy && (
-                <div className="pg-trace-derivation">
-                  <div className="pg-trace-rule">via {ruleKey(step.derivedBy.rule)}</div>
-                  {step.derivedBy.groundBody.map((pf, j) => {
-                    const pfKey = factKey(pf);
-                    const pfIsBase = baseFacts.has(pfKey);
-                    return (
-                      <div
-                        key={j}
-                        className={pfIsBase ? 'pg-trace-premise-base' : 'pg-trace-premise-derived'}
-                      >
-                        {pfKey}
-                        <span className="pg-trace-tag"> [{pfIsBase ? 'base' : 'derived'}]</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function ProgramEditor({
-  handle,
-  onSave,
-}: {
-  handle: DocHandle<DatalogDoc>;
-  onSave: () => void;
-}) {
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!containerRef.current) return;
-
-    const currentDoc = handle.doc();
-    const initialText = currentDoc?.draftText ?? '';
-
-    const view = new EditorView({
-      doc: initialText,
-      extensions: [
-        basicSetup,
-        automergeSyncPlugin({ handle, path: ['draftText'] }),
-        keymap.of([
-          {
-            key: 'Mod-s',
-            run() {
-              onSave();
-              return true;
-            },
-          },
-        ]),
-        EditorView.theme({
-          '&': { height: '100%', fontSize: '12px' },
-          '.cm-scroller': {
-            overflow: 'auto',
-            fontFamily: "ui-monospace, 'Cascadia Code', Menlo, monospace",
-          },
-          '.cm-content': { padding: '6px 0' },
-        }),
-      ],
-      parent: containerRef.current,
-    });
-
-    return () => view.destroy();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [handle]);
-
-  return <div ref={containerRef} className="pg-cm-container" />;
 }
 
 function useDiffType(

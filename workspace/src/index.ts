@@ -43,6 +43,26 @@ export const plugins: Plugin<any>[] = [
   } as Datatype,
   {
     type: 'patchwork:tool',
+    id: 'spec-collection-viewer',
+    name: 'Spec Collection',
+    supportedDatatypes: ['spec-collection'],
+    async load() {
+      const { SpecTool } = await import('./old-spec/tool');
+      return SpecTool;
+    },
+  } satisfies Tool,
+  {
+    type: 'patchwork:datatype',
+    id: 'spec-collection',
+    name: 'Spec Collection',
+    icon: 'FileStack',
+    async load() {
+      const { SpecDatatype } = await import('./old-spec/datatype');
+      return SpecDatatype;
+    },
+  } as Datatype,
+  {
+    type: 'patchwork:tool',
     id: 'plan-viewer',
     name: 'Plan Viewer',
     supportedDatatypes: ['plan'],

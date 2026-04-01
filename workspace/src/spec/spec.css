@@ -5,9 +5,9 @@
     height: 100%;
     overflow: hidden;
     font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
-    font-size: 13px;
-    color: #1e293b;
-    background: #f8fafc;
+    font-size: 14px;
+    color: #374151;
+    background: #f9fafb;
   }
 
   .spec-loading,
@@ -16,172 +16,179 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #94a3b8;
-    font-size: 13px;
+    color: #9ca3af;
+    font-size: 14px;
   }
 
-  /* Collection layout */
-
-  .spec-collection {
+  .spec-container {
+    display: flex;
     flex: 1;
     min-height: 0;
+    overflow: hidden;
+  }
+
+  .spec-tree {
+    flex: 1;
+    min-width: 320px;
+    max-width: 480px;
     overflow-y: auto;
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
+    padding: 24px;
+    border-right: 1px solid #e5e7eb;
   }
 
-  /* Individual spec card */
-
-  .spec-card {
-    background: #fff;
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
-    padding: 16px;
+  .spec-preview {
+    flex: 2;
+    min-width: 0;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
-    gap: 14px;
   }
 
-  .spec-card-goal {
+  .spec-preview-empty {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9ca3af;
     font-size: 14px;
+    background: #f9fafb;
+  }
+
+  /* Node structure */
+
+  .spec-node {
+    position: relative;
+  }
+
+  /* Spec box - contains goal and verifications */
+
+  .spec-node-box {
+    background: #f3f4f6;
+    border-radius: 12px;
+    padding: 16px 20px;
+  }
+
+  .spec-node-goal {
+    font-size: 16px;
     font-weight: 600;
+    color: #1f2937;
     line-height: 1.4;
-    color: #0f172a;
   }
 
-  /* Sections within a spec card */
+  /* Verifications list - inside the box */
 
-  .spec-section {
+  .spec-verifications {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 4px;
+    margin-top: 12px;
   }
 
-  .spec-section-label {
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: #94a3b8;
-  }
-
-  /* Document cards with embedded patchwork-view */
-
-  .spec-doc-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .spec-doc-card {
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    overflow: hidden;
-  }
-
-  .spec-doc-card-label {
-    padding: 6px 12px;
-    font-size: 11px;
-    font-weight: 600;
-    color: #475569;
-    background: #f1f5f9;
-    border-bottom: 1px solid #e2e8f0;
-  }
-
-  .spec-doc-card-view {
-    height: 180px;
-    overflow: auto;
-  }
-
-  /* Required document pills */
-
-  .spec-required-docs {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-
-  .spec-required-doc {
-    display: inline-flex;
-    align-items: center;
-    padding: 4px 10px;
-    font-size: 12px;
-    font-weight: 500;
-    color: #64748b;
-    background: #fff;
-    border: 1.5px dashed #cbd5e1;
-    border-radius: 6px;
-    font-family: ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
-  }
-
-  /* Expandable verification cards */
-
-  .spec-verification-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .spec-verification-card {
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    overflow: hidden;
-  }
-
-  .spec-verification-summary {
+  .spec-verification-item {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     padding: 8px 12px;
+    margin: 0 -8px;
+    font-size: 14px;
+    font-weight: 400;
+    font-style: italic;
+    color: #6b7280;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
     cursor: pointer;
-    user-select: none;
-    list-style: none;
+    transition: all 0.15s ease;
+    text-align: left;
   }
 
-  .spec-verification-summary::-webkit-details-marker {
-    display: none;
+  .spec-verification-item:hover {
+    background: rgba(0, 0, 0, 0.04);
+    color: #374151;
   }
 
-  .spec-verification-summary::before {
-    content: '▶';
-    font-size: 9px;
-    color: #94a3b8;
-    transition: transform 0.15s ease;
-    flex-shrink: 0;
+  .spec-verification-item.selected {
+    background: rgba(59, 130, 246, 0.1);
+    color: #2563eb;
   }
 
-  .spec-verification-card[open] > .spec-verification-summary::before {
-    transform: rotate(90deg);
-  }
-
-  .spec-verification-icon {
-    width: 16px;
-    height: 16px;
+  .spec-verification-circle {
+    width: 12px;
+    height: 12px;
+    border: 2px solid currentColor;
     border-radius: 50%;
-    background: #f1f5f9;
-    border: 1.5px solid #cbd5e1;
     flex-shrink: 0;
+  }
+
+  .spec-verification-item.selected .spec-verification-circle {
+    background: currentColor;
   }
 
   .spec-verification-name {
-    font-size: 13px;
-    color: #334155;
-    font-weight: 500;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  .spec-verification-script {
-    margin: 0;
-    padding: 10px 14px;
-    font-size: 11px;
-    line-height: 1.5;
-    font-family: ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
-    color: #334155;
-    background: #f8fafc;
-    border-top: 1px solid #e2e8f0;
-    overflow-x: auto;
-    white-space: pre-wrap;
-    word-break: break-word;
+  /* Subspecs container with curved connector lines */
+
+  .spec-subspecs {
+    position: relative;
+    margin-left: 24px;
+    padding-left: 32px;
+    padding-top: 16px;
+  }
+
+  /* Vertical line from parent */
+  .spec-subspecs::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 2px;
+    height: calc(100% - 40px);
+    background: #d1d5db;
+    border-radius: 1px;
+  }
+
+  /* Each subspec node */
+  .spec-subspecs > .spec-node {
+    position: relative;
+    margin-bottom: 16px;
+  }
+
+  .spec-subspecs > .spec-node:last-child {
+    margin-bottom: 0;
+  }
+
+  /* Curved horizontal connector */
+  .spec-subspecs > .spec-node::before {
+    content: '';
+    position: absolute;
+    left: -32px;
+    top: 24px;
+    width: 24px;
+    height: 2px;
+    background: #d1d5db;
+  }
+
+  /* Curved corner piece */
+  .spec-subspecs > .spec-node::after {
+    content: '';
+    position: absolute;
+    left: -32px;
+    top: 0;
+    width: 8px;
+    height: 26px;
+    border-left: 2px solid #d1d5db;
+    border-bottom: 2px solid #d1d5db;
+    border-bottom-left-radius: 12px;
+    background: transparent;
+  }
+
+  /* Hide parts of the vertical line for last child */
+  .spec-subspecs > .spec-node:last-child::after {
+    height: 26px;
   }
 }

@@ -18,6 +18,7 @@ export type MapStyle = {
 
 export type DatalogDoc = {
   '@patchwork': { type: 'datalog' };
+  title?: string;
   facts: StoredFact[];
   rules: StoredRule[];
   constraints: StoredConstraint[];
@@ -34,7 +35,7 @@ export const DatalogDatatype: DatatypeImplementation<DatalogDoc> = {
     doc.draftText = DEFAULT_PROGRAM_TEXT;
     doc.mapStyle = { lines: {}, properties: {} };
   },
-  getTitle(_doc: DatalogDoc) {
-    return 'Datalog Database';
+  getTitle(doc: DatalogDoc) {
+    return doc.title || 'Datalog Database';
   },
 };

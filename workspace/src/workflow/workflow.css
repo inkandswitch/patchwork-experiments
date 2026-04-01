@@ -23,26 +23,31 @@
   }
 
   .wf-stage-item {
-    padding: 4px 8px;
+    padding: 4px 10px;
     font-size: 13px;
-    font-weight: 400;
+    font-weight: 500;
     font-family: inherit;
     border: none;
     background: none;
-    color: #cbd5e1;
-    cursor: default;
+    color: #64748b;
+    cursor: pointer;
     border-radius: 4px;
-    transition: color 0.15s;
+    transition: all 0.15s;
+  }
+
+  .wf-stage-item:hover {
+    background: #f1f5f9;
+    color: #334155;
   }
 
   .wf-stage-item.active {
     font-weight: 600;
     color: #3b82f6;
+    background: #eff6ff;
   }
 
-  .wf-stage-item.future {
-    color: #cbd5e1;
-    cursor: default;
+  .wf-stage-item.active:hover {
+    background: #dbeafe;
   }
 
   .wf-stage-chevron {

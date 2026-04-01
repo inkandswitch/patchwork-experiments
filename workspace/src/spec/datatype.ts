@@ -1,18 +1,21 @@
 import type { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
-import type { SpecCollectionDoc } from '../types';
+import type { SpecDoc } from '../workflow/types';
 
-export type { SpecCollectionDoc, SpecDoc, Verification } from '../types';
+export type { SpecDoc, Spec } from '../workflow/types';
 
-export const SpecDatatype: DatatypeImplementation<SpecCollectionDoc> = {
-  init(doc: SpecCollectionDoc) {
-    doc.specs = [];
+export const SpecDatatype: DatatypeImplementation<SpecDoc> = {
+  init(doc: SpecDoc) {
+    doc.spec = {
+      goal: '',
+      verificationUrls: [],
+    };
   },
-  getTitle(doc: SpecCollectionDoc) {
-    return doc.specs?.[0]?.goal || 'Spec Collection';
+  getTitle(doc: SpecDoc) {
+    return doc.spec?.goal || 'Spec';
   },
-  setTitle(doc: SpecCollectionDoc, title: string) {
-    if (doc.specs?.[0]) {
-      doc.specs[0].goal = title;
+  setTitle(doc: SpecDoc, title: string) {
+    if (doc.spec) {
+      doc.spec.goal = title;
     }
   },
 };

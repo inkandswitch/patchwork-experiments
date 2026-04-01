@@ -1,34 +1,36 @@
-import type { Plugin } from '@inkandswitch/patchwork-plugins';
+import type { Plugin } from "@inkandswitch/patchwork-plugins";
 
 export const plugins: Plugin<any>[] = [
   {
-    type: 'patchwork:tool',
-    id: 'datalog',
-    name: 'Datalog',
-    supportedDatatypes: ['datalog'],
+    type: "patchwork:tool",
+    id: "datalog",
+    name: "Datalog",
+    supportedDatatypes: ["datalog"],
     async load() {
-      const { DatalogTool } = await import('./tool');
+      const { DatalogTool } = await import("./tool");
       return DatalogTool;
     },
   },
   {
-    type: 'patchwork:tool',
-    id: 'datalog-map-view',
-    name: 'Datalog Map View',
-    supportedDatatypes: ['datalog'],
+    type: "patchwork:tool",
+    id: "datalog-map-view",
+    name: "Datalog Map View",
+    supportedDatatypes: ["datalog"],
     async load() {
-      const { MapTool } = await import('./map/tool');
+      const { MapTool } = await import("./map/tool");
       return MapTool;
     },
   },
   {
-    type: 'patchwork:datatype',
-    id: 'datalog',
-    name: 'Datalog',
-    icon: 'Zap',
+    type: "patchwork:datatype",
+    id: "datalog",
+    name: "Datalog",
+    icon: "Zap",
     async load() {
-      const { DatalogDatatype } = await import('./datatype');
+      const { DatalogDatatype } = await import("./datatype");
       return DatalogDatatype;
     },
   },
 ];
+
+console.log("datalogversion 2");

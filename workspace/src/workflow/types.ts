@@ -1,4 +1,6 @@
+import type { Heads } from '@automerge/automerge';
 import type { AutomergeUrl } from '@automerge/automerge-repo';
+import type { HasPatchworkMetadata } from '@inkandswitch/patchwork-filesystem';
 
 export type WorkflowDoc = {
   specElicitationDocUrl: AutomergeUrl;
@@ -18,21 +20,29 @@ export type SpecElicitationDoc = {
 export type Spec = {
   goal: string;
   verificationUrls: AutomergeUrl[];
-  subSpecs?: Spec[];
+  subSpecUrls?: AutomergeUrl[];
+};
+
+export type SpecDoc = HasPatchworkMetadata & {
+  spec: Spec;
 };
 
 export type Verification = {
-  docsFolderUrl: AutomergeUrl;
+  docUrl: AutomergeUrl;
   script: string;
 };
 
+// TODO: we treat running the verifications as a purely deterministic computation that is cheap to run
+// we probably want a way to store the results that we can reference from the validation
 export type PlanDoc = {
-  tasks: AutomergeUrl[];
-};
-
-export type TaskDoc = {
   goal: string;
   dependsOn: AutomergeUrl[];
-  artifacts: Record<string, AutomergeUrl>;
   specDocUrl: AutomergeUrl;
+  artifactsFolderUrl: AutomergeUrl;
+};
+
+export type ValidationDoc = {
+  planDocUrl: AutomergeUrl;
+  isValidated: boolean;
+  headsByDocUrl: Record<AutomergeUrl, Heads>;
 };
