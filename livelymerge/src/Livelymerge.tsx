@@ -15,7 +15,7 @@ import {
   type TransitionEvent,
 } from 'react';
 import { toolify } from './react-util';
-import type { LivelymergeDoc, Obj } from './types';
+import type { LivelymergeDoc, Obj, ObjRef } from './types';
 import './styles.css';
 
 // TODO: why doesn't toString work when it's a method on Objs? (something to do w/ Proxy)
@@ -112,11 +112,6 @@ function newObj(prototype?: Obj) {
 (window as any).newObj = newObj;
 
 // objects
-
-type ObjRef = {
-  type: 'obj ref';
-  id: number; // obj._id
-};
 
 function isObj(value: any): value is Obj {
   return typeof value === 'object' && value?.type === 'obj';

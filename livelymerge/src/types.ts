@@ -11,3 +11,8 @@ export type Obj = {
   _id: number;
   _protoId?: number;
 } & Record<string, any>;
+
+export type ObjRef = {
+  type: 'obj ref';
+  id: number; // obj._id
+};
