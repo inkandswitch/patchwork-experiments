@@ -1,0 +1,68 @@
+@layer patchwork, tool, user;
+
+@layer tool {
+  .wf-root {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-size: 13px;
+    color: #1e293b;
+    background: #f8fafc;
+  }
+
+  .wf-stage-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 12px 16px;
+    border-bottom: 1px solid #e2e8f0;
+    background: #fff;
+    flex-shrink: 0;
+  }
+
+  .wf-stage-item {
+    padding: 4px 8px;
+    font-size: 13px;
+    font-weight: 400;
+    font-family: inherit;
+    border: none;
+    background: none;
+    color: #cbd5e1;
+    cursor: default;
+    border-radius: 4px;
+    transition: color 0.15s;
+  }
+
+  .wf-stage-item.active {
+    font-weight: 600;
+    color: #3b82f6;
+  }
+
+  .wf-stage-item.future {
+    color: #cbd5e1;
+    cursor: default;
+  }
+
+  .wf-stage-chevron {
+    font-size: 11px;
+    color: #cbd5e1;
+    user-select: none;
+  }
+
+  .wf-content {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .wf-empty {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #94a3b8;
+    font-size: 13px;
+  }
+}

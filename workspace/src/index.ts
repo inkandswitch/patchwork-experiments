@@ -81,6 +81,46 @@ export const plugins: Plugin<any>[] = [
       return WorkspaceChatDatatype;
     },
   } as Datatype,
+  {
+    type: 'patchwork:tool',
+    id: 'workflow',
+    name: 'Workflow',
+    supportedDatatypes: ['workflow'],
+    async load() {
+      const { WorkflowTool } = await import('./workflow/tool');
+      return WorkflowTool;
+    },
+  } satisfies Tool,
+  {
+    type: 'patchwork:datatype',
+    id: 'workflow',
+    name: 'Workflow',
+    icon: 'Workflow',
+    async load() {
+      const { WorkflowDatatype } = await import('./workflow/datatype');
+      return WorkflowDatatype;
+    },
+  } as Datatype,
+  {
+    type: 'patchwork:tool',
+    id: 'elicitation-viewer',
+    name: 'Elicitation',
+    supportedDatatypes: ['elicitation'],
+    async load() {
+      const { ElicitationTool } = await import('./elicitation/tool');
+      return ElicitationTool;
+    },
+  } satisfies Tool,
+  {
+    type: 'patchwork:datatype',
+    id: 'elicitation',
+    name: 'Elicitation',
+    icon: 'MessageCircleQuestion',
+    async load() {
+      const { ElicitationDatatype } = await import('./elicitation/datatype');
+      return ElicitationDatatype;
+    },
+  } as Datatype,
 ];
 
 console.log('load workspace plugins', 4);

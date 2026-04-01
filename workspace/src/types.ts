@@ -1,5 +1,6 @@
 import type { AutomergeUrl } from '@automerge/automerge-repo';
 import type { Heads } from '@automerge/automerge';
+import type { HasPatchworkMetadata } from '@inkandswitch/patchwork-filesystem';
 
 export type DocumentEntry = {
   cloneUrl: AutomergeUrl;
@@ -43,4 +44,9 @@ export type WorkspaceChatDoc = {
   planDocUrl?: AutomergeUrl;
   llmProcessUrl?: AutomergeUrl;
   prompt: string;
+};
+
+export type ElicitationDoc = HasPatchworkMetadata & {
+  prompt: string;
+  docs: Record<string, AutomergeUrl>;
 };

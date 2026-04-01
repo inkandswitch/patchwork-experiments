@@ -16,6 +16,8 @@
     "@automerge/automerge-repo-solid-primitives": "2.5.3",
     "@inkandswitch/patchwork-filesystem": "^0.0.3",
     "@inkandswitch/patchwork-plugins": "^0.0.2",
+    "@inkandswitch/patchwork-react": "^0.0.1",
+    "lucide-solid": "^1.7.0",
     "solid-js": "^1.9.5"
   },
   "devDependencies": {
