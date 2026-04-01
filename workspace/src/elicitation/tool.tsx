@@ -9,6 +9,10 @@ import { useTitle, getDocTitle } from '../hooks/useTitle';
 import type { ElicitationDoc } from '../types';
 import './elicitation.css';
 
+type FolderDoc = {
+  docs: { type: string; name: string; url: AutomergeUrl }[];
+};
+
 export const ElicitationTool: ToolRender = (handle, element) => {
   const dispose = render(
     () => (
@@ -24,15 +28,12 @@ export const ElicitationTool: ToolRender = (handle, element) => {
 function ElicitationView(props: { handle: DocHandle<ElicitationDoc> }) {
   const [doc] = useDocument<ElicitationDoc>(() => props.handle.url);
   const repo = useRepo();
-  const [selectedDocKey, setSelectedDocKey] = createSignal<string | null>(null);
+  const [selectedDocUrl, setSelectedDocUrl] = createSignal<AutomergeUrl | null>(null);
   const [isDragOver, setIsDragOver] = createSignal(false);
 
-  const docEntries = () => Object.entries(doc()?.docs ?? {}) as [string, AutomergeUrl][];
-  const selectedDocUrl = () => {
-    const key = selectedDocKey();
-    if (!key) return null;
-    return doc()?.docs?.[key] ?? null;
-  };
+  const folderUrl = () => doc()?.referenceDocsFolderUrl;
+  const [folderDoc] = useDocument<FolderDoc>(() => folderUrl());
+  const folderEntries = () => folderDoc()?.docs ?? [];
 
   function handlePromptInput(e: InputEvent) {
     const value = (e.target as HTMLTextAreaElement).value;
@@ -56,30 +57,37 @@ function ElicitationView(props: { handle: DocHandle<ElicitationDoc> }) {
     e.preventDefault();
     setIsDragOver(false);
     const data = e.dataTransfer?.getData('text/x-patchwork-urls');
-    if (data) {
-      const urls: AutomergeUrl[] = JSON.parse(data);
-      let lastKey: string | null = null;
-      for (const url of urls) {
-        const name = await getDocTitle(repo, url);
-        props.handle.change((d) => {
-          if (!d.docs) d.docs = {};
-          d.docs[name] = url;
-        });
-        lastKey = name;
-      }
-      if (lastKey) setSelectedDocKey(lastKey);
+    const fUrl = folderUrl();
+    if (!data || !fUrl) return;
+
+    const urls: AutomergeUrl[] = JSON.parse(data);
+    const folderHandle = await repo.find<FolderDoc>(fUrl);
+    let lastUrl: AutomergeUrl | null = null;
+
+    for (const url of urls) {
+      const name = await getDocTitle(repo, url);
+      folderHandle.change((d) => {
+        if (!d.docs) d.docs = [];
+        d.docs.push({ type: 'doc', name, url });
+      });
+      lastUrl = url;
     }
+    if (lastUrl) setSelectedDocUrl(lastUrl);
   }
 
-  function handleDocClick(key: string) {
-    setSelectedDocKey(key);
+  function handleDocClick(url: AutomergeUrl) {
+    setSelectedDocUrl(url);
   }
 
-  function handleRemoveDoc(key: string) {
-    props.handle.change((d) => {
-      if (d.docs) delete d.docs[key];
+  function handleRemoveDoc(index: number, url: AutomergeUrl) {
+    const fUrl = folderUrl();
+    if (!fUrl) return;
+    repo.find<FolderDoc>(fUrl).then((folderHandle) => {
+      folderHandle.change((d) => {
+        if (d.docs) d.docs.splice(index, 1);
+      });
     });
-    if (selectedDocKey() === key) setSelectedDocKey(null);
+    if (selectedDocUrl() === url) setSelectedDocUrl(null);
   }
 
   return (
@@ -113,21 +121,20 @@ function ElicitationView(props: { handle: DocHandle<ElicitationDoc> }) {
           </div>
         </div>
 
-        <Show when={docEntries().length === 0}>
+        <Show when={folderEntries().length === 0}>
           <div class="el-prompt-hint">Drag and drop files to add to elicitation</div>
         </Show>
 
-        <Show when={docEntries().length > 0}>
+        <Show when={folderEntries().length > 0}>
           <div class="el-docs-section">
             <div class="el-doc-list">
-              <For each={docEntries()}>
-                {([key, url]) => (
+              <For each={folderEntries()}>
+                {(entry, index) => (
                   <DocCard
-                    docKey={key}
-                    url={url}
-                    selected={selectedDocKey() === key}
-                    onClick={() => handleDocClick(key)}
-                    onRemove={() => handleRemoveDoc(key)}
+                    url={entry.url}
+                    selected={selectedDocUrl() === entry.url}
+                    onClick={() => handleDocClick(entry.url)}
+                    onRemove={() => handleRemoveDoc(index(), entry.url)}
                   />
                 )}
               </For>
@@ -156,7 +163,6 @@ function ElicitationView(props: { handle: DocHandle<ElicitationDoc> }) {
 }
 
 function DocCard(props: {
-  docKey: string;
   url: AutomergeUrl;
   selected: boolean;
   onClick: () => void;

@@ -48,5 +48,5 @@ export type WorkspaceChatDoc = {
 
 export type ElicitationDoc = HasPatchworkMetadata & {
   prompt: string;
-  docs: Record<string, AutomergeUrl>;
+  referenceDocsFolderUrl: AutomergeUrl;
 };
