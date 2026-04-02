@@ -140,18 +140,6 @@
     padding-top: 16px;
   }
 
-  /* Vertical line from parent */
-  .spec-subspecs::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 2px;
-    height: calc(100% - 40px);
-    background: #d1d5db;
-    border-radius: 1px;
-  }
-
   /* Each subspec node */
   .spec-subspecs > .spec-node {
     position: relative;
@@ -162,33 +150,28 @@
     margin-bottom: 0;
   }
 
-  /* Curved horizontal connector */
+  /* Curved L-shaped connector */
   .spec-subspecs > .spec-node::before {
     content: '';
     position: absolute;
     left: -32px;
-    top: 24px;
+    top: -24px;
     width: 24px;
-    height: 2px;
-    background: #d1d5db;
-  }
-
-  /* Curved corner piece */
-  .spec-subspecs > .spec-node::after {
-    content: '';
-    position: absolute;
-    left: -32px;
-    top: 0;
-    width: 8px;
-    height: 26px;
+    height: 48px;
     border-left: 2px solid #d1d5db;
     border-bottom: 2px solid #d1d5db;
     border-bottom-left-radius: 12px;
     background: transparent;
   }
 
-  /* Hide parts of the vertical line for last child */
-  .spec-subspecs > .spec-node:last-child::after {
-    height: 26px;
+  /* Extend vertical line to next sibling */
+  .spec-subspecs > .spec-node:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    left: -32px;
+    top: 24px;
+    width: 2px;
+    height: calc(100% + 16px);
+    background: #d1d5db;
   }
 }

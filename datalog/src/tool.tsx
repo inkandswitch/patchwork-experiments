@@ -131,12 +131,10 @@ function DatalogViewer({
     return map;
   }, [doc]);
 
-  const parseErrors = useMemo(() => {
-    if (!hasDraft) return [];
-    return parseProgram(doc!.draftText!).errors.map((e) => `Line ${e.line}: ${e.message}`);
+  const hasParseErrors = useMemo(() => {
+    if (!hasDraft) return false;
+    return parseProgram(doc!.draftText!).errors.length > 0;
   }, [hasDraft, doc]);
-
-  const hasParseErrors = parseErrors.length > 0;
 
   function handleTextChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const newValue = e.target.value;
@@ -212,13 +210,6 @@ function DatalogViewer({
               </button>
             )}
           </div>
-          {parseErrors.length > 0 && (
-            <ul className="pg-errors">
-              {parseErrors.map((e, i) => (
-                <li key={i}>{e}</li>
-              ))}
-            </ul>
-          )}
         </div>
       )}
 

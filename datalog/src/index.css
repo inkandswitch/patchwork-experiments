@@ -128,21 +128,6 @@
     margin: 0 0 6px 0;
   }
 
-  .pg-errors {
-    margin: 0;
-    padding: 4px 14px;
-    list-style: none;
-    flex-shrink: 0;
-    background: #fff5f5;
-    border-top: 1px solid #fca5a5;
-  }
-
-  .pg-errors li {
-    color: #dc2626;
-    font-size: 11px;
-    padding: 2px 0;
-  }
-
   /* ── Diff styling ── */
   .pg-diff-added {
     background: #dcfce7;
