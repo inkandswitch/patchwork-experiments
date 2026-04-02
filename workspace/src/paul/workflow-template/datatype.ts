@@ -45,6 +45,10 @@ export const PaulWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> =
 
     doc.specElicitationDocUrl = elicitationHandle.url;
     doc.specDocUrl = specDocUrl;
+    doc.toolIds = {
+      spec: 'paul-spec-viewer',
+      plan: 'paul-plan-viewer',
+    };
   },
   getTitle() {
     return 'Paul Workflow Template';

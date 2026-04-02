@@ -2,12 +2,21 @@ import type { Heads } from '@automerge/automerge';
 import type { AutomergeUrl } from '@automerge/automerge-repo';
 import type { HasPatchworkMetadata } from '@inkandswitch/patchwork-filesystem';
 
+export type WorkflowToolIds = {
+  elicitation?: string;
+  spec?: string;
+  plan?: string;
+  execution?: string;
+  validation?: string;
+};
+
 export type WorkflowDoc = {
   specElicitationDocUrl: AutomergeUrl;
   specDocUrl: AutomergeUrl;
   planDocUrl: AutomergeUrl;
   executionDocUrl: AutomergeUrl;
   validationDocUrl: AutomergeUrl;
+  toolIds?: WorkflowToolIds;
 };
 
 export type SpecElicitationDoc = {

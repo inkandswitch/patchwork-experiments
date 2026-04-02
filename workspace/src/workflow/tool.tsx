@@ -42,6 +42,10 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
     }
   }
 
+  function getStageToolId(): string | undefined {
+    return doc()?.toolIds?.[selectedStage()];
+  }
+
   return (
     <div class="wf-root">
       <div class="wf-stage-bar">
@@ -94,6 +98,7 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
           {(url) => (
             <patchwork-view
               attr:doc-url={url()}
+              attr:tool-id={getStageToolId()}
               style="display:block;width:100%;height:100%;"
             />
           )}
