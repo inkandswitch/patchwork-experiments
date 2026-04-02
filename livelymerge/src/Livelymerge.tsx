@@ -343,7 +343,6 @@ function doIt(view: EditorView, print = false) {
   console.log('doIt', code, print);
   let result: any;
   try {
-    result = eval(code);
     impl.change(() => {
       console.log('evaluating', code);
       result = eval(code);
@@ -485,8 +484,9 @@ export const LivelymergeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
 
   useEffect(() => {
     if (!alreadyInitialized) {
-      // TODO: why doesn't this work at load time?
-      // world.initUI?.();
+      impl.change(() => {
+        world.initUI?.();
+      });
       alreadyInitialized = true;
     }
   }, [docUrl]);

@@ -183,13 +183,20 @@ world.initUI = function () {
   window.renderOnce = () => {
     impl.change(() => {
       processEvents();
-      world.render();
+      if (world.render) {
+        world.render();
+      }
     });
   };
 
   function onFrame() {
     if (renderContinually) {
-      renderOnce();
+      try {
+        renderOnce();
+      } catch (e) {
+        console.error(e);
+        debugger;
+      }
     }
     requestAnimationFrame(onFrame);
   }
@@ -252,11 +259,8 @@ world.setTimeout = function (fn, t) {
 
 world.classProto = newObj();
 
-window.newObjectLog = new Map();
-
 world.classProto.new = function () {
   const obj = newObj(this.proto);
-  window.newObjectLog.set(obj._id, `making a new ${this.name}, proto is ${this.proto._id}`);
   obj.className = this.name;
   obj.initialize(...arguments);
   return obj;
@@ -280,9 +284,10 @@ world.classProto.subclass = function (name) {
 
 world.render = function () {
   const canvas = document.querySelector('canvas');
-  if (!canvas) {
+  if (!canvas || !world.topLevelMorph || !world.topLevelMorph.render) {
     return;
   }
+
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   world.topLevelMorph.render(ctx);
@@ -2013,7 +2018,7 @@ world.WorldMorph.proto.onKeyDown = function (evt) {
   // debugger
   if (evt.shiftKey || evt.key == 'Shift') this.shiftKeyDown = true;
   if (!this.keyboardFocus) this.keyboardFocus = this.world().topMorphAt(this.pointerLocation);
-  if (this.keyboardFocus.onKeyDown) return this.keyboardFocus.onKeyDown(evt);
+  if (this.keyboardFocus?.onKeyDown) return this.keyboardFocus.onKeyDown(evt);
 };
 world.WorldMorph.proto.onKeyUp = function (evt) {
   if (evt.key == 'Shift') this.shiftKeyDown = false;
