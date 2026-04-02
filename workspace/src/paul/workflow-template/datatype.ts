@@ -25,6 +25,20 @@ type DatalogDoc = {
   mapStyle: { lines: Record<string, unknown>; properties: Record<string, unknown> };
 };
 
+type TokenInstance = { id: string; state: { type: string; documentUrl: string } };
+
+type PetriNetPlanDoc = {
+  '@patchwork': { type: 'petrinet-plan' };
+  tokens: {
+    candidates: TokenInstance[];
+    optimizer_idle: TokenInstance[];
+    optimizer_running: TokenInstance[];
+    solutions: TokenInstance[];
+    evaluator_idle: TokenInstance[];
+    evaluator_running: TokenInstance[];
+  };
+};
+
 export const PaulWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> = {
   init(doc: WorkflowDoc, repo: Repo) {
     const folderHandle = repo.create<FolderDoc>();
@@ -45,9 +59,9 @@ export const PaulWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> =
 
     doc.specElicitationDocUrl = elicitationHandle.url;
     doc.specDocUrl = specDocUrl;
+    doc.planDocUrl = createPetriNetDoc(repo);
     doc.toolIds = {
       spec: 'paul-spec-viewer',
-      plan: 'paul-plan-viewer',
     };
   },
   getTitle() {
@@ -55,6 +69,22 @@ export const PaulWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> =
   },
   setTitle() {},
 };
+
+function createPetriNetDoc(repo: Repo): AutomergeUrl {
+  const handle = repo.create<PetriNetPlanDoc>();
+  handle.change((d) => {
+    d['@patchwork'] = { type: 'petrinet-plan' };
+    d.tokens = {
+      candidates: [],
+      optimizer_idle: [],
+      optimizer_running: [],
+      solutions: [],
+      evaluator_idle: [],
+      evaluator_running: [],
+    };
+  });
+  return handle.url;
+}
 
 function createDatalogDoc(
   repo: Repo,

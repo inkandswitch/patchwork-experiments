@@ -67,8 +67,8 @@ export const plugins: Plugin<any>[] = [
     name: 'Paul Plan Viewer',
     supportedDatatypes: ['plan'],
     async load() {
-      const { PlanTool } = await import('./paul/plan/tool');
-      return PlanTool;
+      const { PetriNetPlanTool } = await import('./paul/petrinet-plan/tool');
+      return PetriNetPlanTool;
     },
   } satisfies Tool,
   {
@@ -153,6 +153,28 @@ export const plugins: Plugin<any>[] = [
   } as Datatype,
   {
     type: 'patchwork:tool',
+    id: 'iptables-workflow-template',
+    name: 'IPTables Workflow',
+    supportedDatatypes: ['iptables-workflow-template'],
+    async load() {
+      const { IPTablesWorkflowTemplateTool } =
+        await import('./paul/iptables-workflow-template/tool');
+      return IPTablesWorkflowTemplateTool;
+    },
+  } satisfies Tool,
+  {
+    type: 'patchwork:datatype',
+    id: 'iptables-workflow-template',
+    name: 'IPTables Workflow',
+    icon: 'Shield',
+    async load() {
+      const { IPTablesWorkflowTemplateDatatype } =
+        await import('./paul/iptables-workflow-template/datatype');
+      return IPTablesWorkflowTemplateDatatype;
+    },
+  } as Datatype,
+  {
+    type: 'patchwork:tool',
     id: 'elicitation-viewer',
     name: 'Elicitation',
     supportedDatatypes: ['elicitation'],
@@ -169,6 +191,26 @@ export const plugins: Plugin<any>[] = [
     async load() {
       const { ElicitationDatatype } = await import('./elicitation/datatype');
       return ElicitationDatatype;
+    },
+  } as Datatype,
+  {
+    type: 'patchwork:tool',
+    id: 'petrinet-plan',
+    name: 'Petri Net Plan',
+    supportedDatatypes: ['petrinet-plan'],
+    async load() {
+      const { PetriNetPlanTool } = await import('./paul/petrinet-plan/tool');
+      return PetriNetPlanTool;
+    },
+  } satisfies Tool,
+  {
+    type: 'patchwork:datatype',
+    id: 'petrinet-plan',
+    name: 'Petri Net Plan',
+    icon: 'GitBranch',
+    async load() {
+      const { PetriNetPlanDatatype } = await import('./paul/petrinet-plan/datatype');
+      return PetriNetPlanDatatype;
     },
   } as Datatype,
 ];
