@@ -18,6 +18,8 @@ import { toolify } from './react-util';
 import type { LivelymergeDoc, Obj, ObjRef } from './types';
 import './styles.css';
 
+// TODO: stop requesting animation frame after the UI unmounts
+// TODO: get arrays working
 // TODO: why doesn't toString work when it's a method on Objs? (something to do w/ Proxy)
 // TODO: move workspace contents to an Obj (shouldn't be special state)
 
@@ -45,8 +47,8 @@ const vanillaImpl: Impl = {
   },
   _change(fn: () => void): void {
     if (!world) {
-      world = Object.create(null);
-      (window as any).world = world;
+      world = w = Object.create(null);
+      (window as any).world = (window as any).w = world;
       world.proto = null;
       world._protoId = null;
       world._id = 0;
@@ -59,7 +61,7 @@ let docHandle: DocHandle<LivelymergeDoc>;
 let doc: LivelymergeDoc;
 let newObjects: Map<number, Obj> | null = null;
 let proxies: Map<number, Obj> | null = null;
-let world: any;
+let world: any, w: any;
 
 const automergeImpl: Impl = {
   newObj(prototype?: Obj): Obj {
@@ -78,8 +80,8 @@ const automergeImpl: Impl = {
     newObjects = null;
     proxies = null;
     this._change(() => {
-      world = proxify(doc.objectTable[0]);
-      (window as any).world = world;
+      world = w = proxify(doc.objectTable[0]);
+      (window as any).world = (window as any).w = world;
       try {
         fn();
       } catch (e) {
