@@ -4,7 +4,7 @@ import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primit
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle } from '@automerge/automerge-repo';
 import type { AutomergeUrl } from '@automerge/automerge-repo';
-import type { PlanDoc, TaskDoc } from '../types';
+import type { PlanDoc, TaskDoc } from '../../types';
 import './plan.css';
 
 export const PlanTool: ToolRender = (handle, element) => {

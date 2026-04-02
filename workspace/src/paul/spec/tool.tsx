@@ -3,8 +3,8 @@ import { For, Show, createSignal } from 'solid-js';
 import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primitives';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
-import type { SpecDoc, Spec } from '../workflow/types';
-import { useTitle } from '../hooks/useTitle';
+import type { SpecDoc, Spec } from '../../workflow/types';
+import { useTitle } from '../../hooks/useTitle';
 import './spec.css';
 
 export const SpecTool: ToolRender = (handle, element) => {

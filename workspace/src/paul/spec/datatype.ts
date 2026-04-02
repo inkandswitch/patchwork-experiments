@@ -1,7 +1,7 @@
 import type { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
-import type { SpecDoc } from '../workflow/types';
+import type { SpecDoc } from '../../workflow/types';
 
-export type { SpecDoc, Spec } from '../workflow/types';
+export type { SpecDoc, Spec } from '../../workflow/types';
 
 export const SpecDatatype: DatatypeImplementation<SpecDoc> = {
   init(doc: SpecDoc) {

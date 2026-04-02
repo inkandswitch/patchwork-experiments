@@ -23,11 +23,11 @@ export const plugins: Plugin<any>[] = [
   } as Datatype,
   {
     type: 'patchwork:tool',
-    id: 'spec-viewer',
-    name: 'Spec Viewer',
+    id: 'paul-spec-viewer',
+    name: 'Paul Spec Viewer',
     supportedDatatypes: ['spec'],
     async load() {
-      const { SpecTool } = await import('./spec/tool');
+      const { SpecTool } = await import('./paul/spec/tool');
       return SpecTool;
     },
   } satisfies Tool,
@@ -37,7 +37,7 @@ export const plugins: Plugin<any>[] = [
     name: 'Spec',
     icon: 'FileText',
     async load() {
-      const { SpecDatatype } = await import('./spec/datatype');
+      const { SpecDatatype } = await import('./paul/spec/datatype');
       return SpecDatatype;
     },
   } as Datatype,
@@ -63,11 +63,11 @@ export const plugins: Plugin<any>[] = [
   } as Datatype,
   {
     type: 'patchwork:tool',
-    id: 'plan-viewer',
-    name: 'Plan Viewer',
+    id: 'paul-plan-viewer',
+    name: 'Paul Plan Viewer',
     supportedDatatypes: ['plan'],
     async load() {
-      const { PlanTool } = await import('./plan/tool');
+      const { PlanTool } = await import('./paul/plan/tool');
       return PlanTool;
     },
   } satisfies Tool,
@@ -77,7 +77,7 @@ export const plugins: Plugin<any>[] = [
     name: 'Plan',
     icon: 'ListChecks',
     async load() {
-      const { PlanDatatype } = await import('./plan/datatype');
+      const { PlanDatatype } = await import('./paul/plan/datatype');
       return PlanDatatype;
     },
   } as Datatype,
@@ -119,6 +119,26 @@ export const plugins: Plugin<any>[] = [
     async load() {
       const { WorkflowDatatype } = await import('./workflow/datatype');
       return WorkflowDatatype;
+    },
+  } as Datatype,
+  {
+    type: 'patchwork:tool',
+    id: 'paul-workflow-template',
+    name: 'Paul Workflow Template',
+    supportedDatatypes: ['paul-workflow-template'],
+    async load() {
+      const { PaulWorkflowTemplateTool } = await import('./paul/workflow-template/tool');
+      return PaulWorkflowTemplateTool;
+    },
+  } satisfies Tool,
+  {
+    type: 'patchwork:datatype',
+    id: 'paul-workflow-template',
+    name: 'Paul Workflow Template',
+    icon: 'Workflow',
+    async load() {
+      const { PaulWorkflowTemplateDatatype } = await import('./paul/workflow-template/datatype');
+      return PaulWorkflowTemplateDatatype;
     },
   } as Datatype,
   {
