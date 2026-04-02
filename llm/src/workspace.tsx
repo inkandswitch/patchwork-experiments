@@ -31,7 +31,6 @@ export const LLMWorkspaceTool: ToolRender = (handle, element) => {
 
 export function LLMWorkspaceView(props: { url: AutomergeUrl }) {
   const [doc, handle] = useDocument<LLMWorkspaceDoc>(() => props.url);
-  const [newUrl, setNewUrl] = createSignal('');
   const [isDragOver, setIsDragOver] = createSignal(false);
 
   function addUrls(urls: string[]) {
@@ -46,24 +45,10 @@ export function LLMWorkspaceView(props: { url: AutomergeUrl }) {
     });
   }
 
-  function handleAdd() {
-    const url = newUrl().trim();
-    if (!url) return;
-    addUrls([url]);
-    setNewUrl('');
-  }
-
   function handleRemove(url: string) {
     handle()?.change((d) => {
       delete d.entries[url];
     });
-  }
-
-  function handleKeyDown(e: KeyboardEvent) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleAdd();
-    }
   }
 
   function isPatchworkDrag(types: readonly string[]) {
@@ -100,17 +85,6 @@ export function LLMWorkspaceView(props: { url: AutomergeUrl }) {
     addUrls(extractDroppedUrls(e.dataTransfer!));
   }
 
-  function handleInputDragOver(e: DragEvent) {
-    if (!isPatchworkDrag(e.dataTransfer?.types ?? [])) return;
-    e.preventDefault();
-  }
-
-  function handleInputDrop(e: DragEvent) {
-    if (!isPatchworkDrag(e.dataTransfer?.types ?? [])) return;
-    e.preventDefault();
-    addUrls(extractDroppedUrls(e.dataTransfer!));
-  }
-
   return (
     <Show
       when={doc()}
@@ -136,7 +110,7 @@ export function LLMWorkspaceView(props: { url: AutomergeUrl }) {
               when={Object.keys(currentDoc().entries).length > 0}
               fallback={
                 <div class="llm-ws-drop-hint">
-                  {isDragOver() ? 'Drop to add' : 'Drop documents here or paste an Automerge URL below'}
+                  {isDragOver() ? 'Drop to add' : 'Drop documents here'}
                 </div>
               }
             >
@@ -152,26 +126,6 @@ export function LLMWorkspaceView(props: { url: AutomergeUrl }) {
                 <div class="llm-ws-drop-hint active">Drop to add</div>
               </Show>
             </Show>
-          </div>
-
-          <div class="llm-ws-add-bar">
-            <input
-              class="llm-ws-add-input"
-              type="text"
-              placeholder="automerge:… or drop a document"
-              value={newUrl()}
-              onInput={(e) => setNewUrl(e.currentTarget.value)}
-              onKeyDown={handleKeyDown}
-              onDragOver={handleInputDragOver}
-              onDrop={handleInputDrop}
-            />
-            <button
-              class="llm-ws-add-btn"
-              onClick={handleAdd}
-              disabled={!newUrl().trim()}
-            >
-              Add
-            </button>
           </div>
         </div>
       )}

@@ -71,3 +71,4 @@ export { LLMTool, LLMView } from "./view";
 export { LLMWorkspaceTool, LLMWorkspaceView } from "./workspace";
 export type { LLMDoc, LLMChatDoc, LLMWorkspaceDoc, WorkspaceEntry, OutputBlock, ParsedBlock, ChatMessage, ContentPart } from "./types";
 
+console.log("chat version 2", plugins);

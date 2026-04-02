@@ -60,7 +60,6 @@
 
   .llm-chat-runs {
     flex: 1;
-    min-height: 0;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
@@ -93,16 +92,34 @@
   .llm-chat-run {
     border-bottom: 1px solid #e2e8f0;
     flex-shrink: 0;
-    min-height: 120px;
-    max-height: 480px;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
   }
 
-  .llm-chat-run > * {
-    flex: 1;
-    min-height: 0;
+  .llm-chat-run .llm-root {
+    height: auto;
+    overflow: visible;
+  }
+
+  .llm-chat-run .llm-body {
+    overflow: visible;
+  }
+
+  /* ── Drag-over state ────────────────────────────────────────────── */
+
+  .llm-chat-runs.drag-over {
+    background: #eff6ff;
+    outline: 2px dashed #93c5fd;
+    outline-offset: -4px;
+    border-radius: 4px;
+  }
+
+  .llm-chat-drop-hint {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #3b82f6;
+    font-size: 12px;
+    padding: 16px;
+    text-align: center;
   }
 
   /* ── Input bar ───────────────────────────────────────────────────── */
@@ -117,8 +134,15 @@
     align-items: flex-end;
   }
 
-  .llm-chat-textarea {
+  .llm-chat-input-col {
     flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .llm-chat-textarea {
     resize: none;
     border: 1px solid #e2e8f0;
     border-radius: 6px;
@@ -130,6 +154,32 @@
     line-height: 1.5;
     outline: none;
     min-height: 56px;
+  }
+
+  .llm-chat-input-footer {
+    display: flex;
+    align-items: center;
+  }
+
+  .llm-chat-model-select {
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    font-size: 11px;
+    color: #64748b;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    padding: 3px 6px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  .llm-chat-model-select:focus {
+    border-color: #93c5fd;
+  }
+
+  .llm-chat-model-select:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .llm-chat-textarea:focus {

@@ -5,8 +5,7 @@
  * blocks from the response, evals them, feeds results back, and repeats.
  * All output is written to the LLMDoc via Automerge handle.change().
  *
- * Skills are discovered from the skills folder URL (baked in via __SKILLS_DIR_URL__
- * at build time, or overridden per-doc via doc.skillsFolderUrl). Each skill's
+ * Skills are discovered from the workspace's folder entries. Each skill's
  * SKILL.md frontmatter provides its name and description for the system prompt.
  * The LLM loads skills at runtime via globalThis.loadSkill(name).
  */

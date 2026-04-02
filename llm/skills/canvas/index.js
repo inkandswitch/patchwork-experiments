@@ -115,11 +115,11 @@ export function findFreePosition(shapes, width, height, opts = {}) {
  * @param {string} url  - Automerge URL of the CanvasDoc
  */
 export function getCanvas(repo, url) {
-  const handle = repo.find(url);
+  const handleP = repo.find(url);
 
   async function currentDoc() {
-    await handle.whenReady();
-    return handle.doc();
+    const handle = await handleP;
+    return await handle.doc();
   }
 
   return {
@@ -159,6 +159,7 @@ export function getCanvas(repo, url) {
         : findFreePosition(doc.shapes, width, height, { startX, startY, padding });
 
       const id = newId();
+      const handle = await handleP;
       handle.change((d) => {
         d.shapes[id] = {
           id,
@@ -219,7 +220,7 @@ export function getCanvas(repo, url) {
         ids.push(id);
       }
 
-      // Commit all at once
+      const handle = await handleP;
       handle.change((d) => {
         const base = nextZIndex(d) - 1;
         for (let i = 0; i < ids.length; i++) {
@@ -258,25 +259,22 @@ export function getCanvas(repo, url) {
         : findFreePosition(doc.shapes, estimatedW, estimatedH, { startX, startY, padding });
 
       const id = newId();
+      const handle = await handleP;
       handle.change((d) => {
         d.shapes[id] = { id, type: 'text', x, y, zIndex: nextZIndex(d), text, color, fontSize };
       });
       return id;
     },
 
-    /**
-     * Remove a shape by ID.
-     */
     async removeShape(shapeId) {
+      const handle = await handleP;
       handle.change((d) => {
         delete d.shapes[shapeId];
       });
     },
 
-    /**
-     * Move a shape to an absolute position.
-     */
     async moveShape(shapeId, x, y) {
+      const handle = await handleP;
       handle.change((d) => {
         if (d.shapes[shapeId]) {
           d.shapes[shapeId].x = x;

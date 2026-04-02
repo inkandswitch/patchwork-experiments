@@ -29,7 +29,7 @@ export const LLMChatDatatype: DatatypeImplementation<LLMChatDoc> = {
       model: "anthropic/claude-opus-4-5",
     };
 
-    const skillsFolderUrl: AutomergeUrl = __FORMAL_SKETCH_SKILLS_FOLDER_URL__ as any;
+    const skillsFolderUrl: AutomergeUrl = __SKILLS_FOLDER_URL__ as any;
     const wsHandle = repo.create<LLMWorkspaceDoc>();
     wsHandle.change((ws) => {
       ws["@patchwork"] = { type: "llm-workspace" };
