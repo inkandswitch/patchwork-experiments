@@ -1,4 +1,5 @@
 import type { Plugin, Tool, Datatype } from '@inkandswitch/patchwork-plugins';
+import { PaulWorkflowTemplateDatatype } from './paul/workflow-template/datatype';
 
 export const plugins: Plugin<any>[] = [
   {
@@ -21,6 +22,16 @@ export const plugins: Plugin<any>[] = [
       return WorkspaceDatatype;
     },
   } as Datatype,
+  {
+    type: 'patchwork:tool',
+    id: 'grjte-spec-viewer',
+    name: 'grjte Spec Viewer',
+    supportedDatatypes: ['spec'],
+    async load() {
+      const { SpecTool } = await import('./grjte/spec/tool');
+      return SpecTool;
+    },
+  } satisfies Tool,
   {
     type: 'patchwork:tool',
     id: 'paul-spec-viewer',
@@ -149,6 +160,26 @@ export const plugins: Plugin<any>[] = [
     async load() {
       const { ValidationDatatype } = await import('./workflow/datatypes');
       return ValidationDatatype;
+    },
+  } as Datatype,
+  {
+    type: 'patchwork:tool',
+    id: 'grjte-workflow-template',
+    name: 'grjte Workflow Template',
+    supportedDatatypes: ['grjte-workflow-template'],
+    async load() {
+      const { grjteWorkflowTemplateTool } = await import('./grjte/workflow-template/tool');
+      return grjteWorkflowTemplateTool;
+    },
+  } satisfies Tool,
+  {
+    type: 'patchwork:datatype',
+    id: 'grjte-workflow-template',
+    name: 'grjte Workflow Template',
+    icon: 'Workflow',
+    async load() {
+      const { grjteWorkflowTemplateDatatype } = await import('./grjte/workflow-template/datatype');
+      return grjteWorkflowTemplateDatatype;
     },
   } as Datatype,
   {
