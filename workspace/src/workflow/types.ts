@@ -28,6 +28,8 @@ export type SpecElicitationDoc = {
 // right now we just use the goal to describe this
 export type Spec = {
   goal: string;
+  // a folder containing documents with formalized input data
+  dataFolderUrl?: AutomergeUrl;
   verificationUrls: AutomergeUrl[];
   subSpecUrls?: AutomergeUrl[];
 };

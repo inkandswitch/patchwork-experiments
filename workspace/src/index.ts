@@ -37,7 +37,7 @@ export const plugins: Plugin<any>[] = [
     name: 'Spec',
     icon: 'FileText',
     async load() {
-      const { SpecDatatype } = await import('./paul/spec/datatype');
+      const { SpecDatatype } = await import('./workflow/datatypes');
       return SpecDatatype;
     },
   } as Datatype,
@@ -117,7 +117,7 @@ export const plugins: Plugin<any>[] = [
     name: 'Workflow',
     icon: 'Workflow',
     async load() {
-      const { WorkflowDatatype } = await import('./workflow/datatype');
+      const { WorkflowDatatype } = await import('./workflow/datatypes');
       return WorkflowDatatype;
     },
   } as Datatype,
