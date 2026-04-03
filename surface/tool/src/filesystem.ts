@@ -1,6 +1,6 @@
 import { automergeUrlToServiceWorkerUrl } from "@inkandswitch/patchwork-filesystem";
 import type { DocLink, FolderDoc, UnixFileEntry } from "@inkandswitch/patchwork-filesystem";
-import { updateText } from "@automerge/automerge-repo";
+import { stringifyAutomergeUrl, updateText } from "@automerge/automerge-repo";
 import type { AutomergeUrl, DocHandle, Repo } from "@automerge/automerge-repo";
 
 function splitPath(relativePath: string): string[] {
@@ -294,9 +294,19 @@ export function createFilesystem(repo: Repo, rootFolderUrl: AutomergeUrl): Files
 
     async resolveToolUrl(path: string): Promise<string> {
       const normalized = normalizeToolPath(path);
-      console.log("[fs] resolveToolUrl:", path, "→ normalized:", normalized);
-      const baseUrl = buildFetchUrl(normalized);
+      const root = await rootFolder();
       const parts = splitPath(normalized);
+
+      const versionedRootUrl = stringifyAutomergeUrl({
+        documentId: root.documentId,
+        heads: root.heads(),
+      });
+      const baseHref = new URL(
+        automergeUrlToServiceWorkerUrl(versionedRootUrl),
+        window.location.origin,
+      ).href;
+      const suffix = parts.map(encodeURIComponent).join("/");
+      const pathUrl = parts.length ? new URL(suffix, baseHref).href : baseHref;
 
       let versionHandle: DocHandle<unknown>;
       if (parts.length <= 1) {
@@ -307,9 +317,7 @@ export function createFilesystem(repo: Repo, rootFolderUrl: AutomergeUrl): Files
       }
 
       const versionParam = versionHandle.heads().join("|");
-      const result = baseUrl + "?v=" + encodeURIComponent(versionParam);
-      console.log("[fs] resolveToolUrl result:", result);
-      return result;
+      return pathUrl + "?v=" + encodeURIComponent(versionParam);
     },
 
     async getDocHandle(path: string): Promise<DocHandle<unknown>> {

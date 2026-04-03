@@ -69,7 +69,7 @@ export default function mount(element) {
   }
 
   function onKeyDown(e) {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       void handleSubmit();
     }
@@ -126,6 +126,23 @@ export default function mount(element) {
     }
   }
 
+  
+  function handleStop() {
+    if (abortController) {
+      abortController.abort();
+      abortController = null;
+      setSubmitting(false);
+      // Mark the last run as done
+      ref.change((panel) => {
+        const run = panel.runs[panel.runs.length - 1];
+        if (run && !run.done) {
+          run.output.push({ type: 'text', content: '*[Stopped by user]*' });
+          run.done = true;
+        }
+      });
+    }
+  }
+
   async function showPromptTab() {
     setTab('prompt');
     try {
@@ -170,21 +187,30 @@ export default function mount(element) {
             <div class="llm-compose">
               <textarea
                 class="llm-textarea"
-                placeholder="Message… (⌘↵ to send)"
+                placeholder="Message… (↵ to send, ⇧↵ for newline)"
                 value=${prompt}
                 onInput=${onPromptInput}
                 onKeyDown=${onKeyDown}
                 disabled=${submitting}
                 rows=${3}
               />
-              <button
-                class="llm-send"
-                type="button"
-                onClick=${() => void handleSubmit()}
-                disabled=${isDisabled}
-              >
-                ${() => submitting() ? 'Running…' : 'Send'}
-              </button>
+              <div class="llm-compose-buttons">
+                ${() => submitting()
+                  ? html`<button
+                      class="llm-stop"
+                      type="button"
+                      onClick=${handleStop}
+                    >Stop</button>`
+                  : null}
+                <button
+                  class="llm-send"
+                  type="button"
+                  onClick=${() => void handleSubmit()}
+                  disabled=${isDisabled}
+                >
+                  ${() => submitting() ? 'Running…' : 'Send'}
+                </button>
+              </div>
             </div>`
           : html`<div class="llm-prompt-view">
               <pre class="llm-prompt-pre">${systemPromptText}</pre>
@@ -195,18 +221,38 @@ export default function mount(element) {
 
 
 
-  // Auto-scroll: watch for new content in .llm-body and scroll to bottom
+  // Auto-scroll: only scroll to bottom if user is already near the bottom.
+  // This avoids yanking the view away when the user has scrolled up to read.
+  let userScrolledUp = false;
+  const SCROLL_THRESHOLD = 40; // px from bottom to still count as "at bottom"
+
+  function isNearBottom(el) {
+    return el.scrollHeight - el.scrollTop - el.clientHeight <= SCROLL_THRESHOLD;
+  }
+
+  function onBodyScroll(e) {
+    userScrolledUp = !isNearBottom(e.target);
+  }
+
   const bodyObserver = new MutationObserver(() => {
     const body = element.querySelector('.llm-body');
-    if (body) {
+    if (body && !userScrolledUp) {
       body.scrollTop = body.scrollHeight;
     }
   });
+
+  function attachScrollListener(body) {
+    if (!body) return;
+    body.removeEventListener('scroll', onBodyScroll);
+    body.addEventListener('scroll', onBodyScroll, { passive: true });
+  }
+
   // Start observing once the DOM is ready
   requestAnimationFrame(() => {
     const body = element.querySelector('.llm-body');
     if (body) {
       body.scrollTop = body.scrollHeight;
+      attachScrollListener(body);
       bodyObserver.observe(body, { childList: true, subtree: true, characterData: true });
     }
     // Also observe the panel itself in case .llm-body gets re-created (tab switch)
@@ -215,7 +261,9 @@ export default function mount(element) {
       const panelObserver = new MutationObserver(() => {
         const b = element.querySelector('.llm-body');
         if (b) {
+          userScrolledUp = false; // reset on tab switch
           b.scrollTop = b.scrollHeight;
+          attachScrollListener(b);
           bodyObserver.disconnect();
           bodyObserver.observe(b, { childList: true, subtree: true, characterData: true });
         }
@@ -227,6 +275,8 @@ export default function mount(element) {
   return () => {
     abortController?.abort();
     bodyObserver.disconnect();
+    const body = element.querySelector('.llm-body');
+    if (body) body.removeEventListener('scroll', onBodyScroll);
     dispose();
   };
 }

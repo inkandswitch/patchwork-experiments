@@ -60,8 +60,28 @@ export default function mount(element) {
   let startShapeX = 0;
   let startShapeY = 0;
 
+  function isInteractiveTarget(event) {
+    // Let clicks on interactive elements pass through to the shape's content
+    let node = event.target;
+    while (node && node !== canvas) {
+      if (node instanceof HTMLButtonElement ||
+          node instanceof HTMLInputElement ||
+          node instanceof HTMLSelectElement ||
+          node instanceof HTMLTextAreaElement ||
+          node instanceof HTMLAnchorElement ||
+          (node instanceof HTMLElement && node.isContentEditable)) {
+        return true;
+      }
+      node = node.parentElement;
+    }
+    return false;
+  }
+
   function onPointerDown(event) {
     if (!isSelectionToolActive()) return;
+
+    // If the click is on an interactive element inside a shape, let it handle it
+    if (isInteractiveTarget(event)) return;
 
     let shapeId = shapeIdFromEvent(event, canvas);
     if (!shapeId) {

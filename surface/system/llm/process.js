@@ -269,7 +269,14 @@ export async function runLlmTurns(options) {
           const out = run.output;
           const last = out[out.length - 1];
           if (last && last.type === 'text') {
-            last.content = (last.content || '') + block.content;
+            const Am = globalThis.Automerge;
+            const idx = panel.runs.length - 1;
+            const outIdx = out.length - 1;
+            if (Am?.updateText) {
+              Am.updateText(panel, ['runs', idx, 'output', outIdx, 'content'], (last.content || '') + block.content);
+            } else {
+              last.content = (last.content || '') + block.content;
+            }
           } else {
             out.push({ type: 'text', content: block.content });
           }
@@ -282,7 +289,14 @@ export async function runLlmTurns(options) {
           const out = run.output;
           const last = out[out.length - 1];
           if (last && last.type === 'script' && last.output === undefined && last.error === undefined) {
-            last.code = block.code;
+            const Am = globalThis.Automerge;
+            const idx = panel.runs.length - 1;
+            const outIdx = out.length - 1;
+            if (Am?.updateText) {
+              Am.updateText(panel, ['runs', idx, 'output', outIdx, 'code'], block.code);
+            } else {
+              last.code = block.code;
+            }
             if (block.description !== undefined) last.description = block.description;
           } else {
             out.push({

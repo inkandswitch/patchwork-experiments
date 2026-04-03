@@ -21,6 +21,7 @@ function checkWinner(board) {
 }
 
 export default function mount(element) {
+  console.log("[TTT] mount() called at", Date.now());
   const ref = element.ref.as(schema);
   const data = from(ref);
 
@@ -91,7 +92,7 @@ export default function mount(element) {
         'justify-content': 'center',
         'font-size': '32px',
         'font-weight': 'bold',
-        color: board()[i] === 'X' ? '#2563eb' : '#0ea5e9',
+        color: board()[i] === 'X' ? '#2563eb' : '#3b82f6',
         transition: 'all 0.15s ease',
         'box-shadow': isWinCell ? '0 0 12px rgba(37, 99, 235, 0.4)' : 'none',
       };

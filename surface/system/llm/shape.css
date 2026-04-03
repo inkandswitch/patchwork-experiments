@@ -275,3 +275,26 @@
   font: 12px/1.5 ui-monospace, 'SF Mono', monospace;
   color: #3f3f46;
 }
+
+
+.llm-stop {
+  align-self: flex-end;
+  padding: 6px 14px;
+  font: 12px/1 system-ui, sans-serif;
+  font-weight: 500;
+  border: none;
+  border-radius: 6px;
+  background: #dc2626;
+  color: #fff;
+  cursor: pointer;
+}
+
+.llm-stop:hover {
+  background: #b91c1c;
+}
+
+.llm-compose-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
