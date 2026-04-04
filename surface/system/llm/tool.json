@@ -1,0 +1,7 @@
+{
+  "type": "tool",
+  "name": "LLM Chat",
+  "description": "LLM chat panel with script evaluation loop",
+  "toolUrl": "./tool.js",
+  "schemaUrl": "./schema.js"
+}

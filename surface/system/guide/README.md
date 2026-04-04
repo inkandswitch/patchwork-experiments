@@ -20,7 +20,7 @@ Rules:
    console.log(element.ref.value().shapes);
 
 5. WRITING STATE: Mutate document state using `element.ref.at(...).change(...)`. DO NOT mutate the snapshot directly. DO NOT guess APIs.
-   element.ref.at('shapes', 'my_id').change(() => ({ x: 0, y: 0, toolUrl: '...' }));
+   element.ref.at('shapes', 'my_id').change(() => ({ x: 0, y: 0, viewUrl: '...' }));
 
 6. FILESYSTEM API: `filesystem` is a top-level binding (also accessible as `element.filesystem`). Available methods:
    - `filesystem.readFile(path)` — read a file as text (async)

@@ -1,10 +1,10 @@
 import { z } from 'https://esm.sh/zod@4.3';
-import { getToolUrl } from '../url.js';
+import { getViewUrl } from '../url.js';
 
 const ShapeSchema = z.object({
   x: z.number(),
   y: z.number(),
-  toolUrl: z.string(),
+  viewUrl: z.string(),
 });
 
 export const shapesSchema = {
@@ -14,37 +14,37 @@ export const shapesSchema = {
         x: 10,
         y: 10,
         isLocked: true,
-        toolUrl: getToolUrl('../selection/button.js', import.meta.url),
+        viewUrl: getViewUrl('../selection/button.json', import.meta.url),
       },
       rectButton: {
         x: 50,
         y: 10,
         isLocked: true,
-        toolUrl: getToolUrl('../rectangle/button.js', import.meta.url),
+        viewUrl: getViewUrl('../rectangle/button.json', import.meta.url),
       },
       lineButton: {
         x: 90,
         y: 10,
         isLocked: true,
-        toolUrl: getToolUrl('../line/button.js', import.meta.url),
+        viewUrl: getViewUrl('../line/button.json', import.meta.url),
       },
       textButton: {
         x: 130,
         y: 10,
         isLocked: true,
-        toolUrl: getToolUrl('../text/button.js', import.meta.url),
+        viewUrl: getViewUrl('../text/button.json', import.meta.url),
       },
       embedButton: {
         x: 170,
         y: 10,
         isLocked: true,
-        toolUrl: getToolUrl('../embed/button.js', import.meta.url),
+        viewUrl: getViewUrl('../embed/button.json', import.meta.url),
       },
       partsBin: {
         x: 10,
         y: 50,
         isLocked: true,
-        toolUrl: getToolUrl('../parts-bin/tool.js', import.meta.url),
+        viewUrl: getViewUrl('../parts-bin/tool.json', import.meta.url),
         width: 280,
         height: 800,
       },

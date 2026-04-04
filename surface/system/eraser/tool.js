@@ -77,7 +77,7 @@ export default function mount(element) {
           const doc = canvas.ref.value();
           const shapes = doc.shapes || {};
           for (const [id, shape] of Object.entries(shapes)) {
-            if (shape.createdAt === d.createdAt && shape.toolUrl === d.toolUrl) {
+            if (shape.createdAt === d.createdAt && shape.viewUrl === d.viewUrl) {
               canvas.ref.at('shapes').change((s) => { delete s[id]; });
               break;
             }

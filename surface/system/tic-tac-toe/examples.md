@@ -6,9 +6,9 @@ An empty board ready to play.
 
 ```json
 {
-  "tool": "tic-tac-toe/tool.js",
+  "tool": "tic-tac-toe/tool.json",
   "value": {
-    "x": 0, "y": 0, "toolUrl": "tic-tac-toe/tool.js",
+    "x": 0, "y": 0, "viewUrl": "tic-tac-toe/tool.json",
     "width": 280, "height": 320,
     "board": ["", "", "", "", "", "", "", "", ""],
     "currentPlayer": "X",
@@ -26,9 +26,9 @@ A game in progress with several moves played.
 
 ```json
 {
-  "tool": "tic-tac-toe/tool.js",
+  "tool": "tic-tac-toe/tool.json",
   "value": {
-    "x": 0, "y": 0, "toolUrl": "tic-tac-toe/tool.js",
+    "x": 0, "y": 0, "viewUrl": "tic-tac-toe/tool.json",
     "width": 280, "height": 320,
     "board": ["X", "", "O", "", "X", "", "", "", "O"],
     "currentPlayer": "X",
@@ -46,9 +46,9 @@ A completed game where X wins with a diagonal.
 
 ```json
 {
-  "tool": "tic-tac-toe/tool.js",
+  "tool": "tic-tac-toe/tool.json",
   "value": {
-    "x": 0, "y": 0, "toolUrl": "tic-tac-toe/tool.js",
+    "x": 0, "y": 0, "viewUrl": "tic-tac-toe/tool.json",
     "width": 280, "height": 320,
     "board": ["X", "O", "", "", "X", "O", "", "", "X"],
     "currentPlayer": "O",

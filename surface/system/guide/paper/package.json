@@ -1,0 +1,9 @@
+{
+  "name": "guide-paper",
+  "private": true,
+  "type": "module",
+  "description": "Paper skill guide",
+  "exports": {
+    "./skill.json": "./skill.json"
+  }
+}

@@ -25,8 +25,8 @@ type PluginEntry = {
   [key: string]: unknown;
 };
 
-type PluginsFile = {
-  plugins?: PluginEntry[];
+type PackageJson = {
+  exports?: Record<string, string>;
 };
 
 export function createPluginRegistry(filesystem: Filesystem): PluginRegistry {
@@ -34,13 +34,13 @@ export function createPluginRegistry(filesystem: Filesystem): PluginRegistry {
   const listeners = new Set<(plugins: Plugin[]) => void>();
   const typeViews = new Map<string, TypeView>();
 
-  filesystem.watch("**/plugins.json", (matches) => {
+  filesystem.watch("**/package.json", (matches) => {
     void loadPlugins(matches);
   });
 
   async function loadPlugins(matches: string[]): Promise<void> {
     try {
-      const next = await parsePluginFiles(filesystem, matches);
+      const next = await parsePackageFiles(filesystem, matches);
       if (!pluginsEqual(current, next)) {
         current = next;
         notify();
@@ -110,40 +110,57 @@ export function createPluginRegistry(filesystem: Filesystem): PluginRegistry {
   };
 }
 
-async function parsePluginFiles(
+async function parsePackageFiles(
   filesystem: Filesystem,
   matches: string[],
 ): Promise<Plugin[]> {
   const plugins: Plugin[] = [];
   for (const match of matches) {
-    const folderPath = match.replace(/\/plugins\.json$/, "").replace(/^plugins\.json$/, "");
+    const folderPath = match.replace(/\/package\.json$/, "").replace(/^package\.json$/, "");
     try {
       const raw = await filesystem.readFile(match);
-      const parsed: PluginsFile = JSON.parse(raw);
-      if (!Array.isArray(parsed.plugins)) continue;
-      for (const entry of parsed.plugins) {
-        const entrySource = entry.toolUrl ?? entry.source;
-        if (!entry.type || !entry.name || !entrySource) continue;
-        const sourcePath = folderPath ? `${folderPath}/${entrySource}` : entrySource;
-        const { type, name, description, toolUrl, schemaUrl, source, ...metadata } = entry;
-        const resolvedSchemaUrl = schemaUrl
-          ? filesystem.getUrlOfFile(folderPath ? `${folderPath}/${schemaUrl}` : schemaUrl)
-          : undefined;
-        plugins.push({
-          type,
-          name,
-          description: description ?? "",
-          source: filesystem.getUrlOfFile(sourcePath),
-          folder: folderPath,
-          ...(resolvedSchemaUrl ? { schemaUrl: resolvedSchemaUrl } : {}),
-          ...metadata,
-        });
+      const parsed: PackageJson = JSON.parse(raw);
+      if (!parsed.exports || typeof parsed.exports !== "object") continue;
+      for (const [key, target] of Object.entries(parsed.exports)) {
+        if (!key.endsWith(".json") || !target.endsWith(".json")) continue;
+        const jsonPath = folderPath ? `${folderPath}/${target.replace(/^\.\//, "")}` : target.replace(/^\.\//, "");
+        await loadPluginJson(filesystem, plugins, folderPath, jsonPath);
       }
     } catch {
-      // skip unreadable plugins.json files
+      // skip unreadable package.json files
     }
   }
   return plugins;
+}
+
+async function loadPluginJson(
+  filesystem: Filesystem,
+  plugins: Plugin[],
+  folderPath: string,
+  jsonPath: string,
+): Promise<void> {
+  try {
+    const raw = await filesystem.readFile(jsonPath);
+    const entry: PluginEntry = JSON.parse(raw);
+    const entrySource = entry.toolUrl ?? entry.source;
+    if (!entry.type || !entry.name || !entrySource) return;
+    const sourcePath = folderPath ? `${folderPath}/${entrySource}` : entrySource;
+    const { type, name, description, toolUrl, schemaUrl, source, ...metadata } = entry;
+    const resolvedSchemaUrl = schemaUrl
+      ? filesystem.getUrlOfFile(folderPath ? `${folderPath}/${schemaUrl}` : schemaUrl)
+      : undefined;
+    plugins.push({
+      type,
+      name,
+      description: description ?? "",
+      source: filesystem.getUrlOfFile(sourcePath),
+      folder: folderPath,
+      ...(resolvedSchemaUrl ? { schemaUrl: resolvedSchemaUrl } : {}),
+      ...metadata,
+    });
+  } catch {
+    // skip unreadable plugin JSON files
+  }
 }
 
 function pluginsEqual(a: Plugin[], b: Plugin[]): boolean {

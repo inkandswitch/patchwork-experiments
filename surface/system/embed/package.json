@@ -5,6 +5,9 @@
   "description": "LLM chat embed: toolbar button + frame shape",
   "exports": {
     "./button": "./button.js",
-    "./tool": "./tool.js"
+    "./tool": "./tool.js",
+    "./tool.json": "./tool.json",
+    "./button.json": "./button.json",
+    "./schema.json": "./schema.json"
   }
 }

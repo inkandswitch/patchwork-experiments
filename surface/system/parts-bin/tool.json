@@ -1,0 +1,7 @@
+{
+  "type": "tool",
+  "name": "Parts Bin",
+  "description": "Scrollable panel showing all examples with click-to-place",
+  "toolUrl": "./tool.js",
+  "schemaUrl": "./schema.js"
+}

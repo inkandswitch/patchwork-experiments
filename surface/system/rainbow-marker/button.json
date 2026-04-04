@@ -1,0 +1,6 @@
+{
+  "type": "tool",
+  "name": "Rainbow Marker Button",
+  "description": "Toolbar button for the rainbow marker drawing tool",
+  "toolUrl": "./button.js"
+}

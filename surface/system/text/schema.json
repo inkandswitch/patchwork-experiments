@@ -1,0 +1,7 @@
+{
+  "type": "schema",
+  "name": "Text Schema",
+  "description": "Text shape data schema (x, y, text)",
+  "source": "./schema.js",
+  "unlisted": true
+}

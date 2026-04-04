@@ -1,5 +1,5 @@
 import { createExamples } from '../examples.js';
-import { getToolUrl } from '../url.js';
+import { getViewUrl } from '../url.js';
 import { schema } from './schema.js';
 
 export { schema };
@@ -115,13 +115,13 @@ export default function mount(element) {
       const extracted = getAtDotPath(example.value, example.create);
       if (extracted && typeof extracted === 'object') {
         createValue = extracted;
-        if (typeof extracted.toolUrl === 'string') {
-          createTool = extracted.toolUrl;
+        if (typeof extracted.viewUrl === 'string') {
+          createTool = extracted.viewUrl;
         }
       }
     }
 
-    const toolPath = getToolUrl('../' + createTool, import.meta.url);
+    const viewPath = getViewUrl('../' + createTool, import.meta.url);
     const newWidth = createValue.width || example.width || DEFAULT_WIDTH;
     const newHeight = createValue.height || example.height || DEFAULT_HEIGHT;
 
@@ -130,7 +130,7 @@ export default function mount(element) {
       ...structuredClone(createValue),
       x: (currentData.x || 0) + (currentData.width || 280) + 20,
       y: currentData.y || 0,
-      toolUrl: toolPath,
+      viewUrl: viewPath,
       width: newWidth,
       height: newHeight,
     }));
@@ -192,7 +192,7 @@ export default function mount(element) {
     const inner = document.createElement('ref-view');
     inner.style.cssText = `display:block;width:${nativeWidth}px;height:${nativeHeight}px;transform:scale(${scale});transform-origin:top left;`;
     inner.setAttribute('ref-url', handle.url);
-    inner.setAttribute('tool-url', example.tool);
+    inner.setAttribute('view-url', example.tool);
     outer.appendChild(inner);
     card.appendChild(outer);
 

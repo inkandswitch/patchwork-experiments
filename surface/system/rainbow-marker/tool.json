@@ -1,0 +1,7 @@
+{
+  "type": "tool",
+  "name": "Rainbow Marker",
+  "description": "A freehand drawing tool that renders strokes as animated rainbow gradients",
+  "toolUrl": "./tool.js",
+  "schemaUrl": "./schema.js"
+}

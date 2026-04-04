@@ -1,0 +1,7 @@
+{
+  "type": "schema",
+  "name": "Eraser Trail",
+  "description": "Data schema for eraser trail effects",
+  "source": "./schema.js",
+  "unlisted": true
+}

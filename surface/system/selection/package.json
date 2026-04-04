@@ -4,6 +4,7 @@
   "type": "module",
   "description": "Selection / move shapes tool",
   "exports": {
-    "./button": "./button.js"
+    "./button": "./button.js",
+    "./button.json": "./button.json"
   }
 }

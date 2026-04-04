@@ -1,12 +1,12 @@
 import { z } from 'https://esm.sh/zod@4.3';
-import { getToolUrl } from '../url.js';
+import { getViewUrl } from '../url.js';
 
 const EmbedSchema = z
   .object({
     x: z.number(),
     y: z.number(),
-    toolUrl: z.string(),
-    embedToolUrl: z.string(),
+    viewUrl: z.string(),
+    embedViewUrl: z.string(),
     width: z.number(),
     height: z.number(),
     embedDocUrl: z.string().default(''),
@@ -18,8 +18,8 @@ export const schema = {
     return {
       x: 0,
       y: 0,
-      toolUrl: getToolUrl('./tool.js', import.meta.url),
-      embedToolUrl: '',
+      viewUrl: getViewUrl('./tool.json', import.meta.url),
+      embedViewUrl: '',
       width: 200,
       height: 150,
       embedDocUrl: '',

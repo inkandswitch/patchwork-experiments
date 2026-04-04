@@ -1,0 +1,6 @@
+{
+  "type": "tool",
+  "name": "Eraser Button",
+  "description": "Toolbar button for the eraser tool",
+  "toolUrl": "./button.js"
+}

@@ -1,0 +1,7 @@
+{
+  "type": "tool",
+  "name": "File Browser",
+  "description": "A file browser that lists files and folders in the system tree",
+  "toolUrl": "./tool.js",
+  "schemaUrl": "./schema.js"
+}

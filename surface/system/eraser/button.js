@@ -1,20 +1,20 @@
 
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, render, html } from '../solid.js';
-import { getToolUrl } from '../url.js';
+import { getViewUrl } from '../url.js';
 
 const TOOL_NAME = 'eraser';
-const eraserToolUrl = getToolUrl('./tool.js', import.meta.url);
+const eraserViewUrl = getViewUrl('./tool.json', import.meta.url);
 
 const ButtonShapeSchema = z.object({
   x: z.number(),
   y: z.number(),
-  toolUrl: z.string(),
+  viewUrl: z.string(),
 });
 
 export const schema = {
   init() {
-    return { x: 0, y: 0, toolUrl: getToolUrl('./button.js', import.meta.url) };
+    return { x: 0, y: 0, viewUrl: getViewUrl('./button.json', import.meta.url) };
   },
   parse(value) {
     return ButtonShapeSchema.parse(value);
@@ -61,7 +61,7 @@ export default function mount(element) {
       if (erasedIds.has(id)) continue;
       if (id === trailId) continue;
       // Don't erase eraser trails
-      if (shape.toolUrl && shape.toolUrl.includes('eraser/tool.js')) continue;
+      if (shape.viewUrl && shape.viewUrl.includes('eraser/tool.json')) continue;
 
       // Check if the eraser circle overlaps this shape
       const sx = shape.x || 0;
@@ -122,7 +122,7 @@ export default function mount(element) {
     canvas.ref.at('shapes', trailId).change(() => ({
       x: 0,
       y: 0,
-      toolUrl: eraserToolUrl,
+      viewUrl: eraserViewUrl,
       points: [[pos.x, pos.y]],
       createdAt: Date.now(),
     }));

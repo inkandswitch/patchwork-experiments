@@ -1,0 +1,7 @@
+{
+  "type": "skill",
+  "name": "Screenshot",
+  "description": "Take a screenshot of the canvas and get a data URL",
+  "source": "./SKILL.md",
+  "helpers": ["./screenshot.js"]
+}

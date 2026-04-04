@@ -6,7 +6,7 @@ A blank JSON document.
 
 ```json
 {
-  "tool": "json/tool.js",
+  "tool": "json/tool.json",
   "value": {},
   "width": 280,
   "height": 200
@@ -19,7 +19,7 @@ A typical user profile object.
 
 ```json
 {
-  "tool": "json/tool.js",
+  "tool": "json/tool.json",
   "value": {
     "name": "Ada Lovelace",
     "email": "ada@example.com",
@@ -38,7 +38,7 @@ A configuration object with nested sections.
 
 ```json
 {
-  "tool": "json/tool.js",
+  "tool": "json/tool.json",
   "value": {
     "database": {
       "host": "localhost",

@@ -1,0 +1,7 @@
+{
+  "type": "schema",
+  "name": "Sparkle Marker",
+  "description": "Data schema for sparkle marker strokes",
+  "source": "./schema.js",
+  "unlisted": true
+}

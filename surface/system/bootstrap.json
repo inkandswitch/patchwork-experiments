@@ -1,0 +1,6 @@
+{
+  "type": "tool",
+  "name": "Bootstrap",
+  "description": "Surface bootstrap entry point",
+  "toolUrl": "./bootstrap.js"
+}

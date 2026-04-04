@@ -1,0 +1,10 @@
+{
+  "name": "tic-tac-toe",
+  "private": true,
+  "type": "module",
+  "description": "A playable tic-tac-toe game",
+  "exports": {
+    "./tool.json": "./tool.json",
+    "./schema.json": "./schema.json"
+  }
+}

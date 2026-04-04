@@ -1,0 +1,7 @@
+{
+  "type": "schema",
+  "name": "Rectangle Schema",
+  "description": "Rectangle shape data schema (x, y, width, height)",
+  "source": "./schema.js",
+  "unlisted": true
+}

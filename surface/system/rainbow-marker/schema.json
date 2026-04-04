@@ -1,0 +1,6 @@
+{
+  "type": "schema",
+  "name": "Rainbow Marker",
+  "description": "Data schema for rainbow marker strokes",
+  "source": "./schema.js"
+}

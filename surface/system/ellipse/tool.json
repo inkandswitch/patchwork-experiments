@@ -1,0 +1,8 @@
+{
+  "type": "tool",
+  "name": "Ellipse",
+  "description": "Renders an ellipse on the canvas",
+  "toolUrl": "./tool.js",
+  "schemaUrl": "./schema.js",
+  "unlisted": true
+}

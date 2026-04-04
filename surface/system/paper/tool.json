@@ -1,0 +1,7 @@
+{
+  "type": "tool",
+  "name": "Paper",
+  "description": "Canvas layout that renders the shapes map and active tool",
+  "toolUrl": "./paper.js",
+  "schemaUrl": "./schema.js"
+}

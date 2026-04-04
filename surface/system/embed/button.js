@@ -1,22 +1,22 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, createSignal, render, html } from '../solid.js';
-import { getToolUrl, toToolPath } from '../url.js';
+import { getViewUrl, toViewPath } from '../url.js';
 import styles from './button.css' with { type: 'css' };
 
 document.adoptedStyleSheets = [...document.adoptedStyleSheets, styles];
 
 const TOOL_NAME = 'embed';
-const embedToolUrl = getToolUrl('./tool.js', import.meta.url);
+const embedViewUrl = getViewUrl('./tool.json', import.meta.url);
 
 const ButtonShapeSchema = z.object({
   x: z.number(),
   y: z.number(),
-  toolUrl: z.string(),
+  viewUrl: z.string(),
 });
 
 export const schema = {
   init() {
-    return { x: 0, y: 0, toolUrl: getToolUrl('./button.js', import.meta.url) };
+    return { x: 0, y: 0, viewUrl: getViewUrl('./button.json', import.meta.url) };
   },
   parse(value) {
     return ButtonShapeSchema.parse(value);
@@ -95,7 +95,7 @@ export default function mount(element) {
     const embedHandle = repo.create(initData);
     const embedDocUrl = embedHandle.url;
 
-    const matchedToolUrl = await findMatchingTool(initData);
+    const matchedViewUrl = await findMatchingView(initData);
 
     const rect = canvas.getBoundingClientRect();
     startX = event.clientX - rect.left;
@@ -105,8 +105,8 @@ export default function mount(element) {
     canvas.ref.at('shapes', dragId).change(() => ({
       x: startX,
       y: startY,
-      toolUrl: embedToolUrl,
-      embedToolUrl: matchedToolUrl,
+      viewUrl: embedViewUrl,
+      embedViewUrl: matchedViewUrl,
       embedDocUrl,
       width: 0,
       height: 0,
@@ -114,7 +114,7 @@ export default function mount(element) {
     canvas.setPointerCapture(event.pointerId);
   }
 
-  async function findMatchingTool(value) {
+  async function findMatchingView(value) {
     const tools = (toolPlugins() ?? []).filter((p) => p.schemaUrl);
     const matches = [];
     for (const tool of tools) {
@@ -127,9 +127,8 @@ export default function mount(element) {
         // schema incompatible
       }
     }
-    // Prefer tools with more specific schemas (more init fields) over passthrough schemas like JSON Viewer
     matches.sort((a, b) => b.fieldCount - a.fieldCount);
-    return matches[0]?.tool.source ? toToolPath(matches[0].tool.source) : '';
+    return matches[0]?.tool.source ? toViewPath(matches[0].tool.source) : '';
   }
 
   function onPointerMove(event) {

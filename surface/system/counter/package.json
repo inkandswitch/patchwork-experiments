@@ -1,0 +1,10 @@
+{
+  "name": "counter",
+  "private": true,
+  "type": "module",
+  "description": "A simple counter with increment, decrement, and reset",
+  "exports": {
+    "./tool.json": "./tool.json",
+    "./schema.json": "./schema.json"
+  }
+}

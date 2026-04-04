@@ -1,0 +1,6 @@
+{
+  "type": "schema",
+  "name": "LLM",
+  "description": "LLM panel data schema (config, runs with output blocks)",
+  "source": "./schema.js"
+}

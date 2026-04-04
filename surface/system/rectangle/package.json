@@ -5,6 +5,9 @@
   "description": "Rectangle drawing tool",
   "exports": {
     "./button": "./button.js",
-    "./tool": "./tool.js"
+    "./tool": "./tool.js",
+    "./tool.json": "./tool.json",
+    "./button.json": "./button.json",
+    "./schema.json": "./schema.json"
   }
 }

@@ -1,0 +1,11 @@
+{
+  "name": "sparkle-marker",
+  "private": true,
+  "type": "module",
+  "description": "A sparkly drawing marker with animated sparkle effects",
+  "exports": {
+    "./tool.json": "./tool.json",
+    "./schema.json": "./schema.json",
+    "./button.json": "./button.json"
+  }
+}

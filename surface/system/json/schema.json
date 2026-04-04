@@ -1,0 +1,7 @@
+{
+  "type": "schema",
+  "name": "JSON Schema",
+  "description": "Passthrough schema that accepts any object",
+  "source": "./schema.js",
+  "unlisted": true
+}

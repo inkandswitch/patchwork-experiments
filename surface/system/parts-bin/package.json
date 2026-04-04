@@ -1,0 +1,10 @@
+{
+  "name": "parts-bin",
+  "private": true,
+  "type": "module",
+  "description": "Scrollable panel showing all examples with click-to-place",
+  "exports": {
+    "./tool.json": "./tool.json",
+    "./schema.json": "./schema.json"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "type": "tool",
+  "name": "Line Button",
+  "description": "Toolbar button for the line drawing tool",
+  "toolUrl": "./button.js"
+}

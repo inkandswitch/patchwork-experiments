@@ -1,0 +1,6 @@
+{
+  "type": "tool",
+  "name": "Text Button",
+  "description": "Toolbar button for the text placement tool",
+  "toolUrl": "./button.js"
+}

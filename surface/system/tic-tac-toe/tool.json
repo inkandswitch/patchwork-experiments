@@ -1,0 +1,7 @@
+{
+  "type": "tool",
+  "name": "Tic Tac Toe",
+  "description": "A playable tic-tac-toe game",
+  "toolUrl": "./tool.js",
+  "schemaUrl": "./schema.js"
+}

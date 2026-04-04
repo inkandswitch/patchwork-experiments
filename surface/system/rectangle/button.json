@@ -1,0 +1,6 @@
+{
+  "type": "tool",
+  "name": "Rectangle Button",
+  "description": "Toolbar button for the rectangle drawing tool",
+  "toolUrl": "./button.js"
+}

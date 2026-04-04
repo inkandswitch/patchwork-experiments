@@ -1,0 +1,10 @@
+{
+  "name": "json",
+  "private": true,
+  "type": "module",
+  "description": "JSON viewer tool",
+  "exports": {
+    "./tool.json": "./tool.json",
+    "./schema.json": "./schema.json"
+  }
+}

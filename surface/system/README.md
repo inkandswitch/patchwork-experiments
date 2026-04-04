@@ -4,7 +4,7 @@ This tree is the **surface system**: the collaborative layer where people work i
 
 ## What you are looking at
 
-You work in an environment where you can **create and edit documents** (persistent, mergeable state) and **evolve the system** (how those documents are shown and edited) in the same spirit: the implementation is part of the same world you inspect. To understand a feature, **read the source** next to this README -- typically `tool.js` for how a piece of state is rendered, and `plugins.json` for the tool's metadata.
+You work in an environment where you can **create and edit documents** (persistent, mergeable state) and **evolve the system** (how those documents are shown and edited) in the same spirit: the implementation is part of the same world you inspect. To understand a feature, **read the source** next to this README -- typically `tool.js` for how a piece of state is rendered, and `package.json` exports for the tool's metadata (individual JSON descriptor files like `tool.json`, `schema.json`).
 
 ## Folder layout
 
@@ -12,7 +12,7 @@ You work in an environment where you can **create and edit documents** (persiste
 |------|------|
 | **`bootstrap.js`** | Default entry: mounts the paper surface on the frame's ref (nested `ref-view` so the document ref stays the frame). |
 | **`paper/`** | Lays out the `shapes` map, active tool, and selection highlights. |
-| **`line/`, `rectangle/`, `text/`, `embed/`, `selection/`, `llm/`** | One folder per capability: renderer (`tool.js`), `schema.js` (data shape), and `plugins.json` (metadata). |
+| **`line/`, `rectangle/`, `text/`, `embed/`, `selection/`, `llm/`** | One folder per capability: renderer (`tool.js`), `schema.js` (data shape), `package.json` (exports), and JSON descriptors (`tool.json`, `schema.json`). |
 | **`guide/`** | LLM guide: `README.md` is the system prompt; each subfolder is a skill with a `SKILL.md` and optional `.js` helpers (e.g. `guide/paper/`, `guide/screenshot/`). The LLM prompt lists skill names and paths; the LLM reads them on demand. |
 | **`solid.js`** | Shared Solid helpers (`render`, `html`, `useRef`, ...) used across tools. |
 
@@ -29,7 +29,7 @@ When something should be **its own artifact** -- standalone, **shareable on its 
 To **show** a slice of document state, the host uses a **`ref-view`** element. You give it:
 
 - **`ref-url`** -- Which document path (which ref) to bind.
-- **`tool-url`** -- Which **tool module** should mount there (JavaScript that receives the element, subscribes to `element.ref`, and renders UI).
+- **`view-url`** -- Which **view descriptor** (JSON file) should mount there. The descriptor contains a `toolUrl` pointing to the JavaScript module that receives the element, subscribes to `element.ref`, and renders UI.
 
 The tool is responsible for interpreting that ref's shape (validation, defaults, Solid UI). Different paths can use different tools; the same ref can be nested (e.g. bootstrap pointing at paper on the frame ref) so the outer and inner surfaces share one underlying document when that is what you want.
 

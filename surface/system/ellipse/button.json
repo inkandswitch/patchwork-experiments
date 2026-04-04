@@ -1,0 +1,6 @@
+{
+  "type": "tool",
+  "name": "Ellipse Button",
+  "description": "Toolbar button for the ellipse drawing tool",
+  "toolUrl": "./button.js"
+}

@@ -1,0 +1,7 @@
+{
+  "type": "schema",
+  "name": "Ellipse Schema",
+  "description": "Ellipse shape data schema (x, y, width, height)",
+  "source": "./schema.js",
+  "unlisted": true
+}

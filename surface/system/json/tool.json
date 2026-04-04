@@ -1,0 +1,7 @@
+{
+  "type": "tool",
+  "name": "JSON Viewer",
+  "description": "Renders the document value as formatted JSON",
+  "toolUrl": "./tool.js",
+  "schemaUrl": "./schema.js"
+}

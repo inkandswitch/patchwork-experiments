@@ -6,10 +6,10 @@ The toolbar button that opens the embed type menu and activates the embed placem
 
 ```json
 {
-  "tool": "paper/paper.js",
+  "tool": "paper/tool.json",
   "value": {
     "shapes": {
-      "btn": { "x": 10, "y": 10, "toolUrl": "embed/button.js" }
+      "btn": { "x": 10, "y": 10, "viewUrl": "embed/button.json" }
     }
   },
   "width": 200,

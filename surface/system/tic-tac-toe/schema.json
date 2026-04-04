@@ -1,0 +1,6 @@
+{
+  "type": "schema",
+  "name": "Tic Tac Toe",
+  "description": "Data schema for tic-tac-toe game",
+  "source": "./schema.js"
+}

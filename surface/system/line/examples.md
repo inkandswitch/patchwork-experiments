@@ -6,9 +6,9 @@ A short diagonal line.
 
 ```json
 {
-  "tool": "line/tool.js",
+  "tool": "line/tool.json",
   "value": {
-    "x": 0, "y": 0, "toolUrl": "line/tool.js",
+    "x": 0, "y": 0, "viewUrl": "line/tool.json",
     "points": [[10, 10, 0.5], [50, 80, 0.7], [120, 40, 0.6], [180, 90, 0.5]]
   },
   "width": 200,
@@ -22,9 +22,9 @@ A zigzag pattern across the canvas.
 
 ```json
 {
-  "tool": "line/tool.js",
+  "tool": "line/tool.json",
   "value": {
-    "x": 0, "y": 0, "toolUrl": "line/tool.js",
+    "x": 0, "y": 0, "viewUrl": "line/tool.json",
     "points": [[10, 80, 0.5], [50, 10, 0.6], [90, 80, 0.5], [130, 10, 0.6], [170, 80, 0.5], [210, 10, 0.6], [250, 80, 0.5]]
   },
   "width": 270,
@@ -38,10 +38,10 @@ The toolbar button that activates the freehand line drawing tool.
 
 ```json
 {
-  "tool": "paper/paper.js",
+  "tool": "paper/tool.json",
   "value": {
     "shapes": {
-      "btn": { "x": 10, "y": 10, "toolUrl": "line/button.js" }
+      "btn": { "x": 10, "y": 10, "viewUrl": "line/button.json" }
     }
   },
   "width": 200,

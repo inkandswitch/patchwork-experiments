@@ -7,7 +7,7 @@ import type { RefViewHostElement } from "./ref-view";
 import type { SurfaceDoc } from "./datatype";
 
 const DEFAULT_SOURCE_FOLDER = "automerge:4FwenFcEMbsmjGxvYAuT5U8mLi8m" as AutomergeUrl;
-const BOOTSTRAP_TOOL_URL = "bootstrap.js";
+const BOOTSTRAP_VIEW_URL = "bootstrap.json";
 
 const repo = (globalThis as any).repo;
 (globalThis as any).findRef = findRef;
@@ -39,7 +39,7 @@ export function SurfaceTool(
 
       const frameRef = await findRef(repo, frameDocUrl);
       const rv = document.createElement("ref-view") as RefViewHostElement;
-      rv.setAttribute("tool-url", BOOTSTRAP_TOOL_URL);
+      rv.setAttribute("view-url", BOOTSTRAP_VIEW_URL);
       rv.setAttribute("ref-url", frameRef.url);
       rv.style.cssText = "display:block;width:100%;height:100%;min-height:0;";
       element.appendChild(rv);

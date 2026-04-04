@@ -1,0 +1,6 @@
+{
+  "type": "schema",
+  "name": "Counter",
+  "description": "Data schema for counter tool",
+  "source": "./schema.js"
+}

@@ -1,0 +1,7 @@
+{
+  "type": "schema",
+  "name": "Line Schema",
+  "description": "Line shape data schema (x, y, points)",
+  "source": "./schema.js",
+  "unlisted": true
+}

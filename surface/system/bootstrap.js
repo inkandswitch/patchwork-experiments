@@ -1,14 +1,14 @@
 import { render, html } from './solid.js';
-import { getToolUrl } from './url.js';
+import { getViewUrl } from './url.js';
 
-const paperToolUrl = getToolUrl('./paper/paper.js', import.meta.url);
+const paperViewUrl = getViewUrl('./paper/tool.json', import.meta.url);
 
 export default function mount(element) {
   const refUrl = element.ref.url;
   return render(
     () =>
       html`<ref-view
-        tool-url=${paperToolUrl}
+        view-url=${paperViewUrl}
         ref-url=${refUrl}
         style=${{
           display: 'block',

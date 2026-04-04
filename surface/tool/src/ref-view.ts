@@ -6,7 +6,7 @@ import type { Repo } from "@automerge/automerge-repo";
 
 console.log("ref-view.ts loaded");
 
-const ATTR_TOOL = "tool-url";
+const ATTR_VIEW = "view-url";
 const ATTR_REF = "ref-url";
 
 export type RefViewHostElement = HTMLElement & {
@@ -19,6 +19,11 @@ export type RefViewHostElement = HTMLElement & {
 type MountModule = {
   default: (element: RefViewHostElement) => void | (() => void);
   schema?: Schema<unknown>;
+};
+
+type ViewDescriptor = {
+  toolUrl?: string;
+  [key: string]: unknown;
 };
 
 /**
@@ -35,8 +40,8 @@ export function registerRefView(
     #cleanup: (() => void) | null = null;
     #mountAbort: AbortController | null = null;
     #ref: Ref | null = null;
-    #toolRef: Ref<string> | null = null;
-    #toolUnsub: (() => void) | null = null;
+    #viewRef: Ref<string> | null = null;
+    #viewUnsub: (() => void) | null = null;
     #folderCleanup: (() => void) | null = null;
 
     get filesystem(): Filesystem {
@@ -48,7 +53,7 @@ export function registerRefView(
     }
 
     static get observedAttributes(): string[] {
-      return [ATTR_TOOL, ATTR_REF];
+      return [ATTR_VIEW, ATTR_REF];
     }
 
     get ref(): Ref {
@@ -61,23 +66,23 @@ export function registerRefView(
       return (host as RefViewElement | null) ?? null;
     }
 
-    get toolUrl(): string {
-      return this.getAttribute(ATTR_TOOL) ?? "";
+    get viewUrl(): string {
+      return this.getAttribute(ATTR_VIEW) ?? "";
     }
 
-    set toolUrl(value: string | Ref<string> | null | undefined) {
+    set viewUrl(value: string | Ref<string> | null | undefined) {
       if (value instanceof Ref) {
-        this.#toolRef = value as Ref<string>;
-        this.removeAttribute(ATTR_TOOL);
+        this.#viewRef = value as Ref<string>;
+        this.removeAttribute(ATTR_VIEW);
         if (this.isConnected) this.#scheduleMount();
         return;
       }
-      this.#toolRef = null;
+      this.#viewRef = null;
       const v = value == null ? "" : String(value);
-      const cur = this.getAttribute(ATTR_TOOL) ?? "";
+      const cur = this.getAttribute(ATTR_VIEW) ?? "";
       if (v === cur) return;
-      if (v === "") this.removeAttribute(ATTR_TOOL);
-      else this.setAttribute(ATTR_TOOL, v);
+      if (v === "") this.removeAttribute(ATTR_VIEW);
+      else this.setAttribute(ATTR_VIEW, v);
     }
 
     get refUrl(): string {
@@ -120,9 +125,9 @@ export function registerRefView(
 
     #teardown(): void {
       this.#ref = null;
-      if (this.#toolUnsub) {
-        this.#toolUnsub();
-        this.#toolUnsub = null;
+      if (this.#viewUnsub) {
+        this.#viewUnsub();
+        this.#viewUnsub = null;
       }
       if (this.#folderCleanup) {
         this.#folderCleanup();
@@ -158,17 +163,17 @@ export function registerRefView(
         return;
       }
 
-      let toolUrl: string;
-      if (this.#toolRef) {
-        const val = this.#toolRef.value();
+      let viewUrl: string;
+      if (this.#viewRef) {
+        const val = this.#viewRef.value();
         if (typeof val !== "string" || !val) {
           this.replaceChildren();
           return;
         }
-        toolUrl = val;
+        viewUrl = val;
 
-        let current = toolUrl;
-        this.#toolUnsub = this.#toolRef.subscribe((newVal) => {
+        let current = viewUrl;
+        this.#viewUnsub = this.#viewRef.subscribe((newVal) => {
           const newUrl = typeof newVal === "string" ? newVal : "";
           if (newUrl && newUrl !== current) {
             current = newUrl;
@@ -176,8 +181,8 @@ export function registerRefView(
           }
         });
       } else {
-        toolUrl = this.toolUrl;
-        if (!toolUrl) {
+        viewUrl = this.viewUrl;
+        if (!viewUrl) {
           this.replaceChildren();
           return;
         }
@@ -191,34 +196,31 @@ export function registerRefView(
 
         this.#ref = ref;
 
-        console.log("[ref-view] resolving toolUrl:", toolUrl);
+        const toolUrl = await resolveToolUrlFromView(filesystem, viewUrl);
+        if (this.#stale(signal)) return;
+
         const resolvedToolUrl = await filesystem.resolveToolUrl(toolUrl);
         if (this.#stale(signal)) return;
-        console.log("[ref-view] resolved →", resolvedToolUrl);
 
-        const toolParts = toolUrl.split("/");
-        const watchPath = toolParts.length > 1 ? toolParts[0] : toolUrl;
+        const viewParts = viewUrl.split("/");
+        const watchPath = viewParts.length > 1 ? viewParts[0] : viewUrl;
         const folderHandle = await filesystem.getDocHandle(watchPath);
         if (this.#stale(signal)) return;
 
         let lastResolvedUrl = resolvedToolUrl;
         let lastHeads = folderHandle.heads().join("|");
-        console.log("[ref-view] watching folder for", toolUrl, "path:", watchPath || "(root)", "heads:", lastHeads);
         const onFolderChange = () => {
           const newHeads = folderHandle.heads().join("|");
           const headsChanged = newHeads !== lastHeads;
-          console.log("[ref-view] folder change event for", toolUrl, "headsChanged:", headsChanged, "old:", lastHeads.slice(0, 12), "new:", newHeads.slice(0, 12));
           if (!headsChanged) return;
           lastHeads = newHeads;
           void (async () => {
             try {
-              const newUrl = await filesystem.resolveToolUrl(toolUrl);
+              const newToolUrl = await resolveToolUrlFromView(filesystem, viewUrl);
+              const newUrl = await filesystem.resolveToolUrl(newToolUrl);
               if (newUrl !== lastResolvedUrl) {
-                console.log("[ref-view] remounting", toolUrl, "URL changed");
                 lastResolvedUrl = newUrl;
                 this.#scheduleMount();
-              } else {
-                console.log("[ref-view] skipping remount for", toolUrl, "URL unchanged");
               }
             } catch {
               // ignore resolution errors during change detection
@@ -228,7 +230,6 @@ export function registerRefView(
         folderHandle.on("change", onFolderChange);
         this.#folderCleanup = () => folderHandle.off("change", onFolderChange);
 
-        console.log("[ref-view] importing:", resolvedToolUrl);
         const mod = (await import(/* @vite-ignore */ resolvedToolUrl)) as MountModule;
         if (this.#stale(signal)) return;
 
@@ -252,4 +253,17 @@ export function registerRefView(
   }
 
   customElements.define("ref-view", RefViewElement);
+}
+
+async function resolveToolUrlFromView(filesystem: Filesystem, viewUrl: string): Promise<string> {
+  if (!viewUrl.endsWith(".json")) {
+    return viewUrl;
+  }
+  const raw = await filesystem.readFile(viewUrl);
+  const descriptor: ViewDescriptor = JSON.parse(raw);
+  if (!descriptor.toolUrl) {
+    throw new Error(`view descriptor ${viewUrl} has no toolUrl`);
+  }
+  const folderPath = viewUrl.includes("/") ? viewUrl.slice(0, viewUrl.lastIndexOf("/")) : "";
+  return folderPath ? `${folderPath}/${descriptor.toolUrl}` : descriptor.toolUrl;
 }

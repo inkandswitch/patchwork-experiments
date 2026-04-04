@@ -28,7 +28,7 @@ export default function mount(element) {
             })}
           >
             <ref-view
-              tool-url=${() => shapes[id]?.toolUrl}
+              view-url=${() => shapes[id]?.viewUrl}
               ref-url=${ref.at('shapes', id).url}
             />
           </div>`

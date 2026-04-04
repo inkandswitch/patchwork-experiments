@@ -7,6 +7,8 @@
     "./tool": "./tool.js",
     "./process": "./process.js",
     "./parser": "./parser.js",
-    "./system-prompt": "./system-prompt.js"
+    "./system-prompt": "./system-prompt.js",
+    "./tool.json": "./tool.json",
+    "./schema.json": "./schema.json"
   }
 }

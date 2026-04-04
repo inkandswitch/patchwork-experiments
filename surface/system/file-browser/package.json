@@ -1,0 +1,10 @@
+{
+  "name": "file-browser",
+  "private": true,
+  "type": "module",
+  "description": "A file browser that lists files and folders in the system tree",
+  "exports": {
+    "./tool.json": "./tool.json",
+    "./schema.json": "./schema.json"
+  }
+}

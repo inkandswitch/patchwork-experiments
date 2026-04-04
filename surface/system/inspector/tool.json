@@ -1,0 +1,7 @@
+{
+  "type": "tool",
+  "name": "Inspector",
+  "description": "Inspect tools on the canvas - hover to see names, click to view source",
+  "toolUrl": "./tool.js",
+  "schemaUrl": "./schema.js"
+}

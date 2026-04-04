@@ -1,0 +1,9 @@
+{
+  "name": "guide-screenshot",
+  "private": true,
+  "type": "module",
+  "description": "Screenshot skill",
+  "exports": {
+    "./skill.json": "./skill.json"
+  }
+}

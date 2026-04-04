@@ -1,0 +1,8 @@
+{
+  "type": "tool",
+  "name": "Rectangle",
+  "description": "Renders a rectangle on the canvas",
+  "toolUrl": "./tool.js",
+  "schemaUrl": "./schema.js",
+  "unlisted": true
+}

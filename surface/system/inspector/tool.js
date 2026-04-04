@@ -80,11 +80,11 @@ export default function mount(element) {
   function extractToolName(el) {
     try {
       const val = el.ref.value();
-      const tUrl = val.embedToolUrl || val.toolUrl || '';
-      if (tUrl) {
-        const parts = tUrl.split('/');
-        const toolIdx = parts.indexOf('tool.js');
-        if (toolIdx > 0) return parts[toolIdx - 1];
+      const vUrl = val.embedViewUrl || val.viewUrl || '';
+      if (vUrl) {
+        const parts = vUrl.split('/');
+        const jsonIdx = parts.indexOf('tool.json');
+        if (jsonIdx > 0) return parts[jsonIdx - 1];
         return parts[parts.length - 1] || tUrl;
       }
       if (el.tagName === 'PATCHWORK-VIEW') {
@@ -97,7 +97,7 @@ export default function mount(element) {
   function extractToolPath(el) {
     try {
       const val = el.ref.value();
-      return val.embedToolUrl || val.toolUrl || el.tagName.toLowerCase();
+      return val.embedViewUrl || val.viewUrl || el.tagName.toLowerCase();
     } catch(e) {
       return el.tagName.toLowerCase();
     }

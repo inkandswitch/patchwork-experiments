@@ -6,8 +6,8 @@ A blank text field.
 
 ```json
 {
-  "tool": "text/tool.js",
-  "value": { "x": 0, "y": 0, "toolUrl": "text/tool.js", "text": "" },
+  "tool": "text/tool.json",
+  "value": { "x": 0, "y": 0, "viewUrl": "text/tool.json", "text": "" },
   "width": 250,
   "height": 60
 }
@@ -19,8 +19,8 @@ A simple greeting.
 
 ```json
 {
-  "tool": "text/tool.js",
-  "value": { "x": 0, "y": 0, "toolUrl": "text/tool.js", "text": "Hello, world!" },
+  "tool": "text/tool.json",
+  "value": { "x": 0, "y": 0, "viewUrl": "text/tool.json", "text": "Hello, world!" },
   "width": 250,
   "height": 60
 }
@@ -32,8 +32,8 @@ A text block with multiple lines.
 
 ```json
 {
-  "tool": "text/tool.js",
-  "value": { "x": 0, "y": 0, "toolUrl": "text/tool.js", "text": "Meeting notes:\n- Review Q3 goals\n- Discuss roadmap\n- Assign action items" },
+  "tool": "text/tool.json",
+  "value": { "x": 0, "y": 0, "viewUrl": "text/tool.json", "text": "Meeting notes:\n- Review Q3 goals\n- Discuss roadmap\n- Assign action items" },
   "width": 280,
   "height": 120
 }
@@ -45,10 +45,10 @@ The toolbar button that activates the text placement tool.
 
 ```json
 {
-  "tool": "paper/paper.js",
+  "tool": "paper/tool.json",
   "value": {
     "shapes": {
-      "btn": { "x": 10, "y": 10, "toolUrl": "text/button.js" }
+      "btn": { "x": 10, "y": 10, "viewUrl": "text/button.json" }
     }
   },
   "width": 200,

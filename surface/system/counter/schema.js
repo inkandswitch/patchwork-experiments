@@ -1,6 +1,6 @@
 
 import { z } from 'https://esm.sh/zod@4.3';
-import { getToolUrl } from '../url.js';
+import { getViewUrl } from '../url.js';
 
 const CounterSchema = z.object({
   count: z.number(),

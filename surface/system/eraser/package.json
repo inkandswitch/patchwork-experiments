@@ -1,0 +1,11 @@
+{
+  "name": "eraser",
+  "private": true,
+  "type": "module",
+  "description": "Eraser tool that removes shapes and leaves a fading trail",
+  "exports": {
+    "./tool.json": "./tool.json",
+    "./schema.json": "./schema.json",
+    "./button.json": "./button.json"
+  }
+}

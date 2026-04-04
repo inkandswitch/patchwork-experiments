@@ -1,5 +1,5 @@
 import { from, createSignal, render, html } from '../solid.js';
-import { toToolPath } from '../url.js';
+import { toViewPath } from '../url.js';
 import { schema } from './schema.js';
 import styles from './shape.css' with { type: 'css' };
 
@@ -107,9 +107,9 @@ export default function mount(element) {
 
   function onToolChange(event) {
     const source = event.target.value;
-    if (source && source !== data()?.embedToolUrl) {
+    if (source && source !== data()?.embedViewUrl) {
       ref.change((d) => {
-        d.embedToolUrl = source;
+        d.embedViewUrl = source;
       });
     }
   }
@@ -138,8 +138,8 @@ export default function mount(element) {
     return data()?.embedDocUrl;
   }
 
-  function embedToolUrl() {
-    return data()?.embedToolUrl;
+  function embedViewUrl() {
+    return data()?.embedViewUrl;
   }
 
   function embedWidth() {
@@ -162,14 +162,14 @@ export default function mount(element) {
             class="embed-tool-select"
             onChange=${onToolChange}
             onPointerDown=${(e) => e.stopPropagation()}
-            value=${embedToolUrl}
+            value=${embedViewUrl}
           >
             ${() =>
               checkAndUpdate().map(
                 (p) =>
                   html`<option
-                    value=${toToolPath(p.source)}
-                    selected=${toToolPath(p.source) === embedToolUrl()}
+                    value=${toViewPath(p.source)}
+                    selected=${toViewPath(p.source) === embedViewUrl()}
                   >${p.name}</option>`,
               )}
           </select>
@@ -187,7 +187,7 @@ export default function mount(element) {
           ${() =>
           embedDocUrl()
             ? html`<ref-view
-                    tool-url=${embedToolUrl}
+                    view-url=${embedViewUrl}
                     ref-url=${embedDocUrl}
                   />`
             : html`<div class="embed-shape-placeholder">

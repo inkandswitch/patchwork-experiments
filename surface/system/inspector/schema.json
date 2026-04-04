@@ -1,0 +1,6 @@
+{
+  "type": "schema",
+  "name": "Inspector",
+  "description": "Data schema for the inspector tool",
+  "source": "./schema.js"
+}

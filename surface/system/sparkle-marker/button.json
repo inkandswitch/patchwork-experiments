@@ -1,0 +1,6 @@
+{
+  "type": "tool",
+  "name": "Sparkle Marker Button",
+  "description": "Toolbar button for the sparkle marker drawing tool",
+  "toolUrl": "./button.js"
+}

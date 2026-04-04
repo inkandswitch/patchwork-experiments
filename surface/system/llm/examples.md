@@ -6,7 +6,7 @@ An empty LLM chat with default configuration.
 
 ```json
 {
-  "tool": "llm/tool.js",
+  "tool": "llm/tool.json",
   "value": {
     "config": {
       "apiUrl": "https://openrouter.ai/api/v1",
@@ -25,7 +25,7 @@ A chat session with a pre-filled prompt and response.
 
 ```json
 {
-  "tool": "llm/tool.js",
+  "tool": "llm/tool.json",
   "value": {
     "config": {
       "apiUrl": "https://openrouter.ai/api/v1",

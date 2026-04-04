@@ -1,19 +1,19 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, render, html } from '../solid.js';
-import { getToolUrl } from '../url.js';
+import { getViewUrl } from '../url.js';
 
 const TOOL_NAME = 'rectangle';
-const rectangleToolUrl = getToolUrl('./tool.js', import.meta.url);
+const rectangleViewUrl = getViewUrl('./tool.json', import.meta.url);
 
 const ButtonShapeSchema = z.object({
   x: z.number(),
   y: z.number(),
-  toolUrl: z.string(),
+  viewUrl: z.string(),
 });
 
 export const schema = {
   init() {
-    return { x: 0, y: 0, toolUrl: getToolUrl('./button.js', import.meta.url) };
+    return { x: 0, y: 0, viewUrl: getViewUrl('./button.json', import.meta.url) };
   },
   parse(value) {
     return ButtonShapeSchema.parse(value);
@@ -60,7 +60,7 @@ export default function mount(element) {
     canvas.ref.at('shapes', dragId).change(() => ({
       x: startX,
       y: startY,
-      toolUrl: rectangleToolUrl,
+      viewUrl: rectangleViewUrl,
       width: 0,
       height: 0,
     }));

@@ -1,0 +1,7 @@
+{
+  "type": "tool",
+  "name": "Eraser",
+  "description": "Eraser tool that removes shapes and leaves a fading trail",
+  "toolUrl": "./tool.js",
+  "schemaUrl": "./schema.js"
+}

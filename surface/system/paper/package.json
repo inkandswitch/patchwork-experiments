@@ -1,0 +1,10 @@
+{
+  "name": "paper",
+  "private": true,
+  "type": "module",
+  "description": "Canvas layout that renders the shapes map and active tool",
+  "exports": {
+    "./tool.json": "./tool.json",
+    "./schema.json": "./schema.json"
+  }
+}

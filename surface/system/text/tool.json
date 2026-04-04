@@ -1,0 +1,8 @@
+{
+  "type": "tool",
+  "name": "Text",
+  "description": "Renders an editable text field on the canvas",
+  "toolUrl": "./tool.js",
+  "schemaUrl": "./schema.js",
+  "unlisted": true
+}

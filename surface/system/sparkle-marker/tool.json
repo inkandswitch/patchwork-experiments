@@ -1,0 +1,7 @@
+{
+  "type": "tool",
+  "name": "Sparkle Marker",
+  "description": "A sparkly drawing marker with animated sparkle effects",
+  "toolUrl": "./tool.js",
+  "schemaUrl": "./schema.js"
+}

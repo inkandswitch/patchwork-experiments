@@ -1,0 +1,10 @@
+{
+  "name": "inspector",
+  "private": true,
+  "type": "module",
+  "description": "Inspect tools on the canvas",
+  "exports": {
+    "./tool.json": "./tool.json",
+    "./schema.json": "./schema.json"
+  }
+}

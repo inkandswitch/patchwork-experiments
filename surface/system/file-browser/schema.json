@@ -1,0 +1,6 @@
+{
+  "type": "schema",
+  "name": "File Browser",
+  "description": "Data schema for the file browser tool",
+  "source": "./schema.js"
+}

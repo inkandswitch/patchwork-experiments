@@ -1,0 +1,8 @@
+{
+  "type": "tool",
+  "name": "Line",
+  "description": "Renders a freehand line stroke on the canvas",
+  "toolUrl": "./tool.js",
+  "schemaUrl": "./schema.js",
+  "unlisted": true
+}

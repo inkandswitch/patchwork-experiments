@@ -5,7 +5,7 @@ description: Create and manipulate shapes on the canvas—rectangles, lines, tex
 
 # Paper shapes
 
-Every visible object on the canvas is an entry in the `shapes` map on the frame ref. To create one, write a shape record under a unique id with at least `x`, `y`, and `toolUrl`. The `toolUrl` tells the host which module renders that shape.
+Every visible object on the canvas is an entry in the `shapes` map on the frame ref. To create one, write a shape record under a unique id with at least `x`, `y`, and `viewUrl`. The `viewUrl` tells the host which view descriptor renders that shape.
 
 ## Reading shapes
 
@@ -34,19 +34,9 @@ const textKeys = Object.keys(shapes).filter(id => shapes[id].text !== undefined)
 console.log(textKeys);
 ```
 
-## Resolving tool URLs
+## View URLs
 
-Tool modules live under the system tree. Build absolute URLs from the filesystem:
-
-```js
-const systemBase = filesystem.getUrlOfFile('');
-
-function toolUrl(relativePath) {
-  return new URL(relativePath, systemBase).href;
-}
-```
-
-Then use `toolUrl('rectangle/tool.js')`, `toolUrl('line/tool.js')`, etc.
+Shapes use paths to view descriptors under the system tree, for example `rectangle/tool.json`, `line/tool.json`, `text/tool.json`.
 
 ## Rectangle
 
@@ -54,7 +44,7 @@ Then use `toolUrl('rectangle/tool.js')`, `toolUrl('line/tool.js')`, etc.
 type RectangleShape = {
   x: number;
   y: number;
-  toolUrl: string;
+  viewUrl: string;
   width: number;
   height: number;
 };
@@ -63,15 +53,10 @@ type RectangleShape = {
 Create:
 
 ```js
-const systemBase = filesystem.getUrlOfFile('');
-function toolUrl(relativePath) {
-  return new URL(relativePath, systemBase).href;
-}
-
 element.ref.at('shapes', 'rect_1').change(() => ({
   x: 50,
   y: 50,
-  toolUrl: toolUrl('rectangle/tool.js'),
+  viewUrl: 'rectangle/tool.json',
   width: 200,
   height: 120,
 }));
@@ -96,7 +81,7 @@ type LinePoint = [offsetX: number, offsetY: number, pressure: number];
 type LineShape = {
   x: number;
   y: number;
-  toolUrl: string;
+  viewUrl: string;
   points: LinePoint[];
 };
 ```
@@ -104,16 +89,11 @@ type LineShape = {
 Create:
 
 ```js
-const systemBase = filesystem.getUrlOfFile('');
-function toolUrl(relativePath) {
-  return new URL(relativePath, systemBase).href;
-}
-
 const strokeId = `line_${Date.now()}`;
 element.ref.at('shapes', strokeId).change(() => ({
   x: 100,
   y: 80,
-  toolUrl: toolUrl('line/tool.js'),
+  viewUrl: 'line/tool.json',
   points: [
     [0, 0, 0.5],
     [12, 4, 0.55],
@@ -138,7 +118,7 @@ element.ref.at('shapes', strokeId).change((shape) => {
 type TextShape = {
   x: number;
   y: number;
-  toolUrl: string;
+  viewUrl: string;
   text: string;
 };
 ```
@@ -146,15 +126,10 @@ type TextShape = {
 Create:
 
 ```js
-const systemBase = filesystem.getUrlOfFile('');
-function toolUrl(relativePath) {
-  return new URL(relativePath, systemBase).href;
-}
-
 element.ref.at('shapes', 'note_1').change(() => ({
   x: 120,
   y: 40,
-  toolUrl: toolUrl('text/tool.js'),
+  viewUrl: 'text/tool.json',
   text: 'Hello',
 }));
 ```
@@ -169,14 +144,14 @@ element.ref.at('shapes', 'note_1').change((shape) => {
 
 ## Embed (sub-surface)
 
-Embeds host another tool inside a bounded area. `embedToolUrl` is the inner tool; `embedDocUrl` is the document it binds to.
+Embeds host another tool inside a bounded area. `embedViewUrl` is the inner view; `embedDocUrl` is the document it binds to.
 
 ```ts
 type EmbedShape = {
   x: number;
   y: number;
-  toolUrl: string;
-  embedToolUrl: string;
+  viewUrl: string;
+  embedViewUrl: string;
   width: number;
   height: number;
   embedDocUrl: string;
@@ -186,11 +161,6 @@ type EmbedShape = {
 Create (with an LLM panel inside):
 
 ```js
-const systemBase = filesystem.getUrlOfFile('');
-function toolUrl(relativePath) {
-  return new URL(relativePath, systemBase).href;
-}
-
 const embedDoc = repo.create({
   config: { apiUrl: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-opus-4.6' },
   runs: [],
@@ -199,8 +169,8 @@ const embedDoc = repo.create({
 element.ref.at('shapes', 'embed_1').change(() => ({
   x: 20,
   y: 80,
-  toolUrl: toolUrl('embed/tool.js'),
-  embedToolUrl: toolUrl('llm/tool.js'),
+  viewUrl: 'embed/tool.json',
+  embedViewUrl: 'llm/tool.json',
   embedDocUrl: embedDoc.url,
   width: 320,
   height: 400,

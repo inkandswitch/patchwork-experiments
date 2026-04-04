@@ -1,0 +1,6 @@
+{
+  "type": "schema",
+  "name": "Parts Bin",
+  "description": "Data schema for parts bin panel",
+  "source": "./schema.js"
+}
