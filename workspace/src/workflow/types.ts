@@ -54,6 +54,7 @@ export type PlanDoc = {
 
 export type ValidationDoc = {
   planDocUrl: AutomergeUrl;
+  specDocUrl: AutomergeUrl;
   isValidated: boolean;
   headsByDocUrl: Record<AutomergeUrl, Heads>;
 };

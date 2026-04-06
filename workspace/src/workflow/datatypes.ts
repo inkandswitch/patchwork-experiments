@@ -1,5 +1,5 @@
 import type { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
-import type { PlanDoc, SpecDoc, WorkflowDoc } from './types';
+import type { PlanDoc, SpecDoc, ValidationDoc, WorkflowDoc } from './types';
 
 export type { WorkflowDoc } from './types';
 
@@ -26,4 +26,22 @@ export const SpecDatatype: DatatypeImplementation<SpecDoc> = {
       doc.spec.goal = title;
     }
   },
+};
+
+export const PlanDatatype: DatatypeImplementation<PlanDoc> = {
+  init() {},
+  getTitle(doc: PlanDoc) {
+    return doc.goal || 'Plan';
+  },
+  setTitle(doc: PlanDoc, title: string) {
+    doc.goal = title;
+  },
+};
+
+export const ValidationDatatype: DatatypeImplementation<ValidationDoc> = {
+  init() {},
+  getTitle(doc: ValidationDoc) {
+    return 'Validation for ' + doc.planDocUrl;
+  },
+  setTitle() {},
 };

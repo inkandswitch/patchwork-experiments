@@ -77,7 +77,7 @@ export const plugins: Plugin<any>[] = [
     name: 'Plan',
     icon: 'ListChecks',
     async load() {
-      const { PlanDatatype } = await import('./paul/plan/datatype');
+      const { PlanDatatype } = await import('./workflow/datatypes');
       return PlanDatatype;
     },
   } as Datatype,
@@ -139,6 +139,16 @@ export const plugins: Plugin<any>[] = [
     async load() {
       const { PaulWorkflowTemplateDatatype } = await import('./paul/workflow-template/datatype');
       return PaulWorkflowTemplateDatatype;
+    },
+  } as Datatype,
+  {
+    type: 'patchwork:datatype',
+    id: 'validation',
+    name: 'Validation',
+    icon: 'ShieldCheck',
+    async load() {
+      const { ValidationDatatype } = await import('./workflow/datatypes');
+      return ValidationDatatype;
     },
   } as Datatype,
   {
