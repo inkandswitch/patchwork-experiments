@@ -7,6 +7,8 @@ export type { WorkflowDoc } from '../../workflow/types';
 
 // TEMP: for now, we're using default hard-coded data to focus on the tool viewers
 import { createDefaultSpec } from '../default-data/default-spec';
+import { createDefaultPlan } from '../default-data/default-plan';
+import { createDefaultValidation } from '../default-data/default-validation';
 
 type FolderDoc = {
   '@patchwork'?: { type: string };
@@ -33,14 +35,20 @@ export const grjteWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> 
     doc.specElicitationDocUrl = elicitationHandle.url;
     doc.toolIds = {
       spec: 'grjte-spec-viewer',
-      // plan: 'grjte-plan-viewer',
+      plan: 'grjte-plan-viewer',
       // execution: 'grjte-execution-viewer',
-      // validation: 'grjte-validation-viewer',
+      validation: 'grjte-validation-viewer',
     };
 
     // TEMP: populate with default data
-    const { specDocUrl } = createDefaultSpec(repo);
+    const { specDocUrl, subSpecUrls } = createDefaultSpec(repo);
     doc.specDocUrl = specDocUrl;
+
+    const { planDocUrl, artifactDocUrls } = createDefaultPlan(repo, specDocUrl, subSpecUrls);
+    doc.planDocUrl = planDocUrl;
+
+    const { validationDocUrl } = createDefaultValidation(repo, planDocUrl, specDocUrl, artifactDocUrls);
+    doc.validationDocUrl = validationDocUrl;
   },
   getTitle() {
     return 'grjte Workflow Template';

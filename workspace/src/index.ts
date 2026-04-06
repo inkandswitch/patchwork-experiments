@@ -83,6 +83,16 @@ export const plugins: Plugin<any>[] = [
     },
   } satisfies Tool,
   {
+    type: 'patchwork:tool',
+    id: 'grjte-plan-viewer',
+    name: 'grjte Plan Viewer',
+    supportedDatatypes: ['plan'],
+    async load() {
+      const { PlanTool } = await import('./grjte/plan/tool');
+      return PlanTool;
+    },
+  } satisfies Tool,
+  {
     type: 'patchwork:datatype',
     id: 'plan',
     name: 'Plan',
@@ -182,6 +192,16 @@ export const plugins: Plugin<any>[] = [
       return grjteWorkflowTemplateDatatype;
     },
   } as Datatype,
+  {
+    type: 'patchwork:tool',
+    id: 'grjte-validation-viewer',
+    name: 'grjte Validation Viewer',
+    supportedDatatypes: ['validation'],
+    async load() {
+      const { ValidationTool } = await import('./grjte/validation/tool');
+      return ValidationTool;
+    },
+  } satisfies Tool,
   {
     type: 'patchwork:tool',
     id: 'elicitation-viewer',
