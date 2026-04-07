@@ -38,19 +38,17 @@ function CandidateView({ handle, repo }: { handle: DocHandle<CandidateDoc>; repo
   );
 
   const specGoal = () => specDoc()?.spec?.goal ?? 'Unknown spec';
-  const docEntries = () => Object.entries(doc()?.documents ?? {});
+  const documentsFolderUrl = () => doc()?.documentsFolderUrl;
 
   const [verificationResults] = createResource(
     () => {
       const d = doc();
-      if (!d?.specUrl) return null;
-      const entries = Object.entries(d.documents ?? {});
-      if (entries.length === 0) return null;
-      return { specUrl: d.specUrl, solutionUrl: entries[0][1] };
+      if (!d?.specUrl || !d?.documentsFolderUrl) return null;
+      return { specUrl: d.specUrl, documentsFolderUrl: d.documentsFolderUrl };
     },
     async (params) => {
       if (!params) return [];
-      return evaluateSolutionPerVerification(repo, params.specUrl, params.solutionUrl);
+      return evaluateSolutionPerVerification(repo, params.specUrl, params.documentsFolderUrl);
     },
   );
 
@@ -73,17 +71,13 @@ function CandidateView({ handle, repo }: { handle: DocHandle<CandidateDoc>; repo
         <div class="cand-body">
           <VerificationSection results={verificationResults() ?? []} repo={repo} />
 
-          <Show when={docEntries().length > 0}>
+          <Show when={documentsFolderUrl()}>
             <div class="cand-section">
               <div class="cand-section-header">Documents</div>
               <div class="cand-documents">
-                <For each={docEntries()}>
-                  {([_origUrl, copyUrl]) => (
-                    <div class="cand-doc-embed">
-                      <patchwork-view attr:doc-url={copyUrl} style="display:block;width:100%;min-height:150px;" />
-                    </div>
-                  )}
-                </For>
+                <div class="cand-doc-embed">
+                  <patchwork-view attr:doc-url={documentsFolderUrl()} style="display:block;width:100%;min-height:150px;" />
+                </div>
               </div>
             </div>
           </Show>

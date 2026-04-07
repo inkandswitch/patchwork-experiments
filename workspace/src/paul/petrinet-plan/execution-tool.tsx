@@ -355,7 +355,6 @@ function SolutionsView(props: { candidateTokens: TokenInstance[]; repo: Repo }) 
           <For each={entries()}>
             {({ tokenId, doc }) => {
               const isExpanded = () => expandedKey() === tokenId;
-              const docEntries = () => Object.entries(doc.documents ?? {});
               return (
                 <div class="p3n-candidate-card" classList={{ 'p3n-candidate-card-expanded': isExpanded() }}>
                   <div
@@ -367,13 +366,9 @@ function SolutionsView(props: { candidateTokens: TokenInstance[]; repo: Repo }) 
                     </span>
                     <span class="p3n-candidate-card-toggle">{isExpanded() ? '▾' : '▸'}</span>
                   </div>
-                  <Show when={isExpanded()}>
+                  <Show when={isExpanded() && doc.documentsFolderUrl}>
                     <div class="p3n-candidate-card-body">
-                      <For each={docEntries()}>
-                        {([_origUrl, copyUrl]) => (
-                          <patchwork-view attr:doc-url={copyUrl} style="display:block;width:100%;min-height:200px;" />
-                        )}
-                      </For>
+                      <patchwork-view attr:doc-url={doc.documentsFolderUrl} style="display:block;width:100%;min-height:200px;" />
                     </div>
                   </Show>
                 </div>

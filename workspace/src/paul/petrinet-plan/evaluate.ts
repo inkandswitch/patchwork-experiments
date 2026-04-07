@@ -28,6 +28,10 @@ type DatalogDoc = {
   constraints: StoredConstraint[];
 };
 
+type FolderDoc = {
+  docs: { type: string; name: string; url: AutomergeUrl }[];
+};
+
 export type EvalResult = {
   valid: boolean;
   violations: ConstraintViolation[];
@@ -42,14 +46,15 @@ export type PerVerificationResult = {
 export async function evaluateSolutionPerVerification(
   repo: Repo,
   subSpecUrl: string,
-  solutionDocUrl: string,
+  documentsFolderUrl: string,
 ): Promise<PerVerificationResult[]> {
   const specHandle = await repo.find<SpecDoc>(subSpecUrl as AutomergeUrl);
   const specDoc = await specHandle.doc();
   const verificationUrls = specDoc?.spec?.verificationUrls ?? [];
   if (verificationUrls.length === 0) return [];
 
-  const solutionFacts = await collectDatalogFacts(repo, [solutionDocUrl]);
+  const docUrls = await getDocUrlsFromFolder(repo, documentsFolderUrl);
+  const solutionFacts = await collectDatalogFacts(repo, docUrls);
 
   const results: PerVerificationResult[] = [];
   for (const vUrl of verificationUrls) {
@@ -66,14 +71,15 @@ export async function evaluateSolutionPerVerification(
 export async function evaluateSolution(
   repo: Repo,
   subSpecUrl: string,
-  solutionDocUrl: string,
+  documentsFolderUrl: string,
 ): Promise<EvalResult> {
   const specHandle = await repo.find<SpecDoc>(subSpecUrl as AutomergeUrl);
   const specDoc = await specHandle.doc();
   const verificationUrls = specDoc?.spec?.verificationUrls ?? [];
   if (verificationUrls.length === 0) return { valid: true, violations: [] };
 
-  const solutionFacts = await collectDatalogFacts(repo, [solutionDocUrl]);
+  const docUrls = await getDocUrlsFromFolder(repo, documentsFolderUrl);
+  const solutionFacts = await collectDatalogFacts(repo, docUrls);
 
   const allViolations: ConstraintViolation[] = [];
   for (const vUrl of verificationUrls) {
@@ -82,6 +88,14 @@ export async function evaluateSolution(
   }
 
   return { valid: allViolations.length === 0, violations: allViolations };
+}
+
+async function getDocUrlsFromFolder(repo: Repo, folderUrl: string): Promise<string[]> {
+  if (!folderUrl) return [];
+  const handle = await repo.find<FolderDoc>(folderUrl as AutomergeUrl);
+  const doc = await handle.doc();
+  if (!doc?.docs) return [];
+  return doc.docs.map((d) => d.url as string);
 }
 
 async function collectDatalogFacts(repo: Repo, docUrls: string[]): Promise<StoredFact[]> {

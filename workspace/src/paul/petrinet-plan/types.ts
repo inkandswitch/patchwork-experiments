@@ -13,7 +13,7 @@ export type SystemPromptUrls = {
 export type CandidateDoc = {
   '@patchwork': { type: 'candidate' };
   specUrl: string;
-  documents: { [url: string]: string };
+  documentsFolderUrl: string;
 };
 
 export type PetriNetPlanDoc = {

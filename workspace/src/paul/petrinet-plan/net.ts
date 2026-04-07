@@ -4,6 +4,23 @@ import { evaluateSolution } from './evaluate';
 import type { NetDef, ReadonlyToken, TokenState } from './lib';
 import type { CandidateDoc, PetriNetPlanDoc } from './types';
 
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+type FolderDoc = {
+  '@patchwork'?: { type: string };
+  title?: string;
+  docs: { type: string; name: string; url: AutomergeUrl }[];
+};
+
+type SpecDoc = {
+  spec?: {
+    goal?: string;
+    subSpecUrls?: string[];
+    verificationUrls?: string[];
+    filesFolderUrl?: string;
+  };
+};
+
 // ─── Default prompt content ─────────────────────────────────────────────────
 
 export const DEFAULT_OPTIMIZER_PROMPT = 'TODO: describe the optimizer approach';
@@ -27,7 +44,12 @@ export const PETRINET_SYSTEM_PROMPT = [
   '- `repo.find(url)` is async — always `await` it',
   '- Read a document with `await handle.doc()`',
   '- Mutate documents with `handle.change()`',
-  '- Use `updateText` from `@automerge/automerge-repo` for text content mutations',
+  '',
+  'Working with Datalog documents:',
+  '- Datalog docs have `facts`, `rules`, and `constraints` arrays',
+  '- Facts are `{ pred: string, args: (string|number)[] }`',
+  '- Add facts with `handle.change(d => d.facts.push({ pred: "name", args: [...] }))`',
+  '- Remove facts by filtering the array',
 ].join('\n');
 
 // ─── Default optimizer system prompt template ───────────────────────────────
@@ -36,17 +58,19 @@ export const DEFAULT_OPTIMIZER_SYSTEM_PROMPT = [
   'Task: $PROMPT',
   '',
   'Specification: $SPEC_URL',
-  'Document to modify: $DOC_URL',
+  '',
+  'Documents to modify:',
+  '$DOC_LIST',
   '',
   'Step 1: Read the specification to understand the goal and constraints.',
-  '```',
+  '<script data-description="Read spec">',
   'const specHandle = await repo.find("$SPEC_URL")',
   'const specDoc = await specHandle.doc()',
   'return JSON.stringify(specDoc.spec, null, 2)',
-  '```',
+  '</script>',
   '',
   'Step 2: Read any verification docs referenced by the spec.',
-  '```',
+  '<script data-description="Read verification rules">',
   'const specHandle = await repo.find("$SPEC_URL")',
   'const specDoc = await specHandle.doc()',
   'const verificationUrls = specDoc.spec?.verificationUrls ?? []',
@@ -56,21 +80,31 @@ export const DEFAULT_OPTIMIZER_SYSTEM_PROMPT = [
   '  return { url, title: d.title, constraints: d.constraints, draftText: d.draftText }',
   '}))',
   'return JSON.stringify(results, null, 2)',
-  '```',
+  '</script>',
   '',
-  'Step 3: Read the current document.',
-  '```',
-  'const handle = await repo.find("$DOC_URL")',
-  'const doc = await handle.doc()',
-  'return doc.content',
-  '```',
+  'Step 3: Read the current documents and understand their facts.',
+  '<script data-description="Read current facts">',
+  'const docs = $DOC_URLS',
+  'const results = await Promise.all(docs.map(async ({ name, url }) => {',
+  '  const h = await repo.find(url)',
+  '  const d = await h.doc()',
+  '  return { name, url, facts: d.facts ?? [] }',
+  '}))',
+  'return JSON.stringify(results, null, 2)',
+  '</script>',
   '',
-  'Step 4: Write your solution to the document using the raw Automerge API:',
-  '```',
-  'const { updateText } = await import("@automerge/automerge-repo")',
-  'const handle = await repo.find("$DOC_URL")',
-  'handle.change(d => updateText(d, ["content"], "your improved content here"))',
-  '```',
+  'Step 4: Modify the documents to satisfy the constraints. Add or remove facts as needed.',
+  'Example:',
+  '<script data-description="Update facts">',
+  'const handle = await repo.find("DOC_URL_HERE")',
+  'handle.change(d => {',
+  '  // Remove a fact by filtering',
+  '  d.facts = d.facts.filter(f => !(f.pred === "rule" && f.args[2] === 3))',
+  '  // Add a new fact',
+  '  d.facts.push({ pred: "rule", args: ["machine_a", "input", 1, "accept", "0.0.0.0/0", "tcp", 80] })',
+  '})',
+  'return "Updated"',
+  '</script>',
 ].join('\n');
 
 // ─── Net definition ─────────────────────────────────────────────────────────
@@ -109,10 +143,9 @@ export function createNet(repo: Repo, planHandle: DocHandle<PetriNetPlanDoc>): N
 
           const produce = [];
           for (const subSpecUrl of unsolved) {
-            const copyHandle = await createMarkdownDoc(repo, '');
-            const copyUrl = copyHandle.url as string;
+            const { folderUrl, docEntries } = await cloneSpecFiles(repo, subSpecUrl);
 
-            const prompt = buildOptimizerPrompt(systemTemplate, DEFAULT_OPTIMIZER_PROMPT, copyUrl, subSpecUrl);
+            const prompt = buildOptimizerPrompt(systemTemplate, DEFAULT_OPTIMIZER_PROMPT, subSpecUrl, docEntries);
 
             const processHandle = repo.create<Record<string, unknown>>();
             processHandle.change((d) => {
@@ -128,7 +161,7 @@ export function createNet(repo: Repo, planHandle: DocHandle<PetriNetPlanDoc>): N
                 type: 'llm-process',
                 documentUrl: processHandle.url as string,
                 taskSpecUrl: subSpecUrl,
-                taskDocUrl: copyUrl,
+                taskFolderUrl: folderUrl,
               } as TokenState,
               toPlace: 'running',
             });
@@ -158,13 +191,13 @@ export function createNet(repo: Repo, planHandle: DocHandle<PetriNetPlanDoc>): N
 
         async onConsumedTokens({ running }, _allTokens, repo) {
           const taskSpecUrl = (running.state.taskSpecUrl ?? '') as string;
-          const taskDocUrl = (running.state.taskDocUrl ?? '') as string;
+          const taskFolderUrl = (running.state.taskFolderUrl ?? '') as string;
 
           const candidateHandle = repo.create<CandidateDoc>();
           candidateHandle.change((d) => {
             d['@patchwork'] = { type: 'candidate' };
             d.specUrl = taskSpecUrl;
-            d.documents = { [taskSpecUrl]: taskDocUrl };
+            d.documentsFolderUrl = taskFolderUrl;
           });
 
           return {
@@ -246,9 +279,8 @@ async function getUnsolvedSubSpecs(
     const candidates = candidatesBySpec.get(url) ?? [];
     let foundValid = false;
     for (const candidate of candidates) {
-      const solutionUrl = candidate.documents?.[url];
-      if (!solutionUrl) continue;
-      const result = await evaluateSolution(repo, url, solutionUrl);
+      if (!candidate.documentsFolderUrl) continue;
+      const result = await evaluateSolution(repo, url, candidate.documentsFolderUrl);
       if (result.valid) {
         foundValid = true;
         break;
@@ -261,13 +293,10 @@ async function getUnsolvedSubSpecs(
   return unsolved;
 }
 
-async function readSpecDoc(
-  repo: Repo,
-  specUrl: string,
-): Promise<{ subSpecUrls?: string[]; verificationUrls?: string[] } | null> {
+async function readSpecDoc(repo: Repo, specUrl: string): Promise<SpecDoc['spec'] | null> {
   if (!specUrl) return null;
-  const handle = await repo.find(specUrl as AutomergeUrl);
-  const doc = await handle.doc() as { spec?: { subSpecUrls?: string[]; verificationUrls?: string[] } } | null;
+  const handle = await repo.find<SpecDoc>(specUrl as AutomergeUrl);
+  const doc = await handle.doc();
   return doc?.spec ?? null;
 }
 
@@ -278,26 +307,61 @@ async function readDocContent(repo: Repo, documentUrl: string): Promise<string> 
   return doc?.content ?? '';
 }
 
-async function createMarkdownDoc(
+type DocEntry = { name: string; url: string };
+
+async function cloneSpecFiles(
   repo: Repo,
-  content: string,
-): Promise<DocHandle<Record<string, unknown>>> {
-  const h = repo.create<Record<string, unknown>>();
-  h.change((d) => {
-    d['@patchwork'] = { type: 'markdown' };
-    d.content = content;
+  specUrl: string,
+): Promise<{ folderUrl: string; docEntries: DocEntry[] }> {
+  const specDoc = await readSpecDoc(repo, specUrl);
+  const filesFolderUrl = specDoc?.filesFolderUrl;
+
+  const docEntries: DocEntry[] = [];
+  const clonedEntries: FolderDoc['docs'] = [];
+
+  if (filesFolderUrl) {
+    const folderHandle = await repo.find<FolderDoc>(filesFolderUrl as AutomergeUrl);
+    const folderDoc = await folderHandle.doc();
+
+    if (folderDoc?.docs) {
+      for (const entry of folderDoc.docs) {
+        const originalHandle = await repo.find(entry.url);
+        const clonedHandle = repo.clone(originalHandle);
+        clonedEntries.push({
+          type: entry.type,
+          name: entry.name,
+          url: clonedHandle.url,
+        });
+        docEntries.push({ name: entry.name, url: clonedHandle.url as string });
+      }
+    }
+  }
+
+  const newFolderHandle = repo.create<FolderDoc>();
+  newFolderHandle.change((d) => {
+    d['@patchwork'] = { type: 'folder' };
+    d.title = 'Candidate Documents';
+    d.docs = clonedEntries;
   });
-  return h;
+
+  return { folderUrl: newFolderHandle.url as string, docEntries };
 }
 
 function buildOptimizerPrompt(
   systemPrompt: string,
   characterPrompt: string,
-  docUrl: string,
   specUrl: string,
+  docEntries: DocEntry[],
 ): string {
+  const docList = docEntries.length > 0
+    ? docEntries.map((d) => `- ${d.name}: ${d.url}`).join('\n')
+    : '(no documents)';
+
+  const docUrls = JSON.stringify(docEntries.map((d) => ({ name: d.name, url: d.url })));
+
   return systemPrompt
     .replace(/\$PROMPT/g, characterPrompt)
-    .replace(/\$DOC_URL/g, docUrl)
-    .replace(/\$SPEC_URL/g, specUrl);
+    .replace(/\$SPEC_URL/g, specUrl)
+    .replace(/\$DOC_LIST/g, docList)
+    .replace(/\$DOC_URLS/g, docUrls);
 }

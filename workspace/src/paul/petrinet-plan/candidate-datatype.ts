@@ -5,7 +5,7 @@ export const CandidateDatatype: DatatypeImplementation<CandidateDoc> = {
   init(doc) {
     doc['@patchwork'] = { type: 'candidate' };
     doc.specUrl = '';
-    doc.documents = {};
+    doc.documentsFolderUrl = '';
   },
   getTitle() {
     return 'Candidate';
