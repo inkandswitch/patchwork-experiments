@@ -41,6 +41,12 @@ type InitialToken = {
 type PetriNetPlanDoc = {
   '@patchwork': { type: 'petrinet-plan' };
   initialTokens: InitialToken[];
+  systemPromptUrls?: { optimizer?: string; evaluator?: string };
+};
+
+type MarkdownDoc = {
+  '@patchwork': { type: 'markdown' };
+  content: string;
 };
 
 export const IPTablesWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> = {
@@ -159,9 +165,99 @@ function createPetriNetDoc(repo: Repo, leafSpecUrls: AutomergeUrl[]): AutomergeU
         },
       },
     ];
+    d.systemPromptUrls = {
+      optimizer: createMarkdownDoc(repo, IPTABLES_OPTIMIZER_SYSTEM_PROMPT),
+      evaluator: createMarkdownDoc(repo, IPTABLES_EVALUATOR_SYSTEM_PROMPT),
+    };
   });
   return handle.url;
 }
+
+function createMarkdownDoc(repo: Repo, content: string): string {
+  const h = repo.create<MarkdownDoc>();
+  h.change((d) => {
+    d['@patchwork'] = { type: 'markdown' };
+    d.content = content;
+  });
+  return h.url as string;
+}
+
+const IPTABLES_OPTIMIZER_SYSTEM_PROMPT = `You are a firewall configuration expert optimizing IPTables rules.
+
+Your optimization strategy: $PROMPT
+
+The specification is at $SPEC_URL. It is a Patchwork SpecDoc with:
+- spec.goal: a description of the machine and its role
+- spec.verificationUrls: array of Automerge URLs pointing to datalog docs with integrity constraints
+- spec.filesFolderUrl: URL of a folder containing the original IPTables config files
+
+The document at $DOC_URL is a markdown document containing an IPTables configuration (iptables-save format). Its structure:
+- doc.content: string containing the full iptables-save output
+
+Step 1 — Read the specification to understand the goal and constraints:
+<script data-description="Read spec and verification rules">
+const specHandle = await repo.find("$SPEC_URL")
+const specDoc = await specHandle.doc()
+const goal = specDoc.spec?.goal ?? ""
+const verificationUrls = specDoc.spec?.verificationUrls ?? []
+const verifications = await Promise.all(verificationUrls.map(async url => {
+  const h = await repo.find(url)
+  const d = await h.doc()
+  return { url, title: d.title, draftText: d.draftText, constraints: d.constraints }
+}))
+return JSON.stringify({ goal, verifications }, null, 2)
+</script>
+
+Step 2 — Read the current IPTables configuration:
+<script data-description="Read current IPTables config">
+const handle = await repo.find("$DOC_URL")
+const doc = await handle.doc()
+return doc.content
+</script>
+
+Step 3 — Analyze the rules using your optimization strategy, then write the optimized configuration back:
+<script data-description="Write optimized IPTables config">
+const { updateText } = await import("@automerge/automerge-repo")
+const handle = await repo.find("$DOC_URL")
+handle.change(d => updateText(d, ["content"], \`*filter
+:INPUT DROP [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [0:0]
+
+# ... your optimized rules here ...
+
+COMMIT\`))
+return "Configuration updated"
+</script>
+
+Apply your strategy. Remove redundant rules while preserving the security posture required by the constraints. Do not explain — just compute and write.`;
+
+const IPTABLES_EVALUATOR_SYSTEM_PROMPT = `You are a firewall security analyst choosing the best IPTables configuration from several candidates.
+
+Criteria: $PROMPT
+
+Step 1 — Read all candidate configurations:
+<script data-description="Read all candidate configs">
+const urls = $SOLUTION_URLS
+const reads = await Promise.all(urls.map(async url => {
+  const h = await repo.find(url)
+  const d = await h.doc()
+  return { url, content: d?.content ?? "" }
+}))
+return reads.map(r => \`--- \${r.url} ---\\n\${r.content}\`).join("\\n\\n")
+</script>
+
+Step 2 — For each candidate, count the total rules and check for common issues:
+- Duplicate rules (same chain, action, source, protocol, port)
+- Shadowed rules (ACCEPT after broader DROP on same source)
+- Rules that could be combined (e.g., multiport)
+
+Step 3 — Pick the best configuration. Prefer configurations that:
+1. Have zero redundant or unreachable rules
+2. Maintain the same security posture (same effective allow/deny behavior)
+3. Have the fewest total rules
+
+Respond with ONLY the URL of the winning solution — a single line, nothing else.`;
 
 function createDatalogDoc(
   repo: Repo,

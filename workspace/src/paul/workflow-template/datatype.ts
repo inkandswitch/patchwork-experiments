@@ -33,6 +33,12 @@ type InitialToken = {
 type PetriNetPlanDoc = {
   '@patchwork': { type: 'petrinet-plan' };
   initialTokens: InitialToken[];
+  systemPromptUrls?: { optimizer?: string; evaluator?: string };
+};
+
+type MarkdownDoc = {
+  '@patchwork': { type: 'markdown' };
+  content: string;
 };
 
 export const PaulWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> = {
@@ -97,9 +103,81 @@ function createPetriNetDoc(repo: Repo, leafSpecUrls: AutomergeUrl[]): AutomergeU
         },
       },
     ];
+    d.systemPromptUrls = {
+      optimizer: createMarkdownDoc(repo, WORKFLOW_OPTIMIZER_SYSTEM_PROMPT),
+      evaluator: createMarkdownDoc(repo, WORKFLOW_EVALUATOR_SYSTEM_PROMPT),
+    };
   });
   return handle.url;
 }
+
+function createMarkdownDoc(repo: Repo, content: string): string {
+  const h = repo.create<MarkdownDoc>();
+  h.change((d) => {
+    d['@patchwork'] = { type: 'markdown' };
+    d.content = content;
+  });
+  return h.url as string;
+}
+
+const WORKFLOW_OPTIMIZER_SYSTEM_PROMPT = `You are an optimization agent improving a solution document.
+
+Your optimization strategy: $PROMPT
+
+The specification is at $SPEC_URL. It is a Patchwork SpecDoc with:
+- spec.goal: a description of what needs to be achieved
+- spec.verificationUrls: array of Automerge URLs pointing to datalog docs with integrity constraints
+  Each datalog doc has: title, draftText (human-readable rules), constraints (machine-checkable)
+
+The document at $DOC_URL is a markdown document. Its structure:
+- doc.content: string containing the solution text
+
+Step 1 — Read the specification to understand the goal and constraints:
+<script data-description="Read spec and verification rules">
+const specHandle = await repo.find("$SPEC_URL")
+const specDoc = await specHandle.doc()
+const goal = specDoc.spec?.goal ?? ""
+const verificationUrls = specDoc.spec?.verificationUrls ?? []
+const verifications = await Promise.all(verificationUrls.map(async url => {
+  const h = await repo.find(url)
+  const d = await h.doc()
+  return { url, title: d.title, draftText: d.draftText }
+}))
+return JSON.stringify({ goal, verifications }, null, 2)
+</script>
+
+Step 2 — Read the current solution document:
+<script data-description="Read current solution">
+const handle = await repo.find("$DOC_URL")
+const doc = await handle.doc()
+return doc.content
+</script>
+
+Step 3 — Write your improved solution to the document:
+<script data-description="Write improved solution">
+const { updateText } = await import("@automerge/automerge-repo")
+const handle = await repo.find("$DOC_URL")
+handle.change(d => updateText(d, ["content"], "your improved content here"))
+return "Solution updated"
+</script>
+
+Apply your strategy. Ensure the solution satisfies the specification constraints. Do not explain — just compute and write.`;
+
+const WORKFLOW_EVALUATOR_SYSTEM_PROMPT = `You are an evaluation agent choosing the best solution from several candidates.
+
+Criteria: $PROMPT
+
+Step 1 — Read all solution documents:
+<script data-description="Read all candidate solutions">
+const urls = $SOLUTION_URLS
+const reads = await Promise.all(urls.map(url =>
+  repo.find(url).then(h => h.doc()).then(d => ({ url, content: d?.content ?? "" }))
+))
+return reads.map(r => \`--- \${r.url} ---\\n\${r.content}\`).join("\\n\\n")
+</script>
+
+Step 2 — Pick the best version based on the criteria above.
+Respond with ONLY the URL of the winning solution — a single line, nothing else.`;
 
 function createDatalogDoc(
   repo: Repo,

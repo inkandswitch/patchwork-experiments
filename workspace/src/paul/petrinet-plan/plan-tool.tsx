@@ -4,8 +4,8 @@ import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primit
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle } from '@automerge/automerge-repo';
 
-import type { PetriNetPlanDoc, InitialToken } from './types';
-import type { NetDef } from './lib';
+import type { PetriNetPlanDoc, InitialToken, SystemPromptUrls } from './types';
+import type { NetDef, NetState } from './lib';
 import { usePetriNetPlan } from './use-petrinet-plan';
 import { P3NetRenderer } from './renderer';
 import { TokenCard, getInitialTokensByType } from './components';
@@ -73,6 +73,18 @@ function PlanView({ handle }: { handle: DocHandle<PetriNetPlanDoc> }) {
             const currentNet = () => net()!;
             const initialTokens = () => currentDoc().initialTokens ?? [];
             const tokenTypes = () => getTokenTypesInPlan(currentNet().def, initialTokens());
+            const systemPromptUrls = () => currentDoc().systemPromptUrls;
+
+            const planTokens = (): NetState => {
+              const result: NetState = {};
+              const tokens = initialTokens();
+              for (let i = 0; i < tokens.length; i++) {
+                const t = tokens[i];
+                if (!result[t.placeId]) result[t.placeId] = [];
+                result[t.placeId].push({ id: `plan-${i}`, state: t.state });
+              }
+              return result;
+            };
 
             return (
               <>
@@ -81,6 +93,7 @@ function PlanView({ handle }: { handle: DocHandle<PetriNetPlanDoc> }) {
                     <For each={tokenTypes()}>
                       {(tokenType) => {
                         const tokensOfType = () => getInitialTokensByType(initialTokens(), tokenType.id);
+                        const systemPromptUrl = () => getSystemPromptUrl(systemPromptUrls(), tokenType.id);
                         return (
                           <div class="p3n-token-section">
                             <div class="p3n-token-section-header">
@@ -88,6 +101,15 @@ function PlanView({ handle }: { handle: DocHandle<PetriNetPlanDoc> }) {
                               <span class="p3n-token-section-title">{tokenType.label}</span>
                               <span class="p3n-token-section-count">{tokensOfType().length}</span>
                             </div>
+                            <Show when={systemPromptUrl()}>
+                              {(url) => (
+                                <SystemPromptCard
+                                  url={url()}
+                                  label={`${tokenType.label} System Prompt`}
+                                  tokenTypeId={tokenType.id}
+                                />
+                              )}
+                            </Show>
                             <div class="p3n-token-section-content">
                               <Show
                                 when={tokensOfType().length > 0}
@@ -130,7 +152,7 @@ function PlanView({ handle }: { handle: DocHandle<PetriNetPlanDoc> }) {
                   <div class="p3n-petrinet-wrap">
                     <P3NetRenderer
                       def={currentNet().def}
-                      tokens={{}}
+                      tokens={planTokens()}
                       selectedTokenId={null}
                       onSelectToken={() => {}}
                       onDropOnPlace={() => {}}
@@ -142,6 +164,35 @@ function PlanView({ handle }: { handle: DocHandle<PetriNetPlanDoc> }) {
           }}
         </Show>
       </div>
+    </div>
+  );
+}
+
+function getSystemPromptUrl(urls: SystemPromptUrls | undefined, tokenTypeId: string): string | undefined {
+  if (!urls) return undefined;
+  if (tokenTypeId === 'optimizer') return urls.optimizer;
+  if (tokenTypeId === 'evaluator') return urls.evaluator;
+  return undefined;
+}
+
+const TEMPLATE_VARS: Record<string, string[]> = {
+  optimizer: ['$PROMPT', '$DOC_URL', '$SPEC_URL'],
+  evaluator: ['$PROMPT', '$SOLUTION_URLS'],
+};
+
+function SystemPromptCard(props: { url: string; label: string; tokenTypeId: string }) {
+  const vars = () => TEMPLATE_VARS[props.tokenTypeId] ?? [];
+  return (
+    <div class="p3n-system-prompt-card">
+      <div class="p3n-system-prompt-header">
+        <span class="p3n-system-prompt-label">{props.label}</span>
+        <Show when={vars().length > 0}>
+          <span class="p3n-system-prompt-hint">
+            Variables: <For each={vars()}>{(v) => <><code>{v}</code>{' '}</>}</For>
+          </span>
+        </Show>
+      </div>
+      <patchwork-view attr:doc-url={props.url} style="display:block;width:100%;min-height:120px;" />
     </div>
   );
 }
