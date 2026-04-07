@@ -1,10 +1,10 @@
 import { render } from 'solid-js/web';
-import { createSignal, createEffect, Show, For } from 'solid-js';
+import { createSignal, createEffect, createResource, Show, For } from 'solid-js';
 import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primitives';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle, Repo, AutomergeUrl } from '@automerge/automerge-repo';
 
-import type { PetriNetPlanDoc, PetriNetExecutionDoc } from './types';
+import type { PetriNetPlanDoc, PetriNetExecutionDoc, CandidateDoc } from './types';
 import type { TokenInstance, PendingStep, TransitionFiring, NetDef, NetState, NetDoc, PetriNet } from './lib';
 import { defineNet } from './lib';
 import { createNet } from './net';
@@ -29,7 +29,7 @@ type AnimState = {
   pending: PendingStep;
 };
 
-type Tab = 'petrinet' | 'candidates';
+type Tab = 'petrinet' | 'solutions';
 
 function ExecutionView({ handle, repo }: { handle: DocHandle<PetriNetExecutionDoc>; repo: Repo }) {
   const [doc] = useDocument<PetriNetExecutionDoc>(() => handle.url);
@@ -117,10 +117,10 @@ function ExecutionView({ handle, repo }: { handle: DocHandle<PetriNetExecutionDo
         </button>
         <button
           class="p3n-tab"
-          classList={{ active: selectedTab() === 'candidates' }}
-          onClick={() => setSelectedTab('candidates')}
+          classList={{ active: selectedTab() === 'solutions' }}
+          onClick={() => setSelectedTab('solutions')}
         >
-          Candidates
+          Solutions
         </button>
         <span class="p3n-toolbar-spacer" />
         <button
@@ -138,7 +138,7 @@ function ExecutionView({ handle, repo }: { handle: DocHandle<PetriNetExecutionDo
             const currentDoc = () => doc()!;
             const currentDef = () => net()!.def;
             const tokens = () => currentDoc().tokens ?? {};
-            const candidateUrls = () => currentDoc().originalCandidateUrls ?? [];
+            const candidateTokens = () => (tokens().candidates ?? []) as TokenInstance[];
 
             return (
               <>
@@ -172,8 +172,8 @@ function ExecutionView({ handle, repo }: { handle: DocHandle<PetriNetExecutionDo
                   </div>
                 </Show>
 
-                <Show when={selectedTab() === 'candidates'}>
-                  <CandidatesView candidateUrls={candidateUrls()} />
+                <Show when={selectedTab() === 'solutions'}>
+                  <SolutionsView candidateTokens={candidateTokens()} repo={repo} />
                 </Show>
               </>
             );
@@ -300,11 +300,14 @@ function TokenInspector(props: {
               </div>
             </Show>
             <Show when={(s().token.state as Record<string, unknown>).documentUrl}>
-              <div class="p3n-inspector-row">
+              <div class="p3n-inspector-section">
                 <span class="p3n-inspector-label">Document</span>
-                <span class="p3n-inspector-value p3n-inspector-mono">
-                  {((s().token.state as Record<string, unknown>).documentUrl as string).slice(0, 20)}…
-                </span>
+                <div class="p3n-inspector-doc-embed">
+                  <patchwork-view
+                    attr:doc-url={(s().token.state as Record<string, unknown>).documentUrl as string}
+                    style="display:block;width:100%;min-height:120px;"
+                  />
+                </div>
               </div>
             </Show>
           </div>
@@ -314,41 +317,63 @@ function TokenInspector(props: {
   );
 }
 
-function CandidatesView(props: { candidateUrls: AutomergeUrl[] }) {
-  const [expandedIndex, setExpandedIndex] = createSignal<number | null>(null);
+function SolutionsView(props: { candidateTokens: TokenInstance[]; repo: Repo }) {
+  const [expandedKey, setExpandedKey] = createSignal<string | null>(null);
+
+  const [candidateDocs] = createResource(
+    () => props.candidateTokens,
+    async (tokens) => {
+      const results: { tokenId: string; doc: CandidateDoc }[] = [];
+      for (const token of tokens) {
+        const url = token.state.documentUrl as string;
+        if (!url) continue;
+        const handle = await props.repo.find<CandidateDoc>(url as AutomergeUrl);
+        const doc = await handle.doc();
+        if (doc) results.push({ tokenId: token.id, doc });
+      }
+      return results;
+    },
+  );
+
+  const entries = () => candidateDocs() ?? [];
+
   return (
     <div class="p3n-candidates-view">
       <Show
-        when={props.candidateUrls.length > 0}
+        when={entries().length > 0}
         fallback={
           <div class="p3n-candidates-empty">
             <div class="p3n-empty-icon">◎</div>
-            <div class="p3n-empty-text">No candidates in this execution</div>
+            <div class="p3n-empty-text">No solutions yet</div>
             <div class="p3n-empty-hint">
-              Candidate URLs are populated when the execution is created from a plan
+              Solutions appear here as optimizers complete tasks and produce candidate tokens
             </div>
           </div>
         }
       >
         <div class="p3n-candidates-list">
-          <For each={props.candidateUrls}>
-            {(url, index) => {
-              const isExpanded = () => expandedIndex() === index();
+          <For each={entries()}>
+            {({ tokenId, doc }) => {
+              const isExpanded = () => expandedKey() === tokenId;
+              const docEntries = () => Object.entries(doc.documents ?? {});
               return (
                 <div class="p3n-candidate-card" classList={{ 'p3n-candidate-card-expanded': isExpanded() }}>
                   <div
                     class="p3n-candidate-card-header"
-                    onClick={() => setExpandedIndex(isExpanded() ? null : index())}
+                    onClick={() => setExpandedKey(isExpanded() ? null : tokenId)}
                   >
-                    <span class="p3n-candidate-card-index">#{index() + 1}</span>
                     <span class="p3n-candidate-card-url">
-                      {url.replace('automerge:', '').slice(0, 20)}…
+                      Spec: {(doc.specUrl ?? '').replace('automerge:', '').slice(0, 16)}…
                     </span>
                     <span class="p3n-candidate-card-toggle">{isExpanded() ? '▾' : '▸'}</span>
                   </div>
                   <Show when={isExpanded()}>
                     <div class="p3n-candidate-card-body">
-                      <patchwork-view attr:doc-url={url} style="display:block;width:100%;min-height:200px;" />
+                      <For each={docEntries()}>
+                        {([_origUrl, copyUrl]) => (
+                          <patchwork-view attr:doc-url={copyUrl} style="display:block;width:100%;min-height:200px;" />
+                        )}
+                      </For>
                     </div>
                   </Show>
                 </div>

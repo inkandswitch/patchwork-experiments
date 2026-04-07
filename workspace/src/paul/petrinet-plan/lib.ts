@@ -39,16 +39,22 @@ export type TransitionDef = {
   from: string[];
   /** Consume ALL tokens from each of these places. */
   fromAll?: string[];
+  /** Read tokens from these places without consuming them (test/read arcs). */
+  readFrom?: string[];
+  /** Transition blocked if any of these places have tokens (inhibitor arcs). */
+  inhibitFrom?: string[];
   to: string[];
   guard?: (
     tokens: ReadonlyTokens,
     allTokens: { [placeId: string]: ReadonlyToken[] },
     repo: Repo,
+    readTokens: { [placeId: string]: ReadonlyToken[] },
   ) => boolean | Promise<boolean>;
   onConsumedTokens?: (
     tokens: ReadonlyTokens,
     allTokens: { [placeId: string]: ReadonlyToken[] },
     repo: Repo,
+    readTokens: { [placeId: string]: ReadonlyToken[] },
   ) => TokensResult | Promise<TokensResult>;
   onProducedToken?: (
     token: AnimTokenInfo,
@@ -163,6 +169,22 @@ function createPetriNet(def: NetDef, handle: DocHandle<NetDoc>, repo: Repo): Pet
         }
         if (!canFire) continue;
 
+        if (transition.inhibitFrom) {
+          for (const placeId of transition.inhibitFrom) {
+            const available = (snapshot[placeId] ?? []).filter((t) => !reserved.has(t.id));
+            if (available.length > 0) { canFire = false; break; }
+          }
+        }
+        if (!canFire) continue;
+
+        const readTokensMap: { [placeId: string]: ReadonlyToken[] } = {};
+        if (transition.readFrom) {
+          for (const placeId of transition.readFrom) {
+            const available = (snapshot[placeId] ?? []).filter((t) => !reserved.has(t.id));
+            readTokensMap[placeId] = available.map((t) => ({ id: t.id, state: deepClone(t.state) }));
+          }
+        }
+
         const readonlyTokens: ReadonlyTokens = {};
         for (const [placeId, t] of Object.entries(candidates)) {
           readonlyTokens[placeId] = { id: t.id, state: deepClone(t.state) };
@@ -173,7 +195,7 @@ function createPetriNet(def: NetDef, handle: DocHandle<NetDoc>, repo: Repo): Pet
           allReadonlyTokens[placeId] = tokens.map((t) => ({ id: t.id, state: deepClone(t.state) }));
         }
 
-        if (transition.guard && !(await transition.guard(readonlyTokens, allReadonlyTokens, repo))) continue;
+        if (transition.guard && !(await transition.guard(readonlyTokens, allReadonlyTokens, repo, readTokensMap))) continue;
 
         for (const t of Object.values(candidates)) reserved.add(t.id);
         for (const tokens of Object.values(allCandidates)) {
@@ -193,7 +215,7 @@ function createPetriNet(def: NetDef, handle: DocHandle<NetDoc>, repo: Repo): Pet
 
         let result: TokensResult = {};
         if (transition.onConsumedTokens) {
-          result = (await transition.onConsumedTokens(readonlyTokens, allReadonlyTokens, repo)) ?? {};
+          result = (await transition.onConsumedTokens(readonlyTokens, allReadonlyTokens, repo, readTokensMap)) ?? {};
         }
 
         const outputs: AnimTokenInfo[] = [];

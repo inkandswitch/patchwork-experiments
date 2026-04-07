@@ -33,7 +33,7 @@ type InitialToken = {
 type PetriNetPlanDoc = {
   '@patchwork': { type: 'petrinet-plan' };
   initialTokens: InitialToken[];
-  systemPromptUrls?: { optimizer?: string; evaluator?: string };
+  systemPromptUrls?: { optimizer?: string };
 };
 
 type MarkdownDoc = {
@@ -57,11 +57,11 @@ export const PaulWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> =
       d.referenceDocsFolderUrl = folderHandle.url;
     });
 
-    const { specDocUrl, leafSpecUrls } = createDefaultSpec(repo);
+    const { specDocUrl } = createDefaultSpec(repo);
 
     doc.specElicitationDocUrl = elicitationHandle.url;
     doc.specDocUrl = specDocUrl;
-    doc.planDocUrl = createPetriNetDoc(repo, leafSpecUrls);
+    doc.planDocUrl = createPetriNetDoc(repo, specDocUrl);
     doc.toolIds = {
       spec: 'paul-spec-viewer',
     };
@@ -72,40 +72,18 @@ export const PaulWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> =
   setTitle() {},
 };
 
-function createPetriNetDoc(repo: Repo, leafSpecUrls: AutomergeUrl[]): AutomergeUrl {
+function createPetriNetDoc(repo: Repo, specDocUrl: AutomergeUrl): AutomergeUrl {
   const handle = repo.create<PetriNetPlanDoc>();
   handle.change((d) => {
     d['@patchwork'] = { type: 'petrinet-plan' };
     d.initialTokens = [
-      ...leafSpecUrls.map((specUrl) => ({
-        placeId: 'candidates',
-        state: {
-          type: 'candidate',
-          documentUrl: '',
-          specUrl,
-          prompt: 'Generate a solution that satisfies this specification.',
-        },
-      })),
       {
-        placeId: 'optimizer_idle',
-        state: {
-          type: 'optimizer',
-          documentUrl: '',
-          prompt: 'Optimize the candidate solution.',
-        },
-      },
-      {
-        placeId: 'evaluator_idle',
-        state: {
-          type: 'evaluator',
-          documentUrl: '',
-          prompt: 'Evaluate whether the candidate solution satisfies all constraints in the specification.',
-        },
+        placeId: 'spec',
+        state: { type: 'spec', documentUrl: '', specUrl: specDocUrl },
       },
     ];
     d.systemPromptUrls = {
       optimizer: createMarkdownDoc(repo, WORKFLOW_OPTIMIZER_SYSTEM_PROMPT),
-      evaluator: createMarkdownDoc(repo, WORKFLOW_EVALUATOR_SYSTEM_PROMPT),
     };
   });
   return handle.url;
@@ -162,22 +140,6 @@ return "Solution updated"
 </script>
 
 Apply your strategy. Ensure the solution satisfies the specification constraints. Do not explain — just compute and write.`;
-
-const WORKFLOW_EVALUATOR_SYSTEM_PROMPT = `You are an evaluation agent choosing the best solution from several candidates.
-
-Criteria: $PROMPT
-
-Step 1 — Read all solution documents:
-<script data-description="Read all candidate solutions">
-const urls = $SOLUTION_URLS
-const reads = await Promise.all(urls.map(url =>
-  repo.find(url).then(h => h.doc()).then(d => ({ url, content: d?.content ?? "" }))
-))
-return reads.map(r => \`--- \${r.url} ---\\n\${r.content}\`).join("\\n\\n")
-</script>
-
-Step 2 — Pick the best version based on the criteria above.
-Respond with ONLY the URL of the winning solution — a single line, nothing else.`;
 
 function createDatalogDoc(
   repo: Repo,

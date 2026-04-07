@@ -43,7 +43,9 @@ export type ParseResult = {
 // ─── Key derivation ───────────────────────────────────────────────────────────
 
 function serializeConstant(c: Constant): string {
-  return String(c);
+  if (typeof c === 'number') return String(c);
+  if (/^[a-zA-Z][a-zA-Z0-9_]*$/.test(c)) return c;
+  return `"${c}"`;
 }
 
 function serializeAtom(a: StoredAtom): string {
@@ -157,11 +159,14 @@ Datalog {
               | ident                             -- bare
 
   Term        = "_"      -- wildcard
+              | string   -- str
               | number   -- num
               | ident    -- name
 
   ident       = ~reserved letter (alnum | "_")*
   reserved    = "sum" ~(alnum | "_")
+
+  string      = "\"" (~"\"" any)* "\""
 
   number      = "-"? digit+ ("." digit+)?
 
@@ -273,6 +278,10 @@ semantics.addOperation<any>('toAST', {
     return '_';
   },
 
+  Term_str(str) {
+    return str.sourceString;
+  },
+
   // Term_num body is: number  → arity 1
   Term_num(num) {
     return num.sourceString.trim();
@@ -306,6 +315,9 @@ function isWildcard(t: string): boolean {
 }
 
 export function parseConstant(s: string): Constant {
+  if (s.length >= 2 && s[0] === '"' && s[s.length - 1] === '"') {
+    return s.slice(1, -1);
+  }
   const n = Number(s);
   return isNaN(n) ? s : n;
 }
@@ -399,6 +411,14 @@ function evalBuiltin(atom: StoredAtom, bindings: Bindings): Bindings | null {
     const b = resolve(args[1]);
     if (a === undefined || b === undefined) return null;
     return CMP[pred](Number(a), Number(b)) ? bindings : null;
+  }
+
+  // ip_in(addr_or_narrow_cidr, broader_cidr): true if first range is contained within second
+  if (pred === 'ip_in' && args.length === 2) {
+    const a = resolve(args[0]);
+    const b = resolve(args[1]);
+    if (a === undefined || b === undefined) return null;
+    return ipContains(String(a), String(b)) ? bindings : null;
   }
 
   // Arithmetic built-ins (3 args: input, input, output)
@@ -532,7 +552,35 @@ function bindOut(bindings: Bindings, outTerm: Term, value: number): Bindings | n
   return parseConstant(outTerm) === value ? bindings : null;
 }
 
-const SIMPLE_BUILTINS = new Set(['lt', 'lte', 'gt', 'gte', 'eq', 'neq', 'add', 'sub', 'mul', 'div']);
+// ─── IP address helpers ──────────────────────────────────────────────────────
+
+function parseIPv4(s: string): number | null {
+  const parts = s.split('/')[0].split('.');
+  if (parts.length !== 4) return null;
+  const octets = parts.map(Number);
+  if (octets.some(o => isNaN(o) || o < 0 || o > 255)) return null;
+  return ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>> 0;
+}
+
+function parseCIDR(s: string): { network: number; mask: number } | null {
+  const ip = parseIPv4(s);
+  if (ip === null) return null;
+  const slashIdx = s.indexOf('/');
+  const prefix = slashIdx >= 0 ? Number(s.slice(slashIdx + 1)) : 32;
+  if (isNaN(prefix) || prefix < 0 || prefix > 32) return null;
+  const mask = prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0;
+  return { network: (ip & mask) >>> 0, mask };
+}
+
+function ipContains(inner: string, outer: string): boolean {
+  const i = parseCIDR(inner);
+  const o = parseCIDR(outer);
+  if (!i || !o) return false;
+  if (i.mask < o.mask) return false;
+  return ((i.network & o.mask) >>> 0) === o.network;
+}
+
+const SIMPLE_BUILTINS = new Set(['lt', 'lte', 'gt', 'gte', 'eq', 'neq', 'add', 'sub', 'mul', 'div', 'ip_in']);
 
 function matchBody(body: StoredAtom[], db: StoredFact[], bindings: Bindings): Bindings[] {
   if (body.length === 0) return [bindings];

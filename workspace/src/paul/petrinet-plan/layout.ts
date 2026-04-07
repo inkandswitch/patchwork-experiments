@@ -10,11 +10,11 @@ export type NetLayout = Map<string, NodeLayout>;
 type LayoutNet = {
   places: { id: string }[];
   transitions: { id: string }[];
-  arcs: { from: string; to: string; kind: 'in' | 'out' }[];
+  arcs: { from: string; to: string; kind: 'in' | 'out' | 'read' | 'inhibit' }[];
 };
 
-const RANK_SPACING = 160;
-const NODE_SPACING = 100;
+const RANK_SPACING = 180;
+const NODE_SPACING = 120;
 const ORIGIN_X = 100;
 const ORIGIN_Y = 160;
 
@@ -39,6 +39,7 @@ export function computeLayout(net: LayoutNet): NetLayout {
   }
 
   for (const arc of net.arcs) {
+    if (arc.kind === 'read' || arc.kind === 'inhibit') continue;
     adjOut.get(arc.from)?.push(arc.to);
     inDegree.set(arc.to, (inDegree.get(arc.to) ?? 0) + 1);
   }

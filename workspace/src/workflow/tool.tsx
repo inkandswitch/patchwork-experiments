@@ -64,13 +64,6 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
     const planDoc = planHandle.doc();
     if (!planDoc) return;
 
-    const candidateUrls: AutomergeUrl[] = [];
-    for (const init of planDoc.initialTokens ?? []) {
-      if (init.state.type === 'candidate' && init.state.specUrl) {
-        candidateUrls.push(init.state.specUrl as AutomergeUrl);
-      }
-    }
-
     const execHandle = repo.create<PetriNetExecutionDoc>();
     execHandle.change((d) => {
       d['@patchwork'] = { type: 'petrinet-execution' };
@@ -82,9 +75,6 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
           id: makeId(),
           state: JSON.parse(JSON.stringify(init.state)),
         });
-      }
-      if (candidateUrls.length > 0) {
-        d.originalCandidateUrls = candidateUrls;
       }
     });
 

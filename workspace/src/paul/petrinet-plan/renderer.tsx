@@ -15,7 +15,7 @@ const ANIM_SPEED = 300;
 type LayoutNet = {
   places: { id: string }[];
   transitions: { id: string }[];
-  arcs: { from: string; to: string; kind: 'in' | 'out' }[];
+  arcs: { from: string; to: string; kind: 'in' | 'out' | 'read' | 'inhibit' }[];
 };
 
 function toLayoutNet(def: NetDef): LayoutNet {
@@ -25,6 +25,8 @@ function toLayoutNet(def: NetDef): LayoutNet {
     arcs: def.transitions.flatMap((t) => [
       ...t.from.map((f) => ({ from: f, to: t.id, kind: 'in' as const })),
       ...(t.fromAll ?? []).map((f) => ({ from: f, to: t.id, kind: 'in' as const })),
+      ...(t.readFrom ?? []).map((f) => ({ from: f, to: t.id, kind: 'read' as const })),
+      ...(t.inhibitFrom ?? []).map((f) => ({ from: f, to: t.id, kind: 'inhibit' as const })),
       ...t.to.map((to) => ({ from: t.id, to, kind: 'out' as const })),
     ]),
   };
@@ -48,7 +50,15 @@ function edgePoint(
   return [cx + ux * (tScale + extra), cy + uy * (tScale + extra)];
 }
 
-function arcPath(fromId: string, toId: string, layout: NetLayout, ox: number, oy: number): string | null {
+function arcPath(
+  fromId: string,
+  toId: string,
+  layout: NetLayout,
+  ox: number,
+  oy: number,
+  arcKind: 'in' | 'out' | 'read' | 'inhibit',
+  arcIndex: number,
+): string | null {
   const fl = layout.get(fromId);
   const tl = layout.get(toId);
   if (!fl || !tl) return null;
@@ -58,7 +68,22 @@ function arcPath(fromId: string, toId: string, layout: NetLayout, ox: number, oy
   const dx = tx - fx, dy = ty - fy;
   const dist = Math.sqrt(dx * dx + dy * dy) || 1;
   const ux = dx / dist, uy = dy / dist;
-  const px = -uy * ARC_CURVE, py = ux * ARC_CURVE;
+
+  const isBackward = tx <= fx;
+  const isReadOrInhibit = arcKind === 'read' || arcKind === 'inhibit';
+
+  let curve: number;
+  if (isBackward) {
+    curve = Math.max(60, dist * 0.4) + arcIndex * 20;
+  } else if (isReadOrInhibit) {
+    curve = Math.max(40, dist * 0.25) + arcIndex * 15;
+  } else {
+    curve = ARC_CURVE + arcIndex * 12;
+  }
+
+  const sign = (isBackward || isReadOrInhibit) ? -1 : 1;
+  const px = -uy * curve * sign;
+  const py = ux * curve * sign;
 
   const [sx, sy] = edgePoint(fx, fy, fl.kind, ux, uy);
   const [ex, ey] = edgePoint(tx, ty, tl.kind, -ux, -uy, 6);
@@ -303,13 +328,31 @@ export function P3NetRenderer(props: RendererProps) {
           <marker id="p3n-arrow" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
             <path d="M 0 0 L 10 4 L 0 8 z" fill="#94a3b8" />
           </marker>
+          <marker id="p3n-read-arrow" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 4 L 0 8 z" fill="#60a5fa" />
+          </marker>
+          <marker id="p3n-inhibit-circle" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <circle cx="5" cy="5" r="4" fill="none" stroke="#f87171" stroke-width="2" />
+          </marker>
         </defs>
         <For each={layoutNet().arcs}>
-          {(arc) => {
-            const d = arcPath(arc.from, arc.to, layout(), dims().offsetX, dims().offsetY);
-            return d ? (
-              <path d={d} fill="none" stroke="#94a3b8" stroke-width={1.5} marker-end="url(#p3n-arrow)" />
-            ) : null;
+          {(arc, index) => {
+            const sameTarget = () => layoutNet().arcs.filter((a, i) => a.to === arc.to && i < index());
+            const arcIdx = () => sameTarget().length;
+            const d = () => arcPath(arc.from, arc.to, layout(), dims().offsetX, dims().offsetY, arc.kind, arcIdx());
+            return (
+              <Show when={d()}>
+                {(path) => {
+                  if (arc.kind === 'read') {
+                    return <path d={path()} fill="none" stroke="#60a5fa" stroke-width={1.5} stroke-dasharray="6 3" marker-end="url(#p3n-read-arrow)" />;
+                  }
+                  if (arc.kind === 'inhibit') {
+                    return <path d={path()} fill="none" stroke="#f87171" stroke-width={1.5} stroke-dasharray="4 4" marker-end="url(#p3n-inhibit-circle)" />;
+                  }
+                  return <path d={path()} fill="none" stroke="#94a3b8" stroke-width={1.5} marker-end="url(#p3n-arrow)" />;
+                }}
+              </Show>
+            );
           }}
         </For>
       </svg>

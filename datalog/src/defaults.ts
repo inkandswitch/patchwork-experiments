@@ -2,71 +2,78 @@ import { parseProgram, serializeFacts, serializeRules, serializeConstraints } fr
 import type { StoredFact, StoredRule, StoredConstraint } from './datalog';
 
 export const DEFAULT_FACTS_TEXT = `
-% --- Topology ---
-node(north, generator).
-node(central, substation).
-node(south, load).
+% --- Network zones ---
+zone(dmz, "10.0.1.0/24").
+zone(internal, "10.0.2.0/24").
 
-% --- Transmission lines: edge(from, to, capacity_mw) ---
-edge(north, central, 500).
-edge(central, south, 600).
+% --- Machines: machine(name, ip, zone) ---
+machine(web_srv, "10.0.1.10", dmz).
+machine(app_srv, "10.0.2.10", internal).
+machine(db_srv, "10.0.2.20", internal).
 
-% --- Generation (explicit 0 for non-generators) ---
-generates(north, 800).
-generates(central, 0).
-generates(south, 0).
+% --- Services: service(machine, port, protocol, name) ---
+service(web_srv, 80, "tcp", http).
+service(web_srv, 443, "tcp", https).
+service(app_srv, 8080, "tcp", app_api).
+service(db_srv, 5432, "tcp", postgres).
 
-% --- Consumption (explicit 0 for non-loads) ---
-consumes(north, 0).
-consumes(central, 50).
-consumes(south, 400).
+% --- Firewall rules: fw(index, action, source, dest_machine, protocol, dport) ---
+fw(1, "accept", "0.0.0.0/0", web_srv, "tcp", 80).
+fw(2, "accept", "0.0.0.0/0", web_srv, "tcp", 443).
+fw(3, "accept", "10.0.1.0/24", app_srv, "tcp", 8080).
+fw(4, "accept", "10.0.2.0/24", db_srv, "tcp", 5432).
+fw(5, "drop", "0.0.0.0/0", db_srv, "tcp", 5432).
+fw(6, "drop", "0.0.0.0/0", db_srv, "tcp", 3306).
+fw(7, "accept", "10.0.2.10", db_srv, "tcp", 5432).
+fw(8, "accept", "172.16.0.0/12", db_srv, "tcp", 5432).
 
-% --- Proposed flows ---
-flow(north, central, 400).
-flow(central, south, 350).
+% --- Blocked networks ---
+blocked("10.99.0.0/16").
+blocked("192.168.100.0/24").
 
-% --- Geographic positions: geopos(node, lat, lng) ---
-geopos(north,   52.55, 13.37).
-geopos(central, 52.52, 13.40).
-geopos(south,   52.48, 13.43).
+% --- Trusted sources ---
+trusted("10.0.2.0/24").
 `.trim();
 
 export const DEFAULT_RULES_TEXT = `
-% --- Inflow / outflow aggregates ---
-inflow(N, Total) :- sum(F, flow(_, N, F), Total).
-outflow(N, Total) :- sum(F, flow(N, _, F), Total).
+% --- Accessibility: which sources can reach which machine/port ---
+accessible(Src, M, Port) :- fw(_, "accept", Src, M, _, Port).
 
-% --- Reachability ---
-reachable(X, Y) :- edge(X, Y, _).
-reachable(X, Z) :- reachable(X, Y), edge(Y, Z, _).
+% --- Externally exposed services ---
+externally_exposed(M, Port, Name) :-
+    service(M, Port, _, Name),
+    fw(_, "accept", "0.0.0.0/0", M, _, Port).
 
-% --- Capacity constraints ---
-within_capacity(X, Y) :- edge(X, Y, C), flow(X, Y, F), lte(F, C).
-overloaded(X, Y) :- edge(X, Y, C), flow(X, Y, F), gt(F, C).
+% --- Redundant rules: earlier broader rule with same effect already covers ---
+redundant(Idx) :-
+    fw(Idx, Action, Src, Dest, Proto, Port),
+    fw(Earlier, Action, Broader, Dest, Proto, Port),
+    lt(Earlier, Idx),
+    ip_in(Src, Broader).
 
-% --- Utilization ---
-utilization(X, Y, Pct) :- edge(X, Y, C), flow(X, Y, F), div(F, C, Pct).
-underutilized(X, Y) :- utilization(X, Y, Pct), lt(Pct, 0.5).
+% --- Unreachable rules: earlier DROP shadows a later ACCEPT ---
+unreachable(Idx) :-
+    fw(Idx, "accept", Src, Dest, _, Port),
+    fw(Earlier, "drop", DropSrc, Dest, _, Port),
+    lt(Earlier, Idx),
+    ip_in(Src, DropSrc).
 
-% --- Node conservation ---
-node_balanced(N) :- generates(N, G), consumes(N, C), sum(F, flow(_, N, F), In), sum(F, flow(N, _, F), Out), add(In, G, Supply), add(Out, C, Demand), gte(Supply, Demand).
-
-% --- Global balance ---
-grid_balanced :- sum(G, generates(_, G), TotalGen), sum(C, consumes(_, C), TotalCon), gte(TotalGen, TotalCon).
-
-% --- Net balance at a node (generation minus consumption, ignoring flows) ---
-net_balance(N, B) :- generates(N, G), consumes(N, C), sub(G, C, B).
-
-% --- Node flow conservation (inflow + generation - outflow - consumption) ---
-node_flow_balance(N, Net) :- generates(N, G), consumes(N, C), sum(F, flow(_, N, F), In), sum(F, flow(N, _, F), Out), add(In, G, Supply), add(Out, C, Demand), sub(Supply, Demand, Net).
+% --- Zone of a source CIDR ---
+source_in_zone(Src, Zone) :- zone(Zone, Cidr), ip_in(Src, Cidr).
 `.trim();
 
 export const DEFAULT_CONSTRAINTS_TEXT = `
-% Transmission lines must never carry more than their rated capacity
-:- overloaded(X, Y).
+% Internal machines must not be directly exposed to the world
+:- machine(M, _, internal), fw(_, "accept", "0.0.0.0/0", M, _, _).
 
-% Node conservation: inflow + generation must equal outflow + consumption at every node
-:- node_flow_balance(N, Net), neq(Net, 0).
+% Blocked networks must not slip through any accept rule
+:- blocked(Net), fw(_, "accept", Src, _, _, _), ip_in(Net, Src).
+
+% No redundant firewall rules
+:- redundant(Idx).
+
+% No unreachable firewall rules
+:- unreachable(Idx).
 `.trim();
 
 export const DEFAULT_FACTS: StoredFact[] = parseProgram(DEFAULT_FACTS_TEXT).facts;

@@ -8,7 +8,12 @@ export type InitialToken = {
 
 export type SystemPromptUrls = {
   optimizer?: string;
-  evaluator?: string;
+};
+
+export type CandidateDoc = {
+  '@patchwork': { type: 'candidate' };
+  specUrl: string;
+  documents: { [url: string]: string };
 };
 
 export type PetriNetPlanDoc = {
@@ -21,9 +26,4 @@ export type PetriNetExecutionDoc = {
   '@patchwork': { type: 'petrinet-execution' };
   planUrl: AutomergeUrl;
   tokens: NetState;
-  originalCandidateUrls?: AutomergeUrl[];
-};
-
-type Candidate = {
-  documents: { [url: AutomergeUrl]: AutomergeUrl };
 };

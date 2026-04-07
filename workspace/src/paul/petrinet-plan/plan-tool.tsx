@@ -171,13 +171,11 @@ function PlanView({ handle }: { handle: DocHandle<PetriNetPlanDoc> }) {
 function getSystemPromptUrl(urls: SystemPromptUrls | undefined, tokenTypeId: string): string | undefined {
   if (!urls) return undefined;
   if (tokenTypeId === 'optimizer') return urls.optimizer;
-  if (tokenTypeId === 'evaluator') return urls.evaluator;
   return undefined;
 }
 
 const TEMPLATE_VARS: Record<string, string[]> = {
   optimizer: ['$PROMPT', '$DOC_URL', '$SPEC_URL'],
-  evaluator: ['$PROMPT', '$SOLUTION_URLS'],
 };
 
 function SystemPromptCard(props: { url: string; label: string; tokenTypeId: string }) {

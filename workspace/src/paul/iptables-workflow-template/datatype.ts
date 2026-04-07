@@ -41,7 +41,7 @@ type InitialToken = {
 type PetriNetPlanDoc = {
   '@patchwork': { type: 'petrinet-plan' };
   initialTokens: InitialToken[];
-  systemPromptUrls?: { optimizer?: string; evaluator?: string };
+  systemPromptUrls?: { optimizer?: string };
 };
 
 type MarkdownDoc = {
@@ -52,11 +52,11 @@ type MarkdownDoc = {
 export const IPTablesWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> = {
   init(doc: WorkflowDoc, repo: Repo) {
     const { elicitationUrl } = createElicitationWithIPTables(repo);
-    const { specDocUrl, leafSpecUrls } = createDefaultSpec(repo);
+    const { specDocUrl } = createDefaultSpec(repo);
 
     doc.specElicitationDocUrl = elicitationUrl;
     doc.specDocUrl = specDocUrl;
-    doc.planDocUrl = createPetriNetDoc(repo, leafSpecUrls);
+    doc.planDocUrl = createPetriNetDoc(repo, specDocUrl);
     doc.toolIds = {
       spec: 'paul-spec-viewer',
     };
@@ -132,42 +132,18 @@ function createFilesFolder(
   return handle.url;
 }
 
-function createPetriNetDoc(repo: Repo, leafSpecUrls: AutomergeUrl[]): AutomergeUrl {
+function createPetriNetDoc(repo: Repo, specDocUrl: AutomergeUrl): AutomergeUrl {
   const handle = repo.create<PetriNetPlanDoc>();
   handle.change((d) => {
     d['@patchwork'] = { type: 'petrinet-plan' };
     d.initialTokens = [
-      ...leafSpecUrls.map((specUrl) => ({
-        placeId: 'candidates',
-        state: {
-          type: 'candidate',
-          documentUrl: '',
-          specUrl,
-          prompt: 'Generate an optimized IPTables configuration that satisfies this specification.',
-        },
-      })),
       {
-        placeId: 'optimizer_idle',
-        state: {
-          type: 'optimizer',
-          documentUrl: '',
-          prompt:
-            'Analyze the IPTables configuration and identify redundant rules:\n\n1. Rules that are shadowed by earlier rules (never matched)\n2. Duplicate rules with the same effect\n3. Rules that can be combined (e.g., multiple ports can become a multiport rule)\n4. Rules blocking IPs that are already blocked by a broader CIDR\n5. Accept rules that are unreachable due to earlier DROP rules\n\nOutput the optimized configuration with removed redundant rules and comments explaining each optimization.',
-        },
-      },
-      {
-        placeId: 'evaluator_idle',
-        state: {
-          type: 'evaluator',
-          documentUrl: '',
-          prompt:
-            'Evaluate whether the optimized IPTables configuration maintains the same security posture as the original while having fewer rules.',
-        },
+        placeId: 'spec',
+        state: { type: 'spec', documentUrl: '', specUrl: specDocUrl },
       },
     ];
     d.systemPromptUrls = {
       optimizer: createMarkdownDoc(repo, IPTABLES_OPTIMIZER_SYSTEM_PROMPT),
-      evaluator: createMarkdownDoc(repo, IPTABLES_EVALUATOR_SYSTEM_PROMPT),
     };
   });
   return handle.url;
@@ -231,33 +207,6 @@ return "Configuration updated"
 </script>
 
 Apply your strategy. Remove redundant rules while preserving the security posture required by the constraints. Do not explain — just compute and write.`;
-
-const IPTABLES_EVALUATOR_SYSTEM_PROMPT = `You are a firewall security analyst choosing the best IPTables configuration from several candidates.
-
-Criteria: $PROMPT
-
-Step 1 — Read all candidate configurations:
-<script data-description="Read all candidate configs">
-const urls = $SOLUTION_URLS
-const reads = await Promise.all(urls.map(async url => {
-  const h = await repo.find(url)
-  const d = await h.doc()
-  return { url, content: d?.content ?? "" }
-}))
-return reads.map(r => \`--- \${r.url} ---\\n\${r.content}\`).join("\\n\\n")
-</script>
-
-Step 2 — For each candidate, count the total rules and check for common issues:
-- Duplicate rules (same chain, action, source, protocol, port)
-- Shadowed rules (ACCEPT after broader DROP on same source)
-- Rules that could be combined (e.g., multiport)
-
-Step 3 — Pick the best configuration. Prefer configurations that:
-1. Have zero redundant or unreachable rules
-2. Maintain the same security posture (same effective allow/deny behavior)
-3. Have the fewest total rules
-
-Respond with ONLY the URL of the winning solution — a single line, nothing else.`;
 
 function createDatalogDoc(
   repo: Repo,

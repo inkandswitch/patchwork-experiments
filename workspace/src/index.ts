@@ -233,6 +233,26 @@ export const plugins: Plugin<any>[] = [
       return PetriNetExecutionDatatype;
     },
   } as Datatype,
+  {
+    type: 'patchwork:tool',
+    id: 'candidate-viewer',
+    name: 'Candidate Viewer',
+    supportedDatatypes: ['candidate'],
+    async load() {
+      const { CandidateTool } = await import('./paul/petrinet-plan/candidate-tool');
+      return CandidateTool;
+    },
+  } satisfies Tool,
+  {
+    type: 'patchwork:datatype',
+    id: 'candidate',
+    name: 'Candidate',
+    icon: 'CheckCircle',
+    async load() {
+      const { CandidateDatatype } = await import('./paul/petrinet-plan/candidate-datatype');
+      return CandidateDatatype;
+    },
+  } as Datatype,
 ];
 
 console.log('load workspace plugins', 4);
