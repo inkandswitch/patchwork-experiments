@@ -64,6 +64,13 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
     const planDoc = planHandle.doc();
     if (!planDoc) return;
 
+    const candidateUrls: AutomergeUrl[] = [];
+    for (const init of planDoc.initialTokens ?? []) {
+      if (init.state.type === 'candidate' && init.state.specUrl) {
+        candidateUrls.push(init.state.specUrl as AutomergeUrl);
+      }
+    }
+
     const execHandle = repo.create<PetriNetExecutionDoc>();
     execHandle.change((d) => {
       d['@patchwork'] = { type: 'petrinet-execution' };
@@ -75,6 +82,9 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
           id: makeId(),
           state: JSON.parse(JSON.stringify(init.state)),
         });
+      }
+      if (candidateUrls.length > 0) {
+        d.originalCandidateUrls = candidateUrls;
       }
     });
 
@@ -144,11 +154,7 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
         <Show when={getStageAction()}>
           {(action) => (
             <div class="wf-action-bar">
-              <button
-                class="wf-action-btn"
-                onClick={action().action}
-                disabled={action().disabled}
-              >
+              <button class="wf-action-btn" onClick={action().action} disabled={action().disabled}>
                 {action().label}
               </button>
             </div>

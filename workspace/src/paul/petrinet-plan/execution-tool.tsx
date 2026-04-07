@@ -315,6 +315,7 @@ function TokenInspector(props: {
 }
 
 function CandidatesView(props: { candidateUrls: AutomergeUrl[] }) {
+  const [expandedIndex, setExpandedIndex] = createSignal<number | null>(null);
   return (
     <div class="p3n-candidates-view">
       <Show
@@ -331,14 +332,28 @@ function CandidatesView(props: { candidateUrls: AutomergeUrl[] }) {
       >
         <div class="p3n-candidates-list">
           <For each={props.candidateUrls}>
-            {(url, index) => (
-              <div class="p3n-candidate-card">
-                <span class="p3n-candidate-card-index">#{index() + 1}</span>
-                <span class="p3n-candidate-card-url">
-                  {url.replace('automerge:', '').slice(0, 12)}…
-                </span>
-              </div>
-            )}
+            {(url, index) => {
+              const isExpanded = () => expandedIndex() === index();
+              return (
+                <div class="p3n-candidate-card" classList={{ 'p3n-candidate-card-expanded': isExpanded() }}>
+                  <div
+                    class="p3n-candidate-card-header"
+                    onClick={() => setExpandedIndex(isExpanded() ? null : index())}
+                  >
+                    <span class="p3n-candidate-card-index">#{index() + 1}</span>
+                    <span class="p3n-candidate-card-url">
+                      {url.replace('automerge:', '').slice(0, 20)}…
+                    </span>
+                    <span class="p3n-candidate-card-toggle">{isExpanded() ? '▾' : '▸'}</span>
+                  </div>
+                  <Show when={isExpanded()}>
+                    <div class="p3n-candidate-card-body">
+                      <patchwork-view attr:doc-url={url} style="display:block;width:100%;min-height:200px;" />
+                    </div>
+                  </Show>
+                </div>
+              );
+            }}
           </For>
         </div>
       </Show>

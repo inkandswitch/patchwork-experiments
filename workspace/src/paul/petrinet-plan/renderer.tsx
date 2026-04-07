@@ -289,15 +289,16 @@ export function P3NetRenderer(props: RendererProps) {
   const noopId = (_id: string) => {};
 
   return (
-    <div
-      ref={containerEl}
-      class="p3n-net-container"
-      style={{ width: `${dims().containerW}px`, height: `${dims().containerH}px` }}
-      onClick={(e) => {
-        if (!(e.target as Element).closest('.p3n-token')) props.onSelectToken(null);
-      }}
-    >
-      <svg class="p3n-arc-layer" width={dims().containerW} height={dims().containerH}>
+    <div class="p3n-net-root">
+      <div
+        ref={containerEl}
+        class="p3n-net-container"
+        style={{ width: `${dims().containerW}px`, height: `${dims().containerH}px` }}
+        onClick={(e) => {
+          if (!(e.target as Element).closest('.p3n-token')) props.onSelectToken(null);
+        }}
+      >
+        <svg class="p3n-arc-layer" width={dims().containerW} height={dims().containerH}>
         <defs>
           <marker id="p3n-arrow" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
             <path d="M 0 0 L 10 4 L 0 8 z" fill="#94a3b8" />
@@ -421,6 +422,18 @@ export function P3NetRenderer(props: RendererProps) {
           onComplete={props.onAnimComplete ?? noop}
         />
       </Show>
+      </div>
+
+      <div class="p3n-legend">
+        <For each={props.def.tokenTypes}>
+          {(tt) => (
+            <span class="p3n-legend-item">
+              <span class="p3n-legend-dot" style={{ background: tt.color }} />
+              {tt.label}
+            </span>
+          )}
+        </For>
+      </div>
     </div>
   );
 }

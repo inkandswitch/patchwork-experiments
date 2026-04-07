@@ -23,3 +23,7 @@ export type PetriNetExecutionDoc = {
   tokens: NetState;
   originalCandidateUrls?: AutomergeUrl[];
 };
+
+type Candidate = {
+  documents: { [url: AutomergeUrl]: AutomergeUrl };
+};
