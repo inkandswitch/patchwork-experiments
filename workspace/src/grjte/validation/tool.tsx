@@ -3,7 +3,7 @@ import { For, Show, createMemo, createSignal } from 'solid-js';
 import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primitives';
 import type { ToolRender, ToolElement } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
-import type { ValidationDoc, PlanDoc, SpecDoc, Spec } from '../../workflow/types';
+import type { ValidationDoc, PlanDoc, SpecDoc, Spec, ExecutionDoc } from '../../workflow/types';
 import { useTitle } from '../../hooks/useTitle';
 import {
   Datalog,
@@ -39,7 +39,8 @@ function ValidationView(props: { handle: DocHandle<ValidationDoc>; element: Tool
   const [doc] = useDocument<ValidationDoc>(() => props.handle.url);
   const [plan] = useDocument<PlanDoc>(() => doc()?.planDocUrl);
   const [spec] = useDocument<SpecDoc>(() => doc()?.specDocUrl);
-  const [folder] = useDocument<FolderDoc>(() => plan()?.artifactsFolderUrl);
+  const [execution] = useDocument<ExecutionDoc>(() => doc()?.executionDocUrl);
+  const [folder] = useDocument<FolderDoc>(() => execution()?.artifactsFolderUrl);
   const [selectedVerificationUrl, setSelectedVerificationUrl] =
     createSignal<AutomergeUrl | null>(null);
 

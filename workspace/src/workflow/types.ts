@@ -43,18 +43,33 @@ export type Verification = {
   script: string;
 };
 
-// TODO: we treat running the verifications as a purely deterministic computation that is cheap to run
-// we probably want a way to store the results that we can reference from the validation
-export type PlanDoc = {
+export type TaskDoc = {
   goal: string;
   dependsOn: AutomergeUrl[];
+};
+
+export type PlanDoc = {
+  goal: string;
   specDocUrl: AutomergeUrl;
+  tasks: AutomergeUrl[];
+};
+
+export type VerificationContextDoc = HasPatchworkMetadata & {
+  verificationUrl: AutomergeUrl;
+  artifactUrls: AutomergeUrl[];
+};
+
+export type ExecutionDoc = HasPatchworkMetadata & {
+  specDocUrl: AutomergeUrl;
+  planDocUrl: AutomergeUrl;
   artifactsFolderUrl: AutomergeUrl;
+  verificationContextUrls: AutomergeUrl[];
 };
 
 export type ValidationDoc = {
   planDocUrl: AutomergeUrl;
   specDocUrl: AutomergeUrl;
+  executionDocUrl?: AutomergeUrl;
   isValidated: boolean;
   headsByDocUrl: Record<AutomergeUrl, Heads>;
 };

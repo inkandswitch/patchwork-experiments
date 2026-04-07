@@ -36,7 +36,7 @@ function createDatalogDoc(
 
 export function createDefaultSpec(
   repo: Repo,
-): { specDocUrl: AutomergeUrl; subSpecUrls: AutomergeUrl[] } {
+): { specDocUrl: AutomergeUrl; subSpecUrls: AutomergeUrl[]; verificationDatalogUrls: AutomergeUrl[] } {
   const budgetRulesUrl = createDatalogDoc(
     repo,
     'Budget Rules',
@@ -230,5 +230,6 @@ max_ratio(5).
   return {
     specDocUrl: specHandle.url,
     subSpecUrls: [deptASpecHandle.url, deptBSpecHandle.url],
+    verificationDatalogUrls: [budgetRulesUrl, generalDeptRulesUrl, deptARulesUrl, deptBRulesUrl],
   };
 }

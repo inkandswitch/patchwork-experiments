@@ -7,6 +7,7 @@ export function createDefaultValidation(
   planDocUrl: AutomergeUrl,
   specDocUrl: AutomergeUrl,
   artifactDocUrls: AutomergeUrl[],
+  executionDocUrl: AutomergeUrl,
 ): { validationDocUrl: AutomergeUrl } {
   // Build headsByDocUrl with placeholder heads for each artifact document.
   // In a real workflow these would be actual Automerge document heads capturing
@@ -22,6 +23,7 @@ export function createDefaultValidation(
     d['@patchwork'] = { type: 'validation' };
     d.planDocUrl = planDocUrl;
     d.specDocUrl = specDocUrl;
+    d.executionDocUrl = executionDocUrl;
     d.isValidated = false;
     d.headsByDocUrl = headsByDocUrl;
   });

@@ -1,21 +1,17 @@
 import { render } from 'solid-js/web';
 import { For, Show } from 'solid-js';
 import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primitives';
-import type { ToolRender } from '@inkandswitch/patchwork-plugins';
+import type { ToolRender, ToolElement } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
-import type { PlanDoc } from '../../workflow/types';
+import type { PlanDoc, TaskDoc } from '../../workflow/types';
 import { useTitle } from '../../hooks/useTitle';
 import './plan.css';
-
-type FolderDoc = {
-  docs: { type: string; name: string; url: AutomergeUrl }[];
-};
 
 export const PlanTool: ToolRender = (handle, element) => {
   const dispose = render(
     () => (
       <RepoContext.Provider value={element.repo}>
-        <PlanView handle={handle as DocHandle<PlanDoc>} />
+        <PlanView handle={handle as DocHandle<PlanDoc>} element={element} />
       </RepoContext.Provider>
     ),
     element,
@@ -23,7 +19,17 @@ export const PlanTool: ToolRender = (handle, element) => {
   return () => dispose();
 };
 
-function PlanView(props: { handle: DocHandle<PlanDoc> }) {
+function openDocument(element: ToolElement, url: AutomergeUrl, toolId: string) {
+  element.dispatchEvent(
+    new CustomEvent('patchwork:open-document', {
+      detail: { url, toolId },
+      bubbles: true,
+      composed: true,
+    }),
+  );
+}
+
+function PlanView(props: { handle: DocHandle<PlanDoc>; element: ToolElement }) {
   const [doc] = useDocument<PlanDoc>(() => props.handle.url);
 
   return (
@@ -33,33 +39,30 @@ function PlanView(props: { handle: DocHandle<PlanDoc> }) {
           <div class="plan-content">
             <div class="plan-goal">{currentDoc().goal || 'Untitled plan'}</div>
 
-            <Show when={(currentDoc().dependsOn?.length ?? 0) > 0}>
-              <div class="plan-section">
-                <div class="plan-section-label">Dependencies</div>
-                <div class="plan-dep-list">
-                  <For each={currentDoc().dependsOn}>
-                    {(url) => <DependencyItem url={url} />}
-                  </For>
-                </div>
-              </div>
-            </Show>
-
-            <Show when={currentDoc().artifactsFolderUrl}>
-              {(folderUrl) => <ArtifactsSection folderUrl={folderUrl()} />}
-            </Show>
-
             <Show when={currentDoc().specDocUrl}>
               {(specUrl) => (
                 <div class="plan-section">
-                  <div class="plan-section-label">Spec</div>
-                  <div class="plan-embed">
-                    <patchwork-view
-                      attr:doc-url={specUrl()}
-                      style="display:block;width:100%;height:100%;"
-                    />
-                  </div>
+                  <button
+                    class="plan-spec-btn"
+                    onClick={() => openDocument(props.element, specUrl(), 'grjte-spec-viewer')}
+                  >
+                    View Spec
+                  </button>
                 </div>
               )}
+            </Show>
+
+            <Show when={(currentDoc().tasks?.length ?? 0) > 0}>
+              <div class="plan-section">
+                <div class="plan-section-label">Tasks</div>
+                <div class="plan-task-list">
+                  <For each={currentDoc().tasks}>
+                    {(url, index) => (
+                      <TaskCard url={url} index={index() + 1} element={props.element} />
+                    )}
+                  </For>
+                </div>
+              </div>
             </Show>
           </div>
         )}
@@ -68,40 +71,40 @@ function PlanView(props: { handle: DocHandle<PlanDoc> }) {
   );
 }
 
-function DependencyItem(props: { url: AutomergeUrl }) {
-  const title = useTitle(() => props.url);
+function TaskCard(props: { url: AutomergeUrl; index: number; element: ToolElement }) {
+  const [task] = useDocument<TaskDoc>(() => props.url);
 
   return (
-    <div class="plan-dep-pill">
-      <span class="plan-dep-dot" />
-      <span class="plan-dep-name">{title()}</span>
-    </div>
+    <Show when={task()}>
+      {(currentTask) => (
+        <div class="plan-task-card">
+          <div class="plan-task-header">
+            <span class="plan-task-index">{props.index}</span>
+            <span class="plan-task-goal">{currentTask().goal || 'Untitled task'}</span>
+          </div>
+          <Show when={(currentTask().dependsOn?.length ?? 0) > 0}>
+            <div class="plan-dep-list">
+              <For each={currentTask().dependsOn}>
+                {(depUrl) => <DependencyPill url={depUrl} element={props.element} />}
+              </For>
+            </div>
+          </Show>
+        </div>
+      )}
+    </Show>
   );
 }
 
-function ArtifactsSection(props: { folderUrl: AutomergeUrl }) {
-  const [folder] = useDocument<FolderDoc>(() => props.folderUrl);
+function DependencyPill(props: { url: AutomergeUrl; element: ToolElement }) {
+  const title = useTitle(() => props.url);
 
   return (
-    <Show when={(folder()?.docs?.length ?? 0) > 0}>
-      <div class="plan-section">
-        <div class="plan-section-label">Artifacts</div>
-        <div class="plan-artifact-list">
-          <For each={folder()!.docs}>
-            {(entry) => (
-              <div class="plan-artifact-card">
-                <div class="plan-artifact-card-label">{entry.name}</div>
-                <div class="plan-artifact-card-view">
-                  <patchwork-view
-                    attr:doc-url={entry.url}
-                    style="display:block;width:100%;height:100%;"
-                  />
-                </div>
-              </div>
-            )}
-          </For>
-        </div>
-      </div>
-    </Show>
+    <button
+      class="plan-dep-pill"
+      onClick={() => openDocument(props.element, props.url, 'grjte-spec-viewer')}
+    >
+      <span class="plan-dep-dot" />
+      <span class="plan-dep-name">{title()}</span>
+    </button>
   );
 }

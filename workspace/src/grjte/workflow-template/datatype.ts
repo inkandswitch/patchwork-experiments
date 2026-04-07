@@ -8,6 +8,7 @@ export type { WorkflowDoc } from '../../workflow/types';
 // TEMP: for now, we're using default hard-coded data to focus on the tool viewers
 import { createDefaultSpec } from '../default-data/default-spec';
 import { createDefaultPlan } from '../default-data/default-plan';
+import { createDefaultExecution } from '../default-data/default-execution';
 import { createDefaultValidation } from '../default-data/default-validation';
 
 type FolderDoc = {
@@ -41,13 +42,27 @@ export const grjteWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> 
     };
 
     // TEMP: populate with default data
-    const { specDocUrl, subSpecUrls } = createDefaultSpec(repo);
+    const { specDocUrl, subSpecUrls, verificationDatalogUrls } = createDefaultSpec(repo);
     doc.specDocUrl = specDocUrl;
 
-    const { planDocUrl, artifactDocUrls } = createDefaultPlan(repo, specDocUrl, subSpecUrls);
+    const { planDocUrl } = createDefaultPlan(repo, specDocUrl, subSpecUrls);
     doc.planDocUrl = planDocUrl;
 
-    const { validationDocUrl } = createDefaultValidation(repo, planDocUrl, specDocUrl, artifactDocUrls);
+    const { executionDocUrl, artifactDocUrls } = createDefaultExecution(
+      repo,
+      specDocUrl,
+      planDocUrl,
+      verificationDatalogUrls,
+    );
+    doc.executionDocUrl = executionDocUrl;
+
+    const { validationDocUrl } = createDefaultValidation(
+      repo,
+      planDocUrl,
+      specDocUrl,
+      artifactDocUrls,
+      executionDocUrl,
+    );
     doc.validationDocUrl = validationDocUrl;
   },
   getTitle() {

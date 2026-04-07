@@ -164,6 +164,36 @@ export const plugins: Plugin<any>[] = [
   } as Datatype,
   {
     type: 'patchwork:datatype',
+    id: 'task',
+    name: 'Task',
+    icon: 'CheckSquare',
+    async load() {
+      const { TaskDatatype } = await import('./workflow/datatypes');
+      return TaskDatatype;
+    },
+  } as Datatype,
+  {
+    type: 'patchwork:datatype',
+    id: 'verification-context',
+    name: 'Verification Context',
+    icon: 'ShieldCheck',
+    async load() {
+      const { VerificationContextDatatype } = await import('./workflow/datatypes');
+      return VerificationContextDatatype;
+    },
+  } as Datatype,
+  {
+    type: 'patchwork:datatype',
+    id: 'execution',
+    name: 'Execution',
+    icon: 'Play',
+    async load() {
+      const { ExecutionDatatype } = await import('./workflow/datatypes');
+      return ExecutionDatatype;
+    },
+  } as Datatype,
+  {
+    type: 'patchwork:datatype',
     id: 'validation',
     name: 'Validation',
     icon: 'ShieldCheck',
