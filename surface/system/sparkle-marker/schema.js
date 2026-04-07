@@ -10,7 +10,7 @@ const SparkleMarkerSchema = z.object({
   color: z.string().optional(),
 });
 
-export const schema = {
+export default {
   init() {
     return {
       x: 0,

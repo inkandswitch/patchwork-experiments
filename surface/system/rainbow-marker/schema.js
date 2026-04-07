@@ -9,7 +9,7 @@ const RainbowMarkerSchema = z.object({
   points: z.array(z.tuple([z.number(), z.number(), z.number()])),
 });
 
-export const schema = {
+export default {
   init() {
     return {
       x: 0,

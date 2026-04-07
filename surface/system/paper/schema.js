@@ -8,6 +8,7 @@ const ShapeSchema = z.object({
 });
 
 export const shapesSchema = {
+  namespace: 'shapes',
   init() {
     return {
       selectionButton: {
@@ -61,6 +62,7 @@ export const shapesSchema = {
 };
 
 export const selectedToolSchema = {
+  namespace: 'selectedTool',
   init() {
     return '';
   },
@@ -70,6 +72,7 @@ export const selectedToolSchema = {
 };
 
 export const selectedShapesSchema = {
+  namespace: 'selectedShapes',
   init() {
     return {};
   },

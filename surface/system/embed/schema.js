@@ -13,7 +13,7 @@ const EmbedSchema = z
   })
   .passthrough();
 
-export const schema = {
+export default {
   init() {
     return {
       x: 0,

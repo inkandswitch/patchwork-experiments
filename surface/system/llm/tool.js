@@ -1,13 +1,14 @@
 import { from, render, html, For, createSignal } from '../solid.js';
+import { shapesSchema } from '../paper/schema.js';
 import { marked } from 'https://esm.sh/marked@15';
 import { buildSystemPrompt } from './system-prompt.js';
 import { runLlmTurns } from './process.js';
-import { schema } from './schema.js';
+import llmSchema from './schema.js';
 import styles from './shape.css' with { type: 'css' };
 
 document.adoptedStyleSheets = [...document.adoptedStyleSheets, styles];
 
-export { schema };
+
 
 const MODELS = [
   { id: 'anthropic/claude-opus-4.6', name: 'Claude Opus 4.6' },
@@ -32,7 +33,7 @@ export default function mount(element) {
     return () => pre.remove();
   }
 
-  const ref = element.ref.as(schema);
+  const ref = element.getOrCreate(llmSchema);
   const data = from(ref);
   const [prompt, setPrompt] = createSignal('');
   const [submitting, setSubmitting] = createSignal(false);
@@ -282,11 +283,7 @@ export default function mount(element) {
 }
 
 function rootRefView(host) {
-  let current = host;
-  while (current.parent) {
-    current = current.parent;
-  }
-  return current;
+  return host.findParent(shapesSchema) ?? host;
 }
 
 function getApiKey() {
@@ -299,8 +296,8 @@ async function loadSchema(schemaUrl) {
   if (schemaCache.has(schemaUrl)) return schemaCache.get(schemaUrl);
   try {
     const mod = await import(schemaUrl);
-    schemaCache.set(schemaUrl, mod.schema);
-    return mod.schema;
+    schemaCache.set(schemaUrl, mod.default);
+    return mod.default;
   } catch {
     return null;
   }
@@ -317,7 +314,7 @@ async function buildContextSection(element, frameRefView) {
       const label = depth === 0 ? 'Element 0 (LLM panel)' : `Element ${depth}`;
       lines.push(`### ${label}\n${summarizeValue(value, label)}\n`);
     }
-    current = current.parent;
+    current = current.findParent(shapesSchema);
     depth++;
   }
 

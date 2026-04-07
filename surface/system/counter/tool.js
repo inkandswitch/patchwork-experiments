@@ -1,11 +1,11 @@
 
-import { from, render, html, createSignal } from '../solid.js';
-import { schema } from './schema.js';
+import { from, html, render } from '../solid.js';
+import counterSchema from './schema.js';
 
-export { schema };
+
 
 export default function mount(element) {
-  const ref = element.ref.as(schema);
+  const ref = element.getOrCreate(counterSchema);
   const data = from(ref);
 
   function increment() {
@@ -38,62 +38,62 @@ export default function mount(element) {
         'user-select': 'none',
       }}>
         <div style=${{
-          'font-size': '14px',
-          'font-weight': '600',
-          'letter-spacing': '2px',
-          'text-transform': 'uppercase',
-          'margin-bottom': '12px',
-          opacity: '0.85',
-        }}>Counter</div>
+        'font-size': '14px',
+        'font-weight': '600',
+        'letter-spacing': '2px',
+        'text-transform': 'uppercase',
+        'margin-bottom': '12px',
+        opacity: '0.85',
+      }}>Counter</div>
         <div style=${{
-          'font-size': '56px',
-          'font-weight': '700',
-          'line-height': '1',
-          'margin-bottom': '20px',
-        }}>${() => data()?.count ?? 0}</div>
+        'font-size': '56px',
+        'font-weight': '700',
+        'line-height': '1',
+        'margin-bottom': '20px',
+      }}>${() => data()?.count ?? 0}</div>
         <div style=${{
-          display: 'flex',
-          gap: '8px',
-        }}>
+        display: 'flex',
+        gap: '8px',
+      }}>
           <button onClick=${decrement} style=${{
-            width: '44px',
-            height: '44px',
-            'border-radius': '50%',
-            border: '2px solid rgba(255,255,255,0.5)',
-            background: 'rgba(255,255,255,0.15)',
-            color: 'white',
-            'font-size': '22px',
-            cursor: 'pointer',
-            display: 'flex',
-            'align-items': 'center',
-            'justify-content': 'center',
-            'font-weight': 'bold',
-          }}>−</button>
+        width: '44px',
+        height: '44px',
+        'border-radius': '50%',
+        border: '2px solid rgba(255,255,255,0.5)',
+        background: 'rgba(255,255,255,0.15)',
+        color: 'white',
+        'font-size': '22px',
+        cursor: 'pointer',
+        display: 'flex',
+        'align-items': 'center',
+        'justify-content': 'center',
+        'font-weight': 'bold',
+      }}>−</button>
           <button onClick=${reset} style=${{
-            height: '44px',
-            'border-radius': '22px',
-            border: '2px solid rgba(255,255,255,0.5)',
-            background: 'rgba(255,255,255,0.15)',
-            color: 'white',
-            'font-size': '13px',
-            cursor: 'pointer',
-            padding: '0 16px',
-            'font-weight': '600',
-          }}>Reset</button>
+        height: '44px',
+        'border-radius': '22px',
+        border: '2px solid rgba(255,255,255,0.5)',
+        background: 'rgba(255,255,255,0.15)',
+        color: 'white',
+        'font-size': '13px',
+        cursor: 'pointer',
+        padding: '0 16px',
+        'font-weight': '600',
+      }}>Reset</button>
           <button onClick=${increment} style=${{
-            width: '44px',
-            height: '44px',
-            'border-radius': '50%',
-            border: '2px solid rgba(255,255,255,0.5)',
-            background: 'rgba(255,255,255,0.15)',
-            color: 'white',
-            'font-size': '22px',
-            cursor: 'pointer',
-            display: 'flex',
-            'align-items': 'center',
-            'justify-content': 'center',
-            'font-weight': 'bold',
-          }}>+</button>
+        width: '44px',
+        height: '44px',
+        'border-radius': '50%',
+        border: '2px solid rgba(255,255,255,0.5)',
+        background: 'rgba(255,255,255,0.15)',
+        color: 'white',
+        'font-size': '22px',
+        cursor: 'pointer',
+        display: 'flex',
+        'align-items': 'center',
+        'justify-content': 'center',
+        'font-weight': 'bold',
+      }}>+</button>
         </div>
       </div>
     `,

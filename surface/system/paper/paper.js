@@ -1,18 +1,12 @@
 import { useRef, For, render, html } from '../solid.js';
-import { shapesSchema, selectedToolSchema, selectedShapesSchema } from './schema.js';
-
-function ensurePaperDocument(ref) {
-  ref.at('shapes').as(shapesSchema).value();
-  ref.at('selectedTool').as(selectedToolSchema).value();
-  ref.at('selectedShapes').as(selectedShapesSchema).value();
-}
+import { shapesSchema, selectedShapesSchema } from './schema.js';
 
 export default function mount(element) {
-  const ref = element.ref;
-  ensurePaperDocument(ref);
+  const shapesRef = element.getOrCreate(shapesSchema);
+  const selectedShapesRef = element.getOrCreate(selectedShapesSchema);
 
-  const shapes = useRef(ref.at('shapes'));
-  const selectedShapes = useRef(ref.at('selectedShapes'));
+  const shapes = useRef(shapesRef);
+  const selectedShapes = useRef(selectedShapesRef);
 
   return render(
     () =>
@@ -29,7 +23,7 @@ export default function mount(element) {
           >
             <ref-view
               view-url=${() => shapes[id]?.viewUrl}
-              ref-url=${ref.at('shapes', id).url}
+              ref-url=${shapesRef.at(id).url}
             />
           </div>`
         }</>

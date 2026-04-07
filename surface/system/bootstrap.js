@@ -4,7 +4,7 @@ import { getViewUrl } from './url.js';
 const paperViewUrl = getViewUrl('./paper/tool.json', import.meta.url);
 
 export default function mount(element) {
-  const refUrl = element.ref.url;
+  const refUrl = element.refUrl;
   return render(
     () =>
       html`<ref-view

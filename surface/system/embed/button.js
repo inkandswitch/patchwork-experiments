@@ -1,6 +1,7 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, createSignal, render, html } from '../solid.js';
 import { getViewUrl, toViewPath } from '../url.js';
+import { selectedToolSchema, shapesSchema } from '../paper/schema.js';
 import styles from './button.css' with { type: 'css' };
 
 document.adoptedStyleSheets = [...document.adoptedStyleSheets, styles];
@@ -23,28 +24,21 @@ export const schema = {
   },
 };
 
-const selectedToolSchema = {
-  init() {
-    return '';
-  },
-  parse(value) {
-    return typeof value === 'string' ? value : '';
-  },
-};
-
 const schemaCache = new Map();
 
 async function loadSchema(url) {
   if (schemaCache.has(url)) return schemaCache.get(url);
   const mod = await import(url);
-  schemaCache.set(url, mod.schema);
-  return mod.schema;
+  schemaCache.set(url, mod.default);
+  return mod.default;
 }
 
 export default function mount(element) {
-  const canvas = element.parent;
-  const selectedToolRef = canvas.ref.at('selectedTool').as(selectedToolSchema);
+  const canvas = element.findParent(shapesSchema);
+  if (!canvas) return;
+  const selectedToolRef = canvas.getOrCreate(selectedToolSchema);
   const selectedTool = from(selectedToolRef);
+  const shapesRef = canvas.getOrCreate(shapesSchema);
 
   const schemaPlugins = from(element.plugins.byType('schema'));
   const toolPlugins = from(element.plugins.byType('tool'));
@@ -102,7 +96,7 @@ export default function mount(element) {
     startY = event.clientY - rect.top;
     dragId = `embed_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-    canvas.ref.at('shapes', dragId).change(() => ({
+    shapesRef.at(dragId).change(() => ({
       x: startX,
       y: startY,
       viewUrl: embedViewUrl,
@@ -140,7 +134,7 @@ export default function mount(element) {
     const height = Math.abs(currentY - startY);
     const x = Math.min(startX, currentX);
     const y = Math.min(startY, currentY);
-    canvas.ref.at('shapes', dragId).change((shape) => {
+    shapesRef.at(dragId).change((shape) => {
       shape.x = x;
       shape.y = y;
       shape.width = width;
@@ -150,9 +144,9 @@ export default function mount(element) {
 
   function onPointerUp() {
     if (dragId) {
-      const shape = canvas.ref.at('shapes', dragId).value();
+      const shape = shapesRef.at(dragId).value();
       if (shape.width < 4 && shape.height < 4) {
-        canvas.ref.at('shapes', dragId).change((s) => {
+        shapesRef.at(dragId).change((s) => {
           s.x = startX - 160;
           s.y = startY - 120;
           s.width = 320;

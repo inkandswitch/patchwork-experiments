@@ -1,8 +1,9 @@
 import { createExamples } from '../examples.js';
 import { getViewUrl } from '../url.js';
-import { schema } from './schema.js';
+import { shapesSchema } from '../paper/schema.js';
+import partsBinSchema from './schema.js';
 
-export { schema };
+
 
 const MAX_PREVIEW_W = 260;
 const MAX_PREVIEW_H = 300;
@@ -16,7 +17,7 @@ export default function mount(element) {
   let allExamples = [];
   let searchTerm = '';
 
-  const shapeData = element.ref.as(schema).value();
+  const shapeData = element.getOrCreate(partsBinSchema).value();
   const galleryWidth = shapeData.width || 280;
   const galleryHeight = shapeData.height || 800;
 
@@ -104,10 +105,10 @@ export default function mount(element) {
   }
 
   function placeExample(example) {
-    const canvas = element.parent;
-    if (!canvas?.ref) return;
+    const canvas = element.findParent(shapesSchema);
+    if (!canvas) return;
 
-    const currentData = element.ref.as(schema).value();
+    const currentData = element.getOrCreate(partsBinSchema).value();
 
     let createValue = example.value;
     let createTool = example.tool;
@@ -126,7 +127,7 @@ export default function mount(element) {
     const newHeight = createValue.height || example.height || DEFAULT_HEIGHT;
 
     const shapeId = `example_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    canvas.ref.at('shapes', shapeId).change(() => ({
+    canvas.getOrCreate(shapesSchema).at(shapeId).change(() => ({
       ...structuredClone(createValue),
       x: (currentData.x || 0) + (currentData.width || 280) + 20,
       y: currentData.y || 0,

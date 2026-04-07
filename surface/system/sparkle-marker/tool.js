@@ -1,9 +1,9 @@
 
 import { getStroke } from 'https://esm.sh/perfect-freehand';
 import { from, render, html } from '../solid.js';
-import { schema } from './schema.js';
+import sparkleMarkerSchema from './schema.js';
 
-export { schema };
+
 
 function getSvgPathFromStroke(points) {
   if (points.length < 4) return '';
@@ -81,7 +81,7 @@ function generateParticles(points) {
 }
 
 export default function mount(element) {
-  const ref = element.ref.as(schema);
+  const ref = element.getOrCreate(sparkleMarkerSchema);
   const data = from(ref);
 
   // Create the particle canvas imperatively

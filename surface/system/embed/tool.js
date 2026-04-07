@@ -1,19 +1,19 @@
 import { from, createSignal, render, html } from '../solid.js';
 import { toViewPath } from '../url.js';
-import { schema } from './schema.js';
+import embedSchema from './schema.js';
 import styles from './shape.css' with { type: 'css' };
 
 document.adoptedStyleSheets = [...document.adoptedStyleSheets, styles];
 
-export { schema };
+
 
 const schemaCache = new Map();
 
 async function loadSchema(schemaUrl) {
   if (schemaCache.has(schemaUrl)) return schemaCache.get(schemaUrl);
   const mod = await import(schemaUrl);
-  schemaCache.set(schemaUrl, mod.schema);
-  return mod.schema;
+  schemaCache.set(schemaUrl, mod.default);
+  return mod.default;
 }
 
 function findParentShapeInfo(element) {
@@ -46,7 +46,7 @@ function findParentShapeInfo(element) {
 }
 
 export default function mount(element) {
-  const ref = element.ref.as(schema);
+  const ref = element.getOrCreate(embedSchema);
   const data = from(ref);
 
   const toolPlugins = from(element.plugins.byType('tool'));

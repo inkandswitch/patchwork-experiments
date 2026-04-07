@@ -1,10 +1,10 @@
 import { from, render, html } from '../solid.js';
-import { schema } from './schema.js';
+import rectangleSchema from './schema.js';
 
-export { schema };
+
 
 export default function mount(element) {
-  const ref = element.ref.as(schema);
+  const ref = element.getOrCreate(rectangleSchema);
   const data = from(ref);
 
   return render(

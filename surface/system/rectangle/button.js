@@ -1,6 +1,7 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, render, html } from '../solid.js';
 import { getViewUrl } from '../url.js';
+import { selectedToolSchema, shapesSchema } from '../paper/schema.js';
 
 const TOOL_NAME = 'rectangle';
 const rectangleViewUrl = getViewUrl('./tool.json', import.meta.url);
@@ -20,21 +21,14 @@ export const schema = {
   },
 };
 
-const selectedToolSchema = {
-  init() {
-    return '';
-  },
-  parse(value) {
-    return typeof value === 'string' ? value : '';
-  },
-};
-
 export default function mount(element) {
   console.log('[rect-button] mount', element);
-  const canvas = element.parent;
+  const canvas = element.findParent(shapesSchema);
+  if (!canvas) return;
   console.log('[rect-button] canvas parent', canvas);
-  const selectedToolRef = canvas.ref.at('selectedTool').as(selectedToolSchema);
+  const selectedToolRef = canvas.getOrCreate(selectedToolSchema);
   const selectedTool = from(selectedToolRef);
+  const shapesRef = canvas.getOrCreate(shapesSchema);
 
   const active = () => selectedTool() === TOOL_NAME;
 
@@ -57,7 +51,7 @@ export default function mount(element) {
     startY = event.clientY - rect.top;
     dragId = `rect_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     console.log('[rect-button] creating shape', dragId, { x: startX, y: startY });
-    canvas.ref.at('shapes', dragId).change(() => ({
+    shapesRef.at(dragId).change(() => ({
       x: startX,
       y: startY,
       viewUrl: rectangleViewUrl,
@@ -77,7 +71,7 @@ export default function mount(element) {
     const x = Math.min(startX, currentX);
     const y = Math.min(startY, currentY);
     console.log('[rect-button] pointermove', dragId, { x, y, width, height });
-    canvas.ref.at('shapes', dragId).change((shape) => {
+    shapesRef.at(dragId).change((shape) => {
       shape.x = x;
       shape.y = y;
       shape.width = width;
@@ -88,12 +82,12 @@ export default function mount(element) {
   function onPointerUp() {
     console.log('[rect-button] pointerup', { dragId });
     if (dragId) {
-      const shape = canvas.ref.at('shapes', dragId).value();
+      const shape = shapesRef.at(dragId).value();
       console.log('[rect-button] final shape', dragId, shape);
       if (shape.width < 2 && shape.height < 2) {
         const defaultWidth = 100;
         const defaultHeight = 80;
-        canvas.ref.at('shapes', dragId).change((s) => {
+        shapesRef.at(dragId).change((s) => {
           s.x = startX - defaultWidth / 2;
           s.y = startY - defaultHeight / 2;
           s.width = defaultWidth;

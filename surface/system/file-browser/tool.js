@@ -1,7 +1,7 @@
 
-import { schema } from './schema.js';
+import fileBrowserSchema from './schema.js';
 
-export { schema };
+
 
 export default function mount(element) {
   const fs = element.filesystem;

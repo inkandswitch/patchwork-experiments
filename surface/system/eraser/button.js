@@ -2,6 +2,7 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, render, html } from '../solid.js';
 import { getViewUrl } from '../url.js';
+import { selectedToolSchema, shapesSchema } from '../paper/schema.js';
 
 const TOOL_NAME = 'eraser';
 const eraserViewUrl = getViewUrl('./tool.json', import.meta.url);
@@ -21,15 +22,12 @@ export const schema = {
   },
 };
 
-const selectedToolSchema = {
-  init() { return ''; },
-  parse(value) { return typeof value === 'string' ? value : ''; },
-};
-
 export default function mount(element) {
-  const canvas = element.parent;
-  const selectedToolRef = canvas.ref.at('selectedTool').as(selectedToolSchema);
+  const canvas = element.findParent(shapesSchema);
+  if (!canvas) return;
+  const selectedToolRef = canvas.getOrCreate(selectedToolSchema);
   const selectedTool = from(selectedToolRef);
+  const shapesRef = canvas.getOrCreate(shapesSchema);
 
   const active = () => selectedTool() === TOOL_NAME;
 
@@ -51,8 +49,7 @@ export default function mount(element) {
   }
 
   function eraseAtPoint(px, py) {
-    const doc = canvas.ref.value();
-    const shapes = doc.shapes || {};
+    const shapes = shapesRef.value() || {};
     const toDelete = [];
 
     for (const [id, shape] of Object.entries(shapes)) {
@@ -100,7 +97,7 @@ export default function mount(element) {
     }
 
     if (toDelete.length > 0) {
-      canvas.ref.at('shapes').change((shapes) => {
+      shapesRef.change((shapes) => {
         for (const id of toDelete) {
           delete shapes[id];
           erasedIds.add(id);
@@ -119,7 +116,7 @@ export default function mount(element) {
     trailPoints = [[pos.x, pos.y]];
     trailId = `eraser_trail_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
-    canvas.ref.at('shapes', trailId).change(() => ({
+    shapesRef.at(trailId).change(() => ({
       x: 0,
       y: 0,
       viewUrl: eraserViewUrl,
@@ -136,7 +133,7 @@ export default function mount(element) {
     const pos = getCanvasPos(event);
     trailPoints.push([pos.x, pos.y]);
 
-    canvas.ref.at('shapes', trailId).change((shape) => {
+    shapesRef.at(trailId).change((shape) => {
       shape.points.push([pos.x, pos.y]);
     });
 
@@ -151,7 +148,7 @@ export default function mount(element) {
     const id = trailId;
     if (id) {
       try {
-        canvas.ref.at('shapes').change((shapes) => {
+        shapesRef.change((shapes) => {
           delete shapes[id];
         });
       } catch(e) {}

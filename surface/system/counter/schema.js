@@ -6,7 +6,7 @@ const CounterSchema = z.object({
   count: z.number(),
 });
 
-export const schema = {
+export default {
   init() {
     return { count: 0 };
   },

@@ -8,7 +8,7 @@ const TextSchema = z.object({
   text: z.string(),
 });
 
-export const schema = {
+export default {
   init() {
     return { x: 0, y: 0, viewUrl: getViewUrl('./tool.json', import.meta.url), text: '' };
   },

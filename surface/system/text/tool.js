@@ -1,12 +1,12 @@
 import { render, html } from '../solid.js';
-import { schema } from './schema.js';
+import textSchema from './schema.js';
 
-export { schema };
+
 
 const supportsFieldSizing = CSS.supports('field-sizing', 'content');
 
 export default function mount(element) {
-  const ref = element.ref.as(schema);
+  const ref = element.getOrCreate(textSchema);
   const textRef = ref.at('text');
 
   let textareaEl;

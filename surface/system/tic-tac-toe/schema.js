@@ -14,7 +14,7 @@ const TicTacToeSchema = z.object({
   gameOver: z.boolean(),
 });
 
-export const schema = {
+export default {
   init() {
     return {
       x: 0,

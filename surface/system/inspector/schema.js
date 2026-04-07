@@ -10,7 +10,7 @@ const InspectorSchema = z.object({
   height: z.number().optional(),
 });
 
-export const schema = {
+export default {
   init() {
     return {
       x: 0,

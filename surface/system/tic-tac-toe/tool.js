@@ -1,8 +1,8 @@
 
 import { from, render, html, createSignal } from '../solid.js';
-import { schema } from './schema.js';
+import ticTacToeSchema from './schema.js';
 
-export { schema };
+
 
 const WINNING_LINES = [
   [0, 1, 2], [3, 4, 5], [6, 7, 8], // rows
@@ -22,7 +22,7 @@ function checkWinner(board) {
 
 export default function mount(element) {
   console.log("[TTT] mount() called at", Date.now());
-  const ref = element.ref.as(schema);
+  const ref = element.getOrCreate(ticTacToeSchema);
   const data = from(ref);
 
   function handleClick(index) {

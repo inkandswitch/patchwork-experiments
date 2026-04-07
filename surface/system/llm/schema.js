@@ -25,7 +25,7 @@ const LlmContentSchema = z.object({
   runs: z.array(RunSchema),
 });
 
-export const schema = {
+export default {
   init() {
     return {
       config: {

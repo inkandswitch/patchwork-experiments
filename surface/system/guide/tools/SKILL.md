@@ -57,7 +57,7 @@ const MyToolSchema = z.object({
   // add your fields here
 });
 
-export const schema = {
+export default {
   init() {
     return { x: 0, y: 0, viewUrl: getViewUrl('./tool.json', import.meta.url) };
   },
@@ -76,12 +76,10 @@ await filesystem.writeFile(
   "my-tool/tool.js",
   `
 import { from, render, html } from '../solid.js';
-import { schema } from './schema.js';
-
-export { schema };
+import myToolSchema from './schema.js';
 
 export default function mount(element) {
-  const ref = element.ref.as(schema);
+  const ref = element.getOrCreate(myToolSchema);
   const data = from(ref);
 
   return render(
@@ -202,5 +200,5 @@ element.ref.at("shapes", `embed_${Date.now()}`).change(() => ({
 - Import `getViewUrl` from `'../url.js'` for resolving view-descriptor paths in schemas
 - Use Zod from `'https://esm.sh/zod@4.3'` for schema validation
 - `tool.js` must export `schema` and a default `mount(element)` function
-- `mount` receives a ref-view element; use `element.ref.as(schema)` to get a typed ref, `from(ref)` for reactive data
+- `mount` receives a ref-view element; use `element.ref.getOrCreate(schema)` to get a typed ref, `from(ref)` for reactive data
 - The `mount` function should return a cleanup function (typically from `render()`)

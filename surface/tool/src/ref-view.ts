@@ -11,14 +11,17 @@ const ATTR_REF = "ref-url";
 
 export type RefViewHostElement = HTMLElement & {
   readonly ref: Ref;
-  readonly parent: RefViewHostElement | null;
   readonly filesystem: Filesystem;
   readonly plugins: PluginRegistry;
+  has(schema: Schema<unknown>): boolean;
+  get<T>(schema: Schema<T>): Ref<T> | null;
+  getOrCreate<T>(schema: Schema<T>): Ref<T>;
+  findClosest(schema: Schema<unknown>): RefViewHostElement | null;
+  findParent(schema: Schema<unknown>): RefViewHostElement | null;
 };
 
 type MountModule = {
   default: (element: RefViewHostElement) => void | (() => void);
-  schema?: Schema<unknown>;
 };
 
 type ViewDescriptor = {
@@ -61,9 +64,50 @@ export function registerRefView(
       return this.#ref;
     }
 
-    get parent(): RefViewElement | null {
-      const host = this.parentElement?.closest("ref-view");
-      return (host as RefViewElement | null) ?? null;
+    has(schema: Schema<unknown>): boolean {
+      if (!this.#ref) return false;
+      const target = schema.namespace ? this.#ref.at(schema.namespace) : this.#ref;
+      if (!target.has()) return false;
+      try {
+        schema.parse(target.value());
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    get<T>(schema: Schema<T>): Ref<T> | null {
+      if (!this.#ref) return null;
+      const target = schema.namespace ? this.#ref.at(schema.namespace) : this.#ref;
+      if (!target.has()) return null;
+      return target as unknown as Ref<T>;
+    }
+
+    getOrCreate<T>(schema: Schema<T>): Ref<T> {
+      if (!this.#ref) throw new Error("ref-view: cannot getOrCreate before ref is resolved");
+      const target = schema.namespace ? this.#ref.at(schema.namespace) : this.#ref;
+      if (!target.has()) {
+        target.change((() => schema.init()) as unknown as () => void);
+      }
+      return target as unknown as Ref<T>;
+    }
+
+    findClosest(schema: Schema<unknown>): RefViewHostElement | null {
+      let current: RefViewHostElement | null = this as RefViewHostElement;
+      while (current) {
+        if (current.has(schema)) return current;
+        current = parentRefView(current as unknown as HTMLElement);
+      }
+      return null;
+    }
+
+    findParent(schema: Schema<unknown>): RefViewHostElement | null {
+      let current: RefViewHostElement | null = parentRefView(this as unknown as HTMLElement);
+      while (current) {
+        if (current.has(schema)) return current;
+        current = parentRefView(current as unknown as HTMLElement);
+      }
+      return null;
     }
 
     get viewUrl(): string {
@@ -253,6 +297,11 @@ export function registerRefView(
   }
 
   customElements.define("ref-view", RefViewElement);
+}
+
+function parentRefView(el: HTMLElement): RefViewHostElement | null {
+  const host = el.parentElement?.closest("ref-view");
+  return (host as RefViewHostElement | null) ?? null;
 }
 
 async function resolveToolUrlFromView(filesystem: Filesystem, viewUrl: string): Promise<string> {

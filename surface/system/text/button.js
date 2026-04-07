@@ -1,6 +1,7 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, render, html } from '../solid.js';
 import { getViewUrl } from '../url.js';
+import { selectedToolSchema, shapesSchema } from '../paper/schema.js';
 
 const TOOL_NAME = 'text';
 const textViewUrl = getViewUrl('./tool.json', import.meta.url);
@@ -20,19 +21,12 @@ export const schema = {
   },
 };
 
-const selectedToolSchema = {
-  init() {
-    return '';
-  },
-  parse(value) {
-    return typeof value === 'string' ? value : '';
-  },
-};
-
 export default function mount(element) {
-  const canvas = element.parent;
-  const selectedToolRef = canvas.ref.at('selectedTool').as(selectedToolSchema);
+  const canvas = element.findParent(shapesSchema);
+  if (!canvas) return;
+  const selectedToolRef = canvas.getOrCreate(selectedToolSchema);
   const selectedTool = from(selectedToolRef);
+  const shapesRef = canvas.getOrCreate(shapesSchema);
 
   const active = () => selectedTool() === TOOL_NAME;
 
@@ -49,14 +43,14 @@ export default function mount(element) {
     const halfLineHeight = Math.round((18 * 1.4) / 2);
     const y = event.clientY - rect.top - halfLineHeight;
     const id = `text_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    canvas.ref.at('shapes', id).change(() => ({
+    shapesRef.at(id).change(() => ({
       x,
       y,
       viewUrl: textViewUrl,
       text: '',
     }));
     selectedToolRef.change(() => '');
-    const shapeUrl = canvas.ref.at('shapes', id).url;
+    const shapeUrl = shapesRef.at(id).url;
     requestAnimationFrame(() => {
       const refView = canvas.querySelector(`ref-view[ref-url="${shapeUrl}"]`);
       const textarea = refView?.querySelector('textarea');

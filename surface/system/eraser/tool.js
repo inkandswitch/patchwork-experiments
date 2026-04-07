@@ -1,11 +1,11 @@
 
 import { from, render, html } from '../solid.js';
-import { schema } from './schema.js';
+import eraserSchema from './schema.js';
 
-export { schema };
+
 
 export default function mount(element) {
-  const ref = element.ref.as(schema);
+  const ref = element.getOrCreate(eraserSchema);
   const data = from(ref);
 
   const canvasEl = document.createElement('canvas');

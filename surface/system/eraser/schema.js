@@ -10,7 +10,7 @@ const EraserTrailSchema = z.object({
   createdAt: z.number(),
 });
 
-export const schema = {
+export default {
   init() {
     return {
       x: 0,

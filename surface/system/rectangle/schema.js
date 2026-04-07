@@ -9,7 +9,7 @@ const RectangleSchema = z.object({
   height: z.number(),
 });
 
-export const schema = {
+export default {
   init() {
     return { x: 0, y: 0, viewUrl: getViewUrl('./tool.json', import.meta.url), width: 100, height: 100 };
   },

@@ -2,6 +2,7 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, render, html } from '../solid.js';
 import { getViewUrl } from '../url.js';
+import { selectedToolSchema, shapesSchema } from '../paper/schema.js';
 
 const TOOL_NAME = 'ellipse';
 const ellipseViewUrl = getViewUrl('./tool.json', import.meta.url);
@@ -21,19 +22,12 @@ export const schema = {
   },
 };
 
-const selectedToolSchema = {
-  init() {
-    return '';
-  },
-  parse(value) {
-    return typeof value === 'string' ? value : '';
-  },
-};
-
 export default function mount(element) {
-  const canvas = element.parent;
-  const selectedToolRef = canvas.ref.at('selectedTool').as(selectedToolSchema);
+  const canvas = element.findParent(shapesSchema);
+  if (!canvas) return;
+  const selectedToolRef = canvas.getOrCreate(selectedToolSchema);
   const selectedTool = from(selectedToolRef);
+  const shapesRef = canvas.getOrCreate(shapesSchema);
 
   const active = () => selectedTool() === TOOL_NAME;
 
@@ -53,7 +47,7 @@ export default function mount(element) {
     startX = event.clientX - rect.left;
     startY = event.clientY - rect.top;
     dragId = `ellipse_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    canvas.ref.at('shapes', dragId).change(() => ({
+    shapesRef.at(dragId).change(() => ({
       x: startX,
       y: startY,
       viewUrl: ellipseViewUrl,
@@ -72,7 +66,7 @@ export default function mount(element) {
     const height = Math.abs(currentY - startY);
     const x = Math.min(startX, currentX);
     const y = Math.min(startY, currentY);
-    canvas.ref.at('shapes', dragId).change((shape) => {
+    shapesRef.at(dragId).change((shape) => {
       shape.x = x;
       shape.y = y;
       shape.width = width;
@@ -82,11 +76,11 @@ export default function mount(element) {
 
   function onPointerUp() {
     if (dragId) {
-      const shape = canvas.ref.at('shapes', dragId).value();
+      const shape = shapesRef.at(dragId).value();
       if (shape.width < 2 && shape.height < 2) {
         const defaultWidth = 100;
         const defaultHeight = 100;
-        canvas.ref.at('shapes', dragId).change((s) => {
+        shapesRef.at(dragId).change((s) => {
           s.x = startX - defaultWidth / 2;
           s.y = startY - defaultHeight / 2;
           s.width = defaultWidth;

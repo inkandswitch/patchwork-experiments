@@ -1,15 +1,16 @@
 import { from, render, html } from "../solid.js";
-import { schema } from "./schema.js";
+import counterSchema from "./schema.js";
 
-export { schema };
+
 
 export default function mount(element) {
-  const data = from(element.ref);
+  const ref = element.getOrCreate(counterSchema);
+  const data = from(ref);
 
   function increment(e) {
     e.preventDefault();
     e.stopPropagation();
-    element.ref.change((doc) => {
+    ref.change((doc) => {
       doc.count = (doc.count || 0) + 1;
     });
   }
@@ -17,7 +18,7 @@ export default function mount(element) {
   function decrement(e) {
     e.preventDefault();
     e.stopPropagation();
-    element.ref.change((doc) => {
+    ref.change((doc) => {
       doc.count = (doc.count || 0) - 1;
     });
   }
@@ -25,7 +26,7 @@ export default function mount(element) {
   function reset(e) {
     e.preventDefault();
     e.stopPropagation();
-    element.ref.change((doc) => {
+    ref.change((doc) => {
       doc.count = 0;
     });
   }

@@ -1,8 +1,8 @@
 
 import { render, html, createSignal, from, createEffect } from '../solid.js';
-import { schema } from './schema.js';
+import inspectorSchema from './schema.js';
 
-export { schema };
+
 
 // Solid's from() returns a signal that auto-updates when the subscribable changes.
 // We need to handle dynamic ref switching by using createSignal to hold the

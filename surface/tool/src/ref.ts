@@ -6,7 +6,6 @@ import type {
   DocHandleChangePayload,
   Repo,
 } from "@automerge/automerge-repo";
-import type { Schema } from "./schema";
 import type { Subscribable } from "./subscribable";
 
 export type RefPathSegment = string | number;
@@ -14,15 +13,13 @@ export type RefPathSegment = string | number;
 export class Ref<T = unknown> implements Subscribable<T> {
   #handle: DocHandle<unknown>;
   #path: RefPathSegment[];
-  #schema?: Schema<unknown>;
 
-  constructor(handle: DocHandle<unknown>, path: RefPathSegment[], schema?: Schema<unknown>) {
+  constructor(handle: DocHandle<unknown>, path: RefPathSegment[]) {
     this.#handle = handle;
     this.#path = path;
-    this.#schema = schema;
   }
 
-  at(...segments: RefPathSegment[]): Ref<unknown> {
+  at<V = unknown>(...segments: RefPathSegment[]): Ref<V> {
     return new Ref(this.#handle, this.#path.concat(segments));
   }
 
@@ -31,16 +28,7 @@ export class Ref<T = unknown> implements Subscribable<T> {
   }
 
   value(): T {
-    const raw = getAtPath(this.#handle.doc(), this.#path);
-    if (this.#schema) {
-      if (raw === undefined) {
-        const initial = this.#schema.init();
-        this.change((() => initial) as () => T);
-        return initial as T;
-      }
-      return this.#schema.parse(raw) as T;
-    }
-    return raw as T;
+    return getAtPath(this.#handle.doc(), this.#path) as T;
   }
 
   change(fn: ((current: T) => void) | (() => T)): void {
@@ -67,8 +55,8 @@ export class Ref<T = unknown> implements Subscribable<T> {
     });
   }
 
-  as<U>(schema: Schema<U>): Ref<U> {
-    return new Ref(this.#handle, this.#path, schema as Schema<unknown>) as unknown as Ref<U>;
+  has(): boolean {
+    return getAtPath(this.#handle.doc(), this.#path) !== undefined;
   }
 
   subscribe(fn: (value: T) => void): () => void {

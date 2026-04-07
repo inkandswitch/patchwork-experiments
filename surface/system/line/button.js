@@ -1,6 +1,7 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, render, html } from '../solid.js';
 import { getViewUrl } from '../url.js';
+import { selectedToolSchema, shapesSchema } from '../paper/schema.js';
 
 const TOOL_NAME = 'line';
 const lineViewUrl = getViewUrl('./tool.json', import.meta.url);
@@ -20,19 +21,12 @@ export const schema = {
   },
 };
 
-const selectedToolSchema = {
-  init() {
-    return '';
-  },
-  parse(value) {
-    return typeof value === 'string' ? value : '';
-  },
-};
-
 export default function mount(element) {
-  const canvas = element.parent;
-  const selectedToolRef = canvas.ref.at('selectedTool').as(selectedToolSchema);
+  const canvas = element.findParent(shapesSchema);
+  if (!canvas) return;
+  const selectedToolRef = canvas.getOrCreate(selectedToolSchema);
   const selectedTool = from(selectedToolRef);
+  const shapesRef = canvas.getOrCreate(shapesSchema);
 
   const active = () => selectedTool() === TOOL_NAME;
 
@@ -52,7 +46,7 @@ export default function mount(element) {
     originX = event.clientX - rect.left;
     originY = event.clientY - rect.top;
     dragId = `line_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    canvas.ref.at('shapes', dragId).change(() => ({
+    shapesRef.at(dragId).change(() => ({
       x: originX,
       y: originY,
       viewUrl: lineViewUrl,
@@ -66,16 +60,16 @@ export default function mount(element) {
     const rect = canvas.getBoundingClientRect();
     const relX = event.clientX - rect.left - originX;
     const relY = event.clientY - rect.top - originY;
-    canvas.ref.at('shapes', dragId).change((shape) => {
+    shapesRef.at(dragId).change((shape) => {
       shape.points.push([relX, relY, event.pressure || 0.5]);
     });
   }
 
   function onPointerUp() {
     if (dragId) {
-      const shape = canvas.ref.at('shapes', dragId).value();
+      const shape = shapesRef.at(dragId).value();
       if (shape.points.length < 3) {
-        canvas.ref.at('shapes').change((shapes) => {
+        shapesRef.change((shapes) => {
           delete shapes[dragId];
         });
       }

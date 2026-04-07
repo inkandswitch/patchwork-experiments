@@ -11,7 +11,7 @@ const FileBrowserSchema = z.object({
   currentPath: z.string().optional(),
 });
 
-export const schema = {
+export default {
   init() {
     return {
       x: 0,

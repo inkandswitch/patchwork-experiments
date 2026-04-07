@@ -1,9 +1,9 @@
 
 import { getStroke } from 'https://esm.sh/perfect-freehand';
 import { from, render, html } from '../solid.js';
-import { schema } from './schema.js';
+import rainbowMarkerSchema from './schema.js';
 
-export { schema };
+
 
 function getSvgPathFromStroke(points) {
   if (points.length < 4) return '';
@@ -35,7 +35,7 @@ function cumulativeLength(points) {
 }
 
 export default function mount(element) {
-  const ref = element.ref.as(schema);
+  const ref = element.getOrCreate(rainbowMarkerSchema);
   const data = from(ref);
 
   // We'll use a canvas for the rainbow effect

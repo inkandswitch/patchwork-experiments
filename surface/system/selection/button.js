@@ -1,6 +1,7 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, render, html, createSignal } from '../solid.js';
 import { getViewUrl, toViewPath } from '../url.js';
+import { selectedToolSchema, shapesSchema, selectedShapesSchema } from '../paper/schema.js';
 
 const TOOL_NAME = 'selection';
 
@@ -19,31 +20,13 @@ export const schema = {
   },
 };
 
-const selectedToolSchema = {
-  init() {
-    return '';
-  },
-  parse(value) {
-    return typeof value === 'string' ? value : '';
-  },
-};
-
-const selectedShapesSchema = {
-  init() {
-    return {};
-  },
-  parse(value) {
-    return typeof value === 'object' && value ? value : {};
-  },
-};
-
 const schemaCache = new Map();
 async function loadSchema(schemaUrl) {
   if (schemaCache.has(schemaUrl)) return schemaCache.get(schemaUrl);
   try {
     const mod = await import(schemaUrl);
-    schemaCache.set(schemaUrl, mod.schema);
-    return mod.schema;
+    schemaCache.set(schemaUrl, mod.default);
+    return mod.default;
   } catch {
     return null;
   }
@@ -193,10 +176,12 @@ function createLoadingItem() {
 }
 
 export default function mount(element) {
-  const canvas = element.parent;
-  const selectedToolRef = canvas.ref.at('selectedTool').as(selectedToolSchema);
+  const canvas = element.findParent(shapesSchema);
+  if (!canvas) return;
+  const selectedToolRef = canvas.getOrCreate(selectedToolSchema);
   const selectedTool = from(selectedToolRef);
-  const selectedShapesRef = canvas.ref.at('selectedShapes').as(selectedShapesSchema);
+  const selectedShapesRef = canvas.getOrCreate(selectedShapesSchema);
+  const shapesRef = canvas.getOrCreate(shapesSchema);
 
   const toolPlugins = from(element.plugins.byType('tool'));
 
@@ -253,26 +238,26 @@ export default function mount(element) {
       shapeId = probeNearbyShapes(event, canvas);
     }
     if (!shapeId) {
-      shapeId = findNearbyLine(event, canvas);
+      shapeId = findNearbyLine(event, canvas, shapesRef);
     }
     if (!shapeId) {
       selectedShapesRef.change(() => ({}));
       return;
     }
 
-    const shape = canvas.ref.at('shapes', shapeId).value();
+    const shape = shapesRef.at(shapeId).value();
     if (shape.isLocked) return;
 
     selectedShapesRef.change(() => ({ [shapeId]: true }));
 
-    const allShapes = canvas.ref.at('shapes').value();
+    const allShapes = shapesRef.value();
     let maxZ = 0;
     for (const [sid, s] of Object.entries(allShapes)) {
       if (typeof s.z === 'number' && s.z > maxZ) maxZ = s.z;
     }
     const currentZ = shape.z ?? 0;
     if (currentZ < maxZ || maxZ === 0) {
-      canvas.ref.at('shapes', shapeId).change((s) => {
+      shapesRef.at(shapeId).change((s) => {
         s.z = maxZ + 1;
       });
     }
@@ -289,7 +274,7 @@ export default function mount(element) {
     if (!dragShapeId) return;
     const deltaX = event.clientX - startPointerX;
     const deltaY = event.clientY - startPointerY;
-    canvas.ref.at('shapes', dragShapeId).change((shape) => {
+    shapesRef.at(dragShapeId).change((shape) => {
       shape.x = startShapeX + deltaX;
       shape.y = startShapeY + deltaY;
     });
@@ -317,12 +302,12 @@ export default function mount(element) {
     if (event.key !== 'Backspace' && event.key !== 'Delete') return;
     const selected = selectedShapesRef.value();
     const ids = Object.keys(selected).filter((shapeId) => {
-      const shapeEntry = canvas.ref.at('shapes', shapeId).value();
+      const shapeEntry = shapesRef.at(shapeId).value();
       return !shapeEntry.isLocked;
     });
     if (!ids.length) return;
     event.preventDefault();
-    canvas.ref.at('shapes').change((shapes) => {
+    shapesRef.change((shapes) => {
       for (const id of ids) {
         delete shapes[id];
       }
@@ -337,7 +322,7 @@ export default function mount(element) {
 
     const newSelection = {};
     for (const id of ids) {
-      const shape = canvas.ref.at('shapes', id).value();
+      const shape = shapesRef.at(id).value();
       if (!shape || shape.isLocked) continue;
       const newId = `dup_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       const clone = structuredClone(shape);
@@ -347,7 +332,7 @@ export default function mount(element) {
         clone.x += 10;
         clone.y += 10;
       }
-      canvas.ref.at('shapes', newId).change(() => clone);
+      shapesRef.at(newId).change(() => clone);
       newSelection[newId] = true;
     }
     selectedShapesRef.change(() => newSelection);
@@ -360,7 +345,7 @@ export default function mount(element) {
 
     let shapeId = shapeIdFromEvent(event, canvas);
     if (!shapeId) shapeId = probeNearbyShapes(event, canvas);
-    if (!shapeId) shapeId = findNearbyLine(event, canvas);
+    if (!shapeId) shapeId = findNearbyLine(event, canvas, shapesRef);
     if (!shapeId) {
       closeMenu();
       return;
@@ -369,7 +354,7 @@ export default function mount(element) {
     event.preventDefault();
     event.stopPropagation();
 
-    const shape = canvas.ref.at('shapes', shapeId).value();
+    const shape = shapesRef.at(shapeId).value();
     const isLocked = !!shape.isLocked;
     const isEmbed = !!shape.embedDocUrl;
     const currentToolUrl = isEmbed ? shape.embedToolUrl : shape.toolUrl;
@@ -395,7 +380,7 @@ export default function mount(element) {
       isLocked ? 'Unlock' : 'Lock',
       '#334155',
       () => {
-        canvas.ref.at('shapes', shapeId).change((s) => {
+        shapesRef.at(shapeId).change((s) => {
           s.isLocked = !isLocked;
         });
         if (!isLocked) {
@@ -412,7 +397,7 @@ export default function mount(element) {
         'Duplicate',
         '#334155',
         () => {
-          const s = canvas.ref.at('shapes', shapeId).value();
+          const s = shapesRef.at(shapeId).value();
           if (!s) { closeMenu(); return; }
           const newId = `dup_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
           const clone = structuredClone(s);
@@ -422,7 +407,7 @@ export default function mount(element) {
             clone.x += 20;
             clone.y += 20;
           }
-          canvas.ref.at('shapes', newId).change(() => clone);
+          shapesRef.at(newId).change(() => clone);
           selectedShapesRef.change(() => ({ [newId]: true }));
           closeMenu();
         }
@@ -433,7 +418,7 @@ export default function mount(element) {
         'Delete',
         '#ef4444',
         () => {
-          canvas.ref.at('shapes').change((shapes) => {
+          shapesRef.change((shapes) => {
             delete shapes[shapeId];
           });
           selectedShapesRef.change(() => ({}));
@@ -490,7 +475,7 @@ export default function mount(element) {
           plugin.name,
           isActive,
           () => {
-            canvas.ref.at('shapes', shapeId).change((s) => {
+            shapesRef.at(shapeId).change((s) => {
               if (isEmbed) {
                 s.embedToolUrl = pluginPath;
               } else {
@@ -583,11 +568,11 @@ function probeNearbyShapes(event, canvas) {
   return null;
 }
 
-function findNearbyLine(event, canvas) {
+function findNearbyLine(event, canvas, shapesRef) {
   const rect = canvas.getBoundingClientRect();
   const cursorX = event.clientX - rect.left;
   const cursorY = event.clientY - rect.top;
-  const shapes = canvas.ref.at('shapes').value();
+  const shapes = shapesRef.value();
   const threshold = 10;
 
   let closestId = null;
