@@ -33,28 +33,24 @@ type DatalogDoc = {
   mapStyle: { lines: Record<string, unknown>; properties: Record<string, unknown> };
 };
 
-type TokenInstance = { id: string; state: { type: string; documentUrl: string } };
+type InitialToken = {
+  placeId: string;
+  state: Record<string, unknown>;
+};
 
 type PetriNetPlanDoc = {
   '@patchwork': { type: 'petrinet-plan' };
-  tokens: {
-    candidates: TokenInstance[];
-    optimizer_idle: TokenInstance[];
-    optimizer_running: TokenInstance[];
-    solutions: TokenInstance[];
-    evaluator_idle: TokenInstance[];
-    evaluator_running: TokenInstance[];
-  };
+  initialTokens: InitialToken[];
 };
 
 export const IPTablesWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> = {
   init(doc: WorkflowDoc, repo: Repo) {
-    const { elicitationUrl, referenceDocsFolderUrl } = createElicitationWithIPTables(repo);
-    const { specDocUrl } = createDefaultSpec(repo);
+    const { elicitationUrl } = createElicitationWithIPTables(repo);
+    const { specDocUrl, leafSpecUrls } = createDefaultSpec(repo);
 
     doc.specElicitationDocUrl = elicitationUrl;
     doc.specDocUrl = specDocUrl;
-    doc.planDocUrl = createPetriNetDoc(repo);
+    doc.planDocUrl = createPetriNetDoc(repo, leafSpecUrls);
     doc.toolIds = {
       spec: 'paul-spec-viewer',
     };
@@ -122,18 +118,37 @@ function createFilesFolder(repo: Repo, title: string, files: { name: string; url
   return handle.url;
 }
 
-function createPetriNetDoc(repo: Repo): AutomergeUrl {
+function createPetriNetDoc(repo: Repo, leafSpecUrls: AutomergeUrl[]): AutomergeUrl {
   const handle = repo.create<PetriNetPlanDoc>();
   handle.change((d) => {
     d['@patchwork'] = { type: 'petrinet-plan' };
-    d.tokens = {
-      candidates: [],
-      optimizer_idle: [],
-      optimizer_running: [],
-      solutions: [],
-      evaluator_idle: [],
-      evaluator_running: [],
-    };
+    d.initialTokens = [
+      ...leafSpecUrls.map((specUrl) => ({
+        placeId: 'candidates',
+        state: {
+          type: 'candidate',
+          documentUrl: '',
+          specUrl,
+          prompt: 'Generate an optimized IPTables configuration that satisfies this specification.',
+        },
+      })),
+      {
+        placeId: 'optimizer_idle',
+        state: {
+          type: 'optimizer',
+          documentUrl: '',
+          prompt: 'Analyze the IPTables configuration and identify redundant rules:\n\n1. Rules that are shadowed by earlier rules (never matched)\n2. Duplicate rules with the same effect\n3. Rules that can be combined (e.g., multiple ports can become a multiport rule)\n4. Rules blocking IPs that are already blocked by a broader CIDR\n5. Accept rules that are unreachable due to earlier DROP rules\n\nOutput the optimized configuration with removed redundant rules and comments explaining each optimization.',
+        },
+      },
+      {
+        placeId: 'evaluator_idle',
+        state: {
+          type: 'evaluator',
+          documentUrl: '',
+          prompt: 'Evaluate whether the optimized IPTables configuration maintains the same security posture as the original while having fewer rules.',
+        },
+      },
+    ];
   });
   return handle.url;
 }
@@ -157,7 +172,7 @@ function createDatalogDoc(
   return handle.url;
 }
 
-function createDefaultSpec(repo: Repo): { specDocUrl: AutomergeUrl } {
+function createDefaultSpec(repo: Repo): { specDocUrl: AutomergeUrl; leafSpecUrls: AutomergeUrl[] } {
   const globalRulesUrl = createDatalogDoc(
     repo,
     'Global Firewall Rules',
@@ -165,18 +180,17 @@ function createDefaultSpec(repo: Repo): { specDocUrl: AutomergeUrl } {
     [
       {
         body: [
-          { pred: 'machine', args: ['M', '_'] },
           { pred: 'blocked_ip', args: ['IP'] },
-          { pred: 'allows', args: ['M', 'IP', '_'] },
+          { pred: 'rule', args: ['M', '"input"', '_', '"accept"', 'Src', '_', '_'] },
+          { pred: 'ip_in', args: ['IP', 'Src'] },
         ],
-        comment: 'Global constraint: blocked IPs must not be allowed on any machine',
+        comment: 'Blocked IPs must not be reachable via any allow rule',
       },
       {
         body: [
-          { pred: 'machine', args: ['M', '_'] },
-          { pred: 'allows', args: ['M', '"0.0.0.0/0"', '22'] },
+          { pred: 'rule', args: ['M', '"input"', '_', '"accept"', '"0.0.0.0/0"', '_', '22'] },
         ],
-        comment: 'Global constraint: SSH (port 22) must be restricted to internal network',
+        comment: 'SSH (port 22) must be restricted to internal network',
       },
     ],
   );
@@ -188,17 +202,15 @@ function createDefaultSpec(repo: Repo): { specDocUrl: AutomergeUrl } {
     [
       {
         body: [
-          { pred: 'machine', args: ['M', '_'] },
-          { pred: 'not', args: ['allows(M, "127.0.0.1", _)'] },
+          { pred: 'redundant', args: ['M', 'Idx'] },
         ],
-        comment: 'Constraint: loopback must always be allowed',
+        comment: 'No redundant rules should exist',
       },
       {
         body: [
-          { pred: 'machine', args: ['M', '_'] },
-          { pred: 'blocks', args: ['M', '"0.0.0.0/0"', 'icmp', 'echo'] },
+          { pred: 'unreachable', args: ['M', 'Idx'] },
         ],
-        comment: 'Constraint: ICMP echo should be rate-limited (not blocked entirely)',
+        comment: 'No unreachable rules should exist',
       },
     ],
   );
@@ -211,28 +223,14 @@ function createDefaultSpec(repo: Repo): { specDocUrl: AutomergeUrl } {
       {
         body: [
           { pred: 'role', args: ['M', 'webserver'] },
-          { pred: 'not', args: ['allows(M, "0.0.0.0/0", 80)'] },
-        ],
-        comment: 'Web servers must allow HTTP',
-      },
-      {
-        body: [
-          { pred: 'role', args: ['M', 'webserver'] },
-          { pred: 'not', args: ['allows(M, "0.0.0.0/0", 443)'] },
-        ],
-        comment: 'Web servers must allow HTTPS',
-      },
-      {
-        body: [
-          { pred: 'role', args: ['M', 'webserver'] },
-          { pred: 'allows', args: ['M', '"0.0.0.0/0"', '3306'] },
+          { pred: 'rule', args: ['M', '"input"', '_', '"accept"', '"0.0.0.0/0"', '_', '3306'] },
         ],
         comment: 'Web servers should not expose MySQL port',
       },
       {
         body: [
           { pred: 'role', args: ['M', 'webserver'] },
-          { pred: 'allows', args: ['M', '"0.0.0.0/0"', '5432'] },
+          { pred: 'rule', args: ['M', '"input"', '_', '"accept"', '"0.0.0.0/0"', '_', '5432'] },
         ],
         comment: 'Web servers should not expose PostgreSQL port',
       },
@@ -247,14 +245,14 @@ function createDefaultSpec(repo: Repo): { specDocUrl: AutomergeUrl } {
       {
         body: [
           { pred: 'role', args: ['M', 'database'] },
-          { pred: 'allows', args: ['M', '"0.0.0.0/0"', '3306'] },
+          { pred: 'rule', args: ['M', '"input"', '_', '"accept"', '"0.0.0.0/0"', '_', '3306'] },
         ],
         comment: 'Database servers should only allow DB connections from internal network',
       },
       {
         body: [
           { pred: 'role', args: ['M', 'database'] },
-          { pred: 'allows', args: ['M', '"0.0.0.0/0"', '5432'] },
+          { pred: 'rule', args: ['M', '"input"', '_', '"accept"', '"0.0.0.0/0"', '_', '5432'] },
         ],
         comment: 'Database servers should only allow DB connections from internal network',
       },
@@ -315,7 +313,10 @@ function createDefaultSpec(repo: Repo): { specDocUrl: AutomergeUrl } {
     d.spec = spec;
   });
 
-  return { specDocUrl: specHandle.url };
+  return {
+    specDocUrl: specHandle.url,
+    leafSpecUrls: [machineASpecHandle.url, machineBSpecHandle.url],
+  };
 }
 
 const GLOBAL_RULES_DATALOG = `% Network Configuration
@@ -326,43 +327,49 @@ machine(machine_b, "192.168.1.11").
 blocked_ip("10.0.0.1").
 blocked_ip("10.0.0.2").
 
-% Global constraint: blocked IPs must not be allowed on any machine
-:- machine(M, _), blocked_ip(IP), allows(M, IP, _).
+% Derive convenience relations
+allows(M, Src, Port) :- rule(M, "input", _, "accept", Src, _, Port).
+blocks(M, Src) :- rule(M, "input", _, "drop", Src, _, _).
 
-% Global constraint: SSH (port 22) must be restricted to internal network
-:- machine(M, _), allows(M, "0.0.0.0/0", 22).`;
+% Blocked IPs must not be reachable via any allow rule
+:- blocked_ip(IP), rule(M, "input", _, "accept", Src, _, _), ip_in(IP, Src).
 
-const COMMON_MACHINE_RULES_DATALOG = `% Standard ports that should be open
-standard_port(80).   % HTTP
-standard_port(443).  % HTTPS
+% SSH (port 22) must be restricted to internal network
+:- rule(M, "input", _, "accept", "0.0.0.0/0", _, 22).`;
 
-% Constraint: loopback must always be allowed
-:- machine(M, _), not(allows(M, "127.0.0.1", _)).
+const COMMON_MACHINE_RULES_DATALOG = `% Detect redundant rules (earlier broader rule with same action already covers)
+redundant(M, Idx) :-
+    rule(M, Chain, Idx, Action, Src, Proto, Port),
+    rule(M, Chain, Earlier, Action, Broader, Proto, Port),
+    lt(Earlier, Idx),
+    ip_in(Src, Broader).
 
-% Constraint: ICMP echo should be rate-limited (not blocked entirely)
-:- machine(M, _), blocks(M, "0.0.0.0/0", icmp, echo).`;
+% Detect unreachable rules (earlier DROP shadows a later ACCEPT)
+unreachable(M, Idx) :-
+    rule(M, Chain, Idx, "accept", Src, _, _),
+    rule(M, Chain, Earlier, "drop", DropSrc, _, _),
+    lt(Earlier, Idx),
+    ip_in(Src, DropSrc).
+
+% No redundant rules should exist
+:- redundant(M, Idx).
+
+% No unreachable rules should exist
+:- unreachable(M, Idx).`;
 
 const MACHINE_A_RULES_DATALOG = `% Machine A is a web server
 role(machine_a, webserver).
 
-% Web servers must allow HTTP/HTTPS
-:- role(M, webserver), not(allows(M, "0.0.0.0/0", 80)).
-:- role(M, webserver), not(allows(M, "0.0.0.0/0", 443)).
-
 % Web servers should not expose database ports
-:- role(M, webserver), allows(M, "0.0.0.0/0", 3306).
-:- role(M, webserver), allows(M, "0.0.0.0/0", 5432).`;
+:- role(M, webserver), rule(M, "input", _, "accept", "0.0.0.0/0", _, 3306).
+:- role(M, webserver), rule(M, "input", _, "accept", "0.0.0.0/0", _, 5432).`;
 
 const MACHINE_B_RULES_DATALOG = `% Machine B is a database server
 role(machine_b, database).
 
 % Database servers should only allow DB connections from internal network
-:- role(M, database), allows(M, "0.0.0.0/0", 3306).
-:- role(M, database), allows(M, "0.0.0.0/0", 5432).
-
-% Database servers must allow connections from web servers
-:- role(M, database), machine(WebServer, IP), role(WebServer, webserver), 
-   not(allows(M, IP, 3306)).`;
+:- role(M, database), rule(M, "input", _, "accept", "0.0.0.0/0", _, 3306).
+:- role(M, database), rule(M, "input", _, "accept", "0.0.0.0/0", _, 5432).`;
 
 const MACHINE_A_IPTABLES_RULES = `*filter
 :INPUT DROP [0:0]
@@ -464,98 +471,92 @@ const MACHINE_B_IPTABLES_RULES = `*filter
 
 COMMIT`;
 
-const MACHINE_A_IPTABLES_DATALOG = `% Machine A IPTables Rules (Datalog representation)
-chain(input, drop).
-chain(forward, drop).
-chain(output, accept).
+const MACHINE_A_IPTABLES_DATALOG = `% Machine A IPTables Rules
+% rule(Machine, Chain, Index, Action, Source, Protocol, DPort)
 
-% Loopback rule
-rule(input, 1, accept, interface(lo), any, any).
+chain(machine_a, "input", "drop").
+chain(machine_a, "forward", "drop").
+chain(machine_a, "output", "accept").
 
-% Established connections
-rule(input, 2, accept, any, any, state(established, related)).
+% Loopback
+rule(machine_a, "input", 1, "accept", "127.0.0.0/8", "any", "any").
 
 % HTTP
-rule(input, 3, accept, any, tcp, dport(80)).
+rule(machine_a, "input", 2, "accept", "0.0.0.0/0", "tcp", 80).
 
 % REDUNDANT: Duplicate HTTP rule
-rule(input, 4, accept, any, tcp, dport(80)).
+rule(machine_a, "input", 3, "accept", "0.0.0.0/0", "tcp", 80).
 
 % HTTPS
-rule(input, 5, accept, any, tcp, dport(443)).
+rule(machine_a, "input", 4, "accept", "0.0.0.0/0", "tcp", 443).
 
-% REDUNDANT: Could be combined with multiport
-rule(input, 6, accept, any, tcp, dport(8080)).
-rule(input, 7, accept, any, tcp, dport(8443)).
+% Alternative web ports
+rule(machine_a, "input", 5, "accept", "0.0.0.0/0", "tcp", 8080).
+rule(machine_a, "input", 6, "accept", "0.0.0.0/0", "tcp", 8443).
 
-% SSH from internal
-rule(input, 8, accept, src("192.168.1.0/24"), tcp, dport(22)).
+% SSH from internal network only
+rule(machine_a, "input", 7, "accept", "192.168.1.0/24", "tcp", 22).
 
 % REDUNDANT: Already covered by /24 above
-rule(input, 9, accept, src("192.168.1.10"), tcp, dport(22)).
-rule(input, 10, accept, src("192.168.1.11"), tcp, dport(22)).
+rule(machine_a, "input", 8, "accept", "192.168.1.10", "tcp", 22).
+rule(machine_a, "input", 9, "accept", "192.168.1.11", "tcp", 22).
 
 % Block malicious IPs - broad CIDR
-rule(input, 11, drop, src("10.0.0.0/8"), any, any).
+rule(machine_a, "input", 10, "drop", "10.0.0.0/8", "any", "any").
 
 % REDUNDANT: Subsets of /8 above
-rule(input, 12, drop, src("10.0.0.1"), any, any).
-rule(input, 13, drop, src("10.0.0.2"), any, any).
-rule(input, 14, drop, src("10.1.1.1"), any, any).
+rule(machine_a, "input", 11, "drop", "10.0.0.1", "any", "any").
+rule(machine_a, "input", 12, "drop", "10.0.0.2", "any", "any").
+rule(machine_a, "input", 13, "drop", "10.1.1.1", "any", "any").
 
 % REDUNDANT: Unreachable - 10.0.0.5 blocked by /8 rule
-rule(input, 15, accept, src("10.0.0.5"), tcp, dport(80)).
+rule(machine_a, "input", 14, "accept", "10.0.0.5", "tcp", 80).
 
-% ICMP rate limit
-rule(input, 16, accept, any, icmp, icmp_type(echo_request), limit(1, second)).
+% ICMP
+rule(machine_a, "input", 15, "accept", "0.0.0.0/0", "icmp", "any").
 
 % REDUNDANT: Duplicate ICMP rule
-rule(input, 17, accept, any, icmp, icmp_type(echo_request), limit(1, second)).
+rule(machine_a, "input", 16, "accept", "0.0.0.0/0", "icmp", "any").`;
 
-% REDUNDANT: Shadowed by default DROP policy
-rule(input, 18, drop, any, tcp, dport(23)).
-rule(input, 19, drop, any, tcp, dport(21)).`;
+const MACHINE_B_IPTABLES_DATALOG = `% Machine B IPTables Rules
+% rule(Machine, Chain, Index, Action, Source, Protocol, DPort)
 
-const MACHINE_B_IPTABLES_DATALOG = `% Machine B IPTables Rules (Datalog representation)
-chain(input, drop).
-chain(forward, drop).
-chain(output, accept).
+chain(machine_b, "input", "drop").
+chain(machine_b, "forward", "drop").
+chain(machine_b, "output", "accept").
 
-% Loopback rule
-rule(input, 1, accept, interface(lo), any, any).
+% Loopback
+rule(machine_b, "input", 1, "accept", "127.0.0.0/8", "any", "any").
 
 % REDUNDANT: Duplicate loopback
-rule(input, 2, accept, interface(lo), any, any).
-
-% Established connections
-rule(input, 3, accept, any, any, state(established, related)).
+rule(machine_b, "input", 2, "accept", "127.0.0.0/8", "any", "any").
 
 % MySQL from web server
-rule(input, 4, accept, src("192.168.1.10"), tcp, dport(3306)).
+rule(machine_b, "input", 3, "accept", "192.168.1.10", "tcp", 3306).
 
-% REDUNDANT: Same source, could combine
-rule(input, 5, accept, src("192.168.1.10"), tcp, dport(5432)).
+% PostgreSQL from web server
+rule(machine_b, "input", 4, "accept", "192.168.1.10", "tcp", 5432).
 
-% SSH from internal
-rule(input, 6, accept, src("192.168.1.0/24"), tcp, dport(22)).
+% SSH from internal network
+rule(machine_b, "input", 5, "accept", "192.168.1.0/24", "tcp", 22).
 
-% REDUNDANT: Already covered by /24
-rule(input, 7, accept, src("192.168.1.1"), tcp, dport(22)).
+% REDUNDANT: Already covered by /24 above
+rule(machine_b, "input", 6, "accept", "192.168.1.1", "tcp", 22).
 
-% Block external DB ports
-rule(input, 8, drop, any, tcp, dport(3306)).
-rule(input, 9, drop, any, tcp, dport(5432)).
+% Block external access to DB ports
+rule(machine_b, "input", 7, "drop", "0.0.0.0/0", "tcp", 3306).
+rule(machine_b, "input", 8, "drop", "0.0.0.0/0", "tcp", 5432).
 
-% REDUNDANT: Duplicate of above (shadowed)
-rule(input, 10, drop, any, tcp, dport(3306)).
-rule(input, 11, drop, any, tcp, dport(5432)).
+% REDUNDANT: Duplicate of above
+rule(machine_b, "input", 9, "drop", "0.0.0.0/0", "tcp", 3306).
+rule(machine_b, "input", 10, "drop", "0.0.0.0/0", "tcp", 5432).
 
 % Block malicious IPs
-rule(input, 12, drop, src("10.0.0.0/8"), any, any).
+rule(machine_b, "input", 11, "drop", "10.0.0.0/8", "any", "any").
 
 % REDUNDANT: Subsets of /8 above
-rule(input, 13, drop, src("10.0.0.0/16"), any, any).
-rule(input, 14, drop, src("10.0.0.0/24"), any, any).
+rule(machine_b, "input", 12, "drop", "10.0.0.0/16", "any", "any").
+rule(machine_b, "input", 13, "drop", "10.0.0.0/24", "any", "any").
 
 % REDUNDANT: Unreachable - 10.5.5.5 blocked by /8 rule above
-rule(input, 15, accept, src("10.5.5.5"), tcp, dport(22)).`;
+rule(machine_b, "input", 14, "accept", "10.5.5.5", "tcp", 22).`;

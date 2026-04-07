@@ -13,10 +13,10 @@ type LayoutNet = {
   arcs: { from: string; to: string; kind: 'in' | 'out' }[];
 };
 
-const RANK_SPACING = 200;
-const NODE_SPACING = 130;
-const ORIGIN_X = 120;
-const ORIGIN_Y = 200;
+const RANK_SPACING = 160;
+const NODE_SPACING = 100;
+const ORIGIN_X = 100;
+const ORIGIN_Y = 160;
 
 export function computeLayout(net: LayoutNet): NetLayout {
   const layout = new Map<string, NodeLayout>();

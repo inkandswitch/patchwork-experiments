@@ -76,6 +76,110 @@
   .p3n-play-btn:not(:disabled):not(.p3n-play-btn-active):hover { background: #16a34a; }
   .p3n-play-btn-active:not(:disabled):hover { background: #d97706; }
 
+  .p3n-start-btn {
+    padding: 4px 16px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: inherit;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    background: #22c55e;
+    color: #fff;
+  }
+
+  .p3n-start-btn:disabled { background: #f1f5f9; color: #cbd5e1; cursor: default; }
+  .p3n-start-btn:not(:disabled):hover { background: #16a34a; }
+
+  /* ── Tab bar ─────────────────────────────────────────────────────── */
+
+  .p3n-tab-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 12px;
+    border-bottom: 1px solid #e2e8f0;
+    background: #fff;
+    flex-shrink: 0;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+  }
+
+  .p3n-tab {
+    padding: 4px 10px;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: inherit;
+    border: none;
+    background: none;
+    color: #64748b;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.15s;
+  }
+
+  .p3n-tab:hover {
+    background: #f1f5f9;
+    color: #334155;
+  }
+
+  .p3n-tab.active {
+    font-weight: 600;
+    color: #3b82f6;
+    background: #eff6ff;
+  }
+
+  .p3n-tab.active:hover {
+    background: #dbeafe;
+  }
+
+  .p3n-tab-content {
+    flex: 1;
+    overflow: auto;
+    padding: 12px;
+  }
+
+  /* ── Token section (non-collapsible) ─────────────────────────────── */
+
+  .p3n-token-section {
+    margin-bottom: 16px;
+  }
+
+  .p3n-token-section-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+    border-bottom: 1px solid #e2e8f0;
+    margin-bottom: 8px;
+  }
+
+  .p3n-token-section-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .p3n-token-section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #334155;
+  }
+
+  .p3n-token-section-count {
+    font-size: 11px;
+    font-weight: 500;
+    color: #94a3b8;
+    background: #f1f5f9;
+    padding: 2px 6px;
+    border-radius: 10px;
+  }
+
+  .p3n-token-section-content {
+    padding-left: 18px;
+  }
+
   /* ── Simulation layout ───────────────────────────────────────────── */
 
   .p3n-sim-root {
@@ -280,6 +384,36 @@
     background: #fff1f2;
   }
 
+  .p3n-token-card-prompt {
+    padding: 8px;
+  }
+
+  .p3n-token-card-header + .p3n-token-card-prompt {
+    border-top: 1px solid #e2e8f0;
+  }
+
+  .p3n-token-card-prompt-textarea {
+    width: 100%;
+    padding: 8px;
+    font-size: 12px;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    line-height: 1.5;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    resize: none;
+    overflow: hidden;
+    min-height: 40px;
+    color: #374151;
+    background: #f9fafb;
+    box-sizing: border-box;
+  }
+
+  .p3n-token-card-prompt-textarea:focus {
+    outline: none;
+    border-color: #3b82f6;
+    background: #fff;
+  }
+
   .p3n-token-card-spec {
     border-top: 1px solid #e2e8f0;
   }
@@ -294,8 +428,7 @@
   /* ── Petrinet wrap ─────────────────────────────────────────────────── */
 
   .p3n-petrinet-wrap {
-    overflow: auto;
-    max-height: 400px;
+    overflow: visible;
   }
 
   /* ── Net container ───────────────────────────────────────────────── */

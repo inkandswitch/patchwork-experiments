@@ -199,7 +199,7 @@ export const plugins: Plugin<any>[] = [
     name: 'Petri Net Plan',
     supportedDatatypes: ['petrinet-plan'],
     async load() {
-      const { PetriNetPlanTool } = await import('./paul/petrinet-plan/tool');
+      const { PetriNetPlanTool } = await import('./paul/petrinet-plan/plan-tool');
       return PetriNetPlanTool;
     },
   } satisfies Tool,
@@ -211,6 +211,26 @@ export const plugins: Plugin<any>[] = [
     async load() {
       const { PetriNetPlanDatatype } = await import('./paul/petrinet-plan/datatype');
       return PetriNetPlanDatatype;
+    },
+  } as Datatype,
+  {
+    type: 'patchwork:tool',
+    id: 'petrinet-execution',
+    name: 'Petri Net Execution',
+    supportedDatatypes: ['petrinet-execution'],
+    async load() {
+      const { PetriNetExecutionTool } = await import('./paul/petrinet-plan/execution-tool');
+      return PetriNetExecutionTool;
+    },
+  } satisfies Tool,
+  {
+    type: 'patchwork:datatype',
+    id: 'petrinet-execution',
+    name: 'Petri Net Execution',
+    icon: 'Play',
+    async load() {
+      const { PetriNetExecutionDatatype } = await import('./paul/petrinet-plan/execution-datatype');
+      return PetriNetExecutionDatatype;
     },
   } as Datatype,
 ];

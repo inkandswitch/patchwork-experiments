@@ -25,18 +25,14 @@ type DatalogDoc = {
   mapStyle: { lines: Record<string, unknown>; properties: Record<string, unknown> };
 };
 
-type TokenInstance = { id: string; state: { type: string; documentUrl: string } };
+type InitialToken = {
+  placeId: string;
+  state: Record<string, unknown>;
+};
 
 type PetriNetPlanDoc = {
   '@patchwork': { type: 'petrinet-plan' };
-  tokens: {
-    candidates: TokenInstance[];
-    optimizer_idle: TokenInstance[];
-    optimizer_running: TokenInstance[];
-    solutions: TokenInstance[];
-    evaluator_idle: TokenInstance[];
-    evaluator_running: TokenInstance[];
-  };
+  initialTokens: InitialToken[];
 };
 
 export const PaulWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> = {
@@ -55,11 +51,11 @@ export const PaulWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> =
       d.referenceDocsFolderUrl = folderHandle.url;
     });
 
-    const { specDocUrl } = createDefaultSpec(repo);
+    const { specDocUrl, leafSpecUrls } = createDefaultSpec(repo);
 
     doc.specElicitationDocUrl = elicitationHandle.url;
     doc.specDocUrl = specDocUrl;
-    doc.planDocUrl = createPetriNetDoc(repo);
+    doc.planDocUrl = createPetriNetDoc(repo, leafSpecUrls);
     doc.toolIds = {
       spec: 'paul-spec-viewer',
     };
@@ -70,18 +66,37 @@ export const PaulWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> =
   setTitle() {},
 };
 
-function createPetriNetDoc(repo: Repo): AutomergeUrl {
+function createPetriNetDoc(repo: Repo, leafSpecUrls: AutomergeUrl[]): AutomergeUrl {
   const handle = repo.create<PetriNetPlanDoc>();
   handle.change((d) => {
     d['@patchwork'] = { type: 'petrinet-plan' };
-    d.tokens = {
-      candidates: [],
-      optimizer_idle: [],
-      optimizer_running: [],
-      solutions: [],
-      evaluator_idle: [],
-      evaluator_running: [],
-    };
+    d.initialTokens = [
+      ...leafSpecUrls.map((specUrl) => ({
+        placeId: 'candidates',
+        state: {
+          type: 'candidate',
+          documentUrl: '',
+          specUrl,
+          prompt: 'Generate a solution that satisfies this specification.',
+        },
+      })),
+      {
+        placeId: 'optimizer_idle',
+        state: {
+          type: 'optimizer',
+          documentUrl: '',
+          prompt: 'Optimize the candidate solution.',
+        },
+      },
+      {
+        placeId: 'evaluator_idle',
+        state: {
+          type: 'evaluator',
+          documentUrl: '',
+          prompt: 'Evaluate whether the candidate solution satisfies all constraints in the specification.',
+        },
+      },
+    ];
   });
   return handle.url;
 }
@@ -105,7 +120,7 @@ function createDatalogDoc(
   return handle.url;
 }
 
-function createDefaultSpec(repo: Repo): { specDocUrl: AutomergeUrl } {
+function createDefaultSpec(repo: Repo): { specDocUrl: AutomergeUrl; leafSpecUrls: AutomergeUrl[] } {
   const budgetRulesUrl = createDatalogDoc(
     repo,
     'Budget Rules',
@@ -296,5 +311,8 @@ max_ratio(5).
     d.spec = spec;
   });
 
-  return { specDocUrl: specHandle.url };
+  return {
+    specDocUrl: specHandle.url,
+    leafSpecUrls: [deptASpecHandle.url, deptBSpecHandle.url],
+  };
 }
