@@ -61,7 +61,10 @@ export const IPTablesWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDo
   setTitle() {},
 };
 
-function createElicitationWithIPTables(repo: Repo): { elicitationUrl: AutomergeUrl; referenceDocsFolderUrl: AutomergeUrl } {
+function createElicitationWithIPTables(repo: Repo): {
+  elicitationUrl: AutomergeUrl;
+  referenceDocsFolderUrl: AutomergeUrl;
+} {
   const machineAIptablesUrl = createFileDoc(
     repo,
     'machine-a-iptables',
@@ -89,7 +92,8 @@ function createElicitationWithIPTables(repo: Repo): { elicitationUrl: AutomergeU
   const elicitationHandle = repo.create<ElicitationDoc>();
   elicitationHandle.change((d) => {
     d['@patchwork'] = { type: 'elicitation' };
-    d.prompt = 'Optimize the IPTables configurations for two machines (web server and database server) to remove redundant rules while maintaining the same security posture.';
+    d.prompt =
+      'Optimize the IPTables configurations for two machines (web server and database server) to remove redundant rules while maintaining the same security posture.';
     d.referenceDocsFolderUrl = folderHandle.url;
   });
 
@@ -108,7 +112,11 @@ function createFileDoc(repo: Repo, name: string, extension: string, content: str
   return handle.url;
 }
 
-function createFilesFolder(repo: Repo, title: string, files: { name: string; url: AutomergeUrl }[]): AutomergeUrl {
+function createFilesFolder(
+  repo: Repo,
+  title: string,
+  files: { name: string; url: AutomergeUrl }[],
+): AutomergeUrl {
   const handle = repo.create<FolderDoc>();
   handle.change((d) => {
     d['@patchwork'] = { type: 'folder' };
@@ -137,7 +145,8 @@ function createPetriNetDoc(repo: Repo, leafSpecUrls: AutomergeUrl[]): AutomergeU
         state: {
           type: 'optimizer',
           documentUrl: '',
-          prompt: 'Analyze the IPTables configuration and identify redundant rules:\n\n1. Rules that are shadowed by earlier rules (never matched)\n2. Duplicate rules with the same effect\n3. Rules that can be combined (e.g., multiple ports can become a multiport rule)\n4. Rules blocking IPs that are already blocked by a broader CIDR\n5. Accept rules that are unreachable due to earlier DROP rules\n\nOutput the optimized configuration with removed redundant rules and comments explaining each optimization.',
+          prompt:
+            'Analyze the IPTables configuration and identify redundant rules:\n\n1. Rules that are shadowed by earlier rules (never matched)\n2. Duplicate rules with the same effect\n3. Rules that can be combined (e.g., multiple ports can become a multiport rule)\n4. Rules blocking IPs that are already blocked by a broader CIDR\n5. Accept rules that are unreachable due to earlier DROP rules\n\nOutput the optimized configuration with removed redundant rules and comments explaining each optimization.',
         },
       },
       {
@@ -145,7 +154,8 @@ function createPetriNetDoc(repo: Repo, leafSpecUrls: AutomergeUrl[]): AutomergeU
         state: {
           type: 'evaluator',
           documentUrl: '',
-          prompt: 'Evaluate whether the optimized IPTables configuration maintains the same security posture as the original while having fewer rules.',
+          prompt:
+            'Evaluate whether the optimized IPTables configuration maintains the same security posture as the original while having fewer rules.',
         },
       },
     ];
@@ -173,27 +183,20 @@ function createDatalogDoc(
 }
 
 function createDefaultSpec(repo: Repo): { specDocUrl: AutomergeUrl; leafSpecUrls: AutomergeUrl[] } {
-  const globalRulesUrl = createDatalogDoc(
-    repo,
-    'Global Firewall Rules',
-    GLOBAL_RULES_DATALOG,
-    [
-      {
-        body: [
-          { pred: 'blocked_ip', args: ['IP'] },
-          { pred: 'rule', args: ['M', '"input"', '_', '"accept"', 'Src', '_', '_'] },
-          { pred: 'ip_in', args: ['IP', 'Src'] },
-        ],
-        comment: 'Blocked IPs must not be reachable via any allow rule',
-      },
-      {
-        body: [
-          { pred: 'rule', args: ['M', '"input"', '_', '"accept"', '"0.0.0.0/0"', '_', '22'] },
-        ],
-        comment: 'SSH (port 22) must be restricted to internal network',
-      },
-    ],
-  );
+  const globalRulesUrl = createDatalogDoc(repo, 'Global Firewall Rules', GLOBAL_RULES_DATALOG, [
+    {
+      body: [
+        { pred: 'blocked_ip', args: ['IP'] },
+        { pred: 'rule', args: ['M', '"input"', '_', '"accept"', 'Src', '_', '_'] },
+        { pred: 'ip_in', args: ['IP', 'Src'] },
+      ],
+      comment: 'Blocked IPs must not be reachable via any allow rule',
+    },
+    {
+      body: [{ pred: 'rule', args: ['M', '"input"', '_', '"accept"', '"0.0.0.0/0"', '_', '22'] }],
+      comment: 'SSH (port 22) must be restricted to internal network',
+    },
+  ]);
 
   const commonMachineRulesUrl = createDatalogDoc(
     repo,
@@ -201,15 +204,11 @@ function createDefaultSpec(repo: Repo): { specDocUrl: AutomergeUrl; leafSpecUrls
     COMMON_MACHINE_RULES_DATALOG,
     [
       {
-        body: [
-          { pred: 'redundant', args: ['M', 'Idx'] },
-        ],
+        body: [{ pred: 'redundant', args: ['M', 'Idx'] }],
         comment: 'No redundant rules should exist',
       },
       {
-        body: [
-          { pred: 'unreachable', args: ['M', 'Idx'] },
-        ],
+        body: [{ pred: 'unreachable', args: ['M', 'Idx'] }],
         comment: 'No unreachable rules should exist',
       },
     ],
