@@ -1,5 +1,5 @@
 import { render } from 'solid-js/web';
-import { For, Show, createMemo } from 'solid-js';
+import { For, Show, createMemo, createSignal } from 'solid-js';
 import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primitives';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
@@ -79,16 +79,19 @@ function VerificationView(props: { handle: DocHandle<VerificationContextDoc> }) 
     return r.violations.length === 0;
   };
 
+  const [expanded, setExpanded] = createSignal(false);
+  const toggleExpanded = () => setExpanded((v) => !v);
+
   return (
     <div class="verification-root">
       <Show when={doc()} fallback={<div class="verification-loading">Loading...</div>}>
         <Show when={isRichMode()} fallback={
-          <div class="verification-item">
+          <div class="verification-item" onClick={toggleExpanded}>
             <span class="verification-circle" />
             <span class="verification-name">{title()}</span>
           </div>
         }>
-          <div class="verification-check-title" classList={{ pass: allPass(), fail: !allPass() }}>
+          <div class="verification-check-title" classList={{ pass: allPass(), fail: !allPass() }} onClick={toggleExpanded}>
             <span class="verification-check-circle" />
             <span class="verification-check-name">{title()}</span>
           </div>
@@ -117,6 +120,11 @@ function VerificationView(props: { handle: DocHandle<VerificationContextDoc> }) 
               </div>
             )}
           </Show>
+        </Show>
+        <Show when={expanded() && doc()?.verificationUrl}>
+          <div class="verification-datalog-preview">
+            <patchwork-view attr:doc-url={doc()!.verificationUrl} />
+          </div>
         </Show>
       </Show>
     </div>

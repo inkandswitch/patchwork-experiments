@@ -52,32 +52,45 @@ function ValidationView(props: { handle: DocHandle<ValidationDoc>; element: Tool
         {(currentDoc) => (
           <>
             <div class="validation-header">
-              <div
-                class="validation-status"
-                classList={{ validated: currentDoc().isValidated }}
-              >
+              <div class="validation-status" classList={{ validated: currentDoc().isValidated }}>
                 {currentDoc().isValidated ? 'Approved' : 'Pending'}
               </div>
-              <div class="validation-links">
-                <Show when={currentDoc().specDocUrl}>
-                  {(url) => (
-                    <LinkPill
-                      url={url()}
-                      label="Spec"
-                      onClick={() => openDocument(url(), 'grjte-spec-viewer')}
-                    />
-                  )}
-                </Show>
-                <Show when={currentDoc().planDocUrl}>
-                  {(url) => (
-                    <LinkPill
-                      url={url()}
-                      label="Plan"
-                      onClick={() => openDocument(url(), 'grjte-plan-viewer')}
-                    />
-                  )}
-                </Show>
-              </div>
+              <Show when={currentDoc().specDocUrl}>
+                {(specUrl) => (
+                  <div class="plan-section">
+                    <button
+                      class="plan-spec-btn"
+                      onClick={() => openDocument(specUrl(), 'grjte-spec-viewer')}
+                    >
+                      View Spec
+                    </button>
+                  </div>
+                )}
+              </Show>
+              <Show when={currentDoc().planDocUrl}>
+                {(planUrl) => (
+                  <div class="plan-section">
+                    <button
+                      class="plan-spec-btn"
+                      onClick={() => openDocument(planUrl(), 'grjte-plan-viewer')}
+                    >
+                      View Plan
+                    </button>
+                  </div>
+                )}
+              </Show>
+              <Show when={currentDoc().executionDocUrl}>
+                {(executionUrl) => (
+                  <div class="plan-section">
+                    <button
+                      class="plan-spec-btn"
+                      onClick={() => openDocument(executionUrl(), 'grjte-execution-viewer')}
+                    >
+                      View Execution
+                    </button>
+                  </div>
+                )}
+              </Show>
               <Show when={!currentDoc().isValidated}>
                 <button class="validation-approve-btn" onClick={handleApprove}>
                   Approve

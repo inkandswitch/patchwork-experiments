@@ -22,6 +22,11 @@
     font-weight: 400;
     font-style: italic;
     color: #6b7280;
+    cursor: pointer;
+  }
+
+  .verification-item:hover {
+    background: #f3f4f6;
   }
 
   .verification-circle {
@@ -50,6 +55,11 @@
     font-weight: 500;
     font-style: italic;
     color: #6b7280;
+    cursor: pointer;
+  }
+
+  .verification-check-title:hover {
+    background: #f3f4f6;
   }
 
   .verification-check-circle {
@@ -115,5 +125,21 @@
 
   .verification-constraint-text {
     flex: 1;
+  }
+
+  /* Datalog preview */
+
+  .verification-datalog-preview {
+    height: 300px;
+    overflow: hidden;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    margin: 8px 12px;
+  }
+
+  .verification-datalog-preview patchwork-view {
+    display: block;
+    width: 100%;
+    height: 100%;
   }
 }
