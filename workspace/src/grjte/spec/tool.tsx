@@ -1,10 +1,14 @@
 import { render } from 'solid-js/web';
-import { For, Show } from 'solid-js';
+import { For, Show, createSignal } from 'solid-js';
 import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primitives';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
 import type { SpecDoc, Spec } from '../../workflow/types';
 import './spec.css';
+
+type FolderDoc = {
+  docs: { type: string; name: string; url: AutomergeUrl }[];
+};
 
 export const SpecTool: ToolRender = (handle, element) => {
   const dispose = render(
@@ -50,10 +54,7 @@ function SpecSection(props: { spec: Spec }) {
         {(url) => (
           <div class="spec-data-folder">
             <div class="spec-section-label">Data</div>
-            <patchwork-view
-              attr:doc-url={url()}
-              style="display:block;width:100%;"
-            />
+            <DataFolderList folderUrl={url()} />
           </div>
         )}
       </Show>
@@ -79,6 +80,46 @@ function SpecSection(props: { spec: Spec }) {
             {(url) => <SubSpecSection url={url} />}
           </For>
         </div>
+      </Show>
+    </div>
+  );
+}
+
+function DataFolderList(props: { folderUrl: AutomergeUrl }) {
+  const [folder] = useDocument<FolderDoc>(() => props.folderUrl);
+  const [selectedDoc, setSelectedDoc] = createSignal<AutomergeUrl | null>(null);
+
+  return (
+    <div class="spec-data-list">
+      <Show when={folder()?.docs} fallback={<div class="spec-data-empty">No data docs.</div>}>
+        {(docs) => (
+          <>
+            <For each={docs()}>
+              {(docLink) => (
+                <div
+                  class="spec-data-item"
+                  classList={{ selected: selectedDoc() === docLink.url }}
+                  onClick={() =>
+                    setSelectedDoc((prev) => (prev === docLink.url ? null : docLink.url))
+                  }
+                >
+                  <span class="spec-data-icon">
+                    {docLink.type === 'folder' ? '\uD83D\uDCC1' : '\uD83D\uDCC4'}
+                  </span>
+                  <span class="spec-data-name">{docLink.name || 'Untitled'}</span>
+                  <span class="spec-data-type">{docLink.type}</span>
+                </div>
+              )}
+            </For>
+            <Show when={selectedDoc()}>
+              {(url) => (
+                <div class="spec-data-preview">
+                  <patchwork-view attr:doc-url={url()} />
+                </div>
+              )}
+            </Show>
+          </>
+        )}
       </Show>
     </div>
   );
