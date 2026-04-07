@@ -1,5 +1,5 @@
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo';
-import type { SpecDoc, Spec } from '../../workflow/types';
+import type { SpecDoc, Spec, VerificationContextDoc } from '../../workflow/types';
 
 type StoredAtom = { pred: string; args: string[] };
 type StoredConstraint = { body: StoredAtom[]; comment?: string };
@@ -34,9 +34,28 @@ function createDatalogDoc(
   return handle.url;
 }
 
+function createVerificationContext(
+  repo: Repo,
+  verificationUrl: AutomergeUrl,
+  artifactUrls: AutomergeUrl[],
+): AutomergeUrl {
+  const handle = repo.create<VerificationContextDoc & { '@patchwork': { type: string } }>();
+  handle.change((d) => {
+    d['@patchwork'] = { type: 'verification-context' };
+    d.verificationUrl = verificationUrl;
+    d.artifactUrls = artifactUrls;
+  });
+  return handle.url;
+}
+
 export function createDefaultSpec(
   repo: Repo,
-): { specDocUrl: AutomergeUrl; subSpecUrls: AutomergeUrl[]; verificationDatalogUrls: AutomergeUrl[] } {
+): {
+  specDocUrl: AutomergeUrl;
+  subSpecUrls: AutomergeUrl[];
+  verificationDatalogUrls: AutomergeUrl[];
+  verificationContextUrls: AutomergeUrl[];
+} {
   const budgetRulesUrl = createDatalogDoc(
     repo,
     'Budget Rules',
@@ -197,12 +216,18 @@ max_ratio(5).
     ],
   );
 
+  // Wrap each verification datalog doc in a VerificationContextDoc (empty artifactUrls for spec)
+  const budgetRulesVcUrl = createVerificationContext(repo, budgetRulesUrl, []);
+  const generalDeptRulesVcUrl = createVerificationContext(repo, generalDeptRulesUrl, []);
+  const deptARulesVcUrl = createVerificationContext(repo, deptARulesUrl, []);
+  const deptBRulesVcUrl = createVerificationContext(repo, deptBRulesUrl, []);
+
   const deptASpecHandle = repo.create<SpecDoc>();
   deptASpecHandle.change((d) => {
     d['@patchwork'] = { type: 'spec' };
     d.spec = {
       goal: 'Department A Schedule',
-      verificationUrls: [generalDeptRulesUrl, deptARulesUrl],
+      verificationUrls: [generalDeptRulesVcUrl, deptARulesVcUrl],
     };
   });
 
@@ -211,13 +236,13 @@ max_ratio(5).
     d['@patchwork'] = { type: 'spec' };
     d.spec = {
       goal: 'Department B Schedule',
-      verificationUrls: [generalDeptRulesUrl, deptBRulesUrl],
+      verificationUrls: [generalDeptRulesVcUrl, deptBRulesVcUrl],
     };
   });
 
   const spec: Spec = {
     goal: 'Hospital Schedule',
-    verificationUrls: [budgetRulesUrl],
+    verificationUrls: [budgetRulesVcUrl],
     subSpecUrls: [deptASpecHandle.url, deptBSpecHandle.url],
   };
 
@@ -231,5 +256,6 @@ max_ratio(5).
     specDocUrl: specHandle.url,
     subSpecUrls: [deptASpecHandle.url, deptBSpecHandle.url],
     verificationDatalogUrls: [budgetRulesUrl, generalDeptRulesUrl, deptARulesUrl, deptBRulesUrl],
+    verificationContextUrls: [budgetRulesVcUrl, generalDeptRulesVcUrl, deptARulesVcUrl, deptBRulesVcUrl],
   };
 }

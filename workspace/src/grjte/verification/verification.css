@@ -1,0 +1,119 @@
+@layer tool {
+  .verification-root {
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    color: #374151;
+  }
+
+  .verification-loading {
+    color: #9ca3af;
+    font-size: 14px;
+    padding: 8px 0;
+  }
+
+  /* Simple mode */
+
+  .verification-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    font-size: 14px;
+    font-weight: 400;
+    font-style: italic;
+    color: #6b7280;
+  }
+
+  .verification-circle {
+    width: 12px;
+    height: 12px;
+    border: 2px solid currentColor;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .verification-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Rich mode */
+
+  .verification-check-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    font-style: italic;
+    color: #6b7280;
+  }
+
+  .verification-check-circle {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    border: 2px solid currentColor;
+  }
+
+  .verification-check-title.pass .verification-check-circle {
+    border-color: #16a34a;
+    background: #16a34a;
+  }
+
+  .verification-check-title.fail .verification-check-circle {
+    border-color: #dc2626;
+    background: #dc2626;
+  }
+
+  .verification-check-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Constraints */
+
+  .verification-constraint-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 0 12px;
+  }
+
+  .verification-constraint-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  .verification-constraint-item.pass {
+    color: #065f46;
+    background: #f0fdf4;
+  }
+
+  .verification-constraint-item.fail {
+    color: #991b1b;
+    background: #fef2f2;
+  }
+
+  .verification-constraint-icon {
+    font-size: 14px;
+    font-weight: 700;
+    flex-shrink: 0;
+    line-height: 1.4;
+  }
+
+  .verification-constraint-text {
+    flex: 1;
+  }
+}

@@ -20,158 +20,47 @@
     font-size: 14px;
   }
 
-  .spec-container {
-    display: flex;
+  .spec-content {
     flex: 1;
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  .spec-tree {
-    flex: 1;
-    min-width: 320px;
-    max-width: 480px;
     overflow-y: auto;
     padding: 24px;
-    border-right: 1px solid #e5e7eb;
   }
 
-  .spec-preview {
-    flex: 2;
-    min-width: 0;
-    overflow: hidden;
+  .spec-section {
     display: flex;
     flex-direction: column;
+    gap: 12px;
   }
 
-  .spec-preview-empty {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #9ca3af;
-    font-size: 14px;
-    background: #f9fafb;
-  }
-
-  /* Node structure */
-
-  .spec-node {
-    position: relative;
-  }
-
-  /* Spec box - contains goal and verifications */
-
-  .spec-node-box {
-    background: #f3f4f6;
-    border-radius: 12px;
-    padding: 16px 20px;
-  }
-
-  .spec-node-goal {
+  .spec-goal {
     font-size: 16px;
     font-weight: 600;
     color: #1f2937;
     line-height: 1.4;
   }
 
-  /* Verifications list - inside the box */
+  .spec-section-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #9ca3af;
+    margin-top: 4px;
+  }
 
-  .spec-verifications {
+  .spec-verification-list {
     display: flex;
     flex-direction: column;
     gap: 4px;
-    margin-top: 12px;
   }
-
-  .spec-verification-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 8px 12px;
-    margin: 0 -8px;
-    font-size: 14px;
-    font-weight: 400;
-    font-style: italic;
-    color: #6b7280;
-    background: transparent;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    text-align: left;
-  }
-
-  .spec-verification-item:hover {
-    background: rgba(0, 0, 0, 0.04);
-    color: #374151;
-  }
-
-  .spec-verification-item.selected {
-    background: rgba(59, 130, 246, 0.1);
-    color: #2563eb;
-  }
-
-  .spec-verification-circle {
-    width: 12px;
-    height: 12px;
-    border: 2px solid currentColor;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-
-  .spec-verification-item.selected .spec-verification-circle {
-    background: currentColor;
-  }
-
-  .spec-verification-name {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* Subspecs container with curved connector lines */
 
   .spec-subspecs {
-    position: relative;
-    margin-left: 24px;
-    padding-left: 32px;
-    padding-top: 16px;
-  }
-
-  /* Each subspec node */
-  .spec-subspecs > .spec-node {
-    position: relative;
-    margin-bottom: 16px;
-  }
-
-  .spec-subspecs > .spec-node:last-child {
-    margin-bottom: 0;
-  }
-
-  /* Curved L-shaped connector */
-  .spec-subspecs > .spec-node::before {
-    content: '';
-    position: absolute;
-    left: -32px;
-    top: -24px;
-    width: 24px;
-    height: 48px;
-    border-left: 2px solid #d1d5db;
-    border-bottom: 2px solid #d1d5db;
-    border-bottom-left-radius: 12px;
-    background: transparent;
-  }
-
-  /* Extend vertical line to next sibling */
-  .spec-subspecs > .spec-node:not(:last-child)::after {
-    content: '';
-    position: absolute;
-    left: -32px;
-    top: 24px;
-    width: 2px;
-    height: calc(100% + 16px);
-    background: #d1d5db;
+    margin-left: 16px;
+    padding-left: 16px;
+    border-left: 2px solid #e5e7eb;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    margin-top: 4px;
   }
 }

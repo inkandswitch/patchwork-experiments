@@ -224,6 +224,16 @@ export const plugins: Plugin<any>[] = [
   } as Datatype,
   {
     type: 'patchwork:tool',
+    id: 'grjte-verification-viewer',
+    name: 'grjte Verification Viewer',
+    supportedDatatypes: ['verification-context'],
+    async load() {
+      const { VerificationTool } = await import('./grjte/verification/tool');
+      return VerificationTool;
+    },
+  } satisfies Tool,
+  {
+    type: 'patchwork:tool',
     id: 'grjte-validation-viewer',
     name: 'grjte Validation Viewer',
     supportedDatatypes: ['validation'],
