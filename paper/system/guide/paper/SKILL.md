@@ -142,7 +142,7 @@ element.ref.at('shapes', 'note_1').change((shape) => {
 });
 ```
 
-## Embed (sub-surface)
+## Embed (sub-canvas)
 
 Embeds host another tool inside a bounded area. `embedViewUrl` is the inner view; `embedDocUrl` is the document it binds to.
 

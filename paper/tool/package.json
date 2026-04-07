@@ -1,5 +1,5 @@
 {
-  "name": "surface-tool",
+  "name": "paper-tool",
   "type": "module",
   "exports": {
     ".": {

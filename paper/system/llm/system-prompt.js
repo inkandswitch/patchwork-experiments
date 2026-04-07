@@ -21,7 +21,7 @@ export async function buildSystemPrompt(filesystem) {
  */
 async function detectSystemRoot(filesystem) {
   if (typeof filesystem.listEntries !== 'function') return '';
-  const candidates = ['surface/system', 'system', ''];
+  const candidates = ['paper/system', 'system', ''];
   for (const root of candidates) {
     try {
       const entries = await filesystem.listEntries(joinPath(root, 'guide'));

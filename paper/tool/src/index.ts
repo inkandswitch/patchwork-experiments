@@ -12,9 +12,9 @@ export type { RefViewHostElement } from "./ref-view";
 export const plugins = [
   {
     type: "patchwork:tool",
-    id: "surface",
+    id: "paper",
     name: "Surface",
-    supportedDatatypes: ["surface"],
+    supportedDatatypes: ["paper"],
     async load() {
       const { SurfaceTool } = await import("./tool");
       return SurfaceTool;
@@ -22,7 +22,7 @@ export const plugins = [
   },
   {
     type: "patchwork:datatype",
-    id: "surface",
+    id: "paper",
     name: "Surface",
     icon: "LayoutTemplate",
     async load() {

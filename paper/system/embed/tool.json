@@ -1,7 +1,7 @@
 {
   "type": "tool",
   "name": "Embed",
-  "description": "Renders an embedded sub-surface on the canvas",
+  "description": "Renders an embedded sub-canvas on the paper",
   "toolUrl": "./tool.js",
   "schemaUrl": "./schema.js"
 }

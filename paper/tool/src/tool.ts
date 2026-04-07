@@ -23,7 +23,7 @@ export function SurfaceTool(
   const repo = element.repo ?? (globalThis as any).repo;
   if (!repo) {
     const pre = document.createElement("pre");
-    pre.textContent = "surface: no repo (set element.repo or window.repo)";
+    pre.textContent = "paper: no repo (set element.repo or window.repo)";
     element.appendChild(pre);
     return () => pre.remove();
   }
