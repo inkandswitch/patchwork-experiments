@@ -131,6 +131,71 @@
     color: #9ca3af;
   }
 
+  .validation-summary-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: #fff;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .validation-summary-header,
+  .validation-summary-metrics,
+  .validation-summary-metric {
+    display: flex;
+    align-items: center;
+  }
+
+  .validation-summary-header,
+  .validation-summary-metric {
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .validation-summary-title {
+    font-weight: 600;
+    color: #111827;
+  }
+
+  .validation-summary-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .validation-summary-status.pass {
+    background: #dcfce7;
+    color: #166534;
+  }
+
+  .validation-summary-status.fail {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+
+  .validation-summary-metrics {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .validation-summary-metric-label {
+    color: #64748b;
+  }
+
+  .validation-summary-metric-value {
+    color: #334155;
+    font-weight: 600;
+  }
+
   /* Artifacts */
 
   .validation-artifact-list {

@@ -73,12 +73,24 @@ function createVerificationContext(
   repo: Repo,
   verificationUrl: AutomergeUrl,
   artifactUrls: AutomergeUrl[],
+  options: {
+    scope: 'system' | 'artifacts';
+    title: string;
+    description: string;
+    viewMode: 'spec' | 'validation';
+    requiredArtifactUrls?: AutomergeUrl[];
+  },
 ): AutomergeUrl {
   const handle = repo.create<VerificationContextDoc & { '@patchwork': { type: string } }>();
   handle.change((d) => {
     d['@patchwork'] = { type: 'verification-context' };
     d.verificationUrl = verificationUrl;
     d.artifactUrls = artifactUrls;
+    d.scope = options.scope;
+    d.title = options.title;
+    d.description = options.description;
+    d.viewMode = options.viewMode;
+    d.requiredArtifactUrls = options.requiredArtifactUrls ?? artifactUrls;
   });
   return handle.url;
 }
@@ -388,10 +400,30 @@ staff_in_ward(lisa_brown, ward_6).`,
   ]);
 
   // Wrap each verification datalog doc in a VerificationContextDoc (empty artifactUrls for spec)
-  const trustRotaRulesVcUrl = createVerificationContext(repo, trustRotaRulesUrl, []);
-  const generalWardRulesVcUrl = createVerificationContext(repo, generalWardRulesUrl, []);
-  const amuRulesVcUrl = createVerificationContext(repo, amuRulesUrl, []);
-  const ward6RulesVcUrl = createVerificationContext(repo, ward6RulesUrl, []);
+  const trustRotaRulesVcUrl = createVerificationContext(repo, trustRotaRulesUrl, [], {
+    scope: 'system',
+    title: 'Trust-wide rota checks',
+    description: 'Ensure the combined hospital rota stays within the trust-wide hours budget and includes exactly two ward rosters.',
+    viewMode: 'spec',
+  });
+  const generalWardRulesVcUrl = createVerificationContext(repo, generalWardRulesUrl, [], {
+    scope: 'artifacts',
+    title: 'General ward staffing checks',
+    description: 'Ensure each ward rota satisfies the general staffing rules that apply across wards.',
+    viewMode: 'spec',
+  });
+  const amuRulesVcUrl = createVerificationContext(repo, amuRulesUrl, [], {
+    scope: 'artifacts',
+    title: 'AMU-specific checks',
+    description: 'Ensure the AMU rota has the required senior night coverage and acute assessment competency.',
+    viewMode: 'spec',
+  });
+  const ward6RulesVcUrl = createVerificationContext(repo, ward6RulesUrl, [], {
+    scope: 'artifacts',
+    title: 'Ward 6-specific checks',
+    description: 'Ensure the Ward 6 rota satisfies RN-to-patient ratio and HCA coverage requirements.',
+    viewMode: 'spec',
+  });
 
   const amuSpecHandle = repo.create<SpecDoc>();
   amuSpecHandle.change((d) => {

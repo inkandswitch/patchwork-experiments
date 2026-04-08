@@ -1,9 +1,11 @@
 import { render } from 'solid-js/web';
-import { For, Show, createSignal } from 'solid-js';
+import { For, Show, createMemo, createSignal } from 'solid-js';
 import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primitives';
 import type { ToolRender, ToolElement } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
-import type { ValidationDoc, ExecutionDoc } from '../../workflow/types';
+import type { ValidationDoc, ExecutionDoc, VerificationContextDoc } from '../../workflow/types';
+import type { DatalogDoc, VerificationArtifactInput } from '../verification/model';
+import { evaluateVerificationContext } from '../verification/model';
 import './validation.css';
 
 type FolderDoc = {
@@ -27,8 +29,6 @@ function ValidationView(props: { handle: DocHandle<ValidationDoc>; element: Tool
   const [execution] = useDocument<ExecutionDoc>(() => doc()?.executionDocUrl);
   const [folder] = useDocument<FolderDoc>(() => execution()?.artifactsFolderUrl);
   const [expandedArtifacts, setExpandedArtifacts] = createSignal<AutomergeUrl[]>([]);
-
-  const artifacts = () => folder()?.docs ?? [];
 
   function toggleArtifact(url: AutomergeUrl) {
     setExpandedArtifacts((current) =>
@@ -108,63 +108,187 @@ function ValidationView(props: { handle: DocHandle<ValidationDoc>; element: Tool
               </Show>
             </div>
 
-            <div class="validation-body">
-              <div class="validation-section">
-                <div class="validation-section-label">Artifacts</div>
-                <Show
-                  when={artifacts().length > 0}
-                  fallback={<div class="validation-empty">No artifacts available.</div>}
-                >
-                  <div class="validation-artifact-list">
-                    <For each={artifacts()}>
-                      {(entry) => (
-                        <div
-                          class="validation-artifact-card"
-                          classList={{ expanded: isArtifactExpanded(entry.url) }}
-                        >
-                          <button
-                            class="validation-artifact-toggle"
-                            onClick={() => toggleArtifact(entry.url)}
-                          >
-                            <span class="validation-artifact-name">
-                              {entry.name || 'Untitled'}
-                            </span>
-                            <span class="validation-artifact-type">{entry.type}</span>
-                          </button>
-                          <Show when={isArtifactExpanded(entry.url)}>
-                            <div class="validation-artifact-preview">
-                              <patchwork-view
-                                attr:doc-url={entry.url}
-                                style="display:block;width:100%;height:100%;"
-                              />
-                            </div>
-                          </Show>
-                        </div>
-                      )}
-                    </For>
-                  </div>
+            <Show when={execution()}>
+              {(currentExecution) => (
+                <Show when={folder()}>
+                  {(currentFolder) => (
+                    <ValidationBody
+                      execution={currentExecution()}
+                      artifactEntries={currentFolder().docs ?? []}
+                      toggleArtifact={toggleArtifact}
+                      isArtifactExpanded={isArtifactExpanded}
+                    />
+                  )}
                 </Show>
-              </div>
-
-              <Show when={(execution()?.verificationContextUrls?.length ?? 0) > 0}>
-                <div class="validation-section">
-                  <div class="validation-section-label">Verifications</div>
-                  <div class="validation-verification-list">
-                    <For each={execution()?.verificationContextUrls}>
-                      {(url) => (
-                        <patchwork-view
-                          attr:doc-url={url}
-                          attr:tool-id="grjte-verification-viewer"
-                          style="display:block;width:100%;"
-                        />
-                      )}
-                    </For>
-                  </div>
-                </div>
-              </Show>
-            </div>
+              )}
+            </Show>
           </>
         )}
+      </Show>
+    </div>
+  );
+}
+
+function ValidationBody(props: {
+  execution: ExecutionDoc;
+  artifactEntries: FolderDoc['docs'];
+  toggleArtifact: (url: AutomergeUrl) => void;
+  isArtifactExpanded: (url: AutomergeUrl) => boolean;
+}) {
+  const artifactAccessors = props.artifactEntries.map((entry) => {
+    const [doc] = useDocument<DatalogDoc>(() => entry.url);
+    return { entry, doc };
+  });
+  const verificationContextAccessors = props.execution.verificationContextUrls.map((url) => {
+    const [doc] = useDocument<VerificationContextDoc>(() => url);
+    return { url, doc };
+  });
+  const verificationDocAccessors = verificationContextAccessors.map(({ doc }) => {
+    const [verificationDoc] = useDocument<DatalogDoc>(() => doc()?.verificationUrl);
+    return verificationDoc;
+  });
+
+  const artifactInputs = createMemo<VerificationArtifactInput[]>(() =>
+    artifactAccessors.map(({ entry, doc }) => ({
+      url: entry.url,
+      name: entry.name || doc()?.title || 'Untitled artifact',
+      doc: doc(),
+    })),
+  );
+
+  const verificationSummaries = createMemo(() =>
+    verificationContextAccessors
+      .map(({ url, doc }, index) => {
+        const contextDoc = doc();
+        if (!contextDoc) return null;
+        return {
+          url,
+          evaluation: evaluateVerificationContext(
+            contextDoc,
+            verificationDocAccessors[index](),
+            artifactInputs(),
+          ),
+        };
+      })
+      .filter((entry): entry is { url: AutomergeUrl; evaluation: NonNullable<ReturnType<typeof evaluateVerificationContext>> } => Boolean(entry?.evaluation)),
+  );
+
+  const summary = createMemo(() => {
+    const evaluations = verificationSummaries().map((entry) => entry.evaluation);
+    const passing = evaluations.filter((evaluation) => evaluation.passed).length;
+    const failing = evaluations.length - passing;
+    const artifactEvaluations = evaluations.filter((evaluation) => evaluation.scope === 'artifacts');
+    const artifactTargetsTotal = artifactEvaluations.reduce(
+      (total, evaluation) => total + evaluation.artifactTargetsTotal,
+      0,
+    );
+    const artifactTargetsPassing = artifactEvaluations.reduce(
+      (total, evaluation) => total + evaluation.artifactTargetsPassing,
+      0,
+    );
+
+    return {
+      allPassed: failing === 0,
+      total: evaluations.length,
+      passing,
+      failing,
+      artifactTargetsTotal,
+      artifactTargetsPassing,
+      systemPassed: evaluations.every((evaluation) => evaluation.systemPassed),
+    };
+  });
+
+  return (
+    <div class="validation-body">
+      <Show when={verificationSummaries().length > 0}>
+        <div class="validation-section">
+          <div class="validation-section-label">Verification Summary</div>
+          <div class="validation-summary-card">
+            <div class="validation-summary-header">
+              <div class="validation-summary-title">
+                {summary().allPassed ? 'All required verifications pass' : 'Verification issues detected'}
+              </div>
+              <span
+                class="validation-summary-status"
+                classList={{ pass: summary().allPassed, fail: !summary().allPassed }}
+              >
+                {summary().allPassed ? 'Pass' : 'Fail'}
+              </span>
+            </div>
+            <div class="validation-summary-metrics">
+              <div class="validation-summary-metric">
+                <span class="validation-summary-metric-label">Required verifications</span>
+                <span class="validation-summary-metric-value">
+                  {summary().passing}/{summary().total} passing
+                </span>
+              </div>
+              <div class="validation-summary-metric">
+                <span class="validation-summary-metric-label">Artifact checks</span>
+                <span class="validation-summary-metric-value">
+                  {summary().artifactTargetsPassing}/{summary().artifactTargetsTotal} passing
+                </span>
+              </div>
+              <div class="validation-summary-metric">
+                <span class="validation-summary-metric-label">Whole system</span>
+                <span class="validation-summary-metric-value">
+                  {summary().systemPassed ? 'Passing' : 'Failing'}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Show>
+
+      <div class="validation-section">
+        <div class="validation-section-label">Artifacts</div>
+        <Show
+          when={props.artifactEntries.length > 0}
+          fallback={<div class="validation-empty">No artifacts available.</div>}
+        >
+          <div class="validation-artifact-list">
+            <For each={props.artifactEntries}>
+              {(entry) => (
+                <div
+                  class="validation-artifact-card"
+                  classList={{ expanded: props.isArtifactExpanded(entry.url) }}
+                >
+                  <button
+                    class="validation-artifact-toggle"
+                    onClick={() => props.toggleArtifact(entry.url)}
+                  >
+                    <span class="validation-artifact-name">{entry.name || 'Untitled'}</span>
+                    <span class="validation-artifact-type">{entry.type}</span>
+                  </button>
+                  <Show when={props.isArtifactExpanded(entry.url)}>
+                    <div class="validation-artifact-preview">
+                      <patchwork-view
+                        attr:doc-url={entry.url}
+                        style="display:block;width:100%;height:100%;"
+                      />
+                    </div>
+                  </Show>
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
+      </div>
+
+      <Show when={props.execution.verificationContextUrls.length > 0}>
+        <div class="validation-section">
+          <div class="validation-section-label">Verifications</div>
+          <div class="validation-verification-list">
+            <For each={props.execution.verificationContextUrls}>
+              {(url) => (
+                <patchwork-view
+                  attr:doc-url={url}
+                  attr:tool-id="grjte-verification-viewer"
+                  style="display:block;width:100%;"
+                />
+              )}
+            </For>
+          </div>
+        </div>
       </Show>
     </div>
   );

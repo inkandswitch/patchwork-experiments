@@ -1,24 +1,17 @@
 import { render } from 'solid-js/web';
-import { For, Show, createMemo, createSignal, type Accessor } from 'solid-js';
+import { For, Show, createMemo, createSignal } from 'solid-js';
 import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primitives';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
 import type { VerificationContextDoc } from '../../workflow/types';
-import { useTitle } from '../../hooks/useTitle';
+import type { ConstraintViolation } from './datalog-eval';
 import {
-  Datalog,
-  factKey,
-  type StoredFact,
-  type StoredConstraint,
-  type ConstraintViolation,
-} from './datalog-eval';
+  type DatalogDoc,
+  type VerificationArtifactInput,
+  evaluateVerificationContext,
+  getRequiredArtifactUrls,
+} from './model';
 import './verification.css';
-
-type DatalogDoc = {
-  facts: StoredFact[];
-  rules: unknown[];
-  constraints: StoredConstraint[];
-};
 
 export const VerificationTool: ToolRender = (handle, element) => {
   const dispose = render(
@@ -35,140 +28,210 @@ export const VerificationTool: ToolRender = (handle, element) => {
 function VerificationView(props: { handle: DocHandle<VerificationContextDoc> }) {
   const [doc] = useDocument<VerificationContextDoc>(() => props.handle.url);
 
-  const [expanded, setExpanded] = createSignal(false);
-  const toggleExpanded = () => setExpanded((v) => !v);
-
   return (
     <div class="verification-root">
-      <Show when={doc()} fallback={<div class="verification-loading">Loading...</div>}>
-        <RichVerification
-          verificationUrl={doc()!.verificationUrl}
-          artifactUrls={doc()!.artifactUrls ?? []}
-          expanded={expanded}
-          toggleExpanded={toggleExpanded}
-        />
+      <Show when={doc()} fallback={<div class="verification-loading">Loading verification...</div>}>
+        {(currentDoc) => (
+          <ResolvedVerificationView
+            doc={currentDoc()}
+            verificationUrl={currentDoc().verificationUrl}
+            artifactUrls={getRequiredArtifactUrls(currentDoc())}
+          />
+        )}
       </Show>
     </div>
   );
 }
 
-function RichVerification(props: {
+function ResolvedVerificationView(props: {
+  doc: VerificationContextDoc;
   verificationUrl: AutomergeUrl;
   artifactUrls: AutomergeUrl[];
-  expanded: Accessor<boolean>;
-  toggleExpanded: () => void;
 }) {
-  const title = useTitle(() => props.verificationUrl);
+  const [expanded, setExpanded] = createSignal(false);
   const [verificationDoc] = useDocument<DatalogDoc>(() => props.verificationUrl);
-
-  // Call useDocument at component top level for each artifact URL.
-  // Safe because artifactUrls is fixed at creation time.
-  const artifactAccessors = props.artifactUrls.map((url) => {
-    const [d] = useDocument<DatalogDoc>(() => url);
-    return d;
+  const artifactDocs = props.artifactUrls.map((url) => {
+    const [doc] = useDocument<DatalogDoc>(() => url);
+    return { url, doc };
   });
 
-  const results = createMemo(() => {
-    const vDoc = verificationDoc();
-    if (!vDoc) return null;
+  const artifacts = createMemo<VerificationArtifactInput[]>(() =>
+    artifactDocs.map(({ url, doc }) => ({
+      url,
+      name: doc()?.title || 'Untitled artifact',
+      doc: doc(),
+    })),
+  );
 
-    const allFacts: StoredFact[] = [];
-    for (const accessor of artifactAccessors) {
-      const d = accessor();
-      if (d?.facts) {
-        for (const fact of d.facts) allFacts.push(fact);
-      }
-    }
-
-    if (vDoc.facts) {
-      for (const fact of vDoc.facts) allFacts.push(fact);
-    }
-
-    const constraints = vDoc.constraints ?? [];
-    if (constraints.length === 0) return { constraints: [], violations: [], derivedFacts: allFacts };
-
-    const datalog = new Datalog(allFacts, [], constraints);
-    const violations = datalog.checkConflicts();
-    const derivedFacts = datalog.query();
-
-    return { constraints, violations, derivedFacts };
-  });
-
-  const allPass = () => {
-    const r = results();
-    if (!r) return true;
-    return r.violations.length === 0;
-  };
-
-  const groupedFacts = createMemo(() => {
-    const r = results();
-    if (!r) return [];
-    const map = new Map<string, StoredFact[]>();
-    for (const f of r.derivedFacts) {
-      if (!map.has(f.pred)) map.set(f.pred, []);
-      map.get(f.pred)!.push(f);
-    }
-    return Array.from(map.entries());
-  });
+  const evaluation = createMemo(() =>
+    evaluateVerificationContext(props.doc, verificationDoc(), artifacts()),
+  );
 
   return (
-    <>
-      <div
-        class="verification-check-title"
-        classList={{ pass: allPass(), fail: !allPass() }}
-        onClick={props.toggleExpanded}
-      >
-        <span class="verification-check-circle" />
-        <span class="verification-check-name">{title()}</span>
-      </div>
-      <Show when={results()}>
-        {(r) => (
-          <div class="verification-constraint-list">
-            <For each={r().constraints}>
-              {(constraint) => {
-                const violated = () =>
-                  r().violations.some((v: ConstraintViolation) => v.constraint === constraint);
-                return (
-                  <div
-                    class="verification-constraint-item"
-                    classList={{ pass: !violated(), fail: violated() }}
-                  >
-                    <span class="verification-constraint-icon">
-                      {violated() ? '\u2717' : '\u2713'}
-                    </span>
-                    <span class="verification-constraint-text">
-                      {constraint.comment || ':- ' + constraint.body.map(serializeAtom).join(', ')}
+    <Show when={evaluation()} fallback={<div class="verification-loading">Loading details...</div>}>
+      {(current) => (
+        <div class="verification-card">
+          <button
+            class="verification-summary"
+            classList={{
+              validation: current().mode === 'validation',
+              pass: current().mode === 'validation' && current().passed,
+              fail: current().mode === 'validation' && !current().passed,
+            }}
+            onClick={() => setExpanded((value) => !value)}
+          >
+            <div class="verification-summary-main">
+              <Show when={current().mode === 'validation'}>
+                <span
+                  class="verification-status-pill"
+                  classList={{ pass: current().passed, fail: !current().passed }}
+                >
+                  {current().passed ? 'Pass' : 'Fail'}
+                </span>
+              </Show>
+              <div class="verification-summary-copy">
+                <div class="verification-summary-title">{current().title}</div>
+                <div class="verification-summary-description">{current().description}</div>
+              </div>
+            </div>
+            <div class="verification-summary-meta">
+              <Show when={current().mode === 'validation'}>
+                <span class="verification-target-summary">{current().targetSummary}</span>
+              </Show>
+              <span class="verification-expand-label">{expanded() ? 'Hide details' : 'Show details'}</span>
+            </div>
+          </button>
+
+          <Show when={current().mode === 'validation'}>
+            <div class="verification-target-list">
+              <For each={current().targetResults}>
+                {(target) => (
+                  <div class="verification-target-row">
+                    <div class="verification-target-label">{target.label}</div>
+                    <span
+                      class="verification-target-status"
+                      classList={{ pass: target.passed, fail: !target.passed }}
+                    >
+                      {target.passed ? 'Pass' : 'Fail'}
                     </span>
                   </div>
-                );
-              }}
-            </For>
+                )}
+              </For>
+            </div>
+          </Show>
+
+          <Show when={expanded()}>
+            <div class="verification-details">
+              <Show
+                when={current().mode === 'spec'}
+                fallback={<ValidationDetails evaluation={current()} verificationUrl={props.verificationUrl} />}
+              >
+                <div class="verification-raw-doc">
+                  <patchwork-view attr:doc-url={props.verificationUrl} style="display:block;width:100%;" />
+                </div>
+              </Show>
+            </div>
+          </Show>
+        </div>
+      )}
+    </Show>
+  );
+}
+
+function ValidationDetails(props: {
+  evaluation: NonNullable<ReturnType<typeof evaluateVerificationContext>>;
+  verificationUrl: AutomergeUrl;
+}) {
+  return (
+    <div class="verification-evidence">
+      <For each={props.evaluation.targetResults}>
+        {(target) => (
+          <div class="verification-evidence-card">
+            <div class="verification-evidence-header">
+              <div class="verification-evidence-title">{target.label}</div>
+              <span
+                class="verification-target-status"
+                classList={{ pass: target.passed, fail: !target.passed }}
+              >
+                {target.passed ? 'Pass' : 'Fail'}
+              </span>
+            </div>
+
+            <div class="verification-constraint-list">
+              <For each={target.constraints}>
+                {(constraint) => (
+                  <div
+                    class="verification-constraint-item"
+                    classList={{ pass: constraint.passed, fail: !constraint.passed }}
+                  >
+                    <span class="verification-constraint-icon">
+                      {constraint.passed ? '\u2713' : '\u2717'}
+                    </span>
+                    <div class="verification-constraint-body">
+                      <div class="verification-constraint-text">{constraint.label}</div>
+                      <Show when={!constraint.passed}>
+                        <div class="verification-witness-list">
+                          <For each={constraint.violations}>
+                            {(violation) => (
+                              <For each={violation.witnesses}>
+                                {(witness) => <WitnessCard witness={witness} />}
+                              </For>
+                            )}
+                          </For>
+                        </div>
+                      </Show>
+                    </div>
+                  </div>
+                )}
+              </For>
+            </div>
+
+            <div class="verification-source-section">
+              <div class="verification-source-label">Combined datalog</div>
+              <pre class="verification-source-code">{target.combinedSource}</pre>
+            </div>
           </div>
         )}
-      </Show>
-      <Show when={props.expanded() && groupedFacts().length > 0}>
-        <div class="verification-facts-section">
-          <For each={groupedFacts()}>
-            {([pred, facts]) => (
-              <div class="verification-facts-group">
-                <div class="verification-facts-pred">{pred}</div>
-                <div class="verification-facts-list">
-                  <For each={facts}>
-                    {(f) => (
-                      <div class="verification-fact">{factKey(f)}</div>
-                    )}
-                  </For>
-                </div>
-              </div>
+      </For>
+    </div>
+  );
+}
+
+function WitnessCard(props: {
+  witness: ConstraintViolation['witnesses'][number];
+}) {
+  const bindings = () => Object.entries(props.witness.bindings);
+
+  return (
+    <div class="verification-witness-card">
+      <Show when={bindings().length > 0}>
+        <div class="verification-witness-bindings">
+          <For each={bindings()}>
+            {([key, value]) => (
+              <span class="verification-binding-pill">
+                {key}={String(value)}
+              </span>
             )}
           </For>
         </div>
       </Show>
-    </>
+      <div class="verification-witness-steps">
+        <For each={props.witness.steps}>
+          {(step) => (
+            <div class="verification-step">
+              {step.kind === 'fact' ? (
+                <span class="verification-step-code">
+                  {step.fact.pred}({step.fact.args.join(', ')})
+                </span>
+              ) : (
+                <span class="verification-step-code">
+                  {step.atom.pred}({step.resolvedArgs.map((arg) => String(arg)).join(', ')})
+                </span>
+              )}
+            </div>
+          )}
+        </For>
+      </div>
+    </div>
   );
-}
-
-function serializeAtom(a: { pred: string; args: string[] }): string {
-  if (!a.args || a.args.length === 0) return a.pred;
-  return `${a.pred}(${a.args.join(', ')})`;
 }
