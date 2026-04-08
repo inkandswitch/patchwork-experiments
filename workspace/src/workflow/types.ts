@@ -43,15 +43,9 @@ export type Verification = {
   script: string;
 };
 
-export type TaskDoc = {
-  goal: string;
-  dependsOn: AutomergeUrl[];
-};
-
-export type PlanDoc = {
+export type PlanDoc = HasPatchworkMetadata & {
   goal: string;
   specDocUrl: AutomergeUrl;
-  tasks: AutomergeUrl[];
 };
 
 export type VerificationContextDoc = HasPatchworkMetadata & {
@@ -66,7 +60,7 @@ export type ExecutionDoc = HasPatchworkMetadata & {
   verificationContextUrls: AutomergeUrl[];
 };
 
-export type ValidationDoc = {
+export type ValidationDoc = HasPatchworkMetadata & {
   planDocUrl: AutomergeUrl;
   specDocUrl: AutomergeUrl;
   executionDocUrl?: AutomergeUrl;

@@ -1,5 +1,5 @@
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo';
-import type { PlanDoc, TaskDoc } from '../../workflow/types';
+import type { TaskListPlanDoc, TaskDoc } from '../plan/types';
 
 export function createDefaultPlan(
   repo: Repo,
@@ -21,7 +21,7 @@ export function createDefaultPlan(
     d.dependsOn = subSpecUrls.length > 1 ? [subSpecUrls[1]] : [];
   });
 
-  const planHandle = repo.create<PlanDoc & { '@patchwork': { type: string } }>();
+  const planHandle = repo.create<TaskListPlanDoc & { '@patchwork': { type: string } }>();
   planHandle.change((d) => {
     d['@patchwork'] = { type: 'plan' };
     d.goal =

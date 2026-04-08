@@ -86,7 +86,7 @@ export const plugins: Plugin<any>[] = [
     type: 'patchwork:tool',
     id: 'grjte-plan-viewer',
     name: 'grjte Plan Viewer',
-    supportedDatatypes: ['plan'],
+    supportedDatatypes: ['task-list-plan'],
     async load() {
       const { PlanTool } = await import('./grjte/plan/tool');
       return PlanTool;
@@ -100,6 +100,26 @@ export const plugins: Plugin<any>[] = [
     async load() {
       const { PlanDatatype } = await import('./workflow/datatypes');
       return PlanDatatype;
+    },
+  } as Datatype,
+  {
+    type: 'patchwork:datatype',
+    id: 'task-list-plan',
+    name: 'Task List Plan',
+    icon: 'ListChecks',
+    async load() {
+      const { TaskListPlanDatatype } = await import('./grjte/plan/types');
+      return TaskListPlanDatatype;
+    },
+  } as Datatype,
+  {
+    type: 'patchwork:datatype',
+    id: 'task',
+    name: 'Task',
+    icon: 'CheckSquare',
+    async load() {
+      const { TaskDatatype } = await import('./grjte/plan/types');
+      return TaskDatatype;
     },
   } as Datatype,
   {
@@ -160,16 +180,6 @@ export const plugins: Plugin<any>[] = [
     async load() {
       const { PaulWorkflowTemplateDatatype } = await import('./paul/workflow-template/datatype');
       return PaulWorkflowTemplateDatatype;
-    },
-  } as Datatype,
-  {
-    type: 'patchwork:datatype',
-    id: 'task',
-    name: 'Task',
-    icon: 'CheckSquare',
-    async load() {
-      const { TaskDatatype } = await import('./workflow/datatypes');
-      return TaskDatatype;
     },
   } as Datatype,
   {

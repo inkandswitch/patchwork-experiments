@@ -2,7 +2,6 @@ import type { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
 import type {
   PlanDoc,
   SpecDoc,
-  TaskDoc,
   ExecutionDoc,
   ValidationDoc,
   VerificationContextDoc,
@@ -42,16 +41,6 @@ export const PlanDatatype: DatatypeImplementation<PlanDoc> = {
     return doc.goal || 'Plan';
   },
   setTitle(doc: PlanDoc, title: string) {
-    doc.goal = title;
-  },
-};
-
-export const TaskDatatype: DatatypeImplementation<TaskDoc> = {
-  init() {},
-  getTitle(doc: TaskDoc) {
-    return doc.goal || 'Task';
-  },
-  setTitle(doc: TaskDoc, title: string) {
     doc.goal = title;
   },
 };

@@ -3,7 +3,7 @@ import { For, Show } from 'solid-js';
 import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primitives';
 import type { ToolRender, ToolElement } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
-import type { PlanDoc, TaskDoc } from '../../workflow/types';
+import type { TaskListPlanDoc, TaskDoc } from './types';
 import { useTitle } from '../../hooks/useTitle';
 import './plan.css';
 
@@ -11,7 +11,7 @@ export const PlanTool: ToolRender = (handle, element) => {
   const dispose = render(
     () => (
       <RepoContext.Provider value={element.repo}>
-        <PlanView handle={handle as DocHandle<PlanDoc>} element={element} />
+        <PlanView handle={handle as DocHandle<TaskListPlanDoc>} element={element} />
       </RepoContext.Provider>
     ),
     element,
@@ -29,8 +29,8 @@ function openDocument(element: ToolElement, url: AutomergeUrl, toolId: string) {
   );
 }
 
-function PlanView(props: { handle: DocHandle<PlanDoc>; element: ToolElement }) {
-  const [doc] = useDocument<PlanDoc>(() => props.handle.url);
+function PlanView(props: { handle: DocHandle<TaskListPlanDoc>; element: ToolElement }) {
+  const [doc] = useDocument<TaskListPlanDoc>(() => props.handle.url);
 
   return (
     <div class="plan-root">
