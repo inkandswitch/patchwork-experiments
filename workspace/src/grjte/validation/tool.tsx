@@ -1,10 +1,9 @@
 import { render } from 'solid-js/web';
-import { For, Show } from 'solid-js';
+import { For, Show, createSignal } from 'solid-js';
 import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primitives';
 import type { ToolRender, ToolElement } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
-import type { ValidationDoc, PlanDoc, ExecutionDoc } from '../../workflow/types';
-import { useTitle } from '../../hooks/useTitle';
+import type { ValidationDoc, ExecutionDoc } from '../../workflow/types';
 import './validation.css';
 
 type FolderDoc = {
@@ -27,8 +26,19 @@ function ValidationView(props: { handle: DocHandle<ValidationDoc>; element: Tool
   const [doc] = useDocument<ValidationDoc>(() => props.handle.url);
   const [execution] = useDocument<ExecutionDoc>(() => doc()?.executionDocUrl);
   const [folder] = useDocument<FolderDoc>(() => execution()?.artifactsFolderUrl);
+  const [expandedArtifacts, setExpandedArtifacts] = createSignal<AutomergeUrl[]>([]);
 
   const artifacts = () => folder()?.docs ?? [];
+
+  function toggleArtifact(url: AutomergeUrl) {
+    setExpandedArtifacts((current) =>
+      current.includes(url) ? current.filter((entry) => entry !== url) : [...current, url],
+    );
+  }
+
+  function isArtifactExpanded(url: AutomergeUrl) {
+    return expandedArtifacts().includes(url);
+  }
 
   function handleApprove() {
     props.handle.change((d) => {
@@ -99,26 +109,42 @@ function ValidationView(props: { handle: DocHandle<ValidationDoc>; element: Tool
             </div>
 
             <div class="validation-body">
-              <Show when={artifacts().length > 0}>
-                <div class="validation-section">
-                  <div class="validation-section-label">Artifacts</div>
+              <div class="validation-section">
+                <div class="validation-section-label">Artifacts</div>
+                <Show
+                  when={artifacts().length > 0}
+                  fallback={<div class="validation-empty">No artifacts available.</div>}
+                >
                   <div class="validation-artifact-list">
                     <For each={artifacts()}>
                       {(entry) => (
-                        <div class="validation-artifact-card">
-                          <div class="validation-artifact-card-label">{entry.name}</div>
-                          <div class="validation-artifact-card-view">
-                            <patchwork-view
-                              attr:doc-url={entry.url}
-                              style="display:block;width:100%;height:100%;"
-                            />
-                          </div>
+                        <div
+                          class="validation-artifact-card"
+                          classList={{ expanded: isArtifactExpanded(entry.url) }}
+                        >
+                          <button
+                            class="validation-artifact-toggle"
+                            onClick={() => toggleArtifact(entry.url)}
+                          >
+                            <span class="validation-artifact-name">
+                              {entry.name || 'Untitled'}
+                            </span>
+                            <span class="validation-artifact-type">{entry.type}</span>
+                          </button>
+                          <Show when={isArtifactExpanded(entry.url)}>
+                            <div class="validation-artifact-preview">
+                              <patchwork-view
+                                attr:doc-url={entry.url}
+                                style="display:block;width:100%;height:100%;"
+                              />
+                            </div>
+                          </Show>
                         </div>
                       )}
                     </For>
                   </div>
-                </div>
-              </Show>
+                </Show>
+              </div>
 
               <Show when={(execution()?.verificationContextUrls?.length ?? 0) > 0}>
                 <div class="validation-section">
@@ -141,16 +167,5 @@ function ValidationView(props: { handle: DocHandle<ValidationDoc>; element: Tool
         )}
       </Show>
     </div>
-  );
-}
-
-function LinkPill(props: { url: AutomergeUrl; label: string; onClick: () => void }) {
-  const title = useTitle(() => props.url);
-
-  return (
-    <button class="validation-link-pill" onClick={props.onClick}>
-      <span class="validation-link-label">{props.label}:</span>
-      <span class="validation-link-title">{title()}</span>
-    </button>
   );
 }

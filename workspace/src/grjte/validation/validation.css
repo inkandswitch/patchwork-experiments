@@ -19,6 +19,11 @@
     font-size: 14px;
   }
 
+  .validation-empty {
+    color: #9ca3af;
+    font-size: 14px;
+  }
+
   /* Header */
 
   .validation-header {
@@ -137,20 +142,42 @@
   .validation-artifact-card {
     border: 1px solid #e5e7eb;
     border-radius: 10px;
+    background: #fff;
     overflow: hidden;
   }
 
-  .validation-artifact-card-label {
-    padding: 8px 14px;
-    font-size: 12px;
-    font-weight: 600;
-    color: #475569;
-    background: #f3f4f6;
-    border-bottom: 1px solid #e5e7eb;
+  .validation-artifact-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    background: #fff;
+    border: 0;
+    cursor: pointer;
+    text-align: left;
   }
 
-  .validation-artifact-card-view {
-    height: 200px;
+  .validation-artifact-card.expanded .validation-artifact-toggle {
+    border-bottom: 1px solid #e5e7eb;
+    background: #f8fafc;
+  }
+
+  .validation-artifact-name {
+    font-weight: 600;
+    color: #334155;
+  }
+
+  .validation-artifact-type {
+    font-size: 12px;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .validation-artifact-preview {
+    height: 220px;
     overflow: auto;
   }
 
