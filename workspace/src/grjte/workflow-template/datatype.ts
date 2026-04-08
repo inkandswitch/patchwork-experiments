@@ -18,7 +18,7 @@ export const grjteWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> 
     doc.toolIds = {
       spec: 'grjte-spec-viewer',
       plan: 'grjte-plan-viewer',
-      // execution: 'grjte-execution-viewer',
+      execution: 'grjte-execution-viewer',
       validation: 'grjte-validation-viewer',
     };
 
@@ -26,13 +26,14 @@ export const grjteWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> 
     const { specDocUrl, subSpecUrls, verificationDatalogUrls } = createDefaultSpec(repo);
     doc.specDocUrl = specDocUrl;
 
-    const { planDocUrl } = createDefaultPlan(repo, specDocUrl, subSpecUrls);
+    const { planDocUrl, taskUrls } = createDefaultPlan(repo, specDocUrl, subSpecUrls);
     doc.planDocUrl = planDocUrl;
 
     const { executionDocUrl, artifactDocUrls } = createDefaultExecution(
       repo,
       specDocUrl,
       planDocUrl,
+      taskUrls,
       verificationDatalogUrls,
     );
     doc.executionDocUrl = executionDocUrl;

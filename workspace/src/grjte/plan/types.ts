@@ -5,6 +5,7 @@ import { DatatypeImplementation } from '@inkandswitch/patchwork-plugins/dist/dat
 export type TaskDoc = {
   goal: string;
   dependsOn: AutomergeUrl[];
+  status?: 'pending' | 'in-progress' | 'failed' | 'completed';
 };
 
 export type TaskListPlanDoc = PlanDoc & {

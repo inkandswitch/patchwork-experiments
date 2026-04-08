@@ -1,5 +1,6 @@
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo';
-import type { ExecutionDoc, VerificationContextDoc } from '../../workflow/types';
+import type { VerificationContextDoc } from '../../workflow/types';
+import type { TaskListExecutionDoc } from '../execution/types';
 
 type FolderDoc = {
   '@patchwork'?: { type: string };
@@ -49,6 +50,7 @@ export function createDefaultExecution(
   repo: Repo,
   specDocUrl: AutomergeUrl,
   planDocUrl: AutomergeUrl,
+  taskUrls: AutomergeUrl[],
   verificationDatalogUrls: AutomergeUrl[],
 ): { executionDocUrl: AutomergeUrl; artifactDocUrls: AutomergeUrl[] } {
   // AMU rota facts (Mon-Wed, long day + long night shifts, 12h each)
@@ -302,11 +304,13 @@ assigned(w6_wed_night, dan_murphy, 12). has_hca(w6_wed_night).`;
   });
 
   // Create execution doc
-  const executionHandle = repo.create<ExecutionDoc & { '@patchwork': { type: string } }>();
+  const executionHandle = repo.create<TaskListExecutionDoc & { '@patchwork': { type: string } }>();
   executionHandle.change((d) => {
     d['@patchwork'] = { type: 'execution' };
     d.specDocUrl = specDocUrl;
     d.planDocUrl = planDocUrl;
+    d.status = 'in-progress';
+    d.taskUrls = taskUrls;
     d.artifactsFolderUrl = artifactsFolderHandle.url;
     d.verificationContextUrls = verificationContextUrls;
   });

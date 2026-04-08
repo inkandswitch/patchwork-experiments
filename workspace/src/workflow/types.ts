@@ -56,6 +56,7 @@ export type VerificationContextDoc = HasPatchworkMetadata & {
 export type ExecutionDoc = HasPatchworkMetadata & {
   specDocUrl: AutomergeUrl;
   planDocUrl: AutomergeUrl;
+  status: 'in-progress' | 'failed' | 'completed';
   artifactsFolderUrl: AutomergeUrl;
   verificationContextUrls: AutomergeUrl[];
 };

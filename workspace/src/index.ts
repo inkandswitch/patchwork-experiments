@@ -204,6 +204,16 @@ export const plugins: Plugin<any>[] = [
   } as Datatype,
   {
     type: 'patchwork:datatype',
+    id: 'task-list-execution',
+    name: 'Task List Execution',
+    icon: 'Play',
+    async load() {
+      const { TaskListExecutionDatatype } = await import('./grjte/execution/types');
+      return TaskListExecutionDatatype;
+    },
+  } as Datatype,
+  {
+    type: 'patchwork:datatype',
     id: 'validation',
     name: 'Validation',
     icon: 'ShieldCheck',
@@ -250,6 +260,16 @@ export const plugins: Plugin<any>[] = [
     async load() {
       const { ValidationTool } = await import('./grjte/validation/tool');
       return ValidationTool;
+    },
+  } satisfies Tool,
+  {
+    type: 'patchwork:tool',
+    id: 'grjte-execution-viewer',
+    name: 'grjte Execution Viewer',
+    supportedDatatypes: ['task-list-execution'],
+    async load() {
+      const { ExecutionTool } = await import('./grjte/execution/tool');
+      return ExecutionTool;
     },
   } satisfies Tool,
   {
