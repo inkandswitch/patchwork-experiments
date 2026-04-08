@@ -366,15 +366,36 @@ machine(machine_b, "192.168.1.11").
 blocked_ip("10.0.0.1").
 blocked_ip("10.0.0.2").
 
-% Derive convenience relations
-allows(M, Src, Port) :- rule(M, "input", _, "accept", Src, _, Port).
-blocks(M, Src) :- rule(M, "input", _, "drop", Src, _, _).
+% ═══════════════════════════════════════════════════════
+% EMERGENT CONSTRAINTS - Cross-machine behavioral checks
+% ═══════════════════════════════════════════════════════
 
-% Blocked IPs must not be reachable via any allow rule
-:- blocked_ip(IP), rule(M, "input", _, "accept", Src, _, _), ip_in(IP, Src).
+% 1. Database must be reachable from webserver
+accepts_db_from(DB, Ip) :- rule(DB, "input", _, "accept", Src, _, 3306), ip_in(Ip, Src).
+accepts_db_from(DB, Ip) :- rule(DB, "input", _, "accept", Src, _, 5432), ip_in(Ip, Src).
 
-% SSH (port 22) must be restricted to internal network
-:- rule(M, "input", _, "accept", "0.0.0.0/0", _, 22).`;
+:- role(DB, database), role(Web, webserver),
+   machine(Web, WebIp),
+   not accepts_db_from(DB, WebIp).
+
+% 2. Database should only accept from known webservers
+known_client_in_range(Src) :-
+    role(M, webserver),
+    machine(M, MIp),
+    ip_in(MIp, Src).
+
+:- role(DB, database),
+   rule(DB, "input", _, "accept", Src, _, 3306),
+   Src != "127.0.0.0/8",
+   not known_client_in_range(Src).
+
+:- role(DB, database),
+   rule(DB, "input", _, "accept", Src, _, 5432),
+   Src != "127.0.0.0/8",
+   not known_client_in_range(Src).
+
+% 3. Blocked IPs must be blocked everywhere
+:- blocked_ip(IP), rule(M, "input", _, "accept", Src, _, _), ip_in(IP, Src).`;
 
 const COMMON_MACHINE_RULES_DATALOG = `% Detect redundant rules (earlier broader rule with same action already covers)
 redundant(M, Idx) :-
