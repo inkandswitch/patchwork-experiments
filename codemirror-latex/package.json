@@ -22,11 +22,11 @@
   "dependencies": {
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.38.4",
-    "@inkandswitch/patchwork-bootloader": "workspace:^",
+    "@inkandswitch/patchwork-bootloader": "^0.0.4",
     "katex": "^0.16.11"
   },
   "devDependencies": {
-    "@automerge/automerge": "catalog:",
+    "@automerge/automerge": "^3.2.5",
     "@babel/core": "^7.28.4",
     "@babel/parser": "^7.28.4",
     "@eslint/js": "^9.36.0",

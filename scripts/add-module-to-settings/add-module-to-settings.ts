@@ -1,11 +1,15 @@
 /**
  * Push a module URL onto a module-settings doc's `modules` array (Subduction).
  *
- * Run from anywhere (after `pnpm install` here):
- *   /path/to/patchwork-tools/scripts/add-module-to-settings/register-module \
- *     "$MODULE_SETTINGS_DOC_URL" "$(pushwork url)"
+ * One-time PATH setup (from patchwork-tools repo root only):
+ *   pnpm run link-cli
+ *   # add pnpm’s global bin to PATH if needed: pnpm bin -g
  *
- * Args must be full `automerge:…` URLs (invalid URLs fail when opening the doc).
+ * If you previously ran an older link-cli, unlink first: pnpm unlink --global
+ *
+ * Then from any directory:
+ *   pw-register-module "$MODULE_SETTINGS_DOC_URL" "$(pushwork url)"
+ *   # long name: patchwork-register-module
  *
  * Env: SUBDUCTION_SERVER, AUTOMERGE_DATA_DIR (default: <this-folder>/automerge-repo-data)
  */

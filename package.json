@@ -1,0 +1,12 @@
+{
+  "name": "patchwork-tools",
+  "private": true,
+  "description": "Tool packages for Patchwork — run pnpm run link-cli to expose CLIs on your PATH",
+  "bin": {
+    "patchwork-register-module": "./scripts/add-module-to-settings/register-module",
+    "pw-register-module": "./scripts/add-module-to-settings/register-module"
+  },
+  "scripts": {
+    "link-cli": "pnpm install --dir scripts/add-module-to-settings && pnpm link --global"
+  }
+}

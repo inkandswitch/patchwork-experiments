@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@automerge/automerge':
+        specifier: 3.2.1
+        version: 3.2.1
       '@automerge/automerge-repo':
         specifier: 2.5.2-alpha.0
         version: 2.5.2-alpha.0
@@ -35,9 +38,6 @@ packages:
 
   '@automerge/automerge@3.2.1':
     resolution: {integrity: sha512-xsEZlZe8lWyVCbD7Z7roH4X6ZKlRxMmmumb0M5CuxJWptUEfYsf+1z9lFEJh4aDBbWTLAgxsXd+TBi6jKTj0+g==}
-
-  '@automerge/automerge@3.2.4':
-    resolution: {integrity: sha512-/IAShHSxme5d4ZK0Vs4A0P+tGaR/bSz6KtIJSCIPfwilCxsIqfRHAoNjmsXip6TGouadmbuw3WfLop6cal8pPQ==}
 
   '@cbor-extract/cbor-extract-darwin-arm64@2.2.0':
     resolution: {integrity: sha512-P7swiOAdF7aSi0H+tHtHtr6zrpF3aAq/W9FXx5HektRvLTM2O89xCyXF3pk7pLc7QpaY7AoaE8UowVf9QBdh3w==}
@@ -324,7 +324,7 @@ snapshots:
 
   '@automerge/automerge-repo@2.5.2-alpha.0':
     dependencies:
-      '@automerge/automerge': 3.2.4
+      '@automerge/automerge': 3.2.1
       bs58check: 3.0.1
       cbor-x: 1.6.0
       debug: 4.4.3
@@ -336,8 +336,6 @@ snapshots:
       - supports-color
 
   '@automerge/automerge@3.2.1': {}
-
-  '@automerge/automerge@3.2.4': {}
 
   '@cbor-extract/cbor-extract-darwin-arm64@2.2.0':
     optional: true
