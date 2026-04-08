@@ -34,32 +34,19 @@ export const VerificationTool: ToolRender = (handle, element) => {
 
 function VerificationView(props: { handle: DocHandle<VerificationContextDoc> }) {
   const [doc] = useDocument<VerificationContextDoc>(() => props.handle.url);
-  const title = useTitle(() => doc()?.verificationUrl);
 
   const [expanded, setExpanded] = createSignal(false);
   const toggleExpanded = () => setExpanded((v) => !v);
 
-  const isRichMode = () => (doc()?.artifactUrls?.length ?? 0) > 0;
-
   return (
     <div class="verification-root">
       <Show when={doc()} fallback={<div class="verification-loading">Loading...</div>}>
-        <Show
-          when={isRichMode()}
-          fallback={
-            <div class="verification-item" onClick={toggleExpanded}>
-              <span class="verification-circle" />
-              <span class="verification-name">{title()}</span>
-            </div>
-          }
-        >
-          <RichVerification
-            verificationUrl={doc()!.verificationUrl}
-            artifactUrls={doc()!.artifactUrls}
-            expanded={expanded}
-            toggleExpanded={toggleExpanded}
-          />
-        </Show>
+        <RichVerification
+          verificationUrl={doc()!.verificationUrl}
+          artifactUrls={doc()!.artifactUrls ?? []}
+          expanded={expanded}
+          toggleExpanded={toggleExpanded}
+        />
       </Show>
     </div>
   );
