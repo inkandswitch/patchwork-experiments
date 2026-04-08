@@ -49,6 +49,14 @@ export const shapesSchema = {
         width: 280,
         height: 800,
       },
+      tray: {
+        x: 10,
+        y: 860,
+        isLocked: true,
+        viewUrl: getViewUrl('../tray/tool.json', import.meta.url),
+        width: 520,
+        height: 140,
+      },
     };
   },
   parse(value) {

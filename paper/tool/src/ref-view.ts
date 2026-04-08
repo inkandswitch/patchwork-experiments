@@ -18,6 +18,7 @@ export type RefViewHostElement = HTMLElement & {
   getOrCreate<T>(schema: Schema<T>): Ref<T>;
   findClosest(schema: Schema<unknown>): RefViewHostElement | null;
   findParent(schema: Schema<unknown>): RefViewHostElement | null;
+  findRef(refUrl: string): Promise<Ref>;
 };
 
 type MountModule = {
@@ -108,6 +109,10 @@ export function registerRefView(
         current = parentRefView(current as unknown as HTMLElement);
       }
       return null;
+    }
+
+    findRef(refUrl: string): Promise<Ref> {
+      return findRef(repo, refUrl);
     }
 
     get viewUrl(): string {

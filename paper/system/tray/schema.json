@@ -1,0 +1,6 @@
+{
+  "type": "schema",
+  "name": "Tray",
+  "description": "Data schema for tray tool",
+  "source": "./schema.js"
+}

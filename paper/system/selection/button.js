@@ -48,10 +48,10 @@ async function findCompatibleTools(shapeData, toolPlugins) {
   return results;
 }
 
-async function findCompatibleToolsForEmbed(embedDocUrl, toolPlugins) {
-  if (!embedDocUrl || !globalThis.repo || !globalThis.findRef) return [];
+async function findCompatibleToolsForEmbed(element, embedDocUrl, toolPlugins) {
+  if (!embedDocUrl) return [];
   try {
-    const docRef = await globalThis.findRef(globalThis.repo, embedDocUrl);
+    const docRef = await element.findRef(embedDocUrl);
     const value = docRef.value();
     const results = [];
     for (const plugin of toolPlugins) {
@@ -210,6 +210,11 @@ export default function mount(element) {
   let startPointerY = 0;
   let startShapeX = 0;
   let startShapeY = 0;
+  let dragDataTransfer = null;
+  let lastDragOverTarget = null;
+  let dragThresholdMet = false;
+  let draggedWrapper = null;
+  const DRAG_THRESHOLD = 5;
 
   function isInteractiveTarget(event) {
     let node = event.target;
@@ -268,6 +273,12 @@ export default function mount(element) {
     startShapeX = shape.x;
     startShapeY = shape.y;
     canvas.setPointerCapture(event.pointerId);
+
+    const refUrl = shapesRef.at(shapeId).url;
+    dragDataTransfer = new DataTransfer();
+    dragDataTransfer.setData('text/x-patchwork-ref-url', refUrl);
+    dragDataTransfer.dropEffect = 'move';
+    dragThresholdMet = false;
   }
 
   function onPointerMove(event) {
@@ -278,10 +289,114 @@ export default function mount(element) {
       shape.x = startShapeX + deltaX;
       shape.y = startShapeY + deltaY;
     });
+
+    if (dragDataTransfer) {
+      if (!dragThresholdMet) {
+        if (Math.hypot(deltaX, deltaY) > DRAG_THRESHOLD) {
+          dragThresholdMet = true;
+        } else {
+          return;
+        }
+      }
+      const target = elementUnderCursor(event.clientX, event.clientY, dragShapeId, canvas);
+
+      if (!draggedWrapper) {
+        draggedWrapper = findShapeWrapper(dragShapeId, canvas);
+      }
+      if (draggedWrapper) {
+        draggedWrapper.style.opacity = target ? '0' : '';
+      }
+
+      if (target && target !== lastDragOverTarget) {
+        if (lastDragOverTarget) {
+          lastDragOverTarget.dispatchEvent(
+            new DragEvent('dragleave', { bubbles: true, cancelable: true }),
+          );
+        }
+        lastDragOverTarget = target;
+      }
+      if (target) {
+        target.dispatchEvent(
+          new DragEvent('dragover', {
+            dataTransfer: dragDataTransfer,
+            bubbles: true,
+            cancelable: true,
+            clientX: event.clientX,
+            clientY: event.clientY,
+          }),
+        );
+      }
+    }
   }
 
-  function onPointerUp() {
+  function onPointerUp(event) {
+    if (draggedWrapper) {
+      draggedWrapper.style.opacity = '';
+    }
+    if (dragDataTransfer && dragShapeId && dragThresholdMet) {
+      const target = elementUnderCursor(event.clientX, event.clientY, dragShapeId, canvas);
+      if (target) {
+        target.dispatchEvent(
+          new DragEvent('drop', {
+            dataTransfer: dragDataTransfer,
+            bubbles: true,
+            cancelable: true,
+            clientX: event.clientX,
+            clientY: event.clientY,
+          }),
+        );
+      }
+    }
     dragShapeId = null;
+    dragDataTransfer = null;
+    lastDragOverTarget = null;
+    dragThresholdMet = false;
+    draggedWrapper = null;
+  }
+
+  function findShapeWrapper(shapeId, canvasEl) {
+    const allRefViews = canvasEl.querySelectorAll('ref-view');
+    for (const rv of allRefViews) {
+      const refUrl = rv.getAttribute('ref-url') || '';
+      if (refUrl.endsWith('/' + shapeId)) {
+        return rv.parentElement;
+      }
+    }
+    return null;
+  }
+
+  function elementUnderCursor(clientX, clientY, shapeId, canvasEl) {
+    // Find the dragged shape's positioned wrapper div and temporarily hide it
+    // Paper structure: canvas(ref-view) > div[relative] > div[absolute] > ref-view[shape]
+    const allRefViews = canvasEl.querySelectorAll('ref-view');
+    let wrapper = null;
+    for (const rv of allRefViews) {
+      const refUrl = rv.getAttribute('ref-url') || '';
+      if (refUrl.endsWith('/' + shapeId)) {
+        wrapper = rv.parentElement;
+        break;
+      }
+    }
+    if (wrapper) {
+      const prev = wrapper.style.pointerEvents;
+      const prevVis = wrapper.style.visibility;
+      wrapper.style.pointerEvents = 'none';
+      wrapper.style.visibility = 'hidden';
+      const target = document.elementFromPoint(clientX, clientY);
+      wrapper.style.pointerEvents = prev;
+      wrapper.style.visibility = prevVis;
+      if (isCanvasBackground(target, canvasEl)) return null;
+      return target;
+    }
+    const target = document.elementFromPoint(clientX, clientY);
+    if (isCanvasBackground(target, canvasEl)) return null;
+    return target;
+  }
+
+  function isCanvasBackground(target, canvasEl) {
+    if (!target) return false;
+    const closestRefView = target.closest('ref-view');
+    return closestRefView === canvasEl;
   }
 
   function onKeyDown(event) {
@@ -451,7 +566,7 @@ export default function mount(element) {
     const plugins = toolPlugins() ?? [];
     let compatible;
     if (isEmbed) {
-      compatible = await findCompatibleToolsForEmbed(shape.embedDocUrl, plugins);
+      compatible = await findCompatibleToolsForEmbed(element, shape.embedDocUrl, plugins);
     } else {
       compatible = await findCompatibleTools(shape, plugins);
     }

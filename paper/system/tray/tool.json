@@ -1,0 +1,7 @@
+{
+  "type": "tool",
+  "name": "Tray",
+  "description": "A tray with fixed slots that accept shapes via drag-and-drop",
+  "toolUrl": "./tool.js",
+  "schemaUrl": "./schema.js"
+}

@@ -62,14 +62,8 @@ export default function mount(element) {
       return;
     }
 
-    const repo = globalThis.repo;
-    if (!repo || !globalThis.findRef) {
-      setCompatible([]);
-      return;
-    }
-
     try {
-      const docRef = await globalThis.findRef(repo, docUrl);
+      const docRef = await element.findRef(docUrl);
       if (version !== compatVersion) return;
       const value = docRef.value();
 
