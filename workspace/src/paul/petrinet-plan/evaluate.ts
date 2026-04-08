@@ -90,6 +90,33 @@ export async function evaluateSolution(
   return { valid: allViolations.length === 0, violations: allViolations };
 }
 
+export async function evaluateVerificationsAgainstFolders(
+  repo: Repo,
+  verificationUrls: string[],
+  folderUrls: string[],
+): Promise<PerVerificationResult[]> {
+  if (verificationUrls.length === 0) return [];
+
+  const allDocUrls: string[] = [];
+  for (const folderUrl of folderUrls) {
+    const docUrls = await getDocUrlsFromFolder(repo, folderUrl);
+    allDocUrls.push(...docUrls);
+  }
+
+  const solutionFacts = await collectDatalogFacts(repo, allDocUrls);
+
+  const results: PerVerificationResult[] = [];
+  for (const vUrl of verificationUrls) {
+    const violations = await checkVerificationDoc(repo, vUrl as AutomergeUrl, solutionFacts);
+    results.push({
+      verificationUrl: vUrl,
+      valid: violations.length === 0,
+      violations,
+    });
+  }
+  return results;
+}
+
 async function getDocUrlsFromFolder(repo: Repo, folderUrl: string): Promise<string[]> {
   if (!folderUrl) return [];
   const handle = await repo.find<FolderDoc>(folderUrl as AutomergeUrl);

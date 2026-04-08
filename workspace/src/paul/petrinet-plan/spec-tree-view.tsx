@@ -1,9 +1,13 @@
-import { createSignal, createResource, Show, For } from 'solid-js';
+import { createResource, Show, For } from 'solid-js';
 import { useDocument } from '@automerge/automerge-repo-solid-primitives';
 import type { Repo, AutomergeUrl } from '@automerge/automerge-repo';
 import type { TokenInstance } from './lib';
 import type { CandidateDoc } from './types';
-import { evaluateSolutionPerVerification, type PerVerificationResult } from './evaluate';
+import {
+  evaluateSolutionPerVerification,
+  evaluateVerificationsAgainstFolders,
+  type PerVerificationResult,
+} from './evaluate';
 
 type Spec = {
   goal: string;
@@ -59,43 +63,84 @@ function SpecNode(props: SpecNodeProps) {
   const subSpecUrls = () => spec()?.subSpecUrls ?? [];
   const filesFolderUrl = () => spec()?.filesFolderUrl;
 
-  const [candidateDocs] = createResource(
-    () => props.candidateTokens,
-    async (tokens) => {
-      const docs: { tokenId: string; doc: CandidateDoc }[] = [];
+  const [bestCandidate] = createResource(
+    () => ({ tokens: props.candidateTokens, specUrl: props.specUrl }),
+    async ({ tokens, specUrl }) => {
+      const candidatesForSpec: { doc: CandidateDoc; violationCount: number }[] = [];
+
       for (const token of tokens) {
         const docUrl = token.state.documentUrl as string | undefined;
         if (!docUrl) continue;
         const handle = await props.repo.find<CandidateDoc>(docUrl as AutomergeUrl);
         const doc = await handle.doc();
-        if (doc) docs.push({ tokenId: token.id, doc });
+        if (!doc || doc.specUrl !== specUrl) continue;
+
+        if (!doc.documentsFolderUrl) {
+          candidatesForSpec.push({ doc, violationCount: Infinity });
+          continue;
+        }
+
+        const results = await evaluateSolutionPerVerification(
+          props.repo,
+          specUrl as string,
+          doc.documentsFolderUrl,
+        );
+        const violationCount = results.reduce((sum, r) => sum + r.violations.length, 0);
+        candidatesForSpec.push({ doc, violationCount });
       }
-      return docs;
+
+      if (candidatesForSpec.length === 0) return null;
+
+      candidatesForSpec.sort((a, b) => a.violationCount - b.violationCount);
+      return candidatesForSpec[0].doc;
     },
   );
 
-  const candidateForSpec = () => {
-    const docs = candidateDocs();
-    if (!docs) return null;
-    for (const { doc } of docs) {
-      if (doc.specUrl === props.specUrl) {
-        return doc;
-      }
-    }
-    return null;
-  };
+  const candidateFolderUrl = () => bestCandidate()?.documentsFolderUrl;
 
-  const candidateFolderUrl = () => candidateForSpec()?.documentsFolderUrl;
+  const [childCandidateFolders] = createResource(
+    () => ({ tokens: props.candidateTokens, subSpecUrls: subSpecUrls() }),
+    async ({ tokens, subSpecUrls }) => {
+      if (subSpecUrls.length === 0) return [];
+
+      const folders: string[] = [];
+      const subSpecUrlSet = new Set(subSpecUrls.map((u) => u as string));
+
+      for (const token of tokens) {
+        const docUrl = token.state.documentUrl as string | undefined;
+        if (!docUrl) continue;
+        const handle = await props.repo.find<CandidateDoc>(docUrl as AutomergeUrl);
+        const doc = await handle.doc();
+        if (!doc?.specUrl || !subSpecUrlSet.has(doc.specUrl)) continue;
+        if (doc.documentsFolderUrl) {
+          folders.push(doc.documentsFolderUrl);
+        }
+      }
+      return folders;
+    },
+  );
 
   const [verificationResults] = createResource(
     () => {
-      const folder = candidateFolderUrl();
-      if (!folder) return null;
-      return { specUrl: props.specUrl, folderUrl: folder };
+      const ownFolder = candidateFolderUrl();
+      const childFolders = childCandidateFolders() ?? [];
+      const vUrls = verificationUrls();
+      if (vUrls.length === 0) return null;
+
+      if (ownFolder) {
+        return { type: 'own' as const, specUrl: props.specUrl, folderUrl: ownFolder };
+      }
+      if (childFolders.length > 0) {
+        return { type: 'children' as const, vUrls: vUrls.map((u) => u as string), folders: childFolders };
+      }
+      return null;
     },
     async (params) => {
       if (!params) return null;
-      return evaluateSolutionPerVerification(props.repo, params.specUrl, params.folderUrl);
+      if (params.type === 'own') {
+        return evaluateSolutionPerVerification(props.repo, params.specUrl as string, params.folderUrl);
+      }
+      return evaluateVerificationsAgainstFolders(props.repo, params.vUrls, params.folders);
     },
   );
 
@@ -138,7 +183,7 @@ function SpecNode(props: SpecNodeProps) {
           <div class="spec-tree-right">
             <FilesBox
               folderUrl={filesFolderUrl()!}
-              hasCandidate={!!candidateForSpec()}
+              hasCandidate={!!bestCandidate()}
               status={overallStatus()}
               repo={props.repo}
             />

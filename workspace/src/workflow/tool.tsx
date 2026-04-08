@@ -9,7 +9,7 @@ import './workflow.css';
 
 type Stage = 'elicitation' | 'spec' | 'plan' | 'execution' | 'validation';
 
-const WORKFLOW_VERSION = '0.3.0';
+const WORKFLOW_VERSION = '0.3.2';
 
 function makeId(): string {
   return Math.random().toString(36).slice(2, 10);
