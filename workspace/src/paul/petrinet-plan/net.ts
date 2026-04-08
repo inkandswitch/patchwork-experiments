@@ -125,7 +125,12 @@ export function createNet(repo: Repo, planHandle: DocHandle<PetriNetPlanDoc>): N
           if (!specToken) return false;
           const candidateTokens = readTokens.candidates ?? [];
           const runningTokens = readTokens.running ?? [];
-          const unsolved = await getUnsolvedSubSpecs(repo, specToken, candidateTokens, runningTokens);
+          const unsolved = await getUnsolvedSubSpecs(
+            repo,
+            specToken,
+            candidateTokens,
+            runningTokens,
+          );
           return unsolved.length > 0;
         },
 
@@ -133,7 +138,12 @@ export function createNet(repo: Repo, planHandle: DocHandle<PetriNetPlanDoc>): N
           const specToken = readTokens.spec![0];
           const candidateTokens = readTokens.candidates ?? [];
           const runningTokens = readTokens.running ?? [];
-          const unsolved = await getUnsolvedSubSpecs(repo, specToken, candidateTokens, runningTokens);
+          const unsolved = await getUnsolvedSubSpecs(
+            repo,
+            specToken,
+            candidateTokens,
+            runningTokens,
+          );
 
           const doc = await planHandle.doc();
           const systemPromptUrl = doc?.systemPromptUrls?.optimizer;
@@ -142,10 +152,17 @@ export function createNet(repo: Repo, planHandle: DocHandle<PetriNetPlanDoc>): N
             : DEFAULT_OPTIMIZER_SYSTEM_PROMPT;
 
           const produce = [];
-          for (const subSpecUrl of unsolved) {
+          for (const { specUrl: subSpecUrl, previousViolations } of unsolved) {
             const { folderUrl, docEntries } = await cloneSpecFiles(repo, subSpecUrl);
 
-            const prompt = buildOptimizerPrompt(systemTemplate, DEFAULT_OPTIMIZER_PROMPT, subSpecUrl, docEntries);
+            const prompt = buildOptimizerPrompt(
+              systemTemplate,
+              DEFAULT_OPTIMIZER_PROMPT,
+              subSpecUrl,
+              folderUrl,
+              docEntries,
+              previousViolations,
+            );
 
             const processHandle = repo.create<Record<string, unknown>>();
             processHandle.change((d) => {
@@ -172,8 +189,17 @@ export function createNet(repo: Repo, planHandle: DocHandle<PetriNetPlanDoc>): N
 
         onProducedToken(token, _handle, repo) {
           if (token.placeId === 'running') {
-            runLLMProcessRaw(repo, token.state.documentUrl as unknown as AutomergeUrl)
-              .catch((e) => console.error('[petrinet-plan] runLLMProcess error', e));
+            const customGlobals = {
+              evaluateSolution: (specUrl: string, folderUrl: string) =>
+                evaluateSolution(repo, specUrl, folderUrl),
+            };
+
+            runLLMProcessRaw(
+              repo,
+              token.state.documentUrl as unknown as AutomergeUrl,
+              undefined,
+              customGlobals,
+            ).catch((e) => console.error('[petrinet-plan] runLLMProcess error', e));
           }
         },
       },
@@ -185,7 +211,7 @@ export function createNet(repo: Repo, planHandle: DocHandle<PetriNetPlanDoc>): N
 
         async guard({ running }, _allTokens, repo) {
           const h = await repo.find(running.state.documentUrl as AutomergeUrl);
-          const doc = await h.doc() as { done?: boolean } | null;
+          const doc = (await h.doc()) as { done?: boolean } | null;
           return doc?.done === true;
         },
 
@@ -247,19 +273,22 @@ export function createNet(repo: Repo, planHandle: DocHandle<PetriNetPlanDoc>): N
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
+type UnsolvedSpec = {
+  specUrl: string;
+  previousViolations: string[];
+};
+
 async function getUnsolvedSubSpecs(
   repo: Repo,
   specToken: ReadonlyToken,
   candidateTokens: ReadonlyToken[],
   runningTokens: ReadonlyToken[],
-): Promise<string[]> {
+): Promise<UnsolvedSpec[]> {
   const specDoc = await readSpecDoc(repo, specToken.state.specUrl);
   const subSpecUrls = specDoc?.subSpecUrls ?? [];
   if (subSpecUrls.length === 0) return [];
 
-  const runningSpecUrls = new Set(
-    runningTokens.map((t) => t.state.taskSpecUrl).filter(Boolean),
-  );
+  const runningSpecUrls = new Set(runningTokens.map((t) => t.state.taskSpecUrl).filter(Boolean));
 
   const candidatesBySpec = new Map<string, CandidateDoc[]>();
   for (const ct of candidateTokens) {
@@ -272,12 +301,20 @@ async function getUnsolvedSubSpecs(
     candidatesBySpec.set(doc.specUrl, existing);
   }
 
-  const unsolved: string[] = [];
+  const unsolved: UnsolvedSpec[] = [];
   for (const url of subSpecUrls) {
     if (runningSpecUrls.has(url)) continue;
 
+    const subSpecDoc = await readSpecDoc(repo, url);
+    if (!subSpecDoc?.filesFolderUrl) continue;
+
+    const hasFiles = await checkFolderHasFiles(repo, subSpecDoc.filesFolderUrl as AutomergeUrl);
+    if (!hasFiles) continue;
+
     const candidates = candidatesBySpec.get(url) ?? [];
     let foundValid = false;
+    const allViolations: string[] = [];
+
     for (const candidate of candidates) {
       if (!candidate.documentsFolderUrl) continue;
       const result = await evaluateSolution(repo, url, candidate.documentsFolderUrl);
@@ -285,12 +322,28 @@ async function getUnsolvedSubSpecs(
         foundValid = true;
         break;
       }
+      for (const v of result.violations) {
+        for (const w of v.witnesses) {
+          const bindingsStr = Object.entries(w.bindings)
+            .map(([k, val]) => `${k}=${val}`)
+            .join(', ');
+          const pred = v.constraint.body?.[0]?.pred ?? 'unknown';
+          allViolations.push(`${pred}(${bindingsStr})`);
+        }
+      }
     }
+
     if (!foundValid) {
-      unsolved.push(url);
+      unsolved.push({ specUrl: url, previousViolations: allViolations });
     }
   }
   return unsolved;
+}
+
+async function checkFolderHasFiles(repo: Repo, folderUrl: AutomergeUrl): Promise<boolean> {
+  const handle = await repo.find<FolderDoc>(folderUrl);
+  const doc = await handle.doc();
+  return (doc?.docs?.length ?? 0) > 0;
 }
 
 async function readSpecDoc(repo: Repo, specUrl: string): Promise<SpecDoc['spec'] | null> {
@@ -303,7 +356,7 @@ async function readSpecDoc(repo: Repo, specUrl: string): Promise<SpecDoc['spec']
 async function readDocContent(repo: Repo, documentUrl: string): Promise<string> {
   if (!documentUrl) return '';
   const handle = await repo.find(documentUrl as AutomergeUrl);
-  const doc = await handle.doc() as { content?: string } | null;
+  const doc = (await handle.doc()) as { content?: string } | null;
   return doc?.content ?? '';
 }
 
@@ -351,17 +404,27 @@ function buildOptimizerPrompt(
   systemPrompt: string,
   characterPrompt: string,
   specUrl: string,
+  folderUrl: string,
   docEntries: DocEntry[],
+  previousViolations: string[],
 ): string {
-  const docList = docEntries.length > 0
-    ? docEntries.map((d) => `- ${d.name}: ${d.url}`).join('\n')
-    : '(no documents)';
+  const docList =
+    docEntries.length > 0
+      ? docEntries.map((d) => `- ${d.name}: ${d.url}`).join('\n')
+      : '(no documents)';
 
   const docUrls = JSON.stringify(docEntries.map((d) => ({ name: d.name, url: d.url })));
+
+  const violationsSection =
+    previousViolations.length > 0
+      ? `\n## Previous Attempt Failed\n\nThe previous optimization attempt still had these violations:\n${previousViolations.map((v) => `- ${v}`).join('\n')}\n\nYou MUST fix these violations.\n`
+      : '';
 
   return systemPrompt
     .replace(/\$PROMPT/g, characterPrompt)
     .replace(/\$SPEC_URL/g, specUrl)
+    .replace(/\$FOLDER_URL/g, folderUrl)
     .replace(/\$DOC_LIST/g, docList)
-    .replace(/\$DOC_URLS/g, docUrls);
+    .replace(/\$DOC_URLS/g, docUrls)
+    .replace(/\$PREVIOUS_VIOLATIONS/g, violationsSection);
 }

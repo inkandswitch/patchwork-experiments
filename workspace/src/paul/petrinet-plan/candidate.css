@@ -187,16 +187,77 @@
     line-height: 1.4;
   }
 
-  .cand-documents {
+  .cand-folder-viewer {
     display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .cand-doc-embed {
     border: 1px solid #e5e7eb;
     border-radius: 8px;
     overflow: hidden;
     background: #fff;
+    min-height: 200px;
+  }
+
+  .cand-folder-list {
+    width: 160px;
+    flex-shrink: 0;
+    border-right: 1px solid #e5e7eb;
+    overflow-y: auto;
+    background: #fafafa;
+  }
+
+  .cand-folder-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #374151;
+    border-bottom: 1px solid #f3f4f6;
+    transition: background 0.1s ease;
+  }
+
+  .cand-folder-item:hover {
+    background: #f3f4f6;
+  }
+
+  .cand-folder-item.selected {
+    background: #e0e7ff;
+    color: #4338ca;
+    font-weight: 500;
+  }
+
+  .cand-folder-item-name {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .cand-folder-preview {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .cand-folder-preview-empty {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9ca3af;
+    font-size: 13px;
+  }
+
+  .cand-folder-preview-content {
+    flex: 1;
+    overflow: auto;
+  }
+
+  .cand-folder-empty {
+    padding: 16px;
+    text-align: center;
+    color: #9ca3af;
+    font-size: 13px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
   }
 }

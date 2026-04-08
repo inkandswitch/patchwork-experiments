@@ -6,6 +6,7 @@ import type { DocHandle, Repo, AutomergeUrl } from '@automerge/automerge-repo';
 import type { CandidateDoc } from './types';
 import type { PerVerificationResult } from './evaluate';
 import { evaluateSolutionPerVerification } from './evaluate';
+import { useTitle } from '../../hooks/useTitle';
 import './candidate.css';
 
 type SpecDoc = {
@@ -17,6 +18,10 @@ type SpecDoc = {
 
 type DatalogDoc = {
   title?: string;
+};
+
+type FolderDoc = {
+  docs?: { type: string; name: string; url: AutomergeUrl }[];
 };
 
 export const CandidateTool: ToolRender = (handle, element) => {
@@ -74,15 +79,67 @@ function CandidateView({ handle, repo }: { handle: DocHandle<CandidateDoc>; repo
           <Show when={documentsFolderUrl()}>
             <div class="cand-section">
               <div class="cand-section-header">Documents</div>
-              <div class="cand-documents">
-                <div class="cand-doc-embed">
-                  <patchwork-view attr:doc-url={documentsFolderUrl()} style="display:block;width:100%;min-height:150px;" />
-                </div>
-              </div>
+              <FolderViewer folderUrl={documentsFolderUrl()!} />
             </div>
           </Show>
         </div>
       </Show>
+    </div>
+  );
+}
+
+function FolderViewer(props: { folderUrl: string }) {
+  const [folderDoc] = useDocument<FolderDoc>(() => props.folderUrl as AutomergeUrl);
+  const [selectedUrl, setSelectedUrl] = createSignal<AutomergeUrl | null>(null);
+
+  const entries = () => folderDoc()?.docs ?? [];
+
+  return (
+    <Show when={entries().length > 0} fallback={<div class="cand-folder-empty">No documents</div>}>
+      <div class="cand-folder-viewer">
+        <div class="cand-folder-list">
+          <For each={entries()}>
+            {(entry) => (
+              <FolderItem
+                url={entry.url}
+                name={entry.name}
+                selected={selectedUrl() === entry.url}
+                onClick={() => setSelectedUrl(entry.url)}
+              />
+            )}
+          </For>
+        </div>
+        <div class="cand-folder-preview">
+          <Show
+            when={selectedUrl()}
+            fallback={<div class="cand-folder-preview-empty">Select a document</div>}
+          >
+            {(url) => (
+              <div class="cand-folder-preview-content">
+                <patchwork-view
+                  attr:doc-url={url()}
+                  style="display:block;width:100%;height:100%;"
+                />
+              </div>
+            )}
+          </Show>
+        </div>
+      </div>
+    </Show>
+  );
+}
+
+function FolderItem(props: { url: AutomergeUrl; name: string; selected: boolean; onClick: () => void }) {
+  const title = useTitle(() => props.url);
+  const displayName = () => props.name || title() || 'Untitled';
+
+  return (
+    <div
+      class="cand-folder-item"
+      classList={{ selected: props.selected }}
+      onClick={props.onClick}
+    >
+      <span class="cand-folder-item-name">{displayName()}</span>
     </div>
   );
 }

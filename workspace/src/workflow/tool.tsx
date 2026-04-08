@@ -9,6 +9,8 @@ import './workflow.css';
 
 type Stage = 'elicitation' | 'spec' | 'plan' | 'execution' | 'validation';
 
+const WORKFLOW_VERSION = '0.3.0';
+
 function makeId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -99,57 +101,60 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
   return (
     <div class="wf-root">
       <div class="wf-header">
-        <div class="wf-stage-bar">
-          <button
-            class="wf-stage-item"
-            classList={{ active: selectedStage() === 'elicitation' }}
-            onClick={() => setSelectedStage('elicitation')}
-          >
-            Elicitation
-          </button>
-          <span class="wf-stage-chevron">{'>'}</span>
-          <button
-            class="wf-stage-item"
-            classList={{ active: selectedStage() === 'spec' }}
-            onClick={() => setSelectedStage('spec')}
-          >
-            Spec
-          </button>
-          <span class="wf-stage-chevron">{'>'}</span>
-          <button
-            class="wf-stage-item"
-            classList={{ active: selectedStage() === 'plan' }}
-            onClick={() => setSelectedStage('plan')}
-          >
-            Plan
-          </button>
-          <span class="wf-stage-chevron">{'>'}</span>
-          <button
-            class="wf-stage-item"
-            classList={{ active: selectedStage() === 'execution' }}
-            onClick={() => setSelectedStage('execution')}
-          >
-            Execution
-          </button>
-          <span class="wf-stage-chevron">{'>'}</span>
-          <button
-            class="wf-stage-item"
-            classList={{ active: selectedStage() === 'validation' }}
-            onClick={() => setSelectedStage('validation')}
-          >
-            Validation
-          </button>
-        </div>
+        <span class="wf-version">v{WORKFLOW_VERSION}</span>
+        <div class="wf-header-main">
+          <div class="wf-stage-bar">
+            <button
+              class="wf-stage-item"
+              classList={{ active: selectedStage() === 'elicitation' }}
+              onClick={() => setSelectedStage('elicitation')}
+            >
+              Elicitation
+            </button>
+            <span class="wf-stage-chevron">{'>'}</span>
+            <button
+              class="wf-stage-item"
+              classList={{ active: selectedStage() === 'spec' }}
+              onClick={() => setSelectedStage('spec')}
+            >
+              Spec
+            </button>
+            <span class="wf-stage-chevron">{'>'}</span>
+            <button
+              class="wf-stage-item"
+              classList={{ active: selectedStage() === 'plan' }}
+              onClick={() => setSelectedStage('plan')}
+            >
+              Plan
+            </button>
+            <span class="wf-stage-chevron">{'>'}</span>
+            <button
+              class="wf-stage-item"
+              classList={{ active: selectedStage() === 'execution' }}
+              onClick={() => setSelectedStage('execution')}
+            >
+              Execution
+            </button>
+            <span class="wf-stage-chevron">{'>'}</span>
+            <button
+              class="wf-stage-item"
+              classList={{ active: selectedStage() === 'validation' }}
+              onClick={() => setSelectedStage('validation')}
+            >
+              Validation
+            </button>
+          </div>
 
-        <Show when={getStageAction()}>
-          {(action) => (
-            <div class="wf-action-bar">
-              <button class="wf-action-btn" onClick={action().action} disabled={action().disabled}>
-                {action().label}
-              </button>
-            </div>
-          )}
-        </Show>
+          <Show when={getStageAction()}>
+            {(action) => (
+              <div class="wf-action-bar">
+                <button class="wf-action-btn" onClick={action().action} disabled={action().disabled}>
+                  {action().label}
+                </button>
+              </div>
+            )}
+          </Show>
+        </div>
       </div>
 
       <div class="wf-content">

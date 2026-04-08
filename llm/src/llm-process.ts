@@ -116,11 +116,13 @@ export async function runLLMProcess(repo: Repo, processDocUrl: AutomergeUrl, sig
     return skill.importUrl;
   };
 
-  (globalThis as any).loadSkillDocs = loadSkillDocs;
-  (globalThis as any).importSkillApi = importSkillApi;
-  (globalThis as any).getSkillURL = getSkillURL;
-  (globalThis as any).__llmCapturedConsole = capturedConsole;
-  (globalThis as any).repo = wrapRepoForLLM(repo, doc.workspaceUrl);
+  const globals: Record<string, unknown> = {
+    repo: wrapRepoForLLM(repo, doc.workspaceUrl),
+    console: capturedConsole,
+    loadSkillDocs,
+    importSkillApi,
+    getSkillURL,
+  };
 
   console.log(`[llm] starting run: model=${model}, apiUrl=${apiUrl}`);
   console.log(`[llm] prompt:\n${doc.prompt}`);
@@ -132,6 +134,7 @@ export async function runLLMProcess(repo: Repo, processDocUrl: AutomergeUrl, sig
     apiKey,
     model,
     capturedConsole,
+    globals,
     signal,
   );
 }
@@ -141,8 +144,15 @@ export async function runLLMProcess(repo: Repo, processDocUrl: AutomergeUrl, sig
  * The process doc must have `systemPrompt` set — it is used verbatim as the
  * system message with no additions. Suitable for self-contained prompts that
  * embed all necessary code and context directly.
+ *
+ * @param customGlobals - Optional map of functions to expose to LLM scripts
  */
-export async function runLLMProcessRaw(repo: Repo, processDocUrl: AutomergeUrl, signal?: AbortSignal): Promise<void> {
+export async function runLLMProcessRaw(
+  repo: Repo,
+  processDocUrl: AutomergeUrl,
+  signal?: AbortSignal,
+  customGlobals?: Record<string, unknown>,
+): Promise<void> {
   const handle = await repo.find<LLMDoc>(processDocUrl);
   const doc = await handle.doc();
 
@@ -158,11 +168,11 @@ export async function runLLMProcessRaw(repo: Repo, processDocUrl: AutomergeUrl, 
 
   const capturedConsole = createCapturedConsole();
 
-  (globalThis as any).loadSkillDocs = undefined;
-  (globalThis as any).importSkillApi = undefined;
-  (globalThis as any).getSkillURL = undefined;
-  (globalThis as any).__llmCapturedConsole = capturedConsole;
-  (globalThis as any).repo = repo;
+  const globals: Record<string, unknown> = {
+    repo,
+    console: capturedConsole,
+    ...customGlobals,
+  };
 
   console.log(`[llm] starting raw run: model=${model}, apiUrl=${apiUrl}`);
   console.log(`[llm] prompt:\n${doc.prompt}`);
@@ -174,6 +184,7 @@ export async function runLLMProcessRaw(repo: Repo, processDocUrl: AutomergeUrl, 
     apiKey,
     model,
     capturedConsole,
+    globals,
     signal,
   );
 }
@@ -187,6 +198,7 @@ async function runLoop(
   apiKey: string,
   model: string,
   capturedConsole: ReturnType<typeof createCapturedConsole>,
+  globals: Record<string, unknown>,
   signal?: AbortSignal,
 ): Promise<void> {
   const MAX_ITERATIONS = 20;
@@ -245,7 +257,7 @@ async function runLoop(
           foundScript = true;
           console.log(`[llm] iteration ${iteration}: evaluating script (description="${block.description ?? ""}", ${block.code.length} chars)`);
 
-          const result = await evalScript(block.code, capturedConsole);
+          const result = await evalScript(block.code, capturedConsole, globals);
           console.log(`[llm] iteration ${iteration}: eval result`, result.error ? `ERROR: ${result.error}` : `output: ${result.output ?? "(none)"}`);
 
           handle.change((d) => {
@@ -617,13 +629,22 @@ async function* streamChatCompletion(apiUrl: string, apiKey: string, model: stri
   }
 }
 
-async function evalScript(code: string, capturedConsole: ReturnType<typeof createCapturedConsole>): Promise<{ output?: string; error?: string }> {
+async function evalScript(
+  code: string,
+  capturedConsole: ReturnType<typeof createCapturedConsole>,
+  globals: Record<string, unknown>,
+): Promise<{ output?: string; error?: string }> {
   capturedConsole.flush();
-  (globalThis as any).__llmCapturedConsole = capturedConsole;
+
+  // Build parameter list and values from globals
+  const paramNames = Object.keys(globals);
+  const paramValues = Object.values(globals);
 
   try {
-    const wrappedCode = `(async () => { const console = globalThis.__llmCapturedConsole;\n${code}\n})()`;
-    const returnValue = await eval(wrappedCode);
+    // Wrap code in an async function that receives globals as parameters
+    const wrappedCode = `(async function(${paramNames.join(', ')}) {\n${code}\n})`;
+    const fn = eval(wrappedCode);
+    const returnValue = await fn(...paramValues);
 
     const consoleOutput = capturedConsole.flush();
     const parts: string[] = [];

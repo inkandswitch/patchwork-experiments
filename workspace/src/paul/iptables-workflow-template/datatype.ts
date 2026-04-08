@@ -162,6 +162,25 @@ function createMarkdownDoc(repo: Repo, content: string): string {
 const IPTABLES_OPTIMIZER_SYSTEM_PROMPT = `You are a firewall configuration expert optimizing IPTables rules.
 
 Your optimization strategy: $PROMPT
+$PREVIOUS_VIOLATIONS
+## Available Functions (DO NOT REDEFINE)
+
+The following are already available in your script context:
+- \`repo\` - Automerge repository for finding and modifying documents
+- \`evaluateSolution(specUrl, folderUrl)\` - Checks constraints and returns violations
+- \`console\` - For logging
+
+Do NOT redefine these. Just use them directly.
+
+## IPTables and Datalog Background
+
+IPTables rules are evaluated in order - the first matching rule wins. A rule is:
+- **Redundant**: if an earlier rule with the same action already covers it (broader CIDR, same protocol/port)
+- **Unreachable**: if an earlier DROP rule blocks traffic that a later ACCEPT rule tries to allow
+
+The Datalog engine evaluates CIDR containment via the \`ip_in\` built-in. Do NOT try to manually compute CIDR containment - use \`evaluateSolution()\` to find violations.
+
+## Document Structure
 
 The specification is at $SPEC_URL. It is a Patchwork SpecDoc with:
 - spec.goal: a description of the machine and its role
@@ -179,7 +198,24 @@ Common fact predicates:
 - chain(Machine, Chain, DefaultPolicy) - chain default policies
 - rule(Machine, Chain, Index, Action, Source, Protocol, DPort) - firewall rules
 
-Step 1 — Read the specification to understand the goal and constraints:
+## Violation Output Format
+
+When \`evaluateSolution()\` finds violations, it returns:
+\`\`\`json
+{
+  "valid": false,
+  "violations": [{
+    "constraint": { "body": [{ "pred": "redundant", "args": ["M", "Idx"] }] },
+    "witnesses": [{ "bindings": { "M": "machine_b", "Idx": 6 } }]
+  }]
+}
+\`\`\`
+
+Extract the \`Idx\` values from \`violations[*].witnesses[*].bindings.Idx\` to know which rule indices to remove.
+
+## Optimization Steps
+
+Step 1 — Read the specification to understand the goal:
 <script data-description="Read spec and verification rules">
 const specHandle = await repo.find("$SPEC_URL")
 const specDoc = await specHandle.doc()
@@ -188,7 +224,7 @@ const verificationUrls = specDoc.spec?.verificationUrls ?? []
 const verifications = await Promise.all(verificationUrls.map(async url => {
   const h = await repo.find(url)
   const d = await h.doc()
-  return { url, title: d.title, rules: d.rules, constraints: d.constraints }
+  return { url, title: d.title }
 }))
 return JSON.stringify({ goal, verifications }, null, 2)
 </script>
@@ -199,45 +235,59 @@ const docs = $DOC_URLS
 const results = await Promise.all(docs.map(async ({ name, url }) => {
   const h = await repo.find(url)
   const d = await h.doc()
-  return { name, url, facts: d.facts ?? [], rules: d.rules ?? [] }
+  return { name, url, facts: d.facts ?? [] }
 }))
 return JSON.stringify(results, null, 2)
 </script>
 
-Step 3 — Analyze the rules and remove redundant facts. A rule is redundant if an earlier rule with the same action already covers it (broader source range, same protocol/port).
+Step 3 — Run the constraint checker to find violations BEFORE making changes:
+<script data-description="Find current violations">
+const result = await evaluateSolution("$SPEC_URL", "$FOLDER_URL")
+return JSON.stringify(result, null, 2)
+</script>
+
+Step 4 — If violations exist, extract the problematic rule indices from the violation bindings and remove those facts.
 
 IMPORTANT: Automerge does not allow reassignment of properties. You CANNOT do \`d.facts = d.facts.filter(...)\`.
-Instead, use splice() to remove items in place. Find indices to remove, then splice in reverse order:
+Instead, use splice() to remove items in place. Remove in reverse order to avoid index shifting:
 
-<script data-description="Remove redundant facts">
+<script data-description="Remove violated rules">
 const docs = $DOC_URLS
+
+// Extract rule indices from violations (from Step 3 output)
+// Look for bindings.Idx in each witness
+const violatedIndices = new Set([/* indices from violations[*].witnesses[*].bindings.Idx */])
+
 for (const { url } of docs) {
   const handle = await repo.find(url)
   const doc = await handle.doc()
   
-  // Identify redundant rule indices BEFORE the change
-  const redundantIndices = new Set([/* indices identified as redundant */])
-  
-  // Find array positions to remove
+  // Find array positions where fact.pred === "rule" and fact.args[2] (Index) is violated
   const positionsToRemove = []
   for (let i = 0; i < doc.facts.length; i++) {
     const f = doc.facts[i]
-    if (f.pred === "rule" && redundantIndices.has(f.args[2])) {
+    if (f.pred === "rule" && violatedIndices.has(f.args[2])) {
       positionsToRemove.push(i)
     }
   }
   
-  // Remove in reverse order to avoid index shifting
+  // Remove in reverse order
   handle.change(d => {
     for (let i = positionsToRemove.length - 1; i >= 0; i--) {
       d.facts.splice(positionsToRemove[i], 1)
     }
   })
 }
-return "Redundant facts removed"
+return "Violated rules removed"
 </script>
 
-Apply your strategy. Remove redundant rules while preserving the security posture required by the constraints. Do not explain — just compute and write.`;
+Step 5 — Re-verify to confirm violations are resolved:
+<script data-description="Verify no constraint violations">
+const result = await evaluateSolution("$SPEC_URL", "$FOLDER_URL")
+return JSON.stringify(result, null, 2)
+</script>
+
+If violations remain (valid: false), go back to Step 4 with the new violation indices. Repeat until all constraints are satisfied.`;
 
 function createDatalogDoc(repo: Repo, title: string, datalogText: string): AutomergeUrl {
   const parsed = parseProgram(datalogText);

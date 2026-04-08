@@ -1509,4 +1509,111 @@
     color: #94a3b8;
     font-size: 12px;
   }
+
+  /* ── Spec Tree View ───────────────────────────────────────────────────── */
+
+  .spec-tree-view {
+    padding: 20px;
+    overflow-y: auto;
+    height: 100%;
+  }
+
+  .spec-tree-node {
+    margin-bottom: 16px;
+  }
+
+  .spec-tree-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 24px;
+  }
+
+  .spec-tree-left {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .spec-tree-right {
+    flex-shrink: 0;
+  }
+
+  .spec-tree-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1e293b;
+    margin-bottom: 8px;
+  }
+
+  .spec-tree-verifications {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-left: 8px;
+  }
+
+  .spec-tree-verification-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #475569;
+  }
+
+  .spec-tree-status-icon {
+    font-size: 12px;
+    width: 14px;
+    text-align: center;
+  }
+
+  .spec-tree-verification-item.status-pass .spec-tree-status-icon {
+    color: #10b981;
+  }
+
+  .spec-tree-verification-item.status-fail .spec-tree-status-icon {
+    color: #ef4444;
+  }
+
+  .spec-tree-verification-item.status-pending .spec-tree-status-icon {
+    color: #94a3b8;
+  }
+
+  .spec-tree-verification-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .spec-tree-files-box {
+    padding: 12px 16px;
+    border-radius: 8px;
+    min-width: 160px;
+    background: #fff;
+  }
+
+  .spec-tree-files-box.pending {
+    border: 2px dashed #cbd5e1;
+    color: #94a3b8;
+  }
+
+  .spec-tree-files-box.valid {
+    border: 2px solid #10b981;
+    color: #065f46;
+  }
+
+  .spec-tree-files-box.invalid {
+    border: 2px solid #ef4444;
+    color: #991b1b;
+  }
+
+  .spec-tree-file-name {
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .spec-tree-file-empty {
+    font-size: 12px;
+    font-style: italic;
+  }
 }
