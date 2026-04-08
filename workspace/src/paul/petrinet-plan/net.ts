@@ -1,6 +1,6 @@
 import type { AutomergeUrl, DocHandle, Repo } from '@automerge/automerge-repo';
 import { runLLMProcessRaw } from '../../../../llm/src/llm-process';
-import { evaluateSolution } from './evaluate';
+import { evaluateSolution, evaluateVerificationsAgainstFolders } from './evaluate';
 import type { NetDef, ReadonlyToken, TokenState } from './lib';
 import type { CandidateDoc, PetriNetPlanDoc } from './types';
 
@@ -302,6 +302,9 @@ async function getUnsolvedSubSpecs(
   }
 
   const unsolved: UnsolvedSpec[] = [];
+  const bestCandidateFolders: string[] = [];
+  const subSpecsWithValidCandidates: string[] = [];
+
   for (const url of subSpecUrls) {
     if (runningSpecUrls.has(url)) continue;
 
@@ -313,6 +316,7 @@ async function getUnsolvedSubSpecs(
 
     const candidates = candidatesBySpec.get(url) ?? [];
     let foundValid = false;
+    let bestFolder: string | null = null;
     const allViolations: string[] = [];
 
     for (const candidate of candidates) {
@@ -320,7 +324,11 @@ async function getUnsolvedSubSpecs(
       const result = await evaluateSolution(repo, url, candidate.documentsFolderUrl);
       if (result.valid) {
         foundValid = true;
+        bestFolder = candidate.documentsFolderUrl;
         break;
+      }
+      if (!bestFolder) {
+        bestFolder = candidate.documentsFolderUrl;
       }
       for (const v of result.violations) {
         for (const w of v.witnesses) {
@@ -335,8 +343,42 @@ async function getUnsolvedSubSpecs(
 
     if (!foundValid) {
       unsolved.push({ specUrl: url, previousViolations: allViolations });
+    } else if (bestFolder) {
+      bestCandidateFolders.push(bestFolder);
+      subSpecsWithValidCandidates.push(url);
     }
   }
+
+  const parentVerificationUrls = specDoc?.verificationUrls ?? [];
+  if (parentVerificationUrls.length > 0 && bestCandidateFolders.length > 0) {
+    const parentResults = await evaluateVerificationsAgainstFolders(
+      repo,
+      parentVerificationUrls.map((u) => u as string),
+      bestCandidateFolders,
+    );
+
+    const parentViolations: string[] = [];
+    for (const r of parentResults) {
+      for (const v of r.violations) {
+        for (const w of v.witnesses) {
+          const bindingsStr = Object.entries(w.bindings)
+            .map(([k, val]) => `${k}=${val}`)
+            .join(', ');
+          const pred = v.constraint.body?.[0]?.pred ?? 'unknown';
+          parentViolations.push(`[parent] ${pred}(${bindingsStr})`);
+        }
+      }
+    }
+
+    if (parentViolations.length > 0) {
+      for (const url of subSpecsWithValidCandidates) {
+        if (!runningSpecUrls.has(url)) {
+          unsolved.push({ specUrl: url, previousViolations: parentViolations });
+        }
+      }
+    }
+  }
+
   return unsolved;
 }
 
