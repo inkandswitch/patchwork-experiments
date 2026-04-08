@@ -1,11 +1,12 @@
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo';
 import type { VerificationContextDoc } from '../../workflow/types';
 import type { TaskListExecutionDoc } from '../execution/types';
+import { createArtifactCsvDoc, type ArtifactFolderEntry } from '../validation/csv-sync';
 
 type FolderDoc = {
   '@patchwork'?: { type: string };
   title: string;
-  docs: { type: string; name: string; url: AutomergeUrl }[];
+  docs: ArtifactFolderEntry[];
 };
 
 type StoredAtom = { pred: string; args: string[] };
@@ -278,6 +279,20 @@ assigned(w6_wed_night, tom_williams, 12). assigned(w6_wed_night, aisha_begum, 12
 assigned(w6_wed_night, dan_murphy, 12). has_hca(w6_wed_night).`;
 
   const ward6RotaUrl = createDatalogDoc(repo, 'Ward 6 Rota', ward6DraftText, ward6Facts);
+  const amuCsvUrl = createArtifactCsvDoc(repo, 'AMU Rota', {
+    title: 'AMU Rota',
+    facts: amuFacts,
+    rules: [],
+    constraints: [],
+    draftText: amuDraftText,
+  });
+  const ward6CsvUrl = createArtifactCsvDoc(repo, 'Ward 6 Rota', {
+    title: 'Ward 6 Rota',
+    facts: ward6Facts,
+    rules: [],
+    constraints: [],
+    draftText: ward6DraftText,
+  });
 
   const artifactDocUrls = [amuRotaUrl, ward6RotaUrl];
 
@@ -287,8 +302,20 @@ assigned(w6_wed_night, dan_murphy, 12). has_hca(w6_wed_night).`;
     d['@patchwork'] = { type: 'folder' };
     d.title = 'Rota Artifacts';
     d.docs = [
-      { type: 'datalog', name: 'AMU Rota', url: amuRotaUrl },
-      { type: 'datalog', name: 'Ward 6 Rota', url: ward6RotaUrl },
+      {
+        type: 'datalog',
+        name: 'AMU Rota',
+        url: amuRotaUrl,
+        csvUrl: amuCsvUrl,
+        projectionKind: 'rota-shifts-v1',
+      },
+      {
+        type: 'datalog',
+        name: 'Ward 6 Rota',
+        url: ward6RotaUrl,
+        csvUrl: ward6CsvUrl,
+        projectionKind: 'rota-shifts-v1',
+      },
     ];
   });
 

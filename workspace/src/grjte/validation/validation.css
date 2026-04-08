@@ -242,8 +242,58 @@
   }
 
   .validation-artifact-preview {
-    height: 220px;
+    height: 360px;
     overflow: auto;
+  }
+
+  .validation-artifact-workspace {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+  }
+
+  .validation-artifact-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border-bottom: 1px solid #e5e7eb;
+    background: #f8fafc;
+    flex-shrink: 0;
+  }
+
+  .validation-artifact-tabs {
+    display: flex;
+    gap: 8px;
+  }
+
+  .validation-artifact-tab {
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    color: #475569;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .validation-artifact-tab.active {
+    background: #e0f2fe;
+    border-color: #7dd3fc;
+    color: #0f172a;
+  }
+
+  .validation-artifact-sync-error {
+    color: #991b1b;
+    background: #fee2e2;
+    border: 1px solid #fecaca;
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.4;
   }
 
   /* Verifications */

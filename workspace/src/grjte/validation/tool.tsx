@@ -1,15 +1,35 @@
 import { render } from 'solid-js/web';
-import { For, Show, createMemo, createSignal } from 'solid-js';
+import {
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  on,
+  untrack,
+} from 'solid-js';
 import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primitives';
 import type { ToolRender, ToolElement } from '@inkandswitch/patchwork-plugins';
-import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
+import type {
+  DocHandle,
+  AutomergeUrl,
+  DocHandle as RepoDocHandle,
+} from '@automerge/automerge-repo';
 import type { ValidationDoc, ExecutionDoc, VerificationContextDoc } from '../../workflow/types';
 import type { DatalogDoc, VerificationArtifactInput } from '../verification/model';
 import { evaluateVerificationContext } from '../verification/model';
+import {
+  applyCsvToDatalogArtifact,
+  getArtifactSyncSignature,
+  projectDatalogArtifactToCsv,
+  type ArtifactFolderEntry,
+  type CsvDoc,
+} from './csv-sync';
 import './validation.css';
 
 type FolderDoc = {
-  docs: { type: string; name: string; url: AutomergeUrl }[];
+  docs: ArtifactFolderEntry[];
 };
 
 export const ValidationTool: ToolRender = (handle, element) => {
@@ -113,6 +133,7 @@ function ValidationView(props: { handle: DocHandle<ValidationDoc>; element: Tool
                 <Show when={folder()}>
                   {(currentFolder) => (
                     <ValidationBody
+                      repo={props.element.repo}
                       execution={currentExecution()}
                       artifactEntries={currentFolder().docs ?? []}
                       toggleArtifact={toggleArtifact}
@@ -130,6 +151,7 @@ function ValidationView(props: { handle: DocHandle<ValidationDoc>; element: Tool
 }
 
 function ValidationBody(props: {
+  repo: any;
   execution: ExecutionDoc;
   artifactEntries: FolderDoc['docs'];
   toggleArtifact: (url: AutomergeUrl) => void;
@@ -170,14 +192,23 @@ function ValidationBody(props: {
           ),
         };
       })
-      .filter((entry): entry is { url: AutomergeUrl; evaluation: NonNullable<ReturnType<typeof evaluateVerificationContext>> } => Boolean(entry?.evaluation)),
+      .filter(
+        (
+          entry,
+        ): entry is {
+          url: AutomergeUrl;
+          evaluation: NonNullable<ReturnType<typeof evaluateVerificationContext>>;
+        } => Boolean(entry?.evaluation),
+      ),
   );
 
   const summary = createMemo(() => {
     const evaluations = verificationSummaries().map((entry) => entry.evaluation);
     const passing = evaluations.filter((evaluation) => evaluation.passed).length;
     const failing = evaluations.length - passing;
-    const artifactEvaluations = evaluations.filter((evaluation) => evaluation.scope === 'artifacts');
+    const artifactEvaluations = evaluations.filter(
+      (evaluation) => evaluation.scope === 'artifacts',
+    );
     const artifactTargetsTotal = artifactEvaluations.reduce(
       (total, evaluation) => total + evaluation.artifactTargetsTotal,
       0,
@@ -206,7 +237,9 @@ function ValidationBody(props: {
           <div class="validation-summary-card">
             <div class="validation-summary-header">
               <div class="validation-summary-title">
-                {summary().allPassed ? 'All required verifications pass' : 'Verification issues detected'}
+                {summary().allPassed
+                  ? 'All required verifications pass'
+                  : 'Verification issues detected'}
               </div>
               <span
                 class="validation-summary-status"
@@ -261,10 +294,7 @@ function ValidationBody(props: {
                   </button>
                   <Show when={props.isArtifactExpanded(entry.url)}>
                     <div class="validation-artifact-preview">
-                      <patchwork-view
-                        attr:doc-url={entry.url}
-                        style="display:block;width:100%;height:100%;"
-                      />
+                      <ArtifactWorkspace entry={entry} repo={props.repo} />
                     </div>
                   </Show>
                 </div>
@@ -292,4 +322,144 @@ function ValidationBody(props: {
       </Show>
     </div>
   );
+}
+
+function ArtifactWorkspace(props: { entry: ArtifactFolderEntry; repo: any }) {
+  const [selectedView, setSelectedView] = createSignal<'csv' | 'datalog'>(
+    props.entry.csvUrl ? 'csv' : 'datalog',
+  );
+  const [datalogDoc] = useDocument<DatalogDoc>(() => props.entry.url);
+  const [csvDoc] = useDocument<CsvDoc>(() => props.entry.csvUrl);
+  const [datalogHandle] = createHandleResource<DatalogDoc>(props.repo, () => props.entry.url);
+  const [csvHandle] = createHandleResource<CsvDoc>(props.repo, () => props.entry.csvUrl);
+  const [syncError, setSyncError] = createSignal<string | null>(null);
+  let lastProjectedCsvContent: string | undefined;
+
+  const projection = createMemo(() => {
+    if (!props.entry.csvUrl || !props.entry.projectionKind || !datalogDoc()) return null;
+    return projectDatalogArtifactToCsv(props.entry.projectionKind, datalogDoc()!, props.entry.name);
+  });
+
+  createEffect(
+    on(
+      () => getArtifactSyncSignature(datalogDoc() ?? { title: '', facts: [], draftText: '' }),
+      () => {
+        const currentProjection = projection();
+        const handle = csvHandle();
+        if (!currentProjection || !handle) return;
+        const currentCsvDoc = untrack(csvDoc);
+        if (
+          currentCsvDoc?.content === currentProjection.content &&
+          currentCsvDoc?.title === currentProjection.title
+        ) {
+          lastProjectedCsvContent = currentProjection.content;
+          return;
+        }
+        lastProjectedCsvContent = currentProjection.content;
+        handle.change((d) => {
+          d['@patchwork'] = { type: 'csv' };
+          d.title = currentProjection.title;
+          d.content = currentProjection.content;
+        });
+        setSyncError(null);
+      },
+    ),
+  );
+
+  createEffect(
+    on(
+      () => csvDoc()?.content,
+      (content) => {
+        const currentCsvDoc = csvDoc();
+        const currentDatalogDoc = untrack(datalogDoc);
+        const handle = datalogHandle();
+        if (
+          !content ||
+          !currentCsvDoc ||
+          !currentDatalogDoc ||
+          !handle ||
+          !props.entry.projectionKind ||
+          !props.entry.csvUrl
+        ) {
+          return;
+        }
+        if (content === lastProjectedCsvContent) {
+          setSyncError(null);
+          return;
+        }
+
+        const result = applyCsvToDatalogArtifact(
+          props.entry.projectionKind,
+          content,
+          currentDatalogDoc,
+          props.entry.name,
+        );
+        if (!result.ok) {
+          setSyncError(result.error);
+          return;
+        }
+
+        setSyncError(null);
+        const nextSignature = getArtifactSyncSignature(result.doc);
+        if (nextSignature === getArtifactSyncSignature(currentDatalogDoc)) return;
+
+        handle.change((d) => {
+          d.title = result.doc.title;
+          d.facts = result.doc.facts;
+          d.draftText = result.doc.draftText;
+        });
+      },
+    ),
+  );
+
+  return (
+    <div class="validation-artifact-workspace">
+      <Show when={props.entry.csvUrl}>
+        <div class="validation-artifact-toolbar">
+          <div class="validation-artifact-tabs">
+            <button
+              class="validation-artifact-tab"
+              classList={{ active: selectedView() === 'csv' }}
+              onClick={() => setSelectedView('csv')}
+            >
+              CSV View
+            </button>
+            <button
+              class="validation-artifact-tab"
+              classList={{ active: selectedView() === 'datalog' }}
+              onClick={() => setSelectedView('datalog')}
+            >
+              Datalog Source
+            </button>
+          </div>
+          <Show when={syncError()}>
+            {(message) => <div class="validation-artifact-sync-error">{message()}</div>}
+          </Show>
+        </div>
+      </Show>
+
+      <Show
+        when={selectedView() === 'csv' && props.entry.csvUrl}
+        fallback={
+          <patchwork-view
+            attr:doc-url={props.entry.url}
+            style="display:block;width:100%;height:100%;"
+          />
+        }
+      >
+        <patchwork-view
+          attr:doc-url={props.entry.csvUrl!}
+          attr:tool-id="csv"
+          style="display:block;width:100%;height:100%;"
+        />
+      </Show>
+    </div>
+  );
+}
+
+function createHandleResource<T>(repo: any, url: () => AutomergeUrl | undefined) {
+  return createResource(url, async (currentUrl) => {
+    if (!currentUrl) return undefined;
+    return (await repo.find(currentUrl)) as RepoDocHandle<T>;
+  });
 }
