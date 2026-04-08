@@ -278,10 +278,9 @@ function doCatchingErrors(fn: () => void) {
 }
 
 export const PyonpyonEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
-  docHandle = useDocHandle<PyonpyonDoc>(docUrl)!;
+  docHandle = useDocHandle<PyonpyonDoc>(docUrl, { suspense: true })!;
   (window as any).handle = docHandle; // needed for historical reasons, will go away once we update alldefs
 
-  const title = docHandle.doc().title.trim() || 'Pyonpyon';
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   /** Shell stays mounted during close height animation; cleared after transition ends. */
