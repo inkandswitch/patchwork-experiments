@@ -2,8 +2,8 @@
 
 console.log('task worker script starting; self.name =', (self as any).name);
 
-import type { Status, Task, TaskQueue, Worker } from './datatype';
-import type { MessageToWorker, MessageToWorkerChannel, MessageToWorkerPool } from './protocol';
+import type { TaskQueueDoc, TaskDoc, RunStatus, WorkerDoc, RunLogEntry } from './datatype';
+import type { MessageToWorker, MessageToWorkerChannel, MessageToWorkerPoolProxy } from './protocol';
 import type { Repo, AutomergeUrl, DocHandle } from '@automerge/vanillajs/slim';
 
 import generateName from 'boring-name-generator';
@@ -22,7 +22,7 @@ declare global {
 let importMap: any;
 let baseURI: string;
 
-let workerHandle: DocHandle<Worker>;
+let workerHandle: DocHandle<WorkerDoc>;
 
 function handleConnect(e: any) {
   console.log('got a connection!');
@@ -75,10 +75,10 @@ async function init(
   // Important: if I take out the `globalThis.` from the assignment below, it doesn't work.
   // I get "ReferenceError: repo is not defined." This is probably b/c that variable only
   // counts as declared once it exists as a property in globalThis.
-  globalThis.repo = await getRepo(repoPort, `task-worker-${Math.round(Math.random() * 10_000)}`);
+  globalThis.repo = await getRepo(repoPort, `task-worker-${Math.round(Math.random() * 1_000_000)}`);
 
   // create the worker document
-  workerHandle = repo.create<Worker>({
+  workerHandle = repo.create<WorkerDoc>({
     name: generateName().dashed,
     contactUrl: _contactUrl,
     currentTask: null,
@@ -86,10 +86,10 @@ async function init(
 
   // tell the worker pool proxy that I exist
   workerPoolProxyPort.postMessage({
-    type: 'add worker',
+    type: 'register worker',
     sharedWorkerName: self.name,
     workerUrl: workerHandle.url,
-  } satisfies MessageToWorkerPool);
+  } satisfies MessageToWorkerPoolProxy);
 
   // listen to messages on my channel
   workerHandle.on('ephemeral-message', (payload) => {
@@ -181,15 +181,15 @@ async function processTask(taskUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
 
   let ok = true;
 
-  let taskHandle: DocHandle<Task<any, any>>;
+  let taskHandle: DocHandle<TaskDoc<any, any>>;
   try {
-    taskHandle = await repo.find<Task<any, any>>(taskUrl);
+    taskHandle = await repo.find<TaskDoc<any, any>>(taskUrl);
   } catch (error) {
     console.error('unable to get doc handle for task', { taskUrl, error });
     ok = false;
   }
 
-  let taskQueueHandle: DocHandle<TaskQueue>;
+  let taskQueueHandle: DocHandle<TaskQueueDoc>;
   if (ok) {
     try {
       taskQueueHandle = await getTaskQueueHandle(taskQueueUrl);
@@ -234,16 +234,16 @@ async function processTask(taskUrl: AutomergeUrl, taskQueueUrl: AutomergeUrl) {
   logTally();
 }
 
-function failedTooManyTimes(taskHandle: DocHandle<Task<any, any>>) {
+function failedTooManyTimes(taskHandle: DocHandle<TaskDoc<any, any>>) {
   return taskHandle.doc().runs.filter(({ status }) => status === 'failed').length >= MAX_TRIES;
 }
 
-async function execute(taskHandle: DocHandle<Task<any, any>>) {
+async function execute(taskHandle: DocHandle<TaskDoc<any, any>>) {
   const { importUrl, input } = taskHandle.doc();
 
-  const log: [number, string][] = [];
-  const startTime = Date.now();
-  let status: Status = 'succeeded';
+  const logs: RunLogEntry[] = [];
+  const startTimeMillis = Date.now();
+  let status: RunStatus = 'succeeded';
   let result: any;
   try {
     // Dynamic import of the task module using importShim for import map support
@@ -258,7 +258,7 @@ async function execute(taskHandle: DocHandle<Task<any, any>>) {
           const message = args
             .map((arg: any) => '' + arg)
             .reduce((acc: string, m: string) => `${acc} ${m}`);
-          log.push([timestamp, message]);
+          logs.push({ timestampMillis: timestamp, message });
           console.log('Task log:', message);
         },
       },
@@ -266,11 +266,11 @@ async function execute(taskHandle: DocHandle<Task<any, any>>) {
     );
   } catch (error: any) {
     console.error('task execution failed:', error);
-    log.push([Date.now(), error?.message ?? '' + error]);
+    logs.push({ timestampMillis: Date.now(), message: error?.message ?? '' + error });
     status = 'failed';
   }
 
-  const endTime = Date.now();
+  const endTimeMillis = Date.now();
 
   // Update task document with results
   taskHandle.change((doc) => {
@@ -278,16 +278,16 @@ async function execute(taskHandle: DocHandle<Task<any, any>>) {
       workerUrl: workerHandle.url,
       status,
       result: result ?? null,
-      startTime,
-      endTime,
-      log,
+      startTimeMillis,
+      endTimeMillis,
+      logs,
     });
   });
 
   return status;
 }
 
-function moveToDone(taskUrl: AutomergeUrl, taskQueueHandle: DocHandle<TaskQueue>) {
+function moveToDone(taskUrl: AutomergeUrl, taskQueueHandle: DocHandle<TaskQueueDoc>) {
   taskQueueHandle.change((doc) => {
     const idx = doc.pending.indexOf(taskUrl);
     doc.pending.splice(idx, 1);
@@ -295,14 +295,14 @@ function moveToDone(taskUrl: AutomergeUrl, taskQueueHandle: DocHandle<TaskQueue>
   });
 }
 
-const taskQueueHandles = new Map<AutomergeUrl, DocHandle<TaskQueue>>();
+const taskQueueHandles = new Map<AutomergeUrl, DocHandle<TaskQueueDoc>>();
 
 async function getTaskQueueHandle(taskQueueUrl: AutomergeUrl) {
   if (taskQueueHandles.has(taskQueueUrl)) {
     return taskQueueHandles.get(taskQueueUrl)!;
   }
 
-  const handle = await repo.find<TaskQueue>(taskQueueUrl);
+  const handle = await repo.find<TaskQueueDoc>(taskQueueUrl);
   taskQueueHandles.set(taskQueueUrl, handle);
   return handle;
 }

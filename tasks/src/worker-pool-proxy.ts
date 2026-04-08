@@ -2,7 +2,7 @@ import type { AutomergeUrl } from '@automerge/automerge-repo';
 import type { MessageToRouter, MessageToWorker, MessageToWorkerPool } from './protocol';
 
 import { IndexedDBStorageAdapter, MessageChannelNetworkAdapter, Repo } from '@automerge/vanillajs';
-import { getAccountHandle, getTaskQueues, type TaskQueues } from './helpers';
+import { getAccountHandle, getTaskQueues } from './helpers';
 
 import WorkerPool from './worker-pool.ts?sharedworker';
 import TaskWorker from './worker.ts?sharedworker';
@@ -15,7 +15,7 @@ const NUM_WORKERS = 2;
 export class WorkerPoolProxy {
   private readonly workerPool: SharedWorker;
   private readonly workers: SharedWorker[] = [];
-  private readonly routers = new Map<AutomergeUrl, SharedWorker>();
+  private readonly router: SharedWorker;
   private _repo: Repo | null = null;
 
   constructor(
@@ -24,10 +24,12 @@ export class WorkerPoolProxy {
     baseURI: string,
   ) {
     this.workerPool = this.createAndInitializeWorkerPool();
+
     for (let workerId = 0; workerId < NUM_WORKERS; workerId++) {
       this.workers.push(this.createAndInitializeWorker(workerId, importMap, baseURI));
     }
-    this.initializeRouters();
+
+    this.router = this.createAndInitializeRouter();
   }
 
   private createAndInitializeWorkerPool() {
@@ -35,7 +37,7 @@ export class WorkerPoolProxy {
     const workerPool = new WorkerPool({ name: `task-worker-pool-${BUILD_ID}` });
     workerPool.onerror = (error) => log(error);
 
-    // initialize it (it doesn't matter if this message is sent more than once)
+    // initialize it (doesn't matter if this message is sent more than once)
     const repoPort = (window as any).getRepoChannel();
     log('sending init to worker pool');
     workerPool.port.postMessage(
@@ -46,6 +48,7 @@ export class WorkerPoolProxy {
       } satisfies MessageToWorkerPool,
       [repoPort],
     );
+
     return workerPool;
   }
 
@@ -71,7 +74,7 @@ export class WorkerPoolProxy {
 
     (worker.port as any).start?.();
 
-    // initialize it (it doesn't matter if this message is sent more than once)
+    // initialize it (doesn't matter if this message is sent more than once)
     log('sending init message to', name);
     const repoPort = (window as any).getRepoChannel();
     worker.port.postMessage(
@@ -88,57 +91,43 @@ export class WorkerPoolProxy {
     return worker;
   }
 
-  private async initializeRouters() {
-    const accountHandle = await getAccountHandle(await this.getRepo() as any);
-    accountHandle.on('change', (payload) =>
-      this.updateRouters(getTaskQueues(payload.handle.doc())),
+  private createAndInitializeRouter() {
+    // create the shared worker
+    const router = new TaskRouter({ name: `task-router-${BUILD_ID}` });
+    router.onerror = (error) => log(error);
+
+    // initialize it (doesn't matter if this message is sent more than once)
+    log('sending init message to router');
+    const repoPort = (window as any).getRepoChannel();
+    router.port.postMessage(
+      {
+        type: 'init',
+        repoPort,
+        contactUrl: this.contactUrl,
+      } satisfies MessageToRouter,
+      [repoPort],
     );
-    await this.updateRouters(getTaskQueues(accountHandle.doc()));
+
+    // note: no `await` on purpose
+    this.setUpTaskQueueSetUpdates();
+
+    return router;
   }
 
-  private async updateRouters(taskQueues: TaskQueues) {
-    // terminate routers for the task queues we're no longer interested in
-    for (const [taskQueueUrl, router] of this.routers.entries()) {
-      if (!taskQueues[taskQueueUrl as any]) {
-        log('terminating router for task queue', taskQueueUrl);
-        this.routers.delete(taskQueueUrl);
-        router.port.postMessage({
-          type: 'terminate',
-        } satisfies MessageToRouter);
-      }
-    }
+  async setUpTaskQueueSetUpdates() {
+    const updateTaskQueues = (accountDoc: any) =>
+      this.sendToRouter({
+        type: 'update task queue set',
+        taskQueues: getTaskQueues(accountDoc),
+      });
 
-    // add routers for the task queues we didn't already know about
-    for (const url of Object.keys(taskQueues)) {
-      const taskQueueUrl = url as AutomergeUrl;
+    const accountHandle = await getAccountHandle(await this.getRepo() as any);
+    accountHandle.on('change', (payload) => updateTaskQueues(payload.handle.doc()));
+    updateTaskQueues(accountHandle.doc());
+  }
 
-      log('joining task queue', taskQueueUrl);
-      this.workerPool.port.postMessage({
-        type: 'join',
-        taskQueueUrl,
-      } satisfies MessageToWorkerPool);
-
-      // Create a router (SharedWorker) for this task queue if our browser doesn't have one already.
-      // (If another window or tab already created one, we'll just get that one.)
-      const name = `task-router-${BUILD_ID}-${taskQueueUrl}`;
-      const router = new TaskRouter({ name });
-      this.routers.set(taskQueueUrl, router);
-
-      // Initialize the router -- this is OK even if the `new TaskRouter(...)` above didn't create a new one.
-      const repoPort = (window as any).getRepoChannel();
-      const contactUrl = this.contactUrl;
-      // router.port.start();
-      log('sending init message to router', name);
-      router.port.postMessage(
-        {
-          type: 'init',
-          repoPort,
-          contactUrl,
-          taskQueueUrl,
-        } satisfies MessageToRouter,
-        [repoPort],
-      );
-    }
+  sendToRouter(message: MessageToRouter) {
+    this.router.port.postMessage(message);
   }
 
   async getRepo() {

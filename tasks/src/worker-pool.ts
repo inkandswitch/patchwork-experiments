@@ -1,13 +1,14 @@
 /* eslint-env worker */
 
 import type { AutomergeUrl, DocHandle, Repo } from '@automerge/vanillajs/slim';
-import type { Worker, Router, TaskQueue } from './datatype';
+import type { WorkerDoc, RouterDoc, TaskQueueDoc, TaskQueueSet } from './datatype';
 import type { MessageToWorkerPool, MessageToRouterChannel } from './protocol';
 
 import { getRepo } from './webworker-lib';
+import { seconds } from './helpers';
 
 interface TaskQueueState {
-  activeRouterHandle: DocHandle<Router> | null;
+  activeRouterHandle: DocHandle<RouterDoc> | null;
 }
 
 let repo: Repo;
@@ -16,7 +17,7 @@ let status: 'not initialized' | 'initializing' | 'ready' = 'not initialized';
 const toDoAfterInit: (() => Promise<void>)[] = [];
 
 const sharedWorkerNames = new Set<string>();
-const workerByUrl = new Map<AutomergeUrl, Worker>();
+const workerByUrl = new Map<AutomergeUrl, WorkerDoc>();
 
 const taskQueueUrls = new Set<AutomergeUrl>();
 const taskQueueState = new Map<AutomergeUrl, TaskQueueState>();
@@ -34,11 +35,11 @@ self.addEventListener('connect', (e: any) => {
         case 'init':
           init(msg.repoPort);
           break;
-        case 'join':
-          join(msg.taskQueueUrl);
+        case 'update task queue set':
+          updateTaskQueueSet(msg.taskQueues);
           break;
-        case 'add worker':
-          addWorker(msg.sharedWorkerName, msg.workerUrl);
+        case 'register worker':
+          registerWorker(msg.sharedWorkerName, msg.workerUrl);
           break;
       }
     } catch (error) {
@@ -66,54 +67,67 @@ async function init(port: MessagePort) {
   }
 }
 
-async function join(taskQueueUrl: AutomergeUrl) {
-  if (taskQueueUrls.has(taskQueueUrl)) {
-    // already joined or joining!
-    return;
-  } else if (status !== 'ready') {
+async function updateTaskQueueSet(newTaskQueueUrls: TaskQueueSet) {
+  if (status !== 'ready') {
     // haven't initialized yet, so save this for later
-    toDoAfterInit.push(() => join(taskQueueUrl));
+    toDoAfterInit.push(() => updateTaskQueueSet(newTaskQueueUrls));
     return;
   }
 
-  console.log('joining task queue', taskQueueUrl);
-
-  let taskQueueHandle: DocHandle<TaskQueue>;
-  try {
-    taskQueueHandle = await repo.find<TaskQueue>(taskQueueUrl);
-  } catch (error) {
-    console.error('did not join task queue, unable to get its doc handle', { taskQueueUrl, error });
-    return;
-  }
-
-  taskQueueHandle.on('change', (payload) => setTaskQueueState(payload.doc));
-  await setTaskQueueState(taskQueueHandle.doc());
-
-  taskQueueUrls.add(taskQueueUrl);
-
-  async function setTaskQueueState(taskQueue: TaskQueue) {
-    try {
-      const activeRouterHandle = taskQueue.router
-        ? await repo.find<Router>(taskQueue.router)
-        : null;
-      taskQueueState.set(taskQueueUrl, { activeRouterHandle });
-    } catch (error) {
-      console.error('error finding doc for active router', { taskQueueUrl, error });
+  // remove task queues that are no longer in the set
+  for (const taskQueueUrl of taskQueueUrls) {
+    if (!newTaskQueueUrls[taskQueueUrl]) {
+      taskQueueUrls.delete(taskQueueUrl);
+      taskQueueState.delete(taskQueueUrl);
     }
   }
 
-  console.log('done joining task queue', taskQueueUrl);
+  // add the new ones
+  for (const taskQueueUrl of Object.keys(newTaskQueueUrls) as AutomergeUrl[]) {
+    if (taskQueueUrls.has(taskQueueUrl)) {
+      continue;
+    }
+
+    console.log('joining task queue', taskQueueUrl);
+
+    let taskQueueHandle: DocHandle<TaskQueueDoc>;
+    try {
+      taskQueueHandle = await repo.find<TaskQueueDoc>(taskQueueUrl);
+    } catch (error) {
+      console.error('did not join task queue, unable to get its doc handle', { taskQueueUrl, error });
+      return;
+    }
+
+    taskQueueUrls.add(taskQueueUrl);
+    taskQueueState.set(taskQueueUrl, { activeRouterHandle: null });
+
+    async function setTaskQueueState(taskQueue: TaskQueueDoc) {
+      try {
+        const activeRouterHandle = taskQueue.activeRouter
+          ? await repo.find<RouterDoc>(taskQueue.activeRouter)
+          : null;
+        taskQueueState.set(taskQueueUrl, { activeRouterHandle });
+      } catch (error) {
+        console.error('error finding doc for active router', { taskQueueUrl, error });
+      }
+    }
+
+    taskQueueHandle.on('change', (payload) => setTaskQueueState(payload.doc));
+    await setTaskQueueState(taskQueueHandle.doc());
+
+    console.log('done joining task queue', taskQueueUrl);
+  }
 }
 
-async function addWorker(sharedWorkerName: string, workerUrl: AutomergeUrl) {
+async function registerWorker(sharedWorkerName: string, workerUrl: AutomergeUrl) {
   if (sharedWorkerNames.has(sharedWorkerName)) {
     // already added!
-    console.log('addWorker: already know about', sharedWorkerName);
+    console.log('registerWorker: already know about', sharedWorkerName);
     return;
   } else if (status !== 'ready') {
     // haven't initialized yet, so save this for later
-    console.log('addWorker: will add', sharedWorkerName, 'after init');
-    toDoAfterInit.push(() => addWorker(sharedWorkerName, workerUrl));
+    console.log('registerWorker: will register', sharedWorkerName, 'after init');
+    toDoAfterInit.push(() => registerWorker(sharedWorkerName, workerUrl));
     return;
   }
 
@@ -122,7 +136,7 @@ async function addWorker(sharedWorkerName: string, workerUrl: AutomergeUrl) {
   sharedWorkerNames.add(sharedWorkerName);
 
   try {
-    const workerHandle = await repo.find<Worker>(workerUrl);
+    const workerHandle = await repo.find<WorkerDoc>(workerUrl);
     workerHandle.on('change', (payload) => workerByUrl.set(workerUrl, payload.doc));
     workerByUrl.set(workerUrl, workerHandle.doc());
   } catch (error) {
@@ -134,6 +148,11 @@ async function addWorker(sharedWorkerName: string, workerUrl: AutomergeUrl) {
 async function pSendWorkerStatuses() {
   while (true) {
     await seconds(1);
+
+    const taskQueues: TaskQueueSet = {};
+    for (const taskQueueUrl of taskQueueUrls) {
+      taskQueues[taskQueueUrl] = true;
+    }
 
     for (const [taskQueueUrl, { activeRouterHandle }] of taskQueueState.entries()) {
       if (!activeRouterHandle) {
@@ -149,16 +168,12 @@ async function pSendWorkerStatuses() {
             type: 'worker heartbeat',
             workerUrl,
             currentTask,
+            taskQueues,
           } satisfies MessageToRouterChannel);
         }
       }
     }
   }
 }
-
-const seconds = async (s: number) =>
-  new Promise((resolve) => {
-    setTimeout(resolve, s * 1_000);
-  });
 
 export { }; // to ensure this is a module

@@ -7,10 +7,7 @@ export const plugins: Plugin<any>[] = [
     id: 'task-queue',
     name: 'Task Queue',
     icon: 'CirclePlus',
-    async load() {
-      const { TaskQueueDatatype } = await import('./datatype');
-      return TaskQueueDatatype;
-    },
+    load: async () => (await import('./datatype')).TaskQueueDatatype
   },
   {
     type: 'patchwork:tool',
@@ -18,10 +15,7 @@ export const plugins: Plugin<any>[] = [
     name: 'Task Queue Browser',
     icon: 'CirclePlus',
     supportedDatatypes: ['task-queue'],
-    async load() {
-      const { TaskQueueTool } = await import('./task-queue-tool');
-      return TaskQueueTool;
-    },
+    load: async () => (await import('./task-queue-tool')).TaskQueueTool,
   },
   {
     type: 'patchwork:tool',
@@ -31,9 +25,6 @@ export const plugins: Plugin<any>[] = [
     supportedDatatypes: '*',
     unlisted: true,
     tags: ['titlebar-tool'],
-    async load() {
-      const { TitlebarTool } = await import('./titlebar-tool');
-      return TitlebarTool;
-    },
+    load: async () => (await import('./titlebar-tool')).TitlebarTool,
   },
 ];
