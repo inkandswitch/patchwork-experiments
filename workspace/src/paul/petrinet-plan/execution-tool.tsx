@@ -9,7 +9,12 @@ import type { TokenInstance, PendingStep, TransitionFiring, NetDef, NetState, Ne
 import { defineNet } from './lib';
 import { createNet } from './net';
 import { P3NetRenderer } from './renderer';
+import { useTitle } from '../../hooks/useTitle';
 import './petrinet-plan.css';
+
+type FolderDoc = {
+  docs: { type: string; name: string; url: AutomergeUrl }[];
+};
 
 export const PetriNetExecutionTool: ToolRender = (handle, element) => {
   const dispose = render(
@@ -167,6 +172,7 @@ function ExecutionView({ handle, repo }: { handle: DocHandle<PetriNetExecutionDo
                         def={currentDef()}
                         onClose={() => setSelectedTokenId(null)}
                         onSelectToken={setSelectedTokenId}
+                        repo={repo}
                       />
                     </Show>
                   </div>
@@ -190,6 +196,7 @@ function TokenInspector(props: {
   def: NetDef;
   onClose: () => void;
   onSelectToken: (id: string) => void;
+  repo: Repo;
 }) {
   const selected = () => {
     for (const [placeId, placeTokens] of Object.entries(props.tokens ?? {})) {
@@ -234,6 +241,16 @@ function TokenInspector(props: {
       props.onSelectToken(tokens[idx + 1].id);
     }
   }
+
+  const taskFolderUrl = () => (selected()?.token.state as Record<string, unknown>)?.taskFolderUrl as string | undefined;
+  const isCandidate = () => (selected()?.token.state as Record<string, unknown>)?.type === 'candidate';
+  const documentUrl = () => (selected()?.token.state as Record<string, unknown>)?.documentUrl as string | undefined;
+
+  const [candidateDoc] = useDocument<CandidateDoc>(() =>
+    isCandidate() && documentUrl() ? (documentUrl() as AutomergeUrl) : undefined,
+  );
+
+  const candidateFolderUrl = () => candidateDoc()?.documentsFolderUrl;
 
   return (
     <div class="p3n-inspector">
@@ -299,12 +316,24 @@ function TokenInspector(props: {
                 </span>
               </div>
             </Show>
-            <Show when={(s().token.state as Record<string, unknown>).documentUrl}>
+            <Show when={taskFolderUrl()}>
+              <div class="p3n-inspector-section">
+                <span class="p3n-inspector-label">Files</span>
+                <FolderViewer folderUrl={taskFolderUrl()!} repo={props.repo} />
+              </div>
+            </Show>
+            <Show when={candidateFolderUrl()}>
+              <div class="p3n-inspector-section">
+                <span class="p3n-inspector-label">Files</span>
+                <FolderViewer folderUrl={candidateFolderUrl()!} repo={props.repo} />
+              </div>
+            </Show>
+            <Show when={documentUrl() && !isCandidate()}>
               <div class="p3n-inspector-section">
                 <span class="p3n-inspector-label">Document</span>
                 <div class="p3n-inspector-doc-embed">
                   <patchwork-view
-                    attr:doc-url={(s().token.state as Record<string, unknown>).documentUrl as string}
+                    attr:doc-url={documentUrl()!}
                     style="display:block;width:100%;min-height:120px;"
                   />
                 </div>
@@ -313,6 +342,62 @@ function TokenInspector(props: {
           </div>
         )}
       </Show>
+    </div>
+  );
+}
+
+function FolderViewer(props: { folderUrl: string; repo: Repo }) {
+  const [folderDoc] = useDocument<FolderDoc>(() => props.folderUrl as AutomergeUrl);
+  const [selectedUrl, setSelectedUrl] = createSignal<AutomergeUrl | null>(null);
+
+  const entries = () => folderDoc()?.docs ?? [];
+
+  return (
+    <Show when={entries().length > 0} fallback={<div class="p3n-folder-empty">No files</div>}>
+      <div class="p3n-folder-viewer">
+        <div class="p3n-folder-list">
+          <For each={entries()}>
+            {(entry) => (
+              <FolderItem
+                url={entry.url}
+                name={entry.name}
+                selected={selectedUrl() === entry.url}
+                onClick={() => setSelectedUrl(entry.url)}
+              />
+            )}
+          </For>
+        </div>
+        <div class="p3n-folder-preview">
+          <Show
+            when={selectedUrl()}
+            fallback={<div class="p3n-folder-preview-empty">Select a file</div>}
+          >
+            {(url) => (
+              <div class="p3n-folder-preview-content">
+                <patchwork-view
+                  attr:doc-url={url()}
+                  style="display:block;width:100%;height:100%;"
+                />
+              </div>
+            )}
+          </Show>
+        </div>
+      </div>
+    </Show>
+  );
+}
+
+function FolderItem(props: { url: AutomergeUrl; name: string; selected: boolean; onClick: () => void }) {
+  const title = useTitle(() => props.url);
+  const displayName = () => props.name || title() || 'Untitled';
+
+  return (
+    <div
+      class="p3n-folder-item"
+      classList={{ selected: props.selected }}
+      onClick={props.onClick}
+    >
+      <span class="p3n-folder-item-name">{displayName()}</span>
     </div>
   );
 }

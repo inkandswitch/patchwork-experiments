@@ -2,6 +2,12 @@ import type { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo';
 import type { WorkflowDoc, SpecDoc, Spec } from '../../workflow/types';
 import type { ElicitationDoc } from '../../types';
+import {
+  parseProgram,
+  type StoredFact,
+  type StoredRule,
+  type StoredConstraint,
+} from '../../../../datalog/src/datalog';
 
 export type { WorkflowDoc } from '../../workflow/types';
 
@@ -19,17 +25,12 @@ type FileDoc = {
   content: string;
 };
 
-type StoredAtom = { pred: string; args: string[] };
-type StoredConstraint = { body: StoredAtom[]; comment?: string };
-
 type DatalogDoc = {
   '@patchwork': { type: 'datalog' };
   title?: string;
-  facts: unknown[];
-  rules: unknown[];
+  facts: StoredFact[];
+  rules: StoredRule[];
   constraints: StoredConstraint[];
-  derivedFacts?: unknown[];
-  draftText?: string;
   mapStyle: { lines: Record<string, unknown>; properties: Record<string, unknown> };
 };
 
@@ -121,13 +122,13 @@ function createFileDoc(repo: Repo, name: string, extension: string, content: str
 function createFilesFolder(
   repo: Repo,
   title: string,
-  files: { name: string; url: AutomergeUrl }[],
+  files: { name: string; url: AutomergeUrl; type?: string }[],
 ): AutomergeUrl {
   const handle = repo.create<FolderDoc>();
   handle.change((d) => {
     d['@patchwork'] = { type: 'folder' };
     d.title = title;
-    d.docs = files.map((f) => ({ type: 'file', name: f.name, url: f.url }));
+    d.docs = files.map((f) => ({ type: f.type ?? 'file', name: f.name, url: f.url }));
   });
   return handle.url;
 }
@@ -208,121 +209,35 @@ return "Configuration updated"
 
 Apply your strategy. Remove redundant rules while preserving the security posture required by the constraints. Do not explain — just compute and write.`;
 
-function createDatalogDoc(
-  repo: Repo,
-  title: string,
-  draftText: string,
-  constraints: StoredConstraint[],
-): AutomergeUrl {
+function createDatalogDoc(repo: Repo, title: string, datalogText: string): AutomergeUrl {
+  const parsed = parseProgram(datalogText);
   const handle = repo.create<DatalogDoc>();
   handle.change((d) => {
     d['@patchwork'] = { type: 'datalog' };
     d.title = title;
-    d.facts = [];
-    d.rules = [];
-    d.constraints = constraints;
-    d.draftText = draftText;
+    d.facts = parsed.facts;
+    d.rules = parsed.rules;
+    d.constraints = parsed.constraints;
     d.mapStyle = { lines: {}, properties: {} };
   });
   return handle.url;
 }
 
 function createDefaultSpec(repo: Repo): { specDocUrl: AutomergeUrl; leafSpecUrls: AutomergeUrl[] } {
-  const globalRulesUrl = createDatalogDoc(repo, 'Global Firewall Rules', GLOBAL_RULES_DATALOG, [
-    {
-      body: [
-        { pred: 'blocked_ip', args: ['IP'] },
-        { pred: 'rule', args: ['M', '"input"', '_', '"accept"', 'Src', '_', '_'] },
-        { pred: 'ip_in', args: ['IP', 'Src'] },
-      ],
-      comment: 'Blocked IPs must not be reachable via any allow rule',
-    },
-    {
-      body: [{ pred: 'rule', args: ['M', '"input"', '_', '"accept"', '"0.0.0.0/0"', '_', '22'] }],
-      comment: 'SSH (port 22) must be restricted to internal network',
-    },
-  ]);
+  const globalRulesUrl = createDatalogDoc(repo, 'Global Firewall Rules', GLOBAL_RULES_DATALOG);
+  const commonMachineRulesUrl = createDatalogDoc(repo, 'Common Machine Rules', COMMON_MACHINE_RULES_DATALOG);
+  const machineARulesUrl = createDatalogDoc(repo, 'Machine A Rules (Web Server)', MACHINE_A_RULES_DATALOG);
+  const machineBRulesUrl = createDatalogDoc(repo, 'Machine B Rules (Database Server)', MACHINE_B_RULES_DATALOG);
 
-  const commonMachineRulesUrl = createDatalogDoc(
-    repo,
-    'Common Machine Rules',
-    COMMON_MACHINE_RULES_DATALOG,
-    [
-      {
-        body: [{ pred: 'redundant', args: ['M', 'Idx'] }],
-        comment: 'No redundant rules should exist',
-      },
-      {
-        body: [{ pred: 'unreachable', args: ['M', 'Idx'] }],
-        comment: 'No unreachable rules should exist',
-      },
-    ],
-  );
-
-  const machineARulesUrl = createDatalogDoc(
-    repo,
-    'Machine A Rules (Web Server)',
-    MACHINE_A_RULES_DATALOG,
-    [
-      {
-        body: [
-          { pred: 'role', args: ['M', 'webserver'] },
-          { pred: 'rule', args: ['M', '"input"', '_', '"accept"', '"0.0.0.0/0"', '_', '3306'] },
-        ],
-        comment: 'Web servers should not expose MySQL port',
-      },
-      {
-        body: [
-          { pred: 'role', args: ['M', 'webserver'] },
-          { pred: 'rule', args: ['M', '"input"', '_', '"accept"', '"0.0.0.0/0"', '_', '5432'] },
-        ],
-        comment: 'Web servers should not expose PostgreSQL port',
-      },
-    ],
-  );
-
-  const machineBRulesUrl = createDatalogDoc(
-    repo,
-    'Machine B Rules (Database Server)',
-    MACHINE_B_RULES_DATALOG,
-    [
-      {
-        body: [
-          { pred: 'role', args: ['M', 'database'] },
-          { pred: 'rule', args: ['M', '"input"', '_', '"accept"', '"0.0.0.0/0"', '_', '3306'] },
-        ],
-        comment: 'Database servers should only allow DB connections from internal network',
-      },
-      {
-        body: [
-          { pred: 'role', args: ['M', 'database'] },
-          { pred: 'rule', args: ['M', '"input"', '_', '"accept"', '"0.0.0.0/0"', '_', '5432'] },
-        ],
-        comment: 'Database servers should only allow DB connections from internal network',
-      },
-    ],
-  );
-
-  const machineADatalogFileUrl = createFileDoc(
-    repo,
-    'machine-a-iptables',
-    'datalog',
-    MACHINE_A_IPTABLES_DATALOG,
-  );
-
-  const machineBDatalogFileUrl = createFileDoc(
-    repo,
-    'machine-b-iptables',
-    'datalog',
-    MACHINE_B_IPTABLES_DATALOG,
-  );
+  const machineADatalogUrl = createDatalogDoc(repo, 'Machine A IPTables', MACHINE_A_IPTABLES_DATALOG);
+  const machineBDatalogUrl = createDatalogDoc(repo, 'Machine B IPTables', MACHINE_B_IPTABLES_DATALOG);
 
   const machineAFilesFolderUrl = createFilesFolder(repo, 'Machine A Files', [
-    { name: 'machine-a-iptables.datalog', url: machineADatalogFileUrl },
+    { name: 'machine-a-iptables', url: machineADatalogUrl, type: 'datalog' },
   ]);
 
   const machineBFilesFolderUrl = createFilesFolder(repo, 'Machine B Files', [
-    { name: 'machine-b-iptables.datalog', url: machineBDatalogFileUrl },
+    { name: 'machine-b-iptables', url: machineBDatalogUrl, type: 'datalog' },
   ]);
 
   const machineASpecHandle = repo.create<SpecDoc>();
