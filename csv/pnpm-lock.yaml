@@ -30,6 +30,9 @@ importers:
       vite:
         specifier: ^5.4.19
         version: 5.4.21(@types/node@20.19.39)
+      vite-plugin-css-injected-by-js:
+        specifier: ^3.5.2
+        version: 3.5.2(vite@5.4.21(@types/node@20.19.39))
       vite-plugin-solid:
         specifier: ^2.10.0
         version: 2.11.12(solid-js@1.9.12)(vite@5.4.21(@types/node@20.19.39))
@@ -723,6 +726,11 @@ packages:
   uuid@9.0.1:
     resolution: {integrity: sha512-b+1eJOlsR9K8HJpow9Ok3fiWOWSIcIzXodvv0rQjVoOVNpWMpxf1wZNpt4y9h10odCNrqnYp1OBzRktckBe3sA==}
     hasBin: true
+
+  vite-plugin-css-injected-by-js@3.5.2:
+    resolution: {integrity: sha512-2MpU/Y+SCZyWUB6ua3HbJCrgnF0KACAsmzOQt1UvRVJCGF6S8xdA3ZUhWcWdM9ivG4I5az8PnQmwwrkC2CAQrQ==}
+    peerDependencies:
+      vite: '>2.0.0-0'
 
   vite-plugin-solid@2.11.12:
     resolution: {integrity: sha512-FgjPcx2OwX9h6f28jli7A4bG7PP3te8uyakE5iqsmpq3Jqi1TWLgSroC9N6cMfGRU2zXsl4Q6ISvTr2VL0QHpA==}
@@ -1503,6 +1511,10 @@ snapshots:
       picocolors: 1.1.1
 
   uuid@9.0.1: {}
+
+  vite-plugin-css-injected-by-js@3.5.2(vite@5.4.21(@types/node@20.19.39)):
+    dependencies:
+      vite: 5.4.21(@types/node@20.19.39)
 
   vite-plugin-solid@2.11.12(solid-js@1.9.12)(vite@5.4.21(@types/node@20.19.39)):
     dependencies:
