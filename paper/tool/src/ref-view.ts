@@ -94,21 +94,16 @@ export function registerRefView(
     }
 
     findClosest(schema: Schema<unknown>): RefViewHostElement | null {
-      let current: RefViewHostElement | null = this as RefViewHostElement;
-      while (current) {
-        if (current.has(schema)) return current;
-        current = parentRefView(current as unknown as HTMLElement);
-      }
-      return null;
+      if (this.has(schema)) return this as RefViewHostElement;
+      const parent = parentRefView(this as unknown as HTMLElement);
+      if (!parent) return null;
+      return parent.findClosest(schema);
     }
 
     findParent(schema: Schema<unknown>): RefViewHostElement | null {
-      let current: RefViewHostElement | null = parentRefView(this as unknown as HTMLElement);
-      while (current) {
-        if (current.has(schema)) return current;
-        current = parentRefView(current as unknown as HTMLElement);
-      }
-      return null;
+      const parent = parentRefView(this as unknown as HTMLElement);
+      if (!parent) return null;
+      return parent.findClosest(schema);
     }
 
     findRef(refUrl: string): Promise<Ref> {

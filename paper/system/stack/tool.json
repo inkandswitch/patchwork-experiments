@@ -1,0 +1,7 @@
+{
+  "type": "tool",
+  "name": "Stack",
+  "description": "A z-stack container that renders children layered on top of each other",
+  "toolUrl": "./tool.js",
+  "schemaUrl": "./schema.js"
+}

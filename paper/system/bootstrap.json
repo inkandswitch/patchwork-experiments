@@ -1,6 +1,6 @@
 {
   "type": "tool",
   "name": "Bootstrap",
-  "description": "Surface bootstrap entry point",
+  "description": "Paper bootstrap entry point",
   "toolUrl": "./bootstrap.js"
 }

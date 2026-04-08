@@ -4,7 +4,7 @@ import { createFilesystem } from "./filesystem";
 import { createPluginRegistry } from "./plugins";
 import type { AutomergeUrl, DocHandle, Repo } from "@automerge/automerge-repo";
 import type { RefViewHostElement } from "./ref-view";
-import type { SurfaceDoc } from "./datatype";
+import type { PaperDoc } from "./datatype";
 
 const DEFAULT_SOURCE_FOLDER = "automerge:4FwenFcEMbsmjGxvYAuT5U8mLi8m" as AutomergeUrl;
 const BOOTSTRAP_VIEW_URL = "bootstrap.json";
@@ -16,8 +16,8 @@ const filesystem = createFilesystem(repo, DEFAULT_SOURCE_FOLDER);
 const pluginRegistry = createPluginRegistry(filesystem);
 registerRefView(repo, filesystem, pluginRegistry);
 
-export function SurfaceTool(
-  handle: DocHandle<SurfaceDoc>,
+export function PaperTool(
+  handle: DocHandle<PaperDoc>,
   element: RefViewHostElement & { repo?: Repo },
 ): () => void {
   const repo = element.repo ?? (globalThis as any).repo;

@@ -1,0 +1,7 @@
+{
+  "type": "tool",
+  "name": "DockLayout",
+  "description": "Dock layout with proximity-dot snap positions and drag-and-drop",
+  "toolUrl": "./tool.js",
+  "schemaUrl": "./schema.js"
+}

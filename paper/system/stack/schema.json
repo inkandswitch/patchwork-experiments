@@ -1,0 +1,5 @@
+{
+  "type": "schema",
+  "name": "Stack",
+  "source": "./schema.js"
+}

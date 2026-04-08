@@ -13,21 +13,21 @@ export const plugins = [
   {
     type: "patchwork:tool",
     id: "paper",
-    name: "Surface",
+    name: "Paper",
     supportedDatatypes: ["paper"],
     async load() {
-      const { SurfaceTool } = await import("./tool");
-      return SurfaceTool;
+      const { PaperTool } = await import("./tool");
+      return PaperTool;
     },
   },
   {
     type: "patchwork:datatype",
     id: "paper",
-    name: "Surface",
+    name: "Paper",
     icon: "LayoutTemplate",
     async load() {
-      const { SurfaceDatatype } = await import("./datatype");
-      return SurfaceDatatype;
+      const { PaperDatatype } = await import("./datatype");
+      return PaperDatatype;
     },
   },
 ];

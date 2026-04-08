@@ -1,8 +1,8 @@
 {
-  "name": "tray",
+  "name": "stack",
   "private": true,
   "type": "module",
-  "description": "A tray with fixed slots that accept shapes via drag-and-drop",
+  "description": "A z-stack container that renders children layered on top of each other",
   "exports": {
     "./tool.json": "./tool.json",
     "./schema.json": "./schema.json"

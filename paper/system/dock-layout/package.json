@@ -1,0 +1,10 @@
+{
+  "name": "dock-layout",
+  "private": true,
+  "type": "module",
+  "description": "Dock layout with proximity-dot snap positions and drag-and-drop",
+  "exports": {
+    "./tool.json": "./tool.json",
+    "./schema.json": "./schema.json"
+  }
+}

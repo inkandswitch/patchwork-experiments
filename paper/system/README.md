@@ -1,4 +1,4 @@
-# Surface system
+# Paper system
 
 This tree is the **paper system**: the collaborative layer where people work in **shared documents** and where the **tools themselves** also live as ordinary source files you can open, read, and change. Nothing here is a black box behind a separate app server -- the behavior you see is implemented in these modules, loaded by URL when the UI needs them.
 
