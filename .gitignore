@@ -4,3 +4,4 @@ node_modules
 dist/
 .claude/
 .env
+scripts/add-module-to-settings/automerge-repo-data/

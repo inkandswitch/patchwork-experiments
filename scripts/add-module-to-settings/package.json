@@ -1,0 +1,23 @@
+{
+  "name": "@patchwork/add-module-to-settings",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "CLI: append a module Automerge URL to a module-settings doc (Subduction sync)",
+  "scripts": {
+    "add-module": "tsx add-module-to-settings.ts"
+  },
+  "bin": {
+    "patchwork-register-module": "./register-module"
+  },
+  "dependencies": {
+    "@automerge/automerge-repo": "2.6.0-subduction.9",
+    "@automerge/automerge-repo-storage-nodefs": "2.6.0-subduction.9",
+    "@automerge/automerge-subduction": "0.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3"
+  }
+}
