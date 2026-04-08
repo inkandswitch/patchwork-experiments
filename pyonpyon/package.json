@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "pushwork watch . --dir src --verbose --script \"pnpm run build\"",
     "build": "vite build",
-    "sync": "pnpm run build && pushwork sync"
+    "sync": "pnpm run build && pushwork sync",
+    "register": "patchwork-register-module \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
   },
   "dependencies": {
     "@automerge/automerge-repo": "2.5.2-alpha.0",

@@ -8,7 +8,8 @@
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "sync": "pnpm build && pushwork sync",
-    "format": "pnpm exec prettier --write \"src/**/*.{ts,tsx,css}\""
+    "format": "pnpm exec prettier --write \"src/**/*.{ts,tsx,css}\"",
+    "register": "patchwork-register-module \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
   },
   "keywords": [],
   "author": "Ink & Switch",
@@ -37,7 +38,6 @@
   "devDependencies": {
     "@inkandswitch/patchwork-bootloader": "^0.0.3",
     "prettier": "^3.8.1",
-    "pushwork": "^1.0.5",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
     "vite-plugin-css-injected-by-js": "^3.5.2",

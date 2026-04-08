@@ -11,7 +11,8 @@
   "scripts": {
     "build": "esbuild src/breadboard.ts --bundle --format=esm --outfile=dist/breadboard.js --external:@automerge/* --external:@inkandswitch/*",
     "dev": "esbuild src/breadboard.ts --bundle --format=esm --outfile=dist/breadboard.js --external:@automerge/* --external:@inkandswitch/* --watch",
-    "push": "pnpm build && pushwork sync"
+    "push": "pnpm build && pushwork sync",
+    "register": "patchwork-register-module \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
   },
   "dependencies": {
     "@automerge/automerge": "3.2.1",

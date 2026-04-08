@@ -6,7 +6,8 @@
   "exports": "./dist/index.js",
   "scripts": {
     "build": "tsc && vite build",
-    "sync": "pnpm build && pushwork sync"
+    "sync": "pnpm build && pushwork sync",
+    "register": "patchwork-register-module \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
   },
   "keywords": [],
   "author": "Ink & Switch",
@@ -19,7 +20,6 @@
   "devDependencies": {
     "@automerge/automerge": "3.2.1",
     "@inkandswitch/patchwork-bootloader": "^0.0.3",
-    "pushwork": "^1.0.5",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
     "vite-plugin-css-injected-by-js": "^3.5.2",

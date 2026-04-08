@@ -55,7 +55,8 @@
   },
   "scripts": {
     "build": "tsc && vite build",
-    "sync": "pnpm build && pushwork sync"
+    "sync": "pnpm build && pushwork sync",
+    "register": "patchwork-register-module \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
   },
   "dependencies": {
     "@automerge/automerge-repo-react-hooks": "2.5.0",

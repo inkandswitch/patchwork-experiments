@@ -7,7 +7,10 @@
  *
  * If you previously ran an older link-cli, unlink first: pnpm unlink --global
  *
- * Then from any directory:
+ * From a tool package (after link-cli + PATH):
+ *   MODULE_SETTINGS_DOC_URL='automerge:…' pnpm run register
+ *
+ * Or call the binary directly from any directory:
  *   pw-register-module "$MODULE_SETTINGS_DOC_URL" "$(pushwork url)"
  *   # long name: patchwork-register-module
  *
