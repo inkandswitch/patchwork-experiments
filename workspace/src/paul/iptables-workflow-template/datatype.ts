@@ -166,10 +166,18 @@ Your optimization strategy: $PROMPT
 The specification is at $SPEC_URL. It is a Patchwork SpecDoc with:
 - spec.goal: a description of the machine and its role
 - spec.verificationUrls: array of Automerge URLs pointing to datalog docs with integrity constraints
-- spec.filesFolderUrl: URL of a folder containing the original IPTables config files
 
-The document at $DOC_URL is a markdown document containing an IPTables configuration (iptables-save format). Its structure:
-- doc.content: string containing the full iptables-save output
+Documents to optimize:
+$DOC_LIST
+
+These are Datalog documents with:
+- facts: array of { pred: string, args: (string|number)[] } - the IPTables rules as facts
+- rules: derived relations (redundant, unreachable, etc.)
+- constraints: integrity rules that must not be violated
+
+Common fact predicates:
+- chain(Machine, Chain, DefaultPolicy) - chain default policies
+- rule(Machine, Chain, Index, Action, Source, Protocol, DPort) - firewall rules
 
 Step 1 — Read the specification to understand the goal and constraints:
 <script data-description="Read spec and verification rules">
@@ -180,31 +188,53 @@ const verificationUrls = specDoc.spec?.verificationUrls ?? []
 const verifications = await Promise.all(verificationUrls.map(async url => {
   const h = await repo.find(url)
   const d = await h.doc()
-  return { url, title: d.title, draftText: d.draftText, constraints: d.constraints }
+  return { url, title: d.title, rules: d.rules, constraints: d.constraints }
 }))
 return JSON.stringify({ goal, verifications }, null, 2)
 </script>
 
-Step 2 — Read the current IPTables configuration:
-<script data-description="Read current IPTables config">
-const handle = await repo.find("$DOC_URL")
-const doc = await handle.doc()
-return doc.content
+Step 2 — Read the current facts from the documents:
+<script data-description="Read current facts">
+const docs = $DOC_URLS
+const results = await Promise.all(docs.map(async ({ name, url }) => {
+  const h = await repo.find(url)
+  const d = await h.doc()
+  return { name, url, facts: d.facts ?? [], rules: d.rules ?? [] }
+}))
+return JSON.stringify(results, null, 2)
 </script>
 
-Step 3 — Analyze the rules using your optimization strategy, then write the optimized configuration back:
-<script data-description="Write optimized IPTables config">
-const { updateText } = await import("@automerge/automerge-repo")
-const handle = await repo.find("$DOC_URL")
-handle.change(d => updateText(d, ["content"], \`*filter
-:INPUT DROP [0:0]
-:FORWARD DROP [0:0]
-:OUTPUT ACCEPT [0:0]
+Step 3 — Analyze the rules and remove redundant facts. A rule is redundant if an earlier rule with the same action already covers it (broader source range, same protocol/port).
 
-# ... your optimized rules here ...
+IMPORTANT: Automerge does not allow reassignment of properties. You CANNOT do \`d.facts = d.facts.filter(...)\`.
+Instead, use splice() to remove items in place. Find indices to remove, then splice in reverse order:
 
-COMMIT\`))
-return "Configuration updated"
+<script data-description="Remove redundant facts">
+const docs = $DOC_URLS
+for (const { url } of docs) {
+  const handle = await repo.find(url)
+  const doc = await handle.doc()
+  
+  // Identify redundant rule indices BEFORE the change
+  const redundantIndices = new Set([/* indices identified as redundant */])
+  
+  // Find array positions to remove
+  const positionsToRemove = []
+  for (let i = 0; i < doc.facts.length; i++) {
+    const f = doc.facts[i]
+    if (f.pred === "rule" && redundantIndices.has(f.args[2])) {
+      positionsToRemove.push(i)
+    }
+  }
+  
+  // Remove in reverse order to avoid index shifting
+  handle.change(d => {
+    for (let i = positionsToRemove.length - 1; i >= 0; i--) {
+      d.facts.splice(positionsToRemove[i], 1)
+    }
+  })
+}
+return "Redundant facts removed"
 </script>
 
 Apply your strategy. Remove redundant rules while preserving the security posture required by the constraints. Do not explain — just compute and write.`;

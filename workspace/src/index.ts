@@ -67,7 +67,7 @@ export const plugins: Plugin<any>[] = [
     name: 'Paul Plan Viewer',
     supportedDatatypes: ['plan'],
     async load() {
-      const { PetriNetPlanTool } = await import('./paul/petrinet-plan/tool');
+      const { PetriNetPlanTool } = await import('./paul/petrinet-plan/plan-tool');
       return PetriNetPlanTool;
     },
   } satisfies Tool,
