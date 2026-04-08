@@ -46,9 +46,9 @@ export default function mount(element) {
     console.log('[rect-button] pointerdown', { active: active(), target: event.target });
     if (!active()) return;
     if (event.target.closest('ref-view') !== canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    startX = event.clientX - rect.left;
-    startY = event.clientY - rect.top;
+    const page = canvas.screenToPage(event.clientX, event.clientY);
+    startX = page.x;
+    startY = page.y;
     dragId = `rect_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     console.log('[rect-button] creating shape', dragId, { x: startX, y: startY });
     shapesRef.at(dragId).change(() => ({
@@ -63,9 +63,7 @@ export default function mount(element) {
 
   function onPointerMove(event) {
     if (!dragId) return;
-    const rect = canvas.getBoundingClientRect();
-    const currentX = event.clientX - rect.left;
-    const currentY = event.clientY - rect.top;
+    const { x: currentX, y: currentY } = canvas.screenToPage(event.clientX, event.clientY);
     const width = Math.abs(currentX - startX);
     const height = Math.abs(currentY - startY);
     const x = Math.min(startX, currentX);

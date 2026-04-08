@@ -44,8 +44,7 @@ export default function mount(element) {
   let erasedIds = new Set();
 
   function getCanvasPos(event) {
-    const rect = canvas.getBoundingClientRect();
-    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    return canvas.screenToPage(event.clientX, event.clientY);
   }
 
   function eraseAtPoint(px, py) {

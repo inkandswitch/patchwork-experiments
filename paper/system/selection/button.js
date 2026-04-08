@@ -283,12 +283,14 @@ export default function mount(element) {
 
   function onPointerMove(event) {
     if (!dragShapeId) return;
+    const startPage = canvas.screenToPage(startPointerX, startPointerY);
+    const currentPage = canvas.screenToPage(event.clientX, event.clientY);
+    shapesRef.at(dragShapeId).change((shape) => {
+      shape.x = startShapeX + (currentPage.x - startPage.x);
+      shape.y = startShapeY + (currentPage.y - startPage.y);
+    });
     const deltaX = event.clientX - startPointerX;
     const deltaY = event.clientY - startPointerY;
-    shapesRef.at(dragShapeId).change((shape) => {
-      shape.x = startShapeX + deltaX;
-      shape.y = startShapeY + deltaY;
-    });
 
     if (dragDataTransfer) {
       if (!dragThresholdMet) {
@@ -684,9 +686,7 @@ function probeNearbyShapes(event, canvas) {
 }
 
 function findNearbyLine(event, canvas, shapesRef) {
-  const rect = canvas.getBoundingClientRect();
-  const cursorX = event.clientX - rect.left;
-  const cursorY = event.clientY - rect.top;
+  const { x: cursorX, y: cursorY } = canvas.screenToPage(event.clientX, event.clientY);
   const shapes = shapesRef.value();
   const threshold = 10;
 

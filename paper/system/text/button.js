@@ -38,10 +38,10 @@ export default function mount(element) {
   function onPointerDown(event) {
     if (!active()) return;
     if (event.target.closest('ref-view') !== canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
+    const page = canvas.screenToPage(event.clientX, event.clientY);
+    const x = page.x;
     const halfLineHeight = Math.round((18 * 1.4) / 2);
-    const y = event.clientY - rect.top - halfLineHeight;
+    const y = page.y - halfLineHeight;
     const id = `text_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     shapesRef.at(id).change(() => ({
       x,

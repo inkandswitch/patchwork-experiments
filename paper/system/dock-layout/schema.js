@@ -37,6 +37,9 @@ export default {
         { viewUrl: getViewUrl('../line/button.json', import.meta.url) },
         { viewUrl: getViewUrl('../text/button.json', import.meta.url) },
         { viewUrl: getViewUrl('../embed/button.json', import.meta.url) },
+        { viewUrl: getViewUrl('../eraser/button.json', import.meta.url) },
+        { viewUrl: getViewUrl('../rainbow-marker/button.json', import.meta.url) },
+        { viewUrl: getViewUrl('../sparkle-marker/button.json', import.meta.url) },
       ],
       'top-right': null,
       'middle-left': [

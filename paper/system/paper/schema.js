@@ -40,3 +40,9 @@ export const selectedShapesSchema = {
     return typeof value === 'object' && value ? value : {};
   },
 };
+
+export const cameraSchema = {
+  methods: ['screenToPage', 'pageToScreen'],
+  init() { return {}; },
+  parse(value) { return value; },
+};

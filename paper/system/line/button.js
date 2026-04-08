@@ -42,9 +42,9 @@ export default function mount(element) {
   function onPointerDown(event) {
     if (!active()) return;
     if (event.target.closest('ref-view') !== canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    originX = event.clientX - rect.left;
-    originY = event.clientY - rect.top;
+    const page = canvas.screenToPage(event.clientX, event.clientY);
+    originX = page.x;
+    originY = page.y;
     dragId = `line_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     shapesRef.at(dragId).change(() => ({
       x: originX,
@@ -57,9 +57,9 @@ export default function mount(element) {
 
   function onPointerMove(event) {
     if (!dragId) return;
-    const rect = canvas.getBoundingClientRect();
-    const relX = event.clientX - rect.left - originX;
-    const relY = event.clientY - rect.top - originY;
+    const page = canvas.screenToPage(event.clientX, event.clientY);
+    const relX = page.x - originX;
+    const relY = page.y - originY;
     shapesRef.at(dragId).change((shape) => {
       shape.points.push([relX, relY, event.pressure || 0.5]);
     });

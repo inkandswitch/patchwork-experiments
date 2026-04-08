@@ -66,6 +66,11 @@ export function registerRefView(
     }
 
     has(schema: Schema<unknown>): boolean {
+      if (schema.methods) {
+        return schema.methods.every(
+          (m) => typeof (this as unknown as Record<string, unknown>)[m] === "function"
+        );
+      }
       if (!this.#ref) return false;
       const target = schema.namespace ? this.#ref.at(schema.namespace) : this.#ref;
       if (!target.has()) return false;
