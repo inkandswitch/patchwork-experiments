@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
+cd "$(dirname "$0")/.." || exit 1
+
 PUSHWORK="pushwork"
+
+if ! command -v "$PUSHWORK" >/dev/null 2>&1; then
+  echo "Error: '$PUSHWORK' is not installed or not available in PATH." >&2
+  exit 1
+fi
 
 failed=()
 succeeded=()
@@ -10,7 +17,7 @@ for dir in */; do
   dir="${dir%/}"
 
   # Skip non-tool directories
-  [[ "$dir" == "node_modules" || "$dir" == "scripts" || "$dir" == ".git" ]] && continue
+  [[ "$dir" == "node_modules" || "$dir" == "scripts" ]] && continue
 
   # Skip directories without pushwork initialized
   [[ -d "$dir/.pushwork" ]] || continue
