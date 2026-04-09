@@ -1,6 +1,0 @@
-{
-  "type": "tool",
-  "name": "Embed Button",
-  "description": "Toolbar button for the embed drawing tool",
-  "toolUrl": "./button.js"
-}

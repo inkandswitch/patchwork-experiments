@@ -1,7 +1,0 @@
-{
-  "type": "schema",
-  "name": "Embed Schema",
-  "description": "Embed shape data schema (x, y, width, height, embedViewUrl, embedDocUrl)",
-  "source": "./schema.js",
-  "unlisted": true
-}
