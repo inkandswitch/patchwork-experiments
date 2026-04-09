@@ -137,7 +137,6 @@ export function createFilesystem(repo: Repo, rootFolderUrl: AutomergeUrl): Files
     const parts = splitPath(systemPath);
     const root = await rootFolder();
     if (parts.length <= 1) {
-      console.log("[fs] findDirectFolder: root-level path", systemPath);
       return { folderHandle: root, rest: parts.join("/") };
     }
     const folderName = parts[0];
@@ -146,15 +145,12 @@ export function createFilesystem(repo: Repo, rootFolderUrl: AutomergeUrl): Files
       (d) => d.name === folderName && d.type === "folder",
     );
     if (!folderLink) {
-      console.warn("[fs] findDirectFolder: folder not found in root doc:", folderName, "available:", rootDoc.docs?.map((d) => d.name));
       return { folderHandle: root, rest: parts.join("/") };
     }
-    console.log("[fs] findDirectFolder:", folderName, "→", folderLink.url);
     const handle = await repo.find(folderLink.url as AutomergeUrl);
     if (typeof handle.whenReady === "function") await handle.whenReady();
     const doc = handle.doc();
     if (!isFolderDoc(doc)) {
-      console.warn("[fs] findDirectFolder:", folderName, "is not a folder doc");
       return { folderHandle: root, rest: parts.join("/") };
     }
     return {
@@ -558,13 +554,6 @@ function startChangeTracking(
     reconcileTrackingFileWatchers(repo, discoveredFiles, fileWatchers);
   }
 
-  void (async () => {
-    const root = await rootFolder();
-    root.on("change", () => {
-      console.log("[fs] ROOT folder changed! heads:", root.heads().join("|").slice(0, 20), "trace:", new Error().stack?.split("\n").slice(1, 4).join(" | "));
-    });
-  })();
-
   scheduleRebuild();
 }
 
@@ -639,7 +628,6 @@ function reconcileTrackingFileWatchers(
         const handler = () => {
           const now = Date.now();
           const startIdx = info.ancestors.length > 1 ? 1 : 0;
-          console.log("[fs] file changed:", path, "ancestors:", info.ancestors.length, "startIdx:", startIdx, "updating:", info.ancestors.slice(startIdx).map((a) => a.documentId));
           for (let i = startIdx; i < info.ancestors.length; i++) {
             info.ancestors[i].change((d) => {
               (d as FolderDoc & { lastSyncAt: number }).lastSyncAt = now;

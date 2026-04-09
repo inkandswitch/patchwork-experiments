@@ -1,4 +1,4 @@
-import { render, html, useRef } from '../solid.js';
+import { render, html, useRef, For } from '../solid.js';
 import stackSchema from './schema.js';
 
 export default function mount(element) {
@@ -68,28 +68,26 @@ export default function mount(element) {
           height: '100%',
         }}
       >
-        ${() =>
-          stack.children?.map(
-            (child, index) =>
-              html`<div
+        <${For} each=${() => stack.children || []}>${(child, index) =>
+            html`<div
+              style=${() => ({
+                position: 'absolute',
+                inset: '0',
+                'z-index': index(),
+                'pointer-events': index() > 0 ? 'none' : 'auto',
+              })}
+            >
+              <ref-view
+                ref-url=${() => stackRef.at('children', index()).url}
+                view-url=${() => child.viewUrl}
                 style=${{
-                  position: 'absolute',
-                  inset: '0',
-                  'z-index': index,
-                  'pointer-events': index > 0 ? 'none' : 'auto',
+                  display: 'block',
+                  width: '100%',
+                  height: '100%',
                 }}
-              >
-                <ref-view
-                  ref-url=${stackRef.at('children', index).url}
-                  view-url=${child.viewUrl}
-                  style=${{
-                    display: 'block',
-                    width: '100%',
-                    height: '100%',
-                  }}
-                />
-              </div>`,
-          )}
+              />
+            </div>`
+          }</>
       </div>`,
     element,
   );

@@ -22,10 +22,8 @@ export const schema = {
 };
 
 export default function mount(element) {
-  console.log('[rect-button] mount', element);
   const canvas = element.findParent(shapesSchema);
   if (!canvas) return;
-  console.log('[rect-button] canvas parent', canvas);
   const selectedToolRef = canvas.getOrCreate(selectedToolSchema);
   const selectedTool = from(selectedToolRef);
   const shapesRef = canvas.getOrCreate(shapesSchema);
@@ -34,7 +32,6 @@ export default function mount(element) {
 
   function toggleTool() {
     const next = active() ? '' : TOOL_NAME;
-    console.log('[rect-button] toggleTool', { was: selectedTool(), next });
     selectedToolRef.change(() => next);
   }
 
@@ -43,14 +40,12 @@ export default function mount(element) {
   let startY = 0;
 
   function onPointerDown(event) {
-    console.log('[rect-button] pointerdown', { active: active(), target: event.target });
     if (!active()) return;
     if (event.target.closest('ref-view') !== canvas) return;
     const page = canvas.screenToPage(event.clientX, event.clientY);
     startX = page.x;
     startY = page.y;
     dragId = `rect_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    console.log('[rect-button] creating shape', dragId, { x: startX, y: startY });
     shapesRef.at(dragId).change(() => ({
       x: startX,
       y: startY,
@@ -68,7 +63,6 @@ export default function mount(element) {
     const height = Math.abs(currentY - startY);
     const x = Math.min(startX, currentX);
     const y = Math.min(startY, currentY);
-    console.log('[rect-button] pointermove', dragId, { x, y, width, height });
     shapesRef.at(dragId).change((shape) => {
       shape.x = x;
       shape.y = y;
@@ -78,10 +72,8 @@ export default function mount(element) {
   }
 
   function onPointerUp() {
-    console.log('[rect-button] pointerup', { dragId });
     if (dragId) {
       const shape = shapesRef.at(dragId).value();
-      console.log('[rect-button] final shape', dragId, shape);
       if (shape.width < 2 && shape.height < 2) {
         const defaultWidth = 100;
         const defaultHeight = 80;

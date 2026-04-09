@@ -10,12 +10,18 @@ const MAX_PREVIEW_H = 300;
 const DEFAULT_WIDTH = 300;
 const DEFAULT_HEIGHT = 200;
 
+function exampleKey(example) {
+  return example.source + '#' + example.name;
+}
+
 export default function mount(element) {
   const fs = element.filesystem;
   const registry = createExamples(fs);
 
   let allExamples = [];
   let searchTerm = '';
+  const cardCache = new Map();
+  const examplesByKey = new Map();
 
   const shapeData = element.getOrCreate(partsBinSchema).value();
   const galleryWidth = shapeData.width || 280;
@@ -55,6 +61,28 @@ export default function mount(element) {
 
   element.appendChild(root);
 
+  const previewObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      const container = entry.target;
+      if (container.querySelector('ref-view')) continue;
+      const key = container.dataset.exampleKey;
+      const example = examplesByKey.get(key);
+      if (!example) continue;
+      const repo = globalThis.repo;
+      if (!repo) continue;
+      const nativeWidth = example.width || DEFAULT_WIDTH;
+      const nativeHeight = example.height || DEFAULT_HEIGHT;
+      const scale = Math.min(1, MAX_PREVIEW_W / nativeWidth, MAX_PREVIEW_H / nativeHeight);
+      const handle = repo.create(structuredClone(example.value));
+      const inner = document.createElement('ref-view');
+      inner.style.cssText = `display:block;width:${nativeWidth}px;height:${nativeHeight}px;transform:scale(${scale});transform-origin:top left;pointer-events:none;`;
+      inner.setAttribute('ref-url', handle.url);
+      inner.setAttribute('view-url', example.tool);
+      container.appendChild(inner);
+    }
+  }, { root: listArea, rootMargin: '100px' });
+
   function filterExamples(examples) {
     if (!searchTerm) return examples;
     return examples.filter((ex) => {
@@ -80,12 +108,31 @@ export default function mount(element) {
 
   function renderFiltered() {
     const filtered = filterExamples(allExamples);
-    listArea.innerHTML = '';
+
+    examplesByKey.clear();
+    for (const ex of filtered) examplesByKey.set(exampleKey(ex), ex);
+
+    while (listArea.firstChild) listArea.removeChild(listArea.firstChild);
 
     if (filtered.length === 0) {
-      listArea.innerHTML = '<div style="padding:20px;text-align:center;color:#9ca3af">No examples found</div>';
+      for (const [, entry] of cardCache) {
+        previewObserver.unobserve(entry.previewContainer);
+      }
+      cardCache.clear();
+      const empty = document.createElement('div');
+      empty.style.cssText = 'padding:20px;text-align:center;color:#9ca3af';
+      empty.textContent = 'No examples found';
+      listArea.appendChild(empty);
       footer.textContent = '0 examples';
       return;
+    }
+
+    const activeKeys = new Set(filtered.map(exampleKey));
+    for (const [key, entry] of cardCache) {
+      if (!activeKeys.has(key)) {
+        previewObserver.unobserve(entry.previewContainer);
+        cardCache.delete(key);
+      }
     }
 
     const groups = groupByPackage(filtered);
@@ -96,8 +143,14 @@ export default function mount(element) {
       listArea.appendChild(groupHeader);
 
       for (const example of group.examples) {
-        const card = makeCard(example);
-        listArea.appendChild(card);
+        const key = exampleKey(example);
+        let entry = cardCache.get(key);
+        if (!entry) {
+          entry = makeCard(example);
+          cardCache.set(key, entry);
+          previewObserver.observe(entry.previewContainer);
+        }
+        listArea.appendChild(entry.card);
       }
     }
 
@@ -165,6 +218,18 @@ export default function mount(element) {
     const resetBtn = document.createElement('button');
     resetBtn.textContent = 'Reset';
     resetBtn.style.cssText = 'background:#f1f5f9;border:1px solid #d1d5db;border-radius:4px;padding:2px 8px;font-size:11px;color:#64748b;cursor:pointer;';
+    resetBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const refView = previewContainer.querySelector('ref-view');
+      if (refView) {
+        const repo = globalThis.repo;
+        if (repo) {
+          const fresh = repo.create(structuredClone(example.value));
+          refView.setAttribute('ref-url', fresh.url);
+        }
+      }
+    });
     btnGroup.appendChild(resetBtn);
 
     const createBtn = document.createElement('button');
@@ -184,27 +249,13 @@ export default function mount(element) {
     const nativeHeight = example.height || DEFAULT_HEIGHT;
     const scale = Math.min(1, MAX_PREVIEW_W / nativeWidth, MAX_PREVIEW_H / nativeHeight);
 
-    const outer = document.createElement('div');
-    outer.style.cssText = `width:${nativeWidth * scale}px;height:${nativeHeight * scale}px;overflow:hidden;position:relative;`;
-    outer.addEventListener('pointerdown', (e) => e.stopPropagation());
+    const previewContainer = document.createElement('div');
+    previewContainer.style.cssText = `width:${nativeWidth * scale}px;height:${nativeHeight * scale}px;overflow:hidden;position:relative;background:#f1f5f9;`;
+    previewContainer.dataset.exampleKey = exampleKey(example);
+    previewContainer.addEventListener('pointerdown', (e) => e.stopPropagation());
+    card.appendChild(previewContainer);
 
-    const repo = globalThis.repo;
-    const handle = repo.create(structuredClone(example.value));
-    const inner = document.createElement('ref-view');
-    inner.style.cssText = `display:block;width:${nativeWidth}px;height:${nativeHeight}px;transform:scale(${scale});transform-origin:top left;`;
-    inner.setAttribute('ref-url', handle.url);
-    inner.setAttribute('view-url', example.tool);
-    outer.appendChild(inner);
-    card.appendChild(outer);
-
-    resetBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      const fresh = repo.create(structuredClone(example.value));
-      inner.setAttribute('ref-url', fresh.url);
-    });
-
-    return card;
+    return { card, previewContainer };
   }
 
   registry.all().subscribe((list) => {
@@ -213,6 +264,7 @@ export default function mount(element) {
   });
 
   return () => {
+    previewObserver.disconnect();
     root.remove();
   };
 }

@@ -21,7 +21,6 @@ function checkWinner(board) {
 }
 
 export default function mount(element) {
-  console.log("[TTT] mount() called at", Date.now());
   const ref = element.getOrCreate(ticTacToeSchema);
   const data = from(ref);
 

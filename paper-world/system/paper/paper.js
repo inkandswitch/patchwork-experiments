@@ -43,42 +43,26 @@ export default function mount(element) {
   function onWheel(event) {
     event.preventDefault();
 
-    console.log('[paper] onWheel fired', {
-      deltaX: event.deltaX,
-      deltaY: event.deltaY,
-      ctrlKey: event.ctrlKey,
-      metaKey: event.metaKey,
-      containerEl: !!containerEl,
-    });
-
     const rect = containerEl.getBoundingClientRect();
     const screenX = event.clientX - rect.left;
     const screenY = event.clientY - rect.top;
     const cam = camera();
 
-    console.log('[paper] camera before:', cam);
-
     if (event.ctrlKey || event.metaKey) {
       const dy = Math.sign(event.deltaY) * Math.min(Math.abs(event.deltaY), 50);
       const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, cam.zoom - (dy / 100) * cam.zoom));
-      const newCam = {
+      setCamera({
         x: cam.x + screenX / newZoom - screenX / cam.zoom,
         y: cam.y + screenY / newZoom - screenY / cam.zoom,
         zoom: newZoom,
-      };
-      console.log('[paper] zoom setCamera:', newCam);
-      setCamera(newCam);
+      });
     } else {
-      const newCam = {
+      setCamera({
         x: cam.x - event.deltaX / cam.zoom,
         y: cam.y - event.deltaY / cam.zoom,
         zoom: cam.zoom,
-      };
-      console.log('[paper] pan setCamera:', newCam);
-      setCamera(newCam);
+      });
     }
-
-    console.log('[paper] camera after:', camera());
   }
 
   function onCanvasDragOver(event) {
@@ -113,14 +97,12 @@ export default function mount(element) {
   }
 
   function setContainerRef(el) {
-    console.log('[paper] setContainerRef called', el?.tagName, el === containerEl ? '(same)' : '(new)');
     if (containerEl === el) return;
     if (containerEl) {
       containerEl.removeEventListener('wheel', onWheel);
     }
     containerEl = el;
     if (el) {
-      console.log('[paper] adding wheel listener to container');
       el.addEventListener('wheel', onWheel, { passive: false });
     }
   }

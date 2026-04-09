@@ -6,12 +6,18 @@ const MAX_PREVIEW_H = 200;
 const DEFAULT_WIDTH = 300;
 const DEFAULT_HEIGHT = 200;
 
+function starterKey(example) {
+  return example.source + '#' + example.name;
+}
+
 export default function mount(element) {
   const fs = element.filesystem;
   const registry = createExamples(fs);
 
   let starters = [];
-  let selectedIndex = -1;
+  let selectedKey = null;
+  const cardCache = new Map();
+  const examplesByKey = new Map();
 
   const root = document.createElement('div');
   root.style.cssText = `
@@ -56,8 +62,8 @@ export default function mount(element) {
     transition: background 0.15s ease, transform 0.1s ease;
   `;
   createBtn.addEventListener('click', () => {
-    if (selectedIndex < 0 || !starters[selectedIndex]) return;
-    const example = starters[selectedIndex];
+    const example = selectedKey ? examplesByKey.get(selectedKey) : null;
+    if (!example) return;
 
     const toolViewUrl = getViewUrl('./' + example.tool, import.meta.url);
 
@@ -80,10 +86,38 @@ export default function mount(element) {
   root.appendChild(container);
   element.appendChild(root);
 
+  const previewObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      const previewContainer = entry.target;
+      if (previewContainer.querySelector('ref-view')) continue;
+      const key = previewContainer.dataset.starterKey;
+      const example = examplesByKey.get(key);
+      if (!example) continue;
+      const repo = globalThis.repo;
+      if (!repo) continue;
+      const nativeWidth = example.width || DEFAULT_WIDTH;
+      const nativeHeight = example.height || DEFAULT_HEIGHT;
+      const scale = Math.min(1, MAX_PREVIEW_W / nativeWidth, MAX_PREVIEW_H / nativeHeight);
+      const handle = repo.create(structuredClone(example.value));
+      const inner = document.createElement('ref-view');
+      inner.style.cssText = `display:block;width:${nativeWidth}px;height:${nativeHeight}px;transform:scale(${scale});transform-origin:top left;pointer-events:none;`;
+      inner.setAttribute('ref-url', handle.url);
+      inner.setAttribute('view-url', example.tool);
+      previewContainer.appendChild(inner);
+    }
+  }, { rootMargin: '100px' });
+
   function renderGrid() {
-    grid.innerHTML = '';
+    examplesByKey.clear();
+    for (const ex of starters) examplesByKey.set(starterKey(ex), ex);
 
     if (starters.length === 0) {
+      for (const [, entry] of cardCache) {
+        previewObserver.unobserve(entry.previewContainer);
+      }
+      cardCache.clear();
+      grid.innerHTML = '';
       const empty = document.createElement('div');
       empty.textContent = 'No templates found';
       empty.style.cssText = 'grid-column: 1 / -1; text-align: center; color: #9ca3af; padding: 40px;';
@@ -91,27 +125,45 @@ export default function mount(element) {
       return;
     }
 
-    starters.forEach((example, index) => {
-      const card = makeCard(example, index);
-      grid.appendChild(card);
-    });
+    const activeKeys = new Set(starters.map(starterKey));
+    for (const [key, entry] of cardCache) {
+      if (!activeKeys.has(key)) {
+        previewObserver.unobserve(entry.previewContainer);
+        cardCache.delete(key);
+      }
+    }
 
+    while (grid.firstChild) grid.removeChild(grid.firstChild);
+
+    for (const example of starters) {
+      const key = starterKey(example);
+      let entry = cardCache.get(key);
+      if (!entry) {
+        entry = makeCard(example);
+        cardCache.set(key, entry);
+        previewObserver.observe(entry.previewContainer);
+      }
+      grid.appendChild(entry.card);
+    }
+
+    if (!selectedKey && starters.length > 0) {
+      selectedKey = starterKey(starters[0]);
+    }
     updateSelection();
   }
 
   function updateSelection() {
-    const cards = grid.querySelectorAll('[data-starter-card]');
-    cards.forEach((card, i) => {
-      if (i === selectedIndex) {
-        card.style.borderColor = '#3b82f6';
-        card.style.boxShadow = '0 0 0 2px rgba(59,130,246,0.3)';
+    for (const [key, entry] of cardCache) {
+      if (key === selectedKey) {
+        entry.card.style.borderColor = '#3b82f6';
+        entry.card.style.boxShadow = '0 0 0 2px rgba(59,130,246,0.3)';
       } else {
-        card.style.borderColor = '#e2e8f0';
-        card.style.boxShadow = '0 1px 3px rgba(0,0,0,0.06)';
+        entry.card.style.borderColor = '#e2e8f0';
+        entry.card.style.boxShadow = '0 1px 3px rgba(0,0,0,0.06)';
       }
-    });
+    }
 
-    if (selectedIndex >= 0) {
+    if (selectedKey && examplesByKey.has(selectedKey)) {
       createBtn.disabled = false;
       createBtn.style.background = '#3b82f6';
       createBtn.style.cursor = 'pointer';
@@ -122,7 +174,8 @@ export default function mount(element) {
     }
   }
 
-  function makeCard(example, index) {
+  function makeCard(example) {
+    const key = starterKey(example);
     const card = document.createElement('div');
     card.setAttribute('data-starter-card', '');
     card.style.cssText = `
@@ -134,7 +187,7 @@ export default function mount(element) {
     `;
 
     card.addEventListener('click', () => {
-      selectedIndex = index;
+      selectedKey = key;
       updateSelection();
     });
 
@@ -142,29 +195,15 @@ export default function mount(element) {
     const nativeHeight = example.height || DEFAULT_HEIGHT;
     const scale = Math.min(1, MAX_PREVIEW_W / nativeWidth, MAX_PREVIEW_H / nativeHeight);
 
-    const previewOuter = document.createElement('div');
-    previewOuter.style.cssText = `
+    const previewContainer = document.createElement('div');
+    previewContainer.style.cssText = `
       width: 100%; height: ${nativeHeight * scale}px;
       overflow: hidden; position: relative; background: #f1f5f9;
       display: flex; align-items: center; justify-content: center;
     `;
-    previewOuter.addEventListener('pointerdown', (e) => e.stopPropagation());
-
-    const repo = globalThis.repo;
-    if (repo) {
-      const handle = repo.create(structuredClone(example.value));
-      const inner = document.createElement('ref-view');
-      inner.style.cssText = `
-        display: block; width: ${nativeWidth}px; height: ${nativeHeight}px;
-        transform: scale(${scale}); transform-origin: top left;
-        pointer-events: none;
-      `;
-      inner.setAttribute('ref-url', handle.url);
-      inner.setAttribute('view-url', example.tool);
-      previewOuter.appendChild(inner);
-    }
-
-    card.appendChild(previewOuter);
+    previewContainer.dataset.starterKey = key;
+    previewContainer.addEventListener('pointerdown', (e) => e.stopPropagation());
+    card.appendChild(previewContainer);
 
     const label = document.createElement('div');
     label.style.cssText = 'padding: 10px 12px;';
@@ -182,16 +221,16 @@ export default function mount(element) {
     }
 
     card.appendChild(label);
-    return card;
+    return { card, previewContainer };
   }
 
   const unsub = registry.all().subscribe((list) => {
     starters = list.filter((ex) => ex.tags && ex.tags.includes('starter'));
-    selectedIndex = starters.length > 0 ? 0 : -1;
     renderGrid();
   });
 
   return () => {
+    previewObserver.disconnect();
     if (typeof unsub === 'function') unsub();
     root.remove();
   };
