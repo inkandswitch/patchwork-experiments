@@ -131,6 +131,19 @@ function CsvView(props: { handle: DocHandle<CsvDoc> }) {
   const [draftValue, setDraftValue] = createSignal('');
   let gridRoot!: HTMLDivElement;
 
+  createEffect(() => {
+    const activeCell = editingCell();
+    if (!activeCell) return;
+
+    queueMicrotask(() => {
+      const input = gridRoot?.querySelector<HTMLInputElement>(
+        `[data-cell-input="${activeCell.row}:${activeCell.col}"]`,
+      );
+      input?.focus();
+      input?.select();
+    });
+  });
+
   const grid = createMemo(() => normalizeGrid(parseCsv(doc()?.content ?? '')));
   const columnCount = createMemo(() => grid()[0]?.length ?? 0);
   const dataRowCount = createMemo(() => Math.max(0, grid().length - 1));
@@ -507,8 +520,8 @@ function CsvView(props: { handle: DocHandle<CsvDoc> }) {
                             >
                               <input
                                 class="csv-cell-input"
+                                data-cell-input={`0:${colIndex()}`}
                                 value={draftValue()}
-                                autofocus
                                 onInput={(event) => setDraftValue(event.currentTarget.value)}
                                 onKeyDown={(event) => handleInputKeyDown(event)}
                                 onBlur={() => finishEditing()}
@@ -584,8 +597,8 @@ function CsvView(props: { handle: DocHandle<CsvDoc> }) {
                                 >
                                   <input
                                     class="csv-cell-input"
+                                    data-cell-input={`${actualRow()}:${colIndex()}`}
                                     value={draftValue()}
-                                    autofocus
                                     onInput={(event) => setDraftValue(event.currentTarget.value)}
                                     onKeyDown={(event) => handleInputKeyDown(event)}
                                     onBlur={() => finishEditing()}
