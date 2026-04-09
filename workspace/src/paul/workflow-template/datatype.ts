@@ -22,7 +22,6 @@ type DatalogDoc = {
   constraints: StoredConstraint[];
   derivedFacts?: unknown[];
   draftText?: string;
-  mapStyle: { lines: Record<string, unknown>; properties: Record<string, unknown> };
 };
 
 type InitialToken = {
@@ -155,7 +154,6 @@ function createDatalogDoc(
     d.rules = [];
     d.constraints = constraints;
     d.draftText = draftText;
-    d.mapStyle = { lines: {}, properties: {} };
   });
   return handle.url;
 }

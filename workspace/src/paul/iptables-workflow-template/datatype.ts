@@ -31,7 +31,6 @@ type DatalogDoc = {
   facts: StoredFact[];
   rules: StoredRule[];
   constraints: StoredConstraint[];
-  mapStyle: { lines: Record<string, unknown>; properties: Record<string, unknown> };
 };
 
 type InitialToken = {
@@ -298,7 +297,6 @@ function createDatalogDoc(repo: Repo, title: string, datalogText: string): Autom
     d.facts = parsed.facts;
     d.rules = parsed.rules;
     d.constraints = parsed.constraints;
-    d.mapStyle = { lines: {}, properties: {} };
   });
   return handle.url;
 }

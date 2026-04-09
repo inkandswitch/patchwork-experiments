@@ -6,7 +6,11 @@
     flex-direction: column;
     height: 100%;
     overflow: hidden;
-    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-family:
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      sans-serif;
     font-size: 13px;
     color: #1e293b;
     background: #f8fafc;
@@ -48,6 +52,17 @@
 
   .wf-stage-item.active:hover {
     background: #dbeafe;
+  }
+
+  .wf-stage-item.unavailable,
+  .wf-stage-item:disabled {
+    color: #cbd5e1;
+    cursor: default;
+    pointer-events: none;
+  }
+
+  .wf-stage-item.unavailable:hover {
+    background: none;
   }
 
   .wf-stage-chevron {
@@ -124,5 +139,177 @@
     justify-content: center;
     color: #94a3b8;
     font-size: 13px;
+  }
+
+  /* ── Spec generation split view ─────────────────────────────────────────── */
+
+  .wf-spec-split {
+    display: flex;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .wf-spec-left {
+    width: 35%;
+    flex-shrink: 0;
+    border-right: 1px solid #e2e8f0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .wf-spec-process {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: #fff;
+    font-size: 12px;
+  }
+
+  .wf-spec-followup {
+    display: flex;
+    gap: 6px;
+    padding: 8px 10px;
+    border-top: 1px solid #e2e8f0;
+    background: #f8fafc;
+    align-items: flex-end;
+  }
+
+  .wf-spec-followup-input {
+    flex: 1;
+    resize: none;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 12px;
+    font-family: inherit;
+    line-height: 1.4;
+    outline: none;
+    background: #fff;
+  }
+
+  .wf-spec-followup-input:focus {
+    border-color: #94a3b8;
+  }
+
+  .wf-spec-followup-input:disabled {
+    background: #f1f5f9;
+    color: #94a3b8;
+  }
+
+  .wf-spec-followup-btn {
+    flex-shrink: 0;
+    padding: 6px 12px;
+    background: #3b82f6;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .wf-spec-followup-btn:hover:not(:disabled) {
+    background: #2563eb;
+  }
+
+  .wf-spec-followup-btn:disabled {
+    background: #cbd5e1;
+    cursor: not-allowed;
+  }
+
+  .wf-spec-preview {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .wf-spec-msg {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .wf-spec-msg-user {
+    color: #475569;
+    font-style: italic;
+  }
+
+  .wf-spec-msg-assistant {
+    color: #1e293b;
+  }
+
+  .wf-spec-msg-system {
+    color: #94a3b8;
+    font-size: 11px;
+  }
+
+  .wf-spec-script {
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    overflow: hidden;
+    font-size: 11px;
+  }
+
+  .wf-spec-script-header {
+    padding: 4px 8px;
+    background: #f1f5f9;
+    color: #64748b;
+    font-weight: 500;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  .wf-spec-script-code {
+    padding: 6px 8px;
+    font-family: ui-monospace, monospace;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: #334155;
+    background: #f8fafc;
+    max-height: 120px;
+    overflow-y: auto;
+  }
+
+  .wf-spec-script-output {
+    padding: 4px 8px;
+    font-family: ui-monospace, monospace;
+    white-space: pre-wrap;
+    color: #16a34a;
+    border-top: 1px solid #e2e8f0;
+    background: #f0fdf4;
+  }
+
+  .wf-spec-script-error {
+    padding: 4px 8px;
+    font-family: ui-monospace, monospace;
+    white-space: pre-wrap;
+    color: #dc2626;
+    border-top: 1px solid #e2e8f0;
+    background: #fef2f2;
+  }
+
+  .wf-spec-thinking {
+    display: flex;
+    gap: 4px;
+    padding: 8px 4px;
+    align-items: center;
+  }
+
+  .wf-spec-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #94a3b8;
+    animation: wf-spec-pulse 1.2s ease-in-out infinite;
+  }
+
+  .wf-spec-dot:nth-child(2) { animation-delay: 0.2s; }
+  .wf-spec-dot:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes wf-spec-pulse {
+    0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+    40% { opacity: 1; transform: scale(1); }
   }
 }

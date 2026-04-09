@@ -10,7 +10,7 @@ Manage a PlanDoc that references separate TaskDoc documents. Each task has a goa
 ## Import
 
 ```javascript
-const { createPlan, getPlan } = await workspace.import("skills/plan/index.js");
+const { createPlan, getPlan } = await useSkill("plan");
 ```
 
 ## Types
@@ -32,18 +32,18 @@ const { createPlan, getPlan } = await workspace.import("skills/plan/index.js");
 
 ## API
 
-### `createPlan(workspace)` (sync)
+### `createPlan()` (sync)
 
-Creates a new, empty PlanDoc. **Do NOT await** — `workspace.createDoc()` is synchronous.
+Creates a new, empty PlanDoc. **Do NOT await** — `repo.create()` is synchronous.
 
 Returns `{ handle, url }`.
 
 ```javascript
-const { createPlan } = await workspace.import("skills/plan/index.js");
-const { url } = createPlan(workspace);
+const { createPlan } = await useSkill("plan");
+const { url } = createPlan();
 ```
 
-### `getPlan(workspace, url)` (async)
+### `getPlan(url)` (async)
 
 Returns a read/write interface for the PlanDoc at `url`. Must be awaited.
 
@@ -81,15 +81,15 @@ A task's `artifacts` correspond to the `requiredDocs` of its linked spec. The ar
 ## Example
 
 ```javascript
-const { createPlan, getPlan } = await workspace.import("skills/plan/index.js");
-const { createDatalog } = await workspace.import("skills/datalog/index.js");
+const { createPlan, getPlan } = await useSkill("plan");
+const { createDatalog } = await useSkill("datalog");
 
 // Create the plan
-const { url: planUrl } = createPlan(workspace);
-const plan = await getPlan(workspace, planUrl);
+const { url: planUrl } = createPlan();
+const plan = await getPlan(planUrl);
 
 // Create an empty schedule document as an artifact placeholder
-const erSchedule = createDatalog(workspace, "ER Schedule");
+const erSchedule = createDatalog("ER Schedule");
 
 // Add a task linked to a spec, with an artifact
 const erTask = plan.addTask("Generate ER department schedule", erSpecUrl);

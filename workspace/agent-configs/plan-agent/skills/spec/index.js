@@ -14,13 +14,12 @@
 /**
  * Create a new SpecCollectionDoc.
  *
- * workspace.createDoc() is SYNCHRONOUS — do NOT await this function.
+ * repo.create() is SYNCHRONOUS — do NOT await this function.
  *
- * @param {object} workspace - The workspace object (global `workspace`)
  * @returns {{ handle: object, url: string }} The new doc handle and its URL
  */
-export function createSpecCollection(workspace) {
-  const handle = workspace.createDoc();
+export function createSpecCollection() {
+  const handle = repo.create();
   handle.change((d) => {
     d['@patchwork'] = { type: 'spec' };
     d.specs = [];
@@ -31,11 +30,10 @@ export function createSpecCollection(workspace) {
 /**
  * Get a read/write interface for a SpecCollectionDoc.
  *
- * @param {object} workspace - The workspace object (global `workspace`)
  * @param {string} url - Automerge URL of the SpecCollectionDoc
  */
-export async function getSpecCollection(workspace, url) {
-  const handle = await workspace.find(url);
+export async function getSpecCollection(url) {
+  const handle = await repo.find(url);
 
   return {
     getSpecs() {
@@ -64,11 +62,11 @@ export async function getSpecCollection(workspace, url) {
       });
     },
 
-    async runAllVerifications(workspace, providedDocs) {
+    async runAllVerifications(providedDocs) {
       const specs = handle.doc()?.specs ?? [];
       const results = [];
       for (let i = 0; i < specs.length; i++) {
-        const specResults = await runSpecVerifications(workspace, specs[i], i, providedDocs);
+        const specResults = await runSpecVerifications(specs[i], i, providedDocs);
         results.push(...specResults);
       }
       return results;
@@ -158,15 +156,15 @@ function createSpecHandle(handle, index) {
       });
     },
 
-    async runVerifications(workspace, providedDocs) {
+    async runVerifications(providedDocs) {
       const spec = handle.doc()?.specs?.[index];
       if (!spec) return [];
-      return runSpecVerifications(workspace, spec, index, providedDocs);
+      return runSpecVerifications(spec, index, providedDocs);
     },
   };
 }
 
-async function runSpecVerifications(workspace, spec, specIndex, providedDocs) {
+async function runSpecVerifications(spec, specIndex, providedDocs) {
   const verifications = spec.verifications ?? [];
   const results = [];
 
@@ -174,8 +172,8 @@ async function runSpecVerifications(workspace, spec, specIndex, providedDocs) {
     try {
       const allDocs = { ...(providedDocs ?? {}), ...(v.documentUrls ?? {}) };
       const docEntries = Object.entries(allDocs);
-      const paramNames = ['workspace', ...docEntries.map(([k]) => k)];
-      const paramValues = [workspace, ...docEntries.map(([, u]) => u)];
+      const paramNames = docEntries.map(([k]) => k);
+      const paramValues = docEntries.map(([, u]) => u);
       const fn = new Function(...paramNames, `return (async () => {\n${v.script}\n})();`);
       const result = await fn(...paramValues);
       results.push({ specIndex, name: v.name, passed: result === true, error: undefined });

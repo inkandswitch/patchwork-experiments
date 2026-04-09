@@ -36,6 +36,9 @@ function factKey(f) {
 }
 
 function serializeAtom(a) {
+  if (a.pred === 'not' && a.args.length === 1 && typeof a.args[0] === 'object' && a.args[0] !== null) {
+    return `not(${serializeAtom(a.args[0])})`;
+  }
   if (!a.args || a.args.length === 0) return a.pred;
   return `${a.pred}(${a.args.join(', ')})`;
 }
@@ -231,6 +234,14 @@ function matchBody(body, db, bindings) {
     return matchBody(rest, db, b);
   }
 
+  if (first.pred === 'not') {
+    const innerAtom = first.args[0];
+    if (typeof innerAtom !== 'object' || !innerAtom.pred) return [];
+    const hasMatch = db.some((fact) => matchAtom(innerAtom, fact, bindings) !== null);
+    if (hasMatch) return [];
+    return matchBody(rest, db, bindings);
+  }
+
   const results = [];
   for (const fact of db) {
     const b = matchAtom(first, fact, bindings);
@@ -303,6 +314,15 @@ function matchBodyTracked(body, db, bindings, steps) {
     };
     const step = { kind: 'builtin', atom: first, resolvedArgs: first.args.map(resolve) };
     return matchBodyTracked(rest, db, b, [...steps, step]);
+  }
+
+  if (first.pred === 'not') {
+    const innerAtom = first.args[0];
+    if (typeof innerAtom !== 'object' || !innerAtom.pred) return [];
+    const hasMatch = db.some((fact) => matchAtom(innerAtom, fact, bindings) !== null);
+    if (hasMatch) return [];
+    const step = { kind: 'not', atom: innerAtom };
+    return matchBodyTracked(rest, db, bindings, [...steps, step]);
   }
 
   const results = [];
@@ -511,21 +531,18 @@ export class DocDatalog extends Datalog {
 /**
  * Create a new empty Datalog database document.
  *
- * workspace.createDoc() is SYNCHRONOUS — do NOT await it.
+ * repo.create() is SYNCHRONOUS — do NOT await it.
  *
- * @param {object} workspace - The workspace object (global `workspace`)
  * @param {string} [title] - Optional title stored in the document
  * @returns {DocDatalog} A document-backed Datalog instance
  */
-export function createDatalog(workspace, title) {
-  const handle = workspace.createDoc();
+export function createDatalog(title) {
+  const handle = repo.create();
   handle.change((d) => {
     d['@patchwork'] = { type: 'datalog' };
     d.facts = [];
     d.rules = [];
     d.constraints = [];
-    d.draftText = '';
-    d.mapStyle = { lines: {}, properties: {} };
     if (title) d.title = title;
   });
   return new DocDatalog(handle);
@@ -534,12 +551,11 @@ export function createDatalog(workspace, title) {
 /**
  * Get a read/write interface for an existing Datalog database document.
  *
- * @param {object} workspace - The workspace object (global `workspace`)
  * @param {string} url - Automerge URL of the DatalogDoc
  * @returns {Promise<DocDatalog>} A document-backed Datalog instance
  */
-export async function getDatalog(workspace, url) {
-  const handle = await workspace.find(url);
+export async function getDatalog(url) {
+  const handle = await repo.find(url);
   return new DocDatalog(handle);
 }
 
@@ -547,16 +563,15 @@ export async function getDatalog(workspace, url) {
  * Merge multiple Datalog documents into a single read-only in-memory instance.
  * No Automerge document is created — the result is purely for evaluation.
  *
- * @param {object} workspace - The workspace object (global `workspace`)
  * @param {string[]} urls - Automerge URLs of DatalogDocs to merge
  * @returns {Promise<Datalog>} A read-only Datalog with only query() and checkConflicts()
  */
-export async function mergeDatalog(workspace, urls) {
+export async function mergeDatalog(urls) {
   const facts = [];
   const rules = [];
   const constraints = [];
   for (const srcUrl of urls) {
-    const handle = await workspace.find(srcUrl);
+    const handle = await repo.find(srcUrl);
     const doc = handle.doc();
     for (const f of doc?.facts ?? []) facts.push(f);
     for (const r of doc?.rules ?? []) rules.push(r);

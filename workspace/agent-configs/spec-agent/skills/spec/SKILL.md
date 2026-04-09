@@ -1,168 +1,189 @@
 ---
 name: spec
-description: Manage a Spec Collection — a single document containing multiple specs, each with a goal, named document references, and JavaScript verification scripts.
+description: Create and manage tree-structured SpecDoc documents — standalone Automerge documents with a goal, Datalog verification URLs, optional child specs, and optional file folders.
 ---
 
 # Spec Skill
 
-Manage a Spec Collection (SpecCollectionDoc) that groups multiple specs into a single document. Each spec has a goal, named document references, and verification scripts.
+Create a **tree of SpecDoc documents**. Each SpecDoc is a standalone Automerge document that holds a goal, references to Datalog constraint files (`verificationUrls`), and optional child spec URLs (`subSpecUrls`). A root SpecDoc links to one or more leaf SpecDocs via `subSpecUrls`.
 
 ## Import
 
 ```javascript
-const { createSpecCollection, getSpecCollection } = await workspace.import("skills/spec/index.js");
+const { createSpec, getSpec, createFolder, addFileToFolder } = await useSkill("spec");
 ```
 
-## Types
+## SpecDoc Shape
 
 ```javascript
-// SpecCollectionDoc shape
 {
-  specs: SpecDoc[]
+  '@patchwork': { type: 'spec' },
+  spec: {
+    goal: string,
+    verificationUrls: AutomergeUrl[],  // Datalog constraint docs (merged + checked at validation)
+    subSpecUrls: AutomergeUrl[],        // child SpecDoc URLs (for root spec)
+    filesFolderUrl?: AutomergeUrl,      // folder of solution artifact files (for leaf specs)
+  }
 }
-
-// SpecDoc (embedded within the collection)
-{
-  goal: string,
-  docs: Record<string, AutomergeUrl>,
-  requiredDocs: string[],
-  verifications: Verification[]
-}
-
-// Verification
-{ name: string, script: string, documentUrls: Record<string, AutomergeUrl> }
 ```
 
 ## API
 
-### `createSpecCollection(workspace)` (sync)
+### `createSpec(goal)` (sync)
 
-Creates a new, empty SpecCollectionDoc. **Do NOT await** — `workspace.createDoc()` is synchronous.
+Creates a new SpecDoc. **Do NOT await** — `repo.create()` is synchronous.
 
 Returns `{ handle, url }`.
 
 ```javascript
-const { createSpecCollection } = await workspace.import("skills/spec/index.js");
-const { url } = createSpecCollection(workspace);
+const { url: leafUrl } = createSpec("Machine A satisfies firewall rules");
 ```
 
-### `getSpecCollection(workspace, url)` (async)
+### `await getSpec(url)` (async)
 
-Returns a read/write interface for the SpecCollectionDoc at `url`. Must be awaited.
+Returns a spec handle for read/write access.
 
-#### Collection methods
+| Method | Description |
+|--------|-------------|
+| `getGoal()` | Returns the goal string |
+| `setGoal(goal)` | Sets the goal |
+| `addVerificationDoc(url)` | Appends a Datalog doc URL to `verificationUrls` |
+| `removeVerificationDoc(url)` | Removes a Datalog doc URL |
+| `addSubSpec(url)` | Appends a child SpecDoc URL to `subSpecUrls` (root spec) |
+| `removeSubSpec(url)` | Removes a child SpecDoc URL |
+| `setFilesFolder(url)` | Sets `filesFolderUrl` (for solution artifact files) |
+| `getUrl()` | Returns the Automerge URL of the spec doc |
 
-| Method                          | Description                                                              |
-| ------------------------------- | ------------------------------------------------------------------------ |
-| `getSpecs()`                    | Returns a shallow copy of the specs array.                               |
-| `addSpec(goal)`                 | Adds a new spec with the given goal. Returns a **spec handle**.          |
-| `getSpec(index)`                | Returns a spec handle for the spec at `index`.                           |
-| `removeSpec(index)`             | Removes the spec at `index`.                                             |
-| `runAllVerifications(workspace, providedDocs?)` | Runs verifications for every spec. `providedDocs` is `Record<string, AutomergeUrl>` supplying URLs for required docs. Returns `{ specIndex, name, passed, error? }[]`. |
+### `createFolder()` (sync)
 
-#### Spec handle methods
+Creates a folder doc for holding solution artifact files. **Do NOT await.**
 
-A spec handle is returned by `addSpec()` or `getSpec()`. All mutations apply to the collection document.
-
-| Method                                          | Description                                                       |
-| ------------------------------------------------ | ----------------------------------------------------------------- |
-| `getGoal()`                                      | Returns the spec's goal string.                                   |
-| `setGoal(goal)`                                  | Sets the spec's goal.                                             |
-| `getDocs()`                                      | Returns a copy of the spec's `docs` record.                       |
-| `setDoc(name, url)`                              | Sets a named document reference.                                  |
-| `removeDoc(name)`                                | Removes a named document reference.                               |
-| `getRequiredDocs()`                              | Returns the `requiredDocs` array (document names the plan must provide). |
-| `addRequiredDoc(name)`                           | Adds a required document name (no-op if already present).         |
-| `removeRequiredDoc(name)`                        | Removes a required document name.                                 |
-| `getVerifications()`                             | Returns verifications as `{ name, script, documentUrls }[]`.      |
-| `addVerification(name, script, documentUrls?)`   | Adds a verification with optional named document URLs.             |
-| `removeVerification(name)`                       | Removes the first verification matching `name`.                   |
-| `runVerifications(workspace, providedDocs?)`     | Async. `providedDocs` is `Record<string, AutomergeUrl>` supplying URLs for required docs. Evals each script, returns `{ specIndex, name, passed, error? }[]`. |
-
-## Required Documents
-
-`requiredDocs` declares document names that the spec needs but that don't exist yet. A plan executor creates these documents and passes their URLs via the `providedDocs` argument when running verifications.
+Returns `{ handle, url }`.
 
 ```javascript
-// During spec creation — declare what's needed
-const handle = coll.addSpec("ER staffing rules are satisfied");
-handle.addRequiredDoc("schedule");
-
-// During plan execution — provide the actual document
-const results = await handle.runVerifications(workspace, { schedule: scheduleUrl });
+const { url: folderUrl } = createFolder();
 ```
 
-`providedDocs` entries are merged with each verification's `documentUrls`. If both define the same key, `documentUrls` takes precedence.
+### `await addFileToFolder(folderUrl, name, docUrl, type)` (async)
 
-## Verification Scripts
-
-Each verification is a JavaScript snippet that has access to:
-
-- `workspace` — the workspace object
-- **Named document URLs** — any keys from `documentUrls` are injected as variables (e.g. `{ spec: url1 }` makes `spec` available)
-- **Provided documents** — any keys from `providedDocs` passed to `runVerifications` / `runAllVerifications` (e.g. `{ schedule: url2 }` makes `schedule` available)
-
-The script must **return `true`** to pass. Any other return value or thrown error counts as a failure.
-
-### Verification script pattern
-
-Verification scripts should be short orchestration — merge relevant Datalog documents and check for constraint violations:
+Appends a file entry to a folder doc.
 
 ```javascript
-const { mergeDatalog } = await workspace.import("skills/datalog/index.js")
-const merged = await mergeDatalog(workspace, [spec, schedule, staff])
-return merged.checkConflicts('my_constraint_name').length === 0
+await addFileToFolder(folderUrl, "machine-a-iptables", datalogUrl, "datalog");
 ```
 
-## Examples
+## Tree Structure
 
-### Creating a spec collection
+The output is always a **root SpecDoc** that may contain **leaf SpecDocs** via `subSpecUrls`:
+
+```
+Root SpecDoc
+  ├── verificationUrls: [globalConstraintsDatalog]
+  └── subSpecUrls:
+        ├── Leaf SpecDoc A
+        │     ├── verificationUrls: [commonRules, machineARules]
+        │     └── filesFolderUrl: folderA  ← solution artifacts go here
+        └── Leaf SpecDoc B
+              ├── verificationUrls: [commonRules, machineBRules]
+              └── filesFolderUrl: folderB
+```
+
+`verificationUrls` always point to **Datalog constraint docs**. The plan executor merges the verification docs with the solution files from `filesFolderUrl` and checks for constraint violations.
+
+If the domain is simple (no sub-problems), create a single leaf spec and use it as the root too (just don't add `subSpecUrls`).
+
+## ROOT_SPEC_URL Convention
+
+At the end of your final script, always log the root spec URL so the workflow can locate it:
 
 ```javascript
-const { createSpecCollection, getSpecCollection } = await workspace.import("skills/spec/index.js");
-const { createDatalog } = await workspace.import("skills/datalog/index.js");
+console.log('ROOT_SPEC_URL:', rootUrl);
+```
 
-// Create the collection
-const { url: collUrl } = createSpecCollection(workspace);
-const coll = await getSpecCollection(workspace, collUrl);
+## Example — Network Firewall
 
-// Create shared Datalog docs
-const hospitalStaff = createDatalog(workspace, "Hospital Staff");
-hospitalStaff.assertFact("staff", ["dr_chen", "doctor", "attending"]);
-hospitalStaff.assertFact("staff", ["nurse_kim", "nurse", "senior"]);
+```javascript
+const { createDatalog } = await useSkill("datalog");
+const { createSpec, getSpec, createFolder, addFileToFolder } = await useSkill("spec");
 
-const shiftConfig = createDatalog(workspace, "Shift Config");
-shiftConfig.assertFact("shift", ["morning"]);
-shiftConfig.assertFact("shift", ["afternoon"]);
-
-// Create department Datalog docs
-const erSpec = createDatalog(workspace, "ER Spec");
-erSpec.assertFact("dept_shift_hours", ["er", "morning", 8]);
-erSpec.assertConstraint("er_no_junior_night", {
+// --- Shared constraint Datalog docs ---
+const commonRules = createDatalog("Common Machine Rules");
+commonRules.assertConstraint("no_redundant_rules", {
   body: [
-    { pred: "assigned", args: ["P", "er", "night"] },
-    { pred: "staff", args: ["P", "_", "junior"] },
+    { pred: "rule", args: ["M", "Chain", "Idx", "Action", "Src", "Proto", "Port"] },
+    { pred: "rule", args: ["M", "Chain", "Earlier", "Action", "Broader", "Proto", "Port"] },
+    { pred: "lt", args: ["Earlier", "Idx"] },
+    { pred: "ip_in", args: ["Src", "Broader"] },
   ],
 });
 
-// Add a spec to the collection — returns a spec handle
-const erHandle = coll.addSpec("ER staffing rules are satisfied");
-erHandle.setDoc("spec", erSpec.url);
-erHandle.setDoc("staff", hospitalStaff.url);
-erHandle.setDoc("shifts", shiftConfig.url);
+const globalRules = createDatalog("Global Firewall Rules");
+globalRules.assertFact("machine", ["machine_a", "192.168.1.10"]);
+globalRules.assertFact("machine", ["machine_b", "192.168.1.11"]);
+globalRules.assertConstraint("blocked_ip_not_allowed", {
+  body: [
+    { pred: "blocked_ip", args: ["IP"] },
+    { pred: "rule", args: ["M", "input", "_", "accept", "Src", "_", "_"] },
+    { pred: "ip_in", args: ["IP", "Src"] },
+  ],
+});
 
-// Declare that a "schedule" document must be provided by the plan
-erHandle.addRequiredDoc("schedule");
+const machineARules = createDatalog("Machine A Rules");
+machineARules.assertFact("role", ["machine_a", "webserver"]);
+// ... add machine-specific constraints
 
-erHandle.addVerification("no junior night shifts", `
-  const { mergeDatalog } = await workspace.import("skills/datalog/index.js")
-  const merged = await mergeDatalog(workspace, [spec, schedule, staff])
-  return merged.checkConflicts('er_no_junior_night').length === 0
-`, { spec: erSpec.url, staff: hospitalStaff.url });
+const machineBRules = createDatalog("Machine B Rules");
+machineBRules.assertFact("role", ["machine_b", "database"]);
+// ... add machine-specific constraints
 
-// After the plan creates a schedule document, run verifications with it:
-// const results = await coll.runAllVerifications(workspace, { schedule: scheduleUrl });
-// for (const r of results) {
-//   console.log(`[spec ${r.specIndex}] ${r.name}: ${r.passed ? "PASSED" : "FAILED"}`, r.error ?? "");
-// }
+// --- Pre-create solution artifact stubs ---
+// These DatalogDocs will be modified by the plan executor to satisfy the constraints.
+// Seed them with domain facts so the executor knows the structure.
+const machineASolution = createDatalog("Machine A IPTables");
+machineASolution.assertFact("chain", ["machine_a", "input", "drop"]);
+machineASolution.assertFact("chain", ["machine_a", "output", "accept"]);
+// (plan executor will add/modify rule(...) facts here)
+
+const machineBSolution = createDatalog("Machine B IPTables");
+machineBSolution.assertFact("chain", ["machine_b", "input", "drop"]);
+machineBSolution.assertFact("chain", ["machine_b", "output", "accept"]);
+
+// --- Files folders ---
+const folderA = createFolder();
+await addFileToFolder(folderA.url, "machine-a-iptables", machineASolution.url, "datalog");
+
+const folderB = createFolder();
+await addFileToFolder(folderB.url, "machine-b-iptables", machineBSolution.url, "datalog");
+
+// --- Leaf specs — goals name the artifact ---
+const { url: leafAUrl } = createSpec("Machine A iptables configuration");
+const leafA = await getSpec(leafAUrl);
+leafA.addVerificationDoc(commonRules.url);
+leafA.addVerificationDoc(machineARules.url);
+leafA.setFilesFolder(folderA.url);
+
+const { url: leafBUrl } = createSpec("Machine B iptables configuration");
+const leafB = await getSpec(leafBUrl);
+leafB.addVerificationDoc(commonRules.url);
+leafB.addVerificationDoc(machineBRules.url);
+leafB.setFilesFolder(folderB.url);
+
+// --- Root spec ---
+const { url: rootUrl } = createSpec("Network Firewall Configuration");
+const root = await getSpec(rootUrl);
+root.addVerificationDoc(globalRules.url);
+root.addSubSpec(leafAUrl);
+root.addSubSpec(leafBUrl);
+
+console.log('ROOT_SPEC_URL:', rootUrl);
 ```
+
+## Guidelines
+
+- Always log `ROOT_SPEC_URL: <url>` at the end of your final script.
+- `verificationUrls` must be **Datalog docs** — use the datalog skill to create them. Every doc in `verificationUrls` must contain at least one `assertConstraint`.
+- Add constraints to Datalog docs via `assertConstraint(name, { body: [...] })`. Give every constraint a descriptive name.
+- **Leaf spec goals name the artifact** to be produced (e.g. `"Machine A iptables configuration"`), not a validation statement.
+- **Pre-create a solution DatalogDoc stub** for each leaf artifact and place it in the `filesFolderUrl` folder with `addFileToFolder`. Seed it with domain facts; the plan executor will modify it to satisfy constraints.
+- The root spec holds cross-cutting/global constraints; leaf specs hold per-domain constraints.
+- If the problem has no sub-domains, a single SpecDoc (no subSpecUrls) is fine.

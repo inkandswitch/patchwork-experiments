@@ -1,10 +1,25 @@
 import type { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
-import type { PlanDoc, SpecDoc, ValidationDoc, WorkflowDoc } from './types';
+import type { Repo } from '@automerge/automerge-repo';
+import type { PlanDoc, SpecDoc, SpecElicitationDoc, ValidationDoc, WorkflowDoc } from './types';
 
 export type { WorkflowDoc } from './types';
 
+type FolderDoc = { docs: { type: string; name: string; url: string }[] };
+
 export const WorkflowDatatype: DatatypeImplementation<WorkflowDoc> = {
-  init() {},
+  init(doc: WorkflowDoc, repo: Repo) {
+    const folderHandle = repo.create<FolderDoc>();
+    folderHandle.change((d) => { d.docs = []; });
+
+    const elicitHandle = repo.create<SpecElicitationDoc & { '@patchwork': { type: string } }>();
+    elicitHandle.change((d) => {
+      d['@patchwork'] = { type: 'elicitation' };
+      d.prompt = '';
+      d.referenceDocsFolderUrl = folderHandle.url as any;
+    });
+
+    doc.specElicitationDocUrl = elicitHandle.url;
+  },
   getTitle() {
     return 'Workflow';
   },

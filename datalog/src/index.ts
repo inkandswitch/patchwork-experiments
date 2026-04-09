@@ -12,16 +12,6 @@ export const plugins: Plugin<any>[] = [
     },
   },
   {
-    type: "patchwork:tool",
-    id: "datalog-map-view",
-    name: "Datalog Map View",
-    supportedDatatypes: ["datalog"],
-    async load() {
-      const { MapTool } = await import("./map/tool");
-      return MapTool;
-    },
-  },
-  {
     type: "patchwork:datatype",
     id: "datalog",
     name: "Datalog",

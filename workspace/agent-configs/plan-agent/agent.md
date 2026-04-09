@@ -25,68 +25,53 @@ You can add a description attribute for clarity:
 
 Each `<script>` block is executed one at a time. After execution, you will see the output or error, then you can continue with more text or scripts.
 
-## Workspace API
+## Available Globals
 
 The following globals are available inside `<script>` blocks:
 
-### `workspace`
+### `repo`
 
-A filesystem-like wrapper over the workspace documents. Paths are resolved against the workspace's folder structure.
+Direct access to the Automerge repository.
 
-#### `workspace.createDoc()`
+#### `repo.create()`
 
 Creates a new empty Automerge document. Returns a document handle. This is **synchronous** — do NOT await it.
 
 ```javascript
-const handle = workspace.createDoc();
+const handle = repo.create();
 handle.change((d) => {
   d.title = "New Document";
 });
 console.log(handle.url);
 ```
 
-#### `await workspace.find(url)`
+#### `await repo.find(url)`
 
-Finds a document by its Automerge URL. Returns a document handle with clone-on-write: the first `.change()` call clones the document so you don't modify the original.
+Finds a document by its Automerge URL. Returns the live document handle.
 
 ```javascript
-const handle = await workspace.find(url);
-const doc = await handle.doc();
-console.log(doc);
+const handle = await repo.find(url);
+const doc = handle.doc();
+handle.change((d) => { d.title = "Updated"; });
 ```
 
-#### `await workspace.getHandle(path)`
+### `await readSkill(name)`
 
-Like `workspace.find()` but resolves a path (e.g. `"my-doc"`) to the document's URL first. Also clone-on-write.
-
-```javascript
-const handle = await workspace.getHandle("my-doc");
-const doc = await handle.doc();
-handle.change((d) => {
-  d.title = "Updated";
-});
-```
-
-#### `await workspace.import(path)`
-
-Dynamically imports a JavaScript module by path. Returns the module's exports. Use this to load skill APIs.
+Returns the SKILL.md documentation string for a named skill.
 
 ```javascript
-const { createPlan, getPlan } = await workspace.import("skills/plan/index.js");
-const { getSpecCollection } = await workspace.import("skills/spec/index.js");
-const { createDatalog } = await workspace.import("skills/datalog/index.js");
-```
-
-#### `await workspace.readDoc(path)`
-
-Reads a document and returns its content as a string. Use this to read skill documentation.
-
-- Text files (with a `content` field): returns the text directly
-- Other documents: returns `JSON.stringify(doc, null, 2)`
-
-```javascript
-const docs = await workspace.readDoc("skills/plan/SKILL.md");
+const docs = await readSkill("plan");
 console.log(docs);
+```
+
+### `await useSkill(name)`
+
+Loads a skill module by name and returns its exports.
+
+```javascript
+const { createPlan, getPlan } = await useSkill("plan");
+const { getSpecCollection } = await useSkill("spec");
+const { createDatalog } = await useSkill("datalog");
 ```
 
 ### Automerge document gotcha
@@ -119,8 +104,8 @@ A captured console. Use `console.log(...)` to produce output that you will see a
 2. Load the skill docs to understand the APIs:
    ```
    <script>
-   const planDocs = await workspace.readDoc("skills/plan/SKILL.md");
-   const specDocs = await workspace.readDoc("skills/spec/SKILL.md");
+   const planDocs = await readSkill("plan");
+   const specDocs = await readSkill("spec");
    console.log(planDocs);
    console.log(specDocs);
    </script>
@@ -128,9 +113,9 @@ A captured console. Use `console.log(...)` to produce output that you will see a
 3. Import the skill APIs:
    ```
    <script>
-   const { createPlan, getPlan } = await workspace.import("skills/plan/index.js");
-   const { getSpecCollection } = await workspace.import("skills/spec/index.js");
-   const { createDatalog } = await workspace.import("skills/datalog/index.js");
+   const { createPlan, getPlan } = await useSkill("plan");
+   const { getSpecCollection } = await useSkill("spec");
+   const { createDatalog } = await useSkill("datalog");
    </script>
    ```
 4. **Read the spec collection** to understand the specs, their goals, docs, and requiredDocs.
@@ -171,17 +156,17 @@ A task depends on other tasks when its spec consumes data that other tasks produ
 
 ```
 <script>
-const { createPlan, getPlan } = await workspace.import("skills/plan/index.js");
-const { getSpecCollection } = await workspace.import("skills/spec/index.js");
-const { createDatalog } = await workspace.import("skills/datalog/index.js");
+const { createPlan, getPlan } = await useSkill("plan");
+const { getSpecCollection } = await useSkill("spec");
+const { createDatalog } = await useSkill("datalog");
 
 // Read the spec collection
-const coll = await getSpecCollection(workspace, specCollectionUrl);
+const coll = await getSpecCollection(specCollectionUrl);
 const specs = coll.getSpecs();
 
 // Create the plan
-const { url: planUrl } = createPlan(workspace);
-const plan = await getPlan(workspace, planUrl);
+const { url: planUrl } = createPlan();
+const plan = await getPlan(planUrl);
 
 // Phase 1: create tasks for specs that have requiredDocs (producers)
 const tasksBySpecIndex = {};
@@ -195,7 +180,7 @@ for (let i = 0; i < specs.length; i++) {
 
   // Create empty artifact documents for each requiredDoc
   for (const docName of spec.requiredDocs) {
-    const artifact = createDatalog(workspace, `${spec.goal} — ${docName}`);
+    const artifact = createDatalog(`${spec.goal} — ${docName}`);
     task.setArtifact(docName, artifact.url);
   }
 }

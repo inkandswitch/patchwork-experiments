@@ -10,7 +10,7 @@ Read and write a Datalog database document. Supports rule evaluation (queries) a
 ## Import
 
 ```javascript
-const { createDatalog, getDatalog, mergeDatalog } = await workspace.import("skills/datalog/index.js");
+const { createDatalog, getDatalog, mergeDatalog } = await useSkill("datalog");
 ```
 
 ## Types
@@ -63,44 +63,44 @@ Returned by `createDatalog` and `getDatalog`. Full read/write backed by an Autom
 
 ## API
 
-### `createDatalog(workspace, title?)`
+### `createDatalog(title?)`
 
 Creates a new, properly initialised DatalogDoc. Returns a `DocDatalog` instance.
 
-**`workspace.createDoc()` is synchronous — this function must NOT be awaited.**
+**`repo.create()` is synchronous — this function must NOT be awaited.**
 
 ```javascript
-const { createDatalog } = await workspace.import("skills/datalog/index.js");
-const db = createDatalog(workspace, "My Spec Database");
+const { createDatalog } = await useSkill("datalog");
+const db = createDatalog("My Spec Database");
 console.log(db.url); // Automerge URL
 ```
 
-### `getDatalog(workspace, url)` (async)
+### `getDatalog(url)` (async)
 
 Returns a `DocDatalog` for the DatalogDoc at `url`. Must be awaited.
 
 ```javascript
-const { getDatalog } = await workspace.import("skills/datalog/index.js");
-const db = await getDatalog(workspace, url);
+const { getDatalog } = await useSkill("datalog");
+const db = await getDatalog(url);
 ```
 
-### `mergeDatalog(workspace, urls)` (async)
+### `mergeDatalog(urls)` (async)
 
 Merges multiple DatalogDocs into a single read-only in-memory `Datalog` instance. No document is created — purely for evaluation.
 
 ```javascript
-const { mergeDatalog } = await workspace.import("skills/datalog/index.js");
-const merged = await mergeDatalog(workspace, [specUrl, configUrl]);
+const { mergeDatalog } = await useSkill("datalog");
+const merged = await mergeDatalog([specUrl, configUrl]);
 const violations = merged.checkConflicts('my_constraint');
 ```
 
 ## Examples
 
 ```javascript
-const { createDatalog, mergeDatalog } = await workspace.import("skills/datalog/index.js");
+const { createDatalog, mergeDatalog } = await useSkill("datalog");
 
-// Create a new document
-const db = createDatalog(workspace, "Spec Database");
+// Create a new document (synchronous — do NOT await)
+const db = createDatalog("Spec Database");
 
 // Add facts with optional comments
 db.assertFact("requirement", ["auth_required"], "users must authenticate");
@@ -133,10 +133,10 @@ const violations = db.checkConflicts();
 const specific = db.checkConflicts("all_requirements_named");
 
 // Merge multiple docs and check
-const config = createDatalog(workspace, "Config");
+const config = createDatalog("Config");
 config.assertFact("implemented", ["auth_required"]);
 
-const merged = await mergeDatalog(workspace, [db.url, config.url]);
+const merged = await mergeDatalog([db.url, config.url]);
 const result = merged.checkConflicts("all_requirements_named");
 ```
 
@@ -155,6 +155,7 @@ const result = merged.checkConflicts("all_requirements_named");
 | `mul(A, B, C)`       | C = A * B                                |
 | `div(A, B, C)`       | C = A / B                                |
 | `sum(V, pattern, C)` | C = sum of V over all matches of pattern |
+| `not(Atom)`          | Negation-as-failure: succeeds if no derived fact matches `Atom`. `Atom` must be `{ pred, args }`. All variables in `Atom` must already be bound by earlier positive atoms (safe negation). Wildcards (`"_"`) are allowed. |
 
 ## Notes
 
@@ -162,3 +163,14 @@ const result = merged.checkConflicts("all_requirements_named");
 - `retractFact` matches by prefix: `retractFact('flow', ['north'])` removes all `flow(north, ...)` facts.
 - `assertConstraint` requires a name as the first argument. Use `checkConflicts(name)` to check a specific constraint.
 - `mergeDatalog` returns a read-only `Datalog` — it has no mutation methods, only `query()` and `checkConflicts()`.
+- **`not` syntax:** the inner atom must be a plain object `{ pred, args }` — NOT a string. All variables in the inner atom must already be bound by preceding positive atoms in the same body (safe negation).
+
+```javascript
+// Constraint: every required item must be covered
+db.assertConstraint("all_required_items_covered", {
+  body: [
+    { pred: "required", args: ["X"] },              // X is bound here
+    { pred: "not", args: [{ pred: "covered", args: ["X"] }] }, // NAF on bound X
+  ],
+});
+```

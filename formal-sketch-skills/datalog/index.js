@@ -383,8 +383,6 @@ export function createDatalog(repo, title) {
     d.facts = [];
     d.rules = [];
     d.constraints = [];
-    d.draftText = '';
-    d.mapStyle = { lines: {}, properties: {} };
     if (title) d.title = title;
   });
   return { handle, url: handle.url };

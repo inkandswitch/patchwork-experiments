@@ -148,7 +148,7 @@ function WorkspaceChatView(props: { handle: DocHandle<WorkspaceChatDoc> }) {
       const oldProcess = await oldProcessHandle.doc();
       if (!oldProcess) return;
 
-      const wsHandle = await repo.find<WorkspaceDoc>(oldProcess.workspaceUrl);
+      const wsHandle = oldProcess.workspaceUrl ? await repo.find<WorkspaceDoc>(oldProcess.workspaceUrl) : null;
 
       const processHandle = repo.create<LLMProcessDoc>();
       processHandle.change((d) => {
@@ -175,7 +175,7 @@ function WorkspaceChatView(props: { handle: DocHandle<WorkspaceChatDoc> }) {
 
       await runWorkspaceLLM(repo, processHandle.url, controller.signal);
 
-      const planUrl = await findDocUrlByType(repo, wsHandle, 'plan');
+      const planUrl = wsHandle ? await findDocUrlByType(repo, wsHandle, 'plan') : undefined;
       if (planUrl) {
         props.handle.change((d) => {
           d.planDocUrl = planUrl;
