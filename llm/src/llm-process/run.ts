@@ -14,11 +14,7 @@ type ApiMessage = {
   content: string;
 };
 
-export async function runLLMProcess(
-  repo: Repo,
-  handle: DocHandle<LLMProcessDoc>,
-  signal?: AbortSignal
-): Promise<void> {
+export async function runLLMProcess(repo: Repo, handle: DocHandle<LLMProcessDoc>, signal?: AbortSignal): Promise<void> {
   const doc = await handle.doc();
   if (!doc) throw new Error("Process document not found");
 
@@ -124,10 +120,8 @@ async function buildSystemPrompt(basePrompt: string, skillIds?: string[]): Promi
 
   try {
     const allSkills = registry.all();
-    const skillsToUse = skillIds && skillIds.length > 0
-      ? allSkills.filter((s: any) => skillIds.includes(s.id))
-      : allSkills;
-    
+    const skillsToUse = skillIds && skillIds.length > 0 ? allSkills.filter((s: any) => skillIds.includes(s.id)) : allSkills;
+
     for (const skill of skillsToUse) {
       const desc = (skill as any).description || "No description";
       skillSummaries.push(`- **${(skill as any).id}**: ${desc}`);
@@ -138,26 +132,10 @@ async function buildSystemPrompt(basePrompt: string, skillIds?: string[]): Promi
 
   if (skillSummaries.length > 0) {
     parts.push("Available skills:\n" + skillSummaries.join("\n"));
-    parts.push(
-      "To use a skill, first load its documentation:\n" +
-        "```javascript\n" +
-        'const docs = await workspace.getSkillDocumentation("skillId");\n' +
-        "```\n" +
-        "Then load and use it:\n" +
-        "```javascript\n" +
-        'const skill = await workspace.loadSkill("skillId");\n' +
-        "```"
-    );
+    parts.push("To use a skill, first load its documentation:\n" + "```javascript\n" + 'const docs = await workspace.getSkillDocumentation("skillId");\n' + "```\n" + "Then load and use it:\n" + "```javascript\n" + 'const skill = await workspace.loadSkill("skillId");\n' + "```");
   }
 
-  parts.push(
-    "The `workspace` object is available with:\n" +
-      "- workspace.loadSkill(skillId)\n" +
-      "- workspace.getSkillDocumentation(skillId)\n" +
-      "- workspace.find(url)\n" +
-      "- workspace.create()\n" +
-      "- workspace.listDocuments()"
-  );
+  parts.push("The `workspace` object is available with:\n" + "- workspace.loadSkill(skillId)\n" + "- workspace.getSkillDocumentation(skillId)\n" + "- workspace.find(url)\n" + "- workspace.create()\n" + "- workspace.listDocuments()");
 
   return parts.join("\n\n");
 }
@@ -227,7 +205,7 @@ async function evalScript(code: string, workspace: Workspace, capturedConsole: R
       "console",
       `return (async () => {
         ${code}
-      })();`
+      })();`,
     );
 
     const returnValue = await fn(workspace, capturedConsole);

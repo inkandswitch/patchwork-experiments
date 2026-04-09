@@ -26,7 +26,8 @@ export const plugins: Plugin<any>[] = [
     type: 'patchwork:skill',
     id: 'todo',
     name: 'Todo List',
-    description: 'Creates and manages todo list documents with items that can be added, toggled, and removed. Use when the user asks to create a task list, checklist, shopping list, or track items to complete.',
+    description:
+      'Creates and manages todo list documents with items that can be added, toggled, and removed. Use when the user asks to create a task list, checklist, shopping list, or track items to complete.',
     async load() {
       return {
         documentation: (await import('./SKILL.md?raw')).default,
