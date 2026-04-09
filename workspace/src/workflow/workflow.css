@@ -83,6 +83,7 @@
   .wf-action-bar {
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 8px;
     padding: 8px 16px 12px;
   }

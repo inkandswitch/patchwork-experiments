@@ -63,9 +63,12 @@ function SpecNode(props: SpecNodeProps) {
   const subSpecUrls = () => spec()?.subSpecUrls ?? [];
   const filesFolderUrl = () => spec()?.filesFolderUrl;
 
-  const [bestCandidate] = createResource(
-    () => ({ tokens: props.candidateTokens, specUrl: props.specUrl }),
-    async ({ tokens, specUrl }) => {
+  const candidateTokenIds = () => props.candidateTokens.map((t) => t.id).join(',');
+
+  const [bestCandidate, { refetch: refetchBestCandidate }] = createResource(
+    () => ({ tokenIds: candidateTokenIds(), specUrl: props.specUrl }),
+    async ({ specUrl }) => {
+      const tokens = props.candidateTokens;
       const candidatesForSpec: { doc: CandidateDoc; violationCount: number }[] = [];
 
       for (const token of tokens) {
@@ -99,10 +102,11 @@ function SpecNode(props: SpecNodeProps) {
   const candidateFolderUrl = () => bestCandidate()?.documentsFolderUrl;
 
   const [childCandidateFolders] = createResource(
-    () => ({ tokens: props.candidateTokens, subSpecUrls: subSpecUrls() }),
-    async ({ tokens, subSpecUrls }) => {
+    () => ({ tokenIds: candidateTokenIds(), subSpecUrls: subSpecUrls() }),
+    async ({ subSpecUrls }) => {
       if (subSpecUrls.length === 0) return [];
 
+      const tokens = props.candidateTokens;
       const folders: string[] = [];
       const subSpecUrlSet = new Set(subSpecUrls.map((u) => u as string));
 
@@ -122,16 +126,17 @@ function SpecNode(props: SpecNodeProps) {
 
   const [verificationResults] = createResource(
     () => {
+      const _tokenIds = candidateTokenIds();
       const ownFolder = candidateFolderUrl();
       const childFolders = childCandidateFolders() ?? [];
       const vUrls = verificationUrls();
       if (vUrls.length === 0) return null;
 
       if (ownFolder) {
-        return { type: 'own' as const, specUrl: props.specUrl, folderUrl: ownFolder };
+        return { type: 'own' as const, specUrl: props.specUrl, folderUrl: ownFolder, _tokenIds };
       }
       if (childFolders.length > 0) {
-        return { type: 'children' as const, vUrls: vUrls.map((u) => u as string), folders: childFolders };
+        return { type: 'children' as const, vUrls: vUrls.map((u) => u as string), folders: childFolders, _tokenIds };
       }
       return null;
     },

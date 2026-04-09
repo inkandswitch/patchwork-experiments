@@ -3,13 +3,13 @@ import { Show, createSignal } from 'solid-js';
 import { RepoContext, useDocument, useRepo } from '@automerge/automerge-repo-solid-primitives';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
-import type { WorkflowDoc } from './types';
+import type { WorkflowDoc, ValidationDoc } from './types';
 import type { PetriNetPlanDoc, PetriNetExecutionDoc } from '../paul/petrinet-plan/types';
 import './workflow.css';
 
 type Stage = 'elicitation' | 'spec' | 'plan' | 'execution' | 'validation';
 
-const WORKFLOW_VERSION = '0.3.3';
+const WORKFLOW_VERSION = '0.3.6';
 
 function makeId(): string {
   return Math.random().toString(36).slice(2, 10);
@@ -29,8 +29,16 @@ export const WorkflowTool: ToolRender = (handle, element) => {
 
 function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
   const [doc] = useDocument<WorkflowDoc>(() => props.handle.url);
+  const [executionDoc] = useDocument<PetriNetExecutionDoc>(() => doc()?.executionDocUrl);
   const [selectedStage, setSelectedStage] = createSignal<Stage>('elicitation');
   const repo = useRepo();
+
+  const isExecutionRunning = () => {
+    const exec = executionDoc();
+    if (!exec?.tokens) return false;
+    const llmTokens = exec.tokens.llm ?? [];
+    return llmTokens.length > 0;
+  };
 
   function getStageUrl(): AutomergeUrl | undefined {
     const currentDoc = doc();
@@ -80,8 +88,22 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
       }
     });
 
+    const validationHandle = currentDoc.validationDocUrl
+      ? await repo.find<ValidationDoc>(currentDoc.validationDocUrl)
+      : repo.create<ValidationDoc>();
+
+    validationHandle.change((d) => {
+      d['@patchwork'] = { type: 'validation' };
+      d.planDocUrl = currentDoc.planDocUrl;
+      d.specDocUrl = currentDoc.specDocUrl;
+      d.executionDocUrl = execHandle.url;
+      d.isValidated = false;
+      d.headsByDocUrl = {} as Record<AutomergeUrl, never>;
+    });
+
     props.handle.change((d) => {
       d.executionDocUrl = execHandle.url;
+      d.validationDocUrl = validationHandle.url;
     });
 
     setSelectedStage('execution');
@@ -93,6 +115,12 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
         return { label: 'Generate Spec', action: handleGenerateSpec, disabled: true };
       case 'plan':
         return { label: 'Execute Plan', action: handleExecutePlan };
+      case 'execution':
+        return {
+          label: 'Validate',
+          action: () => setSelectedStage('validation'),
+          disabled: isExecutionRunning(),
+        };
       default:
         return null;
     }

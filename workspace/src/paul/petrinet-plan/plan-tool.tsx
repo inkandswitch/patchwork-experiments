@@ -28,7 +28,7 @@ export const PetriNetPlanTool: ToolRender = (handle, element) => {
 function PlanView({ handle }: { handle: DocHandle<PetriNetPlanDoc> }) {
   const [doc] = useDocument<PetriNetPlanDoc>(() => handle.url);
   const { net } = usePetriNetPlan(handle);
-  const [selectedTab, setSelectedTab] = createSignal<Tab>('tokens');
+  const [selectedTab, setSelectedTab] = createSignal<Tab>('petrinet');
 
   function handlePromptChange(index: number, newPrompt: string) {
     handle.change((d) => {
@@ -52,17 +52,17 @@ function PlanView({ handle }: { handle: DocHandle<PetriNetPlanDoc> }) {
       <div class="p3n-tab-bar">
         <button
           class="p3n-tab"
-          classList={{ active: selectedTab() === 'tokens' }}
-          onClick={() => setSelectedTab('tokens')}
-        >
-          Tokens
-        </button>
-        <button
-          class="p3n-tab"
           classList={{ active: selectedTab() === 'petrinet' }}
           onClick={() => setSelectedTab('petrinet')}
         >
           Petrinet
+        </button>
+        <button
+          class="p3n-tab"
+          classList={{ active: selectedTab() === 'tokens' }}
+          onClick={() => setSelectedTab('tokens')}
+        >
+          Tokens
         </button>
       </div>
 
@@ -88,6 +88,18 @@ function PlanView({ handle }: { handle: DocHandle<PetriNetPlanDoc> }) {
 
             return (
               <>
+                <Show when={selectedTab() === 'petrinet'}>
+                  <div class="p3n-petrinet-wrap">
+                    <P3NetRenderer
+                      def={currentNet().def}
+                      tokens={planTokens()}
+                      selectedTokenId={null}
+                      onSelectToken={() => {}}
+                      onDropOnPlace={() => {}}
+                    />
+                  </div>
+                </Show>
+
                 <Show when={selectedTab() === 'tokens'}>
                   <div class="p3n-token-sections">
                     <For each={tokenTypes()}>
@@ -145,18 +157,6 @@ function PlanView({ handle }: { handle: DocHandle<PetriNetPlanDoc> }) {
                         );
                       }}
                     </For>
-                  </div>
-                </Show>
-
-                <Show when={selectedTab() === 'petrinet'}>
-                  <div class="p3n-petrinet-wrap">
-                    <P3NetRenderer
-                      def={currentNet().def}
-                      tokens={planTokens()}
-                      selectedTokenId={null}
-                      onSelectToken={() => {}}
-                      onDropOnPlace={() => {}}
-                    />
                   </div>
                 </Show>
               </>

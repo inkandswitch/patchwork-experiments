@@ -142,6 +142,16 @@ export const plugins: Plugin<any>[] = [
     },
   } as Datatype,
   {
+    type: 'patchwork:tool',
+    id: 'validation',
+    name: 'Validation',
+    supportedDatatypes: ['validation'],
+    async load() {
+      const { ValidationTool } = await import('./paul/petrinet-plan/validation-tool');
+      return ValidationTool;
+    },
+  } satisfies Tool,
+  {
     type: 'patchwork:datatype',
     id: 'validation',
     name: 'Validation',

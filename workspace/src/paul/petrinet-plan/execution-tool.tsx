@@ -1,10 +1,10 @@
 import { render } from 'solid-js/web';
-import { createSignal, createEffect, createResource, Show, For } from 'solid-js';
+import { createSignal, createEffect, Show } from 'solid-js';
 import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primitives';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle, Repo, AutomergeUrl } from '@automerge/automerge-repo';
 
-import type { PetriNetPlanDoc, PetriNetExecutionDoc, CandidateDoc } from './types';
+import type { PetriNetPlanDoc, PetriNetExecutionDoc } from './types';
 import type { TokenInstance, PendingStep, TransitionFiring, NetDef, NetState, NetDoc, PetriNet } from './lib';
 import { defineNet } from './lib';
 import { createNet } from './net';
@@ -30,13 +30,14 @@ type AnimState = {
   pending: PendingStep;
 };
 
-type Tab = 'petrinet' | 'spec' | 'solutions';
+type Tab = 'petrinet' | 'spec';
 
 function ExecutionView({ handle, repo }: { handle: DocHandle<PetriNetExecutionDoc>; repo: Repo }) {
   const [doc] = useDocument<PetriNetExecutionDoc>(() => handle.url);
   const [planDoc] = useDocument<PetriNetPlanDoc>(() => doc()?.planUrl);
   const [selectedTab, setSelectedTab] = createSignal<Tab>('spec');
   const [petriNet, setPetriNet] = createSignal<PetriNet | null>(null);
+  const [autoStarted, setAutoStarted] = createSignal(false);
 
   createEffect(() => {
     const d = doc();
@@ -45,6 +46,14 @@ function ExecutionView({ handle, repo }: { handle: DocHandle<PetriNetExecutionDo
       const netDef = createNet(repo, planHandle);
       setPetriNet(defineNet(netDef)(handle as unknown as DocHandle<NetDoc>, repo));
     });
+  });
+
+  createEffect(() => {
+    const pn = petriNet();
+    if (pn && !autoStarted()) {
+      setAutoStarted(true);
+      startPlaying();
+    }
   });
 
   const net = () => {
@@ -77,16 +86,25 @@ function ExecutionView({ handle, repo }: { handle: DocHandle<PetriNetExecutionDo
     }
   }
 
-  function handlePlayPause() {
-    const nowPlaying = !isPlaying();
-    setIsPlaying(nowPlaying);
-    if (nowPlaying) {
-      playIntervalId = setInterval(() => {
-        if (!steppingRef) handleStep();
-      }, 100);
+  function startPlaying() {
+    if (isPlaying()) return;
+    setIsPlaying(true);
+    playIntervalId = setInterval(() => {
+      if (!steppingRef) handleStep();
+    }, 100);
+  }
+
+  function stopPlaying() {
+    setIsPlaying(false);
+    if (playIntervalId !== null) clearInterval(playIntervalId);
+    playIntervalId = null;
+  }
+
+  function handleStartStop() {
+    if (isPlaying()) {
+      stopPlaying();
     } else {
-      if (playIntervalId !== null) clearInterval(playIntervalId);
-      playIntervalId = null;
+      startPlaying();
     }
   }
 
@@ -123,20 +141,13 @@ function ExecutionView({ handle, repo }: { handle: DocHandle<PetriNetExecutionDo
         >
           Petrinet
         </button>
-        <button
-          class="p3n-tab"
-          classList={{ active: selectedTab() === 'solutions' }}
-          onClick={() => setSelectedTab('solutions')}
-        >
-          Solutions
-        </button>
         <span class="p3n-toolbar-spacer" />
         <button
           class={`p3n-play-btn${isPlaying() ? ' p3n-play-btn-active' : ''}`}
-          onClick={handlePlayPause}
+          onClick={handleStartStop}
           disabled={!net()}
         >
-          {isPlaying() ? 'Pause' : 'Play'}
+          {isPlaying() ? 'Stop' : 'Start'}
         </button>
       </div>
 
@@ -198,9 +209,6 @@ function ExecutionView({ handle, repo }: { handle: DocHandle<PetriNetExecutionDo
                   </div>
                 </Show>
 
-                <Show when={selectedTab() === 'solutions'}>
-                  <SolutionsView candidateTokens={candidateTokens()} repo={repo} />
-                </Show>
               </>
             );
           }}
@@ -349,66 +357,3 @@ function TokenInspector(props: {
   );
 }
 
-function SolutionsView(props: { candidateTokens: TokenInstance[]; repo: Repo }) {
-  const [expandedKey, setExpandedKey] = createSignal<string | null>(null);
-
-  const [candidateDocs] = createResource(
-    () => props.candidateTokens,
-    async (tokens) => {
-      const results: { tokenId: string; doc: CandidateDoc }[] = [];
-      for (const token of tokens) {
-        const url = token.state.documentUrl as string;
-        if (!url) continue;
-        const handle = await props.repo.find<CandidateDoc>(url as AutomergeUrl);
-        const doc = await handle.doc();
-        if (doc) results.push({ tokenId: token.id, doc });
-      }
-      return results;
-    },
-  );
-
-  const entries = () => candidateDocs() ?? [];
-
-  return (
-    <div class="p3n-candidates-view">
-      <Show
-        when={entries().length > 0}
-        fallback={
-          <div class="p3n-candidates-empty">
-            <div class="p3n-empty-icon">◎</div>
-            <div class="p3n-empty-text">No solutions yet</div>
-            <div class="p3n-empty-hint">
-              Solutions appear here as optimizers complete tasks and produce candidate tokens
-            </div>
-          </div>
-        }
-      >
-        <div class="p3n-candidates-list">
-          <For each={entries()}>
-            {({ tokenId, doc }) => {
-              const isExpanded = () => expandedKey() === tokenId;
-              return (
-                <div class="p3n-candidate-card" classList={{ 'p3n-candidate-card-expanded': isExpanded() }}>
-                  <div
-                    class="p3n-candidate-card-header"
-                    onClick={() => setExpandedKey(isExpanded() ? null : tokenId)}
-                  >
-                    <span class="p3n-candidate-card-url">
-                      Spec: {(doc.specUrl ?? '').replace('automerge:', '').slice(0, 16)}…
-                    </span>
-                    <span class="p3n-candidate-card-toggle">{isExpanded() ? '▾' : '▸'}</span>
-                  </div>
-                  <Show when={isExpanded() && doc.documentsFolderUrl}>
-                    <div class="p3n-candidate-card-body">
-                      <patchwork-view attr:doc-url={doc.documentsFolderUrl} style="display:block;width:100%;min-height:200px;" />
-                    </div>
-                  </Show>
-                </div>
-              );
-            }}
-          </For>
-        </div>
-      </Show>
-    </div>
-  );
-}

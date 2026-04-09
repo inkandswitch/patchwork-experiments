@@ -53,9 +53,10 @@ export type PlanDoc = {
   artifactsFolderUrl: AutomergeUrl;
 };
 
-export type ValidationDoc = {
+export type ValidationDoc = HasPatchworkMetadata & {
   planDocUrl: AutomergeUrl;
   specDocUrl: AutomergeUrl;
+  executionDocUrl: AutomergeUrl;
   isValidated: boolean;
   headsByDocUrl: Record<AutomergeUrl, Heads>;
 };
