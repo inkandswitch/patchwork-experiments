@@ -1,28 +1,24 @@
 import type { Plugin } from "@inkandswitch/patchwork-plugins";
 
+import { llmProcessPlugins } from "./llm-process";
+import { chatPlugins } from "./chat";
+
 export const plugins: Plugin<any>[] = [
-  {
-    type: "patchwork:datatype",
-    id: "llm-process",
-    name: "LLM Process",
-    icon: "Bot",
-    async load() {
-      const { LLMProcessDatatype } = await import("./datatype");
-      return LLMProcessDatatype;
-    },
-  },
-  {
-    type: "patchwork:tool",
-    id: "llm-process",
-    name: "LLM Process",
-    supportedDatatypes: ["llm-process"],
-    async load() {
-      const { LLMProcessTool } = await import("./view");
-      return LLMProcessTool;
-    },
-  },
+  ...llmProcessPlugins,
+  ...chatPlugins,
 ];
 
-export { LLMProcessDatatype } from "./datatype";
-export { LLMProcessTool, LLMProcessView } from "./view";
-export type { LLMProcessDoc } from "./types";
+export { LLMProcessDatatype, LLMProcessTool, LLMProcessView, runLLMProcess, parseScriptBlocks } from "./llm-process";
+export { LLMChatDatatype, LLMChatTool } from "./chat";
+export { createWorkspace } from "./workspace";
+export type { 
+  LLMProcessDoc, 
+  LLMChatDoc, 
+  Message, 
+  ContentBlock, 
+  TextBlock, 
+  ScriptBlock, 
+  ImageBlock,
+  Workspace,
+  ParsedBlock,
+} from "./types";

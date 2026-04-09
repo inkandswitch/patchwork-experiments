@@ -1,0 +1,48 @@
+.llm-process-root {
+  padding: 1rem;
+  font-family: system-ui, sans-serif;
+}
+
+.llm-process-root h1 {
+  margin: 0 0 1rem 0;
+  font-size: 1.5rem;
+}
+
+.llm-process-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.llm-process-message {
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+}
+
+.llm-process-message.user {
+  background: #007bff;
+  color: white;
+}
+
+.llm-process-message.assistant {
+  background: #f0f0f0;
+  color: #333;
+}
+
+.llm-process-message.system {
+  background: #fff3cd;
+  color: #856404;
+  font-size: 0.875rem;
+}
+
+.llm-process-message-role {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  margin-bottom: 0.25rem;
+  text-transform: capitalize;
+}
+
+.llm-process-message-content {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
