@@ -16,7 +16,9 @@ import type {
   AutomergeUrl,
   DocHandle as RepoDocHandle,
 } from '@automerge/automerge-repo';
-import type { ValidationDoc, ExecutionDoc, VerificationContextDoc } from '../../workflow/types';
+import type { ValidationDoc } from '../../workflow/types';
+import type { VerificationContextDoc } from '../verification/types';
+import type { TaskListExecutionDoc } from '../execution/types';
 import type { DatalogDoc, VerificationArtifactInput } from '../verification/model';
 import { evaluateVerificationContext } from '../verification/model';
 import {
@@ -46,7 +48,7 @@ export const ValidationTool: ToolRender = (handle, element) => {
 
 function ValidationView(props: { handle: DocHandle<ValidationDoc>; element: ToolElement }) {
   const [doc] = useDocument<ValidationDoc>(() => props.handle.url);
-  const [execution] = useDocument<ExecutionDoc>(() => doc()?.executionDocUrl);
+  const [execution] = useDocument<TaskListExecutionDoc>(() => doc()?.executionDocUrl);
   const [folder] = useDocument<FolderDoc>(() => execution()?.artifactsFolderUrl);
   const [expandedArtifacts, setExpandedArtifacts] = createSignal<AutomergeUrl[]>([]);
 
@@ -152,7 +154,7 @@ function ValidationView(props: { handle: DocHandle<ValidationDoc>; element: Tool
 
 function ValidationBody(props: {
   repo: any;
-  execution: ExecutionDoc;
+  execution: TaskListExecutionDoc;
   artifactEntries: FolderDoc['docs'];
   toggleArtifact: (url: AutomergeUrl) => void;
   isArtifactExpanded: (url: AutomergeUrl) => boolean;

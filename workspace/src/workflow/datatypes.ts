@@ -1,12 +1,5 @@
 import type { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
-import type {
-  PlanDoc,
-  SpecDoc,
-  ExecutionDoc,
-  ValidationDoc,
-  VerificationContextDoc,
-  WorkflowDoc,
-} from './types';
+import type { PlanDoc, SpecDoc, ExecutionDoc, ValidationDoc, WorkflowDoc } from './types';
 
 export type { WorkflowDoc } from './types';
 
@@ -43,14 +36,6 @@ export const PlanDatatype: DatatypeImplementation<PlanDoc> = {
   setTitle(doc: PlanDoc, title: string) {
     doc.goal = title;
   },
-};
-
-export const VerificationContextDatatype: DatatypeImplementation<VerificationContextDoc> = {
-  init() {},
-  getTitle() {
-    return 'Verification Context';
-  },
-  setTitle() {},
 };
 
 export const ExecutionDatatype: DatatypeImplementation<ExecutionDoc> = {

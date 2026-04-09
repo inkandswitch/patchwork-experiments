@@ -1,5 +1,5 @@
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo';
-import type { VerificationContextDoc } from '../../workflow/types';
+import type { VerificationContextDoc } from '../verification/types';
 import type { TaskListExecutionDoc } from '../execution/types';
 import { createArtifactCsvDoc, type ArtifactFolderEntry } from '../validation/csv-sync';
 

@@ -3,7 +3,7 @@ import { For, Show, createMemo, createSignal } from 'solid-js';
 import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primitives';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
-import type { VerificationContextDoc } from '../../workflow/types';
+import type { VerificationContextDoc } from './types';
 import type { ConstraintViolation } from './datalog-eval';
 import {
   type DatalogDoc,
@@ -98,7 +98,9 @@ function ResolvedVerificationView(props: {
               <Show when={current().mode === 'validation'}>
                 <span class="verification-target-summary">{current().targetSummary}</span>
               </Show>
-              <span class="verification-expand-label">{expanded() ? 'Hide details' : 'Show details'}</span>
+              <span class="verification-expand-label">
+                {expanded() ? 'Hide details' : 'Show details'}
+              </span>
             </div>
           </button>
 
@@ -124,10 +126,18 @@ function ResolvedVerificationView(props: {
             <div class="verification-details">
               <Show
                 when={current().mode === 'spec'}
-                fallback={<ValidationDetails evaluation={current()} verificationUrl={props.verificationUrl} />}
+                fallback={
+                  <ValidationDetails
+                    evaluation={current()}
+                    verificationUrl={props.verificationUrl}
+                  />
+                }
               >
                 <div class="verification-raw-doc">
-                  <patchwork-view attr:doc-url={props.verificationUrl} style="display:block;width:100%;" />
+                  <patchwork-view
+                    attr:doc-url={props.verificationUrl}
+                    style="display:block;width:100%;"
+                  />
                 </div>
               </Show>
             </div>
@@ -197,9 +207,7 @@ function ValidationDetails(props: {
   );
 }
 
-function WitnessCard(props: {
-  witness: ConstraintViolation['witnesses'][number];
-}) {
+function WitnessCard(props: { witness: ConstraintViolation['witnesses'][number] }) {
   const bindings = () => Object.entries(props.witness.bindings);
 
   return (

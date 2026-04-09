@@ -188,7 +188,7 @@ export const plugins: Plugin<any>[] = [
     name: 'Verification Context',
     icon: 'ShieldCheck',
     async load() {
-      const { VerificationContextDatatype } = await import('./workflow/datatypes');
+      const { VerificationContextDatatype } = await import('./grjte/verification/types');
       return VerificationContextDatatype;
     },
   } as Datatype,

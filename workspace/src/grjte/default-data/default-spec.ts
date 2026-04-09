@@ -1,5 +1,6 @@
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo';
-import type { SpecDoc, Spec, VerificationContextDoc } from '../../workflow/types';
+import type { SpecDoc, Spec } from '../../workflow/types';
+import type { VerificationContextDoc } from '../verification/types';
 
 type StoredAtom = { pred: string; args: string[] };
 type StoredConstraint = { body: StoredAtom[]; comment?: string };
@@ -45,7 +46,12 @@ function f(pred: string, ...args: (string | number)[]): StoredFact {
   return { pred, args };
 }
 
-function createDataDoc(repo: Repo, title: string, draftText: string, facts: StoredFact[]): AutomergeUrl {
+function createDataDoc(
+  repo: Repo,
+  title: string,
+  draftText: string,
+  facts: StoredFact[],
+): AutomergeUrl {
   const handle = repo.create<DatalogDoc>();
   handle.change((d) => {
     d['@patchwork'] = { type: 'datalog' };
@@ -59,7 +65,11 @@ function createDataDoc(repo: Repo, title: string, draftText: string, facts: Stor
   return handle.url;
 }
 
-function createFolder(repo: Repo, title: string, docs: { type: string; name: string; url: AutomergeUrl }[]): AutomergeUrl {
+function createFolder(
+  repo: Repo,
+  title: string,
+  docs: { type: string; name: string; url: AutomergeUrl }[],
+): AutomergeUrl {
   const handle = repo.create<FolderDoc>();
   handle.change((d) => {
     d['@patchwork'] = { type: 'folder' };
@@ -95,9 +105,7 @@ function createVerificationContext(
   return handle.url;
 }
 
-export function createDefaultSpec(
-  repo: Repo,
-): {
+export function createDefaultSpec(repo: Repo): {
   specDocUrl: AutomergeUrl;
   subSpecUrls: AutomergeUrl[];
   verificationDatalogUrls: AutomergeUrl[];
@@ -306,17 +314,26 @@ registered_nurse(aisha_begum).
 hca(mike_thompson). hca(dan_murphy). hca(lisa_brown).
 supernumerary(sarah_chen).`,
     [
-      f('staff', 'sarah_chen', 'amu', 7), f('staff', 'james_okafor', 'amu', 6),
-      f('staff', 'priya_sharma', 'amu', 5), f('staff', 'emily_davies', 'amu', 5),
+      f('staff', 'sarah_chen', 'amu', 7),
+      f('staff', 'james_okafor', 'amu', 6),
+      f('staff', 'priya_sharma', 'amu', 5),
+      f('staff', 'emily_davies', 'amu', 5),
       f('staff', 'mike_thompson', 'amu', 3),
-      f('staff', 'rachel_green', 'ward_6', 6), f('staff', 'tom_williams', 'ward_6', 5),
-      f('staff', 'aisha_begum', 'ward_6', 5), f('staff', 'dan_murphy', 'ward_6', 3),
+      f('staff', 'rachel_green', 'ward_6', 6),
+      f('staff', 'tom_williams', 'ward_6', 5),
+      f('staff', 'aisha_begum', 'ward_6', 5),
+      f('staff', 'dan_murphy', 'ward_6', 3),
       f('staff', 'lisa_brown', 'ward_6', 2),
-      f('registered_nurse', 'sarah_chen'), f('registered_nurse', 'james_okafor'),
-      f('registered_nurse', 'priya_sharma'), f('registered_nurse', 'emily_davies'),
-      f('registered_nurse', 'rachel_green'), f('registered_nurse', 'tom_williams'),
+      f('registered_nurse', 'sarah_chen'),
+      f('registered_nurse', 'james_okafor'),
+      f('registered_nurse', 'priya_sharma'),
+      f('registered_nurse', 'emily_davies'),
+      f('registered_nurse', 'rachel_green'),
+      f('registered_nurse', 'tom_williams'),
       f('registered_nurse', 'aisha_begum'),
-      f('hca', 'mike_thompson'), f('hca', 'dan_murphy'), f('hca', 'lisa_brown'),
+      f('hca', 'mike_thompson'),
+      f('hca', 'dan_murphy'),
+      f('hca', 'lisa_brown'),
       f('supernumerary', 'sarah_chen'),
     ],
   );
@@ -330,8 +347,10 @@ ward(ward_6, 28).
 ward_type(amu, acute_medical).
 ward_type(ward_6, general_medicine).`,
     [
-      f('ward', 'amu', 20), f('ward', 'ward_6', 28),
-      f('ward_type', 'amu', 'acute_medical'), f('ward_type', 'ward_6', 'general_medicine'),
+      f('ward', 'amu', 20),
+      f('ward', 'ward_6', 28),
+      f('ward_type', 'amu', 'acute_medical'),
+      f('ward_type', 'ward_6', 'general_medicine'),
     ],
   );
 
@@ -360,12 +379,17 @@ band_6_plus(sarah_chen). band_6_plus(james_okafor).
 competency(sarah_chen, acute_assessment). competency(james_okafor, acute_assessment).
 competency(priya_sharma, acute_assessment). competency(emily_davies, acute_assessment).`,
     [
-      f('staff_in_ward', 'sarah_chen', 'amu'), f('staff_in_ward', 'james_okafor', 'amu'),
-      f('staff_in_ward', 'priya_sharma', 'amu'), f('staff_in_ward', 'emily_davies', 'amu'),
+      f('staff_in_ward', 'sarah_chen', 'amu'),
+      f('staff_in_ward', 'james_okafor', 'amu'),
+      f('staff_in_ward', 'priya_sharma', 'amu'),
+      f('staff_in_ward', 'emily_davies', 'amu'),
       f('staff_in_ward', 'mike_thompson', 'amu'),
-      f('band_6_plus', 'sarah_chen'), f('band_6_plus', 'james_okafor'),
-      f('competency', 'sarah_chen', 'acute_assessment'), f('competency', 'james_okafor', 'acute_assessment'),
-      f('competency', 'priya_sharma', 'acute_assessment'), f('competency', 'emily_davies', 'acute_assessment'),
+      f('band_6_plus', 'sarah_chen'),
+      f('band_6_plus', 'james_okafor'),
+      f('competency', 'sarah_chen', 'acute_assessment'),
+      f('competency', 'james_okafor', 'acute_assessment'),
+      f('competency', 'priya_sharma', 'acute_assessment'),
+      f('competency', 'emily_davies', 'acute_assessment'),
     ],
   );
 
@@ -377,8 +401,10 @@ staff_in_ward(rachel_green, ward_6). staff_in_ward(tom_williams, ward_6).
 staff_in_ward(aisha_begum, ward_6). staff_in_ward(dan_murphy, ward_6).
 staff_in_ward(lisa_brown, ward_6).`,
     [
-      f('staff_in_ward', 'rachel_green', 'ward_6'), f('staff_in_ward', 'tom_williams', 'ward_6'),
-      f('staff_in_ward', 'aisha_begum', 'ward_6'), f('staff_in_ward', 'dan_murphy', 'ward_6'),
+      f('staff_in_ward', 'rachel_green', 'ward_6'),
+      f('staff_in_ward', 'tom_williams', 'ward_6'),
+      f('staff_in_ward', 'aisha_begum', 'ward_6'),
+      f('staff_in_ward', 'dan_murphy', 'ward_6'),
       f('staff_in_ward', 'lisa_brown', 'ward_6'),
     ],
   );
@@ -403,25 +429,29 @@ staff_in_ward(lisa_brown, ward_6).`,
   const trustRotaRulesVcUrl = createVerificationContext(repo, trustRotaRulesUrl, [], {
     scope: 'system',
     title: 'Trust-wide rota checks',
-    description: 'Ensure the combined hospital rota stays within the trust-wide hours budget and includes exactly two ward rosters.',
+    description:
+      'Ensure the combined hospital rota stays within the trust-wide hours budget and includes exactly two ward rosters.',
     viewMode: 'spec',
   });
   const generalWardRulesVcUrl = createVerificationContext(repo, generalWardRulesUrl, [], {
     scope: 'artifacts',
     title: 'General ward staffing checks',
-    description: 'Ensure each ward rota satisfies the general staffing rules that apply across wards.',
+    description:
+      'Ensure each ward rota satisfies the general staffing rules that apply across wards.',
     viewMode: 'spec',
   });
   const amuRulesVcUrl = createVerificationContext(repo, amuRulesUrl, [], {
     scope: 'artifacts',
     title: 'AMU-specific checks',
-    description: 'Ensure the AMU rota has the required senior night coverage and acute assessment competency.',
+    description:
+      'Ensure the AMU rota has the required senior night coverage and acute assessment competency.',
     viewMode: 'spec',
   });
   const ward6RulesVcUrl = createVerificationContext(repo, ward6RulesUrl, [], {
     scope: 'artifacts',
     title: 'Ward 6-specific checks',
-    description: 'Ensure the Ward 6 rota satisfies RN-to-patient ratio and HCA coverage requirements.',
+    description:
+      'Ensure the Ward 6 rota satisfies RN-to-patient ratio and HCA coverage requirements.',
     viewMode: 'spec',
   });
 
@@ -462,6 +492,11 @@ staff_in_ward(lisa_brown, ward_6).`,
     specDocUrl: specHandle.url,
     subSpecUrls: [amuSpecHandle.url, ward6SpecHandle.url],
     verificationDatalogUrls: [trustRotaRulesUrl, generalWardRulesUrl, amuRulesUrl, ward6RulesUrl],
-    verificationContextUrls: [trustRotaRulesVcUrl, generalWardRulesVcUrl, amuRulesVcUrl, ward6RulesVcUrl],
+    verificationContextUrls: [
+      trustRotaRulesVcUrl,
+      generalWardRulesVcUrl,
+      amuRulesVcUrl,
+      ward6RulesVcUrl,
+    ],
   };
 }

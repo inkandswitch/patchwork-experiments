@@ -4,6 +4,8 @@ import { ExecutionDoc } from '../../workflow/types';
 
 export type TaskListExecutionDoc = ExecutionDoc & {
   taskUrls: AutomergeUrl[];
+  status: 'in-progress' | 'failed' | 'completed';
+  verificationContextUrls: AutomergeUrl[];
 };
 
 export const TaskListExecutionDatatype: DatatypeImplementation<TaskListExecutionDoc> = {

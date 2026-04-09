@@ -48,22 +48,10 @@ export type PlanDoc = HasPatchworkMetadata & {
   specDocUrl: AutomergeUrl;
 };
 
-export type VerificationContextDoc = HasPatchworkMetadata & {
-  verificationUrl: AutomergeUrl;
-  artifactUrls: AutomergeUrl[];
-  scope?: 'system' | 'artifacts';
-  requiredArtifactUrls?: AutomergeUrl[];
-  title?: string;
-  description?: string;
-  viewMode?: 'spec' | 'validation';
-};
-
 export type ExecutionDoc = HasPatchworkMetadata & {
   specDocUrl: AutomergeUrl;
   planDocUrl: AutomergeUrl;
-  status: 'in-progress' | 'failed' | 'completed';
   artifactsFolderUrl: AutomergeUrl;
-  verificationContextUrls: AutomergeUrl[];
 };
 
 export type ValidationDoc = HasPatchworkMetadata & {

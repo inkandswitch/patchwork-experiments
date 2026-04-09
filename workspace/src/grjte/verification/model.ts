@@ -1,5 +1,5 @@
 import type { AutomergeUrl } from '@automerge/automerge-repo';
-import type { VerificationContextDoc } from '../../workflow/types';
+import type { VerificationContextDoc } from './types';
 import {
   Datalog,
   type ConstraintViolation,
@@ -54,9 +54,12 @@ export type VerificationEvaluation = {
 };
 
 export function getVerificationMode(doc: VerificationContextDoc): 'spec' | 'validation' {
-  return doc.viewMode ?? ((doc.requiredArtifactUrls?.length ?? doc.artifactUrls?.length ?? 0) > 0
-    ? 'validation'
-    : 'spec');
+  return (
+    doc.viewMode ??
+    ((doc.requiredArtifactUrls?.length ?? doc.artifactUrls?.length ?? 0) > 0
+      ? 'validation'
+      : 'spec')
+  );
 }
 
 export function getVerificationScope(doc: VerificationContextDoc): 'system' | 'artifacts' {
@@ -67,7 +70,10 @@ export function getRequiredArtifactUrls(doc: VerificationContextDoc): AutomergeU
   return doc.requiredArtifactUrls ?? doc.artifactUrls ?? [];
 }
 
-export function getVerificationTitle(doc: VerificationContextDoc, verificationDoc?: DatalogDoc): string {
+export function getVerificationTitle(
+  doc: VerificationContextDoc,
+  verificationDoc?: DatalogDoc,
+): string {
   return doc.title || verificationDoc?.title || 'Untitled verification';
 }
 
@@ -76,7 +82,9 @@ export function getVerificationDescription(
   verificationDoc?: DatalogDoc,
 ): string {
   if (doc.description) return doc.description;
-  const firstComment = verificationDoc?.constraints?.find((constraint) => constraint.comment)?.comment;
+  const firstComment = verificationDoc?.constraints?.find(
+    (constraint) => constraint.comment,
+  )?.comment;
   return firstComment || getVerificationTitle(doc, verificationDoc);
 }
 
@@ -92,9 +100,10 @@ export function evaluateVerificationContext(
   const title = getVerificationTitle(doc, verificationDoc);
   const description = getVerificationDescription(doc, verificationDoc);
   const requiredArtifactUrls = getRequiredArtifactUrls(doc);
-  const requiredArtifacts = requiredArtifactUrls.length > 0
-    ? artifacts.filter((artifact) => requiredArtifactUrls.includes(artifact.url))
-    : artifacts;
+  const requiredArtifacts =
+    requiredArtifactUrls.length > 0
+      ? artifacts.filter((artifact) => requiredArtifactUrls.includes(artifact.url))
+      : artifacts;
 
   if (mode === 'spec') {
     return {
@@ -152,10 +161,16 @@ function evaluateTarget(
     ...(verificationDoc.facts ?? []),
     ...artifacts.flatMap((artifact) => artifact.doc?.facts ?? []),
   ];
-  const datalog = new Datalog(facts, verificationDoc.rules ?? [], verificationDoc.constraints ?? []);
+  const datalog = new Datalog(
+    facts,
+    verificationDoc.rules ?? [],
+    verificationDoc.constraints ?? [],
+  );
   const violations = datalog.checkConflicts();
   const constraints = (verificationDoc.constraints ?? []).map((constraint) => {
-    const constraintViolations = violations.filter((violation) => violation.constraint === constraint);
+    const constraintViolations = violations.filter(
+      (violation) => violation.constraint === constraint,
+    );
     return {
       constraint,
       passed: constraintViolations.length === 0,
@@ -181,10 +196,10 @@ export function buildCombinedSource(
 ): string {
   const sections = [
     ['Verification', buildDatalogSource(verificationDoc)],
-    ...artifacts.map((artifact) => [
-      `Artifact: ${artifact.name}`,
-      buildDatalogSource(artifact.doc, artifact.name),
-    ] as const),
+    ...artifacts.map(
+      (artifact) =>
+        [`Artifact: ${artifact.name}`, buildDatalogSource(artifact.doc, artifact.name)] as const,
+    ),
   ];
 
   return sections
