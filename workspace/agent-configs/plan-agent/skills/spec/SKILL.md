@@ -1,16 +1,52 @@
 ---
 name: spec
-description: Manage a Spec Collection — a single document containing multiple specs, each with a goal, named document references, and JavaScript verification scripts.
+description: Read SpecDoc trees (new format) and manage legacy SpecCollectionDocs. Use getSpec/getLeafSpecs to traverse a SpecDoc tree when creating plans.
 ---
 
 # Spec Skill
 
-Manage a Spec Collection (SpecCollectionDoc) that groups multiple specs into a single document. Each spec has a goal, named document references, and verification scripts.
+Supports two formats:
+- **New SpecDoc tree** (used by the spec-agent): standalone Automerge documents linked via `subSpecUrls`. Use `getSpec` and `getLeafSpecs`.
+- **Legacy SpecCollectionDoc**: a single document containing embedded specs. Use `getSpecCollection`.
 
 ## Import
 
 ```javascript
+// For new SpecDoc trees (plan creation):
+const { getSpec, getLeafSpecs } = await useSkill("spec");
+
+// For legacy SpecCollectionDocs:
 const { createSpecCollection, getSpecCollection } = await useSkill("spec");
+```
+
+## New SpecDoc Tree API
+
+### `await getSpec(url)`
+
+Returns a read-only handle for a SpecDoc.
+
+| Method | Description |
+|--------|-------------|
+| `getGoal()` | Returns the goal string |
+| `getVerificationUrls()` | Returns array of Datalog constraint doc URLs |
+| `getSubSpecUrls()` | Returns array of child SpecDoc URLs |
+| `getFilesFolderUrl()` | Returns the solution files folder URL (leaf specs only) |
+| `url` | The Automerge URL of this SpecDoc |
+
+### `await getLeafSpecs(rootUrl)`
+
+Recursively collects all leaf specs from a SpecDoc tree. A leaf is a spec with no `subSpecUrls` (it represents a concrete artifact to generate). If the root has no `subSpecUrls`, the root itself is the only leaf.
+
+```javascript
+const { getSpec, getLeafSpecs } = await useSkill("spec");
+
+const root = await getSpec(rootSpecUrl);
+console.log(root.getGoal()); // "Network Firewall Configuration"
+
+const leaves = await getLeafSpecs(rootSpecUrl);
+for (const leaf of leaves) {
+  console.log(leaf.url, leaf.getGoal(), leaf.getFilesFolderUrl());
+}
 ```
 
 ## Types

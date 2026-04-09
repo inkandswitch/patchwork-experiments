@@ -286,7 +286,13 @@ async function getUnsolvedSubSpecs(
 ): Promise<UnsolvedSpec[]> {
   const specDoc = await readSpecDoc(repo, specToken.state.specUrl);
   const subSpecUrls = specDoc?.subSpecUrls ?? [];
-  if (subSpecUrls.length === 0) return [];
+
+  // Leaf spec: treat the spec itself as the only "sub-spec" to solve
+  const effectiveSubSpecUrls =
+    subSpecUrls.length === 0 && specDoc?.filesFolderUrl
+      ? [specToken.state.specUrl as string]
+      : subSpecUrls.map((u) => u as string);
+  if (effectiveSubSpecUrls.length === 0) return [];
 
   const runningSpecUrls = new Set(runningTokens.map((t) => t.state.taskSpecUrl).filter(Boolean));
 
@@ -305,7 +311,7 @@ async function getUnsolvedSubSpecs(
   const bestCandidateFolders: string[] = [];
   const subSpecsWithValidCandidates: string[] = [];
 
-  for (const url of subSpecUrls) {
+  for (const url of effectiveSubSpecUrls) {
     if (runningSpecUrls.has(url)) continue;
 
     const subSpecDoc = await readSpecDoc(repo, url);

@@ -14,7 +14,8 @@ export type WorkflowDoc = {
   specElicitationDocUrl: AutomergeUrl;
   specDocUrl?: AutomergeUrl;
   specProcessUrl?: AutomergeUrl;
-  planDocUrl: AutomergeUrl;
+  planDocUrl?: AutomergeUrl;
+  planProcessUrl?: AutomergeUrl;
   executionDocUrl: AutomergeUrl;
   validationDocUrl: AutomergeUrl;
   toolIds?: WorkflowToolIds;

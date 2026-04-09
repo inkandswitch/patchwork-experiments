@@ -11,10 +11,37 @@ import './workflow.css';
 
 type Stage = 'elicitation' | 'spec' | 'plan' | 'execution' | 'validation';
 
-const WORKFLOW_VERSION = '0.3.9';
+const WORKFLOW_VERSION = '0.4.3';
 
 function makeId(): string {
   return Math.random().toString(36).slice(2, 10);
+}
+
+function findUrlInMessages(
+  messages: LLMProcessDoc['messages'],
+  pattern: RegExp,
+): AutomergeUrl | undefined {
+  let found: AutomergeUrl | undefined;
+  for (const msg of messages ?? []) {
+    for (const part of msg.content) {
+      const candidates: (string | undefined)[] =
+        part.type === 'script'
+          ? [
+              'output' in part ? (part.output as string | undefined) : undefined,
+              'error' in part ? (part.error as string | undefined) : undefined,
+              part.code,
+            ]
+          : part.type === 'text'
+          ? [(part as { type: 'text'; text: string }).text]
+          : [];
+      for (const str of candidates) {
+        if (typeof str !== 'string') continue;
+        const m = str.match(pattern);
+        if (m) found = m[1] as AutomergeUrl;
+      }
+    }
+  }
+  return found;
 }
 
 export const WorkflowTool: ToolRender = (handle, element) => {
@@ -48,7 +75,7 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
     switch (stage) {
       case 'elicitation': return !!d.specElicitationDocUrl;
       case 'spec':        return !!(d.specProcessUrl || d.specDocUrl);
-      case 'plan':        return !!d.planDocUrl;
+      case 'plan':        return !!(d.planDocUrl || d.planProcessUrl);
       case 'execution':   return !!d.executionDocUrl;
       case 'validation':  return !!d.validationDocUrl;
     }
@@ -113,19 +140,8 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
 
     await runWorkspaceLLM(repo, processHandle.url);
 
-    // Find root spec URL from ROOT_SPEC_URL log in process messages
     const processDoc = await processHandle.doc();
-    let rootSpecUrl: AutomergeUrl | undefined;
-    if (processDoc?.messages) {
-      for (const msg of processDoc.messages) {
-        for (const part of msg.content) {
-          if (part.type === 'script' && 'output' in part && typeof part.output === 'string') {
-            const match = part.output.match(/ROOT_SPEC_URL:\s*(automerge:[A-Za-z0-9]+)/);
-            if (match) rootSpecUrl = match[1] as AutomergeUrl;
-          }
-        }
-      }
-    }
+    const rootSpecUrl = findUrlInMessages(processDoc?.messages, /ROOT_SPEC_URL:\s*(automerge:[A-Za-z0-9]+)/);
 
     if (rootSpecUrl) {
       props.handle.change((d) => {
@@ -162,23 +178,44 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
     await runWorkspaceLLM(repo, processHandle.url);
 
     const processDoc = await processHandle.doc();
-    let rootSpecUrl: AutomergeUrl | undefined;
-    if (processDoc?.messages) {
-      for (const msg of processDoc.messages) {
-        for (const part of msg.content) {
-          if (part.type === 'script' && 'output' in part && typeof part.output === 'string') {
-            const match = part.output.match(/ROOT_SPEC_URL:\s*(automerge:[A-Za-z0-9]+)/);
-            if (match) rootSpecUrl = match[1] as AutomergeUrl;
-          }
-        }
-      }
-    }
+    const rootSpecUrl = findUrlInMessages(processDoc?.messages, /ROOT_SPEC_URL:\s*(automerge:[A-Za-z0-9]+)/);
 
     if (rootSpecUrl) {
       props.handle.change((d) => {
         d.specDocUrl = rootSpecUrl!;
         if (!d.toolIds) d.toolIds = {};
         d.toolIds.spec = 'paul-spec-viewer';
+      });
+    }
+  }
+
+  async function handleCreatePlan() {
+    const currentDoc = doc();
+    if (!currentDoc?.specDocUrl) return;
+
+    const processHandle = repo.create<LLMProcessDoc>();
+    processHandle.change((d) => {
+      d.config = { apiUrl: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-sonnet-4.6' };
+      d.llmConfigFolderUrl = __PLAN_AGENT_FOLDER_URL__ as AutomergeUrl;
+      d.messages = [{ role: 'user', content: [{ type: 'text', text: `Create a plan for this spec: ${currentDoc.specDocUrl}` }] }];
+      d.done = false;
+    });
+
+    props.handle.change((d) => {
+      d.planProcessUrl = processHandle.url;
+      delete (d as any).planDocUrl;
+    });
+
+    setSelectedStage('plan');
+
+    await runWorkspaceLLM(repo, processHandle.url);
+
+    const processDoc = await processHandle.doc();
+    const planDocUrl = findUrlInMessages(processDoc?.messages, /PLAN_DOC_URL:\s*(automerge:[A-Za-z0-9]+)/);
+
+    if (planDocUrl) {
+      props.handle.change((d) => {
+        d.planDocUrl = planDocUrl!;
       });
     }
   }
@@ -194,7 +231,7 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
     const execHandle = repo.create<PetriNetExecutionDoc>();
     execHandle.change((d) => {
       d['@patchwork'] = { type: 'petrinet-execution' };
-      d.planUrl = currentDoc.planDocUrl;
+      d.planUrl = currentDoc.planDocUrl!;
       d.tokens = {};
       for (const init of planDoc.initialTokens ?? []) {
         if (!d.tokens[init.placeId]) d.tokens[init.placeId] = [];
@@ -211,7 +248,7 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
 
     validationHandle.change((d) => {
       d['@patchwork'] = { type: 'validation' };
-      d.planDocUrl = currentDoc.planDocUrl;
+      d.planDocUrl = currentDoc.planDocUrl!;
       d.specDocUrl = currentDoc.specDocUrl!;
       d.executionDocUrl = execHandle.url;
       d.isValidated = false;
@@ -230,8 +267,16 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
     switch (selectedStage()) {
       case 'elicitation':
         return { label: 'Generate Spec', action: handleGenerateSpec };
+      case 'spec':
+        if (doc()?.specDocUrl) {
+          return { label: 'Create Plan', action: handleCreatePlan };
+        }
+        return null;
       case 'plan':
-        return { label: 'Execute Plan', action: handleExecutePlan };
+        if (doc()?.planDocUrl) {
+          return { label: 'Execute Plan', action: handleExecutePlan };
+        }
+        return null;
       case 'execution':
         return {
           label: 'Validate',
@@ -296,6 +341,7 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
       </div>
 
       <div class="wf-content">
+        {/* Spec stage */}
         <Show when={selectedStage() === 'spec' && doc()?.specProcessUrl}>
           {(_) => (
             <SpecGenerationView
@@ -306,7 +352,35 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
             />
           )}
         </Show>
-        <Show when={selectedStage() !== 'spec'}>
+        <Show when={selectedStage() === 'spec' && !doc()?.specProcessUrl}>
+          <div class="wf-empty">Click "Generate Spec" to begin.</div>
+        </Show>
+
+        {/* Plan stage — split view while generating, full view once done */}
+        <Show when={selectedStage() === 'plan' && doc()?.planProcessUrl && !doc()?.planDocUrl}>
+          {(_) => (
+            <PlanGenerationView
+              processUrl={doc()!.planProcessUrl!}
+              planDocUrl={doc()?.planDocUrl}
+            />
+          )}
+        </Show>
+        <Show when={selectedStage() === 'plan' && (doc()?.planDocUrl || !doc()?.planProcessUrl)}>
+          <Show
+            when={doc()?.planDocUrl}
+            fallback={<div class="wf-empty">No document for this stage</div>}
+          >
+            {(url) => (
+              <patchwork-view
+                attr:doc-url={url()}
+                style="display:block;width:100%;height:100%;"
+              />
+            )}
+          </Show>
+        </Show>
+
+        {/* All other stages */}
+        <Show when={selectedStage() !== 'spec' && selectedStage() !== 'plan'}>
           <Show
             when={getStageUrl()}
             fallback={<div class="wf-empty">No document for this stage</div>}
@@ -319,9 +393,6 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
               />
             )}
           </Show>
-        </Show>
-        <Show when={selectedStage() === 'spec' && !doc()?.specProcessUrl}>
-          <div class="wf-empty">Click "Generate Spec" to begin.</div>
         </Show>
       </div>
     </div>
@@ -418,6 +489,66 @@ function SpecGenerationView(props: {
             <patchwork-view
               attr:doc-url={url()}
               attr:tool-id={props.specToolId}
+              style="display:block;width:100%;height:100%;"
+            />
+          )}
+        </Show>
+      </div>
+    </div>
+  );
+}
+
+function PlanGenerationView(props: {
+  processUrl: AutomergeUrl;
+  planDocUrl?: AutomergeUrl;
+}) {
+  const [processDoc] = useDocument<LLMProcessDoc>(() => props.processUrl);
+  let containerRef: HTMLDivElement | undefined;
+  let isAtBottom = true;
+
+  function handleScroll() {
+    if (!containerRef) return;
+    isAtBottom = containerRef.scrollTop + containerRef.clientHeight >= containerRef.scrollHeight - 20;
+  }
+
+  createEffect(() => {
+    processDoc();
+    if (isAtBottom && containerRef) {
+      containerRef.scrollTop = containerRef.scrollHeight;
+    }
+  });
+
+  return (
+    <div class="wf-spec-split">
+      <div class="wf-spec-left">
+        <div class="wf-spec-process" ref={containerRef} onScroll={handleScroll}>
+          <Show when={processDoc()}>
+            {(pd) => (
+              <>
+                <For each={pd().messages}>
+                  {(msg) => <SpecMessageView message={msg} />}
+                </For>
+                <Show when={!pd().done}>
+                  <div class="wf-spec-thinking">
+                    <div class="wf-spec-dot" />
+                    <div class="wf-spec-dot" />
+                    <div class="wf-spec-dot" />
+                  </div>
+                </Show>
+              </>
+            )}
+          </Show>
+        </div>
+      </div>
+
+      <div class="wf-spec-preview">
+        <Show
+          when={props.planDocUrl}
+          fallback={<div class="wf-empty">No plan yet</div>}
+        >
+          {(url) => (
+            <patchwork-view
+              attr:doc-url={url()}
               style="display:block;width:100%;height:100%;"
             />
           )}
