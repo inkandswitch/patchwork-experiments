@@ -1,0 +1,6 @@
+{
+  "type": "tool",
+  "name": "Bootstrap",
+  "description": "Paper bootstrap entry point — shows starter gallery or mounts the selected tool",
+  "toolUrl": "./bootstrap.js"
+}
