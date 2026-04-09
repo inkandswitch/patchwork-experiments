@@ -1,6 +1,6 @@
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo';
 import type { SpecDoc, Spec } from '../../workflow/types';
-import type { VerificationContextDoc } from '../verification/types';
+import type { VerificationDoc } from '../verification/types';
 
 type StoredAtom = { pred: string; args: string[] };
 type StoredConstraint = { body: StoredAtom[]; comment?: string };
@@ -79,28 +79,21 @@ function createFolder(
   return handle.url;
 }
 
-function createVerificationContext(
+function createVerificationDoc(
   repo: Repo,
-  verificationUrl: AutomergeUrl,
-  artifactUrls: AutomergeUrl[],
+  docUrl: AutomergeUrl,
   options: {
-    scope: 'system' | 'artifacts';
     title: string;
     description: string;
-    viewMode: 'spec' | 'validation';
-    requiredArtifactUrls?: AutomergeUrl[];
   },
 ): AutomergeUrl {
-  const handle = repo.create<VerificationContextDoc & { '@patchwork': { type: string } }>();
+  const handle = repo.create<VerificationDoc & { '@patchwork': { type: string } }>();
   handle.change((d) => {
-    d['@patchwork'] = { type: 'verification-context' };
-    d.verificationUrl = verificationUrl;
-    d.artifactUrls = artifactUrls;
-    d.scope = options.scope;
+    d['@patchwork'] = { type: 'verification' };
+    d.docUrl = docUrl;
+    d.script = '';
     d.title = options.title;
     d.description = options.description;
-    d.viewMode = options.viewMode;
-    d.requiredArtifactUrls = options.requiredArtifactUrls ?? artifactUrls;
   });
   return handle.url;
 }
@@ -108,8 +101,6 @@ function createVerificationContext(
 export function createDefaultSpec(repo: Repo): {
   specDocUrl: AutomergeUrl;
   subSpecUrls: AutomergeUrl[];
-  verificationDatalogUrls: AutomergeUrl[];
-  verificationContextUrls: AutomergeUrl[];
 } {
   const trustRotaRulesUrl = createConstraintDoc(
     repo,
@@ -425,34 +416,25 @@ staff_in_ward(lisa_brown, ward_6).`,
     { type: 'datalog', name: 'Ward 6 Staff', url: ward6StaffDataUrl },
   ]);
 
-  // Wrap each verification datalog doc in a VerificationContextDoc (empty artifactUrls for spec)
-  const trustRotaRulesVcUrl = createVerificationContext(repo, trustRotaRulesUrl, [], {
-    scope: 'system',
+  const trustRotaRulesVerificationUrl = createVerificationDoc(repo, trustRotaRulesUrl, {
     title: 'Trust-wide rota checks',
     description:
       'Ensure the combined hospital rota stays within the trust-wide hours budget and includes exactly two ward rosters.',
-    viewMode: 'spec',
   });
-  const generalWardRulesVcUrl = createVerificationContext(repo, generalWardRulesUrl, [], {
-    scope: 'artifacts',
+  const generalWardRulesVerificationUrl = createVerificationDoc(repo, generalWardRulesUrl, {
     title: 'General ward staffing checks',
     description:
       'Ensure each ward rota satisfies the general staffing rules that apply across wards.',
-    viewMode: 'spec',
   });
-  const amuRulesVcUrl = createVerificationContext(repo, amuRulesUrl, [], {
-    scope: 'artifacts',
+  const amuRulesVerificationUrl = createVerificationDoc(repo, amuRulesUrl, {
     title: 'AMU-specific checks',
     description:
       'Ensure the AMU rota has the required senior night coverage and acute assessment competency.',
-    viewMode: 'spec',
   });
-  const ward6RulesVcUrl = createVerificationContext(repo, ward6RulesUrl, [], {
-    scope: 'artifacts',
+  const ward6RulesVerificationUrl = createVerificationDoc(repo, ward6RulesUrl, {
     title: 'Ward 6-specific checks',
     description:
       'Ensure the Ward 6 rota satisfies RN-to-patient ratio and HCA coverage requirements.',
-    viewMode: 'spec',
   });
 
   const amuSpecHandle = repo.create<SpecDoc>();
@@ -461,7 +443,7 @@ staff_in_ward(lisa_brown, ward_6).`,
     d.spec = {
       goal: 'AMU Rota',
       dataFolderUrl: amuDataFolderUrl,
-      verificationUrls: [generalWardRulesVcUrl, amuRulesVcUrl],
+      verificationUrls: [generalWardRulesVerificationUrl, amuRulesVerificationUrl],
     };
   });
 
@@ -471,14 +453,14 @@ staff_in_ward(lisa_brown, ward_6).`,
     d.spec = {
       goal: 'Ward 6 Rota',
       dataFolderUrl: ward6DataFolderUrl,
-      verificationUrls: [generalWardRulesVcUrl, ward6RulesVcUrl],
+      verificationUrls: [generalWardRulesVerificationUrl, ward6RulesVerificationUrl],
     };
   });
 
   const spec: Spec = {
     goal: 'Hospital Rota',
     dataFolderUrl: rootDataFolderUrl,
-    verificationUrls: [trustRotaRulesVcUrl],
+    verificationUrls: [trustRotaRulesVerificationUrl],
     subSpecUrls: [amuSpecHandle.url, ward6SpecHandle.url],
   };
 
@@ -491,12 +473,5 @@ staff_in_ward(lisa_brown, ward_6).`,
   return {
     specDocUrl: specHandle.url,
     subSpecUrls: [amuSpecHandle.url, ward6SpecHandle.url],
-    verificationDatalogUrls: [trustRotaRulesUrl, generalWardRulesUrl, amuRulesUrl, ward6RulesUrl],
-    verificationContextUrls: [
-      trustRotaRulesVcUrl,
-      generalWardRulesVcUrl,
-      amuRulesVcUrl,
-      ward6RulesVcUrl,
-    ],
   };
 }

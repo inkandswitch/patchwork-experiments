@@ -15,6 +15,7 @@ export type ArtifactFolderEntry = {
   url: AutomergeUrl;
   csvUrl?: AutomergeUrl;
   projectionKind?: ArtifactProjectionKind;
+  specPath?: string;
 };
 
 type StoredFact = DatalogDoc['facts'][number];
@@ -46,7 +47,11 @@ const DYNAMIC_PREDICATES = new Set([
   'rostered_hours',
 ]);
 
-export function createArtifactCsvDoc(repo: Repo, title: string, datalogDoc: DatalogDoc): AutomergeUrl {
+export function createArtifactCsvDoc(
+  repo: Repo,
+  title: string,
+  datalogDoc: DatalogDoc,
+): AutomergeUrl {
   const handle = repo.create<CsvDoc>();
   const projection = projectDatalogArtifactToCsv('rota-shifts-v1', datalogDoc, title);
   handle.change((d) => {
@@ -118,7 +123,10 @@ export function applyCsvToDatalogArtifact(
   const seenWards = new Set<string>();
 
   for (const rawRow of rows.slice(1)) {
-    const row = pad(rawRow.map((cell) => cell.trim()), SHIFT_HEADERS.length);
+    const row = pad(
+      rawRow.map((cell) => cell.trim()),
+      SHIFT_HEADERS.length,
+    );
     const shiftId = row[0];
     if (!shiftId) continue;
 
@@ -137,7 +145,10 @@ export function applyCsvToDatalogArtifact(
 
     const staff = row.slice(4, 9).filter(Boolean);
     if (staff.length === 0) {
-      return { ok: false, error: `Shift "${shiftId}" must include at least one assigned staff member.` };
+      return {
+        ok: false,
+        error: `Shift "${shiftId}" must include at least one assigned staff member.`,
+      };
     }
 
     const inCharge = row[9];
@@ -184,7 +195,9 @@ export function applyCsvToDatalogArtifact(
   };
 }
 
-export function getArtifactSyncSignature(doc: Pick<DatalogDoc, 'title' | 'facts' | 'draftText'>): string {
+export function getArtifactSyncSignature(
+  doc: Pick<DatalogDoc, 'title' | 'facts' | 'draftText'>,
+): string {
   return JSON.stringify({
     title: doc.title ?? '',
     facts: doc.facts,
@@ -260,7 +273,10 @@ function sameHeaders(left: string[], right: string[]) {
 }
 
 function pad<T>(values: T[], length: number, fillValue = '' as T): T[] {
-  return [...values, ...Array.from({ length: Math.max(0, length - values.length) }, () => fillValue)].slice(0, length);
+  return [
+    ...values,
+    ...Array.from({ length: Math.max(0, length - values.length) }, () => fillValue),
+  ].slice(0, length);
 }
 
 function parseCsv(content: string): string[][] {

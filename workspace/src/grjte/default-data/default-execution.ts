@@ -1,5 +1,4 @@
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo';
-import type { VerificationContextDoc } from '../verification/types';
 import type { TaskListExecutionDoc } from '../execution/types';
 import { createArtifactCsvDoc, type ArtifactFolderEntry } from '../validation/csv-sync';
 
@@ -52,7 +51,6 @@ export function createDefaultExecution(
   specDocUrl: AutomergeUrl,
   planDocUrl: AutomergeUrl,
   taskUrls: AutomergeUrl[],
-  verificationDatalogUrls: AutomergeUrl[],
 ): { executionDocUrl: AutomergeUrl; artifactDocUrls: AutomergeUrl[] } {
   // AMU rota facts (Mon-Wed, long day + long night shifts, 12h each)
   const amuFacts: StoredFact[] = [
@@ -308,6 +306,7 @@ assigned(w6_wed_night, dan_murphy, 12). has_hca(w6_wed_night).`;
         url: amuRotaUrl,
         csvUrl: amuCsvUrl,
         projectionKind: 'rota-shifts-v1',
+        specPath: 'root/0',
       },
       {
         type: 'datalog',
@@ -315,59 +314,9 @@ assigned(w6_wed_night, dan_murphy, 12). has_hca(w6_wed_night).`;
         url: ward6RotaUrl,
         csvUrl: ward6CsvUrl,
         projectionKind: 'rota-shifts-v1',
+        specPath: 'root/1',
       },
     ];
-  });
-
-  // Create verification contexts linking verifications to artifacts
-  const verificationSpecs = [
-    {
-      verificationUrl: verificationDatalogUrls[0],
-      scope: 'system' as const,
-      requiredArtifactUrls: artifactDocUrls,
-      title: 'Trust-wide rota checks',
-      description:
-        'Ensure the combined hospital rota stays within the trust-wide hours budget and includes exactly two ward rosters.',
-    },
-    {
-      verificationUrl: verificationDatalogUrls[1],
-      scope: 'artifacts' as const,
-      requiredArtifactUrls: artifactDocUrls,
-      title: 'General ward staffing checks',
-      description:
-        'Ensure each generated ward rota satisfies the general staffing rules that apply across wards.',
-    },
-    {
-      verificationUrl: verificationDatalogUrls[2],
-      scope: 'artifacts' as const,
-      requiredArtifactUrls: [amuRotaUrl],
-      title: 'AMU-specific checks',
-      description:
-        'Ensure the AMU rota satisfies the required senior night coverage and acute assessment competency rules.',
-    },
-    {
-      verificationUrl: verificationDatalogUrls[3],
-      scope: 'artifacts' as const,
-      requiredArtifactUrls: [ward6RotaUrl],
-      title: 'Ward 6-specific checks',
-      description:
-        'Ensure the Ward 6 rota satisfies RN-to-patient ratio and HCA coverage requirements.',
-    },
-  ];
-
-  const verificationContextUrls: AutomergeUrl[] = verificationSpecs.map((spec) => {
-    const handle = repo.create<VerificationContextDoc & { '@patchwork': { type: string } }>();
-    handle.change((d) => {
-      d['@patchwork'] = { type: 'verification-context' };
-      d.verificationUrl = spec.verificationUrl;
-      d.artifactUrls = artifactDocUrls;
-      d.scope = spec.scope;
-      d.requiredArtifactUrls = spec.requiredArtifactUrls;
-      d.title = spec.title;
-      d.description = spec.description;
-      d.viewMode = 'validation';
-    });
-    return handle.url;
   });
 
   // Create execution doc
@@ -379,7 +328,10 @@ assigned(w6_wed_night, dan_murphy, 12). has_hca(w6_wed_night).`;
     d.status = 'in-progress';
     d.taskUrls = taskUrls;
     d.artifactsFolderUrl = artifactsFolderHandle.url;
-    d.verificationContextUrls = verificationContextUrls;
+    d.artifactSpecPaths = {
+      [amuRotaUrl]: 'root/0',
+      [ward6RotaUrl]: 'root/1',
+    };
   });
 
   return { executionDocUrl: executionHandle.url, artifactDocUrls };

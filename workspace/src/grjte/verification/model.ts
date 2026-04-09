@@ -1,5 +1,5 @@
 import type { AutomergeUrl } from '@automerge/automerge-repo';
-import type { VerificationContextDoc } from './types';
+import type { VerificationDoc } from './types';
 import {
   Datalog,
   type ConstraintViolation,
@@ -29,134 +29,46 @@ export type VerificationConstraintResult = {
   label: string;
 };
 
-export type VerificationTargetResult = {
-  kind: 'system' | 'artifact';
-  label: string;
-  artifactUrl?: AutomergeUrl;
+export type VerificationEvaluation = {
+  title: string;
+  description: string;
+  targetKind: 'global' | 'scoped';
+  targetLabel: string;
   passed: boolean;
   constraints: VerificationConstraintResult[];
   violations: ConstraintViolation[];
   combinedSource: string;
 };
 
-export type VerificationEvaluation = {
-  mode: 'spec' | 'validation';
-  scope: 'system' | 'artifacts';
-  title: string;
-  description: string;
-  requiredArtifacts: VerificationArtifactInput[];
-  targetSummary: string;
-  targetResults: VerificationTargetResult[];
-  passed: boolean;
-  systemPassed: boolean;
-  artifactTargetsPassing: number;
-  artifactTargetsTotal: number;
-};
-
-export function getVerificationMode(doc: VerificationContextDoc): 'spec' | 'validation' {
-  return (
-    doc.viewMode ??
-    ((doc.requiredArtifactUrls?.length ?? doc.artifactUrls?.length ?? 0) > 0
-      ? 'validation'
-      : 'spec')
-  );
-}
-
-export function getVerificationScope(doc: VerificationContextDoc): 'system' | 'artifacts' {
-  return doc.scope ?? 'system';
-}
-
-export function getRequiredArtifactUrls(doc: VerificationContextDoc): AutomergeUrl[] {
-  return doc.requiredArtifactUrls ?? doc.artifactUrls ?? [];
-}
-
 export function getVerificationTitle(
-  doc: VerificationContextDoc,
+  verification: Pick<VerificationDoc, 'title'>,
   verificationDoc?: DatalogDoc,
 ): string {
-  return doc.title || verificationDoc?.title || 'Untitled verification';
+  return verification.title || verificationDoc?.title || 'Untitled verification';
 }
 
 export function getVerificationDescription(
-  doc: VerificationContextDoc,
+  verification: Pick<VerificationDoc, 'title' | 'description'>,
   verificationDoc?: DatalogDoc,
 ): string {
-  if (doc.description) return doc.description;
+  if (verification.description) return verification.description;
   const firstComment = verificationDoc?.constraints?.find(
     (constraint) => constraint.comment,
   )?.comment;
-  return firstComment || getVerificationTitle(doc, verificationDoc);
+  return firstComment || getVerificationTitle(verification, verificationDoc);
 }
 
-export function evaluateVerificationContext(
-  doc: VerificationContextDoc,
+export function evaluateVerification(
+  verification: Pick<VerificationDoc, 'title' | 'description'>,
   verificationDoc: DatalogDoc | undefined,
   artifacts: VerificationArtifactInput[],
+  target: {
+    kind: 'global' | 'scoped';
+    label: string;
+  },
 ): VerificationEvaluation | null {
   if (!verificationDoc) return null;
 
-  const mode = getVerificationMode(doc);
-  const scope = getVerificationScope(doc);
-  const title = getVerificationTitle(doc, verificationDoc);
-  const description = getVerificationDescription(doc, verificationDoc);
-  const requiredArtifactUrls = getRequiredArtifactUrls(doc);
-  const requiredArtifacts =
-    requiredArtifactUrls.length > 0
-      ? artifacts.filter((artifact) => requiredArtifactUrls.includes(artifact.url))
-      : artifacts;
-
-  if (mode === 'spec') {
-    return {
-      mode,
-      scope,
-      title,
-      description,
-      requiredArtifacts,
-      targetSummary: scope === 'system' ? 'System requirement' : 'Artifact requirement',
-      targetResults: [],
-      passed: true,
-      systemPassed: true,
-      artifactTargetsPassing: 0,
-      artifactTargetsTotal: 0,
-    };
-  }
-
-  const targetResults =
-    scope === 'system'
-      ? [evaluateTarget('system', 'Whole system', undefined, verificationDoc, requiredArtifacts)]
-      : requiredArtifacts.map((artifact) =>
-          evaluateTarget('artifact', artifact.name, artifact.url, verificationDoc, [artifact]),
-        );
-
-  const artifactTargetResults = targetResults.filter((target) => target.kind === 'artifact');
-  const artifactTargetsPassing = artifactTargetResults.filter((target) => target.passed).length;
-  const systemPassed = targetResults.every((target) => target.passed);
-
-  return {
-    mode,
-    scope,
-    title,
-    description,
-    requiredArtifacts,
-    targetSummary:
-      scope === 'system'
-        ? `Applies to ${requiredArtifacts.length} artifact${requiredArtifacts.length === 1 ? '' : 's'}`
-        : requiredArtifacts.map((artifact) => artifact.name).join(', '),
-    targetResults,
-    passed: systemPassed,
-    systemPassed,
-    artifactTargetsPassing,
-    artifactTargetsTotal: artifactTargetResults.length,
-  };
-}
-
-function evaluateTarget(
-  kind: 'system' | 'artifact',
-  label: string,
-  artifactUrl: AutomergeUrl | undefined,
-  verificationDoc: DatalogDoc,
-  artifacts: VerificationArtifactInput[],
-): VerificationTargetResult {
   const facts = [
     ...(verificationDoc.facts ?? []),
     ...artifacts.flatMap((artifact) => artifact.doc?.facts ?? []),
@@ -180,9 +92,10 @@ function evaluateTarget(
   });
 
   return {
-    kind,
-    label,
-    artifactUrl,
+    title: getVerificationTitle(verification, verificationDoc),
+    description: getVerificationDescription(verification, verificationDoc),
+    targetKind: target.kind,
+    targetLabel: target.label,
     passed: violations.length === 0,
     constraints,
     violations,

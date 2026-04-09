@@ -29,10 +29,7 @@ function SpecView(props: { handle: DocHandle<SpecDoc> }) {
     <div class="spec-root">
       <Show when={doc()} fallback={<div class="spec-loading">Loading spec...</div>}>
         {(currentDoc) => (
-          <Show
-            when={currentDoc().spec}
-            fallback={<div class="spec-empty">No spec defined.</div>}
-          >
+          <Show when={currentDoc().spec} fallback={<div class="spec-empty">No spec defined.</div>}>
             {(spec) => (
               <div class="spec-content">
                 <SpecSection spec={spec()} />
@@ -76,9 +73,7 @@ function SpecSection(props: { spec: Spec }) {
 
       <Show when={(props.spec.subSpecUrls?.length ?? 0) > 0}>
         <div class="spec-subspecs">
-          <For each={props.spec.subSpecUrls}>
-            {(url) => <SubSpecSection url={url} />}
-          </For>
+          <For each={props.spec.subSpecUrls}>{(url) => <SubSpecSection url={url} />}</For>
         </div>
       </Show>
     </div>
@@ -128,9 +123,5 @@ function DataFolderList(props: { folderUrl: AutomergeUrl }) {
 function SubSpecSection(props: { url: AutomergeUrl }) {
   const [doc] = useDocument<SpecDoc>(() => props.url);
 
-  return (
-    <Show when={doc()?.spec}>
-      {(spec) => <SpecSection spec={spec()} />}
-    </Show>
-  );
+  return <Show when={doc()?.spec}>{(spec) => <SpecSection spec={spec()} />}</Show>;
 }

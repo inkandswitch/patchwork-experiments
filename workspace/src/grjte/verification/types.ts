@@ -1,21 +1,21 @@
-import type { AutomergeUrl } from '@automerge/automerge-repo';
 import type { HasPatchworkMetadata } from '@inkandswitch/patchwork-filesystem';
 import type { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
+import type { Verification as WorkflowVerification } from '../../workflow/types';
 
-export type VerificationContextDoc = HasPatchworkMetadata & {
-  verificationUrl: AutomergeUrl;
-  artifactUrls: AutomergeUrl[];
-  scope?: 'system' | 'artifacts';
-  requiredArtifactUrls?: AutomergeUrl[];
-  title?: string;
-  description?: string;
-  viewMode?: 'spec' | 'validation';
-};
+export type VerificationDoc = HasPatchworkMetadata &
+  WorkflowVerification & {
+    title?: string;
+    description?: string;
+  };
 
-export const VerificationContextDatatype: DatatypeImplementation<VerificationContextDoc> = {
-  init() {},
-  getTitle() {
-    return 'Verification Context';
+export const VerificationDatatype: DatatypeImplementation<VerificationDoc> = {
+  init(doc) {
+    doc.script = '';
   },
-  setTitle() {},
+  getTitle(doc) {
+    return doc.title || 'Verification';
+  },
+  setTitle(doc, title) {
+    doc.title = title;
+  },
 };

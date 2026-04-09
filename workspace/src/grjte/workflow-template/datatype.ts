@@ -23,7 +23,7 @@ export const grjteWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> 
     };
 
     // TEMP: populate with default data
-    const { specDocUrl, subSpecUrls, verificationDatalogUrls } = createDefaultSpec(repo);
+    const { specDocUrl, subSpecUrls } = createDefaultSpec(repo);
     doc.specDocUrl = specDocUrl;
 
     const { planDocUrl, taskUrls } = createDefaultPlan(repo, specDocUrl, subSpecUrls);
@@ -34,7 +34,6 @@ export const grjteWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> 
       specDocUrl,
       planDocUrl,
       taskUrls,
-      verificationDatalogUrls,
     );
     doc.executionDocUrl = executionDocUrl;
 

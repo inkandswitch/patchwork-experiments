@@ -16,11 +16,16 @@ import type {
   AutomergeUrl,
   DocHandle as RepoDocHandle,
 } from '@automerge/automerge-repo';
-import type { ValidationDoc } from '../../workflow/types';
-import type { VerificationContextDoc } from '../verification/types';
+import type { SpecDoc, ValidationDoc } from '../../workflow/types';
 import type { TaskListExecutionDoc } from '../execution/types';
-import type { DatalogDoc, VerificationArtifactInput } from '../verification/model';
-import { evaluateVerificationContext } from '../verification/model';
+import type { VerificationDoc } from '../verification/types';
+import type {
+  DatalogDoc,
+  VerificationArtifactInput,
+  VerificationEvaluation,
+} from '../verification/model';
+import { evaluateVerification } from '../verification/model';
+import type { ConstraintViolation } from '../verification/datalog-eval';
 import {
   applyCsvToDatalogArtifact,
   getArtifactSyncSignature,
@@ -28,10 +33,39 @@ import {
   type ArtifactFolderEntry,
   type CsvDoc,
 } from './csv-sync';
+import '../verification/verification.css';
 import './validation.css';
 
 type FolderDoc = {
   docs: ArtifactFolderEntry[];
+};
+
+type LoadedVerification = {
+  url: AutomergeUrl;
+  docUrl: AutomergeUrl;
+  title?: string;
+  description?: string;
+  script: string;
+  datalogDoc?: DatalogDoc;
+};
+
+type SpecTreeNode = {
+  path: string;
+  goal: string;
+  verifications: LoadedVerification[];
+  subSpecs: SpecTreeNode[];
+};
+
+type FlattenedVerification = {
+  nodePath: string;
+  nodeGoal: string;
+  targetKind: 'global' | 'scoped';
+  verification: LoadedVerification;
+};
+
+type EvaluatedVerificationEntry = {
+  entry: FlattenedVerification;
+  evaluation: VerificationEvaluation;
 };
 
 export const ValidationTool: ToolRender = (handle, element) => {
@@ -137,6 +171,7 @@ function ValidationView(props: { handle: DocHandle<ValidationDoc>; element: Tool
                     <ValidationBody
                       repo={props.element.repo}
                       execution={currentExecution()}
+                      specDocUrl={currentDoc().specDocUrl}
                       artifactEntries={currentFolder().docs ?? []}
                       toggleArtifact={toggleArtifact}
                       isArtifactExpanded={isArtifactExpanded}
@@ -155,6 +190,7 @@ function ValidationView(props: { handle: DocHandle<ValidationDoc>; element: Tool
 function ValidationBody(props: {
   repo: any;
   execution: TaskListExecutionDoc;
+  specDocUrl: AutomergeUrl;
   artifactEntries: FolderDoc['docs'];
   toggleArtifact: (url: AutomergeUrl) => void;
   isArtifactExpanded: (url: AutomergeUrl) => boolean;
@@ -163,14 +199,10 @@ function ValidationBody(props: {
     const [doc] = useDocument<DatalogDoc>(() => entry.url);
     return { entry, doc };
   });
-  const verificationContextAccessors = props.execution.verificationContextUrls.map((url) => {
-    const [doc] = useDocument<VerificationContextDoc>(() => url);
-    return { url, doc };
-  });
-  const verificationDocAccessors = verificationContextAccessors.map(({ doc }) => {
-    const [verificationDoc] = useDocument<DatalogDoc>(() => doc()?.verificationUrl);
-    return verificationDoc;
-  });
+  const [specTree] = createResource(
+    () => props.specDocUrl,
+    (url) => loadSpecTree(props.repo, url),
+  );
 
   const artifactInputs = createMemo<VerificationArtifactInput[]>(() =>
     artifactAccessors.map(({ entry, doc }) => ({
@@ -180,60 +212,60 @@ function ValidationBody(props: {
     })),
   );
 
-  const verificationSummaries = createMemo(() =>
-    verificationContextAccessors
-      .map(({ url, doc }, index) => {
-        const contextDoc = doc();
-        if (!contextDoc) return null;
-        return {
-          url,
-          evaluation: evaluateVerificationContext(
-            contextDoc,
-            verificationDocAccessors[index](),
+  const flattenedVerifications = createMemo<FlattenedVerification[]>(() =>
+    flattenSpecTree(specTree()),
+  );
+
+  const verificationResults = createMemo<EvaluatedVerificationEntry[]>(() =>
+    flattenedVerifications()
+      .map((entry) => {
+        const evaluation = evaluateVerification(
+          entry.verification,
+          entry.verification.datalogDoc,
+          getArtifactsForNode(
+            entry.nodePath,
             artifactInputs(),
+            props.execution.artifactSpecPaths ?? {},
           ),
-        };
+          {
+            kind: entry.targetKind,
+            label: entry.nodeGoal,
+          },
+        );
+        return evaluation ? { entry, evaluation } : null;
       })
-      .filter(
-        (
-          entry,
-        ): entry is {
-          url: AutomergeUrl;
-          evaluation: NonNullable<ReturnType<typeof evaluateVerificationContext>>;
-        } => Boolean(entry?.evaluation),
-      ),
+      .filter((entry): entry is EvaluatedVerificationEntry => Boolean(entry))
+      .sort((a, b) => Number(a.evaluation.passed) - Number(b.evaluation.passed)),
   );
 
   const summary = createMemo(() => {
-    const evaluations = verificationSummaries().map((entry) => entry.evaluation);
-    const passing = evaluations.filter((evaluation) => evaluation.passed).length;
-    const failing = evaluations.length - passing;
-    const artifactEvaluations = evaluations.filter(
-      (evaluation) => evaluation.scope === 'artifacts',
+    const evaluations = verificationResults().map((entry) => entry.evaluation);
+    const globalEvaluations = evaluations.filter(
+      (evaluation) => evaluation.targetKind === 'global',
     );
-    const artifactTargetsTotal = artifactEvaluations.reduce(
-      (total, evaluation) => total + evaluation.artifactTargetsTotal,
-      0,
-    );
-    const artifactTargetsPassing = artifactEvaluations.reduce(
-      (total, evaluation) => total + evaluation.artifactTargetsPassing,
-      0,
+    const scopedEvaluations = evaluations.filter(
+      (evaluation) => evaluation.targetKind === 'scoped',
     );
 
     return {
-      allPassed: failing === 0,
+      allPassed: evaluations.every((evaluation) => evaluation.passed),
       total: evaluations.length,
-      passing,
-      failing,
-      artifactTargetsTotal,
-      artifactTargetsPassing,
-      systemPassed: evaluations.every((evaluation) => evaluation.systemPassed),
+      passing: evaluations.filter((evaluation) => evaluation.passed).length,
+      failing: evaluations.filter((evaluation) => !evaluation.passed).length,
+      globalPassing: globalEvaluations.filter((evaluation) => evaluation.passed).length,
+      globalTotal: globalEvaluations.length,
+      scopedPassing: scopedEvaluations.filter((evaluation) => evaluation.passed).length,
+      scopedTotal: scopedEvaluations.length,
     };
   });
 
   return (
     <div class="validation-body">
-      <Show when={verificationSummaries().length > 0}>
+      <Show when={specTree.loading}>
+        <div class="validation-loading-inline">Resolving verification definitions...</div>
+      </Show>
+
+      <Show when={verificationResults().length > 0}>
         <div class="validation-section">
           <div class="validation-section-label">Verification Summary</div>
           <div class="validation-summary-card">
@@ -252,27 +284,41 @@ function ValidationBody(props: {
             </div>
             <div class="validation-summary-metrics">
               <div class="validation-summary-metric">
-                <span class="validation-summary-metric-label">Required verifications</span>
+                <span class="validation-summary-metric-label">All verifications</span>
                 <span class="validation-summary-metric-value">
                   {summary().passing}/{summary().total} passing
                 </span>
               </div>
               <div class="validation-summary-metric">
-                <span class="validation-summary-metric-label">Artifact checks</span>
+                <span class="validation-summary-metric-label">Global checks</span>
                 <span class="validation-summary-metric-value">
-                  {summary().artifactTargetsPassing}/{summary().artifactTargetsTotal} passing
+                  {summary().globalPassing}/{summary().globalTotal} passing
                 </span>
               </div>
               <div class="validation-summary-metric">
-                <span class="validation-summary-metric-label">Whole system</span>
+                <span class="validation-summary-metric-label">Scoped checks</span>
                 <span class="validation-summary-metric-value">
-                  {summary().systemPassed ? 'Passing' : 'Failing'}
+                  {summary().scopedPassing}/{summary().scopedTotal} passing
                 </span>
               </div>
             </div>
           </div>
         </div>
       </Show>
+
+      <div class="validation-section">
+        <div class="validation-section-label">Verification Results</div>
+        <Show
+          when={verificationResults().length > 0}
+          fallback={<div class="validation-empty">No verifications available.</div>}
+        >
+          <div class="validation-results-list">
+            <For each={verificationResults()}>
+              {(result) => <ValidationResultCard result={result} />}
+            </For>
+          </div>
+        </Show>
+      </div>
 
       <div class="validation-section">
         <div class="validation-section-label">Artifacts</div>
@@ -292,7 +338,10 @@ function ValidationBody(props: {
                     onClick={() => props.toggleArtifact(entry.url)}
                   >
                     <span class="validation-artifact-name">{entry.name || 'Untitled'}</span>
-                    <span class="validation-artifact-type">{entry.type}</span>
+                    <span class="validation-artifact-meta">
+                      <span class="validation-artifact-scope">{entry.specPath || 'root'}</span>
+                      <span class="validation-artifact-type">{entry.type}</span>
+                    </span>
                   </button>
                   <Show when={props.isArtifactExpanded(entry.url)}>
                     <div class="validation-artifact-preview">
@@ -305,23 +354,134 @@ function ValidationBody(props: {
           </div>
         </Show>
       </div>
+    </div>
+  );
+}
 
-      <Show when={props.execution.verificationContextUrls.length > 0}>
-        <div class="validation-section">
-          <div class="validation-section-label">Verifications</div>
-          <div class="validation-verification-list">
-            <For each={props.execution.verificationContextUrls}>
-              {(url) => (
-                <patchwork-view
-                  attr:doc-url={url}
-                  attr:tool-id="grjte-verification-viewer"
-                  style="display:block;width:100%;"
-                />
-              )}
-            </For>
+function ValidationResultCard(props: { result: EvaluatedVerificationEntry }) {
+  const [expanded, setExpanded] = createSignal(!props.result.evaluation.passed);
+  const orderedConstraints = createMemo(() =>
+    [...props.result.evaluation.constraints].sort((a, b) => Number(a.passed) - Number(b.passed)),
+  );
+
+  return (
+    <div class="verification-card">
+      <button
+        class="verification-summary validation"
+        classList={{ pass: props.result.evaluation.passed, fail: !props.result.evaluation.passed }}
+        onClick={() => setExpanded((value) => !value)}
+      >
+        <div class="verification-summary-main">
+          <span
+            class="verification-status-pill"
+            classList={{
+              pass: props.result.evaluation.passed,
+              fail: !props.result.evaluation.passed,
+            }}
+          >
+            {props.result.evaluation.passed ? 'Pass' : 'Fail'}
+          </span>
+          <div class="verification-summary-copy">
+            <div class="verification-summary-title">{props.result.evaluation.title}</div>
+            <div class="verification-summary-description">
+              {props.result.evaluation.description}
+            </div>
+          </div>
+        </div>
+        <div class="verification-summary-meta">
+          <span class="validation-result-target">
+            {props.result.evaluation.targetKind === 'global' ? 'Global' : 'Scoped'}:{' '}
+            {props.result.evaluation.targetLabel}
+          </span>
+          <span class="verification-expand-label">
+            {expanded() ? 'Hide details' : 'Show details'}
+          </span>
+        </div>
+      </button>
+
+      <Show when={expanded()}>
+        <div class="verification-details">
+          <div class="verification-evidence">
+            <div class="verification-evidence-card">
+              <div class="verification-evidence-header">
+                <div class="verification-evidence-title">Constraint violations</div>
+                <span class="validation-result-node">{props.result.entry.nodePath}</span>
+              </div>
+
+              <div class="verification-constraint-list">
+                <For each={orderedConstraints()}>
+                  {(constraint) => (
+                    <div
+                      class="verification-constraint-item"
+                      classList={{ pass: constraint.passed, fail: !constraint.passed }}
+                    >
+                      <span class="verification-constraint-icon">
+                        {constraint.passed ? '\u2713' : '\u2717'}
+                      </span>
+                      <div class="verification-constraint-body">
+                        <div class="verification-constraint-text">{constraint.label}</div>
+                        <Show when={!constraint.passed}>
+                          <div class="verification-witness-list">
+                            <For each={constraint.violations}>
+                              {(violation) => (
+                                <For each={violation.witnesses}>
+                                  {(witness) => <WitnessCard witness={witness} />}
+                                </For>
+                              )}
+                            </For>
+                          </div>
+                        </Show>
+                      </div>
+                    </div>
+                  )}
+                </For>
+              </div>
+
+              <div class="verification-source-section">
+                <div class="verification-source-label">Combined datalog</div>
+                <pre class="verification-source-code">{props.result.evaluation.combinedSource}</pre>
+              </div>
+            </div>
           </div>
         </div>
       </Show>
+    </div>
+  );
+}
+
+function WitnessCard(props: { witness: ConstraintViolation['witnesses'][number] }) {
+  const bindings = () => Object.entries(props.witness.bindings);
+
+  return (
+    <div class="verification-witness-card">
+      <Show when={bindings().length > 0}>
+        <div class="verification-witness-bindings">
+          <For each={bindings()}>
+            {([key, value]) => (
+              <span class="verification-binding-pill">
+                {key}={String(value)}
+              </span>
+            )}
+          </For>
+        </div>
+      </Show>
+      <div class="verification-witness-steps">
+        <For each={props.witness.steps}>
+          {(step) => (
+            <div class="verification-step">
+              {step.kind === 'fact' ? (
+                <span class="verification-step-code">
+                  {step.fact.pred}({step.fact.args.join(', ')})
+                </span>
+              ) : (
+                <span class="verification-step-code">
+                  {step.atom.pred}({step.resolvedArgs.map((arg) => String(arg)).join(', ')})
+                </span>
+              )}
+            </div>
+          )}
+        </For>
+      </div>
     </div>
   );
 }
@@ -457,6 +617,82 @@ function ArtifactWorkspace(props: { entry: ArtifactFolderEntry; repo: any }) {
       </Show>
     </div>
   );
+}
+
+async function loadSpecTree(
+  repo: any,
+  url: AutomergeUrl,
+  path = 'root',
+): Promise<SpecTreeNode | null> {
+  const handle = (await repo.find(url)) as RepoDocHandle<SpecDoc>;
+  const doc = handle.doc();
+  if (!doc?.spec) return null;
+
+  const verifications = await Promise.all(
+    (doc.spec.verificationUrls ?? []).map(async (verificationUrl) => {
+      const verificationHandle = (await repo.find(
+        verificationUrl,
+      )) as RepoDocHandle<VerificationDoc>;
+      const verification = verificationHandle.doc();
+      if (!verification?.docUrl) return null;
+
+      const datalogHandle = (await repo.find(verification.docUrl)) as RepoDocHandle<DatalogDoc>;
+      return {
+        url: verificationUrl,
+        docUrl: verification.docUrl,
+        title: verification.title,
+        description: verification.description,
+        script: verification.script ?? '',
+        datalogDoc: datalogHandle.doc(),
+      } satisfies LoadedVerification;
+    }),
+  );
+
+  const subSpecs = await Promise.all(
+    (doc.spec.subSpecUrls ?? []).map((subSpecUrl, index) =>
+      loadSpecTree(repo, subSpecUrl, `${path}/${index}`),
+    ),
+  );
+  const resolvedVerifications = verifications.filter(
+    (entry): entry is NonNullable<(typeof verifications)[number]> => entry !== null,
+  );
+  const resolvedSubSpecs = subSpecs.filter(
+    (entry): entry is NonNullable<(typeof subSpecs)[number]> => entry !== null,
+  );
+
+  return {
+    path,
+    goal: doc.spec.goal || 'Untitled spec',
+    verifications: resolvedVerifications,
+    subSpecs: resolvedSubSpecs,
+  };
+}
+
+function flattenSpecTree(node: SpecTreeNode | null | undefined): FlattenedVerification[] {
+  if (!node) return [];
+
+  return [
+    ...node.verifications.map((verification) => ({
+      nodePath: node.path,
+      nodeGoal: node.goal,
+      targetKind: node.path === 'root' ? ('global' as const) : ('scoped' as const),
+      verification,
+    })),
+    ...node.subSpecs.flatMap((subSpec) => flattenSpecTree(subSpec)),
+  ];
+}
+
+function getArtifactsForNode(
+  nodePath: string,
+  artifacts: VerificationArtifactInput[],
+  artifactSpecPaths: Record<string, string>,
+): VerificationArtifactInput[] {
+  if (nodePath === 'root') return artifacts;
+
+  return artifacts.filter((artifact) => {
+    const artifactPath = artifactSpecPaths[artifact.url];
+    return artifactPath === nodePath || artifactPath?.startsWith(`${nodePath}/`);
+  });
 }
 
 function createHandleResource<T>(repo: any, url: () => AutomergeUrl | undefined) {
