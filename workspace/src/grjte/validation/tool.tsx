@@ -23,6 +23,7 @@ import type {
   DatalogDoc,
   VerificationArtifactInput,
   VerificationEvaluation,
+  VerificationDataInput,
 } from '../verification/model';
 import { evaluateVerification } from '../verification/model';
 import type { ConstraintViolation } from '../verification/datalog-eval';
@@ -33,34 +34,17 @@ import {
   type ArtifactFolderEntry,
   type CsvDoc,
 } from './csv-sync';
+import {
+  flattenSpecTree,
+  getArtifactsForNode,
+  loadSpecTree,
+  type FlattenedVerification,
+} from './verification-assembly';
 import '../verification/verification.css';
 import './validation.css';
 
 type FolderDoc = {
   docs: ArtifactFolderEntry[];
-};
-
-type LoadedVerification = {
-  url: AutomergeUrl;
-  docUrl: AutomergeUrl;
-  title?: string;
-  description?: string;
-  script: string;
-  datalogDoc?: DatalogDoc;
-};
-
-type SpecTreeNode = {
-  path: string;
-  goal: string;
-  verifications: LoadedVerification[];
-  subSpecs: SpecTreeNode[];
-};
-
-type FlattenedVerification = {
-  nodePath: string;
-  nodeGoal: string;
-  targetKind: 'global' | 'scoped';
-  verification: LoadedVerification;
 };
 
 type EvaluatedVerificationEntry = {
@@ -219,9 +203,15 @@ function ValidationBody(props: {
   const verificationResults = createMemo<EvaluatedVerificationEntry[]>(() =>
     flattenedVerifications()
       .map((entry) => {
+        const dataInputs: VerificationDataInput[] = entry.dataDocs.map((dataDoc) => ({
+          url: dataDoc.url,
+          name: dataDoc.name || dataDoc.title || 'Untitled data doc',
+          doc: dataDoc.datalogDoc,
+        }));
         const evaluation = evaluateVerification(
           entry.verification,
           entry.verification.datalogDoc,
+          dataInputs,
           getArtifactsForNode(
             entry.nodePath,
             artifactInputs(),
@@ -617,82 +607,6 @@ function ArtifactWorkspace(props: { entry: ArtifactFolderEntry; repo: any }) {
       </Show>
     </div>
   );
-}
-
-async function loadSpecTree(
-  repo: any,
-  url: AutomergeUrl,
-  path = 'root',
-): Promise<SpecTreeNode | null> {
-  const handle = (await repo.find(url)) as RepoDocHandle<SpecDoc>;
-  const doc = handle.doc();
-  if (!doc?.spec) return null;
-
-  const verifications = await Promise.all(
-    (doc.spec.verificationUrls ?? []).map(async (verificationUrl) => {
-      const verificationHandle = (await repo.find(
-        verificationUrl,
-      )) as RepoDocHandle<VerificationDoc>;
-      const verification = verificationHandle.doc();
-      if (!verification?.docUrl) return null;
-
-      const datalogHandle = (await repo.find(verification.docUrl)) as RepoDocHandle<DatalogDoc>;
-      return {
-        url: verificationUrl,
-        docUrl: verification.docUrl,
-        title: verification.title,
-        description: verification.description,
-        script: verification.script ?? '',
-        datalogDoc: datalogHandle.doc(),
-      } satisfies LoadedVerification;
-    }),
-  );
-
-  const subSpecs = await Promise.all(
-    (doc.spec.subSpecUrls ?? []).map((subSpecUrl, index) =>
-      loadSpecTree(repo, subSpecUrl, `${path}/${index}`),
-    ),
-  );
-  const resolvedVerifications = verifications.filter(
-    (entry): entry is NonNullable<(typeof verifications)[number]> => entry !== null,
-  );
-  const resolvedSubSpecs = subSpecs.filter(
-    (entry): entry is NonNullable<(typeof subSpecs)[number]> => entry !== null,
-  );
-
-  return {
-    path,
-    goal: doc.spec.goal || 'Untitled spec',
-    verifications: resolvedVerifications,
-    subSpecs: resolvedSubSpecs,
-  };
-}
-
-function flattenSpecTree(node: SpecTreeNode | null | undefined): FlattenedVerification[] {
-  if (!node) return [];
-
-  return [
-    ...node.verifications.map((verification) => ({
-      nodePath: node.path,
-      nodeGoal: node.goal,
-      targetKind: node.path === 'root' ? ('global' as const) : ('scoped' as const),
-      verification,
-    })),
-    ...node.subSpecs.flatMap((subSpec) => flattenSpecTree(subSpec)),
-  ];
-}
-
-function getArtifactsForNode(
-  nodePath: string,
-  artifacts: VerificationArtifactInput[],
-  artifactSpecPaths: Record<string, string>,
-): VerificationArtifactInput[] {
-  if (nodePath === 'root') return artifacts;
-
-  return artifacts.filter((artifact) => {
-    const artifactPath = artifactSpecPaths[artifact.url];
-    return artifactPath === nodePath || artifactPath?.startsWith(`${nodePath}/`);
-  });
 }
 
 function createHandleResource<T>(repo: any, url: () => AutomergeUrl | undefined) {

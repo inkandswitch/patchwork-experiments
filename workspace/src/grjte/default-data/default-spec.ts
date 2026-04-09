@@ -3,6 +3,7 @@ import type { SpecDoc, Spec } from '../../workflow/types';
 import type { VerificationDoc } from '../verification/types';
 
 type StoredAtom = { pred: string; args: string[] };
+type StoredRule = { head: StoredAtom; body: StoredAtom[]; comment?: string };
 type StoredConstraint = { body: StoredAtom[]; comment?: string };
 type StoredFact = { pred: string; args: (string | number)[]; comment?: string };
 
@@ -10,7 +11,7 @@ type DatalogDoc = {
   '@patchwork': { type: 'datalog' };
   title?: string;
   facts: StoredFact[];
-  rules: unknown[];
+  rules: StoredRule[];
   constraints: StoredConstraint[];
   derivedFacts?: unknown[];
   draftText?: string;
@@ -23,42 +24,23 @@ type FolderDoc = {
   docs: { type: string; name: string; url: AutomergeUrl }[];
 };
 
-function createConstraintDoc(
+function createDatalogDoc(
   repo: Repo,
   title: string,
   draftText: string,
-  constraints: StoredConstraint[],
+  options: {
+    facts?: StoredFact[];
+    rules?: StoredRule[];
+    constraints?: StoredConstraint[];
+  },
 ): AutomergeUrl {
   const handle = repo.create<DatalogDoc>();
   handle.change((d) => {
     d['@patchwork'] = { type: 'datalog' };
     d.title = title;
-    d.facts = [];
-    d.rules = [];
-    d.constraints = constraints;
-    d.draftText = draftText;
-    d.mapStyle = { lines: {}, properties: {} };
-  });
-  return handle.url;
-}
-
-function f(pred: string, ...args: (string | number)[]): StoredFact {
-  return { pred, args };
-}
-
-function createDataDoc(
-  repo: Repo,
-  title: string,
-  draftText: string,
-  facts: StoredFact[],
-): AutomergeUrl {
-  const handle = repo.create<DatalogDoc>();
-  handle.change((d) => {
-    d['@patchwork'] = { type: 'datalog' };
-    d.title = title;
-    d.facts = facts;
-    d.rules = [];
-    d.constraints = [];
+    d.facts = options.facts ?? [];
+    d.rules = options.rules ?? [];
+    d.constraints = options.constraints ?? [];
     d.draftText = draftText;
     d.mapStyle = { lines: {}, properties: {} };
   });
@@ -98,350 +80,437 @@ function createVerificationDoc(
   return handle.url;
 }
 
+function f(pred: string, ...args: (string | number)[]): StoredFact {
+  return { pred, args };
+}
+
+function atom(pred: string, ...args: string[]): StoredAtom {
+  return { pred, args };
+}
+
+function rule(head: StoredAtom, body: StoredAtom[], comment?: string): StoredRule {
+  return { head, body, comment };
+}
+
+function constraint(body: StoredAtom[], comment: string): StoredConstraint {
+  return { body, comment };
+}
+
 export function createDefaultSpec(repo: Repo): {
   specDocUrl: AutomergeUrl;
   subSpecUrls: AutomergeUrl[];
 } {
-  const trustRotaRulesUrl = createConstraintDoc(
+  const trustChecksUrl = createDatalogDoc(
     repo,
-    'Trust Rota Rules',
-    `% St Mary's Hospital NHS Trust — Trust-wide Rota Rules
-
-% Staff establishment
-staff(sarah_chen, amu, 7).
-staff(james_okafor, amu, 6).
-staff(priya_sharma, amu, 5).
-staff(emily_davies, amu, 5).
-staff(mike_thompson, amu, 3).
-staff(rachel_green, ward_6, 6).
-staff(tom_williams, ward_6, 5).
-staff(aisha_begum, ward_6, 5).
-staff(dan_murphy, ward_6, 3).
-staff(lisa_brown, ward_6, 2).
-
-% Weekly hours budget
-budget(480).
-
-% Total rostered hours must not exceed trust budget
-:- sum(H, rostered_hours(_, H), Total), budget(B), gt(Total, B).
-
-% Must have exactly 2 ward rosters
-:- sum(_, ward_roster(_), Count), neq(Count, 2).`,
-    [
-      {
-        body: [
-          { pred: 'sum', args: ['H', 'rostered_hours(_, H)', 'Total'] },
-          { pred: 'budget', args: ['B'] },
-          { pred: 'gt', args: ['Total', 'B'] },
-        ],
-        comment: 'Total rostered hours must not exceed trust budget',
-      },
-      {
-        body: [
-          { pred: 'sum', args: ['_', 'ward_roster(_)', 'Count'] },
-          { pred: 'neq', args: ['Count', '2'] },
-        ],
-        comment: 'Must have exactly 2 ward rosters',
-      },
-    ],
+    'Trust-wide Rota Checks',
+    `% Trust-wide rota checks
+:- not(ward_roster(amu)).
+:- not(ward_roster(ward_6)).
+:- ward_roster(W), neq(W, amu), neq(W, ward_6).
+:- rostered_hours(amu, AmuHours), rostered_hours(ward_6, Ward6Hours), add(AmuHours, Ward6Hours, Total), trust_budget_hours(Max), gt(Total, Max).`,
+    {
+      constraints: [
+        constraint([atom('not', 'ward_roster(amu)')], 'AMU roster must be present'),
+        constraint([atom('not', 'ward_roster(ward_6)')], 'Ward 6 roster must be present'),
+        constraint(
+          [atom('ward_roster', 'W'), atom('neq', 'W', 'amu'), atom('neq', 'W', 'ward_6')],
+          'Only AMU and Ward 6 rosters are allowed in the default scenario',
+        ),
+        constraint(
+          [
+            atom('rostered_hours', 'amu', 'AmuHours'),
+            atom('rostered_hours', 'ward_6', 'Ward6Hours'),
+            atom('add', 'AmuHours', 'Ward6Hours', 'Total'),
+            atom('trust_budget_hours', 'Max'),
+            atom('gt', 'Total', 'Max'),
+          ],
+          'Combined rostered hours must remain within the trust budget',
+        ),
+      ],
+    },
   );
 
-  const generalWardRulesUrl = createConstraintDoc(
+  const generalWardRulesUrl = createDatalogDoc(
     repo,
     'General Ward Rules',
-    `% General Ward Rules (all wards)
+    `% General ward rules
+rn_in_slot(S, Slot) :- assignment_slot(S, Slot, E), registered_nurse(E), not(supernumerary(E)).
+hca_in_slot(S, Slot) :- assignment_slot(S, Slot, E), hca(E), not(supernumerary(E)).
+two_rns_on_shift(S) :- rn_in_slot(S, SlotA), rn_in_slot(S, SlotB), neq(SlotA, SlotB).
+three_rns_on_shift(S) :- rn_in_slot(S, SlotA), rn_in_slot(S, SlotB), rn_in_slot(S, SlotC), neq(SlotA, SlotB), neq(SlotA, SlotC), neq(SlotB, SlotC).
+hca_on_shift(S) :- hca_in_slot(S, Slot).
+band_6_in_charge_on_shift(S) :- in_charge(S, E), assigned(S, E, _), registered_nurse(E), band_6_plus(E).
 
-% Minimum registered nurses (Band 5+) per shift
-min_rn_coverage(2).
-
-% Working Time Directive: max weekly hours
-max_weekly_hours(48).
-
-% Each shift must have minimum 2 registered nurses
-:- shift(S), sum(_, assigned(S, E), registered_nurse(E)), Count, lt(Count, 2).
-
-% No employee may work more than 48 hours per week (Working Time Directive)
-:- employee(E), sum(H, assigned(_, E, H), Total), max_weekly_hours(M), gt(Total, M).
-
-% Minimum 11 hours rest between shifts
-:- assigned(S1, E, _), assigned(S2, E, _), neq(S1, S2), shift_end(S1, End1), shift_start(S2, Start2), diff(Start2, End1, Gap), lt(Gap, 11).`,
-    [
-      {
-        body: [
-          { pred: 'shift', args: ['S'] },
-          { pred: 'sum', args: ['_', 'assigned(S, E)', 'registered_nurse(E)'] },
-          { pred: 'lt', args: ['Count', '2'] },
-        ],
-        comment: 'Each shift must have minimum 2 registered nurses (Band 5+)',
-      },
-      {
-        body: [
-          { pred: 'employee', args: ['E'] },
-          { pred: 'sum', args: ['H', 'assigned(_, E, H)', 'Total'] },
-          { pred: 'max_weekly_hours', args: ['M'] },
-          { pred: 'gt', args: ['Total', 'M'] },
-        ],
-        comment: 'No employee may work more than 48 hours/week (Working Time Directive)',
-      },
-    ],
+:- assigned(S, E, _), not(employee(E)).
+:- assignment_slot(S, SlotA, E), assignment_slot(S, SlotB, E), neq(SlotA, SlotB).
+:- employee_rostered_hours(E, Total), max_weekly_hours_limit(Max), gt(Total, Max).
+:- assigned(S, E, _), ward(S, W), home_ward(E, HomeWard), neq(W, HomeWard).
+:- assigned(S, E, _), supernumerary(E).
+:- shift(S), ward(S, W), requires_two_rns(W), not(two_rns_on_shift(S)).
+:- shift(S), ward(S, W), requires_hca(W), not(hca_on_shift(S)).`,
+    {
+      rules: [
+        rule(
+          atom('rn_in_slot', 'S', 'Slot'),
+          [
+            atom('assignment_slot', 'S', 'Slot', 'E'),
+            atom('registered_nurse', 'E'),
+            atom('not', 'supernumerary(E)'),
+          ],
+          'Registered nurses only count toward coverage when they are direct-care staff',
+        ),
+        rule(
+          atom('hca_in_slot', 'S', 'Slot'),
+          [
+            atom('assignment_slot', 'S', 'Slot', 'E'),
+            atom('hca', 'E'),
+            atom('not', 'supernumerary(E)'),
+          ],
+          'HCAs only count toward coverage when they are direct-care staff',
+        ),
+        rule(
+          atom('two_rns_on_shift', 'S'),
+          [atom('rn_in_slot', 'S', 'SlotA'), atom('rn_in_slot', 'S', 'SlotB'), atom('neq', 'SlotA', 'SlotB')],
+          'Two distinct RN slots satisfy the baseline RN coverage rule',
+        ),
+        rule(
+          atom('three_rns_on_shift', 'S'),
+          [
+            atom('rn_in_slot', 'S', 'SlotA'),
+            atom('rn_in_slot', 'S', 'SlotB'),
+            atom('rn_in_slot', 'S', 'SlotC'),
+            atom('neq', 'SlotA', 'SlotB'),
+            atom('neq', 'SlotA', 'SlotC'),
+            atom('neq', 'SlotB', 'SlotC'),
+          ],
+          'Three distinct RN slots satisfy the high-census coverage rule',
+        ),
+        rule(atom('hca_on_shift', 'S'), [atom('hca_in_slot', 'S', 'Slot')], 'At least one HCA is present on the shift'),
+        rule(
+          atom('band_6_in_charge_on_shift', 'S'),
+          [
+            atom('in_charge', 'S', 'E'),
+            atom('assigned', 'S', 'E', '_'),
+            atom('registered_nurse', 'E'),
+            atom('band_6_plus', 'E'),
+          ],
+          'The named nurse in charge must be rostered on the shift and be Band 6+',
+        ),
+      ],
+      constraints: [
+        constraint(
+          [atom('assigned', 'S', 'E', '_'), atom('not', 'employee(E)')],
+          'Every assignment must reference a known employee',
+        ),
+        constraint(
+          [
+            atom('assignment_slot', 'S', 'SlotA', 'E'),
+            atom('assignment_slot', 'S', 'SlotB', 'E'),
+            atom('neq', 'SlotA', 'SlotB'),
+          ],
+          'A person may not be assigned to the same shift more than once',
+        ),
+        constraint(
+          [atom('employee_rostered_hours', 'E', 'Total'), atom('max_weekly_hours_limit', 'Max'), atom('gt', 'Total', 'Max')],
+          'No employee may exceed the default weekly hours limit',
+        ),
+        constraint(
+          [
+            atom('assigned', 'S', 'E', '_'),
+            atom('ward', 'S', 'W'),
+            atom('home_ward', 'E', 'HomeWard'),
+            atom('neq', 'W', 'HomeWard'),
+          ],
+          'Assignments must stay within each employee’s home ward in the default scenario',
+        ),
+        constraint(
+          [atom('assigned', 'S', 'E', '_'), atom('supernumerary', 'E')],
+          'Supernumerary staff must not be assigned into direct-care coverage',
+        ),
+        constraint(
+          [atom('shift', 'S'), atom('ward', 'S', 'W'), atom('requires_two_rns', 'W'), atom('not', 'two_rns_on_shift(S)')],
+          'Each shift must have at least two direct-care registered nurses',
+        ),
+        constraint(
+          [atom('shift', 'S'), atom('ward', 'S', 'W'), atom('requires_hca', 'W'), atom('not', 'hca_on_shift(S)')],
+          'Each shift must include at least one direct-care HCA',
+        ),
+      ],
+    },
   );
 
-  const amuRulesUrl = createConstraintDoc(
+  const amuRulesUrl = createDatalogDoc(
     repo,
     'AMU Rules',
-    `% AMU-specific Rules
+    `% AMU-specific rules
+band_6_in_charge_on_shift(S) :- in_charge(S, E), assigned(S, E, _), registered_nurse(E), band_6_plus(E).
 
-% AMU staff
-staff_in_ward(sarah_chen, amu).
-staff_in_ward(james_okafor, amu).
-staff_in_ward(priya_sharma, amu).
-staff_in_ward(emily_davies, amu).
-staff_in_ward(mike_thompson, amu).
-
-% Band 6+ staff (can be nurse in charge)
-band_6_plus(sarah_chen).
-band_6_plus(james_okafor).
-
-% Acute assessment competency
-competency(sarah_chen, acute_assessment).
-competency(james_okafor, acute_assessment).
-competency(priya_sharma, acute_assessment).
-competency(emily_davies, acute_assessment).
-
-% Night shifts require a Band 6+ nurse in charge
-:- night_shift(S), ward(S, amu), sum(_, assigned(S, E), band_6_plus(E)), Count, lt(Count, 1).
-
-% All AMU nursing staff must hold acute assessment competency
-:- assigned(S, E, _), ward(S, amu), registered_nurse(E), not(competency(E, acute_assessment)).`,
-    [
-      {
-        body: [
-          { pred: 'night_shift', args: ['S'] },
-          { pred: 'ward', args: ['S', 'amu'] },
-          { pred: 'sum', args: ['_', 'assigned(S, E)', 'band_6_plus(E)'] },
-          { pred: 'lt', args: ['Count', '1'] },
-        ],
-        comment: 'Night shifts require a Band 6+ nurse in charge',
-      },
-      {
-        body: [
-          { pred: 'assigned', args: ['S', 'E', '_'] },
-          { pred: 'ward', args: ['S', 'amu'] },
-          { pred: 'registered_nurse', args: ['E'] },
-          { pred: 'not', args: ['competency(E, acute_assessment)'] },
-        ],
-        comment: 'All AMU nursing staff must hold acute assessment competency',
-      },
-    ],
+:- night_shift(S), ward(S, W), requires_band_6_in_charge(W), not(band_6_in_charge_on_shift(S)).
+:- assigned(S, E, _), ward(S, W), registered_nurse(E), required_rn_competency(W, Competency), not(competency(E, Competency)).`,
+    {
+      rules: [
+        rule(
+          atom('band_6_in_charge_on_shift', 'S'),
+          [
+            atom('in_charge', 'S', 'E'),
+            atom('assigned', 'S', 'E', '_'),
+            atom('registered_nurse', 'E'),
+            atom('band_6_plus', 'E'),
+          ],
+          'The named nurse in charge must be rostered on the shift and be Band 6+',
+        ),
+      ],
+      constraints: [
+        constraint(
+          [
+            atom('night_shift', 'S'),
+            atom('ward', 'S', 'W'),
+            atom('requires_band_6_in_charge', 'W'),
+            atom('not', 'band_6_in_charge_on_shift(S)'),
+          ],
+          'AMU night shifts must name a Band 6+ registered nurse in charge',
+        ),
+        constraint(
+          [
+            atom('assigned', 'S', 'E', '_'),
+            atom('ward', 'S', 'W'),
+            atom('registered_nurse', 'E'),
+            atom('required_rn_competency', 'W', 'Competency'),
+            atom('not', 'competency(E, Competency)'),
+          ],
+          'AMU registered nurses must hold the acute assessment competency',
+        ),
+      ],
+    },
   );
 
-  const ward6RulesUrl = createConstraintDoc(
+  const ward6RulesUrl = createDatalogDoc(
     repo,
     'Ward 6 Rules',
-    `% Ward 6 (General Medicine) Rules
+    `% Ward 6-specific rules
+rn_in_slot(S, Slot) :- assignment_slot(S, Slot, E), registered_nurse(E), not(supernumerary(E)).
+three_rns_on_shift(S) :- rn_in_slot(S, SlotA), rn_in_slot(S, SlotB), rn_in_slot(S, SlotC), neq(SlotA, SlotB), neq(SlotA, SlotC), neq(SlotB, SlotC).
 
-% Ward 6 staff
-staff_in_ward(rachel_green, ward_6).
-staff_in_ward(tom_williams, ward_6).
-staff_in_ward(aisha_begum, ward_6).
-staff_in_ward(dan_murphy, ward_6).
-staff_in_ward(lisa_brown, ward_6).
-
-% NICE red flag: max RN-to-patient ratio
-max_rn_patient_ratio(8).
-
-% Maximum 1:8 RN-to-patient ratio (NICE safe staffing red flag)
-:- shift(S), ward(S, ward_6), patients(S, P), sum(_, assigned(S, E), registered_nurse(E)), Staff, div(P, Staff, Ratio), max_rn_patient_ratio(M), gt(Ratio, M).
-
-% Each shift must have at least one HCA (Band 2-3)
-:- shift(S), ward(S, ward_6), sum(_, assigned(S, E), hca(E)), Count, lt(Count, 1).`,
-    [
-      {
-        body: [
-          { pred: 'shift', args: ['S'] },
-          { pred: 'ward', args: ['S', 'ward_6'] },
-          { pred: 'patients', args: ['S', 'P'] },
-          { pred: 'sum', args: ['_', 'assigned(S, E)', 'registered_nurse(E)'] },
-          { pred: 'div', args: ['P', 'Staff', 'Ratio'] },
-          { pred: 'max_rn_patient_ratio', args: ['M'] },
-          { pred: 'gt', args: ['Ratio', 'M'] },
-        ],
-        comment: 'Maximum 1:8 RN-to-patient ratio (NICE safe staffing red flag)',
-      },
-      {
-        body: [
-          { pred: 'shift', args: ['S'] },
-          { pred: 'ward', args: ['S', 'ward_6'] },
-          { pred: 'sum', args: ['_', 'assigned(S, E)', 'hca(E)'] },
-          { pred: 'lt', args: ['Count', '1'] },
-        ],
-        comment: 'Each shift must have at least one HCA (Band 2-3)',
-      },
-    ],
+:- shift(S), ward(S, W), patients(S, Patients), high_census_threshold(W, Threshold), gt(Patients, Threshold), not(three_rns_on_shift(S)).`,
+    {
+      rules: [
+        rule(
+          atom('rn_in_slot', 'S', 'Slot'),
+          [
+            atom('assignment_slot', 'S', 'Slot', 'E'),
+            atom('registered_nurse', 'E'),
+            atom('not', 'supernumerary(E)'),
+          ],
+          'Registered nurses only count toward coverage when they are direct-care staff',
+        ),
+        rule(
+          atom('three_rns_on_shift', 'S'),
+          [
+            atom('rn_in_slot', 'S', 'SlotA'),
+            atom('rn_in_slot', 'S', 'SlotB'),
+            atom('rn_in_slot', 'S', 'SlotC'),
+            atom('neq', 'SlotA', 'SlotB'),
+            atom('neq', 'SlotA', 'SlotC'),
+            atom('neq', 'SlotB', 'SlotC'),
+          ],
+          'Three distinct RN slots satisfy the high-census coverage rule',
+        ),
+      ],
+      constraints: [
+        constraint(
+          [
+            atom('shift', 'S'),
+            atom('ward', 'S', 'W'),
+            atom('patients', 'S', 'Patients'),
+            atom('high_census_threshold', 'W', 'Threshold'),
+            atom('gt', 'Patients', 'Threshold'),
+            atom('not', 'three_rns_on_shift(S)'),
+          ],
+          'Ward 6 shifts above the high-census threshold must roster three registered nurses',
+        ),
+      ],
+    },
   );
 
-  // --- Data docs (formalized input data for spec) ---
-
-  const allStaffDataUrl = createDataDoc(
+  const staffRosterDataUrl = createDatalogDoc(
     repo,
     'Staff Roster',
-    `% St Mary's Hospital NHS Trust — Staff Roster
-staff(sarah_chen, amu, 7).
-staff(james_okafor, amu, 6).
-staff(priya_sharma, amu, 5).
-staff(emily_davies, amu, 5).
-staff(mike_thompson, amu, 3).
-staff(rachel_green, ward_6, 6).
-staff(tom_williams, ward_6, 5).
-staff(aisha_begum, ward_6, 5).
-staff(dan_murphy, ward_6, 3).
-staff(lisa_brown, ward_6, 2).
+    `% Staff roster
+employee(sarah_chen). home_ward(sarah_chen, amu). band_6_plus(sarah_chen). registered_nurse(sarah_chen). supernumerary(sarah_chen). competency(sarah_chen, acute_assessment).
+employee(james_okafor). home_ward(james_okafor, amu). band_6_plus(james_okafor). registered_nurse(james_okafor). competency(james_okafor, acute_assessment).
+employee(priya_sharma). home_ward(priya_sharma, amu). registered_nurse(priya_sharma). competency(priya_sharma, acute_assessment).
+employee(emily_davies). home_ward(emily_davies, amu). registered_nurse(emily_davies). competency(emily_davies, acute_assessment).
+employee(nia_ford). home_ward(nia_ford, amu). registered_nurse(nia_ford). competency(nia_ford, acute_assessment).
+employee(luke_evans). home_ward(luke_evans, amu). hca(luke_evans).
+employee(mike_thompson). home_ward(mike_thompson, amu). hca(mike_thompson).
 
-registered_nurse(sarah_chen). registered_nurse(james_okafor).
-registered_nurse(priya_sharma). registered_nurse(emily_davies).
-registered_nurse(rachel_green). registered_nurse(tom_williams).
-registered_nurse(aisha_begum).
-
-hca(mike_thompson). hca(dan_murphy). hca(lisa_brown).
-supernumerary(sarah_chen).`,
-    [
-      f('staff', 'sarah_chen', 'amu', 7),
-      f('staff', 'james_okafor', 'amu', 6),
-      f('staff', 'priya_sharma', 'amu', 5),
-      f('staff', 'emily_davies', 'amu', 5),
-      f('staff', 'mike_thompson', 'amu', 3),
-      f('staff', 'rachel_green', 'ward_6', 6),
-      f('staff', 'tom_williams', 'ward_6', 5),
-      f('staff', 'aisha_begum', 'ward_6', 5),
-      f('staff', 'dan_murphy', 'ward_6', 3),
-      f('staff', 'lisa_brown', 'ward_6', 2),
-      f('registered_nurse', 'sarah_chen'),
-      f('registered_nurse', 'james_okafor'),
-      f('registered_nurse', 'priya_sharma'),
-      f('registered_nurse', 'emily_davies'),
-      f('registered_nurse', 'rachel_green'),
-      f('registered_nurse', 'tom_williams'),
-      f('registered_nurse', 'aisha_begum'),
-      f('hca', 'mike_thompson'),
-      f('hca', 'dan_murphy'),
-      f('hca', 'lisa_brown'),
-      f('supernumerary', 'sarah_chen'),
-    ],
+employee(rachel_green). home_ward(rachel_green, ward_6). band_6_plus(rachel_green). registered_nurse(rachel_green).
+employee(tom_williams). home_ward(tom_williams, ward_6). registered_nurse(tom_williams).
+employee(aisha_begum). home_ward(aisha_begum, ward_6). registered_nurse(aisha_begum).
+employee(helen_morris). home_ward(helen_morris, ward_6). registered_nurse(helen_morris).
+employee(noor_khan). home_ward(noor_khan, ward_6). registered_nurse(noor_khan).
+employee(dan_murphy). home_ward(dan_murphy, ward_6). hca(dan_murphy).
+employee(lisa_brown). home_ward(lisa_brown, ward_6). hca(lisa_brown).`,
+    {
+      facts: [
+        f('employee', 'sarah_chen'),
+        f('home_ward', 'sarah_chen', 'amu'),
+        f('band_6_plus', 'sarah_chen'),
+        f('registered_nurse', 'sarah_chen'),
+        f('supernumerary', 'sarah_chen'),
+        f('competency', 'sarah_chen', 'acute_assessment'),
+        f('employee', 'james_okafor'),
+        f('home_ward', 'james_okafor', 'amu'),
+        f('band_6_plus', 'james_okafor'),
+        f('registered_nurse', 'james_okafor'),
+        f('competency', 'james_okafor', 'acute_assessment'),
+        f('employee', 'priya_sharma'),
+        f('home_ward', 'priya_sharma', 'amu'),
+        f('registered_nurse', 'priya_sharma'),
+        f('competency', 'priya_sharma', 'acute_assessment'),
+        f('employee', 'emily_davies'),
+        f('home_ward', 'emily_davies', 'amu'),
+        f('registered_nurse', 'emily_davies'),
+        f('competency', 'emily_davies', 'acute_assessment'),
+        f('employee', 'nia_ford'),
+        f('home_ward', 'nia_ford', 'amu'),
+        f('registered_nurse', 'nia_ford'),
+        f('competency', 'nia_ford', 'acute_assessment'),
+        f('employee', 'luke_evans'),
+        f('home_ward', 'luke_evans', 'amu'),
+        f('hca', 'luke_evans'),
+        f('employee', 'mike_thompson'),
+        f('home_ward', 'mike_thompson', 'amu'),
+        f('hca', 'mike_thompson'),
+        f('employee', 'rachel_green'),
+        f('home_ward', 'rachel_green', 'ward_6'),
+        f('band_6_plus', 'rachel_green'),
+        f('registered_nurse', 'rachel_green'),
+        f('employee', 'tom_williams'),
+        f('home_ward', 'tom_williams', 'ward_6'),
+        f('registered_nurse', 'tom_williams'),
+        f('employee', 'aisha_begum'),
+        f('home_ward', 'aisha_begum', 'ward_6'),
+        f('registered_nurse', 'aisha_begum'),
+        f('employee', 'helen_morris'),
+        f('home_ward', 'helen_morris', 'ward_6'),
+        f('registered_nurse', 'helen_morris'),
+        f('employee', 'noor_khan'),
+        f('home_ward', 'noor_khan', 'ward_6'),
+        f('registered_nurse', 'noor_khan'),
+        f('employee', 'dan_murphy'),
+        f('home_ward', 'dan_murphy', 'ward_6'),
+        f('hca', 'dan_murphy'),
+        f('employee', 'lisa_brown'),
+        f('home_ward', 'lisa_brown', 'ward_6'),
+        f('hca', 'lisa_brown'),
+      ],
+    },
   );
 
-  const wardInfoDataUrl = createDataDoc(
+  const trustPolicyDataUrl = createDatalogDoc(
     repo,
-    'Ward Information',
-    `% Ward Information
-ward(amu, 20).
-ward(ward_6, 28).
-ward_type(amu, acute_medical).
-ward_type(ward_6, general_medicine).`,
-    [
-      f('ward', 'amu', 20),
-      f('ward', 'ward_6', 28),
-      f('ward_type', 'amu', 'acute_medical'),
-      f('ward_type', 'ward_6', 'general_medicine'),
-    ],
+    'Trust Policy',
+    `% Trust policy
+trust_budget_hours(504).
+max_weekly_hours_limit(48).`,
+    {
+      facts: [f('trust_budget_hours', 504), f('max_weekly_hours_limit', 48)],
+    },
   );
 
-  const shiftDefsDataUrl = createDataDoc(
+  const shiftDefinitionsDataUrl = createDatalogDoc(
     repo,
     'Shift Definitions',
-    `% Shift Definitions
-shift_type(long_day, 0730, 2000, 12).
-shift_type(long_night, 1930, 0800, 12).
-rota_week(week_1).`,
-    [
-      f('shift_type', 'long_day', '0730', '2000', 12),
-      f('shift_type', 'long_night', '1930', '0800', 12),
-      f('rota_week', 'week_1'),
-    ],
+    `% Shift definitions
+shift_length_hours(long_day, 12).
+shift_length_hours(long_night, 12).
+shift_kind(long_day, day).
+shift_kind(long_night, night).`,
+    {
+      facts: [
+        f('shift_length_hours', 'long_day', 12),
+        f('shift_length_hours', 'long_night', 12),
+        f('shift_kind', 'long_day', 'day'),
+        f('shift_kind', 'long_night', 'night'),
+      ],
+    },
   );
 
-  const amuStaffDataUrl = createDataDoc(
+  const amuDataUrl = createDatalogDoc(
     repo,
-    'AMU Staff',
-    `% AMU Staff
-staff_in_ward(sarah_chen, amu). staff_in_ward(james_okafor, amu).
-staff_in_ward(priya_sharma, amu). staff_in_ward(emily_davies, amu).
-staff_in_ward(mike_thompson, amu).
-band_6_plus(sarah_chen). band_6_plus(james_okafor).
-competency(sarah_chen, acute_assessment). competency(james_okafor, acute_assessment).
-competency(priya_sharma, acute_assessment). competency(emily_davies, acute_assessment).`,
-    [
-      f('staff_in_ward', 'sarah_chen', 'amu'),
-      f('staff_in_ward', 'james_okafor', 'amu'),
-      f('staff_in_ward', 'priya_sharma', 'amu'),
-      f('staff_in_ward', 'emily_davies', 'amu'),
-      f('staff_in_ward', 'mike_thompson', 'amu'),
-      f('band_6_plus', 'sarah_chen'),
-      f('band_6_plus', 'james_okafor'),
-      f('competency', 'sarah_chen', 'acute_assessment'),
-      f('competency', 'james_okafor', 'acute_assessment'),
-      f('competency', 'priya_sharma', 'acute_assessment'),
-      f('competency', 'emily_davies', 'acute_assessment'),
-    ],
+    'AMU Staffing Assumptions',
+    `% AMU staffing assumptions
+requires_two_rns(amu).
+requires_hca(amu).
+requires_band_6_in_charge(amu).
+required_rn_competency(amu, acute_assessment).`,
+    {
+      facts: [
+        f('requires_two_rns', 'amu'),
+        f('requires_hca', 'amu'),
+        f('requires_band_6_in_charge', 'amu'),
+        f('required_rn_competency', 'amu', 'acute_assessment'),
+      ],
+    },
   );
 
-  const ward6StaffDataUrl = createDataDoc(
+  const ward6DataUrl = createDatalogDoc(
     repo,
-    'Ward 6 Staff',
-    `% Ward 6 Staff
-staff_in_ward(rachel_green, ward_6). staff_in_ward(tom_williams, ward_6).
-staff_in_ward(aisha_begum, ward_6). staff_in_ward(dan_murphy, ward_6).
-staff_in_ward(lisa_brown, ward_6).`,
-    [
-      f('staff_in_ward', 'rachel_green', 'ward_6'),
-      f('staff_in_ward', 'tom_williams', 'ward_6'),
-      f('staff_in_ward', 'aisha_begum', 'ward_6'),
-      f('staff_in_ward', 'dan_murphy', 'ward_6'),
-      f('staff_in_ward', 'lisa_brown', 'ward_6'),
-    ],
+    'Ward 6 Staffing Assumptions',
+    `% Ward 6 staffing assumptions
+requires_two_rns(ward_6).
+requires_hca(ward_6).
+high_census_threshold(ward_6, 16).`,
+    {
+      facts: [
+        f('requires_two_rns', 'ward_6'),
+        f('requires_hca', 'ward_6'),
+        f('high_census_threshold', 'ward_6', 16),
+      ],
+    },
   );
-
-  // --- Data folders ---
 
   const rootDataFolderUrl = createFolder(repo, 'Hospital Data', [
-    { type: 'datalog', name: 'Staff Roster', url: allStaffDataUrl },
-    { type: 'datalog', name: 'Ward Information', url: wardInfoDataUrl },
-    { type: 'datalog', name: 'Shift Definitions', url: shiftDefsDataUrl },
+    { type: 'datalog', name: 'Staff Roster', url: staffRosterDataUrl },
+    { type: 'datalog', name: 'Trust Policy', url: trustPolicyDataUrl },
+    { type: 'datalog', name: 'Shift Definitions', url: shiftDefinitionsDataUrl },
   ]);
 
   const amuDataFolderUrl = createFolder(repo, 'AMU Data', [
-    { type: 'datalog', name: 'AMU Staff', url: amuStaffDataUrl },
+    { type: 'datalog', name: 'AMU Staffing Assumptions', url: amuDataUrl },
   ]);
 
   const ward6DataFolderUrl = createFolder(repo, 'Ward 6 Data', [
-    { type: 'datalog', name: 'Ward 6 Staff', url: ward6StaffDataUrl },
+    { type: 'datalog', name: 'Ward 6 Staffing Assumptions', url: ward6DataUrl },
   ]);
 
-  const trustRotaRulesVerificationUrl = createVerificationDoc(repo, trustRotaRulesUrl, {
+  const trustChecksVerificationUrl = createVerificationDoc(repo, trustChecksUrl, {
     title: 'Trust-wide rota checks',
     description:
-      'Ensure the combined hospital rota stays within the trust-wide hours budget and includes exactly two ward rosters.',
+      'Ensure both ward rosters are present and the combined rostered hours remain within the trust budget.',
   });
   const generalWardRulesVerificationUrl = createVerificationDoc(repo, generalWardRulesUrl, {
     title: 'General ward staffing checks',
     description:
-      'Ensure each ward rota satisfies the general staffing rules that apply across wards.',
+      'Ensure assignments are unique, stay within weekly hours, use direct-care staff correctly, and meet baseline ward coverage.',
   });
   const amuRulesVerificationUrl = createVerificationDoc(repo, amuRulesUrl, {
     title: 'AMU-specific checks',
     description:
-      'Ensure the AMU rota has the required senior night coverage and acute assessment competency.',
+      'Ensure AMU night shifts have a Band 6+ nurse in charge and all AMU registered nurses hold the acute assessment competency.',
   });
   const ward6RulesVerificationUrl = createVerificationDoc(repo, ward6RulesUrl, {
     title: 'Ward 6-specific checks',
     description:
-      'Ensure the Ward 6 rota satisfies RN-to-patient ratio and HCA coverage requirements.',
+      'Ensure Ward 6 shifts above the high-census threshold roster three registered nurses.',
   });
 
   const amuSpecHandle = repo.create<SpecDoc>();
   amuSpecHandle.change((d) => {
     d['@patchwork'] = { type: 'spec' };
     d.spec = {
-      goal: 'AMU Rota',
+      goal: 'AMU rota',
       dataFolderUrl: amuDataFolderUrl,
       verificationUrls: [generalWardRulesVerificationUrl, amuRulesVerificationUrl],
     };
@@ -451,16 +520,16 @@ staff_in_ward(lisa_brown, ward_6).`,
   ward6SpecHandle.change((d) => {
     d['@patchwork'] = { type: 'spec' };
     d.spec = {
-      goal: 'Ward 6 Rota',
+      goal: 'Ward 6 rota',
       dataFolderUrl: ward6DataFolderUrl,
       verificationUrls: [generalWardRulesVerificationUrl, ward6RulesVerificationUrl],
     };
   });
 
   const spec: Spec = {
-    goal: 'Hospital Rota',
+    goal: 'Hospital rota',
     dataFolderUrl: rootDataFolderUrl,
-    verificationUrls: [trustRotaRulesVerificationUrl],
+    verificationUrls: [trustChecksVerificationUrl],
     subSpecUrls: [amuSpecHandle.url, ward6SpecHandle.url],
   };
 

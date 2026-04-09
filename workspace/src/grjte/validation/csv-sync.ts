@@ -40,9 +40,11 @@ const DYNAMIC_PREDICATES = new Set([
   'night_shift',
   'ward',
   'assigned',
+  'assignment_slot',
   'patients',
   'has_hca',
   'in_charge',
+  'employee_rostered_hours',
   'ward_roster',
   'rostered_hours',
 ]);
@@ -120,6 +122,7 @@ export function applyCsvToDatalogArtifact(
   const dynamicFacts: StoredFact[] = [];
   const staticFacts = priorDoc.facts.filter((fact) => !DYNAMIC_PREDICATES.has(fact.pred));
   const wardHours = new Map<string, number>();
+  const employeeHours = new Map<string, number>();
   const seenWards = new Set<string>();
 
   for (const rawRow of rows.slice(1)) {
@@ -161,8 +164,10 @@ export function applyCsvToDatalogArtifact(
     dynamicFacts.push(f('shift', shiftId));
     dynamicFacts.push(f('ward', shiftId, ward));
     if (night) dynamicFacts.push(f('night_shift', shiftId));
-    for (const person of staff) {
+    for (const [index, person] of staff.entries()) {
       dynamicFacts.push(f('assigned', shiftId, person, hours));
+      dynamicFacts.push(f('assignment_slot', shiftId, index + 1, person));
+      employeeHours.set(person, (employeeHours.get(person) ?? 0) + hours);
     }
     if (inCharge) dynamicFacts.push(f('in_charge', shiftId, inCharge));
     if (patients) {
@@ -182,6 +187,11 @@ export function applyCsvToDatalogArtifact(
   for (const ward of seenWards) {
     dynamicFacts.unshift(f('rostered_hours', ward, wardHours.get(ward) ?? 0));
     dynamicFacts.unshift(f('ward_roster', ward));
+  }
+  for (const [employee, totalHours] of [...employeeHours.entries()].sort(([a], [b]) =>
+    a.localeCompare(b),
+  )) {
+    dynamicFacts.unshift(f('employee_rostered_hours', employee, totalHours));
   }
 
   const facts = [...staticFacts, ...dynamicFacts];

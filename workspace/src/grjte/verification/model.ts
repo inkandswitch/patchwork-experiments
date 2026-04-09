@@ -22,6 +22,12 @@ export type VerificationArtifactInput = {
   doc?: DatalogDoc;
 };
 
+export type VerificationDataInput = {
+  url: AutomergeUrl;
+  name: string;
+  doc?: DatalogDoc;
+};
+
 export type VerificationConstraintResult = {
   constraint: StoredConstraint;
   passed: boolean;
@@ -61,6 +67,7 @@ export function getVerificationDescription(
 export function evaluateVerification(
   verification: Pick<VerificationDoc, 'title' | 'description'>,
   verificationDoc: DatalogDoc | undefined,
+  dataDocs: VerificationDataInput[],
   artifacts: VerificationArtifactInput[],
   target: {
     kind: 'global' | 'scoped';
@@ -71,6 +78,7 @@ export function evaluateVerification(
 
   const facts = [
     ...(verificationDoc.facts ?? []),
+    ...dataDocs.flatMap((dataDoc) => dataDoc.doc?.facts ?? []),
     ...artifacts.flatMap((artifact) => artifact.doc?.facts ?? []),
   ];
   const datalog = new Datalog(
@@ -99,16 +107,20 @@ export function evaluateVerification(
     passed: violations.length === 0,
     constraints,
     violations,
-    combinedSource: buildCombinedSource(verificationDoc, artifacts),
+    combinedSource: buildCombinedSource(verificationDoc, dataDocs, artifacts),
   };
 }
 
 export function buildCombinedSource(
   verificationDoc: DatalogDoc,
+  dataDocs: VerificationDataInput[],
   artifacts: VerificationArtifactInput[],
 ): string {
   const sections = [
     ['Verification', buildDatalogSource(verificationDoc)],
+    ...dataDocs.map(
+      (dataDoc) => [`Spec Data: ${dataDoc.name}`, buildDatalogSource(dataDoc.doc, dataDoc.name)] as const,
+    ),
     ...artifacts.map(
       (artifact) =>
         [`Artifact: ${artifact.name}`, buildDatalogSource(artifact.doc, artifact.name)] as const,
