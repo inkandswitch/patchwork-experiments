@@ -1,0 +1,293 @@
+.artifact-sheet-root {
+  --sheet-bg: #f4f6fb;
+  --sheet-panel: #ffffff;
+  --sheet-grid: #d7deea;
+  --sheet-grid-strong: #bac6da;
+  --sheet-text: #1f2937;
+  --sheet-muted: #66758f;
+  --sheet-header: #eef3fb;
+  --sheet-selected: #2563eb;
+  --sheet-selected-soft: #dbeafe;
+  --sheet-button: #f8fafc;
+  --sheet-button-hover: #edf2f9;
+  --sheet-issue: #b42318;
+  --sheet-issue-soft: #fef3f2;
+  font-family: 'Aptos', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  font-size: 13px;
+  color: var(--sheet-text);
+  height: 100%;
+  background: linear-gradient(180deg, #f8fbff 0%, #eef3fb 100%);
+}
+
+.artifact-sheet-loading,
+.artifact-sheet-empty-state {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: 24px;
+}
+
+.artifact-sheet-empty-card {
+  width: min(480px, 100%);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(186, 198, 218, 0.9);
+  border-radius: 18px;
+  padding: 28px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+}
+
+.artifact-sheet-empty-eyebrow {
+  margin-bottom: 10px;
+  color: #3157a3;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.artifact-sheet-primary-button,
+.artifact-sheet-toolbar-button,
+.artifact-sheet-action-button {
+  border: 1px solid var(--sheet-grid-strong);
+  background: var(--sheet-button);
+  color: var(--sheet-text);
+  border-radius: 8px;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.artifact-sheet-primary-button,
+.artifact-sheet-toolbar-button {
+  height: 34px;
+  padding: 0 12px;
+  font: inherit;
+  font-weight: 600;
+}
+
+.artifact-sheet-primary-button {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.artifact-sheet-primary-button:hover,
+.artifact-sheet-toolbar-button:hover,
+.artifact-sheet-action-button:hover {
+  background: var(--sheet-button-hover);
+}
+
+.artifact-sheet-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  padding: 14px;
+  outline: none;
+}
+
+.artifact-sheet-toolbar,
+.artifact-sheet-issues {
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(186, 198, 218, 0.9);
+  border-radius: 14px;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.06);
+}
+
+.artifact-sheet-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+}
+
+.artifact-sheet-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.artifact-sheet-toolbar-status {
+  min-width: 72px;
+  padding: 0 10px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: #e8f0ff;
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
+.artifact-sheet-issues {
+  padding: 12px;
+}
+
+.artifact-sheet-issues-header {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 700;
+  color: var(--sheet-issue);
+  margin-bottom: 8px;
+}
+
+.artifact-sheet-issue-list {
+  display: grid;
+  gap: 8px;
+  max-height: 160px;
+  overflow: auto;
+}
+
+.artifact-sheet-issue-card {
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: var(--sheet-issue-soft);
+  border: 1px solid rgba(180, 35, 24, 0.18);
+}
+
+.artifact-sheet-issue-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--sheet-issue);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.artifact-sheet-issue-text {
+  margin-top: 3px;
+  line-height: 1.45;
+}
+
+.artifact-sheet-table-wrapper {
+  flex: 1;
+  overflow: auto;
+  background: var(--sheet-panel);
+  border: 1px solid rgba(186, 198, 218, 0.9);
+  border-radius: 16px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+}
+
+.artifact-sheet-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 100%;
+  table-layout: fixed;
+}
+
+.artifact-sheet-table th,
+.artifact-sheet-table td {
+  border-right: 1px solid var(--sheet-grid);
+  border-bottom: 1px solid var(--sheet-grid);
+  min-width: 140px;
+  width: 140px;
+  height: 34px;
+  padding: 0;
+  vertical-align: middle;
+}
+
+.artifact-sheet-corner-cell,
+.artifact-sheet-row-number,
+.artifact-sheet-header-cell {
+  background: var(--sheet-header);
+}
+
+.artifact-sheet-corner-cell {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 4;
+  width: 56px;
+  min-width: 56px;
+}
+
+.artifact-sheet-header-cell {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+
+.artifact-sheet-header-content {
+  display: flex;
+  min-height: 100%;
+}
+
+.artifact-sheet-column-label {
+  width: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid rgba(186, 198, 218, 0.65);
+  color: var(--sheet-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.artifact-sheet-row-number {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  width: 56px;
+  min-width: 56px;
+  padding: 0 6px;
+}
+
+.artifact-sheet-row-number,
+.artifact-sheet-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.artifact-sheet-row-actions {
+  margin-left: auto;
+}
+
+.artifact-sheet-row-number-label {
+  color: var(--sheet-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.artifact-sheet-cell,
+.artifact-sheet-header-cell {
+  background: #fff;
+}
+
+.artifact-sheet-header-cell {
+  background: var(--sheet-header);
+}
+
+.artifact-sheet-cell-text {
+  display: block;
+  padding: 0 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.artifact-sheet-cell-input {
+  width: 100%;
+  height: 100%;
+  border: none;
+  outline: none;
+  padding: 0 10px;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+}
+
+.artifact-sheet-selected {
+  box-shadow: inset 0 0 0 2px var(--sheet-selected);
+  background: var(--sheet-selected-soft);
+}
+
+.artifact-sheet-has-issue,
+.artifact-sheet-row-has-issue > .artifact-sheet-row-number {
+  background: linear-gradient(0deg, rgba(180, 35, 24, 0.1), rgba(180, 35, 24, 0.1)), #fff;
+}
+
+.artifact-sheet-header-cell.artifact-sheet-has-issue {
+  background: linear-gradient(0deg, rgba(180, 35, 24, 0.1), rgba(180, 35, 24, 0.1)), var(--sheet-header);
+}

@@ -9,6 +9,19 @@ export type CsvDoc = {
 
 export type ArtifactProjectionKind = 'rota-shifts-v1';
 
+export type ArtifactSheetAnnotationKind = 'cell' | 'row' | 'column' | 'sheet';
+export type ArtifactSheetAnnotationSource = 'parse' | 'constraint';
+
+export type ArtifactSheetAnnotation = {
+  artifactUrl?: AutomergeUrl;
+  kind: ArtifactSheetAnnotationKind;
+  row?: number;
+  col?: number;
+  message: string;
+  constraintLabel?: string;
+  source: ArtifactSheetAnnotationSource;
+};
+
 export type ArtifactFolderEntry = {
   type: string;
   name: string;
@@ -34,6 +47,25 @@ const SHIFT_HEADERS = [
   'Patients',
   'Has HCA',
 ] as const;
+
+export const ROTA_SHIFT_HEADERS = [...SHIFT_HEADERS];
+
+type ShiftHeader = (typeof SHIFT_HEADERS)[number];
+
+export type RotaShiftProjectionIndex = {
+  projectionKind: 'rota-shifts-v1';
+  rows: Array<{
+    row: number;
+    shiftId: string;
+    ward: string;
+    staff: string[];
+  }>;
+  rowByShiftId: Map<string, number>;
+  rowIndicesByWard: Map<string, number[]>;
+  rowIndicesByEmployee: Map<string, number[]>;
+  columns: Record<ShiftHeader, number>;
+  staffColumnIndices: number[];
+};
 
 const DYNAMIC_PREDICATES = new Set([
   'shift',
@@ -99,23 +131,59 @@ export function applyCsvToDatalogArtifact(
   csvContent: string,
   priorDoc: DatalogDoc,
   artifactName: string,
+  artifactUrl?: AutomergeUrl,
 ):
   | { ok: true; doc: Pick<DatalogDoc, 'title' | 'facts' | 'draftText'> }
-  | { ok: false; error: string } {
+  | { ok: false; error: string; annotations: ArtifactSheetAnnotation[] } {
   if (projectionKind !== 'rota-shifts-v1') {
-    return { ok: false, error: `Unsupported projection kind: ${projectionKind}` };
+    return {
+      ok: false,
+      error: `Unsupported projection kind: ${projectionKind}`,
+      annotations: [
+        {
+          artifactUrl,
+          kind: 'sheet',
+          message: `Unsupported projection kind: ${projectionKind}`,
+          source: 'parse',
+        },
+      ],
+    };
   }
 
   const rows = parseCsv(csvContent);
   if (rows.length === 0) {
-    return { ok: false, error: 'CSV is empty. Add a header row and at least one shift row.' };
+    return {
+      ok: false,
+      error: 'CSV is empty. Add a header row and at least one shift row.',
+      annotations: [
+        {
+          artifactUrl,
+          kind: 'sheet',
+          message: 'CSV is empty. Add a header row and at least one shift row.',
+          source: 'parse',
+        },
+      ],
+    };
   }
 
   const header = rows[0].map((cell) => cell.trim());
   if (!sameHeaders(header, SHIFT_HEADERS as unknown as string[])) {
+    const annotations: ArtifactSheetAnnotation[] = SHIFT_HEADERS.flatMap((expected, index) => {
+      if (header[index] === expected) return [];
+      return [
+        {
+          artifactUrl,
+          kind: 'column',
+          col: index,
+          message: `Expected header "${expected}" but found "${header[index] || '(blank)'}".`,
+          source: 'parse',
+        },
+      ];
+    });
     return {
       ok: false,
       error: `CSV headers must remain: ${SHIFT_HEADERS.join(', ')}`,
+      annotations,
     };
   }
 
@@ -135,22 +203,61 @@ export function applyCsvToDatalogArtifact(
 
     const ward = row[1];
     if (!ward) {
-      return { ok: false, error: `Shift "${shiftId}" is missing a ward.` };
+      return {
+        ok: false,
+        error: `Shift "${shiftId}" is missing a ward.`,
+        annotations: [
+          buildCellAnnotation(
+            artifactUrl,
+            rowIndexForShiftRows(rows, rawRow),
+            1,
+            `Shift "${shiftId}" is missing a ward.`,
+          ),
+        ],
+      };
     }
 
     const night = parseBoolean(row[2]);
     if (night == null) {
-      return { ok: false, error: `Shift "${shiftId}" has invalid Night value "${row[2]}".` };
+      return {
+        ok: false,
+        error: `Shift "${shiftId}" has invalid Night value "${row[2]}".`,
+        annotations: [
+          buildCellAnnotation(
+            artifactUrl,
+            rowIndexForShiftRows(rows, rawRow),
+            2,
+            `Shift "${shiftId}" has invalid Night value "${row[2]}".`,
+          ),
+        ],
+      };
     }
 
     const hours = parseInteger(row[3], `Shift "${shiftId}" has invalid Hours value "${row[3]}".`);
-    if (typeof hours === 'string') return { ok: false, error: hours };
+    if (typeof hours === 'string') {
+      return {
+        ok: false,
+        error: hours,
+        annotations: [
+          buildCellAnnotation(artifactUrl, rowIndexForShiftRows(rows, rawRow), 3, hours),
+        ],
+      };
+    }
 
     const staff = row.slice(4, 9).filter(Boolean);
     if (staff.length === 0) {
       return {
         ok: false,
         error: `Shift "${shiftId}" must include at least one assigned staff member.`,
+        annotations: [
+          {
+            artifactUrl,
+            kind: 'row',
+            row: rowIndexForShiftRows(rows, rawRow),
+            message: `Shift "${shiftId}" must include at least one assigned staff member.`,
+            source: 'parse',
+          },
+        ],
       };
     }
 
@@ -158,7 +265,18 @@ export function applyCsvToDatalogArtifact(
     const patients = row[10];
     const hasHca = parseBoolean(row[11]);
     if (hasHca == null) {
-      return { ok: false, error: `Shift "${shiftId}" has invalid Has HCA value "${row[11]}".` };
+      return {
+        ok: false,
+        error: `Shift "${shiftId}" has invalid Has HCA value "${row[11]}".`,
+        annotations: [
+          buildCellAnnotation(
+            artifactUrl,
+            rowIndexForShiftRows(rows, rawRow),
+            11,
+            `Shift "${shiftId}" has invalid Has HCA value "${row[11]}".`,
+          ),
+        ],
+      };
     }
 
     dynamicFacts.push(f('shift', shiftId));
@@ -175,7 +293,20 @@ export function applyCsvToDatalogArtifact(
         patients,
         `Shift "${shiftId}" has invalid Patients value "${patients}".`,
       );
-      if (typeof parsedPatients === 'string') return { ok: false, error: parsedPatients };
+      if (typeof parsedPatients === 'string') {
+        return {
+          ok: false,
+          error: parsedPatients,
+          annotations: [
+            buildCellAnnotation(
+              artifactUrl,
+              rowIndexForShiftRows(rows, rawRow),
+              10,
+              parsedPatients,
+            ),
+          ],
+        };
+      }
       dynamicFacts.push(f('patients', shiftId, parsedPatients));
     }
     if (hasHca) dynamicFacts.push(f('has_hca', shiftId));
@@ -249,6 +380,49 @@ function extractShiftRows(datalogDoc: DatalogDoc) {
   });
 }
 
+export function buildProjectionIndexFromCsvContent(
+  projectionKind: ArtifactProjectionKind,
+  csvContent: string,
+): RotaShiftProjectionIndex | null {
+  if (projectionKind !== 'rota-shifts-v1') return null;
+  const rows = parseCsv(csvContent);
+  if (rows.length === 0) return null;
+
+  const columns = Object.fromEntries(
+    SHIFT_HEADERS.map((header, index) => [header, index]),
+  ) as Record<ShiftHeader, number>;
+  const rowByShiftId = new Map<string, number>();
+  const rowIndicesByWard = new Map<string, number[]>();
+  const rowIndicesByEmployee = new Map<string, number[]>();
+  const projectionRows: RotaShiftProjectionIndex['rows'] = [];
+
+  for (let rowIndex = 1; rowIndex < rows.length; rowIndex++) {
+    const row = pad(rows[rowIndex].map((cell) => cell.trim()), SHIFT_HEADERS.length);
+    const shiftId = row[0];
+    if (!shiftId) continue;
+    const ward = row[1];
+    const staff = row.slice(4, 9).filter(Boolean);
+    projectionRows.push({ row: rowIndex, shiftId, ward, staff });
+    rowByShiftId.set(shiftId, rowIndex);
+    if (ward) {
+      rowIndicesByWard.set(ward, [...(rowIndicesByWard.get(ward) ?? []), rowIndex]);
+    }
+    for (const person of staff) {
+      rowIndicesByEmployee.set(person, [...(rowIndicesByEmployee.get(person) ?? []), rowIndex]);
+    }
+  }
+
+  return {
+    projectionKind: 'rota-shifts-v1',
+    rows: projectionRows,
+    rowByShiftId,
+    rowIndicesByWard,
+    rowIndicesByEmployee,
+    columns,
+    staffColumnIndices: [4, 5, 6, 7, 8],
+  };
+}
+
 function findFactArg(
   facts: StoredFact[],
   predicate: string,
@@ -289,7 +463,7 @@ function pad<T>(values: T[], length: number, fillValue = '' as T): T[] {
   ].slice(0, length);
 }
 
-function parseCsv(content: string): string[][] {
+export function parseCsv(content: string): string[][] {
   if (!content.trim()) return [];
   const rows: string[][] = [];
   const lines = content.split('\n');
@@ -324,7 +498,7 @@ function parseCsv(content: string): string[][] {
   return rows;
 }
 
-function serializeCsv(rows: (string | number)[][]): string {
+export function serializeCsv(rows: (string | number)[][]): string {
   return rows
     .map((row) =>
       row
@@ -357,4 +531,24 @@ function buildDatalogDraft(
 
 function serializeFact(fact: StoredFact): string {
   return `${fact.pred}(${fact.args.join(', ')}).`;
+}
+
+function buildCellAnnotation(
+  artifactUrl: AutomergeUrl | undefined,
+  row: number,
+  col: number,
+  message: string,
+): ArtifactSheetAnnotation {
+  return {
+    artifactUrl,
+    kind: 'cell',
+    row,
+    col,
+    message,
+    source: 'parse',
+  };
+}
+
+function rowIndexForShiftRows(rows: string[][], targetRow: string[]): number {
+  return Math.max(1, rows.indexOf(targetRow));
 }

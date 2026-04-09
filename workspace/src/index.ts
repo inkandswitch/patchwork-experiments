@@ -264,6 +264,16 @@ export const plugins: Plugin<any>[] = [
   } satisfies Tool,
   {
     type: 'patchwork:tool',
+    id: 'grjte-artifact-sheet',
+    name: 'grjte Artifact Sheet',
+    supportedDatatypes: ['csv'],
+    async load() {
+      const { ArtifactSheetTool } = await import('./grjte/artifact-sheet/tool');
+      return ArtifactSheetTool;
+    },
+  } satisfies Tool,
+  {
+    type: 'patchwork:tool',
     id: 'grjte-execution-viewer',
     name: 'grjte Execution Viewer',
     supportedDatatypes: ['task-list-execution'],

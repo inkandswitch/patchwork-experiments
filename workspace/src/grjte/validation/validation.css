@@ -234,9 +234,43 @@
     background: #f8fafc;
   }
 
+  .validation-artifact-heading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
   .validation-artifact-name {
     font-weight: 600;
     color: #334155;
+  }
+
+  .validation-artifact-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    background: #e2e8f0;
+    color: #475569;
+  }
+
+  .validation-artifact-status.pass {
+    background: #dcfce7;
+    color: #166534;
+  }
+
+  .validation-artifact-status.fail {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+
+  .validation-artifact-status.idle {
+    background: #e2e8f0;
+    color: #475569;
   }
 
   .validation-artifact-meta {
@@ -267,7 +301,7 @@
   }
 
   .validation-artifact-preview {
-    height: 360px;
+    height: min(78vh, 980px);
     overflow: auto;
   }
 
@@ -287,6 +321,13 @@
     border-bottom: 1px solid #e5e7eb;
     background: #f8fafc;
     flex-shrink: 0;
+  }
+
+  .validation-artifact-toolbar-main {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
   }
 
   .validation-artifact-tabs {
@@ -309,6 +350,34 @@
     background: #e0f2fe;
     border-color: #7dd3fc;
     color: #0f172a;
+  }
+
+  .validation-artifact-verification-banner {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 32px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    background: #e2e8f0;
+    color: #475569;
+  }
+
+  .validation-artifact-verification-banner.pass {
+    background: #dcfce7;
+    color: #166534;
+  }
+
+  .validation-artifact-verification-banner.fail {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+
+  .validation-artifact-verification-banner.idle {
+    background: #e2e8f0;
+    color: #475569;
   }
 
   .validation-artifact-sync-error {

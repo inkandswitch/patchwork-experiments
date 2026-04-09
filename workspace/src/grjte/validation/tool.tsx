@@ -6,6 +6,7 @@ import {
   createMemo,
   createResource,
   createSignal,
+  onCleanup,
   on,
   untrack,
 } from 'solid-js';
@@ -16,9 +17,8 @@ import type {
   AutomergeUrl,
   DocHandle as RepoDocHandle,
 } from '@automerge/automerge-repo';
-import type { SpecDoc, ValidationDoc } from '../../workflow/types';
+import type { ValidationDoc } from '../../workflow/types';
 import type { TaskListExecutionDoc } from '../execution/types';
-import type { VerificationDoc } from '../verification/types';
 import type {
   DatalogDoc,
   VerificationArtifactInput,
@@ -31,14 +31,17 @@ import {
   applyCsvToDatalogArtifact,
   getArtifactSyncSignature,
   projectDatalogArtifactToCsv,
+  type ArtifactSheetAnnotation,
   type ArtifactFolderEntry,
   type CsvDoc,
 } from './csv-sync';
+import { deriveConstraintAnnotationsForArtifact } from './artifact-annotations';
 import {
   flattenSpecTree,
   getArtifactsForNode,
-  loadSpecTree,
   type FlattenedVerification,
+  type SpecTreeNode,
+  watchSpecTree,
 } from './verification-assembly';
 import '../verification/verification.css';
 import './validation.css';
@@ -50,6 +53,14 @@ type FolderDoc = {
 type EvaluatedVerificationEntry = {
   entry: FlattenedVerification;
   evaluation: VerificationEvaluation;
+};
+
+type ArtifactVerificationSummary = {
+  total: number;
+  failing: number;
+  passing: number;
+  status: 'pass' | 'fail' | 'none';
+  label: string;
 };
 
 export const ValidationTool: ToolRender = (handle, element) => {
@@ -183,10 +194,32 @@ function ValidationBody(props: {
     const [doc] = useDocument<DatalogDoc>(() => entry.url);
     return { entry, doc };
   });
-  const [specTree] = createResource(
-    () => props.specDocUrl,
-    (url) => loadSpecTree(props.repo, url),
-  );
+  const [specTree, setSpecTree] = createSignal<SpecTreeNode | null>(null);
+  const [specTreeLoading, setSpecTreeLoading] = createSignal(true);
+
+  createEffect(() => {
+    const url = props.specDocUrl;
+    let active = true;
+    let dispose: (() => void) | undefined;
+    setSpecTreeLoading(true);
+
+    void watchSpecTree(props.repo, url, (tree) => {
+      if (!active) return;
+      setSpecTree(tree);
+      setSpecTreeLoading(false);
+    }).then((cleanup) => {
+      if (!active) {
+        cleanup();
+        return;
+      }
+      dispose = cleanup;
+    });
+
+    onCleanup(() => {
+      active = false;
+      dispose?.();
+    });
+  });
 
   const artifactInputs = createMemo<VerificationArtifactInput[]>(() =>
     artifactAccessors.map(({ entry, doc }) => ({
@@ -249,9 +282,44 @@ function ValidationBody(props: {
     };
   });
 
+  const artifactStatusByUrl = createMemo<Record<string, ArtifactVerificationSummary>>(() => {
+    const statuses: Record<string, ArtifactVerificationSummary> = Object.fromEntries(
+      props.artifactEntries.map((entry) => [
+        entry.url,
+        buildArtifactVerificationSummary(0, 0),
+      ]),
+    );
+
+    for (const result of verificationResults()) {
+      const relevantArtifacts = getArtifactsForNode(
+        result.entry.nodePath,
+        props.artifactEntries,
+        props.execution.artifactSpecPaths ?? {},
+      );
+      for (const artifact of relevantArtifacts) {
+        const current = statuses[artifact.url] ?? {
+          total: 0,
+          failing: 0,
+          passing: 0,
+          status: 'none' as ArtifactVerificationSummary['status'],
+          label: 'No verifications',
+        };
+        current.total += 1;
+        if (result.evaluation.passed) current.passing += 1;
+        else current.failing += 1;
+        statuses[artifact.url] = buildArtifactVerificationSummary(
+          current.total,
+          current.failing,
+        );
+      }
+    }
+
+    return statuses;
+  });
+
   return (
     <div class="validation-body">
-      <Show when={specTree.loading}>
+      <Show when={specTreeLoading()}>
         <div class="validation-loading-inline">Resolving verification definitions...</div>
       </Show>
 
@@ -297,20 +365,6 @@ function ValidationBody(props: {
       </Show>
 
       <div class="validation-section">
-        <div class="validation-section-label">Verification Results</div>
-        <Show
-          when={verificationResults().length > 0}
-          fallback={<div class="validation-empty">No verifications available.</div>}
-        >
-          <div class="validation-results-list">
-            <For each={verificationResults()}>
-              {(result) => <ValidationResultCard result={result} />}
-            </For>
-          </div>
-        </Show>
-      </div>
-
-      <div class="validation-section">
         <div class="validation-section-label">Artifacts</div>
         <Show
           when={props.artifactEntries.length > 0}
@@ -327,7 +381,20 @@ function ValidationBody(props: {
                     class="validation-artifact-toggle"
                     onClick={() => props.toggleArtifact(entry.url)}
                   >
-                    <span class="validation-artifact-name">{entry.name || 'Untitled'}</span>
+                    <span class="validation-artifact-heading">
+                      <span class="validation-artifact-name">{entry.name || 'Untitled'}</span>
+                      <ArtifactStatusPill
+                        summary={
+                          artifactStatusByUrl()[entry.url] ?? {
+                            total: 0,
+                            failing: 0,
+                            passing: 0,
+                            status: 'none',
+                            label: 'No verifications',
+                          }
+                        }
+                      />
+                    </span>
                     <span class="validation-artifact-meta">
                       <span class="validation-artifact-scope">{entry.specPath || 'root'}</span>
                       <span class="validation-artifact-type">{entry.type}</span>
@@ -335,7 +402,20 @@ function ValidationBody(props: {
                   </button>
                   <Show when={props.isArtifactExpanded(entry.url)}>
                     <div class="validation-artifact-preview">
-                      <ArtifactWorkspace entry={entry} repo={props.repo} />
+                      <ArtifactWorkspace
+                        entry={entry}
+                        repo={props.repo}
+                        verificationResults={verificationResults().filter((result) =>
+                          getArtifactsForNode(
+                            result.entry.nodePath,
+                            [entry],
+                            props.execution.artifactSpecPaths ?? {},
+                          ).length > 0,
+                        )}
+                        verificationSummary={
+                          artifactStatusByUrl()[entry.url] ?? buildArtifactVerificationSummary(0, 0)
+                        }
+                      />
                     </div>
                   </Show>
                 </div>
@@ -344,8 +424,60 @@ function ValidationBody(props: {
           </div>
         </Show>
       </div>
+
+      <div class="validation-section">
+        <div class="validation-section-label">Verification Results</div>
+        <Show
+          when={verificationResults().length > 0}
+          fallback={<div class="validation-empty">No verifications available.</div>}
+        >
+          <div class="validation-results-list">
+            <For each={verificationResults()}>
+              {(result) => <ValidationResultCard result={result} />}
+            </For>
+          </div>
+        </Show>
+      </div>
     </div>
   );
+}
+
+function ArtifactStatusPill(props: { summary: ArtifactVerificationSummary }) {
+  return (
+    <span
+      class="validation-artifact-status"
+      classList={{
+        pass: props.summary.status === 'pass',
+        fail: props.summary.status === 'fail',
+        idle: props.summary.status === 'none',
+      }}
+    >
+      {props.summary.label}
+    </span>
+  );
+}
+
+function buildArtifactVerificationSummary(
+  total: number,
+  failing: number,
+): ArtifactVerificationSummary {
+  if (total === 0) {
+    return {
+      total,
+      failing,
+      passing: 0,
+      status: 'none',
+      label: 'No verifications',
+    };
+  }
+
+  return {
+    total,
+    failing,
+    passing: total - failing,
+    status: failing > 0 ? 'fail' : 'pass',
+    label: failing > 0 ? 'Verification failed' : 'Verification passed',
+  };
 }
 
 function ValidationResultCard(props: { result: EvaluatedVerificationEntry }) {
@@ -476,7 +608,12 @@ function WitnessCard(props: { witness: ConstraintViolation['witnesses'][number] 
   );
 }
 
-function ArtifactWorkspace(props: { entry: ArtifactFolderEntry; repo: any }) {
+function ArtifactWorkspace(props: {
+  entry: ArtifactFolderEntry;
+  repo: any;
+  verificationResults: EvaluatedVerificationEntry[];
+  verificationSummary: ArtifactVerificationSummary;
+}) {
   const [selectedView, setSelectedView] = createSignal<'csv' | 'datalog'>(
     props.entry.csvUrl ? 'csv' : 'datalog',
   );
@@ -491,6 +628,53 @@ function ArtifactWorkspace(props: { entry: ArtifactFolderEntry; repo: any }) {
     if (!props.entry.csvUrl || !props.entry.projectionKind || !datalogDoc()) return null;
     return projectDatalogArtifactToCsv(props.entry.projectionKind, datalogDoc()!, props.entry.name);
   });
+
+  const parseAnnotations = createMemo<ArtifactSheetAnnotation[]>(() => {
+    const currentCsvDoc = csvDoc();
+    const currentDatalogDoc = datalogDoc();
+    if (
+      !currentCsvDoc?.content ||
+      !currentDatalogDoc ||
+      !props.entry.projectionKind ||
+      !props.entry.csvUrl
+    ) {
+      return [];
+    }
+    const result = applyCsvToDatalogArtifact(
+      props.entry.projectionKind,
+      currentCsvDoc.content,
+      currentDatalogDoc,
+      props.entry.name,
+      props.entry.url,
+    );
+    return result.ok ? [] : result.annotations;
+  });
+
+  const constraintAnnotations = createMemo<ArtifactSheetAnnotation[]>(() => {
+    const currentCsvContent = csvDoc()?.content ?? projection()?.content ?? '';
+    if (!currentCsvContent || !props.entry.projectionKind || parseAnnotations().length > 0) return [];
+
+    const failingConstraints = props.verificationResults.flatMap((result) =>
+      result.evaluation.constraints
+        .filter((constraint) => !constraint.passed)
+        .map((constraint) => ({
+          constraintLabel: constraint.label,
+          violations: constraint.violations,
+        })),
+    );
+
+    return deriveConstraintAnnotationsForArtifact(
+      props.entry.url,
+      props.entry.projectionKind,
+      currentCsvContent,
+      failingConstraints,
+    );
+  });
+
+  const sheetAnnotations = createMemo<ArtifactSheetAnnotation[]>(() => [
+    ...parseAnnotations(),
+    ...constraintAnnotations(),
+  ]);
 
   createEffect(
     on(
@@ -545,6 +729,7 @@ function ArtifactWorkspace(props: { entry: ArtifactFolderEntry; repo: any }) {
           content,
           currentDatalogDoc,
           props.entry.name,
+          props.entry.url,
         );
         if (!result.ok) {
           setSyncError(result.error);
@@ -568,21 +753,33 @@ function ArtifactWorkspace(props: { entry: ArtifactFolderEntry; repo: any }) {
     <div class="validation-artifact-workspace">
       <Show when={props.entry.csvUrl}>
         <div class="validation-artifact-toolbar">
-          <div class="validation-artifact-tabs">
-            <button
-              class="validation-artifact-tab"
-              classList={{ active: selectedView() === 'csv' }}
-              onClick={() => setSelectedView('csv')}
+          <div class="validation-artifact-toolbar-main">
+            <div class="validation-artifact-tabs">
+              <button
+                class="validation-artifact-tab"
+                classList={{ active: selectedView() === 'csv' }}
+                onClick={() => setSelectedView('csv')}
+              >
+                CSV View
+              </button>
+              <button
+                class="validation-artifact-tab"
+                classList={{ active: selectedView() === 'datalog' }}
+                onClick={() => setSelectedView('datalog')}
+              >
+                Datalog Source
+              </button>
+            </div>
+            <div
+              class="validation-artifact-verification-banner"
+              classList={{
+                pass: props.verificationSummary.status === 'pass',
+                fail: props.verificationSummary.status === 'fail',
+                idle: props.verificationSummary.status === 'none',
+              }}
             >
-              CSV View
-            </button>
-            <button
-              class="validation-artifact-tab"
-              classList={{ active: selectedView() === 'datalog' }}
-              onClick={() => setSelectedView('datalog')}
-            >
-              Datalog Source
-            </button>
+              {props.verificationSummary.label}
+            </div>
           </div>
           <Show when={syncError()}>
             {(message) => <div class="validation-artifact-sync-error">{message()}</div>}
@@ -601,7 +798,8 @@ function ArtifactWorkspace(props: { entry: ArtifactFolderEntry; repo: any }) {
       >
         <patchwork-view
           attr:doc-url={props.entry.csvUrl!}
-          attr:tool-id="csv"
+          attr:tool-id="grjte-artifact-sheet"
+          attr:data-annotations={JSON.stringify(sheetAnnotations())}
           style="display:block;width:100%;height:100%;"
         />
       </Show>
