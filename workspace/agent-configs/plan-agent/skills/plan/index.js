@@ -11,13 +11,12 @@
 /**
  * Create a new PlanDoc.
  *
- * workspace.createDoc() is SYNCHRONOUS — do NOT await this function.
+ * repo.create() is SYNCHRONOUS — do NOT await this function.
  *
- * @param {object} workspace - The workspace object (global `workspace`)
  * @returns {{ handle: object, url: string }} The new doc handle and its URL
  */
-export function createPlan(workspace) {
-  const handle = workspace.createDoc();
+export function createPlan() {
+  const handle = repo.create();
   handle.change((d) => {
     d['@patchwork'] = { type: 'plan' };
     d.tasks = [];
@@ -28,11 +27,10 @@ export function createPlan(workspace) {
 /**
  * Get a read/write interface for a PlanDoc.
  *
- * @param {object} workspace - The workspace object (global `workspace`)
  * @param {string} url - Automerge URL of the PlanDoc
  */
-export async function getPlan(workspace, url) {
-  const handle = await workspace.find(url);
+export async function getPlan(url) {
+  const handle = await repo.find(url);
 
   return {
     getTasks() {
@@ -40,7 +38,7 @@ export async function getPlan(workspace, url) {
     },
 
     addTask(goal, specDocUrl) {
-      const taskHandle = workspace.createDoc();
+      const taskHandle = repo.create();
       taskHandle.change((d) => {
         d['@patchwork'] = { type: 'task' };
         d.goal = goal || '';
@@ -58,7 +56,7 @@ export async function getPlan(workspace, url) {
     },
 
     async getTask(taskUrl) {
-      const taskHandle = await workspace.find(taskUrl);
+      const taskHandle = await repo.find(taskUrl);
       return createTaskHandle(taskHandle);
     },
 

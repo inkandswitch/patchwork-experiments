@@ -11,12 +11,11 @@
  * discovered skill descriptions, and a document list from the workspace.
  */
 
+import * as Automerge from '@automerge/automerge';
 import type { DocHandle, Repo } from '@automerge/automerge-repo';
 import { updateText, type AutomergeUrl } from '@automerge/automerge-repo';
 import { parseScriptBlocks } from './parser';
 import type { LLMProcessDoc, ChatMessage, ChatMessagePart } from './types';
-import type { WorkspaceDoc } from '../types';
-import { createWorkspace } from './workspace';
 
 type FolderDoc = {
   docs: { type: string; name: string; url: AutomergeUrl }[];
@@ -45,29 +44,24 @@ export async function runWorkspaceLLM(
   const doc = await handle.doc();
 
   if (!doc) throw new Error('Process document not found');
-  if (!doc.workspaceUrl) throw new Error('No workspace linked to this process doc');
   if (!doc.llmConfigFolderUrl) throw new Error('No LLM config folder linked to this process doc');
 
   const { apiUrl, model } = doc.config;
   const apiKey = (import.meta as any).env?.VITE_OPENAI_API_KEY || '';
-
-  const wsHandle = await repo.find<WorkspaceDoc>(doc.workspaceUrl);
-  const wsDoc = await wsHandle.doc();
-  if (!wsDoc) throw new Error('Workspace document not found');
 
   const capturedConsole = createCapturedConsole();
 
   const systemPrompt = await loadAgentPrompt(repo, doc.llmConfigFolderUrl);
   const skills = await discoverSkills(repo, doc.llmConfigFolderUrl);
   const skillDescriptions = buildSkillDescriptions(skills);
-  const documentList = buildDocumentList(wsDoc);
 
-  const systemText = buildSystemPrompt(systemPrompt, skillDescriptions, documentList);
-
-  const workspace = createWorkspace(repo, wsHandle, doc.llmConfigFolderUrl);
+  const systemText = buildSystemPrompt(systemPrompt, skillDescriptions);
 
   (globalThis as any).__llmCapturedConsole = capturedConsole;
-  (globalThis as any).workspace = workspace;
+  (globalThis as any).Automerge = Automerge;
+  (globalThis as any).repo = repo;
+  (globalThis as any).readSkill = (name: string) => readSkillDoc(skills, name);
+  (globalThis as any).useSkill = (name: string) => loadSkillModule(skills, name);
 
   console.log(`[workspace-llm] starting run: model=${model}, apiUrl=${apiUrl}`);
 
@@ -77,17 +71,12 @@ export async function runWorkspaceLLM(
 export async function buildFullSystemPrompt(
   repo: Repo,
   configFolderUrl: AutomergeUrl,
-  workspaceUrl: AutomergeUrl,
 ): Promise<string> {
-  const wsHandle = await repo.find<WorkspaceDoc>(workspaceUrl);
-  const wsDoc = await wsHandle.doc();
-
   const agentPrompt = await loadAgentPrompt(repo, configFolderUrl);
   const skills = await discoverSkills(repo, configFolderUrl);
   const skillDescriptions = buildSkillDescriptions(skills);
-  const documentList = wsDoc ? buildDocumentList(wsDoc) : '';
 
-  return buildSystemPrompt(agentPrompt, skillDescriptions, documentList);
+  return buildSystemPrompt(agentPrompt, skillDescriptions);
 }
 
 // ─── Agent prompt loading ─────────────────────────────────────────────────────
@@ -116,37 +105,39 @@ async function loadAgentPrompt(repo: Repo, configFolderUrl: AutomergeUrl): Promi
 function buildSystemPrompt(
   agentPrompt: string,
   skillDescriptions: string,
-  documentList: string,
 ): string {
   let prompt = agentPrompt;
 
   if (skillDescriptions) {
     prompt +=
-      '\n\nAvailable skills (use workspace.readDoc to read docs, workspace.import to load API):\n\n' +
+      '\n\nAvailable skills (use readSkill(name) to read docs, useSkill(name) to load API):\n\n' +
       skillDescriptions;
-  }
-
-  if (documentList) {
-    prompt +=
-      '\n\nDocuments in the workspace (this list is exhaustive — no other documents exist unless you create them):\n' +
-      documentList +
-      '\nUse repo.find(url) to open a document. If no suitable document exists, create one using the appropriate skill.';
-  } else {
-    prompt +=
-      '\n\nThere are no documents in the workspace yet. Create any documents you need using the appropriate skill.';
   }
 
   return prompt;
 }
 
-// ─── Document list ────────────────────────────────────────────────────────────
+// ─── Skill accessors exposed as globals ──────────────────────────────────────
 
-function buildDocumentList(wsDoc: WorkspaceDoc): string {
-  const entries = Object.entries(wsDoc.documents ?? {});
-  if (!entries.length) return '';
+function readSkillDoc(skills: SkillInfo[], name: string): string {
+  const skill = skills.find((s) => s.name === name);
+  if (!skill) {
+    const available = skills.map((s) => s.name).join(', ');
+    throw new Error(`Skill not found: "${name}". Available: [${available}]`);
+  }
+  return skill.content;
+}
 
-  const lines = entries.map(([url]) => `  - ${url}`);
-  return lines.join('\n');
+function loadSkillModule(skills: SkillInfo[], name: string): Promise<Record<string, unknown>> {
+  const skill = skills.find((s) => s.name === name);
+  if (!skill) {
+    const available = skills.map((s) => s.name).join(', ');
+    throw new Error(`Skill not found: "${name}". Available: [${available}]`);
+  }
+  if (!skill.importUrl) {
+    throw new Error(`Skill "${name}" has no index.js`);
+  }
+  return import(/* @vite-ignore */ skill.importUrl);
 }
 
 // ─── Serialize messages for the LLM API ───────────────────────────────────────
@@ -285,11 +276,7 @@ async function runLoop(
             lastPart.error === undefined
           ) {
             const partIdx = msg.content.length - 1;
-            updateText(
-              d,
-              ['messages', assistantIdx, 'content', partIdx, 'code'],
-              block.code,
-            );
+            updateText(d, ['messages', assistantIdx, 'content', partIdx, 'code'], block.code);
           } else {
             const scriptPart: ChatMessagePart = block.description
               ? { type: 'script', code: block.code, description: block.description }
@@ -326,11 +313,7 @@ async function runLoop(
             }
             if (result.error !== undefined) {
               scriptPart.error = '';
-              updateText(
-                d,
-                ['messages', assistantIdx, 'content', partIdx, 'error'],
-                result.error,
-              );
+              updateText(d, ['messages', assistantIdx, 'content', partIdx, 'error'], result.error);
             }
             if (result.output === undefined && result.error === undefined) {
               scriptPart.output = '';
@@ -452,8 +435,8 @@ function buildSkillDescriptions(skills: SkillInfo[]): string {
       const capitalized = s.name.charAt(0).toUpperCase() + s.name.slice(1);
       return [
         `${capitalized}: ${s.description}`,
-        `- docs: skills/${s.name}/SKILL.md`,
-        `- api: skills/${s.name}/index.js`,
+        `- docs: await readSkill("${s.name}")`,
+        `- api:  await useSkill("${s.name}")`,
       ].join('\n');
     })
     .join('\n\n');

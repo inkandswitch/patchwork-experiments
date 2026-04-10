@@ -78,8 +78,8 @@ export const plugins: Plugin<any>[] = [
     name: 'Paul Plan Viewer',
     supportedDatatypes: ['plan'],
     async load() {
-      const { PlanTool } = await import('./paul/plan/tool');
-      return PlanTool;
+      const { PetriNetPlanTool } = await import('./paul/petrinet-plan/plan-tool');
+      return PetriNetPlanTool;
     },
   } satisfies Tool,
   {
@@ -183,6 +183,16 @@ export const plugins: Plugin<any>[] = [
     },
   } as Datatype,
   {
+    type: 'patchwork:tool',
+    id: 'validation',
+    name: 'Validation',
+    supportedDatatypes: ['validation'],
+    async load() {
+      const { ValidationTool } = await import('./paul/petrinet-plan/validation-tool');
+      return ValidationTool;
+    },
+  } satisfies Tool,
+  {
     type: 'patchwork:datatype',
     id: 'verification',
     name: 'Verification',
@@ -233,6 +243,17 @@ export const plugins: Plugin<any>[] = [
     },
   } satisfies Tool,
   {
+    type: 'patchwork:tool',
+    id: 'iptables-workflow-template',
+    name: 'IPTables Workflow',
+    supportedDatatypes: ['iptables-workflow-template'],
+    async load() {
+      const { IPTablesWorkflowTemplateTool } =
+        await import('./paul/iptables-workflow-template/tool');
+      return IPTablesWorkflowTemplateTool;
+    },
+  } satisfies Tool,
+  {
     type: 'patchwork:datatype',
     id: 'grjte-workflow-template',
     name: 'grjte Workflow Template',
@@ -240,6 +261,17 @@ export const plugins: Plugin<any>[] = [
     async load() {
       const { grjteWorkflowTemplateDatatype } = await import('./grjte/workflow-template/datatype');
       return grjteWorkflowTemplateDatatype;
+    },
+  } as Datatype,
+  {
+    type: 'patchwork:datatype',
+    id: 'iptables-workflow-template',
+    name: 'IPTables Workflow',
+    icon: 'Shield',
+    async load() {
+      const { IPTablesWorkflowTemplateDatatype } =
+        await import('./paul/iptables-workflow-template/datatype');
+      return IPTablesWorkflowTemplateDatatype;
     },
   } as Datatype,
   {
@@ -300,6 +332,66 @@ export const plugins: Plugin<any>[] = [
     async load() {
       const { ElicitationDatatype } = await import('./elicitation/datatype');
       return ElicitationDatatype;
+    },
+  } as Datatype,
+  {
+    type: 'patchwork:tool',
+    id: 'petrinet-plan',
+    name: 'Petri Net Plan',
+    supportedDatatypes: ['petrinet-plan'],
+    async load() {
+      const { PetriNetPlanTool } = await import('./paul/petrinet-plan/plan-tool');
+      return PetriNetPlanTool;
+    },
+  } satisfies Tool,
+  {
+    type: 'patchwork:datatype',
+    id: 'petrinet-plan',
+    name: 'Petri Net Plan',
+    icon: 'GitBranch',
+    async load() {
+      const { PetriNetPlanDatatype } = await import('./paul/petrinet-plan/datatype');
+      return PetriNetPlanDatatype;
+    },
+  } as Datatype,
+  {
+    type: 'patchwork:tool',
+    id: 'petrinet-execution',
+    name: 'Petri Net Execution',
+    supportedDatatypes: ['petrinet-execution'],
+    async load() {
+      const { PetriNetExecutionTool } = await import('./paul/petrinet-plan/execution-tool');
+      return PetriNetExecutionTool;
+    },
+  } satisfies Tool,
+  {
+    type: 'patchwork:datatype',
+    id: 'petrinet-execution',
+    name: 'Petri Net Execution',
+    icon: 'Play',
+    async load() {
+      const { PetriNetExecutionDatatype } = await import('./paul/petrinet-plan/execution-datatype');
+      return PetriNetExecutionDatatype;
+    },
+  } as Datatype,
+  {
+    type: 'patchwork:tool',
+    id: 'candidate-viewer',
+    name: 'Candidate Viewer',
+    supportedDatatypes: ['candidate'],
+    async load() {
+      const { CandidateTool } = await import('./paul/petrinet-plan/candidate-tool');
+      return CandidateTool;
+    },
+  } satisfies Tool,
+  {
+    type: 'patchwork:datatype',
+    id: 'candidate',
+    name: 'Candidate',
+    icon: 'CheckCircle',
+    async load() {
+      const { CandidateDatatype } = await import('./paul/petrinet-plan/candidate-datatype');
+      return CandidateDatatype;
     },
   } as Datatype,
 ];

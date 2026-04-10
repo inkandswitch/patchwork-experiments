@@ -7,6 +7,12 @@ import type { SpecDoc, Spec } from '../../workflow/types';
 import { useTitle } from '../../hooks/useTitle';
 import './spec.css';
 
+type FolderDoc = {
+  '@patchwork'?: { type: string };
+  title: string;
+  docs: { type: string; name: string; url: AutomergeUrl }[];
+};
+
 export const SpecTool: ToolRender = (handle, element) => {
   const dispose = render(
     () => (
@@ -24,6 +30,19 @@ function SpecView(props: { handle: DocHandle<SpecDoc> }) {
   const [selectedVerificationUrl, setSelectedVerificationUrl] = createSignal<AutomergeUrl | null>(
     null,
   );
+  const [selectedFileUrl, setSelectedFileUrl] = createSignal<AutomergeUrl | null>(null);
+
+  const handleSelectVerification = (url: AutomergeUrl | null) => {
+    setSelectedVerificationUrl(url);
+    if (url) setSelectedFileUrl(null);
+  };
+
+  const handleSelectFile = (url: AutomergeUrl | null) => {
+    setSelectedFileUrl(url);
+    if (url) setSelectedVerificationUrl(null);
+  };
+
+  const selectedPreviewUrl = () => selectedVerificationUrl() ?? selectedFileUrl();
 
   return (
     <div class="spec-root">
@@ -40,7 +59,9 @@ function SpecView(props: { handle: DocHandle<SpecDoc> }) {
                     spec={spec()}
                     depth={0}
                     selectedVerificationUrl={selectedVerificationUrl()}
-                    onSelectVerification={setSelectedVerificationUrl}
+                    onSelectVerification={handleSelectVerification}
+                    selectedFileUrl={selectedFileUrl()}
+                    onSelectFile={handleSelectFile}
                   />
                 )}
               </Show>
@@ -48,9 +69,9 @@ function SpecView(props: { handle: DocHandle<SpecDoc> }) {
 
             <div class="spec-preview">
               <Show
-                when={selectedVerificationUrl()}
+                when={selectedPreviewUrl()}
                 fallback={
-                  <div class="spec-preview-empty">Select a verification to inspect</div>
+                  <div class="spec-preview-empty">Select a verification or file to inspect</div>
                 }
               >
                 {(url) => (
@@ -73,9 +94,12 @@ function SpecNode(props: {
   depth: number;
   selectedVerificationUrl: AutomergeUrl | null;
   onSelectVerification: (url: AutomergeUrl | null) => void;
+  selectedFileUrl: AutomergeUrl | null;
+  onSelectFile: (url: AutomergeUrl | null) => void;
 }) {
   const hasSubSpecs = () => (props.spec.subSpecUrls?.length ?? 0) > 0;
   const hasVerifications = () => (props.spec.verificationUrls?.length ?? 0) > 0;
+  const hasFiles = () => !!props.spec.filesFolderUrl;
 
   return (
     <div class="spec-node">
@@ -96,6 +120,13 @@ function SpecNode(props: {
             </For>
           </div>
         </Show>
+        <Show when={hasFiles()}>
+          <FilesSection
+            folderUrl={props.spec.filesFolderUrl!}
+            selectedFileUrl={props.selectedFileUrl}
+            onSelectFile={props.onSelectFile}
+          />
+        </Show>
       </div>
 
       <Show when={hasSubSpecs()}>
@@ -107,6 +138,8 @@ function SpecNode(props: {
                 depth={props.depth + 1}
                 selectedVerificationUrl={props.selectedVerificationUrl}
                 onSelectVerification={props.onSelectVerification}
+                selectedFileUrl={props.selectedFileUrl}
+                onSelectFile={props.onSelectFile}
               />
             )}
           </For>
@@ -121,6 +154,8 @@ function SubSpecNode(props: {
   depth: number;
   selectedVerificationUrl: AutomergeUrl | null;
   onSelectVerification: (url: AutomergeUrl | null) => void;
+  selectedFileUrl: AutomergeUrl | null;
+  onSelectFile: (url: AutomergeUrl | null) => void;
 }) {
   const [doc] = useDocument<SpecDoc>(() => props.url);
 
@@ -132,6 +167,8 @@ function SubSpecNode(props: {
           depth={props.depth}
           selectedVerificationUrl={props.selectedVerificationUrl}
           onSelectVerification={props.onSelectVerification}
+          selectedFileUrl={props.selectedFileUrl}
+          onSelectFile={props.onSelectFile}
         />
       )}
     </Show>
@@ -150,5 +187,35 @@ function VerificationItem(props: { url: AutomergeUrl; selected: boolean; onSelec
       <span class="spec-verification-circle" />
       <span class="spec-verification-name">{title()}</span>
     </button>
+  );
+}
+
+function FilesSection(props: {
+  folderUrl: AutomergeUrl;
+  selectedFileUrl: AutomergeUrl | null;
+  onSelectFile: (url: AutomergeUrl | null) => void;
+}) {
+  const [folder] = useDocument<FolderDoc>(() => props.folderUrl);
+
+  return (
+    <Show when={folder()?.docs && folder()!.docs.length > 0}>
+      <div class="spec-files">
+        <div class="spec-files-header">Files</div>
+        <For each={folder()?.docs}>
+          {(file) => (
+            <button
+              class="spec-file-item"
+              classList={{ selected: props.selectedFileUrl === file.url }}
+              onClick={() =>
+                props.onSelectFile(props.selectedFileUrl === file.url ? null : file.url)
+              }
+            >
+              <span class="spec-file-icon">📄</span>
+              <span class="spec-file-name">{file.name}</span>
+            </button>
+          )}
+        </For>
+      </div>
+    </Show>
   );
 }

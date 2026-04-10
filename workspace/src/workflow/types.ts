@@ -12,8 +12,10 @@ export type WorkflowToolIds = {
 
 export type WorkflowDoc = {
   specElicitationDocUrl: AutomergeUrl;
-  specDocUrl: AutomergeUrl;
-  planDocUrl: AutomergeUrl;
+  specDocUrl?: AutomergeUrl;
+  specProcessUrl?: AutomergeUrl;
+  planDocUrl?: AutomergeUrl;
+  planProcessUrl?: AutomergeUrl;
   executionDocUrl: AutomergeUrl;
   validationDocUrl: AutomergeUrl;
   toolIds?: WorkflowToolIds;
@@ -32,6 +34,7 @@ export type Spec = {
   dataFolderUrl?: AutomergeUrl;
   verificationUrls: AutomergeUrl[];
   subSpecUrls?: AutomergeUrl[];
+  filesFolderUrl?: AutomergeUrl;
 };
 
 export type SpecDoc = HasPatchworkMetadata & {
@@ -57,7 +60,7 @@ export type ExecutionDoc = HasPatchworkMetadata & {
 export type ValidationDoc = HasPatchworkMetadata & {
   planDocUrl: AutomergeUrl;
   specDocUrl: AutomergeUrl;
-  executionDocUrl?: AutomergeUrl;
+  executionDocUrl: AutomergeUrl;
   isValidated: boolean;
   headsByDocUrl: Record<AutomergeUrl, Heads>;
 };

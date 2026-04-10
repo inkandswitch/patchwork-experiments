@@ -1,0 +1,620 @@
+import type { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
+import type { AutomergeUrl, Repo } from '@automerge/automerge-repo';
+import type { WorkflowDoc, SpecDoc, Spec } from '../../workflow/types';
+import type { ElicitationDoc } from '../../types';
+import {
+  parseProgram,
+  type StoredFact,
+  type StoredRule,
+  type StoredConstraint,
+} from '../../../../datalog/src/datalog';
+
+export type { WorkflowDoc } from '../../workflow/types';
+
+type FolderDoc = {
+  '@patchwork'?: { type: string };
+  title: string;
+  docs: { type: string; name: string; url: AutomergeUrl }[];
+};
+
+type FileDoc = {
+  '@patchwork': { type: 'file' };
+  name: string;
+  extension: string;
+  mimeType: string;
+  content: string;
+};
+
+type DatalogDoc = {
+  '@patchwork': { type: 'datalog' };
+  title?: string;
+  facts: StoredFact[];
+  rules: StoredRule[];
+  constraints: StoredConstraint[];
+};
+
+type InitialToken = {
+  placeId: string;
+  state: Record<string, unknown>;
+};
+
+type PetriNetPlanDoc = {
+  '@patchwork': { type: 'petrinet-plan' };
+  initialTokens: InitialToken[];
+  systemPromptUrls?: { optimizer?: string };
+};
+
+type MarkdownDoc = {
+  '@patchwork': { type: 'markdown' };
+  content: string;
+};
+
+export const IPTablesWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> = {
+  init(doc: WorkflowDoc, repo: Repo) {
+    const { elicitationUrl } = createElicitationWithIPTables(repo);
+    const { specDocUrl } = createDefaultSpec(repo);
+
+    doc.specElicitationDocUrl = elicitationUrl;
+    doc.specDocUrl = specDocUrl;
+    doc.planDocUrl = createPetriNetDoc(repo, specDocUrl);
+    doc.toolIds = {
+      spec: 'paul-spec-viewer',
+    };
+  },
+  getTitle() {
+    return 'IPTables Workflow';
+  },
+  setTitle() {},
+};
+
+function createElicitationWithIPTables(repo: Repo): {
+  elicitationUrl: AutomergeUrl;
+  referenceDocsFolderUrl: AutomergeUrl;
+} {
+  const machineAIptablesUrl = createFileDoc(
+    repo,
+    'machine-a-iptables',
+    'rules',
+    MACHINE_A_IPTABLES_RULES,
+  );
+
+  const machineBIptablesUrl = createFileDoc(
+    repo,
+    'machine-b-iptables',
+    'rules',
+    MACHINE_B_IPTABLES_RULES,
+  );
+
+  const folderHandle = repo.create<FolderDoc>();
+  folderHandle.change((d) => {
+    d['@patchwork'] = { type: 'folder' };
+    d.title = 'IPTables Config Files';
+    d.docs = [
+      { type: 'file', name: 'machine-a-iptables.rules', url: machineAIptablesUrl },
+      { type: 'file', name: 'machine-b-iptables.rules', url: machineBIptablesUrl },
+    ];
+  });
+
+  const elicitationHandle = repo.create<ElicitationDoc>();
+  elicitationHandle.change((d) => {
+    d['@patchwork'] = { type: 'elicitation' };
+    d.prompt =
+      'Optimize the IPTables configurations for two machines (web server and database server) to remove redundant rules while maintaining the same security posture.';
+    d.referenceDocsFolderUrl = folderHandle.url;
+  });
+
+  return { elicitationUrl: elicitationHandle.url, referenceDocsFolderUrl: folderHandle.url };
+}
+
+function createFileDoc(repo: Repo, name: string, extension: string, content: string): AutomergeUrl {
+  const handle = repo.create<FileDoc>();
+  handle.change((d) => {
+    d['@patchwork'] = { type: 'file' };
+    d.name = name;
+    d.extension = extension;
+    d.mimeType = 'text/plain';
+    d.content = content;
+  });
+  return handle.url;
+}
+
+function createFilesFolder(
+  repo: Repo,
+  title: string,
+  files: { name: string; url: AutomergeUrl; type?: string }[],
+): AutomergeUrl {
+  const handle = repo.create<FolderDoc>();
+  handle.change((d) => {
+    d['@patchwork'] = { type: 'folder' };
+    d.title = title;
+    d.docs = files.map((f) => ({ type: f.type ?? 'file', name: f.name, url: f.url }));
+  });
+  return handle.url;
+}
+
+function createPetriNetDoc(repo: Repo, specDocUrl: AutomergeUrl): AutomergeUrl {
+  const handle = repo.create<PetriNetPlanDoc>();
+  handle.change((d) => {
+    d['@patchwork'] = { type: 'petrinet-plan' };
+    d.initialTokens = [
+      {
+        placeId: 'spec',
+        state: { type: 'spec', documentUrl: '', specUrl: specDocUrl },
+      },
+    ];
+    d.systemPromptUrls = {
+      optimizer: createMarkdownDoc(repo, IPTABLES_OPTIMIZER_SYSTEM_PROMPT),
+    };
+  });
+  return handle.url;
+}
+
+function createMarkdownDoc(repo: Repo, content: string): string {
+  const h = repo.create<MarkdownDoc>();
+  h.change((d) => {
+    d['@patchwork'] = { type: 'markdown' };
+    d.content = content;
+  });
+  return h.url as string;
+}
+
+const IPTABLES_OPTIMIZER_SYSTEM_PROMPT = `You are a firewall configuration expert optimizing IPTables rules.
+
+Your optimization strategy: $PROMPT
+$PREVIOUS_VIOLATIONS
+## Available Functions (DO NOT REDEFINE)
+
+The following are already available in your script context:
+- \`repo\` - Automerge repository for finding and modifying documents
+- \`evaluateSolution(specUrl, folderUrl)\` - Checks constraints and returns violations
+- \`console\` - For logging
+
+Do NOT redefine these. Just use them directly.
+
+## IPTables and Datalog Background
+
+IPTables rules are evaluated in order - the first matching rule wins. A rule is:
+- **Redundant**: if an earlier rule with the same action already covers it (broader CIDR, same protocol/port)
+- **Unreachable**: if an earlier DROP rule blocks traffic that a later ACCEPT rule tries to allow
+
+The Datalog engine evaluates CIDR containment via the \`ip_in\` built-in. Do NOT try to manually compute CIDR containment - use \`evaluateSolution()\` to find violations.
+
+## Document Structure
+
+The specification is at $SPEC_URL. It is a Patchwork SpecDoc with:
+- spec.goal: a description of the machine and its role
+- spec.verificationUrls: array of Automerge URLs pointing to datalog docs with integrity constraints
+
+Documents to optimize:
+$DOC_LIST
+
+These are Datalog documents with:
+- facts: array of { pred: string, args: (string|number)[] } - the IPTables rules as facts
+- rules: derived relations (redundant, unreachable, etc.)
+- constraints: integrity rules that must not be violated
+
+Common fact predicates:
+- chain(Machine, Chain, DefaultPolicy) - chain default policies
+- rule(Machine, Chain, Index, Action, Source, Protocol, DPort) - firewall rules
+
+## Violation Output Format
+
+When \`evaluateSolution()\` finds violations, it returns:
+\`\`\`json
+{
+  "valid": false,
+  "violations": [{
+    "constraint": { "body": [{ "pred": "redundant", "args": ["M", "Idx"] }] },
+    "witnesses": [{ "bindings": { "M": "machine_b", "Idx": 6 } }]
+  }]
+}
+\`\`\`
+
+Extract the \`Idx\` values from \`violations[*].witnesses[*].bindings.Idx\` to know which rule indices to remove.
+
+## Optimization Steps
+
+Step 1 — Read the specification to understand the goal:
+<script data-description="Read spec and verification rules">
+const specHandle = await repo.find("$SPEC_URL")
+const specDoc = await specHandle.doc()
+const goal = specDoc.spec?.goal ?? ""
+const verificationUrls = specDoc.spec?.verificationUrls ?? []
+const verifications = await Promise.all(verificationUrls.map(async url => {
+  const h = await repo.find(url)
+  const d = await h.doc()
+  return { url, title: d.title }
+}))
+return JSON.stringify({ goal, verifications }, null, 2)
+</script>
+
+Step 2 — Read the current facts from the documents:
+<script data-description="Read current facts">
+const docs = $DOC_URLS
+const results = await Promise.all(docs.map(async ({ name, url }) => {
+  const h = await repo.find(url)
+  const d = await h.doc()
+  return { name, url, facts: d.facts ?? [] }
+}))
+return JSON.stringify(results, null, 2)
+</script>
+
+Step 3 — Run the constraint checker to find violations BEFORE making changes:
+<script data-description="Find current violations">
+const result = await evaluateSolution("$SPEC_URL", "$FOLDER_URL")
+return JSON.stringify(result, null, 2)
+</script>
+
+Step 4 — If violations exist, extract the problematic rule indices from the violation bindings and remove those facts.
+
+IMPORTANT: Automerge does not allow reassignment of properties. You CANNOT do \`d.facts = d.facts.filter(...)\`.
+Instead, use splice() to remove items in place. Remove in reverse order to avoid index shifting:
+
+<script data-description="Remove violated rules">
+const docs = $DOC_URLS
+
+// Extract rule indices from violations (from Step 3 output)
+// Look for bindings.Idx in each witness
+const violatedIndices = new Set([/* indices from violations[*].witnesses[*].bindings.Idx */])
+
+for (const { url } of docs) {
+  const handle = await repo.find(url)
+  const doc = await handle.doc()
+  
+  // Find array positions where fact.pred === "rule" and fact.args[2] (Index) is violated
+  const positionsToRemove = []
+  for (let i = 0; i < doc.facts.length; i++) {
+    const f = doc.facts[i]
+    if (f.pred === "rule" && violatedIndices.has(f.args[2])) {
+      positionsToRemove.push(i)
+    }
+  }
+  
+  // Remove in reverse order
+  handle.change(d => {
+    for (let i = positionsToRemove.length - 1; i >= 0; i--) {
+      d.facts.splice(positionsToRemove[i], 1)
+    }
+  })
+}
+return "Violated rules removed"
+</script>
+
+Step 5 — Re-verify to confirm violations are resolved:
+<script data-description="Verify no constraint violations">
+const result = await evaluateSolution("$SPEC_URL", "$FOLDER_URL")
+return JSON.stringify(result, null, 2)
+</script>
+
+If violations remain (valid: false), go back to Step 4 with the new violation indices. Repeat until all constraints are satisfied.`;
+
+function createDatalogDoc(repo: Repo, title: string, datalogText: string): AutomergeUrl {
+  const parsed = parseProgram(datalogText);
+  const handle = repo.create<DatalogDoc>();
+  handle.change((d) => {
+    d['@patchwork'] = { type: 'datalog' };
+    d.title = title;
+    d.facts = parsed.facts;
+    d.rules = parsed.rules;
+    d.constraints = parsed.constraints;
+  });
+  return handle.url;
+}
+
+function createDefaultSpec(repo: Repo): { specDocUrl: AutomergeUrl; leafSpecUrls: AutomergeUrl[] } {
+  const globalRulesUrl = createDatalogDoc(repo, 'Global Firewall Rules', GLOBAL_RULES_DATALOG);
+  const commonMachineRulesUrl = createDatalogDoc(repo, 'Common Machine Rules', COMMON_MACHINE_RULES_DATALOG);
+  const machineARulesUrl = createDatalogDoc(repo, 'Machine A Rules (Web Server)', MACHINE_A_RULES_DATALOG);
+  const machineBRulesUrl = createDatalogDoc(repo, 'Machine B Rules (Database Server)', MACHINE_B_RULES_DATALOG);
+
+  const machineADatalogUrl = createDatalogDoc(repo, 'Machine A IPTables', MACHINE_A_IPTABLES_DATALOG);
+  const machineBDatalogUrl = createDatalogDoc(repo, 'Machine B IPTables', MACHINE_B_IPTABLES_DATALOG);
+
+  const machineAFilesFolderUrl = createFilesFolder(repo, 'Machine A Files', [
+    { name: 'machine-a-iptables', url: machineADatalogUrl, type: 'datalog' },
+  ]);
+
+  const machineBFilesFolderUrl = createFilesFolder(repo, 'Machine B Files', [
+    { name: 'machine-b-iptables', url: machineBDatalogUrl, type: 'datalog' },
+  ]);
+
+  const machineASpecHandle = repo.create<SpecDoc>();
+  machineASpecHandle.change((d) => {
+    d['@patchwork'] = { type: 'spec' };
+    d.spec = {
+      goal: 'Machine A Firewall (Web Server)',
+      verificationUrls: [commonMachineRulesUrl, machineARulesUrl],
+      filesFolderUrl: machineAFilesFolderUrl,
+    };
+  });
+
+  const machineBSpecHandle = repo.create<SpecDoc>();
+  machineBSpecHandle.change((d) => {
+    d['@patchwork'] = { type: 'spec' };
+    d.spec = {
+      goal: 'Machine B Firewall (Database Server)',
+      verificationUrls: [commonMachineRulesUrl, machineBRulesUrl],
+      filesFolderUrl: machineBFilesFolderUrl,
+    };
+  });
+
+  const spec: Spec = {
+    goal: 'Network Firewall Configuration',
+    verificationUrls: [globalRulesUrl],
+    subSpecUrls: [machineASpecHandle.url, machineBSpecHandle.url],
+  };
+
+  const specHandle = repo.create<SpecDoc>();
+  specHandle.change((d) => {
+    d['@patchwork'] = { type: 'spec' };
+    d.spec = spec;
+  });
+
+  return {
+    specDocUrl: specHandle.url,
+    leafSpecUrls: [machineASpecHandle.url, machineBSpecHandle.url],
+  };
+}
+
+const GLOBAL_RULES_DATALOG = `% Network Configuration
+machine(machine_a, "192.168.1.10").
+machine(machine_b, "192.168.1.11").
+
+% Blocked IPs (network-wide)
+blocked_ip("10.0.0.1").
+blocked_ip("10.0.0.2").
+
+% ═══════════════════════════════════════════════════════
+% EMERGENT CONSTRAINTS - Cross-machine behavioral checks
+% ═══════════════════════════════════════════════════════
+
+% 1. Database must be reachable from webserver
+accepts_db_from(DB, Ip) :- rule(DB, "input", _, "accept", Src, _, 3306), ip_in(Ip, Src).
+accepts_db_from(DB, Ip) :- rule(DB, "input", _, "accept", Src, _, 5432), ip_in(Ip, Src).
+
+:- role(DB, database), role(Web, webserver),
+   machine(Web, WebIp),
+   not accepts_db_from(DB, WebIp).
+
+% 2. Database should only accept from known webservers
+known_client_in_range(Src) :-
+    role(M, webserver),
+    machine(M, MIp),
+    ip_in(MIp, Src).
+
+:- role(DB, database),
+   rule(DB, "input", _, "accept", Src, _, 3306),
+   Src != "127.0.0.0/8",
+   not known_client_in_range(Src).
+
+:- role(DB, database),
+   rule(DB, "input", _, "accept", Src, _, 5432),
+   Src != "127.0.0.0/8",
+   not known_client_in_range(Src).
+
+% 3. Blocked IPs must be blocked everywhere
+:- blocked_ip(IP), rule(M, "input", _, "accept", Src, _, _), ip_in(IP, Src).`;
+
+const COMMON_MACHINE_RULES_DATALOG = `% Detect redundant rules (earlier broader rule with same action already covers)
+redundant(M, Idx) :-
+    rule(M, Chain, Idx, Action, Src, Proto, Port),
+    rule(M, Chain, Earlier, Action, Broader, Proto, Port),
+    lt(Earlier, Idx),
+    ip_in(Src, Broader).
+
+% Detect unreachable rules (earlier DROP shadows a later ACCEPT)
+unreachable(M, Idx) :-
+    rule(M, Chain, Idx, "accept", Src, _, _),
+    rule(M, Chain, Earlier, "drop", DropSrc, _, _),
+    lt(Earlier, Idx),
+    ip_in(Src, DropSrc).
+
+% No redundant rules should exist
+:- redundant(M, Idx).
+
+% No unreachable rules should exist
+:- unreachable(M, Idx).`;
+
+const MACHINE_A_RULES_DATALOG = `% Machine A is a web server
+role(machine_a, webserver).
+
+% Web servers should not expose database ports
+:- role(M, webserver), rule(M, "input", _, "accept", "0.0.0.0/0", _, 3306).
+:- role(M, webserver), rule(M, "input", _, "accept", "0.0.0.0/0", _, 5432).`;
+
+const MACHINE_B_RULES_DATALOG = `% Machine B is a database server
+role(machine_b, database).
+
+% Database servers should only allow DB connections from internal network
+:- role(M, database), rule(M, "input", _, "accept", "0.0.0.0/0", _, 3306).
+:- role(M, database), rule(M, "input", _, "accept", "0.0.0.0/0", _, 5432).`;
+
+const MACHINE_A_IPTABLES_RULES = `*filter
+:INPUT DROP [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [0:0]
+
+# Allow loopback
+-A INPUT -i lo -j ACCEPT
+
+# Allow established connections
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+# Allow HTTP
+-A INPUT -p tcp --dport 80 -j ACCEPT
+
+# REDUNDANT: Duplicate HTTP rule (same as above)
+-A INPUT -p tcp --dport 80 -j ACCEPT
+
+# Allow HTTPS
+-A INPUT -p tcp --dport 443 -j ACCEPT
+
+# REDUNDANT: Could be combined with HTTP/HTTPS above using multiport
+-A INPUT -p tcp --dport 8080 -j ACCEPT
+-A INPUT -p tcp --dport 8443 -j ACCEPT
+
+# Allow SSH from internal network only
+-A INPUT -p tcp -s 192.168.1.0/24 --dport 22 -j ACCEPT
+
+# REDUNDANT: More specific rule already covered by above
+-A INPUT -p tcp -s 192.168.1.10 --dport 22 -j ACCEPT
+-A INPUT -p tcp -s 192.168.1.11 --dport 22 -j ACCEPT
+
+# Block known malicious IPs
+-A INPUT -s 10.0.0.0/8 -j DROP
+
+# REDUNDANT: These are already blocked by the /8 CIDR above
+-A INPUT -s 10.0.0.1 -j DROP
+-A INPUT -s 10.0.0.2 -j DROP
+-A INPUT -s 10.1.1.1 -j DROP
+
+# REDUNDANT: Unreachable rule - 10.0.0.5 is already blocked by /8 above
+-A INPUT -s 10.0.0.5 -p tcp --dport 80 -j ACCEPT
+
+# Rate limit ICMP
+-A INPUT -p icmp --icmp-type echo-request -m limit --limit 1/s -j ACCEPT
+
+# REDUNDANT: Duplicate ICMP rule
+-A INPUT -p icmp --icmp-type echo-request -m limit --limit 1/s -j ACCEPT
+
+# REDUNDANT: Shadowed by default DROP policy - these explicit drops are unnecessary
+-A INPUT -p tcp --dport 23 -j DROP
+-A INPUT -p tcp --dport 21 -j DROP
+
+COMMIT`;
+
+const MACHINE_B_IPTABLES_RULES = `*filter
+:INPUT DROP [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [0:0]
+
+# Allow loopback
+-A INPUT -i lo -j ACCEPT
+
+# REDUNDANT: Duplicate loopback rule
+-A INPUT -i lo -j ACCEPT
+
+# Allow established connections
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+# Allow MySQL from web server
+-A INPUT -p tcp -s 192.168.1.10 --dport 3306 -j ACCEPT
+
+# REDUNDANT: Same source, could be combined with MySQL rule above
+-A INPUT -p tcp -s 192.168.1.10 --dport 5432 -j ACCEPT
+
+# Allow SSH from internal network
+-A INPUT -p tcp -s 192.168.1.0/24 --dport 22 -j ACCEPT
+
+# REDUNDANT: Already covered by /24 rule above
+-A INPUT -p tcp -s 192.168.1.1 --dport 22 -j ACCEPT
+
+# Block external access to DB ports
+-A INPUT -p tcp --dport 3306 -j DROP
+-A INPUT -p tcp --dport 5432 -j DROP
+
+# REDUNDANT: Shadowed by default DROP - these would never match anyway
+-A INPUT -p tcp --dport 3306 -j DROP
+-A INPUT -p tcp --dport 5432 -j DROP
+
+# Block malicious IPs
+-A INPUT -s 10.0.0.0/8 -j DROP
+
+# REDUNDANT: Subset of /8 block above
+-A INPUT -s 10.0.0.0/16 -j DROP
+-A INPUT -s 10.0.0.0/24 -j DROP
+
+# REDUNDANT: Order issue - this ACCEPT is after DROP, so unreachable
+-A INPUT -s 10.5.5.5 -p tcp --dport 22 -j ACCEPT
+
+COMMIT`;
+
+const MACHINE_A_IPTABLES_DATALOG = `% Machine A IPTables Rules
+% rule(Machine, Chain, Index, Action, Source, Protocol, DPort)
+
+chain(machine_a, "input", "drop").
+chain(machine_a, "forward", "drop").
+chain(machine_a, "output", "accept").
+
+% Loopback
+rule(machine_a, "input", 1, "accept", "127.0.0.0/8", "any", "any").
+
+% HTTP
+rule(machine_a, "input", 2, "accept", "0.0.0.0/0", "tcp", 80).
+
+% REDUNDANT: Duplicate HTTP rule
+rule(machine_a, "input", 3, "accept", "0.0.0.0/0", "tcp", 80).
+
+% HTTPS
+rule(machine_a, "input", 4, "accept", "0.0.0.0/0", "tcp", 443).
+
+% Alternative web ports
+rule(machine_a, "input", 5, "accept", "0.0.0.0/0", "tcp", 8080).
+rule(machine_a, "input", 6, "accept", "0.0.0.0/0", "tcp", 8443).
+
+% SSH from internal network only
+rule(machine_a, "input", 7, "accept", "192.168.1.0/24", "tcp", 22).
+
+% REDUNDANT: Already covered by /24 above
+rule(machine_a, "input", 8, "accept", "192.168.1.10", "tcp", 22).
+rule(machine_a, "input", 9, "accept", "192.168.1.11", "tcp", 22).
+
+% Block malicious IPs - broad CIDR
+rule(machine_a, "input", 10, "drop", "10.0.0.0/8", "any", "any").
+
+% REDUNDANT: Subsets of /8 above
+rule(machine_a, "input", 11, "drop", "10.0.0.1", "any", "any").
+rule(machine_a, "input", 12, "drop", "10.0.0.2", "any", "any").
+rule(machine_a, "input", 13, "drop", "10.1.1.1", "any", "any").
+
+% REDUNDANT: Unreachable - 10.0.0.5 blocked by /8 rule
+rule(machine_a, "input", 14, "accept", "10.0.0.5", "tcp", 80).
+
+% ICMP
+rule(machine_a, "input", 15, "accept", "0.0.0.0/0", "icmp", "any").
+
+% REDUNDANT: Duplicate ICMP rule
+rule(machine_a, "input", 16, "accept", "0.0.0.0/0", "icmp", "any").`;
+
+const MACHINE_B_IPTABLES_DATALOG = `% Machine B IPTables Rules
+% rule(Machine, Chain, Index, Action, Source, Protocol, DPort)
+
+chain(machine_b, "input", "drop").
+chain(machine_b, "forward", "drop").
+chain(machine_b, "output", "accept").
+
+% Loopback
+rule(machine_b, "input", 1, "accept", "127.0.0.0/8", "any", "any").
+
+% REDUNDANT: Duplicate loopback
+rule(machine_b, "input", 2, "accept", "127.0.0.0/8", "any", "any").
+
+% MySQL from web server
+rule(machine_b, "input", 3, "accept", "192.168.1.10", "tcp", 3306).
+
+% PostgreSQL from web server
+rule(machine_b, "input", 4, "accept", "192.168.1.10", "tcp", 5432).
+
+% SSH from internal network
+rule(machine_b, "input", 5, "accept", "192.168.1.0/24", "tcp", 22).
+
+% REDUNDANT: Already covered by /24 above
+rule(machine_b, "input", 6, "accept", "192.168.1.1", "tcp", 22).
+
+% Block external access to DB ports
+rule(machine_b, "input", 7, "drop", "0.0.0.0/0", "tcp", 3306).
+rule(machine_b, "input", 8, "drop", "0.0.0.0/0", "tcp", 5432).
+
+% REDUNDANT: Duplicate of above
+rule(machine_b, "input", 9, "drop", "0.0.0.0/0", "tcp", 3306).
+rule(machine_b, "input", 10, "drop", "0.0.0.0/0", "tcp", 5432).
+
+% Block malicious IPs
+rule(machine_b, "input", 11, "drop", "10.0.0.0/8", "any", "any").
+
+% REDUNDANT: Subsets of /8 above
+rule(machine_b, "input", 12, "drop", "10.0.0.0/16", "any", "any").
+rule(machine_b, "input", 13, "drop", "10.0.0.0/24", "any", "any").
+
+% REDUNDANT: Unreachable - 10.5.5.5 blocked by /8 rule above
+rule(machine_b, "input", 14, "accept", "10.5.5.5", "tcp", 22).`;

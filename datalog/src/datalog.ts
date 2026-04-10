@@ -1,3 +1,4 @@
+import type { AutomergeUrl, Cursor } from '@automerge/automerge-repo';
 import * as ohm from 'ohm-js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -10,11 +11,37 @@ export type Constant = string | number;
 //   otherwise                    → constant   e.g. "north", "500" or a number
 export type Term = string;
 
-export type StoredFact = { pred: string; args: Constant[]; comment?: string };
-export type StoredAtom = { pred: string; args: Term[] };
-export type StoredRule = { head: StoredAtom; body: StoredAtom[]; comment?: string };
+export type StoredTextRangeRef = {
+  docUrl: AutomergeUrl;
+  path: Array<string | number>;
+  from: Cursor;
+  to: Cursor;
+};
 
-export type StoredConstraint = { body: StoredAtom[]; comment?: string };
+export type StoredAttribution = {
+  refs: StoredTextRangeRef[];
+};
+
+export type StoredFact = {
+  pred: string;
+  args: Constant[];
+  comment?: string;
+  attribution?: StoredAttribution;
+};
+export type StoredAtom = { pred: string; args: Term[] };
+export type StoredRule = {
+  head: StoredAtom;
+  body: StoredAtom[];
+  comment?: string;
+  attribution?: StoredAttribution;
+};
+
+export type StoredConstraint = {
+  name?: string;
+  body: StoredAtom[];
+  comment?: string;
+  attribution?: StoredAttribution;
+};
 
 export type ProvenanceEntry = { rule: StoredRule; groundBody: StoredFact[] };
 export type ProvenanceMap = Map<string, ProvenanceEntry>;
@@ -43,10 +70,19 @@ export type ParseResult = {
 // ─── Key derivation ───────────────────────────────────────────────────────────
 
 function serializeConstant(c: Constant): string {
-  return String(c);
+  if (typeof c === 'number') return String(c);
+  if (/^[a-zA-Z][a-zA-Z0-9_]*$/.test(c)) return c;
+  return `"${c}"`;
 }
 
 function serializeAtom(a: StoredAtom): string {
+  if (a.pred === 'not' && a.args.length === 1) {
+    const inner = a.args[0];
+    if (typeof inner === 'object' && inner !== null) {
+      return `not(${serializeAtom(inner as unknown as StoredAtom)})`;
+    }
+    return `not(${inner})`;
+  }
   if (a.args.length === 0) return a.pred;
   return `${a.pred}(${a.args.join(', ')})`;
 }
@@ -62,6 +98,10 @@ export function factKey(f: StoredFact): string {
 
 export function ruleKey(r: StoredRule): string {
   return `${serializeAtom(r.head)} :- ${r.body.map(serializeAtom).join(', ')}`;
+}
+
+export function constraintKey(c: StoredConstraint): string {
+  return ':- ' + c.body.map(serializeAtom).join(', ');
 }
 
 // ─── Serialization (structure → text) ─────────────────────────────────────────
@@ -149,7 +189,10 @@ Datalog {
   Fact        = Atom
 
   BodyLit     = SumLit
+              | NotLit
               | Atom
+
+  NotLit      = "not" Atom
 
   SumLit      = "sum" "(" Term "," Atom "," Term ")"
 
@@ -157,11 +200,14 @@ Datalog {
               | ident                             -- bare
 
   Term        = "_"      -- wildcard
+              | string   -- str
               | number   -- num
               | ident    -- name
 
   ident       = ~reserved letter (alnum | "_")*
-  reserved    = "sum" ~(alnum | "_")
+  reserved    = ("sum" | "not") ~(alnum | "_")
+
+  string      = "\"" (~"\"" any)* "\""
 
   number      = "-"? digit+ ("." digit+)?
 
@@ -250,6 +296,11 @@ semantics.addOperation<any>('toAST', {
     return child.toAST();
   },
 
+  NotLit(_not, atom) {
+    const inner: StoredAtom = atom.toAST();
+    return { pred: 'not', args: [inner] } as unknown as StoredAtom;
+  },
+
   SumLit(_, _lp, aggVar, _c1, pattern, _c2, outVar, _rp) {
     const patAtom: StoredAtom = pattern.toAST();
     // Serialize the inner atom back to a string so the evaluator can re-parse it
@@ -271,6 +322,10 @@ semantics.addOperation<any>('toAST', {
 
   Term_wildcard(_) {
     return '_';
+  },
+
+  Term_str(str) {
+    return str.sourceString;
   },
 
   // Term_num body is: number  → arity 1
@@ -306,6 +361,9 @@ function isWildcard(t: string): boolean {
 }
 
 export function parseConstant(s: string): Constant {
+  if (s.length >= 2 && s[0] === '"' && s[s.length - 1] === '"') {
+    return s.slice(1, -1);
+  }
   const n = Number(s);
   return isNaN(n) ? s : n;
 }
@@ -399,6 +457,14 @@ function evalBuiltin(atom: StoredAtom, bindings: Bindings): Bindings | null {
     const b = resolve(args[1]);
     if (a === undefined || b === undefined) return null;
     return CMP[pred](Number(a), Number(b)) ? bindings : null;
+  }
+
+  // ip_in(addr_or_narrow_cidr, broader_cidr): true if first range is contained within second
+  if (pred === 'ip_in' && args.length === 2) {
+    const a = resolve(args[0]);
+    const b = resolve(args[1]);
+    if (a === undefined || b === undefined) return null;
+    return ipContains(String(a), String(b)) ? bindings : null;
   }
 
   // Arithmetic built-ins (3 args: input, input, output)
@@ -532,7 +598,50 @@ function bindOut(bindings: Bindings, outTerm: Term, value: number): Bindings | n
   return parseConstant(outTerm) === value ? bindings : null;
 }
 
-const SIMPLE_BUILTINS = new Set(['lt', 'lte', 'gt', 'gte', 'eq', 'neq', 'add', 'sub', 'mul', 'div']);
+// ─── IP address helpers ──────────────────────────────────────────────────────
+
+function parseIPv4(s: string): number | null {
+  const parts = s.split('/')[0].split('.');
+  if (parts.length !== 4) return null;
+  const octets = parts.map(Number);
+  if (octets.some(o => isNaN(o) || o < 0 || o > 255)) return null;
+  return ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>> 0;
+}
+
+function parseCIDR(s: string): { network: number; mask: number } | null {
+  const ip = parseIPv4(s);
+  if (ip === null) return null;
+  const slashIdx = s.indexOf('/');
+  const prefix = slashIdx >= 0 ? Number(s.slice(slashIdx + 1)) : 32;
+  if (isNaN(prefix) || prefix < 0 || prefix > 32) return null;
+  const mask = prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0;
+  return { network: (ip & mask) >>> 0, mask };
+}
+
+function ipContains(inner: string, outer: string): boolean {
+  const i = parseCIDR(inner);
+  const o = parseCIDR(outer);
+  if (!i || !o) return false;
+  if (i.mask < o.mask) return false;
+  return ((i.network & o.mask) >>> 0) === o.network;
+}
+
+const SIMPLE_BUILTINS = new Set(['lt', 'lte', 'gt', 'gte', 'eq', 'neq', 'add', 'sub', 'mul', 'div', 'ip_in']);
+
+function resolveNotArg(arg: unknown, bindings: Bindings): StoredAtom | null {
+  if (typeof arg === 'object' && arg !== null && 'pred' in arg) {
+    return arg as StoredAtom;
+  }
+  if (typeof arg === 'string') {
+    // Substitute bound variables in the string before parsing
+    let s = arg;
+    for (const [k, v] of bindings) {
+      s = s.replace(new RegExp(`\\b${k}\\b`, 'g'), String(v));
+    }
+    return parseAtom(s);
+  }
+  return null;
+}
 
 function matchBody(body: StoredAtom[], db: StoredFact[], bindings: Bindings): Bindings[] {
   if (body.length === 0) return [bindings];
@@ -552,6 +661,15 @@ function matchBody(body: StoredAtom[], db: StoredFact[], bindings: Bindings): Bi
     const b = evalBuiltin(first, bindings);
     if (b === null) return [];
     return matchBody(rest, db, b);
+  }
+
+  // negation-as-failure
+  if (first.pred === 'not' && first.args.length === 1) {
+    const innerAtom = resolveNotArg(first.args[0], bindings);
+    if (!innerAtom) return [];
+    const hasMatch = db.some(fact => matchAtom(innerAtom, fact, bindings) !== null);
+    if (hasMatch) return [];
+    return matchBody(rest, db, bindings);
   }
 
   // regular DB lookup
@@ -638,6 +756,15 @@ function matchBodyTracked(
     };
     const step: GroundBodyStep = { kind: 'builtin', atom: first, resolvedArgs: first.args.map(resolve) };
     return matchBodyTracked(rest, db, b, [...steps, step]);
+  }
+
+  // negation-as-failure
+  if (first.pred === 'not' && first.args.length === 1) {
+    const innerAtom = resolveNotArg(first.args[0], bindings);
+    if (!innerAtom) return [];
+    const hasMatch = db.some(fact => matchAtom(innerAtom, fact, bindings) !== null);
+    if (hasMatch) return [];
+    return matchBodyTracked(rest, db, bindings, steps);
   }
 
   // regular DB lookup

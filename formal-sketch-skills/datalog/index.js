@@ -36,6 +36,9 @@ function factKey(f) {
 }
 
 function serializeAtom(a) {
+  if (a.pred === 'not' && a.args.length === 1 && typeof a.args[0] === 'object' && a.args[0] !== null) {
+    return `not(${serializeAtom(a.args[0])})`;
+  }
   if (!a.args || a.args.length === 0) return a.pred;
   return `${a.pred}(${a.args.join(', ')})`;
 }
@@ -46,6 +49,13 @@ function ruleKey(r) {
 
 function constraintKey(c) {
   return `:- ${c.body.map(serializeAtom).join(', ')}`;
+}
+
+function copyAtom(a) {
+  if (a.pred === 'not' && a.args.length === 1 && typeof a.args[0] === 'object' && a.args[0] !== null) {
+    return { pred: 'not', args: [copyAtom(a.args[0])] };
+  }
+  return { pred: a.pred, args: [...a.args] };
 }
 
 /**
@@ -231,6 +241,14 @@ function matchBody(body, db, bindings) {
     return matchBody(rest, db, b);
   }
 
+  if (first.pred === 'not' && first.args.length === 1) {
+    const innerAtom = first.args[0];
+    if (typeof innerAtom !== 'object' || !innerAtom.pred) return [];
+    const hasMatch = db.some((fact) => matchAtom(innerAtom, fact, bindings) !== null);
+    if (hasMatch) return [];
+    return matchBody(rest, db, bindings);
+  }
+
   const results = [];
   for (const fact of db) {
     const b = matchAtom(first, fact, bindings);
@@ -303,6 +321,15 @@ function matchBodyTracked(body, db, bindings, steps) {
     };
     const step = { kind: 'builtin', atom: first, resolvedArgs: first.args.map(resolve) };
     return matchBodyTracked(rest, db, b, [...steps, step]);
+  }
+
+  if (first.pred === 'not' && first.args.length === 1) {
+    const innerAtom = first.args[0];
+    if (typeof innerAtom !== 'object' || !innerAtom.pred) return [];
+    const hasMatch = db.some((fact) => matchAtom(innerAtom, fact, bindings) !== null);
+    if (hasMatch) return [];
+    const notStep = { kind: 'not', atom: innerAtom };
+    return matchBodyTracked(rest, db, bindings, [...steps, notStep]);
   }
 
   const results = [];
@@ -383,8 +410,6 @@ export function createDatalog(repo, title) {
     d.facts = [];
     d.rules = [];
     d.constraints = [];
-    d.draftText = '';
-    d.mapStyle = { lines: {}, properties: {} };
     if (title) d.title = title;
   });
   return { handle, url: handle.url };
@@ -459,7 +484,7 @@ export async function getDatalog(repo, url) {
       const key = ruleKey(rule);
       handle.change((d) => {
         const exists = (d.rules ?? []).some((r) => ruleKey(r) === key);
-        if (!exists) d.rules.push({ head: { pred: rule.head.pred, args: [...rule.head.args] }, body: rule.body.map((a) => ({ pred: a.pred, args: [...a.args] })) });
+        if (!exists) d.rules.push({ head: { pred: rule.head.pred, args: [...rule.head.args] }, body: rule.body.map(copyAtom) });
       });
     },
 
@@ -490,7 +515,7 @@ export async function getDatalog(repo, url) {
       const key = constraintKey(constraint);
       handle.change((d) => {
         const exists = (d.constraints ?? []).some((c) => constraintKey(c) === key);
-        if (!exists) d.constraints.push({ body: constraint.body.map((a) => ({ pred: a.pred, args: [...a.args] })) });
+        if (!exists) d.constraints.push({ body: constraint.body.map(copyAtom) });
       });
     },
 

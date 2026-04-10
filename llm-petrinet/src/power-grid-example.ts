@@ -246,7 +246,6 @@ function createDatalogDoc(repo: Repo, facts: Fact[], rules: Rule[], constraints:
       body: c.body.map((a) => ({ pred: a.pred, args: [...a.args] })),
       ...(c.comment !== undefined ? { comment: c.comment } : {}),
     }));
-    d.mapStyle = { lines: {}, properties: {} };
   });
   return h.url as string;
 }

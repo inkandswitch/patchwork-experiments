@@ -1,7 +1,18 @@
 /**
- * Spec skill — manage a SpecCollectionDoc containing embedded specs.
+ * Spec skill — supports both new SpecDoc trees and legacy SpecCollectionDocs.
  *
- * SpecCollectionDoc shape:
+ * New SpecDoc shape (standalone Automerge document):
+ *   {
+ *     '@patchwork': { type: 'spec' },
+ *     spec: {
+ *       goal: string,
+ *       verificationUrls: AutomergeUrl[],
+ *       subSpecUrls?: AutomergeUrl[],
+ *       filesFolderUrl?: AutomergeUrl,
+ *     }
+ *   }
+ *
+ * Legacy SpecCollectionDoc shape:
  *   { specs: SpecDoc[] }
  *
  * SpecDoc shape (embedded):
@@ -11,16 +22,83 @@
  *   { name: string, script: string, documentUrls: Record<string, AutomergeUrl> }
  */
 
+// ─── New SpecDoc tree API ─────────────────────────────────────────────────────
+
+/**
+ * Get a read-only handle for a SpecDoc (new tree format).
+ *
+ * @param {string} url - Automerge URL of the SpecDoc
+ * @returns {Promise<object>} Spec handle with accessor methods
+ */
+export async function getSpec(url) {
+  const handle = await repo.find(url);
+  return createSpecHandle(handle, url);
+}
+
+function createSpecHandle(handle, url) {
+  return {
+    url,
+
+    getGoal() {
+      return handle.doc()?.spec?.goal ?? '';
+    },
+
+    getVerificationUrls() {
+      return [...(handle.doc()?.spec?.verificationUrls ?? [])];
+    },
+
+    getSubSpecUrls() {
+      return [...(handle.doc()?.spec?.subSpecUrls ?? [])];
+    },
+
+    getFilesFolderUrl() {
+      return handle.doc()?.spec?.filesFolderUrl ?? null;
+    },
+  };
+}
+
+/**
+ * Recursively collect all leaf specs from a SpecDoc tree.
+ *
+ * A leaf spec is one that has a `filesFolderUrl` (it represents an artifact to
+ * be generated). If the root has no `subSpecUrls`, the root itself is the leaf.
+ *
+ * @param {string} rootUrl - Automerge URL of the root SpecDoc
+ * @returns {Promise<object[]>} Array of spec handles for each leaf
+ */
+export async function getLeafSpecs(rootUrl) {
+  const visited = new Set();
+  const leaves = [];
+
+  async function traverse(url) {
+    if (visited.has(url)) return;
+    visited.add(url);
+
+    const spec = await getSpec(url);
+    const subSpecUrls = spec.getSubSpecUrls();
+
+    if (subSpecUrls.length === 0) {
+      leaves.push(spec);
+    } else {
+      for (const childUrl of subSpecUrls) {
+        await traverse(childUrl);
+      }
+    }
+  }
+
+  await traverse(rootUrl);
+  return leaves;
+}
+
 /**
  * Create a new SpecCollectionDoc.
  *
- * workspace.createDoc() is SYNCHRONOUS — do NOT await this function.
+ * repo.create() is SYNCHRONOUS — do NOT await this function.
  *
- * @param {object} workspace - The workspace object (global `workspace`)
  * @returns {{ handle: object, url: string }} The new doc handle and its URL
  */
-export function createSpecCollection(workspace) {
-  const handle = workspace.createDoc();
+export function createSpecCollection() {
+  const handle = repo.create();
   handle.change((d) => {
     d['@patchwork'] = { type: 'spec' };
     d.specs = [];
@@ -31,11 +109,10 @@ export function createSpecCollection(workspace) {
 /**
  * Get a read/write interface for a SpecCollectionDoc.
  *
- * @param {object} workspace - The workspace object (global `workspace`)
  * @param {string} url - Automerge URL of the SpecCollectionDoc
  */
-export async function getSpecCollection(workspace, url) {
-  const handle = await workspace.find(url);
+export async function getSpecCollection(url) {
+  const handle = await repo.find(url);
 
   return {
     getSpecs() {
@@ -64,11 +141,11 @@ export async function getSpecCollection(workspace, url) {
       });
     },
 
-    async runAllVerifications(workspace, providedDocs) {
+    async runAllVerifications(providedDocs) {
       const specs = handle.doc()?.specs ?? [];
       const results = [];
       for (let i = 0; i < specs.length; i++) {
-        const specResults = await runSpecVerifications(workspace, specs[i], i, providedDocs);
+        const specResults = await runSpecVerifications(specs[i], i, providedDocs);
         results.push(...specResults);
       }
       return results;
@@ -158,15 +235,15 @@ function createSpecHandle(handle, index) {
       });
     },
 
-    async runVerifications(workspace, providedDocs) {
+    async runVerifications(providedDocs) {
       const spec = handle.doc()?.specs?.[index];
       if (!spec) return [];
-      return runSpecVerifications(workspace, spec, index, providedDocs);
+      return runSpecVerifications(spec, index, providedDocs);
     },
   };
 }
 
-async function runSpecVerifications(workspace, spec, specIndex, providedDocs) {
+async function runSpecVerifications(spec, specIndex, providedDocs) {
   const verifications = spec.verifications ?? [];
   const results = [];
 
@@ -174,8 +251,8 @@ async function runSpecVerifications(workspace, spec, specIndex, providedDocs) {
     try {
       const allDocs = { ...(providedDocs ?? {}), ...(v.documentUrls ?? {}) };
       const docEntries = Object.entries(allDocs);
-      const paramNames = ['workspace', ...docEntries.map(([k]) => k)];
-      const paramValues = [workspace, ...docEntries.map(([, u]) => u)];
+      const paramNames = docEntries.map(([k]) => k);
+      const paramValues = docEntries.map(([, u]) => u);
       const fn = new Function(...paramNames, `return (async () => {\n${v.script}\n})();`);
       const result = await fn(...paramValues);
       results.push({ specIndex, name: v.name, passed: result === true, error: undefined });

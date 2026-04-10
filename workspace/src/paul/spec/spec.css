@@ -174,4 +174,65 @@
     height: calc(100% + 16px);
     background: #d1d5db;
   }
+
+  /* Files section */
+
+  .spec-files {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #e5e7eb;
+  }
+
+  .spec-files-header {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #9ca3af;
+    margin-bottom: 4px;
+  }
+
+  .spec-file-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    margin: 0 -6px;
+    font-size: 13px;
+    font-weight: 400;
+    color: #6b7280;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-align: left;
+  }
+
+  .spec-file-item:hover {
+    background: rgba(0, 0, 0, 0.04);
+    color: #374151;
+  }
+
+  .spec-file-item.selected {
+    background: rgba(59, 130, 246, 0.1);
+    color: #2563eb;
+  }
+
+  .spec-file-icon {
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+
+  .spec-file-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+    font-size: 12px;
+  }
 }

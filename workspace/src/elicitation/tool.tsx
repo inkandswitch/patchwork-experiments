@@ -114,11 +114,6 @@ function ElicitationView(props: { handle: DocHandle<ElicitationDoc> }) {
             onInput={handlePromptInput}
             rows={3}
           />
-          <div class="el-prompt-actions">
-            <button class="el-generate-btn" disabled>
-              Generate Spec
-            </button>
-          </div>
         </div>
 
         <Show when={folderEntries().length === 0}>

@@ -1,6 +1,8 @@
 import { render } from 'solid-js/web';
 import { createSignal, For, Show, createEffect } from 'solid-js';
 import { RepoContext, useDocument, useRepo } from '@automerge/automerge-repo-solid-primitives';
+import { SolidMarkdown } from 'solid-markdown';
+import remarkGfm from 'remark-gfm';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle, Repo } from '@automerge/automerge-repo';
 import type { AutomergeUrl } from '@automerge/automerge-repo';
@@ -148,7 +150,7 @@ function WorkspaceChatView(props: { handle: DocHandle<WorkspaceChatDoc> }) {
       const oldProcess = await oldProcessHandle.doc();
       if (!oldProcess) return;
 
-      const wsHandle = await repo.find<WorkspaceDoc>(oldProcess.workspaceUrl);
+      const wsHandle = oldProcess.workspaceUrl ? await repo.find<WorkspaceDoc>(oldProcess.workspaceUrl) : null;
 
       const processHandle = repo.create<LLMProcessDoc>();
       processHandle.change((d) => {
@@ -175,7 +177,7 @@ function WorkspaceChatView(props: { handle: DocHandle<WorkspaceChatDoc> }) {
 
       await runWorkspaceLLM(repo, processHandle.url, controller.signal);
 
-      const planUrl = await findDocUrlByType(repo, wsHandle, 'plan');
+      const planUrl = wsHandle ? await findDocUrlByType(repo, wsHandle, 'plan') : undefined;
       if (planUrl) {
         props.handle.change((d) => {
           d.planDocUrl = planUrl;
@@ -389,7 +391,7 @@ function PartView(props: { part: ChatMessagePart }) {
       when={props.part.type === 'script' ? props.part : undefined}
       fallback={
         <Show when={props.part.type === 'text' ? props.part : undefined}>
-          {(textPart) => <span>{textPart().text}</span>}
+          {(textPart) => <SolidMarkdown remarkPlugins={[remarkGfm]}>{textPart().text}</SolidMarkdown>}
         </Show>
       }
     >

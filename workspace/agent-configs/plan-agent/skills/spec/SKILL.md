@@ -1,16 +1,52 @@
 ---
 name: spec
-description: Manage a Spec Collection — a single document containing multiple specs, each with a goal, named document references, and JavaScript verification scripts.
+description: Read SpecDoc trees (new format) and manage legacy SpecCollectionDocs. Use getSpec/getLeafSpecs to traverse a SpecDoc tree when creating plans.
 ---
 
 # Spec Skill
 
-Manage a Spec Collection (SpecCollectionDoc) that groups multiple specs into a single document. Each spec has a goal, named document references, and verification scripts.
+Supports two formats:
+- **New SpecDoc tree** (used by the spec-agent): standalone Automerge documents linked via `subSpecUrls`. Use `getSpec` and `getLeafSpecs`.
+- **Legacy SpecCollectionDoc**: a single document containing embedded specs. Use `getSpecCollection`.
 
 ## Import
 
 ```javascript
-const { createSpecCollection, getSpecCollection } = await workspace.import("skills/spec/index.js");
+// For new SpecDoc trees (plan creation):
+const { getSpec, getLeafSpecs } = await useSkill("spec");
+
+// For legacy SpecCollectionDocs:
+const { createSpecCollection, getSpecCollection } = await useSkill("spec");
+```
+
+## New SpecDoc Tree API
+
+### `await getSpec(url)`
+
+Returns a read-only handle for a SpecDoc.
+
+| Method | Description |
+|--------|-------------|
+| `getGoal()` | Returns the goal string |
+| `getVerificationUrls()` | Returns array of Datalog constraint doc URLs |
+| `getSubSpecUrls()` | Returns array of child SpecDoc URLs |
+| `getFilesFolderUrl()` | Returns the solution files folder URL (leaf specs only) |
+| `url` | The Automerge URL of this SpecDoc |
+
+### `await getLeafSpecs(rootUrl)`
+
+Recursively collects all leaf specs from a SpecDoc tree. A leaf is a spec with no `subSpecUrls` (it represents a concrete artifact to generate). If the root has no `subSpecUrls`, the root itself is the only leaf.
+
+```javascript
+const { getSpec, getLeafSpecs } = await useSkill("spec");
+
+const root = await getSpec(rootSpecUrl);
+console.log(root.getGoal()); // "Network Firewall Configuration"
+
+const leaves = await getLeafSpecs(rootSpecUrl);
+for (const leaf of leaves) {
+  console.log(leaf.url, leaf.getGoal(), leaf.getFilesFolderUrl());
+}
 ```
 
 ## Types
@@ -35,18 +71,18 @@ const { createSpecCollection, getSpecCollection } = await workspace.import("skil
 
 ## API
 
-### `createSpecCollection(workspace)` (sync)
+### `createSpecCollection()` (sync)
 
-Creates a new, empty SpecCollectionDoc. **Do NOT await** — `workspace.createDoc()` is synchronous.
+Creates a new, empty SpecCollectionDoc. **Do NOT await** — `repo.create()` is synchronous.
 
 Returns `{ handle, url }`.
 
 ```javascript
-const { createSpecCollection } = await workspace.import("skills/spec/index.js");
-const { url } = createSpecCollection(workspace);
+const { createSpecCollection } = await useSkill("spec");
+const { url } = createSpecCollection();
 ```
 
-### `getSpecCollection(workspace, url)` (async)
+### `getSpecCollection(url)` (async)
 
 Returns a read/write interface for the SpecCollectionDoc at `url`. Must be awaited.
 
@@ -58,7 +94,7 @@ Returns a read/write interface for the SpecCollectionDoc at `url`. Must be await
 | `addSpec(goal)`                 | Adds a new spec with the given goal. Returns a **spec handle**.          |
 | `getSpec(index)`                | Returns a spec handle for the spec at `index`.                           |
 | `removeSpec(index)`             | Removes the spec at `index`.                                             |
-| `runAllVerifications(workspace, providedDocs?)` | Runs verifications for every spec. `providedDocs` is `Record<string, AutomergeUrl>` supplying URLs for required docs. Returns `{ specIndex, name, passed, error? }[]`. |
+| `runAllVerifications(providedDocs?)` | Runs verifications for every spec. `providedDocs` is `Record<string, AutomergeUrl>` supplying URLs for required docs. Returns `{ specIndex, name, passed, error? }[]`. |
 
 #### Spec handle methods
 
@@ -77,7 +113,7 @@ A spec handle is returned by `addSpec()` or `getSpec()`. All mutations apply to 
 | `getVerifications()`                             | Returns verifications as `{ name, script, documentUrls }[]`.      |
 | `addVerification(name, script, documentUrls?)`   | Adds a verification with optional named document URLs.             |
 | `removeVerification(name)`                       | Removes the first verification matching `name`.                   |
-| `runVerifications(workspace, providedDocs?)`     | Async. `providedDocs` is `Record<string, AutomergeUrl>` supplying URLs for required docs. Evals each script, returns `{ specIndex, name, passed, error? }[]`. |
+| `runVerifications(providedDocs?)`     | Async. `providedDocs` is `Record<string, AutomergeUrl>` supplying URLs for required docs. Evals each script, returns `{ specIndex, name, passed, error? }[]`. |
 
 ## Required Documents
 
@@ -89,7 +125,7 @@ const handle = coll.addSpec("ER staffing rules are satisfied");
 handle.addRequiredDoc("schedule");
 
 // During plan execution — provide the actual document
-const results = await handle.runVerifications(workspace, { schedule: scheduleUrl });
+const results = await handle.runVerifications({ schedule: scheduleUrl });
 ```
 
 `providedDocs` entries are merged with each verification's `documentUrls`. If both define the same key, `documentUrls` takes precedence.
@@ -98,9 +134,9 @@ const results = await handle.runVerifications(workspace, { schedule: scheduleUrl
 
 Each verification is a JavaScript snippet that has access to:
 
-- `workspace` — the workspace object
 - **Named document URLs** — any keys from `documentUrls` are injected as variables (e.g. `{ spec: url1 }` makes `spec` available)
 - **Provided documents** — any keys from `providedDocs` passed to `runVerifications` / `runAllVerifications` (e.g. `{ schedule: url2 }` makes `schedule` available)
+- Global `repo`, `useSkill`, `readSkill` are also available
 
 The script must **return `true`** to pass. Any other return value or thrown error counts as a failure.
 
@@ -109,8 +145,8 @@ The script must **return `true`** to pass. Any other return value or thrown erro
 Verification scripts should be short orchestration — merge relevant Datalog documents and check for constraint violations:
 
 ```javascript
-const { mergeDatalog } = await workspace.import("skills/datalog/index.js")
-const merged = await mergeDatalog(workspace, [spec, schedule, staff])
+const { mergeDatalog } = await useSkill("datalog")
+const merged = await mergeDatalog([spec, schedule, staff])
 return merged.checkConflicts('my_constraint_name').length === 0
 ```
 
@@ -119,24 +155,24 @@ return merged.checkConflicts('my_constraint_name').length === 0
 ### Creating a spec collection
 
 ```javascript
-const { createSpecCollection, getSpecCollection } = await workspace.import("skills/spec/index.js");
-const { createDatalog } = await workspace.import("skills/datalog/index.js");
+const { createSpecCollection, getSpecCollection } = await useSkill("spec");
+const { createDatalog } = await useSkill("datalog");
 
 // Create the collection
-const { url: collUrl } = createSpecCollection(workspace);
-const coll = await getSpecCollection(workspace, collUrl);
+const { url: collUrl } = createSpecCollection();
+const coll = await getSpecCollection(collUrl);
 
 // Create shared Datalog docs
-const hospitalStaff = createDatalog(workspace, "Hospital Staff");
+const hospitalStaff = createDatalog("Hospital Staff");
 hospitalStaff.assertFact("staff", ["dr_chen", "doctor", "attending"]);
 hospitalStaff.assertFact("staff", ["nurse_kim", "nurse", "senior"]);
 
-const shiftConfig = createDatalog(workspace, "Shift Config");
+const shiftConfig = createDatalog("Shift Config");
 shiftConfig.assertFact("shift", ["morning"]);
 shiftConfig.assertFact("shift", ["afternoon"]);
 
 // Create department Datalog docs
-const erSpec = createDatalog(workspace, "ER Spec");
+const erSpec = createDatalog("ER Spec");
 erSpec.assertFact("dept_shift_hours", ["er", "morning", 8]);
 erSpec.assertConstraint("er_no_junior_night", {
   body: [
@@ -155,13 +191,13 @@ erHandle.setDoc("shifts", shiftConfig.url);
 erHandle.addRequiredDoc("schedule");
 
 erHandle.addVerification("no junior night shifts", `
-  const { mergeDatalog } = await workspace.import("skills/datalog/index.js")
-  const merged = await mergeDatalog(workspace, [spec, schedule, staff])
+  const { mergeDatalog } = await useSkill("datalog")
+  const merged = await mergeDatalog([spec, schedule, staff])
   return merged.checkConflicts('er_no_junior_night').length === 0
 `, { spec: erSpec.url, staff: hospitalStaff.url });
 
 // After the plan creates a schedule document, run verifications with it:
-// const results = await coll.runAllVerifications(workspace, { schedule: scheduleUrl });
+// const results = await coll.runAllVerifications({ schedule: scheduleUrl });
 // for (const r of results) {
 //   console.log(`[spec ${r.specIndex}] ${r.name}: ${r.passed ? "PASSED" : "FAILED"}`, r.error ?? "");
 // }

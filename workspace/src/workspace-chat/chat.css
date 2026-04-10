@@ -100,7 +100,6 @@
   .ws-chat-msg {
     max-width: 100%;
     line-height: 1.55;
-    white-space: pre-wrap;
     word-break: break-word;
   }
 
@@ -128,6 +127,110 @@
     font-size: 11px;
     font-style: italic;
     padding: 4px 8px;
+  }
+
+  /* ── Markdown prose ──────────────────────────────────────────────── */
+
+  .ws-chat-msg p {
+    margin: 0 0 0.6em;
+  }
+
+  .ws-chat-msg p:last-child {
+    margin-bottom: 0;
+  }
+
+  .ws-chat-msg h1,
+  .ws-chat-msg h2,
+  .ws-chat-msg h3,
+  .ws-chat-msg h4 {
+    font-weight: 600;
+    line-height: 1.3;
+    margin: 0.8em 0 0.3em;
+  }
+
+  .ws-chat-msg h1:first-child,
+  .ws-chat-msg h2:first-child,
+  .ws-chat-msg h3:first-child {
+    margin-top: 0;
+  }
+
+  .ws-chat-msg h1 { font-size: 15px; }
+  .ws-chat-msg h2 { font-size: 13px; }
+  .ws-chat-msg h3 { font-size: 12px; }
+
+  .ws-chat-msg ul,
+  .ws-chat-msg ol {
+    margin: 0 0 0.6em;
+    padding-left: 1.4em;
+  }
+
+  .ws-chat-msg li {
+    margin-bottom: 0.2em;
+  }
+
+  .ws-chat-msg code {
+    font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace;
+    font-size: 11px;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-radius: 3px;
+    padding: 0 3px;
+  }
+
+  .ws-chat-msg pre {
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-radius: 5px;
+    padding: 8px 10px;
+    overflow-x: auto;
+    margin: 0 0 0.6em;
+  }
+
+  .ws-chat-msg pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 11px;
+  }
+
+  .ws-chat-msg blockquote {
+    border-left: 3px solid #cbd5e1;
+    margin: 0 0 0.6em;
+    padding: 0 0 0 10px;
+    color: #64748b;
+  }
+
+  .ws-chat-msg a {
+    color: #3b82f6;
+    text-decoration: underline;
+  }
+
+  .ws-chat-msg strong { font-weight: 600; }
+  .ws-chat-msg em { font-style: italic; }
+
+  .ws-chat-msg hr {
+    border: none;
+    border-top: 1px solid #e2e8f0;
+    margin: 0.8em 0;
+  }
+
+  .ws-chat-msg table {
+    border-collapse: collapse;
+    font-size: 11px;
+    margin-bottom: 0.6em;
+    width: 100%;
+  }
+
+  .ws-chat-msg th,
+  .ws-chat-msg td {
+    border: 1px solid #e2e8f0;
+    padding: 4px 8px;
+    text-align: left;
+  }
+
+  .ws-chat-msg th {
+    background: #f8fafc;
+    font-weight: 600;
   }
 
   /* Script blocks inside assistant messages */

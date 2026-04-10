@@ -18,7 +18,9 @@
     "@inkandswitch/patchwork-plugins": "^0.0.2",
     "@inkandswitch/patchwork-react": "^0.0.1",
     "lucide-solid": "^1.7.0",
-    "solid-js": "^1.9.5"
+    "remark-gfm": "^4.0.1",
+    "solid-js": "^1.9.5",
+    "solid-markdown": "^2.1.1"
   },
   "devDependencies": {
     "@inkandswitch/patchwork-bootloader": "^0.0.3",

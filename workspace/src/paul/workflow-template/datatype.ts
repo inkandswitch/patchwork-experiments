@@ -22,7 +22,22 @@ type DatalogDoc = {
   constraints: StoredConstraint[];
   derivedFacts?: unknown[];
   draftText?: string;
-  mapStyle: { lines: Record<string, unknown>; properties: Record<string, unknown> };
+};
+
+type InitialToken = {
+  placeId: string;
+  state: Record<string, unknown>;
+};
+
+type PetriNetPlanDoc = {
+  '@patchwork': { type: 'petrinet-plan' };
+  initialTokens: InitialToken[];
+  systemPromptUrls?: { optimizer?: string };
+};
+
+type MarkdownDoc = {
+  '@patchwork': { type: 'markdown' };
+  content: string;
 };
 
 export const PaulWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> = {
@@ -45,9 +60,9 @@ export const PaulWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> =
 
     doc.specElicitationDocUrl = elicitationHandle.url;
     doc.specDocUrl = specDocUrl;
+    doc.planDocUrl = createPetriNetDoc(repo, specDocUrl);
     doc.toolIds = {
       spec: 'paul-spec-viewer',
-      plan: 'paul-plan-viewer',
     };
   },
   getTitle() {
@@ -55,6 +70,75 @@ export const PaulWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> =
   },
   setTitle() {},
 };
+
+function createPetriNetDoc(repo: Repo, specDocUrl: AutomergeUrl): AutomergeUrl {
+  const handle = repo.create<PetriNetPlanDoc>();
+  handle.change((d) => {
+    d['@patchwork'] = { type: 'petrinet-plan' };
+    d.initialTokens = [
+      {
+        placeId: 'spec',
+        state: { type: 'spec', documentUrl: '', specUrl: specDocUrl },
+      },
+    ];
+    d.systemPromptUrls = {
+      optimizer: createMarkdownDoc(repo, WORKFLOW_OPTIMIZER_SYSTEM_PROMPT),
+    };
+  });
+  return handle.url;
+}
+
+function createMarkdownDoc(repo: Repo, content: string): string {
+  const h = repo.create<MarkdownDoc>();
+  h.change((d) => {
+    d['@patchwork'] = { type: 'markdown' };
+    d.content = content;
+  });
+  return h.url as string;
+}
+
+const WORKFLOW_OPTIMIZER_SYSTEM_PROMPT = `You are an optimization agent improving a solution document.
+
+Your optimization strategy: $PROMPT
+
+The specification is at $SPEC_URL. It is a Patchwork SpecDoc with:
+- spec.goal: a description of what needs to be achieved
+- spec.verificationUrls: array of Automerge URLs pointing to datalog docs with integrity constraints
+  Each datalog doc has: title, draftText (human-readable rules), constraints (machine-checkable)
+
+The document at $DOC_URL is a markdown document. Its structure:
+- doc.content: string containing the solution text
+
+Step 1 — Read the specification to understand the goal and constraints:
+<script data-description="Read spec and verification rules">
+const specHandle = await repo.find("$SPEC_URL")
+const specDoc = await specHandle.doc()
+const goal = specDoc.spec?.goal ?? ""
+const verificationUrls = specDoc.spec?.verificationUrls ?? []
+const verifications = await Promise.all(verificationUrls.map(async url => {
+  const h = await repo.find(url)
+  const d = await h.doc()
+  return { url, title: d.title, draftText: d.draftText }
+}))
+return JSON.stringify({ goal, verifications }, null, 2)
+</script>
+
+Step 2 — Read the current solution document:
+<script data-description="Read current solution">
+const handle = await repo.find("$DOC_URL")
+const doc = await handle.doc()
+return doc.content
+</script>
+
+Step 3 — Write your improved solution to the document:
+<script data-description="Write improved solution">
+const { updateText } = await import("@automerge/automerge-repo")
+const handle = await repo.find("$DOC_URL")
+handle.change(d => updateText(d, ["content"], "your improved content here"))
+return "Solution updated"
+</script>
+
+Apply your strategy. Ensure the solution satisfies the specification constraints. Do not explain — just compute and write.`;
 
 function createDatalogDoc(
   repo: Repo,
@@ -70,12 +154,11 @@ function createDatalogDoc(
     d.rules = [];
     d.constraints = constraints;
     d.draftText = draftText;
-    d.mapStyle = { lines: {}, properties: {} };
   });
   return handle.url;
 }
 
-function createDefaultSpec(repo: Repo): { specDocUrl: AutomergeUrl } {
+function createDefaultSpec(repo: Repo): { specDocUrl: AutomergeUrl; leafSpecUrls: AutomergeUrl[] } {
   const budgetRulesUrl = createDatalogDoc(
     repo,
     'Budget Rules',
@@ -266,5 +349,8 @@ max_ratio(5).
     d.spec = spec;
   });
 
-  return { specDocUrl: specHandle.url };
+  return {
+    specDocUrl: specHandle.url,
+    leafSpecUrls: [deptASpecHandle.url, deptBSpecHandle.url],
+  };
 }

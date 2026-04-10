@@ -371,6 +371,41 @@ describe('evaluateWithProvenance', () => {
     const key = factKey(fact('reachable', 'a', 'c'));
     expect(provenance.has(key)).toBe(true);
   });
+
+  it('ignores attribution metadata during evaluation', () => {
+    const attribution = {
+      refs: [
+        {
+          docUrl: 'automerge:source' as any,
+          path: ['content'],
+          from: 'start-cursor' as any,
+          to: 'end-cursor' as any,
+        },
+      ],
+    };
+    const facts: StoredFact[] = [{ pred: 'edge', args: ['a', 'b', 1], attribution }];
+    const rules: StoredRule[] = [
+      {
+        head: { pred: 'reachable', args: ['X', 'Y'] },
+        body: [{ pred: 'edge', args: ['X', 'Y', '_'] }],
+        attribution,
+      },
+    ];
+    const constraints: StoredConstraint[] = [
+      {
+        name: 'no_reachability',
+        body: [{ pred: 'reachable', args: ['X', 'Y'] }],
+        attribution,
+      },
+    ];
+
+    const { db, provenance } = evaluateWithProvenance(facts, rules);
+    const baseFacts = new Set(facts.map(factKey));
+    const violations = checkConstraints(db, constraints, provenance, baseFacts);
+
+    expect(factsOf(db, 'reachable')).toHaveLength(1);
+    expect(violations).toHaveLength(1);
+  });
 });
 
 // ─── checkConstraints ─────────────────────────────────────────────────────────
@@ -596,5 +631,186 @@ describe('full pipeline', () => {
     const baseFacts = new Set(facts.map(factKey));
     const violations = checkConstraints(db, constraints, provenance, baseFacts);
     expect(violations).toHaveLength(1);
+  });
+});
+
+// ─── String literals ──────────────────────────────────────────────────────────
+
+describe('string literals', () => {
+  it('parses a string literal in a fact', () => {
+    const { facts, errors } = parseProgram('machine("192.168.1.10").');
+    expect(errors).toHaveLength(0);
+    expect(facts).toHaveLength(1);
+    expect(facts[0].args[0]).toBe('192.168.1.10');
+  });
+
+  it('parses CIDR notation as a string literal', () => {
+    const { facts } = parseProgram('blocked("10.0.0.0/8").');
+    expect(facts[0].args[0]).toBe('10.0.0.0/8');
+  });
+
+  it('parses mixed bare-ident and string-literal args', () => {
+    const { facts } = parseProgram('rule(machine_a, "input", 1, "accept", "0.0.0.0/0", "tcp", 80).');
+    expect(facts[0].args).toEqual(['machine_a', 'input', 1, 'accept', '0.0.0.0/0', 'tcp', 80]);
+  });
+
+  it('string literal in rule body matches fact constant', () => {
+    const src = `
+      rule(a, input, 1, accept).
+      allows(M) :- rule(M, "input", _, "accept").
+    `;
+    const { facts, rules } = parseProgram(src);
+    const db = evaluate(facts, rules);
+    expect(factsOf(db, 'allows')).toHaveLength(1);
+    expect(factsOf(db, 'allows')[0].args[0]).toBe('a');
+  });
+
+  it('parseConstant strips surrounding quotes', () => {
+    expect(parseConstant('"hello"')).toBe('hello');
+    expect(parseConstant('"192.168.1.0/24"')).toBe('192.168.1.0/24');
+  });
+
+  it('parseConstant treats quoted numeric string as string', () => {
+    expect(parseConstant('"42"')).toBe('42');
+  });
+
+  it('serializeFacts round-trips string constants', () => {
+    const original = [
+      fact('rule', 'machine_a', 'input', 1, 'accept', '192.168.1.0/24', 'tcp', 22),
+    ];
+    const text = serializeFacts(original);
+    expect(text).toContain('"192.168.1.0/24"');
+    const { facts, errors } = parseProgram(text);
+    expect(errors).toHaveLength(0);
+    expect(sortedKeys(facts)).toEqual(sortedKeys(original));
+  });
+
+  it('serializeFacts does not quote valid identifiers', () => {
+    const original = [fact('node', 'north', 'generator')];
+    const text = serializeFacts(original);
+    expect(text).toBe('node(north, generator).');
+  });
+
+  it('constraints with string literals detect violations', () => {
+    const src = `
+      rule(a, "input", 1, "accept", "0.0.0.0/0", "tcp", 22).
+      :- rule(_, "input", _, "accept", "0.0.0.0/0", _, 22).
+    `;
+    const { facts, rules, constraints } = parseProgram(src);
+    const { db, provenance } = evaluateWithProvenance(facts, rules);
+    const baseFacts = new Set(facts.map(factKey));
+    const violations = checkConstraints(db, constraints, provenance, baseFacts);
+    expect(violations).toHaveLength(1);
+  });
+});
+
+// ─── ip_in built-in ───────────────────────────────────────────────────────────
+
+describe('ip_in', () => {
+  it('point-in-range: single IP inside CIDR', () => {
+    const src = `
+      addr("10.0.0.1").
+      range("10.0.0.0/8").
+      contained(A) :- addr(A), range(R), ip_in(A, R).
+    `;
+    const { facts, rules } = parseProgram(src);
+    const db = evaluate(facts, rules);
+    expect(factsOf(db, 'contained')).toHaveLength(1);
+    expect(factsOf(db, 'contained')[0].args[0]).toBe('10.0.0.1');
+  });
+
+  it('point-in-range: IP outside CIDR returns no match', () => {
+    const src = `
+      addr("192.168.1.1").
+      range("10.0.0.0/8").
+      contained(A) :- addr(A), range(R), ip_in(A, R).
+    `;
+    const { facts, rules } = parseProgram(src);
+    const db = evaluate(facts, rules);
+    expect(factsOf(db, 'contained')).toHaveLength(0);
+  });
+
+  it('range-subset: narrow CIDR inside broad CIDR', () => {
+    const src = `
+      narrow("10.0.0.0/24").
+      broad("10.0.0.0/8").
+      subset(N) :- narrow(N), broad(B), ip_in(N, B).
+    `;
+    const { facts, rules } = parseProgram(src);
+    const db = evaluate(facts, rules);
+    expect(factsOf(db, 'subset')).toHaveLength(1);
+  });
+
+  it('range-subset: broad CIDR is NOT inside narrow CIDR', () => {
+    const src = `
+      broad("10.0.0.0/8").
+      narrow("10.0.0.0/24").
+      subset(B) :- broad(B), narrow(N), ip_in(B, N).
+    `;
+    const { facts, rules } = parseProgram(src);
+    const db = evaluate(facts, rules);
+    expect(factsOf(db, 'subset')).toHaveLength(0);
+  });
+
+  it('same IP treated as /32 matches itself', () => {
+    const src = `
+      a("10.0.0.1").
+      b("10.0.0.1").
+      same(X) :- a(X), b(Y), ip_in(X, Y).
+    `;
+    const { facts, rules } = parseProgram(src);
+    const db = evaluate(facts, rules);
+    expect(factsOf(db, 'same')).toHaveLength(1);
+  });
+
+  it('0.0.0.0/0 contains everything', () => {
+    const src = `
+      addr("192.168.1.1").
+      contained(A) :- addr(A), ip_in(A, "0.0.0.0/0").
+    `;
+    const { facts, rules } = parseProgram(src);
+    const db = evaluate(facts, rules);
+    expect(factsOf(db, 'contained')).toHaveLength(1);
+  });
+
+  it('constraint detects blocked IP allowed by a broad rule', () => {
+    const src = `
+      blocked_ip("10.0.0.1").
+      rule(a, "input", 1, "accept", "10.0.0.0/8", "tcp", 80).
+      :- blocked_ip(IP), rule(_, "input", _, "accept", Src, _, _), ip_in(IP, Src).
+    `;
+    const { facts, rules, constraints } = parseProgram(src);
+    const { db, provenance } = evaluateWithProvenance(facts, rules);
+    const baseFacts = new Set(facts.map(factKey));
+    const violations = checkConstraints(db, constraints, provenance, baseFacts);
+    expect(violations).toHaveLength(1);
+  });
+
+  it('detects redundant iptables rules via ip_in', () => {
+    const src = `
+      rule(a, "input", 1, "drop", "10.0.0.0/8", "any", "any").
+      rule(a, "input", 2, "drop", "10.0.0.1", "any", "any").
+      redundant(M, Idx) :-
+          rule(M, Chain, Idx, Action, Src, Proto, Port),
+          rule(M, Chain, Earlier, Action, Broader, Proto, Port),
+          lt(Earlier, Idx),
+          ip_in(Src, Broader).
+    `;
+    const { facts, rules } = parseProgram(src);
+    const db = evaluate(facts, rules);
+    const redundant = factsOf(db, 'redundant');
+    expect(redundant).toHaveLength(1);
+    expect(redundant[0].args).toEqual(['a', 2]);
+  });
+
+  it('returns no match for non-IP strings', () => {
+    const src = `
+      a("hello").
+      b("world").
+      match(X) :- a(X), b(Y), ip_in(X, Y).
+    `;
+    const { facts, rules } = parseProgram(src);
+    const db = evaluate(facts, rules);
+    expect(factsOf(db, 'match')).toHaveLength(0);
   });
 });

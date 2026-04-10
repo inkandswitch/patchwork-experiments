@@ -1,6 +1,16 @@
 import type { Plugin } from "@inkandswitch/patchwork-plugins";
+import { loadCustomHighlights } from "./codemirror-highlights";
 
 export const plugins: Plugin<any>[] = [
+  {
+    type: "codemirror:extension",
+    id: "datalog-attribution-highlights",
+    name: "Datalog Attribution Highlights",
+    supportedDatatypes: "*",
+    async load() {
+      return loadCustomHighlights();
+    },
+  },
   {
     type: "patchwork:tool",
     id: "datalog",
@@ -9,16 +19,6 @@ export const plugins: Plugin<any>[] = [
     async load() {
       const { DatalogTool } = await import("./tool");
       return DatalogTool;
-    },
-  },
-  {
-    type: "patchwork:tool",
-    id: "datalog-map-view",
-    name: "Datalog Map View",
-    supportedDatatypes: ["datalog"],
-    async load() {
-      const { MapTool } = await import("./map/tool");
-      return MapTool;
     },
   },
   {

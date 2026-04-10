@@ -203,8 +203,20 @@ Parsing round-trips correctly — comments survive `parseProgram` → `serialize
 | `mul(A, B, C)`       | C = A × B                                |
 | `div(A, B, C)`       | C = A / B                                |
 | `sum(V, pattern, C)` | C = sum of V over all matches of pattern |
+| `not(Atom)`          | Negation-as-failure: succeeds if no derived fact matches `Atom`. `Atom` must be `{ pred, args }`. All variables in `Atom` must already be bound by earlier positive atoms (safe negation). Wildcards (`"_"`) are allowed. |
 
 ## Notes
 
 - `assertFact` / `retractFact` update the stored `facts` array directly.
 - `retractFact` matches by prefix: `retractFact('flow', ['north'])` removes all `flow(north, ...)` facts regardless of remaining args.
+- **`not` syntax:** the inner atom must be a plain object `{ pred, args }` — NOT a string. All variables in the inner atom must already be bound by preceding positive atoms in the same body (safe negation).
+
+```javascript
+// Constraint: every required item must be covered
+db.assertConstraint({
+  body: [
+    { pred: "required", args: ["X"] },              // X is bound here
+    { pred: "not", args: [{ pred: "covered", args: ["X"] }] }, // NAF on bound X
+  ],
+});
+```

@@ -6,7 +6,7 @@ export type LLMProcessDoc = {
     model: string;
   };
   llmConfigFolderUrl: AutomergeUrl;
-  workspaceUrl: AutomergeUrl;
+  workspaceUrl?: AutomergeUrl;
   messages: ChatMessage[];
   done: boolean;
 };
