@@ -30,7 +30,7 @@ import {
 } from '../artifact-projection/artifact-projection';
 import {
   flattenSpecTree,
-  getArtifactsForNode,
+  getArtifactsForSpec,
   type FlattenedVerification,
   type SpecTreeNode,
   watchSpecTree,
@@ -247,6 +247,7 @@ function ValidationBody(props: {
       return {
         url: entry.url,
         name: entry.name || currentDoc?.title || 'Untitled artifact',
+        specDocUrls: entry.specDocUrls,
         doc:
           currentDoc && expanded
             ? {
@@ -303,10 +304,10 @@ function ValidationBody(props: {
           entry.verification,
           entry.verification.datalogDoc,
           dataInputs,
-          getArtifactsForNode(
-            entry.nodePath,
+          getArtifactsForSpec(
+            entry.specDocUrl,
             artifactInputs(),
-            props.execution.artifactSpecPaths ?? {},
+            entry.targetKind === 'global',
           ),
           {
             kind: entry.targetKind,
@@ -349,10 +350,10 @@ function ValidationBody(props: {
     );
 
     for (const result of verificationResults()) {
-      const relevantArtifacts = getArtifactsForNode(
-        result.entry.nodePath,
+      const relevantArtifacts = getArtifactsForSpec(
+        result.entry.specDocUrl,
         props.artifactEntries,
-        props.execution.artifactSpecPaths ?? {},
+        result.entry.targetKind === 'global',
       );
       for (const artifact of relevantArtifacts) {
         const current = statuses[artifact.url] ?? {
@@ -454,7 +455,7 @@ function ValidationBody(props: {
                       />
                     </span>
                     <span class="validation-artifact-meta">
-                      <span class="validation-artifact-scope">{entry.specPath || 'root'}</span>
+                      <span class="validation-artifact-scope">{entry.specDocUrls?.[0]?.slice(-8) ?? 'global'}</span>
                       <span class="validation-artifact-type">{entry.type}</span>
                     </span>
                   </button>
@@ -464,10 +465,10 @@ function ValidationBody(props: {
                         entry={entry}
                         expandedArtifact={expandedArtifactsByUrl().get(entry.url) ?? null}
                         verificationResults={verificationResults().filter((result) =>
-                          getArtifactsForNode(
-                            result.entry.nodePath,
+                          getArtifactsForSpec(
+                            result.entry.specDocUrl,
                             [entry],
-                            props.execution.artifactSpecPaths ?? {},
+                            result.entry.targetKind === 'global',
                           ).length > 0,
                         )}
                         verificationSummary={

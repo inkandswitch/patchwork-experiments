@@ -94,7 +94,7 @@ export type ArtifactFolderEntry = {
   name: string;
   url: AutomergeUrl;
   projectionDocUrl?: AutomergeUrl;
-  specPath?: string;
+  specDocUrls?: AutomergeUrl[];
 };
 
 export type ArtifactProjectionAnnotationKind = 'cell' | 'row' | 'column' | 'sheet';

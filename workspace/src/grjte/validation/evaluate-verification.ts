@@ -7,6 +7,7 @@ export type VerificationArtifactInput = {
   url: AutomergeUrl;
   name: string;
   doc?: DatalogDoc;
+  specDocUrls?: AutomergeUrl[];
 };
 
 export type VerificationDataInput = {

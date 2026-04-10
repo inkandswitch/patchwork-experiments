@@ -30,6 +30,7 @@ export type LoadedDataDoc = {
 };
 
 export type SpecTreeNode = {
+  specDocUrl: AutomergeUrl;
   path: string;
   goal: string;
   verifications: LoadedVerification[];
@@ -38,6 +39,7 @@ export type SpecTreeNode = {
 };
 
 export type FlattenedVerification = {
+  specDocUrl: AutomergeUrl;
   nodePath: string;
   nodeGoal: string;
   targetKind: 'global' | 'scoped';
@@ -91,6 +93,7 @@ export async function loadSpecTree(
   );
 
   return {
+    specDocUrl: url,
     path,
     goal: doc.spec.goal || 'Untitled spec',
     verifications: verifications.filter(
@@ -108,6 +111,7 @@ export function flattenSpecTree(node: SpecTreeNode | null | undefined): Flattene
 
   return [
     ...node.verifications.map((verification) => ({
+      specDocUrl: node.specDocUrl,
       nodePath: node.path,
       nodeGoal: node.goal,
       targetKind: node.path === 'root' ? ('global' as const) : ('scoped' as const),
@@ -118,17 +122,15 @@ export function flattenSpecTree(node: SpecTreeNode | null | undefined): Flattene
   ];
 }
 
-export function getArtifactsForNode<T extends { url: AutomergeUrl }>(
-  nodePath: string,
+export function getArtifactsForSpec<T extends { url: AutomergeUrl; specDocUrls?: AutomergeUrl[] }>(
+  specDocUrl: AutomergeUrl,
   artifacts: T[],
-  artifactSpecPaths: Record<string, string>,
+  isRoot: boolean,
 ): T[] {
-  if (nodePath === 'root') return artifacts;
-
-  return artifacts.filter((artifact) => {
-    const artifactPath = artifactSpecPaths[artifact.url];
-    return artifactPath === nodePath || artifactPath?.startsWith(`${nodePath}/`);
-  });
+  if (isRoot) return artifacts;
+  return artifacts.filter((artifact) =>
+    artifact.specDocUrls?.includes(specDocUrl) ?? false,
+  );
 }
 
 async function loadDataDocsFromFolder(
@@ -240,6 +242,7 @@ export async function watchSpecTree(
       );
 
       return {
+        specDocUrl: url,
         path,
         goal: doc.spec.goal || 'Untitled spec',
         verifications: verifications.filter(

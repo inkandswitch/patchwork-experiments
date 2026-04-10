@@ -34,6 +34,7 @@ export const grjteWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> 
       specDocUrl,
       planDocUrl,
       taskUrls,
+      subSpecUrls,
     );
     doc.executionDocUrl = executionDocUrl;
 

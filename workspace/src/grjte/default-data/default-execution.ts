@@ -71,6 +71,7 @@ export function createDefaultExecution(
   specDocUrl: AutomergeUrl,
   planDocUrl: AutomergeUrl,
   taskUrls: AutomergeUrl[],
+  subSpecUrls: AutomergeUrl[],
 ): { executionDocUrl: AutomergeUrl; artifactDocUrls: AutomergeUrl[] } {
   const amuFacts: StoredFact[] = [
     f('ward_roster', 'amu'),
@@ -361,14 +362,14 @@ assigned(w6_wed_night, lisa_brown, 12). assignment_slot(w6_wed_night, 4, lisa_br
         name: 'AMU Rota',
         url: amuRotaUrl,
         projectionDocUrl: amuProjectionUrl,
-        specPath: 'root/0',
+        specDocUrls: [subSpecUrls[0], specDocUrl],
       },
       {
         type: 'datalog',
         name: 'Ward 6 Rota',
         url: ward6RotaUrl,
         projectionDocUrl: ward6ProjectionUrl,
-        specPath: 'root/1',
+        specDocUrls: [subSpecUrls[1], specDocUrl],
       },
     ];
   });
@@ -381,10 +382,7 @@ assigned(w6_wed_night, lisa_brown, 12). assignment_slot(w6_wed_night, 4, lisa_br
     d.status = 'in-progress';
     d.taskUrls = taskUrls;
     d.artifactsFolderUrl = artifactsFolderHandle.url;
-    d.artifactSpecPaths = {
-      [amuRotaUrl]: 'root/0',
-      [ward6RotaUrl]: 'root/1',
-    };
+
   });
 
   return {
