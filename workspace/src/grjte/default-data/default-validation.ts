@@ -13,10 +13,8 @@ export function createDefaultValidation(
     d.planDocUrl = planDocUrl;
     d.specDocUrl = specDocUrl;
     d.executionDocUrl = executionDocUrl;
-    d.approval = {
-      status: 'pending',
-      headsByDocUrl: {},
-    };
+    d.isValidated = false;
+    d.headsByDocUrl = {};
   });
 
   return { validationDocUrl: validationHandle.url };

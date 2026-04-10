@@ -86,10 +86,8 @@ function ValidationView(props: { handle: DocHandle<ValidationDoc>; element: Tool
 
   function handleApprove() {
     props.handle.change((d) => {
-      d.approval = {
-        status: 'approved',
-        headsByDocUrl: cloneHeadsByDocUrl(liveHeadsByDocUrl()),
-      };
+      d.isValidated = true;
+      d.headsByDocUrl = cloneHeadsByDocUrl(liveHeadsByDocUrl());
     });
   }
 
@@ -111,9 +109,9 @@ function ValidationView(props: { handle: DocHandle<ValidationDoc>; element: Tool
             <div class="validation-header">
               <div
                 class="validation-status"
-                classList={{ validated: currentDoc().approval.status === 'approved' }}
+                classList={{ validated: currentDoc().isValidated }}
               >
-                {formatApprovalStatus(currentDoc().approval.status)}
+                {currentDoc().isValidated ? 'Validated' : 'Pending'}
               </div>
               <Show when={currentDoc().specDocUrl}>
                 {(specUrl) => (
@@ -151,9 +149,9 @@ function ValidationView(props: { handle: DocHandle<ValidationDoc>; element: Tool
                   </div>
                 )}
               </Show>
-              <Show when={currentDoc().approval.status !== 'approved'}>
+              <Show when={!currentDoc().isValidated}>
                 <button class="validation-approve-btn" onClick={handleApprove}>
-                  {currentDoc().approval.status === 'stale' ? 'Re-approve' : 'Approve'}
+                  Validate
                 </button>
               </Show>
             </div>
@@ -279,12 +277,12 @@ function ValidationBody(props: {
   });
 
   createEffect(() => {
-    if (props.validationDoc.approval.status !== 'approved') return;
-    if (!headsByDocUrlDiffer(props.validationDoc.approval.headsByDocUrl, liveHeadsByDocUrl())) return;
+    if (!props.validationDoc.isValidated) return;
+    if (!headsByDocUrlDiffer(props.validationDoc.headsByDocUrl, liveHeadsByDocUrl())) return;
 
     props.validationHandle.change((doc) => {
-      if (doc.approval.status === 'approved') {
-        doc.approval.status = 'stale';
+      if (doc.isValidated) {
+        doc.isValidated = false;
       }
     });
   });
@@ -757,12 +755,6 @@ function ArtifactWorkspace(props: {
       </Show>
     </div>
   );
-}
-
-function formatApprovalStatus(status: ValidationDoc['approval']['status']) {
-  if (status === 'approved') return 'Approved';
-  if (status === 'stale') return 'Stale';
-  return 'Pending';
 }
 
 function cloneHeadsByDocUrl(headsByDocUrl: Record<AutomergeUrl, Heads>) {

@@ -58,11 +58,6 @@ export type ValidationDoc = HasPatchworkMetadata & {
   planDocUrl: AutomergeUrl;
   specDocUrl: AutomergeUrl;
   executionDocUrl?: AutomergeUrl;
-  // isValidated: boolean;
-  // headsByDocUrl: Record<AutomergeUrl, Heads>;
-  // TODO: consider model for validation approval status
-  approval: {
-    status: 'pending' | 'approved' | 'stale';
-    headsByDocUrl: Record<AutomergeUrl, Heads>;
-  };
+  isValidated: boolean;
+  headsByDocUrl: Record<AutomergeUrl, Heads>;
 };
