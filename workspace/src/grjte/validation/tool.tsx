@@ -24,10 +24,10 @@ import type { ConstraintViolation } from './datalog-eval';
 import {
   deriveConstraintAnnotationsForArtifact,
   expandArtifactDocForVerification,
-  type ArtifactSheetAnnotation,
+  type ArtifactProjectionAnnotation,
   type ArtifactFolderEntry,
   type ProjectionDoc,
-} from '../artifact-projection';
+} from '../artifact-projection/artifact-projection';
 import {
   flattenSpecTree,
   getArtifactsForNode,
@@ -680,7 +680,7 @@ function ArtifactWorkspace(props: {
   const [datalogDoc] = useDocument<DatalogDoc>(() => props.entry.url);
   const [projectionDoc] = useDocument<ProjectionDoc>(() => props.entry.projectionDocUrl);
 
-  const constraintAnnotations = createMemo<ArtifactSheetAnnotation[]>(() => {
+  const constraintAnnotations = createMemo<ArtifactProjectionAnnotation[]>(() => {
     const currentExpandedArtifact = props.expandedArtifact;
     const currentProjection = projectionDoc();
     if (!currentExpandedArtifact || !currentProjection || !props.entry.projectionDocUrl) return [];
@@ -753,7 +753,7 @@ function ArtifactWorkspace(props: {
       >
         <patchwork-view
           attr:doc-url={props.entry.projectionDocUrl!}
-          attr:tool-id="grjte-artifact-sheet"
+          attr:tool-id="grjte-artifact-projection"
           attr:data-annotations={JSON.stringify(constraintAnnotations())}
           style="display:block;width:100%;height:100%;"
         />

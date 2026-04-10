@@ -17,20 +17,20 @@ import {
   applyProjectionCellEdit,
   deleteProjectionRow,
   materializeProjection,
-  type ArtifactSheetAnnotation,
+  type ArtifactProjectionAnnotation,
   type MaterializedProjection,
   type ProjectionDoc,
-} from '../artifact-projection';
-import './artifact-sheet.css';
+} from './artifact-projection';
+import './artifact-projection.css';
 
 type ToolElement = HTMLElement & { repo: any };
 type CellPosition = { row: number; col: number };
 
-export const ArtifactSheetTool: ToolRender = (handle, element) => {
+export const ArtifactProjectionTool: ToolRender = (handle, element) => {
   const dispose = render(
     () => (
       <RepoContext.Provider value={element.repo}>
-        <ArtifactSheetView
+        <ArtifactProjectionView
           handle={handle as DocHandle<ProjectionDoc>}
           element={element as ToolElement}
         />
@@ -41,7 +41,7 @@ export const ArtifactSheetTool: ToolRender = (handle, element) => {
   return () => dispose();
 };
 
-function ArtifactSheetView(props: { handle: DocHandle<ProjectionDoc>; element: ToolElement }) {
+function ArtifactProjectionView(props: { handle: DocHandle<ProjectionDoc>; element: ToolElement }) {
   const [projection] = useDocument<ProjectionDoc>(() => props.handle.url);
   const [artifactDoc] = useDocument<Pick<DatalogDoc, 'title' | 'facts' | 'draftText'>>(
     () => projection()?.artifactDocUrl,
@@ -53,10 +53,10 @@ function ArtifactSheetView(props: { handle: DocHandle<ProjectionDoc>; element: T
   const [selection, setSelection] = createSignal<CellPosition | null>(null);
   const [editingCell, setEditingCell] = createSignal<CellPosition | null>(null);
   const [draftValue, setDraftValue] = createSignal('');
-  const [externalAnnotations, setExternalAnnotations] = createSignal<ArtifactSheetAnnotation[]>(
+  const [externalAnnotations, setExternalAnnotations] = createSignal<ArtifactProjectionAnnotation[]>(
     readAnnotations(props.element),
   );
-  const [localAnnotations, setLocalAnnotations] = createSignal<ArtifactSheetAnnotation[]>([]);
+  const [localAnnotations, setLocalAnnotations] = createSignal<ArtifactProjectionAnnotation[]>([]);
   const [localError, setLocalError] = createSignal<string | null>(null);
   let gridRoot!: HTMLDivElement;
 
@@ -529,14 +529,14 @@ function ArtifactSheetView(props: { handle: DocHandle<ProjectionDoc>; element: T
   }
 
   return (
-    <div class="artifact-sheet-root">
-      <Show when={projection() && artifactDoc()} fallback={<div class="artifact-sheet-loading">Loading...</div>}>
+    <div class="artifact-projection-root">
+      <Show when={projection() && artifactDoc()} fallback={<div class="artifact-projection-loading">Loading...</div>}>
         <Show
           when={visibleSheet()}
           fallback={
-            <div class="artifact-sheet-empty-state">
-              <div class="artifact-sheet-empty-card">
-                <div class="artifact-sheet-empty-eyebrow">Artifact Sheet</div>
+            <div class="artifact-projection-empty-state">
+              <div class="artifact-projection-empty-card">
+                <div class="artifact-projection-empty-eyebrow">Artifact Sheet</div>
                 <h2>Projection unavailable</h2>
                 <p>This projection does not define any visible columns yet.</p>
               </div>
@@ -545,57 +545,57 @@ function ArtifactSheetView(props: { handle: DocHandle<ProjectionDoc>; element: T
         >
           {(sheet) => (
             <div
-              class="artifact-sheet-workspace"
+              class="artifact-projection-workspace"
               ref={gridRoot}
               tabindex="0"
               onKeyDown={(event) => handleGridKeyDown(event)}
             >
-              <div class="artifact-sheet-toolbar">
-                <div class="artifact-sheet-toolbar-group">
-                  <button class="artifact-sheet-toolbar-button" onClick={appendRow}>
+              <div class="artifact-projection-toolbar">
+                <div class="artifact-projection-toolbar-group">
+                  <button class="artifact-projection-toolbar-button" onClick={appendRow}>
                     Add row
                   </button>
                 </div>
-                <div class="artifact-sheet-toolbar-group">
+                <div class="artifact-projection-toolbar-group">
                   <button
-                    class="artifact-sheet-toolbar-button"
+                    class="artifact-projection-toolbar-button"
                     onClick={() => moveSelectedColumn(-1)}
                     disabled={(selection()?.col ?? 0) <= 0}
                   >
                     Move column left
                   </button>
                   <button
-                    class="artifact-sheet-toolbar-button"
+                    class="artifact-projection-toolbar-button"
                     onClick={() => moveSelectedColumn(1)}
                     disabled={(selection()?.col ?? 0) >= sheet().columns.length - 1}
                   >
                     Move column right
                   </button>
                   <button
-                    class="artifact-sheet-toolbar-button"
+                    class="artifact-projection-toolbar-button"
                     onClick={hideSelectedColumn}
                     disabled={sheet().columns.length <= 1}
                   >
                     Hide column
                   </button>
                   <button
-                    class="artifact-sheet-toolbar-button"
+                    class="artifact-projection-toolbar-button"
                     onClick={() => deleteRow(selection()?.row ?? -1)}
                     disabled={(selection()?.row ?? 0) <= 0}
                   >
                     Delete row
                   </button>
                 </div>
-                <div class="artifact-sheet-toolbar-status">{selectionLabel()}</div>
+                <div class="artifact-projection-toolbar-status">{selectionLabel()}</div>
               </div>
 
               <Show when={sheet().hiddenColumns.length > 0}>
-                <div class="artifact-sheet-toolbar">
-                  <div class="artifact-sheet-toolbar-group">
+                <div class="artifact-projection-toolbar">
+                  <div class="artifact-projection-toolbar-group">
                     <For each={sheet().hiddenColumns}>
                       {(column) => (
                         <button
-                          class="artifact-sheet-toolbar-button"
+                          class="artifact-projection-toolbar-button"
                           onClick={() => showHiddenColumn(column.id)}
                         >
                           Show {column.header}
@@ -608,14 +608,14 @@ function ArtifactSheetView(props: { handle: DocHandle<ProjectionDoc>; element: T
 
               <Show when={localError()}>
                 {(message) => (
-                  <div class="artifact-sheet-issues">
-                    <div class="artifact-sheet-issues-header">
+                  <div class="artifact-projection-issues">
+                    <div class="artifact-projection-issues-header">
                       <span>Edit issue</span>
                     </div>
-                    <div class="artifact-sheet-issue-list">
-                      <div class="artifact-sheet-issue-card">
-                        <div class="artifact-sheet-issue-label">Current edit</div>
-                        <div class="artifact-sheet-issue-text">{message()}</div>
+                    <div class="artifact-projection-issue-list">
+                      <div class="artifact-projection-issue-card">
+                        <div class="artifact-projection-issue-label">Current edit</div>
+                        <div class="artifact-projection-issue-text">{message()}</div>
                       </div>
                     </div>
                   </div>
@@ -623,19 +623,19 @@ function ArtifactSheetView(props: { handle: DocHandle<ProjectionDoc>; element: T
               </Show>
 
               <Show when={annotations().length > 0}>
-                <div class="artifact-sheet-issues">
-                  <div class="artifact-sheet-issues-header">
+                <div class="artifact-projection-issues">
+                  <div class="artifact-projection-issues-header">
                     <span>Verification issues</span>
                     <span>{annotations().length}</span>
                   </div>
-                  <div class="artifact-sheet-issue-list">
+                  <div class="artifact-projection-issue-list">
                     <For each={annotationSummary()}>
                       {(annotation) => (
-                        <div class="artifact-sheet-issue-card">
-                          <div class="artifact-sheet-issue-label">
+                        <div class="artifact-projection-issue-card">
+                          <div class="artifact-projection-issue-label">
                             {describeAnnotation(annotation, sheet())}
                           </div>
-                          <div class="artifact-sheet-issue-text">{annotation.message}</div>
+                          <div class="artifact-projection-issue-text">{annotation.message}</div>
                         </div>
                       )}
                     </For>
@@ -643,30 +643,30 @@ function ArtifactSheetView(props: { handle: DocHandle<ProjectionDoc>; element: T
                 </div>
               </Show>
 
-              <div class="artifact-sheet-table-wrapper">
-                <table class="artifact-sheet-table">
+              <div class="artifact-projection-table-wrapper">
+                <table class="artifact-projection-table">
                   <thead>
                     <tr>
-                      <th class="artifact-sheet-corner-cell">#</th>
+                      <th class="artifact-projection-corner-cell">#</th>
                       <For each={sheet().columns}>
                         {(column, colIndex) => (
                           <th
                             classList={{
-                              'artifact-sheet-header-cell': true,
-                              'artifact-sheet-selected': isSelected(0, colIndex()),
-                              'artifact-sheet-has-issue': annotationsForColumn(column.id).length > 0,
+                              'artifact-projection-header-cell': true,
+                              'artifact-projection-selected': isSelected(0, colIndex()),
+                              'artifact-projection-has-issue': annotationsForColumn(column.id).length > 0,
                             }}
                             onClick={() => selectCell({ row: 0, col: colIndex() })}
                             onDblClick={() => startEditing({ row: 0, col: colIndex() })}
                           >
-                            <div class="artifact-sheet-header-content">
-                              <div class="artifact-sheet-column-label">{columnLabel(colIndex())}</div>
+                            <div class="artifact-projection-header-content">
+                              <div class="artifact-projection-column-label">{columnLabel(colIndex())}</div>
                               <Show
                                 when={isEditing(0, colIndex())}
-                                fallback={<span class="artifact-sheet-cell-text">{column.header}</span>}
+                                fallback={<span class="artifact-projection-cell-text">{column.header}</span>}
                               >
                                 <input
-                                  class="artifact-sheet-cell-input"
+                                  class="artifact-projection-cell-input"
                                   data-cell-input={`0:${colIndex()}`}
                                   value={draftValue()}
                                   onInput={(event) => setDraftValue(event.currentTarget.value)}
@@ -687,14 +687,14 @@ function ArtifactSheetView(props: { handle: DocHandle<ProjectionDoc>; element: T
                         return (
                           <tr
                             classList={{
-                              'artifact-sheet-row-has-issue': annotationsForRow(row.rowId).length > 0,
+                              'artifact-projection-row-has-issue': annotationsForRow(row.rowId).length > 0,
                             }}
                           >
-                            <td class="artifact-sheet-row-number">
-                              <div class="artifact-sheet-row-number-label">{actualRow()}</div>
-                              <div class="artifact-sheet-row-actions">
+                            <td class="artifact-projection-row-number">
+                              <div class="artifact-projection-row-number-label">{actualRow()}</div>
+                              <div class="artifact-projection-row-actions">
                                 <button
-                                  class="artifact-sheet-action-button"
+                                  class="artifact-projection-action-button"
                                   title="Delete row"
                                   onClick={() => deleteRow(actualRow())}
                                 >
@@ -706,9 +706,9 @@ function ArtifactSheetView(props: { handle: DocHandle<ProjectionDoc>; element: T
                               {(cell, colIndex) => (
                                 <td
                                   classList={{
-                                    'artifact-sheet-cell': true,
-                                    'artifact-sheet-selected': isSelected(actualRow(), colIndex()),
-                                    'artifact-sheet-has-issue':
+                                    'artifact-projection-cell': true,
+                                    'artifact-projection-selected': isSelected(actualRow(), colIndex()),
+                                    'artifact-projection-has-issue':
                                       annotationsForCell(row.rowId, cell.columnId).length > 0,
                                   }}
                                   onClick={() => selectCell({ row: actualRow(), col: colIndex() })}
@@ -716,10 +716,10 @@ function ArtifactSheetView(props: { handle: DocHandle<ProjectionDoc>; element: T
                                 >
                                   <Show
                                     when={isEditing(actualRow(), colIndex())}
-                                    fallback={<span class="artifact-sheet-cell-text">{cell.value}</span>}
+                                    fallback={<span class="artifact-projection-cell-text">{cell.value}</span>}
                                   >
                                     <input
-                                      class="artifact-sheet-cell-input"
+                                      class="artifact-projection-cell-input"
                                       data-cell-input={`${actualRow()}:${colIndex()}`}
                                       value={draftValue()}
                                       onInput={(event) => setDraftValue(event.currentTarget.value)}
@@ -745,18 +745,18 @@ function ArtifactSheetView(props: { handle: DocHandle<ProjectionDoc>; element: T
   );
 }
 
-function readAnnotations(element: HTMLElement): ArtifactSheetAnnotation[] {
+function readAnnotations(element: HTMLElement): ArtifactProjectionAnnotation[] {
   const raw = element.getAttribute('data-annotations');
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as ArtifactSheetAnnotation[]) : [];
+    return Array.isArray(parsed) ? (parsed as ArtifactProjectionAnnotation[]) : [];
   } catch {
     return [];
   }
 }
 
-function dedupeAnnotations(annotations: ArtifactSheetAnnotation[]) {
+function dedupeAnnotations(annotations: ArtifactProjectionAnnotation[]) {
   const seen = new Set<string>();
   return annotations.filter((annotation) => {
     const key = JSON.stringify([
@@ -787,7 +787,7 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function describeAnnotation(annotation: ArtifactSheetAnnotation, sheet: MaterializedProjection) {
+function describeAnnotation(annotation: ArtifactProjectionAnnotation, sheet: MaterializedProjection) {
   if (annotation.kind === 'cell' && annotation.rowId && annotation.columnId) {
     const rowIndex = sheet.rows.findIndex((row) => row.rowId === annotation.rowId);
     const colIndex = sheet.columns.findIndex((column) => column.id === annotation.columnId);

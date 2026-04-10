@@ -254,12 +254,12 @@ export const plugins: Plugin<any>[] = [
   } satisfies Tool,
   {
     type: 'patchwork:tool',
-    id: 'grjte-artifact-sheet',
-    name: 'grjte Artifact Sheet',
+    id: 'grjte-artifact-projection',
+    name: 'grjte Artifact Projection',
     supportedDatatypes: ['artifact-projection'],
     async load() {
-      const { ArtifactSheetTool } = await import('./grjte/artifact-sheet/tool');
-      return ArtifactSheetTool;
+      const { ArtifactProjectionTool } = await import('./grjte/artifact-projection/tool');
+      return ArtifactProjectionTool;
     },
   } satisfies Tool,
   {
@@ -268,7 +268,7 @@ export const plugins: Plugin<any>[] = [
     name: 'Artifact Projection',
     icon: 'TableProperties',
     async load() {
-      const { ArtifactProjectionDatatype } = await import('./grjte/artifact-sheet/datatype');
+      const { ArtifactProjectionDatatype } = await import('./grjte/artifact-projection/datatype');
       return ArtifactProjectionDatatype;
     },
   } as Datatype,

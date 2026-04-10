@@ -1,7 +1,7 @@
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo';
-import type { DatalogDoc } from './spec/datalog-doc';
-import type { VerificationConstraintResult } from './validation/evaluate-verification';
-import type { ConstraintViolation } from './validation/datalog-eval';
+import type { DatalogDoc } from '../spec/datalog-doc';
+import type { VerificationConstraintResult } from '../validation/evaluate-verification';
+import type { ConstraintViolation } from '../validation/datalog-eval';
 
 type StoredFact = DatalogDoc['facts'][number];
 
@@ -97,17 +97,17 @@ export type ArtifactFolderEntry = {
   specPath?: string;
 };
 
-export type ArtifactSheetAnnotationKind = 'cell' | 'row' | 'column' | 'sheet';
-export type ArtifactSheetAnnotationSource = 'parse' | 'constraint';
+export type ArtifactProjectionAnnotationKind = 'cell' | 'row' | 'column' | 'sheet';
+export type ArtifactProjectionAnnotationSource = 'parse' | 'constraint';
 
-export type ArtifactSheetAnnotation = {
+export type ArtifactProjectionAnnotation = {
   artifactUrl?: AutomergeUrl;
-  kind: ArtifactSheetAnnotationKind;
+  kind: ArtifactProjectionAnnotationKind;
   rowId?: string;
   columnId?: string;
   message: string;
   constraintLabel?: string;
-  source: ArtifactSheetAnnotationSource;
+  source: ArtifactProjectionAnnotationSource;
 };
 
 export type MaterializedProjectionColumn = ProjectionColumn & {
@@ -128,7 +128,7 @@ export type MaterializedProjection = {
   columns: MaterializedProjectionColumn[];
   hiddenColumns: ProjectionColumn[];
   rows: MaterializedProjectionRow[];
-  annotations: ArtifactSheetAnnotation[];
+  annotations: ArtifactProjectionAnnotation[];
 };
 
 export type SheetAnchor = {
@@ -154,7 +154,7 @@ type MutationSuccess = {
 type MutationFailure = {
   ok: false;
   error: string;
-  annotations: ArtifactSheetAnnotation[];
+  annotations: ArtifactProjectionAnnotation[];
 };
 
 type MutationResult = MutationSuccess | MutationFailure;
@@ -213,7 +213,7 @@ type ScriptMapViolationContext = {
   constraintLabel: string;
   violation: ConstraintViolation;
   expandedArtifactDoc: ScriptExpandedArtifactDoc;
-  defaultAnnotations: ArtifactSheetAnnotation[];
+  defaultAnnotations: ArtifactProjectionAnnotation[];
   helpers: ProjectionScriptHelpers;
 };
 
@@ -547,9 +547,9 @@ export function deriveConstraintAnnotationsForArtifact(
     | Array<{ constraintLabel: string; violations: ConstraintViolation[] }>
     | VerificationConstraintResult[],
   options: ProjectionRuntimeOptions = {},
-): ArtifactSheetAnnotation[] {
+): ArtifactProjectionAnnotation[] {
   const scriptState = loadProjectionScriptHooks(projectionDoc, options.projectionUrl);
-  const annotations: ArtifactSheetAnnotation[] = [];
+  const annotations: ArtifactProjectionAnnotation[] = [];
   const expandedForScript = toScriptExpandedArtifact(expandedArtifactDoc);
 
   for (const constraint of constraints) {
@@ -622,7 +622,7 @@ export function buildExpandedArtifactDraft(
 function materializeProjectionDeclarative(
   projectionDoc: ProjectionDoc,
   artifactDoc: Pick<DatalogDoc, 'title' | 'facts' | 'draftText'>,
-  annotations: ArtifactSheetAnnotation[],
+  annotations: ArtifactProjectionAnnotation[],
 ): MaterializedProjection {
   const visibleColumns = projectionDoc.columns.filter((column) => !column.hidden);
   const rows = projectionDoc.rowSpec
@@ -859,8 +859,8 @@ function buildBaseExpandedArtifactDoc(
 function getGenericProjectionAnnotations(
   projectionDoc: ProjectionDoc,
   hooks?: ProjectionScriptHooks,
-): ArtifactSheetAnnotation[] {
-  const annotations: ArtifactSheetAnnotation[] = [];
+): ArtifactProjectionAnnotation[] {
+  const annotations: ArtifactProjectionAnnotation[] = [];
   if (!projectionDoc.columns.length) {
     annotations.push({
       kind: 'sheet',
@@ -882,7 +882,7 @@ function getScriptValidationAnnotations(
   hooks: ProjectionScriptHooks | undefined,
   projectionDoc: ProjectionDoc,
   artifactDoc?: Pick<DatalogDoc, 'title' | 'facts' | 'draftText'>,
-): ArtifactSheetAnnotation[] {
+): ArtifactProjectionAnnotation[] {
   if (!hooks?.validateProjection) return [];
 
   try {
@@ -900,7 +900,7 @@ function getScriptValidationAnnotations(
 function loadProjectionScriptHooks(
   projectionDoc: ProjectionDoc,
   projectionUrl?: AutomergeUrl,
-): { hooks?: ProjectionScriptHooks; annotations: ArtifactSheetAnnotation[] } {
+): { hooks?: ProjectionScriptHooks; annotations: ArtifactProjectionAnnotation[] } {
   const script = projectionDoc.script?.trim();
   if (!script) {
     console.warn('[projection] No script found on projectionDoc', { title: projectionDoc.title, projectionUrl, hasScript: 'script' in projectionDoc, scriptType: typeof projectionDoc.script, scriptValue: projectionDoc.script });
@@ -1068,8 +1068,8 @@ function mapViolationToAnnotations(
   constraintLabel: string,
   violation: ConstraintViolation,
   provenanceByFactKey: Map<string, SheetAnchor[]>,
-): ArtifactSheetAnnotation[] {
-  const annotations: ArtifactSheetAnnotation[] = [];
+): ArtifactProjectionAnnotation[] {
+  const annotations: ArtifactProjectionAnnotation[] = [];
   let touchedArtifact = false;
 
   // When the constraint body contains a negation, the cell anchors we find
@@ -1548,14 +1548,14 @@ function normalizeDocLike(raw: unknown): Pick<DatalogDoc, 'title' | 'facts' | 'd
 
 function normalizeScriptAnnotations(
   raw: unknown,
-  source: ArtifactSheetAnnotationSource,
+  source: ArtifactProjectionAnnotationSource,
   artifactUrl?: AutomergeUrl,
   constraintLabel?: string,
-  fallback: ArtifactSheetAnnotation[] = [],
-): ArtifactSheetAnnotation[] {
+  fallback: ArtifactProjectionAnnotation[] = [],
+): ArtifactProjectionAnnotation[] {
   if (raw == null) return fallback;
   if (Array.isArray(raw)) {
-    const annotations: ArtifactSheetAnnotation[] = [];
+    const annotations: ArtifactProjectionAnnotation[] = [];
     for (const entry of raw) {
       if (typeof entry === 'string') {
         annotations.push({
@@ -1661,7 +1661,7 @@ function freezeScriptExpandedArtifactDoc(expanded: ScriptExpandedArtifactDoc) {
   });
 }
 
-function freezeAnnotations(annotations: ArtifactSheetAnnotation[]) {
+function freezeAnnotations(annotations: ArtifactProjectionAnnotation[]) {
   return deepFreeze(annotations.map((annotation) => ({ ...annotation })));
 }
 
@@ -1681,9 +1681,9 @@ function serializeFact(fact: StoredFact) {
 function scriptRuntimeAnnotation(
   message: string,
   artifactUrl?: AutomergeUrl,
-  source: ArtifactSheetAnnotationSource = 'parse',
+  source: ArtifactProjectionAnnotationSource = 'parse',
   constraintLabel?: string,
-): ArtifactSheetAnnotation {
+): ArtifactProjectionAnnotation {
   return {
     artifactUrl,
     kind: 'sheet',
@@ -1697,7 +1697,7 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-function dedupeAnnotations(annotations: ArtifactSheetAnnotation[]) {
+function dedupeAnnotations(annotations: ArtifactProjectionAnnotation[]) {
   const seen = new Set<string>();
   return annotations.filter((annotation) => {
     const key = JSON.stringify([

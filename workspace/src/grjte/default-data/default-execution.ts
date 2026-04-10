@@ -4,11 +4,11 @@ import {
   buildBaseArtifactDraft,
   createProjectionDoc,
   type ArtifactFolderEntry,
-} from '../artifact-projection';
+} from '../artifact-projection/artifact-projection';
 import {
   buildHospitalRotaProjection,
   normalizeHospitalLegacySolutionFacts,
-} from './hospital-projection';
+} from './default-projection';
 
 type FolderDoc = {
   '@patchwork'?: { type: string };
@@ -54,7 +54,12 @@ function createSolutionArtifactDoc(
   legacyFacts: StoredFact[],
 ): AutomergeUrl {
   const normalizedFacts = normalizeHospitalLegacySolutionFacts(legacyFacts);
-  return createDatalogDoc(repo, title, buildBaseArtifactDraft(title, normalizedFacts), normalizedFacts);
+  return createDatalogDoc(
+    repo,
+    title,
+    buildBaseArtifactDraft(title, normalizedFacts),
+    normalizedFacts,
+  );
 }
 
 function f(pred: string, ...args: (string | number)[]): StoredFact {
@@ -337,7 +342,10 @@ assigned(w6_wed_night, lisa_brown, 12). assignment_slot(w6_wed_night, 4, lisa_br
 
   const ward6RotaUrl = createSolutionArtifactDoc(repo, 'Ward 6 Rota', ward6Facts);
 
-  const amuProjectionUrl = createProjectionDoc(repo, buildHospitalRotaProjection(amuRotaUrl, 'AMU Rota'));
+  const amuProjectionUrl = createProjectionDoc(
+    repo,
+    buildHospitalRotaProjection(amuRotaUrl, 'AMU Rota'),
+  );
   const ward6ProjectionUrl = createProjectionDoc(
     repo,
     buildHospitalRotaProjection(ward6RotaUrl, 'Ward 6 Rota'),

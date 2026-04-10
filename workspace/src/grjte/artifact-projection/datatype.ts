@@ -1,5 +1,5 @@
 import type { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
-import type { ProjectionDoc } from '../artifact-projection';
+import type { ProjectionDoc } from './artifact-projection';
 
 export const ArtifactProjectionDatatype: DatatypeImplementation<ProjectionDoc> = {
   init(doc) {
