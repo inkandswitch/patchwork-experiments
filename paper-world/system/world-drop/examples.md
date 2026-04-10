@@ -9,7 +9,7 @@ A card that enables dropping Paper World documents onto the canvas as embedded s
   "tool": "world-drop/card.json",
   "tags": [],
   "value": {},
-  "width": 180,
-  "height": 110
+  "width": 140,
+  "height": 196
 }
 ```
