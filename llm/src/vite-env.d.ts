@@ -1,3 +1,6 @@
 /// <reference types="vite/client" />
 
-declare const __SKILLS_FOLDER_URL__: string;
+declare module "*.md?raw" {
+  const content: string;
+  export default content;
+}

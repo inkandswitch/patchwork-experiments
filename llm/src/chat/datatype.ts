@@ -1,18 +1,11 @@
 import type { DatatypeImplementation } from "@inkandswitch/patchwork-plugins";
 import type { Repo } from "@automerge/automerge-repo";
 import type { LLMChatDoc, LLMProcessDoc } from "../types";
+import INSTRUCTIONS from "../INSTRUCTIONS.md?raw";
 
-const DEFAULT_SYSTEM_PROMPT = `You are a helpful assistant that can execute JavaScript code to accomplish tasks.
+const CHAT_PREAMBLE = `You are a helpful assistant in a chat interface. Be concise and friendly.`;
 
-To execute code, wrap it in <script> tags:
-<script>
-// your code here
-</script>
-
-You can optionally add a description:
-<script data-description="what this script does">
-// your code here
-</script>`;
+const DEFAULT_SYSTEM_PROMPT = `${CHAT_PREAMBLE}\n\n${INSTRUCTIONS}`;
 
 export const LLMChatDatatype: DatatypeImplementation<LLMChatDoc> = {
   init(doc: LLMChatDoc, repo: Repo) {
