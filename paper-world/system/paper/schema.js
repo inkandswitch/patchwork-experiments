@@ -42,7 +42,18 @@ export const selectedShapesSchema = {
 };
 
 export const cameraSchema = {
-  methods: ['screenToPage', 'pageToScreen'],
-  init() { return {}; },
-  parse(value) { return value; },
+  methods: [
+    'screenToPage',
+    'pageToScreen',
+    'getCamera',
+    'setCamera',
+    'subscribeCamera',
+    'getContainerEl',
+  ],
+  init() {
+    return {};
+  },
+  parse(value) {
+    return value;
+  },
 };

@@ -1,0 +1,6 @@
+{
+  "type": "tool",
+  "name": "Viewport",
+  "description": "Pan/zoom controls for the paper canvas",
+  "toolUrl": "./tool.js"
+}

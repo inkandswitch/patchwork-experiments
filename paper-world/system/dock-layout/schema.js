@@ -1,5 +1,4 @@
 import { z } from 'https://esm.sh/zod@4.3';
-import { getViewUrl } from '../url.js';
 
 const POSITIONS = [
   'top-left',
@@ -20,39 +19,23 @@ const ItemSchema = z
 
 const SlotSchema = z.array(ItemSchema).nullable();
 
-const DockLayoutSchema = z.object(
-  Object.fromEntries(POSITIONS.map((p) => [p, SlotSchema])),
-);
+const DockLayoutSchema = z.object({
+  'top-left': SlotSchema,
+  'top-center': SlotSchema,
+  'top-right': SlotSchema,
+  'middle-left': SlotSchema,
+  'middle-right': SlotSchema,
+  'bottom-left': SlotSchema,
+  'bottom-center': SlotSchema,
+  'bottom-right': SlotSchema,
+});
 
 export { POSITIONS };
 
 export default {
   namespace: 'dockLayout',
   init() {
-    return {
-      'top-left': null,
-      'top-center': [
-        { viewUrl: getViewUrl('../selection/button.json', import.meta.url) },
-        { viewUrl: getViewUrl('../rectangle/button.json', import.meta.url) },
-        { viewUrl: getViewUrl('../line/button.json', import.meta.url) },
-        { viewUrl: getViewUrl('../text/button.json', import.meta.url) },
-        { viewUrl: getViewUrl('../eraser/button.json', import.meta.url) },
-        { viewUrl: getViewUrl('../rainbow-marker/button.json', import.meta.url) },
-        { viewUrl: getViewUrl('../sparkle-marker/button.json', import.meta.url) },
-      ],
-      'top-right': null,
-      'middle-left': [
-        {
-          viewUrl: getViewUrl('../parts-bin/tool.json', import.meta.url),
-          width: 280,
-          height: 800,
-        },
-      ],
-      'middle-right': null,
-      'bottom-left': null,
-      'bottom-center': null,
-      'bottom-right': null,
-    };
+    return Object.fromEntries(POSITIONS.map((p) => [p, null]));
   },
   parse(value) {
     return DockLayoutSchema.parse(value);

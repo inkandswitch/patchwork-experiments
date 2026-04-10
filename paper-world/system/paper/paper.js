@@ -2,8 +2,6 @@ import { useRef, For, render, html, createSignal } from '../solid.js';
 import { shapesSchema, selectedShapesSchema } from './schema.js';
 
 const MIME = 'text/x-patchwork-ref-url';
-const MIN_ZOOM = 0.1;
-const MAX_ZOOM = 8;
 
 export default function mount(element) {
   const shapesRef = element.getOrCreate(shapesSchema);
@@ -12,6 +10,7 @@ export default function mount(element) {
   const shapes = useRef(shapesRef);
   const selectedShapes = useRef(selectedShapesRef);
   const [camera, setCamera] = createSignal({ x: 0, y: 0, zoom: 1 });
+  const cameraListeners = new Set();
 
   let containerEl = null;
 
@@ -37,33 +36,21 @@ export default function mount(element) {
     };
   }
 
+  function updateCamera(cam) {
+    setCamera(cam);
+    for (const fn of cameraListeners) fn(cam);
+  }
+
   element.screenToPage = screenToPage;
   element.pageToScreen = pageToScreen;
-
-  function onWheel(event) {
-    event.preventDefault();
-
-    const rect = containerEl.getBoundingClientRect();
-    const screenX = event.clientX - rect.left;
-    const screenY = event.clientY - rect.top;
-    const cam = camera();
-
-    if (event.ctrlKey || event.metaKey) {
-      const dy = Math.sign(event.deltaY) * Math.min(Math.abs(event.deltaY), 50);
-      const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, cam.zoom - (dy / 100) * cam.zoom));
-      setCamera({
-        x: cam.x + screenX / newZoom - screenX / cam.zoom,
-        y: cam.y + screenY / newZoom - screenY / cam.zoom,
-        zoom: newZoom,
-      });
-    } else {
-      setCamera({
-        x: cam.x - event.deltaX / cam.zoom,
-        y: cam.y - event.deltaY / cam.zoom,
-        zoom: cam.zoom,
-      });
-    }
-  }
+  element.getCamera = () => camera();
+  element.setCamera = updateCamera;
+  element.subscribeCamera = (fn) => {
+    fn(camera());
+    cameraListeners.add(fn);
+    return () => cameraListeners.delete(fn);
+  };
+  element.getContainerEl = () => containerEl;
 
   function onCanvasDragOver(event) {
     if (event.dataTransfer.types.includes(MIME)) {
@@ -81,30 +68,26 @@ export default function mount(element) {
 
     const { x: dropX, y: dropY } = screenToPage(event.clientX, event.clientY);
 
-    element.findRef(refUrl).then((ref) => {
-      const data = ref.value();
-      if (!data || !data.viewUrl) return;
+    element
+      .findRef(refUrl)
+      .then((ref) => {
+        const data = ref.value();
+        if (!data || !data.viewUrl) return;
 
-      const clone = structuredClone(data);
-      clone.x = dropX;
-      clone.y = dropY;
-      delete clone._trayWidth;
-      delete clone._trayHeight;
+        const clone = structuredClone(data);
+        clone.x = dropX;
+        clone.y = dropY;
+        delete clone._trayWidth;
+        delete clone._trayHeight;
 
-      const shapeId = `drop_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      shapesRef.at(shapeId).change(() => clone);
-    }).catch(() => {});
+        const shapeId = `drop_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        shapesRef.at(shapeId).change(() => clone);
+      })
+      .catch(() => {});
   }
 
   function setContainerRef(el) {
-    if (containerEl === el) return;
-    if (containerEl) {
-      containerEl.removeEventListener('wheel', onWheel);
-    }
     containerEl = el;
-    if (el) {
-      el.addEventListener('wheel', onWheel, { passive: false });
-    }
   }
 
   const cleanup = render(
@@ -148,11 +131,12 @@ export default function mount(element) {
   );
 
   return () => {
-    if (containerEl) {
-      containerEl.removeEventListener('wheel', onWheel);
-    }
     delete element.screenToPage;
     delete element.pageToScreen;
+    delete element.getCamera;
+    delete element.setCamera;
+    delete element.subscribeCamera;
+    delete element.getContainerEl;
     cleanup();
   };
 }

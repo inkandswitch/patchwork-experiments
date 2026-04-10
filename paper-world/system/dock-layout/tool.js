@@ -28,15 +28,15 @@ function positionStyle(position) {
     gap: '4px',
   };
 
-  if (row === 'top') style.top = '0';
-  else if (row === 'bottom') style.bottom = '0';
+  if (row === 'top') style.top = `${EDGE}px`;
+  else if (row === 'bottom') style.bottom = `${EDGE}px`;
   else {
     style.top = '50%';
     style.transform = 'translateY(-50%)';
   }
 
-  if (col === 'left') style.left = '0';
-  else if (col === 'right') style.right = '0';
+  if (col === 'left') style.left = `${EDGE}px`;
+  else if (col === 'right') style.right = `${EDGE}px`;
   else {
     const existing = style.transform || '';
     style.left = '50%';

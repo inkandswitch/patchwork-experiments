@@ -19,7 +19,27 @@ A paper canvas with a dock layout toolbar and parts bin.
             "parts_bin": { "viewUrl": "parts-bin/tool.json", "x": 420, "y": 0, "width": 280, "height": 600 }
           }
         },
-        { "viewUrl": "dock-layout/tool.json" }
+        {
+          "viewUrl": "dock-layout/tool.json",
+          "dockLayout": {
+            "top-left": null,
+            "top-center": [
+              { "viewUrl": "selection/button.json" },
+              { "viewUrl": "rectangle/button.json" },
+              { "viewUrl": "line/button.json" },
+              { "viewUrl": "text/button.json" },
+              { "viewUrl": "eraser/button.json" },
+              { "viewUrl": "rainbow-marker/button.json" },
+              { "viewUrl": "sparkle-marker/button.json" }
+            ],
+            "top-right": null,
+            "middle-left": null,
+            "middle-right": null,
+            "bottom-left": null,
+            "bottom-center": null,
+            "bottom-right": [{ "viewUrl": "viewport/tool.json" }]
+          }
+        }
       ]
     }
   },
@@ -64,7 +84,7 @@ A clean canvas with drawing tools but no parts bin.
             "middle-right": null,
             "bottom-left": null,
             "bottom-center": null,
-            "bottom-right": null
+            "bottom-right": [{ "viewUrl": "viewport/tool.json" }]
           }
         }
       ]
