@@ -1,0 +1,6 @@
+{
+  "type": "tool",
+  "name": "Import Worlds",
+  "description": "Card that enables dropping Paper World documents onto the canvas as embedded shapes",
+  "toolUrl": "./card.js"
+}

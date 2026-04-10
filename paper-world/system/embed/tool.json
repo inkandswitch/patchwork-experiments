@@ -1,0 +1,8 @@
+{
+  "type": "tool",
+  "name": "Embed",
+  "description": "Renders an embedded document by URL",
+  "toolUrl": "./tool.js",
+  "schemaUrl": "./schema.js",
+  "unlisted": true
+}

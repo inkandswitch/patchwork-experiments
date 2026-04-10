@@ -657,12 +657,18 @@ export default function mount(element) {
 }
 
 function shapeIdFromEvent(event, canvas) {
-  const childRefView = event.target.closest('ref-view');
-  if (!childRefView || childRefView === canvas) return null;
-  const refUrl = childRefView.getAttribute('ref-url');
-  if (!refUrl) return null;
-  const parts = refUrl.split('/');
-  return parts[parts.length - 1];
+  let refView = event.target.closest('ref-view');
+  while (refView && refView !== canvas) {
+    const parentRefView = refView.parentElement?.closest('ref-view');
+    if (parentRefView === canvas) {
+      const refUrl = refView.getAttribute('ref-url');
+      if (!refUrl) return null;
+      const parts = refUrl.split('/');
+      return parts[parts.length - 1];
+    }
+    refView = parentRefView;
+  }
+  return null;
 }
 
 const PROBE_OFFSETS = [
@@ -671,12 +677,22 @@ const PROBE_OFFSETS = [
   [10, 0], [-10, 0], [0, 10], [0, -10],
 ];
 
+function findShapeRefView(startEl, canvas) {
+  let refView = startEl.closest('ref-view');
+  while (refView && refView !== canvas) {
+    const parentRefView = refView.parentElement?.closest('ref-view');
+    if (parentRefView === canvas) return refView;
+    refView = parentRefView;
+  }
+  return null;
+}
+
 function probeNearbyShapes(event, canvas) {
   for (const [dx, dy] of PROBE_OFFSETS) {
     const el = document.elementFromPoint(event.clientX + dx, event.clientY + dy);
     if (!el) continue;
-    const refView = el.closest('ref-view');
-    if (!refView || refView === canvas) continue;
+    const refView = findShapeRefView(el, canvas);
+    if (!refView) continue;
     const refUrl = refView.getAttribute('ref-url');
     if (!refUrl) continue;
     const parts = refUrl.split('/');

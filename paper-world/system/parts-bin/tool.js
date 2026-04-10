@@ -28,7 +28,7 @@ export default function mount(element) {
   const galleryHeight = shapeData.height || 800;
 
   const root = document.createElement('div');
-  root.style.cssText = `width:${galleryWidth}px;height:${galleryHeight}px;max-height:800px;background:#fff;border-radius:12px;border:1px solid #e2e8f0;box-shadow:0 4px 16px rgba(0,0,0,0.08);display:flex;flex-direction:column;overflow:hidden;font-family:Inter,system-ui,-apple-system,sans-serif;font-size:13px;box-sizing:border-box;`;
+  root.style.cssText = `width:100%;height:100%;background:#fff;display:flex;flex-direction:column;overflow:hidden;font-family:Inter,system-ui,-apple-system,sans-serif;font-size:13px;box-sizing:border-box;`;
 
   const header = document.createElement('div');
   header.style.cssText = 'padding:12px 16px;background:linear-gradient(135deg,#10b981 0%,#059669 100%);color:white;display:flex;align-items:center;gap:10px;flex-shrink:0;';
