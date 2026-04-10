@@ -371,6 +371,41 @@ describe('evaluateWithProvenance', () => {
     const key = factKey(fact('reachable', 'a', 'c'));
     expect(provenance.has(key)).toBe(true);
   });
+
+  it('ignores attribution metadata during evaluation', () => {
+    const attribution = {
+      refs: [
+        {
+          docUrl: 'automerge:source' as any,
+          path: ['content'],
+          from: 'start-cursor' as any,
+          to: 'end-cursor' as any,
+        },
+      ],
+    };
+    const facts: StoredFact[] = [{ pred: 'edge', args: ['a', 'b', 1], attribution }];
+    const rules: StoredRule[] = [
+      {
+        head: { pred: 'reachable', args: ['X', 'Y'] },
+        body: [{ pred: 'edge', args: ['X', 'Y', '_'] }],
+        attribution,
+      },
+    ];
+    const constraints: StoredConstraint[] = [
+      {
+        name: 'no_reachability',
+        body: [{ pred: 'reachable', args: ['X', 'Y'] }],
+        attribution,
+      },
+    ];
+
+    const { db, provenance } = evaluateWithProvenance(facts, rules);
+    const baseFacts = new Set(facts.map(factKey));
+    const violations = checkConstraints(db, constraints, provenance, baseFacts);
+
+    expect(factsOf(db, 'reachable')).toHaveLength(1);
+    expect(violations).toHaveLength(1);
+  });
 });
 
 // ─── checkConstraints ─────────────────────────────────────────────────────────

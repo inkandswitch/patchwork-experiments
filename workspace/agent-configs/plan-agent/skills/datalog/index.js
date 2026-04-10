@@ -4,10 +4,17 @@
  * DatalogDoc shape:
  *   { facts: StoredFact[], rules: StoredRule[], constraints: StoredConstraint[], draftText?: string }
  *
- * StoredFact:      { pred: string, args: (string|number)[], comment?: string }
+ * StoredTextRangeRef: {
+ *   docUrl: string,
+ *   path: (string|number)[],
+ *   from: Cursor,
+ *   to: Cursor,
+ * }
+ * StoredAttribution:{ refs: StoredTextRangeRef[] }
+ * StoredFact:      { pred: string, args: (string|number)[], comment?: string, attribution?: StoredAttribution }
  * StoredAtom:      { pred: string, args: string[] }
- * StoredRule:      { head: StoredAtom, body: StoredAtom[], comment?: string }
- * StoredConstraint:{ name: string, body: StoredAtom[], comment?: string }
+ * StoredRule:      { head: StoredAtom, body: StoredAtom[], comment?: string, attribution?: StoredAttribution }
+ * StoredConstraint:{ name: string, body: StoredAtom[], comment?: string, attribution?: StoredAttribution }
  */
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -56,6 +63,222 @@ function copyAtom(a) {
     return { pred: 'not', args: [copyAtom(a.args[0])] };
   }
   return { pred: a.pred, args: [...a.args] };
+}
+
+function extractFactOptions(commentOrOptions, maybeOptions) {
+  if (typeof commentOrOptions === 'string' || commentOrOptions === undefined) {
+    return {
+      comment: commentOrOptions,
+      options: maybeOptions ?? {},
+    };
+  }
+
+  return {
+    comment: commentOrOptions.comment,
+    options: commentOrOptions,
+  };
+}
+
+function mergeAttribution(existing, incoming) {
+  if (!existing && !incoming) return undefined;
+  return normalizeAttribution({
+    refs: [
+      ...(existing?.refs ?? []),
+      ...(incoming?.refs ?? []),
+    ],
+  });
+}
+
+function normalizeAttribution(attribution) {
+  if (!attribution?.refs) return undefined;
+
+  const refs = [];
+  const seen = new Set();
+  for (const rangeRef of attribution.refs) {
+    const normalizedRef = normalizeStoredRangeRef(rangeRef);
+    const key = JSON.stringify([
+      normalizedRef.docUrl,
+      normalizedRef.path,
+      normalizedRef.from,
+      normalizedRef.to,
+    ]);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    refs.push(normalizedRef);
+  }
+
+  return refs.length > 0 ? { refs } : undefined;
+}
+
+function normalizeStoredRangeRef(rangeRef) {
+  if (typeof rangeRef?.docUrl !== 'string') {
+    throw new Error('Attribution refs require a docUrl');
+  }
+  if (!Array.isArray(rangeRef.path)) {
+    throw new Error('Attribution refs require path to be an array');
+  }
+  if (rangeRef.from == null || rangeRef.to == null) {
+    throw new Error('Attribution refs require from/to cursors');
+  }
+
+  return {
+    docUrl: rangeRef.docUrl,
+    path: [...rangeRef.path],
+    from: rangeRef.from,
+    to: rangeRef.to,
+  };
+}
+
+function normalizeRangeInput(range) {
+  if (typeof range?.docUrl !== 'string') {
+    throw new Error('Attribution ranges require a docUrl');
+  }
+  if (!Array.isArray(range.path)) {
+    throw new Error('Attribution ranges require path to be an array');
+  }
+
+  const quote = typeof range.quote === 'string' ? range.quote : range.snippet;
+  if (typeof quote === 'string') {
+    const prefix = range.prefix ?? range.before;
+    const suffix = range.suffix ?? range.after;
+    if (quote.length === 0) {
+      throw new Error('Attribution quotes must not be empty');
+    }
+    if (prefix !== undefined && typeof prefix !== 'string') {
+      throw new Error('Attribution prefix must be a string when provided');
+    }
+    if (suffix !== undefined && typeof suffix !== 'string') {
+      throw new Error('Attribution suffix must be a string when provided');
+    }
+
+    return {
+      docUrl: range.docUrl,
+      path: [...range.path],
+      quote,
+      prefix,
+      suffix,
+    };
+  }
+
+  const start = Number(range.start);
+  const end = Number(range.end);
+  if (!Number.isInteger(start) || !Number.isInteger(end)) {
+    throw new Error('Attribution ranges require either quote text or integer start/end offsets');
+  }
+  if (start < 0 || end < 0) {
+    throw new Error('Attribution ranges cannot be negative');
+  }
+  if (end <= start) {
+    throw new Error('Attribution ranges must have end > start');
+  }
+
+  return {
+    docUrl: range.docUrl,
+    path: [...range.path],
+    start,
+    end,
+  };
+}
+
+function resolveOffsetsFromQuote(text, normalizedRange) {
+  const candidates = [];
+  let searchFrom = 0;
+  while (searchFrom <= text.length) {
+    const start = text.indexOf(normalizedRange.quote, searchFrom);
+    if (start === -1) break;
+    const end = start + normalizedRange.quote.length;
+    if (matchesContext(text, start, end, normalizedRange.prefix, normalizedRange.suffix)) {
+      candidates.push({ start, end });
+    }
+    searchFrom = start + 1;
+  }
+
+  if (candidates.length === 0) {
+    throw new Error(
+      `Could not find quoted attribution text in ${normalizedRange.docUrl}: ${JSON.stringify(normalizedRange.quote)}`,
+    );
+  }
+  if (candidates.length > 1) {
+    throw new Error(
+      `Quoted attribution text is ambiguous in ${normalizedRange.docUrl}; provide a longer quote or add prefix/suffix context`,
+    );
+  }
+
+  return candidates[0];
+}
+
+function matchesContext(text, start, end, prefix, suffix) {
+  if (prefix !== undefined) {
+    const prefixIndex = text.lastIndexOf(prefix, start);
+    if (prefixIndex === -1 || prefixIndex + prefix.length > start) {
+      return false;
+    }
+  }
+  if (suffix !== undefined) {
+    const suffixIndex = text.indexOf(suffix, end);
+    if (suffixIndex === -1) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function getAutomerge() {
+  const automerge = globalThis.Automerge;
+  if (!automerge?.getCursor) {
+    throw new Error('Automerge global is not available in the skill runtime');
+  }
+  return automerge;
+}
+
+function resolveValueAtPath(root, path) {
+  let current = root;
+  for (const segment of path) {
+    if (current == null) return undefined;
+    if (typeof segment !== 'string' && typeof segment !== 'number') {
+      throw new Error(`Unsupported attribution path segment: ${String(segment)}`);
+    }
+    current = current[segment];
+  }
+  return current;
+}
+
+async function createRangeRef(range) {
+  const normalizedRange = normalizeRangeInput(range);
+  const handle = await repo.find(normalizedRange.docUrl);
+  const doc = handle.doc();
+  if (!doc) {
+    throw new Error(`Could not load document for attribution: ${normalizedRange.docUrl}`);
+  }
+
+  const textValue = resolveValueAtPath(doc, normalizedRange.path);
+  if (typeof textValue !== 'string' && !(textValue instanceof String)) {
+    throw new Error(
+      `Attribution path ${JSON.stringify(normalizedRange.path)} does not resolve to text in ${normalizedRange.docUrl}`,
+    );
+  }
+
+  const textLength = String(textValue).length;
+  const offsets =
+    'quote' in normalizedRange
+      ? resolveOffsetsFromQuote(String(textValue), normalizedRange)
+      : normalizedRange;
+  if (offsets.end > textLength) {
+    throw new Error(
+      `Attribution range ${offsets.start}-${offsets.end} is out of bounds for text length ${textLength}`,
+    );
+  }
+
+  const Automerge = getAutomerge();
+  const start = Math.min(offsets.start, offsets.end);
+  const end = Math.max(offsets.start, offsets.end);
+
+  return {
+    docUrl: normalizedRange.docUrl,
+    path: normalizedRange.path,
+    from: Automerge.getCursor(doc, normalizedRange.path, start, 'before'),
+    to: Automerge.getCursor(doc, normalizedRange.path, end, 'after'),
+  };
 }
 
 /**
@@ -469,15 +692,23 @@ export class DocDatalog extends Datalog {
     return [...this.constraints];
   }
 
-  assertFact(pred, args, comment) {
+  assertFact(pred, args, commentOrOptions, maybeOptions) {
+    const { comment, options } = extractFactOptions(commentOrOptions, maybeOptions);
     const key = factKey({ pred, args });
+    const normalizedAttribution = normalizeAttribution(options?.attribution);
     this._handle.change((d) => {
-      const exists = (d.facts ?? []).some((f) => factKey(f) === key);
-      if (!exists) {
+      const existing = (d.facts ?? []).find((f) => factKey(f) === key);
+      if (!existing) {
         const fact = { pred, args };
         if (comment !== undefined) fact.comment = comment;
+        if (normalizedAttribution) fact.attribution = normalizedAttribution;
         d.facts.push(fact);
+        return;
       }
+
+      if (comment !== undefined) existing.comment = comment;
+      const mergedAttribution = mergeAttribution(existing.attribution, normalizedAttribution);
+      if (mergedAttribution) existing.attribution = mergedAttribution;
     });
   }
 
@@ -491,16 +722,25 @@ export class DocDatalog extends Datalog {
     });
   }
 
-  assertRule(rule) {
+  assertRule(rule, options) {
     const key = ruleKey(rule);
+    const normalizedAttribution = normalizeAttribution(options?.attribution ?? rule.attribution);
     this._handle.change((d) => {
-      const exists = (d.rules ?? []).some((r) => ruleKey(r) === key);
-      if (!exists) {
-        d.rules.push({
+      const existing = (d.rules ?? []).find((r) => ruleKey(r) === key);
+      if (!existing) {
+        const nextRule = {
           head: { pred: rule.head.pred, args: [...rule.head.args] },
           body: rule.body.map(copyAtom),
-        });
+        };
+        if (rule.comment !== undefined) nextRule.comment = rule.comment;
+        if (normalizedAttribution) nextRule.attribution = normalizedAttribution;
+        d.rules.push(nextRule);
+        return;
       }
+
+      if (rule.comment !== undefined) existing.comment = rule.comment;
+      const mergedAttribution = mergeAttribution(existing.attribution, normalizedAttribution);
+      if (mergedAttribution) existing.attribution = mergedAttribution;
     });
   }
 
@@ -512,16 +752,26 @@ export class DocDatalog extends Datalog {
     });
   }
 
-  assertConstraint(name, constraint) {
+  assertConstraint(name, constraint, options) {
     const key = constraintKey(constraint);
+    const normalizedAttribution = normalizeAttribution(options?.attribution ?? constraint.attribution);
     this._handle.change((d) => {
-      const exists = (d.constraints ?? []).some((c) => constraintKey(c) === key);
-      if (!exists) {
-        d.constraints.push({
+      const existing = (d.constraints ?? []).find((c) => constraintKey(c) === key);
+      if (!existing) {
+        const nextConstraint = {
           name,
           body: constraint.body.map(copyAtom),
-        });
+        };
+        if (constraint.comment !== undefined) nextConstraint.comment = constraint.comment;
+        if (normalizedAttribution) nextConstraint.attribution = normalizedAttribution;
+        d.constraints.push(nextConstraint);
+        return;
       }
+
+      existing.name = name;
+      if (constraint.comment !== undefined) existing.comment = constraint.comment;
+      const mergedAttribution = mergeAttribution(existing.attribution, normalizedAttribution);
+      if (mergedAttribution) existing.attribution = mergedAttribution;
     });
   }
 
@@ -585,4 +835,22 @@ export async function mergeDatalog(urls) {
     for (const c of doc?.constraints ?? []) constraints.push(c);
   }
   return new Datalog(facts, rules, constraints);
+}
+
+/**
+ * Convert offset-based text ranges into stable cursor-based attribution refs.
+ *
+ * @param {{ docUrl: string, path: (string|number)[], start: number, end: number }[]} ranges
+ * @returns {Promise<{ refs: { docUrl: string, path: (string|number)[], from: any, to: any }[] }>}
+ */
+export async function makeAttribution(ranges) {
+  if (!Array.isArray(ranges)) {
+    throw new Error('makeAttribution expects an array of text ranges');
+  }
+
+  const refs = [];
+  for (const range of ranges) {
+    refs.push(await createRangeRef(range));
+  }
+  return normalizeAttribution({ refs }) ?? { refs: [] };
 }

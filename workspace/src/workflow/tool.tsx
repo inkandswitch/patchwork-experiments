@@ -13,7 +13,7 @@ import './workflow.css';
 
 type Stage = 'elicitation' | 'spec' | 'plan' | 'execution' | 'validation';
 
-const WORKFLOW_VERSION = '0.4.4';
+const WORKFLOW_VERSION = '0.4.8';
 
 function makeId(): string {
   return Math.random().toString(36).slice(2, 10);
@@ -108,22 +108,20 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
     const elicitDoc = await elicitHandle.doc();
     const prompt = elicitDoc?.prompt?.trim() ?? '';
 
-    // Include any reference documents from the elicitation folder
-    let docsContext = '';
+    // Build reference document listing (names + URLs only, not full content)
+    let referenceDocs: { name: string; url: string }[] = [];
     if (elicitDoc?.referenceDocsFolderUrl) {
       const folderHandle = await repo.find(elicitDoc.referenceDocsFolderUrl);
       const folderDoc = await folderHandle.doc() as any;
-      for (const entry of (folderDoc?.docs ?? []) as { name: string; url: AutomergeUrl }[]) {
-        const h = await repo.find(entry.url);
-        const d = await h.doc() as any;
-        const content = typeof d?.content === 'string' ? d.content
-          : d?.content instanceof Uint8Array ? new TextDecoder().decode(d.content)
-          : JSON.stringify(d, null, 2);
-        docsContext += `\n\n### ${entry.name}\n${content}`;
-      }
+      referenceDocs = ((folderDoc?.docs ?? []) as { name: string; url: AutomergeUrl }[])
+        .map(entry => ({ name: entry.name, url: entry.url as string }));
     }
 
-    const userMessage = (prompt || 'Generate a spec.') + docsContext;
+    let userMessage = prompt || 'Generate a spec.';
+    if (referenceDocs.length > 0) {
+      userMessage += '\n\nReference documents (use repo.find(url) to read full content):\n' +
+        JSON.stringify(referenceDocs, null, 2);
+    }
 
     const processHandle = repo.create<LLMProcessDoc>();
     processHandle.change((d) => {

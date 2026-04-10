@@ -1,3 +1,4 @@
+import type { AutomergeUrl, Cursor } from '@automerge/automerge-repo';
 import * as ohm from 'ohm-js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -10,11 +11,37 @@ export type Constant = string | number;
 //   otherwise                    → constant   e.g. "north", "500" or a number
 export type Term = string;
 
-export type StoredFact = { pred: string; args: Constant[]; comment?: string };
-export type StoredAtom = { pred: string; args: Term[] };
-export type StoredRule = { head: StoredAtom; body: StoredAtom[]; comment?: string };
+export type StoredTextRangeRef = {
+  docUrl: AutomergeUrl;
+  path: Array<string | number>;
+  from: Cursor;
+  to: Cursor;
+};
 
-export type StoredConstraint = { body: StoredAtom[]; comment?: string };
+export type StoredAttribution = {
+  refs: StoredTextRangeRef[];
+};
+
+export type StoredFact = {
+  pred: string;
+  args: Constant[];
+  comment?: string;
+  attribution?: StoredAttribution;
+};
+export type StoredAtom = { pred: string; args: Term[] };
+export type StoredRule = {
+  head: StoredAtom;
+  body: StoredAtom[];
+  comment?: string;
+  attribution?: StoredAttribution;
+};
+
+export type StoredConstraint = {
+  name?: string;
+  body: StoredAtom[];
+  comment?: string;
+  attribution?: StoredAttribution;
+};
 
 export type ProvenanceEntry = { rule: StoredRule; groundBody: StoredFact[] };
 export type ProvenanceMap = Map<string, ProvenanceEntry>;
@@ -71,6 +98,10 @@ export function factKey(f: StoredFact): string {
 
 export function ruleKey(r: StoredRule): string {
   return `${serializeAtom(r.head)} :- ${r.body.map(serializeAtom).join(', ')}`;
+}
+
+export function constraintKey(c: StoredConstraint): string {
+  return ':- ' + c.body.map(serializeAtom).join(', ');
 }
 
 // ─── Serialization (structure → text) ─────────────────────────────────────────

@@ -11,6 +11,7 @@
  * discovered skill descriptions, and a document list from the workspace.
  */
 
+import * as Automerge from '@automerge/automerge';
 import type { DocHandle, Repo } from '@automerge/automerge-repo';
 import { updateText, type AutomergeUrl } from '@automerge/automerge-repo';
 import { parseScriptBlocks } from './parser';
@@ -57,6 +58,7 @@ export async function runWorkspaceLLM(
   const systemText = buildSystemPrompt(systemPrompt, skillDescriptions);
 
   (globalThis as any).__llmCapturedConsole = capturedConsole;
+  (globalThis as any).Automerge = Automerge;
   (globalThis as any).repo = repo;
   (globalThis as any).readSkill = (name: string) => readSkillDoc(skills, name);
   (globalThis as any).useSkill = (name: string) => loadSkillModule(skills, name);

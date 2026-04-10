@@ -73,7 +73,7 @@ console.log(docs);
 Loads a skill module by name and returns its exports.
 
 ```javascript
-const { createDatalog } = await useSkill("datalog");
+const { createDatalog, makeAttribution } = await useSkill("datalog");
 const { createSpec, getSpec, createFolder, addFileToFolder } = await useSkill("spec");
 ```
 
@@ -103,7 +103,7 @@ A captured console. Use `console.log(...)` to produce output that you will see a
 
 ## Workflow
 
-1. Read the user's request carefully. Reference documents may be included in the message — use them to understand the domain.
+1. Read the user's request carefully. The message may include a list of reference documents with their names and Automerge URLs. Use the `docs` skill to read their full JSON content.
 2. Load the skill docs to understand the APIs:
    ```
    <script>
@@ -116,17 +116,23 @@ A captured console. Use `console.log(...)` to produce output that you will see a
 3. Import the skill APIs:
    ```
    <script>
-   const { createDatalog } = await useSkill("datalog");
+   const { createDatalog, makeAttribution } = await useSkill("datalog");
    const { createSpec, getSpec, createFolder, addFileToFolder } = await useSkill("spec");
    </script>
    ```
-4. **Decompose** the domain into sub-problems (leaf specs) and identify any cross-cutting constraints (root spec).
-5. For each leaf spec:
+4. If the user provided reference documents, ground each fact, rule, and constraint in the relevant source text:
+   - Read the reference doc JSON with the `docs` skill.
+   - Pass quoted source snippets to `await makeAttribution(...)`, e.g. `{ docUrl, path, quote, prefix?, suffix? }`.
+   - Reuse the returned attribution object on every statement justified by that source span.
+   - Prefer exact quotes over offsets. Only fall back to `{ start, end }` if you truly cannot quote the source text.
+   - Do not construct cursors yourself; always let the skill convert matched text into stored `from` / `to` refs.
+5. **Decompose** the domain into sub-problems (leaf specs) and identify any cross-cutting constraints (root spec).
+6. For each leaf spec:
    - Create Datalog docs for domain data and constraints.
    - Create a files folder and **pre-create an initial solution DatalogDoc** (with domain seed facts) inside it — this is the artifact the plan executor will modify to satisfy the constraints. Add it to the folder with `addFileToFolder`.
    - Set the leaf spec's `filesFolderUrl` to this folder.
-6. Create a root SpecDoc that references the leaf specs via `addSubSpec` and holds global/cross-cutting constraints.
-7. **Log `ROOT_SPEC_URL: <url>`** as the very last output in your final script.
+7. Create a root SpecDoc that references the leaf specs via `addSubSpec` and holds global/cross-cutting constraints.
+8. **Log `ROOT_SPEC_URL: <url>`** as the very last output in your final script.
 
 ## Output Structure
 
@@ -148,13 +154,22 @@ Root SpecDoc  { goal, verificationUrls: [globalConstraints], subSpecUrls: [...] 
 
 ```
 <script>
-const { createDatalog } = await useSkill("datalog");
+const { createDatalog, makeAttribution } = await useSkill("datalog");
 const { createSpec, getSpec, createFolder, addFileToFolder } = await useSkill("spec");
+
+const sourceRange = await makeAttribution([
+  {
+    docUrl: referenceDocUrl,
+    path: ["content"],
+    quote: "Every required item must be covered",
+    prefix: "Constraint:",
+  },
+]);
 
 // --- Domain data facts (what entities exist in the problem) ---
 const domainData = createDatalog("Domain Data");
-domainData.assertFact("entity", ["thing_a"]);
-domainData.assertFact("entity", ["thing_b"]);
+domainData.assertFact("entity", ["thing_a"], { attribution: sourceRange });
+domainData.assertFact("entity", ["thing_b"], { attribution: sourceRange });
 
 // --- Shared constraint rules ---
 const commonRules = createDatalog("Common Rules");
@@ -164,6 +179,7 @@ commonRules.assertConstraint("no_duplicate_assignments", {
     { pred: "assigned", args: ["X", "Z"] },
     { pred: "neq", args: ["Y", "Z"] },
   ],
+  attribution: sourceRange,
 });
 
 // --- Domain-specific constraints ---
@@ -218,6 +234,8 @@ console.log('ROOT_SPEC_URL:', rootUrl);
 - Focus on defining **constraints** (what must be true, what must not happen). Do not design a solution or implementation.
 - Be precise and formal in your Datalog definitions.
 - Use comments on facts, rules, and constraints to explain their intent in plain language.
+- When a statement comes from reference text, attach attribution with `await makeAttribution([{ docUrl, path, quote, prefix?, suffix? }])` and store it on the fact, rule, or constraint.
+- `path` must resolve to a text field in the source document. Prefer quoting the exact text you want to ground rather than inventing character offsets.
 - Always produce a root SpecDoc and log its URL as `ROOT_SPEC_URL: <url>` at the end of your final script.
 - Decompose complex specs into leaf specs with clean interface predicates, linked from a root spec.
 - Every constraint must have a descriptive name via `assertConstraint(name, { body: [...] })`.
