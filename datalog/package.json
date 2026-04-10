@@ -23,6 +23,7 @@
     "@inkandswitch/patchwork-plugins": "^0.0.2",
     "@inkandswitch/patchwork-refs": "0.1.3",
     "@inkandswitch/subscribables-react": "0.1.2",
+    "@patchwork/codemirror-highlights": "link:../codemirror-highlights",
     "codemirror": "^6.0.2",
     "lucide-react": "^0.577.0",
     "maplibre-gl": "^5.19.0",

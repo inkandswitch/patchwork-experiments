@@ -1,33 +1,52 @@
 import * as Automerge from '@automerge/automerge';
-import { useDocument, useRepo } from '@automerge/automerge-repo-react-hooks';
-import { RepoContext } from '@automerge/automerge-repo-react-hooks';
-import { createRoot } from 'react-dom/client';
-import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { AutomergeUrl, DocHandle } from '@automerge/automerge-repo';
+import { RepoContext } from '@automerge/automerge-repo-react-hooks';
+import { useDocument, useRepo } from '@automerge/automerge-repo-react-hooks';
 import { annotations } from '@inkandswitch/annotations-context';
 import { Diff } from '@inkandswitch/annotations-diff';
-import { ref, Ref } from '@inkandswitch/patchwork-refs';
+import type { ToolRender } from '@inkandswitch/patchwork-plugins';
+import { ref, type Ref } from '@inkandswitch/patchwork-refs';
 import { useSubscribe } from '@inkandswitch/subscribables-react';
+import { useEffect, useMemo, useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import { addHighlightStyle } from './codemirror-highlights';
 import type { DatalogDoc } from './datatype';
 import {
   type StoredAttribution,
   type StoredConstraint,
   type StoredFact,
   type StoredRule,
+  type StoredTextRangeRef,
   constraintKey,
-  parseProgram,
-  factKey,
   evaluateWithProvenance,
+  factKey,
+  parseProgram,
   ruleKey,
   serializeConstraint,
-  serializeFact,
-  serializeRule,
-  serializeFacts,
-  serializeRules,
   serializeConstraints,
+  serializeFact,
+  serializeFacts,
+  serializeRule,
+  serializeRules,
 } from './datalog';
-import { useEffect, useMemo, useState } from 'react';
 import './index.css';
+
+type ViewTab = 'source' | 'derived';
+type AttributionStatementKind = 'fact' | 'rule' | 'constraint';
+type SourceStatement = {
+  id: string;
+  kind: AttributionStatementKind;
+  summary: string;
+  comment?: string;
+  attribution?: StoredAttribution;
+};
+type ReferencedDocument = {
+  docUrl: AutomergeUrl;
+  refs: StoredTextRangeRef[];
+  paths: string[];
+  handle?: DocHandle<unknown>;
+  error?: string;
+};
 
 export const DatalogTool: ToolRender = (handle, element) => {
   const repo = element.repo;
@@ -39,6 +58,582 @@ export const DatalogTool: ToolRender = (handle, element) => {
   );
   return () => root.unmount();
 };
+
+function DatalogViewer({
+  docUrl,
+  handle,
+}: {
+  docUrl: AutomergeUrl;
+  handle: DocHandle<DatalogDoc>;
+}) {
+  const [doc] = useDocument<DatalogDoc>(docUrl);
+  const [activeTab, setActiveTab] = useState<ViewTab>('source');
+  const [isAttributionPanelOpen, setIsAttributionPanelOpen] = useState(false);
+  const [selectedStatementId, setSelectedStatementId] = useState<string | null>(null);
+
+  const hasDraft = doc?.draftText != null;
+  const currentText = hasDraft ? doc!.draftText! : (doc ? programText(doc) : '');
+
+  const { facts: parsedFacts, rules: parsedRules } = useMemo(
+    () => (hasDraft ? parseProgram(doc!.draftText!) : { facts: [], rules: [] }),
+    [hasDraft, doc],
+  );
+
+  const { derivedFacts, baseFacts } = useMemo(() => {
+    const facts = hasDraft ? parsedFacts : (doc?.facts ?? []);
+    const rules = hasDraft ? parsedRules : (doc?.rules ?? []);
+    const baseFactKeys = new Set(facts.map(factKey));
+    let db: StoredFact[] = facts;
+    try {
+      ({ db } = evaluateWithProvenance(facts, rules));
+    } catch {
+      db = facts;
+    }
+    return {
+      derivedFacts: db,
+      baseFacts: baseFactKeys,
+    };
+  }, [doc, hasDraft, parsedFacts, parsedRules]);
+
+  const derivedOnlyFacts = useMemo(
+    () => derivedFacts.filter((fact) => !baseFacts.has(factKey(fact))),
+    [derivedFacts, baseFacts],
+  );
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, StoredFact[]>();
+    for (const fact of derivedFacts) {
+      if (!map.has(fact.pred)) map.set(fact.pred, []);
+      map.get(fact.pred)!.push(fact);
+    }
+    return map;
+  }, [derivedFacts]);
+
+  const factKeyToIndex = useMemo(() => {
+    const map = new Map<string, number>();
+    for (let i = 0; i < (doc?.facts ?? []).length; i++) {
+      map.set(factKey((doc?.facts ?? [])[i]), i);
+    }
+    return map;
+  }, [doc]);
+
+  const derivedKeyToIndex = useMemo(() => {
+    const map = new Map<string, number>();
+    for (let i = 0; i < (doc?.derivedFacts ?? []).length; i++) {
+      map.set(factKey((doc?.derivedFacts ?? [])[i]), i);
+    }
+    return map;
+  }, [doc]);
+
+  const hasParseErrors = useMemo(() => {
+    if (!hasDraft) return false;
+    return parseProgram(doc!.draftText!).errors.length > 0;
+  }, [hasDraft, doc]);
+
+  const sourceStatements = useMemo(() => {
+    if (!doc) return [];
+    return listSourceStatements(doc);
+  }, [doc]);
+
+  const attributedStatementCount = useMemo(
+    () => sourceStatements.filter(hasStatementAttribution).length,
+    [sourceStatements],
+  );
+
+  const attributionRefCount = useMemo(
+    () =>
+      sourceStatements.reduce((total, statement) => {
+        return total + (statement.attribution?.refs.length ?? 0);
+      }, 0),
+    [sourceStatements],
+  );
+
+  const selectedStatement = useMemo(
+    () => sourceStatements.find((statement) => statement.id === selectedStatementId) ?? null,
+    [selectedStatementId, sourceStatements],
+  );
+
+  useEffect(() => {
+    if (hasDraft) return;
+    const newKeySet = new Set(derivedOnlyFacts.map(factKey));
+    const stored = handle.doc()?.derivedFacts ?? [];
+    const existingKeySet = new Set(stored.map(factKey));
+
+    const same = newKeySet.size === existingKeySet.size && [...newKeySet].every((key) => existingKeySet.has(key));
+    if (same) return;
+
+    handle.change((nextDoc) => {
+      if (!nextDoc.derivedFacts) nextDoc.derivedFacts = [];
+      for (let i = nextDoc.derivedFacts.length - 1; i >= 0; i--) {
+        if (!newKeySet.has(factKey(nextDoc.derivedFacts[i]))) {
+          nextDoc.derivedFacts.splice(i, 1);
+        }
+      }
+      const remaining = new Set(nextDoc.derivedFacts.map(factKey));
+      for (const fact of derivedOnlyFacts) {
+        if (!remaining.has(factKey(fact))) {
+          nextDoc.derivedFacts.push({ pred: fact.pred, args: [...fact.args] });
+        }
+      }
+    });
+  }, [derivedOnlyFacts, hasDraft, handle]);
+
+  useEffect(() => {
+    if (!selectedStatementId) return;
+    if (sourceStatements.some((statement) => statement.id === selectedStatementId)) return;
+    setSelectedStatementId(null);
+  }, [selectedStatementId, sourceStatements]);
+
+  useEffect(() => {
+    if (!hasDraft) return;
+    setIsAttributionPanelOpen(false);
+  }, [hasDraft]);
+
+  function handleTextChange(event: React.ChangeEvent<HTMLTextAreaElement>) {
+    const newValue = event.target.value;
+    const current = handle.doc();
+    if (!current) return;
+
+    handle.change((nextDoc) => {
+      if (nextDoc.draftText == null) {
+        nextDoc.draftText = programText(current);
+      }
+      Automerge.updateText(nextDoc, ['draftText'], newValue);
+    });
+  }
+
+  function handleStartEditing() {
+    const current = handle.doc();
+    if (!current || current.draftText != null) return;
+    handle.change((nextDoc) => {
+      nextDoc.draftText = programText(current);
+    });
+  }
+
+  function handleSave() {
+    const current = handle.doc();
+    if (!current || current.draftText == null) return;
+    const { facts, rules, constraints, errors } = parseProgram(current.draftText);
+    if (errors.length > 0) return;
+
+    const nextFacts = preserveFactAttribution(facts, current.facts ?? []);
+    const nextRules = preserveRuleAttribution(rules, current.rules ?? []);
+    const nextConstraints = preserveConstraintMetadata(constraints, current.constraints ?? []);
+
+    handle.change((nextDoc) => {
+      nextDoc.facts = nextFacts;
+      nextDoc.rules = nextRules;
+      nextDoc.constraints = nextConstraints;
+      delete nextDoc.draftText;
+    });
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if ((event.metaKey || event.ctrlKey) && event.key === 's') {
+      event.preventDefault();
+      handleSave();
+    }
+  }
+
+  function handleSelectStatement(statementId: string) {
+    setSelectedStatementId(statementId);
+    setIsAttributionPanelOpen(true);
+  }
+
+  if (!doc) {
+    return <div className="pg-loading">Loading…</div>;
+  }
+
+  return (
+    <div className="pg-root">
+      <div className="pg-tabs">
+        <div className="pg-tab-list">
+          <button
+            className={`pg-tab ${activeTab === 'source' ? 'pg-tab-active' : ''}`}
+            onClick={() => setActiveTab('source')}
+            type="button"
+          >
+            Source
+          </button>
+          <button
+            className={`pg-tab ${activeTab === 'derived' ? 'pg-tab-active' : ''}`}
+            onClick={() => setActiveTab('derived')}
+            type="button"
+          >
+            Derived Facts
+          </button>
+        </div>
+
+        <div className="pg-tab-actions">
+          {activeTab === 'source' && !hasDraft && (
+            <button className="pg-action-btn" onClick={handleStartEditing} type="button">
+              Edit
+            </button>
+          )}
+          {activeTab === 'source' && !hasDraft && (
+            <button
+              className={`pg-debug-toggle ${isAttributionPanelOpen ? 'pg-debug-toggle-active' : ''}`}
+              onClick={() => setIsAttributionPanelOpen((open) => !open)}
+              type="button"
+            >
+              {isAttributionPanelOpen ? 'Hide Sources' : 'Show Sources'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="pg-main">
+        <div className="pg-main-content">
+          {activeTab === 'source' &&
+            (hasDraft ? (
+              <div className="pg-editor-col">
+                <div className="pg-editor-wrapper">
+                  <textarea
+                    className="pg-textarea"
+                    value={currentText}
+                    onChange={handleTextChange}
+                    onKeyDown={handleKeyDown}
+                    spellCheck={false}
+                  />
+                  <button
+                    className={`pg-save-btn ${hasParseErrors ? 'pg-save-btn-disabled' : ''}`}
+                    disabled={hasParseErrors}
+                    onClick={handleSave}
+                    type="button"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <SourceReadPane
+                selectedStatementId={selectedStatementId}
+                statements={sourceStatements}
+                onSelectStatement={handleSelectStatement}
+              />
+            ))}
+
+          {activeTab === 'derived' && (
+            <div className="pg-derived">
+              <h2 className="pg-section-title">Derived Facts</h2>
+              <div className="pg-derived-scroll">
+                {grouped.size === 0 ? (
+                  <p className="pg-empty">No facts derived.</p>
+                ) : (
+                  Array.from(grouped.entries()).map(([pred, facts]) => (
+                    <div key={pred} className="pg-pred-group">
+                      <div className="pg-pred-name">{pred}</div>
+                      {facts.map((fact) => {
+                        const key = factKey(fact);
+                        const isBase = baseFacts.has(key);
+                        return (
+                          <DerivedFactRow
+                            key={key}
+                            baseIndex={factKeyToIndex.get(key) ?? -1}
+                            derivedIndex={derivedKeyToIndex.get(key) ?? -1}
+                            fact={key}
+                            handle={handle}
+                            isBase={isBase}
+                          />
+                        );
+                      })}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {activeTab === 'source' && !hasDraft && isAttributionPanelOpen && (
+          <AttributionDocumentPanel
+            attributedStatementCount={attributedStatementCount}
+            selectedStatement={selectedStatement}
+            totalRefs={attributionRefCount}
+            onClose={() => setIsAttributionPanelOpen(false)}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SourceReadPane({
+  selectedStatementId,
+  statements,
+  onSelectStatement,
+}: {
+  selectedStatementId: string | null;
+  statements: SourceStatement[];
+  onSelectStatement: (statementId: string) => void;
+}) {
+  const facts = statements.filter((statement) => statement.kind === 'fact');
+  const rules = statements.filter((statement) => statement.kind === 'rule');
+  const constraints = statements.filter((statement) => statement.kind === 'constraint');
+
+  return (
+    <div className="pg-source-read">
+      <div className="pg-source-read-header">
+        <div className="pg-source-read-title">Saved Statements</div>
+        <div className="pg-source-read-meta">
+          Click a fact, rule, or constraint to inspect its attributed source ranges.
+        </div>
+      </div>
+
+      <div className="pg-source-read-scroll">
+        {statements.length === 0 ? (
+          <p className="pg-empty">No saved Datalog statements.</p>
+        ) : (
+          <>
+            <SourceStatementSection
+              selectedStatementId={selectedStatementId}
+              statements={facts}
+              title="Facts"
+              onSelectStatement={onSelectStatement}
+            />
+            <SourceStatementSection
+              selectedStatementId={selectedStatementId}
+              statements={rules}
+              title="Rules"
+              onSelectStatement={onSelectStatement}
+            />
+            <SourceStatementSection
+              selectedStatementId={selectedStatementId}
+              statements={constraints}
+              title="Constraints"
+              onSelectStatement={onSelectStatement}
+            />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SourceStatementSection({
+  selectedStatementId,
+  statements,
+  title,
+  onSelectStatement,
+}: {
+  selectedStatementId: string | null;
+  statements: SourceStatement[];
+  title: string;
+  onSelectStatement: (statementId: string) => void;
+}) {
+  if (statements.length === 0) return null;
+
+  return (
+    <section className="pg-source-section">
+      <div className="pg-source-section-header">
+        <h2 className="pg-section-title">{title}</h2>
+        <span className="pg-source-section-count">{statements.length}</span>
+      </div>
+
+      <div className="pg-source-list">
+        {statements.map((statement) => {
+          const refCount = statement.attribution?.refs.length ?? 0;
+          const isSelected = selectedStatementId === statement.id;
+          return (
+            <button
+              key={statement.id}
+              className={`pg-source-statement ${isSelected ? 'pg-source-statement-selected' : ''}`}
+              onClick={() => onSelectStatement(statement.id)}
+              type="button"
+            >
+              <div className="pg-source-statement-header">
+                <span className={`pg-attribution-kind pg-attribution-kind-${statement.kind}`}>{statement.kind}</span>
+                <span className={`pg-source-ref-badge ${refCount === 0 ? 'pg-source-ref-badge-empty' : ''}`}>
+                  {refCount === 0 ? 'No attribution' : `${refCount} refs`}
+                </span>
+              </div>
+              <pre className="pg-source-summary">{statement.summary}</pre>
+              {statement.comment && <div className="pg-source-comment">// {statement.comment}</div>}
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function AttributionDocumentPanel({
+  attributedStatementCount,
+  selectedStatement,
+  totalRefs,
+  onClose,
+}: {
+  attributedStatementCount: number;
+  selectedStatement: SourceStatement | null;
+  totalRefs: number;
+  onClose: () => void;
+}) {
+  const repo = useRepo();
+  const [documents, setDocuments] = useState<ReferencedDocument[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadReferencedDocuments() {
+      const refs = selectedStatement?.attribution?.refs ?? [];
+      if (refs.length === 0) {
+        setDocuments([]);
+        return;
+      }
+
+      const groupedDocuments = groupStatementRefsByDocument(refs);
+      const nextDocuments = await Promise.all(
+        groupedDocuments.map(async (document) => {
+          try {
+            const handle = await repo.find(document.docUrl);
+            await handle.whenReady();
+            return { ...document, handle };
+          } catch (error) {
+            return {
+              ...document,
+              error: error instanceof Error ? error.message : String(error),
+            };
+          }
+        }),
+      );
+
+      if (!cancelled) {
+        setDocuments(nextDocuments);
+      }
+    }
+
+    void loadReferencedDocuments();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [repo, selectedStatement]);
+
+  useEffect(() => {
+    const cleanupFns: Array<() => void> = [];
+
+    for (const document of documents) {
+      if (!document.handle) continue;
+      for (const rangeRef of document.refs) {
+        cleanupFns.push(addHighlightStyle(document.handle, rangeRef.path, rangeRef.from, rangeRef.to));
+      }
+    }
+
+    return () => {
+      for (const cleanup of cleanupFns) {
+        cleanup();
+      }
+    };
+  }, [documents]);
+
+  const selectedRefCount = selectedStatement?.attribution?.refs.length ?? 0;
+
+  return (
+    <aside className="pg-attribution-panel">
+      <div className="pg-attribution-panel-header">
+        <div>
+          <div className="pg-attribution-panel-title">Source Documents</div>
+          <div className="pg-attribution-panel-meta">
+            {attributedStatementCount} attributed statements, {totalRefs} refs
+          </div>
+        </div>
+        <button className="pg-attribution-close" onClick={onClose} type="button">
+          Close
+        </button>
+      </div>
+
+      <div className="pg-attribution-scroll">
+        {!selectedStatement ? (
+          <p className="pg-empty">Select a saved statement to highlight its supporting source text.</p>
+        ) : (
+          <>
+            <div className="pg-attribution-selection">
+              <div className="pg-attribution-selection-header">
+                <span className={`pg-attribution-kind pg-attribution-kind-${selectedStatement.kind}`}>
+                  {selectedStatement.kind}
+                </span>
+                <span className="pg-attribution-ref-count">{selectedRefCount} refs</span>
+              </div>
+              <pre className="pg-attribution-summary">{selectedStatement.summary}</pre>
+              {selectedStatement.comment && (
+                <div className="pg-attribution-comment">// {selectedStatement.comment}</div>
+              )}
+            </div>
+
+            {selectedRefCount === 0 ? (
+              <p className="pg-empty">This statement does not have saved attribution yet.</p>
+            ) : documents.length === 0 ? (
+              <p className="pg-empty">Loading referenced documents…</p>
+            ) : (
+              documents.map((document) => <SourceDocumentCard key={document.docUrl} document={document} />)
+            )}
+          </>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+function SourceDocumentCard({ document }: { document: ReferencedDocument }) {
+  return (
+    <section className="pg-attribution-doc-card">
+      <div className="pg-attribution-doc-header">
+        <div className="pg-attribution-doc-title">Document</div>
+        <div className="pg-attribution-doc-meta">
+          {document.refs.length} refs across {document.paths.length} path{document.paths.length === 1 ? '' : 's'}
+        </div>
+      </div>
+
+      <code className="pg-attribution-doc-url">{document.docUrl}</code>
+      <div className="pg-attribution-doc-paths">
+        {document.paths.map((path) => (
+          <span key={path} className="pg-attribution-doc-path">
+            {path}
+          </span>
+        ))}
+      </div>
+
+      {document.error ? (
+        <div className="pg-attribution-preview-error">{document.error}</div>
+      ) : (
+        <patchwork-view className="pg-attribution-doc-view" doc-url={document.docUrl} tool-id="codemirror-base" />
+      )}
+    </section>
+  );
+}
+
+function DerivedFactRow({
+  baseIndex,
+  derivedIndex,
+  fact,
+  handle,
+  isBase,
+}: {
+  baseIndex: number;
+  derivedIndex: number;
+  fact: string;
+  handle: DocHandle<DatalogDoc>;
+  isBase: boolean;
+}) {
+  const baseDiff = useDiffType(handle, 'facts', baseIndex);
+  const derivedDiff = useDiffType(handle, 'derivedFacts', derivedIndex);
+  const diffType = isBase ? baseDiff : derivedDiff;
+  const diffClass = diffType ? `pg-diff-${diffType}` : '';
+  const kindClass = isBase ? 'pg-fact-base' : 'pg-fact-derived';
+  return <div className={`pg-fact ${kindClass} ${diffClass}`}>{fact}</div>;
+}
+
+function useDiffType(
+  handle: DocHandle<DatalogDoc>,
+  collection: string,
+  index: number,
+): string | undefined {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const itemRef = useMemo(() => ref(handle as any, collection, index), [collection, handle, index]);
+  const subscribable = useMemo(() => annotations.onRef(itemRef as Ref), [itemRef]);
+  const itemAnnotations = useSubscribe(subscribable);
+  return itemAnnotations?.lookup(Diff)?.type;
+}
 
 function programText(doc: DatalogDoc): string {
   const facts = serializeFacts(doc.facts ?? []);
@@ -97,405 +692,11 @@ function cloneAttribution(attribution?: StoredAttribution): StoredAttribution | 
   };
 }
 
-type ViewTab = 'source' | 'derived';
-type AttributionStatementKind = 'fact' | 'rule' | 'constraint';
-type AttributionEntry = {
-  id: string;
-  kind: AttributionStatementKind;
-  summary: string;
-  comment?: string;
-  attribution: StoredAttribution;
-};
-
-type AttributionPreview = {
-  from: number;
-  to: number;
-  excerpt: string;
-};
-
-function DatalogViewer({
-  docUrl,
-  handle,
-}: {
-  docUrl: AutomergeUrl;
-  handle: DocHandle<DatalogDoc>;
-}) {
-  const [doc] = useDocument<DatalogDoc>(docUrl);
-  const [activeTab, setActiveTab] = useState<ViewTab>('source');
-  const [isAttributionPanelOpen, setIsAttributionPanelOpen] = useState(false);
-
-  const hasDraft = doc?.draftText != null;
-  const currentText = hasDraft ? doc!.draftText! : (doc ? programText(doc) : '');
-
-  const { facts: parsedFacts, rules: parsedRules } = useMemo(
-    () => (hasDraft ? parseProgram(doc!.draftText!) : { facts: [], rules: [] }),
-    [hasDraft, doc],
-  );
-
-  const { derivedFacts, baseFacts } = useMemo(() => {
-    const facts = hasDraft ? parsedFacts : (doc?.facts ?? []);
-    const rules = hasDraft ? parsedRules : (doc?.rules ?? []);
-    const baseFactKeys = new Set(facts.map(factKey));
-    let db: StoredFact[] = facts;
-    try {
-      ({ db } = evaluateWithProvenance(facts, rules));
-    } catch {
-      db = facts;
-    }
-    return {
-      derivedFacts: db,
-      baseFacts: baseFactKeys,
-    };
-  }, [doc, hasDraft, parsedFacts, parsedRules]);
-
-  const derivedOnlyFacts = useMemo(
-    () => derivedFacts.filter((f) => !baseFacts.has(factKey(f))),
-    [derivedFacts, baseFacts],
-  );
-
-  useEffect(() => {
-    if (hasDraft) return;
-    const newKeySet = new Set(derivedOnlyFacts.map(factKey));
-    const stored = handle.doc()?.derivedFacts ?? [];
-    const existingKeySet = new Set(stored.map(factKey));
-
-    const same = newKeySet.size === existingKeySet.size && [...newKeySet].every((k) => existingKeySet.has(k));
-    if (same) return;
-
-    handle.change((d) => {
-      if (!d.derivedFacts) d.derivedFacts = [];
-      for (let i = d.derivedFacts.length - 1; i >= 0; i--) {
-        if (!newKeySet.has(factKey(d.derivedFacts[i]))) {
-          d.derivedFacts.splice(i, 1);
-        }
-      }
-      const remaining = new Set(d.derivedFacts.map(factKey));
-      for (const f of derivedOnlyFacts) {
-        if (!remaining.has(factKey(f))) {
-          d.derivedFacts.push({ pred: f.pred, args: [...f.args] });
-        }
-      }
-    });
-  }, [derivedOnlyFacts, hasDraft, handle]);
-
-  const grouped = useMemo(() => {
-    const map = new Map<string, StoredFact[]>();
-    for (const f of derivedFacts) {
-      if (!map.has(f.pred)) map.set(f.pred, []);
-      map.get(f.pred)!.push(f);
-    }
-    return map;
-  }, [derivedFacts]);
-
-  const factKeyToIndex = useMemo(() => {
-    const map = new Map<string, number>();
-    for (let i = 0; i < (doc?.facts ?? []).length; i++) {
-      map.set(factKey((doc?.facts ?? [])[i]), i);
-    }
-    return map;
-  }, [doc]);
-
-  const derivedKeyToIndex = useMemo(() => {
-    const map = new Map<string, number>();
-    for (let i = 0; i < (doc?.derivedFacts ?? []).length; i++) {
-      map.set(factKey((doc?.derivedFacts ?? [])[i]), i);
-    }
-    return map;
-  }, [doc]);
-
-  const hasParseErrors = useMemo(() => {
-    if (!hasDraft) return false;
-    return parseProgram(doc!.draftText!).errors.length > 0;
-  }, [hasDraft, doc]);
-
-  const attributionEntries = useMemo(() => {
-    if (!doc) return [];
-    return listAttributionEntries(doc);
-  }, [doc]);
-
-  const attributionRefCount = useMemo(
-    () => attributionEntries.reduce((total, entry) => total + entry.attribution.refs.length, 0),
-    [attributionEntries],
-  );
-
-  function handleTextChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    const newValue = e.target.value;
-    const current = handle.doc();
-    if (!current) return;
-
-    handle.change((d) => {
-      if (d.draftText == null) {
-        d.draftText = programText(current);
-      }
-      Automerge.updateText(d, ['draftText'], newValue);
-    });
-  }
-
-  function handleSave() {
-    const current = handle.doc();
-    if (!current || current.draftText == null) return;
-    const { facts, rules, constraints, errors } = parseProgram(current.draftText);
-    if (errors.length > 0) return;
-    const nextFacts = preserveFactAttribution(facts, current.facts ?? []);
-    const nextRules = preserveRuleAttribution(rules, current.rules ?? []);
-    const nextConstraints = preserveConstraintMetadata(constraints, current.constraints ?? []);
-    handle.change((d) => {
-      d.facts = nextFacts;
-      d.rules = nextRules;
-      d.constraints = nextConstraints;
-      delete d.draftText;
-    });
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-      e.preventDefault();
-      handleSave();
-    }
-  }
-
-  if (!doc) {
-    return <div className="pg-loading">Loading…</div>;
-  }
-
-  return (
-    <div className="pg-root">
-      <div className="pg-tabs">
-        <div className="pg-tab-list">
-          <button
-            className={`pg-tab ${activeTab === 'source' ? 'pg-tab-active' : ''}`}
-            onClick={() => setActiveTab('source')}
-          >
-            Source
-          </button>
-          <button
-            className={`pg-tab ${activeTab === 'derived' ? 'pg-tab-active' : ''}`}
-            onClick={() => setActiveTab('derived')}
-          >
-            Derived Facts
-          </button>
-        </div>
-        <button
-          className={`pg-debug-toggle ${isAttributionPanelOpen ? 'pg-debug-toggle-active' : ''}`}
-          onClick={() => setIsAttributionPanelOpen((open) => !open)}
-        >
-          {isAttributionPanelOpen ? 'Hide Attribution' : 'Show Attribution'}
-        </button>
-      </div>
-
-      <div className="pg-main">
-        <div className="pg-main-content">
-          {activeTab === 'source' && (
-            <div className="pg-editor-col">
-              <div className="pg-editor-wrapper">
-                <textarea
-                  className="pg-textarea"
-                  value={currentText}
-                  onChange={handleTextChange}
-                  onKeyDown={handleKeyDown}
-                  spellCheck={false}
-                />
-                {hasDraft && (
-                  <button
-                    className={`pg-save-btn ${hasParseErrors ? 'pg-save-btn-disabled' : ''}`}
-                    disabled={hasParseErrors}
-                    onClick={handleSave}
-                  >
-                    Save
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'derived' && (
-            <div className="pg-derived">
-              <h2 className="pg-section-title">Derived Facts</h2>
-              <div className="pg-derived-scroll">
-                {grouped.size === 0 ? (
-                  <p className="pg-empty">No facts derived.</p>
-                ) : (
-                  Array.from(grouped.entries()).map(([pred, facts]) => (
-                    <div key={pred} className="pg-pred-group">
-                      <div className="pg-pred-name">{pred}</div>
-                      {facts.map((f) => {
-                        const key = factKey(f);
-                        const isBase = baseFacts.has(key);
-                        return (
-                          <DerivedFactRow
-                            key={key}
-                            handle={handle}
-                            fact={key}
-                            isBase={isBase}
-                            baseIndex={factKeyToIndex.get(key) ?? -1}
-                            derivedIndex={derivedKeyToIndex.get(key) ?? -1}
-                          />
-                        );
-                      })}
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {isAttributionPanelOpen && (
-          <AttributionDebugPanel
-            entries={attributionEntries}
-            hasDraft={hasDraft}
-            totalRefs={attributionRefCount}
-            onClose={() => setIsAttributionPanelOpen(false)}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function AttributionDebugPanel({
-  entries,
-  hasDraft,
-  totalRefs,
-  onClose,
-}: {
-  entries: AttributionEntry[];
-  hasDraft: boolean;
-  totalRefs: number;
-  onClose: () => void;
-}) {
-  const repo = useRepo();
-  const [docsByUrl, setDocsByUrl] = useState<Record<string, unknown>>({});
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadReferencedDocs() {
-      const urls = [...new Set(entries.flatMap((entry) => entry.attribution.refs.map((rangeRef) => rangeRef.docUrl)))];
-      const nextDocsByUrl: Record<string, unknown> = {};
-      for (const url of urls) {
-        try {
-          const handle = await repo.find(url as AutomergeUrl);
-          nextDocsByUrl[url] = handle.doc();
-        } catch (error) {
-          nextDocsByUrl[url] = error instanceof Error ? error : new Error(String(error));
-        }
-      }
-
-      if (!cancelled) {
-        setDocsByUrl(nextDocsByUrl);
-      }
-    }
-
-    loadReferencedDocs();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [entries, repo]);
-
-  return (
-    <aside className="pg-attribution-panel">
-      <div className="pg-attribution-panel-header">
-        <div>
-          <div className="pg-attribution-panel-title">Attribution Debug</div>
-          <div className="pg-attribution-panel-meta">
-            {entries.length} attributed statements, {totalRefs} refs
-          </div>
-        </div>
-        <button className="pg-attribution-close" onClick={onClose}>
-          Close
-        </button>
-      </div>
-
-      {hasDraft && (
-        <div className="pg-attribution-banner">
-          Showing attribution from the saved structured statements. Save the draft to refresh this panel.
-        </div>
-      )}
-
-      <div className="pg-attribution-scroll">
-        {entries.length === 0 ? (
-          <p className="pg-empty">No statement attribution stored in this document.</p>
-        ) : (
-          entries.map((entry) => (
-            <div key={entry.id} className="pg-attribution-entry">
-              <div className="pg-attribution-entry-header">
-                <span className={`pg-attribution-kind pg-attribution-kind-${entry.kind}`}>{entry.kind}</span>
-                <span className="pg-attribution-ref-count">{entry.attribution.refs.length} refs</span>
-              </div>
-              <pre className="pg-attribution-summary">{entry.summary}</pre>
-              {entry.comment && <div className="pg-attribution-comment">// {entry.comment}</div>}
-              <div className="pg-attribution-ref-list">
-                {entry.attribution.refs.map((rangeRef, index) => (
-                  <div key={`${entry.id}-${index}`} className="pg-attribution-ref">
-                    {renderAttributionPreview(docsByUrl[rangeRef.docUrl], rangeRef.path, rangeRef.from, rangeRef.to)}
-                    <div className="pg-attribution-ref-row">
-                      <span className="pg-attribution-label">doc</span>
-                      <code>{rangeRef.docUrl}</code>
-                    </div>
-                    <div className="pg-attribution-ref-row">
-                      <span className="pg-attribution-label">path</span>
-                      <code>{formatPath(rangeRef.path)}</code>
-                    </div>
-                    <div className="pg-attribution-ref-row">
-                      <span className="pg-attribution-label">from</span>
-                      <code>{formatDebugValue(rangeRef.from)}</code>
-                    </div>
-                    <div className="pg-attribution-ref-row">
-                      <span className="pg-attribution-label">to</span>
-                      <code>{formatDebugValue(rangeRef.to)}</code>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </aside>
-  );
-}
-
-function DerivedFactRow({
-  handle,
-  fact,
-  isBase,
-  baseIndex,
-  derivedIndex,
-}: {
-  handle: DocHandle<DatalogDoc>;
-  fact: string;
-  isBase: boolean;
-  baseIndex: number;
-  derivedIndex: number;
-}) {
-  const baseDiff = useDiffType(handle, 'facts', baseIndex);
-  const derivedDiff = useDiffType(handle, 'derivedFacts', derivedIndex);
-  const diffType = isBase ? baseDiff : derivedDiff;
-  const diffClass = diffType ? `pg-diff-${diffType}` : '';
-  const kindClass = isBase ? 'pg-fact-base' : 'pg-fact-derived';
-  return <div className={`pg-fact ${kindClass} ${diffClass}`}>{fact}</div>;
-}
-
-function useDiffType(
-  handle: DocHandle<DatalogDoc>,
-  collection: string,
-  index: number,
-): string | undefined {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const itemRef = useMemo(() => ref(handle as any, collection, index), [handle, collection, index]);
-  const subscribable = useMemo(() => annotations.onRef(itemRef as Ref), [itemRef]);
-  const itemAnnotations = useSubscribe(subscribable);
-  return itemAnnotations?.lookup(Diff)?.type;
-}
-
-function listAttributionEntries(doc: DatalogDoc): AttributionEntry[] {
-  const entries: AttributionEntry[] = [];
+function listSourceStatements(doc: DatalogDoc): SourceStatement[] {
+  const statements: SourceStatement[] = [];
 
   for (const fact of doc.facts ?? []) {
-    if (!fact.attribution?.refs?.length) continue;
-    entries.push({
+    statements.push({
       id: `fact:${factKey(fact)}`,
       kind: 'fact',
       summary: serializeFact({ pred: fact.pred, args: fact.args }),
@@ -505,8 +706,7 @@ function listAttributionEntries(doc: DatalogDoc): AttributionEntry[] {
   }
 
   for (const rule of doc.rules ?? []) {
-    if (!rule.attribution?.refs?.length) continue;
-    entries.push({
+    statements.push({
       id: `rule:${ruleKey(rule)}`,
       kind: 'rule',
       summary: serializeRule({ head: rule.head, body: rule.body }),
@@ -516,8 +716,7 @@ function listAttributionEntries(doc: DatalogDoc): AttributionEntry[] {
   }
 
   for (const constraint of doc.constraints ?? []) {
-    if (!constraint.attribution?.refs?.length) continue;
-    entries.push({
+    statements.push({
       id: `constraint:${constraint.name ?? constraintKey(constraint)}`,
       kind: 'constraint',
       summary: serializeConstraint({ body: constraint.body }),
@@ -526,96 +725,37 @@ function listAttributionEntries(doc: DatalogDoc): AttributionEntry[] {
     });
   }
 
-  return entries;
+  return statements;
+}
+
+function hasStatementAttribution(statement: SourceStatement): boolean {
+  return (statement.attribution?.refs.length ?? 0) > 0;
+}
+
+function groupStatementRefsByDocument(refs: StoredTextRangeRef[]): ReferencedDocument[] {
+  const documents = new Map<AutomergeUrl, ReferencedDocument>();
+
+  for (const rangeRef of refs) {
+    const existing = documents.get(rangeRef.docUrl);
+    const path = formatPath(rangeRef.path);
+    if (existing) {
+      existing.refs.push(rangeRef);
+      if (!existing.paths.includes(path)) {
+        existing.paths.push(path);
+      }
+      continue;
+    }
+
+    documents.set(rangeRef.docUrl, {
+      docUrl: rangeRef.docUrl,
+      refs: [rangeRef],
+      paths: [path],
+    });
+  }
+
+  return [...documents.values()];
 }
 
 function formatPath(path: Array<string | number>): string {
   return path.map((segment) => (typeof segment === 'number' ? `[${segment}]` : segment)).join('.');
-}
-
-function formatDebugValue(value: unknown): string {
-  if (typeof value === 'string') return value;
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
-}
-
-function renderAttributionPreview(
-  doc: unknown,
-  path: Array<string | number>,
-  from: unknown,
-  to: unknown,
-) {
-  const resolved = resolveAttributionPreview(doc, path, from, to);
-  if ('error' in resolved) {
-    return <div className="pg-attribution-preview-error">{resolved.error}</div>;
-  }
-
-  return (
-    <div className="pg-attribution-preview">
-      <div className="pg-attribution-preview-header">
-        Preview <code>{resolved.from}:{resolved.to}</code>
-      </div>
-      <pre className="pg-attribution-preview-text">{resolved.excerpt}</pre>
-    </div>
-  );
-}
-
-function resolveAttributionPreview(
-  doc: unknown,
-  path: Array<string | number>,
-  from: unknown,
-  to: unknown,
-): AttributionPreview | { error: string } {
-  if (doc instanceof Error) {
-    return { error: doc.message };
-  }
-  if (doc == null) {
-    return { error: 'Referenced document is not loaded yet.' };
-  }
-
-  const text = resolveValueAtPath(doc, path);
-  if (typeof text !== 'string' && !(text instanceof String)) {
-    return { error: `Path ${formatPath(path)} does not resolve to text.` };
-  }
-
-  try {
-    const start = Automerge.getCursorPosition(doc, path, from as any);
-    const end = Automerge.getCursorPosition(doc, path, to as any);
-    const normalizedFrom = Math.min(start, end);
-    const normalizedTo = Math.max(start, end);
-
-    return {
-      from: normalizedFrom,
-      to: normalizedTo,
-      excerpt: buildPreviewExcerpt(String(text), normalizedFrom, normalizedTo),
-    };
-  } catch (error) {
-    return {
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-}
-
-function resolveValueAtPath(root: unknown, path: Array<string | number>): unknown {
-  let current: any = root;
-  for (const segment of path) {
-    if (current == null) return undefined;
-    current = current[segment];
-  }
-  return current;
-}
-
-function buildPreviewExcerpt(text: string, from: number, to: number): string {
-  const contextChars = 40;
-  const excerptStart = Math.max(0, from - contextChars);
-  const excerptEnd = Math.min(text.length, to + contextChars);
-  const prefix = excerptStart > 0 ? '...' : '';
-  const suffix = excerptEnd < text.length ? '...' : '';
-  const before = text.slice(excerptStart, from);
-  const selected = text.slice(from, to);
-  const after = text.slice(to, excerptEnd);
-  return `${prefix}${before}[${selected}]${after}${suffix}`;
 }

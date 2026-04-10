@@ -35,6 +35,12 @@
     gap: 4px;
   }
 
+  .pg-tab-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
   .pg-tab {
     padding: 5px 14px;
     font-size: 13px;
@@ -64,6 +70,7 @@
     background: #fff;
   }
 
+  .pg-action-btn,
   .pg-debug-toggle {
     padding: 5px 10px;
     font-size: 12px;
@@ -77,6 +84,7 @@
     transition: all 0.15s ease;
   }
 
+  .pg-action-btn:hover,
   .pg-debug-toggle:hover {
     color: #0f172a;
     border-color: #94a3b8;
@@ -164,6 +172,121 @@
     cursor: not-allowed;
   }
 
+  .pg-source-read {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    background: #fff;
+  }
+
+  .pg-source-read-header {
+    padding: 12px 14px 10px;
+    border-bottom: 1px solid var(--color-border, #e2e8f0);
+    background: #fff;
+  }
+
+  .pg-source-read-title {
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: #0f172a;
+  }
+
+  .pg-source-read-meta {
+    margin-top: 4px;
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #64748b;
+  }
+
+  .pg-source-read-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 14px;
+  }
+
+  .pg-source-section + .pg-source-section {
+    margin-top: 18px;
+  }
+
+  .pg-source-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .pg-source-section-count {
+    color: #64748b;
+    font-size: 11px;
+  }
+
+  .pg-source-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .pg-source-statement {
+    width: 100%;
+    padding: 10px 12px;
+    text-align: left;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #fff;
+    cursor: pointer;
+    transition:
+      border-color 0.15s ease,
+      box-shadow 0.15s ease,
+      background 0.15s ease;
+  }
+
+  .pg-source-statement:hover {
+    border-color: #93c5fd;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  }
+
+  .pg-source-statement-selected {
+    border-color: #2563eb;
+    background: #eff6ff;
+    box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.12);
+  }
+
+  .pg-source-statement-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .pg-source-ref-badge {
+    color: #475569;
+    font-size: 11px;
+  }
+
+  .pg-source-ref-badge-empty {
+    color: #94a3b8;
+  }
+
+  .pg-source-summary {
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: #0f172a;
+    line-height: 1.5;
+  }
+
+  .pg-source-comment {
+    margin-top: 8px;
+    color: #475569;
+    line-height: 1.5;
+  }
+
   .pg-section-title {
     font-size: 10px;
     font-weight: 600;
@@ -241,9 +364,9 @@
   }
 
   .pg-attribution-panel {
-    width: 340px;
-    min-width: 280px;
-    max-width: 40%;
+    width: min(52%, 720px);
+    min-width: 340px;
+    max-width: 60%;
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -307,20 +430,82 @@
     padding: 10px 12px 12px;
   }
 
-  .pg-attribution-entry {
-    margin-bottom: 10px;
+  .pg-attribution-selection {
+    margin-bottom: 12px;
+    padding: 10px;
+    border: 1px solid #dbeafe;
+    border-radius: 10px;
+    background: #eff6ff;
+  }
+
+  .pg-attribution-selection-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .pg-attribution-doc-card {
+    margin-bottom: 12px;
     padding: 10px;
     border: 1px solid #e2e8f0;
     border-radius: 10px;
     background: #fff;
   }
 
-  .pg-attribution-entry-header {
+  .pg-attribution-doc-header {
     display: flex;
-    align-items: center;
+    align-items: baseline;
     justify-content: space-between;
-    gap: 8px;
+    gap: 12px;
     margin-bottom: 8px;
+  }
+
+  .pg-attribution-doc-title {
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    color: #0f172a;
+  }
+
+  .pg-attribution-doc-meta {
+    color: #64748b;
+    font-size: 11px;
+  }
+
+  .pg-attribution-doc-url {
+    display: block;
+    margin-bottom: 8px;
+    overflow-wrap: anywhere;
+    color: #1e293b;
+  }
+
+  .pg-attribution-doc-paths {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+
+  .pg-attribution-doc-path {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #334155;
+    font-size: 11px;
+  }
+
+  .pg-attribution-doc-view {
+    display: block;
+    width: 100%;
+    min-height: 280px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fff;
   }
 
   .pg-attribution-kind {
@@ -369,75 +554,13 @@
     line-height: 1.5;
   }
 
-  .pg-attribution-ref-list {
-    margin-top: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .pg-attribution-ref {
-    padding: 8px;
-    border-radius: 8px;
-    background: #f8fafc;
-  }
-
-  .pg-attribution-preview {
-    margin-bottom: 8px;
-    padding: 8px;
-    border-radius: 8px;
-    background: #eef2ff;
-    border: 1px solid #c7d2fe;
-  }
-
-  .pg-attribution-preview-header {
-    margin-bottom: 6px;
-    color: #4338ca;
-    font-size: 11px;
-    font-weight: 600;
-  }
-
-  .pg-attribution-preview-text {
-    margin: 0;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    color: #1e1b4b;
-    line-height: 1.5;
-  }
-
   .pg-attribution-preview-error {
-    margin-bottom: 8px;
     padding: 8px;
     border-radius: 8px;
     background: #fef2f2;
     border: 1px solid #fecaca;
     color: #991b1b;
     line-height: 1.5;
-  }
-
-  .pg-attribution-ref-row {
-    display: flex;
-    gap: 8px;
-    margin-top: 4px;
-    overflow: hidden;
-  }
-
-  .pg-attribution-ref-row:first-child {
-    margin-top: 0;
-  }
-
-  .pg-attribution-label {
-    width: 34px;
-    flex-shrink: 0;
-    color: #64748b;
-    text-transform: uppercase;
-    font-size: 10px;
-    letter-spacing: 0.04em;
-  }
-
-  .pg-attribution-ref-row code {
-    overflow-wrap: anywhere;
-    color: #0f172a;
   }
 
 }
