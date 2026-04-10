@@ -49,6 +49,13 @@ function serializeConstant(c: Constant): string {
 }
 
 function serializeAtom(a: StoredAtom): string {
+  if (a.pred === 'not' && a.args.length === 1) {
+    const inner = a.args[0];
+    if (typeof inner === 'object' && inner !== null) {
+      return `not(${serializeAtom(inner as unknown as StoredAtom)})`;
+    }
+    return `not(${inner})`;
+  }
   if (a.args.length === 0) return a.pred;
   return `${a.pred}(${a.args.join(', ')})`;
 }
@@ -151,7 +158,10 @@ Datalog {
   Fact        = Atom
 
   BodyLit     = SumLit
+              | NotLit
               | Atom
+
+  NotLit      = "not" Atom
 
   SumLit      = "sum" "(" Term "," Atom "," Term ")"
 
@@ -164,7 +174,7 @@ Datalog {
               | ident    -- name
 
   ident       = ~reserved letter (alnum | "_")*
-  reserved    = "sum" ~(alnum | "_")
+  reserved    = ("sum" | "not") ~(alnum | "_")
 
   string      = "\"" (~"\"" any)* "\""
 
@@ -253,6 +263,11 @@ semantics.addOperation<any>('toAST', {
   // BodyLit = SumLit | Atom  → arity 1 (non-inline alternation)
   BodyLit(child) {
     return child.toAST();
+  },
+
+  NotLit(_not, atom) {
+    const inner: StoredAtom = atom.toAST();
+    return { pred: 'not', args: [inner] } as unknown as StoredAtom;
   },
 
   SumLit(_, _lp, aggVar, _c1, pattern, _c2, outVar, _rp) {
@@ -582,6 +597,21 @@ function ipContains(inner: string, outer: string): boolean {
 
 const SIMPLE_BUILTINS = new Set(['lt', 'lte', 'gt', 'gte', 'eq', 'neq', 'add', 'sub', 'mul', 'div', 'ip_in']);
 
+function resolveNotArg(arg: unknown, bindings: Bindings): StoredAtom | null {
+  if (typeof arg === 'object' && arg !== null && 'pred' in arg) {
+    return arg as StoredAtom;
+  }
+  if (typeof arg === 'string') {
+    // Substitute bound variables in the string before parsing
+    let s = arg;
+    for (const [k, v] of bindings) {
+      s = s.replace(new RegExp(`\\b${k}\\b`, 'g'), String(v));
+    }
+    return parseAtom(s);
+  }
+  return null;
+}
+
 function matchBody(body: StoredAtom[], db: StoredFact[], bindings: Bindings): Bindings[] {
   if (body.length === 0) return [bindings];
   const [first, ...rest] = body;
@@ -600,6 +630,15 @@ function matchBody(body: StoredAtom[], db: StoredFact[], bindings: Bindings): Bi
     const b = evalBuiltin(first, bindings);
     if (b === null) return [];
     return matchBody(rest, db, b);
+  }
+
+  // negation-as-failure
+  if (first.pred === 'not' && first.args.length === 1) {
+    const innerAtom = resolveNotArg(first.args[0], bindings);
+    if (!innerAtom) return [];
+    const hasMatch = db.some(fact => matchAtom(innerAtom, fact, bindings) !== null);
+    if (hasMatch) return [];
+    return matchBody(rest, db, bindings);
   }
 
   // regular DB lookup
@@ -686,6 +725,15 @@ function matchBodyTracked(
     };
     const step: GroundBodyStep = { kind: 'builtin', atom: first, resolvedArgs: first.args.map(resolve) };
     return matchBodyTracked(rest, db, b, [...steps, step]);
+  }
+
+  // negation-as-failure
+  if (first.pred === 'not' && first.args.length === 1) {
+    const innerAtom = resolveNotArg(first.args[0], bindings);
+    if (!innerAtom) return [];
+    const hasMatch = db.some(fact => matchAtom(innerAtom, fact, bindings) !== null);
+    if (hasMatch) return [];
+    return matchBodyTracked(rest, db, bindings, steps);
   }
 
   // regular DB lookup

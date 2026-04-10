@@ -51,6 +51,13 @@ function constraintKey(c) {
   return `:- ${c.body.map(serializeAtom).join(', ')}`;
 }
 
+function copyAtom(a) {
+  if (a.pred === 'not' && a.args.length === 1 && typeof a.args[0] === 'object' && a.args[0] !== null) {
+    return { pred: 'not', args: [copyAtom(a.args[0])] };
+  }
+  return { pred: a.pred, args: [...a.args] };
+}
+
 /**
  * Parse a simple atom string like "pred(arg1, arg2)" or "pred".
  * Used by the sum aggregation evaluator.
@@ -491,7 +498,7 @@ export class DocDatalog extends Datalog {
       if (!exists) {
         d.rules.push({
           head: { pred: rule.head.pred, args: [...rule.head.args] },
-          body: rule.body.map((a) => ({ pred: a.pred, args: [...a.args] })),
+          body: rule.body.map(copyAtom),
         });
       }
     });
@@ -512,7 +519,7 @@ export class DocDatalog extends Datalog {
       if (!exists) {
         d.constraints.push({
           name,
-          body: constraint.body.map((a) => ({ pred: a.pred, args: [...a.args] })),
+          body: constraint.body.map(copyAtom),
         });
       }
     });
