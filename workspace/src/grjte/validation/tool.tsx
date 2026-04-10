@@ -4,19 +4,13 @@ import {
   Show,
   createEffect,
   createMemo,
-  createResource,
   createSignal,
   onCleanup,
-  on,
-  untrack,
 } from 'solid-js';
 import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primitives';
 import type { ToolRender, ToolElement } from '@inkandswitch/patchwork-plugins';
-import type {
-  DocHandle,
-  AutomergeUrl,
-  DocHandle as RepoDocHandle,
-} from '@automerge/automerge-repo';
+import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
+import { getHeads, type Heads } from '@automerge/automerge';
 import type { ValidationDoc } from '../../workflow/types';
 import type { TaskListExecutionDoc } from '../execution/types';
 import type {
@@ -28,14 +22,12 @@ import type {
 import { evaluateVerification } from '../verification/model';
 import type { ConstraintViolation } from '../verification/datalog-eval';
 import {
-  applyCsvToDatalogArtifact,
-  getArtifactSyncSignature,
-  projectDatalogArtifactToCsv,
+  deriveConstraintAnnotationsForArtifact,
+  expandArtifactDocForVerification,
   type ArtifactSheetAnnotation,
   type ArtifactFolderEntry,
-  type CsvDoc,
-} from './csv-sync';
-import { deriveConstraintAnnotationsForArtifact } from './artifact-annotations';
+  type ProjectionDoc,
+} from '../artifact-projection';
 import {
   flattenSpecTree,
   getArtifactsForNode,
@@ -80,6 +72,7 @@ function ValidationView(props: { handle: DocHandle<ValidationDoc>; element: Tool
   const [execution] = useDocument<TaskListExecutionDoc>(() => doc()?.executionDocUrl);
   const [folder] = useDocument<FolderDoc>(() => execution()?.artifactsFolderUrl);
   const [expandedArtifacts, setExpandedArtifacts] = createSignal<AutomergeUrl[]>([]);
+  const [liveHeadsByDocUrl, setLiveHeadsByDocUrl] = createSignal<Record<AutomergeUrl, Heads>>({});
 
   function toggleArtifact(url: AutomergeUrl) {
     setExpandedArtifacts((current) =>
@@ -93,7 +86,10 @@ function ValidationView(props: { handle: DocHandle<ValidationDoc>; element: Tool
 
   function handleApprove() {
     props.handle.change((d) => {
-      d.isValidated = true;
+      d.approval = {
+        status: 'approved',
+        headsByDocUrl: cloneHeadsByDocUrl(liveHeadsByDocUrl()),
+      };
     });
   }
 
@@ -113,8 +109,11 @@ function ValidationView(props: { handle: DocHandle<ValidationDoc>; element: Tool
         {(currentDoc) => (
           <>
             <div class="validation-header">
-              <div class="validation-status" classList={{ validated: currentDoc().isValidated }}>
-                {currentDoc().isValidated ? 'Approved' : 'Pending'}
+              <div
+                class="validation-status"
+                classList={{ validated: currentDoc().approval.status === 'approved' }}
+              >
+                {formatApprovalStatus(currentDoc().approval.status)}
               </div>
               <Show when={currentDoc().specDocUrl}>
                 {(specUrl) => (
@@ -152,9 +151,9 @@ function ValidationView(props: { handle: DocHandle<ValidationDoc>; element: Tool
                   </div>
                 )}
               </Show>
-              <Show when={!currentDoc().isValidated}>
+              <Show when={currentDoc().approval.status !== 'approved'}>
                 <button class="validation-approve-btn" onClick={handleApprove}>
-                  Approve
+                  {currentDoc().approval.status === 'stale' ? 'Re-approve' : 'Approve'}
                 </button>
               </Show>
             </div>
@@ -166,10 +165,13 @@ function ValidationView(props: { handle: DocHandle<ValidationDoc>; element: Tool
                     <ValidationBody
                       repo={props.element.repo}
                       execution={currentExecution()}
+                      validationDoc={currentDoc()}
+                      validationHandle={props.handle}
                       specDocUrl={currentDoc().specDocUrl}
                       artifactEntries={currentFolder().docs ?? []}
                       toggleArtifact={toggleArtifact}
                       isArtifactExpanded={isArtifactExpanded}
+                      onHeadsChanged={setLiveHeadsByDocUrl}
                     />
                   )}
                 </Show>
@@ -185,14 +187,18 @@ function ValidationView(props: { handle: DocHandle<ValidationDoc>; element: Tool
 function ValidationBody(props: {
   repo: any;
   execution: TaskListExecutionDoc;
+  validationDoc: ValidationDoc;
+  validationHandle: DocHandle<ValidationDoc>;
   specDocUrl: AutomergeUrl;
   artifactEntries: FolderDoc['docs'];
   toggleArtifact: (url: AutomergeUrl) => void;
   isArtifactExpanded: (url: AutomergeUrl) => boolean;
+  onHeadsChanged: (headsByDocUrl: Record<AutomergeUrl, Heads>) => void;
 }) {
   const artifactAccessors = props.artifactEntries.map((entry) => {
     const [doc] = useDocument<DatalogDoc>(() => entry.url);
-    return { entry, doc };
+    const [projectionDoc] = useDocument<ProjectionDoc>(() => entry.projectionDocUrl);
+    return { entry, doc, projectionDoc };
   });
   const [specTree, setSpecTree] = createSignal<SpecTreeNode | null>(null);
   const [specTreeLoading, setSpecTreeLoading] = createSignal(true);
@@ -221,13 +227,62 @@ function ValidationBody(props: {
     });
   });
 
+  const expandedArtifactsByUrl = createMemo(() => {
+    const entries = artifactAccessors.flatMap(({ entry, doc, projectionDoc }) => {
+      const currentDoc = doc();
+      const currentProjection = projectionDoc();
+      if (!currentDoc || !currentProjection) return [];
+      return [[entry.url, expandArtifactDocForVerification(currentProjection, currentDoc)] as const];
+    });
+    return new Map(entries);
+  });
+
   const artifactInputs = createMemo<VerificationArtifactInput[]>(() =>
-    artifactAccessors.map(({ entry, doc }) => ({
-      url: entry.url,
-      name: entry.name || doc()?.title || 'Untitled artifact',
-      doc: doc(),
-    })),
+    artifactAccessors.map(({ entry, doc }) => {
+      const currentDoc = doc();
+      const expanded = expandedArtifactsByUrl().get(entry.url);
+      return {
+        url: entry.url,
+        name: entry.name || currentDoc?.title || 'Untitled artifact',
+        doc:
+          currentDoc && expanded
+            ? {
+                ...currentDoc,
+                facts: expanded.facts,
+                draftText: expanded.draftText,
+              }
+            : currentDoc,
+      };
+    }),
   );
+
+  const liveHeadsByDocUrl = createMemo<Record<AutomergeUrl, Heads>>(() => {
+    const next: Record<AutomergeUrl, Heads> = {};
+    for (const { entry, doc, projectionDoc } of artifactAccessors) {
+      const currentDoc = doc();
+      if (currentDoc) next[entry.url] = getHeads(currentDoc);
+      const currentProjection = projectionDoc();
+      if (entry.projectionDocUrl && currentProjection) {
+        next[entry.projectionDocUrl] = getHeads(currentProjection);
+      }
+    }
+    return next;
+  });
+
+  createEffect(() => {
+    props.onHeadsChanged(liveHeadsByDocUrl());
+  });
+
+  createEffect(() => {
+    if (props.validationDoc.approval.status !== 'approved') return;
+    if (!headsByDocUrlDiffer(props.validationDoc.approval.headsByDocUrl, liveHeadsByDocUrl())) return;
+
+    props.validationHandle.change((doc) => {
+      if (doc.approval.status === 'approved') {
+        doc.approval.status = 'stale';
+      }
+    });
+  });
 
   const flattenedVerifications = createMemo<FlattenedVerification[]>(() =>
     flattenSpecTree(specTree()),
@@ -404,7 +459,7 @@ function ValidationBody(props: {
                     <div class="validation-artifact-preview">
                       <ArtifactWorkspace
                         entry={entry}
-                        repo={props.repo}
+                        expandedArtifact={expandedArtifactsByUrl().get(entry.url) ?? null}
                         verificationResults={verificationResults().filter((result) =>
                           getArtifactsForNode(
                             result.entry.nodePath,
@@ -610,49 +665,18 @@ function WitnessCard(props: { witness: ConstraintViolation['witnesses'][number] 
 
 function ArtifactWorkspace(props: {
   entry: ArtifactFolderEntry;
-  repo: any;
+  expandedArtifact: ReturnType<typeof expandArtifactDocForVerification> | null;
   verificationResults: EvaluatedVerificationEntry[];
   verificationSummary: ArtifactVerificationSummary;
 }) {
-  const [selectedView, setSelectedView] = createSignal<'csv' | 'datalog'>(
-    props.entry.csvUrl ? 'csv' : 'datalog',
+  const [selectedView, setSelectedView] = createSignal<'sheet' | 'datalog'>(
+    props.entry.projectionDocUrl ? 'sheet' : 'datalog',
   );
   const [datalogDoc] = useDocument<DatalogDoc>(() => props.entry.url);
-  const [csvDoc] = useDocument<CsvDoc>(() => props.entry.csvUrl);
-  const [datalogHandle] = createHandleResource<DatalogDoc>(props.repo, () => props.entry.url);
-  const [csvHandle] = createHandleResource<CsvDoc>(props.repo, () => props.entry.csvUrl);
-  const [syncError, setSyncError] = createSignal<string | null>(null);
-  let lastProjectedCsvContent: string | undefined;
-
-  const projection = createMemo(() => {
-    if (!props.entry.csvUrl || !props.entry.projectionKind || !datalogDoc()) return null;
-    return projectDatalogArtifactToCsv(props.entry.projectionKind, datalogDoc()!, props.entry.name);
-  });
-
-  const parseAnnotations = createMemo<ArtifactSheetAnnotation[]>(() => {
-    const currentCsvDoc = csvDoc();
-    const currentDatalogDoc = datalogDoc();
-    if (
-      !currentCsvDoc?.content ||
-      !currentDatalogDoc ||
-      !props.entry.projectionKind ||
-      !props.entry.csvUrl
-    ) {
-      return [];
-    }
-    const result = applyCsvToDatalogArtifact(
-      props.entry.projectionKind,
-      currentCsvDoc.content,
-      currentDatalogDoc,
-      props.entry.name,
-      props.entry.url,
-    );
-    return result.ok ? [] : result.annotations;
-  });
 
   const constraintAnnotations = createMemo<ArtifactSheetAnnotation[]>(() => {
-    const currentCsvContent = csvDoc()?.content ?? projection()?.content ?? '';
-    if (!currentCsvContent || !props.entry.projectionKind || parseAnnotations().length > 0) return [];
+    const currentExpandedArtifact = props.expandedArtifact;
+    if (!currentExpandedArtifact) return [];
 
     const failingConstraints = props.verificationResults.flatMap((result) =>
       result.evaluation.constraints
@@ -665,102 +689,23 @@ function ArtifactWorkspace(props: {
 
     return deriveConstraintAnnotationsForArtifact(
       props.entry.url,
-      props.entry.projectionKind,
-      currentCsvContent,
+      currentExpandedArtifact,
       failingConstraints,
     );
   });
 
-  const sheetAnnotations = createMemo<ArtifactSheetAnnotation[]>(() => [
-    ...parseAnnotations(),
-    ...constraintAnnotations(),
-  ]);
-
-  createEffect(
-    on(
-      () => getArtifactSyncSignature(datalogDoc() ?? { title: '', facts: [], draftText: '' }),
-      () => {
-        const currentProjection = projection();
-        const handle = csvHandle();
-        if (!currentProjection || !handle) return;
-        const currentCsvDoc = untrack(csvDoc);
-        if (
-          currentCsvDoc?.content === currentProjection.content &&
-          currentCsvDoc?.title === currentProjection.title
-        ) {
-          lastProjectedCsvContent = currentProjection.content;
-          return;
-        }
-        lastProjectedCsvContent = currentProjection.content;
-        handle.change((d) => {
-          d['@patchwork'] = { type: 'csv' };
-          d.title = currentProjection.title;
-          d.content = currentProjection.content;
-        });
-        setSyncError(null);
-      },
-    ),
-  );
-
-  createEffect(
-    on(
-      () => csvDoc()?.content,
-      (content) => {
-        const currentCsvDoc = csvDoc();
-        const currentDatalogDoc = untrack(datalogDoc);
-        const handle = datalogHandle();
-        if (
-          !content ||
-          !currentCsvDoc ||
-          !currentDatalogDoc ||
-          !handle ||
-          !props.entry.projectionKind ||
-          !props.entry.csvUrl
-        ) {
-          return;
-        }
-        if (content === lastProjectedCsvContent) {
-          setSyncError(null);
-          return;
-        }
-
-        const result = applyCsvToDatalogArtifact(
-          props.entry.projectionKind,
-          content,
-          currentDatalogDoc,
-          props.entry.name,
-          props.entry.url,
-        );
-        if (!result.ok) {
-          setSyncError(result.error);
-          return;
-        }
-
-        setSyncError(null);
-        const nextSignature = getArtifactSyncSignature(result.doc);
-        if (nextSignature === getArtifactSyncSignature(currentDatalogDoc)) return;
-
-        handle.change((d) => {
-          d.title = result.doc.title;
-          d.facts = result.doc.facts;
-          d.draftText = result.doc.draftText;
-        });
-      },
-    ),
-  );
-
   return (
     <div class="validation-artifact-workspace">
-      <Show when={props.entry.csvUrl}>
+      <Show when={props.entry.projectionDocUrl}>
         <div class="validation-artifact-toolbar">
           <div class="validation-artifact-toolbar-main">
             <div class="validation-artifact-tabs">
               <button
                 class="validation-artifact-tab"
-                classList={{ active: selectedView() === 'csv' }}
-                onClick={() => setSelectedView('csv')}
+                classList={{ active: selectedView() === 'sheet' }}
+                onClick={() => setSelectedView('sheet')}
               >
-                CSV View
+                Sheet View
               </button>
               <button
                 class="validation-artifact-tab"
@@ -781,25 +726,24 @@ function ArtifactWorkspace(props: {
               {props.verificationSummary.label}
             </div>
           </div>
-          <Show when={syncError()}>
-            {(message) => <div class="validation-artifact-sync-error">{message()}</div>}
-          </Show>
         </div>
       </Show>
 
       <Show
-        when={selectedView() === 'csv' && props.entry.csvUrl}
+        when={selectedView() === 'sheet' && props.entry.projectionDocUrl}
         fallback={
-          <patchwork-view
-            attr:doc-url={props.entry.url}
-            style="display:block;width:100%;height:100%;"
-          />
+          <div class="verification-source-section">
+            <div class="verification-source-label">Expanded Datalog Source</div>
+            <pre class="verification-source-code">
+              {props.expandedArtifact?.draftText ?? datalogDoc()?.draftText ?? ''}
+            </pre>
+          </div>
         }
       >
         <patchwork-view
-          attr:doc-url={props.entry.csvUrl!}
+          attr:doc-url={props.entry.projectionDocUrl!}
           attr:tool-id="grjte-artifact-sheet"
-          attr:data-annotations={JSON.stringify(sheetAnnotations())}
+          attr:data-annotations={JSON.stringify(constraintAnnotations())}
           style="display:block;width:100%;height:100%;"
         />
       </Show>
@@ -807,9 +751,34 @@ function ArtifactWorkspace(props: {
   );
 }
 
-function createHandleResource<T>(repo: any, url: () => AutomergeUrl | undefined) {
-  return createResource(url, async (currentUrl) => {
-    if (!currentUrl) return undefined;
-    return (await repo.find(currentUrl)) as RepoDocHandle<T>;
-  });
+function formatApprovalStatus(status: ValidationDoc['approval']['status']) {
+  if (status === 'approved') return 'Approved';
+  if (status === 'stale') return 'Stale';
+  return 'Pending';
+}
+
+function cloneHeadsByDocUrl(headsByDocUrl: Record<AutomergeUrl, Heads>) {
+  return Object.fromEntries(
+    Object.entries(headsByDocUrl).map(([url, heads]) => [url, [...heads] as Heads]),
+  ) as Record<AutomergeUrl, Heads>;
+}
+
+function headsByDocUrlDiffer(
+  left: Record<AutomergeUrl, Heads>,
+  right: Record<AutomergeUrl, Heads>,
+) {
+  const leftEntries = Object.entries(left);
+  const rightEntries = Object.entries(right);
+  if (leftEntries.length !== rightEntries.length) return true;
+
+  for (const [url, leftHeads] of leftEntries) {
+    const rightHeads = right[url as AutomergeUrl];
+    if (!rightHeads) return true;
+    if (leftHeads.length !== rightHeads.length) return true;
+    const leftSorted = [...leftHeads].sort();
+    const rightSorted = [...rightHeads].sort();
+    if (leftSorted.some((head, index) => head !== rightSorted[index])) return true;
+  }
+
+  return false;
 }

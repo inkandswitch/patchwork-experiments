@@ -29,7 +29,7 @@ export const grjteWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> 
     const { planDocUrl, taskUrls } = createDefaultPlan(repo, specDocUrl, subSpecUrls);
     doc.planDocUrl = planDocUrl;
 
-    const { executionDocUrl, artifactDocUrls } = createDefaultExecution(
+    const { executionDocUrl } = createDefaultExecution(
       repo,
       specDocUrl,
       planDocUrl,
@@ -41,7 +41,6 @@ export const grjteWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> 
       repo,
       planDocUrl,
       specDocUrl,
-      artifactDocUrls,
       executionDocUrl,
     );
     doc.validationDocUrl = validationDocUrl;

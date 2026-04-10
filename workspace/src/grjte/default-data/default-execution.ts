@@ -1,6 +1,12 @@
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo';
 import type { TaskListExecutionDoc } from '../execution/types';
-import { createArtifactCsvDoc, type ArtifactFolderEntry } from '../validation/csv-sync';
+import {
+  buildBaseArtifactDraft,
+  buildDefaultRotaProjection,
+  createProjectionDoc,
+  normalizeLegacySolutionFacts,
+  type ArtifactFolderEntry,
+} from '../artifact-projection';
 
 type FolderDoc = {
   '@patchwork'?: { type: string };
@@ -38,6 +44,15 @@ function createDatalogDoc(
     d.mapStyle = { lines: {}, properties: {} };
   });
   return handle.url;
+}
+
+function createSolutionArtifactDoc(
+  repo: Repo,
+  title: string,
+  legacyFacts: StoredFact[],
+): AutomergeUrl {
+  const normalizedFacts = normalizeLegacySolutionFacts(legacyFacts);
+  return createDatalogDoc(repo, title, buildBaseArtifactDraft(title, normalizedFacts), normalizedFacts);
 }
 
 function f(pred: string, ...args: (string | number)[]): StoredFact {
@@ -176,7 +191,7 @@ assigned(amu_wed_night, emily_davies, 12). assignment_slot(amu_wed_night, 2, emi
 assigned(amu_wed_night, mike_thompson, 12). assignment_slot(amu_wed_night, 3, mike_thompson).
 in_charge(amu_wed_night, james_okafor).`;
 
-  const amuRotaUrl = createDatalogDoc(repo, 'AMU Rota', amuDraftText, amuFacts);
+  const amuRotaUrl = createSolutionArtifactDoc(repo, 'AMU Rota', amuFacts);
 
   const ward6Facts: StoredFact[] = [
     f('ward_roster', 'ward_6'),
@@ -318,24 +333,13 @@ assigned(w6_wed_night, tom_williams, 12). assignment_slot(w6_wed_night, 2, tom_w
 assigned(w6_wed_night, helen_morris, 12). assignment_slot(w6_wed_night, 3, helen_morris).
 assigned(w6_wed_night, lisa_brown, 12). assignment_slot(w6_wed_night, 4, lisa_brown).`;
 
-  const ward6RotaUrl = createDatalogDoc(repo, 'Ward 6 Rota', ward6DraftText, ward6Facts);
+  const ward6RotaUrl = createSolutionArtifactDoc(repo, 'Ward 6 Rota', ward6Facts);
 
-  const amuCsvUrl = createArtifactCsvDoc(repo, 'AMU Rota', {
-    title: 'AMU Rota',
-    facts: amuFacts,
-    rules: [],
-    constraints: [],
-    draftText: amuDraftText,
-  });
-  const ward6CsvUrl = createArtifactCsvDoc(repo, 'Ward 6 Rota', {
-    title: 'Ward 6 Rota',
-    facts: ward6Facts,
-    rules: [],
-    constraints: [],
-    draftText: ward6DraftText,
-  });
-
-  const artifactDocUrls = [amuRotaUrl, ward6RotaUrl];
+  const amuProjectionUrl = createProjectionDoc(repo, buildDefaultRotaProjection(amuRotaUrl, 'AMU Rota'));
+  const ward6ProjectionUrl = createProjectionDoc(
+    repo,
+    buildDefaultRotaProjection(ward6RotaUrl, 'Ward 6 Rota'),
+  );
 
   const artifactsFolderHandle = repo.create<FolderDoc>();
   artifactsFolderHandle.change((d) => {
@@ -346,16 +350,14 @@ assigned(w6_wed_night, lisa_brown, 12). assignment_slot(w6_wed_night, 4, lisa_br
         type: 'datalog',
         name: 'AMU Rota',
         url: amuRotaUrl,
-        csvUrl: amuCsvUrl,
-        projectionKind: 'rota-shifts-v1',
+        projectionDocUrl: amuProjectionUrl,
         specPath: 'root/0',
       },
       {
         type: 'datalog',
         name: 'Ward 6 Rota',
         url: ward6RotaUrl,
-        csvUrl: ward6CsvUrl,
-        projectionKind: 'rota-shifts-v1',
+        projectionDocUrl: ward6ProjectionUrl,
         specPath: 'root/1',
       },
     ];
@@ -375,5 +377,8 @@ assigned(w6_wed_night, lisa_brown, 12). assignment_slot(w6_wed_night, 4, lisa_br
     };
   });
 
-  return { executionDocUrl: executionHandle.url, artifactDocUrls };
+  return {
+    executionDocUrl: executionHandle.url,
+    artifactDocUrls: [amuRotaUrl, ward6RotaUrl],
+  };
 }

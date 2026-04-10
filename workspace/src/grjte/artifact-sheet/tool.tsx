@@ -1,23 +1,39 @@
 import { render } from 'solid-js/web';
-import { For, Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
+import {
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  onCleanup,
+} from 'solid-js';
 import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primitives';
-import type { DocHandle } from '@automerge/automerge-repo';
+import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
-import type { CsvDoc } from '../validation/csv-sync';
-import { parseCsv, serializeCsv, type ArtifactSheetAnnotation } from '../validation/csv-sync';
+import type { DatalogDoc } from '../verification/model';
+import {
+  appendProjectionRow,
+  applyProjectionCellEdit,
+  deleteProjectionRow,
+  materializeProjection,
+  type ArtifactSheetAnnotation,
+  type MaterializedProjection,
+  type ProjectionDoc,
+} from '../artifact-projection';
 import './artifact-sheet.css';
 
 type ToolElement = HTMLElement & { repo: any };
 type CellPosition = { row: number; col: number };
 
-const STARTER_COLUMN_COUNT = 5;
-const STARTER_ROW_COUNT = 8;
-
 export const ArtifactSheetTool: ToolRender = (handle, element) => {
   const dispose = render(
     () => (
       <RepoContext.Provider value={element.repo}>
-        <ArtifactSheetView handle={handle as DocHandle<CsvDoc>} element={element as ToolElement} />
+        <ArtifactSheetView
+          handle={handle as DocHandle<ProjectionDoc>}
+          element={element as ToolElement}
+        />
       </RepoContext.Provider>
     ),
     element,
@@ -25,16 +41,27 @@ export const ArtifactSheetTool: ToolRender = (handle, element) => {
   return () => dispose();
 };
 
-function ArtifactSheetView(props: { handle: DocHandle<CsvDoc>; element: ToolElement }) {
-  const [doc] = useDocument<CsvDoc>(() => props.handle.url);
+function ArtifactSheetView(props: { handle: DocHandle<ProjectionDoc>; element: ToolElement }) {
+  const [projection] = useDocument<ProjectionDoc>(() => props.handle.url);
+  const [artifactDoc] = useDocument<Pick<DatalogDoc, 'title' | 'facts' | 'draftText'>>(
+    () => projection()?.artifactDocUrl,
+  );
+  const [artifactHandle] = createHandleResource<Pick<DatalogDoc, 'title' | 'facts' | 'draftText'>>(
+    props.element.repo,
+    () => projection()?.artifactDocUrl,
+  );
   const [selection, setSelection] = createSignal<CellPosition | null>(null);
   const [editingCell, setEditingCell] = createSignal<CellPosition | null>(null);
   const [draftValue, setDraftValue] = createSignal('');
-  const [annotations, setAnnotations] = createSignal<ArtifactSheetAnnotation[]>(readAnnotations(props.element));
+  const [externalAnnotations, setExternalAnnotations] = createSignal<ArtifactSheetAnnotation[]>(
+    readAnnotations(props.element),
+  );
+  const [localAnnotations, setLocalAnnotations] = createSignal<ArtifactSheetAnnotation[]>([]);
+  const [localError, setLocalError] = createSignal<string | null>(null);
   let gridRoot!: HTMLDivElement;
 
   const observer = new MutationObserver(() => {
-    setAnnotations(readAnnotations(props.element));
+    setExternalAnnotations(readAnnotations(props.element));
   });
   observer.observe(props.element, { attributes: true, attributeFilter: ['data-annotations'] });
   onCleanup(() => observer.disconnect());
@@ -52,45 +79,78 @@ function ArtifactSheetView(props: { handle: DocHandle<CsvDoc>; element: ToolElem
     });
   });
 
-  const grid = createMemo(() => normalizeGrid(parseCsv(doc()?.content ?? '')));
-  const columnCount = createMemo(() => grid()[0]?.length ?? 0);
-  const selectionLabel = createMemo(() => {
-    const cell = selection();
-    if (!cell) return 'No selection';
-    return `${columnLabel(cell.col)}${cell.row + 1}`;
+  const materialized = createMemo<MaterializedProjection | null>(() => {
+    const currentProjection = projection();
+    const currentArtifact = artifactDoc();
+    if (!currentProjection || !currentArtifact) return null;
+    return materializeProjection(currentProjection, currentArtifact);
   });
+  const visibleSheet = createMemo(() => {
+    const current = materialized();
+    return current && current.columns.length > 0 ? current : null;
+  });
+
+  const annotations = createMemo(() => dedupeAnnotations([...externalAnnotations(), ...localAnnotations()]));
+  const columnCount = createMemo(() => materialized()?.columns.length ?? 0);
+  const selectionLabel = createMemo(() => {
+    const currentSelection = selection();
+    const currentMaterialized = materialized();
+    if (!currentSelection || !currentMaterialized) return 'No selection';
+
+    const column = currentMaterialized.columns[currentSelection.col];
+    if (!column) return 'No selection';
+    if (currentSelection.row === 0) return `Header ${columnLabel(currentSelection.col)}`;
+    return `${columnLabel(currentSelection.col)}${currentSelection.row + 1}`;
+  });
+
   const annotationSummary = createMemo(() => {
     const currentSelection = selection();
+    const currentMaterialized = materialized();
     const all = annotations();
+    if (!currentSelection || !currentMaterialized) return all;
+
+    const currentColumn = currentMaterialized.columns[currentSelection.col];
+    if (!currentColumn) return all;
+
     const focused =
-      currentSelection == null
-        ? all
-        : all.filter(
+      currentSelection.row === 0
+        ? all.filter(
             (annotation) =>
+              annotation.kind === 'sheet' || annotation.columnId === currentColumn.id,
+          )
+        : all.filter((annotation) => {
+            const currentRow = currentMaterialized.rows[currentSelection.row - 1];
+            if (!currentRow) return annotation.kind === 'sheet';
+            return (
               annotation.kind === 'sheet' ||
-              annotation.row === currentSelection.row ||
-              annotation.col === currentSelection.col,
-          );
+              annotation.rowId === currentRow.rowId ||
+              annotation.columnId === currentColumn.id
+            );
+          });
     return focused.length > 0 ? focused : all;
   });
 
   createEffect(() => {
-    const nextGrid = grid();
+    const currentMaterialized = materialized();
     const currentSelection = selection();
-    if (nextGrid.length === 0) {
+
+    if (!currentMaterialized || currentMaterialized.columns.length === 0) {
       setSelection(null);
       setEditingCell(null);
       setDraftValue('');
       return;
     }
 
+    const maxRow = currentMaterialized.rows.length;
+    const maxCol = currentMaterialized.columns.length - 1;
+
     if (!currentSelection) {
       setSelection({ row: 0, col: 0 });
       return;
     }
 
-    const nextRow = clamp(currentSelection.row, 0, nextGrid.length - 1);
-    const nextCol = clamp(currentSelection.col, 0, nextGrid[0].length - 1);
+    const nextRow = clamp(currentSelection.row, 0, maxRow);
+    const nextCol = clamp(currentSelection.col, 0, maxCol);
     if (nextRow !== currentSelection.row || nextCol !== currentSelection.col) {
       setSelection({ row: nextRow, col: nextCol });
     }
@@ -100,20 +160,19 @@ function ArtifactSheetView(props: { handle: DocHandle<CsvDoc>; element: ToolElem
     queueMicrotask(() => gridRoot?.focus());
   }
 
-  function persistGrid(nextGrid: string[][]) {
-    props.handle.change((d) => {
-      d.content = serializeCsv(nextGrid);
-    });
+  function clearLocalFeedback() {
+    setLocalError(null);
+    setLocalAnnotations([]);
   }
 
-  function updateCellValue(position: CellPosition, value: string) {
-    const currentGrid = grid();
-    if (!currentGrid[position.row]?.length) return;
-    if ((currentGrid[position.row][position.col] ?? '') === value) return;
-
-    const nextGrid = currentGrid.map((row) => [...row]);
-    nextGrid[position.row][position.col] = value;
-    persistGrid(nextGrid);
+  function persistArtifactDoc(nextDoc: Pick<DatalogDoc, 'title' | 'facts' | 'draftText'>) {
+    const handle = artifactHandle();
+    if (!handle) return;
+    handle.change((doc: Pick<DatalogDoc, 'title' | 'facts' | 'draftText'>) => {
+      doc.title = nextDoc.title;
+      doc.facts = nextDoc.facts.map((fact) => ({ ...fact, args: [...fact.args] }));
+      doc.draftText = nextDoc.draftText;
+    });
   }
 
   function selectCell(position: CellPosition) {
@@ -121,10 +180,66 @@ function ArtifactSheetView(props: { handle: DocHandle<CsvDoc>; element: ToolElem
     focusGrid();
   }
 
+  function isEditable(position: CellPosition) {
+    const currentMaterialized = materialized();
+    if (!currentMaterialized) return false;
+    if (position.row === 0) return true;
+    return currentMaterialized.rows[position.row - 1]?.cells[position.col]?.editable ?? false;
+  }
+
+  function getCellValue(position: CellPosition) {
+    const currentMaterialized = materialized();
+    if (!currentMaterialized) return '';
+    if (position.row === 0) return currentMaterialized.columns[position.col]?.header ?? '';
+    return currentMaterialized.rows[position.row - 1]?.cells[position.col]?.value ?? '';
+  }
+
   function startEditing(position: CellPosition, seedValue?: string) {
+    if (!isEditable(position)) return;
     setSelection(position);
     setEditingCell(position);
-    setDraftValue(seedValue ?? (grid()[position.row]?.[position.col] ?? ''));
+    setDraftValue(seedValue ?? getCellValue(position));
+  }
+
+  function commitHeaderEdit(position: CellPosition, value: string) {
+    const currentProjection = projection();
+    const currentColumn = currentProjection?.columns.filter((column) => !column.hidden)[position.col];
+    if (!currentProjection || !currentColumn) return;
+
+    props.handle.change((doc) => {
+      const target = doc.columns.find((column) => column.id === currentColumn.id);
+      if (target) target.header = value.trim();
+    });
+    clearLocalFeedback();
+  }
+
+  function commitBodyEdit(position: CellPosition, value: string) {
+    const currentProjection = projection();
+    const currentArtifact = artifactDoc();
+    const currentMaterialized = materialized();
+    if (!currentProjection || !currentArtifact || !currentMaterialized) return;
+
+    const row = currentMaterialized.rows[position.row - 1];
+    const column = currentMaterialized.columns[position.col];
+    if (!row || !column) return;
+
+    const result = applyProjectionCellEdit(
+      currentProjection,
+      currentArtifact,
+      row.rowId,
+      column.id,
+      value,
+      currentProjection.artifactDocUrl,
+    );
+
+    if (!result.ok) {
+      setLocalError(result.error);
+      setLocalAnnotations(result.annotations);
+      return;
+    }
+
+    persistArtifactDoc(result.doc);
+    clearLocalFeedback();
   }
 
   function finishEditing(options?: { commit?: boolean; nextSelection?: CellPosition }) {
@@ -136,7 +251,8 @@ function ArtifactSheetView(props: { handle: DocHandle<CsvDoc>; element: ToolElem
     }
 
     if (options?.commit ?? true) {
-      updateCellValue(activeCell, draftValue());
+      if (activeCell.row === 0) commitHeaderEdit(activeCell, draftValue());
+      else commitBodyEdit(activeCell, draftValue());
     }
 
     setEditingCell(null);
@@ -147,103 +263,126 @@ function ArtifactSheetView(props: { handle: DocHandle<CsvDoc>; element: ToolElem
 
   function moveSelection(rowDelta: number, colDelta: number) {
     const currentSelection = selection();
-    const currentGrid = grid();
-    if (!currentSelection || currentGrid.length === 0) return;
+    const currentMaterialized = materialized();
+    if (!currentSelection || !currentMaterialized) return;
 
     setSelection({
-      row: clamp(currentSelection.row + rowDelta, 0, currentGrid.length - 1),
-      col: clamp(currentSelection.col + colDelta, 0, currentGrid[0].length - 1),
+      row: clamp(currentSelection.row + rowDelta, 0, currentMaterialized.rows.length),
+      col: clamp(currentSelection.col + colDelta, 0, Math.max(0, currentMaterialized.columns.length - 1)),
     });
   }
 
-  function createGrid() {
-    persistGrid(buildStarterGrid());
-    setSelection({ row: 0, col: 0 });
-    focusGrid();
-  }
-
   function appendRow() {
-    const currentGrid = grid();
-    const nextGrid =
-      currentGrid.length === 0
-        ? buildStarterGrid()
-        : [...currentGrid.map((row) => [...row]), Array.from({ length: currentGrid[0].length }, () => '')];
+    const currentProjection = projection();
+    const currentArtifact = artifactDoc();
+    if (!currentProjection || !currentArtifact) return;
 
-    persistGrid(nextGrid);
-    setSelection({ row: nextGrid.length - 1, col: selection()?.col ?? 0 });
-    focusGrid();
-  }
-
-  function insertRow(at: number) {
-    const currentGrid = grid();
-    if (currentGrid.length === 0) {
-      createGrid();
-      return;
-    }
-
-    const row = Array.from({ length: currentGrid[0].length }, () => '');
-    const nextGrid = currentGrid.map((currentRow) => [...currentRow]);
-    nextGrid.splice(at, 0, row);
-    persistGrid(nextGrid);
-    setSelection({ row: at, col: selection()?.col ?? 0 });
+    const result = appendProjectionRow(currentProjection, currentArtifact);
+    persistArtifactDoc(result.doc);
+    clearLocalFeedback();
+    setSelection({
+      row: (materialized()?.rows.length ?? 0) + 1,
+      col: selection()?.col ?? 0,
+    });
     focusGrid();
   }
 
   function deleteRow(rowIndex: number) {
-    const currentGrid = grid();
-    if (rowIndex <= 0 || rowIndex >= currentGrid.length) return;
-    const nextGrid = currentGrid.filter((_, index) => index !== rowIndex).map((row) => [...row]);
-    persistGrid(nextGrid);
-    setSelection({
-      row: clamp(rowIndex, 0, nextGrid.length - 1),
-      col: clamp(selection()?.col ?? 0, 0, nextGrid[0].length - 1),
-    });
-    focusGrid();
-  }
+    const currentProjection = projection();
+    const currentArtifact = artifactDoc();
+    const currentMaterialized = materialized();
+    if (!currentProjection || !currentArtifact || !currentMaterialized) return;
 
-  function insertColumn(at: number) {
-    const currentGrid = grid();
-    if (currentGrid.length === 0) {
-      createGrid();
+    const row = currentMaterialized.rows[rowIndex - 1];
+    if (!row) return;
+
+    const result = deleteProjectionRow(
+      currentProjection,
+      currentArtifact,
+      row.rowId,
+      currentProjection.artifactDocUrl,
+    );
+    if (!result.ok) {
+      setLocalError(result.error);
+      setLocalAnnotations(result.annotations);
+      focusGrid();
       return;
     }
 
-    const nextGrid = currentGrid.map((row, rowIndex) => {
-      const nextRow = [...row];
-      nextRow.splice(at, 0, rowIndex === 0 ? `Column ${columnLabel(at)}` : '');
-      return nextRow;
+    persistArtifactDoc(result.doc);
+    clearLocalFeedback();
+    setSelection({
+      row: clamp(rowIndex, 0, Math.max(0, currentMaterialized.rows.length - 1)),
+      col: clamp(selection()?.col ?? 0, 0, Math.max(0, columnCount() - 1)),
     });
-
-    persistGrid(nextGrid);
-    setSelection({ row: selection()?.row ?? 0, col: at });
     focusGrid();
   }
 
-  function deleteColumn(colIndex: number) {
-    const currentGrid = grid();
-    if (currentGrid.length === 0 || currentGrid[0].length <= 1) return;
-    const nextGrid = currentGrid.map((row) => row.filter((_, index) => index !== colIndex));
-    persistGrid(nextGrid);
-    setSelection({
-      row: clamp(selection()?.row ?? 0, 0, nextGrid.length - 1),
-      col: clamp(colIndex, 0, nextGrid[0].length - 1),
+  function selectedVisibleColumnId() {
+    const currentSelection = selection();
+    const currentMaterialized = materialized();
+    if (!currentSelection || !currentMaterialized) return null;
+    return currentMaterialized.columns[currentSelection.col]?.id ?? null;
+  }
+
+  function moveSelectedColumn(direction: -1 | 1) {
+    const targetColumnId = selectedVisibleColumnId();
+    if (!targetColumnId) return;
+
+    props.handle.change((doc) => {
+      const currentIndex = doc.columns.findIndex((column) => column.id === targetColumnId);
+      if (currentIndex < 0) return;
+
+      let swapIndex = currentIndex + direction;
+      while (swapIndex >= 0 && swapIndex < doc.columns.length && doc.columns[swapIndex]?.hidden) {
+        swapIndex += direction;
+      }
+      if (swapIndex < 0 || swapIndex >= doc.columns.length) return;
+
+      const [column] = doc.columns.splice(currentIndex, 1);
+      doc.columns.splice(swapIndex, 0, column);
     });
-    focusGrid();
+    clearLocalFeedback();
+  }
+
+  function hideSelectedColumn() {
+    const targetColumnId = selectedVisibleColumnId();
+    if (!targetColumnId) return;
+
+    props.handle.change((doc) => {
+      const column = doc.columns.find((entry) => entry.id === targetColumnId);
+      if (column) column.hidden = true;
+    });
+    clearLocalFeedback();
+    setSelection((current) =>
+      current ? { row: current.row, col: clamp(current.col, 0, Math.max(0, columnCount() - 2)) } : current,
+    );
+  }
+
+  function showHiddenColumn(columnId: string) {
+    props.handle.change((doc) => {
+      const column = doc.columns.find((entry) => entry.id === columnId);
+      if (column) column.hidden = false;
+    });
+    clearLocalFeedback();
   }
 
   function clearSelectedCell() {
     const currentSelection = selection();
-    if (!currentSelection) return;
-    updateCellValue(currentSelection, '');
+    if (!currentSelection || !isEditable(currentSelection)) return;
+    if (currentSelection.row === 0) return;
+    commitBodyEdit(currentSelection, '');
   }
 
   function handleGridKeyDown(event: KeyboardEvent) {
     if (editingCell()) return;
     const currentSelection = selection();
-    const currentGrid = grid();
-    if (!currentSelection || currentGrid.length === 0) return;
+    const currentMaterialized = materialized();
+    if (!currentSelection || !currentMaterialized || currentMaterialized.columns.length === 0) return;
 
-    const isPrintable = event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey;
+    const isPrintable =
+      event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey;
+
     switch (event.key) {
       case 'ArrowUp':
         event.preventDefault();
@@ -264,16 +403,19 @@ function ArtifactSheetView(props: { handle: DocHandle<CsvDoc>; element: ToolElem
       case 'Tab': {
         event.preventDefault();
         const nextCol = currentSelection.col + (event.shiftKey ? -1 : 1);
-        if (nextCol >= currentGrid[0].length) {
-          if (currentSelection.row === currentGrid.length - 1) {
+        if (nextCol >= currentMaterialized.columns.length) {
+          if (currentSelection.row === currentMaterialized.rows.length && currentSelection.row > 0) {
             appendRow();
           } else {
-            setSelection({ row: currentSelection.row + 1, col: 0 });
+            setSelection({
+              row: clamp(currentSelection.row + 1, 0, currentMaterialized.rows.length),
+              col: 0,
+            });
           }
         } else if (nextCol < 0) {
           setSelection({
-            row: clamp(currentSelection.row - 1, 0, currentGrid.length - 1),
-            col: currentGrid[0].length - 1,
+            row: clamp(currentSelection.row - 1, 0, currentMaterialized.rows.length),
+            col: currentMaterialized.columns.length - 1,
           });
         } else {
           setSelection({ row: currentSelection.row, col: nextCol });
@@ -291,7 +433,7 @@ function ArtifactSheetView(props: { handle: DocHandle<CsvDoc>; element: ToolElem
         clearSelectedCell();
         break;
       default:
-        if (isPrintable) {
+        if (isPrintable && isEditable(currentSelection)) {
           event.preventDefault();
           startEditing(currentSelection, event.key);
         }
@@ -300,7 +442,8 @@ function ArtifactSheetView(props: { handle: DocHandle<CsvDoc>; element: ToolElem
 
   function handleInputKeyDown(event: KeyboardEvent) {
     const activeCell = editingCell();
-    if (!activeCell) return;
+    const currentMaterialized = materialized();
+    if (!activeCell || !currentMaterialized) return;
 
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -312,7 +455,7 @@ function ArtifactSheetView(props: { handle: DocHandle<CsvDoc>; element: ToolElem
       event.preventDefault();
       finishEditing({
         nextSelection: {
-          row: clamp(activeCell.row + 1, 0, grid().length - 1),
+          row: clamp(activeCell.row + 1, 0, currentMaterialized.rows.length),
           col: activeCell.col,
         },
       });
@@ -323,10 +466,16 @@ function ArtifactSheetView(props: { handle: DocHandle<CsvDoc>; element: ToolElem
       event.preventDefault();
       const nextCol = activeCell.col + (event.shiftKey ? -1 : 1);
       const nextSelection =
-        nextCol >= grid()[0].length
-          ? { row: clamp(activeCell.row + 1, 0, grid().length - 1), col: 0 }
+        nextCol >= currentMaterialized.columns.length
+          ? {
+              row: clamp(activeCell.row + 1, 0, currentMaterialized.rows.length),
+              col: 0,
+            }
           : nextCol < 0
-            ? { row: clamp(activeCell.row - 1, 0, grid().length - 1), col: grid()[0].length - 1 }
+            ? {
+                row: clamp(activeCell.row - 1, 0, currentMaterialized.rows.length),
+                col: currentMaterialized.columns.length - 1,
+              }
             : { row: activeCell.row, col: nextCol };
       finishEditing({ nextSelection });
     }
@@ -342,212 +491,236 @@ function ArtifactSheetView(props: { handle: DocHandle<CsvDoc>; element: ToolElem
     return activeCell?.row === row && activeCell?.col === col;
   }
 
-  function annotationsForCell(row: number, col: number) {
+  function annotationsForColumn(columnId: string) {
+    return annotations().filter((annotation) => annotation.columnId === columnId);
+  }
+
+  function annotationsForRow(rowId: string) {
+    return annotations().filter((annotation) => annotation.rowId === rowId && annotation.kind === 'row');
+  }
+
+  function annotationsForCell(rowId: string, columnId: string) {
     return annotations().filter(
       (annotation) =>
-        (annotation.kind === 'cell' && annotation.row === row && annotation.col === col) ||
-        (annotation.kind === 'row' && annotation.row === row) ||
-        (annotation.kind === 'column' && annotation.col === col),
-    );
-  }
-
-  function annotationsForRow(row: number) {
-    return annotations().filter(
-      (annotation) => annotation.kind === 'row' && annotation.row === row,
-    );
-  }
-
-  function annotationsForColumn(col: number) {
-    return annotations().filter(
-      (annotation) => annotation.kind === 'column' && annotation.col === col,
+        (annotation.kind === 'cell' &&
+          annotation.rowId === rowId &&
+          annotation.columnId === columnId) ||
+        (annotation.kind === 'row' && annotation.rowId === rowId) ||
+        (annotation.kind === 'column' && annotation.columnId === columnId),
     );
   }
 
   return (
     <div class="artifact-sheet-root">
-      <Show when={doc()} fallback={<div class="artifact-sheet-loading">Loading...</div>}>
+      <Show when={projection() && artifactDoc()} fallback={<div class="artifact-sheet-loading">Loading...</div>}>
         <Show
-          when={grid().length > 0}
+          when={visibleSheet()}
           fallback={
             <div class="artifact-sheet-empty-state">
               <div class="artifact-sheet-empty-card">
                 <div class="artifact-sheet-empty-eyebrow">Artifact Sheet</div>
-                <h2>Start with a spreadsheet-style grid</h2>
-                <p>Use this view to edit the projected artifact and review verification failures in place.</p>
-                <button class="artifact-sheet-primary-button" onClick={createGrid}>
-                  Create grid
-                </button>
+                <h2>Projection unavailable</h2>
+                <p>This projection does not define any visible columns yet.</p>
               </div>
             </div>
           }
         >
-          <div
-            class="artifact-sheet-workspace"
-            ref={gridRoot}
-            tabindex="0"
-            onKeyDown={(event) => handleGridKeyDown(event)}
-          >
-            <div class="artifact-sheet-toolbar">
-              <div class="artifact-sheet-toolbar-group">
-                <button class="artifact-sheet-toolbar-button" onClick={appendRow}>
-                  Add row
-                </button>
-                <button
-                  class="artifact-sheet-toolbar-button"
-                  onClick={() => insertColumn((selection()?.col ?? columnCount()) + 1)}
-                >
-                  Add column
-                </button>
-              </div>
-              <div class="artifact-sheet-toolbar-group">
-                <button
-                  class="artifact-sheet-toolbar-button"
-                  onClick={() => insertRow((selection()?.row ?? 0) + 1)}
-                >
-                  Insert row below
-                </button>
-                <button
-                  class="artifact-sheet-toolbar-button"
-                  onClick={() => deleteRow(selection()?.row ?? -1)}
-                  disabled={(selection()?.row ?? 0) <= 0}
-                >
-                  Delete row
-                </button>
-                <button
-                  class="artifact-sheet-toolbar-button"
-                  onClick={() => insertColumn((selection()?.col ?? 0) + 1)}
-                >
-                  Insert column right
-                </button>
-                <button
-                  class="artifact-sheet-toolbar-button"
-                  onClick={() => deleteColumn(selection()?.col ?? 0)}
-                  disabled={columnCount() <= 1}
-                >
-                  Delete column
-                </button>
-              </div>
-              <div class="artifact-sheet-toolbar-status">{selectionLabel()}</div>
-            </div>
-
-            <Show when={annotations().length > 0}>
-              <div class="artifact-sheet-issues">
-                <div class="artifact-sheet-issues-header">
-                  <span>Verification issues</span>
-                  <span>{annotations().length}</span>
+          {(sheet) => (
+            <div
+              class="artifact-sheet-workspace"
+              ref={gridRoot}
+              tabindex="0"
+              onKeyDown={(event) => handleGridKeyDown(event)}
+            >
+              <div class="artifact-sheet-toolbar">
+                <div class="artifact-sheet-toolbar-group">
+                  <button class="artifact-sheet-toolbar-button" onClick={appendRow}>
+                    Add row
+                  </button>
                 </div>
-                <div class="artifact-sheet-issue-list">
-                  <For each={annotationSummary()}>
-                    {(annotation) => (
-                      <div class="artifact-sheet-issue-card">
-                        <div class="artifact-sheet-issue-label">
-                          {describeAnnotation(annotation)}
-                        </div>
-                        <div class="artifact-sheet-issue-text">{annotation.message}</div>
-                      </div>
-                    )}
-                  </For>
+                <div class="artifact-sheet-toolbar-group">
+                  <button
+                    class="artifact-sheet-toolbar-button"
+                    onClick={() => moveSelectedColumn(-1)}
+                    disabled={(selection()?.col ?? 0) <= 0}
+                  >
+                    Move column left
+                  </button>
+                  <button
+                    class="artifact-sheet-toolbar-button"
+                    onClick={() => moveSelectedColumn(1)}
+                    disabled={(selection()?.col ?? 0) >= sheet().columns.length - 1}
+                  >
+                    Move column right
+                  </button>
+                  <button
+                    class="artifact-sheet-toolbar-button"
+                    onClick={hideSelectedColumn}
+                    disabled={sheet().columns.length <= 1}
+                  >
+                    Hide column
+                  </button>
+                  <button
+                    class="artifact-sheet-toolbar-button"
+                    onClick={() => deleteRow(selection()?.row ?? -1)}
+                    disabled={(selection()?.row ?? 0) <= 0}
+                  >
+                    Delete row
+                  </button>
                 </div>
+                <div class="artifact-sheet-toolbar-status">{selectionLabel()}</div>
               </div>
-            </Show>
 
-            <div class="artifact-sheet-table-wrapper">
-              <table class="artifact-sheet-table">
-                <thead>
-                  <tr>
-                    <th class="artifact-sheet-corner-cell">#</th>
-                    <For each={grid()[0]}>
-                      {(header, colIndex) => (
-                        <th
-                          classList={{
-                            'artifact-sheet-header-cell': true,
-                            'artifact-sheet-selected': isSelected(0, colIndex()),
-                            'artifact-sheet-has-issue': annotationsForColumn(colIndex()).length > 0,
-                          }}
-                          onClick={() => selectCell({ row: 0, col: colIndex() })}
-                          onDblClick={() => startEditing({ row: 0, col: colIndex() })}
+              <Show when={sheet().hiddenColumns.length > 0}>
+                <div class="artifact-sheet-toolbar">
+                  <div class="artifact-sheet-toolbar-group">
+                    <For each={sheet().hiddenColumns}>
+                      {(column) => (
+                        <button
+                          class="artifact-sheet-toolbar-button"
+                          onClick={() => showHiddenColumn(column.id)}
                         >
-                          <div class="artifact-sheet-header-content">
-                            <div class="artifact-sheet-column-label">{columnLabel(colIndex())}</div>
-                            <Show
-                              when={isEditing(0, colIndex())}
-                              fallback={<span class="artifact-sheet-cell-text">{header}</span>}
-                            >
-                              <input
-                                class="artifact-sheet-cell-input"
-                                data-cell-input={`0:${colIndex()}`}
-                                value={draftValue()}
-                                onInput={(event) => setDraftValue(event.currentTarget.value)}
-                                onKeyDown={(event) => handleInputKeyDown(event)}
-                                onBlur={() => finishEditing()}
-                              />
-                            </Show>
-                          </div>
-                        </th>
+                          Show {column.header}
+                        </button>
                       )}
                     </For>
-                  </tr>
-                </thead>
-                <tbody>
-                  <For each={grid().slice(1)}>
-                    {(row, rowIndex) => {
-                      const actualRow = () => rowIndex() + 1;
-                      return (
-                        <tr classList={{ 'artifact-sheet-row-has-issue': annotationsForRow(actualRow()).length > 0 }}>
-                          <td class="artifact-sheet-row-number">
-                            <div class="artifact-sheet-row-number-label">{actualRow()}</div>
-                            <div class="artifact-sheet-row-actions">
-                              <button
-                                class="artifact-sheet-action-button"
-                                title="Insert row below"
-                                onClick={() => insertRow(actualRow() + 1)}
+                  </div>
+                </div>
+              </Show>
+
+              <Show when={localError()}>
+                {(message) => (
+                  <div class="artifact-sheet-issues">
+                    <div class="artifact-sheet-issues-header">
+                      <span>Edit issue</span>
+                    </div>
+                    <div class="artifact-sheet-issue-list">
+                      <div class="artifact-sheet-issue-card">
+                        <div class="artifact-sheet-issue-label">Current edit</div>
+                        <div class="artifact-sheet-issue-text">{message()}</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </Show>
+
+              <Show when={annotations().length > 0}>
+                <div class="artifact-sheet-issues">
+                  <div class="artifact-sheet-issues-header">
+                    <span>Verification issues</span>
+                    <span>{annotations().length}</span>
+                  </div>
+                  <div class="artifact-sheet-issue-list">
+                    <For each={annotationSummary()}>
+                      {(annotation) => (
+                        <div class="artifact-sheet-issue-card">
+                          <div class="artifact-sheet-issue-label">
+                            {describeAnnotation(annotation, sheet())}
+                          </div>
+                          <div class="artifact-sheet-issue-text">{annotation.message}</div>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </div>
+              </Show>
+
+              <div class="artifact-sheet-table-wrapper">
+                <table class="artifact-sheet-table">
+                  <thead>
+                    <tr>
+                      <th class="artifact-sheet-corner-cell">#</th>
+                      <For each={sheet().columns}>
+                        {(column, colIndex) => (
+                          <th
+                            classList={{
+                              'artifact-sheet-header-cell': true,
+                              'artifact-sheet-selected': isSelected(0, colIndex()),
+                              'artifact-sheet-has-issue': annotationsForColumn(column.id).length > 0,
+                            }}
+                            onClick={() => selectCell({ row: 0, col: colIndex() })}
+                            onDblClick={() => startEditing({ row: 0, col: colIndex() })}
+                          >
+                            <div class="artifact-sheet-header-content">
+                              <div class="artifact-sheet-column-label">{columnLabel(colIndex())}</div>
+                              <Show
+                                when={isEditing(0, colIndex())}
+                                fallback={<span class="artifact-sheet-cell-text">{column.header}</span>}
                               >
-                                +
-                              </button>
-                              <button
-                                class="artifact-sheet-action-button"
-                                title="Delete row"
-                                onClick={() => deleteRow(actualRow())}
-                              >
-                                -
-                              </button>
+                                <input
+                                  class="artifact-sheet-cell-input"
+                                  data-cell-input={`0:${colIndex()}`}
+                                  value={draftValue()}
+                                  onInput={(event) => setDraftValue(event.currentTarget.value)}
+                                  onKeyDown={(event) => handleInputKeyDown(event)}
+                                  onBlur={() => finishEditing()}
+                                />
+                              </Show>
                             </div>
-                          </td>
-                          <For each={row}>
-                            {(cell, colIndex) => (
-                              <td
-                                classList={{
-                                  'artifact-sheet-cell': true,
-                                  'artifact-sheet-selected': isSelected(actualRow(), colIndex()),
-                                  'artifact-sheet-has-issue': annotationsForCell(actualRow(), colIndex()).length > 0,
-                                }}
-                                onClick={() => selectCell({ row: actualRow(), col: colIndex() })}
-                                onDblClick={() => startEditing({ row: actualRow(), col: colIndex() })}
-                              >
-                                <Show
-                                  when={isEditing(actualRow(), colIndex())}
-                                  fallback={<span class="artifact-sheet-cell-text">{cell}</span>}
+                          </th>
+                        )}
+                      </For>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <For each={sheet().rows}>
+                      {(row, rowIndex) => {
+                        const actualRow = () => rowIndex() + 1;
+                        return (
+                          <tr
+                            classList={{
+                              'artifact-sheet-row-has-issue': annotationsForRow(row.rowId).length > 0,
+                            }}
+                          >
+                            <td class="artifact-sheet-row-number">
+                              <div class="artifact-sheet-row-number-label">{actualRow()}</div>
+                              <div class="artifact-sheet-row-actions">
+                                <button
+                                  class="artifact-sheet-action-button"
+                                  title="Delete row"
+                                  onClick={() => deleteRow(actualRow())}
                                 >
-                                  <input
-                                    class="artifact-sheet-cell-input"
-                                    data-cell-input={`${actualRow()}:${colIndex()}`}
-                                    value={draftValue()}
-                                    onInput={(event) => setDraftValue(event.currentTarget.value)}
-                                    onKeyDown={(event) => handleInputKeyDown(event)}
-                                    onBlur={() => finishEditing()}
-                                  />
-                                </Show>
-                              </td>
-                            )}
-                          </For>
-                        </tr>
-                      );
-                    }}
-                  </For>
-                </tbody>
-              </table>
+                                  -
+                                </button>
+                              </div>
+                            </td>
+                            <For each={row.cells}>
+                              {(cell, colIndex) => (
+                                <td
+                                  classList={{
+                                    'artifact-sheet-cell': true,
+                                    'artifact-sheet-selected': isSelected(actualRow(), colIndex()),
+                                    'artifact-sheet-has-issue':
+                                      annotationsForCell(row.rowId, cell.columnId).length > 0,
+                                  }}
+                                  onClick={() => selectCell({ row: actualRow(), col: colIndex() })}
+                                  onDblClick={() => startEditing({ row: actualRow(), col: colIndex() })}
+                                >
+                                  <Show
+                                    when={isEditing(actualRow(), colIndex())}
+                                    fallback={<span class="artifact-sheet-cell-text">{cell.value}</span>}
+                                  >
+                                    <input
+                                      class="artifact-sheet-cell-input"
+                                      data-cell-input={`${actualRow()}:${colIndex()}`}
+                                      value={draftValue()}
+                                      onInput={(event) => setDraftValue(event.currentTarget.value)}
+                                      onKeyDown={(event) => handleInputKeyDown(event)}
+                                      onBlur={() => finishEditing()}
+                                    />
+                                  </Show>
+                                </td>
+                              )}
+                            </For>
+                          </tr>
+                        );
+                      }}
+                    </For>
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+          )}
         </Show>
       </Show>
     </div>
@@ -565,18 +738,21 @@ function readAnnotations(element: HTMLElement): ArtifactSheetAnnotation[] {
   }
 }
 
-function normalizeGrid(rows: string[][]): string[][] {
-  if (rows.length === 0) return [];
-  const columnCount = Math.max(1, ...rows.map((row) => row.length));
-  return rows.map((row) => Array.from({ length: columnCount }, (_, index) => row[index] ?? ''));
-}
-
-function buildStarterGrid(): string[][] {
-  const header = Array.from({ length: STARTER_COLUMN_COUNT }, (_, index) => `Column ${columnLabel(index)}`);
-  const body = Array.from({ length: STARTER_ROW_COUNT }, () =>
-    Array.from({ length: STARTER_COLUMN_COUNT }, () => ''),
-  );
-  return [header, ...body];
+function dedupeAnnotations(annotations: ArtifactSheetAnnotation[]) {
+  const seen = new Set<string>();
+  return annotations.filter((annotation) => {
+    const key = JSON.stringify([
+      annotation.kind,
+      annotation.rowId ?? null,
+      annotation.columnId ?? null,
+      annotation.message,
+      annotation.constraintLabel ?? null,
+      annotation.source,
+    ]);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function columnLabel(index: number): string {
@@ -593,15 +769,26 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function describeAnnotation(annotation: ArtifactSheetAnnotation) {
-  if (annotation.kind === 'cell' && annotation.row != null && annotation.col != null) {
-    return `${columnLabel(annotation.col)}${annotation.row + 1}`;
+function describeAnnotation(annotation: ArtifactSheetAnnotation, sheet: MaterializedProjection) {
+  if (annotation.kind === 'cell' && annotation.rowId && annotation.columnId) {
+    const rowIndex = sheet.rows.findIndex((row) => row.rowId === annotation.rowId);
+    const colIndex = sheet.columns.findIndex((column) => column.id === annotation.columnId);
+    if (rowIndex >= 0 && colIndex >= 0) return `${columnLabel(colIndex)}${rowIndex + 2}`;
   }
-  if (annotation.kind === 'row' && annotation.row != null) {
-    return `Row ${annotation.row + 1}`;
+  if (annotation.kind === 'row' && annotation.rowId) {
+    const rowIndex = sheet.rows.findIndex((row) => row.rowId === annotation.rowId);
+    if (rowIndex >= 0) return `Row ${rowIndex + 2}`;
   }
-  if (annotation.kind === 'column' && annotation.col != null) {
-    return `Column ${columnLabel(annotation.col)}`;
+  if (annotation.kind === 'column' && annotation.columnId) {
+    const colIndex = sheet.columns.findIndex((column) => column.id === annotation.columnId);
+    if (colIndex >= 0) return `Column ${columnLabel(colIndex)}`;
   }
   return 'Sheet';
+}
+
+function createHandleResource<T>(repo: any, url: () => AutomergeUrl | undefined) {
+  return createResource(url, async (currentUrl) => {
+    if (!currentUrl) return undefined;
+    return (await repo.find(currentUrl)) as DocHandle<T>;
+  });
 }

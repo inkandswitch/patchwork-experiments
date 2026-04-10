@@ -266,12 +266,22 @@ export const plugins: Plugin<any>[] = [
     type: 'patchwork:tool',
     id: 'grjte-artifact-sheet',
     name: 'grjte Artifact Sheet',
-    supportedDatatypes: ['csv'],
+    supportedDatatypes: ['artifact-projection'],
     async load() {
       const { ArtifactSheetTool } = await import('./grjte/artifact-sheet/tool');
       return ArtifactSheetTool;
     },
   } satisfies Tool,
+  {
+    type: 'patchwork:datatype',
+    id: 'artifact-projection',
+    name: 'Artifact Projection',
+    icon: 'TableProperties',
+    async load() {
+      const { ArtifactProjectionDatatype } = await import('./grjte/artifact-sheet/datatype');
+      return ArtifactProjectionDatatype;
+    },
+  } as Datatype,
   {
     type: 'patchwork:tool',
     id: 'grjte-execution-viewer',

@@ -5,10 +5,11 @@ import type { ToolRender, ToolElement } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
 import type { TaskListExecutionDoc } from './types';
 import type { TaskDoc } from '../plan/types';
+import type { ArtifactFolderEntry } from '../artifact-projection';
 import './execution.css';
 
 type FolderDoc = {
-  docs: { type: string; name: string; url: AutomergeUrl }[];
+  docs: ArtifactFolderEntry[];
 };
 
 export const ExecutionTool: ToolRender = (handle, element) => {
@@ -121,7 +122,8 @@ function ExecutionView(props: { handle: DocHandle<TaskListExecutionDoc>; element
                           <Show when={isArtifactExpanded(entry.url)}>
                             <div class="execution-artifact-preview">
                               <patchwork-view
-                                attr:doc-url={entry.url}
+                                attr:doc-url={entry.projectionDocUrl ?? entry.url}
+                                attr:tool-id={entry.projectionDocUrl ? 'grjte-artifact-sheet' : undefined}
                                 style="display:block;width:100%;height:100%;"
                               />
                             </div>
