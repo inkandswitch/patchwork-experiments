@@ -3,15 +3,14 @@
  * Ported from workspace/agent-configs/plan-agent/skills/datalog/index.js
  */
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export type Constant = string | number;
-export type Term = string;
-
-export type StoredFact = { pred: string; args: Constant[]; comment?: string };
-export type StoredAtom = { pred: string; args: Term[] };
-export type StoredRule = { head: StoredAtom; body: StoredAtom[]; comment?: string };
-export type StoredConstraint = { body: StoredAtom[]; comment?: string; name?: string };
+import type {
+  Constant,
+  Term,
+  StoredFact,
+  StoredAtom,
+  StoredRule,
+  StoredConstraint,
+} from '../spec/datalog-doc';
 
 export type ConstraintViolation = {
   constraint: StoredConstraint;

@@ -188,7 +188,7 @@ export const plugins: Plugin<any>[] = [
     name: 'Verification',
     icon: 'ShieldCheck',
     async load() {
-      const { VerificationDatatype } = await import('./grjte/verification/types');
+      const { VerificationDatatype } = await import('./grjte/spec/verification-doc');
       return VerificationDatatype;
     },
   } as Datatype,
@@ -242,16 +242,6 @@ export const plugins: Plugin<any>[] = [
       return grjteWorkflowTemplateDatatype;
     },
   } as Datatype,
-  {
-    type: 'patchwork:tool',
-    id: 'grjte-verification-viewer',
-    name: 'grjte Verification Viewer',
-    supportedDatatypes: ['verification'],
-    async load() {
-      const { VerificationTool } = await import('./grjte/verification/tool');
-      return VerificationTool;
-    },
-  } satisfies Tool,
   {
     type: 'patchwork:tool',
     id: 'grjte-validation-viewer',

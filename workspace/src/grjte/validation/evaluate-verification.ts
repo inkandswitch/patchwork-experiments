@@ -1,20 +1,7 @@
 import type { AutomergeUrl } from '@automerge/automerge-repo';
-import type { VerificationDoc } from './types';
-import {
-  Datalog,
-  type ConstraintViolation,
-  type StoredConstraint,
-  type StoredFact,
-  type StoredRule,
-} from './datalog-eval';
-
-export type DatalogDoc = {
-  title?: string;
-  facts: StoredFact[];
-  rules: StoredRule[];
-  constraints: StoredConstraint[];
-  draftText?: string;
-};
+import type { VerificationDoc } from '../spec/verification-doc';
+import type { DatalogDoc, StoredConstraint, StoredFact, StoredRule } from '../spec/datalog-doc';
+import { Datalog, type ConstraintViolation } from './datalog-eval';
 
 export type VerificationArtifactInput = {
   url: AutomergeUrl;

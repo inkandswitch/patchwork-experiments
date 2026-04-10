@@ -4,7 +4,9 @@ import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primit
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
 import type { SpecDoc, Spec } from '../../workflow/types';
+import type { VerificationDoc } from './verification-doc';
 import './spec.css';
+import './verification-embed.css';
 
 type FolderDoc = {
   docs: { type: string; name: string; url: AutomergeUrl }[];
@@ -43,6 +45,10 @@ function SpecView(props: { handle: DocHandle<SpecDoc> }) {
 }
 
 function SpecSection(props: { spec: Spec }) {
+  const [expandedVerificationUrl, setExpandedVerificationUrl] = createSignal<AutomergeUrl | null>(
+    null,
+  );
+
   return (
     <div class="spec-section">
       <div class="spec-goal">{props.spec.goal || 'Untitled spec'}</div>
@@ -61,10 +67,12 @@ function SpecSection(props: { spec: Spec }) {
         <div class="spec-verification-list">
           <For each={props.spec.verificationUrls}>
             {(url) => (
-              <patchwork-view
-                attr:doc-url={url}
-                attr:tool-id="grjte-verification-viewer"
-                style="display:block;width:100%;"
+              <VerificationListRow
+                verificationUrl={url}
+                expanded={expandedVerificationUrl() === url}
+                onToggleExpanded={() =>
+                  setExpandedVerificationUrl((cur) => (cur === url ? null : url))
+                }
               />
             )}
           </For>
@@ -75,6 +83,62 @@ function SpecSection(props: { spec: Spec }) {
         <div class="spec-subspecs">
           <For each={props.spec.subSpecUrls}>{(url) => <SubSpecSection url={url} />}</For>
         </div>
+      </Show>
+    </div>
+  );
+}
+
+/** One `useDocument` per listed verification; datalog `patchwork-view` only mounts for the expanded row. */
+function VerificationListRow(props: {
+  verificationUrl: AutomergeUrl;
+  expanded: boolean;
+  onToggleExpanded: () => void;
+}) {
+  const [doc] = useDocument<VerificationDoc>(() => props.verificationUrl);
+
+  return (
+    <div class="verification-root">
+      <Show when={doc()} fallback={<div class="verification-loading">Loading verification...</div>}>
+        {(current) => (
+          <div class="verification-card">
+            <button
+              type="button"
+              class="verification-summary"
+              onClick={() => props.onToggleExpanded()}
+            >
+              <div class="verification-summary-main">
+                <div class="verification-summary-copy">
+                  <div class="verification-summary-title">
+                    {current().title || 'Untitled verification'}
+                  </div>
+                  <div class="verification-summary-description">
+                    {current().description || 'Formalized verification'}
+                  </div>
+                </div>
+              </div>
+              <div class="verification-summary-meta">
+                <span class="verification-expand-label">
+                  {props.expanded ? 'Hide details' : 'Show details'}
+                </span>
+              </div>
+            </button>
+
+            <Show when={props.expanded}>
+              <div class="verification-details">
+                <div class="verification-raw-doc">
+                  <Show when={current().docUrl}>
+                    {(datalogUrl) => (
+                      <patchwork-view
+                        attr:doc-url={datalogUrl()}
+                        style="display:block;width:100%;"
+                      />
+                    )}
+                  </Show>
+                </div>
+              </div>
+            </Show>
+          </div>
+        )}
       </Show>
     </div>
   );

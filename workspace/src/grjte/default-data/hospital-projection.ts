@@ -1,6 +1,6 @@
 import type { AutomergeUrl } from '@automerge/automerge-repo';
 import type { ProjectionDoc } from '../artifact-projection';
-import type { DatalogDoc } from '../verification/model';
+import type { DatalogDoc } from '../spec/datalog-doc';
 
 type StoredFact = DatalogDoc['facts'][number];
 

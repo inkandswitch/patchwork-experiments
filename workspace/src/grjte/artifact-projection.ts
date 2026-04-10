@@ -1,6 +1,7 @@
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo';
-import type { DatalogDoc, VerificationConstraintResult } from './verification/model';
-import type { ConstraintViolation } from './verification/datalog-eval';
+import type { DatalogDoc } from './spec/datalog-doc';
+import type { VerificationConstraintResult } from './validation/evaluate-verification';
+import type { ConstraintViolation } from './validation/datalog-eval';
 
 type StoredFact = DatalogDoc['facts'][number];
 

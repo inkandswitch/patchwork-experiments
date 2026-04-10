@@ -1,0 +1,85 @@
+@layer tool {
+  .spec-verification-list .verification-root {
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    color: #374151;
+  }
+
+  .spec-verification-list .verification-loading {
+    color: #9ca3af;
+    font-size: 14px;
+    padding: 8px 0;
+  }
+
+  .spec-verification-list .verification-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: #fff;
+    overflow: hidden;
+  }
+
+  .spec-verification-list .verification-summary {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    background: #fff;
+    border: 0;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .spec-verification-list .verification-summary:hover {
+    background: #f3f4f6;
+  }
+
+  .spec-verification-list .verification-summary-main {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .spec-verification-list .verification-summary-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .spec-verification-list .verification-summary-title {
+    color: #111827;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  .spec-verification-list .verification-summary-description {
+    color: #6b7280;
+    line-height: 1.5;
+  }
+
+  .spec-verification-list .verification-summary-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .spec-verification-list .verification-expand-label {
+    font-size: 12px;
+    color: #64748b;
+  }
+
+  .spec-verification-list .verification-details {
+    border-top: 1px solid #e5e7eb;
+    background: #fcfcfd;
+  }
+
+  .spec-verification-list .verification-raw-doc {
+    padding: 12px;
+  }
+}

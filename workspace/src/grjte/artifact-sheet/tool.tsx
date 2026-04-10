@@ -11,7 +11,7 @@ import {
 import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primitives';
 import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
-import type { DatalogDoc } from '../verification/model';
+import type { DatalogDoc } from '../spec/datalog-doc';
 import {
   appendProjectionRow,
   applyProjectionCellEdit,

@@ -1,6 +1,6 @@
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo';
 import type { SpecDoc, Spec } from '../../workflow/types';
-import type { VerificationDoc } from '../verification/types';
+import type { VerificationDoc } from '../spec/verification-doc';
 
 type StoredAtom = { pred: string; args: string[] };
 type StoredRule = { head: StoredAtom; body: StoredAtom[]; comment?: string };

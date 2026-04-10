@@ -13,14 +13,14 @@ import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
 import type { Heads } from '@automerge/automerge';
 import type { ValidationDoc } from '../../workflow/types';
 import type { TaskListExecutionDoc } from '../execution/types';
+import type { DatalogDoc } from '../spec/datalog-doc';
 import type {
-  DatalogDoc,
   VerificationArtifactInput,
-  VerificationEvaluation,
   VerificationDataInput,
-} from '../verification/model';
-import { evaluateVerification } from '../verification/model';
-import type { ConstraintViolation } from '../verification/datalog-eval';
+  VerificationEvaluation,
+} from './evaluate-verification';
+import { evaluateVerification } from './evaluate-verification';
+import type { ConstraintViolation } from './datalog-eval';
 import {
   deriveConstraintAnnotationsForArtifact,
   expandArtifactDocForVerification,
@@ -35,7 +35,7 @@ import {
   type SpecTreeNode,
   watchSpecTree,
 } from './verification-assembly';
-import '../verification/verification.css';
+import './verification-datalog.css';
 import './validation.css';
 
 type FolderDoc = {
