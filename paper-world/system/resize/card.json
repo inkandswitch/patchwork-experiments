@@ -1,0 +1,6 @@
+{
+  "type": "tool",
+  "name": "Resize",
+  "description": "Drag shape edges and corners to resize",
+  "toolUrl": "./card.js"
+}
