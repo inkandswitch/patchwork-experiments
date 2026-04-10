@@ -80,7 +80,7 @@
   }
 
   .wf-version {
-    padding: 14px 0 0 16px;
+    padding: 14px 16px 0 0;
     font-size: 11px;
     font-weight: 500;
     color: #94a3b8;
@@ -149,10 +149,10 @@
     overflow: hidden;
   }
 
-  .wf-spec-left {
+  .wf-spec-right {
     width: 35%;
     flex-shrink: 0;
-    border-right: 1px solid #e2e8f0;
+    border-left: 1px solid #e2e8f0;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -244,6 +244,110 @@
   .wf-spec-msg-system {
     color: #94a3b8;
     font-size: 11px;
+  }
+
+  /* ── Markdown prose ──────────────────────────────────────────────── */
+
+  .wf-spec-msg p {
+    margin: 0 0 0.6em;
+  }
+
+  .wf-spec-msg p:last-child {
+    margin-bottom: 0;
+  }
+
+  .wf-spec-msg h1,
+  .wf-spec-msg h2,
+  .wf-spec-msg h3,
+  .wf-spec-msg h4 {
+    font-weight: 600;
+    line-height: 1.3;
+    margin: 0.8em 0 0.3em;
+  }
+
+  .wf-spec-msg h1:first-child,
+  .wf-spec-msg h2:first-child,
+  .wf-spec-msg h3:first-child {
+    margin-top: 0;
+  }
+
+  .wf-spec-msg h1 { font-size: 15px; }
+  .wf-spec-msg h2 { font-size: 13px; }
+  .wf-spec-msg h3 { font-size: 12px; }
+
+  .wf-spec-msg ul,
+  .wf-spec-msg ol {
+    margin: 0 0 0.6em;
+    padding-left: 1.4em;
+  }
+
+  .wf-spec-msg li {
+    margin-bottom: 0.2em;
+  }
+
+  .wf-spec-msg code {
+    font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace;
+    font-size: 11px;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-radius: 3px;
+    padding: 0 3px;
+  }
+
+  .wf-spec-msg pre {
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-radius: 5px;
+    padding: 8px 10px;
+    overflow-x: auto;
+    margin: 0 0 0.6em;
+  }
+
+  .wf-spec-msg pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 11px;
+  }
+
+  .wf-spec-msg blockquote {
+    border-left: 3px solid #cbd5e1;
+    margin: 0 0 0.6em;
+    padding: 0 0 0 10px;
+    color: #64748b;
+  }
+
+  .wf-spec-msg a {
+    color: #3b82f6;
+    text-decoration: underline;
+  }
+
+  .wf-spec-msg strong { font-weight: 600; }
+  .wf-spec-msg em { font-style: italic; }
+
+  .wf-spec-msg hr {
+    border: none;
+    border-top: 1px solid #e2e8f0;
+    margin: 0.8em 0;
+  }
+
+  .wf-spec-msg table {
+    border-collapse: collapse;
+    font-size: 11px;
+    margin-bottom: 0.6em;
+    width: 100%;
+  }
+
+  .wf-spec-msg th,
+  .wf-spec-msg td {
+    border: 1px solid #e2e8f0;
+    padding: 4px 8px;
+    text-align: left;
+  }
+
+  .wf-spec-msg th {
+    background: #f8fafc;
+    font-weight: 600;
   }
 
   .wf-spec-script {

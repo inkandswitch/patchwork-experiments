@@ -1,6 +1,8 @@
 import { render } from 'solid-js/web';
 import { createSignal, For, Show, createEffect } from 'solid-js';
 import { RepoContext, useDocument, useRepo } from '@automerge/automerge-repo-solid-primitives';
+import { SolidMarkdown } from 'solid-markdown';
+import remarkGfm from 'remark-gfm';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle, Repo } from '@automerge/automerge-repo';
 import type { AutomergeUrl } from '@automerge/automerge-repo';
@@ -389,7 +391,7 @@ function PartView(props: { part: ChatMessagePart }) {
       when={props.part.type === 'script' ? props.part : undefined}
       fallback={
         <Show when={props.part.type === 'text' ? props.part : undefined}>
-          {(textPart) => <span>{textPart().text}</span>}
+          {(textPart) => <SolidMarkdown remarkPlugins={[remarkGfm]}>{textPart().text}</SolidMarkdown>}
         </Show>
       }
     >

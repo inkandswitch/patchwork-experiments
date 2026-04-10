@@ -1,6 +1,8 @@
 import { render } from 'solid-js/web';
 import { Show, createSignal, For, createEffect, createMemo } from 'solid-js';
 import { RepoContext, useDocument, useRepo } from '@automerge/automerge-repo-solid-primitives';
+import { SolidMarkdown } from 'solid-markdown';
+import remarkGfm from 'remark-gfm';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
 import type { WorkflowDoc, ValidationDoc, SpecElicitationDoc } from './types';
@@ -11,7 +13,7 @@ import './workflow.css';
 
 type Stage = 'elicitation' | 'spec' | 'plan' | 'execution' | 'validation';
 
-const WORKFLOW_VERSION = '0.4.3';
+const WORKFLOW_VERSION = '0.4.4';
 
 function makeId(): string {
   return Math.random().toString(36).slice(2, 10);
@@ -299,7 +301,6 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
   return (
     <div class="wf-root">
       <div class="wf-header">
-        <span class="wf-version">v{WORKFLOW_VERSION}</span>
         <div class="wf-header-main">
           <div class="wf-stage-bar">
             <For each={STAGES}>
@@ -338,6 +339,7 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
             )}
           </Show>
         </div>
+        <span class="wf-version">v{WORKFLOW_VERSION}</span>
       </div>
 
       <div class="wf-content">
@@ -440,7 +442,22 @@ function SpecGenerationView(props: {
 
   return (
     <div class="wf-spec-split">
-      <div class="wf-spec-left">
+      <div class="wf-spec-preview">
+        <Show
+          when={props.specDocUrl}
+          fallback={<div class="wf-empty">No spec yet</div>}
+        >
+          {(url) => (
+            <patchwork-view
+              attr:doc-url={url()}
+              attr:tool-id={props.specToolId}
+              style="display:block;width:100%;height:100%;"
+            />
+          )}
+        </Show>
+      </div>
+
+      <div class="wf-spec-right">
         <div class="wf-spec-process" ref={containerRef} onScroll={handleScroll}>
           <Show when={processDoc()}>
             {(pd) => (
@@ -479,21 +496,6 @@ function SpecGenerationView(props: {
           </button>
         </div>
       </div>
-
-      <div class="wf-spec-preview">
-        <Show
-          when={props.specDocUrl}
-          fallback={<div class="wf-empty">No spec yet</div>}
-        >
-          {(url) => (
-            <patchwork-view
-              attr:doc-url={url()}
-              attr:tool-id={props.specToolId}
-              style="display:block;width:100%;height:100%;"
-            />
-          )}
-        </Show>
-      </div>
     </div>
   );
 }
@@ -520,7 +522,21 @@ function PlanGenerationView(props: {
 
   return (
     <div class="wf-spec-split">
-      <div class="wf-spec-left">
+      <div class="wf-spec-preview">
+        <Show
+          when={props.planDocUrl}
+          fallback={<div class="wf-empty">No plan yet</div>}
+        >
+          {(url) => (
+            <patchwork-view
+              attr:doc-url={url()}
+              style="display:block;width:100%;height:100%;"
+            />
+          )}
+        </Show>
+      </div>
+
+      <div class="wf-spec-right">
         <div class="wf-spec-process" ref={containerRef} onScroll={handleScroll}>
           <Show when={processDoc()}>
             {(pd) => (
@@ -539,20 +555,6 @@ function PlanGenerationView(props: {
             )}
           </Show>
         </div>
-      </div>
-
-      <div class="wf-spec-preview">
-        <Show
-          when={props.planDocUrl}
-          fallback={<div class="wf-empty">No plan yet</div>}
-        >
-          {(url) => (
-            <patchwork-view
-              attr:doc-url={url()}
-              style="display:block;width:100%;height:100%;"
-            />
-          )}
-        </Show>
       </div>
     </div>
   );
@@ -574,7 +576,7 @@ function SpecPartView(props: { part: ChatMessagePart }) {
       when={props.part.type === 'script' ? props.part : undefined}
       fallback={
         <Show when={props.part.type === 'text' ? props.part : undefined}>
-          {(p) => <span>{(p() as { type: 'text'; text: string }).text}</span>}
+          {(p) => <SolidMarkdown remarkPlugins={[remarkGfm]}>{(p() as { type: 'text'; text: string }).text}</SolidMarkdown>}
         </Show>
       }
     >
