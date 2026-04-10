@@ -2,11 +2,13 @@ import type { AutomergeUrl, Repo } from '@automerge/automerge-repo';
 import type { TaskListExecutionDoc } from '../execution/types';
 import {
   buildBaseArtifactDraft,
-  buildDefaultRotaProjection,
   createProjectionDoc,
-  normalizeLegacySolutionFacts,
   type ArtifactFolderEntry,
 } from '../artifact-projection';
+import {
+  buildHospitalRotaProjection,
+  normalizeHospitalLegacySolutionFacts,
+} from './hospital-projection';
 
 type FolderDoc = {
   '@patchwork'?: { type: string };
@@ -51,7 +53,7 @@ function createSolutionArtifactDoc(
   title: string,
   legacyFacts: StoredFact[],
 ): AutomergeUrl {
-  const normalizedFacts = normalizeLegacySolutionFacts(legacyFacts);
+  const normalizedFacts = normalizeHospitalLegacySolutionFacts(legacyFacts);
   return createDatalogDoc(repo, title, buildBaseArtifactDraft(title, normalizedFacts), normalizedFacts);
 }
 
@@ -335,10 +337,10 @@ assigned(w6_wed_night, lisa_brown, 12). assignment_slot(w6_wed_night, 4, lisa_br
 
   const ward6RotaUrl = createSolutionArtifactDoc(repo, 'Ward 6 Rota', ward6Facts);
 
-  const amuProjectionUrl = createProjectionDoc(repo, buildDefaultRotaProjection(amuRotaUrl, 'AMU Rota'));
+  const amuProjectionUrl = createProjectionDoc(repo, buildHospitalRotaProjection(amuRotaUrl, 'AMU Rota'));
   const ward6ProjectionUrl = createProjectionDoc(
     repo,
-    buildDefaultRotaProjection(ward6RotaUrl, 'Ward 6 Rota'),
+    buildHospitalRotaProjection(ward6RotaUrl, 'Ward 6 Rota'),
   );
 
   const artifactsFolderHandle = repo.create<FolderDoc>();

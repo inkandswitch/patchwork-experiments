@@ -83,14 +83,22 @@ function ArtifactSheetView(props: { handle: DocHandle<ProjectionDoc>; element: T
     const currentProjection = projection();
     const currentArtifact = artifactDoc();
     if (!currentProjection || !currentArtifact) return null;
-    return materializeProjection(currentProjection, currentArtifact);
+    return materializeProjection(currentProjection, currentArtifact, {
+      projectionUrl: props.handle.url,
+    });
   });
   const visibleSheet = createMemo(() => {
     const current = materialized();
     return current && current.columns.length > 0 ? current : null;
   });
 
-  const annotations = createMemo(() => dedupeAnnotations([...externalAnnotations(), ...localAnnotations()]));
+  const annotations = createMemo(() =>
+    dedupeAnnotations([
+      ...(materialized()?.annotations ?? []),
+      ...externalAnnotations(),
+      ...localAnnotations(),
+    ]),
+  );
   const columnCount = createMemo(() => materialized()?.columns.length ?? 0);
   const selectionLabel = createMemo(() => {
     const currentSelection = selection();
@@ -230,6 +238,7 @@ function ArtifactSheetView(props: { handle: DocHandle<ProjectionDoc>; element: T
       column.id,
       value,
       currentProjection.artifactDocUrl,
+      { projectionUrl: props.handle.url },
     );
 
     if (!result.ok) {
@@ -277,7 +286,15 @@ function ArtifactSheetView(props: { handle: DocHandle<ProjectionDoc>; element: T
     const currentArtifact = artifactDoc();
     if (!currentProjection || !currentArtifact) return;
 
-    const result = appendProjectionRow(currentProjection, currentArtifact);
+    const result = appendProjectionRow(currentProjection, currentArtifact, {
+      projectionUrl: props.handle.url,
+    });
+    if (!result.ok) {
+      setLocalError(result.error);
+      setLocalAnnotations(result.annotations);
+      focusGrid();
+      return;
+    }
     persistArtifactDoc(result.doc);
     clearLocalFeedback();
     setSelection({
@@ -301,6 +318,7 @@ function ArtifactSheetView(props: { handle: DocHandle<ProjectionDoc>; element: T
       currentArtifact,
       row.rowId,
       currentProjection.artifactDocUrl,
+      { projectionUrl: props.handle.url },
     );
     if (!result.ok) {
       setLocalError(result.error);

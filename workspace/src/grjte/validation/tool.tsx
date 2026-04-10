@@ -10,7 +10,7 @@ import {
 import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primitives';
 import type { ToolRender, ToolElement } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
-import { getHeads, type Heads } from '@automerge/automerge';
+import type { Heads } from '@automerge/automerge';
 import type { ValidationDoc } from '../../workflow/types';
 import type { TaskListExecutionDoc } from '../execution/types';
 import type {
@@ -196,9 +196,9 @@ function ValidationBody(props: {
   onHeadsChanged: (headsByDocUrl: Record<AutomergeUrl, Heads>) => void;
 }) {
   const artifactAccessors = props.artifactEntries.map((entry) => {
-    const [doc] = useDocument<DatalogDoc>(() => entry.url);
-    const [projectionDoc] = useDocument<ProjectionDoc>(() => entry.projectionDocUrl);
-    return { entry, doc, projectionDoc };
+    const [doc, docHandle] = useDocument<DatalogDoc>(() => entry.url);
+    const [projectionDoc, projectionHandle] = useDocument<ProjectionDoc>(() => entry.projectionDocUrl);
+    return { entry, doc, docHandle, projectionDoc, projectionHandle };
   });
   const [specTree, setSpecTree] = createSignal<SpecTreeNode | null>(null);
   const [specTreeLoading, setSpecTreeLoading] = createSignal(true);
@@ -232,7 +232,12 @@ function ValidationBody(props: {
       const currentDoc = doc();
       const currentProjection = projectionDoc();
       if (!currentDoc || !currentProjection) return [];
-      return [[entry.url, expandArtifactDocForVerification(currentProjection, currentDoc)] as const];
+      return [[
+        entry.url,
+        expandArtifactDocForVerification(currentProjection, currentDoc, {
+          projectionUrl: entry.projectionDocUrl,
+        }),
+      ] as const];
     });
     return new Map(entries);
   });
@@ -258,12 +263,12 @@ function ValidationBody(props: {
 
   const liveHeadsByDocUrl = createMemo<Record<AutomergeUrl, Heads>>(() => {
     const next: Record<AutomergeUrl, Heads> = {};
-    for (const { entry, doc, projectionDoc } of artifactAccessors) {
-      const currentDoc = doc();
-      if (currentDoc) next[entry.url] = getHeads(currentDoc);
-      const currentProjection = projectionDoc();
-      if (entry.projectionDocUrl && currentProjection) {
-        next[entry.projectionDocUrl] = getHeads(currentProjection);
+    for (const { entry, docHandle, projectionHandle } of artifactAccessors) {
+      const currentDocHandle = docHandle();
+      if (currentDocHandle?.isReady()) next[entry.url] = currentDocHandle.heads() as Heads;
+      const currentProjectionHandle = projectionHandle();
+      if (entry.projectionDocUrl && currentProjectionHandle?.isReady()) {
+        next[entry.projectionDocUrl] = currentProjectionHandle.heads() as Heads;
       }
     }
     return next;
@@ -673,10 +678,12 @@ function ArtifactWorkspace(props: {
     props.entry.projectionDocUrl ? 'sheet' : 'datalog',
   );
   const [datalogDoc] = useDocument<DatalogDoc>(() => props.entry.url);
+  const [projectionDoc] = useDocument<ProjectionDoc>(() => props.entry.projectionDocUrl);
 
   const constraintAnnotations = createMemo<ArtifactSheetAnnotation[]>(() => {
     const currentExpandedArtifact = props.expandedArtifact;
-    if (!currentExpandedArtifact) return [];
+    const currentProjection = projectionDoc();
+    if (!currentExpandedArtifact || !currentProjection || !props.entry.projectionDocUrl) return [];
 
     const failingConstraints = props.verificationResults.flatMap((result) =>
       result.evaluation.constraints
@@ -687,10 +694,14 @@ function ArtifactWorkspace(props: {
         })),
     );
 
+    if (!props.entry.projectionDocUrl) return [];
+
     return deriveConstraintAnnotationsForArtifact(
+      currentProjection,
       props.entry.url,
       currentExpandedArtifact,
       failingConstraints,
+      { projectionUrl: props.entry.projectionDocUrl },
     );
   });
 
