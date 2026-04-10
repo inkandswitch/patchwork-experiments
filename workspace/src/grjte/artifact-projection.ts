@@ -503,17 +503,30 @@ export function expandArtifactDocForVerification(
   const scriptState = loadProjectionScriptHooks(projectionDoc, options.projectionUrl);
   const fallback = buildBaseExpandedArtifactDoc(projectionDoc, artifactDoc);
 
-  if (!scriptState.hooks?.expandForVerification) return fallback;
+  if (!scriptState.hooks?.expandForVerification) {
+    console.warn('[projection] No expandForVerification hook found for', projectionDoc.title, '| hooks available:', scriptState.hooks ? Object.keys(scriptState.hooks) : 'none');
+    return fallback;
+  }
+
+  console.log('[projection] Running expandForVerification for', projectionDoc.title, '| base facts:', fallback.facts.length);
 
   try {
+    const frozenArtifact = freezeDocLike(artifactDoc);
+    const frozenProjection = freezeProjectionDoc(projectionDoc);
+    const frozenExpanded = freezeScriptExpandedArtifactDoc(toScriptExpandedArtifact(fallback));
+    console.log('[projection] Frozen inputs ready. Calling hook...');
     const raw = scriptState.hooks.expandForVerification({
-      artifactDoc: freezeDocLike(artifactDoc),
-      projectionDoc: freezeProjectionDoc(projectionDoc),
-      defaultExpanded: freezeScriptExpandedArtifactDoc(toScriptExpandedArtifact(fallback)),
+      artifactDoc: frozenArtifact,
+      projectionDoc: frozenProjection,
+      defaultExpanded: frozenExpanded,
       helpers: scriptHelpers,
     });
-    return normalizeScriptExpandedArtifact(raw, fallback);
+    console.log('[projection] Hook returned. raw type:', typeof raw, '| has facts:', raw && typeof raw === 'object' && 'facts' in raw);
+    const result = normalizeScriptExpandedArtifact(raw, fallback);
+    console.log('[projection] Normalized result: facts count:', result.facts.length, '| sample preds:', [...new Set(result.facts.map((f: { pred: string }) => f.pred))].join(', '));
+    return result;
   } catch (error) {
+    console.error('[projection] expandForVerification FAILED:', error);
     return {
       ...fallback,
       draftText: [
@@ -888,17 +901,27 @@ function loadProjectionScriptHooks(
   projectionUrl?: AutomergeUrl,
 ): { hooks?: ProjectionScriptHooks; annotations: ArtifactSheetAnnotation[] } {
   const script = projectionDoc.script?.trim();
-  if (!script) return { hooks: undefined, annotations: [] };
+  if (!script) {
+    console.warn('[projection] No script found on projectionDoc', { title: projectionDoc.title, projectionUrl, hasScript: 'script' in projectionDoc, scriptType: typeof projectionDoc.script, scriptValue: projectionDoc.script });
+    return { hooks: undefined, annotations: [] };
+  }
+
+  console.log('[projection] Compiling script for', projectionDoc.title, '| length:', script.length, '| first 80 chars:', script.slice(0, 80));
 
   const cacheKey = buildProjectionScriptCacheKey(projectionDoc, projectionUrl);
   const cached = projectionScriptCache.get(cacheKey);
-  if (cached) return { hooks: cached, annotations: [] };
+  if (cached) {
+    console.log('[projection] Using cached hooks for', projectionDoc.title);
+    return { hooks: cached, annotations: [] };
+  }
 
   try {
     const hooks = compileProjectionScript(script);
+    console.log('[projection] Compiled hooks:', Object.keys(hooks).filter((k) => typeof (hooks as Record<string, unknown>)[k] === 'function'));
     projectionScriptCache.set(cacheKey, hooks);
     return { hooks, annotations: [] };
   } catch (error) {
+    console.error('[projection] Script compilation FAILED:', error);
     return {
       hooks: undefined,
       annotations: [scriptRuntimeAnnotation(`Projection script failed to compile: ${errorMessage(error)}`)],
@@ -907,6 +930,7 @@ function loadProjectionScriptHooks(
 }
 
 function compileProjectionScript(script: string): ProjectionScriptHooks {
+  console.log('[projection] Creating Function from script...');
   const evaluator = new Function(
     'helpers',
     [
@@ -918,7 +942,9 @@ function compileProjectionScript(script: string): ProjectionScriptHooks {
     ].join('\n'),
   ) as (helpers: ProjectionScriptHelpers) => unknown;
 
+  console.log('[projection] Function created, executing...');
   const raw = evaluator(scriptHelpers);
+  console.log('[projection] Evaluator returned:', typeof raw, raw ? Object.keys(raw as object) : 'null/undefined');
   if (!raw || typeof raw !== 'object') {
     throw new Error('Projection script must return an object of hook functions.');
   }
@@ -1045,6 +1071,12 @@ function mapViolationToAnnotations(
   const annotations: ArtifactSheetAnnotation[] = [];
   let touchedArtifact = false;
 
+  // When the constraint body contains a negation, the cell anchors we find
+  // come from the positive atoms (context) rather than the absent fact that
+  // actually caused the violation.  Fall back to row-level annotations so we
+  // don't highlight misleading cells.
+  const hasNegation = violation.constraint.body.some((atom) => atom.pred === 'not');
+
   for (const witness of violation.witnesses) {
     const rowAnchors = new Set<string>();
     const cellAnchors = new Set<string>();
@@ -1057,7 +1089,7 @@ function mapViolationToAnnotations(
 
       for (const anchor of anchors) {
         if (anchor.rowId) rowAnchors.add(anchor.rowId);
-        if (anchor.rowId && anchor.columnId) {
+        if (!hasNegation && anchor.rowId && anchor.columnId) {
           cellAnchors.add(JSON.stringify([anchor.rowId, anchor.columnId]));
         }
       }
@@ -1367,7 +1399,11 @@ function cloneFacts(facts: StoredFact[]) {
 }
 
 function cloneProjectionColumns(columns: ProjectionColumn[]) {
-  return columns.map((column) => ({ ...column }));
+  return columns.map((column) => ({
+    ...column,
+    read: { ...column.read },
+    write: column.write ? { ...column.write } : undefined,
+  }));
 }
 
 function cloneMaterializedColumns(columns: MaterializedProjectionColumn[]) {

@@ -135,7 +135,7 @@ function expandForVerification({ defaultExpanded, projectionDoc, helpers }) {
   const wardHours = new Map();
   const employeeHours = new Map();
   const wardRows = new Map();
-  const employeeRows = new Map();
+  const employeeCells = new Map();
   const rowIds = helpers.getRowIds(projectionDoc, baseFacts);
   const hoursColumnId =
     projectionDoc.columns.find(
@@ -178,8 +178,8 @@ function expandForVerification({ defaultExpanded, projectionDoc, helpers }) {
       addProvenance(assignedFact, anchors);
 
       employeeHours.set(assignment.person, (employeeHours.get(assignment.person) || 0) + hours);
-      if (!employeeRows.has(assignment.person)) employeeRows.set(assignment.person, new Set());
-      employeeRows.get(assignment.person).add(rowId);
+      if (!employeeCells.has(assignment.person)) employeeCells.set(assignment.person, []);
+      employeeCells.get(assignment.person).push({ rowId, columnId: assignment.columnId });
     }
 
     if (ward) {
@@ -211,7 +211,7 @@ function expandForVerification({ defaultExpanded, projectionDoc, helpers }) {
     derivedFacts.push(employeeFact);
     addProvenance(
       employeeFact,
-      [...(employeeRows.get(employee) || new Set())].map((rowId) => ({ rowId })),
+      employeeCells.get(employee) || [],
     );
   }
 
