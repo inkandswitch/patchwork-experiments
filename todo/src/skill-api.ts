@@ -26,8 +26,7 @@ export default function (workspace: Workspace) {
     },
 
     async getTodo(url: AutomergeUrl) {
-      const handle = repo.find<TodoDoc>(url);
-      await handle.whenReady();
+      const handle = await repo.find<TodoDoc>(url);
 
       return {
         addItem(description: string) {
@@ -55,11 +54,11 @@ export default function (workspace: Workspace) {
         },
 
         getItems() {
-          return handle.docSync()?.todos ?? [];
+          return handle.doc()?.todos ?? [];
         },
 
         getTitle() {
-          return handle.docSync()?.title ?? "";
+          return handle.doc()?.title ?? "";
         },
 
         setTitle(title: string) {
