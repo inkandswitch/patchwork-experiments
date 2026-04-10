@@ -677,7 +677,6 @@ function ArtifactWorkspace(props: {
   const [selectedView, setSelectedView] = createSignal<'sheet' | 'datalog'>(
     props.entry.projectionDocUrl ? 'sheet' : 'datalog',
   );
-  const [datalogDoc] = useDocument<DatalogDoc>(() => props.entry.url);
   const [projectionDoc] = useDocument<ProjectionDoc>(() => props.entry.projectionDocUrl);
 
   const constraintAnnotations = createMemo<ArtifactProjectionAnnotation[]>(() => {
@@ -743,12 +742,10 @@ function ArtifactWorkspace(props: {
       <Show
         when={selectedView() === 'sheet' && props.entry.projectionDocUrl}
         fallback={
-          <div class="verification-source-section">
-            <div class="verification-source-label">Expanded Datalog Source</div>
-            <pre class="verification-source-code">
-              {props.expandedArtifact?.draftText ?? datalogDoc()?.draftText ?? ''}
-            </pre>
-          </div>
+          <patchwork-view
+            attr:doc-url={props.entry.url}
+            style="display:block;width:100%;height:100%;"
+          />
         }
       >
         <patchwork-view
