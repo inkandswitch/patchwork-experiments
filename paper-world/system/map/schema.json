@@ -1,0 +1,6 @@
+{
+  "type": "schema",
+  "name": "Map",
+  "description": "Map document schema with paper-compatible shapes and persisted camera state",
+  "source": "./schema.js"
+}

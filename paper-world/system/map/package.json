@@ -1,0 +1,10 @@
+{
+  "name": "map",
+  "private": true,
+  "type": "module",
+  "description": "MapLibre-backed drawing surface",
+  "exports": {
+    "./tool.json": "./tool.json",
+    "./schema.json": "./schema.json"
+  }
+}

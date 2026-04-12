@@ -1,0 +1,7 @@
+{
+  "type": "tool",
+  "name": "Map",
+  "description": "MapLibre-backed canvas that reuses the paper drawing tools",
+  "toolUrl": "./tool.js",
+  "schemaUrl": "./schema.js"
+}

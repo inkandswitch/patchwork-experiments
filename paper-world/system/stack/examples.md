@@ -96,3 +96,48 @@ A clean canvas with drawing tools but no parts bin.
   "height": 300
 }
 ```
+
+## Map
+
+A MapLibre-backed canvas with drawing tools and no parts bin.
+
+```json
+{
+  "tool": "stack/tool.json",
+  "tags": ["starter"],
+  "value": {
+    "toolUrl": "stack/tool.json",
+    "stack": {
+      "children": [
+        {
+          "viewUrl": "map/tool.json",
+          "centerX": 13.388,
+          "centerY": 52.517,
+          "zoom": 9.5,
+          "shapes": {}
+        },
+        {
+          "viewUrl": "dock-layout/tool.json",
+          "dockLayout": {
+            "top-left": null,
+            "top-center": [
+              { "viewUrl": "selection/button.json" },
+              { "viewUrl": "rectangle/button.json" },
+              { "viewUrl": "ellipse/button.json" },
+              { "viewUrl": "line/button.json" }
+            ],
+            "top-right": null,
+            "middle-left": null,
+            "middle-right": null,
+            "bottom-left": null,
+            "bottom-center": null,
+            "bottom-right": null
+          }
+        }
+      ]
+    }
+  },
+  "width": 400,
+  "height": 300
+}
+```
