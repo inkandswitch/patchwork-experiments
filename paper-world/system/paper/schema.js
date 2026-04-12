@@ -41,6 +41,17 @@ export const selectedShapesSchema = {
   },
 };
 
+export function findTargetCanvas(target, rootCanvas) {
+  const closestRefView = target.closest('ref-view');
+  if (!closestRefView) return null;
+  const closestCanvas = closestRefView.findClosest(shapesSchema);
+  if (!closestCanvas) return null;
+  if (closestCanvas === rootCanvas || rootCanvas.contains(closestCanvas)) {
+    return closestCanvas;
+  }
+  return null;
+}
+
 export const cameraSchema = {
   methods: [
     'screenToPage',

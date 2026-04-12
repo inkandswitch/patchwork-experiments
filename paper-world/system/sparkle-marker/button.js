@@ -2,7 +2,7 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, render, html } from '../solid.js';
 import { getViewUrl } from '../url.js';
-import { selectedToolSchema, shapesSchema } from '../paper/schema.js';
+import { findTargetCanvas, selectedToolSchema, shapesSchema } from '../paper/schema.js';
 
 const TOOL_NAME = 'sparkle-marker';
 const sparkleViewUrl = getViewUrl('./tool.json', import.meta.url);
@@ -27,7 +27,6 @@ export default function mount(element) {
   if (!canvas) return;
   const selectedToolRef = canvas.getOrCreate(selectedToolSchema);
   const selectedTool = from(selectedToolRef);
-  const shapesRef = canvas.getOrCreate(shapesSchema);
 
   const active = () => selectedTool() === TOOL_NAME;
 
@@ -39,19 +38,23 @@ export default function mount(element) {
   let dragId = null;
   let originX = 0;
   let originY = 0;
+  let drawCanvas = null;
+  let drawShapesRef = null;
 
-  // Pick a random sparkly color each stroke
   const colors = ['#f0abfc', '#c084fc', '#818cf8', '#38bdf8', '#34d399', '#fbbf24', '#fb7185'];
 
   function onPointerDown(event) {
     if (!active()) return;
-    if (event.target.closest('ref-view') !== canvas) return;
-    const page = canvas.screenToPage(event.clientX, event.clientY);
+    const targetCanvas = findTargetCanvas(event.target, canvas);
+    if (!targetCanvas) return;
+    drawCanvas = targetCanvas;
+    drawShapesRef = targetCanvas.getOrCreate(shapesSchema);
+    const page = drawCanvas.screenToPage(event.clientX, event.clientY);
     originX = page.x;
     originY = page.y;
     dragId = `sparkle_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const color = colors[Math.floor(Math.random() * colors.length)];
-    shapesRef.at(dragId).change(() => ({
+    drawShapesRef.at(dragId).change(() => ({
       x: originX,
       y: originY,
       viewUrl: sparkleViewUrl,
@@ -63,24 +66,26 @@ export default function mount(element) {
 
   function onPointerMove(event) {
     if (!dragId) return;
-    const page = canvas.screenToPage(event.clientX, event.clientY);
+    const page = drawCanvas.screenToPage(event.clientX, event.clientY);
     const relX = page.x - originX;
     const relY = page.y - originY;
-    shapesRef.at(dragId).change((shape) => {
+    drawShapesRef.at(dragId).change((shape) => {
       shape.points.push([relX, relY, event.pressure || 0.5]);
     });
   }
 
   function onPointerUp() {
     if (dragId) {
-      const shape = shapesRef.at(dragId).value();
+      const shape = drawShapesRef.at(dragId).value();
       if (shape.points.length < 3) {
-        shapesRef.change((shapes) => {
+        drawShapesRef.change((shapes) => {
           delete shapes[dragId];
         });
       }
     }
     dragId = null;
+    drawCanvas = null;
+    drawShapesRef = null;
   }
 
   canvas.addEventListener('pointerdown', onPointerDown);

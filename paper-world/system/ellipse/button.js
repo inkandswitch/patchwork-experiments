@@ -2,7 +2,7 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, render, html } from '../solid.js';
 import { getViewUrl } from '../url.js';
-import { selectedToolSchema, shapesSchema } from '../paper/schema.js';
+import { findTargetCanvas, selectedToolSchema, shapesSchema } from '../paper/schema.js';
 
 const TOOL_NAME = 'ellipse';
 const ellipseViewUrl = getViewUrl('./tool.json', import.meta.url);
@@ -27,7 +27,6 @@ export default function mount(element) {
   if (!canvas) return;
   const selectedToolRef = canvas.getOrCreate(selectedToolSchema);
   const selectedTool = from(selectedToolRef);
-  const shapesRef = canvas.getOrCreate(shapesSchema);
 
   const active = () => selectedTool() === TOOL_NAME;
 
@@ -39,15 +38,20 @@ export default function mount(element) {
   let dragId = null;
   let startX = 0;
   let startY = 0;
+  let drawCanvas = null;
+  let drawShapesRef = null;
 
   function onPointerDown(event) {
     if (!active()) return;
-    if (event.target.closest('ref-view') !== canvas) return;
-    const page = canvas.screenToPage(event.clientX, event.clientY);
+    const targetCanvas = findTargetCanvas(event.target, canvas);
+    if (!targetCanvas) return;
+    drawCanvas = targetCanvas;
+    drawShapesRef = targetCanvas.getOrCreate(shapesSchema);
+    const page = drawCanvas.screenToPage(event.clientX, event.clientY);
     startX = page.x;
     startY = page.y;
     dragId = `ellipse_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    shapesRef.at(dragId).change(() => ({
+    drawShapesRef.at(dragId).change(() => ({
       x: startX,
       y: startY,
       viewUrl: ellipseViewUrl,
@@ -59,12 +63,12 @@ export default function mount(element) {
 
   function onPointerMove(event) {
     if (!dragId) return;
-    const { x: currentX, y: currentY } = canvas.screenToPage(event.clientX, event.clientY);
+    const { x: currentX, y: currentY } = drawCanvas.screenToPage(event.clientX, event.clientY);
     const width = Math.abs(currentX - startX);
     const height = Math.abs(currentY - startY);
     const x = Math.min(startX, currentX);
     const y = Math.min(startY, currentY);
-    shapesRef.at(dragId).change((shape) => {
+    drawShapesRef.at(dragId).change((shape) => {
       shape.x = x;
       shape.y = y;
       shape.width = width;
@@ -74,11 +78,11 @@ export default function mount(element) {
 
   function onPointerUp() {
     if (dragId) {
-      const shape = shapesRef.at(dragId).value();
+      const shape = drawShapesRef.at(dragId).value();
       if (shape.width < 2 && shape.height < 2) {
         const defaultWidth = 100;
         const defaultHeight = 100;
-        shapesRef.at(dragId).change((s) => {
+        drawShapesRef.at(dragId).change((s) => {
           s.x = startX - defaultWidth / 2;
           s.y = startY - defaultHeight / 2;
           s.width = defaultWidth;
@@ -88,6 +92,8 @@ export default function mount(element) {
       selectedToolRef.change(() => '');
     }
     dragId = null;
+    drawCanvas = null;
+    drawShapesRef = null;
   }
 
   canvas.addEventListener('pointerdown', onPointerDown);

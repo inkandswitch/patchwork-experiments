@@ -2,7 +2,7 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, render, html } from '../solid.js';
 import { getViewUrl } from '../url.js';
-import { selectedToolSchema, shapesSchema } from '../paper/schema.js';
+import { findTargetCanvas, selectedToolSchema, shapesSchema } from '../paper/schema.js';
 
 const TOOL_NAME = 'eraser';
 const eraserViewUrl = getViewUrl('./tool.json', import.meta.url);
@@ -43,12 +43,16 @@ export default function mount(element) {
   // Track which shapes we've already erased so we don't try to delete twice
   let erasedIds = new Set();
 
+  let drawCanvas = null;
+  let drawShapesRef = null;
+
   function getCanvasPos(event) {
-    return canvas.screenToPage(event.clientX, event.clientY);
+    return (drawCanvas || canvas).screenToPage(event.clientX, event.clientY);
   }
 
   function eraseAtPoint(px, py) {
-    const shapes = shapesRef.value() || {};
+    const ref = drawShapesRef || shapesRef;
+    const shapes = ref.value() || {};
     const toDelete = [];
 
     for (const [id, shape] of Object.entries(shapes)) {
@@ -96,7 +100,8 @@ export default function mount(element) {
     }
 
     if (toDelete.length > 0) {
-      shapesRef.change((shapes) => {
+      const ref = drawShapesRef || shapesRef;
+      ref.change((shapes) => {
         for (const id of toDelete) {
           delete shapes[id];
           erasedIds.add(id);
@@ -107,7 +112,10 @@ export default function mount(element) {
 
   function onPointerDown(event) {
     if (!active()) return;
-    if (event.target.closest('ref-view') !== canvas) return;
+    const targetCanvas = findTargetCanvas(event.target, canvas);
+    if (!targetCanvas) return;
+    drawCanvas = targetCanvas;
+    drawShapesRef = targetCanvas.getOrCreate(shapesSchema);
 
     dragging = true;
     erasedIds = new Set();
@@ -115,7 +123,7 @@ export default function mount(element) {
     trailPoints = [[pos.x, pos.y]];
     trailId = `eraser_trail_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
-    shapesRef.at(trailId).change(() => ({
+    drawShapesRef.at(trailId).change(() => ({
       x: 0,
       y: 0,
       viewUrl: eraserViewUrl,
@@ -132,7 +140,7 @@ export default function mount(element) {
     const pos = getCanvasPos(event);
     trailPoints.push([pos.x, pos.y]);
 
-    shapesRef.at(trailId).change((shape) => {
+    drawShapesRef.at(trailId).change((shape) => {
       shape.points.push([pos.x, pos.y]);
     });
 
@@ -143,11 +151,10 @@ export default function mount(element) {
     if (!dragging) return;
     dragging = false;
 
-    // Remove trail immediately
     const id = trailId;
-    if (id) {
+    if (id && drawShapesRef) {
       try {
-        shapesRef.change((shapes) => {
+        drawShapesRef.change((shapes) => {
           delete shapes[id];
         });
       } catch(e) {}
@@ -156,6 +163,8 @@ export default function mount(element) {
     trailId = null;
     trailPoints = [];
     erasedIds = new Set();
+    drawCanvas = null;
+    drawShapesRef = null;
   }
 
   canvas.addEventListener('pointerdown', onPointerDown);

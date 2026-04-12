@@ -1,5 +1,5 @@
 import mapSchema from './schema.js';
-import { selectedShapesSchema, selectedToolSchema, shapesSchema } from '../paper/schema.js';
+import { selectedShapesSchema, shapesSchema } from '../paper/schema.js';
 
 const MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
 const MAPLIBRE_SCRIPT_SRC = 'https://unpkg.com/maplibre-gl/dist/maplibre-gl.js';
@@ -25,9 +25,6 @@ export default function mount(element) {
   let disposeShapesSubscription = null;
   let disposeSelectedShapesSubscription = null;
   let exactLayoutFrameId = 0;
-  let interactionPointerId = null;
-  let interactionMouseDown = false;
-  let interactionsDisabled = false;
   let overlayMotionState = null;
 
   const cameraListeners = new Set();
@@ -37,7 +34,7 @@ export default function mount(element) {
   containerEl.style.cssText = 'position:relative;width:100%;height:100%;overflow:hidden;background:#e5e7eb;';
 
   const mapEl = document.createElement('div');
-  mapEl.style.cssText = 'position:absolute;inset:0;z-index:0;';
+  mapEl.style.cssText = 'position:absolute;inset:0;z-index:0;pointer-events:none;cursor:default;';
   containerEl.appendChild(mapEl);
 
   const overlayRootEl = document.createElement('div');
@@ -63,11 +60,6 @@ export default function mount(element) {
   element.getContainerEl = getContainerEl;
 
   containerEl.addEventListener('wheel', onWheel);
-  containerEl.addEventListener('pointerdown', onPointerDownCapture, true);
-  containerEl.addEventListener('pointerup', onPointerUpCapture, true);
-  containerEl.addEventListener('pointercancel', onPointerCancelCapture, true);
-  containerEl.addEventListener('mousedown', onMouseDownCapture, true);
-  window.addEventListener('mouseup', onWindowMouseUp, true);
 
   resizeObserver = new ResizeObserver(() => {
     if (!map) return;
@@ -89,11 +81,6 @@ export default function mount(element) {
   return () => {
     cancelExactLayout();
     containerEl.removeEventListener('wheel', onWheel);
-    containerEl.removeEventListener('pointerdown', onPointerDownCapture, true);
-    containerEl.removeEventListener('pointerup', onPointerUpCapture, true);
-    containerEl.removeEventListener('pointercancel', onPointerCancelCapture, true);
-    containerEl.removeEventListener('mousedown', onMouseDownCapture, true);
-    window.removeEventListener('mouseup', onWindowMouseUp, true);
     if (resizeObserver) {
       resizeObserver.disconnect();
     }
@@ -127,7 +114,13 @@ export default function mount(element) {
         zoom: geo.zoom,
         dragRotate: false,
         pitchWithRotate: false,
+        attributionControl: false,
       });
+      map.dragPan.disable();
+      map.scrollZoom.disable();
+      map.boxZoom.disable();
+      map.doubleClickZoom.disable();
+      map.touchZoomRotate.disable();
       map.on('load', onMapLoad);
       map.on('movestart', onMapMoveStart);
       map.on('move', onMapMove);
@@ -249,60 +242,6 @@ export default function mount(element) {
 
   function onWheel(event) {
     event.stopPropagation();
-  }
-
-  function onPointerDownCapture(event) {
-    if (event.button !== 0) return;
-    interactionPointerId = event.pointerId;
-    if (shouldSuspendMapGestures(element, event)) {
-      disableMapInteractions();
-    }
-  }
-
-  function onPointerUpCapture(event) {
-    if (interactionPointerId !== event.pointerId) return;
-    interactionPointerId = null;
-    enableMapInteractions();
-  }
-
-  function onPointerCancelCapture(event) {
-    if (interactionPointerId !== event.pointerId) return;
-    interactionPointerId = null;
-    enableMapInteractions();
-  }
-
-  function onMouseDownCapture(event) {
-    if (event.button !== 0) return;
-    interactionMouseDown = shouldSuspendMapGestures(element, event);
-    if (interactionMouseDown) {
-      disableMapInteractions();
-    }
-  }
-
-  function onWindowMouseUp() {
-    if (!interactionMouseDown) return;
-    interactionMouseDown = false;
-    enableMapInteractions();
-  }
-
-  function disableMapInteractions() {
-    if (!map || interactionsDisabled) return;
-    map.dragPan.disable();
-    map.scrollZoom.disable();
-    map.boxZoom.disable();
-    map.doubleClickZoom.disable();
-    map.touchZoomRotate.disable();
-    interactionsDisabled = true;
-  }
-
-  function enableMapInteractions() {
-    if (!map || !interactionsDisabled) return;
-    map.dragPan.enable();
-    map.scrollZoom.enable();
-    map.boxZoom.enable();
-    map.doubleClickZoom.enable();
-    map.touchZoomRotate.enable();
-    interactionsDisabled = false;
   }
 
   function scheduleExactLayout() {
@@ -453,14 +392,6 @@ function applyOverlayMotionTransform(overlayRootEl, map, overlayMotionState) {
 
 function resetOverlayTransform(overlayRootEl) {
   overlayRootEl.style.transform = '';
-}
-
-function shouldSuspendMapGestures(element, event) {
-  if (!(event.target instanceof Element)) return false;
-  if (event.target.closest('button, input, textarea, select, a, [contenteditable="true"]')) return true;
-  if (event.target.closest('ref-view') !== element) return true;
-  const selectedToolRef = element.get(selectedToolSchema);
-  return Boolean(selectedToolRef?.value?.());
 }
 
 function syncShapeWrappers(shapeLayerEl, shapeWrappers, map, shapes, selectedShapes, element) {

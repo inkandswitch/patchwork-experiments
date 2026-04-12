@@ -1,7 +1,7 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, render, html } from '../solid.js';
 import { getViewUrl } from '../url.js';
-import { isCanvasTarget, selectedToolSchema, shapesSchema } from '../paper/schema.js';
+import { findTargetCanvas, selectedToolSchema, shapesSchema } from '../paper/schema.js';
 
 const TOOL_NAME = 'text';
 const textViewUrl = getViewUrl('./tool.json', import.meta.url);
@@ -26,7 +26,6 @@ export default function mount(element) {
   if (!canvas) return;
   const selectedToolRef = canvas.getOrCreate(selectedToolSchema);
   const selectedTool = from(selectedToolRef);
-  const shapesRef = canvas.getOrCreate(shapesSchema);
 
   const active = () => selectedTool() === TOOL_NAME;
 
@@ -37,21 +36,23 @@ export default function mount(element) {
 
   function onPointerDown(event) {
     if (!active()) return;
-    if (!isCanvasTarget(event.target, canvas)) return;
-    const page = canvas.screenToPage(event.clientX, event.clientY);
+    const targetCanvas = findTargetCanvas(event.target, canvas);
+    if (!targetCanvas) return;
+    const drawShapesRef = targetCanvas.getOrCreate(shapesSchema);
+    const page = targetCanvas.screenToPage(event.clientX, event.clientY);
     const x = page.x;
     const halfLineHeight = Math.round((18 * 1.4) / 2);
     const y = page.y - halfLineHeight;
     const id = `text_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    shapesRef.at(id).change(() => ({
+    drawShapesRef.at(id).change(() => ({
       x,
       y,
       viewUrl: textViewUrl,
       text: '',
     }));
     selectedToolRef.change(() => '');
-    const shapeUrl = shapesRef.at(id).url;
-    canvas.addEventListener(
+    const shapeUrl = drawShapesRef.at(id).url;
+    targetCanvas.addEventListener(
       'mounted',
       (event) => {
         const refView = event.target.closest('ref-view');
