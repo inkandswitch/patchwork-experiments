@@ -13,7 +13,7 @@ export default function mount(element) {
         style=${() => ({
           width: `${data()?.width}px`,
           height: `${data()?.height}px`,
-          background: '#3b82f6',
+          background: data()?.color ?? '#3b82f6',
           'border-radius': '4px',
         })}
       ></div>`,

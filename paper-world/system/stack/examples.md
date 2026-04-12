@@ -31,7 +31,8 @@ A paper canvas with a dock layout toolbar and parts bin.
               { "viewUrl": "text/button.json" },
               { "viewUrl": "eraser/button.json" },
               { "viewUrl": "rainbow-marker/button.json" },
-              { "viewUrl": "sparkle-marker/button.json" }
+              { "viewUrl": "sparkle-marker/button.json" },
+              { "viewUrl": "color-picker/button.json" }
             ],
             "top-right": null,
             "middle-left": null,
@@ -79,7 +80,8 @@ A clean canvas with drawing tools but no parts bin.
               { "viewUrl": "text/button.json" },
               { "viewUrl": "eraser/button.json" },
               { "viewUrl": "rainbow-marker/button.json" },
-              { "viewUrl": "sparkle-marker/button.json" }
+              { "viewUrl": "sparkle-marker/button.json" },
+              { "viewUrl": "color-picker/button.json" }
             ],
             "top-right": null,
             "middle-left": null,
@@ -124,7 +126,8 @@ A MapLibre-backed canvas with drawing tools and no parts bin.
               { "viewUrl": "selection/button.json" },
               { "viewUrl": "rectangle/button.json" },
               { "viewUrl": "ellipse/button.json" },
-              { "viewUrl": "line/button.json" }
+              { "viewUrl": "line/button.json" },
+              { "viewUrl": "color-picker/button.json" }
             ],
             "top-right": null,
             "middle-left": null,

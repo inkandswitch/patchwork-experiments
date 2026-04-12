@@ -1,0 +1,10 @@
+{
+  "name": "color-picker",
+  "private": true,
+  "type": "module",
+  "description": "Color picker for drawing tools",
+  "exports": {
+    "./button": "./button.js",
+    "./button.json": "./button.json"
+  }
+}

@@ -6,6 +6,7 @@ const LineSchema = z.object({
   y: z.number(),
   viewUrl: z.string(),
   points: z.array(z.tuple([z.number(), z.number(), z.number()])),
+  color: z.string().optional(),
 });
 
 export default {

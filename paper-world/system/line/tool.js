@@ -33,7 +33,7 @@ export default function mount(element) {
             });
             return getSvgPathFromStroke(outlinePoints);
           }}
-          fill="#3b82f6"
+          fill=${() => data()?.color ?? '#3b82f6'}
         />
       </svg>`,
     element,

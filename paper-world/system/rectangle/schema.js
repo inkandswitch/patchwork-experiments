@@ -7,6 +7,7 @@ const RectangleSchema = z.object({
   viewUrl: z.string(),
   width: z.number(),
   height: z.number(),
+  color: z.string().optional(),
 });
 
 export default {

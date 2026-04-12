@@ -2,6 +2,7 @@ import { z } from 'https://esm.sh/zod@4.3';
 import { from, render, html } from '../solid.js';
 import { getViewUrl } from '../url.js';
 import { findTargetCanvas, selectedToolSchema, shapesSchema } from '../paper/schema.js';
+import { selectedColorSchema } from '../color-picker/schema.js';
 
 const TOOL_NAME = 'rectangle';
 const rectangleViewUrl = getViewUrl('./tool.json', import.meta.url);
@@ -26,6 +27,7 @@ export default function mount(element) {
   if (!canvas) return;
   const selectedToolRef = canvas.getOrCreate(selectedToolSchema);
   const selectedTool = from(selectedToolRef);
+  const selectedColorRef = canvas.getOrCreate(selectedColorSchema);
 
   const active = () => selectedTool() === TOOL_NAME;
 
@@ -50,12 +52,14 @@ export default function mount(element) {
     startX = page.x;
     startY = page.y;
     dragId = `rect_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const color = selectedColorRef.value();
     drawShapesRef.at(dragId).change(() => ({
       x: startX,
       y: startY,
       viewUrl: rectangleViewUrl,
       width: 0,
       height: 0,
+      color,
     }));
     canvas.setPointerCapture(event.pointerId);
   }

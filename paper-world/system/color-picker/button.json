@@ -1,0 +1,6 @@
+{
+  "type": "tool",
+  "name": "Color Picker Button",
+  "description": "Toolbar button for picking the drawing color",
+  "toolUrl": "./button.js"
+}
