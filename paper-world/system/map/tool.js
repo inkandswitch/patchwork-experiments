@@ -62,6 +62,7 @@ export default function mount(element) {
   element.subscribeCamera = subscribeCamera;
   element.getContainerEl = getContainerEl;
 
+  containerEl.addEventListener('wheel', onWheel);
   containerEl.addEventListener('pointerdown', onPointerDownCapture, true);
   containerEl.addEventListener('pointerup', onPointerUpCapture, true);
   containerEl.addEventListener('pointercancel', onPointerCancelCapture, true);
@@ -87,6 +88,7 @@ export default function mount(element) {
 
   return () => {
     cancelExactLayout();
+    containerEl.removeEventListener('wheel', onWheel);
     containerEl.removeEventListener('pointerdown', onPointerDownCapture, true);
     containerEl.removeEventListener('pointerup', onPointerUpCapture, true);
     containerEl.removeEventListener('pointercancel', onPointerCancelCapture, true);
@@ -243,6 +245,10 @@ export default function mount(element) {
   function onMapRemove() {
     stopOverlayMotion();
     map = null;
+  }
+
+  function onWheel(event) {
+    event.stopPropagation();
   }
 
   function onPointerDownCapture(event) {
