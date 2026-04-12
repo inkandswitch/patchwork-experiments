@@ -213,7 +213,6 @@ export default function mount(element) {
   let dragDataTransfer = null;
   let lastDragOverTarget = null;
   let dragThresholdMet = false;
-  let draggedWrapper = null;
   const DRAG_THRESHOLD = 5;
 
   function isInteractiveTarget(event) {
@@ -302,13 +301,6 @@ export default function mount(element) {
       }
       const target = elementUnderCursor(event.clientX, event.clientY, dragShapeId, canvas);
 
-      if (!draggedWrapper) {
-        draggedWrapper = findShapeWrapper(dragShapeId, canvas);
-      }
-      if (draggedWrapper) {
-        draggedWrapper.style.opacity = target ? '0' : '';
-      }
-
       if (target && target !== lastDragOverTarget) {
         if (lastDragOverTarget) {
           lastDragOverTarget.dispatchEvent(
@@ -332,9 +324,6 @@ export default function mount(element) {
   }
 
   function onPointerUp(event) {
-    if (draggedWrapper) {
-      draggedWrapper.style.opacity = '';
-    }
     if (dragDataTransfer && dragShapeId && dragThresholdMet) {
       const target = elementUnderCursor(event.clientX, event.clientY, dragShapeId, canvas);
       if (target) {
@@ -353,18 +342,6 @@ export default function mount(element) {
     dragDataTransfer = null;
     lastDragOverTarget = null;
     dragThresholdMet = false;
-    draggedWrapper = null;
-  }
-
-  function findShapeWrapper(shapeId, canvasEl) {
-    const allRefViews = canvasEl.querySelectorAll('ref-view');
-    for (const rv of allRefViews) {
-      const refUrl = rv.getAttribute('ref-url') || '';
-      if (refUrl.endsWith('/' + shapeId)) {
-        return rv.parentElement;
-      }
-    }
-    return null;
   }
 
   function elementUnderCursor(clientX, clientY, shapeId, canvasEl) {
