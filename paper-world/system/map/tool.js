@@ -61,6 +61,9 @@ export default function mount(element) {
 
   containerEl.addEventListener('wheel', onWheel);
 
+  let visible = false;
+  let intersectionObserver = null;
+
   resizeObserver = new ResizeObserver(() => {
     if (!map) return;
     map.resize();
@@ -76,11 +79,27 @@ export default function mount(element) {
     scheduleExactLayout();
   });
 
-  void initializeMap();
+  intersectionObserver = new IntersectionObserver(
+    (entries) => {
+      const isVisible = entries[0].isIntersecting;
+      if (isVisible && !visible) {
+        visible = true;
+        if (!map) void initializeMap();
+      } else if (!isVisible && visible) {
+        visible = false;
+        destroyMap();
+      }
+    },
+    { threshold: 0 },
+  );
+  intersectionObserver.observe(containerEl);
 
   return () => {
     cancelExactLayout();
     containerEl.removeEventListener('wheel', onWheel);
+    if (intersectionObserver) {
+      intersectionObserver.disconnect();
+    }
     if (resizeObserver) {
       resizeObserver.disconnect();
     }
@@ -106,6 +125,7 @@ export default function mount(element) {
   async function initializeMap() {
     try {
       const mapLibre = await loadMapLibre();
+      if (!visible) return;
       const geo = readGeoCamera(rootRef);
       map = new mapLibre.Map({
         container: mapEl,
@@ -238,6 +258,15 @@ export default function mount(element) {
   function onMapRemove() {
     stopOverlayMotion();
     map = null;
+  }
+
+  function destroyMap() {
+    cancelExactLayout();
+    stopOverlayMotion();
+    clearShapeWrappers(shapeWrappers);
+    if (map) {
+      map.remove();
+    }
   }
 
   function onWheel(event) {
