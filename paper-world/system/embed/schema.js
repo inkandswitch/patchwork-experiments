@@ -5,6 +5,8 @@ const EmbedSchema = z
     embedDocUrl: z.string(),
     embedToolUrl: z.string().optional(),
     title: z.string().optional(),
+    width: z.number().nullable().optional(),
+    height: z.number().nullable().optional(),
   })
   .passthrough();
 

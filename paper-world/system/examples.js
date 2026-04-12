@@ -1,8 +1,11 @@
 /**
- * @typedef {{ name: string, description: string, tool: string, value: object, source: string, package: string, tags: string[], width?: number, height?: number, create?: string }} Example
+ * @typedef {{ name: string, description: string, tool: string, value: object, source: string, package: string, tags: string[], create?: string }} Example
  * @typedef {{ value(): Example[], subscribe(fn: (value: Example[]) => void): () => void }} ExampleSubscribable
  * @typedef {{ readFile: (path: string) => Promise<string>, watch: (pattern: string, fn: (matches: string[]) => void) => () => void }} ExampleFilesystem
  */
+
+const DEFAULT_PREVIEW_WIDTH = 300;
+const DEFAULT_PREVIEW_HEIGHT = 200;
 
 /**
  * @param {ExampleFilesystem} filesystem
@@ -128,8 +131,6 @@ function tryParseExample(json, name, description, source, packageName) {
     ) {
       const tags = Array.isArray(parsed.tags) ? parsed.tags.filter((t) => typeof t === 'string') : [];
       const example = { name: name || 'Untitled', description, tool: parsed.tool, value: parsed.value, source, package: packageName, tags };
-      if (typeof parsed.width === 'number') example.width = parsed.width;
-      if (typeof parsed.height === 'number') example.height = parsed.height;
       if (typeof parsed.create === 'string') example.create = parsed.create;
       return example;
     }
@@ -159,4 +160,16 @@ function examplesEqual(a, b) {
     }
   }
   return true;
+}
+
+/**
+ * @param {Example} example
+ * @returns {{ width: number, height: number }}
+ */
+export function getExamplePreviewSize(example) {
+  const value = example?.value;
+  return {
+    width: typeof value?.width === 'number' ? value.width : DEFAULT_PREVIEW_WIDTH,
+    height: typeof value?.height === 'number' ? value.height : DEFAULT_PREVIEW_HEIGHT,
+  };
 }

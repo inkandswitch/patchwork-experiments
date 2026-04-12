@@ -1,6 +1,6 @@
-import { render, html, createSignal, createEffect } from '../solid.js';
+import { render, html, createSignal, createEffect, from } from '../solid.js';
 import { useRef } from '../solid.js';
-import { shapesSchema } from '../paper/schema.js';
+import { shapesSchema, selectedToolSchema } from '../paper/schema.js';
 
 const MIN_SIZE = 20;
 const DEFAULT_MARGIN = 6;
@@ -12,7 +12,9 @@ export default function mount(element) {
   if (!canvas) return;
 
   const shapesRef = canvas.getOrCreate(shapesSchema);
+  const selectedToolRef = canvas.getOrCreate(selectedToolSchema);
   const shapes = useRef(shapesRef);
+  const selectedTool = from(selectedToolRef);
   const containerEl = canvas.getContainerEl();
   if (!containerEl) return;
 
@@ -20,9 +22,50 @@ export default function mount(element) {
 
   function isResizable(id) {
     const shape = shapes[id];
-    if (!shape || typeof shape.width !== 'number' || typeof shape.height !== 'number') return false;
+    if (!shape) return false;
     if (shapesRef.at(id).url === selfUrl) return false;
-    return true;
+    if (typeof shape.width === 'number' && typeof shape.height === 'number') return true;
+    return shape.width === null || shape.height === null;
+  }
+
+  function getShapeBounds(id) {
+    const shape = shapes[id];
+    if (!shape) return null;
+    if (typeof shape.width === 'number' && typeof shape.height === 'number') {
+      return {
+        x: shape.x,
+        y: shape.y,
+        width: shape.width,
+        height: shape.height,
+      };
+    }
+    if (shape.width !== null && shape.height !== null) return null;
+    return measureShapeBounds(id);
+  }
+
+  function measureShapeBounds(id) {
+    const wrapper = findShapeWrapperEl(id);
+    if (!wrapper) return null;
+    const rect = wrapper.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) return null;
+    const topLeft = canvas.screenToPage(rect.left, rect.top);
+    const bottomRight = canvas.screenToPage(rect.right, rect.bottom);
+    return {
+      x: topLeft.x,
+      y: topLeft.y,
+      width: bottomRight.x - topLeft.x,
+      height: bottomRight.y - topLeft.y,
+    };
+  }
+
+  function findShapeWrapperEl(id) {
+    const targetUrl = shapesRef.at(id).url;
+    const allRefViews = containerEl.querySelectorAll('ref-view');
+    for (const refView of allRefViews) {
+      if (refView.getAttribute('ref-url') !== targetUrl) continue;
+      return refView.parentElement;
+    }
+    return null;
   }
 
   const [margin, setMargin] = createSignal(DEFAULT_MARGIN);
@@ -31,15 +74,24 @@ export default function mount(element) {
 
   let drag = null;
 
+  function isSelectionToolActive() {
+    return selectedTool() === 'selection';
+  }
+
+  function isResizeActive() {
+    return enabled() && isSelectionToolActive();
+  }
+
   function hitTest(clientX, clientY) {
-    if (!enabled()) return null;
+    if (!isResizeActive()) return null;
     const page = canvas.screenToPage(clientX, clientY);
     const zoom = canvas.getCamera().zoom;
     const m = margin() / zoom;
 
     for (const id of Object.keys(shapes)) {
       if (!isResizable(id)) continue;
-      const shape = shapes[id];
+      const shape = getShapeBounds(id);
+      if (!shape) continue;
 
       const left = shape.x;
       const top = shape.y;
@@ -69,19 +121,25 @@ export default function mount(element) {
 
   function onMouseMove(event) {
     if (drag) return;
+    if (!isResizeActive()) {
+      containerEl.style.cursor = '';
+      return;
+    }
     const hit = hitTest(event.clientX, event.clientY);
     containerEl.style.cursor = hit ? hit.cursor : '';
   }
 
   function onMouseDown(event) {
     if (event.button !== 0) return;
+    if (!isResizeActive()) return;
     const hit = hitTest(event.clientX, event.clientY);
     if (!hit) return;
 
     event.preventDefault();
     event.stopPropagation();
 
-    const shape = shapes[hit.id];
+    const shape = getShapeBounds(hit.id);
+    if (!shape) return;
     drag = {
       id: hit.id,
       edge: hit.edge,
@@ -156,14 +214,15 @@ export default function mount(element) {
   if (transformLayer) transformLayer.appendChild(overlay);
 
   createEffect(() => {
-    const visible = showZones();
+    const visible = showZones() && isResizeActive();
     const m = margin();
     while (overlay.firstChild) overlay.removeChild(overlay.firstChild);
     if (!visible) return;
 
     for (const id of Object.keys(shapes)) {
       if (!isResizable(id)) continue;
-      const shape = shapes[id];
+      const shape = getShapeBounds(id);
+      if (!shape) continue;
 
       const ox = shape.x - m;
       const oy = shape.y - m;
@@ -257,7 +316,7 @@ export default function mount(element) {
         style=${{ width: '140px', height: '196px', perspective: '600px' }}
       >
         <div
-          onMouseEnter=${() => enabled() && setShowZones(true)}
+          onMouseEnter=${() => isResizeActive() && setShowZones(true)}
           onMouseLeave=${() => setShowZones(false)}
           style=${() => ({
             position: 'relative',

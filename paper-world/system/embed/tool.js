@@ -1,5 +1,8 @@
 import { useRef, render, html } from '../solid.js';
 
+const DEFAULT_EMBED_WIDTH = 420;
+const DEFAULT_EMBED_HEIGHT = 320;
+
 export default function mount(element) {
   const ref = element.ref;
   const data = useRef(ref);
@@ -7,13 +10,7 @@ export default function mount(element) {
   const cleanup = render(
     () =>
       html`<div
-        style=${() => ({
-          width: typeof data.width === 'number' ? `${data.width}px` : 'auto',
-          height: typeof data.height === 'number' ? `${data.height}px` : 'auto',
-          background: '#f1f5f9',
-          'border-radius': '4px',
-          overflow: 'hidden',
-        })}
+        style=${() => embedFrameStyle(data)}
       >
         ${() => {
           const embedDocUrl = data.embedDocUrl;
@@ -44,4 +41,18 @@ export default function mount(element) {
   );
 
   return cleanup;
+}
+
+function embedFrameStyle(data) {
+  const hasExplicitWidth = typeof data.width === 'number';
+  const hasExplicitHeight = typeof data.height === 'number';
+  return {
+    width: hasExplicitWidth ? `${data.width}px` : `min(${DEFAULT_EMBED_WIDTH}px, calc(100vw - 48px))`,
+    height: hasExplicitHeight ? `${data.height}px` : `min(${DEFAULT_EMBED_HEIGHT}px, calc(100vh - 96px))`,
+    'max-width': hasExplicitWidth ? 'none' : `${DEFAULT_EMBED_WIDTH}px`,
+    'max-height': hasExplicitHeight ? 'none' : `${DEFAULT_EMBED_HEIGHT}px`,
+    background: '#f1f5f9',
+    'border-radius': '4px',
+    overflow: 'hidden',
+  };
 }

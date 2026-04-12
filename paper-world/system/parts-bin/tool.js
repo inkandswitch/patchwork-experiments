@@ -1,14 +1,11 @@
-import { createExamples } from '../examples.js';
+import { createExamples, getExamplePreviewSize } from '../examples.js';
 import { getViewUrl } from '../url.js';
 import { shapesSchema } from '../paper/schema.js';
 import partsBinSchema from './schema.js';
 
-
-
+const SHAPE_MIME = 'text/x-patchwork-shape';
 const MAX_PREVIEW_W = 260;
 const MAX_PREVIEW_H = 300;
-const DEFAULT_WIDTH = 300;
-const DEFAULT_HEIGHT = 200;
 
 function exampleKey(example) {
   return example.source + '#' + example.name;
@@ -71,8 +68,7 @@ export default function mount(element) {
       if (!example) continue;
       const repo = globalThis.repo;
       if (!repo) continue;
-      const nativeWidth = example.width || DEFAULT_WIDTH;
-      const nativeHeight = example.height || DEFAULT_HEIGHT;
+      const { width: nativeWidth, height: nativeHeight } = getExamplePreviewSize(example);
       const scale = Math.min(1, MAX_PREVIEW_W / nativeWidth, MAX_PREVIEW_H / nativeHeight);
       const handle = repo.create(structuredClone(example.value));
       const inner = document.createElement('ref-view');
@@ -157,12 +153,7 @@ export default function mount(element) {
     footer.textContent = filtered.length + ' example' + (filtered.length === 1 ? '' : 's');
   }
 
-  function placeExample(example) {
-    const canvas = element.findParent(shapesSchema);
-    if (!canvas) return;
-
-    const currentData = element.getOrCreate(partsBinSchema).value();
-
+  function resolveExample(example) {
     let createValue = example.value;
     let createTool = example.tool;
     if (example.create) {
@@ -174,19 +165,46 @@ export default function mount(element) {
         }
       }
     }
+    return {
+      value: structuredClone(createValue),
+      viewUrl: getViewUrl('../' + createTool, import.meta.url),
+    };
+  }
 
-    const viewPath = getViewUrl('../' + createTool, import.meta.url);
-    const newWidth = createValue.width || example.width || DEFAULT_WIDTH;
-    const newHeight = createValue.height || example.height || DEFAULT_HEIGHT;
+  function placeExample(example) {
+    const canvas = element.findParent(shapesSchema);
+    if (!canvas) return;
 
+    const currentData = element.getOrCreate(partsBinSchema).value();
+    const { value, viewUrl } = resolveExample(example);
+    const dropX = (currentData.x || 0) + (currentData.width || 280) + 20;
+    const dropY = currentData.y || 0;
+    const shapesRef = canvas.getOrCreate(shapesSchema);
     const shapeId = `example_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    canvas.getOrCreate(shapesSchema).at(shapeId).change(() => ({
-      ...structuredClone(createValue),
-      x: (currentData.x || 0) + (currentData.width || 280) + 20,
-      y: currentData.y || 0,
-      viewUrl: viewPath,
-      width: newWidth,
-      height: newHeight,
+
+    if (looksLikeShapeValue(value, viewUrl)) {
+      shapesRef.at(shapeId).change(() => ({
+        ...value,
+        x: dropX,
+        y: dropY,
+        viewUrl,
+      }));
+      return;
+    }
+
+    const repo = globalThis.repo;
+    if (!repo) return;
+    const handle = repo.create(structuredClone(value));
+    const embedViewUrl = getViewUrl('../embed/tool.json', import.meta.url);
+    shapesRef.at(shapeId).change(() => ({
+      x: dropX,
+      y: dropY,
+      viewUrl: embedViewUrl,
+      embedDocUrl: handle.url,
+      embedToolUrl: viewUrl,
+      title: example.name,
+      width: null,
+      height: null,
     }));
   }
 
@@ -212,47 +230,35 @@ export default function mount(element) {
     }
     cardHeader.appendChild(nameEl);
 
-    const btnGroup = document.createElement('div');
-    btnGroup.style.cssText = 'display:flex;gap:4px;flex-shrink:0;';
-
-    const resetBtn = document.createElement('button');
-    resetBtn.textContent = 'Reset';
-    resetBtn.style.cssText = 'background:#f1f5f9;border:1px solid #d1d5db;border-radius:4px;padding:2px 8px;font-size:11px;color:#64748b;cursor:pointer;';
-    resetBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      const refView = previewContainer.querySelector('ref-view');
-      if (refView) {
-        const repo = globalThis.repo;
-        if (repo) {
-          const fresh = repo.create(structuredClone(example.value));
-          refView.setAttribute('ref-url', fresh.url);
-        }
-      }
-    });
-    btnGroup.appendChild(resetBtn);
-
     const createBtn = document.createElement('button');
     createBtn.textContent = 'Create';
-    createBtn.style.cssText = 'background:#10b981;border:1px solid #059669;border-radius:4px;padding:2px 8px;font-size:11px;color:#fff;cursor:pointer;';
+    createBtn.style.cssText = 'background:#10b981;border:1px solid #059669;border-radius:4px;padding:2px 8px;font-size:11px;color:#fff;cursor:pointer;flex-shrink:0;';
     createBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       e.preventDefault();
-      placeExample(example);
+      void placeExample(example);
     });
-    btnGroup.appendChild(createBtn);
+    cardHeader.appendChild(createBtn);
 
-    cardHeader.appendChild(btnGroup);
     card.appendChild(cardHeader);
 
-    const nativeWidth = example.width || DEFAULT_WIDTH;
-    const nativeHeight = example.height || DEFAULT_HEIGHT;
+    const { width: nativeWidth, height: nativeHeight } = getExamplePreviewSize(example);
     const scale = Math.min(1, MAX_PREVIEW_W / nativeWidth, MAX_PREVIEW_H / nativeHeight);
 
     const previewContainer = document.createElement('div');
-    previewContainer.style.cssText = `width:${nativeWidth * scale}px;height:${nativeHeight * scale}px;overflow:hidden;position:relative;background:#f1f5f9;`;
+    previewContainer.style.cssText = `width:${Math.min(MAX_PREVIEW_W, nativeWidth * scale)}px;height:${Math.min(MAX_PREVIEW_H, nativeHeight * scale)}px;max-width:${MAX_PREVIEW_W}px;max-height:${MAX_PREVIEW_H}px;overflow:hidden;position:relative;background:#f1f5f9;cursor:grab;`;
     previewContainer.dataset.exampleKey = exampleKey(example);
+    previewContainer.draggable = true;
     previewContainer.addEventListener('pointerdown', (e) => e.stopPropagation());
+    previewContainer.addEventListener('dragstart', (e) => {
+      e.stopPropagation();
+      const payload = resolveExample(example);
+      e.dataTransfer.setData(SHAPE_MIME, JSON.stringify({ ...payload, title: example.name }));
+      e.dataTransfer.effectAllowed = 'copy';
+      if (previewContainer.firstElementChild) {
+        e.dataTransfer.setDragImage(previewContainer, 0, 0);
+      }
+    });
     card.appendChild(previewContainer);
 
     return { card, previewContainer };
@@ -271,5 +277,16 @@ export default function mount(element) {
 
 function getAtDotPath(obj, dotPath) {
   return dotPath.split('.').reduce((cur, seg) => cur?.[seg], obj);
+}
+
+function looksLikeShapeValue(value, viewUrl) {
+  return (
+    value &&
+    typeof value === 'object' &&
+    typeof value.x === 'number' &&
+    typeof value.y === 'number' &&
+    typeof viewUrl === 'string' &&
+    viewUrl !== ''
+  );
 }
 

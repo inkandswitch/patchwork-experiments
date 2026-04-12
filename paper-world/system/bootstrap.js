@@ -1,10 +1,8 @@
-import { createExamples } from './examples.js';
+import { createExamples, getExamplePreviewSize } from './examples.js';
 import { getViewUrl } from './url.js';
 
 const MAX_PREVIEW_W = 280;
 const MAX_PREVIEW_H = 200;
-const DEFAULT_WIDTH = 300;
-const DEFAULT_HEIGHT = 200;
 
 function starterKey(example) {
   return example.source + '#' + example.name;
@@ -96,8 +94,7 @@ export default function mount(element) {
       if (!example) continue;
       const repo = globalThis.repo;
       if (!repo) continue;
-      const nativeWidth = example.width || DEFAULT_WIDTH;
-      const nativeHeight = example.height || DEFAULT_HEIGHT;
+      const { width: nativeWidth, height: nativeHeight } = getExamplePreviewSize(example);
       const scale = Math.min(1, MAX_PREVIEW_W / nativeWidth, MAX_PREVIEW_H / nativeHeight);
       const handle = repo.create(structuredClone(example.value));
       const inner = document.createElement('ref-view');
@@ -191,8 +188,7 @@ export default function mount(element) {
       updateSelection();
     });
 
-    const nativeWidth = example.width || DEFAULT_WIDTH;
-    const nativeHeight = example.height || DEFAULT_HEIGHT;
+    const { width: nativeWidth, height: nativeHeight } = getExamplePreviewSize(example);
     const scale = Math.min(1, MAX_PREVIEW_W / nativeWidth, MAX_PREVIEW_H / nativeHeight);
 
     const previewContainer = document.createElement('div');

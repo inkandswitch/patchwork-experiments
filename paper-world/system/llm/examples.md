@@ -14,9 +14,7 @@ An empty LLM chat with default configuration.
       "model": "anthropic/claude-opus-4.6"
     },
     "runs": []
-  },
-  "width": 400,
-  "height": 300
+  }
 }
 ```
 
@@ -40,8 +38,6 @@ A chat session with a pre-filled prompt and response.
         "done": true
       }
     ]
-  },
-  "width": 400,
-  "height": 300
+  }
 }
 ```

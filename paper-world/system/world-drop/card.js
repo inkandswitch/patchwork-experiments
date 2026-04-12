@@ -3,6 +3,10 @@ import { getViewUrl } from '../url.js';
 import { shapesSchema } from '../paper/schema.js';
 
 const URLS_MIME = 'text/x-patchwork-urls';
+const SHAPE_MIME = 'text/x-patchwork-shape';
+const REF_MIME = 'text/x-patchwork-ref-url';
+const DIRECT_DROP_OFFSET_X = 40;
+const EMBED_DROP_OFFSET_X = 440;
 
 export default function mount(element) {
   const canvas = element.findParent(shapesSchema);
@@ -24,10 +28,10 @@ export default function mount(element) {
 
   function onDragOver(event) {
     if (!enabled()) return;
-    if (!event.dataTransfer.types.includes(URLS_MIME)) return;
+    if (!supportsDropType(event.dataTransfer)) return;
     if (!isOverCanvas(event)) return;
     event.preventDefault();
-    event.dataTransfer.dropEffect = 'copy';
+    event.dataTransfer.dropEffect = event.dataTransfer.types.includes(REF_MIME) ? 'move' : 'copy';
     setActive(true);
     clearTimeout(dragTimer);
     dragTimer = setTimeout(() => setActive(false), 150);
@@ -35,27 +39,13 @@ export default function mount(element) {
 
   async function onDrop(event) {
     if (!enabled()) return;
-    if (!event.dataTransfer.types.includes(URLS_MIME)) return;
+    if (!supportsDropType(event.dataTransfer)) return;
     if (!isOverCanvas(event)) return;
-
-    const raw = event.dataTransfer.getData(URLS_MIME);
-    console.log('[world-drop] drop, raw:', raw);
-    if (!raw) return;
 
     event.preventDefault();
     event.stopPropagation();
     setActive(false);
     clearTimeout(dragTimer);
-
-    let urls;
-    try {
-      urls = JSON.parse(raw);
-    } catch (err) {
-      console.log('[world-drop] JSON parse error:', err);
-      return;
-    }
-    console.log('[world-drop] parsed urls:', urls);
-    if (!Array.isArray(urls)) return;
 
     const repo = globalThis.repo;
     if (!repo) return;
@@ -64,38 +54,16 @@ export default function mount(element) {
       typeof canvas.screenToPage === 'function'
         ? canvas.screenToPage(event.clientX, event.clientY)
         : { x: 100, y: 100 };
-    console.log('[world-drop] dropPos:', dropPos);
+    const droppedEntries = await getDroppedEntries(event.dataTransfer, repo, canvas);
+    if (droppedEntries.length === 0) return;
 
     let offsetX = 0;
-    for (const url of urls) {
-      if (typeof url !== 'string' || !url.startsWith('automerge:')) {
-        console.log('[world-drop] skipping non-automerge url:', url);
-        continue;
-      }
-      try {
-        console.log('[world-drop] looking up:', url);
-        const handle = await repo.find(url);
-        if (typeof handle.whenReady === 'function') await handle.whenReady();
-        const doc = handle.doc();
-        console.log('[world-drop] doc:', doc, 'isPaperWorld:', isPaperWorldDoc(doc));
-        if (!isPaperWorldDoc(doc)) continue;
-
-        const shapeId = `world_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        console.log('[world-drop] creating shape:', shapeId, { embedDocUrl: url, embedToolUrl: doc.toolUrl, title: doc.title });
-        shapesRef.at(shapeId).change(() => ({
-          x: dropPos.x + offsetX,
-          y: dropPos.y,
-          viewUrl: embedViewUrl,
-          embedDocUrl: url,
-          embedToolUrl: doc.toolUrl || '',
-          title: doc.title || 'Paper World',
-          width: 400,
-          height: 300,
-        }));
-        offsetX += 420;
-      } catch (err) {
-        console.log('[world-drop] error processing url:', url, err);
-      }
+    for (const entry of droppedEntries) {
+      const shape = await buildDroppedShapeValue(repo, entry, embedViewUrl, dropPos.x + offsetX, dropPos.y);
+      if (!shape) continue;
+      const shapeId = `drop_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      shapesRef.at(shapeId).change(() => shape);
+      offsetX += entry.kind === 'embed' ? EMBED_DROP_OFFSET_X : DIRECT_DROP_OFFSET_X;
     }
   }
 
@@ -201,7 +169,7 @@ export default function mount(element) {
               </svg>
             </div>
             <div style=${{ padding: '8px 10px', 'border-top': '1px solid #f1f5f9', background: '#fafafa', 'font-size': '11px', color: '#64748b', 'line-height': '1.3' }}>
-              Drop docs to embed
+              Drop shapes or docs
             </div>
           </div>
           <!-- back face -->
@@ -245,6 +213,165 @@ function isPaperWorldDoc(doc) {
     doc &&
     typeof doc === 'object' &&
     typeof doc.title === 'string' &&
-    typeof doc.sourceFolderUrl === 'string'
+    typeof doc.sourceFolderUrl === 'string' &&
+    typeof doc.frameDocUrl === 'string'
+  );
+}
+
+function supportsDropType(dataTransfer) {
+  return (
+    dataTransfer.types.includes(SHAPE_MIME) ||
+    dataTransfer.types.includes(REF_MIME) ||
+    dataTransfer.types.includes(URLS_MIME)
+  );
+}
+
+async function getDroppedEntries(dataTransfer, repo, canvas) {
+  if (dataTransfer.types.includes(SHAPE_MIME)) {
+    return getEntriesFromShapePayload(dataTransfer.getData(SHAPE_MIME));
+  }
+
+  if (dataTransfer.types.includes(REF_MIME)) {
+    return getEntriesFromRefUrl(dataTransfer.getData(REF_MIME), canvas);
+  }
+
+  if (dataTransfer.types.includes(URLS_MIME)) {
+    return getEntriesFromWorldUrls(dataTransfer.getData(URLS_MIME), repo);
+  }
+
+  return [];
+}
+
+function getEntriesFromShapePayload(raw) {
+  if (!raw) return [];
+
+  try {
+    const parsed = JSON.parse(raw);
+    const entry = normalizeDroppedEntry(parsed?.value, parsed?.viewUrl, parsed?.title);
+    return entry ? [entry] : [];
+  } catch {
+    return [];
+  }
+}
+
+async function getEntriesFromRefUrl(refUrl, canvas) {
+  if (!refUrl) return [];
+
+  try {
+    const ref = await canvas.findRef(refUrl);
+    const value = structuredClone(ref.value());
+    const entry = normalizeDroppedEntry(value, value?.viewUrl, value?.title);
+    return entry ? [entry] : [];
+  } catch {
+    return [];
+  }
+}
+
+async function getEntriesFromWorldUrls(raw, repo) {
+  if (!raw) return [];
+
+  let urls;
+  try {
+    urls = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(urls)) return [];
+
+  const entries = [];
+  for (const url of urls) {
+    const entry = await getEntryFromWorldUrl(url, repo);
+    if (entry) entries.push(entry);
+  }
+  return entries;
+}
+
+async function getEntryFromWorldUrl(url, repo) {
+  if (typeof url !== 'string' || !url.startsWith('automerge:')) return null;
+
+  try {
+    const handle = await repo.find(url);
+    if (typeof handle.whenReady === 'function') await handle.whenReady();
+    const doc = handle.doc();
+
+    if (isPaperWorldDoc(doc)) {
+      if (typeof doc.toolUrl !== 'string' || !doc.toolUrl) return null;
+      const frameHandle = await repo.find(doc.frameDocUrl);
+      if (typeof frameHandle.whenReady === 'function') await frameHandle.whenReady();
+      const frameValue = structuredClone(frameHandle.doc());
+      return normalizeDroppedEntry(frameValue, doc.toolUrl, doc.title || 'Paper World');
+    }
+
+    return normalizeDroppedEntry(structuredClone(doc), doc?.viewUrl, doc?.title);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeDroppedEntry(value, viewUrl, title) {
+  if (!value || typeof value !== 'object') return null;
+
+  const normalizedViewUrl =
+    typeof viewUrl === 'string' && viewUrl
+      ? viewUrl
+      : typeof value.viewUrl === 'string' && value.viewUrl
+        ? value.viewUrl
+        : '';
+
+  if (looksLikeShapeValue(value, normalizedViewUrl)) {
+    return {
+      kind: 'shape',
+      value: structuredClone(value),
+      viewUrl: normalizedViewUrl,
+      title,
+    };
+  }
+
+  if (!normalizedViewUrl) return null;
+
+  return {
+    kind: 'embed',
+    value: stripShapePlacementFields(structuredClone(value)),
+    viewUrl: normalizedViewUrl,
+    title: typeof title === 'string' && title ? title : 'Embedded tool',
+  };
+}
+
+async function buildDroppedShapeValue(repo, entry, embedViewUrl, x, y) {
+  if (entry.kind === 'shape') {
+    const shape = stripShapePlacementFields(structuredClone(entry.value));
+    shape.x = x;
+    shape.y = y;
+    shape.viewUrl = entry.viewUrl;
+    return shape;
+  }
+
+  const handle = repo.create(structuredClone(entry.value));
+  return {
+    x,
+    y,
+    viewUrl: embedViewUrl,
+    embedDocUrl: handle.url,
+    embedToolUrl: entry.viewUrl,
+    title: entry.title,
+    width: null,
+    height: null,
+  };
+}
+
+function stripShapePlacementFields(value) {
+  delete value._trayWidth;
+  delete value._trayHeight;
+  return value;
+}
+
+function looksLikeShapeValue(value, viewUrl) {
+  return (
+    value &&
+    typeof value === 'object' &&
+    typeof value.x === 'number' &&
+    typeof value.y === 'number' &&
+    typeof viewUrl === 'string' &&
+    viewUrl !== ''
   );
 }
