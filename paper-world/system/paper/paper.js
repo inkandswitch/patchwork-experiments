@@ -50,8 +50,16 @@ export default function mount(element) {
   };
   element.getContainerEl = () => containerEl;
 
+  let dragging = false;
+
   function setContainerRef(el) {
     containerEl = el;
+    el.addEventListener('pointerdown', () => { dragging = true; });
+    el.addEventListener('pointerup', () => { dragging = false; });
+    el.addEventListener('pointercancel', () => { dragging = false; });
+    el.addEventListener('selectstart', (e) => {
+      if (dragging) e.preventDefault();
+    });
   }
 
   const cleanup = render(
