@@ -9,6 +9,9 @@ const DEFAULT_CENTER_Y = 52.517;
 const DEFAULT_ZOOM = 9.5;
 const SELECTED_SHADOW = 'drop-shadow(0 0 3px rgba(0,0,0,0.4))';
 
+const PAGE_REFERENCE_ZOOM = 14;
+const PAGE_WORLD_SIZE = 512 * Math.pow(2, PAGE_REFERENCE_ZOOM);
+
 let mapLibreLoadPromise = null;
 
 export default function mount(element) {
@@ -38,11 +41,11 @@ export default function mount(element) {
   containerEl.appendChild(mapEl);
 
   const overlayRootEl = document.createElement('div');
-  overlayRootEl.style.cssText = 'position:absolute;inset:0;z-index:1;pointer-events:none;overflow:hidden;transform-origin:0 0;will-change:transform;';
+  overlayRootEl.style.cssText = 'position:absolute;inset:0;z-index:1;pointer-events:none;transform-origin:0 0;will-change:transform;';
   containerEl.appendChild(overlayRootEl);
 
   const shapeLayerEl = document.createElement('div');
-  shapeLayerEl.style.cssText = 'position:absolute;inset:0;pointer-events:none;overflow:hidden;';
+  shapeLayerEl.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
   overlayRootEl.appendChild(shapeLayerEl);
 
   const loadingEl = document.createElement('div');
@@ -114,12 +117,12 @@ export default function mount(element) {
   async function initializeMap() {
     try {
       const mapLibre = await loadMapLibre();
-      const camera = readStoredCamera(rootRef);
+      const geo = readGeoCamera(rootRef);
       map = new mapLibre.Map({
         container: mapEl,
         style: MAP_STYLE_URL,
-        center: [camera.x, camera.y],
-        zoom: camera.zoom,
+        center: [geo.lng, geo.lat],
+        zoom: geo.zoom,
         dragRotate: false,
         pitchWithRotate: false,
       });
@@ -140,10 +143,11 @@ export default function mount(element) {
   function screenToPage(clientX, clientY) {
     const rect = containerEl.getBoundingClientRect();
     if (!map) {
-      return readStoredCamera(rootRef);
+      const geo = readGeoCamera(rootRef);
+      return { x: lngToPageX(geo.lng), y: latToPageY(geo.lat) };
     }
-    const point = map.unproject([clientX - rect.left, clientY - rect.top]);
-    return { x: point.lng, y: point.lat };
+    const lngLat = map.unproject([clientX - rect.left, clientY - rect.top]);
+    return { x: lngToPageX(lngLat.lng), y: latToPageY(lngLat.lat) };
   }
 
   function pageToScreen(pageX, pageY) {
@@ -151,33 +155,40 @@ export default function mount(element) {
     if (!map) {
       return { x: rect.left, y: rect.top };
     }
-    const point = map.project([pageX, pageY]);
+    const point = map.project([pageXToLng(pageX), pageYToLat(pageY)]);
     return { x: point.x + rect.left, y: point.y + rect.top };
   }
 
   function getCamera() {
     if (map) {
       const center = map.getCenter();
-      return { x: center.lng, y: center.lat, zoom: map.getZoom() };
+      return {
+        x: lngToPageX(center.lng),
+        y: latToPageY(center.lat),
+        zoom: Math.pow(2, map.getZoom() - PAGE_REFERENCE_ZOOM),
+      };
     }
-    return readStoredCamera(rootRef);
+    const geo = readGeoCamera(rootRef);
+    return {
+      x: lngToPageX(geo.lng),
+      y: latToPageY(geo.lat),
+      zoom: Math.pow(2, geo.zoom - PAGE_REFERENCE_ZOOM),
+    };
   }
 
   function setCamera(camera) {
     const currentCamera = getCamera();
-    const nextCamera = {
-      x: typeof camera?.x === 'number' ? camera.x : currentCamera.x,
-      y: typeof camera?.y === 'number' ? camera.y : currentCamera.y,
-      zoom: typeof camera?.zoom === 'number' ? camera.zoom : currentCamera.zoom,
-    };
-    persistCamera(rootRef, nextCamera);
+    const nextPageX = typeof camera?.x === 'number' ? camera.x : currentCamera.x;
+    const nextPageY = typeof camera?.y === 'number' ? camera.y : currentCamera.y;
+    const nextZoom = typeof camera?.zoom === 'number' ? camera.zoom : currentCamera.zoom;
+    const geoLng = pageXToLng(nextPageX);
+    const geoLat = pageYToLat(nextPageY);
+    const mapZoom = Math.log2(nextZoom) + PAGE_REFERENCE_ZOOM;
+    persistGeoCamera(rootRef, { lng: geoLng, lat: geoLat, zoom: mapZoom });
     if (map) {
       stopOverlayMotion();
-      map.jumpTo({
-        center: [nextCamera.x, nextCamera.y],
-        zoom: nextCamera.zoom,
-      });
-      emitCameraChange(cameraListeners, nextCamera);
+      map.jumpTo({ center: [geoLng, geoLat], zoom: mapZoom });
+      emitCameraChange(cameraListeners, { x: nextPageX, y: nextPageY, zoom: nextZoom });
       scheduleExactLayout();
     }
   }
@@ -217,7 +228,10 @@ export default function mount(element) {
 
   function onMapMoveEnd() {
     stopOverlayMotion();
-    persistCamera(rootRef, getCamera());
+    if (map) {
+      const center = map.getCenter();
+      persistGeoCamera(rootRef, { lng: center.lng, lat: center.lat, zoom: map.getZoom() });
+    }
     scheduleExactLayout();
   }
 
@@ -323,7 +337,6 @@ export default function mount(element) {
 
   function stopOverlayMotion() {
     overlayMotionState = null;
-    resetOverlayTransform(overlayRootEl);
   }
 }
 
@@ -341,20 +354,20 @@ function ensureMapDefaults(rootRef) {
   });
 }
 
-function readStoredCamera(rootRef) {
+function readGeoCamera(rootRef) {
   const value = rootRef.value() ?? {};
   return {
-    x: typeof value.centerX === 'number' ? value.centerX : DEFAULT_CENTER_X,
-    y: typeof value.centerY === 'number' ? value.centerY : DEFAULT_CENTER_Y,
+    lng: typeof value.centerX === 'number' ? value.centerX : DEFAULT_CENTER_X,
+    lat: typeof value.centerY === 'number' ? value.centerY : DEFAULT_CENTER_Y,
     zoom: typeof value.zoom === 'number' ? value.zoom : DEFAULT_ZOOM,
   };
 }
 
-function persistCamera(rootRef, camera) {
+function persistGeoCamera(rootRef, geo) {
   rootRef.change((documentValue) => {
-    documentValue.centerX = camera.x;
-    documentValue.centerY = camera.y;
-    documentValue.zoom = camera.zoom;
+    documentValue.centerX = geo.lng;
+    documentValue.centerY = geo.lat;
+    documentValue.zoom = geo.zoom;
   });
 }
 
@@ -362,6 +375,24 @@ function emitCameraChange(cameraListeners, camera) {
   for (const listener of cameraListeners) {
     listener(camera);
   }
+}
+
+function lngToPageX(lng) {
+  return ((lng + 180) / 360) * PAGE_WORLD_SIZE;
+}
+
+function pageXToLng(pageX) {
+  return (pageX / PAGE_WORLD_SIZE) * 360 - 180;
+}
+
+function latToPageY(lat) {
+  const latRad = (lat * Math.PI) / 180;
+  return ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * PAGE_WORLD_SIZE;
+}
+
+function pageYToLat(pageY) {
+  const n = Math.PI - (2 * Math.PI * pageY) / PAGE_WORLD_SIZE;
+  return (Math.atan(Math.sinh(n)) * 180) / Math.PI;
 }
 
 function createOverlayMotionState(map, containerEl) {
@@ -519,7 +550,7 @@ function getLocalBounds(shape) {
 }
 
 function projectShapeFrame(map, shape, localBounds) {
-  const anchorPoint = projectLngLat(map, shape.x, shape.y);
+  const anchorPoint = projectLngLat(map, pageXToLng(shape.x), pageYToLat(shape.y));
   if (!anchorPoint) {
     return null;
   }
@@ -535,16 +566,20 @@ function projectShapeFrame(map, shape, localBounds) {
     };
   }
 
-  const boundsOriginPoint = projectLngLat(map, shape.x + localBounds.minX, shape.y + localBounds.minY);
+  const boundsOriginPoint = projectLngLat(
+    map,
+    pageXToLng(shape.x + localBounds.minX),
+    pageYToLat(shape.y + localBounds.minY),
+  );
   const horizontalReferencePoint = projectLngLat(
     map,
-    shape.x + localBounds.maxX,
-    shape.y + localBounds.minY,
+    pageXToLng(shape.x + localBounds.maxX),
+    pageYToLat(shape.y + localBounds.minY),
   );
   const verticalReferencePoint = projectLngLat(
     map,
-    shape.x + localBounds.minX,
-    shape.y + localBounds.maxY,
+    pageXToLng(shape.x + localBounds.minX),
+    pageYToLat(shape.y + localBounds.maxY),
   );
   const localWidth = localBounds.maxX - localBounds.minX;
   const localHeight = localBounds.maxY - localBounds.minY;
