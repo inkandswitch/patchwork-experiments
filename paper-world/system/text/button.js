@@ -51,11 +51,16 @@ export default function mount(element) {
     }));
     selectedToolRef.change(() => '');
     const shapeUrl = shapesRef.at(id).url;
-    requestAnimationFrame(() => {
-      const refView = canvas.querySelector(`ref-view[ref-url="${shapeUrl}"]`);
-      const textarea = refView?.querySelector('textarea');
-      textarea?.focus();
-    });
+    canvas.addEventListener(
+      'mounted',
+      (event) => {
+        const refView = event.target.closest('ref-view');
+        if (refView?.getAttribute('ref-url') !== shapeUrl) return;
+        const textarea = refView.querySelector('textarea');
+        textarea?.focus();
+      },
+      { once: true },
+    );
   }
 
   canvas.addEventListener('pointerdown', onPointerDown);

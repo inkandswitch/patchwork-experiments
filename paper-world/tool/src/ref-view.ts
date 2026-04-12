@@ -294,6 +294,7 @@ export function registerRefView(
         }
 
         this.#cleanup = typeof dispose === "function" ? dispose : null;
+        this.dispatchEvent(new Event("mounted", { bubbles: true }));
       } catch (err) {
         if (this.#stale(signal)) return;
         this.#showError(err);
