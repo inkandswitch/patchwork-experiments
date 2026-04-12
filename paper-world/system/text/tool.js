@@ -32,9 +32,13 @@ const keybindings = [
     {
       key: 'Tab',
       run: (view) => {
-        view.dispatch(view.state.replaceSelection('\t'));
+        view.dispatch(view.state.replaceSelection('  '));
         return true;
       },
+    },
+    {
+      key: 'Shift-Tab',
+      run: removeLeadingIndent,
     },
     {
       key: 'Escape',
@@ -48,6 +52,23 @@ const keybindings = [
   keymap.of(historyKeymap),
   keymap.of(defaultKeymap),
 ];
+
+function removeLeadingIndent(view) {
+  const changes = [];
+  for (const range of view.state.selection.ranges) {
+    const startLine = view.state.doc.lineAt(range.from).number;
+    const endLine = view.state.doc.lineAt(range.to).number;
+    for (let i = startLine; i <= endLine; i++) {
+      const line = view.state.doc.line(i);
+      const match = line.text.match(/^(\t| {1,2})/);
+      if (match) {
+        changes.push({ from: line.from, to: line.from + match[1].length });
+      }
+    }
+  }
+  if (changes.length > 0) view.dispatch({ changes });
+  return true;
+}
 
 const theme = EditorView.theme({
   '&': {
