@@ -19,6 +19,14 @@ export class Ref<T = unknown> implements Subscribable<T> {
     this.#path = path;
   }
 
+  get handle(): DocHandle<unknown> {
+    return this.#handle;
+  }
+
+  get path(): RefPathSegment[] {
+    return this.#path.slice();
+  }
+
   at<V = unknown>(...segments: RefPathSegment[]): Ref<V> {
     return new Ref(this.#handle, this.#path.concat(segments));
   }

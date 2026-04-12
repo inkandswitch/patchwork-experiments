@@ -1,7 +1,7 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, render, html } from '../solid.js';
 import { getViewUrl } from '../url.js';
-import { selectedToolSchema, shapesSchema } from '../paper/schema.js';
+import { isCanvasTarget, selectedToolSchema, shapesSchema } from '../paper/schema.js';
 
 const TOOL_NAME = 'text';
 const textViewUrl = getViewUrl('./tool.json', import.meta.url);
@@ -37,7 +37,7 @@ export default function mount(element) {
 
   function onPointerDown(event) {
     if (!active()) return;
-    if (event.target.closest('ref-view') !== canvas) return;
+    if (!isCanvasTarget(event.target, canvas)) return;
     const page = canvas.screenToPage(event.clientX, event.clientY);
     const x = page.x;
     const halfLineHeight = Math.round((18 * 1.4) / 2);
@@ -56,8 +56,8 @@ export default function mount(element) {
       (event) => {
         const refView = event.target.closest('ref-view');
         if (refView?.getAttribute('ref-url') !== shapeUrl) return;
-        const textarea = refView.querySelector('textarea');
-        textarea?.focus();
+        const cmContent = refView.querySelector('.cm-content');
+        cmContent?.focus();
       },
       { once: true },
     );
