@@ -1,51 +1,62 @@
 import type { AutomergeUrl } from '@automerge/automerge-repo';
-import type { ProjectionDoc } from '../artifact-projection/artifact-projection';
+import type { ProjectionSpecDoc } from '../artifact-projection/artifact-projection';
 import type { DatalogDoc } from '../spec/datalog-doc';
 
 type StoredFact = DatalogDoc['facts'][number];
 
-export function buildHospitalRotaProjection(
+export function buildHospitalRotaProjectionSpec(
   artifactDocUrl: AutomergeUrl,
   title: string,
   staffSlots = 5,
-): ProjectionDoc {
+): ProjectionSpecDoc {
   return {
     '@patchwork': { type: 'artifact-projection' },
+    schemaVersion: 2,
     artifactDocUrl,
     sourceType: 'datalog',
     title: `${title} Table`,
-    rowSpec: {
+    rows: {
       entityPredicate: 'shift',
+      keyArg: 0,
       entityIdPrefix: 'shift',
       order: 'entity-fact-order',
+      create: { insertEntityFact: true },
+      delete: { mode: 'managed-predicates-only' },
     },
     columns: [
       {
         id: 'shift',
         header: 'Shift',
         cellType: 'text',
-        read: { kind: 'derived', derive: 'row-id' },
+        read: { kind: 'derived-row-key' },
+        cardinality: 'exactly-one',
+        readOnlyReason: 'The row key is derived from the shift fact.',
       },
       {
         id: 'ward',
         header: 'Ward',
         cellType: 'text',
-        read: { kind: 'fact-arg', pred: 'ward', arg: 1 },
-        write: { kind: 'set-fact-arg', pred: 'ward', arg: 1, deleteWhenBlank: true },
+        read: { kind: 'fact-arg', pred: 'ward', rowKeyArg: 0, valueArg: 1 },
+        write: { kind: 'upsert-fact-arg', pred: 'ward', rowKeyArg: 0, valueArg: 1 },
+        cardinality: 'zero-or-one',
+        blankPolicy: 'delete',
       },
       {
         id: 'night',
         header: 'Night',
         cellType: 'boolean',
-        read: { kind: 'fact-presence', pred: 'night_shift' },
-        write: { kind: 'set-fact-presence', pred: 'night_shift' },
+        read: { kind: 'fact-presence', pred: 'night_shift', rowKeyArg: 0 },
+        write: { kind: 'set-fact-presence', pred: 'night_shift', rowKeyArg: 0 },
+        cardinality: 'zero-or-one',
       },
       {
         id: 'hours',
         header: 'Hours',
         cellType: 'number',
-        read: { kind: 'fact-arg', pred: 'shift_hours', arg: 1 },
-        write: { kind: 'set-fact-arg', pred: 'shift_hours', arg: 1, deleteWhenBlank: true },
+        read: { kind: 'fact-arg', pred: 'shift_hours', rowKeyArg: 0, valueArg: 1 },
+        write: { kind: 'upsert-fact-arg', pred: 'shift_hours', rowKeyArg: 0, valueArg: 1 },
+        cardinality: 'zero-or-one',
+        blankPolicy: 'delete',
       },
       ...Array.from({ length: staffSlots }, (_, index) => ({
         id: `staff-${index + 1}`,
@@ -54,40 +65,52 @@ export function buildHospitalRotaProjection(
         read: {
           kind: 'slot-value' as const,
           pred: 'assignment_slot',
+          rowKeyArg: 0,
+          slotArg: 1,
           slot: index + 1,
           valueArg: 2,
         },
         write: {
-          kind: 'set-slot-value' as const,
+          kind: 'upsert-slot-value' as const,
           pred: 'assignment_slot',
+          rowKeyArg: 0,
+          slotArg: 1,
           slot: index + 1,
           valueArg: 2,
-          deleteWhenBlank: true,
         },
+        cardinality: 'zero-or-one' as const,
+        blankPolicy: 'delete' as const,
       })),
       {
         id: 'in-charge',
         header: 'In Charge',
         cellType: 'entity',
-        read: { kind: 'fact-arg', pred: 'in_charge', arg: 1 },
-        write: { kind: 'set-fact-arg', pred: 'in_charge', arg: 1, deleteWhenBlank: true },
+        read: { kind: 'fact-arg', pred: 'in_charge', rowKeyArg: 0, valueArg: 1 },
+        write: { kind: 'upsert-fact-arg', pred: 'in_charge', rowKeyArg: 0, valueArg: 1 },
+        cardinality: 'zero-or-one',
+        blankPolicy: 'delete',
       },
       {
         id: 'patients',
         header: 'Patients',
         cellType: 'number',
-        read: { kind: 'fact-arg', pred: 'patients', arg: 1 },
-        write: { kind: 'set-fact-arg', pred: 'patients', arg: 1, deleteWhenBlank: true },
+        read: { kind: 'fact-arg', pred: 'patients', rowKeyArg: 0, valueArg: 1 },
+        write: { kind: 'upsert-fact-arg', pred: 'patients', rowKeyArg: 0, valueArg: 1 },
+        cardinality: 'zero-or-one',
+        blankPolicy: 'delete',
       },
       {
         id: 'has-hca',
         header: 'Has HCA',
         cellType: 'boolean',
-        read: { kind: 'fact-presence', pred: 'has_hca' },
-        write: { kind: 'set-fact-presence', pred: 'has_hca' },
+        read: { kind: 'fact-presence', pred: 'has_hca', rowKeyArg: 0 },
+        write: { kind: 'set-fact-presence', pred: 'has_hca', rowKeyArg: 0 },
+        cardinality: 'zero-or-one',
       },
     ],
-    script: HOSPITAL_ROTA_PROJECTION_SCRIPT,
+    verification: {
+      expandScript: HOSPITAL_ROTA_EXPAND_SCRIPT,
+    },
   };
 }
 
@@ -125,8 +148,9 @@ export function normalizeHospitalLegacySolutionFacts(facts: StoredFact[]): Store
   return nextFacts;
 }
 
-const HOSPITAL_ROTA_PROJECTION_SCRIPT = `
-function expandForVerification({ defaultExpanded, projectionDoc, helpers }) {
+export const HOSPITAL_ROTA_EXPAND_SCRIPT = `
+const { defaultExpanded, projectionDoc, helpers } = ctx;
+{
   const baseFacts = helpers.cloneFacts(defaultExpanded.facts);
   const provenanceEntries = (defaultExpanded.provenanceEntries || []).map((entry) =>
     helpers.provenanceEntry(entry.fact, entry.anchors),
@@ -226,8 +250,4 @@ function expandForVerification({ defaultExpanded, projectionDoc, helpers }) {
     provenanceEntries,
   };
 }
-
-module.exports = {
-  expandForVerification,
-};
 `;

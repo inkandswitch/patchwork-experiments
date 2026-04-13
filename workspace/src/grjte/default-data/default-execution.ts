@@ -6,7 +6,7 @@ import {
   type ArtifactFolderEntry,
 } from '../artifact-projection/artifact-projection';
 import {
-  buildHospitalRotaProjection,
+  buildHospitalRotaProjectionSpec,
   normalizeHospitalLegacySolutionFacts,
 } from './default-projection';
 
@@ -345,11 +345,11 @@ assigned(w6_wed_night, lisa_brown, 12). assignment_slot(w6_wed_night, 4, lisa_br
 
   const amuProjectionUrl = createProjectionDoc(
     repo,
-    buildHospitalRotaProjection(amuRotaUrl, 'AMU Rota'),
+    buildHospitalRotaProjectionSpec(amuRotaUrl, 'AMU Rota'),
   );
   const ward6ProjectionUrl = createProjectionDoc(
     repo,
-    buildHospitalRotaProjection(ward6RotaUrl, 'Ward 6 Rota'),
+    buildHospitalRotaProjectionSpec(ward6RotaUrl, 'Ward 6 Rota'),
   );
 
   const artifactsFolderHandle = repo.create<FolderDoc>();

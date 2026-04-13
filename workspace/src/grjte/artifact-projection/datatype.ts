@@ -1,16 +1,25 @@
 import type { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
-import type { ProjectionDoc } from './artifact-projection';
+import type { ProjectionSpecDoc } from './artifact-projection';
 
-export const ArtifactProjectionDatatype: DatatypeImplementation<ProjectionDoc> = {
+export const ArtifactProjectionDatatype: DatatypeImplementation<ProjectionSpecDoc> = {
   init(doc) {
+    doc.schemaVersion = 2;
     doc.sourceType = 'datalog';
+    doc.rows = {
+      entityPredicate: '',
+      keyArg: 0,
+      entityIdPrefix: 'row',
+      order: 'entity-fact-order',
+      create: { insertEntityFact: true },
+      delete: { mode: 'managed-predicates-only' },
+    };
     doc.columns = [];
-    doc.script = '';
+    doc.verification = {};
   },
-  getTitle(doc: ProjectionDoc) {
+  getTitle(doc: ProjectionSpecDoc) {
     return doc.title || 'Artifact Projection';
   },
-  setTitle(doc: ProjectionDoc, title: string) {
+  setTitle(doc: ProjectionSpecDoc, title: string) {
     doc.title = title;
   },
 };

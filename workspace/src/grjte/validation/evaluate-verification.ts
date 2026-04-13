@@ -1,7 +1,13 @@
 import type { AutomergeUrl } from '@automerge/automerge-repo';
+import {
+  Datalog,
+  serializeConstraint,
+  serializeFact,
+  serializeRule,
+  type ConstraintViolation,
+} from '../datalog-runtime';
 import type { VerificationDoc } from '../spec/verification-doc';
 import type { DatalogDoc, StoredConstraint, StoredFact, StoredRule } from '../spec/datalog-doc';
-import { Datalog, type ConstraintViolation } from './datalog-eval';
 
 export type VerificationArtifactInput = {
   url: AutomergeUrl;
@@ -130,7 +136,7 @@ export function buildDatalogSource(doc: DatalogDoc | undefined, fallbackTitle?: 
     lines.push(`% ${doc.title || fallbackTitle}`);
   }
   for (const fact of doc.facts ?? []) {
-    lines.push(`${serializeFact(fact)}.`);
+    lines.push(serializeFact(fact));
   }
   for (const rule of doc.rules ?? []) {
     lines.push(serializeRule(rule));
@@ -139,21 +145,4 @@ export function buildDatalogSource(doc: DatalogDoc | undefined, fallbackTitle?: 
     lines.push(serializeConstraint(constraint));
   }
   return lines.join('\n');
-}
-
-function serializeFact(fact: StoredFact): string {
-  return `${fact.pred}(${fact.args.join(', ')})`;
-}
-
-function serializeRule(rule: StoredRule): string {
-  return `${serializeAtom(rule.head)} :- ${rule.body.map(serializeAtom).join(', ')}.`;
-}
-
-export function serializeConstraint(constraint: StoredConstraint): string {
-  return `:- ${constraint.body.map(serializeAtom).join(', ')}.`;
-}
-
-function serializeAtom(atom: { pred: string; args: string[] }): string {
-  if (!atom.args || atom.args.length === 0) return atom.pred;
-  return `${atom.pred}(${atom.args.join(', ')})`;
 }
