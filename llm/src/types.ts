@@ -30,7 +30,7 @@ export type ParsedBlock =
   | { index: number; type: "script"; code: string; description?: string; complete: boolean };
 
 export type LLMProcessDoc = {
-  "@patchwork": { type: "llm-process2" };
+  "@patchwork": { type: "llm-process" };
   title: string;
   model: string;
   systemPrompt: string;
@@ -41,7 +41,7 @@ export type LLMProcessDoc = {
 };
 
 export type LLMChatDoc = {
-  "@patchwork": { type: "llm-chat2" };
+  "@patchwork": { type: "llm-chat" };
   title: string;
   model: string;
   docFolderUrl: AutomergeUrl;

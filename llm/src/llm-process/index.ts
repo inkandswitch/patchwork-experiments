@@ -3,8 +3,8 @@ import type { Plugin } from "@inkandswitch/patchwork-plugins";
 export const llmProcessPlugins: Plugin<any>[] = [
   {
     type: "patchwork:datatype",
-    id: "llm-process2",
-    name: "LLM Process 2",
+    id: "llm-process",
+    name: "LLM Process",
     icon: "Bot",
     async load() {
       const { LLMProcessDatatype } = await import("./datatype");
@@ -13,9 +13,9 @@ export const llmProcessPlugins: Plugin<any>[] = [
   },
   {
     type: "patchwork:tool",
-    id: "llm-process2",
-    name: "LLM Process 2",
-    supportedDatatypes: ["llm-process2"],
+    id: "llm-process",
+    name: "LLM Process",
+    supportedDatatypes: ["llm-process"],
     async load() {
       const { LLMProcessTool } = await import("./view");
       return LLMProcessTool;

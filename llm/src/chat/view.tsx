@@ -3,7 +3,7 @@ import { createSignal, For, Show } from "solid-js";
 import { RepoContext, useDocument } from "@automerge/automerge-repo-solid-primitives";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import type { DocHandle, Repo } from "@automerge/automerge-repo";
-import { ChevronRight, ChevronDown, X } from "lucide-solid";
+import { ChevronRight, ChevronDown, X, Square } from "lucide-solid";
 import { SolidMarkdown } from "solid-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -34,6 +34,7 @@ function LLMChatView(props: { handle: DocHandle<LLMChatDoc>; repo: Repo }) {
   const [activeTab, setActiveTab] = createSignal<"chat" | "documents">("chat");
   const [input, setInput] = createSignal("");
   const [isRunning, setIsRunning] = createSignal(false);
+  let abortController: AbortController | null = null;
 
   const sendMessage = async () => {
     const currentDoc = doc();
@@ -42,6 +43,7 @@ function LLMChatView(props: { handle: DocHandle<LLMChatDoc>; repo: Repo }) {
     const userMessage = input().trim();
     setInput("");
     setIsRunning(true);
+    abortController = new AbortController();
 
     try {
       const processHandle = await props.repo.find<LLMProcessDoc>(currentDoc.processUrl);
@@ -51,12 +53,18 @@ function LLMChatView(props: { handle: DocHandle<LLMChatDoc>; repo: Repo }) {
         d.done = false;
       });
 
-      await runLLMProcess(props.repo, processHandle);
+      await runLLMProcess(props.repo, processHandle, abortController.signal);
     } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return;
       console.error("[chat] error:", err);
     } finally {
+      abortController = null;
       setIsRunning(false);
     }
+  };
+
+  const stopGeneration = () => {
+    abortController?.abort();
   };
 
   return (
@@ -101,9 +109,15 @@ function LLMChatView(props: { handle: DocHandle<LLMChatDoc>; repo: Repo }) {
                 placeholder="Type a message…"
                 disabled={isRunning()}
               />
-              <button onClick={sendMessage} disabled={isRunning()}>
-                Send
-              </button>
+              <Show when={isRunning()} fallback={
+                <button onClick={sendMessage} disabled={isRunning()}>
+                  Send
+                </button>
+              }>
+                <button class="stop-button" onClick={stopGeneration}>
+                  <Square size={14} /> Stop
+                </button>
+              </Show>
             </div>
           </Show>
 

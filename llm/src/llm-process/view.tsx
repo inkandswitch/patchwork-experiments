@@ -26,7 +26,7 @@ export function LLMProcessView(props: { handle: DocHandle<LLMProcessDoc> }) {
     <Show when={doc()} fallback={<div class="llm-process-root">Loading…</div>}>
       {(currentDoc) => (
         <div class="llm-process-root">
-          <h1>{currentDoc().title || "LLM Process 2"}</h1>
+          <h1>{currentDoc().title || "LLM Process"}</h1>
           <div class="llm-process-messages">
             <For each={currentDoc().messages}>
               {(message) => <MessageView message={message} />}

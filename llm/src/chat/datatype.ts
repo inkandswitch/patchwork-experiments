@@ -9,8 +9,8 @@ const DEFAULT_SYSTEM_PROMPT = `${CHAT_PREAMBLE}\n\n${INSTRUCTIONS}`;
 
 export const LLMChatDatatype: DatatypeImplementation<LLMChatDoc> = {
   init(doc: LLMChatDoc, repo: Repo) {
-    doc["@patchwork"] = { type: "llm-chat2" };
-    doc.title = "LLM Chat 2";
+    doc["@patchwork"] = { type: "llm-chat" };
+    doc.title = "LLM Chat";
     doc.model = "anthropic/claude-sonnet-4.6";
 
     const folderHandle = repo.create<any>();
@@ -23,7 +23,7 @@ export const LLMChatDatatype: DatatypeImplementation<LLMChatDoc> = {
 
     const processHandle = repo.create<LLMProcessDoc>();
     processHandle.change((d) => {
-      d["@patchwork"] = { type: "llm-process2" };
+      d["@patchwork"] = { type: "llm-process" };
       d.title = "Chat Process";
       d.model = doc.model;
       d.systemPrompt = DEFAULT_SYSTEM_PROMPT;
@@ -36,6 +36,6 @@ export const LLMChatDatatype: DatatypeImplementation<LLMChatDoc> = {
   },
 
   getTitle(doc: LLMChatDoc) {
-    return doc.title || "LLM Chat 2";
+    return doc.title || "LLM Chat";
   },
 };

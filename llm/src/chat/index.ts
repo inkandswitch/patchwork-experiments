@@ -3,8 +3,8 @@ import type { Plugin } from "@inkandswitch/patchwork-plugins";
 export const chatPlugins: Plugin<any>[] = [
   {
     type: "patchwork:datatype",
-    id: "llm-chat2",
-    name: "LLM Chat 2",
+    id: "llm-chat",
+    name: "LLM Chat",
     icon: "MessageSquare",
     async load() {
       const { LLMChatDatatype } = await import("./datatype");
@@ -13,9 +13,9 @@ export const chatPlugins: Plugin<any>[] = [
   },
   {
     type: "patchwork:tool",
-    id: "llm-chat2",
-    name: "LLM Chat 2",
-    supportedDatatypes: ["llm-chat2"],
+    id: "llm-chat",
+    name: "LLM Chat",
+    supportedDatatypes: ["llm-chat"],
     async load() {
       const { LLMChatTool } = await import("./view");
       return LLMChatTool;

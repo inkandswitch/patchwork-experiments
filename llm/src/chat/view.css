@@ -319,6 +319,17 @@
   cursor: not-allowed;
 }
 
+.chat-input button.stop-button {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  background: #d32f2f;
+}
+
+.chat-input button.stop-button:hover {
+  background: #b71c1c;
+}
+
 /* Documents tab */
 .chat-documents {
   flex: 1;

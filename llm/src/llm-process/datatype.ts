@@ -4,8 +4,8 @@ import type { LLMProcessDoc } from "../types";
 
 export const LLMProcessDatatype: DatatypeImplementation<LLMProcessDoc> = {
   init(doc: LLMProcessDoc, repo: Repo) {
-    doc["@patchwork"] = { type: "llm-process2" };
-    doc.title = "LLM Process 2";
+    doc["@patchwork"] = { type: "llm-process" };
+    doc.title = "LLM Process";
     doc.model = "anthropic/claude-sonnet-4.6";
     doc.systemPrompt = "";
     doc.messages = [];
@@ -21,6 +21,6 @@ export const LLMProcessDatatype: DatatypeImplementation<LLMProcessDoc> = {
   },
 
   getTitle(doc: LLMProcessDoc) {
-    return doc.title || "LLM Process 2";
+    return doc.title || "LLM Process";
   },
 };
