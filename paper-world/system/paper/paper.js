@@ -95,22 +95,25 @@ export default function mount(element) {
         >
           <${For} each=${() => Object.keys(shapes)}>${(id) =>
             html`<div
-              style=${() => ({
-                position: 'absolute',
-                left: `${shapes[id]?.x}px`,
-                top: `${shapes[id]?.y}px`,
-                'z-index': shapes[id]?.z ?? 0,
-                ...(shapes[id]?.width != null ? { width: `${shapes[id].width}px` } : {}),
-                ...(shapes[id]?.height != null ? { height: `${shapes[id].height}px` } : {}),
-                ...(shapes[id]?.scale != null && shapes[id]?.scale !== 1
-                  ? { transform: `scale(${shapes[id].scale})`, 'transform-origin': '0 0' }
-                  : {}),
-                filter: selectedShapes[id] ? 'drop-shadow(0 0 3px rgba(0,0,0,0.4))' : 'none',
-              })}
+              style=${() => {
+                const d = shapes[id]?.data;
+                return {
+                  position: 'absolute',
+                  left: `${d?.x}px`,
+                  top: `${d?.y}px`,
+                  'z-index': d?.z ?? 0,
+                  ...(d?.width != null ? { width: `${d.width}px` } : {}),
+                  ...(d?.height != null ? { height: `${d.height}px` } : {}),
+                  ...(d?.scale != null && d?.scale !== 1
+                    ? { transform: `scale(${d.scale})`, 'transform-origin': '0 0' }
+                    : {}),
+                  filter: selectedShapes[id] ? 'drop-shadow(0 0 3px rgba(0,0,0,0.4))' : 'none',
+                };
+              }}
             >
               <ref-view
                 view-url=${() => shapes[id]?.viewUrl}
-                ref-url=${shapesRef.at(id).url}
+                ref-url=${shapesRef.at(id).at('data').url}
               />
             </div>`
           }</>

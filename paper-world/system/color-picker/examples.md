@@ -10,7 +10,7 @@ The toolbar button that opens a color palette for choosing the drawing color.
   "tags": [],
   "value": {
     "shapes": {
-      "btn": { "x": 10, "y": 10, "viewUrl": "color-picker/button.json" }
+      "btn": { "viewUrl": "color-picker/button.json", "data": { "x": 10, "y": 10 } }
     }
   },
   "width": 200,
@@ -29,9 +29,9 @@ A canvas toolbar with rectangle, line, and color picker buttons.
   "tags": [],
   "value": {
     "shapes": {
-      "rect_btn": { "x": 10, "y": 10, "viewUrl": "rectangle/button.json" },
-      "line_btn": { "x": 50, "y": 10, "viewUrl": "line/button.json" },
-      "color_btn": { "x": 90, "y": 10, "viewUrl": "color-picker/button.json" }
+      "rect_btn": { "viewUrl": "rectangle/button.json", "data": { "x": 10, "y": 10 } },
+      "line_btn": { "viewUrl": "line/button.json", "data": { "x": 50, "y": 10 } },
+      "color_btn": { "viewUrl": "color-picker/button.json", "data": { "x": 90, "y": 10 } }
     }
   },
   "width": 300,

@@ -25,20 +25,24 @@ Both stamp the same methods onto their `element`, so consumers can't tell them a
 
 ## Shape Properties
 
-A shape is a record in a surface's `surfaceSchema` store. The minimum:
+A shape is a record in a surface's `surfaceSchema` store. Each shape has two top-level fields:
 
 ```ts
 type Shape = {
-  x: number;
-  y: number;
   viewUrl: string;
+  data: {
+    x: number;
+    y: number;
+    [key: string]: unknown;
+  };
 };
 ```
 
-`viewUrl` determines which tool renders the shape. Additional properties are tool-specific (Zod `.passthrough()` allows arbitrary extra fields):
+`viewUrl` determines which tool renders the shape. All positioning and tool-specific properties live in `data`:
 
-| Property | Used by | Purpose |
+| Property (in `data`) | Used by | Purpose |
 |---|---|---|
+| `x`, `y` | all shapes | Position in page coordinates. |
 | `width`, `height` | rectangles, embeds | Bounding dimensions. |
 | `points` | lines, markers | Array of `[offsetX, offsetY, pressure]` tuples relative to `(x, y)`. |
 | `color` | lines, markers, rectangles | Stroke or fill color. |
@@ -55,7 +59,7 @@ A surface is itself a shape on another surface. The DOM looks like:
 ```
 root paper (ref-view)
   └─ camera div (CSS transform: scale + translate)
-      └─ shape wrapper div (position: absolute at shape.x, shape.y)
+      └─ shape wrapper div (position: absolute at shape.data.x, shape.data.y)
           └─ ref-view (viewUrl → e.g. map/tool.json)
               ├─ implements cameraSchema (its own coordinate space)
               └─ has its own surfaceSchema store
@@ -116,7 +120,7 @@ If clicking on a shape inside a nested map, it finds that shape on the map surfa
 When a shape is dragged from one surface to another, the selection tool:
 
 1. Converts the shape's position from the source surface's page coordinates to screen coordinates, then to the target surface's page coordinates.
-2. Adjusts the shape's `scale` to preserve its apparent size: `shape.scale *= sourceSurface.getScale() / targetSurface.getScale()`.
+2. Adjusts the shape's `data.scale` to preserve its apparent size: `shape.data.scale *= sourceSurface.getScale() / targetSurface.getScale()`.
 3. Creates the shape in the target surface's store and deletes it from the source.
 
 For surfaces that clip their content (like paper's `overflow: hidden`), the dragged shape is lifted into a fixed-position overlay using `Element.moveBefore()` so it remains visible outside the source surface bounds. For surfaces where this lift isn't possible (like maps, which use geographic projection), the shape is immediately moved to the target surface as soon as the cursor crosses the boundary.

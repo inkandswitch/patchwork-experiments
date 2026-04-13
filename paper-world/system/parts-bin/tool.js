@@ -158,9 +158,14 @@ export default function mount(element) {
     if (example.create) {
       const extracted = getAtDotPath(example.value, example.create);
       if (extracted && typeof extracted === 'object') {
-        createValue = extracted;
-        if (typeof extracted.viewUrl === 'string') {
+        if (typeof extracted.viewUrl === 'string' && extracted.data) {
+          createValue = extracted.data;
           createTool = extracted.viewUrl;
+        } else {
+          createValue = extracted;
+          if (typeof extracted.viewUrl === 'string') {
+            createTool = extracted.viewUrl;
+          }
         }
       }
     }
@@ -205,7 +210,8 @@ export default function mount(element) {
     previewContainer.addEventListener('dragstart', (e) => {
       e.stopPropagation();
       const payload = resolveExample(example);
-      e.dataTransfer.setData(SHAPE_MIME, JSON.stringify({ ...payload, title: example.name }));
+      const { width: previewWidth, height: previewHeight } = getExamplePreviewSize(example);
+      e.dataTransfer.setData(SHAPE_MIME, JSON.stringify({ ...payload, title: example.name, width: previewWidth, height: previewHeight }));
       e.dataTransfer.effectAllowed = 'copy';
       if (previewContainer.firstElementChild) {
         e.dataTransfer.setDragImage(previewContainer, 0, 0);

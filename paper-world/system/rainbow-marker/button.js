@@ -10,12 +10,11 @@ const rainbowViewUrl = getViewUrl('./tool.json', import.meta.url);
 const ButtonShapeSchema = z.object({
   x: z.number(),
   y: z.number(),
-  viewUrl: z.string(),
 });
 
 export const schema = {
   init() {
-    return { x: 0, y: 0, viewUrl: getViewUrl('./button.json', import.meta.url) };
+    return { x: 0, y: 0 };
   },
   parse(value) {
     return ButtonShapeSchema.parse(value);
@@ -24,13 +23,14 @@ export const schema = {
 
 export default function mount(element) {
   const surface = element.findParent(surfaceSchema);
-  if (!surface) return;
-  const selectedToolRef = surface.getOrCreate(selectedToolSchema);
-  const selectedTool = from(selectedToolRef);
+  const disabled = !surface;
+  const selectedToolRef = surface?.getOrCreate(selectedToolSchema);
+  const selectedTool = selectedToolRef ? from(selectedToolRef) : () => '';
 
   const active = () => selectedTool() === TOOL_NAME;
 
   function toggleTool() {
+    if (disabled) return;
     const next = active() ? '' : TOOL_NAME;
     selectedToolRef.change(() => next);
   }
@@ -55,11 +55,8 @@ export default function mount(element) {
     const drawScale = drawSurface.getScale();
     const strokeScale = rootScale / drawScale;
     drawShapesRef.at(dragId).change(() => ({
-      x: originX,
-      y: originY,
       viewUrl: rainbowViewUrl,
-      points: [[0, 0, event.pressure || 0.5]],
-      strokeScale,
+      data: { x: originX, y: originY, points: [[0, 0, event.pressure || 0.5]], strokeScale },
     }));
     surface.setPointerCapture(event.pointerId);
   }
@@ -70,14 +67,14 @@ export default function mount(element) {
     const relX = page.x - originX;
     const relY = page.y - originY;
     drawShapesRef.at(dragId).change((shape) => {
-      shape.points.push([relX, relY, event.pressure || 0.5]);
+      shape.data.points.push([relX, relY, event.pressure || 0.5]);
     });
   }
 
   function onPointerUp() {
     if (dragId) {
       const shape = drawShapesRef.at(dragId).value();
-      if (shape.points.length < 3) {
+      if (shape.data.points.length < 3) {
         drawShapesRef.change((shapes) => {
           delete shapes[dragId];
         });
@@ -88,13 +85,16 @@ export default function mount(element) {
     drawShapesRef = null;
   }
 
-  surface.addEventListener('pointerdown', onPointerDown);
-  surface.addEventListener('pointermove', onPointerMove);
-  surface.addEventListener('pointerup', onPointerUp);
+  if (surface) {
+    surface.addEventListener('pointerdown', onPointerDown);
+    surface.addEventListener('pointermove', onPointerMove);
+    surface.addEventListener('pointerup', onPointerUp);
+  }
 
   const dispose = render(
     () =>
       html`<button
+        disabled=${disabled}
         onPointerDown=${(e) => e.stopPropagation()}
         onClick=${toggleTool}
         style=${() => ({
@@ -103,11 +103,12 @@ export default function mount(element) {
           border: active() ? '2px solid #f59e0b' : '1px solid #d4d4d8',
           'border-radius': '6px',
           background: active() ? '#fffbeb' : '#fff',
-          cursor: 'pointer',
+          cursor: disabled ? 'default' : 'pointer',
           display: 'flex',
           'align-items': 'center',
           'justify-content': 'center',
           padding: '0',
+          opacity: disabled ? '0.4' : '1',
         })}
         title="Rainbow Marker"
       >
@@ -125,9 +126,11 @@ export default function mount(element) {
   );
 
   return () => {
-    surface.removeEventListener('pointerdown', onPointerDown);
-    surface.removeEventListener('pointermove', onPointerMove);
-    surface.removeEventListener('pointerup', onPointerUp);
+    if (surface) {
+      surface.removeEventListener('pointerdown', onPointerDown);
+      surface.removeEventListener('pointermove', onPointerMove);
+      surface.removeEventListener('pointerup', onPointerUp);
+    }
     dispose();
   };
 }

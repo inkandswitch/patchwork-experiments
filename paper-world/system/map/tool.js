@@ -462,7 +462,7 @@ function createShapeWrapper(shapeId, shapeLayerEl, element) {
 
   const shapeEl = document.createElement('ref-view');
   shapeEl.style.cssText = 'display:block;transform-origin:0 0;';
-  shapeEl.setAttribute('ref-url', element.getOrCreate(surfaceSchema).at(shapeId).url);
+  shapeEl.setAttribute('ref-url', element.getOrCreate(surfaceSchema).at(shapeId).at('data').url);
   wrapper.appendChild(shapeEl);
 
   shapeLayerEl.appendChild(wrapper);
@@ -470,7 +470,8 @@ function createShapeWrapper(shapeId, shapeLayerEl, element) {
 }
 
 function updateShapeWrapper(wrapper, shapeId, shape, isSelected, map) {
-  if (!shape || typeof shape.x !== 'number' || typeof shape.y !== 'number' || typeof shape.viewUrl !== 'string') {
+  const d = shape?.data;
+  if (!shape || typeof d?.x !== 'number' || typeof d?.y !== 'number' || typeof shape.viewUrl !== 'string') {
     wrapper.style.display = 'none';
     return;
   }
@@ -479,11 +480,11 @@ function updateShapeWrapper(wrapper, shapeId, shape, isSelected, map) {
   if (!(shapeEl instanceof HTMLElement)) return;
   shapeEl.setAttribute('view-url', shape.viewUrl);
 
-  if (typeof shape.width === 'number') shapeEl.style.width = `${shape.width}px`;
-  if (typeof shape.height === 'number') shapeEl.style.height = `${shape.height}px`;
+  if (typeof d.width === 'number') shapeEl.style.width = `${d.width}px`;
+  if (typeof d.height === 'number') shapeEl.style.height = `${d.height}px`;
 
-  const localBounds = getLocalBounds(shape);
-  const projectedFrame = projectShapeFrame(map, shape, localBounds);
+  const localBounds = getLocalBounds(d);
+  const projectedFrame = projectShapeFrame(map, d, localBounds);
   if (!projectedFrame) {
     wrapper.style.display = 'none';
     return;
@@ -491,9 +492,9 @@ function updateShapeWrapper(wrapper, shapeId, shape, isSelected, map) {
   wrapper.style.display = '';
   wrapper.style.left = `${projectedFrame.originX}px`;
   wrapper.style.top = `${projectedFrame.originY}px`;
-  const shapeScale = shape.scale ?? 1;
+  const shapeScale = d.scale ?? 1;
   wrapper.style.transform = `scale(${projectedFrame.scaleX * shapeScale}, ${projectedFrame.scaleY * shapeScale})`;
-  wrapper.style.zIndex = `${shape.z ?? 0}`;
+  wrapper.style.zIndex = `${d.z ?? 0}`;
   wrapper.style.filter = isSelected ? SELECTED_SHADOW : 'none';
   shapeEl.style.transform = `translate(${projectedFrame.offsetX}px, ${projectedFrame.offsetY}px)`;
 }

@@ -9,7 +9,7 @@ A short diagonal line.
   "tool": "line/tool.json",
   "tags": [],
   "value": {
-    "x": 0, "y": 0, "viewUrl": "line/tool.json",
+    "x": 0, "y": 0,
     "points": [[10, 10, 0.5], [50, 80, 0.7], [120, 40, 0.6], [180, 90, 0.5]]
   },
   "width": 200,
@@ -26,7 +26,7 @@ A zigzag pattern across the canvas.
   "tool": "line/tool.json",
   "tags": [],
   "value": {
-    "x": 0, "y": 0, "viewUrl": "line/tool.json",
+    "x": 0, "y": 0,
     "points": [[10, 80, 0.5], [50, 10, 0.6], [90, 80, 0.5], [130, 10, 0.6], [170, 80, 0.5], [210, 10, 0.6], [250, 80, 0.5]]
   },
   "width": 270,

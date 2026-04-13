@@ -1,9 +1,8 @@
 import { z } from 'https://esm.sh/zod@4.3';
 
 const ShapeSchema = z.object({
-  x: z.number(),
-  y: z.number(),
   viewUrl: z.string(),
+  data: z.unknown().optional(),
 });
 
 export const surfaceSchema = {

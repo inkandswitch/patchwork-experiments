@@ -18,6 +18,7 @@ export type RefViewHostElement = HTMLElement & {
   getOrCreate<T>(schema: Schema<T>): Ref<T>;
   findClosest(schema: Schema<unknown>): RefViewHostElement | null;
   findParent(schema: Schema<unknown>): RefViewHostElement | null;
+  findAll(schema: Schema<unknown>): RefViewHostElement[];
   findRef(refUrl: string): Promise<Ref>;
 };
 
@@ -111,6 +112,22 @@ export function registerRefView(
       return parent.findClosest(schema);
     }
 
+    findAll(schema: Schema<unknown>): RefViewHostElement[] {
+      let root: RefViewHostElement = this as RefViewHostElement;
+      let parent = parentRefView(this as unknown as HTMLElement);
+      while (parent) {
+        root = parent;
+        parent = parentRefView(root as unknown as HTMLElement);
+      }
+      const all = root.querySelectorAll("ref-view");
+      const matches: RefViewHostElement[] = [];
+      for (const el of all) {
+        const rv = el as unknown as RefViewHostElement;
+        if (rv !== (this as unknown) && rv.has(schema)) matches.push(rv);
+      }
+      return matches;
+    }
+
     findRef(refUrl: string): Promise<Ref> {
       return findRef(repo, refUrl);
     }
@@ -173,6 +190,15 @@ export function registerRefView(
     }
 
     #teardown(): void {
+      if (this.#cleanup) {
+        this.dispatchEvent(new Event("unmounted", { bubbles: true }));
+        try {
+          this.#cleanup();
+        } catch {
+          // ignore cleanup errors
+        }
+        this.#cleanup = null;
+      }
       this.#ref = null;
       if (this.#viewUnsub) {
         this.#viewUnsub();
@@ -181,14 +207,6 @@ export function registerRefView(
       if (this.#folderCleanup) {
         this.#folderCleanup();
         this.#folderCleanup = null;
-      }
-      if (this.#cleanup) {
-        try {
-          this.#cleanup();
-        } catch {
-          // ignore cleanup errors
-        }
-        this.#cleanup = null;
       }
     }
 

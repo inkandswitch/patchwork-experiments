@@ -23,43 +23,20 @@ export default function mount(element) {
   function isResizable(id) {
     const shape = shapes[id];
     if (!shape) return false;
-    if (shapesRef.at(id).url === selfUrl) return false;
-    if (typeof shape.width === 'number' && typeof shape.height === 'number') return true;
-    return shape.width === null || shape.height === null;
+    if (shapesRef.at(id).at('data').url === selfUrl) return false;
+    const d = shape.data;
+    return typeof d?.width === 'number' && typeof d?.height === 'number';
   }
 
   function getShapeBounds(id) {
-    const shape = shapes[id];
-    if (!shape) return null;
-    if (typeof shape.width === 'number' && typeof shape.height === 'number') {
-      return {
-        x: shape.x,
-        y: shape.y,
-        width: shape.width,
-        height: shape.height,
-      };
-    }
-    if (shape.width !== null && shape.height !== null) return null;
-    return measureShapeBounds(id);
-  }
-
-  function measureShapeBounds(id) {
-    const wrapper = findShapeWrapperEl(id);
-    if (!wrapper) return null;
-    const rect = wrapper.getBoundingClientRect();
-    if (rect.width === 0 && rect.height === 0) return null;
-    const topLeft = surface.screenToPage(rect.left, rect.top);
-    const bottomRight = surface.screenToPage(rect.right, rect.bottom);
-    return {
-      x: topLeft.x,
-      y: topLeft.y,
-      width: bottomRight.x - topLeft.x,
-      height: bottomRight.y - topLeft.y,
-    };
+    const d = shapes[id]?.data;
+    if (!d) return null;
+    if (typeof d.width !== 'number' || typeof d.height !== 'number') return null;
+    return { x: d.x ?? 0, y: d.y ?? 0, width: d.width, height: d.height };
   }
 
   function findShapeWrapperEl(id) {
-    const targetUrl = shapesRef.at(id).url;
+    const targetUrl = shapesRef.at(id).at('data').url;
     const allRefViews = containerEl.querySelectorAll('ref-view');
     for (const refView of allRefViews) {
       if (refView.getAttribute('ref-url') !== targetUrl) continue;
@@ -185,14 +162,13 @@ export default function mount(element) {
       newH = MIN_SIZE;
     }
 
-    const current = shapesRef.at(drag.id).value();
-    shapesRef.at(drag.id).change(() => ({
-      ...current,
-      x: newX,
-      y: newY,
-      width: newW,
-      height: newH,
-    }));
+    shapesRef.at(drag.id).change((shape) => {
+      if (!shape.data) shape.data = {};
+      shape.data.x = newX;
+      shape.data.y = newY;
+      shape.data.width = newW;
+      shape.data.height = newH;
+    });
   }
 
   function onDragEnd() {

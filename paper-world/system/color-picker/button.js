@@ -1,6 +1,5 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, render, html, createSignal } from '../solid.js';
-import { getViewUrl } from '../url.js';
 import { surfaceSchema } from '../surface/schema.js';
 import { selectedColorSchema } from './schema.js';
 
@@ -20,12 +19,11 @@ const COLORS = [
 const ButtonShapeSchema = z.object({
   x: z.number(),
   y: z.number(),
-  viewUrl: z.string(),
 });
 
 export const schema = {
   init() {
-    return { x: 0, y: 0, viewUrl: getViewUrl('./button.json', import.meta.url) };
+    return { x: 0, y: 0 };
   },
   parse(value) {
     return ButtonShapeSchema.parse(value);
@@ -34,17 +32,19 @@ export const schema = {
 
 export default function mount(element) {
   const surface = element.findParent(surfaceSchema);
-  if (!surface) return;
-  const selectedColorRef = surface.getOrCreate(selectedColorSchema);
-  const selectedColor = from(selectedColorRef);
+  const disabled = !surface;
+  const selectedColorRef = surface?.getOrCreate(selectedColorSchema);
+  const selectedColor = selectedColorRef ? from(selectedColorRef) : () => '#3b82f6';
   const [open, setOpen] = createSignal(false);
 
   function pickColor(color) {
+    if (disabled) return;
     selectedColorRef.change(() => color);
     setOpen(false);
   }
 
   function toggleOpen(event) {
+    if (disabled) return;
     event.stopPropagation();
     setOpen(!open());
   }
@@ -53,6 +53,7 @@ export default function mount(element) {
     () =>
       html`<div style=${{ position: 'relative', display: 'inline-block' }}>
         <button
+          disabled=${disabled}
           onPointerDown=${(e) => e.stopPropagation()}
           onClick=${toggleOpen}
           style=${() => ({
@@ -61,11 +62,12 @@ export default function mount(element) {
             border: open() ? '2px solid #3b82f6' : '1px solid #d4d4d8',
             'border-radius': '6px',
             background: '#fff',
-            cursor: 'pointer',
+            cursor: disabled ? 'default' : 'pointer',
             display: 'flex',
             'align-items': 'center',
             'justify-content': 'center',
             padding: '0',
+            opacity: disabled ? '0.4' : '1',
           })}
         >
           <div

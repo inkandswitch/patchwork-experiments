@@ -233,7 +233,7 @@ function getEntriesFromShapePayload(raw) {
 
   try {
     const parsed = JSON.parse(raw);
-    const entry = normalizeDroppedEntry(parsed?.value, parsed?.viewUrl, parsed?.title);
+    const entry = normalizeDroppedEntry(parsed?.value, parsed?.viewUrl, parsed?.title, parsed?.width, parsed?.height);
     return entry ? [entry] : [];
   } catch {
     return [];
@@ -281,7 +281,7 @@ async function getEntryFromWorldUrl(url, repo) {
   }
 }
 
-function normalizeDroppedEntry(value, viewUrl, title) {
+function normalizeDroppedEntry(value, viewUrl, title, width, height) {
   if (!value || typeof value !== 'object') return null;
 
   const normalizedViewUrl =
@@ -297,6 +297,8 @@ function normalizeDroppedEntry(value, viewUrl, title) {
       value: structuredClone(value),
       viewUrl: normalizedViewUrl,
       title,
+      width,
+      height,
     };
   }
 
@@ -307,28 +309,31 @@ function normalizeDroppedEntry(value, viewUrl, title) {
     value: stripShapePlacementFields(structuredClone(value)),
     viewUrl: normalizedViewUrl,
     title: typeof title === 'string' && title ? title : 'Embedded tool',
+    width,
+    height,
   };
 }
 
 async function buildDroppedShapeValue(repo, entry, embedViewUrl, x, y) {
   if (entry.kind === 'shape') {
-    const shape = stripShapePlacementFields(structuredClone(entry.value));
-    shape.x = x;
-    shape.y = y;
-    shape.viewUrl = entry.viewUrl;
-    return shape;
+    const data = stripShapePlacementFields(structuredClone(entry.value));
+    data.x = x;
+    data.y = y;
+    return { viewUrl: entry.viewUrl, data };
   }
 
   const handle = repo.create(structuredClone(entry.value));
   return {
-    x,
-    y,
     viewUrl: embedViewUrl,
-    embedDocUrl: handle.url,
-    embedToolUrl: entry.viewUrl,
-    title: entry.title,
-    width: null,
-    height: null,
+    data: {
+      x,
+      y,
+      embedDocUrl: handle.url,
+      embedToolUrl: entry.viewUrl,
+      title: entry.title,
+      width: entry.width ?? 420,
+      height: entry.height ?? 320,
+    },
   };
 }
 

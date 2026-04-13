@@ -10,7 +10,7 @@ Just the pan tool button.
   "tags": [],
   "value": {
     "shapes": {
-      "btn": { "x": 10, "y": 10, "viewUrl": "hand/button.json" }
+      "btn": { "viewUrl": "hand/button.json", "data": { "x": 10, "y": 10 } }
     }
   },
   "width": 60,
@@ -29,10 +29,10 @@ The hand tool with some shapes to pan around.
   "tags": [],
   "value": {
     "shapes": {
-      "btn": { "x": 10, "y": 10, "viewUrl": "hand/button.json" },
-      "rect1": { "x": 80, "y": 60, "viewUrl": "rectangle/tool.json", "width": 100, "height": 70 },
-      "rect2": { "x": 220, "y": 120, "viewUrl": "rectangle/tool.json", "width": 80, "height": 50 },
-      "text1": { "x": 90, "y": 170, "viewUrl": "text/tool.json", "text": "drag to pan" }
+      "btn": { "viewUrl": "hand/button.json", "data": { "x": 10, "y": 10 } },
+      "rect1": { "viewUrl": "rectangle/tool.json", "data": { "x": 80, "y": 60, "width": 100, "height": 70 } },
+      "rect2": { "viewUrl": "rectangle/tool.json", "data": { "x": 220, "y": 120, "width": 80, "height": 50 } },
+      "text1": { "viewUrl": "text/tool.json", "data": { "x": 90, "y": 170, "text": "drag to pan" } }
     }
   },
   "width": 350,

@@ -10,12 +10,11 @@ const rectangleViewUrl = getViewUrl('./tool.json', import.meta.url);
 const ButtonShapeSchema = z.object({
   x: z.number(),
   y: z.number(),
-  viewUrl: z.string(),
 });
 
 export const schema = {
   init() {
-    return { x: 0, y: 0, viewUrl: getViewUrl('./button.json', import.meta.url) };
+    return { x: 0, y: 0 };
   },
   parse(value) {
     return ButtonShapeSchema.parse(value);
@@ -24,14 +23,15 @@ export const schema = {
 
 export default function mount(element) {
   const surface = element.findParent(surfaceSchema);
-  if (!surface) return;
-  const selectedToolRef = surface.getOrCreate(selectedToolSchema);
-  const selectedTool = from(selectedToolRef);
-  const selectedColorRef = surface.getOrCreate(selectedColorSchema);
+  const disabled = !surface;
+  const selectedToolRef = surface?.getOrCreate(selectedToolSchema);
+  const selectedTool = selectedToolRef ? from(selectedToolRef) : () => '';
+  const selectedColorRef = surface?.getOrCreate(selectedColorSchema);
 
   const active = () => selectedTool() === TOOL_NAME;
 
   function toggleTool() {
+    if (disabled) return;
     const next = active() ? '' : TOOL_NAME;
     selectedToolRef.change(() => next);
   }
@@ -54,12 +54,8 @@ export default function mount(element) {
     dragId = `rect_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const color = selectedColorRef.value();
     drawShapesRef.at(dragId).change(() => ({
-      x: startX,
-      y: startY,
       viewUrl: rectangleViewUrl,
-      width: 0,
-      height: 0,
-      color,
+      data: { x: startX, y: startY, width: 0, height: 0, color },
     }));
     surface.setPointerCapture(event.pointerId);
   }
@@ -72,24 +68,24 @@ export default function mount(element) {
     const x = Math.min(startX, currentX);
     const y = Math.min(startY, currentY);
     drawShapesRef.at(dragId).change((shape) => {
-      shape.x = x;
-      shape.y = y;
-      shape.width = width;
-      shape.height = height;
+      shape.data.x = x;
+      shape.data.y = y;
+      shape.data.width = width;
+      shape.data.height = height;
     });
   }
 
   function onPointerUp() {
     if (dragId) {
       const shape = drawShapesRef.at(dragId).value();
-      if (shape.width < 2 && shape.height < 2) {
+      if (shape.data.width < 2 && shape.data.height < 2) {
         const defaultWidth = 100;
         const defaultHeight = 80;
         drawShapesRef.at(dragId).change((s) => {
-          s.x = startX - defaultWidth / 2;
-          s.y = startY - defaultHeight / 2;
-          s.width = defaultWidth;
-          s.height = defaultHeight;
+          s.data.x = startX - defaultWidth / 2;
+          s.data.y = startY - defaultHeight / 2;
+          s.data.width = defaultWidth;
+          s.data.height = defaultHeight;
         });
       }
       selectedToolRef.change(() => '');
@@ -99,13 +95,16 @@ export default function mount(element) {
     drawShapesRef = null;
   }
 
-  surface.addEventListener('pointerdown', onPointerDown);
-  surface.addEventListener('pointermove', onPointerMove);
-  surface.addEventListener('pointerup', onPointerUp);
+  if (surface) {
+    surface.addEventListener('pointerdown', onPointerDown);
+    surface.addEventListener('pointermove', onPointerMove);
+    surface.addEventListener('pointerup', onPointerUp);
+  }
 
   const dispose = render(
     () =>
       html`<button
+        disabled=${disabled}
         onPointerDown=${(e) => e.stopPropagation()}
         onClick=${toggleTool}
         style=${() => ({
@@ -114,11 +113,12 @@ export default function mount(element) {
           border: active() ? '2px solid #3b82f6' : '1px solid #d4d4d8',
           'border-radius': '6px',
           background: active() ? '#eff6ff' : '#fff',
-          cursor: 'pointer',
+          cursor: disabled ? 'default' : 'pointer',
           display: 'flex',
           'align-items': 'center',
           'justify-content': 'center',
           padding: '0',
+          opacity: disabled ? '0.4' : '1',
         })}
       >
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -129,9 +129,11 @@ export default function mount(element) {
   );
 
   return () => {
-    surface.removeEventListener('pointerdown', onPointerDown);
-    surface.removeEventListener('pointermove', onPointerMove);
-    surface.removeEventListener('pointerup', onPointerUp);
+    if (surface) {
+      surface.removeEventListener('pointerdown', onPointerDown);
+      surface.removeEventListener('pointermove', onPointerMove);
+      surface.removeEventListener('pointerup', onPointerUp);
+    }
     dispose();
   };
 }

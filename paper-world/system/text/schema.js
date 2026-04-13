@@ -1,16 +1,17 @@
 import { z } from 'https://esm.sh/zod@4.3';
-import { getViewUrl } from '../url.js';
-
 const TextSchema = z.object({
   x: z.number(),
   y: z.number(),
-  viewUrl: z.string(),
   text: z.string(),
 });
 
+export const editorExtensionsSchema = {
+  methods: ['addExtension', 'removeExtension'],
+};
+
 export default {
   init() {
-    return { x: 0, y: 0, viewUrl: getViewUrl('./tool.json', import.meta.url), text: '' };
+    return { x: 0, y: 0, text: '' };
   },
   parse(value) {
     return TextSchema.parse(value);

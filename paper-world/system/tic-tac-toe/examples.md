@@ -9,7 +9,7 @@ An empty board ready to play.
   "tool": "tic-tac-toe/tool.json",
   "tags": ["starter"],
   "value": {
-    "x": 0, "y": 0, "viewUrl": "tic-tac-toe/tool.json",
+    "x": 0, "y": 0,
     "width": 280, "height": 320,
     "board": ["", "", "", "", "", "", "", "", ""],
     "currentPlayer": "X",
@@ -30,7 +30,7 @@ A game in progress with several moves played.
   "tool": "tic-tac-toe/tool.json",
   "tags": [],
   "value": {
-    "x": 0, "y": 0, "viewUrl": "tic-tac-toe/tool.json",
+    "x": 0, "y": 0,
     "width": 280, "height": 320,
     "board": ["X", "", "O", "", "X", "", "", "", "O"],
     "currentPlayer": "X",
@@ -51,7 +51,7 @@ A completed game where X wins with a diagonal.
   "tool": "tic-tac-toe/tool.json",
   "tags": [],
   "value": {
-    "x": 0, "y": 0, "viewUrl": "tic-tac-toe/tool.json",
+    "x": 0, "y": 0,
     "width": 280, "height": 320,
     "board": ["X", "O", "", "", "X", "O", "", "", "X"],
     "currentPlayer": "O",

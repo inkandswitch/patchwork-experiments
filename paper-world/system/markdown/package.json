@@ -1,0 +1,10 @@
+{
+  "name": "markdown",
+  "private": true,
+  "type": "module",
+  "description": "Markdown formatting card for text shapes",
+  "exports": {
+    "./button": "./button.js",
+    "./button.json": "./button.json"
+  }
+}

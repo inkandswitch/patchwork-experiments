@@ -15,9 +15,9 @@ A paper canvas with a dock layout toolbar and parts bin.
         {
           "viewUrl": "paper/tool.json",
           "shapes": {
-            "import_card": { "viewUrl": "world-drop/card.json", "x": 20, "y": 20 },
-            "resize_card": { "viewUrl": "resize/card.json", "x": 180, "y": 20 },
-            "parts_bin": { "viewUrl": "parts-bin/tool.json", "x": 420, "y": 0, "width": 280, "height": 600 }
+            "import_card": { "viewUrl": "world-drop/card.json", "data": { "x": 20, "y": 20 } },
+            "resize_card": { "viewUrl": "resize/card.json", "data": { "x": 180, "y": 20 } },
+            "parts_bin": { "viewUrl": "parts-bin/tool.json", "data": { "x": 420, "y": 0, "width": 280, "height": 600 } }
           }
         },
         {
@@ -65,8 +65,8 @@ A clean canvas with drawing tools but no parts bin.
         {
           "viewUrl": "paper/tool.json",
           "shapes": {
-            "import_card": { "viewUrl": "world-drop/card.json", "x": 20, "y": 20 },
-            "resize_card": { "viewUrl": "resize/card.json", "x": 180, "y": 20 }
+            "import_card": { "viewUrl": "world-drop/card.json", "data": { "x": 20, "y": 20 } },
+            "resize_card": { "viewUrl": "resize/card.json", "data": { "x": 180, "y": 20 } }
           }
         },
         {

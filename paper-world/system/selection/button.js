@@ -1,6 +1,6 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, render, html, createSignal } from '../solid.js';
-import { getViewUrl, toViewPath } from '../url.js';
+import { toViewPath } from '../url.js';
 import { selectedToolSchema, surfaceSchema, selectedShapesSchema } from '../surface/schema.js';
 
 const TOOL_NAME = 'selection';
@@ -8,12 +8,11 @@ const TOOL_NAME = 'selection';
 const ButtonShapeSchema = z.object({
   x: z.number(),
   y: z.number(),
-  viewUrl: z.string(),
 });
 
 export const schema = {
   init() {
-    return { x: 40, y: 10, viewUrl: getViewUrl('./button.json', import.meta.url) };
+    return { x: 40, y: 10 };
   },
   parse(value) {
     return ButtonShapeSchema.parse(value);
@@ -177,11 +176,11 @@ function createLoadingItem() {
 
 export default function mount(element) {
   const surface = element.findParent(surfaceSchema);
-  if (!surface) return;
-  const selectedToolRef = surface.getOrCreate(selectedToolSchema);
-  const selectedTool = from(selectedToolRef);
-  const selectedShapesRef = surface.getOrCreate(selectedShapesSchema);
-  const shapesRef = surface.getOrCreate(surfaceSchema);
+  const disabled = !surface;
+  const selectedToolRef = surface?.getOrCreate(selectedToolSchema);
+  const selectedTool = selectedToolRef ? from(selectedToolRef) : () => '';
+  const selectedShapesRef = surface?.getOrCreate(selectedShapesSchema);
+  const shapesRef = surface?.getOrCreate(surfaceSchema);
 
   const toolPlugins = from(element.plugins.byType('tool'));
 
@@ -199,6 +198,7 @@ export default function mount(element) {
   }
 
   function toggleTool() {
+    if (disabled) return;
     if (isSelectionToolActive()) {
       selectedShapesRef.change(() => ({}));
     }
@@ -259,7 +259,7 @@ export default function mount(element) {
     }
 
     const shape = sourceShapesRef.at(shapeId).value();
-    if (shape.isLocked) return;
+    if (shape.data?.isLocked) return;
 
     event.stopPropagation();
 
@@ -270,12 +270,13 @@ export default function mount(element) {
     const allShapes = sourceShapesRef.value();
     let maxZ = 0;
     for (const [sid, s] of Object.entries(allShapes)) {
-      if (typeof s.z === 'number' && s.z > maxZ) maxZ = s.z;
+      if (typeof s.data?.z === 'number' && s.data.z > maxZ) maxZ = s.data.z;
     }
-    const currentZ = shape.z ?? 0;
+    const currentZ = shape.data?.z ?? 0;
     if (currentZ < maxZ || maxZ === 0) {
       sourceShapesRef.at(shapeId).change((s) => {
-        s.z = maxZ + 1;
+        if (!s.data) s.data = {};
+        s.data.z = maxZ + 1;
       });
     }
 
@@ -284,22 +285,24 @@ export default function mount(element) {
     dragSourceShapesRef = sourceShapesRef;
     startPointerX = event.clientX;
     startPointerY = event.clientY;
-    startShapeX = shape.x;
-    startShapeY = shape.y;
+    startShapeX = shape.data?.x ?? 0;
+    startShapeY = shape.data?.y ?? 0;
     surface.setPointerCapture(event.pointerId);
     dragThresholdMet = false;
   }
 
   function moveShapeToCrossContext(targetSurface, clientX, clientY) {
-    const shapeValue = { ...dragSourceShapesRef.at(dragShapeId).value() };
+    const shapeValue = structuredClone(dragSourceShapesRef.at(dragShapeId).value());
     const targetShapesRef = targetSurface.getOrCreate(surfaceSchema);
-    const shapeScreen = dragSourceSurface.pageToScreen(shapeValue.x, shapeValue.y);
+    const d = shapeValue.data || {};
+    const shapeScreen = dragSourceSurface.pageToScreen(d.x ?? 0, d.y ?? 0);
     const targetPage = targetSurface.screenToPage(shapeScreen.x, shapeScreen.y);
-    shapeValue.x = targetPage.x;
-    shapeValue.y = targetPage.y;
+    d.x = targetPage.x;
+    d.y = targetPage.y;
     const sourceScale = dragSourceSurface.getScale();
     const targetScale = targetSurface.getScale();
-    shapeValue.scale = ((shapeValue.scale ?? 1) * sourceScale) / targetScale;
+    d.scale = ((d.scale ?? 1) * sourceScale) / targetScale;
+    shapeValue.data = d;
     restoreDraggedShape();
     const newId = `move_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     targetShapesRef.at(newId).change(() => shapeValue);
@@ -307,8 +310,8 @@ export default function mount(element) {
     dragShapeId = newId;
     dragSourceSurface = targetSurface;
     dragSourceShapesRef = targetShapesRef;
-    startShapeX = shapeValue.x;
-    startShapeY = shapeValue.y;
+    startShapeX = d.x;
+    startShapeY = d.y;
     startPointerX = clientX;
     startPointerY = clientY;
     if (dragSourceSurface !== surface) {
@@ -321,8 +324,9 @@ export default function mount(element) {
     const startPage = dragSourceSurface.screenToPage(startPointerX, startPointerY);
     const currentPage = dragSourceSurface.screenToPage(event.clientX, event.clientY);
     dragSourceShapesRef.at(dragShapeId).change((shape) => {
-      shape.x = startShapeX + (currentPage.x - startPage.x);
-      shape.y = startShapeY + (currentPage.y - startPage.y);
+      if (!shape.data) shape.data = {};
+      shape.data.x = startShapeX + (currentPage.x - startPage.x);
+      shape.data.y = startShapeY + (currentPage.y - startPage.y);
     });
     if (!dragThresholdMet) {
       const deltaX = event.clientX - startPointerX;
@@ -366,13 +370,11 @@ export default function mount(element) {
   }
 
   function elementUnderCursor(clientX, clientY, shapeId, surfaceEl) {
-    // Find the dragged shape's positioned wrapper div and temporarily hide it
-    // Paper structure: surface(ref-view) > div[relative] > div[absolute] > ref-view[shape]
     const allRefViews = surfaceEl.querySelectorAll('ref-view');
     let wrapper = null;
     for (const rv of allRefViews) {
       const refUrl = rv.getAttribute('ref-url') || '';
-      if (refUrl.endsWith('/' + shapeId)) {
+      if (refUrl.includes('/' + shapeId + '/')) {
         wrapper = rv.parentElement;
         break;
       }
@@ -404,7 +406,7 @@ export default function mount(element) {
     let wrapper = null;
     for (const rv of allRefViews) {
       const refUrl = rv.getAttribute('ref-url') || '';
-      if (refUrl.endsWith('/' + shapeId)) {
+      if (refUrl.includes('/' + shapeId + '/')) {
         wrapper = rv.parentElement;
         break;
       }
@@ -480,7 +482,7 @@ export default function mount(element) {
     const selected = selectedShapesRef.value();
     const ids = Object.keys(selected).filter((shapeId) => {
       const shapeEntry = shapesRef.at(shapeId).value();
-      return !shapeEntry.isLocked;
+      return !shapeEntry.data?.isLocked;
     });
     if (!ids.length) return;
     event.preventDefault();
@@ -500,15 +502,17 @@ export default function mount(element) {
     const newSelection = {};
     for (const id of ids) {
       const shape = shapesRef.at(id).value();
-      if (!shape || shape.isLocked) continue;
+      if (!shape || shape.data?.isLocked) continue;
       const newId = `dup_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       const clone = structuredClone(shape);
-      if (typeof clone.width === 'number' && typeof clone.height === 'number') {
-        clone.x += clone.width;
+      const d = clone.data || {};
+      if (typeof d.width === 'number' && typeof d.height === 'number') {
+        d.x = (d.x ?? 0) + d.width;
       } else {
-        clone.x += 10;
-        clone.y += 10;
+        d.x = (d.x ?? 0) + 10;
+        d.y = (d.y ?? 0) + 10;
       }
+      clone.data = d;
       shapesRef.at(newId).change(() => clone);
       newSelection[newId] = true;
     }
@@ -532,9 +536,9 @@ export default function mount(element) {
     event.stopPropagation();
 
     const shape = shapesRef.at(shapeId).value();
-    const isLocked = !!shape.isLocked;
-    const isEmbed = !!shape.embedDocUrl;
-    const currentToolUrl = isEmbed ? shape.embedToolUrl : shape.toolUrl;
+    const isLocked = !!shape.data?.isLocked;
+    const isEmbed = !!shape.data?.embedDocUrl;
+    const currentToolUrl = isEmbed ? shape.data?.embedToolUrl : shape.data?.toolUrl;
     const normalizedCurrent = normalizeToolUrl(currentToolUrl);
 
     // Select the shape
@@ -558,7 +562,8 @@ export default function mount(element) {
       '#334155',
       () => {
         shapesRef.at(shapeId).change((s) => {
-          s.isLocked = !isLocked;
+          if (!s.data) s.data = {};
+          s.data.isLocked = !isLocked;
         });
         if (!isLocked) {
           selectedShapesRef.change(() => ({}));
@@ -578,12 +583,14 @@ export default function mount(element) {
           if (!s) { closeMenu(); return; }
           const newId = `dup_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
           const clone = structuredClone(s);
-          if (typeof clone.width === 'number' && typeof clone.height === 'number') {
-            clone.x += clone.width;
+          const cd = clone.data || {};
+          if (typeof cd.width === 'number' && typeof cd.height === 'number') {
+            cd.x = (cd.x ?? 0) + cd.width;
           } else {
-            clone.x += 20;
-            clone.y += 20;
+            cd.x = (cd.x ?? 0) + 20;
+            cd.y = (cd.y ?? 0) + 20;
           }
+          clone.data = cd;
           shapesRef.at(newId).change(() => clone);
           selectedShapesRef.change(() => ({ [newId]: true }));
           closeMenu();
@@ -628,9 +635,9 @@ export default function mount(element) {
     const plugins = toolPlugins() ?? [];
     let compatible;
     if (isEmbed) {
-      compatible = await findCompatibleToolsForEmbed(element, shape.embedDocUrl, plugins);
+      compatible = await findCompatibleToolsForEmbed(element, shape.data?.embedDocUrl, plugins);
     } else {
-      compatible = await findCompatibleTools(shape, plugins);
+      compatible = await findCompatibleTools(shape.data ?? {}, plugins);
     }
 
     // Check menu is still open for this shape
@@ -653,10 +660,11 @@ export default function mount(element) {
           isActive,
           () => {
             shapesRef.at(shapeId).change((s) => {
+              if (!s.data) s.data = {};
               if (isEmbed) {
-                s.embedToolUrl = pluginPath;
+                s.data.embedToolUrl = pluginPath;
               } else {
-                s.toolUrl = pluginPath;
+                s.data.toolUrl = pluginPath;
               }
             });
             closeMenu();
@@ -674,15 +682,18 @@ export default function mount(element) {
     });
   }
 
-  surface.addEventListener('pointerdown', onPointerDown);
-  surface.addEventListener('pointermove', onPointerMove);
-  surface.addEventListener('pointerup', onPointerUp);
-  surface.addEventListener('contextmenu', onContextMenu);
-  document.addEventListener('keydown', onKeyDown);
+  if (surface) {
+    surface.addEventListener('pointerdown', onPointerDown);
+    surface.addEventListener('pointermove', onPointerMove);
+    surface.addEventListener('pointerup', onPointerUp);
+    surface.addEventListener('contextmenu', onContextMenu);
+    document.addEventListener('keydown', onKeyDown);
+  }
 
   const dispose = render(
     () =>
       html`<button
+        disabled=${disabled}
         onPointerDown=${(e) => e.stopPropagation()}
         onClick=${toggleTool}
         style=${() => ({
@@ -691,11 +702,12 @@ export default function mount(element) {
           border: isSelectionToolActive() ? '2px solid #3b82f6' : '1px solid #d4d4d8',
           'border-radius': '6px',
           background: isSelectionToolActive() ? '#eff6ff' : '#fff',
-          cursor: 'pointer',
+          cursor: disabled ? 'default' : 'pointer',
           display: 'flex',
           'align-items': 'center',
           'justify-content': 'center',
           padding: '0',
+          opacity: disabled ? '0.4' : '1',
         })}
       >
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -707,11 +719,13 @@ export default function mount(element) {
 
   return () => {
     closeMenu();
-    surface.removeEventListener('pointerdown', onPointerDown);
-    surface.removeEventListener('pointermove', onPointerMove);
-    surface.removeEventListener('pointerup', onPointerUp);
-    surface.removeEventListener('contextmenu', onContextMenu);
-    document.removeEventListener('keydown', onKeyDown);
+    if (surface) {
+      surface.removeEventListener('pointerdown', onPointerDown);
+      surface.removeEventListener('pointermove', onPointerMove);
+      surface.removeEventListener('pointerup', onPointerUp);
+      surface.removeEventListener('contextmenu', onContextMenu);
+      document.removeEventListener('keydown', onKeyDown);
+    }
     dispose();
   };
 }
@@ -724,7 +738,8 @@ function shapeIdFromEvent(event, surface) {
       const refUrl = refView.getAttribute('ref-url');
       if (!refUrl) return null;
       const parts = refUrl.split('/');
-      return parts[parts.length - 1];
+      // ref-url is .../shapes/<id>/data, so shape ID is second-to-last
+      return parts[parts.length - 2];
     }
     refView = parentRefView;
   }
@@ -756,7 +771,7 @@ function probeNearbyShapes(event, surface) {
     const refUrl = refView.getAttribute('ref-url');
     if (!refUrl) continue;
     const parts = refUrl.split('/');
-    return parts[parts.length - 1];
+    return parts[parts.length - 2];
   }
   return null;
 }
@@ -770,14 +785,15 @@ function findNearbyLine(event, surface, shapesRef) {
   let closestDist = threshold;
 
   for (const [id, shape] of Object.entries(shapes)) {
-    if (!shape.points || shape.points.length < 2) continue;
-    if (shape.isLocked) continue;
+    const d = shape.data;
+    if (!d?.points || d.points.length < 2) continue;
+    if (d.isLocked) continue;
 
-    for (let i = 0; i < shape.points.length - 1; i++) {
-      const segStartX = shape.x + shape.points[i][0];
-      const segStartY = shape.y + shape.points[i][1];
-      const segEndX = shape.x + shape.points[i + 1][0];
-      const segEndY = shape.y + shape.points[i + 1][1];
+    for (let i = 0; i < d.points.length - 1; i++) {
+      const segStartX = (d.x ?? 0) + d.points[i][0];
+      const segStartY = (d.y ?? 0) + d.points[i][1];
+      const segEndX = (d.x ?? 0) + d.points[i + 1][0];
+      const segEndY = (d.y ?? 0) + d.points[i + 1][1];
       const dist = distanceToSegment(cursorX, cursorY, segStartX, segStartY, segEndX, segEndY);
       if (dist < closestDist) {
         closestDist = dist;

@@ -8,7 +8,7 @@ The parts bin showing available shapes and tools.
 {
   "tool": "parts-bin/tool.json",
   "tags": ["starter"],
-  "value": { "x": 0, "y": 0, "viewUrl": "parts-bin/tool.json", "width": 280, "height": 800 },
+  "value": {},
   "width": 280,
   "height": 800
 }

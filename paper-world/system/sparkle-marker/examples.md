@@ -9,7 +9,7 @@ A sparkle trail in the default pink color.
   "tool": "sparkle-marker/tool.json",
   "tags": [],
   "value": {
-    "x": 0, "y": 0, "viewUrl": "sparkle-marker/tool.json",
+    "x": 0, "y": 0,
     "points": [[20, 60, 0.5], [50, 30, 0.7], [80, 50, 0.6], [120, 20, 0.8], [160, 45, 0.5]],
     "color": "#f0abfc"
   },
@@ -27,7 +27,7 @@ A sparkle trail in gold.
   "tool": "sparkle-marker/tool.json",
   "tags": [],
   "value": {
-    "x": 0, "y": 0, "viewUrl": "sparkle-marker/tool.json",
+    "x": 0, "y": 0,
     "points": [[15, 50, 0.6], [60, 15, 0.8], [100, 55, 0.5], [150, 25, 0.7], [190, 60, 0.6]],
     "color": "#fbbf24"
   },
@@ -45,7 +45,7 @@ A looping sparkle path in cyan.
   "tool": "sparkle-marker/tool.json",
   "tags": [],
   "value": {
-    "x": 0, "y": 0, "viewUrl": "sparkle-marker/tool.json",
+    "x": 0, "y": 0,
     "points": [[30, 50, 0.5], [60, 20, 0.6], [100, 30, 0.7], [130, 60, 0.5], [100, 80, 0.6], [60, 70, 0.7], [30, 50, 0.5]],
     "color": "#22d3ee"
   },

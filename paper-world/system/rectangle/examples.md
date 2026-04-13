@@ -8,7 +8,7 @@ A compact 100x100 square.
 {
   "tool": "rectangle/tool.json",
   "tags": [],
-  "value": { "x": 0, "y": 0, "viewUrl": "rectangle/tool.json", "width": 100, "height": 100 },
+  "value": { "x": 0, "y": 0, "width": 100, "height": 100 },
   "width": 100,
   "height": 100
 }
@@ -22,7 +22,7 @@ A wide, short rectangle.
 {
   "tool": "rectangle/tool.json",
   "tags": [],
-  "value": { "x": 0, "y": 0, "viewUrl": "rectangle/tool.json", "width": 300, "height": 60 },
+  "value": { "x": 0, "y": 0, "width": 300, "height": 60 },
   "width": 300,
   "height": 60
 }
@@ -36,7 +36,7 @@ A narrow, tall rectangle.
 {
   "tool": "rectangle/tool.json",
   "tags": [],
-  "value": { "x": 0, "y": 0, "viewUrl": "rectangle/tool.json", "width": 60, "height": 300 },
+  "value": { "x": 0, "y": 0, "width": 60, "height": 300 },
   "width": 60,
   "height": 300
 }

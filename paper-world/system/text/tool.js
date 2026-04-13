@@ -1,4 +1,5 @@
 import { EditorView, keymap } from '@codemirror/view';
+import { Compartment } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap } from 'https://esm.sh/@codemirror/commands@6?external=@codemirror/state,@codemirror/view,@codemirror/language';
 import { automergeSyncPlugin } from 'https://esm.sh/@automerge/automerge-codemirror@0.2.0?external=@automerge/automerge,@codemirror/state,@codemirror/view';
 import textSchema from './schema.js';
@@ -6,6 +7,9 @@ import textSchema from './schema.js';
 export default function mount(element) {
   const ref = element.getOrCreate(textSchema);
   const textRef = ref.at('text');
+
+  const pluginSlot = new Compartment();
+  const pluginExtensions = new Map();
 
   const view = new EditorView({
     doc: textRef.value() ?? '',
@@ -16,13 +20,26 @@ export default function mount(element) {
       }),
       keybindings,
       theme,
+      pluginSlot.of([]),
     ],
     parent: element,
   });
 
   view.dom.addEventListener('pointerdown', (e) => e.stopPropagation());
 
+  element.addExtension = (caller, extension) => {
+    pluginExtensions.set(caller, extension);
+    view.dispatch({ effects: pluginSlot.reconfigure([...pluginExtensions.values()]) });
+  };
+
+  element.removeExtension = (caller) => {
+    pluginExtensions.delete(caller);
+    view.dispatch({ effects: pluginSlot.reconfigure([...pluginExtensions.values()]) });
+  };
+
   return () => {
+    delete element.addExtension;
+    delete element.removeExtension;
     view.destroy();
   };
 }

@@ -1,6 +1,5 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, render, html } from '../solid.js';
-import { getViewUrl } from '../url.js';
 import { findTargetSurface, selectedToolSchema, surfaceSchema } from '../surface/schema.js';
 
 const TOOL_NAME = 'hand';
@@ -8,12 +7,11 @@ const TOOL_NAME = 'hand';
 const ButtonShapeSchema = z.object({
   x: z.number(),
   y: z.number(),
-  viewUrl: z.string(),
 });
 
 export const schema = {
   init() {
-    return { x: 0, y: 0, viewUrl: getViewUrl('./button.json', import.meta.url) };
+    return { x: 0, y: 0 };
   },
   parse(value) {
     return ButtonShapeSchema.parse(value);
@@ -22,18 +20,16 @@ export const schema = {
 
 export default function mount(element) {
   const surface = element.findParent(surfaceSchema);
-  if (!surface) return;
-  const selectedToolRef = surface.getOrCreate(selectedToolSchema);
-  const selectedTool = from(selectedToolRef);
+  const disabled = !surface;
+  const selectedToolRef = surface?.getOrCreate(selectedToolSchema);
+  const selectedTool = selectedToolRef ? from(selectedToolRef) : () => '';
 
   const active = () => selectedTool() === TOOL_NAME;
 
   function toggleTool() {
-    console.log('[hand] toggleTool called, active:', active(), 'current selectedTool:', selectedTool());
+    if (disabled) return;
     const next = active() ? '' : TOOL_NAME;
-    console.log('[hand] setting selectedTool to:', JSON.stringify(next));
     selectedToolRef.change(() => next);
-    console.log('[hand] after change, selectedTool:', selectedTool());
     if (!next) surface.style.cursor = '';
   }
 
@@ -76,32 +72,36 @@ export default function mount(element) {
   }
 
   function updateCursor() {
-    if (!panSurface) {
+    if (!panSurface && surface) {
       surface.style.cursor = active() ? 'grab' : '';
     }
   }
 
-  surface.addEventListener('pointerdown', onPointerDown);
-  surface.addEventListener('pointermove', onPointerMove);
-  surface.addEventListener('pointerup', onPointerUp);
+  if (surface) {
+    surface.addEventListener('pointerdown', onPointerDown);
+    surface.addEventListener('pointermove', onPointerMove);
+    surface.addEventListener('pointerup', onPointerUp);
+  }
 
   const dispose = render(
     () => {
       updateCursor();
       return html`<button
-        onPointerDown=${(e) => { console.log('[hand] button pointerdown, stopping propagation'); e.stopPropagation(); }}
-        onClick=${(e) => { console.log('[hand] button click fired'); toggleTool(); }}
+        disabled=${disabled}
+        onPointerDown=${(e) => e.stopPropagation()}
+        onClick=${() => toggleTool()}
         style=${() => ({
           width: '32px',
           height: '32px',
           border: active() ? '2px solid #3b82f6' : '1px solid #d4d4d8',
           'border-radius': '6px',
           background: active() ? '#eff6ff' : '#fff',
-          cursor: 'pointer',
+          cursor: disabled ? 'default' : 'pointer',
           display: 'flex',
           'align-items': 'center',
           'justify-content': 'center',
           padding: '0',
+          opacity: disabled ? '0.4' : '1',
         })}
       >
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -119,10 +119,12 @@ export default function mount(element) {
   );
 
   return () => {
-    surface.style.cursor = '';
-    surface.removeEventListener('pointerdown', onPointerDown);
-    surface.removeEventListener('pointermove', onPointerMove);
-    surface.removeEventListener('pointerup', onPointerUp);
+    if (surface) {
+      surface.style.cursor = '';
+      surface.removeEventListener('pointerdown', onPointerDown);
+      surface.removeEventListener('pointermove', onPointerMove);
+      surface.removeEventListener('pointerup', onPointerUp);
+    }
     dispose();
   };
 }

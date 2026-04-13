@@ -5,7 +5,7 @@ description: Create and manipulate shapes on the surface—rectangles, lines, te
 
 # Paper shapes
 
-Every visible object on the surface is an entry in the `shapes` map on the frame ref. To create one, write a shape record under a unique id with at least `x`, `y`, and `viewUrl`. The `viewUrl` tells the host which view descriptor renders that shape.
+Every visible object on the surface is an entry in the `shapes` map on the frame ref. Each shape is `{ viewUrl, data: { ... } }`. The `viewUrl` tells the host which view descriptor renders the shape, and `data` holds all positioning and tool-specific properties.
 
 ## Reading shapes
 
@@ -30,23 +30,25 @@ Find all text shapes:
 ```js
 const doc = element.ref.value();
 const shapes = doc.shapes || {};
-const textKeys = Object.keys(shapes).filter(id => shapes[id].text !== undefined);
+const textKeys = Object.keys(shapes).filter(id => shapes[id].data?.text !== undefined);
 console.log(textKeys);
 ```
 
 ## View URLs
 
-Shapes use paths to view descriptors under the system tree, for example `rectangle/tool.json`, `line/tool.json`, `text/tool.json`.
+Shapes use paths to view descriptors under the system tree, for example `rectangle/tool.json`, `line/tool.json`, `text/tool.json`. The `viewUrl` is stored at the top level of each shape entry, separate from the tool-specific data in `data`.
 
 ## Rectangle
 
 ```ts
 type RectangleShape = {
-  x: number;
-  y: number;
   viewUrl: string;
-  width: number;
-  height: number;
+  data: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
 };
 ```
 
@@ -54,11 +56,8 @@ Create:
 
 ```js
 element.ref.at('shapes', 'rect_1').change(() => ({
-  x: 50,
-  y: 50,
   viewUrl: 'rectangle/tool.json',
-  width: 200,
-  height: 120,
+  data: { x: 50, y: 50, width: 200, height: 120 },
 }));
 ```
 
@@ -66,23 +65,25 @@ Resize or move:
 
 ```js
 element.ref.at('shapes', 'rect_1').change((shape) => {
-  shape.width = 180;
-  shape.x += 10;
+  shape.data.width = 180;
+  shape.data.x += 10;
 });
 ```
 
 ## Line (freehand stroke)
 
-Points are `[offsetX, offsetY, pressure]` tuples relative to `(x, y)`.
+Points are `[offsetX, offsetY, pressure]` tuples relative to `(data.x, data.y)`.
 
 ```ts
 type LinePoint = [offsetX: number, offsetY: number, pressure: number];
 
 type LineShape = {
-  x: number;
-  y: number;
   viewUrl: string;
-  points: LinePoint[];
+  data: {
+    x: number;
+    y: number;
+    points: LinePoint[];
+  };
 };
 ```
 
@@ -91,14 +92,16 @@ Create:
 ```js
 const strokeId = `line_${Date.now()}`;
 element.ref.at('shapes', strokeId).change(() => ({
-  x: 100,
-  y: 80,
   viewUrl: 'line/tool.json',
-  points: [
-    [0, 0, 0.5],
-    [12, 4, 0.55],
-    [30, -6, 0.6],
-  ],
+  data: {
+    x: 100,
+    y: 80,
+    points: [
+      [0, 0, 0.5],
+      [12, 4, 0.55],
+      [30, -6, 0.6],
+    ],
+  },
 }));
 ```
 
@@ -108,7 +111,7 @@ Extend a stroke:
 const strokeId = 'line_1';
 const relX = 42, relY = 10, pressure = 0.6;
 element.ref.at('shapes', strokeId).change((shape) => {
-  shape.points.push([relX, relY, pressure]);
+  shape.data.points.push([relX, relY, pressure]);
 });
 ```
 
@@ -116,10 +119,12 @@ element.ref.at('shapes', strokeId).change((shape) => {
 
 ```ts
 type TextShape = {
-  x: number;
-  y: number;
   viewUrl: string;
-  text: string;
+  data: {
+    x: number;
+    y: number;
+    text: string;
+  };
 };
 ```
 
@@ -127,10 +132,8 @@ Create:
 
 ```js
 element.ref.at('shapes', 'note_1').change(() => ({
-  x: 120,
-  y: 40,
   viewUrl: 'text/tool.json',
-  text: 'Hello',
+  data: { x: 120, y: 40, text: 'Hello' },
 }));
 ```
 
@@ -138,23 +141,25 @@ Update:
 
 ```js
 element.ref.at('shapes', 'note_1').change((shape) => {
-  shape.text = 'Updated';
+  shape.data.text = 'Updated';
 });
 ```
 
 ## Embed (sub-surface)
 
-Embeds host another tool inside a bounded area. `embedViewUrl` is the inner view; `embedDocUrl` is the document it binds to.
+Embeds host another tool inside a bounded area. `embedToolUrl` is the inner view; `embedDocUrl` is the document it binds to. Both live in `data`.
 
 ```ts
 type EmbedShape = {
-  x: number;
-  y: number;
   viewUrl: string;
-  embedViewUrl: string;
-  width: number;
-  height: number;
-  embedDocUrl: string;
+  data: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    embedDocUrl: string;
+    embedToolUrl: string;
+  };
 };
 ```
 
@@ -167,13 +172,15 @@ const embedDoc = repo.create({
 });
 
 element.ref.at('shapes', 'embed_1').change(() => ({
-  x: 20,
-  y: 80,
   viewUrl: 'embed/tool.json',
-  embedViewUrl: 'llm/tool.json',
-  embedDocUrl: embedDoc.url,
-  width: 320,
-  height: 400,
+  data: {
+    x: 20,
+    y: 80,
+    width: 320,
+    height: 400,
+    embedDocUrl: embedDoc.url,
+    embedToolUrl: 'llm/tool.json',
+  },
 }));
 ```
 
@@ -182,8 +189,8 @@ Resize or retarget:
 ```js
 const newDocUrl = 'automerge:abc123';
 element.ref.at('shapes', 'embed_1').change((shape) => {
-  shape.width = 400;
-  shape.embedDocUrl = newDocUrl;
+  shape.data.width = 400;
+  shape.data.embedDocUrl = newDocUrl;
 });
 ```
 

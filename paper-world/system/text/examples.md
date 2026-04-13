@@ -8,7 +8,7 @@ A blank text field.
 {
   "tool": "text/tool.json",
   "tags": [],
-  "value": { "x": 0, "y": 0, "viewUrl": "text/tool.json", "text": "" },
+  "value": { "x": 0, "y": 0, "text": "" },
   "width": 250,
   "height": 60
 }
@@ -22,7 +22,7 @@ A simple greeting.
 {
   "tool": "text/tool.json",
   "tags": [],
-  "value": { "x": 0, "y": 0, "viewUrl": "text/tool.json", "text": "Hello, world!" },
+  "value": { "x": 0, "y": 0, "text": "Hello, world!" },
   "width": 250,
   "height": 60
 }
@@ -36,7 +36,7 @@ A text block with multiple lines.
 {
   "tool": "text/tool.json",
   "tags": [],
-  "value": { "x": 0, "y": 0, "viewUrl": "text/tool.json", "text": "Meeting notes:\n- Review Q3 goals\n- Discuss roadmap\n- Assign action items" },
+  "value": { "x": 0, "y": 0, "text": "Meeting notes:\n- Review Q3 goals\n- Discuss roadmap\n- Assign action items" },
   "width": 280,
   "height": 120
 }

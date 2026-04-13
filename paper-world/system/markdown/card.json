@@ -1,0 +1,6 @@
+{
+  "type": "tool",
+  "name": "Markdown Format",
+  "description": "Card that adds live markdown preview to all text shapes on the canvas",
+  "toolUrl": "./card.js"
+}

@@ -10,12 +10,11 @@ const eraserViewUrl = getViewUrl('./tool.json', import.meta.url);
 const ButtonShapeSchema = z.object({
   x: z.number(),
   y: z.number(),
-  viewUrl: z.string(),
 });
 
 export const schema = {
   init() {
-    return { x: 0, y: 0, viewUrl: getViewUrl('./button.json', import.meta.url) };
+    return { x: 0, y: 0 };
   },
   parse(value) {
     return ButtonShapeSchema.parse(value);
@@ -24,14 +23,15 @@ export const schema = {
 
 export default function mount(element) {
   const surface = element.findParent(surfaceSchema);
-  if (!surface) return;
-  const selectedToolRef = surface.getOrCreate(selectedToolSchema);
-  const selectedTool = from(selectedToolRef);
-  const shapesRef = surface.getOrCreate(surfaceSchema);
+  const disabled = !surface;
+  const selectedToolRef = surface?.getOrCreate(selectedToolSchema);
+  const selectedTool = selectedToolRef ? from(selectedToolRef) : () => '';
+  const shapesRef = surface?.getOrCreate(surfaceSchema);
 
   const active = () => selectedTool() === TOOL_NAME;
 
   function toggleTool() {
+    if (disabled) return;
     selectedToolRef.change(() => active() ? '' : TOOL_NAME);
   }
 
@@ -58,16 +58,17 @@ export default function mount(element) {
     const scaledRadius = ERASER_RADIUS * currentStrokeScale;
 
     for (const [id, shape] of Object.entries(shapes)) {
-      if (shape.isLocked) continue;
+      const d = shape.data;
+      if (d?.isLocked) continue;
       if (erasedIds.has(id)) continue;
       if (id === trailId) continue;
       if (shape.viewUrl && shape.viewUrl.includes('eraser/tool.json')) continue;
 
-      const sx = shape.x || 0;
-      const sy = shape.y || 0;
+      const sx = d?.x || 0;
+      const sy = d?.y || 0;
 
-      if (shape.points && shape.points.length > 0) {
-        for (const pt of shape.points) {
+      if (d?.points && d.points.length > 0) {
+        for (const pt of d.points) {
           const ptx = sx + (pt[0] || 0);
           const pty = sy + (pt[1] || 0);
           const dist = Math.sqrt((px - ptx) ** 2 + (py - pty) ** 2);
@@ -76,14 +77,14 @@ export default function mount(element) {
             break;
           }
         }
-      } else if (shape.width && shape.height) {
-        const inX = px >= sx - scaledRadius && px <= sx + shape.width + scaledRadius;
-        const inY = py >= sy - scaledRadius && py <= sy + shape.height + scaledRadius;
+      } else if (d?.width && d?.height) {
+        const inX = px >= sx - scaledRadius && px <= sx + d.width + scaledRadius;
+        const inY = py >= sy - scaledRadius && py <= sy + d.height + scaledRadius;
         if (inX && inY) {
           toDelete.push(id);
         }
-      } else if (shape.text !== undefined) {
-        const tw = Math.max(50, (shape.text || '').length * 8);
+      } else if (d?.text !== undefined) {
+        const tw = Math.max(50, (d.text || '').length * 8);
         const th = 24;
         const inX = px >= sx - scaledRadius && px <= sx + tw + scaledRadius;
         const inY = py >= sy - scaledRadius && py <= sy + th + scaledRadius;
@@ -122,12 +123,8 @@ export default function mount(element) {
     trailId = `eraser_trail_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
     drawShapesRef.at(trailId).change(() => ({
-      x: 0,
-      y: 0,
       viewUrl: eraserViewUrl,
-      points: [[pos.x, pos.y]],
-      strokeScale: currentStrokeScale,
-      createdAt: Date.now(),
+      data: { x: 0, y: 0, points: [[pos.x, pos.y]], strokeScale: currentStrokeScale, createdAt: Date.now() },
     }));
 
     surface.setPointerCapture(event.pointerId);
@@ -140,7 +137,7 @@ export default function mount(element) {
     trailPoints.push([pos.x, pos.y]);
 
     drawShapesRef.at(trailId).change((shape) => {
-      shape.points.push([pos.x, pos.y]);
+      shape.data.points.push([pos.x, pos.y]);
     });
 
     eraseAtPoint(pos.x, pos.y);
@@ -167,21 +164,13 @@ export default function mount(element) {
     drawShapesRef = null;
   }
 
-  surface.addEventListener('pointerdown', onPointerDown);
-  surface.addEventListener('pointermove', onPointerMove);
-  surface.addEventListener('pointerup', onPointerUp);
-
-  // Custom cursor when eraser is active
-  function updateCursor() {
-    if (active()) {
-      surface.style.cursor = 'none';
-    }
-  }
-
-  // Show a visual cursor circle
   let cursorEl = null;
 
-  function createCursor() {
+  if (surface) {
+    surface.addEventListener('pointerdown', onPointerDown);
+    surface.addEventListener('pointermove', onPointerMove);
+    surface.addEventListener('pointerup', onPointerUp);
+
     cursorEl = document.createElement('div');
     cursorEl.style.cssText = `
       position: fixed; pointer-events: none; z-index: 99999;
@@ -195,10 +184,9 @@ export default function mount(element) {
     `;
     document.body.appendChild(cursorEl);
   }
-  createCursor();
 
   function onGlobalMove(e) {
-    if (!cursorEl) return;
+    if (!cursorEl || !surface) return;
     if (active()) {
       cursorEl.style.display = 'block';
       cursorEl.style.left = e.clientX + 'px';
@@ -209,11 +197,14 @@ export default function mount(element) {
       surface.style.cursor = '';
     }
   }
-  document.addEventListener('pointermove', onGlobalMove);
+  if (surface) {
+    document.addEventListener('pointermove', onGlobalMove);
+  }
 
   const dispose = render(
     () =>
       html`<button
+        disabled=${disabled}
         onPointerDown=${(e) => e.stopPropagation()}
         onClick=${toggleTool}
         style=${() => ({
@@ -222,11 +213,12 @@ export default function mount(element) {
           border: active() ? '2px solid #94a3b8' : '1px solid #d4d4d8',
           'border-radius': '6px',
           background: active() ? '#f1f5f9' : '#fff',
-          cursor: 'pointer',
+          cursor: disabled ? 'default' : 'pointer',
           display: 'flex',
           'align-items': 'center',
           'justify-content': 'center',
           padding: '0',
+          opacity: disabled ? '0.4' : '1',
         })}
         title="Eraser"
       >
@@ -255,12 +247,14 @@ export default function mount(element) {
   );
 
   return () => {
-    surface.removeEventListener('pointerdown', onPointerDown);
-    surface.removeEventListener('pointermove', onPointerMove);
-    surface.removeEventListener('pointerup', onPointerUp);
-    document.removeEventListener('pointermove', onGlobalMove);
+    if (surface) {
+      surface.removeEventListener('pointerdown', onPointerDown);
+      surface.removeEventListener('pointermove', onPointerMove);
+      surface.removeEventListener('pointerup', onPointerUp);
+      document.removeEventListener('pointermove', onGlobalMove);
+      surface.style.cursor = '';
+    }
     if (cursorEl && cursorEl.parentNode) cursorEl.parentNode.removeChild(cursorEl);
-    surface.style.cursor = '';
     dispose();
   };
 }

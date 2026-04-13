@@ -167,9 +167,12 @@ function examplesEqual(a, b) {
  * @returns {{ width: number, height: number }}
  */
 export function getExamplePreviewSize(example) {
-  const value = example?.value;
+  const exWidth = typeof example?.width === 'number' ? example.width : undefined;
+  const exHeight = typeof example?.height === 'number' ? example.height : undefined;
+  const valWidth = typeof example?.value?.width === 'number' ? example.value.width : undefined;
+  const valHeight = typeof example?.value?.height === 'number' ? example.value.height : undefined;
   return {
-    width: typeof value?.width === 'number' ? value.width : DEFAULT_PREVIEW_WIDTH,
-    height: typeof value?.height === 'number' ? value.height : DEFAULT_PREVIEW_HEIGHT,
+    width: exWidth ?? valWidth ?? DEFAULT_PREVIEW_WIDTH,
+    height: exHeight ?? valHeight ?? DEFAULT_PREVIEW_HEIGHT,
   };
 }

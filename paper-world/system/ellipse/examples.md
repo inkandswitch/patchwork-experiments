@@ -8,7 +8,7 @@ A 100x100 circle.
 {
   "tool": "ellipse/tool.json",
   "tags": [],
-  "value": { "x": 0, "y": 0, "viewUrl": "ellipse/tool.json", "width": 100, "height": 100 },
+  "value": { "x": 0, "y": 0, "width": 100, "height": 100 },
   "width": 100,
   "height": 100
 }
@@ -22,7 +22,7 @@ A wide, flat oval.
 {
   "tool": "ellipse/tool.json",
   "tags": [],
-  "value": { "x": 0, "y": 0, "viewUrl": "ellipse/tool.json", "width": 200, "height": 80 },
+  "value": { "x": 0, "y": 0, "width": 200, "height": 80 },
   "width": 200,
   "height": 80
 }
@@ -36,7 +36,7 @@ A narrow, tall oval.
 {
   "tool": "ellipse/tool.json",
   "tags": [],
-  "value": { "x": 0, "y": 0, "viewUrl": "ellipse/tool.json", "width": 60, "height": 180 },
+  "value": { "x": 0, "y": 0, "width": 60, "height": 180 },
   "width": 60,
   "height": 180
 }
