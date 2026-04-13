@@ -43,12 +43,15 @@ export const ArtifactProjectionTool: ToolRender = (handle, element) => {
 
 function ArtifactProjectionView(props: { handle: DocHandle<ProjectionDoc>; element: ToolElement }) {
   const [projection] = useDocument<ProjectionDoc>(() => props.handle.url);
+  const artifactDocUrl = () =>
+    (props.element.getAttribute('artifact-doc-url') as AutomergeUrl | null) ??
+    projection()?.artifactDocUrl;
   const [artifactDoc] = useDocument<Pick<DatalogDoc, 'title' | 'facts' | 'draftText'>>(
-    () => projection()?.artifactDocUrl,
+    artifactDocUrl,
   );
   const [artifactHandle] = createHandleResource<Pick<DatalogDoc, 'title' | 'facts' | 'draftText'>>(
     props.element.repo,
-    () => projection()?.artifactDocUrl,
+    artifactDocUrl,
   );
   const [selection, setSelection] = createSignal<CellPosition | null>(null);
   const [editingCell, setEditingCell] = createSignal<CellPosition | null>(null);
@@ -237,7 +240,7 @@ function ArtifactProjectionView(props: { handle: DocHandle<ProjectionDoc>; eleme
       row.rowId,
       column.id,
       value,
-      currentProjection.artifactDocUrl,
+      artifactDocUrl() ?? currentProjection.artifactDocUrl,
       { projectionUrl: props.handle.url },
     );
 
@@ -317,7 +320,7 @@ function ArtifactProjectionView(props: { handle: DocHandle<ProjectionDoc>; eleme
       currentProjection,
       currentArtifact,
       row.rowId,
-      currentProjection.artifactDocUrl,
+      artifactDocUrl() ?? currentProjection.artifactDocUrl,
       { projectionUrl: props.handle.url },
     );
     if (!result.ok) {

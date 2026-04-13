@@ -120,7 +120,6 @@ export type ArtifactFolderEntry = {
   type: string;
   name: string;
   url: AutomergeUrl;
-  projectionDocUrl?: AutomergeUrl;
   specDocUrls?: AutomergeUrl[];
 };
 

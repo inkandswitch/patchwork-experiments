@@ -6,11 +6,17 @@ import remarkGfm from 'remark-gfm';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
 import type { WorkflowDoc, ValidationDoc, SpecElicitationDoc, PlanType } from './types';
+import type { SpecDoc } from './types';
 import type { LLMProcessDoc, ChatMessagePart } from '../llm/types';
 import type { PetriNetPlanDoc, PetriNetExecutionDoc } from '../paul/petrinet-plan/types';
 import type { TaskListPlanDoc } from '../grjte/plan/types';
 import type { TaskListExecutionDoc } from '../grjte/execution/types';
 import { runWorkspaceLLM } from '../llm/llm-process';
+import {
+  createProjectionProcess,
+  resolveOwningSpecUrl,
+  runProjectionProcessAndPersist,
+} from '../grjte/projection-utils';
 import './workflow.css';
 import { FolderDoc } from '@inkandswitch/patchwork-filesystem';
 
@@ -481,6 +487,82 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
     }
   }
 
+  async function handleOpenValidation() {
+    const currentDoc = doc();
+    if (!currentDoc?.validationDocUrl) return;
+
+    setSelectedStage('validation');
+
+    const currentPlanType = inferPlanType(currentDoc);
+    if (currentPlanType !== 'task-list' || !currentDoc.executionDocUrl || !currentDoc.specDocUrl) {
+      return;
+    }
+
+    try {
+      const executionHandle = await repo.find<TaskListExecutionDoc>(currentDoc.executionDocUrl);
+      const execution = executionHandle.doc();
+      if (!execution?.artifactsFolderUrl) return;
+
+      const folderHandle = await repo.find<FolderDoc & { docs?: Array<{ name?: string; url: AutomergeUrl; specDocUrls?: AutomergeUrl[] }> }>(
+        execution.artifactsFolderUrl,
+      );
+      const folderDoc = folderHandle.doc();
+      const artifacts = folderDoc?.docs ?? [];
+
+      const workBySpec = new Map<
+        AutomergeUrl,
+        { artifactUrl: AutomergeUrl; artifactName: string }
+      >();
+
+      for (const artifact of artifacts) {
+        const owningSpecUrl = resolveOwningSpecUrl(currentDoc.specDocUrl, artifact.specDocUrls);
+        if (!workBySpec.has(owningSpecUrl)) {
+          workBySpec.set(owningSpecUrl, {
+            artifactUrl: artifact.url,
+            artifactName: artifact.name || 'Untitled artifact',
+          });
+        }
+      }
+
+      for (const [owningSpecUrl, representative] of workBySpec) {
+        const specHandle = await repo.find<SpecDoc>(owningSpecUrl);
+        const specDoc = specHandle.doc();
+        const existingProjectionDocUrl = specDoc?.spec?.projectionDocUrl;
+        if (existingProjectionDocUrl) continue;
+
+        const existingProcessUrl = specDoc?.spec?.projectionProcessUrl;
+        if (existingProcessUrl) {
+          const existingProcessHandle = await repo.find<LLMProcessDoc>(existingProcessUrl);
+          const existingProcessDoc = existingProcessHandle.doc();
+          if (existingProcessDoc && !existingProcessDoc.done) continue;
+        }
+
+        const previousMessages = existingProcessUrl
+          ? (await repo.find<LLMProcessDoc>(existingProcessUrl)).doc()?.messages ?? []
+          : [];
+        const processHandle = await createProjectionProcess(repo, {
+          rootSpecUrl: currentDoc.specDocUrl,
+          owningSpecUrl,
+          artifactUrl: representative.artifactUrl,
+          artifactName: representative.artifactName,
+          existingProjectionDocUrl,
+          previousMessages,
+        });
+
+        specHandle.change((d) => {
+          if (!d.spec) return;
+          d.spec.projectionProcessUrl = processHandle.url;
+        });
+
+        runProjectionProcessAndPersist(repo, processHandle.url, specHandle).catch((err) => {
+          console.error('[workflow] projection generation failed', err);
+        });
+      }
+    } catch (err) {
+      console.error('[workflow] handleOpenValidation failed', err);
+    }
+  }
+
   async function createPetriNetExecution(currentDoc: WorkflowDoc): Promise<AutomergeUrl> {
     const planHandle = await repo.find<PetriNetPlanDoc>(currentDoc.planDocUrl!);
     const planDoc = planHandle.doc();
@@ -549,7 +631,7 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
       case 'execution':
         return {
           label: 'Validate',
-          action: () => setSelectedStage('validation'),
+          action: handleOpenValidation,
           disabled: isExecutionRunning(),
         };
       default:

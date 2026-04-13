@@ -6,6 +6,8 @@ import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
 import type { TaskListExecutionDoc } from './types';
 import type { TaskDoc } from '../plan/types';
 import type { ArtifactFolderEntry } from '../artifact-projection/artifact-projection';
+import type { SpecDoc } from '../../workflow/types';
+import { resolveOwningSpecUrl } from '../projection-utils';
 import './execution.css';
 
 type FolderDoc = {
@@ -108,27 +110,12 @@ function ExecutionView(props: { handle: DocHandle<TaskListExecutionDoc>; element
                   <div class="execution-artifact-list">
                     <For each={artifacts()}>
                       {(entry) => (
-                        <div
-                          class="execution-artifact-card"
-                          classList={{ expanded: isArtifactExpanded(entry.url) }}
-                        >
-                          <button
-                            class="execution-artifact-toggle"
-                            onClick={() => toggleArtifact(entry.url)}
-                          >
-                            <span class="execution-artifact-name">{entry.name || 'Untitled'}</span>
-                            <span class="execution-artifact-type">{entry.type}</span>
-                          </button>
-                          <Show when={isArtifactExpanded(entry.url)}>
-                            <div class="execution-artifact-preview">
-                              <patchwork-view
-                                attr:doc-url={entry.projectionDocUrl ?? entry.url}
-                                attr:tool-id={entry.projectionDocUrl ? 'grjte-artifact-projection' : undefined}
-                                style="display:block;width:100%;height:100%;"
-                              />
-                            </div>
-                          </Show>
-                        </div>
+                        <ArtifactCard
+                          entry={entry}
+                          rootSpecUrl={currentDoc().specDocUrl}
+                          expanded={isArtifactExpanded(entry.url)}
+                          onToggle={() => toggleArtifact(entry.url)}
+                        />
                       )}
                     </For>
                   </div>
@@ -137,6 +124,36 @@ function ExecutionView(props: { handle: DocHandle<TaskListExecutionDoc>; element
             </div>
           </>
         )}
+      </Show>
+    </div>
+  );
+}
+
+function ArtifactCard(props: {
+  entry: ArtifactFolderEntry;
+  rootSpecUrl: AutomergeUrl;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const owningSpecUrl = () => resolveOwningSpecUrl(props.rootSpecUrl, props.entry.specDocUrls);
+  const [owningSpec] = useDocument<SpecDoc>(owningSpecUrl);
+  const projectionDocUrl = () => owningSpec()?.spec?.projectionDocUrl;
+
+  return (
+    <div class="execution-artifact-card" classList={{ expanded: props.expanded }}>
+      <button class="execution-artifact-toggle" onClick={props.onToggle}>
+        <span class="execution-artifact-name">{props.entry.name || 'Untitled'}</span>
+        <span class="execution-artifact-type">{props.entry.type}</span>
+      </button>
+      <Show when={props.expanded}>
+        <div class="execution-artifact-preview">
+          <patchwork-view
+            attr:doc-url={projectionDocUrl() ?? props.entry.url}
+            attr:tool-id={projectionDocUrl() ? 'grjte-artifact-projection' : undefined}
+            attr:artifact-doc-url={projectionDocUrl() ? props.entry.url : undefined}
+            style="display:block;width:100%;height:100%;"
+          />
+        </div>
       </Show>
     </div>
   );

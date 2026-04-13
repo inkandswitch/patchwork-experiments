@@ -39,6 +39,8 @@ export type Spec = {
   verificationUrls: AutomergeUrl[];
   subSpecUrls?: AutomergeUrl[];
   filesFolderUrl?: AutomergeUrl;
+  projectionDocUrl?: AutomergeUrl;
+  projectionProcessUrl?: AutomergeUrl;
 };
 
 export type SpecDoc = HasPatchworkMetadata & {

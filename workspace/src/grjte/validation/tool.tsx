@@ -11,9 +11,13 @@ import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primit
 import type { ToolRender, ToolElement } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
 import type { Heads } from '@automerge/automerge';
-import type { ValidationDoc } from '../../workflow/types';
+import { SolidMarkdown } from 'solid-markdown';
+import remarkGfm from 'remark-gfm';
+import type { ValidationDoc, SpecDoc } from '../../workflow/types';
 import type { TaskListExecutionDoc } from '../execution/types';
 import type { DatalogDoc } from '../spec/datalog-doc';
+import type { LLMProcessDoc, ChatMessagePart } from '../../llm/types';
+import { createProjectionProcess, resolveOwningSpecUrl, runProjectionProcessAndPersist } from '../projection-utils';
 import type {
   VerificationArtifactInput,
   VerificationDataInput,
@@ -53,6 +57,29 @@ type ArtifactVerificationSummary = {
   passing: number;
   status: 'pass' | 'fail' | 'none';
   label: string;
+};
+
+type ArtifactContext = {
+  entry: ArtifactFolderEntry;
+  owningSpecUrl: () => AutomergeUrl;
+  owningSpec: () => SpecDoc | undefined;
+  owningSpecHandle: () => DocHandle<SpecDoc> | undefined;
+  doc: () => DatalogDoc | undefined;
+  docHandle: () => DocHandle<DatalogDoc> | undefined;
+  projectionDocUrl: () => AutomergeUrl | undefined;
+  projectionDoc: () => ProjectionDoc | undefined;
+  projectionHandle: () => DocHandle<ProjectionDoc> | undefined;
+  projectionProcessUrl: () => AutomergeUrl | undefined;
+  projectionProcess: () => LLMProcessDoc | undefined;
+};
+
+type ProjectionCardModel = {
+  specDocUrl: AutomergeUrl;
+  goal: string;
+  entry: ArtifactFolderEntry;
+  projectionDocUrl?: AutomergeUrl;
+  projectionProcessUrl?: AutomergeUrl;
+  projectionProcess?: LLMProcessDoc;
 };
 
 export const ValidationTool: ToolRender = (handle, element) => {
@@ -193,10 +220,27 @@ function ValidationBody(props: {
   isArtifactExpanded: (url: AutomergeUrl) => boolean;
   onHeadsChanged: (headsByDocUrl: Record<AutomergeUrl, Heads>) => void;
 }) {
-  const artifactAccessors = props.artifactEntries.map((entry) => {
+  const artifactAccessors: ArtifactContext[] = props.artifactEntries.map((entry) => {
+    const owningSpecUrl = () => resolveOwningSpecUrl(props.specDocUrl, entry.specDocUrls);
+    const [owningSpec, owningSpecHandle] = useDocument<SpecDoc>(owningSpecUrl);
     const [doc, docHandle] = useDocument<DatalogDoc>(() => entry.url);
-    const [projectionDoc, projectionHandle] = useDocument<ProjectionDoc>(() => entry.projectionDocUrl);
-    return { entry, doc, docHandle, projectionDoc, projectionHandle };
+    const projectionDocUrl = () => owningSpec()?.spec?.projectionDocUrl;
+    const [projectionDoc, projectionHandle] = useDocument<ProjectionDoc>(projectionDocUrl);
+    const projectionProcessUrl = () => owningSpec()?.spec?.projectionProcessUrl;
+    const [projectionProcess] = useDocument<LLMProcessDoc>(projectionProcessUrl);
+    return {
+      entry,
+      owningSpecUrl,
+      owningSpec,
+      owningSpecHandle,
+      doc,
+      docHandle,
+      projectionDocUrl,
+      projectionDoc,
+      projectionHandle,
+      projectionProcessUrl,
+      projectionProcess,
+    };
   });
   const [specTree, setSpecTree] = createSignal<SpecTreeNode | null>(null);
   const [specTreeLoading, setSpecTreeLoading] = createSignal(true);
@@ -226,14 +270,14 @@ function ValidationBody(props: {
   });
 
   const expandedArtifactsByUrl = createMemo(() => {
-    const entries = artifactAccessors.flatMap(({ entry, doc, projectionDoc }) => {
+    const entries = artifactAccessors.flatMap(({ entry, doc, projectionDoc, projectionDocUrl }) => {
       const currentDoc = doc();
       const currentProjection = projectionDoc();
       if (!currentDoc || !currentProjection) return [];
       return [[
         entry.url,
         expandArtifactDocForVerification(currentProjection, currentDoc, {
-          projectionUrl: entry.projectionDocUrl,
+          projectionUrl: projectionDocUrl(),
         }),
       ] as const];
     });
@@ -262,12 +306,12 @@ function ValidationBody(props: {
 
   const liveHeadsByDocUrl = createMemo<Record<AutomergeUrl, Heads>>(() => {
     const next: Record<AutomergeUrl, Heads> = {};
-    for (const { entry, docHandle, projectionHandle } of artifactAccessors) {
+    for (const { entry, docHandle, projectionHandle, projectionDocUrl } of artifactAccessors) {
       const currentDocHandle = docHandle();
       if (currentDocHandle?.isReady()) next[entry.url] = currentDocHandle.heads() as Heads;
       const currentProjectionHandle = projectionHandle();
-      if (entry.projectionDocUrl && currentProjectionHandle?.isReady()) {
-        next[entry.projectionDocUrl] = currentProjectionHandle.heads() as Heads;
+      if (projectionDocUrl() && currentProjectionHandle?.isReady()) {
+        next[projectionDocUrl()!] = currentProjectionHandle.heads() as Heads;
       }
     }
     return next;
@@ -376,6 +420,51 @@ function ValidationBody(props: {
     return statuses;
   });
 
+  const projectionCards = createMemo<ProjectionCardModel[]>(() => {
+    const bySpec = new Map<AutomergeUrl, ProjectionCardModel>();
+    for (const artifact of artifactAccessors) {
+      const specUrl = artifact.owningSpecUrl();
+      if (bySpec.has(specUrl)) continue;
+      bySpec.set(specUrl, {
+        specDocUrl: specUrl,
+        goal: artifact.owningSpec()?.spec?.goal || artifact.entry.name || 'Untitled spec',
+        entry: artifact.entry,
+        projectionDocUrl: artifact.projectionDocUrl(),
+        projectionProcessUrl: artifact.projectionProcessUrl(),
+        projectionProcess: artifact.projectionProcess(),
+      });
+    }
+    return [...bySpec.values()];
+  });
+
+  async function handleProjectionFollowUp(card: ProjectionCardModel, message: string) {
+    const repo = props.repo as { find: <T>(url: AutomergeUrl) => Promise<DocHandle<T>> };
+    const specHandle = await repo.find<SpecDoc>(card.specDocUrl);
+    const specDoc = specHandle.doc();
+    const previousProcessUrl = specDoc?.spec?.projectionProcessUrl;
+    const previousMessages = previousProcessUrl
+      ? (await repo.find<LLMProcessDoc>(previousProcessUrl)).doc()?.messages ?? []
+      : [];
+    const processHandle = await createProjectionProcess(props.repo, {
+      rootSpecUrl: props.specDocUrl,
+      owningSpecUrl: card.specDocUrl,
+      artifactUrl: card.entry.url,
+      artifactName: card.entry.name || 'Untitled artifact',
+      existingProjectionDocUrl: specDoc?.spec?.projectionDocUrl,
+      previousMessages,
+      message,
+    });
+
+    specHandle.change((d: SpecDoc) => {
+      if (!d.spec) return;
+      d.spec.projectionProcessUrl = processHandle.url;
+    });
+
+    runProjectionProcessAndPersist(props.repo, processHandle.url, specHandle).catch((err) => {
+      console.error('[validation] projection follow-up failed', err);
+    });
+  }
+
   return (
     <div class="validation-body">
       <Show when={specTreeLoading()}>
@@ -424,6 +513,25 @@ function ValidationBody(props: {
       </Show>
 
       <div class="validation-section">
+        <div class="validation-section-label">Projection</div>
+        <Show
+          when={projectionCards().length > 0}
+          fallback={<div class="validation-empty">No projection targets available.</div>}
+        >
+          <div class="validation-projection-list">
+            <For each={projectionCards()}>
+              {(card) => (
+                <ProjectionCard
+                  card={card}
+                  onFollowUp={handleProjectionFollowUp}
+                />
+              )}
+            </For>
+          </div>
+        </Show>
+      </div>
+
+      <div class="validation-section">
         <div class="validation-section-label">Artifacts</div>
         <Show
           when={props.artifactEntries.length > 0}
@@ -463,6 +571,9 @@ function ValidationBody(props: {
                     <div class="validation-artifact-preview">
                       <ArtifactWorkspace
                         entry={entry}
+                        projectionDocUrl={
+                          artifactAccessors.find((artifact) => artifact.entry.url === entry.url)?.projectionDocUrl()
+                        }
                         expandedArtifact={expandedArtifactsByUrl().get(entry.url) ?? null}
                         verificationResults={verificationResults().filter((result) =>
                           getArtifactsForSpec(
@@ -669,19 +780,26 @@ function WitnessCard(props: { witness: ConstraintViolation['witnesses'][number] 
 
 function ArtifactWorkspace(props: {
   entry: ArtifactFolderEntry;
+  projectionDocUrl?: AutomergeUrl;
   expandedArtifact: ReturnType<typeof expandArtifactDocForVerification> | null;
   verificationResults: EvaluatedVerificationEntry[];
   verificationSummary: ArtifactVerificationSummary;
 }) {
   const [selectedView, setSelectedView] = createSignal<'sheet' | 'datalog'>(
-    props.entry.projectionDocUrl ? 'sheet' : 'datalog',
+    props.projectionDocUrl ? 'sheet' : 'datalog',
   );
-  const [projectionDoc] = useDocument<ProjectionDoc>(() => props.entry.projectionDocUrl);
+  const [projectionDoc] = useDocument<ProjectionDoc>(() => props.projectionDocUrl);
+
+  createEffect(() => {
+    if (props.projectionDocUrl && selectedView() === 'datalog') {
+      setSelectedView('sheet');
+    }
+  });
 
   const constraintAnnotations = createMemo<ArtifactProjectionAnnotation[]>(() => {
     const currentExpandedArtifact = props.expandedArtifact;
     const currentProjection = projectionDoc();
-    if (!currentExpandedArtifact || !currentProjection || !props.entry.projectionDocUrl) return [];
+    if (!currentExpandedArtifact || !currentProjection || !props.projectionDocUrl) return [];
 
     const failingConstraints = props.verificationResults.flatMap((result) =>
       result.evaluation.constraints
@@ -692,20 +810,20 @@ function ArtifactWorkspace(props: {
         })),
     );
 
-    if (!props.entry.projectionDocUrl) return [];
+    if (!props.projectionDocUrl) return [];
 
     return deriveConstraintAnnotationsForArtifact(
       currentProjection,
       props.entry.url,
       currentExpandedArtifact,
       failingConstraints,
-      { projectionUrl: props.entry.projectionDocUrl },
+      { projectionUrl: props.projectionDocUrl },
     );
   });
 
   return (
     <div class="validation-artifact-workspace">
-      <Show when={props.entry.projectionDocUrl}>
+      <Show when={props.projectionDocUrl}>
         <div class="validation-artifact-toolbar">
           <div class="validation-artifact-toolbar-main">
             <div class="validation-artifact-tabs">
@@ -739,7 +857,7 @@ function ArtifactWorkspace(props: {
       </Show>
 
       <Show
-        when={selectedView() === 'sheet' && props.entry.projectionDocUrl}
+        when={selectedView() === 'sheet' && props.projectionDocUrl}
         fallback={
           <patchwork-view
             attr:doc-url={props.entry.url}
@@ -748,13 +866,154 @@ function ArtifactWorkspace(props: {
         }
       >
         <patchwork-view
-          attr:doc-url={props.entry.projectionDocUrl!}
+          attr:doc-url={props.projectionDocUrl!}
           attr:tool-id="grjte-artifact-projection"
+          attr:artifact-doc-url={props.entry.url}
           attr:data-annotations={JSON.stringify(constraintAnnotations())}
           style="display:block;width:100%;height:100%;"
         />
       </Show>
     </div>
+  );
+}
+
+function ProjectionCard(props: {
+  card: ProjectionCardModel;
+  onFollowUp: (card: ProjectionCardModel, message: string) => Promise<void> | void;
+}) {
+  const [followUpText, setFollowUpText] = createSignal('');
+  const isRunning = createMemo(() => Boolean(props.card.projectionProcess && !props.card.projectionProcess.done));
+
+  function handleSend() {
+    const text = followUpText().trim();
+    if (!text || isRunning()) return;
+    setFollowUpText('');
+    void props.onFollowUp(props.card, text);
+  }
+
+  function handleKeyDown(event: KeyboardEvent) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      handleSend();
+    }
+  }
+
+  return (
+    <div class="validation-projection-card">
+      <div class="validation-projection-header">
+        <div>
+          <div class="validation-projection-title">{props.card.goal}</div>
+          <div class="validation-projection-subtitle">{props.card.entry.name || 'Untitled artifact'}</div>
+        </div>
+        <span
+          class="validation-projection-status"
+          classList={{
+            ready: Boolean(props.card.projectionDocUrl),
+            pending: isRunning(),
+          }}
+        >
+          {isRunning() ? 'Generating' : props.card.projectionDocUrl ? 'Ready' : 'Missing'}
+        </span>
+      </div>
+
+      <div class="validation-projection-body">
+        <div class="validation-projection-preview">
+          <Show
+            when={props.card.projectionDocUrl}
+            fallback={
+              <div class="validation-empty">
+                {isRunning()
+                  ? 'Projection generation in progress...'
+                  : 'No reusable projection has been created for this spec yet.'}
+              </div>
+            }
+          >
+            <patchwork-view
+              attr:doc-url={props.card.projectionDocUrl!}
+              attr:tool-id="grjte-artifact-projection"
+              attr:artifact-doc-url={props.card.entry.url}
+              style="display:block;width:100%;height:100%;"
+            />
+          </Show>
+        </div>
+
+        <div class="validation-projection-chat">
+          <div class="validation-projection-chat-log">
+            <Show when={props.card.projectionProcess}>
+              {(processDoc) => (
+                <>
+                  <For each={processDoc().messages}>{(message) => <ProjectionMessageView message={message} />}</For>
+                  <Show when={!processDoc().done}>
+                    <div class="validation-loading-inline">Projection agent is working...</div>
+                  </Show>
+                </>
+              )}
+            </Show>
+            <Show when={!props.card.projectionProcess}>
+              <div class="validation-empty">No projection chat yet.</div>
+            </Show>
+          </div>
+          <div class="validation-projection-followup">
+            <textarea
+              class="validation-projection-input"
+              placeholder="Ask for changes to the projection…"
+              value={followUpText()}
+              onInput={(event) => setFollowUpText(event.currentTarget.value)}
+              onKeyDown={handleKeyDown}
+              disabled={isRunning()}
+              rows={3}
+            />
+            <button
+              class="validation-projection-send"
+              onClick={handleSend}
+              disabled={isRunning() || !followUpText().trim()}
+            >
+              Send
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProjectionMessageView(props: { message: { role: string; content: ChatMessagePart[] } }) {
+  return (
+    <div class={`validation-projection-msg validation-projection-msg-${props.message.role}`}>
+      <For each={props.message.content}>{(part) => <ProjectionPartView part={part} />}</For>
+    </div>
+  );
+}
+
+function ProjectionPartView(props: { part: ChatMessagePart }) {
+  return (
+    <Show
+      when={props.part.type === 'script' ? props.part : undefined}
+      fallback={
+        <Show when={props.part.type === 'text' ? props.part : undefined}>
+          {(part) => (
+            <SolidMarkdown remarkPlugins={[remarkGfm]}>
+              {part().text}
+            </SolidMarkdown>
+          )}
+        </Show>
+      }
+    >
+      {(scriptPart) => (
+        <div class="validation-projection-script">
+          <Show when={scriptPart().description}>
+            {(description) => <div class="validation-projection-script-label">{description()}</div>}
+          </Show>
+          <pre>{scriptPart().code}</pre>
+          <Show when={scriptPart().output}>
+            {(output) => <pre class="validation-projection-script-output">{output()}</pre>}
+          </Show>
+          <Show when={scriptPart().error}>
+            {(error) => <pre class="validation-projection-script-error">{error()}</pre>}
+          </Show>
+        </div>
+      )}
+    </Show>
   );
 }
 

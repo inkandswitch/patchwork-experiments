@@ -1,5 +1,6 @@
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo';
 import type { TaskListExecutionDoc } from '../execution/types';
+import type { SpecDoc } from '../../workflow/types';
 import {
   buildBaseArtifactDraft,
   createProjectionDoc,
@@ -361,18 +362,29 @@ assigned(w6_wed_night, lisa_brown, 12). assignment_slot(w6_wed_night, 4, lisa_br
         type: 'datalog',
         name: 'AMU Rota',
         url: amuRotaUrl,
-        projectionDocUrl: amuProjectionUrl,
         specDocUrls: [subSpecUrls[0], specDocUrl],
       },
       {
         type: 'datalog',
         name: 'Ward 6 Rota',
         url: ward6RotaUrl,
-        projectionDocUrl: ward6ProjectionUrl,
         specDocUrls: [subSpecUrls[1], specDocUrl],
       },
     ];
   });
+
+  for (const [specUrl, projectionUrl] of [
+    [subSpecUrls[0], amuProjectionUrl],
+    [subSpecUrls[1], ward6ProjectionUrl],
+  ] as const) {
+    const specHandle = repo.find<SpecDoc>(specUrl);
+    void specHandle.then((handle) => {
+      handle.change((d) => {
+        if (!d.spec) return;
+        d.spec.projectionDocUrl = projectionUrl;
+      });
+    });
+  }
 
   const executionHandle = repo.create<TaskListExecutionDoc & { '@patchwork': { type: string } }>();
   executionHandle.change((d) => {
