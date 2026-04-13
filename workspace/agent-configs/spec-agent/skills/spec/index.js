@@ -57,19 +57,28 @@ export async function getSpec(url) {
       });
     },
 
-    /** Add a Datalog constraint doc URL to verificationUrls */
-    addVerificationDoc(docUrl) {
+    /** Add a Datalog constraint doc as a verification. Creates a VerificationDoc wrapper. */
+    addVerificationDoc(docUrl, options) {
+      const verificationHandle = repo.create();
+      verificationHandle.change((d) => {
+        d['@patchwork'] = { type: 'verification' };
+        d.docUrl = docUrl;
+        d.script = '';
+        if (options?.title) d.title = options.title;
+        if (options?.description) d.description = options.description;
+      });
       handle.change((d) => {
         if (!d.spec) return;
         if (!d.spec.verificationUrls) d.spec.verificationUrls = [];
-        d.spec.verificationUrls.push(docUrl);
+        d.spec.verificationUrls.push(verificationHandle.url);
       });
+      return verificationHandle.url;
     },
 
-    removeVerificationDoc(docUrl) {
+    removeVerificationDoc(verificationUrl) {
       handle.change((d) => {
         if (!d.spec?.verificationUrls) return;
-        const idx = d.spec.verificationUrls.indexOf(docUrl);
+        const idx = d.spec.verificationUrls.indexOf(verificationUrl);
         if (idx !== -1) d.spec.verificationUrls.splice(idx, 1);
       });
     },
