@@ -71,18 +71,34 @@ export async function loadSpecTree(
       const verificationHandle = (await repo.find(
         verificationUrl,
       )) as RepoDocHandle<VerificationDoc>;
-      const verification = verificationHandle.doc();
-      if (!verification?.docUrl) return null;
+      const verification = verificationHandle.doc() as any;
+      if (!verification) return null;
 
-      const datalogHandle = (await repo.find(verification.docUrl)) as RepoDocHandle<DatalogDoc>;
-      return {
-        url: verificationUrl,
-        docUrl: verification.docUrl,
-        title: verification.title,
-        description: verification.description,
-        script: verification.script ?? '',
-        datalogDoc: datalogHandle.doc(),
-      } satisfies LoadedVerification;
+      // If the doc has a docUrl, it's a proper VerificationDoc wrapper
+      if (verification.docUrl) {
+        const datalogHandle = (await repo.find(verification.docUrl)) as RepoDocHandle<DatalogDoc>;
+        return {
+          url: verificationUrl,
+          docUrl: verification.docUrl,
+          title: verification.title,
+          description: verification.description,
+          script: verification.script ?? '',
+          datalogDoc: datalogHandle.doc(),
+        } satisfies LoadedVerification;
+      }
+
+      // Otherwise treat as a raw DatalogDoc (the spec skill pushes these directly)
+      if (verification.constraints || verification.facts) {
+        return {
+          url: verificationUrl,
+          docUrl: verificationUrl,
+          title: verification.title,
+          script: '',
+          datalogDoc: verification as unknown as DatalogDoc,
+        } satisfies LoadedVerification;
+      }
+
+      return null;
     }),
   );
 
@@ -219,19 +235,33 @@ export async function watchSpecTree(
             verificationUrl,
           )) as RepoDocHandle<VerificationDoc>;
           trackHandle(verificationHandle);
-          const verification = verificationHandle.doc();
-          if (!verification?.docUrl) return null;
+          const verification = verificationHandle.doc() as any;
+          if (!verification) return null;
 
-          const datalogHandle = (await repo.find(verification.docUrl)) as RepoDocHandle<DatalogDoc>;
-          trackHandle(datalogHandle);
-          return {
-            url: verificationUrl,
-            docUrl: verification.docUrl,
-            title: verification.title,
-            description: verification.description,
-            script: verification.script ?? '',
-            datalogDoc: datalogHandle.doc(),
-          } satisfies LoadedVerification;
+          if (verification.docUrl) {
+            const datalogHandle = (await repo.find(verification.docUrl)) as RepoDocHandle<DatalogDoc>;
+            trackHandle(datalogHandle);
+            return {
+              url: verificationUrl,
+              docUrl: verification.docUrl,
+              title: verification.title,
+              description: verification.description,
+              script: verification.script ?? '',
+              datalogDoc: datalogHandle.doc(),
+            } satisfies LoadedVerification;
+          }
+
+          if (verification.constraints || verification.facts) {
+            return {
+              url: verificationUrl,
+              docUrl: verificationUrl,
+              title: verification.title,
+              script: '',
+              datalogDoc: verification as unknown as DatalogDoc,
+            } satisfies LoadedVerification;
+          }
+
+          return null;
         }),
       );
 
