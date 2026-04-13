@@ -35,6 +35,9 @@ export default defineConfig({
     __PLAN_AGENT_FOLDER_URL__: JSON.stringify(
       findDirectoryUrl(workspaceSnapshot, 'agent-configs/plan-agent'),
     ),
+    __EXEC_AGENT_FOLDER_URL__: JSON.stringify(
+      findDirectoryUrl(workspaceSnapshot, 'agent-configs/exec-agent'),
+    ),
   },
 
   build: {

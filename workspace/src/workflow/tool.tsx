@@ -87,11 +87,19 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
     });
   }
 
+  const [executionProcessDoc] = useDocument<LLMProcessDoc>(() => doc()?.executionProcessUrl);
+
   const isExecutionRunning = () => {
+    // Petrinet path
     const exec = executionDoc();
-    if (!exec?.tokens) return false;
-    const llmTokens = exec.tokens.llm ?? [];
-    return llmTokens.length > 0;
+    if (exec?.tokens) {
+      const llmTokens = exec.tokens.llm ?? [];
+      if (llmTokens.length > 0) return true;
+    }
+    // Task-list path: check if the LLM process is still running
+    const processDoc = executionProcessDoc();
+    if (processDoc && !processDoc.done) return true;
+    return false;
   };
 
   function hasDocForStage(stage: Stage): boolean {
@@ -434,6 +442,40 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
 
       console.log('[workflow] handleExecutePlan: done, switching to execution stage');
       setSelectedStage('execution');
+
+      // For task-list executions, launch the LLM to execute the plan
+      if (currentPlanType === 'task-list') {
+        const processHandle = repo.create<LLMProcessDoc>();
+        processHandle.change((d) => {
+          d.config = { apiUrl: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-sonnet-4.6' };
+          d.llmConfigFolderUrl = __EXEC_AGENT_FOLDER_URL__ as AutomergeUrl;
+          d.messages = [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: `Execute the plan. Spec: ${currentDoc.specDocUrl}, Plan: ${currentDoc.planDocUrl}, Execution: ${execUrl}`,
+                },
+              ],
+            },
+          ];
+          d.done = false;
+        });
+
+        console.log('[workflow] handleExecutePlan: created execution LLM process =', processHandle.url);
+
+        props.handle.change((d) => {
+          d.executionProcessUrl = processHandle.url;
+        });
+
+        // Run async — UI updates reactively as the LLM modifies docs
+        runWorkspaceLLM(repo, processHandle.url).then(() => {
+          console.log('[workflow] handleExecutePlan: execution LLM process finished');
+        }).catch((err) => {
+          console.error('[workflow] handleExecutePlan: execution LLM process error', err);
+        });
+      }
     } catch (err) {
       console.error('[workflow] handleExecutePlan: error during execution creation', err);
     }
@@ -622,8 +664,29 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
           <div class="wf-empty">No document for this stage</div>
         </Show>
 
-        {/* All other stages */}
-        <Show when={selectedStage() !== 'spec' && selectedStage() !== 'plan'}>
+        {/* Execution stage — with LLM chat sidebar */}
+        <Show when={selectedStage() === 'execution' && doc()?.executionProcessUrl}>
+          {(_) => (
+            <ExecutionGenerationView
+              processUrl={doc()!.executionProcessUrl!}
+              executionDocUrl={doc()?.executionDocUrl}
+              executionToolId={doc()?.toolIds?.execution}
+            />
+          )}
+        </Show>
+        {/* Execution stage — no LLM process (e.g. pre-existing execution) */}
+        <Show when={selectedStage() === 'execution' && !doc()?.executionProcessUrl && doc()?.executionDocUrl}>
+          {(_) => (
+            <patchwork-view
+              attr:doc-url={doc()!.executionDocUrl!}
+              attr:tool-id={doc()?.toolIds?.execution}
+              style="display:block;width:100%;height:100%;"
+            />
+          )}
+        </Show>
+
+        {/* All other stages (elicitation, validation) */}
+        <Show when={selectedStage() !== 'spec' && selectedStage() !== 'plan' && selectedStage() !== 'execution'}>
           <Show
             when={getStageUrl()}
             fallback={<div class="wf-empty">No document for this stage</div>}
@@ -956,6 +1019,76 @@ function PlanGenerationView(props: {
               </button>
             </div>
           </>
+        </Show>
+      </div>
+    </div>
+  );
+}
+
+function ExecutionGenerationView(props: {
+  processUrl: AutomergeUrl;
+  executionDocUrl?: AutomergeUrl;
+  executionToolId?: string;
+}) {
+  const [processDoc] = useDocument<LLMProcessDoc>(() => props.processUrl);
+  const [isSidebarOpen, setIsSidebarOpen] = createSignal(true);
+  let containerRef: HTMLDivElement | undefined;
+  let isAtBottom = true;
+
+  createEffect(() => {
+    processDoc();
+    if (isAtBottom && containerRef) {
+      containerRef.scrollTop = containerRef.scrollHeight;
+    }
+  });
+
+  function handleScroll() {
+    if (!containerRef) return;
+    isAtBottom =
+      containerRef.scrollTop + containerRef.clientHeight >= containerRef.scrollHeight - 20;
+  }
+
+  return (
+    <div class="wf-spec-split">
+      <div class="wf-spec-preview">
+        <Show when={props.executionDocUrl} fallback={<div class="wf-empty">No execution yet</div>}>
+          {(url) => (
+            <patchwork-view
+              attr:doc-url={url()}
+              attr:tool-id={props.executionToolId}
+              style="display:block;width:100%;height:100%;"
+            />
+          )}
+        </Show>
+      </div>
+
+      <div class={`wf-spec-right${isSidebarOpen() ? '' : ' wf-spec-right-collapsed'}`}>
+        <button
+          class="wf-spec-sidebar-toggle"
+          onClick={() => setIsSidebarOpen((open) => !open)}
+          title={isSidebarOpen() ? 'Collapse chat' : 'Expand chat'}
+          type="button"
+        >
+          {isSidebarOpen() ? '›' : '‹'}
+        </button>
+
+        <Show when={isSidebarOpen()}>
+          <div class="wf-spec-process" ref={containerRef} onScroll={handleScroll}>
+            <Show when={processDoc()}>
+              {(pd) => (
+                <>
+                  <For each={pd().messages}>{(msg) => <SpecMessageView message={msg} />}</For>
+                  <Show when={!pd().done}>
+                    <div class="wf-spec-thinking">
+                      <div class="wf-spec-dot" />
+                      <div class="wf-spec-dot" />
+                      <div class="wf-spec-dot" />
+                    </div>
+                  </Show>
+                </>
+              )}
+            </Show>
+          </div>
         </Show>
       </div>
     </div>
