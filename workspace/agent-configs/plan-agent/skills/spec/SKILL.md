@@ -47,7 +47,7 @@ Returns a spec handle for read/write access.
 |--------|-------------|
 | `getGoal()` | Returns the goal string |
 | `setGoal(goal)` | Sets the goal |
-| `addVerificationDoc(url, options?)` | Creates a VerificationDoc wrapping the Datalog constraint doc at `url` and appends it to `verificationUrls`. Options: `{ title?, description? }`. Returns the VerificationDoc URL. |
+| `addVerificationDoc(url)` | Appends a Datalog doc URL to `verificationUrls` |
 | `removeVerificationDoc(url)` | Removes a Datalog doc URL |
 | `addSubSpec(url)` | Appends a child SpecDoc URL to `subSpecUrls` (root spec) |
 | `removeSubSpec(url)` | Removes a child SpecDoc URL |
