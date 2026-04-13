@@ -54,7 +54,7 @@ export async function createProjectionProcess(
 
   processHandle.change((d) => {
     d.config = { apiUrl: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-sonnet-4.6' };
-    d.llmConfigFolderUrl = __SPEC_AGENT_FOLDER_URL__ as AutomergeUrl;
+    d.llmConfigFolderUrl = __PROJ_AGENT_FOLDER_URL__ as AutomergeUrl;
     d.messages = [
       ...JSON.parse(JSON.stringify(options.previousMessages ?? [])),
       { role: 'user', content: [{ type: 'text', text: userText }] },
