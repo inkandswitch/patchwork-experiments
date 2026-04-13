@@ -16,10 +16,13 @@ export default function mount(element) {
     const rect = containerEl
       ? containerEl.getBoundingClientRect()
       : element.getBoundingClientRect();
+    const el = containerEl || element;
+    const scaleX = el.offsetWidth ? rect.width / el.offsetWidth : 1;
+    const scaleY = el.offsetHeight ? rect.height / el.offsetHeight : 1;
     const cam = camera();
     return {
-      x: (clientX - rect.left) / cam.zoom - cam.x,
-      y: (clientY - rect.top) / cam.zoom - cam.y,
+      x: (clientX - rect.left) / (cam.zoom * scaleX) - cam.x,
+      y: (clientY - rect.top) / (cam.zoom * scaleY) - cam.y,
     };
   }
 
@@ -27,10 +30,13 @@ export default function mount(element) {
     const rect = containerEl
       ? containerEl.getBoundingClientRect()
       : element.getBoundingClientRect();
+    const el = containerEl || element;
+    const scaleX = el.offsetWidth ? rect.width / el.offsetWidth : 1;
+    const scaleY = el.offsetHeight ? rect.height / el.offsetHeight : 1;
     const cam = camera();
     return {
-      x: (pageX + cam.x) * cam.zoom + rect.left,
-      y: (pageY + cam.y) * cam.zoom + rect.top,
+      x: (pageX + cam.x) * cam.zoom * scaleX + rect.left,
+      y: (pageY + cam.y) * cam.zoom * scaleY + rect.top,
     };
   }
 
