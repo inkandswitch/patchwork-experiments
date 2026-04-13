@@ -10,12 +10,15 @@ export type WorkflowToolIds = {
   validation?: string;
 };
 
+export type PlanType = 'petrinet' | 'task-list';
+
 export type WorkflowDoc = {
   specElicitationDocUrl: AutomergeUrl;
   specDocUrl?: AutomergeUrl;
   specProcessUrl?: AutomergeUrl;
   planDocUrl?: AutomergeUrl;
   planProcessUrl?: AutomergeUrl;
+  planType?: PlanType;
   executionDocUrl?: AutomergeUrl;
   validationDocUrl?: AutomergeUrl;
   toolIds?: WorkflowToolIds;

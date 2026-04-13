@@ -99,6 +99,27 @@
     white-space: nowrap;
   }
 
+  .wf-plan-select {
+    padding: 5px 8px;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: inherit;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    background: #fff;
+    color: #334155;
+    cursor: pointer;
+    outline: none;
+  }
+
+  .wf-plan-select:hover {
+    border-color: #94a3b8;
+  }
+
+  .wf-plan-select:focus {
+    border-color: #3b82f6;
+  }
+
   .wf-action-btn {
     padding: 6px 16px;
     font-size: 12px;
@@ -135,6 +156,21 @@
     justify-content: center;
     color: #94a3b8;
     font-size: 13px;
+  }
+
+  /* ── Spec edit view (doc exists, no LLM process) ──────────────────────── */
+
+  .wf-spec-edit {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .wf-spec-edit-preview {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
   }
 
   /* ── Spec generation split view ─────────────────────────────────────────── */
