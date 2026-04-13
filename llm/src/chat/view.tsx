@@ -33,8 +33,9 @@ function LLMChatView(props: { handle: DocHandle<LLMChatDoc>; repo: Repo }) {
   const [processDoc] = useDocument<LLMProcessDoc>(() => doc()?.processUrl);
   const [activeTab, setActiveTab] = createSignal<"chat" | "documents">("chat");
   const [input, setInput] = createSignal("");
-  const [isRunning, setIsRunning] = createSignal(false);
   let abortController: AbortController | null = null;
+
+  const isRunning = () => processDoc()?.done === false;
 
   const sendMessage = async () => {
     const currentDoc = doc();
@@ -42,7 +43,6 @@ function LLMChatView(props: { handle: DocHandle<LLMChatDoc>; repo: Repo }) {
 
     const userMessage = input().trim();
     setInput("");
-    setIsRunning(true);
     abortController = new AbortController();
 
     try {
@@ -59,7 +59,6 @@ function LLMChatView(props: { handle: DocHandle<LLMChatDoc>; repo: Repo }) {
       console.error("[chat] error:", err);
     } finally {
       abortController = null;
-      setIsRunning(false);
     }
   };
 

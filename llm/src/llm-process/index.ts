@@ -6,6 +6,7 @@ export const llmProcessPlugins: Plugin<any>[] = [
     id: "llm-process",
     name: "LLM Process",
     icon: "Bot",
+    unlisted: true,
     async load() {
       const { LLMProcessDatatype } = await import("./datatype");
       return LLMProcessDatatype;
