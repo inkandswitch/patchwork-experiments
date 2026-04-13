@@ -10,6 +10,7 @@ import type { LLMProcessDoc, ChatMessagePart } from '../llm/types';
 import type { PetriNetPlanDoc, PetriNetExecutionDoc } from '../paul/petrinet-plan/types';
 import { runWorkspaceLLM } from '../llm/llm-process';
 import './workflow.css';
+import { FolderDoc } from '@inkandswitch/patchwork-filesystem';
 
 type Stage = 'elicitation' | 'spec' | 'plan' | 'execution' | 'validation';
 
@@ -34,14 +35,24 @@ function findUrlInMessages(
               part.code,
             ]
           : part.type === 'text'
-          ? [(part as { type: 'text'; text: string }).text]
-          : [];
+            ? [(part as { type: 'text'; text: string }).text]
+            : [];
       for (const str of candidates) {
         if (typeof str !== 'string') continue;
         const m = str.match(pattern);
-        if (m) found = m[1] as AutomergeUrl;
+        if (m) {
+          console.log(
+            `[workflow] findUrlInMessages: matched ${pattern} → ${m[1]} in ${part.type}${part.type === 'script' ? ` (${(part as any).description ?? 'no desc'})` : ''}`,
+          );
+          found = m[1] as AutomergeUrl;
+        }
       }
     }
+  }
+  if (!found) {
+    console.warn(
+      `[workflow] findUrlInMessages: no match for ${pattern} across ${messages?.length ?? 0} messages`,
+    );
   }
   return found;
 }
@@ -75,11 +86,16 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
     const d = doc();
     if (!d) return false;
     switch (stage) {
-      case 'elicitation': return !!d.specElicitationDocUrl;
-      case 'spec':        return !!(d.specProcessUrl || d.specDocUrl);
-      case 'plan':        return !!(d.planDocUrl || d.planProcessUrl);
-      case 'execution':   return !!d.executionDocUrl;
-      case 'validation':  return !!d.validationDocUrl;
+      case 'elicitation':
+        return !!d.specElicitationDocUrl;
+      case 'spec':
+        return !!(d.specProcessUrl || d.specDocUrl);
+      case 'plan':
+        return !!(d.planDocUrl || d.planProcessUrl);
+      case 'execution':
+        return !!d.executionDocUrl;
+      case 'validation':
+        return !!d.validationDocUrl;
     }
   }
 
@@ -88,11 +104,16 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
     if (!currentDoc) return undefined;
 
     switch (selectedStage()) {
-      case 'elicitation': return currentDoc.specElicitationDocUrl;
-      case 'spec':        return currentDoc.specDocUrl;
-      case 'plan':        return currentDoc.planDocUrl;
-      case 'execution':   return currentDoc.executionDocUrl;
-      case 'validation':  return currentDoc.validationDocUrl;
+      case 'elicitation':
+        return currentDoc.specElicitationDocUrl;
+      case 'spec':
+        return currentDoc.specDocUrl;
+      case 'plan':
+        return currentDoc.planDocUrl;
+      case 'execution':
+        return currentDoc.executionDocUrl;
+      case 'validation':
+        return currentDoc.validationDocUrl;
     }
   }
 
@@ -104,6 +125,8 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
     const currentDoc = doc();
     if (!currentDoc?.specElicitationDocUrl) return;
 
+    console.log('[workflow] handleGenerateSpec: starting');
+
     const elicitHandle = await repo.find<SpecElicitationDoc>(currentDoc.specElicitationDocUrl);
     const elicitDoc = await elicitHandle.doc();
     const prompt = elicitDoc?.prompt?.trim() ?? '';
@@ -111,15 +134,17 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
     // Build reference document listing (names + URLs only, not full content)
     let referenceDocs: { name: string; url: string }[] = [];
     if (elicitDoc?.referenceDocsFolderUrl) {
-      const folderHandle = await repo.find(elicitDoc.referenceDocsFolderUrl);
-      const folderDoc = await folderHandle.doc() as any;
-      referenceDocs = ((folderDoc?.docs ?? []) as { name: string; url: AutomergeUrl }[])
-        .map(entry => ({ name: entry.name, url: entry.url as string }));
+      const folderHandle = await repo.find<FolderDoc>(elicitDoc.referenceDocsFolderUrl);
+      const folderDoc = folderHandle.doc();
+      referenceDocs = ((folderDoc?.docs ?? []) as { name: string; url: AutomergeUrl }[]).map(
+        (entry) => ({ name: entry.name, url: entry.url as string }),
+      );
     }
 
     let userMessage = prompt || 'Generate a spec.';
     if (referenceDocs.length > 0) {
-      userMessage += '\n\nReference documents (use repo.find(url) to read full content):\n' +
+      userMessage +=
+        '\n\nReference documents (use repo.find(url) to read full content):\n' +
         JSON.stringify(referenceDocs, null, 2);
     }
 
@@ -133,7 +158,11 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
 
     props.handle.change((d) => {
       d.specProcessUrl = processHandle.url;
-      delete (d as any).specDocUrl;
+      delete d.specDocUrl;
+      delete d.planDocUrl;
+      delete d.planProcessUrl;
+      delete d.executionDocUrl;
+      delete d.validationDocUrl;
     });
 
     setSelectedStage('spec');
@@ -141,20 +170,31 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
     await runWorkspaceLLM(repo, processHandle.url);
 
     const processDoc = await processHandle.doc();
-    const rootSpecUrl = findUrlInMessages(processDoc?.messages, /ROOT_SPEC_URL:\s*(automerge:[A-Za-z0-9]+)/);
+    const rootSpecUrl = findUrlInMessages(
+      processDoc?.messages,
+      /ROOT_SPEC_URL:\s*(automerge:[A-Za-z0-9]+)/,
+    );
 
     if (rootSpecUrl) {
+      console.log('[workflow] handleGenerateSpec: setting specDocUrl =', rootSpecUrl);
       props.handle.change((d) => {
         d.specDocUrl = rootSpecUrl!;
         if (!d.toolIds) d.toolIds = {};
         d.toolIds.spec = 'paul-spec-viewer';
       });
+    } else {
+      console.warn('[workflow] handleGenerateSpec: no ROOT_SPEC_URL found in LLM output');
     }
   }
 
   async function handleFollowUpSpec(message: string) {
     const currentDoc = doc();
     if (!currentDoc?.specProcessUrl) return;
+
+    console.log(
+      '[workflow] handleFollowUpSpec: starting, current specDocUrl =',
+      currentDoc.specDocUrl,
+    );
 
     const prevProcessHandle = await repo.find<LLMProcessDoc>(currentDoc.specProcessUrl);
     const prevProcessDoc = await prevProcessHandle.doc();
@@ -178,14 +218,20 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
     await runWorkspaceLLM(repo, processHandle.url);
 
     const processDoc = await processHandle.doc();
-    const rootSpecUrl = findUrlInMessages(processDoc?.messages, /ROOT_SPEC_URL:\s*(automerge:[A-Za-z0-9]+)/);
+    const rootSpecUrl = findUrlInMessages(
+      processDoc?.messages,
+      /ROOT_SPEC_URL:\s*(automerge:[A-Za-z0-9]+)/,
+    );
 
     if (rootSpecUrl) {
+      console.log('[workflow] handleFollowUpSpec: setting specDocUrl =', rootSpecUrl);
       props.handle.change((d) => {
         d.specDocUrl = rootSpecUrl!;
         if (!d.toolIds) d.toolIds = {};
         d.toolIds.spec = 'paul-spec-viewer';
       });
+    } else {
+      console.warn('[workflow] handleFollowUpSpec: no ROOT_SPEC_URL found in LLM output');
     }
   }
 
@@ -193,40 +239,84 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
     const currentDoc = doc();
     if (!currentDoc?.specDocUrl) return;
 
+    console.log('[workflow] handleCreatePlan: specDocUrl =', currentDoc.specDocUrl);
+    console.log('[workflow] handleCreatePlan: current planDocUrl =', currentDoc.planDocUrl);
+    console.log('[workflow] handleCreatePlan: current planProcessUrl =', currentDoc.planProcessUrl);
+
     const processHandle = repo.create<LLMProcessDoc>();
     processHandle.change((d) => {
       d.config = { apiUrl: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-sonnet-4.6' };
       d.llmConfigFolderUrl = __PLAN_AGENT_FOLDER_URL__ as AutomergeUrl;
-      d.messages = [{ role: 'user', content: [{ type: 'text', text: `Create a plan for this spec: ${currentDoc.specDocUrl}` }] }];
+      d.messages = [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: `Create a plan for this spec: ${currentDoc.specDocUrl}` },
+          ],
+        },
+      ];
       d.done = false;
     });
 
+    console.log('[workflow] handleCreatePlan: created LLM process =', processHandle.url);
+
     props.handle.change((d) => {
       d.planProcessUrl = processHandle.url;
-      delete (d as any).planDocUrl;
+      delete d.planDocUrl;
     });
 
+    console.log(
+      '[workflow] handleCreatePlan: set planProcessUrl, deleted planDocUrl, switching to plan stage',
+    );
     setSelectedStage('plan');
 
+    console.log('[workflow] handleCreatePlan: starting runWorkspaceLLM...');
     await runWorkspaceLLM(repo, processHandle.url);
+    console.log('[workflow] handleCreatePlan: runWorkspaceLLM finished');
 
-    const processDoc = await processHandle.doc();
-    const planDocUrl = findUrlInMessages(processDoc?.messages, /PLAN_DOC_URL:\s*(automerge:[A-Za-z0-9]+)/);
+    const finalProcessDoc = await processHandle.doc();
+    console.log('[workflow] handleCreatePlan: process done =', finalProcessDoc?.done);
+    console.log('[workflow] handleCreatePlan: message count =', finalProcessDoc?.messages?.length);
+
+    const planDocUrl = findUrlInMessages(
+      finalProcessDoc?.messages,
+      /PLAN_DOC_URL:\s*(automerge:[A-Za-z0-9]+)/,
+    );
+    console.log('[workflow] handleCreatePlan: extracted planDocUrl =', planDocUrl);
 
     if (planDocUrl) {
       props.handle.change((d) => {
         d.planDocUrl = planDocUrl!;
       });
+      console.log('[workflow] handleCreatePlan: set planDocUrl on workflow doc');
+    } else {
+      console.warn('[workflow] handleCreatePlan: no PLAN_DOC_URL found in LLM output');
     }
+
+    const afterDoc = await props.handle.doc();
+    console.log('[workflow] handleCreatePlan: final workflow state:', {
+      specDocUrl: afterDoc?.specDocUrl,
+      planDocUrl: afterDoc?.planDocUrl,
+      planProcessUrl: afterDoc?.planProcessUrl,
+    });
   }
 
   async function handleExecutePlan() {
     const currentDoc = doc();
     if (!currentDoc?.planDocUrl) return;
 
+    console.log('[workflow] handleExecutePlan: planDocUrl =', currentDoc.planDocUrl);
+
     const planHandle = await repo.find<PetriNetPlanDoc>(currentDoc.planDocUrl);
     const planDoc = planHandle.doc();
-    if (!planDoc) return;
+    if (!planDoc) {
+      console.warn('[workflow] handleExecutePlan: planDoc is null');
+      return;
+    }
+    console.log(
+      '[workflow] handleExecutePlan: initialTokens count =',
+      planDoc.initialTokens?.length,
+    );
 
     const execHandle = repo.create<PetriNetExecutionDoc>();
     execHandle.change((d) => {
@@ -290,54 +380,48 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
 
   const STAGES: { id: Stage; label: string }[] = [
     { id: 'elicitation', label: 'Elicitation' },
-    { id: 'spec',        label: 'Spec' },
-    { id: 'plan',        label: 'Plan' },
-    { id: 'execution',   label: 'Execution' },
-    { id: 'validation',  label: 'Validation' },
+    { id: 'spec', label: 'Spec' },
+    { id: 'plan', label: 'Plan' },
+    { id: 'execution', label: 'Execution' },
+    { id: 'validation', label: 'Validation' },
   ];
 
   return (
     <div class="wf-root">
       <div class="wf-header">
-        <div class="wf-header-main">
-          <div class="wf-stage-bar">
-            <For each={STAGES}>
-              {(stage, i) => (
-                <>
-                  <Show when={i() > 0}>
-                    <span class="wf-stage-chevron">{'>'}</span>
-                  </Show>
-                  <button
-                    class="wf-stage-item"
-                    classList={{
-                      active: selectedStage() === stage.id,
-                      unavailable: !hasDocForStage(stage.id),
-                    }}
-                    disabled={!hasDocForStage(stage.id)}
-                    onClick={() => setSelectedStage(stage.id)}
-                  >
-                    {stage.label}
-                  </button>
-                </>
-              )}
-            </For>
-          </div>
+        <div class="wf-stage-bar">
+          <For each={STAGES}>
+            {(stage, i) => (
+              <>
+                <Show when={i() > 0}>
+                  <span class="wf-stage-chevron">{'>'}</span>
+                </Show>
+                <button
+                  class="wf-stage-item"
+                  classList={{
+                    active: selectedStage() === stage.id,
+                    unavailable: !hasDocForStage(stage.id),
+                  }}
+                  disabled={!hasDocForStage(stage.id)}
+                  onClick={() => setSelectedStage(stage.id)}
+                >
+                  {stage.label}
+                </button>
+              </>
+            )}
+          </For>
+        </div>
 
+        <div class="wf-header-right">
+          <span class="wf-version">v{WORKFLOW_VERSION}</span>
           <Show when={getStageAction()}>
             {(action) => (
-              <div class="wf-action-bar">
-                <button
-                  class="wf-action-btn"
-                  onClick={action().action}
-                  disabled={action().disabled}
-                >
-                  {action().label}
-                </button>
-              </div>
+              <button class="wf-action-btn" onClick={action().action} disabled={action().disabled}>
+                {action().label}
+              </button>
             )}
           </Show>
         </div>
-        <span class="wf-version">v{WORKFLOW_VERSION}</span>
       </div>
 
       <div class="wf-content">
@@ -371,10 +455,7 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
             fallback={<div class="wf-empty">No document for this stage</div>}
           >
             {(url) => (
-              <patchwork-view
-                attr:doc-url={url()}
-                style="display:block;width:100%;height:100%;"
-              />
+              <patchwork-view attr:doc-url={url()} style="display:block;width:100%;height:100%;" />
             )}
           </Show>
         </Show>
@@ -411,11 +492,12 @@ function SpecGenerationView(props: {
   let containerRef: HTMLDivElement | undefined;
   let isAtBottom = true;
 
-  const isRunning = createMemo(() => processDoc() ? !processDoc()!.done : false);
+  const isRunning = createMemo(() => (processDoc() ? !processDoc()!.done : false));
 
   function handleScroll() {
     if (!containerRef) return;
-    isAtBottom = containerRef.scrollTop + containerRef.clientHeight >= containerRef.scrollHeight - 20;
+    isAtBottom =
+      containerRef.scrollTop + containerRef.clientHeight >= containerRef.scrollHeight - 20;
   }
 
   createEffect(() => {
@@ -442,10 +524,7 @@ function SpecGenerationView(props: {
   return (
     <div class="wf-spec-split">
       <div class="wf-spec-preview">
-        <Show
-          when={props.specDocUrl}
-          fallback={<div class="wf-empty">No spec yet</div>}
-        >
+        <Show when={props.specDocUrl} fallback={<div class="wf-empty">No spec yet</div>}>
           {(url) => (
             <patchwork-view
               attr:doc-url={url()}
@@ -472,9 +551,7 @@ function SpecGenerationView(props: {
               <Show when={processDoc()}>
                 {(pd) => (
                   <>
-                    <For each={pd().messages}>
-                      {(msg) => <SpecMessageView message={msg} />}
-                    </For>
+                    <For each={pd().messages}>{(msg) => <SpecMessageView message={msg} />}</For>
                     <Show when={!pd().done}>
                       <div class="wf-spec-thinking">
                         <div class="wf-spec-dot" />
@@ -512,10 +589,7 @@ function SpecGenerationView(props: {
   );
 }
 
-function PlanGenerationView(props: {
-  processUrl: AutomergeUrl;
-  planDocUrl?: AutomergeUrl;
-}) {
+function PlanGenerationView(props: { processUrl: AutomergeUrl; planDocUrl?: AutomergeUrl }) {
   const [processDoc] = useDocument<LLMProcessDoc>(() => props.processUrl);
   const [isSidebarOpen, setIsSidebarOpen] = createSignal(true);
   let containerRef: HTMLDivElement | undefined;
@@ -523,7 +597,8 @@ function PlanGenerationView(props: {
 
   function handleScroll() {
     if (!containerRef) return;
-    isAtBottom = containerRef.scrollTop + containerRef.clientHeight >= containerRef.scrollHeight - 20;
+    isAtBottom =
+      containerRef.scrollTop + containerRef.clientHeight >= containerRef.scrollHeight - 20;
   }
 
   createEffect(() => {
@@ -536,15 +611,9 @@ function PlanGenerationView(props: {
   return (
     <div class="wf-spec-split">
       <div class="wf-spec-preview">
-        <Show
-          when={props.planDocUrl}
-          fallback={<div class="wf-empty">No plan yet</div>}
-        >
+        <Show when={props.planDocUrl} fallback={<div class="wf-empty">No plan yet</div>}>
           {(url) => (
-            <patchwork-view
-              attr:doc-url={url()}
-              style="display:block;width:100%;height:100%;"
-            />
+            <patchwork-view attr:doc-url={url()} style="display:block;width:100%;height:100%;" />
           )}
         </Show>
       </div>
@@ -564,9 +633,7 @@ function PlanGenerationView(props: {
             <Show when={processDoc()}>
               {(pd) => (
                 <>
-                  <For each={pd().messages}>
-                    {(msg) => <SpecMessageView message={msg} />}
-                  </For>
+                  <For each={pd().messages}>{(msg) => <SpecMessageView message={msg} />}</For>
                   <Show when={!pd().done}>
                     <div class="wf-spec-thinking">
                       <div class="wf-spec-dot" />
@@ -587,9 +654,7 @@ function PlanGenerationView(props: {
 function SpecMessageView(props: { message: { role: string; content: ChatMessagePart[] } }) {
   return (
     <div class={`wf-spec-msg wf-spec-msg-${props.message.role}`}>
-      <For each={props.message.content}>
-        {(part) => <SpecPartView part={part} />}
-      </For>
+      <For each={props.message.content}>{(part) => <SpecPartView part={part} />}</For>
     </div>
   );
 }
@@ -600,12 +665,22 @@ function SpecPartView(props: { part: ChatMessagePart }) {
       when={props.part.type === 'script' ? props.part : undefined}
       fallback={
         <Show when={props.part.type === 'text' ? props.part : undefined}>
-          {(p) => <SolidMarkdown remarkPlugins={[remarkGfm]}>{(p() as { type: 'text'; text: string }).text}</SolidMarkdown>}
+          {(p) => (
+            <SolidMarkdown remarkPlugins={[remarkGfm]}>
+              {(p() as { type: 'text'; text: string }).text}
+            </SolidMarkdown>
+          )}
         </Show>
       }
     >
       {(sp) => {
-        const s = sp() as { type: 'script'; code: string; description?: string; output?: string; error?: string };
+        const s = sp() as {
+          type: 'script';
+          code: string;
+          description?: string;
+          output?: string;
+          error?: string;
+        };
         return (
           <div class="wf-spec-script">
             <Show when={s.description}>
