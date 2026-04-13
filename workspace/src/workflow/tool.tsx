@@ -481,6 +481,52 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
     }
   }
 
+  async function handleValidateWithProjections() {
+    const currentDoc = doc();
+    if (!currentDoc?.executionDocUrl) return;
+
+    setSelectedStage('validation');
+
+    // Launch projection generation LLM
+    const processHandle = repo.create<LLMProcessDoc>();
+    processHandle.change((d) => {
+      d.config = { apiUrl: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-sonnet-4.6' };
+      d.llmConfigFolderUrl = __PROJECTION_AGENT_FOLDER_URL__ as AutomergeUrl;
+      d.messages = [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: `Generate projections for the artifacts. Execution: ${currentDoc.executionDocUrl}`,
+            },
+          ],
+        },
+      ];
+      d.done = false;
+    });
+
+    console.log('[workflow] handleValidateWithProjections: created projection LLM process =', processHandle.url);
+
+    props.handle.change((d) => {
+      d.projectionProcessUrl = processHandle.url;
+    });
+
+    // Also store on the validation doc so the validation tool can access the chat
+    if (currentDoc.validationDocUrl) {
+      const validationHandle = await repo.find<ValidationDoc>(currentDoc.validationDocUrl);
+      validationHandle.change((d) => {
+        d.projectionProcessUrl = processHandle.url;
+      });
+    }
+
+    runWorkspaceLLM(repo, processHandle.url).then(() => {
+      console.log('[workflow] handleValidateWithProjections: projection LLM finished');
+    }).catch((err) => {
+      console.error('[workflow] handleValidateWithProjections: projection LLM error', err);
+    });
+  }
+
   async function createPetriNetExecution(currentDoc: WorkflowDoc): Promise<AutomergeUrl> {
     const planHandle = await repo.find<PetriNetPlanDoc>(currentDoc.planDocUrl!);
     const planDoc = planHandle.doc();
@@ -549,7 +595,7 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
       case 'execution':
         return {
           label: 'Validate',
-          action: () => setSelectedStage('validation'),
+          action: handleValidateWithProjections,
           disabled: isExecutionRunning(),
         };
       default:

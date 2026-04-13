@@ -21,6 +21,7 @@ export type WorkflowDoc = {
   planType?: PlanType;
   executionDocUrl?: AutomergeUrl;
   executionProcessUrl?: AutomergeUrl;
+  projectionProcessUrl?: AutomergeUrl;
   validationDocUrl?: AutomergeUrl;
   toolIds?: WorkflowToolIds;
 };
@@ -65,6 +66,7 @@ export type ValidationDoc = HasPatchworkMetadata & {
   planDocUrl: AutomergeUrl;
   specDocUrl: AutomergeUrl;
   executionDocUrl: AutomergeUrl;
+  projectionProcessUrl?: AutomergeUrl;
   isValidated: boolean;
   headsByDocUrl: Record<AutomergeUrl, Heads>;
 };
