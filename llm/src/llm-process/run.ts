@@ -104,7 +104,7 @@ export async function runLLMProcess(repo: Repo, handle: DocHandle<LLMProcessDoc>
   }
 
   handle.change((d) => {
-    d.done = true;
+    d.running = false;
   });
 }
 

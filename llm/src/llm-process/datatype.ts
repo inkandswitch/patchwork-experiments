@@ -9,7 +9,6 @@ export const LLMProcessDatatype: DatatypeImplementation<LLMProcessDoc> = {
     doc.model = "anthropic/claude-sonnet-4.6";
     doc.systemPrompt = "";
     doc.messages = [];
-    doc.done = false;
 
     const folderHandle = repo.create<any>();
     folderHandle.change((d: any) => {

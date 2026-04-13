@@ -30,7 +30,6 @@ export const LLMChatDatatype: DatatypeImplementation<LLMChatDoc> = {
       d.docFolderUrl = doc.docFolderUrl;
       if (doc.skills) d.skills = doc.skills;
       d.messages = [];
-      d.done = false;
     });
     doc.processUrl = processHandle.url;
   },

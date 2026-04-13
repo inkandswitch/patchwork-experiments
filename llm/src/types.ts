@@ -37,7 +37,7 @@ export type LLMProcessDoc = {
   docFolderUrl: AutomergeUrl;
   skills?: string[];
   messages: Message[];
-  done: boolean;
+  running?: boolean;
 };
 
 export type LLMChatDoc = {
