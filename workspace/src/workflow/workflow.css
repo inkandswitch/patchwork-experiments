@@ -156,6 +156,31 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    background: #f8fafc;
+    position: relative;
+  }
+
+  .wf-spec-right-collapsed {
+    width: 40px;
+    background: #f8fafc;
+  }
+
+  .wf-spec-sidebar-toggle {
+    align-self: flex-start;
+    margin: 8px;
+    width: 24px;
+    height: 24px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #fff;
+    color: #475569;
+    cursor: pointer;
+    line-height: 1;
+  }
+
+  .wf-spec-sidebar-toggle:hover {
+    color: #0f172a;
+    border-color: #94a3b8;
   }
 
   .wf-spec-process {

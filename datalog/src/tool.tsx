@@ -7,6 +7,7 @@ import { Diff } from '@inkandswitch/annotations-diff';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import { ref, type Ref } from '@inkandswitch/patchwork-refs';
 import { useSubscribe } from '@inkandswitch/subscribables-react';
+import { X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { addHighlightStyle } from './codemirror-highlights';
@@ -135,19 +136,6 @@ function DatalogViewer({
     return listSourceStatements(doc);
   }, [doc]);
 
-  const attributedStatementCount = useMemo(
-    () => sourceStatements.filter(hasStatementAttribution).length,
-    [sourceStatements],
-  );
-
-  const attributionRefCount = useMemo(
-    () =>
-      sourceStatements.reduce((total, statement) => {
-        return total + (statement.attribution?.refs.length ?? 0);
-      }, 0),
-    [sourceStatements],
-  );
-
   const selectedStatement = useMemo(
     () => sourceStatements.find((statement) => statement.id === selectedStatementId) ?? null,
     [selectedStatementId, sourceStatements],
@@ -270,15 +258,6 @@ function DatalogViewer({
               Edit
             </button>
           )}
-          {activeTab === 'source' && !hasDraft && (
-            <button
-              className={`pg-debug-toggle ${isAttributionPanelOpen ? 'pg-debug-toggle-active' : ''}`}
-              onClick={() => setIsAttributionPanelOpen((open) => !open)}
-              type="button"
-            >
-              {isAttributionPanelOpen ? 'Hide Sources' : 'Show Sources'}
-            </button>
-          )}
         </div>
       </div>
 
@@ -347,9 +326,7 @@ function DatalogViewer({
 
         {activeTab === 'source' && !hasDraft && isAttributionPanelOpen && (
           <AttributionDocumentPanel
-            attributedStatementCount={attributedStatementCount}
             selectedStatement={selectedStatement}
-            totalRefs={attributionRefCount}
             onClose={() => setIsAttributionPanelOpen(false)}
           />
         )}
@@ -373,13 +350,6 @@ function SourceReadPane({
 
   return (
     <div className="pg-source-read">
-      <div className="pg-source-read-header">
-        <div className="pg-source-read-title">Saved Statements</div>
-        <div className="pg-source-read-meta">
-          Click a fact, rule, or constraint to inspect its attributed source ranges.
-        </div>
-      </div>
-
       <div className="pg-source-read-scroll">
         {statements.length === 0 ? (
           <p className="pg-empty">No saved Datalog statements.</p>
@@ -427,12 +397,10 @@ function SourceStatementSection({
     <section className="pg-source-section">
       <div className="pg-source-section-header">
         <h2 className="pg-section-title">{title}</h2>
-        <span className="pg-source-section-count">{statements.length}</span>
       </div>
 
       <div className="pg-source-list">
         {statements.map((statement) => {
-          const refCount = statement.attribution?.refs.length ?? 0;
           const isSelected = selectedStatementId === statement.id;
           return (
             <button
@@ -441,14 +409,8 @@ function SourceStatementSection({
               onClick={() => onSelectStatement(statement.id)}
               type="button"
             >
-              <div className="pg-source-statement-header">
-                <span className={`pg-attribution-kind pg-attribution-kind-${statement.kind}`}>{statement.kind}</span>
-                <span className={`pg-source-ref-badge ${refCount === 0 ? 'pg-source-ref-badge-empty' : ''}`}>
-                  {refCount === 0 ? 'No attribution' : `${refCount} refs`}
-                </span>
-              </div>
-              <pre className="pg-source-summary">{statement.summary}</pre>
               {statement.comment && <div className="pg-source-comment">// {statement.comment}</div>}
+              <pre className="pg-source-summary">{statement.summary}</pre>
             </button>
           );
         })}
@@ -458,14 +420,10 @@ function SourceStatementSection({
 }
 
 function AttributionDocumentPanel({
-  attributedStatementCount,
   selectedStatement,
-  totalRefs,
   onClose,
 }: {
-  attributedStatementCount: number;
   selectedStatement: SourceStatement | null;
-  totalRefs: number;
   onClose: () => void;
 }) {
   const repo = useRepo();
@@ -531,35 +489,22 @@ function AttributionDocumentPanel({
   return (
     <aside className="pg-attribution-panel">
       <div className="pg-attribution-panel-header">
-        <div>
-          <div className="pg-attribution-panel-title">Source Documents</div>
-          <div className="pg-attribution-panel-meta">
-            {attributedStatementCount} attributed statements, {totalRefs} refs
-          </div>
-        </div>
-        <button className="pg-attribution-close" onClick={onClose} type="button">
-          Close
+        <button
+          aria-label="Close sources panel"
+          className="pg-attribution-close"
+          onClick={onClose}
+          title="Close"
+          type="button"
+        >
+          <X size={16} strokeWidth={2} />
         </button>
       </div>
 
       <div className="pg-attribution-scroll">
         {!selectedStatement ? (
-          <p className="pg-empty">Select a saved statement to highlight its supporting source text.</p>
+          <p className="pg-empty">Select a statement.</p>
         ) : (
           <>
-            <div className="pg-attribution-selection">
-              <div className="pg-attribution-selection-header">
-                <span className={`pg-attribution-kind pg-attribution-kind-${selectedStatement.kind}`}>
-                  {selectedStatement.kind}
-                </span>
-                <span className="pg-attribution-ref-count">{selectedRefCount} refs</span>
-              </div>
-              <pre className="pg-attribution-summary">{selectedStatement.summary}</pre>
-              {selectedStatement.comment && (
-                <div className="pg-attribution-comment">// {selectedStatement.comment}</div>
-              )}
-            </div>
-
             {selectedRefCount === 0 ? (
               <p className="pg-empty">This statement does not have saved attribution yet.</p>
             ) : documents.length === 0 ? (
@@ -577,22 +522,6 @@ function AttributionDocumentPanel({
 function SourceDocumentCard({ document }: { document: ReferencedDocument }) {
   return (
     <section className="pg-attribution-doc-card">
-      <div className="pg-attribution-doc-header">
-        <div className="pg-attribution-doc-title">Document</div>
-        <div className="pg-attribution-doc-meta">
-          {document.refs.length} refs across {document.paths.length} path{document.paths.length === 1 ? '' : 's'}
-        </div>
-      </div>
-
-      <code className="pg-attribution-doc-url">{document.docUrl}</code>
-      <div className="pg-attribution-doc-paths">
-        {document.paths.map((path) => (
-          <span key={path} className="pg-attribution-doc-path">
-            {path}
-          </span>
-        ))}
-      </div>
-
       {document.error ? (
         <div className="pg-attribution-preview-error">{document.error}</div>
       ) : (

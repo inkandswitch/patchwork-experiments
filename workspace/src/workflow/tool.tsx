@@ -407,6 +407,7 @@ function SpecGenerationView(props: {
 }) {
   const [processDoc] = useDocument<LLMProcessDoc>(() => props.processUrl);
   const [followUpText, setFollowUpText] = createSignal('');
+  const [isSidebarOpen, setIsSidebarOpen] = createSignal(true);
   let containerRef: HTMLDivElement | undefined;
   let isAtBottom = true;
 
@@ -455,44 +456,57 @@ function SpecGenerationView(props: {
         </Show>
       </div>
 
-      <div class="wf-spec-right">
-        <div class="wf-spec-process" ref={containerRef} onScroll={handleScroll}>
-          <Show when={processDoc()}>
-            {(pd) => (
-              <>
-                <For each={pd().messages}>
-                  {(msg) => <SpecMessageView message={msg} />}
-                </For>
-                <Show when={!pd().done}>
-                  <div class="wf-spec-thinking">
-                    <div class="wf-spec-dot" />
-                    <div class="wf-spec-dot" />
-                    <div class="wf-spec-dot" />
-                  </div>
-                </Show>
-              </>
-            )}
-          </Show>
-        </div>
+      <div class={`wf-spec-right${isSidebarOpen() ? '' : ' wf-spec-right-collapsed'}`}>
+        <button
+          class="wf-spec-sidebar-toggle"
+          onClick={() => setIsSidebarOpen((open) => !open)}
+          title={isSidebarOpen() ? 'Collapse chat' : 'Expand chat'}
+          type="button"
+        >
+          {isSidebarOpen() ? '›' : '‹'}
+        </button>
 
-        <div class="wf-spec-followup">
-          <textarea
-            class="wf-spec-followup-input"
-            placeholder="Ask for changes…"
-            value={followUpText()}
-            onInput={(e) => setFollowUpText(e.currentTarget.value)}
-            onKeyDown={handleFollowUpKeyDown}
-            disabled={isRunning()}
-            rows={2}
-          />
-          <button
-            class="wf-spec-followup-btn"
-            onClick={handleSendFollowUp}
-            disabled={isRunning() || !followUpText().trim()}
-          >
-            Send
-          </button>
-        </div>
+        <Show when={isSidebarOpen()}>
+          <>
+            <div class="wf-spec-process" ref={containerRef} onScroll={handleScroll}>
+              <Show when={processDoc()}>
+                {(pd) => (
+                  <>
+                    <For each={pd().messages}>
+                      {(msg) => <SpecMessageView message={msg} />}
+                    </For>
+                    <Show when={!pd().done}>
+                      <div class="wf-spec-thinking">
+                        <div class="wf-spec-dot" />
+                        <div class="wf-spec-dot" />
+                        <div class="wf-spec-dot" />
+                      </div>
+                    </Show>
+                  </>
+                )}
+              </Show>
+            </div>
+
+            <div class="wf-spec-followup">
+              <textarea
+                class="wf-spec-followup-input"
+                placeholder="Ask for changes…"
+                value={followUpText()}
+                onInput={(e) => setFollowUpText(e.currentTarget.value)}
+                onKeyDown={handleFollowUpKeyDown}
+                disabled={isRunning()}
+                rows={2}
+              />
+              <button
+                class="wf-spec-followup-btn"
+                onClick={handleSendFollowUp}
+                disabled={isRunning() || !followUpText().trim()}
+              >
+                Send
+              </button>
+            </div>
+          </>
+        </Show>
       </div>
     </div>
   );
@@ -503,6 +517,7 @@ function PlanGenerationView(props: {
   planDocUrl?: AutomergeUrl;
 }) {
   const [processDoc] = useDocument<LLMProcessDoc>(() => props.processUrl);
+  const [isSidebarOpen, setIsSidebarOpen] = createSignal(true);
   let containerRef: HTMLDivElement | undefined;
   let isAtBottom = true;
 
@@ -534,25 +549,36 @@ function PlanGenerationView(props: {
         </Show>
       </div>
 
-      <div class="wf-spec-right">
-        <div class="wf-spec-process" ref={containerRef} onScroll={handleScroll}>
-          <Show when={processDoc()}>
-            {(pd) => (
-              <>
-                <For each={pd().messages}>
-                  {(msg) => <SpecMessageView message={msg} />}
-                </For>
-                <Show when={!pd().done}>
-                  <div class="wf-spec-thinking">
-                    <div class="wf-spec-dot" />
-                    <div class="wf-spec-dot" />
-                    <div class="wf-spec-dot" />
-                  </div>
-                </Show>
-              </>
-            )}
-          </Show>
-        </div>
+      <div class={`wf-spec-right${isSidebarOpen() ? '' : ' wf-spec-right-collapsed'}`}>
+        <button
+          class="wf-spec-sidebar-toggle"
+          onClick={() => setIsSidebarOpen((open) => !open)}
+          title={isSidebarOpen() ? 'Collapse chat' : 'Expand chat'}
+          type="button"
+        >
+          {isSidebarOpen() ? '›' : '‹'}
+        </button>
+
+        <Show when={isSidebarOpen()}>
+          <div class="wf-spec-process" ref={containerRef} onScroll={handleScroll}>
+            <Show when={processDoc()}>
+              {(pd) => (
+                <>
+                  <For each={pd().messages}>
+                    {(msg) => <SpecMessageView message={msg} />}
+                  </For>
+                  <Show when={!pd().done}>
+                    <div class="wf-spec-thinking">
+                      <div class="wf-spec-dot" />
+                      <div class="wf-spec-dot" />
+                      <div class="wf-spec-dot" />
+                    </div>
+                  </Show>
+                </>
+              )}
+            </Show>
+          </div>
+        </Show>
       </div>
     </div>
   );

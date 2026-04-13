@@ -124,6 +124,7 @@ A captured console. Use `console.log(...)` to produce output that you will see a
    - Read the reference doc JSON with the `docs` skill.
    - Pass quoted source snippets to `await makeAttribution(...)`, e.g. `{ docUrl, path, quote, prefix?, suffix? }`.
    - Reuse the returned attribution object on every statement justified by that source span.
+   - This includes fact-only Datalog docs: if a document just lists domain facts from source material, still attach attribution to those facts.
    - Prefer exact quotes over offsets. Only fall back to `{ start, end }` if you truly cannot quote the source text.
    - Do not construct cursors yourself; always let the skill convert matched text into stored `from` / `to` refs.
 5. **Decompose** the domain into sub-problems (leaf specs) and identify any cross-cutting constraints (root spec).
@@ -235,6 +236,7 @@ console.log('ROOT_SPEC_URL:', rootUrl);
 - Be precise and formal in your Datalog definitions.
 - Use comments on facts, rules, and constraints to explain their intent in plain language.
 - When a statement comes from reference text, attach attribution with `await makeAttribution([{ docUrl, path, quote, prefix?, suffix? }])` and store it on the fact, rule, or constraint.
+- Do not skip attribution on fact-only Datalog docs. If a fact is copied or derived directly from the reference material, ground that fact with attribution too.
 - `path` must resolve to a text field in the source document. Prefer quoting the exact text you want to ground rather than inventing character offsets.
 - Always produce a root SpecDoc and log its URL as `ROOT_SPEC_URL: <url>` at the end of your final script.
 - Decompose complex specs into leaf specs with clean interface predicates, linked from a root spec.

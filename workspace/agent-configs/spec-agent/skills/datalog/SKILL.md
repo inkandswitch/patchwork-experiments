@@ -228,6 +228,7 @@ const result = merged.checkConflicts("all_requirements_named");
 - Attribution paths currently support ordinary key/index traversal to text fields, e.g. `["content"]` or `["sections", 0, "body"]`.
 - The skill uses the host-provided global `Automerge` runtime to create stable cursors; it does not depend on the official refs package at runtime.
 - Attribution is statement-owned: each fact, rule, or constraint stores its own `attribution`. Reuse the same attribution object on multiple statements when the same source span justifies them.
+- Fact-only Datalog docs should still carry attribution on their facts when those facts come from the source text. Do not wait for a rule or constraint doc before grounding the source.
 - **`not` syntax:** the inner atom must be a plain object `{ pred, args }` — NOT a string. All variables in the inner atom must already be bound by preceding positive atoms in the same body (safe negation).
 
 ```javascript
