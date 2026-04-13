@@ -4,7 +4,7 @@ import { shapesSchema } from '../paper/schema.js';
 
 const URLS_MIME = 'text/x-patchwork-urls';
 const SHAPE_MIME = 'text/x-patchwork-shape';
-const REF_MIME = 'text/x-patchwork-ref-url';
+// Horizontal spacing between shapes when multiple items are dropped at once
 const DIRECT_DROP_OFFSET_X = 40;
 const EMBED_DROP_OFFSET_X = 440;
 
@@ -19,19 +19,11 @@ export default function mount(element) {
 
   let dragTimer = null;
 
-  function isOverCanvas(event) {
-    const target = event.target;
-    if (target === canvas) return true;
-    if (target instanceof Node && canvas.contains(target)) return true;
-    return false;
-  }
-
   function onDragOver(event) {
     if (!enabled()) return;
     if (!supportsDropType(event.dataTransfer)) return;
-    if (!isOverCanvas(event)) return;
     event.preventDefault();
-    event.dataTransfer.dropEffect = event.dataTransfer.types.includes(REF_MIME) ? 'move' : 'copy';
+    event.dataTransfer.dropEffect = 'copy';
     setActive(true);
     clearTimeout(dragTimer);
     dragTimer = setTimeout(() => setActive(false), 150);
@@ -40,7 +32,6 @@ export default function mount(element) {
   async function onDrop(event) {
     if (!enabled()) return;
     if (!supportsDropType(event.dataTransfer)) return;
-    if (!isOverCanvas(event)) return;
 
     event.preventDefault();
     event.stopPropagation();
@@ -54,7 +45,7 @@ export default function mount(element) {
       typeof canvas.screenToPage === 'function'
         ? canvas.screenToPage(event.clientX, event.clientY)
         : { x: 100, y: 100 };
-    const droppedEntries = await getDroppedEntries(event.dataTransfer, repo, canvas);
+    const droppedEntries = await getDroppedEntries(event.dataTransfer, repo);
     if (droppedEntries.length === 0) return;
 
     let offsetX = 0;
@@ -72,9 +63,9 @@ export default function mount(element) {
     clearTimeout(dragTimer);
   }
 
-  document.addEventListener('dragover', onDragOver, true);
-  document.addEventListener('drop', onDrop, true);
-  document.addEventListener('dragend', onDragEnd);
+  canvas.addEventListener('dragover', onDragOver);
+  canvas.addEventListener('drop', onDrop);
+  canvas.addEventListener('dragend', onDragEnd);
 
   function flipCorner(onClick) {
     return html`<div
@@ -200,9 +191,9 @@ export default function mount(element) {
   );
 
   return () => {
-    document.removeEventListener('dragover', onDragOver, true);
-    document.removeEventListener('drop', onDrop, true);
-    document.removeEventListener('dragend', onDragEnd);
+    canvas.removeEventListener('dragover', onDragOver);
+    canvas.removeEventListener('drop', onDrop);
+    canvas.removeEventListener('dragend', onDragEnd);
     clearTimeout(dragTimer);
     cleanup();
   };
@@ -221,18 +212,13 @@ function isPaperWorldDoc(doc) {
 function supportsDropType(dataTransfer) {
   return (
     dataTransfer.types.includes(SHAPE_MIME) ||
-    dataTransfer.types.includes(REF_MIME) ||
     dataTransfer.types.includes(URLS_MIME)
   );
 }
 
-async function getDroppedEntries(dataTransfer, repo, canvas) {
+async function getDroppedEntries(dataTransfer, repo) {
   if (dataTransfer.types.includes(SHAPE_MIME)) {
     return getEntriesFromShapePayload(dataTransfer.getData(SHAPE_MIME));
-  }
-
-  if (dataTransfer.types.includes(REF_MIME)) {
-    return getEntriesFromRefUrl(dataTransfer.getData(REF_MIME), canvas);
   }
 
   if (dataTransfer.types.includes(URLS_MIME)) {
@@ -248,19 +234,6 @@ function getEntriesFromShapePayload(raw) {
   try {
     const parsed = JSON.parse(raw);
     const entry = normalizeDroppedEntry(parsed?.value, parsed?.viewUrl, parsed?.title);
-    return entry ? [entry] : [];
-  } catch {
-    return [];
-  }
-}
-
-async function getEntriesFromRefUrl(refUrl, canvas) {
-  if (!refUrl) return [];
-
-  try {
-    const ref = await canvas.findRef(refUrl);
-    const value = structuredClone(ref.value());
-    const entry = normalizeDroppedEntry(value, value?.viewUrl, value?.title);
     return entry ? [entry] : [];
   } catch {
     return [];

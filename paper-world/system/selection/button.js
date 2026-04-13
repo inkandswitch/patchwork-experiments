@@ -206,13 +206,16 @@ export default function mount(element) {
   }
 
   let dragShapeId = null;
+  let dragSourceCanvas = null;
+  let dragSourceShapesRef = null;
   let startPointerX = 0;
   let startPointerY = 0;
   let startShapeX = 0;
   let startShapeY = 0;
-  let dragDataTransfer = null;
-  let lastDragOverTarget = null;
   let dragThresholdMet = false;
+  let dragOverlay = null;
+  let dragOriginalParent = null;
+  let dragOriginalNextSibling = null;
   const DRAG_THRESHOLD = 5;
 
   function isInteractiveTarget(event) {
@@ -237,11 +240,14 @@ export default function mount(element) {
 
     closeMenu();
 
-    let shapeId = shapeIdFromEvent(event, canvas);
-    if (!shapeId) {
+    const sourceCanvas = findTargetContext(event.target) ?? canvas;
+    const sourceShapesRef = sourceCanvas.getOrCreate(shapesSchema);
+
+    let shapeId = shapeIdFromEvent(event, sourceCanvas);
+    if (!shapeId && sourceCanvas === canvas) {
       shapeId = probeNearbyShapes(event, canvas);
     }
-    if (!shapeId) {
+    if (!shapeId && sourceCanvas === canvas) {
       shapeId = findNearbyLine(event, canvas, shapesRef);
     }
     if (!shapeId) {
@@ -249,98 +255,83 @@ export default function mount(element) {
       return;
     }
 
-    const shape = shapesRef.at(shapeId).value();
+    const shape = sourceShapesRef.at(shapeId).value();
     if (shape.isLocked) return;
 
-    selectedShapesRef.change(() => ({ [shapeId]: true }));
+    event.stopPropagation();
 
-    const allShapes = shapesRef.value();
+    if (sourceCanvas === canvas) {
+      selectedShapesRef.change(() => ({ [shapeId]: true }));
+    }
+
+    const allShapes = sourceShapesRef.value();
     let maxZ = 0;
     for (const [sid, s] of Object.entries(allShapes)) {
       if (typeof s.z === 'number' && s.z > maxZ) maxZ = s.z;
     }
     const currentZ = shape.z ?? 0;
     if (currentZ < maxZ || maxZ === 0) {
-      shapesRef.at(shapeId).change((s) => {
+      sourceShapesRef.at(shapeId).change((s) => {
         s.z = maxZ + 1;
       });
     }
 
     dragShapeId = shapeId;
+    dragSourceCanvas = sourceCanvas;
+    dragSourceShapesRef = sourceShapesRef;
     startPointerX = event.clientX;
     startPointerY = event.clientY;
     startShapeX = shape.x;
     startShapeY = shape.y;
     canvas.setPointerCapture(event.pointerId);
-
-    const refUrl = shapesRef.at(shapeId).url;
-    dragDataTransfer = new DataTransfer();
-    dragDataTransfer.setData('text/x-patchwork-ref-url', refUrl);
-    dragDataTransfer.dropEffect = 'move';
     dragThresholdMet = false;
   }
 
   function onPointerMove(event) {
     if (!dragShapeId) return;
-    const startPage = canvas.screenToPage(startPointerX, startPointerY);
-    const currentPage = canvas.screenToPage(event.clientX, event.clientY);
-    shapesRef.at(dragShapeId).change((shape) => {
+    const startPage = dragSourceCanvas.screenToPage(startPointerX, startPointerY);
+    const currentPage = dragSourceCanvas.screenToPage(event.clientX, event.clientY);
+    dragSourceShapesRef.at(dragShapeId).change((shape) => {
       shape.x = startShapeX + (currentPage.x - startPage.x);
       shape.y = startShapeY + (currentPage.y - startPage.y);
     });
-    const deltaX = event.clientX - startPointerX;
-    const deltaY = event.clientY - startPointerY;
-
-    if (dragDataTransfer) {
-      if (!dragThresholdMet) {
-        if (Math.hypot(deltaX, deltaY) > DRAG_THRESHOLD) {
-          dragThresholdMet = true;
-        } else {
-          return;
+    if (!dragThresholdMet) {
+      const deltaX = event.clientX - startPointerX;
+      const deltaY = event.clientY - startPointerY;
+      if (Math.hypot(deltaX, deltaY) > DRAG_THRESHOLD) {
+        dragThresholdMet = true;
+        if (dragSourceCanvas !== canvas) {
+          liftDraggedShape(dragShapeId, dragSourceCanvas);
         }
-      }
-      const target = elementUnderCursor(event.clientX, event.clientY, dragShapeId, canvas);
-
-      if (target && target !== lastDragOverTarget) {
-        if (lastDragOverTarget) {
-          lastDragOverTarget.dispatchEvent(
-            new DragEvent('dragleave', { bubbles: true, cancelable: true }),
-          );
-        }
-        lastDragOverTarget = target;
-      }
-      if (target) {
-        target.dispatchEvent(
-          new DragEvent('dragover', {
-            dataTransfer: dragDataTransfer,
-            bubbles: true,
-            cancelable: true,
-            clientX: event.clientX,
-            clientY: event.clientY,
-          }),
-        );
       }
     }
   }
 
   function onPointerUp(event) {
-    if (dragDataTransfer && dragShapeId && dragThresholdMet) {
-      const target = elementUnderCursor(event.clientX, event.clientY, dragShapeId, canvas);
+    if (dragShapeId && dragThresholdMet) {
+      const target = elementUnderCursor(event.clientX, event.clientY, dragShapeId, dragSourceCanvas);
       if (target) {
-        target.dispatchEvent(
-          new DragEvent('drop', {
-            dataTransfer: dragDataTransfer,
-            bubbles: true,
-            cancelable: true,
-            clientX: event.clientX,
-            clientY: event.clientY,
-          }),
-        );
+        const targetCanvas = findTargetContext(target);
+        if (targetCanvas && targetCanvas !== dragSourceCanvas) {
+          const shapeValue = { ...dragSourceShapesRef.at(dragShapeId).value() };
+          const targetShapesRef = targetCanvas.getOrCreate(shapesSchema);
+          const dropPage = targetCanvas.screenToPage(event.clientX, event.clientY);
+          const startPage = dragSourceCanvas.screenToPage(startPointerX, startPointerY);
+          const grabOffsetX = startShapeX - startPage.x;
+          const grabOffsetY = startShapeY - startPage.y;
+          shapeValue.x = dropPage.x + grabOffsetX;
+          shapeValue.y = dropPage.y + grabOffsetY;
+          restoreDraggedShape();
+          const newId = `move_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          targetShapesRef.at(newId).change(() => shapeValue);
+          dragSourceShapesRef.change((shapes) => { delete shapes[dragShapeId]; });
+        }
       }
     }
+    restoreDraggedShape();
     dragShapeId = null;
-    dragDataTransfer = null;
-    lastDragOverTarget = null;
+    dragSourceCanvas = null;
+    dragSourceShapesRef = null;
     dragThresholdMet = false;
   }
 
@@ -376,6 +367,67 @@ export default function mount(element) {
     if (!target) return false;
     const closestRefView = target.closest('ref-view');
     return closestRefView === canvasEl;
+  }
+
+  function liftDraggedShape(shapeId, sourceCanvas) {
+    const allRefViews = sourceCanvas.querySelectorAll('ref-view');
+    let wrapper = null;
+    for (const rv of allRefViews) {
+      const refUrl = rv.getAttribute('ref-url') || '';
+      if (refUrl.endsWith('/' + shapeId)) {
+        wrapper = rv.parentElement;
+        break;
+      }
+    }
+    if (!wrapper || !wrapper.parentElement) return;
+    if (!document.body.moveBefore) return;
+
+    dragOriginalParent = wrapper.parentElement;
+    dragOriginalNextSibling = wrapper.nextSibling;
+
+    const containerEl = sourceCanvas.getContainerEl();
+    const containerRect = containerEl.getBoundingClientRect();
+    const cam = sourceCanvas.getCamera();
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;pointer-events:none;overflow:visible;';
+
+    const transformDiv = document.createElement('div');
+    transformDiv.style.cssText = `
+      position:absolute;
+      left:${containerRect.left}px;
+      top:${containerRect.top}px;
+      width:${containerRect.width}px;
+      height:${containerRect.height}px;
+      transform-origin:0 0;
+      transform:scale(${cam.zoom}) translate(${cam.x}px,${cam.y}px);
+    `;
+    overlay.appendChild(transformDiv);
+    document.body.appendChild(overlay);
+
+    transformDiv.moveBefore(wrapper, null);
+    dragOverlay = overlay;
+  }
+
+  function restoreDraggedShape() {
+    if (!dragOverlay) return;
+    if (dragOriginalParent && dragOverlay.querySelector('div')?.firstChild) {
+      const wrapper = dragOverlay.querySelector('div').firstChild;
+      if (dragOriginalParent.moveBefore) {
+        dragOriginalParent.moveBefore(wrapper, dragOriginalNextSibling);
+      } else {
+        dragOriginalParent.insertBefore(wrapper, dragOriginalNextSibling);
+      }
+    }
+    dragOverlay.remove();
+    dragOverlay = null;
+    dragOriginalParent = null;
+    dragOriginalNextSibling = null;
+  }
+
+  function findTargetContext(target) {
+    const refView = target.closest('ref-view');
+    return refView?.findClosest?.(shapesSchema) ?? null;
   }
 
   function onKeyDown(event) {
