@@ -7,6 +7,7 @@ llm/src/
 ├── index.ts           # Root - exports plugins = [...llmProcessPlugins, ...chatPlugins]
 ├── types.ts           # Shared types
 ├── workspace.ts       # Workspace API implementation
+├── INSTRUCTIONS.md    # System prompt instructions for LLM scripting
 ├── llm-process/       # LLM Process datatype & tool
 │   ├── index.ts       # Exports llmProcessPlugins
 │   ├── datatype.ts
@@ -27,22 +28,23 @@ llm/src/
 
 ```ts
 type LLMProcessDoc = {
-  title: string;
-  model: string;
-  systemPrompt: string;  // Base prompt (dynamic parts added automatically)
-  docFolderUrl: AutomergeUrl;
-  skills: string[];      // Plugin IDs of skills to use
-  messages: Message[];   // User prompt + assistant response
-  done: boolean;
-};
-
-type LLMChatDoc = {
+  "@patchwork": { type: "llm-process" };
   title: string;
   model: string;
   systemPrompt: string;
   docFolderUrl: AutomergeUrl;
-  skills: string[];
-  runs: AutomergeUrl[];  // Ordered list of LLMProcess URLs
+  skills?: string[];
+  messages: Message[];
+  running?: boolean;
+};
+
+type LLMChatDoc = {
+  "@patchwork": { type: "llm-chat" };
+  title: string;
+  model: string;
+  docFolderUrl: AutomergeUrl;
+  skills?: string[];
+  processUrl: AutomergeUrl;
 };
 
 type ScriptBlock = { type: "script"; code: string; description?: string; output?: string; error?: string };
@@ -120,12 +122,11 @@ Skills export a **default function** that receives the workspace and returns the
 import type { Workspace } from "@patchwork/llm";
 
 export default function(workspace: Workspace) {
-  const { repo } = workspace;
-  
   return {
-    createTodo(title: string) {
-      const handle = repo.create<TodoDoc>();
+    async createTodo(title: string) {
+      const handle = await workspace.create<TodoDoc>({ name: title, type: "todo" });
       handle.change(doc => {
+        doc["@patchwork"] = { type: "todo" };
         doc.title = title;
         doc.todos = [];
       });
@@ -133,8 +134,7 @@ export default function(workspace: Workspace) {
     },
     
     async getTodo(url: AutomergeUrl) {
-      const handle = repo.find<TodoDoc>(url);
-      await handle.whenReady();
+      const handle = await workspace.find<TodoDoc>(url);
       return {
         addItem(description: string) { ... },
         toggleItem(id: string) { ... },
@@ -161,13 +161,13 @@ interface Workspace {
   docFolderUrl: AutomergeUrl;
   
   // Skills
-  loadSkill(skillId: string): Promise<SkillAPI>;  // Load and instantiate
-  getSkillDocumentation(skillId: string): Promise<string>;  // Get SKILL.md content
+  loadSkill(skillId: string): Promise<SkillAPI>;
+  getSkillDocumentation(skillId: string): Promise<string>;
   
   // Documents
-  find(url: AutomergeUrl): DocHandle;
-  create<T>(): DocHandle<T>;
-  listDocuments(): { name: string; type: string; url: AutomergeUrl }[];
+  find<T>(url: AutomergeUrl): Promise<DocHandle<T>>;
+  create<T>(options?: { name?: string; type?: string }): Promise<DocHandle<T>>;
+  listDocuments(): Promise<{ name: string; type: string; url: AutomergeUrl }[]>;
 }
 ```
 
@@ -188,7 +188,7 @@ Then load and use the skill:
 const todo = await workspace.loadSkill("todo");
 
 // Use the skill API
-const { url } = todo.createTodo("Shopping List");
+const { url } = await todo.createTodo("Shopping List");
 const list = await todo.getTodo(url);
 list.addItem("Buy milk");
 list.addItem("Buy eggs");
@@ -198,20 +198,22 @@ console.log(list.getItems());
 
 This pattern follows progressive disclosure: descriptions enable discovery, documentation provides full details only when needed.
 
-## Chat Pattern
+## Chat
 
-A chat is a sequence of LLMProcess documents. Each turn creates a new LLMProcess with the full message history.
+A chat document wraps a single LLM process document. The chat view provides the input UI and embeds the process view (via `<patchwork-view>`) for message rendering.
+
+When the user sends a message, the chat appends it to the process doc's messages and calls `runLLMProcess`. The `running` field on the process doc tracks whether the LLM is actively generating.
 
 ## runLLMProcess
 
 ```ts
 import { runLLMProcess } from "@patchwork/llm";
 
-// Create doc directly
 const handle = repo.create<LLMProcessDoc>();
 handle.change((doc) => {
+  doc["@patchwork"] = { type: "llm-process" };
   doc.title = "Grocery List";
-  doc.model = "anthropic/claude-sonnet-4";
+  doc.model = "anthropic/claude-sonnet-4.6";
   doc.systemPrompt = "You are a helpful assistant.";
   doc.docFolderUrl = folderUrl;
   doc.skills = ["todo"];
@@ -220,7 +222,7 @@ handle.change((doc) => {
   ];
 });
 
-// Run it - workspace is injected into script eval scope
+// Run it - supports optional AbortSignal for cancellation
 await runLLMProcess(repo, handle);
 
 // Doc is mutated with assistant response
@@ -235,7 +237,6 @@ Scripts are executed with `workspace` injected as a local variable (not on globa
 async function evalScript(code: string, workspace: Workspace) {
   const capturedConsole = createCapturedConsole();
   
-  // Create function with workspace and console as parameters
   const fn = new Function('workspace', 'console', `
     return (async () => {
       ${code}
@@ -244,33 +245,5 @@ async function evalScript(code: string, workspace: Workspace) {
   
   const result = await fn(workspace, capturedConsole);
   return { output: capturedConsole.flush() };
-}
-```
-
-### Chat Example
-
-```ts
-async function sendMessage(chat: LLMChatDoc, userMessage: string) {
-  // Get previous messages
-  const previous = chat.runs.length > 0
-    ? repo.find<LLMProcessDoc>(chat.runs.at(-1)!).docSync()?.messages ?? []
-    : [];
-
-  // Create new process doc
-  const handle = repo.create<LLMProcessDoc>();
-  handle.change((doc) => {
-    doc.title = userMessage.slice(0, 50);
-    doc.model = chat.model;
-    doc.systemPrompt = chat.systemPrompt;
-    doc.docFolderUrl = chat.docFolderUrl;
-    doc.skills = chat.skills;
-    doc.messages = [...previous, { role: "user", content: userMessage }];
-  });
-
-  // Run and add to chat
-  await runLLMProcess(repo, handle);
-  chat.runs.push(handle.url);
-
-  return handle;
 }
 ```
