@@ -1,7 +1,7 @@
 {
   "name": "@patchwork/llm",
   "version": "0.0.1",
-  "description": "LLM process tool for Patchwork",
+  "description": "LLM Process module for Patchwork",
   "type": "module",
   "exports": "./dist/index.js",
   "scripts": {
@@ -14,7 +14,10 @@
   "dependencies": {
     "@automerge/automerge-repo": "2.5.0",
     "@automerge/automerge-repo-solid-primitives": "2.5.3",
+    "@inkandswitch/patchwork-filesystem": "^0.0.3",
     "@inkandswitch/patchwork-plugins": "^0.0.2",
+    "lucide-solid": "^1.8.0",
+    "remark-gfm": "^4.0.1",
     "solid-js": "^1.9.7",
     "solid-markdown": "^2.1.1"
   },

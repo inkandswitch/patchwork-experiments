@@ -1,19 +1,12 @@
-import type { ParsedBlock } from './types';
+import type { ParsedBlock } from "../types";
 
 /**
- * Simple streaming parser that extracts <script> blocks from an async token stream.
+ * Streaming parser that extracts <script> blocks from an async token stream.
  *
- * Yields ParsedBlock items with an id and complete flag:
+ * Yields ParsedBlock items with an index and complete flag:
  *   - { type: "text", complete: true }    for text chunks between scripts
  *   - { type: "script", complete: false } while a script block is still streaming
  *   - { type: "script", complete: true }  when a </script> closing tag is found
- *
- * The parser is a minimal state machine with two states: "text" and "script".
- * It scans for <script> / <script data-description="..."> and </script> tags.
- *
- * Each logical block (text region or script block) gets a unique incrementing id.
- * While inside a script block, the parser yields blocks with complete=false
- * carrying the accumulated code so far, allowing the UI to render incrementally.
  */
 export async function* parseScriptBlocks(
   stream: AsyncIterable<string>
@@ -21,7 +14,7 @@ export async function* parseScriptBlocks(
   let buffer = "";
   let state: "text" | "script" = "text";
   let scriptBuffer = "";
-  let blockId = 0;
+  let blockIndex = 0;
   let currentDescription: string | undefined;
 
   const SCRIPT_PREFIX = "<script";
@@ -39,7 +32,7 @@ export async function* parseScriptBlocks(
 
           if (afterPrefixIdx >= buffer.length) {
             if (scriptIdx > 0) {
-              yield { id: blockId, type: "text", content: buffer.slice(0, scriptIdx), complete: true };
+              yield { index: blockIndex, type: "text", content: buffer.slice(0, scriptIdx), complete: true };
               buffer = buffer.slice(scriptIdx);
             }
             break;
@@ -48,7 +41,7 @@ export async function* parseScriptBlocks(
           const afterChar = buffer[afterPrefixIdx];
           if (afterChar !== ">" && afterChar !== " " && afterChar !== "\t" && afterChar !== "\n") {
             const safeEnd = afterPrefixIdx;
-            yield { id: blockId, type: "text", content: buffer.slice(0, safeEnd), complete: true };
+            yield { index: blockIndex, type: "text", content: buffer.slice(0, safeEnd), complete: true };
             buffer = buffer.slice(safeEnd);
             continue;
           }
@@ -61,15 +54,15 @@ export async function* parseScriptBlocks(
             currentDescription = descMatch ? descMatch[1] : undefined;
 
             if (scriptIdx > 0) {
-              yield { id: blockId, type: "text", content: buffer.slice(0, scriptIdx), complete: true };
+              yield { index: blockIndex, type: "text", content: buffer.slice(0, scriptIdx), complete: true };
             }
             buffer = buffer.slice(tagEndIdx + 1);
             state = "script";
             scriptBuffer = "";
-            blockId++;
+            blockIndex++;
           } else {
             if (scriptIdx > 0) {
-              yield { id: blockId, type: "text", content: buffer.slice(0, scriptIdx), complete: true };
+              yield { index: blockIndex, type: "text", content: buffer.slice(0, scriptIdx), complete: true };
               buffer = buffer.slice(scriptIdx);
             }
             break;
@@ -78,12 +71,12 @@ export async function* parseScriptBlocks(
           const partialIdx = findPartialTag(buffer, SCRIPT_PREFIX);
           if (partialIdx < buffer.length) {
             if (partialIdx > 0) {
-              yield { id: blockId, type: "text", content: buffer.slice(0, partialIdx), complete: true };
+              yield { index: blockIndex, type: "text", content: buffer.slice(0, partialIdx), complete: true };
             }
             buffer = buffer.slice(partialIdx);
           } else {
             if (buffer.length > 0) {
-              yield { id: blockId, type: "text", content: buffer, complete: true };
+              yield { index: blockIndex, type: "text", content: buffer, complete: true };
               buffer = "";
             }
           }
@@ -95,7 +88,7 @@ export async function* parseScriptBlocks(
         if (closeIdx !== -1) {
           scriptBuffer += buffer.slice(0, closeIdx);
           yield {
-            id: blockId,
+            index: blockIndex,
             type: "script",
             code: scriptBuffer,
             description: currentDescription,
@@ -105,7 +98,7 @@ export async function* parseScriptBlocks(
           state = "text";
           scriptBuffer = "";
           currentDescription = undefined;
-          blockId++;
+          blockIndex++;
         } else {
           const partialIdx = findPartialTag(buffer, CLOSE_TAG);
           if (partialIdx < buffer.length) {
@@ -117,7 +110,7 @@ export async function* parseScriptBlocks(
           }
           if (scriptBuffer.length > 0) {
             yield {
-              id: blockId,
+              index: blockIndex,
               type: "script",
               code: scriptBuffer,
               description: currentDescription,
@@ -132,22 +125,18 @@ export async function* parseScriptBlocks(
 
   if (state === "text") {
     if (buffer.length > 0) {
-      yield { id: blockId, type: "text", content: buffer, complete: true };
+      yield { index: blockIndex, type: "text", content: buffer, complete: true };
     }
   } else {
     scriptBuffer += buffer;
     if (scriptBuffer.length > 0) {
-      yield { id: blockId, type: "text", content: `<script>${scriptBuffer}`, complete: true };
+      yield { index: blockIndex, type: "text", content: `<script>${scriptBuffer}`, complete: true };
     }
   }
 }
 
 function findPartialTag(buffer: string, tag: string): number {
-  for (
-    let i = Math.max(0, buffer.length - tag.length + 1);
-    i < buffer.length;
-    i++
-  ) {
+  for (let i = Math.max(0, buffer.length - tag.length + 1); i < buffer.length; i++) {
     const remaining = buffer.slice(i);
     if (tag.startsWith(remaining)) {
       return i;
