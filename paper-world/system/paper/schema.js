@@ -60,6 +60,7 @@ export const cameraSchema = {
     'setCamera',
     'subscribeCamera',
     'getContainerEl',
+    'getScale',
   ],
   init() {
     return {};

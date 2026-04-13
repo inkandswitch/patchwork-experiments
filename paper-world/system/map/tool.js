@@ -58,6 +58,7 @@ export default function mount(element) {
   element.setCamera = setCamera;
   element.subscribeCamera = subscribeCamera;
   element.getContainerEl = getContainerEl;
+  element.getScale = getScale;
 
   containerEl.addEventListener('wheel', onWheel);
 
@@ -119,6 +120,7 @@ export default function mount(element) {
     delete element.setCamera;
     delete element.subscribeCamera;
     delete element.getContainerEl;
+    delete element.getScale;
     containerEl.remove();
   };
 
@@ -161,7 +163,9 @@ export default function mount(element) {
       const geo = readGeoCamera(rootRef);
       return { x: lngToPageX(geo.lng), y: latToPageY(geo.lat) };
     }
-    const lngLat = map.unproject([clientX - rect.left, clientY - rect.top]);
+    const scaleX = containerEl.offsetWidth ? rect.width / containerEl.offsetWidth : 1;
+    const scaleY = containerEl.offsetHeight ? rect.height / containerEl.offsetHeight : 1;
+    const lngLat = map.unproject([(clientX - rect.left) / scaleX, (clientY - rect.top) / scaleY]);
     return { x: lngToPageX(lngLat.lng), y: latToPageY(lngLat.lat) };
   }
 
@@ -170,8 +174,10 @@ export default function mount(element) {
     if (!map) {
       return { x: rect.left, y: rect.top };
     }
+    const scaleX = containerEl.offsetWidth ? rect.width / containerEl.offsetWidth : 1;
+    const scaleY = containerEl.offsetHeight ? rect.height / containerEl.offsetHeight : 1;
     const point = map.project([pageXToLng(pageX), pageYToLat(pageY)]);
-    return { x: point.x + rect.left, y: point.y + rect.top };
+    return { x: point.x * scaleX + rect.left, y: point.y * scaleY + rect.top };
   }
 
   function getCamera() {
@@ -218,6 +224,12 @@ export default function mount(element) {
 
   function getContainerEl() {
     return containerEl;
+  }
+
+  function getScale() {
+    const rect = containerEl.getBoundingClientRect();
+    const ancestorScale = containerEl.offsetWidth ? rect.width / containerEl.offsetWidth : 1;
+    return (getCamera()?.zoom ?? 1) * ancestorScale;
   }
 
   function onMapLoad() {
@@ -476,7 +488,8 @@ function updateShapeWrapper(wrapper, shapeId, shape, isSelected, map) {
   wrapper.style.display = '';
   wrapper.style.left = `${projectedFrame.originX}px`;
   wrapper.style.top = `${projectedFrame.originY}px`;
-  wrapper.style.transform = `scale(${projectedFrame.scaleX}, ${projectedFrame.scaleY})`;
+  const shapeScale = shape.scale ?? 1;
+  wrapper.style.transform = `scale(${projectedFrame.scaleX * shapeScale}, ${projectedFrame.scaleY * shapeScale})`;
   wrapper.style.zIndex = `${shape.z ?? 0}`;
   wrapper.style.filter = isSelected ? SELECTED_SHADOW : 'none';
   shapeEl.style.transform = `translate(${projectedFrame.offsetX}px, ${projectedFrame.offsetY}px)`;
@@ -561,11 +574,14 @@ function projectShapeFrame(map, shape, localBounds) {
     };
   }
 
+  const rawScaleX = localWidth !== 0 ? (horizontalReferencePoint.x - boundsOriginPoint.x) / localWidth : 0;
+  const rawScaleY = localHeight !== 0 ? (verticalReferencePoint.y - boundsOriginPoint.y) / localHeight : 0;
+
   return {
     originX: boundsOriginPoint.x,
     originY: boundsOriginPoint.y,
-    scaleX: localWidth !== 0 ? (horizontalReferencePoint.x - boundsOriginPoint.x) / localWidth : 1,
-    scaleY: localHeight !== 0 ? (verticalReferencePoint.y - boundsOriginPoint.y) / localHeight : 1,
+    scaleX: rawScaleX || rawScaleY || 1,
+    scaleY: rawScaleY || rawScaleX || 1,
     offsetX: -localBounds.minX,
     offsetY: -localBounds.minY,
   };

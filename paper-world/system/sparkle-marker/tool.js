@@ -151,7 +151,8 @@ export default function mount(element) {
       maxX = Math.max(maxX, p[0]);
       maxY = Math.max(maxY, p[1]);
     }
-    const pad = 40;
+    const particleScale = d.strokeScale ?? 1;
+    const pad = 40 * particleScale;
     minX -= pad; minY -= pad; maxX += pad; maxY += pad;
 
     const w = Math.ceil(maxX - minX) || 1;
@@ -178,14 +179,14 @@ export default function mount(element) {
 
     for (const p of particles) {
       const t = now + p.timeOffset;
-      const dist = (Math.sin(t * p.speed * 1.5) * 0.5 + 0.5) * p.maxDist;
+      const dist = (Math.sin(t * p.speed * 1.5) * 0.5 + 0.5) * p.maxDist * particleScale;
       const wanderAngle = p.angle + Math.sin(t * 0.7 + p.phase) * 0.8;
       const px = p.baseX + Math.cos(wanderAngle) * dist + ox;
       const py = p.baseY + Math.sin(wanderAngle) * dist + oy;
 
       const twinkle = Math.sin(t * p.twinkleSpeed + p.phase);
       const opacity = Math.max(0, 0.1 + twinkle * 0.9);
-      const currentSize = p.size * (0.4 + twinkle * 0.6);
+      const currentSize = p.size * particleScale * (0.4 + twinkle * 0.6);
       if (currentSize < 0.2 || opacity < 0.05) continue;
 
       ctx.save();
@@ -231,17 +232,19 @@ export default function mount(element) {
       const strokePath = () => {
         const pts = points();
         if (pts.length < 2) return '';
-        return getSvgPathFromStroke(getStroke(pts, {
-          size: 6, thinning: 0.4, smoothing: 0.5, streamline: 0.5,
-        }));
+        const scale = data()?.strokeScale ?? 1;
+        const norm = scale !== 1 ? pts.map(([x, y, p]) => [x / scale, y / scale, p]) : pts;
+        const outline = getStroke(norm, { size: 6, thinning: 0.4, smoothing: 0.5, streamline: 0.5 });
+        return getSvgPathFromStroke(scale !== 1 ? outline.map(([x, y]) => [x * scale, y * scale]) : outline);
       };
 
       const innerPath = () => {
         const pts = points();
         if (pts.length < 2) return '';
-        return getSvgPathFromStroke(getStroke(pts, {
-          size: 2.5, thinning: 0.3, smoothing: 0.5, streamline: 0.5,
-        }));
+        const scale = data()?.strokeScale ?? 1;
+        const norm = scale !== 1 ? pts.map(([x, y, p]) => [x / scale, y / scale, p]) : pts;
+        const outline = getStroke(norm, { size: 2.5, thinning: 0.3, smoothing: 0.5, streamline: 0.5 });
+        return getSvgPathFromStroke(scale !== 1 ? outline.map(([x, y]) => [x * scale, y * scale]) : outline);
       };
 
       return html`<div style=${{
@@ -256,7 +259,7 @@ export default function mount(element) {
         }}>
           <defs>
             <filter id="sg${element.id || ''}">
-              <feGaussianBlur stdDeviation="2.5" />
+              <feGaussianBlur stdDeviation=${() => 2.5 * (data()?.strokeScale ?? 1)} />
             </filter>
           </defs>
           <path d=${strokePath} fill=${color} opacity="0.3"

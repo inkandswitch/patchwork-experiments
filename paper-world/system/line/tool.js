@@ -25,13 +25,20 @@ export default function mount(element) {
           d=${() => {
             const points = data()?.points ?? [];
             if (points.length < 2) return '';
-            const outlinePoints = getStroke(points, {
+            const scale = data()?.strokeScale ?? 1;
+            const normalizedPoints = scale !== 1
+              ? points.map(([x, y, p]) => [x / scale, y / scale, p])
+              : points;
+            const outlinePoints = getStroke(normalizedPoints, {
               size: 4,
               thinning: 0.5,
               smoothing: 0.5,
               streamline: 0.5,
             });
-            return getSvgPathFromStroke(outlinePoints);
+            const scaledOutline = scale !== 1
+              ? outlinePoints.map(([x, y]) => [x * scale, y * scale])
+              : outlinePoints;
+            return getSvgPathFromStroke(scaledOutline);
           }}
           fill=${() => data()?.color ?? '#3b82f6'}
         />

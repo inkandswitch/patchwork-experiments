@@ -35,7 +35,8 @@ export default function mount(element) {
       maxX = Math.max(maxX, p[0]);
       maxY = Math.max(maxY, p[1]);
     }
-    const pad = 20;
+    const scale = d.strokeScale ?? 1;
+    const pad = 20 * scale;
     minX -= pad; minY -= pad; maxX += pad; maxY += pad;
 
     const w = Math.ceil(maxX - minX) || 1;
@@ -90,9 +91,7 @@ export default function mount(element) {
 
     ctx.globalAlpha = opacity;
 
-    // Draw eraser trail with sparkly dust effect
-    // Main trail path
-    ctx.lineWidth = 18;
+    ctx.lineWidth = 18 * scale;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.strokeStyle = 'rgba(200, 200, 220, 0.5)';
@@ -103,8 +102,7 @@ export default function mount(element) {
     }
     ctx.stroke();
 
-    // Inner lighter trail
-    ctx.lineWidth = 10;
+    ctx.lineWidth = 10 * scale;
     ctx.strokeStyle = 'rgba(240, 240, 255, 0.6)';
     ctx.beginPath();
     ctx.moveTo(points[0][0] + ox, points[0][1] + oy);
@@ -122,10 +120,10 @@ export default function mount(element) {
       for (let j = 0; j < 3; j++) {
         const seed = i * 7 + j * 13;
         const angle = (seed * 2.39996) + time * (0.5 + (seed % 5) * 0.2);
-        const dist = 5 + ((seed * 3.14) % 15);
+        const dist = (5 + ((seed * 3.14) % 15)) * scale;
         const dx = Math.cos(angle) * dist;
-        const dy = Math.sin(angle) * dist - (time * 3 % 20); // float upward
-        const size = 1 + (seed % 3);
+        const dy = Math.sin(angle) * dist - (time * 3 % 20) * scale;
+        const size = (1 + (seed % 3)) * scale;
         const particleOpacity = Math.max(0, Math.sin(time * 2 + seed) * 0.5 + 0.5) * opacity;
 
         ctx.globalAlpha = particleOpacity;

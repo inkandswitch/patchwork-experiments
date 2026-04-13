@@ -55,6 +55,14 @@ export default function mount(element) {
     return () => cameraListeners.delete(fn);
   };
   element.getContainerEl = () => containerEl;
+  element.getScale = () => {
+    const rect = containerEl
+      ? containerEl.getBoundingClientRect()
+      : element.getBoundingClientRect();
+    const el = containerEl || element;
+    const ancestorScale = el.offsetWidth ? rect.width / el.offsetWidth : 1;
+    return camera().zoom * ancestorScale;
+  };
 
   let dragging = false;
 
@@ -92,6 +100,9 @@ export default function mount(element) {
                 left: `${shapes[id]?.x}px`,
                 top: `${shapes[id]?.y}px`,
                 'z-index': shapes[id]?.z ?? 0,
+                ...(shapes[id]?.scale != null && shapes[id]?.scale !== 1
+                  ? { transform: `scale(${shapes[id].scale})`, 'transform-origin': '0 0' }
+                  : {}),
                 filter: selectedShapes[id] ? 'drop-shadow(0 0 3px rgba(0,0,0,0.4))' : 'none',
               })}
             >
@@ -113,6 +124,7 @@ export default function mount(element) {
     delete element.setCamera;
     delete element.subscribeCamera;
     delete element.getContainerEl;
+    delete element.getScale;
     cleanup();
   };
 }

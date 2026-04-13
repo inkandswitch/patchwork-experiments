@@ -213,6 +213,7 @@ export default function mount(element) {
   let startShapeX = 0;
   let startShapeY = 0;
   let dragThresholdMet = false;
+  let dragNeedsEarlyMove = false;
   let dragOverlay = null;
   let dragOriginalParent = null;
   let dragOriginalNextSibling = null;
@@ -240,16 +241,18 @@ export default function mount(element) {
 
     closeMenu();
 
-    const sourceCanvas = findTargetContext(event.target) ?? canvas;
-    const sourceShapesRef = sourceCanvas.getOrCreate(shapesSchema);
-
+    let sourceCanvas = findTargetContext(event.target) ?? canvas;
+    let sourceShapesRef = sourceCanvas.getOrCreate(shapesSchema);
     let shapeId = shapeIdFromEvent(event, sourceCanvas);
-    if (!shapeId && sourceCanvas === canvas) {
-      shapeId = probeNearbyShapes(event, canvas);
+
+    while (!shapeId && sourceCanvas !== canvas) {
+      sourceCanvas = findTargetContext(sourceCanvas.parentElement) ?? canvas;
+      sourceShapesRef = sourceCanvas.getOrCreate(shapesSchema);
+      shapeId = shapeIdFromEvent(event, sourceCanvas);
     }
-    if (!shapeId && sourceCanvas === canvas) {
-      shapeId = findNearbyLine(event, canvas, shapesRef);
-    }
+
+    if (!shapeId) shapeId = probeNearbyShapes(event, canvas);
+    if (!shapeId) shapeId = findNearbyLine(event, canvas, shapesRef);
     if (!shapeId) {
       selectedShapesRef.change(() => ({}));
       return;
@@ -287,6 +290,32 @@ export default function mount(element) {
     dragThresholdMet = false;
   }
 
+  function moveShapeToCrossContext(targetCanvas, clientX, clientY) {
+    const shapeValue = { ...dragSourceShapesRef.at(dragShapeId).value() };
+    const targetShapesRef = targetCanvas.getOrCreate(shapesSchema);
+    const shapeScreen = dragSourceCanvas.pageToScreen(shapeValue.x, shapeValue.y);
+    const targetPage = targetCanvas.screenToPage(shapeScreen.x, shapeScreen.y);
+    shapeValue.x = targetPage.x;
+    shapeValue.y = targetPage.y;
+    const sourceScale = dragSourceCanvas.getScale();
+    const targetScale = targetCanvas.getScale();
+    shapeValue.scale = ((shapeValue.scale ?? 1) * sourceScale) / targetScale;
+    restoreDraggedShape();
+    const newId = `move_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    targetShapesRef.at(newId).change(() => shapeValue);
+    dragSourceShapesRef.change((shapes) => { delete shapes[dragShapeId]; });
+    dragShapeId = newId;
+    dragSourceCanvas = targetCanvas;
+    dragSourceShapesRef = targetShapesRef;
+    startShapeX = shapeValue.x;
+    startShapeY = shapeValue.y;
+    startPointerX = clientX;
+    startPointerY = clientY;
+    if (dragSourceCanvas !== canvas) {
+      liftDraggedShape(dragShapeId, dragSourceCanvas);
+    }
+  }
+
   function onPointerMove(event) {
     if (!dragShapeId) return;
     const startPage = dragSourceCanvas.screenToPage(startPointerX, startPointerY);
@@ -303,6 +332,17 @@ export default function mount(element) {
         if (dragSourceCanvas !== canvas) {
           liftDraggedShape(dragShapeId, dragSourceCanvas);
         }
+        dragNeedsEarlyMove = !dragOverlay && dragSourceCanvas !== canvas;
+      }
+    }
+    if (dragThresholdMet && dragNeedsEarlyMove) {
+      const target = elementUnderCursor(event.clientX, event.clientY, dragShapeId, dragSourceCanvas);
+      if (target) {
+        const targetCanvas = findTargetContext(target);
+        if (targetCanvas && targetCanvas !== dragSourceCanvas) {
+          moveShapeToCrossContext(targetCanvas, event.clientX, event.clientY);
+          dragNeedsEarlyMove = false;
+        }
       }
     }
   }
@@ -313,18 +353,7 @@ export default function mount(element) {
       if (target) {
         const targetCanvas = findTargetContext(target);
         if (targetCanvas && targetCanvas !== dragSourceCanvas) {
-          const shapeValue = { ...dragSourceShapesRef.at(dragShapeId).value() };
-          const targetShapesRef = targetCanvas.getOrCreate(shapesSchema);
-          const dropPage = targetCanvas.screenToPage(event.clientX, event.clientY);
-          const startPage = dragSourceCanvas.screenToPage(startPointerX, startPointerY);
-          const grabOffsetX = startShapeX - startPage.x;
-          const grabOffsetY = startShapeY - startPage.y;
-          shapeValue.x = dropPage.x + grabOffsetX;
-          shapeValue.y = dropPage.y + grabOffsetY;
-          restoreDraggedShape();
-          const newId = `move_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-          targetShapesRef.at(newId).change(() => shapeValue);
-          dragSourceShapesRef.change((shapes) => { delete shapes[dragShapeId]; });
+          moveShapeToCrossContext(targetCanvas, event.clientX, event.clientY);
         }
       }
     }
@@ -333,6 +362,7 @@ export default function mount(element) {
     dragSourceCanvas = null;
     dragSourceShapesRef = null;
     dragThresholdMet = false;
+    dragNeedsEarlyMove = false;
   }
 
   function elementUnderCursor(clientX, clientY, shapeId, canvasEl) {
@@ -386,6 +416,7 @@ export default function mount(element) {
     dragOriginalNextSibling = wrapper.nextSibling;
 
     const containerEl = sourceCanvas.getContainerEl();
+    if (!containerEl || dragOriginalParent.parentElement !== containerEl) return;
     const containerRect = containerEl.getBoundingClientRect();
     const cam = sourceCanvas.getCamera();
 

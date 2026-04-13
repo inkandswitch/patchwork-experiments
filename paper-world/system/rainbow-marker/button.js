@@ -51,11 +51,15 @@ export default function mount(element) {
     originX = page.x;
     originY = page.y;
     dragId = `rainbow_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const rootScale = canvas.getScale();
+    const drawScale = drawCanvas.getScale();
+    const strokeScale = rootScale / drawScale;
     drawShapesRef.at(dragId).change(() => ({
       x: originX,
       y: originY,
       viewUrl: rainbowViewUrl,
       points: [[0, 0, event.pressure || 0.5]],
+      strokeScale,
     }));
     canvas.setPointerCapture(event.pointerId);
   }

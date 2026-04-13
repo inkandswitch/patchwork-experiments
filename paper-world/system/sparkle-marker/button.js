@@ -54,12 +54,16 @@ export default function mount(element) {
     originY = page.y;
     dragId = `sparkle_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const color = colors[Math.floor(Math.random() * colors.length)];
+    const rootScale = canvas.getScale();
+    const drawScale = drawCanvas.getScale();
+    const strokeScale = rootScale / drawScale;
     drawShapesRef.at(dragId).change(() => ({
       x: originX,
       y: originY,
       viewUrl: sparkleViewUrl,
       points: [[0, 0, event.pressure || 0.5]],
-      color: color,
+      color,
+      strokeScale,
     }));
     canvas.setPointerCapture(event.pointerId);
   }

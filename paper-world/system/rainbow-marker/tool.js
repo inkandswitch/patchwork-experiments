@@ -84,7 +84,8 @@ export default function mount(element) {
       maxX = Math.max(maxX, p[0]);
       maxY = Math.max(maxY, p[1]);
     }
-    const pad = 20;
+    const scale = d.strokeScale ?? 1;
+    const pad = 20 * scale;
     minX -= pad; minY -= pad; maxX += pad; maxY += pad;
 
     const w = Math.ceil(maxX - minX) || 1;
@@ -115,8 +116,7 @@ export default function mount(element) {
     const now = performance.now() / 1000;
     const shift = (now * 1.5) % 1; // slowly cycle
 
-    // Draw thick segments with rainbow colors
-    const strokeSize = 6;
+    const baseStrokeSize = 6 * scale;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
@@ -127,9 +127,8 @@ export default function mount(element) {
       const x2 = points[i + 1][0] + ox;
       const y2 = points[i + 1][1] + oy;
 
-      // Pressure-based width
       const pressure = (points[i][2] + points[i + 1][2]) / 2;
-      const lineWidth = strokeSize * (0.5 + pressure * 0.8);
+      const lineWidth = baseStrokeSize * (0.5 + pressure * 0.8);
 
       ctx.beginPath();
       ctx.moveTo(x1, y1);
@@ -139,9 +138,8 @@ export default function mount(element) {
       ctx.stroke();
     }
 
-    // Draw a subtle white inner highlight
     ctx.globalAlpha = 0.25;
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 1.5 * scale;
     for (let i = 0; i < points.length - 1; i++) {
       const x1 = points[i][0] + ox;
       const y1 = points[i][1] + oy;
@@ -155,18 +153,16 @@ export default function mount(element) {
     }
     ctx.globalAlpha = 1;
 
-    // Add subtle glow dots at intervals
-    const glowInterval = 15;
     for (let i = 0; i < points.length; i += 3) {
       const t = (cumLen[i] / totalLen + shift) % 1;
       const px = points[i][0] + ox;
       const py = points[i][1] + oy;
-      const size = 3 + Math.sin(now * 15 + i) * 1.5;
+      const size = (3 + Math.sin(now * 15 + i) * 1.5) * scale;
 
       ctx.save();
       ctx.globalAlpha = 0.4 + Math.sin(now * 20 + i * 0.5) * 0.3;
       ctx.shadowColor = hslForT(t);
-      ctx.shadowBlur = 8;
+      ctx.shadowBlur = 8 * scale;
       ctx.fillStyle = hslForT(t);
       ctx.beginPath();
       ctx.arc(px, py, size, 0, Math.PI * 2);

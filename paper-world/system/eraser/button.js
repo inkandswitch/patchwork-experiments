@@ -38,6 +38,7 @@ export default function mount(element) {
   let dragging = false;
   let trailId = null;
   let trailPoints = [];
+  let currentStrokeScale = 1;
   const ERASER_RADIUS = 18;
 
   // Track which shapes we've already erased so we don't try to delete twice
@@ -54,45 +55,38 @@ export default function mount(element) {
     const ref = drawShapesRef || shapesRef;
     const shapes = ref.value() || {};
     const toDelete = [];
+    const scaledRadius = ERASER_RADIUS * currentStrokeScale;
 
     for (const [id, shape] of Object.entries(shapes)) {
-      // Don't erase locked shapes (toolbar buttons), eraser trails, or self
       if (shape.isLocked) continue;
       if (erasedIds.has(id)) continue;
       if (id === trailId) continue;
-      // Don't erase eraser trails
       if (shape.viewUrl && shape.viewUrl.includes('eraser/tool.json')) continue;
 
-      // Check if the eraser circle overlaps this shape
       const sx = shape.x || 0;
       const sy = shape.y || 0;
 
-      // For shapes with points (lines, sparkle markers), check point proximity
       if (shape.points && shape.points.length > 0) {
         for (const pt of shape.points) {
           const ptx = sx + (pt[0] || 0);
           const pty = sy + (pt[1] || 0);
           const dist = Math.sqrt((px - ptx) ** 2 + (py - pty) ** 2);
-          if (dist < ERASER_RADIUS + 8) {
+          if (dist < scaledRadius + 8 * currentStrokeScale) {
             toDelete.push(id);
             break;
           }
         }
-      }
-      // For shapes with width/height (rectangles, embeds)
-      else if (shape.width && shape.height) {
-        const inX = px >= sx - ERASER_RADIUS && px <= sx + shape.width + ERASER_RADIUS;
-        const inY = py >= sy - ERASER_RADIUS && py <= sy + shape.height + ERASER_RADIUS;
+      } else if (shape.width && shape.height) {
+        const inX = px >= sx - scaledRadius && px <= sx + shape.width + scaledRadius;
+        const inY = py >= sy - scaledRadius && py <= sy + shape.height + scaledRadius;
         if (inX && inY) {
           toDelete.push(id);
         }
-      }
-      // For text shapes, rough bounding box
-      else if (shape.text !== undefined) {
+      } else if (shape.text !== undefined) {
         const tw = Math.max(50, (shape.text || '').length * 8);
         const th = 24;
-        const inX = px >= sx - ERASER_RADIUS && px <= sx + tw + ERASER_RADIUS;
-        const inY = py >= sy - ERASER_RADIUS && py <= sy + th + ERASER_RADIUS;
+        const inX = px >= sx - scaledRadius && px <= sx + tw + scaledRadius;
+        const inY = py >= sy - scaledRadius && py <= sy + th + scaledRadius;
         if (inX && inY) {
           toDelete.push(id);
         }
@@ -117,6 +111,10 @@ export default function mount(element) {
     drawCanvas = targetCanvas;
     drawShapesRef = targetCanvas.getOrCreate(shapesSchema);
 
+    const rootScale = canvas.getScale();
+    const drawScale = drawCanvas.getScale();
+    currentStrokeScale = rootScale / drawScale;
+
     dragging = true;
     erasedIds = new Set();
     const pos = getCanvasPos(event);
@@ -128,6 +126,7 @@ export default function mount(element) {
       y: 0,
       viewUrl: eraserViewUrl,
       points: [[pos.x, pos.y]],
+      strokeScale: currentStrokeScale,
       createdAt: Date.now(),
     }));
 
@@ -163,6 +162,7 @@ export default function mount(element) {
     trailId = null;
     trailPoints = [];
     erasedIds = new Set();
+    currentStrokeScale = 1;
     drawCanvas = null;
     drawShapesRef = null;
   }
