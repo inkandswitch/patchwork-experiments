@@ -8,8 +8,8 @@ import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
 import type { WorkflowDoc, ValidationDoc, SpecElicitationDoc, PlanType } from './types';
 import type { LLMProcessDoc, ChatMessagePart } from '../llm/types';
 import type { PetriNetPlanDoc, PetriNetExecutionDoc } from '../paul/petrinet-plan/types';
-import type { TaskListPlanDoc } from '../grjte/plan/types';
-import type { TaskListExecutionDoc } from '../grjte/execution/types';
+import type { TaskListExecutionDoc } from '../../../grjte-workflow-tools/src/execution/types';
+import type { TaskListPlanDoc } from '../../../grjte-workflow-tools/src/plan/types';
 import { runWorkspaceLLM } from '../llm/llm-process';
 import './workflow.css';
 import { FolderDoc } from '@inkandswitch/patchwork-filesystem';
@@ -227,9 +227,10 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
     processHandle.change((d) => {
       d.config = { apiUrl: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-sonnet-4.6' };
       d.llmConfigFolderUrl = __SPEC_AGENT_FOLDER_URL__ as AutomergeUrl;
-      const userText = previousMessages.length > 0
-        ? message
-        : `The existing spec is at: ${currentDoc.specDocUrl}\n\n${message}`;
+      const userText =
+        previousMessages.length > 0
+          ? message
+          : `The existing spec is at: ${currentDoc.specDocUrl}\n\n${message}`;
       d.messages = [
         ...JSON.parse(JSON.stringify(previousMessages)),
         { role: 'user', content: [{ type: 'text', text: userText }] },
@@ -279,7 +280,10 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
         {
           role: 'user',
           content: [
-            { type: 'text', text: `Create a ${selectedPlanType} plan for this spec: ${currentDoc.specDocUrl}` },
+            {
+              type: 'text',
+              text: `Create a ${selectedPlanType} plan for this spec: ${currentDoc.specDocUrl}`,
+            },
           ],
         },
       ];
@@ -315,13 +319,17 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
     console.log('[workflow] handleCreatePlan: extracted planDocUrl =', planDocUrl);
 
     if (planDocUrl) {
-      const planToolId = selectedPlanType === 'task-list' ? 'grjte-plan-viewer' : 'paul-plan-viewer';
+      const planToolId =
+        selectedPlanType === 'task-list' ? 'grjte-plan-viewer' : 'paul-plan-viewer';
       props.handle.change((d) => {
         d.planDocUrl = planDocUrl!;
         if (!d.toolIds) d.toolIds = {};
         d.toolIds.plan = planToolId;
       });
-      console.log('[workflow] handleCreatePlan: set planDocUrl on workflow doc, toolId =', planToolId);
+      console.log(
+        '[workflow] handleCreatePlan: set planDocUrl on workflow doc, toolId =',
+        planToolId,
+      );
     } else {
       console.warn('[workflow] handleCreatePlan: no PLAN_DOC_URL found in LLM output');
     }
@@ -340,8 +348,14 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
 
     const currentPlanType = currentDoc.planType ?? 'petrinet';
     console.log('[workflow] handleFollowUpPlan: planType =', currentPlanType);
-    console.log('[workflow] handleFollowUpPlan: starting, current planDocUrl =', currentDoc.planDocUrl);
-    console.log('[workflow] handleFollowUpPlan: planProcessUrl =', currentDoc.planProcessUrl ?? '(none — cold start)');
+    console.log(
+      '[workflow] handleFollowUpPlan: starting, current planDocUrl =',
+      currentDoc.planDocUrl,
+    );
+    console.log(
+      '[workflow] handleFollowUpPlan: planProcessUrl =',
+      currentDoc.planProcessUrl ?? '(none — cold start)',
+    );
 
     let previousMessages: LLMProcessDoc['messages'] = [];
     if (currentDoc.planProcessUrl) {
@@ -354,9 +368,10 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
     processHandle.change((d) => {
       d.config = { apiUrl: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-sonnet-4.6' };
       d.llmConfigFolderUrl = __PLAN_AGENT_FOLDER_URL__ as AutomergeUrl;
-      const userText = previousMessages.length > 0
-        ? `(Plan type: ${currentPlanType}) ${message}`
-        : `The existing plan is at: ${currentDoc.planDocUrl}\n\n(Plan type: ${currentPlanType}) ${message}`;
+      const userText =
+        previousMessages.length > 0
+          ? `(Plan type: ${currentPlanType}) ${message}`
+          : `The existing plan is at: ${currentDoc.planDocUrl}\n\n(Plan type: ${currentPlanType}) ${message}`;
       d.messages = [
         ...JSON.parse(JSON.stringify(previousMessages)),
         { role: 'user', content: [{ type: 'text', text: userText }] },
@@ -394,7 +409,10 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
 
   async function handleExecutePlan() {
     const currentDoc = doc();
-    console.log('[workflow] handleExecutePlan: called, doc keys =', currentDoc ? Object.keys(currentDoc) : 'null');
+    console.log(
+      '[workflow] handleExecutePlan: called, doc keys =',
+      currentDoc ? Object.keys(currentDoc) : 'null',
+    );
     console.log('[workflow] handleExecutePlan: planDocUrl =', currentDoc?.planDocUrl);
     console.log('[workflow] handleExecutePlan: specDocUrl =', currentDoc?.specDocUrl);
     console.log('[workflow] handleExecutePlan: planType =', currentDoc?.planType);
@@ -430,7 +448,8 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
         d.headsByDocUrl = {} as Record<AutomergeUrl, never>;
       });
 
-      const execToolId = currentPlanType === 'task-list' ? 'grjte-execution-viewer' : 'petrinet-execution';
+      const execToolId =
+        currentPlanType === 'task-list' ? 'grjte-execution-viewer' : 'petrinet-execution';
       console.log('[workflow] handleExecutePlan: execUrl =', execUrl, 'execToolId =', execToolId);
 
       props.handle.change((d) => {
@@ -447,7 +466,10 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
       if (currentPlanType === 'task-list') {
         const processHandle = repo.create<LLMProcessDoc>();
         processHandle.change((d) => {
-          d.config = { apiUrl: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-sonnet-4.6' };
+          d.config = {
+            apiUrl: 'https://openrouter.ai/api/v1',
+            model: 'anthropic/claude-sonnet-4.6',
+          };
           d.llmConfigFolderUrl = __EXEC_AGENT_FOLDER_URL__ as AutomergeUrl;
           d.messages = [
             {
@@ -463,18 +485,23 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
           d.done = false;
         });
 
-        console.log('[workflow] handleExecutePlan: created execution LLM process =', processHandle.url);
+        console.log(
+          '[workflow] handleExecutePlan: created execution LLM process =',
+          processHandle.url,
+        );
 
         props.handle.change((d) => {
           d.executionProcessUrl = processHandle.url;
         });
 
         // Run async — UI updates reactively as the LLM modifies docs
-        runWorkspaceLLM(repo, processHandle.url).then(() => {
-          console.log('[workflow] handleExecutePlan: execution LLM process finished');
-        }).catch((err) => {
-          console.error('[workflow] handleExecutePlan: execution LLM process error', err);
-        });
+        runWorkspaceLLM(repo, processHandle.url)
+          .then(() => {
+            console.log('[workflow] handleExecutePlan: execution LLM process finished');
+          })
+          .catch((err) => {
+            console.error('[workflow] handleExecutePlan: execution LLM process error', err);
+          });
       }
     } catch (err) {
       console.error('[workflow] handleExecutePlan: error during execution creation', err);
@@ -506,7 +533,10 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
       d.done = false;
     });
 
-    console.log('[workflow] handleValidateWithProjections: created projection LLM process =', processHandle.url);
+    console.log(
+      '[workflow] handleValidateWithProjections: created projection LLM process =',
+      processHandle.url,
+    );
 
     props.handle.change((d) => {
       d.projectionProcessUrl = processHandle.url;
@@ -520,11 +550,13 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
       });
     }
 
-    runWorkspaceLLM(repo, processHandle.url).then(() => {
-      console.log('[workflow] handleValidateWithProjections: projection LLM finished');
-    }).catch((err) => {
-      console.error('[workflow] handleValidateWithProjections: projection LLM error', err);
-    });
+    runWorkspaceLLM(repo, processHandle.url)
+      .then(() => {
+        console.log('[workflow] handleValidateWithProjections: projection LLM finished');
+      })
+      .catch((err) => {
+        console.error('[workflow] handleValidateWithProjections: projection LLM error', err);
+      });
   }
 
   async function createPetriNetExecution(currentDoc: WorkflowDoc): Promise<AutomergeUrl> {
@@ -532,7 +564,10 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
     const planDoc = planHandle.doc();
     if (!planDoc) throw new Error('Plan doc not found');
 
-    console.log('[workflow] createPetriNetExecution: initialTokens count =', planDoc.initialTokens?.length);
+    console.log(
+      '[workflow] createPetriNetExecution: initialTokens count =',
+      planDoc.initialTokens?.length,
+    );
 
     const execHandle = repo.create<PetriNetExecutionDoc>();
     execHandle.change((d) => {
@@ -651,7 +686,11 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
           </Show>
           <Show when={getStageAction()}>
             {(action) => (
-              <button class="wf-action-btn" onClick={() => action().action()} disabled={action().disabled}>
+              <button
+                class="wf-action-btn"
+                onClick={() => action().action()}
+                disabled={action().disabled}
+              >
                 {action().label}
               </button>
             )}
@@ -721,7 +760,11 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
           )}
         </Show>
         {/* Execution stage — no LLM process (e.g. pre-existing execution) */}
-        <Show when={selectedStage() === 'execution' && !doc()?.executionProcessUrl && doc()?.executionDocUrl}>
+        <Show
+          when={
+            selectedStage() === 'execution' && !doc()?.executionProcessUrl && doc()?.executionDocUrl
+          }
+        >
           {(_) => (
             <patchwork-view
               attr:doc-url={doc()!.executionDocUrl!}
@@ -732,7 +775,13 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
         </Show>
 
         {/* All other stages (elicitation, validation) */}
-        <Show when={selectedStage() !== 'spec' && selectedStage() !== 'plan' && selectedStage() !== 'execution'}>
+        <Show
+          when={
+            selectedStage() !== 'spec' &&
+            selectedStage() !== 'plan' &&
+            selectedStage() !== 'execution'
+          }
+        >
           <Show
             when={getStageUrl()}
             fallback={<div class="wf-empty">No document for this stage</div>}
@@ -790,11 +839,7 @@ function SpecEditView(props: {
           onKeyDown={handleKeyDown}
           rows={2}
         />
-        <button
-          class="wf-spec-followup-btn"
-          onClick={handleSend}
-          disabled={!followUpText().trim()}
-        >
+        <button class="wf-spec-followup-btn" onClick={handleSend} disabled={!followUpText().trim()}>
           Send
         </button>
       </div>
@@ -841,11 +886,7 @@ function PlanEditView(props: {
           onKeyDown={handleKeyDown}
           rows={2}
         />
-        <button
-          class="wf-spec-followup-btn"
-          onClick={handleSend}
-          disabled={!followUpText().trim()}
-        >
+        <button class="wf-spec-followup-btn" onClick={handleSend} disabled={!followUpText().trim()}>
           Send
         </button>
       </div>

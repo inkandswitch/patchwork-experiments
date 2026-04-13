@@ -4,36 +4,6 @@ import { PaulWorkflowTemplateDatatype } from './paul/workflow-template/datatype'
 export const plugins: Plugin<any>[] = [
   {
     type: 'patchwork:tool',
-    id: 'workspace',
-    name: 'Workspace',
-    supportedDatatypes: ['workspace'],
-    async load() {
-      const { WorkspaceTool } = await import('./workspace/tool');
-      return WorkspaceTool;
-    },
-  } satisfies Tool,
-  {
-    type: 'patchwork:datatype',
-    id: 'workspace',
-    name: 'Workspace',
-    icon: 'Layout',
-    async load() {
-      const { WorkspaceDatatype } = await import('./workspace/datatype');
-      return WorkspaceDatatype;
-    },
-  } as Datatype,
-  {
-    type: 'patchwork:tool',
-    id: 'grjte-spec-viewer',
-    name: 'grjte Spec Viewer',
-    supportedDatatypes: ['spec'],
-    async load() {
-      const { SpecTool } = await import('./grjte/spec/tool');
-      return SpecTool;
-    },
-  } satisfies Tool,
-  {
-    type: 'patchwork:tool',
     id: 'paul-spec-viewer',
     name: 'Paul Spec Viewer',
     supportedDatatypes: ['spec'],
@@ -54,42 +24,12 @@ export const plugins: Plugin<any>[] = [
   } as Datatype,
   {
     type: 'patchwork:tool',
-    id: 'spec-collection-viewer',
-    name: 'Spec Collection',
-    supportedDatatypes: ['spec-collection'],
-    async load() {
-      const { SpecTool } = await import('./old-spec/tool');
-      return SpecTool;
-    },
-  } satisfies Tool,
-  {
-    type: 'patchwork:datatype',
-    id: 'spec-collection',
-    name: 'Spec Collection',
-    icon: 'FileStack',
-    async load() {
-      const { SpecDatatype } = await import('./old-spec/datatype');
-      return SpecDatatype;
-    },
-  } as Datatype,
-  {
-    type: 'patchwork:tool',
     id: 'paul-plan-viewer',
     name: 'Paul Plan Viewer',
     supportedDatatypes: ['plan'],
     async load() {
       const { PetriNetPlanTool } = await import('./paul/petrinet-plan/plan-tool');
       return PetriNetPlanTool;
-    },
-  } satisfies Tool,
-  {
-    type: 'patchwork:tool',
-    id: 'grjte-plan-viewer',
-    name: 'grjte Plan Viewer',
-    supportedDatatypes: ['task-list-plan'],
-    async load() {
-      const { PlanTool } = await import('./grjte/plan/tool');
-      return PlanTool;
     },
   } satisfies Tool,
   {
@@ -100,46 +40,6 @@ export const plugins: Plugin<any>[] = [
     async load() {
       const { PlanDatatype } = await import('./workflow/datatypes');
       return PlanDatatype;
-    },
-  } as Datatype,
-  {
-    type: 'patchwork:datatype',
-    id: 'task-list-plan',
-    name: 'Task List Plan',
-    icon: 'ListChecks',
-    async load() {
-      const { TaskListPlanDatatype } = await import('./grjte/plan/types');
-      return TaskListPlanDatatype;
-    },
-  } as Datatype,
-  {
-    type: 'patchwork:datatype',
-    id: 'task',
-    name: 'Task',
-    icon: 'CheckSquare',
-    async load() {
-      const { TaskDatatype } = await import('./grjte/plan/types');
-      return TaskDatatype;
-    },
-  } as Datatype,
-  {
-    type: 'patchwork:tool',
-    id: 'workspace-chat',
-    name: 'Workspace Chat',
-    supportedDatatypes: ['workspace-chat'],
-    async load() {
-      const { WorkspaceChatTool } = await import('./workspace-chat/tool');
-      return WorkspaceChatTool;
-    },
-  } satisfies Tool,
-  {
-    type: 'patchwork:datatype',
-    id: 'workspace-chat',
-    name: 'Workspace Chat',
-    icon: 'MessageSquare',
-    async load() {
-      const { WorkspaceChatDatatype } = await import('./workspace-chat/datatype');
-      return WorkspaceChatDatatype;
     },
   } as Datatype,
   {
@@ -194,32 +94,12 @@ export const plugins: Plugin<any>[] = [
   } satisfies Tool,
   {
     type: 'patchwork:datatype',
-    id: 'verification',
-    name: 'Verification',
-    icon: 'ShieldCheck',
-    async load() {
-      const { VerificationDatatype } = await import('./grjte/spec/verification-doc');
-      return VerificationDatatype;
-    },
-  } as Datatype,
-  {
-    type: 'patchwork:datatype',
     id: 'execution',
     name: 'Execution',
     icon: 'Play',
     async load() {
       const { ExecutionDatatype } = await import('./workflow/datatypes');
       return ExecutionDatatype;
-    },
-  } as Datatype,
-  {
-    type: 'patchwork:datatype',
-    id: 'task-list-execution',
-    name: 'Task List Execution',
-    icon: 'Play',
-    async load() {
-      const { TaskListExecutionDatatype } = await import('./grjte/execution/types');
-      return TaskListExecutionDatatype;
     },
   } as Datatype,
   {
@@ -274,46 +154,6 @@ export const plugins: Plugin<any>[] = [
       return IPTablesWorkflowTemplateDatatype;
     },
   } as Datatype,
-  {
-    type: 'patchwork:tool',
-    id: 'grjte-validation-viewer',
-    name: 'grjte Validation Viewer',
-    supportedDatatypes: ['validation'],
-    async load() {
-      const { ValidationTool } = await import('./grjte/validation/tool');
-      return ValidationTool;
-    },
-  } satisfies Tool,
-  {
-    type: 'patchwork:tool',
-    id: 'grjte-artifact-projection',
-    name: 'grjte Artifact Projection',
-    supportedDatatypes: ['artifact-projection'],
-    async load() {
-      const { ArtifactProjectionTool } = await import('./grjte/artifact-projection/tool');
-      return ArtifactProjectionTool;
-    },
-  } satisfies Tool,
-  {
-    type: 'patchwork:datatype',
-    id: 'artifact-projection',
-    name: 'Artifact Projection',
-    icon: 'TableProperties',
-    async load() {
-      const { ArtifactProjectionDatatype } = await import('./grjte/artifact-projection/datatype');
-      return ArtifactProjectionDatatype;
-    },
-  } as Datatype,
-  {
-    type: 'patchwork:tool',
-    id: 'grjte-execution-viewer',
-    name: 'grjte Execution Viewer',
-    supportedDatatypes: ['task-list-execution'],
-    async load() {
-      const { ExecutionTool } = await import('./grjte/execution/tool');
-      return ExecutionTool;
-    },
-  } satisfies Tool,
   {
     type: 'patchwork:tool',
     id: 'elicitation-viewer',

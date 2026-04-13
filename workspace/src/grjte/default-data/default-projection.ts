@@ -1,6 +1,6 @@
 import type { AutomergeUrl } from '@automerge/automerge-repo';
-import type { ProjectionSpecDoc } from '../artifact-projection/artifact-projection';
-import type { DatalogDoc } from '../spec/datalog-doc';
+import type { ProjectionSpecDoc } from '../../../../grjte-workflow-tools/src/artifact-projection/artifact-projection';
+import type { DatalogDoc } from '../../../../grjte-workflow-tools/src/spec/types';
 
 type StoredFact = DatalogDoc['facts'][number];
 

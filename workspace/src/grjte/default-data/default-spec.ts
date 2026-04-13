@@ -1,6 +1,6 @@
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo';
 import type { SpecDoc, Spec } from '../../workflow/types';
-import type { VerificationDoc } from '../spec/verification-doc';
+import type { VerificationDoc } from '../../../../grjte-workflow-tools/src/spec/types';
 
 type StoredAtom = { pred: string; args: string[] };
 type StoredRule = { head: StoredAtom; body: StoredAtom[]; comment?: string };
@@ -170,7 +170,11 @@ band_6_in_charge_on_shift(S) :- in_charge(S, E), assigned(S, E, _), registered_n
         ),
         rule(
           atom('two_rns_on_shift', 'S'),
-          [atom('rn_in_slot', 'S', 'SlotA'), atom('rn_in_slot', 'S', 'SlotB'), atom('neq', 'SlotA', 'SlotB')],
+          [
+            atom('rn_in_slot', 'S', 'SlotA'),
+            atom('rn_in_slot', 'S', 'SlotB'),
+            atom('neq', 'SlotA', 'SlotB'),
+          ],
           'Two distinct RN slots satisfy the baseline RN coverage rule',
         ),
         rule(
@@ -185,7 +189,11 @@ band_6_in_charge_on_shift(S) :- in_charge(S, E), assigned(S, E, _), registered_n
           ],
           'Three distinct RN slots satisfy the high-census coverage rule',
         ),
-        rule(atom('hca_on_shift', 'S'), [atom('hca_in_slot', 'S', 'Slot')], 'At least one HCA is present on the shift'),
+        rule(
+          atom('hca_on_shift', 'S'),
+          [atom('hca_in_slot', 'S', 'Slot')],
+          'At least one HCA is present on the shift',
+        ),
         rule(
           atom('band_6_in_charge_on_shift', 'S'),
           [
@@ -211,7 +219,11 @@ band_6_in_charge_on_shift(S) :- in_charge(S, E), assigned(S, E, _), registered_n
           'A person may not be assigned to the same shift more than once',
         ),
         constraint(
-          [atom('employee_rostered_hours', 'E', 'Total'), atom('max_weekly_hours_limit', 'Max'), atom('gt', 'Total', 'Max')],
+          [
+            atom('employee_rostered_hours', 'E', 'Total'),
+            atom('max_weekly_hours_limit', 'Max'),
+            atom('gt', 'Total', 'Max'),
+          ],
           'No employee may exceed the default weekly hours limit',
         ),
         constraint(
@@ -228,11 +240,21 @@ band_6_in_charge_on_shift(S) :- in_charge(S, E), assigned(S, E, _), registered_n
           'Supernumerary staff must not be assigned into direct-care coverage',
         ),
         constraint(
-          [atom('shift', 'S'), atom('ward', 'S', 'W'), atom('requires_two_rns', 'W'), atom('not', 'two_rns_on_shift(S)')],
+          [
+            atom('shift', 'S'),
+            atom('ward', 'S', 'W'),
+            atom('requires_two_rns', 'W'),
+            atom('not', 'two_rns_on_shift(S)'),
+          ],
           'Each shift must have at least two direct-care registered nurses',
         ),
         constraint(
-          [atom('shift', 'S'), atom('ward', 'S', 'W'), atom('requires_hca', 'W'), atom('not', 'hca_on_shift(S)')],
+          [
+            atom('shift', 'S'),
+            atom('ward', 'S', 'W'),
+            atom('requires_hca', 'W'),
+            atom('not', 'hca_on_shift(S)'),
+          ],
           'Each shift must include at least one direct-care HCA',
         ),
       ],

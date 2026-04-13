@@ -1,10 +1,10 @@
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo';
-import type { TaskListExecutionDoc } from '../execution/types';
+import type { TaskListExecutionDoc } from '../../../../grjte-workflow-tools/src/execution/types';
 import {
   buildBaseArtifactDraft,
   createProjectionDoc,
   type ArtifactFolderEntry,
-} from '../artifact-projection/artifact-projection';
+} from '../../../../grjte-workflow-tools/src/artifact-projection/artifact-projection';
 import {
   buildHospitalRotaProjectionSpec,
   normalizeHospitalLegacySolutionFacts,
@@ -382,7 +382,6 @@ assigned(w6_wed_night, lisa_brown, 12). assignment_slot(w6_wed_night, 4, lisa_br
     d.status = 'in-progress';
     d.taskUrls = taskUrls;
     d.artifactsFolderUrl = artifactsFolderHandle.url;
-
   });
 
   return {

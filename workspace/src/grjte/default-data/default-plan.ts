@@ -1,5 +1,5 @@
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo';
-import type { TaskListPlanDoc, TaskDoc } from '../plan/types';
+import type { TaskListPlanDoc, TaskDoc } from '../../../../grjte-workflow-tools/src/plan/types';
 
 export function createDefaultPlan(
   repo: Repo,
