@@ -1,7 +1,7 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, render, html, createSignal } from '../solid.js';
 import { getViewUrl } from '../url.js';
-import { shapesSchema } from '../paper/schema.js';
+import { surfaceSchema } from '../surface/schema.js';
 import { selectedColorSchema } from './schema.js';
 
 const COLORS = [
@@ -33,9 +33,9 @@ export const schema = {
 };
 
 export default function mount(element) {
-  const canvas = element.findParent(shapesSchema);
-  if (!canvas) return;
-  const selectedColorRef = canvas.getOrCreate(selectedColorSchema);
+  const surface = element.findParent(surfaceSchema);
+  if (!surface) return;
+  const selectedColorRef = surface.getOrCreate(selectedColorSchema);
   const selectedColor = from(selectedColorRef);
   const [open, setOpen] = createSignal(false);
 

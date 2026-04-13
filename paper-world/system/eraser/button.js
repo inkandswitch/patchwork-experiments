@@ -2,7 +2,7 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, render, html } from '../solid.js';
 import { getViewUrl } from '../url.js';
-import { findTargetCanvas, selectedToolSchema, shapesSchema } from '../paper/schema.js';
+import { findTargetSurface, selectedToolSchema, surfaceSchema } from '../surface/schema.js';
 
 const TOOL_NAME = 'eraser';
 const eraserViewUrl = getViewUrl('./tool.json', import.meta.url);
@@ -23,11 +23,11 @@ export const schema = {
 };
 
 export default function mount(element) {
-  const canvas = element.findParent(shapesSchema);
-  if (!canvas) return;
-  const selectedToolRef = canvas.getOrCreate(selectedToolSchema);
+  const surface = element.findParent(surfaceSchema);
+  if (!surface) return;
+  const selectedToolRef = surface.getOrCreate(selectedToolSchema);
   const selectedTool = from(selectedToolRef);
-  const shapesRef = canvas.getOrCreate(shapesSchema);
+  const shapesRef = surface.getOrCreate(surfaceSchema);
 
   const active = () => selectedTool() === TOOL_NAME;
 
@@ -44,11 +44,11 @@ export default function mount(element) {
   // Track which shapes we've already erased so we don't try to delete twice
   let erasedIds = new Set();
 
-  let drawCanvas = null;
+  let drawSurface = null;
   let drawShapesRef = null;
 
   function getCanvasPos(event) {
-    return (drawCanvas || canvas).screenToPage(event.clientX, event.clientY);
+    return (drawSurface || surface).screenToPage(event.clientX, event.clientY);
   }
 
   function eraseAtPoint(px, py) {
@@ -106,13 +106,13 @@ export default function mount(element) {
 
   function onPointerDown(event) {
     if (!active()) return;
-    const targetCanvas = findTargetCanvas(event.target, canvas);
-    if (!targetCanvas) return;
-    drawCanvas = targetCanvas;
-    drawShapesRef = targetCanvas.getOrCreate(shapesSchema);
+    const targetSurface = findTargetSurface(event.target, surface);
+    if (!targetSurface) return;
+    drawSurface = targetSurface;
+    drawShapesRef = targetSurface.getOrCreate(surfaceSchema);
 
-    const rootScale = canvas.getScale();
-    const drawScale = drawCanvas.getScale();
+    const rootScale = surface.getScale();
+    const drawScale = drawSurface.getScale();
     currentStrokeScale = rootScale / drawScale;
 
     dragging = true;
@@ -130,7 +130,7 @@ export default function mount(element) {
       createdAt: Date.now(),
     }));
 
-    canvas.setPointerCapture(event.pointerId);
+    surface.setPointerCapture(event.pointerId);
     eraseAtPoint(pos.x, pos.y);
   }
 
@@ -163,18 +163,18 @@ export default function mount(element) {
     trailPoints = [];
     erasedIds = new Set();
     currentStrokeScale = 1;
-    drawCanvas = null;
+    drawSurface = null;
     drawShapesRef = null;
   }
 
-  canvas.addEventListener('pointerdown', onPointerDown);
-  canvas.addEventListener('pointermove', onPointerMove);
-  canvas.addEventListener('pointerup', onPointerUp);
+  surface.addEventListener('pointerdown', onPointerDown);
+  surface.addEventListener('pointermove', onPointerMove);
+  surface.addEventListener('pointerup', onPointerUp);
 
   // Custom cursor when eraser is active
   function updateCursor() {
     if (active()) {
-      canvas.style.cursor = 'none';
+      surface.style.cursor = 'none';
     }
   }
 
@@ -203,10 +203,10 @@ export default function mount(element) {
       cursorEl.style.display = 'block';
       cursorEl.style.left = e.clientX + 'px';
       cursorEl.style.top = e.clientY + 'px';
-      canvas.style.cursor = 'none';
+      surface.style.cursor = 'none';
     } else {
       cursorEl.style.display = 'none';
-      canvas.style.cursor = '';
+      surface.style.cursor = '';
     }
   }
   document.addEventListener('pointermove', onGlobalMove);
@@ -255,12 +255,12 @@ export default function mount(element) {
   );
 
   return () => {
-    canvas.removeEventListener('pointerdown', onPointerDown);
-    canvas.removeEventListener('pointermove', onPointerMove);
-    canvas.removeEventListener('pointerup', onPointerUp);
+    surface.removeEventListener('pointerdown', onPointerDown);
+    surface.removeEventListener('pointermove', onPointerMove);
+    surface.removeEventListener('pointerup', onPointerUp);
     document.removeEventListener('pointermove', onGlobalMove);
     if (cursorEl && cursorEl.parentNode) cursorEl.parentNode.removeChild(cursorEl);
-    canvas.style.cursor = '';
+    surface.style.cursor = '';
     dispose();
   };
 }

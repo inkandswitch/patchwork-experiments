@@ -1,21 +1,21 @@
 import { render, html, createSignal } from '../solid.js';
-import { cameraSchema } from '../paper/schema.js';
+import { cameraSchema } from '../surface/schema.js';
 
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 8;
 const ZOOM_STEP = 0.25;
 
 export default function mount(element) {
-  const canvas = element.findParent(cameraSchema);
-  if (!canvas) return;
+  const surface = element.findParent(cameraSchema);
+  if (!surface) return;
 
-  const [zoom, setZoom] = createSignal(canvas.getCamera().zoom);
+  const [zoom, setZoom] = createSignal(surface.getCamera().zoom);
 
-  const unsubscribeCamera = canvas.subscribeCamera((cam) => {
+  const unsubscribeCamera = surface.subscribeCamera((cam) => {
     setZoom(cam.zoom);
   });
 
-  const containerEl = canvas.getContainerEl();
+  const containerEl = surface.getContainerEl();
   if (containerEl) {
     containerEl.addEventListener('wheel', onWheel, { passive: false });
   }
@@ -28,19 +28,19 @@ export default function mount(element) {
     const rect = containerEl.getBoundingClientRect();
     const screenX = event.clientX - rect.left;
     const screenY = event.clientY - rect.top;
-    const cam = canvas.getCamera();
+    const cam = surface.getCamera();
 
     if (event.ctrlKey || event.metaKey) {
       const dy =
         Math.sign(event.deltaY) * Math.min(Math.abs(event.deltaY), 50);
       const newZoom = clampZoom(cam.zoom - (dy / 100) * cam.zoom);
-      canvas.setCamera({
+      surface.setCamera({
         x: cam.x + screenX / newZoom - screenX / cam.zoom,
         y: cam.y + screenY / newZoom - screenY / cam.zoom,
         zoom: newZoom,
       });
     } else {
-      canvas.setCamera({
+      surface.setCamera({
         x: cam.x - event.deltaX / cam.zoom,
         y: cam.y - event.deltaY / cam.zoom,
         zoom: cam.zoom,
@@ -49,24 +49,24 @@ export default function mount(element) {
   }
 
   function zoomBy(factor) {
-    const cam = canvas.getCamera();
+    const cam = surface.getCamera();
     const newZoom = clampZoom(cam.zoom * factor);
     const rect = containerEl?.getBoundingClientRect();
     if (rect) {
       const cx = rect.width / 2;
       const cy = rect.height / 2;
-      canvas.setCamera({
+      surface.setCamera({
         x: cam.x + cx / newZoom - cx / cam.zoom,
         y: cam.y + cy / newZoom - cy / cam.zoom,
         zoom: newZoom,
       });
     } else {
-      canvas.setCamera({ ...cam, zoom: newZoom });
+      surface.setCamera({ ...cam, zoom: newZoom });
     }
   }
 
   function resetZoom() {
-    canvas.setCamera({ x: 0, y: 0, zoom: 1 });
+    surface.setCamera({ x: 0, y: 0, zoom: 1 });
   }
 
   const cleanup = render(
@@ -132,10 +132,10 @@ function clampZoom(z) {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
 }
 
-function isScrollableTarget(event, canvasContainer) {
+function isScrollableTarget(event, surfaceContainer) {
   const path = event.composedPath();
   for (const el of path) {
-    if (el === canvasContainer) break;
+    if (el === surfaceContainer) break;
     if (!(el instanceof HTMLElement)) continue;
     const { overflowY, overflowX } = getComputedStyle(el);
     const scrollableY =

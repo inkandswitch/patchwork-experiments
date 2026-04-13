@@ -2,7 +2,7 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, render, html } from '../solid.js';
 import { getViewUrl } from '../url.js';
-import { findTargetCanvas, selectedToolSchema, shapesSchema } from '../paper/schema.js';
+import { findTargetSurface, selectedToolSchema, surfaceSchema } from '../surface/schema.js';
 
 const TOOL_NAME = 'sparkle-marker';
 const sparkleViewUrl = getViewUrl('./tool.json', import.meta.url);
@@ -23,9 +23,9 @@ export const schema = {
 };
 
 export default function mount(element) {
-  const canvas = element.findParent(shapesSchema);
-  if (!canvas) return;
-  const selectedToolRef = canvas.getOrCreate(selectedToolSchema);
+  const surface = element.findParent(surfaceSchema);
+  if (!surface) return;
+  const selectedToolRef = surface.getOrCreate(selectedToolSchema);
   const selectedTool = from(selectedToolRef);
 
   const active = () => selectedTool() === TOOL_NAME;
@@ -38,24 +38,24 @@ export default function mount(element) {
   let dragId = null;
   let originX = 0;
   let originY = 0;
-  let drawCanvas = null;
+  let drawSurface = null;
   let drawShapesRef = null;
 
   const colors = ['#f0abfc', '#c084fc', '#818cf8', '#38bdf8', '#34d399', '#fbbf24', '#fb7185'];
 
   function onPointerDown(event) {
     if (!active()) return;
-    const targetCanvas = findTargetCanvas(event.target, canvas);
-    if (!targetCanvas) return;
-    drawCanvas = targetCanvas;
-    drawShapesRef = targetCanvas.getOrCreate(shapesSchema);
-    const page = drawCanvas.screenToPage(event.clientX, event.clientY);
+    const targetSurface = findTargetSurface(event.target, surface);
+    if (!targetSurface) return;
+    drawSurface = targetSurface;
+    drawShapesRef = targetSurface.getOrCreate(surfaceSchema);
+    const page = drawSurface.screenToPage(event.clientX, event.clientY);
     originX = page.x;
     originY = page.y;
     dragId = `sparkle_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const color = colors[Math.floor(Math.random() * colors.length)];
-    const rootScale = canvas.getScale();
-    const drawScale = drawCanvas.getScale();
+    const rootScale = surface.getScale();
+    const drawScale = drawSurface.getScale();
     const strokeScale = rootScale / drawScale;
     drawShapesRef.at(dragId).change(() => ({
       x: originX,
@@ -65,12 +65,12 @@ export default function mount(element) {
       color,
       strokeScale,
     }));
-    canvas.setPointerCapture(event.pointerId);
+    surface.setPointerCapture(event.pointerId);
   }
 
   function onPointerMove(event) {
     if (!dragId) return;
-    const page = drawCanvas.screenToPage(event.clientX, event.clientY);
+    const page = drawSurface.screenToPage(event.clientX, event.clientY);
     const relX = page.x - originX;
     const relY = page.y - originY;
     drawShapesRef.at(dragId).change((shape) => {
@@ -88,13 +88,13 @@ export default function mount(element) {
       }
     }
     dragId = null;
-    drawCanvas = null;
+    drawSurface = null;
     drawShapesRef = null;
   }
 
-  canvas.addEventListener('pointerdown', onPointerDown);
-  canvas.addEventListener('pointermove', onPointerMove);
-  canvas.addEventListener('pointerup', onPointerUp);
+  surface.addEventListener('pointerdown', onPointerDown);
+  surface.addEventListener('pointermove', onPointerMove);
+  surface.addEventListener('pointerup', onPointerUp);
 
   const dispose = render(
     () =>
@@ -132,9 +132,9 @@ export default function mount(element) {
   );
 
   return () => {
-    canvas.removeEventListener('pointerdown', onPointerDown);
-    canvas.removeEventListener('pointermove', onPointerMove);
-    canvas.removeEventListener('pointerup', onPointerUp);
+    surface.removeEventListener('pointerdown', onPointerDown);
+    surface.removeEventListener('pointermove', onPointerMove);
+    surface.removeEventListener('pointerup', onPointerUp);
     dispose();
   };
 }

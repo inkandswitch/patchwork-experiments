@@ -22,7 +22,7 @@ export default function mount(element) {
   // Monkey-patch the stack's ref-view element so that schema lookups
   // transparently delegate to whichever child owns the schema. This lets
   // deeply nested tools (e.g. a button inside the dock-layout) call
-  // element.findParent(shapesSchema) and receive the *paper* ref-view
+  // element.findParent(surfaceSchema) and receive the *paper* ref-view
   // rather than the stack, because findParent delegates up to the stack's
   // resolveClosestDependency, which checks children first via findChildWith.
   const hadResolveClosestDependency = typeof element.resolveClosestDependency === 'function';

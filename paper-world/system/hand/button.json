@@ -1,0 +1,6 @@
+{
+  "type": "tool",
+  "name": "Hand",
+  "description": "Toolbar button for the pan / hand tool",
+  "toolUrl": "./button.js"
+}

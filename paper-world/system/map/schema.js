@@ -1,5 +1,5 @@
 import { z } from 'https://esm.sh/zod@4.3';
-import { cameraSchema, selectedShapesSchema, selectedToolSchema, shapesSchema } from '../paper/schema.js';
+import { cameraSchema, selectedShapesSchema, selectedToolSchema, surfaceSchema } from '../surface/schema.js';
 
 const MapSchema = z.object({
   centerX: z.number().optional(),
@@ -10,7 +10,7 @@ const MapSchema = z.object({
   selectedShapes: z.record(z.string(), z.unknown()).optional(),
 }).passthrough();
 
-export { cameraSchema, selectedShapesSchema, selectedToolSchema, shapesSchema };
+export { cameraSchema, selectedShapesSchema, selectedToolSchema, surfaceSchema };
 
 export default {
   init() {

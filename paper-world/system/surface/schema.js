@@ -6,7 +6,7 @@ const ShapeSchema = z.object({
   viewUrl: z.string(),
 });
 
-export const shapesSchema = {
+export const surfaceSchema = {
   namespace: 'shapes',
   init() {
     return {};
@@ -41,13 +41,13 @@ export const selectedShapesSchema = {
   },
 };
 
-export function findTargetCanvas(target, rootCanvas) {
+export function findTargetSurface(target, rootSurface) {
   const closestRefView = target.closest('ref-view');
   if (!closestRefView) return null;
-  const closestCanvas = closestRefView.findClosest(shapesSchema);
-  if (!closestCanvas) return null;
-  if (closestCanvas === rootCanvas || rootCanvas.contains(closestCanvas)) {
-    return closestCanvas;
+  const closestSurface = closestRefView.findClosest(surfaceSchema);
+  if (!closestSurface) return null;
+  if (closestSurface === rootSurface || rootSurface.contains(closestSurface)) {
+    return closestSurface;
   }
   return null;
 }

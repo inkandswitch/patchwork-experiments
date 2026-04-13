@@ -1,6 +1,6 @@
 import { render, html, createSignal, createEffect, from } from '../solid.js';
 import { useRef } from '../solid.js';
-import { shapesSchema, selectedToolSchema } from '../paper/schema.js';
+import { surfaceSchema, selectedToolSchema } from '../surface/schema.js';
 
 const MIN_SIZE = 20;
 const DEFAULT_MARGIN = 6;
@@ -8,14 +8,14 @@ const ZONE_COLOR = 'rgba(139, 92, 246, 0.12)';
 const ZONE_STROKE = 'rgba(139, 92, 246, 0.3)';
 
 export default function mount(element) {
-  const canvas = element.findParent(shapesSchema);
-  if (!canvas) return;
+  const surface = element.findParent(surfaceSchema);
+  if (!surface) return;
 
-  const shapesRef = canvas.getOrCreate(shapesSchema);
-  const selectedToolRef = canvas.getOrCreate(selectedToolSchema);
+  const shapesRef = surface.getOrCreate(surfaceSchema);
+  const selectedToolRef = surface.getOrCreate(selectedToolSchema);
   const shapes = useRef(shapesRef);
   const selectedTool = from(selectedToolRef);
-  const containerEl = canvas.getContainerEl();
+  const containerEl = surface.getContainerEl();
   if (!containerEl) return;
 
   const selfUrl = element.getAttribute('ref-url') || '';
@@ -48,8 +48,8 @@ export default function mount(element) {
     if (!wrapper) return null;
     const rect = wrapper.getBoundingClientRect();
     if (rect.width === 0 && rect.height === 0) return null;
-    const topLeft = canvas.screenToPage(rect.left, rect.top);
-    const bottomRight = canvas.screenToPage(rect.right, rect.bottom);
+    const topLeft = surface.screenToPage(rect.left, rect.top);
+    const bottomRight = surface.screenToPage(rect.right, rect.bottom);
     return {
       x: topLeft.x,
       y: topLeft.y,
@@ -84,8 +84,8 @@ export default function mount(element) {
 
   function hitTest(clientX, clientY) {
     if (!isResizeActive()) return null;
-    const page = canvas.screenToPage(clientX, clientY);
-    const zoom = canvas.getCamera().zoom;
+    const page = surface.screenToPage(clientX, clientY);
+    const zoom = surface.getCamera().zoom;
     const m = margin() / zoom;
 
     for (const id of Object.keys(shapes)) {
@@ -159,8 +159,8 @@ export default function mount(element) {
     if (!drag) return;
     event.preventDefault();
 
-    const startPage = canvas.screenToPage(drag.startX, drag.startY);
-    const nowPage = canvas.screenToPage(event.clientX, event.clientY);
+    const startPage = surface.screenToPage(drag.startX, drag.startY);
+    const nowPage = surface.screenToPage(event.clientX, event.clientY);
     const dx = nowPage.x - startPage.x;
     const dy = nowPage.y - startPage.y;
 

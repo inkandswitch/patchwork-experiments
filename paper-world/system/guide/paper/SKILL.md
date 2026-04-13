@@ -1,11 +1,11 @@
 ---
 name: paper
-description: Create and manipulate shapes on the canvas—rectangles, lines, text, and embeds.
+description: Create and manipulate shapes on the surface—rectangles, lines, text, and embeds.
 ---
 
 # Paper shapes
 
-Every visible object on the canvas is an entry in the `shapes` map on the frame ref. To create one, write a shape record under a unique id with at least `x`, `y`, and `viewUrl`. The `viewUrl` tells the host which view descriptor renders that shape.
+Every visible object on the surface is an entry in the `shapes` map on the frame ref. To create one, write a shape record under a unique id with at least `x`, `y`, and `viewUrl`. The `viewUrl` tells the host which view descriptor renders that shape.
 
 ## Reading shapes
 
@@ -142,7 +142,7 @@ element.ref.at('shapes', 'note_1').change((shape) => {
 });
 ```
 
-## Embed (sub-canvas)
+## Embed (sub-surface)
 
 Embeds host another tool inside a bounded area. `embedViewUrl` is the inner view; `embedDocUrl` is the document it binds to.
 

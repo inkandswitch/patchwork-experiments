@@ -1,6 +1,5 @@
 import { createExamples, getExamplePreviewSize } from '../examples.js';
 import { getViewUrl } from '../url.js';
-import { shapesSchema } from '../paper/schema.js';
 import partsBinSchema from './schema.js';
 
 const SHAPE_MIME = 'text/x-patchwork-shape';
@@ -171,43 +170,6 @@ export default function mount(element) {
     };
   }
 
-  function placeExample(example) {
-    const canvas = element.findParent(shapesSchema);
-    if (!canvas) return;
-
-    const currentData = element.getOrCreate(partsBinSchema).value();
-    const { value, viewUrl } = resolveExample(example);
-    const dropX = (currentData.x || 0) + (currentData.width || 280) + 20;
-    const dropY = currentData.y || 0;
-    const shapesRef = canvas.getOrCreate(shapesSchema);
-    const shapeId = `example_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-    if (looksLikeShapeValue(value, viewUrl)) {
-      shapesRef.at(shapeId).change(() => ({
-        ...value,
-        x: dropX,
-        y: dropY,
-        viewUrl,
-      }));
-      return;
-    }
-
-    const repo = globalThis.repo;
-    if (!repo) return;
-    const handle = repo.create(structuredClone(value));
-    const embedViewUrl = getViewUrl('../embed/tool.json', import.meta.url);
-    shapesRef.at(shapeId).change(() => ({
-      x: dropX,
-      y: dropY,
-      viewUrl: embedViewUrl,
-      embedDocUrl: handle.url,
-      embedToolUrl: viewUrl,
-      title: example.name,
-      width: null,
-      height: null,
-    }));
-  }
-
   function makeCard(example) {
     const card = document.createElement('div');
     card.style.cssText = 'border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;flex-shrink:0;';
@@ -229,16 +191,6 @@ export default function mount(element) {
       nameEl.appendChild(desc);
     }
     cardHeader.appendChild(nameEl);
-
-    const createBtn = document.createElement('button');
-    createBtn.textContent = 'Create';
-    createBtn.style.cssText = 'background:#10b981;border:1px solid #059669;border-radius:4px;padding:2px 8px;font-size:11px;color:#fff;cursor:pointer;flex-shrink:0;';
-    createBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      void placeExample(example);
-    });
-    cardHeader.appendChild(createBtn);
 
     card.appendChild(cardHeader);
 
@@ -277,16 +229,5 @@ export default function mount(element) {
 
 function getAtDotPath(obj, dotPath) {
   return dotPath.split('.').reduce((cur, seg) => cur?.[seg], obj);
-}
-
-function looksLikeShapeValue(value, viewUrl) {
-  return (
-    value &&
-    typeof value === 'object' &&
-    typeof value.x === 'number' &&
-    typeof value.y === 'number' &&
-    typeof viewUrl === 'string' &&
-    viewUrl !== ''
-  );
 }
 

@@ -1,5 +1,5 @@
 import mapSchema from './schema.js';
-import { selectedShapesSchema, shapesSchema } from '../paper/schema.js';
+import { selectedShapesSchema, surfaceSchema } from '../surface/schema.js';
 
 const MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
 const MAPLIBRE_SCRIPT_SRC = 'https://unpkg.com/maplibre-gl/dist/maplibre-gl.js';
@@ -16,7 +16,7 @@ let mapLibreLoadPromise = null;
 
 export default function mount(element) {
   const rootRef = element.getOrCreate(mapSchema);
-  const shapesRef = element.getOrCreate(shapesSchema);
+  const shapesRef = element.getOrCreate(surfaceSchema);
   const selectedShapesRef = element.getOrCreate(selectedShapesSchema);
   ensureMapDefaults(rootRef);
 
@@ -184,32 +184,32 @@ export default function mount(element) {
     if (map) {
       const center = map.getCenter();
       return {
-        x: lngToPageX(center.lng),
-        y: latToPageY(center.lat),
+        x: -lngToPageX(center.lng),
+        y: -latToPageY(center.lat),
         zoom: Math.pow(2, map.getZoom() - PAGE_REFERENCE_ZOOM),
       };
     }
     const geo = readGeoCamera(rootRef);
     return {
-      x: lngToPageX(geo.lng),
-      y: latToPageY(geo.lat),
+      x: -lngToPageX(geo.lng),
+      y: -latToPageY(geo.lat),
       zoom: Math.pow(2, geo.zoom - PAGE_REFERENCE_ZOOM),
     };
   }
 
   function setCamera(camera) {
     const currentCamera = getCamera();
-    const nextPageX = typeof camera?.x === 'number' ? camera.x : currentCamera.x;
-    const nextPageY = typeof camera?.y === 'number' ? camera.y : currentCamera.y;
+    const nextOffsetX = typeof camera?.x === 'number' ? camera.x : currentCamera.x;
+    const nextOffsetY = typeof camera?.y === 'number' ? camera.y : currentCamera.y;
     const nextZoom = typeof camera?.zoom === 'number' ? camera.zoom : currentCamera.zoom;
-    const geoLng = pageXToLng(nextPageX);
-    const geoLat = pageYToLat(nextPageY);
+    const geoLng = pageXToLng(-nextOffsetX);
+    const geoLat = pageYToLat(-nextOffsetY);
     const mapZoom = Math.log2(nextZoom) + PAGE_REFERENCE_ZOOM;
     persistGeoCamera(rootRef, { lng: geoLng, lat: geoLat, zoom: mapZoom });
     if (map) {
       stopOverlayMotion();
       map.jumpTo({ center: [geoLng, geoLat], zoom: mapZoom });
-      emitCameraChange(cameraListeners, { x: nextPageX, y: nextPageY, zoom: nextZoom });
+      emitCameraChange(cameraListeners, { x: nextOffsetX, y: nextOffsetY, zoom: nextZoom });
       scheduleExactLayout();
     }
   }
@@ -462,7 +462,7 @@ function createShapeWrapper(shapeId, shapeLayerEl, element) {
 
   const shapeEl = document.createElement('ref-view');
   shapeEl.style.cssText = 'display:block;transform-origin:0 0;';
-  shapeEl.setAttribute('ref-url', element.getOrCreate(shapesSchema).at(shapeId).url);
+  shapeEl.setAttribute('ref-url', element.getOrCreate(surfaceSchema).at(shapeId).url);
   wrapper.appendChild(shapeEl);
 
   shapeLayerEl.appendChild(wrapper);
@@ -478,6 +478,9 @@ function updateShapeWrapper(wrapper, shapeId, shape, isSelected, map) {
   const shapeEl = wrapper.firstElementChild;
   if (!(shapeEl instanceof HTMLElement)) return;
   shapeEl.setAttribute('view-url', shape.viewUrl);
+
+  if (typeof shape.width === 'number') shapeEl.style.width = `${shape.width}px`;
+  if (typeof shape.height === 'number') shapeEl.style.height = `${shape.height}px`;
 
   const localBounds = getLocalBounds(shape);
   const projectedFrame = projectShapeFrame(map, shape, localBounds);

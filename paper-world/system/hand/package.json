@@ -1,0 +1,10 @@
+{
+  "name": "hand",
+  "private": true,
+  "type": "module",
+  "description": "Pan / hand tool for dragging the viewport",
+  "exports": {
+    "./button": "./button.js",
+    "./button.json": "./button.json"
+  }
+}

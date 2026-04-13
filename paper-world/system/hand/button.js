@@ -2,10 +2,8 @@ import { z } from 'https://esm.sh/zod@4.3';
 import { from, render, html } from '../solid.js';
 import { getViewUrl } from '../url.js';
 import { findTargetSurface, selectedToolSchema, surfaceSchema } from '../surface/schema.js';
-import { selectedColorSchema } from '../color-picker/schema.js';
 
-const TOOL_NAME = 'line';
-const lineViewUrl = getViewUrl('./tool.json', import.meta.url);
+const TOOL_NAME = 'hand';
 
 const ButtonShapeSchema = z.object({
   x: z.number(),
@@ -27,68 +25,60 @@ export default function mount(element) {
   if (!surface) return;
   const selectedToolRef = surface.getOrCreate(selectedToolSchema);
   const selectedTool = from(selectedToolRef);
-  const selectedColorRef = surface.getOrCreate(selectedColorSchema);
 
   const active = () => selectedTool() === TOOL_NAME;
 
   function toggleTool() {
+    console.log('[hand] toggleTool called, active:', active(), 'current selectedTool:', selectedTool());
     const next = active() ? '' : TOOL_NAME;
+    console.log('[hand] setting selectedTool to:', JSON.stringify(next));
     selectedToolRef.change(() => next);
+    console.log('[hand] after change, selectedTool:', selectedTool());
+    if (!next) surface.style.cursor = '';
   }
 
-  let dragId = null;
-  let originX = 0;
-  let originY = 0;
-  let drawSurface = null;
-  let drawShapesRef = null;
+  let panSurface = null;
+  let startPointerX = 0;
+  let startPointerY = 0;
+  let startCam = null;
 
   function onPointerDown(event) {
+    console.log('[hand] surface pointerdown, active:', active(), 'target:', event.target.tagName);
     if (!active()) return;
     const targetSurface = findTargetSurface(event.target, surface);
     if (!targetSurface) return;
-    drawSurface = targetSurface;
-    drawShapesRef = targetSurface.getOrCreate(surfaceSchema);
-    const page = drawSurface.screenToPage(event.clientX, event.clientY);
-    originX = page.x;
-    originY = page.y;
-    dragId = `line_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const color = selectedColorRef.value();
-    const rootScale = surface.getScale();
-    const drawScale = drawSurface.getScale();
-    const strokeScale = rootScale / drawScale;
-    drawShapesRef.at(dragId).change(() => ({
-      x: originX,
-      y: originY,
-      viewUrl: lineViewUrl,
-      points: [[0, 0, event.pressure || 0.5]],
-      color,
-      strokeScale,
-    }));
+    panSurface = targetSurface;
+    startCam = panSurface.getCamera();
+    startPointerX = event.clientX;
+    startPointerY = event.clientY;
     surface.setPointerCapture(event.pointerId);
+    surface.style.cursor = 'grabbing';
   }
 
   function onPointerMove(event) {
-    if (!dragId) return;
-    const page = drawSurface.screenToPage(event.clientX, event.clientY);
-    const relX = page.x - originX;
-    const relY = page.y - originY;
-    drawShapesRef.at(dragId).change((shape) => {
-      shape.points.push([relX, relY, event.pressure || 0.5]);
+    if (!panSurface) return;
+    const dx = event.clientX - startPointerX;
+    const dy = event.clientY - startPointerY;
+    panSurface.setCamera({
+      x: startCam.x + dx / startCam.zoom,
+      y: startCam.y + dy / startCam.zoom,
+      zoom: startCam.zoom,
     });
   }
 
-  function onPointerUp() {
-    if (dragId) {
-      const shape = drawShapesRef.at(dragId).value();
-      if (shape.points.length < 3) {
-        drawShapesRef.change((shapes) => {
-          delete shapes[dragId];
-        });
-      }
+  function onPointerUp(event) {
+    console.log('[hand] surface pointerup, panSurface:', !!panSurface);
+    if (!panSurface) return;
+    panSurface = null;
+    startCam = null;
+    surface.releasePointerCapture(event.pointerId);
+    surface.style.cursor = active() ? 'grab' : '';
+  }
+
+  function updateCursor() {
+    if (!panSurface) {
+      surface.style.cursor = active() ? 'grab' : '';
     }
-    dragId = null;
-    drawSurface = null;
-    drawShapesRef = null;
   }
 
   surface.addEventListener('pointerdown', onPointerDown);
@@ -96,10 +86,11 @@ export default function mount(element) {
   surface.addEventListener('pointerup', onPointerUp);
 
   const dispose = render(
-    () =>
-      html`<button
-        onPointerDown=${(e) => e.stopPropagation()}
-        onClick=${toggleTool}
+    () => {
+      updateCursor();
+      return html`<button
+        onPointerDown=${(e) => { console.log('[hand] button pointerdown, stopping propagation'); e.stopPropagation(); }}
+        onClick=${(e) => { console.log('[hand] button click fired'); toggleTool(); }}
         style=${() => ({
           width: '32px',
           height: '32px',
@@ -114,13 +105,21 @@ export default function mount(element) {
         })}
       >
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <path d="M3 13 Q6 5 9 8 Q12 11 13 3" stroke=${() => (active() ? '#3b82f6' : '#71717a')} stroke-width="1.5" fill="none" stroke-linecap="round" />
+          <path
+            d="M8 1.5v4M5.5 3v6.5a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1V6.5M5.5 6.5 4 5a1 1 0 0 0-1.5 0v0A1 1 0 0 0 2 6v3.5a4 4 0 0 0 4 4h2a4 4 0 0 0 4-4V6M8 5.5h2.5a1 1 0 0 1 1 1V6M8 5.5V3a1 1 0 0 1 1-1h0a1 1 0 0 1 1 1v3.5"
+            stroke=${() => (active() ? '#3b82f6' : '#71717a')}
+            stroke-width="1.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
         </svg>
-      </button>`,
+      </button>`;
+    },
     element,
   );
 
   return () => {
+    surface.style.cursor = '';
     surface.removeEventListener('pointerdown', onPointerDown);
     surface.removeEventListener('pointermove', onPointerMove);
     surface.removeEventListener('pointerup', onPointerUp);

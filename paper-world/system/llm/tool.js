@@ -1,5 +1,5 @@
 import { from, render, html, For, createSignal } from '../solid.js';
-import { shapesSchema } from '../paper/schema.js';
+import { surfaceSchema } from '../surface/schema.js';
 import { marked } from 'https://esm.sh/marked@15';
 import { buildSystemPrompt } from './system-prompt.js';
 import { runLlmTurns } from './process.js';
@@ -283,7 +283,7 @@ export default function mount(element) {
 }
 
 function rootRefView(host) {
-  return host.findParent(shapesSchema) ?? host;
+  return host.findParent(surfaceSchema) ?? host;
 }
 
 function getApiKey() {
@@ -314,7 +314,7 @@ async function buildContextSection(element, frameRefView) {
       const label = depth === 0 ? 'Element 0 (LLM panel)' : `Element ${depth}`;
       lines.push(`### ${label}\n${summarizeValue(value, label)}\n`);
     }
-    current = current.findParent(shapesSchema);
+    current = current.findParent(surfaceSchema);
     depth++;
   }
 

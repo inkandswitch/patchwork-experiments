@@ -1,7 +1,7 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, render, html } from '../solid.js';
 import { getViewUrl } from '../url.js';
-import { findTargetCanvas, selectedToolSchema, shapesSchema } from '../paper/schema.js';
+import { findTargetSurface, selectedToolSchema, surfaceSchema } from '../surface/schema.js';
 
 const TOOL_NAME = 'text';
 const textViewUrl = getViewUrl('./tool.json', import.meta.url);
@@ -22,9 +22,9 @@ export const schema = {
 };
 
 export default function mount(element) {
-  const canvas = element.findParent(shapesSchema);
-  if (!canvas) return;
-  const selectedToolRef = canvas.getOrCreate(selectedToolSchema);
+  const surface = element.findParent(surfaceSchema);
+  if (!surface) return;
+  const selectedToolRef = surface.getOrCreate(selectedToolSchema);
   const selectedTool = from(selectedToolRef);
 
   const active = () => selectedTool() === TOOL_NAME;
@@ -36,10 +36,10 @@ export default function mount(element) {
 
   function onPointerDown(event) {
     if (!active()) return;
-    const targetCanvas = findTargetCanvas(event.target, canvas);
-    if (!targetCanvas) return;
-    const drawShapesRef = targetCanvas.getOrCreate(shapesSchema);
-    const page = targetCanvas.screenToPage(event.clientX, event.clientY);
+    const targetSurface = findTargetSurface(event.target, surface);
+    if (!targetSurface) return;
+    const drawShapesRef = targetSurface.getOrCreate(surfaceSchema);
+    const page = targetSurface.screenToPage(event.clientX, event.clientY);
     const x = page.x;
     const halfLineHeight = Math.round((18 * 1.4) / 2);
     const y = page.y - halfLineHeight;
@@ -52,7 +52,7 @@ export default function mount(element) {
     }));
     selectedToolRef.change(() => '');
     const shapeUrl = drawShapesRef.at(id).url;
-    targetCanvas.addEventListener(
+    targetSurface.addEventListener(
       'mounted',
       (event) => {
         const refView = event.target.closest('ref-view');
@@ -64,7 +64,7 @@ export default function mount(element) {
     );
   }
 
-  canvas.addEventListener('pointerdown', onPointerDown);
+  surface.addEventListener('pointerdown', onPointerDown);
 
   const dispose = render(
     () =>
@@ -92,7 +92,7 @@ export default function mount(element) {
   );
 
   return () => {
-    canvas.removeEventListener('pointerdown', onPointerDown);
+    surface.removeEventListener('pointerdown', onPointerDown);
     dispose();
   };
 }

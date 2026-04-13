@@ -1,6 +1,6 @@
 import { render, html, createSignal } from '../solid.js';
 import { getViewUrl } from '../url.js';
-import { shapesSchema } from '../paper/schema.js';
+import { surfaceSchema } from '../surface/schema.js';
 
 const URLS_MIME = 'text/x-patchwork-urls';
 const SHAPE_MIME = 'text/x-patchwork-shape';
@@ -9,10 +9,10 @@ const DIRECT_DROP_OFFSET_X = 40;
 const EMBED_DROP_OFFSET_X = 440;
 
 export default function mount(element) {
-  const canvas = element.findParent(shapesSchema);
-  if (!canvas) return;
+  const surface = element.findParent(surfaceSchema);
+  if (!surface) return;
 
-  const shapesRef = canvas.getOrCreate(shapesSchema);
+  const shapesRef = surface.getOrCreate(surfaceSchema);
   const [active, setActive] = createSignal(false);
   const [enabled, setEnabled] = createSignal(true);
   const embedViewUrl = getViewUrl('../embed/tool.json', import.meta.url);
@@ -42,8 +42,8 @@ export default function mount(element) {
     if (!repo) return;
 
     const dropPos =
-      typeof canvas.screenToPage === 'function'
-        ? canvas.screenToPage(event.clientX, event.clientY)
+      typeof surface.screenToPage === 'function'
+        ? surface.screenToPage(event.clientX, event.clientY)
         : { x: 100, y: 100 };
     const droppedEntries = await getDroppedEntries(event.dataTransfer, repo);
     if (droppedEntries.length === 0) return;
@@ -63,9 +63,9 @@ export default function mount(element) {
     clearTimeout(dragTimer);
   }
 
-  canvas.addEventListener('dragover', onDragOver);
-  canvas.addEventListener('drop', onDrop);
-  canvas.addEventListener('dragend', onDragEnd);
+  surface.addEventListener('dragover', onDragOver);
+  surface.addEventListener('drop', onDrop);
+  surface.addEventListener('dragend', onDragEnd);
 
   function flipCorner(onClick) {
     return html`<div
@@ -191,9 +191,9 @@ export default function mount(element) {
   );
 
   return () => {
-    canvas.removeEventListener('dragover', onDragOver);
-    canvas.removeEventListener('drop', onDrop);
-    canvas.removeEventListener('dragend', onDragEnd);
+    surface.removeEventListener('dragover', onDragOver);
+    surface.removeEventListener('drop', onDrop);
+    surface.removeEventListener('dragend', onDragEnd);
     clearTimeout(dragTimer);
     cleanup();
   };

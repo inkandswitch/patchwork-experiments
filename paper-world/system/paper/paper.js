@@ -1,8 +1,8 @@
 import { useRef, For, render, html, createSignal } from '../solid.js';
-import { shapesSchema, selectedShapesSchema } from './schema.js';
+import { surfaceSchema, selectedShapesSchema } from '../surface/schema.js';
 
 export default function mount(element) {
-  const shapesRef = element.getOrCreate(shapesSchema);
+  const shapesRef = element.getOrCreate(surfaceSchema);
   const selectedShapesRef = element.getOrCreate(selectedShapesSchema);
 
   const shapes = useRef(shapesRef);
@@ -100,6 +100,8 @@ export default function mount(element) {
                 left: `${shapes[id]?.x}px`,
                 top: `${shapes[id]?.y}px`,
                 'z-index': shapes[id]?.z ?? 0,
+                ...(shapes[id]?.width != null ? { width: `${shapes[id].width}px` } : {}),
+                ...(shapes[id]?.height != null ? { height: `${shapes[id].height}px` } : {}),
                 ...(shapes[id]?.scale != null && shapes[id]?.scale !== 1
                   ? { transform: `scale(${shapes[id].scale})`, 'transform-origin': '0 0' }
                   : {}),

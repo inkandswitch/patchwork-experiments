@@ -1,7 +1,7 @@
 import { z } from 'https://esm.sh/zod@4.3';
 import { from, render, html, createSignal } from '../solid.js';
 import { getViewUrl, toViewPath } from '../url.js';
-import { selectedToolSchema, shapesSchema, selectedShapesSchema } from '../paper/schema.js';
+import { selectedToolSchema, surfaceSchema, selectedShapesSchema } from '../surface/schema.js';
 
 const TOOL_NAME = 'selection';
 
@@ -176,12 +176,12 @@ function createLoadingItem() {
 }
 
 export default function mount(element) {
-  const canvas = element.findParent(shapesSchema);
-  if (!canvas) return;
-  const selectedToolRef = canvas.getOrCreate(selectedToolSchema);
+  const surface = element.findParent(surfaceSchema);
+  if (!surface) return;
+  const selectedToolRef = surface.getOrCreate(selectedToolSchema);
   const selectedTool = from(selectedToolRef);
-  const selectedShapesRef = canvas.getOrCreate(selectedShapesSchema);
-  const shapesRef = canvas.getOrCreate(shapesSchema);
+  const selectedShapesRef = surface.getOrCreate(selectedShapesSchema);
+  const shapesRef = surface.getOrCreate(surfaceSchema);
 
   const toolPlugins = from(element.plugins.byType('tool'));
 
@@ -206,7 +206,7 @@ export default function mount(element) {
   }
 
   let dragShapeId = null;
-  let dragSourceCanvas = null;
+  let dragSourceSurface = null;
   let dragSourceShapesRef = null;
   let startPointerX = 0;
   let startPointerY = 0;
@@ -221,7 +221,7 @@ export default function mount(element) {
 
   function isInteractiveTarget(event) {
     let node = event.target;
-    while (node && node !== canvas) {
+    while (node && node !== surface) {
       if (node instanceof HTMLButtonElement ||
           node instanceof HTMLInputElement ||
           node instanceof HTMLSelectElement ||
@@ -241,18 +241,18 @@ export default function mount(element) {
 
     closeMenu();
 
-    let sourceCanvas = findTargetContext(event.target) ?? canvas;
-    let sourceShapesRef = sourceCanvas.getOrCreate(shapesSchema);
-    let shapeId = shapeIdFromEvent(event, sourceCanvas);
+    let sourceSurface = findTargetSurfaceContext(event.target) ?? surface;
+    let sourceShapesRef = sourceSurface.getOrCreate(surfaceSchema);
+    let shapeId = shapeIdFromEvent(event, sourceSurface);
 
-    while (!shapeId && sourceCanvas !== canvas) {
-      sourceCanvas = findTargetContext(sourceCanvas.parentElement) ?? canvas;
-      sourceShapesRef = sourceCanvas.getOrCreate(shapesSchema);
-      shapeId = shapeIdFromEvent(event, sourceCanvas);
+    while (!shapeId && sourceSurface !== surface) {
+      sourceSurface = findTargetSurfaceContext(sourceSurface.parentElement) ?? surface;
+      sourceShapesRef = sourceSurface.getOrCreate(surfaceSchema);
+      shapeId = shapeIdFromEvent(event, sourceSurface);
     }
 
-    if (!shapeId) shapeId = probeNearbyShapes(event, canvas);
-    if (!shapeId) shapeId = findNearbyLine(event, canvas, shapesRef);
+    if (!shapeId) shapeId = probeNearbyShapes(event, surface);
+    if (!shapeId) shapeId = findNearbyLine(event, surface, shapesRef);
     if (!shapeId) {
       selectedShapesRef.change(() => ({}));
       return;
@@ -263,7 +263,7 @@ export default function mount(element) {
 
     event.stopPropagation();
 
-    if (sourceCanvas === canvas) {
+    if (sourceSurface === surface) {
       selectedShapesRef.change(() => ({ [shapeId]: true }));
     }
 
@@ -280,46 +280,46 @@ export default function mount(element) {
     }
 
     dragShapeId = shapeId;
-    dragSourceCanvas = sourceCanvas;
+    dragSourceSurface = sourceSurface;
     dragSourceShapesRef = sourceShapesRef;
     startPointerX = event.clientX;
     startPointerY = event.clientY;
     startShapeX = shape.x;
     startShapeY = shape.y;
-    canvas.setPointerCapture(event.pointerId);
+    surface.setPointerCapture(event.pointerId);
     dragThresholdMet = false;
   }
 
-  function moveShapeToCrossContext(targetCanvas, clientX, clientY) {
+  function moveShapeToCrossContext(targetSurface, clientX, clientY) {
     const shapeValue = { ...dragSourceShapesRef.at(dragShapeId).value() };
-    const targetShapesRef = targetCanvas.getOrCreate(shapesSchema);
-    const shapeScreen = dragSourceCanvas.pageToScreen(shapeValue.x, shapeValue.y);
-    const targetPage = targetCanvas.screenToPage(shapeScreen.x, shapeScreen.y);
+    const targetShapesRef = targetSurface.getOrCreate(surfaceSchema);
+    const shapeScreen = dragSourceSurface.pageToScreen(shapeValue.x, shapeValue.y);
+    const targetPage = targetSurface.screenToPage(shapeScreen.x, shapeScreen.y);
     shapeValue.x = targetPage.x;
     shapeValue.y = targetPage.y;
-    const sourceScale = dragSourceCanvas.getScale();
-    const targetScale = targetCanvas.getScale();
+    const sourceScale = dragSourceSurface.getScale();
+    const targetScale = targetSurface.getScale();
     shapeValue.scale = ((shapeValue.scale ?? 1) * sourceScale) / targetScale;
     restoreDraggedShape();
     const newId = `move_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     targetShapesRef.at(newId).change(() => shapeValue);
     dragSourceShapesRef.change((shapes) => { delete shapes[dragShapeId]; });
     dragShapeId = newId;
-    dragSourceCanvas = targetCanvas;
+    dragSourceSurface = targetSurface;
     dragSourceShapesRef = targetShapesRef;
     startShapeX = shapeValue.x;
     startShapeY = shapeValue.y;
     startPointerX = clientX;
     startPointerY = clientY;
-    if (dragSourceCanvas !== canvas) {
-      liftDraggedShape(dragShapeId, dragSourceCanvas);
+    if (dragSourceSurface !== surface) {
+      liftDraggedShape(dragShapeId, dragSourceSurface);
     }
   }
 
   function onPointerMove(event) {
     if (!dragShapeId) return;
-    const startPage = dragSourceCanvas.screenToPage(startPointerX, startPointerY);
-    const currentPage = dragSourceCanvas.screenToPage(event.clientX, event.clientY);
+    const startPage = dragSourceSurface.screenToPage(startPointerX, startPointerY);
+    const currentPage = dragSourceSurface.screenToPage(event.clientX, event.clientY);
     dragSourceShapesRef.at(dragShapeId).change((shape) => {
       shape.x = startShapeX + (currentPage.x - startPage.x);
       shape.y = startShapeY + (currentPage.y - startPage.y);
@@ -329,18 +329,18 @@ export default function mount(element) {
       const deltaY = event.clientY - startPointerY;
       if (Math.hypot(deltaX, deltaY) > DRAG_THRESHOLD) {
         dragThresholdMet = true;
-        if (dragSourceCanvas !== canvas) {
-          liftDraggedShape(dragShapeId, dragSourceCanvas);
+        if (dragSourceSurface !== surface) {
+          liftDraggedShape(dragShapeId, dragSourceSurface);
         }
-        dragNeedsEarlyMove = !dragOverlay && dragSourceCanvas !== canvas;
+        dragNeedsEarlyMove = !dragOverlay && dragSourceSurface !== surface;
       }
     }
     if (dragThresholdMet && dragNeedsEarlyMove) {
-      const target = elementUnderCursor(event.clientX, event.clientY, dragShapeId, dragSourceCanvas);
+      const target = elementUnderCursor(event.clientX, event.clientY, dragShapeId, dragSourceSurface);
       if (target) {
-        const targetCanvas = findTargetContext(target);
-        if (targetCanvas && targetCanvas !== dragSourceCanvas) {
-          moveShapeToCrossContext(targetCanvas, event.clientX, event.clientY);
+        const targetSurface = findTargetSurfaceContext(target);
+        if (targetSurface && targetSurface !== dragSourceSurface) {
+          moveShapeToCrossContext(targetSurface, event.clientX, event.clientY);
           dragNeedsEarlyMove = false;
         }
       }
@@ -349,26 +349,26 @@ export default function mount(element) {
 
   function onPointerUp(event) {
     if (dragShapeId && dragThresholdMet) {
-      const target = elementUnderCursor(event.clientX, event.clientY, dragShapeId, dragSourceCanvas);
+      const target = elementUnderCursor(event.clientX, event.clientY, dragShapeId, dragSourceSurface);
       if (target) {
-        const targetCanvas = findTargetContext(target);
-        if (targetCanvas && targetCanvas !== dragSourceCanvas) {
-          moveShapeToCrossContext(targetCanvas, event.clientX, event.clientY);
+        const targetSurface = findTargetSurfaceContext(target);
+        if (targetSurface && targetSurface !== dragSourceSurface) {
+          moveShapeToCrossContext(targetSurface, event.clientX, event.clientY);
         }
       }
     }
     restoreDraggedShape();
     dragShapeId = null;
-    dragSourceCanvas = null;
+    dragSourceSurface = null;
     dragSourceShapesRef = null;
     dragThresholdMet = false;
     dragNeedsEarlyMove = false;
   }
 
-  function elementUnderCursor(clientX, clientY, shapeId, canvasEl) {
+  function elementUnderCursor(clientX, clientY, shapeId, surfaceEl) {
     // Find the dragged shape's positioned wrapper div and temporarily hide it
-    // Paper structure: canvas(ref-view) > div[relative] > div[absolute] > ref-view[shape]
-    const allRefViews = canvasEl.querySelectorAll('ref-view');
+    // Paper structure: surface(ref-view) > div[relative] > div[absolute] > ref-view[shape]
+    const allRefViews = surfaceEl.querySelectorAll('ref-view');
     let wrapper = null;
     for (const rv of allRefViews) {
       const refUrl = rv.getAttribute('ref-url') || '';
@@ -385,22 +385,22 @@ export default function mount(element) {
       const target = document.elementFromPoint(clientX, clientY);
       wrapper.style.pointerEvents = prev;
       wrapper.style.visibility = prevVis;
-      if (isCanvasBackground(target, canvasEl)) return null;
+      if (isSurfaceBackground(target, surfaceEl)) return null;
       return target;
     }
     const target = document.elementFromPoint(clientX, clientY);
-    if (isCanvasBackground(target, canvasEl)) return null;
+    if (isSurfaceBackground(target, surfaceEl)) return null;
     return target;
   }
 
-  function isCanvasBackground(target, canvasEl) {
+  function isSurfaceBackground(target, surfaceEl) {
     if (!target) return false;
     const closestRefView = target.closest('ref-view');
-    return closestRefView === canvasEl;
+    return closestRefView === surfaceEl;
   }
 
-  function liftDraggedShape(shapeId, sourceCanvas) {
-    const allRefViews = sourceCanvas.querySelectorAll('ref-view');
+  function liftDraggedShape(shapeId, sourceSurface) {
+    const allRefViews = sourceSurface.querySelectorAll('ref-view');
     let wrapper = null;
     for (const rv of allRefViews) {
       const refUrl = rv.getAttribute('ref-url') || '';
@@ -415,10 +415,10 @@ export default function mount(element) {
     dragOriginalParent = wrapper.parentElement;
     dragOriginalNextSibling = wrapper.nextSibling;
 
-    const containerEl = sourceCanvas.getContainerEl();
+    const containerEl = sourceSurface.getContainerEl();
     if (!containerEl || dragOriginalParent.parentElement !== containerEl) return;
     const containerRect = containerEl.getBoundingClientRect();
-    const cam = sourceCanvas.getCamera();
+    const cam = sourceSurface.getCamera();
 
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;pointer-events:none;overflow:visible;';
@@ -456,9 +456,9 @@ export default function mount(element) {
     dragOriginalNextSibling = null;
   }
 
-  function findTargetContext(target) {
+  function findTargetSurfaceContext(target) {
     const refView = target.closest('ref-view');
-    return refView?.findClosest?.(shapesSchema) ?? null;
+    return refView?.findClosest?.(surfaceSchema) ?? null;
   }
 
   function onKeyDown(event) {
@@ -520,9 +520,9 @@ export default function mount(element) {
   async function onContextMenu(event) {
     if (!isSelectionToolActive()) return;
 
-    let shapeId = shapeIdFromEvent(event, canvas);
-    if (!shapeId) shapeId = probeNearbyShapes(event, canvas);
-    if (!shapeId) shapeId = findNearbyLine(event, canvas, shapesRef);
+    let shapeId = shapeIdFromEvent(event, surface);
+    if (!shapeId) shapeId = probeNearbyShapes(event, surface);
+    if (!shapeId) shapeId = findNearbyLine(event, surface, shapesRef);
     if (!shapeId) {
       closeMenu();
       return;
@@ -674,10 +674,10 @@ export default function mount(element) {
     });
   }
 
-  canvas.addEventListener('pointerdown', onPointerDown);
-  canvas.addEventListener('pointermove', onPointerMove);
-  canvas.addEventListener('pointerup', onPointerUp);
-  canvas.addEventListener('contextmenu', onContextMenu);
+  surface.addEventListener('pointerdown', onPointerDown);
+  surface.addEventListener('pointermove', onPointerMove);
+  surface.addEventListener('pointerup', onPointerUp);
+  surface.addEventListener('contextmenu', onContextMenu);
   document.addEventListener('keydown', onKeyDown);
 
   const dispose = render(
@@ -707,20 +707,20 @@ export default function mount(element) {
 
   return () => {
     closeMenu();
-    canvas.removeEventListener('pointerdown', onPointerDown);
-    canvas.removeEventListener('pointermove', onPointerMove);
-    canvas.removeEventListener('pointerup', onPointerUp);
-    canvas.removeEventListener('contextmenu', onContextMenu);
+    surface.removeEventListener('pointerdown', onPointerDown);
+    surface.removeEventListener('pointermove', onPointerMove);
+    surface.removeEventListener('pointerup', onPointerUp);
+    surface.removeEventListener('contextmenu', onContextMenu);
     document.removeEventListener('keydown', onKeyDown);
     dispose();
   };
 }
 
-function shapeIdFromEvent(event, canvas) {
+function shapeIdFromEvent(event, surface) {
   let refView = event.target.closest('ref-view');
-  while (refView && refView !== canvas) {
+  while (refView && refView !== surface) {
     const parentRefView = refView.parentElement?.closest('ref-view');
-    if (parentRefView === canvas) {
+    if (parentRefView === surface) {
       const refUrl = refView.getAttribute('ref-url');
       if (!refUrl) return null;
       const parts = refUrl.split('/');
@@ -737,21 +737,21 @@ const PROBE_OFFSETS = [
   [10, 0], [-10, 0], [0, 10], [0, -10],
 ];
 
-function findShapeRefView(startEl, canvas) {
+function findShapeRefView(startEl, surface) {
   let refView = startEl.closest('ref-view');
-  while (refView && refView !== canvas) {
+  while (refView && refView !== surface) {
     const parentRefView = refView.parentElement?.closest('ref-view');
-    if (parentRefView === canvas) return refView;
+    if (parentRefView === surface) return refView;
     refView = parentRefView;
   }
   return null;
 }
 
-function probeNearbyShapes(event, canvas) {
+function probeNearbyShapes(event, surface) {
   for (const [dx, dy] of PROBE_OFFSETS) {
     const el = document.elementFromPoint(event.clientX + dx, event.clientY + dy);
     if (!el) continue;
-    const refView = findShapeRefView(el, canvas);
+    const refView = findShapeRefView(el, surface);
     if (!refView) continue;
     const refUrl = refView.getAttribute('ref-url');
     if (!refUrl) continue;
@@ -761,8 +761,8 @@ function probeNearbyShapes(event, canvas) {
   return null;
 }
 
-function findNearbyLine(event, canvas, shapesRef) {
-  const { x: cursorX, y: cursorY } = canvas.screenToPage(event.clientX, event.clientY);
+function findNearbyLine(event, surface, shapesRef) {
+  const { x: cursorX, y: cursorY } = surface.screenToPage(event.clientX, event.clientY);
   const shapes = shapesRef.value();
   const threshold = 10;
 
