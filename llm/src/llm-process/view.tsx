@@ -1,5 +1,5 @@
 import { render } from "solid-js/web";
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { RepoContext, useDocument } from "@automerge/automerge-repo-solid-primitives";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
@@ -24,9 +24,28 @@ export const LLMProcessTool: ToolRender = (handle, element) => {
 
 export function LLMProcessView(props: { url: AutomergeUrl }) {
   const [doc] = useDocument<LLMProcessDoc>(() => props.url);
+  let containerRef: HTMLDivElement | undefined;
+  let shouldAutoScroll = true;
+
+  const handleScroll = () => {
+    if (!containerRef) return;
+    const { scrollTop, scrollHeight, clientHeight } = containerRef;
+    shouldAutoScroll = scrollHeight - scrollTop - clientHeight < 40;
+  };
+
+  onMount(() => {
+    if (!containerRef) return;
+    const observer = new MutationObserver(() => {
+      if (shouldAutoScroll && containerRef) {
+        containerRef.scrollTop = containerRef.scrollHeight;
+      }
+    });
+    observer.observe(containerRef, { childList: true, subtree: true, characterData: true });
+    onCleanup(() => observer.disconnect());
+  });
 
   return (
-    <div class="llm-process-messages">
+    <div class="llm-process-messages" ref={containerRef} onScroll={handleScroll}>
       <Show when={doc()}>
         {(currentDoc) => (
           <For each={currentDoc().messages}>
