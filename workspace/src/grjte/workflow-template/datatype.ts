@@ -15,6 +15,7 @@ export const grjteWorkflowTemplateDatatype: DatatypeImplementation<WorkflowDoc> 
   init(doc: WorkflowDoc, repo: Repo) {
     const { elicitationDocUrl } = createDefaultElicitation(repo);
     doc.specElicitationDocUrl = elicitationDocUrl;
+    doc.planType = 'task-list';
     doc.toolIds = {
       spec: 'grjte-spec-viewer',
       plan: 'grjte-plan-viewer',
