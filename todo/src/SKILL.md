@@ -25,12 +25,12 @@ const todo = await workspace.loadSkill("todo");
 
 ## API
 
-### `createTodo(title)`
+### `createTodo(title)` (async)
 
 Creates a new todo list. Returns `{ handle, url }`.
 
 ```javascript
-const { url } = todo.createTodo("Shopping List");
+const { url } = await todo.createTodo("Shopping List");
 ```
 
 ### `getTodo(url)` (async)
@@ -52,7 +52,7 @@ Returns interface for the todo at `url`:
 const todo = await workspace.loadSkill("todo");
 
 // Create a new list
-const { url } = todo.createTodo("Weekly Tasks");
+const { url } = await todo.createTodo("Weekly Tasks");
 
 // Work with existing list
 const list = await todo.getTodo(url);

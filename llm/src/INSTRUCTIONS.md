@@ -34,8 +34,8 @@ handle.change((doc) => {
 ### Creating Documents
 
 ```javascript
-// Create returns a handle immediately (sync)
-const handle = workspace.create();
+// Create a document — it is automatically added to the workspace folder
+const handle = await workspace.create({ name: "My Document", type: "my-type" });
 
 // Initialize the document
 handle.change((doc) => {
@@ -94,7 +94,7 @@ The `workspace` object is available in all scripts:
 | `loadSkill(id)`             | Load a skill plugin and get its API        |
 | `getSkillDocumentation(id)` | Get markdown documentation for a skill     |
 | `find(url)`                 | Find a document by URL (async)             |
-| `create()`                  | Create a new document (async)              |
+| `create({name?, type?})`    | Create a new document and add to folder    |
 | `listDocuments()`           | List all documents in the workspace folder |
 
 ## Using Skills

@@ -135,7 +135,7 @@ async function buildSystemPrompt(basePrompt: string, skillIds?: string[]): Promi
     parts.push("To use a skill, first load its documentation:\n" + "```javascript\n" + 'const docs = await workspace.getSkillDocumentation("skillId");\n' + "```\n" + "Then load and use it:\n" + "```javascript\n" + 'const skill = await workspace.loadSkill("skillId");\n' + "```");
   }
 
-  parts.push("The `workspace` object is available with:\n" + "- workspace.loadSkill(skillId)\n" + "- workspace.getSkillDocumentation(skillId)\n" + "- workspace.find(url)\n" + "- workspace.create()\n" + "- workspace.listDocuments()");
+  parts.push("The `workspace` object is available with:\n" + "- workspace.loadSkill(skillId)\n" + "- workspace.getSkillDocumentation(skillId)\n" + "- workspace.find(url)\n" + "- workspace.create({ name?, type? })\n" + "- workspace.listDocuments()");
 
   return parts.join("\n\n");
 }

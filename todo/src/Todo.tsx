@@ -19,6 +19,7 @@ type Todo = {
 };
 
 export type TodoDoc = {
+  '@patchwork': { type: 'todo' };
   title: string;
   todos: Todo[];
 };

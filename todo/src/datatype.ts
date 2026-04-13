@@ -3,6 +3,7 @@ import { TodoDoc } from "./Todo";
 
 export const TodoDatatype: DatatypeImplementation<TodoDoc> = {
   init: (doc: TodoDoc) => {
+    doc["@patchwork"] = { type: "todo" };
     doc.title = "My Todo List";
     doc.todos = [];
   },

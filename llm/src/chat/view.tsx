@@ -11,7 +11,7 @@ import type { LLMChatDoc, LLMProcessDoc, ContentBlock, Message, ScriptBlock } fr
 import { runLLMProcess } from "../llm-process/run";
 import "./view.css";
 
-const VERSION = "0.6.0";
+const VERSION = "0.8.0";
 
 export const LLMChatTool: ToolRender = (handle, element) => {
   const dispose = render(

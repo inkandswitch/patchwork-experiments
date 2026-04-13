@@ -14,6 +14,9 @@ importers:
       '@automerge/automerge-repo-solid-primitives':
         specifier: 2.5.3
         version: 2.5.3(@automerge/automerge@3.2.1)(solid-js@1.9.11)
+      '@inkandswitch/patchwork-filesystem':
+        specifier: ^0.0.3
+        version: 0.0.3
       '@inkandswitch/patchwork-plugins':
         specifier: ^0.0.2
         version: 0.0.2
@@ -371,6 +374,9 @@ packages:
 
   '@inkandswitch/patchwork-filesystem@0.0.1':
     resolution: {integrity: sha512-opTKzHXszExOZOJbgkqUY/0N8xTIt88GcPpoTaRVA+ul/RXo9f8wflrBtx+vxwkueT+eOX9TMkcggUK8k8A2lA==}
+
+  '@inkandswitch/patchwork-filesystem@0.0.3':
+    resolution: {integrity: sha512-x6yqX1Xyr05ug4YfRyfKJ7jSm/zjhMxU7g/e70nz4QbxfLmcG98LHB9qAkFI2zd+VvKLnTvSpPGu2UvJzXGciw==}
 
   '@inkandswitch/patchwork-plugins@0.0.2':
     resolution: {integrity: sha512-BQ+PxqWXh0hl7R9+OaC4ehckXyAfk925fYEFBIfjuJifi1yQ55OjJaG7EqEvdSeg7vq0i37UzJ5fsQ6IlNn6oA==}
@@ -1534,6 +1540,17 @@ snapshots:
       - supports-color
 
   '@inkandswitch/patchwork-filesystem@0.0.1':
+    dependencies:
+      '@automerge/automerge': 3.2.1
+      '@automerge/automerge-repo': 2.5.0
+      '@types/debug': 4.1.12
+      '@types/node': 20.19.37
+      debug: 4.4.3
+      resolve.exports: 2.0.3
+    transitivePeerDependencies:
+      - supports-color
+
+  '@inkandswitch/patchwork-filesystem@0.0.3':
     dependencies:
       '@automerge/automerge': 3.2.1
       '@automerge/automerge-repo': 2.5.0

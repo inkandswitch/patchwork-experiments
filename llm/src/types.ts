@@ -55,6 +55,6 @@ export interface Workspace {
   loadSkill(skillId: string): Promise<any>;
   getSkillDocumentation(skillId: string): Promise<string>;
   find<T>(url: AutomergeUrl): Promise<DocHandle<T>>;
-  create<T>(): Promise<DocHandle<T>>;
+  create<T>(options?: { name?: string; type?: string }): Promise<DocHandle<T>>;
   listDocuments(): Promise<{ name: string; type: string; url: AutomergeUrl }[]>;
 }

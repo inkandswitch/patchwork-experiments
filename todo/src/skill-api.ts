@@ -8,17 +8,17 @@ type Todo = {
 };
 
 type TodoDoc = {
+  "@patchwork": { type: "todo" };
   title: string;
   todos: Todo[];
 };
 
 export default function (workspace: Workspace) {
-  const { repo } = workspace;
-
   return {
-    createTodo(title: string) {
-      const handle = repo.create<TodoDoc>();
+    async createTodo(title: string) {
+      const handle = await workspace.create<TodoDoc>({ name: title, type: "todo" });
       handle.change((doc) => {
+        doc["@patchwork"] = { type: "todo" };
         doc.title = title;
         doc.todos = [];
       });
@@ -26,7 +26,7 @@ export default function (workspace: Workspace) {
     },
 
     async getTodo(url: AutomergeUrl) {
-      const handle = await repo.find<TodoDoc>(url);
+      const handle = await workspace.find<TodoDoc>(url);
 
       return {
         addItem(description: string) {
