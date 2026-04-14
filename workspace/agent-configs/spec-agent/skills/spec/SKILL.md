@@ -47,8 +47,8 @@ Returns a spec handle for read/write access.
 |--------|-------------|
 | `getGoal()` | Returns the goal string |
 | `setGoal(goal)` | Sets the goal |
-| `addVerificationDoc(url)` | Appends a Datalog doc URL to `verificationUrls` |
-| `removeVerificationDoc(url)` | Removes a Datalog doc URL |
+| `await addVerificationDoc(datalogUrl, options?)` | Creates a verification wrapper doc for the Datalog doc and appends it to `verificationUrls`. Options: `{ title?, description? }`. Returns the verification doc URL. **Must be awaited.** |
+| `removeVerificationDoc(url)` | Removes a verification doc URL |
 | `addSubSpec(url)` | Appends a child SpecDoc URL to `subSpecUrls` (root spec) |
 | `removeSubSpec(url)` | Removes a child SpecDoc URL |
 | `setFilesFolder(url)` | Sets `filesFolderUrl` (for solution artifact files) |
@@ -158,20 +158,20 @@ await addFileToFolder(folderB.url, "machine-b-iptables", machineBSolution.url, "
 // --- Leaf specs — goals name the artifact ---
 const { url: leafAUrl } = createSpec("Machine A iptables configuration");
 const leafA = await getSpec(leafAUrl);
-leafA.addVerificationDoc(commonRules.url);
-leafA.addVerificationDoc(machineARules.url);
+await leafA.addVerificationDoc(commonRules.url, { title: "Common Machine Rules" });
+await leafA.addVerificationDoc(machineARules.url, { title: "Machine A Rules" });
 leafA.setFilesFolder(folderA.url);
 
 const { url: leafBUrl } = createSpec("Machine B iptables configuration");
 const leafB = await getSpec(leafBUrl);
-leafB.addVerificationDoc(commonRules.url);
-leafB.addVerificationDoc(machineBRules.url);
+await leafB.addVerificationDoc(commonRules.url, { title: "Common Machine Rules" });
+await leafB.addVerificationDoc(machineBRules.url, { title: "Machine B Rules" });
 leafB.setFilesFolder(folderB.url);
 
 // --- Root spec ---
 const { url: rootUrl } = createSpec("Network Firewall Configuration");
 const root = await getSpec(rootUrl);
-root.addVerificationDoc(globalRules.url);
+await root.addVerificationDoc(globalRules.url, { title: "Global Firewall Rules" });
 root.addSubSpec(leafAUrl);
 root.addSubSpec(leafBUrl);
 
@@ -181,7 +181,7 @@ console.log('ROOT_SPEC_URL:', rootUrl);
 ## Guidelines
 
 - Always log `ROOT_SPEC_URL: <url>` at the end of your final script.
-- `verificationUrls` must be **Datalog docs** — use the datalog skill to create them. Every doc in `verificationUrls` must contain at least one `assertConstraint`.
+- `addVerificationDoc` creates a verification wrapper document pointing to a Datalog doc and adds it to `verificationUrls`. The underlying Datalog doc must contain at least one `assertConstraint`. **Must be awaited.**
 - Add constraints to Datalog docs via `assertConstraint(name, { body: [...] })`. Give every constraint a descriptive name.
 - **Leaf spec goals name the artifact** to be produced (e.g. `"Machine A iptables configuration"`), not a validation statement.
 - **Pre-create a solution DatalogDoc stub** for each leaf artifact and place it in the `filesFolderUrl` folder with `addFileToFolder`. Seed it with domain facts; the plan executor will modify it to satisfy constraints.

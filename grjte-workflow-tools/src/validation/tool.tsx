@@ -554,7 +554,6 @@ function ValidationBody(props: {
       AutomergeUrl,
       {
         name: string;
-        artifactType: string;
         specLabel: string;
       }
     >
@@ -569,8 +568,6 @@ function ValidationBody(props: {
               currentWorkflowArtifact?.name ||
               entry.name ||
               "Untitled artifact",
-            artifactType:
-              currentWorkflowArtifact?.artifactType || "workflow-artifact",
             specLabel:
               currentWorkflowArtifact?.specDocUrl?.slice(-8) ?? "loading",
           },
@@ -689,8 +686,7 @@ function ValidationBody(props: {
                           "loading"}
                       </span>
                       <span class="validation-artifact-type">
-                        {artifactDisplayByUrl()[entry.url]?.artifactType ||
-                          entry.type}
+                        {entry.type}
                       </span>
                     </span>
                   </button>

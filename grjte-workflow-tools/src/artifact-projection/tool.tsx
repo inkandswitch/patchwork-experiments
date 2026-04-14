@@ -110,7 +110,7 @@ function ArtifactProjectionWorkspace(props: {
                     {artifact().name || "Untitled artifact"}
                   </div>
                   <div class="artifact-projection-selection-meta">
-                    <span>{artifact().artifactType || "datalog"}</span>
+                    <span>datalog</span>
                     <span>Spec {artifact().specDocUrl.slice(-8)}</span>
                   </div>
                 </div>

@@ -67,7 +67,6 @@ export type ExecutionDoc = HasPatchworkMetadata & {
 
 export type WorkflowArtifactDoc = HasPatchworkMetadata & {
   name: string;
-  artifactType: string;
   artifactDocUrl: AutomergeUrl;
   specDocUrl: AutomergeUrl;
 };

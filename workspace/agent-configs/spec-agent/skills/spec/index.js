@@ -57,13 +57,21 @@ export async function getSpec(url) {
       });
     },
 
-    /** Add a Datalog constraint doc URL to verificationUrls */
-    addVerificationDoc(docUrl) {
+    /** Create a verification wrapper for a Datalog doc and add it to verificationUrls */
+    async addVerificationDoc(datalogUrl, options) {
+      const vHandle = await repo.create2({
+        '@patchwork': { type: 'verification' },
+        docUrl: datalogUrl,
+        script: '',
+        title: options?.title ?? '',
+        description: options?.description ?? '',
+      });
       handle.change((d) => {
         if (!d.spec) return;
         if (!d.spec.verificationUrls) d.spec.verificationUrls = [];
-        d.spec.verificationUrls.push(docUrl);
+        d.spec.verificationUrls.push(vHandle.url);
       });
+      return vHandle.url;
     },
 
     removeVerificationDoc(docUrl) {

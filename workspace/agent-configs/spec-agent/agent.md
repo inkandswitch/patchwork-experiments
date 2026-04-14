@@ -146,7 +146,7 @@ Root SpecDoc  { goal, verificationUrls: [globalConstraints], subSpecUrls: [...] 
 ```
 
 - **Leaf spec goals name the artifact to be produced**, not a validation statement. Good: `"24-hour generation dispatch schedule"`. Bad: `"Generation dispatch is valid for all timesteps"`.
-- `verificationUrls` on each spec point to **Datalog constraint docs** — every doc in `verificationUrls` must contain at least one `assertConstraint`. A pure-facts doc with no constraints does nothing as a verification doc.
+- `addVerificationDoc(datalogUrl, { title?, description? })` creates a verification wrapper document and adds it to `verificationUrls`. **Must be awaited.** Every underlying Datalog doc must contain at least one `assertConstraint`. A pure-facts doc with no constraints does nothing as a verification doc.
 - `filesFolderUrl` folders contain **pre-created DatalogDoc stubs** (with domain seed facts) that the plan executor will modify to satisfy constraints.
 - The root spec holds cross-cutting constraints that check relationships across sub-domains.
 - If the domain has no sub-problems, a single SpecDoc without `subSpecUrls` is fine.
@@ -215,15 +215,15 @@ await addFileToFolder(folderA.url, "domain-a-solution", solutionA.url, "datalog"
 // --- Leaf spec A — goal names the artifact ---
 const { url: leafAUrl } = createSpec("Domain A assignment schedule");
 const leafA = await getSpec(leafAUrl);
-leafA.addVerificationDoc(domainData.url);
-leafA.addVerificationDoc(commonRules.url);
-leafA.addVerificationDoc(domainARules.url);
+await leafA.addVerificationDoc(domainData.url, { title: "Domain Data" });
+await leafA.addVerificationDoc(commonRules.url, { title: "Common Rules" });
+await leafA.addVerificationDoc(domainARules.url, { title: "Domain A Rules" });
 leafA.setFilesFolder(folderA.url);
 
 // --- Root spec ---
 const { url: rootUrl } = createSpec("Full system scheduling solution");
 const root = await getSpec(rootUrl);
-root.addVerificationDoc(globalRules.url);
+await root.addVerificationDoc(globalRules.url, { title: "Global Constraints" });
 root.addSubSpec(leafAUrl);
 
 console.log('ROOT_SPEC_URL:', rootUrl);
@@ -243,7 +243,7 @@ console.log('ROOT_SPEC_URL:', rootUrl);
 - Every constraint must have a descriptive name via `assertConstraint(name, { body: [...] })`.
 - **Leaf spec goals name the artifact to be produced** (e.g. `"Nurse scheduling table for the ER department"`), not a validation statement.
 - **Pre-create a solution DatalogDoc stub** for each leaf spec's artifact and place it in the `filesFolderUrl` folder using `addFileToFolder`. Seed it with domain facts (entities, relationships). The plan executor will modify it to satisfy constraints.
-- **Every doc in `verificationUrls` must contain at least one `assertConstraint`.** A pure-facts doc with no constraints contributes domain data but cannot detect any violations on its own — keep domain facts and constraints in separate docs if needed.
+- **Every Datalog doc added via `addVerificationDoc` must contain at least one `assertConstraint`.** A pure-facts doc with no constraints contributes domain data but cannot detect any violations on its own — keep domain facts and constraints in separate docs if needed.
 - **Negation-as-failure:** use `{ pred: "not", args: [{ pred: "p", args: ["X", ...] }] }` where the inner atom is a plain object. All variables in the inner atom must already be bound by earlier positive atoms in the same constraint body (safe negation). Wildcards (`"_"`) are allowed.
 - If the user's request is ambiguous, state your assumptions clearly rather than guessing silently.
 - **Never create throwaway or test documents for debugging.** Build the real spec directly. If you encounter an error, re-read the skill documentation or review your code.

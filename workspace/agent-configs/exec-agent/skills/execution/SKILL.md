@@ -10,7 +10,7 @@ Manage a TaskListExecutionDoc during plan execution. Provides helpers to update 
 ## Import
 
 ```javascript
-const { getExecution, createArtifact, createWorkflowArtifact, addToArtifactsFolder, updateTaskStatus } = await useSkill("execution");
+const { getExecution, createArtifact, updateTaskStatus } = await useSkill("execution");
 ```
 
 ## Types
@@ -26,18 +26,10 @@ const { getExecution, createArtifact, createWorkflowArtifact, addToArtifactsFold
   status: 'in-progress' | 'failed' | 'completed',
 }
 
-// ArtifactFolderEntry
-{
-  type: string,       // e.g. 'workflow-artifact'
-  name: string,       // display name
-  url: AutomergeUrl,  // workflow-artifact doc URL
-}
-
-// WorkflowArtifactDoc
+// WorkflowArtifactDoc (created automatically by createArtifact)
 {
   '@patchwork': { type: 'workflow-artifact' },
   name: string,
-  artifactType: string,      // underlying artifact datatype, e.g. 'datalog'
   artifactDocUrl: AutomergeUrl,
   specDocUrl: AutomergeUrl,  // owning spec
 }
@@ -63,50 +55,26 @@ const taskUrls = exec.getTaskUrls();
 exec.setStatus('completed');
 ```
 
-### `createArtifact(title, facts)` (sync)
+### `await createArtifact(artifactsFolderUrl, name, specDocUrl, facts)` (async)
 
-Creates a new DatalogDoc with the given title and facts array. **Do NOT await** — `repo.create()` is synchronous.
+Creates a DatalogDoc artifact, wraps it in a `workflow-artifact` doc, and adds the wrapper to the artifacts folder. **Must be awaited.**
 
-Returns `{ url }`.
+Returns `{ artifactUrl, workflowArtifactUrl }`.
 
 ```javascript
 const { createArtifact } = await useSkill("execution");
-const { url } = createArtifact("My Artifact", [
-  { pred: "shift", args: ["mon_day"] },
-  { pred: "ward", args: ["mon_day", "amu"] },
-]);
-```
-
-### `createWorkflowArtifact(name, artifactDocUrl, specDocUrl, artifactType?)` (sync)
-
-Creates a `workflow-artifact` wrapper doc that links the generated artifact to its owning spec.
-
-Returns `{ url }`.
-
-```javascript
-const { createWorkflowArtifact } = await useSkill("execution");
-const { url: workflowArtifactUrl } = createWorkflowArtifact(
-  "My Artifact",
-  artifactUrl,
+const { artifactUrl, workflowArtifactUrl } = await createArtifact(
+  artifactsFolderUrl,
+  "AMU Rota",
   leafSpecUrl,
-  "datalog",
+  [
+    { pred: "shift", args: ["mon_day"] },
+    { pred: "ward", args: ["mon_day", "amu"] },
+  ],
 );
 ```
 
-### `addToArtifactsFolder(folderUrl, entry)` (async)
-
-Adds a `workflow-artifact` entry to the artifacts folder document.
-
-```javascript
-const { addToArtifactsFolder } = await useSkill("execution");
-await addToArtifactsFolder(folderUrl, {
-  type: 'workflow-artifact',
-  name: 'AMU Rota',
-  url: workflowArtifactUrl,
-});
-```
-
-### `updateTaskStatus(taskUrl, status)` (async)
+### `await updateTaskStatus(taskUrl, status)` (async)
 
 Updates a TaskDoc's status field.
 
@@ -120,12 +88,13 @@ await updateTaskStatus(taskUrl, 'completed');
 ## Example
 
 ```javascript
-const { getExecution, createArtifact, createWorkflowArtifact, addToArtifactsFolder, updateTaskStatus } = await useSkill("execution");
+const { getExecution, createArtifact, updateTaskStatus } = await useSkill("execution");
 const { getPlan } = await useSkill("plan");
-const { getSpec, getLeafSpecs } = await useSkill("spec");
+const { getSpec } = await useSkill("spec");
 
 const exec = await getExecution(executionUrl);
 const plan = await getPlan(planUrl);
+const artifactsFolderUrl = exec.getArtifactsFolderUrl();
 
 for (const taskUrl of exec.getTaskUrls()) {
   await updateTaskStatus(taskUrl, 'in-progress');
@@ -134,25 +103,11 @@ for (const taskUrl of exec.getTaskUrls()) {
   const specUrl = task.getSpecDocUrl();
   const spec = await getSpec(specUrl);
 
-  // Create artifact with solution facts
-  const { url: artifactUrl } = createArtifact(spec.getGoal(), [
+  // Create artifact with solution facts — automatically wrapped and added to folder
+  await createArtifact(artifactsFolderUrl, spec.getGoal(), specUrl, [
     { pred: "shift", args: ["day_1"] },
-    // ... more facts
+    // ... more facts that satisfy the spec constraints
   ]);
-
-  const { url: workflowArtifactUrl } = createWorkflowArtifact(
-    spec.getGoal(),
-    artifactUrl,
-    specUrl,
-    'datalog',
-  );
-
-  // Register in artifacts folder
-  await addToArtifactsFolder(exec.getArtifactsFolderUrl(), {
-    type: 'workflow-artifact',
-    name: spec.getGoal(),
-    url: workflowArtifactUrl,
-  });
 
   await updateTaskStatus(taskUrl, 'completed');
 }

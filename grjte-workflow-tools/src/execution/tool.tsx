@@ -215,7 +215,7 @@ function WorkflowArtifactCard(props: {
           {workflowArtifact()?.name || props.entry.name || "Untitled"}
         </span>
         <span class="execution-artifact-type">
-          {workflowArtifact()?.artifactType || "artifact"}
+          datalog
         </span>
       </button>
       <Show when={props.expanded}>

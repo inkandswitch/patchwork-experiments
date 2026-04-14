@@ -126,39 +126,28 @@ Read each task's goal and linked spec. The leaf spec describes what artifact to 
 For each task:
 1. Set task status to `'in-progress'`
 2. Read the task's linked spec to understand the required facts
-3. Create a DatalogDoc with solution facts using `createArtifact(title, facts)`
-4. Wrap the artifact in a `workflow-artifact` doc
-5. Add the wrapper doc to the execution's artifacts folder using `addToArtifactsFolder()`
-6. Set task status to `'completed'`
+3. Create the artifact with `createArtifact(artifactsFolderUrl, name, specDocUrl, facts)` — this creates the DatalogDoc, wraps it in a workflow-artifact doc, and adds it to the artifacts folder automatically
+4. Set task status to `'completed'`
 
 ```
 <script data-description="Execute task 1">
-const { createArtifact, createWorkflowArtifact, addToArtifactsFolder, updateTaskStatus } = await useSkill("execution");
+const { createArtifact, updateTaskStatus } = await useSkill("execution");
 
 await updateTaskStatus(taskUrl, 'in-progress');
 
-// Create artifact with solution facts based on the spec
-const { url: artifactUrl } = createArtifact("Solution Title", [
-  { pred: "fact_name", args: ["arg1", "arg2"] },
-  // ... more facts that satisfy the spec constraints
-]);
-
-const { url: workflowArtifactUrl } = createWorkflowArtifact(
+// Create artifact with solution facts — automatically wrapped and added to folder
+const { artifactUrl, workflowArtifactUrl } = await createArtifact(
+  artifactsFolderUrl,
   "Solution Title",
-  artifactUrl,
   taskSpecUrl,
-  "datalog",
+  [
+    { pred: "fact_name", args: ["arg1", "arg2"] },
+    // ... more facts that satisfy the spec constraints
+  ],
 );
 
-// Register in artifacts folder
-await addToArtifactsFolder(artifactsFolderUrl, {
-  type: 'workflow-artifact',
-  name: 'Solution Title',
-  url: workflowArtifactUrl,
-});
-
 await updateTaskStatus(taskUrl, 'completed');
-console.log('Task completed, artifact:', artifactUrl, 'wrapper:', workflowArtifactUrl);
+console.log('Task completed, artifact:', artifactUrl);
 </script>
 ```
 

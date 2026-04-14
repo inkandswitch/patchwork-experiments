@@ -74,17 +74,6 @@ export const plugins: Plugin<any>[] = [
   } satisfies Tool,
   {
     type: "patchwork:datatype",
-    id: "workflow-artifact",
-    name: "Workflow Artifact",
-    icon: "FileSpreadsheet",
-    async load() {
-      const { WorkflowArtifactDatatype } =
-        await import("./execution/workflow-artifact");
-      return WorkflowArtifactDatatype;
-    },
-  } as Datatype,
-  {
-    type: "patchwork:datatype",
     id: "artifact-projection",
     name: "Artifact Projection",
     icon: "TableProperties",

@@ -16,7 +16,7 @@ import { FolderDoc } from '@inkandswitch/patchwork-filesystem';
 
 type Stage = 'elicitation' | 'spec' | 'plan' | 'execution' | 'validation';
 
-const WORKFLOW_VERSION = '0.12.0';
+const WORKFLOW_VERSION = '0.14.0';
 
 function makeId(): string {
   return Math.random().toString(36).slice(2, 10);

@@ -33,66 +33,44 @@ export async function getExecution(url) {
 }
 
 /**
- * Create a new DatalogDoc artifact with the given title and facts.
+ * Create a DatalogDoc artifact, wrap it in a workflow-artifact doc, and add it
+ * to the execution's artifacts folder — all in one step.
  *
- * repo.create() is SYNCHRONOUS — do NOT await this function.
- *
- * @param {string} title - Document title
- * @param {{ pred: string, args: (string|number)[] }[]} facts - Array of facts
- * @returns {{ url: string }} The artifact URL
- */
-export function createArtifact(title, facts) {
-  const handle = repo.create();
-  handle.change((d) => {
-    d['@patchwork'] = { type: 'datalog' };
-    d.title = title;
-    d.facts = facts.map((f) => ({ pred: f.pred, args: [...f.args] }));
-    d.rules = [];
-    d.constraints = [];
-    d.draftText = buildDraftText(title, facts);
-    d.mapStyle = { lines: {}, properties: {} };
-  });
-  return { url: handle.url };
-}
-
-/**
- * Create a workflow-artifact wrapper doc that links an artifact to its spec.
- *
+ * @param {string} artifactsFolderUrl - Automerge URL of the artifacts folder
  * @param {string} name - Display name for the artifact
- * @param {string} artifactDocUrl - Automerge URL of the underlying artifact doc
- * @param {string} specDocUrl - Automerge URL of the owning spec doc
- * @param {string} artifactType - Underlying artifact datatype, usually 'datalog'
- * @returns {{ url: string }}
+ * @param {string} specDocUrl - Automerge URL of the owning leaf spec
+ * @param {{ pred: string, args: (string|number)[] }[]} facts - Array of solution facts
+ * @returns {Promise<{ artifactUrl: string, workflowArtifactUrl: string }>}
  */
-export function createWorkflowArtifact(name, artifactDocUrl, specDocUrl, artifactType = 'datalog') {
-  const handle = repo.create();
-  handle.change((d) => {
-    d['@patchwork'] = { type: 'workflow-artifact' };
-    d.name = name || '';
-    d.artifactType = artifactType || 'datalog';
-    d.artifactDocUrl = artifactDocUrl;
-    d.specDocUrl = specDocUrl;
+export async function createArtifact(artifactsFolderUrl, name, specDocUrl, facts) {
+  const artifactHandle = await repo.create2({
+    '@patchwork': { type: 'datalog' },
+    title: name,
+    facts: facts.map((f) => ({ pred: f.pred, args: [...f.args] })),
+    rules: [],
+    constraints: [],
+    draftText: buildDraftText(name, facts),
+    mapStyle: { lines: {}, properties: {} },
   });
-  return { url: handle.url };
-}
 
-/**
- * Add a workflow-artifact entry to the artifacts folder.
- *
- * @param {string} folderUrl - Automerge URL of the folder doc
- * @param {{ type: string, name: string, url: string }} entry
- */
-export async function addToArtifactsFolder(folderUrl, entry) {
-  const handle = await repo.find(folderUrl);
-  handle.change((d) => {
-    if (!d.docs) d.docs = [];
-    const newEntry = {
-      type: entry.type,
-      name: entry.name,
-      url: entry.url,
-    };
-    d.docs.push(newEntry);
+  const workflowArtifactHandle = await repo.create2({
+    '@patchwork': { type: 'workflow-artifact' },
+    name: name || '',
+    artifactDocUrl: artifactHandle.url,
+    specDocUrl: specDocUrl,
   });
+
+  const folderHandle = await repo.find(artifactsFolderUrl);
+  folderHandle.change((d) => {
+    if (!d.docs) d.docs = [];
+    d.docs.push({
+      type: 'workflow-artifact',
+      name: name || '',
+      url: workflowArtifactHandle.url,
+    });
+  });
+
+  return { artifactUrl: artifactHandle.url, workflowArtifactUrl: workflowArtifactHandle.url };
 }
 
 /**

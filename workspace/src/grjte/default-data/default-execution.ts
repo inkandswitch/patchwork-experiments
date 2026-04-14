@@ -64,13 +64,11 @@ function createWorkflowArtifactDoc(
   name: string,
   artifactDocUrl: AutomergeUrl,
   specDocUrl: AutomergeUrl,
-  artifactType = 'datalog',
 ): AutomergeUrl {
   const handle = repo.create<WorkflowArtifactDoc>();
   handle.change((d) => {
     d['@patchwork'] = { type: 'workflow-artifact' };
     d.name = name;
-    d.artifactType = artifactType;
     d.artifactDocUrl = artifactDocUrl;
     d.specDocUrl = specDocUrl;
   });

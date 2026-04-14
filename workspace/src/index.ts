@@ -114,6 +114,16 @@ export const plugins: Plugin<any>[] = [
   } as Datatype,
   {
     type: 'patchwork:datatype',
+    id: 'workflow-artifact',
+    name: 'Workflow Artifact',
+    icon: 'FileSpreadsheet',
+    async load() {
+      const { WorkflowArtifactDatatype } = await import('./workflow/datatypes');
+      return WorkflowArtifactDatatype;
+    },
+  } as Datatype,
+  {
+    type: 'patchwork:datatype',
     id: 'validation',
     name: 'Validation',
     icon: 'ShieldCheck',

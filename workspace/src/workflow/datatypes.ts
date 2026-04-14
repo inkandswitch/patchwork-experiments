@@ -7,6 +7,7 @@ import type {
   ExecutionDoc,
   ValidationDoc,
   WorkflowDoc,
+  WorkflowArtifactDoc,
   VerificationDoc,
 } from './types';
 
@@ -81,6 +82,18 @@ export const ExecutionDatatype: DatatypeImplementation<ExecutionDoc> = {
     return 'Execution';
   },
   setTitle() {},
+};
+
+export const WorkflowArtifactDatatype: DatatypeImplementation<WorkflowArtifactDoc> = {
+  init(doc) {
+    doc.name = '';
+  },
+  getTitle(doc: WorkflowArtifactDoc) {
+    return doc.name || 'Workflow Artifact';
+  },
+  setTitle(doc: WorkflowArtifactDoc, title: string) {
+    doc.name = title;
+  },
 };
 
 export const ValidationDatatype: DatatypeImplementation<ValidationDoc> = {
