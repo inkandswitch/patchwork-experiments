@@ -47,7 +47,9 @@ export type SpecDoc = HasPatchworkMetadata & {
   spec: Spec;
 };
 
-export type Verification = {
+export type VerificationDoc = HasPatchworkMetadata & {
+  title?: string;
+  description?: string;
   docUrl: AutomergeUrl;
   script: string;
 };

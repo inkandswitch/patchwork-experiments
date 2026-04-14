@@ -6,11 +6,8 @@ import {
   serializeRule,
   type ConstraintViolation,
 } from "../datalog-runtime";
-import type {
-  VerificationDoc,
-  DatalogDoc,
-  StoredConstraint,
-} from "../spec/types";
+import type { DatalogDoc, StoredConstraint } from "../spec/types";
+import type { VerificationDoc } from "../workflow-types";
 
 export type VerificationArtifactInput = {
   url: AutomergeUrl;

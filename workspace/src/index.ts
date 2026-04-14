@@ -23,6 +23,16 @@ export const plugins: Plugin<any>[] = [
     },
   } as Datatype,
   {
+    type: 'patchwork:datatype',
+    id: 'verification',
+    name: 'Verification',
+    icon: 'ShieldCheck',
+    async load() {
+      const { VerificationDatatype } = await import('./workflow/datatypes');
+      return VerificationDatatype;
+    },
+  } as Datatype,
+  {
     type: 'patchwork:tool',
     id: 'paul-plan-viewer',
     name: 'Paul Plan Viewer',

@@ -43,16 +43,6 @@ export const plugins: Plugin<any>[] = [
   } as Datatype,
   {
     type: "patchwork:datatype",
-    id: "verification",
-    name: "Verification",
-    icon: "ShieldCheck",
-    async load() {
-      const { VerificationDatatype } = await import("./spec/types");
-      return VerificationDatatype;
-    },
-  } as Datatype,
-  {
-    type: "patchwork:datatype",
     id: "task-list-execution",
     name: "Task List Execution",
     icon: "Play",
@@ -88,9 +78,8 @@ export const plugins: Plugin<any>[] = [
     name: "Workflow Artifact",
     icon: "FileSpreadsheet",
     async load() {
-      const { WorkflowArtifactDatatype } = await import(
-        "./execution/workflow-artifact"
-      );
+      const { WorkflowArtifactDatatype } =
+        await import("./execution/workflow-artifact");
       return WorkflowArtifactDatatype;
     },
   } as Datatype,

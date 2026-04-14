@@ -6,8 +6,7 @@ import {
 } from "@automerge/automerge-repo-solid-primitives";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import type { DocHandle, AutomergeUrl } from "@automerge/automerge-repo";
-import type { SpecDoc, Spec } from "../workflow-types";
-import type { VerificationDoc } from "./types";
+import type { SpecDoc, Spec, VerificationDoc } from "../workflow-types";
 import { VersionBadge } from "../version";
 import "./spec.css";
 import "./verification-embed.css";

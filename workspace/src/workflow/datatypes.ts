@@ -7,6 +7,7 @@ import type {
   ExecutionDoc,
   ValidationDoc,
   WorkflowDoc,
+  VerificationDoc,
 } from './types';
 
 export type { WorkflowDoc } from './types';
@@ -49,6 +50,18 @@ export const SpecDatatype: DatatypeImplementation<SpecDoc> = {
     if (doc.spec) {
       doc.spec.goal = title;
     }
+  },
+};
+
+export const VerificationDatatype: DatatypeImplementation<VerificationDoc> = {
+  init(doc) {
+    doc.script = '';
+  },
+  getTitle(doc) {
+    return doc.title || 'Verification';
+  },
+  setTitle(doc, title) {
+    doc.title = title;
   },
 };
 

@@ -1,6 +1,6 @@
-import type { Heads } from '@automerge/automerge';
-import type { AutomergeUrl } from '@automerge/automerge-repo';
-import type { HasPatchworkMetadata } from '@inkandswitch/patchwork-filesystem';
+import type { Heads } from "@automerge/automerge";
+import type { AutomergeUrl } from "@automerge/automerge-repo";
+import type { HasPatchworkMetadata } from "@inkandswitch/patchwork-filesystem";
 
 export type WorkflowToolIds = {
   elicitation?: string;
@@ -10,7 +10,7 @@ export type WorkflowToolIds = {
   validation?: string;
 };
 
-export type PlanType = 'petrinet' | 'task-list';
+export type PlanType = "petrinet" | "task-list";
 
 export type WorkflowDoc = {
   specElicitationDocUrl: AutomergeUrl;
@@ -47,7 +47,9 @@ export type SpecDoc = HasPatchworkMetadata & {
   spec: Spec;
 };
 
-export type Verification = {
+export type VerificationDoc = HasPatchworkMetadata & {
+  title?: string;
+  description?: string;
   docUrl: AutomergeUrl;
   script: string;
 };

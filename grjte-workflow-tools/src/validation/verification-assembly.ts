@@ -2,8 +2,8 @@ import type {
   AutomergeUrl,
   DocHandle as RepoDocHandle,
 } from "@automerge/automerge-repo";
-import type { SpecDoc } from "../workflow-types";
-import type { VerificationDoc, DatalogDoc } from "../spec/types";
+import type { SpecDoc, VerificationDoc } from "../workflow-types";
+import type { DatalogDoc } from "../spec/types";
 
 type FolderEntry = {
   type: string;

@@ -1,6 +1,5 @@
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo';
-import type { SpecDoc, Spec } from '../../workflow/types';
-import type { VerificationDoc } from '../../../../grjte-workflow-tools/src/spec/types';
+import type { SpecDoc, Spec, VerificationDoc } from '../../workflow/types';
 import { createProjectionDoc } from '../../../../grjte-workflow-tools/src/artifact-projection/artifact-projection';
 import { buildHospitalRotaProjectionSpec } from './default-projection';
 
@@ -529,10 +528,7 @@ high_census_threshold(ward_6, 16).`,
     description:
       'Ensure Ward 6 shifts above the high-census threshold roster three registered nurses.',
   });
-  const amuProjectionUrl = createProjectionDoc(
-    repo,
-    buildHospitalRotaProjectionSpec('AMU Rota'),
-  );
+  const amuProjectionUrl = createProjectionDoc(repo, buildHospitalRotaProjectionSpec('AMU Rota'));
   const ward6ProjectionUrl = createProjectionDoc(
     repo,
     buildHospitalRotaProjectionSpec('Ward 6 Rota'),
