@@ -5,6 +5,8 @@ export const ArtifactProjectionDatatype: DatatypeImplementation<ProjectionSpecDo
   init(doc) {
     doc.schemaVersion = 3;
     doc.sourceType = 'datalog';
+    doc.viewKind = 'table';
+    doc.view = {};
     doc.rows = {
       entityPredicate: '',
       keyArg: 0,

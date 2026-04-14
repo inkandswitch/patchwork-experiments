@@ -248,3 +248,115 @@ const { defaultExpanded, projectionDoc, helpers } = ctx;
   };
 }
 `;
+
+export function buildPostgresConfigProjectionSpec(
+  title: string,
+): ProjectionSpecDoc {
+  return {
+    '@patchwork': { type: 'artifact-projection' },
+    schemaVersion: 3,
+    sourceType: 'datalog',
+    viewKind: 'key-value',
+    title: `${title} Config`,
+    entries: [
+      {
+        id: 'max-connections',
+        label: 'max_connections',
+        cellType: 'number',
+        read: { kind: 'singleton-fact-arg', pred: 'max_connections', valueArg: 0 },
+        readOnlyReason: 'Derived from capacity planning facts.',
+      },
+      {
+        id: 'shared-buffers',
+        label: 'shared_buffers',
+        cellType: 'text',
+        read: { kind: 'singleton-fact-arg', pred: 'shared_buffers', valueArg: 0 },
+        readOnlyReason: 'Derived from the selected instance size.',
+      },
+      {
+        id: 'work-mem',
+        label: 'work_mem',
+        cellType: 'text',
+        read: { kind: 'singleton-fact-arg', pred: 'work_mem', valueArg: 0 },
+        readOnlyReason: 'Derived from the selected instance size.',
+      },
+    ],
+    view: {
+      expandScript: POSTGRES_CONFIG_VIEW_EXPAND_SCRIPT,
+    },
+    verification: {},
+  };
+}
+
+export const POSTGRES_CONFIG_VIEW_EXPAND_SCRIPT = `
+const { defaultExpanded, helpers } = ctx;
+{
+  const baseFacts = helpers.cloneFacts(defaultExpanded.facts);
+  const provenanceEntries = (defaultExpanded.provenanceEntries || []).map((entry) =>
+    helpers.provenanceEntry(entry.fact, entry.anchors),
+  );
+  const derivedFacts = [];
+
+  const serviceTier =
+    baseFacts.find((fact) => fact.pred === 'service' && String(fact.args[0] ?? '') === 'postgres')
+      ?.args[1] ?? '';
+  const instanceFact = baseFacts.find(
+    (fact) => fact.pred === 'instance' && String(fact.args[0] ?? '') === String(serviceTier),
+  );
+  const peakConnectionsFact = baseFacts.find(
+    (fact) => fact.pred === 'peak_concurrent_db_connections',
+  );
+
+  const cores = Number(instanceFact?.args[1] ?? 0);
+  const memoryMb = Number(instanceFact?.args[2] ?? 0);
+  const peakConnections = Number(peakConnectionsFact?.args[0] ?? 0);
+
+  if (Number.isFinite(peakConnections) && peakConnections > 0) {
+    derivedFacts.push(helpers.makeFact('max_connections', peakConnections));
+    if (peakConnectionsFact) {
+      provenanceEntries.push(
+        helpers.provenanceEntry(
+          helpers.makeFact('max_connections', peakConnections),
+          [{ kind: 'key-value-entry', entryId: 'max-connections' }],
+        ),
+      );
+    }
+  }
+
+  if (Number.isFinite(memoryMb) && memoryMb > 0) {
+    const sharedBuffersMb = Math.max(128, Math.floor(memoryMb / 4));
+    derivedFacts.push(helpers.makeFact('shared_buffers', sharedBuffersMb + 'MB'));
+    if (instanceFact) {
+      provenanceEntries.push(
+        helpers.provenanceEntry(
+          helpers.makeFact('shared_buffers', sharedBuffersMb + 'MB'),
+          [{ kind: 'key-value-entry', entryId: 'shared-buffers' }],
+        ),
+      );
+    }
+  }
+
+  if (Number.isFinite(cores) && cores > 0) {
+    derivedFacts.push(helpers.makeFact('work_mem', cores + 'MB'));
+    if (instanceFact) {
+      provenanceEntries.push(
+        helpers.provenanceEntry(
+          helpers.makeFact('work_mem', cores + 'MB'),
+          [{ kind: 'key-value-entry', entryId: 'work-mem' }],
+        ),
+      );
+    }
+  }
+
+  return {
+    title: defaultExpanded.title,
+    facts: [...baseFacts, ...derivedFacts],
+    draftText: helpers.buildExpandedArtifactDraft(
+      defaultExpanded.title || 'Artifact',
+      baseFacts,
+      derivedFacts,
+    ),
+    provenanceEntries,
+  };
+}
+`;

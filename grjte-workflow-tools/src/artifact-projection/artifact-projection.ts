@@ -11,6 +11,7 @@ const DEFAULT_FALSE_VALUE = "no";
 export type ProjectionCellType = "text" | "number" | "boolean" | "entity";
 export type ProjectionCardinality = "zero-or-one" | "exactly-one" | "many";
 export type ProjectionBlankPolicy = "delete" | "reject";
+export type ProjectionViewKind = "table" | "key-value";
 
 export type FactArgRead = {
   kind: "fact-arg";
@@ -40,11 +41,26 @@ export type DerivedRowKeyRead = {
   kind: "derived-row-key";
 };
 
+export type SingletonFactArgRead = {
+  kind: "singleton-fact-arg";
+  pred: string;
+  valueArg: number;
+};
+
+export type SingletonFactPresenceRead = {
+  kind: "singleton-fact-presence";
+  pred: string;
+  trueValue?: string;
+  falseValue?: string;
+};
+
 export type ProjectionReadBinding =
   | FactArgRead
   | FactPresenceRead
   | SlotValueRead
-  | DerivedRowKeyRead;
+  | DerivedRowKeyRead
+  | SingletonFactArgRead
+  | SingletonFactPresenceRead;
 
 export type UpsertFactArgWrite = {
   kind: "upsert-fact-arg";
@@ -68,10 +84,23 @@ export type UpsertSlotValueWrite = {
   valueArg: number;
 };
 
+export type UpsertSingletonFactArgWrite = {
+  kind: "upsert-singleton-fact-arg";
+  pred: string;
+  valueArg: number;
+};
+
+export type SetSingletonFactPresenceWrite = {
+  kind: "set-singleton-fact-presence";
+  pred: string;
+};
+
 export type ProjectionWriteBinding =
   | UpsertFactArgWrite
   | SetFactPresenceWrite
-  | UpsertSlotValueWrite;
+  | UpsertSlotValueWrite
+  | UpsertSingletonFactArgWrite
+  | SetSingletonFactPresenceWrite;
 
 export type ProjectionSpecColumn = {
   id: string;
@@ -81,6 +110,16 @@ export type ProjectionSpecColumn = {
   read: ProjectionReadBinding;
   write?: ProjectionWriteBinding;
   cardinality: ProjectionCardinality;
+  blankPolicy?: ProjectionBlankPolicy;
+  readOnlyReason?: string;
+};
+
+export type ProjectionKeyValueEntrySpec = {
+  id: string;
+  label: string;
+  cellType: ProjectionCellType;
+  read: ProjectionReadBinding;
+  write?: ProjectionWriteBinding;
   blankPolicy?: ProjectionBlankPolicy;
   readOnlyReason?: string;
 };
@@ -103,15 +142,37 @@ export type ProjectionVerificationSpec = {
   mapViolationScript?: string;
 };
 
-export type ProjectionSpecDoc = {
+export type ProjectionViewSpec = {
+  expandScript?: string;
+};
+
+type ProjectionSpecDocBase = {
   "@patchwork": { type: "artifact-projection" };
   schemaVersion: 3;
   sourceType: "datalog";
   title?: string;
-  rows: ProjectionRowsSpec;
-  columns: ProjectionSpecColumn[];
+  viewKind?: ProjectionViewKind;
+  view?: ProjectionViewSpec;
   verification?: ProjectionVerificationSpec;
 };
+
+export type TableProjectionSpecDoc = ProjectionSpecDocBase & {
+  viewKind?: "table";
+  rows: ProjectionRowsSpec;
+  columns: ProjectionSpecColumn[];
+  entries?: never;
+};
+
+export type KeyValueProjectionSpecDoc = ProjectionSpecDocBase & {
+  viewKind: "key-value";
+  rows?: never;
+  columns?: never;
+  entries: ProjectionKeyValueEntrySpec[];
+};
+
+export type ProjectionSpecDoc =
+  | TableProjectionSpecDoc
+  | KeyValueProjectionSpecDoc;
 
 export type ProjectionDoc = ProjectionSpecDoc;
 
@@ -125,14 +186,23 @@ export type ArtifactProjectionAnnotationKind =
   | "cell"
   | "row"
   | "column"
+  | "entry"
   | "sheet";
 export type ArtifactProjectionAnnotationSource = "parse" | "constraint";
+
+export type ProjectionAnchor =
+  | { kind: "sheet" }
+  | { kind: "table-cell"; rowId: string; columnId: string }
+  | { kind: "table-row"; rowId: string }
+  | { kind: "table-column"; columnId: string }
+  | { kind: "key-value-entry"; entryId: string };
 
 export type ArtifactProjectionAnnotation = {
   artifactUrl?: AutomergeUrl;
   kind: ArtifactProjectionAnnotationKind;
   rowId?: string;
   columnId?: string;
+  entryId?: string;
   message: string;
   constraintLabel?: string;
   source: ArtifactProjectionAnnotationSource;
@@ -151,7 +221,8 @@ export type MaterializedProjectionRow = {
   }>;
 };
 
-export type MaterializedProjection = {
+export type MaterializedTableProjection = {
+  viewKind: "table";
   title: string;
   columns: MaterializedProjectionColumn[];
   hiddenColumns: ProjectionSpecColumn[];
@@ -159,18 +230,29 @@ export type MaterializedProjection = {
   annotations: ArtifactProjectionAnnotation[];
 };
 
-export type SheetAnchor = {
-  rowId?: string;
-  columnId?: string;
+export type MaterializedKeyValueEntry = ProjectionKeyValueEntrySpec & {
+  value: string;
+  editable: boolean;
 };
+
+export type MaterializedKeyValueProjection = {
+  viewKind: "key-value";
+  title: string;
+  entries: MaterializedKeyValueEntry[];
+  annotations: ArtifactProjectionAnnotation[];
+};
+
+export type MaterializedProjection =
+  | MaterializedTableProjection
+  | MaterializedKeyValueProjection;
 
 export type ProjectionProvenanceEntry = {
   fact: StoredFact;
-  anchors: SheetAnchor[];
+  anchors: ProjectionAnchor[];
 };
 
 export type ExpandedArtifactDoc = ArtifactDocLike & {
-  provenanceByFactKey: Map<string, SheetAnchor[]>;
+  provenanceByFactKey: Map<string, ProjectionAnchor[]>;
   provenanceEntries: ProjectionProvenanceEntry[];
 };
 
@@ -198,6 +280,7 @@ type NormalizedProjectionColumn = ProjectionSpecColumn & {
 };
 
 export type CompiledProjectionSpec = {
+  viewKind: "table";
   title: string;
   rows: ProjectionRowsSpec;
   columns: NormalizedProjectionColumn[];
@@ -207,14 +290,43 @@ export type CompiledProjectionSpec = {
   rowKeyArgByPredicate: Map<string, number>;
 };
 
+type NormalizedKeyValueEntry = ProjectionKeyValueEntrySpec & {
+  blankPolicy?: ProjectionBlankPolicy;
+};
+
+export type CompiledKeyValueProjectionSpec = {
+  viewKind: "key-value";
+  title: string;
+  entries: NormalizedKeyValueEntry[];
+  managedPredicates: Set<string>;
+};
+
+export type AnyCompiledProjectionSpec =
+  | CompiledProjectionSpec
+  | CompiledKeyValueProjectionSpec;
+
 export type CompileProjectionSpecResult = {
   ok: boolean;
-  compiled?: CompiledProjectionSpec;
+  compiled?: AnyCompiledProjectionSpec;
   annotations: ArtifactProjectionAnnotation[];
   title: string;
   visibleColumns: NormalizedProjectionColumn[];
   hiddenColumns: NormalizedProjectionColumn[];
+  viewKind: ProjectionViewKind;
+  entries: NormalizedKeyValueEntry[];
 };
+
+function isKeyValueProjectionDoc(
+  projectionDoc: ProjectionSpecDoc,
+): projectionDoc is KeyValueProjectionSpecDoc {
+  return projectionDoc.viewKind === "key-value";
+}
+
+function isTableProjectionDoc(
+  projectionDoc: ProjectionSpecDoc,
+): projectionDoc is TableProjectionSpecDoc {
+  return !isKeyValueProjectionDoc(projectionDoc);
+}
 
 export interface LensBackend {
   readonly id: string;
@@ -312,13 +424,13 @@ type ProjectionScriptHelpers = {
   ) => string;
   provenanceEntry: (
     fact: StoredFact,
-    anchors: SheetAnchor[],
+    anchors: ProjectionAnchor[],
   ) => ProjectionProvenanceEntry;
   resolveFactAnchors: (
     fact: StoredFact,
     provenanceEntries: ProjectionProvenanceEntry[],
     groundBody?: StoredFact[],
-  ) => SheetAnchor[];
+  ) => ProjectionAnchor[];
 };
 
 const verificationScriptCache = new Map<string, (ctx: unknown) => unknown>();
@@ -404,6 +516,7 @@ class NativeDatalogLensBackend implements LensBackend {
     }));
 
     return {
+      viewKind: "table",
       title: compiled.title,
       columns: compiled.visibleColumns.map((column, visibleIndex) => ({
         ...column,
@@ -557,6 +670,14 @@ class NativeDatalogLensBackend implements LensBackend {
         }
         break;
       }
+      case "upsert-singleton-fact-arg":
+      case "set-singleton-fact-presence":
+        return mutationError(
+          artifactUrl,
+          rowId,
+          columnId,
+          `Column "${column.header}" uses a key-value write binding that is not supported in table views.`,
+        );
       default: {
         const exhaustiveCheck: never = write;
         throw new Error(
@@ -719,8 +840,16 @@ export function createProjectionDoc(
     doc.schemaVersion = 3;
     doc.sourceType = "datalog";
     doc.title = projectionDoc.title;
-    doc.rows = cloneRowsSpec(projectionDoc.rows);
-    doc.columns = projectionDoc.columns.map((column) => cloneColumn(column));
+    doc.viewKind = projectionDoc.viewKind ?? "table";
+    if (projectionDoc.view) {
+      doc.view = { ...projectionDoc.view };
+    }
+    if (isKeyValueProjectionDoc(projectionDoc)) {
+      doc.entries = projectionDoc.entries.map((entry) => cloneEntry(entry));
+    } else {
+      doc.rows = cloneRowsSpec(projectionDoc.rows);
+      doc.columns = projectionDoc.columns.map((column) => cloneColumn(column));
+    }
     if (projectionDoc.verification) {
       doc.verification = { ...projectionDoc.verification };
     }
@@ -731,13 +860,332 @@ export function createProjectionDoc(
 export function compileProjectionSpec(
   specDoc: ProjectionSpecDoc,
 ): CompileProjectionSpecResult {
+  const viewKind = specDoc.viewKind ?? "table";
+  if (viewKind === "key-value") {
+    return compileKeyValueProjectionSpec(specDoc);
+  }
+  return compileTableProjectionSpec(specDoc);
+}
+
+export function materializeProjection(
+  projectionDoc: ProjectionSpecDoc,
+  artifactDoc: ArtifactDocLike,
+  options: ProjectionRuntimeOptions = {},
+): MaterializedProjection {
+  const compile = compileProjectionSpec(projectionDoc);
+  if (!compile.ok || !compile.compiled) {
+    if (compile.viewKind === "key-value") {
+      return {
+        viewKind: "key-value",
+        title: compile.title || artifactDoc.title || "Artifact Sheet",
+        entries: compile.entries.map((entry) => ({
+          ...entry,
+          editable: Boolean(entry.write),
+          value: "",
+        })),
+        annotations: dedupeAnnotations(compile.annotations),
+      };
+    }
+    return {
+      viewKind: "table",
+      title: compile.title || artifactDoc.title || "Artifact Sheet",
+      columns: compile.visibleColumns.map((column, visibleIndex) => ({
+        ...column,
+        visibleIndex,
+      })),
+      hiddenColumns: compile.hiddenColumns.map((column) => ({ ...column })),
+      rows: [],
+      annotations: dedupeAnnotations(compile.annotations),
+    };
+  }
+
+  if (compile.compiled.viewKind === "key-value") {
+    const expanded = expandArtifactDocForView(
+      projectionDoc,
+      buildBaseKeyValueProvenance(compile.compiled, artifactDoc),
+    );
+    const base = materializeKeyValueProjection(compile.compiled, expanded);
+    const annotations = dedupeAnnotations([
+      ...compile.annotations,
+      ...base.annotations,
+      ...validateKeyValueProjection(compile.compiled, expanded),
+    ]);
+    return { ...base, annotations };
+  }
+
+  const backend = options.backend ?? nativeDatalogLensBackend;
+  const expanded = expandArtifactDocForView(
+    projectionDoc,
+    backend.buildBaseProvenance(compile.compiled, artifactDoc),
+  );
+  const base = backend.materialize(compile.compiled, expanded);
+  const annotations = dedupeAnnotations([
+    ...compile.annotations,
+    ...base.annotations,
+    ...backend.validate(compile.compiled, expanded),
+  ]);
+  return { ...base, annotations };
+}
+
+export function appendProjectionRow(
+  projectionDoc: ProjectionSpecDoc,
+  priorDoc: ArtifactDocLike,
+  options: ProjectionRuntimeOptions = {},
+): MutationResult {
+  const compile = compileProjectionSpec(projectionDoc);
+  if (!compile.ok || !compile.compiled) {
+    return {
+      ok: false,
+      error: compile.annotations[0]?.message || "Projection spec is invalid.",
+      annotations: compile.annotations,
+    };
+  }
+  if (compile.compiled.viewKind === "key-value") {
+    return {
+      ok: false,
+      error: "Key-value projections do not support adding rows.",
+      annotations: [sheetAnnotation("Key-value projections do not support adding rows.")],
+    };
+  }
+  return (options.backend ?? nativeDatalogLensBackend).appendRow(
+    compile.compiled,
+    priorDoc,
+  );
+}
+
+export function deleteProjectionRow(
+  projectionDoc: ProjectionSpecDoc,
+  priorDoc: ArtifactDocLike,
+  rowId: string,
+  artifactUrl?: AutomergeUrl,
+  options: ProjectionRuntimeOptions = {},
+): MutationResult {
+  const compile = compileProjectionSpec(projectionDoc);
+  if (!compile.ok || !compile.compiled) {
+    return {
+      ok: false,
+      error: compile.annotations[0]?.message || "Projection spec is invalid.",
+      annotations: compile.annotations,
+    };
+  }
+  if (compile.compiled.viewKind === "key-value") {
+    return {
+      ok: false,
+      error: "Key-value projections do not support deleting rows.",
+      annotations: [
+        {
+          artifactUrl,
+          kind: "sheet",
+          message: "Key-value projections do not support deleting rows.",
+          source: "parse",
+        },
+      ],
+    };
+  }
+  return (options.backend ?? nativeDatalogLensBackend).deleteRow(
+    compile.compiled,
+    priorDoc,
+    rowId,
+    artifactUrl,
+  );
+}
+
+export function applyProjectionCellEdit(
+  projectionDoc: ProjectionSpecDoc,
+  priorDoc: ArtifactDocLike,
+  rowId: string,
+  columnId: string,
+  rawValue: string,
+  artifactUrl?: AutomergeUrl,
+  options: ProjectionRuntimeOptions = {},
+): MutationResult {
+  const compile = compileProjectionSpec(projectionDoc);
+  if (!compile.ok || !compile.compiled) {
+    return {
+      ok: false,
+      error: compile.annotations[0]?.message || "Projection spec is invalid.",
+      annotations: compile.annotations,
+    };
+  }
+  if (compile.compiled.viewKind === "key-value") {
+    return applyKeyValueEntryEdit(
+      compile.compiled,
+      priorDoc,
+      columnId,
+      rawValue,
+      artifactUrl,
+    );
+  }
+  return (options.backend ?? nativeDatalogLensBackend).applyCellEdit(
+    compile.compiled,
+    priorDoc,
+    rowId,
+    columnId,
+    rawValue,
+    artifactUrl,
+  );
+}
+
+export function expandArtifactDocForVerification(
+  projectionDoc: ProjectionSpecDoc,
+  artifactDoc: ArtifactDocLike,
+  options: ProjectionRuntimeOptions = {},
+): ExpandedArtifactDoc {
+  const fallback = buildArtifactProjectionProvenance(
+    projectionDoc,
+    artifactDoc,
+    options,
+  );
+  const script = projectionDoc.verification?.expandScript?.trim();
+  if (!script) return fallback;
+
+  try {
+    const raw = loadVerificationScript(
+      script,
+      "expand",
+    )({
+      artifactDoc: freezeDocLike(artifactDoc),
+      projectionDoc: freezeProjectionDoc(projectionDoc),
+      defaultExpanded: freezeExpandedArtifactForScript(fallback),
+      helpers: scriptHelpers,
+    } satisfies VerificationExpandContext);
+    return normalizeScriptExpandedArtifact(raw, fallback);
+  } catch (error) {
+    return {
+      ...fallback,
+      draftText: [
+        fallback.draftText ||
+          buildBaseArtifactDraft(
+            artifactDoc.title || "Artifact",
+            fallback.facts,
+          ),
+        "",
+        `% Verification expansion script error: ${errorMessage(error)}`,
+      ].join("\n"),
+    };
+  }
+}
+
+export function buildArtifactProjectionProvenance(
+  projectionDoc: ProjectionSpecDoc,
+  artifactDoc: ArtifactDocLike,
+  options: ProjectionRuntimeOptions = {},
+): ExpandedArtifactDoc {
+  const compile = compileProjectionSpec(projectionDoc);
+  if (!compile.ok || !compile.compiled) {
+    return buildFallbackExpandedArtifactDoc(artifactDoc);
+  }
+  if (compile.compiled.viewKind === "key-value") {
+    return expandArtifactDocForView(
+      projectionDoc,
+      buildBaseKeyValueProvenance(compile.compiled, artifactDoc),
+    );
+  }
+  const backend = options.backend ?? nativeDatalogLensBackend;
+  return expandArtifactDocForView(
+    projectionDoc,
+    backend.buildBaseProvenance(compile.compiled, artifactDoc),
+  );
+}
+
+export function deriveConstraintAnnotationsForArtifact(
+  projectionDoc: ProjectionSpecDoc,
+  artifactUrl: AutomergeUrl,
+  expandedArtifactDoc: ExpandedArtifactDoc,
+  constraints:
+    | Array<{ constraintLabel: string; violations: ConstraintViolation[] }>
+    | VerificationConstraintResult[],
+  _options: ProjectionRuntimeOptions = {},
+): ArtifactProjectionAnnotation[] {
+  const annotations: ArtifactProjectionAnnotation[] = [];
+  const script = projectionDoc.verification?.mapViolationScript?.trim();
+
+  for (const constraint of constraints) {
+    const constraintLabel =
+      "constraintLabel" in constraint
+        ? constraint.constraintLabel
+        : constraint.label;
+    for (const violation of constraint.violations) {
+      const fallback = mapViolationToAnnotations(
+        artifactUrl,
+        constraintLabel,
+        violation,
+        expandedArtifactDoc.provenanceByFactKey,
+      );
+      if (!script) {
+        annotations.push(...fallback);
+        continue;
+      }
+
+      try {
+        const raw = loadVerificationScript(
+          script,
+          "mapViolation",
+        )({
+          artifactUrl,
+          constraintLabel,
+          violation,
+          expandedArtifactDoc:
+            freezeExpandedArtifactForScript(expandedArtifactDoc),
+          defaultAnnotations: freezeAnnotations(fallback),
+          helpers: scriptHelpers,
+        } satisfies VerificationMapViolationContext);
+        annotations.push(
+          ...normalizeScriptAnnotations(
+            raw,
+            "constraint",
+            artifactUrl,
+            constraintLabel,
+            fallback,
+          ),
+        );
+      } catch (error) {
+        annotations.push(
+          ...fallback,
+          scriptRuntimeAnnotation(
+            `Verification mapViolationScript failed: ${errorMessage(error)}`,
+            artifactUrl,
+            "constraint",
+            constraintLabel,
+          ),
+        );
+      }
+    }
+  }
+
+  return dedupeAnnotations(annotations);
+}
+
+export function buildBaseArtifactDraft(
+  title: string,
+  facts: StoredFact[],
+): string {
+  const lines = [`% ${title}`];
+  for (const fact of facts) lines.push(serializeFact(fact));
+  return lines.join("\n");
+}
+
+export function buildExpandedArtifactDraft(
+  title: string,
+  baseFacts: StoredFact[],
+  derivedFacts: StoredFact[],
+): string {
+  const lines = [`% ${title}`];
+  if (baseFacts.length > 0) {
+    lines.push("% Base solution facts");
+    lines.push(...baseFacts.map((fact) => serializeFact(fact)));
+  }
+  if (derivedFacts.length > 0) {
+    if (baseFacts.length > 0) lines.push("");
+    lines.push("% Derived facts used by verification");
+    lines.push(...derivedFacts.map((fact) => serializeFact(fact)));
+  }
+  return lines.join("\n");
+}
+
+function compileProjectionBase(specDoc: ProjectionSpecDoc) {
   const annotations: ArtifactProjectionAnnotation[] = [];
   const title = specDoc.title || "Artifact Sheet";
-  const columns = Array.isArray(specDoc.columns)
-    ? specDoc.columns.map((column) => normalizeColumn(column))
-    : [];
-  const visibleColumns = columns.filter((column) => !column.hidden);
-  const hiddenColumns = columns.filter((column) => column.hidden);
 
   if (specDoc["@patchwork"]?.type !== "artifact-projection") {
     annotations.push(
@@ -754,6 +1202,20 @@ export function compileProjectionSpec(
       sheetAnnotation("Projection only supports datalog sources."),
     );
   }
+
+  return { annotations, title };
+}
+
+function compileTableProjectionSpec(
+  specDoc: ProjectionSpecDoc,
+): CompileProjectionSpecResult {
+  const { annotations, title } = compileProjectionBase(specDoc);
+  const columns = Array.isArray(specDoc.columns)
+    ? specDoc.columns.map((column) => normalizeColumn(column))
+    : [];
+  const visibleColumns = columns.filter((column) => !column.hidden);
+  const hiddenColumns = columns.filter((column) => column.hidden);
+
   if (!specDoc.rows) {
     annotations.push(
       sheetAnnotation("Projection is missing rows configuration."),
@@ -853,6 +1315,15 @@ export function compileProjectionSpec(
           );
         }
         break;
+      case "singleton-fact-arg":
+      case "singleton-fact-presence":
+        annotations.push(
+          columnAnnotation(
+            column.id,
+            `Column "${column.header}" uses a singleton binding that only works in key-value views.`,
+          ),
+        );
+        break;
       default: {
         const exhaustiveCheck: never = column.read;
         annotations.push(
@@ -947,6 +1418,15 @@ export function compileProjectionSpec(
           );
         }
         break;
+      case "upsert-singleton-fact-arg":
+      case "set-singleton-fact-presence":
+        annotations.push(
+          columnAnnotation(
+            column.id,
+            `Column "${column.header}" uses a singleton write binding that only works in key-value views.`,
+          ),
+        );
+        break;
       default: {
         const exhaustiveCheck: never = column.write;
         annotations.push(
@@ -961,7 +1441,15 @@ export function compileProjectionSpec(
 
   const ok = annotations.length === 0;
   if (!ok || !specDoc.rows) {
-    return { ok: false, annotations, title, visibleColumns, hiddenColumns };
+    return {
+      ok: false,
+      annotations,
+      title,
+      visibleColumns,
+      hiddenColumns,
+      viewKind: "table",
+      entries: [],
+    };
   }
 
   return {
@@ -970,7 +1458,10 @@ export function compileProjectionSpec(
     title,
     visibleColumns,
     hiddenColumns,
+    viewKind: "table",
+    entries: [],
     compiled: {
+      viewKind: "table",
       title,
       rows: cloneRowsSpec(specDoc.rows),
       columns,
@@ -982,251 +1473,157 @@ export function compileProjectionSpec(
   };
 }
 
-export function materializeProjection(
-  projectionDoc: ProjectionSpecDoc,
-  artifactDoc: ArtifactDocLike,
-  options: ProjectionRuntimeOptions = {},
-): MaterializedProjection {
-  const compile = compileProjectionSpec(projectionDoc);
-  if (!compile.ok || !compile.compiled) {
-    return {
-      title: compile.title || artifactDoc.title || "Artifact Sheet",
-      columns: compile.visibleColumns.map((column, visibleIndex) => ({
-        ...column,
-        visibleIndex,
-      })),
-      hiddenColumns: compile.hiddenColumns.map((column) => ({ ...column })),
-      rows: [],
-      annotations: dedupeAnnotations(compile.annotations),
-    };
+function compileKeyValueProjectionSpec(
+  specDoc: ProjectionSpecDoc,
+): CompileProjectionSpecResult {
+  const { annotations, title } = compileProjectionBase(specDoc);
+  const entries = Array.isArray(specDoc.entries)
+    ? specDoc.entries.map((entry) => normalizeEntry(entry))
+    : [];
+  const seenIds = new Set<string>();
+  const managedPredicates = new Set<string>();
+
+  if (!Array.isArray(specDoc.entries) || specDoc.entries.length === 0) {
+    annotations.push(
+      sheetAnnotation("Key-value projection must define at least one entry."),
+    );
+  }
+  if (specDoc.rows || specDoc.columns) {
+    annotations.push(
+      sheetAnnotation("Key-value projection cannot define table rows/columns."),
+    );
   }
 
-  const backend = options.backend ?? nativeDatalogLensBackend;
-  const base = backend.materialize(compile.compiled, artifactDoc);
-  const annotations = dedupeAnnotations([
-    ...compile.annotations,
-    ...base.annotations,
-    ...backend.validate(compile.compiled, artifactDoc),
-  ]);
-  return { ...base, annotations };
-}
-
-export function appendProjectionRow(
-  projectionDoc: ProjectionSpecDoc,
-  priorDoc: ArtifactDocLike,
-  options: ProjectionRuntimeOptions = {},
-): MutationResult {
-  const compile = compileProjectionSpec(projectionDoc);
-  if (!compile.ok || !compile.compiled) {
-    return {
-      ok: false,
-      error: compile.annotations[0]?.message || "Projection spec is invalid.",
-      annotations: compile.annotations,
-    };
-  }
-  return (options.backend ?? nativeDatalogLensBackend).appendRow(
-    compile.compiled,
-    priorDoc,
-  );
-}
-
-export function deleteProjectionRow(
-  projectionDoc: ProjectionSpecDoc,
-  priorDoc: ArtifactDocLike,
-  rowId: string,
-  artifactUrl?: AutomergeUrl,
-  options: ProjectionRuntimeOptions = {},
-): MutationResult {
-  const compile = compileProjectionSpec(projectionDoc);
-  if (!compile.ok || !compile.compiled) {
-    return {
-      ok: false,
-      error: compile.annotations[0]?.message || "Projection spec is invalid.",
-      annotations: compile.annotations,
-    };
-  }
-  return (options.backend ?? nativeDatalogLensBackend).deleteRow(
-    compile.compiled,
-    priorDoc,
-    rowId,
-    artifactUrl,
-  );
-}
-
-export function applyProjectionCellEdit(
-  projectionDoc: ProjectionSpecDoc,
-  priorDoc: ArtifactDocLike,
-  rowId: string,
-  columnId: string,
-  rawValue: string,
-  artifactUrl?: AutomergeUrl,
-  options: ProjectionRuntimeOptions = {},
-): MutationResult {
-  const compile = compileProjectionSpec(projectionDoc);
-  if (!compile.ok || !compile.compiled) {
-    return {
-      ok: false,
-      error: compile.annotations[0]?.message || "Projection spec is invalid.",
-      annotations: compile.annotations,
-    };
-  }
-  return (options.backend ?? nativeDatalogLensBackend).applyCellEdit(
-    compile.compiled,
-    priorDoc,
-    rowId,
-    columnId,
-    rawValue,
-    artifactUrl,
-  );
-}
-
-export function expandArtifactDocForVerification(
-  projectionDoc: ProjectionSpecDoc,
-  artifactDoc: ArtifactDocLike,
-  options: ProjectionRuntimeOptions = {},
-): ExpandedArtifactDoc {
-  const fallback = buildArtifactProjectionProvenance(
-    projectionDoc,
-    artifactDoc,
-    options,
-  );
-  const script = projectionDoc.verification?.expandScript?.trim();
-  if (!script) return fallback;
-
-  try {
-    const raw = loadVerificationScript(
-      script,
-      "expand",
-    )({
-      artifactDoc: freezeDocLike(artifactDoc),
-      projectionDoc: freezeProjectionDoc(projectionDoc),
-      defaultExpanded: freezeExpandedArtifactForScript(fallback),
-      helpers: scriptHelpers,
-    } satisfies VerificationExpandContext);
-    return normalizeScriptExpandedArtifact(raw, fallback);
-  } catch (error) {
-    return {
-      ...fallback,
-      draftText: [
-        fallback.draftText ||
-          buildBaseArtifactDraft(
-            artifactDoc.title || "Artifact",
-            fallback.facts,
-          ),
-        "",
-        `% Verification expansion script error: ${errorMessage(error)}`,
-      ].join("\n"),
-    };
-  }
-}
-
-export function buildArtifactProjectionProvenance(
-  projectionDoc: ProjectionSpecDoc,
-  artifactDoc: ArtifactDocLike,
-  options: ProjectionRuntimeOptions = {},
-): ExpandedArtifactDoc {
-  const compile = compileProjectionSpec(projectionDoc);
-  const backend = options.backend ?? nativeDatalogLensBackend;
-  return (
-    compile.ok && compile.compiled
-      ? backend.buildBaseProvenance(compile.compiled, artifactDoc)
-      : buildFallbackExpandedArtifactDoc(artifactDoc)
-  );
-}
-
-export function deriveConstraintAnnotationsForArtifact(
-  projectionDoc: ProjectionSpecDoc,
-  artifactUrl: AutomergeUrl,
-  expandedArtifactDoc: ExpandedArtifactDoc,
-  constraints:
-    | Array<{ constraintLabel: string; violations: ConstraintViolation[] }>
-    | VerificationConstraintResult[],
-  _options: ProjectionRuntimeOptions = {},
-): ArtifactProjectionAnnotation[] {
-  const annotations: ArtifactProjectionAnnotation[] = [];
-  const script = projectionDoc.verification?.mapViolationScript?.trim();
-
-  for (const constraint of constraints) {
-    const constraintLabel =
-      "constraintLabel" in constraint
-        ? constraint.constraintLabel
-        : constraint.label;
-    for (const violation of constraint.violations) {
-      const fallback = mapViolationToAnnotations(
-        artifactUrl,
-        constraintLabel,
-        violation,
-        expandedArtifactDoc.provenanceByFactKey,
+  for (const entry of entries) {
+    if (!entry.id) {
+      annotations.push(sheetAnnotation("Projection entries must have an id."));
+      continue;
+    }
+    if (seenIds.has(entry.id)) {
+      annotations.push(
+        entryAnnotation(entry.id, `Entry id "${entry.id}" must be unique.`),
       );
-      if (!script) {
-        annotations.push(...fallback);
-        continue;
-      }
+      continue;
+    }
+    seenIds.add(entry.id);
 
-      try {
-        const raw = loadVerificationScript(
-          script,
-          "mapViolation",
-        )({
-          artifactUrl,
-          constraintLabel,
-          violation,
-          expandedArtifactDoc:
-            freezeExpandedArtifactForScript(expandedArtifactDoc),
-          defaultAnnotations: freezeAnnotations(fallback),
-          helpers: scriptHelpers,
-        } satisfies VerificationMapViolationContext);
+    switch (entry.read.kind) {
+      case "singleton-fact-arg":
+        break;
+      case "singleton-fact-presence":
+        if (entry.cellType !== "boolean") {
+          annotations.push(
+            entryAnnotation(
+              entry.id,
+              `Entry "${entry.label}" must use cellType "boolean" for singleton-fact-presence reads.`,
+            ),
+          );
+        }
+        break;
+      case "fact-arg":
+      case "fact-presence":
+      case "slot-value":
+      case "derived-row-key":
         annotations.push(
-          ...normalizeScriptAnnotations(
-            raw,
-            "constraint",
-            artifactUrl,
-            constraintLabel,
-            fallback,
+          entryAnnotation(
+            entry.id,
+            `Entry "${entry.label}" uses a table binding that only works in table views.`,
           ),
         );
-      } catch (error) {
+        break;
+      default: {
+        const exhaustiveCheck: never = entry.read;
         annotations.push(
-          ...fallback,
-          scriptRuntimeAnnotation(
-            `Verification mapViolationScript failed: ${errorMessage(error)}`,
-            artifactUrl,
-            "constraint",
-            constraintLabel,
+          entryAnnotation(
+            entry.id,
+            `Unsupported read binding: ${JSON.stringify(exhaustiveCheck)}`,
+          ),
+        );
+      }
+    }
+
+    if (!entry.write) continue;
+
+    switch (entry.write.kind) {
+      case "upsert-singleton-fact-arg":
+        managedPredicates.add(entry.write.pred);
+        if (
+          entry.read.kind !== "singleton-fact-arg" ||
+          entry.read.pred !== entry.write.pred ||
+          entry.read.valueArg !== entry.write.valueArg
+        ) {
+          annotations.push(
+            entryAnnotation(
+              entry.id,
+              `Entry "${entry.label}" write binding must mirror its singleton-fact-arg read binding.`,
+            ),
+          );
+        }
+        break;
+      case "set-singleton-fact-presence":
+        managedPredicates.add(entry.write.pred);
+        if (
+          entry.read.kind !== "singleton-fact-presence" ||
+          entry.read.pred !== entry.write.pred
+        ) {
+          annotations.push(
+            entryAnnotation(
+              entry.id,
+              `Entry "${entry.label}" write binding must mirror its singleton-fact-presence read binding.`,
+            ),
+          );
+        }
+        break;
+      case "upsert-fact-arg":
+      case "set-fact-presence":
+      case "upsert-slot-value":
+        annotations.push(
+          entryAnnotation(
+            entry.id,
+            `Entry "${entry.label}" uses a table write binding that only works in table views.`,
+          ),
+        );
+        break;
+      default: {
+        const exhaustiveCheck: never = entry.write;
+        annotations.push(
+          entryAnnotation(
+            entry.id,
+            `Unsupported write binding: ${JSON.stringify(exhaustiveCheck)}`,
           ),
         );
       }
     }
   }
 
-  return dedupeAnnotations(annotations);
-}
-
-export function buildBaseArtifactDraft(
-  title: string,
-  facts: StoredFact[],
-): string {
-  const lines = [`% ${title}`];
-  for (const fact of facts) lines.push(serializeFact(fact));
-  return lines.join("\n");
-}
-
-export function buildExpandedArtifactDraft(
-  title: string,
-  baseFacts: StoredFact[],
-  derivedFacts: StoredFact[],
-): string {
-  const lines = [`% ${title}`];
-  if (baseFacts.length > 0) {
-    lines.push("% Base solution facts");
-    lines.push(...baseFacts.map((fact) => serializeFact(fact)));
+  const ok = annotations.length === 0;
+  if (!ok) {
+    return {
+      ok: false,
+      annotations,
+      title,
+      visibleColumns: [],
+      hiddenColumns: [],
+      viewKind: "key-value",
+      entries,
+    };
   }
-  if (derivedFacts.length > 0) {
-    if (baseFacts.length > 0) lines.push("");
-    lines.push("% Derived facts used by verification");
-    lines.push(...derivedFacts.map((fact) => serializeFact(fact)));
-  }
-  return lines.join("\n");
+
+  return {
+    ok: true,
+    annotations,
+    title,
+    visibleColumns: [],
+    hiddenColumns: [],
+    viewKind: "key-value",
+    entries,
+    compiled: {
+      viewKind: "key-value",
+      title,
+      entries,
+      managedPredicates,
+    },
+  };
 }
 
 function normalizeColumn(
@@ -1247,6 +1644,19 @@ function normalizeColumn(
   };
 }
 
+function normalizeEntry(
+  entry: ProjectionKeyValueEntrySpec,
+): NormalizedKeyValueEntry {
+  return {
+    ...entry,
+    blankPolicy:
+      entry.blankPolicy ??
+      (entry.write ? "delete" : undefined),
+    read: { ...entry.read },
+    write: entry.write ? { ...entry.write } : undefined,
+  };
+}
+
 function cloneRowsSpec(rows: ProjectionRowsSpec): ProjectionRowsSpec {
   return {
     entityPredicate: rows.entityPredicate,
@@ -1264,6 +1674,17 @@ function cloneColumn(column: ProjectionSpecColumn): ProjectionSpecColumn {
     read: { ...column.read },
   };
   if (column.write) result.write = { ...column.write };
+  return result;
+}
+
+function cloneEntry(
+  entry: ProjectionKeyValueEntrySpec,
+): ProjectionKeyValueEntrySpec {
+  const result: ProjectionKeyValueEntrySpec = {
+    ...entry,
+    read: { ...entry.read },
+  };
+  if (entry.write) result.write = { ...entry.write };
   return result;
 }
 
@@ -1344,6 +1765,8 @@ function getReadMatches(
           Number(fact.args[read.slotArg]) === read.slot,
       );
     case "derived-row-key":
+    case "singleton-fact-arg":
+    case "singleton-fact-presence":
       return [];
     default: {
       const exhaustiveCheck: never = read;
@@ -1387,6 +1810,9 @@ function readCellValue(
       return String(matches[0].args[read.valueArg] ?? "");
     case "derived-row-key":
       return rowId;
+    case "singleton-fact-arg":
+    case "singleton-fact-presence":
+      return "";
     default: {
       const exhaustiveCheck: never = read;
       throw new Error(
@@ -1400,18 +1826,33 @@ function parseInputValue(
   column: ProjectionSpecColumn,
   rawValue: string,
 ): { ok: true; value: string | number | null } | { ok: false; error: string } {
+  return parseTypedInputValue(column.header, column.cellType, rawValue);
+}
+
+function parseEntryInputValue(
+  entry: ProjectionKeyValueEntrySpec,
+  rawValue: string,
+): { ok: true; value: string | number | null } | { ok: false; error: string } {
+  return parseTypedInputValue(entry.label, entry.cellType, rawValue);
+}
+
+function parseTypedInputValue(
+  label: string,
+  cellType: ProjectionCellType,
+  rawValue: string,
+): { ok: true; value: string | number | null } | { ok: false; error: string } {
   if (!rawValue) return { ok: true, value: null };
-  if (column.cellType === "number") {
+  if (cellType === "number") {
     const parsed = Number(rawValue);
     if (!Number.isFinite(parsed)) {
       return {
         ok: false,
-        error: `Expected a number for "${column.header}" but found "${rawValue}".`,
+        error: `Expected a number for "${label}" but found "${rawValue}".`,
       };
     }
     return { ok: true, value: parsed };
   }
-  if (column.cellType === "boolean") {
+  if (cellType === "boolean") {
     return { ok: true, value: rawValue };
   }
   return { ok: true, value: rawValue };
@@ -1438,6 +1879,19 @@ function buildFactFromWrite(
   const length = Math.max(1, ...indices) + 1;
   const args: Array<string | number> = Array.from({ length }, () => "");
   args[rowKeyArg] = rowId;
+  for (const [index, value] of Object.entries(extraArgs)) {
+    args[Number(index)] = value;
+  }
+  return { pred, args };
+}
+
+function buildSingletonFactFromWrite(
+  pred: string,
+  extraArgs: Record<number, string | number> = {},
+): StoredFact {
+  const indices = Object.keys(extraArgs).map((key) => Number(key));
+  const length = indices.length > 0 ? Math.max(...indices) + 1 : 0;
+  const args: Array<string | number> = Array.from({ length }, () => "");
   for (const [index, value] of Object.entries(extraArgs)) {
     args[Number(index)] = value;
   }
@@ -1491,6 +1945,26 @@ function mutationError(
         kind: "cell",
         rowId,
         columnId,
+        message: error,
+        source: "parse",
+      },
+    ],
+  };
+}
+
+function keyValueMutationError(
+  artifactUrl: AutomergeUrl | undefined,
+  entryId: string,
+  error: string,
+): MutationFailure {
+  return {
+    ok: false,
+    error,
+    annotations: [
+      {
+        artifactUrl,
+        kind: "entry",
+        entryId,
         message: error,
         source: "parse",
       },
@@ -1563,10 +2037,191 @@ function hasFact(
   );
 }
 
+function getSingletonReadMatches(
+  read: SingletonFactArgRead | SingletonFactPresenceRead,
+  facts: StoredFact[],
+) {
+  return facts.filter((fact) => fact.pred === read.pred);
+}
+
+function readKeyValueEntryValue(
+  entry: ProjectionKeyValueEntrySpec,
+  facts: StoredFact[],
+): string {
+  switch (entry.read.kind) {
+    case "singleton-fact-arg": {
+      const matches = getSingletonReadMatches(entry.read, facts);
+      if (matches.length === 0) return "";
+      return String(matches[0].args[entry.read.valueArg] ?? "");
+    }
+    case "singleton-fact-presence": {
+      const matches = getSingletonReadMatches(entry.read, facts);
+      return matches.length > 0
+        ? entry.read.trueValue || DEFAULT_TRUE_VALUE
+        : entry.read.falseValue || DEFAULT_FALSE_VALUE;
+    }
+    case "fact-arg":
+    case "fact-presence":
+    case "slot-value":
+    case "derived-row-key":
+      throw new Error(
+        `Unsupported key-value read binding: ${JSON.stringify(entry.read)}`,
+      );
+    default: {
+      const exhaustiveCheck: never = entry.read;
+      throw new Error(
+        `Unsupported key-value read binding: ${JSON.stringify(exhaustiveCheck)}`,
+      );
+    }
+  }
+}
+
+function validateKeyValueProjection(
+  compiled: CompiledKeyValueProjectionSpec,
+  doc: ArtifactDocLike,
+): ArtifactProjectionAnnotation[] {
+  const annotations: ArtifactProjectionAnnotation[] = [];
+
+  for (const entry of compiled.entries) {
+    const read = entry.read;
+    if (
+      read.kind !== "singleton-fact-arg" &&
+      read.kind !== "singleton-fact-presence"
+    ) {
+      continue;
+    }
+    const matches = getSingletonReadMatches(read, doc.facts);
+    if (matches.length > 1) {
+      annotations.push({
+        kind: "entry",
+        entryId: entry.id,
+        message: `Entry "${entry.label}" is ambiguous because ${matches.length} matching facts exist.`,
+        source: "parse",
+      });
+    }
+  }
+
+  return dedupeAnnotations(annotations);
+}
+
+function materializeKeyValueProjection(
+  compiled: CompiledKeyValueProjectionSpec,
+  doc: ArtifactDocLike,
+): MaterializedKeyValueProjection {
+  return {
+    viewKind: "key-value",
+    title: compiled.title,
+    entries: compiled.entries.map((entry) => ({
+      ...entry,
+      value: readKeyValueEntryValue(entry, doc.facts),
+      editable: Boolean(entry.write),
+    })),
+    annotations: [],
+  };
+}
+
+function applyKeyValueEntryEdit(
+  compiled: CompiledKeyValueProjectionSpec,
+  doc: ArtifactDocLike,
+  entryId: string,
+  rawValue: string,
+  artifactUrl?: AutomergeUrl,
+): MutationResult {
+  const entry = compiled.entries.find((candidate) => candidate.id === entryId);
+  if (!entry) {
+    return keyValueMutationError(
+      artifactUrl,
+      entryId,
+      `Unknown key-value entry "${entryId}".`,
+    );
+  }
+  if (!entry.write) {
+    return keyValueMutationError(
+      artifactUrl,
+      entryId,
+      `Entry "${entry.label}" is read-only.`,
+    );
+  }
+
+  const normalized = rawValue.trim();
+  const value = parseEntryInputValue(entry, normalized);
+  if (!value.ok) {
+    return keyValueMutationError(artifactUrl, entryId, value.error);
+  }
+  if (value.value == null && entry.blankPolicy === "reject") {
+    return keyValueMutationError(
+      artifactUrl,
+      entryId,
+      `Entry "${entry.label}" does not allow blank values.`,
+    );
+  }
+
+  const nextFacts = cloneFacts(doc.facts);
+  const write = entry.write;
+
+  switch (write.kind) {
+    case "upsert-singleton-fact-arg": {
+      const matches = nextFacts.filter((fact) => fact.pred === write.pred);
+      if (matches.length > 1) {
+        return keyValueMutationError(
+          artifactUrl,
+          entryId,
+          `Entry "${entry.label}" is ambiguous because multiple matching facts already exist.`,
+        );
+      }
+      if (value.value == null) {
+        removeFacts(nextFacts, (fact) => fact.pred === write.pred);
+      } else if (matches.length === 1) {
+        matches[0].args[write.valueArg] = value.value;
+      } else {
+        nextFacts.push(
+          buildSingletonFactFromWrite(write.pred, { [write.valueArg]: value.value }),
+        );
+      }
+      break;
+    }
+    case "set-singleton-fact-presence": {
+      const parsed = parseBooleanValue(normalized);
+      if (parsed == null) {
+        return keyValueMutationError(
+          artifactUrl,
+          entryId,
+          `Expected a boolean value for "${entry.label}". Use yes/no, true/false, or 1/0.`,
+        );
+      }
+      const matches = nextFacts.filter((fact) => fact.pred === write.pred);
+      if (parsed) {
+        if (matches.length === 0) {
+          nextFacts.push(buildSingletonFactFromWrite(write.pred));
+        }
+      } else {
+        removeFacts(nextFacts, (fact) => fact.pred === write.pred);
+      }
+      break;
+    }
+    case "upsert-fact-arg":
+    case "set-fact-presence":
+    case "upsert-slot-value":
+      return keyValueMutationError(
+        artifactUrl,
+        entryId,
+        `Entry "${entry.label}" uses a table write binding that is not supported in key-value views.`,
+      );
+    default: {
+      const exhaustiveCheck: never = write;
+      throw new Error(
+        `Unsupported key-value write binding: ${JSON.stringify(exhaustiveCheck)}`,
+      );
+    }
+  }
+
+  return successResult(doc.title, nextFacts);
+}
+
 function anchorsForFact(
   compiled: CompiledProjectionSpec,
   fact: StoredFact,
-): SheetAnchor[] {
+): ProjectionAnchor[] {
   const rowKeyArg = compiled.rowKeyArgByPredicate.get(fact.pred);
   const rowId = rowKeyArg != null ? String(fact.args[rowKeyArg] ?? "") : "";
   if (!rowId) return [];
@@ -1576,24 +2231,27 @@ function anchorsForFact(
       case "fact-arg":
         return column.read.pred === fact.pred &&
           String(fact.args[column.read.rowKeyArg] ?? "") === rowId
-          ? [{ rowId, columnId: column.id }]
+          ? [{ kind: "table-cell" as const, rowId, columnId: column.id }]
           : [];
       case "fact-presence":
         return column.read.pred === fact.pred &&
           String(fact.args[column.read.rowKeyArg] ?? "") === rowId
-          ? [{ rowId, columnId: column.id }]
+          ? [{ kind: "table-cell" as const, rowId, columnId: column.id }]
           : [];
       case "slot-value":
         return column.read.pred === fact.pred &&
           String(fact.args[column.read.rowKeyArg] ?? "") === rowId &&
           Number(fact.args[column.read.slotArg] ?? NaN) === column.read.slot
-          ? [{ rowId, columnId: column.id }]
+          ? [{ kind: "table-cell" as const, rowId, columnId: column.id }]
           : [];
       case "derived-row-key":
         return fact.pred === compiled.rows.entityPredicate &&
           String(fact.args[compiled.rows.keyArg] ?? "") === rowId
-          ? [{ rowId, columnId: column.id }]
+          ? [{ kind: "table-cell" as const, rowId, columnId: column.id }]
           : [];
+      case "singleton-fact-arg":
+      case "singleton-fact-presence":
+        return [];
       default: {
         const exhaustiveCheck: never = column.read;
         throw new Error(
@@ -1603,11 +2261,49 @@ function anchorsForFact(
     }
   });
 
-  return anchors.length > 0 ? anchors : [{ rowId }];
+  return anchors.length > 0 ? anchors : [{ kind: "table-row", rowId }];
+}
+
+function anchorsForKeyValueFact(
+  compiled: CompiledKeyValueProjectionSpec,
+  fact: StoredFact,
+): ProjectionAnchor[] {
+  const anchors = compiled.entries.flatMap((entry) => {
+    switch (entry.read.kind) {
+      case "singleton-fact-arg":
+      case "singleton-fact-presence":
+        return entry.read.pred === fact.pred
+          ? [{ kind: "key-value-entry" as const, entryId: entry.id }]
+          : [];
+      default:
+        return [];
+    }
+  });
+
+  return anchors.length > 0 ? anchors : [{ kind: "sheet" }];
+}
+
+function buildBaseKeyValueProvenance(
+  compiled: CompiledKeyValueProjectionSpec,
+  doc: ArtifactDocLike,
+): ExpandedArtifactDoc {
+  const facts = cloneFacts(doc.facts);
+  const provenanceEntries = facts.flatMap((fact) => {
+    const anchors = anchorsForKeyValueFact(compiled, fact);
+    return anchors.length > 0 ? [{ fact: cloneFact(fact), anchors }] : [];
+  });
+
+  return {
+    title: doc.title,
+    facts,
+    draftText: buildBaseArtifactDraft(doc.title || "Artifact", facts),
+    provenanceEntries,
+    provenanceByFactKey: provenanceEntriesToMap(provenanceEntries),
+  };
 }
 
 function provenanceEntriesToMap(entries: ProjectionProvenanceEntry[]) {
-  const map = new Map<string, SheetAnchor[]>();
+  const map = new Map<string, ProjectionAnchor[]>();
   for (const entry of entries) {
     const key = factSignature(entry.fact);
     const existing = map.get(key) ?? [];
@@ -1622,7 +2318,7 @@ function factSignature(fact: StoredFact) {
 
 function resolveFactAnchors(
   fact: StoredFact,
-  provenanceByFactKey: Map<string, SheetAnchor[]>,
+  provenanceByFactKey: Map<string, ProjectionAnchor[]>,
   groundBody?: StoredFact[],
 ) {
   const direct = provenanceByFactKey.get(factSignature(fact)) ?? [];
@@ -1658,9 +2354,40 @@ function buildFallbackExpandedArtifactDoc(
   };
 }
 
+function expandArtifactDocForView(
+  projectionDoc: ProjectionSpecDoc,
+  fallback: ExpandedArtifactDoc,
+): ExpandedArtifactDoc {
+  const script = projectionDoc.view?.expandScript?.trim();
+  if (!script) return fallback;
+
+  try {
+    const raw = loadVerificationScript(
+      script,
+      "viewExpand",
+    )({
+      artifactDoc: freezeDocLike(fallback),
+      projectionDoc: freezeProjectionDoc(projectionDoc),
+      defaultExpanded: freezeExpandedArtifactForScript(fallback),
+      helpers: scriptHelpers,
+    } satisfies VerificationExpandContext);
+    return normalizeScriptExpandedArtifact(raw, fallback);
+  } catch (error) {
+    return {
+      ...fallback,
+      draftText: [
+        fallback.draftText ||
+          buildBaseArtifactDraft(fallback.title || "Artifact", fallback.facts),
+        "",
+        `% View expansion script error: ${errorMessage(error)}`,
+      ].join("\n"),
+    };
+  }
+}
+
 function loadVerificationScript(
   script: string,
-  kind: "expand" | "mapViolation",
+  kind: "expand" | "mapViolation" | "viewExpand",
 ) {
   const cacheKey = `${kind}::${script}`;
   const cached = verificationScriptCache.get(cacheKey);
@@ -1740,26 +2467,76 @@ function normalizeProvenanceEntries(
   return entries;
 }
 
-function normalizeAnchors(raw: unknown): SheetAnchor[] {
+function normalizeAnchors(raw: unknown): ProjectionAnchor[] {
   if (!Array.isArray(raw)) return [];
-  return raw.flatMap((entry) => {
-    if (!entry || typeof entry !== "object") return [];
+  const anchors: ProjectionAnchor[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
     const anchor = entry as Record<string, unknown>;
-    return [
-      {
-        rowId: typeof anchor.rowId === "string" ? anchor.rowId : undefined,
-        columnId:
-          typeof anchor.columnId === "string" ? anchor.columnId : undefined,
-      },
-    ];
-  });
+    if (anchor.kind === "table-cell") {
+      if (
+        typeof anchor.rowId === "string" &&
+        typeof anchor.columnId === "string"
+      ) {
+        anchors.push({
+          kind: "table-cell",
+          rowId: anchor.rowId,
+          columnId: anchor.columnId,
+        });
+      }
+      continue;
+    }
+    if (anchor.kind === "table-row") {
+      if (typeof anchor.rowId === "string") {
+        anchors.push({ kind: "table-row", rowId: anchor.rowId });
+      }
+      continue;
+    }
+    if (anchor.kind === "table-column") {
+      if (typeof anchor.columnId === "string") {
+        anchors.push({ kind: "table-column", columnId: anchor.columnId });
+      }
+      continue;
+    }
+    if (anchor.kind === "key-value-entry") {
+      if (typeof anchor.entryId === "string") {
+        anchors.push({ kind: "key-value-entry", entryId: anchor.entryId });
+      }
+      continue;
+    }
+    if (anchor.kind === "sheet") {
+      anchors.push({ kind: "sheet" });
+      continue;
+    }
+
+    const rowId =
+      typeof anchor.rowId === "string" ? anchor.rowId : undefined;
+    const columnId =
+      typeof anchor.columnId === "string" ? anchor.columnId : undefined;
+    if (rowId && columnId) {
+      anchors.push({ kind: "table-cell", rowId, columnId });
+      continue;
+    }
+    if (rowId) {
+      anchors.push({ kind: "table-row", rowId });
+      continue;
+    }
+    if (columnId) {
+      anchors.push({ kind: "table-column", columnId });
+      continue;
+    }
+    if (typeof anchor.entryId === "string") {
+      anchors.push({ kind: "key-value-entry", entryId: anchor.entryId });
+    }
+  }
+  return anchors;
 }
 
 function mapViolationToAnnotations(
   artifactUrl: AutomergeUrl,
   constraintLabel: string,
   violation: ConstraintViolation,
-  provenanceByFactKey: Map<string, SheetAnchor[]>,
+  provenanceByFactKey: Map<string, ProjectionAnchor[]>,
 ): ArtifactProjectionAnnotation[] {
   const annotations: ArtifactProjectionAnnotation[] = [];
   let touchedArtifact = false;
@@ -1770,6 +2547,9 @@ function mapViolationToAnnotations(
   for (const witness of violation.witnesses) {
     const rowAnchors = new Set<string>();
     const cellAnchors = new Set<string>();
+    const columnAnchors = new Set<string>();
+    const entryAnchors = new Set<string>();
+    let touchedSheet = false;
 
     for (const step of witness.steps) {
       if (step.kind !== "fact") continue;
@@ -1782,11 +2562,41 @@ function mapViolationToAnnotations(
       touchedArtifact = true;
 
       for (const anchor of anchors) {
-        if (anchor.rowId) rowAnchors.add(anchor.rowId);
-        if (!hasNegation && anchor.rowId && anchor.columnId) {
-          cellAnchors.add(JSON.stringify([anchor.rowId, anchor.columnId]));
+        switch (anchor.kind) {
+          case "table-row":
+            rowAnchors.add(anchor.rowId);
+            break;
+          case "table-cell":
+            rowAnchors.add(anchor.rowId);
+            if (!hasNegation) {
+              cellAnchors.add(JSON.stringify([anchor.rowId, anchor.columnId]));
+            }
+            break;
+          case "table-column":
+            if (!hasNegation) columnAnchors.add(anchor.columnId);
+            break;
+          case "key-value-entry":
+            entryAnchors.add(anchor.entryId);
+            break;
+          case "sheet":
+            touchedSheet = true;
+            break;
         }
       }
+    }
+
+    if (entryAnchors.size > 0) {
+      for (const entryId of entryAnchors) {
+        annotations.push({
+          artifactUrl,
+          kind: "entry",
+          entryId,
+          message: constraintLabel,
+          constraintLabel,
+          source: "constraint",
+        });
+      }
+      continue;
     }
 
     if (cellAnchors.size > 0) {
@@ -1796,6 +2606,20 @@ function mapViolationToAnnotations(
           artifactUrl,
           kind: "cell",
           rowId,
+          columnId,
+          message: constraintLabel,
+          constraintLabel,
+          source: "constraint",
+        });
+      }
+      continue;
+    }
+
+    if (columnAnchors.size > 0) {
+      for (const columnId of columnAnchors) {
+        annotations.push({
+          artifactUrl,
+          kind: "column",
           columnId,
           message: constraintLabel,
           constraintLabel,
@@ -1816,6 +2640,17 @@ function mapViolationToAnnotations(
           source: "constraint",
         });
       }
+      continue;
+    }
+
+    if (touchedSheet) {
+      annotations.push({
+        artifactUrl,
+        kind: "sheet",
+        message: constraintLabel,
+        constraintLabel,
+        source: "constraint",
+      });
     }
   }
 
@@ -1860,6 +2695,7 @@ function normalizeScriptAnnotations(
       annotation.kind !== "cell" &&
       annotation.kind !== "row" &&
       annotation.kind !== "column" &&
+      annotation.kind !== "entry" &&
       annotation.kind !== "sheet"
     ) {
       continue;
@@ -1877,6 +2713,8 @@ function normalizeScriptAnnotations(
         typeof annotation.columnId === "string"
           ? annotation.columnId
           : undefined,
+      entryId:
+        typeof annotation.entryId === "string" ? annotation.entryId : undefined,
       message: annotation.message,
       constraintLabel:
         typeof annotation.constraintLabel === "string"
@@ -1900,6 +2738,13 @@ function columnAnnotation(
   return { kind: "column", columnId, message, source: "parse" };
 }
 
+function entryAnnotation(
+  entryId: string,
+  message: string,
+): ArtifactProjectionAnnotation {
+  return { kind: "entry", entryId, message, source: "parse" };
+}
+
 function scriptRuntimeAnnotation(
   message: string,
   artifactUrl?: AutomergeUrl,
@@ -1917,6 +2762,7 @@ function dedupeAnnotations(annotations: ArtifactProjectionAnnotation[]) {
       annotation.kind,
       annotation.rowId,
       annotation.columnId,
+      annotation.entryId,
       annotation.message,
       annotation.constraintLabel,
       annotation.source,
@@ -1940,17 +2786,33 @@ function freezeDocLike(doc: ArtifactDocLike) {
 }
 
 function freezeProjectionDoc(projectionDoc: ProjectionSpecDoc) {
-  return deepFreeze({
+  const base = {
     "@patchwork": { ...projectionDoc["@patchwork"] },
     schemaVersion: projectionDoc.schemaVersion,
     sourceType: projectionDoc.sourceType,
     title: projectionDoc.title,
-    rows: cloneRowsSpec(projectionDoc.rows),
-    columns: projectionDoc.columns.map((column) => cloneColumn(column)),
+    view: projectionDoc.view ? { ...projectionDoc.view } : undefined,
     verification: projectionDoc.verification
       ? { ...projectionDoc.verification }
       : undefined,
-  });
+  };
+
+  if (isKeyValueProjectionDoc(projectionDoc)) {
+    const frozen: KeyValueProjectionSpecDoc = {
+      ...base,
+      viewKind: "key-value",
+      entries: projectionDoc.entries.map((entry) => cloneEntry(entry)),
+    };
+    return deepFreeze(frozen);
+  }
+
+  const frozen: TableProjectionSpecDoc = {
+    ...base,
+    viewKind: "table",
+    rows: cloneRowsSpec(projectionDoc.rows),
+    columns: projectionDoc.columns.map((column) => cloneColumn(column)),
+  };
+  return deepFreeze(frozen);
 }
 
 function freezeExpandedArtifactForScript(expanded: ExpandedArtifactDoc) {

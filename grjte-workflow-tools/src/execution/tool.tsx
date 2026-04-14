@@ -10,7 +10,7 @@ import type { TaskListExecutionDoc } from "./types";
 import type { TaskDoc } from "../plan/types";
 import type { ArtifactFolderEntry } from "../artifact-projection/artifact-projection";
 import type { WorkflowArtifactDoc } from "../workflow-types";
-import { GrjteVersionBadge } from "../version";
+import { VersionBadge } from "../version";
 import "./execution.css";
 
 type FolderDoc = {
@@ -78,7 +78,7 @@ function ExecutionView(props: {
               <div class={`execution-status ${currentDoc().status}`}>
                 {formatStatus(currentDoc().status)}
               </div>
-              <GrjteVersionBadge />
+              <VersionBadge />
 
               <Show when={currentDoc().specDocUrl}>
                 {(specUrl) => (
@@ -199,7 +199,9 @@ function WorkflowArtifactCard(props: {
   expanded: boolean;
   onToggle: () => void;
 }) {
-  const [workflowArtifact] = useDocument<WorkflowArtifactDoc>(() => props.entry.url);
+  const [workflowArtifact] = useDocument<WorkflowArtifactDoc>(
+    () => props.entry.url,
+  );
 
   return (
     <div

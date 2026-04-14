@@ -16,7 +16,7 @@ import type { DocHandle, AutomergeUrl } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import type { DatalogDoc } from "../spec/types";
 import type { SpecDoc, WorkflowArtifactDoc } from "../workflow-types";
-import { GrjteVersionBadge } from "../version";
+import { VersionBadge } from "../version";
 import {
   appendProjectionRow,
   applyProjectionCellEdit,
@@ -25,12 +25,24 @@ import {
   type ArtifactProjectionAnnotation,
   type MaterializedProjection,
   type ProjectionDoc,
+  type TableProjectionSpecDoc,
 } from "./artifact-projection";
 import "./artifact-projection.css";
 
 type ToolElement = HTMLElement & { repo: any };
 type CellPosition = { row: number; col: number };
 type ArtifactDocLike = Pick<DatalogDoc, "title" | "facts" | "draftText">;
+
+function isTableProjectionDoc(
+  projection: ProjectionDoc | undefined,
+): projection is TableProjectionSpecDoc {
+  return Boolean(
+    projection &&
+    (projection.viewKind ?? "table") === "table" &&
+    projection.rows &&
+    Array.isArray(projection.columns),
+  );
+}
 
 export const ArtifactProjectionTool: ToolRender = (handle, element) => {
   const dispose = render(
@@ -91,7 +103,7 @@ function ArtifactProjectionWorkspace(props: {
         {(artifact) => (
           <div class="artifact-projection-shell no-picker">
             <div class="artifact-projection-panel">
-              <GrjteVersionBadge />
+              <VersionBadge />
               <div class="artifact-projection-selection-card">
                 <div class="artifact-projection-selection-copy">
                   <div class="artifact-projection-selection-title">
@@ -126,7 +138,9 @@ function ArtifactProjectionWorkspace(props: {
                     <Show
                       when={!projectionUrl()}
                       fallback={
-                        <div class="artifact-projection-loading">Loading...</div>
+                        <div class="artifact-projection-loading">
+                          Loading...
+                        </div>
                       }
                     >
                       <div class="artifact-projection-empty-state">
@@ -145,7 +159,7 @@ function ArtifactProjectionWorkspace(props: {
                   </Show>
                 }
               >
-                <ProjectionSheetView
+                <ProjectionViewSwitcher
                   projection={projectionDoc}
                   projectionHandle={projectionHandle}
                   projectionUrl={projectionUrl}
@@ -160,6 +174,27 @@ function ArtifactProjectionWorkspace(props: {
         )}
       </Show>
     </div>
+  );
+}
+
+function ProjectionViewSwitcher(props: {
+  projection: () => ProjectionDoc | undefined;
+  projectionHandle: () => DocHandle<ProjectionDoc> | undefined;
+  projectionUrl: () => AutomergeUrl | undefined;
+  artifactDoc: () => ArtifactDocLike | undefined;
+  artifactHandle: () => DocHandle<ArtifactDocLike> | undefined;
+  artifactUrl: () => AutomergeUrl | undefined;
+  externalAnnotations: () => ArtifactProjectionAnnotation[];
+}) {
+  const viewKind = createMemo(() => props.projection()?.viewKind ?? "table");
+
+  return (
+    <Show
+      when={viewKind() === "key-value"}
+      fallback={<ProjectionSheetView {...props} />}
+    >
+      <ProjectionKeyValueView {...props} />
+    </Show>
   );
 }
 
@@ -194,15 +229,19 @@ function ProjectionSheetView(props: {
     });
   });
 
-  const materialized = createMemo<MaterializedProjection | null>(() => {
+  const materialized = createMemo<Extract<
+    MaterializedProjection,
+    { viewKind: "table" }
+  > | null>(() => {
     const currentProjection = props.projection();
     const currentArtifact = props.artifactDoc();
     const currentProjectionUrl = props.projectionUrl();
     if (!currentProjection || !currentArtifact || !currentProjectionUrl)
       return null;
-    return materializeProjection(currentProjection, currentArtifact, {
+    const next = materializeProjection(currentProjection, currentArtifact, {
       projectionUrl: currentProjectionUrl,
     });
+    return next.viewKind === "table" ? next : null;
   });
   const visibleSheet = createMemo(() => {
     const current = materialized();
@@ -342,12 +381,14 @@ function ProjectionSheetView(props: {
   function commitHeaderEdit(position: CellPosition, value: string) {
     const currentProjection = props.projection();
     const handle = props.projectionHandle();
-    const currentColumn = currentProjection?.columns.filter(
+    if (!isTableProjectionDoc(currentProjection) || !handle) return;
+    const currentColumn = currentProjection.columns.filter(
       (column) => !column.hidden,
     )[position.col];
-    if (!currentProjection || !currentColumn || !handle) return;
+    if (!currentColumn) return;
 
     handle.change((doc) => {
+      if (!isTableProjectionDoc(doc)) return;
       const target = doc.columns.find(
         (column) => column.id === currentColumn.id,
       );
@@ -510,6 +551,7 @@ function ProjectionSheetView(props: {
     if (!targetColumnId || !handle) return;
 
     handle.change((doc) => {
+      if (!isTableProjectionDoc(doc)) return;
       const currentIndex = doc.columns.findIndex(
         (column) => column.id === targetColumnId,
       );
@@ -537,6 +579,7 @@ function ProjectionSheetView(props: {
     if (!targetColumnId || !handle) return;
 
     handle.change((doc) => {
+      if (!isTableProjectionDoc(doc)) return;
       const column = doc.columns.find((entry) => entry.id === targetColumnId);
       if (column) column.hidden = true;
     });
@@ -556,6 +599,7 @@ function ProjectionSheetView(props: {
     if (!handle) return;
 
     handle.change((doc) => {
+      if (!isTableProjectionDoc(doc)) return;
       const column = doc.columns.find((entry) => entry.id === columnId);
       if (column) column.hidden = false;
     });
@@ -946,10 +990,8 @@ function ProjectionSheetView(props: {
                                   colIndex(),
                                 ),
                                 "artifact-projection-has-issue":
-                                  annotationsForCell(
-                                    row.rowId,
-                                    cell.columnId,
-                                  ).length > 0,
+                                  annotationsForCell(row.rowId, cell.columnId)
+                                    .length > 0,
                               }}
                               onClick={() =>
                                 selectCell({
@@ -1001,6 +1043,237 @@ function ProjectionSheetView(props: {
   );
 }
 
+function ProjectionKeyValueView(props: {
+  projection: () => ProjectionDoc | undefined;
+  projectionHandle: () => DocHandle<ProjectionDoc> | undefined;
+  projectionUrl: () => AutomergeUrl | undefined;
+  artifactDoc: () => ArtifactDocLike | undefined;
+  artifactHandle: () => DocHandle<ArtifactDocLike> | undefined;
+  artifactUrl: () => AutomergeUrl | undefined;
+  externalAnnotations: () => ArtifactProjectionAnnotation[];
+}) {
+  const [editingEntryId, setEditingEntryId] = createSignal<string | null>(null);
+  const [draftValue, setDraftValue] = createSignal("");
+  const [localAnnotations, setLocalAnnotations] = createSignal<
+    ArtifactProjectionAnnotation[]
+  >([]);
+  const [localError, setLocalError] = createSignal<string | null>(null);
+
+  const materialized = createMemo(() => {
+    const currentProjection = props.projection();
+    const currentArtifact = props.artifactDoc();
+    const currentProjectionUrl = props.projectionUrl();
+    if (!currentProjection || !currentArtifact || !currentProjectionUrl)
+      return null;
+    const next = materializeProjection(currentProjection, currentArtifact, {
+      projectionUrl: currentProjectionUrl,
+    });
+    return next.viewKind === "key-value" ? next : null;
+  });
+
+  const annotations = createMemo(() =>
+    dedupeAnnotations([
+      ...(materialized()?.annotations ?? []),
+      ...props.externalAnnotations(),
+      ...localAnnotations(),
+    ]),
+  );
+
+  function clearLocalFeedback() {
+    setLocalError(null);
+    setLocalAnnotations([]);
+  }
+
+  function persistArtifactDoc(nextDoc: ArtifactDocLike) {
+    const handle = props.artifactHandle();
+    if (!handle) return;
+    handle.change((doc: ArtifactDocLike) => {
+      doc.title = nextDoc.title;
+      doc.facts = nextDoc.facts.map((fact) => ({
+        ...fact,
+        args: [...fact.args],
+      }));
+      doc.draftText = nextDoc.draftText;
+    });
+  }
+
+  function startEditing(entryId: string, seedValue: string) {
+    setEditingEntryId(entryId);
+    setDraftValue(seedValue);
+  }
+
+  function finishEditing(commit = true) {
+    const activeEntryId = editingEntryId();
+    const currentProjection = props.projection();
+    const currentArtifact = props.artifactDoc();
+    const currentProjectionUrl = props.projectionUrl();
+    if (!activeEntryId) return;
+
+    if (
+      commit &&
+      currentProjection &&
+      currentArtifact &&
+      currentProjectionUrl
+    ) {
+      const result = applyProjectionCellEdit(
+        currentProjection,
+        currentArtifact,
+        "",
+        activeEntryId,
+        draftValue(),
+        props.artifactUrl(),
+        { projectionUrl: currentProjectionUrl },
+      );
+      if (!result.ok) {
+        setLocalError(result.error);
+        setLocalAnnotations(result.annotations);
+        return;
+      }
+      persistArtifactDoc(result.doc);
+      clearLocalFeedback();
+    }
+
+    setEditingEntryId(null);
+    setDraftValue("");
+  }
+
+  function annotationsForEntry(entryId: string) {
+    return annotations().filter(
+      (annotation) =>
+        annotation.kind === "entry" && annotation.entryId === entryId,
+    );
+  }
+
+  return (
+    <Show
+      when={materialized()}
+      fallback={
+        <div class="artifact-projection-empty-state">
+          <div class="artifact-projection-empty-card">
+            <div class="artifact-projection-empty-eyebrow">Artifact View</div>
+            <h2>Projection unavailable</h2>
+            <p>This projection does not define any visible entries yet.</p>
+          </div>
+        </div>
+      }
+    >
+      {(view) => (
+        <div class="artifact-projection-workspace">
+          <div class="artifact-projection-toolbar">
+            <div class="artifact-projection-toolbar-group">
+              <strong>{view().title}</strong>
+            </div>
+            <div class="artifact-projection-toolbar-status">
+              {view().entries.length} entries
+            </div>
+          </div>
+
+          <Show when={localError()}>
+            {(message) => (
+              <div class="artifact-projection-issues">
+                <div class="artifact-projection-issues-header">
+                  <span>Edit issue</span>
+                </div>
+                <div class="artifact-projection-issue-list">
+                  <div class="artifact-projection-issue-card">
+                    <div class="artifact-projection-issue-label">
+                      Current edit
+                    </div>
+                    <div class="artifact-projection-issue-text">
+                      {message()}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </Show>
+
+          <Show when={annotations().length > 0}>
+            <div class="artifact-projection-issues">
+              <div class="artifact-projection-issues-header">
+                <span>Verification issues</span>
+                <span>{annotations().length}</span>
+              </div>
+              <div class="artifact-projection-issue-list">
+                <For each={annotations()}>
+                  {(annotation) => (
+                    <div class="artifact-projection-issue-card">
+                      <div class="artifact-projection-issue-label">
+                        {describeKeyValueAnnotation(annotation, view())}
+                      </div>
+                      <div class="artifact-projection-issue-text">
+                        {annotation.message}
+                      </div>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </div>
+          </Show>
+
+          <div class="artifact-projection-issues">
+            <div class="artifact-projection-issues-header">
+              <span>Settings</span>
+              <span>{view().entries.length}</span>
+            </div>
+            <div class="artifact-projection-issue-list">
+              <For each={view().entries}>
+                {(entry) => (
+                  <div
+                    class="artifact-projection-issue-card"
+                    classList={{
+                      "artifact-projection-has-issue":
+                        annotationsForEntry(entry.id).length > 0,
+                    }}
+                  >
+                    <div class="artifact-projection-issue-label">
+                      {entry.label}
+                    </div>
+                    <div class="artifact-projection-issue-text">
+                      <Show
+                        when={editingEntryId() === entry.id}
+                        fallback={
+                          <button
+                            class="artifact-projection-toolbar-button"
+                            onClick={() => startEditing(entry.id, entry.value)}
+                            disabled={!entry.editable}
+                            type="button"
+                          >
+                            {entry.value || "(blank)"}
+                          </button>
+                        }
+                      >
+                        <input
+                          class="artifact-projection-cell-input"
+                          value={draftValue()}
+                          onInput={(event) =>
+                            setDraftValue(event.currentTarget.value)
+                          }
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              finishEditing(true);
+                            }
+                            if (event.key === "Escape") {
+                              event.preventDefault();
+                              finishEditing(false);
+                            }
+                          }}
+                          onBlur={() => finishEditing(true)}
+                        />
+                      </Show>
+                    </div>
+                  </div>
+                )}
+              </For>
+            </div>
+          </div>
+        </div>
+      )}
+    </Show>
+  );
+}
+
 function readAnnotations(element: HTMLElement): ArtifactProjectionAnnotation[] {
   const raw = element.getAttribute("data-annotations");
   if (!raw) return [];
@@ -1021,6 +1294,7 @@ function dedupeAnnotations(annotations: ArtifactProjectionAnnotation[]) {
       annotation.kind,
       annotation.rowId ?? null,
       annotation.columnId ?? null,
+      annotation.entryId ?? null,
       annotation.message,
       annotation.constraintLabel ?? null,
       annotation.source,
@@ -1047,7 +1321,7 @@ function clamp(value: number, min: number, max: number) {
 
 function describeAnnotation(
   annotation: ArtifactProjectionAnnotation,
-  sheet: MaterializedProjection,
+  sheet: Extract<MaterializedProjection, { viewKind: "table" }>,
 ) {
   if (annotation.kind === "cell" && annotation.rowId && annotation.columnId) {
     const rowIndex = sheet.rows.findIndex(
@@ -1070,6 +1344,19 @@ function describeAnnotation(
       (column) => column.id === annotation.columnId,
     );
     if (colIndex >= 0) return `Column ${columnLabel(colIndex)}`;
+  }
+  return "Sheet";
+}
+
+function describeKeyValueAnnotation(
+  annotation: ArtifactProjectionAnnotation,
+  view: Extract<MaterializedProjection, { viewKind: "key-value" }>,
+) {
+  if (annotation.kind === "entry" && annotation.entryId) {
+    const entry = view.entries.find(
+      (candidate) => candidate.id === annotation.entryId,
+    );
+    if (entry) return entry.label;
   }
   return "Sheet";
 }

@@ -13,6 +13,12 @@ Create and manage ProjectionSpecDocs. A projection defines how a flat DatalogDoc
 const { createProjection, getProjection, setSpecProjection } = await useSkill("projection");
 ```
 
+For key-value projections:
+
+```javascript
+const { createKeyValueProjection } = await useSkill("projection");
+```
+
 ## Types
 
 ### ProjectionSpecDoc
@@ -22,9 +28,14 @@ const { createProjection, getProjection, setSpecProjection } = await useSkill("p
   '@patchwork': { type: 'artifact-projection' },
   schemaVersion: 3,
   sourceType: 'datalog',
+  viewKind?: 'table' | 'key-value', // defaults to 'table'
   title: string,
-  rows: ProjectionRowsSpec,
-  columns: ProjectionSpecColumn[],
+  rows?: ProjectionRowsSpec,
+  columns?: ProjectionSpecColumn[],
+  entries?: ProjectionKeyValueEntrySpec[],
+  view?: {
+    expandScript?: string, // optional view-level derived fact expansion
+  },
 }
 ```
 
@@ -60,6 +71,22 @@ Each column has an `id`, `header`, `cellType`, `read` binding, optional `write` 
 }
 ```
 
+### ProjectionKeyValueEntrySpec
+
+Used by `viewKind: 'key-value'` projections for singleton/key-value artifacts.
+
+```javascript
+{
+  id: string,
+  label: string,
+  cellType: 'text' | 'number' | 'boolean' | 'entity',
+  read: ReadBinding,
+  write?: WriteBinding,
+  blankPolicy?: 'delete' | 'reject',
+  readOnlyReason?: string,
+}
+```
+
 ### Read Bindings
 
 **`derived-row-key`** — displays the row key itself (always read-only):
@@ -92,6 +119,18 @@ Each column has an `id`, `header`, `cellType`, `read` binding, optional `write` 
 // For row "amu_day", reads assignment_slot(amu_day, 1, X) → X
 ```
 
+**`singleton-fact-arg`** — reads an argument from a singleton fact:
+```javascript
+{ kind: 'singleton-fact-arg', pred: 'max_connections', valueArg: 0 }
+// Reads max_connections(X) → X
+```
+
+**`singleton-fact-presence`** — boolean: does a singleton fact exist?
+```javascript
+{ kind: 'singleton-fact-presence', pred: 'log_checkpoints' }
+// Checks whether log_checkpoints. exists
+```
+
 ### Write Bindings
 
 **`upsert-fact-arg`** — insert or update a fact argument:
@@ -109,12 +148,24 @@ Each column has an `id`, `header`, `cellType`, `read` binding, optional `write` 
 { kind: 'upsert-slot-value', pred: 'assignment_slot', rowKeyArg: 0, slotArg: 1, slot: 1, valueArg: 2 }
 ```
 
+**`upsert-singleton-fact-arg`** — insert or update a singleton fact argument:
+```javascript
+{ kind: 'upsert-singleton-fact-arg', pred: 'max_connections', valueArg: 0 }
+```
+
+**`set-singleton-fact-presence`** — add or remove a singleton fact:
+```javascript
+{ kind: 'set-singleton-fact-presence', pred: 'log_checkpoints' }
+```
+
 ### Matching read and write bindings
 
 When a column is editable, the write binding must mirror its read binding:
 - `fact-arg` read → `upsert-fact-arg` write (same pred, rowKeyArg, valueArg)
 - `fact-presence` read → `set-fact-presence` write (same pred, rowKeyArg)
 - `slot-value` read → `upsert-slot-value` write (same pred, rowKeyArg, slotArg, slot, valueArg)
+- `singleton-fact-arg` read → `upsert-singleton-fact-arg` write (same pred, valueArg)
+- `singleton-fact-presence` read → `set-singleton-fact-presence` write (same pred)
 
 ## API
 
@@ -154,6 +205,24 @@ const { url } = createProjection("My Table", {
 ]);
 ```
 
+### `createKeyValueProjection(title, entries, viewSpec?)` (sync)
+
+Creates a `viewKind: 'key-value'` projection for singleton/key-value artifacts.
+
+```javascript
+const { createKeyValueProjection } = await useSkill("projection");
+const { url } = createKeyValueProjection("Postgres Config", [
+  {
+    id: 'max-connections',
+    label: 'max_connections',
+    cellType: 'number',
+    read: { kind: 'singleton-fact-arg', pred: 'max_connections', valueArg: 0 },
+  },
+], {
+  expandScript: `return ctx.defaultExpanded;`,
+});
+```
+
 ### `getProjection(url)` (async)
 
 Returns a read/write interface for an existing ProjectionSpecDoc.
@@ -163,11 +232,19 @@ Returns a read/write interface for an existing ProjectionSpecDoc.
 | `getTitle()` | Returns the projection title |
 | `setTitle(title)` | Sets the title |
 | `getColumns()` | Returns a copy of the columns array |
+| `getEntries()` | Returns a copy of the key-value entries array |
 | `addColumn(column)` | Appends a column to the columns array |
+| `addEntry(entry)` | Appends a key-value entry |
 | `removeColumn(id)` | Removes the column with the given id |
+| `removeEntry(id)` | Removes the key-value entry with the given id |
 | `updateColumn(id, updates)` | Merges updates into the column with the given id |
+| `updateEntry(id, updates)` | Merges updates into the key-value entry |
 | `getRows()` | Returns the rows spec |
 | `setRows(rowsSpec)` | Sets the rows spec |
+| `getViewKind()` | Returns the current `viewKind` |
+| `setViewKind(viewKind)` | Sets `viewKind` |
+| `getView()` | Returns the `view` config |
+| `setView(viewSpec)` | Sets the `view` config |
 
 ```javascript
 const { getProjection } = await useSkill("projection");
@@ -221,6 +298,15 @@ Before deciding a dataset is unsupported, try choosing a different row axis that
 - CPU/memory/disk/cost from `instance` using `rowKeyArg: 0`
 
 If a useful table still requires following one fact into another fact, the current answer is to add derived/denormalized facts outside the projection model or extend the lens backend with a richer binding type.
+
+## Key-Value Views
+
+Use `viewKind: 'key-value'` when the artifact is better expressed as a singleton settings view than as rows/columns.
+
+- Good fit: config settings like `postgres.conf`
+- Read from singleton facts with `singleton-fact-arg` / `singleton-fact-presence`
+- If the display needs derived settings, use `view.expandScript` to add derived facts plus provenance entries for the rendered settings
+- In v1, generator support should stay generic: choose `key-value` only when the artifact already looks singleton-shaped or when a hand-authored derived projection is clearly required
 
 ## Example: Full Projection Generation
 

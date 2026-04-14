@@ -105,6 +105,10 @@ console.log(JSON.stringify({ artifactsFolderUrl: execDoc.artifactsFolderUrl, art
 
 For each artifact without a projection, analyze its facts to determine:
 
+0. **View kind** — choose the lens that best matches the artifact:
+   - `table` for row-oriented datasets
+   - `key-value` for singleton/config-style artifacts where each visible field is a standalone setting
+
 1. **Entity predicate** — the predicate that defines rows. Look for a predicate that:
    - Appears once per logical entity
    - Has one argument position that can serve as a stable row key
@@ -119,6 +123,14 @@ For each artifact without a projection, analyze its facts to determine:
    - `pred(..., key, slot, value, ...)` with multiple slot values → one `slot-value` column per slot
    - The current projection backend only supports cells that come from a **single predicate lookup keyed by the current row**. It does **not** support joins, aggregations, or global singleton facts as normal editable columns.
 
+For `key-value` views:
+
+- Use one entry per singleton setting
+- `pred(value)` → `singleton-fact-arg` entry
+- `pred` / presence-only singleton fact → `singleton-fact-presence` entry
+- If the visible settings are derived from other raw facts, prefer a hand-authored `view.expandScript` that derives singleton display facts and provenance
+- In v1, only auto-generate `key-value` when the artifact already looks generic singleton-shaped; do not invent domain-specific derivations automatically
+
 3. **Cell types** — infer from values:
    - All values are numbers → `'number'`
    - Values are yes/no/true/false → `'boolean'`
@@ -132,7 +144,7 @@ For each artifact without a projection, analyze its facts to determine:
 
 ```
 <script data-description="Create projection for artifact">
-const { createProjection, setSpecProjection } = await useSkill("projection");
+const { createProjection, createKeyValueProjection, setSpecProjection } = await useSkill("projection");
 
 const { url: projUrl } = createProjection("Table Title", {
   entityPredicate: 'shift',
@@ -152,6 +164,28 @@ const { url: projUrl } = createProjection("Table Title", {
   },
   // ... more columns based on analysis
 ]);
+
+await setSpecProjection(specUrl, projUrl);
+console.log('Created projection:', projUrl, 'for spec:', specUrl);
+</script>
+```
+
+For a singleton/config-style artifact:
+
+```
+<script data-description="Create key-value projection for artifact">
+const { createKeyValueProjection, setSpecProjection } = await useSkill("projection");
+
+const { url: projUrl } = createKeyValueProjection("Config View", [
+  {
+    id: 'max-connections',
+    label: 'max_connections',
+    cellType: 'number',
+    read: { kind: 'singleton-fact-arg', pred: 'max_connections', valueArg: 0 },
+  },
+], {
+  expandScript: `return ctx.defaultExpanded;`,
+});
 
 await setSpecProjection(specUrl, projUrl);
 console.log('Created projection:', projUrl, 'for spec:', specUrl);
@@ -178,13 +212,16 @@ The user may ask you to modify an existing projection (e.g. "add a column for to
 
 - Create one reusable projection per spec that lacks a `projectionDocUrl`.
 - Skip artifacts whose owning spec already has a projection (unless the user asks to regenerate).
-- The entity predicate is the most important decision — pick the row model that maximizes single-step row-key lookups and minimizes joins.
+- The most important decision is the view kind: use `table` for row-oriented data and `key-value` for singleton/config-style data.
+- For `table`, the entity predicate is the most important decision — pick the row model that maximizes single-step row-key lookups and minimizes joins.
 - Make columns editable (with write bindings) unless there's a reason not to (derived values, cross-entity aggregations).
+- For `key-value`, make entries editable only when there is a direct deterministic write-back target in the underlying artifact facts.
 - If a desired column would require following one predicate into another predicate, do not pretend the backend can express it. Either:
   1. choose a different row axis that avoids the join,
   2. omit that column,
   3. or explain that the current projection model needs derived/denormalized facts or a richer lens binding.
 - Do not reject a projection as "needs joins" until you have checked whether `rowKeyArg` on a non-first argument solves it.
+- If a singleton/config view needs derived settings, prefer a hand-authored `view.expandScript` rather than inventing a bespoke generation heuristic.
 - Use `blankPolicy: 'delete'` for optional columns, `blankPolicy: 'reject'` for required ones.
 - Output `PROJECTION_DONE: true` in your final script.
 - **Never create throwaway or test documents.** Build real projections directly.

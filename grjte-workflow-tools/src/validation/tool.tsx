@@ -47,7 +47,7 @@ import {
   type SpecTreeNode,
   watchSpecTree,
 } from "./verification-assembly";
-import { GrjteVersionBadge } from "../version";
+import { VersionBadge } from "../version";
 import "./verification-datalog.css";
 import "./validation.css";
 
@@ -145,7 +145,7 @@ function ValidationView(props: {
               >
                 {currentDoc().isValidated ? "Validated" : "Pending"}
               </div>
-              <GrjteVersionBadge />
+              <VersionBadge />
               <Show when={currentDoc().specDocUrl}>
                 {(specUrl) => (
                   <div class="plan-section">
@@ -358,7 +358,8 @@ function ValidationBody(props: {
         }
       }
       const currentProjectionHandle = projectionHandle();
-      const currentProjectionUrl = currentSpecHandle?.doc()?.spec?.projectionDocUrl;
+      const currentProjectionUrl =
+        currentSpecHandle?.doc()?.spec?.projectionDocUrl;
       if (currentProjectionUrl && currentProjectionHandle?.isReady()) {
         next[currentProjectionUrl] = currentProjectionHandle.heads() as Heads;
       }
@@ -498,11 +499,21 @@ function ValidationBody(props: {
   >(() => {
     const next: Record<AutomergeUrl, ArtifactProjectionAnnotation[]> = {};
 
-    for (const { entry, workflowArtifact, projectionDoc } of artifactAccessors) {
+    for (const {
+      entry,
+      workflowArtifact,
+      projectionDoc,
+    } of artifactAccessors) {
       const currentWorkflowArtifact = workflowArtifact();
       const currentProjection = projectionDoc();
-      const currentExpandedArtifact = projectionProvenanceByUrl().get(entry.url);
-      if (!currentWorkflowArtifact || !currentProjection || !currentExpandedArtifact) {
+      const currentExpandedArtifact = projectionProvenanceByUrl().get(
+        entry.url,
+      );
+      if (
+        !currentWorkflowArtifact ||
+        !currentProjection ||
+        !currentExpandedArtifact
+      ) {
         next[entry.url] = [];
         continue;
       }
@@ -555,10 +566,13 @@ function ValidationBody(props: {
           entry.url,
           {
             name:
-              currentWorkflowArtifact?.name || entry.name || "Untitled artifact",
+              currentWorkflowArtifact?.name ||
+              entry.name ||
+              "Untitled artifact",
             artifactType:
               currentWorkflowArtifact?.artifactType || "workflow-artifact",
-            specLabel: currentWorkflowArtifact?.specDocUrl?.slice(-8) ?? "loading",
+            specLabel:
+              currentWorkflowArtifact?.specDocUrl?.slice(-8) ?? "loading",
           },
         ];
       }),
@@ -873,7 +887,9 @@ function ProjectionSection(props: {
 }
 
 function ProjectionSummaryCard(props: { entry: ArtifactFolderEntry }) {
-  const [workflowArtifact] = useDocument<WorkflowArtifactDoc>(() => props.entry.url);
+  const [workflowArtifact] = useDocument<WorkflowArtifactDoc>(
+    () => props.entry.url,
+  );
   const [specDoc] = useDocument<SpecDoc>(() => workflowArtifact()?.specDocUrl);
   const [projectionDoc] = useDocument<ProjectionDoc>(
     () => specDoc()?.spec?.projectionDocUrl,
@@ -891,7 +907,9 @@ function ProjectionSummaryCard(props: { entry: ArtifactFolderEntry }) {
         >
           {(pd) => (
             <span class="projection-card-meta">
-              {pd().columns?.length ?? 0} columns
+              {(pd().viewKind ?? "table") === "key-value"
+                ? `${pd().entries?.length ?? 0} entries`
+                : `${pd().columns?.length ?? 0} columns`}
             </span>
           )}
         </Show>
@@ -899,19 +917,38 @@ function ProjectionSummaryCard(props: { entry: ArtifactFolderEntry }) {
       <Show when={projectionDoc()}>
         {(pd) => (
           <div class="projection-card-columns">
-            <For each={pd().columns ?? []}>
-              {(col) => (
-                <span
-                  class="projection-card-column"
-                  classList={{ "read-only": !col.write }}
-                >
-                  {col.header}
-                  <span class="projection-card-column-type">
-                    {col.cellType}
+            <Show
+              when={(pd().viewKind ?? "table") === "key-value"}
+              fallback={
+                <For each={pd().columns ?? []}>
+                  {(col) => (
+                    <span
+                      class="projection-card-column"
+                      classList={{ "read-only": !col.write }}
+                    >
+                      {col.header}
+                      <span class="projection-card-column-type">
+                        {col.cellType}
+                      </span>
+                    </span>
+                  )}
+                </For>
+              }
+            >
+              <For each={pd().entries ?? []}>
+                {(entry) => (
+                  <span
+                    class="projection-card-column"
+                    classList={{ "read-only": !entry.write }}
+                  >
+                    {entry.label}
+                    <span class="projection-card-column-type">
+                      {entry.cellType}
+                    </span>
                   </span>
-                </span>
-              )}
-            </For>
+                )}
+              </For>
+            </Show>
           </div>
         )}
       </Show>
@@ -1150,7 +1187,9 @@ function ArtifactPreviewSwitcher(props: {
     () => props.workflowArtifactUrl,
   );
   const [specDoc] = useDocument<SpecDoc>(() => workflowArtifact()?.specDocUrl);
-  const hasProjection = createMemo(() => Boolean(specDoc()?.spec?.projectionDocUrl));
+  const hasProjection = createMemo(() =>
+    Boolean(specDoc()?.spec?.projectionDocUrl),
+  );
 
   createEffect(() => {
     if (!hasProjection() && selectedView() === "projection") {
