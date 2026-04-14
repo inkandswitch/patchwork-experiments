@@ -138,13 +138,29 @@ async function collectDatalogFacts(repo: Repo, docUrls: string[]): Promise<Store
   return facts;
 }
 
+async function resolveDatalogDoc(
+  repo: Repo,
+  verificationUrl: AutomergeUrl,
+): Promise<Partial<DatalogDoc> | null> {
+  const handle = await repo.find<Partial<DatalogDoc> & { docUrl?: AutomergeUrl }>(verificationUrl);
+  const doc = await handle.doc();
+  if (!doc) return null;
+
+  if (doc.docUrl) {
+    const datalogHandle = await repo.find<Partial<DatalogDoc>>(doc.docUrl);
+    return await datalogHandle.doc();
+  }
+
+  if (doc.constraints || doc.facts) return doc;
+  return null;
+}
+
 async function checkVerificationDoc(
   repo: Repo,
   verificationUrl: AutomergeUrl,
   candidateFacts: StoredFact[],
 ): Promise<ConstraintViolation[]> {
-  const handle = await repo.find<Partial<DatalogDoc>>(verificationUrl);
-  const doc = await handle.doc();
+  const doc = await resolveDatalogDoc(repo, verificationUrl);
   if (!doc) return [];
 
   const vFacts = doc.facts ?? [];

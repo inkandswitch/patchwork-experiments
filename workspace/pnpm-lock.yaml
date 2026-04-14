@@ -26,9 +26,6 @@ importers:
       '@inkandswitch/patchwork-react':
         specifier: ^0.0.1
         version: 0.0.1
-      '@patchwork/grjte-workflow-tools':
-        specifier: link:../grjte-workflow-tools
-        version: link:../grjte-workflow-tools
       lucide-solid:
         specifier: ^1.7.0
         version: 1.7.0(solid-js@1.9.12)

@@ -16,7 +16,7 @@ import { FolderDoc } from '@inkandswitch/patchwork-filesystem';
 
 type Stage = 'elicitation' | 'spec' | 'plan' | 'execution' | 'validation';
 
-const WORKFLOW_VERSION = '0.8.0';
+const WORKFLOW_VERSION = '0.9.0';
 
 function makeId(): string {
   return Math.random().toString(36).slice(2, 10);
@@ -569,10 +569,19 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
       planDoc.initialTokens?.length,
     );
 
+    const artifactsFolderHandle = repo.create();
+    artifactsFolderHandle.change((d: any) => {
+      d['@patchwork'] = { type: 'folder' };
+      d.title = 'Execution Artifacts';
+      d.docs = [];
+    });
+
     const execHandle = repo.create<PetriNetExecutionDoc>();
     execHandle.change((d) => {
       d['@patchwork'] = { type: 'petrinet-execution' };
       d.planUrl = currentDoc.planDocUrl!;
+      d.specDocUrl = currentDoc.specDocUrl!;
+      d.artifactsFolderUrl = artifactsFolderHandle.url;
       d.tokens = {};
       for (const init of planDoc.initialTokens ?? []) {
         if (!d.tokens[init.placeId]) d.tokens[init.placeId] = [];

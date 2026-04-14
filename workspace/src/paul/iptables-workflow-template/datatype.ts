@@ -44,6 +44,13 @@ type PetriNetPlanDoc = {
   systemPromptUrls?: { optimizer?: string };
 };
 
+type VerificationDoc = {
+  '@patchwork': { type: 'verification' };
+  docUrl: AutomergeUrl;
+  script: string;
+  title: string;
+};
+
 type MarkdownDoc = {
   '@patchwork': { type: 'markdown' };
   content: string;
@@ -288,6 +295,17 @@ return JSON.stringify(result, null, 2)
 
 If violations remain (valid: false), go back to Step 4 with the new violation indices. Repeat until all constraints are satisfied.`;
 
+function createVerificationDoc(repo: Repo, title: string, datalogUrl: AutomergeUrl): AutomergeUrl {
+  const handle = repo.create<VerificationDoc>();
+  handle.change((d) => {
+    d['@patchwork'] = { type: 'verification' };
+    d.docUrl = datalogUrl;
+    d.script = '';
+    d.title = title;
+  });
+  return handle.url;
+}
+
 function createDatalogDoc(repo: Repo, title: string, datalogText: string): AutomergeUrl {
   const parsed = parseProgram(datalogText);
   const handle = repo.create<DatalogDoc>();
@@ -318,12 +336,17 @@ function createDefaultSpec(repo: Repo): { specDocUrl: AutomergeUrl; leafSpecUrls
     { name: 'machine-b-iptables', url: machineBDatalogUrl, type: 'datalog' },
   ]);
 
+  const globalVerificationUrl = createVerificationDoc(repo, 'Global Firewall Rules', globalRulesUrl);
+  const commonVerificationUrl = createVerificationDoc(repo, 'Common Machine Rules', commonMachineRulesUrl);
+  const machineAVerificationUrl = createVerificationDoc(repo, 'Machine A Rules (Web Server)', machineARulesUrl);
+  const machineBVerificationUrl = createVerificationDoc(repo, 'Machine B Rules (Database Server)', machineBRulesUrl);
+
   const machineASpecHandle = repo.create<SpecDoc>();
   machineASpecHandle.change((d) => {
     d['@patchwork'] = { type: 'spec' };
     d.spec = {
       goal: 'Machine A Firewall (Web Server)',
-      verificationUrls: [commonMachineRulesUrl, machineARulesUrl],
+      verificationUrls: [commonVerificationUrl, machineAVerificationUrl],
       filesFolderUrl: machineAFilesFolderUrl,
     };
   });
@@ -333,14 +356,14 @@ function createDefaultSpec(repo: Repo): { specDocUrl: AutomergeUrl; leafSpecUrls
     d['@patchwork'] = { type: 'spec' };
     d.spec = {
       goal: 'Machine B Firewall (Database Server)',
-      verificationUrls: [commonMachineRulesUrl, machineBRulesUrl],
+      verificationUrls: [commonVerificationUrl, machineBVerificationUrl],
       filesFolderUrl: machineBFilesFolderUrl,
     };
   });
 
   const spec: Spec = {
     goal: 'Network Firewall Configuration',
-    verificationUrls: [globalRulesUrl],
+    verificationUrls: [globalVerificationUrl],
     subSpecUrls: [machineASpecHandle.url, machineBSpecHandle.url],
   };
 

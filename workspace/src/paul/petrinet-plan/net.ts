@@ -77,7 +77,8 @@ export const DEFAULT_OPTIMIZER_SYSTEM_PROMPT = [
   'const results = await Promise.all(verificationUrls.map(async url => {',
   '  const h = await repo.find(url)',
   '  const d = await h.doc()',
-  '  return { url, title: d.title, constraints: d.constraints, draftText: d.draftText }',
+  '  const datalogDoc = d.docUrl ? await (await repo.find(d.docUrl)).doc() : d',
+  '  return { url, title: d.title || datalogDoc.title, constraints: datalogDoc.constraints, draftText: datalogDoc.draftText }',
   '}))',
   'return JSON.stringify(results, null, 2)',
   '</script>',
@@ -121,29 +122,37 @@ export function createNet(repo: Repo, planHandle: DocHandle<PetriNetPlanDoc>): N
         to: ['running'],
 
         async guard(_tokens, _allTokens, repo, readTokens) {
-          const specToken = readTokens.spec?.[0];
-          if (!specToken) return false;
+          const specTokens = readTokens.spec ?? [];
+          if (specTokens.length === 0) return false;
           const candidateTokens = readTokens.candidates ?? [];
           const runningTokens = readTokens.running ?? [];
-          const unsolved = await getUnsolvedSubSpecs(
-            repo,
-            specToken,
-            candidateTokens,
-            runningTokens,
-          );
-          return unsolved.length > 0;
+          for (const specToken of specTokens) {
+            const unsolved = await getUnsolvedSubSpecs(
+              repo,
+              specToken,
+              candidateTokens,
+              runningTokens,
+            );
+            if (unsolved.length > 0) return true;
+          }
+          return false;
         },
 
         async onConsumedTokens(_tokens, _allTokens, repo, readTokens) {
-          const specToken = readTokens.spec![0];
+          const specTokens = readTokens.spec ?? [];
           const candidateTokens = readTokens.candidates ?? [];
           const runningTokens = readTokens.running ?? [];
-          const unsolved = await getUnsolvedSubSpecs(
-            repo,
-            specToken,
-            candidateTokens,
-            runningTokens,
-          );
+
+          const allUnsolved: UnsolvedSpec[] = [];
+          for (const specToken of specTokens) {
+            const unsolved = await getUnsolvedSubSpecs(
+              repo,
+              specToken,
+              candidateTokens,
+              runningTokens,
+            );
+            allUnsolved.push(...unsolved);
+          }
 
           const doc = await planHandle.doc();
           const systemPromptUrl = doc?.systemPromptUrls?.optimizer;
@@ -152,7 +161,7 @@ export function createNet(repo: Repo, planHandle: DocHandle<PetriNetPlanDoc>): N
             : DEFAULT_OPTIMIZER_SYSTEM_PROMPT;
 
           const produce = [];
-          for (const { specUrl: subSpecUrl, previousViolations } of unsolved) {
+          for (const { specUrl: subSpecUrl, previousViolations } of allUnsolved) {
             const { folderUrl, docEntries } = await cloneSpecFiles(repo, subSpecUrl);
 
             const prompt = buildOptimizerPrompt(
@@ -232,11 +241,46 @@ export function createNet(repo: Repo, planHandle: DocHandle<PetriNetPlanDoc>): N
                 state: {
                   type: 'candidate',
                   documentUrl: candidateHandle.url as string,
+                  taskSpecUrl,
+                  taskFolderUrl,
                 } as TokenState,
                 toPlace: 'candidates',
               },
             ],
           };
+        },
+
+        async onProducedToken(token, handle, repo) {
+          if (token.placeId !== 'candidates') return;
+          const candidateUrl = token.state.documentUrl as string;
+          if (!candidateUrl) return;
+
+          const candidateHandle = await repo.find<CandidateDoc>(candidateUrl as AutomergeUrl);
+          const candidateDoc = await candidateHandle.doc();
+          if (!candidateDoc?.documentsFolderUrl) return;
+
+          const folderHandle = await repo.find<FolderDoc>(candidateDoc.documentsFolderUrl as AutomergeUrl);
+          const folderDoc = await folderHandle.doc();
+          if (!folderDoc?.docs?.length) return;
+
+          const execDoc = handle.doc() as { artifactsFolderUrl?: string } | undefined;
+          const artifactsFolderUrl = execDoc?.artifactsFolderUrl;
+          if (!artifactsFolderUrl) return;
+
+          const artifactsFolderHandle = await repo.find<FolderDoc>(artifactsFolderUrl as AutomergeUrl);
+          const taskSpecUrl = candidateDoc.specUrl;
+
+          artifactsFolderHandle.change((d) => {
+            if (!d.docs) d.docs = [];
+            for (const entry of folderDoc.docs) {
+              (d.docs as any[]).push({
+                type: entry.type,
+                name: entry.name,
+                url: entry.url,
+                specDocUrls: taskSpecUrl ? [taskSpecUrl] : [],
+              });
+            }
+          });
         },
       },
     ],

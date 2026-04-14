@@ -25,5 +25,7 @@ export type PetriNetPlanDoc = {
 export type PetriNetExecutionDoc = {
   '@patchwork': { type: 'petrinet-execution' };
   planUrl: AutomergeUrl;
+  specDocUrl: AutomergeUrl;
+  artifactsFolderUrl: AutomergeUrl;
   tokens: NetState;
 };

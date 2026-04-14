@@ -35,6 +35,13 @@ type PetriNetPlanDoc = {
   systemPromptUrls?: { optimizer?: string };
 };
 
+type VerificationDoc = {
+  '@patchwork': { type: 'verification' };
+  docUrl: AutomergeUrl;
+  script: string;
+  title: string;
+};
+
 type MarkdownDoc = {
   '@patchwork': { type: 'markdown' };
   content: string;
@@ -118,7 +125,8 @@ const verificationUrls = specDoc.spec?.verificationUrls ?? []
 const verifications = await Promise.all(verificationUrls.map(async url => {
   const h = await repo.find(url)
   const d = await h.doc()
-  return { url, title: d.title, draftText: d.draftText }
+  const datalogDoc = d.docUrl ? await (await repo.find(d.docUrl)).doc() : d
+  return { url, title: d.title || datalogDoc.title, draftText: datalogDoc.draftText }
 }))
 return JSON.stringify({ goal, verifications }, null, 2)
 </script>
@@ -139,6 +147,17 @@ return "Solution updated"
 </script>
 
 Apply your strategy. Ensure the solution satisfies the specification constraints. Do not explain — just compute and write.`;
+
+function createVerificationDoc(repo: Repo, title: string, datalogUrl: AutomergeUrl): AutomergeUrl {
+  const handle = repo.create<VerificationDoc>();
+  handle.change((d) => {
+    d['@patchwork'] = { type: 'verification' };
+    d.docUrl = datalogUrl;
+    d.script = '';
+    d.title = title;
+  });
+  return handle.url;
+}
 
 function createDatalogDoc(
   repo: Repo,
@@ -319,12 +338,17 @@ max_ratio(5).
     ],
   );
 
+  const budgetVerificationUrl = createVerificationDoc(repo, 'Budget Rules', budgetRulesUrl);
+  const generalDeptVerificationUrl = createVerificationDoc(repo, 'General Department Rules', generalDeptRulesUrl);
+  const deptAVerificationUrl = createVerificationDoc(repo, 'Department A Rules', deptARulesUrl);
+  const deptBVerificationUrl = createVerificationDoc(repo, 'Department B Rules', deptBRulesUrl);
+
   const deptASpecHandle = repo.create<SpecDoc>();
   deptASpecHandle.change((d) => {
     d['@patchwork'] = { type: 'spec' };
     d.spec = {
       goal: 'Department A Schedule',
-      verificationUrls: [generalDeptRulesUrl, deptARulesUrl],
+      verificationUrls: [generalDeptVerificationUrl, deptAVerificationUrl],
     };
   });
 
@@ -333,13 +357,13 @@ max_ratio(5).
     d['@patchwork'] = { type: 'spec' };
     d.spec = {
       goal: 'Department B Schedule',
-      verificationUrls: [generalDeptRulesUrl, deptBRulesUrl],
+      verificationUrls: [generalDeptVerificationUrl, deptBVerificationUrl],
     };
   });
 
   const spec: Spec = {
     goal: 'Hospital Schedule',
-    verificationUrls: [budgetRulesUrl],
+    verificationUrls: [budgetVerificationUrl],
     subSpecUrls: [deptASpecHandle.url, deptBSpecHandle.url],
   };
 

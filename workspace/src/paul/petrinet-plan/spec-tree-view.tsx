@@ -24,8 +24,9 @@ type FolderDoc = {
   docs?: { type: string; name: string; url: AutomergeUrl }[];
 };
 
-type DatalogDoc = {
+type VerificationOrDatalogDoc = {
   title?: string;
+  docUrl?: AutomergeUrl;
 };
 
 type SpecTreeProps = {
@@ -216,7 +217,7 @@ function VerificationItem(props: { url: AutomergeUrl; status: 'pass' | 'fail' | 
   const [title] = createResource(
     () => props.url,
     async (url) => {
-      const handle = await props.repo.find<DatalogDoc>(url);
+      const handle = await props.repo.find<VerificationOrDatalogDoc>(url);
       const doc = await handle.doc();
       return doc?.title ?? url.replace('automerge:', '').slice(0, 12) + '...';
     },

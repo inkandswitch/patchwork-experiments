@@ -1,11 +1,15 @@
 import { render } from 'solid-js/web';
-import { For, Show, createSignal } from 'solid-js';
+import { For, Show, createSignal, createMemo } from 'solid-js';
 import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primitives';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
 import type { SpecDoc, Spec } from '../../workflow/types';
 import { useTitle } from '../../hooks/useTitle';
 import './spec.css';
+
+type VerificationWrapperDoc = {
+  docUrl?: AutomergeUrl;
+};
 
 type FolderDoc = {
   '@patchwork'?: { type: string };
@@ -42,7 +46,17 @@ function SpecView(props: { handle: DocHandle<SpecDoc> }) {
     if (url) setSelectedVerificationUrl(null);
   };
 
-  const selectedPreviewUrl = () => selectedVerificationUrl() ?? selectedFileUrl();
+  const [verificationWrapperDoc] = useDocument<VerificationWrapperDoc>(
+    () => selectedVerificationUrl() ?? undefined,
+  );
+
+  const resolvedVerificationUrl = createMemo(() => {
+    const wrapper = verificationWrapperDoc();
+    if (wrapper?.docUrl) return wrapper.docUrl;
+    return selectedVerificationUrl();
+  });
+
+  const selectedPreviewUrl = () => resolvedVerificationUrl() ?? selectedFileUrl();
 
   return (
     <div class="spec-root">
