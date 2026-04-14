@@ -1,7 +1,6 @@
 {
   "type": "tool",
   "name": "Inspector",
-  "description": "Inspect tools on the canvas - hover to see names, click to view source",
-  "toolUrl": "./tool.js",
-  "schemaUrl": "./schema.js"
+  "description": "Dev tool that renders the ref-view hierarchy as a collapsible tree with hover highlighting",
+  "toolUrl": "./tool.js"
 }

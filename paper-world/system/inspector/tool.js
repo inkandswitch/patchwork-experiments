@@ -1,460 +1,222 @@
-
-import { render, html, createSignal, from, createEffect } from '../solid.js';
-import inspectorSchema from './schema.js';
-
-
-
-// Solid's from() returns a signal that auto-updates when the subscribable changes.
-// We need to handle dynamic ref switching by using createSignal to hold the
-// current reactive data accessor, and update it when the inspected ref changes.
+const nameCache = new Map();
 
 export default function mount(element) {
-  const [active, setActive] = createSignal(false);
-  const [toolName, setToolName] = createSignal('');
-  const [toolPath, setToolPath] = createSignal('');
-  const [toolSource, setToolSource] = createSignal('');
-  const [hoveredName, setHoveredName] = createSignal('');
-  const [loading, setLoading] = createSignal(false);
-  const [tab, setTab] = createSignal('source');
-  const [hasInspected, setHasInspected] = createSignal(false);
-  
-  // We store a reactive signal accessor for the inspected ref's data.
-  // Each time we inspect a new element, we create a new from(ref) signal.
-  const [dataAccessor, setDataAccessor] = createSignal(null);
-  // Track the raw ref URL so we can detect changes
-  const [inspectedRefUrl, setInspectedRefUrl] = createSignal('');
+  const collapsed = new Set();
+  let highlightedEl = null;
+  let debounceTimer = null;
+  const fs = element.filesystem;
 
-  let cleanup = null;
+  const root = document.createElement('div');
+  root.style.cssText =
+    'width:100%;height:100%;background:#fff;border-radius:12px;border:1px solid #e2e8f0;box-shadow:0 4px 16px rgba(0,0,0,0.08);display:flex;flex-direction:column;overflow:hidden;font-family:Inter,system-ui,-apple-system,sans-serif;font-size:13px;box-sizing:border-box;';
 
-  function getFrame() {
-    let el = element;
-    let frame = null;
-    while (el) {
-      if (el.tagName === 'REF-VIEW') {
-        try {
-          const val = el.ref.value();
-          if (val && val.shapes) frame = el;
-        } catch(e) {}
-      }
-      const parent = el.parentElement;
-      if (!parent || parent === el) break;
-      el = parent;
-    }
-    return frame;
-  }
+  const header = document.createElement('div');
+  header.style.cssText =
+    'padding:10px 14px;background:linear-gradient(135deg,#0f172a 0%,#334155 100%);color:white;display:flex;align-items:center;gap:8px;flex-shrink:0;';
+  header.innerHTML =
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>' +
+    '<span style="font-weight:600;font-size:13px;letter-spacing:0.3px">Inspector</span>';
+  root.appendChild(header);
 
-  function findElementAt(x, y) {
-    const frame = getFrame();
-    if (!frame) return null;
-    
-    const candidates = [
-      ...frame.querySelectorAll('ref-view'),
-      ...document.querySelectorAll('patchwork-view'),
-    ];
-    
-    let best = null;
-    let bestArea = Infinity;
-    
-    for (const rv of candidates) {
-      if (rv === frame) continue;
-      if (!rv.ref) continue;
-      
-      try {
-        const val = rv.ref.value();
-        if (!val) continue;
-      } catch(e) { continue; }
-      
-      const rect = rv.getBoundingClientRect();
-      if (rect.width === 0 && rect.height === 0) continue;
-      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
-        const area = rect.width * rect.height;
-        if (area < bestArea) {
-          bestArea = area;
-          best = rv;
-        }
-      }
-    }
-    return best;
-  }
+  const treeContainer = document.createElement('div');
+  treeContainer.style.cssText = 'flex:1;overflow-y:auto;padding:6px 0;';
+  root.appendChild(treeContainer);
 
-  function extractToolName(el) {
-    try {
-      const val = el.ref.value();
-      const vUrl = val.embedViewUrl || val.viewUrl || '';
-      if (vUrl) {
-        const parts = vUrl.split('/');
-        const jsonIdx = parts.indexOf('tool.json');
-        if (jsonIdx > 0) return parts[jsonIdx - 1];
-        return parts[parts.length - 1] || tUrl;
-      }
-      if (el.tagName === 'PATCHWORK-VIEW') {
-        return 'patchwork-view';
-      }
-    } catch(e) {}
-    return 'Unknown';
-  }
+  const footer = document.createElement('div');
+  footer.style.cssText =
+    'padding:6px 14px;border-top:1px solid #e2e8f0;background:#f8fafc;font-size:11px;color:#9ca3af;flex-shrink:0;font-variant-numeric:tabular-nums;';
+  footer.textContent = '0 views';
+  root.appendChild(footer);
 
-  function extractToolPath(el) {
-    try {
-      const val = el.ref.value();
-      return val.embedViewUrl || val.viewUrl || el.tagName.toLowerCase();
-    } catch(e) {
-      return el.tagName.toLowerCase();
-    }
-  }
+  element.appendChild(root);
 
-  function getFilesystem() {
-    if (element.filesystem) return element.filesystem;
-    let el = element;
-    while (el) {
-      if (el.filesystem) return el.filesystem;
-      const parent = el.parentElement || el.getRootNode()?.host;
-      if (!parent || parent === el) break;
-      el = parent;
-    }
-    return null;
-  }
+  renderTree();
 
-  function formatJSON(obj) {
-    try {
-      return JSON.stringify(obj, null, 2);
-    } catch(e) {
-      return String(obj);
-    }
-  }
+  document.addEventListener('mounted', scheduleRender);
+  document.addEventListener('unmounted', scheduleRender);
 
-  async function inspectElement(targetEl) {
-    const name = extractToolName(targetEl);
-    const path = extractToolPath(targetEl);
-    setToolName(name);
-    setToolPath(path);
-    setHasInspected(true);
-    setTab('data');
-
-    // Create a new reactive signal from this ref
-    // from() subscribes to the ref and returns a signal accessor
-    const ref = targetEl.ref;
-    if (ref) {
-      const refUrl = ref.url || '';
-      setInspectedRefUrl(refUrl);
-      
-      // Create reactive signal from the ref
-      const reactiveSignal = from(ref);
-      setDataAccessor(() => reactiveSignal);
-    } else {
-      setDataAccessor(null);
-      setInspectedRefUrl('');
-    }
-
-    // Get source from filesystem
-    try {
-      setLoading(true);
-      const fs = getFilesystem();
-      if (fs && path && path.includes('/')) {
-        // Try to resolve tool path relative to filesystem
-        let toolRelPath = path;
-        // If it's an absolute URL, try to extract the relative path
-        try {
-          const fsBase = fs.getUrlOfFile('');
-          if (path.startsWith(fsBase)) {
-            toolRelPath = path.slice(fsBase.length);
-          } else if (path.startsWith('http')) {
-            // Try extracting from URL
-            const url = new URL(path);
-            const pathParts = url.pathname.split('/');
-            // Find the tool folder name + tool.js
-            const toolJsIdx = pathParts.findIndex(p => p === 'tool.js');
-            if (toolJsIdx > 0) {
-              toolRelPath = pathParts[toolJsIdx - 1] + '/tool.js';
-            }
-          }
-        } catch(e) {}
-        
-        const source = await fs.readFile(toolRelPath);
-        setToolSource(source);
-      } else {
-        setToolSource('// No filesystem source for: ' + path);
-      }
-    } catch(e) {
-      setToolSource('// Could not load source: ' + e.message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function enableInspection() {
-    setActive(true);
-    setHoveredName('');
-
-    let highlightedEl = null;
-
-    const onMove = (e) => {
-      const targetEl = findElementAt(e.clientX, e.clientY);
-      
-      if (highlightedEl && highlightedEl !== targetEl) {
-        highlightedEl.style.outline = '';
-        highlightedEl.style.outlineOffset = '';
-      }
-
-      if (targetEl) {
-        highlightedEl = targetEl;
-        setHoveredName(extractToolName(targetEl));
-        targetEl.style.outline = '2px solid #89b4fa';
-        targetEl.style.outlineOffset = '2px';
-      } else {
-        highlightedEl = null;
-        setHoveredName('');
-      }
-    };
-
-    const onClick = async (e) => {
-      const targetEl = findElementAt(e.clientX, e.clientY);
-      if (targetEl) {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        await inspectElement(targetEl);
-      }
-      
-      if (highlightedEl) {
-        highlightedEl.style.outline = '';
-        highlightedEl.style.outlineOffset = '';
-        highlightedEl = null;
-      }
-      
-      setActive(false);
-      cleanupListeners();
-    };
-
-    const frame = getFrame();
-    const target = frame || document;
-    
-    target.addEventListener('mousemove', onMove, true);
-    target.addEventListener('click', onClick, true);
-
-    function cleanupListeners() {
-      target.removeEventListener('mousemove', onMove, true);
-      target.removeEventListener('click', onClick, true);
-    }
-
-    cleanup = () => {
-      cleanupListeners();
-      if (highlightedEl) {
-        highlightedEl.style.outline = '';
-        highlightedEl.style.outlineOffset = '';
-      }
-    };
-  }
-
-  function disableInspection() {
-    setActive(false);
-    if (cleanup) {
-      cleanup();
-      cleanup = null;
-    }
-  }
-
-  function toggleInspect(e) {
-    e.stopPropagation();
-    if (active()) {
-      disableInspection();
-    } else {
-      enableInspection();
-    }
-  }
-
-  const targetSvg = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>`;
-
-  const tabStyle = (isActive) => ({
-    padding: '6px 16px',
-    border: 'none',
-    background: isActive ? '#45475a' : 'transparent',
-    color: isActive ? '#cdd6f4' : '#6c7086',
-    cursor: 'pointer',
-    'font-size': '12px',
-    'font-family': "'SF Mono', 'Fira Code', monospace",
-    'font-weight': isActive ? '600' : '400',
-    'border-radius': '4px',
-    transition: 'all 0.15s ease',
-  });
-
-  const preStyle = {
-    margin: '0',
-    padding: '12px',
-    'white-space': 'pre-wrap',
-    'word-break': 'break-all',
-    'overflow-x': 'auto',
-    'tab-size': '2',
-    'line-height': '1.6',
-    color: '#a6adc8',
-    'font-size': '11.5px',
-    'font-family': "'SF Mono', 'Fira Code', monospace",
+  return () => {
+    document.removeEventListener('mounted', scheduleRender);
+    document.removeEventListener('unmounted', scheduleRender);
+    clearHighlight();
+    root.remove();
+    if (debounceTimer) cancelAnimationFrame(debounceTimer);
   };
 
-  return render(() => html`
-    <div style=${{
-      width: '100%',
-      height: '100%',
-      background: '#1e1e2e',
-      color: '#cdd6f4',
-      'font-family': "'SF Mono', 'Fira Code', monospace",
-      'font-size': '12px',
-      display: 'flex',
-      'flex-direction': 'column',
-      overflow: 'hidden',
-      'border-radius': '8px',
-      border: '1px solid #45475a',
-    }}>
-      <!-- Header -->
-      <div style=${{
-        display: 'flex',
-        'align-items': 'center',
-        gap: '10px',
-        padding: '10px 12px',
-        background: '#313244',
-        'border-bottom': '1px solid #45475a',
-        'flex-shrink': '0',
-      }}>
-        <button
-          style=${() => ({
-            width: '34px',
-            height: '34px',
-            border: '2px solid ' + (active() ? '#f38ba8' : '#585b70'),
-            'border-radius': '8px',
-            cursor: 'pointer',
-            display: 'flex',
-            'align-items': 'center',
-            'justify-content': 'center',
-            background: active() ? '#f38ba8' : 'transparent',
-            color: active() ? '#1e1e2e' : '#a6adc8',
-            transition: 'all 0.15s ease',
-            'flex-shrink': '0',
-            padding: '0',
-          })}
-          onClick=${toggleInspect}
-          title="Toggle Inspector"
-          innerHTML=${targetSvg}
-        />
-        <div style=${{
-          display: 'flex',
-          'flex-direction': 'column',
-          gap: '2px',
-          overflow: 'hidden',
-          flex: '1',
-        }}>
-          <div style=${{
-            'font-size': '14px',
-            'font-weight': '700',
-            color: '#cdd6f4',
-            'white-space': 'nowrap',
-            overflow: 'hidden',
-            'text-overflow': 'ellipsis',
-          }}>
-            ${() => {
-              if (active() && hoveredName()) return '🎯 ' + hoveredName();
-              if (active()) return '🎯 Select an element...';
-              if (toolName()) return '📦 ' + toolName();
-              return 'Inspector';
-            }}
-          </div>
-          ${() => toolPath() ? html`
-            <div style=${{
-              'font-size': '11px',
-              color: '#6c7086',
-              'white-space': 'nowrap',
-              overflow: 'hidden',
-              'text-overflow': 'ellipsis',
-            }}>${() => toolPath()}</div>
-          ` : null}
-          ${() => inspectedRefUrl() ? html`
-            <div style=${{
-              'font-size': '10px',
-              color: '#585b70',
-              'white-space': 'nowrap',
-              overflow: 'hidden',
-              'text-overflow': 'ellipsis',
-            }}>${() => inspectedRefUrl()}</div>
-          ` : null}
-        </div>
-      </div>
+  function scheduleRender() {
+    if (debounceTimer) cancelAnimationFrame(debounceTimer);
+    debounceTimer = requestAnimationFrame(() => {
+      debounceTimer = null;
+      renderTree();
+    });
+  }
 
-      <!-- Tabs -->
-      ${() => hasInspected() ? html`
-        <div style=${{
-          display: 'flex',
-          gap: '4px',
-          padding: '6px 12px',
-          background: '#313244',
-          'border-bottom': '1px solid #45475a',
-          'flex-shrink': '0',
-        }}>
-          <button
-            style=${() => tabStyle(tab() === 'data')}
-            onClick=${() => setTab('data')}
-          >Data</button>
-          <button
-            style=${() => tabStyle(tab() === 'source')}
-            onClick=${() => setTab('source')}
-          >Source</button>
-        </div>
-      ` : null}
+  async function renderTree() {
+    const rootEl = findRootRefView(element);
+    const tree = await buildNode(fs, rootEl);
+    const total = countNodes(tree);
 
-      <!-- Content -->
-      <div style=${{
-        flex: '1',
-        overflow: 'auto',
-        padding: '0',
-        position: 'relative',
-      }}>
-        ${() => {
-          if (loading() && tab() === 'source') return html`<div style=${{padding: '16px', color: '#6c7086'}}>Loading...</div>`;
-          
-          if (hasInspected()) {
-            if (tab() === 'data') {
-              // Get the reactive data accessor
-              const accessor = dataAccessor();
-              if (accessor) {
-                // accessor is a Solid signal created by from(ref)
-                // Calling it inside this reactive context will track changes
-                return html`<pre style=${{
-                  ...preStyle,
-                  color: '#89b4fa',
-                }}>${() => {
-                  const val = accessor();
-                  return val ? formatJSON(val) : '// No data';
-                }}</pre>`;
-              }
-              return html`<pre style=${{
-                ...preStyle,
-                color: '#6c7086',
-              }}>// No ref data available</pre>`;
-            }
-            if (tab() === 'source') {
-              return html`<pre style=${preStyle}>${() => toolSource() || '// No source available'}</pre>`;
-            }
-          }
-          
-          if (active()) return html`<div style=${{
-            padding: '24px 16px',
-            color: '#6c7086',
-            'text-align': 'center',
-            'line-height': '1.6',
-          }}>
-            <div style=${{ 'font-size': '32px', 'margin-bottom': '8px' }}>🎯</div>
-            Hover over any element on the canvas<br/>and click to inspect it.
-          </div>`;
-          
-          return html`<div style=${{
-            padding: '24px 16px',
-            color: '#6c7086',
-            'text-align': 'center',
-            'line-height': '1.6',
-          }}>
-            <div style=${{ 'font-size': '32px', 'margin-bottom': '8px' }}>🔍</div>
-            Click the target button to<br/>start inspecting elements.
-          </div>`;
-        }}
-      </div>
-    </div>
-  `, element);
+    treeContainer.innerHTML = '';
+    renderNode(tree, treeContainer, 0);
+    footer.textContent = total + ' view' + (total === 1 ? '' : 's');
+  }
+
+  function renderNode(node, container, depth) {
+    const hasChildren = node.children.length > 0;
+    const isCollapsed = collapsed.has(node.el);
+
+    const row = document.createElement('div');
+    row.style.cssText =
+      'display:flex;align-items:center;gap:4px;padding:3px 10px 3px ' +
+      (10 + depth * 16) +
+      'px;cursor:pointer;user-select:none;white-space:nowrap;transition:background 0.1s;';
+
+    row.addEventListener('mouseenter', () => {
+      row.style.background = '#f1f5f9';
+      highlightElement(node.el);
+    });
+    row.addEventListener('mouseleave', () => {
+      row.style.background = '';
+      clearHighlight();
+    });
+
+    const arrow = document.createElement('span');
+    arrow.style.cssText =
+      'width:14px;height:14px;display:flex;align-items:center;justify-content:center;font-size:9px;color:#94a3b8;flex-shrink:0;transition:transform 0.15s;';
+    if (hasChildren) {
+      arrow.textContent = '▶';
+      if (!isCollapsed) arrow.style.transform = 'rotate(90deg)';
+    }
+    row.appendChild(arrow);
+
+    const dot = document.createElement('span');
+    dot.style.cssText =
+      'width:6px;height:6px;border-radius:50%;flex-shrink:0;background:' +
+      (hasChildren ? '#3b82f6' : '#94a3b8') +
+      ';';
+    row.appendChild(dot);
+
+    const label = document.createElement('span');
+    label.style.cssText =
+      'color:#1e293b;font-size:12px;overflow:hidden;text-overflow:ellipsis;' +
+      (hasChildren ? 'font-weight:500;' : '');
+    label.textContent = node.name;
+    row.appendChild(label);
+
+    if (hasChildren) {
+      const count = document.createElement('span');
+      count.style.cssText = 'font-size:10px;color:#94a3b8;margin-left:4px;';
+      count.textContent = '(' + node.children.length + ')';
+      row.appendChild(count);
+    }
+
+    if (hasChildren) {
+      row.addEventListener('click', () => {
+        if (collapsed.has(node.el)) {
+          collapsed.delete(node.el);
+        } else {
+          collapsed.add(node.el);
+        }
+        void renderTree();
+      });
+    }
+
+    container.appendChild(row);
+
+    if (hasChildren && !isCollapsed) {
+      for (const child of node.children) {
+        renderNode(child, container, depth + 1);
+      }
+    }
+  }
+
+  function highlightElement(el) {
+    clearHighlight();
+    highlightedEl = el;
+    el.style.filter = 'drop-shadow(0 0 6px rgba(59,130,246,0.8)) drop-shadow(0 0 2px rgba(59,130,246,0.9))';
+  }
+
+  function clearHighlight() {
+    if (highlightedEl) {
+      highlightedEl.style.filter = '';
+      highlightedEl = null;
+    }
+  }
+}
+
+function findRootRefView(el) {
+  let current = el;
+  while (current.parentElement?.closest('ref-view')) {
+    current = current.parentElement.closest('ref-view');
+  }
+  return current;
+}
+
+async function buildNode(fs, el) {
+  const viewUrl = el.getAttribute('view-url') || '';
+  const directChildren = findDirectRefViewChildren(el);
+  const [name, children] = await Promise.all([
+    resolveViewName(fs, viewUrl),
+    Promise.all(directChildren.map((child) => buildNode(fs, child))),
+  ]);
+  return { el, viewUrl, name, children };
+}
+
+function findDirectRefViewChildren(el) {
+  const children = [];
+  for (const child of el.children) {
+    if (child.tagName === 'REF-VIEW') {
+      children.push(child);
+    } else {
+      collectNestedRefViews(child, children);
+    }
+  }
+  return children;
+}
+
+function collectNestedRefViews(el, result) {
+  for (const child of el.children) {
+    if (child.tagName === 'REF-VIEW') {
+      result.push(child);
+    } else {
+      collectNestedRefViews(child, result);
+    }
+  }
+}
+
+async function resolveViewName(fs, viewUrl) {
+  if (!viewUrl) return '(no view-url)';
+  if (nameCache.has(viewUrl)) return nameCache.get(viewUrl);
+
+  let name = fallbackName(viewUrl);
+  if (viewUrl.endsWith('.json')) {
+    try {
+      const raw = await fs.readFile(viewUrl);
+      const descriptor = JSON.parse(raw);
+      if (descriptor.name) name = descriptor.name;
+    } catch {
+      // fall back to path-based name
+    }
+  }
+
+  nameCache.set(viewUrl, name);
+  return name;
+}
+
+function fallbackName(viewUrl) {
+  const clean = viewUrl.replace(/^\.\//, '');
+  const parts = clean.split('/');
+  const last = parts[parts.length - 1];
+  if (/^(tool|schema)\.(json|js)$/.test(last) && parts.length > 1) {
+    return parts[parts.length - 2];
+  }
+  return last.replace(/\.[^.]+$/, '') || viewUrl;
+}
+
+function countNodes(node) {
+  let total = 1;
+  for (const child of node.children) {
+    total += countNodes(child);
+  }
+  return total;
 }

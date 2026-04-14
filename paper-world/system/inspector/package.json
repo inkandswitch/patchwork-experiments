@@ -2,9 +2,8 @@
   "name": "inspector",
   "private": true,
   "type": "module",
-  "description": "Inspect tools on the canvas",
+  "description": "Dev tool that renders the ref-view hierarchy as a collapsible tree with hover highlighting",
   "exports": {
-    "./tool.json": "./tool.json",
-    "./schema.json": "./schema.json"
+    "./tool.json": "./tool.json"
   }
 }

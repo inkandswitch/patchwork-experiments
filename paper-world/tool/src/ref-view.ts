@@ -48,6 +48,7 @@ export function registerRefView(
     #viewRef: Ref<string> | null = null;
     #viewUnsub: (() => void) | null = null;
     #folderCleanup: (() => void) | null = null;
+    #parentEl: Element | null = null;
 
     get filesystem(): Filesystem {
       return filesystem;
@@ -164,6 +165,7 @@ export function registerRefView(
     }
 
     connectedCallback(): void {
+      this.#parentEl = this.parentElement;
       this.#scheduleMount();
     }
 
@@ -171,6 +173,7 @@ export function registerRefView(
       this.#mountAbort?.abort();
       this.#mountAbort = null;
       this.#teardown();
+      this.#parentEl = null;
     }
 
     attributeChangedCallback(_name: string, oldVal: string, newVal: string): void {
@@ -191,7 +194,8 @@ export function registerRefView(
 
     #teardown(): void {
       if (this.#cleanup) {
-        this.dispatchEvent(new Event("unmounted", { bubbles: true }));
+        const target = this.isConnected ? this : connectedAncestor(this.#parentEl);
+        target.dispatchEvent(new Event("unmounted", { bubbles: true }));
         try {
           this.#cleanup();
         } catch {
@@ -321,6 +325,15 @@ export function registerRefView(
   }
 
   customElements.define("ref-view", RefViewElement);
+}
+
+function connectedAncestor(el: Element | null): Element | Document {
+  let current = el;
+  while (current) {
+    if (current.isConnected) return current;
+    current = current.parentElement;
+  }
+  return document;
 }
 
 function parentRefView(el: HTMLElement): RefViewHostElement | null {
