@@ -77,13 +77,20 @@ const folder = folderHandle.doc();
 
 const artifacts = [];
 for (const entry of folder.docs ?? []) {
-  if (entry.type !== 'datalog') continue;
-  const db = await getDatalog(entry.url);
+  if (entry.type !== 'workflow-artifact') continue;
+  const workflowArtifactHandle = await repo.find(entry.url);
+  const workflowArtifact = workflowArtifactHandle.doc();
+  if (!workflowArtifact?.artifactDocUrl || !workflowArtifact?.specDocUrl) continue;
+  const db = await getDatalog(workflowArtifact.artifactDocUrl);
   const facts = db.getFacts();
+  const specHandle = await repo.find(workflowArtifact.specDocUrl);
+  const specDoc = specHandle.doc();
   artifacts.push({
-    name: entry.name,
-    url: entry.url,
-    hasProjection: !!entry.projectionDocUrl,
+    name: workflowArtifact.name || entry.name,
+    workflowArtifactUrl: entry.url,
+    artifactUrl: workflowArtifact.artifactDocUrl,
+    specDocUrl: workflowArtifact.specDocUrl,
+    hasProjection: !!specDoc?.spec?.projectionDocUrl,
     factCount: facts.length,
     predicates: [...new Set(facts.map(f => f.pred))],
     sampleFacts: facts.slice(0, 20),
@@ -118,13 +125,13 @@ For each artifact without a projection, analyze its facts to determine:
 
 5. **Editable columns** should have matching write bindings
 
-### Step 4: Create the projection and link it
+### Step 4: Create the reusable projection and attach it to the spec
 
 ```
 <script data-description="Create projection for artifact">
-const { createProjection, setArtifactProjection } = await useSkill("projection");
+const { createProjection, setSpecProjection } = await useSkill("projection");
 
-const { url: projUrl } = createProjection(artifactUrl, "Table Title", {
+const { url: projUrl } = createProjection("Table Title", {
   entityPredicate: 'shift',
   keyArg: 0,
   entityIdPrefix: 'shift',
@@ -143,8 +150,8 @@ const { url: projUrl } = createProjection(artifactUrl, "Table Title", {
   // ... more columns based on analysis
 ]);
 
-await setArtifactProjection(artifactsFolderUrl, artifactUrl, projUrl);
-console.log('Created projection:', projUrl, 'for artifact:', artifactUrl);
+await setSpecProjection(specUrl, projUrl);
+console.log('Created projection:', projUrl, 'for spec:', specUrl);
 </script>
 ```
 
@@ -166,8 +173,8 @@ The user may ask you to modify an existing projection (e.g. "add a column for to
 
 ## Guidelines
 
-- Create one projection per artifact that lacks a `projectionDocUrl`.
-- Skip artifacts that already have projections (unless the user asks to regenerate).
+- Create one reusable projection per spec that lacks a `projectionDocUrl`.
+- Skip artifacts whose owning spec already has a projection (unless the user asks to regenerate).
 - The entity predicate is the most important decision — get it right by analyzing which predicate's first arg is referenced by all other predicates.
 - Make columns editable (with write bindings) unless there's a reason not to (derived values, cross-entity aggregations).
 - Use `blankPolicy: 'delete'` for optional columns, `blankPolicy: 'reject'` for required ones.

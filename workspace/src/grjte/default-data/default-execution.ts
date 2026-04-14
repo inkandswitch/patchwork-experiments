@@ -2,13 +2,10 @@ import type { AutomergeUrl, Repo } from '@automerge/automerge-repo';
 import type { TaskListExecutionDoc } from '../../../../grjte-workflow-tools/src/execution/types';
 import {
   buildBaseArtifactDraft,
-  createProjectionDoc,
   type ArtifactFolderEntry,
 } from '../../../../grjte-workflow-tools/src/artifact-projection/artifact-projection';
-import {
-  buildHospitalRotaProjectionSpec,
-  normalizeHospitalLegacySolutionFacts,
-} from './default-projection';
+import type { WorkflowArtifactDoc } from '../../workflow/types';
+import { normalizeHospitalLegacySolutionFacts } from './default-projection';
 
 type FolderDoc = {
   '@patchwork'?: { type: string };
@@ -60,6 +57,24 @@ function createSolutionArtifactDoc(
     buildBaseArtifactDraft(title, normalizedFacts),
     normalizedFacts,
   );
+}
+
+function createWorkflowArtifactDoc(
+  repo: Repo,
+  name: string,
+  artifactDocUrl: AutomergeUrl,
+  specDocUrl: AutomergeUrl,
+  artifactType = 'datalog',
+): AutomergeUrl {
+  const handle = repo.create<WorkflowArtifactDoc>();
+  handle.change((d) => {
+    d['@patchwork'] = { type: 'workflow-artifact' };
+    d.name = name;
+    d.artifactType = artifactType;
+    d.artifactDocUrl = artifactDocUrl;
+    d.specDocUrl = specDocUrl;
+  });
+  return handle.url;
 }
 
 function f(pred: string, ...args: (string | number)[]): StoredFact {
@@ -342,14 +357,17 @@ assigned(w6_wed_night, helen_morris, 12). assignment_slot(w6_wed_night, 3, helen
 assigned(w6_wed_night, lisa_brown, 12). assignment_slot(w6_wed_night, 4, lisa_brown).`;
 
   const ward6RotaUrl = createSolutionArtifactDoc(repo, 'Ward 6 Rota', ward6Facts);
-
-  const amuProjectionUrl = createProjectionDoc(
+  const amuWorkflowArtifactUrl = createWorkflowArtifactDoc(
     repo,
-    buildHospitalRotaProjectionSpec(amuRotaUrl, 'AMU Rota'),
+    'AMU Rota',
+    amuRotaUrl,
+    subSpecUrls[0],
   );
-  const ward6ProjectionUrl = createProjectionDoc(
+  const ward6WorkflowArtifactUrl = createWorkflowArtifactDoc(
     repo,
-    buildHospitalRotaProjectionSpec(ward6RotaUrl, 'Ward 6 Rota'),
+    'Ward 6 Rota',
+    ward6RotaUrl,
+    subSpecUrls[1],
   );
 
   const artifactsFolderHandle = repo.create<FolderDoc>();
@@ -358,18 +376,14 @@ assigned(w6_wed_night, lisa_brown, 12). assignment_slot(w6_wed_night, 4, lisa_br
     d.title = 'Rota Artifacts';
     d.docs = [
       {
-        type: 'datalog',
+        type: 'workflow-artifact',
         name: 'AMU Rota',
-        url: amuRotaUrl,
-        projectionDocUrl: amuProjectionUrl,
-        specDocUrls: [subSpecUrls[0], specDocUrl],
+        url: amuWorkflowArtifactUrl,
       },
       {
-        type: 'datalog',
+        type: 'workflow-artifact',
         name: 'Ward 6 Rota',
-        url: ward6RotaUrl,
-        projectionDocUrl: ward6ProjectionUrl,
-        specDocUrls: [subSpecUrls[1], specDocUrl],
+        url: ward6WorkflowArtifactUrl,
       },
     ];
   });

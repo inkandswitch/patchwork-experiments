@@ -148,12 +148,10 @@ export function flattenSpecTree(
 }
 
 export function getArtifactsForSpec<
-  T extends { url: AutomergeUrl; specDocUrls?: AutomergeUrl[] },
+  T extends { url: AutomergeUrl; specDocUrl?: AutomergeUrl },
 >(specDocUrl: AutomergeUrl, artifacts: T[], isRoot: boolean): T[] {
   if (isRoot) return artifacts;
-  return artifacts.filter(
-    (artifact) => artifact.specDocUrls?.includes(specDocUrl) ?? false,
-  );
+  return artifacts.filter((artifact) => artifact.specDocUrl === specDocUrl);
 }
 
 async function loadDataDocsFromFolder(

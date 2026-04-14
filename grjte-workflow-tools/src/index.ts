@@ -75,13 +75,25 @@ export const plugins: Plugin<any>[] = [
     type: "patchwork:tool",
     id: "grjte-artifact-projection",
     name: "grjte Artifact Projection",
-    supportedDatatypes: ["artifact-projection"],
+    supportedDatatypes: ["workflow-artifact"],
     async load() {
       const { ArtifactProjectionTool } =
         await import("./artifact-projection/tool");
       return ArtifactProjectionTool;
     },
   } satisfies Tool,
+  {
+    type: "patchwork:datatype",
+    id: "workflow-artifact",
+    name: "Workflow Artifact",
+    icon: "FileSpreadsheet",
+    async load() {
+      const { WorkflowArtifactDatatype } = await import(
+        "./execution/workflow-artifact"
+      );
+      return WorkflowArtifactDatatype;
+    },
+  } as Datatype,
   {
     type: "patchwork:datatype",
     id: "artifact-projection",

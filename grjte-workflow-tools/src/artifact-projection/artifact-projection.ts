@@ -105,8 +105,7 @@ export type ProjectionVerificationSpec = {
 
 export type ProjectionSpecDoc = {
   "@patchwork": { type: "artifact-projection" };
-  schemaVersion: 2;
-  artifactDocUrl: AutomergeUrl;
+  schemaVersion: 3;
   sourceType: "datalog";
   title?: string;
   rows: ProjectionRowsSpec;
@@ -120,8 +119,6 @@ export type ArtifactFolderEntry = {
   type: string;
   name: string;
   url: AutomergeUrl;
-  projectionDocUrl?: AutomergeUrl;
-  specDocUrls?: AutomergeUrl[];
 };
 
 export type ArtifactProjectionAnnotationKind =
@@ -719,8 +716,7 @@ export function createProjectionDoc(
   const handle = repo.create<ProjectionSpecDoc>();
   handle.change((doc) => {
     doc["@patchwork"] = { type: "artifact-projection" };
-    doc.schemaVersion = 2;
-    doc.artifactDocUrl = projectionDoc.artifactDocUrl;
+    doc.schemaVersion = 3;
     doc.sourceType = "datalog";
     doc.title = projectionDoc.title;
     doc.rows = cloneRowsSpec(projectionDoc.rows);
@@ -748,9 +744,9 @@ export function compileProjectionSpec(
       sheetAnnotation("Projection document has the wrong datatype marker."),
     );
   }
-  if (specDoc.schemaVersion !== 2) {
+  if (specDoc.schemaVersion !== 3) {
     annotations.push(
-      sheetAnnotation("Projection must declare schemaVersion 2."),
+      sheetAnnotation("Projection must declare schemaVersion 3."),
     );
   }
   if (specDoc.sourceType !== "datalog") {
@@ -1089,13 +1085,11 @@ export function expandArtifactDocForVerification(
   artifactDoc: ArtifactDocLike,
   options: ProjectionRuntimeOptions = {},
 ): ExpandedArtifactDoc {
-  const compile = compileProjectionSpec(projectionDoc);
-  const backend = options.backend ?? nativeDatalogLensBackend;
-  const fallback =
-    compile.ok && compile.compiled
-      ? backend.buildBaseProvenance(compile.compiled, artifactDoc)
-      : buildFallbackExpandedArtifactDoc(artifactDoc);
-
+  const fallback = buildArtifactProjectionProvenance(
+    projectionDoc,
+    artifactDoc,
+    options,
+  );
   const script = projectionDoc.verification?.expandScript?.trim();
   if (!script) return fallback;
 
@@ -1124,6 +1118,20 @@ export function expandArtifactDocForVerification(
       ].join("\n"),
     };
   }
+}
+
+export function buildArtifactProjectionProvenance(
+  projectionDoc: ProjectionSpecDoc,
+  artifactDoc: ArtifactDocLike,
+  options: ProjectionRuntimeOptions = {},
+): ExpandedArtifactDoc {
+  const compile = compileProjectionSpec(projectionDoc);
+  const backend = options.backend ?? nativeDatalogLensBackend;
+  return (
+    compile.ok && compile.compiled
+      ? backend.buildBaseProvenance(compile.compiled, artifactDoc)
+      : buildFallbackExpandedArtifactDoc(artifactDoc)
+  );
 }
 
 export function deriveConstraintAnnotationsForArtifact(
@@ -1935,7 +1943,6 @@ function freezeProjectionDoc(projectionDoc: ProjectionSpecDoc) {
   return deepFreeze({
     "@patchwork": { ...projectionDoc["@patchwork"] },
     schemaVersion: projectionDoc.schemaVersion,
-    artifactDocUrl: projectionDoc.artifactDocUrl,
     sourceType: projectionDoc.sourceType,
     title: projectionDoc.title,
     rows: cloneRowsSpec(projectionDoc.rows),

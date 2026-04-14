@@ -4,8 +4,7 @@
  * ProjectionSpecDoc shape:
  *   {
  *     '@patchwork': { type: 'artifact-projection' },
- *     schemaVersion: 2,
- *     artifactDocUrl: AutomergeUrl,
+ *     schemaVersion: 3,
  *     sourceType: 'datalog',
  *     title: string,
  *     rows: ProjectionRowsSpec,
@@ -18,18 +17,16 @@
  *
  * repo.create() is SYNCHRONOUS — do NOT await this function.
  *
- * @param {string} artifactDocUrl - Automerge URL of the DatalogDoc to project
  * @param {string} title - Display title for the projection
  * @param {object} rowsSpec - Row configuration (entityPredicate, keyArg, etc.)
  * @param {object[]} columns - Array of column definitions
  * @returns {{ url: string }}
  */
-export function createProjection(artifactDocUrl, title, rowsSpec, columns) {
+export function createProjection(title, rowsSpec, columns) {
   const handle = repo.create();
   handle.change((d) => {
     d['@patchwork'] = { type: 'artifact-projection' };
-    d.schemaVersion = 2;
-    d.artifactDocUrl = artifactDocUrl;
+    d.schemaVersion = 3;
     d.sourceType = 'datalog';
     d.title = title || '';
     d.rows = {
@@ -145,19 +142,15 @@ export async function getProjection(url) {
 }
 
 /**
- * Update an artifact folder entry to link a projection doc.
+ * Update a SpecDoc to link a projection doc.
  *
- * @param {string} folderUrl - Automerge URL of the artifacts folder
- * @param {string} artifactUrl - Automerge URL of the artifact DatalogDoc
+ * @param {string} specUrl - Automerge URL of the SpecDoc
  * @param {string} projectionUrl - Automerge URL of the ProjectionSpecDoc
  */
-export async function setArtifactProjection(folderUrl, artifactUrl, projectionUrl) {
-  const handle = await repo.find(folderUrl);
+export async function setSpecProjection(specUrl, projectionUrl) {
+  const handle = await repo.find(specUrl);
   handle.change((d) => {
-    if (!d.docs) return;
-    const entry = d.docs.find((e) => e.url === artifactUrl);
-    if (entry) {
-      entry.projectionDocUrl = projectionUrl;
-    }
+    if (!d.spec) return;
+    d.spec.projectionDocUrl = projectionUrl;
   });
 }

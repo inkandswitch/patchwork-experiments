@@ -56,10 +56,31 @@ export function createArtifact(title, facts) {
 }
 
 /**
- * Add an ArtifactFolderEntry to the artifacts folder.
+ * Create a workflow-artifact wrapper doc that links an artifact to its spec.
+ *
+ * @param {string} name - Display name for the artifact
+ * @param {string} artifactDocUrl - Automerge URL of the underlying artifact doc
+ * @param {string} specDocUrl - Automerge URL of the owning spec doc
+ * @param {string} artifactType - Underlying artifact datatype, usually 'datalog'
+ * @returns {{ url: string }}
+ */
+export function createWorkflowArtifact(name, artifactDocUrl, specDocUrl, artifactType = 'datalog') {
+  const handle = repo.create();
+  handle.change((d) => {
+    d['@patchwork'] = { type: 'workflow-artifact' };
+    d.name = name || '';
+    d.artifactType = artifactType || 'datalog';
+    d.artifactDocUrl = artifactDocUrl;
+    d.specDocUrl = specDocUrl;
+  });
+  return { url: handle.url };
+}
+
+/**
+ * Add a workflow-artifact entry to the artifacts folder.
  *
  * @param {string} folderUrl - Automerge URL of the folder doc
- * @param {{ type: string, name: string, url: string, specDocUrls?: string[] }} entry
+ * @param {{ type: string, name: string, url: string }} entry
  */
 export async function addToArtifactsFolder(folderUrl, entry) {
   const handle = await repo.find(folderUrl);
@@ -70,9 +91,6 @@ export async function addToArtifactsFolder(folderUrl, entry) {
       name: entry.name,
       url: entry.url,
     };
-    if (entry.specDocUrls) {
-      newEntry.specDocUrls = [...entry.specDocUrls];
-    }
     d.docs.push(newEntry);
   });
 }

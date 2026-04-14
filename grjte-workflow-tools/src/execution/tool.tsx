@@ -9,6 +9,8 @@ import type { DocHandle, AutomergeUrl } from "@automerge/automerge-repo";
 import type { TaskListExecutionDoc } from "./types";
 import type { TaskDoc } from "../plan/types";
 import type { ArtifactFolderEntry } from "../artifact-projection/artifact-projection";
+import type { WorkflowArtifactDoc } from "../workflow-types";
+import { GrjteVersionBadge } from "../version";
 import "./execution.css";
 
 type FolderDoc = {
@@ -76,6 +78,7 @@ function ExecutionView(props: {
               <div class={`execution-status ${currentDoc().status}`}>
                 {formatStatus(currentDoc().status)}
               </div>
+              <GrjteVersionBadge />
 
               <Show when={currentDoc().specDocUrl}>
                 {(specUrl) => (
@@ -144,32 +147,11 @@ function ExecutionView(props: {
                   <div class="execution-artifact-list">
                     <For each={artifacts()}>
                       {(entry) => (
-                        <div
-                          class="execution-artifact-card"
-                          classList={{
-                            expanded: isArtifactExpanded(entry.url),
-                          }}
-                        >
-                          <button
-                            class="execution-artifact-toggle"
-                            onClick={() => toggleArtifact(entry.url)}
-                          >
-                            <span class="execution-artifact-name">
-                              {entry.name || "Untitled"}
-                            </span>
-                            <span class="execution-artifact-type">
-                              {entry.type}
-                            </span>
-                          </button>
-                          <Show when={isArtifactExpanded(entry.url)}>
-                            <div class="execution-artifact-preview">
-                              <patchwork-view
-                                attr:doc-url={entry.url}
-                                style="display:block;width:100%;height:100%;"
-                              />
-                            </div>
-                          </Show>
-                        </div>
+                        <WorkflowArtifactCard
+                          entry={entry}
+                          expanded={isArtifactExpanded(entry.url)}
+                          onToggle={() => toggleArtifact(entry.url)}
+                        />
                       )}
                     </For>
                   </div>
@@ -209,6 +191,47 @@ function TaskRow(props: { url: AutomergeUrl; index: number }) {
         );
       }}
     </Show>
+  );
+}
+
+function WorkflowArtifactCard(props: {
+  entry: ArtifactFolderEntry;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const [workflowArtifact] = useDocument<WorkflowArtifactDoc>(() => props.entry.url);
+
+  return (
+    <div
+      class="execution-artifact-card"
+      classList={{
+        expanded: props.expanded,
+      }}
+    >
+      <button class="execution-artifact-toggle" onClick={props.onToggle}>
+        <span class="execution-artifact-name">
+          {workflowArtifact()?.name || props.entry.name || "Untitled"}
+        </span>
+        <span class="execution-artifact-type">
+          {workflowArtifact()?.artifactType || "artifact"}
+        </span>
+      </button>
+      <Show when={props.expanded}>
+        <div class="execution-artifact-preview">
+          <Show
+            when={workflowArtifact()?.artifactDocUrl}
+            fallback={<div class="execution-empty">Loading artifact...</div>}
+          >
+            {(artifactUrl) => (
+              <patchwork-view
+                attr:doc-url={artifactUrl()}
+                style="display:block;width:100%;height:100%;"
+              />
+            )}
+          </Show>
+        </div>
+      </Show>
+    </div>
   );
 }
 

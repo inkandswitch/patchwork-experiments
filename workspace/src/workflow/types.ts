@@ -40,6 +40,7 @@ export type Spec = {
   verificationUrls: AutomergeUrl[];
   subSpecUrls?: AutomergeUrl[];
   filesFolderUrl?: AutomergeUrl;
+  projectionDocUrl?: AutomergeUrl;
 };
 
 export type SpecDoc = HasPatchworkMetadata & {
@@ -60,6 +61,13 @@ export type ExecutionDoc = HasPatchworkMetadata & {
   specDocUrl: AutomergeUrl;
   planDocUrl: AutomergeUrl;
   artifactsFolderUrl: AutomergeUrl;
+};
+
+export type WorkflowArtifactDoc = HasPatchworkMetadata & {
+  name: string;
+  artifactType: string;
+  artifactDocUrl: AutomergeUrl;
+  specDocUrl: AutomergeUrl;
 };
 
 export type ValidationDoc = HasPatchworkMetadata & {

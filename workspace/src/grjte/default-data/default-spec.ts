@@ -1,6 +1,8 @@
 import type { AutomergeUrl, Repo } from '@automerge/automerge-repo';
 import type { SpecDoc, Spec } from '../../workflow/types';
 import type { VerificationDoc } from '../../../../grjte-workflow-tools/src/spec/types';
+import { createProjectionDoc } from '../../../../grjte-workflow-tools/src/artifact-projection/artifact-projection';
+import { buildHospitalRotaProjectionSpec } from './default-projection';
 
 type StoredAtom = { pred: string; args: string[] };
 type StoredRule = { head: StoredAtom; body: StoredAtom[]; comment?: string };
@@ -527,6 +529,14 @@ high_census_threshold(ward_6, 16).`,
     description:
       'Ensure Ward 6 shifts above the high-census threshold roster three registered nurses.',
   });
+  const amuProjectionUrl = createProjectionDoc(
+    repo,
+    buildHospitalRotaProjectionSpec('AMU Rota'),
+  );
+  const ward6ProjectionUrl = createProjectionDoc(
+    repo,
+    buildHospitalRotaProjectionSpec('Ward 6 Rota'),
+  );
 
   const amuSpecHandle = repo.create<SpecDoc>();
   amuSpecHandle.change((d) => {
@@ -535,6 +545,7 @@ high_census_threshold(ward_6, 16).`,
       goal: 'AMU rota',
       dataFolderUrl: amuDataFolderUrl,
       verificationUrls: [generalWardRulesVerificationUrl, amuRulesVerificationUrl],
+      projectionDocUrl: amuProjectionUrl,
     };
   });
 
@@ -545,6 +556,7 @@ high_census_threshold(ward_6, 16).`,
       goal: 'Ward 6 rota',
       dataFolderUrl: ward6DataFolderUrl,
       verificationUrls: [generalWardRulesVerificationUrl, ward6RulesVerificationUrl],
+      projectionDocUrl: ward6ProjectionUrl,
     };
   });
 

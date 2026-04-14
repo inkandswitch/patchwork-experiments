@@ -10,7 +10,7 @@ Create and manage ProjectionSpecDocs. A projection defines how a flat DatalogDoc
 ## Import
 
 ```javascript
-const { createProjection, getProjection, setArtifactProjection } = await useSkill("projection");
+const { createProjection, getProjection, setSpecProjection } = await useSkill("projection");
 ```
 
 ## Types
@@ -20,8 +20,7 @@ const { createProjection, getProjection, setArtifactProjection } = await useSkil
 ```javascript
 {
   '@patchwork': { type: 'artifact-projection' },
-  schemaVersion: 2,
-  artifactDocUrl: AutomergeUrl,   // the DatalogDoc this projects
+  schemaVersion: 3,
   sourceType: 'datalog',
   title: string,
   rows: ProjectionRowsSpec,
@@ -112,7 +111,7 @@ When a column is editable, the write binding must mirror its read binding:
 
 ## API
 
-### `createProjection(artifactDocUrl, title, rowsSpec, columns)` (sync)
+### `createProjection(title, rowsSpec, columns)` (sync)
 
 Creates a new ProjectionSpecDoc. **Do NOT await** — `repo.create()` is synchronous.
 
@@ -120,7 +119,7 @@ Returns `{ url }`.
 
 ```javascript
 const { createProjection } = await useSkill("projection");
-const { url } = createProjection(artifactUrl, "My Table", {
+const { url } = createProjection("My Table", {
   entityPredicate: 'shift',
   keyArg: 0,
   entityIdPrefix: 'shift',
@@ -177,13 +176,13 @@ proj.addColumn({
 });
 ```
 
-### `setArtifactProjection(folderUrl, artifactUrl, projectionUrl)` (async)
+### `setSpecProjection(specUrl, projectionUrl)` (async)
 
-Updates the artifact folder entry to link the projection doc.
+Updates a spec to link the reusable projection doc.
 
 ```javascript
-const { setArtifactProjection } = await useSkill("projection");
-await setArtifactProjection(folderUrl, artifactUrl, projectionUrl);
+const { setSpecProjection } = await useSkill("projection");
+await setSpecProjection(specUrl, projectionUrl);
 ```
 
 ## Analyzing Facts to Build a Projection
@@ -204,7 +203,7 @@ When generating a projection for a DatalogDoc, analyze the facts to determine:
 ## Example: Full Projection Generation
 
 ```javascript
-const { createProjection, setArtifactProjection } = await useSkill("projection");
+const { createProjection, setSpecProjection } = await useSkill("projection");
 const { getDatalog } = await useSkill("datalog");
 
 // Read artifact facts
@@ -215,7 +214,7 @@ const facts = db.getFacts();
 // (your analysis logic here)
 
 // Create projection
-const { url: projUrl } = createProjection(artifactUrl, "Rota Table", {
+const { url: projUrl } = createProjection("Rota Table", {
   entityPredicate: 'shift',
   keyArg: 0,
   entityIdPrefix: 'shift',
@@ -224,6 +223,6 @@ const { url: projUrl } = createProjection(artifactUrl, "Rota Table", {
   delete: { mode: 'managed-predicates-only' },
 }, columns);
 
-// Link to artifact in folder
-await setArtifactProjection(folderUrl, artifactUrl, projUrl);
+// Link to owning spec
+await setSpecProjection(specUrl, projUrl);
 ```

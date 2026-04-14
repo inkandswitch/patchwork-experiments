@@ -3,7 +3,7 @@ import type { ProjectionSpecDoc } from './artifact-projection';
 
 export const ArtifactProjectionDatatype: DatatypeImplementation<ProjectionSpecDoc> = {
   init(doc) {
-    doc.schemaVersion = 2;
+    doc.schemaVersion = 3;
     doc.sourceType = 'datalog';
     doc.rows = {
       entityPredicate: '',

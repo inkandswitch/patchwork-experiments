@@ -17,7 +17,11 @@ import remarkGfm from "remark-gfm";
 import type { ToolRender, ToolElement } from "@inkandswitch/patchwork-plugins";
 import type { DocHandle, AutomergeUrl } from "@automerge/automerge-repo";
 import type { Heads } from "@automerge/automerge";
-import type { ValidationDoc } from "../workflow-types";
+import type {
+  SpecDoc,
+  ValidationDoc,
+  WorkflowArtifactDoc,
+} from "../workflow-types";
 import type { LLMProcessDoc, ChatMessagePart } from "../llm/types";
 import { runWorkspaceLLM } from "../llm/llm-process";
 import type { TaskListExecutionDoc } from "../execution/types";
@@ -30,8 +34,8 @@ import type {
 import { evaluateVerification } from "./evaluate-verification";
 import type { ConstraintViolation } from "../datalog-runtime";
 import {
+  buildArtifactProjectionProvenance,
   deriveConstraintAnnotationsForArtifact,
-  expandArtifactDocForVerification,
   type ArtifactProjectionAnnotation,
   type ArtifactFolderEntry,
   type ProjectionDoc,
@@ -43,6 +47,7 @@ import {
   type SpecTreeNode,
   watchSpecTree,
 } from "./verification-assembly";
+import { GrjteVersionBadge } from "../version";
 import "./verification-datalog.css";
 import "./validation.css";
 
@@ -140,6 +145,7 @@ function ValidationView(props: {
               >
                 {currentDoc().isValidated ? "Validated" : "Pending"}
               </div>
+              <GrjteVersionBadge />
               <Show when={currentDoc().specDocUrl}>
                 {(specUrl) => (
                   <div class="plan-section">
@@ -229,11 +235,28 @@ function ValidationBody(props: {
   projectionProcessUrl?: AutomergeUrl;
 }) {
   const artifactAccessors = props.artifactEntries.map((entry) => {
-    const [doc, docHandle] = useDocument<DatalogDoc>(() => entry.url);
-    const [projectionDoc, projectionHandle] = useDocument<ProjectionDoc>(
-      () => entry.projectionDocUrl,
+    const [workflowArtifact, workflowArtifactHandle] =
+      useDocument<WorkflowArtifactDoc>(() => entry.url);
+    const [doc, docHandle] = useDocument<DatalogDoc>(
+      () => workflowArtifact()?.artifactDocUrl,
     );
-    return { entry, doc, docHandle, projectionDoc, projectionHandle };
+    const [specDoc, specHandle] = useDocument<SpecDoc>(
+      () => workflowArtifact()?.specDocUrl,
+    );
+    const [projectionDoc, projectionHandle] = useDocument<ProjectionDoc>(
+      () => specDoc()?.spec?.projectionDocUrl,
+    );
+    return {
+      entry,
+      workflowArtifact,
+      workflowArtifactHandle,
+      doc,
+      docHandle,
+      specDoc,
+      specHandle,
+      projectionDoc,
+      projectionHandle,
+    };
   });
   const [specTree, setSpecTree] = createSignal<SpecTreeNode | null>(null);
   const [specTreeLoading, setSpecTreeLoading] = createSignal(true);
@@ -262,17 +285,26 @@ function ValidationBody(props: {
     });
   });
 
-  const expandedArtifactsByUrl = createMemo(() => {
+  const projectionProvenanceByUrl = createMemo(() => {
     const entries = artifactAccessors.flatMap(
-      ({ entry, doc, projectionDoc }) => {
+      ({ entry, workflowArtifact, doc, specDoc, projectionDoc }) => {
+        const currentWorkflowArtifact = workflowArtifact();
         const currentDoc = doc();
+        const currentSpec = specDoc();
         const currentProjection = projectionDoc();
-        if (!currentDoc || !currentProjection) return [];
+        const currentProjectionUrl = currentSpec?.spec?.projectionDocUrl;
+        if (
+          !currentWorkflowArtifact ||
+          !currentDoc ||
+          !currentProjection ||
+          !currentProjectionUrl
+        )
+          return [];
         return [
           [
             entry.url,
-            expandArtifactDocForVerification(currentProjection, currentDoc, {
-              projectionUrl: entry.projectionDocUrl,
+            buildArtifactProjectionProvenance(currentProjection, currentDoc, {
+              projectionUrl: currentProjectionUrl,
             }),
           ] as const,
         ];
@@ -282,34 +314,53 @@ function ValidationBody(props: {
   });
 
   const artifactInputs = createMemo<VerificationArtifactInput[]>(() =>
-    artifactAccessors.map(({ entry, doc }) => {
+    artifactAccessors.flatMap(({ entry, workflowArtifact, doc }) => {
+      const currentWorkflowArtifact = workflowArtifact();
       const currentDoc = doc();
-      const expanded = expandedArtifactsByUrl().get(entry.url);
-      return {
-        url: entry.url,
-        name: entry.name || currentDoc?.title || "Untitled artifact",
-        specDocUrls: entry.specDocUrls,
-        doc:
-          currentDoc && expanded
-            ? {
-                ...currentDoc,
-                facts: expanded.facts,
-                draftText: expanded.draftText,
-              }
-            : currentDoc,
-      };
+      if (!currentWorkflowArtifact || !currentDoc) return [];
+      return [
+        {
+          url: currentWorkflowArtifact.artifactDocUrl,
+          name:
+            currentWorkflowArtifact.name ||
+            currentDoc?.title ||
+            "Untitled artifact",
+          specDocUrl: currentWorkflowArtifact.specDocUrl,
+          doc: currentDoc,
+        },
+      ];
     }),
   );
 
   const liveHeadsByDocUrl = createMemo<Record<AutomergeUrl, Heads>>(() => {
     const next: Record<AutomergeUrl, Heads> = {};
-    for (const { entry, docHandle, projectionHandle } of artifactAccessors) {
+    for (const {
+      entry,
+      workflowArtifact,
+      workflowArtifactHandle,
+      docHandle,
+      specHandle,
+      projectionHandle,
+    } of artifactAccessors) {
+      const currentWorkflowArtifact = workflowArtifactHandle();
+      if (currentWorkflowArtifact?.isReady()) {
+        next[entry.url] = currentWorkflowArtifact.heads() as Heads;
+      }
       const currentDocHandle = docHandle();
       if (currentDocHandle?.isReady())
-        next[entry.url] = currentDocHandle.heads() as Heads;
+        next[currentDocHandle.url] = currentDocHandle.heads() as Heads;
+      const currentSpecHandle = specHandle();
+      if (currentSpecHandle?.isReady()) {
+        const currentWorkflowArtifactDoc = workflowArtifact();
+        if (currentWorkflowArtifactDoc) {
+          next[currentWorkflowArtifactDoc.specDocUrl] =
+            currentSpecHandle.heads() as Heads;
+        }
+      }
       const currentProjectionHandle = projectionHandle();
-      if (entry.projectionDocUrl && currentProjectionHandle?.isReady()) {
-        next[entry.projectionDocUrl] = currentProjectionHandle.heads() as Heads;
+      const currentProjectionUrl = currentSpecHandle?.doc()?.spec?.projectionDocUrl;
+      if (currentProjectionUrl && currentProjectionHandle?.isReady()) {
+        next[currentProjectionUrl] = currentProjectionHandle.heads() as Heads;
       }
     }
     return next;
@@ -407,13 +458,22 @@ function ValidationBody(props: {
       );
 
     for (const result of verificationResults()) {
-      const relevantArtifacts = getArtifactsForSpec(
-        result.entry.specDocUrl,
-        props.artifactEntries,
-        result.entry.targetKind === "global",
+      const relevantArtifacts = artifactAccessors.filter(
+        ({ workflowArtifact }) =>
+          workflowArtifact() &&
+          getArtifactsForSpec(
+            result.entry.specDocUrl,
+            [
+              {
+                url: workflowArtifact()!.artifactDocUrl,
+                specDocUrl: workflowArtifact()!.specDocUrl,
+              },
+            ],
+            result.entry.targetKind === "global",
+          ).length > 0,
       );
       for (const artifact of relevantArtifacts) {
-        const current = statuses[artifact.url] ?? {
+        const current = statuses[artifact.entry.url] ?? {
           total: 0,
           failing: 0,
           passing: 0,
@@ -423,7 +483,7 @@ function ValidationBody(props: {
         current.total += 1;
         if (result.evaluation.passed) current.passing += 1;
         else current.failing += 1;
-        statuses[artifact.url] = buildArtifactVerificationSummary(
+        statuses[artifact.entry.url] = buildArtifactVerificationSummary(
           current.total,
           current.failing,
         );
@@ -432,6 +492,78 @@ function ValidationBody(props: {
 
     return statuses;
   });
+
+  const constraintAnnotationsByArtifact = createMemo<
+    Record<AutomergeUrl, ArtifactProjectionAnnotation[]>
+  >(() => {
+    const next: Record<AutomergeUrl, ArtifactProjectionAnnotation[]> = {};
+
+    for (const { entry, workflowArtifact, projectionDoc } of artifactAccessors) {
+      const currentWorkflowArtifact = workflowArtifact();
+      const currentProjection = projectionDoc();
+      const currentExpandedArtifact = projectionProvenanceByUrl().get(entry.url);
+      if (!currentWorkflowArtifact || !currentProjection || !currentExpandedArtifact) {
+        next[entry.url] = [];
+        continue;
+      }
+
+      const failingConstraints = verificationResults().flatMap((result) => {
+        const relevant = getArtifactsForSpec(
+          result.entry.specDocUrl,
+          [
+            {
+              url: currentWorkflowArtifact.artifactDocUrl,
+              specDocUrl: currentWorkflowArtifact.specDocUrl,
+            },
+          ],
+          result.entry.targetKind === "global",
+        );
+        if (relevant.length === 0) return [];
+        return result.evaluation.constraints
+          .filter((constraint) => !constraint.passed)
+          .map((constraint) => ({
+            constraintLabel: constraint.label,
+            violations: constraint.violations,
+          }));
+      });
+
+      next[entry.url] = deriveConstraintAnnotationsForArtifact(
+        currentProjection,
+        currentWorkflowArtifact.artifactDocUrl,
+        currentExpandedArtifact,
+        failingConstraints,
+      );
+    }
+
+    return next;
+  });
+
+  const artifactDisplayByUrl = createMemo<
+    Record<
+      AutomergeUrl,
+      {
+        name: string;
+        artifactType: string;
+        specLabel: string;
+      }
+    >
+  >(() =>
+    Object.fromEntries(
+      artifactAccessors.map(({ entry, workflowArtifact }) => {
+        const currentWorkflowArtifact = workflowArtifact();
+        return [
+          entry.url,
+          {
+            name:
+              currentWorkflowArtifact?.name || entry.name || "Untitled artifact",
+            artifactType:
+              currentWorkflowArtifact?.artifactType || "workflow-artifact",
+            specLabel: currentWorkflowArtifact?.specDocUrl?.slice(-8) ?? "loading",
+          },
+        ];
+      }),
+    ),
+  );
 
   return (
     <div class="validation-body">
@@ -491,17 +623,15 @@ function ValidationBody(props: {
         </div>
       </Show>
 
-      <Show when={props.projectionProcessUrl}>
-        {(processUrl) => (
-          <div class="validation-section">
-            <div class="validation-section-label">Projection</div>
-            <ProjectionSection
-              processUrl={processUrl()}
-              validationHandle={props.validationHandle}
-              artifactEntries={props.artifactEntries}
-            />
-          </div>
-        )}
+      <Show when={props.artifactEntries.length > 0}>
+        <div class="validation-section">
+          <div class="validation-section-label">Projection</div>
+          <ProjectionSection
+            artifactEntries={props.artifactEntries}
+            processUrl={props.projectionProcessUrl}
+            validationHandle={props.validationHandle}
+          />
+        </div>
       </Show>
 
       <div class="validation-section">
@@ -523,7 +653,9 @@ function ValidationBody(props: {
                   >
                     <span class="validation-artifact-heading">
                       <span class="validation-artifact-name">
-                        {entry.name || "Untitled"}
+                        {artifactDisplayByUrl()[entry.url]?.name ||
+                          entry.name ||
+                          "Untitled"}
                       </span>
                       <ArtifactStatusPill
                         summary={
@@ -539,29 +671,21 @@ function ValidationBody(props: {
                     </span>
                     <span class="validation-artifact-meta">
                       <span class="validation-artifact-scope">
-                        {entry.specDocUrls?.[0]?.slice(-8) ?? "global"}
+                        {artifactDisplayByUrl()[entry.url]?.specLabel ||
+                          "loading"}
                       </span>
-                      <span class="validation-artifact-type">{entry.type}</span>
+                      <span class="validation-artifact-type">
+                        {artifactDisplayByUrl()[entry.url]?.artifactType ||
+                          entry.type}
+                      </span>
                     </span>
                   </button>
                   <Show when={props.isArtifactExpanded(entry.url)}>
                     <div class="validation-artifact-preview">
-                      <ArtifactWorkspace
-                        entry={entry}
-                        expandedArtifact={
-                          expandedArtifactsByUrl().get(entry.url) ?? null
-                        }
-                        verificationResults={verificationResults().filter(
-                          (result) =>
-                            getArtifactsForSpec(
-                              result.entry.specDocUrl,
-                              [entry],
-                              result.entry.targetKind === "global",
-                            ).length > 0,
-                        )}
-                        verificationSummary={
-                          artifactStatusByUrl()[entry.url] ??
-                          buildArtifactVerificationSummary(0, 0)
+                      <ArtifactPreviewSwitcher
+                        workflowArtifactUrl={entry.url}
+                        constraintAnnotations={
+                          constraintAnnotationsByArtifact()[entry.url] ?? []
                         }
                       />
                     </div>
@@ -593,9 +717,9 @@ function ValidationBody(props: {
 }
 
 function ProjectionSection(props: {
-  processUrl: AutomergeUrl;
-  validationHandle: DocHandle<ValidationDoc>;
   artifactEntries: FolderDoc["docs"];
+  processUrl?: AutomergeUrl;
+  validationHandle: DocHandle<ValidationDoc>;
 }) {
   const repo = useRepo();
   const [processDoc] = useDocument<LLMProcessDoc>(() => props.processUrl);
@@ -624,7 +748,7 @@ function ProjectionSection(props: {
 
   async function handleFollowUp() {
     const text = followUpText().trim();
-    if (!text || isRunning()) return;
+    if (!text || isRunning() || !processDoc()) return;
     setFollowUpText("");
 
     const previousMessages = processDoc()?.messages ?? [];
@@ -660,7 +784,7 @@ function ProjectionSection(props: {
   }
 
   const projectionEntries = createMemo(() =>
-    props.artifactEntries.filter((entry) => entry.projectionDocUrl),
+    props.artifactEntries.filter((entry) => entry.type === "workflow-artifact"),
   );
 
   return (
@@ -684,80 +808,87 @@ function ProjectionSection(props: {
         </Show>
       </div>
 
-      <div
-        class={`projection-sidebar${isSidebarOpen() ? "" : " projection-sidebar-collapsed"}`}
-      >
-        <button
-          class="projection-sidebar-toggle"
-          onClick={() => setIsSidebarOpen((open) => !open)}
-          title={isSidebarOpen() ? "Collapse chat" : "Expand chat"}
-          type="button"
+      <Show when={props.processUrl}>
+        <div
+          class={`projection-sidebar${isSidebarOpen() ? "" : " projection-sidebar-collapsed"}`}
         >
-          {isSidebarOpen() ? "\u203A" : "\u2039"}
-        </button>
+          <button
+            class="projection-sidebar-toggle"
+            onClick={() => setIsSidebarOpen((open) => !open)}
+            title={isSidebarOpen() ? "Collapse chat" : "Expand chat"}
+            type="button"
+          >
+            {isSidebarOpen() ? "\u203A" : "\u2039"}
+          </button>
 
-        <Show when={isSidebarOpen()}>
-          <>
-            <div
-              class="projection-chat"
-              ref={containerRef}
-              onScroll={handleScroll}
-            >
-              <Show when={processDoc()}>
-                {(pd) => (
-                  <>
-                    <For each={pd().messages}>
-                      {(msg) => <ProjectionMessageView message={msg} />}
-                    </For>
-                    <Show when={!pd().done}>
-                      <div class="projection-thinking">
-                        <div class="projection-dot" />
-                        <div class="projection-dot" />
-                        <div class="projection-dot" />
-                      </div>
-                    </Show>
-                  </>
-                )}
-              </Show>
-            </div>
-
-            <div class="projection-followup">
-              <textarea
-                class="projection-followup-input"
-                placeholder="Ask for changes to the projection..."
-                value={followUpText()}
-                onInput={(e) => setFollowUpText(e.currentTarget.value)}
-                onKeyDown={handleKeyDown}
-                disabled={isRunning()}
-                rows={2}
-              />
-              <button
-                class="projection-followup-btn"
-                onClick={handleFollowUp}
-                disabled={isRunning() || !followUpText().trim()}
+          <Show when={isSidebarOpen()}>
+            <>
+              <div
+                class="projection-chat"
+                ref={containerRef}
+                onScroll={handleScroll}
               >
-                Send
-              </button>
-            </div>
-          </>
-        </Show>
-      </div>
+                <Show when={processDoc()}>
+                  {(pd) => (
+                    <>
+                      <For each={pd().messages}>
+                        {(msg) => <ProjectionMessageView message={msg} />}
+                      </For>
+                      <Show when={!pd().done}>
+                        <div class="projection-thinking">
+                          <div class="projection-dot" />
+                          <div class="projection-dot" />
+                          <div class="projection-dot" />
+                        </div>
+                      </Show>
+                    </>
+                  )}
+                </Show>
+              </div>
+
+              <div class="projection-followup">
+                <textarea
+                  class="projection-followup-input"
+                  placeholder="Ask for changes to the projection..."
+                  value={followUpText()}
+                  onInput={(e) => setFollowUpText(e.currentTarget.value)}
+                  onKeyDown={handleKeyDown}
+                  disabled={isRunning()}
+                  rows={2}
+                />
+                <button
+                  class="projection-followup-btn"
+                  onClick={handleFollowUp}
+                  disabled={isRunning() || !followUpText().trim()}
+                >
+                  Send
+                </button>
+              </div>
+            </>
+          </Show>
+        </div>
+      </Show>
     </div>
   );
 }
 
 function ProjectionSummaryCard(props: { entry: ArtifactFolderEntry }) {
+  const [workflowArtifact] = useDocument<WorkflowArtifactDoc>(() => props.entry.url);
+  const [specDoc] = useDocument<SpecDoc>(() => workflowArtifact()?.specDocUrl);
   const [projectionDoc] = useDocument<ProjectionDoc>(
-    () => props.entry.projectionDocUrl,
+    () => specDoc()?.spec?.projectionDocUrl,
   );
 
   return (
     <div class="projection-card">
       <div class="projection-card-header">
         <span class="projection-card-name">
-          {props.entry.name || "Untitled"}
+          {workflowArtifact()?.name || props.entry.name || "Untitled"}
         </span>
-        <Show when={projectionDoc()}>
+        <Show
+          when={projectionDoc()}
+          fallback={<span class="projection-card-meta">No projection</span>}
+        >
           {(pd) => (
             <span class="projection-card-meta">
               {pd().columns?.length ?? 0} columns
@@ -992,6 +1123,97 @@ function ValidationResultCard(props: { result: EvaluatedVerificationEntry }) {
   );
 }
 
+function ArtifactWorkspace(props: {
+  workflowArtifactUrl: AutomergeUrl;
+  constraintAnnotations: ArtifactProjectionAnnotation[];
+}) {
+  return (
+    <div class="validation-artifact-view">
+      <patchwork-view
+        attr:doc-url={props.workflowArtifactUrl}
+        attr:tool-id="grjte-artifact-projection"
+        attr:data-annotations={JSON.stringify(props.constraintAnnotations)}
+        style="display:block;width:100%;height:100%;"
+      />
+    </div>
+  );
+}
+
+function ArtifactPreviewSwitcher(props: {
+  workflowArtifactUrl: AutomergeUrl;
+  constraintAnnotations: ArtifactProjectionAnnotation[];
+}) {
+  const [selectedView, setSelectedView] = createSignal<"raw" | "projection">(
+    "raw",
+  );
+  const [workflowArtifact] = useDocument<WorkflowArtifactDoc>(
+    () => props.workflowArtifactUrl,
+  );
+  const [specDoc] = useDocument<SpecDoc>(() => workflowArtifact()?.specDocUrl);
+  const hasProjection = createMemo(() => Boolean(specDoc()?.spec?.projectionDocUrl));
+
+  createEffect(() => {
+    if (!hasProjection() && selectedView() === "projection") {
+      setSelectedView("raw");
+    }
+  });
+
+  return (
+    <div class="validation-artifact-workspace">
+      <div class="validation-artifact-toolbar">
+        <div class="validation-artifact-toolbar-main">
+          <div class="validation-artifact-tabs">
+            <button
+              class="validation-artifact-tab"
+              classList={{ active: selectedView() === "raw" }}
+              onClick={() => setSelectedView("raw")}
+              type="button"
+            >
+              Raw
+            </button>
+            <button
+              class="validation-artifact-tab"
+              classList={{ active: selectedView() === "projection" }}
+              onClick={() => setSelectedView("projection")}
+              disabled={!hasProjection()}
+              type="button"
+            >
+              Projection
+            </button>
+          </div>
+          <Show when={!hasProjection()}>
+            <div class="validation-artifact-hint">No projection yet.</div>
+          </Show>
+        </div>
+      </div>
+
+      <Show
+        when={workflowArtifact()?.artifactDocUrl}
+        fallback={<div class="validation-empty">Loading artifact...</div>}
+      >
+        {(artifactUrl) => (
+          <Show
+            when={selectedView() === "projection"}
+            fallback={
+              <div class="validation-artifact-view">
+                <patchwork-view
+                  attr:doc-url={artifactUrl()}
+                  style="display:block;width:100%;height:100%;"
+                />
+              </div>
+            }
+          >
+            <ArtifactWorkspace
+              workflowArtifactUrl={props.workflowArtifactUrl}
+              constraintAnnotations={props.constraintAnnotations}
+            />
+          </Show>
+        )}
+      </Show>
+    </div>
+  );
+}
+
 function WitnessCard(props: {
   witness: ConstraintViolation["witnesses"][number];
 }) {
@@ -1028,106 +1250,6 @@ function WitnessCard(props: {
           )}
         </For>
       </div>
-    </div>
-  );
-}
-
-function ArtifactWorkspace(props: {
-  entry: ArtifactFolderEntry;
-  expandedArtifact: ReturnType<typeof expandArtifactDocForVerification> | null;
-  verificationResults: EvaluatedVerificationEntry[];
-  verificationSummary: ArtifactVerificationSummary;
-}) {
-  const [selectedView, setSelectedView] = createSignal<"sheet" | "datalog">(
-    props.entry.projectionDocUrl ? "sheet" : "datalog",
-  );
-  const [projectionDoc] = useDocument<ProjectionDoc>(
-    () => props.entry.projectionDocUrl,
-  );
-
-  const constraintAnnotations = createMemo<ArtifactProjectionAnnotation[]>(
-    () => {
-      const currentExpandedArtifact = props.expandedArtifact;
-      const currentProjection = projectionDoc();
-      if (
-        !currentExpandedArtifact ||
-        !currentProjection ||
-        !props.entry.projectionDocUrl
-      )
-        return [];
-
-      const failingConstraints = props.verificationResults.flatMap((result) =>
-        result.evaluation.constraints
-          .filter((constraint) => !constraint.passed)
-          .map((constraint) => ({
-            constraintLabel: constraint.label,
-            violations: constraint.violations,
-          })),
-      );
-
-      if (!props.entry.projectionDocUrl) return [];
-
-      return deriveConstraintAnnotationsForArtifact(
-        currentProjection,
-        props.entry.url,
-        currentExpandedArtifact,
-        failingConstraints,
-        { projectionUrl: props.entry.projectionDocUrl },
-      );
-    },
-  );
-
-  return (
-    <div class="validation-artifact-workspace">
-      <Show when={props.entry.projectionDocUrl}>
-        <div class="validation-artifact-toolbar">
-          <div class="validation-artifact-toolbar-main">
-            <div class="validation-artifact-tabs">
-              <button
-                class="validation-artifact-tab"
-                classList={{ active: selectedView() === "sheet" }}
-                onClick={() => setSelectedView("sheet")}
-              >
-                Sheet View
-              </button>
-              <button
-                class="validation-artifact-tab"
-                classList={{ active: selectedView() === "datalog" }}
-                onClick={() => setSelectedView("datalog")}
-              >
-                Datalog Source
-              </button>
-            </div>
-            <div
-              class="validation-artifact-verification-banner"
-              classList={{
-                pass: props.verificationSummary.status === "pass",
-                fail: props.verificationSummary.status === "fail",
-                idle: props.verificationSummary.status === "none",
-              }}
-            >
-              {props.verificationSummary.label}
-            </div>
-          </div>
-        </div>
-      </Show>
-
-      <Show
-        when={selectedView() === "sheet" && props.entry.projectionDocUrl}
-        fallback={
-          <patchwork-view
-            attr:doc-url={props.entry.url}
-            style="display:block;width:100%;height:100%;"
-          />
-        }
-      >
-        <patchwork-view
-          attr:doc-url={props.entry.projectionDocUrl!}
-          attr:tool-id="grjte-artifact-projection"
-          attr:data-annotations={JSON.stringify(constraintAnnotations())}
-          style="display:block;width:100%;height:100%;"
-        />
-      </Show>
     </div>
   );
 }

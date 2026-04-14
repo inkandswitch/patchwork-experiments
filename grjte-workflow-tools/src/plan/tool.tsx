@@ -5,6 +5,7 @@ import type { ToolRender, ToolElement } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle, AutomergeUrl } from '@automerge/automerge-repo';
 import type { TaskListPlanDoc, TaskDoc } from './types';
 import { useTitle } from '../hooks/useTitle';
+import { GrjteVersionBadge } from '../version';
 import './plan.css';
 
 export const PlanTool: ToolRender = (handle, element) => {
@@ -37,6 +38,7 @@ function PlanView(props: { handle: DocHandle<TaskListPlanDoc>; element: ToolElem
       <Show when={doc()} fallback={<div class="plan-loading">Loading plan…</div>}>
         {(currentDoc) => (
           <div class="plan-content">
+            <GrjteVersionBadge />
             <div class="plan-goal">{currentDoc().goal || 'Untitled plan'}</div>
 
             <Show when={currentDoc().specDocUrl}>

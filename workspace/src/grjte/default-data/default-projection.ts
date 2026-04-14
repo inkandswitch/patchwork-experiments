@@ -1,18 +1,15 @@
-import type { AutomergeUrl } from '@automerge/automerge-repo';
 import type { ProjectionSpecDoc } from '../../../../grjte-workflow-tools/src/artifact-projection/artifact-projection';
 import type { DatalogDoc } from '../../../../grjte-workflow-tools/src/spec/types';
 
 type StoredFact = DatalogDoc['facts'][number];
 
 export function buildHospitalRotaProjectionSpec(
-  artifactDocUrl: AutomergeUrl,
   title: string,
   staffSlots = 5,
 ): ProjectionSpecDoc {
   return {
     '@patchwork': { type: 'artifact-projection' },
-    schemaVersion: 2,
-    artifactDocUrl,
+    schemaVersion: 3,
     sourceType: 'datalog',
     title: `${title} Table`,
     rows: {

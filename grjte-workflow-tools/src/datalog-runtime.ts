@@ -37,7 +37,8 @@ function isWildcard(t: Term): boolean {
   return t === "_";
 }
 
-function parseConstant(value: string): Constant {
+function parseConstant(value: string | number): Constant {
+  if (typeof value === "number") return value;
   const parsed = Number(value);
   return Number.isNaN(parsed) ? value : parsed;
 }
@@ -120,7 +121,25 @@ function unquote(value: string): string {
   return value;
 }
 
-function parseFactConstant(value: string): Constant {
+function normalizeAtomTerm(term: unknown): string {
+  if (typeof term === "string") return term;
+  if (typeof term === "number") return String(term);
+  if (term && typeof term === "object") {
+    const maybeAtom = term as Partial<StoredAtom>;
+    if (typeof maybeAtom.pred === "string") {
+      const args = Array.isArray(maybeAtom.args)
+        ? maybeAtom.args.map((entry) => normalizeAtomTerm(entry))
+        : [];
+      return args.length > 0
+        ? `${maybeAtom.pred}(${args.join(", ")})`
+        : maybeAtom.pred;
+    }
+  }
+  return String(term ?? "");
+}
+
+function parseFactConstant(value: string | number): Constant {
+  if (typeof value === "number") return value;
   const unquoted = unquote(value.trim());
   const parsed = Number(unquoted);
   return Number.isNaN(parsed) ? unquoted : parsed;
@@ -257,8 +276,9 @@ function consumeStatements(buffer: string): {
   };
 }
 
-function parseAtom(source: string): StoredAtom {
-  const trimmed = source.trim();
+function parseAtom(source: unknown): StoredAtom {
+  const normalizedSource = normalizeAtomTerm(source);
+  const trimmed = normalizedSource.trim();
   const parenIdx = trimmed.indexOf("(");
   if (parenIdx === -1) return { pred: trimmed, args: [] };
   const pred = trimmed.slice(0, parenIdx).trim();

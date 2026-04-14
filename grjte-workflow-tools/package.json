@@ -1,6 +1,6 @@
 {
   "name": "@patchwork/grjte-workflow-tools",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "description": "grjte workflow tools (spec, plan, execution, validation, artifact projection)",
   "type": "module",
   "exports": "./dist/index.js",

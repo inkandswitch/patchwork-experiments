@@ -346,10 +346,26 @@
     cursor: pointer;
   }
 
+  .validation-artifact-tab:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   .validation-artifact-tab.active {
     background: #e0f2fe;
     border-color: #7dd3fc;
     color: #0f172a;
+  }
+
+  .validation-artifact-hint {
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .validation-artifact-view {
+    flex: 1;
+    min-height: 0;
   }
 
   .validation-artifact-verification-banner {

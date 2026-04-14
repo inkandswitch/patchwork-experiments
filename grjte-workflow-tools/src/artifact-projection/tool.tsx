@@ -15,6 +15,8 @@ import {
 import type { DocHandle, AutomergeUrl } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import type { DatalogDoc } from "../spec/types";
+import type { SpecDoc, WorkflowArtifactDoc } from "../workflow-types";
+import { GrjteVersionBadge } from "../version";
 import {
   appendProjectionRow,
   applyProjectionCellEdit,
@@ -28,13 +30,14 @@ import "./artifact-projection.css";
 
 type ToolElement = HTMLElement & { repo: any };
 type CellPosition = { row: number; col: number };
+type ArtifactDocLike = Pick<DatalogDoc, "title" | "facts" | "draftText">;
 
 export const ArtifactProjectionTool: ToolRender = (handle, element) => {
   const dispose = render(
     () => (
       <RepoContext.Provider value={element.repo}>
-        <ArtifactProjectionView
-          handle={handle as DocHandle<ProjectionDoc>}
+        <ArtifactProjectionWorkspace
+          handle={handle as DocHandle<WorkflowArtifactDoc>}
           element={element as ToolElement}
         />
       </RepoContext.Provider>
@@ -44,28 +47,16 @@ export const ArtifactProjectionTool: ToolRender = (handle, element) => {
   return () => dispose();
 };
 
-function ArtifactProjectionView(props: {
-  handle: DocHandle<ProjectionDoc>;
+function ArtifactProjectionWorkspace(props: {
+  handle: DocHandle<WorkflowArtifactDoc>;
   element: ToolElement;
 }) {
-  const [projection] = useDocument<ProjectionDoc>(() => props.handle.url);
-  const [artifactDoc] = useDocument<
-    Pick<DatalogDoc, "title" | "facts" | "draftText">
-  >(() => projection()?.artifactDocUrl);
-  const [artifactHandle] = createHandleResource<
-    Pick<DatalogDoc, "title" | "facts" | "draftText">
-  >(props.element.repo, () => projection()?.artifactDocUrl);
-  const [selection, setSelection] = createSignal<CellPosition | null>(null);
-  const [editingCell, setEditingCell] = createSignal<CellPosition | null>(null);
-  const [draftValue, setDraftValue] = createSignal("");
+  const [workflowArtifact] = useDocument<WorkflowArtifactDoc>(
+    () => props.handle.url,
+  );
   const [externalAnnotations, setExternalAnnotations] = createSignal<
     ArtifactProjectionAnnotation[]
   >(readAnnotations(props.element));
-  const [localAnnotations, setLocalAnnotations] = createSignal<
-    ArtifactProjectionAnnotation[]
-  >([]);
-  const [localError, setLocalError] = createSignal<string | null>(null);
-  let gridRoot!: HTMLDivElement;
 
   const observer = new MutationObserver(() => {
     setExternalAnnotations(readAnnotations(props.element));
@@ -75,6 +66,120 @@ function ArtifactProjectionView(props: {
     attributeFilter: ["data-annotations"],
   });
   onCleanup(() => observer.disconnect());
+
+  const [artifactDoc] = useDocument<ArtifactDocLike>(
+    () => workflowArtifact()?.artifactDocUrl,
+  );
+  const [artifactHandle] = createHandleResource<ArtifactDocLike>(
+    props.element.repo,
+    () => workflowArtifact()?.artifactDocUrl,
+  );
+  const [specDoc] = useDocument<SpecDoc>(() => workflowArtifact()?.specDocUrl);
+  const projectionUrl = createMemo(() => specDoc()?.spec?.projectionDocUrl);
+  const [projectionDoc] = useDocument<ProjectionDoc>(() => projectionUrl());
+  const [projectionHandle] = createHandleResource<ProjectionDoc>(
+    props.element.repo,
+    projectionUrl,
+  );
+
+  return (
+    <div class="artifact-projection-root">
+      <Show
+        when={workflowArtifact()}
+        fallback={<div class="artifact-projection-loading">Loading...</div>}
+      >
+        {(artifact) => (
+          <div class="artifact-projection-shell no-picker">
+            <div class="artifact-projection-panel">
+              <GrjteVersionBadge />
+              <div class="artifact-projection-selection-card">
+                <div class="artifact-projection-selection-copy">
+                  <div class="artifact-projection-selection-title">
+                    {artifact().name || "Untitled artifact"}
+                  </div>
+                  <div class="artifact-projection-selection-meta">
+                    <span>{artifact().artifactType || "datalog"}</span>
+                    <span>Spec {artifact().specDocUrl.slice(-8)}</span>
+                  </div>
+                </div>
+                <div class="artifact-projection-selection-status">
+                  <Show when={projectionUrl()} fallback={"No projection yet"}>
+                    Projection ready
+                  </Show>
+                </div>
+              </div>
+
+              <Show
+                when={
+                  artifactDoc() &&
+                  specDoc() &&
+                  projectionDoc() &&
+                  projectionUrl()
+                }
+                fallback={
+                  <Show
+                    when={artifactDoc() && specDoc()}
+                    fallback={
+                      <div class="artifact-projection-loading">Loading...</div>
+                    }
+                  >
+                    <Show
+                      when={!projectionUrl()}
+                      fallback={
+                        <div class="artifact-projection-loading">Loading...</div>
+                      }
+                    >
+                      <div class="artifact-projection-empty-state">
+                        <div class="artifact-projection-empty-card">
+                          <div class="artifact-projection-empty-eyebrow">
+                            Artifact Sheet
+                          </div>
+                          <h2>No projection yet</h2>
+                          <p>
+                            This artifact&apos;s spec does not have a reusable
+                            projection definition yet.
+                          </p>
+                        </div>
+                      </div>
+                    </Show>
+                  </Show>
+                }
+              >
+                <ProjectionSheetView
+                  projection={projectionDoc}
+                  projectionHandle={projectionHandle}
+                  projectionUrl={projectionUrl}
+                  artifactDoc={artifactDoc}
+                  artifactHandle={artifactHandle}
+                  artifactUrl={() => artifact().artifactDocUrl}
+                  externalAnnotations={externalAnnotations}
+                />
+              </Show>
+            </div>
+          </div>
+        )}
+      </Show>
+    </div>
+  );
+}
+
+function ProjectionSheetView(props: {
+  projection: () => ProjectionDoc | undefined;
+  projectionHandle: () => DocHandle<ProjectionDoc> | undefined;
+  projectionUrl: () => AutomergeUrl | undefined;
+  artifactDoc: () => ArtifactDocLike | undefined;
+  artifactHandle: () => DocHandle<ArtifactDocLike> | undefined;
+  artifactUrl: () => AutomergeUrl | undefined;
+  externalAnnotations: () => ArtifactProjectionAnnotation[];
+}) {
+  const [selection, setSelection] = createSignal<CellPosition | null>(null);
+  const [editingCell, setEditingCell] = createSignal<CellPosition | null>(null);
+  const [draftValue, setDraftValue] = createSignal("");
+  const [localAnnotations, setLocalAnnotations] = createSignal<
+    ArtifactProjectionAnnotation[]
+  >([]);
+  const [localError, setLocalError] = createSignal<string | null>(null);
+  let gridRoot!: HTMLDivElement;
 
   createEffect(() => {
     const activeCell = editingCell();
@@ -90,11 +195,13 @@ function ArtifactProjectionView(props: {
   });
 
   const materialized = createMemo<MaterializedProjection | null>(() => {
-    const currentProjection = projection();
-    const currentArtifact = artifactDoc();
-    if (!currentProjection || !currentArtifact) return null;
+    const currentProjection = props.projection();
+    const currentArtifact = props.artifactDoc();
+    const currentProjectionUrl = props.projectionUrl();
+    if (!currentProjection || !currentArtifact || !currentProjectionUrl)
+      return null;
     return materializeProjection(currentProjection, currentArtifact, {
-      projectionUrl: props.handle.url,
+      projectionUrl: currentProjectionUrl,
     });
   });
   const visibleSheet = createMemo(() => {
@@ -105,7 +212,7 @@ function ArtifactProjectionView(props: {
   const annotations = createMemo(() =>
     dedupeAnnotations([
       ...(materialized()?.annotations ?? []),
-      ...externalAnnotations(),
+      ...props.externalAnnotations(),
       ...localAnnotations(),
     ]),
   );
@@ -186,12 +293,10 @@ function ArtifactProjectionView(props: {
     setLocalAnnotations([]);
   }
 
-  function persistArtifactDoc(
-    nextDoc: Pick<DatalogDoc, "title" | "facts" | "draftText">,
-  ) {
-    const handle = artifactHandle();
+  function persistArtifactDoc(nextDoc: ArtifactDocLike) {
+    const handle = props.artifactHandle();
     if (!handle) return;
-    handle.change((doc: Pick<DatalogDoc, "title" | "facts" | "draftText">) => {
+    handle.change((doc: ArtifactDocLike) => {
       doc.title = nextDoc.title;
       doc.facts = nextDoc.facts.map((fact) => ({
         ...fact,
@@ -235,13 +340,14 @@ function ArtifactProjectionView(props: {
   }
 
   function commitHeaderEdit(position: CellPosition, value: string) {
-    const currentProjection = projection();
+    const currentProjection = props.projection();
+    const handle = props.projectionHandle();
     const currentColumn = currentProjection?.columns.filter(
       (column) => !column.hidden,
     )[position.col];
-    if (!currentProjection || !currentColumn) return;
+    if (!currentProjection || !currentColumn || !handle) return;
 
-    props.handle.change((doc) => {
+    handle.change((doc) => {
       const target = doc.columns.find(
         (column) => column.id === currentColumn.id,
       );
@@ -251,10 +357,17 @@ function ArtifactProjectionView(props: {
   }
 
   function commitBodyEdit(position: CellPosition, value: string) {
-    const currentProjection = projection();
-    const currentArtifact = artifactDoc();
+    const currentProjection = props.projection();
+    const currentArtifact = props.artifactDoc();
     const currentMaterialized = materialized();
-    if (!currentProjection || !currentArtifact || !currentMaterialized) return;
+    const currentProjectionUrl = props.projectionUrl();
+    if (
+      !currentProjection ||
+      !currentArtifact ||
+      !currentMaterialized ||
+      !currentProjectionUrl
+    )
+      return;
 
     const row = currentMaterialized.rows[position.row - 1];
     const column = currentMaterialized.columns[position.col];
@@ -266,8 +379,8 @@ function ArtifactProjectionView(props: {
       row.rowId,
       column.id,
       value,
-      currentProjection.artifactDocUrl,
-      { projectionUrl: props.handle.url },
+      props.artifactUrl(),
+      { projectionUrl: currentProjectionUrl },
     );
 
     if (!result.ok) {
@@ -322,12 +435,13 @@ function ArtifactProjectionView(props: {
   }
 
   function appendRow() {
-    const currentProjection = projection();
-    const currentArtifact = artifactDoc();
-    if (!currentProjection || !currentArtifact) return;
+    const currentProjection = props.projection();
+    const currentArtifact = props.artifactDoc();
+    const currentProjectionUrl = props.projectionUrl();
+    if (!currentProjection || !currentArtifact || !currentProjectionUrl) return;
 
     const result = appendProjectionRow(currentProjection, currentArtifact, {
-      projectionUrl: props.handle.url,
+      projectionUrl: currentProjectionUrl,
     });
     if (!result.ok) {
       setLocalError(result.error);
@@ -345,10 +459,17 @@ function ArtifactProjectionView(props: {
   }
 
   function deleteRow(rowIndex: number) {
-    const currentProjection = projection();
-    const currentArtifact = artifactDoc();
+    const currentProjection = props.projection();
+    const currentArtifact = props.artifactDoc();
     const currentMaterialized = materialized();
-    if (!currentProjection || !currentArtifact || !currentMaterialized) return;
+    const currentProjectionUrl = props.projectionUrl();
+    if (
+      !currentProjection ||
+      !currentArtifact ||
+      !currentMaterialized ||
+      !currentProjectionUrl
+    )
+      return;
 
     const row = currentMaterialized.rows[rowIndex - 1];
     if (!row) return;
@@ -357,8 +478,8 @@ function ArtifactProjectionView(props: {
       currentProjection,
       currentArtifact,
       row.rowId,
-      currentProjection.artifactDocUrl,
-      { projectionUrl: props.handle.url },
+      props.artifactUrl(),
+      { projectionUrl: currentProjectionUrl },
     );
     if (!result.ok) {
       setLocalError(result.error);
@@ -385,9 +506,10 @@ function ArtifactProjectionView(props: {
 
   function moveSelectedColumn(direction: -1 | 1) {
     const targetColumnId = selectedVisibleColumnId();
-    if (!targetColumnId) return;
+    const handle = props.projectionHandle();
+    if (!targetColumnId || !handle) return;
 
-    props.handle.change((doc) => {
+    handle.change((doc) => {
       const currentIndex = doc.columns.findIndex(
         (column) => column.id === targetColumnId,
       );
@@ -411,9 +533,10 @@ function ArtifactProjectionView(props: {
 
   function hideSelectedColumn() {
     const targetColumnId = selectedVisibleColumnId();
-    if (!targetColumnId) return;
+    const handle = props.projectionHandle();
+    if (!targetColumnId || !handle) return;
 
-    props.handle.change((doc) => {
+    handle.change((doc) => {
       const column = doc.columns.find((entry) => entry.id === targetColumnId);
       if (column) column.hidden = true;
     });
@@ -429,7 +552,10 @@ function ArtifactProjectionView(props: {
   }
 
   function showHiddenColumn(columnId: string) {
-    props.handle.change((doc) => {
+    const handle = props.projectionHandle();
+    if (!handle) return;
+
+    handle.change((doc) => {
       const column = doc.columns.find((entry) => entry.id === columnId);
       if (column) column.hidden = false;
     });
@@ -611,177 +737,244 @@ function ArtifactProjectionView(props: {
   }
 
   return (
-    <div class="artifact-projection-root">
-      <Show
-        when={projection() && artifactDoc()}
-        fallback={<div class="artifact-projection-loading">Loading...</div>}
-      >
-        <Show
-          when={visibleSheet()}
-          fallback={
-            <div class="artifact-projection-empty-state">
-              <div class="artifact-projection-empty-card">
-                <div class="artifact-projection-empty-eyebrow">
-                  Artifact Sheet
-                </div>
-                <h2>Projection unavailable</h2>
-                <p>This projection does not define any visible columns yet.</p>
+    <Show
+      when={visibleSheet()}
+      fallback={
+        <div class="artifact-projection-empty-state">
+          <div class="artifact-projection-empty-card">
+            <div class="artifact-projection-empty-eyebrow">Artifact Sheet</div>
+            <h2>Projection unavailable</h2>
+            <p>This projection does not define any visible columns yet.</p>
+          </div>
+        </div>
+      }
+    >
+      {(sheet) => (
+        <div
+          class="artifact-projection-workspace"
+          ref={gridRoot}
+          tabindex="0"
+          onKeyDown={(event) => handleGridKeyDown(event)}
+        >
+          <div class="artifact-projection-toolbar">
+            <div class="artifact-projection-toolbar-group">
+              <button
+                class="artifact-projection-toolbar-button"
+                onClick={appendRow}
+              >
+                Add row
+              </button>
+            </div>
+            <div class="artifact-projection-toolbar-group">
+              <button
+                class="artifact-projection-toolbar-button"
+                onClick={() => moveSelectedColumn(-1)}
+                disabled={(selection()?.col ?? 0) <= 0}
+              >
+                Move column left
+              </button>
+              <button
+                class="artifact-projection-toolbar-button"
+                onClick={() => moveSelectedColumn(1)}
+                disabled={(selection()?.col ?? 0) >= sheet().columns.length - 1}
+              >
+                Move column right
+              </button>
+              <button
+                class="artifact-projection-toolbar-button"
+                onClick={hideSelectedColumn}
+                disabled={sheet().columns.length <= 1}
+              >
+                Hide column
+              </button>
+              <button
+                class="artifact-projection-toolbar-button"
+                onClick={() => deleteRow(selection()?.row ?? -1)}
+                disabled={(selection()?.row ?? 0) <= 0}
+              >
+                Delete row
+              </button>
+            </div>
+            <div class="artifact-projection-toolbar-status">
+              {selectionLabel()}
+            </div>
+          </div>
+
+          <Show when={sheet().hiddenColumns.length > 0}>
+            <div class="artifact-projection-toolbar">
+              <div class="artifact-projection-toolbar-group">
+                <For each={sheet().hiddenColumns}>
+                  {(column) => (
+                    <button
+                      class="artifact-projection-toolbar-button"
+                      onClick={() => showHiddenColumn(column.id)}
+                    >
+                      Show {column.header}
+                    </button>
+                  )}
+                </For>
               </div>
             </div>
-          }
-        >
-          {(sheet) => (
-            <div
-              class="artifact-projection-workspace"
-              ref={gridRoot}
-              tabindex="0"
-              onKeyDown={(event) => handleGridKeyDown(event)}
-            >
-              <div class="artifact-projection-toolbar">
-                <div class="artifact-projection-toolbar-group">
-                  <button
-                    class="artifact-projection-toolbar-button"
-                    onClick={appendRow}
-                  >
-                    Add row
-                  </button>
+          </Show>
+
+          <Show when={localError()}>
+            {(message) => (
+              <div class="artifact-projection-issues">
+                <div class="artifact-projection-issues-header">
+                  <span>Edit issue</span>
                 </div>
-                <div class="artifact-projection-toolbar-group">
-                  <button
-                    class="artifact-projection-toolbar-button"
-                    onClick={() => moveSelectedColumn(-1)}
-                    disabled={(selection()?.col ?? 0) <= 0}
-                  >
-                    Move column left
-                  </button>
-                  <button
-                    class="artifact-projection-toolbar-button"
-                    onClick={() => moveSelectedColumn(1)}
-                    disabled={
-                      (selection()?.col ?? 0) >= sheet().columns.length - 1
-                    }
-                  >
-                    Move column right
-                  </button>
-                  <button
-                    class="artifact-projection-toolbar-button"
-                    onClick={hideSelectedColumn}
-                    disabled={sheet().columns.length <= 1}
-                  >
-                    Hide column
-                  </button>
-                  <button
-                    class="artifact-projection-toolbar-button"
-                    onClick={() => deleteRow(selection()?.row ?? -1)}
-                    disabled={(selection()?.row ?? 0) <= 0}
-                  >
-                    Delete row
-                  </button>
-                </div>
-                <div class="artifact-projection-toolbar-status">
-                  {selectionLabel()}
+                <div class="artifact-projection-issue-list">
+                  <div class="artifact-projection-issue-card">
+                    <div class="artifact-projection-issue-label">
+                      Current edit
+                    </div>
+                    <div class="artifact-projection-issue-text">
+                      {message()}
+                    </div>
+                  </div>
                 </div>
               </div>
+            )}
+          </Show>
 
-              <Show when={sheet().hiddenColumns.length > 0}>
-                <div class="artifact-projection-toolbar">
-                  <div class="artifact-projection-toolbar-group">
-                    <For each={sheet().hiddenColumns}>
-                      {(column) => (
-                        <button
-                          class="artifact-projection-toolbar-button"
-                          onClick={() => showHiddenColumn(column.id)}
-                        >
-                          Show {column.header}
-                        </button>
-                      )}
-                    </For>
-                  </div>
-                </div>
-              </Show>
-
-              <Show when={localError()}>
-                {(message) => (
-                  <div class="artifact-projection-issues">
-                    <div class="artifact-projection-issues-header">
-                      <span>Edit issue</span>
-                    </div>
-                    <div class="artifact-projection-issue-list">
-                      <div class="artifact-projection-issue-card">
-                        <div class="artifact-projection-issue-label">
-                          Current edit
-                        </div>
-                        <div class="artifact-projection-issue-text">
-                          {message()}
-                        </div>
+          <Show when={annotations().length > 0}>
+            <div class="artifact-projection-issues">
+              <div class="artifact-projection-issues-header">
+                <span>Verification issues</span>
+                <span>{annotations().length}</span>
+              </div>
+              <div class="artifact-projection-issue-list">
+                <For each={annotationSummary()}>
+                  {(annotation) => (
+                    <div class="artifact-projection-issue-card">
+                      <div class="artifact-projection-issue-label">
+                        {describeAnnotation(annotation, sheet())}
+                      </div>
+                      <div class="artifact-projection-issue-text">
+                        {annotation.message}
                       </div>
                     </div>
-                  </div>
-                )}
-              </Show>
+                  )}
+                </For>
+              </div>
+            </div>
+          </Show>
 
-              <Show when={annotations().length > 0}>
-                <div class="artifact-projection-issues">
-                  <div class="artifact-projection-issues-header">
-                    <span>Verification issues</span>
-                    <span>{annotations().length}</span>
-                  </div>
-                  <div class="artifact-projection-issue-list">
-                    <For each={annotationSummary()}>
-                      {(annotation) => (
-                        <div class="artifact-projection-issue-card">
-                          <div class="artifact-projection-issue-label">
-                            {describeAnnotation(annotation, sheet())}
+          <div class="artifact-projection-table-wrapper">
+            <table class="artifact-projection-table">
+              <thead>
+                <tr>
+                  <th class="artifact-projection-corner-cell">#</th>
+                  <For each={sheet().columns}>
+                    {(column, colIndex) => (
+                      <th
+                        classList={{
+                          "artifact-projection-header-cell": true,
+                          "artifact-projection-selected": isSelected(
+                            0,
+                            colIndex(),
+                          ),
+                          "artifact-projection-has-issue":
+                            annotationsForColumn(column.id).length > 0,
+                        }}
+                        onClick={() => selectCell({ row: 0, col: colIndex() })}
+                        onDblClick={() =>
+                          startEditing({ row: 0, col: colIndex() })
+                        }
+                      >
+                        <div class="artifact-projection-header-content">
+                          <div class="artifact-projection-column-label">
+                            {columnLabel(colIndex())}
                           </div>
-                          <div class="artifact-projection-issue-text">
-                            {annotation.message}
-                          </div>
-                        </div>
-                      )}
-                    </For>
-                  </div>
-                </div>
-              </Show>
-
-              <div class="artifact-projection-table-wrapper">
-                <table class="artifact-projection-table">
-                  <thead>
-                    <tr>
-                      <th class="artifact-projection-corner-cell">#</th>
-                      <For each={sheet().columns}>
-                        {(column, colIndex) => (
-                          <th
-                            classList={{
-                              "artifact-projection-header-cell": true,
-                              "artifact-projection-selected": isSelected(
-                                0,
-                                colIndex(),
-                              ),
-                              "artifact-projection-has-issue":
-                                annotationsForColumn(column.id).length > 0,
-                            }}
-                            onClick={() =>
-                              selectCell({ row: 0, col: colIndex() })
-                            }
-                            onDblClick={() =>
-                              startEditing({ row: 0, col: colIndex() })
+                          <Show
+                            when={isEditing(0, colIndex())}
+                            fallback={
+                              <span class="artifact-projection-cell-text">
+                                {column.header}
+                              </span>
                             }
                           >
-                            <div class="artifact-projection-header-content">
-                              <div class="artifact-projection-column-label">
-                                {columnLabel(colIndex())}
-                              </div>
+                            <input
+                              class="artifact-projection-cell-input"
+                              data-cell-input={`0:${colIndex()}`}
+                              value={draftValue()}
+                              onInput={(event) =>
+                                setDraftValue(event.currentTarget.value)
+                              }
+                              onKeyDown={(event) => handleInputKeyDown(event)}
+                              onBlur={() => finishEditing()}
+                            />
+                          </Show>
+                        </div>
+                      </th>
+                    )}
+                  </For>
+                </tr>
+              </thead>
+              <tbody>
+                <For each={sheet().rows}>
+                  {(row, rowIndex) => {
+                    const actualRow = () => rowIndex() + 1;
+                    return (
+                      <tr
+                        classList={{
+                          "artifact-projection-row-has-issue":
+                            annotationsForRow(row.rowId).length > 0,
+                        }}
+                      >
+                        <td class="artifact-projection-row-number">
+                          <div class="artifact-projection-row-number-label">
+                            {actualRow()}
+                          </div>
+                          <div class="artifact-projection-row-actions">
+                            <button
+                              class="artifact-projection-action-button"
+                              title="Delete row"
+                              onClick={() => deleteRow(actualRow())}
+                            >
+                              -
+                            </button>
+                          </div>
+                        </td>
+                        <For each={row.cells}>
+                          {(cell, colIndex) => (
+                            <td
+                              classList={{
+                                "artifact-projection-cell": true,
+                                "artifact-projection-selected": isSelected(
+                                  actualRow(),
+                                  colIndex(),
+                                ),
+                                "artifact-projection-has-issue":
+                                  annotationsForCell(
+                                    row.rowId,
+                                    cell.columnId,
+                                  ).length > 0,
+                              }}
+                              onClick={() =>
+                                selectCell({
+                                  row: actualRow(),
+                                  col: colIndex(),
+                                })
+                              }
+                              onDblClick={() =>
+                                startEditing({
+                                  row: actualRow(),
+                                  col: colIndex(),
+                                })
+                              }
+                            >
                               <Show
-                                when={isEditing(0, colIndex())}
+                                when={isEditing(actualRow(), colIndex())}
                                 fallback={
                                   <span class="artifact-projection-cell-text">
-                                    {column.header}
+                                    {cell.value}
                                   </span>
                                 }
                               >
                                 <input
                                   class="artifact-projection-cell-input"
-                                  data-cell-input={`0:${colIndex()}`}
+                                  data-cell-input={`${actualRow()}:${colIndex()}`}
                                   value={draftValue()}
                                   onInput={(event) =>
                                     setDraftValue(event.currentTarget.value)
@@ -792,101 +985,19 @@ function ArtifactProjectionView(props: {
                                   onBlur={() => finishEditing()}
                                 />
                               </Show>
-                            </div>
-                          </th>
-                        )}
-                      </For>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <For each={sheet().rows}>
-                      {(row, rowIndex) => {
-                        const actualRow = () => rowIndex() + 1;
-                        return (
-                          <tr
-                            classList={{
-                              "artifact-projection-row-has-issue":
-                                annotationsForRow(row.rowId).length > 0,
-                            }}
-                          >
-                            <td class="artifact-projection-row-number">
-                              <div class="artifact-projection-row-number-label">
-                                {actualRow()}
-                              </div>
-                              <div class="artifact-projection-row-actions">
-                                <button
-                                  class="artifact-projection-action-button"
-                                  title="Delete row"
-                                  onClick={() => deleteRow(actualRow())}
-                                >
-                                  -
-                                </button>
-                              </div>
                             </td>
-                            <For each={row.cells}>
-                              {(cell, colIndex) => (
-                                <td
-                                  classList={{
-                                    "artifact-projection-cell": true,
-                                    "artifact-projection-selected": isSelected(
-                                      actualRow(),
-                                      colIndex(),
-                                    ),
-                                    "artifact-projection-has-issue":
-                                      annotationsForCell(
-                                        row.rowId,
-                                        cell.columnId,
-                                      ).length > 0,
-                                  }}
-                                  onClick={() =>
-                                    selectCell({
-                                      row: actualRow(),
-                                      col: colIndex(),
-                                    })
-                                  }
-                                  onDblClick={() =>
-                                    startEditing({
-                                      row: actualRow(),
-                                      col: colIndex(),
-                                    })
-                                  }
-                                >
-                                  <Show
-                                    when={isEditing(actualRow(), colIndex())}
-                                    fallback={
-                                      <span class="artifact-projection-cell-text">
-                                        {cell.value}
-                                      </span>
-                                    }
-                                  >
-                                    <input
-                                      class="artifact-projection-cell-input"
-                                      data-cell-input={`${actualRow()}:${colIndex()}`}
-                                      value={draftValue()}
-                                      onInput={(event) =>
-                                        setDraftValue(event.currentTarget.value)
-                                      }
-                                      onKeyDown={(event) =>
-                                        handleInputKeyDown(event)
-                                      }
-                                      onBlur={() => finishEditing()}
-                                    />
-                                  </Show>
-                                </td>
-                              )}
-                            </For>
-                          </tr>
-                        );
-                      }}
-                    </For>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </Show>
-      </Show>
-    </div>
+                          )}
+                        </For>
+                      </tr>
+                    );
+                  }}
+                </For>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </Show>
   );
 }
 
