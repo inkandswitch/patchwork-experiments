@@ -1,4 +1,3 @@
-import path from 'path';
 import solid from 'vite-plugin-solid';
 import { defineConfig } from 'vite';
 import topLevelAwait from 'vite-plugin-top-level-await';
@@ -18,15 +17,6 @@ function findDirectoryUrl(snapshot: typeof workspaceSnapshot, dirPath: string): 
 export default defineConfig({
   base: './',
   plugins: [topLevelAwait(), wasm(), solid(), tailwindcss(), cssInjectedByJsPlugin()],
-
-  resolve: {
-    alias: {
-      '@automerge/automerge-repo-solid-primitives': path.resolve(
-        __dirname,
-        'src/lib/automerge-repo-solid-primitives/index.ts',
-      ),
-    },
-  },
 
   define: {
     __SPEC_AGENT_FOLDER_URL__: JSON.stringify(
