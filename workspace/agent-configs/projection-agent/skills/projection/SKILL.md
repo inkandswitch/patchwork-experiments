@@ -35,7 +35,7 @@ Defines which facts create rows and how rows are identified.
 ```javascript
 {
   entityPredicate: string,   // predicate whose facts define rows (e.g. "shift")
-  keyArg: number,            // which arg is the row key (usually 0)
+  keyArg: number,            // which arg is the row key (often 0, but not required)
   entityIdPrefix: string,    // prefix for auto-generated row IDs
   order: 'entity-fact-order',
   create: { insertEntityFact: true },
@@ -71,6 +71,13 @@ Each column has an `id`, `header`, `cellType`, `read` binding, optional `write` 
 ```javascript
 { kind: 'fact-arg', pred: 'ward', rowKeyArg: 0, valueArg: 1 }
 // For row "amu_day", reads ward(amu_day, X) → X
+```
+
+`rowKeyArg` can be any argument position. For example:
+
+```javascript
+{ kind: 'fact-arg', pred: 'service', rowKeyArg: 1, valueArg: 0 }
+// For row "small", reads service(X, small) → X
 ```
 
 **`fact-presence`** — boolean: does a matching fact exist?
@@ -189,16 +196,31 @@ await setSpecProjection(specUrl, projectionUrl);
 
 When generating a projection for a DatalogDoc, analyze the facts to determine:
 
-1. **Entity predicate** — the predicate that defines rows. Look for a predicate that appears once per logical entity (e.g. `shift(amu_day)`, `employee(alice)`). The first argument is typically the row key.
+1. **Entity predicate** — the predicate that defines rows. Look for a predicate that appears once per logical entity (e.g. `shift(amu_day)`, `employee(alice)`). The row key is often the first argument, but can be any argument position supported by `rows.keyArg`.
 
 2. **Columns** — for each other predicate:
-   - If it takes `(rowKey, value)` → `fact-arg` read/write, cellType based on value type
-   - If it takes `(rowKey)` with no extra args → `fact-presence` read/write, cellType `boolean`
-   - If it takes `(rowKey, slot, value)` → `slot-value` read/write, create one column per distinct slot value
+   - If it contains the row key and one value you want to show → `fact-arg` read/write, using the correct `rowKeyArg` and `valueArg`
+   - If it contains only the row key as the meaningful match → `fact-presence` read/write, cellType `boolean`
+   - If it contains `(rowKey, slot, value)` → `slot-value` read/write, create one column per distinct slot value
 
 3. **Cell types** — infer from values: numbers → `'number'`, `true/false/yes/no` → `'boolean'`, otherwise `'text'`
 
 4. **First column** should always be `derived-row-key` (read-only, shows the row identifier)
+
+## Current Limits
+
+Projection bindings are intentionally simple today:
+
+- A normal cell can only read from a **single predicate lookup** keyed by the current row.
+- The runtime does **not** support join expressions such as `service(Service, Size)` + `instance(Size, Cpu, Mem, Disk, Cost)` in one column.
+- The runtime also does not have a first-class binding for sheet-global singleton facts like `peak_concurrent_db_connections(300)` repeated across every row.
+
+Before deciding a dataset is unsupported, try choosing a different row axis that avoids the join. For the example above, an `instance`-keyed table can read:
+
+- service name from `service` using `rowKeyArg: 1`
+- CPU/memory/disk/cost from `instance` using `rowKeyArg: 0`
+
+If a useful table still requires following one fact into another fact, the current answer is to add derived/denormalized facts outside the projection model or extend the lens backend with a richer binding type.
 
 ## Example: Full Projection Generation
 

@@ -107,14 +107,17 @@ For each artifact without a projection, analyze its facts to determine:
 
 1. **Entity predicate** — the predicate that defines rows. Look for a predicate that:
    - Appears once per logical entity
-   - Has a single argument that serves as a unique key
-   - Other predicates reference this key in their first argument
+   - Has one argument position that can serve as a stable row key
+   - Lets most useful columns be read by matching that same row key in a single fact lookup
    - Examples: `shift(amu_day)`, `employee(alice)`, `task(task_1)`
+   - The row key does **not** have to be the first argument everywhere. The runtime supports `rows.keyArg` and column `rowKeyArg` in any argument position.
+   - Before concluding that a dataset needs joins, check whether choosing a different row axis avoids them. Example: if you have `service(nginx, small)` and `instance(small, 2, 4096, 16384, 10)`, an `instance`-keyed table can read the service name with `rowKeyArg: 1` on the `service` predicate and read instance details directly from `instance`.
 
 2. **Columns** — for each other predicate that references the entity key:
-   - `pred(key, value)` → `fact-arg` column
-   - `pred(key)` → `fact-presence` boolean column
-   - `pred(key, slot, value)` with multiple slot values → one `slot-value` column per slot
+   - `pred(..., key, ...)` with one value you want to show → `fact-arg` column using the appropriate `rowKeyArg` and `valueArg`
+   - `pred(..., key, ...)` used as a presence flag → `fact-presence` boolean column with the appropriate `rowKeyArg`
+   - `pred(..., key, slot, value, ...)` with multiple slot values → one `slot-value` column per slot
+   - The current projection backend only supports cells that come from a **single predicate lookup keyed by the current row**. It does **not** support joins, aggregations, or global singleton facts as normal editable columns.
 
 3. **Cell types** — infer from values:
    - All values are numbers → `'number'`
@@ -175,8 +178,13 @@ The user may ask you to modify an existing projection (e.g. "add a column for to
 
 - Create one reusable projection per spec that lacks a `projectionDocUrl`.
 - Skip artifacts whose owning spec already has a projection (unless the user asks to regenerate).
-- The entity predicate is the most important decision — get it right by analyzing which predicate's first arg is referenced by all other predicates.
+- The entity predicate is the most important decision — pick the row model that maximizes single-step row-key lookups and minimizes joins.
 - Make columns editable (with write bindings) unless there's a reason not to (derived values, cross-entity aggregations).
+- If a desired column would require following one predicate into another predicate, do not pretend the backend can express it. Either:
+  1. choose a different row axis that avoids the join,
+  2. omit that column,
+  3. or explain that the current projection model needs derived/denormalized facts or a richer lens binding.
+- Do not reject a projection as "needs joins" until you have checked whether `rowKeyArg` on a non-first argument solves it.
 - Use `blankPolicy: 'delete'` for optional columns, `blankPolicy: 'reject'` for required ones.
 - Output `PROJECTION_DONE: true` in your final script.
 - **Never create throwaway or test documents.** Build real projections directly.
