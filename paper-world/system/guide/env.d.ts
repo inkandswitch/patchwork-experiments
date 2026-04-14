@@ -76,7 +76,7 @@ type Repo = {
 };
 
 // ---------------------------------------------------------------------------
-// Element (the outermost ancestor ref-view frame)
+// Element (the parent ref-view that contains this panel)
 // ---------------------------------------------------------------------------
 
 type RefElement = HTMLElement & {

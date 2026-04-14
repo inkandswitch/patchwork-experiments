@@ -1,5 +1,4 @@
 import { from, render, html, For, createSignal } from '../solid.js';
-import { surfaceSchema } from '../surface/schema.js';
 import { marked } from 'https://esm.sh/marked@15';
 import { buildSystemPrompt } from './system-prompt.js';
 import { runLlmTurns } from './process.js';
@@ -91,8 +90,7 @@ export default function mount(element) {
       });
       setPrompt('');
 
-      let systemPrompt = await buildSystemPrompt(element.filesystem);
-      systemPrompt += await buildContextSection(element, frameRefView);
+      const systemPrompt = await buildSystemPrompt(element.filesystem);
 
       await runLlmTurns({
         systemPrompt,
@@ -144,11 +142,17 @@ export default function mount(element) {
     }
   }
 
+  function handleCopy() {
+    const runs = getRuns();
+    if (runs.length === 0) return;
+    const text = runs.map((run) => formatRun(run)).join('\n\n---\n\n');
+    navigator.clipboard.writeText(text);
+  }
+
   async function showPromptTab() {
     setTab('prompt');
     try {
-      let text = await buildSystemPrompt(element.filesystem);
-      text += await buildContextSection(element, frameRefView);
+      const text = await buildSystemPrompt(element.filesystem);
       setSystemPromptText(text);
     } catch (err) {
       setSystemPromptText(`Error building prompt: ${err?.message || err}`);
@@ -168,6 +172,11 @@ export default function mount(element) {
             onClick=${showPromptTab}
           >Prompt</button>
           <div class="llm-header-spacer" />
+          <button
+            class="llm-tab"
+            onClick=${handleCopy}
+            title="Copy chat to clipboard"
+          >Copy</button>
           <select
             class="llm-model-select"
             onChange=${onModelChange}
@@ -283,99 +292,26 @@ export default function mount(element) {
 }
 
 function rootRefView(host) {
-  return host.findParent(surfaceSchema) ?? host;
+  return host.parentElement?.closest('ref-view') ?? host;
 }
 
 function getApiKey() {
   return globalThis.VITE_OPENROUTER_API_KEY ?? '';
 }
 
-const schemaCache = new Map();
-
-async function loadSchema(schemaUrl) {
-  if (schemaCache.has(schemaUrl)) return schemaCache.get(schemaUrl);
-  try {
-    const mod = await import(schemaUrl);
-    schemaCache.set(schemaUrl, mod.default);
-    return mod.default;
-  } catch {
-    return null;
-  }
-}
-
-async function buildContextSection(element, frameRefView) {
-  const lines = ['\n## Current context\n'];
-
-  let current = element;
-  let depth = 0;
-  while (current) {
-    const value = safeRefValue(current);
-    if (value) {
-      const label = depth === 0 ? 'Element 0 (LLM panel)' : `Element ${depth}`;
-      lines.push(`### ${label}\n${summarizeValue(value, label)}\n`);
+function formatRun(run) {
+  const parts = [`**User:** ${run.prompt}`];
+  for (const block of run.output ?? []) {
+    if (block.type === 'text') {
+      parts.push(block.content);
+    } else if (block.type === 'script') {
+      const header = block.description ? `script: ${block.description}` : 'script';
+      parts.push(`\`\`\`js // ${header}\n${block.code}\n\`\`\``);
+      if (block.error) parts.push(`> Error: ${block.error}`);
+      else if (block.output) parts.push(`> ${block.output}`);
     }
-    current = current.findParent(surfaceSchema);
-    depth++;
   }
-
-  const frameValue = safeRefValue(frameRefView);
-  const compatibleNames = await findCompatibleSchemas(element, frameValue);
-  if (compatibleNames.length > 0) {
-    lines.push(`### Compatible schemas for frame\n${compatibleNames.join(', ')}\n`);
-  }
-
-  return lines.join('\n');
-}
-
-function safeRefValue(el) {
-  try {
-    if (!el?.ref) return null;
-    if (typeof el.ref.value === 'function') return el.ref.value();
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function summarizeValue(value, label) {
-  try {
-    const clone = JSON.parse(JSON.stringify(value));
-    if (clone.runs) {
-      clone.runs = `[${clone.runs.length} run(s)]`;
-    }
-    if (clone.shapes) {
-      const keys = Object.keys(clone.shapes);
-      clone.shapes = `{${keys.length} shape(s): ${keys.join(', ')}}`;
-    }
-    return '```json\n' + JSON.stringify(clone, null, 2) + '\n```';
-  } catch {
-    return `(could not serialize ${label})`;
-  }
-}
-
-async function findCompatibleSchemas(element, frameValue) {
-  if (!frameValue || !element?.plugins?.byType) return [];
-  try {
-    const plugins = element.plugins.byType('tool');
-    const pluginList = typeof plugins?.value === 'function' ? plugins.value() : [];
-    if (!Array.isArray(pluginList)) return [];
-
-    const names = [];
-    for (const plugin of pluginList) {
-      if (!plugin.schemaUrl) continue;
-      const pluginSchema = await loadSchema(plugin.schemaUrl);
-      if (!pluginSchema) continue;
-      try {
-        pluginSchema.parse(frameValue);
-        names.push(plugin.name);
-      } catch {
-        // not compatible
-      }
-    }
-    return names;
-  } catch {
-    return [];
-  }
+  return parts.join('\n\n');
 }
 
 function renderRun(run) {

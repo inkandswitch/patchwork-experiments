@@ -5,14 +5,25 @@ description: Create and manipulate shapes on the surface—rectangles, lines, te
 
 # Paper shapes
 
-Every visible object on the surface is an entry in the `shapes` map on the frame ref. Each shape is `{ viewUrl, data: { ... } }`. The `viewUrl` tells the host which view descriptor renders the shape, and `data` holds all positioning and tool-specific properties.
+Every visible object on a surface is an entry in its `shapes` map. Each shape is `{ viewUrl, data: { ... } }`. The `viewUrl` tells the host which view descriptor renders the shape, and `data` holds all positioning and tool-specific properties.
+
+## Finding the surface
+
+`element` may not be the surface itself. Import the surface schema and look it up:
+
+```js
+const { surfaceSchema } = await filesystem.import('surface/schema.js');
+const surface = element.findClosest(surfaceSchema);
+```
+
+All examples below use `surface` obtained this way.
 
 ## Reading shapes
 
 Get a snapshot of all shapes:
 
 ```js
-const doc = element.ref.value();
+const doc = surface.ref.value();
 const shapes = doc.shapes || {};
 console.log(Object.keys(shapes));
 ```
@@ -20,7 +31,7 @@ console.log(Object.keys(shapes));
 Read a specific shape:
 
 ```js
-const doc = element.ref.value();
+const doc = surface.ref.value();
 const shape = doc.shapes?.['rect_1'];
 console.log(shape);
 ```
@@ -28,7 +39,7 @@ console.log(shape);
 Find all text shapes:
 
 ```js
-const doc = element.ref.value();
+const doc = surface.ref.value();
 const shapes = doc.shapes || {};
 const textKeys = Object.keys(shapes).filter(id => shapes[id].data?.text !== undefined);
 console.log(textKeys);
@@ -55,7 +66,7 @@ type RectangleShape = {
 Create:
 
 ```js
-element.ref.at('shapes', 'rect_1').change(() => ({
+surface.ref.at('shapes', 'rect_1').change(() => ({
   viewUrl: 'rectangle/tool.json',
   data: { x: 50, y: 50, width: 200, height: 120 },
 }));
@@ -64,7 +75,7 @@ element.ref.at('shapes', 'rect_1').change(() => ({
 Resize or move:
 
 ```js
-element.ref.at('shapes', 'rect_1').change((shape) => {
+surface.ref.at('shapes', 'rect_1').change((shape) => {
   shape.data.width = 180;
   shape.data.x += 10;
 });
@@ -91,7 +102,7 @@ Create:
 
 ```js
 const strokeId = `line_${Date.now()}`;
-element.ref.at('shapes', strokeId).change(() => ({
+surface.ref.at('shapes', strokeId).change(() => ({
   viewUrl: 'line/tool.json',
   data: {
     x: 100,
@@ -110,7 +121,7 @@ Extend a stroke:
 ```js
 const strokeId = 'line_1';
 const relX = 42, relY = 10, pressure = 0.6;
-element.ref.at('shapes', strokeId).change((shape) => {
+surface.ref.at('shapes', strokeId).change((shape) => {
   shape.data.points.push([relX, relY, pressure]);
 });
 ```
@@ -131,7 +142,7 @@ type TextShape = {
 Create:
 
 ```js
-element.ref.at('shapes', 'note_1').change(() => ({
+surface.ref.at('shapes', 'note_1').change(() => ({
   viewUrl: 'text/tool.json',
   data: { x: 120, y: 40, text: 'Hello' },
 }));
@@ -140,7 +151,7 @@ element.ref.at('shapes', 'note_1').change(() => ({
 Update:
 
 ```js
-element.ref.at('shapes', 'note_1').change((shape) => {
+surface.ref.at('shapes', 'note_1').change((shape) => {
   shape.data.text = 'Updated';
 });
 ```
@@ -171,7 +182,7 @@ const embedDoc = repo.create({
   runs: [],
 });
 
-element.ref.at('shapes', 'embed_1').change(() => ({
+surface.ref.at('shapes', 'embed_1').change(() => ({
   viewUrl: 'embed/tool.json',
   data: {
     x: 20,
@@ -188,7 +199,7 @@ Resize or retarget:
 
 ```js
 const newDocUrl = 'automerge:abc123';
-element.ref.at('shapes', 'embed_1').change((shape) => {
+surface.ref.at('shapes', 'embed_1').change((shape) => {
   shape.data.width = 400;
   shape.data.embedDocUrl = newDocUrl;
 });
@@ -197,7 +208,7 @@ element.ref.at('shapes', 'embed_1').change((shape) => {
 ## Removing shapes
 
 ```js
-element.ref.at('shapes').change((shapes) => {
+surface.ref.at('shapes').change((shapes) => {
   delete shapes['rect_1'];
 });
 ```

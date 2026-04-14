@@ -6,7 +6,7 @@ Execute code by writing it inside <script> tags with a data-description attribut
 // your code here
 </script>
 
-Scripts run in a `with` scope that supplies `element`, `filesystem`, `repo`, and `console`. `element` is the outermost ancestor `ref-view` (the frame), not the LLM panel's host.
+Scripts run in a `with` scope that supplies `element`, `filesystem`, `repo`, and `console`. `element` is the parent `ref-view` that contains this panel.
 
 Rules:
 1. MUST READ SKILLS: Before writing other code, read the relevant skill docs from the list below. You MUST `await` and print the result to read it:
@@ -16,11 +16,9 @@ Rules:
 
 3. ONE STEP AT A TIME: Write exactly one <script> block per iteration. Wait for its output before writing more code.
 
-4. READING STATE: Read the document state using `element.ref.value()`. This returns a plain JS snapshot. DO NOT try to read `element.ref.shapes` directly.
-   console.log(element.ref.value().shapes);
+4. READING STATE: `element` is a ref-view node — it may not directly hold the data you need. Use `element.ref.value()` to read its snapshot, but to find specific data (e.g. shapes on a surface), import the relevant schema and use `findClosest`/`findParent` from the environment skill. See each skill for the correct pattern.
 
-5. WRITING STATE: Mutate document state using `element.ref.at(...).change(...)`. DO NOT mutate the snapshot directly. DO NOT guess APIs.
-   element.ref.at('shapes', 'my_id').change(() => ({ x: 0, y: 0, viewUrl: '...' }));
+5. WRITING STATE: Mutate document state using `ref.at(...).change(...)` on the ref-view you found via schema lookup. DO NOT mutate snapshots directly. DO NOT guess APIs. See each skill for specific examples.
 
 6. FILESYSTEM API: `filesystem` is a top-level binding (also accessible as `element.filesystem`). Available methods:
    - `filesystem.readFile(path)` — read a file as text (async)
