@@ -16,7 +16,7 @@ import { FolderDoc } from '@inkandswitch/patchwork-filesystem';
 
 type Stage = 'elicitation' | 'spec' | 'plan' | 'execution' | 'validation';
 
-const WORKFLOW_VERSION = '0.10.0';
+const WORKFLOW_VERSION = '0.11.0';
 
 function makeId(): string {
   return Math.random().toString(36).slice(2, 10);
@@ -541,17 +541,33 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
       processHandle.url,
     );
 
+    // Create validation doc if it doesn't exist yet
+    const validationHandle = currentDoc.validationDocUrl
+      ? await repo.find<ValidationDoc>(currentDoc.validationDocUrl)
+      : repo.create<ValidationDoc>();
+
+    if (!currentDoc.validationDocUrl) {
+      validationHandle.change((d) => {
+        d['@patchwork'] = { type: 'validation' };
+        d.planDocUrl = currentDoc.planDocUrl!;
+        d.specDocUrl = currentDoc.specDocUrl!;
+        d.executionDocUrl = currentDoc.executionDocUrl!;
+        d.isValidated = false;
+        d.headsByDocUrl = {} as Record<AutomergeUrl, never>;
+      });
+    }
+
     props.handle.change((d) => {
       d.projectionProcessUrl = processHandle.url;
+      if (!d.validationDocUrl) {
+        d.validationDocUrl = validationHandle.url;
+      }
     });
 
     // Also store on the validation doc so the validation tool can access the chat
-    if (currentDoc.validationDocUrl) {
-      const validationHandle = await repo.find<ValidationDoc>(currentDoc.validationDocUrl);
-      validationHandle.change((d) => {
-        d.projectionProcessUrl = processHandle.url;
-      });
-    }
+    validationHandle.change((d) => {
+      d.projectionProcessUrl = processHandle.url;
+    });
 
     runWorkspaceLLM(repo, processHandle.url)
       .then(() => {
