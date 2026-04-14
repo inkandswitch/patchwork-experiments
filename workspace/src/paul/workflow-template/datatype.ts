@@ -108,15 +108,18 @@ const WORKFLOW_OPTIMIZER_SYSTEM_PROMPT = `You are an optimization agent improvin
 
 Your optimization strategy: $PROMPT
 
+IMPORTANT: Always read the full content of every document before acting on it.
+Never assume anything about a document based on its name, type, or URL alone.
+Inspect the actual fields, structure, and data inside each document.
+
 The specification is at $SPEC_URL. It is a Patchwork SpecDoc with:
 - spec.goal: a description of what needs to be achieved
-- spec.verificationUrls: array of Automerge URLs pointing to datalog docs with integrity constraints
-  Each datalog doc has: title, draftText (human-readable rules), constraints (machine-checkable)
+- spec.verificationUrls: array of Automerge URLs pointing to verification or datalog docs with integrity constraints
 
 The document at $DOC_URL is a markdown document. Its structure:
 - doc.content: string containing the solution text
 
-Step 1 — Read the specification to understand the goal and constraints:
+Step 1 — Read the specification and ALL verification documents. Follow any docUrl references to read the underlying document:
 <script data-description="Read spec and verification rules">
 const specHandle = await repo.find("$SPEC_URL")
 const specDoc = await specHandle.doc()
@@ -126,16 +129,16 @@ const verifications = await Promise.all(verificationUrls.map(async url => {
   const h = await repo.find(url)
   const d = await h.doc()
   const datalogDoc = d.docUrl ? await (await repo.find(d.docUrl)).doc() : d
-  return { url, title: d.title || datalogDoc.title, draftText: datalogDoc.draftText }
+  return { url, title: d.title || datalogDoc.title, draftText: datalogDoc.draftText, constraints: datalogDoc.constraints, facts: datalogDoc.facts, rules: datalogDoc.rules }
 }))
 return JSON.stringify({ goal, verifications }, null, 2)
 </script>
 
-Step 2 — Read the current solution document:
+Step 2 — Read the FULL current solution document. Inspect all its fields:
 <script data-description="Read current solution">
 const handle = await repo.find("$DOC_URL")
 const doc = await handle.doc()
-return doc.content
+return JSON.stringify(doc, null, 2)
 </script>
 
 Step 3 — Write your improved solution to the document:

@@ -38,7 +38,7 @@ export const plugins = [
 		icon: "Video",
 		supportedDatatypes: ["call"],
 		async load() {
-			const {default: TelephoneTool} = await import("./telephone.js")
+			const { default: TelephoneTool } = await import("./telephone.js")
 			return TelephoneTool
 		},
 	},
@@ -51,7 +51,7 @@ export const plugins = [
 		unlisted: true,
 		tags: ["titlebar-tool"],
 		async load() {
-			const {default: CallTitlebarTool} = await import("./call-titlebar.js")
+			const { default: CallTitlebarTool } = await import("./call-titlebar.js")
 			return CallTitlebarTool
 		},
 	},
@@ -62,7 +62,7 @@ export const plugins = [
 		icon: "FileText",
 		supportedDatatypes: ["call"],
 		async load() {
-			const {default: TeleprintTool} = await import("./teleprint.js")
+			const { default: TeleprintTool } = await import("./teleprint.js")
 			return TeleprintTool
 		},
 	},

@@ -525,7 +525,7 @@ function SourceDocumentCard({ document }: { document: ReferencedDocument }) {
       {document.error ? (
         <div className="pg-attribution-preview-error">{document.error}</div>
       ) : (
-        <patchwork-view className="pg-attribution-doc-view" doc-url={document.docUrl} tool-id="codemirror-base" />
+        <patchwork-view className="pg-attribution-doc-view" doc-url={document.docUrl} />
       )}
     </section>
   );

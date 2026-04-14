@@ -16,7 +16,7 @@ import { FolderDoc } from '@inkandswitch/patchwork-filesystem';
 
 type Stage = 'elicitation' | 'spec' | 'plan' | 'execution' | 'validation';
 
-const WORKFLOW_VERSION = '0.9.0';
+const WORKFLOW_VERSION = '0.10.0';
 
 function makeId(): string {
   return Math.random().toString(36).slice(2, 10);
@@ -164,8 +164,11 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
     let userMessage = prompt || 'Generate a spec.';
     if (referenceDocs.length > 0) {
       userMessage +=
-        '\n\nReference documents (use repo.find(url) to read full content):\n' +
-        JSON.stringify(referenceDocs, null, 2);
+        '\n\nReference documents:\n' +
+        JSON.stringify(referenceDocs, null, 2) +
+        '\n\nIMPORTANT: You MUST read the full content of every reference document using repo.find(url) before generating the spec. ' +
+        'Do not assume anything about a document based on its name or type alone — always read it and inspect its actual content, structure, and fields. ' +
+        'Documents may contain facts, rules, constraints, text, or other data that you need to understand in order to produce a correct spec.';
     }
 
     const processHandle = repo.create<LLMProcessDoc>();

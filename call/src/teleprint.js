@@ -5,10 +5,12 @@
  * speaker name highlighting, auto-scroll-to-bottom, and a collapsible
  * summary panel at the bottom that renders meeting notes as formatted markdown.
  *
+ * Loads codemirror:extension plugins (e.g. customHighlights) from the shared
+ * patchwork plugin registry so highlights work correctly.
+ *
  * Styled after classic Macintosh System 7.5.
  */
 
-import { next as Automerge } from "@automerge/automerge";
 import { minimalSetup } from "codemirror";
 import {
   EditorView,
@@ -16,7 +18,10 @@ import {
   ViewPlugin,
   MatchDecorator,
 } from "@codemirror/view";
+import { Compartment } from "@codemirror/state";
 import { automergeSyncPlugin } from "@automerge/automerge-codemirror";
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+
 
 // Highlight <speaker> names at the start of lines
 const nameDeco = Decoration.mark({ class: "tp-speaker" });
@@ -134,6 +139,7 @@ export default function TeleprintTool(handle, element) {
       min-height: 0;
       overflow: hidden;
       border-bottom: 1px solid #000;
+      position: relative;
     }
     .tp-summary-bar {
       display: flex;
@@ -311,6 +317,7 @@ export default function TeleprintTool(handle, element) {
   const content = doc?.content || "";
 
   let pinnedToBottom = true;
+  const registryExtensions = new Compartment();
 
   const view = new EditorView({
     doc: content,
@@ -330,6 +337,7 @@ export default function TeleprintTool(handle, element) {
         "&.cm-focused .cm-selectionMatch": { background: "#c0c0c0" },
       }),
       nameHighlighter,
+      registryExtensions.of([]),
       automergeSyncPlugin({ handle, path: ["content"] }),
       EditorView.updateListener.of((update) => {
         if (!update.docChanged) return;
@@ -342,6 +350,30 @@ export default function TeleprintTool(handle, element) {
       }),
     ],
   });
+
+  // Load codemirror:extension plugins from the shared registry (e.g. customHighlights)
+  (async () => {
+    try {
+      const docType = doc?.["@patchwork"]?.type;
+      const extensionsRegistry = getRegistry("codemirror:extension");
+      const matching = extensionsRegistry.filter((ext) =>
+        ext.supportedDatatypes === "*" ||
+        (Array.isArray(ext.supportedDatatypes) && ext.supportedDatatypes.includes(docType))
+      );
+      const loaded = await extensionsRegistry.loadAll(matching);
+      const exts = loaded.flatMap((ext) => {
+        const impl = ext.module;
+        return Array.isArray(impl) ? impl : [impl];
+      });
+      if (exts.length > 0) {
+        view.dispatch({
+          effects: registryExtensions.reconfigure(exts),
+        });
+      }
+    } catch (err) {
+      console.warn("[teleprint] Could not load codemirror extensions from registry:", err);
+    }
+  })();
 
   view.scrollDOM.addEventListener("scroll", () => {
     const scroller = view.scrollDOM;
@@ -364,7 +396,7 @@ export default function TeleprintTool(handle, element) {
   summaryBar.appendChild(arrow);
 
   const barLabel = document.createElement("span");
-  barLabel.textContent = "Summary";
+  barLabel.textContent = "Summary v3";
   summaryBar.appendChild(barLabel);
 
   const statusEl = document.createElement("span");
@@ -616,7 +648,7 @@ export default function TeleprintTool(handle, element) {
             // Live-update the summary as tokens stream in
             summaryContent.innerHTML = renderMarkdown(full);
           }
-        } catch {}
+        } catch { }
       }
     }
     return full;

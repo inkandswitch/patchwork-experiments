@@ -1070,7 +1070,7 @@ export default function TelephoneTool(handle, element) {
         );
         const name = contactHandle.doc().name;
         if (name) lobbyNameEl.textContent = `Joining as ${name}`;
-      } catch {}
+      } catch { }
 
       // Preview media
       try {
@@ -1081,7 +1081,7 @@ export default function TelephoneTool(handle, element) {
         } catch {
           try {
             lobbyStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-          } catch {}
+          } catch { }
         }
       }
       if (lobbyStream) {
