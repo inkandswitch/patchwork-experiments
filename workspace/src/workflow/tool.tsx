@@ -16,7 +16,7 @@ import { FolderDoc } from '@inkandswitch/patchwork-filesystem';
 
 type Stage = 'elicitation' | 'spec' | 'plan' | 'execution' | 'validation';
 
-const WORKFLOW_VERSION = '0.14.0';
+const WORKFLOW_VERSION = '0.16.5';
 
 function makeId(): string {
   return Math.random().toString(36).slice(2, 10);
@@ -426,6 +426,10 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
       return;
     }
 
+    props.handle.change((d) => {
+      delete d.validationDocUrl;
+    });
+
     const currentPlanType = inferPlanType(currentDoc);
     console.log('[workflow] handleExecutePlan: inferred planType =', currentPlanType);
 
@@ -438,26 +442,12 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
         execUrl = await createPetriNetExecution(currentDoc);
       }
 
-      const validationHandle = currentDoc.validationDocUrl
-        ? await repo.find<ValidationDoc>(currentDoc.validationDocUrl)
-        : repo.create<ValidationDoc>();
-
-      validationHandle.change((d) => {
-        d['@patchwork'] = { type: 'validation' };
-        d.planDocUrl = currentDoc.planDocUrl!;
-        d.specDocUrl = currentDoc.specDocUrl!;
-        d.executionDocUrl = execUrl;
-        d.isValidated = false;
-        d.headsByDocUrl = {} as Record<AutomergeUrl, never>;
-      });
-
       const execToolId =
         currentPlanType === 'task-list' ? 'grjte-execution-viewer' : 'petrinet-execution';
       console.log('[workflow] handleExecutePlan: execUrl =', execUrl, 'execToolId =', execToolId);
 
       props.handle.change((d) => {
         d.executionDocUrl = execUrl;
-        d.validationDocUrl = validationHandle.url;
         if (!d.toolIds) d.toolIds = {};
         d.toolIds.execution = execToolId;
       });
@@ -552,8 +542,14 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
         d.planDocUrl = currentDoc.planDocUrl!;
         d.specDocUrl = currentDoc.specDocUrl!;
         d.executionDocUrl = currentDoc.executionDocUrl!;
+        d.projectionProcessUrl = processHandle.url;
         d.isValidated = false;
         d.headsByDocUrl = {} as Record<AutomergeUrl, never>;
+      });
+    } else {
+      // Also store on the validation doc so the validation tool can access the chat
+      validationHandle.change((d) => {
+        d.projectionProcessUrl = processHandle.url;
       });
     }
 
@@ -562,11 +558,6 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
       if (!d.validationDocUrl) {
         d.validationDocUrl = validationHandle.url;
       }
-    });
-
-    // Also store on the validation doc so the validation tool can access the chat
-    validationHandle.change((d) => {
-      d.projectionProcessUrl = processHandle.url;
     });
 
     runWorkspaceLLM(repo, processHandle.url)
