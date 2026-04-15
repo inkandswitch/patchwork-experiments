@@ -49,46 +49,71 @@ function PlanView(props: {
         fallback={<div class="plan-loading">Loading plan…</div>}
       >
         {(currentDoc) => (
-          <div class="plan-content">
-            <VersionBadge />
-            <div class="plan-goal">{currentDoc().goal || "Untitled plan"}</div>
-
-            <Show when={currentDoc().specDocUrl}>
-              {(specUrl) => (
-                <div class="plan-section">
-                  <button
-                    class="plan-spec-btn"
-                    onClick={() =>
-                      openDocument(
-                        props.element,
-                        specUrl(),
-                        "grjte-spec-viewer",
-                      )
-                    }
-                  >
-                    View Spec
-                  </button>
-                </div>
-              )}
-            </Show>
-
-            <Show when={(currentDoc().tasks?.length ?? 0) > 0}>
-              <div class="plan-section">
-                <div class="plan-section-label">Tasks</div>
-                <div class="plan-task-list">
-                  <For each={currentDoc().tasks}>
-                    {(url, index) => (
-                      <TaskCard
-                        url={url}
-                        index={index() + 1}
-                        element={props.element}
-                      />
-                    )}
-                  </For>
-                </div>
+          <>
+            <div class="plan-header">
+              <div class="plan-header-left">
+                <Show when={currentDoc().specDocUrl}>
+                  {(specUrl) => (
+                    <button
+                      class="plan-header-link"
+                      onClick={() =>
+                        openDocument(
+                          props.element,
+                          specUrl(),
+                          "grjte-spec-viewer",
+                        )
+                      }
+                    >
+                      Spec
+                    </button>
+                  )}
+                </Show>
               </div>
-            </Show>
-          </div>
+              <div class="plan-header-right">
+                <VersionBadge />
+              </div>
+            </div>
+
+            <div class="plan-content">
+              <div class="plan-goal">{currentDoc().goal || "Untitled plan"}</div>
+
+              <Show when={currentDoc().specDocUrl}>
+                {(specUrl) => (
+                  <div class="plan-section">
+                    <button
+                      class="plan-spec-btn"
+                      onClick={() =>
+                        openDocument(
+                          props.element,
+                          specUrl(),
+                          "grjte-spec-viewer",
+                        )
+                      }
+                    >
+                      View Spec
+                    </button>
+                  </div>
+                )}
+              </Show>
+
+              <Show when={(currentDoc().tasks?.length ?? 0) > 0}>
+                <div class="plan-section">
+                  <div class="plan-section-label">Tasks</div>
+                  <div class="plan-task-list">
+                    <For each={currentDoc().tasks}>
+                      {(url, index) => (
+                        <TaskCard
+                          url={url}
+                          index={index() + 1}
+                          element={props.element}
+                        />
+                      )}
+                    </For>
+                  </div>
+                </div>
+              </Show>
+            </div>
+          </>
         )}
       </Show>
     </div>

@@ -42,10 +42,16 @@ function SpecView(props: { handle: DocHandle<SpecDoc> }) {
             fallback={<div class="spec-empty">No spec defined.</div>}
           >
             {(spec) => (
-              <div class="spec-content">
-                <VersionBadge />
+              <>
+                <div class="spec-header">
+                  <div class="spec-header-right">
+                    <VersionBadge />
+                  </div>
+                </div>
+                <div class="spec-content">
                 <SpecSection spec={spec()} />
-              </div>
+                </div>
+              </>
             )}
           </Show>
         )}

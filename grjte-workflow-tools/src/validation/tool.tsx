@@ -68,6 +68,11 @@ type ArtifactVerificationSummary = {
   label: string;
 };
 
+type ProjectionPreviewSummary = {
+  name: string;
+  description: string;
+};
+
 export const ValidationTool: ToolRender = (handle, element) => {
   const dispose = render(
     () => (
@@ -139,60 +144,67 @@ function ValidationView(props: {
         {(currentDoc) => (
           <>
             <div class="validation-header">
-              <div
-                class="validation-status"
-                classList={{ validated: currentDoc().isValidated }}
-              >
-                {currentDoc().isValidated ? "Validated" : "Pending"}
-              </div>
-              <VersionBadge />
-              <Show when={currentDoc().specDocUrl}>
-                {(specUrl) => (
-                  <div class="plan-section">
+              <div class="validation-header-left">
+                <Show when={currentDoc().specDocUrl}>
+                  {(specUrl) => (
                     <button
-                      class="plan-spec-btn"
+                      class="validation-header-link"
                       onClick={() =>
                         openDocument(specUrl(), "grjte-spec-viewer")
                       }
                     >
-                      View Spec
+                      Spec
                     </button>
-                  </div>
-                )}
-              </Show>
-              <Show when={currentDoc().planDocUrl}>
-                {(planUrl) => (
-                  <div class="plan-section">
+                  )}
+                </Show>
+                <Show when={currentDoc().planDocUrl}>
+                  {(planUrl) => (
                     <button
-                      class="plan-spec-btn"
+                      class="validation-header-link"
                       onClick={() =>
                         openDocument(planUrl(), "grjte-plan-viewer")
                       }
                     >
-                      View Plan
+                      Plan
                     </button>
-                  </div>
-                )}
-              </Show>
-              <Show when={currentDoc().executionDocUrl}>
-                {(executionUrl) => (
-                  <div class="plan-section">
+                  )}
+                </Show>
+                <Show when={currentDoc().executionDocUrl}>
+                  {(executionUrl) => (
                     <button
-                      class="plan-spec-btn"
+                      class="validation-header-link"
                       onClick={() =>
-                        openDocument(executionUrl(), "grjte-execution-viewer")
+                        openDocument(
+                          executionUrl(),
+                          "grjte-execution-viewer",
+                        )
                       }
                     >
-                      View Execution
+                      Execution
                     </button>
-                  </div>
-                )}
-              </Show>
-              <Show when={!currentDoc().isValidated}>
-                <button class="validation-approve-btn" onClick={handleApprove}>
+                  )}
+                </Show>
+              </div>
+
+              <div class="validation-header-center">
+                <div
+                  class="validation-status"
+                  classList={{ validated: currentDoc().isValidated }}
+                >
+                  {currentDoc().isValidated ? "Validated" : "Pending"}
+                </div>
+                <button
+                  class="validation-approve-btn"
+                  onClick={handleApprove}
+                  disabled={currentDoc().isValidated}
+                >
                   Validate
                 </button>
-              </Show>
+              </div>
+
+              <div class="validation-header-right">
+                <VersionBadge />
+              </div>
             </div>
 
             <Show when={execution()}>
@@ -258,9 +270,15 @@ function ValidationBody(props: {
       projectionHandle,
     };
   });
+  const [projectionProcessDoc] = useDocument<LLMProcessDoc>(
+    () => props.projectionProcessUrl,
+  );
   const [specTree, setSpecTree] = createSignal<SpecTreeNode | null>(null);
   const [specTreeLoading, setSpecTreeLoading] = createSignal(true);
   const [projectionExpanded, setProjectionExpanded] = createSignal(false);
+  const projectionProcessActive = createMemo(() =>
+    Boolean(projectionProcessDoc() && !projectionProcessDoc()!.done),
+  );
 
   createEffect(() => {
     const url = props.specDocUrl;
@@ -284,6 +302,12 @@ function ValidationBody(props: {
       active = false;
       dispose?.();
     });
+  });
+
+  createEffect(() => {
+    if (projectionProcessActive() && !projectionExpanded()) {
+      setProjectionExpanded(true);
+    }
   });
 
   const projectionProvenanceByUrl = createMemo(() => {
@@ -576,6 +600,24 @@ function ValidationBody(props: {
       }),
     ),
   );
+  const projectionPreviewSummaries = createMemo<ProjectionPreviewSummary[]>(
+    () =>
+      artifactAccessors
+        .filter(({ entry }) => entry.type === "workflow-artifact")
+        .map(({ entry, workflowArtifact, projectionDoc }) => ({
+          name: workflowArtifact()?.name || entry.name || "Untitled artifact",
+          description: describeProjectionSummary(projectionDoc()),
+        })),
+  );
+  const projectionPreviewChips = createMemo(() =>
+    projectionPreviewSummaries().slice(0, 3),
+  );
+  const projectionPreviewOverflow = createMemo(() =>
+    Math.max(
+      0,
+      projectionPreviewSummaries().length - projectionPreviewChips().length,
+    ),
+  );
 
   return (
     <div class="validation-body">
@@ -638,19 +680,76 @@ function ValidationBody(props: {
       <Show when={props.artifactEntries.length > 0}>
         <div class="validation-section">
           <div class="validation-section-label">Projection</div>
-          <div class="validation-artifact-list">
+          <div class="validation-projection-list">
             <div
-              class="validation-artifact-card"
+              class="validation-projection-card"
               classList={{ expanded: projectionExpanded() }}
             >
               <button
-                class="validation-artifact-toggle"
-                onClick={() => setProjectionExpanded((v) => !v)}
+                class="validation-projection-toggle"
+                onClick={() => {
+                  if (projectionProcessActive()) {
+                    setProjectionExpanded(true);
+                    return;
+                  }
+                  setProjectionExpanded((value) => !value);
+                }}
+                type="button"
               >
-                <span class="validation-artifact-heading">
-                  <span class="validation-artifact-name">
-                    {props.artifactEntries.length} artifact projection view
-                    {props.artifactEntries.length !== 1 ? "s" : ""}
+                <span class="validation-projection-toggle-main">
+                  <span class="validation-projection-heading">
+                    <span class="validation-projection-title">
+                      Artifact view projections
+                    </span>
+                    <span
+                      class="validation-projection-run-state"
+                      classList={{ running: projectionProcessActive() }}
+                    >
+                      {projectionProcessActive() ? "Generating" : "Idle"}
+                    </span>
+                    <span class="validation-projection-count">
+                      {projectionPreviewSummaries().length} artifact
+                      {projectionPreviewSummaries().length === 1 ? "" : "s"}
+                    </span>
+                  </span>
+                  <span class="validation-projection-preview-list">
+                    <Show
+                      when={projectionPreviewChips().length > 0}
+                      fallback={
+                        <span class="validation-projection-preview-empty">
+                          No projections yet.
+                        </span>
+                      }
+                    >
+                      <For each={projectionPreviewChips()}>
+                        {(preview) => (
+                          <span class="validation-projection-preview-chip">
+                            <span class="validation-projection-preview-name">
+                              {preview.name}
+                            </span>
+                            <span class="validation-projection-preview-detail">
+                              {preview.description}
+                            </span>
+                          </span>
+                        )}
+                      </For>
+                    </Show>
+                    <Show when={projectionPreviewOverflow() > 0}>
+                      <span class="validation-projection-preview-overflow">
+                        +{projectionPreviewOverflow()} more
+                      </span>
+                    </Show>
+                  </span>
+                </span>
+                <span class="validation-projection-toggle-side">
+                  <span class="validation-projection-toggle-label">
+                    {projectionExpanded() ? "Hide details" : "Show details"}
+                  </span>
+                  <span
+                    class="validation-projection-toggle-icon"
+                    classList={{ expanded: projectionExpanded() }}
+                  >
+                    ›
                   </span>
                 </span>
               </button>
@@ -768,6 +867,12 @@ function ProjectionSection(props: {
     }
   });
 
+  createEffect(() => {
+    if (isRunning() && !isSidebarOpen()) {
+      setIsSidebarOpen(true);
+    }
+  });
+
   function handleScroll() {
     if (!containerRef) return;
     isAtBottom =
@@ -843,8 +948,17 @@ function ProjectionSection(props: {
         >
           <button
             class="projection-sidebar-toggle"
-            onClick={() => setIsSidebarOpen((open) => !open)}
-            title={isSidebarOpen() ? "Collapse chat" : "Expand chat"}
+            onClick={() => {
+              if (isRunning() && isSidebarOpen()) return;
+              setIsSidebarOpen((open) => !open);
+            }}
+            title={
+              isRunning()
+                ? "Chat stays open while projections are generating"
+                : isSidebarOpen()
+                  ? "Collapse chat"
+                  : "Expand chat"
+            }
             type="button"
           >
             {isSidebarOpen() ? "\u203A" : "\u2039"}
@@ -922,9 +1036,7 @@ function ProjectionSummaryCard(props: { entry: ArtifactFolderEntry }) {
         >
           {(pd) => (
             <span class="projection-card-meta">
-              {(pd().viewKind ?? "table") === "key-value"
-                ? `${pd().entries?.length ?? 0} entries`
-                : `${pd().columns?.length ?? 0} columns`}
+              {describeProjectionSummary(pd())}
             </span>
           )}
         </Show>
@@ -1310,6 +1422,18 @@ function WitnessCard(props: {
       </div>
     </div>
   );
+}
+
+function describeProjectionSummary(projection?: ProjectionDoc) {
+  if (!projection) return "no projection";
+
+  if ((projection.viewKind ?? "table") === "key-value") {
+    const entryCount = projection.entries?.length ?? 0;
+    return `key-value ${entryCount} ${entryCount === 1 ? "entry" : "entries"}`;
+  }
+
+  const columnCount = projection.columns?.length ?? 0;
+  return `table ${columnCount} ${columnCount === 1 ? "column" : "columns"}`;
 }
 
 function cloneHeadsByDocUrl(headsByDocUrl: Record<AutomergeUrl, Heads>) {

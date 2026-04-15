@@ -1059,6 +1059,14 @@ function ProjectionKeyValueView(props: {
       ...localAnnotations(),
     ]),
   );
+  const issueAnnotations = createMemo(() =>
+    annotations().filter(
+      (annotation) => annotation.kind !== "entry" || !annotation.entryId,
+    ),
+  );
+  const visibleSettingRows = createMemo(() =>
+    Math.max(1, Math.min(materialized()?.entries.length ?? 0, 5)),
+  );
 
   function clearLocalFeedback() {
     setLocalError(null);
@@ -1169,14 +1177,14 @@ function ProjectionKeyValueView(props: {
             )}
           </Show>
 
-          <Show when={annotations().length > 0}>
+          <Show when={issueAnnotations().length > 0}>
             <div class="artifact-projection-issues">
               <div class="artifact-projection-issues-header">
                 <span>Verification issues</span>
-                <span>{annotations().length}</span>
+                <span>{issueAnnotations().length}</span>
               </div>
               <div class="artifact-projection-issue-list">
-                <For each={annotations()}>
+                <For each={issueAnnotations()}>
                   {(annotation) => (
                     <div class="artifact-projection-issue-card">
                       <div class="artifact-projection-issue-label">
@@ -1192,40 +1200,63 @@ function ProjectionKeyValueView(props: {
             </div>
           </Show>
 
-          <div class="artifact-projection-issues">
-            <div class="artifact-projection-issues-header">
+          <div class="artifact-projection-settings-panel">
+            <div class="artifact-projection-settings-header">
               <span>Settings</span>
               <span>{view().entries.length}</span>
             </div>
-            <div class="artifact-projection-issue-list">
+            <div
+              class="artifact-projection-settings-list"
+              style={{
+                "min-height": `calc(${visibleSettingRows()} * var(--artifact-projection-setting-row-min-height))`,
+              }}
+            >
               <For each={view().entries}>
                 {(entry) => (
                   <div
-                    class="artifact-projection-issue-card"
+                    class="artifact-projection-setting-row"
                     classList={{
-                      "artifact-projection-has-issue":
+                      "artifact-projection-setting-row-has-issue":
                         annotationsForEntry(entry.id).length > 0,
                     }}
                   >
-                    <div class="artifact-projection-issue-label">
-                      {entry.label}
+                    <div class="artifact-projection-setting-copy">
+                      <div class="artifact-projection-setting-label">
+                        {entry.label}
+                      </div>
+                      <div class="artifact-projection-setting-meta">
+                        <span>{entry.cellType}</span>
+                        <span>
+                          {entry.editable ? "Editable" : "Read only"}
+                        </span>
+                      </div>
                     </div>
-                    <div class="artifact-projection-issue-text">
+                    <div class="artifact-projection-setting-value-column">
                       <Show
                         when={editingEntryId() === entry.id}
                         fallback={
-                          <button
-                            class="artifact-projection-toolbar-button"
-                            onClick={() => startEditing(entry.id, entry.value)}
-                            disabled={!entry.editable}
-                            type="button"
+                          <Show
+                            when={entry.editable}
+                            fallback={
+                              <div class="artifact-projection-setting-value artifact-projection-setting-value-readonly">
+                                {entry.value || "(blank)"}
+                              </div>
+                            }
                           >
-                            {entry.value || "(blank)"}
-                          </button>
+                            <button
+                              class="artifact-projection-setting-value artifact-projection-setting-button"
+                              onClick={() =>
+                                startEditing(entry.id, entry.value)
+                              }
+                              type="button"
+                            >
+                              {entry.value || "(blank)"}
+                            </button>
+                          </Show>
                         }
                       >
                         <input
-                          class="artifact-projection-cell-input"
+                          class="artifact-projection-cell-input artifact-projection-setting-input"
                           value={draftValue()}
                           onInput={(event) =>
                             setDraftValue(event.currentTarget.value)
@@ -1242,6 +1273,17 @@ function ProjectionKeyValueView(props: {
                           }}
                           onBlur={() => finishEditing(true)}
                         />
+                      </Show>
+                      <Show when={annotationsForEntry(entry.id).length > 0}>
+                        <div class="artifact-projection-setting-error-list">
+                          <For each={annotationsForEntry(entry.id)}>
+                            {(annotation) => (
+                              <div class="artifact-projection-setting-error">
+                                {annotation.message}
+                              </div>
+                            )}
+                          </For>
+                        </div>
                       </Show>
                     </div>
                   </div>

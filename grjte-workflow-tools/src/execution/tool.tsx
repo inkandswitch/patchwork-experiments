@@ -75,44 +75,50 @@ function ExecutionView(props: {
         {(currentDoc) => (
           <>
             <div class="execution-header">
-              <div class={`execution-status ${currentDoc().status}`}>
-                {formatStatus(currentDoc().status)}
+              <div class="execution-header-left">
+                <Show when={currentDoc().specDocUrl}>
+                  {(specUrl) => (
+                    <button
+                      class="execution-link-btn"
+                      onClick={() =>
+                        openDocument(
+                          props.element,
+                          specUrl(),
+                          "grjte-spec-viewer",
+                        )
+                      }
+                    >
+                      Spec
+                    </button>
+                  )}
+                </Show>
+                <Show when={currentDoc().planDocUrl}>
+                  {(planUrl) => (
+                    <button
+                      class="execution-link-btn"
+                      onClick={() =>
+                        openDocument(
+                          props.element,
+                          planUrl(),
+                          "grjte-plan-viewer",
+                        )
+                      }
+                    >
+                      Plan
+                    </button>
+                  )}
+                </Show>
               </div>
-              <VersionBadge />
 
-              <Show when={currentDoc().specDocUrl}>
-                {(specUrl) => (
-                  <button
-                    class="execution-link-btn"
-                    onClick={() =>
-                      openDocument(
-                        props.element,
-                        specUrl(),
-                        "grjte-spec-viewer",
-                      )
-                    }
-                  >
-                    View Spec
-                  </button>
-                )}
-              </Show>
+              <div class="execution-header-center">
+                <div class={`execution-status ${currentDoc().status}`}>
+                  {formatStatus(currentDoc().status)}
+                </div>
+              </div>
 
-              <Show when={currentDoc().planDocUrl}>
-                {(planUrl) => (
-                  <button
-                    class="execution-link-btn"
-                    onClick={() =>
-                      openDocument(
-                        props.element,
-                        planUrl(),
-                        "grjte-plan-viewer",
-                      )
-                    }
-                  >
-                    View Plan
-                  </button>
-                )}
-              </Show>
+              <div class="execution-header-right">
+                <VersionBadge />
+              </div>
             </div>
 
             <div class="execution-body">
