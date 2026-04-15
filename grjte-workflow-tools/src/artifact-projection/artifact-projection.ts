@@ -33,7 +33,7 @@ export type SlotValueRead = {
   pred: string;
   rowKeyArg: number;
   slotArg: number;
-  slot: number;
+  slot: number | string;
   valueArg: number;
 };
 
@@ -80,7 +80,7 @@ export type UpsertSlotValueWrite = {
   pred: string;
   rowKeyArg: number;
   slotArg: number;
-  slot: number;
+  slot: number | string;
   valueArg: number;
 };
 
@@ -400,7 +400,7 @@ type ProjectionScriptHelpers = {
     facts: StoredFact[],
     rowId: string,
     pred: string,
-    slot: number,
+    slot: number | string,
     valueArg: number,
     rowKeyArg?: number,
     slotArg?: number,
@@ -640,7 +640,7 @@ class NativeDatalogLensBackend implements LensBackend {
           (fact) =>
             fact.pred === write.pred &&
             String(fact.args[write.rowKeyArg]) === rowId &&
-            Number(fact.args[write.slotArg]) === write.slot,
+            String(fact.args[write.slotArg] ?? "") === String(write.slot),
         );
         if (matches.length > 1) {
           return mutationError(
@@ -656,7 +656,7 @@ class NativeDatalogLensBackend implements LensBackend {
             (fact) =>
               fact.pred === write.pred &&
               String(fact.args[write.rowKeyArg]) === rowId &&
-              Number(fact.args[write.slotArg]) === write.slot,
+              String(fact.args[write.slotArg] ?? "") === String(write.slot),
           );
         } else if (matches.length === 1) {
           matches[0].args[write.valueArg] = value.value;
@@ -1762,7 +1762,7 @@ function getReadMatches(
         (fact) =>
           fact.pred === read.pred &&
           String(fact.args[read.rowKeyArg]) === rowId &&
-          Number(fact.args[read.slotArg]) === read.slot,
+          String(fact.args[read.slotArg] ?? "") === String(read.slot),
       );
     case "derived-row-key":
     case "singleton-fact-arg":
@@ -2011,7 +2011,7 @@ function findSlotValue(
   facts: StoredFact[],
   rowId: string,
   pred: string,
-  slot: number,
+  slot: number | string,
   valueArg: number,
   rowKeyArg = 0,
   slotArg = 1,
@@ -2020,7 +2020,7 @@ function findSlotValue(
     (entry) =>
       entry.pred === pred &&
       String(entry.args[rowKeyArg] ?? "") === rowId &&
-      Number(entry.args[slotArg] ?? NaN) === slot,
+      String(entry.args[slotArg] ?? "") === String(slot),
   );
   return fact ? String(fact.args[valueArg] ?? "") : undefined;
 }
@@ -2241,7 +2241,7 @@ function anchorsForFact(
       case "slot-value":
         return column.read.pred === fact.pred &&
           String(fact.args[column.read.rowKeyArg] ?? "") === rowId &&
-          Number(fact.args[column.read.slotArg] ?? NaN) === column.read.slot
+          String(fact.args[column.read.slotArg] ?? "") === String(column.read.slot)
           ? [{ kind: "table-cell" as const, rowId, columnId: column.id }]
           : [];
       case "derived-row-key":
