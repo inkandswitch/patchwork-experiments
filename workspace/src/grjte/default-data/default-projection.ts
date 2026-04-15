@@ -115,31 +115,63 @@ export function normalizeHospitalLegacySolutionFacts(facts: StoredFact[]): Store
   const nextFacts: StoredFact[] = [];
   const seenShiftHours = new Set<string>();
 
+  // Predicates that the table projection reads/writes directly (base facts).
+  const basePreds = new Set([
+    'shift',
+    'ward',
+    'night_shift',
+    'assignment_slot',
+    'in_charge',
+    'patients',
+    'has_hca',
+    'shift_hours',
+    'shift_day',
+  ]);
+
+  // Predicates derived by the expand script that verification constraints
+  // reference.  We keep them in the stored artifact so verification works even
+  // when the expand-script output is not yet available (e.g. the projection
+  // document hasn't loaded).  When the expand script DOES run, its output
+  // replaces these stored facts, so duplicates are harmless.
+  const derivedPreds = new Set([
+    'ward_roster',
+    'rostered_hours',
+    'employee_rostered_hours',
+  ]);
+
+  // Check whether shift_hours facts already exist in the input, so we only
+  // derive them from assigned() when they are missing.
+  const existingShiftHoursRows = new Set(
+    facts
+      .filter((fact) => fact.pred === 'shift_hours')
+      .map((fact) => String(fact.args[0] ?? '')),
+  );
+
   for (const fact of facts) {
-    if (
-      [
-        'shift',
-        'ward',
-        'night_shift',
-        'assignment_slot',
-        'in_charge',
-        'patients',
-        'has_hca',
-      ].includes(fact.pred)
-    ) {
+    // Keep base predicates and derived predicates as-is.
+    if (basePreds.has(fact.pred) || derivedPreds.has(fact.pred)) {
       nextFacts.push({ ...fact, args: [...fact.args] });
       continue;
     }
 
+    // Keep assigned() facts (needed by verification rules like
+    // band_6_in_charge_on_shift).  Also extract shift_hours() from the first
+    // assigned() per shift when no explicit shift_hours fact exists.
     if (fact.pred === 'assigned') {
+      nextFacts.push({ ...fact, args: [...fact.args] });
+
       const rowId = String(fact.args[0] ?? '');
-      if (!rowId || seenShiftHours.has(rowId)) continue;
-      seenShiftHours.add(rowId);
-      nextFacts.push({
-        pred: 'shift_hours',
-        args: [rowId, Number(fact.args[2] ?? 0)],
-      });
+      if (rowId && !seenShiftHours.has(rowId) && !existingShiftHoursRows.has(rowId)) {
+        seenShiftHours.add(rowId);
+        nextFacts.push({
+          pred: 'shift_hours',
+          args: [rowId, Number(fact.args[2] ?? 0)],
+        });
+      }
+      continue;
     }
+
+    // Drop unknown predicates (legacy artefacts may contain stale data).
   }
 
   return nextFacts;
