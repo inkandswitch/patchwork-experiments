@@ -16,7 +16,6 @@ import type { DocHandle, AutomergeUrl } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import type { DatalogDoc } from "../spec/types";
 import type { SpecDoc, WorkflowArtifactDoc } from "../workflow-types";
-import { VersionBadge } from "../version";
 import {
   appendProjectionRow,
   applyProjectionCellEdit,
@@ -103,24 +102,6 @@ function ArtifactProjectionWorkspace(props: {
         {(artifact) => (
           <div class="artifact-projection-shell no-picker">
             <div class="artifact-projection-panel">
-              <VersionBadge />
-              <div class="artifact-projection-selection-card">
-                <div class="artifact-projection-selection-copy">
-                  <div class="artifact-projection-selection-title">
-                    {artifact().name || "Untitled artifact"}
-                  </div>
-                  <div class="artifact-projection-selection-meta">
-                    <span>datalog</span>
-                    <span>Spec {artifact().specDocUrl.slice(-8)}</span>
-                  </div>
-                </div>
-                <div class="artifact-projection-selection-status">
-                  <Show when={projectionUrl()} fallback={"No projection yet"}>
-                    Projection ready
-                  </Show>
-                </div>
-              </div>
-
               <Show
                 when={
                   artifactDoc() &&

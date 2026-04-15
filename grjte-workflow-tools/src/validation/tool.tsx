@@ -260,6 +260,7 @@ function ValidationBody(props: {
   });
   const [specTree, setSpecTree] = createSignal<SpecTreeNode | null>(null);
   const [specTreeLoading, setSpecTreeLoading] = createSignal(true);
+  const [projectionExpanded, setProjectionExpanded] = createSignal(false);
 
   createEffect(() => {
     const url = props.specDocUrl;
@@ -637,11 +638,31 @@ function ValidationBody(props: {
       <Show when={props.artifactEntries.length > 0}>
         <div class="validation-section">
           <div class="validation-section-label">Projection</div>
-          <ProjectionSection
-            artifactEntries={props.artifactEntries}
-            processUrl={props.projectionProcessUrl}
-            validationHandle={props.validationHandle}
-          />
+          <div class="validation-artifact-list">
+            <div
+              class="validation-artifact-card"
+              classList={{ expanded: projectionExpanded() }}
+            >
+              <button
+                class="validation-artifact-toggle"
+                onClick={() => setProjectionExpanded((v) => !v)}
+              >
+                <span class="validation-artifact-heading">
+                  <span class="validation-artifact-name">
+                    {props.artifactEntries.length} artifact projection view
+                    {props.artifactEntries.length !== 1 ? "s" : ""}
+                  </span>
+                </span>
+              </button>
+              <Show when={projectionExpanded()}>
+                <ProjectionSection
+                  artifactEntries={props.artifactEntries}
+                  processUrl={props.projectionProcessUrl}
+                  validationHandle={props.validationHandle}
+                />
+              </Show>
+            </div>
+          </div>
         </div>
       </Show>
 
@@ -685,9 +706,7 @@ function ValidationBody(props: {
                         {artifactDisplayByUrl()[entry.url]?.specLabel ||
                           "loading"}
                       </span>
-                      <span class="validation-artifact-type">
-                        {entry.type}
-                      </span>
+                      <span class="validation-artifact-type">{entry.type}</span>
                     </span>
                   </button>
                   <Show when={props.isArtifactExpanded(entry.url)}>
@@ -1177,15 +1196,19 @@ function ArtifactPreviewSwitcher(props: {
   constraintAnnotations: ArtifactProjectionAnnotation[];
 }) {
   const [selectedView, setSelectedView] = createSignal<"raw" | "projection">(
-    "raw",
+    "projection",
   );
   const [workflowArtifact] = useDocument<WorkflowArtifactDoc>(
     () => props.workflowArtifactUrl,
   );
   const [specDoc] = useDocument<SpecDoc>(() => workflowArtifact()?.specDocUrl);
-  const hasProjection = createMemo(() =>
-    Boolean(specDoc()?.spec?.projectionDocUrl),
-  );
+  const projectionDocUrl = createMemo(() => specDoc()?.spec?.projectionDocUrl);
+  const [projectionDoc] = useDocument<ProjectionDoc>(() => projectionDocUrl());
+  const hasProjection = createMemo(() => Boolean(projectionDocUrl()));
+  const viewKindLabel = createMemo(() => {
+    const kind = projectionDoc()?.viewKind ?? "table";
+    return kind === "key-value" ? "Key-Value" : "Table";
+  });
 
   createEffect(() => {
     if (!hasProjection() && selectedView() === "projection") {
@@ -1200,20 +1223,20 @@ function ArtifactPreviewSwitcher(props: {
           <div class="validation-artifact-tabs">
             <button
               class="validation-artifact-tab"
-              classList={{ active: selectedView() === "raw" }}
-              onClick={() => setSelectedView("raw")}
-              type="button"
-            >
-              Raw
-            </button>
-            <button
-              class="validation-artifact-tab"
               classList={{ active: selectedView() === "projection" }}
               onClick={() => setSelectedView("projection")}
               disabled={!hasProjection()}
               type="button"
             >
-              Projection
+              {viewKindLabel()}
+            </button>
+            <button
+              class="validation-artifact-tab"
+              classList={{ active: selectedView() === "raw" }}
+              onClick={() => setSelectedView("raw")}
+              type="button"
+            >
+              Datalog
             </button>
           </div>
           <Show when={!hasProjection()}>

@@ -17,6 +17,7 @@
   color: var(--sheet-text);
   height: 100%;
   background: linear-gradient(180deg, #f8fbff 0%, #eef3fb 100%);
+  overflow: auto;
 }
 
 .artifact-projection-loading,
