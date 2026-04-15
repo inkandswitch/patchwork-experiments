@@ -3,6 +3,7 @@ import { runLLMProcessRaw } from '../../../../llm/src/llm-process';
 import { evaluateSolution, evaluateVerificationsAgainstFolders } from './evaluate';
 import type { NetDef, ReadonlyToken, TokenState } from './lib';
 import type { CandidateDoc, PetriNetPlanDoc } from './types';
+import type { WorkflowArtifactDoc } from '../../workflow/types';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -278,16 +279,29 @@ export function createNet(repo: Repo, planHandle: DocHandle<PetriNetPlanDoc>): N
           const artifactsFolderHandle = await repo.find<FolderDoc>(artifactsFolderUrl as AutomergeUrl);
           const taskSpecUrl = candidateDoc.specUrl;
 
+          const workflowArtifactEntries = await Promise.all(
+            folderDoc.docs.map(async (entry) => {
+              const workflowArtifactHandle = repo.create<WorkflowArtifactDoc>();
+              workflowArtifactHandle.change((d) => {
+                d['@patchwork'] = { type: 'workflow-artifact' };
+                d.name = entry.name;
+                d.artifactDocUrl = entry.url;
+                d.specDocUrl = taskSpecUrl as AutomergeUrl;
+              });
+
+              return {
+                type: 'workflow-artifact',
+                name: entry.name,
+                url: workflowArtifactHandle.url,
+              };
+            }),
+          );
+
           artifactsFolderHandle.change((d) => {
             if (!d.docs) d.docs = [];
-            for (const entry of folderDoc.docs) {
-              (d.docs as any[]).push({
-                type: entry.type,
-                name: entry.name,
-                url: entry.url,
-                specDocUrls: taskSpecUrl ? [taskSpecUrl] : [],
-              });
-            }
+            (d.docs as Array<{ type: string; name: string; url: AutomergeUrl }>).push(
+              ...workflowArtifactEntries,
+            );
           });
         },
       },
