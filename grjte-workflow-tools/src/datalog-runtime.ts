@@ -49,7 +49,11 @@ function serializeConstant(value: Constant): string {
 
 function serializeAtom(atom: StoredAtom): string {
   if (atom.pred === "not" && atom.args.length === 1) {
-    return `not(${atom.args[0]})`;
+    const inner = atom.args[0];
+    if (typeof inner === "object" && inner !== null) {
+      return `not(${serializeAtom(inner as unknown as StoredAtom)})`;
+    }
+    return `not(${inner})`;
   }
   if (!atom.args || atom.args.length === 0) return atom.pred;
   return `${atom.pred}(${atom.args.join(", ")})`;

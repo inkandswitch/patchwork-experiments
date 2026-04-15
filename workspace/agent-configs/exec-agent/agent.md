@@ -117,9 +117,36 @@ console.log(JSON.stringify({
 </script>
 ```
 
-### Step 3: For each task, read the linked spec and understand what to create
+### Step 3: For each task, read the linked spec and extract predicate schemas
 
 Read each task's goal and linked spec. The leaf spec describes what artifact to produce. Read any data documents in the spec's files folder and verification docs to understand the constraints.
+
+**Critical — match predicate arity exactly:** Before creating any artifact facts, inspect the rules and constraints in the spec's verification documents. Every predicate referenced there has a specific number of arguments (its *arity*). Your artifact facts **must use the same predicate names and the same number of arguments**. The validation engine performs strict arity matching — `assigned(ShiftId, StaffId)` (2 args) will NOT match `assigned(ShiftId, 1, StaffId)` (3 args), and constraints will fail.
+
+To extract predicate schemas, load each verification doc's Datalog and log its rules and constraints:
+
+```
+<script data-description="Extract predicate schemas from verification docs">
+const { getDatalog } = await useSkill("datalog");
+
+for (const vUrl of verificationUrls) {
+  const vHandle = await repo.find(vUrl);
+  const vDoc = vHandle.doc();
+  const datalogUrl = vDoc.docUrl;
+  const dl = await getDatalog(datalogUrl);
+  console.log("Rules:", JSON.stringify(dl.rules.map(r => ({
+    head: r.head.pred + "/" + r.head.args.length,
+    bodyPreds: r.body.map(a => a.pred + "/" + a.args.length)
+  }))));
+  console.log("Constraints:", JSON.stringify(dl.constraints.map(c => ({
+    name: c.name,
+    bodyPreds: c.body.map(a => a.pred + "/" + a.args.length)
+  }))));
+}
+</script>
+```
+
+Use the logged `pred/arity` signatures as the schema for your artifact facts. If a rule references `assigned(ShiftId, StaffId)` (arity 2), create facts as `{ pred: "assigned", args: [shiftId, staffId] }` — do not add extra arguments like slot numbers.
 
 ### Step 4: Create artifacts and update task statuses
 
@@ -170,6 +197,8 @@ console.log('EXECUTION_DONE: true');
 - Read the spec's data folder and verification documents to understand what facts are needed.
 - The artifacts you create are DatalogDoc documents containing ground facts (no rules or constraints).
 - Facts should satisfy the constraints defined in the spec's verification documents.
+- **Match predicate schemas exactly.** Every fact you create must use the same predicate name and the same number of arguments (arity) as referenced in the spec's rules and constraints. The validation engine checks arity strictly — a 3-argument fact will never match a 2-argument pattern, even if the predicate name is the same. Do not add extra arguments (such as slot numbers, indices, or ordinals) beyond what the spec expects. If the spec's rules reference `assigned(ShiftId, StaffId)`, your facts must be exactly `{ pred: "assigned", args: [shiftId, staffId] }`.
+- Also check the **seed facts** in the spec's files folder — these show the domain entities and predicate schemas already established. Your artifact facts should be consistent with them.
 - If a task fails (e.g., you cannot satisfy constraints), set its status to `'failed'` and set the execution status to `'failed'`.
 - **Do NOT create ProjectionSpecDocs.** Only create DatalogDoc artifacts.
 - **Never create throwaway or test documents for debugging.** Build real artifacts directly.
