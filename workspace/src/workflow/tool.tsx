@@ -1,5 +1,5 @@
 import { render } from 'solid-js/web';
-import { Show, createSignal, For, createEffect, createMemo } from 'solid-js';
+import { Show, createSignal, For, createEffect, createMemo, onCleanup } from 'solid-js';
 import { RepoContext, useDocument, useRepo } from '@automerge/automerge-repo-solid-primitives';
 import { SolidMarkdown } from 'solid-markdown';
 import remarkGfm from 'remark-gfm';
@@ -16,7 +16,7 @@ import { FolderDoc } from '@inkandswitch/patchwork-filesystem';
 
 type Stage = 'elicitation' | 'spec' | 'plan' | 'execution' | 'validation';
 
-const WORKFLOW_VERSION = '0.17.0';
+const WORKFLOW_VERSION = '0.18.0';
 
 function makeId(): string {
   return Math.random().toString(36).slice(2, 10);
@@ -57,6 +57,29 @@ function findUrlInMessages(
     );
   }
   return found;
+}
+
+function setupChatAutoScroll(
+  getContainer: () => HTMLDivElement | undefined,
+  shouldStickToBottom: () => boolean,
+) {
+  createEffect(() => {
+    const container = getContainer();
+    if (!container) return;
+
+    const scrollToBottomIfNeeded = () => {
+      if (shouldStickToBottom()) {
+        container.scrollTop = container.scrollHeight;
+      }
+    };
+
+    // Cover token streaming and other in-place chat content updates.
+    const observer = new MutationObserver(scrollToBottomIfNeeded);
+    observer.observe(container, { childList: true, subtree: true, characterData: true });
+    queueMicrotask(scrollToBottomIfNeeded);
+
+    onCleanup(() => observer.disconnect());
+  });
 }
 
 export const WorkflowTool: ToolRender = (handle, element) => {
@@ -933,8 +956,14 @@ function SpecGenerationView(props: {
       containerRef.scrollTop + containerRef.clientHeight >= containerRef.scrollHeight - 20;
   }
 
+  setupChatAutoScroll(
+    () => containerRef,
+    () => isAtBottom,
+  );
+
   createEffect(() => {
-    processDoc(); // track reactively
+    processDoc()?.messages?.length;
+    processDoc()?.done;
     if (isAtBottom && containerRef) {
       containerRef.scrollTop = containerRef.scrollHeight;
     }
@@ -1042,8 +1071,14 @@ function PlanGenerationView(props: {
       containerRef.scrollTop + containerRef.clientHeight >= containerRef.scrollHeight - 20;
   }
 
+  setupChatAutoScroll(
+    () => containerRef,
+    () => isAtBottom,
+  );
+
   createEffect(() => {
-    processDoc();
+    processDoc()?.messages?.length;
+    processDoc()?.done;
     if (isAtBottom && containerRef) {
       containerRef.scrollTop = containerRef.scrollHeight;
     }
@@ -1141,8 +1176,14 @@ function ExecutionGenerationView(props: {
   let containerRef: HTMLDivElement | undefined;
   let isAtBottom = true;
 
+  setupChatAutoScroll(
+    () => containerRef,
+    () => isAtBottom,
+  );
+
   createEffect(() => {
-    processDoc();
+    processDoc()?.messages?.length;
+    processDoc()?.done;
     if (isAtBottom && containerRef) {
       containerRef.scrollTop = containerRef.scrollHeight;
     }
