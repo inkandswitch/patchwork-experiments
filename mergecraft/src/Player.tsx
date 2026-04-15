@@ -23,8 +23,9 @@ const rotation = new THREE.Vector3();
 
 const vectorHelper = new THREE.Vector3();
 const quaternionHelper = new THREE.Quaternion();
-const quaternionHelper2 = new THREE.Quaternion();
 const eulerHelper = new THREE.Euler();
+/** Reused to read yaw from camera quaternion (YXZ) without coupling to pitch from pointer-lock. */
+const cameraYawEuler = new THREE.Euler();
 
 export function Player({ lerp = THREE.MathUtils.lerp }) {
   const axe = useRef<THREE.Group>(null);
@@ -65,7 +66,7 @@ export function Player({ lerp = THREE.MathUtils.lerp }) {
       return;
     }
 
-    // Use camera's rotation for movement direction
+    // Walk / strafe in the horizontal plane for this yaw (caller passes YXZ yaw, not rotation.y).
     eulerHelper.set(0, rotationYVelocity, 0, "YXZ");
     quaternionHelper.setFromEuler(eulerHelper);
 
@@ -129,14 +130,17 @@ export function Player({ lerp = THREE.MathUtils.lerp }) {
         .add(state.camera.getWorldDirection(rotation).multiplyScalar(1));
     }
 
-    // movement
+    // movement — use YXZ yaw so WASD matches look direction after PointerLockControls adds pitch
+    cameraYawEuler.setFromQuaternion(state.camera.quaternion, "YXZ");
+    const yaw = cameraYawEuler.y;
+
     if (rigidBodyRef.current) {
       playerMove({
         forward,
         backward,
         left,
         right,
-        rotationYVelocity: state.camera.rotation.y,
+        rotationYVelocity: yaw,
         velocity,
       });
 

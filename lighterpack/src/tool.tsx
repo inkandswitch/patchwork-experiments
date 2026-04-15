@@ -1,6 +1,8 @@
-import { useDocHandle } from "@automerge/automerge-repo-react-hooks";
-import { EditorProps } from "@patchwork/sdk";
-import { Button, Input } from "@patchwork/sdk/ui";
+import { useDocHandle, RepoContext } from "@automerge/automerge-repo-react-hooks";
+import type { AutomergeUrl } from "@automerge/automerge-repo";
+import type { ToolRender } from "@inkandswitch/patchwork-plugins";
+import { createRoot } from "react-dom/client";
+import { Button, Input } from "./ui";
 import {
   Doc,
   GearItem,
@@ -14,9 +16,7 @@ import {
 import { importCSVData } from "./csvImporter";
 import React, { useState, useMemo, useRef } from "react";
 
-console.log("This is tool.tsx in the counter package");
-
-export const Tool: React.FC<EditorProps<Doc, string>> = ({ docUrl }) => {
+function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
   const handle = useDocHandle<Doc>(docUrl, { suspense: true });
   const [editingItem, setEditingItem] = useState<{
     id: string;
@@ -738,4 +738,15 @@ export const Tool: React.FC<EditorProps<Doc, string>> = ({ docUrl }) => {
       </div>
     </div>
   );
+}
+
+export const LighterpackTool: ToolRender = (handle, element) => {
+  const repo = element.repo;
+  const root = createRoot(element);
+  root.render(
+    <RepoContext.Provider value={repo}>
+      <LighterpackView docUrl={handle.url} />
+    </RepoContext.Provider>
+  );
+  return () => root.unmount();
 };

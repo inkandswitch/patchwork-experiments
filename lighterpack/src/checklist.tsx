@@ -1,12 +1,12 @@
 import React, { useMemo } from "react";
-import { useDocHandle } from "@automerge/automerge-repo-react-hooks";
-import { EditorProps } from "@patchwork/sdk";
-import { Button } from "@patchwork/sdk/ui";
+import { useDocHandle, RepoContext } from "@automerge/automerge-repo-react-hooks";
+import type { AutomergeUrl } from "@automerge/automerge-repo";
+import type { ToolRender } from "@inkandswitch/patchwork-plugins";
+import { createRoot } from "react-dom/client";
+import { Button } from "./ui";
 import { Doc, GearItem, formatWeightLb } from "./datatype";
 
-export const PackingChecklist: React.FC<EditorProps<Doc, string>> = ({
-  docUrl,
-}) => {
+function PackingChecklistView({ docUrl }: { docUrl: AutomergeUrl }) {
   const handle = useDocHandle<Doc>(docUrl, { suspense: true });
   const doc = handle.docSync();
   const items = useMemo(() => doc?.items || [], [doc?.items]);
@@ -210,4 +210,15 @@ export const PackingChecklist: React.FC<EditorProps<Doc, string>> = ({
       </div>
     </div>
   );
+}
+
+export const LighterpackChecklistTool: ToolRender = (handle, element) => {
+  const repo = element.repo;
+  const root = createRoot(element);
+  root.render(
+    <RepoContext.Provider value={repo}>
+      <PackingChecklistView docUrl={handle.url} />
+    </RepoContext.Provider>
+  );
+  return () => root.unmount();
 };

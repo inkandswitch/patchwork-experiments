@@ -1,7 +1,5 @@
-import { HasVersionControlMetadata } from "@patchwork/sdk/versionControl";
-import { type DataTypeImplementation, initFrom } from "@patchwork/sdk";
-
-// SCHEMA
+import type { Repo } from "@automerge/automerge-repo";
+import type { DatatypeImplementation } from "@inkandswitch/patchwork-plugins";
 
 export type GearItem = {
   id: string;
@@ -23,7 +21,7 @@ export type WeightCategory = {
   color: string;
 };
 
-export type Doc = HasVersionControlMetadata<unknown, unknown> & {
+export type Doc = {
   title: string;
   description?: string;
   items: GearItem[];
@@ -31,26 +29,12 @@ export type Doc = HasVersionControlMetadata<unknown, unknown> & {
   packedItems: string[]; // Array of item IDs that are packed
 };
 
-// FUNCTIONS
-
-export const markCopy = (doc: Doc) => {
-  doc.title = "Copy of " + doc.title;
-};
-
-const setTitle = async (doc: Doc, title: string) => {
-  doc.title = title;
-};
-
-const getTitle = async (doc: Doc) => {
-  return doc.title || "Gear List";
-};
-
-export const init = (doc: Doc) => {
-  initFrom(doc, {
-    title: "New Gear List",
-    description: "",
-    items: [],
-    categories: [
+export const LighterpackDatatype: DatatypeImplementation<Doc> = {
+  init(doc: Doc, _repo: Repo) {
+    doc.title = "New Gear List";
+    doc.description = "";
+    doc.items = [];
+    doc.categories = [
       "Tent (Shared)",
       "Camp Kitchen (Shared)",
       "Sanitation (Shared)",
@@ -66,12 +50,17 @@ export const init = (doc: Doc) => {
       "Personal Gear (Alyson)",
       "Water & Fuel",
       "Food",
-    ],
-    packedItems: [],
-  });
+    ];
+    doc.packedItems = [];
+  },
+  getTitle(doc: Doc) {
+    return doc.title || "Gear List";
+  },
+  setTitle(doc: Doc, title: string) {
+    doc.title = title;
+  },
 };
 
-// Helper functions for calculations
 export const getTotalWeight = (items: GearItem[]): number => {
   return items.reduce((total, item) => total + item.weight * item.quantity, 0);
 };
@@ -139,11 +128,4 @@ export const formatWeight = (grams: number): string => {
 export const formatWeightLb = (grams: number): string => {
   const pounds = grams / 453.592;
   return `${pounds.toFixed(2)} lb`;
-};
-
-export const dataType: DataTypeImplementation<Doc, unknown> = {
-  init,
-  getTitle,
-  setTitle,
-  markCopy,
 };

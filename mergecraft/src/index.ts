@@ -1,25 +1,25 @@
-import type { Plugin } from "@patchwork/sdk";
+import type { Plugin, Tool, Datatype } from "@inkandswitch/patchwork-plugins";
 
 export const plugins: Plugin<any>[] = [
   {
-    type: "patchwork:dataType",
+    type: "patchwork:datatype",
     id: "mergecraft",
     name: "Mergecraft",
     icon: "Glasses",
     async load() {
-      const { dataType } = await import("./datatype");
-      return dataType;
+      const { MergecraftDatatype } = await import("./datatype");
+      return MergecraftDatatype;
     },
-  },
+  } as Datatype,
   {
-    id: "mergecraft",
     type: "patchwork:tool",
-    supportedDataTypes: ["mergecraft"],
+    id: "mergecraft",
     name: "Mergecraft",
     icon: "Glasses",
+    supportedDatatypes: ["mergecraft"],
     async load() {
-      const { tool } = await import("./tool");
-      return tool;
+      const { MergecraftTool } = await import("./tool");
+      return MergecraftTool;
     },
-  },
+  } satisfies Tool,
 ];

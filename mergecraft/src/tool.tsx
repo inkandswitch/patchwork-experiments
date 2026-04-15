@@ -1,12 +1,15 @@
-import { useDocument, useDocHandle } from "@automerge/automerge-repo-react-hooks";
-import { EditorProps } from "@patchwork/sdk";
-import { Doc } from "./datatype";
+import { useDocument, RepoContext } from "@automerge/automerge-repo-react-hooks";
+import type { ToolRender } from "@inkandswitch/patchwork-plugins";
+import type { AutomergeUrl } from "@automerge/automerge-repo";
+import { createRoot } from "react-dom/client";
 import React from "react";
 
 import App from "./App";
+import type { Doc } from "./datatype";
+import "./styles.css";
 
-export const Counter: React.FC<EditorProps<Doc, string>> = ({ docUrl }) => {
-  const [doc, changeDoc] = useDocument<Doc>(docUrl);
+function MergecraftView({ docUrl }: { docUrl: AutomergeUrl }) {
+  const [doc] = useDocument<Doc>(docUrl);
 
   if (!doc) {
     return null;
@@ -17,8 +20,15 @@ export const Counter: React.FC<EditorProps<Doc, string>> = ({ docUrl }) => {
       <App docUrl={docUrl} />
     </div>
   );
-};
+}
 
-export const tool = {
-  EditorComponent: Counter,
+export const MergecraftTool: ToolRender = (handle, element) => {
+  const repo = element.repo;
+  const root = createRoot(element);
+  root.render(
+    <RepoContext.Provider value={repo}>
+      <MergecraftView docUrl={handle.url} />
+    </RepoContext.Provider>
+  );
+  return () => root.unmount();
 };

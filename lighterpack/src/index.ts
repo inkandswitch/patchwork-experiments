@@ -1,38 +1,38 @@
-import { type Plugin } from "@patchwork/sdk";
+import type { Plugin, Tool, Datatype } from "@inkandswitch/patchwork-plugins";
 
 import "./index.css";
 
 export const plugins: Plugin<any>[] = [
   {
-    type: "patchwork:dataType",
+    type: "patchwork:datatype",
     id: "lighterpack",
     name: "Gear List",
     icon: "Backpack",
     async load() {
-      const { dataType } = await import("./datatype");
-      return dataType;
+      const { LighterpackDatatype } = await import("./datatype");
+      return LighterpackDatatype;
     },
-  },
+  } as Datatype,
   {
     type: "patchwork:tool",
     id: "lighterpack",
     name: "Gear List",
     icon: "Backpack",
-    supportedDataTypes: ["lighterpack"],
+    supportedDatatypes: ["lighterpack"],
     async load() {
-      const { Tool } = await import("./tool");
-      return { EditorComponent: Tool };
+      const { LighterpackTool } = await import("./tool");
+      return LighterpackTool;
     },
-  },
+  } satisfies Tool,
   {
     type: "patchwork:tool",
     id: "lighterpack-checklist",
     name: "Packing Checklist",
     icon: "CheckSquare",
-    supportedDataTypes: ["lighterpack"],
+    supportedDatatypes: ["lighterpack"],
     async load() {
-      const { PackingChecklist } = await import("./checklist");
-      return { EditorComponent: PackingChecklist };
+      const { LighterpackChecklistTool } = await import("./checklist");
+      return LighterpackChecklistTool;
     },
-  },
+  } satisfies Tool,
 ];
