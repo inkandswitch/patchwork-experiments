@@ -16,7 +16,7 @@ import { FolderDoc } from '@inkandswitch/patchwork-filesystem';
 
 type Stage = 'elicitation' | 'spec' | 'plan' | 'execution' | 'validation';
 
-const WORKFLOW_VERSION = '0.18.0';
+const WORKFLOW_VERSION = '0.24.0';
 
 function makeId(): string {
   return Math.random().toString(36).slice(2, 10);
@@ -581,6 +581,8 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
       if (!d.validationDocUrl) {
         d.validationDocUrl = validationHandle.url;
       }
+      if (!d.toolIds) d.toolIds = {};
+      d.toolIds.validation = 'validation';
     });
 
     runWorkspaceLLM(repo, processHandle.url)
@@ -816,12 +818,40 @@ function WorkflowView(props: { handle: DocHandle<WorkflowDoc> }) {
           )}
         </Show>
 
-        {/* All other stages (elicitation, validation) */}
+        {/* Validation stage — with projection chat sidebar */}
+        <Show when={selectedStage() === 'validation' && doc()?.projectionProcessUrl}>
+          {(_) => (
+            <ValidationGenerationView
+              processUrl={doc()!.projectionProcessUrl!}
+              validationDocUrl={doc()?.validationDocUrl}
+              validationToolId={doc()?.toolIds?.validation}
+            />
+          )}
+        </Show>
+        {/* Validation stage — no projection process */}
+        <Show
+          when={
+            selectedStage() === 'validation' &&
+            !doc()?.projectionProcessUrl &&
+            doc()?.validationDocUrl
+          }
+        >
+          {(_) => (
+            <patchwork-view
+              attr:doc-url={doc()!.validationDocUrl!}
+              attr:tool-id={doc()?.toolIds?.validation}
+              style="display:block;width:100%;height:100%;"
+            />
+          )}
+        </Show>
+
+        {/* All other stages (elicitation) */}
         <Show
           when={
             selectedStage() !== 'spec' &&
             selectedStage() !== 'plan' &&
-            selectedStage() !== 'execution'
+            selectedStage() !== 'execution' &&
+            selectedStage() !== 'validation'
           }
         >
           <Show
@@ -1203,6 +1233,85 @@ function ExecutionGenerationView(props: {
             <patchwork-view
               attr:doc-url={url()}
               attr:tool-id={props.executionToolId}
+              style="display:block;width:100%;height:100%;"
+            />
+          )}
+        </Show>
+      </div>
+
+      <div class={`wf-spec-right${isSidebarOpen() ? '' : ' wf-spec-right-collapsed'}`}>
+        <button
+          class="wf-spec-sidebar-toggle"
+          onClick={() => setIsSidebarOpen((open) => !open)}
+          title={isSidebarOpen() ? 'Collapse chat' : 'Expand chat'}
+          type="button"
+        >
+          {isSidebarOpen() ? '›' : '‹'}
+        </button>
+
+        <Show when={isSidebarOpen()}>
+          <div class="wf-spec-process" ref={containerRef} onScroll={handleScroll}>
+            <Show when={processDoc()}>
+              {(pd) => (
+                <>
+                  <For each={pd().messages}>{(msg) => <SpecMessageView message={msg} />}</For>
+                  <Show when={!pd().done}>
+                    <div class="wf-spec-thinking">
+                      <div class="wf-spec-dot" />
+                      <div class="wf-spec-dot" />
+                      <div class="wf-spec-dot" />
+                    </div>
+                  </Show>
+                </>
+              )}
+            </Show>
+          </div>
+        </Show>
+      </div>
+    </div>
+  );
+}
+
+function ValidationGenerationView(props: {
+  processUrl: AutomergeUrl;
+  validationDocUrl?: AutomergeUrl;
+  validationToolId?: string;
+}) {
+  const [processDoc] = useDocument<LLMProcessDoc>(() => props.processUrl);
+  const [isSidebarOpen, setIsSidebarOpen] = createSignal(true);
+  let containerRef: HTMLDivElement | undefined;
+  let isAtBottom = true;
+
+  setupChatAutoScroll(
+    () => containerRef,
+    () => isAtBottom,
+  );
+
+  createEffect(() => {
+    processDoc()?.messages?.length;
+    processDoc()?.done;
+    if (isAtBottom && containerRef) {
+      containerRef.scrollTop = containerRef.scrollHeight;
+    }
+  });
+
+  function handleScroll() {
+    if (!containerRef) return;
+    isAtBottom =
+      containerRef.scrollTop + containerRef.clientHeight >= containerRef.scrollHeight - 20;
+  }
+
+  return (
+    <div class="wf-spec-split">
+      <div class="wf-spec-preview">
+        <Show
+          when={props.validationDocUrl}
+          fallback={<div class="wf-empty">No validation yet</div>}
+        >
+          {(url) => (
+            <patchwork-view
+              attr:doc-url={url()}
+              attr:tool-id={props.validationToolId}
               style="display:block;width:100%;height:100%;"
             />
           )}

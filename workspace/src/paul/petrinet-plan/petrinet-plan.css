@@ -1532,8 +1532,10 @@
 
   .spec-tree-view {
     padding: 20px;
-    overflow-y: auto;
-    height: 100%;
+  }
+
+  .spec-tree-view + .spec-tree-view {
+    border-top: 1px solid #e2e8f0;
   }
 
   .spec-tree-node {
@@ -1548,11 +1550,12 @@
 
   .spec-tree-left {
     flex: 1;
-    min-width: 0;
+    min-width: 160px;
   }
 
   .spec-tree-right {
-    flex-shrink: 0;
+    flex: 2;
+    min-width: 0;
   }
 
   .spec-tree-title {
@@ -1628,6 +1631,18 @@
   .spec-tree-file-name {
     font-size: 13px;
     font-weight: 500;
+  }
+
+  .spec-tree-file-embed {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .spec-tree-file-embed + .spec-tree-file-embed {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #e2e8f0;
   }
 
   .spec-tree-file-empty {

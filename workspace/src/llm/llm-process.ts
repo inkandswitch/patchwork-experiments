@@ -49,6 +49,8 @@ export async function runWorkspaceLLM(
   const { apiUrl, model } = doc.config;
   const apiKey = (import.meta as any).env?.VITE_OPENAI_API_KEY || '';
 
+  console.log(`[workspace-llm] apiKey present: ${!!apiKey}, length: ${apiKey.length}, prefix: ${apiKey.slice(0, 10)}...`);
+
   const capturedConsole = createCapturedConsole();
 
   const systemPrompt = await loadAgentPrompt(repo, doc.llmConfigFolderUrl);

@@ -1,5 +1,5 @@
 import { render } from 'solid-js/web';
-import { createSignal, Show } from 'solid-js';
+import { createSignal, Show, For } from 'solid-js';
 import { RepoContext, useDocument } from '@automerge/automerge-repo-solid-primitives';
 import type { ToolRender } from '@inkandswitch/patchwork-plugins';
 import type { DocHandle, Repo, AutomergeUrl } from '@automerge/automerge-repo';
@@ -28,9 +28,12 @@ function ValidationView({ handle, repo }: { handle: DocHandle<ValidationDoc>; re
   const [isApproving, setIsApproving] = createSignal(false);
 
   const tokens = () => executionDoc()?.tokens ?? {};
-  const specToken = () => (tokens().spec ?? [])[0] as TokenInstance | undefined;
-  const specUrl = () => (specToken()?.state as Record<string, unknown>)?.specUrl as string | undefined;
   const candidateTokens = () => (tokens().candidates ?? []) as TokenInstance[];
+  const specTokens = () => (tokens().spec ?? []) as TokenInstance[];
+  const specUrls = () =>
+    specTokens()
+      .map((t) => (t.state as Record<string, unknown>)?.specUrl as AutomergeUrl | undefined)
+      .filter((u): u is AutomergeUrl => !!u);
 
   const isValidated = () => doc()?.isValidated ?? false;
 
@@ -66,16 +69,18 @@ function ValidationView({ handle, repo }: { handle: DocHandle<ValidationDoc>; re
 
       <div class="p3n-validation-content">
         <Show
-          when={specUrl()}
+          when={specUrls().length > 0}
           fallback={<div class="p3n-loading">No execution data found</div>}
         >
-          {(url) => (
-            <SpecTreeView
-              specUrl={url() as AutomergeUrl}
-              candidateTokens={candidateTokens()}
-              repo={repo}
-            />
-          )}
+          <For each={specUrls()}>
+            {(url) => (
+              <SpecTreeView
+                specUrl={url}
+                candidateTokens={candidateTokens()}
+                repo={repo}
+              />
+            )}
+          </For>
         </Show>
       </div>
 

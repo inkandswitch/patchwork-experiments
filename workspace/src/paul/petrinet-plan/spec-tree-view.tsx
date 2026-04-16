@@ -189,6 +189,7 @@ function SpecNode(props: SpecNodeProps) {
           <div class="spec-tree-right">
             <FilesBox
               folderUrl={filesFolderUrl()!}
+              candidateFolderUrl={candidateFolderUrl()}
               hasCandidate={!!bestCandidate()}
               status={overallStatus()}
               repo={props.repo}
@@ -255,13 +256,18 @@ function VerificationItem(props: { url: AutomergeUrl; status: 'pass' | 'fail' | 
 
 function FilesBox(props: {
   folderUrl: AutomergeUrl;
+  candidateFolderUrl?: string;
   hasCandidate: boolean;
   status: 'pass' | 'fail' | 'pending';
   repo: Repo;
 }) {
   const [folderDoc] = useDocument<FolderDoc>(() => props.folderUrl);
+  const [candidateFolderDoc] = useDocument<FolderDoc>(
+    () => props.candidateFolderUrl as AutomergeUrl | undefined,
+  );
 
   const files = () => folderDoc()?.docs ?? [];
+  const candidateFiles = () => candidateFolderDoc()?.docs ?? [];
 
   const boxClass = () => {
     if (!props.hasCandidate) return 'spec-tree-files-box pending';
@@ -270,11 +276,30 @@ function FilesBox(props: {
 
   return (
     <div class={boxClass()}>
-      <For each={files()}>
-        {(file) => <div class="spec-tree-file-name">{file.name}</div>}
-      </For>
-      <Show when={files().length === 0}>
-        <div class="spec-tree-file-empty">No files</div>
+      <Show
+        when={candidateFiles().length > 0}
+        fallback={
+          <>
+            <For each={files()}>
+              {(file) => <div class="spec-tree-file-name">{file.name}</div>}
+            </For>
+            <Show when={files().length === 0}>
+              <div class="spec-tree-file-empty">No files</div>
+            </Show>
+          </>
+        }
+      >
+        <For each={candidateFiles()}>
+          {(file) => (
+            <div class="spec-tree-file-embed">
+              <div class="spec-tree-file-name">{file.name}</div>
+              <patchwork-view
+                attr:doc-url={file.url}
+                style="display:block;width:100%;min-height:120px;"
+              />
+            </div>
+          )}
+        </For>
       </Show>
     </div>
   );
