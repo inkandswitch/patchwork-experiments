@@ -8,17 +8,17 @@
     "push": "vite build && pushwork sync"
   },
   "dependencies": {
-    "@automerge/automerge": "catalog:",
-    "@automerge/automerge-repo": "catalog:",
-    "@automerge/vanillajs": "catalog:",
-    "@inkandswitch/patchwork-elements": "workspace:^",
-    "@inkandswitch/patchwork-plugins": "workspace:^",
+    "@automerge/automerge": "^3.2.5",
+    "@automerge/automerge-repo": "^2.6.0-subduction.9",
+    "@automerge/vanillajs": "^2.6.0-subduction.9",
+    "@inkandswitch/patchwork-elements": "^0.0.5",
+    "@inkandswitch/patchwork-plugins": "^0.0.5",
     "lit": "^3.3.2",
     "lucide": "^0.577.0",
     "tailwindcss": "^4.1.14"
   },
   "devDependencies": {
-    "@inkandswitch/patchwork-bootloader": "workspace:^",
+    "@inkandswitch/patchwork-bootloader": "^0.0.4",
     "@tailwindcss/vite": "^4.1.14",
     "vite": "^7.1.9",
     "vite-plugin-css-injected-by-js": "^3.5.2"
