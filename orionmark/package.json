@@ -24,7 +24,8 @@
   "scripts": {
     "build": "node esbuild/build.ts",
     "dev": "node esbuild/watch.ts",
-    "pushwatch": "pnpm dev pushwork"
+    "pushwatch": "pnpm dev pushwork",
+    "register": "patchwork-register-module \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
   },
   "dependencies": {
     "@automerge/automerge": "^3.2.5",
@@ -42,8 +43,8 @@
     "@codemirror/view": "^6.38.4",
     "@lezer/highlight": "^1.2.1",
     "@inkandswitch/patchwork-bootloader": "^0.0.4",
-    "@inkandswitch/patchwork-filesystem": "^0.0.3",
-    "@inkandswitch/patchwork-plugins": "^0.0.5",
+    "@inkandswitch/patchwork-filesystem": "^0.0.4",
+    "@inkandswitch/patchwork-plugins": "^0.0.6",
     "react": "^18.3.0",
     "react-dom": "^18.3.1"
   },
