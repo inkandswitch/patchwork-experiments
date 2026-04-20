@@ -44,6 +44,7 @@
     "@inkandswitch/patchwork-bootloader": "^0.0.4",
     "@inkandswitch/patchwork-elements": "^0.0.6",
     "@kobalte/core": "^0.13.11",
+    "@lezer/common": "^1.5.2",
     "@lezer/highlight": "^1.2.2",
     "@lezer/javascript": "^1.5.4",
     "@inkandswitch/annotations-selection": "^0.1.5",
