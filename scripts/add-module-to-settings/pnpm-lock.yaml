@@ -9,11 +9,11 @@ importers:
   .:
     dependencies:
       '@automerge/automerge-repo':
-        specifier: 2.6.0-subduction.9
-        version: 2.6.0-subduction.9
+        specifier: 2.6.0-subduction.14
+        version: 2.6.0-subduction.14
       '@automerge/automerge-repo-storage-nodefs':
-        specifier: 2.6.0-subduction.9
-        version: 2.6.0-subduction.9
+        specifier: 2.6.0-subduction.14
+        version: 2.6.0-subduction.14
       '@automerge/automerge-subduction':
         specifier: 0.7.0
         version: 0.7.0
@@ -30,11 +30,11 @@ importers:
 
 packages:
 
-  '@automerge/automerge-repo-storage-nodefs@2.6.0-subduction.9':
-    resolution: {integrity: sha512-1JQYc6qEPu/QOyJN5lv2AIpWQ8VivvTexKgK3YQ9i1UFyutPc2inFqnFHU+Bs/UUQXhV97vbg5U65jpF4JlY5Q==}
+  '@automerge/automerge-repo-storage-nodefs@2.6.0-subduction.14':
+    resolution: {integrity: sha512-2zNBr+GAO/3AUVwZb0tX0IOebROOYYVY11wP3/KTOccWZOhEa/JmWw/Jn0ORjiQdDLwyYAuNo1L47rt8x+CSqg==}
 
-  '@automerge/automerge-repo@2.6.0-subduction.9':
-    resolution: {integrity: sha512-SVA+aAnhxL2Bw6VavcB83pvyvQjz9eSHaaiox2JRgD9DfxtbZjmIvKnftMN69L6E4yvkmE2ibNNigbt1mB9B7A==}
+  '@automerge/automerge-repo@2.6.0-subduction.14':
+    resolution: {integrity: sha512-SLm0uRCXBD2pUaVHmb/VmtsXjsm440iy52qaKKK+eFBobHixs9MM9PR+6J1kMOn1l/tfAbQZ7PPtqnHHR0Id5w==}
 
   '@automerge/automerge-subduction@0.7.0':
     resolution: {integrity: sha512-I838jrX+j6zeLEIyszuA246OY1HnTyS+bXODJAVlBmXGM0QzasRePulNrzJtclvowzhY56SybUj4+j/PNCdBhA==}
@@ -468,16 +468,16 @@ packages:
 
 snapshots:
 
-  '@automerge/automerge-repo-storage-nodefs@2.6.0-subduction.9':
+  '@automerge/automerge-repo-storage-nodefs@2.6.0-subduction.14':
     dependencies:
-      '@automerge/automerge-repo': 2.6.0-subduction.9
+      '@automerge/automerge-repo': 2.6.0-subduction.14
       rimraf: 5.0.10
     transitivePeerDependencies:
       - bufferutil
       - supports-color
       - utf-8-validate
 
-  '@automerge/automerge-repo@2.6.0-subduction.9':
+  '@automerge/automerge-repo@2.6.0-subduction.14':
     dependencies:
       '@automerge/automerge': 3.2.5
       '@automerge/automerge-subduction': 0.7.0

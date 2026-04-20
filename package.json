@@ -4,7 +4,9 @@
   "description": "Tool packages for Patchwork — link-cli exposes pw-register-module; each tool has pnpm run register",
   "bin": {
     "patchwork-register-module": "./scripts/add-module-to-settings/register-module",
-    "pw-register-module": "./scripts/add-module-to-settings/register-module"
+    "pw-register-module": "./scripts/add-module-to-settings/register-module",
+    "patchwork-modules": "./scripts/add-module-to-settings/register-module",
+    "pw-modules": "./scripts/add-module-to-settings/register-module"
   },
   "scripts": {
     "link-cli": "pnpm install --dir scripts/add-module-to-settings && pnpm link --global"

@@ -1,18 +1,30 @@
 /**
- * Push a module URL onto a module-settings doc's `modules` array (Subduction).
+ * Manage module-settings docs over Subduction.
+ *
+ * Subcommands:
+ *   add    <settings-url> <module-url>   Append a module URL to a settings doc.
+ *   remove <settings-url> <module-url>   Remove a module URL from a settings doc.
+ *   create                               Create a new module-settings doc.
+ *
+ * Legacy form (for backward compatibility with existing `pnpm run register`):
+ *   <settings-url> <module-url>          Equivalent to `add`.
  *
  * One-time PATH setup (from patchwork-tools repo root only):
  *   pnpm run link-cli
- *   # add pnpm’s global bin to PATH if needed: pnpm bin -g
+ *   # add pnpm's global bin to PATH if needed: pnpm bin -g
  *
  * If you previously ran an older link-cli, unlink first: pnpm unlink --global
  *
  * From a tool package (after link-cli + PATH):
  *   MODULE_SETTINGS_DOC_URL='automerge:…' pnpm run register
+ *   MODULE_SETTINGS_DOC_URL='automerge:…' pnpm run unregister
+ *   pnpm run create-module-settings
  *
  * Or call the binary directly from any directory:
- *   pw-register-module "$MODULE_SETTINGS_DOC_URL" "$(pushwork url)"
- *   # long name: patchwork-register-module
+ *   pw-register-module add    "$MODULE_SETTINGS_DOC_URL" "$(pushwork url)"
+ *   pw-register-module remove "$MODULE_SETTINGS_DOC_URL" "$(pushwork url)"
+ *   pw-register-module create
+ *   # friendlier aliases (same script): pw-modules / patchwork-modules
  *
  * Env: SUBDUCTION_SERVER, AUTOMERGE_DATA_DIR (default: <this-folder>/automerge-repo-data)
  */
@@ -21,63 +33,179 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import type { AutomergeUrl } from "@automerge/automerge-repo";
+import type { AutomergeUrl, Repo } from "@automerge/automerge-repo";
 
-type ModuleSettingsDoc = { modules?: AutomergeUrl[] };
+type ModuleSettingsDoc = {
+  "@patchwork"?: { type: "patchwork:module-settings" };
+  modules?: AutomergeUrl[];
+};
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
-const [, , settingsArg, moduleArg] = process.argv;
-if (!settingsArg || !moduleArg) {
-  console.error(`Usage: register-module <automerge:settings-url> <automerge:module-url>
+const USAGE = `Usage:
+  pw-register-module add    <automerge:settings-url> <automerge:module-url>
+  pw-register-module remove <automerge:settings-url> <automerge:module-url>
+  pw-register-module create
+  pw-register-module <automerge:settings-url> <automerge:module-url>   (legacy → add)
 
-Env: SUBDUCTION_SERVER, AUTOMERGE_DATA_DIR`);
+Env: SUBDUCTION_SERVER, AUTOMERGE_DATA_DIR`;
+
+function parseCommand(argv: string[]): {
+  cmd: "add" | "remove" | "create";
+  settingsUrl?: AutomergeUrl;
+  moduleUrl?: AutomergeUrl;
+} {
+  const [, , ...rest] = argv;
+  const first = rest[0];
+
+  if (!first) {
+    console.error(USAGE);
+    process.exit(1);
+  }
+
+  if (first === "add" || first === "remove") {
+    const [, settingsArg, moduleArg] = rest;
+    if (!settingsArg || !moduleArg) {
+      console.error(USAGE);
+      process.exit(1);
+    }
+    return {
+      cmd: first,
+      settingsUrl: settingsArg as AutomergeUrl,
+      moduleUrl: moduleArg as AutomergeUrl,
+    };
+  }
+
+  if (first === "create") {
+    return { cmd: "create" };
+  }
+
+  // Legacy positional form: <settings-url> <module-url>
+  if (first.startsWith("automerge:")) {
+    const moduleArg = rest[1];
+    if (!moduleArg) {
+      console.error(USAGE);
+      process.exit(1);
+    }
+    return {
+      cmd: "add",
+      settingsUrl: first as AutomergeUrl,
+      moduleUrl: moduleArg as AutomergeUrl,
+    };
+  }
+
+  console.error(`Unknown command: ${first}\n\n${USAGE}`);
   process.exit(1);
 }
 
-const subductionServer =
-  process.env.SUBDUCTION_SERVER ?? "wss://subduction.sync.inkandswitch.com";
-const dataDir = path.resolve(
-  process.env.AUTOMERGE_DATA_DIR ?? path.join(here, "automerge-repo-data"),
-);
-await mkdir(dataDir, { recursive: true });
+async function openRepo(): Promise<Repo> {
+  const subductionServer =
+    process.env.SUBDUCTION_SERVER ?? "wss://subduction.sync.inkandswitch.com";
+  const dataDir = path.resolve(
+    process.env.AUTOMERGE_DATA_DIR ?? path.join(here, "automerge-repo-data"),
+  );
+  await mkdir(dataDir, { recursive: true });
 
-await import("@automerge/automerge-subduction");
-const { Repo } = await import("@automerge/automerge-repo");
-const { NodeFSStorageAdapter } =
-  await import("@automerge/automerge-repo-storage-nodefs");
+  await import("@automerge/automerge-subduction");
+  const { Repo } = await import("@automerge/automerge-repo");
+  const { NodeFSStorageAdapter } = await import(
+    "@automerge/automerge-repo-storage-nodefs"
+  );
 
-const settingsUrl = settingsArg as AutomergeUrl;
-const moduleUrl = moduleArg as AutomergeUrl;
+  return new Repo({
+    storage: new NodeFSStorageAdapter(dataDir),
+    subductionWebsocketEndpoints: [subductionServer],
+  });
+}
 
-const repo = new Repo({
-  storage: new NodeFSStorageAdapter(dataDir),
-  subductionWebsocketEndpoints: [subductionServer],
-  periodicSyncInterval: 2000,
-  batchSyncInterval: 0,
-});
+// Subduction's local head stability doesn't confirm server receipt; give
+// syncWithAllPeers a moment to land before we tear down. Remove once
+// awaitSynced() lands upstream.
+async function syncAndShutdown(repo: Repo) {
+  await new Promise((r) => setTimeout(r, 1000));
+  await repo.flush();
+  await repo.shutdown();
+  await new Promise((r) => setTimeout(r, 2500));
+}
 
-const handle = await repo.find<ModuleSettingsDoc>(settingsUrl);
-await handle.whenReady();
+async function add(settingsUrl: AutomergeUrl, moduleUrl: AutomergeUrl) {
+  const repo = await openRepo();
+  const handle = await repo.find<ModuleSettingsDoc>(settingsUrl);
+  await handle.whenReady();
 
-let added = false;
-handle.change((doc) => {
-  if (!doc.modules) doc.modules = [];
-  if (!doc.modules.includes(moduleUrl)) {
-    doc.modules.push(moduleUrl);
-    added = true;
-  }
-});
+  let added = false;
+  handle.change((doc) => {
+    if (!doc.modules) doc.modules = [];
+    if (!doc.modules.includes(moduleUrl)) {
+      doc.modules.push(moduleUrl);
+      added = true;
+    }
+  });
 
-await repo.flush();
-await repo.shutdown();
-await new Promise((r) => setTimeout(r, 2500));
+  await syncAndShutdown(repo);
 
-console.log(
-  added
-    ? `Added ${moduleUrl} → ${settingsUrl}`
-    : `${moduleUrl} already in ${settingsUrl}`,
-);
+  console.log(
+    added
+      ? `Added ${moduleUrl} → ${settingsUrl}`
+      : `${moduleUrl} already in ${settingsUrl}`,
+  );
+}
+
+async function remove(settingsUrl: AutomergeUrl, moduleUrl: AutomergeUrl) {
+  const repo = await openRepo();
+  const handle = await repo.find<ModuleSettingsDoc>(settingsUrl);
+  await handle.whenReady();
+
+  let removed = false;
+  handle.change((doc) => {
+    if (!doc.modules) return;
+    const idx = doc.modules.indexOf(moduleUrl);
+    if (idx !== -1) {
+      doc.modules.splice(idx, 1);
+      removed = true;
+    }
+  });
+
+  await syncAndShutdown(repo);
+
+  console.log(
+    removed
+      ? `Removed ${moduleUrl} from ${settingsUrl}`
+      : `${moduleUrl} was not in ${settingsUrl}`,
+  );
+}
+
+async function create() {
+  const repo = await openRepo();
+  const handle = repo.create<ModuleSettingsDoc>({
+    ["@patchwork"]: { type: "patchwork:module-settings" },
+    modules: [],
+  });
+  await handle.whenReady();
+
+  const url = handle.url;
+
+  await syncAndShutdown(repo);
+
+  // Human message to stderr; bare URL to stdout so callers can capture it:
+  //   MODULE_SETTINGS_DOC_URL=$(pw-register-module create)
+  console.error(`Created module-settings doc: ${url}`);
+  console.log(url);
+}
+
+const parsed = parseCommand(process.argv);
+
+switch (parsed.cmd) {
+  case "add":
+    await add(parsed.settingsUrl!, parsed.moduleUrl!);
+    break;
+  case "remove":
+    await remove(parsed.settingsUrl!, parsed.moduleUrl!);
+    break;
+  case "create":
+    await create();
+    break;
+}
 
 // Subduction leaves the wss TLSSocket open after repo.shutdown(); exit explicitly for this CLI.
 process.exit(0);
