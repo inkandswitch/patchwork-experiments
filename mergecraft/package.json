@@ -9,7 +9,7 @@
     "sync": "pnpm build && npx pushwork sync",
     "push": "pushwork sync",
     "watch": "nodemon --watch src -e js,tsx,ts,tsx,css,json --exec 'pnpm build && pnpm push'",
-    "register": "patchwork-register-module \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
   },
   "keywords": [],
   "author": "Ink & Switch",

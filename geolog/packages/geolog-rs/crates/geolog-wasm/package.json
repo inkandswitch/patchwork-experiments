@@ -47,7 +47,7 @@
   "scripts": {
     "build": "wasm-bodge build --crate-path ./",
     "test": "node test.cjs",
-    "register": "patchwork-register-module \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
   },
   "type": "module",
   "types": "./dist/index.d.ts",

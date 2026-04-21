@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "sync": "pnpm build && pushwork sync",
     "format": "pnpm exec prettier --write \"src/**/*.{ts,tsx,css}\"",
-    "register": "patchwork-register-module \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
   },
   "keywords": [],
   "author": "Ink & Switch",

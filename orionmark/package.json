@@ -22,7 +22,7 @@
     "build": "node esbuild/build.ts",
     "dev": "node esbuild/watch.ts",
     "pushwatch": "pnpm dev pushwork",
-    "register": "patchwork-register-module \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
   },
   "dependencies": {
     "@automerge/automerge": "^3.2.5",

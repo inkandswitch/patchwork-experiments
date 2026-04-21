@@ -6,7 +6,7 @@
     "dev": "vite build --watch",
     "build": "vite build",
     "sync": "vite build && pushwork sync",
-    "register": "patchwork-register-module \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
   },
   "dependencies": {
     "@automerge/automerge": "^3.2.5",

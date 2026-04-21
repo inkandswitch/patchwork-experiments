@@ -9,7 +9,7 @@
     "sync": "pnpm build && pushwork sync",
     "test": "vitest run",
     "test:watch": "vitest",
-    "register": "patchwork-register-module \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
   },
   "keywords": [],
   "author": "Ink & Switch",

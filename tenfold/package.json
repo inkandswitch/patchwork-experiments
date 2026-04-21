@@ -22,7 +22,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite build --watch",
-    "register": "patchwork-register-module \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
   },
   "dependencies": {
     "@automerge/automerge": "^3.2.5",
