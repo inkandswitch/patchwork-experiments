@@ -185,7 +185,7 @@ export function createNet(repo: Repo, planHandle: DocHandle<PetriNetPlanDoc>): N
             const processHandle = repo.create<Record<string, unknown>>();
             processHandle.change((d) => {
               d['@patchwork'] = { type: 'llm' };
-              d.config = { apiUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o' };
+              d.config = { apiUrl: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-sonnet-4.6' };
               d.systemPrompt = PETRINET_SYSTEM_PROMPT;
               d.prompt = prompt;
               d.output = [];
