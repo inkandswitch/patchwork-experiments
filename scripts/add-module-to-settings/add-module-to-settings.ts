@@ -50,6 +50,26 @@ const USAGE = `Usage:
 
 Env: SUBDUCTION_SERVER, AUTOMERGE_DATA_DIR`;
 
+// Automerge URLs are `automerge:<base58check-encoded-documentId>`; the
+// encoded portion is 1+ base58 chars. We keep this loose — upstream does
+// the authoritative parse — but tight enough to catch shell-substitution
+// accidents like `$(pushwork url)` returning error text on stderr-less
+// older binaries.
+const AUTOMERGE_URL_RE = /^automerge:[1-9A-HJ-NP-Za-km-z]+$/;
+
+function requireAutomergeUrl(label: string, value: string): AutomergeUrl {
+  if (!AUTOMERGE_URL_RE.test(value)) {
+    console.error(
+      `Invalid ${label}: ${JSON.stringify(value)}\n` +
+        `Expected an Automerge URL of the form automerge:XXXXX.\n` +
+        `(If this came from \`$(pushwork url)\`, the source directory may ` +
+        `not be initialized for sync.)`,
+    );
+    process.exit(1);
+  }
+  return value as AutomergeUrl;
+}
+
 function parseCommand(argv: string[]): {
   cmd: "add" | "remove" | "create";
   settingsUrl?: AutomergeUrl;
@@ -71,8 +91,8 @@ function parseCommand(argv: string[]): {
     }
     return {
       cmd: first,
-      settingsUrl: settingsArg as AutomergeUrl,
-      moduleUrl: moduleArg as AutomergeUrl,
+      settingsUrl: requireAutomergeUrl("settings URL", settingsArg),
+      moduleUrl: requireAutomergeUrl("module URL", moduleArg),
     };
   }
 
@@ -89,8 +109,8 @@ function parseCommand(argv: string[]): {
     }
     return {
       cmd: "add",
-      settingsUrl: first as AutomergeUrl,
-      moduleUrl: moduleArg as AutomergeUrl,
+      settingsUrl: requireAutomergeUrl("settings URL", first),
+      moduleUrl: requireAutomergeUrl("module URL", moduleArg),
     };
   }
 
