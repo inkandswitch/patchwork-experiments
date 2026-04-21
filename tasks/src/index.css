@@ -1,9 +1,0 @@
-.task-browser {
-  @import 'tailwindcss';
-  margin: 4pt;
-}
-
-patchwork-view[tool-id='contact-inline'] {
-  display: inline-block;
-  width: auto;
-}
