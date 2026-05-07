@@ -1,0 +1,38 @@
+{
+  "name": "sequencer",
+  "version": "0.0.1",
+  "description": "A music collaboration tool",
+  "type": "module",
+  "main": "./dist/main.js",
+  "scripts": {
+    "build": "tsc && vite build",
+    "dev": "vite",
+    "dev:standalone": "vite --config vite.standalone.config.ts",
+    "build:standalone": "tsc && vite build --config vite.standalone.config.ts"
+  },
+  "keywords": [],
+  "author": "Ink & Switch",
+  "dependencies": {
+    "@jtfmumm/patchwork-standalone-frame": "^0.1.0",
+    "@automerge/automerge-repo": "^2.5.2-alpha.0",
+    "@automerge/react": "^2.5.2-alpha.0",
+    "solid-js": "^1.9.9",
+    "@tailwindcss/forms": "^0.5.7",
+    "animate.css": "^4.1.1",
+    "classnames": "^2.5.1",
+    "jszip": "^3.10.1",
+    "lodash": "^4.17.21",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite-plugin-css-injected-by-js": "^3.5.2"
+  },
+  "devDependencies": {
+    "@types/lodash": "^4.17.7",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "typescript": "^5.9.2",
+    "vite": "^6.0.3",
+    "vite-plugin-wasm": "^3.5.0"
+  }
+}
