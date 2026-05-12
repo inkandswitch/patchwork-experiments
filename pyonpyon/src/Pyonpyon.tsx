@@ -538,7 +538,7 @@ export const PyonpyonEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
 
   return (
     <div className="relative h-full min-h-0 flex-1 overflow-hidden bg-base-100">
-      <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full" />
+      <canvas ref={canvasRef} className="pyonpyon-canvas absolute inset-0 block h-full w-full" />
       <div className="pointer-events-none absolute bottom-3 right-3 z-30">
         <div
           className={`rounded-md bg-success px-2 py-1 text-xs font-medium text-success-content shadow-sm transition-opacity duration-200 ${

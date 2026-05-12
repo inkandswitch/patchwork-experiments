@@ -1,2 +1,9 @@
 @import 'tailwindcss';
 @plugin 'daisyui';
+
+.pyonpyon-canvas {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
