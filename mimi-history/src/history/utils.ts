@@ -1,4 +1,4 @@
-import type { GroupingStrategyConfig } from "../types";
+import type { GroupingStrategyConfig, HistoryItem } from "../types";
 
 const relativeTime = (timestamp: number): string => {
   const now = Date.now();
@@ -51,22 +51,64 @@ export function formatTime(timestampSeconds: number | undefined): string {
   return `${relative} (${datePart}, ${timePart})`;
 }
 
+export function formatTimeOnly(timestampSeconds: number | undefined): string {
+  if (!timestampSeconds) return "";
+  const date = new Date(timestampSeconds * 1000);
+  return date
+    .toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    })
+    .toLowerCase();
+}
+
+// ============================================================================
+// Change labels
+// ============================================================================
+
+export type ChangeSizeThresholds = { large: number; medium: number };
+
+export function computeChangeSizeThresholds(items: HistoryItem[]): ChangeSizeThresholds {
+  const magnitudes = items
+    .map((i) => (i.additions ?? 0) + (i.deletions ?? 0))
+    .filter((m) => m > 0)
+    .sort((a, b) => a - b);
+
+  if (magnitudes.length === 0) return { large: 0, medium: 0 };
+
+  const at = (p: number) => magnitudes[Math.floor((magnitudes.length - 1) * p)];
+  return { large: at(0.66), medium: at(0.33) };
+}
+
+export function getChangeLabel(item: HistoryItem, thresholds: ChangeSizeThresholds): string {
+  const add = item.additions ?? 0;
+  const del = item.deletions ?? 0;
+  const magnitude = add + del;
+
+  if (magnitude === 0) return "No change";
+
+  const size =
+    magnitude >= thresholds.large ? "Large"
+    : magnitude >= thresholds.medium ? "Medium"
+    : "Minor";
+
+  const direction =
+    del < add * 0.2 ? "addition"
+    : add < del * 0.2 ? "deletion"
+    : "edits";
+
+  return `${size} ${direction}`;
+}
+
 // ============================================================================
 // Strategies
 // ============================================================================
 
-export const DEFAULT_TIME_WINDOW = 30 * 60 * 1000; // 30 minutes
+export const DEFAULT_TIME_WINDOW = 15 * 60 * 1000; // 15 minutes
 
 /**
  * Generate a unique cache key for a grouping strategy configuration.
- *
- * Format:
- * - "author" - Group by author
- * - "timeWindow:1800000" - Time window grouping with specific window in ms
- *
- * The key is used to store and retrieve cached groupings from the groupings
- * document. Each unique combination of strategy name and parameters gets its
- * own cache entry.
  *
  * NOTE: Keep in sync with the duplicate implementation in `./task.ts` — the
  * task module can't currently import from siblings when run under the shared
@@ -78,6 +120,7 @@ export function getStrategyKey(config: GroupingStrategyConfig): string {
       return "author";
     case "timeWindow": {
       const windowMs = config.params?.timeWindow ?? DEFAULT_TIME_WINDOW;
+      if (config.params?.perActor) return `timeWindowPerActor:${windowMs}`;
       return `timeWindow:${windowMs}`;
     }
     default:

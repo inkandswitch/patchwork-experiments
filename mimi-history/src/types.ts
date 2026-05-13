@@ -28,6 +28,12 @@ export interface HistoryItem {
   additions?: number;
   /** Number of characters/elements removed across all changes in the item */
   deletions?: number;
+  /** User-defined label overriding the auto-generated one */
+  customLabel?: string;
+  /** True for the runtime-only virtual item representing in-progress changes */
+  isVirtual?: boolean;
+  /** Per-author breakdown, present when multiple authors contributed to this item */
+  subItems?: HistoryItem[];
 }
 
 /**
@@ -48,7 +54,8 @@ export type StrategyName = "timeWindow" | "author";
 export interface GroupingStrategyConfig {
   name: StrategyName;
   params?: {
-    timeWindow?: number; // in milliseconds
+    timeWindow?: number;  // ms, for timeWindow strategy
+    perActor?: boolean;   // when true, split groups on actor change within the window
   };
 }
 
@@ -64,7 +71,7 @@ export interface CachedGrouping {
  * Bump when the shape of `HistoryItem` changes so the task can discard a
  * stale cache instead of reading a now-incompatible structure.
  */
-export const HISTORY_DOC_VERSION = 4;
+export const HISTORY_DOC_VERSION = 8;
 
 /**
  * Document structure for storing persistent history groupings.
@@ -83,6 +90,8 @@ export interface HistoryGroupingsDoc {
   groupings: {
     [strategyKey: string]: CachedGrouping;
   };
+  /** User-defined labels keyed by item latestHash — survives task recomputation */
+  labels?: { [hash: string]: string };
 }
 
 /**
@@ -107,8 +116,7 @@ export function findItemByHash(
  */
 export function isItemSelected(
   item: HistoryItem,
-  selectedItem: HistoryItem | null
+  selectedItems: HistoryItem[]
 ): boolean {
-  if (!selectedItem) return false;
-  return item.id === selectedItem.id;
+  return selectedItems.some((s) => s.id === item.id);
 }

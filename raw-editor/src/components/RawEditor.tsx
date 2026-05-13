@@ -10,8 +10,8 @@ import {
   RepoContext,
 } from "@automerge/automerge-repo-react-hooks";
 import { OpenDocumentEvent } from "@inkandswitch/patchwork-elements";
-import { JsonEditor } from "json-edit-react";
-import { Download, PenLine, Redo2, Undo2 } from "lucide-react";
+import { JsonEditor } from "../json-editor";
+import { Download, Redo2, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Uint8ArrayInspector } from "./Uint8ArrayInspector";
@@ -59,67 +59,45 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-/**
- * Walk a nested object/array, calling `fn` on each value.
- * If `fn` returns a non-undefined result, that replaces the value.
- * Otherwise the walk recurses into arrays/objects.
- */
-function deepMapValues(
-  value: unknown,
-  fn: (v: unknown) => unknown | undefined,
-): unknown {
-  const mapped = fn(value);
-  if (mapped !== undefined) return mapped;
-  if (Array.isArray(value)) return value.map((v) => deepMapValues(v, fn));
+const UINT8_PLACEHOLDER = '"<Uint8Array>"';
+
+function jsonStringifyWithUint8(
+  data: unknown,
+  replacer?: (key: string, value: unknown) => unknown,
+): string {
+  let hasUint8 = false;
+  const result = JSON.stringify(
+    data,
+    (key, value) => {
+      if (value instanceof Uint8Array) {
+        hasUint8 = true;
+        return UINT8_PLACEHOLDER;
+      }
+      return replacer ? replacer(key, value) : value;
+    },
+    2,
+  );
+  if (hasUint8) {
+    return `⚠ Contains binary data (Uint8Array) — editing disabled.\n\n${result}`;
+  }
+  return result;
+}
+
+function prepareForJson(value: unknown): unknown {
+  if (value instanceof Uint8Array) return Array.from(value);
+  if (Array.isArray(value)) return value.map(prepareForJson);
   if (value !== null && typeof value === "object") {
     const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value))
-      out[k] = deepMapValues(v, fn);
+    for (const [k, v] of Object.entries(value)) out[k] = prepareForJson(v);
     return out;
   }
   return value;
 }
 
-function getAtPath(obj: any, path: Automerge.Prop[]): unknown {
-  let node = obj;
-  for (const key of path) {
-    if (node == null) return undefined;
-    node = node[key];
-  }
-  return node;
-}
+// ─── Custom nodes ─────────────────────────────────────────────────────────────
 
-// ─── Uint8Array display ──────────────────────────────────────────────────────
-
-const U8_SENTINEL = "\x00__uint8array__\x00";
-
-const prepareForDisplay = (value: unknown): unknown =>
-  deepMapValues(value, (v) =>
-    v instanceof Uint8Array ? U8_SENTINEL : undefined,
-  );
-
-const prepareForJson = (value: unknown): unknown =>
-  deepMapValues(value, (v) =>
-    v instanceof Uint8Array ? Array.from(v) : undefined,
-  );
-
-function containsSentinel(value: unknown): boolean {
-  if (value === U8_SENTINEL) return true;
-  if (Array.isArray(value)) return value.some(containsSentinel);
-  if (value !== null && typeof value === "object")
-    return Object.values(value as Record<string, unknown>).some(
-      containsSentinel,
-    );
-  return false;
-}
-
-const restrictEditFilter = ({ value }: any) =>
-  value && typeof value === "object" ? containsSentinel(value) : false;
-
-// ─── Custom nodes for json-edit-react ─────────────────────────────────────────
-
-function Uint8ArrayCustomNode({ nodeData, customNodeProps }: any) {
-  const bytes = getAtPath(customNodeProps.doc, nodeData.path);
+function Uint8ArrayCustomNode({ nodeData }: any) {
+  const bytes = nodeData.value;
   if (!(bytes instanceof Uint8Array)) return null;
   return <Uint8ArrayInspector bytes={bytes} />;
 }
@@ -139,25 +117,6 @@ function AutomergeUrlNode({ value, customNodeProps }: any) {
       }}
     >
       {value}
-    </span>
-  );
-}
-
-function BinaryDataHint({ nodeData }: { nodeData: any }) {
-  if (!nodeData.value || typeof nodeData.value !== "object") return null;
-  if (!containsSentinel(nodeData.value)) return null;
-  return (
-    <span
-      className="re-binary-hint"
-      title="Contains binary data — text editing disabled"
-      onClick={(e) => {
-        e.stopPropagation();
-        alert(
-          "This collection contains Uint8Array (binary) data and cannot be edited as text.\n\nYou can still edit individual non-binary values within it.",
-        );
-      }}
-    >
-      <PenLine size={13} strokeWidth={2} />
     </span>
   );
 }
@@ -289,20 +248,10 @@ export const RawEditor = ({
   const handle = useDocHandle(docUrl);
   const isDark = usePrefersDarkMode();
 
-  const [editorData, setEditorData] = useState<any>({});
   const contentRef = useRef<HTMLDivElement>(null);
 
   const { push: pushUndo, undo, redo, canUndo, canRedo } =
     useUndoRedo(changeDoc);
-
-  const displayDoc = useMemo(() => {
-    if (!doc) return null;
-    return prepareForDisplay(doc) as object;
-  }, [doc]);
-
-  useEffect(() => {
-    if (displayDoc) setEditorData(displayDoc);
-  }, [displayDoc]);
 
   // Stable refs for keyboard handler
   const undoRef = useRef(undo);
@@ -352,9 +301,8 @@ export const RawEditor = ({
   const customNodeDefs = useMemo(
     () => [
       {
-        condition: ({ value }: any) => value === U8_SENTINEL,
+        condition: ({ value }: any) => value instanceof Uint8Array,
         element: Uint8ArrayCustomNode,
-        customNodeProps: { doc },
         showEditTools: false,
         showOnEdit: true,
         showOnView: true,
@@ -369,12 +317,7 @@ export const RawEditor = ({
         showOnEdit: false,
       },
     ],
-    [element, doc],
-  );
-
-  const customButtons = useMemo(
-    () => [{ Element: BinaryDataHint, onClick: () => {} }],
-    [],
+    [element],
   );
 
   const onEdit = useCallback(
@@ -431,7 +374,7 @@ export const RawEditor = ({
     });
   }, [docUrl]);
 
-  if (!doc || !displayDoc) {
+  if (!doc) {
     return (
       <div className="raw-editor-wrapper">
         <div className="re-loading">Loading {docUrl}…</div>
@@ -487,13 +430,14 @@ export const RawEditor = ({
 
       <div className="re-content" ref={contentRef}>
         <JsonEditor
-          data={editorData}
-          setData={setEditorData}
+          data={doc}
+          setData={() => {}}
           rootName=""
           theme={theme}
           icons={icons}
-          collapse={3}
-          collapseAnimationTime={0}
+          collapse={({ size, level }: any) =>
+            (size !== null && size > 100) || level >= 3
+          }
           indent={3}
           showStringQuotes
           showCollectionCount="when-closed"
@@ -502,8 +446,7 @@ export const RawEditor = ({
           minWidth="100%"
           maxWidth="100%"
           customNodeDefinitions={customNodeDefs}
-          customButtons={customButtons}
-          restrictEdit={restrictEditFilter}
+          jsonStringify={jsonStringifyWithUint8}
           onEdit={onEdit}
           onDelete={onDelete}
           onAdd={onAdd}

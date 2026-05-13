@@ -1,32 +1,25 @@
 import { Show } from "solid-js";
 
 export interface DocHistoryHeaderProps {
-  /**
-   * Document title to display. When omitted, only the reset button is
-   * rendered (right-aligned via flex layout). Used when the surrounding UI
-   * already shows the title — e.g. a single-doc sidebar.
-   */
   title?: string;
-  hasSelection: boolean;
-  onReset: () => void;
+  onRecompute: () => void;
 }
 
-/**
- * Header component showing the (optional) document title and a reset button.
- */
 export function DocHistoryHeader(props: DocHistoryHeaderProps) {
   return (
-    <div class="p-2 flex justify-between items-center">
-      <Show when={props.title !== undefined} fallback={<div />}>
-        <div class="font-medium">{props.title}</div>
-      </Show>
+    <div class="p-2 flex justify-between items-center gap-2">
+      <div class="flex flex-col min-w-0">
+        <div class="font-medium">Version History</div>
+        <Show when={props.title !== undefined}>
+          <div class="text-[10px] text-gray-400 truncate mt-0.5">{props.title}</div>
+        </Show>
+      </div>
 
-      <button
-        class={`btn btn-sm btn-ghost ${props.hasSelection ? "" : "invisible"}`}
-        onClick={props.onReset}
-      >
-        Reset to now
-      </button>
+      <div class="flex items-center gap-1 shrink-0">
+        <button class="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); props.onRecompute(); }}>
+          Recompute
+        </button>
+      </div>
     </div>
   );
 }

@@ -45,23 +45,4 @@ export const plugins: Plugin<any>[] = [
       };
     },
   },
-  {
-    type: "patchwork:tool",
-    id: "highlight-changes-checkbox",
-    name: "Highlight Changes",
-    icon: "Highlighter",
-    supportedDatatypes: "*",
-    async load(): Promise<ToolImplementation<any>> {
-      const { HighlightChangesOption } =
-        await import("./highlight/HighlightChangesCheckbox");
-      return function (_handle, element) {
-        return render(
-          () => <HighlightChangesOption repo={element.repo} />,
-          element
-        );
-      };
-    },
-    unlisted: true,
-    forTitleBar: true,
-  },
 ];

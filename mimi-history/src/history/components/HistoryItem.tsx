@@ -1,35 +1,246 @@
-import { Show } from "solid-js";
+import { For, Show, createSignal, createMemo, createEffect } from "solid-js";
 import type { HistoryItem as HistoryItemType } from "../../types";
-import { formatTime } from "../utils";
+import { formatTimeOnly, getChangeLabel, type ChangeSizeThresholds } from "../utils";
 import { TimelineCard } from "./TimelineCard";
-import { LabeledField } from "./LabeledField";
 
 export interface HistoryItemProps {
   item: HistoryItemType;
   isSelected: boolean;
-  onClick: () => void;
+  thresholds: ChangeSizeThresholds;
+  onClick: (e: MouseEvent) => void;
+  onRename: (label: string) => void;
+  onSubItemClick?: (item: HistoryItemType, e: MouseEvent) => void;
+  isSubItemSelected?: (item: HistoryItemType) => boolean;
+}
+
+function actorColor(actorId: string): string {
+  let hash = 0;
+  for (let i = 0; i < actorId.length; i++) {
+    hash = actorId.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const h = Math.abs(hash) % 360;
+  return `hsl(${h}, 45%, 63%)`;
+}
+
+function getInitials(actorId: string): string {
+  const parts = actorId.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  if (actorId.includes("@")) {
+    return actorId.split("@")[0].slice(0, 2).toUpperCase();
+  }
+  return actorId.slice(0, 2).toUpperCase();
+}
+
+function barWidth(value: number, large: number): number {
+  if (value === 0) return 0;
+  return Math.max(2, Math.min(60, (value / Math.max(large, value)) * 60));
 }
 
 export function HistoryItem(props: HistoryItemProps) {
-  const changeCount = () => props.item.count;
-  const timeDisplay = () => formatTime(props.item.endTime);
-  const additions = () => props.item.additions;
-  const deletions = () => props.item.deletions;
-  const hasDiff = () => additions() !== undefined || deletions() !== undefined;
+  const timeDisplay = () => formatTimeOnly(props.item.endTime);
+  const additions = () => props.item.additions ?? 0;
+  const deletions = () => props.item.deletions ?? 0;
+  const label = () => props.item.customLabel ?? getChangeLabel(props.item, props.thresholds);
+  const authors = () => props.item.authors ?? [];
+  const visibleAuthors = () => authors().slice(0, 3);
+  const extraAuthors = () => Math.max(0, authors().length - 3);
+  const subItems = () => props.item.subItems ?? [];
+
+  const [isEditing, setIsEditing] = createSignal(false);
+  const [editValue, setEditValue] = createSignal("");
+
+  const [isOpen, setIsOpen] = createSignal(false);
+  const isMultiAuthorWithSubItems = () => authors().length > 1 && subItems().length > 0;
+  const isExpanded = createMemo(() => isOpen() && isMultiAuthorWithSubItems());
+
+  const anySubItemSelected = createMemo(() =>
+    subItems().some((si) => props.isSubItemSelected?.(si) ?? false)
+  );
+
+  // Auto-collapse when neither the parent nor any sub-item is selected
+  createEffect(() => {
+    if (!props.isSelected && !anySubItemSelected()) setIsOpen(false);
+  });
+
+  const startEdit = (e: MouseEvent) => {
+    e.stopPropagation();
+    setEditValue(label());
+    setIsEditing(true);
+  };
+
+  const commitEdit = () => {
+    const trimmed = editValue().trim();
+    if (trimmed !== label()) {
+      props.onRename(trimmed);
+    }
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (e: KeyboardEvent) => {
+    if (e.key === "Enter") { e.preventDefault(); commitEdit(); }
+    if (e.key === "Escape") { setIsEditing(false); }
+  };
+
+  const handleParentClick = (e: MouseEvent) => {
+    if (isMultiAuthorWithSubItems()) setIsOpen((v) => !v);
+    props.onClick(e);
+  };
 
   return (
-    <TimelineCard isSelected={props.isSelected} onClick={props.onClick}>
-      <div class="flex justify-between items-start">
-        <LabeledField label="Changes">
-          <div class="flex items-center gap-2">
-            <Show when={hasDiff()} fallback={<span>{changeCount()}</span>}>
-              <span class="text-green-500">+{additions() ?? 0}</span>
-              <span class="text-red-500">-{deletions() ?? 0}</span>
+    <div>
+      <TimelineCard isSelected={props.isSelected} onClick={handleParentClick}>
+        <div class="flex items-center gap-2">
+          <div class="flex items-center shrink-0">
+            <For each={visibleAuthors()}>
+              {(actor, i) => (
+                <div
+                  title={actor}
+                  style={{
+                    background: actorColor(actor),
+                    "margin-left": i() === 0 ? "0" : "-4px",
+                    "z-index": visibleAuthors().length - i(),
+                    "font-size": "9px",
+                  }}
+                  class="relative w-[18px] h-[18px] rounded-full flex items-center justify-center text-white font-light select-none shrink-0"
+                >
+                  {getInitials(actor)}
+                </div>
+              )}
+            </For>
+            <Show when={extraAuthors() > 0}>
+              <div
+                style={{ "margin-left": "-4px", "font-size": "7px" }}
+                class="w-[18px] h-[18px] rounded-full bg-gray-400 flex items-center justify-center text-white relative shrink-0"
+              >
+                +{extraAuthors()}
+              </div>
             </Show>
           </div>
-        </LabeledField>
-        <div class="text-[var(--history-muted-fg)] text-xs">{timeDisplay()}</div>
-      </div>
-    </TimelineCard>
+
+          <Show
+            when={isEditing()}
+            fallback={
+              <>
+                <div
+                  class="group/label flex items-center gap-1 cursor-text min-w-0 overflow-hidden shrink"
+                  onDblClick={startEdit}
+                  title="Double-click to rename"
+                >
+                  <span class="truncate text-gray-700">
+                    <Show
+                      when={props.item.isVirtual && !props.item.customLabel}
+                      fallback={label()}
+                    >
+                      <em>Making changes...</em>
+                    </Show>
+                  </span>
+                  <svg
+                    class="shrink-0 w-3 h-3 opacity-0 group-hover/label:opacity-40 transition-opacity"
+                    style={{ color: "inherit" }}
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 16 16"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Z" />
+                  </svg>
+                </div>
+                <div class="flex-1" />
+              </>
+            }
+          >
+            <input
+              class="flex-1 min-w-0 bg-transparent border-0 border-b border-current outline-none p-0 leading-none"
+              style={{ font: "inherit", color: "inherit" }}
+              value={editValue()}
+              onInput={(e) => setEditValue(e.currentTarget.value)}
+              onBlur={commitEdit}
+              onKeyDown={handleKeyDown}
+              onClick={(e) => e.stopPropagation()}
+              ref={(el) => setTimeout(() => { el.focus(); el.select(); }, 0)}
+            />
+          </Show>
+
+          <div class="flex items-center gap-1.5 shrink-0">
+            <Show when={additions() > 0}>
+              <div class="flex items-center gap-0.5">
+                <div class="h-1.5 rounded-sm bg-green-500" style={{ width: `${barWidth(additions(), props.thresholds.large)}px` }} />
+                <span class="text-green-600 text-[11px] font-light">+{additions()}</span>
+              </div>
+            </Show>
+            <Show when={deletions() > 0}>
+              <div class="flex items-center gap-0.5">
+                <div class="h-1.5 rounded-sm bg-red-400" style={{ width: `${barWidth(deletions(), props.thresholds.large)}px` }} />
+                <span class="text-red-500 text-[11px] font-light">-{deletions()}</span>
+              </div>
+            </Show>
+          </div>
+
+          <span class="text-[var(--history-muted-fg)] text-[11px] font-light shrink-0 w-14 text-right">
+            {timeDisplay()}
+          </span>
+        </div>
+      </TimelineCard>
+
+      <Show when={isExpanded()}>
+        <div class="ml-4 mt-1 space-y-1">
+          <For each={subItems()}>
+            {(subItem) => {
+              const subAdd = () => subItem.additions ?? 0;
+              const subDel = () => subItem.deletions ?? 0;
+              const subAuthor = () => subItem.authors[0] ?? "";
+
+              return (
+                <TimelineCard
+                  isSelected={props.isSubItemSelected?.(subItem) ?? false}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    props.onSubItemClick?.(subItem, e);
+                  }}
+                >
+                  <div class="flex items-center gap-2">
+                    <div
+                      title={subAuthor()}
+                      style={{
+                        background: actorColor(subAuthor()),
+                        "font-size": "9px",
+                      }}
+                      class="w-[18px] h-[18px] rounded-full flex items-center justify-center text-white font-light select-none shrink-0"
+                    >
+                      {getInitials(subAuthor())}
+                    </div>
+
+                    <span class="flex-1 truncate text-gray-700">
+                      {getChangeLabel(subItem, props.thresholds)}
+                    </span>
+
+                    <div class="flex items-center gap-1.5 shrink-0">
+                      <Show when={subAdd() > 0}>
+                        <div class="flex items-center gap-0.5">
+                          <div class="h-1.5 rounded-sm bg-green-500" style={{ width: `${barWidth(subAdd(), props.thresholds.large)}px` }} />
+                          <span class="text-green-600 text-[11px] font-light">+{subAdd()}</span>
+                        </div>
+                      </Show>
+                      <Show when={subDel() > 0}>
+                        <div class="flex items-center gap-0.5">
+                          <div class="h-1.5 rounded-sm bg-red-400" style={{ width: `${barWidth(subDel(), props.thresholds.large)}px` }} />
+                          <span class="text-red-500 text-[11px] font-light">-{subDel()}</span>
+                        </div>
+                      </Show>
+                    </div>
+
+                    <span class="text-[var(--history-muted-fg)] text-[11px] font-light shrink-0 w-14 text-right">
+                      {formatTimeOnly(subItem.endTime)}
+                    </span>
+                  </div>
+                </TimelineCard>
+              );
+            }}
+          </For>
+        </div>
+      </Show>
+    </div>
   );
 }

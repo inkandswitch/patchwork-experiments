@@ -37,6 +37,12 @@ export interface CachedHistory {
    * "computing history…" UI instead of the (empty) item list.
    */
   isInitializing: Accessor<boolean>;
+  /** Unix ms timestamp from historyDoc.updatedAt — when the task last ran */
+  updatedAt: Accessor<number | undefined>;
+  /** Reset the cache and re-dispatch the grouping task from scratch */
+  forceRecompute: () => void;
+  /** Persist a user-defined label for an item (keyed by latestHash) */
+  setLabel: (hash: string, label: string) => void;
 }
 
 /**
@@ -153,6 +159,8 @@ export function useCachedHistory(
       const cachedHeads = histDoc.heads ?? [];
       if (headsEqual(currentHeads, cachedHeads)) return;
 
+      if (Date.now() - lastDispatchTime < DISPATCH_COOLDOWN_MS) return;
+
       // Precise trigger: only dispatch when the accumulated delta would
       // actually split into more than one group — i.e. when its time span
       // exceeds the strategy's grouping window. Concurrent changes that
@@ -169,7 +177,6 @@ export function useCachedHistory(
         return;
       }
 
-      if (Date.now() - lastDispatchTime < DISPATCH_COOLDOWN_MS) return;
       dispatchTask(source.url);
     };
 
@@ -189,11 +196,16 @@ export function useCachedHistory(
   const items = createMemo<HistoryItem[]>(() => {
     const doc = historyDoc();
     const strategyKey = getStrategyKey(strategyConfig());
+    const labels = doc?.labels ?? {};
     // Deduplicate by latestHash — concurrent task runs (e.g. two browser tabs)
     // can each splice the same group into the array before syncing, leaving
     // duplicate entries in the stored doc.
     const storedItems: HistoryItem[] = deduplicateItems(
       doc?.groupings?.[strategyKey]?.items ?? []
+    ).map((item) =>
+      labels[item.latestHash]
+        ? { ...item, customLabel: labels[item.latestHash] }
+        : item
     );
 
     const cachedHeads = doc?.heads ?? [];
@@ -213,7 +225,11 @@ export function useCachedHistory(
     deltaMeta.reverse();
 
     const virtualItem = buildVirtualItem(deltaMeta, storedItems[0]?.latestHash);
-    return [virtualItem, ...storedItems];
+
+    const virtualWithLabel = labels[virtualItem.latestHash]
+      ? { ...virtualItem, customLabel: labels[virtualItem.latestHash] }
+      : virtualItem;
+    return [virtualWithLabel, ...storedItems];
   });
 
   // True until the source doc carries a link to a history doc AND that doc
@@ -225,7 +241,34 @@ export function useCachedHistory(
     return historyDoc() === undefined;
   });
 
-  return { items, isInitializing };
+  const updatedAt = createMemo<number | undefined>(() => historyDoc()?.updatedAt);
+
+  const forceRecompute = () => {
+    const hHandle = historyDocHandle();
+    if (hHandle) {
+      hHandle.change((doc: HistoryGroupingsDoc) => {
+        doc.heads = [];
+        doc.groupings = {};
+      });
+    }
+    const source = sourceHandle();
+    if (source) dispatchTask(source.url);
+  };
+
+  const setLabel = (hash: string, label: string) => {
+    const hHandle = historyDocHandle();
+    if (!hHandle) return;
+    hHandle.change((doc: HistoryGroupingsDoc) => {
+      if (!doc.labels) doc.labels = {};
+      if (label.trim() === "") {
+        delete doc.labels[hash];
+      } else {
+        doc.labels[hash] = label.trim();
+      }
+    });
+  };
+
+  return { items, isInitializing, updatedAt, forceRecompute, setLabel };
 }
 
 /**
@@ -254,6 +297,7 @@ function buildVirtualItem(
     count: deltaMeta.length,
     latestHash: deltaMeta[0].hash,
     authors,
+    isVirtual: true,
   };
 
   if (minTime !== Infinity) {
@@ -289,11 +333,9 @@ function deduplicateItems(items: HistoryItem[]): HistoryItem[] {
  * Check if two heads arrays are equal (order-independent)
  */
 function headsEqual(heads1: string[], heads2: string[]): boolean {
-  if (heads1.length !== heads2.length) {
-    return false;
-  }
-
-  return heads1.every((h) => heads2.includes(h));
+  if (heads1.length !== heads2.length) return false;
+  const set = new Set(heads2);
+  return heads1.every((h) => set.has(h));
 }
 
 /**

@@ -1,13 +1,15 @@
 import { For, createMemo } from "solid-js";
 import type { HistoryItem as HistoryItemType } from "../../types";
 import { isItemSelected } from "../../types";
+import { computeChangeSizeThresholds, type ChangeSizeThresholds } from "../utils";
 import { HistoryItem } from "./HistoryItem";
 import { DateHeader } from "./DateHeader";
 
 export interface HistoryListProps {
   items: HistoryItemType[];
-  selectedItem: HistoryItemType | null;
-  onSelectItem: (item: HistoryItemType) => void;
+  selectedItems: HistoryItemType[];
+  onSelectItem: (item: HistoryItemType, shiftHeld: boolean) => void;
+  onRenameItem: (hash: string, label: string) => void;
 }
 
 interface GroupedByDate {
@@ -33,6 +35,11 @@ function getItemDate(item: HistoryItemType): Date | null {
  * Groups items by date and shows date headers.
  */
 export function HistoryList(props: HistoryListProps) {
+  const thresholds = createMemo<ChangeSizeThresholds>(() => {
+    const allItems = props.items.flatMap(item => [item, ...(item.subItems ?? [])]);
+    return computeChangeSizeThresholds(allItems);
+  });
+
   // Group items by date
   const groupedItems = createMemo<GroupedByDate[]>(() => {
     const groups: Map<string, GroupedByDate> = new Map();
@@ -65,14 +72,18 @@ export function HistoryList(props: HistoryListProps) {
                 {(item, index) => {
                   const isLast = () => index() === group.items.length - 1;
                   const isSelected = () =>
-                    isItemSelected(item, props.selectedItem);
+                    isItemSelected(item, props.selectedItems);
 
                   return (
                     <div class={isLast() ? "last-timeline-item" : ""}>
                       <HistoryItem
                         item={item}
                         isSelected={isSelected()}
-                        onClick={() => props.onSelectItem(item)}
+                        thresholds={thresholds()}
+                        onClick={(e) => props.onSelectItem(item, e.shiftKey)}
+                        onRename={(label) => props.onRenameItem(item.latestHash, label)}
+                        onSubItemClick={(subItem, e) => props.onSelectItem(subItem, e.shiftKey)}
+                        isSubItemSelected={(subItem) => isItemSelected(subItem, props.selectedItems)}
                       />
                     </div>
                   );

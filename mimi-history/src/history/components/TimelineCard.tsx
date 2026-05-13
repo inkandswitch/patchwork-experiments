@@ -2,7 +2,7 @@ import type { JSXElement } from "solid-js";
 
 export interface TimelineCardProps {
   isSelected: boolean;
-  onClick: () => void;
+  onClick: (e: MouseEvent) => void;
   children: JSXElement;
 }
 
@@ -16,20 +16,14 @@ export function TimelineCard(props: TimelineCardProps) {
       role="button"
       tabIndex={0}
       aria-selected={props.isSelected}
-      onClick={props.onClick}
+      onClick={(e) => { e.stopPropagation(); props.onClick(e); }}
       class={
-        "relative text-xs py-1.5 px-3 pl-6 rounded border cursor-pointer " +
+        "relative text-xs py-1.5 px-3 rounded cursor-pointer " +
         (props.isSelected
           ? "bg-[var(--history-accent)] border-[var(--history-accent)] text-[var(--history-accent-fg)] [&_*]:text-[var(--history-accent-fg)]"
-          : "bg-[var(--history-card-bg)] border-[var(--history-card-border)] hover:bg-[var(--history-card-hover-bg)]")
+          : "bg-[var(--history-card-bg)] hover:bg-[var(--history-card-hover-bg)]")
       }
     >
-      {/* Timeline dot */}
-      <div class={"absolute left-2 top-2.5 w-2 h-2 rounded-full " + (props.isSelected ? "bg-[var(--history-accent-fg)]" : "bg-[var(--history-accent)]")}></div>
-
-      {/* Timeline line */}
-      <div class="absolute left-[11px] top-[22px] bottom-0 w-0.5 bg-[var(--history-section-divider)] timeline-line"></div>
-
       {props.children}
     </div>
   );

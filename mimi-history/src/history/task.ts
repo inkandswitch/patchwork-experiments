@@ -18,7 +18,7 @@ const THROTTLE_MS = 2 * 1000;
 
 // TODO: relative imports aren't working correctly when the task runs in the shared worker
 // Keep this in sync with `HISTORY_DOC_VERSION` in ../types.ts
-const HISTORY_DOC_VERSION = 4;
+const HISTORY_DOC_VERSION = 8;
 
 /**
  * Internal working shape used while walking the source doc's change stream.
@@ -104,8 +104,6 @@ export default async function (source: AutomergeUrl) {
     }
   }
 
-  // Currently only one strategy is implemented. The discriminated config is
-  // kept so additional strategies can slot in without reshuffling consumers.
   const timeConfig: GroupingStrategyConfig = {
     name: "timeWindow",
     params: { timeWindow: DEFAULT_TIME_WINDOW },
@@ -160,13 +158,19 @@ export default async function (source: AutomergeUrl) {
 
   const deltaGrouping = applyGroupingStrategy(timeConfig, deltaChanges);
 
-  for (const item of deltaGrouping) {
+  // Build filtered content items — skip groups whose patches touch only the
+  // @patchwork metadata namespace (invisible in the document DOM).
+  const contentItems: HistoryItem[] = [];
+  for (const { item, changes } of deltaGrouping) {
+    await new Promise<void>((r) => setTimeout(r, 0));
     const beforeHeads = item.beforeHead ? [item.beforeHead] : [];
     const afterHeads = [item.latestHash];
     const patches = Automerge.diff(sourceDoc, beforeHeads, afterHeads);
+    const contentPatches = patches.filter((p) => p.path[0] !== "@patchwork");
+    if (contentPatches.length === 0) continue;
     let additions = 0;
     let deletions = 0;
-    for (const patch of patches) {
+    for (const patch of contentPatches) {
       if (patch.action === "splice") {
         additions += (patch.value as string).length;
       } else if (patch.action === "del") {
@@ -175,6 +179,33 @@ export default async function (source: AutomergeUrl) {
     }
     item.additions = additions;
     item.deletions = deletions;
+
+    if (item.subItems) {
+      // Sum per-change diffs grouped by author. Each sub-item represents one
+      // author's total contribution, not just their single most-recent change.
+      const authorTotals = new Map<string, { add: number; del: number }>();
+      for (const c of changes) {
+        await new Promise<void>((r) => setTimeout(r, 0));
+        const cBefore = c.beforeHead ? [c.beforeHead] : [];
+        const cPatches = Automerge.diff(sourceDoc, cBefore, [c.hash]);
+        const cContent = cPatches.filter((p) => p.path[0] !== "@patchwork");
+        let cAdd = 0;
+        let cDel = 0;
+        for (const p of cContent) {
+          if (p.action === "splice") cAdd += (p.value as string).length;
+          else if (p.action === "del") cDel += (p as { action: "del"; length?: number }).length ?? 1;
+        }
+        const prev = authorTotals.get(c.actor) ?? { add: 0, del: 0 };
+        authorTotals.set(c.actor, { add: prev.add + cAdd, del: prev.del + cDel });
+      }
+      for (const subItem of item.subItems) {
+        const totals = authorTotals.get(subItem.authors[0]) ?? { add: 0, del: 0 };
+        subItem.additions = totals.add;
+        subItem.deletions = totals.del;
+      }
+    }
+
+    contentItems.push(item);
   }
 
   historyDocHandle.change((doc: HistoryGroupingsDoc) => {
@@ -184,20 +215,25 @@ export default async function (source: AutomergeUrl) {
     // the same group, bail out rather than creating a duplicate entry.
     if (
       canIncrement &&
-      deltaGrouping.length > 0 &&
+      contentItems.length > 0 &&
       doc.groupings?.[strategyKey]?.items?.[0]?.latestHash ===
-        deltaGrouping[0].latestHash
+        contentItems[0].latestHash
     ) {
       return;
     }
 
+    // Always advance heads so the task doesn't reprocess the same delta
+    // (even if all items were metadata-only and contentItems is empty).
     doc.heads = currentHeads;
+    doc.updatedAt = Date.now();
     if (canIncrement && doc.groupings[strategyKey]?.items) {
-      // Prepend the newly-computed groups to the existing array so Automerge
-      // sees a small insert rather than a full array replacement.
-      doc.groupings[strategyKey].items.splice(0, 0, ...deltaGrouping);
+      if (contentItems.length > 0) {
+        // Prepend the newly-computed groups to the existing array so Automerge
+        // sees a small insert rather than a full array replacement.
+        doc.groupings[strategyKey].items.splice(0, 0, ...contentItems);
+      }
     } else {
-      doc.groupings[strategyKey] = { items: deltaGrouping };
+      doc.groupings[strategyKey] = { items: contentItems };
     }
   });
 }
@@ -233,7 +269,7 @@ function changeMetadataToWorkingChanges(
 // The constants and `getStrategyKey` below are duplicated from `./utils.ts`
 // because relative imports don't resolve correctly when this module is
 // dynamically loaded inside the shared-worker task runner. Keep in sync.
-export const DEFAULT_TIME_WINDOW = 30 * 60 * 1000; // 30 minutes
+export const DEFAULT_TIME_WINDOW = 15 * 60 * 1000; // 15 minutes
 
 /**
  * Generate a unique cache key for a grouping strategy configuration.
@@ -246,6 +282,7 @@ export function getStrategyKey(config: GroupingStrategyConfig): string {
       return "author";
     case "timeWindow": {
       const windowMs = config.params?.timeWindow ?? DEFAULT_TIME_WINDOW;
+      if (config.params?.perActor) return `timeWindowPerActor:${windowMs}`;
       return `timeWindow:${windowMs}`;
     }
     default:
@@ -253,17 +290,23 @@ export function getStrategyKey(config: GroupingStrategyConfig): string {
   }
 }
 
+interface GroupResult {
+  item: HistoryItem;
+  changes: WorkingChange[];
+}
+
 /**
- * Group changes that occur within a specified time window (in milliseconds)
- * Changes within the window are grouped together
+ * Group changes that occur within a specified time window (in milliseconds).
+ * When perActor is true, a group also splits whenever the actor changes.
  */
 function groupByTimeWindow(
-  windowMs: number
-): (changes: WorkingChange[]) => HistoryItem[] {
-  return (changes: WorkingChange[]): HistoryItem[] => {
+  windowMs: number,
+  perActor = false
+): (changes: WorkingChange[]) => GroupResult[] {
+  return (changes: WorkingChange[]): GroupResult[] => {
     if (changes.length === 0) return [];
 
-    const groups: HistoryItem[] = [];
+    const groups: GroupResult[] = [];
     let currentGroup: WorkingChange[] = [];
 
     for (let i = 0; i < changes.length; i++) {
@@ -271,27 +314,23 @@ function groupByTimeWindow(
       const changeTime = change.time ? change.time * 1000 : 0;
 
       if (currentGroup.length === 0) {
-        // Start a new group
         currentGroup.push(change);
       } else {
-        // Check if this change is within the time window of the first change in the group
         const groupStartTime = currentGroup[0].time
           ? currentGroup[0].time * 1000
           : 0;
         const timeDiff = Math.abs(groupStartTime - changeTime);
+        const sameActor = !perActor || change.actor === currentGroup[0].actor;
 
-        if (timeDiff <= windowMs) {
-          // Add to current group
+        if (timeDiff <= windowMs && sameActor) {
           currentGroup.push(change);
         } else {
-          // Save current group and start a new one
           finalizeGroup(groups, currentGroup);
           currentGroup = [change];
         }
       }
     }
 
-    // Add the last group
     finalizeGroup(groups, currentGroup);
 
     return groups;
@@ -336,35 +375,51 @@ function createItem(changes: WorkingChange[]): HistoryItem {
     item.beforeHead = lastBeforeHead;
   }
 
+  if (authors.length > 1) {
+    // changes is newest-first; first occurrence of each actor = their most recent change
+    const perAuthorLatest = new Map<string, WorkingChange>();
+    for (const c of changes) {
+      if (!perAuthorLatest.has(c.actor)) perAuthorLatest.set(c.actor, c);
+    }
+    item.subItems = Array.from(perAuthorLatest.values()).map((c) => ({
+      id: `subitem-${c.hash}`,
+      count: 1,
+      latestHash: c.hash,
+      authors: [c.actor],
+      startTime: c.time,
+      endTime: c.time,
+      ...(c.beforeHead ? { beforeHead: c.beforeHead } : {}),
+    }));
+  }
+
   return item;
 }
 
 /**
  * Push a completed run of changes to the output array as a single
- * `HistoryItem`, regardless of whether the run contains one change or many.
+ * `HistoryItem`, alongside the raw changes that produced it.
  */
 function finalizeGroup(
-  items: HistoryItem[],
+  groups: GroupResult[],
   currentGroup: WorkingChange[]
 ): void {
   if (currentGroup.length === 0) return;
-  items.push(createItem(currentGroup));
+  groups.push({ item: createItem(currentGroup), changes: [...currentGroup] });
 }
+
 
 /**
  * Apply a grouping strategy configuration to a list of changes.
- *
- * Only `timeWindow` is implemented; `author` is declared in the config type
- * but not wired up yet (needs proper author data, e.g. via Keyhive).
  */
 function applyGroupingStrategy(
   config: GroupingStrategyConfig,
   changes: WorkingChange[]
-): HistoryItem[] {
+): GroupResult[] {
   switch (config.name) {
     case "timeWindow": {
       const windowMs = config.params?.timeWindow ?? DEFAULT_TIME_WINDOW;
-      return groupByTimeWindow(windowMs)(changes);
+      const perActor = config.params?.perActor ?? false;
+      return groupByTimeWindow(windowMs, perActor)(changes);
     }
     case "author":
       throw new Error("Author grouping is not implemented yet");

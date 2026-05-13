@@ -21,7 +21,6 @@ export function HistoryTimeline(props: PatchworkToolProps) {
 
   return (
     <div class="flex flex-col h-full">
-      <div class="text-[10px] text-[var(--history-muted-fg)] px-3 py-1 select-none">v0.0.3</div>
       <Show when={primaryUrl()} keyed>
         {(url) => (
           <DocHistoryView

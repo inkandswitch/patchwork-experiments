@@ -1,6 +1,6 @@
 import type { Plugin } from '@inkandswitch/patchwork-plugins';
 
-console.log('pyonpyon', 1);
+console.log('pyonpyon', 2);
 
 export const plugins: Plugin<any>[] = [
   {
