@@ -42,7 +42,6 @@ export default async function (source: AutomergeUrl) {
   const sourceDocHandle = await repo.find<HasPatchworkMetadata>(source);
   const sourceDoc = sourceDocHandle.doc();
   if (!sourceDoc) {
-    console.warn("History task: source document not available");
     return;
   }
 
@@ -68,9 +67,6 @@ export default async function (source: AutomergeUrl) {
     // Update source document with reference to history document
     sourceDocHandle.change((doc) => {
       if (!doc["@patchwork"]) {
-        console.warn(
-          "History task: source document missing @patchwork metadata"
-        );
         return;
       }
       doc["@patchwork"].history = historyDocHandle!.url;
@@ -78,7 +74,6 @@ export default async function (source: AutomergeUrl) {
   } else {
     const histDoc = historyDocHandle.doc();
     if (!histDoc) {
-      console.warn("History task: history document not available");
       return;
     }
 
@@ -113,7 +108,6 @@ export default async function (source: AutomergeUrl) {
   // Re-read the history doc now that any version-reset above has landed.
   const histDoc = historyDocHandle.doc();
   if (!histDoc) {
-    console.warn("History task: history document not available after setup");
     return;
   }
 
@@ -161,8 +155,11 @@ export default async function (source: AutomergeUrl) {
   // Build filtered content items — skip groups whose patches touch only the
   // @patchwork metadata namespace (invisible in the document DOM).
   const contentItems: HistoryItem[] = [];
+  let groupIndex = 0;
   for (const { item, changes } of deltaGrouping) {
-    await new Promise<void>((r) => setTimeout(r, 0));
+    // Yield to the event loop every 10 groups to keep the UI responsive
+    // without paying the ~4ms setTimeout cost on every single group.
+    if (groupIndex++ % 10 === 0) await new Promise<void>((r) => setTimeout(r, 0));
     const beforeHeads = item.beforeHead ? [item.beforeHead] : [];
     const afterHeads = [item.latestHash];
     const patches = Automerge.diff(sourceDoc, beforeHeads, afterHeads);
@@ -184,8 +181,9 @@ export default async function (source: AutomergeUrl) {
       // Sum per-change diffs grouped by author. Each sub-item represents one
       // author's total contribution, not just their single most-recent change.
       const authorTotals = new Map<string, { add: number; del: number }>();
+      let changeIndex = 0;
       for (const c of changes) {
-        await new Promise<void>((r) => setTimeout(r, 0));
+        if (changeIndex++ % 10 === 0) await new Promise<void>((r) => setTimeout(r, 0));
         const cBefore = c.beforeHead ? [c.beforeHead] : [];
         const cPatches = Automerge.diff(sourceDoc, cBefore, [c.hash]);
         const cContent = cPatches.filter((p) => p.path[0] !== "@patchwork");

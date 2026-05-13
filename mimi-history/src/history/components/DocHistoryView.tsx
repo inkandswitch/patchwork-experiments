@@ -39,7 +39,7 @@ export function DocHistoryView(props: DocHistoryViewProps) {
 
   const { title, docRef } = useDocumentMetadata(doc, handle);
 
-  const { items: groupedItems, isInitializing, forceRecompute, setLabel } = useCachedHistory(
+  const { items: groupedItems, isInitializing, isRecalculating, forceRecompute, setLabel } = useCachedHistory(
     handle,
     strategyConfig,
     props.repo
@@ -62,6 +62,7 @@ export function DocHistoryView(props: DocHistoryViewProps) {
       <DocHistoryHeader
         title={(props.showTitle?.() ?? true) ? title() : undefined}
         onRecompute={forceRecompute}
+        isRecalculating={isRecalculating()}
       />
       <Show
         when={!isInitializing()}

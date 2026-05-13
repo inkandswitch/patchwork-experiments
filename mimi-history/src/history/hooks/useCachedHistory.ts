@@ -37,6 +37,8 @@ export interface CachedHistory {
    * "computing history…" UI instead of the (empty) item list.
    */
   isInitializing: Accessor<boolean>;
+  /** True while a forced recompute is in progress */
+  isRecalculating: Accessor<boolean>;
   /** Unix ms timestamp from historyDoc.updatedAt — when the task last ran */
   updatedAt: Accessor<number | undefined>;
   /** Reset the cache and re-dispatch the grouping task from scratch */
@@ -95,10 +97,6 @@ export function useCachedHistory(
   let lastDispatchTime = 0;
 
   const dispatchTask = (sourceUrl: AutomergeUrl) => {
-    console.log(
-      "localStorage.useTasks ('truthy' -> use tasks, all other values run on main thread)",
-      localStorage.useTasks
-    );
     if (localStorage.useTasks) {
       tasklib
         .queue("automerge:21cbVwPwNZWXzC29AzhJGsVzSuQW" as AutomergeUrl)
@@ -108,7 +106,6 @@ export function useCachedHistory(
         });
       lastDispatchTime = Date.now();
     } else {
-      console.log("Running history task on main thread until tasks stabilize.");
       import("../task").then((m) => {
         m.default(sourceUrl);
         lastDispatchTime = Date.now();
@@ -131,6 +128,8 @@ export function useCachedHistory(
   const [sourceHeads, setSourceHeads] = createSignal<string[] | undefined>(
     undefined
   );
+
+  const [isRecalculating, setIsRecalculating] = createSignal(false);
 
   createEffect(() => {
     const source = sourceHandle();
@@ -188,6 +187,14 @@ export function useCachedHistory(
     });
   });
 
+  // Clear isRecalculating once the task writes non-empty heads back.
+  createEffect(() => {
+    const heads = historyDoc()?.heads;
+    if (heads && heads.length > 0 && isRecalculating()) {
+      setIsRecalculating(false);
+    }
+  });
+
   // PART 4: Return reactive items. If the source doc has advanced past the
   // cached heads, synthesize a single "virtual" item at the top of the list
   // covering the ungrouped tail. The virtual item is never stored; it
@@ -207,6 +214,10 @@ export function useCachedHistory(
         ? { ...item, customLabel: labels[item.latestHash] }
         : item
     );
+
+    // While recalculating, keep existing items visible to avoid collapsing the
+    // list into a single virtual item covering all history.
+    if (isRecalculating()) return storedItems;
 
     const cachedHeads = doc?.heads ?? [];
     const currentSourceHeads = sourceHeads();
@@ -248,8 +259,9 @@ export function useCachedHistory(
     if (hHandle) {
       hHandle.change((doc: HistoryGroupingsDoc) => {
         doc.heads = [];
-        doc.groupings = {};
+        doc.updatedAt = 0; // bypass throttle so the task runs immediately
       });
+      setIsRecalculating(true);
     }
     const source = sourceHandle();
     if (source) dispatchTask(source.url);
@@ -268,7 +280,7 @@ export function useCachedHistory(
     });
   };
 
-  return { items, isInitializing, updatedAt, forceRecompute, setLabel };
+  return { items, isInitializing, isRecalculating, updatedAt, forceRecompute, setLabel };
 }
 
 /**
