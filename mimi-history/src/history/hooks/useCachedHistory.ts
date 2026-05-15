@@ -99,7 +99,7 @@ export function useCachedHistory(
   const dispatchTask = (sourceUrl: AutomergeUrl) => {
     if (localStorage.useTasks) {
       tasklib
-        .queue("automerge:21cbVwPwNZWXzC29AzhJGsVzSuQW" as AutomergeUrl)
+        .queue("automerge:2xrHArq3QwSGHaeUdquP7ECTpnEL" as AutomergeUrl)
         .addTask<AutomergeUrl, void>({
           input: sourceUrl,
           importUrl: new URL(/* @vite-ignore */ "../task.js", import.meta.url),
@@ -160,11 +160,6 @@ export function useCachedHistory(
 
       if (Date.now() - lastDispatchTime < DISPATCH_COOLDOWN_MS) return;
 
-      // Precise trigger: only dispatch when the accumulated delta would
-      // actually split into more than one group — i.e. when its time span
-      // exceeds the strategy's grouping window. Concurrent changes that
-      // arrive via sync are included here naturally: they show up in the
-      // delta and extend its min/max just like local edits would.
       const deltaMeta = Automerge.getChangesMetaSince(
         sourceRawDoc,
         cachedHeads
@@ -252,7 +247,9 @@ export function useCachedHistory(
     return historyDoc() === undefined;
   });
 
-  const updatedAt = createMemo<number | undefined>(() => historyDoc()?.updatedAt);
+  const updatedAt = createMemo<number | undefined>(
+    () => historyDoc()?.updatedAt
+  );
 
   const forceRecompute = () => {
     const hHandle = historyDocHandle();
@@ -280,7 +277,14 @@ export function useCachedHistory(
     });
   };
 
-  return { items, isInitializing, isRecalculating, updatedAt, forceRecompute, setLabel };
+  return {
+    items,
+    isInitializing,
+    isRecalculating,
+    updatedAt,
+    forceRecompute,
+    setLabel,
+  };
 }
 
 /**

@@ -27,7 +27,7 @@ const HISTORY_DOC_VERSION = 8;
  */
 interface WorkingChange {
   hash: string;
-  actor: string;
+  author: string;
   time: number;
   beforeHead?: string;
 }
@@ -138,7 +138,7 @@ export default async function (source: AutomergeUrl) {
   // Reverse to get newest first (UI display order)
   deltaMeta.reverse();
 
-  // Project into the minimal working form (hash/actor/time + beforeHead).
+  // Project into the minimal working form (hash/author/time + beforeHead).
   const deltaChanges = changeMetadataToWorkingChanges(deltaMeta);
 
   // Stitch the boundary: the oldest delta change's `beforeHead` should link
@@ -193,8 +193,8 @@ export default async function (source: AutomergeUrl) {
           if (p.action === "splice") cAdd += (p.value as string).length;
           else if (p.action === "del") cDel += (p as { action: "del"; length?: number }).length ?? 1;
         }
-        const prev = authorTotals.get(c.actor) ?? { add: 0, del: 0 };
-        authorTotals.set(c.actor, { add: prev.add + cAdd, del: prev.del + cDel });
+        const prev = authorTotals.get(c.author) ?? { add: 0, del: 0 };
+        authorTotals.set(c.author, { add: prev.add + cAdd, del: prev.del + cDel });
       }
       for (const subItem of item.subItems) {
         const totals = authorTotals.get(subItem.authors[0]) ?? { add: 0, del: 0 };
@@ -238,7 +238,7 @@ export default async function (source: AutomergeUrl) {
 
 /**
  * Project Automerge change metadata (ordered newest-first) into the minimal
- * working shape used during grouping. Only `hash`, `actor`, `time`, and the
+ * working shape used during grouping. Only `hash`, `author`, `time`, and the
  * link to the previous change's hash are retained — everything else (`seq`,
  * `startOp`, `maxOp`, `message`, `deps`) is discarded here and never makes it
  * into the cached document.
@@ -249,7 +249,7 @@ function changeMetadataToWorkingChanges(
   return metadata.map((meta, index) => {
     const change: WorkingChange = {
       hash: meta.hash,
-      actor: meta.actor,
+      author: meta.actor,
       time: meta.time,
     };
     const beforeHead = metadata[index + 1]?.hash;
@@ -295,7 +295,7 @@ interface GroupResult {
 
 /**
  * Group changes that occur within a specified time window (in milliseconds).
- * When perActor is true, a group also splits whenever the actor changes.
+ * When perActor is true, a group also splits whenever the author changes.
  */
 function groupByTimeWindow(
   windowMs: number,
@@ -318,7 +318,7 @@ function groupByTimeWindow(
           ? currentGroup[0].time * 1000
           : 0;
         const timeDiff = Math.abs(groupStartTime - changeTime);
-        const sameActor = !perActor || change.actor === currentGroup[0].actor;
+        const sameActor = !perActor || change.author === currentGroup[0].author;
 
         if (timeDiff <= windowMs && sameActor) {
           currentGroup.push(change);
@@ -348,7 +348,7 @@ function createItem(changes: WorkingChange[]): HistoryItem {
   let minTime = Infinity;
   let maxTime = -Infinity;
   for (const c of changes) {
-    if (c.actor && !authors.includes(c.actor)) authors.push(c.actor);
+    if (c.author && !authors.includes(c.author)) authors.push(c.author);
     const t = c.time;
     if (t !== undefined) {
       if (t < minTime) minTime = t;
@@ -374,16 +374,16 @@ function createItem(changes: WorkingChange[]): HistoryItem {
   }
 
   if (authors.length > 1) {
-    // changes is newest-first; first occurrence of each actor = their most recent change
+    // changes is newest-first; first occurrence of each author = their most recent change
     const perAuthorLatest = new Map<string, WorkingChange>();
     for (const c of changes) {
-      if (!perAuthorLatest.has(c.actor)) perAuthorLatest.set(c.actor, c);
+      if (!perAuthorLatest.has(c.author)) perAuthorLatest.set(c.author, c);
     }
     item.subItems = Array.from(perAuthorLatest.values()).map((c) => ({
       id: `subitem-${c.hash}`,
       count: 1,
       latestHash: c.hash,
-      authors: [c.actor],
+      authors: [c.author],
       startTime: c.time,
       endTime: c.time,
       ...(c.beforeHead ? { beforeHead: c.beforeHead } : {}),

@@ -13,24 +13,24 @@ export interface HistoryItemProps {
   isSubItemSelected?: (item: HistoryItemType) => boolean;
 }
 
-function actorColor(actorId: string): string {
+function authorColor(authorId: string): string {
   let hash = 0;
-  for (let i = 0; i < actorId.length; i++) {
-    hash = actorId.charCodeAt(i) + ((hash << 5) - hash);
+  for (let i = 0; i < authorId.length; i++) {
+    hash = authorId.charCodeAt(i) + ((hash << 5) - hash);
   }
   const h = Math.abs(hash) % 360;
   return `hsl(${h}, 45%, 63%)`;
 }
 
-function getInitials(actorId: string): string {
-  const parts = actorId.trim().split(/\s+/);
+function getInitials(authorId: string): string {
+  const parts = authorId.trim().split(/\s+/);
   if (parts.length >= 2) {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   }
-  if (actorId.includes("@")) {
-    return actorId.split("@")[0].slice(0, 2).toUpperCase();
+  if (authorId.includes("@")) {
+    return authorId.split("@")[0].slice(0, 2).toUpperCase();
   }
-  return actorId.slice(0, 2).toUpperCase();
+  return authorId.slice(0, 2).toUpperCase();
 }
 
 function barWidth(value: number, large: number): number {
@@ -94,18 +94,18 @@ export function HistoryItem(props: HistoryItemProps) {
         <div class="flex items-center gap-2">
           <div class="flex items-center shrink-0">
             <For each={visibleAuthors()}>
-              {(actor, i) => (
+              {(author, i) => (
                 <div
-                  title={actor}
+                  title={author}
                   style={{
-                    background: actorColor(actor),
+                    background: authorColor(author),
                     "margin-left": i() === 0 ? "0" : "-4px",
                     "z-index": visibleAuthors().length - i(),
                     "font-size": "9px",
                   }}
                   class="relative w-[18px] h-[18px] rounded-full flex items-center justify-center text-white font-light select-none shrink-0"
                 >
-                  {getInitials(actor)}
+                  {getInitials(author)}
                 </div>
               )}
             </For>
@@ -137,12 +137,13 @@ export function HistoryItem(props: HistoryItemProps) {
                     </Show>
                   </span>
                   <svg
-                    class="shrink-0 w-3 h-3 opacity-0 group-hover/label:opacity-40 transition-opacity"
+                    class="shrink-0 w-3 h-3 opacity-0 group-hover/label:opacity-40 hover:!opacity-70 transition-opacity cursor-pointer"
                     style={{ color: "inherit" }}
                     xmlns="http://www.w3.org/2000/svg"
                     viewBox="0 0 16 16"
                     fill="currentColor"
-                    aria-hidden="true"
+                    aria-label="Edit label"
+                    onClick={startEdit}
                   >
                     <path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Z" />
                   </svg>
@@ -204,7 +205,7 @@ export function HistoryItem(props: HistoryItemProps) {
                     <div
                       title={subAuthor()}
                       style={{
-                        background: actorColor(subAuthor()),
+                        background: authorColor(subAuthor()),
                         "font-size": "9px",
                       }}
                       class="w-[18px] h-[18px] rounded-full flex items-center justify-center text-white font-light select-none shrink-0"
