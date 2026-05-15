@@ -1,0 +1,26 @@
+@import "tailwindcss";
+@plugin "daisyui";
+
+:root {
+  /* Accent — selected card background, border, and timeline dot */
+  --history-accent: #2962d9;
+  --history-accent-fg: #ffffff;
+
+  /* Unselected cards */
+  --history-card-bg: var(--color-base-50);
+  --history-card-border: var(--color-base-200);
+  --history-card-hover-bg: var(--color-base-100);
+
+  /* Date section header */
+  --history-section-bg: var(--color-base-100);
+  --history-section-divider: color-mix(in oklch, var(--color-base-300) 50%, transparent);
+
+  /* Text */
+  --history-fg: var(--color-base-content);
+  --history-muted-fg: color-mix(in oklch, var(--color-base-content) 55%, transparent);
+}
+
+/* Hide timeline line on last item in each date group */
+.last-timeline-item .timeline-line {
+  display: none;
+}
