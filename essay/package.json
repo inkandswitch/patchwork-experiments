@@ -1,0 +1,47 @@
+{
+  "name": "@patchwork/essay",
+  "version": "0.0.1",
+  "description": "Markdown essay editor for Patchwork",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch",
+    "push": "pnpm build && pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  },
+  "keywords": [],
+  "author": "Ink & Switch",
+  "dependencies": {
+    "@automerge/automerge": "^3.2.5",
+    "@automerge/automerge-codemirror": "^0.1.0",
+    "@automerge/automerge-repo": "^2.6.0-subduction.9",
+    "@codemirror/commands": "^6.10.3",
+    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/language": "^6.12.2",
+    "@codemirror/search": "^6.6.0",
+    "@codemirror/state": "^6.6.0",
+    "@codemirror/view": "^6.40.0",
+    "@inkandswitch/patchwork-plugins": "^0.0.6",
+    "@lezer/highlight": "^1.2.3",
+    "codemirror": "^6.0.0",
+    "solid-js": "^1.9.9"
+  },
+  "devDependencies": {
+    "@inkandswitch/patchwork-bootloader": "^0.0.4",
+    "esbuild": "~0.25.0",
+    "typescript": "~5.9.3",
+    "vite": "^7.1.9",
+    "vite-plugin-css-injected-by-js": "^3.5.2",
+    "vite-plugin-solid": "^2.11.10",
+    "vite-plugin-top-level-await": "^1.6.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "esbuild": "~0.25.0"
+    }
+  }
+}
