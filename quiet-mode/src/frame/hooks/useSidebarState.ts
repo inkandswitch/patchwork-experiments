@@ -9,10 +9,12 @@ function getStoredNumber(key: string, defaultValue: number): number {
 }
 
 /**
- * Reads a boolean from localStorage (returns true if value is "true")
+ * Reads a boolean from localStorage with a default fallback
  */
-function getStoredBoolean(key: string): boolean {
-  return localStorage.getItem(key) === "true";
+function getStoredBoolean(key: string, defaultValue: boolean = false): boolean {
+  const stored = localStorage.getItem(key);
+  if (stored === null) return defaultValue;
+  return stored === "true";
 }
 
 /**
@@ -21,10 +23,10 @@ function getStoredBoolean(key: string): boolean {
 export function useSidebarState() {
   // Sidebar collapse state with localStorage persistence
   const [isSidebarCollapsed, setIsSidebarCollapsed] = createSignal(
-    getStoredBoolean("patchwork:leftSidebarCollapsed")
+    getStoredBoolean("patchwork:leftSidebarCollapsed", true)
   );
   const [isRightSidebarCollapsed, setIsRightSidebarCollapsed] = createSignal(
-    getStoredBoolean("patchwork:rightSidebarCollapsed")
+    getStoredBoolean("patchwork:rightSidebarCollapsed", true)
   );
 
   // Resizable sidebar width state with localStorage persistence

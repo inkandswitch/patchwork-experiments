@@ -37,6 +37,7 @@ import type {
   CopyOption,
   DocLink,
   PanelMode,
+  SidebarControls,
 } from "./types.js";
 import { CATEGORY_ORDER, CATEGORY_LABELS } from "./types.js";
 import ButtonRow from "./ButtonRow.jsx";
@@ -46,6 +47,7 @@ export default function CommandPalette(props: {
   repo: Repo;
   accountDocHandle: DocHandle<AccountDoc>;
   hive?: AutomergeRepoKeyhive;
+  sidebarState?: SidebarControls;
 }) {
   // --- State ---
 
@@ -233,6 +235,43 @@ export default function CommandPalette(props: {
         close();
       },
     });
+
+    if (props.sidebarState) {
+      const sb = props.sidebarState;
+
+      if (sb.isSidebarCollapsed()) {
+        cmds.push({
+          name: "/show left-sidebar",
+          description: "Show the left sidebar",
+          category: "view",
+          action: () => { sb.setIsSidebarCollapsed(false); close(); },
+        });
+      }
+      if (sb.isRightSidebarCollapsed()) {
+        cmds.push({
+          name: "/show right-sidebar",
+          description: "Show the right sidebar",
+          category: "view",
+          action: () => { sb.setIsRightSidebarCollapsed(false); close(); },
+        });
+      }
+      if (!sb.isSidebarCollapsed()) {
+        cmds.push({
+          name: "/hide left-sidebar",
+          description: "Hide the left sidebar",
+          category: "view",
+          action: () => { sb.setIsSidebarCollapsed(true); close(); },
+        });
+      }
+      if (!sb.isRightSidebarCollapsed()) {
+        cmds.push({
+          name: "/hide right-sidebar",
+          description: "Hide the right sidebar",
+          category: "view",
+          action: () => { sb.setIsRightSidebarCollapsed(true); close(); },
+        });
+      }
+    }
 
     return cmds;
   };

@@ -133,6 +133,48 @@
   --debug-toast-changed: oklch(0.75 0.2 80);
 }
 
+/* Layout */
+
+.frame {
+  display: flex;
+  width: 100%;
+  height: 100%;
+}
+
+.sidebar {
+  position: relative;
+  display: flex;
+  flex: none;
+  overflow: hidden;
+}
+
+.sidebar[data-collapsed] {
+  overflow: visible;
+}
+
+.sidebar[data-side="left"] {
+  background: var(--color-base-100);
+}
+
+.sidebar[data-side="right"] {
+  background: var(--color-base-100);
+}
+
+.main-area {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.sidebar patchwork-view {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .sidebar-toggle {
   height: 100%;
   padding: 0;

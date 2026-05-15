@@ -12,7 +12,7 @@ export interface AccountDoc {
   moduleSettingsUrl?: AutomergeUrl;
 }
 
-export type CommandCategory = "account" | "document" | "create";
+export type CommandCategory = "account" | "document" | "create" | "view";
 
 export interface Command {
   name: string;
@@ -24,14 +24,23 @@ export interface Command {
 export const CATEGORY_ORDER: CommandCategory[] = [
   "create",
   "document",
+  "view",
   "account",
 ];
 
 export const CATEGORY_LABELS: Record<CommandCategory, string> = {
   create: "New Document",
   document: "Current Document",
+  view: "View",
   account: "Account",
 };
+
+export interface SidebarControls {
+  setIsSidebarCollapsed: (value: boolean) => void;
+  setIsRightSidebarCollapsed: (value: boolean) => void;
+  isSidebarCollapsed: () => boolean;
+  isRightSidebarCollapsed: () => boolean;
+}
 
 export type PanelMode =
   | "commands"

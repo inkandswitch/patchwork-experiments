@@ -3,16 +3,24 @@ import type { DocHandle, Repo } from "@automerge/automerge-repo";
 import type { DocWithComments } from "@inkandswitch/annotations-comments";
 import type { AccountDoc } from "../types";
 import {
+  useSidebarState,
+  useSidebarResize,
   useSelectedDocument,
   useAnnotations,
   useCommentThreads,
   useDebugRegistryToast,
   DebugRegistryToast,
 } from "./hooks";
+import { Sidebar } from "./components/Sidebar";
 import { MainDocumentView } from "./components/MainDocumentView";
 import { ensureAccountSubdocs } from "./account/ensureSubdocs";
 import CommandPalette from "../commands/CommandPalette";
+import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import "./styles.css";
+
+const MIN_SIDEBAR_WIDTH = 48;
+const MAX_SIDEBAR_WIDTH = 600;
+const DRAG_THRESHOLD = 3;
 
 export const PatchworkFrame = ({
   handle,
@@ -23,10 +31,41 @@ export const PatchworkFrame = ({
   element: HTMLElement | ShadowRoot;
   repo: Repo;
 }) => {
+  const accountDocHandle = useDocHandle<AccountDoc>(() => handle.url, { repo });
+
   // Lazily populate subdoc fields (rootFolderUrl, moduleSettingsUrl, contactUrl)
   // on first mount. Each is created via createDocOfDatatype2 of its own
   // datatype, so defaults and shape are owned by the datatype, not the frame.
   void ensureAccountSubdocs(handle, repo);
+
+  const [docVersion, setDocVersion] = createSignal(0);
+
+  createEffect(() => {
+    const h = accountDocHandle();
+    if (!h) return;
+    const onChange = () => setDocVersion((v) => v + 1);
+    h.on("change", onChange);
+    onCleanup(() => h.off("change", onChange));
+  });
+
+  const accountDoc = createMemo(() => {
+    docVersion();
+    return accountDocHandle()?.doc();
+  });
+
+  // Sidebar state management
+  const sidebarState = useSidebarState();
+
+  // Sidebar resize handlers
+  const { handleMouseDown, handleToggleClick } = useSidebarResize({
+    setLeftSidebarWidth: sidebarState.setLeftSidebarWidth,
+    setRightSidebarWidth: sidebarState.setRightSidebarWidth,
+    setIsSidebarCollapsed: sidebarState.setIsSidebarCollapsed,
+    setIsRightSidebarCollapsed: sidebarState.setIsRightSidebarCollapsed,
+    minWidth: MIN_SIDEBAR_WIDTH,
+    maxWidth: MAX_SIDEBAR_WIDTH,
+    dragThreshold: DRAG_THRESHOLD,
+  });
 
   // Selected document management
   const selectedDoc = useSelectedDocument({
@@ -55,7 +94,7 @@ export const PatchworkFrame = ({
   } = useDebugRegistryToast();
 
   return (
-    <div class="flex w-full h-full">
+    <div class="frame">
       <DebugRegistryToast
         events={debugEvents()}
         onDismiss={dismissEvent}
@@ -66,16 +105,48 @@ export const PatchworkFrame = ({
         repo={repo}
         accountDocHandle={handle}
         hive={(element as any).hive}
+        sidebarState={{
+          setIsSidebarCollapsed: (v: boolean) => sidebarState.setIsSidebarCollapsed(v),
+          setIsRightSidebarCollapsed: (v: boolean) => sidebarState.setIsRightSidebarCollapsed(v),
+          isSidebarCollapsed: sidebarState.isSidebarCollapsed,
+          isRightSidebarCollapsed: sidebarState.isRightSidebarCollapsed,
+        }}
       />
 
+      {/* Left Sidebar */}
+      {accountDoc()?.accountSidebarToolId && (
+        <Sidebar
+          side="left"
+          isCollapsed={sidebarState.isSidebarCollapsed}
+          width={sidebarState.leftSidebarWidth}
+          toolId={accountDoc()!.accountSidebarToolId}
+          docUrl={handle.url}
+          onMouseDown={handleMouseDown}
+          onToggleClick={handleToggleClick}
+        />
+      )}
+
       {/* Main Content Area */}
-      <div class="flex flex-col flex-1 h-full">
+      <div class="main-area">
         <MainDocumentView
           viewKey={selectedDoc.viewKey}
           selectedDocUrl={selectedDoc.selectedDocUrl}
           toolId={() => selectedDoc.selectedView()?.toolId}
         />
       </div>
+
+      {/* Right Sidebar */}
+      {accountDoc()?.contextSidebarToolId && (
+        <Sidebar
+          side="right"
+          isCollapsed={sidebarState.isRightSidebarCollapsed}
+          width={sidebarState.rightSidebarWidth}
+          toolId={accountDoc()!.contextSidebarToolId}
+          docUrl={handle.url}
+          onMouseDown={handleMouseDown}
+          onToggleClick={handleToggleClick}
+        />
+      )}
     </div>
   );
 };
