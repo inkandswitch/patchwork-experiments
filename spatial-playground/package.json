@@ -1,0 +1,32 @@
+{
+  "name": "@patchwork/spatial-playground",
+  "version": "0.0.1",
+  "description": "Six interactive spatial computing tools: colors, instrument, mocap, puppet, battle, clap",
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": "./dist/index.js",
+  "scripts": {
+    "build": "node esbuild/build.js",
+    "dev": "node esbuild/watch.js",
+    "pushwatch": "pnpm dev pushwork",
+    "push": "pnpm build && pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  },
+  "keywords": [],
+  "author": "Ink & Switch",
+  "dependencies": {
+    "@automerge/automerge-repo": "^2.5.0",
+    "@inkandswitch/patchwork-plugins": "^0.0.4",
+    "@mediapipe/tasks-vision": "^0.10.35",
+    "@pixiv/three-vrm": "^3.5.2",
+    "@undecaf/zbar-wasm": "^0.11.0",
+    "qrcode": "^1.5.4",
+    "three": "^0.184.0"
+  },
+  "devDependencies": {
+    "@inkandswitch/patchwork-bootloader": "^0.0.9",
+    "@types/qrcode": "^1.5.5",
+    "@types/three": "^0.184.1",
+    "esbuild": "^0.23.1"
+  }
+}
