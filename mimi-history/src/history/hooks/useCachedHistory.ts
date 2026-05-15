@@ -95,7 +95,7 @@ export function useCachedHistory(
     );
     if (localStorage.useTasks) {
       tasklib
-        .queue("automerge:21cbVwPwNZWXzC29AzhJGsVzSuQW" as AutomergeUrl)
+        .queue("automerge:2xrHArq3QwSGHaeUdquP7ECTpnEL" as AutomergeUrl)
         .addTask<AutomergeUrl, void>({
           input: sourceUrl,
           importUrl: new URL(/* @vite-ignore */ "../task.js", import.meta.url),
@@ -153,11 +153,6 @@ export function useCachedHistory(
       const cachedHeads = histDoc.heads ?? [];
       if (headsEqual(currentHeads, cachedHeads)) return;
 
-      // Precise trigger: only dispatch when the accumulated delta would
-      // actually split into more than one group — i.e. when its time span
-      // exceeds the strategy's grouping window. Concurrent changes that
-      // arrive via sync are included here naturally: they show up in the
-      // delta and extend its min/max just like local edits would.
       const deltaMeta = Automerge.getChangesMetaSince(
         sourceRawDoc,
         cachedHeads
