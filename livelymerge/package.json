@@ -1,7 +1,7 @@
 {
   "name": "@tiny-patchwork/livelymerge",
   "type": "module",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "main": "./dist/index.js",
   "scripts": {
@@ -12,16 +12,17 @@
   "dependencies": {
     "@automerge/automerge-repo": "2.6.0-subduction.20",
     "@automerge/automerge-repo-react-hooks": "2.6.0-subduction.20",
-    "@codemirror/lang-javascript": "^6.2.5",
-    "@codemirror/state": "^6.6.0",
-    "@codemirror/view": "^6.43.0",
-    "@inkandswitch/patchwork-plugins": "^0.0.4",
-    "codemirror": "^6.0.2",
+    "@codemirror/state": "6.5.2",
+    "@codemirror/view": "6.38.8",
+    "@codemirror/lang-javascript": "6.2.4",
+    "@codemirror/lint": "6.9.0",
+    "codemirror": "6.0.2",
+    "@inkandswitch/patchwork-plugins": "0.0.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@inkandswitch/patchwork-bootloader": "^0.0.9",
+    "@inkandswitch/patchwork-bootloader": "^0.1.0",
     "@tailwindcss/vite": "^4.3.0",
     "@types/react": "^18.3.28",
     "@types/react-dom": "^18.3.7",

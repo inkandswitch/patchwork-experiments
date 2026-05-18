@@ -379,7 +379,7 @@ function doCatchingErrors(fn: () => void) {
 }
 
 export const LivelymergeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
-  docHandle = useDocHandle<LivelymergeDoc>(docUrl)!;
+  docHandle = useDocHandle<LivelymergeDoc>(docUrl, { suspense: true })!;
   (window as any).handle = docHandle; // needed for historical reasons, will go away once we update alldefs
 
   const title = docHandle.doc().title.trim() || 'Livelymerge';
