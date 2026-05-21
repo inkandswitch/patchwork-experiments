@@ -5,7 +5,10 @@ export const LivelymergeDatatype: DatatypeImplementation<LivelymergeDoc> = {
   init(doc: LivelymergeDoc) {
     doc['@patchwork'] = { type: 'livelymerge' };
     doc.title = 'Untitled Livelymerge';
-    doc.objectTable = { 0: { type: "obj", _id: 0 } };
+    doc.objectTable = {
+      "-1": { type: "obj", _id: -1 }, // object prototype (top of the delegation chain)
+      "0": { type: "obj", _id: 0, _protoId: -1 }, // root object (w or world)
+    };
   },
   getTitle(doc: LivelymergeDoc) {
     return doc.title?.trim() || 'Livelymerge';
