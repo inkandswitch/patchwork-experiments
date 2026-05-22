@@ -1,3 +1,28 @@
+// helpers for arrays
+
+function clearArray(xs) {
+  xs.splice(0, xs.length);
+}
+
+function deleteFromArray(xs, x) {
+  const idx = xs.indexOf(x);
+  if (idx >= 0) {
+    xs.splice(idx, 1);
+  }
+}
+
+function deleteFromArrayPred(xs, pred) {
+  while (true) {
+    const idx = xs.findIndex(pred);
+    if (idx < 0) {
+      break;
+    }
+    xs.splice(idx, 1);
+  }
+}
+
+// --------
+
 w.setInterval = function (fn, interval) {
   return setInterval(() => impl.change(fn), interval);
 };
@@ -1564,7 +1589,7 @@ w.Morph.proto.remove = function () {
   //               a problem of morphs losing the chain to this.world()
 };
 w.Morph.proto.removeMorph = function (submorph) {
-  this.submorphs = this.submorphs.filter((each) => !(each === submorph));
+  deleteFromArray(this.submorphs, submorph);
   this.changed();
 };
 w.Morph.proto.renderMeOn = function (ctx) {
@@ -1668,9 +1693,9 @@ w.Morph.proto.startStepping = function (method, argIfAny, msTime, nextStepTimeIf
 w.Morph.proto.stopStepping = function (methodName) {
   if (!this.steppingSpecs) this.steppingSpecs = [];
   if (methodName) {
-    this.steppingSpecs = this.steppingSpecs.filter((spec) => spec.methodName !== methodName);
+    deleteFromArrayPred(this.steppingSpecs, (spec) => spec.methodName == methodName);
   } else {
-    this.steppingSpecs = [];
+    clearArray(this.steppingSpecs);
   }
   this.world().stopSteppingMorph(this, methodName);
 };
@@ -3078,7 +3103,7 @@ w.PanelMorph.proto.toggleCollapse = function () {
     this.lastLocationCollapsed = this.boundsToLoc(this.getBounds());
     this.collapsed = false;
     this._stashedContent.forEach((m) => this.addMorph(m));
-    this._stashedContent = [];
+    clearArray(this._stashedContent);
     let r = null;
     if (this.lastLocationExpanded) r = this.locToRect(this.lastLocationExpanded);
     else if (this._savedBounds) r = this._savedBounds;
@@ -4301,7 +4326,7 @@ w.OnScreenKeyboardMorph.proto.keyFaceLabel = function (spec) {
 };
 w.OnScreenKeyboardMorph.proto.buildKeys = function () {
   this.keyMorphs.forEach((m) => m.remove());
-  this.keyMorphs = [];
+  clearArray(this.keyMorphs);
   let rows = this._kbdRowSpecs || w.OnScreenKeyboardMorph.defaultRowSpecs();
   let nRows = rows.length;
   let pad = 8;

@@ -65,6 +65,17 @@ let world: any, w: any;
 
 let inChangeCall = false;
 
+(window as any).showRefs = (referentId: string) => {
+  for (const [id, state] of Object.entries(doc.objectTable)) {
+    if (!('type' in state) || state.type !== 'obj') {
+      continue;
+    }
+    for (const [k, v] of Object.entries(state))
+      if (typeof v === 'object' && v != null && v.type === 'ref' && v.id === referentId)
+        console.log(id, '.', k, '=', v);
+  }
+};
+
 const automergeImpl: Impl = {
   newObj(prototype?: Obj): Obj {
     if (newObjects == null) {
@@ -75,7 +86,7 @@ const automergeImpl: Impl = {
       _id: Math.random(),
       _protoId: prototype != null ? prototype[UNWRAPPED as any]._id : -1,
     };
-    console.log('>> fresh newObj', obj._id);
+    // console.log('>> fresh newObj', obj._id);
     newObjects.set(obj._id, obj);
     return proxify(obj);
   },
@@ -247,6 +258,8 @@ function _serialize(value: any): any {
     return toObjRef(value);
   } else if (Array.isArray(value)) {
     return toArrayRef(value);
+  } else if (isRef(value)) {
+    return { type: 'ref', id: value.id };
   } else if (typeof value === 'object' && value && value[UNWRAPPED]) {
     return value[UNWRAPPED];
   } else {
@@ -337,6 +350,31 @@ function proxifyArray(referent: any, objectTableId: number) {
         case 'shift': {
           return function () {
             return _deserialize(referent.shift());
+          };
+        }
+        case 'findIndex': {
+          return function (predicate: (value: any, index: number) => boolean, thisArg?: any) {
+            return referent.map(_deserialize).findIndex(predicate, thisArg);
+          };
+        }
+        case 'find': {
+          return function (predicate: (value: any, index: number) => boolean, thisArg?: any) {
+            return referent.map(_deserialize).find(predicate, thisArg);
+          };
+        }
+        case 'filter': {
+          return function (predicate: (value: any, index: number) => boolean, thisArg?: any) {
+            return referent.map(_deserialize).filter(predicate, thisArg);
+          };
+        }
+        case 'includes': {
+          return function (searchElement: any, fromIndex?: number) {
+            return referent.map(_deserialize).includes(searchElement, fromIndex);
+          };
+        }
+        case 'indexOf': {
+          return function (searchElement: any, fromIndex?: number) {
+            return referent.map(_deserialize).indexOf(searchElement, fromIndex);
           };
         }
         case 'forEach': {
@@ -517,7 +555,7 @@ function proxify(value: Referent, objectTableId?: number) {
 function gc() {
   for (const xs of newArrays ?? []) {
     const id: number = (xs as any)._id;
-    console.log('>> storing array with id', id, 'in object table');
+    // console.log('>> storing array with id', id, 'in object table');
     doc.objectTable[id] = xs.map(_serialize);
   }
 
@@ -529,7 +567,7 @@ function gc() {
     visited[id] = true;
 
     if (newObjects?.has(id)) {
-      console.log('>> storing object with id', id, 'from newObjects');
+      // console.log('>> storing object with id', id, 'from newObjects');
       doc.objectTable[id] = newObjects.get(id)!;
     }
 
