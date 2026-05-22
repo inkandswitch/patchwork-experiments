@@ -1,3 +1,25 @@
+// for compatibility between Livelymerge and Pyonpyon
+
+if (!window.impl) {
+  window.impl = {
+    change(fn) {
+      fn();
+    }
+  }
+}
+
+function getPrototypeOf(obj) {
+  return typeof obj === 'object' && obj && obj.__proto__ ? 
+    obj.__proto__ :
+    Object.getPrototypeOf(obj);
+}
+
+function getLmId(obj) {
+  return typeof obj === 'object' && obj && obj.getLmId ?
+    obj.getLmId() :
+    -Infinity;
+}
+
 // helpers for arrays
 
 function clearArray(xs) {
@@ -20,6 +42,52 @@ function deleteFromArrayPred(xs, pred) {
     xs.splice(idx, 1);
   }
 }
+
+/** Reparent diagnostics — set w.debugReparent = true, then drop a morph. */
+w.debugReparentCheck = function (morph, label) {
+  if (!w.debugReparent) return;
+  let id = morph.getLmId && getLmId(morph);
+  let listed = [];
+  function scan(owner, path) {
+    if (!owner || !owner.submorphs) return;
+    for (let i = 0; i < owner.submorphs.length; i++) {
+      let sub = owner.submorphs[i];
+      let hit = sub === morph || (id != null && sub.getLmId && getLmId(sub) === id);
+      if (hit) {
+        listed.push(
+          path +
+            '[' +
+            i +
+            '] ownerField=' +
+            (sub.owner ? sub.owner.className || 'Morph' : 'null') +
+            ' ix=' +
+            (owner.submorphs ? owner.submorphs.indexOf(sub) : -1)
+        );
+      }
+      if (sub.submorphs && sub.submorphs.length) scan(sub, path + '/' + (sub.className || 'Morph'));
+    }
+  }
+  let world = morph.world && morph.world();
+  if (world) scan(world, 'world');
+  let ownerName = morph.owner ? morph.owner.className || 'Morph' : 'null';
+  let ownerIx = morph.owner && morph.owner.submorphs ? morph.owner.submorphs.indexOf(morph) : -1;
+  let worldIx = world && world.submorphs ? world.submorphs.indexOf(morph) : -1;
+  console.log(
+    '[reparent]',
+    label || '',
+    'id',
+    id,
+    'morph.owner',
+    ownerName,
+    'indexInOwner',
+    ownerIx,
+    'indexInWorld',
+    worldIx,
+    'parentLists',
+    listed.length ? listed : '(none)'
+  );
+  if (listed.length > 1) console.warn('[reparent] duplicate parent list membership', listed);
+};
 
 // --------
 
@@ -52,11 +120,11 @@ w.classProto.subClass = function(name) {
   return cls;
 }
 w.classProto.inheritsFrom = function(maybeSuper) { 
-  return this.proto.__proto__ === maybeSuper.proto;
+  return getPrototypeOf(this.proto) === maybeSuper.proto;
 };
 
 // ***Instances and delegation
-w.objProto = w.__proto__;
+w.objProto = getPrototypeOf(w);
 w.objProto.isClass = function () { return false };
 w.classProto.isClass = function () { return true };
 
@@ -64,7 +132,7 @@ w.objProto.delegatesTo = function(parent) {
   let curr = this;
   while(curr) {
     if (curr === parent) return true;
-    curr = curr.__proto__;
+    curr = getPrototypeOf(curr);
   }
   return false;
 };
@@ -865,7 +933,7 @@ w.classProto.subClass = function(name) {
   return cls;
 }
 w.classProto.inheritsFrom = function(maybeSuper) { 
-  return this.proto.__proto__ === maybeSuper.proto;
+  return getPrototypeOf(this.proto) === maybeSuper.proto;
 };
 
 // ***Instances and delegation
@@ -876,7 +944,7 @@ w.objProto.delegatesTo = function(parent) {
   let curr = this;
   while(curr) {
     if (curr === parent) return true;
-    curr = curr.__proto__;
+    curr = getPrototypeOf(curr);
   }
   return false;
 };
@@ -1050,7 +1118,7 @@ w.superclass = function (sub) {
   if ( ! sub.isClass() ) return null;
   w.allClassNames().forEach((cName) => {
     let cls = w[cName];
-    if(sub.__proto__ === cls.proto) return cName } );
+    if(getPrototypeOf(sub) === cls.proto) return cName } );
     return 'must be Obj' ;
 };
 w.testTransforms = function () {
@@ -1369,7 +1437,9 @@ w.Morph.proto.reparentToOwnerPreservingWorldAnchor = function (newOwner, anchorL
     return;
   let p = anchorLocal == null ? this.shape.getBounds().topLeft : anchorLocal;
   let anchorWorld = this.globalize(p);
+  w.debugReparentCheck(this, 'before addMorph -> ' + (newOwner.className || 'Morph'));
   newOwner.addMorph(this); // removes from previous owner
+  w.debugReparentCheck(this, 'after addMorph -> ' + (newOwner.className || 'Morph'));
   let ownerPt = newOwner.localize(anchorWorld);
   let rotScale = this.transform.transformPt(p).subPt(this.transform.translation);
   this.transform.translation = ownerPt.subPt(rotScale);
@@ -1450,7 +1520,7 @@ w.Morph.proto.onPointerDown = function (p, evt) {
     if (sub.fullBounds().includesPt(localP)) {
       eventConsumed = sub.onPointerDown(localP, evt);
       if (eventConsumed) {
-        console.log('pointerDown event consumed by morph with id', sub.getLmId());
+        console.log('pointerDown event consumed by morph with id', getLmId(sub));
       }
     }
   });
@@ -1464,7 +1534,7 @@ w.Morph.proto.onPointerDown = function (p, evt) {
     copy.hitPoint = p;
     copy.actorID = evt.actorID;
     this.world().setPointerFocus(copy);
-    console.log('pointerDown event consumed by morph with id', this.getLmId());
+    console.log('pointerDown event consumed by morph with id', getLmId(this));
     return true; // could merge code
   }
   this.hitPoint = p;
@@ -1473,7 +1543,7 @@ w.Morph.proto.onPointerDown = function (p, evt) {
   this._pickUpOnDrag = this.owner != null && this.owner !== this.world();
   this.actorID = evt.actorID;
   this.world().setPointerFocus(this);
-  console.log('pointerDown event consumed by morph with id', this.getLmId());
+  console.log('pointerDown event consumed by morph with id', getLmId(this));
   return true;
 };
 w.Morph.proto.onPointerMove = function (p, evt) {
@@ -1790,7 +1860,7 @@ w.Obj.proto.delegatesTo = function(parent) {
   let curr = this;
   while(curr) {
     if (curr === parent) return true;
-    curr = curr.__proto__;
+    curr = getPrototypeOf(curr);
   }
   return false;
 };
