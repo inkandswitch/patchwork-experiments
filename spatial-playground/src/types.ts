@@ -12,6 +12,8 @@ export type ColorsDoc = {
   '@patchwork': { type: 'spatial-colors' };
   title: string;
   activeColors: ColorId[];
+  activeRegions: { colorId: ColorId; corners: number[][] }[] | null;
+  cameraAspect: number | null;
 };
 
 // -- Instrument --

@@ -57,6 +57,11 @@ export type ColorPosition = {
   y: number;
 };
 
+export type ColorRegion = {
+  colorId: ColorId;
+  corners: { x: number; y: number }[];
+};
+
 export type ActiveComposition = {
   colors: ColorId[];
   colorPositions: ColorPosition[];

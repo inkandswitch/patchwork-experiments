@@ -2,7 +2,7 @@ import QRCode from 'qrcode';
 import type { ColorsDoc, ColorId } from '../types.ts';
 import { listVideoDevices, buildVideoConstraints, waitForVideoReady, stopStream } from '../shared/camera.ts';
 import { escapeHtml } from '../shared/utils.ts';
-import type { ActiveComposition } from './types.ts';
+import type { ColorRegion } from './types.ts';
 import { CARD_DEFINITIONS, DWELL_MS } from './constants.ts';
 import { STYLE } from './style.ts';
 import { createComposition, formatColorMix, formatVisibleLabel, categoryLabel } from './composition.ts';
@@ -157,25 +157,46 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
   const overlayEl = q<HTMLDivElement>('.js-scanner-overlay');
   const cardGrid = q<HTMLDivElement>('.js-card-grid');
 
-  // --- Shared mutable state ---
+  // --- Doc-driven display state (always read from document) ---
+  let currentRegions: ColorRegion[] = [];
+  let currentAspect = 4 / 3;
+
+  // --- Other mutable state ---
   let currentStream: MediaStream | null = null;
-  let currentComposition = createComposition([]);
   let cameraReady = false;
   let cameraStarting = false;
   let selectedCameraId: string | null = null;
   let destroyed = false;
 
+  // --- Sync display state from document ---
+  function syncFromDoc() {
+    const doc = handle.doc() as ColorsDoc | undefined;
+    if (!doc) return;
+
+    currentRegions = (doc.activeRegions ?? []).map((r: any) => ({
+      colorId: r.colorId as ColorId,
+      corners: (r.corners ?? []).map((c: any) => ({ x: c[0] ?? 0, y: c[1] ?? 0 })),
+    }));
+    currentAspect = doc.cameraAspect ?? 4 / 3;
+
+    const colors = (doc.activeColors ?? []) as ColorId[];
+    colorStatus.textContent = colors.length ? formatColorMix(colors) : 'Idle';
+    sceneTitle.textContent = colors.length ? formatColorMix(colors) : 'Idle';
+    shell.dataset.scene = colors.join('-') || 'idle';
+  }
+
   // --- Create module instances ---
   const effects = createEffectsRenderer({
     canvas: sceneCanvas,
     element,
-    getComposition: () => currentComposition,
+    getRegions: () => currentRegions,
+    getAspectRatio: () => currentAspect,
   });
 
   const tracker = createCardTracker({
     video,
-    onCompositionChange(composition) {
-      applyComposition(composition);
+    onCompositionChange() {
+      // Composition changes are persisted via onRegionsChange; UI updates via syncFromDoc
     },
     onVisibleCardsChange(cards) {
       renderOverlay(overlayEl, video, tracker.getTrackedCards(), cards);
@@ -183,41 +204,24 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
         ? cards.map((card) => formatVisibleLabel(card.card)).join(' \u2022 ')
         : 'No supported cards visible';
     },
+    onRegionsChange(regions) {
+      // Camera → Document: write detected regions to the doc
+      handle.change((doc: ColorsDoc) => {
+        doc.activeRegions = regions.map((r) => ({
+          colorId: r.colorId,
+          corners: r.corners.map((c) => [c.x, c.y]),
+        }));
+        doc.cameraAspect = video.videoWidth / (video.videoHeight || 1);
+        doc.activeColors = regions.map((r) => r.colorId);
+      });
+      // Document → Display: read back from doc
+      syncFromDoc();
+    },
   });
 
-  // --- Composition bridge ---
-  function applyComposition(composition: ActiveComposition, fromRemote = false) {
-    currentComposition = composition;
-
-    shell.dataset.scene = composition.colors.join('-') || 'idle';
-    element.style.setProperty('--scene-accent', composition.palette.accent);
-    element.style.setProperty('--scene-panel', composition.palette.panel);
-    element.style.setProperty('--scene-text', composition.palette.text);
-
-    sceneTitle.textContent = composition.title;
-    sceneTagline.textContent = composition.tagline;
-    colorStatus.textContent = composition.colors.length
-      ? formatColorMix(composition.colors)
-      : 'Idle';
-
-    if (!fromRemote) {
-      handle.change((doc: ColorsDoc) => {
-        doc.activeColors = composition.colors;
-      });
-    }
-  }
-
-  // --- Remote doc sync ---
+  // --- Listen for remote doc changes ---
   function onDocChange() {
-    const doc = handle.doc() as ColorsDoc | undefined;
-    if (!doc) return;
-    const remoteColors = (doc.activeColors ?? []) as ColorId[];
-    const remoteComposition = createComposition(
-      remoteColors.map((colorId, i) => ({ colorId, x: (i + 1) / (remoteColors.length + 1), y: 0.5 })),
-    );
-    if (remoteComposition.key !== currentComposition.key) {
-      applyComposition(remoteComposition, true);
-    }
+    syncFromDoc();
   }
   handle.on("change", onDocChange);
 
@@ -292,7 +296,14 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
     stopCurrentStream();
     tracker.reset();
     renderOverlay(overlayEl, video, tracker.getTrackedCards(), []);
-    applyComposition(createComposition([]));
+
+    // Clear document state
+    handle.change((doc: ColorsDoc) => {
+      doc.activeRegions = null;
+      doc.cameraAspect = null;
+      doc.activeColors = [];
+    });
+    syncFromDoc();
 
     scannerStatus.textContent = 'Standby';
     lastCode.textContent = 'Camera stopped';
@@ -345,12 +356,6 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
     if (destroyed) return;
     const now = performance.now();
     const candidateCards = tracker.getCandidateCards();
-
-    for (const [id, candidate] of candidateCards) {
-      if (now - candidate.lastSeenAt > 1400) {
-        candidateCards.delete(id);
-      }
-    }
 
     if (!cameraReady) {
       dwellLabel.textContent = 'Cards become active after brief stable visibility.';
@@ -448,17 +453,8 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
   printButtonInline.addEventListener('click', onPrint);
   window.addEventListener('resize', onResize);
 
-  // --- Initialize ---
-  {
-    const doc = handle.doc() as ColorsDoc | undefined;
-    if (doc?.activeColors?.length) {
-      const colors = (doc.activeColors ?? []) as ColorId[];
-      currentComposition = createComposition(
-        colors.map((colorId, i) => ({ colorId, x: (i + 1) / (colors.length + 1), y: 0.5 })),
-      );
-    }
-  }
-  applyComposition(currentComposition, true);
+  // --- Initialize from document ---
+  syncFromDoc();
   void renderCards();
   void probeCameraAvailability();
 
