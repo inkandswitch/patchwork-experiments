@@ -1,12 +1,12 @@
-import type { ColorId, EffectId } from '../types.ts';
+import type { ColorId } from '../types.ts';
 
-export type CardCategory = 'color' | 'fx';
-export type CardPayload = `color:${ColorId}` | `fx:${EffectId}`;
+export type CardCategory = 'color';
+export type CardPayload = `color:${ColorId}`;
 
 export type CardDefinition = {
   payload: CardPayload;
   category: CardCategory;
-  id: ColorId | EffectId;
+  id: ColorId;
   label: string;
   description: string;
   accent: string;
@@ -21,8 +21,6 @@ export type Hsl = {
 export type Palette = {
   name: string;
   accent: string;
-  glow: string;
-  background: [string, string, string];
   panel: string;
   text: string;
 };
@@ -53,9 +51,15 @@ export type TrackedSceneCard = {
   lastSeenAt: number;
 };
 
+export type ColorPosition = {
+  colorId: ColorId;
+  x: number;
+  y: number;
+};
+
 export type ActiveComposition = {
   colors: ColorId[];
-  effect: EffectId | null;
+  colorPositions: ColorPosition[];
   palette: Palette;
   title: string;
   tagline: string;

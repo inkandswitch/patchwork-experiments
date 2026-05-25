@@ -5,15 +5,13 @@ export type Point = {
 
 // -- Colors --
 
-export type ColorId = 'red' | 'blue' | 'yellow' | 'green';
-export type EffectId = 'ripple' | 'grid' | 'grain';
+export type ColorId = 'red' | 'blue' | 'yellow';
 export type SoundId = 'chime' | 'pad' | 'lofi';
 
 export type ColorsDoc = {
   '@patchwork': { type: 'spatial-colors' };
   title: string;
   activeColors: ColorId[];
-  activeEffect: EffectId | null;
 };
 
 // -- Instrument --

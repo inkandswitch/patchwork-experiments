@@ -1,8 +1,8 @@
 import { createWasmDetector, type MultiDetector } from '../shared/qr-detector.ts';
-import type { CandidateCard, TrackedSceneCard, VisibleCard } from './types.ts';
+import type { CandidateCard, ColorPosition, TrackedSceneCard, VisibleCard } from './types.ts';
 import { CARD_TTL_MS, DWELL_MS, MAX_SCANS_PER_SECOND, TRACK_MATCH_DISTANCE_RATIO } from './constants.ts';
 import { toVisibleCard } from './overlay.ts';
-import { resolveComposition, type ActiveComposition } from './composition.ts';
+import { createComposition, type ActiveComposition } from './composition.ts';
 
 export function createCardTracker(opts: {
   video: HTMLVideoElement;
@@ -123,10 +123,22 @@ export function createCardTracker(opts: {
 
     pruneStaleCandidates(now);
 
-    const activeCards = [...candidateCards.values()].filter(
-      (candidate) => now - candidate.firstSeenAt >= DWELL_MS,
-    );
-    const nextComposition = resolveComposition(activeCards);
+    const activeCards = [...candidateCards.values()]
+      .filter((candidate) => now - candidate.firstSeenAt >= DWELL_MS)
+      .filter((candidate) => candidate.card.category === 'color');
+
+    const videoW = video.videoWidth || 1;
+    const videoH = video.videoHeight || 1;
+
+    const colorPositions: ColorPosition[] = activeCards
+      .slice(0, 3)
+      .map((candidate) => ({
+        colorId: candidate.card.id,
+        x: candidate.x / videoW,
+        y: candidate.y / videoH,
+      }));
+
+    const nextComposition = createComposition(colorPositions);
 
     if (nextComposition.key !== lastCompositionKey) {
       lastCompositionKey = nextComposition.key;

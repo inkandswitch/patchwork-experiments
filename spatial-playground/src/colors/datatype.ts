@@ -5,7 +5,6 @@ export const ColorsDatatype = {
     doc['@patchwork'] = { type: 'spatial-colors' };
     doc.title = 'QR Colors';
     doc.activeColors = [];
-    doc.activeEffect = null;
   },
   getTitle(doc: ColorsDoc) {
     return doc.title || 'QR Colors';

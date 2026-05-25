@@ -61,19 +61,6 @@ code {
   pointer-events: none;
 }
 
-.scene-noise {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  opacity: 0.25;
-  mix-blend-mode: soft-light;
-  background-image:
-    radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.35) 1px, transparent 0),
-    radial-gradient(circle at 2px 2px, rgba(0, 0, 0, 0.12) 1px, transparent 0);
-  background-size: 18px 18px, 23px 23px;
-}
-
 .display-stage,
 .studio-shell,
 .studio-header,

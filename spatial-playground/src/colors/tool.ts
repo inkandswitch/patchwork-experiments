@@ -1,9 +1,9 @@
 import QRCode from 'qrcode';
-import type { ColorsDoc, ColorId, EffectId } from '../types.ts';
+import type { ColorsDoc, ColorId } from '../types.ts';
 import { listVideoDevices, buildVideoConstraints, waitForVideoReady, stopStream } from '../shared/camera.ts';
 import { escapeHtml } from '../shared/utils.ts';
 import type { ActiveComposition } from './types.ts';
-import { CARD_DEFINITIONS, DWELL_MS, EFFECT_LIBRARY } from './constants.ts';
+import { CARD_DEFINITIONS, DWELL_MS } from './constants.ts';
 import { STYLE } from './style.ts';
 import { createComposition, formatColorMix, formatVisibleLabel, categoryLabel } from './composition.ts';
 import { renderOverlay } from './overlay.ts';
@@ -15,7 +15,6 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
   element.innerHTML = `
     <div class="app-shell" data-scene="idle">
       <canvas class="scene-canvas" aria-hidden="true"></canvas>
-      <div class="scene-noise" aria-hidden="true"></div>
 
       <section class="display-stage" aria-label="Current display">
         <div class="display-toolbar">
@@ -27,7 +26,7 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
         <section class="studio-header panel">
           <div>
             <p class="eyebrow">Studio</p>
-            <h2>Camera, cards, and composition controls</h2>
+            <h2>Camera and color card controls</h2>
           </div>
           <button class="secondary-button js-back-to-display" type="button">Back to Display</button>
         </section>
@@ -35,13 +34,13 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
         <section class="hero-stage">
           <section class="hero-copy panel">
             <p class="eyebrow">QR Scene Machine</p>
-            <h1 class="js-scene-title">Idle Field</h1>
+            <h1 class="js-scene-title">Idle</h1>
             <p class="js-scene-tagline tagline">
-              Blend up to two color cards and one effect card at the same time.
+              Show up to three color cards to blend colors based on their positions.
             </p>
 
             <div class="controls">
-              <button class="primary-button js-start-camera" type="button">Enable Webcam</button>
+              <button class="primary-button js-toggle-camera" type="button">Start Camera</button>
               <button class="secondary-button js-print-cards" type="button">Print Cards</button>
             </div>
 
@@ -54,15 +53,11 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
                 <span class="status-label">Colors</span>
                 <strong class="js-color-status">Idle</strong>
               </article>
-              <article class="status-card">
-                <span class="status-label">Effect</span>
-                <strong class="js-effect-status">None</strong>
-              </article>
             </div>
 
             <section class="dwell-meter">
               <div class="dwell-copy">
-                <span class="js-dwell-label">Cards become active after 0.22 seconds of stable visibility.</span>
+                <span class="js-dwell-label">Cards become active after brief stable visibility.</span>
                 <span class="js-dwell-amount">0%</span>
               </div>
               <div class="dwell-track" aria-hidden="true">
@@ -71,7 +66,7 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
             </section>
 
             <p class="micro-copy">
-              Use up to two color cards at once. Add one effect card to stack motion on top.
+              Show up to three color cards at once. Move cards closer to blend faster, farther apart for a wider gradient.
             </p>
           </section>
 
@@ -98,10 +93,10 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
             <div class="camera-footer">
               <div class="camera-note">
                 <span class="status-label">Visible cards</span>
-                <strong class="js-last-code">Waiting for camera permission</strong>
+                <strong class="js-last-code">Waiting for camera</strong>
               </div>
               <p class="micro-copy">
-                Detector: <span class="js-detector-mode">Tuned WASM detector (stable multi-QR)</span>. Edge and Chrome can read multiple QR codes at once when the native detector is available.
+                Detector: <span class="js-detector-mode">Tuned WASM detector (stable multi-QR)</span>.
               </p>
             </div>
           </aside>
@@ -111,7 +106,7 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
           <div class="card-sheet-header">
             <div>
               <p class="eyebrow">Printable Cards</p>
-              <h2>Seven cards: color and effect</h2>
+              <h2>Three cards: red, blue, and yellow</h2>
               <p class="micro-copy">
                 Print these on plain paper or cardstock. Start with large cards and keep them well lit.
               </p>
@@ -150,12 +145,11 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
   const sceneTagline = q<HTMLParagraphElement>('.js-scene-tagline');
   const scannerStatus = q<HTMLElement>('.js-scanner-status');
   const colorStatus = q<HTMLElement>('.js-color-status');
-  const effectStatus = q<HTMLElement>('.js-effect-status');
   const dwellLabel = q<HTMLElement>('.js-dwell-label');
   const dwellAmount = q<HTMLElement>('.js-dwell-amount');
   const dwellFill = q<HTMLElement>('.js-dwell-fill');
   const lastCode = q<HTMLElement>('.js-last-code');
-  const startCameraButton = q<HTMLButtonElement>('.js-start-camera');
+  const toggleCameraButton = q<HTMLButtonElement>('.js-toggle-camera');
   const printButton = q<HTMLButtonElement>('.js-print-cards');
   const printButtonInline = q<HTMLButtonElement>('.js-print-cards-inline');
   const cameraSelect = q<HTMLSelectElement>('.js-camera-select');
@@ -165,8 +159,7 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
 
   // --- Shared mutable state ---
   let currentStream: MediaStream | null = null;
-  let currentComposition = createComposition([], null);
-  let compositionEnteredAt = performance.now();
+  let currentComposition = createComposition([]);
   let cameraReady = false;
   let cameraStarting = false;
   let selectedCameraId: string | null = null;
@@ -177,7 +170,6 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
     canvas: sceneCanvas,
     element,
     getComposition: () => currentComposition,
-    getCompositionEnteredAt: () => compositionEnteredAt,
   });
 
   const tracker = createCardTracker({
@@ -196,14 +188,9 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
   // --- Composition bridge ---
   function applyComposition(composition: ActiveComposition, fromRemote = false) {
     currentComposition = composition;
-    compositionEnteredAt = performance.now();
 
     shell.dataset.scene = composition.colors.join('-') || 'idle';
-    element.style.setProperty('--scene-bg-a', composition.palette.background[0]);
-    element.style.setProperty('--scene-bg-b', composition.palette.background[1]);
-    element.style.setProperty('--scene-bg-c', composition.palette.background[2]);
     element.style.setProperty('--scene-accent', composition.palette.accent);
-    element.style.setProperty('--scene-glow', composition.palette.glow);
     element.style.setProperty('--scene-panel', composition.palette.panel);
     element.style.setProperty('--scene-text', composition.palette.text);
 
@@ -212,12 +199,10 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
     colorStatus.textContent = composition.colors.length
       ? formatColorMix(composition.colors)
       : 'Idle';
-    effectStatus.textContent = composition.effect ? EFFECT_LIBRARY[composition.effect].label : 'None';
 
     if (!fromRemote) {
       handle.change((doc: ColorsDoc) => {
         doc.activeColors = composition.colors;
-        doc.activeEffect = composition.effect;
       });
     }
   }
@@ -227,8 +212,9 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
     const doc = handle.doc() as ColorsDoc | undefined;
     if (!doc) return;
     const remoteColors = (doc.activeColors ?? []) as ColorId[];
-    const remoteEffect = (doc.activeEffect ?? null) as EffectId | null;
-    const remoteComposition = createComposition(remoteColors, remoteEffect);
+    const remoteComposition = createComposition(
+      remoteColors.map((colorId, i) => ({ colorId, x: (i + 1) / (remoteColors.length + 1), y: 0.5 })),
+    );
     if (remoteComposition.key !== currentComposition.key) {
       applyComposition(remoteComposition, true);
     }
@@ -239,14 +225,14 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
   async function probeCameraAvailability() {
     if (!navigator.mediaDevices?.getUserMedia || !navigator.mediaDevices.enumerateDevices) {
       scannerStatus.textContent = 'Camera API unavailable';
-      startCameraButton.disabled = true;
+      toggleCameraButton.disabled = true;
       return;
     }
 
     const devices = await listVideoDevices().catch(() => []);
     if (!devices.length) {
       scannerStatus.textContent = 'No camera detected';
-      startCameraButton.disabled = true;
+      toggleCameraButton.disabled = true;
     }
   }
 
@@ -254,8 +240,8 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
     if (cameraStarting) return;
 
     cameraStarting = true;
-    startCameraButton.disabled = true;
-    startCameraButton.textContent = cameraReady ? 'Switching...' : 'Starting...';
+    toggleCameraButton.disabled = true;
+    toggleCameraButton.textContent = cameraReady ? 'Switching...' : 'Starting...';
     scannerStatus.textContent = cameraReady ? 'Switching camera' : 'Requesting permission';
 
     try {
@@ -283,22 +269,34 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
       tracker.start();
 
       scannerStatus.textContent = 'Watching for cards';
-      startCameraButton.textContent = 'Webcam Ready';
+      toggleCameraButton.textContent = 'Stop Camera';
       lastCode.textContent = 'No supported cards visible';
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       cameraReady = false;
       scannerStatus.textContent = 'Camera failed';
       lastCode.textContent = message;
-      startCameraButton.textContent = 'Retry Webcam';
-      startCameraButton.disabled = false;
+      toggleCameraButton.textContent = 'Start Camera';
+      toggleCameraButton.disabled = false;
       stopCurrentStream();
     } finally {
       if (cameraReady) {
-        startCameraButton.disabled = false;
+        toggleCameraButton.disabled = false;
       }
       cameraStarting = false;
     }
+  }
+
+  function stopCamera() {
+    tracker.stop();
+    stopCurrentStream();
+    tracker.reset();
+    renderOverlay(overlayEl, video, tracker.getTrackedCards(), []);
+    applyComposition(createComposition([]));
+
+    scannerStatus.textContent = 'Standby';
+    lastCode.textContent = 'Camera stopped';
+    toggleCameraButton.textContent = 'Start Camera';
   }
 
   async function populateCameraSelect() {
@@ -355,8 +353,7 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
     }
 
     if (!cameraReady) {
-      scannerStatus.textContent = 'Standby';
-      dwellLabel.textContent = 'Cards become active after 0.22 seconds of stable visibility.';
+      dwellLabel.textContent = 'Cards become active after brief stable visibility.';
       dwellAmount.textContent = '0%';
       dwellFill.style.transform = 'scaleX(0)';
       return;
@@ -377,7 +374,7 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
       dwellAmount.textContent = `${Math.round(progress * 100)}%`;
       dwellFill.style.transform = `scaleX(${progress})`;
     } else {
-      dwellLabel.textContent = 'Use up to two color cards and one effect card.';
+      dwellLabel.textContent = 'Show up to three color cards.';
       dwellAmount.textContent = candidates.length ? `${candidates.length} active` : '0%';
       dwellFill.style.transform = 'scaleX(0)';
     }
@@ -420,7 +417,13 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
   }
 
   // --- Event listeners ---
-  const onStartCamera = () => { void startCamera(); };
+  const onToggleCamera = () => {
+    if (cameraReady) {
+      stopCamera();
+    } else {
+      void startCamera();
+    }
+  };
   const onOpenStudio = () => {
     studioShell.style.display = '';
     displayStage.style.display = 'none';
@@ -437,7 +440,7 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
   const onPrint = () => { window.print(); };
   const onResize = () => { effects.resize(); };
 
-  startCameraButton.addEventListener('click', onStartCamera);
+  toggleCameraButton.addEventListener('click', onToggleCamera);
   q<HTMLButtonElement>('.js-open-studio').addEventListener('click', onOpenStudio);
   q<HTMLButtonElement>('.js-back-to-display').addEventListener('click', onBackToDisplay);
   cameraSelect.addEventListener('change', onCameraChange);
@@ -448,10 +451,10 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
   // --- Initialize ---
   {
     const doc = handle.doc() as ColorsDoc | undefined;
-    if (doc?.activeColors?.length || doc?.activeEffect) {
+    if (doc?.activeColors?.length) {
+      const colors = (doc.activeColors ?? []) as ColorId[];
       currentComposition = createComposition(
-        (doc.activeColors ?? []) as ColorId[],
-        (doc.activeEffect ?? null) as EffectId | null,
+        colors.map((colorId, i) => ({ colorId, x: (i + 1) / (colors.length + 1), y: 0.5 })),
       );
     }
   }
@@ -473,7 +476,7 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
       window.clearInterval(syncIntervalHandle);
     }
 
-    startCameraButton.removeEventListener('click', onStartCamera);
+    toggleCameraButton.removeEventListener('click', onToggleCamera);
     cameraSelect.removeEventListener('change', onCameraChange);
     printButton.removeEventListener('click', onPrint);
     printButtonInline.removeEventListener('click', onPrint);
