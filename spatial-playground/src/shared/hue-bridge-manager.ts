@@ -1,102 +1,99 @@
-import type { ColorsDoc } from '../types.ts';
-import { clamp } from '../shared/utils.ts';
 import {
   findHueBridgeIp,
   pairHue,
   sendHueAction,
-  hueToHueBridge,
-  percentToHueSat,
-  percentToHueBrightness,
   type HueAction,
-} from '../shared/hue.ts';
-import type { ActiveComposition } from './types.ts';
-import { formatColorMix, hslForComposition } from './composition.ts';
+} from './hue.ts';
+
+export type HueBridgeConfig = {
+  bridgeIp: string;
+  username: string;
+  lightsOn: boolean;
+};
 
 export function createHueBridgeManager(opts: {
   handle: any;
+  configKey: string;
+  deviceType: string;
   bridgeIpInput: HTMLInputElement;
   findButton: HTMLButtonElement;
   pairButton: HTMLButtonElement;
   toggleButton: HTMLButtonElement;
-  syncButton: HTMLButtonElement;
   statusText: HTMLElement;
-  getComposition: () => ActiveComposition;
 }): {
   loadSettings(): void;
   syncControls(message?: string): void;
-  applyComposition(composition: ActiveComposition, force?: boolean): Promise<void>;
+  isLightsOn(): boolean;
+  setLightsOn(on: boolean): void;
+  getUsername(): string;
+  getBridgeIp(): string;
+  sendAction(action: HueAction): Promise<void>;
   destroy(): void;
 } {
-  const { handle, bridgeIpInput, findButton, pairButton, toggleButton, syncButton, statusText, getComposition } = opts;
+  const { handle, configKey, deviceType, bridgeIpInput, findButton, pairButton, toggleButton, statusText } = opts;
 
   let hueUsername = '';
   let huePairedBridgeIp = '';
   let hueLightsOn = false;
-  let hueSceneSync = false;
   let hueBusy = false;
-  let hueLastSceneKey = '';
 
-  function getHueBridgeIp() {
+  function getBridgeIp() {
     return bridgeIpInput.value.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
   }
 
   function loadSettings() {
     try {
-      const doc = handle.doc() as ColorsDoc | undefined;
-      const settings = doc?.hueConfig;
+      const doc = handle.doc();
+      const settings = doc?.[configKey] as HueBridgeConfig | null | undefined;
       if (settings) {
         bridgeIpInput.value = settings.bridgeIp ?? '';
         hueUsername = settings.username ?? '';
         huePairedBridgeIp = settings.bridgeIp ?? '';
         hueLightsOn = Boolean(settings.lightsOn);
-        hueSceneSync = Boolean(settings.sceneSync);
       } else {
         bridgeIpInput.value = '';
         hueUsername = '';
         huePairedBridgeIp = '';
         hueLightsOn = false;
-        hueSceneSync = false;
       }
     } catch {
       bridgeIpInput.value = '';
       hueUsername = '';
       huePairedBridgeIp = '';
       hueLightsOn = false;
-      hueSceneSync = false;
     }
   }
 
   function saveSettings() {
-    handle.change((doc: ColorsDoc) => {
-      doc.hueConfig = {
-        bridgeIp: getHueBridgeIp(),
-        username: hueUsername,
-        lightsOn: hueLightsOn,
-        sceneSync: hueSceneSync,
-      };
+    const bridgeIp = getBridgeIp();
+    handle.change((doc: any) => {
+      if (bridgeIp && hueUsername) {
+        doc[configKey] = {
+          bridgeIp,
+          username: hueUsername,
+          lightsOn: hueLightsOn,
+        };
+      } else {
+        doc[configKey] = null;
+      }
     });
   }
 
   function syncControls(message?: string) {
-    const bridgeIp = getHueBridgeIp();
+    const bridgeIp = getBridgeIp();
     findButton.disabled = hueBusy;
     pairButton.disabled = hueBusy || !bridgeIp;
     toggleButton.disabled = hueBusy || !bridgeIp || !hueUsername;
-    syncButton.disabled = hueBusy || !bridgeIp || !hueUsername;
     toggleButton.textContent = hueLightsOn ? 'Turn Lights Off' : 'Turn Lights On';
-    syncButton.textContent = hueSceneSync ? 'Unsync Scene' : 'Sync Scene';
-    syncButton.classList.toggle('is-active', hueSceneSync);
 
     if (message) {
       statusText.textContent = message;
     } else if (!bridgeIp) {
-      statusText.textContent = 'Enter the Hue Bridge IP, press the bridge button, then Pair.';
+      statusText.textContent = 'Enter the Hue Bridge IP, or use Find Bridge.';
     } else if (!hueUsername) {
       statusText.textContent = 'Press the physical Hue Bridge button, then click Pair.';
-    } else if (hueSceneSync) {
-      statusText.textContent = `Scene sync active: QR colors and effects are driving Hue at ${bridgeIp}.`;
     } else {
-      statusText.textContent = `Paired with ${bridgeIp}. Toggle lights, or Sync Scene for QR-driven color/effects.`;
+      statusText.textContent = `Paired with ${bridgeIp}. Toggle lights or use tool-specific controls.`;
     }
   }
 
@@ -113,7 +110,7 @@ export function createHueBridgeManager(opts: {
       }
 
       bridgeIpInput.value = ip;
-      if (getHueBridgeIp() !== huePairedBridgeIp) {
+      if (getBridgeIp() !== huePairedBridgeIp) {
         hueUsername = '';
       }
       saveSettings();
@@ -127,7 +124,7 @@ export function createHueBridgeManager(opts: {
   }
 
   async function pair() {
-    const bridgeIp = getHueBridgeIp();
+    const bridgeIp = getBridgeIp();
     if (!bridgeIp) {
       syncControls('Enter the Hue Bridge IP first.');
       return;
@@ -138,7 +135,7 @@ export function createHueBridgeManager(opts: {
     let statusMessage = '';
 
     try {
-      const username = await pairHue(bridgeIp, 'qr_scene_machine#browser');
+      const username = await pairHue(bridgeIp, deviceType);
       if (username) {
         hueUsername = username;
         huePairedBridgeIp = bridgeIp;
@@ -158,7 +155,7 @@ export function createHueBridgeManager(opts: {
   }
 
   async function toggleLights() {
-    const bridgeIp = getHueBridgeIp();
+    const bridgeIp = getBridgeIp();
     if (!bridgeIp || !hueUsername) {
       syncControls('Pair the Hue Bridge first.');
       return;
@@ -184,90 +181,45 @@ export function createHueBridgeManager(opts: {
     }
   }
 
-  async function toggleSceneSync() {
-    if (!hueUsername || !getHueBridgeIp()) {
-      syncControls('Pair the Hue Bridge first.');
-      return;
-    }
-
-    hueSceneSync = !hueSceneSync;
-    hueLightsOn = hueSceneSync ? true : hueLightsOn;
-    saveSettings();
-    syncControls(hueSceneSync ? 'Scene sync enabled.' : 'Scene sync paused.');
-
-    if (hueSceneSync) {
-      await applyComp(getComposition(), true);
-    }
-  }
-
-  async function applyComp(composition: ActiveComposition, force = false) {
-    if (!hueSceneSync || !hueUsername || !getHueBridgeIp()) {
-      return;
-    }
-
-    if (!force && composition.key === hueLastSceneKey) {
-      return;
-    }
-
-    hueLastSceneKey = composition.key;
-    const action = createHueColorAction(composition, force ? 2 : 3);
-    await doSendAction(action);
-  }
-
-  function createHueColorAction(composition: ActiveComposition, transitiontime: number): HueAction {
-    const mix = hslForComposition(composition);
-    return {
-      on: true,
-      hue: hueToHueBridge(mix.h),
-      sat: percentToHueSat(composition.colors.length ? clamp(mix.s + 22, 55, 100) : mix.s),
-      bri: percentToHueBrightness(composition.colors.length ? clamp(mix.l + 42, 62, 100) : 54),
-      transitiontime,
-    };
-  }
-
   async function doSendAction(action: HueAction) {
-    const bridgeIp = getHueBridgeIp();
-    if (!bridgeIp || !hueUsername) {
-      return;
-    }
+    const bridgeIp = getBridgeIp();
+    if (!bridgeIp || !hueUsername) return;
 
-    try {
-      await sendHueAction(bridgeIp, hueUsername, action);
+    await sendHueAction(bridgeIp, hueUsername, action);
 
-      if (action.on !== undefined) {
-        hueLightsOn = action.on;
-        saveSettings();
-        syncControls(hueSceneSync ? `Hue target: ${formatColorMix(getComposition().colors) || 'Idle'}.` : undefined);
-      }
-    } catch {
-      hueSceneSync = false;
-      syncControls('Hue sync stopped: bridge request failed.');
+    if (action.on !== undefined) {
+      hueLightsOn = action.on;
       saveSettings();
     }
   }
 
   function onBridgeInput() {
-    if (getHueBridgeIp() !== huePairedBridgeIp) {
+    if (getBridgeIp() !== huePairedBridgeIp) {
       hueUsername = '';
     }
     saveSettings();
     syncControls();
   }
 
-  // Wire up event listeners
+  // Wire event listeners
   bridgeIpInput.addEventListener('input', onBridgeInput);
   findButton.addEventListener('click', () => { void findBridge(); });
   pairButton.addEventListener('click', () => { void pair(); });
   toggleButton.addEventListener('click', () => { void toggleLights(); });
-  syncButton.addEventListener('click', () => { void toggleSceneSync(); });
 
   return {
     loadSettings,
     syncControls,
-    applyComposition: applyComp,
+    isLightsOn: () => hueLightsOn,
+    setLightsOn(on: boolean) {
+      hueLightsOn = on;
+      saveSettings();
+    },
+    getUsername: () => hueUsername,
+    getBridgeIp,
+    sendAction: doSendAction,
     destroy() {
       bridgeIpInput.removeEventListener('input', onBridgeInput);
-      // Button listeners are cleaned up when DOM is cleared
     },
   };
 }

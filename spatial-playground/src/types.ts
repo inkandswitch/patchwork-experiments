@@ -14,13 +14,6 @@ export type ColorsDoc = {
   title: string;
   activeColors: ColorId[];
   activeEffect: EffectId | null;
-  activeSound: SoundId | null;
-  hueConfig: {
-    bridgeIp: string;
-    username: string;
-    lightsOn: boolean;
-    sceneSync: boolean;
-  } | null;
 };
 
 // -- Instrument --

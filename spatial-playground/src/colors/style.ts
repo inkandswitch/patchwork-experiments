@@ -299,59 +299,6 @@ h3 {
   box-shadow: 0 0 28px rgba(186, 255, 207, 0.22);
 }
 
-.hue-panel {
-  display: grid;
-  grid-template-columns: minmax(150px, 0.8fr) minmax(170px, 1fr);
-  gap: 12px;
-  align-items: end;
-  padding: 16px;
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-}
-
-.hue-panel .eyebrow {
-  margin-bottom: 6px;
-}
-
-.hue-panel h3 {
-  font-size: 1.35rem;
-}
-
-.hue-field {
-  display: grid;
-  gap: 7px;
-}
-
-.hue-field span {
-  font-size: 0.78rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  opacity: 0.68;
-}
-
-.hue-field input {
-  min-height: 42px;
-  width: 100%;
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  border-radius: 16px;
-  padding: 0 12px;
-  color: inherit;
-  background: rgba(255, 255, 255, 0.18);
-  font: inherit;
-}
-
-.hue-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.hue-panel .micro-copy {
-  grid-column: 1 / -1;
-  font-size: 0.9rem;
-}
-
 .status-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

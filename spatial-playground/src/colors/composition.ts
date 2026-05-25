@@ -1,7 +1,7 @@
-import type { ColorId, EffectId, SoundId } from '../types.ts';
+import type { ColorId, EffectId } from '../types.ts';
 import { clamp } from '../shared/utils.ts';
 import type { ActiveComposition, CandidateCard, CardCategory, CardDefinition, Hsl, Palette } from './types.ts';
-import { COLOR_LIBRARY, COLOR_ORDER, EFFECT_LIBRARY, IDLE_PALETTE, SOUND_LIBRARY } from './constants.ts';
+import { COLOR_LIBRARY, COLOR_ORDER, EFFECT_LIBRARY, IDLE_PALETTE } from './constants.ts';
 
 export function mixHsl(colors: Hsl[]): Hsl {
   const total = colors.length;
@@ -132,14 +132,6 @@ export function resolvePalette(colors: ColorId[]): Palette {
   } satisfies Palette;
 }
 
-export function hslForComposition(composition: ActiveComposition): Hsl {
-  if (!composition.colors.length) {
-    return { h: 190, s: 40, l: 48 };
-  }
-
-  return mixHsl(composition.colors.map((colorId) => COLOR_LIBRARY[colorId].hsl));
-}
-
 export function formatColorMix(colors: ColorId[]): string {
   const counts = new Map<ColorId, number>();
   for (const color of colors) {
@@ -162,18 +154,14 @@ export function categoryLabel(category: CardCategory): string {
     return 'Color';
   }
 
-  if (category === 'fx') {
-    return 'Effect';
-  }
-
-  return 'Sound';
+  return 'Effect';
 }
 
 export function formatVisibleLabel(card: CardDefinition): string {
   return `${categoryLabel(card.category)}: ${card.label}`;
 }
 
-export function createComposition(colors: ColorId[], effect: EffectId | null, sound: SoundId | null): ActiveComposition {
+export function createComposition(colors: ColorId[], effect: EffectId | null): ActiveComposition {
   const palette = resolvePalette(colors);
   const title = colors.length
     ? formatColorMix(colors)
@@ -187,18 +175,13 @@ export function createComposition(colors: ColorId[], effect: EffectId | null, so
     ? `${EFFECT_LIBRARY[effect].label} effect is active.`
     : 'No effect layer active.';
 
-  const soundPhrase = sound
-    ? `${SOUND_LIBRARY[sound].label} sound bed is active.`
-    : 'No sound layer active.';
-
   return {
     colors,
     effect,
-    sound,
     palette,
     title,
-    tagline: `${colorPhrase} ${effectPhrase} ${soundPhrase}`,
-    key: `colors:${colors.join('+') || 'idle'}|fx:${effect ?? 'none'}|sound:${sound ?? 'none'}`,
+    tagline: `${colorPhrase} ${effectPhrase}`,
+    key: `colors:${colors.join('+') || 'idle'}|fx:${effect ?? 'none'}`,
   };
 }
 
@@ -212,9 +195,5 @@ export function resolveComposition(activeCandidates: CandidateCard[]): ActiveCom
     .filter((candidate) => candidate.card.category === 'fx')
     .sort((left, right) => right.lastArea - left.lastArea)[0]?.card.id as EffectId | undefined;
 
-  const activeSound = activeCandidates
-    .filter((candidate) => candidate.card.category === 'sound')
-    .sort((left, right) => right.lastArea - left.lastArea)[0]?.card.id as SoundId | undefined;
-
-  return createComposition(activeColors, activeEffect ?? null, activeSound ?? null);
+  return createComposition(activeColors, activeEffect ?? null);
 }

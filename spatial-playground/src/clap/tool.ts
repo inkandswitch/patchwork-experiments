@@ -1,5 +1,6 @@
 import { ensureAudioContext } from '../shared/audio.ts';
-import { findHueBridgeIp, pairHue, sendHueAction, hueToHueBridge, percentToHueSat, percentToHueBrightness } from '../shared/hue.ts';
+import { hueToHueBridge, percentToHueSat, percentToHueBrightness } from '../shared/hue.ts';
+import { createHueBridgeManager } from '../shared/hue-bridge-manager.ts';
 import { clamp } from '../shared/utils.ts';
 import type { ClapDoc } from '../types.ts';
 
@@ -295,10 +296,6 @@ export default function ClapTool(handle: any, element: HTMLElement) {
   const doc = handle.doc() as ClapDoc | undefined;
   let peakThreshold = doc?.thresholdConfig?.peakThreshold ?? DEFAULT_PEAK_THRESHOLD;
   let windowMs = doc?.thresholdConfig?.windowMs ?? DEFAULT_WINDOW_MS;
-  let hueUsername = doc?.hueConfig?.username ?? '';
-  let huePairedBridgeIp = doc?.hueConfig?.bridgeIp ?? '';
-  let hueLightsOn = doc?.hueConfig?.lightsOn ?? false;
-  let hueBusy = false;
 
   // ---- audio / mic state ----
   let audioContext: AudioContext | null = null;
@@ -425,11 +422,17 @@ export default function ClapTool(handle: any, element: HTMLElement) {
   const waveCanvas = q<HTMLCanvasElement>('.wave-canvas');
   const waveContext = waveCanvas.getContext('2d')!;
   const startMicButton = q<HTMLButtonElement>('.start-mic');
-  const bridgeIpInput = q<HTMLInputElement>('.bridge-ip');
-  const findBridgeButton = q<HTMLButtonElement>('.find-bridge');
-  const pairBridgeButton = q<HTMLButtonElement>('.pair-bridge');
-  const toggleLightsButton = q<HTMLButtonElement>('.toggle-lights');
-  const hueStatusEl = q<HTMLElement>('.hue-status');
+
+  const hueBridge = createHueBridgeManager({
+    handle,
+    configKey: 'hueConfig',
+    deviceType: 'clap_lights#browser',
+    bridgeIpInput: q<HTMLInputElement>('.bridge-ip'),
+    findButton: q<HTMLButtonElement>('.find-bridge'),
+    pairButton: q<HTMLButtonElement>('.pair-bridge'),
+    toggleButton: q<HTMLButtonElement>('.toggle-lights'),
+    statusText: q<HTMLElement>('.hue-status'),
+  });
   const gestureTitleEl = q<HTMLElement>('.gesture-title');
   const gestureSubtitleEl = q<HTMLElement>('.gesture-subtitle');
   const peakFillEl = q<HTMLElement>('.peak-fill');
@@ -446,8 +449,8 @@ export default function ClapTool(handle: any, element: HTMLElement) {
   const testDoubleButton = q<HTMLButtonElement>('.test-double');
 
   // ---- load persisted Hue state ----
-  bridgeIpInput.value = huePairedBridgeIp;
-  syncHueControls();
+  hueBridge.loadSettings();
+  hueBridge.syncControls();
   syncClassifierLabels();
   resizeCanvases();
   bgRafHandle = requestAnimationFrame(renderBackground);
@@ -463,46 +466,9 @@ export default function ClapTool(handle: any, element: HTMLElement) {
     });
   }
 
-  function persistHueConfig() {
-    const bridgeIp = getHueBridgeIp();
-    if (bridgeIp && hueUsername) {
-      handle.change((doc: ClapDoc) => {
-        doc.hueConfig = {
-          bridgeIp,
-          username: hueUsername,
-          lightsOn: hueLightsOn,
-        };
-      });
-    } else {
-      handle.change((doc: ClapDoc) => {
-        doc.hueConfig = null;
-      });
-    }
-  }
-
   // ---- event listeners ----
   startMicButton.addEventListener('click', () => {
     void toggleMic();
-  });
-
-  bridgeIpInput.addEventListener('input', () => {
-    if (getHueBridgeIp() !== huePairedBridgeIp) {
-      hueUsername = '';
-    }
-    persistHueConfig();
-    syncHueControls();
-  });
-
-  findBridgeButton.addEventListener('click', () => {
-    void findHueBridge();
-  });
-
-  pairBridgeButton.addEventListener('click', () => {
-    void pairHueBridge();
-  });
-
-  toggleLightsButton.addEventListener('click', () => {
-    void toggleHueLights();
   });
 
   thresholdSlider.addEventListener('input', () => {
@@ -673,46 +639,43 @@ export default function ClapTool(handle: any, element: HTMLElement) {
 
   // ---- Hue actions ----
   async function triggerColorChange() {
-    if (!hueLightsOn) {
+    if (!hueBridge.isLightsOn()) {
       setActionText('Single clap ignored', 'Lights are off. Double clap to turn them on first.');
-      syncHueControls('Single clap ignored: lights are off. Double clap to turn them on.');
+      hueBridge.syncControls('Single clap ignored: lights are off. Double clap to turn them on.');
       return;
     }
 
     const color = COLORS[colorIndex % COLORS.length];
     colorIndex += 1;
     setActionText('Single clap: color', `Hue ${Math.round(color.h)} degrees.`);
-    const bridgeIp = getHueBridgeIp();
-    if (!bridgeIp || !hueUsername) return;
+    if (!hueBridge.getBridgeIp() || !hueBridge.getUsername()) return;
 
     try {
-      await sendHueAction(bridgeIp, hueUsername, {
+      await hueBridge.sendAction({
         hue: hueToHueBridge(color.h),
         sat: percentToHueSat(color.s),
         bri: percentToHueBrightness(Math.min(100, color.l + 34)),
         transitiontime: 1,
       });
     } catch {
-      syncHueControls('Hue request failed. Check bridge IP/network.');
+      hueBridge.syncControls('Hue request failed. Check bridge IP/network.');
     }
   }
 
   async function triggerPowerToggle() {
-    const nextOn = !hueLightsOn;
-    hueLightsOn = nextOn;
-    persistHueConfig();
+    const nextOn = !hueBridge.isLightsOn();
+    hueBridge.setLightsOn(nextOn);
     setActionText(nextOn ? 'Double clap: ON' : 'Double clap: OFF', nextOn ? 'Power toggled on.' : 'Power toggled off.');
-    const bridgeIp = getHueBridgeIp();
-    if (!bridgeIp || !hueUsername) return;
+    if (!hueBridge.getBridgeIp() || !hueBridge.getUsername()) return;
 
     try {
-      await sendHueAction(bridgeIp, hueUsername, {
+      await hueBridge.sendAction({
         on: nextOn,
         bri: nextOn ? 254 : undefined,
         transitiontime: 1,
       });
     } catch {
-      syncHueControls('Hue request failed. Check bridge IP/network.');
+      hueBridge.syncControls('Hue request failed. Check bridge IP/network.');
     }
   }
 
@@ -796,95 +759,6 @@ export default function ClapTool(handle: any, element: HTMLElement) {
     lastActionEl.textContent = title;
   }
 
-  function syncHueControls(message?: string) {
-    const bridgeIp = getHueBridgeIp();
-    findBridgeButton.disabled = hueBusy;
-    pairBridgeButton.disabled = hueBusy || !bridgeIp;
-    toggleLightsButton.disabled = hueBusy || !bridgeIp || !hueUsername;
-    toggleLightsButton.textContent = hueLightsOn ? 'Turn Lights Off' : 'Turn Lights On';
-
-    if (message) {
-      hueStatusEl.textContent = message;
-    } else if (!bridgeIp) {
-      hueStatusEl.textContent = 'Enter the Hue Bridge IP, or use Find Bridge.';
-    } else if (!hueUsername) {
-      hueStatusEl.textContent = 'Press the physical Hue Bridge button, then Pair.';
-    } else {
-      hueStatusEl.textContent = `Paired with ${bridgeIp}. Start mic to test clap controls.`;
-    }
-  }
-
-  async function findHueBridge() {
-    hueBusy = true;
-    syncHueControls('Looking for Hue bridges...');
-    let statusMessage = '';
-
-    try {
-      const ip = await findHueBridgeIp();
-      if (!ip) {
-        statusMessage = 'No Hue Bridge found. Check bridge/router connection.';
-        return;
-      }
-
-      bridgeIpInput.value = ip;
-      if (getHueBridgeIp() !== huePairedBridgeIp) {
-        hueUsername = '';
-      }
-      persistHueConfig();
-      statusMessage = `Found Hue Bridge at ${ip}. Press bridge button, then Pair.`;
-    } catch {
-      statusMessage = 'Bridge discovery failed. Type the bridge IP manually.';
-    } finally {
-      hueBusy = false;
-      syncHueControls(statusMessage || undefined);
-    }
-  }
-
-  async function pairHueBridge() {
-    const bridgeIp = getHueBridgeIp();
-    if (!bridgeIp) {
-      syncHueControls('Enter the Hue Bridge IP first.');
-      return;
-    }
-
-    hueBusy = true;
-    syncHueControls('Pairing... press the bridge button if this fails.');
-    let statusMessage = '';
-
-    try {
-      const username = await pairHue(bridgeIp, 'clap_lights#browser');
-      if (username) {
-        hueUsername = username;
-        huePairedBridgeIp = bridgeIp;
-        persistHueConfig();
-        statusMessage = 'Paired. Start mic or use Test buttons.';
-      } else {
-        statusMessage = 'Pairing failed. Press the bridge button and try again.';
-      }
-    } catch {
-      statusMessage = 'Pairing request failed. Check bridge IP and network.';
-    } finally {
-      hueBusy = false;
-      syncHueControls(statusMessage || undefined);
-    }
-  }
-
-  async function toggleHueLights() {
-    const nextOn = !hueLightsOn;
-    hueLightsOn = nextOn;
-    persistHueConfig();
-    syncHueControls(nextOn ? 'Turning Hue lights on...' : 'Turning Hue lights off...');
-    const bridgeIp = getHueBridgeIp();
-    if (!bridgeIp || !hueUsername) return;
-
-    try {
-      await sendHueAction(bridgeIp, hueUsername, { on: nextOn, bri: nextOn ? 254 : undefined, transitiontime: 1 });
-      syncHueControls(nextOn ? 'Hue lights are on.' : 'Hue lights are off.');
-    } catch {
-      syncHueControls('Hue request failed. Check bridge IP/network.');
-    }
-  }
-
   // ---- background animation ----
   function renderBackground(timestamp: number) {
     if (destroyed) return;
@@ -936,10 +810,6 @@ export default function ClapTool(handle: any, element: HTMLElement) {
     drawWaveform();
   }
 
-  function getHueBridgeIp() {
-    return bridgeIpInput.value.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-  }
-
   // ---- cleanup ----
   return () => {
     destroyed = true;
@@ -950,6 +820,7 @@ export default function ClapTool(handle: any, element: HTMLElement) {
     }
     void audioContext?.close();
     audioContext = null;
+    hueBridge.destroy();
     window.removeEventListener('resize', onResize);
   };
 }

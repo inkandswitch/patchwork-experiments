@@ -6,8 +6,6 @@ export const ColorsDatatype = {
     doc.title = 'QR Colors';
     doc.activeColors = [];
     doc.activeEffect = null;
-    doc.activeSound = null;
-    doc.hueConfig = null;
   },
   getTitle(doc: ColorsDoc) {
     return doc.title || 'QR Colors';

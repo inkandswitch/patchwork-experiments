@@ -1,4 +1,4 @@
-import type { ColorId, EffectId, SoundId } from '../types.ts';
+import type { ColorId, EffectId } from '../types.ts';
 import type { CardDefinition, CardPayload, Hsl, Palette } from './types.ts';
 
 export const DWELL_MS = 160;
@@ -53,24 +53,6 @@ export const EFFECT_LIBRARY: Record<EffectId, { label: string; description: stri
   },
 };
 
-export const SOUND_LIBRARY: Record<SoundId, { label: string; description: string; accent: string }> = {
-  chime: {
-    label: 'Chime',
-    description: 'Sparse bell tones in a pentatonic pattern.',
-    accent: '#f2f5ff',
-  },
-  pad: {
-    label: 'Pad',
-    description: 'Airy sustained synth chords with slow filter drift.',
-    accent: '#c5e6ff',
-  },
-  lofi: {
-    label: 'Lofi',
-    description: 'Soft pulse, filtered hiss, and mellow tape wobble.',
-    accent: '#ffd3a1',
-  },
-};
-
 export const IDLE_PALETTE: Palette = {
   name: 'Idle Field',
   accent: '#355f70',
@@ -96,14 +78,6 @@ export const CARD_DEFINITIONS: CardDefinition[] = [
     label: EFFECT_LIBRARY[effectId].label,
     description: EFFECT_LIBRARY[effectId].description,
     accent: EFFECT_LIBRARY[effectId].accent,
-  })),
-  ...(['chime', 'pad', 'lofi'] as const).map((soundId) => ({
-    payload: `sound:${soundId}` as CardPayload,
-    category: 'sound' as const,
-    id: soundId,
-    label: SOUND_LIBRARY[soundId].label,
-    description: SOUND_LIBRARY[soundId].description,
-    accent: SOUND_LIBRARY[soundId].accent,
   })),
 ];
 

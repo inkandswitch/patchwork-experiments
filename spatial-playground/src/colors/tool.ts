@@ -1,15 +1,13 @@
 import QRCode from 'qrcode';
-import type { ColorsDoc, ColorId, EffectId, SoundId } from '../types.ts';
+import type { ColorsDoc, ColorId, EffectId } from '../types.ts';
 import { listVideoDevices, buildVideoConstraints, waitForVideoReady, stopStream } from '../shared/camera.ts';
 import { escapeHtml } from '../shared/utils.ts';
-import type { ActiveComposition, VisibleCard } from './types.ts';
-import { CARD_DEFINITIONS, DWELL_MS, EFFECT_LIBRARY, SOUND_LIBRARY } from './constants.ts';
+import type { ActiveComposition } from './types.ts';
+import { CARD_DEFINITIONS, DWELL_MS, EFFECT_LIBRARY } from './constants.ts';
 import { STYLE } from './style.ts';
 import { createComposition, formatColorMix, formatVisibleLabel, categoryLabel } from './composition.ts';
 import { renderOverlay } from './overlay.ts';
 import { createEffectsRenderer } from './effects.ts';
-import { createAudioManager } from './audio.ts';
-import { createHueBridgeManager } from './hue-bridge.ts';
 import { createCardTracker } from './tracking.ts';
 
 export default function ColorsTool(handle: any, element: HTMLElement) {
@@ -39,32 +37,13 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
             <p class="eyebrow">QR Scene Machine</p>
             <h1 class="js-scene-title">Idle Field</h1>
             <p class="js-scene-tagline tagline">
-              Blend up to two color cards, one effect card, and one sound card at the same time.
+              Blend up to two color cards and one effect card at the same time.
             </p>
 
             <div class="controls">
-              <button class="primary-button js-start-camera" type="button">Enable Webcam + Audio</button>
-              <button class="secondary-button js-test-audio" type="button">Test Audio</button>
+              <button class="primary-button js-start-camera" type="button">Enable Webcam</button>
               <button class="secondary-button js-print-cards" type="button">Print Cards</button>
             </div>
-
-            <section class="hue-panel">
-              <div>
-                <p class="eyebrow">Hue Bridge</p>
-                <h3>Light bars</h3>
-              </div>
-              <label class="hue-field">
-                <span>Bridge IP</span>
-                <input class="js-hue-bridge-ip" type="text" inputmode="decimal" autocomplete="off" placeholder="192.168.1.50" />
-              </label>
-              <div class="hue-actions">
-                <button class="secondary-button compact-button js-hue-find" type="button">Find Bridge</button>
-                <button class="secondary-button compact-button js-hue-pair" type="button">Pair</button>
-                <button class="secondary-button compact-button js-hue-toggle" type="button">Turn Lights On</button>
-                <button class="secondary-button compact-button js-hue-sync" type="button">Sync Scene</button>
-              </div>
-              <p class="js-hue-status micro-copy">Enter the Hue Bridge IP, press the bridge button, then Pair.</p>
-            </section>
 
             <div class="status-grid">
               <article class="status-card">
@@ -79,10 +58,6 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
                 <span class="status-label">Effect</span>
                 <strong class="js-effect-status">None</strong>
               </article>
-              <article class="status-card">
-                <span class="status-label">Sound</span>
-                <strong class="js-sound-status">Silent</strong>
-              </article>
             </div>
 
             <section class="dwell-meter">
@@ -96,7 +71,7 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
             </section>
 
             <p class="micro-copy">
-              Use up to two color cards at once. Add one effect card and one sound card to stack motion and audio on top.
+              Use up to two color cards at once. Add one effect card to stack motion on top.
             </p>
           </section>
 
@@ -136,7 +111,7 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
           <div class="card-sheet-header">
             <div>
               <p class="eyebrow">Printable Cards</p>
-              <h2>Ten cards: color, effect, and sound</h2>
+              <h2>Seven cards: color and effect</h2>
               <p class="micro-copy">
                 Print these on plain paper or cardstock. Start with large cards and keep them well lit.
               </p>
@@ -176,13 +151,11 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
   const scannerStatus = q<HTMLElement>('.js-scanner-status');
   const colorStatus = q<HTMLElement>('.js-color-status');
   const effectStatus = q<HTMLElement>('.js-effect-status');
-  const soundStatus = q<HTMLElement>('.js-sound-status');
   const dwellLabel = q<HTMLElement>('.js-dwell-label');
   const dwellAmount = q<HTMLElement>('.js-dwell-amount');
   const dwellFill = q<HTMLElement>('.js-dwell-fill');
   const lastCode = q<HTMLElement>('.js-last-code');
   const startCameraButton = q<HTMLButtonElement>('.js-start-camera');
-  const testAudioButton = q<HTMLButtonElement>('.js-test-audio');
   const printButton = q<HTMLButtonElement>('.js-print-cards');
   const printButtonInline = q<HTMLButtonElement>('.js-print-cards-inline');
   const cameraSelect = q<HTMLSelectElement>('.js-camera-select');
@@ -192,7 +165,7 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
 
   // --- Shared mutable state ---
   let currentStream: MediaStream | null = null;
-  let currentComposition = createComposition([], null, null);
+  let currentComposition = createComposition([], null);
   let compositionEnteredAt = performance.now();
   let cameraReady = false;
   let cameraStarting = false;
@@ -200,24 +173,11 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
   let destroyed = false;
 
   // --- Create module instances ---
-  const audio = createAudioManager();
-
   const effects = createEffectsRenderer({
     canvas: sceneCanvas,
     element,
     getComposition: () => currentComposition,
     getCompositionEnteredAt: () => compositionEnteredAt,
-  });
-
-  const hueBridge = createHueBridgeManager({
-    handle,
-    bridgeIpInput: q<HTMLInputElement>('.js-hue-bridge-ip'),
-    findButton: q<HTMLButtonElement>('.js-hue-find'),
-    pairButton: q<HTMLButtonElement>('.js-hue-pair'),
-    toggleButton: q<HTMLButtonElement>('.js-hue-toggle'),
-    syncButton: q<HTMLButtonElement>('.js-hue-sync'),
-    statusText: q<HTMLElement>('.js-hue-status'),
-    getComposition: () => currentComposition,
   });
 
   const tracker = createCardTracker({
@@ -253,16 +213,11 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
       ? formatColorMix(composition.colors)
       : 'Idle';
     effectStatus.textContent = composition.effect ? EFFECT_LIBRARY[composition.effect].label : 'None';
-    soundStatus.textContent = composition.sound ? SOUND_LIBRARY[composition.sound].label : 'Silent';
-
-    audio.updateSoundLayer(composition.sound);
-    void hueBridge.applyComposition(composition);
 
     if (!fromRemote) {
       handle.change((doc: ColorsDoc) => {
         doc.activeColors = composition.colors;
         doc.activeEffect = composition.effect;
-        doc.activeSound = composition.sound;
       });
     }
   }
@@ -273,8 +228,7 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
     if (!doc) return;
     const remoteColors = (doc.activeColors ?? []) as ColorId[];
     const remoteEffect = (doc.activeEffect ?? null) as EffectId | null;
-    const remoteSound = (doc.activeSound ?? null) as SoundId | null;
-    const remoteComposition = createComposition(remoteColors, remoteEffect, remoteSound);
+    const remoteComposition = createComposition(remoteColors, remoteEffect);
     if (remoteComposition.key !== currentComposition.key) {
       applyComposition(remoteComposition, true);
     }
@@ -305,7 +259,6 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
     scannerStatus.textContent = cameraReady ? 'Switching camera' : 'Requesting permission';
 
     try {
-      await audio.ensureContext();
       tracker.stop();
       stopCurrentStream();
       tracker.reset();
@@ -330,14 +283,14 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
       tracker.start();
 
       scannerStatus.textContent = 'Watching for cards';
-      startCameraButton.textContent = 'Webcam + Audio Ready';
+      startCameraButton.textContent = 'Webcam Ready';
       lastCode.textContent = 'No supported cards visible';
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       cameraReady = false;
       scannerStatus.textContent = 'Camera failed';
       lastCode.textContent = message;
-      startCameraButton.textContent = 'Retry Webcam + Audio';
+      startCameraButton.textContent = 'Retry Webcam';
       startCameraButton.disabled = false;
       stopCurrentStream();
     } finally {
@@ -395,7 +348,6 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
     const now = performance.now();
     const candidateCards = tracker.getCandidateCards();
 
-    // Prune stale candidates by checking the map
     for (const [id, candidate] of candidateCards) {
       if (now - candidate.lastSeenAt > 1400) {
         candidateCards.delete(id);
@@ -425,7 +377,7 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
       dwellAmount.textContent = `${Math.round(progress * 100)}%`;
       dwellFill.style.transform = `scaleX(${progress})`;
     } else {
-      dwellLabel.textContent = 'Use up to two color cards, one effect card, and one sound card.';
+      dwellLabel.textContent = 'Use up to two color cards and one effect card.';
       dwellAmount.textContent = candidates.length ? `${candidates.length} active` : '0%';
       dwellFill.style.transform = 'scaleX(0)';
     }
@@ -469,18 +421,6 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
 
   // --- Event listeners ---
   const onStartCamera = () => { void startCamera(); };
-  const onTestAudio = () => {
-    void audio.testOutput((text) => {
-      soundStatus.textContent = text;
-      if (text === 'Test tone') {
-        window.setTimeout(() => {
-          if (soundStatus.textContent === 'Test tone' && !currentComposition.sound) {
-            soundStatus.textContent = 'Silent';
-          }
-        }, 900);
-      }
-    });
-  };
   const onOpenStudio = () => {
     studioShell.style.display = '';
     displayStage.style.display = 'none';
@@ -498,7 +438,6 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
   const onResize = () => { effects.resize(); };
 
   startCameraButton.addEventListener('click', onStartCamera);
-  testAudioButton.addEventListener('click', onTestAudio);
   q<HTMLButtonElement>('.js-open-studio').addEventListener('click', onOpenStudio);
   q<HTMLButtonElement>('.js-back-to-display').addEventListener('click', onBackToDisplay);
   cameraSelect.addEventListener('change', onCameraChange);
@@ -507,19 +446,16 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
   window.addEventListener('resize', onResize);
 
   // --- Initialize ---
-  hueBridge.loadSettings();
   {
     const doc = handle.doc() as ColorsDoc | undefined;
-    if (doc?.activeColors?.length || doc?.activeEffect || doc?.activeSound) {
+    if (doc?.activeColors?.length || doc?.activeEffect) {
       currentComposition = createComposition(
         (doc.activeColors ?? []) as ColorId[],
         (doc.activeEffect ?? null) as EffectId | null,
-        (doc.activeSound ?? null) as SoundId | null,
       );
     }
   }
   applyComposition(currentComposition, true);
-  hueBridge.syncControls();
   void renderCards();
   void probeCameraAvailability();
 
@@ -531,16 +467,13 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
 
     tracker.destroy();
     stopCurrentStream();
-    audio.destroy();
     effects.destroy();
-    hueBridge.destroy();
 
     if (syncIntervalHandle) {
       window.clearInterval(syncIntervalHandle);
     }
 
     startCameraButton.removeEventListener('click', onStartCamera);
-    testAudioButton.removeEventListener('click', onTestAudio);
     cameraSelect.removeEventListener('change', onCameraChange);
     printButton.removeEventListener('click', onPrint);
     printButtonInline.removeEventListener('click', onPrint);

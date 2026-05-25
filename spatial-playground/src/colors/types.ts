@@ -1,12 +1,12 @@
-import type { ColorId, EffectId, SoundId } from '../types.ts';
+import type { ColorId, EffectId } from '../types.ts';
 
-export type CardCategory = 'color' | 'fx' | 'sound';
-export type CardPayload = `color:${ColorId}` | `fx:${EffectId}` | `sound:${SoundId}`;
+export type CardCategory = 'color' | 'fx';
+export type CardPayload = `color:${ColorId}` | `fx:${EffectId}`;
 
 export type CardDefinition = {
   payload: CardPayload;
   category: CardCategory;
-  id: ColorId | EffectId | SoundId;
+  id: ColorId | EffectId;
   label: string;
   description: string;
   accent: string;
@@ -56,7 +56,6 @@ export type TrackedSceneCard = {
 export type ActiveComposition = {
   colors: ColorId[];
   effect: EffectId | null;
-  sound: SoundId | null;
   palette: Palette;
   title: string;
   tagline: string;
