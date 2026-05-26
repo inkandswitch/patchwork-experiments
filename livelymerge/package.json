@@ -10,6 +10,7 @@
     "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
   },
   "dependencies": {
+    "@automerge/automerge": "^3.2.6",
     "@automerge/automerge-repo": "2.6.0-subduction.20",
     "@automerge/automerge-repo-react-hooks": "2.6.0-subduction.20",
     "@codemirror/state": "6.5.2",

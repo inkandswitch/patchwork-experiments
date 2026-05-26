@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@automerge/automerge':
+        specifier: ^3.2.6
+        version: 3.2.6
       '@automerge/automerge-repo':
         specifier: 2.6.0-subduction.20
         version: 2.6.0-subduction.20
@@ -1227,7 +1230,7 @@ snapshots:
 
   '@automerge/automerge-repo@2.5.0':
     dependencies:
-      '@automerge/automerge': 3.2.1
+      '@automerge/automerge': 3.2.6
       bs58check: 3.0.1
       cbor-x: 1.6.4
       debug: 4.4.3
