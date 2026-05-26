@@ -5309,9 +5309,21 @@ w.menuItemCaption = function (item) {
   if (s.startsWith('[ ] ')) return s.slice(4);
   return s;
 };
+w.longClickForHalosLabel = 'Long click for halos';
+w.refreshWorldMenuItems = function (menuMorph) {
+  let refreshed = [];
+  menuMorph.itemList.forEach((line) => {
+    let cap = w.menuItemCaption(line);
+    if (cap === w.longClickForHalosLabel || cap.endsWith(w.longClickForHalosLabel))
+      refreshed.push(w.menuToggleLabel(w.longClickForHalosLabel, window.longClickForHalos));
+    else if (cap === onScreenKeyboardLabel || cap.endsWith(onScreenKeyboardLabel))
+      refreshed.push(w.menuToggleLabel(onScreenKeyboardLabel, w.useOnScreenKbd));
+    else refreshed.push(line);
+  });
+  menuMorph.setList(refreshed);
+};
 w.WorldMorph.proto.showWorldMenuAt = function (pt, optsIfAny) {
   let opts = optsIfAny || {};
-  let longClickForHalosLabel = 'Long click for halos';
   let onScreenKeyboardLabel = 'Show on-screen keyboard';
   let items = [
     'Status',
@@ -5324,21 +5336,9 @@ w.WorldMorph.proto.showWorldMenuAt = function (pt, optsIfAny) {
     'Open Transcript',
     'Open Console',
     'Restart Console',
-    w.menuToggleLabel(longClickForHalosLabel, window.longClickForHalos),
+    w.menuToggleLabel(w.longClickForHalosLabel, window.longClickForHalos),
     w.menuToggleLabel(onScreenKeyboardLabel, w.useOnScreenKbd),
   ];
-  let refreshWorldMenuItems = function (menuMorph) {
-    let refreshed = [];
-    menuMorph.itemList.forEach((line) => {
-      let cap = w.menuItemCaption(line);
-      if (cap === longClickForHalosLabel || cap.endsWith(longClickForHalosLabel))
-        refreshed.push(w.menuToggleLabel(longClickForHalosLabel, window.longClickForHalos));
-      else if (cap === onScreenKeyboardLabel || cap.endsWith(onScreenKeyboardLabel))
-        refreshed.push(w.menuToggleLabel(onScreenKeyboardLabel, w.useOnScreenKbd));
-      else refreshed.push(line);
-    });
-    menuMorph.setList(refreshed);
-  };
   // Use a normal function so MenuMorph's actionFn.call(this, ...) supplies the menu as `this`
   // (avoids referencing outer `theMenu` before assignment / TDZ in the arrow closure).
   let menu = w.MenuMorph.new(pt.extent(w.pt(220, 24 + items.length * 20)), items, function (item) {
@@ -5349,14 +5349,14 @@ w.WorldMorph.proto.showWorldMenuAt = function (pt, optsIfAny) {
     if (item == 'Morphic help') this.world().showMorphicHelp();
     if (item == 'Halo help') this.world().showHaloHelp();
     if (item == 'Text help') this.world().showTextHelp();
-    if (cap === longClickForHalosLabel || cap.endsWith(longClickForHalosLabel)) {
+    if (cap === w.longClickForHalosLabel || cap.endsWith(w.longClickForHalosLabel)) {
       window.longClickForHalos = !window.longClickForHalos;
-      refreshWorldMenuItems(this);
+      w.refreshWorldMenuItems(this);
     }
     if (cap === onScreenKeyboardLabel || cap.endsWith(onScreenKeyboardLabel)) {
       w.useOnScreenKbd = !w.useOnScreenKbd;
       w.syncOnScreenKeyboardWithFocus(this.world());
-      refreshWorldMenuItems(this);
+      w.refreshWorldMenuItems(this);
     }
     if (item == 'Init hand') this.world().initHand(true);
     if (item == 'Open Transcript') {
