@@ -4975,7 +4975,7 @@ w.WorldMorph.proto.initialize = function (bounds) {
   this.keyboardFocus = null;
   this.shiftKeyDown = false; // maintained here
   this.hands = null;
-  this.pointerLocation = bounds.topLeft;
+  // this.pointerLocation = bounds.topLeft;
 };
 w.WorldMorph.proto.setKeyboardFocus = function (morphOrNull) {
   /*
@@ -5018,7 +5018,7 @@ w.WorldMorph.proto.onKeyUp = function (evt) {
   return w.Morph.proto.onKeyUp.call(this, evt);
 };
 w.WorldMorph.proto.onPointerDown = function (p, evt) {
-  this.pointerLocation = p;
+  // this.pointerLocation = p;
   // Dismiss fleeting menus but still deliver this click to morphs underneath
   // (otherwise the first click after a pane menu only closes the menu).
   this.dismissFleetingMenusAt(p);
@@ -5110,7 +5110,7 @@ w.WorldMorph.proto.longClickHaloDefersAt = function (worldPt) {
   return false;
 };
 w.WorldMorph.proto.onPointerMove = function (p, evt) {
-  this.pointerLocation = p;
+  // this.pointerLocation = p;
   let hand = this.handForID(evt.actorID);
   if (hand) {
     hand.onPointerMove(p, evt);
@@ -5124,7 +5124,7 @@ w.WorldMorph.proto.onPointerMove = function (p, evt) {
   this.submorphs.forEach((morph) => morph.onPointerMove(p, evt));
 };
 w.WorldMorph.proto.onPointerUp = function (p, evt) {
-  this.pointerLocation = p;
+  // this.pointerLocation = p;
   let hand = this.handForID(evt.actorID);
   if (hand) {
     let handHandled = hand.hasSubmorphs() || evt.altKey;
