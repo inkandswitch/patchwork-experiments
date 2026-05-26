@@ -1,5 +1,7 @@
 // Generated: 2026-05-22 15:33:00 EDT
 
+// TODO: preamble shouldn't duplicate code -- maintenance nightmare
+
 // for compatibility between Livelymerge and Pyonpyon
 
 if (!window.impl) {
@@ -908,12 +910,12 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
 
   w.Lively.showWorldMenuAt(w.pt(130, 40));
   let gb = w.getBounds();
-  if (gb) {
-    let tray = w.MetaBlob.new(w.rect(8, gb.height() - 58, 236, 50));
-    w._metaBlobTray = tray;
-    w.Lively.addMorph(tray);
-    tray.startStepping('stepAlignToCanvas', null, 500);
-  }
+  // if (gb) {
+  //   let tray = w.MetaBlob.new(w.rect(8, gb.height() - 58, 236, 50));
+  //   w._metaBlobTray = tray;
+  //   w.Lively.addMorph(tray);
+  //   tray.startStepping('stepAlignToCanvas', null, 500);
+  // }
   //w.testTransforms();
 
   /*
