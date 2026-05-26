@@ -5,14 +5,12 @@ export type Point = {
 
 // -- Colors --
 
-export type ColorId = 'red' | 'blue' | 'yellow';
 export type SoundId = 'chime' | 'pad' | 'lofi';
 
 export type ColorsDoc = {
   '@patchwork': { type: 'spatial-colors' };
   title: string;
-  activeColors: ColorId[];
-  activeRegions: { colorId: ColorId; corners: number[][] }[] | null;
+  activeRegions: { hue: number; corners: number[][] }[] | null;
   cameraAspect: number | null;
 };
 

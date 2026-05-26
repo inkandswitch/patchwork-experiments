@@ -1,6 +1,5 @@
 import type { ColorRegion } from './types.ts';
-import { COLOR_LIBRARY } from './constants.ts';
-import type { ColorId } from '../types.ts';
+import { hueToColor } from './composition.ts';
 
 function computeContainGeometry(videoAspect: number, displayW: number, displayH: number) {
   const displayAspect = displayW / displayH;
@@ -52,19 +51,16 @@ export function createEffectsRenderer(opts: {
     const { fitW, fitH, offsetX, offsetY } = computeContainGeometry(aspect, width, height);
     const regions = getRegions();
 
-    // Black background (letterbox bars)
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, width, height);
 
-    // White fit rect (camera FOV area)
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(offsetX, offsetY, fitW, fitH);
 
-    // Draw filled polygons for each region
     for (const region of regions) {
       if (region.corners.length < 3) continue;
 
-      ctx.fillStyle = COLOR_LIBRARY[region.colorId as ColorId]?.accent ?? '#888888';
+      ctx.fillStyle = hueToColor(region.hue);
       ctx.beginPath();
       const first = region.corners[0];
       ctx.moveTo(offsetX + first.x * fitW, offsetY + first.y * fitH);

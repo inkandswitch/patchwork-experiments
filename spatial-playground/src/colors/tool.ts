@@ -1,17 +1,22 @@
-import QRCode from 'qrcode';
-import type { ColorsDoc, ColorId } from '../types.ts';
+import { arucoToSVGString } from 'aruco-marker';
+import type { ColorsDoc } from '../types.ts';
 import { listVideoDevices, buildVideoConstraints, waitForVideoReady, stopStream } from '../shared/camera.ts';
 import { escapeHtml } from '../shared/utils.ts';
 import type { ColorRegion } from './types.ts';
-import { CARD_DEFINITIONS, DWELL_MS } from './constants.ts';
+import { DWELL_MS } from './constants.ts';
 import { STYLE } from './style.ts';
-import { createComposition, formatColorMix, formatVisibleLabel, categoryLabel } from './composition.ts';
+import { hueToColor } from './composition.ts';
 import { renderOverlay } from './overlay.ts';
 import { createEffectsRenderer } from './effects.ts';
 import { createCardTracker } from './tracking.ts';
 
+const DEFAULT_MARKERS = [
+  { id: 0, label: 'Red', description: 'Hue 0 — pure red.' },
+  { id: 120, label: 'Green', description: 'Hue 120 — pure green.' },
+  { id: 240, label: 'Blue', description: 'Hue 240 — pure blue.' },
+];
+
 export default function ColorsTool(handle: any, element: HTMLElement) {
-  // --- Build DOM inside element ---
   element.innerHTML = `
     <div class="app-shell" data-scene="idle">
       <canvas class="scene-canvas" aria-hidden="true"></canvas>
@@ -26,22 +31,21 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
         <section class="studio-header panel">
           <div>
             <p class="eyebrow">Studio</p>
-            <h2>Camera and color card controls</h2>
+            <h2>Camera and marker controls</h2>
           </div>
           <button class="secondary-button js-back-to-display" type="button">Back to Display</button>
         </section>
 
         <section class="hero-stage">
           <section class="hero-copy panel">
-            <p class="eyebrow">QR Scene Machine</p>
+            <p class="eyebrow">Color Markers</p>
             <h1 class="js-scene-title">Idle</h1>
             <p class="js-scene-tagline tagline">
-              Show up to three color cards to blend colors based on their positions.
+              Show ArUco markers (IDs 0–359) to display colors. The marker ID is the hue.
             </p>
 
             <div class="controls">
               <button class="primary-button js-toggle-camera" type="button">Start Camera</button>
-              <button class="secondary-button js-print-cards" type="button">Print Cards</button>
             </div>
 
             <div class="status-grid">
@@ -50,14 +54,14 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
                 <strong class="js-scanner-status">Standby</strong>
               </article>
               <article class="status-card">
-                <span class="status-label">Colors</span>
-                <strong class="js-color-status">Idle</strong>
+                <span class="status-label">Active markers</span>
+                <strong class="js-color-status">None</strong>
               </article>
             </div>
 
             <section class="dwell-meter">
               <div class="dwell-copy">
-                <span class="js-dwell-label">Cards become active after brief stable visibility.</span>
+                <span class="js-dwell-label">Markers become active after brief stable visibility.</span>
                 <span class="js-dwell-amount">0%</span>
               </div>
               <div class="dwell-track" aria-hidden="true">
@@ -66,7 +70,7 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
             </section>
 
             <p class="micro-copy">
-              Show up to three color cards at once. Move cards closer to blend faster, farther apart for a wider gradient.
+              ArUco marker ID = hue (0–359). Color is hsl(id, 100%, 50%). Print markers from any ArUco generator using the standard dictionary.
             </p>
           </section>
 
@@ -92,12 +96,9 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
 
             <div class="camera-footer">
               <div class="camera-note">
-                <span class="status-label">Visible cards</span>
+                <span class="status-label">Visible markers</span>
                 <strong class="js-last-code">Waiting for camera</strong>
               </div>
-              <p class="micro-copy">
-                Detector: <span class="js-detector-mode">Tuned WASM detector (stable multi-QR)</span>.
-              </p>
             </div>
           </aside>
         </section>
@@ -105,13 +106,13 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
         <section class="card-sheet panel">
           <div class="card-sheet-header">
             <div>
-              <p class="eyebrow">Printable Cards</p>
-              <h2>Three cards: red, blue, and yellow</h2>
+              <p class="eyebrow">Printable Markers</p>
+              <h2>Three default markers: red, green, and blue</h2>
               <p class="micro-copy">
-                Print these on plain paper or cardstock. Start with large cards and keep them well lit.
+                Print these on plain paper or cardstock. The marker ID is the hue value.
               </p>
             </div>
-            <button class="secondary-button js-print-cards-inline" type="button">Print This Sheet</button>
+            <button class="secondary-button js-print-cards" type="button">Print This Sheet</button>
           </div>
 
           <div class="card-grid js-card-grid"></div>
@@ -120,7 +121,6 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
     </div>
   `;
 
-  // --- Inject inline styles & positioning context ---
   const styleEl = document.createElement('style');
   styleEl.textContent = STYLE;
   element.appendChild(styleEl);
@@ -129,7 +129,6 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
   element.style.height = '100%';
   element.style.overflow = 'hidden';
 
-  // --- Query elements ---
   const q = <T extends Element>(sel: string): T => {
     const el = element.querySelector<T>(sel);
     if (!el) throw new Error(`Required element not found: ${sel}`);
@@ -142,7 +141,6 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
   studioShell.style.display = 'none';
   const shell = q<HTMLDivElement>('.app-shell');
   const sceneTitle = q<HTMLHeadingElement>('.js-scene-title');
-  const sceneTagline = q<HTMLParagraphElement>('.js-scene-tagline');
   const scannerStatus = q<HTMLElement>('.js-scanner-status');
   const colorStatus = q<HTMLElement>('.js-color-status');
   const dwellLabel = q<HTMLElement>('.js-dwell-label');
@@ -150,42 +148,42 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
   const dwellFill = q<HTMLElement>('.js-dwell-fill');
   const lastCode = q<HTMLElement>('.js-last-code');
   const toggleCameraButton = q<HTMLButtonElement>('.js-toggle-camera');
-  const printButton = q<HTMLButtonElement>('.js-print-cards');
-  const printButtonInline = q<HTMLButtonElement>('.js-print-cards-inline');
   const cameraSelect = q<HTMLSelectElement>('.js-camera-select');
   const video = q<HTMLVideoElement>('.js-camera');
   const overlayEl = q<HTMLDivElement>('.js-scanner-overlay');
   const cardGrid = q<HTMLDivElement>('.js-card-grid');
+  const printButton = q<HTMLButtonElement>('.js-print-cards');
 
-  // --- Doc-driven display state (always read from document) ---
+  // --- Doc-driven display state ---
   let currentRegions: ColorRegion[] = [];
   let currentAspect = 4 / 3;
 
-  // --- Other mutable state ---
   let currentStream: MediaStream | null = null;
   let cameraReady = false;
   let cameraStarting = false;
   let selectedCameraId: string | null = null;
   let destroyed = false;
 
-  // --- Sync display state from document ---
   function syncFromDoc() {
     const doc = handle.doc() as ColorsDoc | undefined;
     if (!doc) return;
 
     currentRegions = (doc.activeRegions ?? []).map((r: any) => ({
-      colorId: r.colorId as ColorId,
+      hue: r.hue as number,
       corners: (r.corners ?? []).map((c: any) => ({ x: c[0] ?? 0, y: c[1] ?? 0 })),
     }));
     currentAspect = doc.cameraAspect ?? 4 / 3;
 
-    const colors = (doc.activeColors ?? []) as ColorId[];
-    colorStatus.textContent = colors.length ? formatColorMix(colors) : 'Idle';
-    sceneTitle.textContent = colors.length ? formatColorMix(colors) : 'Idle';
-    shell.dataset.scene = colors.join('-') || 'idle';
+    const hues = currentRegions.map((r) => r.hue);
+    colorStatus.textContent = hues.length
+      ? hues.map((h) => `hue ${h}`).join(', ')
+      : 'None';
+    sceneTitle.textContent = hues.length
+      ? `${hues.length} marker${hues.length > 1 ? 's' : ''}`
+      : 'Idle';
+    shell.dataset.scene = hues.length ? 'active' : 'idle';
   }
 
-  // --- Create module instances ---
   const effects = createEffectsRenderer({
     canvas: sceneCanvas,
     element,
@@ -195,37 +193,31 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
 
   const tracker = createCardTracker({
     video,
-    onCompositionChange() {
-      // Composition changes are persisted via onRegionsChange; UI updates via syncFromDoc
-    },
     onVisibleCardsChange(cards) {
       renderOverlay(overlayEl, video, tracker.getTrackedCards(), cards);
       lastCode.textContent = cards.length
-        ? cards.map((card) => formatVisibleLabel(card.card)).join(' \u2022 ')
-        : 'No supported cards visible';
+        ? cards.map((card) => `hue ${card.hue}`).join(' \u2022 ')
+        : 'No markers visible';
     },
     onRegionsChange(regions) {
-      // Camera → Document: write detected regions to the doc
       handle.change((doc: ColorsDoc) => {
         doc.activeRegions = regions.map((r) => ({
-          colorId: r.colorId,
+          hue: r.hue,
           corners: r.corners.map((c) => [c.x, c.y]),
         }));
         doc.cameraAspect = video.videoWidth / (video.videoHeight || 1);
-        doc.activeColors = regions.map((r) => r.colorId);
       });
-      // Document → Display: read back from doc
       syncFromDoc();
     },
   });
 
-  // --- Listen for remote doc changes ---
   function onDocChange() {
-    syncFromDoc();
+    if (!cameraReady) {
+      syncFromDoc();
+    }
   }
-  handle.on("change", onDocChange);
+  handle.on('change', onDocChange);
 
-  // --- Camera ---
   async function probeCameraAvailability() {
     if (!navigator.mediaDevices?.getUserMedia || !navigator.mediaDevices.enumerateDevices) {
       scannerStatus.textContent = 'Camera API unavailable';
@@ -272,9 +264,9 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
       await populateCameraSelect();
       tracker.start();
 
-      scannerStatus.textContent = 'Watching for cards';
+      scannerStatus.textContent = 'Watching for markers';
       toggleCameraButton.textContent = 'Stop Camera';
-      lastCode.textContent = 'No supported cards visible';
+      lastCode.textContent = 'No markers visible';
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       cameraReady = false;
@@ -297,11 +289,9 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
     tracker.reset();
     renderOverlay(overlayEl, video, tracker.getTrackedCards(), []);
 
-    // Clear document state
     handle.change((doc: ColorsDoc) => {
       doc.activeRegions = null;
       doc.cameraAspect = null;
-      doc.activeColors = [];
     });
     syncFromDoc();
 
@@ -351,14 +341,29 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
     }
   }
 
-  // --- Scanner state sync (UI polling) ---
+  function renderCards() {
+    cardGrid.innerHTML = DEFAULT_MARKERS.map((marker) => `
+      <article class="print-card" data-category="color">
+        <div class="print-card-top">
+          <span class="scene-chip" style="background: ${hueToColor(marker.id)}">Hue ${marker.id}</span>
+          <span class="print-value">${marker.label}</span>
+        </div>
+        <div class="print-code-shell">
+          ${arucoToSVGString(marker.id, '220px')}
+        </div>
+        <h3>${marker.label}</h3>
+        <p>${marker.description}</p>
+      </article>
+    `).join('');
+  }
+
   function syncScannerState() {
     if (destroyed) return;
     const now = performance.now();
     const candidateCards = tracker.getCandidateCards();
 
     if (!cameraReady) {
-      dwellLabel.textContent = 'Cards become active after brief stable visibility.';
+      dwellLabel.textContent = 'Markers become active after brief stable visibility.';
       dwellAmount.textContent = '0%';
       dwellFill.style.transform = 'scaleX(0)';
       return;
@@ -375,11 +380,11 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
     if (pending.length) {
       const nextPending = pending[0];
       const progress = Math.min(1, (now - nextPending.firstSeenAt) / DWELL_MS);
-      dwellLabel.textContent = `Settling ${formatVisibleLabel(nextPending.card)}`;
+      dwellLabel.textContent = `Settling hue ${nextPending.hue}`;
       dwellAmount.textContent = `${Math.round(progress * 100)}%`;
       dwellFill.style.transform = `scaleX(${progress})`;
     } else {
-      dwellLabel.textContent = 'Show up to three color cards.';
+      dwellLabel.textContent = 'Show ArUco markers to the camera.';
       dwellAmount.textContent = candidates.length ? `${candidates.length} active` : '0%';
       dwellFill.style.transform = 'scaleX(0)';
     }
@@ -387,41 +392,9 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
     const visibleCards = tracker.getVisibleCards();
     scannerStatus.textContent = visibleCards.length
       ? `${visibleCards.length} held`
-      : 'Watching for cards';
+      : 'Watching for markers';
   }
 
-  // --- Card printing ---
-  async function renderCards() {
-    cardGrid.innerHTML = CARD_DEFINITIONS.map((card) => `
-        <article class="print-card" data-category="${card.category}">
-          <div class="print-card-top">
-            <span class="scene-chip">${categoryLabel(card.category)}</span>
-            <span class="print-value">${card.payload}</span>
-          </div>
-          <div class="print-code-shell">
-            <canvas class="qr-canvas" data-payload="${card.payload}" width="220" height="220"></canvas>
-          </div>
-          <h3>${card.label}</h3>
-          <p>${card.description}</p>
-        </article>
-      `).join('');
-
-    const canvases = Array.from(element.querySelectorAll<HTMLCanvasElement>('.qr-canvas'));
-    await Promise.all(
-      canvases.map((canvas) =>
-        QRCode.toCanvas(canvas, canvas.dataset.payload ?? 'color:red', {
-          width: 220,
-          margin: 2,
-          color: {
-            dark: '#111111',
-            light: '#ffffff',
-          },
-        }),
-      ),
-    );
-  }
-
-  // --- Event listeners ---
   const onToggleCamera = () => {
     if (cameraReady) {
       stopCamera();
@@ -442,7 +415,34 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
       void startCamera(cameraSelect.value);
     }
   };
-  const onPrint = () => { window.print(); };
+  const onPrint = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const cardsHtml = DEFAULT_MARKERS.map((marker) => `
+      <div style="page-break-inside: avoid; border: 1px solid #ccc; border-radius: 12px; padding: 24px; display: inline-block; text-align: center; margin: 12px;">
+        <div style="display: inline-block; padding: 2px; background: ${hueToColor(marker.id)}; color: white; border-radius: 999px; font-size: 13px; padding: 4px 12px; margin-bottom: 12px;">
+          Hue ${marker.id}
+        </div>
+        <div style="padding: 12px; background: white;">
+          ${arucoToSVGString(marker.id, '200px')}
+        </div>
+        <h2 style="margin: 12px 0 4px; font-family: sans-serif;">${marker.label}</h2>
+        <p style="margin: 0; font-family: sans-serif; color: #666; font-size: 14px;">${marker.description}</p>
+      </div>
+    `).join('');
+
+    printWindow.document.write(`<!DOCTYPE html>
+      <html>
+      <head><title>ArUco Color Markers</title></head>
+      <body style="font-family: sans-serif; text-align: center; padding: 24px;">
+        <h1 style="margin-bottom: 24px;">ArUco Color Markers</h1>
+        ${cardsHtml}
+        <script>window.onload = () => { window.print(); window.close(); }<\/script>
+      </body>
+      </html>`);
+    printWindow.document.close();
+  };
   const onResize = () => { effects.resize(); };
 
   toggleCameraButton.addEventListener('click', onToggleCamera);
@@ -450,17 +450,14 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
   q<HTMLButtonElement>('.js-back-to-display').addEventListener('click', onBackToDisplay);
   cameraSelect.addEventListener('change', onCameraChange);
   printButton.addEventListener('click', onPrint);
-  printButtonInline.addEventListener('click', onPrint);
   window.addEventListener('resize', onResize);
 
-  // --- Initialize from document ---
   syncFromDoc();
-  void renderCards();
+  renderCards();
   void probeCameraAvailability();
 
   const syncIntervalHandle = window.setInterval(syncScannerState, 80);
 
-  // --- Cleanup ---
   return () => {
     destroyed = true;
 
@@ -475,9 +472,8 @@ export default function ColorsTool(handle: any, element: HTMLElement) {
     toggleCameraButton.removeEventListener('click', onToggleCamera);
     cameraSelect.removeEventListener('change', onCameraChange);
     printButton.removeEventListener('click', onPrint);
-    printButtonInline.removeEventListener('click', onPrint);
     window.removeEventListener('resize', onResize);
-    handle.off("change", onDocChange);
+    handle.off('change', onDocChange);
 
     element.innerHTML = '';
   };

@@ -1,27 +1,12 @@
-import {
-  createWasmDetector,
-  type MultiDetector,
-} from "../shared/qr-detector.ts";
-import type {
-  CandidateCard,
-  ColorPosition,
-  ColorRegion,
-  TrackedSceneCard,
-  VisibleCard,
-} from "./types.ts";
-import {
-  DWELL_MS,
-  MAX_SCANS_PER_SECOND,
-  TRACK_MATCH_DISTANCE_RATIO,
-} from "./constants.ts";
-import { toVisibleCard } from "./overlay.ts";
-import { createComposition, type ActiveComposition } from "./composition.ts";
+import { createArucoDetector, type MarkerDetector } from '../shared/aruco-detector.ts';
+import type { CandidateCard, ColorRegion, TrackedSceneCard, VisibleCard } from './types.ts';
+import { DWELL_MS, MAX_SCANS_PER_SECOND, TRACK_MATCH_DISTANCE_RATIO } from './constants.ts';
+import { toVisibleCard } from './overlay.ts';
 
 const REMOVAL_FRAME_THRESHOLD = 20;
 
 export function createCardTracker(opts: {
   video: HTMLVideoElement;
-  onCompositionChange: (composition: ActiveComposition) => void;
   onVisibleCardsChange: (cards: VisibleCard[]) => void;
   onRegionsChange: (regions: ColorRegion[]) => void;
 }): {
@@ -33,10 +18,9 @@ export function createCardTracker(opts: {
   getTrackedCards(): Map<string, TrackedSceneCard>;
   destroy(): void;
 } {
-  const { video, onCompositionChange, onVisibleCardsChange, onRegionsChange } =
-    opts;
+  const { video, onVisibleCardsChange, onRegionsChange } = opts;
 
-  let multiDetector: MultiDetector | null = null;
+  let detector: MarkerDetector | null = null;
   let scanLoopHandle = 0;
   let scanInFlight = false;
   let lastScanAt = 0;
@@ -46,11 +30,10 @@ export function createCardTracker(opts: {
   let missedFrames = new Map<string, number>();
   let nextTrackingId = 1;
   let destroyed = false;
-  let lastCompositionKey = "";
-  let lastRegionsKey = "";
+  let lastRegionsKey = '';
 
   function start() {
-    multiDetector = createWasmDetector();
+    detector = createArucoDetector();
     stopLoop();
     scanLoopHandle = window.requestAnimationFrame(scanFrame);
   }
@@ -69,8 +52,7 @@ export function createCardTracker(opts: {
     missedFrames.clear();
     nextTrackingId = 1;
     currentVisibleCards = [];
-    lastCompositionKey = "";
-    lastRegionsKey = "";
+    lastRegionsKey = '';
   }
 
   async function scanFrame(timestamp: number) {
@@ -91,7 +73,7 @@ export function createCardTracker(opts: {
     scanInFlight = true;
 
     try {
-      const cards = await detectVisibleCards();
+      const cards = detectVisibleCards();
       handleVisibleCards(cards);
     } catch {
       handleVisibleCards([]);
@@ -103,29 +85,26 @@ export function createCardTracker(opts: {
     }
   }
 
-  async function detectVisibleCards(): Promise<VisibleCard[]> {
-    if (!multiDetector) {
+  function detectVisibleCards(): VisibleCard[] {
+    if (!detector) {
       return [];
     }
 
-    const detections = await multiDetector.detect(video);
-    return detections
-      .map((detection) =>
-        toVisibleCard(detection.rawValue, detection.cornerPoints ?? []),
-      )
+    const markers = detector.detect(video);
+    return markers
+      .map((marker) => toVisibleCard(marker.id, marker.corners))
       .filter((card): card is VisibleCard => Boolean(card));
   }
 
   function handleVisibleCards(cards: VisibleCard[]) {
     const now = performance.now();
-    const matchedIds = updateTrackedCards(cards, now);
+    updateTrackedCards(cards, now);
 
     currentVisibleCards = [...trackedCards.values()]
       .map((tracked) => tracked.card)
       .sort((left, right) => right.area - left.area);
     onVisibleCardsChange(currentVisibleCards);
 
-    // Update candidates from tracked cards
     for (const card of currentVisibleCards) {
       const existing = candidateCards.get(card.trackingId);
       if (existing) {
@@ -135,7 +114,7 @@ export function createCardTracker(opts: {
       } else {
         candidateCards.set(card.trackingId, {
           trackingId: card.trackingId,
-          card: card.card,
+          hue: card.hue,
           firstSeenAt: now,
           lastSeenAt: now,
           lastArea: card.area,
@@ -145,7 +124,6 @@ export function createCardTracker(opts: {
       }
     }
 
-    // Remove candidates for tracked cards that were removed
     for (const id of candidateCards.keys()) {
       if (!trackedCards.has(id)) {
         candidateCards.delete(id);
@@ -153,42 +131,26 @@ export function createCardTracker(opts: {
     }
 
     const activeCards = [...candidateCards.values()]
-      .filter((candidate) => now - candidate.firstSeenAt >= DWELL_MS)
-      .filter((candidate) => candidate.card.category === "color");
+      .filter((candidate) => now - candidate.firstSeenAt >= DWELL_MS);
 
     const videoW = video.videoWidth || 1;
     const videoH = video.videoHeight || 1;
 
-    const colorPositions: ColorPosition[] = activeCards
-      .slice(0, 3)
-      .map((candidate) => ({
-        colorId: candidate.card.id,
-        x: candidate.x / videoW,
-        y: candidate.y / videoH,
-      }));
-
-    const nextComposition = createComposition(colorPositions);
-
-    if (nextComposition.key !== lastCompositionKey) {
-      lastCompositionKey = nextComposition.key;
-      onCompositionChange(nextComposition);
-    }
-
-    const regions: ColorRegion[] = activeCards.slice(0, 3).map((candidate) => {
+    const regions: ColorRegion[] = activeCards.map((candidate) => {
       const tracked = trackedCards.get(candidate.trackingId);
       const corners = (tracked?.card.cornerPoints ?? []).map((p) => ({
         x: p.x / videoW,
         y: p.y / videoH,
       }));
-      return { colorId: candidate.card.id, corners };
+      return { hue: candidate.hue, corners };
     });
 
     const regionsKey = regions
       .map(
         (r) =>
-          `${r.colorId}:${r.corners.map((c) => `${c.x.toFixed(2)},${c.y.toFixed(2)}`).join("|")}`,
+          `${r.hue}:${r.corners.map((c) => `${c.x.toFixed(2)},${c.y.toFixed(2)}`).join('|')}`,
       )
-      .join(";");
+      .join(';');
 
     if (regionsKey !== lastRegionsKey) {
       lastRegionsKey = regionsKey;
@@ -196,14 +158,10 @@ export function createCardTracker(opts: {
     }
   }
 
-  function updateTrackedCards(
-    detectedCards: VisibleCard[],
-    now: number,
-  ): Set<string> {
+  function updateTrackedCards(detectedCards: VisibleCard[], now: number) {
     const matchedTrackedIds = new Set<string>();
     const matchDistance =
-      Math.max(video.videoWidth, video.videoHeight) *
-      TRACK_MATCH_DISTANCE_RATIO;
+      Math.max(video.videoWidth, video.videoHeight) * TRACK_MATCH_DISTANCE_RATIO;
 
     for (const detectedCard of detectedCards.sort(
       (left, right) => right.area - left.area,
@@ -213,7 +171,7 @@ export function createCardTracker(opts: {
         matchedTrackedIds,
         matchDistance,
       );
-      const id = match?.id ?? `scene-card-${nextTrackingId}`;
+      const id = match?.id ?? `marker-${nextTrackingId}`;
       if (!match) {
         nextTrackingId += 1;
       }
@@ -232,7 +190,6 @@ export function createCardTracker(opts: {
       missedFrames.set(id, 0);
     }
 
-    // Increment miss count for unmatched cards, remove if threshold exceeded
     for (const [id] of trackedCards) {
       if (matchedTrackedIds.has(id)) continue;
 
@@ -244,8 +201,6 @@ export function createCardTracker(opts: {
         missedFrames.delete(id);
       }
     }
-
-    return matchedTrackedIds;
   }
 
   function findMatchingTrackedCard(
@@ -257,10 +212,7 @@ export function createCardTracker(opts: {
     let bestDistance = Number.POSITIVE_INFINITY;
 
     for (const tracked of trackedCards.values()) {
-      if (
-        usedIds.has(tracked.id) ||
-        tracked.card.card.payload !== card.card.payload
-      ) {
+      if (usedIds.has(tracked.id) || tracked.card.hue !== card.hue) {
         continue;
       }
 

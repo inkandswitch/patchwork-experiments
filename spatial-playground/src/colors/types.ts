@@ -1,35 +1,9 @@
-import type { ColorId } from '../types.ts';
-
-export type CardCategory = 'color';
-export type CardPayload = `color:${ColorId}`;
-
-export type CardDefinition = {
-  payload: CardPayload;
-  category: CardCategory;
-  id: ColorId;
-  label: string;
-  description: string;
-  accent: string;
-};
-
-export type Hsl = {
-  h: number;
-  s: number;
-  l: number;
-};
-
-export type Palette = {
-  name: string;
-  accent: string;
-  panel: string;
-  text: string;
-};
+import type { Point } from '../types.ts';
 
 export type VisibleCard = {
   trackingId: string;
-  card: CardDefinition;
-  rawValue: string;
-  cornerPoints: import('../types.ts').Point[];
+  hue: number;
+  cornerPoints: Point[];
   x: number;
   y: number;
   area: number;
@@ -37,7 +11,7 @@ export type VisibleCard = {
 
 export type CandidateCard = {
   trackingId: string;
-  card: CardDefinition;
+  hue: number;
   firstSeenAt: number;
   lastSeenAt: number;
   lastArea: number;
@@ -51,22 +25,7 @@ export type TrackedSceneCard = {
   lastSeenAt: number;
 };
 
-export type ColorPosition = {
-  colorId: ColorId;
-  x: number;
-  y: number;
-};
-
 export type ColorRegion = {
-  colorId: ColorId;
+  hue: number;
   corners: { x: number; y: number }[];
-};
-
-export type ActiveComposition = {
-  colors: ColorId[];
-  colorPositions: ColorPosition[];
-  palette: Palette;
-  title: string;
-  tagline: string;
-  key: string;
 };

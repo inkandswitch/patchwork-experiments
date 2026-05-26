@@ -23,6 +23,12 @@ importers:
       '@undecaf/zbar-wasm':
         specifier: ^0.11.0
         version: 0.11.0
+      aruco-marker:
+        specifier: ^3.0.1
+        version: 3.0.1
+      js-aruco:
+        specifier: ^0.1.0
+        version: 0.1.0
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
@@ -405,6 +411,9 @@ packages:
     resolution: {integrity: sha512-zbB9rCJAT1rbjiVDb2hqKFHNYLxgtk8NURxZ3IZwD3F6NtxbXZQCnnSi1Lkx+IDohdPlFp222wVALIheZJQSEg==}
     engines: {node: '>=8'}
 
+  aruco-marker@3.0.1:
+    resolution: {integrity: sha512-PJy3ZP4I+YVRqAieZJuF+UXSvDxuwuGcM6mTyvH/k8k8NkadcxtBlKAMm4q1Mp8BttE1pYQXEsiLrrsSc7MAsA==}
+
   base-x@4.0.1:
     resolution: {integrity: sha512-uAZ8x6r6S3aUM9rbHGVOIsR15U/ZSc82b3ymnCPsT45Gk1DDvhDPdIgB5MrhirZWt+5K0EEPQH985kNqZgNPFw==}
 
@@ -488,6 +497,9 @@ packages:
     resolution: {integrity: sha512-muId7Zzn9ywDsyXgTIafTry2sV3nySZeUDe6YedVd1Hvuuep5AsIlqK+XefWpYTyJG5e503F2xIuT2lcU6rCSw==}
     peerDependencies:
       ws: '*'
+
+  js-aruco@0.1.0:
+    resolution: {integrity: sha512-M6YQ4qR+tSUBXaCV6HdlONdConen7aU3BWx0xiAs5Dgbnl49cGJW1P4x9g5NUTYRxlrC6mPRt1WUeb9OyxEEMA==}
 
   locate-path@5.0.0:
     resolution: {integrity: sha512-t7hw9pI+WvuwNJXwk5zVHpyhIqzg2qTlklJOf0mVxGSbe3Fp2VieZcduNYjaLDoy6p9uGpQEGWG87WpMKlNq8g==}
@@ -1022,6 +1034,8 @@ snapshots:
     dependencies:
       color-convert: 2.0.1
 
+  aruco-marker@3.0.1: {}
+
   base-x@4.0.1: {}
 
   bs58@5.0.0:
@@ -1121,6 +1135,8 @@ snapshots:
   isomorphic-ws@5.0.0(ws@8.20.1):
     dependencies:
       ws: 8.20.1
+
+  js-aruco@0.1.0: {}
 
   locate-path@5.0.0:
     dependencies:

@@ -1,8 +1,7 @@
 import type { Point } from '../types.ts';
 import { escapeHtml, polygonArea, computeOverlayGeometry, projectPoint } from '../shared/utils.ts';
-import type { CardPayload, TrackedSceneCard, VisibleCard } from './types.ts';
-import { CARD_LIBRARY } from './constants.ts';
-import { withAlpha } from './composition.ts';
+import type { TrackedSceneCard, VisibleCard } from './types.ts';
+import { hueToColor } from './composition.ts';
 
 export function renderOverlay(
   overlay: HTMLDivElement,
@@ -39,12 +38,13 @@ export function renderOverlay(
     );
     const labelX = centroid.x / projected.length;
     const labelY = centroid.y / projected.length - 10;
+    const color = hueToColor(card.hue);
 
     return `
       <g>
-        <polygon class="qr-outline ${held ? 'held' : 'fresh'}" fill="${withAlpha(card.card.accent, held ? 0.08 : 0.16)}" stroke="${card.card.accent}" points="${points}"></polygon>
+        <polygon class="qr-outline ${held ? 'held' : 'fresh'}" fill="${held ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.16)'}" stroke="${color}" points="${points}"></polygon>
         <text class="qr-label" x="${labelX.toFixed(1)}" y="${labelY.toFixed(1)}" text-anchor="middle">
-          ${escapeHtml(card.card.label)}
+          ${escapeHtml(`hue ${card.hue}`)}
         </text>
       </g>
     `;
@@ -57,18 +57,12 @@ export function renderOverlay(
   `;
 }
 
-export function toVisibleCard(rawValue: string | undefined, cornerPoints: Point[]): VisibleCard | null {
-  if (!rawValue) {
+export function toVisibleCard(markerId: number, cornerPoints: Point[]): VisibleCard | null {
+  if (markerId < 0 || markerId > 359) {
     return null;
   }
 
-  const payload = normalizePayload(rawValue);
-  if (!payload) {
-    return null;
-  }
-
-  const card = CARD_LIBRARY.get(payload);
-  if (!card) {
+  if (cornerPoints.length < 4) {
     return null;
   }
 
@@ -76,34 +70,15 @@ export function toVisibleCard(rawValue: string | undefined, cornerPoints: Point[
     (sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }),
     { x: 0, y: 0 },
   );
-  const x = centroid.x / Math.max(1, cornerPoints.length);
-  const y = centroid.y / Math.max(1, cornerPoints.length);
+  const x = centroid.x / cornerPoints.length;
+  const y = centroid.y / cornerPoints.length;
 
   return {
     trackingId: '',
-    card,
-    rawValue,
+    hue: markerId,
     cornerPoints,
     x,
     y,
     area: polygonArea(cornerPoints),
-  } satisfies VisibleCard;
-}
-
-export function normalizePayload(rawValue: string): CardPayload | null {
-  const trimmed = rawValue.trim().toLowerCase();
-
-  if (CARD_LIBRARY.has(trimmed as CardPayload)) {
-    return trimmed as CardPayload;
-  }
-
-  if (trimmed === 'scene:red') {
-    return 'color:red';
-  }
-
-  if (trimmed === 'scene:blue') {
-    return 'color:blue';
-  }
-
-  return null;
+  };
 }
