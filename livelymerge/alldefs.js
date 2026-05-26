@@ -199,6 +199,18 @@ w.truncateString = (str, num) => {
   return str.length > num ? str.slice(0, num) + '...' : str;
 };
 w.menuItemMaxChars = 30;
+/** Sentinel for a non-selectable rule line in pane/popup menus ({@link ListMorph.setList}). */
+w.menuSeparator = '—menuSep—';
+w.isMenuSeparator = function (item) {
+  return item === w.menuSeparator;
+};
+w.menuSeparatorDisplay = function () {
+  return '————————';
+};
+/** Optional extra trim after content fit for TextPane selection pane menus ({@link ListMorph.setList}). */
+w.paneSelectionMenuNarrowBy = 0;
+/** Min width for TextPane selection pane menus (general menus still use 96). */
+w.paneSelectionMenuMinWidth = 48;
 
 w.allClassNames = function () {
   // w.allClassNames().length ==> 27
@@ -565,8 +577,8 @@ w.initUI = function () {
   window.LONG_CLICK_MS = 700;
   /** Cancel long-click timer if the pointer moves farther than this from press (CSS px). */
   window.LONG_CLICK_MOVE_CANCEL_PX = 7;
-  /** When true (default), a completed long-click runs halo cycling like meta-click (see {@link WorldMorph.longClickHaloDefersAt}). Toggled from world menu "Long click for halos". */
-  window.longClickForHalos = true;
+  /** When true, a completed long-click runs halo cycling like meta-click (see {@link WorldMorph.longClickHaloDefersAt}). Default false; toggled from world menu "Long click for halos". */
+  window.longClickForHalos = false;
   /** pointerId → { timer, downEvt, pressPt, startPt } */
   window._longClickByPointerId = new Map();
   window._longClickDisarmPointer = function (pointerId) {
@@ -1349,6 +1361,25 @@ w.keyboardFocusBelongsToScrollPane = function (world, scrollPane) {
   }
   return false;
 };
+/** TextPane on the owner chain of `world.keyboardFocus`, if any. */
+w.textPaneWithKeyboardFocus = function (world) {
+  let f = world && world.keyboardFocus;
+  if (!f) return null;
+  let m = f;
+  while (m && m !== world) {
+    if (m.instanceOf && m.instanceOf(w.TextPane)) return m;
+    m = m.owner;
+  }
+  return null;
+};
+/** Same gate as {@link ScrollPane.tryShowPaneMenuForSelection} on a TextPane (preference + focus + selection). */
+w.shouldShowOnScreenKeyboardForWorld = function (world) {
+  if (!world || !w.useOnScreenKbd) return false;
+  let pane = w.textPaneWithKeyboardFocus(world);
+  if (!pane) return false;
+  if (!w.keyboardFocusBelongsToScrollPane(world, pane)) return false;
+  return pane.hasNonEmptyContentSelectionForPaneMenu();
+};
 w.Morph.proto.changed = function () {
   // Means we have to redraw due to altered content
   this.hasChanged = true;
@@ -2012,80 +2043,6 @@ w.Pen.proto.withBug = function (emoji) {
   return this;
 };
 
-/**
- * Demo: bouncing bugs. Call {@link w.makeBouncer} several times for multiple actors.
- * Each bouncer is a {@link Pen} (for location) plus the bug from {@link Pen.withBug}, stepped on the bug morph every 50ms.
- */
-w.makeBouncer = function () {
-  // w.makeBouncer()
-  if (!w.bouncers) w.bouncers = [];
-  let world = w.Lively;
-  if (!world) return null;
-  let wb = world.getBounds();
-  let start = wb.center().copy();
-  let pen = w.Pen.new(start);
-  pen.withBug();
-  let bug = pen.bug;
-  bug.pen = pen;
-  bug.velocity = w.pt(Math.random() * 12 - 6, Math.random() * 12 - 6);
-  bug.syncRotationToVelocity();
-  bug.bouncerStep = function () {
-    let prevGb = this.collisionBounds();
-    let p = this.pen.location.addPt(this.velocity);
-    this.pen.location = p;
-    this.moveTo(p);
-    let b = world.getBounds();
-    let gb = this.collisionBounds();
-    let eps = 1;
-    let wallNudged = false;
-    if (gb.topLeft.y < b.topLeft.y && this.velocity.y < 0) {
-      this.velocity = this.velocity.flipY();
-      this.pen.location = this.pen.location.addPt(w.pt(0, Math.sign(this.velocity.y) * eps));
-      wallNudged = true;
-    }
-    if (gb.bottomRight().y > b.bottomRight().y && this.velocity.y > 0) {
-      this.velocity = this.velocity.flipY();
-      this.pen.location = this.pen.location.addPt(w.pt(0, Math.sign(this.velocity.y) * eps));
-      wallNudged = true;
-    }
-    if (gb.topLeft.x < b.topLeft.x && this.velocity.x < 0) {
-      this.velocity = this.velocity.flipX();
-      this.pen.location = this.pen.location.addPt(w.pt(Math.sign(this.velocity.x) * eps, 0));
-      wallNudged = true;
-    }
-    if (gb.bottomRight().x > b.bottomRight().x && this.velocity.x > 0) {
-      this.velocity = this.velocity.flipX();
-      this.pen.location = this.pen.location.addPt(w.pt(Math.sign(this.velocity.x) * eps, 0));
-      wallNudged = true;
-    }
-    if (wallNudged) this.moveTo(this.pen.location);
-    gb = this.collisionBounds();
-    for (let i = 0; i < world.submorphs.length; i++) {
-      let sub = world.submorphs[i];
-      if (sub === this) continue;
-      let sb = sub.getBounds();
-      if (!gb.overlapsRect(sb)) continue;
-      if (prevGb.overlapsRect(sb)) continue;
-      let axis = gb.overlapBounceAxis(sb, this.velocity);
-      if (axis === 'x') {
-        this.velocity = this.velocity.flipX();
-        this.pen.location = this.pen.location.addPt(w.pt(Math.sign(this.velocity.x) * eps, 0));
-      } else if (axis === 'y') {
-        this.velocity = this.velocity.flipY();
-        this.pen.location = this.pen.location.addPt(w.pt(0, Math.sign(this.velocity.y) * eps));
-      }
-      this.moveTo(this.pen.location);
-      gb = this.collisionBounds();
-      break;
-    }
-    this.syncRotationToVelocity();
-    world.changed();
-  };
-  w.bouncers.push(bug);
-  bug.startStepping('bouncerStep', null, 50);
-  return bug;
-};
-
 w.Point = w.newClass('Point');
 w.Point.proto.addPt = function (p) {
   return w.pt(this.x + p.x, this.y + p.y);
@@ -2680,7 +2637,7 @@ w.ListMorph.proto.onPointerUp = function (p, evt) {
   this.world().setPointerFocus(null);
   if (selectionIndex > 0) {
     let rawItem = this.itemList ? this.itemList[selectionIndex - 1] : null;
-    this.actionFn.call(this, rawItem, evt.shiftKey);
+    if (!w.isMenuSeparator(rawItem)) this.actionFn.call(this, rawItem, evt.shiftKey);
   }
   if (
     this.className === 'ListMorph' &&
@@ -2697,7 +2654,10 @@ w.ListMorph.proto.onPointerUp = function (p, evt) {
 w.ListMorph.proto.setList = function (list) {
   this.itemList = list || [];
   let lim = w.menuItemMaxChars != null ? w.menuItemMaxChars : 15;
-  this.displayItems = this.itemList.map((item) => w.truncateString(String(item), lim));
+  if (this.className === 'MenuMorph') lim = Math.max(lim, 48);
+  this.displayItems = this.itemList.map((item) =>
+    w.isMenuSeparator(item) ? w.menuSeparatorDisplay() : w.truncateString(String(item), lim),
+  );
   let itemText = '';
   this.displayItems.forEach((item) => (itemText += item + '\n'));
   this.shape.setText(itemText);
@@ -2709,7 +2669,16 @@ w.ListMorph.proto.setList = function (list) {
       maxW = Math.max(maxW, ctx.measureText(item).width);
     });
     let insetX = this.shape.inset ? this.shape.inset.x : 2;
-    let targetW = Math.max(96, Math.ceil(maxW + insetX * 2 + 14));
+    let isPaneSelMenu = this.className === 'MenuMorph' && this._paneMenuOwnerScrollPane;
+    let minMenuW = isPaneSelMenu
+      ? w.paneSelectionMenuMinWidth != null
+        ? w.paneSelectionMenuMinWidth
+        : 48
+      : 96;
+    let targetW = Math.max(minMenuW, Math.ceil(maxW + insetX * 2 + 14));
+    if (isPaneSelMenu && w.paneSelectionMenuNarrowBy) {
+      targetW = Math.max(minMenuW, targetW - w.paneSelectionMenuNarrowBy);
+    }
     let b = this.getBounds();
     if (Math.abs(targetW - b.width()) > 0.5)
       this.setBounds(w.rect(b.topLeft.x, b.topLeft.y, targetW, b.height()));
@@ -2726,7 +2695,7 @@ w.ListMorph.proto.setSelectionString = function (str, suppressAction) {
   let selectionIndex = this.shape.setSelectedTextString(probe);
   if (selectionIndex > 0 && !suppressAction) {
     let rawItem = this.itemList ? this.itemList[selectionIndex - 1] : null;
-    this.actionFn.call(this, rawItem);
+    if (!w.isMenuSeparator(rawItem)) this.actionFn.call(this, rawItem);
   }
 };
 
@@ -2825,10 +2794,10 @@ w.PanelMorph.proto.buildBrowser = function () {
   console.log('PanelMorph.messagePane.setList (["message names"])...');
   this.messagePane.setList(['message names']);
   this.messagePane.setPaneMenu({
-    items: ['spawn this method', 'filout method to OS paste menu'],
+    items: ['spawn this method', 'filout method to OS paste buffer'],
     onSelect: (item, pane) => {
       if (item == 'spawn this method') this.browseSelectedMethod();
-      if (item == 'filout method to OS paste menu') this.browseSelectedMethod();
+      if (item == 'filout method to OS paste buffer') this.filoutSelectedMethodToOSPaste();
     },
   });
   this.messagePane.onSelect((methodSelection, shiftKey) => {
@@ -3488,16 +3457,23 @@ w.ScrollPane.proto.hasNonEmptyContentSelectionForPaneMenu = function () {
 /** If this pane has a pane menu and content warrants it, show it anchored to the pane. */
 w.ScrollPane.proto.tryShowPaneMenuForSelection = function () {
   if (!this.paneMenu || !this.world()) return;
+  let world = this.world();
   let items = this.paneMenu.items || [];
   if (items.length === 0) return;
-  if (!this.hasNonEmptyContentSelectionForPaneMenu()) return;
-  let world = this.world();
+  if (!this.hasNonEmptyContentSelectionForPaneMenu()) {
+    if (this.instanceOf && this.instanceOf(w.TextPane)) w.syncOnScreenKeyboardWithFocus(world);
+    return;
+  }
   let existing = world.submorphs.find(
     (sub) =>
       sub.className === 'MenuMorph' && sub.isFleetingMenu && sub._paneMenuOwnerScrollPane === this,
   );
-  if (existing) return;
+  if (existing) {
+    if (this.instanceOf && this.instanceOf(w.TextPane)) w.syncOnScreenKeyboardWithFocus(world);
+    return;
+  }
   this.showPaneMenu(null, { fleeting: true, fromSelection: true });
+  if (this.instanceOf && this.instanceOf(w.TextPane)) w.syncOnScreenKeyboardWithFocus(world);
 };
 w.ScrollPane.proto.showPaneMenu = function (ptIfAny, optsIfAny) {
   if (!this.paneMenu || !this.world()) return false;
@@ -3512,9 +3488,10 @@ w.ScrollPane.proto.showPaneMenu = function (ptIfAny, optsIfAny) {
       : this.world().pointerLocation || this.globalize(this.shape.getBounds().topLeft);
   let thisPane = this;
   let menu = w.MenuMorph.new(
-    w.rect(worldPt.x, worldPt.y, 180, Math.max(48, 24 + items.length * 18)),
+    w.rect(worldPt.x, worldPt.y, 165, Math.max(48, 24 + items.length * 18)),
     items,
     function (item) {
+      if (w.isMenuSeparator(item)) return;
       if (spec.onSelect) spec.onSelect(item, thisPane);
       if (menu.staysOpenOnSelect) {
         menu.shape.selectLineAt(0);
@@ -3527,6 +3504,7 @@ w.ScrollPane.proto.showPaneMenu = function (ptIfAny, optsIfAny) {
     menu.staysOpenOnSelect = true;
     menu._paneMenuOwnerScrollPane = thisPane;
     menu._paneMenuPinWhileInContent = thisPane.contentPane;
+    menu.setList(items);
   }
   this.world().addMorphBack(menu);
   return true;
@@ -4786,12 +4764,12 @@ w.defaultOnScreenKeyboardBounds = function (world) {
   let y = Math.max(8, gb.height() - 292);
   return w.rect(x, y, width, 276);
 };
-/** When true (world menu "Show on-screen keyboard"), {@link w.syncOnScreenKeyboardWithFocus} shows OSK while keyboardFocus is non-null. Only morphs created by that sync path are removed when the preference is off or focus clears; MetaBlob KBD uses a separate morph. Cleared by the keyboard ✕ key. */
+/** When true (world menu), OSK follows the same TextPane rules as the selection pane menu. */
 w.useOnScreenKbd = false;
 w.syncOnScreenKeyboardWithFocus = function (worldIfAny) {
   let world = worldIfAny || w.Lively;
   if (!world) return;
-  if (!w.useOnScreenKbd) {
+  if (!w.shouldShowOnScreenKeyboardForWorld(world)) {
     if (
       w._onScreenKeyboardMorph &&
       w._onScreenKeyboardMorph.world() &&
@@ -4803,26 +4781,18 @@ w.syncOnScreenKeyboardWithFocus = function (worldIfAny) {
     }
     return;
   }
-  if (world.keyboardFocus != null) {
-    if (!w._onScreenKeyboardMorph || !w._onScreenKeyboardMorph.world()) {
-      let kb = w.OnScreenKeyboardMorph.new(w.defaultOnScreenKeyboardBounds(world));
-      kb._openedViaFocusSync = true;
-      world.addMorph(kb);
-      kb.startStepping('stepRefreshLockLabels', null, 200);
-      w._onScreenKeyboardMorph = kb;
-      w._refreshMetaBlobKeyStyles();
-    }
-  } else {
-    if (
-      w._onScreenKeyboardMorph &&
-      w._onScreenKeyboardMorph.world() &&
-      w._onScreenKeyboardMorph._openedViaFocusSync
-    ) {
-      w._onScreenKeyboardMorph.remove();
-      w._onScreenKeyboardMorph = null;
-      w._refreshMetaBlobKeyStyles();
-    }
+  let kb = w._onScreenKeyboardMorph;
+  if (kb && kb.world()) {
+    kb._openedViaFocusSync = true;
+    w._refreshMetaBlobKeyStyles();
+    return;
   }
+  kb = w.OnScreenKeyboardMorph.new(w.defaultOnScreenKeyboardBounds(world));
+  kb._openedViaFocusSync = true;
+  world.addMorph(kb);
+  kb.startStepping('stepRefreshLockLabels', null, 200);
+  w._onScreenKeyboardMorph = kb;
+  w._refreshMetaBlobKeyStyles();
 };
 w.toggleOnScreenKeyboard = function (worldIfAny) {
   let world = worldIfAny || w.Lively;
@@ -4831,7 +4801,12 @@ w.toggleOnScreenKeyboard = function (worldIfAny) {
     w._onScreenKeyboardMorph.remove();
     w._onScreenKeyboardMorph = null;
     w._refreshMetaBlobKeyStyles();
+    if (w.useOnScreenKbd) w.syncOnScreenKeyboardWithFocus(world);
     return null;
+  }
+  if (w.useOnScreenKbd) {
+    w.syncOnScreenKeyboardWithFocus(world);
+    return w._onScreenKeyboardMorph;
   }
   let kb = w.OnScreenKeyboardMorph.new(w.defaultOnScreenKeyboardBounds(world));
   kb._openedViaFocusSync = false;
@@ -5322,8 +5297,21 @@ A couple more nice features:
     'Text help',
   );
 };
+/** Brackets only — handlers match with `item.endsWith(caption)`. */
+w.menuToggleLabel = function (caption, on) {
+  return (on ? '[X] ' : '[ ] ') + caption;
+};
+/** Strip `[X] ` / `[ ] ` prefix; also accepts a bare caption or truncated display line. */
+w.menuItemCaption = function (item) {
+  let s = String(item);
+  if (s.startsWith('[X] ')) return s.slice(4);
+  if (s.startsWith('[ ] ')) return s.slice(4);
+  return s;
+};
 w.WorldMorph.proto.showWorldMenuAt = function (pt, optsIfAny) {
   let opts = optsIfAny || {};
+  let longClickForHalosLabel = 'Long click for halos';
+  let onScreenKeyboardLabel = 'Show on-screen keyboard';
   let items = [
     'Status',
     'System browser',
@@ -5335,22 +5323,39 @@ w.WorldMorph.proto.showWorldMenuAt = function (pt, optsIfAny) {
     'Open Transcript',
     'Open Console',
     'Restart Console',
-    'Long click for halos',
-    'Show on-screen keyboard',
+    w.menuToggleLabel(longClickForHalosLabel, window.longClickForHalos),
+    w.menuToggleLabel(onScreenKeyboardLabel, w.useOnScreenKbd),
   ];
+  let refreshWorldMenuItems = function (menuMorph) {
+    let refreshed = [];
+    menuMorph.itemList.forEach((line) => {
+      let cap = w.menuItemCaption(line);
+      if (cap === longClickForHalosLabel || cap.endsWith(longClickForHalosLabel))
+        refreshed.push(w.menuToggleLabel(longClickForHalosLabel, window.longClickForHalos));
+      else if (cap === onScreenKeyboardLabel || cap.endsWith(onScreenKeyboardLabel))
+        refreshed.push(w.menuToggleLabel(onScreenKeyboardLabel, w.useOnScreenKbd));
+      else refreshed.push(line);
+    });
+    menuMorph.setList(refreshed);
+  };
   // Use a normal function so MenuMorph's actionFn.call(this, ...) supplies the menu as `this`
   // (avoids referencing outer `theMenu` before assignment / TDZ in the arrow closure).
   let menu = w.MenuMorph.new(pt.extent(w.pt(220, 24 + items.length * 20)), items, function (item) {
+    let cap = w.menuItemCaption(item);
     if (item == 'Status') w.newPanel().browseMethod('WorldMorph', 'showStatus');
     if (item == 'System browser') w.newPanel().buildBrowser();
     if (item == 'Recent changes') w.browseRecentChanges();
     if (item == 'Morphic help') this.world().showMorphicHelp();
     if (item == 'Halo help') this.world().showHaloHelp();
     if (item == 'Text help') this.world().showTextHelp();
-    if (item == 'Long click for halos') window.longClickForHalos = !window.longClickForHalos;
-    if (item == 'Show on-screen keyboard') {
+    if (cap === longClickForHalosLabel || cap.endsWith(longClickForHalosLabel)) {
+      window.longClickForHalos = !window.longClickForHalos;
+      refreshWorldMenuItems(this);
+    }
+    if (cap === onScreenKeyboardLabel || cap.endsWith(onScreenKeyboardLabel)) {
       w.useOnScreenKbd = !w.useOnScreenKbd;
       w.syncOnScreenKeyboardWithFocus(this.world());
+      refreshWorldMenuItems(this);
     }
     if (item == 'Init hand') this.world().initHand(true);
     if (item == 'Open Transcript') {
@@ -6379,15 +6384,32 @@ w.TextLine.proto.render = function (ctx) {
 w.TextPane = w.ScrollPane.subClass('TextPane');
 w.TextPane.defaultPaneMenuSpec = function () {
   return {
-    items: ['cut', 'copy', 'paste', 'paste...', 'do it', 'printit', 'find'],
+    items: [
+      'cut',
+      'copy',
+      'paste',
+      'paste...',
+      'do it',
+      'printit',
+      'find',
+      'undo',
+      w.menuSeparator,
+      'save',
+      'cancel',
+    ],
     onSelect: function (item, pane) {
       let mor = pane.contentPane;
       if (!mor || !mor.shape) return;
       let tb = mor.shape;
       let world = pane.world();
       if (world) world.setKeyboardFocus(mor);
+      if (w.isMenuSeparator(item)) return;
       if (item == 'paste...') {
         w.showPasteHistoryMenu(pane, tb);
+        return;
+      }
+      if (item == 'cancel') {
+        if (pane._savedTextSnapshot != null) pane.setText(pane._savedTextSnapshot, { force: true });
         return;
       }
       let evtStub = { preventDefault: function () {}, stopPropagation: function () {}, key: '' };
@@ -6398,6 +6420,8 @@ w.TextPane.defaultPaneMenuSpec = function () {
         'do it': 'd',
         printit: 'p',
         find: 'f',
+        undo: 'z',
+        save: 's',
       };
       let k = keyByItem[item];
       if (!k) return;
