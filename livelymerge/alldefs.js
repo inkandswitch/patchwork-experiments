@@ -10,30 +10,30 @@ if (!window.impl) {
   };
 }
 
-window.getPrototypeOf = function (obj) {
+w.getPrototypeOf = function (obj) {
   return typeof obj === 'object' && obj && obj.__proto__
     ? obj.__proto__
     : Object.getPrototypeOf(obj);
 };
 
-window.getLmId = function (obj) {
+w.getLmId = function (obj) {
   return typeof obj === 'object' && obj && obj.getLmId ? obj.getLmId() : -Infinity;
 };
 
 // helpers for arrays
 
-window.clearArray = function (xs) {
+w.clearArray = function (xs) {
   xs.splice(0, xs.length);
 };
 
-window.deleteFromArray = function (xs, x) {
+w.deleteFromArray = function (xs, x) {
   const idx = xs.indexOf(x);
   if (idx >= 0) {
     xs.splice(idx, 1);
   }
 };
 
-window.deleteFromArrayPred = function (xs, pred) {
+w.deleteFromArrayPred = function (xs, pred) {
   while (true) {
     const idx = xs.findIndex(pred);
     if (idx < 0) {
@@ -46,13 +46,13 @@ window.deleteFromArrayPred = function (xs, pred) {
 /** Reparent diagnostics — set w.debugReparent = true, then drop a morph. */
 w.debugReparentCheck = function (morph, label) {
   if (!w.debugReparent) return;
-  let id = morph.getLmId && getLmId(morph);
+  let id = w.getLmId(morph);
   let listed = [];
   function scan(owner, path) {
     if (!owner || !owner.submorphs) return;
     for (let i = 0; i < owner.submorphs.length; i++) {
       let sub = owner.submorphs[i];
-      let hit = sub === morph || (id != null && sub.getLmId && getLmId(sub) === id);
+      let hit = sub === morph || (id != null && w.getLmId(sub) === id);
       if (hit) {
         listed.push(
           path +
@@ -120,11 +120,11 @@ w.classProto.subClass = function (name) {
   return cls;
 };
 w.classProto.inheritsFrom = function (maybeSuper) {
-  return getPrototypeOf(this.proto) === maybeSuper.proto;
+  return w.getPrototypeOf(this.proto) === maybeSuper.proto;
 };
 
 // ***Instances and delegation
-w.objProto = getPrototypeOf(w);
+w.objProto = w.getPrototypeOf(w);
 w.objProto.isClass = function () {
   return false;
 };
@@ -136,7 +136,7 @@ w.objProto.delegatesTo = function (parent) {
   let curr = this;
   while (curr) {
     if (curr === parent) return true;
-    curr = getPrototypeOf(curr);
+    curr = w.getPrototypeOf(curr);
   }
   return false;
 };
@@ -563,7 +563,6 @@ w.readPatches = function () {
     });
 };
 w.initLively = function () {
-  // w.initLively();
   w.Lively = w.WorldMorph.new(w.getBounds()); // make up a morphic world
   w.topLevelMorph = w.Lively; // 'install' the morphic world in patchwork world
   return w.Lively;
@@ -970,7 +969,7 @@ w.classProto.subClass = function(name) {
   return cls;
 }
 w.classProto.inheritsFrom = function(maybeSuper) { 
-  return getPrototypeOf(this.proto) === maybeSuper.proto;
+  return w.getPrototypeOf(this.proto) === maybeSuper.proto;
 };
 
 // ***Instances and delegation
@@ -981,7 +980,7 @@ w.objProto.delegatesTo = function(parent) {
   let curr = this;
   while(curr) {
     if (curr === parent) return true;
-    curr = getPrototypeOf(curr);
+    curr = w.getPrototypeOf(curr);
   }
   return false;
 };
@@ -1159,7 +1158,7 @@ w.superclass = function (sub) {
   if (!sub.isClass()) return null;
   w.allClassNames().forEach((cName) => {
     let cls = w[cName];
-    if (getPrototypeOf(sub) === cls.proto) return cName;
+    if (w.getPrototypeOf(sub) === cls.proto) return cName;
   });
   return 'must be Obj';
 };
@@ -1507,9 +1506,9 @@ w.Morph.proto.reparentToOwnerPreservingWorldAnchor = function (newOwner, anchorL
     return;
   let p = anchorLocal == null ? this.shape.getBounds().topLeft : anchorLocal;
   let anchorWorld = this.globalize(p);
-  w.debugReparentCheck(this, 'before addMorph -> ' + (newOwner.className || 'Morph'));
+  // w.debugReparentCheck(this, 'before addMorph -> ' + (newOwner.className || 'Morph'));
   newOwner.addMorph(this); // removes from previous owner
-  w.debugReparentCheck(this, 'after addMorph -> ' + (newOwner.className || 'Morph'));
+  // w.debugReparentCheck(this, 'after addMorph -> ' + (newOwner.className || 'Morph'));
   let ownerPt = newOwner.localize(anchorWorld);
   let rotScale = this.transform.transformPt(p).subPt(this.transform.translation);
   this.transform.translation = ownerPt.subPt(rotScale);
@@ -1594,7 +1593,7 @@ w.Morph.proto.onPointerDown = function (p, evt) {
     if (sub.fullBounds().includesPt(localP)) {
       eventConsumed = sub.onPointerDown(localP, evt);
       if (eventConsumed) {
-        console.log('pointerDown event consumed by morph with id', getLmId(sub));
+        console.log('pointerDown event consumed by morph with id', w.getLmId(sub));
       }
     }
   });
@@ -1608,7 +1607,7 @@ w.Morph.proto.onPointerDown = function (p, evt) {
     copy.hitPoint = p;
     copy.actorID = evt.actorID;
     this.world().setPointerFocus(copy);
-    console.log('pointerDown event consumed by morph with id', getLmId(this));
+    console.log('pointerDown event consumed by morph with id', w.getLmId(this));
     return true; // could merge code
   }
   this.hitPoint = p;
@@ -1617,7 +1616,7 @@ w.Morph.proto.onPointerDown = function (p, evt) {
   this._pickUpOnDrag = this.owner != null && this.owner !== this.world();
   this.actorID = evt.actorID;
   this.world().setPointerFocus(this);
-  console.log('pointerDown event consumed by morph with id', getLmId(this));
+  console.log('pointerDown event consumed by morph with id', w.getLmId(this));
   return true;
 };
 w.Morph.proto.onPointerMove = function (p, evt) {
@@ -1734,7 +1733,7 @@ w.Morph.proto.remove = function () {
   //               a problem of morphs losing the chain to this.world()
 };
 w.Morph.proto.removeMorph = function (submorph) {
-  deleteFromArray(this.submorphs, submorph);
+  w.deleteFromArray(this.submorphs, submorph);
   this.changed();
 };
 w.Morph.proto.renderMeOn = function (ctx) {
@@ -1835,9 +1834,9 @@ w.Morph.proto.startStepping = function (method, argIfAny, msTime, nextStepTimeIf
 w.Morph.proto.stopStepping = function (methodName) {
   if (!this.steppingSpecs) this.steppingSpecs = [];
   if (methodName) {
-    deleteFromArrayPred(this.steppingSpecs, (spec) => spec.methodName == methodName);
+    w.deleteFromArrayPred(this.steppingSpecs, (spec) => spec.methodName == methodName);
   } else {
-    clearArray(this.steppingSpecs);
+    w.clearArray(this.steppingSpecs);
   }
   this.world().stopSteppingMorph(this, methodName);
 };
@@ -1935,7 +1934,7 @@ w.Obj.proto.delegatesTo = function (parent) {
   let curr = this;
   while (curr) {
     if (curr === parent) return true;
-    curr = getPrototypeOf(curr);
+    curr = w.getPrototypeOf(curr);
   }
   return false;
 };
@@ -3188,7 +3187,7 @@ w.PanelMorph.proto.toggleCollapse = function () {
     this.lastLocationCollapsed = this.boundsToLoc(this.getBounds());
     this.collapsed = false;
     this._stashedContent.forEach((m) => this.addMorph(m));
-    clearArray(this._stashedContent);
+    w.clearArray(this._stashedContent);
     let r = null;
     if (this.lastLocationExpanded) r = this.locToRect(this.lastLocationExpanded);
     else if (this._savedBounds) r = this._savedBounds;
@@ -4432,7 +4431,7 @@ w.OnScreenKeyboardMorph.proto.keyFaceLabel = function (spec) {
 };
 w.OnScreenKeyboardMorph.proto.buildKeys = function () {
   this.keyMorphs.forEach((m) => m.remove());
-  clearArray(this.keyMorphs);
+  w.clearArray(this.keyMorphs);
   let rows = this._kbdRowSpecs || w.OnScreenKeyboardMorph.defaultRowSpecs();
   let nRows = rows.length;
   let pad = 8;
