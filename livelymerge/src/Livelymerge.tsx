@@ -1,4 +1,5 @@
 import type { AutomergeUrl, DocHandle } from '@automerge/automerge-repo';
+import { next as Automerge, type Doc } from '@automerge/automerge/slim';
 import { useDocHandle } from '@automerge/automerge-repo-react-hooks';
 import { javascript } from '@codemirror/lang-javascript';
 import { EditorState, Prec } from '@codemirror/state';
@@ -555,7 +556,7 @@ function proxify(value: Referent, objectTableId?: number) {
 function gc() {
   for (const xs of newArrays ?? []) {
     const id: number = (xs as any)._id;
-    // console.log('>> storing array with id', id, 'in object table');
+    console.log('>> storing array with id', id, 'in object table');
     doc.objectTable[id] = xs.map(_serialize);
   }
 
@@ -567,7 +568,7 @@ function gc() {
     visited[id] = true;
 
     if (newObjects?.has(id)) {
-      // console.log('>> storing object with id', id, 'from newObjects');
+      console.log('>> storing object with id', id, 'from newObjects');
       doc.objectTable[id] = newObjects.get(id)!;
     }
 
@@ -677,6 +678,54 @@ function doCatchingErrors(fn: () => void) {
   } catch (error) {
     console.error('error', error);
   }
+}
+
+function readAutomergeDocStats(amDoc: Doc<LivelymergeDoc>) {
+  return {
+    heads: Automerge.getHeads(amDoc),
+    numOps: Automerge.stats(amDoc).numOps,
+  };
+}
+
+function AutomergeDocStats({ handle }: { handle: DocHandle<LivelymergeDoc> }) {
+  const [stats, setStats] = useState(() => readAutomergeDocStats(handle.doc()));
+
+  useEffect(() => {
+    const refresh = () => setStats(readAutomergeDocStats(handle.doc()));
+    refresh();
+    handle.on('change', refresh);
+    handle.on('heads-changed', refresh);
+    return () => {
+      handle.removeListener('change', refresh);
+      handle.removeListener('heads-changed', refresh);
+    };
+  }, [handle]);
+
+  return (
+    <div
+      className="pointer-events-none absolute top-2 right-2 z-30 max-w-[min(24rem,calc(100%-1rem))] font-mono text-[11px] leading-snug text-base-content/80"
+      aria-live="polite"
+      aria-label="Automerge document statistics"
+    >
+      <div className="rounded-md border border-base-300/70 bg-base-100/90 px-2.5 py-1.5 shadow-sm backdrop-blur-sm">
+        <div className="tabular-nums">
+          <span className="text-base-content/55">ops</span> {stats.numOps.toLocaleString()}
+        </div>
+        <div className="mt-0.5">
+          <span className="text-base-content/55">heads</span>{' '}
+          {stats.heads.length === 0 ? (
+            '—'
+          ) : (
+            <ul className="mt-0.5 list-none space-y-0.5 break-all">
+              {stats.heads.map((head: string) => (
+                <li key={head}>{head}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export const LivelymergeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
@@ -885,6 +934,7 @@ export const LivelymergeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   return (
     <div className="relative h-full min-h-0 flex-1 overflow-hidden bg-base-100">
       <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full" />
+      <AutomergeDocStats handle={docHandle} />
 
       {!drawerInDom && (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center pb-2">
