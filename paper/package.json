@@ -1,0 +1,30 @@
+{
+  "name": "@patchwork/paper",
+  "version": "0.0.1",
+  "description": "paper: a 2d canvas that stacks per-layer documents with css z-ordering",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch",
+    "push": "yarn build && pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  },
+  "author": "paul",
+  "dependencies": {
+    "@automerge/automerge-repo": "^2.5.0",
+    "@automerge/automerge-repo-solid-primitives": "^2.5.3",
+    "@inkandswitch/patchwork-elements": "^0.2.0",
+    "@inkandswitch/patchwork-plugins": "^0.0.11",
+    "solid-js": "^1.9.11"
+  },
+  "devDependencies": {
+    "@inkandswitch/patchwork-bootloader": "^0.2.5",
+    "typescript": "^5.8.3",
+    "vite": "^5.4.19",
+    "vite-plugin-css-injected-by-js": "^3.5.2",
+    "vite-plugin-solid": "^2.10.0"
+  }
+}

@@ -1,0 +1,12 @@
+.line-layer-host {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+}
+
+.line-layer-svg {
+	position: absolute;
+	inset: 0;
+	display: block;
+	overflow: visible;
+}
