@@ -1,0 +1,63 @@
+{
+  "name": "@patchwork/tldraw4",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./dist/main.js",
+  "exports": {
+    ".": {
+      "import": "./dist/main.js",
+      "source": "./src/main.ts"
+    },
+    "./tool": {
+      "import": "./dist/tool.js",
+      "source": "./src/tool.tsx"
+    },
+    "./datatype": {
+      "import": "./dist/datatype.js",
+      "source": "./src/datatype.ts"
+    },
+    "./style": "./dist/main.css"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["cbor-extract", "core-js", "esbuild"]
+  },
+  "scripts": {
+    "build": "node esbuild/build.ts",
+    "dev": "node esbuild/watch.ts",
+    "pushwatch": "pnpm dev pushwork",
+    "sync": "pnpm build && pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  },
+  "dependencies": {
+    "@automerge/automerge-repo-react-hooks": "^2.6.0-subduction.9",
+    "@automerge/react": "^2.6.0-subduction.9",
+    "@inkandswitch/patchwork-bootloader": "^0.0.4",
+    "@inkandswitch/patchwork-filesystem": "^0.0.3",
+    "@inkandswitch/patchwork-plugins": "^0.0.5",
+    "@tldraw/tldraw": "4.3.1",
+    "@types/lodash": "^4.17.20",
+    "lodash": "^4.17.21",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tldraw": "^4.3.1",
+    "vite-plugin-wasm": "^3.5.0"
+  },
+  "devDependencies": {
+    "@automerge/automerge": "^3.2.5",
+    "@automerge/automerge-repo": "^2.6.0-subduction.9",
+    "@eslint/js": "^9.36.0",
+    "@types/node": "^24.6.0",
+    "@types/react": "^18.3.1",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^5.0.4",
+    "babel-plugin-react-compiler": "19.1.0-rc.3",
+    "esbuild": "^0.23.1",
+    "eslint": "^9.36.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.22",
+    "globals": "^16.4.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.45.0"
+  }
+}
