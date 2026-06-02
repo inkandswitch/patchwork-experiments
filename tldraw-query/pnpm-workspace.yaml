@@ -1,0 +1,4 @@
+allowBuilds:
+  cbor-extract: true
+  core-js: true
+  esbuild: true

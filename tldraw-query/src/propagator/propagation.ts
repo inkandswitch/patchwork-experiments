@@ -13,8 +13,10 @@ import {
 import {
   PROPAGATOR_MEMBER_BINDING_TYPE,
   PROPAGATOR_SHAPE_TYPE,
+  getHullPagePoints,
   type PropagatorShape,
 } from "./PropagatorShape.tsx";
+import { pointInPolygon } from "./convexHull.ts";
 
 const DEBOUNCE_MS = 150;
 
@@ -45,6 +47,45 @@ function extractPlaintext(editor: Editor, shape: TLShape): string {
   }
   if (typeof props.text === "string") return props.text.trim();
   return "";
+}
+
+/**
+ * Auto-add shapes whose center falls inside a propagator's hull as members
+ * (the "drop into the hull to add" gesture). Add-only — dragging a shape out
+ * doesn't remove it. Skipped mid-drag so it fires on drop, not while moving.
+ */
+function reconcileMembership(editor: Editor): void {
+  if (editor.inputs.isDragging) return;
+
+  const shapes = editor.getCurrentPageShapes();
+  const propagators = shapes.filter((s) => s.type === PROPAGATOR_SHAPE_TYPE);
+  if (propagators.length === 0) return;
+
+  for (const prop of propagators) {
+    const hull = getHullPagePoints(editor, prop.id);
+    if (hull.length < 3) continue;
+
+    const memberIds = new Set(
+      editor
+        .getBindingsFromShape(prop.id, PROPAGATOR_MEMBER_BINDING_TYPE)
+        .map((b) => b.toId)
+    );
+
+    for (const shape of shapes) {
+      if (shape.type === PROPAGATOR_SHAPE_TYPE) continue;
+      if (memberIds.has(shape.id)) continue;
+      const bounds = editor.getShapePageBounds(shape.id);
+      if (!bounds) continue;
+      if (pointInPolygon({ x: bounds.center.x, y: bounds.center.y }, hull)) {
+        editor.createBinding({
+          type: PROPAGATOR_MEMBER_BINDING_TYPE,
+          fromId: prop.id,
+          toId: shape.id,
+          props: {},
+        });
+      }
+    }
+  }
 }
 
 /**
@@ -93,6 +134,8 @@ export function startPropagation(editor: Editor, repo: Repo): () => void {
   const recompute = async () => {
     if (stopped) return;
 
+    reconcileMembership(editor);
+
     const propagators = editor.store
       .allRecords()
       .filter(
@@ -102,6 +145,12 @@ export function startPropagation(editor: Editor, repo: Repo): () => void {
       );
 
     for (const prop of propagators) {
+      // Repair any propagator left offset by older builds: it must sit at the
+      // page origin so its hull (page-space) renders in the right place.
+      if (prop.x !== 0 || prop.y !== 0) {
+        editor.updateShape({ id: prop.id, type: PROPAGATOR_SHAPE_TYPE, x: 0, y: 0 });
+      }
+
       const url = prop.props.target?.trim() ?? "";
       const members = getMemberShapes(editor, prop.id);
 

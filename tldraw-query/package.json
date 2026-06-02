@@ -19,9 +19,6 @@
     },
     "./style": "./dist/main.css"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": ["cbor-extract", "core-js", "esbuild"]
-  },
   "scripts": {
     "build": "node esbuild/build.ts",
     "dev": "node esbuild/watch.ts",

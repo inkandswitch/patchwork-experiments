@@ -14,6 +14,7 @@ export {
 export {
   PropagatorTool,
   PropagatorToolbar,
+  PropagatorStylePanel,
   PROPAGATOR_TOOL_ID,
   propagatorUiOverrides,
   createPropagatorFromSelection,

@@ -121,6 +121,22 @@ export function growHull(
   return out;
 }
 
+/** Ray-casting point-in-polygon test. */
+export function pointInPolygon(p: Pt, poly: Pt[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x;
+    const yi = poly[i].y;
+    const xj = poly[j].x;
+    const yj = poly[j].y;
+    const intersect =
+      yi > p.y !== yj > p.y &&
+      p.x < ((xj - xi) * (p.y - yi)) / (yj - yi) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
 export function centroid(pts: Pt[]): Pt {
   if (pts.length === 0) return { x: 0, y: 0 };
   return {

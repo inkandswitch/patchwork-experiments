@@ -25,6 +25,7 @@ import {
   PropagatorMemberBindingUtil,
   PropagatorTool,
   PropagatorToolbar,
+  PropagatorStylePanel,
   propagatorUiOverrides,
   startPropagation,
 } from "./propagator/index.ts";
@@ -87,6 +88,7 @@ const customBindingUtils = [PropagatorMemberBindingUtil];
 const customTools = [PropagatorTool];
 const uiComponents: TLComponents = {
   Toolbar: PropagatorToolbar,
+  StylePanel: PropagatorStylePanel,
 };
 
 export function TldrawTool({ docUrl }: { docUrl: AutomergeUrl }) {

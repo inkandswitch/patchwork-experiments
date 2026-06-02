@@ -13,8 +13,7 @@ import {
   type TLShape,
   type TLShapeId,
 } from "@tldraw/tldraw";
-import { useState } from "react";
-import { centroid, convexHull, growHull, type Pt } from "./convexHull.ts";
+import { convexHull, growHull, type Pt } from "./convexHull.ts";
 
 export const PROPAGATOR_SHAPE_TYPE = "propagator" as const;
 export const PROPAGATOR_MEMBER_BINDING_TYPE = "propagator-member" as const;
@@ -125,6 +124,16 @@ export class PropagatorShapeUtil extends ShapeUtil<PropagatorShape> {
     return toShapeType !== PROPAGATOR_SHAPE_TYPE;
   }
 
+  // The propagator's position is derived from its members, so it must stay at
+  // the page origin. Returning the initial shape on every translate frame pins
+  // it in place (selectable, but not draggable).
+  override onTranslate(initial: PropagatorShape) {
+    return initial;
+  }
+  override onTranslateEnd(initial: PropagatorShape) {
+    return initial;
+  }
+
   getGeometry(shape: PropagatorShape): Geometry2d {
     const pts = getHullPagePoints(this.editor, shape.id);
     if (pts.length < 3) {
@@ -160,38 +169,21 @@ function PropagatorComponent({ shape }: { shape: PropagatorShape }) {
     () => getHullPagePoints(editor, shape.id),
     [editor, shape.id]
   );
+  const isSelected = useValue(
+    "propagator-selected",
+    () => editor.getSelectedShapeIds().includes(shape.id),
+    [editor, shape.id]
+  );
 
   const origin = { x: shape.x, y: shape.y };
   const local = pts.map((p) => ({ x: p.x - origin.x, y: p.y - origin.y }));
-  const center = centroid(local);
   const polygon = local.map((p) => `${p.x},${p.y}`).join(" ");
 
   const hasTarget = !!shape.props.target;
-
-  const configureTarget = () => {
-    const next = window.prompt(
-      "Propagator target (RefUrl to a string):",
-      shape.props.target || ""
-    );
-    if (next == null) return;
-    editor.updateShape<PropagatorShape>({
-      id: shape.id,
-      type: PROPAGATOR_SHAPE_TYPE,
-      props: { target: next.trim() },
-    });
-    console.log("[propagator] target set", shape.id, next.trim());
-  };
-
-  const editTransform = () => {
-    const next = window.prompt("Propagator transform code:", shape.props.transform);
-    if (next == null) return;
-    editor.updateShape<PropagatorShape>({
-      id: shape.id,
-      type: PROPAGATOR_SHAPE_TYPE,
-      props: { transform: next },
-    });
-    console.log("[propagator] transform updated", shape.id);
-  };
+  const badgeX = local.length
+    ? (Math.min(...local.map((p) => p.x)) + Math.max(...local.map((p) => p.x))) / 2
+    : 0;
+  const badgeY = local.length ? Math.min(...local.map((p) => p.y)) : 0;
 
   return (
     <HTMLContainer style={{ overflow: "visible", pointerEvents: "none" }}>
@@ -206,90 +198,52 @@ function PropagatorComponent({ shape }: { shape: PropagatorShape }) {
           <polygon
             points={polygon}
             fill="var(--color-selected, #2f80ed)"
-            fillOpacity={0.06}
+            fillOpacity={isSelected ? 0.1 : 0.05}
             stroke="var(--color-selected, #2f80ed)"
-            strokeWidth={1.5}
+            strokeWidth={isSelected ? 2 : 1.5}
             strokeDasharray="6 5"
             strokeLinejoin="round"
           />
         </svg>
       )}
-      <div
-        style={{
-          position: "absolute",
-          left: center.x,
-          top: center.y,
-          transform: "translate(-50%, -50%)",
-          display: "flex",
-          alignItems: "stretch",
-          pointerEvents: "all",
-          background: "var(--color-panel, #fff)",
-          color: "var(--color-text-1, #1d1d1d)",
-          border: "1px solid var(--color-muted-1, rgba(0,0,0,0.1))",
-          borderRadius: "var(--radius-3, 8px)",
-          boxShadow: "var(--shadow-2, 0 1px 3px rgba(0,0,0,0.2))",
-          font: "500 12px var(--tl-font-sans, system-ui, sans-serif)",
-          overflow: "hidden",
-          userSelect: "none",
-        }}
-        onPointerDown={(e) => e.stopPropagation()}
-      >
-        <ChipButton
-          onClick={configureTarget}
-          title={hasTarget ? shape.props.target : "Set the propagator's target ref"}
-          accent={hasTarget}
+      {local.length > 0 && (
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => editor.select(shape.id)}
+          title={hasTarget ? shape.props.target : "No target — select to configure"}
+          style={{
+            position: "absolute",
+            left: badgeX,
+            top: badgeY,
+            transform: "translate(-50%, calc(-100% - 6px))",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            pointerEvents: "all",
+            padding: "3px 8px",
+            borderRadius: "var(--radius-3, 8px)",
+            background: "var(--color-panel, #fff)",
+            color: hasTarget
+              ? "var(--color-selected, #2f80ed)"
+              : "var(--color-text-1, #1d1d1d)",
+            border: "1px solid var(--color-muted-1, rgba(0,0,0,0.1))",
+            boxShadow: "var(--shadow-2, 0 1px 3px rgba(0,0,0,0.2))",
+            font: "500 11px var(--tl-font-sans, system-ui, sans-serif)",
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+            userSelect: "none",
+          }}
         >
           <LinkGlyph />
-          {hasTarget ? "Target" : "Set target"}
-        </ChipButton>
-        <div style={{ width: 1, background: "var(--color-muted-1, rgba(0,0,0,0.1))" }} />
-        <ChipButton onClick={editTransform} title="Edit the transform code">
-          <span style={{ fontStyle: "italic", fontFamily: "Georgia, serif" }}>ƒ</span>
-        </ChipButton>
-      </div>
+          {hasTarget ? "Linked" : "Propagator"}
+        </button>
+      )}
     </HTMLContainer>
   );
 }
 
-function ChipButton({
-  onClick,
-  title,
-  accent,
-  children,
-}: {
-  onClick: () => void;
-  title?: string;
-  accent?: boolean;
-  children: React.ReactNode;
-}) {
-  const [hover, setHover] = useState(false);
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      onPointerEnter={() => setHover(true)}
-      onPointerLeave={() => setHover(false)}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 5,
-        padding: "5px 10px",
-        border: "none",
-        background: hover ? "var(--color-muted-2, rgba(0,0,0,0.05))" : "transparent",
-        color: accent ? "var(--color-selected, #2f80ed)" : "inherit",
-        cursor: "pointer",
-        font: "inherit",
-        whiteSpace: "nowrap",
-        lineHeight: "14px",
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
-function LinkGlyph() {
+export function LinkGlyph() {
   return (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden>
       <path
