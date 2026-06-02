@@ -1,0 +1,23 @@
+.sequence-timeline {
+  --timeline-bg: oklch(22% 0.01 260);
+  --timeline-ruler-bg: oklch(26% 0.012 260);
+  --timeline-label-bg: oklch(24% 0.012 260);
+  --timeline-track-bg: oklch(20% 0.01 260);
+  --timeline-track-alt-bg: oklch(21.5% 0.01 260);
+  --timeline-grid: oklch(40% 0.01 260 / 0.35);
+  --timeline-grid-major: oklch(50% 0.015 260 / 0.5);
+  --timeline-border: oklch(35% 0.01 260 / 0.6);
+  --timeline-text: oklch(82% 0.01 260);
+  --timeline-text-muted: oklch(62% 0.01 260);
+  --timeline-clip-fill: oklch(48% 0.12 250);
+  --timeline-clip-fill-hover: oklch(52% 0.13 250);
+  --timeline-clip-stroke: oklch(68% 0.1 250);
+  --timeline-clip-selected-fill: oklch(55% 0.14 245);
+  --timeline-clip-selected-stroke: oklch(78% 0.1 245);
+  --timeline-handle-fill: oklch(88% 0.02 260);
+  --timeline-playhead: oklch(72% 0.18 25);
+  --timeline-button-fill: oklch(32% 0.02 260);
+  --timeline-button-hover: oklch(38% 0.025 260);
+  --timeline-button-text: oklch(88% 0.01 260);
+  --timeline-danger: oklch(58% 0.18 25);
+}

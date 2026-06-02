@@ -11,11 +11,22 @@ export type Source = {
 };
 
 export type Track = {
+  id: string;
   clips: Clip[];
 };
 
 export type Clip = {
+  id: string;
   sourceId: string;
-  inTime: number | null; // null means right after the end of the previous clip
-  duration: number | null; // null means use the entire source
+  /** Seconds from the start of the sequence where this clip starts. */
+  time: number;
+  /** Seconds of source media to skip from the beginning; null means no skip. */
+  sourceInTime: number | null;
+  /** Seconds from sourceInTime; null means use the remainder of the source.  */
+  duration: number | null;
+};
+
+export type ClipRef = {
+  trackId: string;
+  clipId: string;
 };

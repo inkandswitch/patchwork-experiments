@@ -1,65 +1,70 @@
 import type { AutomergeUrl } from '@automerge/automerge-repo';
 import type { SequenceDoc } from './types';
 
-import { useDocHandle } from '@automerge/automerge-repo-react-hooks';
-import { useLayoutEffect, useRef } from 'react';
+import { useDocument } from '@automerge/automerge-repo-react-hooks';
 import { toolify } from './react-util';
+import { usePlayer } from './diffusion/use-player';
+import { isSequenceEmpty, turnIntoSampleSequence } from './helpers';
+import { Timeline } from './timeline/Timeline';
 
 import './styles.css';
 
 export const SequenceEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
-  const docHandle = useDocHandle<SequenceDoc>(docUrl, { suspense: true });
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [doc, changeDoc] = useDocument<SequenceDoc>(docUrl, { suspense: true });
+  const { mountRef, playerState, playing, play, pause, seek, currentTime, timeLabel } =
+    usePlayer(doc);
 
-  useLayoutEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const syncCanvasSize = () => {
-      const { width, height } = canvas.getBoundingClientRect();
-      const w = Math.max(1, Math.floor(width));
-      const h = Math.max(1, Math.floor(height));
-      if (canvas.width !== w || canvas.height !== h) {
-        canvas.width = w;
-        canvas.height = h;
-      }
-    };
-
-    let rafId = 0;
-
-    const render = () => {
-      const { width, height } = canvas;
-      ctx.clearRect(0, 0, width, height);
-      ctx.strokeStyle = 'black';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(width, height);
-      ctx.stroke();
-
-      rafId = requestAnimationFrame(render);
-    };
-
-    const ro = new ResizeObserver(syncCanvasSize);
-    ro.observe(canvas);
-    window.addEventListener('resize', syncCanvasSize);
-
-    syncCanvasSize();
-    rafId = requestAnimationFrame(render);
-
-    return () => {
-      cancelAnimationFrame(rafId);
-      ro.disconnect();
-      window.removeEventListener('resize', syncCanvasSize);
-    };
-  }, []);
+  const sequenceDuration = playerState.status === 'ready' ? playerState.duration : 0;
 
   return (
-    <div className="relative h-full min-h-0 flex-1 overflow-hidden bg-base-100">
-      <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full" />
+    <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-base-100">
+      {playerState.status === 'error' && (
+        <div className="border-b border-error/30 bg-error/10 px-4 py-2 text-sm text-error">
+          {playerState.message}
+        </div>
+      )}
+
+      <div className="relative flex min-h-0 w-full flex-2 items-center justify-center overflow-hidden bg-neutral">
+        <div ref={mountRef} className="origin-center" />
+        {playerState.status === 'loading' && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-sm text-white">
+            Loading sequence…
+          </div>
+        )}
+        {isSequenceEmpty(doc) && playerState.status !== 'loading' && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
+            <p className="text-sm text-neutral-content/80">This sequence has no clips yet.</p>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline"
+              onClick={() => changeDoc(turnIntoSampleSequence)}
+            >
+              Load sample video
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center gap-3 border-t border-base-300 px-4 py-2">
+        <button
+          type="button"
+          className="btn btn-sm btn-primary"
+          disabled={playerState.status !== 'ready'}
+          onClick={() => void (playing ? pause() : play())}
+        >
+          {playing ? 'Pause' : 'Play'}
+        </button>
+        <span className="font-mono text-sm tabular-nums text-base-content/70">{timeLabel}</span>
+      </div>
+
+      <Timeline
+        doc={doc}
+        changeDoc={changeDoc}
+        currentTime={currentTime}
+        sequenceDuration={sequenceDuration}
+        onSeek={(time) => void seek(time)}
+        onScrubStart={() => void pause()}
+      />
     </div>
   );
 };

@@ -1,5 +1,6 @@
 import type { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
 import type { SequenceDoc } from './types';
+import { turnIntoSampleSequence } from './helpers';
 
 export const SequenceDatatype: DatatypeImplementation<SequenceDoc> = {
   init(doc: SequenceDoc) {
@@ -7,6 +8,7 @@ export const SequenceDatatype: DatatypeImplementation<SequenceDoc> = {
     doc.title = 'Untitled Sequence';
     doc.sources = {};
     doc.tracks = [];
+    turnIntoSampleSequence(doc);
   },
   getTitle(doc: SequenceDoc) {
     return doc.title;

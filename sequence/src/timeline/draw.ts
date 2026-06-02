@@ -1,0 +1,268 @@
+import type { TimelineTheme } from './constants';
+import {
+  ADD_TRACK_HEIGHT,
+  PIXELS_PER_SECOND,
+  RULER_HEIGHT,
+  TRACK_HEIGHT,
+  TRACK_LABEL_WIDTH,
+  formatRulerTime,
+  timeToX,
+  timelineContentWidth,
+  tracksAreaHeight,
+} from './constants';
+import type { TimelineLayout } from './layout';
+import { clipRefEquals } from './layout';
+import type { ClipRef } from '../types';
+
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+): void {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  ctx.lineTo(x + r, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function drawRuler(
+  ctx: CanvasRenderingContext2D,
+  theme: TimelineTheme,
+  layout: TimelineLayout,
+): void {
+  ctx.fillStyle = theme.rulerBg;
+  ctx.fillRect(0, 0, layout.width, RULER_HEIGHT);
+
+  ctx.fillStyle = theme.labelBg;
+  ctx.fillRect(0, 0, TRACK_LABEL_WIDTH, RULER_HEIGHT);
+
+  ctx.strokeStyle = theme.border;
+  ctx.beginPath();
+  ctx.moveTo(0, RULER_HEIGHT + 0.5);
+  ctx.lineTo(layout.width, RULER_HEIGHT + 0.5);
+  ctx.stroke();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(TRACK_LABEL_WIDTH, 0, layout.width - TRACK_LABEL_WIDTH, RULER_HEIGHT);
+  ctx.clip();
+
+  const startSecond = Math.floor(layout.scrollX / PIXELS_PER_SECOND);
+  const endSecond = Math.ceil((layout.scrollX + layout.width) / PIXELS_PER_SECOND);
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '11px ui-sans-serif, system-ui, sans-serif';
+
+  for (let second = startSecond; second <= endSecond; second++) {
+    const x = timeToX(second, layout.scrollX);
+    const major = second % 5 === 0;
+    ctx.strokeStyle = major ? theme.gridMajor : theme.grid;
+    ctx.beginPath();
+    ctx.moveTo(x + 0.5, RULER_HEIGHT - (major ? 12 : 8));
+    ctx.lineTo(x + 0.5, RULER_HEIGHT);
+    ctx.stroke();
+
+    if (major) {
+      ctx.fillStyle = theme.textMuted;
+      ctx.fillText(formatRulerTime(second), x, 10);
+    }
+  }
+
+  ctx.restore();
+}
+
+function drawTrackRows(
+  ctx: CanvasRenderingContext2D,
+  theme: TimelineTheme,
+  layout: TimelineLayout,
+  trackCount: number,
+): void {
+  for (let i = 0; i < trackCount; i++) {
+    const y = RULER_HEIGHT + i * TRACK_HEIGHT;
+    ctx.fillStyle = i % 2 === 0 ? theme.trackBg : theme.trackAltBg;
+    ctx.fillRect(TRACK_LABEL_WIDTH, y, layout.width - TRACK_LABEL_WIDTH, TRACK_HEIGHT);
+
+    ctx.strokeStyle = theme.border;
+    ctx.beginPath();
+    ctx.moveTo(0, y + TRACK_HEIGHT + 0.5);
+    ctx.lineTo(layout.width, y + TRACK_HEIGHT + 0.5);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = theme.labelBg;
+  ctx.fillRect(0, RULER_HEIGHT, TRACK_LABEL_WIDTH, tracksAreaHeight(trackCount));
+
+  ctx.strokeStyle = theme.border;
+  ctx.beginPath();
+  ctx.moveTo(TRACK_LABEL_WIDTH + 0.5, RULER_HEIGHT);
+  ctx.lineTo(TRACK_LABEL_WIDTH + 0.5, layout.height);
+  ctx.stroke();
+}
+
+function drawTrackLabels(
+  ctx: CanvasRenderingContext2D,
+  theme: TimelineTheme,
+  layout: TimelineLayout,
+): void {
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.font = '12px ui-sans-serif, system-ui, sans-serif';
+
+  for (const trackLabel of layout.trackLabels) {
+    ctx.fillStyle = theme.text;
+    ctx.fillText(trackLabel.label, 12, trackLabel.y + trackLabel.height / 2);
+
+    const btn = trackLabel.removeButton;
+    ctx.fillStyle = theme.buttonFill;
+    roundRect(ctx, btn.x, btn.y, btn.width, btn.height, 4);
+    ctx.fill();
+
+    ctx.strokeStyle = theme.danger;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(btn.x + 5, btn.y + 5);
+    ctx.lineTo(btn.x + btn.width - 5, btn.y + btn.height - 5);
+    ctx.moveTo(btn.x + btn.width - 5, btn.y + 5);
+    ctx.lineTo(btn.x + 5, btn.y + btn.height - 5);
+    ctx.stroke();
+  }
+
+  const add = layout.addTrackButton;
+  ctx.fillStyle = theme.buttonFill;
+  roundRect(ctx, add.x, add.y, add.width, add.height, 4);
+  ctx.fill();
+  ctx.fillStyle = theme.buttonText;
+  ctx.textAlign = 'center';
+  ctx.fillText('+ Track', add.x + add.width / 2, add.y + add.height / 2);
+}
+
+function drawGrid(
+  ctx: CanvasRenderingContext2D,
+  theme: TimelineTheme,
+  layout: TimelineLayout,
+  trackCount: number,
+): void {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(TRACK_LABEL_WIDTH, RULER_HEIGHT, layout.width - TRACK_LABEL_WIDTH, trackCount * TRACK_HEIGHT);
+  ctx.clip();
+
+  const startSecond = Math.floor(layout.scrollX / PIXELS_PER_SECOND);
+  const endSecond = Math.ceil((layout.scrollX + layout.width) / PIXELS_PER_SECOND);
+
+  for (let second = startSecond; second <= endSecond; second++) {
+    const x = timeToX(second, layout.scrollX);
+    ctx.strokeStyle = second % 5 === 0 ? theme.gridMajor : theme.grid;
+    ctx.beginPath();
+    ctx.moveTo(x + 0.5, RULER_HEIGHT);
+    ctx.lineTo(x + 0.5, RULER_HEIGHT + trackCount * TRACK_HEIGHT);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawClips(
+  ctx: CanvasRenderingContext2D,
+  theme: TimelineTheme,
+  layout: TimelineLayout,
+  selected: ClipRef | null,
+  hovered: ClipRef | null,
+): void {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(TRACK_LABEL_WIDTH, RULER_HEIGHT, layout.width - TRACK_LABEL_WIDTH, layout.height);
+  ctx.clip();
+
+  for (const clip of layout.clips) {
+    const selectedClip = clipRefEquals(selected, clip);
+    const hoveredClip = clipRefEquals(hovered, clip);
+
+    ctx.fillStyle = selectedClip
+      ? theme.clipSelectedFill
+      : hoveredClip
+        ? theme.clipFillHover
+        : theme.clipFill;
+    ctx.strokeStyle = selectedClip ? theme.clipSelectedStroke : theme.clipStroke;
+    ctx.lineWidth = selectedClip ? 2 : 1;
+
+    roundRect(ctx, clip.x, clip.y, clip.width, clip.height, 4);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = theme.handleFill;
+    roundRect(ctx, clip.x, clip.y, 8, clip.height, 4);
+    ctx.fill();
+    roundRect(ctx, clip.x + clip.width - 8, clip.y, 8, clip.height, 4);
+    ctx.fill();
+
+    ctx.fillStyle = theme.text;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.font = '11px ui-sans-serif, system-ui, sans-serif';
+    ctx.fillText(clip.label, clip.x + 10, clip.y + clip.height / 2);
+  }
+
+  ctx.restore();
+}
+
+function drawPlayhead(
+  ctx: CanvasRenderingContext2D,
+  theme: TimelineTheme,
+  layout: TimelineLayout,
+  trackCount: number,
+): void {
+  const x = layout.playheadX;
+  if (x < TRACK_LABEL_WIDTH) return;
+
+  ctx.strokeStyle = theme.playhead;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x + 0.5, 0);
+  ctx.lineTo(x + 0.5, RULER_HEIGHT + trackCount * TRACK_HEIGHT);
+  ctx.stroke();
+
+  ctx.fillStyle = theme.playhead;
+  ctx.beginPath();
+  ctx.moveTo(x - 6, 0);
+  ctx.lineTo(x + 6, 0);
+  ctx.lineTo(x, 8);
+  ctx.closePath();
+  ctx.fill();
+}
+
+export function drawTimeline(
+  ctx: CanvasRenderingContext2D,
+  theme: TimelineTheme,
+  layout: TimelineLayout,
+  trackCount: number,
+  selected: ClipRef | null,
+  hovered: ClipRef | null,
+): void {
+  ctx.clearRect(0, 0, layout.width, layout.height);
+  ctx.fillStyle = theme.bg;
+  ctx.fillRect(0, 0, layout.width, layout.height);
+
+  drawTrackRows(ctx, theme, layout, trackCount);
+  drawGrid(ctx, theme, layout, trackCount);
+  drawRuler(ctx, theme, layout);
+  drawTrackLabels(ctx, theme, layout);
+  drawClips(ctx, theme, layout, selected, hovered);
+  drawPlayhead(ctx, theme, layout, trackCount);
+}
+
+export function maxScrollX(duration: number, canvasWidth: number): number {
+  return Math.max(0, timelineContentWidth(duration) - (canvasWidth - TRACK_LABEL_WIDTH));
+}
