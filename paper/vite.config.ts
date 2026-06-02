@@ -7,6 +7,8 @@ export default defineConfig({
 	base: "./",
 	plugins: [solidPlugin(), cssInjectedByJsPlugin()],
 	build: {
+		// Keep the vendored provider tarballs that live in dist/ across builds.
+		emptyOutDir: false,
 		lib: {
 			entry: "src/index.ts",
 			formats: ["es"],

@@ -18,6 +18,17 @@
 	z-index: auto;
 }
 
+/* Floating tool buttons over the canvas. The buttons themselves carry
+   data-surface-no-draw so pressing one never starts a draw. */
+.paper-controls {
+	position: absolute;
+	top: 12px;
+	left: 12px;
+	z-index: 2147483646;
+	display: flex;
+	gap: 8px;
+}
+
 .paper-version {
 	position: absolute;
 	right: 8px;

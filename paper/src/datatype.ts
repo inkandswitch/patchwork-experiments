@@ -1,12 +1,12 @@
 import type {Repo} from "@automerge/automerge-repo"
 import type {PaperDoc, PaperLayerDoc} from "./types"
-import type {RectShape} from "./rect-layer/RectLayerTool"
-import type {LineShape} from "./line-layer/LineLayerTool"
+import type {RectShape} from "./rect/RectLayerTool"
+import type {LineShape} from "./line/LineLayerTool"
 
 export const PaperDatatype = {
 	init(doc: PaperDoc, repo: Repo) {
 		doc.title = "Paper"
-		doc.layers = []
+		doc.layers = {}
 
 		const rects: RectShape[] = [
 			{x: 80, y: 80, z: 1, width: 240, height: 160, fill: "#e0a3a3", stroke: "#b97f7f"},
@@ -28,8 +28,8 @@ export const PaperDatatype = {
 			shapes: lines,
 		})
 
-		doc.layers.push({url: rectLayer.url, toolId: "paper-rect"})
-		doc.layers.push({url: lineLayer.url, toolId: "paper-line"})
+		doc.layers.rect = rectLayer.url
+		doc.layers.line = lineLayer.url
 	},
 	getTitle(doc: PaperDoc) {
 		return doc.title || "Paper"

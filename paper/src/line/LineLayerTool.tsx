@@ -4,7 +4,7 @@ import {RepoContext, useDocument} from "@automerge/automerge-repo-solid-primitiv
 import type {ToolRender} from "@inkandswitch/patchwork-plugins"
 import type {AutomergeUrl, DocHandle} from "@automerge/automerge-repo"
 import type {PaperLayerDoc, Shape} from "../types"
-import "./line-layer.css"
+import "./line.css"
 
 export type LineShape = Shape & {
 	x2: number
@@ -18,7 +18,7 @@ export type LineShape = Shape & {
 // gets its own absolutely positioned svg with a z-index driven by `shape.z`,
 // which is what lets shapes interlace across layers.
 export const LineLayerTool: ToolRender = (handle, element) => {
-	element.classList.add("line-layer-host")
+	element.classList.add("line-host")
 
 	const dispose = render(
 		() => (
@@ -38,7 +38,7 @@ function LineLayer(props: {url: AutomergeUrl}) {
 	return (
 		<For each={shapes()}>
 			{(line) => (
-				<svg class="line-layer-svg" width="100%" height="100%" style={{"z-index": line.z}}>
+				<svg class="line-svg" width="100%" height="100%" style={{"z-index": line.z}}>
 					<line
 						x1={line.x}
 						y1={line.y}

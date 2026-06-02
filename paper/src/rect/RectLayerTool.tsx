@@ -4,7 +4,7 @@ import {RepoContext, useDocument} from "@automerge/automerge-repo-solid-primitiv
 import type {ToolRender} from "@inkandswitch/patchwork-plugins"
 import type {AutomergeUrl, DocHandle} from "@automerge/automerge-repo"
 import type {PaperLayerDoc, Shape} from "../types"
-import "./rect-layer.css"
+import "./rect.css"
 
 export type RectShape = Shape & {
 	fill?: string
@@ -17,7 +17,7 @@ export type RectShape = Shape & {
 // gets its own absolutely positioned svg with a z-index driven by `shape.z`,
 // which is what lets shapes interlace across layers.
 export const RectLayerTool: ToolRender = (handle, element) => {
-	element.classList.add("rect-layer-host")
+	element.classList.add("rect-host")
 
 	const dispose = render(
 		() => (
@@ -37,7 +37,7 @@ function RectLayer(props: {url: AutomergeUrl}) {
 	return (
 		<For each={shapes()}>
 			{(rect) => (
-				<svg class="rect-layer-svg" width="100%" height="100%" style={{"z-index": rect.z}}>
+				<svg class="rect-svg" width="100%" height="100%" style={{"z-index": rect.z}}>
 					<rect
 						x={rect.x}
 						y={rect.y}

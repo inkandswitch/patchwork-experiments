@@ -1,16 +1,20 @@
 import {render} from "solid-js/web"
 import {For} from "solid-js"
 import {RepoContext, useDocument} from "@automerge/automerge-repo-solid-primitives"
-import type {ToolRender} from "@inkandswitch/patchwork-plugins"
-import type {AutomergeUrl, DocHandle} from "@automerge/automerge-repo"
+import type {ToolElement, ToolRender} from "@inkandswitch/patchwork-plugins"
+import type {DocHandle} from "@automerge/automerge-repo"
 import "@inkandswitch/patchwork-elements"
 import type {PaperDoc} from "../types"
+import {SurfaceProvider} from "../surface/SurfaceProvider"
+import {LineButton} from "../line/LineButton"
+import {RectButton} from "../rect/RectButton"
 import "./paper.css"
 
-const VERSION = "0.0.1"
+const VERSION = "0.0.2"
 
-// The surface tool: renders each layer as a <patchwork-view>. The example
-// layers are seeded by the paper datatype's init, not here.
+// The surface tool: wraps the stack of layer <patchwork-view>s in a
+// SurfaceProvider so the layer buttons can drive the canvas purely through the
+// provider protocol.
 export const PaperTool: ToolRender = (handle, element) => {
 	if (getComputedStyle(element).position === "static") {
 		element.style.position = "relative"
@@ -19,7 +23,7 @@ export const PaperTool: ToolRender = (handle, element) => {
 	const dispose = render(
 		() => (
 			<RepoContext.Provider value={element.repo}>
-				<PaperSurface url={(handle as DocHandle<PaperDoc>).url} />
+				<PaperSurface handle={handle as DocHandle<PaperDoc>} element={element} />
 			</RepoContext.Provider>
 		),
 		element
@@ -27,15 +31,23 @@ export const PaperTool: ToolRender = (handle, element) => {
 	return dispose
 }
 
-function PaperSurface(props: {url: AutomergeUrl}) {
-	const [doc] = useDocument<PaperDoc>(() => props.url)
+function PaperSurface(props: {handle: DocHandle<PaperDoc>; element: ToolElement}) {
+	const [doc] = useDocument<PaperDoc>(() => props.handle.url)
+	const layers = () => Object.entries(doc()?.layers ?? {})
+
 	return (
 		<div class="paper-canvas">
-			<For each={doc()?.layers ?? []}>
-				{(layer) => (
-					<patchwork-view doc-url={layer.url} tool-id={layer.toolId} />
-				)}
-			</For>
+			<SurfaceProvider element={props.element} paper={props.handle}>
+				<For each={layers()}>
+					{([toolId, url]) => (
+						<patchwork-view doc-url={url} tool-id={`paper-${toolId}`} />
+					)}
+				</For>
+				<div class="paper-controls" data-surface-no-draw>
+					<RectButton />
+					<LineButton />
+				</div>
+			</SurfaceProvider>
 			<div class="paper-version">v{VERSION}</div>
 		</div>
 	)

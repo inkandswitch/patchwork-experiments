@@ -1,16 +1,12 @@
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 
-// A paper doc points at its layers; each ref names the layer doc plus the
-// tool that draws it ("paper-line" | "paper-rect").
-export type LayerRef = {
-  url: AutomergeUrl;
-  toolId: string;
-};
-
+// A paper doc maps each surface tool id ("rect" | "line") to the layer
+// document that tool draws into. The map shape lets the surface provider
+// look a layer up (and create it on demand) by tool id.
 export type PaperDoc = {
   "@patchwork": { type: "paper" };
   title: string;
-  layers: LayerRef[];
+  layers: { [toolId: string]: AutomergeUrl };
 };
 
 // Shared base shape. Each layer tool stuffs its own fields on top of this.
