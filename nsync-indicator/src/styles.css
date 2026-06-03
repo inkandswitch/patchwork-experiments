@@ -15,9 +15,12 @@
 }
 
 .sync-trigger-offline {
-  padding: 8px;
+  padding: 0;
+  height: 26px;
+  width: 26px;
   border-radius: 6px;
   color: #6b7280;
+  vertical-align: top;
   background: none;
   border: none;
   cursor: pointer;

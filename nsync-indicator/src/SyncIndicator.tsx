@@ -72,7 +72,10 @@ export function SyncIndicator(props: { handle: DocHandle<unknown> }) {
   // online/offline
   {
     const onOnline = () => setIsOnline(true);
-    const onOffline = () => setIsOnline(false);
+    const onOffline = () => {
+      console.log("[nsync-indicator] offline detected");
+      setIsOnline(false);
+    };
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
     onCleanup(() => {
