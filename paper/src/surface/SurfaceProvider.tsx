@@ -3,7 +3,7 @@ import {useRepo} from "@automerge/automerge-repo-solid-primitives"
 import {accept, type SubscribeEvent} from "@inkandswitch/patchwork-providers"
 import type {AutomergeUrl, DocHandle} from "@automerge/automerge-repo"
 import type {PaperDoc, PaperLayerDoc} from "../paper/types"
-import type {Pointer, SurfacePointerState, SurfaceState} from "./types"
+import type {Pointer, SurfaceLayers, SurfacePointerState, SurfaceState} from "./types"
 
 // Brokers every button/canvas interaction for the paper surface. It owns an
 // ephemeral selection-state document, tracks the canvas pointer, and creates
@@ -23,6 +23,17 @@ export function SurfaceProvider(props: {
 	const pointerListeners = new Set<(value: SurfacePointerState) => void>()
 	const emitPointer = () => {
 		for (const respond of pointerListeners) respond({pointer})
+	}
+
+	// Subscribers to the full layer list (those who request `surface:layer`
+	// without a toolId). Re-emitted whenever the paper doc changes.
+	const layerListeners = new Set<(value: SurfaceLayers) => void>()
+	const currentLayers = (): SurfaceLayers => ({
+		...(props.paper.doc()?.layers ?? {}),
+	})
+	const emitLayers = () => {
+		const value = currentLayers()
+		for (const respond of layerListeners) respond(value)
 	}
 
 	onMount(() => {
@@ -63,7 +74,17 @@ export function SurfaceProvider(props: {
 					accept<AutomergeUrl>(event, (respond) => respond(stateHandle.url))
 					break
 				case "surface:layer": {
-					const toolId = String(selector.toolId ?? "")
+					// Without a toolId, stream the whole layer list (and updates).
+					const toolId = selector.toolId ? String(selector.toolId) : undefined
+					if (!toolId) {
+						accept<SurfaceLayers>(event, (respond) => {
+							layerListeners.add(respond)
+							respond(currentLayers())
+							return () => layerListeners.delete(respond)
+						})
+						break
+					}
+					// With a toolId, resolve (creating on demand) that one layer.
 					accept<AutomergeUrl>(event, (respond) => {
 						void ensureLayer(toolId).then((url) => {
 							if (url) respond(url)
@@ -89,12 +110,14 @@ export function SurfaceProvider(props: {
 		el.addEventListener("pointermove", onPointerMove)
 		window.addEventListener("pointerup", onPointerUp)
 		el.addEventListener("patchwork:subscribe", onSubscribe)
+		props.paper.on("change", emitLayers)
 
 		onCleanup(() => {
 			el.removeEventListener("pointerdown", onPointerDown)
 			el.removeEventListener("pointermove", onPointerMove)
 			window.removeEventListener("pointerup", onPointerUp)
 			el.removeEventListener("patchwork:subscribe", onSubscribe)
+			props.paper.off("change", emitLayers)
 		})
 	})
 

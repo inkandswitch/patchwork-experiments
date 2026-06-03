@@ -45,7 +45,7 @@ function PaperSurface(props: {handle: DocHandle<PaperDoc>; element: ToolElement}
 						<patchwork-view doc-url={url} tool-id={`paper-${toolId}`} />
 					)}
 				</For>
-				<SelectionOverlay layers={layers} />
+				<SelectionOverlay />
 				<div class="paper-controls" data-surface-no-draw>
 					<SelectButton />
 					<RectButton />

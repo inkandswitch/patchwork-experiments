@@ -1,8 +1,15 @@
+import type {AutomergeUrl} from "@automerge/automerge-repo"
+
 // Shape of the ephemeral surface state document the provider owns. Buttons
 // read/write `selectedTool` through it; more fields will land here later.
 export type SurfaceState = {
 	selectedTool: string
 }
+
+// The paper's layers, keyed by toolId. The provider pushes this over
+// `surface:layer` when requested without a `toolId`, re-emitting whenever
+// layers are added or removed.
+export type SurfaceLayers = {[toolId: string]: AutomergeUrl}
 
 // A point in canvas coordinates.
 export type Point = {
