@@ -1,6 +1,7 @@
 import type { AutomergeUrl } from '@automerge/automerge-repo';
 import type { SequenceDoc } from './types';
 
+import { useRef } from 'react';
 import { useDocument } from '@automerge/automerge-repo-react-hooks';
 import { toolify } from './react-util';
 import { usePlayer } from './diffusion/use-player';
@@ -10,14 +11,45 @@ import { Timeline } from './timeline/Timeline';
 import './styles.css';
 
 export const SequenceEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
+  const rootRef = useRef<HTMLDivElement>(null);
   const [doc, changeDoc] = useDocument<SequenceDoc>(docUrl, { suspense: true });
   const { mountRef, playerState, playing, play, pause, seek, currentTime, timeLabel } =
     usePlayer(doc);
 
   const sequenceDuration = playerState.status === 'ready' ? playerState.duration : 0;
 
+  const togglePlayPause = () => {
+    if (playerState.status !== 'ready') return;
+    void (playing ? pause() : play());
+  };
+
+  const onEditorPointerDownCapture = (event: React.PointerEvent<HTMLDivElement>) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.closest('input, textarea, [contenteditable="true"]')) return;
+    rootRef.current?.focus({ preventScroll: true });
+  };
+
+  const onEditorKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== ' ' && event.code !== 'Space') return;
+    if (event.repeat) return;
+    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+      return;
+    }
+    if (playerState.status !== 'ready') return;
+
+    event.preventDefault();
+    togglePlayPause();
+  };
+
   return (
-    <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-base-100">
+    <div
+      ref={rootRef}
+      tabIndex={-1}
+      className="sequence-editor relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-base-100 outline-none"
+      onPointerDownCapture={onEditorPointerDownCapture}
+      onKeyDown={onEditorKeyDown}
+    >
       {playerState.status === 'error' && (
         <div className="border-b border-error/30 bg-error/10 px-4 py-2 text-sm text-error">
           {playerState.message}
@@ -50,7 +82,7 @@ export const SequenceEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
           type="button"
           className="btn btn-sm btn-primary"
           disabled={playerState.status !== 'ready'}
-          onClick={() => void (playing ? pause() : play())}
+          onClick={togglePlayPause}
         >
           {playing ? 'Pause' : 'Play'}
         </button>
