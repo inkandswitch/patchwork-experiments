@@ -6,13 +6,19 @@ import {createSurfacePointer} from "../surface/usePointer"
 import type {LineShape} from "./LineLayerTool"
 
 const STROKE = "#64748b"
-const STROKE_WIDTH = 4
-const MIN_LENGTH = 3
+const SIZE = 8
+// Skip pointer samples closer than this (px) to the last one: keeps the stored
+// path — and the Automerge change log — from exploding while staying smooth.
+const MIN_POINT_DISTANCE = 2
+// Discard strokes shorter than this so a stray click/tap leaves nothing behind.
+const MIN_LENGTH = 4
 
-// Selects the line tool and draws lines into its layer, entirely through the
-// surface provider: selection over `surface:state`, the layer over
-// `surface:layer`, and the drag over `surface:pointer`. The button dispatches
-// from its own element, so there's no Solid context.
+// Selects the freehand tool and draws strokes into the line layer, entirely
+// through the surface provider: selection over `surface:state`, the layer over
+// `surface:layer`, and the drag over `surface:pointer`. Every pointer sample
+// becomes a point in the stroke's outline; rendering expands it with
+// perfect-freehand. The button dispatches from its own element, so there's no
+// Solid context.
 export function LineButton(): JSX.Element {
 	let root!: HTMLButtonElement
 
@@ -26,7 +32,25 @@ export function LineButton(): JSX.Element {
 	const active = () => state()?.selectedTool === "line"
 
 	let index: number | undefined
+	let last: Point | undefined
 	const [hovered, setHovered] = createSignal(false)
+
+	// Append a sample to the stroke, stored relative to the shape origin so the
+	// stroke can be moved by changing only `x`/`y`.
+	const addPoint = (shape: LineShape, point: Point) => {
+		const next = {x: point.x - shape.x, y: point.y - shape.y}
+		if (shape.outline?.type === "line") shape.outline.points.push(next)
+		else shape.outline = {type: "line", points: [next]}
+	}
+
+	const strokeLength = (shape: LineShape) => {
+		const points = shape.outline?.type === "line" ? shape.outline.points : []
+		let total = 0
+		for (let i = 1; i < points.length; i++) {
+			total += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y)
+		}
+		return total
+	}
 
 	createSurfacePointer(() => root, {
 		onPointerDown: (point) => {
@@ -39,25 +63,24 @@ export function LineButton(): JSX.Element {
 					x: point.x,
 					y: point.y,
 					z,
-					x2: point.x,
-					y2: point.y,
+					outline: {type: "line", points: [{x: 0, y: 0}]},
 					stroke: STROKE,
-					strokeWidth: STROKE_WIDTH,
+					strokeWidth: SIZE,
 				}
 				doc.shapes.push(shape)
 				index = doc.shapes.length - 1
 			})
+			last = point
 		},
-		onPointerMove: (point) => {
+		onPointerMove: (pointer) => {
 			const layer = layerHandle()
-			if (!active() || !layer || index === undefined) return
+			if (!active() || !layer || index === undefined || !pointer.isPressed) return
+			if (last && Math.hypot(pointer.x - last.x, pointer.y - last.y) < MIN_POINT_DISTANCE) return
 			layer.change((doc) => {
 				const shape = doc.shapes?.[index!] as LineShape | undefined
-				if (shape) {
-					shape.x2 = point.x
-					shape.y2 = point.y
-				}
+				if (shape) addPoint(shape, pointer)
 			})
+			last = {x: pointer.x, y: pointer.y}
 		},
 		onPointerUp: (point) => {
 			const layer = layerHandle()
@@ -65,14 +88,14 @@ export function LineButton(): JSX.Element {
 				layer.change((doc) => {
 					const shape = doc.shapes?.[index!] as LineShape | undefined
 					if (!shape) return
-					shape.x2 = point.x
-					shape.y2 = point.y
-					if (Math.hypot(shape.x2 - shape.x, shape.y2 - shape.y) < MIN_LENGTH) {
+					addPoint(shape, point)
+					if (strokeLength(shape) < MIN_LENGTH) {
 						doc.shapes.splice(index!, 1)
 					}
 				})
 			}
 			index = undefined
+			last = undefined
 		},
 	})
 
@@ -82,7 +105,7 @@ export function LineButton(): JSX.Element {
 		})
 	}
 
-	const buttonStyle = () => ({
+	const buttonStyle = (): JSX.CSSProperties => ({
 		display: "flex",
 		"align-items": "center",
 		"justify-content": "center",
@@ -105,8 +128,8 @@ export function LineButton(): JSX.Element {
 			ref={root}
 			type="button"
 			style={buttonStyle()}
-			title="Line"
-			aria-label="Line"
+			title="Draw"
+			aria-label="Draw freehand"
 			aria-pressed={active()}
 			data-surface-no-draw
 			onClick={toggle}
@@ -114,14 +137,13 @@ export function LineButton(): JSX.Element {
 			onPointerLeave={() => setHovered(false)}
 		>
 			<svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
-				<line
-					x1="4"
-					y1="16"
-					x2="16"
-					y2="4"
+				<path
+					d="M3 13c2.5 0 2.5-6 5-6s2.5 6 5 6 2.5-3 4-3"
+					fill="none"
 					stroke="currentColor"
 					stroke-width="1.8"
 					stroke-linecap="round"
+					stroke-linejoin="round"
 				/>
 			</svg>
 		</button>

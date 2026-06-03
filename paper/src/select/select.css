@@ -1,0 +1,28 @@
+/* Sits above every layer view but below the toolbar. Pointer-events stay off
+   so it never intercepts drawing or clicks — selection input arrives through
+   the surface pointer provider instead. */
+.select-overlay {
+	position: absolute;
+	inset: 0;
+	z-index: 2147483640;
+	pointer-events: none;
+}
+
+.select-overlay-svg {
+	position: absolute;
+	inset: 0;
+	display: block;
+	overflow: visible;
+}
+
+/* A doubled stroke: a soft halo plus a crisp dashed outline, so the highlight
+   reads against both light fills and dark strokes. */
+.select-highlight {
+	fill: none;
+	stroke: #2563eb;
+	stroke-width: 2;
+	stroke-dasharray: 5 4;
+	paint-order: stroke;
+	vector-effect: non-scaling-stroke;
+	filter: drop-shadow(0 0 2px rgba(37, 99, 235, 0.55));
+}

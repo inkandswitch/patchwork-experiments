@@ -8,6 +8,8 @@ import type {PaperDoc} from "../types"
 import {SurfaceProvider} from "../surface/SurfaceProvider"
 import {LineButton} from "../line/LineButton"
 import {RectButton} from "../rect/RectButton"
+import {SelectButton} from "../select/SelectButton"
+import {SelectionOverlay} from "../select/SelectionOverlay"
 import "./paper.css"
 
 const VERSION = "0.0.2"
@@ -43,7 +45,9 @@ function PaperSurface(props: {handle: DocHandle<PaperDoc>; element: ToolElement}
 						<patchwork-view doc-url={url} tool-id={`paper-${toolId}`} />
 					)}
 				</For>
+				<SelectionOverlay layers={layers} />
 				<div class="paper-controls" data-surface-no-draw>
+					<SelectButton />
 					<RectButton />
 					<LineButton />
 				</div>

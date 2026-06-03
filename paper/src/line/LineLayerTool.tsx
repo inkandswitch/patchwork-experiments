@@ -3,14 +3,26 @@ import {For} from "solid-js"
 import {RepoContext, useDocument} from "@automerge/automerge-repo-solid-primitives"
 import type {ToolRender} from "@inkandswitch/patchwork-plugins"
 import type {AutomergeUrl, DocHandle} from "@automerge/automerge-repo"
-import type {PaperLayerDoc, Shape} from "../types"
+import type {PaperLayerDoc, Point, Shape} from "../types"
+import {resolveOutline} from "../select/geometry"
+import {freehandPath} from "./freehand"
 import "./line.css"
 
+// A freehand stroke. Its full path lives in `shape.outline` (a "line" variant
+// whose points are relative to the shape origin); `strokeWidth` is the pen
+// size and `stroke` the fill color. Only visual properties sit on the shape.
 export type LineShape = Shape & {
-	x2: number
-	y2: number
+	outline?: {type: "line"; points: Point[]}
 	stroke?: string
 	strokeWidth?: number
+}
+
+// The stroke's input points in absolute canvas coordinates, derived from the
+// outline (falling back to legacy `x2`/`y2` for pre-outline shapes).
+function strokePoints(line: LineShape): Point[] {
+	const outline = resolveOutline(line)
+	const points = outline?.type === "line" ? outline.points : []
+	return points.map((p) => ({x: line.x + p.x, y: line.y + p.y}))
 }
 
 // A self-contained layer tool. The mount target is the enclosing
@@ -39,15 +51,7 @@ function LineLayer(props: {url: AutomergeUrl}) {
 		<For each={shapes()}>
 			{(line) => (
 				<svg class="line-svg" width="100%" height="100%" style={{"z-index": line.z}}>
-					<line
-						x1={line.x}
-						y1={line.y}
-						x2={line.x2}
-						y2={line.y2}
-						stroke={line.stroke ?? "#64748b"}
-						stroke-width={line.strokeWidth ?? 4}
-						stroke-linecap="round"
-					/>
+					<path d={freehandPath(strokePoints(line), line.strokeWidth)} fill={line.stroke ?? "#64748b"} />
 				</svg>
 			)}
 		</For>
