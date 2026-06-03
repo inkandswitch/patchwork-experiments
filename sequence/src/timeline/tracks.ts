@@ -57,6 +57,11 @@ function resolveDestinationTrackId(
 
   if (dropTarget.kind === 'insert-above') {
     if (fromTrackIndex === 0) {
+      // The dragged clip is alone in the uppermost track; adding a track above
+      // would just recreate the same situation, so keep it where it is.
+      if (doc.tracks[0]!.clips.length === 1) {
+        return doc.tracks[0]!.id;
+      }
       if (edgeTracks.above && doc.tracks.some((track) => track.id === edgeTracks.above)) {
         return edgeTracks.above;
       }
@@ -70,6 +75,11 @@ function resolveDestinationTrackId(
 
   const lastIndex = trackCount - 1;
   if (fromTrackIndex === lastIndex) {
+    // The dragged clip is alone in the lowest track; adding a track below
+    // would just recreate the same situation, so keep it where it is.
+    if (doc.tracks[lastIndex]!.clips.length === 1) {
+      return doc.tracks[lastIndex]!.id;
+    }
     if (edgeTracks.below && doc.tracks.some((track) => track.id === edgeTracks.below)) {
       return edgeTracks.below;
     }
