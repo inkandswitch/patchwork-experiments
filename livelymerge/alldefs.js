@@ -387,7 +387,7 @@ w.findSuperclassOf = function (sub) {
   });
   return maybeSuper;
 };
-/** Soft modifier state for pads (MetaBlob). SHIFT/META flags are fleeting (cleared after use in an event batch). */
+/** Soft modifier state for the on-screen keyboard. SHIFT/META flags are fleeting (cleared after use in an event batch). */
 w.shiftKeyPressedFlag = false;
 w.lockKeyPressedFlag = false;
 w.metaKeyPressedFlag = false;
@@ -395,14 +395,69 @@ w._fleetingClearShiftFlag = false;
 w._fleetingClearMetaFlag = false;
 w.setShiftKeyPressed = function (v) {
   w.shiftKeyPressedFlag = !!v;
-  w._refreshMetaBlobKeyStyles();
+  w._refreshPadModifierStyles();
 };
 w.setLockKeyPressed = function (v) {
   w.lockKeyPressedFlag = !!v;
-  w._refreshMetaBlobKeyStyles();
+  w._refreshPadModifierStyles();
 };
 w.setMetaKeyPressed = function (v) {
   w.metaKeyPressedFlag = !!v;
+  w._refreshPadModifierStyles();
+};
+w.toggleMetaKeyPressed = function () {
+  w.setMetaKeyPressed(!w.metaKeyPressedFlag);
+};
+w.consumeSoftMetaKey = function () {
+  if (!w.metaKeyPressedFlag) return;
+  w.metaKeyPressedFlag = false;
+  w._refreshPadModifierStyles();
+};
+/** Clear one-shot soft SHIFT (LOCK is unchanged). */
+w.consumeSoftShiftKey = function () {
+  if (!w.shiftKeyPressedFlag || w.lockKeyPressedFlag) return;
+  w.setShiftKeyPressed(false);
+};
+/** SHIFT on OSK ⇧ — clears LOCK if on, else toggles one-shot soft shift. */
+w.pressPadShiftKey = function () {
+  if (w.isLockKeyPressed()) {
+    w.setLockKeyPressed(false);
+    w.setShiftKeyPressed(false);
+  } else {
+    w.setShiftKeyPressed(!w.shiftKeyPressedFlag);
+  }
+  w._refreshPadModifierStyles();
+};
+/** META on OSK ⌘ — toggles until next character or pointerDown consumes it. */
+w.pressPadMetaKey = function () {
+  w.toggleMetaKeyPressed();
+};
+/** LOCK / shift-lock and soft pad modifiers when the OSK goes away. */
+w.clearOskPadModifierState = function () {
+  w.setLockKeyPressed(false);
+  w.setShiftKeyPressed(false);
+  w.setMetaKeyPressed(false);
+};
+/** Remember OSK position/size (world bounds) for the next show. */
+w.saveOnScreenKeyboardChrome = function (kb) {
+  if (!kb || !kb.getBounds) return;
+  let b = kb.getBounds();
+  w._oskSavedChrome = {
+    x: b.topLeft.x,
+    y: b.topLeft.y,
+    w: b.width(),
+    h: b.height(),
+  };
+};
+w.onScreenKeyboardBoundsForWorld = function (world) {
+  let c = w._oskSavedChrome;
+  if (c && c.w > 0 && c.h > 0) return w.rect(c.x, c.y, c.w, c.h);
+  return w.defaultOnScreenKeyboardBounds(world);
+};
+/** Gray highlight for active SHIFT/META on OSK pad keys. */
+w.padModifierHighlightOn = function (baseColor) {
+  let base = baseColor && baseColor.copy ? baseColor.copy() : w.Color.lightGray.copy();
+  return w.Color.gray.mixedWith(base, 0.58);
 };
 /** Local coords on canvas for Pointer Events. Touch/pen use clientX/Y − rect (Safari often omits or misreports offsetX/Y). */
 w.pointerEventCanvasLocalPt = function (canvas, e) {
@@ -449,7 +504,7 @@ w.showPasteHistoryMenu = function (pane, textBox) {
     entries.push({ label: history.length - i + '. ' + preview, text: String(raw) });
   }
   let anchor =
-    world.pointerLocation ||
+    window.pointerLocation ||
     (pane.globalize ? pane.globalize(pane.shape.getBounds().topLeft) : w.pt(8, 8));
   let menu = null;
   menu = w.MenuMorph.new(
@@ -897,7 +952,20 @@ w.populateLively = function () {
   let d = w.pt(30, 100).subPt(w.Lively.star.getBounds().topLeft);
   w.Lively.star.moveBy(d);
 
-  w.newPanel(w.rect(25, 310, 400, 220)).browseText(
+  let welcomeRect = w.rect(25, 350, 400, 220);
+  let boxB = w.Lively.box.getBounds();
+  let lineY = welcomeRect.topLeft.y - 20;
+  let plmVerts = [w.pt(boxB.topLeft.x, lineY), w.pt(boxB.topLeft.x + boxB.width(), lineY)];
+  w.Lively.demoLine = w.Lively.addMorph(
+    w.LineMorph.new(plmVerts, {
+      borderWidth: 2,
+      borderColor: w.Color.black,
+      arrowheads: 'end',
+    }),
+  );
+  w.Lively.demoLine.startHandleStepping();
+
+  w.newPanel(welcomeRect).browseText(
     `The shapes you see are objects in Pyonpyon.  You can drag them around, copy and reshape them at will.  The tools for such manipulation are described in "halos" described in 'Halo help' in the screen menu.
 
 Everywhere you see text, you can edit it, search, and evaluate JavaScript expressions as in 'Text help' also in the screen menu.
@@ -909,16 +977,8 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
   );
 
   w.Lively.showWorldMenuAt(w.pt(130, 40));
-  let gb = w.getBounds();
-  // if (gb) {
-  //   let tray = w.MetaBlob.new(w.rect(8, gb.height() - 58, 236, 50));
-  //   w._metaBlobTray = tray;
-  //   w.Lively.addMorph(tray);
-  //   tray.startStepping('stepAlignToCanvas', null, 500);
-  // }
-  //w.testTransforms();
+  w.testTransforms();
 
-  /*
   w.bugImage = w.EmojiMorph.new('LADY BEETLE', 64);
   // Cute bug drawing a spiral (uses w.bugImage at scale 0.5 via Pen.withBug)...
   w.Lively.spiral = w.Lively.addMorph(w.Morph.new(w.rect(50, 210, 1, 1)));
@@ -942,10 +1002,9 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
     this.trail = this.owner.addMorph(w.Morph.new(null, this.pen.polyLine()));
     this.world().changed();
   };
-  w.setTimeout(() => {
-    w.Lively.spiral.startStepping("animatedSpiral", {goDist: 2, turnAngle: 60, nSteps: 26}, 50); },
-    2000);
-*/
+  setTimeout(() => {
+    w.Lively.spiral.startStepping('animatedSpiral', { goDist: 2, turnAngle: 60, nSteps: 26 }, 50);
+  }, 2000);
 };
 
 w.preamble = function () {
@@ -1410,23 +1469,57 @@ w.Morph.proto.forEverySubmorph = function (fn) {
     sub.forEverySubmorph(fn);
   });
 };
+/** Shape + submorph stickouts in morph-local coords (before this morph's transform). */
+w.Morph.proto.localContentBounds = function () {
+  let b = this.shape.getBounds().copy();
+  this.submorphs.forEach((sub) => {
+    b = b.union(sub.fullBounds());
+  });
+  return b;
+};
+/** Axis-aligned footprint in owner space; applies scale and rotation like {@link Morph#renderOn}. */
+w.Morph.proto.boundsInOwnerAfterTransform = function () {
+  let local = this.localContentBounds();
+  let sx = this.transform.scale.x || 1;
+  let sy = this.transform.scale.y || 1;
+  let rot = this.transform.rotation || 0;
+  if (Math.abs(rot) < 1e-10 && Math.abs(sx - 1) < 1e-10 && Math.abs(sy - 1) < 1e-10) {
+    return local.translatedBy(this.transform.translation);
+  }
+  let corners = [local.topLeft, local.topRight(), local.bottomRight(), local.bottomLeft()];
+  let pts = corners.map((c) => this.transform.transformPt(c));
+  return w.Rectangle.unionPts(pts);
+};
 w.Morph.proto.getBounds = function () {
-  // NOTE for now this does not include any protruding submorphs ("stickouts")
-  // Shape bounds are local; return bounds in owner space
+  // NOTE: does not include submorph stickouts; use {@link fullBounds} or {@link boundsInOwnerAfterTransform}.
   return this.shape.getBounds().translatedBy(this.transform.translation);
 };
+/** Visible bounds for halos etc.; includes transform scale/rotation. Clipped when inside a {@link ScrollPane}. */
+w.Morph.proto.clippedBounds = function () {
+  let b = this.boundsInOwnerAfterTransform().copy();
+  if (this.owner && this.owner.instanceOf && this.owner.instanceOf(w.ScrollPane)) {
+    b = b.intersection(this.owner.shape.getBounds());
+  }
+  return b;
+};
+/** {@link clippedBounds} in world coordinates, intersecting every ancestor {@link ScrollPane} viewport. */
+w.Morph.proto.clippedBoundsInWorld = function () {
+  let b = this.boundsInWorld();
+  let o = this.owner;
+  while (o) {
+    if (o.instanceOf && o.instanceOf(w.ScrollPane)) {
+      b = b.intersection(o.boundsInWorld());
+    }
+    o = o.owner;
+  }
+  return b;
+};
 w.Morph.proto.fullBounds = function () {
-  // Includes this morph's shape and all descendant submorph shapes.
-  // Return value is in owner coordinates, matching getBounds().
-  let b = this.shape.getBounds().copy(); // local coords
-  this.submorphs.forEach((sub) => {
-    b = b.union(sub.fullBounds()); // child bounds are in this local coords
-  });
-  return b.translatedBy(this.transform.translation);
+  return this.boundsInOwnerAfterTransform();
 };
 /** Axis-aligned bounds of this morph in world coordinates. */
 w.Morph.proto.boundsInWorld = function () {
-  let ob = this.getBounds();
+  let ob = this.boundsInOwnerAfterTransform();
   let o = this.owner;
   if (!o || o.owner == null) return ob;
   let tl = o.globalize(ob.topLeft);
@@ -1474,6 +1567,31 @@ w.Morph.proto.inspect = function () {
   // w.Lively.submorphs.first().inspect()
   return w.Lively.addMorph(w.PanelMorph.new(w.rect(500, 100, 300, 300))).buildInspector(this);
 };
+/** Optional halo menu: `{ items: string[], onSelect(item, morph) }` or null. */
+w.Morph.proto.morphMenu = function () {
+  return null;
+};
+/** Show {@link morphMenu} at a world point; returns false when there is no menu. */
+w.Morph.proto.showMorphMenuAt = function (worldPt, optsIfAny) {
+  this.menuSpec = this.morphMenu();
+  if (!this.menuSpec || !this.menuSpec.items || this.menuSpec.items.length === 0) return false;
+  let world = this.world();
+  if (!world) return false;
+  let opts = optsIfAny || {};
+  let items = this.menuSpec.items;
+  this.menu = w.MenuMorph.new(
+    w.rect(worldPt.x, worldPt.y, 165, Math.max(48, 24 + items.length * 18)),
+    items,
+    (item) => {
+      if (w.isMenuSeparator(item)) return;
+      if (this.menuSpec.onSelect) this.menuSpec.onSelect(item, this);
+      this.menu.remove();
+    },
+  );
+  this.menu.isFleetingMenu = !!opts.fleeting;
+  world.addMorph(this.menu);
+  return true;
+};
 w.Morph.proto.isaHand = function () {
   return false;
 };
@@ -1508,9 +1626,7 @@ w.Morph.proto.reparentToOwnerPreservingWorldAnchor = function (newOwner, anchorL
     return;
   let p = anchorLocal == null ? this.shape.getBounds().topLeft : anchorLocal;
   let anchorWorld = this.globalize(p);
-  // w.debugReparentCheck(this, 'before addMorph -> ' + (newOwner.className || 'Morph'));
   newOwner.addMorph(this); // removes from previous owner
-  // w.debugReparentCheck(this, 'after addMorph -> ' + (newOwner.className || 'Morph'));
   let ownerPt = newOwner.localize(anchorWorld);
   let rotScale = this.transform.transformPt(p).subPt(this.transform.translation);
   this.transform.translation = ownerPt.subPt(rotScale);
@@ -1585,6 +1701,7 @@ w.Morph.proto.onPointerDown = function (p, evt) {
   if (this.bringTopLevelPanelToFrontIfNeeded(p)) return true;
   let localP = this.relativize(p);
   if (w.effectiveMetaKey(evt)) {
+    w.consumeSoftMetaKey();
     let maybeHit = this.world().hitMorphAt(p);
     if (maybeHit) maybeHit.showHalo();
     return false;
@@ -1592,12 +1709,7 @@ w.Morph.proto.onPointerDown = function (p, evt) {
   let eventConsumed = false;
   this.submorphs.forEach((sub, idx) => {
     // localP is in this morph's local coords, i.e. owner coords for submorphs
-    if (sub.fullBounds().includesPt(localP)) {
-      eventConsumed = sub.onPointerDown(localP, evt);
-      if (eventConsumed) {
-        console.log('pointerDown event consumed by morph with id', w.getLmId(sub));
-      }
-    }
+    if (sub.fullBounds().includesPt(localP)) eventConsumed = sub.onPointerDown(localP, evt);
   });
   if (eventConsumed) return true;
 
@@ -1609,7 +1721,6 @@ w.Morph.proto.onPointerDown = function (p, evt) {
     copy.hitPoint = p;
     copy.actorID = evt.actorID;
     this.world().setPointerFocus(copy);
-    console.log('pointerDown event consumed by morph with id', w.getLmId(this));
     return true; // could merge code
   }
   this.hitPoint = p;
@@ -1618,7 +1729,6 @@ w.Morph.proto.onPointerDown = function (p, evt) {
   this._pickUpOnDrag = this.owner != null && this.owner !== this.world();
   this.actorID = evt.actorID;
   this.world().setPointerFocus(this);
-  console.log('pointerDown event consumed by morph with id', w.getLmId(this));
   return true;
 };
 w.Morph.proto.onPointerMove = function (p, evt) {
@@ -1794,6 +1904,17 @@ w.Morph.proto.rotateBy = function (angle) {
 w.Morph.proto.scaleBy = function (scale) {
   const scalePt = typeof scale === 'number' ? w.pt(scale, scale) : scale;
   this.transform.scale = this.transform.scale.scaleBy(scalePt);
+};
+/** Per shift-click on halo Z: multiply {@link transform.scale} (submorphs scale with parent render). */
+w.haloShiftTransformScaleFactor = 1.2;
+w.applyHaloShiftTransformScale = function (morph) {
+  if (!morph || !morph.transform || !morph.scaleBy) return;
+  let f = w.haloShiftTransformScaleFactor != null ? w.haloShiftTransformScaleFactor : 1.2;
+  morph.scaleBy(f);
+  if (morph.syncBoundsFromGeometry) morph.syncBoundsFromGeometry();
+  morph.changed();
+  let world = morph.world();
+  if (world && world.changed) world.changed();
 };
 w.Morph.proto.setBorderColor = function (color) {
   this.shape.setBorderColor(color);
@@ -2156,6 +2277,12 @@ w.Rectangle.proto.getBounds = function () {
 w.Rectangle.proto.height = function () {
   return this.extent.y;
 };
+w.Rectangle.proto.top = function () {
+  return this.topLeft.y;
+};
+w.Rectangle.proto.bottom = function () {
+  return this.topLeft.y + this.extent.y;
+};
 w.Rectangle.proto.includesPt = function (p) {
   return this.topLeft.lePt(p) && p.lePt(this.bottomRight());
 };
@@ -2169,6 +2296,13 @@ w.Rectangle.proto.overlapsRect = function (other) {
     this.topLeft.y < b2.y &&
     a2.y > other.topLeft.y
   );
+};
+/** Axis-aligned overlap, or zero-size rect at this topLeft when disjoint. */
+w.Rectangle.proto.intersection = function (other) {
+  if (!this.overlapsRect(other)) return w.rect(this.topLeft.x, this.topLeft.y, 0, 0);
+  let tl = this.topLeft.maxPt(other.topLeft);
+  let br = this.bottomRight().minPt(other.bottomRight());
+  return w.rect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
 };
 /**
  * When this overlaps `other`, which velocity component to flip: return `'x'` for a vertical wall
@@ -2198,6 +2332,10 @@ w.Rectangle.proto.initialize = function (p, ext) {
 w.Rectangle.proto.insetBy = function (numOrPt) {
   const inset = typeof numOrPt === 'number' ? w.pt(numOrPt, numOrPt) : numOrPt;
   return this.topLeft.addPt(inset).extent(this.extent.subPt(inset).subPt(inset));
+};
+w.Rectangle.proto.expandBy = function (n) {
+  const d = typeof n === 'number' ? n : n.x;
+  return this.insetBy(w.pt(-d, -d));
 };
 w.Rectangle.proto.moveBy = function (p) {
   //NOTE: this does not return a copy, but *changes this rect*
@@ -2461,21 +2599,132 @@ w.HaloHandle.proto.onPointerUp = function (pt, evt) {
 };
 
 w.HaloMorph = w.Morph.subClass('HaloMorph');
+w.HaloMorph.proto.handleLetterMetrics = function () {
+  return {
+    font: '14px sans-serif',
+    lineHeight: 16,
+    letterW: 14,
+    letterH: 16,
+    hang: 4,
+    nudge: w.pt(-2, -1),
+  };
+};
+/** Fill and border for handle ellipses and the halo title plate. */
+w.HaloMorph.proto.handleChromeStyle = function () {
+  return {
+    fill: w.Color.blue.lighter().lighter().withAlpha(0.5),
+    borderWidth: 1,
+    borderColor: w.Color.blue,
+  };
+};
+/** Canvas y of the text baseline for a handle letter, in halo-local coordinates. */
+w.HaloMorph.proto.handleLetterBaselineYInHalo = function (index) {
+  let m = this.handleLetterMetrics();
+  let center = this.handleCenterForIndex(index);
+  let letterTop = center.y - m.letterH / 2;
+  if (index !== 9) letterTop += m.nudge.y;
+  return letterTop + m.hang;
+};
+/** Center of handle ellipse `index` (1–10) in halo-local coordinates. */
+w.HaloMorph.proto.handleCenterForIndex = function (index) {
+  let wid = 20;
+  let haloBounds = this.shape.getBounds();
+  let frame = w.rect(-wid, -wid, haloBounds.width() + 2 * wid, haloBounds.height() + 2 * wid);
+  let p1 = frame.bottomLeft().subPt(w.pt(0, wid));
+  let p2 = frame.topLeft;
+  let p3 = frame.topRight().subPt(w.pt(wid, 0));
+  let p4 = frame.bottomRight().subPt(w.pt(wid, wid));
+  let c1, c2, d;
+  if (index <= 4) {
+    c1 = p1;
+    c2 = p2;
+    d = (4 - index) / 3;
+  } else if (index <= 7) {
+    c1 = p2;
+    c2 = p3;
+    d = (7 - index) / 3;
+  } else {
+    c1 = p3;
+    c2 = p4;
+    d = (10 - index) / 3;
+  }
+  let handleLoc = c2.addPt(c1.subPt(c2).scaleBy(d));
+  let radius = wid / 2;
+  return handleLoc.addPt(w.pt(radius, radius));
+};
+w.HaloMorph.proto.layoutTitleMorph = function () {
+  let m = this.handleLetterMetrics();
+  let rC = this.handleCenterForIndex(1);
+  let zC = this.handleCenterForIndex(10);
+  let mid = rC.addPt(zC.subPt(rC).scaleBy(0.5));
+  let span = Math.max(24, rC.dist(zC) - 36);
+  let maxChars = Math.max(4, Math.floor(span / 8));
+  let name = this.target && this.target.className ? this.target.className : 'Morph';
+  let titleStr = w.truncateString(name, maxChars);
+  let baselineY = this.handleLetterBaselineYInHalo(1);
+  let chrome = this.handleChromeStyle();
+  let padX = 6;
+  let padY = 3;
+  let innerW = Math.min(span, Math.max(28, titleStr.length * 8));
+  let titleW = innerW + padX * 2;
+  let titleH = m.lineHeight + padY * 2;
+  let titleTop = baselineY - m.hang - padY;
+  let titleBounds = w.rect(mid.x - titleW / 2, titleTop, titleW, titleH);
+  this.titleMorph = this.addMorph(w.TextMorph.new(titleBounds, titleStr));
+  let letter = this.titleMorph.shape;
+  letter.font = m.font;
+  letter.lineHeight = m.lineHeight;
+  letter.hang = m.hang + padY;
+  letter.inset = w.pt(m.hang + padX, m.hang + padY);
+  letter.boxColor = chrome.fill;
+  letter.borderWidth = chrome.borderWidth;
+  letter.borderColor = chrome.borderColor;
+  letter.fill = chrome.fill;
+  letter.selStart = null;
+  letter.selStop = null;
+  letter.disableSelectionRendering = true;
+  letter.noMenuLineHighlight = true;
+  letter.centerGlyph = true;
+  letter.verticallyCenterSingleLine = false;
+  letter.composeBottomPad = 0;
+  if (letter.compose) letter.compose();
+  this.titleMorph.onPointerDown = () => false;
+  this.titleMorph.includesPt = () => false;
+};
 w.HaloMorph.proto.initialize = function (targetMorph) {
   this.target = targetMorph;
-  // Halo lives in world coordinates; nested targets need world-space bounds.
-  w.Morph.proto.initialize.call(this, targetMorph.boundsInWorld().insetBy(-10));
+  let isWorld =
+    targetMorph.className === 'WorldMorph' ||
+    (targetMorph.instanceOf && targetMorph.instanceOf(w.WorldMorph));
+  let haloBounds = isWorld
+    ? targetMorph.clippedBoundsInWorld().insetBy(20)
+    : targetMorph.clippedBoundsInWorld().insetBy(-10);
+  w.Morph.proto.initialize.call(this, haloBounds);
   this.shape.setStyles(null, 1, w.Color.green);
-  this.rotateHandle = this.addMorph(w.HaloHandle.new(1, 'R', 'Rotate', this));
-  this.styleHandle = this.addMorph(w.HaloHandle.new(2, 'S', 'Style', this));
-  this.copyHandle = this.addMorph(w.HaloHandle.new(3, 'C', 'Copy', this));
-  this.menuHandle = this.addMorph(w.HaloHandle.new(4, 'M', 'Menu', this));
-  this.grabHandle = this.addMorph(w.HaloHandle.new(5, 'G', 'Grab', this));
-  this.dragHandle = this.addMorph(w.HaloHandle.new(6, 'D', 'Drag', this));
-  this.deleteHandle = this.addMorph(w.HaloHandle.new(7, 'X', 'Delete', this));
-  this.codeHandle = this.addMorph(w.HaloHandle.new(8, 'B', 'Browse', this));
-  this.inspectHandle = this.addMorph(w.HaloHandle.new(9, 'I', 'Inspect', this));
-  this.resizeHandle = this.addMorph(w.HaloHandle.new(10, 'Z', 'Scale', this));
+  this.layoutTitleMorph();
+  if (isWorld) {
+    this.rotateHandle = null;
+    this.styleHandle = null;
+    this.copyHandle = null;
+    this.menuHandle = this.addMorph(w.HaloHandle.new(4, 'M', 'Menu', this));
+    this.grabHandle = null;
+    this.dragHandle = null;
+    this.deleteHandle = null;
+    this.codeHandle = this.addMorph(w.HaloHandle.new(8, 'B', 'Browse', this));
+    this.inspectHandle = this.addMorph(w.HaloHandle.new(9, 'I', 'Inspect', this));
+    this.resizeHandle = null;
+  } else {
+    this.rotateHandle = this.addMorph(w.HaloHandle.new(1, 'R', 'Rotate', this));
+    this.styleHandle = this.addMorph(w.HaloHandle.new(2, 'S', 'Style', this));
+    this.copyHandle = this.addMorph(w.HaloHandle.new(3, 'C', 'Copy', this));
+    this.menuHandle = this.addMorph(w.HaloHandle.new(4, 'M', 'Menu', this));
+    this.grabHandle = this.addMorph(w.HaloHandle.new(5, 'G', 'Grab', this));
+    this.dragHandle = this.addMorph(w.HaloHandle.new(6, 'D', 'Drag', this));
+    this.deleteHandle = this.addMorph(w.HaloHandle.new(7, 'X', 'Delete', this));
+    this.codeHandle = this.addMorph(w.HaloHandle.new(8, 'B', 'Browse', this));
+    this.inspectHandle = this.addMorph(w.HaloHandle.new(9, 'I', 'Inspect', this));
+    this.resizeHandle = this.addMorph(w.HaloHandle.new(10, 'Z', 'Scale', this));
+  }
 };
 w.HaloMorph.proto.includesPt = function (p) {
   // p is in owner (world) coords. A halo should be hittable if either its
@@ -2496,15 +2745,22 @@ w.HaloMorph.proto.pointerDownOnHandle = function (handle, pt, evt) {
       break;
     case 'Menu': {
       let anchor = this.getBounds().topLeft.addPt(handle.getBounds().center());
-      let pane = w.nearestScrollPaneWithPaneMenu(this.target);
-      if (pane && pane.showPaneMenu(anchor, { fleeting: true })) break;
+      let target = this.target;
+      let morphSpec = target && target.morphMenu ? target.morphMenu() : null;
+      if (morphSpec && morphSpec.items && morphSpec.items.length > 0) {
+        target.showMorphMenuAt(anchor, { fleeting: true });
+        break;
+      }
       this.world().showWorldMenuAt(anchor, { fleeting: true });
       break;
     }
-    case 'Browse':
-      let browser = w.PanelMorph.test();
-      browser.classPane.setSelectionString(this.target.className);
+    case 'Browse': {
+      let className = this.target && this.target.className ? this.target.className : 'Morph';
+      let browser = w.newPanel();
+      browser.buildBrowser();
+      browser.classPane.setSelectionString(className);
       break;
+    }
     case 'Inspect':
       this.target.inspect();
       break;
@@ -2540,7 +2796,7 @@ w.HandMorph.proto.grabMorph = function (p, evt) {
 w.HandMorph.proto.initialize = function (id, location, color) {
   this.actorID = id;
   w.Morph.proto.initialize.call(this, null, w.Pen.new().makeHandShape(location, color));
-  this.pointerLocation = location ? location.copy() : this.location();
+  window.pointerLocation = location ? location.copy() : this.location();
 };
 w.HandMorph.proto.isaHand = function () {
   return true;
@@ -2557,7 +2813,7 @@ w.HandMorph.proto.handColor = function () {
 };
 w.HandMorph.proto.onPointerDown = function (p, evt) {
   this.hitPoint = p;
-  this.pointerLocation = p;
+  window.pointerLocation = p;
   // Hand operations are explicit (Alt-click), so normal clicks still edit/select panes.
   if (!evt.altKey) return false;
   if (evt.shiftKey) {
@@ -2576,13 +2832,13 @@ w.HandMorph.proto.onPointerDown = function (p, evt) {
   return true;
 };
 w.HandMorph.proto.onPointerMove = function (p, evt) {
-  let d = p.subPt(this.pointerLocation ? this.pointerLocation : this.location());
-  this.pointerLocation = p;
+  let d = p.subPt(window.pointerLocation ? window.pointerLocation : this.location());
+  window.pointerLocation = p;
   this.moveBy(d);
   // Submorphs ride under transform; do not move them separately.
 };
 w.HandMorph.proto.onPointerUp = function (p, evt) {
-  this.pointerLocation = p;
+  window.pointerLocation = p;
   if (this.hasSubmorphs() && this.hitPoint.dist(p) > 2) this.dropMorph();
 };
 
@@ -3486,7 +3742,7 @@ w.ScrollPane.proto.showPaneMenu = function (ptIfAny, optsIfAny) {
     ? ptIfAny
     : this.paneMenuAnchorInWorld
       ? this.paneMenuAnchorInWorld()
-      : this.world().pointerLocation || this.globalize(this.shape.getBounds().topLeft);
+      : window.pointerLocation || this.globalize(this.shape.getBounds().topLeft);
   let thisPane = this;
   let menu = w.MenuMorph.new(
     w.rect(worldPt.x, worldPt.y, 165, Math.max(48, 24 + items.length * 18)),
@@ -4954,7 +5210,10 @@ w.WorldMorph.proto.initHand = function (start) {
   let color = w.Color.blue;
   if (!this.hands) this.hands = [];
   else color = w.Color.green;
-  this.addHand(w.HandMorph.new(window.actorID, this.pointerLocation, color));
+  console.log('creating hand morph');
+  const hm = w.HandMorph.new(window.actorID, window.pointerLocation, color);
+  console.log('adding hand morph');
+  this.addHand(hm);
 };
 w.WorldMorph.proto.handForID = function (id) {
   if (!this.hands || this.hands.length == 0) return null;
@@ -4975,7 +5234,7 @@ w.WorldMorph.proto.initialize = function (bounds) {
   this.keyboardFocus = null;
   this.shiftKeyDown = false; // maintained here
   this.hands = null;
-  // this.pointerLocation = bounds.topLeft;
+  window.pointerLocation = bounds.topLeft;
 };
 w.WorldMorph.proto.setKeyboardFocus = function (morphOrNull) {
   /*
@@ -5018,7 +5277,7 @@ w.WorldMorph.proto.onKeyUp = function (evt) {
   return w.Morph.proto.onKeyUp.call(this, evt);
 };
 w.WorldMorph.proto.onPointerDown = function (p, evt) {
-  // this.pointerLocation = p;
+  window.pointerLocation = p;
   // Dismiss fleeting menus but still deliver this click to morphs underneath
   // (otherwise the first click after a pane menu only closes the menu).
   this.dismissFleetingMenusAt(p);
@@ -5110,7 +5369,7 @@ w.WorldMorph.proto.longClickHaloDefersAt = function (worldPt) {
   return false;
 };
 w.WorldMorph.proto.onPointerMove = function (p, evt) {
-  // this.pointerLocation = p;
+  window.pointerLocation = p;
   let hand = this.handForID(evt.actorID);
   if (hand) {
     hand.onPointerMove(p, evt);
@@ -5124,7 +5383,7 @@ w.WorldMorph.proto.onPointerMove = function (p, evt) {
   this.submorphs.forEach((morph) => morph.onPointerMove(p, evt));
 };
 w.WorldMorph.proto.onPointerUp = function (p, evt) {
-  // this.pointerLocation = p;
+  window.pointerLocation = p;
   let hand = this.handForID(evt.actorID);
   if (hand) {
     let handHandled = hand.hasSubmorphs() || evt.altKey;
@@ -5310,21 +5569,21 @@ w.menuItemCaption = function (item) {
   return s;
 };
 w.longClickForHalosLabel = 'Long click for halos';
+w.onScreenKeyboardLabel = 'Show on-screen keyboard';
 w.refreshWorldMenuItems = function (menuMorph) {
   let refreshed = [];
   menuMorph.itemList.forEach((line) => {
     let cap = w.menuItemCaption(line);
     if (cap === w.longClickForHalosLabel || cap.endsWith(w.longClickForHalosLabel))
       refreshed.push(w.menuToggleLabel(w.longClickForHalosLabel, window.longClickForHalos));
-    else if (cap === onScreenKeyboardLabel || cap.endsWith(onScreenKeyboardLabel))
-      refreshed.push(w.menuToggleLabel(onScreenKeyboardLabel, w.useOnScreenKbd));
+    else if (cap === w.onScreenKeyboardLabel || cap.endsWith(w.onScreenKeyboardLabel))
+      refreshed.push(w.menuToggleLabel(w.onScreenKeyboardLabel, w.useOnScreenKbd));
     else refreshed.push(line);
   });
   menuMorph.setList(refreshed);
 };
 w.WorldMorph.proto.showWorldMenuAt = function (pt, optsIfAny) {
   let opts = optsIfAny || {};
-  let onScreenKeyboardLabel = 'Show on-screen keyboard';
   let items = [
     'Status',
     'System browser',
@@ -5337,7 +5596,7 @@ w.WorldMorph.proto.showWorldMenuAt = function (pt, optsIfAny) {
     'Open Console',
     'Restart Console',
     w.menuToggleLabel(w.longClickForHalosLabel, window.longClickForHalos),
-    w.menuToggleLabel(onScreenKeyboardLabel, w.useOnScreenKbd),
+    w.menuToggleLabel(w.onScreenKeyboardLabel, w.useOnScreenKbd),
   ];
   // Use a normal function so MenuMorph's actionFn.call(this, ...) supplies the menu as `this`
   // (avoids referencing outer `theMenu` before assignment / TDZ in the arrow closure).
@@ -5353,7 +5612,7 @@ w.WorldMorph.proto.showWorldMenuAt = function (pt, optsIfAny) {
       window.longClickForHalos = !window.longClickForHalos;
       w.refreshWorldMenuItems(this);
     }
-    if (cap === onScreenKeyboardLabel || cap.endsWith(onScreenKeyboardLabel)) {
+    if (cap === w.onScreenKeyboardLabel || cap.endsWith(w.onScreenKeyboardLabel)) {
       w.useOnScreenKbd = !w.useOnScreenKbd;
       w.syncOnScreenKeyboardWithFocus(this.world());
       w.refreshWorldMenuItems(this);
@@ -5524,19 +5783,51 @@ w.ListPane.proto.setSelectionString = function (str, suppressAction) {
 };
 
 w.PolyLine = w.Shape.subClass('PolyLine');
+/** Draw filled arrowhead at `tip` pointing from `from`. */
+w.PolyLine.drawArrowhead = function (ctx, from, tip, size) {
+  let angle = Math.atan2(tip.y - from.y, tip.x - from.x);
+  let wing = Math.PI * 0.82;
+  ctx.beginPath();
+  ctx.moveTo(tip.x, tip.y);
+  ctx.lineTo(tip.x + Math.cos(angle + wing) * size, tip.y + Math.sin(angle + wing) * size);
+  ctx.lineTo(tip.x + Math.cos(angle - wing) * size, tip.y + Math.sin(angle - wing) * size);
+  ctx.closePath();
+  ctx.fill();
+};
 w.PolyLine.proto.asString = function () {
   return `PolyLine at ${this.topLeft.asString()} with size ${this.extent}`;
 };
 w.PolyLine.proto.copy = function () {
   let copy = w.PolyLine.new([...this.vertices], this.borderWidth, this.borderColor);
   copy.setStyles(this.fillColor, this.borderWidth, this.borderColor);
+  copy.curved = this.curved;
+  copy.closed = this.closed;
+  copy.arrowheads = this.arrowheads;
   return copy;
 };
 w.PolyLine.proto.initialize = function (verts, width, color) {
   this.vertices = verts;
-  let bounds = w.Rectangle.unionPts(verts);
+  this.curved = false;
+  this.closed = false;
+  this.arrowheads = 'none';
+  let bounds = w.PolyLine.boundsForVertices(verts, width);
   w.Shape.proto.initialize.call(this, 'PolyLine', bounds, null, width, color);
-  this.morphOrigin = bounds.center();
+  this.morphOrigin = w.pt(0, 0);
+};
+w.PolyLine.proto.recomputeBounds = function () {
+  let b = w.PolyLine.boundsForVertices(this.vertices, this.borderWidth);
+  this.topLeft = b.topLeft;
+  this.extent = b.extent;
+};
+/** Union of vertices with minimum width/height so flat lines stay hittable and setBounds never divides by zero. */
+w.PolyLine.boundsForVertices = function (vertices, borderWidth) {
+  let b = w.Rectangle.unionPts(vertices);
+  let pad = Math.max(2, borderWidth != null ? borderWidth : 2);
+  let wdt = b.width();
+  let hgt = b.height();
+  if (wdt < 1) wdt = 1;
+  if (hgt < 1) hgt = pad;
+  return w.rect(b.topLeft.x, b.topLeft.y, wdt, hgt);
 };
 w.PolyLine.proto.moveBy = function (d) {
   w.Shape.proto.moveBy.call(this, d); // moves the bounds
@@ -5552,17 +5843,48 @@ w.PolyLine.proto.onPointerMove = function (p) {
     this.hitPoint = p;
   }
 };
-w.PolyLine.proto.render = function (ctx) {
-  ctx.beginPath();
-  let first = true;
-  this.vertices.forEach((vert) => {
-    if (first) {
-      ctx.moveTo(vert.x, vert.y);
-      first = false;
+/** Smooth cubic Bézier through vertices (Catmull–Rom style). If `closed`, includes last→first segment. */
+w.PolyLine.drawBezierThrough = function (ctx, verts, closed) {
+  if (verts.length < 2) return;
+  let n = verts.length;
+  ctx.moveTo(verts[0].x, verts[0].y);
+  if (n === 2) {
+    ctx.lineTo(verts[1].x, verts[1].y);
+    if (closed) ctx.closePath();
+    return;
+  }
+  let segments = closed ? n : n - 1;
+  for (let i = 0; i < segments; i++) {
+    let p0, p1, p2, p3;
+    if (closed) {
+      p0 = verts[(i - 1 + n) % n];
+      p1 = verts[i % n];
+      p2 = verts[(i + 1) % n];
+      p3 = verts[(i + 2) % n];
     } else {
-      ctx.lineTo(vert.x, vert.y);
+      p0 = verts[Math.max(0, i - 1)];
+      p1 = verts[i];
+      p2 = verts[i + 1];
+      p3 = verts[Math.min(n - 1, i + 2)];
     }
-  });
+    let cp1x = p1.x + (p2.x - p0.x) / 6;
+    let cp1y = p1.y + (p2.y - p0.y) / 6;
+    let cp2x = p2.x - (p3.x - p1.x) / 6;
+    let cp2y = p2.y - (p3.y - p1.y) / 6;
+    ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
+  }
+};
+w.PolyLine.proto.render = function (ctx) {
+  let verts = this.vertices;
+  if (!verts || verts.length < 1) return;
+  ctx.beginPath();
+  if (this.curved && verts.length > 2) {
+    w.PolyLine.drawBezierThrough(ctx, verts, this.closed);
+  } else {
+    ctx.moveTo(verts[0].x, verts[0].y);
+    for (let i = 1; i < verts.length; i++) ctx.lineTo(verts[i].x, verts[i].y);
+    if (this.closed && verts.length > 2) ctx.closePath();
+  }
   if (this.fillColor !== null) {
     ctx.fillStyle = this.fillColor.fillStyle;
     ctx.fill();
@@ -5572,7 +5894,14 @@ w.PolyLine.proto.render = function (ctx) {
     ctx.strokeStyle = this.borderColor.fillStyle;
     ctx.stroke();
   }
-  ctx.closePath();
+  let ah = this.arrowheads || 'none';
+  if (ah !== 'none' && verts.length >= 2) {
+    let size = Math.max(6, (this.borderWidth || 2) * 4);
+    ctx.fillStyle = (this.borderColor || w.Color.black).fillStyle;
+    if (ah === 'start' || ah === 'both') w.PolyLine.drawArrowhead(ctx, verts[1], verts[0], size);
+    if (ah === 'end' || ah === 'both')
+      w.PolyLine.drawArrowhead(ctx, verts[verts.length - 2], verts[verts.length - 1], size);
+  }
 };
 w.PolyLine.proto.renderOn = function (ctx) {
   // console.log('rendering Shape', this.shapeType);
@@ -5588,11 +5917,400 @@ w.PolyLine.proto.setBounds = function (newBnds) {
   let oldBnds = this.getBounds();
   let oldCtr = oldBnds.center();
   let newCtr = newBnds.center();
-  let scale = w.pt(newBnds.width() / oldBnds.width(), newBnds.height() / oldBnds.height());
+  let ow = Math.max(oldBnds.width(), 0.001);
+  let oh = Math.max(oldBnds.height(), 0.001);
+  let scale = w.pt(newBnds.width() / ow, newBnds.height() / oh);
   this.vertices = this.vertices.map((vert) => {
     return vert.subPt(oldCtr).scaleBy(scale).addPt(newCtr);
   });
-  w.Shape.proto.setBounds.call(this, w.Rectangle.unionPts(this.vertices));
+  w.Shape.proto.setBounds.call(this, w.PolyLine.boundsForVertices(this.vertices, this.borderWidth));
+};
+
+/** Editable polyline morph: hover shows vertex handles; optional arrowheads on ends. */
+w.LineMorph = w.Morph.subClass('LineMorph');
+w.LineMorph.proto.morphMenu = function () {
+  return {
+    items: ['be curved', 'be closed'],
+    onSelect: function (item, line) {
+      if (item === 'be curved') line.beCurved(!line.beCurved());
+      if (item === 'be closed') line.beClosed(!line.beClosed());
+    },
+  };
+};
+/** @returns {'none'|'start'|'end'|'both'} */
+w.LineMorph.normalizeArrowheads = function (spec) {
+  if (spec === true || spec === 'end') return 'end';
+  if (spec === false || spec === 'none' || spec == null) return 'none';
+  if (spec === 'start' || spec === 'both') return spec;
+  return 'none';
+};
+w.LineMorph.proto.initialize = function (vertices, opts = {}) {
+  let verts = vertices.map((v) => w.pt(v.x, v.y));
+  let worldBounds = w.PolyLine.boundsForVertices(
+    verts,
+    opts.borderWidth != null ? opts.borderWidth : 2,
+  );
+  let origin = worldBounds.topLeft.copy();
+  let localVerts = verts.map((v) => v.subPt(origin));
+  let pl = w.PolyLine.new(localVerts, opts.borderWidth ?? 2, opts.borderColor ?? w.Color.black);
+  pl.curved = opts.beCurved === true;
+  pl.closed = opts.beClosed === true;
+  pl.arrowheads = w.LineMorph.normalizeArrowheads(opts.arrowheads);
+  w.Morph.proto.initialize.call(this, null, pl);
+  this.transform.translation = origin;
+  this.bounds = worldBounds.copy();
+  this.arrowheads = pl.arrowheads;
+  this.handleRadius = opts.handleRadius != null ? opts.handleRadius : 5;
+  this._vertexHandles = [];
+  this._midpointHandles = [];
+  this._vertexDragActive = false;
+  this._dragVertexIndex = null;
+  this._mergeNeighborIx = null;
+};
+/** Smooth Bézier vs straight segments. `line.beCurved(true)` or read `line.beCurved()`. */
+w.LineMorph.proto.beCurved = function (on) {
+  if (arguments.length === 0) return !!this.shape.curved;
+  this.shape.curved = !!on;
+  this.changed();
+  let world = this.world();
+  if (world && world.changed) world.changed();
+  return this;
+};
+/** Connect last vertex back to first. `line.beClosed(true)` or read `line.beClosed()`. */
+w.LineMorph.proto.beClosed = function (on) {
+  if (arguments.length === 0) return !!this.shape.closed;
+  this.shape.closed = !!on;
+  this.changed();
+  let world = this.world();
+  if (world && world.changed) world.changed();
+  this.syncShapeFromVertices();
+  return this;
+};
+/** Start hover stepping for vertex handles (call after addMorph). */
+w.LineMorph.proto.startHandleStepping = function () {
+  console.log('startHandleStepping');
+  // this.startStepping('stepHoverHandles', null, 200);
+  w.Morph.proto.startStepping.call(this, 'stepHoverHandles', null, 200);
+};
+w.LineMorph.proto.morphCopy = function () {
+  let worldVerts = this.shape.vertices.map((v) => this.globalize(v));
+  let copy = w.LineMorph.new(worldVerts, {
+    borderWidth: this.shape.borderWidth,
+    borderColor: this.shape.borderColor,
+    arrowheads: this.arrowheads,
+    beCurved: this.shape.curved,
+    beClosed: this.shape.closed,
+    handleRadius: this.handleRadius,
+  });
+  copy.owner = this.owner;
+  copy.steppingSpecs = (this.steppingSpecs || []).map((spec) => spec.copyForMorph(copy));
+  copy.steppingSpecs.forEach((spec) => {
+    if (!this.isStepping(spec.methodName)) return;
+    if (spec.methodName === 'stepHoverHandles') copy.startHandleStepping();
+    else copy.startStepping(spec.methodName, spec.arg, spec.stepPeriod, spec.nextStepTime);
+  });
+  return copy;
+};
+w.LineMorph.proto.moveBy = function (delta) {
+  w.Morph.proto.moveBy.call(this, delta);
+  this.syncBoundsFromGeometry();
+};
+w.LineMorph.proto.remove = function () {
+  this.clearAllHandles();
+  return w.Morph.proto.remove.call(this);
+};
+w.LineMorph.proto.isVertexHandle = function (m) {
+  return m && m.className === 'LineVertexHandle' && m.lineMorph === this;
+};
+w.LineMorph.proto.isMidpointHandle = function (m) {
+  return m && m.className === 'LineMidpointHandle' && m.lineMorph === this;
+};
+w.LineMorph.proto.isLineHandle = function (m) {
+  return this.isVertexHandle(m) || this.isMidpointHandle(m);
+};
+w.LineMorph.proto.hoverHitBounds = function () {
+  let verts = this.shape.vertices;
+  if (!verts || verts.length < 1) return this.shape.getBounds().expandBy(10);
+  let pad = 10 + (this.handleRadius != null ? this.handleRadius : 5);
+  return w.Rectangle.unionPts(verts).expandBy(pad);
+};
+/** Refresh shape/morph bounds from current vertices (hover region, hit testing). */
+w.LineMorph.proto.syncGeometryFromVertices = function () {
+  this.shape.recomputeBounds();
+  this.syncBoundsFromGeometry();
+};
+w.LineMorph.proto.syncShapeFromVertices = function () {
+  this.syncGeometryFromVertices();
+  let n = this.shape.vertices.length;
+  if (!this._vertexHandles || this._vertexHandles.length !== n) this.ensureVertexHandles();
+  else this.layoutVertexHandles();
+  if (!this._vertexDragActive) {
+    let nm = this.segmentMidpoints().length;
+    if (!this._midpointHandles || this._midpointHandles.length !== nm) this.ensureMidpointHandles();
+    else this.layoutMidpointHandles();
+  }
+  this.changed();
+};
+/** Neighboring vertex index if drag handle overlaps it (circles touch), else null. */
+w.LineMorph.proto.adjacentOverlapVertex = function (dragIx) {
+  let verts = this.shape.vertices;
+  if (dragIx == null || dragIx < 0 || dragIx >= verts.length) return null;
+  let lim = 2 * this.handleRadius * 0.98;
+  if (dragIx > 0 && verts[dragIx].dist(verts[dragIx - 1]) < lim) return dragIx - 1;
+  if (dragIx < verts.length - 1 && verts[dragIx].dist(verts[dragIx + 1]) < lim) return dragIx + 1;
+  return null;
+};
+w.LineMorph.proto.refreshMergeHighlight = function () {
+  let dragIx = this._dragVertexIndex;
+  let neighbor = this.adjacentOverlapVertex(dragIx);
+  this._mergeNeighborIx = neighbor;
+  (this._vertexHandles || []).forEach((h, i) => {
+    let on = neighbor != null && (i === dragIx || i === neighbor);
+    if (h.setMergeHighlight) h.setMergeHighlight(on);
+  });
+};
+w.LineMorph.proto.mergeDraggedVertexWithNeighbor = function () {
+  let dragIx = this._dragVertexIndex;
+  let neighbor = this._mergeNeighborIx;
+  if (dragIx == null || neighbor == null) return;
+  let verts = this.shape.vertices;
+  if (verts.length < 3) return;
+  let removeIx = dragIx;
+  if (neighbor > dragIx) removeIx = neighbor;
+  verts.splice(removeIx, 1);
+  this._dragVertexIndex = null;
+  this._mergeNeighborIx = null;
+  this.syncShapeFromVertices();
+};
+w.LineMorph.proto.clearVertexHandles = function () {
+  (this._vertexHandles || []).forEach((h) => h.remove());
+  this._vertexHandles = [];
+};
+w.LineMorph.proto.clearMidpointHandles = function () {
+  (this._midpointHandles || []).forEach((h) => h.remove());
+  this._midpointHandles = [];
+};
+w.LineMorph.proto.clearAllHandles = function () {
+  this.clearVertexHandles();
+  this.clearMidpointHandles();
+};
+w.LineMorph.proto.segmentMidpoints = function () {
+  let verts = this.shape.vertices;
+  let mids = [];
+  for (let i = 0; i < verts.length - 1; i++) {
+    mids.push({
+      segmentIndex: i,
+      pt: w.pt((verts[i].x + verts[i + 1].x) / 2, (verts[i].y + verts[i + 1].y) / 2),
+    });
+  }
+  if (this.shape.closed && verts.length >= 3) {
+    let i = verts.length - 1;
+    mids.push({
+      segmentIndex: i,
+      pt: w.pt((verts[i].x + verts[0].x) / 2, (verts[i].y + verts[0].y) / 2),
+    });
+  }
+  return mids;
+};
+w.LineMorph.proto.layoutVertexHandles = function () {
+  let verts = this.shape.vertices;
+  if (!this._vertexHandles || this._vertexHandles.length !== verts.length) return;
+  verts.forEach((v, i) => this._vertexHandles[i].positionAtVertex(v));
+};
+w.LineMorph.proto.layoutMidpointHandles = function () {
+  let mids = this.segmentMidpoints();
+  if (!this._midpointHandles || this._midpointHandles.length !== mids.length) return;
+  mids.forEach((m, i) => this._midpointHandles[i].positionAt(m.pt));
+};
+w.LineMorph.proto.ensureVertexHandles = function () {
+  let verts = this.shape.vertices;
+  let r = this.handleRadius;
+  let needRebuild =
+    !this._vertexHandles ||
+    this._vertexHandles.length !== verts.length ||
+    this._vertexHandles.some((h) => h.owner !== this);
+  if (!needRebuild) {
+    this.layoutVertexHandles();
+    return;
+  }
+  this.clearVertexHandles();
+  this._vertexHandles = verts.map((v, i) => {
+    let h = w.LineVertexHandle.new(this, i, r);
+    this.addMorph(h);
+    h.positionAtVertex(v);
+    return h;
+  });
+};
+w.LineMorph.proto.ensureMidpointHandles = function () {
+  let mids = this.segmentMidpoints();
+  let r = Math.max(3, this.handleRadius - 1);
+  if (this._midpointHandles && this._midpointHandles.length === mids.length) {
+    this.layoutMidpointHandles();
+    return;
+  }
+  this.clearMidpointHandles();
+  this._midpointHandles = mids.map((m) => {
+    let h = w.LineMidpointHandle.new(this, m.segmentIndex, r);
+    this.addMorph(h);
+    h.positionAt(m.pt);
+    return h;
+  });
+};
+w.LineMorph.proto.insertVertexOnSegment = function (segmentIndex, pt) {
+  let verts = this.shape.vertices;
+  let ix = segmentIndex + 1;
+  verts.splice(ix, 0, w.pt(pt.x, pt.y));
+  this.syncShapeFromVertices();
+  return ix;
+};
+w.LineMorph.proto.stepHoverHandles = function () {
+  let world = this.world();
+  if (!world) return;
+  if (this._vertexDragActive) {
+    this.ensureVertexHandles();
+    this.clearMidpointHandles();
+    return;
+  }
+  let pf = world.pointerFocus;
+  if (pf && this.isLineHandle(pf)) {
+    this.ensureVertexHandles();
+    if (!this.isMidpointHandle(pf)) this.ensureMidpointHandles();
+    return;
+  }
+  if (!window.pointerLocation) {
+    console.log('no pointerLocation');
+    this.clearAllHandles();
+    return;
+  }
+  let localP = this.localize(window.pointerLocation);
+  if (!this.hoverHitBounds().includesPt(localP)) {
+    this.clearAllHandles();
+    return;
+  }
+  this.ensureVertexHandles();
+  this.ensureMidpointHandles();
+};
+
+w.LineVertexHandle = w.Morph.subClass('LineVertexHandle');
+w.LineVertexHandle.proto.initialize = function (lineMorph, vertexIndex, radius) {
+  this.lineMorph = lineMorph;
+  this.vertexIndex = vertexIndex;
+  this.handleRadius = radius != null ? radius : 5;
+  let ell = w.Ellipse.new(w.pt(0, 0), this.handleRadius);
+  ell.setColor(w.Color.white);
+  ell.setBorderWidth(1);
+  ell.setBorderColor(w.Color.gray);
+  w.Morph.proto.initialize.call(this, null, ell);
+};
+w.LineVertexHandle.proto.positionAtVertex = function (v) {
+  let r = this.handleRadius;
+  this.setBounds(w.rect(v.x - r, v.y - r, 2 * r, 2 * r));
+};
+w.LineVertexHandle.proto.setMergeHighlight = function (on) {
+  if (on) {
+    this.shape.setColor(w.Color.orange);
+    this.shape.setBorderColor(w.Color.orange);
+  } else {
+    this.shape.setColor(w.Color.white);
+    this.shape.setBorderColor(w.Color.gray);
+  }
+  this.changed();
+};
+w.LineVertexHandle.proto.onPointerDown = function (p, evt) {
+  if (!this.includesPt(p)) return false;
+  let lm = this.lineMorph;
+  lm._vertexDragActive = true;
+  lm._dragVertexIndex = this.vertexIndex;
+  lm._mergeNeighborIx = null;
+  this.hitPoint = p;
+  this.actorID = evt.actorID;
+  lm.clearMidpointHandles();
+  this.world().setPointerFocus(this);
+  return true;
+};
+w.LineVertexHandle.proto.onPointerMove = function (p, evt) {
+  if (!this.hitPoint) return false;
+  let lm = this.lineMorph;
+  let verts = lm.shape.vertices;
+  let i = lm._dragVertexIndex != null ? lm._dragVertexIndex : this.vertexIndex;
+  if (i < 0 || i >= verts.length) return true;
+  verts[i] = w.pt(p.x, p.y);
+  lm.syncGeometryFromVertices();
+  lm.layoutVertexHandles();
+  lm.refreshMergeHighlight();
+  lm.changed();
+  return true;
+};
+w.LineVertexHandle.proto.onPointerUp = function (p, evt) {
+  let lm = this.lineMorph;
+  if (lm._mergeNeighborIx != null) lm.mergeDraggedVertexWithNeighbor();
+  this.hitPoint = null;
+  this.actorID = null;
+  lm._vertexDragActive = false;
+  lm._dragVertexIndex = null;
+  lm._mergeNeighborIx = null;
+  lm.syncShapeFromVertices();
+  this.world().setPointerFocus(null);
+  return true;
+};
+
+/** Green handle on a segment midpoint: click inserts a vertex and drags it. */
+w.LineMidpointHandle = w.Morph.subClass('LineMidpointHandle');
+w.LineMidpointHandle.proto.initialize = function (lineMorph, segmentIndex, radius) {
+  this.lineMorph = lineMorph;
+  this.segmentIndex = segmentIndex;
+  this.handleRadius = radius != null ? radius : 4;
+  this._dragVertexIndex = null;
+  let ell = w.Ellipse.new(w.pt(0, 0), this.handleRadius);
+  ell.setColor(w.Color.green.lighter());
+  ell.setBorderWidth(1);
+  ell.setBorderColor(w.Color.gray);
+  w.Morph.proto.initialize.call(this, null, ell);
+};
+w.LineMidpointHandle.proto.positionAt = function (v) {
+  let r = this.handleRadius;
+  this.setBounds(w.rect(v.x - r, v.y - r, 2 * r, 2 * r));
+};
+w.LineMidpointHandle.proto.onPointerDown = function (p, evt) {
+  if (!this.includesPt(p)) return false;
+  let lm = this.lineMorph;
+  lm._vertexDragActive = true;
+  this.hitPoint = p;
+  this.actorID = evt.actorID;
+  let newIx = lm.insertVertexOnSegment(this.segmentIndex, p);
+  lm._dragVertexIndex = newIx;
+  lm._mergeNeighborIx = null;
+  this._dragVertexIndex = newIx;
+  lm.ensureVertexHandles();
+  lm.clearMidpointHandles();
+  this.world().setPointerFocus(this);
+  return true;
+};
+w.LineMidpointHandle.proto.onPointerMove = function (p, evt) {
+  if (!this.hitPoint || this._dragVertexIndex == null) return false;
+  let lm = this.lineMorph;
+  let verts = lm.shape.vertices;
+  let i = lm._dragVertexIndex;
+  if (i < 0 || i >= verts.length) return true;
+  verts[i] = w.pt(p.x, p.y);
+  lm.syncGeometryFromVertices();
+  lm.layoutVertexHandles();
+  lm.refreshMergeHighlight();
+  lm.changed();
+  return true;
+};
+w.LineMidpointHandle.proto.onPointerUp = function (p, evt) {
+  let lm = this.lineMorph;
+  if (lm._mergeNeighborIx != null) lm.mergeDraggedVertexWithNeighbor();
+  this.hitPoint = null;
+  this.actorID = null;
+  this._dragVertexIndex = null;
+  lm._vertexDragActive = false;
+  lm._dragVertexIndex = null;
+  lm._mergeNeighborIx = null;
+  lm.syncShapeFromVertices();
+  this.world().setPointerFocus(null);
+  return true;
 };
 
 w.TextBox = w.Shape.subClass('TextBox');
@@ -5917,7 +6635,7 @@ w.TextBox.proto.handleKeyboardShortcuts = function (evt) {
     if (!hits || hits.length === 0) {
       let world = this.world && this.world();
       if (world) {
-        let pt = world.pointerLocation ? world.pointerLocation.copy() : w.pt(120, 120);
+        let pt = window.pointerLocation ? window.pointerLocation.copy() : w.pt(120, 120);
         w.showFindNoMatchesMenu(world, pt, term);
       }
     } else {
