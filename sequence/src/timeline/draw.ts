@@ -1,14 +1,15 @@
 import type { TimelineTheme } from './constants';
 import {
-  ADD_TRACK_HEIGHT,
   PIXELS_PER_SECOND,
   RULER_HEIGHT,
+  TRACK_EDGE_PADDING,
   TRACK_HEIGHT,
   TRACK_LABEL_WIDTH,
   formatRulerTime,
   timeToX,
   timelineContentWidth,
-  tracksAreaHeight,
+  trackTop,
+  tracksContentHeight,
 } from './constants';
 import type { TimelineLayout } from './layout';
 import { clipRefEquals } from './layout';
@@ -44,19 +45,11 @@ function drawRuler(
   ctx.fillStyle = theme.rulerBg;
   ctx.fillRect(0, 0, layout.width, RULER_HEIGHT);
 
-  ctx.fillStyle = theme.labelBg;
-  ctx.fillRect(0, 0, TRACK_LABEL_WIDTH, RULER_HEIGHT);
-
   ctx.strokeStyle = theme.border;
   ctx.beginPath();
   ctx.moveTo(0, RULER_HEIGHT + 0.5);
   ctx.lineTo(layout.width, RULER_HEIGHT + 0.5);
   ctx.stroke();
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(TRACK_LABEL_WIDTH, 0, layout.width - TRACK_LABEL_WIDTH, RULER_HEIGHT);
-  ctx.clip();
 
   const startSecond = Math.floor(layout.scrollX / PIXELS_PER_SECOND);
   const endSecond = Math.ceil((layout.scrollX + layout.width) / PIXELS_PER_SECOND);
@@ -79,8 +72,6 @@ function drawRuler(
       ctx.fillText(formatRulerTime(second), x, 10);
     }
   }
-
-  ctx.restore();
 }
 
 function drawTrackRows(
@@ -90,7 +81,7 @@ function drawTrackRows(
   trackCount: number,
 ): void {
   for (let i = 0; i < trackCount; i++) {
-    const y = RULER_HEIGHT + i * TRACK_HEIGHT;
+    const y = trackTop(i);
     ctx.fillStyle = i % 2 === 0 ? theme.trackBg : theme.trackAltBg;
     ctx.fillRect(TRACK_LABEL_WIDTH, y, layout.width - TRACK_LABEL_WIDTH, TRACK_HEIGHT);
 
@@ -101,51 +92,20 @@ function drawTrackRows(
     ctx.stroke();
   }
 
-  ctx.fillStyle = theme.labelBg;
-  ctx.fillRect(0, RULER_HEIGHT, TRACK_LABEL_WIDTH, tracksAreaHeight(trackCount));
-
-  ctx.strokeStyle = theme.border;
-  ctx.beginPath();
-  ctx.moveTo(TRACK_LABEL_WIDTH + 0.5, RULER_HEIGHT);
-  ctx.lineTo(TRACK_LABEL_WIDTH + 0.5, layout.height);
-  ctx.stroke();
-}
-
-function drawTrackLabels(
-  ctx: CanvasRenderingContext2D,
-  theme: TimelineTheme,
-  layout: TimelineLayout,
-): void {
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.font = '12px ui-sans-serif, system-ui, sans-serif';
-
-  for (const trackLabel of layout.trackLabels) {
-    ctx.fillStyle = theme.text;
-    ctx.fillText(trackLabel.label, 12, trackLabel.y + trackLabel.height / 2);
-
-    const btn = trackLabel.removeButton;
-    ctx.fillStyle = theme.buttonFill;
-    roundRect(ctx, btn.x, btn.y, btn.width, btn.height, 4);
-    ctx.fill();
-
-    ctx.strokeStyle = theme.danger;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(btn.x + 5, btn.y + 5);
-    ctx.lineTo(btn.x + btn.width - 5, btn.y + btn.height - 5);
-    ctx.moveTo(btn.x + btn.width - 5, btn.y + 5);
-    ctx.lineTo(btn.x + 5, btn.y + btn.height - 5);
-    ctx.stroke();
-  }
-
-  const add = layout.addTrackButton;
-  ctx.fillStyle = theme.buttonFill;
-  roundRect(ctx, add.x, add.y, add.width, add.height, 4);
-  ctx.fill();
-  ctx.fillStyle = theme.buttonText;
-  ctx.textAlign = 'center';
-  ctx.fillText('+ Track', add.x + add.width / 2, add.y + add.height / 2);
+  ctx.fillStyle = theme.bg;
+  ctx.fillRect(
+    TRACK_LABEL_WIDTH,
+    RULER_HEIGHT,
+    layout.width - TRACK_LABEL_WIDTH,
+    TRACK_EDGE_PADDING,
+  );
+  const bottomPadY = RULER_HEIGHT + TRACK_EDGE_PADDING + trackCount * TRACK_HEIGHT;
+  ctx.fillRect(
+    TRACK_LABEL_WIDTH,
+    bottomPadY,
+    layout.width - TRACK_LABEL_WIDTH,
+    TRACK_EDGE_PADDING,
+  );
 }
 
 function drawGrid(
@@ -156,7 +116,12 @@ function drawGrid(
 ): void {
   ctx.save();
   ctx.beginPath();
-  ctx.rect(TRACK_LABEL_WIDTH, RULER_HEIGHT, layout.width - TRACK_LABEL_WIDTH, trackCount * TRACK_HEIGHT);
+  ctx.rect(
+    TRACK_LABEL_WIDTH,
+    RULER_HEIGHT,
+    layout.width - TRACK_LABEL_WIDTH,
+    tracksContentHeight(trackCount),
+  );
   ctx.clip();
 
   const startSecond = Math.floor(layout.scrollX / PIXELS_PER_SECOND);
@@ -167,7 +132,7 @@ function drawGrid(
     ctx.strokeStyle = second % 5 === 0 ? theme.gridMajor : theme.grid;
     ctx.beginPath();
     ctx.moveTo(x + 0.5, RULER_HEIGHT);
-    ctx.lineTo(x + 0.5, RULER_HEIGHT + trackCount * TRACK_HEIGHT);
+    ctx.lineTo(x + 0.5, RULER_HEIGHT + tracksContentHeight(trackCount));
     ctx.stroke();
   }
 
@@ -183,7 +148,7 @@ function drawClips(
 ): void {
   ctx.save();
   ctx.beginPath();
-  ctx.rect(TRACK_LABEL_WIDTH, RULER_HEIGHT, layout.width - TRACK_LABEL_WIDTH, layout.height);
+  ctx.rect(TRACK_LABEL_WIDTH, RULER_HEIGHT, layout.width - TRACK_LABEL_WIDTH, layout.height - RULER_HEIGHT);
   ctx.clip();
 
   for (const clip of layout.clips) {
@@ -227,11 +192,12 @@ function drawPlayhead(
   const x = layout.playheadX;
   if (x < TRACK_LABEL_WIDTH) return;
 
+  const tracksBottom = RULER_HEIGHT + tracksContentHeight(trackCount);
   ctx.strokeStyle = theme.playhead;
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(x + 0.5, 0);
-  ctx.lineTo(x + 0.5, RULER_HEIGHT + trackCount * TRACK_HEIGHT);
+  ctx.lineTo(x + 0.5, tracksBottom);
   ctx.stroke();
 
   ctx.fillStyle = theme.playhead;
@@ -258,7 +224,6 @@ export function drawTimeline(
   drawTrackRows(ctx, theme, layout, trackCount);
   drawGrid(ctx, theme, layout, trackCount);
   drawRuler(ctx, theme, layout);
-  drawTrackLabels(ctx, theme, layout);
   drawClips(ctx, theme, layout, selected, hovered);
   drawPlayhead(ctx, theme, layout, trackCount);
 }

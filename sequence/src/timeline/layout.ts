@@ -3,7 +3,6 @@ import type { ClipTimingInfo } from '../diffusion/sync-composition';
 import { DEFAULT_CLIP_DURATION } from '../helpers';
 
 import {
-  ADD_TRACK_HEIGHT,
   HANDLE_WIDTH,
   PIXELS_PER_SECOND,
   RULER_HEIGHT,
@@ -12,7 +11,6 @@ import {
   timeToX,
   totalCanvasHeight,
   trackTop,
-  tracksAreaHeight,
 } from './constants';
 
 export type ClipLayout = ClipRef & {
@@ -26,30 +24,12 @@ export type ClipLayout = ClipRef & {
   label: string;
 };
 
-export type TrackLabelLayout = {
-  trackId: string;
-  trackIndex: number;
-  y: number;
-  height: number;
-  label: string;
-  removeButton: { x: number; y: number; width: number; height: number };
-};
-
-export type AddTrackButtonLayout = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-};
-
 export type TimelineLayout = {
   width: number;
   height: number;
   scrollX: number;
   duration: number;
   clips: ClipLayout[];
-  trackLabels: TrackLabelLayout[];
-  addTrackButton: AddTrackButtonLayout;
   playheadX: number;
 };
 
@@ -57,8 +37,6 @@ export type HitTarget =
   | { kind: 'clip-body'; ref: ClipRef }
   | { kind: 'clip-left-handle'; ref: ClipRef }
   | { kind: 'clip-right-handle'; ref: ClipRef }
-  | { kind: 'track-remove'; trackId: string }
-  | { kind: 'add-track' }
   | { kind: 'ruler' }
   | { kind: 'playhead' }
   | { kind: 'none' };
@@ -72,23 +50,9 @@ export function computeTimelineLayout(
   sequenceDuration: number,
 ): TimelineLayout {
   const clips: ClipLayout[] = [];
-  const trackLabels: TrackLabelLayout[] = [];
 
   doc.tracks.forEach((track, trackIndex) => {
     const y = trackTop(trackIndex);
-    trackLabels.push({
-      trackId: track.id,
-      trackIndex,
-      y,
-      height: TRACK_HEIGHT,
-      label: `Track ${trackIndex + 1}`,
-      removeButton: {
-        x: TRACK_LABEL_WIDTH - 28,
-        y: y + 10,
-        width: 18,
-        height: 18,
-      },
-    });
 
     for (const clip of track.clips) {
       const clipTiming = timing.get(clip.id);
@@ -122,13 +86,6 @@ export function computeTimelineLayout(
     scrollX,
     duration: contentDuration,
     clips,
-    trackLabels,
-    addTrackButton: {
-      x: 8,
-      y: RULER_HEIGHT + tracksAreaHeight(doc.tracks.length) - ADD_TRACK_HEIGHT + 4,
-      width: TRACK_LABEL_WIDTH - 16,
-      height: ADD_TRACK_HEIGHT - 8,
-    },
     playheadX: timeToX(currentTime, scrollX),
   };
 }
@@ -142,16 +99,6 @@ export function pointInRect(
 }
 
 export function hitTestTimeline(layout: TimelineLayout, x: number, y: number): HitTarget {
-  if (pointInRect(x, y, layout.addTrackButton)) {
-    return { kind: 'add-track' };
-  }
-
-  for (const trackLabel of layout.trackLabels) {
-    if (pointInRect(x, y, trackLabel.removeButton)) {
-      return { kind: 'track-remove', trackId: trackLabel.trackId };
-    }
-  }
-
   if (x >= TRACK_LABEL_WIDTH && Math.abs(x - layout.playheadX) <= 6) {
     return { kind: 'playhead' };
   }

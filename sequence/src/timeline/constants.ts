@@ -1,8 +1,10 @@
 export const PIXELS_PER_SECOND = 80;
 export const TRACK_HEIGHT = 48;
-export const TRACK_LABEL_WIDTH = 128;
+/** Left gutter before the time axis (track names/buttons removed). */
+export const TRACK_LABEL_WIDTH = 0;
 export const RULER_HEIGHT = 28;
-export const ADD_TRACK_HEIGHT = 32;
+/** Drop zone above the first track / below the last track when dragging clips. */
+export const TRACK_EDGE_PADDING = 24;
 export const HANDLE_WIDTH = 8;
 export const MIN_CLIP_DURATION = 0.25;
 export const MIN_TIMELINE_WIDTH = 600;
@@ -76,8 +78,12 @@ export function timelineContentWidth(duration: number): number {
   return Math.max(MIN_TIMELINE_WIDTH, duration * PIXELS_PER_SECOND + 240);
 }
 
+export function tracksContentHeight(trackCount: number): number {
+  return TRACK_EDGE_PADDING * 2 + trackCount * TRACK_HEIGHT;
+}
+
 export function tracksAreaHeight(trackCount: number): number {
-  return trackCount * TRACK_HEIGHT + ADD_TRACK_HEIGHT;
+  return tracksContentHeight(trackCount);
 }
 
 export function totalCanvasHeight(trackCount: number): number {
@@ -85,7 +91,7 @@ export function totalCanvasHeight(trackCount: number): number {
 }
 
 export function trackTop(trackIndex: number): number {
-  return RULER_HEIGHT + trackIndex * TRACK_HEIGHT;
+  return RULER_HEIGHT + TRACK_EDGE_PADDING + trackIndex * TRACK_HEIGHT;
 }
 
 export function formatRulerTime(seconds: number): string {

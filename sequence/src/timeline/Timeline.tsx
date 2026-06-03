@@ -14,8 +14,14 @@ import {
   xToTime,
 } from './constants';
 import { drawTimeline, maxScrollX } from './draw';
-import { computeTimelineLayout, hitTestTimeline, type TimelineLayout } from './layout';
-import { findClip, findTrack, newTrack } from '../helpers';
+import { clipRefEquals, computeTimelineLayout, hitTestTimeline, type TimelineLayout } from './layout';
+import { findClip } from '../helpers';
+import {
+  commitClipMove,
+  pruneEmptyTracks,
+  trackDropTargetFromY,
+  type EdgeTracksDuringDrag,
+} from './tracks';
 
 import './timeline.css';
 
@@ -27,6 +33,7 @@ type DragState =
       startPointerX: number;
       originalTime: number;
       originalDuration: number;
+      edgeTracks: EdgeTracksDuringDrag;
     }
   | {
       kind: 'resize';
@@ -154,12 +161,13 @@ export function Timeline({
       event.preventDefault();
       const ref = selected;
       changeDoc((d) => {
-        const track = findTrack(d, ref.trackId);
+        const track = d.tracks.find((t) => t.id === ref.trackId);
         const clip = findClip(d, ref);
         if (!track || !clip) return;
         const clipIndex = track.clips.indexOf(clip);
         if (clipIndex === -1) return;
         track.clips.splice(clipIndex, 1);
+        pruneEmptyTracks(d);
       });
       setSelected(null);
     };
@@ -225,25 +233,6 @@ export function Timeline({
     const { x, y } = canvasPoint(event);
     const target = hitTestTimeline(layout, x, y);
 
-    if (target.kind === 'add-track') {
-      changeDoc((d) => {
-        d.tracks.push(newTrack());
-      });
-      return;
-    }
-
-    if (target.kind === 'track-remove') {
-      changeDoc((d) => {
-        const index = d.tracks.findIndex((track) => track.id === target.trackId);
-        if (index === -1) return;
-        d.tracks.splice(index, 1);
-      });
-      if (selected && selected.trackId === target.trackId) {
-        setSelected(null);
-      }
-      return;
-    }
-
     if (target.kind === 'ruler' || target.kind === 'playhead') {
       startPlayheadScrub(event, x);
       return;
@@ -273,6 +262,7 @@ export function Timeline({
           startPointerX: x,
           originalTime: clip.time,
           originalDuration: playDuration,
+          edgeTracks: {},
         };
       } else if (target.kind === 'clip-right-handle') {
         dragRef.current = {
@@ -333,7 +323,23 @@ export function Timeline({
     const deltaSeconds = (x - drag.startPointerX) / PIXELS_PER_SECOND;
 
     if (drag.kind === 'move') {
-      commitClipUpdate(drag.ref, drag.originalTime + deltaSeconds, drag.originalDuration);
+      const dropTarget = trackDropTargetFromY(y, doc.tracks.length);
+      changeDoc((d) => {
+        const nextRef = commitClipMove(
+          d,
+          drag.ref,
+          drag.originalTime + deltaSeconds,
+          drag.originalDuration,
+          dropTarget,
+          drag.edgeTracks,
+        );
+        if (nextRef) {
+          drag.ref = nextRef;
+        }
+      });
+      if (!clipRefEquals(selected, drag.ref)) {
+        setSelected(drag.ref);
+      }
     } else if (drag.kind === 'resize') {
       const duration = Math.min(
         drag.maxDuration,
@@ -352,13 +358,20 @@ export function Timeline({
   };
 
   const onPointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    if (dragRef.current?.pointerId === event.pointerId) {
-      if (dragRef.current.kind === 'playhead') {
-        setScrubTime(null);
-      }
-      dragRef.current = null;
-      event.currentTarget.releasePointerCapture(event.pointerId);
+    const drag = dragRef.current;
+    if (drag?.pointerId !== event.pointerId) return;
+
+    if (drag.kind === 'playhead') {
+      setScrubTime(null);
+    } else if (drag.kind === 'move') {
+      changeDoc((d) => {
+        pruneEmptyTracks(d);
+      });
+      setSelected(drag.ref);
     }
+
+    dragRef.current = null;
+    event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
   const onWheel = (event: React.WheelEvent<HTMLCanvasElement>) => {
