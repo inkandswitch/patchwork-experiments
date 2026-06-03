@@ -1,0 +1,12 @@
+.paper-map-host {
+	position: absolute;
+	inset: 0;
+	overflow: hidden;
+}
+
+.paper-map-container {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+}

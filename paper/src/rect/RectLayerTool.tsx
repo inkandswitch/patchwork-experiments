@@ -3,7 +3,7 @@ import {For} from "solid-js"
 import {RepoContext, useDocument} from "@automerge/automerge-repo-solid-primitives"
 import type {ToolRender} from "@inkandswitch/patchwork-plugins"
 import type {AutomergeUrl, DocHandle} from "@automerge/automerge-repo"
-import type {PaperLayerDoc, Shape} from "../types"
+import type {PaperLayerDoc, Shape} from "../paper/types"
 import {resolveOutline} from "../select/geometry"
 import "./rect.css"
 

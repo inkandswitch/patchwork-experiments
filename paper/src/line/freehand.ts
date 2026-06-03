@@ -1,5 +1,5 @@
 import {getStroke, type StrokeOptions} from "perfect-freehand"
-import type {Point} from "../types"
+import type {Point} from "../paper/types"
 
 // Pen feel for the freehand tool. `size` is the base diameter; it is overridden
 // per-shape so each stroke can carry its own width.

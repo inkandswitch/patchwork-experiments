@@ -1,6 +1,6 @@
 import {createSignal, type JSX} from "solid-js"
 import {subscribeDoc} from "@inkandswitch/patchwork-providers-solid"
-import type {PaperLayerDoc} from "../types"
+import type {PaperLayerDoc} from "../paper/types"
 import type {Point, SurfaceState} from "../surface/types"
 import {createSurfacePointer} from "../surface/usePointer"
 import type {LineShape} from "./LineLayerTool"

@@ -1,0 +1,19 @@
+/* Full-canvas overlay like the other layer hosts. The host stays
+   pointer-transparent so empty areas never block the surface; individual
+   embeds opt back into pointer events (see EmbedLayerTool) when no tool is
+   active so the embedded document can be interacted with directly. */
+.paper-embed-host {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+}
+
+/* Each embed is positioned/sized inline from its shape. The inline left/top/
+   width/height/right/bottom override the global `.paper-canvas patchwork-view`
+   inset:0 rule so embeds are not forced full-canvas. */
+.paper-embed-item {
+	display: block;
+	overflow: hidden;
+	border-radius: 6px;
+	box-shadow: 0 1px 4px rgba(28, 25, 23, 0.18);
+}

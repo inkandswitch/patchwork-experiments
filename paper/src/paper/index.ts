@@ -1,4 +1,4 @@
-import {PaperDatatype, PaperLayerDatatype} from "../datatype"
+import {PaperDatatype, PaperLayerDatatype} from "./datatype"
 
 // The paper surface owns the "paper" datatype plus the shared "paper-layer"
 // datatype that the individual layer tools render.

@@ -2,7 +2,7 @@ import {onCleanup, onMount, type JSX} from "solid-js"
 import {useRepo} from "@automerge/automerge-repo-solid-primitives"
 import {accept, type SubscribeEvent} from "@inkandswitch/patchwork-providers"
 import type {AutomergeUrl, DocHandle} from "@automerge/automerge-repo"
-import type {PaperDoc, PaperLayerDoc} from "../types"
+import type {PaperDoc, PaperLayerDoc} from "../paper/types"
 import type {Pointer, SurfacePointerState, SurfaceState} from "./types"
 
 // Brokers every button/canvas interaction for the paper surface. It owns an

@@ -4,7 +4,7 @@ import {RepoContext, useDocument} from "@automerge/automerge-repo-solid-primitiv
 import type {ToolElement, ToolRender} from "@inkandswitch/patchwork-plugins"
 import type {DocHandle} from "@automerge/automerge-repo"
 import "@inkandswitch/patchwork-elements"
-import type {PaperDoc} from "../types"
+import type {PaperDoc} from "./types"
 import {SurfaceProvider} from "../surface/SurfaceProvider"
 import {LineButton} from "../line/LineButton"
 import {RectButton} from "../rect/RectButton"
@@ -12,7 +12,7 @@ import {SelectButton} from "../select/SelectButton"
 import {SelectionOverlay} from "../select/SelectionOverlay"
 import "./paper.css"
 
-const VERSION = "0.0.2"
+const VERSION = "0.0.4"
 
 // The surface tool: wraps the stack of layer <patchwork-view>s in a
 // SurfaceProvider so the layer buttons can drive the canvas purely through the

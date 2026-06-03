@@ -1,5 +1,5 @@
 import type { AutomergeUrl } from "@automerge/automerge-repo"
-import type { Outline, Point, Shape } from "../types"
+import type { Outline, Point, Shape } from "../paper/types"
 
 // Slack (px) around a stroke's centerline for hit detection. Roughly half a
 // freehand stroke's width plus a little extra so thin/thick strokes alike are
