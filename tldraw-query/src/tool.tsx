@@ -26,6 +26,7 @@ import {
   PropagatorTool,
   PropagatorToolbar,
   PropagatorStylePanel,
+  PropagatorContextMenu,
   propagatorUiOverrides,
   startPropagation,
 } from "./propagator/index.ts";
@@ -89,6 +90,7 @@ const customTools = [PropagatorTool];
 const uiComponents: TLComponents = {
   Toolbar: PropagatorToolbar,
   StylePanel: PropagatorStylePanel,
+  ContextMenu: PropagatorContextMenu,
 };
 
 export function TldrawTool({ docUrl }: { docUrl: AutomergeUrl }) {

@@ -21,6 +21,16 @@ import { pointInPolygon } from "./convexHull.ts";
 const DEBOUNCE_MS = 150;
 
 /**
+ * Ids the user explicitly removed from a propagator, stored in shape `meta`
+ * (free-form — avoids a props migration). Auto-add skips these; the exclusion
+ * is cleared when the shape is next user-dragged, so it stays re-droppable.
+ */
+function getExcluded(shape: TLShape | undefined): string[] {
+  const e = (shape?.meta as { excluded?: unknown } | undefined)?.excluded;
+  return Array.isArray(e) ? e.filter((x): x is string => typeof x === "string") : [];
+}
+
+/**
  * Run a propagator's transform body. The code receives `shapes` (the member
  * shape records) and returns the value to write to the target. Non-string
  * results are coerced; `null`/`undefined` become an empty string.
@@ -37,7 +47,10 @@ function runTransform(code: string, shapes: TLShape[]): string {
  * strings are used as-is. Returns "" when the shape has no label.
  */
 function extractPlaintext(editor: Editor, shape: TLShape): string {
-  const props = shape.props as { richText?: TLRichText; text?: unknown };
+  const props = shape.props as { richText?: TLRichText; text?: unknown; name?: unknown };
+  if (shape.type === "frame") {
+    return typeof props.name === "string" ? props.name.trim() : "";
+  }
   if (props.richText) {
     try {
       return renderPlaintextFromRichText(editor, props.richText).trim();
@@ -70,10 +83,12 @@ function reconcileMembership(editor: Editor): void {
         .getBindingsFromShape(prop.id, PROPAGATOR_MEMBER_BINDING_TYPE)
         .map((b) => b.toId)
     );
+    const excluded = new Set(getExcluded(prop));
 
     for (const shape of shapes) {
       if (shape.type === PROPAGATOR_SHAPE_TYPE) continue;
       if (memberIds.has(shape.id)) continue;
+      if (excluded.has(shape.id)) continue;
       const bounds = editor.getShapePageBounds(shape.id);
       if (!bounds) continue;
       if (pointInPolygon({ x: bounds.center.x, y: bounds.center.y }, hull)) {
@@ -102,6 +117,50 @@ function getMemberShapes(editor: Editor, propagatorId: PropagatorShape["id"]): T
       const text = extractPlaintext(editor, s);
       return text ? ({ ...s, props: { ...s.props, text } } as TLShape) : s;
     });
+}
+
+/** A propagator's current members, with display labels, for UI lists. */
+export function listMembers(
+  editor: Editor,
+  propagatorId: PropagatorShape["id"]
+): { id: PropagatorShape["id"]; label: string }[] {
+  return editor
+    .getBindingsFromShape(propagatorId, PROPAGATOR_MEMBER_BINDING_TYPE)
+    .map((b) => {
+      const shape = editor.getShape(b.toId);
+      const label = shape
+        ? extractPlaintext(editor, shape) || shape.type
+        : String(b.toId);
+      return { id: b.toId as PropagatorShape["id"], label };
+    });
+}
+
+/**
+ * Remove a member from a propagator: delete the membership binding and record
+ * the shape id in the propagator's `excluded` meta so auto-add won't re-add it
+ * while it sits inside the hull. Dragging the shape later clears the exclusion.
+ */
+export function removeMember(
+  editor: Editor,
+  propagatorId: PropagatorShape["id"],
+  memberId: PropagatorShape["id"]
+): void {
+  editor.run(() => {
+    const bindings = editor
+      .getBindingsFromShape(propagatorId, PROPAGATOR_MEMBER_BINDING_TYPE)
+      .filter((b) => b.toId === memberId);
+    if (bindings.length) editor.deleteBindings(bindings);
+
+    const prop = editor.getShape(propagatorId);
+    const excluded = getExcluded(prop);
+    if (!excluded.includes(memberId)) {
+      editor.updateShape({
+        id: propagatorId,
+        type: PROPAGATOR_SHAPE_TYPE,
+        meta: { ...(prop?.meta ?? {}), excluded: [...excluded, memberId] },
+      });
+    }
+  });
 }
 
 /**
@@ -154,6 +213,13 @@ export function startPropagation(editor: Editor, repo: Repo): () => void {
       const url = prop.props.target?.trim() ?? "";
       const members = getMemberShapes(editor, prop.id);
 
+      // Keep the filled hull behind its page-level members so they stay
+      // clickable on top (z-order in tldraw is lexicographic by `index`).
+      const pageMembers = members.filter((m) => m.parentId === prop.parentId);
+      if (pageMembers.some((m) => m.index < prop.index)) {
+        editor.sendToBack([prop.id]);
+      }
+
       let value: string;
       try {
         value = runTransform(prop.props.transform, members);
@@ -193,6 +259,27 @@ export function startPropagation(editor: Editor, repo: Repo): () => void {
     timer = setTimeout(() => void recompute(), DEBOUNCE_MS);
   };
 
+  // When the user drags a shape, clear it from any propagator's exclusion set
+  // so a removed shape can re-join by being dropped back into a hull.
+  const disposeMove = editor.sideEffects.registerAfterChangeHandler(
+    "shape",
+    (prev, next, source) => {
+      if (source !== "user") return;
+      if (prev.x === next.x && prev.y === next.y) return;
+      for (const prop of editor.getCurrentPageShapes()) {
+        if (prop.type !== PROPAGATOR_SHAPE_TYPE) continue;
+        const excluded = getExcluded(prop);
+        if (excluded.includes(next.id)) {
+          editor.updateShape({
+            id: prop.id,
+            type: PROPAGATOR_SHAPE_TYPE,
+            meta: { ...prop.meta, excluded: excluded.filter((id) => id !== next.id) },
+          });
+        }
+      }
+    }
+  );
+
   const unsub = editor.store.listen(schedule, { scope: "document" });
   void recompute();
 
@@ -200,5 +287,6 @@ export function startPropagation(editor: Editor, repo: Repo): () => void {
     stopped = true;
     if (timer) clearTimeout(timer);
     unsub();
+    disposeMove();
   };
 }

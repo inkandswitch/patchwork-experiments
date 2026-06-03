@@ -21,11 +21,44 @@ export const PROPAGATOR_MEMBER_BINDING_TYPE = "propagator-member" as const;
 const HULL_PADDING = 16;
 
 /** Default transform body. Receives `shapes` (member records) -> returns a string. */
-export const DEFAULT_TRANSFORM = `// shapes: array of member shape records
-// return a markdown string
-return shapes
-  .map((s) => "- " + (s.props?.text ?? s.props?.name ?? s.type))
-  .join("\\n");`;
+export const DEFAULT_TRANSFORM = `// shapes: member shape records (frames included).
+// Builds a markdown checklist: positive emoji (✅ 👍) => checked, others
+// unchecked. Shapes inside a frame are grouped under the frame's label.
+var POS = ["✅", "✔️", "☑️", "👍", "🟢", "✓"];
+var EMOJI = /[✅✔️☑️👍🟢✓❌✖️👎🔴⬜✗]/gu;
+
+function labelOf(s) {
+  var t = s.props && (s.props.text || s.props.name);
+  return t ? String(t) : s.type;
+}
+function todo(s) {
+  var raw = labelOf(s);
+  var checked = POS.some(function (e) { return raw.indexOf(e) >= 0; });
+  var label = raw.replace(EMOJI, "").trim();
+  return "- [" + (checked ? "x" : " ") + "] " + (label || s.type);
+}
+
+var frames = {};
+shapes.forEach(function (s) { if (s.type === "frame") frames[s.id] = s; });
+
+var top = [];
+var grouped = {};
+shapes.forEach(function (s) {
+  if (s.type === "frame") return;
+  if (s.parentId && frames[s.parentId]) {
+    (grouped[s.parentId] = grouped[s.parentId] || []).push(s);
+  } else {
+    top.push(s);
+  }
+});
+
+var out = top.map(todo);
+Object.keys(frames).forEach(function (fid) {
+  if (out.length) out.push("");
+  out.push("## " + (labelOf(frames[fid]).replace(EMOJI, "").trim() || "Frame"));
+  (grouped[fid] || []).forEach(function (s) { out.push(todo(s)); });
+});
+return out.join("\\n");`;
 
 // ---------------------------------------------------------------------------
 // Register the shape's props in tldraw's type system
@@ -137,11 +170,14 @@ export class PropagatorShapeUtil extends ShapeUtil<PropagatorShape> {
   getGeometry(shape: PropagatorShape): Geometry2d {
     const pts = getHullPagePoints(this.editor, shape.id);
     if (pts.length < 3) {
-      return new Rectangle2d({ width: 1, height: 1, isFilled: false });
+      return new Rectangle2d({ width: 1, height: 1, isFilled: true });
     }
+    // Filled so the hull interior is hoverable/clickable for selection. The
+    // shape is kept at the back (see createPropagatorFromSelection) so member
+    // shapes on top stay independently clickable.
     return new Polygon2d({
       points: pts.map((p) => new Vec(p.x - shape.x, p.y - shape.y)),
-      isFilled: false,
+      isFilled: true,
     });
   }
 
@@ -158,8 +194,11 @@ export class PropagatorShapeUtil extends ShapeUtil<PropagatorShape> {
 }
 
 // ---------------------------------------------------------------------------
-// React component — draws the dashed hull + a small control chip
+// React component — draws the dashed hull. Colour encodes link state:
+// dim grey when no target, hyperlink-blue when linked.
 // ---------------------------------------------------------------------------
+
+const UNLINKED_COLOR = "#8b8f98";
 
 function PropagatorComponent({ shape }: { shape: PropagatorShape }) {
   const editor = useEditor();
@@ -175,84 +214,29 @@ function PropagatorComponent({ shape }: { shape: PropagatorShape }) {
     [editor, shape.id]
   );
 
-  const origin = { x: shape.x, y: shape.y };
-  const local = pts.map((p) => ({ x: p.x - origin.x, y: p.y - origin.y }));
+  if (pts.length < 3) return null;
+
+  const local = pts.map((p) => ({ x: p.x - shape.x, y: p.y - shape.y }));
   const polygon = local.map((p) => `${p.x},${p.y}`).join(" ");
 
   const hasTarget = !!shape.props.target;
-  const badgeX = local.length
-    ? (Math.min(...local.map((p) => p.x)) + Math.max(...local.map((p) => p.x))) / 2
-    : 0;
-  const badgeY = local.length ? Math.min(...local.map((p) => p.y)) : 0;
+  const color = hasTarget ? "var(--color-selected, #2f80ed)" : UNLINKED_COLOR;
 
   return (
     <HTMLContainer style={{ overflow: "visible", pointerEvents: "none" }}>
-      {local.length >= 3 && (
-        <svg
-          style={{
-            position: "absolute",
-            overflow: "visible",
-            pointerEvents: "none",
-          }}
-        >
-          <polygon
-            points={polygon}
-            fill="var(--color-selected, #2f80ed)"
-            fillOpacity={isSelected ? 0.1 : 0.05}
-            stroke="var(--color-selected, #2f80ed)"
-            strokeWidth={isSelected ? 2 : 1.5}
-            strokeDasharray="6 5"
-            strokeLinejoin="round"
-          />
-        </svg>
-      )}
-      {local.length > 0 && (
-        <button
-          type="button"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={() => editor.select(shape.id)}
-          title={hasTarget ? shape.props.target : "No target — select to configure"}
-          style={{
-            position: "absolute",
-            left: badgeX,
-            top: badgeY,
-            transform: "translate(-50%, calc(-100% - 6px))",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 5,
-            pointerEvents: "all",
-            padding: "3px 8px",
-            borderRadius: "var(--radius-3, 8px)",
-            background: "var(--color-panel, #fff)",
-            color: hasTarget
-              ? "var(--color-selected, #2f80ed)"
-              : "var(--color-text-1, #1d1d1d)",
-            border: "1px solid var(--color-muted-1, rgba(0,0,0,0.1))",
-            boxShadow: "var(--shadow-2, 0 1px 3px rgba(0,0,0,0.2))",
-            font: "500 11px var(--tl-font-sans, system-ui, sans-serif)",
-            cursor: "pointer",
-            whiteSpace: "nowrap",
-            userSelect: "none",
-          }}
-        >
-          <LinkGlyph />
-          {hasTarget ? "Linked" : "Propagator"}
-        </button>
-      )}
+      <svg
+        style={{ position: "absolute", overflow: "visible", pointerEvents: "none" }}
+      >
+        <polygon
+          points={polygon}
+          fill={color}
+          fillOpacity={isSelected ? 0.12 : 0.05}
+          stroke={color}
+          strokeWidth={isSelected ? 2.5 : 1.5}
+          strokeDasharray="6 5"
+          strokeLinejoin="round"
+        />
+      </svg>
     </HTMLContainer>
-  );
-}
-
-export function LinkGlyph() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
   );
 }
