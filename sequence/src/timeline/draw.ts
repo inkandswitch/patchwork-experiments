@@ -11,7 +11,7 @@ import {
   trackTop,
   tracksContentHeight,
 } from './constants';
-import type { TimelineLayout } from './layout';
+import type { GhostClip, TimelineLayout } from './layout';
 import { clipRefEquals } from './layout';
 import type { ClipRef } from '../types';
 
@@ -209,6 +209,42 @@ function drawPlayhead(
   ctx.fill();
 }
 
+function drawGhost(
+  ctx: CanvasRenderingContext2D,
+  theme: TimelineTheme,
+  layout: TimelineLayout,
+  ghost: GhostClip,
+): void {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(TRACK_LABEL_WIDTH, RULER_HEIGHT, layout.width - TRACK_LABEL_WIDTH, layout.height - RULER_HEIGHT);
+  ctx.clip();
+
+  ctx.fillStyle = theme.clipSelectedFill;
+  ctx.globalAlpha = 0.18;
+  ctx.fillRect(TRACK_LABEL_WIDTH, ghost.highlight.y, layout.width - TRACK_LABEL_WIDTH, ghost.highlight.height);
+  ctx.globalAlpha = 1;
+
+  ctx.globalAlpha = 0.75;
+  ctx.fillStyle = theme.clipSelectedFill;
+  ctx.strokeStyle = theme.clipSelectedStroke;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 4]);
+  roundRect(ctx, ghost.x, ghost.y, ghost.width, ghost.height, 4);
+  ctx.fill();
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+
+  ctx.fillStyle = theme.text;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.font = '11px ui-sans-serif, system-ui, sans-serif';
+  ctx.fillText(ghost.label, ghost.x + 10, ghost.y + ghost.height / 2);
+
+  ctx.restore();
+}
+
 export function drawTimeline(
   ctx: CanvasRenderingContext2D,
   theme: TimelineTheme,
@@ -216,6 +252,7 @@ export function drawTimeline(
   trackCount: number,
   selected: ClipRef | null,
   hovered: ClipRef | null,
+  ghost: GhostClip | null,
 ): void {
   ctx.clearRect(0, 0, layout.width, layout.height);
   ctx.fillStyle = theme.bg;
@@ -226,6 +263,7 @@ export function drawTimeline(
   drawRuler(ctx, theme, layout);
   drawClips(ctx, theme, layout, selected, hovered);
   drawPlayhead(ctx, theme, layout, trackCount);
+  if (ghost) drawGhost(ctx, theme, layout, ghost);
 }
 
 export function maxScrollX(duration: number, canvasWidth: number): number {

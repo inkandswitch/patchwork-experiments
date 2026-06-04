@@ -1,11 +1,14 @@
 import type { ClipRef, SequenceDoc } from '../types';
 import type { ClipTimingInfo } from '../diffusion/sync-composition';
+import type { PendingClip } from '../drag';
+import type { TrackDropTarget } from './tracks';
 import { DEFAULT_CLIP_DURATION } from '../helpers';
 
 import {
   HANDLE_WIDTH,
   PIXELS_PER_SECOND,
   RULER_HEIGHT,
+  TRACK_EDGE_PADDING,
   TRACK_HEIGHT,
   TRACK_LABEL_WIDTH,
   timeToX,
@@ -32,6 +35,50 @@ export type TimelineLayout = {
   clips: ClipLayout[];
   playheadX: number;
 };
+
+export type GhostClip = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  label: string;
+  /** Highlighted band showing which track (or new-track gap) the clip will land on. */
+  highlight: { y: number; height: number };
+};
+
+/** Layout for the translucent preview of a clip being dragged in from the source monitor. */
+export function computeGhostLayout(
+  payload: PendingClip,
+  time: number,
+  dropTarget: TrackDropTarget,
+  scrollX: number,
+  trackCount: number,
+): GhostClip {
+  const width = Math.max(12, payload.duration * PIXELS_PER_SECOND);
+  const x = timeToX(Math.max(0, time), scrollX);
+
+  let rowTop: number;
+  let highlight: { y: number; height: number };
+  if (dropTarget.kind === 'track') {
+    rowTop = trackTop(dropTarget.index);
+    highlight = { y: rowTop, height: TRACK_HEIGHT };
+  } else if (dropTarget.kind === 'insert-above') {
+    rowTop = RULER_HEIGHT + TRACK_EDGE_PADDING - TRACK_HEIGHT;
+    highlight = { y: RULER_HEIGHT, height: TRACK_EDGE_PADDING };
+  } else {
+    rowTop = trackTop(trackCount);
+    highlight = { y: rowTop, height: TRACK_EDGE_PADDING };
+  }
+
+  return {
+    x,
+    y: rowTop + 6,
+    width,
+    height: TRACK_HEIGHT - 12,
+    label: payload.label,
+    highlight,
+  };
+}
 
 export type HitTarget =
   | { kind: 'clip-body'; ref: ClipRef }

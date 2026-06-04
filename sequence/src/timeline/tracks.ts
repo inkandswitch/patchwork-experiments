@@ -1,5 +1,6 @@
 import type { Clip, ClipRef, SequenceDoc } from '../types';
-import { findClip, newTrack } from '../helpers';
+import type { PendingClip } from '../drag';
+import { findClip, newClip, newTrack } from '../helpers';
 import { MIN_CLIP_DURATION, RULER_HEIGHT, TRACK_EDGE_PADDING, TRACK_HEIGHT } from './constants';
 
 export type TrackDropTarget =
@@ -117,6 +118,35 @@ export function moveClipToDropTarget(
   }
   destTrack.clips.push(copyClip(clip));
   return { trackId: destTrackId, clipId: clip.id };
+}
+
+/** Insert a brand-new clip (dragged from the source monitor) at a drop target. */
+export function createClipFromDrop(
+  doc: SequenceDoc,
+  payload: PendingClip,
+  time: number,
+  dropTarget: TrackDropTarget,
+): ClipRef {
+  const clip = newClip(
+    payload.sourceId,
+    Math.max(0, time),
+    payload.sourceInTime <= 0 ? null : payload.sourceInTime,
+    Math.max(MIN_CLIP_DURATION, payload.duration),
+  );
+
+  let track;
+  if (dropTarget.kind === 'track' && doc.tracks[dropTarget.index]) {
+    track = doc.tracks[dropTarget.index]!;
+  } else if (dropTarget.kind === 'insert-above') {
+    track = newTrack();
+    doc.tracks.unshift(track);
+  } else {
+    track = newTrack();
+    doc.tracks.push(track);
+  }
+
+  track.clips.push(clip);
+  return { trackId: track.id, clipId: clip.id };
 }
 
 export function commitClipMove(

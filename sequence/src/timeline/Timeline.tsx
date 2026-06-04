@@ -1,5 +1,6 @@
 import type { ChangeFn } from '@automerge/automerge/slim';
 import type { ClipRef, SequenceDoc } from '../types';
+import type { PendingClip } from '../drag';
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createSourceLoader, resolveTimelineClipTiming } from '../diffusion/sync-composition';
@@ -14,10 +15,18 @@ import {
   xToTime,
 } from './constants';
 import { drawTimeline, maxScrollX } from './draw';
-import { clipRefEquals, computeTimelineLayout, hitTestTimeline, type TimelineLayout } from './layout';
+import {
+  clipRefEquals,
+  computeGhostLayout,
+  computeTimelineLayout,
+  hitTestTimeline,
+  type GhostClip,
+  type TimelineLayout,
+} from './layout';
 import { findClip } from '../helpers';
 import {
   commitClipMove,
+  createClipFromDrop,
   pruneEmptyTracks,
   trackDropTargetFromY,
   type EdgeTracksDuringDrag,
@@ -65,6 +74,9 @@ type TimelineProps = {
   sequenceDuration: number;
   onSeek: (time: number) => void;
   onScrubStart?: () => void;
+  pendingClip?: PendingClip | null;
+  onPendingClipResolved?: () => void;
+  onPendingOverTimelineChange?: (over: boolean) => void;
 };
 
 export function Timeline({
@@ -74,6 +86,9 @@ export function Timeline({
   sequenceDuration,
   onSeek,
   onScrubStart,
+  pendingClip = null,
+  onPendingClipResolved,
+  onPendingOverTimelineChange,
 }: TimelineProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -82,6 +97,7 @@ export function Timeline({
   const loaderRef = useRef(createSourceLoader());
   const scrollXRef = useRef(0);
   const dragRef = useRef<DragState | null>(null);
+  const ghostRef = useRef<GhostClip | null>(null);
 
   const [selected, setSelected] = useState<ClipRef | null>(null);
   const [hovered, setHovered] = useState<ClipRef | null>(null);
@@ -136,7 +152,7 @@ export function Timeline({
       layoutRef.current = layout;
 
       const theme = readTimelineTheme(root);
-      drawTimeline(ctx, theme, layout, doc.tracks.length, selected, hovered);
+      drawTimeline(ctx, theme, layout, doc.tracks.length, selected, hovered, ghostRef.current);
     };
 
     syncCanvasSize();
@@ -175,6 +191,74 @@ export function Timeline({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [selected, changeDoc]);
+
+  useEffect(() => {
+    if (!pendingClip) {
+      if (ghostRef.current) {
+        ghostRef.current = null;
+        bump();
+      }
+      return;
+    }
+
+    const dropFromClient = (clientX: number, clientY: number) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return null;
+      const rect = canvas.getBoundingClientRect();
+      const inside =
+        clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+      if (!inside) return null;
+      const x = clientX - rect.left;
+      const y = clientY - rect.top;
+      return {
+        time: Math.max(0, xToTime(x, scrollXRef.current)),
+        dropTarget: trackDropTargetFromY(y, doc.tracks.length),
+      };
+    };
+
+    const onMove = (event: PointerEvent) => {
+      const drop = dropFromClient(event.clientX, event.clientY);
+      if (!drop) {
+        onPendingOverTimelineChange?.(false);
+        if (ghostRef.current) {
+          ghostRef.current = null;
+          bump();
+        }
+        return;
+      }
+      ghostRef.current = computeGhostLayout(
+        pendingClip,
+        drop.time,
+        drop.dropTarget,
+        scrollXRef.current,
+        doc.tracks.length,
+      );
+      onPendingOverTimelineChange?.(true);
+      bump();
+    };
+
+    const onUp = (event: PointerEvent) => {
+      const drop = dropFromClient(event.clientX, event.clientY);
+      if (drop) {
+        let createdRef: ClipRef | null = null;
+        changeDoc((d) => {
+          createdRef = createClipFromDrop(d, pendingClip, drop.time, drop.dropTarget);
+        });
+        if (createdRef) setSelected(createdRef);
+      }
+      ghostRef.current = null;
+      onPendingOverTimelineChange?.(false);
+      onPendingClipResolved?.();
+      bump();
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+  }, [pendingClip, doc.tracks.length, changeDoc, onPendingClipResolved, onPendingOverTimelineChange]);
 
   const canvasPoint = (event: { clientX: number; clientY: number }) => {
     const canvas = canvasRef.current!;
