@@ -391,6 +391,8 @@ w.findSuperclassOf = function (sub) {
 w.shiftKeyPressedFlag = false;
 w.lockKeyPressedFlag = false;
 w.metaKeyPressedFlag = false;
+w._fleetingClearShiftFlag = false;
+w._fleetingClearMetaFlag = false;
 w.setShiftKeyPressed = function (v) {
   w.shiftKeyPressedFlag = !!v;
   w._refreshPadModifierStyles();
@@ -532,9 +534,17 @@ w.isLockKeyPressed = function () {
 w.isMetaKeyPressed = function () {
   return w.metaKeyPressedFlag;
 };
-/** True if meta should apply: hardware meta or soft META flag (use {@link consumeSoftMetaKey} after halo use). */
+/** True if meta should apply: hardware meta or META flag (flag is fleeting once consulted). */
 w.effectiveMetaKey = function (evt) {
-  return !!(evt && evt.metaKey) || w.metaKeyPressedFlag;
+  let hardware = !!evt && evt.metaKey;
+  let flag = w.metaKeyPressedFlag;
+  if (flag) {
+    w.metaKeyPressedFlag = false;
+    w._fleetingClearMetaFlag = false;
+  }
+  let hit = hardware || flag;
+  if (flag) w._refreshMetaBlobKeyStyles();
+  return hit;
 };
 /** True if shift should apply for this event (LOCK forces shift until cleared). */
 w.effectiveShiftKey = function (evt) {
@@ -544,17 +554,31 @@ w.effectiveShiftKey = function (evt) {
   let worldDownApplies =
     worldDown && evtType !== 'pointerdown' && evtType !== 'pointermove' && evtType !== 'pointerup';
   let flag = w.shiftKeyPressedFlag;
-  if (flag) w.shiftKeyPressedFlag = false;
-  if (flag) w._refreshPadModifierStyles();
+  if (flag) {
+    w.shiftKeyPressedFlag = false;
+    w._fleetingClearShiftFlag = false;
+  }
+  if (flag) w._refreshMetaBlobKeyStyles();
   return hardware || flag || w.lockKeyPressedFlag || worldDownApplies;
 };
-w._refreshPadModifierStyles = function () {
+w._refreshMetaBlobKeyStyles = function () {
   let root = w.topLevelMorph;
   if (!root) return;
-  let kb = w._onScreenKeyboardMorph;
-  if (kb && kb.world() && kb.refreshModifierKeyHighlights) kb.refreshModifierKeyHighlights();
-  if (kb && kb.world() && kb.refreshKeyLabels) kb.refreshKeyLabels();
+  function walk(m) {
+    if (m.className === 'MetaBlobKey' && m.refreshAppearance) m.refreshAppearance();
+    if (m.submorphs) m.submorphs.forEach(walk);
+  }
+  walk(root);
   if (root.changed) root.changed();
+};
+/** Pointer is over MetaBlob / MetaBlobKey so world should not steal meta for cycleHalo. */
+w.pointerOnMetaBlobUI = function (world, worldPt) {
+  let t = world.topMorphAt(worldPt);
+  while (t) {
+    if (t.className === 'MetaBlob' || t.className === 'MetaBlobKey') return true;
+    t = t.owner;
+  }
+  return false;
 };
 /** Pointer is over an OSK key so world should not steal meta for cycleHalo. */
 w.pointerOnOskKeyUI = function (world, worldPt) {
@@ -656,8 +680,9 @@ w.initUI = function () {
   window.actorID = Automerge.getActorId(handle.doc());
   // Fresh UI init must not inherit stale soft-shift state.
   w.shiftKeyPressedFlag = false;
+  w._fleetingClearShiftFlag = false;
   if (w.topLevelMorph) w.topLevelMorph.shiftKeyDown = false;
-  w._refreshPadModifierStyles();
+  w._refreshMetaBlobKeyStyles();
 
   // Remove any previous listeners so we never double-register (avoids doubled clicks)
   /*
@@ -734,6 +759,18 @@ w.initUI = function () {
           console.error('unsupported event type', e.type);
       }
     }
+    let refreshFlags = false;
+    if (w._fleetingClearMetaFlag) {
+      w.metaKeyPressedFlag = false;
+      w._fleetingClearMetaFlag = false;
+      refreshFlags = true;
+    }
+    if (w._fleetingClearShiftFlag) {
+      w.shiftKeyPressedFlag = false;
+      w._fleetingClearShiftFlag = false;
+      refreshFlags = true;
+    }
+    if (refreshFlags) w._refreshMetaBlobKeyStyles();
     canvasEvents = [];
   }
   console.log('initUI loaded');
@@ -1489,15 +1526,15 @@ w.Morph.proto.clippedBoundsInWorld = function () {
 w.Morph.proto.fullBounds = function () {
   // Includes this morph's shape and all descendant submorph shapes.
   // Return value is in owner coordinates, matching getBounds().
-  let b = this.shape.getBounds().copy(); // local coords
+  let b = this.shape.getBounds().copy();
   this.submorphs.forEach((sub) => {
-    b = b.union(sub.fullBounds()); // child bounds are in this local coords
+    b = b.union(sub.fullBounds());
   });
   return b.translatedBy(this.transform.translation);
 };
 /** Axis-aligned bounds of this morph in world coordinates. */
 w.Morph.proto.boundsInWorld = function () {
-  let ob = this.getBounds();
+  let ob = this.boundsInOwnerAfterTransform();
   let o = this.owner;
   if (!o || o.owner == null) return ob;
   let tl = o.globalize(ob.topLeft);
@@ -1882,6 +1919,17 @@ w.Morph.proto.rotateBy = function (angle) {
 w.Morph.proto.scaleBy = function (scale) {
   const scalePt = typeof scale === 'number' ? w.pt(scale, scale) : scale;
   this.transform.scale = this.transform.scale.scaleBy(scalePt);
+};
+/** Per shift-click on halo Z: multiply {@link transform.scale} (submorphs scale with parent render). */
+w.haloShiftTransformScaleFactor = 1.2;
+w.applyHaloShiftTransformScale = function (morph) {
+  if (!morph || !morph.transform || !morph.scaleBy) return;
+  let f = w.haloShiftTransformScaleFactor != null ? w.haloShiftTransformScaleFactor : 1.2;
+  morph.scaleBy(f);
+  if (morph.syncBoundsFromGeometry) morph.syncBoundsFromGeometry();
+  morph.changed();
+  let world = morph.world();
+  if (world && world.changed) world.changed();
 };
 w.Morph.proto.setBorderColor = function (color) {
   this.shape.setBorderColor(color);
@@ -2540,7 +2588,7 @@ w.HaloHandle.proto.onPointerMove = function (pt, evt) {
       r = Math.max(0.05, Math.min(24, r));
       this.target.transform.scale = w.pt(
         this.scaleStartTransform.x * r,
-        this.scaleStartTransform.y * r
+        this.scaleStartTransform.y * r,
       );
       if (this.target.syncBoundsFromGeometry) this.target.syncBoundsFromGeometry();
       this.target.changed();
@@ -2548,7 +2596,7 @@ w.HaloHandle.proto.onPointerMove = function (pt, evt) {
       if (world && world.changed) world.changed();
     } else {
       this.target.setBounds(
-        this.scaleStartTopLeft.extent(cornerPos.subPt(this.scaleStartTopLeft))
+        this.scaleStartTopLeft.extent(cornerPos.subPt(this.scaleStartTopLeft)),
       );
     }
   }
@@ -2650,7 +2698,7 @@ w.HaloMorph.proto.layoutTitleMorph = function () {
   letter.hang = m.hang + padY;
   letter.inset = w.pt(m.hang + padX, m.hang + padY);
   letter.boxColor = chrome.fill;
-  letter.borderWidth = 0;
+  letter.borderWidth = chrome.borderWidth;
   letter.borderColor = chrome.borderColor;
   letter.fill = chrome.fill;
   letter.selStart = null;
@@ -2769,7 +2817,8 @@ w.HandMorph.proto.grabMorph = function (p, evt) {
 w.HandMorph.proto.initialize = function (id, location, color) {
   this.actorID = id;
   w.Morph.proto.initialize.call(this, null, w.Pen.new().makeHandShape(location, color));
-  window.pointerLocation = location ? location.copy() : this.location();
+  this.pointerLocation = location ? location.copy() : this.location();
+  window.pointerLocation = this.pointerLocation;
 };
 w.HandMorph.proto.isaHand = function () {
   return true;
@@ -2786,6 +2835,7 @@ w.HandMorph.proto.handColor = function () {
 };
 w.HandMorph.proto.onPointerDown = function (p, evt) {
   this.hitPoint = p;
+  this.pointerLocation = p;
   window.pointerLocation = p;
   // Hand operations are explicit (Alt-click), so normal clicks still edit/select panes.
   if (!evt.altKey) return false;
@@ -2805,12 +2855,14 @@ w.HandMorph.proto.onPointerDown = function (p, evt) {
   return true;
 };
 w.HandMorph.proto.onPointerMove = function (p, evt) {
-  let d = p.subPt(window.pointerLocation ? window.pointerLocation : this.location());
+  let d = p.subPt(this.pointerLocation ? this.pointerLocation : this.location());
+  this.pointerLocation = p;
   window.pointerLocation = p;
   this.moveBy(d);
   // Submorphs ride under transform; do not move them separately.
 };
 w.HandMorph.proto.onPointerUp = function (p, evt) {
+  this.pointerLocation = p;
   window.pointerLocation = p;
   if (this.hasSubmorphs() && this.hitPoint.dist(p) > 2) this.dropMorph();
 };
@@ -2883,8 +2935,7 @@ w.ListMorph.proto.onPointerUp = function (p, evt) {
     if (reclickSameLine) {
       let world = this.world();
       let pane = this.owner;
-      let suppress =
-        world && world._suppressListPaneMenuReselect === pane;
+      let suppress = world && world._suppressListPaneMenuReselect === pane;
       if (suppress) world._suppressListPaneMenuReselect = null;
       else if (this._paneMenuWasOpenOnDown) w.removeFleetingPaneMenuFor(pane);
       else if (pane.tryShowPaneMenuForSelection) {
@@ -3673,13 +3724,6 @@ w.ScrollPane.proto.fullBounds = function () {
   if (this.scrollBar) b = b.union(this.scrollBar.getBounds().copy());
   return b.translatedBy(this.transform.translation);
 };
-/** Halo frame matches the visible pane, not scrolled-away content. */
-w.ScrollPane.proto.clippedBounds = function () {
-  return this.getBounds().copy();
-};
-w.ScrollPane.proto.clippedBoundsInWorld = function () {
-  return this.boundsInWorld();
-};
 w.ScrollPane.proto.onKeyDown = function (evt) {
   // Mainly called by subclass.call()
   return w.Morph.proto.onKeyDown.call(this, evt);
@@ -3739,7 +3783,9 @@ w.ScrollPane.proto.showPaneMenu = function (ptIfAny, optsIfAny) {
     ? ptIfAny
     : this.paneMenuAnchorInWorld
       ? this.paneMenuAnchorInWorld()
-      : window.pointerLocation || this.globalize(this.shape.getBounds().topLeft);
+      : this.world().pointerLocation ||
+          window.pointerLocation ||
+          this.globalize(this.shape.getBounds().topLeft);
   let thisPane = this;
   let menu = w.MenuMorph.new(
     w.rect(worldPt.x, worldPt.y, 165, Math.max(48, 24 + items.length * 18)),
@@ -4414,25 +4460,13 @@ w.SimpleButtonMorph.proto.onPointerUp = function (p, evt) {
   return true;
 };
 
-/* On-screen keyboard (canvas); world menu or focus sync toggles; ✕ key closes. */
+/* On-screen keyboard (canvas); MetaBlob KBD toggles; ✕ key closes. */
 
 w.KbdKeyMorph = w.SimpleButtonMorph.subClass('KbdKeyMorph');
 w.KbdKeyMorph.proto.initialize = function (bounds, label, keySpec, keyboardMorph) {
   w.SimpleButtonMorph.proto.initialize.call(this, bounds, label);
   this.keySpec = keySpec;
   this.keyboardMorph = keyboardMorph;
-  this._kbdKeyBaseBoxColor =
-    this.shape && this.shape.boxColor ? this.shape.boxColor.copy() : w.Color.lightGray.copy();
-};
-w.KbdKeyMorph.proto.refreshModifierHighlight = function () {
-  let spec = this.keySpec;
-  let base = this._kbdKeyBaseBoxColor || w.Color.lightGray;
-  let active = false;
-  if (spec && spec.type === 'shift') active = w.isShiftKeyPressed();
-  else if (spec && spec.type === 'caps_unused') active = w.isLockKeyPressed();
-  else if (spec && spec.type === 'meta_toggle') active = w.metaKeyPressedFlag;
-  this.shape.boxColor = active ? w.padModifierHighlightOn(base) : base;
-  this.changed();
 };
 w.KbdKeyMorph.proto.setKeyLabel = function (label) {
   this.setText(label);
@@ -4444,7 +4478,7 @@ w.KbdKeyMorph.proto.onPointerDown = function (p, evt) {
   if (this.bringTopLevelPanelToFrontIfNeeded(p)) return true;
   this.hitPoint = p;
   this.actorID = evt.actorID;
-  if (this.keyboardMorph) this.keyboardMorph.handleVirtualKey(this.keySpec, evt);
+  if (this.keyboardMorph) this.keyboardMorph.handleVirtualKey(this.keySpec);
   this.world().setPointerFocus(this);
   return true;
 };
@@ -4508,6 +4542,7 @@ w.OnScreenKeyboardMorph.proto.initialize = function (bounds) {
     ),
   );
   this.transform.translation = ib.topLeft.copy();
+  this.softShift = false;
   this.keyMorphs = [];
   this._kbdRowSpecs = w.OnScreenKeyboardMorph.defaultRowSpecs();
   this.buildKeys();
@@ -4608,10 +4643,8 @@ w.OnScreenKeyboardMorph.defaultRowSpecs = function () {
 };
 w.OnScreenKeyboardMorph.proto.remove = function () {
   this.stopStepping('stepRefreshLockLabels');
-  w.saveOnScreenKeyboardChrome(this);
-  w.clearOskPadModifierState();
   if (w._onScreenKeyboardMorph === this) w._onScreenKeyboardMorph = null;
-  if (w._refreshPadModifierStyles) w._refreshPadModifierStyles();
+  if (w._refreshMetaBlobKeyStyles) w._refreshMetaBlobKeyStyles();
   return w.Morph.proto.remove.call(this);
 };
 w.OnScreenKeyboardMorph.proto.stepRefreshLockLabels = function () {
@@ -4669,7 +4702,7 @@ w.OnScreenKeyboardMorph.proto.applyKeyMetrics = function (keyMorph, ks, displayT
 };
 /** Stable keycap face: shifted glyph on top, base on bottom when both exist (same style before/after shift). */
 w.OnScreenKeyboardMorph.proto.keyFaceLabel = function (spec) {
-  if (spec.type === 'shift') return 'Shift';
+  if (spec.type === 'shift') return this.softShift ? 'shift*' : 'shift';
   if (spec.type === 'meta_toggle') return '⌘';
   if (spec.type === 'close') return '✕';
   if (spec.type === 'space') return 'space';
@@ -4696,11 +4729,6 @@ w.OnScreenKeyboardMorph.proto.keyFaceLabel = function (spec) {
   let up = shiftTable[k];
   if (up) return up + '\n' + k;
   return k;
-};
-w.OnScreenKeyboardMorph.proto.refreshModifierKeyHighlights = function () {
-  this.keyMorphs.forEach((keyMorph) => {
-    if (keyMorph.refreshModifierHighlight) keyMorph.refreshModifierHighlight();
-  });
 };
 w.OnScreenKeyboardMorph.proto.buildKeys = function () {
   this.keyMorphs.forEach((m) => m.remove());
@@ -4770,7 +4798,6 @@ w.OnScreenKeyboardMorph.proto.buildKeys = function () {
   this._kbdNaturalSize = w.pt(b.width(), b.height());
   this.syncBoundsFromGeometry();
   this.refreshKeyLabels();
-  this.refreshModifierKeyHighlights();
   this.changed();
 };
 w.OnScreenKeyboardMorph.proto.refreshKeyLabels = function () {
@@ -4782,20 +4809,21 @@ w.OnScreenKeyboardMorph.proto.refreshKeyLabels = function () {
     this.applyKeyMetrics(keyMorph, ks, face);
   });
 };
-w.OnScreenKeyboardMorph.proto.handleVirtualKey = function (spec, evtIfAny) {
+w.OnScreenKeyboardMorph.proto.handleVirtualKey = function (spec) {
   if (!spec) return;
   if (spec.type === 'meta_toggle') {
-    w.pressPadMetaKey();
-    this.refreshKeyLabels();
+    w.setMetaKeyPressed(!w.metaKeyPressedFlag);
+    w._refreshMetaBlobKeyStyles();
     return;
   }
   if (spec.type === 'caps_unused') {
     w.setLockKeyPressed(!w.isLockKeyPressed());
     this.refreshKeyLabels();
+    w._refreshMetaBlobKeyStyles();
     return;
   }
   if (spec.type === 'shift') {
-    w.pressPadShiftKey();
+    this.softShift = !this.softShift;
     this.refreshKeyLabels();
     return;
   }
@@ -4805,23 +4833,16 @@ w.OnScreenKeyboardMorph.proto.handleVirtualKey = function (spec, evtIfAny) {
     return;
   }
   let locked = w.isLockKeyPressed();
-  let shiftLike = locked || w.shiftKeyPressedFlag;
+  let shiftLike = this.softShift || locked;
   let key = spec.key;
   if (spec.type === 'space') key = ' ';
   if (!key) return;
 
-  let metaChord = w.metaKeyPressedFlag || !!(evtIfAny && evtIfAny.metaKey);
-  if (metaChord && w.metaKeyPressedFlag) w.consumeSoftMetaKey();
-
-  if (!metaChord) {
-    let shiftTable = w.getKbdShiftTable ? w.getKbdShiftTable() : w.kbdShiftTable || {};
-    if (/^[a-z]$/i.test(key)) {
-      key = shiftLike ? key.toUpperCase() : key.toLowerCase();
-    } else if (shiftLike && shiftTable[key]) {
-      key = shiftTable[key];
-    }
-  } else if (key && key.length === 1) {
-    key = key.toLowerCase();
+  let shiftTable = w.getKbdShiftTable ? w.getKbdShiftTable() : w.kbdShiftTable || {};
+  if (/^[a-z]$/i.test(key)) {
+    key = shiftLike ? key.toUpperCase() : key.toLowerCase();
+  } else if (shiftLike && shiftTable[key]) {
+    key = shiftTable[key];
   }
 
   let evt = {
@@ -4829,8 +4850,8 @@ w.OnScreenKeyboardMorph.proto.handleVirtualKey = function (spec, evtIfAny) {
     keyCode: key === 'Enter' ? 13 : key === 'Tab' ? 9 : key === 'Backspace' ? 8 : 0,
     // Keep synthetic virtual-key events from latching WorldMorph.shiftKeyDown.
     shiftKey: false,
-    metaKey: metaChord,
-    ctrlKey: metaChord,
+    metaKey: false,
+    ctrlKey: false,
     altKey: false,
     actorID: window.actorID,
     preventDefault: function () {},
@@ -4843,34 +4864,131 @@ w.OnScreenKeyboardMorph.proto.handleVirtualKey = function (spec, evtIfAny) {
   if (focus && focus.className === 'TextPane' && focus.contentPane) focus = focus.contentPane;
   if (focus && focus.onKeyDown) focus.onKeyDown(evt);
   else world.onKeyDown(evt);
-  w.consumeSoftShiftKey();
-  if (metaChord) w._refreshPadModifierStyles();
-  this.refreshKeyLabels();
+  if (this.softShift) {
+    this.softShift = false;
+    this.refreshKeyLabels();
+  }
 };
 
-/** Slop before a press on the OSK frame becomes a drag (keeps long-click for halos usable). */
-w.OnScreenKeyboardMorph.OSK_BODY_DRAG_SLOP = 8;
-/** Extra move tolerance while holding on the OSK frame so long-click halo is not cancelled. */
-w.OnScreenKeyboardMorph.OSK_LONG_CLICK_MOVE_CANCEL_PX = 24;
-w.OnScreenKeyboardMorph.proto._noteOskBodyPressForLongClick = function (evt) {
-  if (!evt || typeof evt.pointerId !== 'number') return;
-  let arm = w._longClickByPointerId.get(evt.pointerId);
-  if (arm) arm.longClickMoveCancelPx = w.OnScreenKeyboardMorph.OSK_LONG_CLICK_MOVE_CANCEL_PX;
+/** Pad-friendly soft SHIFT / LOCK / META toggles (ellipse keys). */
+w.MetaBlobKey = w.Morph.subClass('MetaBlobKey');
+w.MetaBlobKey.proto.initialize = function (bounds, label, kind) {
+  let bw = bounds.width();
+  let bh = bounds.height();
+  let cx = bounds.topLeft.x + bw / 2;
+  let cy = bounds.topLeft.y + bh / 2;
+  let rx = Math.max(4, bw / 2 - 2);
+  let ry = Math.max(4, bh / 2 - 2);
+  let ell = w.Ellipse.new(w.pt(cx, cy), w.pt(rx, ry));
+  ell.setBorderWidth(1);
+  ell.setBorderColor(w.Color.gray);
+  w.Morph.proto.initialize.call(this, bounds, ell);
+  this.kind = kind;
+  this._label = label;
+  this.refreshAppearance();
 };
-w.OnScreenKeyboardMorph.proto._startOskBodyDragIfNeeded = function (p, evt) {
-  if (!this._oskBodyPress || this.hitPoint) return false;
-  let slop = w.OnScreenKeyboardMorph.OSK_BODY_DRAG_SLOP;
-  if (p.dist(this._oskBodyPress.ownerPt) < slop) return true;
-  this.hitPoint = this._oskBodyPress.ownerPt;
-  this.didDrag = false;
-  this._pickUpOnDrag = this.owner != null && this.owner !== this.world();
+w.MetaBlobKey.proto.refreshAppearance = function () {
+  let on = false;
+  if (this.kind === 'shift') on = w.isShiftKeyPressed();
+  else if (this.kind === 'lock') on = w.isLockKeyPressed();
+  else if (this.kind === 'meta') on = w.metaKeyPressedFlag;
+  else if (this.kind === 'kbd')
+    on = !!(w.useOnScreenKbd || (w._onScreenKeyboardMorph && w._onScreenKeyboardMorph.world()));
+  this.setColor(on ? w.Color.green.lighter().lighter() : w.Color.cyan.lighter().lighter());
+};
+w.MetaBlobKey.proto.renderOn = function (ctx) {
+  w.Morph.proto.renderOn.call(this, ctx);
+  let b = this.shape.getBounds();
+  let c = b.center();
+  ctx.save();
+  ctx.fillStyle = w.Color.black.fillStyle;
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(this._label, c.x, c.y);
+  ctx.restore();
+};
+w.MetaBlobKey.proto.onPointerDown = function (p, evt) {
+  if (!this.fullBounds().includesPt(p)) return false;
+  if (this.kind === 'shift') w.setShiftKeyPressed(!w.shiftKeyPressedFlag);
+  else if (this.kind === 'lock') w.setLockKeyPressed(!w.isLockKeyPressed());
+  else if (this.kind === 'meta') w.setMetaKeyPressed(true);
+  else if (this.kind === 'kbd') w.toggleOnScreenKeyboard(this.world());
+  if (this.owner && this.owner.className === 'MetaBlob') {
+    let mb = this.owner;
+    mb._groupDragStartWorld = this.globalize(this.relativize(p));
+    mb._groupDragLastWorld = mb._groupDragStartWorld.copy
+      ? mb._groupDragStartWorld.copy()
+      : w.pt(mb._groupDragStartWorld.x, mb._groupDragStartWorld.y);
+    mb._groupDragging = false;
+  }
+  this.hitPoint = p;
   this.actorID = evt.actorID;
+  this.didDrag = false;
   this.world().setPointerFocus(this);
-  this._oskBodyPress = null;
-  return w.Morph.proto.onPointerMove.call(this, p, evt);
+  this.refreshAppearance();
+  if (this.owner && this.owner.submorphs) {
+    this.owner.submorphs.forEach((s) => {
+      if (s.className === 'MetaBlobKey' && s.refreshAppearance) s.refreshAppearance();
+    });
+  }
+  this.world().changed();
+  return true;
 };
-/** Children (keys) before body handling so soft META + tap toggles keys instead of halo-on-key. */
-w.OnScreenKeyboardMorph.proto.onPointerDown = function (p, evt) {
+w.MetaBlobKey.proto.onPointerMove = function (p, evt) {
+  if (!this.hitPoint) return false;
+  let mb = this.owner;
+  if (!mb || mb.className !== 'MetaBlob') return true;
+  let worldNow = this.globalize(this.relativize(p));
+  let lastW = mb._groupDragLastWorld;
+  if (!lastW) return true;
+  if (!mb._groupDragging) {
+    let startW = mb._groupDragStartWorld;
+    if (startW && worldNow.dist(startW) > 10) mb._groupDragging = true;
+    else return true;
+  }
+  let dWorld = worldNow.subPt(lastW);
+  mb._groupDragLastWorld = worldNow.copy ? worldNow.copy() : w.pt(worldNow.x, worldNow.y);
+  mb.moveBy(dWorld);
+  this.world().changed();
+  return true;
+};
+w.MetaBlobKey.proto.onPointerUp = function (p, evt) {
+  this.hitPoint = null;
+  this.actorID = null;
+  if (this.owner && this.owner.className === 'MetaBlob') {
+    this.owner._groupDragStartWorld = null;
+    this.owner._groupDragLastWorld = null;
+    this.owner._groupDragging = false;
+  }
+  this.world().setPointerFocus(null);
+  return true;
+};
+
+w.MetaBlob = w.Morph.subClass('MetaBlob');
+w.MetaBlob.proto.initialize = function (bounds) {
+  let fill = w.Color.gray.mixedWith(w.Color.white, 0.45);
+  w.Morph.proto.initialize.call(
+    this,
+    bounds,
+    w.Shape.new('Rectangle', bounds, fill, 1, w.Color.darkGray),
+  );
+  let b = this.shape.getBounds();
+  let gap = 6;
+  let pad = 5;
+  let cellW = (b.width() - gap * 4) / 3;
+  let cellH = Math.max(26, b.height() - pad * 2);
+  let top = b.topLeft.y + pad;
+  let left = b.topLeft.x + gap;
+  let labels = ['SHIFT', 'META', 'KBD'];
+  let kinds = ['shift', 'meta', 'kbd'];
+  for (let i = 0; i < 3; i++) {
+    let r = w.rect(left + i * (cellW + gap), top, cellW, cellH);
+    this.addMorph(w.MetaBlobKey.new(r, labels[i], kinds[i]));
+  }
+};
+/** Children (keys) before meta→halo so soft META + tap toggles keys instead of halo-on-key. */
+w.MetaBlob.proto.onPointerDown = function (p, evt) {
   if (!this.fullBounds().includesPt(p)) return false;
   if (this.bringTopLevelPanelToFrontIfNeeded(p)) return true;
   let localP = this.relativize(p);
@@ -4881,8 +4999,8 @@ w.OnScreenKeyboardMorph.proto.onPointerDown = function (p, evt) {
   if (eventConsumed) return true;
   w.clearKeyboardFocusUnlessTypingOrOsk(this);
   if (w.effectiveMetaKey(evt)) {
-    w.consumeSoftMetaKey();
-    this.showHalo();
+    let maybeHit = this.world().hitMorphAt(p);
+    if (maybeHit) maybeHit.showHalo();
     return false;
   }
   this.beTopMorph();
@@ -4893,18 +5011,49 @@ w.OnScreenKeyboardMorph.proto.onPointerDown = function (p, evt) {
     this.world().setPointerFocus(copy);
     return true;
   }
-  this._oskBodyPress = { ownerPt: p.copy ? p.copy() : w.pt(p.x, p.y) };
-  this._noteOskBodyPressForLongClick(evt);
+  this.hitPoint = p;
+  this.didDrag = false;
+  this._pickUpOnDrag = this.owner != null && this.owner !== this.world();
+  this.actorID = evt.actorID;
+  this.world().setPointerFocus(this);
   return true;
 };
-w.OnScreenKeyboardMorph.proto.onPointerMove = function (p, evt) {
-  if (this._startOskBodyDragIfNeeded(p, evt)) return true;
-  if (this._oskBodyPress) return true;
-  return w.Morph.proto.onPointerMove.call(this, p, evt);
-};
-w.OnScreenKeyboardMorph.proto.onPointerUp = function (p, evt) {
-  this._oskBodyPress = null;
-  return w.Morph.proto.onPointerUp.call(this, p, evt);
+/** Pin tray to lower-left of the visible canvas area; keep world size in sync with DOM layout. */
+w.MetaBlob.proto.stepAlignToCanvas = function () {
+  let world = this.world();
+  if (!world) return;
+  let gb = w.viewportBounds && w.viewportBounds();
+  if (!gb) {
+    let canvas = w.primaryCanvasElement && w.primaryCanvasElement();
+    if (!canvas) return;
+    gb = w.rect(0, 0, canvas.width, canvas.height);
+  }
+  let wb = world.getBounds();
+  if (Math.abs(wb.width() - gb.width()) > 0.5 || Math.abs(wb.height() - gb.height()) > 0.5) {
+    world.setBounds(w.rect(0, 0, gb.width(), gb.height()));
+    world.changed();
+  }
+  let curB = this.shape.getBounds();
+  let trayW = curB.width();
+  let trayH = curB.height();
+  let margin = 8;
+  let x = margin;
+  if (x + trayW + margin > gb.width()) x = Math.max(0, gb.width() - trayW - margin);
+  let y = Math.max(margin, gb.height() - trayH - margin);
+  let want = w.rect(x, y, trayW, trayH);
+  let cur = this.getBounds();
+  function r2(n) {
+    return Math.round(n * 2) / 2;
+  }
+  if (
+    r2(cur.topLeft.x) !== r2(want.topLeft.x) ||
+    r2(cur.topLeft.y) !== r2(want.topLeft.y) ||
+    r2(cur.width()) !== r2(want.width()) ||
+    r2(cur.height()) !== r2(want.height())
+  ) {
+    this.setBounds(want);
+    this.changed();
+  }
 };
 
 w.defaultOnScreenKeyboardBounds = function (world) {
@@ -4928,14 +5077,14 @@ w.syncOnScreenKeyboardWithFocus = function (worldIfAny) {
     ) {
       w._onScreenKeyboardMorph.remove();
       w._onScreenKeyboardMorph = null;
-      w._refreshPadModifierStyles();
+      w._refreshMetaBlobKeyStyles();
     }
     return;
   }
   let kb = w._onScreenKeyboardMorph;
   if (kb && kb.world()) {
     kb._openedViaFocusSync = true;
-    w._refreshPadModifierStyles();
+    w._refreshMetaBlobKeyStyles();
     return;
   }
   kb = w.OnScreenKeyboardMorph.new(w.defaultOnScreenKeyboardBounds(world));
@@ -4943,7 +5092,7 @@ w.syncOnScreenKeyboardWithFocus = function (worldIfAny) {
   world.addMorph(kb);
   kb.startStepping('stepRefreshLockLabels', null, 200);
   w._onScreenKeyboardMorph = kb;
-  w._refreshPadModifierStyles();
+  w._refreshMetaBlobKeyStyles();
 };
 w.toggleOnScreenKeyboard = function (worldIfAny) {
   let world = worldIfAny || w.Lively;
@@ -4951,7 +5100,7 @@ w.toggleOnScreenKeyboard = function (worldIfAny) {
   if (w._onScreenKeyboardMorph && w._onScreenKeyboardMorph.world()) {
     w._onScreenKeyboardMorph.remove();
     w._onScreenKeyboardMorph = null;
-    w._refreshPadModifierStyles();
+    w._refreshMetaBlobKeyStyles();
     if (w.useOnScreenKbd) w.syncOnScreenKeyboardWithFocus(world);
     return null;
   }
@@ -4964,7 +5113,7 @@ w.toggleOnScreenKeyboard = function (worldIfAny) {
   world.addMorph(kb);
   kb.startStepping('stepRefreshLockLabels', null, 200);
   w._onScreenKeyboardMorph = kb;
-  w._refreshPadModifierStyles();
+  w._refreshMetaBlobKeyStyles();
   return kb;
 };
 
@@ -5105,7 +5254,7 @@ w.WorldMorph.proto.initHand = function (start) {
   if (!this.hands) this.hands = [];
   else color = w.Color.green;
   console.log('creating hand morph');
-  const hm = w.HandMorph.new(window.actorID, window.pointerLocation, color);
+  const hm = w.HandMorph.new(window.actorID, this.pointerLocation || window.pointerLocation, color);
   console.log('adding hand morph');
   this.addHand(hm);
 };
@@ -5128,6 +5277,7 @@ w.WorldMorph.proto.initialize = function (bounds) {
   this.keyboardFocus = null;
   this.shiftKeyDown = false; // maintained here
   this.hands = null;
+  this.pointerLocation = bounds.topLeft;
   window.pointerLocation = bounds.topLeft;
 };
 w.WorldMorph.proto.setKeyboardFocus = function (morphOrNull) {
@@ -5139,9 +5289,9 @@ w.WorldMorph.proto.setKeyboardFocus = function (morphOrNull) {
    *   (see handleVirtualKey) and physical keys from the host. Only TextMorph sets it;
    *   other morphs clear it via w.clearKeyboardFocusUnlessTypingOrOsk when a morph
    *   handles a click that did not go to a submorph (e.g. chrome, not TextMorph).
-   * — World menu “On-screen keyboard” toggles w.useOnScreenKbd; the keyboard’s ✕ key
-   *   removes it and clears w.useOnScreenKbd.
-   * — When w.useOnScreenKbd is true, OSK follows keyboardFocus automatically.
+   * — MetaBlob “KBD” calls w.toggleOnScreenKeyboard; the keyboard’s ✕ key removes it
+   *   and clears w.useOnScreenKbd.
+   * — When w.useOnScreenKbd is true (world menu), OSK follows keyboardFocus automatically.
    */
   if (this.keyboardFocus === morphOrNull) return;
   this.keyboardFocus = morphOrNull;
@@ -5153,20 +5303,20 @@ w.WorldMorph.proto.myHand = function () {
 w.WorldMorph.proto.onKeyDown = function (evt) {
   // Match browser modifier state (handles Shift+N and both Shift keys reliably).
   this.shiftKeyDown = !!evt.shiftKey;
-  w._refreshPadModifierStyles();
+  w._refreshMetaBlobKeyStyles();
   if (!this.keyboardFocus) return null;
   if (this.keyboardFocus.onKeyDown) return this.keyboardFocus.onKeyDown(evt);
 };
 w.WorldMorph.proto.onKeyPress = function (evt) {
   this.shiftKeyDown = !!evt.shiftKey;
-  w._refreshPadModifierStyles();
+  w._refreshMetaBlobKeyStyles();
   if (this.keyboardFocus != null && this.keyboardFocus.world() != null) {
     this.keyboardFocus.onKeyPress(evt);
   }
 };
 w.WorldMorph.proto.onKeyUp = function (evt) {
   this.shiftKeyDown = !!evt.shiftKey;
-  w._refreshPadModifierStyles();
+  w._refreshMetaBlobKeyStyles();
   if (this.keyboardFocus && this.keyboardFocus.onKeyUp) this.keyboardFocus.onKeyUp(evt);
   return w.Morph.proto.onKeyUp.call(this, evt);
 };
@@ -5177,7 +5327,7 @@ w.fleetingPaneMenuForScrollPane = function (world, scrollPane) {
     (sub) =>
       sub.className === 'MenuMorph' &&
       sub.isFleetingMenu &&
-      sub._paneMenuOwnerScrollPane === scrollPane
+      sub._paneMenuOwnerScrollPane === scrollPane,
   );
 };
 w.removeFleetingPaneMenuFor = function (scrollPane) {
@@ -5185,12 +5335,17 @@ w.removeFleetingPaneMenuFor = function (scrollPane) {
   if (menu) menu.remove();
 };
 w.WorldMorph.proto.onPointerDown = function (p, evt) {
+  this.pointerLocation = p;
   window.pointerLocation = p;
   this._suppressListPaneMenuReselect = null;
   // Dismiss fleeting menus but still deliver this click to morphs underneath
   // (otherwise the first click after a pane menu only closes the menu).
   this.dismissFleetingMenusAt(p);
-  if (w.effectiveMetaKey(evt) && !w.pointerOnOskKeyUI(this, p)) {
+  if (
+    w.effectiveMetaKey(evt) &&
+    !w.pointerOnOskKeyUI(this, p) &&
+    !w.pointerOnMetaBlobUI(this, p)
+  ) {
     w.consumeSoftMetaKey();
     this.cycleHaloAt(p);
     return true;
@@ -5282,6 +5437,7 @@ w.WorldMorph.proto.longClickHaloDefersAt = function (worldPt) {
   return false;
 };
 w.WorldMorph.proto.onPointerMove = function (p, evt) {
+  this.pointerLocation = p;
   window.pointerLocation = p;
   let hand = this.handForID(evt.actorID);
   if (hand) {
@@ -5296,6 +5452,7 @@ w.WorldMorph.proto.onPointerMove = function (p, evt) {
   this.submorphs.forEach((morph) => morph.onPointerMove(p, evt));
 };
 w.WorldMorph.proto.onPointerUp = function (p, evt) {
+  this.pointerLocation = p;
   window.pointerLocation = p;
   let hand = this.handForID(evt.actorID);
   if (hand) {
@@ -5362,6 +5519,7 @@ w.WorldMorph.proto.cycleHaloAt = function (pt) {
 w.WorldMorph.proto.onLongClickHalo = function (pt, downEvt) {
   if (this.dismissFleetingMenusAt(pt)) return;
   if (w.pointerOnOskKeyUI(this, pt)) return;
+  if (w.pointerOnMetaBlobUI(this, pt)) return;
   if (this.longClickHaloDefersAt(pt)) return;
   this.cycleHaloAt(pt);
 };
@@ -6095,12 +6253,12 @@ w.LineMorph.proto.stepHoverHandles = function () {
     if (!this.isMidpointHandle(pf)) this.ensureMidpointHandles();
     return;
   }
-  if (!window.pointerLocation) {
-    console.log('no pointerLocation');
+  let worldPt = world.pointerLocation || window.pointerLocation;
+  if (!worldPt) {
     this.clearAllHandles();
     return;
   }
-  let localP = this.localize(window.pointerLocation);
+  let localP = this.localize(worldPt);
   if (!this.hoverHitBounds().includesPt(localP)) {
     this.clearAllHandles();
     return;
@@ -6525,10 +6683,9 @@ w.TextBox.proto.handleEscapeKey = function (evt) {
 };
 w.TextBox.proto.handleKeyboardShortcuts = function (evt) {
   console.log(evt); //
-  let k = evt.key && evt.key.length === 1 ? evt.key.toLowerCase() : evt.key;
-  if ('dacxvzgdspf'.indexOf(k) < 0) return; // so as to not prevent default for some useful cases??
-  if (k == 'a') this.setSelectionRange([0, this.string.length - 1]); // SELECT ALL
-  if (k == 'c') {
+  if ('dacxvzgdspf'.indexOf(evt.key) < 0) return; // so as to not prevent default for some useful cases??
+  if (evt.key == 'a') this.setSelectionRange([0, this.string.length - 1]); // SELECT ALL
+  if (evt.key == 'c') {
     // COPY
     let copied = this.selectedTextString();
     w.addPasteBufferItem(copied);
@@ -6538,16 +6695,16 @@ w.TextBox.proto.handleKeyboardShortcuts = function (evt) {
     evt.stopPropagation();
     return;
   }
-  if (k == 'x') {
+  if (evt.key == 'x') {
     w.addPasteBufferItem(this.selectedTextString()); // Cut
     this.paste('');
   }
-  if (k == 'v') {
+  if (evt.key == 'v') {
     this.paste(w.latestPasteBufferItem()); // Paste
   }
-  if (k == 'z') this.undoReplacement(); // Undo
-  if (k == 'g') this.redoReplacement(); // aGain
-  if (k == 'f') {
+  if (evt.key == 'z') this.undoReplacement(); // Undo
+  if (evt.key == 'g') this.redoReplacement(); // aGain
+  if (evt.key == 'f') {
     // FIND — avoid an empty throwaway panel when there are no hits
     let term = this.selectedTextString();
     let hits = w.methodsContaining(term);
@@ -6561,17 +6718,17 @@ w.TextBox.proto.handleKeyboardShortcuts = function (evt) {
       w.newPanel().browseSearch(term);
     }
   }
-  if (k == 's') {
+  if (evt.key == 's') {
     // SAVE (eval all)
     w.noteMethodChanges(this.string);
     this.wsEval.call(this.workspaceObj, this.string);
     if (typeof this.onTextSaved === 'function') this.onTextSaved(this);
   }
-  if (k == 'd') {
+  if (evt.key == 'd') {
     // DO IT
     this.wsEval.call(this.workspaceObj, this.selectedTextString());
   }
-  if (k == 'p') {
+  if (evt.key == 'p') {
     // PRINT IT
     let selA = this.selStart.strIx;
     let selB = this.selStop.strIx;
