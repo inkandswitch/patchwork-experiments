@@ -3,22 +3,12 @@ import {
   useDocHandle,
   useDocument,
   useDocuments,
-  useRepo,
 } from "@automerge/automerge-repo-react-hooks";
-import { DocHandle } from "@automerge/automerge-repo";
 import {
   AutomergeUrl,
-  encodeHeads,
   parseAutomergeUrl,
-  stringifyAutomergeUrl,
-} from "@automerge/vanillajs";
+} from "@automerge/automerge-repo";
 import { OpenDocumentEvent } from "@inkandswitch/patchwork-elements";
-import { AnnotationSet } from "@inkandswitch/annotations";
-import { annotations as globalAnnotations } from "@inkandswitch/annotations-context";
-import { ViewHeads } from "@inkandswitch/annotations-diff";
-import { IsSelected } from "@inkandswitch/annotations-selection";
-import { useSubscribe } from "@inkandswitch/subscribables-react";
-import { ref, RefOfType } from "@inkandswitch/patchwork-refs";
 import {
   DatatypeDescription,
   DatatypeImplementation,
@@ -45,19 +35,12 @@ import {
   useDebugRegistryToast,
 } from "./useDebugRegistryToast";
 import {
-  CommentThread,
-  DocWithComments,
-  SerializedCommentThread,
-} from "@inkandswitch/annotations-comments";
-import { commentThreadsWithRefOfDoc } from "@inkandswitch/annotations-comments";
-import {
   DockviewApi,
   DockviewReact,
   DockviewReadyEvent,
   IDockviewPanelProps,
 } from "dockview";
 
-// Declare the patchwork-view custom element for TypeScript
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace JSX {
@@ -131,7 +114,7 @@ export const PatchworkFrame = ({
     accountDocUrl,
     {
       suspense: true,
-    }
+    },
   );
 
   const { rootFolderUrl, accountSidebarToolId, contextSidebarToolId } =
@@ -142,11 +125,13 @@ export const PatchworkFrame = ({
   const [pendingOpen, setPendingOpen] = useState<OpenView[]>([]);
   const lastOpenRef = useRef<{ id: string; at: number } | null>(null);
   const [openDocPanels, setOpenDocPanels] = useState<Map<string, OpenView>>(
-    () => new Map()
+    () => new Map(),
   );
   const lastDocPanelIdRef = useRef<string | null>(null);
   const openDocUrls = useMemo(() => {
-    return Array.from(new Set(Array.from(openDocPanels.values()).map((v) => v.url)));
+    return Array.from(
+      new Set(Array.from(openDocPanels.values()).map((v) => v.url)),
+    );
   }, [openDocPanels]);
   const [openDocsMap] = useDocuments<HasPatchworkMetadata>(openDocUrls);
   const [dockviewTheme, setDockviewTheme] = useState(() => {
@@ -162,7 +147,6 @@ export const PatchworkFrame = ({
       : "dockview-theme-light";
   });
 
-  // Debug registry toast
   const {
     events: debugEvents,
     dismissEvent,
@@ -170,83 +154,8 @@ export const PatchworkFrame = ({
   } = useDebugRegistryToast();
 
   const selectedDocHandle = useDocHandle(activeView?.url);
-  const selectedDocRef = useMemo(
-    () => (selectedDocHandle ? ref(selectedDocHandle) : undefined),
-    [selectedDocHandle]
-  );
 
-  const selectedDocAnnotations = useSubscribe(
-    useMemo(
-      () =>
-        selectedDocRef ? globalAnnotations.onRef(selectedDocRef) : undefined,
-      [selectedDocRef]
-    )
-  );
-
-  const viewHeads = selectedDocAnnotations?.lookup(ViewHeads);
-
-  const selectedDocUrl = useMemo(() => {
-    if (!activeView?.url) {
-      return undefined;
-    }
-
-    if (!viewHeads) {
-      return activeView.url;
-    }
-
-    const currentDocumentId = parseAutomergeUrl(activeView.url).documentId;
-    return stringifyAutomergeUrl({
-      documentId: currentDocumentId,
-      heads: encodeHeads(viewHeads.afterHeads),
-    });
-  }, [activeView?.url, viewHeads]);
-
-  //  Contribute annotations to the global context
-  const commentThreadsWithRef = useCommentThreadsWithRefOfDoc(
-    selectedDocHandle as DocHandle<DocWithComments>
-  );
-  const annotations = useMemo(() => new AnnotationSet(), []);
-  useEffect(() => {
-    if (!selectedDocRef) {
-      return;
-    }
-
-    globalAnnotations.add(annotations);
-
-    annotations.change(() => {
-      annotations.clear();
-
-      // selection
-      annotations.add(selectedDocRef, IsSelected(true));
-
-      // comment threads
-      for (const [threadRef, thread] of commentThreadsWithRef) {
-        for (const ref of thread.refs) {
-          if (threadRef.value()?.isResolved) {
-            continue;
-          }
-
-          annotations.add(ref, CommentThread(threadRef));
-        }
-      }
-    });
-
-    return () => {
-      globalAnnotations.remove(annotations);
-    };
-  }, [
-    annotations,
-    selectedDocAnnotations,
-    selectedDocRef,
-    commentThreadsWithRef,
-  ]);
-
-  // Effects
-  // this should be probably a plugin type that allows to run code without rendering something
-
-  useUpdateDocLinksOfActiveDocumentsEffect(rootFolderUrl);
-  //todo disabling this until it supports folders
-  // useAddUnknownDocumentsToSidebarEffect(rootFolderUrl);
+  useUpdateDocLinksOfActiveDocumentsEffect(rootFolderUrl, openDocUrls);
 
   const panelIdFor = useCallback((view: OpenView) => {
     const { documentId } = parseAutomergeUrl(view.url);
@@ -283,7 +192,7 @@ export const PatchworkFrame = ({
       }
 
       panel.setTitle(
-        activeView.toolId ? `${title} · ${activeView.toolId}` : title
+        activeView.toolId ? `${title} · ${activeView.toolId}` : title,
       );
     });
 
@@ -370,7 +279,7 @@ export const PatchworkFrame = ({
       docPanelPosition,
       panelIdFor,
       panelTitleFor,
-    ]
+    ],
   );
 
   useEffect(() => {
@@ -607,7 +516,7 @@ export const PatchworkFrame = ({
         return;
       }
       setDockviewTheme(
-        mediaQuery.matches ? "dockview-theme-abyss" : "dockview-theme-light"
+        mediaQuery.matches ? "dockview-theme-abyss" : "dockview-theme-light",
       );
     };
 
@@ -626,7 +535,6 @@ export const PatchworkFrame = ({
     };
   }, []);
 
-  // listen to open document events
   useEffect(() => {
     const onOpenDocument = (event: OpenDocumentEvent) => {
       event.stopPropagation();
@@ -659,21 +567,16 @@ export const PatchworkFrame = ({
 
     element.addEventListener(
       "patchwork:open-document",
-      onOpenDocument as EventListener
+      onOpenDocument as EventListener,
     );
 
     return () => {
-      (element as HTMLElement).removeEventListener(
+      element.removeEventListener(
         "patchwork:open-document",
-        onOpenDocument
+        onOpenDocument as EventListener,
       );
     };
   }, [dockviewApi, element, openPanelForDocument, panelIdFor]);
-
-  // Add current handle to window
-  useEffect(() => {
-    (window as any).currentDocHandle = selectedDocRef?.docHandle;
-  }, [selectedDocRef]);
 
   return (
     <div className="w-screen h-screen flex">
@@ -683,7 +586,6 @@ export const PatchworkFrame = ({
         onClearAll={clearAll}
       />
       <div className="flex flex-col flex-1 h-full">
-        {/* Dockview workspace (sidebars are dock panels) */}
         <div className="w-full flex-1 min-h-0 relative">
           <DockviewReact
             className={`${dockviewTheme} w-full h-full`}
@@ -693,12 +595,12 @@ export const PatchworkFrame = ({
             }}
             onReady={handleDockviewReady}
           />
-          {!selectedDocUrl && (
+          {!activeView?.url && (
             <div className="absolute inset-0 flex items-center justify-center text-base-content pointer-events-none">
               Select a document in the sidebar
             </div>
           )}
-        </div> 
+        </div>
       </div>
     </div>
   );
@@ -706,43 +608,13 @@ export const PatchworkFrame = ({
 
 export function renderPatchworkFrame(
   handle: { url: AutomergeUrl },
-  element: ToolElement
+  element: ToolElement,
 ) {
   const root = createRoot(element);
   root.render(
     <RepoContext.Provider value={element.repo}>
       <PatchworkFrame docUrl={handle.url} element={element} />
-    </RepoContext.Provider>
+    </RepoContext.Provider>,
   );
   return () => root.unmount();
 }
-
-export const useCommentThreadsWithRefOfDoc = (
-  docHandle?: DocHandle<DocWithComments>
-) => {
-  const repo = useRepo();
-  const [doc] = useDocument(docHandle?.url);
-  const [commentThreadsWithRef, setCommentThreadsWithRef] = useState<
-    [RefOfType<SerializedCommentThread>, CommentThread][]
-  >([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!docHandle) {
-      return;
-    }
-
-    commentThreadsWithRefOfDoc(docHandle, repo).then((threadsWithRef) => {
-      if (cancelled) {
-        return;
-      }
-      setCommentThreadsWithRef(threadsWithRef);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [docHandle, repo, doc]);
-
-  return commentThreadsWithRef;
-};
