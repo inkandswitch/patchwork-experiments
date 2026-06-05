@@ -134,18 +134,22 @@ export function createClipFromDrop(
     Math.max(MIN_CLIP_DURATION, payload.duration),
   );
 
-  let track;
   if (dropTarget.kind === 'track' && doc.tracks[dropTarget.index]) {
-    track = doc.tracks[dropTarget.index]!;
-  } else if (dropTarget.kind === 'insert-above') {
-    track = newTrack();
-    doc.tracks.unshift(track);
-  } else {
-    track = newTrack();
-    doc.tracks.push(track);
+    const track = doc.tracks[dropTarget.index]!;
+    track.clips.push(clip);
+    return { trackId: track.id, clipId: clip.id };
   }
 
+  // For a new track, attach the clip before inserting so the whole object graph is
+  // serialized into the document at once. (Pushing into `track.clips` after insertion
+  // would mutate the detached plain object, not the live Automerge proxy.)
+  const track = newTrack();
   track.clips.push(clip);
+  if (dropTarget.kind === 'insert-above') {
+    doc.tracks.unshift(track);
+  } else {
+    doc.tracks.push(track);
+  }
   return { trackId: track.id, clipId: clip.id };
 }
 
