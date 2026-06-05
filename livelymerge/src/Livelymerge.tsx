@@ -1,5 +1,4 @@
-import type { AutomergeUrl, DocHandle } from '@automerge/automerge-repo';
-import { next as Automerge, type Doc } from '@automerge/automerge/slim';
+import type { AutomergeUrl, Doc, DocHandle } from '@automerge/automerge-repo';
 import { useDocHandle } from '@automerge/automerge-repo-react-hooks';
 import { javascript } from '@codemirror/lang-javascript';
 import { EditorState, Prec } from '@codemirror/state';
@@ -15,9 +14,13 @@ import {
   type PointerEvent as DomPointerEvent,
   type TransitionEvent,
 } from 'react';
-import { toolify } from './react-util';
+
 import type { LivelymergeDoc, Obj, Ref, Referent } from './types';
+import { createRoot } from 'react-dom/client';
+import { RepoContext } from '@automerge/automerge-repo-react-hooks';
+import type { ToolElement, ToolImplementation } from '@inkandswitch/patchwork-plugins';
 import './styles.css';
+import { Automerge } from '@automerge/automerge-repo/slim';
 
 // TODO: stop requesting animation frame after the UI unmounts
 // TODO: why doesn't toString work when it's a method on Objs? (something to do w/ Proxy)
@@ -995,4 +998,15 @@ export const LivelymergeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   );
 };
 
-export const renderLivelymergeEditor = toolify(LivelymergeEditor);
+export function renderLivelymergeEditor(
+  handle: { url: AutomergeUrl },
+  element: ToolElement,
+): ReturnType<ToolImplementation> {
+  const root = createRoot(element);
+  root.render(
+    <RepoContext.Provider value={element.repo}>
+      <LivelymergeEditor docUrl={handle.url} />
+    </RepoContext.Provider>,
+  );
+  return () => root.unmount();
+}

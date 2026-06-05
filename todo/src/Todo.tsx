@@ -9,7 +9,9 @@ import { ref, Ref, RefOfType } from '@inkandswitch/patchwork-refs';
 import { useSubscribe } from '@inkandswitch/subscribables-react';
 import { MessageCircle } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { toolify } from './react-util';
+import { createRoot } from 'react-dom/client';
+import { RepoContext } from '@automerge/automerge-repo-react-hooks';
+import type { ToolElement, ToolImplementation } from '@inkandswitch/patchwork-plugins';
 import './styles.css';
 
 type Todo = {
@@ -209,4 +211,15 @@ const TodoItem = ({ todoRef, selectionAnnotations }: TodoItemProps) => {
   );
 };
 
-export const renderTodoEditor = toolify(TodoEditor);
+export function renderTodoEditor(
+  handle: { url: AutomergeUrl },
+  element: ToolElement
+): ReturnType<ToolImplementation> {
+  const root = createRoot(element);
+  root.render(
+    <RepoContext.Provider value={element.repo}>
+      <TodoEditor docUrl={handle.url} />
+    </RepoContext.Provider>
+  );
+  return () => root.unmount();
+}

@@ -1,4 +1,5 @@
 import {
+  RepoContext,
   useDocHandle,
   useDocument,
   useDocuments,
@@ -34,6 +35,8 @@ import {
   startTransition,
   type CSSProperties,
 } from "react";
+import { createRoot } from "react-dom/client";
+import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import { useUpdateDocLinksOfActiveDocumentsEffect } from "./effects";
 import "./styles.css";
 import { TinyPatchworkConfigDoc } from "./types";
@@ -700,6 +703,19 @@ export const PatchworkFrame = ({
     </div>
   );
 };
+
+export function renderPatchworkFrame(
+  handle: { url: AutomergeUrl },
+  element: ToolElement
+) {
+  const root = createRoot(element);
+  root.render(
+    <RepoContext.Provider value={element.repo}>
+      <PatchworkFrame docUrl={handle.url} element={element} />
+    </RepoContext.Provider>
+  );
+  return () => root.unmount();
+}
 
 export const useCommentThreadsWithRefOfDoc = (
   docHandle?: DocHandle<DocWithComments>

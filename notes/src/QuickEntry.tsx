@@ -3,7 +3,9 @@ import { useDocument, useDocuments, useRepo } from '@automerge/automerge-repo-re
 import { FolderDoc, DocLink } from '@inkandswitch/patchwork-filesystem';
 import { Search, Plus } from 'lucide-react';
 import { useMemo, useState, useCallback } from 'react';
-import { toolify, ReactToolProps } from './react-util';
+import { createRoot } from 'react-dom/client';
+import { RepoContext } from '@automerge/automerge-repo-react-hooks';
+import type { ToolElement, ToolImplementation } from '@inkandswitch/patchwork-plugins';
 import { NoteDoc } from './types';
 import { NoteDatatype } from './datatype';
 import './styles.css';
@@ -24,7 +26,13 @@ function matchesQuery(doc: NoteDoc, query: string): boolean {
   return false;
 }
 
-const QuickEntry = ({ docUrl, element }: ReactToolProps) => {
+const QuickEntry = ({
+  docUrl,
+  element,
+}: {
+  docUrl: AutomergeUrl;
+  element: ToolElement;
+}) => {
   const [folder, changeFolder] = useDocument<FolderDoc>(docUrl);
   const repo = useRepo();
   const [query, setQuery] = useState('');
@@ -149,4 +157,15 @@ const QuickEntry = ({ docUrl, element }: ReactToolProps) => {
   );
 };
 
-export const renderQuickEntry = toolify(QuickEntry);
+export function renderQuickEntry(
+  handle: { url: AutomergeUrl },
+  element: ToolElement
+): ReturnType<ToolImplementation> {
+  const root = createRoot(element);
+  root.render(
+    <RepoContext.Provider value={element.repo}>
+      <QuickEntry docUrl={handle.url} element={element} />
+    </RepoContext.Provider>
+  );
+  return () => root.unmount();
+}

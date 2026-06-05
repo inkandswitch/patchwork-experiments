@@ -2,7 +2,9 @@ import { AutomergeUrl } from '@automerge/automerge-repo';
 import { useDocument, useDocuments } from '@automerge/automerge-repo-react-hooks';
 import { FolderDoc, DocLink } from '@inkandswitch/patchwork-filesystem';
 import { useMemo } from 'react';
-import { toolify, ReactToolProps } from './react-util';
+import { createRoot } from 'react-dom/client';
+import { RepoContext } from '@automerge/automerge-repo-react-hooks';
+import type { ToolElement, ToolImplementation } from '@inkandswitch/patchwork-plugins';
 import { NoteDoc } from './types';
 import './styles.css';
 
@@ -19,7 +21,13 @@ function truncate(text: string, max: number): string {
   return text.slice(0, max).trimEnd() + '...';
 }
 
-const NotesList = ({ docUrl, element }: ReactToolProps) => {
+const NotesList = ({
+  docUrl,
+  element,
+}: {
+  docUrl: AutomergeUrl;
+  element: ToolElement;
+}) => {
   const [folder] = useDocument<FolderDoc>(docUrl);
 
   const noteLinks = useMemo(() => {
@@ -97,4 +105,15 @@ const NotesList = ({ docUrl, element }: ReactToolProps) => {
   );
 };
 
-export const renderNotesList = toolify(NotesList);
+export function renderNotesList(
+  handle: { url: AutomergeUrl },
+  element: ToolElement
+): ReturnType<ToolImplementation> {
+  const root = createRoot(element);
+  root.render(
+    <RepoContext.Provider value={element.repo}>
+      <NotesList docUrl={handle.url} element={element} />
+    </RepoContext.Provider>
+  );
+  return () => root.unmount();
+}

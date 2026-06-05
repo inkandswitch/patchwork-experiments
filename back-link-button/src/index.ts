@@ -1,5 +1,4 @@
 import { Plugin } from "@inkandswitch/patchwork-plugins";
-import { toolify } from "@inkandswitch/patchwork-react";
 
 export const plugins: Plugin<any>[] = [
   {
@@ -10,8 +9,8 @@ export const plugins: Plugin<any>[] = [
     icon: "ArrowLeft",
     supportedDatatypes: "*",
     async load() {
-      const { BackLinkButton } = await import("./BackLinkButton");
-      return toolify(BackLinkButton);
+      const { renderBackLinkButton } = await import("./BackLinkButton");
+      return renderBackLinkButton;
     },
     unlisted: true,
     forTitleBar: true,

@@ -24,7 +24,6 @@
     "@inkandswitch/patchwork-elements": "0.0.5",
     "@inkandswitch/patchwork-filesystem": "0.0.3",
     "@inkandswitch/patchwork-plugins": "0.0.5",
-    "@inkandswitch/patchwork-react": "0.0.1",
     "@inkandswitch/patchwork-refs": "0.1.3",
     "@inkandswitch/subscribables-react": "0.1.2",
     "dockview": "^4.13.1",
