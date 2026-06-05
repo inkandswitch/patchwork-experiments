@@ -1,5 +1,6 @@
 import type { Repo } from "@automerge/automerge-repo";
 import type { DatatypeImplementation } from "@inkandswitch/patchwork-plugins";
+import { createEmptyGrid, type CellValue } from "./grid-utils";
 
 export type DataGridDoc = {
   "@patchwork"?: { type: "datagrid" };
@@ -9,17 +10,13 @@ export type DataGridDoc = {
   // The correct technique is like this, but we need cursors for
   // arbitrary lists to do that in Automerge:
   // https://mattweidner.com/2022/02/10/collaborative-data-design.html#case-study-a-collaborative-spreadsheet
-  data: any[][];
+  data: CellValue[][];
 };
 
 export const DatagridDatatype: DatatypeImplementation<DataGridDoc> = {
   init(doc: DataGridDoc, _repo: Repo) {
-    const rows = 100;
-    const cols = 26;
     doc.title = "Untitled Spreadsheet";
-    doc.data = Array.from({ length: rows }, () =>
-      Array.from({ length: cols }, () => "")
-    );
+    doc.data = createEmptyGrid();
   },
 
   getTitle(doc: DataGridDoc) {

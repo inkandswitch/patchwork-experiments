@@ -1,33 +1,46 @@
 import {
   RepoContext,
   useDocument,
-  useDocHandle,
 } from "@automerge/automerge-repo-react-hooks";
-import type { AutomergeUrl } from "@automerge/automerge-repo";
+import type { DocHandle } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import Handsontable from "handsontable";
-import { HotTable } from "@handsontable/react";
-import "handsontable/dist/handsontable.full.min.css";
+import { HotTable, type HotTableRef } from "@handsontable/react-wrapper";
+import "handsontable/styles/handsontable.min.css";
+import "handsontable/styles/ht-theme-main.min.css";
 import { registerAllModules } from "handsontable/registry";
-import { registerRenderer, textRenderer } from "handsontable/renderers";
 import { HyperFormula } from "hyperformula";
+import { useEffect, useMemo, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import type { DataGridDoc } from "./datatype";
+import {
+  columnCount,
+  createEmptyCells,
+  createEmptyRows,
+  ensureCellWritable,
+  ensureGridStructure,
+} from "./grid-utils";
 
 registerAllModules();
 
-registerRenderer("addedCell", (hotInstance, TD, ...rest) => {
-  textRenderer(hotInstance, TD, ...rest);
-  TD.style.outline = "solid 1px rgb(0 100 0 / 80%)";
-  TD.style.background = "rgb(0 255 0 / 10%)";
-});
+function DataGridEditor({ handle }: { handle: DocHandle<DataGridDoc> }) {
+  const [doc] = useDocument<DataGridDoc>(handle.url);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const hotRef = useRef<HotTableRef>(null);
+  const formulaEngine = useRef(
+    HyperFormula.buildEmpty({ licenseKey: "gpl-v3" }),
+  ).current;
+  const formulas = useMemo(() => ({ engine: formulaEngine }), [formulaEngine]);
 
-function DataGridEditor({ docUrl }: { docUrl: AutomergeUrl }) {
-  const [doc] = useDocument<DataGridDoc>(docUrl);
-  const handle = useDocHandle<DataGridDoc>(docUrl)!;
+  useEffect(() => {
+    if (!doc) return;
+    if (!doc.data?.length || !Array.isArray(doc.data[0])) {
+      handle.change(ensureGridStructure);
+    }
+  }, [doc, handle]);
 
   const onBeforeHotChange = (
-    changes: Array<Handsontable.CellChange | null>
+    changes: Array<Handsontable.CellChange | null>,
   ) => {
     handle.change((d) => {
       changes.forEach((change) => {
@@ -36,12 +49,7 @@ function DataGridEditor({ docUrl }: { docUrl: AutomergeUrl }) {
         }
         const [row, columnUntyped, , newValue] = change;
         const column = columnUntyped as number;
-        if (column > d.data[0].length) {
-          d.data[0][column] = "";
-        }
-        if (!d.data[row]) {
-          d.data[row] = new Array(column).fill(null);
-        }
+        ensureCellWritable(d, row, column);
         d.data[row][column] = newValue;
       });
     });
@@ -50,30 +58,32 @@ function DataGridEditor({ docUrl }: { docUrl: AutomergeUrl }) {
 
   const onBeforeCreateRow = (index: number, amount: number) => {
     handle.change((d) => {
-      d.data.splice(
-        index,
-        0,
-        ...new Array(amount).fill(new Array(d.data[0].length).fill(null))
-      );
+      ensureGridStructure(d);
+      const cols = columnCount(d.data);
+      d.data.splice(index, 0, ...createEmptyRows(amount, cols));
     });
     return false;
   };
 
   const onBeforeCreateCol = (index: number, amount: number) => {
     handle.change((d) => {
+      ensureGridStructure(d);
       d.data.forEach((row) => {
-        row.splice(index, 0, ...new Array(amount).fill(null));
+        row.splice(index, 0, ...createEmptyCells(amount));
       });
     });
     return false;
   };
 
-  if (!doc) {
+  if (!doc?.data?.length) {
     return null;
   }
 
   return (
-    <div className="w-full h-full overflow-hidden">
+    <div
+      ref={containerRef}
+      className="datagrid-root ht-theme-main overflow-scroll eldritch-horrors"
+    >
       <HotTable
         data={doc.data}
         beforeChange={onBeforeHotChange}
@@ -82,12 +92,12 @@ function DataGridEditor({ docUrl }: { docUrl: AutomergeUrl }) {
         rowHeaders={true}
         colHeaders={true}
         contextMenu={true}
-        width="100%"
-        height="100%"
+        width="auto"
+        height="auto"
         autoWrapRow={false}
         autoWrapCol={false}
         licenseKey="non-commercial-and-evaluation"
-        formulas={{ engine: HyperFormula }}
+        formulas={formulas}
       />
     </div>
   );
@@ -97,8 +107,8 @@ export const DatagridTool: ToolRender = (handle, element) => {
   const root = createRoot(element);
   root.render(
     <RepoContext.Provider value={element.repo}>
-      <DataGridEditor docUrl={handle.url} />
-    </RepoContext.Provider>
+      <DataGridEditor handle={handle as DocHandle<DataGridDoc>} />
+    </RepoContext.Provider>,
   );
   return () => root.unmount();
 };

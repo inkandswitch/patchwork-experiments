@@ -1,17 +1,41 @@
 import react from "@vitejs/plugin-react";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
-import topLevelAwait from "vite-plugin-top-level-await";
-import wasm from "vite-plugin-wasm";
 import cssInjectedByJsPlugin from "vite-plugin-css-injected-by-js";
 import external from "@inkandswitch/patchwork-bootloader/externals";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Bundle react-hooks with our React copy. If left external, the host's React
+// instance won't match the bundled one used by createRoot/Handsontable.
+const moduleExternals = external.filter(
+  (dep) => dep !== "@automerge/automerge-repo-react-hooks"
+);
+
 export default defineConfig({
   base: "./",
-  plugins: [topLevelAwait(), wasm(), react(), cssInjectedByJsPlugin()],
+  plugins: [react(), cssInjectedByJsPlugin()],
+
+  resolve: {
+    alias: {
+      react: path.resolve(__dirname, "node_modules/react"),
+      "react-dom": path.resolve(__dirname, "node_modules/react-dom"),
+      "react/jsx-runtime": path.resolve(
+        __dirname,
+        "node_modules/react/jsx-runtime"
+      ),
+      "react/jsx-dev-runtime": path.resolve(
+        __dirname,
+        "node_modules/react/jsx-dev-runtime"
+      ),
+    },
+  },
 
   build: {
+    minify: false,
     rollupOptions: {
-      external,
+      external: moduleExternals,
       input: "./src/index.ts",
       output: {
         format: "es",
