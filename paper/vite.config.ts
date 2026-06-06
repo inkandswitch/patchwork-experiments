@@ -1,19 +1,19 @@
-import {defineConfig} from "vite"
-import solidPlugin from "vite-plugin-solid"
-import cssInjectedByJsPlugin from "vite-plugin-css-injected-by-js"
-import external from "@inkandswitch/patchwork-bootloader/externals"
+import { defineConfig } from "vite";
+import solidPlugin from "vite-plugin-solid";
+import cssInjectedByJsPlugin from "vite-plugin-css-injected-by-js";
+import external from "@inkandswitch/patchwork-bootloader/externals";
 
 export default defineConfig({
-	base: "./",
-	plugins: [solidPlugin(), cssInjectedByJsPlugin()],
-	build: {
-		// Keep the vendored provider tarballs that live in dist/ across builds.
-		emptyOutDir: false,
-		lib: {
-			entry: "src/index.ts",
-			formats: ["es"],
-			fileName: "index",
-		},
-		rollupOptions: {external},
-	},
-})
+  base: "./",
+  plugins: [solidPlugin(), cssInjectedByJsPlugin()],
+  build: {
+    // Keep the vendored provider tarballs that live in dist/ across builds.
+    emptyOutDir: false,
+    lib: {
+      entry: "src/index.ts",
+      formats: ["es"],
+      fileName: "index",
+    },
+    rollupOptions: { external },
+  },
+});

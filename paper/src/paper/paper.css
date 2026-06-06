@@ -1,11 +1,11 @@
 .paper-canvas {
-	position: absolute;
-	inset: 0;
-	overflow: hidden;
-	background: #fafaf9;
-	background-image: radial-gradient(#e7e5e4 1px, transparent 1px);
-	background-size: 24px 24px;
-	font-family: system-ui, sans-serif;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #fafaf9;
+  background-image: radial-gradient(#e7e5e4 1px, transparent 1px);
+  background-size: 24px 24px;
+  font-family: system-ui, sans-serif;
 }
 
 /* Each layer's <patchwork-view> stacks on top of the others. We keep z-index
@@ -13,33 +13,33 @@
    these views don't form a stacking context, those inner z-indexes interlace
    within the canvas. */
 .paper-canvas patchwork-view {
-	position: absolute;
-	inset: 0;
-	z-index: auto;
+  position: absolute;
+  inset: 0;
+  z-index: auto;
 }
 
 /* Floating tool buttons over the canvas. The buttons themselves carry
    data-surface-no-draw so pressing one never starts a draw. */
 .paper-controls {
-	position: absolute;
-	top: 12px;
-	left: 12px;
-	z-index: 2147483646;
-	display: flex;
-	gap: 8px;
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 2147483646;
+  display: flex;
+  gap: 8px;
 }
 
 .paper-version {
-	position: absolute;
-	right: 8px;
-	bottom: 8px;
-	z-index: 2147483647;
-	padding: 2px 8px;
-	border-radius: 999px;
-	background: rgba(28, 25, 23, 0.7);
-	color: #fafaf9;
-	font-size: 11px;
-	font-variant-numeric: tabular-nums;
-	pointer-events: none;
-	user-select: none;
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2147483647;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(28, 25, 23, 0.7);
+  color: #fafaf9;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  user-select: none;
 }

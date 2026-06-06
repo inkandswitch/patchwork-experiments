@@ -7,7 +7,10 @@ import {
   type JSX,
 } from "solid-js";
 import { useRepo } from "@automerge/automerge-repo-solid-primitives";
-import { subscribe, subscribeDoc } from "@inkandswitch/patchwork-providers-solid";
+import {
+  subscribe,
+  subscribeDoc,
+} from "@inkandswitch/patchwork-providers-solid";
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import type { PaperLayerDoc, Point } from "../paper/types";
 import type { SurfaceLayers, SurfaceState } from "../surface/types";

@@ -1,12 +1,12 @@
 .rect-host {
-	position: absolute;
-	inset: 0;
-	pointer-events: none;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 
 .rect-svg {
-	position: absolute;
-	inset: 0;
-	display: block;
-	overflow: visible;
+  position: absolute;
+  inset: 0;
+  display: block;
+  overflow: visible;
 }

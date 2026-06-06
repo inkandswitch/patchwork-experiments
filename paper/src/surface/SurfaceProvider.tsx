@@ -1,9 +1,14 @@
-import {onCleanup, onMount, type JSX} from "solid-js"
-import {useRepo} from "@automerge/automerge-repo-solid-primitives"
-import {accept, type SubscribeEvent} from "@inkandswitch/patchwork-providers"
-import type {AutomergeUrl, DocHandle} from "@automerge/automerge-repo"
-import type {PaperDoc, PaperLayerDoc} from "../paper/types"
-import type {Pointer, SurfaceLayers, SurfacePointerState, SurfaceState} from "./types"
+import { onCleanup, onMount, type JSX } from "solid-js";
+import { useRepo } from "@automerge/automerge-repo-solid-primitives";
+import { accept, type SubscribeEvent } from "@inkandswitch/patchwork-providers";
+import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
+import type { PaperDoc, PaperLayerDoc } from "../paper/types";
+import type {
+  Pointer,
+  SurfaceLayers,
+  SurfacePointerState,
+  SurfaceState,
+} from "./types";
 
 // Brokers every button/canvas interaction for the paper surface. It owns an
 // ephemeral selection-state document, tracks the canvas pointer, and creates
@@ -12,133 +17,135 @@ import type {Pointer, SurfaceLayers, SurfacePointerState, SurfaceState} from "./
 // by dispatching `patchwork:subscribe` from their own element — there is no
 // Solid context wiring them together.
 export function SurfaceProvider(props: {
-	element: HTMLElement
-	paper: DocHandle<PaperDoc>
-	children: JSX.Element
+  element: HTMLElement;
+  paper: DocHandle<PaperDoc>;
+  children: JSX.Element;
 }): JSX.Element {
-	const repo = useRepo()
-	const stateHandle = repo.create<SurfaceState>({selectedTool: ""})
+  const repo = useRepo();
+  const stateHandle = repo.create<SurfaceState>({ selectedTool: "" });
 
-	let pointer: Pointer | undefined
-	const pointerListeners = new Set<(value: SurfacePointerState) => void>()
-	const emitPointer = () => {
-		for (const respond of pointerListeners) respond({pointer})
-	}
+  let pointer: Pointer | undefined;
+  const pointerListeners = new Set<(value: SurfacePointerState) => void>();
+  const emitPointer = () => {
+    for (const respond of pointerListeners) respond({ pointer });
+  };
 
-	// Subscribers to the full layer list (those who request `surface:layer`
-	// without a toolId). Re-emitted whenever the paper doc changes.
-	const layerListeners = new Set<(value: SurfaceLayers) => void>()
-	const currentLayers = (): SurfaceLayers => ({
-		...(props.paper.doc()?.layers ?? {}),
-	})
-	const emitLayers = () => {
-		const value = currentLayers()
-		for (const respond of layerListeners) respond(value)
-	}
+  // Subscribers to the full layer list (those who request `surface:layer`
+  // without a toolId). Re-emitted whenever the paper doc changes.
+  const layerListeners = new Set<(value: SurfaceLayers) => void>();
+  const currentLayers = (): SurfaceLayers => ({
+    ...(props.paper.doc()?.layers ?? {}),
+  });
+  const emitLayers = () => {
+    const value = currentLayers();
+    for (const respond of layerListeners) respond(value);
+  };
 
-	onMount(() => {
-		const el = props.element
+  onMount(() => {
+    const el = props.element;
 
-		const toLocal = (event: PointerEvent): Point2D => {
-			const rect = el.getBoundingClientRect()
-			return {x: event.clientX - rect.left, y: event.clientY - rect.top}
-		}
+    const toLocal = (event: PointerEvent): Point2D => {
+      const rect = el.getBoundingClientRect();
+      return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    };
 
-		const onPointerDown = (event: PointerEvent) => {
-			// A press that lands on chrome (the toolbar) must not start a draw.
-			const onChrome = (event.target as HTMLElement | null)?.closest(
-				"[data-surface-no-draw]"
-			)
-			const {x, y} = toLocal(event)
-			pointer = {x, y, isPressed: !onChrome}
-			emitPointer()
-		}
-		const onPointerMove = (event: PointerEvent) => {
-			const {x, y} = toLocal(event)
-			pointer = {x, y, isPressed: pointer?.isPressed ?? false}
-			emitPointer()
-		}
-		// Listen for release on the window so a drag that ends off-canvas still
-		// clears the pressed state.
-		const onPointerUp = (event: PointerEvent) => {
-			const {x, y} = toLocal(event)
-			pointer = {x, y, isPressed: false}
-			emitPointer()
-		}
+    const onPointerDown = (event: PointerEvent) => {
+      // A press that lands on chrome (the toolbar) must not start a draw.
+      const onChrome = (event.target as HTMLElement | null)?.closest(
+        "[data-surface-no-draw]",
+      );
+      const { x, y } = toLocal(event);
+      pointer = { x, y, isPressed: !onChrome };
+      emitPointer();
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      const { x, y } = toLocal(event);
+      pointer = { x, y, isPressed: pointer?.isPressed ?? false };
+      emitPointer();
+    };
+    // Listen for release on the window so a drag that ends off-canvas still
+    // clears the pressed state.
+    const onPointerUp = (event: PointerEvent) => {
+      const { x, y } = toLocal(event);
+      pointer = { x, y, isPressed: false };
+      emitPointer();
+    };
 
-		const onSubscribe = (event: SubscribeEvent) => {
-			const selector = event.detail?.selector
-			if (!selector) return
-			switch (selector.type) {
-				case "surface:state":
-					accept<AutomergeUrl>(event, (respond) => respond(stateHandle.url))
-					break
-				case "surface:layer": {
-					// Without a toolId, stream the whole layer list (and updates).
-					const toolId = selector.toolId ? String(selector.toolId) : undefined
-					if (!toolId) {
-						accept<SurfaceLayers>(event, (respond) => {
-							layerListeners.add(respond)
-							respond(currentLayers())
-							return () => layerListeners.delete(respond)
-						})
-						break
-					}
-					// With a toolId, resolve (creating on demand) that one layer.
-					accept<AutomergeUrl>(event, (respond) => {
-						void ensureLayer(toolId).then((url) => {
-							if (url) respond(url)
-						})
-					})
-					break
-				}
-				case "surface:pointer":
-					accept<SurfacePointerState>(event, (respond) => {
-						pointerListeners.add(respond)
-						respond({pointer})
-						return () => pointerListeners.delete(respond)
-					})
-					break
-				default:
-					// Leave other selectors (patchwork:repo, patchwork:dochandle, ...)
-					// to bubble up to the host's repo provider.
-					return
-			}
-		}
+    const onSubscribe = (event: SubscribeEvent) => {
+      const selector = event.detail?.selector;
+      if (!selector) return;
+      switch (selector.type) {
+        case "surface:state":
+          accept<AutomergeUrl>(event, (respond) => respond(stateHandle.url));
+          break;
+        case "surface:layer": {
+          // Without a toolId, stream the whole layer list (and updates).
+          const toolId = selector.toolId ? String(selector.toolId) : undefined;
+          if (!toolId) {
+            accept<SurfaceLayers>(event, (respond) => {
+              layerListeners.add(respond);
+              respond(currentLayers());
+              return () => layerListeners.delete(respond);
+            });
+            break;
+          }
+          // With a toolId, resolve (creating on demand) that one layer.
+          accept<AutomergeUrl>(event, (respond) => {
+            void ensureLayer(toolId).then((url) => {
+              if (url) respond(url);
+            });
+          });
+          break;
+        }
+        case "surface:pointer":
+          accept<SurfacePointerState>(event, (respond) => {
+            pointerListeners.add(respond);
+            respond({ pointer });
+            return () => pointerListeners.delete(respond);
+          });
+          break;
+        default:
+          // Leave other selectors (patchwork:repo, patchwork:dochandle, ...)
+          // to bubble up to the host's repo provider.
+          return;
+      }
+    };
 
-		el.addEventListener("pointerdown", onPointerDown)
-		el.addEventListener("pointermove", onPointerMove)
-		window.addEventListener("pointerup", onPointerUp)
-		el.addEventListener("patchwork:subscribe", onSubscribe)
-		props.paper.on("change", emitLayers)
+    el.addEventListener("pointerdown", onPointerDown);
+    el.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    el.addEventListener("patchwork:subscribe", onSubscribe);
+    props.paper.on("change", emitLayers);
 
-		onCleanup(() => {
-			el.removeEventListener("pointerdown", onPointerDown)
-			el.removeEventListener("pointermove", onPointerMove)
-			window.removeEventListener("pointerup", onPointerUp)
-			el.removeEventListener("patchwork:subscribe", onSubscribe)
-			props.paper.off("change", emitLayers)
-		})
-	})
+    onCleanup(() => {
+      el.removeEventListener("pointerdown", onPointerDown);
+      el.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      el.removeEventListener("patchwork:subscribe", onSubscribe);
+      props.paper.off("change", emitLayers);
+    });
+  });
 
-	// Resolve the layer for a tool, creating (and recording) it the first time
-	// it is requested.
-	async function ensureLayer(toolId: string): Promise<AutomergeUrl | undefined> {
-		const existing = props.paper.doc()?.layers?.[toolId]
-		if (existing) return existing
-		const layer = repo.create<PaperLayerDoc>({
-			"@patchwork": {type: "paper-layer"},
-			title: toolId,
-			shapes: [],
-		})
-		props.paper.change((doc) => {
-			if (!doc.layers) doc.layers = {}
-			doc.layers[toolId] = layer.url
-		})
-		return layer.url
-	}
+  // Resolve the layer for a tool, creating (and recording) it the first time
+  // it is requested.
+  async function ensureLayer(
+    toolId: string,
+  ): Promise<AutomergeUrl | undefined> {
+    const existing = props.paper.doc()?.layers?.[toolId];
+    if (existing) return existing;
+    const layer = repo.create<PaperLayerDoc>({
+      "@patchwork": { type: "paper-layer" },
+      title: toolId,
+      shapes: [],
+    });
+    props.paper.change((doc) => {
+      if (!doc.layers) doc.layers = {};
+      doc.layers[toolId] = layer.url;
+    });
+    return layer.url;
+  }
 
-	return <>{props.children}</>
+  return <>{props.children}</>;
 }
 
-type Point2D = {x: number; y: number}
+type Point2D = { x: number; y: number };
