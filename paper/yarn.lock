@@ -457,15 +457,21 @@
     eventemitter3 "^5.0.1"
     resolve.exports "^2.0.3"
 
-"@inkandswitch/patchwork-providers-solid@file:dist/inkandswitch-patchwork-providers-solid-0.1.3.tgz":
-  version "0.1.3"
-  resolved "file:dist/inkandswitch-patchwork-providers-solid-0.1.3.tgz#2ebef1f72cf0376ab323f16edb3f9126dd2ee090"
+"@inkandswitch/patchwork-providers-solid@^0.2.2":
+  version "0.2.2"
+  resolved "https://registry.yarnpkg.com/@inkandswitch/patchwork-providers-solid/-/patchwork-providers-solid-0.2.2.tgz#6298a6eca3daf5c1a19a899635e966958586a331"
+  integrity sha512-uYsCnFnaqv8KbhYu5LmzBjawym5dAlfIdlHwtqheIjCMC7QBN5+L9p+Ahfr0qqLFg5Og9J3JIDLzmjFauFSw8A==
   dependencies:
-    "@inkandswitch/patchwork-providers" "^0.1.2"
+    "@inkandswitch/patchwork-providers" "^0.2.2"
 
-"@inkandswitch/patchwork-providers@^0.1.2", "@inkandswitch/patchwork-providers@file:dist/inkandswitch-patchwork-providers-0.1.2.tgz":
+"@inkandswitch/patchwork-providers@^0.1.2":
   version "0.1.2"
   resolved "file:dist/inkandswitch-patchwork-providers-0.1.2.tgz#3334cffd773d126418bc010001ed0c76406d4177"
+
+"@inkandswitch/patchwork-providers@^0.2.2":
+  version "0.2.2"
+  resolved "https://registry.yarnpkg.com/@inkandswitch/patchwork-providers/-/patchwork-providers-0.2.2.tgz#aeba2eb6a23ee04afc7c687a29d8cc1fbe48f6b2"
+  integrity sha512-Yh/21N+1gBbtZmf2MRqmkK9y0PGS7LIHHq7fgzVS07IfDtELS36fhasODtHCUQ7+LDKTdNNlw9CkFLHSMlZY8Q==
 
 "@jridgewell/gen-mapping@^0.3.12", "@jridgewell/gen-mapping@^0.3.5":
   version "0.3.13"
