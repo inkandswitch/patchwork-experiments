@@ -14,8 +14,9 @@ import { RectButton } from "../rect/RectButton";
 import { SelectButton } from "../select/SelectButton";
 import { SelectionOverlay } from "../select/SelectionOverlay";
 import "./paper.css";
+import { DocWithLayers } from "../surface/types";
 
-const VERSION = "0.0.4";
+const VERSION = "0.0.27";
 
 // The surface tool: wraps the stack of layer <patchwork-view>s in a
 // SurfaceProvider so the layer buttons can drive the canvas purely through the
@@ -48,14 +49,15 @@ function PaperSurface(props: {
 
   return (
     <div class="paper-canvas">
-      <SurfaceProvider element={props.element} paper={props.handle}>
+      <SurfaceProvider
+        element={props.element}
+        handle={props.handle as DocHandle<DocWithLayers>}
+      >
         <For each={layers()}>
-          {([toolId, url]) => (
-            <patchwork-view doc-url={url} tool-id={`paper-${toolId}`} />
-          )}
+          {([toolId, url]) => <patchwork-view doc-url={url} tool-id={toolId} />}
         </For>
         <SelectionOverlay />
-        <div class="paper-controls" data-surface-no-draw>
+        <div class="paper-controls">
           <SelectButton />
           <RectButton />
           <LineButton />

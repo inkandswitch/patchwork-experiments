@@ -1,7 +1,8 @@
 import type { Repo } from "@automerge/automerge-repo";
-import type { PaperDoc, PaperLayerDoc } from "./types";
+import type { PaperDoc } from "./types";
 import type { PaperMapDoc } from "../map/types";
 import type { EmbedShape } from "../embed/EmbedLayerTool";
+import { ShapeLayerDoc } from "../surface/types";
 
 export const PaperDatatype = {
   init(doc: PaperDoc, repo: Repo) {
@@ -21,31 +22,36 @@ export const PaperDatatype = {
       docUrl: map.url,
       toolId: "paper-map",
     };
-    const embedLayer = repo.create<PaperLayerDoc>({
-      "@patchwork": { type: "paper-layer" },
-      title: "Embeds",
-      shapes: [mapEmbed],
+
+    // Also seed an empty nested paper so a fresh paper shows off recursive
+    // surfaces. Created with explicit fields (so this `init` is not re-run) and
+    // no layers, leaving it a blank canvas rather than recursing forever.
+    const childPaper = repo.create<PaperDoc>({
+      "@patchwork": { type: "paper" },
+      title: "Paper",
+      layers: {},
+    });
+    const paperEmbed: EmbedShape = {
+      x: 760,
+      y: 80,
+      z: 1,
+      outline: { type: "rectangle", width: 640, height: 420 },
+      docUrl: childPaper.url,
+      toolId: "paper",
+    };
+
+    const embedLayer = repo.create<ShapeLayerDoc>({
+      "@patchwork": { type: "shape-layer" },
+      title: "Embed",
+      shapes: [mapEmbed, paperEmbed],
     });
 
-    doc.layers = { embed: embedLayer.url };
+    doc.layers = { ["embed-shape-layer"]: embedLayer.url };
   },
   getTitle(doc: PaperDoc) {
     return doc.title || "Paper";
   },
   setTitle(doc: PaperDoc, title: string) {
-    doc.title = title;
-  },
-};
-
-export const PaperLayerDatatype = {
-  init(doc: PaperLayerDoc) {
-    doc.title = "Layer";
-    doc.shapes = [];
-  },
-  getTitle(doc: PaperLayerDoc) {
-    return doc.title || "Layer";
-  },
-  setTitle(doc: PaperLayerDoc, title: string) {
     doc.title = title;
   },
 };

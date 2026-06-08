@@ -1,10 +1,10 @@
 export const plugins = [
   {
     type: "patchwork:tool",
-    id: "paper-line",
+    id: "line-shape-layer",
     name: "Line Layer",
     icon: "PenLine",
-    supportedDatatypes: ["paper-layer"],
+    supportedDatatypes: ["shape-layer"],
     async load() {
       const { LineLayerTool } = await import("./LineLayerTool");
       return LineLayerTool;

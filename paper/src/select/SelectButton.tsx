@@ -6,14 +6,11 @@ import {
   onMount,
   type JSX,
 } from "solid-js";
-import { useRepo } from "@automerge/automerge-repo-solid-primitives";
-import {
-  subscribe,
-  subscribeDoc,
-} from "@inkandswitch/patchwork-providers-solid";
+import { useDocument, useRepo } from "@automerge/automerge-repo-solid-primitives";
+import { subscribeDoc } from "@inkandswitch/patchwork-providers-solid";
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
-import type { PaperLayerDoc, Point } from "../paper/types";
-import type { SurfaceLayers, SurfaceState } from "../surface/types";
+import type { PaperDoc, PaperLayerDoc, Point } from "../paper/types";
+import type { SurfaceState } from "../surface/types";
 import { createSurfacePointer, type Pointer } from "../surface/usePointer";
 import { hitTestShape, shapeRef } from "./geometry";
 
@@ -34,21 +31,19 @@ type DragGroup = {
 };
 
 // The select tool. The button toggles select mode, but the component also owns
-// all selection interaction: it reads every layer (via the `surface:layer`
-// provider), hit-tests the pointer, writes the selection into the shared focus
-// doc, deletes on Backspace/Delete, and drags selected shapes by mutating their
-// `x`/`y`. SelectionOverlay only renders the highlights for whatever is here.
+// all selection interaction: it reads every layer (from the paper doc that
+// `surface:state` points to), hit-tests the pointer, writes the selection into
+// the shared focus doc, deletes on Backspace/Delete, and drags selected shapes
+// by mutating their `x`/`y`. SelectionOverlay only renders the highlights for
+// whatever is here.
 export function SelectButton(): JSX.Element {
   let root!: HTMLButtonElement;
 
   const [state, stateHandle] = subscribeDoc<SurfaceState>(() => root, {
     type: "surface:state",
   });
-  const layers = subscribe<SurfaceLayers>(
-    () => root,
-    { type: "surface:layer" },
-    {},
-  );
+  const [paper] = useDocument<PaperDoc>(() => state()?.surfaceDocUrl);
+  const layers = () => paper()?.layers ?? {};
   const [focusDoc, focusHandle] = subscribeDoc<{
     selection: Record<string, true>;
     highlight: Record<string, true>;
@@ -61,7 +56,7 @@ export function SelectButton(): JSX.Element {
 
   // Hit detection, deletion, and dragging read layers imperatively at event
   // time. The registry keeps a live handle/doc accessor per layer, tracking the
-  // layer list from the `surface:layer` provider.
+  // layer list from the paper doc.
   const registry = getLayerDocs(layers);
   let shiftDown = false;
 
@@ -287,7 +282,7 @@ export function SelectButton(): JSX.Element {
 // each layer's handle from the repo and subscribing to it, then unsubscribing
 // and unregistering when the layer leaves the list (or the owner is disposed).
 function getLayerDocs(
-  layers: () => SurfaceLayers,
+  layers: () => Record<string, AutomergeUrl>,
 ): Map<AutomergeUrl, LayerEntry> {
   const repo = useRepo();
   const registry = new Map<AutomergeUrl, LayerEntry>();

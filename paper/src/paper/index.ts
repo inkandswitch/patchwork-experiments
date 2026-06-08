@@ -1,4 +1,4 @@
-import { PaperDatatype, PaperLayerDatatype } from "./datatype";
+import { PaperDatatype } from "./datatype";
 
 // The paper surface owns the "paper" datatype plus the shared "paper-layer"
 // datatype that the individual layer tools render.
@@ -10,15 +10,6 @@ export const plugins = [
     icon: "Square",
     async load() {
       return PaperDatatype;
-    },
-  },
-  {
-    type: "patchwork:datatype",
-    id: "paper-layer",
-    name: "Paper Layer",
-    icon: "Layers",
-    async load() {
-      return PaperLayerDatatype;
     },
   },
   {

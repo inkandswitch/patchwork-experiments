@@ -1,8 +1,13 @@
-import { createSignal, type JSX } from "solid-js";
+import { useRepo } from "@automerge/automerge-repo-solid-primitives";
 import { subscribeDoc } from "@inkandswitch/patchwork-providers-solid";
-import type { PaperLayerDoc } from "../paper/types";
-import type { Point, SurfaceState } from "../surface/types";
-import { createSurfacePointer } from "../surface/usePointer";
+import { createEffect, createSignal, type JSX } from "solid-js";
+import type {
+  DocWithLayers,
+  Point,
+  ShapeLayerDoc,
+  SurfacePointer,
+  SurfaceTool,
+} from "../surface/types";
 import type { LineShape } from "./LineLayerTool";
 
 const STROKE = "#64748b";
@@ -13,103 +18,126 @@ const MIN_POINT_DISTANCE = 2;
 // Discard strokes shorter than this so a stray click/tap leaves nothing behind.
 const MIN_LENGTH = 4;
 
-// Selects the freehand tool and draws strokes into the line layer, entirely
-// through the surface provider: selection over `surface:state`, the layer over
-// `surface:layer`, and the drag over `surface:pointer`. Every pointer sample
-// becomes a point in the stroke's outline; rendering expands it with
-// perfect-freehand. The button dispatches from its own element, so there's no
-// Solid context.
+// Selects the freehand tool and draws strokes into the line layer. Selection
+// and the drag pointer come over `surface:state`; the layer is read (and
+// created on first draw) from the paper doc that `surface:state` points to.
+// Every pointer sample becomes a point in the stroke's outline; rendering
+// expands it with perfect-freehand. The button dispatches from its own
+// element, so there's no Solid context.
 export function LineButton(): JSX.Element {
   let root!: HTMLButtonElement;
 
-  const [state, stateHandle] = subscribeDoc<SurfaceState>(() => root, {
-    type: "surface:state",
+  const [tool, toolHandle] = subscribeDoc<SurfaceTool>(() => root, {
+    type: "surface:tool",
   });
-  const [, layerHandle] = subscribeDoc<PaperLayerDoc>(() => root, {
-    type: "surface:layer",
-    toolId: "line",
-  });
-  const active = () => state()?.selectedTool === "line";
-
-  let index: number | undefined;
-  let last: Point | undefined;
+  const active = () => tool()?.toolId === "line-shape-layer";
   const [hovered, setHovered] = createSignal(false);
+  const repo = useRepo();
 
-  // Append a sample to the stroke, stored relative to the shape origin so the
-  // stroke can be moved by changing only `x`/`y`.
-  const addPoint = (shape: LineShape, point: Point) => {
-    const next = { x: point.x - shape.x, y: point.y - shape.y };
-    if (shape.outline?.type === "line") shape.outline.points.push(next);
-    else shape.outline = { type: "line", points: [next] };
-  };
+  const [getPointer] = subscribeDoc<SurfacePointer>(() => root, {
+    type: "surface:pointer",
+  });
 
-  const strokeLength = (shape: LineShape) => {
-    const points = shape.outline?.type === "line" ? shape.outline.points : [];
-    let total = 0;
-    for (let i = 1; i < points.length; i++) {
-      total += Math.hypot(
-        points[i].x - points[i - 1].x,
-        points[i].y - points[i - 1].y,
-      );
+  const getLayerHandle = async () => {
+    const surfaceUrl = getPointer()?.surfaceUrl;
+    if (!surfaceUrl) {
+      return;
     }
-    return total;
+
+    const surfaceHandle = await repo.find<DocWithLayers>(surfaceUrl);
+    const lineShapeLayerUrl = surfaceHandle.doc()?.layers["line-shape-layer"];
+
+    if (lineShapeLayerUrl) {
+      return repo.find<ShapeLayerDoc>(lineShapeLayerUrl);
+    }
+
+    const lineShapeLayerHandle = await repo.create2<ShapeLayerDoc>({
+      "@patchwork": {
+        type: "shape-layer",
+      },
+      title: "Lines",
+      shapes: [],
+    });
+    surfaceHandle.change(
+      (surface) =>
+        (surface.layers["line-shape-layer"] = lineShapeLayerHandle.url),
+    );
+
+    return lineShapeLayerHandle;
   };
 
-  createSurfacePointer(() => root, {
-    onPointerDown: (point) => {
-      const layer = layerHandle();
-      if (!active() || !layer) return;
-      layer.change((doc) => {
-        if (!doc.shapes) doc.shapes = [];
-        const z = doc.shapes.reduce((max, s) => Math.max(max, s.z ?? 0), 0) + 1;
-        const shape: LineShape = {
-          x: point.x,
-          y: point.y,
-          z,
-          outline: { type: "line", points: [{ x: 0, y: 0 }] },
-          stroke: STROKE,
-          strokeWidth: SIZE,
-        };
-        doc.shapes.push(shape);
-        index = doc.shapes.length - 1;
+  let currentLineIndex: number | null = null;
+
+  const onPointerDown = async () => {
+    const layerHandle = await getLayerHandle();
+    const position = getPointer()?.position;
+    if (!layerHandle || !position) {
+      return;
+    }
+
+    layerHandle.change(({ shapes }) => {
+      currentLineIndex = shapes.length;
+
+      shapes.push({
+        x: position.x,
+        y: position.y,
+        z: 1,
+        outline: { type: "line", points: [{ x: 0, y: 0 }] },
+        stroke: STROKE,
+        strokeWidth: SIZE,
+      } as LineShape);
+    });
+  };
+
+  const onPointerMove = async () => {
+    if (currentLineIndex === null) {
+      return;
+    }
+
+    const layerHandle = await getLayerHandle();
+    const position = getPointer()?.position;
+    if (!layerHandle || !position) {
+      return;
+    }
+
+    layerHandle.change(({ shapes }) => {
+      const currentShape = shapes[currentLineIndex!] as LineShape;
+
+      currentShape.outline?.points.push({
+        x: position.x - currentShape.x,
+        y: position.y - currentShape.y,
       });
-      last = point;
-    },
-    onPointerMove: (pointer) => {
-      const layer = layerHandle();
-      if (!active() || !layer || index === undefined || !pointer.isPressed)
-        return;
-      if (
-        last &&
-        Math.hypot(pointer.x - last.x, pointer.y - last.y) < MIN_POINT_DISTANCE
-      )
-        return;
-      layer.change((doc) => {
-        const shape = doc.shapes?.[index!] as LineShape | undefined;
-        if (shape) addPoint(shape, pointer);
-      });
-      last = { x: pointer.x, y: pointer.y };
-    },
-    onPointerUp: (point) => {
-      const layer = layerHandle();
-      if (active() && layer && index !== undefined) {
-        layer.change((doc) => {
-          const shape = doc.shapes?.[index!] as LineShape | undefined;
-          if (!shape) return;
-          addPoint(shape, point);
-          if (strokeLength(shape) < MIN_LENGTH) {
-            doc.shapes.splice(index!, 1);
-          }
-        });
-      }
-      index = undefined;
-      last = undefined;
-    },
+    });
+  };
+
+  const onPointerUp = () => {
+    currentLineIndex = null;
+  };
+
+  let wasPressed = false;
+
+  createEffect(() => {
+    const pointer = getPointer();
+    if (!pointer) {
+      return;
+    }
+
+    console.log("pointer effect", pointer, pointer.position);
+
+    if (!wasPressed && pointer.isPressed) {
+      onPointerDown();
+    } else if (wasPressed && !pointer.isPressed) {
+      onPointerUp();
+    } else {
+      onPointerMove();
+    }
+
+    wasPressed = pointer.isPressed;
   });
 
   const toggle = () => {
-    stateHandle()?.change((doc) => {
-      doc.selectedTool = doc.selectedTool === "line" ? "" : "line";
+    toolHandle()?.change((doc) => {
+      doc.toolId = doc.toolId === "line-shape-layer" ? "" : "line-shape-layer";
     });
   };
 

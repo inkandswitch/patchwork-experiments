@@ -1,6 +1,6 @@
 import { createEffect, type Accessor } from "solid-js";
-import { subscribe } from "@inkandswitch/patchwork-providers-solid";
-import type { Pointer, SurfacePointerState } from "./types";
+import { subscribeDoc } from "@inkandswitch/patchwork-providers-solid";
+import type { Pointer, SurfaceState } from "./types";
 
 export type { Pointer } from "./types";
 
@@ -12,10 +12,10 @@ export type PointerHandlers = {
 
 type ElementSource = HTMLElement | (() => HTMLElement | undefined);
 
-// Subscribes to the provider's `surface:pointer` state and turns the stream of
-// pointer snapshots into discrete down / move / up callbacks by watching the
-// `isPressed` edge. Returns an accessor for the current pointer so callers can
-// also read it directly.
+// Subscribes to the surface provider's `surface:state` document and turns the
+// stream of `state.pointer` snapshots into discrete down / move / up callbacks
+// by watching the `isPressed` edge. Returns an accessor for the current pointer
+// so callers can also read it directly.
 //
 // Sketch of the intended API:
 //
@@ -28,8 +28,8 @@ export function createSurfacePointer(
   element: ElementSource,
   handlers: PointerHandlers,
 ): Accessor<Pointer | undefined> {
-  const state = subscribe<SurfacePointerState>(element, {
-    type: "surface:pointer",
+  const [state] = subscribeDoc<SurfaceState>(element, {
+    type: "surface:state",
   });
   const pointer = () => state()?.pointer;
 
@@ -37,14 +37,30 @@ export function createSurfacePointer(
   createEffect(() => {
     const next = pointer();
     if (!next) return;
-    if (!wasPressed && next.isPressed) {
-      handlers.onPointerDown?.({ x: next.x, y: next.y });
-    } else if (wasPressed && !next.isPressed) {
-      handlers.onPointerUp?.({ x: next.x, y: next.y });
-    } else {
-      handlers.onPointerMove?.(next);
-    }
-    wasPressed = next.isPressed;
+    // Snapshot the values synchronously: `next` is a live store proxy that
+    // reconciles in place, so a deferred read could see a newer sample.
+    const snapshot: Pointer = {
+      x: next.x,
+      y: next.y,
+      isPressed: next.isPressed,
+    };
+    const wasPressedBefore = wasPressed;
+    wasPressed = snapshot.isPressed;
+
+    // Defer the consumer callbacks to a microtask. They typically mutate
+    // another Automerge doc (e.g. a layer); running them synchronously here
+    // would re-enter Automerge inside the `surface:state` change that produced
+    // this snapshot, which the wasm backend rejects ("recursive use of an
+    // object").
+    queueMicrotask(() => {
+      if (!wasPressedBefore && snapshot.isPressed) {
+        handlers.onPointerDown?.({ x: snapshot.x, y: snapshot.y });
+      } else if (wasPressedBefore && !snapshot.isPressed) {
+        handlers.onPointerUp?.({ x: snapshot.x, y: snapshot.y });
+      } else {
+        handlers.onPointerMove?.(snapshot);
+      }
+    });
   });
 
   return pointer;

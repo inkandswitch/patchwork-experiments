@@ -1,15 +1,15 @@
-import { render } from "solid-js/web";
-import { For } from "solid-js";
+import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import {
   RepoContext,
   useDocument,
 } from "@automerge/automerge-repo-solid-primitives";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
-import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
-import type { PaperLayerDoc, Point, Shape } from "../paper/types";
+import { For } from "solid-js";
+import { render } from "solid-js/web";
 import { resolveOutline } from "../select/geometry";
 import { freehandPath } from "./freehand";
 import "./line.css";
+import { Point, Shape, ShapeLayerDoc } from "../surface/types";
 
 // A freehand stroke. Its full path lives in `shape.outline` (a "line" variant
 // whose points are relative to the shape origin); `strokeWidth` is the pen
@@ -38,7 +38,7 @@ export const LineLayerTool: ToolRender = (handle, element) => {
   const dispose = render(
     () => (
       <RepoContext.Provider value={element.repo}>
-        <LineLayer url={(handle as DocHandle<PaperLayerDoc>).url} />
+        <LineLayer url={(handle as DocHandle<ShapeLayerDoc>).url} />
       </RepoContext.Provider>
     ),
     element,
@@ -47,7 +47,7 @@ export const LineLayerTool: ToolRender = (handle, element) => {
 };
 
 function LineLayer(props: { url: AutomergeUrl }) {
-  const [doc] = useDocument<PaperLayerDoc>(() => props.url);
+  const [doc] = useDocument<ShapeLayerDoc>(() => props.url);
   const shapes = () => (doc()?.shapes ?? []) as LineShape[];
 
   return (
