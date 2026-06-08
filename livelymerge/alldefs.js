@@ -341,22 +341,27 @@ w.filoutSelectionsForEntireSystem = function () {
 };
 w.browseRecentChanges = function () {
   // w.browseRecentChanges()
-  let panel = w.Lively.addMorph(w.PanelMorph.new(w.rect(400, 60, 400, 300)));
   let changes = w.recentChanges ?? [];
-  panel.buildMessageList(
-    changes.map((tuple) => tuple[0] + tuple[1]),
-    changes,
+  let panel = w.Lively.addMorph(
+    w.MethodListPanel.new(
+      null,
+      changes.map((tuple) => tuple[0] + tuple[1]),
+      changes,
+      'Recent Changes',
+    ),
   );
-  panel.setPanelTitle('Recent Changes');
   return panel;
 };
 w.browseSavedChanges = function () {
   // w.browseSavedChanges()
-  let panel = w.Lively.addMorph(w.PanelMorph.new(w.rect(400, 60, 400, 300)));
   let changes = JSON.parse(w.storageGetItem('recentChanges'));
-  panel.buildMessageList(
-    changes.map((tuple) => tuple[0] + tuple[1]),
-    changes,
+  let panel = w.Lively.addMorph(
+    w.MethodListPanel.new(
+      null,
+      changes.map((tuple) => tuple[0] + tuple[1]),
+      changes,
+      'Saved Changes',
+    ),
   );
   return panel;
 };
@@ -747,9 +752,10 @@ w.inspect = function (obj, optionalBounds) {
   } else {
     r = w.rect(500, 100, 300, 300);
   }
-  let p = w.PanelMorph.new(r);
+  let p = w.InspectorPanel.new(r, obj);
   w.Lively.addMorph(p);
-  return p.buildInspector(obj);
+  p.startStepping('showSelectedValue', false, 500);
+  return p;
 };
 w.inspectString = function (obj) {
   if (obj === null) return 'null';
@@ -840,10 +846,6 @@ w.newClass = function (name) {
   cls.name = name;
   console.log('Defining ' + name + '...');
   return cls;
-};
-w.newPanel = function (optionalRect) {
-  // w.newPanel().browseText('abc');
-  return w.Lively.addMorph(w.PanelMorph.new(optionalRect ?? w.rect(400, 60, 400, 300)));
 };
 w.noteMethodChanges = function (evalString) {
   /* w.recentChanges is an array of triples as in the last line here
@@ -937,7 +939,9 @@ w.populateLively = function () {
   );
   w.Lively.demoLine.startHandleStepping();
 
-  w.newPanel(welcomeRect).browseText(
+  w.Lively.addMorph(
+    w.MethodPanel.new(
+      welcomeRect,
     `The shapes you see are objects in Pyonpyon.  You can drag them around, copy and reshape them at will.  The tools for such manipulation are described in "halos" described in 'Halo help' in the screen menu.
 
 Everywhere you see text, you can edit it, search, and evaluate JavaScript expressions as in 'Text help' also in the screen menu.
@@ -946,6 +950,7 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
 
 `,
     'Welcome to Pyonpyon! (' + new Date().toLocaleString() + ')',
+    ),
   );
 
   w.Lively.showWorldMenuAt(w.pt(130, 40));
@@ -1543,7 +1548,10 @@ w.Morph.proto.initialize = function (bounds, shape) {
 };
 w.Morph.proto.inspect = function () {
   // w.Lively.submorphs.first().inspect()
-  return w.Lively.addMorph(w.PanelMorph.new(w.rect(500, 100, 300, 300))).buildInspector(this);
+  let p = w.InspectorPanel.new(w.rect(500, 100, 300, 300), this);
+  w.Lively.addMorph(p);
+  p.startStepping('showSelectedValue', false, 500);
+  return p;
 };
 /** Optional halo menu: `{ items: string[], onSelect(item, morph) }` or null. */
 w.Morph.proto.morphMenu = function () {
@@ -2729,8 +2737,7 @@ w.HaloMorph.proto.pointerDownOnHandle = function (handle, pt, evt) {
     }
     case 'Browse': {
       let className = this.target && this.target.className ? this.target.className : 'Morph';
-      let browser = w.newPanel();
-      browser.buildBrowser();
+      let browser = w.Lively.addMorph(w.BrowserPanel.new());
       browser.classPane.setSelectionString(className);
       break;
     }
@@ -2968,279 +2975,15 @@ w.promptOkToCancelEditsMenu = function (world, pt, onResult) {
 };
 
 w.PanelMorph = w.Morph.subClass('PanelMorph');
+w.PanelMorph.proto.defaultRect = function () {
+  return w.rect(400, 60, 400, 300);
+};
+/** Resolve optional bounds for panel {@link initialize}. */
+w.PanelMorph.proto.boundsForNew = function (optionalRect) {
+  return optionalRect != null ? optionalRect : this.defaultRect();
+};
 w.PanelMorph.proto.acceptsDroppingMorphs = function () {
   return false;
-};
-w.PanelMorph.proto.browseText = function (string, optionalTitle) {
-  let panelBounds = this.paneLayoutBounds();
-  this.textPane = this.addMorph(w.TextPane.new(panelBounds, w.rect(0.0, 0.0, 1.0, 1.0)));
-  this.textPane.setText(string);
-  this.setPanelTitle(optionalTitle ? optionalTitle : 'Text Panel');
-  this.layoutChrome();
-  this.relayoutContentPanes();
-  return this;
-};
-w.PanelMorph.proto.browseMethod = function (className, methodName) {
-  let methodString = w[className].proto[methodName].toString();
-  // need to handle class name ends with .class
-  return this.browseText(
-    'w.' + className + '.proto.' + methodName + ' = ' + methodString,
-    className + ' ' + methodName,
-  );
-};
-w.PanelMorph.proto.buildBrowser = function () {
-  let panel = this;
-  let panelBounds = panel.paneLayoutBounds();
-  this.classPane = this.addMorph(w.ListPane.new(panelBounds, w.rect(0.0, 0.0, 0.4, 0.4)));
-
-  this.classPane.setList(['w.'].concat(w.allClassNamesWithStatics()));
-  this.classPane.setPaneMenu({
-    items: ['filout class to OS paste buffer'],
-    onSelect: (item, pane) => {
-      if (item == 'filout class to OS paste buffer') this.filoutSelectedClassToOSPaste();
-    },
-  });
-  this.classPane.onSelect((classSelection) => {
-    let applyClass = () => {
-      console.log('this.classOrInst = ' + classSelection);
-      this.selectedClass = classSelection;
-      this.selectedMethod = null;
-      this.updateBrowserTitle();
-      let obj = null;
-      if (classSelection == 'w.') obj = w;
-      else if (classSelection.endsWith('.class')) {
-        this.classOnly = classSelection.split('.')[0];
-        obj = w[this.classOnly];
-      } else obj = w[classSelection].proto;
-      let msgList = Object.getOwnPropertyNames(obj).sort();
-      if (classSelection.endsWith('.class')) {
-        msgList = msgList.filter((sel) => ['proto', 'name'].indexOf(sel) == -1);
-      }
-      msgList = msgList.filter((msg) => msg[0] == msg[0].toLowerCase());
-      this.messagePane.setList(msgList);
-    };
-    if (this.methodPane && this.methodPane.hasUnsavedChanges()) {
-      if (this.selectedClass != null && classSelection === this.selectedClass) return;
-      this.promptOkToCancelEdits((okToCancel) => {
-        if (!okToCancel) {
-          if (this.selectedClass != null)
-            this.classPane.setSelectionString(this.selectedClass, true);
-          if (this.selectedMethod != null)
-            this.messagePane.setSelectionString(this.selectedMethod, true);
-          return;
-        }
-        this.methodPane.setText('Method text', { force: true });
-        applyClass();
-      });
-      return;
-    }
-    applyClass();
-  });
-
-  this.messagePane = this.addMorph(w.ListPane.new(panelBounds, w.rect(0.4, 0.0, 0.6, 0.4)));
-  console.log('PanelMorph.messagePane.setList (["message names"])...');
-  this.messagePane.setList(['message names']);
-  this.messagePane.setPaneMenu({
-    items: ['spawn this method', 'filout method to OS paste buffer'],
-    onSelect: (item, pane) => {
-      if (item == 'spawn this method') this.browseSelectedMethod();
-      if (item == 'filout method to OS paste buffer') this.filoutSelectedMethodToOSPaste();
-    },
-  });
-  this.messagePane.onSelect((methodSelection, shiftKey) => {
-    let applyMethod = () => {
-      console.log('this.selectedMethod = ' + methodSelection);
-      this.selectedMethod = methodSelection;
-      this.updateBrowserTitle();
-      let methodString = null;
-      let headerString = null;
-      if (this.selectedClass == 'w.') {
-        methodString = w[this.selectedMethod].toString();
-        headerString = 'w.' + this.selectedMethod + ' = ';
-      } else if (this.selectedClass.endsWith('.class')) {
-        methodString = w[this.classOnly][this.selectedMethod].toString();
-        headerString = 'w.' + this.classOnly + '.' + this.selectedMethod + ' = ';
-      } else {
-        methodString = w[this.selectedClass].proto[this.selectedMethod].toString();
-        headerString = 'w.' + this.selectedClass + '.proto.' + this.selectedMethod + ' = ';
-      }
-      this.methodPane.setText(headerString + methodString, { force: true });
-    };
-    if (this.methodPane && this.methodPane.hasUnsavedChanges()) {
-      if (this.selectedMethod != null && methodSelection === this.selectedMethod) return;
-      this.promptOkToCancelEdits((okToCancel) => {
-        if (!okToCancel) {
-          if (this.selectedMethod != null)
-            this.messagePane.setSelectionString(this.selectedMethod, true);
-          return;
-        }
-        applyMethod();
-      });
-      return;
-    }
-    applyMethod();
-  });
-  this.methodPane = this.addMorph(w.TextPane.new(panelBounds, w.rect(0.0, 0.4, 1.0, 0.6)));
-  this.methodPane.setText('Method text');
-  this.setPanelTitle('System Browser');
-  this.layoutChrome();
-  this.relayoutContentPanes();
-};
-w.PanelMorph.proto.buildInspector = function (target) {
-  this.target = target;
-  this.varValue = null;
-  this.selectedVarName = null;
-  let panelBounds = this.paneLayoutBounds();
-  this.varsPane = this.addMorph(w.ListPane.new(panelBounds, w.rect(0.0, 0.0, 0.3, 0.6)));
-  this.varsPane.setList(Object.getOwnPropertyNames(this.target));
-  this.varsPane.setPaneMenu({
-    items: ['inspect selected value'],
-    onSelect: (item, pane) => {
-      if (item == 'inspect selected value' && this.selectedVarName != null)
-        this.showSelectedValue(true, null);
-    },
-  });
-  this.varsPane.onSelect((varName, shiftKey) => {
-    let applyVar = (printOpts) => {
-      this.selectedVarName = varName;
-      this.showSelectedValue(shiftKey, printOpts);
-    };
-    if (this.printPane && this.printPane.hasUnsavedChanges()) {
-      if (this.selectedVarName != null && varName === this.selectedVarName) return;
-      this.promptOkToCancelEdits((okToCancel) => {
-        if (!okToCancel) {
-          if (this.selectedVarName != null)
-            this.varsPane.setSelectionString(this.selectedVarName, true);
-          return;
-        }
-        applyVar({ force: true });
-      });
-      return;
-    }
-    applyVar(null);
-  });
-  this.printPane = this.addMorph(w.TextPane.new(panelBounds, w.rect(0.3, 0.0, 0.7, 0.6)));
-  this.printPane.setText('Var value asString()');
-  this.evalPane = this.addMorph(w.TextPane.new(panelBounds, w.rect(0.0, 0.6, 1.0, 0.4)));
-  this.evalPane.setText('Var value asString()');
-  this.evalPane.setText('Eval here with this bound to this ' + this.target.className);
-  this.evalPane.contentPane.setWorkspaceObj(this.target);
-  this.startStepping('showSelectedValue', false, 500);
-  this.setPanelTitle('Inspector ' + this.target.className);
-  this.layoutChrome();
-  this.relayoutContentPanes();
-};
-w.PanelMorph.proto.browseSearch = function (searchString) {
-  // w.newPanel().browseSearch('Pane')
-  this.searchString = searchString;
-  let hits = w.methodsContaining(searchString);
-  if (!hits || hits.length === 0) {
-    let world = this.world ? this.world() : w.Lively;
-    if (!world) return;
-    let pt = world.pointerLocation ? world.pointerLocation.copy() : w.pt(120, 120);
-    w.showFindNoMatchesMenu(world, pt, searchString);
-    this.remove();
-    return;
-  }
-  this.buildMessageList(hits);
-  this.setPanelTitle('Occurrences of "' + searchString + '"');
-};
-w.PanelMorph.proto.showSelectedValue = function (shiftKey, printOpts) {
-  if (!this.selectedVarName) return;
-  this.varValue = this.target[this.selectedVarName];
-  if (shiftKey) {
-    w.inspect(this.varValue, this.rectForSpawnedPanel(28, 320, 220));
-  } else {
-    this.printPane.setText(w.inspectString(this.varValue), printOpts);
-  }
-};
-w.PanelMorph.proto.filoutSelectedClassToOSPaste = function () {
-  if (!this.selectedClass) return;
-  let classSelection = this.selectedClass;
-  // Browser filout should export only an actual selected class, not whole-world methods.
-  if (classSelection == 'w.') return;
-  let filout = w.filoutStringForSelection(classSelection, {
-    includeHeader: true,
-    includeClassDef: true,
-  });
-  if (!filout) return;
-  w.addPasteBufferItem(filout);
-  if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText)
-    navigator.clipboard.writeText(filout).catch(() => {});
-};
-w.PanelMorph.proto.filoutSelectedMethodToOSPaste = function () {
-  let filout = this.selectedMethod;
-  if (!filout) return;
-  w.addPasteBufferItem(filout);
-  if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText)
-    navigator.clipboard.writeText(filout).catch(() => {});
-};
-w.PanelMorph.proto.browseSelectedMethod = function () {
-  if (!this.selectedClass || !this.selectedMethod) return;
-  let methodString = null;
-  let headerString = null;
-  if (this.selectedClass == 'w.') {
-    methodString = w[this.selectedMethod].toString();
-    headerString = 'w.' + this.selectedMethod + ' = ';
-  } else if (this.selectedClass.endsWith('.class')) {
-    let classOnly = this.selectedClass.split('.')[0];
-    methodString = w[classOnly][this.selectedMethod].toString();
-    headerString = 'w.' + classOnly + '.' + this.selectedMethod + ' = ';
-  } else {
-    methodString = w[this.selectedClass].proto[this.selectedMethod].toString();
-    headerString = 'w.' + this.selectedClass + '.proto.' + this.selectedMethod + ' = ';
-  }
-  let np = w.newPanel(this.rectForSpawnedPanel(28, 320, 220));
-  np.browseText(headerString + methodString, this.selectedClass + ' ' + this.selectedMethod);
-};
-w.PanelMorph.proto.buildMessageList = function (methodSpecs, recentMethodsIfAny) {
-  let panel = this;
-  this.methodSpecs = methodSpecs;
-  this.recents = recentMethodsIfAny;
-  this._occurrenceLastSpec = null;
-  let panelBounds = this.paneLayoutBounds();
-  this.methodsPane = this.addMorph(w.ListPane.new(panelBounds, w.rect(0.0, 0.0, 1.0, 0.4)));
-  this.methodsPane.setList(methodSpecs);
-  this.methodsPane.onSelect((spec, shiftKey) => {
-    let applySpec = () => {
-      let methodString = null;
-      let preamble = null;
-      if (spec.includes('[')) {
-        methodString = this.methodFromRecentSpec(spec);
-        preamble = spec.slice(0, spec.indexOf('[') - 1) + ' = ';
-      } else {
-        methodString = w.methodFromSpec(spec);
-        preamble = (spec.startsWith('w.') ? spec : 'w.' + spec) + ' = ';
-      }
-      this.printPane.setText(preamble + methodString, { force: true });
-      this._occurrenceLastSpec = spec;
-      console.log('** searchString = ' + this.searchString);
-      if (this.searchString) this.printPane.contentPane.shape.selectSearchString(this.searchString);
-      if (shiftKey) {
-        let np = w.Lively.addMorph(w.PanelMorph.new(panel.rectForSpawnedPanel(28, 320, 220)));
-        np.browseText(preamble + methodString);
-        np.setPanelTitle(spec);
-      }
-    };
-    if (this.printPane && this.printPane.hasUnsavedChanges()) {
-      if (this._occurrenceLastSpec != null && spec === this._occurrenceLastSpec) return;
-      this.promptOkToCancelEdits((okToCancel) => {
-        if (!okToCancel) {
-          if (this._occurrenceLastSpec != null)
-            this.methodsPane.setSelectionString(this._occurrenceLastSpec, true);
-          return;
-        }
-        applySpec();
-      });
-      return;
-    }
-    applySpec();
-  });
-  this.printPane = this.addMorph(w.TextPane.new(panelBounds, w.rect(0.0, 0.4, 1.0, 0.6)));
-  this.printPane.setText('Selected method');
-  this.setPanelTitle('Method list');
-  this.layoutChrome();
-  this.relayoutContentPanes();
 };
 w.PanelMorph.proto.contentMorphs = function () {
   return this.submorphs.filter(
@@ -3300,8 +3043,6 @@ w.PanelMorph.proto.initialize = function (initialBounds) {
   this.collapsed = false;
   this._savedBounds = null;
   this._stashedContent = [];
-  this.selectedClass = null;
-  this.selectedMethod = null;
   let b = this.shape.getBounds();
   let th = this.titleBarHeight;
   let bw = this.titleButtonWidth;
@@ -3492,21 +3233,6 @@ w.PanelMorph.proto.finishStickyCollapsedTitleBarDrag = function (p, evt) {
   this.world().setPointerFocus(null);
   return true;
 };
-w.PanelMorph.proto.updateBrowserTitle = function () {
-  let t = 'System Browser';
-  if (this.selectedClass) t = this.selectedClass;
-  if (this.selectedMethod) t = this.selectedClass + ' ' + this.selectedMethod;
-  this.setPanelTitle(t);
-};
-w.PanelMorph.proto.methodFromRecentSpec = function (spec) {
-  // Private method for recent methods browsing
-  // spec includes a bracketed date
-  let found = null;
-  this.recents.forEach((tuple) => {
-    if (tuple[0] + tuple[1] == spec) found = tuple[2];
-  });
-  return found;
-};
 w.PanelMorph.proto.titleBarRect = function () {
   let b = this.shape.getBounds();
   return w.rect(b.topLeft.x, b.topLeft.y, b.width(), this.titleBarHeight);
@@ -3650,6 +3376,324 @@ w.PanelMorph.proto.setBounds = function (newBounds) {
   w.Morph.proto.setBounds.call(this, newBounds);
   this.layoutChrome();
   this.relayoutContentPanes();
+};
+
+w.MethodPanel = w.PanelMorph.subClass('MethodPanel');
+/** Single full-height {@link TextPane} for method source or help text. */
+w.MethodPanel.proto.initTextPane = function (string, optionalTitle) {
+  let panelBounds = this.paneLayoutBounds();
+  this.textPane = this.addMorph(w.TextPane.new(panelBounds, w.rect(0.0, 0.0, 1.0, 1.0)));
+  this.textPane.setText(string);
+  this.setPanelTitle(optionalTitle ? optionalTitle : 'Text Panel');
+  this.layoutChrome();
+  this.relayoutContentPanes();
+};
+w.MethodPanel.proto.initialize = function (initialBounds, string, optionalTitle) {
+  w.PanelMorph.proto.initialize.call(this, this.boundsForNew(initialBounds));
+  this.initTextPane(string != null ? string : '', optionalTitle);
+};
+
+w.BrowserPanel = w.PanelMorph.subClass('BrowserPanel');
+/** Class list (upper-left) in the system browser. */
+w.BrowserPanel.proto.initClassPane = function () {
+  let panelBounds = this.paneLayoutBounds();
+  this.classPane = this.addMorph(w.ListPane.new(panelBounds, w.rect(0.0, 0.0, 0.4, 0.4)));
+  this.classPane.setList(['w.'].concat(w.allClassNamesWithStatics()));
+  this.classPane.setPaneMenu({
+    items: ['filout class to OS paste buffer'],
+    onSelect: (item, pane) => {
+      if (item == 'filout class to OS paste buffer') this.filoutSelectedClassToOSPaste();
+    },
+  });
+  this.classPane.onSelect((classSelection) => {
+    let applyClass = () => {
+      console.log('this.classOrInst = ' + classSelection);
+      this.selectedClass = classSelection;
+      this.selectedMethod = null;
+      this.updateBrowserTitle();
+      let obj = null;
+      if (classSelection == 'w.') obj = w;
+      else if (classSelection.endsWith('.class')) {
+        this.classOnly = classSelection.split('.')[0];
+        obj = w[this.classOnly];
+      } else obj = w[classSelection].proto;
+      let msgList = Object.getOwnPropertyNames(obj).sort();
+      if (classSelection.endsWith('.class')) {
+        msgList = msgList.filter((sel) => ['proto', 'name'].indexOf(sel) == -1);
+      }
+      msgList = msgList.filter((msg) => msg[0] == msg[0].toLowerCase());
+      this.messagePane.setList(msgList);
+    };
+    if (this.methodPane && this.methodPane.hasUnsavedChanges()) {
+      if (this.selectedClass != null && classSelection === this.selectedClass) return;
+      this.promptOkToCancelEdits((okToCancel) => {
+        if (!okToCancel) {
+          if (this.selectedClass != null)
+            this.classPane.setSelectionString(this.selectedClass, true);
+          if (this.selectedMethod != null)
+            this.messagePane.setSelectionString(this.selectedMethod, true);
+          return;
+        }
+        this.methodPane.setText('Method text', { force: true });
+        applyClass();
+      });
+      return;
+    }
+    applyClass();
+  });
+};
+/** Method name list (upper-right) in the system browser. */
+w.BrowserPanel.proto.initMessagePane = function () {
+  let panelBounds = this.paneLayoutBounds();
+  this.messagePane = this.addMorph(w.ListPane.new(panelBounds, w.rect(0.4, 0.0, 0.6, 0.4)));
+  this.messagePane.setList(['message names']);
+  this.messagePane.setPaneMenu({
+    items: ['spawn this method', 'filout method to OS paste buffer'],
+    onSelect: (item, pane) => {
+      if (item == 'spawn this method') this.browseSelectedMethod();
+      if (item == 'filout method to OS paste buffer') this.filoutSelectedMethodToOSPaste();
+    },
+  });
+  this.messagePane.onSelect((methodSelection, shiftKey) => {
+    let applyMethod = () => {
+      console.log('this.selectedMethod = ' + methodSelection);
+      this.selectedMethod = methodSelection;
+      this.updateBrowserTitle();
+      let methodString = null;
+      let headerString = null;
+      if (this.selectedClass == 'w.') {
+        methodString = w[this.selectedMethod].toString();
+        headerString = 'w.' + this.selectedMethod + ' = ';
+      } else if (this.selectedClass.endsWith('.class')) {
+        methodString = w[this.classOnly][this.selectedMethod].toString();
+        headerString = 'w.' + this.classOnly + '.' + this.selectedMethod + ' = ';
+      } else {
+        methodString = w[this.selectedClass].proto[this.selectedMethod].toString();
+        headerString = 'w.' + this.selectedClass + '.proto.' + this.selectedMethod + ' = ';
+      }
+      this.methodPane.setText(headerString + methodString, { force: true });
+    };
+    if (this.methodPane && this.methodPane.hasUnsavedChanges()) {
+      if (this.selectedMethod != null && methodSelection === this.selectedMethod) return;
+      this.promptOkToCancelEdits((okToCancel) => {
+        if (!okToCancel) {
+          if (this.selectedMethod != null)
+            this.messagePane.setSelectionString(this.selectedMethod, true);
+          return;
+        }
+        applyMethod();
+      });
+      return;
+    }
+    applyMethod();
+  });
+};
+/** Editable method source (lower) in the system browser. */
+w.BrowserPanel.proto.initMethodPane = function () {
+  let panelBounds = this.paneLayoutBounds();
+  this.methodPane = this.addMorph(w.TextPane.new(panelBounds, w.rect(0.0, 0.4, 1.0, 0.6)));
+  this.methodPane.setText('Method text');
+};
+w.BrowserPanel.proto.initialize = function (initialBounds) {
+  w.PanelMorph.proto.initialize.call(this, this.boundsForNew(initialBounds));
+  this.selectedClass = null;
+  this.selectedMethod = null;
+  this.initClassPane();
+  this.initMessagePane();
+  this.initMethodPane();
+  this.setPanelTitle('System Browser');
+  this.layoutChrome();
+  this.relayoutContentPanes();
+};
+w.BrowserPanel.proto.updateBrowserTitle = function () {
+  let t = 'System Browser';
+  if (this.selectedClass) t = this.selectedClass;
+  if (this.selectedMethod) t = this.selectedClass + ' ' + this.selectedMethod;
+  this.setPanelTitle(t);
+};
+w.BrowserPanel.proto.filoutSelectedClassToOSPaste = function () {
+  if (!this.selectedClass) return;
+  let classSelection = this.selectedClass;
+  if (classSelection == 'w.') return;
+  let filout = w.filoutStringForSelection(classSelection, {
+    includeHeader: true,
+    includeClassDef: true,
+  });
+  if (!filout) return;
+  w.addPasteBufferItem(filout);
+  if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText)
+    navigator.clipboard.writeText(filout).catch(() => {});
+};
+w.BrowserPanel.proto.filoutSelectedMethodToOSPaste = function () {
+  let filout = this.selectedMethod;
+  if (!filout) return;
+  w.addPasteBufferItem(filout);
+  if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText)
+    navigator.clipboard.writeText(filout).catch(() => {});
+};
+w.BrowserPanel.proto.browseSelectedMethod = function () {
+  if (!this.selectedClass || !this.selectedMethod) return;
+  let methodString = null;
+  let headerString = null;
+  if (this.selectedClass == 'w.') {
+    methodString = w[this.selectedMethod].toString();
+    headerString = 'w.' + this.selectedMethod + ' = ';
+  } else if (this.selectedClass.endsWith('.class')) {
+    let classOnly = this.selectedClass.split('.')[0];
+    methodString = w[classOnly][this.selectedMethod].toString();
+    headerString = 'w.' + classOnly + '.' + this.selectedMethod + ' = ';
+  } else {
+    methodString = w[this.selectedClass].proto[this.selectedMethod].toString();
+    headerString = 'w.' + this.selectedClass + '.proto.' + this.selectedMethod + ' = ';
+  }
+  w.Lively.addMorph(
+    w.MethodPanel.new(
+      this.rectForSpawnedPanel(28, 320, 220),
+      headerString + methodString,
+      this.selectedClass + ' ' + this.selectedMethod,
+    ),
+  );
+};
+
+w.InspectorPanel = w.PanelMorph.subClass('InspectorPanel');
+w.InspectorPanel.proto.defaultRect = function () {
+  return w.rect(500, 100, 300, 300);
+};
+/** Instance variable list (left) in the inspector. */
+w.InspectorPanel.proto.initVarsPane = function () {
+  let panelBounds = this.paneLayoutBounds();
+  this.varsPane = this.addMorph(w.ListPane.new(panelBounds, w.rect(0.0, 0.0, 0.3, 0.6)));
+  this.varsPane.setList(Object.getOwnPropertyNames(this.target));
+  this.varsPane.setPaneMenu({
+    items: ['inspect selected value'],
+    onSelect: (item, pane) => {
+      if (item == 'inspect selected value' && this.selectedVarName != null)
+        this.showSelectedValue(true, null);
+    },
+  });
+  this.varsPane.onSelect((varName, shiftKey) => {
+    let applyVar = (printOpts) => {
+      this.selectedVarName = varName;
+      this.showSelectedValue(shiftKey, printOpts);
+    };
+    if (this.printPane && this.printPane.hasUnsavedChanges()) {
+      if (this.selectedVarName != null && varName === this.selectedVarName) return;
+      this.promptOkToCancelEdits((okToCancel) => {
+        if (!okToCancel) {
+          if (this.selectedVarName != null)
+            this.varsPane.setSelectionString(this.selectedVarName, true);
+          return;
+        }
+        applyVar({ force: true });
+      });
+      return;
+    }
+    applyVar(null);
+  });
+};
+/** Print-it and eval panes (right / bottom) in the inspector. */
+w.InspectorPanel.proto.initPrintAndEvalPanes = function () {
+  let panelBounds = this.paneLayoutBounds();
+  this.printPane = this.addMorph(w.TextPane.new(panelBounds, w.rect(0.3, 0.0, 0.7, 0.6)));
+  this.printPane.setText('Var value asString()');
+  this.evalPane = this.addMorph(w.TextPane.new(panelBounds, w.rect(0.0, 0.6, 1.0, 0.4)));
+  this.evalPane.setText('Eval here with this bound to this ' + this.target.className);
+  this.evalPane.contentPane.setWorkspaceObj(this.target);
+};
+w.InspectorPanel.proto.initialize = function (initialBounds, target) {
+  this.target = target;
+  w.PanelMorph.proto.initialize.call(this, this.boundsForNew(initialBounds));
+  this.varValue = null;
+  this.selectedVarName = null;
+  this.initVarsPane();
+  this.initPrintAndEvalPanes();
+  this.setPanelTitle('Inspector ' + this.target.className);
+  this.layoutChrome();
+  this.relayoutContentPanes();
+};
+w.InspectorPanel.proto.showSelectedValue = function (shiftKey, printOpts) {
+  if (!this.selectedVarName) return;
+  this.varValue = this.target[this.selectedVarName];
+  if (shiftKey) {
+    w.inspect(this.varValue, this.rectForSpawnedPanel(28, 320, 220));
+  } else {
+    this.printPane.setText(w.inspectString(this.varValue), printOpts);
+  }
+};
+
+w.MethodListPanel = w.PanelMorph.subClass('MethodListPanel');
+/** Method-spec list (upper) for search results and recent changes. */
+w.MethodListPanel.proto.initMethodsPane = function () {
+  let panelBounds = this.paneLayoutBounds();
+  this.methodsPane = this.addMorph(w.ListPane.new(panelBounds, w.rect(0.0, 0.0, 1.0, 0.4)));
+  this.methodsPane.setList(this.methodSpecs);
+  this.methodsPane.onSelect((spec, shiftKey) => {
+    let applySpec = () => {
+      let methodString = null;
+      let preamble = null;
+      if (spec.includes('[')) {
+        methodString = this.methodFromRecentSpec(spec);
+        preamble = spec.slice(0, spec.indexOf('[') - 1) + ' = ';
+      } else {
+        methodString = w.methodFromSpec(spec);
+        preamble = (spec.startsWith('w.') ? spec : 'w.' + spec) + ' = ';
+      }
+      this.printPane.setText(preamble + methodString, { force: true });
+      this._occurrenceLastSpec = spec;
+      if (this.searchString)
+        this.printPane.contentPane.shape.selectSearchString(this.searchString);
+      if (shiftKey) {
+        w.Lively.addMorph(
+          w.MethodPanel.new(this.rectForSpawnedPanel(28, 320, 220), preamble + methodString, spec),
+        );
+      }
+    };
+    if (this.printPane && this.printPane.hasUnsavedChanges()) {
+      if (this._occurrenceLastSpec != null && spec === this._occurrenceLastSpec) return;
+      this.promptOkToCancelEdits((okToCancel) => {
+        if (!okToCancel) {
+          if (this._occurrenceLastSpec != null)
+            this.methodsPane.setSelectionString(this._occurrenceLastSpec, true);
+          return;
+        }
+        applySpec();
+      });
+      return;
+    }
+    applySpec();
+  });
+};
+/** Method source preview (lower) for search / recent-changes panels. */
+w.MethodListPanel.proto.initPrintPane = function () {
+  let panelBounds = this.paneLayoutBounds();
+  this.printPane = this.addMorph(w.TextPane.new(panelBounds, w.rect(0.0, 0.4, 1.0, 0.6)));
+  this.printPane.setText('Selected method');
+};
+w.MethodListPanel.proto.initialize = function (
+  initialBounds,
+  methodSpecs,
+  recentMethodsIfAny,
+  optionalTitle,
+  searchStringIfAny,
+) {
+  this.methodSpecs = methodSpecs;
+  this.recents = recentMethodsIfAny;
+  this.searchString = searchStringIfAny || null;
+  this._occurrenceLastSpec = null;
+  w.PanelMorph.proto.initialize.call(this, this.boundsForNew(initialBounds));
+  this.initMethodsPane();
+  this.initPrintPane();
+  this.setPanelTitle(optionalTitle || 'Method list');
+  this.layoutChrome();
+  this.relayoutContentPanes();
+};
+w.MethodListPanel.proto.methodFromRecentSpec = function (spec) {
+  let found = null;
+  if (!this.recents) return found;
+  this.recents.forEach((tuple) => {
+    if (tuple[0] + tuple[1] == spec) found = tuple[2];
+  });
+  return found;
 };
 
 w.ScrollPane = w.Morph.subClass('ScrollPane');
@@ -5394,7 +5438,7 @@ w.WorldMorph.proto.setPointerFocus = function (morphOrNull) {
   else console.log('setting pointerFocus to null ');
 };
 w.WorldMorph.proto.showHaloHelp = function () {
-  w.newPanel().browseText(
+  w.Lively.addMorph(w.MethodPanel.new(null, 
     `HALOS
 Halos provide ten "handles" for manipulating morphs.  Halos are accessed by a meta-click (see also below) and the handles offer the following functions, not all of which will always be available...
 'R' - Rotate: Drag the handle to rotate the target object
@@ -5415,10 +5459,11 @@ Note that on platforms that do not offer meta keys, halos can still be accessed 
   and w.LONG_CLICK_MOVE_CANCEL_PX ==> 7 pixels]
 `,
     'Halo help',
+    ),
   );
 };
 w.WorldMorph.proto.showMorphicHelp = function () {
-  w.newPanel().browseText(
+  w.Lively.addMorph(w.MethodPanel.new(null, 
     `MORPHIC
 The graphics model of this system is Morphic, and the UI is taken very closely from Squeak and Lively.
 
@@ -5428,15 +5473,16 @@ Each user is associated with a "hand" that can pick up any morph (removing it fr
 Every morph has a 2-D coordinate transform between its bounds (in its owner's oordinate system) and its submorphs and other graphical content)).
 Please note: hands and transforms are not currently used`,
     'Morphic help',
+    ),
   );
 };
 w.WorldMorph.proto.showStatus = function () {
-  w.newPanel().browseText(
+  w.Lively.addMorph(w.MethodPanel.new(null, 
     `Current to-do list for PyonPyon, updated 5/03/26...
     Edit content then ctrl-S here
 [ ] Test: w.browser function to filout class or method
-[ ] Refactor PanelMorph with subclasses for
-        Browser, Inspector, and MethodList
+[x] Refactor PanelMorph with subclasses for
+        Browser, Inspector, MethodList, and Method
 [ ] Separate the code for Title Bars?
 [ ] Browser template for new class
 [ ] Syle panel - border width, color, fill color
@@ -5447,10 +5493,11 @@ w.WorldMorph.proto.showStatus = function () {
 [ ] Assemble "Demo: " searches - like for bugs
 `,
     'Current Status',
+    ),
   );
 };
 w.WorldMorph.proto.showTextHelp = function () {
-  w.newPanel().browseText(
+  w.Lively.addMorph(w.MethodPanel.new(null, 
     `Text editing in this system is very simple - there are no automatic pop-ups or type-aheads.  The following command-keys provide basic edits:
 [Note: currently on a Mac, you must stick to the designated form of meta key to achieve the desired results]
   ctrl-A: select the entire string
@@ -5473,6 +5520,7 @@ A couple more nice features:
   Careful double clicking next to most bracket characters will select matching parentheses and other brackets (even // and /*).  Double click at the beginning or end ot the entire text will select all of it.
   If you shift-click near either end of a selection it lets you change that end of the selection range`,
     'Text help',
+    ),
   );
 };
 /** Brackets only — handlers match with `item.endsWith(caption)`. */
@@ -5520,8 +5568,17 @@ w.WorldMorph.proto.showWorldMenuAt = function (pt, optsIfAny) {
   // (avoids referencing outer `theMenu` before assignment / TDZ in the arrow closure).
   let menu = w.MenuMorph.new(pt.extent(w.pt(220, 24 + items.length * 20)), items, function (item) {
     let cap = w.menuItemCaption(item);
-    if (item == 'Status') w.newPanel().browseMethod('WorldMorph', 'showStatus');
-    if (item == 'System browser') w.newPanel().buildBrowser();
+    if (item == 'Status') {
+      let methodString = w.WorldMorph.proto.showStatus.toString();
+      w.Lively.addMorph(
+        w.MethodPanel.new(
+          null,
+          'w.WorldMorph.proto.showStatus = ' + methodString,
+          'WorldMorph showStatus',
+        ),
+      );
+    }
+    if (item == 'System browser') w.Lively.addMorph(w.BrowserPanel.new());
     if (item == 'Recent changes') w.browseRecentChanges();
     if (item == 'Morphic help') this.world().showMorphicHelp();
     if (item == 'Halo help') this.world().showHaloHelp();
@@ -6558,7 +6615,9 @@ w.TextBox.proto.handleKeyboardShortcuts = function (evt) {
         w.showFindNoMatchesMenu(world, pt, term);
       }
     } else {
-      w.newPanel().browseSearch(term);
+      w.Lively.addMorph(
+        w.MethodListPanel.new(null, hits, null, 'Occurrences of "' + term + '"', term),
+      );
     }
   }
   if (k == 's') {
