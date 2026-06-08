@@ -16,7 +16,7 @@ import { SelectionOverlay } from "../select/SelectionOverlay";
 import "./paper.css";
 import { DocWithLayers } from "../surface/types";
 
-const VERSION = "0.0.27";
+const VERSION = "0.0.29";
 
 // The surface tool: wraps the stack of layer <patchwork-view>s in a
 // SurfaceProvider so the layer buttons can drive the canvas purely through the

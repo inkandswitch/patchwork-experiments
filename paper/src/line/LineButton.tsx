@@ -71,7 +71,7 @@ export function LineButton(): JSX.Element {
   const onPointerDown = async () => {
     const layerHandle = await getLayerHandle();
     const position = getPointer()?.position;
-    if (!layerHandle || !position) {
+    if (!layerHandle || !position || tool()?.toolId !== "line-shape-layer") {
       return;
     }
 
@@ -121,8 +121,6 @@ export function LineButton(): JSX.Element {
     if (!pointer) {
       return;
     }
-
-    console.log("pointer effect", pointer, pointer.position);
 
     if (!wasPressed && pointer.isPressed) {
       onPointerDown();

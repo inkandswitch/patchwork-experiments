@@ -9,9 +9,13 @@ import {
 import { useDocument, useRepo } from "@automerge/automerge-repo-solid-primitives";
 import { subscribeDoc } from "@inkandswitch/patchwork-providers-solid";
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
-import type { PaperDoc, PaperLayerDoc, Point } from "../paper/types";
-import type { SurfaceState } from "../surface/types";
-import { createSurfacePointer, type Pointer } from "../surface/usePointer";
+import type {
+  DocWithLayers,
+  Point,
+  ShapeLayerDoc,
+  SurfacePointer,
+  SurfaceTool,
+} from "../surface/types";
 import { hitTestShape, shapeRef } from "./geometry";
 
 // A live view of one layer the select tool reads on demand. `getDoc` returns
@@ -19,31 +23,34 @@ import { hitTestShape, shapeRef } from "./geometry";
 // reactive snapshot is needed.
 type LayerEntry = {
   url: AutomergeUrl;
-  getDoc: () => PaperLayerDoc | undefined;
-  getHandle: () => DocHandle<PaperLayerDoc> | undefined;
+  getDoc: () => ShapeLayerDoc | undefined;
+  getHandle: () => DocHandle<ShapeLayerDoc> | undefined;
 };
 
 // One layer's worth of an in-progress drag: the handle to mutate plus, per
 // selected shape, its index and the origin it had when the drag began.
 type DragGroup = {
-  handle: DocHandle<PaperLayerDoc>;
+  handle: DocHandle<ShapeLayerDoc>;
   items: { index: number; x0: number; y0: number }[];
 };
 
 // The select tool. The button toggles select mode, but the component also owns
-// all selection interaction: it reads every layer (from the paper doc that
-// `surface:state` points to), hit-tests the pointer, writes the selection into
-// the shared focus doc, deletes on Backspace/Delete, and drags selected shapes
-// by mutating their `x`/`y`. SelectionOverlay only renders the highlights for
-// whatever is here.
+// all selection interaction: it reads every layer (from the surface doc that
+// `surface:pointer` points to), hit-tests the pointer, writes the selection
+// into the shared focus doc, deletes on Backspace/Delete, and drags selected
+// shapes by mutating their `x`/`y`. SelectionOverlay only renders the
+// highlights for whatever is here.
 export function SelectButton(): JSX.Element {
   let root!: HTMLButtonElement;
 
-  const [state, stateHandle] = subscribeDoc<SurfaceState>(() => root, {
-    type: "surface:state",
+  const [tool, toolHandle] = subscribeDoc<SurfaceTool>(() => root, {
+    type: "surface:tool",
   });
-  const [paper] = useDocument<PaperDoc>(() => state()?.surfaceDocUrl);
-  const layers = () => paper()?.layers ?? {};
+  const [getPointer] = subscribeDoc<SurfacePointer>(() => root, {
+    type: "surface:pointer",
+  });
+  const [surface] = useDocument<DocWithLayers>(() => getPointer()?.surfaceUrl);
+  const layers = () => surface()?.layers ?? {};
   const [focusDoc, focusHandle] = subscribeDoc<{
     selection: Record<string, true>;
     highlight: Record<string, true>;
@@ -51,7 +58,7 @@ export function SelectButton(): JSX.Element {
     type: "patchwork:focus",
   });
 
-  const active = () => state()?.selectedTool === "select";
+  const active = () => tool()?.toolId === "select";
   const [hovered, setHovered] = createSignal(false);
 
   // Hit detection, deletion, and dragging read layers imperatively at event
@@ -65,10 +72,21 @@ export function SelectButton(): JSX.Element {
   let snapshot: DragGroup[] = [];
   let dragging = false;
 
-  createSurfacePointer(() => root, {
-    onPointerDown: (point) => pointerDown(point),
-    onPointerMove: (pointer) => pointerMove(pointer),
-    onPointerUp: () => pointerUp(),
+  // Turn the stream of `surface:pointer` snapshots into discrete down / move /
+  // up calls by watching the `isPressed` edge, mirroring LineButton.
+  let wasPressed = false;
+  createEffect(() => {
+    const pointer = getPointer();
+    if (!pointer) return;
+    const position = pointer.position;
+    if (!wasPressed && pointer.isPressed) {
+      if (position) pointerDown(position);
+    } else if (wasPressed && !pointer.isPressed) {
+      pointerUp();
+    } else if (position) {
+      pointerMove(position);
+    }
+    wasPressed = pointer.isPressed;
   });
 
   onMount(() => {
@@ -83,8 +101,8 @@ export function SelectButton(): JSX.Element {
   });
 
   const toggle = () => {
-    stateHandle()?.change((doc) => {
-      doc.selectedTool = doc.selectedTool === "select" ? "" : "select";
+    toolHandle()?.change((doc) => {
+      doc.toolId = doc.toolId === "select" ? "" : "select";
     });
   };
 
@@ -149,10 +167,10 @@ export function SelectButton(): JSX.Element {
     dragging = true;
   }
 
-  function pointerMove(pointer: Pointer) {
-    if (!dragging || !pointer.isPressed || !active()) return;
-    const dx = pointer.x - dragStart.x;
-    const dy = pointer.y - dragStart.y;
+  function pointerMove(point: Point) {
+    if (!dragging || !active()) return;
+    const dx = point.x - dragStart.x;
+    const dy = point.y - dragStart.y;
     for (const group of snapshot) {
       group.handle.change((doc) => {
         for (const { index, x0, y0 } of group.items) {
@@ -290,7 +308,7 @@ function getLayerDocs(
   const tracked = mapArray(
     () => Object.values(layers()),
     (url) => {
-      let handle: DocHandle<PaperLayerDoc> | undefined;
+      let handle: DocHandle<ShapeLayerDoc> | undefined;
       let alive = true;
       // The tool reads `handle.doc()` on demand, so the listener has no work to
       // do today; it is the hook point for reacting to live layer edits.
@@ -308,7 +326,7 @@ function getLayerDocs(
         getHandle: () => handle,
       });
 
-      void repo.find<PaperLayerDoc>(url).then((resolved) => {
+      void repo.find<ShapeLayerDoc>(url).then((resolved) => {
         if (!alive) return;
         handle = resolved;
         resolved.on("change", onChange);

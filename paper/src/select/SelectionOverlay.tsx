@@ -2,8 +2,12 @@ import { For, Show, createMemo, type JSX } from "solid-js";
 import { useDocument } from "@automerge/automerge-repo-solid-primitives";
 import { subscribeDoc } from "@inkandswitch/patchwork-providers-solid";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
-import type { PaperDoc, PaperLayerDoc, Shape } from "../paper/types";
-import type { SurfaceState } from "../surface/types";
+import type {
+  DocWithLayers,
+  Shape,
+  ShapeLayerDoc,
+  SurfacePointer,
+} from "../surface/types";
 import { outlinePoints, resolveOutline, shapeRef } from "./geometry";
 import "./select.css";
 
@@ -15,17 +19,17 @@ type FocusDoc = {
 
 // A full-canvas overlay that draws a highlight on each selected shape. It is
 // purely a renderer: it reads the current selection from the focus provider and
-// the shapes from each layer (discovered from the paper doc that
-// `surface:state` points to), and paints dashed outlines. All selection
+// the shapes from each layer (discovered from the surface doc that
+// `surface:pointer` points to), and paints dashed outlines. All selection
 // interaction lives in SelectButton.
 export function SelectionOverlay(): JSX.Element {
   let root!: HTMLDivElement;
 
-  const [state] = subscribeDoc<SurfaceState>(() => root, {
-    type: "surface:state",
+  const [getPointer] = subscribeDoc<SurfacePointer>(() => root, {
+    type: "surface:pointer",
   });
-  const [paper] = useDocument<PaperDoc>(() => state()?.surfaceDocUrl);
-  const layers = () => paper()?.layers ?? {};
+  const [surface] = useDocument<DocWithLayers>(() => getPointer()?.surfaceUrl);
+  const layers = () => surface()?.layers ?? {};
   const [focusDoc] = subscribeDoc<FocusDoc>(() => root, {
     type: "patchwork:focus",
   });
@@ -54,7 +58,7 @@ function LayerProbe(props: {
   url: AutomergeUrl;
   isSelected: (index: number) => boolean;
 }): JSX.Element {
-  const [doc] = useDocument<PaperLayerDoc>(() => props.url);
+  const [doc] = useDocument<ShapeLayerDoc>(() => props.url);
   const shapes = () => doc()?.shapes ?? [];
 
   return (

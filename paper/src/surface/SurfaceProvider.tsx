@@ -50,8 +50,6 @@ export function SurfaceProvider(props: {
     };
 
     const onPointerDown = async (event: PointerEvent) => {
-      console.log("pointer down event");
-
       const target = event.target as HTMLElement | null;
       if (!target || !event.isPrimary) return;
 
@@ -70,8 +68,6 @@ export function SurfaceProvider(props: {
     };
 
     const onPointerMove = (event: PointerEvent) => {
-      console.log("pointer move event");
-
       if (!event.isPrimary) return;
 
       if (pointerHandle.url === activePointerUrl) {
@@ -84,7 +80,6 @@ export function SurfaceProvider(props: {
     // Listen for release/cancel on the window so a drag that ends off-canvas
     // still clears the pressed state.
     const onPointerUp = (event: PointerEvent) => {
-      console.log("pointer up event");
       if (!event.isPrimary) return;
 
       if (pointerHandle.url === activePointerUrl) {
