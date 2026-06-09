@@ -15,6 +15,33 @@ import type { GhostClip, TimelineLayout } from './layout';
 import { clipRefEquals } from './layout';
 import type { ClipRef } from '../types';
 
+const CLIP_LABEL_FONT = '11px ui-sans-serif, system-ui, sans-serif';
+const CLIP_LABEL_PADDING_X = 10;
+const CLIP_HANDLE_WIDTH = 8;
+
+function clipLabelMaxWidth(clipWidth: number): number {
+  return Math.max(0, clipWidth - CLIP_LABEL_PADDING_X - CLIP_HANDLE_WIDTH - 2);
+}
+
+function truncateClipLabel(
+  ctx: CanvasRenderingContext2D,
+  label: string,
+  maxWidth: number,
+): string {
+  if (maxWidth <= 0 || !label) return '';
+  if (ctx.measureText(label).width <= maxWidth) return label;
+
+  const ellipsis = '…';
+  const ellipsisWidth = ctx.measureText(ellipsis).width;
+  if (ellipsisWidth >= maxWidth) return '';
+
+  let truncated = label;
+  while (truncated.length > 0 && ctx.measureText(truncated + ellipsis).width > maxWidth) {
+    truncated = truncated.slice(0, -1);
+  }
+  return truncated + ellipsis;
+}
+
 function roundRect(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -178,8 +205,11 @@ function drawClips(
       ctx.fillStyle = theme.text;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.font = '11px ui-sans-serif, system-ui, sans-serif';
-      ctx.fillText(clip.label, clip.x + 10, clip.y + clip.height / 2);
+      ctx.font = CLIP_LABEL_FONT;
+      const label = truncateClipLabel(ctx, clip.label, clipLabelMaxWidth(clip.width));
+      if (label) {
+        ctx.fillText(label, clip.x + CLIP_LABEL_PADDING_X, clip.y + clip.height / 2);
+      }
     }
   }
 
@@ -242,8 +272,11 @@ function drawGhost(
   ctx.fillStyle = theme.text;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.font = '11px ui-sans-serif, system-ui, sans-serif';
-  ctx.fillText(ghost.label, ghost.x + 10, ghost.y + ghost.height / 2);
+  ctx.font = CLIP_LABEL_FONT;
+  const label = truncateClipLabel(ctx, ghost.label, clipLabelMaxWidth(ghost.width));
+  if (label) {
+    ctx.fillText(label, ghost.x + CLIP_LABEL_PADDING_X, ghost.y + ghost.height / 2);
+  }
 
   ctx.restore();
 }
