@@ -224,6 +224,23 @@ export function SourceMonitor({
         )}
       </div>
 
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          className="btn btn-xs btn-primary"
+          disabled={!ready}
+          onClick={togglePlay}
+        >
+          {playing ? 'pause' : 'play'}
+        </button>
+        <span className="font-mono text-xs tabular-nums text-base-content/70">
+          {formatTime(currentTime)} / {formatTime(duration)}
+        </span>
+        <span className="ml-auto font-mono text-[10px] tabular-nums text-base-content/50">
+          in {formatTime(inPoint)} · out {formatTime(resolvedOut)}
+        </span>
+      </div>
+
       <div
         ref={barRef}
         className="source-scrubber relative h-12 w-full touch-none rounded bg-base-300/60"
@@ -249,23 +266,6 @@ export function SourceMonitor({
             />
           </>
         )}
-      </div>
-
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          className="btn btn-xs btn-primary"
-          disabled={!ready}
-          onClick={togglePlay}
-        >
-          {playing ? 'pause' : 'play'}
-        </button>
-        <span className="font-mono text-xs tabular-nums text-base-content/70">
-          {formatTime(currentTime)} / {formatTime(duration)}
-        </span>
-        <span className="ml-auto font-mono text-[10px] tabular-nums text-base-content/50">
-          in {formatTime(inPoint)} · out {formatTime(resolvedOut)}
-        </span>
       </div>
 
       <p className="text-[10px] text-base-content/45">
