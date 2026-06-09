@@ -49,6 +49,10 @@ export function sourceIndexInDoc(doc: SequenceDoc, sourceId: string): number {
   return index >= 0 ? index : 0;
 }
 
+export function isSourceUsedInTimeline(doc: SequenceDoc, sourceId: string): boolean {
+  return doc.tracks.some((track) => track.clips.some((clip) => clip.sourceId === sourceId));
+}
+
 export function clipDisplayName(doc: SequenceDoc, clip: Clip): string {
   if (clip.name?.trim()) return clip.name.trim();
   const source = doc.sources[clip.sourceId];

@@ -3,7 +3,12 @@ import type { SequenceDoc, Source } from '../types';
 import type { PendingClip } from '../drag';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { addSourceFromUrl, defaultSourceName, sourceDisplayName } from '../helpers';
+import {
+  addSourceFromUrl,
+  defaultSourceName,
+  isSourceUsedInTimeline,
+  sourceDisplayName,
+} from '../helpers';
 import { SourceMonitor } from './SourceMonitor';
 
 type SourceNameInputProps = {
@@ -63,6 +68,15 @@ export function SourcePanel({ doc, changeDoc, onStartClipDrag }: SourcePanelProp
   const panelRef = useRef<HTMLElement>(null);
   const toggleSourcePlayRef = useRef<(() => void) | null>(null);
   const sourceEntries = useMemo(() => Object.entries(doc.sources), [doc.sources]);
+  const usedSourceIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const track of doc.tracks) {
+      for (const clip of track.clips) {
+        ids.add(clip.sourceId);
+      }
+    }
+    return ids;
+  }, [doc.tracks]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sourceUrl, setSourceUrl] = useState('');
   const [sourceUrlError, setSourceUrlError] = useState<string | null>(null);
@@ -91,6 +105,20 @@ export function SourcePanel({ doc, changeDoc, onStartClipDrag }: SourcePanelProp
         delete source.name;
       }
     });
+  };
+
+  const removeSource = (id: string) => {
+    if (usedSourceIds.has(id)) return;
+
+    changeDoc((d) => {
+      if (isSourceUsedInTimeline(d, id)) return;
+      delete d.sources[id];
+    });
+
+    if (selectedId === id) {
+      const remaining = sourceEntries.filter(([entryId]) => entryId !== id);
+      setSelectedId(remaining[0]?.[0] ?? null);
+    }
   };
 
   const onPanelPointerDownCapture = (event: React.PointerEvent<HTMLElement>) => {
@@ -187,6 +215,21 @@ export function SourcePanel({ doc, changeDoc, onStartClipDrag }: SourcePanelProp
                       onSelect={setSelectedId}
                       onRename={renameSource}
                     />
+                    {!usedSourceIds.has(id) && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-xs btn-square shrink-0 text-base-content/50 hover:text-base-content"
+                        aria-label={`Remove ${sourceDisplayName(source, index)}`}
+                        title="Remove unused source"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          removeSource(id);
+                        }}
+                        onPointerDown={(event) => event.stopPropagation()}
+                      >
+                        ×
+                      </button>
+                    )}
                   </div>
                 </li>
               ))}
