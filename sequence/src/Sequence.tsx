@@ -3,6 +3,7 @@ import type { SequenceDoc } from './types';
 import type { PendingClip } from './drag';
 
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useDocument } from '@automerge/automerge-repo-react-hooks';
 import { toolify } from './react-util';
 import { usePlayer } from './diffusion/use-player';
@@ -144,11 +145,15 @@ export const SequenceEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
         />
       </div>
 
-      {pendingClip && dragPointer && !overTimeline && (
-        <div className="source-drag-chip" style={{ left: dragPointer.x, top: dragPointer.y }}>
-          {pendingClip.label}
-        </div>
-      )}
+      {pendingClip &&
+        dragPointer &&
+        !overTimeline &&
+        createPortal(
+          <div className="source-drag-chip" style={{ left: dragPointer.x, top: dragPointer.y }}>
+            {pendingClip.label}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 };
