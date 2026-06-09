@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+.boardgame-collection {
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
