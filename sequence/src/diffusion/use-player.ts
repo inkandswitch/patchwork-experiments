@@ -3,7 +3,13 @@ import * as core from '@diffusionstudio/core';
 import type { SequenceDoc } from '../types';
 
 import { useLayoutEffect, useRef, useState } from 'react';
-import { createSourceLoader, syncCompositionFromDoc } from './sync-composition';
+import {
+  compositionStructureKey,
+  createSourceLoader,
+  syncCompositionFromDoc,
+  updateCompositionTiming,
+} from './sync-composition';
+import { isSequenceEmpty } from '../helpers';
 
 type PlayerState =
   | { status: 'idle' }
@@ -35,6 +41,11 @@ export function usePlayer(doc: SequenceDoc) {
   const [playerState, setPlayerState] = useState<PlayerState>({ status: 'idle' });
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+
+  const playerStateRef = useRef(playerState);
+  playerStateRef.current = playerState;
+
+  const structureKeyRef = useRef<string | null>(null);
 
   useLayoutEffect(() => {
     const mountEl = mountRef.current;
@@ -70,11 +81,33 @@ export function usePlayer(doc: SequenceDoc) {
     if (!composition) return;
 
     const generation = ++syncGenerationRef.current;
-    setPlayerState({ status: 'loading' });
 
-    void syncCompositionFromDoc(composition, doc, loaderRef.current)
+    // Only show the loading overlay on the first (initial) load. Re-syncs that
+    // happen while editing clips keep the previously rendered frame on screen so
+    // the monitor updates live instead of flashing black.
+    const isResync = playerStateRef.current.status === 'ready';
+    const previousTime = composition.currentTime;
+
+    // When only clip timing changed (move along a track, resize, trim) the
+    // structure key is unchanged, so we can update clips in place instead of
+    // clearing + rebuilding, which is what made the monitor flash black.
+    const structureKey = compositionStructureKey(doc);
+    const canUpdateInPlace =
+      isResync && !isSequenceEmpty(doc) && structureKey === structureKeyRef.current;
+
+    if (!isResync) {
+      setPlayerState({ status: 'loading' });
+    }
+
+    const sync = canUpdateInPlace
+      ? updateCompositionTiming(composition, doc, loaderRef.current)
+      : syncCompositionFromDoc(composition, doc, loaderRef.current);
+
+    void sync
       .then(async ({ empty, duration }) => {
         if (generation !== syncGenerationRef.current) return;
+
+        structureKeyRef.current = empty ? null : structureKey;
 
         const mountEl = mountRef.current;
         if (mountEl) layoutPlayer(mountEl, composition);
@@ -86,7 +119,12 @@ export function usePlayer(doc: SequenceDoc) {
           return;
         }
 
-        await composition.seek(0);
+        // Keep the playhead where it was rather than snapping back to the start,
+        // clamping to the (possibly changed) sequence duration.
+        const targetTime = Number.isFinite(previousTime)
+          ? Math.max(0, Math.min(previousTime, duration))
+          : 0;
+        await composition.seek(targetTime);
         setCurrentTime(composition.currentTime);
         setPlaying(false);
         setPlayerState({ status: 'ready', duration });

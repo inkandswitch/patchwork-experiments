@@ -151,6 +151,58 @@ export async function syncCompositionFromDoc(
   return { empty: false, duration: composition.duration };
 }
 
+/**
+ * Signature of everything that requires a full composition rebuild: track order
+ * and the clips (and their sources) on each track. Pure timing edits (moving a
+ * clip along its track, resizing, trimming) do NOT change this signature and can
+ * be applied in place without clearing the canvas.
+ */
+export function compositionStructureKey(doc: SequenceDoc): string {
+  return JSON.stringify({
+    tracks: doc.tracks.map((track) => ({
+      id: track.id,
+      clips: track.clips.map((clip) => `${clip.id}:${clip.sourceId}`),
+    })),
+    sources: Object.fromEntries(
+      Object.entries(doc.sources).map(([id, source]) => [id, source.type]),
+    ),
+  });
+}
+
+/**
+ * Update the timing (delay/range/duration) of already-mounted clips without
+ * clearing the composition, so the monitor keeps showing frames while clips are
+ * being dragged/trimmed instead of flashing black. Assumes the composition's
+ * structure matches `doc` (see `compositionStructureKey`).
+ */
+export async function updateCompositionTiming(
+  composition: core.Composition,
+  doc: SequenceDoc,
+  loader: SourceLoader,
+): Promise<{ empty: boolean; duration: number }> {
+  const byClipId = new Map<string, core.Clip>();
+  for (const dscClip of composition.clips) {
+    const clipId = dscClip.data['clipId'];
+    if (typeof clipId === 'string') byClipId.set(clipId, dscClip);
+  }
+
+  for (const track of doc.tracks) {
+    for (const clip of track.clips) {
+      const dscClip = byClipId.get(clip.id);
+      const sourceDef = doc.sources[clip.sourceId];
+      if (!dscClip || !sourceDef) continue;
+
+      const source = await loader.load(sourceDef, clip.sourceId);
+      const length = sourceLength(source, sourceDef.type);
+      const playDuration = resolveClipPlayDuration(clip, length);
+      applyClipTiming(dscClip, clip, sourceDef.type, playDuration);
+    }
+  }
+
+  await composition.update();
+  return { empty: isSequenceEmpty(doc), duration: composition.duration };
+}
+
 export async function resolveClipTiming(
   clip: Clip,
   doc: SequenceDoc,
