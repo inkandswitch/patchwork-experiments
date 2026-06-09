@@ -9,6 +9,7 @@ import type {
   SurfaceTool,
 } from "../surface/types";
 import type { LineShape } from "./LineLayerTool";
+import { DocHandle } from "@automerge/automerge-repo";
 
 const STROKE = "#64748b";
 const SIZE = 8;
@@ -68,19 +69,17 @@ export function LineButton(): JSX.Element {
 
   let currentLineIndex: number | null = null;
 
-  const onPointerDown = async () => {
-    const layerHandle = await getLayerHandle();
-    const position = getPointer()?.position;
-    if (!layerHandle || !position || tool()?.toolId !== "line-shape-layer") {
-      return;
-    }
-
+  const onPointerDown = async (
+    x: number,
+    y: number,
+    layerHandle: DocHandle<ShapeLayerDoc>,
+  ) => {
     layerHandle.change(({ shapes }) => {
       currentLineIndex = shapes.length;
 
       shapes.push({
-        x: position.x,
-        y: position.y,
+        x,
+        y,
         z: 1,
         outline: { type: "line", points: [{ x: 0, y: 0 }] },
         stroke: STROKE,
@@ -89,14 +88,12 @@ export function LineButton(): JSX.Element {
     });
   };
 
-  const onPointerMove = async () => {
+  const onPointerMove = async (
+    x: number,
+    y: number,
+    layerHandle: DocHandle<ShapeLayerDoc>,
+  ) => {
     if (currentLineIndex === null) {
-      return;
-    }
-
-    const layerHandle = await getLayerHandle();
-    const position = getPointer()?.position;
-    if (!layerHandle || !position) {
       return;
     }
 
@@ -104,30 +101,45 @@ export function LineButton(): JSX.Element {
       const currentShape = shapes[currentLineIndex!] as LineShape;
 
       currentShape.outline?.points.push({
-        x: position.x - currentShape.x,
-        y: position.y - currentShape.y,
+        x: x - currentShape.x,
+        y: y - currentShape.y,
       });
     });
   };
 
-  const onPointerUp = () => {
+  const onPointerUp = (
+    x: number,
+    y: number,
+    layer: DocHandle<ShapeLayerDoc>,
+  ) => {
     currentLineIndex = null;
   };
 
   let wasPressed = false;
 
-  createEffect(() => {
+  createEffect(async () => {
     const pointer = getPointer();
-    if (!pointer) {
+    if (!pointer || !pointer.position) {
+      return;
+    }
+
+    const { x, y } = pointer.position;
+
+    if (tool()?.toolId !== "line-shape-layer") {
+      return;
+    }
+
+    const layerHandle = await getLayerHandle();
+    if (!layerHandle) {
       return;
     }
 
     if (!wasPressed && pointer.isPressed) {
-      onPointerDown();
+      onPointerDown(x, y, layerHandle);
     } else if (wasPressed && !pointer.isPressed) {
-      onPointerUp();
+      onPointerUp(x, y, layerHandle);
     } else {
-      onPointerMove();
+      onPointerMove(x, y, layerHandle);
     }
 
     wasPressed = pointer.isPressed;

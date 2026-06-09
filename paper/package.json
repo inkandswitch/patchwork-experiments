@@ -9,7 +9,7 @@
   "main": "./dist/index.js",
   "scripts": {
     "build": "vite build",
-    "dev": "vite build --watch",
+    "dev": "vite build --watch & npx --yes http-server . -p 5173 --cors -c-1",
     "prettier": "prettier --write .",
     "push": "yarn build && pushwork sync",
     "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
@@ -30,7 +30,7 @@
     "@inkandswitch/patchwork-bootloader": "^0.2.5",
     "prettier": "^3.8.3",
     "typescript": "^5.8.3",
-    "vite": "^5.4.19",
+    "vite": "^8.0.16",
     "vite-plugin-css-injected-by-js": "^3.5.2",
     "vite-plugin-solid": "^2.10.0"
   }
