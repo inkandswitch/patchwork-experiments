@@ -1,7 +1,7 @@
 import type { SequenceDoc } from '../types';
 import type { PendingClip } from '../drag';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { SourceMonitor } from './SourceMonitor';
 
 type SourcePanelProps = {
@@ -10,6 +10,8 @@ type SourcePanelProps = {
 };
 
 export function SourcePanel({ doc, onStartClipDrag }: SourcePanelProps) {
+  const panelRef = useRef<HTMLElement>(null);
+  const toggleSourcePlayRef = useRef<(() => void) | null>(null);
   const sourceEntries = useMemo(() => Object.entries(doc.sources), [doc.sources]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -24,13 +26,40 @@ export function SourcePanel({ doc, onStartClipDrag }: SourcePanelProps) {
     return `Source ${index + 1}`;
   };
 
+  const onPanelPointerDownCapture = (event: React.PointerEvent<HTMLElement>) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.closest('input, textarea, [contenteditable="true"]')) return;
+    panelRef.current?.focus({ preventScroll: true });
+  };
+
+  const onPanelKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.key !== ' ' && event.code !== 'Space') return;
+    if (event.repeat) return;
+    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+      return;
+    }
+    if (!toggleSourcePlayRef.current) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    toggleSourcePlayRef.current();
+  };
+
   return (
-    <aside className="source-panel flex h-full w-80 min-w-72 flex-col border-r border-base-300 bg-base-200">
+    <aside
+      ref={panelRef}
+      tabIndex={-1}
+      className="source-panel flex h-full w-80 min-w-72 flex-col border-r border-base-300 bg-base-200 outline-none"
+      onPointerDownCapture={onPanelPointerDownCapture}
+      onKeyDown={onPanelKeyDown}
+    >
       <SourceMonitor
         source={selectedSource}
         sourceId={selectedId}
         label={selectedId ? labelFor(selectedId) : 'clip'}
         onStartClipDrag={onStartClipDrag}
+        bindTogglePlay={toggleSourcePlayRef}
       />
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3">

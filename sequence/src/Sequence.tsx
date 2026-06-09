@@ -59,14 +59,14 @@ export const SequenceEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     void (playing ? pause() : play());
   };
 
-  const onEditorPointerDownCapture = (event: React.PointerEvent<HTMLDivElement>) => {
+  const onSequencePointerDownCapture = (event: React.PointerEvent<HTMLDivElement>) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
     if (target.closest('input, textarea, [contenteditable="true"]')) return;
     rootRef.current?.focus({ preventScroll: true });
   };
 
-  const onEditorKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+  const onSequenceKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== ' ' && event.code !== 'Space') return;
     if (event.repeat) return;
     if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
@@ -79,16 +79,16 @@ export const SequenceEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   };
 
   return (
-    <div
-      ref={rootRef}
-      tabIndex={-1}
-      className="sequence-editor relative flex h-full min-h-0 flex-1 flex-row overflow-hidden bg-base-100 outline-none"
-      onPointerDownCapture={onEditorPointerDownCapture}
-      onKeyDown={onEditorKeyDown}
-    >
+    <div className="sequence-editor relative flex h-full min-h-0 flex-1 flex-row overflow-hidden bg-base-100">
       <SourcePanel doc={doc} onStartClipDrag={startClipDrag} />
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <div
+        ref={rootRef}
+        tabIndex={-1}
+        className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden outline-none"
+        onPointerDownCapture={onSequencePointerDownCapture}
+        onKeyDown={onSequenceKeyDown}
+      >
         {playerState.status === 'error' && (
           <div className="border-b border-error/30 bg-error/10 px-4 py-2 text-sm text-error">
             {playerState.message}
