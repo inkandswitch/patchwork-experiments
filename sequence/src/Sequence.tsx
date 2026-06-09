@@ -81,7 +81,7 @@ export const SequenceEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
 
   return (
     <div className="sequence-editor relative flex h-full min-h-0 flex-1 flex-row overflow-hidden bg-base-100">
-      <SourcePanel doc={doc} onStartClipDrag={startClipDrag} />
+      <SourcePanel doc={doc} changeDoc={changeDoc} onStartClipDrag={startClipDrag} />
 
       <div
         ref={rootRef}

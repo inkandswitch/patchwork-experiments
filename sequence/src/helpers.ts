@@ -1,4 +1,4 @@
-import type { Clip, ClipRef, SequenceDoc, Track } from './types';
+import type { Clip, ClipRef, SequenceDoc, Source, Track } from './types';
 
 export const SAMPLE_VIDEO_URL =
   'https://diffusion-studio-public.s3.eu-central-1.amazonaws.com/videos/big_buck_bunny_1080p_30fps.mp4';
@@ -34,6 +34,29 @@ export function findClip(doc: SequenceDoc, ref: ClipRef): Clip | undefined {
   const track = findTrack(doc, ref.trackId);
   if (!track) return undefined;
   return track.clips.find((clip) => clip.id === ref.clipId);
+}
+
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|bmp|avif)(\?|#|$)/i;
+const VIDEO_EXT = /\.(mp4|webm|mov|m4v|ogv)(\?|#|$)/i;
+const AUDIO_EXT = /\.(mp3|wav|ogg|m4a|aac|flac)(\?|#|$)/i;
+
+export function inferSourceTypeFromUrl(url: string): Source['type'] | null {
+  if (IMAGE_EXT.test(url)) return 'image';
+  if (VIDEO_EXT.test(url)) return 'video';
+  if (AUDIO_EXT.test(url)) return 'audio';
+  return null;
+}
+
+export function addSourceFromUrl(doc: SequenceDoc, url: string): string | null {
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+
+  const type = inferSourceTypeFromUrl(trimmed);
+  if (!type) return null;
+
+  const id = newId();
+  doc.sources[id] = { type, url: trimmed };
+  return id;
 }
 
 export function turnIntoSampleSequence(doc: SequenceDoc): void {
