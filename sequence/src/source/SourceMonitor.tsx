@@ -225,14 +225,6 @@ export function SourceMonitor({
       </div>
 
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          className="btn btn-xs btn-primary"
-          disabled={!ready}
-          onClick={togglePlay}
-        >
-          {playing ? 'pause' : 'play'}
-        </button>
         <span className="font-mono text-xs tabular-nums text-base-content/70">
           {formatTime(currentTime)} / {formatTime(duration)}
         </span>

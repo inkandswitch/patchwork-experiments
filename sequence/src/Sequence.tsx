@@ -117,15 +117,7 @@ export const SequenceEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
           )}
         </div>
 
-        <div className="flex items-center gap-3 border-t border-base-300 px-4 py-2">
-          <button
-            type="button"
-            className="btn btn-sm btn-primary"
-            disabled={playerState.status !== 'ready'}
-            onClick={togglePlayPause}
-          >
-            {playing ? 'pause' : 'play'}
-          </button>
+        <div className="flex items-center border-t border-base-300 px-4 py-2">
           <span className="font-mono text-sm tabular-nums text-base-content/70">{timeLabel}</span>
         </div>
 
