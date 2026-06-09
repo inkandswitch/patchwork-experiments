@@ -1,7 +1,11 @@
 import type { DocHandle, Repo } from "@automerge/automerge-repo";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import { assignAutomergeFields } from "./automerge-fields";
-import type { BoardGameDoc, CollectionDoc } from "./datatype";
+import type { BoardGameDoc } from "./datatype";
+import {
+  boardgameUrls,
+  type BoardgameFolderDoc,
+} from "./folder";
 
 const BGG_COLLECTION_HEADERS = [
   "objectname",
@@ -196,18 +200,18 @@ export function mergeGameData(
 }
 
 async function loadExistingByBggId(
-  collection: CollectionDoc,
+  folder: BoardgameFolderDoc,
   repo: Repo,
 ): Promise<Map<number, AutomergeUrl>> {
   const byBggId = new Map<number, AutomergeUrl>();
 
   await Promise.all(
-    collection.games.map(async (entry) => {
+    boardgameUrls(folder).map(async (url) => {
       try {
-        const handle = await repo.find<BoardGameDoc>(entry.url);
+        const handle = await repo.find<BoardGameDoc>(url);
         const game = handle.doc();
         if (game?.bggId) {
-          byBggId.set(game.bggId, entry.url);
+          byBggId.set(game.bggId, url);
         }
       } catch {
         // Skip unavailable documents during import.
@@ -219,7 +223,7 @@ async function loadExistingByBggId(
 }
 
 export async function importBggCollectionCsv(
-  collectionHandle: DocHandle<CollectionDoc>,
+  collectionHandle: DocHandle<BoardgameFolderDoc>,
   csvText: string,
   repo: Repo,
 ): Promise<CsvImportResult> {
@@ -245,7 +249,7 @@ export async function importBggCollectionCsv(
   }
 
   const existingByBggId = await loadExistingByBggId(collection, repo);
-  const newUrls: AutomergeUrl[] = [];
+  const newEntries: { url: AutomergeUrl; name: string }[] = [];
 
   let imported = 0;
   let updated = 0;
@@ -278,14 +282,19 @@ export async function importBggCollectionCsv(
     });
 
     existingByBggId.set(incoming.bggId, handle.url);
-    newUrls.push(handle.url);
+    newEntries.push({ url: handle.url, name: incoming.name });
     imported++;
   }
 
-  if (newUrls.length > 0 || updated > 0) {
+  if (newEntries.length > 0 || updated > 0) {
     collectionHandle.change((doc) => {
-      for (const url of newUrls) {
-        doc.games.push({ url });
+      if (!doc.docs) doc.docs = [];
+      for (const entry of newEntries) {
+        doc.docs.push({
+          name: entry.name,
+          type: "boardgame",
+          url: entry.url,
+        });
       }
       doc.lastImportedAt = new Date().toISOString();
     });

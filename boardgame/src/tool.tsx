@@ -33,7 +33,8 @@ import {
 } from "./collection-filters";
 import { assignAutomergeFields, setAutomergeString } from "./automerge-fields";
 import { importBggCollectionCsv } from "./csv-importer";
-import type { BoardGameDoc, CollectionDoc } from "./datatype";
+import type { BoardGameDoc } from "./datatype";
+import { boardgameUrls, type BoardgameFolderDoc } from "./folder";
 import kaggleEnrichment from "./kaggle-enrichment.json";
 import {
   applyKaggleEnrichment,
@@ -176,7 +177,7 @@ function FilterBar({
 }
 
 function CollectionBrowser({ docUrl }: { docUrl: AutomergeUrl }) {
-  const handle = useDocHandle<CollectionDoc>(docUrl, { suspense: true });
+  const handle = useDocHandle<BoardgameFolderDoc>(docUrl, { suspense: true });
   const repo = useRepo();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [filters, setFilters] = useState<CollectionFilters>(defaultFilters);
@@ -194,8 +195,8 @@ function CollectionBrowser({ docUrl }: { docUrl: AutomergeUrl }) {
 
   const doc = handle.doc();
   const gameUrls = useMemo(
-    () => doc?.games.map((entry) => entry.url) ?? [],
-    [doc?.games],
+    () => (doc ? boardgameUrls(doc) : []),
+    [doc],
   );
   const [gameDocsMap, changeGameDoc] = useDocuments<BoardGameDoc>(gameUrls, {
     suspense: false,

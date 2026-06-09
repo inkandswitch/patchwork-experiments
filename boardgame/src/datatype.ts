@@ -46,19 +46,6 @@ export type BoardGameDoc = {
   acquisitionDate?: string;
 };
 
-export type CollectionEntry = {
-  url: AutomergeUrl;
-};
-
-export type CollectionDoc = {
-  "@patchwork"?: { type: "boardgame-collection" };
-  title: string;
-  bggUsername?: string;
-  bggApiToken?: string;
-  games: CollectionEntry[];
-  lastImportedAt?: string;
-};
-
 export const BoardgameDatatype: DatatypeImplementation<BoardGameDoc> = {
   init(doc: BoardGameDoc, _repo: Repo) {
     doc["@patchwork"] = { type: "boardgame" };
@@ -74,22 +61,6 @@ export const BoardgameDatatype: DatatypeImplementation<BoardGameDoc> = {
     doc.name = title;
   },
 };
-
-export const BoardgameCollectionDatatype: DatatypeImplementation<CollectionDoc> =
-  {
-    init(doc: CollectionDoc, _repo: Repo) {
-      doc.title = "Board Game Collection";
-      doc.games = [];
-    },
-
-    getTitle(doc: CollectionDoc) {
-      return doc.title || "Board Game Collection";
-    },
-
-    setTitle(doc: CollectionDoc, title: string) {
-      doc.title = title;
-    },
-  };
 
 export const bggGameUrl = (bggId: number) =>
   `https://boardgamegeek.com/boardgame/${bggId}`;

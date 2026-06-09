@@ -4,16 +4,6 @@ import "./index.css";
 export const plugins: Plugin<any>[] = [
   {
     type: "patchwork:datatype",
-    id: "boardgame-collection",
-    name: "Board Game Collection",
-    icon: "Dices",
-    async load() {
-      const { BoardgameCollectionDatatype } = await import("./datatype");
-      return BoardgameCollectionDatatype;
-    },
-  } as Datatype,
-  {
-    type: "patchwork:datatype",
     id: "boardgame",
     name: "Board Game",
     icon: "Dices",
@@ -27,7 +17,7 @@ export const plugins: Plugin<any>[] = [
     id: "boardgame-collection",
     name: "Board Game Collection",
     icon: "Dices",
-    supportedDatatypes: ["boardgame-collection"],
+    supportedDatatypes: ["folder"],
     async load() {
       const { BoardgameCollectionTool } = await import("./tool");
       return BoardgameCollectionTool;
