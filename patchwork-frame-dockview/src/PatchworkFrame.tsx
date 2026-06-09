@@ -68,12 +68,13 @@ const RIGHT_SIDEBAR_PANEL_ID = "sidebar-right";
 
 const PatchworkDocPanel = ({
   params,
+  api,
 }: IDockviewPanelProps<DockviewPanelParams>) => {
   return (
-    <div className="w-full h-full">
+    <div className="patchwork-dock-panel flex flex-col w-full h-full min-h-0 min-w-0">
       {params.documentToolbarToolIds &&
         params.documentToolbarToolIds.length > 0 && (
-          <div className="p-2 bg-base-200 border-b border-base-300 flex items-center gap-2 flex-start">
+          <div className="shrink-0 p-2 bg-base-200 border-b border-base-300 flex items-center gap-2 flex-start">
             {params.documentToolbarToolIds.map((toolId, index) => (
               <patchwork-view
                 class="!w-fit !h-8 !overflow-hidden !flex"
@@ -85,7 +86,8 @@ const PatchworkDocPanel = ({
           </div>
         )}
       <patchwork-view
-        key={`${params.docUrl}::${params.toolId ?? ""}`}
+        key={api.id}
+        class="patchwork-dock-panel__view"
         doc-url={params.docUrl}
         tool-id={params.toolId}
       />
@@ -95,10 +97,16 @@ const PatchworkDocPanel = ({
 
 const PatchworkSidebarPanel = ({
   params,
+  api,
 }: IDockviewPanelProps<DockviewPanelParams>) => {
   return (
-    <div className="w-full h-full">
-      <patchwork-view doc-url={params.docUrl} tool-id={params.toolId} />
+    <div className="patchwork-dock-panel w-full h-full min-h-0 min-w-0">
+      <patchwork-view
+        key={api.id}
+        class="patchwork-dock-panel__view"
+        doc-url={params.docUrl}
+        tool-id={params.toolId}
+      />
     </div>
   );
 };
@@ -255,6 +263,7 @@ export const PatchworkFrame = ({
           id,
           component: "patchwork-doc",
           title: panelTitleFor(view),
+          renderer: "always",
           params: {
             docUrl: view.url,
             toolId: view.toolId,
@@ -297,6 +306,10 @@ export const PatchworkFrame = ({
     }
 
     const addDisposable = dockviewApi.onDidAddPanel((panel) => {
+      if (panel.api.renderer !== "always") {
+        panel.api.setRenderer("always");
+      }
+
       if (
         panel.id === LEFT_SIDEBAR_PANEL_ID ||
         panel.id === RIGHT_SIDEBAR_PANEL_ID
@@ -435,6 +448,9 @@ export const PatchworkFrame = ({
     event.api.updateOptions({
       hideBorders: false,
       singleTabMode: "default",
+      // Keep panel content mounted when splitting/moving tabs. The default
+      // `onlyWhenVisible` mode detaches DOM and tears down <patchwork-view>.
+      defaultRenderer: "always",
     });
     setDockviewApi(event.api);
   }, []);
@@ -456,6 +472,7 @@ export const PatchworkFrame = ({
           id: LEFT_SIDEBAR_PANEL_ID,
           component: "patchwork-sidebar",
           title: "Account",
+          renderer: "always",
           params: { docUrl: accountDocUrl, toolId: accountSidebarToolId },
           position: { direction: "left" },
           initialWidth: 250,
@@ -485,6 +502,7 @@ export const PatchworkFrame = ({
           id: RIGHT_SIDEBAR_PANEL_ID,
           component: "patchwork-sidebar",
           title: "Context",
+          renderer: "always",
           params: { docUrl: accountDocUrl, toolId: contextSidebarToolId },
           position: { direction: "right" },
           initialWidth: 250,

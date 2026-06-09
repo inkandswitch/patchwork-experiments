@@ -4,7 +4,7 @@ export const plugins: Plugin<any>[] = [
   {
     type: "patchwork:tool",
     id: "patchwork-frame-dockview",
-    category: "frame",
+    tags: ["frame-tool"],
     name: "Patchwork Frame (Dockview)",
     icon: "Window",
     supportedDatatypes: ["account"],
