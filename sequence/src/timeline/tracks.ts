@@ -13,6 +13,28 @@ export type EdgeTracksDuringDrag = {
   below?: string;
 };
 
+/** Visual track row for a clip preview while dragging (does not mutate the doc). */
+export function previewTrackIndexFromDropTarget(
+  dropTarget: TrackDropTarget,
+  fromTrackIndex: number,
+  fromTrackClipCount: number,
+  trackCount: number,
+): number {
+  if (dropTarget.kind === 'track') {
+    return dropTarget.index;
+  }
+  if (dropTarget.kind === 'insert-above') {
+    if (fromTrackIndex === 0 && fromTrackClipCount === 1) {
+      return 0;
+    }
+    return -1;
+  }
+  if (fromTrackIndex === trackCount - 1 && fromTrackClipCount === 1) {
+    return fromTrackIndex;
+  }
+  return trackCount;
+}
+
 export function trackDropTargetFromY(y: number, trackCount: number): TrackDropTarget {
   const tracksTop = RULER_HEIGHT + TRACK_EDGE_PADDING;
   if (y < tracksTop) {

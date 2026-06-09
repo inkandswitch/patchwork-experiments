@@ -8,6 +8,7 @@ import {
   createSourceLoader,
   syncCompositionFromDoc,
   updateCompositionTiming,
+  type ClipTimingOverride,
 } from './sync-composition';
 import { isSequenceEmpty } from '../helpers';
 
@@ -46,6 +47,11 @@ export function usePlayer(doc: SequenceDoc) {
   playerStateRef.current = playerState;
 
   const structureKeyRef = useRef<string | null>(null);
+  const docRef = useRef(doc);
+  docRef.current = doc;
+  const clipPreviewRef = useRef<ReadonlyMap<string, ClipTimingOverride> | null>(null);
+  const clipPreviewTimerRef = useRef<number | null>(null);
+  const clipPreviewGenerationRef = useRef(0);
 
   useLayoutEffect(() => {
     const mountEl = mountRef.current;
@@ -71,6 +77,9 @@ export function usePlayer(doc: SequenceDoc) {
       ro.disconnect();
       composition.unmount();
       compositionRef.current = null;
+      if (clipPreviewTimerRef.current !== null) {
+        window.clearTimeout(clipPreviewTimerRef.current);
+      }
     };
   }, []);
 
@@ -157,6 +166,50 @@ export function usePlayer(doc: SequenceDoc) {
     setCurrentTime(composition.currentTime);
   };
 
+  const seekPreview = (time: number) => {
+    const composition = compositionRef.current;
+    if (!composition) return;
+    void composition.seek(time);
+  };
+
+  const previewClipTiming = (preview: ({ clipId: string } & ClipTimingOverride) | null) => {
+    if (preview === null) {
+      clipPreviewRef.current = null;
+      if (clipPreviewTimerRef.current !== null) {
+        window.clearTimeout(clipPreviewTimerRef.current);
+        clipPreviewTimerRef.current = null;
+      }
+      return;
+    }
+
+    clipPreviewRef.current = new Map([
+      [
+        preview.clipId,
+        {
+          time: preview.time,
+          duration: preview.duration,
+          sourceInTime: preview.sourceInTime,
+        },
+      ],
+    ]);
+
+    if (clipPreviewTimerRef.current !== null) return;
+    clipPreviewTimerRef.current = window.setTimeout(() => {
+      clipPreviewTimerRef.current = null;
+      const composition = compositionRef.current;
+      const overrides = clipPreviewRef.current;
+      if (!composition || !overrides || playerStateRef.current.status !== 'ready') return;
+
+      const generation = ++clipPreviewGenerationRef.current;
+      void updateCompositionTiming(composition, docRef.current, loaderRef.current, overrides).then(
+        () => {
+          if (generation !== clipPreviewGenerationRef.current) return;
+          void composition.seek(composition.currentTime);
+        },
+      );
+    }, 80);
+  };
+
   const duration = playerState.status === 'ready' ? playerState.duration : 0;
 
   return {
@@ -167,6 +220,8 @@ export function usePlayer(doc: SequenceDoc) {
     play,
     pause,
     seek,
+    seekPreview,
+    previewClipTiming,
     timeLabel: `${formatTime(currentTime)} / ${formatTime(duration)}`,
   };
 }

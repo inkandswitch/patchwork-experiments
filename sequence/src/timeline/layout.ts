@@ -36,6 +36,15 @@ export type TimelineLayout = {
   playheadX: number;
 };
 
+export type ClipDragPreview = {
+  ref: ClipRef;
+  time: number;
+  duration: number;
+  trackIndex: number;
+  label: string;
+  sourceInTime?: number | null;
+};
+
 export type GhostClip = {
   x: number;
   y: number;
@@ -135,6 +144,25 @@ export function computeTimelineLayout(
     clips,
     playheadX: timeToX(currentTime, scrollX),
   };
+}
+
+export function applyClipDragPreview(layout: TimelineLayout, preview: ClipDragPreview): TimelineLayout {
+  const clips = layout.clips.filter(
+    (clip) => !(clip.trackId === preview.ref.trackId && clip.clipId === preview.ref.clipId),
+  );
+  clips.push({
+    trackId: preview.ref.trackId,
+    clipId: preview.ref.clipId,
+    trackIndex: preview.trackIndex,
+    start: preview.time,
+    duration: preview.duration,
+    x: timeToX(preview.time, layout.scrollX),
+    y: trackTop(preview.trackIndex) + 6,
+    width: Math.max(12, preview.duration * PIXELS_PER_SECOND),
+    height: TRACK_HEIGHT - 12,
+    label: preview.label,
+  });
+  return { ...layout, clips };
 }
 
 export function pointInRect(

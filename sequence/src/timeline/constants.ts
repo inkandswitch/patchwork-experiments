@@ -6,6 +6,9 @@ export const RULER_HEIGHT = 28;
 /** Drop zone above the first track / below the last track when dragging clips. */
 export const TRACK_EDGE_PADDING = 24;
 export const HANDLE_WIDTH = 8;
+/** Clip edges snap to the playhead within this distance (matches playhead hit target). */
+export const SNAP_THRESHOLD_PX = 6;
+export const SNAP_THRESHOLD_SECONDS = SNAP_THRESHOLD_PX / PIXELS_PER_SECOND;
 export const MIN_CLIP_DURATION = 0.25;
 export const MIN_TIMELINE_WIDTH = 600;
 
@@ -72,6 +75,27 @@ export function timeToX(time: number, scrollX: number): number {
 
 export function xToTime(x: number, scrollX: number): number {
   return (x - TRACK_LABEL_WIDTH + scrollX) / PIXELS_PER_SECOND;
+}
+
+export function snapTimeToPlayhead(time: number, playheadTime: number): number {
+  if (Math.abs(time - playheadTime) <= SNAP_THRESHOLD_SECONDS) {
+    return playheadTime;
+  }
+  return time;
+}
+
+/** Nudge clip start so a handle edge snaps to the playhead without changing duration. */
+export function snapClipMoveTime(time: number, duration: number, playheadTime: number): number {
+  const leftDist = Math.abs(time - playheadTime);
+  const rightDist = Math.abs(time + duration - playheadTime);
+
+  if (leftDist <= SNAP_THRESHOLD_SECONDS && leftDist <= rightDist) {
+    return playheadTime;
+  }
+  if (rightDist <= SNAP_THRESHOLD_SECONDS) {
+    return playheadTime - duration;
+  }
+  return time;
 }
 
 export function timelineContentWidth(duration: number): number {

@@ -13,13 +13,23 @@ import { SourcePanel } from './source/SourcePanel';
 import './styles.css';
 import './source/source.css';
 
+function formatTime(seconds: number): string {
+  const whole = Math.max(0, Math.floor(seconds));
+  const mins = Math.floor(whole / 60);
+  const secs = whole % 60;
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
 export const SequenceEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   const rootRef = useRef<HTMLDivElement>(null);
   const [doc, changeDoc] = useDocument<SequenceDoc>(docUrl, { suspense: true });
-  const { mountRef, playerState, playing, play, pause, seek, currentTime, timeLabel } =
+  const { mountRef, playerState, playing, play, pause, seek, seekPreview, previewClipTiming, currentTime } =
     usePlayer(doc);
 
   const sequenceDuration = playerState.status === 'ready' ? playerState.duration : 0;
+  const [scrubTime, setScrubTime] = useState<number | null>(null);
+  const displayTime = scrubTime ?? currentTime;
+  const timeLabel = `${formatTime(displayTime)} / ${formatTime(sequenceDuration)}`;
 
   const [pendingClip, setPendingClip] = useState<PendingClip | null>(null);
   const [dragPointer, setDragPointer] = useState<{ x: number; y: number } | null>(null);
@@ -124,6 +134,9 @@ export const SequenceEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
           currentTime={currentTime}
           sequenceDuration={sequenceDuration}
           onSeek={(time) => void seek(time)}
+          onSeekPreview={seekPreview}
+          onScrubTimeChange={setScrubTime}
+          onClipPreview={previewClipTiming}
           onScrubStart={() => void pause()}
           pendingClip={pendingClip}
           onPendingClipResolved={resolvePendingClip}

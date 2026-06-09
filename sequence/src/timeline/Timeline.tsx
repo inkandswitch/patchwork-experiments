@@ -7,19 +7,24 @@ import { createSourceLoader, resolveTimelineClipTiming } from '../diffusion/sync
 import type { ClipTimingInfo } from '../diffusion/sync-composition';
 import { maxClipPlayDuration } from '../clip-timing';
 import { DEFAULT_CLIP_DURATION } from '../helpers';
+import type { TimelineTheme } from './constants';
 import {
   MIN_CLIP_DURATION,
   PIXELS_PER_SECOND,
   readTimelineTheme,
+  snapClipMoveTime,
+  snapTimeToPlayhead,
   totalCanvasHeight,
   xToTime,
 } from './constants';
 import { drawTimeline, maxScrollX } from './draw';
 import {
+  applyClipDragPreview,
   clipRefEquals,
   computeGhostLayout,
   computeTimelineLayout,
   hitTestTimeline,
+  type ClipDragPreview,
   type GhostClip,
   type TimelineLayout,
 } from './layout';
@@ -28,6 +33,7 @@ import {
   commitClipMove,
   createClipFromDrop,
   pruneEmptyTracks,
+  previewTrackIndexFromDropTarget,
   trackDropTargetFromY,
   type EdgeTracksDuringDrag,
 } from './tracks';
@@ -73,6 +79,11 @@ type TimelineProps = {
   currentTime: number;
   sequenceDuration: number;
   onSeek: (time: number) => void;
+  onSeekPreview?: (time: number) => void;
+  onScrubTimeChange?: (time: number | null) => void;
+  onClipPreview?: (
+    preview: ({ clipId: string } & Pick<ClipDragPreview, 'time' | 'duration' | 'sourceInTime'>) | null,
+  ) => void;
   onScrubStart?: () => void;
   pendingClip?: PendingClip | null;
   onPendingClipResolved?: () => void;
@@ -85,6 +96,9 @@ export function Timeline({
   currentTime,
   sequenceDuration,
   onSeek,
+  onSeekPreview,
+  onScrubTimeChange,
+  onClipPreview,
   onScrubStart,
   pendingClip = null,
   onPendingClipResolved,
@@ -92,17 +106,34 @@ export function Timeline({
 }: TimelineProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasCtxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const canvasSizeRef = useRef({ w: 0, h: 0, dpr: 1 });
+  const themeRef = useRef<TimelineTheme | null>(null);
   const layoutRef = useRef<TimelineLayout | null>(null);
   const timingRef = useRef<Map<string, ClipTimingInfo>>(new Map());
   const loaderRef = useRef(createSourceLoader());
   const scrollXRef = useRef(0);
   const dragRef = useRef<DragState | null>(null);
   const ghostRef = useRef<GhostClip | null>(null);
+  const clipDragPreviewRef = useRef<ClipDragPreview | null>(null);
+  const scrubTimeRef = useRef<number | null>(null);
+  const paintRafRef = useRef<number | null>(null);
+  const seekPreviewTimerRef = useRef<number | null>(null);
+  const pendingSeekPreviewRef = useRef<number | null>(null);
+  const clipPreviewTimerRef = useRef<number | null>(null);
+  const paintDepsRef = useRef({
+    doc,
+    sequenceDuration,
+    selected: null as ClipRef | null,
+    hovered: null as ClipRef | null,
+    currentTime,
+  });
 
   const [selected, setSelected] = useState<ClipRef | null>(null);
   const [hovered, setHovered] = useState<ClipRef | null>(null);
-  const [scrubTime, setScrubTime] = useState<number | null>(null);
   const [frame, setFrame] = useState(0);
+
+  paintDepsRef.current = { doc, sequenceDuration, selected, hovered, currentTime };
 
   const docSyncKey = JSON.stringify({ tracks: doc.tracks, sources: doc.sources });
   const bump = () => setFrame((n) => n + 1);
@@ -111,6 +142,85 @@ export function Timeline({
     const timing = timingRef.current.get(clipId);
     return explicit ?? timing?.playDuration ?? DEFAULT_CLIP_DURATION;
   };
+
+  const clipLabel = (sourceId: string) => doc.sources[sourceId]?.type ?? 'clip';
+
+  const displayPlayheadTime = () => scrubTimeRef.current ?? paintDepsRef.current.currentTime;
+
+  const buildLayout = (playheadTime: number, canvasWidth: number): TimelineLayout => {
+    const { doc: liveDoc, sequenceDuration: liveDuration } = paintDepsRef.current;
+    let layout = computeTimelineLayout(
+      liveDoc,
+      timingRef.current,
+      scrollXRef.current,
+      canvasWidth,
+      playheadTime,
+      liveDuration,
+    );
+    if (clipDragPreviewRef.current) {
+      layout = applyClipDragPreview(layout, clipDragPreviewRef.current);
+    }
+    return layout;
+  };
+
+  const ensureCanvasSize = (): number => {
+    const root = rootRef.current;
+    const canvas = canvasRef.current;
+    const ctx = canvasCtxRef.current;
+    if (!root || !canvas || !ctx) return 0;
+
+    const { width, height } = root.getBoundingClientRect();
+    const w = Math.max(1, Math.floor(width));
+    const h = Math.max(totalCanvasHeight(paintDepsRef.current.doc.tracks.length), Math.floor(height));
+    const dpr = window.devicePixelRatio || 1;
+    const size = canvasSizeRef.current;
+
+    if (size.w !== w || size.h !== h || size.dpr !== dpr) {
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      canvasSizeRef.current = { w, h, dpr };
+    }
+
+    scrollXRef.current = Math.min(scrollXRef.current, maxScrollX(paintDepsRef.current.sequenceDuration, w));
+    return w;
+  };
+
+  const paintTimeline = () => {
+    const root = rootRef.current;
+    const ctx = canvasCtxRef.current;
+    if (!root || !ctx) return;
+
+    const w = ensureCanvasSize();
+    if (w <= 0) return;
+
+    if (!themeRef.current) {
+      themeRef.current = readTimelineTheme(root);
+    }
+
+    const { selected: liveSelected, hovered: liveHovered, doc: liveDoc } = paintDepsRef.current;
+    const layout = buildLayout(displayPlayheadTime(), w);
+    layoutRef.current = layout;
+    drawTimeline(ctx, themeRef.current, layout, liveDoc.tracks.length, liveSelected, liveHovered, ghostRef.current);
+  };
+
+  const schedulePaint = () => {
+    if (paintRafRef.current !== null) return;
+    paintRafRef.current = requestAnimationFrame(() => {
+      paintRafRef.current = null;
+      paintTimeline();
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      if (paintRafRef.current !== null) cancelAnimationFrame(paintRafRef.current);
+      if (seekPreviewTimerRef.current !== null) window.clearTimeout(seekPreviewTimerRef.current);
+      if (clipPreviewTimerRef.current !== null) window.clearTimeout(clipPreviewTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     void resolveTimelineClipTiming(doc, loaderRef.current).then((timing) => {
@@ -126,45 +236,34 @@ export function Timeline({
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    canvasCtxRef.current = ctx;
+    themeRef.current = readTimelineTheme(root);
 
-    const syncCanvasSize = () => {
-      const { width, height } = root.getBoundingClientRect();
-      const w = Math.max(1, Math.floor(width));
-      const h = Math.max(totalCanvasHeight(doc.tracks.length), Math.floor(height));
-      const dpr = window.devicePixelRatio || 1;
-
-      canvas.width = Math.floor(w * dpr);
-      canvas.height = Math.floor(h * dpr);
-      canvas.style.width = `${w}px`;
-      canvas.style.height = `${h}px`;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-      scrollXRef.current = Math.min(scrollXRef.current, maxScrollX(sequenceDuration, w));
-
-      const layout = computeTimelineLayout(
-        doc,
-        timingRef.current,
-        scrollXRef.current,
-        w,
-        scrubTime ?? currentTime,
-        sequenceDuration,
-      );
-      layoutRef.current = layout;
-
-      const theme = readTimelineTheme(root);
-      drawTimeline(ctx, theme, layout, doc.tracks.length, selected, hovered, ghostRef.current);
+    const onResize = () => {
+      themeRef.current = readTimelineTheme(root);
+      paintTimeline();
     };
 
-    syncCanvasSize();
-    const ro = new ResizeObserver(syncCanvasSize);
+    onResize();
+    const ro = new ResizeObserver(onResize);
     ro.observe(root);
-    window.addEventListener('resize', syncCanvasSize);
+    window.addEventListener('resize', onResize);
 
     return () => {
       ro.disconnect();
-      window.removeEventListener('resize', syncCanvasSize);
+      window.removeEventListener('resize', onResize);
     };
-  }, [doc, docSyncKey, currentTime, scrubTime, sequenceDuration, selected, hovered, frame]);
+  }, []);
+
+  useLayoutEffect(() => {
+    themeRef.current = null;
+    paintTimeline();
+  }, [doc, docSyncKey, sequenceDuration, selected, hovered, frame]);
+
+  useEffect(() => {
+    if (dragRef.current?.kind === 'playhead') return;
+    schedulePaint();
+  }, [currentTime]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -296,18 +395,72 @@ export function Timeline({
     return Math.max(minDelta, Math.min(maxDelta, delta));
   };
 
-  const seekFromX = (x: number) => {
-    const maxTime = sequenceDuration > 0 ? sequenceDuration : Infinity;
+  const scheduleClipPreview = (preview: ClipDragPreview) => {
+    if (!onClipPreview) return;
+    if (clipPreviewTimerRef.current !== null) return;
+    clipPreviewTimerRef.current = window.setTimeout(() => {
+      clipPreviewTimerRef.current = null;
+      const livePreview = clipDragPreviewRef.current;
+      if (!livePreview) return;
+      onClipPreview({
+        clipId: livePreview.ref.clipId,
+        time: livePreview.time,
+        duration: livePreview.duration,
+        sourceInTime: livePreview.sourceInTime,
+      });
+    }, 80);
+  };
+
+  const clearClipPreview = () => {
+    if (clipPreviewTimerRef.current !== null) {
+      window.clearTimeout(clipPreviewTimerRef.current);
+      clipPreviewTimerRef.current = null;
+    }
+    onClipPreview?.(null);
+  };
+
+  const scheduleSeekPreview = (time: number) => {
+    pendingSeekPreviewRef.current = time;
+    if (seekPreviewTimerRef.current !== null) return;
+    seekPreviewTimerRef.current = window.setTimeout(() => {
+      seekPreviewTimerRef.current = null;
+      const previewTime = pendingSeekPreviewRef.current;
+      if (previewTime === null) return;
+      onSeekPreview?.(previewTime);
+      onScrubTimeChange?.(previewTime);
+    }, 120);
+  };
+
+  const flushSeekPreview = () => {
+    if (seekPreviewTimerRef.current !== null) {
+      window.clearTimeout(seekPreviewTimerRef.current);
+      seekPreviewTimerRef.current = null;
+    }
+    pendingSeekPreviewRef.current = null;
+  };
+
+  const seekFromX = (x: number, options?: { preview?: boolean; updateLabel?: boolean }) => {
+    const maxTime = paintDepsRef.current.sequenceDuration > 0 ? paintDepsRef.current.sequenceDuration : Infinity;
     const time = Math.max(0, Math.min(maxTime, xToTime(x, scrollXRef.current)));
-    setScrubTime(time);
-    onSeek(time);
+    scrubTimeRef.current = time;
+    schedulePaint();
+
+    if (options?.updateLabel) {
+      onScrubTimeChange?.(time);
+    }
+
+    if (options?.preview) {
+      scheduleSeekPreview(time);
+    } else {
+      onSeek(time);
+    }
   };
 
   const startPlayheadScrub = (event: React.PointerEvent<HTMLCanvasElement>, x: number) => {
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = { kind: 'playhead', pointerId: event.pointerId };
     onScrubStart?.();
-    seekFromX(x);
+    seekFromX(x, { preview: true, updateLabel: true });
   };
 
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -400,44 +553,70 @@ export function Timeline({
     if (event.pointerId !== drag.pointerId) return;
 
     if (drag.kind === 'playhead') {
-      seekFromX(x);
+      seekFromX(x, { preview: true });
       return;
     }
 
     const deltaSeconds = (x - drag.startPointerX) / PIXELS_PER_SECOND;
+    const playheadTime = scrubTimeRef.current ?? currentTime;
 
     if (drag.kind === 'move') {
       const dropTarget = trackDropTargetFromY(y, doc.tracks.length);
-      changeDoc((d) => {
-        const nextRef = commitClipMove(
-          d,
-          drag.ref,
-          drag.originalTime + deltaSeconds,
-          drag.originalDuration,
-          dropTarget,
-          drag.edgeTracks,
-        );
-        if (nextRef) {
-          drag.ref = nextRef;
-        }
-      });
-      if (!clipRefEquals(selected, drag.ref)) {
-        setSelected(drag.ref);
-      }
+      const fromTrackIndex = doc.tracks.findIndex((track) => track.id === drag.ref.trackId);
+      const fromTrack = fromTrackIndex === -1 ? null : doc.tracks[fromTrackIndex]!;
+      const time = Math.max(
+        0,
+        snapClipMoveTime(drag.originalTime + deltaSeconds, drag.originalDuration, playheadTime),
+      );
+      clipDragPreviewRef.current = {
+        ref: drag.ref,
+        time,
+        duration: drag.originalDuration,
+        trackIndex: fromTrack
+          ? previewTrackIndexFromDropTarget(
+              dropTarget,
+              fromTrackIndex,
+              fromTrack.clips.length,
+              doc.tracks.length,
+            )
+          : 0,
+        label: clipLabel(findClip(doc, drag.ref)?.sourceId ?? ''),
+      };
+      schedulePaint();
+      scheduleClipPreview(clipDragPreviewRef.current);
     } else if (drag.kind === 'resize') {
+      const fromTrackIndex = doc.tracks.findIndex((track) => track.id === drag.ref.trackId);
+      const rightEdge = snapTimeToPlayhead(
+        drag.originalTime + drag.originalDuration + deltaSeconds,
+        playheadTime,
+      );
       const duration = Math.min(
         drag.maxDuration,
-        Math.max(MIN_CLIP_DURATION, drag.originalDuration + deltaSeconds),
+        Math.max(MIN_CLIP_DURATION, rightEdge - drag.originalTime),
       );
-      commitClipUpdate(drag.ref, drag.originalTime, duration);
+      clipDragPreviewRef.current = {
+        ref: drag.ref,
+        time: drag.originalTime,
+        duration,
+        trackIndex: fromTrackIndex === -1 ? 0 : fromTrackIndex,
+        label: clipLabel(findClip(doc, drag.ref)?.sourceId ?? ''),
+      };
+      schedulePaint();
+      scheduleClipPreview(clipDragPreviewRef.current);
     } else {
-      const delta = clampTrimLeftDelta(drag, deltaSeconds);
-      commitClipTrimLeft(
-        drag.ref,
-        drag.originalTime + delta,
-        drag.originalSourceInTime + delta,
-        drag.originalDuration - delta,
-      );
+      const fromTrackIndex = doc.tracks.findIndex((track) => track.id === drag.ref.trackId);
+      const leftEdge = snapTimeToPlayhead(drag.originalTime + deltaSeconds, playheadTime);
+      const delta = clampTrimLeftDelta(drag, leftEdge - drag.originalTime);
+      clipDragPreviewRef.current = {
+        ref: drag.ref,
+        time: drag.originalTime + delta,
+        duration: drag.originalDuration - delta,
+        sourceInTime: drag.originalSourceInTime + delta,
+        trackIndex: fromTrackIndex === -1 ? 0 : fromTrackIndex,
+        label: clipLabel(findClip(doc, drag.ref)?.sourceId ?? ''),
+      };
+      schedulePaint();
+      scheduleClipPreview(clipDragPreviewRef.current);
     }
   };
 
@@ -445,16 +624,52 @@ export function Timeline({
     const drag = dragRef.current;
     if (drag?.pointerId !== event.pointerId) return;
 
+    const preview = clipDragPreviewRef.current;
+
     if (drag.kind === 'playhead') {
-      setScrubTime(null);
+      flushSeekPreview();
+      const time = scrubTimeRef.current;
+      scrubTimeRef.current = null;
+      onScrubTimeChange?.(null);
+      if (time !== null) {
+        onSeek(time);
+      }
+      schedulePaint();
     } else if (drag.kind === 'move') {
+      clearClipPreview();
+      const { x, y } = canvasPoint(event);
+      const dropTarget = trackDropTargetFromY(y, doc.tracks.length);
       changeDoc((d) => {
+        const nextRef = commitClipMove(
+          d,
+          drag.ref,
+          preview?.time ?? drag.originalTime,
+          preview?.duration ?? drag.originalDuration,
+          dropTarget,
+          drag.edgeTracks,
+        );
         pruneEmptyTracks(d);
+        if (nextRef) {
+          drag.ref = nextRef;
+        }
       });
       setSelected(drag.ref);
+    } else if (drag.kind === 'resize' && preview) {
+      clearClipPreview();
+      commitClipUpdate(drag.ref, preview.time, preview.duration);
+    } else if (drag.kind === 'trim-left' && preview) {
+      clearClipPreview();
+      commitClipTrimLeft(
+        drag.ref,
+        preview.time,
+        preview.sourceInTime ?? 0,
+        preview.duration,
+      );
     }
 
+    clipDragPreviewRef.current = null;
     dragRef.current = null;
+    bump();
     event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
@@ -469,7 +684,7 @@ export function Timeline({
       0,
       Math.min(maxScrollX(sequenceDuration, canvas.clientWidth), scrollXRef.current + event.deltaX),
     );
-    bump();
+    schedulePaint();
   };
 
   return (

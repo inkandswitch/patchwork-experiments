@@ -82,6 +82,23 @@ function applyClipTiming(
   (dscClip as core.AudioClip).range = range;
 }
 
+/** Live timing override for one clip while dragging on the timeline. */
+export type ClipTimingOverride = {
+  time: number;
+  duration: number;
+  sourceInTime?: number | null;
+};
+
+function effectiveClipTiming(clip: Clip, override: ClipTimingOverride | undefined): Clip {
+  if (!override) return clip;
+  return {
+    ...clip,
+    time: override.time,
+    duration: override.duration,
+    sourceInTime: override.sourceInTime !== undefined ? override.sourceInTime : clip.sourceInTime,
+  };
+}
+
 async function createClip(
   source: LoadedSource,
   sourceType: Source['type'],
@@ -179,6 +196,7 @@ export async function updateCompositionTiming(
   composition: core.Composition,
   doc: SequenceDoc,
   loader: SourceLoader,
+  overrides?: ReadonlyMap<string, ClipTimingOverride>,
 ): Promise<{ empty: boolean; duration: number }> {
   const byClipId = new Map<string, core.Clip>();
   for (const dscClip of composition.clips) {
@@ -192,10 +210,11 @@ export async function updateCompositionTiming(
       const sourceDef = doc.sources[clip.sourceId];
       if (!dscClip || !sourceDef) continue;
 
+      const timingClip = effectiveClipTiming(clip, overrides?.get(clip.id));
       const source = await loader.load(sourceDef, clip.sourceId);
       const length = sourceLength(source, sourceDef.type);
-      const playDuration = resolveClipPlayDuration(clip, length);
-      applyClipTiming(dscClip, clip, sourceDef.type, playDuration);
+      const playDuration = resolveClipPlayDuration(timingClip, length);
+      applyClipTiming(dscClip, timingClip, sourceDef.type, playDuration);
     }
   }
 
