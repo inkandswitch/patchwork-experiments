@@ -8,6 +8,7 @@ export type SequenceDoc = {
 export type Source = {
   type: 'image' | 'video' | 'audio';
   url: string;
+  name?: string;
 };
 
 export type Track = {
@@ -17,6 +18,7 @@ export type Track = {
 
 export type Clip = {
   id: string;
+  name?: string;
   sourceId: string;
   /** Seconds from the start of the sequence where this clip starts. */
   time: number;

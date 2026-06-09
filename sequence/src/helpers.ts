@@ -36,6 +36,25 @@ export function findClip(doc: SequenceDoc, ref: ClipRef): Clip | undefined {
   return track.clips.find((clip) => clip.id === ref.clipId);
 }
 
+export function defaultSourceName(index: number): string {
+  return `Source ${index + 1}`;
+}
+
+export function sourceDisplayName(source: Source | undefined, sourceIndex: number): string {
+  return source?.name?.trim() || defaultSourceName(sourceIndex);
+}
+
+export function sourceIndexInDoc(doc: SequenceDoc, sourceId: string): number {
+  const index = Object.keys(doc.sources).indexOf(sourceId);
+  return index >= 0 ? index : 0;
+}
+
+export function clipDisplayName(doc: SequenceDoc, clip: Clip): string {
+  if (clip.name?.trim()) return clip.name.trim();
+  const source = doc.sources[clip.sourceId];
+  return sourceDisplayName(source, sourceIndexInDoc(doc, clip.sourceId));
+}
+
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|bmp|avif)(\?|#|$)/i;
 const VIDEO_EXT = /\.(mp4|webm|mov|m4v|ogv)(\?|#|$)/i;
 const AUDIO_EXT = /\.(mp3|wav|ogg|m4a|aac|flac)(\?|#|$)/i;

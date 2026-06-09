@@ -1,10 +1,57 @@
 import type { ChangeFn } from '@automerge/automerge/slim';
-import type { SequenceDoc } from '../types';
+import type { SequenceDoc, Source } from '../types';
 import type { PendingClip } from '../drag';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { addSourceFromUrl } from '../helpers';
+import { addSourceFromUrl, defaultSourceName, sourceDisplayName } from '../helpers';
 import { SourceMonitor } from './SourceMonitor';
+
+type SourceNameInputProps = {
+  id: string;
+  source: Source;
+  index: number;
+  onSelect: (id: string) => void;
+  onRename: (id: string, name: string) => void;
+};
+
+function SourceNameInput({ id, source, index, onSelect, onRename }: SourceNameInputProps) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const value = draft ?? source.name ?? '';
+  const placeholder = defaultSourceName(index);
+
+  const commit = () => {
+    if (draft === null) return;
+    onRename(id, draft);
+    setDraft(null);
+  };
+
+  return (
+    <input
+      type="text"
+      className="min-w-0 flex-1 truncate bg-transparent p-0 text-sm outline-none placeholder:text-base-content/50"
+      value={value}
+      placeholder={placeholder}
+      onClick={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
+      onFocus={() => {
+        onSelect(id);
+        setDraft(source.name ?? '');
+      }}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key === 'Enter') {
+          event.currentTarget.blur();
+        }
+        if (event.key === 'Escape') {
+          setDraft(null);
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
 
 type SourcePanelProps = {
   doc: SequenceDoc;
@@ -28,7 +75,22 @@ export function SourcePanel({ doc, changeDoc, onStartClipDrag }: SourcePanelProp
   const selectedSource = selectedId ? doc.sources[selectedId] ?? null : null;
   const labelFor = (id: string) => {
     const index = sourceEntries.findIndex(([entryId]) => entryId === id);
-    return `Source ${index + 1}`;
+    const source = doc.sources[id];
+    if (!source || index < 0) return 'clip';
+    return sourceDisplayName(source, index);
+  };
+
+  const renameSource = (id: string, name: string) => {
+    changeDoc((d) => {
+      const source = d.sources[id];
+      if (!source) return;
+      const trimmed = name.trim();
+      if (trimmed) {
+        source.name = trimmed;
+      } else {
+        delete source.name;
+      }
+    });
   };
 
   const onPanelPointerDownCapture = (event: React.PointerEvent<HTMLElement>) => {
@@ -100,18 +162,32 @@ export function SourcePanel({ doc, changeDoc, onStartClipDrag }: SourcePanelProp
             <ul className="flex flex-col gap-1">
               {sourceEntries.map(([id, source], index) => (
                 <li key={id}>
-                  <button
-                    type="button"
+                  <div
+                    role="button"
+                    tabIndex={0}
                     className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm ${
                       id === selectedId
                         ? 'bg-primary/20 text-base-content'
                         : 'hover:bg-base-300/60 text-base-content/80'
                     }`}
                     onClick={() => setSelectedId(id)}
+                    onKeyDown={(event) => {
+                      if (event.target instanceof HTMLInputElement) return;
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        setSelectedId(id);
+                      }
+                    }}
                   >
-                    <span className="badge badge-xs badge-neutral">{source.type}</span>
-                    <span className="truncate">Source {index + 1}</span>
-                  </button>
+                    <span className="badge badge-xs badge-neutral shrink-0">{source.type}</span>
+                    <SourceNameInput
+                      id={id}
+                      source={source}
+                      index={index}
+                      onSelect={setSelectedId}
+                      onRename={renameSource}
+                    />
+                  </div>
                 </li>
               ))}
             </ul>

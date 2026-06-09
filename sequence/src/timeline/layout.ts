@@ -2,7 +2,7 @@ import type { ClipRef, SequenceDoc } from '../types';
 import type { ClipTimingInfo } from '../diffusion/sync-composition';
 import type { PendingClip } from '../drag';
 import type { TrackDropTarget } from './tracks';
-import { DEFAULT_CLIP_DURATION } from '../helpers';
+import { clipDisplayName, DEFAULT_CLIP_DURATION } from '../helpers';
 
 import {
   HANDLE_WIDTH,
@@ -113,8 +113,6 @@ export function computeTimelineLayout(
     for (const clip of track.clips) {
       const clipTiming = timing.get(clip.id);
       const playDuration = clip.duration ?? clipTiming?.playDuration ?? DEFAULT_CLIP_DURATION;
-      const source = doc.sources[clip.sourceId];
-      const sourceLabel = source?.type ?? 'clip';
       clips.push({
         trackId: track.id,
         clipId: clip.id,
@@ -125,7 +123,7 @@ export function computeTimelineLayout(
         y: y + 6,
         width: Math.max(12, playDuration * PIXELS_PER_SECOND),
         height: TRACK_HEIGHT - 12,
-        label: sourceLabel,
+        label: clipDisplayName(doc, clip),
       });
     }
   });

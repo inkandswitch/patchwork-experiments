@@ -6,7 +6,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createSourceLoader, resolveTimelineClipTiming } from '../diffusion/sync-composition';
 import type { ClipTimingInfo } from '../diffusion/sync-composition';
 import { maxClipPlayDuration } from '../clip-timing';
-import { DEFAULT_CLIP_DURATION } from '../helpers';
+import { clipDisplayName, DEFAULT_CLIP_DURATION, findClip } from '../helpers';
 import type { TimelineTheme } from './constants';
 import {
   MIN_CLIP_DURATION,
@@ -28,7 +28,6 @@ import {
   type GhostClip,
   type TimelineLayout,
 } from './layout';
-import { findClip } from '../helpers';
 import {
   commitClipMove,
   createClipFromDrop,
@@ -39,6 +38,61 @@ import {
 } from './tracks';
 
 import './timeline.css';
+
+function ClipNameEditor({
+  clip,
+  value,
+  onChange,
+  onCommit,
+  onCancel,
+}: {
+  clip: { x: number; y: number; width: number; height: number };
+  value: string;
+  onChange: (value: string) => void;
+  onCommit: () => void;
+  onCancel: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useLayoutEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    input.focus();
+    input.select();
+  }, []);
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      className="absolute z-10 border-0 bg-base-100/90 p-0 font-sans text-[11px] text-base-content outline-none ring-1 ring-primary"
+      style={{
+        left: clip.x + 10,
+        top: clip.y,
+        width: Math.max(40, clip.width - 20),
+        height: clip.height,
+        lineHeight: `${clip.height}px`,
+      }}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          onCommit();
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          onCancel();
+        }
+      }}
+      onBlur={onCommit}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+    />
+  );
+}
 
 type DragState =
   | {
@@ -116,6 +170,7 @@ export function Timeline({
   const dragRef = useRef<DragState | null>(null);
   const ghostRef = useRef<GhostClip | null>(null);
   const clipDragPreviewRef = useRef<ClipDragPreview | null>(null);
+  const editingClipRef = useRef<ClipRef | null>(null);
   const scrubTimeRef = useRef<number | null>(null);
   const paintRafRef = useRef<number | null>(null);
   const seekPreviewTimerRef = useRef<number | null>(null);
@@ -131,7 +186,11 @@ export function Timeline({
 
   const [selected, setSelected] = useState<ClipRef | null>(null);
   const [hovered, setHovered] = useState<ClipRef | null>(null);
+  const [editingClip, setEditingClip] = useState<ClipRef | null>(null);
+  const [editingDraft, setEditingDraft] = useState('');
   const [frame, setFrame] = useState(0);
+
+  editingClipRef.current = editingClip;
 
   paintDepsRef.current = { doc, sequenceDuration, selected, hovered, currentTime };
 
@@ -143,7 +202,39 @@ export function Timeline({
     return explicit ?? timing?.playDuration ?? DEFAULT_CLIP_DURATION;
   };
 
-  const clipLabel = (sourceId: string) => doc.sources[sourceId]?.type ?? 'clip';
+  const clipLabelForRef = (ref: ClipRef) => {
+    const clip = findClip(doc, ref);
+    return clip ? clipDisplayName(doc, clip) : 'clip';
+  };
+
+  const startEditingClip = (ref: ClipRef) => {
+    const clip = findClip(doc, ref);
+    if (!clip) return;
+    setSelected(ref);
+    setEditingClip(ref);
+    setEditingDraft(clipDisplayName(doc, clip));
+  };
+
+  const commitEditingClipName = () => {
+    if (!editingClip) return;
+    const ref = editingClip;
+    const name = editingDraft;
+    setEditingClip(null);
+    changeDoc((d) => {
+      const clip = findClip(d, ref);
+      if (!clip) return;
+      const trimmed = name.trim();
+      if (trimmed) {
+        clip.name = trimmed;
+      } else {
+        delete clip.name;
+      }
+    });
+  };
+
+  const cancelEditingClipName = () => {
+    setEditingClip(null);
+  };
 
   const displayPlayheadTime = () => scrubTimeRef.current ?? paintDepsRef.current.currentTime;
 
@@ -203,7 +294,16 @@ export function Timeline({
     const { selected: liveSelected, hovered: liveHovered, doc: liveDoc } = paintDepsRef.current;
     const layout = buildLayout(displayPlayheadTime(), w);
     layoutRef.current = layout;
-    drawTimeline(ctx, themeRef.current, layout, liveDoc.tracks.length, liveSelected, liveHovered, ghostRef.current);
+    drawTimeline(
+      ctx,
+      themeRef.current,
+      layout,
+      liveDoc.tracks.length,
+      liveSelected,
+      liveHovered,
+      ghostRef.current,
+      editingClipRef.current,
+    );
   };
 
   const schedulePaint = () => {
@@ -258,7 +358,7 @@ export function Timeline({
   useLayoutEffect(() => {
     themeRef.current = null;
     paintTimeline();
-  }, [doc, docSyncKey, sequenceDuration, selected, hovered, frame]);
+  }, [doc, docSyncKey, sequenceDuration, selected, hovered, editingClip, frame]);
 
   useEffect(() => {
     if (dragRef.current?.kind === 'playhead') return;
@@ -290,6 +390,13 @@ export function Timeline({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [selected, changeDoc]);
+
+  useEffect(() => {
+    if (!editingClip) return;
+    if (!findClip(doc, editingClip)) {
+      setEditingClip(null);
+    }
+  }, [doc, docSyncKey, editingClip]);
 
   useEffect(() => {
     if (!pendingClip) {
@@ -580,7 +687,7 @@ export function Timeline({
               doc.tracks.length,
             )
           : 0,
-        label: clipLabel(findClip(doc, drag.ref)?.sourceId ?? ''),
+        label: clipLabelForRef(drag.ref),
       };
       schedulePaint();
       scheduleClipPreview(clipDragPreviewRef.current);
@@ -599,7 +706,7 @@ export function Timeline({
         time: drag.originalTime,
         duration,
         trackIndex: fromTrackIndex === -1 ? 0 : fromTrackIndex,
-        label: clipLabel(findClip(doc, drag.ref)?.sourceId ?? ''),
+        label: clipLabelForRef(drag.ref),
       };
       schedulePaint();
       scheduleClipPreview(clipDragPreviewRef.current);
@@ -613,7 +720,7 @@ export function Timeline({
         duration: drag.originalDuration - delta,
         sourceInTime: drag.originalSourceInTime + delta,
         trackIndex: fromTrackIndex === -1 ? 0 : fromTrackIndex,
-        label: clipLabel(findClip(doc, drag.ref)?.sourceId ?? ''),
+        label: clipLabelForRef(drag.ref),
       };
       schedulePaint();
       scheduleClipPreview(clipDragPreviewRef.current);
@@ -673,6 +780,17 @@ export function Timeline({
     event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
+  const onDoubleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const layout = layoutRef.current;
+    if (!layout) return;
+
+    const { x, y } = canvasPoint(event);
+    const target = hitTestTimeline(layout, x, y);
+    if (target.kind !== 'clip-body') return;
+
+    startEditingClip(target.ref);
+  };
+
   const onWheel = (event: React.WheelEvent<HTMLCanvasElement>) => {
     if (Math.abs(event.deltaX) < Math.abs(event.deltaY)) return;
     event.preventDefault();
@@ -685,10 +803,16 @@ export function Timeline({
       Math.min(maxScrollX(sequenceDuration, canvas.clientWidth), scrollXRef.current + event.deltaX),
     );
     schedulePaint();
+    if (editingClipRef.current) bump();
   };
 
+  const editingLayout =
+    editingClip && layoutRef.current
+      ? layoutRef.current.clips.find((clip) => clipRefEquals(editingClip, clip))
+      : null;
+
   return (
-    <div ref={rootRef} className="sequence-timeline min-h-[180px] flex-1 overflow-hidden">
+    <div ref={rootRef} className="sequence-timeline relative min-h-[180px] flex-1 overflow-hidden">
       <canvas
         ref={canvasRef}
         className="block h-full w-full touch-none"
@@ -696,8 +820,18 @@ export function Timeline({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerLeave={() => setHovered(null)}
+        onDoubleClick={onDoubleClick}
         onWheel={onWheel}
       />
+      {editingLayout && (
+        <ClipNameEditor
+          clip={editingLayout}
+          value={editingDraft}
+          onChange={setEditingDraft}
+          onCommit={commitEditingClipName}
+          onCancel={cancelEditingClipName}
+        />
+      )}
     </div>
   );
 }

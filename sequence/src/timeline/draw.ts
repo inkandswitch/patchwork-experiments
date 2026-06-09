@@ -145,6 +145,7 @@ function drawClips(
   layout: TimelineLayout,
   selected: ClipRef | null,
   hovered: ClipRef | null,
+  editing: ClipRef | null,
 ): void {
   ctx.save();
   ctx.beginPath();
@@ -173,11 +174,13 @@ function drawClips(
     roundRect(ctx, clip.x + clip.width - 8, clip.y, 8, clip.height, 4);
     ctx.fill();
 
-    ctx.fillStyle = theme.text;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.font = '11px ui-sans-serif, system-ui, sans-serif';
-    ctx.fillText(clip.label, clip.x + 10, clip.y + clip.height / 2);
+    if (!clipRefEquals(editing, clip)) {
+      ctx.fillStyle = theme.text;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.font = '11px ui-sans-serif, system-ui, sans-serif';
+      ctx.fillText(clip.label, clip.x + 10, clip.y + clip.height / 2);
+    }
   }
 
   ctx.restore();
@@ -253,6 +256,7 @@ export function drawTimeline(
   selected: ClipRef | null,
   hovered: ClipRef | null,
   ghost: GhostClip | null,
+  editing: ClipRef | null = null,
 ): void {
   ctx.clearRect(0, 0, layout.width, layout.height);
   ctx.fillStyle = theme.bg;
@@ -261,7 +265,7 @@ export function drawTimeline(
   drawTrackRows(ctx, theme, layout, trackCount);
   drawGrid(ctx, theme, layout, trackCount);
   drawRuler(ctx, theme, layout);
-  drawClips(ctx, theme, layout, selected, hovered);
+  drawClips(ctx, theme, layout, selected, hovered, editing);
   drawPlayhead(ctx, theme, layout, trackCount);
   if (ghost) drawGhost(ctx, theme, layout, ghost);
 }
