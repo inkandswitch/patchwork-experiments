@@ -33,6 +33,7 @@ import {
   createClipFromDrop,
   pruneEmptyTracks,
   previewTrackIndexFromDropTarget,
+  splitClipAtTime,
   trackDropTargetFromY,
   type EdgeTracksDuringDrag,
 } from './tracks';
@@ -391,6 +392,30 @@ export function Timeline({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [selected, changeDoc]);
 
+  const onTimelineKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+      return;
+    }
+
+    if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'b') return;
+    if (!selected) return;
+
+    const clip = findClip(doc, selected);
+    if (!clip) return;
+
+    const playheadTime = displayPlayheadTime();
+    const playDuration = resolveClipPlayDurationForUi(clip.id, clip.duration);
+    if (playheadTime <= clip.time || playheadTime >= clip.time + playDuration) return;
+
+    event.preventDefault();
+    const ref = selected;
+    let rightRef: ClipRef | null = null;
+    changeDoc((d) => {
+      rightRef = splitClipAtTime(d, ref, playheadTime, playDuration);
+    });
+    if (rightRef) setSelected(rightRef);
+  };
+
   useEffect(() => {
     if (!editingClip) return;
     if (!findClip(doc, editingClip)) {
@@ -571,6 +596,8 @@ export function Timeline({
   };
 
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    rootRef.current?.focus({ preventScroll: true });
+
     const layout = layoutRef.current;
     if (!layout) return;
 
@@ -812,7 +839,12 @@ export function Timeline({
       : null;
 
   return (
-    <div ref={rootRef} className="sequence-timeline relative min-h-[180px] flex-1 overflow-hidden">
+    <div
+      ref={rootRef}
+      tabIndex={-1}
+      className="sequence-timeline relative min-h-[180px] flex-1 overflow-hidden outline-none"
+      onKeyDown={onTimelineKeyDown}
+    >
       <canvas
         ref={canvasRef}
         className="block h-full w-full touch-none"

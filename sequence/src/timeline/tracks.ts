@@ -191,3 +191,43 @@ export function commitClipMove(
 
   return moveClipToDropTarget(doc, ref, dropTarget, edgeTracks);
 }
+
+/** Split a clip at a sequence time; returns the new right-hand clip ref, or null if invalid. */
+export function splitClipAtTime(
+  doc: SequenceDoc,
+  ref: ClipRef,
+  splitTime: number,
+  playDuration: number,
+): ClipRef | null {
+  const track = doc.tracks.find((t) => t.id === ref.trackId);
+  const clip = findClip(doc, ref);
+  if (!track || !clip) return null;
+
+  const leftDuration = splitTime - clip.time;
+  const rightDuration = playDuration - leftDuration;
+  if (
+    leftDuration < MIN_CLIP_DURATION ||
+    rightDuration < MIN_CLIP_DURATION ||
+    splitTime <= clip.time ||
+    splitTime >= clip.time + playDuration
+  ) {
+    return null;
+  }
+
+  const sourceIn = clip.sourceInTime ?? 0;
+  const rightSourceIn = sourceIn + leftDuration;
+
+  clip.duration = leftDuration;
+
+  const rightClip = newClip(
+    clip.sourceId,
+    splitTime,
+    rightSourceIn <= 0 ? null : rightSourceIn,
+    rightDuration,
+  );
+
+  const clipIndex = track.clips.findIndex((c) => c.id === ref.clipId);
+  track.clips.splice(clipIndex + 1, 0, rightClip);
+
+  return { trackId: track.id, clipId: rightClip.id };
+}
