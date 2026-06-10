@@ -1,0 +1,39 @@
+{
+  "name": "@patchwork/lanes",
+  "version": "0.1.0",
+  "description": "Kanban lanes for project cards",
+  "type": "module",
+  "exports": "./dist/index.js",
+  "scripts": {
+    "build": "tsc && vite build",
+    "sync": "pnpm build && pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  },
+  "keywords": [],
+  "author": "Ink & Switch",
+  "dependencies": {
+    "@automerge/automerge": "3.3.0-fragments.1",
+    "@automerge/automerge-repo": "2.6.0-subduction.26",
+    "@automerge/automerge-repo-react-hooks": "2.6.0-subduction.26",
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@inkandswitch/patchwork-plugins": "^0.0.11",
+    "cmdk": "^0.2.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@inkandswitch/patchwork-bootloader": "^0.2.6",
+    "@tailwindcss/vite": "^4.1.18",
+    "@types/react": "^18.3.30",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^5.1.2",
+    "tailwindcss": "^4.1.18",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vite-plugin-css-injected-by-js": "^3.5.2",
+    "daisyui": "^5.1.29"
+  },
+  "license": "ISC"
+}
