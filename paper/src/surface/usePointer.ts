@@ -1,5 +1,5 @@
 import { createEffect, type Accessor } from "solid-js";
-import { subscribeDoc } from "@inkandswitch/patchwork-providers-solid";
+import { subscribeDoc } from "../vendor/providers-solid";
 import type { Pointer, SurfaceState } from "./types";
 
 export type { Pointer } from "./types";

@@ -1,38 +1,15 @@
+import type { DocHandle } from "@automerge/automerge-repo";
+import { useRepo } from "@automerge/automerge-repo-solid-primitives";
+import { subscribeDoc } from "../vendor/providers-solid";
 import {
   createEffect,
   createSignal,
-  mapArray,
   onCleanup,
   onMount,
   type JSX,
 } from "solid-js";
-import { useDocument, useRepo } from "@automerge/automerge-repo-solid-primitives";
-import { subscribeDoc } from "@inkandswitch/patchwork-providers-solid";
-import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
-import type {
-  DocWithLayers,
-  Point,
-  ShapeLayerDoc,
-  SurfacePointer,
-  SurfaceTool,
-} from "../surface/types";
+import type { ShapeLayerDoc } from "../surface/types";
 import { hitTestShape, shapeRef } from "./geometry";
-
-// A live view of one layer the select tool reads on demand. `getDoc` returns
-// the handle's current document (read imperatively at event time), so no
-// reactive snapshot is needed.
-type LayerEntry = {
-  url: AutomergeUrl;
-  getDoc: () => ShapeLayerDoc | undefined;
-  getHandle: () => DocHandle<ShapeLayerDoc> | undefined;
-};
-
-// One layer's worth of an in-progress drag: the handle to mutate plus, per
-// selected shape, its index and the origin it had when the drag began.
-type DragGroup = {
-  handle: DocHandle<ShapeLayerDoc>;
-  items: { index: number; x0: number; y0: number }[];
-};
 
 // The select tool. The button toggles select mode, but the component also owns
 // all selection interaction: it reads every layer (from the surface doc that
@@ -46,11 +23,10 @@ export function SelectButton(): JSX.Element {
   const [tool, toolHandle] = subscribeDoc<SurfaceTool>(() => root, {
     type: "surface:tool",
   });
-  const [getPointer] = subscribeDoc<SurfacePointer>(() => root, {
+  const [state] = subscribeDoc<SurfacePointerState>(() => root, {
     type: "surface:pointer",
   });
-  const [surface] = useDocument<DocWithLayers>(() => getPointer()?.surfaceUrl);
-  const layers = () => surface()?.layers ?? {};
+
   const [focusDoc, focusHandle] = subscribeDoc<{
     selection: Record<string, true>;
     highlight: Record<string, true>;
@@ -60,33 +36,31 @@ export function SelectButton(): JSX.Element {
 
   const active = () => tool()?.toolId === "select";
   const [hovered, setHovered] = createSignal(false);
+  const repo = useRepo();
 
-  // Hit detection, deletion, and dragging read layers imperatively at event
-  // time. The registry keeps a live handle/doc accessor per layer, tracking the
-  // layer list from the paper doc.
-  const registry = getLayerDocs(layers);
   let shiftDown = false;
+  let wasPointerPressed = false;
 
-  // Drag state: null snapshot means "not dragging".
-  let dragStart: Point = { x: 0, y: 0 };
-  let snapshot: DragGroup[] = [];
-  let dragging = false;
-
-  // Turn the stream of `surface:pointer` snapshots into discrete down / move /
-  // up calls by watching the `isPressed` edge, mirroring LineButton.
-  let wasPressed = false;
-  createEffect(() => {
+  createEffect(async () => {
     const pointer = getPointer();
-    if (!pointer) return;
-    const position = pointer.position;
-    if (!wasPressed && pointer.isPressed) {
-      if (position) pointerDown(position);
-    } else if (wasPressed && !pointer.isPressed) {
-      pointerUp();
-    } else if (position) {
-      pointerMove(position);
+    if (!pointer || !pointer.position) return;
+
+    const { x, y } = pointer.position;
+
+    if (!active()) {
+      return;
     }
-    wasPressed = pointer.isPressed;
+
+    const surface = await repo.find(pointer.surfaceUrl);
+
+    const shapeLayerHandles = await Promise.all(
+      Object.values(layers()).map((url) => repo.find<ShapeLayerDoc>(url)),
+    );
+
+    if (!wasPointerPressed && pointer.isPressed) {
+      onPointerDown(x, y, shapeLayerHandles);
+    }
+    wasPointerPressed = pointer.isPressed;
   });
 
   onMount(() => {
@@ -106,15 +80,18 @@ export function SelectButton(): JSX.Element {
     });
   };
 
-  // On press: shift-click toggles the hit shape (no drag); a plain click on
-  // empty space clears the selection; a plain click on a shape selects it (if
-  // not already) and begins dragging the whole selection.
-  function pointerDown(point: Point) {
-    if (!active()) return;
+  function onPointerDown(
+    x: number,
+    y: number,
+    shapeLayerHandles: DocHandle<ShapeLayerDoc>[],
+  ) {
+    console.log("on pointer down!!!");
     const focus = focusHandle();
+    console.log("pointer down", focus);
     if (!focus) return;
 
-    const hit = topmostHit(point);
+    const hit = topmostHit(x, y, shapeLayerHandles);
+    console.log("pointer down!", hit);
     if (shiftDown) {
       focus.change((doc) => {
         if (!doc.selection) doc.selection = {};
@@ -141,60 +118,21 @@ export function SelectButton(): JSX.Element {
         doc.selection = { [hit]: true };
       });
     }
-    beginDrag(point, keys);
-  }
-
-  // Snapshot the origin of every selected shape, grouped by layer so each move
-  // issues one `change()` per layer. Indices are stable for the drag's
-  // duration (we never add/remove shapes mid-drag).
-  function beginDrag(point: Point, keys: string[]) {
-    const selected = new Set(keys);
-    const groups: DragGroup[] = [];
-    for (const entry of registry.values()) {
-      const handle = entry.getHandle();
-      if (!handle) continue;
-      const items: DragGroup["items"] = [];
-      (entry.getDoc()?.shapes ?? []).forEach((shape, index) => {
-        if (selected.has(shapeRef(entry.url, index))) {
-          items.push({ index, x0: shape.x, y0: shape.y });
-        }
-      });
-      if (items.length) groups.push({ handle, items });
-    }
-    if (groups.length === 0) return;
-    dragStart = point;
-    snapshot = groups;
-    dragging = true;
-  }
-
-  function pointerMove(point: Point) {
-    if (!dragging || !active()) return;
-    const dx = point.x - dragStart.x;
-    const dy = point.y - dragStart.y;
-    for (const group of snapshot) {
-      group.handle.change((doc) => {
-        for (const { index, x0, y0 } of group.items) {
-          const shape = doc.shapes[index];
-          if (!shape) continue;
-          shape.x = x0 + dx;
-          shape.y = y0 + dy;
-        }
-      });
-    }
-  }
-
-  function pointerUp() {
-    dragging = false;
-    snapshot = [];
   }
 
   // The ref of the shape with the greatest `z` under `point`, if any.
-  function topmostHit(point: Point): string | undefined {
-    let best: { ref: string; z: number } | undefined;
-    for (const entry of registry.values()) {
-      const shapes = entry.getDoc()?.shapes ?? [];
+  function topmostHit(
+    x: number,
+    y: number,
+    shapeLayerHandles: DocHandle<ShapeLayerDoc>[],
+  ): string | undefined {
+    debugger;
+    let bestZ = -Infinity;
+    let bestShape;
+    for (const handle of shapeLayerHandles) {
+      const shapes = handle.doc().shapes ?? [];
       shapes.forEach((shape, index) => {
-        if (!hitTestShape(shape, point)) return;
+        if (!hitTestShape(x, y, shape)) return;
         const z = shape.z ?? 0;
         if (!best || z >= best.z) best = { ref: shapeRef(entry.url, index), z };
       });
@@ -222,20 +160,7 @@ export function SelectButton(): JSX.Element {
   // Remove every selected shape from every layer, splicing from the highest
   // index down so earlier indices stay valid.
   function deleteSelected(selected: Record<string, true>) {
-    for (const entry of registry.values()) {
-      const handle = entry.getHandle();
-      if (!handle) continue;
-      const shapes = entry.getDoc()?.shapes ?? [];
-      const indices: number[] = [];
-      for (let i = 0; i < shapes.length; i++) {
-        if (selected[shapeRef(entry.url, i)]) indices.push(i);
-      }
-      if (indices.length === 0) continue;
-      handle.change((doc) => {
-        for (let k = indices.length - 1; k >= 0; k--)
-          doc.shapes.splice(indices[k], 1);
-      });
-    }
+    console.log("todo implement delete");
   }
 
   function onKeyUp(event: KeyboardEvent) {
@@ -276,10 +201,15 @@ export function SelectButton(): JSX.Element {
       title="Select"
       aria-label="Select"
       aria-pressed={active()}
-      data-surface-no-draw
       onClick={toggle}
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}
+      // Native (non-delegated) listeners: they run while the event bubbles
+      // through the button, before the surface root's own listeners, so
+      // pressing the button never reads as drawing on the surface.
+      on:pointerdown={(event) => event.stopPropagation()}
+      on:pointermove={(event) => event.stopPropagation()}
+      on:pointerup={(event) => event.stopPropagation()}
     >
       <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
         <path
@@ -292,59 +222,4 @@ export function SelectButton(): JSX.Element {
       </svg>
     </button>
   );
-}
-
-// Builds a live registry of every layer doc the select tool reads imperatively
-// (for hit-testing, deletion, and dragging). It tracks the layer list with
-// `mapArray` — the same diffing `<For>` uses, but without rendering — resolving
-// each layer's handle from the repo and subscribing to it, then unsubscribing
-// and unregistering when the layer leaves the list (or the owner is disposed).
-function getLayerDocs(
-  layers: () => Record<string, AutomergeUrl>,
-): Map<AutomergeUrl, LayerEntry> {
-  const repo = useRepo();
-  const registry = new Map<AutomergeUrl, LayerEntry>();
-
-  const tracked = mapArray(
-    () => Object.values(layers()),
-    (url) => {
-      let handle: DocHandle<ShapeLayerDoc> | undefined;
-      let alive = true;
-      // The tool reads `handle.doc()` on demand, so the listener has no work to
-      // do today; it is the hook point for reacting to live layer edits.
-      const onChange = () => {};
-
-      registry.set(url, {
-        url,
-        getDoc: () => {
-          try {
-            return handle?.isReady() ? handle.doc() : undefined;
-          } catch {
-            return undefined;
-          }
-        },
-        getHandle: () => handle,
-      });
-
-      void repo.find<ShapeLayerDoc>(url).then((resolved) => {
-        if (!alive) return;
-        handle = resolved;
-        resolved.on("change", onChange);
-      });
-
-      onCleanup(() => {
-        alive = false;
-        handle?.off("change", onChange);
-        registry.delete(url);
-      });
-
-      return url;
-    },
-  );
-
-  // `mapArray` is lazy: read it inside an effect so each layer's setup runs and
-  // stays alive for the component's lifetime.
-  createEffect(() => tracked());
-
-  return registry;
 }

@@ -4,12 +4,11 @@ import {
   RepoContext,
   useDocument,
 } from "@automerge/automerge-repo-solid-primitives";
-import { subscribeDoc } from "@inkandswitch/patchwork-providers-solid";
+import { subscribeDoc } from "../vendor/providers-solid";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import "@inkandswitch/patchwork-elements";
-import type { PaperLayerDoc, Shape } from "../paper/types";
-import type { SurfaceState } from "../surface/types";
+import type { Shape, ShapeLayerDoc, SurfaceState } from "../surface/types";
 import { resolveOutline } from "../select/geometry";
 import "./embed.css";
 
@@ -39,10 +38,7 @@ export const EmbedLayerTool: ToolRender = (handle, element) => {
   const dispose = render(
     () => (
       <RepoContext.Provider value={element.repo}>
-        <EmbedLayer
-          url={(handle as DocHandle<PaperLayerDoc>).url}
-          element={element}
-        />
+        <EmbedLayer url={handle.url} element={element} />
       </RepoContext.Provider>
     ),
     element,
@@ -51,7 +47,7 @@ export const EmbedLayerTool: ToolRender = (handle, element) => {
 };
 
 function EmbedLayer(props: { url: AutomergeUrl; element: HTMLElement }) {
-  const [doc] = useDocument<PaperLayerDoc>(() => props.url);
+  const [doc] = useDocument<ShapeLayerDoc>(() => props.url);
   const [state] = subscribeDoc<SurfaceState>(() => props.element, {
     type: "surface:state",
   });
@@ -61,7 +57,7 @@ function EmbedLayer(props: { url: AutomergeUrl; element: HTMLElement }) {
   // panned/zoomed) only while no surface tool is active. When a tool such as
   // select or draw is active, embeds turn pointer-transparent so the surface
   // gets the click for hit-testing/drawing instead.
-  const interactive = () => !state()?.selectedTool;
+  const interactive = () => !state()?.selectedToolId;
 
   return (
     <For each={shapes()}>

@@ -1,10 +1,10 @@
 export const plugins = [
   {
     type: "patchwork:tool",
-    id: "paper-rect",
+    id: "rect-shape-layer",
     name: "Rectangle Layer",
     icon: "Square",
-    supportedDatatypes: ["paper-layer"],
+    supportedDatatypes: ["shape-layer"],
     async load() {
       const { RectLayerTool } = await import("./RectLayerTool");
       return RectLayerTool;

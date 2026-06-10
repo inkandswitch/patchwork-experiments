@@ -1,6 +1,6 @@
 import { For, Show, createMemo, type JSX } from "solid-js";
 import { useDocument } from "@automerge/automerge-repo-solid-primitives";
-import { subscribeDoc } from "@inkandswitch/patchwork-providers-solid";
+import { subscribeDoc } from "../vendor/providers-solid";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type {
   DocWithLayers,

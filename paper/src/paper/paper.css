@@ -18,8 +18,8 @@
   z-index: auto;
 }
 
-/* Floating tool buttons over the canvas. The buttons themselves carry
-   data-surface-no-draw so pressing one never starts a draw. */
+/* Floating tool buttons over the canvas. The buttons stop pointer events
+   themselves (native listeners) so pressing one never starts a draw. */
 .paper-controls {
   position: absolute;
   top: 12px;

@@ -8,7 +8,7 @@ import { plugins as surfacePlugins } from "./surface";
 export const plugins = [
   ...paperPlugins,
   ...lineLayerPlugins,
-  //  ...rectLayerPlugins,
+  ...rectLayerPlugins,
   ...embedLayerPlugins,
   ...mapPlugins,
   ...surfacePlugins,

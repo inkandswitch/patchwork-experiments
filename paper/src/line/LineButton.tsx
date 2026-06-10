@@ -1,15 +1,13 @@
+import { DocHandle } from "@automerge/automerge-repo";
 import { useRepo } from "@automerge/automerge-repo-solid-primitives";
-import { subscribeDoc } from "@inkandswitch/patchwork-providers-solid";
+import { subscribeDoc } from "../vendor/providers-solid";
 import { createEffect, createSignal, type JSX } from "solid-js";
 import type {
   DocWithLayers,
-  Point,
   ShapeLayerDoc,
-  SurfacePointer,
-  SurfaceTool,
+  SurfaceState,
 } from "../surface/types";
 import type { LineShape } from "./LineLayerTool";
-import { DocHandle } from "@automerge/automerge-repo";
 
 const STROKE = "#64748b";
 const SIZE = 8;
@@ -26,21 +24,18 @@ const MIN_LENGTH = 4;
 // expands it with perfect-freehand. The button dispatches from its own
 // element, so there's no Solid context.
 export function LineButton(): JSX.Element {
-  let root!: HTMLButtonElement;
+  const [root, setRoot] = createSignal<HTMLDivElement>();
 
-  const [tool, toolHandle] = subscribeDoc<SurfaceTool>(() => root, {
-    type: "surface:tool",
+  const [surfaceState, surfaceStateHandle] = subscribeDoc<SurfaceState>(root, {
+    type: "surface:state",
   });
-  const active = () => tool()?.toolId === "line-shape-layer";
+
+  const active = () => surfaceState()?.selectedToolId === "line-shape-layer";
   const [hovered, setHovered] = createSignal(false);
   const repo = useRepo();
 
-  const [getPointer] = subscribeDoc<SurfacePointer>(() => root, {
-    type: "surface:pointer",
-  });
-
   const getLayerHandle = async () => {
-    const surfaceUrl = getPointer()?.surfaceUrl;
+    const surfaceUrl = surfaceState()?.pointer?.surfaceUrl;
     if (!surfaceUrl) {
       return;
     }
@@ -118,36 +113,49 @@ export function LineButton(): JSX.Element {
   let wasPressed = false;
 
   createEffect(async () => {
-    const pointer = getPointer();
-    if (!pointer || !pointer.position) {
+    const state = surfaceState();
+    const pointer = state?.pointer;
+    if (!pointer) {
+      return;
+    }
+
+    if (state?.selectedToolId !== "line-shape-layer") {
+      // Tool inactive: drop any in-progress stroke and keep the pressed
+      // bookkeeping current, so re-enabling the tool mid-press or with a
+      // stale pressed pointer doesn't spawn a line at the old position.
+      currentLineIndex = null;
+      wasPressed = pointer.isPressed;
       return;
     }
 
     const { x, y } = pointer.position;
-
-    if (tool()?.toolId !== "line-shape-layer") {
-      return;
-    }
+    const isPressed = pointer.isPressed;
+    const startedStroke = !wasPressed && isPressed;
+    const endedStroke = wasPressed && !isPressed;
+    // Update before the await: effect re-runs triggered during the await must
+    // see the new value, otherwise every queued run looks like a pointer down.
+    wasPressed = isPressed;
 
     const layerHandle = await getLayerHandle();
     if (!layerHandle) {
       return;
     }
 
-    if (!wasPressed && pointer.isPressed) {
+    if (startedStroke) {
       onPointerDown(x, y, layerHandle);
-    } else if (wasPressed && !pointer.isPressed) {
+    } else if (endedStroke) {
       onPointerUp(x, y, layerHandle);
-    } else {
+    } else if (isPressed) {
       onPointerMove(x, y, layerHandle);
     }
-
-    wasPressed = pointer.isPressed;
   });
 
-  const toggle = () => {
-    toolHandle()?.change((doc) => {
-      doc.toolId = doc.toolId === "line-shape-layer" ? "" : "line-shape-layer";
+  const toggle = (event: Event) => {
+    event.stopPropagation();
+
+    surfaceStateHandle()?.change((state) => {
+      state.selectedToolId =
+        state.selectedToolId === "line-shape-layer" ? "" : "line-shape-layer";
     });
   };
 
@@ -176,16 +184,21 @@ export function LineButton(): JSX.Element {
 
   return (
     <button
-      ref={root}
+      ref={setRoot}
       type="button"
       style={buttonStyle()}
       title="Draw"
       aria-label="Draw freehand"
       aria-pressed={active()}
-      data-surface-no-draw
       onClick={toggle}
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}
+      // Native (non-delegated) listeners: they run while the event bubbles
+      // through the button, before the surface root's own listeners, so
+      // pressing the button never reads as drawing on the surface.
+      on:pointerdown={(event) => event.stopPropagation()}
+      on:pointermove={(event) => event.stopPropagation()}
+      on:pointerup={(event) => event.stopPropagation()}
     >
       <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
         <path

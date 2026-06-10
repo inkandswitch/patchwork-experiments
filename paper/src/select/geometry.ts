@@ -8,22 +8,25 @@ const LINE_HIT_PADDING = 8;
 
 // Decide whether `point` (in canvas coordinates) lands on `shape`. Works off
 // the shape's resolved outline, so it is agnostic to which tool drew it.
-export function hitTestShape(shape: Shape, point: Point): boolean {
+export function hitTestShape(x: number, y: number, shape: Shape): boolean {
   const outline = resolveOutline(shape);
   if (!outline) return false;
-  const local = { x: point.x - shape.x, y: point.y - shape.y };
+  const localX = x - shape.x;
+  const localY = y - shape.y;
   switch (outline.type) {
     case "rectangle":
       return (
-        local.x >= 0 &&
-        local.y >= 0 &&
-        local.x <= outline.width &&
-        local.y <= outline.height
+        localX >= 0 &&
+        localY >= 0 &&
+        localX <= outline.width &&
+        localY <= outline.height
       );
     case "polygon":
-      return pointInPolygon(local, outline.points);
+      return pointInPolygon(localX, localY, outline.points);
     case "line":
-      return distanceToPolyline(local, outline.points) <= LINE_HIT_PADDING;
+      return (
+        distanceToPolyline(localX, localY, outline.points) <= LINE_HIT_PADDING
+      );
   }
 }
 
@@ -72,35 +75,34 @@ export function shapeRef(layerUrl: AutomergeUrl, index: number): string {
   return `${layerUrl}#${index}`;
 }
 
-// Standard even-odd ray cast: is `point` inside the polygon `points`?
-function pointInPolygon(point: Point, points: Point[]): boolean {
+// Standard even-odd ray cast: is the point (x, y) inside the polygon `points`?
+function pointInPolygon(x: number, y: number, points: Point[]): boolean {
   let inside = false;
   for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
     const a = points[i];
     const b = points[j];
     const intersects =
-      a.y > point.y !== b.y > point.y &&
-      point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x;
+      a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x;
     if (intersects) inside = !inside;
   }
   return inside;
 }
 
-// Shortest distance from `point` to a connected run of segments.
-function distanceToPolyline(point: Point, points: Point[]): number {
+// Shortest distance from point (x, y) to a connected run of segments.
+function distanceToPolyline(x: number, y: number, points: Point[]): number {
   let min = Infinity;
   for (let i = 1; i < points.length; i++) {
-    min = Math.min(min, distanceToSegment(point, points[i - 1], points[i]));
+    min = Math.min(min, distanceToSegment(x, y, points[i - 1], points[i]));
   }
   return min;
 }
 
-function distanceToSegment(point: Point, a: Point, b: Point): number {
+function distanceToSegment(x: number, y: number, a: Point, b: Point): number {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const lengthSquared = dx * dx + dy * dy;
-  if (lengthSquared === 0) return Math.hypot(point.x - a.x, point.y - a.y);
-  let t = ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSquared;
+  if (lengthSquared === 0) return Math.hypot(x - a.x, y - a.y);
+  let t = ((x - a.x) * dx + (y - a.y) * dy) / lengthSquared;
   t = Math.max(0, Math.min(1, t));
-  return Math.hypot(point.x - (a.x + t * dx), point.y - (a.y + t * dy));
+  return Math.hypot(x - (a.x + t * dx), y - (a.y + t * dy));
 }

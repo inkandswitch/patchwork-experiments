@@ -1,13 +1,12 @@
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 
-export type SurfaceTool = {
-  toolId?: string;
-};
-
-export type SurfacePointer = {
-  position?: Point;
-  isPressed: boolean;
-  surfaceUrl?: AutomergeUrl; // points to Doc<DocWithLayers>
+export type SurfaceState = {
+  selectedToolId?: string;
+  pointer?: {
+    position: Point;
+    isPressed: boolean;
+    surfaceUrl: AutomergeUrl; // points to Doc<DocWithLayers>
+  };
 };
 
 export type DocWithLayers = {

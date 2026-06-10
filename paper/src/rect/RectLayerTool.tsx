@@ -6,7 +6,7 @@ import {
 } from "@automerge/automerge-repo-solid-primitives";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
-import type { PaperLayerDoc, Shape } from "../paper/types";
+import type { Shape, ShapeLayerDoc } from "../surface/types";
 import { resolveOutline } from "../select/geometry";
 import "./rect.css";
 
@@ -38,7 +38,7 @@ export const RectLayerTool: ToolRender = (handle, element) => {
   const dispose = render(
     () => (
       <RepoContext.Provider value={element.repo}>
-        <RectLayer url={(handle as DocHandle<PaperLayerDoc>).url} />
+        <RectLayer url={(handle as DocHandle<ShapeLayerDoc>).url} />
       </RepoContext.Provider>
     ),
     element,
@@ -47,7 +47,7 @@ export const RectLayerTool: ToolRender = (handle, element) => {
 };
 
 function RectLayer(props: { url: AutomergeUrl }) {
-  const [doc] = useDocument<PaperLayerDoc>(() => props.url);
+  const [doc] = useDocument<ShapeLayerDoc>(() => props.url);
   const shapes = () => (doc()?.shapes ?? []) as RectShape[];
 
   return (

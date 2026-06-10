@@ -1,80 +1,78 @@
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import { useRepo } from "@automerge/automerge-repo-solid-primitives";
+import { accept, request, type SubscribeEvent } from "../vendor/providers";
 import {
-  accept,
-  request,
-  type SubscribeEvent,
-} from "@inkandswitch/patchwork-providers";
-import { onCleanup, onMount, type JSX } from "solid-js";
-import {
-  DocWithLayers,
-  SurfaceTool,
-  type Point,
-  type SurfacePointer,
-} from "./types";
+  createEffect,
+  createMemo,
+  createRoot,
+  onCleanup,
+  onMount,
+  type JSX,
+} from "solid-js";
+import { DocWithLayers, type Point, SurfaceState } from "./types";
+import { subscribeDoc } from "../vendor/providers-solid";
 
-// Brokers the canvas interaction for the paper surface. It owns an ephemeral
-// selection-state document — exposing it over `surface:state` and seeding it
-// with the paper's url so tools can open the paper doc directly — and tracks
-// the canvas pointer. Consumers find it purely by dispatching
-// `patchwork:subscribe` from their own element — there is no Solid context
-// wiring them together.
-export function SurfaceProvider(props: {
-  element: HTMLElement;
+export function SurfaceProvider({
+  handle,
+  children,
+  onMounted,
+}: {
   handle: DocHandle<DocWithLayers>;
   children: JSX.Element;
+  onMounted?: () => void;
 }): JSX.Element {
+  let root!: HTMLDivElement;
+
   const repo = useRepo();
-  const pointerHandle = repo.create<SurfacePointer>({
-    surfaceUrl: props.handle.url,
-    isPressed: false,
+
+  const [, _stateHandle] = subscribeDoc<SurfaceState>(() => root, {
+    type: "surface:state",
   });
-  const toolHandle = repo.create<SurfaceTool>();
+  // The ancestor's answer arrives async (MessagePort + repo.find), so the
+  // memo runs with `undefined` first and needs a fallback doc — created once,
+  // not per evaluation, so re-runs can't mint orphan docs.
+  let fallback: DocHandle<SurfaceState> | undefined;
+  const stateHandle = createMemo(
+    () => _stateHandle() ?? (fallback ??= repo.create<SurfaceState>()),
+  );
 
   onMount(() => {
-    const el = props.element;
+    if (onMounted) onMounted();
 
-    let activePointerUrl: AutomergeUrl = pointerHandle.url;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!event.isPrimary) return;
 
-    const pointerListeners = new Set<(url: AutomergeUrl) => void>();
+      event.stopPropagation();
 
-    const setActivePointerUrl = (url: AutomergeUrl) => {
-      if (url === activePointerUrl) {
-        return;
-      }
+      // Capture so the drag keeps streaming through root even when the
+      // pointer crosses layer views or leaves the canvas.
+      root.setPointerCapture(event.pointerId);
 
-      activePointerUrl = url;
-      for (const listener of pointerListeners) {
-        listener(activePointerUrl);
-      }
-    };
-
-    const onPointerDown = async (event: PointerEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (!target || !event.isPrimary) return;
-
-      setActivePointerUrl(
-        await request<AutomergeUrl>(target, {
-          type: "surface:pointer",
-        }),
-      );
-
-      if (activePointerUrl == pointerHandle.url) {
-        pointerHandle.change((pointer) => {
-          pointer.position = toLocal(event);
-          pointer.isPressed = true;
-        });
-      }
+      stateHandle().change((state) => {
+        state.pointer = {
+          position: getLocalPosition(event),
+          surfaceUrl: handle.url,
+          isPressed: true,
+        };
+      });
     };
 
     const onPointerMove = (event: PointerEvent) => {
       if (!event.isPrimary) return;
 
-      if (pointerHandle.url === activePointerUrl) {
-        pointerHandle.change((state) => {
-          state.position = toLocal(event);
-        });
-      }
+      event.stopPropagation();
+
+      // A hover move must not report "pressed"; derive it from the actual
+      // button state instead of hardcoding true.
+      const isPressed = (event.buttons & 1) === 1;
+
+      stateHandle().change((state) => {
+        state.pointer = {
+          position: getLocalPosition(event),
+          surfaceUrl: handle.url,
+          isPressed,
+        };
+      });
     };
 
     // Listen for release/cancel on the window so a drag that ends off-canvas
@@ -82,58 +80,61 @@ export function SurfaceProvider(props: {
     const onPointerUp = (event: PointerEvent) => {
       if (!event.isPrimary) return;
 
-      if (pointerHandle.url === activePointerUrl) {
-        pointerHandle.change((state) => {
-          state.isPressed = false;
-        });
-      }
+      event.stopPropagation();
 
-      setActivePointerUrl(pointerHandle.url);
+      stateHandle().change((state) => {
+        state.pointer = {
+          position: getLocalPosition(event),
+          surfaceUrl: handle.url,
+          isPressed: false,
+        };
+      });
     };
 
-    const toLocal = (event: PointerEvent): Point => {
-      const rect = el.getBoundingClientRect();
+    const getLocalPosition = (event: PointerEvent): Point => {
+      const rect = root.getBoundingClientRect();
       return { x: event.clientX - rect.left, y: event.clientY - rect.top };
     };
 
     const onSubscribe = (event: SubscribeEvent) => {
       const selector = event.detail?.selector;
 
-      switch (selector?.type) {
-        case "surface:pointer":
-          accept<AutomergeUrl>(event, (respond) => {
-            respond(activePointerUrl);
-
-            pointerListeners.add(respond);
-            return () => {
-              pointerListeners.delete(respond);
-            };
-          });
-
-          break;
-
-        case "surface:tool":
-          accept<AutomergeUrl>(event, (respond) => respond(toolHandle.url));
-      }
-
-      if (selector && selector.type === "surface:state") {
+      if (selector?.type === "surface:state") {
+        // Respond reactively: children often subscribe before this provider's
+        // own upstream subscription has resolved, so they'd otherwise be
+        // stuck on the fallback doc when the inherited state arrives. The
+        // DOM listener runs outside any Solid owner, hence createRoot; accept
+        // runs the returned dispose as teardown on unsubscribe.
+        accept<AutomergeUrl>(event, (respond) =>
+          createRoot((dispose) => {
+            createEffect(() => respond(stateHandle().url));
+            return dispose;
+          }),
+        );
       }
     };
 
-    el.addEventListener("pointerdown", onPointerDown);
-    el.addEventListener("pointermove", onPointerMove);
+    root.addEventListener("pointerdown", onPointerDown);
+    root.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("pointercancel", onPointerUp);
-    el.addEventListener("patchwork:subscribe", onSubscribe);
+    root.addEventListener("patchwork:subscribe", onSubscribe);
 
     onCleanup(() => {
-      el.removeEventListener("pointerdown", onPointerDown);
-      el.removeEventListener("pointermove", onPointerMove);
+      root.removeEventListener("pointerdown", onPointerDown);
+      root.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointercancel", onPointerUp);
-      el.removeEventListener("patchwork:subscribe", onSubscribe);
+      root.removeEventListener("patchwork:subscribe", onSubscribe);
     });
   });
 
-  return <>{props.children}</>;
+  // Must fill the surface: the layer views and overlays are pointer-events:
+  // none, so this div is the actual hit target for canvas pointer events. An
+  // unpositioned div has zero height here and never receives them.
+  return (
+    <div ref={root} style={{ position: "absolute", inset: "0" }}>
+      {children}
+    </div>
+  );
 }

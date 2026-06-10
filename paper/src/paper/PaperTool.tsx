@@ -1,22 +1,21 @@
-import { render } from "solid-js/web";
-import { For } from "solid-js";
+import type { DocHandle } from "@automerge/automerge-repo";
 import {
   RepoContext,
   useDocument,
 } from "@automerge/automerge-repo-solid-primitives";
-import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
-import type { DocHandle } from "@automerge/automerge-repo";
 import "@inkandswitch/patchwork-elements";
-import type { PaperDoc } from "./types";
-import { SurfaceProvider } from "../surface/SurfaceProvider";
+import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
+import { createSignal, For, Show } from "solid-js";
+import { render } from "solid-js/web";
 import { LineButton } from "../line/LineButton";
 import { RectButton } from "../rect/RectButton";
-import { SelectButton } from "../select/SelectButton";
 import { SelectionOverlay } from "../select/SelectionOverlay";
-import "./paper.css";
+import { SurfaceProvider } from "../surface/SurfaceProvider";
 import { DocWithLayers } from "../surface/types";
+import "./paper.css";
+import type { PaperDoc } from "./types";
 
-const VERSION = "0.0.29";
+const VERSION = "0.0.30";
 
 // The surface tool: wraps the stack of layer <patchwork-view>s in a
 // SurfaceProvider so the layer buttons can drive the canvas purely through the
@@ -45,23 +44,28 @@ function PaperSurface(props: {
   element: ToolElement;
 }) {
   const [doc] = useDocument<PaperDoc>(() => props.handle.url);
+  const [isMounted, setIsMounted] = createSignal(false);
   const layers = () => Object.entries(doc()?.layers ?? {});
 
   return (
     <div class="paper-canvas">
       <SurfaceProvider
-        element={props.element}
         handle={props.handle as DocHandle<DocWithLayers>}
+        onMounted={() => setIsMounted(true)}
       >
-        <For each={layers()}>
-          {([toolId, url]) => <patchwork-view doc-url={url} tool-id={toolId} />}
-        </For>
-        <SelectionOverlay />
-        <div class="paper-controls">
-          <SelectButton />
-          <RectButton />
-          <LineButton />
-        </div>
+        <Show when={isMounted()}>
+          <For each={layers()}>
+            {([toolId, url]) => (
+              <patchwork-view doc-url={url} tool-id={toolId} />
+            )}
+          </For>
+          <SelectionOverlay />
+          <div class="paper-controls">
+            {/*<SelectButton />*/}
+            <RectButton />
+            <LineButton />
+          </div>
+        </Show>
       </SurfaceProvider>
       <div class="paper-version">v{VERSION}</div>
     </div>
