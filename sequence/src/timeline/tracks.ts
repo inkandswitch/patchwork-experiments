@@ -51,6 +51,7 @@ export function trackDropTargetFromY(y: number, trackCount: number): TrackDropTa
 function copyClip(clip: Clip): Clip {
   return {
     id: clip.id,
+    name: clip.name,
     sourceId: clip.sourceId,
     time: clip.time,
     sourceInTime: clip.sourceInTime,
