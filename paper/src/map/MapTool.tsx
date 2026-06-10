@@ -93,14 +93,11 @@ function MapSurface(props: {
   // Project a pointer event into the map's local (Mercator world) space. The
   // map owns this conversion, so no layer tool ever learns the surface is
   // geographic — it just reads world coordinates like any other surface space.
-  const toLocal = (event: PointerEvent): Point => {
+  const toLocal = (clientX: number, clientY: number): Point => {
     const m = map();
     if (!m) return { x: 0, y: 0 };
     const rect = mapContainer.getBoundingClientRect();
-    const lngLat = m.unproject([
-      event.clientX - rect.left,
-      event.clientY - rect.top,
-    ]);
+    const lngLat = m.unproject([clientX - rect.left, clientY - rect.top]);
     const merc = maplibregl.MercatorCoordinate.fromLngLat(lngLat);
     return { x: merc.x * WORLD_SIZE, y: merc.y * WORLD_SIZE };
   };
