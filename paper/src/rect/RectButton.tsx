@@ -1,4 +1,4 @@
-import { DocHandle } from "@automerge/automerge-repo";
+import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import { useRepo } from "@automerge/automerge-repo-solid-primitives";
 import { subscribeDoc } from "../vendor/providers-solid";
 import { createEffect, createSignal, type JSX } from "solid-js";
@@ -31,12 +31,7 @@ export function RectButton(): JSX.Element {
   const [hovered, setHovered] = createSignal(false);
   const repo = useRepo();
 
-  const getLayerHandle = async () => {
-    const surfaceUrl = surfaceState()?.pointer?.surfaceUrl;
-    if (!surfaceUrl) {
-      return;
-    }
-
+  const getLayerHandle = async (surfaceUrl: AutomergeUrl) => {
     const surfaceHandle = await repo.find<DocWithLayers>(surfaceUrl);
     const rectShapeLayerUrl = surfaceHandle.doc()?.layers["rect-shape-layer"];
 
@@ -59,79 +54,28 @@ export function RectButton(): JSX.Element {
     return rectShapeLayerHandle;
   };
 
-  let start: Point | null = null;
-  let currentRectIndex: number | null = null;
+  // The in-progress rect is pinned to the surface it started on: without
+  // pointer capture, samples can come from other surfaces mid-gesture (the
+  // pointer crossing an embed), and those must not resize this rect.
+  let rect: {
+    surfaceUrl: AutomergeUrl;
+    layerHandle: DocHandle<ShapeLayerDoc>;
+    index: number;
+    start: Point;
+  } | null = null;
 
   // Anchor at the drag origin so dragging in any direction grows the rect.
-  const resize = (shape: RectShape, x: number, y: number) => {
-    shape.x = Math.min(start!.x, x);
-    shape.y = Math.min(start!.y, y);
-    const width = Math.abs(x - start!.x);
-    const height = Math.abs(y - start!.y);
+  const resize = (shape: RectShape, start: Point, x: number, y: number) => {
+    shape.x = Math.min(start.x, x);
+    shape.y = Math.min(start.y, y);
+    const width = Math.abs(x - start.x);
+    const height = Math.abs(y - start.y);
     if (shape.outline?.type === "rectangle") {
       shape.outline.width = width;
       shape.outline.height = height;
     } else {
       shape.outline = { type: "rectangle", width, height };
     }
-  };
-
-  const onPointerDown = (
-    x: number,
-    y: number,
-    layerHandle: DocHandle<ShapeLayerDoc>,
-  ) => {
-    start = { x, y };
-    layerHandle.change(({ shapes }) => {
-      currentRectIndex = shapes.length;
-      const z = shapes.reduce((max, s) => Math.max(max, s.z ?? 0), 0) + 1;
-
-      shapes.push({
-        x,
-        y,
-        z,
-        outline: { type: "rectangle", width: 0, height: 0 },
-        fill: FILL,
-        stroke: STROKE,
-      } as RectShape);
-    });
-  };
-
-  const onPointerMove = (
-    x: number,
-    y: number,
-    layerHandle: DocHandle<ShapeLayerDoc>,
-  ) => {
-    if (currentRectIndex === null || !start) {
-      return;
-    }
-
-    layerHandle.change(({ shapes }) => {
-      const shape = shapes[currentRectIndex!] as RectShape | undefined;
-      if (shape) resize(shape, x, y);
-    });
-  };
-
-  const onPointerUp = (
-    x: number,
-    y: number,
-    layerHandle: DocHandle<ShapeLayerDoc>,
-  ) => {
-    if (currentRectIndex !== null && start) {
-      layerHandle.change(({ shapes }) => {
-        const shape = shapes[currentRectIndex!] as RectShape | undefined;
-        if (!shape) return;
-        resize(shape, x, y);
-        if (
-          shape.outline?.type === "rectangle" &&
-          (shape.outline.width < MIN_SIZE || shape.outline.height < MIN_SIZE)
-        ) {
-          shapes.splice(currentRectIndex!, 1);
-        }
-      });
-    }
-    start = null;
-    currentRectIndex = null;
   };
 
   let wasPressed = false;
@@ -147,8 +91,7 @@ export function RectButton(): JSX.Element {
       // Tool inactive: drop any in-progress rect and keep the pressed
       // bookkeeping current, so re-enabling the tool mid-press or with a
       // stale pressed pointer doesn't spawn a rect at the old position.
-      start = null;
-      currentRectIndex = null;
+      rect = null;
       wasPressed = pointer.isPressed;
       return;
     }
@@ -161,17 +104,56 @@ export function RectButton(): JSX.Element {
     // see the new value, otherwise every queued run looks like a pointer down.
     wasPressed = isPressed;
 
-    const layerHandle = await getLayerHandle();
-    if (!layerHandle) {
-      return;
-    }
-
     if (startedRect) {
-      onPointerDown(x, y, layerHandle);
+      const layerHandle = await getLayerHandle(pointer.surfaceUrl);
+      if (!layerHandle) {
+        return;
+      }
+
+      layerHandle.change(({ shapes }) => {
+        rect = {
+          surfaceUrl: pointer.surfaceUrl,
+          layerHandle,
+          index: shapes.length,
+          start: { x, y },
+        };
+        const z = shapes.reduce((max, s) => Math.max(max, s.z ?? 0), 0) + 1;
+
+        shapes.push({
+          x,
+          y,
+          z,
+          outline: { type: "rectangle", width: 0, height: 0 },
+          fill: FILL,
+          stroke: STROKE,
+        } as RectShape);
+      });
     } else if (endedRect) {
-      onPointerUp(x, y, layerHandle);
+      if (rect && pointer.surfaceUrl === rect.surfaceUrl) {
+        const { layerHandle, index, start } = rect;
+        layerHandle.change(({ shapes }) => {
+          const shape = shapes[index] as RectShape | undefined;
+          if (!shape) return;
+          resize(shape, start, x, y);
+          if (
+            shape.outline?.type === "rectangle" &&
+            (shape.outline.width < MIN_SIZE || shape.outline.height < MIN_SIZE)
+          ) {
+            shapes.splice(index, 1);
+          }
+        });
+      }
+      rect = null;
     } else if (isPressed) {
-      onPointerMove(x, y, layerHandle);
+      if (!rect || pointer.surfaceUrl !== rect.surfaceUrl) {
+        return;
+      }
+
+      const { layerHandle, index, start } = rect;
+      layerHandle.change(({ shapes }) => {
+        const shape = shapes[index] as RectShape | undefined;
+        if (shape) resize(shape, start, x, y);
+      });
     }
   });
 

@@ -1,6 +1,6 @@
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import { useRepo } from "@automerge/automerge-repo-solid-primitives";
-import { accept, request, type SubscribeEvent } from "../vendor/providers";
+import { accept, type SubscribeEvent } from "../vendor/providers";
 import {
   createEffect,
   createMemo,
@@ -10,7 +10,7 @@ import {
   type JSX,
 } from "solid-js";
 import { DocWithLayers, type Point, SurfaceState } from "./types";
-import { subscribeDoc } from "../vendor/providers-solid";
+import { request, subscribeDoc } from "../vendor/providers-solid";
 
 export function SurfaceProvider({
   handle,
@@ -36,25 +36,52 @@ export function SurfaceProvider({
     () => _stateHandle() ?? (fallback ??= repo.create<SurfaceState>()),
   );
 
+  // Ask the nearest ancestor surface for its url. Dispatched before this
+  // provider's own subscribe listener attaches (request's onMount runs
+  // first), so a provider can't answer itself. Stays undefined for a
+  // top-level surface.
+  const parentSurfaceUrl = request<AutomergeUrl>(() => root, {
+    type: "surface:parent",
+  });
+
   onMount(() => {
     if (onMounted) onMounted();
+
+    const getLocalPosition = (event: PointerEvent): Point => {
+      const rect = root.getBoundingClientRect();
+      return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    };
+
+    const stampPointer = (event: PointerEvent, isPressed: boolean) => {
+      stateHandle().change((state) => {
+        const pointer: SurfaceState["pointer"] = {
+          position: getLocalPosition(event),
+          screenPosition: { x: event.clientX, y: event.clientY },
+          surfaceUrl: handle.url,
+          isPressed,
+        };
+        // Automerge rejects explicit undefined values, so only set when known.
+        const parent = parentSurfaceUrl();
+        if (parent) pointer.parentSurfaceUrl = parent;
+        state.pointer = pointer;
+      });
+    };
 
     const onPointerDown = (event: PointerEvent) => {
       if (!event.isPrimary) return;
 
       event.stopPropagation();
 
-      // Capture so the drag keeps streaming through root even when the
-      // pointer crosses layer views or leaves the canvas.
-      root.setPointerCapture(event.pointerId);
+      // No capture: moves and the release must hit-test to whatever surface
+      // is under the cursor, so cross-surface drags can read their drop
+      // target straight from the pointer state. Touch pointers are
+      // implicitly captured to the down target, so release that too.
+      const target = event.target as Element;
+      if (target.hasPointerCapture?.(event.pointerId)) {
+        target.releasePointerCapture(event.pointerId);
+      }
 
-      stateHandle().change((state) => {
-        state.pointer = {
-          position: getLocalPosition(event),
-          surfaceUrl: handle.url,
-          isPressed: true,
-        };
-      });
+      stampPointer(event, true);
     };
 
     const onPointerMove = (event: PointerEvent) => {
@@ -64,36 +91,29 @@ export function SurfaceProvider({
 
       // A hover move must not report "pressed"; derive it from the actual
       // button state instead of hardcoding true.
-      const isPressed = (event.buttons & 1) === 1;
-
-      stateHandle().change((state) => {
-        state.pointer = {
-          position: getLocalPosition(event),
-          surfaceUrl: handle.url,
-          isPressed,
-        };
-      });
+      stampPointer(event, (event.buttons & 1) === 1);
     };
 
-    // Listen for release/cancel on the window so a drag that ends off-canvas
-    // still clears the pressed state.
+    // On root, not window: whichever surface is under the cursor stamps the
+    // release, and that sample is the drop target for cross-surface drags.
     const onPointerUp = (event: PointerEvent) => {
       if (!event.isPrimary) return;
 
       event.stopPropagation();
 
-      stateHandle().change((state) => {
-        state.pointer = {
-          position: getLocalPosition(event),
-          surfaceUrl: handle.url,
-          isPressed: false,
-        };
-      });
+      stampPointer(event, false);
     };
 
-    const getLocalPosition = (event: PointerEvent): Point => {
-      const rect = root.getBoundingClientRect();
-      return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    // Safety net for releases outside any surface (toolbar, off-window):
+    // only clears the pressed flag, never touches position or surface, so it
+    // can't corrupt drop targets. In-surface releases stop propagation at
+    // root and never reach this.
+    const onWindowPointerUp = (event: PointerEvent) => {
+      if (!event.isPrimary) return;
+
+      stateHandle().change((state) => {
+        if (state.pointer?.isPressed) state.pointer.isPressed = false;
+      });
     };
 
     const onSubscribe = (event: SubscribeEvent) => {
@@ -112,19 +132,29 @@ export function SurfaceProvider({
           }),
         );
       }
+
+      if (selector?.type === "surface:parent") {
+        accept<AutomergeUrl>(event, (respond) => {
+          respond(handle.url);
+        });
+      }
     };
 
     root.addEventListener("pointerdown", onPointerDown);
     root.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-    window.addEventListener("pointercancel", onPointerUp);
+    root.addEventListener("pointerup", onPointerUp);
+    root.addEventListener("pointercancel", onPointerUp);
+    window.addEventListener("pointerup", onWindowPointerUp);
+    window.addEventListener("pointercancel", onWindowPointerUp);
     root.addEventListener("patchwork:subscribe", onSubscribe);
 
     onCleanup(() => {
       root.removeEventListener("pointerdown", onPointerDown);
       root.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-      window.removeEventListener("pointercancel", onPointerUp);
+      root.removeEventListener("pointerup", onPointerUp);
+      root.removeEventListener("pointercancel", onPointerUp);
+      window.removeEventListener("pointerup", onWindowPointerUp);
+      window.removeEventListener("pointercancel", onWindowPointerUp);
       root.removeEventListener("patchwork:subscribe", onSubscribe);
     });
   });

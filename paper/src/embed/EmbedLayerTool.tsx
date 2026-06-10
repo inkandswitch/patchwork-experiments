@@ -4,11 +4,10 @@ import {
   RepoContext,
   useDocument,
 } from "@automerge/automerge-repo-solid-primitives";
-import { subscribeDoc } from "../vendor/providers-solid";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
-import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
+import type { AutomergeUrl } from "@automerge/automerge-repo";
 import "@inkandswitch/patchwork-elements";
-import type { Shape, ShapeLayerDoc, SurfaceState } from "../surface/types";
+import type { Shape, ShapeLayerDoc } from "../surface/types";
 import { resolveOutline } from "../select/geometry";
 import "./embed.css";
 
@@ -38,7 +37,7 @@ export const EmbedLayerTool: ToolRender = (handle, element) => {
   const dispose = render(
     () => (
       <RepoContext.Provider value={element.repo}>
-        <EmbedLayer url={handle.url} element={element} />
+        <EmbedLayer url={handle.url} />
       </RepoContext.Provider>
     ),
     element,
@@ -46,19 +45,15 @@ export const EmbedLayerTool: ToolRender = (handle, element) => {
   return dispose;
 };
 
-function EmbedLayer(props: { url: AutomergeUrl; element: HTMLElement }) {
+function EmbedLayer(props: { url: AutomergeUrl }) {
   const [doc] = useDocument<ShapeLayerDoc>(() => props.url);
-  const [state] = subscribeDoc<SurfaceState>(() => props.element, {
-    type: "surface:state",
-  });
   const shapes = () => (doc()?.shapes ?? []) as EmbedShape[];
 
-  // Embeds receive pointer events (so an embedded doc like a map can be
-  // panned/zoomed) only while no surface tool is active. When a tool such as
-  // select or draw is active, embeds turn pointer-transparent so the surface
-  // gets the click for hit-testing/drawing instead.
-  const interactive = () => !state()?.selectedToolId;
-
+  // Embeds are always interactive: an embedded surface handles its own
+  // pointer input (it stamps the shared surface:state with its url and
+  // parent), which is what lets tools draw into it and drags drop onto it.
+  // hide-controls keeps nested papers from rendering their own toolbar, so
+  // there is exactly one instance of each tool button.
   return (
     <For each={shapes()}>
       {(embed) => (
@@ -66,6 +61,7 @@ function EmbedLayer(props: { url: AutomergeUrl; element: HTMLElement }) {
           class="paper-embed-item"
           doc-url={embed.docUrl}
           tool-id={embed.toolId}
+          hide-controls=""
           style={{
             position: "absolute",
             left: `${embed.x}px`,
@@ -75,7 +71,7 @@ function EmbedLayer(props: { url: AutomergeUrl; element: HTMLElement }) {
             right: "auto",
             bottom: "auto",
             "z-index": embed.z,
-            "pointer-events": interactive() ? "auto" : "none",
+            "pointer-events": "auto",
           }}
         />
       )}

@@ -9,6 +9,7 @@ import { createSignal, For, Show } from "solid-js";
 import { render } from "solid-js/web";
 import { LineButton } from "../line/LineButton";
 import { RectButton } from "../rect/RectButton";
+import { SelectButton } from "../select/SelectButton";
 import { SelectionOverlay } from "../select/SelectionOverlay";
 import { SurfaceProvider } from "../surface/SurfaceProvider";
 import { DocWithLayers } from "../surface/types";
@@ -46,6 +47,10 @@ function PaperSurface(props: {
   const [doc] = useDocument<PaperDoc>(() => props.handle.url);
   const [isMounted, setIsMounted] = createSignal(false);
   const layers = () => Object.entries(doc()?.layers ?? {});
+  // Embedded papers are rendered with hide-controls so only the outermost
+  // paper shows a toolbar — one instance of each tool button drives the
+  // whole surface hierarchy through the shared surface:state.
+  const showControls = !props.element.hasAttribute("hide-controls");
 
   return (
     <div class="paper-canvas">
@@ -59,12 +64,14 @@ function PaperSurface(props: {
               <patchwork-view doc-url={url} tool-id={toolId} />
             )}
           </For>
-          <SelectionOverlay />
-          <div class="paper-controls">
-            {/*<SelectButton />*/}
-            <RectButton />
-            <LineButton />
-          </div>
+          <SelectionOverlay surfaceUrl={props.handle.url} />
+          <Show when={showControls}>
+            <div class="paper-controls">
+              <SelectButton />
+              <RectButton />
+              <LineButton />
+            </div>
+          </Show>
         </Show>
       </SurfaceProvider>
       <div class="paper-version">v{VERSION}</div>

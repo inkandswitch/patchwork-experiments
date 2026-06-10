@@ -2,12 +2,7 @@ import { For, Show, createMemo, type JSX } from "solid-js";
 import { useDocument } from "@automerge/automerge-repo-solid-primitives";
 import { subscribeDoc } from "../vendor/providers-solid";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
-import type {
-  DocWithLayers,
-  Shape,
-  ShapeLayerDoc,
-  SurfacePointer,
-} from "../surface/types";
+import type { DocWithLayers, Shape, ShapeLayerDoc } from "../surface/types";
 import { outlinePoints, resolveOutline, shapeRef } from "./geometry";
 import "./select.css";
 
@@ -17,18 +12,19 @@ type FocusDoc = {
   selection: Record<string, true>;
 };
 
-// A full-canvas overlay that draws a highlight on each selected shape. It is
-// purely a renderer: it reads the current selection from the focus provider and
-// the shapes from each layer (discovered from the surface doc that
-// `surface:pointer` points to), and paints dashed outlines. All selection
+// A full-canvas overlay that draws a highlight on each selected shape of its
+// own surface. Purely a renderer: it reads the current selection from the
+// focus provider and the shapes from this surface's layers, and paints dashed
+// outlines. Selection refs are globally unique (layer urls), so each paper —
+// nested or not — highlights exactly its own shapes in its own coordinates;
+// an embed's highlight is drawn by the parent's overlay. All selection
 // interaction lives in SelectButton.
-export function SelectionOverlay(): JSX.Element {
+export function SelectionOverlay(props: {
+  surfaceUrl: AutomergeUrl;
+}): JSX.Element {
   let root!: HTMLDivElement;
 
-  const [getPointer] = subscribeDoc<SurfacePointer>(() => root, {
-    type: "surface:pointer",
-  });
-  const [surface] = useDocument<DocWithLayers>(() => getPointer()?.surfaceUrl);
+  const [surface] = useDocument<DocWithLayers>(() => props.surfaceUrl);
   const layers = () => surface()?.layers ?? {};
   const [focusDoc] = subscribeDoc<FocusDoc>(() => root, {
     type: "patchwork:focus",

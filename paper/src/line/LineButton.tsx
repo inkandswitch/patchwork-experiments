@@ -1,4 +1,4 @@
-import { DocHandle } from "@automerge/automerge-repo";
+import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import { useRepo } from "@automerge/automerge-repo-solid-primitives";
 import { subscribeDoc } from "../vendor/providers-solid";
 import { createEffect, createSignal, type JSX } from "solid-js";
@@ -34,12 +34,7 @@ export function LineButton(): JSX.Element {
   const [hovered, setHovered] = createSignal(false);
   const repo = useRepo();
 
-  const getLayerHandle = async () => {
-    const surfaceUrl = surfaceState()?.pointer?.surfaceUrl;
-    if (!surfaceUrl) {
-      return;
-    }
-
+  const getLayerHandle = async (surfaceUrl: AutomergeUrl) => {
     const surfaceHandle = await repo.find<DocWithLayers>(surfaceUrl);
     const lineShapeLayerUrl = surfaceHandle.doc()?.layers["line-shape-layer"];
 
@@ -62,53 +57,14 @@ export function LineButton(): JSX.Element {
     return lineShapeLayerHandle;
   };
 
-  let currentLineIndex: number | null = null;
-
-  const onPointerDown = async (
-    x: number,
-    y: number,
-    layerHandle: DocHandle<ShapeLayerDoc>,
-  ) => {
-    layerHandle.change(({ shapes }) => {
-      currentLineIndex = shapes.length;
-
-      shapes.push({
-        x,
-        y,
-        z: 1,
-        outline: { type: "line", points: [{ x: 0, y: 0 }] },
-        stroke: STROKE,
-        strokeWidth: SIZE,
-      } as LineShape);
-    });
-  };
-
-  const onPointerMove = async (
-    x: number,
-    y: number,
-    layerHandle: DocHandle<ShapeLayerDoc>,
-  ) => {
-    if (currentLineIndex === null) {
-      return;
-    }
-
-    layerHandle.change(({ shapes }) => {
-      const currentShape = shapes[currentLineIndex!] as LineShape;
-
-      currentShape.outline?.points.push({
-        x: x - currentShape.x,
-        y: y - currentShape.y,
-      });
-    });
-  };
-
-  const onPointerUp = (
-    x: number,
-    y: number,
-    layer: DocHandle<ShapeLayerDoc>,
-  ) => {
-    currentLineIndex = null;
-  };
+  // The in-progress stroke is pinned to the surface it started on: without
+  // pointer capture, samples can come from other surfaces mid-gesture (the
+  // pointer crossing an embed), and those must not extend this stroke.
+  let stroke: {
+    surfaceUrl: AutomergeUrl;
+    layerHandle: DocHandle<ShapeLayerDoc>;
+    index: number;
+  } | null = null;
 
   let wasPressed = false;
 
@@ -123,7 +79,7 @@ export function LineButton(): JSX.Element {
       // Tool inactive: drop any in-progress stroke and keep the pressed
       // bookkeeping current, so re-enabling the tool mid-press or with a
       // stale pressed pointer doesn't spawn a line at the old position.
-      currentLineIndex = null;
+      stroke = null;
       wasPressed = pointer.isPressed;
       return;
     }
@@ -136,17 +92,40 @@ export function LineButton(): JSX.Element {
     // see the new value, otherwise every queued run looks like a pointer down.
     wasPressed = isPressed;
 
-    const layerHandle = await getLayerHandle();
-    if (!layerHandle) {
-      return;
-    }
-
     if (startedStroke) {
-      onPointerDown(x, y, layerHandle);
+      const layerHandle = await getLayerHandle(pointer.surfaceUrl);
+      if (!layerHandle) {
+        return;
+      }
+
+      layerHandle.change(({ shapes }) => {
+        stroke = { surfaceUrl: pointer.surfaceUrl, layerHandle, index: shapes.length };
+
+        shapes.push({
+          x,
+          y,
+          z: 1,
+          outline: { type: "line", points: [{ x: 0, y: 0 }] },
+          stroke: STROKE,
+          strokeWidth: SIZE,
+        } as LineShape);
+      });
     } else if (endedStroke) {
-      onPointerUp(x, y, layerHandle);
+      stroke = null;
     } else if (isPressed) {
-      onPointerMove(x, y, layerHandle);
+      if (!stroke || pointer.surfaceUrl !== stroke.surfaceUrl) {
+        return;
+      }
+
+      const { layerHandle, index } = stroke;
+      layerHandle.change(({ shapes }) => {
+        const currentShape = shapes[index] as LineShape;
+
+        currentShape.outline?.points.push({
+          x: x - currentShape.x,
+          y: y - currentShape.y,
+        });
+      });
     }
   });
 
