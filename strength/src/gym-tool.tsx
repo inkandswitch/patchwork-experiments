@@ -7,7 +7,8 @@ import {
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import { createRoot } from "react-dom/client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { CurrentExerciseEmbed } from "./components/CurrentExerciseEmbed";
 import { importHevyCsv, type HevyImportResult } from "./hevy-importer";
 import {
   convertWeight,
@@ -21,10 +22,7 @@ import {
   createTemplateInGym,
 } from "./gym";
 import { sessionLinks, templateLinks } from "./folder";
-import {
-  useLoadedWorkoutSessions,
-  useLoadedWorkoutTemplates,
-} from "./hooks";
+import { useLoadedWorkoutSessions, useLoadedWorkoutTemplates } from "./hooks";
 import type { FolderDoc } from "./types";
 
 type OpenDoc = { url: AutomergeUrl; toolId?: string };
@@ -98,7 +96,8 @@ function GymHub({
   );
 
   const sessionUrls = useMemo(
-    () => (sessionsFolder ? sessionLinks(sessionsFolder).map((l) => l.url) : []),
+    () =>
+      sessionsFolder ? sessionLinks(sessionsFolder).map((l) => l.url) : [],
     [sessionsFolder],
   );
   const loadedSessions = useLoadedWorkoutSessions(sessionUrls);
@@ -305,9 +304,7 @@ function GymHub({
         <button
           type="button"
           disabled={!gym.sessionsFolderUrl}
-          onClick={() =>
-            openInGym(gym.sessionsFolderUrl!, "strength-sessions")
-          }
+          onClick={() => openInGym(gym.sessionsFolderUrl!, "strength-sessions")}
           className={navButton}
         >
           History
@@ -365,11 +362,11 @@ function GymHub({
                     <div className="text-xs text-emerald-800">
                       Started {formatDate(doc.startedAt)} ·{" "}
                       {doc.exercises?.reduce(
-                        (n, ex) => n + ex.sets.filter((s) => s.completed).length,
+                        (n, ex) =>
+                          n + ex.sets.filter((s) => s.completed).length,
                         0,
                       )}
-                      /
-                      {doc.exercises?.reduce((n, ex) => n + ex.sets.length, 0)}{" "}
+                      /{doc.exercises?.reduce((n, ex) => n + ex.sets.length, 0)}{" "}
                       sets done
                     </div>
                   </div>
@@ -382,6 +379,17 @@ function GymHub({
                   </button>
                 </div>
               ))}
+              {/* Live preview of the next exercise, rendered by the
+                  strength-exercise-logger tool against a path-addressed
+                  sub-document of the in-progress session. */}
+              <div className="mt-3">
+                <Suspense fallback={null}>
+                  <CurrentExerciseEmbed
+                    sessionUrl={inProgress[0].url}
+                    label="Up next"
+                  />
+                </Suspense>
+              </div>
             </section>
           ) : null}
 

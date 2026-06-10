@@ -7,24 +7,27 @@ import {
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import { createRoot } from "react-dom/client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   convertWeight,
   estimate1Rm,
   formatDateTime,
   formatDuration,
 } from "./calculations";
-import { LoggedSetRow } from "./components/SetRow";
+import { CurrentExerciseEmbed } from "./components/CurrentExerciseEmbed";
+import { ExerciseLogger } from "./components/ExerciseLogger";
 import { RestTimer } from "./components/RestTimer";
-import { assignAutomergeFields, setAutomergeString } from "./automerge-fields";
+import { setAutomergeString } from "./automerge-fields";
 import { saveSessionAsTemplate } from "./gym";
 import { templateTitleFromSession } from "./history";
 import { openPatchworkDocument } from "./navigation";
-import type {
-  LoggedExercise,
-  WeightUnit,
-  WorkoutSessionDoc,
-} from "./types";
+import type { LoggedSet, WeightUnit, WorkoutSessionDoc } from "./types";
 import {
   findNextIncompleteSet,
   restSecondsForSet,
@@ -116,40 +119,19 @@ function WorkoutSessionEditor({
     [sessionHandle],
   );
 
-  const updateExercise = (
+  /** Rest-timer / focus orchestration when a logger reports a set toggle. */
+  const handleSetToggled = (
     exerciseId: string,
-    updater: (exercise: LoggedExercise) => void,
+    setIndex: number,
+    completed: boolean,
+    set: LoggedSet,
   ) => {
-    sessionHandle.change((draft) => {
-      const index = [...(draft.exercises ?? [])].findIndex(
-        (e) => e.id === exerciseId,
-      );
-      if (index < 0) return;
-      updater(draft.exercises![index]);
-    });
-  };
-
-  const toggleSetComplete = (exerciseId: string, setIndex: number) => {
-    const exercise = session?.exercises?.find((e) => e.id === exerciseId);
-    const set = exercise?.sets[setIndex];
-    if (!set) return;
-
-    const willComplete = !set.completed;
-    const pointer = { exerciseId, setIndex };
-
-    sessionHandle.change((draft) => {
-      const ex = draft.exercises?.find((e) => e.id === exerciseId);
-      if (!ex) return;
-      const loggedSet = ex.sets[setIndex];
-      loggedSet.completed = !loggedSet.completed;
-    });
-
-    if (willComplete && executing) {
-      setCurrentSet(pointer);
+    if (completed && executing) {
+      setCurrentSet({ exerciseId, setIndex });
       setActiveExerciseId(exerciseId);
       const rest = restSecondsForSet(set, defaultRestSeconds);
       setRestTimer({ seconds: rest, phase: "resting" });
-    } else if (!willComplete) {
+    } else if (!completed) {
       setRestTimer(null);
     }
   };
@@ -215,7 +197,14 @@ function WorkoutSessionEditor({
 
   if (!session) return null;
 
-  const allSetsDone = !findNextIncompleteSet(session.exercises ?? []);
+  const firstIncomplete = findNextIncompleteSet(session.exercises ?? []);
+  const allSetsDone = !firstIncomplete;
+  // Show the current-exercise banner only when that exercise's inline panel
+  // isn't already expanded right below it.
+  const showCurrentBanner =
+    executing &&
+    firstIncomplete &&
+    activeExerciseId !== firstIncomplete.exerciseId;
 
   return (
     <div className="strength flex h-full flex-col bg-slate-50">
@@ -242,6 +231,17 @@ function WorkoutSessionEditor({
       ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        {showCurrentBanner ? (
+          <div className="mb-4">
+            <Suspense fallback={null}>
+              <CurrentExerciseEmbed
+                sessionUrl={docUrl}
+                label="Current exercise"
+              />
+            </Suspense>
+          </div>
+        ) : null}
+
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <div className="flex flex-1 flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
             <span>{formatDateTime(session.startedAt)}</span>
@@ -326,21 +326,28 @@ function WorkoutSessionEditor({
               return rm > best ? rm : best;
             }, 0);
 
+            // Path-addressed sub-document URL for this exercise, e.g.
+            // automerge:<docId>/exercises/{"id":"…"} — stable across
+            // reorders because it matches by id, not index.
+            const exerciseSubUrl = sessionHandle.sub("exercises", {
+              id: exercise.id,
+            }).url;
+
             return (
               <div
                 key={exercise.id}
                 className="rounded-lg border border-slate-200 bg-white"
               >
-                <button
-                  type="button"
-                  onClick={() =>
-                    setActiveExerciseId((cur) =>
-                      cur === exercise.id ? null : exercise.id,
-                    )
-                  }
-                  className="flex w-full items-center justify-between px-4 py-3 text-left"
-                >
-                  <div>
+                <div className="flex items-center justify-between gap-2 px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setActiveExerciseId((cur) =>
+                        cur === exercise.id ? null : exercise.id,
+                      )
+                    }
+                    className="flex-1 text-left"
+                  >
                     <span className="mr-2 text-xs text-slate-400">
                       {exIndex + 1}.
                     </span>
@@ -351,89 +358,53 @@ function WorkoutSessionEditor({
                       {exercise.sets.filter((s) => s.completed).length}/
                       {exercise.sets.length} sets
                     </span>
-                  </div>
-                  {best1Rm > 0 ? (
-                    <span className="text-xs text-emerald-700">
-                      ~{Math.round(best1Rm)} {exUnit} 1RM
-                    </span>
-                  ) : null}
-                </button>
-
-                {expanded ? (
-                  <div className="space-y-1 border-t border-slate-100 px-4 py-3">
-                    {executing ? (
-                      <div className="mb-1 flex justify-end">
-                        <div className="flex overflow-hidden rounded-md border border-slate-200 text-xs">
-                          {(["kg", "lb"] as const).map((u) => (
-                            <button
-                              key={u}
-                              type="button"
-                              onClick={() =>
-                                updateExercise(exercise.id, (ex) => {
-                                  ex.unit = u;
-                                })
-                              }
-                              className={`px-2.5 py-1 ${
-                                exUnit === u
-                                  ? "bg-emerald-600 font-medium text-white"
-                                  : "bg-white text-slate-500 hover:bg-slate-50"
-                              }`}
-                            >
-                              {u}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-[2rem_1fr_1fr_1fr_auto] gap-2 text-xs font-medium text-slate-400">
-                        <span>✓</span>
-                        <span>Reps</span>
-                        <span>Weight ({exUnit})</span>
-                        <span>RPE</span>
-                        <span>#</span>
-                      </div>
-                    )}
-                    {exercise.sets.map((set, setIndex) => {
-                      const pointer = {
-                        exerciseId: exercise.id,
-                        setIndex,
-                      };
-                      return (
-                        <LoggedSetRow
-                          key={setIndex}
-                          rowId={setRowId(pointer)}
-                          isCurrent={
-                            currentSet?.exerciseId === exercise.id &&
-                            currentSet?.setIndex === setIndex
-                          }
-                          set={set}
-                          index={setIndex}
-                          unit={exUnit}
-                          executing={executing}
-                          onChange={(patch) =>
-                            updateExercise(exercise.id, (ex) => {
-                              assignAutomergeFields(ex.sets[setIndex], patch);
-                            })
-                          }
-                          onToggleComplete={() =>
-                            toggleSetComplete(exercise.id, setIndex)
-                          }
-                        />
-                      );
-                    })}
+                  </button>
+                  <div className="flex items-center gap-2">
+                    {best1Rm > 0 ? (
+                      <span className="text-xs text-emerald-700">
+                        ~{Math.round(best1Rm)} {exUnit} 1RM
+                      </span>
+                    ) : null}
                     {executing ? (
                       <button
                         type="button"
                         onClick={() =>
-                          updateExercise(exercise.id, (ex) => {
-                            ex.sets.push({ completed: false });
-                          })
+                          openPatchworkDocument(
+                            hostElement,
+                            exerciseSubUrl,
+                            "strength-exercise-logger",
+                          )
                         }
-                        className="text-xs text-emerald-700 hover:underline"
+                        className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-slate-300 hover:text-slate-700"
+                        title="Open just this exercise (focus mode)"
                       >
-                        + Add set
+                        Focus
                       </button>
                     ) : null}
+                  </div>
+                </div>
+
+                {expanded ? (
+                  <div className="border-t border-slate-100 px-4 py-3">
+                    {/* Experimental: the logger is bound to a path-addressed
+                        sub-document (`…/exercises/{"id":…}`) and owns all of
+                        its own reads/writes through that sub-handle. */}
+                    <ExerciseLogger
+                      exerciseUrl={exerciseSubUrl}
+                      executing={executing}
+                      fallbackUnit={sessionUnit}
+                      currentSetIndex={
+                        currentSet?.exerciseId === exercise.id
+                          ? currentSet.setIndex
+                          : null
+                      }
+                      rowIdForSet={(setIndex) =>
+                        setRowId({ exerciseId: exercise.id, setIndex })
+                      }
+                      onSetToggled={(setIndex, completed, set) =>
+                        handleSetToggled(exercise.id, setIndex, completed, set)
+                      }
+                    />
                   </div>
                 ) : null}
               </div>

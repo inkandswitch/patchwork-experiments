@@ -100,6 +100,17 @@ export const plugins: Plugin<any>[] = [
   } satisfies Tool,
   {
     type: "patchwork:tool",
+    id: "strength-exercise-logger",
+    name: "Exercise Logger",
+    icon: "Target",
+    supportedDatatypes: ["strength-workout-session"],
+    async load() {
+      const { ExerciseLoggerTool } = await import("./exercise-logger-tool");
+      return ExerciseLoggerTool;
+    },
+  } satisfies Tool,
+  {
+    type: "patchwork:tool",
     id: "strength-sessions",
     name: "Sessions",
     icon: "TrendingUp",
