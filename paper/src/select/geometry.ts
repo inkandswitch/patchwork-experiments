@@ -1,4 +1,3 @@
-import type { AutomergeUrl } from "@automerge/automerge-repo";
 import { Outline, Point, Shape } from "../surface/types";
 
 // Slack (px) around a stroke's centerline for hit detection. Roughly half a
@@ -66,18 +65,6 @@ export function outlinePoints(outline: Outline): Point[] {
     case "polygon":
       return outline.points;
   }
-}
-
-// The canonical sub-document URL of a shape inside its layer
-// (`automerge:<layerDocId>/shapes/<shapeId>`). This is what we store in the
-// shared focus doc's `selection` map; it resolves through `repo.find` to a
-// handle scoped to the shape. Shape ids are uuids, which need no escaping in
-// the path segment.
-export function shapeUrl(
-  layerUrl: AutomergeUrl,
-  shapeId: string,
-): AutomergeUrl {
-  return `${layerUrl}/shapes/${shapeId}` as AutomergeUrl;
 }
 
 // Standard even-odd ray cast: is the point (x, y) inside the polygon `points`?

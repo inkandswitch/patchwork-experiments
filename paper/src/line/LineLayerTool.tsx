@@ -2,7 +2,7 @@ import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import {
   RepoContext,
   useDocument,
-} from "@automerge/automerge-repo-solid-primitives";
+} from "../vendor/automerge-solid-primitives";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import { For } from "solid-js";
 import { render } from "solid-js/web";

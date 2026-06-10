@@ -2,7 +2,7 @@ import type { DocHandle } from "@automerge/automerge-repo";
 import {
   RepoContext,
   useDocument,
-} from "@automerge/automerge-repo-solid-primitives";
+} from "../vendor/automerge-solid-primitives";
 import "@inkandswitch/patchwork-elements";
 import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
 import { createSignal, For, Show } from "solid-js";
@@ -16,7 +16,7 @@ import { DocWithLayers } from "../surface/types";
 import "./paper.css";
 import type { PaperDoc } from "./types";
 
-const VERSION = "0.0.30";
+const VERSION = "0.0.32";
 
 // The surface tool: wraps the stack of layer <patchwork-view>s in a
 // SurfaceProvider so the layer buttons can drive the canvas purely through the

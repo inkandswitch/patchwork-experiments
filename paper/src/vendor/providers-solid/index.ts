@@ -1,6 +1,6 @@
 import { createSignal, onCleanup, onMount, type Accessor } from "solid-js";
 import { createStore, reconcile, type Store } from "solid-js/store";
-import { createDocumentProjection } from "@automerge/automerge-repo-solid-primitives";
+import { createDocumentProjection } from "../automerge-solid-primitives";
 import type { AutomergeUrl, Doc, DocHandle } from "@automerge/automerge-repo";
 import * as Providers from "../providers";
 import type {

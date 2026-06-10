@@ -2,6 +2,7 @@
   position: absolute;
   inset: 0;
   overflow: hidden;
+  font-family: system-ui, sans-serif;
 }
 
 .paper-map-container {
@@ -9,4 +10,32 @@
   inset: 0;
   width: 100%;
   height: 100%;
+}
+
+/* The layer stack lives in here; its CSS transform maps the surface's Mercator
+   world coordinates onto the screen and tracks the camera. Pointer-transparent
+   so map gestures reach the canvas beneath; embeds opt back in themselves. */
+.paper-map-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Each layer's <patchwork-view> fills the overlay and stacks by its own
+   z-index, mirroring `.paper-canvas patchwork-view`. */
+.paper-map-overlay patchwork-view {
+  position: absolute;
+  inset: 0;
+  z-index: auto;
+}
+
+/* Floating tool buttons. Duplicated from paper.css so a standalone map (whose
+   paper styles may never load) still positions its toolbar. */
+.paper-map-host .paper-controls {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 2147483646;
+  display: flex;
+  gap: 8px;
 }

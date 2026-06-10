@@ -1,5 +1,5 @@
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
-import { useRepo } from "@automerge/automerge-repo-solid-primitives";
+import { useRepo } from "../vendor/automerge-solid-primitives";
 import { subscribeDoc } from "../vendor/providers-solid";
 import {
   createEffect,
@@ -16,10 +16,10 @@ import type {
   SurfaceState,
 } from "../surface/types";
 import type { EmbedShape } from "../embed/EmbedLayerTool";
-import { hitTestShape, shapeUrl } from "./geometry";
+import { hitTestShape } from "./geometry";
 
 // Mirrors the shared focus document the FocusProvider owns. We only touch
-// `selection`; keys are shape sub-document URLs (see `shapeUrl`).
+// `selection`; keys are shape sub-document URLs (`handle.sub(...).url`).
 type FocusDoc = {
   selection: Record<string, true>;
 };
@@ -32,7 +32,6 @@ type SurfacePointer = NonNullable<SurfaceState["pointer"]>;
 // pointer sample; without them the shape still drags but won't re-home on a
 // cross-surface drop.
 type DragShape = {
-  ref: string;
   handle: DocHandle<Shape>;
   homeSurfaceUrl?: AutomergeUrl;
   // Shape origin minus pointer-down position, in the shape's home space.
@@ -40,16 +39,6 @@ type DragShape = {
   // which is what makes drop placement a single addition in the drop space.
   grabOffset?: Point;
 };
-
-// Split a shape sub-document URL (`automerge:<docId>/shapes/<shapeId>`) back
-// into the layer's document URL and the shape id.
-function parseRef(ref: string): { layerUrl: AutomergeUrl; id: string } {
-  const segments = ref.split("/");
-  return {
-    layerUrl: segments[0] as AutomergeUrl,
-    id: segments[segments.length - 1],
-  };
-}
 
 // The select tool. The button toggles select mode, but the component also owns
 // all selection interaction: it hit-tests the pointer against the layers of
@@ -75,116 +64,129 @@ export function SelectButton(): JSX.Element {
   let shiftDown = false;
   let wasPressed = false;
 
-  // Deltas are computed in screen coordinates: dragging an embed moves the
-  // surface that stamps the samples, so local deltas would feed back into
-  // themselves (the shape lagging and oscillating behind the cursor). The
-  // screen frame is immune, and translation is the same in every frame.
-  let drag: {
-    shapes: DragShape[];
-    last: Point;
-  } | null = null;
+  // The shapes being dragged. Placement is absolute, not incremental: each
+  // move reads the pointer position in a shape's home surface space (from the
+  // pointer's per-surface `positions`) and adds the constant grab offset.
+  // This needs no screen frame: a shape's home surface is never moved by
+  // dragging that shape, so its stamped position is a stable reference. A
+  // shape whose home isn't under the cursor this sample simply holds still
+  // until it can be placed (e.g. on drop, via rehome).
+  let drag: DragShape[] | null = null;
 
-  // The ref of the shape with the greatest `z` under the local point, if any.
+  // The sub-document URL of the shape with the greatest `z` under the local
+  // point, if any.
   const topmostHit = async (
     surfaceUrl: AutomergeUrl,
     x: number,
     y: number,
-  ): Promise<string | undefined> => {
+  ): Promise<AutomergeUrl | undefined> => {
     const surfaceHandle = await repo.find<DocWithLayers>(surfaceUrl);
     const layers = surfaceHandle.doc()?.layers ?? {};
 
-    let best: { ref: string; z: number } | undefined;
+    let bestUrl: AutomergeUrl | undefined;
+    let bestZ: number | undefined;
     for (const layerUrl of Object.values(layers)) {
       const layerHandle = await repo.find<ShapeLayerDoc>(layerUrl);
       const shapes = layerHandle.doc()?.shapes ?? {};
       for (const shape of Object.values(shapes)) {
         if (!hitTestShape(x, y, shape)) continue;
         const z = shape.z ?? 0;
-        if (!best || z >= best.z)
-          best = { ref: shapeUrl(layerUrl, shape.id), z };
+        if (bestZ === undefined || z >= bestZ) {
+          bestUrl = layerHandle.sub("shapes", shape.id).url;
+          bestZ = z;
+        }
       }
     }
-    return best?.ref;
+    return bestUrl;
   };
 
-  // A miss on a nested surface resolves to that surface's embed shape in its
-  // parent: find the embed pointing at `surfaceUrl` that contains the point
-  // (`embed.origin + local` in parent coordinates), highest `z` wins.
+  // A miss on the innermost surface resolves to that surface's embed shape in
+  // an ancestor. The ancestor candidates are simply the other surfaces under
+  // the cursor (the other keys in `positions`); for each, look for an embed
+  // pointing at the innermost surface that contains that ancestor's own
+  // stamped position. No coordinate conversion: each surface already supplied
+  // its own-space point, so this works even when the inner surface (e.g. a
+  // map) uses different units than the parent. Highest `z` wins.
   const embedHit = async (
-    surfaceUrl: AutomergeUrl,
-    parentSurfaceUrl: AutomergeUrl,
-    x: number,
-    y: number,
-  ): Promise<string | undefined> => {
-    const parentHandle = await repo.find<DocWithLayers>(parentSurfaceUrl);
-    const layers = parentHandle.doc()?.layers ?? {};
-
-    let best: { ref: string; z: number } | undefined;
-    for (const layerUrl of Object.values(layers)) {
-      const layerHandle = await repo.find<ShapeLayerDoc>(layerUrl);
-      const shapes = (layerHandle.doc()?.shapes ?? {}) as Record<
-        string,
-        EmbedShape
-      >;
-      for (const shape of Object.values(shapes)) {
-        if (shape.docUrl !== surfaceUrl) continue;
-        if (!hitTestShape(shape.x + x, shape.y + y, shape)) continue;
-        const z = shape.z ?? 0;
-        if (!best || z >= best.z)
-          best = { ref: shapeUrl(layerUrl, shape.id), z };
-      }
-    }
-    return best?.ref;
-  };
-
-  // Which of the two surfaces in the pointer sample owns `layerUrl`, if any.
-  const findHomeSurface = async (
-    layerUrl: AutomergeUrl,
     pointer: SurfacePointer,
   ): Promise<AutomergeUrl | undefined> => {
-    const candidates = [pointer.surfaceUrl, pointer.parentSurfaceUrl];
-    for (const surfaceUrl of candidates) {
-      if (!surfaceUrl) continue;
+    const innerUrl = pointer.surfaceUrl;
+
+    let bestUrl: AutomergeUrl | undefined;
+    let bestZ: number | undefined;
+    for (const [candidateUrl, position] of Object.entries(pointer.positions)) {
+      if (candidateUrl === innerUrl) continue;
+      const parentHandle = await repo.find<DocWithLayers>(
+        candidateUrl as AutomergeUrl,
+      );
+      const layers = parentHandle.doc()?.layers ?? {};
+      for (const layerUrl of Object.values(layers)) {
+        const layerHandle = await repo.find<ShapeLayerDoc>(layerUrl);
+        const shapes = (layerHandle.doc()?.shapes ?? {}) as Record<
+          string,
+          EmbedShape
+        >;
+        for (const shape of Object.values(shapes)) {
+          if (shape.docUrl !== innerUrl) continue;
+          if (!hitTestShape(position.x, position.y, shape)) continue;
+          const z = shape.z ?? 0;
+          if (bestZ === undefined || z >= bestZ) {
+            bestUrl = layerHandle.sub("shapes", shape.id).url;
+            bestZ = z;
+          }
+        }
+      }
+    }
+    return bestUrl;
+  };
+
+  // Which surface under the cursor owns the layer the shape url lives in, if
+  // any. The candidates are every surface in the pointer sample. Sub-document
+  // URLs are prefixed by their document's URL, so "url is inside this layer"
+  // is a prefix check.
+  const findHomeSurface = async (
+    shapeUrl: AutomergeUrl,
+    pointer: SurfacePointer,
+  ): Promise<AutomergeUrl | undefined> => {
+    for (const surfaceUrl of Object.keys(pointer.positions) as AutomergeUrl[]) {
       const surfaceHandle = await repo.find<DocWithLayers>(surfaceUrl);
       const layers = surfaceHandle.doc()?.layers ?? {};
-      if (Object.values(layers).includes(layerUrl)) return surfaceUrl;
+      if (
+        Object.values(layers).some((layerUrl) => shapeUrl.startsWith(layerUrl))
+      ) {
+        return surfaceUrl;
+      }
     }
     return undefined;
   };
 
   const resolveDragShapes = async (
-    refs: string[],
+    urls: AutomergeUrl[],
     pointer: SurfacePointer,
-    hitRef: string,
-    hitSurfaceUrl: AutomergeUrl,
   ): Promise<DragShape[]> => {
-    const { x, y } = pointer.position;
     const shapes: DragShape[] = [];
 
-    for (const ref of refs) {
-      const { layerUrl } = parseRef(ref);
-      // The ref is a sub-document URL, so find returns a handle scoped to
-      // the shape itself.
-      const handle = await repo.find<Shape>(ref as AutomergeUrl);
+    for (const url of urls) {
+      // The url points at the shape inside its layer doc, so find returns a
+      // handle scoped to the shape itself.
+      const handle = await repo.find<Shape>(url);
       const shape = handle.doc();
       if (!shape) continue;
 
-      const dragShape: DragShape = { ref, handle };
+      const dragShape: DragShape = { handle };
 
-      const homeSurfaceUrl = await findHomeSurface(layerUrl, pointer);
+      const homeSurfaceUrl = await findHomeSurface(url, pointer);
       if (homeSurfaceUrl) {
         dragShape.homeSurfaceUrl = homeSurfaceUrl;
-        if (ref === hitRef && hitSurfaceUrl !== pointer.surfaceUrl) {
-          // Embed hit: the shape lives in the parent, the down sample is
-          // local to the embedded surface. Parent-space down position is
-          // `shape.origin + local`, so the offset collapses to `-local`.
-          dragShape.grabOffset = { x: -x, y: -y };
-        } else if (homeSurfaceUrl === pointer.surfaceUrl) {
-          dragShape.grabOffset = { x: shape.x - x, y: shape.y - y };
+        // The grab offset is the shape origin minus the pointer position in
+        // the shape's home space — the same space the shape's x/y live in, so
+        // no conversion. Constant for the whole drag. A home surface that
+        // isn't under the cursor at press time has no stamped position; that
+        // shape drags only once its home comes under the cursor.
+        const home = pointer.positions[homeSurfaceUrl];
+        if (home) {
+          dragShape.grabOffset = { x: shape.x - home.x, y: shape.y - home.y };
         }
-        // Other combinations (e.g. a leftover selection on another surface)
-        // have no known transform into the down sample's space: drag them,
-        // but skip re-homing.
       }
 
       shapes.push(dragShape);
@@ -192,28 +194,28 @@ export function SelectButton(): JSX.Element {
     return shapes;
   };
 
-  const applyDelta = (pointer: SurfacePointer) => {
+  // Place every dragged shape at its home-space pointer position plus the
+  // constant grab offset. Shapes whose home surface isn't under the cursor
+  // this sample (no stamped position, or no resolved offset) hold still.
+  const applyMove = (pointer: SurfacePointer) => {
     if (!drag) return;
-    const { x, y } = pointer.screenPosition;
 
-    const dx = x - drag.last.x;
-    const dy = y - drag.last.y;
-    if (dx !== 0 || dy !== 0) {
-      for (const dragShape of drag.shapes) {
-        if (dragShape.handle.doc() === undefined) continue;
-        dragShape.handle.change((shape) => {
-          shape.x += dx;
-          shape.y += dy;
-        });
-      }
+    for (const dragShape of drag) {
+      const { handle, homeSurfaceUrl, grabOffset } = dragShape;
+      if (!homeSurfaceUrl || !grabOffset) continue;
+      const home = pointer.positions[homeSurfaceUrl];
+      if (!home) continue;
+      if (handle.doc() === undefined) continue;
+      handle.change((shape) => {
+        shape.x = home.x + grabOffset.x;
+        shape.y = home.y + grabOffset.y;
+      });
     }
-
-    drag.last = { x, y };
   };
 
   // Move a dropped shape into the drop surface: same layer key as at home
   // (created on demand), placed at `drop + grabOffset`, removed from the
-  // source layer, selection ref rewritten. The shape keeps its id across the
+  // source layer, selection url rewritten. The shape keeps its id across the
   // move (ids are uuids, so they can't collide in the drop layer).
   const rehome = async (
     dragShape: DragShape,
@@ -223,17 +225,20 @@ export function SelectButton(): JSX.Element {
     const { handle, homeSurfaceUrl, grabOffset } = dragShape;
     if (!homeSurfaceUrl || !grabOffset) return;
 
-    const { layerUrl, id } = parseRef(dragShape.ref);
     const shape = handle.doc();
     if (!shape) return;
     // An embed can't be dropped into its own document.
     if ((shape as EmbedShape).docUrl === dropSurfaceUrl) return;
 
+    // The shape's map key is the last segment of the sub-handle's path.
+    const id = String(handle.path.at(-1)?.prop);
+
     const homeHandle = await repo.find<DocWithLayers>(homeSurfaceUrl);
-    const layerKey = Object.entries(homeHandle.doc()?.layers ?? {}).find(
-      ([, url]) => url === layerUrl,
-    )?.[0];
-    if (!layerKey) return;
+    const sourceLayer = Object.entries(homeHandle.doc()?.layers ?? {}).find(
+      ([, layerUrl]) => handle.url.startsWith(layerUrl),
+    );
+    if (!sourceLayer) return;
+    const [layerKey, sourceLayerUrl] = sourceLayer;
 
     const dropSurfaceHandle = await repo.find<DocWithLayers>(dropSurfaceUrl);
     const dropLayerUrl = dropSurfaceHandle.doc()?.layers[layerKey];
@@ -241,7 +246,7 @@ export function SelectButton(): JSX.Element {
     if (dropLayerUrl) {
       dropLayerHandle = await repo.find<ShapeLayerDoc>(dropLayerUrl);
     } else {
-      const sourceLayerHandle = await repo.find<ShapeLayerDoc>(layerUrl);
+      const sourceLayerHandle = await repo.find<ShapeLayerDoc>(sourceLayerUrl);
       dropLayerHandle = await repo.create2<ShapeLayerDoc>({
         "@patchwork": { type: "shape-layer" },
         title: sourceLayerHandle.doc()?.title ?? "Layer",
@@ -262,9 +267,9 @@ export function SelectButton(): JSX.Element {
     handle.remove();
 
     focusHandle()?.change((doc) => {
-      if (doc.selection?.[dragShape.ref]) {
-        delete doc.selection[dragShape.ref];
-        doc.selection[shapeUrl(dropLayerHandle.url, id)] = true;
+      if (doc.selection?.[handle.url]) {
+        delete doc.selection[handle.url];
+        doc.selection[dropLayerHandle.sub("shapes", id).url] = true;
       }
     });
   };
@@ -273,13 +278,13 @@ export function SelectButton(): JSX.Element {
     const focus = focusHandle();
     if (!focus) return;
 
-    const { x, y } = pointer.position;
+    const innermost = pointer.positions[pointer.surfaceUrl];
+    if (!innermost) return;
+    const { x, y } = innermost;
 
     let hit = await topmostHit(pointer.surfaceUrl, x, y);
-    let hitSurfaceUrl = pointer.surfaceUrl;
-    if (!hit && pointer.parentSurfaceUrl) {
-      hit = await embedHit(pointer.surfaceUrl, pointer.parentSurfaceUrl, x, y);
-      hitSurfaceUrl = pointer.parentSurfaceUrl;
+    if (!hit) {
+      hit = await embedHit(pointer);
     }
 
     if (shiftDown) {
@@ -300,21 +305,18 @@ export function SelectButton(): JSX.Element {
     }
 
     const current = focusDoc()?.selection ?? {};
-    let refs: string[];
+    let urls: AutomergeUrl[];
     if (current[hit]) {
       // Clicking an already-selected shape drags the whole selection.
-      refs = Object.keys(current);
+      urls = Object.keys(current) as AutomergeUrl[];
     } else {
-      refs = [hit];
+      urls = [hit];
       focus.change((doc) => {
         doc.selection = { [hit]: true };
       });
     }
 
-    drag = {
-      shapes: await resolveDragShapes(refs, pointer, hit, hitSurfaceUrl),
-      last: { ...pointer.screenPosition },
-    };
+    drag = await resolveDragShapes(urls, pointer);
   };
 
   const onPointerUp = async (pointer: SurfacePointer) => {
@@ -324,18 +326,21 @@ export function SelectButton(): JSX.Element {
 
     // Apply the release sample like a final move before re-homing.
     drag = finished;
-    applyDelta(pointer);
+    applyMove(pointer);
     drag = null;
 
     const dropSurfaceUrl = pointer.surfaceUrl;
-    const candidates = finished.shapes.filter(
+    const dropPosition = pointer.positions[dropSurfaceUrl];
+    if (!dropPosition) return;
+
+    const candidates = finished.filter(
       (shape) =>
         shape.homeSurfaceUrl &&
         shape.grabOffset &&
         shape.homeSurfaceUrl !== dropSurfaceUrl,
     );
     for (const shape of candidates) {
-      await rehome(shape, dropSurfaceUrl, pointer.position);
+      await rehome(shape, dropSurfaceUrl, dropPosition);
     }
   };
 
@@ -367,7 +372,7 @@ export function SelectButton(): JSX.Element {
     } else if (endedPress) {
       await onPointerUp(pointer);
     } else if (isPressed) {
-      applyDelta(pointer);
+      applyMove(pointer);
     }
   });
 
@@ -399,20 +404,13 @@ export function SelectButton(): JSX.Element {
     });
   }
 
-  // Remove every selected shape from every layer, one change per layer.
+  // Remove every selected shape: each url resolves to a handle scoped to the
+  // shape, and `remove` deletes it from its layer.
   async function deleteSelected(selected: Record<string, true>) {
-    const byLayer = new Map<AutomergeUrl, string[]>();
-    for (const ref of Object.keys(selected)) {
-      const { layerUrl, id } = parseRef(ref);
-      const ids = byLayer.get(layerUrl) ?? [];
-      ids.push(id);
-      byLayer.set(layerUrl, ids);
-    }
-    for (const [layerUrl, ids] of byLayer) {
-      const layerHandle = await repo.find<ShapeLayerDoc>(layerUrl);
-      layerHandle.change(({ shapes }) => {
-        for (const id of ids) delete shapes[id];
-      });
+    for (const url of Object.keys(selected)) {
+      const handle = await repo.find<Shape>(url as AutomergeUrl);
+      if (handle.doc() === undefined) continue;
+      handle.remove();
     }
   }
 

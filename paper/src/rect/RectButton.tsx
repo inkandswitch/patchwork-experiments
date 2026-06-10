@@ -1,5 +1,5 @@
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
-import { useRepo } from "@automerge/automerge-repo-solid-primitives";
+import { useRepo } from "../vendor/automerge-solid-primitives";
 import { subscribeDoc } from "../vendor/providers-solid";
 import { createEffect, createSignal, type JSX } from "solid-js";
 import type {
@@ -97,7 +97,14 @@ export function RectButton(): JSX.Element {
       return;
     }
 
-    const { x, y } = pointer.position;
+    // The pointer location in the innermost surface's own space; that surface
+    // is where a fresh rect is drawn. Always present alongside `surfaceUrl`,
+    // but guard defensively.
+    const local = pointer.positions[pointer.surfaceUrl];
+    if (!local) {
+      return;
+    }
+    const { x, y } = local;
     const isPressed = pointer.isPressed;
     const startedRect = !wasPressed && isPressed;
     const endedRect = wasPressed && !isPressed;

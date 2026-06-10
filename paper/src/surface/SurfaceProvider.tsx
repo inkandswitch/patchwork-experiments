@@ -1,5 +1,5 @@
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
-import { useRepo } from "@automerge/automerge-repo-solid-primitives";
+import { useRepo } from "../vendor/automerge-solid-primitives";
 import { accept, type SubscribeEvent } from "../vendor/providers";
 import {
   createEffect,
@@ -10,16 +10,22 @@ import {
   type JSX,
 } from "solid-js";
 import { DocWithLayers, type Point, SurfaceState } from "./types";
-import { request, subscribeDoc } from "../vendor/providers-solid";
+import { subscribeDoc } from "../vendor/providers-solid";
 
 export function SurfaceProvider({
   handle,
   children,
   onMounted,
+  toLocal,
 }: {
   handle: DocHandle<DocWithLayers>;
   children: JSX.Element;
   onMounted?: () => void;
+  // Converts a pointer event into this surface's local coordinate space.
+  // Defaults to plain rect-relative pixels; the map passes a projection from
+  // screen pixels into geographic (Mercator world) coordinates so its shapes
+  // are stored georeferenced. Every surface only ever converts for itself.
+  toLocal?: (event: PointerEvent) => Point;
 }): JSX.Element {
   let root!: HTMLDivElement;
 
@@ -36,41 +42,45 @@ export function SurfaceProvider({
     () => _stateHandle() ?? (fallback ??= repo.create<SurfaceState>()),
   );
 
-  // Ask the nearest ancestor surface for its url. Dispatched before this
-  // provider's own subscribe listener attaches (request's onMount runs
-  // first), so a provider can't answer itself. Stays undefined for a
-  // top-level surface.
-  const parentSurfaceUrl = request<AutomergeUrl>(() => root, {
-    type: "surface:parent",
-  });
-
   onMount(() => {
     if (onMounted) onMounted();
 
-    const getLocalPosition = (event: PointerEvent): Point => {
-      const rect = root.getBoundingClientRect();
-      return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    const getLocalPosition =
+      toLocal ??
+      ((event: PointerEvent): Point => {
+        const rect = root.getBoundingClientRect();
+        return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      });
+
+    // The event target's nearest surface root is the innermost surface under
+    // the cursor. Only that provider owns the sample (resets it and stamps
+    // `surfaceUrl`); every ancestor surface, reached as the event bubbles,
+    // merely adds its own position entry.
+    const isInnermost = (event: PointerEvent): boolean => {
+      const target = event.target as Element | null;
+      return target?.closest("[data-surface-root]") === root;
     };
 
     const stampPointer = (event: PointerEvent, isPressed: boolean) => {
+      const position = getLocalPosition(event);
       stateHandle().change((state) => {
-        const pointer: SurfaceState["pointer"] = {
-          position: getLocalPosition(event),
-          screenPosition: { x: event.clientX, y: event.clientY },
-          surfaceUrl: handle.url,
-          isPressed,
-        };
-        // Automerge rejects explicit undefined values, so only set when known.
-        const parent = parentSurfaceUrl();
-        if (parent) pointer.parentSurfaceUrl = parent;
-        state.pointer = pointer;
+        if (isInnermost(event)) {
+          state.pointer = {
+            positions: { [handle.url]: position },
+            surfaceUrl: handle.url,
+            isPressed,
+          };
+        } else if (state.pointer) {
+          // An ancestor surface: the innermost provider already ran (bubbling
+          // is innermost-first) and reset the sample, so just contribute this
+          // surface's view of the same cursor location.
+          state.pointer.positions[handle.url] = position;
+        }
       });
     };
 
     const onPointerDown = (event: PointerEvent) => {
       if (!event.isPrimary) return;
-
-      event.stopPropagation();
 
       // No capture: moves and the release must hit-test to whatever surface
       // is under the cursor, so cross-surface drags can read their drop
@@ -87,27 +97,26 @@ export function SurfaceProvider({
     const onPointerMove = (event: PointerEvent) => {
       if (!event.isPrimary) return;
 
-      event.stopPropagation();
-
       // A hover move must not report "pressed"; derive it from the actual
       // button state instead of hardcoding true.
       stampPointer(event, (event.buttons & 1) === 1);
     };
 
-    // On root, not window: whichever surface is under the cursor stamps the
-    // release, and that sample is the drop target for cross-surface drags.
+    // No stopPropagation anywhere: the event must bubble through every
+    // ancestor surface root so each can stamp its own position entry. The
+    // innermost surface is identified structurally (isInnermost), not by
+    // suppressing the ancestors.
     const onPointerUp = (event: PointerEvent) => {
       if (!event.isPrimary) return;
-
-      event.stopPropagation();
 
       stampPointer(event, false);
     };
 
     // Safety net for releases outside any surface (toolbar, off-window):
-    // only clears the pressed flag, never touches position or surface, so it
-    // can't corrupt drop targets. In-surface releases stop propagation at
-    // root and never reach this.
+    // only clears the pressed flag, never touches positions or surface, so it
+    // can't corrupt drop targets. In-surface releases now bubble here too, but
+    // the surface handler has already cleared the flag, so this is a no-op for
+    // them.
     const onWindowPointerUp = (event: PointerEvent) => {
       if (!event.isPrimary) return;
 
@@ -131,12 +140,6 @@ export function SurfaceProvider({
             return dispose;
           }),
         );
-      }
-
-      if (selector?.type === "surface:parent") {
-        accept<AutomergeUrl>(event, (respond) => {
-          respond(handle.url);
-        });
       }
     };
 
@@ -163,7 +166,11 @@ export function SurfaceProvider({
   // none, so this div is the actual hit target for canvas pointer events. An
   // unpositioned div has zero height here and never receives them.
   return (
-    <div ref={root} style={{ position: "absolute", inset: "0" }}>
+    <div
+      ref={root}
+      data-surface-root=""
+      style={{ position: "absolute", inset: "0" }}
+    >
       {children}
     </div>
   );

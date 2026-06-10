@@ -1,85 +1,71 @@
 import { For, Show, createMemo, type JSX } from "solid-js";
-import { useDocument } from "@automerge/automerge-repo-solid-primitives";
+import { useDocument } from "../vendor/automerge-solid-primitives";
 import { subscribeDoc } from "../vendor/providers-solid";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
-import type { DocWithLayers, Shape, ShapeLayerDoc } from "../surface/types";
-import { outlinePoints, resolveOutline, shapeUrl } from "./geometry";
+import type { DocWithLayers, Shape } from "../surface/types";
+import { outlinePoints, resolveOutline } from "./geometry";
 import "./select.css";
 
 // Mirrors the shared focus document the FocusProvider owns. We only read
-// `selection` here; keys are shape sub-document URLs (see `shapeUrl`).
+// `selection` here; keys are shape sub-document URLs.
 type FocusDoc = {
   selection: Record<string, true>;
 };
 
 // A full-canvas overlay that draws a highlight on each selected shape of its
-// own surface. Purely a renderer: it reads the current selection from the
-// focus provider and the shapes from this surface's layers, and paints dashed
-// outlines. Selection refs are globally unique (layer urls), so each paper —
-// nested or not — highlights exactly its own shapes in its own coordinates;
-// an embed's highlight is drawn by the parent's overlay. All selection
-// interaction lives in SelectButton.
+// own surface. Purely a renderer: it iterates the selection from the focus
+// provider, keeps the urls whose layer belongs to this surface, and paints a
+// dashed outline per shape. Each url is a sub-document URL, so a highlight
+// subscribes to exactly its shape — nothing is projected while the selection
+// is empty. An embed's highlight is drawn by the parent's overlay. All
+// selection interaction lives in SelectButton.
 export function SelectionOverlay(props: {
   surfaceUrl: AutomergeUrl;
 }): JSX.Element {
   let root!: HTMLDivElement;
 
   const [surface] = useDocument<DocWithLayers>(() => props.surfaceUrl);
-  const layers = () => surface()?.layers ?? {};
   const [focusDoc] = subscribeDoc<FocusDoc>(() => root, {
     type: "patchwork:focus",
   });
 
-  const selection = () => focusDoc()?.selection ?? {};
+  // Selected shape urls that live in one of this surface's layers. The focus
+  // doc is shared across all surfaces, so each overlay filters down to its
+  // own. Sub-document URLs are prefixed by their document's URL, so "shape is
+  // inside this layer" is a prefix check.
+  const localUrls = createMemo(() => {
+    const layerUrls = Object.values(surface()?.layers ?? {});
+    return Object.keys(focusDoc()?.selection ?? {}).filter((shapeUrl) =>
+      layerUrls.some((layerUrl) => shapeUrl.startsWith(layerUrl)),
+    ) as AutomergeUrl[];
+  });
 
   return (
     <div ref={root} class="select-overlay">
       <svg class="select-overlay-svg" width="100%" height="100%">
-        <For each={Object.entries(layers())}>
-          {([, url]) => (
-            <LayerProbe
-              url={url}
-              isSelected={(id) => Boolean(selection()[shapeUrl(url, id)])}
-            />
-          )}
-        </For>
+        <For each={localUrls()}>{(url) => <ShapeHighlight url={url} />}</For>
       </svg>
     </div>
   );
 }
 
-// Subscribes to a single layer and renders a highlight for each of its selected
-// shapes.
-function LayerProbe(props: {
-  url: AutomergeUrl;
-  isSelected: (id: string) => boolean;
-}): JSX.Element {
-  const [doc] = useDocument<ShapeLayerDoc>(() => props.url);
-  const shapes = () => Object.values(doc()?.shapes ?? {});
+// Subscribes to a single selected shape via its sub-document URL and draws
+// its resolved outline as a highlight. Rectangles and polygons close; lines
+// stay open. Works for any outline variant, including the ones derived from
+// legacy shapes.
+function ShapeHighlight(props: { url: AutomergeUrl }): JSX.Element {
+  const [shape] = useDocument<Shape>(() => props.url);
 
-  return (
-    <For each={shapes()}>
-      {(shape) => (
-        <Show when={props.isSelected(shape.id)}>
-          <SelectionHighlight shape={shape} />
-        </Show>
-      )}
-    </For>
-  );
-}
-
-// Draws the resolved outline of a selected shape as a highlight. Rectangles and
-// polygons close; lines stay open. Works for any outline variant, including the
-// ones derived from legacy shapes.
-function SelectionHighlight(props: { shape: Shape }): JSX.Element {
   const points = createMemo(() => {
-    const outline = resolveOutline(props.shape);
+    const current = shape();
+    if (!current) return undefined;
+    const outline = resolveOutline(current);
     if (!outline) return undefined;
     const local = outlinePoints(outline);
     return {
       closed: outline.type !== "line",
       value: local
-        .map((p) => `${props.shape.x + p.x},${props.shape.y + p.y}`)
+        .map((p) => `${current.x + p.x},${current.y + p.y}`)
         .join(" "),
     };
   });
