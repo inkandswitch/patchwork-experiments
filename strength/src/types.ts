@@ -8,10 +8,10 @@ export interface DocLink {
 
 export type WeightUnit = "kg" | "lb";
 
-/** Metadata stamped on gym subfolders at bootstrap time. */
+/** Metadata for strength training folders (gym root and subfolders). */
 export interface StrengthFolderMeta {
   strengthGymUrl?: AutomergeUrl;
-  strengthRole?: "exercises" | "templates" | "sessions";
+  strengthRole?: "gym" | "exercises" | "templates" | "sessions";
   exercisesFolderUrl?: AutomergeUrl;
   templatesFolderUrl?: AutomergeUrl;
   sessionsFolderUrl?: AutomergeUrl;
@@ -21,16 +21,6 @@ export interface FolderDoc extends StrengthFolderMeta {
   "@patchwork"?: { type: string };
   title: string;
   docs: DocLink[];
-  preferredUnit?: WeightUnit;
-}
-
-export interface StrengthGymDoc {
-  "@patchwork"?: { type: "strength-gym" };
-  title: string;
-  /** Set automatically when the gym is bootstrapped. */
-  exercisesFolderUrl?: AutomergeUrl;
-  templatesFolderUrl?: AutomergeUrl;
-  sessionsFolderUrl?: AutomergeUrl;
   preferredUnit?: WeightUnit;
 }
 
@@ -99,6 +89,9 @@ export interface WorkoutTemplateDoc {
   notes?: string;
   exercises: TemplateExercise[];
   gymUrl?: AutomergeUrl;
+  /** Denormalized from gym/folder for standalone template editing. */
+  exercisesFolderUrl?: AutomergeUrl;
+  sessionsFolderUrl?: AutomergeUrl;
 }
 
 export interface LoggedSet {
@@ -106,6 +99,8 @@ export interface LoggedSet {
   weight?: number;
   rpe?: number;
   durationSeconds?: number;
+  /** Rest after this set (seconds); copied from template when present. */
+  restSeconds?: number;
   completed: boolean;
   notes?: string;
 }
@@ -130,6 +125,15 @@ export interface WorkoutSessionDoc {
   notes?: string;
   exercises: LoggedExercise[];
   status: "in_progress" | "completed";
+  /** Default rest between sets when a set has no restSeconds. */
+  defaultRestSeconds?: number;
+  /** Weight unit for logged sets (e.g. lb for Hevy imports). */
+  weightUnit?: WeightUnit;
+  /** Denormalized from sessions folder for save-as-template. */
+  gymUrl?: AutomergeUrl;
+  exercisesFolderUrl?: AutomergeUrl;
+  templatesFolderUrl?: AutomergeUrl;
+  sessionsFolderUrl?: AutomergeUrl;
 }
 
 export interface ExerciseHistoryEntry {

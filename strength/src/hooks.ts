@@ -1,10 +1,28 @@
 import { useDocuments } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import { useMemo } from "react";
-import type { ExerciseDoc, WorkoutSessionDoc } from "./types";
+import type {
+  ExerciseDoc,
+  WorkoutSessionDoc,
+  WorkoutTemplateDoc,
+} from "./types";
 
 export function useLoadedExercises(urls: AutomergeUrl[]) {
   const [docsMap] = useDocuments<ExerciseDoc>(urls, { suspense: false });
+  return useMemo(
+    () =>
+      urls.flatMap((url) => {
+        const doc = docsMap.get(url);
+        return doc ? [{ url, doc }] : [];
+      }),
+    [urls, docsMap],
+  );
+}
+
+export function useLoadedWorkoutTemplates(urls: AutomergeUrl[]) {
+  const [docsMap] = useDocuments<WorkoutTemplateDoc>(urls, {
+    suspense: false,
+  });
   return useMemo(
     () =>
       urls.flatMap((url) => {

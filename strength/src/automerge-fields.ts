@@ -31,3 +31,21 @@ export function setAutomergeString(
     delete target[key];
   }
 }
+
+/** Build plain objects for Automerge — strips undefined keys recursively one level deep on arrays. */
+export function omitUndefined<T extends object>(obj: T): T {
+  const result = {} as Record<string, unknown>;
+  for (const [key, value] of Object.entries(obj)) {
+    if (value === undefined) continue;
+    if (Array.isArray(value)) {
+      result[key] = value.map((item) =>
+        item && typeof item === "object" && !Array.isArray(item)
+          ? omitUndefined(item as object)
+          : item,
+      );
+    } else {
+      result[key] = value;
+    }
+  }
+  return result as T;
+}

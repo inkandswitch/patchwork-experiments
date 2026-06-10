@@ -15,15 +15,21 @@ import { PlannedSetRow } from "./components/SetRow";
 import { EXERCISE_TYPE } from "./folder";
 import { cloneTemplateToSession } from "./gym";
 import { useLoadedExercises, useLoadedWorkoutSessions } from "./hooks";
-import { setAutomergeString } from "./automerge-fields";
+import { openPatchworkDocument } from "./navigation";
+import { assignAutomergeFields, setAutomergeString } from "./automerge-fields";
 import type {
   FolderDoc,
-  StrengthGymDoc,
   TemplateExercise,
   WorkoutTemplateDoc,
 } from "./types";
 
-function WorkoutTemplateEditor({ docUrl }: { docUrl: AutomergeUrl }) {
+function WorkoutTemplateEditor({
+  docUrl,
+  hostElement,
+}: {
+  docUrl: AutomergeUrl;
+  hostElement: HTMLElement;
+}) {
   const repo = useRepo();
   const templateHandle = useDocHandle<WorkoutTemplateDoc>(docUrl, {
     suspense: true,
@@ -34,15 +40,15 @@ function WorkoutTemplateEditor({ docUrl }: { docUrl: AutomergeUrl }) {
     null,
   );
   const [starting, setStarting] = useState(false);
-  const [startedSessionUrl, setStartedSessionUrl] =
-    useState<AutomergeUrl | null>(null);
 
-  const [gym] = useDocument<StrengthGymDoc>(template?.gymUrl || undefined, {
+  const [gym] = useDocument<FolderDoc>(template?.gymUrl || undefined, {
     suspense: false,
   });
 
-  const exercisesFolderUrl = gym?.exercisesFolderUrl;
-  const sessionsFolderUrl = gym?.sessionsFolderUrl;
+  const exercisesFolderUrl =
+    gym?.exercisesFolderUrl ?? template?.exercisesFolderUrl;
+  const sessionsFolderUrl =
+    gym?.sessionsFolderUrl ?? template?.sessionsFolderUrl;
 
   const [exercisesFolder] = useDocument<FolderDoc>(
     exercisesFolderUrl || undefined,
@@ -129,7 +135,11 @@ function WorkoutTemplateEditor({ docUrl }: { docUrl: AutomergeUrl }) {
         docUrl,
         sessionsHandle,
       );
-      setStartedSessionUrl(sessionHandle.url);
+      openPatchworkDocument(
+        hostElement,
+        sessionHandle.url,
+        "strength-workout-session",
+      );
     } finally {
       setStarting(false);
     }
@@ -139,67 +149,10 @@ function WorkoutTemplateEditor({ docUrl }: { docUrl: AutomergeUrl }) {
 
   return (
     <div className="strength flex h-full flex-col bg-slate-50">
-      <header className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-4 py-3">
-        <input
-          value={template.title}
-          onChange={(e) =>
-            templateHandle.change((draft) => {
-              draft.title = e.target.value;
-            })
-          }
-          className="min-w-[200px] flex-1 rounded-md border border-transparent px-2 py-1 text-lg font-semibold outline-none hover:border-slate-200 focus:border-emerald-400"
-        />
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-          Template
-        </span>
-        <button
-          type="button"
-          onClick={() => setPickerOpen(true)}
-          disabled={!exercisesFolderUrl}
-          className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-        >
-          + Exercise
-        </button>
-        <button
-          type="button"
-          onClick={startSession}
-          disabled={
-            starting || !template.exercises?.length || !sessionsFolderUrl
-          }
-          className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
-        >
-          {starting ? "Starting…" : "Start session"}
-        </button>
-      </header>
-
-      {!template.gymUrl ? (
+      {!exercisesFolderUrl || !sessionsFolderUrl ? (
         <div className="border-b border-amber-100 bg-amber-50 px-4 py-2 text-sm text-amber-800">
-          Link this template to a gym to pick exercises and start sessions.
-          <button
-            type="button"
-            className="ml-2 underline"
-            onClick={() => {
-              const url = window.prompt("Gym Automerge URL:");
-              if (url) {
-                templateHandle.change((draft) => {
-                  draft.gymUrl = url as AutomergeUrl;
-                });
-              }
-            }}
-          >
-            Set gym URL
-          </button>
-        </div>
-      ) : null}
-
-      {startedSessionUrl ? (
-        <div className="border-b border-emerald-100 bg-emerald-50 px-4 py-3">
-          <span className="text-sm text-emerald-800">Session started — </span>
-          <patchwork-view
-            doc-url={startedSessionUrl}
-            tool-id="strength-workout-session"
-            class="inline-block h-48 w-full max-w-2xl rounded border border-emerald-200 bg-white"
-          />
+          This template isn&apos;t linked to a gym. Create templates from the
+          Templates folder so exercises and sessions resolve automatically.
         </div>
       ) : null}
 
@@ -267,7 +220,7 @@ function WorkoutTemplateEditor({ docUrl }: { docUrl: AutomergeUrl }) {
                           unit={unit}
                           onChange={(patch) =>
                             updateExercise(exercise.id, (ex) => {
-                              Object.assign(ex.sets[setIndex], patch);
+                              assignAutomergeFields(ex.sets[setIndex], patch);
                             })
                           }
                           onRemove={() =>
@@ -294,6 +247,27 @@ function WorkoutTemplateEditor({ docUrl }: { docUrl: AutomergeUrl }) {
               ))}
             </div>
           )}
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setPickerOpen(true)}
+              disabled={!exercisesFolderUrl}
+              className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              + Exercise
+            </button>
+            <button
+              type="button"
+              onClick={startSession}
+              disabled={
+                starting || !template.exercises?.length || !sessionsFolderUrl
+              }
+              className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
+            >
+              {starting ? "Starting…" : "Start session"}
+            </button>
+          </div>
 
           <div className="mt-4 space-y-1">
             <label className="text-xs font-medium text-slate-500">Notes</label>
@@ -345,7 +319,7 @@ export const WorkoutTemplateTool: ToolRender = (handle, element) => {
   const root = createRoot(element);
   root.render(
     <RepoContext.Provider value={element.repo}>
-      <WorkoutTemplateEditor docUrl={handle.url} />
+      <WorkoutTemplateEditor docUrl={handle.url} hostElement={element} />
     </RepoContext.Provider>,
   );
   return () => root.unmount();

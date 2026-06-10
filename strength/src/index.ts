@@ -14,16 +14,6 @@ export const plugins: Plugin<any>[] = [
   } as Datatype,
   {
     type: "patchwork:datatype",
-    id: "strength-gym",
-    name: "Gym",
-    icon: "Home",
-    async load() {
-      const { StrengthGymDatatype } = await import("./datatype");
-      return StrengthGymDatatype;
-    },
-  } as Datatype,
-  {
-    type: "patchwork:datatype",
     id: "strength-workout-template",
     name: "Workout Template",
     icon: "ClipboardList",
@@ -47,7 +37,7 @@ export const plugins: Plugin<any>[] = [
     id: "strength-gym",
     name: "Gym",
     icon: "Home",
-    supportedDatatypes: ["strength-gym"],
+    supportedDatatypes: ["folder"],
     async load() {
       const { GymTool } = await import("./gym-tool");
       return GymTool;
@@ -84,6 +74,17 @@ export const plugins: Plugin<any>[] = [
     async load() {
       const { WorkoutTemplateTool } = await import("./template-tool");
       return WorkoutTemplateTool;
+    },
+  } satisfies Tool,
+  {
+    type: "patchwork:tool",
+    id: "strength-templates",
+    name: "Templates",
+    icon: "ClipboardList",
+    supportedDatatypes: ["folder"],
+    async load() {
+      const { TemplatesTool } = await import("./templates-tool");
+      return TemplatesTool;
     },
   } satisfies Tool,
   {

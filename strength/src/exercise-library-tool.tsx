@@ -125,9 +125,7 @@ function ExerciseLibrary({ docUrl }: { docUrl: AutomergeUrl }) {
         </div>
       ) : null}
 
-      <header className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-4 py-3">
-        <h1 className="text-lg font-semibold text-slate-900">Exercises</h1>
-        <div className="flex-1" />
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-4 py-2">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -151,7 +149,7 @@ function ExerciseLibrary({ docUrl }: { docUrl: AutomergeUrl }) {
             {seeding ? "Seeding…" : "Seed defaults"}
           </button>
         ) : null}
-      </header>
+      </div>
 
       <div className="flex min-h-0 flex-1">
         <div className="min-h-0 flex-1 overflow-y-auto">

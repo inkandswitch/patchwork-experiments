@@ -1,4 +1,5 @@
 import type { AutomergeUrl } from "@automerge/automerge-repo";
+import { omitUndefined } from "./automerge-fields";
 import {
   bestSetFromSets,
   estimate1Rm,
@@ -10,6 +11,8 @@ import type {
   ExerciseProgressPoint,
   LoggedExercise,
   LoggedSet,
+  TemplateExercise,
+  TemplateSet,
   WorkoutSessionDoc,
   WorkoutTemplateDoc,
 } from "./types";
@@ -85,20 +88,24 @@ export function createSessionFromTemplate(
   });
 
   const exercises: LoggedExercise[] = (template.exercises ?? []).map(
-    (planned) => ({
-      id: newId(),
-      exerciseUrl: planned.exerciseUrl,
-      exerciseName: planned.exerciseName,
-      notes: planned.notes,
-      supersetGroup: planned.supersetGroup,
-      sets: planned.sets.map((set) => ({
-        reps: set.targetReps ?? set.targetRepsMin,
-        weight: set.targetWeight,
-        rpe: set.targetRpe,
-        completed: false,
-        notes: set.notes,
-      })),
-    }),
+    (planned) =>
+      omitUndefined({
+        id: newId(),
+        exerciseUrl: planned.exerciseUrl,
+        exerciseName: planned.exerciseName,
+        notes: planned.notes,
+        supersetGroup: planned.supersetGroup,
+        sets: planned.sets.map((set) =>
+          omitUndefined({
+            reps: set.targetReps ?? set.targetRepsMin,
+            weight: set.targetWeight,
+            rpe: set.targetRpe,
+            restSeconds: set.restSeconds,
+            completed: false,
+            notes: set.notes,
+          }),
+        ),
+      }) as LoggedExercise,
   );
 
   return {
@@ -107,7 +114,66 @@ export function createSessionFromTemplate(
     templateUrl,
     exercises,
     status: "in_progress",
+    defaultRestSeconds: 90,
   };
+}
+
+/** Strip date suffix from session titles like "Push Day — Jun 10, 2026". */
+export function templateTitleFromSession(sessionTitle: string): string {
+  const stripped = sessionTitle
+    .replace(
+      /\s+[—–-]\s+(?:\w{3,9}\s+\d{1,2},?\s*(?:\d{4})?|\d{1,2}\s+\w{3,9}\s+\d{4})$/i,
+      "",
+    )
+    .trim();
+  return stripped || sessionTitle;
+}
+
+function loggedSetToTemplateSet(set: LoggedSet): TemplateSet {
+  return omitUndefined({
+    targetReps: set.reps,
+    targetWeight: set.weight,
+    targetRpe: set.rpe,
+    restSeconds: set.restSeconds,
+    notes: set.notes,
+  }) as TemplateSet;
+}
+
+/** Build template content from a completed (or in-progress) session. */
+export function createTemplateFromSession(
+  session: WorkoutSessionDoc,
+  title?: string,
+): Omit<WorkoutTemplateDoc, "@patchwork"> {
+  const exercises: TemplateExercise[] = (session.exercises ?? [])
+    .map((exercise) => {
+      const sets = exercise.sets
+        .filter(
+          (set) =>
+            set.completed ||
+            set.reps != null ||
+            set.weight != null ||
+            set.durationSeconds != null,
+        )
+        .map(loggedSetToTemplateSet);
+      if (!sets.length) return null;
+      return omitUndefined({
+        id: newId(),
+        exerciseUrl: exercise.exerciseUrl,
+        exerciseName: exercise.exerciseName,
+        notes: exercise.notes,
+        supersetGroup: exercise.supersetGroup,
+        sets,
+      }) as TemplateExercise;
+    })
+    .filter((exercise): exercise is TemplateExercise => exercise != null);
+
+  return omitUndefined({
+    title: title ?? templateTitleFromSession(session.title),
+    notes: session.notes,
+    exercises,
+    gymUrl: session.gymUrl,
+    exercisesFolderUrl: session.exercisesFolderUrl,
+  }) as Omit<WorkoutTemplateDoc, "@patchwork">;
 }
 
 export function summarizeSet(set: LoggedSet, unit = "kg"): string {

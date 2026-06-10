@@ -96,6 +96,8 @@ export function LoggedSetRow({
   index,
   unit,
   executing,
+  isCurrent,
+  rowId,
   onChange,
   onToggleComplete,
 }: {
@@ -103,13 +105,20 @@ export function LoggedSetRow({
   index: number;
   unit: string;
   executing?: boolean;
+  isCurrent?: boolean;
+  rowId?: string;
   onChange: (patch: Partial<LoggedSet>) => void;
   onToggleComplete: () => void;
 }) {
   return (
     <div
+      id={rowId}
       className={`grid grid-cols-[2rem_1fr_1fr_1fr_auto] items-center gap-2 rounded px-1 py-1 text-sm ${
-        set.completed ? "bg-emerald-50" : ""
+        isCurrent
+          ? "bg-emerald-50 ring-2 ring-emerald-400 ring-offset-1"
+          : set.completed
+            ? "bg-emerald-50/60"
+            : ""
       }`}
     >
       <button

@@ -2,6 +2,7 @@ import {
   RepoContext,
   useDocHandle,
   useDocument,
+  useRepo,
 } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
@@ -17,11 +18,24 @@ import {
 import { HistoryPanel } from "./components/HistoryPanel";
 import { ProgressChart } from "./components/ProgressChart";
 import { sessionLinks } from "./folder";
-import { progressPointsForExercise, summarizeSet } from "./history";
+import { saveSessionAsTemplate } from "./gym";
+import {
+  progressPointsForExercise,
+  summarizeSet,
+  templateTitleFromSession,
+} from "./history";
+import { openPatchworkDocument } from "./navigation";
 import { useLoadedExercises, useLoadedWorkoutSessions } from "./hooks";
 import type { FolderDoc } from "./types";
 
-function SessionsBrowser({ docUrl }: { docUrl: AutomergeUrl }) {
+function SessionsBrowser({
+  docUrl,
+  hostElement,
+}: {
+  docUrl: AutomergeUrl;
+  hostElement: HTMLElement;
+}) {
+  const repo = useRepo();
   const folderHandle = useDocHandle<FolderDoc>(docUrl, { suspense: true });
   const folder = folderHandle.doc();
   const [tab, setTab] = useState<"history" | "progress">("history");
@@ -29,6 +43,7 @@ function SessionsBrowser({ docUrl }: { docUrl: AutomergeUrl }) {
     useState<AutomergeUrl | null>(null);
   const [selectedExerciseUrl, setSelectedExerciseUrl] =
     useState<AutomergeUrl | null>(null);
+  const [savingTemplate, setSavingTemplate] = useState(false);
 
   const unit = folder?.preferredUnit ?? "kg";
   const exercisesFolderUrl = folder?.exercisesFolderUrl;
@@ -85,6 +100,34 @@ function SessionsBrowser({ docUrl }: { docUrl: AutomergeUrl }) {
     (s) => s.url === selectedSessionUrl,
   );
 
+  const saveAsTemplate = async () => {
+    if (!selectedSession) return;
+    const defaultTitle = templateTitleFromSession(selectedSession.doc.title);
+    const input = window.prompt("Template name:", defaultTitle);
+    if (input === null) return;
+    const title = input.trim() || defaultTitle;
+    setSavingTemplate(true);
+    try {
+      const handle = await saveSessionAsTemplate(
+        repo,
+        selectedSession.doc,
+        folderHandle,
+        { title },
+      );
+      openPatchworkDocument(
+        hostElement,
+        handle.url,
+        "strength-workout-template",
+      );
+    } catch (err) {
+      window.alert(
+        err instanceof Error ? err.message : "Could not save template.",
+      );
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
+
   const exerciseProgress = useMemo(() => {
     if (!selectedExerciseUrl) return [];
     return progressPointsForExercise(selectedExerciseUrl, loadedSessions);
@@ -103,8 +146,7 @@ function SessionsBrowser({ docUrl }: { docUrl: AutomergeUrl }) {
 
   return (
     <div className="strength flex h-full flex-col bg-slate-50">
-      <header className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-4 py-3">
-        <h1 className="text-lg font-semibold text-slate-900">Sessions</h1>
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-4 py-2">
         <div className="flex rounded-lg border border-slate-200 p-0.5 text-sm">
           <button
             type="button"
@@ -134,7 +176,7 @@ function SessionsBrowser({ docUrl }: { docUrl: AutomergeUrl }) {
           {completedSessions.length} completed
           {inProgress.length ? ` · ${inProgress.length} active` : ""}
         </span>
-      </header>
+      </div>
 
       {inProgress.length > 0 ? (
         <div className="border-b border-emerald-100 bg-emerald-50 px-4 py-2">
@@ -145,7 +187,13 @@ function SessionsBrowser({ docUrl }: { docUrl: AutomergeUrl }) {
             <button
               key={url}
               type="button"
-              onClick={() => setSelectedSessionUrl(url)}
+              onClick={() =>
+                openPatchworkDocument(
+                  hostElement,
+                  url,
+                  "strength-workout-session",
+                )
+              }
               className="mr-2 text-xs text-emerald-700 underline"
             >
               {doc.title}
@@ -199,23 +247,38 @@ function SessionsBrowser({ docUrl }: { docUrl: AutomergeUrl }) {
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
               {selectedSession ? (
                 <div className="space-y-4">
-                  <div>
-                    <h2 className="text-xl font-semibold text-slate-900">
-                      {selectedSession.doc.title}
-                    </h2>
-                    <p className="text-sm text-slate-500">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <p className="flex-1 text-sm text-slate-500">
                       {formatDateTime(
                         selectedSession.doc.completedAt ??
                           selectedSession.doc.startedAt,
                       )}
+                      {selectedSession.doc.durationSeconds
+                        ? ` · ${formatDuration(selectedSession.doc.durationSeconds)}`
+                        : ""}
                     </p>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openPatchworkDocument(
+                          hostElement,
+                          selectedSession.url,
+                          "strength-workout-session",
+                        )
+                      }
+                      className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700"
+                    >
+                      Open session
+                    </button>
+                    <button
+                      type="button"
+                      onClick={saveAsTemplate}
+                      disabled={savingTemplate}
+                      className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      {savingTemplate ? "Saving…" : "Save as template"}
+                    </button>
                   </div>
-
-                  <patchwork-view
-                    doc-url={selectedSession.url}
-                    tool-id="strength-workout-session"
-                    class="block h-64 rounded-lg border border-slate-200"
-                  />
 
                   <div className="space-y-3">
                     {(selectedSession.doc.exercises ?? []).map((exercise) => (
@@ -342,7 +405,7 @@ export const SessionsTool: ToolRender = (handle, element) => {
   const root = createRoot(element);
   root.render(
     <RepoContext.Provider value={element.repo}>
-      <SessionsBrowser docUrl={handle.url} />
+      <SessionsBrowser docUrl={handle.url} hostElement={element} />
     </RepoContext.Provider>,
   );
   return () => root.unmount();

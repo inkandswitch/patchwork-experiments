@@ -5,6 +5,12 @@ export const EXERCISE_TYPE = "strength-exercise";
 export const TEMPLATE_TYPE = "strength-workout-template";
 export const SESSION_TYPE = "strength-workout-session";
 
+export const GYM_ROLE = "gym" as const;
+
+export function isGymFolder(doc: FolderDoc): boolean {
+  return doc.strengthRole === GYM_ROLE || Boolean(doc.exercisesFolderUrl);
+}
+
 export function linksOfType(doc: FolderDoc, type: string): DocLink[] {
   return (doc.docs ?? []).filter((link) => link.type === type);
 }

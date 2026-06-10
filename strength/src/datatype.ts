@@ -2,7 +2,6 @@ import type { Repo } from "@automerge/automerge-repo";
 import type { DatatypeImplementation } from "@inkandswitch/patchwork-plugins";
 import type {
   ExerciseDoc,
-  StrengthGymDoc,
   WorkoutSessionDoc,
   WorkoutTemplateDoc,
 } from "./types";
@@ -22,21 +21,6 @@ export const ExerciseDatatype: DatatypeImplementation<ExerciseDoc> = {
 
   setTitle(doc, title) {
     doc.name = title;
-  },
-};
-
-export const StrengthGymDatatype: DatatypeImplementation<StrengthGymDoc> = {
-  init(doc: StrengthGymDoc, _repo: Repo) {
-    doc["@patchwork"] = { type: "strength-gym" };
-    doc.title = "My Gym";
-  },
-
-  getTitle(doc) {
-    return doc.title || "Gym";
-  },
-
-  setTitle(doc, title) {
-    doc.title = title;
   },
 };
 

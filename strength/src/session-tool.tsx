@@ -1,11 +1,12 @@
 import {
   RepoContext,
   useDocHandle,
+  useRepo,
 } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import { createRoot } from "react-dom/client";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   estimate1Rm,
   formatDateTime,
@@ -13,20 +14,44 @@ import {
 } from "./calculations";
 import { LoggedSetRow } from "./components/SetRow";
 import { RestTimer } from "./components/RestTimer";
-import { setAutomergeString } from "./automerge-fields";
+import { assignAutomergeFields, setAutomergeString } from "./automerge-fields";
+import { saveSessionAsTemplate } from "./gym";
+import { templateTitleFromSession } from "./history";
+import { openPatchworkDocument } from "./navigation";
 import type { LoggedExercise, WorkoutSessionDoc } from "./types";
+import {
+  findNextIncompleteSet,
+  restSecondsForSet,
+  setRowId,
+  type SetPointer,
+} from "./workout-flow";
 
-function WorkoutSessionEditor({ docUrl }: { docUrl: AutomergeUrl }) {
+type RestTimerState = {
+  seconds: number;
+  phase: "resting" | "ready";
+};
+
+function WorkoutSessionEditor({
+  docUrl,
+  hostElement,
+}: {
+  docUrl: AutomergeUrl;
+  hostElement: HTMLElement;
+}) {
+  const repo = useRepo();
   const sessionHandle = useDocHandle<WorkoutSessionDoc>(docUrl, {
     suspense: true,
   });
   const session = sessionHandle.doc();
   const [activeExerciseId, setActiveExerciseId] = useState<string | null>(null);
-  const [restSeconds, setRestSeconds] = useState<number | null>(null);
+  const [currentSet, setCurrentSet] = useState<SetPointer | null>(null);
+  const [restTimer, setRestTimer] = useState<RestTimerState | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  const [savingTemplate, setSavingTemplate] = useState(false);
 
   const executing = session?.status === "in_progress";
-  const unit = "kg";
+  const unit = session?.weightUnit ?? "kg";
+  const defaultRestSeconds = session?.defaultRestSeconds ?? 90;
 
   useEffect(() => {
     if (!executing || !session?.startedAt) return;
@@ -36,6 +61,52 @@ function WorkoutSessionEditor({ docUrl }: { docUrl: AutomergeUrl }) {
     const id = window.setInterval(tick, 1000);
     return () => window.clearInterval(id);
   }, [executing, session?.startedAt]);
+
+  const focusSet = useCallback((pointer: SetPointer) => {
+    setCurrentSet(pointer);
+    setActiveExerciseId(pointer.exerciseId);
+    window.requestAnimationFrame(() => {
+      const row = document.getElementById(setRowId(pointer));
+      row?.scrollIntoView({ block: "center", behavior: "smooth" });
+      const input = row?.querySelector(
+        'input[type="number"]',
+      ) as HTMLInputElement | null;
+      input?.focus({ preventScroll: true });
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!executing || currentSet || !session?.exercises?.length) return;
+    const first = findNextIncompleteSet(session.exercises);
+    if (first) {
+      setCurrentSet(first);
+      setActiveExerciseId(first.exerciseId);
+    }
+  }, [executing, session?.exercises, currentSet]);
+
+  const nextSetPointer = useMemo(
+    () =>
+      session?.exercises
+        ? findNextIncompleteSet(session.exercises, currentSet)
+        : null,
+    [session?.exercises, currentSet],
+  );
+
+  const goToNextSet = useCallback(() => {
+    setRestTimer(null);
+    const next =
+      nextSetPointer ?? findNextIncompleteSet(session?.exercises ?? [], null);
+    if (next) focusSet(next);
+  }, [focusSet, nextSetPointer, session?.exercises]);
+
+  const updateDefaultRest = useCallback(
+    (seconds: number) => {
+      sessionHandle.change((draft) => {
+        draft.defaultRestSeconds = seconds;
+      });
+    },
+    [sessionHandle],
+  );
 
   const updateExercise = (
     exerciseId: string,
@@ -50,20 +121,29 @@ function WorkoutSessionEditor({ docUrl }: { docUrl: AutomergeUrl }) {
     });
   };
 
-  const toggleSetComplete = (
-    exerciseId: string,
-    setIndex: number,
-    rest?: number,
-  ) => {
+  const toggleSetComplete = (exerciseId: string, setIndex: number) => {
+    const exercise = session?.exercises?.find((e) => e.id === exerciseId);
+    const set = exercise?.sets[setIndex];
+    if (!set) return;
+
+    const willComplete = !set.completed;
+    const pointer = { exerciseId, setIndex };
+
     sessionHandle.change((draft) => {
-      const exercise = draft.exercises?.find((e) => e.id === exerciseId);
-      if (!exercise) return;
-      const set = exercise.sets[setIndex];
-      set.completed = !set.completed;
-      if (set.completed && rest && rest > 0) {
-        setRestSeconds(rest);
-      }
+      const ex = draft.exercises?.find((e) => e.id === exerciseId);
+      if (!ex) return;
+      const loggedSet = ex.sets[setIndex];
+      loggedSet.completed = !loggedSet.completed;
     });
+
+    if (willComplete && executing) {
+      setCurrentSet(pointer);
+      setActiveExerciseId(exerciseId);
+      const rest = restSecondsForSet(set, defaultRestSeconds);
+      setRestTimer({ seconds: rest, phase: "resting" });
+    } else if (!willComplete) {
+      setRestTimer(null);
+    }
   };
 
   const completeSession = () => {
@@ -76,6 +156,40 @@ function WorkoutSessionEditor({ docUrl }: { docUrl: AutomergeUrl }) {
         );
       }
     });
+    setRestTimer(null);
+  };
+
+  const saveAsTemplate = async () => {
+    if (!session?.sessionsFolderUrl) {
+      window.alert(
+        "This session is not linked to a gym — open it from the Sessions folder to save as a template.",
+      );
+      return;
+    }
+    const defaultTitle = templateTitleFromSession(session.title);
+    const input = window.prompt("Template name:", defaultTitle);
+    if (input === null) return;
+    const title = input.trim() || defaultTitle;
+    setSavingTemplate(true);
+    try {
+      const handle = await saveSessionAsTemplate(
+        repo,
+        session,
+        session.sessionsFolderUrl,
+        { title },
+      );
+      openPatchworkDocument(
+        hostElement,
+        handle.url,
+        "strength-workout-template",
+      );
+    } catch (err) {
+      window.alert(
+        err instanceof Error ? err.message : "Could not save template.",
+      );
+    } finally {
+      setSavingTemplate(false);
+    }
   };
 
   const totalVolume = useMemo(() => {
@@ -93,27 +207,81 @@ function WorkoutSessionEditor({ docUrl }: { docUrl: AutomergeUrl }) {
 
   if (!session) return null;
 
+  const allSetsDone = !findNextIncompleteSet(session.exercises ?? []);
+
   return (
     <div className="strength flex h-full flex-col bg-slate-50">
-      <header className="border-b border-slate-200 bg-white px-4 py-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex-1">
-            <input
-              value={session.title}
-              disabled={!executing}
-              onChange={(e) =>
-                sessionHandle.change((draft) => {
-                  draft.title = e.target.value;
-                })
-              }
-              className="w-full rounded-md border border-transparent px-1 text-lg font-semibold outline-none hover:border-slate-200 focus:border-emerald-400 disabled:opacity-80"
-            />
-            <div className="text-xs text-slate-500">
-              {formatDateTime(session.startedAt)}
-              {executing ? ` · ${formatDuration(elapsed)}` : null}
-              {session.status === "completed" ? " · Completed" : " · In progress"}
-              {session.templateUrl ? " · from template" : ""}
-            </div>
+      {restTimer && executing ? (
+        <div className="shrink-0 border-b border-slate-200 px-4 py-3">
+          <RestTimer
+            seconds={restTimer.seconds}
+            onReady={() =>
+              setRestTimer((timer) =>
+                timer ? { ...timer, phase: "ready" } : null,
+              )
+            }
+            onSkip={() => setRestTimer(null)}
+            onGo={() => {
+              setRestTimer(null);
+              goToNextSet();
+            }}
+            onDurationChange={(seconds) => {
+              updateDefaultRest(seconds);
+              setRestTimer({ seconds, phase: "resting" });
+            }}
+          />
+        </div>
+      ) : null}
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <div className="flex flex-1 flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+            <span>{formatDateTime(session.startedAt)}</span>
+            {executing ? <span>{formatDuration(elapsed)}</span> : null}
+            {session.status === "completed" ? (
+              <span>Completed</span>
+            ) : (
+              <span>In progress</span>
+            )}
+            {session.templateUrl ? <span>From template</span> : null}
+            <span>
+              Volume:{" "}
+              <strong className="text-slate-700">
+                {totalVolume} {unit}
+              </strong>
+            </span>
+            <span>
+              Sets:{" "}
+              <strong className="text-slate-700">
+                {(session.exercises ?? []).reduce(
+                  (n, ex) => n + ex.sets.filter((s) => s.completed).length,
+                  0,
+                )}
+                /
+                {(session.exercises ?? []).reduce(
+                  (n, ex) => n + ex.sets.length,
+                  0,
+                )}
+              </strong>
+            </span>
+            {executing ? (
+              <label className="inline-flex items-center gap-1">
+                Rest
+                <input
+                  type="number"
+                  min={0}
+                  step={15}
+                  value={defaultRestSeconds}
+                  onChange={(e) =>
+                    updateDefaultRest(
+                      Math.max(0, Number(e.target.value) || 0),
+                    )
+                  }
+                  className="w-14 rounded border border-slate-200 px-1 py-0.5 text-xs"
+                />
+                s
+              </label>
+            ) : null}
           </div>
           {executing ? (
             <button
@@ -124,42 +292,22 @@ function WorkoutSessionEditor({ docUrl }: { docUrl: AutomergeUrl }) {
               Finish workout
             </button>
           ) : (
-            <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-800">
-              Completed
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-800">
+                Completed
+              </span>
+              <button
+                type="button"
+                onClick={saveAsTemplate}
+                disabled={savingTemplate}
+                className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {savingTemplate ? "Saving…" : "Save as template"}
+              </button>
+            </div>
           )}
         </div>
 
-        <div className="mt-2 flex gap-4 text-xs text-slate-600">
-          <span>
-            Volume: <strong>{totalVolume} {unit}</strong>
-          </span>
-          <span>
-            Exercises: <strong>{session.exercises?.length ?? 0}</strong>
-          </span>
-          <span>
-            Sets done:{" "}
-            <strong>
-              {(session.exercises ?? []).reduce(
-                (n, ex) => n + ex.sets.filter((s) => s.completed).length,
-                0,
-              )}
-            </strong>
-          </span>
-        </div>
-      </header>
-
-      {restSeconds != null && executing ? (
-        <div className="border-b border-slate-200 px-4 py-3">
-          <RestTimer
-            seconds={restSeconds}
-            onDone={() => setRestSeconds(null)}
-            onSkip={() => setRestSeconds(null)}
-          />
-        </div>
-      ) : null}
-
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
         <div className="space-y-4">
           {(session.exercises ?? []).map((exercise, exIndex) => {
             const expanded = activeExerciseId === exercise.id;
@@ -211,23 +359,34 @@ function WorkoutSessionEditor({ docUrl }: { docUrl: AutomergeUrl }) {
                       <span>RPE</span>
                       <span>#</span>
                     </div>
-                    {exercise.sets.map((set, setIndex) => (
-                      <LoggedSetRow
-                        key={setIndex}
-                        set={set}
-                        index={setIndex}
-                        unit={unit}
-                        executing={executing}
-                        onChange={(patch) =>
-                          updateExercise(exercise.id, (ex) => {
-                            Object.assign(ex.sets[setIndex], patch);
-                          })
-                        }
-                        onToggleComplete={() =>
-                          toggleSetComplete(exercise.id, setIndex, 90)
-                        }
-                      />
-                    ))}
+                    {exercise.sets.map((set, setIndex) => {
+                      const pointer = {
+                        exerciseId: exercise.id,
+                        setIndex,
+                      };
+                      return (
+                        <LoggedSetRow
+                          key={setIndex}
+                          rowId={setRowId(pointer)}
+                          isCurrent={
+                            currentSet?.exerciseId === exercise.id &&
+                            currentSet?.setIndex === setIndex
+                          }
+                          set={set}
+                          index={setIndex}
+                          unit={unit}
+                          executing={executing}
+                          onChange={(patch) =>
+                            updateExercise(exercise.id, (ex) => {
+                              assignAutomergeFields(ex.sets[setIndex], patch);
+                            })
+                          }
+                          onToggleComplete={() =>
+                            toggleSetComplete(exercise.id, setIndex)
+                          }
+                        />
+                      );
+                    })}
                     {executing ? (
                       <button
                         type="button"
@@ -269,6 +428,29 @@ function WorkoutSessionEditor({ docUrl }: { docUrl: AutomergeUrl }) {
           />
         </div>
       </div>
+
+      {executing ? (
+        <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-3">
+          <button
+            type="button"
+            onClick={goToNextSet}
+            disabled={allSetsDone && !restTimer}
+            className={`w-full rounded-lg px-4 py-3 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40 ${
+              restTimer?.phase === "ready"
+                ? "strength-rest-go bg-emerald-600 hover:bg-emerald-700"
+                : "bg-emerald-600 hover:bg-emerald-700"
+            }`}
+          >
+            {allSetsDone && !restTimer
+              ? "All sets done"
+              : restTimer?.phase === "ready"
+                ? "Next set — Go!"
+                : restTimer
+                  ? "Skip rest — Next set"
+                  : "Next set"}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -277,7 +459,7 @@ export const WorkoutSessionTool: ToolRender = (handle, element) => {
   const root = createRoot(element);
   root.render(
     <RepoContext.Provider value={element.repo}>
-      <WorkoutSessionEditor docUrl={handle.url} />
+      <WorkoutSessionEditor docUrl={handle.url} hostElement={element} />
     </RepoContext.Provider>,
   );
   return () => root.unmount();
