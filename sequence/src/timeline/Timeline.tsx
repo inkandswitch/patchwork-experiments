@@ -29,6 +29,7 @@ import {
   type TimelineLayout,
 } from './layout';
 import {
+  clipEdgeSnapTargets,
   commitClipMove,
   createClipFromDrop,
   pruneEmptyTracks,
@@ -698,9 +699,27 @@ export function Timeline({
       const dropTarget = trackDropTargetFromY(y, doc.tracks.length);
       const fromTrackIndex = doc.tracks.findIndex((track) => track.id === drag.ref.trackId);
       const fromTrack = fromTrackIndex === -1 ? null : doc.tracks[fromTrackIndex]!;
+      const previewTrackIndex = fromTrack
+        ? previewTrackIndexFromDropTarget(
+            dropTarget,
+            fromTrackIndex,
+            fromTrack.clips.length,
+            doc.tracks.length,
+          )
+        : 0;
+      const snapTargets: number[] = [playheadTime];
+      if (previewTrackIndex >= 0 && previewTrackIndex < doc.tracks.length) {
+        snapTargets.push(
+          ...clipEdgeSnapTargets(
+            doc.tracks[previewTrackIndex]!,
+            drag.ref.clipId,
+            (clip) => resolveClipPlayDurationForUi(clip.id, clip.duration),
+          ),
+        );
+      }
       const time = Math.max(
         0,
-        snapClipMoveTime(drag.originalTime + deltaSeconds, drag.originalDuration, playheadTime),
+        snapClipMoveTime(drag.originalTime + deltaSeconds, drag.originalDuration, snapTargets),
       );
       clipDragPreviewRef.current = {
         ref: drag.ref,

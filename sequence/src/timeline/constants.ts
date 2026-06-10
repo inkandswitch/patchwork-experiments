@@ -77,25 +77,47 @@ export function xToTime(x: number, scrollX: number): number {
   return (x - TRACK_LABEL_WIDTH + scrollX) / PIXELS_PER_SECOND;
 }
 
-export function snapTimeToPlayhead(time: number, playheadTime: number): number {
-  if (Math.abs(time - playheadTime) <= SNAP_THRESHOLD_SECONDS) {
-    return playheadTime;
+export function snapTimeToTargets(time: number, targets: readonly number[]): number {
+  let bestTime = time;
+  let bestDist = SNAP_THRESHOLD_SECONDS + 1;
+  for (const target of targets) {
+    const dist = Math.abs(time - target);
+    if (dist <= SNAP_THRESHOLD_SECONDS && dist < bestDist) {
+      bestDist = dist;
+      bestTime = target;
+    }
   }
-  return time;
+  return bestTime;
 }
 
-/** Nudge clip start so a handle edge snaps to the playhead without changing duration. */
-export function snapClipMoveTime(time: number, duration: number, playheadTime: number): number {
-  const leftDist = Math.abs(time - playheadTime);
-  const rightDist = Math.abs(time + duration - playheadTime);
+export function snapTimeToPlayhead(time: number, playheadTime: number): number {
+  return snapTimeToTargets(time, [playheadTime]);
+}
 
-  if (leftDist <= SNAP_THRESHOLD_SECONDS && leftDist <= rightDist) {
-    return playheadTime;
+/** Nudge clip start so a start/end edge snaps to a target time without changing duration. */
+export function snapClipMoveTime(
+  time: number,
+  duration: number,
+  targets: readonly number[],
+): number {
+  const leftEdge = time;
+  const rightEdge = time + duration;
+  let bestTime = time;
+  let bestDist = SNAP_THRESHOLD_SECONDS + 1;
+
+  for (const target of targets) {
+    const leftDist = Math.abs(leftEdge - target);
+    if (leftDist <= SNAP_THRESHOLD_SECONDS && leftDist < bestDist) {
+      bestDist = leftDist;
+      bestTime = target;
+    }
+    const rightDist = Math.abs(rightEdge - target);
+    if (rightDist <= SNAP_THRESHOLD_SECONDS && rightDist < bestDist) {
+      bestDist = rightDist;
+      bestTime = target - duration;
+    }
   }
-  if (rightDist <= SNAP_THRESHOLD_SECONDS) {
-    return playheadTime - duration;
-  }
-  return time;
+  return bestTime;
 }
 
 export function timelineContentWidth(duration: number): number {

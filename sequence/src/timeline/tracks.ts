@@ -35,6 +35,21 @@ export function previewTrackIndexFromDropTarget(
   return trackCount;
 }
 
+/** Start/end times of other clips on a track, for edge snapping while dragging. */
+export function clipEdgeSnapTargets(
+  track: { clips: Clip[] },
+  excludeClipId: string | null,
+  playDurationForClip: (clip: Clip) => number,
+): number[] {
+  const targets: number[] = [];
+  for (const clip of track.clips) {
+    if (clip.id === excludeClipId) continue;
+    const duration = playDurationForClip(clip);
+    targets.push(clip.time, clip.time + duration);
+  }
+  return targets;
+}
+
 export function trackDropTargetFromY(y: number, trackCount: number): TrackDropTarget {
   const tracksTop = RULER_HEIGHT + TRACK_EDGE_PADDING;
   if (y < tracksTop) {
