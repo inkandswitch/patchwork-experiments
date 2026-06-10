@@ -35,17 +35,19 @@ export function previewTrackIndexFromDropTarget(
   return trackCount;
 }
 
-/** Start/end times of other clips on a track, for edge snapping while dragging. */
+/** Start/end times of other clips in the sequence, for edge snapping while dragging. */
 export function clipEdgeSnapTargets(
-  track: { clips: Clip[] },
+  doc: SequenceDoc,
   excludeClipId: string | null,
   playDurationForClip: (clip: Clip) => number,
 ): number[] {
   const targets: number[] = [];
-  for (const clip of track.clips) {
-    if (clip.id === excludeClipId) continue;
-    const duration = playDurationForClip(clip);
-    targets.push(clip.time, clip.time + duration);
+  for (const track of doc.tracks) {
+    for (const clip of track.clips) {
+      if (clip.id === excludeClipId) continue;
+      const duration = playDurationForClip(clip);
+      targets.push(clip.time, clip.time + duration);
+    }
   }
   return targets;
 }

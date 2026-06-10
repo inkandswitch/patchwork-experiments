@@ -707,16 +707,14 @@ export function Timeline({
             doc.tracks.length,
           )
         : 0;
-      const snapTargets: number[] = [playheadTime];
-      if (previewTrackIndex >= 0 && previewTrackIndex < doc.tracks.length) {
-        snapTargets.push(
-          ...clipEdgeSnapTargets(
-            doc.tracks[previewTrackIndex]!,
-            drag.ref.clipId,
-            (clip) => resolveClipPlayDurationForUi(clip.id, clip.duration),
-          ),
-        );
-      }
+      const snapTargets: number[] = [
+        playheadTime,
+        ...clipEdgeSnapTargets(
+          doc,
+          drag.ref.clipId,
+          (clip) => resolveClipPlayDurationForUi(clip.id, clip.duration),
+        ),
+      ];
       const time = Math.max(
         0,
         snapClipMoveTime(drag.originalTime + deltaSeconds, drag.originalDuration, snapTargets),
