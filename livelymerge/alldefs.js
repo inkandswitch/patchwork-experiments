@@ -207,7 +207,41 @@ w.isMenuSeparator = function (item) {
   return item === w.menuSeparator;
 };
 w.menuSeparatorDisplay = function () {
-  return '————————';
+  return '———';
+};
+/** Pane menu for method-selector list panes (browser message list, method-list panel, …). */
+w.methodSelectorPaneMenuSpec = function (panel) {
+  return {
+    items: [
+      'spawn this method to its own window',
+      'filout this method to the OS paste buffer',
+      w.menuSeparator,
+      'delete this method',
+    ],
+    onSelect: (item, pane) => {
+      if (w.isMenuSeparator(item)) return;
+      if (item == 'spawn this method to its own window') panel.spawnMethodCopyToWindow();
+      if (item == 'filout this method to the OS paste buffer') panel.filoutMethodCopyToOSPaste();
+      if (item == 'delete this method') panel.promptDeleteThisMethod();
+    },
+  };
+};
+/** Pane menu for class-selector list pane (browser class list). */
+w.classSelectorPaneMenuSpec = function (panel) {
+  return {
+    items: [
+      'spawn this class to its own window',
+      'filout this class to the OS paste buffer',
+      w.menuSeparator,
+      'delete this class',
+    ],
+    onSelect: (item, pane) => {
+      if (w.isMenuSeparator(item)) return;
+      if (item == 'spawn this class to its own window') panel.spawnThisClassToWindow();
+      if (item == 'filout this class to the OS paste buffer') panel.filoutThisClassToOSPaste();
+      if (item == 'delete this class') panel.promptDeleteThisClass();
+    },
+  };
 };
 /** Optional extra trim after content fit for TextPane selection pane menus ({@link ListMorph.setList}). */
 w.paneSelectionMenuNarrowBy = 0;
@@ -570,18 +604,6 @@ w.pointerOnOskKeyUI = function (world, worldPt) {
   }
   return false;
 };
-/** Walk owner chain from a morph (e.g. halo target) to a ScrollPane that has a non-empty pane menu. */
-w.nearestScrollPaneWithPaneMenu = function (morph) {
-  let m = morph;
-  while (m) {
-    if (m.instanceOf && m.instanceOf(w.ScrollPane) && m.paneMenu) {
-      let items = m.paneMenu.items || [];
-      if (items.length > 0) return m;
-    }
-    m = m.owner;
-  }
-  return null;
-};
 w.init = function (restart) {
   // w.init()
   console.log('init!');
@@ -804,6 +826,49 @@ w.methodFromSpec = function (spec) {
   if (className == 'w') return w[selector];
   if (protoPart == 'class') return w[className][selector];
   return w[className].proto[selector];
+};
+/** Method spec key without a recent-changes date suffix. */
+w.methodSpecKey = function (spec) {
+  if (!spec) return spec;
+  if (spec.includes('[')) return spec.slice(0, spec.indexOf('[') - 1).trim();
+  return spec;
+};
+/** `eval` expression to remove a live method (`Morph.proto.foo`, `w.init`, …). */
+w.deleteExprForMethodSpec = function (spec) {
+  let key = w.methodSpecKey(spec);
+  if (!key) return null;
+  if (key.startsWith('w.')) return 'delete w.' + key.slice(2);
+  let dotIx = key.indexOf('.');
+  if (dotIx < 0) return null;
+  let className = key.slice(0, dotIx);
+  let dotIx2 = key.indexOf('.', dotIx + 1);
+  if (dotIx2 < 0) return null;
+  let kind = key.slice(dotIx + 1, dotIx2);
+  let selector = key.slice(dotIx2 + 1);
+  if (kind == 'proto') return 'delete w.' + className + '.proto.' + selector;
+  if (kind == 'class') return 'delete w.' + className + '.' + selector;
+  return null;
+};
+w.deleteMethodWithSpec = function (spec) {
+  let expr = w.deleteExprForMethodSpec(spec);
+  if (!expr) return false;
+  try {
+    eval(expr);
+    return true;
+  } catch (e) {
+    console.log('delete failed: ' + expr, e);
+    return false;
+  }
+};
+w.deleteClassNamed = function (className) {
+  if (!className || className == 'w' || !w[className]) return false;
+  try {
+    eval('delete w.' + className);
+    return true;
+  } catch (e) {
+    console.log('delete class failed: w.' + className, e);
+    return false;
+  }
 };
 w.methodsContaining = function (searchString) {
   // w.methodsContaining('Pane').length
@@ -1409,13 +1474,12 @@ w.textPaneWithKeyboardFocus = function (world) {
   }
   return null;
 };
-/** Same gate as {@link ScrollPane.tryShowPaneMenuForSelection} on a TextPane (preference + focus + selection). */
+/** True when OSK should track keyboard focus in a TextPane. */
 w.shouldShowOnScreenKeyboardForWorld = function (world) {
   if (!world || !w.useOnScreenKbd) return false;
   let pane = w.textPaneWithKeyboardFocus(world);
   if (!pane) return false;
-  if (!w.keyboardFocusBelongsToScrollPane(world, pane)) return false;
-  return pane.hasNonEmptyContentSelectionForPaneMenu();
+  return w.keyboardFocusBelongsToScrollPane(world, pane);
 };
 w.Morph.proto.changed = function () {
   // Means we have to redraw due to altered content
@@ -2849,14 +2913,6 @@ w.ListMorph.proto.onPointerDown = function (p, evt) {
   w.clearKeyboardFocusUnlessTypingOrOsk(this);
   this.hitPoint = p;
   this.actorID = evt.actorID;
-  // ListPane: pane menu on re-click of the same line (see onPointerUp); toggle if menu already open.
-  if (this.owner && this.owner.className === 'ListPane') {
-    this._paneMenuPriorLineIndex = this.shape.selectedLineIndex;
-    let world = this.world();
-    this._paneMenuWasOpenOnDown = !!(
-      world && w.fleetingPaneMenuForScrollPane(world, this.owner)
-    );
-  }
   this.shape.selectLineAt(this.relativize(p));
   this.world().setPointerFocus(this);
   if (this.bringTopLevelPanelToFrontIfNeeded(p)) return true;
@@ -2878,28 +2934,10 @@ w.ListMorph.proto.onPointerUp = function (p, evt) {
   this.actorID = null;
   this.hitPoint = null;
   let selectionIndex = this.shape.selectedLineIndex;
-  let priorIndex =
-    this.owner && this.owner.className === 'ListPane' ? this._paneMenuPriorLineIndex : null;
-  this._paneMenuPriorLineIndex = null;
   this.world().setPointerFocus(null);
-  let inListPane = this.className === 'ListMorph' && this.owner && this.owner.className === 'ListPane';
-  let reclickSameLine =
-    inListPane && selectionIndex > 0 && priorIndex != null && priorIndex === selectionIndex;
   if (selectionIndex > 0) {
     let rawItem = this.itemList ? this.itemList[selectionIndex - 1] : null;
-    if (reclickSameLine) {
-      let world = this.world();
-      let pane = this.owner;
-      let suppress =
-        world && world._suppressListPaneMenuReselect === pane;
-      if (suppress) world._suppressListPaneMenuReselect = null;
-      else if (this._paneMenuWasOpenOnDown) w.removeFleetingPaneMenuFor(pane);
-      else if (pane.tryShowPaneMenuForSelection) {
-        let anchor = this.globalize(this.relativize(p).addPt(w.pt(4, 0)));
-        pane.tryShowPaneMenuForSelection(anchor);
-      }
-      this._paneMenuWasOpenOnDown = false;
-    } else if (this.actionFn && !w.isMenuSeparator(rawItem))
+    if (this.actionFn && !w.isMenuSeparator(rawItem))
       this.actionFn.call(this, rawItem, evt.shiftKey);
   }
   // Retain visible selection after choice (e.g. in ListPanes / class browser)
@@ -2955,6 +2993,21 @@ w.ListMorph.proto.setSelectionString = function (str, suppressAction) {
 
 /** Fleeting / popup menus; same behavior as {@link ListMorph}. */
 w.MenuMorph = w.ListMorph.subClass('MenuMorph');
+/** Fleeting yes/no confirm; title line is not selectable. */
+w.promptConfirmMenu = function (world, pt, titleLine, yesLine, noLine, onResult) {
+  let menu = w.MenuMorph.new(
+    w.rect(pt.x, pt.y, Math.max(200, titleLine.length * 7), 112),
+    [titleLine, yesLine, noLine],
+    (item) => {
+      menu.remove();
+      onResult(item === yesLine);
+    },
+  );
+  let bg = w.Color.yellow;
+  menu.shape.boxColor = bg;
+  menu.shape.fill = bg;
+  world.addMorph(menu);
+};
 /** Menu: yes; cancel = discard edits & continue; NO = keep edits (abort). Title line acts like NO. */
 w.promptOkToCancelEditsMenu = function (world, pt, onResult) {
   let titleLine = 'OK to cancel edits?';
@@ -3006,6 +3059,12 @@ w.PanelMorph.proto.promptOkToCancelEdits = function (onResult) {
   let b = this.shape.getBounds();
   let pt = w.pt(tl.x + Math.max(4, b.width() / 2 - 150), tl.y + this.titleBarHeight + 16);
   w.promptOkToCancelEditsMenu(this.world(), pt, onResult);
+};
+w.PanelMorph.proto.promptConfirm = function (titleLine, yesLine, noLine, onResult) {
+  let tl = this.topLeftInWorld();
+  let b = this.shape.getBounds();
+  let pt = w.pt(tl.x + Math.max(4, b.width() / 2 - 100), tl.y + this.titleBarHeight + 16);
+  w.promptConfirmMenu(this.world(), pt, titleLine, yesLine, noLine, onResult);
 };
 w.PanelMorph.proto.revertUnsavedTextInTextPanes = function () {
   let walk = (m) => {
@@ -3399,12 +3458,7 @@ w.BrowserPanel.proto.initClassPane = function () {
   let panelBounds = this.paneLayoutBounds();
   this.classPane = this.addMorph(w.ListPane.new(panelBounds, w.rect(0.0, 0.0, 0.4, 0.4)));
   this.classPane.setList(['w.'].concat(w.allClassNamesWithStatics()));
-  this.classPane.setPaneMenu({
-    items: ['filout class to OS paste buffer'],
-    onSelect: (item, pane) => {
-      if (item == 'filout class to OS paste buffer') this.filoutSelectedClassToOSPaste();
-    },
-  });
+  this.classPane.setPaneMenu(w.classSelectorPaneMenuSpec(this));
   this.classPane.onSelect((classSelection) => {
     let applyClass = () => {
       console.log('this.classOrInst = ' + classSelection);
@@ -3447,13 +3501,7 @@ w.BrowserPanel.proto.initMessagePane = function () {
   let panelBounds = this.paneLayoutBounds();
   this.messagePane = this.addMorph(w.ListPane.new(panelBounds, w.rect(0.4, 0.0, 0.6, 0.4)));
   this.messagePane.setList(['message names']);
-  this.messagePane.setPaneMenu({
-    items: ['spawn this method', 'filout method to OS paste buffer'],
-    onSelect: (item, pane) => {
-      if (item == 'spawn this method') this.browseSelectedMethod();
-      if (item == 'filout method to OS paste buffer') this.filoutSelectedMethodToOSPaste();
-    },
-  });
+  this.messagePane.setPaneMenu(w.methodSelectorPaneMenuSpec(this));
   this.messagePane.onSelect((methodSelection, shiftKey) => {
     let applyMethod = () => {
       console.log('this.selectedMethod = ' + methodSelection);
@@ -3511,7 +3559,7 @@ w.BrowserPanel.proto.updateBrowserTitle = function () {
   if (this.selectedMethod) t = this.selectedClass + ' ' + this.selectedMethod;
   this.setPanelTitle(t);
 };
-w.BrowserPanel.proto.filoutSelectedClassToOSPaste = function () {
+w.BrowserPanel.proto.filoutThisClassToOSPaste = function () {
   if (!this.selectedClass) return;
   let classSelection = this.selectedClass;
   if (classSelection == 'w.') return;
@@ -3524,34 +3572,112 @@ w.BrowserPanel.proto.filoutSelectedClassToOSPaste = function () {
   if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText)
     navigator.clipboard.writeText(filout).catch(() => {});
 };
-w.BrowserPanel.proto.filoutSelectedMethodToOSPaste = function () {
-  let filout = this.selectedMethod;
+w.BrowserPanel.proto.spawnThisClassToWindow = function () {
+  if (!this.selectedClass || this.selectedClass == 'w.') return;
+  let text = w.filoutStringForSelection(this.selectedClass, {
+    includeHeader: true,
+    includeClassDef: true,
+  });
+  if (!text) return;
+  w.Lively.addMorph(
+    w.MethodPanel.new(this.rectForSpawnedPanel(28, 320, 220), text, this.selectedClass),
+  );
+};
+w.BrowserPanel.proto.selectedClassName = function () {
+  if (!this.selectedClass || this.selectedClass == 'w.') return null;
+  if (this.selectedClass.endsWith('.class')) return this.selectedClass.split('.')[0];
+  return this.selectedClass;
+};
+w.BrowserPanel.proto.selectedMethodSpec = function () {
+  if (!this.selectedMethod) return null;
+  if (this.selectedClass == 'w.') return 'w.' + this.selectedMethod;
+  if (this.selectedClass && this.selectedClass.endsWith('.class'))
+    return this.selectedClass.split('.')[0] + '.class.' + this.selectedMethod;
+  if (this.selectedClass) return this.selectedClass + '.proto.' + this.selectedMethod;
+  return null;
+};
+w.BrowserPanel.proto.refreshMessageListForSelectedClass = function () {
+  if (!this.selectedClass || !this.messagePane) return;
+  let classSelection = this.selectedClass;
+  let obj = null;
+  if (classSelection == 'w.') obj = w;
+  else if (classSelection.endsWith('.class')) {
+    if (!this.classOnly) this.classOnly = classSelection.split('.')[0];
+    obj = w[this.classOnly];
+  } else obj = w[classSelection].proto;
+  let msgList = Object.getOwnPropertyNames(obj).sort();
+  if (classSelection.endsWith('.class')) {
+    msgList = msgList.filter((sel) => ['proto', 'name'].indexOf(sel) == -1);
+  }
+  msgList = msgList.filter((msg) => msg[0] == msg[0].toLowerCase());
+  this.messagePane.setList(msgList);
+};
+w.BrowserPanel.proto.deleteThisClass = function () {
+  let className = this.selectedClassName();
+  if (!className) return;
+  if (!w.deleteClassNamed(className)) return;
+  this.selectedClass = null;
+  this.selectedMethod = null;
+  this.classPane.setList(['w.'].concat(w.allClassNamesWithStatics()));
+  if (this.messagePane) this.messagePane.setList(['message names']);
+  if (this.methodPane) this.methodPane.setText('Method text', { force: true });
+  this.updateBrowserTitle();
+};
+w.BrowserPanel.proto.promptDeleteThisClass = function () {
+  let className = this.selectedClassName();
+  if (!className) return;
+  this.promptConfirm(
+    'Do you really want to delete ' + className + '?',
+    '  yes',
+    '  NO',
+    (ok) => {
+      if (ok) this.deleteThisClass();
+    },
+  );
+};
+w.BrowserPanel.proto.methodCopyText = function () {
+  if (!this.methodPane || !this.methodPane.contentPane) return null;
+  let text = this.methodPane.contentPane.shape.string;
+  if (!text || text === 'Method text') return null;
+  return text;
+};
+w.BrowserPanel.proto.methodCopyTitle = function () {
+  if (this.selectedClass && this.selectedMethod) return this.selectedClass + ' ' + this.selectedMethod;
+  return 'Method copy';
+};
+w.BrowserPanel.proto.spawnMethodCopyToWindow = function () {
+  let text = this.methodCopyText();
+  if (!text) return;
+  w.Lively.addMorph(
+    w.MethodPanel.new(this.rectForSpawnedPanel(28, 320, 220), text, this.methodCopyTitle()),
+  );
+};
+w.BrowserPanel.proto.filoutMethodCopyToOSPaste = function () {
+  let filout = this.methodCopyText();
   if (!filout) return;
   w.addPasteBufferItem(filout);
   if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText)
     navigator.clipboard.writeText(filout).catch(() => {});
 };
-w.BrowserPanel.proto.browseSelectedMethod = function () {
-  if (!this.selectedClass || !this.selectedMethod) return;
-  let methodString = null;
-  let headerString = null;
-  if (this.selectedClass == 'w.') {
-    methodString = w[this.selectedMethod].toString();
-    headerString = 'w.' + this.selectedMethod + ' = ';
-  } else if (this.selectedClass.endsWith('.class')) {
-    let classOnly = this.selectedClass.split('.')[0];
-    methodString = w[classOnly][this.selectedMethod].toString();
-    headerString = 'w.' + classOnly + '.' + this.selectedMethod + ' = ';
-  } else {
-    methodString = w[this.selectedClass].proto[this.selectedMethod].toString();
-    headerString = 'w.' + this.selectedClass + '.proto.' + this.selectedMethod + ' = ';
-  }
-  w.Lively.addMorph(
-    w.MethodPanel.new(
-      this.rectForSpawnedPanel(28, 320, 220),
-      headerString + methodString,
-      this.selectedClass + ' ' + this.selectedMethod,
-    ),
+w.BrowserPanel.proto.deleteThisMethod = function () {
+  let spec = this.selectedMethodSpec();
+  if (!spec) return;
+  if (!w.deleteMethodWithSpec(spec)) return;
+  this.selectedMethod = null;
+  if (this.methodPane) this.methodPane.setText('Method text', { force: true });
+  this.refreshMessageListForSelectedClass();
+  this.updateBrowserTitle();
+};
+w.BrowserPanel.proto.promptDeleteThisMethod = function () {
+  let spec = this.selectedMethodSpec();
+  if (!spec) return;
+  this.promptConfirm(
+    'Do you really want to delete ' + spec + '?',
+    '  yes',
+    '  NO',
+    (ok) => {
+      if (ok) this.deleteThisMethod();
+    },
   );
 };
 
@@ -3627,6 +3753,7 @@ w.MethodListPanel.proto.initMethodsPane = function () {
   let panelBounds = this.paneLayoutBounds();
   this.methodsPane = this.addMorph(w.ListPane.new(panelBounds, w.rect(0.0, 0.0, 1.0, 0.4)));
   this.methodsPane.setList(this.methodSpecs);
+  this.methodsPane.setPaneMenu(w.methodSelectorPaneMenuSpec(this));
   this.methodsPane.onSelect((spec, shiftKey) => {
     let applySpec = () => {
       let methodString = null;
@@ -3695,6 +3822,62 @@ w.MethodListPanel.proto.methodFromRecentSpec = function (spec) {
   });
   return found;
 };
+w.MethodListPanel.proto.methodCopyText = function () {
+  if (!this.printPane || !this.printPane.contentPane) return null;
+  let text = this.printPane.contentPane.shape.string;
+  if (!text || text === 'Selected method') return null;
+  return text;
+};
+w.MethodListPanel.proto.methodCopyTitle = function () {
+  return this._occurrenceLastSpec || 'Method copy';
+};
+w.MethodListPanel.proto.selectedMethodSpec = function () {
+  if (this._occurrenceLastSpec) return w.methodSpecKey(this._occurrenceLastSpec);
+  let text = this.methodCopyText();
+  if (!text) return null;
+  let ix = text.indexOf(' =');
+  if (ix < 0) return null;
+  let lhs = text.slice(0, ix).trim();
+  if (lhs.startsWith('w.')) return lhs.slice(2);
+  return lhs;
+};
+w.MethodListPanel.proto.spawnMethodCopyToWindow = function () {
+  let text = this.methodCopyText();
+  if (!text) return;
+  w.Lively.addMorph(
+    w.MethodPanel.new(this.rectForSpawnedPanel(28, 320, 220), text, this.methodCopyTitle()),
+  );
+};
+w.MethodListPanel.proto.filoutMethodCopyToOSPaste = function () {
+  let filout = this.methodCopyText();
+  if (!filout) return;
+  w.addPasteBufferItem(filout);
+  if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText)
+    navigator.clipboard.writeText(filout).catch(() => {});
+};
+w.MethodListPanel.proto.deleteThisMethod = function () {
+  let spec = this.selectedMethodSpec();
+  if (!spec) return;
+  if (!w.deleteMethodWithSpec(spec)) return;
+  if (this.methodSpecs) {
+    this.methodSpecs = this.methodSpecs.filter((s) => w.methodSpecKey(s) !== spec);
+    this.methodsPane.setList(this.methodSpecs);
+  }
+  if (this.printPane) this.printPane.setText('Selected method', { force: true });
+  this._occurrenceLastSpec = null;
+};
+w.MethodListPanel.proto.promptDeleteThisMethod = function () {
+  let spec = this.selectedMethodSpec();
+  if (!spec) return;
+  this.promptConfirm(
+    'Do you really want to delete ' + spec + '?',
+    '  yes',
+    '  NO',
+    (ok) => {
+      if (ok) this.deleteThisMethod();
+    },
+  );
+};
 
 w.ScrollPane = w.Morph.subClass('ScrollPane');
 w.ScrollPane.proto.getScrollPosition = function () {
@@ -3733,45 +3916,19 @@ w.ScrollPane.proto.setPaneMenu = function (paneMenuSpec) {
   this.paneMenu = paneMenuSpec;
   this.changed();
 };
-/** World point just outside this pane’s right edge (stable when content scrolls). */
+/** World point just to the right of this pane’s top-right (stable when content scrolls). */
 w.ScrollPane.proto.paneMenuAnchorInWorld = function () {
   let r = this.shape.getBounds();
   return this.globalize(r.topRight().addPt(w.pt(3, 0)));
 };
-/** True when the pane menu should apply: TextPane with a caret or range; ListPane only when a list line is selected. */
-w.ScrollPane.proto.hasNonEmptyContentSelectionForPaneMenu = function () {
-  if (!this.contentPane || !this.contentPane.shape) return false;
-  let sh = this.contentPane.shape;
-  if (this.instanceOf && this.instanceOf(w.TextPane)) {
-    // Zero-length selection (caret) is still a valid paste/do-it anchor; keep pane menu.
-    if (!sh.selStart || !sh.selStop) return false;
-    return true;
-  }
-  if (this.instanceOf && this.instanceOf(w.ListPane)) {
-    return sh.selectedLineIndex > 0;
-  }
-  return false;
-};
-/** If this pane has a pane menu and content warrants it, show it (optional world anchor; else pane right edge). */
-w.ScrollPane.proto.tryShowPaneMenuForSelection = function (anchorPtIfAny) {
-  if (!this.paneMenu || !this.world()) return;
-  let world = this.world();
+/** Fleeting pane menu from the scrollbar menuButton (opens on pointer-down). */
+w.ScrollPane.proto.showPaneMenuFromMenuButton = function () {
+  if (!this.paneMenu || !this.world()) return null;
   let items = this.paneMenu.items || [];
-  if (items.length === 0) return;
-  if (!this.hasNonEmptyContentSelectionForPaneMenu()) {
-    if (this.instanceOf && this.instanceOf(w.TextPane)) w.syncOnScreenKeyboardWithFocus(world);
-    return;
-  }
-  let existing = world.submorphs.find(
-    (sub) =>
-      sub.className === 'MenuMorph' && sub.isFleetingMenu && sub._paneMenuOwnerScrollPane === this,
-  );
-  if (existing) {
-    if (this.instanceOf && this.instanceOf(w.TextPane)) w.syncOnScreenKeyboardWithFocus(world);
-    return;
-  }
-  this.showPaneMenu(anchorPtIfAny || null, { fleeting: true, fromSelection: true });
-  if (this.instanceOf && this.instanceOf(w.TextPane)) w.syncOnScreenKeyboardWithFocus(world);
+  if (items.length === 0) return null;
+  let menu = this.showPaneMenu(this.paneMenuAnchorInWorld(), { fleeting: true, fromSelection: true });
+  if (this.instanceOf && this.instanceOf(w.TextPane)) w.syncOnScreenKeyboardWithFocus(this.world());
+  return menu;
 };
 w.ScrollPane.proto.showPaneMenu = function (ptIfAny, optsIfAny) {
   if (!this.paneMenu || !this.world()) return false;
@@ -3804,8 +3961,8 @@ w.ScrollPane.proto.showPaneMenu = function (ptIfAny, optsIfAny) {
     menu._paneMenuPinWhileInContent = thisPane.contentPane;
     menu.setList(items);
   }
-  this.world().addMorphBack(menu);
-  return true;
+  this.world().addMorph(menu);
+  return menu;
 };
 w.ScrollPane.proto.renderOn = function (ctx) {
   // Context is already in pane-local coords (parent applied our transform); clip to local shape bounds
@@ -4167,25 +4324,38 @@ w.ImageMorph.demo = function () {
 };
 
 w.SliderMorph = w.Morph.subClass('SliderMorph');
+/** Scroll track below the menu button strip (remaining 90% of scrollbar height). */
+w.SliderMorph.proto.trackBounds = function () {
+  let bnds = this.shape.getBounds();
+  let topH = bnds.height() * this.menuButtonFraction;
+  return w.rect(0, topH, bnds.width(), Math.max(0, bnds.height() - topH));
+};
+w.SliderMorph.proto.layoutMenuButton = function () {
+  let bnds = this.shape.getBounds();
+  let topH = bnds.height() * this.menuButtonFraction;
+  this.menuButton.setBounds(w.rect(0, 0, bnds.width(), topH));
+};
 /** Reposition thumb from this.value — no console (safe when console is mirrored to Transcript). */
 w.SliderMorph.proto.syncThumbToValue = function () {
   var bnds = this.shape.getBounds();
+  var track = this.trackBounds();
   var ext = this.valExtent;
   var topLeft;
   var sliderExt;
   if (this.isVertical()) {
-    var elevPixV = Math.max(ext * bnds.height(), 6);
-    topLeft = w.pt(0, (bnds.height() - elevPixV) * this.value);
-    sliderExt = w.pt(bnds.width(), elevPixV);
+    var elevPixV = Math.max(ext * track.height(), 6);
+    topLeft = w.pt(0, track.topLeft.y + (track.height() - elevPixV) * this.value);
+    sliderExt = w.pt(track.width(), elevPixV);
   } else {
-    var elevPixH = Math.max(ext * bnds.width(), 6);
-    topLeft = w.pt((bnds.width() - elevPixH) * this.value, 0);
-    sliderExt = w.pt(elevPixH, bnds.height());
+    var elevPixH = Math.max(ext * track.width(), 6);
+    topLeft = w.pt((track.width() - elevPixH) * this.value, track.topLeft.y);
+    sliderExt = w.pt(elevPixH, track.height());
   }
   this.slider.setBounds(bnds.topLeft.addPt(topLeft).extent(sliderExt));
 };
 w.SliderMorph.proto.adjustForNewBounds = function () {
   console.log('isVertical =  ' + this.isVertical());
+  this.layoutMenuButton();
   this.syncThumbToValue();
   console.log('adjust bounds ' + this.slider.getBounds().asString());
   console.log('adjust done');
@@ -4198,11 +4368,17 @@ w.SliderMorph.proto.initialize = function (initialBounds, valueFn) {
   this.setColor(w.Color.gray);
   this.value = 0.0; // By convention, my value ranges from 0.0 to 1.0
   this.valExtent = 0.1; // for when showing a range
+  this.menuButtonFraction = 0.1;
   this.slider = this.addMorph(w.Morph.new(w.rect(0, 0, 10, 10)));
   this.styleSlider();
   this.slider.onPointerDown = function () {
     return false;
   }; // ignore blipper
+  this.menuButton = this.addMorph(w.Morph.new(w.rect(0, 0, 1, 1)));
+  this.menuButton.setColor(w.Color.blue);
+  this.menuButton.onPointerDown = function () {
+    return false;
+  }; // SliderMorph handles pane menu on pointer-down
   this.emitValueFunction = valueFn;
   console.log(`slider value = ${this.value}, slider = ${this.slider.asString()},
     function = ${this.emitValueFunction}`);
@@ -4220,6 +4396,26 @@ w.SliderMorph.proto.onPointerDown = function (pt, evt) {
   w.clearKeyboardFocusUnlessTypingOrOsk(this);
   // pt is in owner coords; convert to my local coords for testing the elevator (slider submorph)
   let localP = this.relativize(pt);
+  if (this.menuButton.includesPt(localP)) {
+    let pane = this.owner;
+    let world = this.world();
+    if (pane && pane.instanceOf && pane.instanceOf(w.ScrollPane) && pane.paneMenu) {
+      if (w.fleetingPaneMenuForScrollPane(world, pane)) w.removeFleetingPaneMenuFor(pane);
+      else {
+        let menu = pane.showPaneMenuFromMenuButton();
+        if (menu) {
+          let worldPt = pane.globalize(pt);
+          world.setPointerFocus(menu);
+          menu.hitPoint = worldPt;
+          menu.actorID = evt.actorID;
+          menu.shape.selectLineAt(menu.relativize(worldPt));
+        }
+      }
+    }
+    return true;
+  }
+  let track = this.trackBounds();
+  if (!track.includesPt(localP)) return false;
   if (!this.slider.includesPt(localP)) {
     let sliderBR = this.slider.getBounds().bottomRight();
     if (localP.lePt(sliderBR)) this.tweakValue(-0.1);
@@ -4236,16 +4432,17 @@ w.SliderMorph.proto.onPointerMove = function (pt, evt) {
   // Compute a new value from a new mouse point, and emit it
   console.log('----pointerMove-----');
   var bnds = this.shape.getBounds();
+  let track = this.trackBounds();
   let ext = this.valExtent; // for now...
   let p = pt.subPt(bnds.topLeft);
   if (this.isVertical()) {
     // more vertical...
-    var elevPix = Math.max(ext * bnds.height(), 6); // thickness of elevator in pixels
-    var newValue = (p.y - elevPix / 2) / (bnds.height() - elevPix);
+    var elevPix = Math.max(ext * track.height(), 6); // thickness of elevator in pixels
+    var newValue = (p.y - track.topLeft.y - elevPix / 2) / (track.height() - elevPix);
   } else {
     // more horizontal...
-    var elevPix = Math.max(ext * bnds.width(), 6); // thickness of elevator in pixels
-    var newValue = (p.x - elevPix / 2) / (bnds.width() - elevPix);
+    var elevPix = Math.max(ext * track.width(), 6); // thickness of elevator in pixels
+    var newValue = (p.x - elevPix / 2) / (track.width() - elevPix);
   }
   console.log('this.emitValueFunction.call(this, newValue' + newValue);
   //debugger;
@@ -4261,7 +4458,14 @@ w.SliderMorph.proto.onPointerMove = function (pt, evt) {
   return true;
 };
 w.SliderMorph.proto.onPointerUp = function (pt, evt) {
-  if (!this.includesPt(pt)) return false;
+  if (!this.includesPt(pt)) {
+    if (this.hitPoint) {
+      this.hitPoint = null;
+      this.world().setPointerFocus(null);
+      return true;
+    }
+    return false;
+  }
   this.hitPoint = null;
   this.world().setPointerFocus(null);
   return true;
@@ -4412,13 +4616,6 @@ w.TextMorph.proto.onPointerUp = function (p, evt) {
   this.actorID = null;
   this.hitPoint = null;
   this.world().setPointerFocus(null);
-  if (
-    this.owner &&
-    this.owner.instanceOf &&
-    this.owner.instanceOf(w.TextPane) &&
-    this.owner.tryShowPaneMenuForSelection
-  )
-    this.owner.tryShowPaneMenuForSelection();
   return true;
 };
 w.TextMorph.proto.setText = function (str) {
@@ -5214,6 +5411,18 @@ w.WorldMorph.proto.onKeyUp = function (evt) {
   if (this.keyboardFocus && this.keyboardFocus.onKeyUp) this.keyboardFocus.onKeyUp(evt);
   return w.Morph.proto.onKeyUp.call(this, evt);
 };
+/** Scrollbar whose menuButton (if any) contains `worldPt`. */
+w.hitScrollPaneMenuButtonAt = function (world, worldPt) {
+  let m = world.topMorphAtExcludingHaloUI(worldPt);
+  while (m && m !== world) {
+    if (m.className === 'SliderMorph' && m.menuButton) {
+      let localP = m.localize(worldPt);
+      if (m.menuButton.includesPt(localP)) return m;
+    }
+    m = m.owner;
+  }
+  return null;
+};
 /** Fleeting pane menu owned by a scroll pane, if any. */
 w.fleetingPaneMenuForScrollPane = function (world, scrollPane) {
   if (!world || !scrollPane) return null;
@@ -5230,7 +5439,6 @@ w.removeFleetingPaneMenuFor = function (scrollPane) {
 };
 w.WorldMorph.proto.onPointerDown = function (p, evt) {
   window.pointerLocation = p;
-  this._suppressListPaneMenuReselect = null;
   // Dismiss fleeting menus but still deliver this click to morphs underneath
   // (otherwise the first click after a pane menu only closes the menu).
   this.dismissFleetingMenusAt(p);
@@ -5275,6 +5483,7 @@ w.WorldMorph.proto.dismissFleetingMenusAt = function (p) {
     (morph) => morph.className == 'MenuMorph' && morph.isFleetingMenu,
   );
   if (fleetingMenus.length == 0) return false;
+  if (w.hitScrollPaneMenuButtonAt(this, p)) return false;
   let clickWasInside = fleetingMenus.some((morph) => morph.includesPt(p));
   if (clickWasInside) return false;
   let removedAny = false;
@@ -5293,8 +5502,6 @@ w.WorldMorph.proto.dismissFleetingMenusAt = function (p) {
     }
     morph.remove();
     removedAny = true;
-    if (ownerPane && ownerPane.instanceOf && ownerPane.instanceOf(w.ListPane))
-      world._suppressListPaneMenuReselect = ownerPane;
   });
   return removedAny;
 };
@@ -5354,7 +5561,6 @@ w.WorldMorph.proto.onPointerUp = function (p, evt) {
   } else {
     this.submorphs.forEach((morph) => morph.onPointerUp(p, evt));
   }
-  this._suppressListPaneMenuReselect = null;
   return result;
 };
 w.WorldMorph.proto.morphsAtPointInDepthOrder = function (pt) {
