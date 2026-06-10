@@ -48,7 +48,7 @@ export const LineLayerTool: ToolRender = (handle, element) => {
 
 function LineLayer(props: { url: AutomergeUrl }) {
   const [doc] = useDocument<ShapeLayerDoc>(() => props.url);
-  const shapes = () => (doc()?.shapes ?? []) as LineShape[];
+  const shapes = () => Object.values(doc()?.shapes ?? {}) as LineShape[];
 
   return (
     <For each={shapes()}>

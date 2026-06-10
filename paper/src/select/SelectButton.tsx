@@ -16,24 +16,24 @@ import type {
   SurfaceState,
 } from "../surface/types";
 import type { EmbedShape } from "../embed/EmbedLayerTool";
-import { hitTestShape, shapeRef } from "./geometry";
+import { hitTestShape, shapeUrl } from "./geometry";
 
 // Mirrors the shared focus document the FocusProvider owns. We only touch
-// `selection`; keys are composite `layerUrl#index` strings.
+// `selection`; keys are shape sub-document URLs (see `shapeUrl`).
 type FocusDoc = {
   selection: Record<string, true>;
 };
 
 type SurfacePointer = NonNullable<SurfaceState["pointer"]>;
 
-// One shape participating in the current drag. `homeSurfaceUrl`/`grabOffset`
+// One shape participating in the current drag. `handle` is a sub-handle
+// scoped to the shape inside its layer doc. `homeSurfaceUrl`/`grabOffset`
 // are only known when the shape's home surface could be resolved from the
 // pointer sample; without them the shape still drags but won't re-home on a
 // cross-surface drop.
 type DragShape = {
   ref: string;
-  layerHandle: DocHandle<ShapeLayerDoc>;
-  index: number;
+  handle: DocHandle<Shape>;
   homeSurfaceUrl?: AutomergeUrl;
   // Shape origin minus pointer-down position, in the shape's home space.
   // Constant for the whole drag (the shape moves exactly with the pointer),
@@ -41,11 +41,13 @@ type DragShape = {
   grabOffset?: Point;
 };
 
-function parseRef(ref: string): { layerUrl: AutomergeUrl; index: number } {
-  const i = ref.lastIndexOf("#");
+// Split a shape sub-document URL (`automerge:<docId>/shapes/<shapeId>`) back
+// into the layer's document URL and the shape id.
+function parseRef(ref: string): { layerUrl: AutomergeUrl; id: string } {
+  const segments = ref.split("/");
   return {
-    layerUrl: ref.slice(0, i) as AutomergeUrl,
-    index: Number(ref.slice(i + 1)),
+    layerUrl: segments[0] as AutomergeUrl,
+    id: segments[segments.length - 1],
   };
 }
 
@@ -94,12 +96,13 @@ export function SelectButton(): JSX.Element {
     let best: { ref: string; z: number } | undefined;
     for (const layerUrl of Object.values(layers)) {
       const layerHandle = await repo.find<ShapeLayerDoc>(layerUrl);
-      const shapes = layerHandle.doc()?.shapes ?? [];
-      shapes.forEach((shape: Shape, index: number) => {
-        if (!hitTestShape(x, y, shape)) return;
+      const shapes = layerHandle.doc()?.shapes ?? {};
+      for (const shape of Object.values(shapes)) {
+        if (!hitTestShape(x, y, shape)) continue;
         const z = shape.z ?? 0;
-        if (!best || z >= best.z) best = { ref: shapeRef(layerUrl, index), z };
-      });
+        if (!best || z >= best.z)
+          best = { ref: shapeUrl(layerUrl, shape.id), z };
+      }
     }
     return best?.ref;
   };
@@ -119,13 +122,17 @@ export function SelectButton(): JSX.Element {
     let best: { ref: string; z: number } | undefined;
     for (const layerUrl of Object.values(layers)) {
       const layerHandle = await repo.find<ShapeLayerDoc>(layerUrl);
-      const shapes = (layerHandle.doc()?.shapes ?? []) as EmbedShape[];
-      shapes.forEach((shape, index) => {
-        if (shape.docUrl !== surfaceUrl) return;
-        if (!hitTestShape(shape.x + x, shape.y + y, shape)) return;
+      const shapes = (layerHandle.doc()?.shapes ?? {}) as Record<
+        string,
+        EmbedShape
+      >;
+      for (const shape of Object.values(shapes)) {
+        if (shape.docUrl !== surfaceUrl) continue;
+        if (!hitTestShape(shape.x + x, shape.y + y, shape)) continue;
         const z = shape.z ?? 0;
-        if (!best || z >= best.z) best = { ref: shapeRef(layerUrl, index), z };
-      });
+        if (!best || z >= best.z)
+          best = { ref: shapeUrl(layerUrl, shape.id), z };
+      }
     }
     return best?.ref;
   };
@@ -155,12 +162,14 @@ export function SelectButton(): JSX.Element {
     const shapes: DragShape[] = [];
 
     for (const ref of refs) {
-      const { layerUrl, index } = parseRef(ref);
-      const layerHandle = await repo.find<ShapeLayerDoc>(layerUrl);
-      const shape = layerHandle.doc()?.shapes?.[index];
+      const { layerUrl } = parseRef(ref);
+      // The ref is a sub-document URL, so find returns a handle scoped to
+      // the shape itself.
+      const handle = await repo.find<Shape>(ref as AutomergeUrl);
+      const shape = handle.doc();
       if (!shape) continue;
 
-      const dragShape: DragShape = { ref, layerHandle, index };
+      const dragShape: DragShape = { ref, handle };
 
       const homeSurfaceUrl = await findHomeSurface(layerUrl, pointer);
       if (homeSurfaceUrl) {
@@ -191,9 +200,8 @@ export function SelectButton(): JSX.Element {
     const dy = y - drag.last.y;
     if (dx !== 0 || dy !== 0) {
       for (const dragShape of drag.shapes) {
-        dragShape.layerHandle.change(({ shapes }) => {
-          const shape = shapes[dragShape.index];
-          if (!shape) return;
+        if (dragShape.handle.doc() === undefined) continue;
+        dragShape.handle.change((shape) => {
           shape.x += dx;
           shape.y += dy;
         });
@@ -205,23 +213,25 @@ export function SelectButton(): JSX.Element {
 
   // Move a dropped shape into the drop surface: same layer key as at home
   // (created on demand), placed at `drop + grabOffset`, removed from the
-  // source layer, selection ref rewritten.
+  // source layer, selection ref rewritten. The shape keeps its id across the
+  // move (ids are uuids, so they can't collide in the drop layer).
   const rehome = async (
     dragShape: DragShape,
     dropSurfaceUrl: AutomergeUrl,
     dropPosition: Point,
   ) => {
-    const { layerHandle, index, homeSurfaceUrl, grabOffset } = dragShape;
+    const { handle, homeSurfaceUrl, grabOffset } = dragShape;
     if (!homeSurfaceUrl || !grabOffset) return;
 
-    const shape = layerHandle.doc()?.shapes?.[index];
+    const { layerUrl, id } = parseRef(dragShape.ref);
+    const shape = handle.doc();
     if (!shape) return;
     // An embed can't be dropped into its own document.
     if ((shape as EmbedShape).docUrl === dropSurfaceUrl) return;
 
     const homeHandle = await repo.find<DocWithLayers>(homeSurfaceUrl);
     const layerKey = Object.entries(homeHandle.doc()?.layers ?? {}).find(
-      ([, url]) => url === layerHandle.url,
+      ([, url]) => url === layerUrl,
     )?.[0];
     if (!layerKey) return;
 
@@ -231,10 +241,11 @@ export function SelectButton(): JSX.Element {
     if (dropLayerUrl) {
       dropLayerHandle = await repo.find<ShapeLayerDoc>(dropLayerUrl);
     } else {
+      const sourceLayerHandle = await repo.find<ShapeLayerDoc>(layerUrl);
       dropLayerHandle = await repo.create2<ShapeLayerDoc>({
         "@patchwork": { type: "shape-layer" },
-        title: layerHandle.doc()?.title ?? "Layer",
-        shapes: [],
+        title: sourceLayerHandle.doc()?.title ?? "Layer",
+        shapes: {},
       });
       dropSurfaceHandle.change(
         (surface) => (surface.layers[layerKey] = dropLayerHandle.url),
@@ -245,24 +256,15 @@ export function SelectButton(): JSX.Element {
     moved.x = dropPosition.x + grabOffset.x;
     moved.y = dropPosition.y + grabOffset.y;
 
-    let newIndex = 0;
     dropLayerHandle.change(({ shapes }) => {
-      newIndex = shapes.length;
-      shapes.push(moved);
+      shapes[id] = moved;
     });
-    layerHandle.change(({ shapes }) => {
-      shapes.splice(index, 1);
-    });
+    handle.remove();
 
     focusHandle()?.change((doc) => {
       if (doc.selection?.[dragShape.ref]) {
-        // Replace the whole map instead of deleting the key: map-key `del`
-        // patches crash the projection's patch replay (automerge fragments
-        // prerelease only handles array/string deletes).
-        const next = { ...doc.selection };
-        delete next[dragShape.ref];
-        next[shapeRef(dropLayerHandle.url, newIndex)] = true;
-        doc.selection = next;
+        delete doc.selection[dragShape.ref];
+        doc.selection[shapeUrl(dropLayerHandle.url, id)] = true;
       }
     });
   };
@@ -282,15 +284,10 @@ export function SelectButton(): JSX.Element {
 
     if (shiftDown) {
       focus.change((doc) => {
-        // Same map-key delete workaround as in `rehome`.
-        const next = { ...(doc.selection ?? {}) };
-        if (!hit) {
-          if (!doc.selection) doc.selection = next;
-          return;
-        }
-        if (next[hit]) delete next[hit];
-        else next[hit] = true;
-        doc.selection = next;
+        if (!doc.selection) doc.selection = {};
+        if (!hit) return;
+        if (doc.selection[hit]) delete doc.selection[hit];
+        else doc.selection[hit] = true;
       });
       return;
     }
@@ -331,16 +328,12 @@ export function SelectButton(): JSX.Element {
     drag = null;
 
     const dropSurfaceUrl = pointer.surfaceUrl;
-    // Descending index order so splices don't shift the indices of shapes
-    // still waiting to be re-homed from the same layer.
-    const candidates = finished.shapes
-      .filter(
-        (shape) =>
-          shape.homeSurfaceUrl &&
-          shape.grabOffset &&
-          shape.homeSurfaceUrl !== dropSurfaceUrl,
-      )
-      .sort((a, b) => b.index - a.index);
+    const candidates = finished.shapes.filter(
+      (shape) =>
+        shape.homeSurfaceUrl &&
+        shape.grabOffset &&
+        shape.homeSurfaceUrl !== dropSurfaceUrl,
+    );
     for (const shape of candidates) {
       await rehome(shape, dropSurfaceUrl, pointer.position);
     }
@@ -406,21 +399,19 @@ export function SelectButton(): JSX.Element {
     });
   }
 
-  // Remove every selected shape from every layer, splicing from the highest
-  // index down so earlier indices stay valid.
+  // Remove every selected shape from every layer, one change per layer.
   async function deleteSelected(selected: Record<string, true>) {
-    const byLayer = new Map<AutomergeUrl, number[]>();
+    const byLayer = new Map<AutomergeUrl, string[]>();
     for (const ref of Object.keys(selected)) {
-      const { layerUrl, index } = parseRef(ref);
-      const indices = byLayer.get(layerUrl) ?? [];
-      indices.push(index);
-      byLayer.set(layerUrl, indices);
+      const { layerUrl, id } = parseRef(ref);
+      const ids = byLayer.get(layerUrl) ?? [];
+      ids.push(id);
+      byLayer.set(layerUrl, ids);
     }
-    for (const [layerUrl, indices] of byLayer) {
+    for (const [layerUrl, ids] of byLayer) {
       const layerHandle = await repo.find<ShapeLayerDoc>(layerUrl);
-      indices.sort((a, b) => b - a);
       layerHandle.change(({ shapes }) => {
-        for (const index of indices) shapes.splice(index, 1);
+        for (const id of ids) delete shapes[id];
       });
     }
   }

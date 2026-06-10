@@ -3,11 +3,11 @@ import { useDocument } from "@automerge/automerge-repo-solid-primitives";
 import { subscribeDoc } from "../vendor/providers-solid";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type { DocWithLayers, Shape, ShapeLayerDoc } from "../surface/types";
-import { outlinePoints, resolveOutline, shapeRef } from "./geometry";
+import { outlinePoints, resolveOutline, shapeUrl } from "./geometry";
 import "./select.css";
 
 // Mirrors the shared focus document the FocusProvider owns. We only read
-// `selection` here; keys are composite `layerUrl#index` strings.
+// `selection` here; keys are shape sub-document URLs (see `shapeUrl`).
 type FocusDoc = {
   selection: Record<string, true>;
 };
@@ -39,7 +39,7 @@ export function SelectionOverlay(props: {
           {([, url]) => (
             <LayerProbe
               url={url}
-              isSelected={(index) => Boolean(selection()[shapeRef(url, index)])}
+              isSelected={(id) => Boolean(selection()[shapeUrl(url, id)])}
             />
           )}
         </For>
@@ -52,15 +52,15 @@ export function SelectionOverlay(props: {
 // shapes.
 function LayerProbe(props: {
   url: AutomergeUrl;
-  isSelected: (index: number) => boolean;
+  isSelected: (id: string) => boolean;
 }): JSX.Element {
   const [doc] = useDocument<ShapeLayerDoc>(() => props.url);
-  const shapes = () => doc()?.shapes ?? [];
+  const shapes = () => Object.values(doc()?.shapes ?? {});
 
   return (
     <For each={shapes()}>
-      {(shape, index) => (
-        <Show when={props.isSelected(index())}>
+      {(shape) => (
+        <Show when={props.isSelected(shape.id)}>
           <SelectionHighlight shape={shape} />
         </Show>
       )}

@@ -44,7 +44,7 @@ export function RectButton(): JSX.Element {
         type: "shape-layer",
       },
       title: "Rectangles",
-      shapes: [],
+      shapes: {},
     });
     surfaceHandle.change(
       (surface) =>
@@ -54,13 +54,14 @@ export function RectButton(): JSX.Element {
     return rectShapeLayerHandle;
   };
 
-  // The in-progress rect is pinned to the surface it started on: without
-  // pointer capture, samples can come from other surfaces mid-gesture (the
-  // pointer crossing an embed), and those must not resize this rect.
+  // The in-progress rect: a sub-handle scoped to the shape itself, pinned to
+  // the surface it started on. Without pointer capture, samples can come from
+  // other surfaces mid-gesture (the pointer crossing an embed), and those
+  // must not resize this rect; the sub-handle can't supply the surface (its
+  // document is the layer), so it is tracked alongside.
   let rect: {
     surfaceUrl: AutomergeUrl;
-    layerHandle: DocHandle<ShapeLayerDoc>;
-    index: number;
+    handle: DocHandle<RectShape>;
     start: Point;
   } | null = null;
 
@@ -110,38 +111,42 @@ export function RectButton(): JSX.Element {
         return;
       }
 
+      const id = crypto.randomUUID();
       layerHandle.change(({ shapes }) => {
-        rect = {
-          surfaceUrl: pointer.surfaceUrl,
-          layerHandle,
-          index: shapes.length,
-          start: { x, y },
-        };
-        const z = shapes.reduce((max, s) => Math.max(max, s.z ?? 0), 0) + 1;
+        const z =
+          Object.values(shapes).reduce((max, s) => Math.max(max, s.z ?? 0), 0) +
+          1;
 
-        shapes.push({
+        shapes[id] = {
+          id,
           x,
           y,
           z,
           outline: { type: "rectangle", width: 0, height: 0 },
           fill: FILL,
           stroke: STROKE,
-        } as RectShape);
+        } as RectShape;
       });
+      rect = {
+        surfaceUrl: pointer.surfaceUrl,
+        handle: layerHandle.sub("shapes", id) as DocHandle<RectShape>,
+        start: { x, y },
+      };
     } else if (endedRect) {
-      if (rect && pointer.surfaceUrl === rect.surfaceUrl) {
-        const { layerHandle, index, start } = rect;
-        layerHandle.change(({ shapes }) => {
-          const shape = shapes[index] as RectShape | undefined;
-          if (!shape) return;
-          resize(shape, start, x, y);
-          if (
-            shape.outline?.type === "rectangle" &&
-            (shape.outline.width < MIN_SIZE || shape.outline.height < MIN_SIZE)
-          ) {
-            shapes.splice(index, 1);
-          }
-        });
+      if (
+        rect &&
+        pointer.surfaceUrl === rect.surfaceUrl &&
+        rect.handle.doc() !== undefined
+      ) {
+        const { handle, start } = rect;
+        handle.change((shape) => resize(shape, start, x, y));
+        const outline = handle.doc()?.outline;
+        if (
+          outline?.type === "rectangle" &&
+          (outline.width < MIN_SIZE || outline.height < MIN_SIZE)
+        ) {
+          handle.remove();
+        }
       }
       rect = null;
     } else if (isPressed) {
@@ -149,11 +154,12 @@ export function RectButton(): JSX.Element {
         return;
       }
 
-      const { layerHandle, index, start } = rect;
-      layerHandle.change(({ shapes }) => {
-        const shape = shapes[index] as RectShape | undefined;
-        if (shape) resize(shape, start, x, y);
-      });
+      // The shape can vanish mid-gesture (deleted by another client).
+      if (rect.handle.doc() === undefined) {
+        return;
+      }
+      const { handle, start } = rect;
+      handle.change((shape) => resize(shape, start, x, y));
     }
   });
 

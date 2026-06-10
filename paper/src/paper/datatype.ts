@@ -17,6 +17,7 @@ export const PaperDatatype = {
       layers: {},
     });
     const paperEmbed: EmbedShape = {
+      id: crypto.randomUUID(),
       x: 80,
       y: 80,
       z: 1,
@@ -28,7 +29,7 @@ export const PaperDatatype = {
     const embedLayer = repo.create<ShapeLayerDoc>({
       "@patchwork": { type: "shape-layer" },
       title: "Embed",
-      shapes: [paperEmbed],
+      shapes: { [paperEmbed.id]: paperEmbed },
     });
 
     doc.layers = { ["embed-shape-layer"]: embedLayer.url };

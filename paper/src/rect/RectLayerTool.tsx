@@ -48,7 +48,7 @@ export const RectLayerTool: ToolRender = (handle, element) => {
 
 function RectLayer(props: { url: AutomergeUrl }) {
   const [doc] = useDocument<ShapeLayerDoc>(() => props.url);
-  const shapes = () => (doc()?.shapes ?? []) as RectShape[];
+  const shapes = () => Object.values(doc()?.shapes ?? {}) as RectShape[];
 
   return (
     <For each={shapes()}>

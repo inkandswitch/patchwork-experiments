@@ -47,7 +47,7 @@ export function LineButton(): JSX.Element {
         type: "shape-layer",
       },
       title: "Lines",
-      shapes: [],
+      shapes: {},
     });
     surfaceHandle.change(
       (surface) =>
@@ -57,13 +57,9 @@ export function LineButton(): JSX.Element {
     return lineShapeLayerHandle;
   };
 
-  // The in-progress stroke is pinned to the surface it started on: without
-  // pointer capture, samples can come from other surfaces mid-gesture (the
-  // pointer crossing an embed), and those must not extend this stroke.
   let stroke: {
     surfaceUrl: AutomergeUrl;
-    layerHandle: DocHandle<ShapeLayerDoc>;
-    index: number;
+    handle: DocHandle<LineShape>;
   } | null = null;
 
   let wasPressed = false;
@@ -98,18 +94,22 @@ export function LineButton(): JSX.Element {
         return;
       }
 
+      const id = crypto.randomUUID();
       layerHandle.change(({ shapes }) => {
-        stroke = { surfaceUrl: pointer.surfaceUrl, layerHandle, index: shapes.length };
-
-        shapes.push({
+        shapes[id] = {
+          id,
           x,
           y,
           z: 1,
           outline: { type: "line", points: [{ x: 0, y: 0 }] },
           stroke: STROKE,
           strokeWidth: SIZE,
-        } as LineShape);
+        } as LineShape;
       });
+      stroke = {
+        surfaceUrl: pointer.surfaceUrl,
+        handle: layerHandle.sub("shapes", id) as DocHandle<LineShape>,
+      };
     } else if (endedStroke) {
       stroke = null;
     } else if (isPressed) {
@@ -117,13 +117,14 @@ export function LineButton(): JSX.Element {
         return;
       }
 
-      const { layerHandle, index } = stroke;
-      layerHandle.change(({ shapes }) => {
-        const currentShape = shapes[index] as LineShape;
-
-        currentShape.outline?.points.push({
-          x: x - currentShape.x,
-          y: y - currentShape.y,
+      // The shape can vanish mid-gesture (deleted by another client).
+      if (stroke.handle.doc() === undefined) {
+        return;
+      }
+      stroke.handle.change((shape) => {
+        shape.outline?.points.push({
+          x: x - shape.x,
+          y: y - shape.y,
         });
       });
     }

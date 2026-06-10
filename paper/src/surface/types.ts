@@ -29,10 +29,11 @@ export type ShapeLayerDoc = {
   "@patchwork": {
     type: "shape-layer";
   };
-  shapes: Shape[];
+  shapes: { [shapeId: string]: Shape };
 };
 
 export type Shape = {
+  id: string;
   x: number;
   y: number;
   z: number;

@@ -68,11 +68,16 @@ export function outlinePoints(outline: Outline): Point[] {
   }
 }
 
-// A stable-enough key for a shape: the layer it lives in plus its index. We
-// have no per-shape id and no sub-document urls, so this composite is what we
-// store in the shared focus doc's `selection` map.
-export function shapeRef(layerUrl: AutomergeUrl, index: number): string {
-  return `${layerUrl}#${index}`;
+// The canonical sub-document URL of a shape inside its layer
+// (`automerge:<layerDocId>/shapes/<shapeId>`). This is what we store in the
+// shared focus doc's `selection` map; it resolves through `repo.find` to a
+// handle scoped to the shape. Shape ids are uuids, which need no escaping in
+// the path segment.
+export function shapeUrl(
+  layerUrl: AutomergeUrl,
+  shapeId: string,
+): AutomergeUrl {
+  return `${layerUrl}/shapes/${shapeId}` as AutomergeUrl;
 }
 
 // Standard even-odd ray cast: is the point (x, y) inside the polygon `points`?

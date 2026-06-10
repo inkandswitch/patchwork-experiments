@@ -47,7 +47,7 @@ export const EmbedLayerTool: ToolRender = (handle, element) => {
 
 function EmbedLayer(props: { url: AutomergeUrl }) {
   const [doc] = useDocument<ShapeLayerDoc>(() => props.url);
-  const shapes = () => (doc()?.shapes ?? []) as EmbedShape[];
+  const shapes = () => Object.values(doc()?.shapes ?? {}) as EmbedShape[];
 
   // Embeds are always interactive: an embedded surface handles its own
   // pointer input (it stamps the shared surface:state with its url and

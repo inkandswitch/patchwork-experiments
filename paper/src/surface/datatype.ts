@@ -2,7 +2,7 @@ import { ShapeLayerDoc } from "./types";
 
 export const PaperLayerDatatype = {
   init(doc: ShapeLayerDoc) {
-    doc.shapes = [];
+    doc.shapes = {};
   },
   getTitle(doc: ShapeLayerDoc) {
     return doc.title;
