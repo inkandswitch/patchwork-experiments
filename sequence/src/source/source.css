@@ -6,6 +6,18 @@
   pointer-events: none;
 }
 
+.source-add-button {
+  background: var(--timeline-clip-selected-fill, oklch(55% 0.14 245));
+  border-color: var(--timeline-clip-selected-stroke, oklch(78% 0.1 245));
+  color: var(--timeline-text, oklch(95% 0.01 260));
+}
+
+.source-add-button:hover {
+  background: var(--timeline-clip-fill-hover, oklch(52% 0.13 250));
+  border-color: var(--timeline-clip-selected-stroke, oklch(78% 0.1 245));
+  color: var(--timeline-text, oklch(95% 0.01 260));
+}
+
 .source-clip-label {
   flex: 1;
   min-width: 0;

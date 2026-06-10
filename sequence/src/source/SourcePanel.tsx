@@ -255,7 +255,7 @@ export function SourcePanel({ doc, changeDoc, onStartClipDrag }: SourcePanelProp
                 }
               }}
             />
-            <button type="button" className="btn btn-sm btn-primary shrink-0" onClick={addSource}>
+            <button type="button" className="source-add-button btn btn-sm shrink-0" onClick={addSource}>
               + source
             </button>
           </div>
