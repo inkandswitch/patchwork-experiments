@@ -80,6 +80,8 @@ export interface TemplateExercise {
   sets: TemplateSet[];
   notes?: string;
   supersetGroup?: string;
+  /** Weight unit for this exercise; falls back to the session/gym default. */
+  unit?: WeightUnit;
 }
 
 /** Reusable workout blueprint — cloned into sessions, never mutated by a workout. */
@@ -112,6 +114,8 @@ export interface LoggedExercise {
   sets: LoggedSet[];
   notes?: string;
   supersetGroup?: string;
+  /** Weight unit for this exercise; falls back to the session/gym default. */
+  unit?: WeightUnit;
 }
 
 /** A single workout instance, cloned from a template. */
@@ -144,6 +148,8 @@ export interface ExerciseHistoryEntry {
   bestSet: LoggedSet | null;
   estimated1Rm: number | null;
   totalVolume: number;
+  /** Unit the sets were logged in (exercise unit, else session unit). */
+  unit?: WeightUnit;
 }
 
 export interface ExerciseProgressPoint {

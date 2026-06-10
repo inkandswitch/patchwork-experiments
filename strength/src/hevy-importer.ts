@@ -358,6 +358,7 @@ export async function importHevyCsv(
           muscleGroups: [],
           equipment: parseHevyEquipment(exercise.title),
           category: "compound",
+          defaultUnit: "lb",
         });
         exerciseUrl = handle.url;
         existingExercises.set(normalizedName, exerciseUrl);

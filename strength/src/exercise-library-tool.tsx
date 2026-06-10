@@ -1,6 +1,7 @@
 import {
   RepoContext,
   useDocHandle,
+  useDocument,
   useRepo,
 } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
@@ -30,7 +31,10 @@ function SelectedExercisePanel({
   const exerciseHandle = useDocHandle<ExerciseDoc>(exerciseUrl, {
     suspense: true,
   });
-  const current = exerciseHandle.doc() ?? exercise;
+  const [currentDoc] = useDocument<ExerciseDoc>(exerciseUrl, {
+    suspense: true,
+  });
+  const current = currentDoc ?? exercise;
 
   return (
     <ExerciseDetail
@@ -55,7 +59,7 @@ function SelectedExercisePanel({
 function ExerciseLibrary({ docUrl }: { docUrl: AutomergeUrl }) {
   const repo = useRepo();
   const folderHandle = useDocHandle<FolderDoc>(docUrl, { suspense: true });
-  const folder = folderHandle.doc();
+  const [folder] = useDocument<FolderDoc>(docUrl, { suspense: true });
   const [query, setQuery] = useState("");
   const [selectedUrl, setSelectedUrl] = useState<AutomergeUrl | null>(null);
   const [seeding, setSeeding] = useState(false);

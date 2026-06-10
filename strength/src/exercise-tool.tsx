@@ -1,6 +1,7 @@
 import {
   RepoContext,
   useDocHandle,
+  useDocument,
 } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
@@ -11,7 +12,7 @@ import type { ExerciseDoc } from "./types";
 
 function ExerciseView({ docUrl }: { docUrl: AutomergeUrl }) {
   const handle = useDocHandle<ExerciseDoc>(docUrl, { suspense: true });
-  const exercise = handle.doc();
+  const [exercise] = useDocument<ExerciseDoc>(docUrl, { suspense: true });
   if (!exercise) return null;
 
   return (

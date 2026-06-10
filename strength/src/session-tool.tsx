@@ -1,6 +1,7 @@
 import {
   RepoContext,
   useDocHandle,
+  useDocument,
   useRepo,
 } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
@@ -8,6 +9,7 @@ import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import { createRoot } from "react-dom/client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  convertWeight,
   estimate1Rm,
   formatDateTime,
   formatDuration,
@@ -18,7 +20,11 @@ import { assignAutomergeFields, setAutomergeString } from "./automerge-fields";
 import { saveSessionAsTemplate } from "./gym";
 import { templateTitleFromSession } from "./history";
 import { openPatchworkDocument } from "./navigation";
-import type { LoggedExercise, WorkoutSessionDoc } from "./types";
+import type {
+  LoggedExercise,
+  WeightUnit,
+  WorkoutSessionDoc,
+} from "./types";
 import {
   findNextIncompleteSet,
   restSecondsForSet,
@@ -42,7 +48,9 @@ function WorkoutSessionEditor({
   const sessionHandle = useDocHandle<WorkoutSessionDoc>(docUrl, {
     suspense: true,
   });
-  const session = sessionHandle.doc();
+  const [session] = useDocument<WorkoutSessionDoc>(docUrl, {
+    suspense: true,
+  });
   const [activeExerciseId, setActiveExerciseId] = useState<string | null>(null);
   const [currentSet, setCurrentSet] = useState<SetPointer | null>(null);
   const [restTimer, setRestTimer] = useState<RestTimerState | null>(null);
@@ -50,7 +58,7 @@ function WorkoutSessionEditor({
   const [savingTemplate, setSavingTemplate] = useState(false);
 
   const executing = session?.status === "in_progress";
-  const unit = session?.weightUnit ?? "kg";
+  const sessionUnit: WeightUnit = session?.weightUnit ?? "kg";
   const defaultRestSeconds = session?.defaultRestSeconds ?? 90;
 
   useEffect(() => {
@@ -194,16 +202,16 @@ function WorkoutSessionEditor({
 
   const totalVolume = useMemo(() => {
     if (!session?.exercises) return 0;
-    return session.exercises.reduce((sum, ex) => {
-      return (
-        sum +
-        ex.sets.reduce((s, set) => {
-          if (!set.completed) return s;
-          return s + (set.weight ?? 0) * (set.reps ?? 0);
-        }, 0)
-      );
+    const total = session.exercises.reduce((sum, ex) => {
+      const exUnit: WeightUnit = ex.unit ?? sessionUnit;
+      const exVolume = ex.sets.reduce((s, set) => {
+        if (!set.completed) return s;
+        return s + (set.weight ?? 0) * (set.reps ?? 0);
+      }, 0);
+      return sum + convertWeight(exVolume, exUnit, sessionUnit);
     }, 0);
-  }, [session?.exercises]);
+    return Math.round(total);
+  }, [session?.exercises, sessionUnit]);
 
   if (!session) return null;
 
@@ -247,7 +255,7 @@ function WorkoutSessionEditor({
             <span>
               Volume:{" "}
               <strong className="text-slate-700">
-                {totalVolume} {unit}
+                {totalVolume} {sessionUnit}
               </strong>
             </span>
             <span>
@@ -311,6 +319,7 @@ function WorkoutSessionEditor({
         <div className="space-y-4">
           {(session.exercises ?? []).map((exercise, exIndex) => {
             const expanded = activeExerciseId === exercise.id;
+            const exUnit: WeightUnit = exercise.unit ?? sessionUnit;
             const best1Rm = exercise.sets.reduce((best, set) => {
               if (!set.completed) return best;
               const rm = estimate1Rm(set.weight ?? 0, set.reps ?? 0);
@@ -345,20 +354,45 @@ function WorkoutSessionEditor({
                   </div>
                   {best1Rm > 0 ? (
                     <span className="text-xs text-emerald-700">
-                      ~{Math.round(best1Rm)} {unit} 1RM
+                      ~{Math.round(best1Rm)} {exUnit} 1RM
                     </span>
                   ) : null}
                 </button>
 
                 {expanded ? (
                   <div className="space-y-1 border-t border-slate-100 px-4 py-3">
-                    <div className="grid grid-cols-[2rem_1fr_1fr_1fr_auto] gap-2 text-xs font-medium text-slate-400">
-                      <span>✓</span>
-                      <span>Reps</span>
-                      <span>Weight ({unit})</span>
-                      <span>RPE</span>
-                      <span>#</span>
-                    </div>
+                    {executing ? (
+                      <div className="mb-1 flex justify-end">
+                        <div className="flex overflow-hidden rounded-md border border-slate-200 text-xs">
+                          {(["kg", "lb"] as const).map((u) => (
+                            <button
+                              key={u}
+                              type="button"
+                              onClick={() =>
+                                updateExercise(exercise.id, (ex) => {
+                                  ex.unit = u;
+                                })
+                              }
+                              className={`px-2.5 py-1 ${
+                                exUnit === u
+                                  ? "bg-emerald-600 font-medium text-white"
+                                  : "bg-white text-slate-500 hover:bg-slate-50"
+                              }`}
+                            >
+                              {u}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-[2rem_1fr_1fr_1fr_auto] gap-2 text-xs font-medium text-slate-400">
+                        <span>✓</span>
+                        <span>Reps</span>
+                        <span>Weight ({exUnit})</span>
+                        <span>RPE</span>
+                        <span>#</span>
+                      </div>
+                    )}
                     {exercise.sets.map((set, setIndex) => {
                       const pointer = {
                         exerciseId: exercise.id,
@@ -374,7 +408,7 @@ function WorkoutSessionEditor({
                           }
                           set={set}
                           index={setIndex}
-                          unit={unit}
+                          unit={exUnit}
                           executing={executing}
                           onChange={(patch) =>
                             updateExercise(exercise.id, (ex) => {

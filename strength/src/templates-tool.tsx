@@ -1,6 +1,7 @@
 import {
   RepoContext,
   useDocHandle,
+  useDocument,
   useRepo,
 } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
@@ -22,7 +23,7 @@ function TemplatesBrowser({
 }) {
   const repo = useRepo();
   const folderHandle = useDocHandle<FolderDoc>(docUrl, { suspense: true });
-  const folder = folderHandle.doc();
+  const [folder] = useDocument<FolderDoc>(docUrl, { suspense: true });
   const [query, setQuery] = useState("");
   const [selectedUrl, setSelectedUrl] = useState<AutomergeUrl | null>(null);
   const [starting, setStarting] = useState(false);

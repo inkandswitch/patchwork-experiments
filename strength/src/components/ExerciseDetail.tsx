@@ -6,7 +6,7 @@ import {
   equipmentLabel,
   muscleGroupLabel,
 } from "../constants";
-import type { Equipment, ExerciseDoc, MuscleGroup } from "../types";
+import type { Equipment, ExerciseDoc, MuscleGroup, WeightUnit } from "../types";
 
 const inputClass =
   "w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-emerald-400";
@@ -120,6 +120,26 @@ export function ExerciseDetail({
           </div>
 
           <div className="space-y-1">
+            <label className={labelClass}>Default unit</label>
+            <div className="flex gap-1.5">
+              {(["kg", "lb"] as WeightUnit[]).map((u) => (
+                <button
+                  key={u}
+                  type="button"
+                  onClick={() => onUpdate?.({ defaultUnit: u })}
+                  className={`rounded-md border px-3 py-1 text-sm ${
+                    exercise.defaultUnit === u
+                      ? "border-emerald-400 bg-emerald-50 font-medium text-emerald-800"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                  }`}
+                >
+                  {u}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-1">
             <label className={labelClass}>Instructions</label>
             <textarea
               value={exercise.instructions ?? ""}
@@ -169,6 +189,11 @@ export function ExerciseDetail({
             <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-600">
               {exercise.category}
             </span>
+            {exercise.defaultUnit ? (
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-800">
+                {exercise.defaultUnit}
+              </span>
+            ) : null}
           </div>
 
           {exercise.instructions ? (

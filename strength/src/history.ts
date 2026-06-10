@@ -2,6 +2,7 @@ import type { AutomergeUrl } from "@automerge/automerge-repo";
 import { omitUndefined } from "./automerge-fields";
 import {
   bestSetFromSets,
+  convertWeight,
   estimate1Rm,
   newId,
   setVolume,
@@ -13,6 +14,7 @@ import type {
   LoggedSet,
   TemplateExercise,
   TemplateSet,
+  WeightUnit,
   WorkoutSessionDoc,
   WorkoutTemplateDoc,
 } from "./types";
@@ -50,6 +52,7 @@ export function exerciseHistoryForUrl(
         bestSet: best,
         estimated1Rm: estimated1Rm && estimated1Rm > 0 ? estimated1Rm : null,
         totalVolume: completedSets.reduce((sum, s) => sum + setVolume(s), 0),
+        unit: exercise.unit ?? doc.weightUnit,
       });
     }
   }
@@ -62,17 +65,21 @@ export function exerciseHistoryForUrl(
 export function progressPointsForExercise(
   exerciseUrl: AutomergeUrl,
   sessions: LoadedWorkoutSession[],
+  targetUnit: WeightUnit = "kg",
 ): ExerciseProgressPoint[] {
   const history = exerciseHistoryForUrl(exerciseUrl, sessions);
   return history
     .filter((entry) => entry.estimated1Rm != null && entry.estimated1Rm > 0)
-    .map((entry) => ({
-      date: entry.date,
-      estimated1Rm: entry.estimated1Rm!,
-      bestWeight: entry.bestSet?.weight ?? 0,
-      bestReps: entry.bestSet?.reps ?? 0,
-      volume: entry.totalVolume,
-    }))
+    .map((entry) => {
+      const from = entry.unit ?? targetUnit;
+      return {
+        date: entry.date,
+        estimated1Rm: convertWeight(entry.estimated1Rm!, from, targetUnit),
+        bestWeight: convertWeight(entry.bestSet?.weight ?? 0, from, targetUnit),
+        bestReps: entry.bestSet?.reps ?? 0,
+        volume: convertWeight(entry.totalVolume, from, targetUnit),
+      };
+    })
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 }
 
@@ -95,6 +102,7 @@ export function createSessionFromTemplate(
         exerciseName: planned.exerciseName,
         notes: planned.notes,
         supersetGroup: planned.supersetGroup,
+        unit: planned.unit,
         sets: planned.sets.map((set) =>
           omitUndefined({
             reps: set.targetReps ?? set.targetRepsMin,
@@ -162,6 +170,7 @@ export function createTemplateFromSession(
         exerciseName: exercise.exerciseName,
         notes: exercise.notes,
         supersetGroup: exercise.supersetGroup,
+        unit: exercise.unit,
         sets,
       }) as TemplateExercise;
     })

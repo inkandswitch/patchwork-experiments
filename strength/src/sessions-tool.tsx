@@ -37,7 +37,7 @@ function SessionsBrowser({
 }) {
   const repo = useRepo();
   const folderHandle = useDocHandle<FolderDoc>(docUrl, { suspense: true });
-  const folder = folderHandle.doc();
+  const [folder] = useDocument<FolderDoc>(docUrl, { suspense: true });
   const [tab, setTab] = useState<"history" | "progress">("history");
   const [selectedSessionUrl, setSelectedSessionUrl] =
     useState<AutomergeUrl | null>(null);
@@ -130,8 +130,8 @@ function SessionsBrowser({
 
   const exerciseProgress = useMemo(() => {
     if (!selectedExerciseUrl) return [];
-    return progressPointsForExercise(selectedExerciseUrl, loadedSessions);
-  }, [selectedExerciseUrl, loadedSessions]);
+    return progressPointsForExercise(selectedExerciseUrl, loadedSessions, unit);
+  }, [selectedExerciseUrl, loadedSessions, unit]);
 
   if (!folder) return null;
 
@@ -297,7 +297,12 @@ function SessionsBrowser({
                                 key={i}
                                 className="rounded bg-slate-50 px-2 py-0.5 text-xs text-slate-700"
                               >
-                                {summarizeSet(set, unit)}
+                                {summarizeSet(
+                                  set,
+                                  exercise.unit ??
+                                    selectedSession.doc.weightUnit ??
+                                    unit,
+                                )}
                                 {set.weight && set.reps
                                   ? ` (~${Math.round(estimate1Rm(set.weight, set.reps))})`
                                   : ""}
@@ -328,6 +333,7 @@ function SessionsBrowser({
                     const points = progressPointsForExercise(
                       url,
                       loadedSessions,
+                      unit,
                     );
                     const latest = points[points.length - 1];
                     return (

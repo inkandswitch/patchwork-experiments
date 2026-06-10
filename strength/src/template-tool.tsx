@@ -20,6 +20,7 @@ import { assignAutomergeFields, setAutomergeString } from "./automerge-fields";
 import type {
   FolderDoc,
   TemplateExercise,
+  WeightUnit,
   WorkoutTemplateDoc,
 } from "./types";
 
@@ -34,7 +35,9 @@ function WorkoutTemplateEditor({
   const templateHandle = useDocHandle<WorkoutTemplateDoc>(docUrl, {
     suspense: true,
   });
-  const template = templateHandle.doc();
+  const [template] = useDocument<WorkoutTemplateDoc>(docUrl, {
+    suspense: true,
+  });
   const [pickerOpen, setPickerOpen] = useState(false);
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(
     null,
@@ -83,13 +86,16 @@ function WorkoutTemplateEditor({
     (e) => e.id === selectedExerciseId,
   );
 
-  const unit = gym?.preferredUnit ?? exercisesFolder?.preferredUnit ?? "kg";
+  const unit: WeightUnit =
+    gym?.preferredUnit ?? exercisesFolder?.preferredUnit ?? "kg";
 
   const addExercise = (entry: (typeof loadedExercises)[number]) => {
+    const exerciseUnit = entry.doc.defaultUnit ?? unit;
     const planned: TemplateExercise = {
       id: newId(),
       exerciseUrl: entry.url,
       exerciseName: entry.doc.name,
+      unit: exerciseUnit,
       sets: [
         { targetReps: 8, restSeconds: 90 },
         { targetReps: 8, restSeconds: 90 },
@@ -204,10 +210,32 @@ function WorkoutTemplateEditor({
 
                   {selectedExerciseId === exercise.id ? (
                     <div className="space-y-2 border-t border-slate-100 px-4 py-3">
+                      <div className="flex justify-end">
+                        <div className="flex overflow-hidden rounded-md border border-slate-200 text-xs">
+                          {(["kg", "lb"] as const).map((u) => (
+                            <button
+                              key={u}
+                              type="button"
+                              onClick={() =>
+                                updateExercise(exercise.id, (ex) => {
+                                  ex.unit = u;
+                                })
+                              }
+                              className={`px-2.5 py-1 ${
+                                (exercise.unit ?? unit) === u
+                                  ? "bg-emerald-600 font-medium text-white"
+                                  : "bg-white text-slate-500 hover:bg-slate-50"
+                              }`}
+                            >
+                              {u}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                       <div className="grid grid-cols-[2rem_1fr_1fr_1fr_1fr_auto] gap-2 text-xs font-medium text-slate-400">
                         <span>#</span>
                         <span>Reps</span>
-                        <span>Weight ({unit})</span>
+                        <span>Weight ({exercise.unit ?? unit})</span>
                         <span>RPE</span>
                         <span>Rest</span>
                         <span />
@@ -217,7 +245,7 @@ function WorkoutTemplateEditor({
                           key={setIndex}
                           set={set}
                           index={setIndex}
-                          unit={unit}
+                          unit={exercise.unit ?? unit}
                           onChange={(patch) =>
                             updateExercise(exercise.id, (ex) => {
                               assignAutomergeFields(ex.sets[setIndex], patch);

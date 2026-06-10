@@ -1,7 +1,13 @@
 import type { AutomergeUrl } from "@automerge/automerge-repo";
-import { formatDate, formatWeight, estimate1Rm } from "../calculations";
+import {
+  convertWeight,
+  formatDate,
+  formatWeight,
+  estimate1Rm,
+} from "../calculations";
 import { exerciseHistoryForUrl, summarizeSet } from "../history";
 import type { LoadedWorkoutSession } from "../history";
+import type { WeightUnit } from "../types";
 import { ProgressChart } from "./ProgressChart";
 
 export function HistoryPanel({
@@ -13,18 +19,21 @@ export function HistoryPanel({
   exerciseUrl: AutomergeUrl;
   exerciseName: string;
   sessions: LoadedWorkoutSession[];
-  unit: string;
+  unit: WeightUnit;
 }) {
   const history = exerciseHistoryForUrl(exerciseUrl, sessions);
   const progressPoints = history
     .filter((e) => e.estimated1Rm != null)
-    .map((e) => ({
-      date: e.date,
-      estimated1Rm: e.estimated1Rm!,
-      bestWeight: e.bestSet?.weight ?? 0,
-      bestReps: e.bestSet?.reps ?? 0,
-      volume: e.totalVolume,
-    }))
+    .map((e) => {
+      const from = e.unit ?? unit;
+      return {
+        date: e.date,
+        estimated1Rm: convertWeight(e.estimated1Rm!, from, unit),
+        bestWeight: convertWeight(e.bestSet?.weight ?? 0, from, unit),
+        bestReps: e.bestSet?.reps ?? 0,
+        volume: convertWeight(e.totalVolume, from, unit),
+      };
+    })
     .reverse();
 
   if (!history.length) {
@@ -36,11 +45,19 @@ export function HistoryPanel({
   }
 
   const latest = history[0];
-  const personalBest = history.reduce(
-    (best, entry) =>
-      (entry.estimated1Rm ?? 0) > (best ?? 0) ? entry.estimated1Rm : best,
-    null as number | null,
-  );
+  const latest1Rm =
+    latest.estimated1Rm != null
+      ? convertWeight(latest.estimated1Rm, latest.unit ?? unit, unit)
+      : null;
+  const personalBest = history.reduce((best, entry) => {
+    if (entry.estimated1Rm == null) return best;
+    const converted = convertWeight(
+      entry.estimated1Rm,
+      entry.unit ?? unit,
+      unit,
+    );
+    return converted > (best ?? 0) ? converted : best;
+  }, null as number | null);
 
   return (
     <div className="space-y-4">
@@ -52,16 +69,14 @@ export function HistoryPanel({
           </div>
           {latest.bestSet ? (
             <div className="text-xs text-slate-600">
-              {summarizeSet(latest.bestSet, unit)}
+              {summarizeSet(latest.bestSet, latest.unit ?? unit)}
             </div>
           ) : null}
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-3">
           <div className="text-xs text-slate-500">Est. 1RM (last)</div>
           <div className="text-sm font-semibold text-emerald-700">
-            {latest.estimated1Rm
-              ? formatWeight(Math.round(latest.estimated1Rm), unit)
-              : "—"}
+            {latest1Rm ? formatWeight(Math.round(latest1Rm), unit) : "—"}
           </div>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-3">
@@ -106,7 +121,7 @@ export function HistoryPanel({
                   key={i}
                   className="rounded bg-slate-50 px-1.5 py-0.5"
                 >
-                  {summarizeSet(set, unit)}
+                  {summarizeSet(set, entry.unit ?? unit)}
                   {set.weight && set.reps
                     ? ` (~${Math.round(estimate1Rm(set.weight, set.reps))} 1RM)`
                     : ""}

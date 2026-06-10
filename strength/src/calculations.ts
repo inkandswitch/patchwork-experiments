@@ -1,4 +1,15 @@
-import type { LoggedSet } from "./types";
+import type { LoggedSet, WeightUnit } from "./types";
+
+export const LB_PER_KG = 2.2046226218;
+
+export function convertWeight(
+  value: number,
+  from: WeightUnit,
+  to: WeightUnit,
+): number {
+  if (from === to || !value) return value;
+  return from === "kg" ? value * LB_PER_KG : value / LB_PER_KG;
+}
 
 /** Epley formula — common 1RM estimate */
 export function estimate1RmEpley(weight: number, reps: number): number {
