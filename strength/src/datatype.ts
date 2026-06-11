@@ -47,6 +47,7 @@ export const WorkoutSessionDatatype: DatatypeImplementation<WorkoutSessionDoc> =
     doc.title = "Workout";
     doc.startedAt = new Date().toISOString();
     doc.exercises = [];
+    doc.sets = [];
     doc.status = "in_progress";
   },
 

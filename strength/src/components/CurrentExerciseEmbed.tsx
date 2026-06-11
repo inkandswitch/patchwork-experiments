@@ -4,6 +4,7 @@ import {
 } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import { findNextIncompleteSet } from "../workout-flow";
+import { sessionSets } from "../session-model";
 import type { WorkoutSessionDoc } from "../types";
 
 /**
@@ -26,9 +27,7 @@ export function CurrentExerciseEmbed({
     suspense: true,
   });
 
-  const next = session?.exercises
-    ? findNextIncompleteSet(session.exercises)
-    : null;
+  const next = session ? findNextIncompleteSet(sessionSets(session)) : null;
   if (!session || !next) return null;
 
   const subUrl = sessionHandle.sub("exercises", { id: next.exerciseId }).url;

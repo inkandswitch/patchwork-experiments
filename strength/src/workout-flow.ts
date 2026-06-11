@@ -1,39 +1,22 @@
-import type { LoggedExercise, LoggedSet } from "./types";
+import type { LoggedSet } from "./types";
 
-export type SetPointer = {
-  exerciseId: string;
-  setIndex: number;
-};
-
-export function setRowId(pointer: SetPointer): string {
-  return `strength-set-${pointer.exerciseId}-${pointer.setIndex}`;
+export function setRowId(setId: string): string {
+  return `strength-set-${setId}`;
 }
 
-export function listIncompleteSets(exercises: LoggedExercise[]): SetPointer[] {
-  const pointers: SetPointer[] = [];
-  for (const exercise of exercises) {
-    for (let setIndex = 0; setIndex < exercise.sets.length; setIndex++) {
-      if (!exercise.sets[setIndex].completed) {
-        pointers.push({ exerciseId: exercise.id, setIndex });
-      }
-    }
-  }
-  return pointers;
-}
-
+/**
+ * The next incomplete set in execution order — optionally the one after
+ * `afterId` (so "Next" can step past the set just completed).
+ */
 export function findNextIncompleteSet(
-  exercises: LoggedExercise[],
-  after?: SetPointer | null,
-): SetPointer | null {
-  const incomplete = listIncompleteSets(exercises);
+  sets: LoggedSet[],
+  afterId?: string | null,
+): LoggedSet | null {
+  const incomplete = sets.filter((set) => !set.completed);
   if (!incomplete.length) return null;
-  if (!after) return incomplete[0];
+  if (!afterId) return incomplete[0];
 
-  const currentIndex = incomplete.findIndex(
-    (pointer) =>
-      pointer.exerciseId === after.exerciseId &&
-      pointer.setIndex === after.setIndex,
-  );
+  const currentIndex = incomplete.findIndex((set) => set.id === afterId);
   if (currentIndex < 0) return incomplete[0];
   return incomplete[currentIndex + 1] ?? null;
 }

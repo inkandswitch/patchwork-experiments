@@ -26,6 +26,7 @@ import {
 } from "./history";
 import { openPatchworkDocument } from "./navigation";
 import { useLoadedExercises, useLoadedWorkoutSessions } from "./hooks";
+import { setsForExercise } from "./session-model";
 import type { FolderDoc } from "./types";
 
 function SessionsBrowser({
@@ -290,7 +291,7 @@ function SessionsBrowser({
                           {exercise.exerciseName}
                         </div>
                         <div className="mt-1 flex flex-wrap gap-2">
-                          {exercise.sets
+                          {setsForExercise(selectedSession.doc, exercise.id)
                             .filter((s) => s.completed)
                             .map((set, i) => (
                               <span

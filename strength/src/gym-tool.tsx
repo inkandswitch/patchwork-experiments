@@ -23,6 +23,7 @@ import {
 } from "./gym";
 import { sessionLinks, templateLinks } from "./folder";
 import { useLoadedWorkoutSessions, useLoadedWorkoutTemplates } from "./hooks";
+import { sessionSets, unitForExercise } from "./session-model";
 import type { FolderDoc } from "./types";
 
 type OpenDoc = { url: AutomergeUrl; toolId?: string };
@@ -168,13 +169,11 @@ function GymHub({
       const time = new Date(doc.completedAt ?? doc.startedAt).getTime();
       if (time < cutoff) continue;
       workouts++;
-      for (const exercise of doc.exercises ?? []) {
-        const exUnit = exercise.unit ?? doc.weightUnit ?? unit;
-        for (const set of exercise.sets) {
-          if (!set.completed) continue;
-          sets++;
-          volume += convertWeight(setVolume(set), exUnit, unit);
-        }
+      for (const set of sessionSets(doc)) {
+        if (!set.completed) continue;
+        const exUnit = unitForExercise(doc, set.exerciseId, unit);
+        sets++;
+        volume += convertWeight(setVolume(set), exUnit, unit);
       }
     }
     return { workouts, sets, volume };
@@ -361,13 +360,8 @@ function GymHub({
                     </div>
                     <div className="text-xs text-emerald-800">
                       Started {formatDate(doc.startedAt)} ·{" "}
-                      {doc.exercises?.reduce(
-                        (n, ex) =>
-                          n + ex.sets.filter((s) => s.completed).length,
-                        0,
-                      )}
-                      /{doc.exercises?.reduce((n, ex) => n + ex.sets.length, 0)}{" "}
-                      sets done
+                      {sessionSets(doc).filter((s) => s.completed).length}/
+                      {sessionSets(doc).length} sets done
                     </div>
                   </div>
                   <button
@@ -509,10 +503,9 @@ function GymHub({
               </div>
               <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
                 {recentSessions.map(({ url, doc }) => {
-                  const setsDone = (doc.exercises ?? []).reduce(
-                    (n, ex) => n + ex.sets.filter((s) => s.completed).length,
-                    0,
-                  );
+                  const setsDone = sessionSets(doc).filter(
+                    (s) => s.completed,
+                  ).length;
                   return (
                     <li key={url}>
                       <button

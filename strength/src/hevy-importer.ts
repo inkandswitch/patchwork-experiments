@@ -9,6 +9,7 @@ import type {
   FolderDoc,
   LoggedExercise,
   LoggedSet,
+  SetKind,
   WorkoutSessionDoc,
 } from "./types";
 
@@ -240,13 +241,20 @@ export function parseHevyCsv(csvText: string): ParsedWorkout[] {
   });
 }
 
+function setKindFromHevy(setType: string): SetKind | undefined {
+  if (setType === "warmup") return "warmup";
+  if (setType === "failure") return "failure";
+  return undefined;
+}
+
 function setNote(
   setType: string,
   exerciseNotes: string,
   isFirstSet: boolean,
 ): string | undefined {
   const parts: string[] = [];
-  if (setType && setType !== "normal") {
+  // warmup/failure are structured (LoggedSet.kind); only note other types (e.g. dropset).
+  if (setType && setType !== "normal" && !setKindFromHevy(setType)) {
     parts.push(setType);
   }
   if (isFirstSet && exerciseNotes) {
@@ -255,9 +263,16 @@ function setNote(
   return parts.length ? parts.join(" — ") : undefined;
 }
 
-function toLoggedSet(set: ParsedSet, exerciseNotes: string): LoggedSet {
+function toLoggedSet(
+  set: ParsedSet,
+  exerciseId: string,
+  exerciseNotes: string,
+): LoggedSet {
   const note = setNote(set.setType, exerciseNotes, set.setIndex === 0);
   return omitUndefined({
+    id: newId(),
+    exerciseId,
+    kind: setKindFromHevy(set.setType),
     reps: set.reps,
     weight: set.weightLbs,
     rpe: set.rpe,
@@ -344,6 +359,7 @@ export async function importHevyCsv(
     }
 
     const loggedExercises: LoggedExercise[] = [];
+    const loggedSets: LoggedSet[] = [];
 
     for (const exercise of workout.exercises) {
       const normalizedName = exercise.title.trim().toLowerCase();
@@ -373,9 +389,10 @@ export async function importHevyCsv(
         result.exercisesCreated++;
       }
 
+      const exerciseId = newId();
       loggedExercises.push(
         omitUndefined({
-          id: newId(),
+          id: exerciseId,
           exerciseUrl: exerciseUrl!,
           exerciseName: exercise.title.trim(),
           notes: exercise.exerciseNotes || undefined,
@@ -383,11 +400,11 @@ export async function importHevyCsv(
             exercise.supersetId && exercise.supersetId !== "0"
               ? exercise.supersetId
               : undefined,
-          sets: exercise.sets.map((set) =>
-            toLoggedSet(set, exercise.exerciseNotes),
-          ),
         }) as LoggedExercise,
       );
+      for (const set of exercise.sets) {
+        loggedSets.push(toLoggedSet(set, exerciseId, exercise.exerciseNotes));
+      }
 
       result.setCount += exercise.sets.length;
     }
@@ -407,6 +424,7 @@ export async function importHevyCsv(
         durationSeconds,
         notes: workout.description || undefined,
         exercises: loggedExercises,
+        sets: loggedSets,
         status: "completed",
         weightUnit: "lb",
         gymUrl: sessionsFolder?.strengthGymUrl,

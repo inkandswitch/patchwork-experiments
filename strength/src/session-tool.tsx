@@ -27,12 +27,16 @@ import { setAutomergeString } from "./automerge-fields";
 import { saveSessionAsTemplate } from "./gym";
 import { templateTitleFromSession } from "./history";
 import { openPatchworkDocument } from "./navigation";
+import {
+  sessionSets,
+  setsForExercise,
+  useFlatSessionMigration,
+} from "./session-model";
 import type { LoggedSet, WeightUnit, WorkoutSessionDoc } from "./types";
 import {
   findNextIncompleteSet,
   restSecondsForSet,
   setRowId,
-  type SetPointer,
 } from "./workout-flow";
 
 type RestTimerState = {
@@ -55,14 +59,20 @@ function WorkoutSessionEditor({
     suspense: true,
   });
   const [activeExerciseId, setActiveExerciseId] = useState<string | null>(null);
-  const [currentSet, setCurrentSet] = useState<SetPointer | null>(null);
+  const [currentSetId, setCurrentSetId] = useState<string | null>(null);
   const [restTimer, setRestTimer] = useState<RestTimerState | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [savingTemplate, setSavingTemplate] = useState(false);
 
+  useFlatSessionMigration(sessionHandle, session);
+
   const executing = session?.status === "in_progress";
   const sessionUnit: WeightUnit = session?.weightUnit ?? "kg";
   const defaultRestSeconds = session?.defaultRestSeconds ?? 90;
+  const allSets = useMemo(
+    () => (session ? sessionSets(session) : []),
+    [session],
+  );
 
   useEffect(() => {
     if (!executing || !session?.startedAt) return;
@@ -73,11 +83,11 @@ function WorkoutSessionEditor({
     return () => window.clearInterval(id);
   }, [executing, session?.startedAt]);
 
-  const focusSet = useCallback((pointer: SetPointer) => {
-    setCurrentSet(pointer);
-    setActiveExerciseId(pointer.exerciseId);
+  const focusSet = useCallback((set: LoggedSet) => {
+    setCurrentSetId(set.id);
+    setActiveExerciseId(set.exerciseId);
     window.requestAnimationFrame(() => {
-      const row = document.getElementById(setRowId(pointer));
+      const row = document.getElementById(setRowId(set.id));
       row?.scrollIntoView({ block: "center", behavior: "smooth" });
       const input = row?.querySelector(
         'input[type="number"]',
@@ -87,28 +97,24 @@ function WorkoutSessionEditor({
   }, []);
 
   useEffect(() => {
-    if (!executing || currentSet || !session?.exercises?.length) return;
-    const first = findNextIncompleteSet(session.exercises);
+    if (!executing || currentSetId || !allSets.length) return;
+    const first = findNextIncompleteSet(allSets);
     if (first) {
-      setCurrentSet(first);
+      setCurrentSetId(first.id);
       setActiveExerciseId(first.exerciseId);
     }
-  }, [executing, session?.exercises, currentSet]);
+  }, [executing, allSets, currentSetId]);
 
-  const nextSetPointer = useMemo(
-    () =>
-      session?.exercises
-        ? findNextIncompleteSet(session.exercises, currentSet)
-        : null,
-    [session?.exercises, currentSet],
+  const nextSet = useMemo(
+    () => findNextIncompleteSet(allSets, currentSetId),
+    [allSets, currentSetId],
   );
 
   const goToNextSet = useCallback(() => {
     setRestTimer(null);
-    const next =
-      nextSetPointer ?? findNextIncompleteSet(session?.exercises ?? [], null);
+    const next = nextSet ?? findNextIncompleteSet(allSets, null);
     if (next) focusSet(next);
-  }, [focusSet, nextSetPointer, session?.exercises]);
+  }, [focusSet, nextSet, allSets]);
 
   const updateDefaultRest = useCallback(
     (seconds: number) => {
@@ -120,15 +126,10 @@ function WorkoutSessionEditor({
   );
 
   /** Rest-timer / focus orchestration when a logger reports a set toggle. */
-  const handleSetToggled = (
-    exerciseId: string,
-    setIndex: number,
-    completed: boolean,
-    set: LoggedSet,
-  ) => {
+  const handleSetToggled = (set: LoggedSet, completed: boolean) => {
     if (completed && executing) {
-      setCurrentSet({ exerciseId, setIndex });
-      setActiveExerciseId(exerciseId);
+      setCurrentSetId(set.id);
+      setActiveExerciseId(set.exerciseId);
       const rest = restSecondsForSet(set, defaultRestSeconds);
       setRestTimer({ seconds: rest, phase: "resting" });
     } else if (!completed) {
@@ -183,21 +184,24 @@ function WorkoutSessionEditor({
   };
 
   const totalVolume = useMemo(() => {
-    if (!session?.exercises) return 0;
-    const total = session.exercises.reduce((sum, ex) => {
-      const exUnit: WeightUnit = ex.unit ?? sessionUnit;
-      const exVolume = ex.sets.reduce((s, set) => {
-        if (!set.completed) return s;
-        return s + (set.weight ?? 0) * (set.reps ?? 0);
-      }, 0);
-      return sum + convertWeight(exVolume, exUnit, sessionUnit);
+    if (!session) return 0;
+    const unitByExercise = new Map<string, WeightUnit>(
+      (session.exercises ?? []).map((ex) => [ex.id, ex.unit ?? sessionUnit]),
+    );
+    const total = allSets.reduce((sum, set) => {
+      if (!set.completed) return sum;
+      const exUnit = unitByExercise.get(set.exerciseId) ?? sessionUnit;
+      return (
+        sum +
+        convertWeight((set.weight ?? 0) * (set.reps ?? 0), exUnit, sessionUnit)
+      );
     }, 0);
     return Math.round(total);
-  }, [session?.exercises, sessionUnit]);
+  }, [session, allSets, sessionUnit]);
 
   if (!session) return null;
 
-  const firstIncomplete = findNextIncompleteSet(session.exercises ?? []);
+  const firstIncomplete = findNextIncompleteSet(allSets);
   const allSetsDone = !firstIncomplete;
   // Show the current-exercise banner only when that exercise's inline panel
   // isn't already expanded right below it.
@@ -230,7 +234,7 @@ function WorkoutSessionEditor({
         </div>
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
         {showCurrentBanner ? (
           <div className="mb-4">
             <Suspense fallback={null}>
@@ -261,15 +265,7 @@ function WorkoutSessionEditor({
             <span>
               Sets:{" "}
               <strong className="text-slate-700">
-                {(session.exercises ?? []).reduce(
-                  (n, ex) => n + ex.sets.filter((s) => s.completed).length,
-                  0,
-                )}
-                /
-                {(session.exercises ?? []).reduce(
-                  (n, ex) => n + ex.sets.length,
-                  0,
-                )}
+                {allSets.filter((s) => s.completed).length}/{allSets.length}
               </strong>
             </span>
             {executing ? (
@@ -320,7 +316,8 @@ function WorkoutSessionEditor({
           {(session.exercises ?? []).map((exercise, exIndex) => {
             const expanded = activeExerciseId === exercise.id;
             const exUnit: WeightUnit = exercise.unit ?? sessionUnit;
-            const best1Rm = exercise.sets.reduce((best, set) => {
+            const exerciseSets = setsForExercise(session, exercise.id);
+            const best1Rm = exerciseSets.reduce((best, set) => {
               if (!set.completed) return best;
               const rm = estimate1Rm(set.weight ?? 0, set.reps ?? 0);
               return rm > best ? rm : best;
@@ -355,8 +352,8 @@ function WorkoutSessionEditor({
                       {exercise.exerciseName}
                     </span>
                     <span className="ml-2 text-xs text-slate-500">
-                      {exercise.sets.filter((s) => s.completed).length}/
-                      {exercise.sets.length} sets
+                      {exerciseSets.filter((s) => s.completed).length}/
+                      {exerciseSets.length} sets
                     </span>
                   </button>
                   <div className="flex items-center gap-2">
@@ -385,25 +382,16 @@ function WorkoutSessionEditor({
                 </div>
 
                 {expanded ? (
-                  <div className="border-t border-slate-100 px-4 py-3">
-                    {/* Experimental: the logger is bound to a path-addressed
-                        sub-document (`…/exercises/{"id":…}`) and owns all of
-                        its own reads/writes through that sub-handle. */}
+                  <div className="border-t border-slate-100 px-2 py-3 sm:px-4">
+                    {/* The logger writes through per-set sub-handles
+                        (`…/sets/{"id":…}`) on the flat sets array. */}
                     <ExerciseLogger
-                      exerciseUrl={exerciseSubUrl}
+                      sessionUrl={docUrl}
+                      exerciseId={exercise.id}
                       executing={executing}
                       fallbackUnit={sessionUnit}
-                      currentSetIndex={
-                        currentSet?.exerciseId === exercise.id
-                          ? currentSet.setIndex
-                          : null
-                      }
-                      rowIdForSet={(setIndex) =>
-                        setRowId({ exerciseId: exercise.id, setIndex })
-                      }
-                      onSetToggled={(setIndex, completed, set) =>
-                        handleSetToggled(exercise.id, setIndex, completed, set)
-                      }
+                      currentSetId={currentSetId}
+                      onSetToggled={handleSetToggled}
                     />
                   </div>
                 ) : null}

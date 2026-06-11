@@ -1,6 +1,9 @@
+/** A patch where `null` (or `""`) means "delete this field". */
+export type FieldPatch<T> = { [K in keyof T]?: T[K] | null };
+
 export function assignAutomergeFields<T extends object>(
   target: T,
-  source: Partial<T>,
+  source: FieldPatch<T>,
   options?: { skip?: (keyof T)[] },
 ): void {
   const skip = new Set(options?.skip ?? []);

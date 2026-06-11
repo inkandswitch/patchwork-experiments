@@ -1,6 +1,7 @@
 import { useState } from "react";
+import type { FieldPatch } from "../automerge-fields";
 import { formatTargetReps } from "../calculations";
-import type { LoggedSet, TemplateSet, WeightUnit } from "../types";
+import type { LoggedSet, SetKind, TemplateSet, WeightUnit } from "../types";
 import { PlatesCalculator } from "./PlatesCalculator";
 
 const inputClass =
@@ -8,6 +9,69 @@ const inputClass =
 
 function roundValue(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function nextSetKind(kind: SetKind | undefined): SetKind | null {
+  if (kind == null) return "warmup";
+  if (kind === "warmup") return "failure";
+  return null;
+}
+
+const setKindStyles: Record<SetKind | "normal", string> = {
+  normal: "text-slate-400",
+  warmup: "bg-amber-100 font-semibold text-amber-700",
+  failure: "bg-red-100 font-semibold text-red-700",
+};
+
+function setKindLabel(kind: SetKind | undefined, index: number): string {
+  if (kind === "warmup") return "W";
+  if (kind === "failure") return "F";
+  return `${index + 1}`;
+}
+
+function setKindTitle(kind: SetKind | undefined): string {
+  if (kind === "warmup") return "Warmup set — tap for to-failure";
+  if (kind === "failure") return "To-failure set — tap for normal";
+  return "Working set — tap for warmup";
+}
+
+/** Set-number badge that cycles normal → warmup (W) → to-failure (F). */
+export function SetKindBadge({
+  kind,
+  index,
+  onCycle,
+  size = "sm",
+}: {
+  kind: SetKind | undefined;
+  index: number;
+  onCycle?: (next: SetKind | null) => void;
+  size?: "sm" | "lg";
+}) {
+  const sizeClass = size === "lg" ? "h-9 w-9 text-sm" : "h-6 w-6 text-xs";
+  const style = setKindStyles[kind ?? "normal"];
+
+  if (!onCycle) {
+    return (
+      <span
+        className={`flex ${sizeClass} items-center justify-center rounded-full ${style}`}
+      >
+        {setKindLabel(kind, index)}
+      </span>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => onCycle(nextSetKind(kind))}
+      title={setKindTitle(kind)}
+      className={`flex ${sizeClass} shrink-0 items-center justify-center rounded-full ${style} ${
+        kind == null ? "border border-dashed border-slate-200 hover:border-slate-400" : ""
+      }`}
+    >
+      {setKindLabel(kind, index)}
+    </button>
+  );
 }
 
 export function Stepper({
@@ -33,16 +97,16 @@ export function Stepper({
   };
 
   return (
-    <div className="flex items-stretch overflow-hidden rounded-lg border border-slate-200 bg-white">
+    <div className="flex min-w-0 flex-1 items-stretch overflow-hidden rounded-lg border border-slate-200 bg-white sm:max-w-44">
       <button
         type="button"
         onClick={() => apply((value ?? 0) - step)}
-        className="h-11 w-10 shrink-0 text-lg font-medium text-slate-500 active:bg-slate-100"
+        className="h-11 w-7 shrink-0 text-lg font-medium text-slate-500 active:bg-slate-100 sm:w-10"
         aria-label={`Decrease ${label}`}
       >
         −
       </button>
-      <div className="flex w-14 flex-col items-center justify-center border-x border-slate-100">
+      <div className="flex min-w-0 flex-1 flex-col items-center justify-center border-x border-slate-100">
         <input
           type="number"
           inputMode="decimal"
@@ -51,7 +115,7 @@ export function Stepper({
           onChange={(e) =>
             onChange(e.target.value ? Number(e.target.value) : undefined)
           }
-          className="w-full bg-transparent text-center text-sm font-semibold text-slate-900 outline-none"
+          className="w-full min-w-0 bg-transparent text-center text-sm font-semibold text-slate-900 outline-none"
         />
         <span className="pb-0.5 text-[10px] leading-none text-slate-400">
           {label}
@@ -60,7 +124,7 @@ export function Stepper({
       <button
         type="button"
         onClick={() => apply((value ?? 0) + step)}
-        className="h-11 w-10 shrink-0 text-lg font-medium text-slate-500 active:bg-slate-100"
+        className="h-11 w-7 shrink-0 text-lg font-medium text-slate-500 active:bg-slate-100 sm:w-10"
         aria-label={`Increase ${label}`}
       >
         +
@@ -79,12 +143,18 @@ export function PlannedSetRow({
   set: TemplateSet;
   index: number;
   unit: string;
-  onChange: (patch: Partial<TemplateSet>) => void;
+  onChange: (patch: FieldPatch<TemplateSet>) => void;
   onRemove: () => void;
 }) {
   return (
     <div className="grid grid-cols-[2rem_1fr_1fr_1fr_1fr_auto] items-center gap-2 text-sm">
-      <span className="text-center text-xs text-slate-400">{index + 1}</span>
+      <div className="flex justify-center">
+        <SetKindBadge
+          kind={set.kind}
+          index={index}
+          onCycle={(kind) => onChange({ kind })}
+        />
+      </div>
       <input
         type="number"
         inputMode="numeric"
@@ -156,6 +226,8 @@ export function PlannedSetDisplay({ set, unit }: { set: TemplateSet; unit: strin
       {formatTargetReps(set)} reps
       {set.targetWeight != null ? ` @ ${set.targetWeight} ${unit}` : ""}
       {set.targetRpe != null ? ` RPE ${set.targetRpe}` : ""}
+      {set.kind === "warmup" ? " · warmup" : ""}
+      {set.kind === "failure" ? " · to failure" : ""}
     </span>
   );
 }
@@ -176,10 +248,10 @@ export function LoggedSetRow({
   executing?: boolean;
   isCurrent?: boolean;
   rowId?: string;
-  onChange: (patch: Partial<LoggedSet>) => void;
+  onChange: (patch: FieldPatch<LoggedSet>) => void;
   onToggleComplete: () => void;
 }) {
-  const [showPlates, setShowPlates] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
 
   if (!executing) {
     return (
@@ -222,9 +294,9 @@ export function LoggedSetRow({
           disabled
           className={inputClass}
         />
-        <span className="w-6 text-center text-xs text-slate-400">
-          {index + 1}
-        </span>
+        <div className="flex w-6 justify-center">
+          <SetKindBadge kind={set.kind} index={index} />
+        </div>
       </div>
     );
   }
@@ -234,7 +306,7 @@ export function LoggedSetRow({
   return (
     <div
       id={rowId}
-      className={`rounded-lg px-2 py-2 ${
+      className={`rounded-lg px-1.5 py-2 sm:px-2 ${
         isCurrent
           ? "bg-emerald-50 ring-2 ring-emerald-400 ring-offset-1"
           : set.completed
@@ -242,18 +314,28 @@ export function LoggedSetRow({
             : ""
       }`}
     >
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Main row is sized to fit a ~300px pane (iPhone) without wrapping:
+          fixed badge + check, two flexing steppers in between. RPE, set
+          kind, and the plates calculator live in the details disclosure. */}
+      <div className="flex items-center gap-1.5 sm:gap-2">
         <button
           type="button"
-          onClick={onToggleComplete}
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border text-lg ${
-            set.completed
-              ? "border-emerald-500 bg-emerald-500 text-white"
-              : "border-slate-300 text-transparent hover:border-emerald-400"
+          onClick={() => setShowDetails((cur) => !cur)}
+          title="Set details (RPE, set type, plates)"
+          className={`flex h-11 w-8 shrink-0 flex-col items-center justify-center rounded-lg sm:w-9 ${
+            setKindStyles[set.kind ?? "normal"]
+          } ${set.kind == null ? "border border-dashed border-slate-200" : ""} ${
+            showDetails ? "ring-1 ring-slate-300" : ""
           }`}
-          title={set.completed ? "Mark incomplete" : "Complete set"}
         >
-          ✓
+          <span className="text-sm">{setKindLabel(set.kind, index)}</span>
+          <span
+            className={`text-[8px] leading-none text-slate-400 transition-transform ${
+              showDetails ? "rotate-180" : ""
+            }`}
+          >
+            ▼
+          </span>
         </button>
         <Stepper
           label="reps"
@@ -267,30 +349,56 @@ export function LoggedSetRow({
           step={weightStep}
           onChange={(weight) => onChange({ weight })}
         />
-        <Stepper
-          label="RPE"
-          value={set.rpe}
-          step={0.5}
-          max={10}
-          onChange={(rpe) => onChange({ rpe })}
-        />
-        <div className="ml-auto flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowPlates((cur) => !cur)}
-            className={`rounded-md border px-2 py-1.5 text-xs ${
-              showPlates
-                ? "border-emerald-400 bg-emerald-50 text-emerald-800"
-                : "border-slate-200 text-slate-500 hover:border-slate-300"
-            }`}
-          >
-            Plates
-          </button>
-          <span className="text-xs text-slate-400">#{index + 1}</span>
-        </div>
+        <button
+          type="button"
+          onClick={onToggleComplete}
+          className={`ml-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-full border text-lg ${
+            set.completed
+              ? "border-emerald-500 bg-emerald-500 text-white"
+              : "border-slate-300 text-transparent hover:border-emerald-400"
+          }`}
+          title={set.completed ? "Mark incomplete" : "Complete set"}
+        >
+          ✓
+        </button>
       </div>
-      {showPlates ? (
-        <div className="mt-2">
+      {showDetails ? (
+        <div className="mt-2 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex overflow-hidden rounded-md border border-slate-200 text-xs">
+              {(
+                [
+                  ["normal", "Working"],
+                  ["warmup", "Warmup"],
+                  ["failure", "To failure"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() =>
+                    onChange({ kind: value === "normal" ? null : value })
+                  }
+                  className={`px-2.5 py-1.5 ${
+                    (set.kind ?? "normal") === value
+                      ? "bg-emerald-600 font-medium text-white"
+                      : "bg-white text-slate-500 hover:bg-slate-50"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="flex w-36">
+              <Stepper
+                label="RPE"
+                value={set.rpe}
+                step={0.5}
+                max={10}
+                onChange={(rpe) => onChange({ rpe })}
+              />
+            </div>
+          </div>
           <PlatesCalculator targetWeight={set.weight ?? 0} unit={unit} />
         </div>
       ) : null}

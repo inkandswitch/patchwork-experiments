@@ -2,48 +2,61 @@ import {
   useDocHandle,
   useDocument,
 } from "@automerge/automerge-repo-react-hooks";
-import type { AutomergeUrl } from "@automerge/automerge-repo";
+import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import { assignAutomergeFields } from "../automerge-fields";
-import type { LoggedExercise, LoggedSet, WeightUnit } from "../types";
+import type {
+  LoggedExercise,
+  LoggedSet,
+  WeightUnit,
+  WorkoutSessionDoc,
+} from "../types";
+import {
+  exerciseById,
+  newLoggedSet,
+  pushSetForExercise,
+  setsForExercise,
+  useFlatSessionMigration,
+} from "../session-model";
+import { setRowId } from "../workout-flow";
 import { LoggedSetRow } from "./SetRow";
 
 /**
- * Experimental: a set-logging panel bound to a *path-addressed sub-document*
- * (e.g. `automerge:<docId>/exercises/{"id":"…"}`). All reads and writes go
- * through the sub-handle — the component needs no callbacks from the parent
- * to mutate its data, only optional orchestration hooks (rest timer, set
- * focus) which remain session-level concerns.
+ * Set-logging panel for one exercise of a session. Sets live flat on the
+ * session doc (execution order), so the logger binds to the session and
+ * filters by exercise id; each row's writes go through a path-addressed
+ * sub-handle straight to its set:
  *
- * The pattern segment (`{"id": …}`) addresses the exercise by its stable id,
- * so the binding survives concurrent reorders/deletes of sibling exercises.
+ *   automerge:<sessionDocId>/sets/{"id":"…"}
  */
 export function ExerciseLogger({
-  exerciseUrl,
+  sessionUrl,
+  exerciseId,
   executing,
   fallbackUnit = "kg",
-  currentSetIndex,
-  rowIdForSet,
+  currentSetId,
   onSetToggled,
 }: {
-  /** Path-addressed sub-document URL pointing at one LoggedExercise. */
-  exerciseUrl: AutomergeUrl;
+  sessionUrl: AutomergeUrl;
+  exerciseId: string;
   executing?: boolean;
   /** Unit to display when the exercise doesn't carry its own. */
   fallbackUnit?: WeightUnit;
-  /** Index of the "current" set to highlight, if any. */
-  currentSetIndex?: number | null;
-  /** Stable DOM ids for scroll/focus targeting from the parent. */
-  rowIdForSet?: (setIndex: number) => string;
+  /** Id of the "current" set to highlight, if any. */
+  currentSetId?: string | null;
   /** Notifies the host when a set is (un)completed, e.g. to run a rest timer. */
-  onSetToggled?: (setIndex: number, completed: boolean, set: LoggedSet) => void;
+  onSetToggled?: (set: LoggedSet, completed: boolean) => void;
 }) {
-  const handle = useDocHandle<LoggedExercise>(exerciseUrl, { suspense: true });
-  const [exercise] = useDocument<LoggedExercise>(exerciseUrl, {
+  const sessionHandle = useDocHandle<WorkoutSessionDoc>(sessionUrl, {
+    suspense: true,
+  });
+  const [session] = useDocument<WorkoutSessionDoc>(sessionUrl, {
     suspense: true,
   });
 
-  // The pattern no longer matches (exercise was removed from the session).
-  if (!exercise) {
+  useFlatSessionMigration(sessionHandle, session);
+
+  const exercise = session ? exerciseById(session, exerciseId) : undefined;
+  if (!session || !exercise) {
     return (
       <p className="text-center text-xs text-slate-400">
         This exercise is no longer part of the session.
@@ -51,16 +64,18 @@ export function ExerciseLogger({
     );
   }
 
+  const sets = setsForExercise(session, exerciseId);
   const unit: WeightUnit = exercise.unit ?? fallbackUnit;
 
-  const toggleSet = (setIndex: number) => {
-    const set = exercise.sets[setIndex];
-    if (!set) return;
+  const setSub = (setId: string) =>
+    sessionHandle.sub("sets", { id: setId }) as DocHandle<LoggedSet>;
+
+  const toggleSet = (set: LoggedSet) => {
     const willComplete = !set.completed;
-    handle.change((ex) => {
-      ex.sets[setIndex].completed = willComplete;
+    setSub(set.id).change((s) => {
+      s.completed = willComplete;
     });
-    onSetToggled?.(setIndex, willComplete, set);
+    onSetToggled?.(set, willComplete);
   };
 
   return (
@@ -73,7 +88,11 @@ export function ExerciseLogger({
                 key={u}
                 type="button"
                 onClick={() =>
-                  handle.change((ex) => {
+                  (
+                    sessionHandle.sub("exercises", {
+                      id: exerciseId,
+                    }) as DocHandle<LoggedExercise>
+                  ).change((ex) => {
                     ex.unit = u;
                   })
                 }
@@ -97,29 +116,29 @@ export function ExerciseLogger({
           <span>#</span>
         </div>
       )}
-      {exercise.sets.map((set, setIndex) => (
+      {sets.map((set, setIndex) => (
         <LoggedSetRow
-          key={setIndex}
-          rowId={rowIdForSet?.(setIndex)}
-          isCurrent={currentSetIndex === setIndex}
+          key={set.id}
+          rowId={setRowId(set.id)}
+          isCurrent={currentSetId === set.id}
           set={set}
           index={setIndex}
           unit={unit}
           executing={executing}
           onChange={(patch) =>
-            handle.change((ex) => {
-              assignAutomergeFields(ex.sets[setIndex], patch);
+            setSub(set.id).change((s) => {
+              assignAutomergeFields(s, patch);
             })
           }
-          onToggleComplete={() => toggleSet(setIndex)}
+          onToggleComplete={() => toggleSet(set)}
         />
       ))}
       {executing ? (
         <button
           type="button"
           onClick={() =>
-            handle.change((ex) => {
-              ex.sets.push({ completed: false });
+            sessionHandle.change((draft) => {
+              pushSetForExercise(draft, exerciseId, newLoggedSet(exerciseId));
             })
           }
           className="text-xs text-emerald-700 hover:underline"

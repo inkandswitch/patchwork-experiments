@@ -7,6 +7,7 @@ import {
   newId,
   setVolume,
 } from "./calculations";
+import { setsForExercise } from "./session-model";
 import type {
   ExerciseHistoryEntry,
   ExerciseProgressPoint,
@@ -36,7 +37,9 @@ export function exerciseHistoryForUrl(
     for (const exercise of doc.exercises ?? []) {
       if (exercise.exerciseUrl !== exerciseUrl) continue;
 
-      const completedSets = (exercise.sets ?? []).filter((s) => s.completed);
+      const completedSets = setsForExercise(doc, exercise.id).filter(
+        (s) => s.completed,
+      );
       if (!completedSets.length) continue;
 
       const best = bestSetFromSets(completedSets);
@@ -94,33 +97,44 @@ export function createSessionFromTemplate(
     day: "numeric",
   });
 
-  const exercises: LoggedExercise[] = (template.exercises ?? []).map(
-    (planned) =>
+  const exercises: LoggedExercise[] = [];
+  const sets: LoggedSet[] = [];
+
+  for (const planned of template.exercises ?? []) {
+    const exerciseId = newId();
+    exercises.push(
       omitUndefined({
-        id: newId(),
+        id: exerciseId,
         exerciseUrl: planned.exerciseUrl,
         exerciseName: planned.exerciseName,
         notes: planned.notes,
         supersetGroup: planned.supersetGroup,
         unit: planned.unit,
-        sets: planned.sets.map((set) =>
-          omitUndefined({
-            reps: set.targetReps ?? set.targetRepsMin,
-            weight: set.targetWeight,
-            rpe: set.targetRpe,
-            restSeconds: set.restSeconds,
-            completed: false,
-            notes: set.notes,
-          }),
-        ),
       }) as LoggedExercise,
-  );
+    );
+    for (const set of planned.sets) {
+      sets.push(
+        omitUndefined({
+          id: newId(),
+          exerciseId,
+          kind: set.kind,
+          reps: set.targetReps ?? set.targetRepsMin,
+          weight: set.targetWeight,
+          rpe: set.targetRpe,
+          restSeconds: set.restSeconds,
+          completed: false,
+          notes: set.notes,
+        }) as LoggedSet,
+      );
+    }
+  }
 
   return {
     title: `${template.title} — ${dateLabel}`,
     startedAt: now.toISOString(),
     templateUrl,
     exercises,
+    sets,
     status: "in_progress",
     defaultRestSeconds: 90,
   };
@@ -139,6 +153,7 @@ export function templateTitleFromSession(sessionTitle: string): string {
 
 function loggedSetToTemplateSet(set: LoggedSet): TemplateSet {
   return omitUndefined({
+    kind: set.kind,
     targetReps: set.reps,
     targetWeight: set.weight,
     targetRpe: set.rpe,
@@ -154,7 +169,7 @@ export function createTemplateFromSession(
 ): Omit<WorkoutTemplateDoc, "@patchwork"> {
   const exercises: TemplateExercise[] = (session.exercises ?? [])
     .map((exercise) => {
-      const sets = exercise.sets
+      const sets = setsForExercise(session, exercise.id)
         .filter(
           (set) =>
             set.completed ||
@@ -201,5 +216,7 @@ export function summarizeSet(set: LoggedSet, unit = "kg"): string {
     const secs = set.durationSeconds % 60;
     parts.push(`${mins}:${secs.toString().padStart(2, "0")}`);
   }
+  if (set.kind === "warmup") parts.push("(warmup)");
+  if (set.kind === "failure") parts.push("(to failure)");
   return parts.length ? parts.join(" ") : "—";
 }

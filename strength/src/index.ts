@@ -111,6 +111,17 @@ export const plugins: Plugin<any>[] = [
   } satisfies Tool,
   {
     type: "patchwork:tool",
+    id: "strength-current-set",
+    name: "Current Set",
+    icon: "Crosshair",
+    supportedDatatypes: ["strength-workout-session"],
+    async load() {
+      const { CurrentSetTool } = await import("./current-set-tool");
+      return CurrentSetTool;
+    },
+  } satisfies Tool,
+  {
+    type: "patchwork:tool",
     id: "strength-sessions",
     name: "Sessions",
     icon: "TrendingUp",

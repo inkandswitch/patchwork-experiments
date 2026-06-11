@@ -8,6 +8,9 @@ export interface DocLink {
 
 export type WeightUnit = "kg" | "lb";
 
+/** Special set markers; absent = normal working set. */
+export type SetKind = "warmup" | "failure";
+
 /** Metadata for strength training folders (gym root and subfolders). */
 export interface StrengthFolderMeta {
   strengthGymUrl?: AutomergeUrl;
@@ -64,6 +67,7 @@ export interface ExerciseDoc {
 }
 
 export interface TemplateSet {
+  kind?: SetKind;
   targetReps?: number;
   targetRepsMin?: number;
   targetRepsMax?: number;
@@ -96,7 +100,9 @@ export interface WorkoutTemplateDoc {
   sessionsFolderUrl?: AutomergeUrl;
 }
 
-export interface LoggedSet {
+/** Field data shared by current (flat) and legacy (nested) logged sets. */
+export interface LoggedSetData {
+  kind?: SetKind;
   reps?: number;
   weight?: number;
   rpe?: number;
@@ -107,15 +113,23 @@ export interface LoggedSet {
   notes?: string;
 }
 
+export interface LoggedSet extends LoggedSetData {
+  id: string;
+  /** Which LoggedExercise this set belongs to. */
+  exerciseId: string;
+}
+
+/** Exercise metadata within a session. Sets live flat on the session doc. */
 export interface LoggedExercise {
   id: string;
   exerciseUrl: AutomergeUrl;
   exerciseName: string;
-  sets: LoggedSet[];
   notes?: string;
   supersetGroup?: string;
   /** Weight unit for this exercise; falls back to the session/gym default. */
   unit?: WeightUnit;
+  /** @deprecated Legacy nested shape — flattened into WorkoutSessionDoc.sets. */
+  sets?: LoggedSetData[];
 }
 
 /** A single workout instance, cloned from a template. */
@@ -128,6 +142,12 @@ export interface WorkoutSessionDoc {
   templateUrl?: AutomergeUrl;
   notes?: string;
   exercises: LoggedExercise[];
+  /**
+   * All sets, flat, in execution order (this is what makes supersets
+   * expressible). Absent on legacy docs, where sets are nested per
+   * exercise — use sessionSets() to read either shape.
+   */
+  sets?: LoggedSet[];
   status: "in_progress" | "completed";
   /** Default rest between sets when a set has no restSeconds. */
   defaultRestSeconds?: number;

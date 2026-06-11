@@ -31,7 +31,8 @@ export function estimate1Rm(weight: number, reps: number): number {
 }
 
 export function setVolume(set: LoggedSet): number {
-  if (!set.completed) return 0;
+  // Warmups don't count toward training volume.
+  if (!set.completed || set.kind === "warmup") return 0;
   const weight = set.weight ?? 0;
   const reps = set.reps ?? 0;
   return weight * reps;
@@ -42,7 +43,8 @@ export function bestSetFromSets(sets: LoggedSet[]): LoggedSet | null {
   let best1Rm = 0;
 
   for (const set of sets) {
-    if (!set.completed) continue;
+    // Warmups are excluded from PR / 1RM estimates.
+    if (!set.completed || set.kind === "warmup") continue;
     const weight = set.weight ?? 0;
     const reps = set.reps ?? 0;
     if (weight <= 0) continue;
