@@ -4,6 +4,7 @@ import { plugins as rectLayerPlugins } from "./rect";
 import { plugins as embedLayerPlugins } from "./embed";
 import { plugins as mapPlugins } from "./map";
 import { plugins as surfacePlugins } from "./surface";
+import { plugins as linkPlugins } from "./link";
 
 export const plugins = [
   ...paperPlugins,
@@ -12,4 +13,5 @@ export const plugins = [
   ...embedLayerPlugins,
   ...mapPlugins,
   ...surfacePlugins,
+  ...linkPlugins,
 ];

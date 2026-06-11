@@ -126,6 +126,20 @@ export function SelectButton(): JSX.Element {
           string,
           EmbedShape
         >;
+        // DEBUG (remove): list this candidate layer's embed docUrls so we can
+        // see whether any equals the innermost surface url (the match key).
+        const embedDocUrls = Object.values(shapes)
+          .map((s) => s.docUrl)
+          .filter(Boolean);
+        if (embedDocUrls.length > 0) {
+          console.log("[paper-debug embedHit]", {
+            candidate: candidateUrl,
+            innerUrl,
+            position,
+            embedDocUrls,
+            matches: embedDocUrls.filter((u) => u === innerUrl),
+          });
+        }
         for (const shape of Object.values(shapes)) {
           if (shape.docUrl !== innerUrl) continue;
           if (!hitTestShape(position.x, position.y, shape)) continue;
@@ -276,16 +290,27 @@ export function SelectButton(): JSX.Element {
 
   const onPointerDown = async (pointer: SurfacePointer) => {
     const focus = focusHandle();
+    // DEBUG (remove): is the focus doc resolved, and does the sample carry the
+    // innermost surface's own position?
+    console.log("[paper-debug down]", {
+      hasFocus: !!focus,
+      surfaceUrl: pointer.surfaceUrl,
+      positions: Object.keys(pointer.positions),
+      hasInnermostPos: !!pointer.positions[pointer.surfaceUrl],
+    });
     if (!focus) return;
 
     const innermost = pointer.positions[pointer.surfaceUrl];
     if (!innermost) return;
     const { x, y } = innermost;
 
-    let hit = await topmostHit(pointer.surfaceUrl, x, y);
+    const topmost = await topmostHit(pointer.surfaceUrl, x, y);
+    let hit = topmost;
     if (!hit) {
       hit = await embedHit(pointer);
     }
+    // DEBUG (remove): what did each resolver return?
+    console.log("[paper-debug hit]", { topmost, hit });
 
     if (shiftDown) {
       focus.change((doc) => {
@@ -366,6 +391,18 @@ export function SelectButton(): JSX.Element {
     // Update before any await: effect re-runs triggered while a handler is
     // pending must see the new value.
     wasPressed = isPressed;
+
+    // DEBUG (remove): confirm the effect fires on the press edges and what
+    // pointer sample it sees.
+    if (startedPress || endedPress) {
+      console.log("[paper-debug effect]", {
+        startedPress,
+        endedPress,
+        tool: state?.selectedToolId,
+        surfaceUrl: pointer.surfaceUrl,
+        positions: Object.keys(pointer.positions),
+      });
+    }
 
     if (startedPress) {
       await onPointerDown(pointer);

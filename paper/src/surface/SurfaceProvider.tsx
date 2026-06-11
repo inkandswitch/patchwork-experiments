@@ -99,6 +99,23 @@ export function SurfaceProvider({
           state.pointer.positions[handle.url] = position;
         }
       });
+
+      // DEBUG (remove): trace stamping for the down/up edges only (moves are
+      // too noisy). Shows which surface ran, whether it claimed innermost,
+      // which shared state doc it wrote to, and the resulting pointer sample.
+      if (event.type !== "pointermove") {
+        const sh = stateHandle();
+        const pointer = sh.doc()?.pointer;
+        console.log("[paper-debug stamp]", {
+          event: event.type,
+          thisSurface: handle.url,
+          innermost: isInnermost(event),
+          sharedStateDoc: sh.url,
+          surfaceUrl: pointer?.surfaceUrl,
+          positions: Object.keys(pointer?.positions ?? {}),
+          isPressed: pointer?.isPressed,
+        });
+      }
     };
 
     const onPointerDown = (event: PointerEvent) => {

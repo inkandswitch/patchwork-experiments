@@ -6,10 +6,13 @@ import type { DocWithLayers, Shape } from "../surface/types";
 import { outlinePoints, resolveOutline } from "./geometry";
 import "./select.css";
 
-// Mirrors the shared focus document the FocusProvider owns. We only read
-// `selection` here; keys are shape sub-document URLs.
+// Mirrors the shared focus document the FocusProvider owns. Keys in both maps
+// are shape sub-document URLs. `selection` is what the select tool picked;
+// `highlight` is auxiliary emphasis other views contribute (e.g. a text editor
+// pointing at a shape from inside a link).
 type FocusDoc = {
   selection: Record<string, true>;
+  highlight: Record<string, true>;
 };
 
 // A full-canvas overlay that draws a highlight on each selected shape of its
@@ -29,31 +32,49 @@ export function SelectionOverlay(props: {
     type: "patchwork:focus",
   });
 
-  // Selected shape urls that live in one of this surface's layers. The focus
-  // doc is shared across all surfaces, so each overlay filters down to its
-  // own. Sub-document URLs are prefixed by their document's URL, so "shape is
-  // inside this layer" is a prefix check.
-  const localUrls = createMemo(() => {
-    const layerUrls = Object.values(surface()?.layers ?? {});
-    return Object.keys(focusDoc()?.selection ?? {}).filter((shapeUrl) =>
+  // Shape urls from a focus map that live in one of this surface's layers. The
+  // focus doc is shared across all surfaces, so each overlay filters down to
+  // its own. Sub-document URLs are prefixed by their document's URL, so "shape
+  // is inside this layer" is a prefix check.
+  const localUrlsIn = (map: Record<string, true> | undefined) => {
+    const layerUrls: AutomergeUrl[] = Object.values(surface()?.layers ?? {});
+    return Object.keys(map ?? {}).filter((shapeUrl) =>
       layerUrls.some((layerUrl) => shapeUrl.startsWith(layerUrl)),
     ) as AutomergeUrl[];
+  };
+
+  const selectedUrls = createMemo(() => localUrlsIn(focusDoc()?.selection));
+  // Highlighted shapes that are not also selected, so a shape that is both
+  // gets the (stronger) selection outline rather than two stacked strokes.
+  const highlightedUrls = createMemo(() => {
+    const selected = new Set(selectedUrls());
+    return localUrlsIn(focusDoc()?.highlight).filter(
+      (url) => !selected.has(url),
+    );
   });
 
   return (
     <div ref={root} class="select-overlay">
       <svg class="select-overlay-svg" width="100%" height="100%">
-        <For each={localUrls()}>{(url) => <ShapeHighlight url={url} />}</For>
+        <For each={selectedUrls()}>
+          {(url) => <ShapeHighlight url={url} class="select-highlight" />}
+        </For>
+        <For each={highlightedUrls()}>
+          {(url) => <ShapeHighlight url={url} class="link-highlight" />}
+        </For>
       </svg>
     </div>
   );
 }
 
-// Subscribes to a single selected shape via its sub-document URL and draws
-// its resolved outline as a highlight. Rectangles and polygons close; lines
+// Subscribes to a single shape via its sub-document URL and draws its resolved
+// outline with the given highlight class. Rectangles and polygons close; lines
 // stay open. Works for any outline variant, including the ones derived from
 // legacy shapes.
-function ShapeHighlight(props: { url: AutomergeUrl }): JSX.Element {
+function ShapeHighlight(props: {
+  url: AutomergeUrl;
+  class: string;
+}): JSX.Element {
   const [shape] = useDocument<Shape>(() => props.url);
 
   const points = createMemo(() => {
@@ -75,9 +96,9 @@ function ShapeHighlight(props: { url: AutomergeUrl }): JSX.Element {
       {(pts) => (
         <Show
           when={pts().closed}
-          fallback={<polyline class="select-highlight" points={pts().value} />}
+          fallback={<polyline class={props.class} points={pts().value} />}
         >
-          <polygon class="select-highlight" points={pts().value} />
+          <polygon class={props.class} points={pts().value} />
         </Show>
       )}
     </Show>
