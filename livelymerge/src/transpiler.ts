@@ -740,8 +740,10 @@ function mapPos(pos: number, deltas: { pos: number; delta: number }[]): number {
 }
 
 function renderFuncCall(inner: string, scopes: LexicalScope[], declName?: string): string {
-  const scopeArg = scopes.length > 0 ? `, [${renderScopeList(scopes)}]` : '';
-  const call = `$func(${inner}${scopeArg})`;
+  const params = renderScopeList(scopes);
+  const funcArg = `(${params}) => ${inner}`;
+  const scopeArg = scopes.length > 0 ? `, [${params}]` : '';
+  const call = `$func(${funcArg}${scopeArg})`;
   return declName !== undefined ? `const ${declName} = ${call};` : call;
 }
 
