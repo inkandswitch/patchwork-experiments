@@ -15,12 +15,22 @@ type FocusDoc = {
   highlight: Record<string, true>;
 };
 
-// A full-canvas overlay that draws a highlight on each selected shape of its
-// own surface. Purely a renderer: it iterates the selection from the focus
-// provider, keeps the urls whose layer belongs to this surface, and paints a
-// dashed outline per shape. Each url is a sub-document URL, so a highlight
-// subscribes to exactly its shape — nothing is projected while the selection
-// is empty. An embed's highlight is drawn by the parent's overlay. All
+// The highlight emphasis: a soft yellow glow, rendered as a CSS filter on the
+// shape's own DOM element (the layer tools stamp `data-automerge-url` with the
+// shape's sub-document url, the same key the focus maps use). Painting on the
+// shape itself follows its rendered alpha and its stacking position, and CSS
+// matches late-mounting or re-created elements automatically.
+const HIGHLIGHT_GLOW =
+  "drop-shadow(0 0 3px rgba(245, 158, 11, 0.95)) " +
+  "drop-shadow(0 0 6px rgba(245, 158, 11, 0.6))";
+
+// Renders the selection and highlight emphasis for this surface's shapes.
+// Selection draws each selected shape's outline in an svg overlay above the
+// layers; highlight is a generated stylesheet applying a glow to the shape's
+// own element. The two are independent, so a shape that is both selected and
+// highlighted shows both. Each selection outline subscribes to exactly its
+// shape via its sub-document URL — nothing is projected while the selection
+// is empty. An embed's outline is drawn by the parent's overlay. All
 // selection interaction lives in SelectButton.
 export function SelectionOverlay(props: {
   surfaceUrl: AutomergeUrl;
@@ -44,23 +54,19 @@ export function SelectionOverlay(props: {
   };
 
   const selectedUrls = createMemo(() => localUrlsIn(focusDoc()?.selection));
-  // Highlighted shapes that are not also selected, so a shape that is both
-  // gets the (stronger) selection outline rather than two stacked strokes.
-  const highlightedUrls = createMemo(() => {
-    const selected = new Set(selectedUrls());
-    return localUrlsIn(focusDoc()?.highlight).filter(
-      (url) => !selected.has(url),
-    );
-  });
+
+  const highlightCss = createMemo(() =>
+    localUrlsIn(focusDoc()?.highlight)
+      .map((url) => `[data-automerge-url="${url}"] { filter: ${HIGHLIGHT_GLOW}; }`)
+      .join("\n"),
+  );
 
   return (
     <div ref={root} class="select-overlay">
+      <style>{highlightCss()}</style>
       <svg class="select-overlay-svg" width="100%" height="100%">
         <For each={selectedUrls()}>
-          {(url) => <ShapeHighlight url={url} class="select-highlight" />}
-        </For>
-        <For each={highlightedUrls()}>
-          {(url) => <ShapeHighlight url={url} class="link-highlight" />}
+          {(url) => <ShapeOutline url={url} />}
         </For>
       </svg>
     </div>
@@ -68,13 +74,9 @@ export function SelectionOverlay(props: {
 }
 
 // Subscribes to a single shape via its sub-document URL and draws its resolved
-// outline with the given highlight class. Rectangles and polygons close; lines
-// stay open. Works for any outline variant, including the ones derived from
-// legacy shapes.
-function ShapeHighlight(props: {
-  url: AutomergeUrl;
-  class: string;
-}): JSX.Element {
+// outline. Rectangles and polygons close; lines stay open. Works for any
+// outline variant, including the ones derived from legacy shapes.
+function ShapeOutline(props: { url: AutomergeUrl }): JSX.Element {
   const [shape] = useDocument<Shape>(() => props.url);
 
   const points = createMemo(() => {
@@ -96,9 +98,9 @@ function ShapeHighlight(props: {
       {(pts) => (
         <Show
           when={pts().closed}
-          fallback={<polyline class={props.class} points={pts().value} />}
+          fallback={<polyline class="select-outline" points={pts().value} />}
         >
-          <polygon class={props.class} points={pts().value} />
+          <polygon class="select-outline" points={pts().value} />
         </Show>
       )}
     </Show>

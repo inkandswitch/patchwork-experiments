@@ -5,7 +5,7 @@ import {
   useDocument,
 } from "../vendor/automerge-solid-primitives";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
-import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
+import type { DocHandle } from "@automerge/automerge-repo";
 import type { Shape, ShapeLayerDoc } from "../surface/types";
 import { resolveOutline } from "../select/geometry";
 import "./rect.css";
@@ -38,7 +38,7 @@ export const RectLayerTool: ToolRender = (handle, element) => {
   const dispose = render(
     () => (
       <RepoContext.Provider value={element.repo}>
-        <RectLayer url={(handle as DocHandle<ShapeLayerDoc>).url} />
+        <RectLayer handle={handle as DocHandle<ShapeLayerDoc>} />
       </RepoContext.Provider>
     ),
     element,
@@ -46,15 +46,19 @@ export const RectLayerTool: ToolRender = (handle, element) => {
   return dispose;
 };
 
-function RectLayer(props: { url: AutomergeUrl }) {
-  const [doc] = useDocument<ShapeLayerDoc>(() => props.url);
+function RectLayer(props: { handle: DocHandle<ShapeLayerDoc> }) {
+  const [doc] = useDocument<ShapeLayerDoc>(() => props.handle.url);
   const shapes = () => Object.values(doc()?.shapes ?? {}) as RectShape[];
 
+  // data-automerge-url carries the shape's sub-document url — the same key
+  // the focus doc's selection/highlight maps use — so the SelectionOverlay's
+  // generated stylesheet can target the shape's own element.
   return (
     <For each={shapes()}>
       {(rect) => (
         <svg
           class="rect-svg"
+          data-automerge-url={props.handle.sub("shapes", rect.id).url}
           width="100%"
           height="100%"
           style={{ "z-index": rect.z }}

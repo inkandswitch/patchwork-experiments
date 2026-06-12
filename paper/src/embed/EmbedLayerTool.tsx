@@ -5,7 +5,7 @@ import {
   useDocument,
 } from "../vendor/automerge-solid-primitives";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
-import type { AutomergeUrl } from "@automerge/automerge-repo";
+import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import "@inkandswitch/patchwork-elements";
 import type { Shape, ShapeLayerDoc } from "../surface/types";
 import { resolveOutline } from "../select/geometry";
@@ -43,7 +43,7 @@ export const EmbedLayerTool: ToolRender = (handle, element) => {
   const dispose = render(
     () => (
       <RepoContext.Provider value={element.repo}>
-        <EmbedLayer url={handle.url} />
+        <EmbedLayer handle={handle as DocHandle<ShapeLayerDoc>} />
       </RepoContext.Provider>
     ),
     element,
@@ -51,8 +51,8 @@ export const EmbedLayerTool: ToolRender = (handle, element) => {
   return dispose;
 };
 
-function EmbedLayer(props: { url: AutomergeUrl }) {
-  const [doc] = useDocument<ShapeLayerDoc>(() => props.url);
+function EmbedLayer(props: { handle: DocHandle<ShapeLayerDoc> }) {
+  const [doc] = useDocument<ShapeLayerDoc>(() => props.handle.url);
   const shapes = () => Object.values(doc()?.shapes ?? {}) as EmbedShape[];
 
   // The embed whose drag handle is currently grabbed. While set, that embed's
@@ -98,8 +98,12 @@ function EmbedLayer(props: { url: AutomergeUrl }) {
     <For each={shapes()}>
       {(embed) => (
         <>
+          {/* data-automerge-url (on both elements: together they are the
+              embed's footprint) lets the SelectionOverlay's generated
+              stylesheet target the embed like any other shape. */}
           <patchwork-view
             class="paper-embed-item"
+            data-automerge-url={props.handle.sub("shapes", embed.id).url}
             doc-url={embed.docUrl}
             tool-id={embed.toolId}
             hide-controls=""
@@ -121,6 +125,7 @@ function EmbedLayer(props: { url: AutomergeUrl }) {
           />
           <div
             class="paper-embed-handle"
+            data-automerge-url={props.handle.sub("shapes", embed.id).url}
             on:pointerdown={() => setGrabbedId(embed.id)}
             style={{
               position: "absolute",

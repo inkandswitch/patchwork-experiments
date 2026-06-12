@@ -1,4 +1,4 @@
-import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
+import type { DocHandle } from "@automerge/automerge-repo";
 import {
   RepoContext,
   useDocument,
@@ -38,7 +38,7 @@ export const LineLayerTool: ToolRender = (handle, element) => {
   const dispose = render(
     () => (
       <RepoContext.Provider value={element.repo}>
-        <LineLayer url={(handle as DocHandle<ShapeLayerDoc>).url} />
+        <LineLayer handle={handle as DocHandle<ShapeLayerDoc>} />
       </RepoContext.Provider>
     ),
     element,
@@ -46,15 +46,19 @@ export const LineLayerTool: ToolRender = (handle, element) => {
   return dispose;
 };
 
-function LineLayer(props: { url: AutomergeUrl }) {
-  const [doc] = useDocument<ShapeLayerDoc>(() => props.url);
+function LineLayer(props: { handle: DocHandle<ShapeLayerDoc> }) {
+  const [doc] = useDocument<ShapeLayerDoc>(() => props.handle.url);
   const shapes = () => Object.values(doc()?.shapes ?? {}) as LineShape[];
 
+  // data-automerge-url carries the shape's sub-document url — the same key
+  // the focus doc's selection/highlight maps use — so the SelectionOverlay's
+  // generated stylesheet can target the shape's own element.
   return (
     <For each={shapes()}>
       {(line) => (
         <svg
           class="line-svg"
+          data-automerge-url={props.handle.sub("shapes", line.id).url}
           width="100%"
           height="100%"
           style={{ "z-index": line.z }}

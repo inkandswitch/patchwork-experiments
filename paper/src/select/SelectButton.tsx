@@ -16,7 +16,7 @@ import type {
   SurfaceState,
 } from "../surface/types";
 import type { EmbedShape } from "../embed/EmbedLayerTool";
-import { hitTestShape } from "./geometry";
+import { topmostShapeAt } from "./geometry";
 
 // One shape participating in the current drag. `handle` is a sub-handle
 // scoped to the shape inside its layer doc; `homeSurfaceUrl` is the surface
@@ -65,12 +65,20 @@ export function SelectButton(): JSX.Element {
 
   // Select is the default tool: whenever no tool is selected (initial state,
   // or another tool toggled itself off), claim the slot. Runs only once the
-  // state doc has loaded, so it never clobbers a real selection.
+  // state doc has loaded, so it never clobbers a real selection. Deferred a
+  // tick: the effect fires synchronously from the state doc's own change
+  // event (e.g. inside another button's toggle), and writing the same doc
+  // re-entrantly trips automerge's wasm borrow ("recursive use of an
+  // object"). The condition is re-checked after the tick.
   createEffect(() => {
     const state = surfaceState();
     if (!state || state.selectedToolId) return;
-    surfaceStateHandle()?.change((doc) => {
-      doc.selectedToolId = "select";
+    queueMicrotask(() => {
+      const handle = surfaceStateHandle();
+      if (!handle || handle.doc()?.selectedToolId) return;
+      handle.change((doc) => {
+        doc.selectedToolId = "select";
+      });
     });
   });
 
@@ -87,33 +95,6 @@ export function SelectButton(): JSX.Element {
   // Reparenting is async (doc copy + remove); this guards against a second
   // overlapping pass duplicating a shape on rapid move samples.
   let reparenting = false;
-
-  // The sub-document URL of the shape with the greatest `z` under the local
-  // point, if any.
-  const topmostHit = async (
-    surfaceUrl: AutomergeUrl,
-    x: number,
-    y: number,
-  ): Promise<AutomergeUrl | undefined> => {
-    const surfaceHandle = await repo.find<DocWithLayers>(surfaceUrl);
-    const layers = surfaceHandle.doc()?.layers ?? {};
-
-    let bestUrl: AutomergeUrl | undefined;
-    let bestZ: number | undefined;
-    for (const layerUrl of Object.values(layers)) {
-      const layerHandle = await repo.find<ShapeLayerDoc>(layerUrl);
-      const shapes = layerHandle.doc()?.shapes ?? {};
-      for (const shape of Object.values(shapes)) {
-        if (!hitTestShape(x, y, shape)) continue;
-        const z = shape.z ?? 0;
-        if (bestZ === undefined || z >= bestZ) {
-          bestUrl = layerHandle.sub("shapes", shape.id).url;
-          bestZ = z;
-        }
-      }
-    }
-    return bestUrl;
-  };
 
   // The drag set is the selected shapes homed in the pressed surface: the
   // single pointer sample is in that surface's space, so only those have a
@@ -167,10 +148,7 @@ export function SelectButton(): JSX.Element {
   // Re-home any dragged shape into the surface now under the cursor, so the
   // drag invariant (home === sampling surface) is restored as soon as a drag
   // crosses a boundary and the shape keeps following the pointer.
-  const reparentDrag = async (
-    shapes: DragShape[],
-    pointer: SurfacePointer,
-  ) => {
+  const reparentDrag = async (shapes: DragShape[], pointer: SurfacePointer) => {
     if (reparenting) return;
     const movers = shapes.filter(
       (shape) => shape.homeSurfaceUrl !== pointer.surfaceUrl,
@@ -260,7 +238,7 @@ export function SelectButton(): JSX.Element {
     if (!focus) return;
 
     const { x, y } = pointer.position;
-    const hit = await topmostHit(pointer.surfaceUrl, x, y);
+    const hit = await topmostShapeAt(repo, pointer.surfaceUrl, x, y);
 
     if (shiftDown) {
       focus.change((doc) => {

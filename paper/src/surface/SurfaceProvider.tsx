@@ -16,6 +16,7 @@ import {
   SurfaceState,
 } from "./types";
 import { subscribeDoc } from "../vendor/providers-solid";
+import { createPositionRegistry, positionOfUrl } from "./position";
 import type { EmbedShape } from "../embed/EmbedLayerTool";
 
 // The sideboard stamps this media type on its drags. The payload is JSON
@@ -67,6 +68,10 @@ export function SurfaceProvider({
 
   onMount(() => {
     if (onMounted) onMounted();
+
+    // Live `surface:position` subscriptions against this surface's subtree.
+    const positions = createPositionRegistry(root);
+    onCleanup(() => positions.dispose());
 
     const getLocalPosition =
       toLocal ??
@@ -176,6 +181,20 @@ export function SurfaceProvider({
           }),
         );
       }
+
+      if (selector?.type === "surface:position") {
+        const url = selector.url;
+        if (typeof url !== "string") return;
+
+        // Decline — return without accepting, so the event keeps bubbling —
+        // when nothing in this subtree renders the url; an ancestor surface
+        // whose subtree contains both the consumer and the target answers
+        // instead. Positions are streamed in screen coordinates, so any
+        // surface's answer is equally valid.
+        if (positionOfUrl(root, url) === null) return;
+
+        accept<Point>(event, (respond) => positions.add(url, respond));
+      }
     };
 
     root.addEventListener("pointerdown", onPointerDown);
@@ -239,7 +258,11 @@ async function createEmbeds(
         x: at.x + i * EMBED_CASCADE,
         y: at.y + i * EMBED_CASCADE,
         z: ++z,
-        outline: { type: "rectangle", width: EMBED_WIDTH, height: EMBED_HEIGHT },
+        outline: {
+          type: "rectangle",
+          width: EMBED_WIDTH,
+          height: EMBED_HEIGHT,
+        },
         docUrl: item.url,
       };
       shapes[id] = embed;

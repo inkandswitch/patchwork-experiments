@@ -15,26 +15,13 @@
   overflow: visible;
 }
 
-/* A doubled stroke: a soft halo plus a crisp dashed outline, so the highlight
+/* A selected shape's outline: a solid blue stroke over a soft halo, so it
    reads against both light fills and dark strokes. */
-.select-highlight {
+.select-outline {
   fill: none;
   stroke: #2563eb;
-  stroke-width: 2;
-  stroke-dasharray: 5 4;
+  stroke-width: 1;
   paint-order: stroke;
   vector-effect: non-scaling-stroke;
   filter: drop-shadow(0 0 2px rgba(37, 99, 235, 0.55));
-}
-
-/* The emphasis a link target gets when the cursor sits inside its link. A
-   solid amber stroke, distinct from the dashed-blue selection so the two can
-   be told apart at a glance. */
-.link-highlight {
-  fill: none;
-  stroke: #f59e0b;
-  stroke-width: 2.5;
-  paint-order: stroke;
-  vector-effect: non-scaling-stroke;
-  filter: drop-shadow(0 0 3px rgba(245, 158, 11, 0.7));
 }

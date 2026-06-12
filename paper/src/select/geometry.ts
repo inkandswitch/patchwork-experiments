@@ -1,9 +1,46 @@
-import { Outline, Point, Shape } from "../surface/types";
+import type { AutomergeUrl } from "@automerge/automerge-repo";
+import type { RepoLike } from "../vendor/providers";
+import {
+  DocWithLayers,
+  Outline,
+  Point,
+  Shape,
+  ShapeLayerDoc,
+} from "../surface/types";
 
 // Slack (px) around a stroke's centerline for hit detection. Roughly half a
 // freehand stroke's width plus a little extra so thin/thick strokes alike are
 // easy to click.
 const LINE_HIT_PADDING = 8;
+
+// The sub-document URL of the shape with the greatest `z` under the point
+// (in `surfaceUrl`'s local space), if any. Shared by the select tool and the
+// link arrow layer.
+export async function topmostShapeAt(
+  repo: RepoLike,
+  surfaceUrl: AutomergeUrl,
+  x: number,
+  y: number,
+): Promise<AutomergeUrl | undefined> {
+  const surfaceHandle = await repo.find<DocWithLayers>(surfaceUrl);
+  const layers = surfaceHandle.doc()?.layers ?? {};
+
+  let bestUrl: AutomergeUrl | undefined;
+  let bestZ: number | undefined;
+  for (const layerUrl of Object.values(layers)) {
+    const layerHandle = await repo.find<ShapeLayerDoc>(layerUrl);
+    const shapes = layerHandle.doc()?.shapes ?? {};
+    for (const shape of Object.values(shapes)) {
+      if (!hitTestShape(x, y, shape)) continue;
+      const z = shape.z ?? 0;
+      if (bestZ === undefined || z >= bestZ) {
+        bestUrl = layerHandle.sub("shapes", shape.id).url;
+        bestZ = z;
+      }
+    }
+  }
+  return bestUrl;
+}
 
 // Decide whether `point` (in canvas coordinates) lands on `shape`. Works off
 // the shape's resolved outline, so it is agnostic to which tool drew it.
