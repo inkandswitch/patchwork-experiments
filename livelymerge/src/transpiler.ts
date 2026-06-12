@@ -739,6 +739,12 @@ function mapPos(pos: number, deltas: { pos: number; delta: number }[]): number {
   return pos + extra;
 }
 
+function renderFuncCall(inner: string, scopes: LexicalScope[], declName?: string): string {
+  const scopeArg = scopes.length > 0 ? `, [${renderScopeList(scopes)}]` : '';
+  const call = `$func(${inner}${scopeArg})`;
+  return declName !== undefined ? `const ${declName} = ${call};` : call;
+}
+
 function renderEdit(source: string, start: number, end: number, edit: Edit): string {
   if (edit.kind === 'replace') return edit.text;
   if (edit.kind === 'arr') return `$arr(${source.slice(start, end)})`;
@@ -746,11 +752,10 @@ function renderEdit(source: string, start: number, end: number, edit: Edit): str
   if (edit.kind === 'insert') return edit.text;
 
   const inner = source.slice(start, end);
-  const scopeList = renderScopeList(edit.scopes);
   if (edit.kind === 'funcDecl') {
-    return `const ${edit.name} = $func(${functionExpressionSource(inner)}, [${scopeList}]);`;
+    return renderFuncCall(functionExpressionSource(inner), edit.scopes, edit.name);
   }
-  return `$func(${inner}, [${scopeList}])`;
+  return renderFuncCall(inner, edit.scopes);
 }
 
 function applyEdits(source: string, edits: Edit[]): string {
