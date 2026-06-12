@@ -5,7 +5,7 @@ export const plugins: Plugin<any>[] = [
     type: "patchwork:datatype",
     id: "latex",
     name: "LaTeX",
-    icon: "FileText",
+    icon: "Sigma",
     async load() {
       const { LaTeXDatatype } = await import("./datatype");
       return LaTeXDatatype;
@@ -15,7 +15,7 @@ export const plugins: Plugin<any>[] = [
     type: "patchwork:tool",
     id: "latex",
     name: "LaTeX Editor",
-    icon: "FileText",
+    icon: "Sigma",
     supportedDatatypes: ["latex"],
     async load() {
       const { renderLaTeXEditor } = await import("./LaTeXEditor");

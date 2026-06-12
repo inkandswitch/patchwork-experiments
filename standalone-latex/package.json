@@ -1,7 +1,7 @@
 {
   "name": "@patchwork/latex",
   "type": "module",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "main": "./dist/index.js",
   "exports": {
@@ -13,34 +13,37 @@
   "scripts": {
     "dev": "pushwork watch . --dir src --verbose --script \"pnpm build\"",
     "build": "vite build",
+    "typecheck": "tsc --noEmit",
     "push": "pnpm build && pushwork sync",
     "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
   },
   "dependencies": {
-    "@automerge/automerge": "^3.2.1",
+    "@automerge/automerge": "3.3.0-fragments.1",
     "@automerge/automerge-codemirror": "^0.2.0",
-    "@automerge/automerge-repo": "2.5.2-alpha.0",
-    "@automerge/automerge-repo-react-hooks": "2.5.2-alpha.0",
+    "@automerge/automerge-repo": "2.6.0-subduction.29",
+    "@automerge/automerge-repo-react-hooks": "2.6.0-subduction.29",
     "@codemirror/autocomplete": "^6.18.0",
     "@codemirror/commands": "^6.9.0",
     "@codemirror/language": "^6.11.0",
     "@codemirror/search": "^6.5.0",
     "@codemirror/state": "^6.5.0",
     "@codemirror/view": "^6.38.0",
-    "@inkandswitch/patchwork-plugins": "0.0.4",
+    "@inkandswitch/edge-handles": "^0.1.0",
+    "@inkandswitch/patchwork-plugins": "^0.0.11",
     "codemirror-lang-latex": "^0.2.0",
     "latex.js": "^0.12.6",
     "lucide-react": "^0.400.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
   },
   "devDependencies": {
-    "@inkandswitch/patchwork-bootloader": "^0.0.4",
+    "@inkandswitch/patchwork-bootloader": "^0.2.6",
+    "@inkandswitch/patchwork-filesystem": "^0.0.8",
     "@siglum/engine": "^0.1.4",
-    "@types/react": "^18.3.27",
-    "@types/react-dom": "^18.3.7",
+    "@types/react": "18.3.1",
+    "@types/react-dom": "18.3.1",
     "@vitejs/plugin-react": "^5.1.2",
-    "typescript": "^5.8.3",
+    "typescript": "^5.9.3",
     "vite": "^7.3.1",
     "vite-plugin-css-injected-by-js": "^3.5.2"
   }
