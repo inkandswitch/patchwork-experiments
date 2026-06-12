@@ -63,6 +63,17 @@ export function SelectButton(): JSX.Element {
   const [hovered, setHovered] = createSignal(false);
   const repo = useRepo();
 
+  // Select is the default tool: whenever no tool is selected (initial state,
+  // or another tool toggled itself off), claim the slot. Runs only once the
+  // state doc has loaded, so it never clobbers a real selection.
+  createEffect(() => {
+    const state = surfaceState();
+    if (!state || state.selectedToolId) return;
+    surfaceStateHandle()?.change((doc) => {
+      doc.selectedToolId = "select";
+    });
+  });
+
   let shiftDown = false;
   let wasPressed = false;
 
@@ -372,11 +383,14 @@ export function SelectButton(): JSX.Element {
     shiftDown = false;
   }
 
-  const toggle = (event: Event) => {
+  // Select is the default tool, so clicking it never toggles it off — it
+  // only switches back from another tool (toggling off would immediately be
+  // undone by the default-selection effect anyway).
+  const select = (event: Event) => {
     event.stopPropagation();
 
     surfaceStateHandle()?.change((state) => {
-      state.selectedToolId = state.selectedToolId === "select" ? "" : "select";
+      state.selectedToolId = "select";
     });
   };
 
@@ -411,7 +425,7 @@ export function SelectButton(): JSX.Element {
       title="Select"
       aria-label="Select"
       aria-pressed={active()}
-      onClick={toggle}
+      onClick={select}
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}
       // Native (non-delegated) listeners: they run while the event bubbles

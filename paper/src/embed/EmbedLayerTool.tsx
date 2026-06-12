@@ -75,6 +75,13 @@ function EmbedLayer(props: { url: AutomergeUrl }) {
     });
   });
 
+  // Pointer events never cross the embed boundary: an embedded surface stops
+  // propagation at its own root, but a non-surface document wouldn't, and its
+  // events would bubble out and be stamped by the parent surface as if the
+  // pointer were on the paper itself. The capture-phase window listeners
+  // above still see these events, so a grab is always released.
+  const stopPointerEvent = (event: Event) => event.stopPropagation();
+
   // Embeds are always interactive: an embedded surface handles its own
   // pointer input (it stamps the shared surface:state and stops propagation),
   // which is what lets tools draw into it and drags drop onto it.
@@ -96,6 +103,10 @@ function EmbedLayer(props: { url: AutomergeUrl }) {
             doc-url={embed.docUrl}
             tool-id={embed.toolId}
             hide-controls=""
+            on:pointerdown={stopPointerEvent}
+            on:pointermove={stopPointerEvent}
+            on:pointerup={stopPointerEvent}
+            on:pointercancel={stopPointerEvent}
             style={{
               position: "absolute",
               left: `${embed.x}px`,
