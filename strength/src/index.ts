@@ -14,6 +14,16 @@ export const plugins: Plugin<any>[] = [
   } as Datatype,
   {
     type: "patchwork:datatype",
+    id: "strength-exercise-library",
+    name: "Exercise Library",
+    icon: "Library",
+    async load() {
+      const { ExerciseLibraryDatatype } = await import("./datatype");
+      return ExerciseLibraryDatatype;
+    },
+  } as Datatype,
+  {
+    type: "patchwork:datatype",
     id: "strength-workout-template",
     name: "Workout Template",
     icon: "ClipboardList",
@@ -56,13 +66,13 @@ export const plugins: Plugin<any>[] = [
   } satisfies Tool,
   {
     type: "patchwork:tool",
-    id: "strength-exercise-library",
+    id: "strength-library",
     name: "Exercise Library",
     icon: "Library",
-    supportedDatatypes: ["folder"],
+    supportedDatatypes: ["strength-exercise-library"],
     async load() {
-      const { ExerciseLibraryTool } = await import("./exercise-library-tool");
-      return ExerciseLibraryTool;
+      const { ExerciseLibraryDocTool } = await import("./library-tool");
+      return ExerciseLibraryDocTool;
     },
   } satisfies Tool,
   {

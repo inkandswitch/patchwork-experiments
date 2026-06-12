@@ -14,8 +14,8 @@ export type SetKind = "warmup" | "failure";
 /** Metadata for strength training folders (gym root and subfolders). */
 export interface StrengthFolderMeta {
   strengthGymUrl?: AutomergeUrl;
-  strengthRole?: "gym" | "exercises" | "templates" | "sessions";
-  exercisesFolderUrl?: AutomergeUrl;
+  strengthRole?: "gym" | "templates" | "sessions";
+  exerciseLibraryUrl?: AutomergeUrl;
   templatesFolderUrl?: AutomergeUrl;
   sessionsFolderUrl?: AutomergeUrl;
 }
@@ -66,6 +66,44 @@ export interface ExerciseDoc {
   notes?: string;
 }
 
+/**
+ * One exercise inside an aggregate {@link ExerciseLibraryDoc}. Carries its own
+ * `@patchwork` metadata so a path-addressed sub-handle
+ * (`libraryHandle.sub("exercises", { id })`) still resolves to the Exercise
+ * tool through the plugin system, exactly like the session tool's set/exercise
+ * sub-embeds.
+ */
+export interface ExerciseEntry extends ExerciseDoc {
+  "@patchwork"?: { type: "strength-exercise" };
+  /** Stable slug (e.g. free-exercise-db id like "Barbell_Bench_Press"). */
+  id: string;
+  /** Source metadata kept for reference/filtering. */
+  force?: string;
+  level?: string;
+  mechanic?: string;
+  /** URLs of `file` docs holding the exercise demonstration images. */
+  imageUrls?: AutomergeUrl[];
+}
+
+/** A single aggregate document holding the whole exercise library. */
+export interface ExerciseLibraryDoc {
+  "@patchwork"?: { type: "strength-exercise-library" };
+  title: string;
+  exercises: ExerciseEntry[];
+}
+
+/**
+ * Minimal shape of a Patchwork `file` document (the host's `file` datatype).
+ * Used to store imported exercise images as standalone, lazily-loaded docs.
+ */
+export interface StrengthFileDoc {
+  "@patchwork"?: { type: "file" };
+  name: string;
+  extension: string;
+  mimeType: string;
+  content: Uint8Array;
+}
+
 export interface TemplateSet {
   kind?: SetKind;
   targetReps?: number;
@@ -96,7 +134,7 @@ export interface WorkoutTemplateDoc {
   exercises: TemplateExercise[];
   gymUrl?: AutomergeUrl;
   /** Denormalized from gym/folder for standalone template editing. */
-  exercisesFolderUrl?: AutomergeUrl;
+  exerciseLibraryUrl?: AutomergeUrl;
   sessionsFolderUrl?: AutomergeUrl;
 }
 
@@ -148,7 +186,7 @@ export interface WorkoutSessionDoc {
   weightUnit?: WeightUnit;
   /** Denormalized from sessions folder for save-as-template. */
   gymUrl?: AutomergeUrl;
-  exercisesFolderUrl?: AutomergeUrl;
+  exerciseLibraryUrl?: AutomergeUrl;
   templatesFolderUrl?: AutomergeUrl;
   sessionsFolderUrl?: AutomergeUrl;
 }

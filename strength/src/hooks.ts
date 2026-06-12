@@ -1,11 +1,7 @@
 import { useDocuments } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import { useMemo } from "react";
-import type {
-  ExerciseDoc,
-  WorkoutSessionDoc,
-  WorkoutTemplateDoc,
-} from "./types";
+import type { WorkoutSessionDoc, WorkoutTemplateDoc } from "./types";
 
 /**
  * Load a list of documents, returning only the ones that have arrived as
@@ -22,9 +18,6 @@ export function useLoadedDocs<T>(urls: AutomergeUrl[]) {
     [urls, docsMap],
   );
 }
-
-export const useLoadedExercises = (urls: AutomergeUrl[]) =>
-  useLoadedDocs<ExerciseDoc>(urls);
 
 export const useLoadedWorkoutTemplates = (urls: AutomergeUrl[]) =>
   useLoadedDocs<WorkoutTemplateDoc>(urls);

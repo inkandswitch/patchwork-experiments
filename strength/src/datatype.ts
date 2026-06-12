@@ -2,6 +2,7 @@ import type { Repo } from "@automerge/automerge-repo";
 import type { DatatypeImplementation } from "@inkandswitch/patchwork-plugins";
 import type {
   ExerciseDoc,
+  ExerciseLibraryDoc,
   WorkoutSessionDoc,
   WorkoutTemplateDoc,
 } from "./types";
@@ -23,6 +24,23 @@ export const ExerciseDatatype: DatatypeImplementation<ExerciseDoc> = {
     doc.name = title;
   },
 };
+
+export const ExerciseLibraryDatatype: DatatypeImplementation<ExerciseLibraryDoc> =
+  {
+    init(doc: ExerciseLibraryDoc, _repo: Repo) {
+      doc["@patchwork"] = { type: "strength-exercise-library" };
+      doc.title = "Exercise Library";
+      doc.exercises = [];
+    },
+
+    getTitle(doc) {
+      return doc.title || "Exercise Library";
+    },
+
+    setTitle(doc, title) {
+      doc.title = title;
+    },
+  };
 
 export const WorkoutTemplateDatatype: DatatypeImplementation<WorkoutTemplateDoc> =
   {

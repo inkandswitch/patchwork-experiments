@@ -82,7 +82,7 @@ function GymHub({
     setOpenDoc({ url, toolId });
 
   const ready =
-    Boolean(gym?.exercisesFolderUrl) &&
+    Boolean(gym?.exerciseLibraryUrl) &&
     Boolean(gym?.templatesFolderUrl) &&
     Boolean(gym?.sessionsFolderUrl);
 
@@ -235,7 +235,6 @@ function GymHub({
   if (!gym) return null;
 
   if (
-    gym.strengthRole === "exercises" ||
     gym.strengthRole === "templates" ||
     gym.strengthRole === "sessions"
   ) {
@@ -281,10 +280,8 @@ function GymHub({
         <div className="flex-1" />
         <button
           type="button"
-          disabled={!gym.exercisesFolderUrl}
-          onClick={() =>
-            openInGym(gym.exercisesFolderUrl!, "strength-exercise-library")
-          }
+          disabled={!gym.exerciseLibraryUrl}
+          onClick={() => openInGym(gym.exerciseLibraryUrl!, "strength-library")}
           className={navButton}
         >
           Exercises

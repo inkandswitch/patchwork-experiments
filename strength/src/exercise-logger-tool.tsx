@@ -1,6 +1,7 @@
 import { useDocument } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import { Suspense } from "react";
+import { ExerciseInfoButton } from "./components/ExerciseInfoButton";
 import { ExerciseLogger } from "./components/ExerciseLogger";
 import { makeTool } from "./make-tool";
 import { rootDocUrl } from "./workout-flow";
@@ -30,9 +31,15 @@ function FocusedExercise({ docUrl }: { docUrl: AutomergeUrl }) {
 
   return (
     <div className="mx-auto max-w-xl space-y-3">
-      <h2 className="text-lg font-semibold text-slate-900">
-        {exercise.exerciseName}
-      </h2>
+      <div className="flex items-center gap-2">
+        <h2 className="text-lg font-semibold text-slate-900">
+          {exercise.exerciseName}
+        </h2>
+        <ExerciseInfoButton
+          exerciseUrl={exercise.exerciseUrl}
+          exerciseName={exercise.exerciseName}
+        />
+      </div>
       <ExerciseLogger
         sessionUrl={rootDocUrl(docUrl)}
         exerciseId={exercise.id}

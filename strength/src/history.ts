@@ -249,7 +249,7 @@ export function createTemplateFromSession(
     notes: session.notes,
     exercises,
     gymUrl: session.gymUrl,
-    exercisesFolderUrl: session.exercisesFolderUrl,
+    exerciseLibraryUrl: session.exerciseLibraryUrl,
   }) as Omit<WorkoutTemplateDoc, "@patchwork">;
 }
 

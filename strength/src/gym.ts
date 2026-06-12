@@ -6,10 +6,10 @@ import {
   createTemplateFromSession,
   templateTitleFromSession,
 } from "./history";
+import { ensureExerciseLibrary } from "./library";
 import { omitUndefined } from "./automerge-fields";
 import type { FolderDoc, WorkoutSessionDoc, WorkoutTemplateDoc } from "./types";
 
-const EXERCISES_FOLDER_TITLE = "Exercises";
 const TEMPLATES_FOLDER_TITLE = "Templates";
 const SESSIONS_FOLDER_TITLE = "Sessions";
 
@@ -34,57 +34,62 @@ export async function bootstrapGym(
 ): Promise<FolderDoc> {
   const gym = gymHandle.doc();
   if (
-    gym?.exercisesFolderUrl &&
+    gym?.exerciseLibraryUrl &&
     gym.templatesFolderUrl &&
     gym.sessionsFolderUrl
   ) {
     return gym;
   }
 
-  const exercisesHandle = await repo.create<FolderDoc>({
-    "@patchwork": { type: "folder" },
-    title: EXERCISES_FOLDER_TITLE,
-    docs: [],
-    strengthRole: "exercises",
-    strengthGymUrl: gymHandle.url,
-  });
+  const exerciseLibraryUrl = await ensureExerciseLibrary(repo, gymHandle);
 
-  const templatesHandle = await repo.create<FolderDoc>({
-    "@patchwork": { type: "folder" },
-    title: TEMPLATES_FOLDER_TITLE,
-    docs: [],
-    strengthRole: "templates",
-    strengthGymUrl: gymHandle.url,
-    exercisesFolderUrl: exercisesHandle.url,
-  });
+  let templatesUrl = gym?.templatesFolderUrl;
+  let sessionsUrl = gym?.sessionsFolderUrl;
 
-  const sessionsHandle = await repo.create<FolderDoc>({
-    "@patchwork": { type: "folder" },
-    title: SESSIONS_FOLDER_TITLE,
-    docs: [],
-    strengthRole: "sessions",
-    strengthGymUrl: gymHandle.url,
-    exercisesFolderUrl: exercisesHandle.url,
-    templatesFolderUrl: templatesHandle.url,
-  });
+  if (!templatesUrl) {
+    const templatesHandle = await repo.create<FolderDoc>({
+      "@patchwork": { type: "folder" },
+      title: TEMPLATES_FOLDER_TITLE,
+      docs: [],
+      strengthRole: "templates",
+      strengthGymUrl: gymHandle.url,
+      exerciseLibraryUrl,
+    });
+    templatesUrl = templatesHandle.url;
+  }
 
+  if (!sessionsUrl) {
+    const sessionsHandle = await repo.create<FolderDoc>({
+      "@patchwork": { type: "folder" },
+      title: SESSIONS_FOLDER_TITLE,
+      docs: [],
+      strengthRole: "sessions",
+      strengthGymUrl: gymHandle.url,
+      exerciseLibraryUrl,
+      templatesFolderUrl: templatesUrl,
+    });
+    sessionsUrl = sessionsHandle.url;
+  }
+
+  // Backfill cross-links + library url on (possibly pre-existing) folders.
+  const templatesHandle = await repo.find<FolderDoc>(templatesUrl);
   templatesHandle.change((draft) => {
-    draft.sessionsFolderUrl = sessionsHandle.url;
+    draft.sessionsFolderUrl = sessionsUrl;
+    draft.exerciseLibraryUrl = exerciseLibraryUrl;
   });
-
-  exercisesHandle.change((draft) => {
-    draft.templatesFolderUrl = templatesHandle.url;
-    draft.sessionsFolderUrl = sessionsHandle.url;
+  const sessionsHandle = await repo.find<FolderDoc>(sessionsUrl);
+  sessionsHandle.change((draft) => {
+    draft.templatesFolderUrl = templatesUrl;
+    draft.exerciseLibraryUrl = exerciseLibraryUrl;
   });
 
   gymHandle.change((draft) => {
     draft.strengthRole = GYM_ROLE;
-    draft.exercisesFolderUrl = exercisesHandle.url;
-    draft.templatesFolderUrl = templatesHandle.url;
-    draft.sessionsFolderUrl = sessionsHandle.url;
-    ensureSubfolderLink(draft, EXERCISES_FOLDER_TITLE, exercisesHandle.url);
-    ensureSubfolderLink(draft, TEMPLATES_FOLDER_TITLE, templatesHandle.url);
-    ensureSubfolderLink(draft, SESSIONS_FOLDER_TITLE, sessionsHandle.url);
+    draft.exerciseLibraryUrl = exerciseLibraryUrl;
+    draft.templatesFolderUrl = templatesUrl;
+    draft.sessionsFolderUrl = sessionsUrl;
+    ensureSubfolderLink(draft, TEMPLATES_FOLDER_TITLE, templatesUrl!);
+    ensureSubfolderLink(draft, SESSIONS_FOLDER_TITLE, sessionsUrl!);
   });
 
   return gymHandle.doc()!;
@@ -102,7 +107,7 @@ export async function createTemplateInGym(
     title,
     exercises: [],
     gymUrl,
-    exercisesFolderUrl: folder?.exercisesFolderUrl,
+    exerciseLibraryUrl: folder?.exerciseLibraryUrl,
     sessionsFolderUrl: folder?.sessionsFolderUrl,
   });
 
@@ -123,7 +128,7 @@ function folderContextForSession(
 ) {
   return omitUndefined({
     gymUrl: folder?.strengthGymUrl,
-    exercisesFolderUrl: folder?.exercisesFolderUrl,
+    exerciseLibraryUrl: folder?.exerciseLibraryUrl,
     templatesFolderUrl: folder?.templatesFolderUrl,
     sessionsFolderUrl,
   });
@@ -234,10 +239,10 @@ export async function saveSessionAsTemplate(
       "@patchwork": { type: "strength-workout-template" },
       ...templateData,
       gymUrl,
-      exercisesFolderUrl:
-        templateData.exercisesFolderUrl ??
-        templatesFolder?.exercisesFolderUrl ??
-        sessionsFolder?.exercisesFolderUrl,
+      exerciseLibraryUrl:
+        templateData.exerciseLibraryUrl ??
+        templatesFolder?.exerciseLibraryUrl ??
+        sessionsFolder?.exerciseLibraryUrl,
       sessionsFolderUrl: sessionsFolderHandle.url,
     }) as WorkoutTemplateDoc,
   );

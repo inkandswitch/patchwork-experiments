@@ -1,20 +1,27 @@
-import { useDocument, useRepo } from "@automerge/automerge-repo-react-hooks";
+import {
+  useDocHandle,
+  useDocument,
+  useRepo,
+} from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import { useMemo, useState } from "react";
 import { newId } from "./calculations";
+import { ExerciseInfoButton } from "./components/ExerciseInfoButton";
 import { ExercisePicker } from "./components/ExercisePicker";
+import type { LoadedExercise } from "./components/ExercisePicker";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { PlannedSetRow } from "./components/SetRow";
 import { SupersetBadge } from "./components/SupersetBadge";
 import { UnitToggle } from "./components/UnitToggle";
-import { EXERCISE_TYPE } from "./folder";
 import { startSessionFromTemplate } from "./gym";
-import { useLoadedExercises, useLoadedWorkoutSessions } from "./hooks";
+import { useLoadedWorkoutSessions } from "./hooks";
+import { exerciseSubUrl } from "./library";
 import { makeTool } from "./make-tool";
 import { openPatchworkDocument } from "./navigation";
 import { assignAutomergeFields, setAutomergeString } from "./automerge-fields";
 import { supersetLabels } from "./workout-flow";
 import type {
+  ExerciseLibraryDoc,
   FolderDoc,
   TemplateExercise,
   WeightUnit,
@@ -42,13 +49,17 @@ function WorkoutTemplateEditor({
     suspense: false,
   });
 
-  const exercisesFolderUrl =
-    gym?.exercisesFolderUrl ?? template?.exercisesFolderUrl;
+  const exerciseLibraryUrl =
+    gym?.exerciseLibraryUrl ?? template?.exerciseLibraryUrl;
   const sessionsFolderUrl =
     gym?.sessionsFolderUrl ?? template?.sessionsFolderUrl;
 
-  const [exercisesFolder] = useDocument<FolderDoc>(
-    exercisesFolderUrl || undefined,
+  const libraryHandle = useDocHandle<ExerciseLibraryDoc>(
+    exerciseLibraryUrl || undefined,
+    { suspense: false },
+  );
+  const [library] = useDocument<ExerciseLibraryDoc>(
+    exerciseLibraryUrl || undefined,
     { suspense: false },
   );
   const [sessionsFolder] = useDocument<FolderDoc>(
@@ -56,14 +67,13 @@ function WorkoutTemplateEditor({
     { suspense: false },
   );
 
-  const exerciseUrls = useMemo(
-    () =>
-      (exercisesFolder?.docs ?? [])
-        .filter((d) => d.type === EXERCISE_TYPE)
-        .map((d) => d.url),
-    [exercisesFolder?.docs],
-  );
-  const loadedExercises = useLoadedExercises(exerciseUrls);
+  const loadedExercises = useMemo<LoadedExercise[]>(() => {
+    if (!libraryHandle || !library) return [];
+    return (library.exercises ?? []).map((entry) => ({
+      url: exerciseSubUrl(libraryHandle, entry.id),
+      doc: entry,
+    }));
+  }, [libraryHandle, library]);
 
   const sessionUrls = useMemo(
     () =>
@@ -80,10 +90,9 @@ function WorkoutTemplateEditor({
     (e) => e.id === selectedExerciseId,
   );
 
-  const unit: WeightUnit =
-    gym?.preferredUnit ?? exercisesFolder?.preferredUnit ?? "kg";
+  const unit: WeightUnit = gym?.preferredUnit ?? "kg";
 
-  const addExercise = (entry: (typeof loadedExercises)[number]) => {
+  const addExercise = (entry: LoadedExercise) => {
     const exerciseUnit = entry.doc.defaultUnit ?? unit;
     const planned: TemplateExercise = {
       id: newId(),
@@ -177,7 +186,7 @@ function WorkoutTemplateEditor({
 
   return (
     <div className="strength flex h-full flex-col bg-slate-50">
-      {!exercisesFolderUrl || !sessionsFolderUrl ? (
+      {!exerciseLibraryUrl || !sessionsFolderUrl ? (
         <div className="border-b border-amber-100 bg-amber-50 px-4 py-2 text-sm text-amber-800">
           This template isn&apos;t linked to a gym. Create templates from the
           Templates folder so exercises and sessions resolve automatically.
@@ -228,13 +237,19 @@ function WorkoutTemplateEditor({
                         {exercise.sets.length} sets
                       </span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => removeExercise(exercise.id)}
-                      className="text-xs text-slate-400 hover:text-red-600"
-                    >
-                      Remove
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <ExerciseInfoButton
+                        exerciseUrl={exercise.exerciseUrl}
+                        exerciseName={exercise.exerciseName}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeExercise(exercise.id)}
+                        className="text-xs text-slate-400 hover:text-red-600"
+                      >
+                        Remove
+                      </button>
+                    </div>
                   </div>
 
                   {selectedExerciseId === exercise.id ? (
@@ -317,7 +332,7 @@ function WorkoutTemplateEditor({
             <button
               type="button"
               onClick={() => setPickerOpen(true)}
-              disabled={!exercisesFolderUrl}
+              disabled={!exerciseLibraryUrl}
               className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
             >
               + Exercise

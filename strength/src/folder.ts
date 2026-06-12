@@ -8,7 +8,7 @@ export const SESSION_TYPE = "strength-workout-session";
 export const GYM_ROLE = "gym" as const;
 
 export function isGymFolder(doc: FolderDoc): boolean {
-  return doc.strengthRole === GYM_ROLE || Boolean(doc.exercisesFolderUrl);
+  return doc.strengthRole === GYM_ROLE || Boolean(doc.exerciseLibraryUrl);
 }
 
 export function linksOfType(doc: FolderDoc, type: string): DocLink[] {
@@ -17,10 +17,6 @@ export function linksOfType(doc: FolderDoc, type: string): DocLink[] {
 
 export function urlsOfType(doc: FolderDoc, type: string): AutomergeUrl[] {
   return linksOfType(doc, type).map((link) => link.url);
-}
-
-export function exerciseLinks(doc: FolderDoc): DocLink[] {
-  return linksOfType(doc, EXERCISE_TYPE);
 }
 
 export function templateLinks(doc: FolderDoc): DocLink[] {
@@ -34,12 +30,4 @@ export function sessionLinks(doc: FolderDoc): DocLink[] {
 export function addDocLink(folder: FolderDoc, link: DocLink): void {
   if (!folder.docs) folder.docs = [];
   folder.docs.push(link);
-}
-
-export function exercisesFolderUrlFromContext(
-  folder: FolderDoc,
-  folderUrl: AutomergeUrl,
-): AutomergeUrl | undefined {
-  if (folder.strengthRole === "exercises") return folderUrl;
-  return folder.exercisesFolderUrl;
 }

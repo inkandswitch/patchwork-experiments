@@ -19,16 +19,18 @@ import { SetSummaryChip } from "./components/SetSummaryChip";
 import { sessionLinks } from "./folder";
 import { promptSaveSessionAsTemplate } from "./gym";
 import { progressPointsForExercise } from "./history";
+import { exerciseSubUrl } from "./library";
 import { makeTool } from "./make-tool";
 import { openPatchworkDocument } from "./navigation";
-import { useLoadedExercises, useLoadedWorkoutSessions } from "./hooks";
+import { useLoadedWorkoutSessions } from "./hooks";
+import type { LoadedExercise } from "./components/ExercisePicker";
 import {
   isSessionCompleted,
   isSessionInProgress,
   sessionTime,
   setsForExercise,
 } from "./session-model";
-import type { FolderDoc } from "./types";
+import type { ExerciseLibraryDoc, FolderDoc } from "./types";
 
 function SessionsBrowser({
   docUrl,
@@ -48,37 +50,34 @@ function SessionsBrowser({
   const [savingTemplate, setSavingTemplate] = useState(false);
 
   const unit = folder?.preferredUnit ?? "kg";
-  const exercisesFolderUrl = folder?.exercisesFolderUrl;
 
   const sessionUrls = useMemo(
     () => (folder ? sessionLinks(folder).map((l) => l.url) : []),
     [folder],
   );
-  const exerciseUrls = useMemo(
-    () =>
-      folder?.strengthRole === "sessions" && exercisesFolderUrl
-        ? []
-        : [],
-    [folder, exercisesFolderUrl],
-  );
 
   const loadedSessions = useLoadedWorkoutSessions(sessionUrls);
 
-  const [exercisesFolder] = useDocument<FolderDoc>(
-    exercisesFolderUrl || undefined,
+  const [gym] = useDocument<FolderDoc>(folder?.strengthGymUrl || undefined, {
+    suspense: false,
+  });
+  const exerciseLibraryUrl = folder?.exerciseLibraryUrl ?? gym?.exerciseLibraryUrl;
+  const libraryHandle = useDocHandle<ExerciseLibraryDoc>(
+    exerciseLibraryUrl || undefined,
     { suspense: false },
   );
-  const exercisesFromGym = useMemo(
-    () =>
-      (exercisesFolder?.docs ?? [])
-        .filter((d) => d.type === "strength-exercise")
-        .map((d) => d.url),
-    [exercisesFolder?.docs],
+  const [library] = useDocument<ExerciseLibraryDoc>(
+    exerciseLibraryUrl || undefined,
+    { suspense: false },
   );
 
-  const loadedExercises = useLoadedExercises(
-    exercisesFromGym.length ? exercisesFromGym : exerciseUrls,
-  );
+  const loadedExercises = useMemo<LoadedExercise[]>(() => {
+    if (!libraryHandle || !library) return [];
+    return (library.exercises ?? []).map((entry) => ({
+      url: exerciseSubUrl(libraryHandle, entry.id),
+      doc: entry,
+    }));
+  }, [libraryHandle, library]);
 
   const completedSessions = useMemo(
     () =>

@@ -2,10 +2,15 @@ import type { AutomergeUrl, Repo } from "@automerge/automerge-repo";
 import type { DocHandle } from "@automerge/automerge-repo";
 import { omitUndefined } from "./automerge-fields";
 import { newId } from "./calculations";
-import { EXERCISE_TYPE, SESSION_TYPE, addDocLink, exerciseLinks } from "./folder";
+import { SESSION_TYPE, addDocLink } from "./folder";
+import {
+  ensureExerciseLibrary,
+  exerciseSubUrl,
+  upsertExerciseByName,
+} from "./library";
 import type {
   Equipment,
-  ExerciseDoc,
+  ExerciseLibraryDoc,
   FolderDoc,
   LoggedExercise,
   LoggedSet,
@@ -293,21 +298,19 @@ export async function importHevyCsv(
   gymHandle: DocHandle<FolderDoc>,
   options?: { skipDuplicates?: boolean },
 ): Promise<HevyImportResult> {
-  if (!gym.exercisesFolderUrl || !gym.sessionsFolderUrl) {
+  if (!gym.sessionsFolderUrl) {
     throw new Error("Gym folders are not set up yet. Open the gym tool first.");
   }
 
   const workouts = parseHevyCsv(csvText);
-  const exercisesFolderHandle = await repo.find<FolderDoc>(
-    gym.exercisesFolderUrl,
-  );
+  const exerciseLibraryUrl = await ensureExerciseLibrary(repo, gymHandle);
+  const libraryHandle = await repo.find<ExerciseLibraryDoc>(exerciseLibraryUrl);
   const sessionsFolderHandle = await repo.find<FolderDoc>(gym.sessionsFolderUrl);
 
   const existingExercises = new Map<string, AutomergeUrl>();
-  for (const link of exerciseLinks(exercisesFolderHandle.doc() ?? { docs: [] })) {
-    const handle = await repo.find<ExerciseDoc>(link.url);
-    const name = handle.doc()?.name?.trim().toLowerCase();
-    if (name) existingExercises.set(name, link.url);
+  for (const entry of libraryHandle.doc()?.exercises ?? []) {
+    const name = entry.name?.trim().toLowerCase();
+    if (name) existingExercises.set(name, exerciseSubUrl(libraryHandle, entry.id));
   }
 
   const existingSessions = new Set<string>();
@@ -330,9 +333,6 @@ export async function importHevyCsv(
   };
 
   gymHandle.change((draft) => {
-    draft.preferredUnit = "lb";
-  });
-  exercisesFolderHandle.change((draft) => {
     draft.preferredUnit = "lb";
   });
   sessionsFolderHandle.change((draft) => {
@@ -362,30 +362,22 @@ export async function importHevyCsv(
     const loggedSets: LoggedSet[] = [];
 
     for (const exercise of workout.exercises) {
-      const normalizedName = exercise.title.trim().toLowerCase();
+      const exerciseName = exercise.title.trim();
+      const normalizedName = exerciseName.toLowerCase();
       let exerciseUrl = existingExercises.get(normalizedName);
 
       if (exerciseUrl) {
         result.exercisesMatched++;
       } else {
-        const handle = await repo.create<ExerciseDoc>({
-          "@patchwork": { type: "strength-exercise" },
-          name: exercise.title.trim(),
+        const { id } = upsertExerciseByName(libraryHandle, {
+          name: exerciseName,
           muscleGroups: [],
           equipment: parseHevyEquipment(exercise.title),
           category: "compound",
           defaultUnit: "lb",
         });
-        exerciseUrl = handle.url;
+        exerciseUrl = exerciseSubUrl(libraryHandle, id);
         existingExercises.set(normalizedName, exerciseUrl);
-
-        exercisesFolderHandle.change((draft) => {
-          addDocLink(draft, {
-            name: exercise.title.trim(),
-            type: EXERCISE_TYPE,
-            url: exerciseUrl!,
-          });
-        });
         result.exercisesCreated++;
       }
 
@@ -394,7 +386,7 @@ export async function importHevyCsv(
         omitUndefined({
           id: exerciseId,
           exerciseUrl: exerciseUrl!,
-          exerciseName: exercise.title.trim(),
+          exerciseName,
           notes: exercise.exerciseNotes || undefined,
           supersetGroup:
             exercise.supersetId && exercise.supersetId !== "0"
@@ -428,7 +420,8 @@ export async function importHevyCsv(
         status: "completed",
         weightUnit: "lb",
         gymUrl: sessionsFolder?.strengthGymUrl,
-        exercisesFolderUrl: sessionsFolder?.exercisesFolderUrl,
+        exerciseLibraryUrl:
+          sessionsFolder?.exerciseLibraryUrl ?? exerciseLibraryUrl,
         templatesFolderUrl: sessionsFolder?.templatesFolderUrl,
         sessionsFolderUrl: sessionsFolderHandle.url,
       }) as WorkoutSessionDoc,

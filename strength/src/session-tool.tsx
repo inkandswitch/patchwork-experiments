@@ -19,6 +19,7 @@ import {
   formatDuration,
 } from "./calculations";
 import { CurrentSetBanner } from "./components/CurrentSetBanner";
+import { ExerciseInfoButton } from "./components/ExerciseInfoButton";
 import { ExerciseLogger } from "./components/ExerciseLogger";
 import { RestTimer } from "./components/RestTimer";
 import { SupersetBadge } from "./components/SupersetBadge";
@@ -379,6 +380,10 @@ function WorkoutSessionEditor({
                         ~{Math.round(best1Rm)} {exUnit} 1RM
                       </span>
                     ) : null}
+                    <ExerciseInfoButton
+                      exerciseUrl={exercise.exerciseUrl}
+                      exerciseName={exercise.exerciseName}
+                    />
                     {executing ? (
                       <button
                         type="button"
