@@ -1,5 +1,5 @@
 import { render } from "solid-js/web";
-import { For } from "solid-js";
+import { For, createSignal, onCleanup, onMount } from "solid-js";
 import {
   RepoContext,
   useDocument,
@@ -11,9 +11,15 @@ import type { Shape, ShapeLayerDoc } from "../surface/types";
 import { resolveOutline } from "../select/geometry";
 import "./embed.css";
 
+// The drag handle's height (px). The embed's rectangle outline covers its
+// full footprint — handle strip on top, view below — so this is purely a
+// rendering split, invisible to hit-testing and the selection overlay.
+const HANDLE_HEIGHT = 20;
+
 // An embed places another document on the canvas. Its geometry is a rectangle
-// outline (so the selection tool hit-tests it like any other shape); `docUrl`
-// is the embedded document and `toolId` optionally pins which tool renders it.
+// outline covering its full footprint — drag handle plus embedded view — so
+// the selection tool hit-tests it like any other shape; `docUrl` is the
+// embedded document and `toolId` optionally pins which tool renders it.
 export type EmbedShape = Shape & {
   outline?: { type: "rectangle"; width: number; height: number };
   docUrl: AutomergeUrl;
@@ -49,31 +55,72 @@ function EmbedLayer(props: { url: AutomergeUrl }) {
   const [doc] = useDocument<ShapeLayerDoc>(() => props.url);
   const shapes = () => Object.values(doc()?.shapes ?? {}) as EmbedShape[];
 
+  // The embed whose drag handle is currently grabbed. While set, that embed's
+  // own view is pointer-transparent: a fast drag outruns the handle onto the
+  // embed's body, and if the embedded surface claimed those events the drag
+  // would stall (the embed can't re-home into itself). Transparent, they fall
+  // through to the parent — or a sibling surface — which keeps stamping
+  // usable samples, so the embed catches up every frame.
+  const [grabbedId, setGrabbedId] = createSignal<string>();
+
+  // Capture phase: surface roots stop propagation of pointerup in the bubble
+  // phase, so a bubble listener on window would miss in-surface releases.
+  onMount(() => {
+    const release = () => setGrabbedId(undefined);
+    window.addEventListener("pointerup", release, true);
+    window.addEventListener("pointercancel", release, true);
+    onCleanup(() => {
+      window.removeEventListener("pointerup", release, true);
+      window.removeEventListener("pointercancel", release, true);
+    });
+  });
+
   // Embeds are always interactive: an embedded surface handles its own
-  // pointer input (it stamps the shared surface:state with its url and
-  // parent), which is what lets tools draw into it and drags drop onto it.
+  // pointer input (it stamps the shared surface:state and stops propagation),
+  // which is what lets tools draw into it and drags drop onto it.
   // hide-controls keeps nested papers from rendering their own toolbar, so
   // there is exactly one instance of each tool button.
+  //
+  // The drag handle is the top strip of the embed's rectangle; the view
+  // fills the rest. The handle belongs to this (parent) surface's DOM, not
+  // the embedded surface, so pointer events on it are stamped by the parent
+  // in parent coordinates, and since it lies inside the embed's outline the
+  // select tool hit-tests the embed like any other shape. The handle must
+  // not stop propagation — the press has to reach the surface root to stamp.
   return (
     <For each={shapes()}>
       {(embed) => (
-        <patchwork-view
-          class="paper-embed-item"
-          doc-url={embed.docUrl}
-          tool-id={embed.toolId}
-          hide-controls=""
-          style={{
-            position: "absolute",
-            left: `${embed.x}px`,
-            top: `${embed.y}px`,
-            width: `${embedSize(embed).width}px`,
-            height: `${embedSize(embed).height}px`,
-            right: "auto",
-            bottom: "auto",
-            "z-index": embed.z,
-            "pointer-events": "auto",
-          }}
-        />
+        <>
+          <patchwork-view
+            class="paper-embed-item"
+            doc-url={embed.docUrl}
+            tool-id={embed.toolId}
+            hide-controls=""
+            style={{
+              position: "absolute",
+              left: `${embed.x}px`,
+              top: `${embed.y + HANDLE_HEIGHT}px`,
+              width: `${embedSize(embed).width}px`,
+              height: `${Math.max(0, embedSize(embed).height - HANDLE_HEIGHT)}px`,
+              right: "auto",
+              bottom: "auto",
+              "z-index": embed.z,
+              "pointer-events": grabbedId() === embed.id ? "none" : "auto",
+            }}
+          />
+          <div
+            class="paper-embed-handle"
+            on:pointerdown={() => setGrabbedId(embed.id)}
+            style={{
+              position: "absolute",
+              left: `${embed.x}px`,
+              top: `${embed.y}px`,
+              width: `${embedSize(embed).width}px`,
+              height: `${HANDLE_HEIGHT}px`,
+              "z-index": embed.z,
+            }}
+          />
+        </>
       )}
     </For>
   );

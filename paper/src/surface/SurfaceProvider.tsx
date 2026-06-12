@@ -23,7 +23,8 @@ import type { EmbedShape } from "../embed/EmbedLayerTool";
 // the url is all we need to embed it.
 const DND_MEDIA_TYPE = "text/x-patchwork-dnd";
 
-// A fresh embed's on-canvas size, matching the fallback in `embedSize`.
+// A fresh embed's on-canvas footprint (drag handle included), matching the
+// fallback in `embedSize`.
 const EMBED_WIDTH = 320;
 const EMBED_HEIGHT = 240;
 // Multi-item drops cascade so the embeds don't land exactly on top of each
@@ -74,48 +75,19 @@ export function SurfaceProvider({
         return { x: clientX - rect.left, y: clientY - rect.top };
       });
 
-    // The event target's nearest surface root is the innermost surface under
-    // the cursor. Only that provider owns the sample (resets it and stamps
-    // `surfaceUrl`); every ancestor surface, reached as the event bubbles,
-    // merely adds its own position entry.
-    const isInnermost = (event: PointerEvent): boolean => {
-      const target = event.target as Element | null;
-      return target?.closest("[data-surface-root]") === root;
-    };
-
+    // The innermost surface under the cursor owns the event: its root is the
+    // first surface root the bubbling event reaches, so it stamps the sample
+    // and stops propagation — ancestor surfaces never see it.
     const stampPointer = (event: PointerEvent, isPressed: boolean) => {
+      event.stopPropagation();
       const position = getLocalPosition(event.clientX, event.clientY);
       stateHandle().change((state) => {
-        if (isInnermost(event)) {
-          state.pointer = {
-            positions: { [handle.url]: position },
-            surfaceUrl: handle.url,
-            isPressed,
-          };
-        } else if (state.pointer) {
-          // An ancestor surface: the innermost provider already ran (bubbling
-          // is innermost-first) and reset the sample, so just contribute this
-          // surface's view of the same cursor location.
-          state.pointer.positions[handle.url] = position;
-        }
+        state.pointer = {
+          position,
+          surfaceUrl: handle.url,
+          isPressed,
+        };
       });
-
-      // DEBUG (remove): trace stamping for the down/up edges only (moves are
-      // too noisy). Shows which surface ran, whether it claimed innermost,
-      // which shared state doc it wrote to, and the resulting pointer sample.
-      if (event.type !== "pointermove") {
-        const sh = stateHandle();
-        const pointer = sh.doc()?.pointer;
-        console.log("[paper-debug stamp]", {
-          event: event.type,
-          thisSurface: handle.url,
-          innermost: isInnermost(event),
-          sharedStateDoc: sh.url,
-          surfaceUrl: pointer?.surfaceUrl,
-          positions: Object.keys(pointer?.positions ?? {}),
-          isPressed: pointer?.isPressed,
-        });
-      }
     };
 
     const onPointerDown = (event: PointerEvent) => {
@@ -141,10 +113,6 @@ export function SurfaceProvider({
       stampPointer(event, (event.buttons & 1) === 1);
     };
 
-    // No stopPropagation anywhere: the event must bubble through every
-    // ancestor surface root so each can stamp its own position entry. The
-    // innermost surface is identified structurally (isInnermost), not by
-    // suppressing the ancestors.
     const onPointerUp = (event: PointerEvent) => {
       if (!event.isPrimary) return;
 
@@ -152,10 +120,9 @@ export function SurfaceProvider({
     };
 
     // Safety net for releases outside any surface (toolbar, off-window):
-    // only clears the pressed flag, never touches positions or surface, so it
-    // can't corrupt drop targets. In-surface releases now bubble here too, but
-    // the surface handler has already cleared the flag, so this is a no-op for
-    // them.
+    // those never pass through a surface root, so nothing else clears the
+    // pressed flag. Only the flag is touched — never position or surface — so
+    // it can't corrupt drop targets.
     const onWindowPointerUp = (event: PointerEvent) => {
       if (!event.isPrimary) return;
 
@@ -170,6 +137,7 @@ export function SurfaceProvider({
     // only readable on `drop`, so here we can only sniff the media type.
     const onDragOver = (event: DragEvent) => {
       if (!event.dataTransfer?.types.includes(DND_MEDIA_TYPE)) return;
+      event.stopPropagation();
       event.preventDefault();
       event.dataTransfer.dropEffect = "copy";
     };
@@ -178,13 +146,10 @@ export function SurfaceProvider({
       const data = event.dataTransfer?.getData(DND_MEDIA_TYPE);
       if (!data) return;
 
-      // Innermost surface under the cursor owns the drop, like pointer
-      // stamping: drag events bubble out of embedded patchwork-views (same-DOM
-      // custom elements), so an ancestor surface would otherwise embed the
-      // same doc too.
-      const target = event.target as Element | null;
-      if (target?.closest("[data-surface-root]") !== root) return;
-
+      // Like pointer stamping, the innermost surface owns the drop: drag
+      // events bubble out of embedded patchwork-views (same-DOM custom
+      // elements), so without this an ancestor would embed the same doc too.
+      event.stopPropagation();
       // Stop the browser from navigating to the dragged document's url.
       event.preventDefault();
 

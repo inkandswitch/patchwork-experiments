@@ -97,14 +97,9 @@ export function RectButton(): JSX.Element {
       return;
     }
 
-    // The pointer location in the innermost surface's own space; that surface
-    // is where a fresh rect is drawn. Always present alongside `surfaceUrl`,
-    // but guard defensively.
-    const local = pointer.positions[pointer.surfaceUrl];
-    if (!local) {
-      return;
-    }
-    const { x, y } = local;
+    // The pointer location in the stamping surface's own space; that surface
+    // is where a fresh rect is drawn.
+    const { x, y } = pointer.position;
     const isPressed = pointer.isPressed;
     const startedRect = !wasPressed && isPressed;
     const endedRect = wasPressed && !isPressed;

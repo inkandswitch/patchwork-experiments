@@ -17,3 +17,33 @@
   border-radius: 6px;
   box-shadow: 0 1px 4px rgba(28, 25, 23, 0.18);
 }
+
+/* The embed's drag handle: the top strip of the embed's footprint. It
+   belongs to the parent surface, so pointer events on it never reach the
+   embedded surface. Positioned/sized inline. */
+.paper-embed-handle {
+  pointer-events: auto;
+  cursor: grab;
+  border-radius: 6px 6px 0 0;
+  background: rgba(28, 25, 23, 0.05);
+  transition: background 0.12s ease;
+}
+
+.paper-embed-handle:hover {
+  background: rgba(28, 25, 23, 0.12);
+}
+
+.paper-embed-handle:active {
+  cursor: grabbing;
+}
+
+/* A centered grip pill as the drag affordance. */
+.paper-embed-handle::after {
+  content: "";
+  display: block;
+  width: 32px;
+  height: 4px;
+  margin: 8px auto 0;
+  border-radius: 2px;
+  background: rgba(28, 25, 23, 0.28);
+}

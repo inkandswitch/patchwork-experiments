@@ -11,11 +11,6 @@ import type { LineShape } from "./LineLayerTool";
 
 const STROKE = "#64748b";
 const SIZE = 8;
-// Skip pointer samples closer than this (px) to the last one: keeps the stored
-// path — and the Automerge change log — from exploding while staying smooth.
-const MIN_POINT_DISTANCE = 2;
-// Discard strokes shorter than this so a stray click/tap leaves nothing behind.
-const MIN_LENGTH = 4;
 
 // Selects the freehand tool and draws strokes into the line layer. Selection
 // and the drag pointer come over `surface:state`; the layer is read (and
@@ -80,14 +75,9 @@ export function LineButton(): JSX.Element {
       return;
     }
 
-    // The pointer location in the innermost surface's own space; that surface
-    // is where a fresh stroke is drawn. Always present alongside `surfaceUrl`,
-    // but guard defensively.
-    const local = pointer.positions[pointer.surfaceUrl];
-    if (!local) {
-      return;
-    }
-    const { x, y } = local;
+    // The pointer location in the stamping surface's own space; that surface
+    // is where a fresh stroke is drawn.
+    const { x, y } = pointer.position;
     const isPressed = pointer.isPressed;
     const startedStroke = !wasPressed && isPressed;
     const endedStroke = wasPressed && !isPressed;
