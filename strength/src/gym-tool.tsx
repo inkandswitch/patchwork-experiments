@@ -1,14 +1,12 @@
 import {
-  RepoContext,
   useDocHandle,
   useDocument,
   useRepo,
 } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
-import type { ToolRender } from "@inkandswitch/patchwork-plugins";
-import { createRoot } from "react-dom/client";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { CurrentExerciseEmbed } from "./components/CurrentExerciseEmbed";
+import { CurrentSetBanner } from "./components/CurrentSetBanner";
+import { FolderRoleNotice } from "./components/FolderRoleNotice";
 import { importHevyCsv, type HevyImportResult } from "./hevy-importer";
 import {
   convertWeight,
@@ -18,12 +16,19 @@ import {
 } from "./calculations";
 import {
   bootstrapGym,
-  cloneTemplateToSession,
   createTemplateInGym,
+  startSessionFromTemplate,
 } from "./gym";
 import { sessionLinks, templateLinks } from "./folder";
 import { useLoadedWorkoutSessions, useLoadedWorkoutTemplates } from "./hooks";
-import { sessionSets, unitForExercise } from "./session-model";
+import { makeTool } from "./make-tool";
+import {
+  isSessionCompleted,
+  isSessionInProgress,
+  sessionSets,
+  sessionTime,
+  unitForExercise,
+} from "./session-model";
 import type { FolderDoc } from "./types";
 
 type OpenDoc = { url: AutomergeUrl; toolId?: string };
@@ -113,7 +118,7 @@ function GymHub({
   const inProgress = useMemo(
     () =>
       loadedSessions
-        .filter((s) => s.doc.status === "in_progress" && !s.doc.completedAt)
+        .filter((s) => isSessionInProgress(s.doc))
         .sort(
           (a, b) =>
             new Date(b.doc.startedAt).getTime() -
@@ -125,12 +130,8 @@ function GymHub({
   const recentSessions = useMemo(
     () =>
       loadedSessions
-        .filter((s) => s.doc.status === "completed" || s.doc.completedAt)
-        .sort(
-          (a, b) =>
-            new Date(b.doc.completedAt ?? b.doc.startedAt).getTime() -
-            new Date(a.doc.completedAt ?? a.doc.startedAt).getTime(),
-        )
+        .filter((s) => isSessionCompleted(s.doc))
+        .sort((a, b) => sessionTime(b.doc) - sessionTime(a.doc))
         .slice(0, 6),
     [loadedSessions],
   );
@@ -140,7 +141,7 @@ function GymHub({
     const map = new Map<string, number>();
     for (const { doc } of loadedSessions) {
       if (!doc.templateUrl) continue;
-      const time = new Date(doc.completedAt ?? doc.startedAt).getTime();
+      const time = sessionTime(doc);
       const prev = map.get(doc.templateUrl) ?? 0;
       if (time > prev) map.set(doc.templateUrl, time);
     }
@@ -165,9 +166,8 @@ function GymHub({
     let sets = 0;
     let volume = 0;
     for (const { doc } of loadedSessions) {
-      if (doc.status !== "completed" && !doc.completedAt) continue;
-      const time = new Date(doc.completedAt ?? doc.startedAt).getTime();
-      if (time < cutoff) continue;
+      if (!isSessionCompleted(doc)) continue;
+      if (sessionTime(doc) < cutoff) continue;
       workouts++;
       for (const set of sessionSets(doc)) {
         if (!set.completed) continue;
@@ -186,12 +186,11 @@ function GymHub({
     if (!gym?.sessionsFolderUrl || startingUrl) return;
     setStartingUrl(templateUrl);
     try {
-      const sessionsHandle = await repo.find<FolderDoc>(gym.sessionsFolderUrl);
-      const sessionHandle = await cloneTemplateToSession(
+      const sessionHandle = await startSessionFromTemplate(
         repo,
         template,
         templateUrl,
-        sessionsHandle,
+        gym.sessionsFolderUrl,
       );
       openInGym(sessionHandle.url, "strength-workout-session");
     } finally {
@@ -241,10 +240,10 @@ function GymHub({
     gym.strengthRole === "sessions"
   ) {
     return (
-      <div className="strength flex h-full items-center justify-center bg-slate-50 p-8 text-center text-sm text-slate-500">
+      <FolderRoleNotice>
         Open the gym <strong>root folder</strong> with this tool, not the{" "}
         {gym.strengthRole} subfolder.
-      </div>
+      </FolderRoleNotice>
     );
   }
 
@@ -373,12 +372,12 @@ function GymHub({
                   </button>
                 </div>
               ))}
-              {/* Live preview of the next exercise, rendered by the
-                  strength-exercise-logger tool against a path-addressed
-                  sub-document of the in-progress session. */}
+              {/* Live preview of the single next set, rendered by the
+                  strength-set tool against the session's
+                  sets/{"completed":false} live-query address. */}
               <div className="mt-3">
                 <Suspense fallback={null}>
-                  <CurrentExerciseEmbed
+                  <CurrentSetBanner
                     sessionUrl={inProgress[0].url}
                     label="Up next"
                   />
@@ -541,12 +540,4 @@ function GymHub({
   );
 }
 
-export const GymTool: ToolRender = (handle, element) => {
-  const root = createRoot(element);
-  root.render(
-    <RepoContext.Provider value={element.repo}>
-      <GymHub docUrl={handle.url} hostElement={element} />
-    </RepoContext.Provider>,
-  );
-  return () => root.unmount();
-};
+export const GymTool = makeTool(GymHub);

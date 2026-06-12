@@ -7,7 +7,7 @@ import {
   newId,
   setVolume,
 } from "./calculations";
-import { setsForExercise } from "./session-model";
+import { isSessionCompleted, setsForExercise } from "./session-model";
 import type {
   ExerciseHistoryEntry,
   ExerciseProgressPoint,
@@ -32,7 +32,7 @@ export function exerciseHistoryForUrl(
   const entries: ExerciseHistoryEntry[] = [];
 
   for (const { url, doc } of sessions) {
-    if (doc.status !== "completed" && !doc.completedAt) continue;
+    if (!isSessionCompleted(doc)) continue;
 
     for (const exercise of doc.exercises ?? []) {
       if (exercise.exerciseUrl !== exerciseUrl) continue;

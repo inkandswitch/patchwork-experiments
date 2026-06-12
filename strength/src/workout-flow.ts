@@ -10,7 +10,7 @@ export function setRowId(setId: string): string {
  * `afterId` (so "Next" can step past the set just completed).
  */
 export function findNextIncompleteSet(
-  sets: LoggedSet[],
+  sets: readonly LoggedSet[],
   afterId?: string | null,
 ): LoggedSet | null {
   const incomplete = sets.filter((set) => !set.completed);

@@ -18,6 +18,19 @@ export function sessionSets(session: WorkoutSessionDoc): LoggedSet[] {
   return session.sets ?? [];
 }
 
+export function isSessionCompleted(session: WorkoutSessionDoc): boolean {
+  return session.status === "completed" || session.completedAt != null;
+}
+
+export function isSessionInProgress(session: WorkoutSessionDoc): boolean {
+  return session.status === "in_progress" && !session.completedAt;
+}
+
+/** Best timestamp for sorting/display: completion time, else start time. */
+export function sessionTime(session: WorkoutSessionDoc): number {
+  return new Date(session.completedAt ?? session.startedAt).getTime();
+}
+
 export function setsForExercise(
   session: WorkoutSessionDoc,
   exerciseId: string,

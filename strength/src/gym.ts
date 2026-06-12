@@ -1,7 +1,11 @@
 import type { AutomergeUrl, Repo } from "@automerge/automerge-repo";
 import type { DocHandle } from "@automerge/automerge-repo";
 import { GYM_ROLE, SESSION_TYPE, TEMPLATE_TYPE, addDocLink } from "./folder";
-import { createSessionFromTemplate, createTemplateFromSession } from "./history";
+import {
+  createSessionFromTemplate,
+  createTemplateFromSession,
+  templateTitleFromSession,
+} from "./history";
 import { omitUndefined } from "./automerge-fields";
 import type { FolderDoc, WorkoutSessionDoc, WorkoutTemplateDoc } from "./types";
 
@@ -151,6 +155,49 @@ export async function cloneTemplateToSession(
   });
 
   return handle;
+}
+
+/** Find the sessions folder and clone the template into a new session. */
+export async function startSessionFromTemplate(
+  repo: Repo,
+  template: WorkoutTemplateDoc,
+  templateUrl: AutomergeUrl,
+  sessionsFolderUrl: AutomergeUrl,
+): Promise<DocHandle<WorkoutSessionDoc>> {
+  const sessionsFolderHandle = await repo.find<FolderDoc>(sessionsFolderUrl);
+  return cloneTemplateToSession(
+    repo,
+    template,
+    templateUrl,
+    sessionsFolderHandle,
+  );
+}
+
+/**
+ * Shared "Save as template" UX: prompt for a name (defaulting to the
+ * session title minus its date suffix), save, and hand the new template
+ * URL to `onOpen`. Errors surface via `window.alert`.
+ */
+export async function promptSaveSessionAsTemplate(
+  repo: Repo,
+  session: WorkoutSessionDoc,
+  sessionsFolder: DocHandle<FolderDoc> | AutomergeUrl,
+  onOpen: (templateUrl: AutomergeUrl) => void,
+): Promise<void> {
+  const defaultTitle = templateTitleFromSession(session.title);
+  const input = window.prompt("Template name:", defaultTitle);
+  if (input === null) return;
+  const title = input.trim() || defaultTitle;
+  try {
+    const handle = await saveSessionAsTemplate(repo, session, sessionsFolder, {
+      title,
+    });
+    onOpen(handle.url);
+  } catch (err) {
+    window.alert(
+      err instanceof Error ? err.message : "Could not save template.",
+    );
+  }
 }
 
 export async function saveSessionAsTemplate(

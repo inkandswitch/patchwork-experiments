@@ -1,13 +1,11 @@
 import {
-  RepoContext,
   useDocHandle,
   useDocument,
   useRepo,
 } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
-import type { ToolRender } from "@inkandswitch/patchwork-plugins";
-import { createRoot } from "react-dom/client";
 import { useMemo, useState } from "react";
+import { makeTool } from "./make-tool";
 import { assignAutomergeFields } from "./automerge-fields";
 import { ExerciseDetail } from "./components/ExerciseDetail";
 import { createDocOfType } from "./create-doc";
@@ -214,12 +212,4 @@ function ExerciseLibrary({ docUrl }: { docUrl: AutomergeUrl }) {
   );
 }
 
-export const ExerciseLibraryTool: ToolRender = (handle, element) => {
-  const root = createRoot(element);
-  root.render(
-    <RepoContext.Provider value={element.repo}>
-      <ExerciseLibrary docUrl={handle.url} />
-    </RepoContext.Provider>,
-  );
-  return () => root.unmount();
-};
+export const ExerciseLibraryTool = makeTool(ExerciseLibrary);

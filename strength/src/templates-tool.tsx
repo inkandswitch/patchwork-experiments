@@ -1,14 +1,14 @@
 import {
-  RepoContext,
   useDocHandle,
   useDocument,
   useRepo,
 } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
-import type { ToolRender } from "@inkandswitch/patchwork-plugins";
-import { createRoot } from "react-dom/client";
 import { useMemo, useState } from "react";
-import { cloneTemplateToSession, createTemplateInGym } from "./gym";
+import { FolderRoleNotice } from "./components/FolderRoleNotice";
+import { ListRow } from "./components/ListRow";
+import { createTemplateInGym, startSessionFromTemplate } from "./gym";
+import { makeTool } from "./make-tool";
 import { openPatchworkDocument } from "./navigation";
 import { templateLinks } from "./folder";
 import { useLoadedWorkoutTemplates } from "./hooks";
@@ -63,12 +63,11 @@ function TemplatesBrowser({
     if (!selected || !sessionsFolderUrl) return;
     setStarting(true);
     try {
-      const sessionsHandle = await repo.find<FolderDoc>(sessionsFolderUrl);
-      const sessionHandle = await cloneTemplateToSession(
+      const sessionHandle = await startSessionFromTemplate(
         repo,
         selected.doc,
         selected.url,
-        sessionsHandle,
+        sessionsFolderUrl,
       );
       openPatchworkDocument(
         hostElement,
@@ -84,10 +83,10 @@ function TemplatesBrowser({
 
   if (folder.strengthRole && folder.strengthRole !== "templates") {
     return (
-      <div className="strength flex h-full items-center justify-center bg-slate-50 p-8 text-center text-sm text-slate-500">
+      <FolderRoleNotice>
         Open the <strong>Templates</strong> subfolder with this tool, not{" "}
         {folder.strengthRole}.
-      </div>
+      </FolderRoleNotice>
     );
   }
 
@@ -130,31 +129,29 @@ function TemplatesBrowser({
             </p>
           ) : (
             <ul>
-              {filtered.map(({ url, doc }) => (
-                <li key={url}>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setSelectedUrl((cur) => (cur === url ? null : url))
-                    }
-                    className={`w-full border-b border-slate-100 px-4 py-3 text-left hover:bg-white ${
-                      selectedUrl === url ? "bg-emerald-50" : ""
-                    }`}
-                  >
-                    <div className="font-medium text-slate-900">{doc.title}</div>
-                    <div className="text-xs text-slate-500">
-                      {doc.exercises?.length ?? 0} exercise
-                      {(doc.exercises?.length ?? 0) === 1 ? "" : "s"}
-                      {(doc.exercises ?? []).reduce(
-                        (n, ex) => n + ex.sets.length,
-                        0,
-                      )
-                        ? ` · ${(doc.exercises ?? []).reduce((n, ex) => n + ex.sets.length, 0)} sets`
-                        : ""}
-                    </div>
-                  </button>
-                </li>
-              ))}
+              {filtered.map(({ url, doc }) => {
+                const totalSets = (doc.exercises ?? []).reduce(
+                  (n, ex) => n + ex.sets.length,
+                  0,
+                );
+                return (
+                  <li key={url}>
+                    <ListRow
+                      title={doc.title}
+                      selected={selectedUrl === url}
+                      onClick={() =>
+                        setSelectedUrl((cur) => (cur === url ? null : url))
+                      }
+                    >
+                      <div className="text-xs text-slate-500">
+                        {doc.exercises?.length ?? 0} exercise
+                        {(doc.exercises?.length ?? 0) === 1 ? "" : "s"}
+                        {totalSets ? ` · ${totalSets} sets` : ""}
+                      </div>
+                    </ListRow>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
@@ -177,12 +174,4 @@ function TemplatesBrowser({
   );
 }
 
-export const TemplatesTool: ToolRender = (handle, element) => {
-  const root = createRoot(element);
-  root.render(
-    <RepoContext.Provider value={element.repo}>
-      <TemplatesBrowser docUrl={handle.url} hostElement={element} />
-    </RepoContext.Provider>,
-  );
-  return () => root.unmount();
-};
+export const TemplatesTool = makeTool(TemplatesBrowser);

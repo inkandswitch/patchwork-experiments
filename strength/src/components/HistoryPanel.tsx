@@ -1,11 +1,7 @@
 import type { AutomergeUrl } from "@automerge/automerge-repo";
-import {
-  convertWeight,
-  formatDate,
-  formatWeight,
-  estimate1Rm,
-} from "../calculations";
+import { convertWeight, formatDate, formatWeight } from "../calculations";
 import { exerciseHistoryForUrl, summarizeSet } from "../history";
+import { SetSummaryChip } from "./SetSummaryChip";
 import type { LoadedWorkoutSession } from "../history";
 import type { WeightUnit } from "../types";
 import { ProgressChart } from "./ProgressChart";
@@ -115,17 +111,13 @@ export function HistoryPanel({
                 {formatDate(entry.date)}
               </span>
             </div>
-            <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-600">
-              {entry.sets.map((set, i) => (
-                <span
-                  key={i}
-                  className="rounded bg-slate-50 px-1.5 py-0.5"
-                >
-                  {summarizeSet(set, entry.unit ?? unit)}
-                  {set.weight && set.reps
-                    ? ` (~${Math.round(estimate1Rm(set.weight, set.reps))} 1RM)`
-                    : ""}
-                </span>
+            <div className="mt-1 flex flex-wrap gap-2">
+              {entry.sets.map((set) => (
+                <SetSummaryChip
+                  key={set.id}
+                  set={set}
+                  unit={entry.unit ?? unit}
+                />
               ))}
             </div>
           </div>

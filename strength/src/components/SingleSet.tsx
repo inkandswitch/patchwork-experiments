@@ -4,7 +4,7 @@ import {
 } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import { assignAutomergeFields } from "../automerge-fields";
-import { rootDocUrl } from "../workout-flow";
+import { findNextIncompleteSet, rootDocUrl } from "../workout-flow";
 import type {
   LoggedExercise,
   LoggedSet,
@@ -14,30 +14,35 @@ import type {
 import { LoggedSetRow } from "./SetRow";
 
 /**
- * Renders exactly one logged set, addressed by a path URL into a session:
+ * THE set renderer for the whole app — every set the user can interact
+ * with is this component, rendered via the `strength-set` tool. Swap the
+ * implementation here to experiment with alternative set UIs everywhere
+ * at once.
+ *
+ * Addressed by a path URL into a session:
  *
  *   automerge:<docId>/sets/{"id":"<setId>"}        — a pinned set
  *   automerge:<docId>/sets/{"completed":false}     — live query: current set
  *
- * The set itself is the only thing this component is "about" — the
- * exercise name and unit come from a *synthesized sibling sub-handle*
- * (`exercises/{"id":<set.exerciseId>}`), and set numbering from the
- * `sets` array sub-handle, rather than loading and scanning the whole
- * session document.
+ * Renders just the row — no exercise-name header; the embedding context
+ * provides that. Everything else is derived from the document:
+ * - unit: sibling exercise sub-handle (`exercises/{"id":…}`)
+ * - set number: position within the exercise's sets
+ * - editability: session status (in-progress vs completed)
+ * - highlight: whether this is the next incomplete set
  */
-export function SingleSet({
-  setUrl,
-  onToggled,
-}: {
-  setUrl: AutomergeUrl;
-  onToggled?: (set: LoggedSet, completed: boolean) => void;
-}) {
+export function SingleSet({ setUrl }: { setUrl: AutomergeUrl }) {
   const setHandle = useDocHandle<LoggedSet>(setUrl, { suspense: true });
   const [set] = useDocument<LoggedSet>(setUrl, { suspense: true });
 
-  // Root handle is used only to synthesize sibling sub-handles.
-  const rootHandle = useDocHandle<WorkoutSessionDoc>(rootDocUrl(setUrl), {
+  // Root handle synthesizes sibling sub-handles; the root doc supplies
+  // session-level facts (status, fallback unit).
+  const rootUrl = rootDocUrl(setUrl);
+  const rootHandle = useDocHandle<WorkoutSessionDoc>(rootUrl, {
     suspense: true,
+  });
+  const [session] = useDocument<WorkoutSessionDoc>(rootUrl, {
+    suspense: false,
   });
 
   const exerciseUrl = set
@@ -62,41 +67,28 @@ export function SingleSet({
     );
   }
 
-  const exerciseSets = (allSets ?? []).filter(
-    (s) => s.exerciseId === set.exerciseId,
-  );
+  const sets = allSets ?? [];
+  const exerciseSets = sets.filter((s) => s.exerciseId === set.exerciseId);
   const setNumber = exerciseSets.findIndex((s) => s.id === set.id);
-  const unit: WeightUnit = exercise?.unit ?? "kg";
+  const unit: WeightUnit = exercise?.unit ?? session?.weightUnit ?? "kg";
+  const executing = session?.status === "in_progress";
+  const isCurrent = executing && findNextIncompleteSet(sets)?.id === set.id;
 
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="truncate text-sm font-medium text-slate-900">
-          {exercise?.exerciseName ?? "Unknown exercise"}
-        </span>
-        {setNumber >= 0 ? (
-          <span className="shrink-0 text-xs text-slate-500">
-            Set {setNumber + 1} of {exerciseSets.length}
-          </span>
-        ) : null}
-      </div>
-      <LoggedSetRow
-        set={set}
-        index={Math.max(0, setNumber)}
-        unit={unit}
-        executing
-        isCurrent
-        onChange={(patch) =>
-          setHandle.change((s) => assignAutomergeFields(s, patch))
-        }
-        onToggleComplete={() => {
-          const completed = !set.completed;
-          setHandle.change((s) => {
-            s.completed = completed;
-          });
-          onToggled?.(set, completed);
-        }}
-      />
-    </div>
+    <LoggedSetRow
+      set={set}
+      index={Math.max(0, setNumber)}
+      unit={unit}
+      executing={executing}
+      isCurrent={isCurrent}
+      onChange={(patch) =>
+        setHandle.change((s) => assignAutomergeFields(s, patch))
+      }
+      onToggleComplete={() =>
+        setHandle.change((s) => {
+          s.completed = !s.completed;
+        })
+      }
+    />
   );
 }

@@ -1,17 +1,15 @@
 import {
-  RepoContext,
   useDocHandle,
   useDocument,
   useRepo,
 } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
-import type { ToolRender } from "@inkandswitch/patchwork-plugins";
-import { createRoot } from "react-dom/client";
 import {
   Suspense,
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -20,12 +18,13 @@ import {
   formatDateTime,
   formatDuration,
 } from "./calculations";
-import { CurrentExerciseEmbed } from "./components/CurrentExerciseEmbed";
+import { CurrentSetBanner } from "./components/CurrentSetBanner";
 import { ExerciseLogger } from "./components/ExerciseLogger";
 import { RestTimer } from "./components/RestTimer";
+import { SupersetBadge } from "./components/SupersetBadge";
 import { setAutomergeString } from "./automerge-fields";
-import { saveSessionAsTemplate } from "./gym";
-import { templateTitleFromSession } from "./history";
+import { promptSaveSessionAsTemplate } from "./gym";
+import { makeTool } from "./make-tool";
 import { openPatchworkDocument } from "./navigation";
 import { sessionSets, setsForExercise } from "./session-model";
 import type { LoggedSet, WeightUnit, WorkoutSessionDoc } from "./types";
@@ -120,9 +119,27 @@ function WorkoutSessionEditor({
     [sessionHandle],
   );
 
-  /** Rest-timer / focus orchestration when a logger reports a set toggle. */
-  const handleSetToggled = (set: LoggedSet, completed: boolean) => {
-    if (completed && executing) {
+  /**
+   * Rest-timer / focus orchestration, driven by the *document* rather than
+   * callbacks: set rows are independent `strength-set` tool embeds, so the
+   * only reliable signal that a set was completed is the doc changing.
+   * Diff completed-set ids between renders to spot toggles — wherever they
+   * came from (inline row, banner, another pane).
+   */
+  const completedIdsRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const completed = new Set(
+      allSets.filter((s) => s.completed).map((s) => s.id),
+    );
+    const prev = completedIdsRef.current;
+    completedIdsRef.current = completed;
+    if (!prev || !executing) return;
+
+    const newlyCompleted = allSets.filter(
+      (s) => s.completed && !prev.has(s.id),
+    );
+    if (newlyCompleted.length > 0) {
+      const set = newlyCompleted[newlyCompleted.length - 1];
       setCurrentSetId(set.id);
       setActiveExerciseId(set.exerciseId);
       const rest = restSecondsForSet(set, defaultRestSeconds);
@@ -134,10 +151,17 @@ function WorkoutSessionEditor({
         const next = findNextIncompleteSet(allSets, set.id);
         if (next) focusSet(next);
       }
-    } else if (!completed) {
-      setRestTimer(null);
+      return;
     }
-  };
+
+    // A set was un-completed — cancel any pending rest.
+    for (const id of prev) {
+      if (!completed.has(id)) {
+        setRestTimer(null);
+        break;
+      }
+    }
+  }, [allSets, executing, defaultRestSeconds, focusSet]);
 
   const completeSession = () => {
     sessionHandle.change((draft) => {
@@ -159,26 +183,14 @@ function WorkoutSessionEditor({
       );
       return;
     }
-    const defaultTitle = templateTitleFromSession(session.title);
-    const input = window.prompt("Template name:", defaultTitle);
-    if (input === null) return;
-    const title = input.trim() || defaultTitle;
     setSavingTemplate(true);
     try {
-      const handle = await saveSessionAsTemplate(
+      await promptSaveSessionAsTemplate(
         repo,
         session,
         session.sessionsFolderUrl,
-        { title },
-      );
-      openPatchworkDocument(
-        hostElement,
-        handle.url,
-        "strength-workout-template",
-      );
-    } catch (err) {
-      window.alert(
-        err instanceof Error ? err.message : "Could not save template.",
+        (url) =>
+          openPatchworkDocument(hostElement, url, "strength-workout-template"),
       );
     } finally {
       setSavingTemplate(false);
@@ -241,10 +253,7 @@ function WorkoutSessionEditor({
         {showCurrentBanner ? (
           <div className="mb-4">
             <Suspense fallback={null}>
-              <CurrentExerciseEmbed
-                sessionUrl={docUrl}
-                label="Current exercise"
-              />
+              <CurrentSetBanner sessionUrl={docUrl} label="Current set" />
             </Suspense>
           </div>
         ) : null}
@@ -354,12 +363,13 @@ function WorkoutSessionEditor({
                     <span className="font-medium text-slate-900">
                       {exercise.exerciseName}
                     </span>
-                    {exercise.supersetGroup &&
-                    ssLabels.has(exercise.supersetGroup) ? (
-                      <span className="ml-2 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700">
-                        SS {ssLabels.get(exercise.supersetGroup)}
-                      </span>
-                    ) : null}
+                    <SupersetBadge
+                      label={
+                        exercise.supersetGroup
+                          ? ssLabels.get(exercise.supersetGroup)
+                          : undefined
+                      }
+                    />
                     <span className="ml-2 text-xs text-slate-500">
                       {exerciseSets.filter((s) => s.completed).length}/
                       {exerciseSets.length} sets
@@ -392,15 +402,13 @@ function WorkoutSessionEditor({
 
                 {expanded ? (
                   <div className="border-t border-slate-100 px-2 py-3 sm:px-4">
-                    {/* The logger writes through per-set sub-handles
-                        (`…/sets/{"id":…}`) on the flat sets array. */}
+                    {/* Each set row is a strength-set tool embed; toggles
+                        reach us through the doc-watching effect above. */}
                     <ExerciseLogger
                       sessionUrl={docUrl}
                       exerciseId={exercise.id}
                       executing={executing}
                       fallbackUnit={sessionUnit}
-                      currentSetId={currentSetId}
-                      onSetToggled={handleSetToggled}
                     />
                   </div>
                 ) : null}
@@ -457,12 +465,4 @@ function WorkoutSessionEditor({
   );
 }
 
-export const WorkoutSessionTool: ToolRender = (handle, element) => {
-  const root = createRoot(element);
-  root.render(
-    <RepoContext.Provider value={element.repo}>
-      <WorkoutSessionEditor docUrl={handle.url} hostElement={element} />
-    </RepoContext.Provider>,
-  );
-  return () => root.unmount();
-};
+export const WorkoutSessionTool = makeTool(WorkoutSessionEditor);

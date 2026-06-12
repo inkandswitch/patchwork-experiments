@@ -1,20 +1,20 @@
 import {
-  RepoContext,
   useDocHandle,
   useDocument,
   useRepo,
 } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
-import type { ToolRender } from "@inkandswitch/patchwork-plugins";
-import { createRoot } from "react-dom/client";
 import { useMemo, useState } from "react";
 import { newId } from "./calculations";
 import { ExercisePicker } from "./components/ExercisePicker";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { PlannedSetRow } from "./components/SetRow";
+import { SupersetBadge } from "./components/SupersetBadge";
+import { UnitToggle } from "./components/UnitToggle";
 import { EXERCISE_TYPE } from "./folder";
-import { cloneTemplateToSession } from "./gym";
+import { startSessionFromTemplate } from "./gym";
 import { useLoadedExercises, useLoadedWorkoutSessions } from "./hooks";
+import { makeTool } from "./make-tool";
 import { openPatchworkDocument } from "./navigation";
 import { assignAutomergeFields, setAutomergeString } from "./automerge-fields";
 import { supersetLabels } from "./workout-flow";
@@ -164,12 +164,11 @@ function WorkoutTemplateEditor({
     if (!template || !sessionsFolderUrl) return;
     setStarting(true);
     try {
-      const sessionsHandle = await repo.find<FolderDoc>(sessionsFolderUrl);
-      const sessionHandle = await cloneTemplateToSession(
+      const sessionHandle = await startSessionFromTemplate(
         repo,
         template,
         docUrl,
-        sessionsHandle,
+        sessionsFolderUrl,
       );
       openPatchworkDocument(
         hostElement,
@@ -225,12 +224,13 @@ function WorkoutTemplateEditor({
                       <span className="font-medium text-slate-900">
                         {exercise.exerciseName}
                       </span>
-                      {exercise.supersetGroup &&
-                      ssLabels.has(exercise.supersetGroup) ? (
-                        <span className="ml-2 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700">
-                          SS {ssLabels.get(exercise.supersetGroup)}
-                        </span>
-                      ) : null}
+                      <SupersetBadge
+                        label={
+                          exercise.supersetGroup
+                            ? ssLabels.get(exercise.supersetGroup)
+                            : undefined
+                        }
+                      />
                       <span className="ml-2 text-xs text-slate-500">
                         {exercise.sets.length} sets
                       </span>
@@ -267,26 +267,14 @@ function WorkoutTemplateEditor({
                             </button>
                           ) : null}
                         </div>
-                        <div className="flex overflow-hidden rounded-md border border-slate-200 text-xs">
-                          {(["kg", "lb"] as const).map((u) => (
-                            <button
-                              key={u}
-                              type="button"
-                              onClick={() =>
-                                updateExercise(exercise.id, (ex) => {
-                                  ex.unit = u;
-                                })
-                              }
-                              className={`px-2.5 py-1 ${
-                                (exercise.unit ?? unit) === u
-                                  ? "bg-emerald-600 font-medium text-white"
-                                  : "bg-white text-slate-500 hover:bg-slate-50"
-                              }`}
-                            >
-                              {u}
-                            </button>
-                          ))}
-                        </div>
+                        <UnitToggle
+                          value={exercise.unit ?? unit}
+                          onChange={(u) =>
+                            updateExercise(exercise.id, (ex) => {
+                              ex.unit = u;
+                            })
+                          }
+                        />
                       </div>
                       <div className="grid grid-cols-[2rem_1fr_1fr_1fr_1fr_auto] gap-2 text-xs font-medium text-slate-400">
                         <span>#</span>
@@ -399,12 +387,4 @@ function WorkoutTemplateEditor({
   );
 }
 
-export const WorkoutTemplateTool: ToolRender = (handle, element) => {
-  const root = createRoot(element);
-  root.render(
-    <RepoContext.Provider value={element.repo}>
-      <WorkoutTemplateEditor docUrl={handle.url} hostElement={element} />
-    </RepoContext.Provider>,
-  );
-  return () => root.unmount();
-};
+export const WorkoutTemplateTool = makeTool(WorkoutTemplateEditor);

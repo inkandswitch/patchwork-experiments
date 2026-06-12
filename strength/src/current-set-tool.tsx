@@ -1,9 +1,7 @@
-import { RepoContext } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
-import type { ToolRender } from "@inkandswitch/patchwork-plugins";
-import { createRoot } from "react-dom/client";
 import { Suspense } from "react";
 import { CurrentSet } from "./components/CurrentSet";
+import { makeTool } from "./make-tool";
 
 /**
  * Minimal "what do I do right now?" view of a workout session: just the
@@ -26,12 +24,4 @@ function CurrentSetView({ docUrl }: { docUrl: AutomergeUrl }) {
   );
 }
 
-export const CurrentSetTool: ToolRender = (handle, element) => {
-  const root = createRoot(element);
-  root.render(
-    <RepoContext.Provider value={element.repo}>
-      <CurrentSetView docUrl={handle.url} />
-    </RepoContext.Provider>,
-  );
-  return () => root.unmount();
-};
+export const CurrentSetTool = makeTool(CurrentSetView);

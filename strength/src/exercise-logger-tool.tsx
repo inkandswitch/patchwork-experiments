@@ -1,12 +1,8 @@
-import {
-  RepoContext,
-  useDocument,
-} from "@automerge/automerge-repo-react-hooks";
+import { useDocument } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
-import type { ToolRender } from "@inkandswitch/patchwork-plugins";
-import { createRoot } from "react-dom/client";
 import { Suspense } from "react";
 import { ExerciseLogger } from "./components/ExerciseLogger";
+import { makeTool } from "./make-tool";
 import { rootDocUrl } from "./workout-flow";
 import type { LoggedExercise } from "./types";
 
@@ -60,12 +56,4 @@ function ExerciseLoggerView({ docUrl }: { docUrl: AutomergeUrl }) {
   );
 }
 
-export const ExerciseLoggerTool: ToolRender = (handle, element) => {
-  const root = createRoot(element);
-  root.render(
-    <RepoContext.Provider value={element.repo}>
-      <ExerciseLoggerView docUrl={handle.url} />
-    </RepoContext.Provider>,
-  );
-  return () => root.unmount();
-};
+export const ExerciseLoggerTool = makeTool(ExerciseLoggerView);

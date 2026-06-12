@@ -1,32 +1,33 @@
 import {
-  RepoContext,
   useDocHandle,
   useDocument,
   useRepo,
 } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
-import type { ToolRender } from "@inkandswitch/patchwork-plugins";
-import { createRoot } from "react-dom/client";
 import { useMemo, useState } from "react";
 import {
-  estimate1Rm,
   formatDate,
   formatDateTime,
   formatDuration,
   formatWeight,
 } from "./calculations";
+import { FolderRoleNotice } from "./components/FolderRoleNotice";
 import { HistoryPanel } from "./components/HistoryPanel";
+import { ListRow } from "./components/ListRow";
 import { ProgressChart } from "./components/ProgressChart";
+import { SetSummaryChip } from "./components/SetSummaryChip";
 import { sessionLinks } from "./folder";
-import { saveSessionAsTemplate } from "./gym";
-import {
-  progressPointsForExercise,
-  summarizeSet,
-  templateTitleFromSession,
-} from "./history";
+import { promptSaveSessionAsTemplate } from "./gym";
+import { progressPointsForExercise } from "./history";
+import { makeTool } from "./make-tool";
 import { openPatchworkDocument } from "./navigation";
 import { useLoadedExercises, useLoadedWorkoutSessions } from "./hooks";
-import { setsForExercise } from "./session-model";
+import {
+  isSessionCompleted,
+  isSessionInProgress,
+  sessionTime,
+  setsForExercise,
+} from "./session-model";
 import type { FolderDoc } from "./types";
 
 function SessionsBrowser({
@@ -82,19 +83,13 @@ function SessionsBrowser({
   const completedSessions = useMemo(
     () =>
       loadedSessions
-        .filter(
-          (s) => s.doc.status === "completed" || s.doc.completedAt != null,
-        )
-        .sort(
-          (a, b) =>
-            new Date(b.doc.completedAt ?? b.doc.startedAt).getTime() -
-            new Date(a.doc.completedAt ?? a.doc.startedAt).getTime(),
-        ),
+        .filter((s) => isSessionCompleted(s.doc))
+        .sort((a, b) => sessionTime(b.doc) - sessionTime(a.doc)),
     [loadedSessions],
   );
 
-  const inProgress = loadedSessions.filter(
-    (s) => s.doc.status === "in_progress" && !s.doc.completedAt,
+  const inProgress = loadedSessions.filter((s) =>
+    isSessionInProgress(s.doc),
   );
 
   const selectedSession = loadedSessions.find(
@@ -103,26 +98,14 @@ function SessionsBrowser({
 
   const saveAsTemplate = async () => {
     if (!selectedSession) return;
-    const defaultTitle = templateTitleFromSession(selectedSession.doc.title);
-    const input = window.prompt("Template name:", defaultTitle);
-    if (input === null) return;
-    const title = input.trim() || defaultTitle;
     setSavingTemplate(true);
     try {
-      const handle = await saveSessionAsTemplate(
+      await promptSaveSessionAsTemplate(
         repo,
         selectedSession.doc,
         folderHandle,
-        { title },
-      );
-      openPatchworkDocument(
-        hostElement,
-        handle.url,
-        "strength-workout-template",
-      );
-    } catch (err) {
-      window.alert(
-        err instanceof Error ? err.message : "Could not save template.",
+        (url) =>
+          openPatchworkDocument(hostElement, url, "strength-workout-template"),
       );
     } finally {
       setSavingTemplate(false);
@@ -138,10 +121,10 @@ function SessionsBrowser({
 
   if (folder.strengthRole && folder.strengthRole !== "sessions") {
     return (
-      <div className="strength flex h-full items-center justify-center bg-slate-50 p-8 text-center text-sm text-slate-500">
+      <FolderRoleNotice>
         Open the <strong>Sessions</strong> subfolder with this tool, not{" "}
         {folder.strengthRole}.
-      </div>
+      </FolderRoleNotice>
     );
   }
 
@@ -221,16 +204,11 @@ function SessionsBrowser({
                     )
                     .map(({ url, doc }) => (
                       <li key={url}>
-                        <button
-                          type="button"
+                        <ListRow
+                          title={doc.title}
+                          selected={selectedSessionUrl === url}
                           onClick={() => setSelectedSessionUrl(url)}
-                          className={`w-full border-b border-slate-100 px-4 py-3 text-left hover:bg-white ${
-                            selectedSessionUrl === url ? "bg-emerald-50" : ""
-                          }`}
                         >
-                          <div className="font-medium text-slate-900">
-                            {doc.title}
-                          </div>
                           <div className="text-xs text-slate-500">
                             {formatDate(doc.completedAt ?? doc.startedAt)}
                             {doc.durationSeconds
@@ -238,7 +216,7 @@ function SessionsBrowser({
                               : ""}
                             {doc.status === "in_progress" ? " · active" : ""}
                           </div>
-                        </button>
+                        </ListRow>
                       </li>
                     ))}
                 </ul>
@@ -293,21 +271,16 @@ function SessionsBrowser({
                         <div className="mt-1 flex flex-wrap gap-2">
                           {setsForExercise(selectedSession.doc, exercise.id)
                             .filter((s) => s.completed)
-                            .map((set, i) => (
-                              <span
-                                key={i}
-                                className="rounded bg-slate-50 px-2 py-0.5 text-xs text-slate-700"
-                              >
-                                {summarizeSet(
-                                  set,
+                            .map((set) => (
+                              <SetSummaryChip
+                                key={set.id}
+                                set={set}
+                                unit={
                                   exercise.unit ??
-                                    selectedSession.doc.weightUnit ??
-                                    unit,
-                                )}
-                                {set.weight && set.reps
-                                  ? ` (~${Math.round(estimate1Rm(set.weight, set.reps))})`
-                                  : ""}
-                              </span>
+                                  selectedSession.doc.weightUnit ??
+                                  unit
+                                }
+                              />
                             ))}
                         </div>
                       </div>
@@ -339,16 +312,11 @@ function SessionsBrowser({
                     const latest = points[points.length - 1];
                     return (
                       <li key={url}>
-                        <button
-                          type="button"
+                        <ListRow
+                          title={doc.name}
+                          selected={selectedExerciseUrl === url}
                           onClick={() => setSelectedExerciseUrl(url)}
-                          className={`w-full border-b border-slate-100 px-4 py-3 text-left hover:bg-white ${
-                            selectedExerciseUrl === url ? "bg-emerald-50" : ""
-                          }`}
                         >
-                          <div className="font-medium text-slate-900">
-                            {doc.name}
-                          </div>
                           {latest ? (
                             <div className="text-xs text-emerald-700">
                               1RM:{" "}
@@ -362,7 +330,7 @@ function SessionsBrowser({
                               No data
                             </div>
                           )}
-                        </button>
+                        </ListRow>
                       </li>
                     );
                   })}
@@ -408,12 +376,4 @@ function SessionsBrowser({
   );
 }
 
-export const SessionsTool: ToolRender = (handle, element) => {
-  const root = createRoot(element);
-  root.render(
-    <RepoContext.Provider value={element.repo}>
-      <SessionsBrowser docUrl={handle.url} hostElement={element} />
-    </RepoContext.Provider>,
-  );
-  return () => root.unmount();
-};
+export const SessionsTool = makeTool(SessionsBrowser);
