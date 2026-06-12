@@ -15,7 +15,6 @@ import {
   newLoggedSet,
   pushSetForExercise,
   setsForExercise,
-  useFlatSessionMigration,
 } from "../session-model";
 import { setRowId } from "../workout-flow";
 import { LoggedSetRow } from "./SetRow";
@@ -52,8 +51,6 @@ export function ExerciseLogger({
   const [session] = useDocument<WorkoutSessionDoc>(sessionUrl, {
     suspense: true,
   });
-
-  useFlatSessionMigration(sessionHandle, session);
 
   const exercise = session ? exerciseById(session, exerciseId) : undefined;
   if (!session || !exercise) {

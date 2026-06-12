@@ -7,6 +7,7 @@ import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import { createRoot } from "react-dom/client";
 import { Suspense } from "react";
 import { ExerciseLogger } from "./components/ExerciseLogger";
+import { rootDocUrl } from "./workout-flow";
 import type { LoggedExercise } from "./types";
 
 /**
@@ -19,11 +20,6 @@ import type { LoggedExercise } from "./types";
  * session), so the path identifies which exercise to focus and the logger
  * binds back to the root session document for the sets.
  */
-
-/** Root document URL for a (possibly) path-addressed automerge URL. */
-function rootDocUrl(url: AutomergeUrl): AutomergeUrl {
-  return url.split("/")[0] as AutomergeUrl;
-}
 
 function FocusedExercise({ docUrl }: { docUrl: AutomergeUrl }) {
   const [exercise] = useDocument<LoggedExercise>(docUrl, { suspense: true });

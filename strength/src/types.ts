@@ -100,8 +100,10 @@ export interface WorkoutTemplateDoc {
   sessionsFolderUrl?: AutomergeUrl;
 }
 
-/** Field data shared by current (flat) and legacy (nested) logged sets. */
-export interface LoggedSetData {
+export interface LoggedSet {
+  id: string;
+  /** Which LoggedExercise this set belongs to. */
+  exerciseId: string;
   kind?: SetKind;
   reps?: number;
   weight?: number;
@@ -113,12 +115,6 @@ export interface LoggedSetData {
   notes?: string;
 }
 
-export interface LoggedSet extends LoggedSetData {
-  id: string;
-  /** Which LoggedExercise this set belongs to. */
-  exerciseId: string;
-}
-
 /** Exercise metadata within a session. Sets live flat on the session doc. */
 export interface LoggedExercise {
   id: string;
@@ -128,8 +124,6 @@ export interface LoggedExercise {
   supersetGroup?: string;
   /** Weight unit for this exercise; falls back to the session/gym default. */
   unit?: WeightUnit;
-  /** @deprecated Legacy nested shape — flattened into WorkoutSessionDoc.sets. */
-  sets?: LoggedSetData[];
 }
 
 /** A single workout instance, cloned from a template. */
@@ -144,10 +138,9 @@ export interface WorkoutSessionDoc {
   exercises: LoggedExercise[];
   /**
    * All sets, flat, in execution order (this is what makes supersets
-   * expressible). Absent on legacy docs, where sets are nested per
-   * exercise — use sessionSets() to read either shape.
+   * expressible).
    */
-  sets?: LoggedSet[];
+  sets: LoggedSet[];
   status: "in_progress" | "completed";
   /** Default rest between sets when a set has no restSeconds. */
   defaultRestSeconds?: number;

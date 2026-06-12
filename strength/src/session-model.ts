@@ -1,5 +1,3 @@
-import { useEffect } from "react";
-import type { DocHandle } from "@automerge/automerge-repo";
 import { omitUndefined } from "./automerge-fields";
 import { newId } from "./calculations";
 import type {
@@ -13,22 +11,11 @@ import type {
  * Sessions store sets *flat* (`doc.sets`, in execution order) so that
  * supersets can interleave sets across exercises and so a single pattern
  * segment (`sets/{"completed":false}`) can address the current set.
- *
- * Older docs nested sets under each exercise; the readers here normalize
- * both shapes, and `flattenSessionDoc` migrates legacy docs in place.
  */
 
-/** All sets in execution order, normalizing legacy nested docs. */
+/** All sets in execution order. */
 export function sessionSets(session: WorkoutSessionDoc): LoggedSet[] {
-  if (session.sets) return session.sets;
-  return (session.exercises ?? []).flatMap((exercise) =>
-    (exercise.sets ?? []).map((set, index) => ({
-      ...set,
-      // Synthesized, stable-enough ids for read-only legacy views.
-      id: `${exercise.id}:${index}`,
-      exerciseId: exercise.id,
-    })),
-  );
+  return session.sets ?? [];
 }
 
 export function setsForExercise(
@@ -51,13 +38,6 @@ export function unitForExercise(
   fallback: WeightUnit = "kg",
 ): WeightUnit {
   return exerciseById(session, exerciseId)?.unit ?? session.weightUnit ?? fallback;
-}
-
-export function isLegacySessionShape(session: WorkoutSessionDoc): boolean {
-  return (
-    !session.sets &&
-    (session.exercises ?? []).some((ex) => (ex.sets?.length ?? 0) > 0)
-  );
 }
 
 export function newLoggedSet(
@@ -87,44 +67,4 @@ export function pushSetForExercise(
     }
   }
   draft.sets.splice(insertAt, 0, set);
-}
-
-/** In-place migration from the legacy nested shape. Call inside change(). */
-export function flattenSessionDoc(draft: WorkoutSessionDoc): void {
-  if (draft.sets) return;
-  const flat: LoggedSet[] = [];
-  for (const exercise of draft.exercises ?? []) {
-    for (const set of exercise.sets ?? []) {
-      flat.push(
-        omitUndefined({
-          id: newId(),
-          exerciseId: exercise.id,
-          kind: set.kind,
-          reps: set.reps,
-          weight: set.weight,
-          rpe: set.rpe,
-          durationSeconds: set.durationSeconds,
-          restSeconds: set.restSeconds,
-          completed: set.completed,
-          notes: set.notes,
-        }) as LoggedSet,
-      );
-    }
-  }
-  draft.sets = flat;
-  for (const exercise of draft.exercises ?? []) {
-    delete exercise.sets;
-  }
-}
-
-/** Lazily migrate a legacy session doc the first time it's opened to edit. */
-export function useFlatSessionMigration(
-  sessionHandle: DocHandle<WorkoutSessionDoc>,
-  session: WorkoutSessionDoc | undefined,
-): void {
-  const needsMigration = session ? isLegacySessionShape(session) : false;
-  useEffect(() => {
-    if (!needsMigration) return;
-    sessionHandle.change((draft) => flattenSessionDoc(draft));
-  }, [needsMigration, sessionHandle]);
 }

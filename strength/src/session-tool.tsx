@@ -27,16 +27,13 @@ import { setAutomergeString } from "./automerge-fields";
 import { saveSessionAsTemplate } from "./gym";
 import { templateTitleFromSession } from "./history";
 import { openPatchworkDocument } from "./navigation";
-import {
-  sessionSets,
-  setsForExercise,
-  useFlatSessionMigration,
-} from "./session-model";
+import { sessionSets, setsForExercise } from "./session-model";
 import type { LoggedSet, WeightUnit, WorkoutSessionDoc } from "./types";
 import {
   findNextIncompleteSet,
   restSecondsForSet,
   setRowId,
+  supersetLabels,
 } from "./workout-flow";
 
 type RestTimerState = {
@@ -63,8 +60,6 @@ function WorkoutSessionEditor({
   const [restTimer, setRestTimer] = useState<RestTimerState | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [savingTemplate, setSavingTemplate] = useState(false);
-
-  useFlatSessionMigration(sessionHandle, session);
 
   const executing = session?.status === "in_progress";
   const sessionUnit: WeightUnit = session?.weightUnit ?? "kg";
@@ -131,7 +126,14 @@ function WorkoutSessionEditor({
       setCurrentSetId(set.id);
       setActiveExerciseId(set.exerciseId);
       const rest = restSecondsForSet(set, defaultRestSeconds);
-      setRestTimer({ seconds: rest, phase: "resting" });
+      if (rest > 0) {
+        setRestTimer({ seconds: rest, phase: "resting" });
+      } else {
+        // Superset transition: no rest, jump straight to the partner set.
+        setRestTimer(null);
+        const next = findNextIncompleteSet(allSets, set.id);
+        if (next) focusSet(next);
+      }
     } else if (!completed) {
       setRestTimer(null);
     }
@@ -201,6 +203,7 @@ function WorkoutSessionEditor({
 
   if (!session) return null;
 
+  const ssLabels = supersetLabels(session.exercises ?? []);
   const firstIncomplete = findNextIncompleteSet(allSets);
   const allSetsDone = !firstIncomplete;
   // Show the current-exercise banner only when that exercise's inline panel
@@ -351,6 +354,12 @@ function WorkoutSessionEditor({
                     <span className="font-medium text-slate-900">
                       {exercise.exerciseName}
                     </span>
+                    {exercise.supersetGroup &&
+                    ssLabels.has(exercise.supersetGroup) ? (
+                      <span className="ml-2 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700">
+                        SS {ssLabels.get(exercise.supersetGroup)}
+                      </span>
+                    ) : null}
                     <span className="ml-2 text-xs text-slate-500">
                       {exerciseSets.filter((s) => s.completed).length}/
                       {exerciseSets.length} sets

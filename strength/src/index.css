@@ -113,6 +113,9 @@
       & .bg-violet-50 {
         background-color: rgb(76 29 149 / 0.35);
       }
+      & .bg-violet-100 {
+        background-color: rgb(76 29 149 / 0.45);
+      }
 
       & .border-slate-50 {
         border-color: #1e293b;
@@ -199,8 +202,14 @@
       & .text-sky-800 {
         color: #7dd3fc;
       }
+      & .text-violet-700 {
+        color: #a78bfa;
+      }
       & .text-violet-800 {
         color: #c4b5fd;
+      }
+      & .hover\:text-violet-700:hover {
+        color: #a78bfa;
       }
 
       & .ring-emerald-200 {
@@ -297,6 +306,9 @@
     & .bg-violet-50 {
       background-color: rgb(76 29 149 / 0.35);
     }
+    & .bg-violet-100 {
+      background-color: rgb(76 29 149 / 0.45);
+    }
 
     & .border-slate-50 {
       border-color: #1e293b;
@@ -383,8 +395,14 @@
     & .text-sky-800 {
       color: #7dd3fc;
     }
+    & .text-violet-700 {
+      color: #a78bfa;
+    }
     & .text-violet-800 {
       color: #c4b5fd;
+    }
+    & .hover\:text-violet-700:hover {
+      color: #a78bfa;
     }
 
     & .ring-emerald-200 {

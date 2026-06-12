@@ -86,6 +86,24 @@ export function progressPointsForExercise(
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 }
 
+function plannedToLoggedSet(
+  exerciseId: string,
+  set: TemplateSet,
+  restSeconds: number | undefined,
+): LoggedSet {
+  return omitUndefined({
+    id: newId(),
+    exerciseId,
+    kind: set.kind,
+    reps: set.targetReps ?? set.targetRepsMin,
+    weight: set.targetWeight,
+    rpe: set.targetRpe,
+    restSeconds,
+    completed: false,
+    notes: set.notes,
+  }) as LoggedSet;
+}
+
 /** Clone a template into a fresh in-progress session (new exercise/set IDs). */
 export function createSessionFromTemplate(
   template: WorkoutTemplateDoc,
@@ -100,11 +118,18 @@ export function createSessionFromTemplate(
   const exercises: LoggedExercise[] = [];
   const sets: LoggedSet[] = [];
 
+  // Group template exercises into blocks: exercises sharing a supersetGroup
+  // form one block (anchored at the group's first appearance); everything
+  // else is a singleton block.
+  type BlockEntry = { exerciseId: string; planned: TemplateExercise };
+  const blocks: BlockEntry[][] = [];
+  const blockByGroup = new Map<string, BlockEntry[]>();
+
   for (const planned of template.exercises ?? []) {
-    const exerciseId = newId();
+    const entry: BlockEntry = { exerciseId: newId(), planned };
     exercises.push(
       omitUndefined({
-        id: exerciseId,
+        id: entry.exerciseId,
         exerciseUrl: planned.exerciseUrl,
         exerciseName: planned.exerciseName,
         notes: planned.notes,
@@ -112,20 +137,48 @@ export function createSessionFromTemplate(
         unit: planned.unit,
       }) as LoggedExercise,
     );
-    for (const set of planned.sets) {
-      sets.push(
-        omitUndefined({
-          id: newId(),
-          exerciseId,
-          kind: set.kind,
-          reps: set.targetReps ?? set.targetRepsMin,
-          weight: set.targetWeight,
-          rpe: set.targetRpe,
-          restSeconds: set.restSeconds,
-          completed: false,
-          notes: set.notes,
-        }) as LoggedSet,
-      );
+
+    const group = planned.supersetGroup;
+    if (group) {
+      const existing = blockByGroup.get(group);
+      if (existing) {
+        existing.push(entry);
+        continue;
+      }
+      const block = [entry];
+      blockByGroup.set(group, block);
+      blocks.push(block);
+    } else {
+      blocks.push([entry]);
+    }
+  }
+
+  // Emit sets in execution order. Superset blocks interleave round-robin
+  // (A1, B1, A2, B2, …); within a round you move straight to the partner
+  // exercise (restSeconds: 0) and only rest after the round's last set.
+  for (const block of blocks) {
+    if (block.length === 1) {
+      const { exerciseId, planned } = block[0];
+      for (const set of planned.sets) {
+        sets.push(plannedToLoggedSet(exerciseId, set, set.restSeconds));
+      }
+      continue;
+    }
+
+    const rounds = Math.max(...block.map((b) => b.planned.sets.length));
+    for (let round = 0; round < rounds; round++) {
+      const inRound = block.filter((b) => round < b.planned.sets.length);
+      inRound.forEach((b, position) => {
+        const set = b.planned.sets[round];
+        const isRoundEnd = position === inRound.length - 1;
+        sets.push(
+          plannedToLoggedSet(
+            b.exerciseId,
+            set,
+            isRoundEnd ? set.restSeconds : 0,
+          ),
+        );
+      });
     }
   }
 

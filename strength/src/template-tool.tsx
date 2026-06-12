@@ -17,6 +17,7 @@ import { cloneTemplateToSession } from "./gym";
 import { useLoadedExercises, useLoadedWorkoutSessions } from "./hooks";
 import { openPatchworkDocument } from "./navigation";
 import { assignAutomergeFields, setAutomergeString } from "./automerge-fields";
+import { supersetLabels } from "./workout-flow";
 import type {
   FolderDoc,
   TemplateExercise,
@@ -130,6 +131,35 @@ function WorkoutTemplateEditor({
     if (selectedExerciseId === id) setSelectedExerciseId(null);
   };
 
+  /** Put this exercise in a superset with the one above it. */
+  const linkWithPrevious = (id: string) => {
+    templateHandle.change((draft) => {
+      const exercises = draft.exercises ?? [];
+      const index = [...exercises].findIndex((e) => e.id === id);
+      if (index <= 0) return;
+      const prev = exercises[index - 1];
+      const group = prev.supersetGroup ?? newId();
+      prev.supersetGroup = group;
+      exercises[index].supersetGroup = group;
+    });
+  };
+
+  const unlinkExercise = (id: string) => {
+    templateHandle.change((draft) => {
+      const exercises = draft.exercises ?? [];
+      const index = [...exercises].findIndex((e) => e.id === id);
+      if (index < 0) return;
+      const group = exercises[index].supersetGroup;
+      delete exercises[index].supersetGroup;
+      if (!group) return;
+      // A superset of one is just an exercise — clean up the leftover.
+      const remaining = exercises.filter((e) => e.supersetGroup === group);
+      if (remaining.length === 1) delete remaining[0].supersetGroup;
+    });
+  };
+
+  const ssLabels = supersetLabels(template?.exercises ?? []);
+
   const startSession = async () => {
     if (!template || !sessionsFolderUrl) return;
     setStarting(true);
@@ -195,6 +225,12 @@ function WorkoutTemplateEditor({
                       <span className="font-medium text-slate-900">
                         {exercise.exerciseName}
                       </span>
+                      {exercise.supersetGroup &&
+                      ssLabels.has(exercise.supersetGroup) ? (
+                        <span className="ml-2 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700">
+                          SS {ssLabels.get(exercise.supersetGroup)}
+                        </span>
+                      ) : null}
                       <span className="ml-2 text-xs text-slate-500">
                         {exercise.sets.length} sets
                       </span>
@@ -210,7 +246,27 @@ function WorkoutTemplateEditor({
 
                   {selectedExerciseId === exercise.id ? (
                     <div className="space-y-2 border-t border-slate-100 px-4 py-3">
-                      <div className="flex justify-end">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-xs">
+                          {exercise.supersetGroup ? (
+                            <button
+                              type="button"
+                              onClick={() => unlinkExercise(exercise.id)}
+                              className="text-violet-700 hover:underline"
+                            >
+                              Unlink superset{" "}
+                              {ssLabels.get(exercise.supersetGroup) ?? ""}
+                            </button>
+                          ) : index > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => linkWithPrevious(exercise.id)}
+                              className="text-slate-500 hover:text-violet-700 hover:underline"
+                            >
+                              ⇄ Superset with previous
+                            </button>
+                          ) : null}
+                        </div>
                         <div className="flex overflow-hidden rounded-md border border-slate-200 text-xs">
                           {(["kg", "lb"] as const).map((u) => (
                             <button
