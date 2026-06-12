@@ -4,3 +4,4 @@ node_modules
 dist/
 .claude/
 .env
+.pnpm-store
