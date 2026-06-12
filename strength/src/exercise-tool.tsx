@@ -1,7 +1,4 @@
-import {
-  useDocHandle,
-  useDocument,
-} from "@automerge/automerge-repo-react-hooks";
+import { useDocument } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import { assignAutomergeFields } from "./automerge-fields";
 import { ExerciseDetail } from "./components/ExerciseDetail";
@@ -9,8 +6,9 @@ import { makeTool } from "./make-tool";
 import type { ExerciseDoc } from "./types";
 
 function ExerciseView({ docUrl }: { docUrl: AutomergeUrl }) {
-  const handle = useDocHandle<ExerciseDoc>(docUrl, { suspense: true });
-  const [exercise] = useDocument<ExerciseDoc>(docUrl, { suspense: true });
+  const [exercise, changeExercise] = useDocument<ExerciseDoc>(docUrl, {
+    suspense: true,
+  });
   if (!exercise) return null;
 
   return (
@@ -18,7 +16,7 @@ function ExerciseView({ docUrl }: { docUrl: AutomergeUrl }) {
       <ExerciseDetail
         exercise={exercise}
         onUpdate={(patch) => {
-          handle.change((draft) => {
+          changeExercise((draft) => {
             assignAutomergeFields(draft, patch);
           });
         }}

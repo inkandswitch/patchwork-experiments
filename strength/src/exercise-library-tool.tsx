@@ -1,8 +1,4 @@
-import {
-  useDocHandle,
-  useDocument,
-  useRepo,
-} from "@automerge/automerge-repo-react-hooks";
+import { useDocument, useRepo } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import { useMemo, useState } from "react";
 import { makeTool } from "./make-tool";
@@ -12,24 +8,20 @@ import { createDocOfType } from "./create-doc";
 import { DEFAULT_EXERCISES } from "./default-exercises";
 import { EXERCISE_TYPE, addDocLink, exerciseLinks } from "./folder";
 import { useLoadedExercises } from "./hooks";
-import type { DocHandle } from "@automerge/automerge-repo";
 import type { ExerciseDoc, FolderDoc } from "./types";
 
 function SelectedExercisePanel({
   exerciseUrl,
   exercise,
-  folderHandle,
+  changeFolder,
   onClose,
 }: {
   exerciseUrl: AutomergeUrl;
   exercise: ExerciseDoc;
-  folderHandle: DocHandle<FolderDoc>;
+  changeFolder: (fn: (draft: FolderDoc) => void) => void;
   onClose: () => void;
 }) {
-  const exerciseHandle = useDocHandle<ExerciseDoc>(exerciseUrl, {
-    suspense: true,
-  });
-  const [currentDoc] = useDocument<ExerciseDoc>(exerciseUrl, {
+  const [currentDoc, changeExercise] = useDocument<ExerciseDoc>(exerciseUrl, {
     suspense: true,
   });
   const current = currentDoc ?? exercise;
@@ -40,11 +32,11 @@ function SelectedExercisePanel({
       compact
       onClose={onClose}
       onUpdate={(patch) => {
-        exerciseHandle.change((draft) => {
+        changeExercise((draft) => {
           assignAutomergeFields(draft, patch);
         });
         if (patch.name) {
-          folderHandle.change((folderDraft) => {
+          changeFolder((folderDraft) => {
             const link = folderDraft.docs?.find((l) => l.url === exerciseUrl);
             if (link) link.name = patch.name!;
           });
@@ -56,16 +48,14 @@ function SelectedExercisePanel({
 
 function ExerciseLibrary({ docUrl }: { docUrl: AutomergeUrl }) {
   const repo = useRepo();
-  const folderHandle = useDocHandle<FolderDoc>(docUrl, { suspense: true });
-  const [folder] = useDocument<FolderDoc>(docUrl, { suspense: true });
+  const [folder, changeFolder] = useDocument<FolderDoc>(docUrl, {
+    suspense: true,
+  });
   const [query, setQuery] = useState("");
   const [selectedUrl, setSelectedUrl] = useState<AutomergeUrl | null>(null);
   const [seeding, setSeeding] = useState(false);
 
-  const links = useMemo(
-    () => (folder ? exerciseLinks(folder) : []),
-    [folder],
-  );
+  const links = useMemo(() => (folder ? exerciseLinks(folder) : []), [folder]);
   const urls = useMemo(() => links.map((l) => l.url), [links]);
   const loaded = useLoadedExercises(urls);
 
@@ -95,7 +85,7 @@ function ExerciseLibrary({ docUrl }: { docUrl: AutomergeUrl }) {
         if (seed) assignAutomergeFields(doc, seed);
       },
     );
-    folderHandle.change((draft) => {
+    changeFolder((draft) => {
       addDocLink(draft, {
         name: handle.doc()?.name ?? "Exercise",
         type: EXERCISE_TYPE,
@@ -202,7 +192,7 @@ function ExerciseLibrary({ docUrl }: { docUrl: AutomergeUrl }) {
             <SelectedExercisePanel
               exerciseUrl={selected.url}
               exercise={selected.doc}
-              folderHandle={folderHandle}
+              changeFolder={changeFolder}
               onClose={() => setSelectedUrl(null)}
             />
           </div>

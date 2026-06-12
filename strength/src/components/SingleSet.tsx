@@ -32,8 +32,7 @@ import { LoggedSetRow } from "./SetRow";
  * - highlight: whether this is the next incomplete set
  */
 export function SingleSet({ setUrl }: { setUrl: AutomergeUrl }) {
-  const setHandle = useDocHandle<LoggedSet>(setUrl, { suspense: true });
-  const [set] = useDocument<LoggedSet>(setUrl, { suspense: true });
+  const [set, changeSet] = useDocument<LoggedSet>(setUrl, { suspense: true });
 
   // Root handle synthesizes sibling sub-handles; the root doc supplies
   // session-level facts (status, fallback unit).
@@ -81,11 +80,9 @@ export function SingleSet({ setUrl }: { setUrl: AutomergeUrl }) {
       unit={unit}
       executing={executing}
       isCurrent={isCurrent}
-      onChange={(patch) =>
-        setHandle.change((s) => assignAutomergeFields(s, patch))
-      }
+      onChange={(patch) => changeSet((s) => assignAutomergeFields(s, patch))}
       onToggleComplete={() =>
-        setHandle.change((s) => {
+        changeSet((s) => {
           s.completed = !s.completed;
         })
       }

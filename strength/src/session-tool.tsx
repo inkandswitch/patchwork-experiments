@@ -51,7 +51,7 @@ function WorkoutSessionEditor({
   const sessionHandle = useDocHandle<WorkoutSessionDoc>(docUrl, {
     suspense: true,
   });
-  const [session] = useDocument<WorkoutSessionDoc>(docUrl, {
+  const [session, changeSession] = useDocument<WorkoutSessionDoc>(docUrl, {
     suspense: true,
   });
   const [activeExerciseId, setActiveExerciseId] = useState<string | null>(null);
@@ -112,11 +112,11 @@ function WorkoutSessionEditor({
 
   const updateDefaultRest = useCallback(
     (seconds: number) => {
-      sessionHandle.change((draft) => {
+      changeSession((draft) => {
         draft.defaultRestSeconds = seconds;
       });
     },
-    [sessionHandle],
+    [changeSession],
   );
 
   /**
@@ -164,7 +164,7 @@ function WorkoutSessionEditor({
   }, [allSets, executing, defaultRestSeconds, focusSet]);
 
   const completeSession = () => {
-    sessionHandle.change((draft) => {
+    changeSession((draft) => {
       draft.status = "completed";
       draft.completedAt = new Date().toISOString();
       if (draft.startedAt) {
@@ -289,9 +289,7 @@ function WorkoutSessionEditor({
                   step={15}
                   value={defaultRestSeconds}
                   onChange={(e) =>
-                    updateDefaultRest(
-                      Math.max(0, Number(e.target.value) || 0),
-                    )
+                    updateDefaultRest(Math.max(0, Number(e.target.value) || 0))
                   }
                   className="w-14 rounded border border-slate-200 px-1 py-0.5 text-xs"
                 />
@@ -425,7 +423,7 @@ function WorkoutSessionEditor({
             value={session.notes ?? ""}
             disabled={!executing}
             onChange={(e) =>
-              sessionHandle.change((draft) => {
+              changeSession((draft) => {
                 setAutomergeString(
                   draft as unknown as Record<string, unknown>,
                   "notes",

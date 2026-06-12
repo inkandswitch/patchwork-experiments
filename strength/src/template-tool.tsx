@@ -1,8 +1,4 @@
-import {
-  useDocHandle,
-  useDocument,
-  useRepo,
-} from "@automerge/automerge-repo-react-hooks";
+import { useDocument, useRepo } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import { useMemo, useState } from "react";
 import { newId } from "./calculations";
@@ -33,10 +29,7 @@ function WorkoutTemplateEditor({
   hostElement: HTMLElement;
 }) {
   const repo = useRepo();
-  const templateHandle = useDocHandle<WorkoutTemplateDoc>(docUrl, {
-    suspense: true,
-  });
-  const [template] = useDocument<WorkoutTemplateDoc>(docUrl, {
+  const [template, changeTemplate] = useDocument<WorkoutTemplateDoc>(docUrl, {
     suspense: true,
   });
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -103,7 +96,7 @@ function WorkoutTemplateEditor({
         { targetReps: 8, restSeconds: 90 },
       ],
     };
-    templateHandle.change((draft) => {
+    changeTemplate((draft) => {
       if (!draft.exercises) draft.exercises = [];
       draft.exercises.push(planned);
     });
@@ -115,7 +108,7 @@ function WorkoutTemplateEditor({
     id: string,
     updater: (exercise: TemplateExercise) => void,
   ) => {
-    templateHandle.change((draft) => {
+    changeTemplate((draft) => {
       const index = [...(draft.exercises ?? [])].findIndex((e) => e.id === id);
       if (index < 0) return;
       updater(draft.exercises![index]);
@@ -123,7 +116,7 @@ function WorkoutTemplateEditor({
   };
 
   const removeExercise = (id: string) => {
-    templateHandle.change((draft) => {
+    changeTemplate((draft) => {
       const exercises = draft.exercises ?? [];
       const index = [...exercises].findIndex((e) => e.id === id);
       if (index >= 0) draft.exercises!.splice(index, 1);
@@ -133,7 +126,7 @@ function WorkoutTemplateEditor({
 
   /** Put this exercise in a superset with the one above it. */
   const linkWithPrevious = (id: string) => {
-    templateHandle.change((draft) => {
+    changeTemplate((draft) => {
       const exercises = draft.exercises ?? [];
       const index = [...exercises].findIndex((e) => e.id === id);
       if (index <= 0) return;
@@ -145,7 +138,7 @@ function WorkoutTemplateEditor({
   };
 
   const unlinkExercise = (id: string) => {
-    templateHandle.change((draft) => {
+    changeTemplate((draft) => {
       const exercises = draft.exercises ?? [];
       const index = [...exercises].findIndex((e) => e.id === id);
       if (index < 0) return;
@@ -346,7 +339,7 @@ function WorkoutTemplateEditor({
             <textarea
               value={template.notes ?? ""}
               onChange={(e) =>
-                templateHandle.change((draft) => {
+                changeTemplate((draft) => {
                   setAutomergeString(
                     draft as unknown as Record<string, unknown>,
                     "notes",

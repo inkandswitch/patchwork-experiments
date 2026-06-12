@@ -42,7 +42,7 @@ export function ExerciseLogger({
   const sessionHandle = useDocHandle<WorkoutSessionDoc>(sessionUrl, {
     suspense: true,
   });
-  const [session] = useDocument<WorkoutSessionDoc>(sessionUrl, {
+  const [session, changeSession] = useDocument<WorkoutSessionDoc>(sessionUrl, {
     suspense: true,
   });
 
@@ -89,7 +89,7 @@ export function ExerciseLogger({
         <button
           type="button"
           onClick={() =>
-            sessionHandle.change((draft) => {
+            changeSession((draft) => {
               pushSetForExercise(draft, exerciseId, newLoggedSet(exerciseId));
             })
           }
