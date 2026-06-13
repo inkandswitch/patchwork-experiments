@@ -1,5 +1,6 @@
+import { Automerge } from '@automerge/automerge-repo/slim';
 import type { AutomergeUrl, Doc, DocHandle } from '@automerge/automerge-repo';
-import { useDocHandle } from '@automerge/automerge-repo-react-hooks';
+import { RepoContext, useDocHandle } from '@automerge/automerge-repo-react-hooks';
 import { javascript } from '@codemirror/lang-javascript';
 import { EditorState, Prec } from '@codemirror/state';
 import { keymap } from '@codemirror/view';
@@ -15,213 +16,397 @@ import {
   type TransitionEvent,
 } from 'react';
 
-import type { LivelymergeDoc, Obj, Ref, Referent } from './types';
+import {
+  type LivelymergeDoc,
+  type Obj,
+  type Arr,
+  type Fun,
+  type Ref,
+  type Val,
+  isObj,
+  isArr,
+  isRef,
+  isFun,
+} from './types';
 import { createRoot } from 'react-dom/client';
-import { RepoContext } from '@automerge/automerge-repo-react-hooks';
 import type { ToolElement, ToolImplementation } from '@inkandswitch/patchwork-plugins';
 import './styles.css';
-import { Automerge } from '@automerge/automerge-repo/slim';
+import { transpile } from './transpiler';
 
 // TODO: stop requesting animation frame after the UI unmounts
 // TODO: why doesn't toString work when it's a method on Objs? (something to do w/ Proxy)
 // TODO: move workspace contents to an Obj (shouldn't be special state)
 
-interface Impl {
-  change(fn: () => void): void;
-  _change(fn: () => void): void;
-  newObj(prototype?: Obj): Obj;
+interface Proxy {
+  $isProxy: boolean;
+  $id: string;
+  $toRef: Ref;
+  $unwrapped: Obj | Arr | Fun;
 }
-
-const vanillaImpl: Impl = {
-  newObj(prototype?: Obj) {
-    let obj: Obj;
-    if (prototype) {
-      obj = Object.create(prototype);
-      obj.proto = prototype;
-      obj._protoId = obj._id;
-    } else {
-      obj = Object.create(null);
-    }
-    obj._id = Math.random();
-    return obj;
-  },
-  change(fn: () => void): void {
-    return this._change(fn);
-  },
-  _change(fn: () => void): void {
-    if (!world) {
-      world = w = Object.create(null);
-      (window as any).world = (window as any).w = world;
-      world.proto = null;
-      world._protoId = null;
-      world._id = 0;
-    }
-    return fn();
-  },
-};
 
 let docHandle: DocHandle<LivelymergeDoc>;
 let doc: LivelymergeDoc;
-let newObjects: Map<number, Obj> | null = null;
-let newArrays: Set<any[]> | null = null;
-let proxies: Map<number, any> | null = null;
-let world: any, w: any;
+let newObjects: Map<string, Obj | Arr | Fun> | null = null;
+let proxies: Map<string, Proxy> | null = null;
+let w: any;
+
+(window as any).showRefs = (referentId: string) => {
+  for (const [id, state] of Object.entries(doc.objectTable) as [string, Obj | Arr | Fun][]) {
+    switch (state.$type) {
+      case 'obj':
+        for (const [k, v] of Object.entries(state) as [string, Val][]) {
+          if (isRef(v) && v.$id === referentId) {
+            console.log(id, '.', k, '=', v);
+          }
+        }
+        break;
+      case 'arr': {
+        state.$values.forEach((v, i) => {
+          if (isRef(v) && v.$id === referentId) {
+            console.log(id, '[', i, ']=', v);
+          }
+        });
+        break;
+      }
+    }
+  }
+};
 
 let inChangeCall = false;
 
-(window as any).showRefs = (referentId: string) => {
-  for (const [id, state] of Object.entries(doc.objectTable)) {
-    if (!('type' in state) || state.type !== 'obj') {
-      continue;
-    }
-    for (const [k, v] of Object.entries(state))
-      if (typeof v === 'object' && v != null && v.type === 'ref' && v.id === referentId)
-        console.log(id, '.', k, '=', v);
+function change(fn: () => void) {
+  if (inChangeCall) {
+    fn();
+    return;
   }
-};
 
-const automergeImpl: Impl = {
-  newObj(prototype?: Obj): Obj {
-    if (newObjects == null) {
-      newObjects = new Map();
-    }
-    const obj: Obj = {
-      type: 'obj',
-      _id: Math.random(),
-      _protoId: prototype != null ? prototype[UNWRAPPED as any]._id : -1,
-    };
-    // console.log('>> fresh newObj', obj._id);
-    newObjects.set(obj._id, obj);
-    return proxify(obj);
-  },
-  change(fn: () => void) {
-    if (inChangeCall) {
-      fn();
-      return;
-    }
-
-    let exception: any;
-    newObjects = null;
-    newArrays = null;
-    proxies = null;
-    this._change(() => {
-      world = w = proxify(doc.objectTable[0], 0);
-      (window as any).world = (window as any).w = world;
-      inChangeCall = true;
-      try {
-        fn();
-      } catch (e) {
-        exception = e;
-        debugger;
-      } finally {
-        gc();
-        inChangeCall = false;
-      }
-    });
-    if (exception) {
-      console.error(exception);
-      if (exception instanceof Error) {
-        console.error(exception.stack);
-      }
-      throw exception;
-    }
-  },
-  _change(fn: () => void) {
+  inChangeCall = true;
+  newObjects = null;
+  proxies = null;
+  let exception: any;
+  try {
     docHandle.change((_doc) => {
       doc = _doc;
-      (window as any).doc = doc;
+      w = (window as any).world = deserialize(doc.objectTable[0]);
       fn();
     });
-  },
-};
-
-let impl = automergeImpl;
-
-function newObj(prototype?: Obj) {
-  return impl.newObj(prototype);
-}
-(window as any).newObj = newObj;
-
-// objects
-
-function isObj(value: any): value is Obj {
-  return typeof value === 'object' && value?.type === 'obj';
-}
-
-function isRef(value: any): value is Ref {
-  return (
-    typeof value === 'object' && value != null && (value.type === 'ref' || value.type === 'obj ref')
-  );
-}
-
-function toRef(id: number): Ref {
-  return { type: 'ref', id };
-}
-
-function toObjRef(obj: Obj): Ref {
-  return toRef(obj._id);
-}
-
-function referentById(id: number): Referent {
-  if (newObjects?.has(id)) {
-    return newObjects.get(id)!;
-  }
-  for (const xs of newArrays ?? []) {
-    if ((xs as any)._id === id) {
-      return xs;
-    }
-  }
-  const ans = doc.objectTable[id];
-  if (!ans) {
-    console.error('no object with id', id);
+  } catch (e) {
+    exception = e;
     debugger;
-    throw new Error('no object with id ' + id);
+  } finally {
+    inChangeCall = false;
   }
-  return ans;
+  if (exception) {
+    console.error(exception);
+    if (exception instanceof Error) {
+      console.error(exception.stack);
+    }
+    throw exception;
+  }
 }
 
-// arrays
+function $obj(obj: Record<string, Val>, proto?: Proxy) {
+  const $id = Math.random().toString();
+  const entry: Obj = {
+    $type: 'obj',
+    $id,
+    $protoId: proto?.$id ?? '-1',
+  };
+  for (const [k, v] of Object.entries(obj)) {
+    entry[k] = toVal(v);
+  }
+  ensureNewObjects().set($id, entry);
+  return deserialize(entry);
+}
 
-function toArrayRef(xs: any[]): Ref {
-  let id = (xs as any)._id;
-  if (typeof id === 'number') {
-    return toRef(id);
+function $arr(values: any) {
+  const $id = Math.random().toString();
+  const entry: Arr = {
+    $type: 'arr',
+    $id,
+    $values: values.map(toVal),
+  };
+  ensureNewObjects().set($id, entry);
+  return deserialize(entry);
+}
+
+const scopesToFnCache = new Map<string, (...args: any[]) => () => any>();
+
+function $fun($code: string, scopes: Proxy[]) {
+  let scopesToFn = scopesToFnCache.get($code);
+  if (!scopesToFn) {
+    scopesToFn = new Function($code) as () => () => any;
+    scopesToFnCache.set($code, scopesToFn);
   }
 
-  id = Math.random();
-  if (!newArrays) {
-    newArrays = new Set();
+  const $id = Math.random().toString();
+  const entry: Fun = {
+    $type: 'fun',
+    $id,
+    $code,
+    $scopes: scopes.map(toRef),
+  };
+  ensureNewObjects().set($id, entry);
+  return deserialize(entry);
+}
+
+function ensureNewObjects() {
+  if (!newObjects) {
+    newObjects = new Map();
   }
-  newArrays.add(xs);
-  console.log('>> new array with id', id, 'added to newArrays');
-  Object.defineProperty(xs, '_id', { value: id });
-  return toRef(id);
+  return newObjects;
 }
 
-// functions
-
-type Func = {
-  type: 'func';
-  code: string; // stringified function
-};
-
-function isFunc(value: any): value is Func {
-  return typeof value === 'object' && value?.type === 'func';
+function toVal(x: any): Val {
+  return isProxy(x) ? toRef(x) : x;
 }
 
-const functionCache = new Map<string, () => any>();
-
-function toFunc(f: () => void): Func {
-  const code = `(${f.toString()})`;
-  functionCache.set(code, f);
-  return { type: 'func', code };
+function toRef(proxy: Proxy): Ref {
+  return { $type: 'ref', $id: proxy.$id };
 }
 
-// serialization / deserialization
+function isProxy(x: any): x is Proxy {
+  return typeof x === 'object' && x != null && x.$isProxy;
+}
 
-const UNWRAPPED = Symbol('proxy-target');
+function deserialize(value: any): Proxy {
+  if (isObj(value)) {
+    return proxifyObj(value);
+  } else if (isArr(value)) {
+    return proxifyArr(value);
+  } else if (isFun(value)) {
+    return proxifyFun(value);
+  } else {
+    return value;
+  }
+}
 
-/** List index or length — stored array data (including Automerge lists). */
+function proxifyObj(obj: Obj): Proxy {
+  let p = proxies?.get(obj.$id);
+  if (p) {
+    return p;
+  }
+
+  let _ref: Ref | null = null;
+  const ref = () => {
+    if (!_ref) {
+      _ref = { $type: 'ref', $id: obj.$id };
+    }
+    return _ref;
+  };
+
+  p = new Proxy(obj, {
+    set(_, prop, value) {
+      (obj as any)[prop] = toVal(value);
+      return true;
+    },
+    get(_, prop) {
+      switch (prop) {
+        case '$isProxy':
+          return true;
+        case '$id':
+          return obj.$id;
+        case '$toRef':
+          return ref();
+        case '$unwrapped':
+          return obj;
+        case '__proto__':
+          return !obj.$protoId ? null : deserialize(doc.objectTable[obj.$protoId]);
+      }
+
+      let o = obj;
+      while (o) {
+        if (prop in o) {
+          return deserialize((o as any)[prop]);
+        } else if (o.$protoId) {
+          o = doc.objectTable[o.$protoId] as Obj;
+        }
+      }
+      return undefined;
+    },
+  }) as unknown as Proxy;
+
+  ensureProxies().set(obj.$id, p);
+  return p;
+}
+
+function proxifyArr(arr: Arr): Proxy {
+  let p = proxies?.get(arr.$id);
+  if (p) {
+    return p;
+  }
+
+  let _ref: Ref | null = null;
+  const ref = () => {
+    if (!_ref) {
+      _ref = { $type: 'ref', $id: arr.$id };
+    }
+    return _ref;
+  };
+
+  p = new Proxy(arr, {
+    set(_, prop, value) {
+      (arr as any)[prop] = toVal(value);
+      return true;
+    },
+    get(_, prop) {
+      switch (prop) {
+        case '$isProxy':
+          return true;
+        case '$id':
+          return arr.$id;
+        case '$toRef':
+          return ref();
+        case '$unwrapped':
+          return arr;
+
+        // override array methods
+        case 'at': {
+          return function (index: number) {
+            return deserialize(arr.$values.at(index));
+          };
+        }
+        case 'push': {
+          return function () {
+            for (const arg of arguments) {
+              arr.$values.push(toVal(arg));
+            }
+            return arr.$values.length;
+          };
+        }
+        case 'pop': {
+          return function () {
+            return deserialize(arr.$values.pop());
+          };
+        }
+        case 'unshift': {
+          return function () {
+            for (const arg of arguments) {
+              arr.$values.unshift(toVal(arg));
+            }
+            return arr.$values.length;
+          };
+        }
+        case 'shift': {
+          return function () {
+            return deserialize(arr.$values.shift());
+          };
+        }
+        case 'findIndex': {
+          return function (predicate: (value: any, index: number) => boolean, thisArg?: any) {
+            return arr.$values.map(deserialize).findIndex(predicate, thisArg);
+          };
+        }
+        case 'find': {
+          return function (predicate: (value: any, index: number) => boolean, thisArg?: any) {
+            return arr.$values.map(deserialize).find(predicate, thisArg);
+          };
+        }
+        case 'filter': {
+          return function (predicate: (value: any, index: number) => boolean, thisArg?: any) {
+            return arr.$values.map(deserialize).filter(predicate, thisArg);
+          };
+        }
+        case 'includes': {
+          return function (searchElement: any, fromIndex?: number) {
+            return arr.$values.map(deserialize).includes(searchElement, fromIndex);
+          };
+        }
+        case 'indexOf': {
+          return function (searchElement: any, fromIndex?: number) {
+            return arr.$values.map(deserialize).indexOf(searchElement, fromIndex);
+          };
+        }
+        case 'forEach': {
+          return function (callbackFn: (value: any, index: number) => void, thisArg?: any) {
+            arr.$values.map(deserialize).forEach(callbackFn, thisArg);
+          };
+        }
+        case 'map': {
+          return function (callbackFn: (value: any) => any, thisArg?: any) {
+            return arr.$values.map(deserialize).map(callbackFn, thisArg);
+          };
+        }
+        case 'slice': {
+          return function (startIdx: number, endIdx?: number) {
+            return arr.$values.slice(startIdx, endIdx).map(deserialize);
+          };
+        }
+        case 'splice': {
+          return function (startIdx: number, deleteCount = 0, ...args: any[]) {
+            return arr.$values.splice(startIdx, deleteCount, ...args.map(toVal)).map(deserialize);
+          };
+        }
+        case 'concat': {
+          return function (...args: any[]) {
+            return arr.$values.concat(...args.map(toVal)).map(deserialize);
+          };
+        }
+        case 'join': {
+          return function (separator?: string) {
+            return arr.$values.join(separator);
+          };
+        }
+        case 'sort': {
+          return function (compareFn?: (a: any, b: any) => number) {
+            return arr.$values.map(deserialize).sort(compareFn);
+          };
+        }
+        case 'toReversed': {
+          return function () {
+            return arr.$values.map(deserialize).toReversed();
+          };
+        }
+      }
+
+      if (isArrayIndexKey(prop)) {
+        return deserialize(arr.$values[prop as any]);
+      }
+
+      return undefined;
+    },
+    getOwnPropertyDescriptor(_fake, prop) {
+      if (prop === '$unwrapped') {
+        return undefined;
+      }
+      if (isArrayIndexKey(prop)) {
+        if (prop === 'length') {
+          return {
+            value: arr.$values.length,
+            writable: true,
+            enumerable: false,
+            configurable: false,
+          };
+        }
+        const idx = typeof prop === 'string' ? Number(prop) : prop;
+        if (typeof idx === 'number' && idx >= 0 && idx < arr.$values.length) {
+          return {
+            value: deserialize(arr.$values[idx]),
+            writable: true,
+            enumerable: true,
+            configurable: true,
+          };
+        }
+        return undefined;
+      }
+      if (typeof prop === 'string') {
+        const v = (arr.$values as any)[prop];
+        if (typeof v === 'function') {
+          return {
+            configurable: true,
+            enumerable: false,
+            writable: true,
+            value: v,
+          };
+        }
+      }
+      return undefined;
+    },
+  }) as unknown as Proxy;
+  ensureProxies().set(arr.$id, p);
+  return p;
+}
+
 function isArrayIndexKey(prop: string | symbol): boolean {
   if (prop === 'length') {
     return true;
@@ -235,383 +420,113 @@ function isArrayIndexKey(prop: string | symbol): boolean {
   return false;
 }
 
-/** Plain JS arrays staged in newArrays during change() — safe for Array.prototype methods. */
-function isStagedPlainArray(target: any): target is any[] {
-  return Array.isArray(target) && (newArrays?.has(target) ?? false);
-}
+function proxifyFun(fun: Fun): Proxy {
+  let p = proxies?.get(fun.$id);
+  if (p) {
+    return p;
+  }
 
-/** Values in objectTable that are arrays (plain JS or Automerge list). */
-function isArrayReferent(value: any): boolean {
-  if (value == null || typeof value !== 'object' || isObj(value)) {
-    return false;
-  }
-  if (Array.isArray(value)) {
-    return true;
-  }
-  try {
-    return typeof value.length === 'number';
-  } catch {
-    return false;
-  }
-}
-
-function _serialize(value: any): any {
-  if (typeof value === 'function') {
-    return toFunc(value);
-  } else if (isObj(value)) {
-    return toObjRef(value);
-  } else if (Array.isArray(value)) {
-    return toArrayRef(value);
-  } else if (isRef(value)) {
-    return { type: 'ref', id: value.id };
-  } else if (typeof value === 'object' && value && value[UNWRAPPED]) {
-    return value[UNWRAPPED];
-  } else {
-    return value;
-  }
-}
-
-function _deserialize(serializedValue: any): any {
-  if (isFunc(serializedValue)) {
-    const code = serializedValue.code;
-    const cached = functionCache.get(code);
-    // console.log('deserializing function', code, cached);
-    if (cached) {
-      return cached;
+  let _ref: Ref | null = null;
+  const ref = () => {
+    if (!_ref) {
+      _ref = { $type: 'ref', $id: fun.$id };
     }
-    try {
-      const f = eval(code) as () => any;
-      functionCache.set(code, f);
-      return f;
-    } catch (eee) {
-      console.error(eee);
-      debugger;
-      throw eee;
+    return _ref;
+  };
+
+  let _fn: (() => any) | null = null;
+  const fn: () => (...args: any[]) => any = () => {
+    if (!_fn) {
+      _fn = scopesToFnCache.get(fun.$code)!(...fun.$scopes.map(deserialize));
     }
-  } else if (isRef(serializedValue)) {
-    return proxify(referentById(serializedValue.id), serializedValue.id);
-  } else {
-    return serializedValue;
-  }
-}
+    return _fn;
+  };
 
-function objById(id: number): Obj {
-  return referentById(id) as Obj;
-}
-
-// proxies
-
-const IS_LM_PROXY = Symbol('is-lm-proxy');
-
-function proxifyArray(referent: any, objectTableId: number) {
-  if (proxies?.has(objectTableId)) {
-    return proxies.get(objectTableId)!;
-  }
-
-  // Do not use an Automerge list as the Proxy target — the engine may call
-  // getOwnPropertyDescriptor("push") on it, which Automerge does not support.
-  const proxyTarget = isStagedPlainArray(referent) ? referent : [];
-
-  const proxy = new Proxy(proxyTarget, {
-    set(_fake, prop, value) {
-      (referent as any)[prop] = _serialize(value);
-      return true;
+  p = new Proxy(fun, {
+    set(_, prop, value) {
+      throw new Error('setting function properties is a no-no!');
     },
-    get(_fake, prop) {
+    get(_, prop) {
       switch (prop) {
-        case IS_LM_PROXY:
+        case '$isProxy':
           return true;
-        case UNWRAPPED:
-          return toRef(objectTableId);
-
-        // override array methods
-        case 'at': {
-          return function (index: number) {
-            return _deserialize(referent.at(index));
-          };
-        }
-        case 'push': {
-          return function () {
-            for (const arg of arguments) {
-              referent.push(_serialize(arg));
-            }
-            return referent.length;
-          };
-        }
-        case 'pop': {
-          return function () {
-            return _deserialize(referent.pop());
-          };
-        }
-        case 'unshift': {
-          return function () {
-            for (const arg of arguments) {
-              referent.unshift(_serialize(arg));
-            }
-            return referent.length;
-          };
-        }
-        case 'shift': {
-          return function () {
-            return _deserialize(referent.shift());
-          };
-        }
-        case 'findIndex': {
-          return function (predicate: (value: any, index: number) => boolean, thisArg?: any) {
-            return referent.map(_deserialize).findIndex(predicate, thisArg);
-          };
-        }
-        case 'find': {
-          return function (predicate: (value: any, index: number) => boolean, thisArg?: any) {
-            return referent.map(_deserialize).find(predicate, thisArg);
-          };
-        }
-        case 'filter': {
-          return function (predicate: (value: any, index: number) => boolean, thisArg?: any) {
-            return referent.map(_deserialize).filter(predicate, thisArg);
-          };
-        }
-        case 'includes': {
-          return function (searchElement: any, fromIndex?: number) {
-            return referent.map(_deserialize).includes(searchElement, fromIndex);
-          };
-        }
-        case 'indexOf': {
-          return function (searchElement: any, fromIndex?: number) {
-            return referent.map(_deserialize).indexOf(searchElement, fromIndex);
-          };
-        }
-        case 'forEach': {
-          return function (callbackFn: (value: any, index: number) => void, thisArg?: any) {
-            referent.map(_deserialize).forEach(callbackFn, thisArg);
-          };
-        }
-        case 'map': {
-          return function (callbackFn: (value: any) => any, thisArg?: any) {
-            return referent.map(_deserialize).map(callbackFn, thisArg);
-          };
-        }
-        case 'slice': {
-          return function (startIdx: number, endIdx?: number) {
-            return referent.slice(startIdx, endIdx).map(_deserialize);
-          };
-        }
-        case 'splice': {
-          return function (startIdx: number, deleteCount = 0, ...args: any[]) {
-            return referent
-              .splice(startIdx, deleteCount, ...args.map(_serialize))
-              .map(_deserialize);
-          };
-        }
-        case 'concat': {
-          return function (...args: any[]) {
-            return referent.concat(...args.map(_serialize)).map(_deserialize);
-          };
-        }
-        case 'join': {
-          return function (separator?: string) {
-            return referent.join(separator);
-          };
-        }
-        case 'sort': {
-          return function (compareFn?: (a: any, b: any) => number) {
-            return referent.map(_deserialize).sort(compareFn);
-          };
-        }
-        case 'toReversed': {
-          return function () {
-            return referent.map(_deserialize).toReversed();
-          };
-        }
-      }
-
-      if (isArrayIndexKey(prop)) {
-        return _deserialize(referent[prop as any]);
-      }
-      if (isStagedPlainArray(referent)) {
-        const protoVal = (Array.prototype as any)[prop];
-        return typeof protoVal === 'function' ? protoVal : _deserialize(protoVal);
-      }
-      const v = (referent as any)[prop];
-      return typeof v === 'function' ? v : _deserialize(v);
-    },
-    getOwnPropertyDescriptor(_fake, prop) {
-      if (prop === UNWRAPPED) {
-        return undefined;
-      }
-      if (isStagedPlainArray(referent)) {
-        return (
-          Object.getOwnPropertyDescriptor(referent, prop) ??
-          Object.getOwnPropertyDescriptor(Array.prototype, prop)
-        );
-      }
-      if (isArrayIndexKey(prop)) {
-        if (prop === 'length') {
-          return {
-            value: referent.length,
-            writable: true,
-            enumerable: false,
-            configurable: false,
-          };
-        }
-        const idx = typeof prop === 'string' ? Number(prop) : prop;
-        if (typeof idx === 'number' && idx >= 0 && idx < referent.length) {
-          return {
-            value: _deserialize(referent[idx]),
-            writable: true,
-            enumerable: true,
-            configurable: true,
-          };
-        }
-        return undefined;
-      }
-      if (typeof prop === 'string') {
-        const v = (referent as any)[prop];
-        if (typeof v === 'function') {
-          return {
-            configurable: true,
-            enumerable: false,
-            writable: true,
-            value: v,
-          };
-        }
+        case '$id':
+          return fun.$id;
+        case '$toRef':
+          return ref();
+        case '$unwrapped':
+          return fun;
       }
       return undefined;
     },
-  });
+    apply(_, thisArg, args) {
+      return fn().apply(thisArg, args);
+    },
+  }) as unknown as Proxy;
+  ensureProxies().set(fun.$id, p);
+  return p;
+}
 
+function ensureProxies() {
   if (!proxies) {
     proxies = new Map();
   }
-  proxies.set(objectTableId, proxy);
-
-  return proxy;
-}
-
-function proxifyObj(value: Obj) {
-  if (!isObj(value)) {
-    console.error(value);
-    debugger;
-    throw new Error('proxifyObj: value is not an object');
-  }
-
-  if (proxies?.has(value._id)) {
-    return proxies.get(value._id)!;
-  }
-
-  const proxy = new Proxy(value, {
-    set(obj, prop, value) {
-      const sv = _serialize(value);
-      (obj as any)[prop] = sv;
-      return true;
-    },
-    get(target, prop) {
-      switch (prop) {
-        case IS_LM_PROXY:
-          return true;
-        case UNWRAPPED:
-          return target;
-        case '__proto__':
-          if (target._protoId != null) {
-            return _deserialize({ type: 'ref', id: target._protoId });
-          }
-          return null;
-        case 'getLmId': {
-          return function () {
-            return target._id;
-          };
-        }
-      }
-
-      let obj: Obj = target;
-      while (true) {
-        if (obj != null && prop in obj) {
-          return _deserialize((obj as any)[prop]);
-        } else if (obj != null && '_protoId' in obj) {
-          obj = objById(obj._protoId!);
-        } else {
-          return undefined;
-        }
-      }
-    },
-  });
-
-  if (!proxies) {
-    proxies = new Map();
-  }
-  proxies.set(value._id, proxy);
-
-  return proxy;
-}
-
-function proxify(value: Referent, objectTableId?: number) {
-  if (isArrayReferent(value) && !isObj(value)) {
-    return proxifyArray(value, objectTableId ?? (value as any)._id);
-  } else if (isObj(value)) {
-    return proxifyObj(value);
-  } else {
-    console.error(value);
-    debugger;
-    throw new Error('proxify: value is not an object or array');
-  }
+  return proxies;
 }
 
 function gc() {
-  for (const xs of newArrays ?? []) {
-    const id: number = (xs as any)._id;
-    console.log('>> storing array with id', id, 'in object table');
-    doc.objectTable[id] = xs.map(_serialize);
-  }
-
-  const visited = {} as Record<number, boolean>;
-  function visit(id: number) {
-    if (visited[id]) {
+  const visited = new Set<string>();
+  function visit(id: string) {
+    if (visited.has(id)) {
       return;
     }
-    visited[id] = true;
+    visited.add(id);
 
-    if (newObjects?.has(id)) {
+    let val = newObjects?.get(id);
+    if (val) {
       console.log('>> storing object with id', id, 'from newObjects');
-      doc.objectTable[id] = newObjects.get(id)!;
+      doc.objectTable[id] = val;
+    } else {
+      val = doc.objectTable[id];
+      if (!val) {
+        throw new Error('BAD: missing referent with id ' + id);
+      }
     }
 
-    const referent = doc.objectTable[id];
-    if (!referent) {
-      console.log('BAD: referent with id', id, 'not found');
-      console.log('   newObjects: ', newObjects);
-      return;
-    }
-
-    if (isObj(referent)) {
-      for (const v of Object.values(referent)) {
-        if ((window as any).debugGC) console.log('w');
+    if (isObj(val)) {
+      for (const v of Object.values(val)) {
         lookAt(v);
       }
-      if (referent._protoId != null) {
-        visit(referent._protoId);
+      if (val._protoId != null) {
+        visit(val._protoId);
+      }
+    } else if (isArr(val)) {
+      for (let i = 0; i < val.$values.length; i++) {
+        lookAt(val.$values[i]);
+      }
+    } else if (isFun(val)) {
+      for (const v of val.$scopes) {
+        lookAt(v);
       }
     } else {
-      for (let i = 0; i < referent.length; i++) {
-        lookAt(referent[i]);
-      }
-    }
-  }
-  function lookAt(v: any) {
-    if (isRef(v)) {
-      visit(v.id);
+      throw new Error('WAT');
     }
   }
 
-  visit(0);
+  function lookAt(v: Val) {
+    if (isRef(v)) {
+      visit(v.$id);
+    }
+  }
+
+  visit('0');
   let numReclaimed = 0;
   for (const id of Object.keys(doc.objectTable)) {
-    if (!visited[+id]) {
+    if (!visited.has(id)) {
       delete doc.objectTable[id];
       numReclaimed++;
     }
   }
-  newObjects = null;
-  newArrays = null;
   if ((window as any).debugGC) {
     console.log('reclaimed', numReclaimed, 'objects');
   }
@@ -650,10 +565,28 @@ function doIt(view: EditorView, print = false) {
   console.log('doIt', code, print);
   let result: any;
   try {
-    impl.change(() => {
-      console.log('evaluating', code);
-      result = eval(code);
-      (window as any).result = result;
+    change(() => {
+      const realCode = transpile(code);
+      console.log('evaluating', realCode);
+      // environment:
+      // - w (setInterval, setTimeout)
+      // - $obj
+      // - $fun
+      // - $arr
+
+      result = (window as any).result = new Function(
+        'w',
+        '$obj',
+        '$arr',
+        '$fun',
+        // TODO: setTimeout, setInterval
+        realCode,
+      )({
+        w,
+        $obj,
+        $arr,
+        $fun,
+      });
     });
     console.log('result', result);
   } catch (error) {
@@ -735,7 +668,6 @@ export const LivelymergeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   docHandle = useDocHandle<LivelymergeDoc>(docUrl, { suspense: true })!;
   (window as any).handle = docHandle; // needed for historical reasons, will go away once we update alldefs
 
-  const title = docHandle.doc().title.trim() || 'Livelymerge';
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   /** Shell stays mounted during close height animation; cleared after transition ends. */
@@ -744,7 +676,6 @@ export const LivelymergeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   const [drawerExpanded, setDrawerExpanded] = useState(false);
   const [drawerHeight, setDrawerHeight] = useState(DEFAULT_DRAWER_HEIGHT);
   const [dragging, setDragging] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
 
   const editorMountRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
@@ -839,8 +770,8 @@ export const LivelymergeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
 
   useEffect(() => {
     if (!alreadyInitialized) {
-      impl.change(() => {
-        world.initUI?.();
+      change(() => {
+        w.initUI?.();
       });
       alreadyInitialized = true;
     }

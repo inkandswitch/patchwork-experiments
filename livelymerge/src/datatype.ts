@@ -6,8 +6,8 @@ export const LivelymergeDatatype: DatatypeImplementation<LivelymergeDoc> = {
     doc['@patchwork'] = { type: 'livelymerge' };
     doc.title = 'Untitled Livelymerge';
     doc.objectTable = {
-      "-1": { type: "obj", _id: -1 }, // object prototype (top of the delegation chain)
-      "0": { type: "obj", _id: 0, _protoId: -1 }, // root object (w or world)
+      "-1": { $type: "obj", $id: "-1" }, // object prototype (top of the delegation chain)
+      "0": { $type: "obj", $id: "0", $protoId: "-1" }, // root object (w or world)
     };
   },
   getTitle(doc: LivelymergeDoc) {

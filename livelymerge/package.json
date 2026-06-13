@@ -1,13 +1,13 @@
 {
   "name": "@tiny-patchwork/livelymerge",
   "type": "module",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "private": true,
   "main": "./dist/index.js",
   "scripts": {
     "build": "vite build",
     "test": "vitest run",
-    "sync": "pnpm uild && pushwork sync",
+    "sync": "pnpm build && pushwork sync",
     "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
   },
   "dependencies": {
