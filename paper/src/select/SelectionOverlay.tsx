@@ -3,7 +3,7 @@ import { useDocument } from "../vendor/automerge-solid-primitives";
 import { subscribeDoc } from "../vendor/providers-solid";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type { DocWithLayers, Shape } from "../surface/types";
-import { outlinePoints, resolveOutline } from "./geometry";
+import { outlinePoints } from "../surface/geometry";
 import "./select.css";
 
 // Mirrors the shared focus document the FocusProvider owns. Keys in both maps
@@ -57,7 +57,9 @@ export function SelectionOverlay(props: {
 
   const highlightCss = createMemo(() =>
     localUrlsIn(focusDoc()?.highlight)
-      .map((url) => `[data-automerge-url="${url}"] { filter: ${HIGHLIGHT_GLOW}; }`)
+      .map(
+        (url) => `[data-automerge-url="${url}"] { filter: ${HIGHLIGHT_GLOW}; }`,
+      )
       .join("\n"),
   );
 
@@ -65,25 +67,22 @@ export function SelectionOverlay(props: {
     <div ref={root} class="select-overlay">
       <style>{highlightCss()}</style>
       <svg class="select-overlay-svg" width="100%" height="100%">
-        <For each={selectedUrls()}>
-          {(url) => <ShapeOutline url={url} />}
-        </For>
+        <For each={selectedUrls()}>{(url) => <ShapeOutline url={url} />}</For>
       </svg>
     </div>
   );
 }
 
-// Subscribes to a single shape via its sub-document URL and draws its resolved
-// outline. Rectangles and polygons close; lines stay open. Works for any
-// outline variant, including the ones derived from legacy shapes.
+// Subscribes to a single shape via its sub-document URL and draws its outline.
+// Rectangles and polygons close; lines stay open. Works for any outline
+// variant.
 function ShapeOutline(props: { url: AutomergeUrl }): JSX.Element {
   const [shape] = useDocument<Shape>(() => props.url);
 
   const points = createMemo(() => {
     const current = shape();
     if (!current) return undefined;
-    const outline = resolveOutline(current);
-    if (!outline) return undefined;
+    const outline = current.outline;
     const local = outlinePoints(outline);
     return {
       closed: outline.type !== "line",

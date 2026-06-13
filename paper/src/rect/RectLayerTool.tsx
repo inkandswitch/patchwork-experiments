@@ -1,31 +1,23 @@
 import { render } from "solid-js/web";
 import { For } from "solid-js";
-import {
-  RepoContext,
-  useDocument,
-} from "../vendor/automerge-solid-primitives";
+import { RepoContext, useDocument } from "../vendor/automerge-solid-primitives";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import type { DocHandle } from "@automerge/automerge-repo";
 import type { Shape, ShapeLayerDoc } from "../surface/types";
-import { resolveOutline } from "../select/geometry";
 import "./rect.css";
 
 // Geometry lives in `shape.outline` (a "rectangle" variant); only the visual
 // properties sit on the shape itself.
 export type RectShape = Shape & {
-  outline?: { type: "rectangle"; width: number; height: number };
+  outline: { type: "rectangle"; width: number; height: number };
   fill?: string;
   stroke?: string;
   strokeWidth?: number;
 };
 
-// Read width/height from the outline, falling back to legacy fields for
-// shapes persisted before outlines existed.
+// Read width/height from the rectangle outline.
 function rectSize(rect: RectShape): { width: number; height: number } {
-  const outline = resolveOutline(rect);
-  if (outline?.type === "rectangle")
-    return { width: outline.width, height: outline.height };
-  return { width: rect.width ?? 120, height: rect.height ?? 120 };
+  return { width: rect.outline.width, height: rect.outline.height };
 }
 
 // A self-contained layer tool. The mount target is the enclosing

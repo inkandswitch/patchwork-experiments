@@ -16,7 +16,6 @@ import type {
   SurfaceState,
 } from "../surface/types";
 import type { EmbedShape } from "../embed/EmbedLayerTool";
-import { topmostShapeAt } from "./geometry";
 
 // One shape participating in the current drag. `handle` is a sub-handle
 // scoped to the shape inside its layer doc; `homeSurfaceUrl` is the surface
@@ -237,8 +236,8 @@ export function SelectButton(): JSX.Element {
     const focus = focusHandle();
     if (!focus) return;
 
-    const { x, y } = pointer.position;
-    const hit = await topmostShapeAt(repo, pointer.surfaceUrl, x, y);
+    // The surface already hit-tested as it stamped the sample.
+    const hit = pointer.shapeUrl;
 
     if (shiftDown) {
       focus.change((doc) => {

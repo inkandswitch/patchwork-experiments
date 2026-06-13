@@ -11,6 +11,11 @@ export type SurfaceState = {
     // The surface that stamped the sample (points to Doc<DocWithLayers>).
     surfaceUrl: AutomergeUrl;
     isPressed: boolean;
+    // The topmost shape under the pointer in the stamping surface, if any
+    // (sub-document url into its layer doc). The surface hit-tests as it
+    // stamps, so tools read what's under the cursor instead of computing it.
+    // Absent until the surface's layer handles have loaded (a sample or two).
+    shapeUrl?: AutomergeUrl;
   };
 };
 
@@ -33,9 +38,7 @@ export type Shape = {
   x: number;
   y: number;
   z: number;
-  outline?: Outline;
-  width?: number;
-  height?: number;
+  outline: Outline;
 };
 
 export type Outline =

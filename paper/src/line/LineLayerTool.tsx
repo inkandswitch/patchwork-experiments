@@ -1,12 +1,8 @@
 import type { DocHandle } from "@automerge/automerge-repo";
-import {
-  RepoContext,
-  useDocument,
-} from "../vendor/automerge-solid-primitives";
+import { RepoContext, useDocument } from "../vendor/automerge-solid-primitives";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import { For } from "solid-js";
 import { render } from "solid-js/web";
-import { resolveOutline } from "../select/geometry";
 import { freehandPath } from "./freehand";
 import "./line.css";
 import { Point, Shape, ShapeLayerDoc } from "../surface/types";
@@ -15,17 +11,14 @@ import { Point, Shape, ShapeLayerDoc } from "../surface/types";
 // whose points are relative to the shape origin); `strokeWidth` is the pen
 // size and `stroke` the fill color. Only visual properties sit on the shape.
 export type LineShape = Shape & {
-  outline?: { type: "line"; points: Point[] };
+  outline: { type: "line"; points: Point[] };
   stroke?: string;
   strokeWidth?: number;
 };
 
-// The stroke's input points in absolute canvas coordinates, derived from the
-// outline (falling back to legacy `x2`/`y2` for pre-outline shapes).
+// The stroke's input points in absolute canvas coordinates.
 function strokePoints(line: LineShape): Point[] {
-  const outline = resolveOutline(line);
-  const points = outline?.type === "line" ? outline.points : [];
-  return points.map((p) => ({ x: line.x + p.x, y: line.y + p.y }));
+  return line.outline.points.map((p) => ({ x: line.x + p.x, y: line.y + p.y }));
 }
 
 // A self-contained layer tool. The mount target is the enclosing

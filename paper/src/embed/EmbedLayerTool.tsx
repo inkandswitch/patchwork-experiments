@@ -1,14 +1,10 @@
 import { render } from "solid-js/web";
 import { For, createSignal, onCleanup, onMount } from "solid-js";
-import {
-  RepoContext,
-  useDocument,
-} from "../vendor/automerge-solid-primitives";
+import { RepoContext, useDocument } from "../vendor/automerge-solid-primitives";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import "@inkandswitch/patchwork-elements";
 import type { Shape, ShapeLayerDoc } from "../surface/types";
-import { resolveOutline } from "../select/geometry";
 import "./embed.css";
 
 // The drag handle's height (px). The embed's rectangle outline covers its
@@ -21,17 +17,14 @@ const HANDLE_HEIGHT = 20;
 // the selection tool hit-tests it like any other shape; `docUrl` is the
 // embedded document and `toolId` optionally pins which tool renders it.
 export type EmbedShape = Shape & {
-  outline?: { type: "rectangle"; width: number; height: number };
+  outline: { type: "rectangle"; width: number; height: number };
   docUrl: AutomergeUrl;
   toolId?: string;
 };
 
-// Read width/height from the rectangle outline, falling back to legacy fields.
+// Read width/height from the rectangle outline.
 function embedSize(shape: EmbedShape): { width: number; height: number } {
-  const outline = resolveOutline(shape);
-  if (outline?.type === "rectangle")
-    return { width: outline.width, height: outline.height };
-  return { width: shape.width ?? 320, height: shape.height ?? 240 };
+  return { width: shape.outline.width, height: shape.outline.height };
 }
 
 // A self-contained layer tool that mounts one <patchwork-view> per embed shape,

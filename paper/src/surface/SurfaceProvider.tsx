@@ -17,6 +17,7 @@ import {
 } from "./types";
 import { subscribeDoc } from "../vendor/providers-solid";
 import { createPositionRegistry, positionOfUrl } from "./position";
+import { hitTestShape } from "./geometry";
 import type { EmbedShape } from "../embed/EmbedLayerTool";
 
 // The sideboard stamps this media type on its drags. The payload is JSON
@@ -80,18 +81,63 @@ export function SurfaceProvider({
         return { x: clientX - rect.left, y: clientY - rect.top };
       });
 
+    // Layer handles resolved so far, for synchronous hit detection while
+    // stamping. `null` marks an in-flight find so each layer is fetched once;
+    // a layer that isn't resolved yet simply doesn't participate (by the next
+    // sample it will). A find that rejects is dropped so the next pass retries.
+    const layerHandles = new Map<
+      AutomergeUrl,
+      DocHandle<ShapeLayerDoc> | null
+    >();
+
+    // The topmost shape (greatest z) under a point in this surface's local
+    // space, or undefined. Fully synchronous: only already-resolved layer
+    // handles are inspected. Layers are read fresh from the surface doc each
+    // call, so added layers are picked up and removed ones never consulted.
+    const topmostShapeAt = (x: number, y: number): AutomergeUrl | undefined => {
+      const layers = handle.doc()?.layers ?? {};
+      let bestUrl: AutomergeUrl | undefined;
+      let bestZ: number | undefined;
+      for (const layerUrl of Object.values(layers)) {
+        const layerHandle = layerHandles.get(layerUrl);
+        if (layerHandle === undefined) {
+          layerHandles.set(layerUrl, null);
+          void repo
+            .find<ShapeLayerDoc>(layerUrl)
+            .then((resolved) => layerHandles.set(layerUrl, resolved))
+            .catch(() => layerHandles.delete(layerUrl));
+          continue;
+        }
+        if (layerHandle === null) continue;
+        for (const shape of Object.values(layerHandle.doc()?.shapes ?? {})) {
+          if (!hitTestShape(x, y, shape)) continue;
+          const z = shape.z ?? 0;
+          if (bestZ === undefined || z >= bestZ) {
+            bestUrl = layerHandle.sub("shapes", shape.id).url;
+            bestZ = z;
+          }
+        }
+      }
+      return bestUrl;
+    };
+
     // The innermost surface under the cursor owns the event: its root is the
     // first surface root the bubbling event reaches, so it stamps the sample
     // and stops propagation — ancestor surfaces never see it.
     const stampPointer = (event: PointerEvent, isPressed: boolean) => {
       event.stopPropagation();
       const position = getLocalPosition(event.clientX, event.clientY);
+      const shapeUrl = topmostShapeAt(position.x, position.y);
       stateHandle().change((state) => {
         state.pointer = {
           position,
           surfaceUrl: handle.url,
           isPressed,
         };
+
+        if (shapeUrl) {
+          state.pointer.shapeUrl = shapeUrl;
+        }
       });
     };
 

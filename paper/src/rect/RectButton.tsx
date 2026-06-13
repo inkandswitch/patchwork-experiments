@@ -69,14 +69,8 @@ export function RectButton(): JSX.Element {
   const resize = (shape: RectShape, start: Point, x: number, y: number) => {
     shape.x = Math.min(start.x, x);
     shape.y = Math.min(start.y, y);
-    const width = Math.abs(x - start.x);
-    const height = Math.abs(y - start.y);
-    if (shape.outline?.type === "rectangle") {
-      shape.outline.width = width;
-      shape.outline.height = height;
-    } else {
-      shape.outline = { type: "rectangle", width, height };
-    }
+    shape.outline.width = Math.abs(x - start.x);
+    shape.outline.height = Math.abs(y - start.y);
   };
 
   let wasPressed = false;
@@ -144,7 +138,7 @@ export function RectButton(): JSX.Element {
         handle.change((shape) => resize(shape, start, x, y));
         const outline = handle.doc()?.outline;
         if (
-          outline?.type === "rectangle" &&
+          outline &&
           (outline.width < MIN_SIZE || outline.height < MIN_SIZE)
         ) {
           handle.remove();

@@ -1,52 +1,14 @@
-import type { AutomergeUrl } from "@automerge/automerge-repo";
-import type { RepoLike } from "../vendor/providers";
-import {
-  DocWithLayers,
-  Outline,
-  Point,
-  Shape,
-  ShapeLayerDoc,
-} from "../surface/types";
+import { Outline, Point, Shape } from "./types";
 
 // Slack (px) around a stroke's centerline for hit detection. Roughly half a
 // freehand stroke's width plus a little extra so thin/thick strokes alike are
 // easy to click.
 const LINE_HIT_PADDING = 8;
 
-// The sub-document URL of the shape with the greatest `z` under the point
-// (in `surfaceUrl`'s local space), if any. Shared by the select tool and the
-// link arrow layer.
-export async function topmostShapeAt(
-  repo: RepoLike,
-  surfaceUrl: AutomergeUrl,
-  x: number,
-  y: number,
-): Promise<AutomergeUrl | undefined> {
-  const surfaceHandle = await repo.find<DocWithLayers>(surfaceUrl);
-  const layers = surfaceHandle.doc()?.layers ?? {};
-
-  let bestUrl: AutomergeUrl | undefined;
-  let bestZ: number | undefined;
-  for (const layerUrl of Object.values(layers)) {
-    const layerHandle = await repo.find<ShapeLayerDoc>(layerUrl);
-    const shapes = layerHandle.doc()?.shapes ?? {};
-    for (const shape of Object.values(shapes)) {
-      if (!hitTestShape(x, y, shape)) continue;
-      const z = shape.z ?? 0;
-      if (bestZ === undefined || z >= bestZ) {
-        bestUrl = layerHandle.sub("shapes", shape.id).url;
-        bestZ = z;
-      }
-    }
-  }
-  return bestUrl;
-}
-
 // Decide whether `point` (in canvas coordinates) lands on `shape`. Works off
-// the shape's resolved outline, so it is agnostic to which tool drew it.
+// the shape's outline, so it is agnostic to which tool drew it.
 export function hitTestShape(x: number, y: number, shape: Shape): boolean {
-  const outline = resolveOutline(shape);
-  if (!outline) return false;
+  const { outline } = shape;
   const localX = x - shape.x;
   const localY = y - shape.y;
   switch (outline.type) {
@@ -64,27 +26,6 @@ export function hitTestShape(x: number, y: number, shape: Shape): boolean {
         distanceToPolyline(localX, localY, outline.points) <= LINE_HIT_PADDING
       );
   }
-}
-
-// The geometry every consumer (rendering, hit detection, overlay) reads from.
-// New shapes always carry an `outline`; older persisted shapes are mapped from
-// their legacy top-level fields so they keep working.
-export function resolveOutline(shape: Shape): Outline | undefined {
-  if (shape.outline) return shape.outline;
-  const legacy = shape as Shape & { x2?: number; y2?: number };
-  if (typeof legacy.x2 === "number" && typeof legacy.y2 === "number") {
-    return {
-      type: "line",
-      points: [
-        { x: 0, y: 0 },
-        { x: legacy.x2 - shape.x, y: legacy.y2 - shape.y },
-      ],
-    };
-  }
-  if (typeof shape.width === "number" && typeof shape.height === "number") {
-    return { type: "rectangle", width: shape.width, height: shape.height };
-  }
-  return undefined;
 }
 
 // The points an outline draws, in the shape's local space. Lets the overlay

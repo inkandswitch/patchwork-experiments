@@ -22,7 +22,7 @@ import { LineButton } from "../line/LineButton";
 import { RectButton } from "../rect/RectButton";
 import { SelectButton } from "../select/SelectButton";
 import { SelectionOverlay } from "../select/SelectionOverlay";
-import { outlinePoints, resolveOutline } from "../select/geometry";
+import { outlinePoints } from "../surface/geometry";
 import { SurfaceProvider } from "../surface/SurfaceProvider";
 import { subscribeDoc } from "../vendor/providers-solid";
 import type {
@@ -63,7 +63,11 @@ const REFERENCE_ZOOM = 9.5;
 const WORLD_SIZE = 512 * Math.pow(2, REFERENCE_ZOOM);
 // Lng/lat of Mercator world origin (top-left of the world), used to anchor the
 // world -> screen transform.
-const WORLD_ORIGIN_LNGLAT = new maplibregl.MercatorCoordinate(0, 0, 0).toLngLat();
+const WORLD_ORIGIN_LNGLAT = new maplibregl.MercatorCoordinate(
+  0,
+  0,
+  0,
+).toLngLat();
 
 // Inverse of `toLocal`'s projection: a point in the map's local (Mercator world
 // unit) space back to geographic coordinates, so shapes can be located on the
@@ -208,9 +212,7 @@ function MapSurface(props: {
 // Mounted only after the SurfaceProvider (inside the same `isMounted` gate as
 // the toolbar) so its `surface:state` subscription reaches the provider, and
 // it subscribes from its own anchor element, which lives under the provider.
-function MapPanControl(props: {
-  map: Accessor<maplibregl.Map | undefined>;
-}) {
+function MapPanControl(props: { map: Accessor<maplibregl.Map | undefined> }) {
   let anchor!: HTMLSpanElement;
 
   const [surfaceState] = subscribeDoc<SurfaceState>(() => anchor, {
@@ -249,7 +251,9 @@ function MapHighlightFocus(props: {
   // selection moves), so the camera doesn't lurch on every cursor tick.
   const highlightedUrls = createMemo<AutomergeUrl[]>(
     () => {
-      const layerUrls: AutomergeUrl[] = Object.values(surfaceDoc()?.layers ?? {});
+      const layerUrls: AutomergeUrl[] = Object.values(
+        surfaceDoc()?.layers ?? {},
+      );
       return Object.keys(focusDoc()?.highlight ?? {}).filter((shapeUrl) =>
         layerUrls.some((layerUrl) => shapeUrl.startsWith(layerUrl)),
       ) as AutomergeUrl[];
@@ -321,9 +325,7 @@ async function collectShapeBounds(
     try {
       const shape = (await repo.find<Shape>(url)).doc();
       if (!shape) continue;
-      const outline = resolveOutline(shape);
-      if (!outline) continue;
-      for (const point of outlinePoints(outline)) {
+      for (const point of outlinePoints(shape.outline)) {
         bounds.extend(worldToLngLat(shape.x + point.x, shape.y + point.y));
         extended = true;
       }

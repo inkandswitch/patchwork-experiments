@@ -8,12 +8,10 @@ import {
   onMount,
   type JSX,
 } from "solid-js";
-import { RepoContext, useRepo } from "../vendor/automerge-solid-primitives";
+import { RepoContext } from "../vendor/automerge-solid-primitives";
 import { subscribeDoc } from "../vendor/providers-solid";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
-import type { AutomergeUrl } from "@automerge/automerge-repo";
 import { subscribePosition } from "../surface/position";
-import { topmostShapeAt } from "../select/geometry";
 import type { Point, SurfaceState } from "../surface/types";
 import type { LinkFocusDoc } from "./types";
 import "./arrow.css";
@@ -40,8 +38,6 @@ export const LinkArrowLayerTool: ToolRender = (handle, element) => {
 };
 
 function LinkArrowLayer(props: { host: HTMLElement }): JSX.Element {
-  const repo = useRepo();
-
   const [focusDoc, focusHandle] = subscribeDoc<LinkFocusDoc>(() => props.host, {
     type: "patchwork:focus",
   });
@@ -90,27 +86,11 @@ function LinkArrowLayer(props: { host: HTMLElement }): JSX.Element {
     onCleanup(() => window.removeEventListener("keydown", onKeyDown, true));
   });
 
-  // The shape under the cursor, hit-tested in the stamping surface's local
-  // space (so shapes inside nested surfaces are found too). The token guards
-  // against out-of-order async resolutions on rapid moves.
-  const [hoveredUrl, setHoveredUrl] = createSignal<AutomergeUrl>();
-  let hitToken = 0;
-  createEffect(() => {
-    const pointer = surfaceState()?.pointer;
-    if (!activeLink() || !pointer) {
-      setHoveredUrl(undefined);
-      return;
-    }
-    const token = ++hitToken;
-    void topmostShapeAt(
-      repo,
-      pointer.surfaceUrl,
-      pointer.position.x,
-      pointer.position.y,
-    ).then((url) => {
-      if (token === hitToken) setHoveredUrl(url);
-    });
-  });
+  // The shape under the cursor while armed: the surface stamps it onto the
+  // pointer sample as it hit-tests, so this is a plain read — no async, no
+  // out-of-order races to guard against.
+  const hoveredUrl = () =>
+    activeLink() ? surfaceState()?.pointer?.shapeUrl : undefined;
 
   // The hovered shape's midpoint in screen coordinates, via the
   // surface:position provider; resets to undefined whenever the hover moves

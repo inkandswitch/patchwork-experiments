@@ -119,7 +119,7 @@ export function LineButton(): JSX.Element {
         return;
       }
       stroke.handle.change((shape) => {
-        shape.outline?.points.push({
+        shape.outline.points.push({
           x: x - shape.x,
           y: y - shape.y,
         });
