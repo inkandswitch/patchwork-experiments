@@ -31,17 +31,17 @@ export interface Ref {
 export type Val = Ref | number | string | boolean | null | undefined;
 
 export function isObj(value: any): value is Obj {
-  return typeof value === 'object' && value?.type === 'obj';
+  return typeof value === 'object' && value?.$type === 'obj';
 }
 
 export function isArr(value: any): value is Arr {
-  return typeof value === 'object' && value?.type === 'arr';
+  return typeof value === 'object' && value?.$type === 'arr';
 }
 
 export function isFun(value: any): value is Fun {
-  return typeof value === 'object' && value?.type === 'fun';
+  return typeof value === 'object' && value?.$type === 'fun';
 }
 
 export function isRef(value: any): value is Ref {
-  return typeof value === 'object' && value != null && value.type === 'ref';
+  return typeof value === 'object' && value?.$type === 'ref';
 }

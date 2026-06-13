@@ -32,6 +32,7 @@ import { createRoot } from 'react-dom/client';
 import type { ToolElement, ToolImplementation } from '@inkandswitch/patchwork-plugins';
 import './styles.css';
 import { transpile } from './transpiler';
+import { wrapForCompletionValue } from './completionValue';
 
 // TODO: stop requesting animation frame after the UI unmounts
 // TODO: why doesn't toString work when it's a method on Objs? (something to do w/ Proxy)
@@ -132,10 +133,10 @@ function $arr(values: any) {
 
 const scopesToFnCache = new Map<string, (...args: any[]) => () => any>();
 
-function $fun($code: string, scopes: Proxy[]) {
+function $fun($code: string, scopes: Proxy[] = []) {
   let scopesToFn = scopesToFnCache.get($code);
   if (!scopesToFn) {
-    scopesToFn = new Function($code) as () => () => any;
+    scopesToFn = new Function('return ' + $code)() as (...args: any[]) => () => any;
     scopesToFnCache.set($code, scopesToFn);
   }
 
@@ -439,10 +440,12 @@ function proxifyFun(fun: Fun): Proxy {
     if (!_fn) {
       _fn = scopesToFnCache.get(fun.$code)!(...fun.$scopes.map(deserialize));
     }
+    console.log('### the fn is', fn, fn.toString());
     return _fn;
   };
 
-  p = new Proxy(fun, {
+  console.log('### creating a proxy for', fun);
+  p = new Proxy(() => null, {
     set(_, prop, value) {
       throw new Error('setting function properties is a no-no!');
     },
@@ -566,14 +569,8 @@ function doIt(view: EditorView, print = false) {
   let result: any;
   try {
     change(() => {
-      const realCode = transpile(code);
+      const realCode = transpile(wrapForCompletionValue(code));
       console.log('evaluating', realCode);
-      // environment:
-      // - w (setInterval, setTimeout)
-      // - $obj
-      // - $fun
-      // - $arr
-
       result = (window as any).result = new Function(
         'w',
         '$obj',
@@ -581,12 +578,7 @@ function doIt(view: EditorView, print = false) {
         '$fun',
         // TODO: setTimeout, setInterval
         realCode,
-      )({
-        w,
-        $obj,
-        $arr,
-        $fun,
-      });
+      )(w, $obj, $arr, $fun);
     });
     console.log('result', result);
   } catch (error) {
@@ -935,7 +927,7 @@ export function renderLivelymergeEditor(
 ): ReturnType<ToolImplementation> {
   const root = createRoot(element);
   root.render(
-    <RepoContext.Provider value={element.repo}>
+    <RepoContext.Provider value={element.repo as any}>
       <LivelymergeEditor docUrl={handle.url} />
     </RepoContext.Provider>,
   );

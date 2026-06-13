@@ -681,6 +681,8 @@ function collectScopeEdits(builder: ScopeBuilder, freeVarUses: FreeVarUse[], edi
     const openBrace = scope.blockNode.firstChild;
     if (openBrace?.name === '{') {
       edits.push({ kind: 'insert', pos: openBrace.to, text: `\n  const ${scope.name} = $obj({});` });
+    } else if (!scope.parent) {
+      edits.push({ kind: 'insert', pos: 0, text: `const ${scope.name} = $obj({});\n` });
     }
 
     for (const bindingName of scope.freeVarBindings) {
@@ -742,8 +744,9 @@ function mapPos(pos: number, deltas: { pos: number; delta: number }[]): number {
 function renderFuncCall(inner: string, scopes: LexicalScope[], declName?: string): string {
   const params = renderScopeList(scopes);
   const funcArg = `(${params}) => ${inner}`;
+  const codeArg = JSON.stringify(funcArg);
   const scopeArg = scopes.length > 0 ? `, [${params}]` : '';
-  const call = `$func(${funcArg}${scopeArg})`;
+  const call = `$fun(${codeArg}${scopeArg})`;
   return declName !== undefined ? `const ${declName} = ${call};` : call;
 }
 
@@ -792,7 +795,7 @@ function applyEdits(source: string, edits: Edit[]): string {
 export function transpile(source: string): string {
   const tree = parser.parse(source);
   const builder = new ScopeBuilder(source);
-  const rootScope = builder.createScope(null, null);
+  const rootScope = builder.createScope(null, tree.topNode);
 
   for (let child = tree.topNode.firstChild; child; child = child.nextSibling) {
     buildScopesInBlock(child, builder, rootScope);
