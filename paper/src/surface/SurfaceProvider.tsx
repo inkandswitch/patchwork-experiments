@@ -12,7 +12,9 @@ import {
 } from "solid-js";
 import {
   DocWithLayers,
+  type DropEffect,
   type Point,
+  type PointerDrag,
   type ShapeLayerDoc,
   SurfaceState,
 } from "./types";
@@ -33,6 +35,11 @@ const EMBED_HEIGHT = 240;
 // Multi-item drops cascade so the embeds don't land exactly on top of each
 // other.
 const EMBED_CASCADE = 24;
+
+// Movement (in client px) a pressed pointer carrying drag data must travel
+// before it counts as a drag and the surface starts dispatching native drag
+// events. Keeps a plain click on a drag source from firing a drop.
+const DRAG_THRESHOLD = 4;
 
 type DroppedItem = { url: AutomergeUrl };
 
@@ -127,26 +134,102 @@ export function SurfaceProvider({
       return bestUrl;
     };
 
-    // The innermost surface under the cursor owns the event: its root is the
-    // first surface root the bubbling event reaches, so it stamps the sample
-    // and stops propagation — ancestor surfaces never see it.
-    const stampPointer = (event: PointerEvent, isPressed: boolean) => {
+    // --- pointer-driven drag-and-drop gesture state (one primary pointer) ---
+    // Non-null only between pointerdown and release. `started` flips once the
+    // press crosses DRAG_THRESHOLD; `targetEl` is what the synthetic
+    // dragenter/dragleave pair currently points at; `dropEffect` is what the
+    // last dragover negotiated (it seeds and finalizes the drop).
+    let dragState: {
+      downClient: { x: number; y: number };
+      started: boolean;
+      targetEl: Element | null;
+      dropEffect: DropEffect;
+    } | null = null;
+
+    // Stamp a pointer sample onto the surface state, merging fields in place so
+    // a drag payload written by a source survives across moves. The innermost
+    // surface under the cursor owns the event: its root is the first surface
+    // root the bubbling event reaches, so it stamps and stops propagation —
+    // ancestor surfaces never see it. `shapeUrl` is cleared when nothing is
+    // under the cursor; `clearDrag` (pointerdown) drops any payload to start
+    // fresh; `finalizeDrag` (release) records the drop outcome in the same
+    // change, so a source reads it on the same release transition.
+    const updatePointer = (
+      event: PointerEvent,
+      isPressed: boolean,
+      opts?: { clearDrag?: boolean; finalizeDrag?: DropEffect },
+    ) => {
       event.stopPropagation();
       const position = getLocalPosition(event.clientX, event.clientY);
       const shapeUrl = topmostShapeAt(position.x, position.y);
       const currentScale = scale();
       stateHandle().change((state) => {
-        state.pointer = {
-          position,
-          surfaceUrl: handle.url,
-          isPressed,
-          scale: currentScale,
-        };
-
-        if (shapeUrl) {
-          state.pointer.shapeUrl = shapeUrl;
+        const p = state.pointer;
+        if (!p) {
+          state.pointer = {
+            position,
+            surfaceUrl: handle.url,
+            isPressed,
+            scale: currentScale,
+          };
+          if (shapeUrl) state.pointer.shapeUrl = shapeUrl;
+          return;
+        }
+        p.position = position;
+        p.surfaceUrl = handle.url;
+        p.isPressed = isPressed;
+        p.scale = currentScale;
+        if (shapeUrl) p.shapeUrl = shapeUrl;
+        else delete p.shapeUrl;
+        if (opts?.clearDrag) {
+          delete p.drag;
+        } else if (
+          opts?.finalizeDrag !== undefined &&
+          p.drag &&
+          p.drag.dropEffect === undefined
+        ) {
+          p.drag.dropEffect = opts.finalizeDrag;
         }
       });
+    };
+
+    // Drive native drag events off a pressed move once a drag payload is
+    // present and the threshold is crossed. Dispatched at the element under the
+    // cursor (real DragEvents, blank values mid-drag), so any native
+    // dragover/drop listener — including this surface's own embed handler —
+    // participates. Records the negotiated drop effect for the eventual drop.
+    const updateDrag = (event: PointerEvent) => {
+      if (!dragState) return;
+      const drag = stateHandle().doc()?.pointer?.drag;
+      if (!drag || drag.dropEffect !== undefined) return;
+
+      if (!dragState.started) {
+        const dx = event.clientX - dragState.downClient.x;
+        const dy = event.clientY - dragState.downClient.y;
+        if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+        dragState.started = true;
+      }
+
+      const target = document.elementFromPoint(event.clientX, event.clientY);
+      if (target !== dragState.targetEl) {
+        if (dragState.targetEl) {
+          dragState.targetEl.dispatchEvent(buildDragEvent("dragleave", drag, false, event));
+        }
+        if (target) {
+          target.dispatchEvent(buildDragEvent("dragenter", drag, false, event));
+        }
+        dragState.targetEl = target;
+      }
+
+      if (!target) {
+        dragState.dropEffect = "none";
+        return;
+      }
+      const over = buildDragEvent("dragover", drag, false, event);
+      target.dispatchEvent(over);
+      dragState.dropEffect = over.defaultPrevented
+        ? acceptedEffect(over.dataTransfer?.dropEffect, "none")
+        : "none";
     };
 
     const onPointerDown = (event: PointerEvent) => {
@@ -161,7 +244,16 @@ export function SurfaceProvider({
         target.releasePointerCapture(event.pointerId);
       }
 
-      stampPointer(event, true);
+      dragState = {
+        downClient: { x: event.clientX, y: event.clientY },
+        started: false,
+        targetEl: null,
+        dropEffect: "none",
+      };
+
+      // Clear any prior drag payload so each press starts a fresh gesture; a
+      // source writes the new payload in its own reaction to this sample.
+      updatePointer(event, true, { clearDrag: true });
     };
 
     const onPointerMove = (event: PointerEvent) => {
@@ -169,25 +261,66 @@ export function SurfaceProvider({
 
       // A hover move must not report "pressed"; derive it from the actual
       // button state instead of hardcoding true.
-      stampPointer(event, (event.buttons & 1) === 1);
+      const isPressed = (event.buttons & 1) === 1;
+      updatePointer(event, isPressed);
+      if (isPressed) updateDrag(event);
     };
 
     const onPointerUp = (event: PointerEvent) => {
       if (!event.isPrimary) return;
 
-      stampPointer(event, false);
+      // Offer the drop synchronously so its outcome is known before the state
+      // change below; the source reads `drag.dropEffect` on the same release.
+      const drag = stateHandle().doc()?.pointer?.drag;
+      let dropEffect: DropEffect = "none";
+      if (drag && drag.dropEffect === undefined && dragState?.started) {
+        const target = document.elementFromPoint(event.clientX, event.clientY);
+        if (target) {
+          const dropEvent = buildDragEvent("drop", drag, true, event);
+          if (dropEvent.dataTransfer) {
+            dropEvent.dataTransfer.dropEffect = dragState.dropEffect;
+          }
+          target.dispatchEvent(dropEvent);
+          dropEffect = dropEvent.defaultPrevented
+            ? acceptedEffect(dropEvent.dataTransfer?.dropEffect, dragState.dropEffect)
+            : "none";
+        }
+      }
+
+      updatePointer(event, false, { finalizeDrag: dropEffect });
+      dragState = null;
     };
 
-    // Safety net for releases outside any surface (toolbar, off-window):
-    // those never pass through a surface root, so nothing else clears the
-    // pressed flag. Only the flag is touched — never position or surface — so
-    // it can't corrupt drop targets.
+    // A cancelled pointer (e.g. the OS stealing the gesture) can't reach a drop
+    // target, so any in-progress drag is rejected: leave the current target and
+    // finalize `dropEffect` to "none" in the same change as the release.
+    const onPointerCancel = (event: PointerEvent) => {
+      if (!event.isPrimary) return;
+
+      const drag = stateHandle().doc()?.pointer?.drag;
+      if (drag && drag.dropEffect === undefined && dragState?.started && dragState.targetEl) {
+        dragState.targetEl.dispatchEvent(buildDragEvent("dragleave", drag, false, event));
+      }
+
+      updatePointer(event, false, { finalizeDrag: "none" });
+      dragState = null;
+    };
+
+    // Safety net for releases outside any surface (toolbar, off-window): those
+    // never pass through a surface root, so nothing else clears the pressed
+    // flag. Position and surface are left untouched so drop targets can't be
+    // corrupted; an in-progress drag is rejected, since a release off any
+    // surface can't have hit a drop target.
     const onWindowPointerUp = (event: PointerEvent) => {
       if (!event.isPrimary) return;
 
       stateHandle().change((state) => {
-        if (state.pointer?.isPressed) state.pointer.isPressed = false;
+        const p = state.pointer;
+        if (!p?.isPressed) return;
+        p.isPressed = false;
+        if (p.drag && p.drag.dropEffect === undefined) p.drag.dropEffect = "none";
       });
+      dragState = null;
     };
 
     // A drag carrying a sideboard payload is a valid drop target. Marking it
@@ -254,7 +387,7 @@ export function SurfaceProvider({
     root.addEventListener("pointerdown", onPointerDown);
     root.addEventListener("pointermove", onPointerMove);
     root.addEventListener("pointerup", onPointerUp);
-    root.addEventListener("pointercancel", onPointerUp);
+    root.addEventListener("pointercancel", onPointerCancel);
     window.addEventListener("pointerup", onWindowPointerUp);
     window.addEventListener("pointercancel", onWindowPointerUp);
     root.addEventListener("dragover", onDragOver);
@@ -265,7 +398,7 @@ export function SurfaceProvider({
       root.removeEventListener("pointerdown", onPointerDown);
       root.removeEventListener("pointermove", onPointerMove);
       root.removeEventListener("pointerup", onPointerUp);
-      root.removeEventListener("pointercancel", onPointerUp);
+      root.removeEventListener("pointercancel", onPointerCancel);
       window.removeEventListener("pointerup", onWindowPointerUp);
       window.removeEventListener("pointercancel", onWindowPointerUp);
       root.removeEventListener("dragover", onDragOver);
@@ -286,6 +419,49 @@ export function SurfaceProvider({
       {children}
     </div>
   );
+}
+
+// Build a real native drag event carrying a pointer drag payload, to dispatch
+// at the element under the cursor so ordinary dragover/drop listeners take
+// part. Values are only attached on the drop (`withValues`), matching native
+// protected mode where dragover exposes the types but not their values.
+function buildDragEvent(
+  type: "dragenter" | "dragover" | "dragleave" | "drop",
+  drag: PointerDrag,
+  withValues: boolean,
+  event: PointerEvent,
+): DragEvent {
+  const dataTransfer = new DataTransfer();
+  dataTransfer.effectAllowed = drag.effectAllowed;
+  for (const [mediaType, value] of Object.entries(drag.data)) {
+    dataTransfer.setData(mediaType, withValues ? value : "");
+  }
+  const dragEvent = new DragEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+    clientX: event.clientX,
+    clientY: event.clientY,
+    dataTransfer,
+  });
+  // Some browsers ignore `dataTransfer` in the DragEvent constructor; attach it
+  // directly so listeners can still read it.
+  if (!dragEvent.dataTransfer) {
+    Object.defineProperty(dragEvent, "dataTransfer", { value: dataTransfer });
+  }
+  return dragEvent;
+}
+
+// The effect a target settled on when it accepted a drag (preventDefault).
+// Targets often accept without setting an explicit dropEffect, so fall back to
+// the negotiated value and finally to "copy".
+function acceptedEffect(
+  fromEvent: DropEffect | undefined,
+  negotiated: DropEffect,
+): DropEffect {
+  if (fromEvent && fromEvent !== "none") return fromEvent;
+  if (negotiated !== "none") return negotiated;
+  return "copy";
 }
 
 // Drop one embed shape per item onto `surfaceHandle`, anchored at `at` (in the
