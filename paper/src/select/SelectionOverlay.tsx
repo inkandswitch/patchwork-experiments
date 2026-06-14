@@ -1,4 +1,4 @@
-import { For, Show, createMemo, type JSX } from "solid-js";
+import { For, Show, createMemo, type Accessor, type JSX } from "solid-js";
 import { useDocument } from "../vendor/automerge-solid-primitives";
 import { subscribeDoc } from "../vendor/providers-solid";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
@@ -34,6 +34,10 @@ const HIGHLIGHT_GLOW =
 // selection interaction lives in SelectButton.
 export function SelectionOverlay(props: {
   surfaceUrl: AutomergeUrl;
+  // Screen px per surface unit. The overlay svg sits inside the surface's
+  // (possibly scaled) container, so the outline is rendered at 1/scale and the
+  // ancestor transform brings it back to a constant on-screen thickness.
+  scale?: Accessor<number>;
 }): JSX.Element {
   let root!: HTMLDivElement;
 
@@ -66,7 +70,12 @@ export function SelectionOverlay(props: {
   return (
     <div ref={root} class="select-overlay">
       <style>{highlightCss()}</style>
-      <svg class="select-overlay-svg" width="100%" height="100%">
+      <svg
+        class="select-overlay-svg"
+        width="100%"
+        height="100%"
+        style={{ "--select-scale": String(props.scale?.() ?? 1) }}
+      >
         <For each={selectedUrls()}>{(url) => <ShapeOutline url={url} />}</For>
       </svg>
     </div>

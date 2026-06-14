@@ -199,7 +199,7 @@ function MapSurface(props: {
               <patchwork-view doc-url={url} tool-id={toolId} />
             )}
           </For>
-          <SelectionOverlay surfaceUrl={props.handle.url} />
+          <SelectionOverlay surfaceUrl={props.handle.url} scale={scale} />
         </div>
         <MapPanControl map={map} />
         <MapHighlightFocus map={map} surfaceUrl={props.handle.url} />

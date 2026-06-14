@@ -16,12 +16,16 @@
 }
 
 /* A selected shape's outline: a solid blue stroke over a soft halo, so it
-   reads against both light fills and dark strokes. */
+   reads against both light fills and dark strokes. The overlay svg sits inside
+   the surface's (possibly zoom-scaled) container, so stroke width and halo blur
+   are divided by --select-scale to stay a constant thickness on screen once the
+   ancestor transform applies. Defaults to 1 on unscaled surfaces (e.g. paper). */
 .select-outline {
   fill: none;
   stroke: #2563eb;
-  stroke-width: 1;
+  stroke-width: calc(1 / var(--select-scale, 1));
   paint-order: stroke;
-  vector-effect: non-scaling-stroke;
-  filter: drop-shadow(0 0 2px rgba(37, 99, 235, 0.55));
+  filter: drop-shadow(
+    0 0 calc(2px / var(--select-scale, 1)) rgba(37, 99, 235, 0.55)
+  );
 }
