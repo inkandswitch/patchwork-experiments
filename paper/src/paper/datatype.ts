@@ -50,18 +50,8 @@ export const PaperDatatype = {
       shapes: { [paperEmbed.id]: paperEmbed, [mapEmbed.id]: mapEmbed },
     });
 
-    // The link arrow layer holds no shapes — it exists so the paper mounts
-    // the LinkArrowLayerTool, which renders the in-flight link arrows above
-    // every other layer.
-    const linkArrowLayer = repo.create<ShapeLayerDoc>({
-      "@patchwork": { type: "shape-layer" },
-      title: "Link Arrows",
-      shapes: {},
-    });
-
     doc.layers = {
       ["embed-shape-layer"]: embedLayer.url,
-      ["link-arrow-layer"]: linkArrowLayer.url,
     };
   },
   getTitle(doc: PaperDoc) {
