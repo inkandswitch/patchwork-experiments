@@ -90,7 +90,20 @@ function EmbedLayer(props: { handle: DocHandle<ShapeLayerDoc> }) {
   return (
     <For each={shapes()}>
       {(embed) => (
-        <>
+        // The wrapper anchors the embed at its world origin and applies the
+        // shape's single scale; the view and handle inside are laid out in
+        // logical pixels (HANDLE_HEIGHT and the px outline), so the whole embed
+        // renders uniformly and matches its draw-time size like other shapes.
+        <div
+          style={{
+            position: "absolute",
+            left: "0",
+            top: "0",
+            "transform-origin": "0 0",
+            transform: `translate(${embed.x}px, ${embed.y}px) scale(${embed.scale})`,
+            "z-index": embed.z,
+          }}
+        >
           {/* data-automerge-url (on both elements: together they are the
               embed's footprint) lets the SelectionOverlay's generated
               stylesheet target the embed like any other shape. */}
@@ -106,13 +119,12 @@ function EmbedLayer(props: { handle: DocHandle<ShapeLayerDoc> }) {
             on:pointercancel={stopPointerEvent}
             style={{
               position: "absolute",
-              left: `${embed.x}px`,
-              top: `${embed.y + HANDLE_HEIGHT}px`,
+              left: "0",
+              top: `${HANDLE_HEIGHT}px`,
               width: `${embedSize(embed).width}px`,
               height: `${Math.max(0, embedSize(embed).height - HANDLE_HEIGHT)}px`,
               right: "auto",
               bottom: "auto",
-              "z-index": embed.z,
               "pointer-events": grabbedId() === embed.id ? "none" : "auto",
             }}
           />
@@ -122,14 +134,13 @@ function EmbedLayer(props: { handle: DocHandle<ShapeLayerDoc> }) {
             on:pointerdown={() => setGrabbedId(embed.id)}
             style={{
               position: "absolute",
-              left: `${embed.x}px`,
-              top: `${embed.y}px`,
+              left: "0",
+              top: "0",
               width: `${embedSize(embed).width}px`,
               height: `${HANDLE_HEIGHT}px`,
-              "z-index": embed.z,
             }}
           />
-        </>
+        </div>
       )}
     </For>
   );

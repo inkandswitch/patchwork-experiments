@@ -7,6 +7,7 @@ import {
   createRoot,
   onCleanup,
   onMount,
+  type Accessor,
   type JSX,
 } from "solid-js";
 import {
@@ -40,6 +41,7 @@ export function SurfaceProvider({
   children,
   onMounted,
   toLocal,
+  scale = () => 1,
 }: {
   handle: DocHandle<DocWithLayers>;
   children: JSX.Element;
@@ -51,6 +53,10 @@ export function SurfaceProvider({
   // Takes raw client coordinates (not an event) so both pointer events and
   // drag events can feed it.
   toLocal?: (clientX: number, clientY: number) => Point;
+  // This surface's current scale (screen pixels per local unit). Stamped onto
+  // every pointer sample and used to scale dropped embeds. Defaults to 1 (the
+  // plain pixel surface, e.g. paper); the map passes its zoom-derived scale.
+  scale?: Accessor<number>;
 }): JSX.Element {
   let root!: HTMLDivElement;
 
@@ -128,11 +134,13 @@ export function SurfaceProvider({
       event.stopPropagation();
       const position = getLocalPosition(event.clientX, event.clientY);
       const shapeUrl = topmostShapeAt(position.x, position.y);
+      const currentScale = scale();
       stateHandle().change((state) => {
         state.pointer = {
           position,
           surfaceUrl: handle.url,
           isPressed,
+          scale: currentScale,
         };
 
         if (shapeUrl) {
@@ -208,7 +216,7 @@ export function SurfaceProvider({
       if (items.length === 0) return;
 
       const position = getLocalPosition(event.clientX, event.clientY);
-      void createEmbeds(repo, handle, items, position);
+      void createEmbeds(repo, handle, items, position, scale());
     };
 
     const onSubscribe = (event: SubscribeEvent) => {
@@ -283,14 +291,19 @@ export function SurfaceProvider({
 // Drop one embed shape per item onto `surfaceHandle`, anchored at `at` (in the
 // surface's local space) and cascaded so multiple items don't stack exactly.
 // No `toolId` is pinned, so each embed falls back to the default tool for its
-// document's datatype.
+// document's datatype. `surfaceScale` is the surface's current scale (screen
+// px per local unit); the embed records `1 / surfaceScale` so its pixel-sized
+// footprint renders at that size on drop and the cascade lands at a fixed
+// on-screen offset regardless of map zoom.
 async function createEmbeds(
   repo: Repo,
   surfaceHandle: DocHandle<DocWithLayers>,
   items: DroppedItem[],
   at: Point,
+  surfaceScale: number,
 ) {
   const layerHandle = await getEmbedLayerHandle(repo, surfaceHandle);
+  const embedScale = 1 / surfaceScale;
 
   layerHandle.change(({ shapes }) => {
     let z = Object.values(shapes).reduce(
@@ -301,9 +314,10 @@ async function createEmbeds(
       const id = crypto.randomUUID();
       const embed: EmbedShape = {
         id,
-        x: at.x + i * EMBED_CASCADE,
-        y: at.y + i * EMBED_CASCADE,
+        x: at.x + i * EMBED_CASCADE * embedScale,
+        y: at.y + i * EMBED_CASCADE * embedScale,
         z: ++z,
+        scale: embedScale,
         outline: {
           type: "rectangle",
           width: EMBED_WIDTH,

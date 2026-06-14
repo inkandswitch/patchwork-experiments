@@ -16,11 +16,6 @@ export type LineShape = Shape & {
   strokeWidth?: number;
 };
 
-// The stroke's input points in absolute canvas coordinates.
-function strokePoints(line: LineShape): Point[] {
-  return line.outline.points.map((p) => ({ x: line.x + p.x, y: line.y + p.y }));
-}
-
 // A self-contained layer tool. The mount target is the enclosing
 // <patchwork-view> content, so we make it a full-canvas overlay. Each shape
 // gets its own absolutely positioned svg with a z-index driven by `shape.z`,
@@ -56,8 +51,12 @@ function LineLayer(props: { handle: DocHandle<ShapeLayerDoc> }) {
           height="100%"
           style={{ "z-index": line.z }}
         >
+          {/* Points are in logical pixels relative to the origin; translate to
+              the world anchor and scale by the shape's draw-time scale so the
+              whole stroke (geometry and width alike) renders uniformly. */}
           <path
-            d={freehandPath(strokePoints(line), line.strokeWidth)}
+            transform={`translate(${line.x} ${line.y}) scale(${line.scale})`}
+            d={freehandPath(line.outline.points, line.strokeWidth)}
             fill={line.stroke ?? "#64748b"}
           />
         </svg>

@@ -11,6 +11,11 @@ export type SurfaceState = {
     // The surface that stamped the sample (points to Doc<DocWithLayers>).
     surfaceUrl: AutomergeUrl;
     isPressed: boolean;
+    // The stamping surface's current scale: screen pixels per local unit at
+    // this view. Paper is always 1; the map varies with zoom. Tools that
+    // create shapes read it so a shape can record the scale it was drawn at
+    // (see `Shape.scale`) without ever measuring the DOM.
+    scale: number;
     // The topmost shape under the pointer in the stamping surface, if any
     // (sub-document url into its layer doc). The surface hit-tests as it
     // stamps, so tools read what's under the cursor instead of computing it.
@@ -38,6 +43,13 @@ export type Shape = {
   x: number;
   y: number;
   z: number;
+  // World units per logical pixel: the scale the shape was drawn at (1 / the
+  // drawing surface's scale). `x`/`y` are the surface-local (world) anchor;
+  // the outline, stroke width and everything else are in logical pixels, and
+  // the renderer applies a single `scale(scale)` around the anchor. So a shape
+  // keeps its on-screen size at draw time and scales with the surface (e.g.
+  // map zoom) afterwards. On paper the scale is 1, so pixels equal world units.
+  scale: number;
   outline: Outline;
 };
 

@@ -129,6 +129,10 @@ function MapSurface(props: {
   const [transform, setTransform] = createSignal(
     "translate(0px, 0px) scale(1)",
   );
+  // The current world -> screen scale (screen px per world unit). Stamped onto
+  // pointer samples via the SurfaceProvider so tools record the scale a shape
+  // was drawn at. Kept in sync with `transform` in `updateTransform`.
+  const [scale, setScale] = createSignal(1);
 
   let mapContainer!: HTMLDivElement;
 
@@ -162,9 +166,12 @@ function MapSurface(props: {
     m.touchZoomRotate.disableRotation();
 
     const updateTransform = () => {
-      const scale = Math.pow(2, m.getZoom() - REFERENCE_ZOOM);
+      const nextScale = Math.pow(2, m.getZoom() - REFERENCE_ZOOM);
       const origin = m.project(WORLD_ORIGIN_LNGLAT);
-      setTransform(`translate(${origin.x}px, ${origin.y}px) scale(${scale})`);
+      setTransform(
+        `translate(${origin.x}px, ${origin.y}px) scale(${nextScale})`,
+      );
+      setScale(nextScale);
     };
     m.on("move", updateTransform);
     updateTransform();
@@ -178,6 +185,7 @@ function MapSurface(props: {
     <SurfaceProvider
       handle={props.handle as DocHandle<DocWithLayers>}
       toLocal={toLocal}
+      scale={scale}
       onMounted={() => setIsMounted(true)}
     >
       <div ref={mapContainer} class="paper-map-container" />
@@ -325,8 +333,15 @@ async function collectShapeBounds(
     try {
       const shape = (await repo.find<Shape>(url)).doc();
       if (!shape) continue;
+      // Outline points are in logical pixels; scale them into world units
+      // around the anchor before projecting to lng/lat.
       for (const point of outlinePoints(shape.outline)) {
-        bounds.extend(worldToLngLat(shape.x + point.x, shape.y + point.y));
+        bounds.extend(
+          worldToLngLat(
+            shape.x + point.x * shape.scale,
+            shape.y + point.y * shape.scale,
+          ),
+        );
         extended = true;
       }
     } catch {

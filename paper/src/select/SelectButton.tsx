@@ -24,10 +24,16 @@ import type { EmbedShape } from "../embed/EmbedLayerTool";
 type DragShape = {
   handle: DocHandle<Shape>;
   homeSurfaceUrl: AutomergeUrl;
-  // Shape origin minus pointer-down position, in the surface's local space.
-  // Constant for the whole drag (the shape moves exactly with the pointer);
-  // pixel surfaces share a scale, so it survives reparenting unchanged.
+  // Shape origin minus pointer-down position, in the home surface's local
+  // space. Constant while the shape stays on one surface; when the drag
+  // crosses into a surface with a different scale, `reparentDrag` rescales it
+  // (and the shape's own `scale`) by the surface scale ratio so the shape
+  // keeps both its on-screen size and its position under the cursor.
   grabOffset: Point;
+  // The home surface's current scale (screen px per local unit), captured at
+  // pointer-down and updated on each crossing. Paired with the drop sample's
+  // scale to compute the reparenting ratio.
+  homeScale: number;
 };
 
 // Mirrors the shared focus document the FocusProvider owns. We only touch
@@ -124,6 +130,7 @@ export function SelectButton(): JSX.Element {
           x: shape.x - pointer.position.x,
           y: shape.y - pointer.position.y,
         },
+        homeScale: pointer.scale,
       });
     }
     return shapes;
@@ -157,7 +164,12 @@ export function SelectButton(): JSX.Element {
     reparenting = true;
     try {
       for (const dragShape of movers) {
-        await rehome(dragShape, pointer.surfaceUrl, pointer.position);
+        await rehome(
+          dragShape,
+          pointer.surfaceUrl,
+          pointer.position,
+          pointer.scale,
+        );
       }
     } finally {
       reparenting = false;
@@ -168,13 +180,17 @@ export function SelectButton(): JSX.Element {
   // (created on demand), placed at `position + grabOffset`, removed from the
   // source layer, selection url rewritten, and the drag entry repointed at
   // the new sub-handle. The shape keeps its id across the move (ids are
-  // uuids, so they can't collide in the target layer).
+  // uuids, so they can't collide in the target layer). The shape's `scale`
+  // and the grab offset are multiplied by the source/target scale ratio so it
+  // keeps its on-screen size and stays under the cursor when the surfaces zoom
+  // differently (e.g. paper <-> a zoomed map).
   const rehome = async (
     dragShape: DragShape,
     dropSurfaceUrl: AutomergeUrl,
     dropPosition: Point,
+    dropScale: number,
   ) => {
-    const { handle, homeSurfaceUrl, grabOffset } = dragShape;
+    const { handle, homeSurfaceUrl, grabOffset, homeScale } = dragShape;
 
     const shape = handle.doc();
     if (!shape) return;
@@ -210,9 +226,15 @@ export function SelectButton(): JSX.Element {
       );
     }
 
+    // Screen px per local unit at home vs. at the drop. Geometry is stored in
+    // logical px so it ports as-is; only the shape's scale and the grab offset
+    // (in world units) need converting by the ratio so nothing visibly jumps.
+    const ratio = homeScale / dropScale;
+
     const moved = JSON.parse(JSON.stringify(shape)) as Shape;
-    moved.x = dropPosition.x + grabOffset.x;
-    moved.y = dropPosition.y + grabOffset.y;
+    moved.scale = shape.scale * ratio;
+    moved.x = dropPosition.x + grabOffset.x * ratio;
+    moved.y = dropPosition.y + grabOffset.y * ratio;
 
     dropLayerHandle.change(({ shapes }) => {
       shapes[id] = moved;
@@ -227,9 +249,15 @@ export function SelectButton(): JSX.Element {
     });
 
     // Repoint the drag entry so subsequent moves keep following the pointer
-    // in the new surface.
+    // in the new surface, and rebase its scale/offset to the new home so a
+    // further crossing computes its ratio correctly.
     dragShape.handle = dropLayerHandle.sub("shapes", id) as DocHandle<Shape>;
     dragShape.homeSurfaceUrl = dropSurfaceUrl;
+    dragShape.homeScale = dropScale;
+    dragShape.grabOffset = {
+      x: grabOffset.x * ratio,
+      y: grabOffset.y * ratio,
+    };
   };
 
   const onPointerDown = async (pointer: SurfacePointer) => {

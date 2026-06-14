@@ -55,9 +55,13 @@ function RectLayer(props: { handle: DocHandle<ShapeLayerDoc> }) {
           height="100%"
           style={{ "z-index": rect.z }}
         >
+          {/* Size/stroke are in logical pixels; translate to the world anchor
+              and scale by the shape's draw-time scale so the rectangle renders
+              uniformly (geometry and stroke width alike). */}
           <rect
-            x={rect.x}
-            y={rect.y}
+            transform={`translate(${rect.x} ${rect.y}) scale(${rect.scale})`}
+            x={0}
+            y={0}
             width={rectSize(rect).width}
             height={rectSize(rect).height}
             fill={rect.fill ?? "#9bb3cc"}

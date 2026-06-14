@@ -84,10 +84,16 @@ function ShapeOutline(props: { url: AutomergeUrl }): JSX.Element {
     if (!current) return undefined;
     const outline = current.outline;
     const local = outlinePoints(outline);
+    // Outline points are in logical pixels; scale them back into world units
+    // around the shape anchor so the overlay (drawn in the surface's space)
+    // lines up with the shape's own scaled rendering.
     return {
       closed: outline.type !== "line",
       value: local
-        .map((p) => `${current.x + p.x},${current.y + p.y}`)
+        .map(
+          (p) =>
+            `${current.x + p.x * current.scale},${current.y + p.y * current.scale}`,
+        )
         .join(" "),
     };
   });

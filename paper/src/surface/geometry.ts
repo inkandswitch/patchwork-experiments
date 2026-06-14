@@ -6,11 +6,14 @@ import { Outline, Point, Shape } from "./types";
 const LINE_HIT_PADDING = 8;
 
 // Decide whether `point` (in canvas coordinates) lands on `shape`. Works off
-// the shape's outline, so it is agnostic to which tool drew it.
+// the shape's outline, so it is agnostic to which tool drew it. The outline is
+// in logical pixels around the world anchor, so the point is converted into the
+// shape's pixel space (dividing the world offset by `shape.scale`) before being
+// compared against it.
 export function hitTestShape(x: number, y: number, shape: Shape): boolean {
   const { outline } = shape;
-  const localX = x - shape.x;
-  const localY = y - shape.y;
+  const localX = (x - shape.x) / shape.scale;
+  const localY = (y - shape.y) / shape.scale;
   switch (outline.type) {
     case "rectangle":
       return (

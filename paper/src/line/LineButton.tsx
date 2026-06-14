@@ -55,6 +55,10 @@ export function LineButton(): JSX.Element {
   let stroke: {
     surfaceUrl: AutomergeUrl;
     handle: DocHandle<LineShape>;
+    // The surface scale captured when the stroke began. Points are stored in
+    // logical pixels (world offset * this), so a scroll-zoom mid-stroke can't
+    // make a single stroke's points inconsistent.
+    drawScale: number;
   } | null = null;
 
   let wasPressed = false;
@@ -91,6 +95,10 @@ export function LineButton(): JSX.Element {
         return;
       }
 
+      // Record the scale the stroke is drawn at so geometry is stored in
+      // logical pixels (1 / drawScale world units each); the layer renders it
+      // back under a single scale(shape.scale) transform.
+      const drawScale = pointer.scale;
       const id = crypto.randomUUID();
       layerHandle.change(({ shapes }) => {
         shapes[id] = {
@@ -98,6 +106,7 @@ export function LineButton(): JSX.Element {
           x,
           y,
           z: 1,
+          scale: 1 / drawScale,
           outline: { type: "line", points: [{ x: 0, y: 0 }] },
           stroke: STROKE,
           strokeWidth: SIZE,
@@ -106,6 +115,7 @@ export function LineButton(): JSX.Element {
       stroke = {
         surfaceUrl: pointer.surfaceUrl,
         handle: layerHandle.sub("shapes", id) as DocHandle<LineShape>,
+        drawScale,
       };
     } else if (endedStroke) {
       stroke = null;
@@ -118,10 +128,12 @@ export function LineButton(): JSX.Element {
       if (stroke.handle.doc() === undefined) {
         return;
       }
+      const { drawScale } = stroke;
       stroke.handle.change((shape) => {
+        // World offset from the origin -> logical pixels.
         shape.outline.points.push({
-          x: x - shape.x,
-          y: y - shape.y,
+          x: (x - shape.x) * drawScale,
+          y: (y - shape.y) * drawScale,
         });
       });
     }

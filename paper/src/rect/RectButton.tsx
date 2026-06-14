@@ -63,14 +63,26 @@ export function RectButton(): JSX.Element {
     surfaceUrl: AutomergeUrl;
     handle: DocHandle<RectShape>;
     start: Point;
+    // The surface scale captured when the rect started. Width/height are
+    // stored in logical pixels (world size * this) so the rect's draw-time
+    // size survives a mid-drag scroll-zoom.
+    drawScale: number;
   } | null = null;
 
   // Anchor at the drag origin so dragging in any direction grows the rect.
-  const resize = (shape: RectShape, start: Point, x: number, y: number) => {
+  // `x`/`y` stay in world units (the surface anchor); width/height are in
+  // logical pixels (world size * drawScale) to match `shape.scale`.
+  const resize = (
+    shape: RectShape,
+    start: Point,
+    x: number,
+    y: number,
+    drawScale: number,
+  ) => {
     shape.x = Math.min(start.x, x);
     shape.y = Math.min(start.y, y);
-    shape.outline.width = Math.abs(x - start.x);
-    shape.outline.height = Math.abs(y - start.y);
+    shape.outline.width = Math.abs(x - start.x) * drawScale;
+    shape.outline.height = Math.abs(y - start.y) * drawScale;
   };
 
   let wasPressed = false;
@@ -107,6 +119,9 @@ export function RectButton(): JSX.Element {
         return;
       }
 
+      // Record the scale the rect is drawn at so its size is stored in logical
+      // pixels and the layer renders it back under a scale(shape.scale).
+      const drawScale = pointer.scale;
       const id = crypto.randomUUID();
       layerHandle.change(({ shapes }) => {
         const z =
@@ -118,6 +133,7 @@ export function RectButton(): JSX.Element {
           x,
           y,
           z,
+          scale: 1 / drawScale,
           outline: { type: "rectangle", width: 0, height: 0 },
           fill: FILL,
           stroke: STROKE,
@@ -127,6 +143,7 @@ export function RectButton(): JSX.Element {
         surfaceUrl: pointer.surfaceUrl,
         handle: layerHandle.sub("shapes", id) as DocHandle<RectShape>,
         start: { x, y },
+        drawScale,
       };
     } else if (endedRect) {
       if (
@@ -134,8 +151,8 @@ export function RectButton(): JSX.Element {
         pointer.surfaceUrl === rect.surfaceUrl &&
         rect.handle.doc() !== undefined
       ) {
-        const { handle, start } = rect;
-        handle.change((shape) => resize(shape, start, x, y));
+        const { handle, start, drawScale } = rect;
+        handle.change((shape) => resize(shape, start, x, y, drawScale));
         const outline = handle.doc()?.outline;
         if (
           outline &&
@@ -154,8 +171,8 @@ export function RectButton(): JSX.Element {
       if (rect.handle.doc() === undefined) {
         return;
       }
-      const { handle, start } = rect;
-      handle.change((shape) => resize(shape, start, x, y));
+      const { handle, start, drawScale } = rect;
+      handle.change((shape) => resize(shape, start, x, y, drawScale));
     }
   });
 
