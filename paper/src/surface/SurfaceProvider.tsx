@@ -1,10 +1,14 @@
 import type { AutomergeUrl, DocHandle, Repo } from "@automerge/automerge-repo";
-import { useRepo } from "../vendor/automerge-solid-primitives";
-import { accept, type SubscribeEvent } from "../vendor/providers";
+import {
+  createDocumentProjection,
+  useRepo,
+} from "../vendor/automerge-solid-primitives";
+import { accept, subscribe, type SubscribeEvent } from "../vendor/providers";
 import {
   createEffect,
   createMemo,
   createRoot,
+  createSignal,
   onCleanup,
   onMount,
   type Accessor,
@@ -15,6 +19,7 @@ import {
   type DropEffect,
   type Point,
   type PointerDrag,
+  type Shape,
   type ShapeLayerDoc,
   SurfaceState,
 } from "./types";
@@ -23,22 +28,13 @@ import { createPositionRegistry, positionOfUrl } from "./position";
 import { hitTestShape } from "./geometry";
 import type { EmbedShape } from "../embed/EmbedLayerTool";
 
-// The sideboard stamps this media type on its drags. The payload is JSON
-// `{ source, items }`, each item carrying at least the dragged document's url;
-// the url is all we need to embed it.
 const DND_MEDIA_TYPE = "text/x-patchwork-dnd";
 
-// A fresh embed's on-canvas footprint (drag handle included), matching the
-// fallback in `embedSize`.
 const EMBED_WIDTH = 320;
 const EMBED_HEIGHT = 240;
-// Multi-item drops cascade so the embeds don't land exactly on top of each
-// other.
 const EMBED_CASCADE = 24;
 
-// Movement (in client px) a pressed pointer carrying drag data must travel
-// before it counts as a drag and the surface starts dispatching native drag
-// events. Keeps a plain click on a drag source from firing a drop.
+// Client px a pressed pointer must travel before it counts as a drag.
 const DRAG_THRESHOLD = 4;
 
 type DroppedItem = { url: AutomergeUrl };
@@ -53,16 +49,11 @@ export function SurfaceProvider({
   handle: DocHandle<DocWithLayers>;
   children: JSX.Element;
   onMounted?: () => void;
-  // Converts screen coordinates into this surface's local coordinate space.
-  // Defaults to plain rect-relative pixels; the map passes a projection from
-  // screen pixels into geographic (Mercator world) coordinates so its shapes
-  // are stored georeferenced. Every surface only ever converts for itself.
-  // Takes raw client coordinates (not an event) so both pointer events and
-  // drag events can feed it.
+  // Converts screen coordinates into this surface's local space. Defaults to
+  // rect-relative pixels; the map passes a screen -> geographic projection.
   toLocal?: (clientX: number, clientY: number) => Point;
-  // This surface's current scale (screen pixels per local unit). Stamped onto
-  // every pointer sample and used to scale dropped embeds. Defaults to 1 (the
-  // plain pixel surface, e.g. paper); the map passes its zoom-derived scale.
+  // Screen pixels per local unit. Stamped onto every sample and used to scale
+  // dropped embeds. 1 for paper; the map passes its zoom-derived scale.
   scale?: Accessor<number>;
 }): JSX.Element {
   let root!: HTMLDivElement;
@@ -72,9 +63,8 @@ export function SurfaceProvider({
   const [, _stateHandle] = subscribeDoc<SurfaceState>(() => root, {
     type: "surface:state",
   });
-  // The ancestor's answer arrives async (MessagePort + repo.find), so the
-  // memo runs with `undefined` first and needs a fallback doc — created once,
-  // not per evaluation, so re-runs can't mint orphan docs.
+  // Fallback until an ancestor surface's state doc resolves; created once so
+  // re-runs can't mint orphan docs.
   let fallback: DocHandle<SurfaceState> | undefined;
   const stateHandle = createMemo(
     () => _stateHandle() ?? (fallback ??= repo.create<SurfaceState>()),
@@ -83,7 +73,308 @@ export function SurfaceProvider({
   onMount(() => {
     if (onMounted) onMounted();
 
-    // Live `surface:position` subscriptions against this surface's subtree.
+    // --- Selection: the default behavior whenever no drawing tool is active.
+    // Every surface runs this, but they share one `surface:state` pointer, so
+    // each only begins a gesture for samples its own surface stamped. The
+    // surface the press lands on owns the drag and keeps driving it across
+    // boundaries, so a cross-surface drag still has exactly one driver.
+    const surfaceState = createDocumentProjection<SurfaceState>(stateHandle);
+
+    const [focusHandle, setFocusHandle] = createSignal<DocHandle<FocusDoc>>();
+    onCleanup(
+      subscribe<AutomergeUrl>(root, { type: "patchwork:focus" }, (url) => {
+        if (!url) return;
+        void Promise.resolve(repo.find<FocusDoc>(url)).then((h) =>
+          setFocusHandle(() => h),
+        );
+      }),
+    );
+
+    const active = () => !surfaceState()?.selectedToolId;
+
+    let shiftDown = false;
+    let wasPressed = false;
+    // The shapes being dragged, re-homed into the surface under the cursor as
+    // the drag crosses boundaries so their single position stays in-space.
+    let dragShapes: DragShape[] | null = null;
+    // Guards against overlapping async reparent passes on rapid moves.
+    let reparenting = false;
+
+    // The drag set is the selection homed in the pressed surface (only those
+    // have a meaningful grab offset in the single pointer sample's space).
+    const resolveDragShapes = async (
+      urls: AutomergeUrl[],
+      pointer: SurfacePointer,
+    ): Promise<DragShape[]> => {
+      const surfaceHandle = await repo.find<DocWithLayers>(pointer.surfaceUrl);
+      const layerUrls = Object.values(surfaceHandle.doc()?.layers ?? {});
+
+      const shapes: DragShape[] = [];
+      for (const url of urls) {
+        if (!layerUrls.some((layerUrl) => url.startsWith(layerUrl))) continue;
+        const shapeHandle = await repo.find<Shape>(url);
+        const shape = shapeHandle.doc();
+        if (!shape) continue;
+        shapes.push({
+          handle: shapeHandle,
+          homeSurfaceUrl: pointer.surfaceUrl,
+          grabOffset: {
+            x: shape.x - pointer.position.x,
+            y: shape.y - pointer.position.y,
+          },
+          homeScale: pointer.scale,
+        });
+      }
+      return shapes;
+    };
+
+    const applyMove = (shapes: DragShape[], pointer: SurfacePointer) => {
+      for (const dragShape of shapes) {
+        const { handle: shapeHandle, homeSurfaceUrl, grabOffset } = dragShape;
+        if (homeSurfaceUrl !== pointer.surfaceUrl) continue;
+        if (shapeHandle.doc() === undefined) continue;
+        queueMicrotask(() => {
+          shapeHandle.change((shape) => {
+            shape.x = pointer.position.x + grabOffset.x;
+            shape.y = pointer.position.y + grabOffset.y;
+          });
+        });
+      }
+    };
+
+    const reparentDrag = async (
+      shapes: DragShape[],
+      pointer: SurfacePointer,
+    ) => {
+      if (reparenting) return;
+      const movers = shapes.filter(
+        (shape) => shape.homeSurfaceUrl !== pointer.surfaceUrl,
+      );
+      if (movers.length === 0) return;
+
+      reparenting = true;
+      try {
+        for (const dragShape of movers) {
+          await rehome(
+            dragShape,
+            pointer.surfaceUrl,
+            pointer.position,
+            pointer.scale,
+          );
+        }
+      } finally {
+        reparenting = false;
+      }
+    };
+
+    // Move a dragged shape into the target surface under the same layer key
+    // (created on demand), repointing the drag entry and selection url at the
+    // new sub-handle. The shape keeps its uuid id across the move.
+    const rehome = async (
+      dragShape: DragShape,
+      dropSurfaceUrl: AutomergeUrl,
+      dropPosition: Point,
+      dropScale: number,
+    ) => {
+      const {
+        handle: shapeHandle,
+        homeSurfaceUrl,
+        grabOffset,
+        homeScale,
+      } = dragShape;
+
+      const shape = shapeHandle.doc();
+      if (!shape) return;
+      // An embed can't be dropped into its own document.
+      if ((shape as EmbedShape).docUrl === dropSurfaceUrl) return;
+
+      const id = String(shapeHandle.path.at(-1)?.prop);
+
+      const homeHandle = await repo.find<DocWithLayers>(homeSurfaceUrl);
+      const sourceLayer = Object.entries(homeHandle.doc()?.layers ?? {}).find(
+        ([, layerUrl]) => shapeHandle.url.startsWith(layerUrl),
+      );
+      if (!sourceLayer) return;
+      const [layerKey, sourceLayerUrl] = sourceLayer;
+
+      const dropSurfaceHandle = await repo.find<DocWithLayers>(dropSurfaceUrl);
+      const dropLayerUrl = dropSurfaceHandle.doc()?.layers[layerKey];
+      let dropLayerHandle: DocHandle<ShapeLayerDoc>;
+      if (dropLayerUrl) {
+        dropLayerHandle = await repo.find<ShapeLayerDoc>(dropLayerUrl);
+      } else {
+        const sourceLayerHandle =
+          await repo.find<ShapeLayerDoc>(sourceLayerUrl);
+        dropLayerHandle = await repo.create2<ShapeLayerDoc>({
+          "@patchwork": { type: "shape-layer" },
+          title: sourceLayerHandle.doc()?.title ?? "Layer",
+          shapes: {},
+        });
+        queueMicrotask(() => {
+          dropSurfaceHandle.change(
+            (surface) => (surface.layers[layerKey] = dropLayerHandle.url),
+          );
+        });
+      }
+
+      // Rescale the offset and the shape's scale by the home/drop ratio so it
+      // keeps its on-screen size and stays under the cursor across zoom levels.
+      const ratio = homeScale / dropScale;
+
+      const moved = JSON.parse(JSON.stringify(shape)) as Shape;
+      moved.scale = shape.scale * ratio;
+      moved.x = dropPosition.x + grabOffset.x * ratio;
+      moved.y = dropPosition.y + grabOffset.y * ratio;
+
+      queueMicrotask(() => {
+        dropLayerHandle.change(({ shapes }) => {
+          shapes[id] = moved;
+        });
+      });
+      shapeHandle.remove();
+
+      focusHandle()?.change((doc) => {
+        if (doc.selection?.[shapeHandle.url]) {
+          delete doc.selection[shapeHandle.url];
+          doc.selection[dropLayerHandle.sub("shapes", id).url] = true;
+        }
+      });
+
+      dragShape.handle = dropLayerHandle.sub("shapes", id) as DocHandle<Shape>;
+      dragShape.homeSurfaceUrl = dropSurfaceUrl;
+      dragShape.homeScale = dropScale;
+      dragShape.grabOffset = {
+        x: grabOffset.x * ratio,
+        y: grabOffset.y * ratio,
+      };
+    };
+
+    const onSelectPress = async (pointer: SurfacePointer) => {
+      const focus = focusHandle();
+      if (!focus) return;
+
+      const hit = pointer.shapeUrl;
+
+      if (shiftDown) {
+        focus.change((doc) => {
+          if (!doc.selection) doc.selection = {};
+          if (!hit) return;
+          if (doc.selection[hit]) delete doc.selection[hit];
+          else doc.selection[hit] = true;
+        });
+        return;
+      }
+
+      if (!hit) {
+        focus.change((doc) => {
+          doc.selection = {};
+        });
+        return;
+      }
+
+      const current = focusHandle()?.doc()?.selection ?? {};
+      let urls: AutomergeUrl[];
+      if (current[hit]) {
+        // Clicking an already-selected shape drags the whole selection.
+        urls = Object.keys(current) as AutomergeUrl[];
+      } else {
+        urls = [hit];
+        focus.change((doc) => {
+          doc.selection = { [hit]: true };
+        });
+      }
+
+      dragShapes = await resolveDragShapes(urls, pointer);
+    };
+
+    const onSelectRelease = async (pointer: SurfacePointer) => {
+      const finished = dragShapes;
+      dragShapes = null;
+      if (!finished) return;
+      applyMove(finished, pointer);
+      await reparentDrag(finished, pointer);
+    };
+
+    // Idempotent: every surface's driver runs this off the shared selection,
+    // so a repeated removal is a no-op rather than a throw.
+    const deleteSelected = async (selected: Record<string, true>) => {
+      for (const url of Object.keys(selected)) {
+        try {
+          const shapeHandle = await repo.find<Shape>(url as AutomergeUrl);
+          if (shapeHandle.doc() === undefined) continue;
+          shapeHandle.remove();
+        } catch {
+          // already gone
+        }
+      }
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Shift") {
+        shiftDown = true;
+        return;
+      }
+      if (!active()) return;
+      if (event.key !== "Backspace" && event.key !== "Delete") return;
+      const focus = focusHandle();
+      const selected = focusHandle()?.doc()?.selection;
+      if (!focus || !selected || Object.keys(selected).length === 0) return;
+      event.preventDefault();
+      void deleteSelected(selected);
+      focus.change((doc) => {
+        doc.selection = {};
+      });
+    };
+
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key === "Shift") shiftDown = false;
+    };
+
+    const onBlur = () => {
+      shiftDown = false;
+    };
+
+    createEffect(async () => {
+      const state = surfaceState();
+      const pointer = state?.pointer;
+      if (!pointer) return;
+
+      if (state?.selectedToolId) {
+        // A drawing tool is active: drop any drag and keep the pressed flag
+        // current so falling back to select doesn't resume a stale drag.
+        dragShapes = null;
+        wasPressed = pointer.isPressed;
+        return;
+      }
+
+      const isPressed = pointer.isPressed;
+      const startedPress = !wasPressed && isPressed;
+      const endedPress = wasPressed && !isPressed;
+      // Update before any await so re-runs mid-handler see the new value.
+      wasPressed = isPressed;
+
+      if (startedPress) {
+        // Only the surface that stamped the press begins the drag; from there
+        // `dragShapes` keeps it the sole driver across surface boundaries.
+        if (pointer.surfaceUrl === handle.url) await onSelectPress(pointer);
+      } else if (endedPress) {
+        await onSelectRelease(pointer);
+      } else if (isPressed && dragShapes) {
+        applyMove(dragShapes, pointer);
+        void reparentDrag(dragShapes, pointer);
+      }
+    });
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+    onCleanup(() => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+    });
+
+    // --- Pointer stamping + native drag-and-drop emulation.
     const positions = createPositionRegistry(root);
     onCleanup(() => positions.dispose());
 
@@ -94,19 +385,13 @@ export function SurfaceProvider({
         return { x: clientX - rect.left, y: clientY - rect.top };
       });
 
-    // Layer handles resolved so far, for synchronous hit detection while
-    // stamping. `null` marks an in-flight find so each layer is fetched once;
-    // a layer that isn't resolved yet simply doesn't participate (by the next
-    // sample it will). A find that rejects is dropped so the next pass retries.
+    // Layer handles resolved so far, for synchronous hit detection. `null`
+    // marks an in-flight find so each layer is fetched once.
     const layerHandles = new Map<
       AutomergeUrl,
       DocHandle<ShapeLayerDoc> | null
     >();
 
-    // The topmost shape (greatest z) under a point in this surface's local
-    // space, or undefined. Fully synchronous: only already-resolved layer
-    // handles are inspected. Layers are read fresh from the surface doc each
-    // call, so added layers are picked up and removed ones never consulted.
     const topmostShapeAt = (x: number, y: number): AutomergeUrl | undefined => {
       const layers = handle.doc()?.layers ?? {};
       let bestUrl: AutomergeUrl | undefined;
@@ -134,11 +419,6 @@ export function SurfaceProvider({
       return bestUrl;
     };
 
-    // --- pointer-driven drag-and-drop gesture state (one primary pointer) ---
-    // Non-null only between pointerdown and release. `started` flips once the
-    // press crosses DRAG_THRESHOLD; `targetEl` is what the synthetic
-    // dragenter/dragleave pair currently points at; `dropEffect` is what the
-    // last dragover negotiated (it seeds and finalizes the drop).
     let dragState: {
       downClient: { x: number; y: number };
       started: boolean;
@@ -146,14 +426,10 @@ export function SurfaceProvider({
       dropEffect: DropEffect;
     } | null = null;
 
-    // Stamp a pointer sample onto the surface state, merging fields in place so
-    // a drag payload written by a source survives across moves. The innermost
-    // surface under the cursor owns the event: its root is the first surface
-    // root the bubbling event reaches, so it stamps and stops propagation —
-    // ancestor surfaces never see it. `shapeUrl` is cleared when nothing is
-    // under the cursor; `clearDrag` (pointerdown) drops any payload to start
-    // fresh; `finalizeDrag` (release) records the drop outcome in the same
-    // change, so a source reads it on the same release transition.
+    // Stamp a pointer sample onto the shared state. The innermost surface
+    // under the cursor owns the event (it stops propagation). `clearDrag`
+    // drops any payload on press; `finalizeDrag` records the drop outcome in
+    // the same change so a source reads it on the same release.
     const updatePointer = (
       event: PointerEvent,
       isPressed: boolean,
@@ -193,11 +469,9 @@ export function SurfaceProvider({
       });
     };
 
-    // Drive native drag events off a pressed move once a drag payload is
-    // present and the threshold is crossed. Dispatched at the element under the
-    // cursor (real DragEvents, blank values mid-drag), so any native
-    // dragover/drop listener — including this surface's own embed handler —
-    // participates. Records the negotiated drop effect for the eventual drop.
+    // Drive native drag events off a pressed move once a payload is present
+    // and the threshold is crossed, so native dragover/drop listeners (incl.
+    // this surface's embed handler) participate.
     const updateDrag = (event: PointerEvent) => {
       if (!dragState) return;
       const drag = stateHandle().doc()?.pointer?.drag;
@@ -237,10 +511,8 @@ export function SurfaceProvider({
     const onPointerDown = (event: PointerEvent) => {
       if (!event.isPrimary) return;
 
-      // No capture: moves and the release must hit-test to whatever surface
-      // is under the cursor, so cross-surface drags can read their drop
-      // target straight from the pointer state. Touch pointers are
-      // implicitly captured to the down target, so release that too.
+      // No capture: moves and the release must hit-test whatever surface is
+      // under the cursor so cross-surface drags read their drop target.
       const target = event.target as Element;
       if (target.hasPointerCapture?.(event.pointerId)) {
         target.releasePointerCapture(event.pointerId);
@@ -253,16 +525,11 @@ export function SurfaceProvider({
         dropEffect: "none",
       };
 
-      // Clear any prior drag payload so each press starts a fresh gesture; a
-      // source writes the new payload in its own reaction to this sample.
       updatePointer(event, true, { clearDrag: true });
     };
 
     const onPointerMove = (event: PointerEvent) => {
       if (!event.isPrimary) return;
-
-      // A hover move must not report "pressed"; derive it from the actual
-      // button state instead of hardcoding true.
       const isPressed = (event.buttons & 1) === 1;
       updatePointer(event, isPressed);
       if (isPressed) updateDrag(event);
@@ -296,9 +563,6 @@ export function SurfaceProvider({
       dragState = null;
     };
 
-    // A cancelled pointer (e.g. the OS stealing the gesture) can't reach a drop
-    // target, so any in-progress drag is rejected: leave the current target and
-    // finalize `dropEffect` to "none" in the same change as the release.
     const onPointerCancel = (event: PointerEvent) => {
       if (!event.isPrimary) return;
 
@@ -318,11 +582,8 @@ export function SurfaceProvider({
       dragState = null;
     };
 
-    // Safety net for releases outside any surface (toolbar, off-window): those
-    // never pass through a surface root, so nothing else clears the pressed
-    // flag. Position and surface are left untouched so drop targets can't be
-    // corrupted; an in-progress drag is rejected, since a release off any
-    // surface can't have hit a drop target.
+    // Safety net for releases outside any surface: those never reach a surface
+    // root, so clear the pressed flag and reject any in-progress drag here.
     const onWindowPointerUp = (event: PointerEvent) => {
       if (!event.isPrimary) return;
 
@@ -336,10 +597,6 @@ export function SurfaceProvider({
       dragState = null;
     };
 
-    // A drag carrying a sideboard payload is a valid drop target. Marking it
-    // (preventDefault) and forcing the copy cursor reflects that the embed
-    // references the dragged doc — it never moves it. The payload itself is
-    // only readable on `drop`, so here we can only sniff the media type.
     const onDragOver = (event: DragEvent) => {
       if (!event.dataTransfer?.types.includes(DND_MEDIA_TYPE)) return;
       event.stopPropagation();
@@ -351,11 +608,8 @@ export function SurfaceProvider({
       const data = event.dataTransfer?.getData(DND_MEDIA_TYPE);
       if (!data) return;
 
-      // Like pointer stamping, the innermost surface owns the drop: drag
-      // events bubble out of embedded patchwork-views (same-DOM custom
-      // elements), so without this an ancestor would embed the same doc too.
+      // Innermost surface owns the drop, and don't let the browser navigate.
       event.stopPropagation();
-      // Stop the browser from navigating to the dragged document's url.
       event.preventDefault();
 
       const items = parseDroppedItems(data);
@@ -369,11 +623,8 @@ export function SurfaceProvider({
       const selector = event.detail?.selector;
 
       if (selector?.type === "surface:state") {
-        // Respond reactively: children often subscribe before this provider's
-        // own upstream subscription has resolved, so they'd otherwise be
-        // stuck on the fallback doc when the inherited state arrives. The
-        // DOM listener runs outside any Solid owner, hence createRoot; accept
-        // runs the returned dispose as teardown on unsubscribe.
+        // Respond reactively so children pick up the inherited state once it
+        // resolves rather than getting stuck on the fallback doc.
         accept<AutomergeUrl>(event, (respond) =>
           createRoot((dispose) => {
             createEffect(() => respond(stateHandle().url));
@@ -385,14 +636,8 @@ export function SurfaceProvider({
       if (selector?.type === "surface:position") {
         const url = selector.url;
         if (typeof url !== "string") return;
-
-        // Decline — return without accepting, so the event keeps bubbling —
-        // when nothing in this subtree renders the url; an ancestor surface
-        // whose subtree contains both the consumer and the target answers
-        // instead. Positions are streamed in screen coordinates, so any
-        // surface's answer is equally valid.
+        // Decline (keep bubbling) when nothing in this subtree renders the url.
         if (positionOfUrl(root, url) === null) return;
-
         accept<Point>(event, (respond) => positions.add(url, respond));
       }
     };
@@ -420,9 +665,8 @@ export function SurfaceProvider({
     });
   });
 
-  // Must fill the surface: the layer views and overlays are pointer-events:
-  // none, so this div is the actual hit target for canvas pointer events. An
-  // unpositioned div has zero height here and never receives them.
+  // Fills the surface so this div is the hit target (layers/overlays are
+  // pointer-events: none, and an unpositioned div has zero height here).
   return (
     <div
       ref={root}
@@ -434,10 +678,27 @@ export function SurfaceProvider({
   );
 }
 
-// Build a real native drag event carrying a pointer drag payload, to dispatch
-// at the element under the cursor so ordinary dragover/drop listeners take
-// part. Values are only attached on the drop (`withValues`), matching native
-// protected mode where dragover exposes the types but not their values.
+// One shape in the current select drag. `handle` is a sub-handle scoped to the
+// shape inside its layer doc; both it and `homeSurfaceUrl` are rewritten in
+// place when the drag crosses into another surface (see `rehome`).
+type DragShape = {
+  handle: DocHandle<Shape>;
+  homeSurfaceUrl: AutomergeUrl;
+  // Shape origin minus pointer-down position, in the home surface's space;
+  // rescaled by the surface scale ratio when the drag crosses a boundary.
+  grabOffset: Point;
+  homeScale: number;
+};
+
+// The shared focus doc; keys are shape sub-document URLs.
+type FocusDoc = {
+  selection: Record<string, true>;
+};
+
+type SurfacePointer = NonNullable<SurfaceState["pointer"]>;
+
+// Build a native drag event carrying a pointer drag payload, to dispatch at
+// the element under the cursor. Values are only attached on the drop.
 function buildDragEvent(
   type: "dragenter" | "dragover" | "dragleave" | "drop",
   drag: PointerDrag,
@@ -457,17 +718,15 @@ function buildDragEvent(
     clientY: event.clientY,
     dataTransfer,
   });
-  // Some browsers ignore `dataTransfer` in the DragEvent constructor; attach it
-  // directly so listeners can still read it.
+  // Some browsers ignore `dataTransfer` from the constructor; attach it back.
   if (!dragEvent.dataTransfer) {
     Object.defineProperty(dragEvent, "dataTransfer", { value: dataTransfer });
   }
   return dragEvent;
 }
 
-// The effect a target settled on when it accepted a drag (preventDefault).
-// Targets often accept without setting an explicit dropEffect, so fall back to
-// the negotiated value and finally to "copy".
+// The effect a target settled on when it accepted a drag, falling back to the
+// negotiated value and finally to "copy".
 function acceptedEffect(
   fromEvent: DropEffect | undefined,
   negotiated: DropEffect,
@@ -477,13 +736,9 @@ function acceptedEffect(
   return "copy";
 }
 
-// Drop one embed shape per item onto `surfaceHandle`, anchored at `at` (in the
-// surface's local space) and cascaded so multiple items don't stack exactly.
-// No `toolId` is pinned, so each embed falls back to the default tool for its
-// document's datatype. `surfaceScale` is the surface's current scale (screen
-// px per local unit); the embed records `1 / surfaceScale` so its pixel-sized
-// footprint renders at that size on drop and the cascade lands at a fixed
-// on-screen offset regardless of map zoom.
+// Drop one embed shape per item onto `surfaceHandle`, anchored at `at` and
+// cascaded so multiple items don't stack exactly. The embed records
+// `1 / surfaceScale` so its pixel footprint renders at a fixed on-screen size.
 async function createEmbeds(
   repo: Repo,
   surfaceHandle: DocHandle<DocWithLayers>,
@@ -519,9 +774,8 @@ async function createEmbeds(
   });
 }
 
-// The embed layer lives under the well-known `embed-shape-layer` key that
-// `PaperDatatype.init` seeds; create it on the first drop onto a surface that
-// doesn't have one yet (e.g. the map, or a blank nested paper).
+// The embed layer lives under the well-known `embed-shape-layer` key; create
+// it on the first drop onto a surface that doesn't have one yet.
 async function getEmbedLayerHandle(
   repo: Repo,
   surfaceHandle: DocHandle<DocWithLayers>,
@@ -543,8 +797,6 @@ async function getEmbedLayerHandle(
 }
 
 // The drag payload is JSON `{ source, items }`; we only need each item's url.
-// A malformed payload yields no items rather than throwing into the drop
-// handler.
 function parseDroppedItems(data: string): DroppedItem[] {
   try {
     const parsed = JSON.parse(data) as { items?: { url?: AutomergeUrl }[] };

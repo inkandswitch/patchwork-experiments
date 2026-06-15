@@ -6,8 +6,6 @@ import { createSignal, For, Show } from "solid-js";
 import { render } from "solid-js/web";
 import { LineButton } from "../line/LineButton";
 import { RectButton } from "../rect/RectButton";
-import { SelectButton } from "../select/SelectButton";
-import { SelectionOverlay } from "../select/SelectionOverlay";
 import { SurfaceProvider } from "../surface/SurfaceProvider";
 import { DocWithLayers } from "../surface/types";
 import "./paper.css";
@@ -63,7 +61,6 @@ function PaperSurface(props: {
           </For>
           <Show when={showControls}>
             <div class="paper-controls">
-              <SelectButton />
               <RectButton />
               <LineButton />
             </div>

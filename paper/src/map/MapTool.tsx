@@ -20,17 +20,10 @@ import {
 import { render } from "solid-js/web";
 import { LineButton } from "../line/LineButton";
 import { RectButton } from "../rect/RectButton";
-import { SelectButton } from "../select/SelectButton";
-import { SelectionOverlay } from "../select/SelectionOverlay";
 import { outlinePoints } from "../surface/geometry";
 import { SurfaceProvider } from "../surface/SurfaceProvider";
 import { subscribeDoc } from "../vendor/providers-solid";
-import type {
-  DocWithLayers,
-  Point,
-  Shape,
-  SurfaceState,
-} from "../surface/types";
+import type { DocWithLayers, Point, Shape } from "../surface/types";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./map.css";
 import type { PaperMapDoc } from "./types";
@@ -156,12 +149,17 @@ function MapSurface(props: {
       zoom: ZOOM,
       // Keep the view affine (a pure scale + translate of the world plane) so
       // the single CSS transform stays exact, and free shift-drag for the
-      // select tool's multi-select.
+      // select interaction's multi-select.
       dragRotate: false,
       pitchWithRotate: false,
       touchPitch: false,
       maxPitch: 0,
       boxZoom: false,
+      // Select is the default canvas interaction and owns drags to move shapes;
+      // since every press reaches the map canvas (the layers above it are
+      // pointer-events:none), drag-panning would fight a shape drag, so it
+      // stays off. Scroll/keyboard still move the camera.
+      dragPan: false,
     });
     m.touchZoomRotate.disableRotation();
 
@@ -199,13 +197,10 @@ function MapSurface(props: {
               <patchwork-view doc-url={url} tool-id={toolId} />
             )}
           </For>
-          <SelectionOverlay surfaceUrl={props.handle.url} scale={scale} />
         </div>
-        <MapPanControl map={map} />
         <MapHighlightFocus map={map} surfaceUrl={props.handle.url} />
         <Show when={showControls}>
           <div class="paper-controls">
-            <SelectButton />
             <RectButton />
             <LineButton />
           </div>
@@ -215,33 +210,11 @@ function MapSurface(props: {
   );
 }
 
-// Drawing vs. panning: a drag must draw or select while a tool is active, so
-// map panning is turned off then and re-enabled when no tool is selected.
-// Mounted only after the SurfaceProvider (inside the same `isMounted` gate as
-// the toolbar) so its `surface:state` subscription reaches the provider, and
-// it subscribes from its own anchor element, which lives under the provider.
-function MapPanControl(props: { map: Accessor<maplibregl.Map | undefined> }) {
-  let anchor!: HTMLSpanElement;
-
-  const [surfaceState] = subscribeDoc<SurfaceState>(() => anchor, {
-    type: "surface:state",
-  });
-
-  createEffect(() => {
-    const m = props.map();
-    if (!m) return;
-    if (surfaceState()?.selectedToolId) m.dragPan.disable();
-    else m.dragPan.enable();
-  });
-
-  return <span ref={anchor} style={{ display: "none" }} />;
-}
-
 // Pans highlighted shapes into view. When the focus doc's `highlight` set
 // changes (e.g. a text editor's cursor enters a link pointing at a shape on
 // this map) and the highlighted shapes aren't already on screen, the camera
 // eases to center them, keeping the current zoom. Mounted under the provider
-// like MapPanControl so its focus subscription reaches the provider.
+// (inside the `isMounted` gate) so its focus subscription reaches it.
 function MapHighlightFocus(props: {
   map: Accessor<maplibregl.Map | undefined>;
   surfaceUrl: AutomergeUrl;

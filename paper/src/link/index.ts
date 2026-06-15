@@ -190,9 +190,9 @@ const focusBridge = ViewPlugin.fromClass(
         effects: setActiveLink.of({ pos: link.from, mode }),
       });
 
-      // Claim the tool slot under a stable, link-specific id so other tools
-      // (e.g. select) stand down. Cleared on blur; SelectButton reclaims the
-      // empty slot as the default tool.
+      // Claim the tool slot under a stable, link-specific id so the default
+      // select interaction stands down. Cleared on blur; the empty slot is
+      // itself select's default behavior, so it resumes then.
       this.stateHandle?.change((state) => {
         state.selectedToolId = `link:${this.sourceId}`;
       });

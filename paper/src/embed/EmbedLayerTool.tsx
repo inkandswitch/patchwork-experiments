@@ -67,11 +67,16 @@ function EmbedLayer(props: { handle: DocHandle<ShapeLayerDoc> }) {
           );
           doc()?.["@patchwork"].type;
 
+          // Select is the default interaction (no tool selected): only then do
+          // pointer events reach the embedded view (so you can use the embedded
+          // doc), and only then are they kept from bubbling up to start a
+          // select-drag on the parent. A drawing tool flips both so you can
+          // draw over the embed instead.
           const preventPointerEventsGoingIn = () =>
-            isDragging() || surface()?.selectedToolId !== "select";
+            isDragging() || Boolean(surface()?.selectedToolId);
 
           const preventPointerEventsBubblingUp = () =>
-            surface()?.selectedToolId === "select";
+            !surface()?.selectedToolId;
 
           return (
             <div
