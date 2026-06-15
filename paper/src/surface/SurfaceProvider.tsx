@@ -213,7 +213,9 @@ export function SurfaceProvider({
       const target = document.elementFromPoint(event.clientX, event.clientY);
       if (target !== dragState.targetEl) {
         if (dragState.targetEl) {
-          dragState.targetEl.dispatchEvent(buildDragEvent("dragleave", drag, false, event));
+          dragState.targetEl.dispatchEvent(
+            buildDragEvent("dragleave", drag, false, event),
+          );
         }
         if (target) {
           target.dispatchEvent(buildDragEvent("dragenter", drag, false, event));
@@ -282,7 +284,10 @@ export function SurfaceProvider({
           }
           target.dispatchEvent(dropEvent);
           dropEffect = dropEvent.defaultPrevented
-            ? acceptedEffect(dropEvent.dataTransfer?.dropEffect, dragState.dropEffect)
+            ? acceptedEffect(
+                dropEvent.dataTransfer?.dropEffect,
+                dragState.dropEffect,
+              )
             : "none";
         }
       }
@@ -298,8 +303,15 @@ export function SurfaceProvider({
       if (!event.isPrimary) return;
 
       const drag = stateHandle().doc()?.pointer?.drag;
-      if (drag && drag.dropEffect === undefined && dragState?.started && dragState.targetEl) {
-        dragState.targetEl.dispatchEvent(buildDragEvent("dragleave", drag, false, event));
+      if (
+        drag &&
+        drag.dropEffect === undefined &&
+        dragState?.started &&
+        dragState.targetEl
+      ) {
+        dragState.targetEl.dispatchEvent(
+          buildDragEvent("dragleave", drag, false, event),
+        );
       }
 
       updatePointer(event, false, { finalizeDrag: "none" });
@@ -318,7 +330,8 @@ export function SurfaceProvider({
         const p = state.pointer;
         if (!p?.isPressed) return;
         p.isPressed = false;
-        if (p.drag && p.drag.dropEffect === undefined) p.drag.dropEffect = "none";
+        if (p.drag && p.drag.dropEffect === undefined)
+          p.drag.dropEffect = "none";
       });
       dragState = null;
     };
@@ -414,7 +427,7 @@ export function SurfaceProvider({
     <div
       ref={root}
       data-surface-root=""
-      style={{ position: "absolute", inset: "0" }}
+      style={{ position: "absolute", inset: "0", "pointer-events": "auto" }}
     >
       {children}
     </div>

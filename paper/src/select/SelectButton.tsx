@@ -144,9 +144,11 @@ export function SelectButton(): JSX.Element {
       const { handle, homeSurfaceUrl, grabOffset } = dragShape;
       if (homeSurfaceUrl !== pointer.surfaceUrl) continue;
       if (handle.doc() === undefined) continue;
-      handle.change((shape) => {
-        shape.x = pointer.position.x + grabOffset.x;
-        shape.y = pointer.position.y + grabOffset.y;
+      queueMicrotask(() => {
+        handle.change((shape) => {
+          shape.x = pointer.position.x + grabOffset.x;
+          shape.y = pointer.position.y + grabOffset.y;
+        });
       });
     }
   };
@@ -221,9 +223,11 @@ export function SelectButton(): JSX.Element {
         title: sourceLayerHandle.doc()?.title ?? "Layer",
         shapes: {},
       });
-      dropSurfaceHandle.change(
-        (surface) => (surface.layers[layerKey] = dropLayerHandle.url),
-      );
+      queueMicrotask(() => {
+        dropSurfaceHandle.change(
+          (surface) => (surface.layers[layerKey] = dropLayerHandle.url),
+        );
+      });
     }
 
     // Screen px per local unit at home vs. at the drop. Geometry is stored in
@@ -236,8 +240,10 @@ export function SelectButton(): JSX.Element {
     moved.x = dropPosition.x + grabOffset.x * ratio;
     moved.y = dropPosition.y + grabOffset.y * ratio;
 
-    dropLayerHandle.change(({ shapes }) => {
-      shapes[id] = moved;
+    queueMicrotask(() => {
+      dropLayerHandle.change(({ shapes }) => {
+        shapes[id] = moved;
+      });
     });
     handle.remove();
 

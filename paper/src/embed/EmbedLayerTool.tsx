@@ -4,13 +4,9 @@ import { RepoContext, useDocument } from "../vendor/automerge-solid-primitives";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import "@inkandswitch/patchwork-elements";
-import type { Shape, ShapeLayerDoc } from "../surface/types";
+import type { Shape, ShapeLayerDoc, SurfaceState } from "../surface/types";
 import "./embed.css";
-
-// The drag handle's height (px). The embed's rectangle outline covers its
-// full footprint — handle strip on top, view below — so this is purely a
-// rendering split, invisible to hit-testing and the selection overlay.
-const HANDLE_HEIGHT = 20;
+import { subscribeDoc } from "../vendor/providers-solid";
 
 // An embed places another document on the canvas. Its geometry is a rectangle
 // outline covering its full footprint — drag handle plus embedded view — so
@@ -31,8 +27,6 @@ function embedSize(shape: EmbedShape): { width: number; height: number } {
 // positioned and sized from the shape. Like the other layer tools its host is a
 // full-canvas overlay; per-shape views are absolutely positioned within it.
 export const EmbedLayerTool: ToolRender = (handle, element) => {
-  element.classList.add("paper-embed-host");
-
   const dispose = render(
     () => (
       <RepoContext.Provider value={element.repo}>
@@ -45,35 +39,11 @@ export const EmbedLayerTool: ToolRender = (handle, element) => {
 };
 
 function EmbedLayer(props: { handle: DocHandle<ShapeLayerDoc> }) {
+  const [root, setRoot] = createSignal<HTMLDivElement>();
+  const [surface] = subscribeDoc<SurfaceState>(root, { type: "surface:state" });
   const [doc] = useDocument<ShapeLayerDoc>(() => props.handle.url);
+
   const shapes = () => Object.values(doc()?.shapes ?? {}) as EmbedShape[];
-
-  // The embed whose drag handle is currently grabbed. While set, that embed's
-  // own view is pointer-transparent: a fast drag outruns the handle onto the
-  // embed's body, and if the embedded surface claimed those events the drag
-  // would stall (the embed can't re-home into itself). Transparent, they fall
-  // through to the parent — or a sibling surface — which keeps stamping
-  // usable samples, so the embed catches up every frame.
-  const [grabbedId, setGrabbedId] = createSignal<string>();
-
-  // Capture phase: surface roots stop propagation of pointerup in the bubble
-  // phase, so a bubble listener on window would miss in-surface releases.
-  onMount(() => {
-    const release = () => setGrabbedId(undefined);
-    window.addEventListener("pointerup", release, true);
-    window.addEventListener("pointercancel", release, true);
-    onCleanup(() => {
-      window.removeEventListener("pointerup", release, true);
-      window.removeEventListener("pointercancel", release, true);
-    });
-  });
-
-  // Pointer events never cross the embed boundary: an embedded surface stops
-  // propagation at its own root, but a non-surface document wouldn't, and its
-  // events would bubble out and be stamped by the parent surface as if the
-  // pointer were on the paper itself. The capture-phase window listeners
-  // above still see these events, so a grab is always released.
-  const stopPointerEvent = (event: Event) => event.stopPropagation();
 
   // Embeds are always interactive: an embedded surface handles its own
   // pointer input (it stamps the shared surface:state and stops propagation),
@@ -88,60 +58,89 @@ function EmbedLayer(props: { handle: DocHandle<ShapeLayerDoc> }) {
   // select tool hit-tests the embed like any other shape. The handle must
   // not stop propagation — the press has to reach the surface root to stamp.
   return (
-    <For each={shapes()}>
-      {(embed) => (
-        // The wrapper anchors the embed at its world origin and applies the
-        // shape's single scale; the view and handle inside are laid out in
-        // logical pixels (HANDLE_HEIGHT and the px outline), so the whole embed
-        // renders uniformly and matches its draw-time size like other shapes.
-        <div
-          style={{
-            position: "absolute",
-            left: "0",
-            top: "0",
-            "transform-origin": "0 0",
-            transform: `translate(${embed.x}px, ${embed.y}px) scale(${embed.scale})`,
-            "z-index": embed.z,
-          }}
-        >
-          {/* data-automerge-url (on both elements: together they are the
+    <div ref={setRoot}>
+      <For each={shapes()}>
+        {(embed) => {
+          const [isDragging, setIsDragging] = createSignal();
+          const [doc] = useDocument<{ "@patchwork": { type: string } }>(
+            embed.docUrl,
+          );
+          doc()?.["@patchwork"].type;
+
+          const preventPointerEventsGoingIn = () =>
+            isDragging() || surface()?.selectedToolId !== "select";
+
+          const preventPointerEventsBubblingUp = () =>
+            surface()?.selectedToolId === "select";
+
+          return (
+            <div
+              class="embed-shape"
+              style={{
+                position: "absolute",
+                left: "0",
+                top: "0",
+                "transform-origin": "0 0",
+                transform: `translate(${embed.x}px, ${embed.y}px) scale(${embed.scale})`,
+                "z-index": embed.z,
+                width: `${embedSize(embed).width}px`,
+                height: `${embedSize(embed).height}px`,
+              }}
+            >
+              {/* data-automerge-url (on both elements: together they are the
               embed's footprint) lets the SelectionOverlay's generated
               stylesheet target the embed like any other shape. */}
-          <patchwork-view
-            class="paper-embed-item"
-            data-automerge-url={props.handle.sub("shapes", embed.id).url}
-            doc-url={embed.docUrl}
-            tool-id={embed.toolId}
-            hide-controls=""
-            on:pointerdown={stopPointerEvent}
-            on:pointermove={stopPointerEvent}
-            on:pointerup={stopPointerEvent}
-            on:pointercancel={stopPointerEvent}
-            style={{
-              position: "absolute",
-              left: "0",
-              top: `${HANDLE_HEIGHT}px`,
-              width: `${embedSize(embed).width}px`,
-              height: `${Math.max(0, embedSize(embed).height - HANDLE_HEIGHT)}px`,
-              right: "auto",
-              bottom: "auto",
-              "pointer-events": grabbedId() === embed.id ? "none" : "auto",
-            }}
-          />
-          <div
-            class="paper-embed-handle"
-            data-automerge-url={props.handle.sub("shapes", embed.id).url}
-            on:pointerdown={() => setGrabbedId(embed.id)}
-            style={{
-              position: "absolute",
-              left: "0",
-              top: "0",
-              width: `${embedSize(embed).width}px`,
-              height: `${HANDLE_HEIGHT}px`,
-            }}
-          />
-        </div>
-      )}
-    </For>
+
+              <div
+                class="embed-shape-drag-handle"
+                on:pointerdown={(event) => {
+                  if (preventPointerEventsGoingIn()) {
+                    event.preventDefault();
+                  }
+                  setIsDragging(true);
+                }}
+                on:pointerup={(event) => {
+                  if (preventPointerEventsGoingIn()) {
+                    event.preventDefault();
+                  }
+                  setIsDragging(false);
+                }}
+                on:pointermove={(event) => {
+                  if (preventPointerEventsGoingIn()) {
+                    event.preventDefault();
+                  }
+                }}
+              ></div>
+              <patchwork-view
+                data-automerge-url={props.handle.sub("shapes", embed.id).url}
+                doc-url={embed.docUrl}
+                tool-id={embed.toolId}
+                hide-controls=""
+                style={{
+                  "pointer-events": preventPointerEventsGoingIn()
+                    ? "none"
+                    : "auto",
+                }}
+                on:pointerdown={(event) => {
+                  if (preventPointerEventsBubblingUp()) {
+                    event.stopPropagation();
+                  }
+                }}
+                on:pointermove={(event) => {
+                  if (preventPointerEventsBubblingUp()) {
+                    event.stopPropagation();
+                  }
+                }}
+                on:pointerup={(event) => {
+                  if (preventPointerEventsBubblingUp()) {
+                    event.stopPropagation();
+                  }
+                }}
+              />
+            </div>
+          );
+        }}
+      </For>
+    </div>
   );
 }

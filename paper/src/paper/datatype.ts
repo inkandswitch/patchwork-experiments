@@ -30,26 +30,31 @@ export const PaperDatatype = {
       toolId: "paper",
     };
 
-    const childMap = repo.create<PaperMapDoc>({
-      "@patchwork": { type: "paper-map" },
-      title: "Map",
-      layers: {},
+    const childMarkdown = repo.create({
+      content: "# Untitled",
+      "@patchwork": {
+        type: "markdown",
+      },
     });
-    const mapEmbed: EmbedShape = {
+
+    const markdownEmbed: EmbedShape = {
       id: crypto.randomUUID(),
-      x: 760,
-      y: 80,
-      z: 2,
+      x: 80,
+      y: 600,
+      z: 1,
       scale: 1,
       outline: { type: "rectangle", width: 640, height: 420 },
-      docUrl: childMap.url,
-      toolId: "paper-map",
+      docUrl: childMarkdown.url,
+      toolId: "codemirror-base",
     };
 
     const embedLayer = repo.create<ShapeLayerDoc>({
       "@patchwork": { type: "shape-layer" },
       title: "Embed",
-      shapes: { [paperEmbed.id]: paperEmbed, [mapEmbed.id]: mapEmbed },
+      shapes: {
+        [paperEmbed.id]: paperEmbed,
+        [markdownEmbed.id]: markdownEmbed,
+      },
     });
 
     doc.layers = {

@@ -13,7 +13,7 @@ import { DocWithLayers } from "../surface/types";
 import "./paper.css";
 import type { PaperDoc } from "./types";
 
-const VERSION = "0.0.39";
+const VERSION = "0.0.44";
 
 // The surface tool: wraps the stack of layer <patchwork-view>s in a
 // SurfaceProvider so the layer buttons can drive the canvas purely through the
@@ -61,7 +61,6 @@ function PaperSurface(props: {
               <patchwork-view doc-url={url} tool-id={toolId} />
             )}
           </For>
-          <SelectionOverlay surfaceUrl={props.handle.url} />
           <Show when={showControls}>
             <div class="paper-controls">
               <SelectButton />

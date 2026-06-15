@@ -8,16 +8,6 @@
   font-family: system-ui, sans-serif;
 }
 
-/* Each layer's <patchwork-view> stacks on top of the others. We keep z-index
-   auto here on purpose: the layer tools set their own z-index, and because
-   these views don't form a stacking context, those inner z-indexes interlace
-   within the canvas. */
-.paper-canvas patchwork-view {
-  position: absolute;
-  inset: 0;
-  z-index: auto;
-}
-
 /* Floating tool buttons over the canvas. The buttons stop pointer events
    themselves (native listeners) so pressing one never starts a draw. */
 .paper-controls {
