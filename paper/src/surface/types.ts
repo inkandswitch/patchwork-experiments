@@ -2,31 +2,15 @@ import type { AutomergeUrl } from "@automerge/automerge-repo";
 
 export type SurfaceState = {
   selectedToolId?: string;
-  pointer?: {
-    // The pointer location in `surfaceUrl`'s own local space. Exactly one
-    // surface — the innermost one under the cursor — owns each pointer event
-    // (its root stops propagation), so there is a single sample, never a
-    // coordinate conversion.
-    position: Point;
-    // The surface that stamped the sample (points to Doc<DocWithLayers>).
-    surfaceUrl: AutomergeUrl;
-    isPressed: boolean;
-    // The stamping surface's current scale: screen pixels per local unit at
-    // this view. Paper is always 1; the map varies with zoom. Tools that
-    // create shapes read it so a shape can record the scale it was drawn at
-    // (see `Shape.scale`) without ever measuring the DOM.
-    scale: number;
-    // The topmost shape under the pointer in the stamping surface, if any
-    // (sub-document url into its layer doc). The surface hit-tests as it
-    // stamps, so tools read what's under the cursor instead of computing it.
-    // Absent until the surface's layer handles have loaded (a sample or two).
-    shapeUrl?: AutomergeUrl;
-    // The active drag-and-drop payload, written by a drag source and carried
-    // across moves. The surface turns it into real native drag events at the
-    // element under the cursor. Cleared at the start of each press; an
-    // in-progress drag has `dropEffect === undefined` (see PointerDrag).
-    drag?: PointerDrag;
-  };
+  pointer?: SurfacePointer;
+};
+
+export type SurfacePointer = {
+  position: Point;
+  surfaceUrl: AutomergeUrl;
+  isPressed: boolean;
+  scale: number;
+  shapeUrl?: AutomergeUrl;
 };
 
 // A pointer-driven drag-and-drop payload. A source writes `data` (and
