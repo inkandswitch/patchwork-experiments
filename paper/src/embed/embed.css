@@ -3,13 +3,27 @@
    embeds opt back into pointer events (see EmbedLayerTool) when no tool is
    active so the embedded document can be interacted with directly. */
 .embed-shape {
-  border: 1px solid gray;
+  border: 1px solid #bbb;
+  box-shadow: 0 2px 8px rgba(60, 60, 60, 0.06);
+  border-radius: 7px;
+  background: white;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .embed-shape-drag-handle {
   height: 20px;
   width: 100%;
-  background: gray;
+  background: linear-gradient(90deg, #b3b3b3 0%, #c8c8c8 100%);
+  border-bottom: 1px solid #aaa;
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding-left: 12px;
+  font-size: 12px;
+  color: #535353;
+  letter-spacing: 1px;
+  user-select: none;
 }
