@@ -6,13 +6,13 @@ describe('transpile', () => {
     it('wraps a flat array literal', () => {
       expect(transpile(`function f(x) {
   return [x, 5].join(',');
-}`)).toBe(`const f = $fun("() => function(x) {\\n  return $arr([x, 5]).join(',');\\n}");`);
+}`)).toBe(`const f = $fun("function f(x) {\\n  return [x, 5].join(',');\\n}", "() => function(x) {\\n  return $arr([x, 5]).join(',');\\n}");`);
     });
 
     it('wraps nested array literals inside-out', () => {
       expect(transpile(`function f(x) {
   return [x, [5, 6]].join(',');
-}`)).toBe(`const f = $fun("() => function(x) {\\n  return $arr([x, $arr([5, 6])]).join(',');\\n}");`);
+}`)).toBe(`const f = $fun("function f(x) {\\n  return [x, [5, 6]].join(',');\\n}", "() => function(x) {\\n  return $arr([x, $arr([5, 6])]).join(',');\\n}");`);
     });
 
     it('wraps nested object and array literals', () => {
@@ -24,12 +24,12 @@ describe('transpile', () => {
 
   describe('$fun wrapping', () => {
     it('wraps an arrow function with no block scopes in the free-var list', () => {
-      expect(transpile(`const f = (x) => x + y;`)).toBe(`const f = $fun("() => (x) => x + y");`);
+      expect(transpile(`const f = (x) => x + y;`)).toBe(`const f = $fun("(x) => x + y", "() => (x) => x + y");`);
     });
 
     it('wraps nested function literals separately', () => {
       expect(transpile(`const f = (x) => (y) => x + y;`)).toBe(
-        `const f = $fun("() => (x) => $fun(\\"() => (y) => x + y\\")");`,
+        `const f = $fun("(x) => (y) => x + y", "() => (x) => $fun(\\"(y) => x + y\\", \\"() => (y) => x + y\\")");`,
       );
     });
 
@@ -40,23 +40,23 @@ describe('transpile', () => {
     });
 
     it('handles destructured parameters', () => {
-      expect(transpile(`const f = ({x, y}) => x + z;`)).toBe(`const f = $fun("() => ({x, y}) => x + z");`);
+      expect(transpile(`const f = ({x, y}) => x + z;`)).toBe(`const f = $fun("({x, y}) => x + z", "() => ({x, y}) => x + z");`);
     });
 
     it('does not list block-local bindings as free variables', () => {
       expect(transpile(`const f = (x) => { let z = w; return x + z; };`)).toBe(
-        `const f = $fun("() => (x) => { let z = w; return x + z; }");`,
+        `const f = $fun("(x) => { let z = w; return x + z; }", "() => (x) => { let z = w; return x + z; }");`,
       );
     });
 
     it('combines $fun wrapping with literal wrapping inside the function body', () => {
-      expect(transpile(`const f = (x) => [x, y];`)).toBe(`const f = $fun("() => (x) => $arr([x, y])");`);
+      expect(transpile(`const f = (x) => [x, y];`)).toBe(`const f = $fun("(x) => [x, y]", "() => (x) => $arr([x, y])");`);
     });
 
     it('wraps function declarations and leaves non-block default-param refs bare', () => {
       expect(transpile(`function f(x = g(5)) {
   return x + 1;
-}`)).toBe(`const f = $fun("() => function(x = g(5)) {\\n  return x + 1;\\n}");`);
+}`)).toBe(`const f = $fun("function f(x = g(5)) {\\n  return x + 1;\\n}", "() => function(x = g(5)) {\\n  return x + 1;\\n}");`);
     });
   });
 
@@ -70,7 +70,7 @@ describe('transpile', () => {
   const $scope2 = $obj({});
   $scope2.x = 0;
   $scope2.y = 1;
-  return $fun("($scope2) => (a) => $scope2.x * $scope2.y", [$scope2]);
+  return $fun("(a) => x * y", "($scope2) => (a) => $scope2.x * $scope2.y", [$scope2]);
 }`);
     });
 
@@ -83,7 +83,7 @@ describe('transpile', () => {
   const $scope2 = $obj({});
   $scope2.x = 0;
   let y = 1;
-  return $fun("($scope2) => (a) => $scope2.x * $scope2.x", [$scope2]);
+  return $fun("(a) => x * x", "($scope2) => (a) => $scope2.x * $scope2.x", [$scope2]);
 }`);
     });
 
@@ -100,8 +100,8 @@ describe('transpile', () => {
   $scope2.x = 0;
   $scope2.y = 1;
   return $arr([
-    $fun("($scope2) => () => $scope2.x * $scope2.x", [$scope2]),
-    $fun("($scope2) => () => $scope2.y * $scope2.y", [$scope2])
+    $fun("() => x * x", "($scope2) => () => $scope2.x * $scope2.x", [$scope2]),
+    $fun("() => y * y", "($scope2) => () => $scope2.y * $scope2.y", [$scope2])
   ]);
 }`);
     });
@@ -119,7 +119,7 @@ describe('transpile', () => {
   {
   const $scope3 = $obj({});
     $scope3.y = 1;
-    return $fun("($scope2, $scope3) => (a) => $scope2.x * $scope3.y", [$scope2, $scope3]);
+    return $fun("(a) => x * y", "($scope2, $scope3) => (a) => $scope2.x * $scope3.y", [$scope2, $scope3]);
   }
 }`);
     });
@@ -136,7 +136,7 @@ describe('transpile', () => {
   $scope2.x = 0;
   {
     let y = 1;
-    return $fun("($scope2) => (a) => $scope2.x * $scope2.x", [$scope2]);
+    return $fun("(a) => x * x", "($scope2) => (a) => $scope2.x * $scope2.x", [$scope2]);
   }
 }`);
     });
@@ -145,7 +145,14 @@ describe('transpile', () => {
       expect(transpile(`let count = 0;
 w.inc = () => ++count;`)).toBe(`const $scope1 = $obj({});
 $scope1.count = 0;
-w.inc = $fun("($scope1) => () => ++$scope1.count", [$scope1]);`);
+w.inc = $fun("() => ++count", "($scope1) => () => ++$scope1.count", [$scope1]);`);
+    });
+
+    it('objectifies bindings without a trailing semicolon before the next statement', () => {
+      expect(transpile(`let c = 0
+w.inc = () => ++c`)).toBe(`const $scope1 = $obj({});
+$scope1.c = 0
+w.inc = $fun("() => ++c", "($scope1) => () => ++$scope1.c", [$scope1])`);
     });
   });
 });

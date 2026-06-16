@@ -670,6 +670,7 @@ function transformBindingDeclaration(source: string, declNode: SyntaxNode, scope
       flush(';');
     }
   }
+  flush('');
 
   return transformedAny ? parts.join(' ') : null;
 }
@@ -753,26 +754,39 @@ function mapPos(pos: number, deltas: { pos: number; delta: number }[]): number {
   return pos + extra;
 }
 
-function renderFuncCall(inner: string, scopes: LexicalScope[], declName?: string): string {
+function renderFuncCall(
+  showInner: string,
+  codeInner: string,
+  scopes: LexicalScope[],
+  declName?: string,
+): string {
   const params = renderScopeList(scopes);
-  const funcArg = `(${params}) => ${inner}`;
-  const codeArg = JSON.stringify(funcArg);
+  const codeFuncArg = scopes.length > 0 ? `(${params}) => ${codeInner}` : `() => ${codeInner}`;
+  const showArg = JSON.stringify(showInner);
+  const codeArg = JSON.stringify(codeFuncArg);
   const scopeArg = scopes.length > 0 ? `, [${params}]` : '';
-  const call = `$fun(${codeArg}${scopeArg})`;
+  const call = `$fun(${showArg}, ${codeArg}${scopeArg})`;
   return declName !== undefined ? `const ${declName} = ${call};` : call;
 }
 
-function renderEdit(source: string, start: number, end: number, edit: Edit): string {
+function renderEdit(
+  source: string,
+  start: number,
+  end: number,
+  edit: Edit,
+  originalSource: string,
+): string {
   if (edit.kind === 'replace') return edit.text;
   if (edit.kind === 'arr') return `$arr(${source.slice(start, end)})`;
   if (edit.kind === 'obj') return `$obj(${source.slice(start, end)})`;
   if (edit.kind === 'insert') return edit.text;
 
-  const inner = source.slice(start, end);
+  const codeInner = source.slice(start, end);
+  const showInner = originalSource.slice(edit.from, edit.to);
   if (edit.kind === 'funcDecl') {
-    return renderFuncCall(functionExpressionSource(inner), edit.scopes, edit.name);
+    return renderFuncCall(showInner, functionExpressionSource(codeInner), edit.scopes, edit.name);
   }
-  return renderFuncCall(inner, edit.scopes);
+  return renderFuncCall(showInner, codeInner, edit.scopes);
 }
 
 function applyEdits(source: string, edits: Edit[]): string {
@@ -796,7 +810,7 @@ function applyEdits(source: string, edits: Edit[]): string {
 
     const start = mapPos(edit.from, deltas);
     const end = mapPos(edit.to, deltas);
-    const text = renderEdit(out, start, end, edit);
+    const text = renderEdit(out, start, end, edit, source);
     out = out.slice(0, start) + text + out.slice(end);
     deltas.push({ pos: edit.to, delta: text.length - (end - start) });
   }

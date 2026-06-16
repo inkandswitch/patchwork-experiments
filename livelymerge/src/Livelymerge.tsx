@@ -134,19 +134,12 @@ function $arr(values: any) {
   return deserialize(entry);
 }
 
-const scopesToFnCache = new Map<string, (...args: any[]) => () => any>();
-
-function $fun($code: string, scopes: Proxy[] = []) {
-  let scopesToFn = scopesToFnCache.get($code);
-  if (!scopesToFn) {
-    scopesToFn = new Function('return ' + $code)() as (...args: any[]) => () => any;
-    scopesToFnCache.set($code, scopesToFn);
-  }
-
+function $fun($codeForShow: string, $code: string, scopes: Proxy[] = []) {
   const $id = Math.random().toString();
   const entry: Fun = {
     $type: 'fun',
     $id,
+    $codeForShow,
     $code,
     $scopes: scopes.map(toRef),
   };
@@ -516,6 +509,17 @@ function getFunPrototype(fun: Fun, funProxy: Proxy): Proxy {
   return proto;
 }
 
+const scopesToFnCache = new Map<string, (...args: any[]) => () => any>();
+
+function getScopesToFn(code: string) {
+  let scopesToFn = scopesToFnCache.get(code);
+  if (!scopesToFn) {
+    scopesToFn = new Function('return ' + code)() as (...args: any[]) => () => any;
+    scopesToFnCache.set(code, scopesToFn);
+  }
+  return scopesToFn;
+}
+
 function proxifyFun(fun: Fun): Proxy {
   const existing = proxies?.get(fun.$id);
   if (existing) {
@@ -533,7 +537,7 @@ function proxifyFun(fun: Fun): Proxy {
   let _fn: (() => any) | null = null;
   const fn: () => (...args: any[]) => any = () => {
     if (!_fn) {
-      _fn = scopesToFnCache.get(fun.$code)!(...fun.$scopes.map(deserialize));
+      _fn = getScopesToFn(fun.$code)(...fun.$scopes.map(deserialize));
     }
     return _fn;
   };
@@ -569,7 +573,7 @@ function proxifyFun(fun: Fun): Proxy {
           }
           return getFunPrototype(fun, funProxy);
         case 'toString':
-          return () => `[fun ${fun.$id}]`;
+          return () => fun.$codeForShow;
       }
       return undefined;
     },

@@ -19,6 +19,7 @@ export interface Arr {
 export interface Fun {
   $type: 'fun';
   $id: string;
+  $codeForShow: string;
   $code: string;
   $scopes: Ref[];
   $prototypeId?: string;
