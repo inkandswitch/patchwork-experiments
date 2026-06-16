@@ -62,7 +62,7 @@ function change(fn: () => void) {
   try {
     docHandle.change((_doc) => {
       doc = _doc;
-      w = (window as any).world = deserialize(doc.objectTable[0]);
+      w = deserialize(doc.objectTable['w']);
       try {
         fn();
       } catch (e) {
@@ -85,18 +85,37 @@ function change(fn: () => void) {
   }
 }
 
-function newObj(proto?: Proxy) {
-  return $obj({}, proto);
+function isLmObj(x: unknown): boolean {
+  return isProxy(x) && isObj(x.$unwrapped);
 }
-(window as any).newObj = newObj;
 
-function $obj(obj: Record<string, Val>, proto?: Proxy) {
+function unwrapLmObj(x: unknown): Obj | null {
+  if (!isProxy(x) || !isObj(x.$unwrapped)) return null;
+  return x.$unwrapped;
+}
+
+function ownUserPropertyKeys(obj: Obj): Proxy {
+  return $arr(Object.getOwnPropertyNames(obj).filter((p) => !p.startsWith('$')));
+}
+
+function lmHasOwn(obj: Obj, prop: string): boolean {
+  return Object.hasOwn(obj, '@' + prop) || Object.hasOwn(obj, prop);
+}
+
+function lmGetPrototypeOf(obj: Obj): Proxy | null {
+  if (!obj.$protoId) return null;
+  return deserialize(doc.objectTable[obj.$protoId]);
+}
+
+function $obj(obj: Record<string, Val>, proto?: Proxy | null) {
   const $id = Math.random().toString();
   const entry: Obj = {
     $type: 'obj',
     $id,
-    $protoId: proto?.$id ?? 'object-prototype',
   };
+  if (proto !== null) {
+    entry.$protoId = proto?.$id ?? 'object-prototype';
+  }
   for (const [k, v] of Object.entries(obj)) {
     entry[k] = toVal(v);
   }
@@ -213,7 +232,7 @@ function proxifyObj(obj: Obj): Proxy {
         }
       }
 
-      if (prop === 'toString') {
+      if (prop === '@toString') {
         return () => `[obj ${obj.$id}]`;
       }
 
@@ -615,45 +634,73 @@ const codeMirrorTheme = EditorView.theme({
   },
 });
 
-// Livelymerge replacement for Array, setTimeout, setInterval
+// Object
 
-function $setTimeout(fn: () => void, delay?: number) {
-  const id = setTimeout(() => {
-    change(() => {
-      try {
-        fn();
-      } finally {
-        delete (doc.objectTable['timeout-fns'] as Obj)[id as any];
-      }
-    });
-  }, delay);
-  change(() => {
-    (doc.objectTable['timeout-fns'] as Obj)[id as any] = toVal(fn);
-  });
-  return id;
+interface $Object {
+  (value?: unknown): Proxy;
+  create(proto: Proxy | null): Proxy;
+  keys(obj: unknown): Proxy;
+  values(obj: unknown): Proxy;
+  entries(obj: unknown): Proxy;
+  hasOwn(obj: unknown, prop: PropertyKey): boolean;
+  getOwnPropertyNames(obj: unknown): Proxy;
+  getPrototypeOf(obj: unknown): Proxy | null;
 }
 
-function $clearTimeout(id: number) {
-  clearTimeout(id);
-  change(() => {
-    delete (doc.objectTable['timeout-fns'] as Obj)[id as any];
-  });
-}
+const $Object = function Object(value?: unknown) {
+  if (value !== undefined && value !== null) {
+    throw new Error('Object(value) is not supported yet');
+  }
+  return $obj({});
+} as $Object;
 
-function $setInterval(fn: () => void, period?: number) {
-  const id = setInterval(() => change(fn), period);
-  change(() => {
-    (doc.objectTable['interval-fns'] as Obj)[id as any] = toVal(fn);
-  });
-  return id;
-}
+$Object.create = function (proto: Proxy | null) {
+  if (proto !== null && !isLmObj(proto)) {
+    throw new TypeError('Object prototype may only be an Object or null');
+  }
+  return $obj({}, proto);
+};
 
-function $clearInterval(id: number) {
-  clearInterval(id);
-  change(() => {
-    delete (doc.objectTable['interval-fns'] as Obj)[id as any];
-  });
-}
+$Object.keys = function (obj: unknown) {
+  const unwrapped = unwrapLmObj(obj);
+  if (unwrapped) return ownUserPropertyKeys(unwrapped);
+  return $arr(Object.keys(obj as object));
+};
+
+$Object.values = function (obj: unknown) {
+  return ($Object.keys(obj) as any).map((key: string) => (obj as any)[key]);
+};
+
+$Object.entries = function (obj: any) {
+  return ($Object.keys(obj) as any).map((key: string) => $arr([key, obj[key]]));
+};
+
+$Object.hasOwn = function (obj: unknown, prop: PropertyKey) {
+  const unwrapped = unwrapLmObj(obj);
+  if (unwrapped) {
+    if (typeof prop !== 'string') return false;
+    return lmHasOwn(unwrapped, prop);
+  }
+  return Object.hasOwn(obj as object, prop);
+};
+
+$Object.getOwnPropertyNames = function (obj: unknown) {
+  const unwrapped = unwrapLmObj(obj);
+  return unwrapped
+    ? ownUserPropertyKeys(unwrapped)
+    : $arr(Object.getOwnPropertyNames(obj as object));
+};
+
+$Object.getPrototypeOf = function (obj: unknown) {
+  const unwrapped = unwrapLmObj(obj);
+  return unwrapped ? lmGetPrototypeOf(unwrapped) : Object.getPrototypeOf(obj as object);
+};
+
+Object.defineProperty($Object, Symbol.hasInstance, {
+  value: (x: unknown) => isLmObj(x),
+});
+
+// Array
 
 interface $Array {
   (...args: any[]): Proxy;
@@ -694,6 +741,46 @@ Object.defineProperty($Array, Symbol.hasInstance, {
   value: (x: unknown) => $Array.isArray(x),
 });
 
+// setTimeout & friends
+
+function $setTimeout(fn: () => void, delay?: number) {
+  const id = setTimeout(() => {
+    change(() => {
+      try {
+        fn();
+      } finally {
+        delete (doc.objectTable['timeout-fns'] as Obj)[id as any];
+      }
+    });
+  }, delay);
+  change(() => {
+    (doc.objectTable['timeout-fns'] as Obj)[id as any] = toVal(fn);
+  });
+  return id;
+}
+
+function $clearTimeout(id: number) {
+  clearTimeout(id);
+  change(() => {
+    delete (doc.objectTable['timeout-fns'] as Obj)[id as any];
+  });
+}
+
+function $setInterval(fn: () => void, period?: number) {
+  const id = setInterval(() => change(fn), period);
+  change(() => {
+    (doc.objectTable['interval-fns'] as Obj)[id as any] = toVal(fn);
+  });
+  return id;
+}
+
+function $clearInterval(id: number) {
+  clearInterval(id);
+  change(() => {
+    delete (doc.objectTable['interval-fns'] as Obj)[id as any];
+  });
+}
+
 function doIt(view: EditorView, print = false) {
   // compute the from- and to-indices of the code we're about to execute
   let { from, to, head } = view.state.selection.main;
@@ -716,7 +803,7 @@ function doIt(view: EditorView, print = false) {
         '$obj',
         '$arr',
         '$fun',
-        'newObj',
+        'Object',
         'Array',
         'setTimeout',
         'clearTimeout',
@@ -728,7 +815,7 @@ function doIt(view: EditorView, print = false) {
         $obj,
         $arr,
         $fun,
-        newObj,
+        $Object,
         $Array,
         $setTimeout,
         $clearTimeout,
