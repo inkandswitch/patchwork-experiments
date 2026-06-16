@@ -39,4 +39,16 @@ describe('wrapForCompletionValue', () => {
     const result = new Function(wrapped)();
     expect(result).toBe(7);
   });
+
+  it('wraps object literals that parse as blocks', () => {
+    expect(wrapForCompletionValue('{x: 1, y: 2}')).toBe('return {x: 1, y: 2}');
+    expect(wrapForCompletionValue('{a: 1}')).toBe('return {a: 1}');
+    expect(wrapForCompletionValue('{foo: bar}')).toBe('return {foo: bar}');
+  });
+
+  it('evaluates wrapped object literals', () => {
+    const wrapped = wrapForCompletionValue('{x: 1, y: 2}');
+    const result = new Function(wrapped)();
+    expect(result).toEqual({ x: 1, y: 2 });
+  });
 });
