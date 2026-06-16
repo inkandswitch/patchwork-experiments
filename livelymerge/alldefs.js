@@ -45,8 +45,8 @@ w.deleteFromArrayPred = function (xs, pred) {
   }
 };
 
-/** Reparent diagnostics — set w.debugReparent = true, then drop a morph. */
 w.debugReparentCheck = function (morph, label) {
+  /** Reparent diagnostics — set w.debugReparent = true, then drop a morph. */
   if (!w.debugReparent) return;
   let id = w.getLmId(morph);
   let listed = [];
@@ -165,8 +165,8 @@ w.primaryCanvasElement = function () {
   if (els && els[0]) return els[0];
   return w.canvas();
 };
-/** Layout box for the drawable canvas (Pyonpyon host: .canvas-container); else canvas bounding rect. */
 w.viewportBounds = function () {
+  /** Layout box for the drawable canvas (Pyonpyon host: .canvas-container); else canvas bounding rect. */
   if (typeof document === 'undefined') return null;
   let c = w.primaryCanvasElement();
   if (!c) return null;
@@ -209,8 +209,8 @@ w.isMenuSeparator = function (item) {
 w.menuSeparatorDisplay = function () {
   return '———';
 };
-/** Pane menu for method-selector list panes (browser message list, method-list panel, …). */
 w.methodSelectorPaneMenuSpec = function (panel) {
+  /** Pane menu for method-selector list panes (browser message list, method-list panel, …). */
   return {
     items: [
       'spawn this method to its own window',
@@ -226,8 +226,8 @@ w.methodSelectorPaneMenuSpec = function (panel) {
     },
   };
 };
-/** Pane menu for class-selector list pane (browser class list). */
 w.classSelectorPaneMenuSpec = function (panel) {
+  /** Pane menu for class-selector list pane (browser class list). */
   return {
     items: [
       'spawn this class to its own window',
@@ -450,13 +450,13 @@ w.consumeSoftMetaKey = function () {
   w.metaKeyPressedFlag = false;
   w._refreshPadModifierStyles();
 };
-/** Clear one-shot soft SHIFT (LOCK is unchanged). */
 w.consumeSoftShiftKey = function () {
+  /** Clear one-shot soft SHIFT (LOCK is unchanged). */
   if (!w.shiftKeyPressedFlag || w.lockKeyPressedFlag) return;
   w.setShiftKeyPressed(false);
 };
-/** SHIFT on OSK ⇧ — clears LOCK if on, else toggles one-shot soft shift. */
 w.pressPadShiftKey = function () {
+  /** SHIFT on OSK ⇧ — clears LOCK if on, else toggles one-shot soft shift. */
   if (w.isLockKeyPressed()) {
     w.setLockKeyPressed(false);
     w.setShiftKeyPressed(false);
@@ -465,18 +465,18 @@ w.pressPadShiftKey = function () {
   }
   w._refreshPadModifierStyles();
 };
-/** META on OSK ⌘ — toggles until next character or pointerDown consumes it. */
 w.pressPadMetaKey = function () {
+  /** META on OSK ⌘ — toggles until next character or pointerDown consumes it. */
   w.toggleMetaKeyPressed();
 };
-/** LOCK / shift-lock and soft pad modifiers when the OSK goes away. */
 w.clearOskPadModifierState = function () {
+  /** LOCK / shift-lock and soft pad modifiers when the OSK goes away. */
   w.setLockKeyPressed(false);
   w.setShiftKeyPressed(false);
   w.setMetaKeyPressed(false);
 };
-/** Remember OSK position/size (world bounds) for the next show. */
 w.saveOnScreenKeyboardChrome = function (kb) {
+  /** Remember OSK position/size (world bounds) for the next show. */
   if (!kb || !kb.getBounds) return;
   let b = kb.getBounds();
   w._oskSavedChrome = {
@@ -491,13 +491,13 @@ w.onScreenKeyboardBoundsForWorld = function (world) {
   if (c && c.w > 0 && c.h > 0) return w.rect(c.x, c.y, c.w, c.h);
   return w.defaultOnScreenKeyboardBounds(world);
 };
-/** Gray highlight for active SHIFT/META on OSK pad keys. */
 w.padModifierHighlightOn = function (baseColor) {
+  /** Gray highlight for active SHIFT/META on OSK pad keys. */
   let base = baseColor && baseColor.copy ? baseColor.copy() : w.Color.lightGray.copy();
   return w.Color.gray.mixedWith(base, 0.58);
 };
-/** Local coords on canvas for Pointer Events. Touch/pen use clientX/Y − rect (Safari often omits or misreports offsetX/Y). */
 w.pointerEventCanvasLocalPt = function (canvas, e) {
+  /** Local coords on canvas for Pointer Events. Touch/pen use clientX/Y − rect (Safari often omits or misreports offsetX/Y). */
   if (!canvas || !e) return w.pt(0, 0);
   let clientBased =
     e.pointerType === 'touch' ||
@@ -560,8 +560,8 @@ w.showPasteHistoryMenu = function (pane, textBox) {
   );
   world.addMorph(menu);
 };
-/** True if shift should apply: hardware shift, LOCK, shift flag, or world shiftKeyDown from keys. */
 w.isShiftKeyPressed = function () {
+  /** True if shift should apply: hardware shift, LOCK, shift flag, or world shiftKeyDown from keys. */
   let worldDown = w.topLevelMorph && w.topLevelMorph.shiftKeyDown;
   return w.shiftKeyPressedFlag || w.lockKeyPressedFlag || !!worldDown;
 };
@@ -571,12 +571,12 @@ w.isLockKeyPressed = function () {
 w.isMetaKeyPressed = function () {
   return w.metaKeyPressedFlag;
 };
-/** True if meta should apply: hardware meta or soft META flag (use {@link consumeSoftMetaKey} after halo use). */
 w.effectiveMetaKey = function (evt) {
+  /** True if meta should apply: hardware meta or soft META flag (use {@link consumeSoftMetaKey} after halo use). */
   return !!(evt && evt.metaKey) || w.metaKeyPressedFlag;
 };
-/** True if shift should apply for this event (LOCK forces shift until cleared). */
 w.effectiveShiftKey = function (evt) {
+  /** True if shift should apply for this event (LOCK forces shift until cleared). */
   let hardware = !!evt && evt.shiftKey;
   let worldDown = w.topLevelMorph && w.topLevelMorph.shiftKeyDown;
   let evtType = evt && evt.type ? evt.type : '';
@@ -595,8 +595,8 @@ w._refreshPadModifierStyles = function () {
   if (kb && kb.world() && kb.refreshKeyLabels) kb.refreshKeyLabels();
   if (root.changed) root.changed();
 };
-/** Pointer is over an OSK key so world should not steal meta for cycleHalo. */
 w.pointerOnOskKeyUI = function (world, worldPt) {
+  /** Pointer is over an OSK key so world should not steal meta for cycleHalo. */
   let t = world.topMorphAt(worldPt);
   while (t) {
     if (t.className === 'KbdKeyMorph') return true;
@@ -613,9 +613,9 @@ w.init = function (restart) {
   this.initLively();
   w.populateLively();
 };
-// Load and apply monkey-patches from a JS file (e.g. alldefs-patches.js).
-// Set w.patchesUrl to the script URL if not same directory as page. Returns a Promise.
 w.readPatches = function () {
+  // Load and apply monkey-patches from a JS file (e.g. alldefs-patches.js).
+  // Set w.patchesUrl to the script URL if not same directory as page. Returns a Promise.
   let url = w.patchesUrl != null ? w.patchesUrl : 'alldefs-patches.js';
   return fetch(url)
     .then((r) => {
@@ -827,14 +827,14 @@ w.methodFromSpec = function (spec) {
   if (protoPart == 'class') return w[className][selector];
   return w[className].proto[selector];
 };
-/** Method spec key without a recent-changes date suffix. */
 w.methodSpecKey = function (spec) {
+  /** Method spec key without a recent-changes date suffix. */
   if (!spec) return spec;
   if (spec.includes('[')) return spec.slice(0, spec.indexOf('[') - 1).trim();
   return spec;
 };
-/** `eval` expression to remove a live method (`Morph.proto.foo`, `w.init`, …). */
 w.deleteExprForMethodSpec = function (spec) {
+  /** `eval` expression to remove a live method (`Morph.proto.foo`, `w.init`, …). */
   let key = w.methodSpecKey(spec);
   if (!key) return null;
   if (key.startsWith('w.')) return 'delete w.' + key.slice(2);
@@ -883,8 +883,8 @@ w.methodsContaining = function (searchString) {
   });
   return found;
 };
-/** Fleeting notifier for find-in-methods when there are zero hits (no panel required). */
 w.showFindNoMatchesMenu = function (world, pt, searchString) {
+  /** Fleeting notifier for find-in-methods when there are zero hits (no panel required). */
   if (!world) return;
   let term = String(searchString != null ? searchString : '');
   let msg =
@@ -1368,7 +1368,7 @@ w.Color.proto.withAlpha = function (a) {
       ')',
   };
 };
-w.Color.random = function () {
+w.Color.proto.random = function () {
   return w.Color.new(Math.random(), Math.random(), Math.random());
 };
 w.Color.black = w.Color.new(0, 0, 0);
@@ -1383,6 +1383,153 @@ w.Color.red = w.Color.new(0.8, 0, 0);
 w.Color.veryLightGray = w.Color.new(0.95, 0.95, 0.95);
 w.Color.white = w.Color.new(1, 1, 1);
 w.Color.yellow = w.Color.new(0.8, 0.8, 0);
+
+/** Named swatches for {@link StylePanel} (first entry = no fill/stroke). */
+w.styleColorNames = function () {
+  return ['none', 'black', 'white', 'gray', 'red', 'orange', 'yellow', 'green', 'blue', 'cyan'];
+};
+w.colorByStyleName = function (name) {
+  if (!name || name === 'none') return null;
+  return w.Color[name] ? w.Color[name].copy() : w.Color.gray.copy();
+};
+w.baseColorFromPaint = function (paint) {
+  if (!paint) return null;
+  if (paint.r != null && paint.g != null && paint.b != null) return paint.copy();
+  let fs = paint.fillStyle;
+  if (!fs) return null;
+  let m = fs.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+  if (!m) return null;
+  return w.Color.new(parseInt(m[1], 10) / 255, parseInt(m[2], 10) / 255, parseInt(m[3], 10) / 255);
+};
+w.colorAlphaFromPaint = function (paint) {
+  if (!paint) return 1;
+  if (paint.r != null && paint.g != null && paint.b != null) return 1;
+  let fs = paint.fillStyle;
+  if (!fs) return 1;
+  let m = fs.match(/rgba\([^,]+,[^,]+,[^,]+,\s*([^)]+)\)/);
+  if (m) return Math.min(1, Math.max(0, parseFloat(m[1])));
+  return 1;
+};
+w.paintWithAlpha = function (color, alpha) {
+  if (!color) return null;
+  let a = alpha != null ? alpha : 1;
+  if (a >= 0.999) return color.copy();
+  return color.withAlpha(a);
+};
+/** HSV in 0..1 → {@link Color} (saturation 1 gives full hue sweep). */
+w.hsvToColor = function (h, s, v) {
+  let hh = ((h % 1) + 1) % 1;
+  let ss = Math.min(1, Math.max(0, s));
+  let vv = Math.min(1, Math.max(0, v));
+  let i = Math.floor(hh * 6);
+  let f = hh * 6 - i;
+  let p = vv * (1 - ss);
+  let q = vv * (1 - f * ss);
+  let t = vv * (1 - (1 - f) * ss);
+  let r;
+  let g;
+  let b;
+  switch (i % 6) {
+    case 0:
+      r = vv;
+      g = t;
+      b = p;
+      break;
+    case 1:
+      r = q;
+      g = vv;
+      b = p;
+      break;
+    case 2:
+      r = p;
+      g = vv;
+      b = t;
+      break;
+    case 3:
+      r = p;
+      g = q;
+      b = vv;
+      break;
+    case 4:
+      r = t;
+      g = p;
+      b = vv;
+      break;
+    default:
+      r = vv;
+      g = p;
+      b = q;
+  }
+  return w.Color.new(r, g, b);
+};
+w.styleNameForColor = function (color) {
+  if (!color) return 'none';
+  let base = w.baseColorFromPaint(color);
+  if (!base) return 'none';
+  for (let i = 1; i < w.styleColorNames().length; i++) {
+    let name = w.styleColorNames()[i];
+    let c = w.Color[name];
+    if (
+      c &&
+      Math.abs(c.r - base.r) < 0.02 &&
+      Math.abs(c.g - base.g) < 0.02 &&
+      Math.abs(c.b - base.b) < 0.02
+    )
+      return name;
+  }
+  return 'gray';
+};
+w.styleSnapshotFromMorph = function (morph) {
+  let sh = morph && morph.shape;
+  if (!sh) return { fillColor: null, fillAlpha: 1, borderColor: null, borderAlpha: 1, borderWidth: 0 };
+  return {
+    fillColor: w.baseColorFromPaint(sh.fillColor),
+    fillAlpha: w.colorAlphaFromPaint(sh.fillColor),
+    borderColor: w.baseColorFromPaint(sh.borderColor),
+    borderAlpha: w.colorAlphaFromPaint(sh.borderColor),
+    borderWidth: w.roundLineWidth(sh.borderWidth != null ? sh.borderWidth : 0),
+  };
+};
+/** True when line controls should adjust a filled shape's border (not a polyline stroke). */
+w.morphLineStyleIsBorder = function (morph) {
+  let sh = morph && morph.shape;
+  if (!sh) return false;
+  if (sh.className === 'PolyLine' || morph.className === 'LineMorph') return false;
+  if (sh.className === 'Ellipse') return true;
+  if (sh.className === 'Shape') return true;
+  return false;
+};
+w.morphDefaultLineWidth = function (morph) {
+  return 2;
+};
+w.roundLineWidth = function (width) {
+  return Math.round(width * 10) / 10;
+};
+w.lineWidthCaptionText = function (width) {
+  let w10 = w.roundLineWidth(width != null ? width : 0);
+  let s = w10 % 1 === 0 ? String(w10) : w10.toFixed(1);
+  return 'line width = ' + s;
+};
+w.copyStyleSnapshot = function (snap) {
+  return {
+    fillColor: snap.fillColor ? snap.fillColor.copy() : null,
+    fillAlpha: snap.fillAlpha != null ? snap.fillAlpha : 1,
+    borderColor: snap.borderColor ? snap.borderColor.copy() : null,
+    borderAlpha: snap.borderAlpha != null ? snap.borderAlpha : 1,
+    borderWidth: snap.borderWidth != null ? snap.borderWidth : 0,
+  };
+};
+w.applyStyleSnapshotToMorph = function (morph, snap) {
+  if (!morph || !morph.shape || !snap) return;
+  let fill = snap.fillColor ? w.paintWithAlpha(snap.fillColor, snap.fillAlpha) : null;
+  let border = snap.borderColor ? w.paintWithAlpha(snap.borderColor, snap.borderAlpha) : null;
+  let width = snap.borderWidth != null ? snap.borderWidth : 0;
+  if (!border) width = 0;
+  morph.setStyles(fill, width, border);
+  morph.changed();
+  let world = morph.world();
+  if (world && world.changed) world.changed();
+};
 
 w.Morph = w.newClass('Morph');
 w.Morph.proto.addMorph = function (morph) {
@@ -1442,8 +1589,8 @@ w.Morph.proto.bringTopLevelPanelToFrontIfNeeded = function (p) {
   }
   return false;
 };
-/** True when the world's front morph is a selection pane menu owned by a scroll pane in `panelMorph`. */
 w.paneMenuIsFrontmostForPanel = function (world, panelMorph) {
+  /** True when the world's front morph is a selection pane menu owned by a scroll pane in `panelMorph`. */
   if (!world || !panelMorph || !world.submorphs || world.submorphs.length === 0) return false;
   let front = world.submorphs.at(-1);
   if (!front || front.className !== 'MenuMorph' || !front.isFleetingMenu) return false;
@@ -1456,8 +1603,8 @@ w.paneMenuIsFrontmostForPanel = function (world, panelMorph) {
   }
   return false;
 };
-/** True when `world.keyboardFocus` is the content morph (or a submorph of it) for `scrollPane`. */
 w.keyboardFocusBelongsToScrollPane = function (world, scrollPane) {
+  /** True when `world.keyboardFocus` is the content morph (or a submorph of it) for `scrollPane`. */
   let f = world && world.keyboardFocus;
   if (!f || !scrollPane || !scrollPane.contentPane) return false;
   let want = scrollPane.contentPane;
@@ -1468,8 +1615,8 @@ w.keyboardFocusBelongsToScrollPane = function (world, scrollPane) {
   }
   return false;
 };
-/** TextPane on the owner chain of `world.keyboardFocus`, if any. */
 w.textPaneWithKeyboardFocus = function (world) {
+  /** TextPane on the owner chain of `world.keyboardFocus`, if any. */
   let f = world && world.keyboardFocus;
   if (!f) return null;
   let m = f;
@@ -1479,8 +1626,8 @@ w.textPaneWithKeyboardFocus = function (world) {
   }
   return null;
 };
-/** True when OSK should track keyboard focus in a TextPane. */
 w.shouldShowOnScreenKeyboardForWorld = function (world) {
+  /** True when OSK should track keyboard focus in a TextPane. */
   if (!world || !w.useOnScreenKbd) return false;
   let pane = w.textPaneWithKeyboardFocus(world);
   if (!pane) return false;
@@ -1515,16 +1662,16 @@ w.Morph.proto.forEverySubmorph = function (fn) {
     sub.forEverySubmorph(fn);
   });
 };
-/** Shape + submorph stickouts in morph-local coords (before this morph's transform). */
 w.Morph.proto.localContentBounds = function () {
+  /** Shape + submorph stickouts in morph-local coords (before this morph's transform). */
   let b = this.shape.getBounds().copy();
   this.submorphs.forEach((sub) => {
     b = b.union(sub.fullBounds());
   });
   return b;
 };
-/** Axis-aligned footprint in owner space; applies scale and rotation like {@link Morph#renderOn}. */
 w.Morph.proto.boundsInOwnerAfterTransform = function () {
+  /** Axis-aligned footprint in owner space; applies scale and rotation like {@link Morph#renderOn}. */
   let local = this.localContentBounds();
   let sx = this.transform.scale.x || 1;
   let sy = this.transform.scale.y || 1;
@@ -1534,22 +1681,22 @@ w.Morph.proto.boundsInOwnerAfterTransform = function () {
   }
   let corners = [local.topLeft, local.topRight(), local.bottomRight(), local.bottomLeft()];
   let pts = corners.map((c) => this.transform.transformPt(c));
-  return w.Rectangle.unionPts(pts);
+  return w.Rectangle.proto.unionPts(pts);
 };
 w.Morph.proto.getBounds = function () {
   // NOTE: does not include submorph stickouts; use {@link fullBounds} or {@link boundsInOwnerAfterTransform}.
   return this.shape.getBounds().translatedBy(this.transform.translation);
 };
-/** Visible bounds for halos etc.; includes transform scale/rotation. Clipped when inside a {@link ScrollPane}. */
 w.Morph.proto.clippedBounds = function () {
+  /** Visible bounds for halos etc.; includes transform scale/rotation. Clipped when inside a {@link ScrollPane}. */
   let b = this.boundsInOwnerAfterTransform().copy();
   if (this.owner && this.owner.instanceOf && this.owner.instanceOf(w.ScrollPane)) {
     b = b.intersection(this.owner.shape.getBounds());
   }
   return b;
 };
-/** {@link clippedBounds} in world coordinates, intersecting every ancestor {@link ScrollPane} viewport. */
 w.Morph.proto.clippedBoundsInWorld = function () {
+  /** {@link clippedBounds} in world coordinates, intersecting every ancestor {@link ScrollPane} viewport. */
   let b = this.boundsInWorld();
   let o = this.owner;
   while (o) {
@@ -1569,8 +1716,8 @@ w.Morph.proto.fullBounds = function () {
   });
   return b.translatedBy(this.transform.translation);
 };
-/** Axis-aligned bounds of this morph in world coordinates. */
 w.Morph.proto.boundsInWorld = function () {
+  /** Axis-aligned bounds of this morph in world coordinates. */
   let ob = this.getBounds();
   let o = this.owner;
   if (!o || o.owner == null) return ob;
@@ -1622,12 +1769,12 @@ w.Morph.proto.inspect = function () {
   p.startStepping('showSelectedValue', false, 500);
   return p;
 };
-/** Optional halo menu: `{ items: string[], onSelect(item, morph) }` or null. */
 w.Morph.proto.morphMenu = function () {
+  /** Optional halo menu: `{ items: string[], onSelect(item, morph) }` or null. */
   return null;
 };
-/** Show {@link morphMenu} at a world point; returns false when there is no menu. */
 w.Morph.proto.showMorphMenuAt = function (worldPt, optsIfAny) {
+  /** Show {@link morphMenu} at a world point; returns false when there is no menu. */
   this.menuSpec = this.morphMenu();
   if (!this.menuSpec || !this.menuSpec.items || this.menuSpec.items.length === 0) return false;
   let world = this.world();
@@ -1673,8 +1820,8 @@ w.Morph.proto.moveBy = function (delta) {
 w.Morph.proto.acceptsDroppingMorphs = function () {
   return true;
 };
-/** Reparent under newOwner while keeping anchorLocal at same world point. */
 w.Morph.proto.reparentToOwnerPreservingWorldAnchor = function (newOwner, anchorLocal) {
+  /** Reparent under newOwner while keeping anchorLocal at same world point. */
   if (!newOwner) return;
   // morphCopy() sets owner without addMorph; only skip if this morph is actually in newOwner's tree.
   if (this.owner === newOwner && newOwner.submorphs && newOwner.submorphs.indexOf(this) >= 0)
@@ -1730,8 +1877,8 @@ w.Morph.proto.dropOnTopMorphAt = function (worldDropPt, anchorLocal) {
 w.Morph.proto.nullTransformation = function () {
   return w.SimpleTransform.new(w.pt(0, 0), 0, w.pt(1, 1));
 };
-/** True if `morph` is the OSK or a submorph of it (clicks must not clear keyboardFocus). */
 w.morphIsUnderOnScreenKeyboard = function (morph) {
+  /** True if `morph` is the OSK or a submorph of it (clicks must not clear keyboardFocus). */
   let kb = w._onScreenKeyboardMorph;
   if (!kb || !morph || !kb.world()) return false;
   let x = morph;
@@ -1741,8 +1888,8 @@ w.morphIsUnderOnScreenKeyboard = function (morph) {
   }
   return false;
 };
-/** Clear world keyboardFocus unless `morph` is a TextMorph or inside the OSK. Only TextMorph sets focus. Call after pointer hits this morph but no submorph consumed the event (so editable text is not underneath). */
 w.clearKeyboardFocusUnlessTypingOrOsk = function (morph) {
+  /** Clear world keyboardFocus unless `morph` is a TextMorph or inside the OSK. Only TextMorph sets focus. Call after pointer hits this morph but no submorph consumed the event (so editable text is not underneath). */
   let world = morph.world();
   if (!world) return;
   if (morph.className === 'TextMorph') return;
@@ -1950,8 +2097,12 @@ w.Morph.proto.renderOn = function (ctx) {
   });
 };
 w.Morph.proto.restyle = function () {
-  if (this.shape && this.shape.fillColor)
-    this.shape.setColor(w.Color.gray.mixedWith(this.shape.fillColor, 0.5));
+  if (!this.shape) return;
+  let world = this.world();
+  if (!world) return;
+  let anchor = this.clippedBoundsInWorld ? this.clippedBoundsInWorld() : this.getBounds();
+  let r = w.rect(anchor.topRight().x + 12, anchor.topLeft.y, 280, 340);
+  world.addMorph(w.StylePanel.new(r, this));
 };
 w.Morph.proto.rotateBy = function (angle) {
   this.transform.rotation += angle;
@@ -1971,8 +2122,8 @@ w.Morph.proto.setBounds = function (rect) {
   this.shape.setBounds(rect.movedBy(rect.topLeft.negated()));
   this.bounds = rect.copy();
 };
-// Sync cached this.bounds with shape + translation (setBounds/moveBy already keep it; reparent paths did not).
 w.Morph.proto.syncBoundsFromGeometry = function () {
+  // Sync cached this.bounds with shape + translation (setBounds/moveBy already keep it; reparent paths did not).
   this.bounds = this.getBounds().copy();
 };
 w.Morph.proto.setColor = function (color) {
@@ -2235,8 +2386,8 @@ w.Point.proto.adhereTo = function (rect) {
     Math.min(Math.max(this.y, rect.topLeft.y), br.y),
   );
 };
-/** Closest point on the infinite line through p1–p2 (may lie outside the segment). */
 w.Point.proto.nearestPointAlongLineFrom = function (p1, p2) {
+  /** Closest point on the infinite line through p1–p2 (may lie outside the segment). */
   let dx = p2.x - p1.x;
   let dy = p2.y - p1.y;
   let len2 = dx * dx + dy * dy;
@@ -2279,12 +2430,12 @@ w.Point.proto.moveBy = function (p) {
 w.Point.proto.negated = function () {
   return w.pt(-this.x, -this.y);
 };
-/** Reflect velocity off a vertical wall (negate x). */
 w.Point.proto.flipX = function () {
+  /** Reflect velocity off a vertical wall (negate x). */
   return w.pt(-this.x, this.y);
 };
-/** Reflect velocity off a horizontal wall (negate y). */
 w.Point.proto.flipY = function () {
+  /** Reflect velocity off a horizontal wall (negate y). */
   return w.pt(this.x, -this.y);
 };
 w.Point.proto.polarAngle = function () {
@@ -2360,8 +2511,8 @@ w.Rectangle.proto.bottom = function () {
 w.Rectangle.proto.includesPt = function (p) {
   return this.topLeft.lePt(p) && p.lePt(this.bottomRight());
 };
-/** True if this axis-aligned rect overlaps `other` (positive area overlap). */
 w.Rectangle.proto.overlapsRect = function (other) {
+  /** True if this axis-aligned rect overlaps `other` (positive area overlap). */
   let a2 = this.bottomRight();
   let b2 = other.bottomRight();
   return (
@@ -2371,18 +2522,18 @@ w.Rectangle.proto.overlapsRect = function (other) {
     a2.y > other.topLeft.y
   );
 };
-/** Axis-aligned overlap, or zero-size rect at this topLeft when disjoint. */
 w.Rectangle.proto.intersection = function (other) {
+  /** Axis-aligned overlap, or zero-size rect at this topLeft when disjoint. */
   if (!this.overlapsRect(other)) return w.rect(this.topLeft.x, this.topLeft.y, 0, 0);
   let tl = this.topLeft.maxPt(other.topLeft);
   let br = this.bottomRight().minPt(other.bottomRight());
   return w.rect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
 };
-/**
- * When this overlaps `other`, which velocity component to flip: return `'x'` for a vertical wall
- * (overlap shallower on x), `'y'` for a horizontal wall. `velIfAny` breaks ties when depths are equal.
- */
 w.Rectangle.proto.overlapBounceAxis = function (other, velIfAny) {
+  /**
+  * When this overlaps `other`, which velocity component to flip: return `'x'` for a vertical wall
+  * (overlap shallower on x), `'y'` for a horizontal wall. `velIfAny` breaks ties when depths are equal.
+  */
   if (!this.overlapsRect(other)) return null;
   let ox =
     Math.min(this.bottomRight().x, other.bottomRight().x) -
@@ -2438,15 +2589,18 @@ w.Rectangle.proto.onPointerUp = function (p) {
   delete this.hitPoint;
 };
 w.Rectangle.proto.render = function (ctx, fillColor, borderWidth, borderColor) {
+  let x = this.topLeft.x;
+  let y = this.topLeft.y;
+  let wdt = this.extent.x;
+  let hgt = this.extent.y;
   if (fillColor) {
     ctx.fillStyle = fillColor.fillStyle;
-    ctx.fillRect(this.topLeft.x, this.topLeft.y, this.extent.x, this.extent.y);
+    ctx.fillRect(x, y, wdt, hgt);
   }
-  if (borderWidth) {
-    borderColor = borderColor ? borderColor : w.Color.black;
-    ctx.fillStyle = borderColor.fillStyle;
-    ctx.lineWidth = borderWidth ? borderWidth : 2;
-    ctx.strokeRect(this.topLeft.x, this.topLeft.y, this.extent.x, this.extent.y);
+  if (borderWidth > 0 && borderColor) {
+    ctx.strokeStyle = borderColor.fillStyle;
+    ctx.lineWidth = borderWidth;
+    ctx.strokeRect(x, y, wdt, hgt);
   }
 };
 w.Rectangle.proto.renderOn = function (ctx) {
@@ -2476,7 +2630,7 @@ w.Rectangle.proto.translatedBy = function (p) {
 w.Rectangle.proto.width = function () {
   return this.extent.x;
 };
-w.Rectangle.unionPts = function (points) {
+w.Rectangle.proto.unionPts = function (points) {
   // points is an array
   let tl = points[0];
   let br = points[0];
@@ -2689,24 +2843,24 @@ w.HaloMorph.proto.handleLetterMetrics = function () {
     nudge: w.pt(-2, -1),
   };
 };
-/** Fill and border for handle ellipses and the halo title plate. */
 w.HaloMorph.proto.handleChromeStyle = function () {
+  /** Fill and border for handle ellipses and the halo title plate. */
   return {
     fill: w.Color.blue.lighter().lighter().withAlpha(0.5),
     borderWidth: 1,
     borderColor: w.Color.blue,
   };
 };
-/** Canvas y of the text baseline for a handle letter, in halo-local coordinates. */
 w.HaloMorph.proto.handleLetterBaselineYInHalo = function (index) {
+  /** Canvas y of the text baseline for a handle letter, in halo-local coordinates. */
   let m = this.handleLetterMetrics();
   let center = this.handleCenterForIndex(index);
   let letterTop = center.y - m.letterH / 2;
   if (index !== 9) letterTop += m.nudge.y;
   return letterTop + m.hang;
 };
-/** Center of handle ellipse `index` (1–10) in halo-local coordinates. */
 w.HaloMorph.proto.handleCenterForIndex = function (index) {
+  /** Center of handle ellipse `index` (1–10) in halo-local coordinates. */
   let wid = 20;
   let haloBounds = this.shape.getBounds();
   let frame = w.rect(-wid, -wid, haloBounds.width() + 2 * wid, haloBounds.height() + 2 * wid);
@@ -3028,8 +3182,8 @@ w.ListMorph.proto.setSelectionString = function (str, suppressAction) {
 
 /** Fleeting / popup menus; same behavior as {@link ListMorph}. */
 w.MenuMorph = w.ListMorph.subClass('MenuMorph');
-/** Fleeting yes/no confirm; title line is not selectable. */
 w.promptConfirmMenu = function (world, pt, titleLine, yesLine, noLine, onResult) {
+  /** Fleeting yes/no confirm; title line is not selectable. */
   let menu = w.MenuMorph.new(
     w.rect(pt.x, pt.y, Math.max(200, titleLine.length * 7), 112),
     [titleLine, yesLine, noLine],
@@ -3043,8 +3197,8 @@ w.promptConfirmMenu = function (world, pt, titleLine, yesLine, noLine, onResult)
   menu.shape.fill = bg;
   world.addMorph(menu);
 };
-/** Menu: yes; cancel = discard edits & continue; NO = keep edits (abort). Title line acts like NO. */
 w.promptOkToCancelEditsMenu = function (world, pt, onResult) {
+  /** Menu: yes; cancel = discard edits & continue; NO = keep edits (abort). Title line acts like NO. */
   let titleLine = 'OK to cancel edits?';
   let okLine = '  yes; cancel';
   let keepLine = '  NO; keep the changes';
@@ -3066,8 +3220,8 @@ w.PanelMorph = w.Morph.subClass('PanelMorph');
 w.PanelMorph.proto.defaultRect = function () {
   return w.rect(400, 60, 400, 300);
 };
-/** Resolve optional bounds for panel {@link initialize}. */
 w.PanelMorph.proto.boundsForNew = function (optionalRect) {
+  /** Resolve optional bounds for panel {@link initialize}. */
   return optionalRect != null ? optionalRect : this.defaultRect();
 };
 w.PanelMorph.proto.acceptsDroppingMorphs = function () {
@@ -3174,8 +3328,8 @@ w.PanelMorph.proto.boundsToLoc = function (r) {
 w.PanelMorph.proto.locToRect = function (s) {
   return w.rect(s.x, s.y, s.w, s.h);
 };
-/** Width of the title row when collapsed: button + title text + horizontal padding. */
 w.PanelMorph.proto.collapsedTitleBarWidth = function () {
+  /** Width of the title row when collapsed: button + title text + horizontal padding. */
   let bw = this.titleButtonWidth;
   let s = this.titleMorph.shape;
   let ctx = s.getTextContext(s.font);
@@ -3218,12 +3372,12 @@ w.PanelMorph.proto.layoutChrome = function () {
   }
   this.changed();
 };
-/** World-space top-left of this panel's shape (for spawning child windows on the world). */
 w.PanelMorph.proto.topLeftInWorld = function () {
+  /** World-space top-left of this panel's shape (for spawning child windows on the world). */
   return this.globalize(this.shape.getBounds().topLeft);
 };
-/** Bounds for a new world-level panel offset from this one (uses world coords; works when nested). */
 w.PanelMorph.proto.rectForSpawnedPanel = function (insetPx, minW, minH) {
+  /** Bounds for a new world-level panel offset from this one (uses world coords; works when nested). */
   let ins = insetPx != null ? insetPx : 28;
   let tl = this.topLeftInWorld();
   let s = this.shape.getBounds();
@@ -3231,8 +3385,8 @@ w.PanelMorph.proto.rectForSpawnedPanel = function (insetPx, minW, minH) {
   let bh = Math.max(minH != null ? minH : 220, s.height());
   return w.rect(tl.x + ins, tl.y + ins, bw, bh);
 };
-/** World-space top-left of the title bar strip (same as panel top-left; used for grid snapping). */
 w.PanelMorph.proto.titleBarTopLeft = function () {
+  /** World-space top-left of the title bar strip (same as panel top-left; used for grid snapping). */
   return this.getBounds().topLeft;
 };
 w.PanelMorph.proto.paneLayoutBounds = function () {
@@ -3306,8 +3460,8 @@ w.PanelMorph.proto.toggleCollapse = function () {
   }
   this.layoutChrome();
 };
-/** End first-collapse sticky drag: drop on pointerDown (not pointerUp). */
 w.PanelMorph.proto.finishStickyCollapsedTitleBarDrag = function (p, evt) {
+  /** End first-collapse sticky drag: drop on pointerDown (not pointerUp). */
   if (!this._stickyDragCollapsedBar) return false;
   if (this.didDrag) {
     let worldDropPt = this.owner ? this.owner.globalize(p) : p;
@@ -3473,8 +3627,8 @@ w.PanelMorph.proto.setBounds = function (newBounds) {
 };
 
 w.MethodPanel = w.PanelMorph.subClass('MethodPanel');
-/** Single full-height {@link TextPane} for method source or help text. */
 w.MethodPanel.proto.initialize = function (initialBounds, string, optionalTitle) {
+  /** Single full-height {@link TextPane} for method source or help text. */
   // Hack to read from localStorage...
   if (optionalTitle.startsWith('localStorage.')) string = localStorage.getItem(optionalTitle.slice(13));
 w.PanelMorph.proto.initialize.call(this, this.boundsForNew(initialBounds));
@@ -3492,8 +3646,8 @@ w.MethodPanel.proto.initTextPane = function (string, optionalTitle) {
 }
 
 w.BrowserPanel = w.PanelMorph.subClass('BrowserPanel');
-/** Class list (upper-left) in the system browser. */
 w.BrowserPanel.proto.initClassPane = function () {
+  /** Class list (upper-left) in the system browser. */
   let panelBounds = this.paneLayoutBounds();
   this.classPane = this.addMorph(w.ListPane.new(panelBounds, w.rect(0.0, 0.0, 0.4, 0.4)));
   this.classPane.setList(['w.'].concat(w.allClassNamesWithStatics()));
@@ -3535,8 +3689,8 @@ w.BrowserPanel.proto.initClassPane = function () {
     applyClass();
   });
 };
-/** Method name list (upper-right) in the system browser. */
 w.BrowserPanel.proto.initMessagePane = function () {
+  /** Method name list (upper-right) in the system browser. */
   let panelBounds = this.paneLayoutBounds();
   this.messagePane = this.addMorph(w.ListPane.new(panelBounds, w.rect(0.4, 0.0, 0.6, 0.4)));
   this.messagePane.setList(['message names']);
@@ -3575,8 +3729,8 @@ w.BrowserPanel.proto.initMessagePane = function () {
     applyMethod();
   });
 };
-/** Editable method source (lower) in the system browser. */
 w.BrowserPanel.proto.initMethodPane = function () {
+  /** Editable method source (lower) in the system browser. */
   let panelBounds = this.paneLayoutBounds();
   this.methodPane = this.addMorph(w.TextPane.new(panelBounds, w.rect(0.0, 0.4, 1.0, 0.6)));
   this.methodPane.setText('Method text');
@@ -3720,12 +3874,285 @@ w.BrowserPanel.proto.promptDeleteThisMethod = function () {
   );
 };
 
+/** Hue×brightness picker: bottom half = saturated hues (black→bright); top half = bright hues→white. */
+w.HuePickerMorph = w.Morph.subClass('HuePickerMorph');
+w.HuePickerMorph.HUE_COLS = 50;
+w.HuePickerMorph.BRIGHTNESS_ROWS = 20;
+w.HuePickerMorph.HALF_ROWS = 10;
+w.HuePickerMorph.proto.colorAtCell = function (col, row) {
+  let cols = w.HuePickerMorph.HUE_COLS;
+  let half = w.HuePickerMorph.HALF_ROWS;
+  let h = (col + 0.5) / cols;
+  if (row >= half) {
+    let oldRow = row - half;
+    let v = 1 - (oldRow + 0.5) / half;
+    return w.hsvToColor(h, 1, v);
+  }
+  let t = half > 1 ? row / (half - 1) : 0;
+  if (t <= 0) return w.Color.white.copy();
+  return w.hsvToColor(h, t, 1 - 0.05 * t);
+};
+w.HuePickerMorph.proto.rebuildPickerImage = function () {
+  if (!this.shape || typeof document === 'undefined') return;
+  let b = this.shape.getBounds();
+  let wdt = Math.max(4, Math.round(b.width()));
+  let hgt = Math.max(4, Math.round(b.height()));
+  let cols = w.HuePickerMorph.HUE_COLS;
+  let rows = w.HuePickerMorph.BRIGHTNESS_ROWS;
+  let canvas = document.createElement('canvas');
+  canvas.width = wdt;
+  canvas.height = hgt;
+  let ctx = canvas.getContext('2d');
+  let cellW = wdt / cols;
+  let cellH = hgt / rows;
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      let c = this.colorAtCell(col, row);
+      ctx.fillStyle = c.fillStyle;
+      ctx.fillRect(col * cellW, row * cellH, cellW, cellH);
+    }
+  }
+  ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+  ctx.lineWidth = 1;
+  for (let i = 1; i < rows; i++) {
+    ctx.beginPath();
+    ctx.moveTo(0, i * cellH + 0.5);
+    ctx.lineTo(wdt, i * cellH + 0.5);
+    ctx.stroke();
+  }
+  this.shape.setImage(canvas);
+  this.changed();
+};
+w.HuePickerMorph.proto.initialize = function (initialBounds, onPickFn) {
+  this.onPick = onPickFn;
+  w.Morph.proto.initialize.call(this, initialBounds, w.ImageShape.new({ width: 64, height: 64 }));
+  this.rebuildPickerImage();
+};
+w.HuePickerMorph.proto.setBounds = function (rect) {
+  w.Morph.proto.setBounds.call(this, rect);
+  this.rebuildPickerImage();
+};
+w.HuePickerMorph.proto.pickColorAt = function (localP) {
+  let b = this.shape.getBounds();
+  let cols = w.HuePickerMorph.HUE_COLS;
+  let rows = w.HuePickerMorph.BRIGHTNESS_ROWS;
+  let x = localP.x - b.topLeft.x;
+  let y = localP.y - b.topLeft.y;
+  if (x < 0 || y < 0 || x >= b.width() || y >= b.height()) return null;
+  let col = Math.min(cols - 1, Math.max(0, Math.floor((x / b.width()) * cols)));
+  let row = Math.min(rows - 1, Math.max(0, Math.floor((y / b.height()) * rows)));
+  return this.colorAtCell(col, row);
+};
+w.HuePickerMorph.proto.applyPickAt = function (localP) {
+  let color = this.pickColorAt(localP);
+  if (color && this.onPick) this.onPick(color);
+};
+w.HuePickerMorph.proto.onPointerDown = function (p, evt) {
+  if (!this.includesPt(p)) return false;
+  if (this.bringTopLevelPanelToFrontIfNeeded(p)) return true;
+  this.hitPoint = p;
+  this.world().setPointerFocus(this);
+  this.applyPickAt(this.relativize(p));
+  return true;
+};
+w.HuePickerMorph.proto.onPointerMove = function (p, evt) {
+  if (!this.hitPoint) return false;
+  this.applyPickAt(this.relativize(p));
+  return true;
+};
+w.HuePickerMorph.proto.onPointerUp = function (p, evt) {
+  this.hitPoint = null;
+  if (this.world() && this.world().pointerFocus === this) this.world().setPointerFocus(null);
+  return true;
+};
+
+w.StylePanel = w.PanelMorph.subClass('StylePanel');
+w.StylePanel.proto.defaultRect = function () {
+  return w.rect(400, 80, 280, 340);
+};
+w.StylePanel.proto.addPaneControl = function (panelBounds, spec, morph, nudgeIfAny) {
+  morph.boundsSpec = spec;
+  if (nudgeIfAny) morph._stylePanelNudge = nudgeIfAny;
+  morph.setPaneBoundsIn = function (pb) {
+    let r = pb.scaleRect(this.boundsSpec);
+    if (this._stylePanelNudge) r = r.translatedBy(this._stylePanelNudge);
+    w.Morph.proto.setPaneBoundsIn.call(this, r);
+    if (this.rebuildPickerImage) this.rebuildPickerImage();
+  };
+  morph.setPaneBoundsIn(panelBounds);
+  this.addMorph(morph);
+  return morph;
+};
+w.StylePanel.proto.makeLabel = function (panelBounds, spec, text, nudgeIfAny) {
+  let m = w.TextMorph.new(w.rect(0, 0, 10, 10), text);
+  m.shape.boxColor = w.Color.veryLightGray;
+  m.shape.inset = w.pt(4, 0);
+  m.shape.hang = 0;
+  m.shape.lineHeight = 18;
+  m.shape.verticallyCenterSingleLine = true;
+  m.shape.verticalNudge = 6;
+  m.shape.disableSelectionRendering = true;
+  m.shape.noMenuLineHighlight = true;
+  return this.addPaneControl(panelBounds, spec, m, nudgeIfAny);
+};
+w.StylePanel.proto.makeAlphaCaption = function (panelBounds, spec) {
+  let m = w.TextMorph.new(w.rect(0, 0, 10, 10), '\u03B1');
+  m.shape.boxColor = w.Color.veryLightGray;
+  m.shape.inset = w.pt(0, 0);
+  m.shape.hang = 0;
+  m.shape.lineHeight = 18;
+  m.shape.centerGlyph = true;
+  m.shape.verticallyCenterSingleLine = true;
+  m.shape.verticalNudge = 6;
+  m.shape.disableSelectionRendering = true;
+  m.shape.noMenuLineHighlight = true;
+  return this.addPaneControl(panelBounds, spec, m);
+};
+w.StylePanel.proto.makeNoneButton = function (panelBounds, spec, onPress) {
+  let btn = w.SimpleButtonMorph.new(w.rect(0, 0, 10, 10), 'None');
+  btn.shape.cornerRadius = 5;
+  btn.shape.boxColor = w.Color.lightGray;
+  btn.shape.setBorderWidth(1);
+  btn.shape.setBorderColor(w.Color.darkGray);
+  btn.shape.verticalNudge = 5;
+  btn.onPointerUp = function (p, evt) {
+    if (onPress) onPress();
+    this.actorID = null;
+    this.hitPoint = null;
+    this.world().setPointerFocus(null);
+    return true;
+  };
+  return this.addPaneControl(panelBounds, spec, btn, w.pt(0, 1));
+};
+w.StylePanel.proto.ensureLineWidthForColor = function () {
+  if (this.styleState.borderColor && this.styleState.borderWidth === 0)
+    this.styleState.borderWidth = w.morphDefaultLineWidth(this.target);
+};
+w.StylePanel.proto.applyStyleToTarget = function () {
+  if (!this.target || !this.target.shape) return;
+  w.applyStyleSnapshotToMorph(this.target, this.styleState);
+};
+w.StylePanel.proto.updateLineWidthCaption = function () {
+  if (!this.lineWidthLabel) return;
+  this.lineWidthLabel.setText(w.lineWidthCaptionText(this.styleState.borderWidth));
+  this.lineWidthLabel.changed();
+};
+w.StylePanel.proto.syncSlidersFromState = function () {
+  if (this.fillAlphaSlider) this.fillAlphaSlider.setValueQuiet(this.styleState.fillAlpha);
+  if (this.lineAlphaSlider) this.lineAlphaSlider.setValueQuiet(this.styleState.borderAlpha);
+  if (this.widthSlider)
+    this.widthSlider.setValueQuiet(Math.min(1, this.styleState.borderWidth / 20));
+  this.updateLineWidthCaption();
+};
+w.StylePanel.proto.revertStyle = function () {
+  if (!this._styleSnapshot) return;
+  this.styleState = w.copyStyleSnapshot(this._styleSnapshot);
+  this.applyStyleToTarget();
+  this.syncSlidersFromState();
+};
+w.StylePanel.proto.initControls = function () {
+  let panelBounds = this.paneLayoutBounds();
+  let panel = this;
+  let alphaW = 0.06;
+  let alphaX = 1 - alphaW;
+  let pickerW = alphaX - 0.01;
+  let capH = 0.07;
+  let pickH = 0.28;
+  this.makeLabel(panelBounds, w.rect(0, 0, 0.12, capH), 'Fill');
+  this.makeNoneButton(panelBounds, w.rect(0.14, 0, 0.14, capH), () => {
+    panel.styleState.fillColor = null;
+    panel.applyStyleToTarget();
+  });
+  this.makeAlphaCaption(panelBounds, w.rect(alphaX, 0, alphaW, capH));
+  this.fillPicker = this.addPaneControl(
+    panelBounds,
+    w.rect(0, capH, pickerW, pickH),
+    w.HuePickerMorph.new(w.rect(0, 0, 64, 64), (color) => {
+      panel.styleState.fillColor = color.copy();
+      panel.applyStyleToTarget();
+    }),
+  );
+  this.fillAlphaSlider = this.addPaneControl(
+    panelBounds,
+    w.rect(alphaX, capH, alphaW, pickH),
+    w.SliderMorph.new(w.rect(0, 0, 10, 40), (val) => {
+      panel.styleState.fillAlpha = val;
+      panel.applyStyleToTarget();
+    }, { menuButton: false }),
+  );
+  this.makeLabel(panelBounds, w.rect(0, 0.37, 0.12, capH), 'Line');
+  this.makeNoneButton(panelBounds, w.rect(0.14, 0.37, 0.14, capH), () => {
+    panel.styleState.borderColor = null;
+    panel.styleState.borderWidth = 0;
+    panel.applyStyleToTarget();
+    panel.syncSlidersFromState();
+  });
+  this.makeAlphaCaption(panelBounds, w.rect(alphaX, 0.37, alphaW, capH));
+  this.linePicker = this.addPaneControl(
+    panelBounds,
+    w.rect(0, 0.44, pickerW, pickH),
+    w.HuePickerMorph.new(w.rect(0, 0, 64, 64), (color) => {
+      panel.styleState.borderColor = color.copy();
+      panel.ensureLineWidthForColor();
+      panel.applyStyleToTarget();
+      panel.syncSlidersFromState();
+    }),
+  );
+  this.lineAlphaSlider = this.addPaneControl(
+    panelBounds,
+    w.rect(alphaX, 0.44, alphaW, pickH),
+    w.SliderMorph.new(w.rect(0, 0, 10, 40), (val) => {
+      panel.styleState.borderAlpha = val;
+      panel.applyStyleToTarget();
+    }, { menuButton: false }),
+  );
+  this.lineWidthLabel = this.makeLabel(
+    panelBounds,
+    w.rect(0, 0.76, 0.55, 0.07),
+    w.lineWidthCaptionText(panel.styleState.borderWidth),
+    w.pt(0, -3),
+  );
+  this.widthSlider = this.addPaneControl(
+    panelBounds,
+    w.rect(0, 0.83, 1, 0.035),
+    w.SliderMorph.new(w.rect(0, 0, 80, 10), (val) => {
+      panel.styleState.borderWidth = w.roundLineWidth(val * 20);
+      if (panel.styleState.borderWidth > 0 && !panel.styleState.borderColor)
+        panel.styleState.borderColor = w.Color.black.copy();
+      panel.applyStyleToTarget();
+      panel.updateLineWidthCaption();
+    }, { menuButton: false }),
+  );
+  this.revertBtn = this.addPaneControl(
+    panelBounds,
+    w.rect(0.22, 0.88, 0.56, 0.08),
+    w.SimpleButtonMorph.new(w.rect(0, 0, 10, 10), 'Revert'),
+  );
+  this.configureChromeButton(this.revertBtn, w.Color.orange.lighter(), 'Revert');
+  this.revertBtn.onPointerUp = function (p, evt) {
+    panel.revertStyle();
+    return true;
+  };
+  this.syncSlidersFromState();
+};
+w.StylePanel.proto.initialize = function (initialBounds, target) {
+  this.target = target;
+  this._styleSnapshot = w.copyStyleSnapshot(w.styleSnapshotFromMorph(target));
+  this.styleState = w.copyStyleSnapshot(this._styleSnapshot);
+  w.PanelMorph.proto.initialize.call(this, this.boundsForNew(initialBounds));
+  this.initControls();
+  let title = target && target.className ? target.className : 'Morph';
+  this.setPanelTitle('Style: ' + title);
+  this.layoutChrome();
+  this.relayoutContentPanes();
+};
+
 w.InspectorPanel = w.PanelMorph.subClass('InspectorPanel');
 w.InspectorPanel.proto.defaultRect = function () {
   return w.rect(500, 100, 300, 300);
 };
-/** Instance variable list (left) in the inspector. */
 w.InspectorPanel.proto.initVarsPane = function () {
+  /** Instance variable list (left) in the inspector. */
   let panelBounds = this.paneLayoutBounds();
   this.varsPane = this.addMorph(w.ListPane.new(panelBounds, w.rect(0.0, 0.0, 0.3, 0.6)));
   this.varsPane.setList(Object.getOwnPropertyNames(this.target));
@@ -3756,8 +4183,8 @@ w.InspectorPanel.proto.initVarsPane = function () {
     applyVar(null);
   });
 };
-/** Print-it and eval panes (right / bottom) in the inspector. */
 w.InspectorPanel.proto.initPrintAndEvalPanes = function () {
+  /** Print-it and eval panes (right / bottom) in the inspector. */
   let panelBounds = this.paneLayoutBounds();
   this.printPane = this.addMorph(w.TextPane.new(panelBounds, w.rect(0.3, 0.0, 0.7, 0.6)));
   this.printPane.setText('Var value asString()');
@@ -3787,8 +4214,8 @@ w.InspectorPanel.proto.showSelectedValue = function (shiftKey, printOpts) {
 };
 
 w.MethodListPanel = w.PanelMorph.subClass('MethodListPanel');
-/** Method-spec list (upper) for search results and recent changes. */
 w.MethodListPanel.proto.initMethodsPane = function () {
+  /** Method-spec list (upper) for search results and recent changes. */
   let panelBounds = this.paneLayoutBounds();
   this.methodsPane = this.addMorph(w.ListPane.new(panelBounds, w.rect(0.0, 0.0, 1.0, 0.4)));
   this.methodsPane.setList(this.methodSpecs);
@@ -3829,8 +4256,8 @@ w.MethodListPanel.proto.initMethodsPane = function () {
     applySpec();
   });
 };
-/** Method source preview (lower) for search / recent-changes panels. */
 w.MethodListPanel.proto.initPrintPane = function () {
+  /** Method source preview (lower) for search / recent-changes panels. */
   let panelBounds = this.paneLayoutBounds();
   this.printPane = this.addMorph(w.TextPane.new(panelBounds, w.rect(0.0, 0.4, 1.0, 0.6)));
   this.printPane.setText('Selected method');
@@ -3933,14 +4360,14 @@ w.ScrollPane.proto.initialize = function (panelBounds, boundsSpec) {
   this.scrollBar = null; // filled in by subclasses
   this.paneMenu = null;
 };
-/** Viewport + scrollbar only — not tall scrolled content — so parent hit tests don't bleed into panes above. */
 w.ScrollPane.proto.fullBounds = function () {
+  /** Viewport + scrollbar only — not tall scrolled content — so parent hit tests don't bleed into panes above. */
   let b = this.shape.getBounds().copy();
   if (this.scrollBar) b = b.union(this.scrollBar.getBounds().copy());
   return b.translatedBy(this.transform.translation);
 };
-/** Halo frame matches the visible pane, not scrolled-away content. */
 w.ScrollPane.proto.clippedBounds = function () {
+  /** Halo frame matches the visible pane, not scrolled-away content. */
   return this.getBounds().copy();
 };
 w.ScrollPane.proto.clippedBoundsInWorld = function () {
@@ -3955,13 +4382,13 @@ w.ScrollPane.proto.setPaneMenu = function (paneMenuSpec) {
   this.paneMenu = paneMenuSpec;
   this.changed();
 };
-/** World point just to the right of this pane’s top-right (stable when content scrolls). */
 w.ScrollPane.proto.paneMenuAnchorInWorld = function () {
+  /** World point just to the right of this pane’s top-right (stable when content scrolls). */
   let r = this.shape.getBounds();
   return this.globalize(r.topRight().addPt(w.pt(3, 0)));
 };
-/** Fleeting pane menu from the scrollbar menuButton (opens on pointer-down). */
 w.ScrollPane.proto.showPaneMenuFromMenuButton = function () {
+  /** Fleeting pane menu from the scrollbar menuButton (opens on pointer-down). */
   if (!this.paneMenu || !this.world()) return null;
   let items = this.paneMenu.items || [];
   if (items.length === 0) return null;
@@ -4067,10 +4494,7 @@ w.Shape.proto.initialize = function (shapeType, bounds, color, borderWidth, bord
   this.setStyles(color, borderWidth, borderColor);
 };
 w.Shape.proto.renderOn = function (ctx) {
-  // renderOn() is the morphic call;
-  // Shape subclasses should override...
-  //console.log('rendering Shape', this._id);
-  this.getBounds().render(ctx, this.fillColor, 1, this.borderColor);
+  this.getBounds().render(ctx, this.fillColor, this.borderWidth, this.borderColor);
 };
 w.Shape.proto.setBorderColor = function (color) {
   this.borderColor = color;
@@ -4097,11 +4521,11 @@ w.Shape.proto.setStyles = function (color, borderWidth, borderColor) {
 // ========== Simple Images ==========
 // ImageShape: Shape subclass that displays an image (e.g. from URL or emoji).
 w.ImageShape = w.Shape.subClass('ImageShape');
-/**
- * Axis-aligned bounds of opaque pixels in canvas coordinates (origin top-left).
- * Returns null if nothing above `alphaThreshold` or canvas empty.
- */
-w.ImageShape.alphaTightBoundsCanvas = function (canvas, alphaThreshold) {
+w.ImageShape.proto.alphaTightBoundsCanvas = function (canvas, alphaThreshold) {
+  /**
+  * Axis-aligned bounds of opaque pixels in canvas coordinates (origin top-left).
+  * Returns null if nothing above `alphaThreshold` or canvas empty.
+  */
   let cw = canvas.width;
   let ch = canvas.height;
   let thr = alphaThreshold != null ? alphaThreshold : 8;
@@ -4234,25 +4658,25 @@ w.ImageMorph.proto.moveTo = function (pt) {
 w.ImageMorph.proto.setHeading = function (angleDegrees) {
   this.transform.rotation = (angleDegrees / 180) * Math.PI;
 };
-/** Match {@link ImageMorph#onPointerMove} drag convention: sprite “forward” aligns with velocity. */
 w.ImageMorph.proto.syncRotationToVelocity = function () {
+  /** Match {@link ImageMorph#onPointerMove} drag convention: sprite “forward” aligns with velocity. */
   if (!this.velocity) return;
   let vx = this.velocity.x;
   let vy = this.velocity.y;
   if (vx === 0 && vy === 0) return;
   this.transform.rotation = Math.atan2(vy, vx) + Math.PI / 2;
 };
-/**
- * Tight axis-aligned bounds in owner space for collision: uses {@link ImageShape#_contentBoundsLocal}
- * when set (emoji glyph from alpha scan), else one-time alpha scan on a canvas image, else {@link Rectangle#insetBy}(10)
- * on shape bounds; always applies {@link SimpleTransform#transformPt} to corners so scale and rotation match rendering.
- */
 w.ImageMorph.proto.collisionBounds = function () {
+  /**
+  * Tight axis-aligned bounds in owner space for collision: uses {@link ImageShape#_contentBoundsLocal}
+  * when set (emoji glyph from alpha scan), else one-time alpha scan on a canvas image, else {@link Rectangle#insetBy}(10)
+  * on shape bounds; always applies {@link SimpleTransform#transformPt} to corners so scale and rotation match rendering.
+  */
   if (!this.shape) return this.getBounds().insetBy(10);
   let sb = this.shape._contentBoundsLocal;
   if (!sb && this.shape.image instanceof HTMLCanvasElement && !this.shape._alphaBoundsTried) {
     this.shape._alphaBoundsTried = true;
-    let tight = w.ImageShape.alphaTightBoundsCanvas(this.shape.image);
+    let tight = w.ImageShape.proto.alphaTightBoundsCanvas(this.shape.image);
     let full = this.shape.getBounds();
     if (tight) {
       this.shape._contentBoundsLocal = w.rect(
@@ -4268,7 +4692,7 @@ w.ImageMorph.proto.collisionBounds = function () {
   let corners = [sb.topLeft, sb.topRight(), sb.bottomRight(), sb.bottomLeft()];
   let tfm = this.transform;
   let ownerPts = corners.map((c) => tfm.transformPt(c));
-  return w.Rectangle.unionPts(ownerPts);
+  return w.Rectangle.proto.unionPts(ownerPts);
 };
 w.ImageMorph.proto.morphCopy = function () {
   let copy = w.ImageMorph.new(this.shape.copy());
@@ -4294,7 +4718,7 @@ w.EmojiMorph._byName = {
   BEE: '\u{1F41D}',
   BUG: '\u{1F41B}',
 };
-w.EmojiMorph.resolveChar = function (name) {
+w.EmojiMorph.proto.resolveChar = function (name) {
   if (name == null || name === '') return '\u{1F41E}';
   let s = String(name).trim();
   let key = s.toUpperCase().replace(/\s+/g, ' ');
@@ -4304,7 +4728,7 @@ w.EmojiMorph.resolveChar = function (name) {
 };
 w.EmojiMorph.proto.initialize = function (emojiName, sizePx) {
   let size = Math.max(8, Math.floor(sizePx != null ? sizePx : 32));
-  let ch = w.EmojiMorph.resolveChar(emojiName);
+  let ch = w.EmojiMorph.proto.resolveChar(emojiName);
   this._emojiName = emojiName;
   this._emojiSize = size;
   let canvas = document.createElement('canvas');
@@ -4316,7 +4740,7 @@ w.EmojiMorph.proto.initialize = function (emojiName, sizePx) {
   ctx.textBaseline = 'middle';
   ctx.fillText(ch, size / 2, size / 2);
   w.ImageMorph.proto.initialize.call(this, w.ImageShape.new(canvas));
-  let tightCanvas = w.ImageShape.alphaTightBoundsCanvas(canvas);
+  let tightCanvas = w.ImageShape.proto.alphaTightBoundsCanvas(canvas);
   if (tightCanvas) {
     let sb = this.shape.getBounds();
     this.shape._contentBoundsLocal = w.rect(
@@ -4341,8 +4765,8 @@ w.EmojiMorph.proto.morphCopy = function () {
   return copy;
 };
 
-// Demo: show a ladybug image (emoji drawn to canvas, then used as image); drag to move and rotate.
-w.ImageMorph.demo = function () {
+w.ImageMorph.proto.demo = function () {
+  // Demo: show a ladybug image (emoji drawn to canvas, then used as image); drag to move and rotate.
   let size = 64;
   let canvas = document.createElement('canvas');
   canvas.width = size;
@@ -4363,19 +4787,32 @@ w.ImageMorph.demo = function () {
 };
 
 w.SliderMorph = w.Morph.subClass('SliderMorph');
-/** Scroll track below the menu button strip (remaining 90% of scrollbar height). */
 w.SliderMorph.proto.trackBounds = function () {
+  /** Track area; 10% reserved for pane menu button (top if vertical, left if horizontal). */
   let bnds = this.shape.getBounds();
-  let topH = bnds.height() * this.menuButtonFraction;
-  return w.rect(0, topH, bnds.width(), Math.max(0, bnds.height() - topH));
+  if (!this.showsMenuButton) return bnds.copy();
+  let frac = this.menuButtonFraction;
+  if (this.isVertical()) {
+    let topH = bnds.height() * frac;
+    return w.rect(0, topH, bnds.width(), Math.max(0, bnds.height() - topH));
+  }
+  let leftW = bnds.width() * frac;
+  return w.rect(leftW, 0, Math.max(0, bnds.width() - leftW), bnds.height());
 };
 w.SliderMorph.proto.layoutMenuButton = function () {
+  if (!this.showsMenuButton || !this.menuButton) return;
   let bnds = this.shape.getBounds();
-  let topH = bnds.height() * this.menuButtonFraction;
-  this.menuButton.setBounds(w.rect(0, 0, bnds.width(), topH));
+  let frac = this.menuButtonFraction;
+  if (this.isVertical()) {
+    let topH = bnds.height() * frac;
+    this.menuButton.setBounds(w.rect(0, 0, bnds.width(), topH));
+  } else {
+    let leftW = bnds.width() * frac;
+    this.menuButton.setBounds(w.rect(0, 0, leftW, bnds.height()));
+  }
 };
-/** Reposition thumb from this.value — no console (safe when console is mirrored to Transcript). */
 w.SliderMorph.proto.syncThumbToValue = function () {
+  /** Reposition thumb from this.value — no console (safe when console is mirrored to Transcript). */
   var bnds = this.shape.getBounds();
   var track = this.trackBounds();
   var ext = this.valExtent;
@@ -4387,7 +4824,7 @@ w.SliderMorph.proto.syncThumbToValue = function () {
     sliderExt = w.pt(track.width(), elevPixV);
   } else {
     var elevPixH = Math.max(ext * track.width(), 6);
-    topLeft = w.pt((track.width() - elevPixH) * this.value, track.topLeft.y);
+    topLeft = w.pt(track.topLeft.x + (track.width() - elevPixH) * this.value, track.topLeft.y);
     sliderExt = w.pt(elevPixH, track.height());
   }
   this.slider.setBounds(bnds.topLeft.addPt(topLeft).extent(sliderExt));
@@ -4402,25 +4839,29 @@ w.SliderMorph.proto.adjustForNewBounds = function () {
 w.SliderMorph.proto.clipValue = function (val) {
   return Math.round(Math.min(1.0, Math.max(0.0, val)) * 1000) / 1000;
 };
-w.SliderMorph.proto.initialize = function (initialBounds, valueFn) {
+w.SliderMorph.proto.initialize = function (initialBounds, valueFn, optsIfAny) {
+  let opts = optsIfAny || {};
   w.Morph.proto.initialize.call(this, initialBounds);
   this.setColor(w.Color.gray);
   this.value = 0.0; // By convention, my value ranges from 0.0 to 1.0
   this.valExtent = 0.1; // for when showing a range
-  this.menuButtonFraction = 0.1;
+  this.showsMenuButton = opts.menuButton !== false; // scrollbars: true; plain sliders: pass false
+  this.menuButtonFraction = this.showsMenuButton ? 0.1 : 0;
   this.slider = this.addMorph(w.Morph.new(w.rect(0, 0, 10, 10)));
   this.styleSlider();
   this.slider.onPointerDown = function () {
     return false;
   }; // ignore blipper
-  this.menuButton = this.addMorph(w.Morph.new(w.rect(0, 0, 1, 1)));
-  this.menuButton.setColor(w.Color.blue);
-  this.menuButton.onPointerDown = function () {
-    return false;
-  }; // SliderMorph handles pane menu on pointer-down
+  if (this.showsMenuButton) {
+    this.menuButton = this.addMorph(w.Morph.new(w.rect(0, 0, 1, 1)));
+    this.menuButton.setColor(w.Color.blue);
+    this.menuButton.onPointerDown = function () {
+      return false;
+    }; // SliderMorph handles pane menu on pointer-down
+  } else {
+    this.menuButton = null;
+  }
   this.emitValueFunction = valueFn;
-  console.log(`slider value = ${this.value}, slider = ${this.slider.asString()},
-    function = ${this.emitValueFunction}`);
   this.adjustForNewBounds();
 };
 w.SliderMorph.proto.isVertical = function () {
@@ -4435,7 +4876,7 @@ w.SliderMorph.proto.onPointerDown = function (pt, evt) {
   w.clearKeyboardFocusUnlessTypingOrOsk(this);
   // pt is in owner coords; convert to my local coords for testing the elevator (slider submorph)
   let localP = this.relativize(pt);
-  if (this.menuButton.includesPt(localP)) {
+  if (this.menuButton && this.menuButton.includesPt(localP)) {
     let pane = this.owner;
     let world = this.world();
     if (pane && pane.instanceOf && pane.instanceOf(w.ScrollPane) && pane.paneMenu) {
@@ -4467,33 +4908,21 @@ w.SliderMorph.proto.onPointerDown = function (pt, evt) {
 };
 w.SliderMorph.proto.onPointerMove = function (pt, evt) {
   if (!this.hitPoint) return false;
-  if (!this.includesPt(pt)) return false;
-  // Compute a new value from a new mouse point, and emit it
-  console.log('----pointerMove-----');
-  var bnds = this.shape.getBounds();
+  let localP = this.relativize(pt);
   let track = this.trackBounds();
-  let ext = this.valExtent; // for now...
-  let p = pt.subPt(bnds.topLeft);
+  let ext = this.valExtent;
+  let newValue;
   if (this.isVertical()) {
-    // more vertical...
-    var elevPix = Math.max(ext * track.height(), 6); // thickness of elevator in pixels
-    var newValue = (p.y - track.topLeft.y - elevPix / 2) / (track.height() - elevPix);
+    let elevPix = Math.max(ext * track.height(), 6);
+    newValue = (localP.y - track.topLeft.y - elevPix / 2) / (track.height() - elevPix);
   } else {
-    // more horizontal...
-    var elevPix = Math.max(ext * track.width(), 6); // thickness of elevator in pixels
-    var newValue = (p.x - elevPix / 2) / (track.width() - elevPix);
+    let elevPix = Math.max(ext * track.width(), 6);
+    newValue = (localP.x - track.topLeft.x - elevPix / 2) / (track.width() - elevPix);
   }
-  console.log('this.emitValueFunction.call(this, newValue' + newValue);
-  //debugger;
   this.value = this.clipValue(newValue);
-  // *** Note that emitValueFunction is not binding the right target
   if (this.valueTarget) this.valueTarget[this.valueMessage](this.value);
   else this.emitValueFunction.call(this.owner, this.value);
-  console.log("moving slider's owner is " + this.owner.asString());
-  if (this.owner.className == 'ListPane') {
-    console.log('... whose list = ' + this.owner.contentPane.itemList[0] + '...');
-  }
-  this.adjustForNewBounds();
+  this.syncThumbToValue();
   return true;
 };
 w.SliderMorph.proto.onPointerUp = function (pt, evt) {
@@ -4517,8 +4946,8 @@ w.SliderMorph.proto.setValue = function (newValue) {
   this.value = newValue;
   this.adjustForNewBounds();
 };
-/** Update value + thumb without console (avoids re-entrancy when transcript mirrors console). */
 w.SliderMorph.proto.setValueQuiet = function (newValue) {
+  /** Update value + thumb without console (avoids re-entrancy when transcript mirrors console). */
   this.value = newValue;
   this.syncThumbToValue();
 };
@@ -4534,27 +4963,27 @@ w.SliderMorph.proto.tweakValue = function (tweak) {
   if (this.valueTarget) this.valueTarget[this.valueMessage](this.value);
   else this.emitValueFunction.call(this.owner, this.value);
 };
-w.SliderMorph.test = function () {
-  // w.SliderMorph.test()
-  // Quick setup for testing SliderMorph...
-  w.Lively = w.WorldMorph.new(w.getBounds()); // make up a morphic world
-  w.topLevelMorph = w.Lively; // 'install' the morphic world in patchwork world
-  console.log('sliderTest 1');
-  this.readOut = w.Lively.addMorph(w.TextMorph.new(w.rect(100, 300, 300, 100), 'slider values'));
-  this.readOut.setColor(w.Color.blue);
-  console.log('sliderTest 2');
-  let sliderH = w.Lively.addMorph(
-    w.SliderMorph.new(w.rect(50, 100, 10, 200), (value) =>
-      this.readOut.setText('sliderH = ' + sliderH.value.toFixed(2)),
+w.SliderMorph.proto.test = function () {
+  // w.SliderMorph.proto.test()
+  let readOut = w.Lively.addMorph(w.TextMorph.new(w.rect(100, 300, 300, 100), 'slider values'));
+  readOut.setColor(w.Color.blue);
+  let sliderOpts = { menuButton: false };
+  let sliderV = w.Lively.addMorph(
+    w.SliderMorph.new(
+      w.rect(50, 100, 10, 200),
+      (value) => readOut.setText('sliderV = ' + sliderV.value.toFixed(2)),
+      sliderOpts,
     ),
   );
-  console.log('sliderTest 3');
-  let sliderV = w.Lively.addMorph(
-    w.SliderMorph.new(w.rect(100, 50, 200, 10), (value) =>
-      this.readOut.setText('sliderV = ' + sliderV.value.toFixed(2)),
+  let sliderH = w.Lively.addMorph(
+    w.SliderMorph.new(
+      w.rect(100, 50, 200, 10),
+      (value) => readOut.setText('sliderH = ' + sliderH.value.toFixed(2)),
+      sliderOpts,
     ),
   );
 };
+
 
 w.TextMorph = w.Morph.subClass('TextMorph');
 w.TextMorph.proto.dragFrom = function (p, evt) {
@@ -4683,7 +5112,11 @@ w.SimpleButtonMorph.proto.initialize = function (bounds, label) {
   this.shape.verticalNudge = 8;
 };
 w.SimpleButtonMorph.proto.onPointerDown = function (p, evt) {
-  return false;
+  if (!this.includesPt(p)) return false;
+  this.hitPoint = p;
+  this.actorID = evt.actorID;
+  this.world().setPointerFocus(this);
+  return true;
 };
 w.SimpleButtonMorph.proto.onPointerMove = function (p, evt) {
   return false;
@@ -4762,8 +5195,8 @@ w.kbdDefaultShiftTable = {
   '.': '>',
   '/': '?',
 };
-/** Ensure shift table is object-shaped even if external patch/load assigns null. */
 w.getKbdShiftTable = function () {
+  /** Ensure shift table is object-shaped even if external patch/load assigns null. */
   let t = w.kbdShiftTable;
   if (!t || typeof t !== 'object') {
     t = { ...w.kbdDefaultShiftTable };
@@ -4789,13 +5222,13 @@ w.OnScreenKeyboardMorph.proto.initialize = function (bounds) {
   );
   this.transform.translation = ib.topLeft.copy();
   this.keyMorphs = [];
-  this._kbdRowSpecs = w.OnScreenKeyboardMorph.defaultRowSpecs();
+  this._kbdRowSpecs = w.OnScreenKeyboardMorph.proto.defaultRowSpecs();
   this.buildKeys();
   this._kbdLockWas = w.isLockKeyPressed();
   // startStepping must run after addMorph — Morph.startStepping uses this.world().
 };
-/** Staggered rows: numbers, QWERTY (+ tab), ASDF (with return), ZXCV (shifts), bottom row (space + arrows). */
-w.OnScreenKeyboardMorph.defaultRowSpecs = function () {
+w.OnScreenKeyboardMorph.proto.defaultRowSpecs = function () {
+  /** Staggered rows: numbers, QWERTY (+ tab), ASDF (with return), ZXCV (shifts), bottom row (space + arrows). */
   let spaceU = 7.4;
   return [
     {
@@ -4902,16 +5335,16 @@ w.OnScreenKeyboardMorph.proto.stepRefreshLockLabels = function () {
     this.changed();
   }
 };
-/** Axis-aligned footprint in owner space (includes uniform scale from halo resize). */
 w.OnScreenKeyboardMorph.proto.getBounds = function () {
+  /** Axis-aligned footprint in owner space (includes uniform scale from halo resize). */
   let sb = this.shape.getBounds();
   let sx = this.transform.scale.x || 1;
   let sy = this.transform.scale.y || 1;
   let ext = w.pt(sb.width() * sx, sb.height() * sy);
   return this.transform.translation.copy().extent(ext);
 };
-/** Halo Z (Scale) adjusts uniform scale; shape + layout stay fixed in local space. */
 w.OnScreenKeyboardMorph.proto.setBounds = function (rect) {
+  /** Halo Z (Scale) adjusts uniform scale; shape + layout stay fixed in local space. */
   let nw = Math.max(48, rect.width());
   let nh = Math.max(36, rect.height());
   let bw = this._kbdNaturalSize ? this._kbdNaturalSize.x : nw;
@@ -4947,8 +5380,8 @@ w.OnScreenKeyboardMorph.proto.applyKeyMetrics = function (keyMorph, ks, displayT
   if (sh.compose) sh.compose();
   sh.extent.y = ks;
 };
-/** Stable keycap face: shifted glyph on top, base on bottom when both exist (same style before/after shift). */
 w.OnScreenKeyboardMorph.proto.keyFaceLabel = function (spec) {
+  /** Stable keycap face: shifted glyph on top, base on bottom when both exist (same style before/after shift). */
   if (spec.type === 'shift') return 'Shift';
   if (spec.type === 'meta_toggle') return '⌘';
   if (spec.type === 'close') return '✕';
@@ -4985,7 +5418,7 @@ w.OnScreenKeyboardMorph.proto.refreshModifierKeyHighlights = function () {
 w.OnScreenKeyboardMorph.proto.buildKeys = function () {
   this.keyMorphs.forEach((m) => m.remove());
   w.clearArray(this.keyMorphs);
-  let rows = this._kbdRowSpecs || w.OnScreenKeyboardMorph.defaultRowSpecs();
+  let rows = this._kbdRowSpecs || w.OnScreenKeyboardMorph.proto.defaultRowSpecs();
   let nRows = rows.length;
   let pad = 8;
   let rowGap = 8;
@@ -5149,8 +5582,8 @@ w.OnScreenKeyboardMorph.proto._startOskBodyDragIfNeeded = function (p, evt) {
   this._oskBodyPress = null;
   return w.Morph.proto.onPointerMove.call(this, p, evt);
 };
-/** Children (keys) before body handling so soft META + tap toggles keys instead of halo-on-key. */
 w.OnScreenKeyboardMorph.proto.onPointerDown = function (p, evt) {
+  /** Children (keys) before body handling so soft META + tap toggles keys instead of halo-on-key. */
   if (!this.fullBounds().includesPt(p)) return false;
   if (this.bringTopLevelPanelToFrontIfNeeded(p)) return true;
   let localP = this.relativize(p);
@@ -5248,8 +5681,8 @@ w.toggleOnScreenKeyboard = function (worldIfAny) {
   return kb;
 };
 
-/** True if `worldPt` hits `targetMorph` or any of its submorphs (world coordinates). */
 w.worldPtHitsMorphOrSubmorphs = function (world, worldPt, targetMorph) {
+  /** True if `worldPt` hits `targetMorph` or any of its submorphs (world coordinates). */
   if (!world || !targetMorph || !world.morphsAtPointInDepthOrder) return false;
   let chain = world.morphsAtPointInDepthOrder(worldPt);
   for (let i = 0; i < chain.length; i++) {
@@ -5450,8 +5883,8 @@ w.WorldMorph.proto.onKeyUp = function (evt) {
   if (this.keyboardFocus && this.keyboardFocus.onKeyUp) this.keyboardFocus.onKeyUp(evt);
   return w.Morph.proto.onKeyUp.call(this, evt);
 };
-/** Scrollbar whose menuButton (if any) contains `worldPt`. */
 w.hitScrollPaneMenuButtonAt = function (world, worldPt) {
+  /** Scrollbar whose menuButton (if any) contains `worldPt`. */
   let m = world.topMorphAtExcludingHaloUI(worldPt);
   while (m && m !== world) {
     if (m.className === 'SliderMorph' && m.menuButton) {
@@ -5462,8 +5895,8 @@ w.hitScrollPaneMenuButtonAt = function (world, worldPt) {
   }
   return null;
 };
-/** Fleeting pane menu owned by a scroll pane, if any. */
 w.fleetingPaneMenuForScrollPane = function (world, scrollPane) {
+  /** Fleeting pane menu owned by a scroll pane, if any. */
   if (!world || !scrollPane) return null;
   return world.submorphs.find(
     (sub) =>
@@ -5544,12 +5977,12 @@ w.WorldMorph.proto.dismissFleetingMenusAt = function (p) {
   });
   return removedAny;
 };
-/**
- * True → skip long-press halo cycling ({@link onLongClickHalo}); normal interaction applies.
- * Uses the same top-hit basis as {@link morphsAtPointInDepthOrder} / meta-click halos
- * ({@link topMorphAtExcludingHaloUI}), so an existing halo does not block repeats or chain climbs.
- */
 w.WorldMorph.proto.longClickHaloDefersAt = function (worldPt) {
+  /**
+  * True → skip long-press halo cycling ({@link onLongClickHalo}); normal interaction applies.
+  * Uses the same top-hit basis as {@link morphsAtPointInDepthOrder} / meta-click halos
+  * ({@link topMorphAtExcludingHaloUI}), so an existing halo does not block repeats or chain climbs.
+  */
   let m = this.topMorphAtExcludingHaloUI(worldPt);
   while (m && m !== this) {
     let cn = m.className;
@@ -5647,8 +6080,8 @@ w.WorldMorph.proto.cycleHaloAt = function (pt) {
     this.addMorph(w.HaloMorph.new(candidates[nextIx]));
   }
 };
-/** Halo cycling when `evt.longClick` fires after {@link LONG_CLICK_MS}. */
 w.WorldMorph.proto.onLongClickHalo = function (pt, downEvt) {
+  /** Halo cycling when `evt.longClick` fires after {@link LONG_CLICK_MS}. */
   if (this.dismissFleetingMenusAt(pt)) return;
   if (w.pointerOnOskKeyUI(this, pt)) return;
   if (this.longClickHaloDefersAt(pt)) return;
@@ -5748,12 +6181,12 @@ A couple more nice features:
     ),
   );
 };
-/** Brackets only — handlers match with `item.endsWith(caption)`. */
 w.menuToggleLabel = function (caption, on) {
+  /** Brackets only — handlers match with `item.endsWith(caption)`. */
   return (on ? '[X] ' : '[ ] ') + caption;
 };
-/** Strip `[X] ` / `[ ] ` prefix; also accepts a bare caption or truncated display line. */
 w.menuItemCaption = function (item) {
+  /** Strip `[X] ` / `[ ] ` prefix; also accepts a bare caption or truncated display line. */
   let s = String(item);
   if (s.startsWith('[X] ')) return s.slice(4);
   if (s.startsWith('[ ] ')) return s.slice(4);
@@ -5870,8 +6303,8 @@ w.WorldMorph.proto.topMorphAt = function (pt) {
   };
   return walk(this, pt);
 };
-/** Like {@link topMorphAt} but skips halo UI and hands so halo cycling hits morphs *behind* them (avoids halos-on-halos). */
 w.WorldMorph.proto.topMorphAtExcludingHaloUI = function (pt) {
+  /** Like {@link topMorphAt} but skips halo UI and hands so halo cycling hits morphs *behind* them (avoids halos-on-halos). */
   let walk = (ownerMorph, worldPt) => {
     let subs = ownerMorph.submorphs || [];
     for (let i = subs.length - 1; i >= 0; i--) {
@@ -5923,15 +6356,16 @@ w.Ellipse.proto.moveBy = function (delta) {
   this.p = this.p.addPt(delta);
 };
 w.Ellipse.proto.render = function (ctx) {
+  ctx.beginPath();
   ctx.ellipse(this.p.x, this.p.y, this.r.x, this.r.y, 0, 0, Math.PI * 2);
-  if (this.borderWidth > 0) {
-    ctx.lineWidth = this.borderWidth;
-    ctx.strokeStyle = this.borderColor.fillStyle;
-    ctx.stroke();
-  }
   if (this.fillColor) {
     ctx.fillStyle = this.fillColor.fillStyle;
     ctx.fill();
+  }
+  if (this.borderWidth > 0 && this.borderColor) {
+    ctx.lineWidth = this.borderWidth;
+    ctx.strokeStyle = this.borderColor.fillStyle;
+    ctx.stroke();
   }
 };
 w.Ellipse.proto.renderOn = function (ctx) {
@@ -5975,8 +6409,8 @@ w.ListPane.proto.setSelectionString = function (str, suppressAction) {
 };
 
 w.PolyLine = w.Shape.subClass('PolyLine');
-/** Draw filled arrowhead at `tip` pointing from `from`. */
-w.PolyLine.drawArrowhead = function (ctx, from, tip, size) {
+w.PolyLine.proto.drawArrowhead = function (ctx, from, tip, size) {
+  /** Draw filled arrowhead at `tip` pointing from `from`. */
   let angle = Math.atan2(tip.y - from.y, tip.x - from.x);
   let wing = Math.PI * 0.82;
   ctx.beginPath();
@@ -6002,18 +6436,18 @@ w.PolyLine.proto.initialize = function (verts, width, color) {
   this.curved = false;
   this.closed = false;
   this.arrowheads = 'none';
-  let bounds = w.PolyLine.boundsForVertices(verts, width);
+  let bounds = this.boundsForVertices(verts, width);
   w.Shape.proto.initialize.call(this, 'PolyLine', bounds, null, width, color);
   this.morphOrigin = w.pt(0, 0);
 };
 w.PolyLine.proto.recomputeBounds = function () {
-  let b = w.PolyLine.boundsForVertices(this.vertices, this.borderWidth);
+  let b = this.boundsForVertices(this.vertices, this.borderWidth);
   this.topLeft = b.topLeft;
   this.extent = b.extent;
 };
-/** Union of vertices with minimum width/height so flat lines stay hittable and setBounds never divides by zero. */
-w.PolyLine.boundsForVertices = function (vertices, borderWidth) {
-  let b = w.Rectangle.unionPts(vertices);
+w.PolyLine.proto.boundsForVertices = function (vertices, borderWidth) {
+  /** Union of vertices with minimum width/height so flat lines stay hittable and setBounds never divides by zero. */
+  let b = w.Rectangle.proto.unionPts(vertices);
   let pad = Math.max(2, borderWidth != null ? borderWidth : 2);
   let wdt = b.width();
   let hgt = b.height();
@@ -6021,8 +6455,8 @@ w.PolyLine.boundsForVertices = function (vertices, borderWidth) {
   if (hgt < 1) hgt = pad;
   return w.rect(b.topLeft.x, b.topLeft.y, wdt, hgt);
 };
-/** Shortest distance from `pt` to straight segments between vertices (chord approximation when curved). */
-w.PolyLine.distanceFromPoint = function (vertices, closed, pt) {
+w.PolyLine.proto.distanceFromPoint = function (vertices, closed, pt) {
+  /** Shortest distance from `pt` to straight segments between vertices (chord approximation when curved). */
   if (!vertices || vertices.length < 2) return Infinity;
   let min = Infinity;
   let n = vertices.length;
@@ -6035,14 +6469,14 @@ w.PolyLine.distanceFromPoint = function (vertices, closed, pt) {
   }
   return min;
 };
-w.PolyLine.hitTolerance = function (borderWidth) {
+w.PolyLine.proto.hitTolerance = function (borderWidth) {
   return Math.max(6, (borderWidth != null ? borderWidth : 2) * 2) + 1;
 };
 w.PolyLine.proto.includesPt = function (pt) {
   if (!w.Rectangle.proto.includesPt.call(this, pt)) return false;
   if (this.closed) return true;
-  let tol = w.PolyLine.hitTolerance(this.borderWidth);
-  return w.PolyLine.distanceFromPoint(this.vertices, this.closed, pt) <= tol;
+  let tol = this.hitTolerance(this.borderWidth);
+  return this.distanceFromPoint(this.vertices, this.closed, pt) <= tol;
 };
 w.PolyLine.proto.moveBy = function (d) {
   w.Shape.proto.moveBy.call(this, d); // moves the bounds
@@ -6058,8 +6492,8 @@ w.PolyLine.proto.onPointerMove = function (p) {
     this.hitPoint = p;
   }
 };
-/** Smooth cubic Bézier through vertices (Catmull–Rom style). If `closed`, includes last→first segment. */
-w.PolyLine.drawBezierThrough = function (ctx, verts, closed) {
+w.PolyLine.proto.drawBezierThrough = function (ctx, verts, closed) {
+  /** Smooth cubic Bézier through vertices (Catmull–Rom style). If `closed`, includes last→first segment. */
   if (verts.length < 2) return;
   let n = verts.length;
   ctx.moveTo(verts[0].x, verts[0].y);
@@ -6094,7 +6528,7 @@ w.PolyLine.proto.render = function (ctx) {
   if (!verts || verts.length < 1) return;
   ctx.beginPath();
   if (this.curved && verts.length > 2) {
-    w.PolyLine.drawBezierThrough(ctx, verts, this.closed);
+    this.drawBezierThrough(ctx, verts, this.closed);
   } else {
     ctx.moveTo(verts[0].x, verts[0].y);
     for (let i = 1; i < verts.length; i++) ctx.lineTo(verts[i].x, verts[i].y);
@@ -6113,9 +6547,9 @@ w.PolyLine.proto.render = function (ctx) {
   if (ah !== 'none' && verts.length >= 2) {
     let size = Math.max(6, (this.borderWidth || 2) * 4);
     ctx.fillStyle = (this.borderColor || w.Color.black).fillStyle;
-    if (ah === 'start' || ah === 'both') w.PolyLine.drawArrowhead(ctx, verts[1], verts[0], size);
+    if (ah === 'start' || ah === 'both') this.drawArrowhead(ctx, verts[1], verts[0], size);
     if (ah === 'end' || ah === 'both')
-      w.PolyLine.drawArrowhead(ctx, verts[verts.length - 2], verts[verts.length - 1], size);
+      this.drawArrowhead(ctx, verts[verts.length - 2], verts[verts.length - 1], size);
   }
 };
 w.PolyLine.proto.renderOn = function (ctx) {
@@ -6138,7 +6572,7 @@ w.PolyLine.proto.setBounds = function (newBnds) {
   this.vertices = this.vertices.map((vert) => {
     return vert.subPt(oldCtr).scaleBy(scale).addPt(newCtr);
   });
-  w.Shape.proto.setBounds.call(this, w.PolyLine.boundsForVertices(this.vertices, this.borderWidth));
+  w.Shape.proto.setBounds.call(this, this.boundsForVertices(this.vertices, this.borderWidth));
 };
 
 /** Editable polyline morph: hover shows vertex handles; optional arrowheads on ends. */
@@ -6156,8 +6590,8 @@ w.LineMorph.proto.morphMenu = function () {
     },
   };
 };
-/** @returns {'none'|'start'|'end'|'both'} */
-w.LineMorph.normalizeArrowheads = function (spec) {
+w.LineMorph.proto.normalizeArrowheads = function (spec) {
+  /** @returns {'none'|'start'|'end'|'both'} */
   if (spec === '---------' || spec === '--------' || spec === '------') return 'none';
   if (spec === '------->' || spec === '------>' || spec === '---->') return 'end';
   if (spec === '<-------' || spec === '<------' || spec === '<----') return 'start';
@@ -6168,7 +6602,7 @@ w.LineMorph.normalizeArrowheads = function (spec) {
   return 'none';
 };
 w.LineMorph.proto.setArrowheads = function (spec) {
-  let ah = w.LineMorph.normalizeArrowheads(spec);
+  let ah = w.LineMorph.proto.normalizeArrowheads(spec);
   this.shape.arrowheads = ah;
   this.arrowheads = ah;
   this.changed();
@@ -6178,7 +6612,7 @@ w.LineMorph.proto.setArrowheads = function (spec) {
 };
 w.LineMorph.proto.initialize = function (vertices, opts = {}) {
   let verts = vertices.map((v) => w.pt(v.x, v.y));
-  let worldBounds = w.PolyLine.boundsForVertices(
+  let worldBounds = w.PolyLine.proto.boundsForVertices(
     verts,
     opts.borderWidth != null ? opts.borderWidth : 2,
   );
@@ -6187,7 +6621,7 @@ w.LineMorph.proto.initialize = function (vertices, opts = {}) {
   let pl = w.PolyLine.new(localVerts, opts.borderWidth ?? 2, opts.borderColor ?? w.Color.black);
   pl.curved = opts.beCurved === true;
   pl.closed = opts.beClosed === true;
-  pl.arrowheads = w.LineMorph.normalizeArrowheads(opts.arrowheads);
+  pl.arrowheads = w.LineMorph.proto.normalizeArrowheads(opts.arrowheads);
   w.Morph.proto.initialize.call(this, null, pl);
   this.transform.translation = origin;
   this.bounds = worldBounds.copy();
@@ -6206,8 +6640,8 @@ w.LineMorph.proto.onPointerDown = function (p, evt) {
   if (!onHandle && !this.shape.includesPt(localP)) return false;
   return w.Morph.proto.onPointerDown.call(this, p, evt);
 };
-/** Smooth Bézier vs straight segments. `line.beCurved(true)` or read `line.beCurved()`. */
 w.LineMorph.proto.beCurved = function (on) {
+  /** Smooth Bézier vs straight segments. `line.beCurved(true)` or read `line.beCurved()`. */
   if (arguments.length === 0) return !!this.shape.curved;
   this.shape.curved = !!on;
   this.changed();
@@ -6215,8 +6649,8 @@ w.LineMorph.proto.beCurved = function (on) {
   if (world && world.changed) world.changed();
   return this;
 };
-/** Connect last vertex back to first. `line.beClosed(true)` or read `line.beClosed()`. */
 w.LineMorph.proto.beClosed = function (on) {
+  /** Connect last vertex back to first. `line.beClosed(true)` or read `line.beClosed()`. */
   if (arguments.length === 0) return !!this.shape.closed;
   this.shape.closed = !!on;
   this.changed();
@@ -6225,8 +6659,8 @@ w.LineMorph.proto.beClosed = function (on) {
   this.syncShapeFromVertices();
   return this;
 };
-/** Start hover stepping for vertex handles (call after addMorph). */
 w.LineMorph.proto.startHandleStepping = function () {
+  /** Start hover stepping for vertex handles (call after addMorph). */
   console.log('startHandleStepping');
   // this.startStepping('stepHoverHandles', null, 200);
   w.Morph.proto.startStepping.call(this, 'stepHoverHandles', null, 200);
@@ -6271,10 +6705,10 @@ w.LineMorph.proto.hoverHitBounds = function () {
   let verts = this.shape.vertices;
   if (!verts || verts.length < 1) return this.shape.getBounds().expandBy(10);
   let pad = 10 + (this.handleRadius != null ? this.handleRadius : 5);
-  return w.Rectangle.unionPts(verts).expandBy(pad);
+  return w.Rectangle.proto.unionPts(verts).expandBy(pad);
 };
-/** Refresh shape/morph bounds from current vertices (hover region, hit testing). */
 w.LineMorph.proto.syncGeometryFromVertices = function () {
+  /** Refresh shape/morph bounds from current vertices (hover region, hit testing). */
   this.shape.recomputeBounds();
   this.syncBoundsFromGeometry();
 };
@@ -6290,8 +6724,8 @@ w.LineMorph.proto.syncShapeFromVertices = function () {
   }
   this.changed();
 };
-/** Neighboring vertex index if drag handle overlaps it (circles touch), else null. */
 w.LineMorph.proto.adjacentOverlapVertex = function (dragIx) {
+  /** Neighboring vertex index if drag handle overlaps it (circles touch), else null. */
   let verts = this.shape.vertices;
   if (dragIx == null || dragIx < 0 || dragIx >= verts.length) return null;
   let lim = 2 * this.handleRadius * 0.98;
@@ -6753,8 +7187,8 @@ w.TextBox.proto.extendSelectionTo = function (p) {
   }
   // console.log("After extendSelectionTo" + spec.asString());
 };
-/** Shift-click: extend selection from the end farthest from pointer; empty selection anchors at index (right side). */
 w.TextBox.proto.shiftExtendSelectionToPointer = function (p) {
+  /** Shift-click: extend selection from the end farthest from pointer; empty selection anchors at index (right side). */
   let clickSpec = this.charSpecForPt(p);
   let ci = clickSpec.strIx;
   if (!this.selStart || !this.selStop) {
@@ -7002,15 +7436,26 @@ w.TextBox.proto.redoReplacement = function (str) {
   this.duringTyping = false; // so we don't grow stringPutIn
   this.paste(this.stringPutIn);
 };
+w.TextBox.proto.boxPath = function (ctx) {
+  let x = this.topLeft.x;
+  let y = this.topLeft.y;
+  let wdt = this.extent.x;
+  let hgt = this.extent.y;
+  let r = this.cornerRadius != null ? this.cornerRadius : 0;
+  ctx.beginPath();
+  if (r > 0 && ctx.roundRect) ctx.roundRect(x, y, wdt, hgt, r);
+  else ctx.rect(x, y, wdt, hgt);
+};
 w.TextBox.proto.render = function (ctx) {
   ctx.save();
-  ctx.rect(this.topLeft.x, this.topLeft.y, this.extent.x, this.extent.y); // path needed for clip even when no fill
+  this.boxPath(ctx);
   if (this.boxColor) {
     ctx.fillStyle = this.boxColor.fillStyle;
     ctx.fill();
   }
-  if (this.borderWidth > 0) {
-    ctx.fillStyle = this.borderColor.fillStyle;
+  if (this.borderWidth > 0 && this.borderColor) {
+    ctx.strokeStyle = this.borderColor.fillStyle;
+    ctx.lineWidth = this.borderWidth;
     ctx.stroke();
   }
   ctx.clip(); // clip to this rectangle
@@ -7347,7 +7792,7 @@ w.TextLine.proto.render = function (ctx) {
 };
 
 w.TextPane = w.ScrollPane.subClass('TextPane');
-w.TextPane.defaultPaneMenuSpec = function () {
+w.TextPane.proto.defaultPaneMenuSpec = function () {
   return {
     items: [
       'cut',
@@ -7418,7 +7863,7 @@ w.TextPane.proto.initialize = function (panelBounds, boundsSpec) {
       this.setScrollPosition(scrollPos);
     }),
   );
-  this.setPaneMenu(w.TextPane.defaultPaneMenuSpec());
+  this.setPaneMenu(w.TextPane.proto.defaultPaneMenuSpec());
   this.setBounds(this.getBounds());
 };
 w.TextPane.proto.hasUnsavedChanges = function () {
@@ -7515,8 +7960,8 @@ w.hasTranscriptConsoleTargets = function () {
   return !!(arr && arr.length > 0);
 };
 
-/** Wraps console once; mirrored panes registered via TranscriptTextPane.setConsoleMirror(true). */
 w._ensureConsoleMirrorInstalled = function () {
+  /** Wraps console once; mirrored panes registered via TranscriptTextPane.setConsoleMirror(true). */
   if (w._consoleMirrorInstalled) return;
   let root = typeof console !== 'undefined' ? console : null;
   if (!root) return;
@@ -7575,7 +8020,7 @@ w.TranscriptTextPane.proto.initialize = function (panelBounds, boundsSpec) {
       this.setScrollPosition(scrollPos);
     }),
   );
-  this.setPaneMenu(w.TextPane.defaultPaneMenuSpec());
+  this.setPaneMenu(w.TextPane.proto.defaultPaneMenuSpec());
   this.setBounds(this.getBounds());
 };
 w.TranscriptTextPane.proto._truncateIfNeeded = function (str) {
@@ -7587,8 +8032,8 @@ w.TranscriptTextPane.proto._truncateIfNeeded = function (str) {
 w.TranscriptTextPane.proto.scrollTranscriptToBottom = function () {
   this._scrollTranscriptBottomQuiet();
 };
-/** ScrollPane.setScrollPosition equivalent without touching console (mirror-safe). */
 w.TranscriptTextPane.proto._applyScrollQuiet = function (scrollPos) {
+  /** ScrollPane.setScrollPosition equivalent without touching console (mirror-safe). */
   let clipped = Math.max(0, Math.min(1, scrollPos));
   let ht = this.contentPane.getBounds().height();
   let slideRoom = ht - this.getBounds().height();
@@ -7600,8 +8045,8 @@ w.TranscriptTextPane.proto._applyScrollQuiet = function (scrollPos) {
   this.contentPane.transform.translation.y = Math.min(0, -slideRoom * clipped);
   if (this.scrollBar) this.scrollBar.setValueQuiet(clipped);
 };
-/** Scroll content to bottom without ScrollPane.setScrollPosition / SliderMorph.setValue (no console → no mirror re-entry). */
 w.TranscriptTextPane.proto._scrollTranscriptBottomQuiet = function () {
+  /** Scroll content to bottom without ScrollPane.setScrollPosition / SliderMorph.setValue (no console → no mirror re-entry). */
   let paneH = this.getBounds().height();
   let contentH = this.contentPane.getBounds().height();
   let slideRoom = Math.max(0, contentH - paneH);
@@ -7632,8 +8077,8 @@ w.TranscriptTextPane.proto.onTextBoundsChanged = function (priorScrollPos) {
     this._applyScrollQuiet(0);
   }
 };
-/** Append one line without going through mirrored nextPut / noisy scroll path. */
 w.TranscriptTextPane.proto._appendTranscriptLineQuiet = function (line) {
+  /** Append one line without going through mirrored nextPut / noisy scroll path. */
   let cur = this.contentPane.shape.string || '';
   let add = (line == null ? '' : String(line)) + '\n';
   let next = this._truncateIfNeeded(cur + add);
@@ -7641,8 +8086,8 @@ w.TranscriptTextPane.proto._appendTranscriptLineQuiet = function (line) {
   this._savedTextSnapshot = next;
   this._scrollTranscriptBottomQuiet();
 };
-/** Unhook from console routing without guard (used from reentry bail and remove). */
 w.TranscriptTextPane.proto._disconnectConsoleMirrorHard = function () {
+  /** Unhook from console routing without guard (used from reentry bail and remove). */
   let arr = w._transcriptConsoleTargets;
   if (arr) {
     let ix = arr.indexOf(this);
@@ -7752,8 +8197,8 @@ w.TranscriptPanelMorph.proto.receivesConsoleOutput = function () {
   return this.transcriptPane && this.transcriptPane.receivesConsoleOutput();
 };
 
-/** Opens a transcript panel in the upper-right quadrant of the backing canvas. */
 w.openTranscript = function () {
+  /** Opens a transcript panel in the upper-right quadrant of the backing canvas. */
   let gb = w.getBounds();
   if (!gb || !w.Lively) return null;
   let m = 8;
