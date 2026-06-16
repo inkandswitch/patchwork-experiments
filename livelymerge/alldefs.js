@@ -1708,7 +1708,7 @@ w.Morph.proto.dropOnTopMorphAt = function (worldDropPt, anchorLocal) {
       )
         continue;
       let pInOwner = sub.owner ? sub.owner.localize(worldPt) : worldPt;
-      if (!sub.fullBounds().includesPt(pInOwner)) continue;
+      if (!sub.includesPt(pInOwner)) continue;
       if (!sub.acceptsDroppingMorphs()) continue;
       let inner = walk(sub, worldPt);
       return inner != null ? inner : sub;
@@ -2229,27 +2229,30 @@ w.Point.proto.rect = function (p) {
 };
 w.Point.proto.adhereTo = function (rect) {
   if (rect.includesPt(this)) return this; // it's inside
-  return w.pt(  // if outside, return nearest interior point
-    Math.min(Math.max(this.x, rect.left), rect.right) ,
-    Math.min(Math.max(this.y, rect.top), rect.bottom)
-    )
+  let br = rect.bottomRight();
+  return w.pt(
+    Math.min(Math.max(this.x, rect.topLeft.x), br.x),
+    Math.min(Math.max(this.y, rect.topLeft.y), br.y),
+  );
 };
+/** Closest point on the infinite line through p1–p2 (may lie outside the segment). */
 w.Point.proto.nearestPointAlongLineFrom = function (p1, p2) {
-  // Note this may return points beyond p1, p2
-  if (p1.x == p2.x) return w.pt(p1.x, this.y);
-  if (p1.y == p2.y) return w.pt(this.x, p1.y);
-  let x1 = p1.x;
-  let y1 = p1.y;
-  let x21 = p2.x - x1;
-  let y21 = p2.y - y1;
-  let t = ( (this.y - y1/x21) + (this.x - x1/y21) )
-    / ( (x21/y21) + (y21/x21) );
-  return w.pt ( (x1 + (t*x21)), (y1 + (t*y21)) )
+  let dx = p2.x - p1.x;
+  let dy = p2.y - p1.y;
+  let len2 = dx * dx + dy * dy;
+  if (len2 === 0) return w.pt(p1.x, p1.y);
+  let t = ((this.x - p1.x) * dx + (this.y - p1.y) * dy) / len2;
+  return w.pt(p1.x + t * dx, p1.y + t * dy);
 };
 w.Point.proto.nearestPointOnLineFrom = function (p1, p2) {
-  // Returns points between p1 and  p2
-  return (this.nearestPointAlongLineFrom(p1, p2))
-    .adhereTo(p1.rect(p2))
+  let dx = p2.x - p1.x;
+  let dy = p2.y - p1.y;
+  let len2 = dx * dx + dy * dy;
+  if (len2 === 0) return w.pt(p1.x, p1.y);
+  let t = ((this.x - p1.x) * dx + (this.y - p1.y) * dy) / len2;
+  if (t <= 0) return w.pt(p1.x, p1.y);
+  if (t >= 1) return w.pt(p2.x, p2.y);
+  return w.pt(p1.x + t * dx, p1.y + t * dy);
 };
 w.Point.proto.extent = function (ext) {
   // Make a rectangle
@@ -6018,6 +6021,29 @@ w.PolyLine.boundsForVertices = function (vertices, borderWidth) {
   if (hgt < 1) hgt = pad;
   return w.rect(b.topLeft.x, b.topLeft.y, wdt, hgt);
 };
+/** Shortest distance from `pt` to straight segments between vertices (chord approximation when curved). */
+w.PolyLine.distanceFromPoint = function (vertices, closed, pt) {
+  if (!vertices || vertices.length < 2) return Infinity;
+  let min = Infinity;
+  let n = vertices.length;
+  let segCount = closed ? n : n - 1;
+  for (let i = 0; i < segCount; i++) {
+    let p1 = vertices[i];
+    let p2 = vertices[(i + 1) % n];
+    let nearest = pt.nearestPointOnLineFrom(p1, p2);
+    min = Math.min(min, pt.dist(nearest));
+  }
+  return min;
+};
+w.PolyLine.hitTolerance = function (borderWidth) {
+  return Math.max(6, (borderWidth != null ? borderWidth : 2) * 2) + 1;
+};
+w.PolyLine.proto.includesPt = function (pt) {
+  if (!w.Rectangle.proto.includesPt.call(this, pt)) return false;
+  if (this.closed) return true;
+  let tol = w.PolyLine.hitTolerance(this.borderWidth);
+  return w.PolyLine.distanceFromPoint(this.vertices, this.closed, pt) <= tol;
+};
 w.PolyLine.proto.moveBy = function (d) {
   w.Shape.proto.moveBy.call(this, d); // moves the bounds
   this.vertices = this.vertices.map((vert) => vert.addPt(d));
@@ -6119,19 +6145,36 @@ w.PolyLine.proto.setBounds = function (newBnds) {
 w.LineMorph = w.Morph.subClass('LineMorph');
 w.LineMorph.proto.morphMenu = function () {
   return {
-    items: ['be curved', 'be closed'],
+    items: ['be curved', 'be closed', '---------', '------->', '<-------', '<----->'],
     onSelect: function (item, line) {
       if (item === 'be curved') line.beCurved(!line.beCurved());
       if (item === 'be closed') line.beClosed(!line.beClosed());
+      if (item === '---------') line.setArrowheads('none');
+      if (item === '------->') line.setArrowheads('end');
+      if (item === '<-------') line.setArrowheads('start');
+      if (item === '<----->') line.setArrowheads('both');
     },
   };
 };
 /** @returns {'none'|'start'|'end'|'both'} */
 w.LineMorph.normalizeArrowheads = function (spec) {
+  if (spec === '---------' || spec === '--------' || spec === '------') return 'none';
+  if (spec === '------->' || spec === '------>' || spec === '---->') return 'end';
+  if (spec === '<-------' || spec === '<------' || spec === '<----') return 'start';
+  if (spec === '<----->' || spec === '<------->' || spec === '<--->') return 'both';
   if (spec === true || spec === 'end') return 'end';
   if (spec === false || spec === 'none' || spec == null) return 'none';
   if (spec === 'start' || spec === 'both') return spec;
   return 'none';
+};
+w.LineMorph.proto.setArrowheads = function (spec) {
+  let ah = w.LineMorph.normalizeArrowheads(spec);
+  this.shape.arrowheads = ah;
+  this.arrowheads = ah;
+  this.changed();
+  let world = this.world();
+  if (world && world.changed) world.changed();
+  return this;
 };
 w.LineMorph.proto.initialize = function (vertices, opts = {}) {
   let verts = vertices.map((v) => w.pt(v.x, v.y));
@@ -6155,6 +6198,13 @@ w.LineMorph.proto.initialize = function (vertices, opts = {}) {
   this._vertexDragActive = false;
   this._dragVertexIndex = null;
   this._mergeNeighborIx = null;
+};
+w.LineMorph.proto.onPointerDown = function (p, evt) {
+  if (!this.fullBounds().includesPt(p)) return false;
+  let localP = this.relativize(p);
+  let onHandle = this.submorphs.some((sub) => sub.includesPt(localP));
+  if (!onHandle && !this.shape.includesPt(localP)) return false;
+  return w.Morph.proto.onPointerDown.call(this, p, evt);
 };
 /** Smooth Bézier vs straight segments. `line.beCurved(true)` or read `line.beCurved()`. */
 w.LineMorph.proto.beCurved = function (on) {
@@ -6372,7 +6422,7 @@ w.LineMorph.proto.stepHoverHandles = function () {
     return;
   }
   let localP = this.localize(window.pointerLocation);
-  if (!this.hoverHitBounds().includesPt(localP)) {
+  if (!this.shape.includesPt(localP)) {
     this.clearAllHandles();
     return;
   }
