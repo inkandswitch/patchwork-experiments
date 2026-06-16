@@ -1,59 +1,34 @@
 import type { Repo } from "@automerge/automerge-repo";
 import type { PaperDoc } from "./types";
-import type { PaperMapDoc } from "../map/types";
 import type { EmbedShape } from "../embed/EmbedLayerTool";
 import { ShapeLayerDoc } from "../surface/types";
+import { createPartsBin } from "../parts-bin/datatype";
 
 export const PaperDatatype = {
   init(doc: PaperDoc, repo: Repo) {
     doc.title = "Paper";
 
-    // Seed an empty nested paper and a map so a fresh paper shows off
-    // recursive surfaces — including one whose local space is geographic.
-    // Both are created with explicit fields (so their datatype `init` is not
-    // re-run); the paper gets no layers, leaving it a blank canvas rather
-    // than recursing forever. Other layers (rect/line) are created on demand
-    // the first time they draw.
-    const childPaper = repo.create<PaperDoc>({
-      "@patchwork": { type: "paper" },
-      title: "Paper",
-      layers: {},
-    });
-    const paperEmbed: EmbedShape = {
+    // A fresh paper isn't blank: it embeds a parts bin on the left holding a
+    // couple of example documents. Drag a part out of the bin and a clone of
+    // it lands on the canvas as its own embed. The bin doc is seeded here (not
+    // via its datatype `init`, which raw `repo.create` doesn't run).
+    const partsBin = createPartsBin(repo);
+    const partsBinEmbed: EmbedShape = {
       id: crypto.randomUUID(),
-      x: 80,
-      y: 80,
+      x: 24,
+      y: 24,
       z: 1,
       scale: 1,
-      outline: { type: "rectangle", width: 640, height: 420 },
-      docUrl: childPaper.url,
-      toolId: "paper",
-    };
-
-    const childMarkdown = repo.create({
-      content: "# Untitled",
-      "@patchwork": {
-        type: "markdown",
-      },
-    });
-
-    const markdownEmbed: EmbedShape = {
-      id: crypto.randomUUID(),
-      x: 80,
-      y: 600,
-      z: 1,
-      scale: 1,
-      outline: { type: "rectangle", width: 640, height: 420 },
-      docUrl: childMarkdown.url,
-      toolId: "codemirror-base",
+      outline: { type: "rectangle", width: 300, height: 560 },
+      docUrl: partsBin.url,
+      toolId: "parts-bin",
     };
 
     const embedLayer = repo.create<ShapeLayerDoc>({
       "@patchwork": { type: "shape-layer" },
       title: "Embed",
       shapes: {
-        [paperEmbed.id]: paperEmbed,
-        [markdownEmbed.id]: markdownEmbed,
+        [partsBinEmbed.id]: partsBinEmbed,
       },
     });
 

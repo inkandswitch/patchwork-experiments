@@ -147,6 +147,11 @@ function MapSurface(props: {
       style: STYLE_URL,
       center: CENTER,
       zoom: ZOOM,
+      // Hidden entirely: even the compact control renders expanded in these
+      // small embeds and crowds them. Note the OpenFreeMap / OpenStreetMap
+      // tiles are ODbL and expect visible attribution somewhere if this ever
+      // ships publicly.
+      attributionControl: false,
       // Keep the view affine (a pure scale + translate of the world plane) so
       // the single CSS transform stays exact, and free shift-drag for the
       // select interaction's multi-select.

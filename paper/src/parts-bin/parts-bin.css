@@ -1,0 +1,79 @@
+.parts-bin {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border-right: 1px solid rgba(28, 25, 23, 0.1);
+  font-family: system-ui, sans-serif;
+  color: #1c1917;
+}
+
+.parts-bin-header {
+  flex: none;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #78716c;
+  border-bottom: 1px solid rgba(28, 25, 23, 0.08);
+}
+
+.parts-bin-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+}
+
+/* A card that mirrors an embed shape: same border, radius, shadow and a top
+   drag-handle strip, so a part in the bin reads as the thing it becomes once
+   dropped. The whole card is the drag source. */
+.parts-bin-item {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #bbb;
+  border-radius: 7px;
+  background: white;
+  box-shadow: 0 2px 8px rgba(60, 60, 60, 0.06);
+  overflow: hidden;
+}
+
+/* A visual handle on top, styled like .embed-shape-drag-handle so a part reads
+   the same as a placed embed. The whole card drags, not just this strip. */
+.parts-bin-grip {
+  flex: none;
+  height: 20px;
+  width: 100%;
+  background: linear-gradient(90deg, #b3b3b3 0%, #c8c8c8 100%);
+  border-bottom: 1px solid #aaa;
+  cursor: grab;
+  user-select: none;
+}
+
+.parts-bin-item:active .parts-bin-grip {
+  cursor: grabbing;
+}
+
+/* A definite, positioned box so the embedded view (which sizes itself with
+   position: absolute; inset: 0) fills exactly this, instead of escaping to a
+   taller ancestor and overflowing. */
+.parts-bin-preview {
+  position: relative;
+  height: 180px;
+  overflow: hidden;
+  background: #f5f5f4;
+}
+
+.parts-bin-preview > patchwork-view {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
