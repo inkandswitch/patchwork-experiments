@@ -95,7 +95,7 @@ function $obj(obj: Record<string, Val>, proto?: Proxy) {
   const entry: Obj = {
     $type: 'obj',
     $id,
-    $protoId: proto?.$id ?? '-1',
+    $protoId: proto?.$id ?? 'object-prototype',
   };
   for (const [k, v] of Object.entries(obj)) {
     entry[k] = toVal(v);
@@ -114,56 +114,6 @@ function $arr(values: any) {
   ensureNewObjects().set($id, entry);
   return deserialize(entry);
 }
-
-function livelyArrayFromArgs(args: any[]): Proxy {
-  if (args.length === 1 && typeof args[0] === 'number') {
-    const n = args[0];
-    const len = n >>> 0;
-    if (len !== n) {
-      throw new RangeError('Invalid array length');
-    }
-    return $arr(Array.from({ length: len }));
-  }
-  return $arr(args);
-}
-
-function livelyArrayIsArray(x: unknown): boolean {
-  return isProxy(x) && isArr(x.$unwrapped);
-}
-
-interface LivelyArrayConstructor {
-  (...args: any[]): Proxy;
-  isArray(x: unknown): boolean;
-  from(
-    iterable: Iterable<any> | ArrayLike<any>,
-    mapFn?: (value: any, index: number) => any,
-    thisArg?: any,
-  ): Proxy;
-  of(...items: any[]): Proxy;
-}
-
-const LivelyArray = function Array(...args: any[]) {
-  return livelyArrayFromArgs(args);
-} as LivelyArrayConstructor;
-
-LivelyArray.isArray = livelyArrayIsArray;
-
-LivelyArray.from = function (
-  iterable: Iterable<any> | ArrayLike<any>,
-  mapFn?: (value: any, index: number) => any,
-  thisArg?: any,
-) {
-  const items = mapFn ? Array.from(iterable, mapFn, thisArg) : Array.from(iterable);
-  return $arr(items);
-};
-
-LivelyArray.of = function (...items: any[]) {
-  return $arr(items);
-};
-
-Object.defineProperty(LivelyArray, Symbol.hasInstance, {
-  value: (x: unknown) => livelyArrayIsArray(x),
-});
 
 const scopesToFnCache = new Map<string, (...args: any[]) => () => any>();
 
@@ -634,7 +584,7 @@ function gc() {
     }
   }
 
-  visit('0');
+  visit('w');
   let numReclaimed = 0;
   for (const id of Object.keys(doc.objectTable)) {
     if (!visited.has(id)) {
@@ -665,6 +615,85 @@ const codeMirrorTheme = EditorView.theme({
   },
 });
 
+// Livelymerge replacement for Array, setTimeout, setInterval
+
+function $setTimeout(fn: () => void, delay?: number) {
+  const id = setTimeout(() => {
+    change(() => {
+      try {
+        fn();
+      } finally {
+        delete (doc.objectTable['timeout-fns'] as Obj)[id as any];
+      }
+    });
+  }, delay);
+  change(() => {
+    (doc.objectTable['timeout-fns'] as Obj)[id as any] = toVal(fn);
+  });
+  return id;
+}
+
+function $clearTimeout(id: number) {
+  clearTimeout(id);
+  change(() => {
+    delete (doc.objectTable['timeout-fns'] as Obj)[id as any];
+  });
+}
+
+function $setInterval(fn: () => void, period?: number) {
+  const id = setInterval(() => change(fn), period);
+  change(() => {
+    (doc.objectTable['interval-fns'] as Obj)[id as any] = toVal(fn);
+  });
+  return id;
+}
+
+function $clearInterval(id: number) {
+  clearInterval(id);
+  change(() => {
+    delete (doc.objectTable['interval-fns'] as Obj)[id as any];
+  });
+}
+
+interface $Array {
+  (...args: any[]): Proxy;
+  isArray(x: unknown): boolean;
+  from(
+    iterable: Iterable<any> | ArrayLike<any>,
+    mapFn?: (value: any, index: number) => any,
+    thisArg?: any,
+  ): Proxy;
+  of(...items: any[]): Proxy;
+}
+
+const $Array = function Array(...args: any[]) {
+  if (args.length === 1 && typeof args[0] === 'number') {
+    const n = args[0];
+    const len = n >>> 0;
+    if (len !== n) {
+      throw new RangeError('Invalid array length');
+    }
+    return $arr(globalThis.Array.from({ length: len }));
+  }
+  return $arr(args);
+} as $Array;
+
+$Array.isArray = (x: unknown) => isProxy(x) && isArr(x.$unwrapped);
+
+$Array.from = (
+  iterable: Iterable<any> | ArrayLike<any>,
+  mapFn?: (value: any, index: number) => any,
+  thisArg?: any,
+) => $arr(mapFn ? Array.from(iterable, mapFn, thisArg) : Array.from(iterable));
+
+$Array.of = function (...items: any[]) {
+  return $arr(items);
+};
+
+Object.defineProperty($Array, Symbol.hasInstance, {
+  value: (x: unknown) => $Array.isArray(x),
+});
+
 function doIt(view: EditorView, print = false) {
   // compute the from- and to-indices of the code we're about to execute
   let { from, to, head } = view.state.selection.main;
@@ -689,9 +718,23 @@ function doIt(view: EditorView, print = false) {
         '$fun',
         'newObj',
         'Array',
-        // TODO: setTimeout, setInterval
+        'setTimeout',
+        'clearTimeout',
+        'setInterval',
+        'clearInterval',
         realCode,
-      )(w, $obj, $arr, $fun, newObj, LivelyArray);
+      )(
+        w,
+        $obj,
+        $arr,
+        $fun,
+        newObj,
+        $Array,
+        $setTimeout,
+        $clearTimeout,
+        $setInterval,
+        $clearInterval,
+      );
     });
     console.log('result', result);
   } catch (error) {
