@@ -621,4 +621,59 @@ export const styles = `
 .pandoc-tree-row.pickable:hover { background: var(--accent-soft); }
 .pandoc-tree-row.pickable:hover .use { visibility: visible; }
 .pandoc-tree-row:not(.pickable):hover { background: #f4f4f5; }
+
+/* ─── paste text modal ─── */
+.pandoc-paste-modal { width: min(620px, calc(100% - 40px)); }
+
+.pandoc-paste-body { padding: 12px 16px; }
+
+.pandoc-paste-area {
+	width: 100%;
+	min-height: 240px;
+	resize: vertical;
+	padding: 10px 12px;
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	background: var(--bg);
+	color: var(--text);
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 12.5px;
+	line-height: 1.55;
+}
+
+.pandoc-paste-area:focus {
+	outline: 2px solid var(--accent-soft);
+	border-color: var(--accent);
+}
+
+.pandoc-paste-footer { align-items: center; }
+
+.pandoc-paste-name {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--text-dim);
+}
+
+.pandoc-paste-name span {
+	font-size: 11px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.pandoc-paste-name input {
+	width: 160px;
+	padding: 5px 9px;
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	background: var(--panel);
+	color: var(--text);
+	font: inherit;
+}
+
+.pandoc-paste-name input:focus {
+	outline: 2px solid var(--accent-soft);
+	border-color: var(--accent);
+}
 `

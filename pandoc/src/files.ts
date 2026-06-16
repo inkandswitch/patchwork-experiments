@@ -2,6 +2,7 @@ import type {AutomergeUrl, Repo} from "@automerge/automerge-repo"
 import {isImmutableString} from "@automerge/automerge-repo"
 import type {LoadedInput} from "./pandoc/convert"
 import type {FileDocShape, PandocInput} from "./types"
+import {mimeByExtension} from "./pandoc/formats"
 
 const TEXT_MIME_PREFIXES = ["text/"]
 const TEXT_MIME_TYPES = new Set([
@@ -81,6 +82,25 @@ export async function createFileDoc(
 		extension: i > 0 ? base.slice(i + 1) : "",
 		mimeType,
 		content,
+	})
+	return handle.url
+}
+
+/** Create a Patchwork file doc from pasted/typed text. */
+export function createTextFileDoc(
+	repo: Repo,
+	name: string,
+	text: string
+): AutomergeUrl {
+	const base = name.split("/").pop() || name
+	const i = base.lastIndexOf(".")
+	const ext = i > 0 ? base.slice(i + 1).toLowerCase() : ""
+	const handle = repo.create<FileDocShape>({
+		"@patchwork": {type: "file"},
+		name: base,
+		extension: ext,
+		mimeType: mimeByExtension[ext] || "text/plain",
+		content: text,
 	})
 	return handle.url
 }
