@@ -34,9 +34,7 @@ import './styles.css';
 import { transpile } from './transpiler';
 import { wrapForCompletionValue } from './completionValue';
 
-// TODO: stop requesting animation frame after the UI unmounts
 // TODO: why doesn't toString work when it's a method on Objs? (something to do w/ Proxy)
-// TODO: move workspace contents to an Obj (shouldn't be special state)
 
 interface Proxy {
   $isProxy: boolean;
@@ -283,6 +281,8 @@ function proxifyObj(obj: Obj): Proxy {
           return deserialize((o as any)[prop]);
         } else if (o.$protoId) {
           o = doc.objectTable[o.$protoId] as Obj;
+        } else {
+          break;
         }
       }
 
