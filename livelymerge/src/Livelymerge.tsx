@@ -502,10 +502,24 @@ function formatEvalResult(value: any): string {
   }
 }
 
+function isConstructibleFun(fun: Fun): boolean {
+  return /=>\s*(async\s+)?function\b/.test(fun.$code);
+}
+
+function getFunPrototype(fun: Fun, funProxy: Proxy): Proxy {
+  if (fun.$prototypeId) {
+    return deserialize(newObjects?.get(fun.$prototypeId) ?? doc.objectTable[fun.$prototypeId]);
+  }
+  const proto = $obj({});
+  (proto as any).constructor = funProxy;
+  fun.$prototypeId = proto.$id;
+  return proto;
+}
+
 function proxifyFun(fun: Fun): Proxy {
-  let p = proxies?.get(fun.$id);
-  if (p) {
-    return p;
+  const existing = proxies?.get(fun.$id);
+  if (existing) {
+    return existing;
   }
 
   let _ref: Ref | null = null;
@@ -524,8 +538,19 @@ function proxifyFun(fun: Fun): Proxy {
     return _fn;
   };
 
-  p = new Proxy(() => null, {
+  let funProxy: Proxy;
+  funProxy = new Proxy(function () {}, {
     set(_, prop, value) {
+      if (prop === 'prototype') {
+        if (!isConstructibleFun(fun)) {
+          return false;
+        }
+        if (value !== null && !isLmObj(value)) {
+          throw new TypeError('Function.prototype is not an object or null');
+        }
+        fun.$prototypeId = value === null ? undefined : value.$id;
+        return true;
+      }
       throw new Error('setting function properties is a no-no!');
     },
     get(_, prop) {
@@ -538,6 +563,11 @@ function proxifyFun(fun: Fun): Proxy {
           return ref();
         case '$unwrapped':
           return fun;
+        case 'prototype':
+          if (!isConstructibleFun(fun)) {
+            return undefined;
+          }
+          return getFunPrototype(fun, funProxy);
         case 'toString':
           return () => `[fun ${fun.$id}]`;
       }
@@ -546,9 +576,20 @@ function proxifyFun(fun: Fun): Proxy {
     apply(_, thisArg, args) {
       return fn().apply(thisArg, args);
     },
+    construct(_, args) {
+      if (!isConstructibleFun(fun)) {
+        throw new TypeError('Not a constructor');
+      }
+      const instance = $obj({}, getFunPrototype(fun, funProxy));
+      const result = fn().apply(instance, args);
+      if (typeof result === 'object' && result !== null) {
+        return result;
+      }
+      return instance;
+    },
   }) as unknown as Proxy;
-  ensureProxies().set(fun.$id, p);
-  return p;
+  ensureProxies().set(fun.$id, funProxy);
+  return funProxy;
 }
 
 function ensureProxies() {
@@ -591,6 +632,9 @@ function gc() {
     } else if (isFun(val)) {
       for (const v of val.$scopes) {
         lookAt(v);
+      }
+      if (val.$prototypeId != null) {
+        visit(val.$prototypeId);
       }
     } else {
       throw new Error('WAT');

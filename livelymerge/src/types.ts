@@ -21,6 +21,7 @@ export interface Fun {
   $id: string;
   $code: string;
   $scopes: Ref[];
+  $prototypeId?: string;
 }
 
 export interface Ref {
