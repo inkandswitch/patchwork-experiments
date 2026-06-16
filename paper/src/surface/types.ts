@@ -13,36 +13,6 @@ export type SurfacePointer = {
   shapeUrl?: AutomergeUrl;
 };
 
-// A pointer-driven drag-and-drop payload. A source writes `data` (and
-// optionally `effectAllowed`) to the pointer; the surface dispatches native
-// drag events built from it and writes back `dropEffect` once the drag ends.
-export type PointerDrag = {
-  // Mirrors DataTransfer: keys are native media types, values are strings. The
-  // surface puts these straight onto a real DataTransfer. Values are withheld
-  // mid-drag (blanked on dragenter/over/leave) and only populated on the drop.
-  data: { [type: string]: string };
-  // What the source permits; targets pick from it. Defaults to "copy".
-  effectAllowed: EffectAllowed;
-  // Finalized on release: the effect a target accepted, or "none" if rejected
-  // or cancelled. Absent while the drag is in progress.
-  dropEffect?: DropEffect;
-};
-
-// The native DnD drop effects (subset of DataTransfer.dropEffect).
-export type DropEffect = "none" | "copy" | "link" | "move";
-
-// The native DnD allowed effects (subset of DataTransfer.effectAllowed; the
-// "uninitialized" sentinel is intentionally excluded).
-export type EffectAllowed =
-  | "none"
-  | "copy"
-  | "copyLink"
-  | "copyMove"
-  | "link"
-  | "linkMove"
-  | "move"
-  | "all";
-
 export type DocWithLayers = {
   layers: {
     [toolId: string]: AutomergeUrl; // points to Doc<LayerDoc>

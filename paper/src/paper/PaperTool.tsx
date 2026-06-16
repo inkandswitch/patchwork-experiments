@@ -11,7 +11,7 @@ import { DocWithLayers } from "../surface/types";
 import "./paper.css";
 import type { PaperDoc } from "./types";
 
-const VERSION = "0.0.44";
+const VERSION = "0.0.45";
 
 // The surface tool: wraps the stack of layer <patchwork-view>s in a
 // SurfaceProvider so the layer buttons can drive the canvas purely through the
