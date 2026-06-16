@@ -89,11 +89,16 @@ function change(fn: () => void) {
     docHandle.change((_doc) => {
       doc = _doc;
       w = (window as any).world = deserialize(doc.objectTable[0]);
-      fn();
+      try {
+        fn();
+      } catch (e) {
+        exception = e;
+      } finally {
+        gc();
+      }
     });
   } catch (e) {
-    exception = e;
-    debugger;
+    exception = exception ?? e;
   } finally {
     inChangeCall = false;
   }
@@ -105,6 +110,11 @@ function change(fn: () => void) {
     throw exception;
   }
 }
+
+function newObj(proto?: Proxy) {
+  return $obj({}, proto);
+}
+(window as any).newObj = newObj;
 
 function $obj(obj: Record<string, Val>, proto?: Proxy) {
   const $id = Math.random().toString();
@@ -130,6 +140,56 @@ function $arr(values: any) {
   ensureNewObjects().set($id, entry);
   return deserialize(entry);
 }
+
+function livelyArrayFromArgs(args: any[]): Proxy {
+  if (args.length === 1 && typeof args[0] === 'number') {
+    const n = args[0];
+    const len = n >>> 0;
+    if (len !== n) {
+      throw new RangeError('Invalid array length');
+    }
+    return $arr(Array.from({ length: len }));
+  }
+  return $arr(args);
+}
+
+function livelyArrayIsArray(x: unknown): boolean {
+  return isProxy(x) && isArr(x.$unwrapped);
+}
+
+interface LivelyArrayConstructor {
+  (...args: any[]): Proxy;
+  isArray(x: unknown): boolean;
+  from(
+    iterable: Iterable<any> | ArrayLike<any>,
+    mapFn?: (value: any, index: number) => any,
+    thisArg?: any,
+  ): Proxy;
+  of(...items: any[]): Proxy;
+}
+
+const LivelyArray = function Array(...args: any[]) {
+  return livelyArrayFromArgs(args);
+} as LivelyArrayConstructor;
+
+LivelyArray.isArray = livelyArrayIsArray;
+
+LivelyArray.from = function (
+  iterable: Iterable<any> | ArrayLike<any>,
+  mapFn?: (value: any, index: number) => any,
+  thisArg?: any,
+) {
+  const items = mapFn ? Array.from(iterable, mapFn, thisArg) : Array.from(iterable);
+  return $arr(items);
+};
+
+LivelyArray.of = function (...items: any[]) {
+  return $arr(items);
+};
+
+Object.defineProperty(LivelyArray, Symbol.hasInstance, {
+  value: (x: unknown) => livelyArrayIsArray(x),
+});
 
 const scopesToFnCache = new Map<string, (...args: any[]) => () => any>();
 
@@ -167,11 +227,13 @@ function toRef(proxy: Proxy): Ref {
 }
 
 function isProxy(x: any): x is Proxy {
-  return typeof x === 'object' && x != null && x.$isProxy;
+  return (typeof x === 'object' || typeof x === 'function') && x != null && x.$isProxy;
 }
 
 function deserialize(value: any): Proxy {
-  if (isObj(value)) {
+  if (isRef(value)) {
+    return deserialize(doc.objectTable[value.$id]);
+  } else if (isObj(value)) {
     return proxifyObj(value);
   } else if (isArr(value)) {
     return proxifyArr(value);
@@ -223,12 +285,21 @@ function proxifyObj(obj: Obj): Proxy {
           o = doc.objectTable[o.$protoId] as Obj;
         }
       }
+
+      if (prop === 'toString') {
+        return () => `[obj ${obj.$id}]`;
+      }
+
       return undefined;
     },
   }) as unknown as Proxy;
 
   ensureProxies().set(obj.$id, p);
   return p;
+}
+
+function unsupportedArrayAccess(kind: 'read' | 'write', prop: string | symbol): never {
+  throw new Error(`Unsupported array ${kind}: ${String(prop)}`);
 }
 
 function proxifyArr(arr: Arr): Proxy {
@@ -247,8 +318,16 @@ function proxifyArr(arr: Arr): Proxy {
 
   p = new Proxy(arr, {
     set(_, prop, value) {
-      (arr as any)[prop] = toVal(value);
-      return true;
+      if (prop === 'length') {
+        arr.$values.length = Number(value);
+        return true;
+      }
+      if (isArrayIndexKey(prop) && prop !== 'length') {
+        const idx = typeof prop === 'number' ? prop : Number(prop);
+        arr.$values[idx] = toVal(value);
+        return true;
+      }
+      unsupportedArrayAccess('write', prop);
     },
     get(_, prop) {
       switch (prop) {
@@ -260,6 +339,8 @@ function proxifyArr(arr: Arr): Proxy {
           return ref();
         case '$unwrapped':
           return arr;
+        case 'toString':
+          return () => `[${arr.$values.map(deserialize).map((x) => x.toString())}]`;
 
         // override array methods
         case 'at': {
@@ -305,7 +386,7 @@ function proxifyArr(arr: Arr): Proxy {
         }
         case 'filter': {
           return function (predicate: (value: any, index: number) => boolean, thisArg?: any) {
-            return arr.$values.map(deserialize).filter(predicate, thisArg);
+            return $arr(arr.$values.map(deserialize).filter(predicate, thisArg));
           };
         }
         case 'includes': {
@@ -323,48 +404,102 @@ function proxifyArr(arr: Arr): Proxy {
             arr.$values.map(deserialize).forEach(callbackFn, thisArg);
           };
         }
+        case 'reduce': {
+          return function (
+            callbackFn: (accumulator: any, value: any, index: number) => any,
+            initialValue?: any,
+          ) {
+            const items = arr.$values.map(deserialize);
+            if (arguments.length >= 2) {
+              return items.reduce(callbackFn, initialValue);
+            }
+            return items.reduce(callbackFn);
+          };
+        }
         case 'map': {
           return function (callbackFn: (value: any) => any, thisArg?: any) {
-            return arr.$values.map(deserialize).map(callbackFn, thisArg);
+            return $arr(arr.$values.map(deserialize).map(callbackFn, thisArg));
           };
         }
         case 'slice': {
           return function (startIdx: number, endIdx?: number) {
-            return arr.$values.slice(startIdx, endIdx).map(deserialize);
+            return $arr(arr.$values.slice(startIdx, endIdx).map(deserialize));
           };
         }
         case 'splice': {
           return function (startIdx: number, deleteCount = 0, ...args: any[]) {
-            return arr.$values.splice(startIdx, deleteCount, ...args.map(toVal)).map(deserialize);
+            return $arr(
+              arr.$values.splice(startIdx, deleteCount, ...args.map(toVal)).map(deserialize),
+            );
           };
         }
         case 'concat': {
           return function (...args: any[]) {
-            return arr.$values.concat(...args.map(toVal)).map(deserialize);
+            return $arr(arr.$values.concat(...args.map(toVal)).map(deserialize));
           };
         }
         case 'join': {
           return function (separator?: string) {
-            return arr.$values.join(separator);
+            return arr.$values.map(deserialize).join(separator);
           };
         }
         case 'sort': {
           return function (compareFn?: (a: any, b: any) => number) {
-            return arr.$values.map(deserialize).sort(compareFn);
+            const sorted = arr.$values.map(deserialize).sort(compareFn);
+            arr.$values.splice(0, arr.$values.length, ...sorted.map(toVal));
+            return p;
           };
         }
         case 'toReversed': {
           return function () {
-            return arr.$values.map(deserialize).toReversed();
+            return $arr(arr.$values.map(deserialize).toReversed());
           };
         }
+        case 'toSorted': {
+          return function (compareFn?: (a: any, b: any) => number) {
+            return $arr(arr.$values.map(deserialize).toSorted(compareFn));
+          };
+        }
+        case 'toSpliced': {
+          return function (start: number, deleteCount?: number, ...items: any[]) {
+            const copy = arr.$values.map(deserialize);
+            if (arguments.length === 1) return $arr(copy.toSpliced(start));
+            if (arguments.length === 2) return $arr(copy.toSpliced(start, deleteCount as number));
+            return $arr(copy.toSpliced(start, deleteCount as number, ...items));
+          };
+        }
+        case 'with': {
+          return function (index: number, value: any) {
+            return $arr(arr.$values.map(deserialize).with(index, value));
+          };
+        }
+        case Symbol.iterator: {
+          return function () {
+            let i = 0;
+            return {
+              [Symbol.iterator]() {
+                return this;
+              },
+              next() {
+                if (i >= arr.$values.length) {
+                  return { done: true, value: undefined };
+                }
+                return { done: false, value: deserialize(arr.$values[i++]) };
+              },
+            };
+          };
+        }
+      }
+
+      if (prop === 'length') {
+        return arr.$values.length;
       }
 
       if (isArrayIndexKey(prop)) {
         return deserialize(arr.$values[prop as any]);
       }
 
-      return undefined;
+      unsupportedArrayAccess('read', prop);
     },
     getOwnPropertyDescriptor(_fake, prop) {
       if (prop === '$unwrapped') {
@@ -390,17 +525,6 @@ function proxifyArr(arr: Arr): Proxy {
         }
         return undefined;
       }
-      if (typeof prop === 'string') {
-        const v = (arr.$values as any)[prop];
-        if (typeof v === 'function') {
-          return {
-            configurable: true,
-            enumerable: false,
-            writable: true,
-            value: v,
-          };
-        }
-      }
       return undefined;
     },
   }) as unknown as Proxy;
@@ -419,6 +543,16 @@ function isArrayIndexKey(prop: string | symbol): boolean {
     return true;
   }
   return false;
+}
+
+function formatEvalResult(value: any): string {
+  if (value === undefined) return 'undefined';
+  if (value === null) return 'null';
+  try {
+    return '' + value;
+  } catch {
+    return isProxy(value) ? value.toString() : `[${typeof value}]`;
+  }
 }
 
 function proxifyFun(fun: Fun): Proxy {
@@ -440,11 +574,9 @@ function proxifyFun(fun: Fun): Proxy {
     if (!_fn) {
       _fn = scopesToFnCache.get(fun.$code)!(...fun.$scopes.map(deserialize));
     }
-    console.log('### the fn is', fn, fn.toString());
     return _fn;
   };
 
-  console.log('### creating a proxy for', fun);
   p = new Proxy(() => null, {
     set(_, prop, value) {
       throw new Error('setting function properties is a no-no!');
@@ -459,6 +591,8 @@ function proxifyFun(fun: Fun): Proxy {
           return ref();
         case '$unwrapped':
           return fun;
+        case 'toString':
+          return () => `[fun ${fun.$id}]`;
       }
       return undefined;
     },
@@ -487,7 +621,6 @@ function gc() {
 
     let val = newObjects?.get(id);
     if (val) {
-      console.log('>> storing object with id', id, 'from newObjects');
       doc.objectTable[id] = val;
     } else {
       val = doc.objectTable[id];
@@ -500,8 +633,8 @@ function gc() {
       for (const v of Object.values(val)) {
         lookAt(v);
       }
-      if (val._protoId != null) {
-        visit(val._protoId);
+      if (val.$protoId != null) {
+        visit(val.$protoId);
       }
     } else if (isArr(val)) {
       for (let i = 0; i < val.$values.length; i++) {
@@ -533,9 +666,8 @@ function gc() {
   if ((window as any).debugGC) {
     console.log('reclaimed', numReclaimed, 'objects');
   }
+  newObjects = null;
 }
-
-let alreadyInitialized = false;
 
 const DEFAULT_DRAWER_HEIGHT = 250;
 const MIN_DRAWER_HEIGHT = 120;
@@ -576,13 +708,15 @@ function doIt(view: EditorView, print = false) {
         '$obj',
         '$arr',
         '$fun',
+        'newObj',
+        'Array',
         // TODO: setTimeout, setInterval
         realCode,
-      )(w, $obj, $arr, $fun);
+      )(w, $obj, $arr, $fun, newObj, LivelyArray);
     });
     console.log('result', result);
   } catch (error) {
-    result = `{ERROR: ${String(error)}}`;
+    result = `{ERROR: ${formatEvalResult(error)}}`;
     console.error('error', error);
   }
 
@@ -591,7 +725,7 @@ function doIt(view: EditorView, print = false) {
   }
 
   // insert the result into the editor, and select it
-  const insert = ` ==> ${result}`;
+  const insert = ` ==> ${formatEvalResult(result)}`;
   view.dispatch({
     changes: { from: to, insert },
   });
@@ -761,13 +895,14 @@ export const LivelymergeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   }, [drawerInDom, editorKeymap]);
 
   useEffect(() => {
-    if (!alreadyInitialized) {
-      change(() => {
-        w.initUI?.();
-      });
-      alreadyInitialized = true;
-    }
-  }, [docUrl]);
+    return () => {
+      const uiRafId = (window as any)._uiRafId;
+      if (uiRafId != null) {
+        cancelAnimationFrame(uiRafId);
+        (window as any)._uiRafId = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const onResize = () => setDrawerHeight((h) => clampDrawerHeight(h));

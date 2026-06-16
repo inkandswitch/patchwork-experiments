@@ -97,6 +97,18 @@ function declarationKeyword(node: SyntaxNode, source: string): string | null {
   return null;
 }
 
+function rejectVarDeclarations(node: SyntaxNode, source: string): void {
+  if (node.name === 'VariableDeclaration') {
+    const keyword = declarationKeyword(node, source);
+    if (keyword === 'var') {
+      throw new Error("'var' is not allowed");
+    }
+  }
+  for (let child = node.firstChild; child; child = child.nextSibling) {
+    rejectVarDeclarations(child, source);
+  }
+}
+
 function collectTypeParamBindings(typeParamList: SyntaxNode, source: string, bindings: Set<string>): void {
   for (let child = typeParamList.firstChild; child; child = child.nextSibling) {
     if (child.name === 'TypeDefinition' || child.name === 'VariableDefinition') {
@@ -794,6 +806,7 @@ function applyEdits(source: string, edits: Edit[]): string {
 
 export function transpile(source: string): string {
   const tree = parser.parse(source);
+  rejectVarDeclarations(tree.topNode, source);
   const builder = new ScopeBuilder(source);
   const rootScope = builder.createScope(null, tree.topNode);
 

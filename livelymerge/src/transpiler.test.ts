@@ -33,9 +33,9 @@ describe('transpile', () => {
       );
     });
 
-    it('wraps a function expression and leaves non-block free vars bare', () => {
-      expect(transpile(`const f = function(a) { var b = c; return a + d; };`)).toBe(
-        `const f = $fun("() => function(a) { var b = c; return a + d; }");`,
+    it('throws on var declarations', () => {
+      expect(() => transpile(`const f = function(a) { var b = c; return a + d; };`)).toThrow(
+        "'var' is not allowed",
       );
     });
 
