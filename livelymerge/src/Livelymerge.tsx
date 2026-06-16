@@ -34,8 +34,6 @@ import './styles.css';
 import { transpile } from './transpiler';
 import { wrapForCompletionValue } from './completionValue';
 
-// TODO: why doesn't toString work when it's a method on Objs? (something to do w/ Proxy)
-
 interface Proxy {
   $isProxy: boolean;
   $id: string;
@@ -48,28 +46,6 @@ let doc: LivelymergeDoc;
 let newObjects: Map<string, Obj | Arr | Fun> | null = null;
 let proxies: Map<string, Proxy> | null = null;
 let w: any;
-
-(window as any).showRefs = (referentId: string) => {
-  for (const [id, state] of Object.entries(doc.objectTable) as [string, Obj | Arr | Fun][]) {
-    switch (state.$type) {
-      case 'obj':
-        for (const [k, v] of Object.entries(state) as [string, Val][]) {
-          if (isRef(v) && v.$id === referentId) {
-            console.log(id, '.', k, '=', v);
-          }
-        }
-        break;
-      case 'arr': {
-        state.$values.forEach((v, i) => {
-          if (isRef(v) && v.$id === referentId) {
-            console.log(id, '[', i, ']=', v);
-          }
-        });
-        break;
-      }
-    }
-  }
-};
 
 let inChangeCall = false;
 
@@ -230,7 +206,7 @@ function isProxy(x: any): x is Proxy {
 
 function deserialize(value: any): Proxy {
   if (isRef(value)) {
-    return deserialize(doc.objectTable[value.$id]);
+    return deserialize(newObjects?.get(value.$id) ?? doc.objectTable[value.$id]);
   } else if (isObj(value)) {
     return proxifyObj(value);
   } else if (isArr(value)) {
@@ -258,7 +234,7 @@ function proxifyObj(obj: Obj): Proxy {
 
   p = new Proxy(obj, {
     set(_, prop, value) {
-      (obj as any)[prop] = toVal(value);
+      (obj as any)['@' + (prop as string)] = toVal(value);
       return true;
     },
     get(_, prop) {
@@ -275,9 +251,10 @@ function proxifyObj(obj: Obj): Proxy {
           return !obj.$protoId ? null : deserialize(doc.objectTable[obj.$protoId]);
       }
 
+      prop = '@' + (prop as string);
       let o = obj;
       while (o) {
-        if (prop in o) {
+        if (Object.hasOwn(o, prop)) {
           return deserialize((o as any)[prop]);
         } else if (o.$protoId) {
           o = doc.objectTable[o.$protoId] as Obj;
@@ -548,10 +525,11 @@ function isArrayIndexKey(prop: string | symbol): boolean {
 function formatEvalResult(value: any): string {
   if (value === undefined) return 'undefined';
   if (value === null) return 'null';
+  if (isProxy(value)) return value.toString();
   try {
     return '' + value;
   } catch {
-    return isProxy(value) ? value.toString() : `[${typeof value}]`;
+    return `[${typeof value}]`;
   }
 }
 
@@ -630,8 +608,9 @@ function gc() {
     }
 
     if (isObj(val)) {
-      for (const v of Object.values(val)) {
-        lookAt(v);
+      for (const p of Object.getOwnPropertyNames(val)) {
+        // console.log('looking at', val.$id, p, val[p]);
+        lookAt(val[p]);
       }
       if (val.$protoId != null) {
         visit(val.$protoId);
