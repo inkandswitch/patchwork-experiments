@@ -214,14 +214,14 @@ w.methodSelectorPaneMenuSpec = function (panel) {
   return {
     items: [
       'spawn this method to its own window',
-      'filout this method to the OS paste buffer',
+      'export this method to the OS paste buffer',
       w.menuSeparator,
       'delete this method',
     ],
     onSelect: (item, pane) => {
       if (w.isMenuSeparator(item)) return;
       if (item == 'spawn this method to its own window') panel.spawnMethodCopyToWindow();
-      if (item == 'filout this method to the OS paste buffer') panel.filoutMethodCopyToOSPaste();
+      if (item == 'export this method to the OS paste buffer') panel.exportMethodCopyToOSPaste();
       if (item == 'delete this method') panel.promptDeleteThisMethod();
     },
   };
@@ -231,14 +231,14 @@ w.classSelectorPaneMenuSpec = function (panel) {
   return {
     items: [
       'spawn this class to its own window',
-      'filout this class to the OS paste buffer',
+      'export this class to the OS paste buffer',
       w.menuSeparator,
       'delete this class',
     ],
     onSelect: (item, pane) => {
       if (w.isMenuSeparator(item)) return;
       if (item == 'spawn this class to its own window') panel.spawnThisClassToWindow();
-      if (item == 'filout this class to the OS paste buffer') panel.filoutThisClassToOSPaste();
+      if (item == 'export this class to the OS paste buffer') panel.exportThisClassToOSPaste();
       if (item == 'delete this class') panel.promptDeleteThisClass();
     },
   };
@@ -311,7 +311,7 @@ w.allMethodSpecs = function () {
   });
   return methodSpecs;
 };
-w.filoutPartsForSelection = function (selection, optsIfAny) {
+w.exportPartsForSelection = function (selection, optsIfAny) {
   let opts = optsIfAny || {};
   let includeClassDef = opts.includeClassDef !== false;
   let classSelection = selection;
@@ -324,14 +324,14 @@ w.filoutPartsForSelection = function (selection, optsIfAny) {
 
   if (classSelection == 'w.') {
     obj = w;
-    header = '// Filout for w.\n';
+    header = '// Export for w.\n';
   } else if (classSelection.endsWith('.class')) {
     let classOnly = classSelection.split('.')[0];
     obj = w[classOnly];
-    header = '// Filout for ' + classSelection + '\n';
+    header = '// Export for ' + classSelection + '\n';
   } else {
     obj = w[classSelection] && w[classSelection].proto;
-    header = '// Filout for ' + classSelection + '\n';
+    header = '// Export for ' + classSelection + '\n';
     if (includeClassDef && w[classSelection] && w.preambleForClass)
       classDef = w.preambleForClass(w[classSelection]);
   }
@@ -351,10 +351,10 @@ w.filoutPartsForSelection = function (selection, optsIfAny) {
 
   return { header, classDef, lines };
 };
-w.filoutStringForSelection = function (selection, optsIfAny) {
+w.exportStringForSelection = function (selection, optsIfAny) {
   let opts = optsIfAny || {};
   let includeHeader = opts.includeHeader !== false;
-  let parts = w.filoutPartsForSelection(selection, opts);
+  let parts = w.exportPartsForSelection(selection, opts);
   if (!parts) return '';
   let out = [];
   if (includeHeader && parts.header) out.push(parts.header);
@@ -362,7 +362,7 @@ w.filoutStringForSelection = function (selection, optsIfAny) {
   if (parts.lines && parts.lines.length > 0) out.push(parts.lines.join(';\n'));
   return out.join('\n');
 };
-w.filoutSelectionsForEntireSystem = function () {
+w.exportSelectionsForEntireSystem = function () {
   let selections = ['w.'];
   w.allClassNamesInSuperclassOrder().forEach((className) => {
     selections.push(className);
@@ -687,11 +687,11 @@ w.initUI = function () {
   w._refreshPadModifierStyles();
 
   // Remove any previous listeners so we never double-register (avoids doubled clicks)
-  /*
-  if (w._uiAbortController) w._uiAbortController.abort();
-  w._uiAbortController = new AbortController();
-  const signal = w._uiAbortController.signal;
-*/
+  
+  if (window._uiAbortController) window._uiAbortController.abort();
+  window._uiAbortController = new AbortController();
+  const signal = window._uiAbortController.signal;
+
 
   let canvasEvents = [];
   const canvas = document.querySelector('canvas');
@@ -1232,6 +1232,11 @@ w.storageSetItem = function (key, value) {
   // w.storageKeys();
   localStorage.setItem(key, value);
 };
+w.storageEditItem = function (key) {
+  //w.storageEditItem('ToDoList')
+  w.Lively.addMorph(
+    w.MethodPanel.new(null, 'to do list', 'localStorage.' + key), );
+}
 w.storeEntireSystem = function () {
   // w.storeEntireSystem();
   // This method will write the entire sources of PyonPyon
@@ -1242,8 +1247,8 @@ w.storeEntireSystem = function () {
   // JSON.parse(w.storageGetItem('system.methods')).length ==> 340;
 
   let parts = [w.preamble()];
-  w.filoutSelectionsForEntireSystem().forEach((selection) => {
-    let chunk = w.filoutStringForSelection(selection, {
+  w.exportSelectionsForEntireSystem().forEach((selection) => {
+    let chunk = w.exportStringForSelection(selection, {
       includeHeader: false,
       includeClassDef: true,
     });
@@ -2219,6 +2224,33 @@ w.Point.proto.dist = function (p) {
   var dy = p.y - this.y;
   return Math.sqrt(dx * dx + dy * dy);
 };
+w.Point.proto.rect = function (p) {
+  return w.rect(this.minPt(p), this.maxPt(p));
+};
+w.Point.proto.adhereTo = function (rect) {
+  if (rect.includesPt(this)) return this; // it's inside
+  return w.pt(  // if outside, return nearest interior point
+    Math.min(Math.max(this.x, rect.left), rect.right) ,
+    Math.min(Math.max(this.y, rect.top), rect.bottom)
+    )
+};
+w.Point.proto.nearestPointAlongLineFrom = function (p1, p2) {
+  // Note this may return points beyond p1, p2
+  if (p1.x == p2.x) return w.pt(p1.x, this.y);
+  if (p1.y == p2.y) return w.pt(this.x, p1.y);
+  let x1 = p1.x;
+  let y1 = p1.y;
+  let x21 = p2.x - x1;
+  let y21 = p2.y - y1;
+  let t = ( (this.y - y1/x21) + (this.x - x1/y21) )
+    / ( (x21/y21) + (y21/x21) );
+  return w.pt ( (x1 + (t*x21)), (y1 + (t*y21)) )
+};
+w.Point.proto.nearestPointOnLineFrom = function (p1, p2) {
+  // Returns points between p1 and  p2
+  return (this.nearestPointAlongLineFrom(p1, p2))
+    .adhereTo(p1.rect(p2))
+};
 w.Point.proto.extent = function (ext) {
   // Make a rectangle
   return w.Rectangle.new(this, ext);
@@ -2709,7 +2741,7 @@ w.HaloMorph.proto.layoutTitleMorph = function () {
   let baselineY = this.handleLetterBaselineYInHalo(1);
   let chrome = this.handleChromeStyle();
   let padX = 6;
-  let padY = 3;
+  let padY = 1;
   let innerW = Math.min(span, Math.max(28, titleStr.length * 8));
   let titleW = innerW + padX * 2;
   let titleH = m.lineHeight + padY * 2;
@@ -2722,7 +2754,7 @@ w.HaloMorph.proto.layoutTitleMorph = function () {
   letter.hang = m.hang + padY;
   letter.inset = w.pt(m.hang + padX, m.hang + padY);
   letter.boxColor = chrome.fill;
-  letter.borderWidth = 0;
+  letter.borderWidth = 1;
   letter.borderColor = chrome.borderColor;
   letter.fill = chrome.fill;
   letter.selStart = null;
@@ -2735,7 +2767,7 @@ w.HaloMorph.proto.layoutTitleMorph = function () {
   if (letter.compose) letter.compose();
   this.titleMorph.onPointerDown = () => false;
   this.titleMorph.includesPt = () => false;
-};
+}
 w.HaloMorph.proto.initialize = function (targetMorph) {
   this.target = targetMorph;
   let isWorld =
@@ -3439,18 +3471,22 @@ w.PanelMorph.proto.setBounds = function (newBounds) {
 
 w.MethodPanel = w.PanelMorph.subClass('MethodPanel');
 /** Single full-height {@link TextPane} for method source or help text. */
+w.MethodPanel.proto.initialize = function (initialBounds, string, optionalTitle) {
+  // Hack to read from localStorage...
+  if (optionalTitle.startsWith('localStorage.')) string = localStorage.getItem(optionalTitle.slice(13));
+w.PanelMorph.proto.initialize.call(this, this.boundsForNew(initialBounds));
+  this.initTextPane(string != null ? string : '', optionalTitle);
+}
+
 w.MethodPanel.proto.initTextPane = function (string, optionalTitle) {
   let panelBounds = this.paneLayoutBounds();
   this.textPane = this.addMorph(w.TextPane.new(panelBounds, w.rect(0.0, 0.0, 1.0, 1.0)));
   this.textPane.setText(string);
+  if (optionalTitle.startsWith('localStorage.')) this.textPane.setLocalStorageKey(optionalTitle.slice(13));
   this.setPanelTitle(optionalTitle ? optionalTitle : 'Text Panel');
   this.layoutChrome();
   this.relayoutContentPanes();
-};
-w.MethodPanel.proto.initialize = function (initialBounds, string, optionalTitle) {
-  w.PanelMorph.proto.initialize.call(this, this.boundsForNew(initialBounds));
-  this.initTextPane(string != null ? string : '', optionalTitle);
-};
+}
 
 w.BrowserPanel = w.PanelMorph.subClass('BrowserPanel');
 /** Class list (upper-left) in the system browser. */
@@ -3559,22 +3595,22 @@ w.BrowserPanel.proto.updateBrowserTitle = function () {
   if (this.selectedMethod) t = this.selectedClass + ' ' + this.selectedMethod;
   this.setPanelTitle(t);
 };
-w.BrowserPanel.proto.filoutThisClassToOSPaste = function () {
+w.BrowserPanel.proto.exportThisClassToOSPaste = function () {
   if (!this.selectedClass) return;
   let classSelection = this.selectedClass;
   if (classSelection == 'w.') return;
-  let filout = w.filoutStringForSelection(classSelection, {
+  let exportText = w.exportStringForSelection(classSelection, {
     includeHeader: true,
     includeClassDef: true,
   });
-  if (!filout) return;
-  w.addPasteBufferItem(filout);
+  if (!exportText) return;
+  w.addPasteBufferItem(exportText);
   if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText)
-    navigator.clipboard.writeText(filout).catch(() => {});
+    navigator.clipboard.writeText(exportText).catch(() => {});
 };
 w.BrowserPanel.proto.spawnThisClassToWindow = function () {
   if (!this.selectedClass || this.selectedClass == 'w.') return;
-  let text = w.filoutStringForSelection(this.selectedClass, {
+  let text = w.exportStringForSelection(this.selectedClass, {
     includeHeader: true,
     includeClassDef: true,
   });
@@ -3652,12 +3688,12 @@ w.BrowserPanel.proto.spawnMethodCopyToWindow = function () {
     w.MethodPanel.new(this.rectForSpawnedPanel(28, 320, 220), text, this.methodCopyTitle()),
   );
 };
-w.BrowserPanel.proto.filoutMethodCopyToOSPaste = function () {
-  let filout = this.methodCopyText();
-  if (!filout) return;
-  w.addPasteBufferItem(filout);
+w.BrowserPanel.proto.exportMethodCopyToOSPaste = function () {
+  let exportText = this.methodCopyText();
+  if (!exportText) return;
+  w.addPasteBufferItem(exportText);
   if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText)
-    navigator.clipboard.writeText(filout).catch(() => {});
+    navigator.clipboard.writeText(exportText).catch(() => {});
 };
 w.BrowserPanel.proto.deleteThisMethod = function () {
   let spec = this.selectedMethodSpec();
@@ -3848,12 +3884,12 @@ w.MethodListPanel.proto.spawnMethodCopyToWindow = function () {
     w.MethodPanel.new(this.rectForSpawnedPanel(28, 320, 220), text, this.methodCopyTitle()),
   );
 };
-w.MethodListPanel.proto.filoutMethodCopyToOSPaste = function () {
-  let filout = this.methodCopyText();
-  if (!filout) return;
-  w.addPasteBufferItem(filout);
+w.MethodListPanel.proto.exportMethodCopyToOSPaste = function () {
+  let exportText = this.methodCopyText();
+  if (!exportText) return;
+  w.addPasteBufferItem(exportText);
   if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText)
-    navigator.clipboard.writeText(filout).catch(() => {});
+    navigator.clipboard.writeText(exportText).catch(() => {});
 };
 w.MethodListPanel.proto.deleteThisMethod = function () {
   let spec = this.selectedMethodSpec();
@@ -5682,26 +5718,6 @@ Please note: hands and transforms are not currently used`,
     ),
   );
 };
-w.WorldMorph.proto.showStatus = function () {
-  w.Lively.addMorph(w.MethodPanel.new(null, 
-    `Current to-do list for PyonPyon, updated 5/03/26...
-    Edit content then ctrl-S here
-[ ] Test: w.browser function to filout class or method
-[x] Refactor PanelMorph with subclasses for
-        Browser, Inspector, MethodList, and Method
-[ ] Separate the code for Title Bars?
-[ ] Browser template for new class
-[ ] Syle panel - border width, color, fill color
-[ ] Color picker
-[ ] Notify of empty search
-[ ] Halo handle offset for scaling needs a tweak
-[ ] Test: w.storeEntireSystem
-[ ] Assemble "Demo: " searches - like for bugs
-`,
-    'Current Status',
-    ),
-  );
-};
 w.WorldMorph.proto.showTextHelp = function () {
   w.Lively.addMorph(w.MethodPanel.new(null, 
     `Text editing in this system is very simple - there are no automatic pop-ups or type-aheads.  The following command-keys provide basic edits:
@@ -5757,7 +5773,7 @@ w.refreshWorldMenuItems = function (menuMorph) {
 w.WorldMorph.proto.showWorldMenuAt = function (pt, optsIfAny) {
   let opts = optsIfAny || {};
   let items = [
-    'Status',
+    'ToDo List',
     'System browser',
     'Recent changes',
     'Morphic help',
@@ -5773,22 +5789,14 @@ w.WorldMorph.proto.showWorldMenuAt = function (pt, optsIfAny) {
   // Use a normal function so MenuMorph's actionFn.call(this, ...) supplies the menu as `this`
   // (avoids referencing outer `theMenu` before assignment / TDZ in the arrow closure).
   let menu = w.MenuMorph.new(pt.extent(w.pt(220, 24 + items.length * 20)), items, function (item) {
+    let wld = this.world();
     let cap = w.menuItemCaption(item);
-    if (item == 'Status') {
-      let methodString = w.WorldMorph.proto.showStatus.toString();
-      w.Lively.addMorph(
-        w.MethodPanel.new(
-          null,
-          'w.WorldMorph.proto.showStatus = ' + methodString,
-          'WorldMorph showStatus',
-        ),
-      );
-    }
-    if (item == 'System browser') w.Lively.addMorph(w.BrowserPanel.new());
+    if (item == 'ToDo List') w.storageEditItem('ToDoList');
+    if (item == 'System browser') wld.addMorph(w.BrowserPanel.new());
     if (item == 'Recent changes') w.browseRecentChanges();
-    if (item == 'Morphic help') this.world().showMorphicHelp();
-    if (item == 'Halo help') this.world().showHaloHelp();
-    if (item == 'Text help') this.world().showTextHelp();
+    if (item == 'Morphic help') wld.showMorphicHelp();
+    if (item == 'Halo help') wld.showHaloHelp();
+    if (item == 'Text help') wld.showTextHelp();
     if (cap === w.longClickForHalosLabel || cap.endsWith(w.longClickForHalosLabel)) {
       window.longClickForHalos = !window.longClickForHalos;
       w.refreshWorldMenuItems(this);
@@ -5822,7 +5830,7 @@ w.WorldMorph.proto.showWorldMenuAt = function (pt, optsIfAny) {
   });
   menu.isFleetingMenu = !!opts.fleeting;
   w.Lively.addMorph(menu);
-};
+}
 w.WorldMorph.proto.startSteppingSpec = function (spec) {
   this.stepList.push(spec);
 };
@@ -6815,11 +6823,8 @@ w.TextBox.proto.handleKeyboardShortcuts = function (evt) {
     let term = this.selectedTextString();
     let hits = w.methodsContaining(term);
     if (!hits || hits.length === 0) {
-      let world = this.world && this.world();
-      if (world) {
-        let pt = window.pointerLocation ? window.pointerLocation.copy() : w.pt(120, 120);
-        w.showFindNoMatchesMenu(world, pt, term);
-      }
+      let pt = window.pointerLocation ? window.pointerLocation.copy() : w.pt(120, 120);
+      w.showFindNoMatchesMenu(w.Lively, pt, term);
     } else {
       w.Lively.addMorph(
         w.MethodListPanel.new(null, hits, null, 'Occurrences of "' + term + '"', term),
@@ -6828,8 +6833,11 @@ w.TextBox.proto.handleKeyboardShortcuts = function (evt) {
   }
   if (k == 's') {
     // SAVE (eval all)
-    w.noteMethodChanges(this.string);
-    this.wsEval.call(this.workspaceObj, this.string);
+    if (this.localStorageKey) {
+      w.storageSetItem(this.localStorageKey, this.string) }
+      else {
+      w.noteMethodChanges(this.string);
+      this.wsEval.call(this.workspaceObj, this.string); }
     if (typeof this.onTextSaved === 'function') this.onTextSaved(this);
   }
   if (k == 'd') {
@@ -6864,7 +6872,7 @@ w.TextBox.proto.handleKeyboardShortcuts = function (evt) {
   }
   evt.preventDefault();
   evt.stopPropagation();
-};
+}
 w.TextBox.proto.handleSelectWord = function () {
   // A chance to notice null selections for selectWord
   //  console.log('handling select word at ' + this.selStart.strIx);
@@ -7182,6 +7190,10 @@ w.TextBox.proto.setEvalContext = function (obj) {
   // if not null, this context will be used by do-it and print-it
   this.evalContext = obj;
 };
+w.TextBox.proto.setLocalStorageKey = function (key) {
+  // Back door for localStoarage access
+  this.localStorageKey = key;
+};
 w.TextBox.proto.setNoBreak = function (ifSo) {
   // Call with true to suppress line breaks
   this.noBreak = ifSo;
@@ -7410,6 +7422,9 @@ w.TextPane.proto.setText = function (text, opts) {
   if (this.contentPane && this.contentPane.shape) this.contentPane.shape.editorID = null;
   this.scrollToTop();
   return true;
+};
+w.TextPane.proto.setLocalStorageKey = function (key) {
+  this.contentPane.shape.setLocalStorageKey(key)
 };
 
 /** Max length before truncation; after crossing it, keep only this many trailing characters. */
