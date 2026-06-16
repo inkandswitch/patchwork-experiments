@@ -95,7 +95,11 @@ function unwrapLmObj(x: unknown): Obj | null {
 }
 
 function ownUserPropertyKeys(obj: Obj): Proxy {
-  return $arr(Object.getOwnPropertyNames(obj).filter((p) => !p.startsWith('$')));
+  return $arr(
+    Object.getOwnPropertyNames(obj)
+      .filter((p) => p.startsWith('@'))
+      .map((p) => p.slice(1)),
+  );
 }
 
 function lmHasOwn(obj: Obj, prop: string): boolean {
@@ -711,8 +715,7 @@ $Object.create = function (proto: Proxy | null) {
 
 $Object.keys = function (obj: unknown) {
   const unwrapped = unwrapLmObj(obj);
-  if (unwrapped) return ownUserPropertyKeys(unwrapped);
-  return $arr(Object.keys(obj as object));
+  return unwrapped ? ownUserPropertyKeys(unwrapped) : $arr(Object.keys(obj as object));
 };
 
 $Object.values = function (obj: unknown) {
