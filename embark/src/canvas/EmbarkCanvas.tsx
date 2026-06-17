@@ -5,6 +5,7 @@ import { render } from "solid-js/web";
 import { RepoContext, useDocument } from "solid-automerge";
 import "@inkandswitch/patchwork-elements";
 import { getDocumentDragPayload, hasDocumentDrag } from "./dnd";
+import { SearchProvider } from "../search/SearchProvider";
 import "./styles.css";
 
 // One embedded document placed on the canvas. `x`/`y` are the top-left corner
@@ -42,7 +43,12 @@ export const EmbarkCanvasTool: ToolRender = (handle, element) => {
     element.style.position = "relative";
   }
 
-  return render(
+  // The search broker lives on the canvas element so search boxes and POI
+  // providers dropped onto the canvas can find each other (the provider
+  // protocol only flows up the DOM, and the embeds are siblings).
+  const disposeProvider = SearchProvider(element);
+
+  const disposeRender = render(
     () => (
       <RepoContext.Provider value={element.repo}>
         <EmbarkCanvas handle={handle as DocHandle<EmbarkCanvasDoc>} />
@@ -50,6 +56,11 @@ export const EmbarkCanvasTool: ToolRender = (handle, element) => {
     ),
     element,
   );
+
+  return () => {
+    disposeRender();
+    disposeProvider();
+  };
 };
 
 function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {

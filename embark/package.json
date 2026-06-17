@@ -14,6 +14,7 @@
     "@automerge/automerge-repo": "2.6.0-subduction.29",
     "@inkandswitch/patchwork-elements": "^0.2.0",
     "@inkandswitch/patchwork-plugins": "^0.0.11",
+    "@inkandswitch/patchwork-providers": "^0.2.2",
     "solid-automerge": "^1.1.0",
     "solid-js": "^1.9.11"
   },
