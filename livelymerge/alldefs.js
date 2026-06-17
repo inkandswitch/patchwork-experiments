@@ -1379,6 +1379,7 @@ w.Color.gray = w.Color.new(0.8, 0.8, 0.8);
 w.Color.green = w.Color.new(0, 0.8, 0);
 w.Color.lightGray = w.Color.new(0.9, 0.9, 0.9);
 w.Color.orange = w.Color.new(0.8, 0.52, 0);
+w.Color.paleLavender = w.Color.new(0.93, 0.88, 0.98);
 w.Color.red = w.Color.new(0.8, 0, 0);
 w.Color.veryLightGray = w.Color.new(0.95, 0.95, 0.95);
 w.Color.white = w.Color.new(1, 1, 1);
@@ -1518,6 +1519,28 @@ w.copyStyleSnapshot = function (snap) {
     borderAlpha: snap.borderAlpha != null ? snap.borderAlpha : 1,
     borderWidth: snap.borderWidth != null ? snap.borderWidth : 0,
   };
+};
+w.colorsEqual = function (a, b) {
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  return (
+    Math.abs(a.r - b.r) < 0.02 &&
+    Math.abs(a.g - b.g) < 0.02 &&
+    Math.abs(a.b - b.b) < 0.02
+  );
+};
+w.styleSnapshotsEqual = function (a, b) {
+  if (!a || !b) return false;
+  if (!w.colorsEqual(a.fillColor, b.fillColor)) return false;
+  if (!w.colorsEqual(a.borderColor, b.borderColor)) return false;
+  if (Math.abs((a.fillAlpha != null ? a.fillAlpha : 1) - (b.fillAlpha != null ? b.fillAlpha : 1)) > 0.001)
+    return false;
+  if (
+    Math.abs((a.borderAlpha != null ? a.borderAlpha : 1) - (b.borderAlpha != null ? b.borderAlpha : 1)) >
+    0.001
+  )
+    return false;
+  return w.roundLineWidth(a.borderWidth) === w.roundLineWidth(b.borderWidth);
 };
 w.applyStyleSnapshotToMorph = function (morph, snap) {
   if (!morph || !morph.shape || !snap) return;
@@ -3234,6 +3257,7 @@ w.PanelMorph.proto.contentMorphs = function () {
 };
 w.PanelMorph.proto.submorphHasUnsavedText = function (m) {
   if (m.className == 'TextPane' && m.hasUnsavedChanges()) return true;
+  if (m.className == 'StylePanel' && m.hasUnsavedChanges && m.hasUnsavedChanges()) return true;
   let subs = m.submorphs || [];
   for (let i = 0; i < subs.length; i++) {
     if (this.submorphHasUnsavedText(subs[i])) return true;
@@ -3260,6 +3284,14 @@ w.PanelMorph.proto.revertUnsavedTextInTextPanes = function () {
     if (m.className == 'TextPane' && m.hasUnsavedChanges && m._savedTextSnapshot != null) {
       m.setText(m._savedTextSnapshot, { force: true });
     }
+    if (m.className == 'StylePanel' && m.revertStyle) m.revertStyle();
+    (m.submorphs || []).forEach(walk);
+  };
+  walk(this);
+};
+w.PanelMorph.proto.revertUnsavedStylePanels = function () {
+  let walk = (m) => {
+    if (m.className == 'StylePanel' && m.revertStyle) m.revertStyle();
     (m.submorphs || []).forEach(walk);
   };
   walk(this);
@@ -3282,6 +3314,8 @@ w.PanelMorph.proto.configureChromeButton = function (btn, fillColor, expectedLab
   s.priorNullSelection = 0;
   s.composeBottomPad = 0;
   s.lineHeight = this.titleBarHeight;
+  s.setBorderWidth(2);
+  s.setBorderColor(w.Color.black);
   if (expectedLabel != null && s.string !== expectedLabel) s.setText(expectedLabel);
 };
 w.PanelMorph.proto.initialize = function (initialBounds) {
@@ -3566,7 +3600,10 @@ w.PanelMorph.proto.onPointerUp = function (p, evt) {
     if (this.anyTextPaneHasUnsavedChanges()) {
       this.promptOkToCancelEdits((okToCancel) => {
         this.clearTitleBarPress();
-        if (okToCancel) this.remove();
+        if (okToCancel) {
+          this.revertUnsavedStylePanels();
+          this.remove();
+        }
       });
       return true;
     }
@@ -3966,11 +4003,40 @@ w.HuePickerMorph.proto.onPointerUp = function (p, evt) {
   return true;
 };
 
-w.StylePanel = w.PanelMorph.subClass('StylePanel');
-w.StylePanel.proto.defaultRect = function () {
-  return w.rect(400, 80, 280, 340);
+w.StylePane = w.Morph.subClass('StylePane');
+w.StylePane.CONTROL_INSET = 3;
+w.StylePane.proto.initialize = function (bounds) {
+  w.Morph.proto.initialize.call(
+    this,
+    bounds,
+    w.Shape.new('Rectangle', bounds, w.Color.paleLavender, 2, w.Color.black),
+  );
 };
-w.StylePanel.proto.addPaneControl = function (panelBounds, spec, morph, nudgeIfAny) {
+w.StylePane.proto.setDirtyBorder = function (dirty) {
+  let want = dirty ? w.Color.red : w.Color.black;
+  let cur = this.shape.borderColor;
+  if (cur && w.colorsEqual(cur, want)) return;
+  this.shape.setBorderColor(want.copy());
+  this.changed();
+};
+w.StylePane.proto.paneLayoutBounds = function () {
+  let b = this.shape.getBounds();
+  let ins = w.StylePane.CONTROL_INSET;
+  return w.rect(
+    b.topLeft.x + ins,
+    b.topLeft.y + ins,
+    Math.max(8, b.width() - 2 * ins),
+    Math.max(8, b.height() - 2 * ins),
+  );
+};
+w.StylePane.proto.setPaneBoundsIn = function (panelBounds) {
+  w.Morph.proto.setPaneBoundsIn.call(this, panelBounds);
+  let inner = this.paneLayoutBounds();
+  this.submorphs.forEach((m) => {
+    if (m.setPaneBoundsIn) m.setPaneBoundsIn(inner);
+  });
+};
+w.StylePane.proto.addPaneControl = function (panelBounds, spec, morph, nudgeIfAny) {
   morph.boundsSpec = spec;
   if (nudgeIfAny) morph._stylePanelNudge = nudgeIfAny;
   morph.setPaneBoundsIn = function (pb) {
@@ -3983,7 +4049,7 @@ w.StylePanel.proto.addPaneControl = function (panelBounds, spec, morph, nudgeIfA
   this.addMorph(morph);
   return morph;
 };
-w.StylePanel.proto.makeLabel = function (panelBounds, spec, text, nudgeIfAny) {
+w.StylePane.proto.makeLabel = function (panelBounds, spec, text, nudgeIfAny) {
   let m = w.TextMorph.new(w.rect(0, 0, 10, 10), text);
   m.shape.boxColor = w.Color.veryLightGray;
   m.shape.inset = w.pt(4, 0);
@@ -3991,11 +4057,13 @@ w.StylePanel.proto.makeLabel = function (panelBounds, spec, text, nudgeIfAny) {
   m.shape.lineHeight = 18;
   m.shape.verticallyCenterSingleLine = true;
   m.shape.verticalNudge = 6;
+  m.shape.setBorderWidth(1);
+  m.shape.setBorderColor(w.Color.black);
   m.shape.disableSelectionRendering = true;
   m.shape.noMenuLineHighlight = true;
   return this.addPaneControl(panelBounds, spec, m, nudgeIfAny);
 };
-w.StylePanel.proto.makeAlphaCaption = function (panelBounds, spec) {
+w.StylePane.proto.makeAlphaCaption = function (panelBounds, spec) {
   let m = w.TextMorph.new(w.rect(0, 0, 10, 10), '\u03B1');
   m.shape.boxColor = w.Color.veryLightGray;
   m.shape.inset = w.pt(0, 0);
@@ -4008,7 +4076,7 @@ w.StylePanel.proto.makeAlphaCaption = function (panelBounds, spec) {
   m.shape.noMenuLineHighlight = true;
   return this.addPaneControl(panelBounds, spec, m);
 };
-w.StylePanel.proto.makeNoneButton = function (panelBounds, spec, onPress) {
+w.StylePane.proto.makeNoneButton = function (panelBounds, spec, onPress) {
   let btn = w.SimpleButtonMorph.new(w.rect(0, 0, 10, 10), 'None');
   btn.shape.cornerRadius = 5;
   btn.shape.boxColor = w.Color.lightGray;
@@ -4024,6 +4092,26 @@ w.StylePanel.proto.makeNoneButton = function (panelBounds, spec, onPress) {
   };
   return this.addPaneControl(panelBounds, spec, btn, w.pt(0, 1));
 };
+
+w.StylePanel = w.PanelMorph.subClass('StylePanel');
+w.StylePanel.proto.defaultRect = function () {
+  return w.rect(400, 80, 280, 340);
+};
+w.StylePanel.proto.hasUnsavedChanges = function () {
+  if (!this._styleSnapshot || !this.styleState) return false;
+  return !w.styleSnapshotsEqual(this.styleState, this._styleSnapshot);
+};
+w.StylePanel.proto.refreshDirtyBorder = function () {
+  if (this.stylePane) this.stylePane.setDirtyBorder(this.hasUnsavedChanges());
+};
+w.StylePanel.proto.styleActionButton = function (btn) {
+  let s = btn.shape;
+  s.cornerRadius = 5;
+  s.setBorderWidth(1);
+  s.setBorderColor(w.Color.darkGray);
+  s.lineHeight = 16;
+  s.verticalNudge = 4;
+};
 w.StylePanel.proto.ensureLineWidthForColor = function () {
   if (this.styleState.borderColor && this.styleState.borderWidth === 0)
     this.styleState.borderWidth = w.morphDefaultLineWidth(this.target);
@@ -4031,6 +4119,17 @@ w.StylePanel.proto.ensureLineWidthForColor = function () {
 w.StylePanel.proto.applyStyleToTarget = function () {
   if (!this.target || !this.target.shape) return;
   w.applyStyleSnapshotToMorph(this.target, this.styleState);
+};
+w.StylePanel.proto.noteStyleEdited = function () {
+  this.refreshDirtyBorder();
+};
+w.StylePanel.proto.previewStyleEdit = function () {
+  this.applyStyleToTarget();
+  this.noteStyleEdited();
+};
+w.StylePanel.proto.saveStyle = function () {
+  this._styleSnapshot = w.copyStyleSnapshot(this.styleState);
+  this.refreshDirtyBorder();
 };
 w.StylePanel.proto.updateLineWidthCaption = function () {
   if (!this.lineWidthLabel) return;
@@ -4049,91 +4148,116 @@ w.StylePanel.proto.revertStyle = function () {
   this.styleState = w.copyStyleSnapshot(this._styleSnapshot);
   this.applyStyleToTarget();
   this.syncSlidersFromState();
+  this.refreshDirtyBorder();
 };
 w.StylePanel.proto.initControls = function () {
-  let panelBounds = this.paneLayoutBounds();
+  let outer = w.PanelMorph.proto.paneLayoutBounds.call(this);
+  this.stylePane = w.StylePane.new(outer);
+  this.stylePane.stylePanel = this;
+  this.addMorph(this.stylePane);
+  let pane = this.stylePane;
+  let panelBounds = pane.paneLayoutBounds();
   let panel = this;
   let alphaW = 0.06;
   let alphaX = 1 - alphaW;
   let pickerW = alphaX - 0.01;
   let capH = 0.07;
   let pickH = 0.28;
-  this.makeLabel(panelBounds, w.rect(0, 0, 0.12, capH), 'Fill');
-  this.makeNoneButton(panelBounds, w.rect(0.14, 0, 0.14, capH), () => {
+  pane.makeLabel(panelBounds, w.rect(0, 0, 0.12, capH), 'Fill');
+  pane.makeNoneButton(panelBounds, w.rect(0.14, 0, 0.14, capH), () => {
     panel.styleState.fillColor = null;
-    panel.applyStyleToTarget();
+    panel.previewStyleEdit();
   });
-  this.makeAlphaCaption(panelBounds, w.rect(alphaX, 0, alphaW, capH));
-  this.fillPicker = this.addPaneControl(
+  pane.makeAlphaCaption(panelBounds, w.rect(alphaX, 0, alphaW, capH));
+  this.fillPicker = pane.addPaneControl(
     panelBounds,
     w.rect(0, capH, pickerW, pickH),
     w.HuePickerMorph.new(w.rect(0, 0, 64, 64), (color) => {
       panel.styleState.fillColor = color.copy();
-      panel.applyStyleToTarget();
+      panel.previewStyleEdit();
     }),
   );
-  this.fillAlphaSlider = this.addPaneControl(
+  this.fillAlphaSlider = pane.addPaneControl(
     panelBounds,
     w.rect(alphaX, capH, alphaW, pickH),
     w.SliderMorph.new(w.rect(0, 0, 10, 40), (val) => {
       panel.styleState.fillAlpha = val;
-      panel.applyStyleToTarget();
+      panel.previewStyleEdit();
     }, { menuButton: false }),
   );
-  this.makeLabel(panelBounds, w.rect(0, 0.37, 0.12, capH), 'Line');
-  this.makeNoneButton(panelBounds, w.rect(0.14, 0.37, 0.14, capH), () => {
+  pane.makeLabel(panelBounds, w.rect(0, 0.37, 0.12, capH), 'Line');
+  pane.makeNoneButton(panelBounds, w.rect(0.14, 0.37, 0.14, capH), () => {
     panel.styleState.borderColor = null;
     panel.styleState.borderWidth = 0;
-    panel.applyStyleToTarget();
+    panel.previewStyleEdit();
     panel.syncSlidersFromState();
   });
-  this.makeAlphaCaption(panelBounds, w.rect(alphaX, 0.37, alphaW, capH));
-  this.linePicker = this.addPaneControl(
+  pane.makeAlphaCaption(panelBounds, w.rect(alphaX, 0.37, alphaW, capH));
+  this.linePicker = pane.addPaneControl(
     panelBounds,
     w.rect(0, 0.44, pickerW, pickH),
     w.HuePickerMorph.new(w.rect(0, 0, 64, 64), (color) => {
       panel.styleState.borderColor = color.copy();
       panel.ensureLineWidthForColor();
-      panel.applyStyleToTarget();
+      panel.previewStyleEdit();
       panel.syncSlidersFromState();
     }),
   );
-  this.lineAlphaSlider = this.addPaneControl(
+  this.lineAlphaSlider = pane.addPaneControl(
     panelBounds,
     w.rect(alphaX, 0.44, alphaW, pickH),
     w.SliderMorph.new(w.rect(0, 0, 10, 40), (val) => {
       panel.styleState.borderAlpha = val;
-      panel.applyStyleToTarget();
+      panel.previewStyleEdit();
     }, { menuButton: false }),
   );
-  this.lineWidthLabel = this.makeLabel(
+  this.lineWidthLabel = pane.makeLabel(
     panelBounds,
     w.rect(0, 0.76, 0.55, 0.07),
     w.lineWidthCaptionText(panel.styleState.borderWidth),
     w.pt(0, -3),
   );
-  this.widthSlider = this.addPaneControl(
+  this.widthSlider = pane.addPaneControl(
     panelBounds,
     w.rect(0, 0.83, 1, 0.035),
     w.SliderMorph.new(w.rect(0, 0, 80, 10), (val) => {
       panel.styleState.borderWidth = w.roundLineWidth(val * 20);
       if (panel.styleState.borderWidth > 0 && !panel.styleState.borderColor)
         panel.styleState.borderColor = w.Color.black.copy();
-      panel.applyStyleToTarget();
+      panel.previewStyleEdit();
       panel.updateLineWidthCaption();
     }, { menuButton: false }),
   );
-  this.revertBtn = this.addPaneControl(
+  this.revertBtn = pane.addPaneControl(
     panelBounds,
-    w.rect(0.22, 0.88, 0.56, 0.08),
+    w.rect(0.1, 0.9, 0.36, 0.055),
     w.SimpleButtonMorph.new(w.rect(0, 0, 10, 10), 'Revert'),
   );
   this.configureChromeButton(this.revertBtn, w.Color.orange.lighter(), 'Revert');
+  this.styleActionButton(this.revertBtn);
   this.revertBtn.onPointerUp = function (p, evt) {
     panel.revertStyle();
+    this.actorID = null;
+    this.hitPoint = null;
+    this.world().setPointerFocus(null);
+    return true;
+  };
+  this.saveBtn = pane.addPaneControl(
+    panelBounds,
+    w.rect(0.54, 0.9, 0.36, 0.055),
+    w.SimpleButtonMorph.new(w.rect(0, 0, 10, 10), 'Save'),
+  );
+  this.configureChromeButton(this.saveBtn, w.Color.green.lighter().lighter(), 'Save');
+  this.styleActionButton(this.saveBtn);
+  this.saveBtn.onPointerUp = function (p, evt) {
+    panel.saveStyle();
+    this.actorID = null;
+    this.hitPoint = null;
+    this.world().setPointerFocus(null);
     return true;
   };
   this.syncSlidersFromState();
+  this.refreshDirtyBorder();
 };
 w.StylePanel.proto.initialize = function (initialBounds, target) {
   this.target = target;
