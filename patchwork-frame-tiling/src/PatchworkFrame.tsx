@@ -14,7 +14,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
 } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -37,6 +36,7 @@ import {
   splitLeafIn,
 } from "./layout";
 import { TopBar } from "./TopBar";
+import { FrameProviders } from "./FrameProviders";
 import "./styles.css";
 import type {
   LayoutNode,
@@ -52,21 +52,6 @@ import {
   useSupportedTools,
   type ContextTool,
 } from "./useDocTitle";
-
-declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
-  namespace JSX {
-    interface IntrinsicElements {
-      "patchwork-view": {
-        "doc-url"?: string;
-        "tool-id"?: string;
-        class?: string;
-        key?: string | number;
-        style?: CSSProperties;
-      };
-    }
-  }
-}
 
 type LayoutOps = {
   activeLeafId: string | null;
@@ -335,7 +320,7 @@ const TilePanel = ({
       <div className="tile-panel__body">
         <patchwork-view
           key={leaf.id}
-          class="tile-panel__view"
+          className="tile-panel__view"
           doc-url={leaf.view.url}
           tool-id={leaf.view.toolId}
         />
@@ -420,11 +405,27 @@ export const PatchworkFrame = ({
     void ensureAccountSubdocs(accountHandle, repo);
   }, [accountHandle, repo]);
 
+  // Account-aware tools (comments, contact avatar, chat, …) read the current
+  // account from `window.accountDocHandle`. Point it at the account this frame
+  // manages so authorship/contact lookups resolve even if the host hasn't set
+  // it (or set a different account).
+  useEffect(() => {
+    if (!accountHandle) return;
+    (window as unknown as { accountDocHandle?: DocHandle<TinyPatchworkConfigDoc> }).accountDocHandle =
+      accountHandle;
+  }, [accountHandle]);
+
   // The document is the single source of truth; React just reflects it.
   const layout = layoutDoc?.layout ?? null;
   const activeLeafId = layoutDoc?.activeLeafId ?? null;
   const focusOrder = layoutDoc?.focusOrder;
-  const frameRef = useRef<HTMLDivElement>(null);
+  // Holds the live `.tile-frame` element. We attach the open-document listener
+  // via a *callback ref* (below) rather than an effect keyed on a ref object,
+  // because `FrameProviders` gates the frame's mount behind provider readiness:
+  // the node appears after our effects have already run, so an effect-based
+  // attach would silently never fire. The callback ref runs exactly when the
+  // node mounts/unmounts.
+  const frameElRef = useRef<HTMLDivElement | null>(null);
 
   const contextTools = useContextTools();
 
@@ -445,10 +446,12 @@ export const PatchworkFrame = ({
     return null;
   }, [layout, focusOrder]);
 
-  const selectedDocUrl = useMemo<AutomergeUrl | undefined>(() => {
+  const selectedLeafView = useMemo(() => {
     if (!layout || !selectedLeafId) return undefined;
-    return findLeaf(layout, selectedLeafId)?.view.url;
+    return findLeaf(layout, selectedLeafId)?.view;
   }, [layout, selectedLeafId]);
+  const selectedDocUrl = selectedLeafView?.url;
+  const selectedToolId = selectedLeafView?.toolId ?? null;
 
   // Refs hold the latest doc/handle so the once-mounted open-document listener
   // and pointer handlers can read current state synchronously.
@@ -658,13 +661,34 @@ export const PatchworkFrame = ({
     [openView],
   );
 
-  useEffect(() => {
-    const el = frameRef.current;
-    if (!el) return;
-    const listener = handleOpenDocument as unknown as EventListener;
-    el.addEventListener("patchwork:open-document", listener);
-    return () => el.removeEventListener("patchwork:open-document", listener);
-  }, [handleOpenDocument]);
+  // Keep the latest handler in a ref so the listener (attached once when the
+  // frame node mounts) always invokes the current closure without re-binding.
+  const handleOpenDocumentRef = useRef(handleOpenDocument);
+  handleOpenDocumentRef.current = handleOpenDocument;
+
+  // Stable listener that delegates to the latest handler via the ref.
+  const frameOpenListener = useMemo<EventListener>(
+    () => (event) =>
+      handleOpenDocumentRef.current(event as unknown as OpenDocumentEvent),
+    [],
+  );
+
+  // Callback ref: attaches the open-document listener the moment `.tile-frame`
+  // mounts (which, behind the provider gate, is after our effects run) and
+  // detaches it on unmount.
+  const setFrameEl = useCallback(
+    (el: HTMLDivElement | null) => {
+      const prev = frameElRef.current;
+      if (prev) {
+        prev.removeEventListener("patchwork:open-document", frameOpenListener);
+      }
+      frameElRef.current = el;
+      if (el) {
+        el.addEventListener("patchwork:open-document", frameOpenListener);
+      }
+    },
+    [frameOpenListener],
+  );
 
   // Top-bar "open" actions originate outside any panel, so they target the
   // active panel (or open a new one if the frame is somehow empty).
@@ -701,30 +725,36 @@ export const PatchworkFrame = ({
   };
 
   return (
-    <div className="tile-app">
-      <TopBar
-        repo={repo}
-        accountDocUrl={accountDocUrl}
-        moduleSettingsUrl={accountDoc.moduleSettingsUrl}
-        contactUrl={accountDoc.contactUrl}
-        rootFolderHandle={rootFolderHandle}
-        onHome={goHome}
-        onOpen={openFromChrome}
-      />
-      <div className="tile-frame" ref={frameRef}>
-        {layout ? (
-          <LayoutView
-            node={layout}
-            ops={ops}
-            canClose={layout.kind === "split"}
-          />
-        ) : (
-          <div className="tile-frame__empty">
-            {rootFolderUrl ? "Loading…" : "Setting up your workspace…"}
-          </div>
-        )}
+    <FrameProviders
+      accountDocUrl={accountDocUrl}
+      selectedDocUrl={selectedDocUrl}
+      selectedToolId={selectedToolId}
+    >
+      <div className="tile-app">
+        <TopBar
+          repo={repo}
+          accountDocUrl={accountDocUrl}
+          moduleSettingsUrl={accountDoc.moduleSettingsUrl}
+          contactUrl={accountDoc.contactUrl}
+          rootFolderHandle={rootFolderHandle}
+          onHome={goHome}
+          onOpen={openFromChrome}
+        />
+        <div className="tile-frame" ref={setFrameEl}>
+          {layout ? (
+            <LayoutView
+              node={layout}
+              ops={ops}
+              canClose={layout.kind === "split"}
+            />
+          ) : (
+            <div className="tile-frame__empty">
+              {rootFolderUrl ? "Loading…" : "Setting up your workspace…"}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </FrameProviders>
   );
 };
 

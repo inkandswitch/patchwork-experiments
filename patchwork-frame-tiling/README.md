@@ -42,12 +42,10 @@ and resize freely.
   the document it describes — click it to reveal/focus that panel. Because
   context tools are just tools, the tabbed `context-sidebar` can also be opened
   as a panel for a compact, tabbed experience.
-
-  > Note: spawning + wayfinding + the selection model are in place. Publishing
-  > the selection onto the global annotations bus (so external context tools
-  > actually populate) is the next step — see `IsSelected` in
-  > `@inkandswitch/annotations-selection`; `comments-view` additionally needs the
-  > frame to publish `CommentThread` annotations from the selected doc.
+- The frame mounts patchwork-base's **context providers** so tools get their
+  shared context via bubbling `patchwork:subscribe` events (see Architecture):
+  comments authoring/listing, focus, and the current contact all work, and the
+  selected document driving context tools is the active content panel.
 
 ## Architecture
 
@@ -76,6 +74,23 @@ and resize freely.
 - `ensureSubdocs.ts` — lazily creates the `rootFolderUrl`, `moduleSettingsUrl`,
   `contactUrl`, and `tilingLayoutUrl` subdocs so the frame works against a
   fresh account document.
+- `FrameProviders.tsx` — the **context-provider** layer. Patchwork-base tools no
+  longer read globals (`window.accountDocHandle`); they open streaming
+  subscriptions by dispatching a bubbling `patchwork:subscribe` event carrying a
+  `MessagePort`, and a provider mounted on an ancestor answers over that port.
+  The frame mounts the base providers via `<patchwork-view component="…">`:
+  - `patchwork-account-provider` (with `doc-url={account}`) answers
+    `patchwork:contact`,
+  - `patchwork-comments-provider` answers `patchwork:comments` (it tracks every
+    mounted doc's threads via `patchwork:mounted` events),
+  - `patchwork-focus-provider` answers `patchwork:focus`.
+
+  Children are gated until each base provider fires `patchwork:mounted` (with a
+  grace-period fallback) so their listeners exist before tools subscribe.
+  Selection (`patchwork:selected-doc` / `patchwork:selected-view`) is answered by
+  the frame's **own** `SelectionProvider` rather than the base
+  `SelectedDocProvider`, so the document context tools describe is the active
+  *content* panel (matching the wayfinding) instead of the last-opened doc.
 
 ## Develop
 
