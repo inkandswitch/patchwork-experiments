@@ -1,18 +1,37 @@
 import type { DocHandle, Repo } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
+import type { SubscribeEvent } from "@inkandswitch/patchwork-providers";
 import { For } from "solid-js";
 import { render } from "solid-js/web";
 import { RepoContext, useDocHandle, useDocument, useRepo } from "solid-automerge";
 import "@inkandswitch/patchwork-elements";
+import { QUERY_SELECTOR, RESPONSES_SELECTOR } from "../providers/SearchProvider";
 import type { PartsBinDoc, PartsBinItem } from "./types";
 import "./parts-bin.css";
+
+// Selectors the bin must isolate. The previews are live documents, so the
+// search box / POI provider rendered inside them dispatch `patchwork:subscribe`
+// for these. We can't blanket-stop every subscribe (that breaks the providers
+// the previews legitimately rely on, e.g. `<patchwork-view>`'s own repo
+// lookups), so for now we hard-code the search-related ones.
+const ISOLATED_SELECTORS = new Set<string>([QUERY_SELECTOR, RESPONSES_SELECTOR]);
 
 // A palette of example documents. Each row previews a live document; dragging
 // the row out (anywhere on the card) writes the standard Patchwork drag payload
 // (see the drag-and-drop recipe) so the canvas can drop it as an embed. The
 // payload points at a clone, so the example stays editable in place.
 export const PartsBinTool: ToolRender = (handle, element) => {
-  return render(
+  // Stop the search-related subscriptions at the bin's root so they never reach
+  // the canvas search broker — the bin's contents are examples, not active
+  // participants in the canvas. Everything else propagates as normal.
+  const stopSubscribe = (event: SubscribeEvent) => {
+    if (ISOLATED_SELECTORS.has(event.detail.selector.type)) {
+      event.stopPropagation();
+    }
+  };
+  element.addEventListener("patchwork:subscribe", stopSubscribe);
+
+  const dispose = render(
     () => (
       <RepoContext.Provider value={element.repo}>
         <PartsBin handle={handle as DocHandle<PartsBinDoc>} />
@@ -20,6 +39,11 @@ export const PartsBinTool: ToolRender = (handle, element) => {
     ),
     element,
   );
+
+  return () => {
+    element.removeEventListener("patchwork:subscribe", stopSubscribe);
+    dispose();
+  };
 };
 
 function PartsBin(props: { handle: DocHandle<PartsBinDoc> }) {
