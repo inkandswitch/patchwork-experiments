@@ -1,6 +1,6 @@
 import type { Repo } from "@automerge/automerge-repo";
 import { DatatypeImplementation } from "@inkandswitch/patchwork-plugins";
-import type { EmbarkCanvasDoc, EmbarkEmbed } from "./EmbarkCanvas";
+import type { EmbarkCanvasDoc, EmbarkEmbed } from "./canvas";
 import type { SearchDoc } from "../search/datatype";
 import type { PoiProviderDoc } from "../poi/datatype";
 

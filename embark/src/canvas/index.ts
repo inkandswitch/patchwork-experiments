@@ -8,7 +8,7 @@ export const plugins: Plugin<any>[] = [
     icon: "LayoutGrid",
     supportedDatatypes: ["embark-canvas"],
     async load() {
-      const { EmbarkCanvasTool } = await import("./EmbarkCanvas");
+      const { EmbarkCanvasTool } = await import("./canvas");
       return EmbarkCanvasTool;
     },
   },

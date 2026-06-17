@@ -1,7 +1,7 @@
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import { accept, type SubscribeEvent } from "@inkandswitch/patchwork-providers";
-import type { SearchDoc } from "./datatype";
+import type { SearchDoc } from "../../search/datatype";
 
 // The search broker. It sits on the canvas element and bridges two roles that
 // can't talk directly (the provider protocol only flows up the DOM tree, and

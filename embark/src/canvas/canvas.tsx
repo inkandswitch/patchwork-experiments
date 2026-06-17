@@ -5,7 +5,7 @@ import { render } from "solid-js/web";
 import { RepoContext, useDocument } from "solid-automerge";
 import "@inkandswitch/patchwork-elements";
 import { getDocumentDragPayload, hasDocumentDrag } from "./dnd";
-import { SearchProvider } from "../search/SearchProvider";
+import { SearchProvider } from "./providers/SearchProvider";
 import "./styles.css";
 
 // One embedded document placed on the canvas. `x`/`y` are the top-left corner

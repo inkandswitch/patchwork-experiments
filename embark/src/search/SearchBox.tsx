@@ -4,7 +4,7 @@ import { For, Show, createEffect, onCleanup } from "solid-js";
 import { render } from "solid-js/web";
 import { RepoContext, useDocument } from "solid-automerge";
 import { coreSubscribe } from "../lib/providers-solid";
-import { QUERY_SELECTOR } from "./SearchProvider";
+import { QUERY_SELECTOR } from "../canvas/providers/SearchProvider";
 import type { SearchDoc } from "./datatype";
 import "./search.css";
 

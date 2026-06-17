@@ -13,7 +13,7 @@ import { subscribeDoc } from "../lib/providers-solid";
 import {
   RESPONSES_SELECTOR,
   type SearchResponseDoc,
-} from "../search/SearchProvider";
+} from "../canvas/providers/SearchProvider";
 import type { Place, PoiResultDoc } from "./datatype";
 import "./poi.css";
 
