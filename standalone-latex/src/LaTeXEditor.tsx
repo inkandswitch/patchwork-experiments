@@ -13,8 +13,10 @@ import type {
 import {
   Cable,
   Download,
+  LocateFixed,
   PanelRightClose,
   PanelRightOpen,
+  ScrollText,
   Sigma,
 } from "lucide-react";
 import {
@@ -63,29 +65,34 @@ import { latex } from "codemirror-lang-latex";
 import {
   compileLatexToPdf,
   downloadBlob,
-  loadLatexJs,
+  onCompilerProgress,
   pdfSupported,
-  renderLatexToHtml,
+  prewarmCompiler,
 } from "./compile";
+import {
+  forwardSearch,
+  inverseSearch,
+  parseSyncTex,
+  type SyncTexData,
+} from "./synctex";
 import { getDocTitle, type LaTeXDoc } from "./datatype";
 import {
   addTarget,
-  createHtmlFileDoc,
   createPdfFileDoc,
   ensureOutputEdge,
   findOutputEdge,
   isFileLikeDoc,
-  publishHtml,
   publishPdf,
   removeTarget,
   resolveTargets,
   type FileDocShape,
-  type OutputKind,
   type OutputTarget,
 } from "./outputs";
-import { DocPathPicker } from "./DocPathPicker";
 import { OutputsPanel } from "./OutputsPanel";
+import { PdfPreview, type PdfPreviewHandle } from "./PdfPreview";
 import "./styles.css";
+
+const MAIN_TEX_FILE = "document.tex"; // what the engine names the source
 
 // ─── CodeMirror setup ────────────────────────────────────────────────────────
 
@@ -117,8 +124,14 @@ const cmDarkTheme = EditorView.theme(
   { dark: true }
 );
 
-function useCodeMirror(handle: DocHandle<LaTeXDoc>) {
+type EditorActions = { forwardSync: () => void };
+
+function useCodeMirror(
+  handle: DocHandle<LaTeXDoc>,
+  actionsRef: { current: EditorActions }
+) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<EditorView | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || !handle) return;
@@ -141,6 +154,14 @@ function useCodeMirror(handle: DocHandle<LaTeXDoc>) {
         history(),
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
         keymap.of([
+          {
+            key: "Mod-j",
+            preventDefault: true,
+            run: () => {
+              actionsRef.current.forwardSync();
+              return true;
+            },
+          },
           ...closeBracketsKeymap,
           ...defaultKeymap,
           ...historyKeymap,
@@ -156,91 +177,79 @@ function useCodeMirror(handle: DocHandle<LaTeXDoc>) {
     });
 
     const view = new EditorView({ state, parent: containerRef.current });
-    return () => view.destroy();
-  }, [handle]);
+    viewRef.current = view;
+    return () => {
+      view.destroy();
+      viewRef.current = null;
+    };
+  }, [handle, actionsRef]);
 
-  return containerRef;
+  return { containerRef, viewRef };
+}
+
+function cursorLine(view: EditorView): number {
+  return view.state.doc.lineAt(view.state.selection.main.head).number;
+}
+
+function jumpToLine(view: EditorView, line: number) {
+  const clamped = Math.min(Math.max(1, line), view.state.doc.lines);
+  const info = view.state.doc.line(clamped);
+  view.dispatch({
+    selection: { anchor: info.from },
+    scrollIntoView: true,
+  });
+  view.focus();
 }
 
 // ─── output wiring ───────────────────────────────────────────────────────────
 
-type PendingPick = { url: AutomergeUrl; title: string; doc: unknown };
-
 function useOutputs(
   handle: DocHandle<LaTeXDoc>,
   hive: ToolElement["hive"],
-  htmlRef: { current: string | null },
   pdfRef: { current: Uint8Array | null }
 ) {
   const repo = useRepo();
-  const [htmlEdge, setHtmlEdge] = useState<EdgeHandle<string> | null>(null);
-  const [pdfEdge, setPdfEdge] = useState<EdgeHandle<Uint8Array> | null>(null);
-  const [htmlTargets, setHtmlTargets] = useState<OutputTarget[]>([]);
-  const [pdfTargets, setPdfTargets] = useState<OutputTarget[]>([]);
+  const [edge, setEdge] = useState<EdgeHandle<Uint8Array> | null>(null);
+  const [targets, setTargets] = useState<OutputTarget[]>([]);
   const [busy, setBusy] = useState(false);
-  const [pendingPick, setPendingPick] = useState<PendingPick | null>(null);
 
-  // Open the recorded edges (if any) on mount.
   useEffect(() => {
     let cancelled = false;
-    findOutputEdge<string>(repo, handle, "html").then((e) => {
-      if (!cancelled && e) setHtmlEdge(e);
-    });
-    findOutputEdge<Uint8Array>(repo, handle, "pdf").then((e) => {
-      if (!cancelled && e) setPdfEdge(e);
+    findOutputEdge(repo, handle).then((e) => {
+      if (!cancelled && e) setEdge(e);
     });
     return () => {
       cancelled = true;
     };
   }, [repo, handle]);
 
-  // Track membership per edge: refresh the chip list and push the latest
-  // compiled output into freshly-connected targets.
   useEffect(() => {
-    if (!htmlEdge) return;
+    if (!edge) return;
     let cancelled = false;
-    const unsub = htmlEdge.onMembersChange(() => {
-      resolveTargets(repo, htmlEdge, "html").then((t) => {
-        if (!cancelled) setHtmlTargets(t);
+    const refresh = () => {
+      resolveTargets(repo, edge).then((t) => {
+        if (!cancelled) setTargets(t);
       });
-      if (htmlRef.current != null) publishHtml(htmlEdge, htmlRef.current);
+    };
+    refresh();
+    const unsub = edge.onMembersChange(() => {
+      refresh();
+      if (pdfRef.current != null) publishPdf(edge, pdfRef.current);
     });
     return () => {
       cancelled = true;
       unsub();
     };
-  }, [htmlEdge, repo, htmlRef]);
-
-  useEffect(() => {
-    if (!pdfEdge) return;
-    let cancelled = false;
-    const unsub = pdfEdge.onMembersChange(() => {
-      resolveTargets(repo, pdfEdge, "pdf").then((t) => {
-        if (!cancelled) setPdfTargets(t);
-      });
-      if (pdfRef.current != null) publishPdf(pdfEdge, pdfRef.current);
-    });
-    return () => {
-      cancelled = true;
-      unsub();
-    };
-  }, [pdfEdge, repo, pdfRef]);
+  }, [edge, repo, pdfRef]);
 
   const withEdge = useCallback(
-    async (
-      kind: OutputKind,
-      fn: (edge: EdgeHandle<unknown>) => Promise<void>
-    ) => {
+    async (fn: (e: EdgeHandle<Uint8Array>) => Promise<void>) => {
       setBusy(true);
       try {
-        let e: EdgeHandle<unknown> | null =
-          kind === "html"
-            ? (htmlEdge as EdgeHandle<unknown> | null)
-            : (pdfEdge as EdgeHandle<unknown> | null);
+        let e = edge;
         if (!e) {
-          e = await ensureOutputEdge<unknown>(repo, handle, kind);
-          if (kind === "html") setHtmlEdge(e as EdgeHandle<string>);
-          else setPdfEdge(e as EdgeHandle<Uint8Array>);
+          e = await ensureOutputEdge(repo, handle);
+          setEdge(e);
         }
         await fn(e);
       } catch (err) {
@@ -249,45 +258,31 @@ function useOutputs(
         setBusy(false);
       }
     },
-    [htmlEdge, pdfEdge, repo, handle]
+    [edge, repo, handle]
   );
 
-  const newDocument = useCallback(
-    (kind: OutputKind) => {
-      void withEdge(kind, async (e) => {
-        const title = getDocTitle(handle.doc()?.content ?? "");
-        const fileHandle =
-          kind === "html"
-            ? await createHtmlFileDoc(repo, title, htmlRef.current ?? "", hive)
-            : await createPdfFileDoc(
-                repo,
-                title,
-                pdfRef.current ?? new Uint8Array(),
-                hive
-              );
-        await addTarget(repo, e, fileHandle.url, ["content"]);
-      });
-    },
-    [withEdge, repo, handle, hive, htmlRef, pdfRef]
-  );
+  const newDocument = useCallback(() => {
+    void withEdge(async (e) => {
+      const title = getDocTitle(handle.doc()?.content ?? "");
+      const fileHandle = await createPdfFileDoc(
+        repo,
+        title,
+        pdfRef.current ?? new Uint8Array(),
+        hive
+      );
+      await addTarget(repo, e, fileHandle.url, ["content"]);
+    });
+  }, [withEdge, repo, handle, hive, pdfRef]);
 
-  // Drops always connect to the html edge — we never write PDF bytes into
-  // an arbitrary slot of an existing document.
   const dropDoc = useCallback(
-    (url: AutomergeUrl, name?: string) => {
+    (url: AutomergeUrl) => {
       void (async () => {
         try {
           const docHandle = await repo.find<FileDocShape>(url);
-          const doc = docHandle.doc();
-          if (isFileLikeDoc(doc)) {
-            await withEdge("html", (e) => addTarget(repo, e, url, ["content"]));
-          } else {
-            setPendingPick({
-              url,
-              title: name || doc?.title || doc?.name || "Document",
-              doc,
-            });
+          if (isFileLikeDoc(docHandle.doc())) {
+            await withEdge((e) => addTarget(repo, e, url, ["content"]));
           }
+          // Non file-like docs can't hold raw PDF bytes; ignore the drop.
         } catch (err) {
           console.error(`[latex] failed to load dropped doc ${url}`, err);
         }
@@ -296,46 +291,19 @@ function useOutputs(
     [repo, withEdge]
   );
 
-  const resolvePick = useCallback(
-    (path: string[] | null) => {
-      const pick = pendingPick;
-      setPendingPick(null);
-      if (!pick || !path) return;
-      void withEdge("html", (e) => addTarget(repo, e, pick.url, path));
-    },
-    [pendingPick, withEdge, repo]
-  );
-
   const remove = useCallback(
     (target: OutputTarget) => {
-      const e = target.kind === "html" ? htmlEdge : pdfEdge;
-      if (e) removeTarget(e as EdgeHandle<unknown>, target.key);
+      if (edge) removeTarget(edge, target.key);
     },
-    [htmlEdge, pdfEdge]
+    [edge]
   );
 
-  const targets = useMemo(
-    () => [...htmlTargets, ...pdfTargets],
-    [htmlTargets, pdfTargets]
-  );
-
-  return {
-    htmlEdge,
-    pdfEdge,
-    targets,
-    pdfTargetCount: pdfTargets.length,
-    busy,
-    pendingPick,
-    newDocument,
-    dropDoc,
-    resolvePick,
-    remove,
-  };
+  return { edge, targets, busy, newDocument, dropDoc, remove };
 }
 
 // ─── component ───────────────────────────────────────────────────────────────
 
-type PreviewMode = "html" | "pdf";
+type Status = "warming" | "compiling" | "ready" | "error" | "unsupported";
 
 const LaTeXEditorInner = ({
   docUrl,
@@ -347,72 +315,103 @@ const LaTeXEditorInner = ({
   const [doc] = useDocument<LaTeXDoc>(docUrl, { suspense: true });
   const handle = useDocHandle<LaTeXDoc>(docUrl, { suspense: true });
 
-  const editorRef = useCodeMirror(handle);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const actionsRef = useRef<EditorActions>({ forwardSync: () => {} });
+  const { containerRef: editorRef, viewRef } = useCodeMirror(handle, actionsRef);
+  const pdfRef = useRef<PdfPreviewHandle>(null);
 
-  const [previewMode, setPreviewMode] = useState<PreviewMode>("html");
   const [previewOpen, setPreviewOpen] = useState(true);
   const [outputsOpen, setOutputsOpen] = useState(false);
+  const [logsOpen, setLogsOpen] = useState(false);
 
-  // HTML pipeline (preview + outputs share one render)
-  const [latexjsReady, setLatexjsReady] = useState(false);
-  const [htmlError, setHtmlError] = useState<string | null>(null);
-  const htmlRef = useRef<string | null>(null);
-
-  // PDF state
-  const [pdfStatus, setPdfStatus] = useState<
-    "idle" | "working" | "ready" | "error" | "unsupported"
-  >("idle");
-  const [pdfMessage, setPdfMessage] = useState<string | null>(null);
-  const pdfBlobUrlRef = useRef<string | null>(null);
+  const [pdfBytes, setPdfBytes] = useState<Uint8Array | null>(null);
   const pdfBytesRef = useRef<Uint8Array | null>(null);
-  const lastCompiledRef = useRef("");
-  const pdfGenRef = useRef(0);
+  const syncTexRef = useRef<SyncTexData | null>(null);
 
-  const outputs = useOutputs(handle, hive, htmlRef, pdfBytesRef);
+  const [status, setStatus] = useState<Status>(
+    pdfSupported() ? "warming" : "unsupported"
+  );
+  const [progress, setProgress] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [logText, setLogText] = useState<string | null>(null);
 
-  // Effects and the render pump read live values through refs so they
-  // don't have to re-run (or capture stale closures) when these change.
-  const previewModeRef = useRef<PreviewMode>(previewMode);
-  previewModeRef.current = previewMode;
-  const edgesRef = useRef<{
-    html: EdgeHandle<string> | null;
-    pdf: EdgeHandle<Uint8Array> | null;
-  }>({ html: null, pdf: null });
-  edgesRef.current = { html: outputs.htmlEdge, pdf: outputs.pdfEdge };
-
-  useEffect(() => {
-    loadLatexJs().then(() => setLatexjsReady(true));
-  }, []);
-
-  // ── HTML render pump ──
-  // Latest-wins, no debounce: render as you type, but never queue more
-  // than the head. While a render is in flight new content just replaces
-  // the head; when the render finishes the pump picks up whatever is
-  // newest and yields a tick between renders so typing stays responsive.
+  const lastCompiledRef = useRef<string | null>(null);
+  // Coalescing compile pump: `head` is the newest source waiting to be
+  // compiled, `pumping` guards a single in-flight compile.
   const headRef = useRef<string | null>(null);
   const pumpingRef = useRef(false);
+  const mountedRef = useRef(true);
 
+  const outputs = useOutputs(handle, hive, pdfBytesRef);
+  const edgeRef = useRef<EdgeHandle<Uint8Array> | null>(null);
+  edgeRef.current = outputs.edge;
+
+  // Warm the engine the moment the editor opens, so the first compile
+  // pays only the compile cost, not the ~45MB engine download.
+  useEffect(() => {
+    if (pdfSupported()) prewarmCompiler();
+  }, []);
+
+  // Surface the engine's detailed download/format progress while busy.
+  useEffect(() => {
+    return onCompilerProgress((stage, detail) => {
+      setProgress(detail ? `${stage}: ${detail}` : stage);
+    });
+  }, []);
+
+  // Publish the latest PDF once the output edge finishes loading.
+  useEffect(() => {
+    if (outputs.edge && pdfBytesRef.current) {
+      publishPdf(outputs.edge, pdfBytesRef.current);
+    }
+  }, [outputs.edge]);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  // ── compile pump ──
+  // Latest-wins, no debounce: compile starts as soon as something changes.
+  // While a compile is in flight new edits just overwrite the head; when it
+  // finishes the pump immediately picks up the freshest source. So results
+  // arrive as soon as possible, yet at most one compile ever runs and edits
+  // never queue up — the same buildup-safety a debounce gives, without the
+  // wait. A `setTimeout(0)` between runs yields to React so typing stays
+  // responsive.
   const pump = useCallback(async () => {
     if (pumpingRef.current) return;
+    if (!pdfSupported()) {
+      setStatus("unsupported");
+      return;
+    }
     pumpingRef.current = true;
     try {
-      const mod = await loadLatexJs();
       while (headRef.current != null) {
         const content = headRef.current;
         headRef.current = null;
-        const result = renderLatexToHtml(content, mod);
+        if (content === lastCompiledRef.current) continue;
+
+        setStatus("compiling");
+        const result = await compileLatexToPdf(content, setProgress);
+        if (!mountedRef.current) return;
+
         if (result.ok) {
-          htmlRef.current = result.html;
-          setHtmlError(null);
-          if (iframeRef.current && previewModeRef.current === "html") {
-            iframeRef.current.removeAttribute("src");
-            iframeRef.current.srcdoc = result.html;
-          }
-          const edge = edgesRef.current.html;
-          if (edge) publishHtml(edge, result.html);
+          lastCompiledRef.current = content;
+          pdfBytesRef.current = result.bytes;
+          setPdfBytes(result.bytes);
+          syncTexRef.current = parseSyncTex(result.syncTex, MAIN_TEX_FILE);
+          setLogText(result.log ?? null);
+          setErrorMessage(null);
+          setStatus("ready");
+          setProgress(null);
+          if (edgeRef.current) publishPdf(edgeRef.current, result.bytes);
         } else {
-          setHtmlError(result.error);
+          // Keep showing the last good PDF; just report the error.
+          setErrorMessage(result.error);
+          setLogText(result.log ?? null);
+          setStatus("error");
+          setProgress(null);
         }
         await new Promise((r) => setTimeout(r, 0));
       }
@@ -423,127 +422,55 @@ const LaTeXEditorInner = ({
 
   useEffect(() => {
     if (doc?.content == null) return;
+    if (doc.content === lastCompiledRef.current) return;
     headRef.current = doc.content;
     void pump();
   }, [doc?.content, pump]);
 
-  // Publish the current render when the html edge finishes loading.
-  useEffect(() => {
-    if (outputs.htmlEdge && htmlRef.current != null) {
-      publishHtml(outputs.htmlEdge, htmlRef.current);
+  // ── SyncTeX: forward (cursor → PDF) ──
+  const forwardSync = useCallback(() => {
+    const view = viewRef.current;
+    const parsed = syncTexRef.current;
+    if (!view || !parsed) return;
+    const rect = forwardSearch(parsed, cursorLine(view));
+    if (rect) {
+      if (!previewOpen) setPreviewOpen(true);
+      pdfRef.current?.scrollToRect(rect);
     }
-  }, [outputs.htmlEdge]);
+  }, [viewRef, previewOpen]);
+  actionsRef.current.forwardSync = forwardSync;
 
-  // ── PDF compile loop ──
-  // Runs while the PDF tab is visible or any PDF target is connected. PDF
-  // keeps a real debounce: each compile is expensive, and each publish
-  // writes a full binary blob into automerge history.
-  const wantPdf =
-    (previewOpen && previewMode === "pdf") || outputs.pdfTargetCount > 0;
-
-  useEffect(() => {
-    if (!wantPdf || doc?.content == null) return;
-    if (!pdfSupported()) {
-      setPdfStatus("unsupported");
-      setPdfMessage(
-        "PDF compilation requires SharedArrayBuffer (cross-origin isolation headers)."
-      );
-      return;
-    }
-    const content = doc.content;
-    if (content === lastCompiledRef.current) return;
-
-    const timer = setTimeout(async () => {
-      const gen = ++pdfGenRef.current;
-      setPdfStatus("working");
-      setPdfMessage("Loading TeX engine…");
-      const result = await compileLatexToPdf(content, setPdfMessage);
-      if (gen !== pdfGenRef.current) return; // superseded by a newer compile
-      if (result.ok) {
-        pdfBytesRef.current = result.bytes;
-        const url = URL.createObjectURL(
-          new Blob([result.bytes.buffer as ArrayBuffer], {
-            type: "application/pdf",
-          })
-        );
-        // Swap first, revoke the old URL later — revoking the URL the
-        // iframe is showing blanks it, which was one half of the flicker.
-        const old = pdfBlobUrlRef.current;
-        pdfBlobUrlRef.current = url;
-        if (iframeRef.current && previewModeRef.current === "pdf") {
-          iframeRef.current.removeAttribute("srcdoc");
-          iframeRef.current.src = url;
-        }
-        if (old) setTimeout(() => URL.revokeObjectURL(old), 5000);
-        lastCompiledRef.current = content;
-        setPdfStatus("ready");
-        setPdfMessage(null);
-        const edge = edgesRef.current.pdf;
-        if (edge) publishPdf(edge, result.bytes);
-      } else {
-        setPdfStatus("error");
-        setPdfMessage(result.error);
-      }
-    }, 1200);
-    return () => clearTimeout(timer);
-  }, [doc?.content, wantPdf]);
-
-  // ── populate the iframe when it (re)mounts or the view changes ──
-  // The iframe only mounts once latex.js is ready, which can race the
-  // first render pump finishing — so on first open the pump may have
-  // produced HTML before the iframe existed. Re-running when the iframe
-  // appears (latexjsReady) closes that gap without needing a manual kick.
-  useEffect(() => {
-    if (!previewOpen) return;
-    const iframe = iframeRef.current;
-    if (!iframe) return;
-    if (previewMode === "html" && htmlRef.current != null) {
-      iframe.removeAttribute("src");
-      iframe.srcdoc = htmlRef.current;
-    } else if (previewMode === "pdf" && pdfBlobUrlRef.current) {
-      iframe.removeAttribute("srcdoc");
-      iframe.src = pdfBlobUrlRef.current;
-    }
-  }, [previewMode, previewOpen, latexjsReady]);
-
-  useEffect(() => {
-    return () => {
-      if (pdfBlobUrlRef.current) URL.revokeObjectURL(pdfBlobUrlRef.current);
-    };
-  }, []);
+  // ── SyncTeX: inverse (PDF click → cursor) ──
+  const inverseSync = useCallback(
+    (page: number, xPt: number, yPt: number) => {
+      const view = viewRef.current;
+      const parsed = syncTexRef.current;
+      if (!view || !parsed) return;
+      const hit = inverseSearch(parsed, page, xPt, yPt);
+      if (hit) jumpToLine(view, hit.line);
+    },
+    [viewRef]
+  );
 
   // ── download ──
   const download = useCallback(() => {
     const title = getDocTitle(doc?.content ?? "");
-    if (previewMode === "html" && htmlRef.current != null) {
+    if (pdfBytesRef.current) {
       downloadBlob(
-        new Blob([htmlRef.current], { type: "text/html" }),
-        `${title}.html`
+        new Blob([pdfBytesRef.current.buffer as ArrayBuffer], {
+          type: "application/pdf",
+        }),
+        `${title}.pdf`
       );
-    } else if (previewMode === "pdf" && pdfBlobUrlRef.current) {
-      // Reuse the blob URL the iframe is already showing — minting (and
-      // later revoking) a fresh one made the PDF viewer repaint.
-      const a = document.createElement("a");
-      a.href = pdfBlobUrlRef.current;
-      a.download = `${title}.pdf`;
-      a.click();
     }
-  }, [doc?.content, previewMode]);
+  }, [doc?.content]);
 
   const title = useMemo(() => getDocTitle(doc?.content ?? ""), [doc?.content]);
 
-  const previewError =
-    previewMode === "html"
-      ? htmlError
-      : pdfStatus === "error" || pdfStatus === "unsupported"
-        ? pdfMessage
-        : null;
-
-  const canDownload =
-    previewMode === "html" ? htmlRef.current != null : !!pdfBlobUrlRef.current;
-
   const liveTargets = outputs.targets.length;
-  const pdfWorking = previewMode === "pdf" && pdfStatus === "working";
+  const compiling = status === "compiling" || status === "warming";
+  const hasPdf = pdfBytes != null;
+  const canSync = syncTexRef.current != null && hasPdf;
 
   return (
     <div className="ltx-root">
@@ -556,51 +483,51 @@ const LaTeXEditorInner = ({
           </span>
         </div>
 
+        {compiling && (
+          <span className="ltx-status">
+            <span className="ltx-spinner small" />
+            {status === "warming" ? "Loading engine…" : "Compiling…"}
+          </span>
+        )}
+
         <div className="ltx-toolbar-spacer" />
+
+        <button
+          className={`ltx-btn ghost${logsOpen ? " active" : ""}${status === "error" ? " warn" : ""}`}
+          onClick={() => setLogsOpen((o) => !o)}
+          title="Compilation log"
+        >
+          <ScrollText size={13} />
+          Log
+        </button>
 
         <button
           className={`ltx-btn ghost outputs-toggle${outputsOpen ? " active" : ""}${liveTargets > 0 ? " live" : ""}`}
           onClick={() => setOutputsOpen((o) => !o)}
-          title="Write compiled output to other documents"
+          title="Write the compiled PDF to other documents"
         >
           <Cable size={13} />
           Outputs
           {liveTargets > 0 && <span className="count">{liveTargets}</span>}
         </button>
 
-        {previewOpen && (
-          <>
-            <div className="ltx-seg">
-              <button
-                className={previewMode === "html" ? "active" : ""}
-                onClick={() => setPreviewMode("html")}
-              >
-                HTML
-              </button>
-              <button
-                className={previewMode === "pdf" ? "active" : ""}
-                onClick={() => setPreviewMode("pdf")}
-              >
-                PDF
-              </button>
-            </div>
+        <button
+          className="ltx-icon-btn"
+          onClick={forwardSync}
+          disabled={!canSync}
+          title="Show cursor position in PDF (⌘J)"
+        >
+          <LocateFixed size={14} />
+        </button>
 
-            <button
-              className="ltx-icon-btn"
-              onClick={download}
-              disabled={!canDownload}
-              title={previewMode === "html" ? "Download HTML" : "Download PDF"}
-            >
-              <Download size={14} />
-            </button>
-          </>
-        )}
-
-        {!previewOpen && previewError && (
-          <span className="ltx-toolbar-warn" title={previewError}>
-            !
-          </span>
-        )}
+        <button
+          className="ltx-icon-btn"
+          onClick={download}
+          disabled={!hasPdf}
+          title="Download PDF"
+        >
+          <Download size={14} />
+        </button>
 
         <button
           className="ltx-icon-btn"
@@ -623,44 +550,74 @@ const LaTeXEditorInner = ({
 
         {previewOpen && (
           <div className="ltx-preview-pane">
-            {!latexjsReady && previewMode === "html" ? (
-              <div className="ltx-placeholder">Loading renderer…</div>
+            {status === "unsupported" ? (
+              <div className="ltx-placeholder ltx-unsupported">
+                <Sigma size={28} />
+                <p>
+                  This browser can't run the TeX engine. It needs cross-origin
+                  isolation (SharedArrayBuffer) — try a recent Chrome, Edge, or
+                  Firefox.
+                </p>
+              </div>
             ) : (
-              <iframe
-                ref={iframeRef}
-                className="ltx-preview-iframe"
-                title="LaTeX Preview"
-              />
-            )}
+              <>
+                <PdfPreview
+                  ref={pdfRef}
+                  bytes={pdfBytes}
+                  onInverseClick={inverseSync}
+                />
 
-            {/* Full overlay only before the first PDF exists; afterwards a
-                quiet corner badge — the old overlay was the other half of
-                the recompile flicker. */}
-            {pdfWorking && !pdfBlobUrlRef.current && (
-              <div className="ltx-progress">
-                <div className="ltx-spinner" />
-                <span>{pdfMessage}</span>
-              </div>
-            )}
-            {pdfWorking && pdfBlobUrlRef.current && (
-              <div className="ltx-compiling-badge">
-                <div className="ltx-spinner small" />
-                <span>Compiling…</span>
-              </div>
-            )}
+                {/* Full overlay only until the first PDF exists; after that a
+                    quiet corner badge so recompiles don't strobe the view. */}
+                {compiling && !hasPdf && (
+                  <div className="ltx-progress">
+                    <div className="ltx-spinner" />
+                    <span>{progress ?? "Compiling…"}</span>
+                  </div>
+                )}
+                {compiling && hasPdf && (
+                  <div className="ltx-compiling-badge">
+                    <div className="ltx-spinner small" />
+                    <span>{progress ?? "Compiling…"}</span>
+                  </div>
+                )}
 
-            {previewError && (
-              <div className="ltx-error">
-                <span className="badge">!</span>
-                <span className="text">{previewError}</span>
-              </div>
+                {!hasPdf && !compiling && status === "error" && (
+                  <div className="ltx-placeholder">
+                    Couldn’t compile — see the log.
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
       </div>
 
-      {/* Anchored to the root, not the preview pane, so it stays usable
-          while the preview is collapsed. */}
+      {/* ── log drawer ── */}
+      {logsOpen && (
+        <div className="ltx-logs">
+          <div className="ltx-logs-head">
+            <span className={status === "error" ? "err" : ""}>
+              {status === "error"
+                ? (errorMessage ?? "Compilation error")
+                : "Compiled successfully"}
+            </span>
+            <button
+              className="ltx-icon-btn small"
+              onClick={() => setLogsOpen(false)}
+              title="Close log"
+            >
+              <PanelRightClose size={12} />
+            </button>
+          </div>
+          <pre className="ltx-logs-body">
+            {logText || "No log output yet."}
+          </pre>
+        </div>
+      )}
+
+      {/* Anchored to the root so it stays usable while the preview is
+          collapsed. */}
       {outputsOpen && (
         <OutputsPanel
           targets={outputs.targets}
@@ -668,15 +625,6 @@ const LaTeXEditorInner = ({
           onNewDocument={outputs.newDocument}
           onDropDoc={outputs.dropDoc}
           onRemove={outputs.remove}
-        />
-      )}
-
-      {outputs.pendingPick && (
-        <DocPathPicker
-          title={outputs.pendingPick.title}
-          doc={outputs.pendingPick.doc}
-          onPick={(path) => outputs.resolvePick(path)}
-          onCancel={() => outputs.resolvePick(null)}
         />
       )}
     </div>

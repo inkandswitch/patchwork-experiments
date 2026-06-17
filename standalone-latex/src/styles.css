@@ -258,21 +258,129 @@
   background: var(--bg);
 }
 
-.ltx-preview-iframe {
+/* ── pdf.js viewer ─────────────────────────────────────────────────────── */
+
+.ltx-pdf-scroller {
   width: 100%;
   height: 100%;
   flex: 1;
-  border: none;
+  overflow: auto;
+  background: var(--bg-raised);
+  padding: 16px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.ltx-pdf-page {
+  position: relative;
+  /* Never let the column flex container shrink a page to fit — that crops
+     the canvas and removes the overflow we need in order to scroll. */
+  flex: 0 0 auto;
   background: #fff;
+  box-shadow: 0 1px 6px rgba(20, 22, 40, 0.18);
+  border-radius: 2px;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.ltx-pdf-canvas {
+  display: block;
+}
+
+.ltx-sync-flash {
+  position: absolute;
+  background: color-mix(in srgb, var(--accent) 38%, transparent);
+  outline: 1.5px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  border-radius: 2px;
+  pointer-events: none;
+  animation: ltx-flash 1.2s ease-out forwards;
+}
+
+@keyframes ltx-flash {
+  0% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 .ltx-placeholder {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 12px;
   width: 100%;
   height: 100%;
+  padding: 24px;
+  text-align: center;
   color: var(--text-faint);
+}
+
+.ltx-unsupported {
+  max-width: 320px;
+  margin: 0 auto;
+}
+
+.ltx-unsupported p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ── toolbar status ────────────────────────────────────────────────────── */
+
+.ltx-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.ltx-btn.ghost.warn {
+  color: var(--danger);
+}
+
+/* ── log drawer ────────────────────────────────────────────────────────── */
+
+.ltx-logs {
+  flex-shrink: 0;
+  max-height: 30%;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+  background: var(--bg-raised);
+}
+
+.ltx-logs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.ltx-logs-head .err {
+  color: var(--danger);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.ltx-logs-body {
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* ── errors & progress ─────────────────────────────────────────────────── */

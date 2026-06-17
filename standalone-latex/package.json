@@ -1,7 +1,7 @@
 {
   "name": "@patchwork/latex",
   "type": "module",
-  "version": "0.1.0",
+  "version": "0.3.5",
   "private": true,
   "main": "./dist/index.js",
   "exports": {
@@ -31,10 +31,10 @@
     "@inkandswitch/edge-handles": "^0.1.0",
     "@inkandswitch/patchwork-plugins": "^0.0.11",
     "codemirror-lang-latex": "^0.2.0",
-    "latex.js": "^0.12.6",
     "lucide-react": "^0.400.0",
     "react": "18.3.1",
-    "react-dom": "18.3.1"
+    "react-dom": "18.3.1",
+    "synctex-js": "^1.0.0"
   },
   "devDependencies": {
     "@inkandswitch/patchwork-bootloader": "^0.2.6",
@@ -43,6 +43,7 @@
     "@types/react": "18.3.1",
     "@types/react-dom": "18.3.1",
     "@vitejs/plugin-react": "^5.1.2",
+    "pdfjs-dist": "^6.0.227",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
     "vite-plugin-css-injected-by-js": "^3.5.2"

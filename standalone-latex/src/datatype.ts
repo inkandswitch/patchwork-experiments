@@ -5,11 +5,11 @@ import { updateText } from "@automerge/automerge";
 export type LaTeXDoc = {
   content: string;
   /**
-   * Output wiring. The EdgeHandle docs referenced here hold the persistent
-   * source/target maps; the LaTeX doc only remembers which edges are "its"
-   * output edges so every device that opens this doc finds the same wiring.
-   * HTML and PDF flow through separate edges since they carry different
-   * values.
+   * Output wiring. The EdgeHandle doc referenced here holds the persistent
+   * source/target map; the LaTeX doc only remembers which edge is "its"
+   * output edge so every device that opens this doc finds the same wiring.
+   * V2 is PDF-only, so only `pdfEdgeUrl` is used; `edgeUrl` is kept for
+   * back-compat with V1 docs that wired an HTML edge.
    */
   output?: {
     edgeUrl?: AutomergeUrl;
@@ -18,61 +18,79 @@ export type LaTeXDoc = {
 };
 
 const DEFAULT_CONTENT = `\\documentclass{article}
-\\title{A Field Guide to Plain \\TeX{}nique}
+\\usepackage{amsmath}
+\\usepackage{amssymb}
+\\usepackage{tikz}
+\\usetikzlibrary{arrows.meta, positioning}
+
+\\title{Diagrams and Identities}
 \\author{}
 \\date{\\today}
 
 \\begin{document}
 \\maketitle
 
+\\section{A Universal Property}
+
+The product $A \\times B$ is determined, up to unique isomorphism, by a
+universal property: for every object $Z$ with morphisms $f : Z \\to A$ and
+$g : Z \\to B$, there is a \\emph{unique} mediating morphism
+$\\langle f, g \\rangle$ making the diagram commute.
+
+\\begin{center}
+\\begin{tikzpicture}[>=Stealth, node distance=2.4cm,
+                    every node/.style={font=\\small}]
+  \\node (Z) {$Z$};
+  \\node (P) [below=of Z] {$A \\times B$};
+  \\node (A) [left=of P]  {$A$};
+  \\node (B) [right=of P] {$B$};
+  \\draw[->] (P) -- node[below] {$\\pi_A$} (A);
+  \\draw[->] (P) -- node[below] {$\\pi_B$} (B);
+  \\draw[->] (Z) -- node[above left]  {$f$} (A);
+  \\draw[->] (Z) -- node[above right] {$g$} (B);
+  \\draw[->, dashed] (Z) -- node[fill=white]
+        {$\\exists!\\,\\langle f, g \\rangle$} (P);
+\\end{tikzpicture}
+\\end{center}
+
+\\section{A Small Graph}
+
+The complete graph $K_4$ has $\\binom{4}{2} = 6$ edges and is planar:
+
+\\begin{center}
+\\begin{tikzpicture}[every node/.style={circle, draw, minimum size=7mm,
+                    font=\\small}, node distance=2cm]
+  \\node (1) {$1$};
+  \\node (2) [right=of 1] {$2$};
+  \\node (3) [below=of 1] {$3$};
+  \\node (4) [below=of 2] {$4$};
+  \\draw (1) -- (2) -- (4) -- (3) -- (1);
+  \\draw (1) -- (4);
+  \\draw (2) -- (3);
+\\end{tikzpicture}
+\\end{center}
+
 \\section{Identities}
 
-The golden ratio $\\varphi = \\frac{1 + \\sqrt{5}}{2}$ is the unique
-positive number satisfying $\\varphi^2 = \\varphi + 1$, while Euler's
-identity binds five fundamental constants in one stroke:
+For good measure, Euler's identity binds five constants in one stroke,
 \\[
-  e^{i\\pi} + 1 = 0.
+  e^{i\\pi} + 1 = 0,
 \\]
-For $|x| < 1$ the geometric series collapses to a closed form,
-\\[
-  \\sum_{n=0}^{\\infty} x^n = \\frac{1}{1 - x},
-\\]
-and differentiating both sides is the classic trick for summing
-$\\sum n x^n$.
-
-\\section{Integrals}
-
-The Gaussian integral has no elementary antiderivative, and yet
-\\[
-  \\int_{-\\infty}^{\\infty} e^{-x^2} \\, dx = \\sqrt{\\pi}.
-\\]
-Euler's solution to the Basel problem is just as tidy:
+and the Basel problem resolves just as tidily:
 \\[
   \\sum_{n=1}^{\\infty} \\frac{1}{n^2} = \\frac{\\pi^2}{6}.
 \\]
 
-\\section{Structure}
-
-A rotation of the plane by an angle $\\theta$ is the linear map
-\\[
-  \\left( \\begin{array}{cc}
-    \\cos\\theta & -\\sin\\theta \\\\
-    \\sin\\theta & \\cos\\theta
-  \\end{array} \\right)
-  \\left( \\begin{array}{c} x \\\\ y \\end{array} \\right),
-\\]
-which preserves length since
-$\\cos^2\\theta + \\sin^2\\theta = 1$. Its eigenvalues
-$e^{\\pm i\\theta}$ live on the unit circle --- rotation stretches
-nothing.
-
 \\section{Notes}
 
 \\begin{itemize}
-  \\item Everything here is plain \\LaTeX{} --- no packages required.
-  \\item Edit the source and the preview re-renders as you type.
-  \\item Open \\emph{Outputs} to publish the HTML or PDF to a live
-        document you can drag into the sidebar.
+  \\item This compiles with real TeX Live, so \\texttt{tikz},
+        \\texttt{amsmath}, \\texttt{biblatex} and friends all work.
+  \\item Edit the source and the PDF re-compiles as you type.
+  \\item Press \\texttt{Cmd-J} to jump from the cursor to the PDF;
+        click anywhere in the PDF to jump back to the source.
+  \\item Open \\emph{Outputs} to publish the PDF to a live document you
+        can drag into the sidebar.
 \\end{itemize}
 
 \\end{document}`;

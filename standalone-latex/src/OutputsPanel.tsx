@@ -1,22 +1,19 @@
 import { useState } from "react";
-import { FileCode2, FilePlus2, FileText, GripVertical, X } from "lucide-react";
+import { FilePlus2, FileText, GripVertical, X } from "lucide-react";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import {
   hasPatchworkDrop,
   parsePatchworkDrop,
-  type OutputKind,
   type OutputTarget,
 } from "./outputs";
 
 /**
- * The outputs panel: where compiled output goes besides the preview.
+ * The outputs panel: where the compiled PDF goes besides the preview.
  *
- *  - "New HTML/PDF document" creates a file doc wired to receive the
- *    compiled output; drag its chip into the sidebar to keep it (and open
- *    it anywhere as a live preview).
- *  - Dropping a Patchwork doc here writes the HTML into it — directly
- *    into `content` for file docs, or into a field you pick. (HTML only;
- *    we don't overwrite arbitrary slots with PDF bytes.)
+ *  - "New PDF document" creates a file doc wired to receive the compiled
+ *    PDF; drag its chip into the sidebar to keep it (and open it anywhere
+ *    as a live preview).
+ *  - Dropping a Patchwork file doc here connects it to receive the PDF.
  */
 export function OutputsPanel({
   targets,
@@ -27,7 +24,7 @@ export function OutputsPanel({
 }: {
   targets: OutputTarget[];
   busy: boolean;
-  onNewDocument: (kind: OutputKind) => void;
+  onNewDocument: () => void;
   onDropDoc: (url: AutomergeUrl, name?: string) => void;
   onRemove: (target: OutputTarget) => void;
 }) {
@@ -60,14 +57,14 @@ export function OutputsPanel({
     >
       <div className="ltx-outputs-head">
         <h3>Outputs</h3>
-        <span>Compiled output is written to these documents as you type.</span>
+        <span>The compiled PDF is written to these documents as you type.</span>
       </div>
 
       {targets.length > 0 && (
         <ul className="ltx-target-list">
           {targets.map((t) => (
             <li
-              key={`${t.kind}:${t.key}`}
+              key={t.key}
               className={`ltx-target${t.error ? " errored" : ""}`}
               draggable
               title={
@@ -83,15 +80,8 @@ export function OutputsPanel({
               }}
             >
               <GripVertical size={12} className="grip" />
-              {t.kind === "pdf" ? (
-                <FileText size={13} className="doc-icon pdf" />
-              ) : (
-                <FileCode2 size={13} className="doc-icon" />
-              )}
+              <FileText size={13} className="doc-icon pdf" />
               <span className="name">{t.title}</span>
-              {t.path.length > 0 && t.path.join(".") !== "content" && (
-                <span className="path">.{t.path.join(".")}</span>
-              )}
               <span className={`dot${t.error ? " error" : ""}`} />
               <button
                 className="ltx-icon-btn small"
@@ -109,15 +99,7 @@ export function OutputsPanel({
         <button
           className="ltx-btn new-doc"
           disabled={busy}
-          onClick={() => onNewDocument("html")}
-        >
-          <FilePlus2 size={13} />
-          New HTML doc
-        </button>
-        <button
-          className="ltx-btn new-doc"
-          disabled={busy}
-          onClick={() => onNewDocument("pdf")}
+          onClick={() => onNewDocument()}
         >
           <FilePlus2 size={13} />
           New PDF doc
@@ -127,7 +109,7 @@ export function OutputsPanel({
       <div className="ltx-drop-hint">
         {dragOver > 0
           ? "Drop to connect"
-          : "…or drop a document here to write the HTML into it"}
+          : "…or drop a file document here to write the PDF into it"}
       </div>
     </div>
   );

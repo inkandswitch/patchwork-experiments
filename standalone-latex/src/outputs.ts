@@ -1,18 +1,14 @@
 /**
  * Output wiring for the LaTeX tool, built on EdgeHandles.
  *
- * Compiled output flows through persisted EdgeHandle docs — one per
- * format, since each edge carries a single value:
+ * V2 is PDF-only: the compiled PDF is the single source of truth, so there
+ * is one output edge carrying the PDF bytes.
  *
- *     latex doc `content` ──source──▶ [ html edge ] ──targets──▶ html slots
- *     latex doc `content` ──source──▶ [ pdf edge ]  ──targets──▶ pdf file docs
+ *     latex doc `content` ──source──▶ [ pdf edge ] ──targets──▶ pdf file docs
  *
- * The edge docs are the shared, persistent record of the wiring (their
- * URLs are stored on the LaTeX doc). Targets are subdoc handles — either
- * the `content` field of a fresh file doc, or any string slot inside an
- * existing document the user pointed us at. The transforms themselves
- * (LaTeX → HTML / PDF) run wherever the tool is open: the editor
- * compiles, then fans the result out with `edge.change(...)`.
+ * The edge doc is the shared, persistent record of the wiring (its URL is
+ * stored on the LaTeX doc). Targets are file-doc handles; the editor
+ * compiles and fans the result out with `edge.change(bytes)`.
  */
 
 import {
@@ -27,13 +23,6 @@ import {
   type EdgeHandle,
 } from "@inkandswitch/edge-handles";
 import type { LaTeXDoc } from "./datatype";
-
-export type OutputKind = "html" | "pdf";
-
-const EDGE_FIELD: Record<OutputKind, "edgeUrl" | "pdfEdgeUrl"> = {
-  html: "edgeUrl",
-  pdf: "pdfEdgeUrl",
-};
 
 // ─── file docs ───────────────────────────────────────────────────────────────
 
@@ -66,27 +55,6 @@ async function createFileDoc(
   return handle as DocHandle<FileDocShape>;
 }
 
-/** Create a fresh html file doc, ready to be dragged into the sidebar. */
-export function createHtmlFileDoc(
-  repo: Repo,
-  title: string,
-  initialHtml: string,
-  hive?: MaybeKeyhive
-): Promise<DocHandle<FileDocShape>> {
-  const name = title.endsWith(".html") ? title : `${title}.html`;
-  return createFileDoc(
-    repo,
-    {
-      "@patchwork": { type: "file" },
-      name,
-      extension: "html",
-      mimeType: "text/html",
-      content: initialHtml,
-    },
-    hive
-  );
-}
-
 /** Create a fresh pdf file doc, ready to be dragged into the sidebar. */
 export function createPdfFileDoc(
   repo: Repo,
@@ -111,43 +79,40 @@ export function createPdfFileDoc(
 // ─── edge lifecycle ──────────────────────────────────────────────────────────
 
 /**
- * Find this doc's output edge for `kind`, or create one (source pre-wired
- * to the LaTeX `content` field) and remember its URL on the doc.
+ * Find this doc's PDF output edge, or create one (source pre-wired to the
+ * LaTeX `content` field) and remember its URL on the doc.
  */
-export async function ensureOutputEdge<T>(
+export async function ensureOutputEdge(
   repo: Repo,
-  handle: DocHandle<LaTeXDoc>,
-  kind: OutputKind
-): Promise<EdgeHandle<T>> {
-  const field = EDGE_FIELD[kind];
-  const existingUrl = handle.doc()?.output?.[field];
+  handle: DocHandle<LaTeXDoc>
+): Promise<EdgeHandle<Uint8Array>> {
+  const existingUrl = handle.doc()?.output?.pdfEdgeUrl;
   if (existingUrl) {
     try {
-      return await findEdgeHandle<T>(repo, existingUrl);
+      return await findEdgeHandle<Uint8Array>(repo, existingUrl);
     } catch {
       // edge doc missing or invalid — fall through and re-create
     }
   }
-  const edge = await createEdgeHandle<T>(repo, {
+  const edge = await createEdgeHandle<Uint8Array>(repo, {
     source: { latex: handle.sub("content") },
   });
   handle.change((d) => {
     if (!d.output) d.output = {};
-    d.output[field] = edge.url;
+    d.output.pdfEdgeUrl = edge.url;
   });
   return edge;
 }
 
-/** Open the doc's output edge for `kind` if one is recorded; never creates. */
-export async function findOutputEdge<T>(
+/** Open the doc's PDF output edge if one is recorded; never creates. */
+export async function findOutputEdge(
   repo: Repo,
-  handle: DocHandle<LaTeXDoc>,
-  kind: OutputKind
-): Promise<EdgeHandle<T> | null> {
-  const url = handle.doc()?.output?.[EDGE_FIELD[kind]];
+  handle: DocHandle<LaTeXDoc>
+): Promise<EdgeHandle<Uint8Array> | null> {
+  const url = handle.doc()?.output?.pdfEdgeUrl;
   if (!url) return null;
   try {
-    return await findEdgeHandle<T>(repo, url);
+    return await findEdgeHandle<Uint8Array>(repo, url);
   } catch {
     return null;
   }
@@ -156,8 +121,6 @@ export async function findOutputEdge<T>(
 // ─── targets ─────────────────────────────────────────────────────────────────
 
 export type OutputTarget = {
-  /** Which edge (and so which format) this target hangs off. */
-  kind: OutputKind;
   /** Name key inside the edge doc's target map. */
   key: string;
   /** Full handle URL, possibly with a /path suffix. */
@@ -183,9 +146,7 @@ function splitHandleUrl(url: string): { docUrl: AutomergeUrl; path: string[] } {
 /** Read and resolve the edge's targets into display-ready entries. */
 export async function resolveTargets(
   repo: Repo,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- EdgeHandle<T> is invariant in T; we only read wiring here
-  edge: EdgeHandle<any>,
-  kind: OutputKind
+  edge: EdgeHandle<Uint8Array>
 ): Promise<OutputTarget[]> {
   const targetMap = edge.doc.doc()?.target ?? {};
   return Promise.all(
@@ -200,7 +161,7 @@ export async function resolveTargets(
         // unsynced peer — leave the placeholder title
       }
       const error = edge.targetErrors[key]?.message;
-      return { kind, key, url, docUrl, path, title, error };
+      return { key, url, docUrl, path, title, error };
     })
   );
 }
@@ -208,7 +169,7 @@ export async function resolveTargets(
 /** Add a target pointing at `path` inside `docUrl`. */
 export async function addTarget(
   repo: Repo,
-  edge: EdgeHandle<unknown>,
+  edge: EdgeHandle<Uint8Array>,
   docUrl: AutomergeUrl,
   path: string[]
 ): Promise<void> {
@@ -218,22 +179,11 @@ export async function addTarget(
   edge.setTarget(key, sub as DocHandle<unknown>);
 }
 
-export function removeTarget(edge: EdgeHandle<unknown>, key: string): void {
+export function removeTarget(edge: EdgeHandle<Uint8Array>, key: string): void {
   edge.removeTarget(key);
 }
 
 // ─── publishing ──────────────────────────────────────────────────────────────
-
-/**
- * Push html into the edge (which fans out to every target). Skips the
- * write when the value is unchanged so two open editors don't ping-pong
- * identical changes into the targets.
- */
-export function publishHtml(edge: EdgeHandle<string>, html: string): void {
-  if (Object.keys(edge.target).length === 0) return;
-  if (edge.value() === html) return;
-  edge.change(html);
-}
 
 function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.byteLength !== b.byteLength) return false;
@@ -243,8 +193,11 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   return true;
 }
 
-/** Push compiled pdf bytes into the pdf edge. Same dedup semantics. */
-export function publishPdf(edge: EdgeHandle<Uint8Array>, bytes: Uint8Array): void {
+/** Push compiled pdf bytes into the pdf edge (fans out to every target). */
+export function publishPdf(
+  edge: EdgeHandle<Uint8Array>,
+  bytes: Uint8Array
+): void {
   if (Object.keys(edge.target).length === 0) return;
   const prev = edge.value();
   if (prev instanceof Uint8Array && bytesEqual(prev, bytes)) return;
@@ -260,13 +213,11 @@ export function isStringLeaf(value: unknown): boolean {
   );
 }
 
-/** File-like docs can be targeted at `content` without asking the user. */
+/** File-like docs can receive the PDF bytes at their `content` field. */
 export function isFileLikeDoc(doc: unknown): boolean {
-  return (
-    doc != null &&
-    typeof doc === "object" &&
-    isStringLeaf((doc as FileDocShape).content)
-  );
+  if (doc == null || typeof doc !== "object") return false;
+  const d = doc as FileDocShape;
+  return "content" in d && (d.content == null || d.content instanceof Uint8Array || isStringLeaf(d.content));
 }
 
 // ─── drag & drop ─────────────────────────────────────────────────────────────
