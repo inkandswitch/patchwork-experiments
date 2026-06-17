@@ -55,6 +55,33 @@ async function ensureSubdoc<S>(
 }
 
 /**
+ * Ensure the account has a `contactUrl`. Tools that attribute authorship
+ * (comments, drawing, chat, …) read `window.accountDocHandle.doc().contactUrl`,
+ * so a missing contact silently breaks them. We create an anonymous contact
+ * *directly* rather than via the datatype registry: the `contact` bundle may
+ * not be loaded, and `loadDatatypeWhenReady` would otherwise wait forever for a
+ * registration event that never arrives. A real identity set by the host always
+ * wins (the field is only written when empty).
+ */
+async function ensureContact(
+  accountHandle: DocHandle<TinyPatchworkConfigDoc>,
+  repo: Repo,
+) {
+  if (accountHandle.doc()?.contactUrl) return;
+  const contact = repo.create<{
+    "@patchwork": { type: string };
+    type: string;
+  }>();
+  contact.change((doc) => {
+    doc["@patchwork"] = { type: "contact" };
+    doc.type = "anonymous";
+  });
+  accountHandle.change((doc) => {
+    if (!doc.contactUrl) doc.contactUrl = contact.url;
+  });
+}
+
+/**
  * Lazily populate the subdoc URLs the tiling frame depends on. Idempotent:
  * fields already set (including those set concurrently by another tab) win.
  */
@@ -70,7 +97,7 @@ export async function ensureAccountSubdocs(
       "moduleSettingsUrl",
       "patchwork:module-settings",
     ),
-    ensureSubdoc(accountHandle, repo, "contactUrl", "contact"),
+    ensureContact(accountHandle, repo),
     ensureSubdoc(
       accountHandle,
       repo,

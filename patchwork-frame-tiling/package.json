@@ -1,5 +1,6 @@
 {
   "name": "@tiny-patchwork/patchwork-frame-tiling",
+  "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
   "scripts": {
@@ -12,9 +13,10 @@
     "@automerge/automerge": "^3.2.6",
     "@automerge/automerge-repo": "2.6.0-subduction.28",
     "@automerge/automerge-repo-react-hooks": "2.6.0-subduction.28",
-    "@inkandswitch/patchwork-elements": "^0.0.6",
-    "@inkandswitch/patchwork-filesystem": "^0.0.4",
-    "@inkandswitch/patchwork-plugins": "^0.0.6",
+    "@inkandswitch/patchwork-elements": "^0.2.0",
+    "@inkandswitch/patchwork-filesystem": "^0.0.8",
+    "@inkandswitch/patchwork-plugins": "^0.0.11",
+    "@inkandswitch/patchwork-providers": "^0.2.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-resizable-panels": "^2.1.9",
@@ -22,7 +24,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.38.0",
-    "@inkandswitch/patchwork-bootloader": "^0.1.0",
+    "@inkandswitch/patchwork-bootloader": "^0.2.8",
     "@tailwindcss/vite": "^4.1.18",
     "@types/react": "^18.3.27",
     "@types/react-dom": "^18.3.7",
