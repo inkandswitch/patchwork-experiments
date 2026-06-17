@@ -1,8 +1,7 @@
 import type { Repo } from "@automerge/automerge-repo";
 import { DatatypeImplementation } from "@inkandswitch/patchwork-plugins";
 import type { EmbarkCanvasDoc, EmbarkEmbed } from "./canvas";
-import type { SearchDoc } from "../search/datatype";
-import type { PoiProviderDoc } from "../poi/datatype";
+import { createPartsBin } from "./parts-bin/datatype";
 
 export const EmbarkCanvasDatatype: DatatypeImplementation<EmbarkCanvasDoc> = {
   init(doc, repo) {
@@ -18,43 +17,25 @@ export const EmbarkCanvasDatatype: DatatypeImplementation<EmbarkCanvasDoc> = {
   },
 };
 
-// A fresh canvas comes pre-wired with a search box and a POI provider so the
-// search demo works out of the box: type a place into the search box and the
-// POI provider answers from OpenStreetMap. `repo.create` doesn't run a
-// datatype's `init`, so each child doc's initial value is set inline.
+// A fresh canvas comes pre-wired with a parts bin so there's something to drag
+// onto it out of the box: the bin previews example documents (a search box and
+// a POI provider) and hands out clones on drag. `repo.create` doesn't run a
+// datatype's `init`, so the parts bin is seeded via its shared helper.
 function seedDefaultEmbeds(repo: Repo): EmbarkCanvasDoc["embeds"] {
-  const search = repo.create<SearchDoc>({
-    "@patchwork": { type: "search" },
-    query: "",
-    results: [],
-  });
-  const poi = repo.create<PoiProviderDoc>({
-    "@patchwork": { type: "poi-provider" },
-  });
+  const partsBin = createPartsBin(repo);
 
-  const searchEmbed: EmbarkEmbed = {
+  const partsBinEmbed: EmbarkEmbed = {
     id: crypto.randomUUID(),
-    docUrl: search.url,
-    toolId: "search",
+    docUrl: partsBin.url,
+    toolId: "parts-bin",
     x: 40,
     y: 40,
-    width: 320,
+    width: 280,
     height: 360,
     z: 1,
   };
-  const poiEmbed: EmbarkEmbed = {
-    id: crypto.randomUUID(),
-    docUrl: poi.url,
-    toolId: "poi-provider",
-    x: 400,
-    y: 40,
-    width: 300,
-    height: 300,
-    z: 2,
-  };
 
   return {
-    [searchEmbed.id]: searchEmbed,
-    [poiEmbed.id]: poiEmbed,
+    [partsBinEmbed.id]: partsBinEmbed,
   };
 }

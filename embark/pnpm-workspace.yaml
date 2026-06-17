@@ -1,0 +1,2 @@
+allowBuilds:
+  cbor-extract: set this to true or false
