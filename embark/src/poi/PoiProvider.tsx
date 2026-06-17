@@ -24,6 +24,11 @@ const NOMINATIM_MIN_GAP_MS = 1000;
 let nextNominatimSlot = 0;
 
 type NominatimItem = {
+  // jsonv2 adds `name` (the place's own name tag, e.g. "Aachen") and
+  // `addresstype` (a human-ish kind like "city"/"county"). `display_name` is
+  // the long comma-joined string kept only as a fallback.
+  name?: string;
+  addresstype?: string;
   display_name: string;
   lat: string;
   lon: string;
@@ -163,21 +168,32 @@ function statusLabel(status: QueryStatus | undefined): string {
 }
 
 // Query Nominatim for a free-text place search, mapped to our flat `Place`
-// shape.
+// shape. `jsonv2` is requested specifically because it returns a short `name`
+// per result; `addressdetails=1` is cheap and handy for future disambiguation.
 async function fetchPois(query: string): Promise<Place[]> {
   await reserveNominatimSlot();
   const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
     query,
-  )}&format=json&limit=10`;
+  )}&format=jsonv2&addressdetails=1&limit=10`;
   const response = await fetch(url, { headers: { Accept: "application/json" } });
   if (!response.ok) throw new Error(`Nominatim responded ${response.status}`);
   const items = (await response.json()) as NominatimItem[];
   return items.map((item) => ({
-    name: item.display_name,
+    name: shortPlaceName(item),
     lat: Number(item.lat),
     lon: Number(item.lon),
-    type: item.type,
+    type: item.addresstype ?? item.type,
   }));
+}
+
+// A short, human-friendly name: prefer the place's own `name` tag, falling back
+// to the leading segment of `display_name` for results without one (raw
+// addresses, etc.). Nominatim appends a parenthetical disambiguator in some
+// locales (e.g. "Aachen (district)") which people don't write, so drop it.
+function shortPlaceName(item: NominatimItem): string {
+  const raw =
+    item.name?.trim() || item.display_name.split(",")[0]?.trim() || item.display_name;
+  return raw.replace(/\s*\([^)]*\)\s*$/, "").trim() || raw;
 }
 
 // Reserve the next free 1s slot so concurrent queries don't exceed Nominatim's
