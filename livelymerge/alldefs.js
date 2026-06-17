@@ -3239,6 +3239,119 @@ w.promptOkToCancelEditsMenu = function (world, pt, onResult) {
   world.addMorph(menu);
 };
 
+w.PanelTitleBar = w.Morph.subClass('PanelTitleBar');
+w.PanelTitleBar.HEIGHT = 24;
+w.PanelTitleBar.BUTTON_WIDTH = 28;
+w.PanelTitleBar.proto.configureChromeButton = function (btn, fillColor, expectedLabel) {
+  if (!btn || !btn.shape) return;
+  let s = btn.shape;
+  if (fillColor) {
+    s.boxColor = fillColor;
+    s.selectionColor = fillColor;
+  }
+  s.noMenuLineHighlight = true;
+  s.disableSelectionRendering = true;
+  s.selectedLineIndex = 0;
+  s.selStart = null;
+  s.selStop = null;
+  s.priorNullSelection = 0;
+  s.composeBottomPad = 0;
+  s.lineHeight = w.PanelTitleBar.HEIGHT;
+  s.setBorderWidth(2);
+  s.setBorderColor(w.Color.black);
+  if (expectedLabel != null && s.string !== expectedLabel) s.setText(expectedLabel);
+};
+w.PanelTitleBar.proto.initialize = function (panel, bounds) {
+  this.panel = panel;
+  w.Morph.proto.initialize.call(this, bounds);
+  let th = w.PanelTitleBar.HEIGHT;
+  let bw = w.PanelTitleBar.BUTTON_WIDTH;
+  let b = this.shape.getBounds();
+  this.collapseBtn = this.addMorph(w.SimpleButtonMorph.new(w.rect(0, 0, bw, th), '▼'));
+  this.closeBtn = this.addMorph(w.SimpleButtonMorph.new(w.rect(0, 0, bw, th), 'X'));
+  this.configureChromeButton(this.collapseBtn, w.Color.green.lighter().lighter(), '▼');
+  this.configureChromeButton(this.closeBtn, w.Color.red.lighter().lighter(), 'X');
+  this.titleMorph = this.addMorph(
+    w.TextMorph.new(w.rect(bw, 0, Math.max(1, b.width() - bw), th), 'A panel'),
+  );
+  let title = this.titleMorph.shape;
+  title.boxColor = w.Color.lightGray.lighter();
+  title.inset = w.pt(6, 0);
+  title.hang = 0;
+  title.lineHeight = th;
+  title.verticallyCenterSingleLine = true;
+  title.verticalNudge = 8;
+  title.composeBottomPad = 0;
+  this.layout();
+};
+w.PanelTitleBar.proto.hasVisibleCloseBtn = function () {
+  return !!(this.closeBtn && this.submorphs && this.submorphs.includes(this.closeBtn));
+};
+w.PanelTitleBar.proto.collapsedTitleBarWidth = function () {
+  let bw = w.PanelTitleBar.BUTTON_WIDTH;
+  let s = this.titleMorph.shape;
+  let ctx = s.getTextContext(s.font);
+  let tw = 0;
+  if (ctx && s.string != null) tw = ctx.measureText(s.string).width;
+  let insetL = s.inset ? s.inset.x : 6;
+  let insetR = 6;
+  return Math.max(bw + insetL + tw + insetR, bw + 24);
+};
+w.PanelTitleBar.proto.layout = function () {
+  let b = this.shape.getBounds();
+  let th = w.PanelTitleBar.HEIGHT;
+  let bw = w.PanelTitleBar.BUTTON_WIDTH;
+  let panel = this.panel;
+  this.titleMorph.shape.composeBottomPad = 0;
+  this.configureChromeButton(this.collapseBtn, w.Color.green.lighter().lighter(), null);
+  this.configureChromeButton(this.closeBtn, w.Color.red.lighter().lighter(), 'X');
+  this.collapseBtn.setBounds(w.rect(b.topLeft.x, b.topLeft.y, bw, th));
+  let hasCloseBtn = this.hasVisibleCloseBtn();
+  if (panel.collapsed) {
+    if (hasCloseBtn) this.removeMorph(this.closeBtn);
+    this.titleMorph.setBounds(
+      w.rect(b.topLeft.x + bw, b.topLeft.y, Math.max(1, b.width() - bw), th),
+    );
+  } else {
+    if (this.closeBtn && !hasCloseBtn) this.addMorph(this.closeBtn);
+    if (this.closeBtn)
+      this.closeBtn.setBounds(w.rect(b.topLeft.x + b.width() - bw, b.topLeft.y, bw, th));
+    this.titleMorph.setBounds(
+      w.rect(b.topLeft.x + bw, b.topLeft.y, Math.max(1, b.width() - 2 * bw), th),
+    );
+  }
+  this.titleMorph.shape.extent.y = th;
+  this.collapseBtn.shape.extent.y = th;
+  if (this.closeBtn && this.closeBtn.shape) this.closeBtn.shape.extent.y = th;
+  if (this.hasVisibleCloseBtn()) {
+    this.removeMorph(this.closeBtn);
+    this.addMorph(this.closeBtn);
+  }
+  this.changed();
+};
+w.PanelTitleBar.proto.setTitle = function (str) {
+  if (!this.titleMorph || !this.titleMorph.shape || !this.titleMorph.shape.setText) return;
+  this.titleMorph.shape.setText(str);
+  let panel = this.panel;
+  if (panel.collapsed) {
+    let b = panel.getBounds();
+    let nw = this.collapsedTitleBarWidth();
+    panel.setBounds(w.rect(b.topLeft.x, b.topLeft.y, nw, w.PanelTitleBar.HEIGHT));
+  } else {
+    this.layout();
+  }
+};
+w.PanelTitleBar.proto.setCollapseGlyph = function (collapsed) {
+  this.collapseBtn.shape.setText(collapsed ? '▶' : '▼');
+};
+w.PanelTitleBar.proto.hitInfo = function (panelLocalP) {
+  if (!this.includesPt(panelLocalP)) return null;
+  let localP = this.relativize(panelLocalP);
+  let onCollapse = this.collapseBtn && this.collapseBtn.includesPt(localP);
+  let onClose = this.hasVisibleCloseBtn() && this.closeBtn.includesPt(localP);
+  return { onCollapse, onClose };
+};
+
 w.PanelMorph = w.Morph.subClass('PanelMorph');
 w.PanelMorph.proto.defaultRect = function () {
   return w.rect(400, 60, 400, 300);
@@ -3251,9 +3364,7 @@ w.PanelMorph.proto.acceptsDroppingMorphs = function () {
   return false;
 };
 w.PanelMorph.proto.contentMorphs = function () {
-  return this.submorphs.filter(
-    (m) => m !== this.collapseBtn && m !== this.titleMorph && m !== this.closeBtn,
-  );
+  return this.submorphs.filter((m) => m !== this.titleBar);
 };
 w.PanelMorph.proto.submorphHasUnsavedText = function (m) {
   if (m.className == 'TextPane' && m.hasUnsavedChanges()) return true;
@@ -3297,64 +3408,27 @@ w.PanelMorph.proto.revertUnsavedStylePanels = function () {
   walk(this);
 };
 w.PanelMorph.proto.hasVisibleCloseBtn = function () {
-  return !!(this.closeBtn && this.submorphs && this.submorphs.includes(this.closeBtn));
+  return this.titleBar ? this.titleBar.hasVisibleCloseBtn() : false;
 };
 w.PanelMorph.proto.configureChromeButton = function (btn, fillColor, expectedLabel) {
-  if (!btn || !btn.shape) return;
-  let s = btn.shape;
-  if (fillColor) {
-    s.boxColor = fillColor;
-    s.selectionColor = fillColor;
-  }
-  s.noMenuLineHighlight = true;
-  s.disableSelectionRendering = true;
-  s.selectedLineIndex = 0;
-  s.selStart = null;
-  s.selStop = null;
-  s.priorNullSelection = 0;
-  s.composeBottomPad = 0;
-  s.lineHeight = this.titleBarHeight;
-  s.setBorderWidth(2);
-  s.setBorderColor(w.Color.black);
-  if (expectedLabel != null && s.string !== expectedLabel) s.setText(expectedLabel);
+  if (this.titleBar) this.titleBar.configureChromeButton(btn, fillColor, expectedLabel);
 };
 w.PanelMorph.proto.initialize = function (initialBounds) {
   w.Morph.proto.initialize.call(this, initialBounds);
-  this.titleBarHeight = 24;
-  this.titleButtonWidth = 28;
+  this.titleBarHeight = w.PanelTitleBar.HEIGHT;
+  this.titleButtonWidth = w.PanelTitleBar.BUTTON_WIDTH;
   this.collapsed = false;
   this._savedBounds = null;
   this._stashedContent = [];
-  let b = this.shape.getBounds();
-  let th = this.titleBarHeight;
-  let bw = this.titleButtonWidth;
-  let panel = this;
   this.lastLocationExpanded = null;
   this.lastLocationCollapsed = null;
   this._stickyDragCollapsedBar = false;
-  this.collapseBtn = this.addMorph(
-    w.SimpleButtonMorph.new(w.rect(b.topLeft.x, b.topLeft.y, bw, th), '▼'),
-  );
-  this.closeBtn = this.addMorph(
-    w.SimpleButtonMorph.new(w.rect(b.topLeft.x, b.topLeft.y, bw, th), 'X'),
-  );
-  this.configureChromeButton(this.collapseBtn, w.Color.green.lighter().lighter(), '▼');
-  this.configureChromeButton(this.closeBtn, w.Color.red.lighter().lighter(), 'X');
-  this.titleMorph = this.addMorph(
-    w.TextMorph.new(
-      w.rect(b.topLeft.x + bw, b.topLeft.y, Math.max(1, b.width() - bw), th),
-      'A panel',
-    ),
-  );
-  let title = this.titleMorph.shape;
-  title.boxColor = w.Color.lightGray.lighter();
-  title.inset = w.pt(6, 0);
-  title.hang = 0;
-  title.lineHeight = th;
-  title.verticallyCenterSingleLine = true;
-  title.verticalNudge = 8;
-  title.composeBottomPad = 0;
-  this.layoutChrome();
+  let b = this.shape.getBounds();
+  this.titleBar = w.PanelTitleBar.new(this, w.rect(b.topLeft.x, b.topLeft.y, b.width(), this.titleBarHeight));
+  this.addMorph(this.titleBar);
+  this.collapseBtn = this.titleBar.collapseBtn;
+  this.closeBtn = this.titleBar.closeBtn;
+  this.titleMorph = this.titleBar.titleMorph;
 };
 w.PanelMorph.proto.boundsToLoc = function (r) {
   return { x: r.topLeft.x, y: r.topLeft.y, w: r.width(), h: r.height() };
@@ -3363,47 +3437,12 @@ w.PanelMorph.proto.locToRect = function (s) {
   return w.rect(s.x, s.y, s.w, s.h);
 };
 w.PanelMorph.proto.collapsedTitleBarWidth = function () {
-  /** Width of the title row when collapsed: button + title text + horizontal padding. */
-  let bw = this.titleButtonWidth;
-  let s = this.titleMorph.shape;
-  let ctx = s.getTextContext(s.font);
-  let tw = 0;
-  if (ctx && s.string != null) tw = ctx.measureText(s.string).width;
-  let insetL = s.inset ? s.inset.x : 6;
-  let insetR = 6;
-  return Math.max(bw + insetL + tw + insetR, bw + 24);
+  return this.titleBar ? this.titleBar.collapsedTitleBarWidth() : this.titleButtonWidth + 24;
 };
 w.PanelMorph.proto.layoutChrome = function () {
   let b = this.shape.getBounds();
-  let th = this.titleBarHeight;
-  let bw = this.titleButtonWidth;
-  this.titleMorph.shape.composeBottomPad = 0;
-  this.configureChromeButton(this.collapseBtn, w.Color.green.lighter().lighter(), null);
-  this.configureChromeButton(this.closeBtn, w.Color.red.lighter().lighter(), 'X');
-  this.collapseBtn.setBounds(w.rect(b.topLeft.x, b.topLeft.y, bw, th));
-  let hasCloseBtn = this.hasVisibleCloseBtn();
-  if (this.collapsed) {
-    if (hasCloseBtn) this.removeMorph(this.closeBtn);
-    this.titleMorph.setBounds(
-      w.rect(b.topLeft.x + bw, b.topLeft.y, Math.max(1, b.width() - bw), th),
-    );
-  } else {
-    if (this.closeBtn && !hasCloseBtn) this.addMorph(this.closeBtn);
-    if (this.closeBtn)
-      this.closeBtn.setBounds(w.rect(b.topLeft.x + b.width() - bw, b.topLeft.y, bw, th));
-    this.titleMorph.setBounds(
-      w.rect(b.topLeft.x + bw, b.topLeft.y, Math.max(1, b.width() - 2 * bw), th),
-    );
-  }
-  this.titleMorph.shape.extent.y = th;
-  this.collapseBtn.shape.extent.y = th;
-  if (this.closeBtn && this.closeBtn.shape) this.closeBtn.shape.extent.y = th;
-  let closeVisible = this.hasVisibleCloseBtn();
-  if (closeVisible) {
-    // Ensure close button draws above title at the right edge.
-    this.removeMorph(this.closeBtn);
-    this.addMorph(this.closeBtn);
-  }
+  this.titleBar.setBounds(w.rect(b.topLeft.x, b.topLeft.y, b.width(), this.titleBarHeight));
+  this.titleBar.layout();
   this.changed();
 };
 w.PanelMorph.proto.topLeftInWorld = function () {
@@ -3437,16 +3476,7 @@ w.PanelMorph.proto.relayoutContentPanes = function () {
   });
 };
 w.PanelMorph.proto.setPanelTitle = function (str) {
-  if (this.titleMorph && this.titleMorph.shape && this.titleMorph.shape.setText) {
-    this.titleMorph.shape.setText(str);
-    if (this.collapsed) {
-      let b = this.getBounds();
-      let nw = this.collapsedTitleBarWidth();
-      this.setBounds(w.rect(b.topLeft.x, b.topLeft.y, nw, this.titleBarHeight));
-    } else {
-      this.layoutChrome();
-    }
-  }
+  if (this.titleBar) this.titleBar.setTitle(str);
 };
 w.PanelMorph.proto.savePanelLocation = function () {
   let s = this.boundsToLoc(this.getBounds());
@@ -3464,7 +3494,7 @@ w.PanelMorph.proto.toggleCollapse = function () {
     else if (this._savedBounds) r = this._savedBounds;
     if (r) this.setBounds(r);
     this._savedBounds = null;
-    this.collapseBtn.shape.setText('▼');
+    this.titleBar.setCollapseGlyph(false);
     this._stickyDragCollapsedBar = false;
   } else {
     let hasSavedCollapsedLocation = !!this.lastLocationCollapsed;
@@ -3489,7 +3519,7 @@ w.PanelMorph.proto.toggleCollapse = function () {
       cr = w.rect(b.topLeft.x, b.topLeft.y, cw, this.titleBarHeight);
     }
     w.Morph.proto.setBounds.call(this, cr);
-    this.collapseBtn.shape.setText('▶');
+    this.titleBar.setCollapseGlyph(true);
     this._stickyDragCollapsedBar = !hasSavedCollapsedLocation;
   }
   this.layoutChrome();
@@ -3516,14 +3546,10 @@ w.PanelMorph.proto.finishStickyCollapsedTitleBarDrag = function (p, evt) {
   return true;
 };
 w.PanelMorph.proto.titleBarRect = function () {
-  let b = this.shape.getBounds();
-  return w.rect(b.topLeft.x, b.topLeft.y, b.width(), this.titleBarHeight);
+  return this.titleBar ? this.titleBar.getBounds().copy() : w.rect(0, 0, 0, 0);
 };
 w.PanelMorph.proto.titleBarHitInfo = function (localP) {
-  if (!this.titleBarRect().includesPt(localP)) return null;
-  let onCollapse = this.collapseBtn && this.collapseBtn.includesPt(localP);
-  let onClose = this.hasVisibleCloseBtn() && this.closeBtn.includesPt(localP);
-  return { onCollapse, onClose };
+  return this.titleBar ? this.titleBar.hitInfo(localP) : null;
 };
 w.PanelMorph.proto.beginTitleBarPress = function (p, evt, hitInfo) {
   this.hitPoint = p;
