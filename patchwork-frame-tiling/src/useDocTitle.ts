@@ -58,10 +58,17 @@ export type ContextTool = {
 };
 
 /**
- * Discover the tools tagged `context-tool` (comments, history, etc.), refreshing
- * as plugins register. These are openable as on-demand context panels.
+ * Resolve the context tools (comments, history, …) the account is configured to
+ * offer, refreshing as plugins register. We deliberately mirror patchwork-base's
+ * model: the source of truth is the account doc's `contextToolIds` list (edited
+ * via frame-configurator, rendered by context-sidebar), *not* the `context-tool`
+ * tag. Upstream only uses that tag to populate the configurator's option picker,
+ * and it's applied inconsistently (history-view isn't tagged; the default list
+ * still references the deleted context-view), so a tag filter would diverge from
+ * what the base frame actually shows. Ids that don't resolve to a loaded tool
+ * (e.g. the stale context-view) are skipped.
  */
-export function useContextTools(): ContextTool[] {
+export function useContextTools(toolIds: string[] | undefined): ContextTool[] {
   const [registryVersion, setRegistryVersion] = useState(0);
 
   useEffect(() => {
@@ -69,14 +76,18 @@ export function useContextTools(): ContextTool[] {
     return registry.on("changed", () => setRegistryVersion((v) => v + 1));
   }, []);
 
+  const idsKey = toolIds?.join("\u0000") ?? "";
+
   return useMemo(() => {
+    if (!toolIds || toolIds.length === 0) return [];
     const registry = getRegistry<ToolDescription>("patchwork:tool");
-    return registry
-      .filter((tool) => (tool.tags ?? []).includes("context-tool"))
+    return toolIds
+      .map((id) => registry.get(id))
+      .filter((tool): tool is NonNullable<typeof tool> => tool != null)
       .map((tool) => ({ id: tool.id, name: tool.name ?? tool.id, icon: tool.icon }));
-    // registryVersion intentionally re-triggers resolution on registry changes.
+    // idsKey + registryVersion drive recomputation as config or plugins change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [registryVersion]);
+  }, [idsKey, registryVersion]);
 }
 
 export type SupportedTools = {

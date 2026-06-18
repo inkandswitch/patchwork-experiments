@@ -82,6 +82,27 @@ async function ensureContact(
 }
 
 /**
+ * Default context tools, mirroring patchwork-base's `AccountDatatype.init`. We
+ * seed the same list (including the upstream-stale `context-view`) for parity;
+ * `useContextTools` skips any id that doesn't resolve to a loaded tool. A list
+ * the host already configured always wins (only written when absent).
+ */
+const DEFAULT_CONTEXT_TOOL_IDS = [
+  "comments-view",
+  "history-view",
+  "context-view",
+];
+
+function ensureContextToolIds(
+  accountHandle: DocHandle<TinyPatchworkConfigDoc>,
+) {
+  if (accountHandle.doc()?.contextToolIds) return;
+  accountHandle.change((doc) => {
+    if (!doc.contextToolIds) doc.contextToolIds = [...DEFAULT_CONTEXT_TOOL_IDS];
+  });
+}
+
+/**
  * Lazily populate the subdoc URLs the tiling frame depends on. Idempotent:
  * fields already set (including those set concurrently by another tab) win.
  */
@@ -89,6 +110,7 @@ export async function ensureAccountSubdocs(
   accountHandle: DocHandle<TinyPatchworkConfigDoc>,
   repo: Repo,
 ) {
+  ensureContextToolIds(accountHandle);
   await Promise.all([
     ensureSubdoc(accountHandle, repo, "rootFolderUrl", "folder"),
     ensureSubdoc(

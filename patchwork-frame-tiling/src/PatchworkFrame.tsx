@@ -427,7 +427,7 @@ export const PatchworkFrame = ({
   // node mounts/unmounts.
   const frameElRef = useRef<HTMLDivElement | null>(null);
 
-  const contextTools = useContextTools();
+  const contextTools = useContextTools(accountDoc.contextToolIds);
 
   // The "selected document" is the most-recently-focused *content* panel
   // (context panels are excluded so opening Comments doesn't make Comments the
