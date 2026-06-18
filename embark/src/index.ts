@@ -5,6 +5,7 @@ import { plugins as poiPlugins } from "./poi";
 import { plugins as cardPlugins } from "./card";
 import { plugins as mapPlugins } from "./map";
 import { plugins as mentionPlugins } from "./mention";
+import { plugins as stickerPlugins } from "./stickers";
 
 export const plugins = [
   ...canvasPlugins,
@@ -14,4 +15,5 @@ export const plugins = [
   ...cardPlugins,
   ...mapPlugins,
   ...mentionPlugins,
+  ...stickerPlugins,
 ];

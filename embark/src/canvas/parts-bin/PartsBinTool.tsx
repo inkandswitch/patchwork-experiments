@@ -17,16 +17,21 @@ import {
 import type { PartsBinDoc, PartsBinItem } from "./types";
 import "./parts-bin.css";
 import { MATCHES_SELECTOR } from "../providers/SchemaMatchProvider";
+import { STICKERS_ON_DOCUMENT, STICKERS_REGISTRY } from "../../stickers/types";
 
 // Selectors the bin must isolate. The previews are live documents, so the
-// search box / POI provider rendered inside them dispatch `patchwork:subscribe`
-// for these. We can't blanket-stop every subscribe (that breaks the providers
-// the previews legitimately rely on, e.g. `<patchwork-view>`'s own repo
-// lookups), so for now we hard-code the search-related ones.
+// search box / POI provider / sticker sources rendered inside them dispatch
+// `patchwork:subscribe` for these. We can't blanket-stop every subscribe (that
+// breaks the providers the previews legitimately rely on, e.g.
+// `<patchwork-view>`'s own repo lookups), so for now we hard-code the known
+// canvas-broker selectors. Isolating `stickers:registry` in particular keeps a
+// previewed sticker source from publishing onto the live canvas's documents.
 const ISOLATED_SELECTORS = new Set<string>([
   QUERY_SELECTOR,
   RESPONSES_SELECTOR,
   MATCHES_SELECTOR,
+  STICKERS_ON_DOCUMENT,
+  STICKERS_REGISTRY,
 ]);
 
 // A palette of example documents. Each row previews a live document; dragging

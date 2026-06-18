@@ -8,6 +8,7 @@ import { getDocumentDragPayload, hasDocumentDrag } from "./dnd";
 import type { PartsBinDoc } from "./parts-bin/types";
 import { SearchProvider } from "./providers/SearchProvider";
 import { SchemaMatchProvider } from "./providers/SchemaMatchProvider";
+import { StickerProvider } from "./providers/StickerProvider";
 import "./styles.css";
 
 // One embedded document placed on the canvas. `x`/`y` are the top-left corner
@@ -54,6 +55,10 @@ export const EmbarkCanvasTool: ToolRender = (handle, element) => {
   // mounted beneath it and answers `schema:matches` for descendants.
   const disposeSchemaMatch = SchemaMatchProvider(element);
 
+  // The sticker broker bridges sticker sources (which publish annotations) and
+  // renderers (which draw them), scoped per target document.
+  const disposeStickers = StickerProvider(element);
+
   const disposeRender = render(
     () => (
       <RepoContext.Provider value={element.repo}>
@@ -65,6 +70,7 @@ export const EmbarkCanvasTool: ToolRender = (handle, element) => {
 
   return () => {
     disposeRender();
+    disposeStickers();
     disposeSchemaMatch();
     disposeProvider();
   };
