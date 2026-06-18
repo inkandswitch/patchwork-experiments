@@ -17,6 +17,21 @@ export type TinyPatchworkConfigDoc = {
   contextSidebarToolId?: string;
   contextToolIds?: string[];
   documentToolbarToolIds?: string[];
+
+  /** Remembered per-doc / per-datatype tool choices (see {@link ToolPreferences}). */
+  toolPreferences?: ToolPreferences;
+};
+
+/**
+ * The user's remembered tool choices, synced on their account so they follow
+ * across devices. Resolution prefers the most specific scope (see
+ * `resolvePreferredTool`): the document, then its datatype.
+ */
+export type ToolPreferences = {
+  /** Last tool chosen for a given document, keyed by AutomergeUrl. */
+  byDoc?: { [url: string]: string };
+  /** Last tool chosen for a given datatype, keyed by `@patchwork.type`. */
+  byType?: { [type: string]: string };
 };
 
 export type PanelView = {

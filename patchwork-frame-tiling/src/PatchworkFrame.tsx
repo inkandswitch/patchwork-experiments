@@ -6,7 +6,10 @@ import {
 } from "@automerge/automerge-repo-react-hooks";
 import { AutomergeUrl, type DocHandle } from "@automerge/automerge-repo";
 import { OpenDocumentEvent } from "@inkandswitch/patchwork-elements";
-import type { ToolElement } from "@inkandswitch/patchwork-plugins";
+import type {
+  ToolDescription,
+  ToolElement,
+} from "@inkandswitch/patchwork-plugins";
 import {
   Suspense,
   useCallback,
@@ -45,13 +48,15 @@ import type {
   SplitDirection,
   TilingLayoutDoc,
   TinyPatchworkConfigDoc,
+  ToolPreferences,
 } from "./types";
 import {
   useContextTools,
   useDocTitle,
-  useSupportedTools,
+  useEffectiveTool,
   type ContextTool,
 } from "./useDocTitle";
+import { rememberToolInDoc } from "./toolMemory";
 
 type LayoutOps = {
   activeLeafId: string | null;
@@ -70,6 +75,14 @@ type LayoutOps = {
   selectedLeafId: string | null;
   /** URL of the current selected document (what context panels describe). */
   selectedDocUrl: AutomergeUrl | undefined;
+  /** The user's remembered tool choices (account-synced), for defaulting. */
+  toolPreferences: ToolPreferences | undefined;
+  /** Persist an explicit tool choice for this doc and its datatype. */
+  rememberTool: (
+    url: AutomergeUrl,
+    type: string | undefined,
+    toolId: string,
+  ) => void;
 };
 
 const SplitRightIcon = () => (
@@ -128,24 +141,35 @@ const CloseIcon = () => (
 const ToolPicker = ({
   leaf,
   ops,
+  tools,
+  fallbackId,
+  type,
+  selected,
 }: {
   leaf: LeafNode;
   ops: LayoutOps;
+  tools: ToolDescription[];
+  fallbackId: string | undefined;
+  type: string | undefined;
+  selected: string | undefined;
 }) => {
-  const { tools, fallbackId } = useSupportedTools(leaf.view.url);
-
   if (tools.length <= 1) {
     return null;
   }
-
-  const selected = leaf.view.toolId ?? fallbackId ?? "";
 
   return (
     <select
       className="tile-panel__tool-picker"
       title="Choose a tool"
-      value={selected}
-      onChange={(event) => ops.setTool(leaf.id, event.target.value)}
+      value={selected ?? ""}
+      onChange={(event) => {
+        const toolId = event.target.value;
+        // Persist the choice on the panel and remember it (on the account) as
+        // the preferred tool for this doc and datatype so future opens default
+        // to it.
+        ops.setTool(leaf.id, toolId);
+        ops.rememberTool(leaf.view.url, type, toolId);
+      }}
       onMouseDown={(event) => event.stopPropagation()}
     >
       {tools.map((tool) => (
@@ -268,6 +292,14 @@ const TilePanel = ({
   const title = isContext ? (contextToolName ?? "Context") : docTitle;
   const { focusLeaf } = ops;
 
+  // Resolve the tool to render: explicit panel choice, else the remembered
+  // preference for this doc / datatype, else the datatype default.
+  const { toolId: effectiveToolId, tools, fallbackId, type } = useEffectiveTool(
+    leaf.view.url,
+    leaf.view.toolId,
+    ops.toolPreferences,
+  );
+
   return (
     <div
       data-leaf-id={leaf.id}
@@ -291,7 +323,16 @@ const TilePanel = ({
         {isContext && <SubjectChip ops={ops} />}
         <div className="tile-panel__actions">
           {!isContext && <ContextLauncher leaf={leaf} ops={ops} />}
-          {!isContext && <ToolPicker leaf={leaf} ops={ops} />}
+          {!isContext && (
+            <ToolPicker
+              leaf={leaf}
+              ops={ops}
+              tools={tools}
+              fallbackId={fallbackId}
+              type={type}
+              selected={effectiveToolId}
+            />
+          )}
           <button
             className="tile-panel__icon-btn"
             title="Split right"
@@ -322,7 +363,7 @@ const TilePanel = ({
           key={leaf.id}
           className="tile-panel__view"
           doc-url={leaf.view.url}
-          tool-id={leaf.view.toolId}
+          tool-id={effectiveToolId}
         />
       </div>
     </div>
@@ -524,6 +565,15 @@ export const PatchworkFrame = ({
     [change],
   );
 
+  // Tool memory lives on the account doc (synced across the user's devices),
+  // not the layout doc, so we mutate the account handle directly.
+  const rememberTool = useCallback(
+    (url: AutomergeUrl, type: string | undefined, toolId: string) => {
+      accountHandle.change((d) => rememberToolInDoc(d, url, type, toolId));
+    },
+    [accountHandle],
+  );
+
   const split = useCallback(
     (leafId: string, direction: SplitDirection) => {
       // The new panel mirrors the source panel's current view so you can
@@ -722,6 +772,8 @@ export const PatchworkFrame = ({
     contextTools,
     selectedLeafId,
     selectedDocUrl,
+    toolPreferences: accountDoc.toolPreferences,
+    rememberTool,
   };
 
   return (

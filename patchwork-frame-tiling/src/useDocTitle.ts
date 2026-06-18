@@ -11,6 +11,8 @@ import {
 } from "@inkandswitch/patchwork-plugins";
 import { PluginRegistry } from "@inkandswitch/patchwork-plugins/dist/registry/registry";
 import { useEffect, useMemo, useState } from "react";
+import { resolvePreferredTool } from "./toolMemory";
+import type { ToolPreferences } from "./types";
 
 /**
  * Resolve a human-readable title for a document by loading its datatype and
@@ -95,6 +97,8 @@ export type SupportedTools = {
   tools: ToolDescription[];
   /** Id of the tool used when no explicit tool is chosen. */
   fallbackId: string | undefined;
+  /** The document's `@patchwork.type`, used to key per-datatype preferences. */
+  type: string | undefined;
 };
 
 /**
@@ -130,5 +134,43 @@ export function useSupportedTools(url?: AutomergeUrl): SupportedTools {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc, type, registryVersion]);
 
-  return { tools, fallbackId };
+  return { tools, fallbackId, type };
+}
+
+export type EffectiveTool = SupportedTools & {
+  /**
+   * The tool the panel should actually render, applying the preference chain
+   * (explicit choice → last-for-doc → last-for-type → datatype default).
+   */
+  toolId: string | undefined;
+};
+
+/**
+ * Resolve the effective tool for a panel: the explicit per-panel choice if set,
+ * otherwise the remembered preference for this document, then this datatype,
+ * then the datatype's default. Also returns the supported tools / fallback /
+ * type so callers can render a picker without re-querying.
+ */
+export function useEffectiveTool(
+  url: AutomergeUrl | undefined,
+  explicitToolId: string | undefined,
+  preferences: ToolPreferences | undefined,
+): EffectiveTool {
+  const supported = useSupportedTools(url);
+  const { tools, fallbackId, type } = supported;
+
+  const toolId = useMemo(() => {
+    if (!url) return explicitToolId;
+    const supportedIds = new Set(tools.map((tool) => tool.id));
+    return resolvePreferredTool({
+      explicitToolId,
+      url,
+      type,
+      supportedIds,
+      fallbackId,
+      preferences,
+    });
+  }, [url, explicitToolId, tools, fallbackId, type, preferences]);
+
+  return { ...supported, toolId };
 }
