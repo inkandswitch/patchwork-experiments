@@ -44,6 +44,7 @@
 }
 
 .embark-parts-bin__grip {
+  position: relative;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -52,6 +53,39 @@
   color: #b6b2ad;
   background: #f5f5f4;
   border-bottom: 1px solid #ececeb;
+}
+
+/* Delete button in the top-right of each row's grip strip. Absolutely
+   positioned so the grip glyph stays centered. Fades up on hover of the row. */
+.embark-parts-bin__delete {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #a8a29e;
+  cursor: pointer;
+  line-height: 0;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.embark-parts-bin__item:hover .embark-parts-bin__delete,
+.embark-parts-bin__delete:focus-visible {
+  opacity: 1;
+}
+
+.embark-parts-bin__delete:hover {
+  background: #e7e5e4;
+  color: #44403c;
 }
 
 .embark-parts-bin__preview {

@@ -31,6 +31,13 @@ export const PartsBinTool: ToolRender = (handle, element) => {
   };
   element.addEventListener("patchwork:subscribe", stopSubscribe);
 
+  // Likewise keep the previews' mount/unmount events from reaching the canvas:
+  // the schema-match provider watches these, and the bin's examples shouldn't
+  // show up as matches.
+  const stopMountEvent = (event: Event) => event.stopPropagation();
+  element.addEventListener("patchwork:mounted", stopMountEvent);
+  element.addEventListener("patchwork:unmounted", stopMountEvent);
+
   const dispose = render(
     () => (
       <RepoContext.Provider value={element.repo}>
@@ -42,6 +49,8 @@ export const PartsBinTool: ToolRender = (handle, element) => {
 
   return () => {
     element.removeEventListener("patchwork:subscribe", stopSubscribe);
+    element.removeEventListener("patchwork:mounted", stopMountEvent);
+    element.removeEventListener("patchwork:unmounted", stopMountEvent);
     dispose();
   };
 };
@@ -56,14 +65,28 @@ function PartsBin(props: { handle: DocHandle<PartsBinDoc> }) {
       <div class="embark-parts-bin__header">{doc()?.title ?? "Parts bin"}</div>
       <div class="embark-parts-bin__list">
         <For each={items()}>
-          {(item) => <PartsBinRow repo={repo} item={item} />}
+          {(item, index) => (
+            <PartsBinRow
+              repo={repo}
+              item={item}
+              onRemove={() =>
+                props.handle.change((binDoc) => {
+                  binDoc.items.splice(index(), 1);
+                })
+              }
+            />
+          )}
         </For>
       </div>
     </div>
   );
 }
 
-function PartsBinRow(props: { repo: Repo; item: PartsBinItem }) {
+function PartsBinRow(props: {
+  repo: Repo;
+  item: PartsBinItem;
+  onRemove: () => void;
+}) {
   // Resolve the source handle up front (waits for ready) so dragstart — which
   // must write its payload synchronously — always has a loaded doc to clone
   // instead of falling back to sharing the original.
@@ -91,6 +114,24 @@ function PartsBinRow(props: { repo: Repo; item: PartsBinItem }) {
     >
       <div class="embark-parts-bin__grip">
         <GripIcon />
+        <button
+          type="button"
+          class="embark-parts-bin__delete"
+          title="Remove from parts bin"
+          aria-label="Remove from parts bin"
+          draggable={false}
+          on:pointerdown={(event) => event.stopPropagation()}
+          on:dragstart={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          on:click={(event) => {
+            event.stopPropagation();
+            props.onRemove();
+          }}
+        >
+          <CloseIcon />
+        </button>
       </div>
       <div class="embark-parts-bin__preview">
         <patchwork-view
@@ -113,6 +154,24 @@ function GripIcon() {
       <circle cx="5" cy="15" r="1.2" />
       <circle cx="12" cy="15" r="1.2" />
       <circle cx="19" cy="15" r="1.2" />
+    </svg>
+  );
+}
+
+// Thin "x" glyph for the delete button; inherits the button's text color.
+function CloseIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2.5"
+      stroke-linecap="round"
+      aria-hidden="true"
+    >
+      <path d="M6 6l12 12M18 6L6 18" />
     </svg>
   );
 }

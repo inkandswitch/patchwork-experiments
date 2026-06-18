@@ -2,10 +2,12 @@ import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import { For, Show, createSignal } from "solid-js";
 import { render } from "solid-js/web";
-import { RepoContext, useDocument } from "solid-automerge";
+import { RepoContext, useDocument, useRepo } from "solid-automerge";
 import "@inkandswitch/patchwork-elements";
 import { getDocumentDragPayload, hasDocumentDrag } from "./dnd";
+import type { PartsBinDoc } from "./parts-bin/types";
 import { SearchProvider } from "./providers/SearchProvider";
+import { SchemaMatchProvider } from "./providers/SchemaMatchProvider";
 import "./styles.css";
 
 // One embedded document placed on the canvas. `x`/`y` are the top-left corner
@@ -48,6 +50,10 @@ export const EmbarkCanvasTool: ToolRender = (handle, element) => {
   // protocol only flows up the DOM, and the embeds are siblings).
   const disposeProvider = SearchProvider(element);
 
+  // The schema-match provider also sits on the canvas: it watches every embed
+  // mounted beneath it and answers `schema:matches` for descendants.
+  const disposeSchemaMatch = SchemaMatchProvider(element);
+
   const disposeRender = render(
     () => (
       <RepoContext.Provider value={element.repo}>
@@ -59,11 +65,13 @@ export const EmbarkCanvasTool: ToolRender = (handle, element) => {
 
   return () => {
     disposeRender();
+    disposeSchemaMatch();
     disposeProvider();
   };
 };
 
 function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
+  const repo = useRepo();
   const [doc] = useDocument<EmbarkCanvasDoc>(() => props.handle.url);
   const [canvasEl, setCanvasEl] = createSignal<HTMLDivElement>();
   const [isDraggingOver, setIsDraggingOver] = createSignal(false);
@@ -93,6 +101,54 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
     Object.values(doc()?.embeds ?? {}).sort((a, b) =>
       a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
     );
+
+  // The topmost parts-bin embed under a client point, if any. Matched against
+  // each bin's stored rect (in canvas space) rather than the DOM, so we never
+  // have to reach into the embedded <patchwork-view>. Used to detect when a
+  // dragged embed is released over a bin.
+  const binEmbedAt = (
+    clientX: number,
+    clientY: number,
+    excludeId: string,
+  ): EmbarkEmbed | null => {
+    const rect = canvasEl()?.getBoundingClientRect();
+    if (!rect) return null;
+    const bins = embeds()
+      .filter((embed) => embed.toolId === "parts-bin" && embed.id !== excludeId)
+      .sort((a, b) => b.z - a.z);
+    for (const bin of bins) {
+      const left = rect.left + bin.x;
+      const top = rect.top + bin.y;
+      if (
+        clientX >= left &&
+        clientX <= left + bin.width &&
+        clientY >= top &&
+        clientY <= top + bin.height
+      ) {
+        return bin;
+      }
+    }
+    return null;
+  };
+
+  // Copy an embed's document into a parts bin as a fresh clone — mirroring the
+  // bin's drag-out behavior — so the bin keeps a stable template independent of
+  // the original embed.
+  const copyEmbedToBin = async (bin: EmbarkEmbed, source: EmbarkEmbed) => {
+    const [binHandle, sourceHandle] = await Promise.all([
+      repo.find<PartsBinDoc>(bin.docUrl),
+      repo.find(source.docUrl),
+    ]);
+    const clone = repo.clone(sourceHandle);
+    binHandle.change((binDoc) => {
+      // Automerge rejects an explicit `undefined`, so only set `toolId` when the
+      // source embed actually pins one.
+      binDoc.items.push({
+        url: clone.url,
+        ...(source.toolId !== undefined && { toolId: source.toolId }),
+      });
+    });
+  };
 
   const dropDocuments = (event: DragEvent) => {
     setIsDraggingOver(false);
@@ -164,6 +220,9 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
             handle={props.handle}
             selected={selectedId() === embed.id}
             onSelect={() => selectEmbed(embed.id)}
+            onDelete={() => deleteEmbed(embed.id)}
+            findBinAt={binEmbedAt}
+            onCopyToBin={copyEmbedToBin}
           />
         )}
       </For>
@@ -182,7 +241,15 @@ function EmbedView(props: {
   handle: DocHandle<EmbarkCanvasDoc>;
   selected: boolean;
   onSelect: () => void;
+  onDelete: () => void;
+  findBinAt: (
+    clientX: number,
+    clientY: number,
+    excludeId: string,
+  ) => EmbarkEmbed | null;
+  onCopyToBin: (bin: EmbarkEmbed, source: EmbarkEmbed) => void;
 }) {
+  let rootEl: HTMLDivElement | undefined;
   let interaction: Interaction | null = null;
 
   const beginInteraction =
@@ -231,6 +298,32 @@ function EmbedView(props: {
       handle.releasePointerCapture(event.pointerId);
     }
     interaction = null;
+
+    // Dropping a move onto a parts bin copies the embed in and springs it back
+    // to where the drag began, so it reads as "took a copy" rather than a move.
+    // Resizes never copy, and a bin can't be dropped into a bin.
+    if (state.mode !== "move" || props.embed.toolId === "parts-bin") return;
+    const bin = props.findBinAt(event.clientX, event.clientY, props.embed.id);
+    if (!bin) return;
+
+    const dx = event.clientX - state.startClientX;
+    const dy = event.clientY - state.startClientY;
+    props.handle.change((canvas) => {
+      const target = canvas.embeds[props.embed.id];
+      if (!target) return;
+      target.x = state.originX;
+      target.y = state.originY;
+    });
+    void props.onCopyToBin(bin, props.embed);
+    // The reset above moves the element to its origin synchronously, so animate
+    // the transform from the drop point back to zero for the spring-back.
+    rootEl?.animate(
+      [
+        { transform: `translate(${dx}px, ${dy}px)` },
+        { transform: "translate(0px, 0px)" },
+      ],
+      { duration: 240, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
+    );
   };
 
   const bringToFront = () => {
@@ -244,6 +337,7 @@ function EmbedView(props: {
 
   return (
     <div
+      ref={rootEl}
       class="embark-embed"
       classList={{ "embark-embed--selected": props.selected }}
       style={{
@@ -263,6 +357,19 @@ function EmbedView(props: {
         on:pointercancel={endInteraction}
       >
         <GripIcon />
+        <button
+          type="button"
+          class="embark-embed__delete"
+          title="Remove from canvas"
+          aria-label="Remove from canvas"
+          on:pointerdown={(event) => event.stopPropagation()}
+          on:click={(event) => {
+            event.stopPropagation();
+            props.onDelete();
+          }}
+        >
+          <CloseIcon />
+        </button>
       </div>
       <div class="embark-embed__view">
         <patchwork-view doc-url={props.embed.docUrl} tool-id={props.embed.toolId} />
@@ -289,6 +396,24 @@ function GripIcon() {
       <circle cx="5" cy="15" r="1.2" />
       <circle cx="12" cy="15" r="1.2" />
       <circle cx="19" cy="15" r="1.2" />
+    </svg>
+  );
+}
+
+// Thin "x" glyph for the delete button; inherits the button's text color.
+function CloseIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2.5"
+      stroke-linecap="round"
+      aria-hidden="true"
+    >
+      <path d="M6 6l12 12M18 6L6 18" />
     </svg>
   );
 }

@@ -2,6 +2,8 @@ import { plugins as canvasPlugins } from "./canvas";
 import { plugins as partsBinPlugins } from "./canvas/parts-bin";
 import { plugins as searchPlugins } from "./search";
 import { plugins as poiPlugins } from "./poi";
+import { plugins as cardPlugins } from "./card";
+import { plugins as mapPlugins } from "./map";
 import { plugins as mentionPlugins } from "./mention";
 
 export const plugins = [
@@ -9,5 +11,7 @@ export const plugins = [
   ...partsBinPlugins,
   ...searchPlugins,
   ...poiPlugins,
+  ...cardPlugins,
+  ...mapPlugins,
   ...mentionPlugins,
 ];

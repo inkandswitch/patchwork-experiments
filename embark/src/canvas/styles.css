@@ -57,8 +57,10 @@
     0 6px 16px rgba(0, 0, 0, 0.08);
 }
 
-/* The little drag handle: a slim strip with a grip glyph. */
+/* The little drag handle: a slim strip with a grip glyph centered, and a
+   delete button parked at the right edge. */
 .embark-embed__handle {
+  position: relative;
   flex: 0 0 auto;
   height: 22px;
   display: flex;
@@ -74,6 +76,39 @@
 
 .embark-embed__handle:active {
   cursor: grabbing;
+}
+
+/* Delete button in the top-right of the drag bar. Absolutely positioned so the
+   grip stays centered. Fades up on hover of the embed. */
+.embark-embed__delete {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #a8a29e;
+  cursor: pointer;
+  line-height: 0;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.embark-embed:hover .embark-embed__delete,
+.embark-embed__delete:focus-visible {
+  opacity: 1;
+}
+
+.embark-embed__delete:hover {
+  background: #e7e5e4;
+  color: #44403c;
 }
 
 .embark-embed__view {

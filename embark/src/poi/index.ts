@@ -22,14 +22,4 @@ export const plugins: Plugin<any>[] = [
       return PoiProviderDatatype;
     },
   },
-  {
-    type: "patchwork:datatype",
-    id: "poi-result",
-    name: "POI Result",
-    icon: "MapPin",
-    async load() {
-      const { PoiResultDatatype } = await import("./datatype");
-      return PoiResultDatatype;
-    },
-  },
 ];

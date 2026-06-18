@@ -15,7 +15,11 @@ import {
   type Tooltip,
   type ViewUpdate,
 } from "@codemirror/view";
-import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
+import {
+  parseAutomergeUrl,
+  type AutomergeUrl,
+  type DocHandle,
+} from "@automerge/automerge-repo";
 import { subscribe } from "@inkandswitch/patchwork-providers";
 import type { SearchDoc } from "../search/datatype";
 import "./mention.css";
@@ -245,13 +249,14 @@ function navigate(view: EditorView, delta: number): boolean {
 }
 
 // Replaces the `@query` span with a Markdown link to the chosen result:
-// `[title](automerge:…)`.
+// `[title](/#doc=<documentId>)`. The app routes `/#doc=` links; the canvas
+// schema-match provider also follows them when traversing documents.
 function applySelected(view: EditorView, index?: number): boolean {
   const active = view.state.field(menuState, false)?.active;
   if (!active || active.results.length === 0) return false;
   const result = active.results[index ?? active.index];
   if (!result) return false;
-  const link = `[${result.title}](${result.url})`;
+  const link = `[${result.title}](/#doc=${parseAutomergeUrl(result.url).documentId})`;
   view.dispatch({
     changes: { from: active.from, to: active.to, insert: link },
     selection: { anchor: active.from + link.length },
@@ -318,8 +323,15 @@ async function resolveResult(url: AutomergeUrl): Promise<Result> {
 }
 
 function docTitle(doc: unknown, url: AutomergeUrl): string {
-  const record = (doc ?? {}) as { title?: unknown; place?: { name?: unknown } };
+  const record = (doc ?? {}) as {
+    title?: unknown;
+    content?: unknown;
+    props?: { name?: unknown };
+    place?: { name?: unknown };
+  };
   if (typeof record.title === "string" && record.title) return record.title;
+  if (typeof record.props?.name === "string" && record.props.name) return record.props.name;
+  if (typeof record.content === "string" && record.content) return record.content;
   if (typeof record.place?.name === "string" && record.place.name) return record.place.name;
   return shortUrl(url);
 }

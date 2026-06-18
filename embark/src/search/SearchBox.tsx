@@ -9,11 +9,14 @@ import type { SearchDoc } from "./datatype";
 import "./search.css";
 
 // What the search box knows how to display about a result document. Kept
-// structural (rather than importing the POI doc type) so the box can render any
-// contributor's result docs, not just POIs.
+// structural (rather than importing a contributor's doc type) so the box can
+// render any result doc — cards (`content`/`props`), POI places, or anything
+// else with a title.
 type SearchResultDoc = {
   title?: string;
-  place?: { name: string; type?: string };
+  content?: string;
+  props?: { name?: string; type?: string };
+  place?: { name?: string; type?: string };
 };
 
 // Tool entry point: a query box that publishes its query to the canvas search
@@ -81,29 +84,23 @@ function SearchBox(props: { handle: DocHandle<SearchDoc>; element: ToolElement }
   );
 }
 
-// One result document. Each result is its own doc now, so this renders the
-// single place it carries (or its title as a fallback for non-POI results).
+// One result document — typically a card. Renders its display name (a card's
+// `props.name`/`content`, or a POI place name, or a title) with an optional
+// type tag.
 function ResultRow(props: { url: AutomergeUrl }) {
   const [doc] = useDocument<SearchResultDoc>(() => props.url);
-  const place = () => doc()?.place;
+  const name = () =>
+    doc()?.props?.name ?? doc()?.place?.name ?? doc()?.content ?? doc()?.title;
+  const type = () => doc()?.props?.type ?? doc()?.place?.type;
 
   return (
-    <Show when={doc()}>
-      <Show
-        when={place()}
-        fallback={
-          <Show when={doc()?.title}>
-            <div class="embark-search__result">{doc()?.title}</div>
-          </Show>
-        }
-      >
-        <div class="embark-search__result">
-          <span class="embark-search__result-name">{place()!.name}</span>
-          <Show when={place()!.type}>
-            <span class="embark-search__result-type">{place()!.type}</span>
-          </Show>
-        </div>
-      </Show>
+    <Show when={doc() && name()}>
+      <div class="embark-search__result">
+        <span class="embark-search__result-name">{name()}</span>
+        <Show when={type()}>
+          <span class="embark-search__result-type">{type()}</span>
+        </Show>
+      </div>
     </Show>
   );
 }

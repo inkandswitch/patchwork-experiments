@@ -1,4 +1,6 @@
+import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
+import { MountedEvent, UnmountedEvent } from "@inkandswitch/patchwork-elements";
 import {
   For,
   Show,
@@ -14,7 +16,8 @@ import {
   RESPONSES_SELECTOR,
   type SearchResponseDoc,
 } from "../canvas/providers/SearchProvider";
-import type { Place, PoiResultDoc } from "./datatype";
+import type { CardDoc } from "../card/datatype";
+import type { Place } from "./datatype";
 import "./poi.css";
 
 const DEBOUNCE_MS = 350;
@@ -58,10 +61,12 @@ function PoiProvider(props: { element: ToolElement }) {
     { type: RESPONSES_SELECTOR },
   );
 
-  // Per-query debounce timers, the queries we've already answered, and a status
-  // map purely for the UI.
+  // Per-query debounce timers, the queries we've already answered, the card
+  // urls minted per query (so they can be unmounted when the query goes away),
+  // and a status map purely for the UI.
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
   const handled = new Set<string>();
+  const cardsByQuery = new Map<string, AutomergeUrl[]>();
   const [status, setStatus] = createSignal<Record<string, QueryStatus>>({});
 
   // The active query set, recomputed only when the set itself changes (not when
@@ -86,7 +91,8 @@ function PoiProvider(props: { element: ToolElement }) {
       timers.set(query, timer);
     }
 
-    // Forget queries the broker dropped: cancel pending fetches and clear status.
+    // Forget queries the broker dropped: cancel pending fetches, clear status,
+    // and unmount the cards we created for them.
     for (const query of [...handled]) {
       if (!active.has(query)) handled.delete(query);
     }
@@ -94,6 +100,9 @@ function PoiProvider(props: { element: ToolElement }) {
       if (active.has(query)) continue;
       clearTimeout(timer);
       timers.delete(query);
+    }
+    for (const query of [...cardsByQuery.keys()]) {
+      if (!active.has(query)) unmountCards(query);
     }
     setStatus((s) => {
       const next: Record<string, QueryStatus> = {};
@@ -105,6 +114,7 @@ function PoiProvider(props: { element: ToolElement }) {
   onCleanup(() => {
     for (const timer of timers.values()) clearTimeout(timer);
     timers.clear();
+    for (const query of [...cardsByQuery.keys()]) unmountCards(query);
   });
 
   const runSearch = async (query: string) => {
@@ -115,22 +125,49 @@ function PoiProvider(props: { element: ToolElement }) {
       // The broker may have dropped this query while we were fetching; don't
       // resurrect a stale key.
       if (!handle || !(query in (handle.doc() ?? {}))) return;
-      // One result document per place so each can be linked separately.
+      // One card document per place so each can be linked and matched
+      // separately. Coordinates live in `props` for the schema-match provider.
       const urls = places.map(
         (place) =>
-          repo.create<PoiResultDoc>({
-            "@patchwork": { type: "poi-result" },
-            query,
-            place,
+          repo.create<CardDoc>({
+            "@patchwork": { type: "card" },
+            props: {
+              name: place.name,
+              lat: place.lat,
+              lon: place.lon,
+              type: place.type,
+            },
+            content: place.name,
           }).url,
       );
       handle.change((doc) => {
         if (query in doc) doc[query] = urls;
       });
       handled.add(query);
+      mountCards(query, urls);
       setStatus((s) => ({ ...s, [query]: places.length }));
     } catch {
       setStatus((s) => ({ ...s, [query]: "error" }));
+    }
+  };
+
+  // Announce the cards minted for a query as mounted documents so the canvas
+  // schema-match provider can discover and traverse them — they're never put in
+  // a `<patchwork-view>`, so these synthetic events are their only signal.
+  const mountCards = (query: string, urls: AutomergeUrl[]) => {
+    unmountCards(query); // replace any previous generation for this query
+    cardsByQuery.set(query, urls);
+    for (const url of urls) {
+      props.element.dispatchEvent(new MountedEvent({ url, toolId: "card" }));
+    }
+  };
+
+  const unmountCards = (query: string) => {
+    const urls = cardsByQuery.get(query);
+    if (!urls) return;
+    cardsByQuery.delete(query);
+    for (const url of urls) {
+      props.element.dispatchEvent(new UnmountedEvent({ url, toolId: "card" }));
     }
   };
 

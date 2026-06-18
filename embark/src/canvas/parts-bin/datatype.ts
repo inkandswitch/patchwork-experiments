@@ -3,6 +3,11 @@ import type { DatatypeImplementation } from "@inkandswitch/patchwork-plugins";
 import type { PartsBinDoc, PartsBinItem } from "./types";
 import type { SearchDoc } from "../../search/datatype";
 import type { PoiProviderDoc } from "../../poi/datatype";
+import {
+  DEFAULT_CENTER,
+  DEFAULT_ZOOM,
+  type MapDoc,
+} from "../../map/datatype";
 
 export const PartsBinDatatype: DatatypeImplementation<PartsBinDoc> = {
   init(doc, repo) {
@@ -30,10 +35,10 @@ export function createPartsBin(repo: Repo): DocHandle<PartsBinDoc> {
   });
 }
 
-// The starter set: a search box and a POI provider. Each is a real document;
-// the bin previews them live and hands out clones on drag. `repo.create`
-// doesn't run a datatype's `init`, so each child doc's initial value is set
-// inline here.
+// The starter set: a search box, a POI provider, and a map. Each is a real
+// document; the bin previews them live and hands out clones on drag.
+// `repo.create` doesn't run a datatype's `init`, so each child doc's initial
+// value is set inline here.
 function seedExampleItems(repo: Repo): PartsBinItem[] {
   const search = repo.create<SearchDoc>({
     "@patchwork": { type: "search" },
@@ -43,9 +48,15 @@ function seedExampleItems(repo: Repo): PartsBinItem[] {
   const poi = repo.create<PoiProviderDoc>({
     "@patchwork": { type: "poi-provider" },
   });
+  const map = repo.create<MapDoc>({
+    "@patchwork": { type: "map" },
+    center: [...DEFAULT_CENTER],
+    zoom: DEFAULT_ZOOM,
+  });
 
   return [
     { url: search.url, toolId: "search" },
     { url: poi.url, toolId: "poi-provider" },
+    { url: map.url, toolId: "map" },
   ];
 }
