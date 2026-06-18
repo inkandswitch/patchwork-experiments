@@ -1049,101 +1049,6 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
   }, 2000);
 };
 
-w.preamble = function () {
-  return `
-// *** Classes and inheritance...
-w.classProto = newObj();
-w.classProto.new = function () {
-  const obj = newObj(this.proto);
-  obj.className = this.name;
-  obj.initialize(...arguments);
-  return obj;
-};
-w.newClass = function(name) {
-  const cls = newObj(w.classProto);
-  cls.proto = newObj();
-  cls.name = name;
-  console.log('defining ' + name + '...');
-  return cls;
-};
-w.classProto.subClass = function(name) { 
-  const cls = w.newClass(name);
-  cls.proto = newObj(this.proto);
-  return cls;
-}
-w.classProto.inheritsFrom = function(maybeSuper) { 
-  return w.getPrototypeOf(this.proto) === maybeSuper.proto;
-};
-
-// ***Instances and delegation
-w.objProto.isClass = function () { return false };
-w.classProto.isClass = function () { return true };
-
-w.objProto.delegatesTo = function(parent) {
-  let curr = this;
-  while(curr) {
-    if (curr === parent) return true;
-    curr = w.getPrototypeOf(curr);
-  }
-  return false;
-};
-w.objProto.instanceOf = function(cls) {
-  return cls.isClass() && this.delegatesTo(cls.proto);
-};
-w.Obj = w.newClass('Obj');
-w.Obj.proto = w.objProto;
-
-// *** Canvas access
-w.render = function () {
-  const canvas = document.querySelector ('canvas')
-  if (!canvas) return
-  const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  w.topLevelMorph.render(ctx);
-};
-w.canvas = function () {
-  return document.querySelector('canvas');
-};
-w.primaryCanvasElement = function () {
-  if (typeof document === 'undefined') return null;
-  let els = document.getElementsByTagName('canvas');
-  if (els && els[0]) return els[0];
-  return w.canvas();
-};
-w.viewportBounds = function () {
-  if (typeof document === 'undefined') return null;
-  let c = w.primaryCanvasElement();
-  if (!c) return null;
-  let rw;
-  let rh;
-  let cont = document.querySelector('.canvas-container');
-  if (cont) {
-    let r = cont.getBoundingClientRect();
-    rw = r.width;
-    rh = r.height;
-  }
-  if (!rw || !rh) {
-    let r2 = c.getBoundingClientRect();
-    rw = r2.width;
-    rh = r2.height;
-  }
-  if (!rw || !rh) {
-    rw = c.clientWidth || c.width;
-    rh = c.clientHeight || c.height;
-  }
-  if (!rw || !rh) return null;
-  return w.rect(0, 0, Math.max(1, Math.round(rw)), Math.max(1, Math.round(rh)));
-};
-w.getBounds = function () {
-  let vp = w.viewportBounds();
-  if (vp) return vp;
-  const canvas = w.canvas();
-  if (!canvas) return;
-  return w.rect(0, 0, canvas.width, canvas.height);
-};
-
-`;
-};
 w.preambleForClass = function (cls) {
   //w.preambleForClass(w.Ellipse);
   let sup = w.findSuperclassOf(cls);
@@ -2025,22 +1930,6 @@ w.Morph.proto.onTextBoundsChanged = function () {
 w.Morph.proto.position = function () {
   return this.getBounds().topLeft;
 };
-w.Morph.proto.printSceneGraph = function (level) {
-  // w.Lively.printSceneGraph()
-  if (!level) level = 0;
-  let str =
-    '\n' +
-    '  '.repeat(level) +
-    this.asString() +
-    ' [' +
-    this.localize(w.pt(100, 100)).asString() +
-    ']';
-  str += '\n' + '  '.repeat(level) + '        translation = ' + this.translation().asString();
-  this.submorphs.forEach((morph) => {
-    str += morph.printSceneGraph(level + 1);
-  });
-  return str;
-};
 w.Morph.proto.promote = function (submorph) {
   if (submorph === this.submorphs.at(-1)) return; // already frontmost
   let idx = this.submorphs.indexOf(submorph);
@@ -2207,26 +2096,6 @@ w.Morph.proto.topMorph = function () {
   if (this.owner.owner == null) return this;
   return this.owner.topMorph();
 };
-w.Morph.proto.transformIFY = function () {
-  // convert this morph from absolute coords to use transform
-  let bnds = this.getBounds();
-  let offset = bnds.topLeft;
-  if (this.owner != null) offset = offset.subPt(this.owner.getBounds().topLeft);
-  this.transform.translation = offset;
-  this.shape.setBounds(
-    // shape coords become local
-    bnds.movedBy(offset.negated()),
-  );
-};
-w.Morph.proto.transformIFYall = function () {
-  // convert all my submorphs (etc) to local coords
-  // - be sure to save first!! -
-  //w.Lively.transformIFYall()
-  this.transformIFY();
-  this.submorphs.forEach((m) => {
-    m.transformIFYall();
-  });
-};
 w.Morph.proto.translateBy = function (pt) {
   this.transform.translation = this.transform.translation.addPt(pt);
 };
@@ -2235,6 +2104,7 @@ w.Morph.proto.translation = function () {
 };
 w.Morph.proto.verifyMorphs = function (level) {
   // w.Lively.verifyMorphs()
+  // Essentially prints the scene graph
   if (!level) level = 0;
   let str =
     '\n' +
@@ -2263,11 +2133,6 @@ w.Morph.proto.myOwningHand = function () {
     m = m.owner;
   }
   return null;
-};
-w.Morph.proto.worldLevel = function () {
-  // returns depth of this morph in the scene graph
-  if (this.owner) return 1 + this.owner.worldLevel();
-  return 0;
 };
 
 w.Obj = w.newClass('Obj');
@@ -2732,6 +2597,13 @@ w.TextCharSpec.proto.initialize = function (lineNo, lineY, charX, strIx) {
   this.lineY = lineY;
   this.charX = charX;
   this.strIx = strIx;
+};
+
+w.TextLineSpec = w.newClass('TextLineSpec');
+w.TextLineSpec.proto.initialize = function (p, ext, str) {
+  this.topLeft = p;
+  this.extent = ext;
+  this.string = str;
 };
 
 w.HaloHandle = w.Morph.subClass('HaloHandle');
@@ -7249,33 +7121,23 @@ w.TextBox.proto.clearTyping = function () {
   this.duringTyping = false;
 };
 w.TextBox.proto.compose = function () {
-  // This version will break not only at newLines, but also
-  // at any alphanumeric preceded by a non-alphanumeric.
-  // That covers normal 'word-breaks', but also, eg, long JS epressions.
-  // I'm sure regex magic could help, but this is readable
   this.lines = [];
   this.lineStarts = [];
   let ctx = this.getTextContext(this.font);
   let str = this.string;
   let lineStart = 0;
-  let newline = 13;
-  let lineFeed = 10;
   let lineTopLeft = this.topLeft.addPt(this.inset);
   let lineNo = 0;
-  let inAlpha = false; // means we are in middle of an identifier
-  let alphaBreak = 0; // most recent start of an identifier
+  let inAlpha = false;
+  let alphaBreak = 0;
   for (let idx = 0; idx < str.length; idx++) {
     let c = str[idx];
     let isAlpha = /^[a-zA-Z0-9]*$/.test(c);
-    // console.log(`str[idx] = ${str[idx]}; charCode = ${c}`)
     if (c == '\n' || c == '\r' || idx == str.length - 1) {
-      // Break after newLine (also end of string)
-      let thisLine = w.TextLine.new(
+      let thisLine = w.TextLineSpec.new(
         lineTopLeft,
         w.pt(this.extent.x, this.lineHeight),
         str.slice(lineStart, idx + 1),
-        this.font,
-        w.Color.blue,
       );
       this.lines.push(thisLine);
       this.lineStarts.push(lineStart);
@@ -7283,31 +7145,25 @@ w.TextBox.proto.compose = function () {
       lineTopLeft = lineTopLeft.addPt(w.pt(0, this.lineHeight));
       lineStart = idx + 1;
     } else if (!this.noBreak) {
-      {
-        // Check if we're out of bounds...
-        let maybeLine = str.slice(lineStart, idx + 1); // leaves off the newline
-        let metrics = ctx.measureText(maybeLine);
-        if (metrics.width >= this.extent.x) {
-          // We're out of bounds; Need to issue a line up to previous break
-          let thisLine = w.TextLine.new(
-            lineTopLeft,
-            w.pt(this.extent.x, this.lineHeight),
-            str.slice(lineStart, alphaBreak),
-            this.font,
-            w.Color.blue,
-          );
-          this.lines.push(thisLine);
-          this.lineStarts.push(lineStart);
-          lineNo++;
-          lineTopLeft = lineTopLeft.addPt(w.pt(0, this.lineHeight));
-          lineStart = alphaBreak;
-        }
-        if (!inAlpha && isAlpha) {
-          alphaBreak = idx; // Note this break and carry on
-          inAlpha = true;
-        }
-        inAlpha = isAlpha; // Track when we are 'in' an identifier
+      let maybeLine = str.slice(lineStart, idx + 1);
+      let metrics = ctx.measureText(maybeLine);
+      if (metrics.width >= this.extent.x) {
+        let thisLine = w.TextLineSpec.new(
+          lineTopLeft,
+          w.pt(this.extent.x, this.lineHeight),
+          str.slice(lineStart, alphaBreak),
+        );
+        this.lines.push(thisLine);
+        this.lineStarts.push(lineStart);
+        lineNo++;
+        lineTopLeft = lineTopLeft.addPt(w.pt(0, this.lineHeight));
+        lineStart = alphaBreak;
       }
+      if (!inAlpha && isAlpha) {
+        alphaBreak = idx;
+        inAlpha = true;
+      }
+      inAlpha = isAlpha;
     }
   }
   return lineTopLeft.y + 2;
@@ -7921,24 +7777,6 @@ w.TextBox.proto.xValuesForLine = function (lineNo) {
   }
   //console.log(s);
   return xVals;
-};
-
-w.TextLine = w.Shape.subClass('TextLine');
-w.TextLine.proto.initialize = function (p, ext, str, ft, fillColor, outlined) {
-  let bounds = p.extent(ext);
-  w.Shape.proto.initialize.call(this, 'TextLine', bounds, w.Color.orange, 2, w.Color.black);
-  this.string = str;
-  this.font = ft ? ft : '24px serif';
-  this.fill = fillColor;
-  this.outline = null; //outlined ? outlined : null;  // Unless true, use normal solid strokes
-};
-w.TextLine.proto.render = function (ctx) {
-  ctx.fillStyle = w.Color.orange.fillStyle;
-  ctx.fillRect(this.topLeft.x, this.topLeft.y, this.extent.x, this.extent.y);
-  ctx.fillStyle = this.fill.fillStyle;
-  ctx.font = this.font;
-  ctx.textBaseline = 'hanging';
-  ctx.fillText(this.string, this.topLeft.x, this.topLeft.y, this.extent.x);
 };
 
 w.TextPane = w.ScrollPane.subClass('TextPane');
