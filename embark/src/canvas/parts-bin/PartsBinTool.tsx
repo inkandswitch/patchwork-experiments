@@ -3,18 +3,31 @@ import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import type { SubscribeEvent } from "@inkandswitch/patchwork-providers";
 import { For } from "solid-js";
 import { render } from "solid-js/web";
-import { RepoContext, useDocHandle, useDocument, useRepo } from "solid-automerge";
+import {
+  RepoContext,
+  useDocHandle,
+  useDocument,
+  useRepo,
+} from "solid-automerge";
 import "@inkandswitch/patchwork-elements";
-import { QUERY_SELECTOR, RESPONSES_SELECTOR } from "../providers/SearchProvider";
+import {
+  QUERY_SELECTOR,
+  RESPONSES_SELECTOR,
+} from "../providers/SearchProvider";
 import type { PartsBinDoc, PartsBinItem } from "./types";
 import "./parts-bin.css";
+import { MATCHES_SELECTOR } from "../providers/SchemaMatchProvider";
 
 // Selectors the bin must isolate. The previews are live documents, so the
 // search box / POI provider rendered inside them dispatch `patchwork:subscribe`
 // for these. We can't blanket-stop every subscribe (that breaks the providers
 // the previews legitimately rely on, e.g. `<patchwork-view>`'s own repo
 // lookups), so for now we hard-code the search-related ones.
-const ISOLATED_SELECTORS = new Set<string>([QUERY_SELECTOR, RESPONSES_SELECTOR]);
+const ISOLATED_SELECTORS = new Set<string>([
+  QUERY_SELECTOR,
+  RESPONSES_SELECTOR,
+  MATCHES_SELECTOR,
+]);
 
 // A palette of example documents. Each row previews a live document; dragging
 // the row out (anywhere on the card) writes the standard Patchwork drag payload
@@ -147,7 +160,13 @@ function PartsBinRow(props: {
 // Six-dot grip glyph for the drag affordance; inherits the grip's text color.
 function GripIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+    >
       <circle cx="5" cy="9" r="1.2" />
       <circle cx="12" cy="9" r="1.2" />
       <circle cx="19" cy="9" r="1.2" />

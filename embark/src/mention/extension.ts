@@ -5,17 +5,22 @@ import {
   StateField,
   type EditorState,
   type Extension,
+  type Range,
 } from "@codemirror/state";
 import {
+  Decoration,
   EditorView,
   ViewPlugin,
+  WidgetType,
   keymap,
   showTooltip,
   tooltips,
+  type DecorationSet,
   type Tooltip,
   type ViewUpdate,
 } from "@codemirror/view";
 import {
+  isValidAutomergeUrl,
   parseAutomergeUrl,
   type AutomergeUrl,
   type DocHandle,
@@ -23,6 +28,20 @@ import {
 import { subscribe } from "@inkandswitch/patchwork-providers";
 import type { SearchDoc } from "../search/datatype";
 import "./mention.css";
+
+// The mention token literal `[Name]{automerge-url}`. The url is stored
+// verbatim (it may be an extended sub-url such as
+// `automerge:<id>/contextToolIds/@0`), validated with `isValidAutomergeUrl`
+// before it's rendered as a pill.
+const MENTION_RE = /\[([^\]\n]+)\]\{([^}\n]+)\}/g;
+
+// The shared focus store ([providers/src/FocusProvider.ts]) keyed by url.
+// Defined locally so the (vanilla CodeMirror) extension needn't depend on the
+// Solid provider package.
+type FocusDoc = {
+  selection: Record<AutomergeUrl, true>;
+  highlight: Record<AutomergeUrl, true>;
+};
 
 // One result the broker surfaced for the active query: the document it points
 // at (`automerge:…`, used verbatim as the link target) and a resolved title.
@@ -43,12 +62,13 @@ type Mention = {
 // the token into something new.
 type MenuState = { active: Mention | null; dismissed: string | null };
 
-// Entry point. The `@mention` feature stays dormant until a search broker is
-// discovered, so this returns just an empty compartment plus a probe that fills
-// it in once a provider answers. Until then (possibly forever) typing `@` does
-// nothing special.
+// Entry point. The pill renderer and focus wiring are always installed (they
+// only act on tokens already in the document). The `@mention` search menu,
+// by contrast, stays dormant until a search broker is discovered: the empty
+// compartment plus a probe fill it in once a provider answers. Until then
+// (possibly forever) typing `@` does nothing special.
 export function mentionSearch(): Extension {
-  return [activation.of([]), brokerProbe];
+  return [mentionTokens(), focusHighlight(), activation.of([]), brokerProbe];
 }
 
 const activation = new Compartment();
@@ -248,18 +268,20 @@ function navigate(view: EditorView, delta: number): boolean {
   return true;
 }
 
-// Replaces the `@query` span with a Markdown link to the chosen result:
-// `[title](/#doc=<documentId>)`. The app routes `/#doc=` links; the canvas
-// schema-match provider also follows them when traversing documents.
+// Replaces the `@query` span with a mention token for the chosen result:
+// `[Name]{automerge-url}`. The url is stored verbatim (native automerge url,
+// possibly a sub-url); the pill renderer below turns it into an atomic chip.
 function applySelected(view: EditorView, index?: number): boolean {
   const active = view.state.field(menuState, false)?.active;
   if (!active || active.results.length === 0) return false;
   const result = active.results[index ?? active.index];
   if (!result) return false;
-  const link = `[${result.title}](/#doc=${parseAutomergeUrl(result.url).documentId})`;
+  // `]` and newlines would prematurely close the name part of the token.
+  const name = result.title.replace(/[\]\n]/g, " ").trim() || shortUrl(result.url);
+  const token = `[${name}]{${result.url}}`;
   view.dispatch({
-    changes: { from: active.from, to: active.to, insert: link },
-    selection: { anchor: active.from + link.length },
+    changes: { from: active.from, to: active.to, insert: token },
+    selection: { anchor: active.from + token.length },
   });
   view.focus();
   return true;
@@ -347,4 +369,266 @@ function triggerKey(t: { from: number; query: string }): string {
 function wrapIndex(index: number, length: number): number {
   if (length === 0) return 0;
   return ((index % length) + length) % length;
+}
+
+// ---------------------------------------------------------------------------
+// Pill renderer
+//
+// Every `[Name]{url}` whose url validates is replaced by an atomic chip. The
+// raw source is never revealed for editing — to change a mention, delete it
+// (Backspace removes the whole token) and mention again. Always on, regardless
+// of whether a search broker was ever found.
+// ---------------------------------------------------------------------------
+
+function mentionTokens(): Extension {
+  return [mentionPlugin];
+}
+
+const mentionPlugin = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+
+    constructor(view: EditorView) {
+      this.decorations = buildMentions(view);
+    }
+
+    update(update: ViewUpdate) {
+      // Selection never affects rendering (we always show the pill); only the
+      // text, the viewport, or the focus set can change what's drawn.
+      const focusChanged =
+        update.startState.field(focusedUrls, false) !==
+        update.state.field(focusedUrls, false);
+      if (update.docChanged || update.viewportChanged || focusChanged) {
+        this.decorations = buildMentions(update.view);
+      }
+    }
+  },
+  {
+    decorations: (plugin) => plugin.decorations,
+    // Treat each pill as one unit: the caret skips over it and Backspace
+    // deletes the whole token rather than peeling off the trailing `}`.
+    provide: (plugin) =>
+      EditorView.atomicRanges.of(
+        (view) => view.plugin(plugin)?.decorations ?? Decoration.none,
+      ),
+  },
+);
+
+// Replace each valid mention token over the visible ranges with a pill.
+function buildMentions(view: EditorView): DecorationSet {
+  const focused = view.state.field(focusedUrls, false) ?? EMPTY_FOCUS;
+  const widgets: Range<Decoration>[] = [];
+  for (const { from, to } of view.visibleRanges) {
+    const text = view.state.doc.sliceString(from, to);
+    for (const match of text.matchAll(MENTION_RE)) {
+      const raw = match[2].trim();
+      if (!isValidAutomergeUrl(raw)) continue; // leave malformed tokens as text
+      const start = from + (match.index ?? 0);
+      const end = start + match[0].length;
+      const isFocused = focused.has(parseAutomergeUrl(raw).documentId);
+      widgets.push(
+        Decoration.replace({
+          widget: new MentionWidget(match[1], raw, isFocused),
+        }).range(start, end),
+      );
+    }
+  }
+  return Decoration.set(widgets, true);
+}
+
+class MentionWidget extends WidgetType {
+  constructor(
+    readonly name: string,
+    readonly url: AutomergeUrl,
+    readonly focused: boolean,
+  ) {
+    super();
+  }
+
+  eq(other: MentionWidget): boolean {
+    return (
+      other.url === this.url &&
+      other.name === this.name &&
+      other.focused === this.focused
+    );
+  }
+
+  toDOM(): HTMLElement {
+    const span = document.createElement("span");
+    span.className = this.focused ? "cm-mention cm-mention--focused" : "cm-mention";
+    span.textContent = this.name;
+    span.title = this.url;
+    span.addEventListener("click", (event) => {
+      event.preventDefault();
+      // Open the target document via the app's hash route (`#doc=<id>`).
+      const params = new URLSearchParams();
+      params.set("doc", parseAutomergeUrl(this.url).documentId);
+      window.location.hash = params.toString();
+    });
+    return span;
+  }
+
+  ignoreEvent(event: Event): boolean {
+    return event.type !== "click";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Focus highlight
+//
+// Tokens light up when their target *document* is in focus, and focusing a
+// token (caret inside it, or a selection overlapping it) writes that document
+// into the shared focus store so the target's own views light up too. This
+// mirrors `searchController`'s plumbing rather than the Solid helper, because
+// the extension is vanilla CodeMirror. Degrades to a no-op when no
+// FocusProvider is reachable.
+// ---------------------------------------------------------------------------
+
+const EMPTY_FOCUS = new Set<string>();
+
+// The set of focused document ids (selection ∪ highlight from the FocusDoc),
+// normalized to bare documentIds so a token matches whether the store holds a
+// plain url or a sub-url for its target.
+const setFocusUrls = StateEffect.define<Set<string>>();
+
+const focusedUrls = StateField.define<Set<string>>({
+  create: () => EMPTY_FOCUS,
+  update(value, tr) {
+    for (const effect of tr.effects) {
+      if (effect.is(setFocusUrls)) return effect.value;
+    }
+    return value;
+  },
+});
+
+function focusHighlight(): Extension {
+  return [focusedUrls, focusController];
+}
+
+const focusController = ViewPlugin.fromClass(
+  class {
+    private handle?: DocHandle<FocusDoc>;
+    private onDocChange?: () => void;
+    private discover?: () => void;
+    private destroyed = false;
+    // The highlight entry this editor currently owns (its focused token's
+    // target), cleared when focus moves elsewhere.
+    private written?: AutomergeUrl;
+
+    constructor(private readonly view: EditorView) {
+      // One-shot discovery of the shared focus doc, like `brokerProbe`.
+      this.discover = subscribe(
+        view.dom,
+        { type: "patchwork:focus" },
+        (url: AutomergeUrl) => {
+          if (this.handle || !url) return;
+          const repo = window.repo;
+          if (!repo) return;
+          void Promise.resolve(repo.find<FocusDoc>(url)).then((handle) => {
+            if (this.destroyed) return;
+            this.handle = handle;
+            this.onDocChange = () => this.publishFocus();
+            handle.on("change", this.onDocChange);
+            this.publishFocus();
+            this.syncWrite();
+          });
+        },
+      );
+    }
+
+    update(update: ViewUpdate) {
+      if (update.selectionSet || update.docChanged) {
+        // Defer: writing the focus doc emits a "change" that dispatches back
+        // into the editor, which must not happen mid-update.
+        queueMicrotask(() => this.syncWrite());
+      }
+    }
+
+    // Project selection ∪ highlight to a set of documentIds and push it in.
+    private publishFocus() {
+      const doc = this.handle?.doc();
+      if (!doc) return;
+      const ids = new Set<string>();
+      const urls = [
+        ...Object.keys(doc.selection ?? {}),
+        ...Object.keys(doc.highlight ?? {}),
+      ];
+      for (const url of urls) {
+        if (isValidAutomergeUrl(url)) ids.add(parseAutomergeUrl(url).documentId);
+      }
+      queueMicrotask(() => {
+        if (this.destroyed) return;
+        const current = this.view.state.field(focusedUrls, false);
+        if (current && sameSet(current, ids)) return;
+        this.view.dispatch({ effects: setFocusUrls.of(ids) });
+      });
+    }
+
+    // Reflect the token under the caret into the shared `highlight` map.
+    private syncWrite() {
+      if (this.destroyed) return;
+      const target = focusedMentionUrl(this.view.state);
+      if (target === this.written) return;
+      const handle = this.handle;
+      const previous = this.written;
+      this.written = target;
+      if (!handle) return;
+      handle.change((doc) => rewriteHighlight(doc, previous, target));
+    }
+
+    destroy() {
+      this.destroyed = true;
+      this.discover?.();
+      if (this.handle && this.onDocChange) {
+        this.handle.off("change", this.onDocChange);
+      }
+      const handle = this.handle;
+      const previous = this.written;
+      if (handle && previous) {
+        handle.change((doc) => rewriteHighlight(doc, previous, undefined));
+      }
+    }
+  },
+);
+
+// Swap this editor's owned highlight entry by reassigning the whole map (a
+// `put`) rather than deleting a key in place. The host editor projects this
+// doc via automerge-repo-solid-primitives, whose patch reconciler throws
+// ("index is not a number for patch") on map-key `del` patches.
+function rewriteHighlight(
+  doc: FocusDoc,
+  remove: AutomergeUrl | undefined,
+  add: AutomergeUrl | undefined,
+): void {
+  const next: Record<AutomergeUrl, true> = {};
+  for (const url of Object.keys(doc.highlight ?? {}) as AutomergeUrl[]) {
+    if (url !== remove) next[url] = true;
+  }
+  if (add) next[add] = true;
+  doc.highlight = next;
+}
+
+// The url of the mention token the selection is focused on: the caret sitting
+// anywhere inside a token, or a non-empty selection overlapping one. Scans only
+// the lines spanning the selection, so it stays cheap.
+function focusedMentionUrl(state: EditorState): AutomergeUrl | undefined {
+  const sel = state.selection.main;
+  const base = state.doc.lineAt(sel.from).from;
+  const text = state.doc.sliceString(base, state.doc.lineAt(sel.to).to);
+  for (const match of text.matchAll(MENTION_RE)) {
+    const raw = match[2].trim();
+    if (!isValidAutomergeUrl(raw)) continue;
+    const start = base + (match.index ?? 0);
+    const end = start + match[0].length;
+    const caretInside = sel.empty && sel.head >= start && sel.head <= end;
+    const selectionOverlaps = !sel.empty && sel.from < end && sel.to > start;
+    if (caretInside || selectionOverlaps) return raw;
+  }
+  return undefined;
+}
+
+function sameSet(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const value of a) if (!b.has(value)) return false;
+  return true;
 }

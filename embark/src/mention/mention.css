@@ -1,3 +1,40 @@
+/* Atomic mention pill. Replaces the raw `[Name]{url}` token in the document. */
+.cm-mention {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.12);
+  color: #1d4ed8;
+  font-size: 0.95em;
+  line-height: 1.5;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s ease, box-shadow 0.12s ease;
+}
+
+.cm-mention::before {
+  content: "@";
+  opacity: 0.55;
+  margin-right: 1px;
+}
+
+.cm-mention:hover {
+  background: rgba(59, 130, 246, 0.22);
+}
+
+/* Lit when the token's target document is in focus (selection ∪ highlight in
+   the shared focus store): the same blue, just more intense. */
+.cm-mention--focused {
+  background: rgba(59, 130, 246, 0.34);
+  color: #1e3a8a;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.6);
+}
+
+.cm-mention--focused:hover {
+  background: rgba(59, 130, 246, 0.44);
+}
+
 /* The mention menu renders inside CodeMirror's .cm-tooltip wrapper. Neutralize
    the wrapper's chrome so only our own surface shows. */
 .cm-tooltip:has(.cm-mention-menu) {
@@ -41,6 +78,25 @@
 }
 
 @media (prefers-color-scheme: dark) {
+  .cm-mention {
+    background: rgba(96, 165, 250, 0.22);
+    color: #bfdbfe;
+  }
+
+  .cm-mention:hover {
+    background: rgba(96, 165, 250, 0.32);
+  }
+
+  .cm-mention--focused {
+    background: rgba(96, 165, 250, 0.48);
+    color: #ffffff;
+    box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.7);
+  }
+
+  .cm-mention--focused:hover {
+    background: rgba(96, 165, 250, 0.58);
+  }
+
   .cm-mention-menu {
     border-color: rgba(255, 255, 255, 0.12);
     background: #1f2937;

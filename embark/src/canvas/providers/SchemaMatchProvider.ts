@@ -4,19 +4,21 @@ import { accept, type SubscribeEvent } from "@inkandswitch/patchwork-providers";
 import type { MountedEvent, UnmountedEvent } from "@inkandswitch/patchwork-elements";
 import type { z } from "zod";
 import { jsonSchemaToZod, type JsonSchema } from "../../lib/schema";
-import { extractDocLinks, joinPointer, makeMatchUrl } from "../../lib/match-url";
+import { extractDocLinks } from "../../lib/doc-links";
 
 // A provider that answers "where does this schema occur?". A consumer subscribes
 // with a JSON Schema:
 //
 //   subscribe<AutomergeUrl[]>(el, { type: "schema:matches", schema })
 //
-// and gets back match urls — each a document url with a JSON Pointer fragment
-// (see match-url.ts) pointing at the exact subtree that matched. The provider
-// watches every document mounted beneath it (via `patchwork:mounted` /
-// `patchwork:unmounted` from `<patchwork-view>`), traverses each one — plus any
-// document it links to via an `automerge:` / `/#doc=` string — and re-emits
-// whenever the reachable docs, their contents, or the set of subscribers change.
+// and gets back match urls — each a native automerge sub-url
+// (`automerge:<id>/seg/seg`, from `handle.sub(...segments).url`) pointing at the
+// exact subtree that matched (the bare document url when the whole doc matched).
+// The provider watches every document mounted beneath it (via
+// `patchwork:mounted` / `patchwork:unmounted` from `<patchwork-view>`),
+// traverses each one — plus any document it links to via an `automerge:` string
+// — and re-emits whenever the reachable docs, their contents, or the set of
+// subscribers change.
 export const MATCHES_SELECTOR = "schema:matches";
 
 // Coalesce bursts (a doc change plus a mount, say) into a single pass.
@@ -113,8 +115,8 @@ export function SchemaMatchProvider(element: ToolElement): () => void {
     const reachable = collectReachable();
     for (const subscriber of subscribers) {
       const matches: AutomergeUrl[] = [];
-      for (const [url, doc] of reachable) {
-        collectMatches(doc, "", subscriber.schema, url, matches);
+      for (const handle of reachable.values()) {
+        collectMatches(handle.doc(), [], subscriber.schema, handle, matches);
       }
       if (subscriber.last && sameUrls(subscriber.last, matches)) continue;
       subscriber.last = matches;
@@ -124,10 +126,11 @@ export function SchemaMatchProvider(element: ToolElement): () => void {
 
   // Breadth-first closure from the mounted roots, following document links found
   // in string values. Lazily loads linked docs and prunes ones no longer
-  // referenced. Returns every loaded doc reachable this pass, keyed by url (so a
-  // doc reached both directly and via a link appears once).
-  const collectReachable = (): Map<AutomergeUrl, unknown> => {
-    const reachable = new Map<AutomergeUrl, unknown>();
+  // referenced. Returns every loaded doc's handle reachable this pass, keyed by
+  // url (so a doc reached both directly and via a link appears once). The handle
+  // (not just the doc) is carried so matches can be emitted as sub-urls.
+  const collectReachable = (): Map<AutomergeUrl, DocHandle<unknown>> => {
+    const reachable = new Map<AutomergeUrl, DocHandle<unknown>>();
     const neededRefs = new Set<AutomergeUrl>();
     const enqueued = new Set<AutomergeUrl>(mounted.keys());
     const queue = [...mounted.keys()];
@@ -136,8 +139,8 @@ export function SchemaMatchProvider(element: ToolElement): () => void {
       const url = queue.shift()!;
       const handle = mounted.get(url)?.handle ?? referenced.get(url)?.handle;
       const doc = handle?.doc();
-      if (!doc) continue; // a referenced doc still resolving — revisit on load
-      reachable.set(url, doc);
+      if (!handle || !doc) continue; // a referenced doc still resolving — revisit on load
+      reachable.set(url, handle);
 
       for (const link of linkedUrls(doc)) {
         if (!mounted.has(link)) {
@@ -211,26 +214,26 @@ function linkedUrls(doc: unknown): AutomergeUrl[] {
   }
 }
 
-// Depth-first walk: test every node against the schema and record the JSON
-// Pointer of each match. A node and its descendants are all candidates, so one
+// Depth-first walk: test every node against the schema and record the native
+// sub-url of each match. A node and its descendants are all candidates, so one
 // document can yield several distinct match locations. Links are not followed
 // here — the reachable closure already supplies linked docs as their own roots.
 function collectMatches(
   node: unknown,
-  pointer: string,
+  segments: (string | number)[],
   schema: z.ZodType,
-  url: AutomergeUrl,
+  handle: DocHandle<unknown>,
   out: AutomergeUrl[],
 ): void {
-  if (schema.safeParse(node).success) out.push(makeMatchUrl(url, pointer));
+  if (schema.safeParse(node).success) out.push(handle.sub(...segments).url);
 
   if (Array.isArray(node)) {
     node.forEach((child, index) =>
-      collectMatches(child, joinPointer(pointer, index), schema, url, out),
+      collectMatches(child, [...segments, index], schema, handle, out),
     );
   } else if (node !== null && typeof node === "object") {
     for (const [key, child] of Object.entries(node)) {
-      collectMatches(child, joinPointer(pointer, key), schema, url, out);
+      collectMatches(child, [...segments, key], schema, handle, out);
     }
   }
 }

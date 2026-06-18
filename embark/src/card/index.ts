@@ -11,4 +11,15 @@ export const plugins: Plugin<any>[] = [
       return CardDatatype;
     },
   },
+  {
+    type: "patchwork:tool",
+    id: "card",
+    name: "Card",
+    icon: "Square",
+    supportedDatatypes: ["card"],
+    async load() {
+      const { CardTool } = await import("./CardTool");
+      return CardTool;
+    },
+  },
 ];
