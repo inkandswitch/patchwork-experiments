@@ -42,8 +42,6 @@ import {
   lmSetOwn,
 } from './lmStorage';
 
-// TODO: add console object (w/ log and error properties)
-
 interface Proxy {
   $isProxy: boolean;
   $id: string;
@@ -549,6 +547,27 @@ function formatEvalResult(value: any): string {
   }
 }
 
+function consoleFormatArg(value: unknown): unknown {
+  if (value === undefined || value === null) return value;
+  return (value as { toString(): string }).toString();
+}
+
+function consoleFormatArgs(args: unknown[]): unknown[] {
+  return args.map(consoleFormatArg);
+}
+
+const $console = {
+  log(...args: unknown[]) {
+    console.log(...consoleFormatArgs(args));
+  },
+  info(...args: unknown[]) {
+    console.info(...consoleFormatArgs(args));
+  },
+  error(...args: unknown[]) {
+    console.error(...consoleFormatArgs(args));
+  },
+};
+
 function isConstructibleFun(fun: Fun): boolean {
   return /=>\s*(async\s+)?function\b/.test(fun.$code);
 }
@@ -895,6 +914,7 @@ function getRuntimeParams(): Record<string, unknown> {
     $fun,
     Object: $Object,
     Array: $Array,
+    console: $console,
     setTimeout: $setTimeout,
     clearTimeout: $clearTimeout,
     setInterval: $setInterval,

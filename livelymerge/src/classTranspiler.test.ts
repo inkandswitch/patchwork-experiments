@@ -12,10 +12,27 @@ describe('class transpilation', () => {
   add(p) { return this.x + p.x; }
 }`);
     expect(result).toMatch(/\$global\.Point = \$fun\(/);
-    expect(result).toMatch(/\$global\.Point\.add = \$fun\(/);
-    expect(result).toContain('$global.Point.prototype = $obj({ add: $global.Point.add });');
+    expect(result).toMatch(/\$global\.Point\['@add'\] = \$fun\(/);
+    expect(result).toContain("$global.Point.prototype = $obj({ '@add': $global.Point['@add'] });");
     expect(result).toContain('if (!(this && this.$isProxy))');
-    expect(result).toContain('this.x = 0');
+    expect(result).toContain("this['@x'] = 0");
+  });
+
+  it('transpiles instance toString with @-prefixed method names', () => {
+    const result = transpile(`class Point {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+  }
+  toString() {
+    return \`(\${this.x}, \${this.y})\`;
+  }
+}`);
+    expect(result).toMatch(/\$global\.Point\['@toString'\] = \$fun\(/);
+    expect(result).toContain("$global.Point.prototype = $obj({ '@toString': $global.Point['@toString'] });");
+    expect(result).not.toContain("$global.Point.toString =");
+    expect(result).toContain("this['@x'] = x");
+    expect(result).toContain("this['@y'] = y");
   });
 
   it('transpiles extends, super(), and super sends', () => {
@@ -39,7 +56,7 @@ describe('class transpilation', () => {
     expect(result).toContain('$global.D.call(this, 1)');
     expect(result).toContain('$global.D.m.call(this, 2)');
     expect(result).toContain('$global.D.n(3)');
-    expect(result).toContain('$obj({ m: $global.C.m }, $global.D.prototype)');
+    expect(result).toContain("$obj({ '@m': $global.C['@m'] }, $global.D.prototype)");
   });
 
   it('rewrites bare super() in constructor', () => {
@@ -85,7 +102,7 @@ describe('class transpilation', () => {
   constructor() { super(); }
 }`);
     const show = JSON.parse(`"${result.match(/\$fun\("((?:\\.|[^"\\])*)"/)![1]}"`);
-    expect(show.indexOf('$global.globalThis.Parent.call(this)')).toBeLessThan(show.indexOf('this.x = 1'));
+    expect(show.indexOf('$global.globalThis.Parent.call(this)')).toBeLessThan(show.indexOf("this['@x'] = 1"));
   });
 
   it('rewrites super() to Object when class has no explicit extends', () => {
@@ -111,7 +128,7 @@ class D {
   x = 1;
 }`);
     expect(result).not.toContain('Object.call(this');
-    expect(result).toContain('this.x = 1');
+    expect(result).toContain("this['@x'] = 1");
     expect(result).not.toContain('Object.prototype');
   });
 

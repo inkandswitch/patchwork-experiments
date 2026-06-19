@@ -240,5 +240,12 @@ $global.y = $tmp2;`,
       expect(() => transpile(`const x = 1;
 x = 2;`)).toThrow("cannot assign to const-declared variable 'x'");
     });
+
+    it('leaves injected console references bare', () => {
+      expect(transpile(`console.log(x);`)).toBe(`console.log($global.x);`);
+      expect(transpile(`f = () => console.info(y);`)).toBe(
+        `$global.f = $fun("() => console.info(y)", "() => () => console.info($global.y)");`,
+      );
+    });
   });
 });

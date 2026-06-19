@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { lmObjDelegatesTo, type LmHeapEntry } from './lmStorage';
+import { lmObjDelegatesTo, lmUserKey, type LmHeapEntry } from './lmStorage';
+
+describe('lmUserKey', () => {
+  it('does not double-prefix names that already start with @', () => {
+    expect(lmUserKey('x')).toBe('@x');
+    expect(lmUserKey('@toString')).toBe('@toString');
+  });
+});
 
 describe('lmObjDelegatesTo', () => {
   const table: Record<string, LmHeapEntry> = {

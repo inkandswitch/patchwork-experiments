@@ -12,6 +12,7 @@ const INJECTED_NAMES = new Set([
   '$fun',
   'Object',
   'Array',
+  'console',
   'setTimeout',
   'clearTimeout',
   'setInterval',

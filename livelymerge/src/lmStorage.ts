@@ -3,7 +3,8 @@ export function lmIsReservedKey(prop: PropertyKey): boolean {
 }
 
 export function lmUserKey(prop: PropertyKey): string {
-  return '@' + String(prop);
+  const plain = String(prop);
+  return plain.startsWith('@') ? plain : '@' + plain;
 }
 
 export function lmGetOwn(entry: Record<string, any>, prop: PropertyKey): unknown {

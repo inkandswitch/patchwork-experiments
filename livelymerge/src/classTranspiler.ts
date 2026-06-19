@@ -166,6 +166,22 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function atMemberName(name: string): string {
+  return '@' + name;
+}
+
+function memberRef(ref: string, name: string): string {
+  return `${ref}['${atMemberName(name)}']`;
+}
+
+function rewriteThisMemberAccess(source: string): string {
+  return source.replace(/\bthis\.(@?[\w$]+)\b/g, (match, name: string) => {
+    if (name.startsWith('$')) return match;
+    if (name.startsWith('@')) return match;
+    return `this['@${name}']`;
+  });
+}
+
 function containsBareSuper(source: string): boolean {
   return /\bsuper\b/.test(source);
 }
@@ -244,7 +260,7 @@ function injectInstanceFields(
   if (open?.name !== '{' || close?.name !== '}') return constructorSource;
 
   const inner = constructorSource.slice(open.to, close.from);
-  const fieldLines = fields.map((f) => `this.${f.name} = ${f.init};`).join('\n');
+  const fieldLines = fields.map((f) => `this['${atMemberName(f.name)}'] = ${f.init};`).join('\n');
 
   let newInner: string;
   if (afterSuper && superGlobal) {
@@ -307,6 +323,7 @@ function buildConstructorSource(
     isDerived || hasExplicitSuperInCtor,
     superGlobal,
   );
+  ctorSource = rewriteThisMemberAccess(ctorSource);
   const guard = `if (!(this && this.$isProxy)) throw new TypeError("Class constructor ${className} cannot be invoked without 'new'");`;
   return injectGuard(ctorSource, guard);
 }
@@ -317,12 +334,13 @@ function transpileFunctionSource(source: string): string {
 }
 
 function renderPrototypeAccessor(member: Extract<ClassMember, { kind: 'method' }>): string {
-  const paramsStart = member.funcSource.indexOf('(');
-  const bodyStart = member.funcSource.indexOf('{');
+  const funcSource = rewriteThisMemberAccess(member.funcSource);
+  const paramsStart = funcSource.indexOf('(');
+  const bodyStart = funcSource.indexOf('{');
   if (paramsStart === -1 || bodyStart === -1) return '';
-  const params = member.funcSource.slice(paramsStart, bodyStart).trim();
-  const body = member.funcSource.slice(bodyStart);
-  return `${member.accessor} ${member.name}${params} ${body}`;
+  const params = funcSource.slice(paramsStart, bodyStart).trim();
+  const body = funcSource.slice(bodyStart);
+  return `${member.accessor} ['${atMemberName(member.name)}']${params} ${body}`;
 }
 
 function renderStaticInit(member: ClassMember, ref: string, superGlobal: string): string {
@@ -368,17 +386,18 @@ function renderClassSetup(
   );
 
   for (const method of instanceMethods) {
-    const funcSource = rewriteSuperCalls(method.funcSource, superGlobal, 'instance');
-    lines.push(`${ref}.${method.name} = ${transpileFunctionSource(funcSource)};`);
+    let funcSource = rewriteSuperCalls(method.funcSource, superGlobal, 'instance');
+    funcSource = rewriteThisMemberAccess(funcSource);
+    lines.push(`${memberRef(ref, method.name)} = ${transpileFunctionSource(funcSource)};`);
   }
 
   if (prototypeAccessors.length === 0 && instanceMethods.length > 0) {
     lines.push(
-      `${ref}.prototype = $obj({ ${instanceMethods.map((m) => `${m.name}: ${ref}.${m.name}`).join(', ')} }${prototypeSuffix(superGlobal, explicitSuper)});`,
+      `${ref}.prototype = $obj({ ${instanceMethods.map((m) => `'${atMemberName(m.name)}': ${memberRef(ref, m.name)}`).join(', ')} }${prototypeSuffix(superGlobal, explicitSuper)});`,
     );
   } else if (prototypeAccessors.length > 0 || instanceMethods.length > 0) {
     const literalParts = [
-      ...instanceMethods.map((m) => `${m.name}: ${ref}.${m.name}`),
+      ...instanceMethods.map((m) => `'${atMemberName(m.name)}': ${memberRef(ref, m.name)}`),
       ...prototypeAccessors.map((a) => {
         const src = rewriteSuperCalls(a.funcSource, superGlobal, 'instance');
         return renderPrototypeAccessor({ ...a, funcSource: src });
