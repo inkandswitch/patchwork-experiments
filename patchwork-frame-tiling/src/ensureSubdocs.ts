@@ -7,11 +7,7 @@ import {
 } from "@inkandswitch/patchwork-plugins";
 import type { TinyPatchworkConfigDoc } from "./types";
 
-type SubdocField =
-  | "rootFolderUrl"
-  | "moduleSettingsUrl"
-  | "contactUrl"
-  | "tilingLayoutUrl";
+type SubdocField = "rootFolderUrl" | "moduleSettingsUrl" | "contactUrl";
 
 /**
  * Wait for a datatype to be loadable, returning the loaded datatype. Subdoc
@@ -120,11 +116,5 @@ export async function ensureAccountSubdocs(
       "patchwork:module-settings",
     ),
     ensureContact(accountHandle, repo),
-    ensureSubdoc(
-      accountHandle,
-      repo,
-      "tilingLayoutUrl",
-      "patchwork-frame-tiling:layout",
-    ),
   ]);
 }
