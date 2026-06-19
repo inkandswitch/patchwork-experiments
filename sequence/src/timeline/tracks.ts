@@ -35,21 +35,59 @@ export function previewTrackIndexFromDropTarget(
   return trackCount;
 }
 
+/** Sorted unique start/end times for clips across all tracks. */
+export function allClipEdges(
+  doc: SequenceDoc,
+  playDurationForClip: (clip: Clip) => number,
+  excludeClipId: string | null = null,
+): number[] {
+  const edges: number[] = [];
+  for (const track of doc.tracks) {
+    for (const clip of track.clips) {
+      if (clip.id === excludeClipId) continue;
+      const duration = playDurationForClip(clip);
+      edges.push(clip.time, clip.time + duration);
+    }
+  }
+  edges.sort((a, b) => a - b);
+
+  const unique: number[] = [];
+  for (const edge of edges) {
+    const last = unique[unique.length - 1];
+    if (last === undefined || edge - last > 1e-9) {
+      unique.push(edge);
+    }
+  }
+  return unique;
+}
+
 /** Start/end times of other clips in the sequence, for edge snapping while dragging. */
 export function clipEdgeSnapTargets(
   doc: SequenceDoc,
   excludeClipId: string | null,
   playDurationForClip: (clip: Clip) => number,
 ): number[] {
-  const targets: number[] = [];
-  for (const track of doc.tracks) {
-    for (const clip of track.clips) {
-      if (clip.id === excludeClipId) continue;
-      const duration = playDurationForClip(clip);
-      targets.push(clip.time, clip.time + duration);
+  return allClipEdges(doc, playDurationForClip, excludeClipId);
+}
+
+/** Next or previous clip boundary relative to the current playhead time. */
+export function adjacentClipEdgeTime(
+  edges: readonly number[],
+  currentTime: number,
+  direction: 'previous' | 'next',
+): number | null {
+  if (direction === 'next') {
+    for (const edge of edges) {
+      if (edge > currentTime) return edge;
     }
+    return null;
   }
-  return targets;
+
+  for (let i = edges.length - 1; i >= 0; i--) {
+    const edge = edges[i]!;
+    if (edge < currentTime) return edge;
+  }
+  return null;
 }
 
 export function trackDropTargetFromY(y: number, trackCount: number): TrackDropTarget {

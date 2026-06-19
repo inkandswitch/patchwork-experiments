@@ -62,7 +62,7 @@ function change(fn: () => void) {
   try {
     docHandle.change((_doc) => {
       doc = _doc;
-      w = deserialize(doc.objectTable['w']);
+      w = (window as any).$w = deserialize(doc.objectTable['w']);
       try {
         fn();
       } catch (e) {
@@ -850,7 +850,7 @@ function doIt(view: EditorView, print = false) {
       const realCode = transpile(wrapForCompletionValue(code));
       console.log('evaluating', realCode);
       result = (window as any).result = new Function(
-        'w',
+        '$w',
         '$obj',
         '$arr',
         '$fun',

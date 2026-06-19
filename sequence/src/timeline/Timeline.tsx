@@ -14,6 +14,7 @@ import {
   readTimelineTheme,
   snapClipMoveTime,
   snapTimeToPlayhead,
+  timeToX,
   totalCanvasHeight,
   xToTime,
 } from './constants';
@@ -29,6 +30,8 @@ import {
   type TimelineLayout,
 } from './layout';
 import {
+  adjacentClipEdgeTime,
+  allClipEdges,
   clipEdgeSnapTargets,
   commitClipMove,
   createClipFromDrop,
@@ -138,7 +141,12 @@ type TimelineProps = {
   onSeekPreview?: (time: number) => void;
   onScrubTimeChange?: (time: number | null) => void;
   onClipPreview?: (
-    preview: ({ clipId: string } & Pick<ClipDragPreview, 'time' | 'duration' | 'sourceInTime'>) | null,
+    preview:
+      | ({ clipId: string; previewTime?: number } & Pick<
+          ClipDragPreview,
+          'time' | 'duration' | 'sourceInTime'
+        >)
+      | null,
   ) => void;
   onScrubStart?: () => void;
   pendingClip?: PendingClip | null;
@@ -264,7 +272,10 @@ export function Timeline({
 
     const { width, height } = root.getBoundingClientRect();
     const w = Math.max(1, Math.floor(width));
-    const h = Math.max(totalCanvasHeight(paintDepsRef.current.doc.tracks.length), Math.floor(height));
+    const h = Math.max(
+      totalCanvasHeight(paintDepsRef.current.doc.tracks.length),
+      Math.floor(height),
+    );
     const dpr = window.devicePixelRatio || 1;
     const size = canvasSizeRef.current;
 
@@ -277,7 +288,10 @@ export function Timeline({
       canvasSizeRef.current = { w, h, dpr };
     }
 
-    scrollXRef.current = Math.min(scrollXRef.current, maxScrollX(paintDepsRef.current.sequenceDuration, w));
+    scrollXRef.current = Math.min(
+      scrollXRef.current,
+      maxScrollX(paintDepsRef.current.sequenceDuration, w),
+    );
     return w;
   };
 
@@ -398,6 +412,23 @@ export function Timeline({
       return;
     }
 
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      const edges = allClipEdges(doc, (clip) =>
+        resolveClipPlayDurationForUi(clip.id, clip.duration),
+      );
+      if (edges.length === 0) return;
+
+      const direction = event.key === 'ArrowRight' ? 'next' : 'previous';
+      const targetTime = adjacentClipEdgeTime(edges, displayPlayheadTime(), direction);
+      if (targetTime === null) return;
+
+      event.preventDefault();
+      ensurePlayheadVisible(targetTime);
+      onSeek(targetTime);
+      schedulePaint();
+      return;
+    }
+
     if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'b') return;
     if (!selected) return;
 
@@ -438,7 +469,10 @@ export function Timeline({
       if (!canvas) return null;
       const rect = canvas.getBoundingClientRect();
       const inside =
-        clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+        clientX >= rect.left &&
+        clientX <= rect.right &&
+        clientY >= rect.top &&
+        clientY <= rect.bottom;
       if (!inside) return null;
       const x = clientX - rect.left;
       const y = clientY - rect.top;
@@ -490,7 +524,13 @@ export function Timeline({
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
-  }, [pendingClip, doc.tracks.length, changeDoc, onPendingClipResolved, onPendingOverTimelineChange]);
+  }, [
+    pendingClip,
+    doc.tracks.length,
+    changeDoc,
+    onPendingClipResolved,
+    onPendingOverTimelineChange,
+  ]);
 
   const canvasPoint = (event: { clientX: number; clientY: number }) => {
     const canvas = canvasRef.current!;
@@ -528,18 +568,32 @@ export function Timeline({
     return Math.max(minDelta, Math.min(maxDelta, delta));
   };
 
+  const clipHandlePreviewTime = (drag: DragState, preview: ClipDragPreview): number | undefined => {
+    if (drag.kind === 'trim-left') return preview.time;
+    if (drag.kind === 'resize') return preview.time + preview.duration;
+    return undefined;
+  };
+
   const scheduleClipPreview = (preview: ClipDragPreview) => {
     if (!onClipPreview) return;
     if (clipPreviewTimerRef.current !== null) return;
     clipPreviewTimerRef.current = window.setTimeout(() => {
       clipPreviewTimerRef.current = null;
       const livePreview = clipDragPreviewRef.current;
-      if (!livePreview) return;
+      const drag = dragRef.current;
+      if (!livePreview || !drag) return;
+
+      const previewTime = clipHandlePreviewTime(drag, livePreview);
+      if (previewTime !== undefined) {
+        onScrubTimeChange?.(previewTime);
+      }
+
       onClipPreview({
         clipId: livePreview.ref.clipId,
         time: livePreview.time,
         duration: livePreview.duration,
         sourceInTime: livePreview.sourceInTime,
+        previewTime,
       });
     }, 80);
   };
@@ -572,8 +626,24 @@ export function Timeline({
     pendingSeekPreviewRef.current = null;
   };
 
+  const ensurePlayheadVisible = (time: number) => {
+    const w = ensureCanvasSize();
+    if (w <= 0) return;
+
+    const margin = 40;
+    const maxScroll = maxScrollX(paintDepsRef.current.sequenceDuration, w);
+    const playheadX = timeToX(time, scrollXRef.current);
+
+    if (playheadX < margin) {
+      scrollXRef.current = Math.max(0, scrollXRef.current + playheadX - margin);
+    } else if (playheadX > w - margin) {
+      scrollXRef.current = Math.min(maxScroll, scrollXRef.current + playheadX - (w - margin));
+    }
+  };
+
   const seekFromX = (x: number, options?: { preview?: boolean; updateLabel?: boolean }) => {
-    const maxTime = paintDepsRef.current.sequenceDuration > 0 ? paintDepsRef.current.sequenceDuration : Infinity;
+    const maxTime =
+      paintDepsRef.current.sequenceDuration > 0 ? paintDepsRef.current.sequenceDuration : Infinity;
     const time = Math.max(0, Math.min(maxTime, xToTime(x, scrollXRef.current)));
     scrubTimeRef.current = time;
     schedulePaint();
@@ -619,12 +689,10 @@ export function Timeline({
       if (!clip) return;
 
       const playDuration = resolveClipPlayDurationForUi(clip.id, clip.duration);
-      const maxDuration = maxClipPlayDuration(
-        clip,
-        timingRef.current.get(clip.id)?.sourceLength,
-      );
+      const maxDuration = maxClipPlayDuration(clip, timingRef.current.get(clip.id)?.sourceLength);
 
       event.currentTarget.setPointerCapture(event.pointerId);
+      const fromTrackIndex = doc.tracks.findIndex((track) => track.id === target.ref.trackId);
 
       if (target.kind === 'clip-body') {
         dragRef.current = {
@@ -646,6 +714,15 @@ export function Timeline({
           originalDuration: playDuration,
           maxDuration,
         };
+        clipDragPreviewRef.current = {
+          ref: target.ref,
+          time: clip.time,
+          duration: playDuration,
+          trackIndex: fromTrackIndex === -1 ? 0 : fromTrackIndex,
+          label: clipLabelForRef(target.ref),
+        };
+        onScrubStart?.();
+        scheduleClipPreview(clipDragPreviewRef.current);
       } else {
         dragRef.current = {
           kind: 'trim-left',
@@ -656,6 +733,16 @@ export function Timeline({
           originalDuration: playDuration,
           originalSourceInTime: clip.sourceInTime ?? 0,
         };
+        clipDragPreviewRef.current = {
+          ref: target.ref,
+          time: clip.time,
+          duration: playDuration,
+          sourceInTime: clip.sourceInTime ?? 0,
+          trackIndex: fromTrackIndex === -1 ? 0 : fromTrackIndex,
+          label: clipLabelForRef(target.ref),
+        };
+        onScrubStart?.();
+        scheduleClipPreview(clipDragPreviewRef.current);
       }
       setSelected(target.ref);
       return;
@@ -709,10 +796,8 @@ export function Timeline({
         : 0;
       const snapTargets: number[] = [
         playheadTime,
-        ...clipEdgeSnapTargets(
-          doc,
-          drag.ref.clipId,
-          (clip) => resolveClipPlayDurationForUi(clip.id, clip.duration),
+        ...clipEdgeSnapTargets(doc, drag.ref.clipId, (clip) =>
+          resolveClipPlayDurationForUi(clip.id, clip.duration),
         ),
       ];
       const time = Math.max(
@@ -807,15 +892,12 @@ export function Timeline({
       setSelected(drag.ref);
     } else if (drag.kind === 'resize' && preview) {
       clearClipPreview();
+      onScrubTimeChange?.(null);
       commitClipUpdate(drag.ref, preview.time, preview.duration);
     } else if (drag.kind === 'trim-left' && preview) {
       clearClipPreview();
-      commitClipTrimLeft(
-        drag.ref,
-        preview.time,
-        preview.sourceInTime ?? 0,
-        preview.duration,
-      );
+      onScrubTimeChange?.(null);
+      commitClipTrimLeft(drag.ref, preview.time, preview.sourceInTime ?? 0, preview.duration);
     }
 
     clipDragPreviewRef.current = null;

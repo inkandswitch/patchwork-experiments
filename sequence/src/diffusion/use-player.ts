@@ -50,6 +50,7 @@ export function usePlayer(doc: SequenceDoc) {
   const docRef = useRef(doc);
   docRef.current = doc;
   const clipPreviewRef = useRef<ReadonlyMap<string, ClipTimingOverride> | null>(null);
+  const clipPreviewSeekTimeRef = useRef<number | undefined>(undefined);
   const clipPreviewTimerRef = useRef<number | null>(null);
   const clipPreviewGenerationRef = useRef(0);
 
@@ -172,15 +173,20 @@ export function usePlayer(doc: SequenceDoc) {
     void composition.seek(time);
   };
 
-  const previewClipTiming = (preview: ({ clipId: string } & ClipTimingOverride) | null) => {
+  const previewClipTiming = (
+    preview: ({ clipId: string; previewTime?: number } & ClipTimingOverride) | null,
+  ) => {
     if (preview === null) {
       clipPreviewRef.current = null;
+      clipPreviewSeekTimeRef.current = undefined;
       if (clipPreviewTimerRef.current !== null) {
         window.clearTimeout(clipPreviewTimerRef.current);
         clipPreviewTimerRef.current = null;
       }
       return;
     }
+
+    clipPreviewSeekTimeRef.current = preview.previewTime;
 
     clipPreviewRef.current = new Map([
       [
@@ -204,7 +210,8 @@ export function usePlayer(doc: SequenceDoc) {
       void updateCompositionTiming(composition, docRef.current, loaderRef.current, overrides).then(
         () => {
           if (generation !== clipPreviewGenerationRef.current) return;
-          void composition.seek(composition.currentTime);
+          const seekTime = clipPreviewSeekTimeRef.current ?? composition.currentTime;
+          void composition.seek(seekTime);
         },
       );
     }, 80);

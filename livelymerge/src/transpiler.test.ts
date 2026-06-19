@@ -45,7 +45,7 @@ describe('transpile', () => {
 
     it('does not list block-local bindings as free variables', () => {
       expect(transpile(`const f = (x) => { let z = w; return x + z; };`)).toBe(
-        `const f = $fun("(x) => { let z = w; return x + z; }", "() => (x) => { let z = w; return x + z; }");`,
+        `const f = $fun("(x) => { let z = w; return x + z; }", "() => (x) => { let z = $w; return x + z; }");`,
       );
     });
 
@@ -145,14 +145,42 @@ describe('transpile', () => {
       expect(transpile(`let count = 0;
 w.inc = () => ++count;`)).toBe(`const $scope1 = $obj({});
 $scope1.count = 0;
-w.inc = $fun("() => ++count", "($scope1) => () => ++$scope1.count", [$scope1]);`);
+$w.inc = $fun("() => ++count", "($scope1) => () => ++$scope1.count", [$scope1]);`);
     });
 
     it('objectifies bindings without a trailing semicolon before the next statement', () => {
       expect(transpile(`let c = 0
 w.inc = () => ++c`)).toBe(`const $scope1 = $obj({});
 $scope1.c = 0
-w.inc = $fun("() => ++c", "($scope1) => () => ++$scope1.c", [$scope1])`);
+$w.inc = $fun("() => ++c", "($scope1) => () => ++$scope1.c", [$scope1])`);
+    });
+  });
+
+  describe('global w renaming', () => {
+    it('renames unbound w references to $w', () => {
+      expect(transpile(`w.foo = 1;`)).toBe(`$w.foo = 1;`);
+    });
+
+    it('does not rename w when shadowed by a local binding', () => {
+      expect(transpile(`let w = $w.foo;
+return w;`)).toBe(`let w = $w.foo;
+return w;`);
+    });
+
+    it('does not rename w when shadowed by a parameter', () => {
+      expect(transpile(`const f = (w) => w + 1;`)).toBe(
+        `const f = $fun("(w) => w + 1", "() => (w) => w + 1");`,
+      );
+    });
+
+    it('does not rename w when shadowed in a nested block', () => {
+      expect(transpile(`{
+  let w = 1;
+  return w;
+}`)).toBe(`{
+  let w = 1;
+  return w;
+}`);
     });
   });
 });
