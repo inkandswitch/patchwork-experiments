@@ -9,7 +9,19 @@ export type TinyPatchworkConfigDoc = {
   rootFolderUrl?: AutomergeUrl;
   moduleSettingsUrl?: AutomergeUrl;
   contactUrl?: AutomergeUrl;
-  /** Points at the {@link TilingLayoutDoc} that persists this frame's panels. */
+  /**
+   * The most-recent tiling session's {@link TilingLayoutDoc} — the "current"
+   * layout a new tab resumes from. It's a rolling pointer: opening a new tab
+   * mints a fresh session (cloned from here) and repoints this at it, POSIX
+   * `unlink`-style. The previously-pointed doc isn't deleted; it just becomes
+   * unreferenced cold storage (still openable by a tab that has it in its URL).
+   */
+  currentLayoutUrl?: AutomergeUrl;
+  /**
+   * Legacy single shared layout (pre per-tab sessions). Read only as a fallback
+   * clone source for the first new-model session so existing users' arrangement
+   * carries over; no longer written.
+   */
   tilingLayoutUrl?: AutomergeUrl;
 
   frameToolId?: string;
@@ -75,9 +87,5 @@ export type LayoutNode = LeafNode | SplitNode;
  */
 export type TilingLayoutDoc = {
   layout: LayoutNode | null;
-  /** Id of the panel that was last focused. */
-  activeLeafId: string | null;
-  /** Panel ids ordered by most-recent focus (last entry = most recent). */
-  focusOrder: string[];
   "@patchwork"?: { type: string };
 };

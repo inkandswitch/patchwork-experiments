@@ -4,7 +4,12 @@ import {
   useDocument,
   useRepo,
 } from "@automerge/automerge-repo-react-hooks";
-import { AutomergeUrl, type DocHandle } from "@automerge/automerge-repo";
+import {
+  AutomergeUrl,
+  isValidAutomergeUrl,
+  type DocHandle,
+  type Repo,
+} from "@automerge/automerge-repo";
 import { OpenDocumentEvent } from "@inkandswitch/patchwork-elements";
 import type {
   ToolDescription,
@@ -27,6 +32,7 @@ import {
 import { ensureAccountSubdocs } from "./ensureSubdocs";
 import type { FolderDoc } from "@inkandswitch/patchwork-filesystem";
 import {
+  cloneLayout,
   collectLeafIds,
   findLeaf,
   findLeafIdByUrl,
@@ -57,6 +63,152 @@ import {
   type ContextTool,
 } from "./useDocTitle";
 import { rememberToolInDoc } from "./toolMemory";
+
+/**
+ * Which pane *this tab* is looking at. Deliberately **not** synced: focus and
+ * selection are per-tab session state. Storing them in the shared layout doc
+ * (as we used to) made every tab mirror one another's focus — clicking a pane
+ * in one tab moved the selection, accent, and context-tool target in all the
+ * others. We keep it in component state and mirror it to `sessionStorage`,
+ * which is naturally scoped to a single tab and survives that tab's reloads.
+ */
+type TabFocus = { activeLeafId: string | null; focusOrder: string[] };
+
+const EMPTY_FOCUS: TabFocus = { activeLeafId: null, focusOrder: [] };
+
+const readTabFocus = (key: string | null): TabFocus => {
+  if (!key) return { ...EMPTY_FOCUS };
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return { ...EMPTY_FOCUS };
+    const parsed = JSON.parse(raw) as Partial<TabFocus>;
+    if (Array.isArray(parsed.focusOrder)) {
+      return {
+        activeLeafId:
+          typeof parsed.activeLeafId === "string" ? parsed.activeLeafId : null,
+        focusOrder: parsed.focusOrder.filter(
+          (id): id is string => typeof id === "string",
+        ),
+      };
+    }
+  } catch {
+    // Corrupt/unavailable storage: fall back to empty focus.
+  }
+  return { ...EMPTY_FOCUS };
+};
+
+const writeTabFocus = (key: string | null, focus: TabFocus): void => {
+  if (!key) return;
+  try {
+    sessionStorage.setItem(key, JSON.stringify(focus));
+  } catch {
+    // Storage may be full or disabled; focus just won't survive reload.
+  }
+};
+
+const sameFocus = (a: TabFocus, b: TabFocus): boolean =>
+  a.activeLeafId === b.activeLeafId &&
+  a.focusOrder.length === b.focusOrder.length &&
+  a.focusOrder.every((id, i) => id === b.focusOrder[i]);
+
+const LAYOUT_TYPE = "patchwork-frame-tiling:layout";
+
+// The page URL identifies *this tab's* layout document (`#…&layout=<docId>`),
+// which makes tabs independent sessions: each gets its own arrangement, the
+// arrangement survives reload, and an arrangement is shareable by copying the
+// URL. The host's hash router preserves params it doesn't recognize, so this
+// `layout` key coexists with its `doc`/`tool`/… keys.
+const LAYOUT_PARAM = "layout";
+
+const readLayoutParam = (): AutomergeUrl | undefined => {
+  try {
+    const raw = new URLSearchParams(window.location.hash.slice(1)).get(
+      LAYOUT_PARAM,
+    );
+    if (!raw) return undefined;
+    const url = raw.startsWith("automerge:") ? raw : `automerge:${raw}`;
+    return isValidAutomergeUrl(url) ? url : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const writeLayoutParam = (url: AutomergeUrl): void => {
+  try {
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    // Stored without the `automerge:` prefix to stay compact, matching `doc`.
+    params.set(LAYOUT_PARAM, url.replace(/^automerge:/, ""));
+    const href = `${window.location.pathname}${window.location.search}#${params.toString()}`;
+    // replaceState: minting a session shouldn't add a back-button entry, and
+    // (unlike assigning `location.hash`) it won't fire a spurious `hashchange`.
+    window.history.replaceState(window.history.state, "", href);
+  } catch {
+    // Non-fatal: the session just won't be reflected in the URL.
+  }
+};
+
+type TabLayoutSession = {
+  /** This tab's layout document (from the URL, or freshly minted). */
+  layoutUrl: AutomergeUrl | undefined;
+  /**
+   * For a freshly-minted session, the doc to clone the initial arrangement
+   * from (the previous "current" layout). Captured at mint so that claiming
+   * `currentLayoutUrl = this` afterwards can't change what we copy from.
+   * `undefined` for resumed/shared sessions or when there's nothing to clone.
+   */
+  cloneSourceUrl: AutomergeUrl | undefined;
+};
+
+/**
+ * Resolve this tab's layout document. If the URL names one (reload, shared
+ * link, back/forward), use it. Otherwise mint a fresh session and record it in
+ * the URL, capturing the account's current layout as the clone source so the
+ * new tab resumes from your last session while staying independent.
+ */
+function useTabLayoutSession(
+  repo: Repo,
+  accountHandle: DocHandle<TinyPatchworkConfigDoc> | undefined,
+): TabLayoutSession {
+  const [layoutUrl, setLayoutUrl] = useState<AutomergeUrl | undefined>(() =>
+    readLayoutParam(),
+  );
+  const [cloneSourceUrl, setCloneSourceUrl] = useState<
+    AutomergeUrl | undefined
+  >(undefined);
+  const mintedRef = useRef(false);
+
+  useEffect(() => {
+    if (layoutUrl || mintedRef.current || !accountHandle) return;
+    mintedRef.current = true;
+    const account = accountHandle.doc();
+    const source = account?.currentLayoutUrl ?? account?.tilingLayoutUrl;
+    const handle = repo.create<TilingLayoutDoc>();
+    handle.change((doc) => {
+      doc.layout = null;
+      doc["@patchwork"] = { type: LAYOUT_TYPE };
+    });
+    // Claim the URL synchronously so a re-mount (e.g. StrictMode) reuses this
+    // doc instead of minting a second one.
+    writeLayoutParam(handle.url);
+    if (source && source !== handle.url) setCloneSourceUrl(source);
+    setLayoutUrl(handle.url);
+  }, [layoutUrl, repo, accountHandle]);
+
+  // Follow back/forward (or a manual hash edit) to a different session.
+  useEffect(() => {
+    const onHashChange = () => {
+      const next = readLayoutParam();
+      if (next && next !== layoutUrl) {
+        setCloneSourceUrl(undefined);
+        setLayoutUrl(next);
+      }
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, [layoutUrl]);
+
+  return { layoutUrl, cloneSourceUrl };
+}
 
 type LayoutOps = {
   activeLeafId: string | null;
@@ -413,6 +565,7 @@ const LayoutView = ({
 
 export const PatchworkFrame = ({
   docUrl: accountDocUrl,
+  element,
 }: {
   docUrl: AutomergeUrl;
   element: HTMLElement | ShadowRoot;
@@ -430,12 +583,18 @@ export const PatchworkFrame = ({
     suspense: false,
   });
 
-  // The panel arrangement lives in its own document so a reload restores it.
-  const layoutUrl = accountDoc.tilingLayoutUrl;
+  // Each tab gets its own layout document, identified in the URL, so tabs are
+  // independent sessions rather than one mirrored workspace. A freshly-minted
+  // session clones `cloneSourceUrl` (the last session) so a new tab resumes
+  // where you left off.
+  const { layoutUrl, cloneSourceUrl } = useTabLayoutSession(repo, accountHandle);
   const [layoutDoc] = useDocument<TilingLayoutDoc>(layoutUrl, {
     suspense: false,
   });
   const layoutHandle = useDocHandle<TilingLayoutDoc>(layoutUrl, {
+    suspense: false,
+  });
+  const [cloneSourceDoc] = useDocument<TilingLayoutDoc>(cloneSourceUrl, {
     suspense: false,
   });
 
@@ -456,17 +615,82 @@ export const PatchworkFrame = ({
       accountHandle;
   }, [accountHandle]);
 
-  // The document is the single source of truth; React just reflects it.
+  // Make this tab's session the account's "current" layout whenever the tab is
+  // the visible one, so a future new tab resumes from the session you were last
+  // looking at. The previous `currentLayoutUrl` simply becomes unreferenced
+  // (POSIX unlink): it stays in cold storage but is never loaded again.
+  useEffect(() => {
+    if (!layoutUrl || !accountHandle) return;
+    const markCurrent = () => {
+      if (document.visibilityState !== "visible") return;
+      if (accountHandle.doc()?.currentLayoutUrl === layoutUrl) return;
+      accountHandle.change((d) => {
+        d.currentLayoutUrl = layoutUrl;
+      });
+    };
+    markCurrent();
+    document.addEventListener("visibilitychange", markCurrent);
+    return () => document.removeEventListener("visibilitychange", markCurrent);
+  }, [layoutUrl, accountHandle]);
+
+  // The *structure* (panel tree, tools, sizes) is the synced doc's job; React
+  // reflects it. Focus/selection is per-tab session state (see {@link TabFocus}).
   const layout = layoutDoc?.layout ?? null;
-  const activeLeafId = layoutDoc?.activeLeafId ?? null;
-  const focusOrder = layoutDoc?.focusOrder;
-  // Holds the live `.tile-frame` element. We attach the open-document listener
-  // via a *callback ref* (below) rather than an effect keyed on a ref object,
-  // because `FrameProviders` gates the frame's mount behind provider readiness:
-  // the node appears after our effects have already run, so an effect-based
-  // attach would silently never fire. The callback ref runs exactly when the
-  // node mounts/unmounts.
-  const frameElRef = useRef<HTMLDivElement | null>(null);
+
+  const focusStorageKey = layoutUrl ? `tiling-focus:${layoutUrl}` : null;
+  const [focus, setFocus] = useState<TabFocus>(() =>
+    readTabFocus(focusStorageKey),
+  );
+  const focusRef = useRef(focus);
+  focusRef.current = focus;
+  // Latest storage key for write-through (kept in a ref so the stable
+  // `commitFocus` always persists under the current key).
+  const focusKeyRef = useRef(focusStorageKey);
+  focusKeyRef.current = focusStorageKey;
+  const activeLeafId = focus.activeLeafId;
+  const focusOrder = focus.focusOrder;
+
+  // Apply a focus update through the ref *and* state (so callbacks that read
+  // `focusRef.current` immediately after committing see the new value) and
+  // write it through to sessionStorage.
+  const commitFocus = useCallback((updater: (prev: TabFocus) => TabFocus) => {
+    const next = updater(focusRef.current);
+    if (sameFocus(next, focusRef.current)) return;
+    focusRef.current = next;
+    setFocus(next);
+    writeTabFocus(focusKeyRef.current, next);
+  }, []);
+
+  // `tilingLayoutUrl` may only resolve after the first render (it's created
+  // lazily on a fresh account), so re-hydrate focus from storage once the key
+  // appears or changes. Done before the prune effect so the reconcile below
+  // sees the restored focus.
+  const loadedKeyRef = useRef(focusStorageKey);
+  useEffect(() => {
+    if (loadedKeyRef.current === focusStorageKey) return;
+    loadedKeyRef.current = focusStorageKey;
+    const loaded = readTabFocus(focusStorageKey);
+    focusRef.current = loaded;
+    setFocus(loaded);
+  }, [focusStorageKey]);
+
+  // Reconcile per-tab focus against the (possibly remotely-edited) structure:
+  // drop ids for panes that no longer exist and re-select if the active pane
+  // was closed — in this tab or another. New panes are focused explicitly by
+  // whoever creates them, so we don't auto-add them here.
+  useEffect(() => {
+    const ids = layout ? collectLeafIds(layout) : [];
+    const live = new Set(ids);
+    commitFocus((prev) => {
+      const order = prev.focusOrder.filter((id) => live.has(id));
+      let active = prev.activeLeafId;
+      if (!active || !live.has(active)) {
+        active = order[order.length - 1] ?? ids[0] ?? null;
+      }
+      if (active && !order.includes(active)) order.push(active);
+      return { activeLeafId: active, focusOrder: order };
+    });
+  }, [layout, commitFocus]);
 
   const contextTools = useContextTools(accountDoc.contextToolIds);
 
@@ -505,7 +729,10 @@ export const PatchworkFrame = ({
     handleRef.current?.change(fn);
   }, []);
 
-  // Seed the document once with a root-folder panel if it has no layout yet.
+  // Seed a freshly-minted session doc once: clone the last session's
+  // arrangement (so a new tab resumes where you left off), otherwise open a
+  // root-folder pane. When there's a clone source we wait for it to load so we
+  // don't seed a bare pane and lose the clone.
   const seededRef = useRef(false);
   useEffect(() => {
     if (seededRef.current || !layoutHandle || layoutDoc === undefined) return;
@@ -513,35 +740,41 @@ export const PatchworkFrame = ({
       seededRef.current = true;
       return;
     }
+    if (cloneSourceUrl) {
+      if (cloneSourceDoc === undefined) return; // clone source still loading
+      const sourceLayout = cloneSourceDoc.layout;
+      if (sourceLayout) {
+        seededRef.current = true;
+        layoutHandle.change((doc) => {
+          doc.layout = cloneLayout(sourceLayout);
+        });
+        return;
+      }
+      // Source exists but is empty → fall through to a root-folder pane.
+    }
     if (!rootFolderUrl) return;
     seededRef.current = true;
     const leaf = makeLeaf({ url: rootFolderUrl });
     layoutHandle.change((doc) => {
       doc.layout = leaf;
-      doc.activeLeafId = leaf.id;
-      doc.focusOrder = [leaf.id];
     });
-  }, [layoutDoc, layoutHandle, rootFolderUrl]);
+  }, [layoutDoc, layoutHandle, cloneSourceUrl, cloneSourceDoc, rootFolderUrl]);
 
   const focusLeaf = useCallback(
     (id: string) => {
-      const doc = docRef.current;
-      if (
-        doc &&
-        doc.activeLeafId === id &&
-        doc.focusOrder?.[doc.focusOrder.length - 1] === id
-      ) {
-        return;
-      }
-      change((d) => {
-        if (!d.focusOrder) d.focusOrder = [];
-        const idx = [...d.focusOrder].indexOf(id);
-        if (idx !== -1) d.focusOrder.splice(idx, 1);
-        d.focusOrder.push(id);
-        d.activeLeafId = id;
+      commitFocus((prev) => {
+        if (
+          prev.activeLeafId === id &&
+          prev.focusOrder[prev.focusOrder.length - 1] === id
+        ) {
+          return prev;
+        }
+        const order = prev.focusOrder.filter((x) => x !== id);
+        order.push(id);
+        return { activeLeafId: id, focusOrder: order };
       });
     },
-    [change],
+    [commitFocus],
   );
 
   const navigate = useCallback(
@@ -611,22 +844,12 @@ export const PatchworkFrame = ({
 
   const close = useCallback(
     (leafId: string) => {
+      // Structural change only. Per-tab focus (active pane / focus order) is
+      // reconciled reactively by the prune effect once `layout` updates.
       change((d) => {
         removeLeafIn(d, leafId);
         // Never leave an empty frame: fall back to the root folder.
         if (!d.layout && rootFolderUrl) d.layout = makeLeaf({ url: rootFolderUrl });
-        const ids = d.layout ? collectLeafIds(d.layout) : [];
-        const live = new Set(ids);
-        if (!d.focusOrder) d.focusOrder = [];
-        for (let i = d.focusOrder.length - 1; i >= 0; i--) {
-          if (!live.has(d.focusOrder[i])) d.focusOrder.splice(i, 1);
-        }
-        if (!d.activeLeafId || !live.has(d.activeLeafId)) {
-          d.activeLeafId = d.focusOrder[d.focusOrder.length - 1] ?? ids[0] ?? null;
-        }
-        if (d.activeLeafId && [...d.focusOrder].indexOf(d.activeLeafId) === -1) {
-          d.focusOrder.push(d.activeLeafId);
-        }
       });
     },
     [change, rootFolderUrl],
@@ -651,11 +874,9 @@ export const PatchworkFrame = ({
     [change],
   );
 
-  // Route a document-open request. A tool that triggers navigation (e.g. the
-  // folder tree) should not replace itself — it navigates the last-focused
-  // *other* panel, or opens a new panel beside the source when no such target
-  // exists yet. `sourceId` is the panel the request came from (null for
-  // app-level chrome like the top bar, which targets the active panel).
+  // Route a document-open request. `sourceId` is the panel the request came
+  // from (null for app chrome and for URL/deep-link opens, which arrive on the
+  // mount element).
   const openView = useCallback(
     (view: PanelView, sourceId: string | null) => {
       const doc = docRef.current;
@@ -664,25 +885,36 @@ export const PatchworkFrame = ({
 
       const leafIds = collectLeafIds(current);
       const liveIds = new Set(leafIds);
-      const order = doc?.focusOrder ?? [];
 
-      let destination: string | null = null;
-      for (let i = order.length - 1; i >= 0; i--) {
-        const id = order[i];
-        if (id !== sourceId && liveIds.has(id)) {
-          destination = id;
-          break;
-        }
-      }
-
-      if (destination) {
-        navigate(destination, view);
-        focusLeaf(destination);
+      // 1. Already open? Just focus it. Opening a doc that's already on screen
+      //    (a folder click on it, or the host re-dispatching the URL's `doc`
+      //    param on load/hashchange) should never duplicate it or, worse,
+      //    clobber the panel you're currently in.
+      const existing = findLeafIdByUrl(current, view.url);
+      if (existing) {
+        focusLeaf(existing);
         return;
       }
 
-      // No existing target panel: open a new one beside the source.
-      const active = doc?.activeLeafId ?? null;
+      // 2. A request *from* a panel (e.g. the folder tree) navigates the
+      //    last-focused *other* panel, so the source pane isn't replaced.
+      //    Sourceless opens (URL deep-links, top bar) deliberately skip this:
+      //    they must not navigate — i.e. clobber — whatever panel is active.
+      if (sourceId !== null) {
+        const order = focusRef.current.focusOrder;
+        for (let i = order.length - 1; i >= 0; i--) {
+          const id = order[i];
+          if (id !== sourceId && liveIds.has(id)) {
+            navigate(id, view);
+            focusLeaf(id);
+            return;
+          }
+        }
+      }
+
+      // 3. Otherwise open a new panel beside the source/active panel, leaving
+      //    existing panels untouched.
+      const active = focusRef.current.activeLeafId;
       const splitSource =
         (sourceId && liveIds.has(sourceId) && sourceId) ||
         (active && liveIds.has(active) && active) ||
@@ -697,67 +929,100 @@ export const PatchworkFrame = ({
 
   const handleOpenDocument = useCallback(
     (event: OpenDocumentEvent) => {
-      event.stopPropagation();
-      event.stopImmediatePropagation();
+      const url = event.detail.url;
+      if (!url) return;
       const target = event.target as Element | null;
       const sourceId =
         target?.closest?.("[data-leaf-id]")?.getAttribute("data-leaf-id") ??
         null;
-      openView(
-        { url: event.detail.url, toolId: event.detail.toolId },
-        sourceId,
-      );
+
+      // Distinguish a navigation *intent* from a panel's *self-announcement*.
+      // Tools routinely re-emit `patchwork:open-document` for the doc they're
+      // already showing — on mount, and again whenever its title/content
+      // changes — to keep the URL and tab title in sync. The single-doc frame
+      // tolerates this because its selection provider dedups by url+tool; here
+      // it's actively harmful: `openView` would route the announcement to some
+      // *other* pane (the "random pane" targeting), and once the host's hash
+      // router writes it to the URL and re-dispatches on `hashchange`, panels
+      // start hijacking each other in a feedback loop (the "resonance").
+      //
+      // So: swallow self-announcements outright. Stopping immediate propagation
+      // in the *capture* phase keeps them from reaching the host's URL writer
+      // (its listener is registered earlier on this same element, so only
+      // capturing beats it). A genuine navigation — a different doc, or app
+      // chrome with no source pane — falls through to `openView` and is allowed
+      // to bubble on to the host, so the URL updates exactly once per actual
+      // navigation.
+      if (sourceId) {
+        const layout = docRef.current?.layout;
+        const leaf = layout ? findLeaf(layout, sourceId) : null;
+        if (leaf && leaf.view.url === url) {
+          event.stopImmediatePropagation();
+          return;
+        }
+      }
+
+      openView({ url, toolId: event.detail.toolId }, sourceId);
     },
     [openView],
   );
 
-  // Keep the latest handler in a ref so the listener (attached once when the
-  // frame node mounts) always invokes the current closure without re-binding.
+  // Keep the latest handler in a ref so the once-attached listener always
+  // invokes the current closure without re-binding.
   const handleOpenDocumentRef = useRef(handleOpenDocument);
   handleOpenDocumentRef.current = handleOpenDocument;
 
-  // Stable listener that delegates to the latest handler via the ref.
-  const frameOpenListener = useMemo<EventListener>(
-    () => (event) =>
-      handleOpenDocumentRef.current(event as unknown as OpenDocumentEvent),
-    [],
-  );
-
-  // Callback ref: attaches the open-document listener the moment `.tile-frame`
-  // mounts (which, behind the provider gate, is after our effects run) and
-  // detaches it on unmount.
-  const setFrameEl = useCallback(
-    (el: HTMLDivElement | null) => {
-      const prev = frameElRef.current;
-      if (prev) {
-        prev.removeEventListener("patchwork:open-document", frameOpenListener);
-      }
-      frameElRef.current = el;
-      if (el) {
-        el.addEventListener("patchwork:open-document", frameOpenListener);
-      }
-    },
-    [frameOpenListener],
-  );
+  // Listen on the *mount element* (the host's frame `rootElement`). In legacy
+  // `patchwork-view` mode the tool is hosted on that element itself, so this is
+  // where the bootloader's hash router (a) dispatches inbound deep-link opens —
+  // a *non-bubbling* event a descendant listener would never see — and (b)
+  // listens (in the bubble phase) for outbound opens to update the URL.
+  //
+  // We attach in the *capture* phase so that for outbound events we run before
+  // the host's bubble-phase listener and can suppress self-announcements before
+  // they churn the URL. Inbound deep-link opens are dispatched directly on this
+  // element, so they still reach us here. Using the stable mount element (not a
+  // gated `.tile-frame` ref) also means the listener attaches immediately,
+  // before the provider gate opens.
+  useEffect(() => {
+    const el = element;
+    const listener: EventListener = (event) =>
+      handleOpenDocumentRef.current(event as unknown as OpenDocumentEvent);
+    el.addEventListener("patchwork:open-document", listener, true);
+    return () =>
+      el.removeEventListener("patchwork:open-document", listener, true);
+  }, [element]);
 
   // Top-bar "open" actions originate outside any panel, so they target the
   // active panel (or open a new one if the frame is somehow empty).
+  // App-chrome opens (home, create-new, settings, account) act on the panel
+  // you're in: focus an existing panel already showing the doc, else navigate
+  // the active panel to it (its current view goes onto that panel's
+  // back-history). This is deliberately different from passive URL/deep-link
+  // opens, which must never clobber the active panel (see `openView`).
   const openFromChrome = useCallback(
-    (view: PanelView) => openView(view, null),
-    [openView],
+    (view: PanelView) => {
+      const current = docRef.current?.layout ?? null;
+      if (!current) return;
+      const existing = findLeafIdByUrl(current, view.url);
+      if (existing) {
+        focusLeaf(existing);
+        return;
+      }
+      const ids = collectLeafIds(current);
+      const active = focusRef.current.activeLeafId;
+      const target = (active && ids.includes(active) && active) || ids[0];
+      if (!target) return;
+      navigate(target, view);
+      focusLeaf(target);
+    },
+    [navigate, focusLeaf],
   );
 
-  // Home: focus an existing panel showing the root folder, else open it.
+  // Home: focus the root-folder panel if open, else bring the active panel home.
   const goHome = useCallback(() => {
-    if (!rootFolderUrl) return;
-    const current = docRef.current?.layout ?? null;
-    const existing = current ? findLeafIdByUrl(current, rootFolderUrl) : null;
-    if (existing) {
-      focusLeaf(existing);
-      return;
-    }
-    openFromChrome({ url: rootFolderUrl });
-  }, [rootFolderUrl, focusLeaf, openFromChrome]);
+    if (rootFolderUrl) openFromChrome({ url: rootFolderUrl });
+  }, [rootFolderUrl, openFromChrome]);
 
   const ops: LayoutOps = {
     activeLeafId,
@@ -792,7 +1057,7 @@ export const PatchworkFrame = ({
           onHome={goHome}
           onOpen={openFromChrome}
         />
-        <div className="tile-frame" ref={setFrameEl}>
+        <div className="tile-frame">
           {layout ? (
             <LayoutView
               node={layout}
