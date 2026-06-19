@@ -7,6 +7,7 @@ import {
   lmOwnUserPropertyKeys,
   lmSetOwn,
 } from './lmStorage';
+import { ensureObjectPrototypeDefaults } from './objectPrototypeDefaults';
 import type { Fun, Obj, Ref, Val } from './types';
 import { isFun, isObj, isRef } from './types';
 
@@ -224,6 +225,7 @@ const $Object = Object.assign(function Object() {
 
 export function resetEvalHarness() {
   objectTable = { 'object-prototype': { $type: 'obj', $id: 'object-prototype' } };
+  ensureObjectPrototypeDefaults(objectTable);
   newObjects = null;
   proxies = null;
   $global = $obj({});

@@ -1,4 +1,8 @@
 import type { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
+import {
+  OBJECT_PROTOTYPE_TO_STRING_FUN_ID,
+  objectPrototypeToStringFun,
+} from './objectPrototypeDefaults';
 import type { LivelymergeDoc } from './types';
 
 export const LivelymergeDatatype: DatatypeImplementation<LivelymergeDoc> = {
@@ -6,9 +10,11 @@ export const LivelymergeDatatype: DatatypeImplementation<LivelymergeDoc> = {
     doc['@patchwork'] = { type: 'livelymerge' };
     doc.title = 'Untitled Livelymerge';
     doc.objectTable = {
+      [OBJECT_PROTOTYPE_TO_STRING_FUN_ID]: objectPrototypeToStringFun,
       "object-prototype": {
         $type: "obj",
         $id: "object-prototype",
+        "@toString": { $type: "ref", $id: OBJECT_PROTOTYPE_TO_STRING_FUN_ID },
       }, // object prototype (top of the delegation chain)
       "global": {
         $type: "obj",

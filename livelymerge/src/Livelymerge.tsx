@@ -33,6 +33,7 @@ import type { ToolElement, ToolImplementation } from '@inkandswitch/patchwork-pl
 import './styles.css';
 import { transpile } from './transpiler';
 import { wrapForCompletionValue } from './completionValue';
+import { ensureObjectPrototypeDefaults } from './objectPrototypeDefaults';
 import {
   lmGetOwn,
   lmGetWithDelegation,
@@ -61,6 +62,7 @@ function ensureHeapRoots(): void {
   if (!doc.objectTable['object-prototype']) {
     doc.objectTable['object-prototype'] = { $type: 'obj', $id: 'object-prototype' };
   }
+  ensureObjectPrototypeDefaults(doc.objectTable);
   if (!doc.objectTable['timeout-fns']) {
     doc.objectTable['timeout-fns'] = { $type: 'obj', $id: 'timeout-fns' };
   }
@@ -273,12 +275,6 @@ function proxifyObj(obj: Obj): Proxy {
       }
 
       if (lmIsReservedKey(prop)) return undefined;
-
-      if (prop === 'toString') {
-        const value = lmGetWithDelegation(obj, prop, lookupHeapProto, deserialize);
-        if (value !== undefined) return value;
-        return () => `[obj ${obj.$id}]`;
-      }
 
       const value = lmGetWithDelegation(obj, prop, lookupHeapProto, deserialize);
       if (value !== undefined) return value;
