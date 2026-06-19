@@ -33,8 +33,16 @@ import type { ToolElement, ToolImplementation } from '@inkandswitch/patchwork-pl
 import './styles.css';
 import { transpile } from './transpiler';
 import { wrapForCompletionValue } from './completionValue';
+import {
+  lmGetOwn,
+  lmGetWithDelegation,
+  lmIsReservedKey,
+  lmObjDelegatesTo,
+  lmOwnUserPropertyKeys,
+  lmSetOwn,
+} from './lmStorage';
 
-// TODO: make classes work
+// TODO: add console object (w/ log and error properties)
 
 interface Proxy {
   $isProxy: boolean;
@@ -51,6 +59,31 @@ let $global: any;
 
 let inChangeCall = false;
 
+function ensureHeapRoots(): void {
+  if (!doc.objectTable['object-prototype']) {
+    doc.objectTable['object-prototype'] = { $type: 'obj', $id: 'object-prototype' };
+  }
+  if (!doc.objectTable['timeout-fns']) {
+    doc.objectTable['timeout-fns'] = { $type: 'obj', $id: 'timeout-fns' };
+  }
+  if (!doc.objectTable['interval-fns']) {
+    doc.objectTable['interval-fns'] = { $type: 'obj', $id: 'interval-fns' };
+  }
+  if (!doc.objectTable['global']) {
+    doc.objectTable['global'] = {
+      $type: 'obj',
+      $id: 'w',
+      $protoId: 'object-prototype',
+      $timeoutFns: { $type: 'ref', $id: 'timeout-fns' },
+      $intervalFns: { $type: 'ref', $id: 'interval-fns' },
+    };
+  }
+}
+
+function ensureObjectPrototype(): void {
+  ($Object as { prototype: Proxy }).prototype = deserialize(doc.objectTable['object-prototype']);
+}
+
 function change(fn: () => void) {
   if (inChangeCall) {
     fn();
@@ -64,7 +97,12 @@ function change(fn: () => void) {
   try {
     docHandle.change((_doc) => {
       doc = _doc;
+      ensureHeapRoots();
       $global = (window as any).$global = deserialize(doc.objectTable['global']);
+      if (!$global) {
+        throw new Error('Failed to initialize $global from document');
+      }
+      ensureObjectPrototype();
       try {
         fn();
       } catch (e) {
@@ -97,11 +135,7 @@ function unwrapLmObj(x: unknown): Obj | null {
 }
 
 function ownUserPropertyKeys(obj: Obj): Proxy {
-  return $arr(
-    Object.getOwnPropertyNames(obj)
-      .filter((p) => p.startsWith('@'))
-      .map((p) => p.slice(1)),
-  );
+  return $arr(lmOwnUserPropertyKeys(obj));
 }
 
 function lmHasOwn(obj: Obj, prop: string): boolean {
@@ -111,6 +145,22 @@ function lmHasOwn(obj: Obj, prop: string): boolean {
 function lmGetPrototypeOf(obj: Obj): Proxy | null {
   if (!obj.$protoId) return null;
   return deserialize(doc.objectTable[obj.$protoId]);
+}
+
+function lookupHeapObj(id: string): Obj | undefined {
+  const val = newObjects?.get(id) ?? doc.objectTable[id];
+  return isObj(val) ? val : undefined;
+}
+
+function lmInstanceOf(instance: unknown, constructor: Proxy): boolean {
+  if (!isProxy(constructor) || !isFun(constructor.$unwrapped)) return false;
+  const fun = constructor.$unwrapped;
+  if (!isConstructibleFun(fun)) return false;
+  const instanceObj = unwrapLmObj(instance);
+  if (!instanceObj) return false;
+  const proto = unwrapLmObj(getFunPrototype(fun, constructor));
+  if (!proto) return false;
+  return lmObjDelegatesTo(instanceObj, proto, lookupHeapObj);
 }
 
 function $obj(obj: Record<string, Val>, proto?: Proxy | null) {
@@ -202,8 +252,8 @@ function proxifyObj(obj: Obj): Proxy {
 
   p = new Proxy(obj, {
     set(_, prop, value) {
-      (obj as any)['@' + (prop as string)] = toVal(value);
-      return true;
+      if (lmIsReservedKey(prop)) return false;
+      return lmSetOwn(obj, prop, value, toVal);
     },
     get(_, prop) {
       switch (prop) {
@@ -219,25 +269,16 @@ function proxifyObj(obj: Obj): Proxy {
           return !obj.$protoId ? null : deserialize(doc.objectTable[obj.$protoId]);
       }
 
-      prop = '@' + (prop as string);
-      let o = obj;
-      while (o) {
-        if (Object.hasOwn(o, prop)) {
-          return deserialize((o as any)[prop]);
-        }
-        const plain = (prop as string).slice(1);
-        if (plain && Object.hasOwn(o, plain)) {
-          return deserialize((o as any)[plain]);
-        } else if (o.$protoId) {
-          o = doc.objectTable[o.$protoId] as Obj;
-        } else {
-          break;
-        }
-      }
+      if (lmIsReservedKey(prop)) return undefined;
 
-      if (prop === '@toString') {
+      if (prop === 'toString') {
+        const value = lmGetWithDelegation(obj, prop, doc.objectTable, deserialize);
+        if (value !== undefined) return value;
         return () => `[obj ${obj.$id}]`;
       }
+
+      const value = lmGetWithDelegation(obj, prop, doc.objectTable, deserialize);
+      if (value !== undefined) return value;
 
       return undefined;
     },
@@ -497,7 +538,10 @@ function isArrayIndexKey(prop: string | symbol): boolean {
 function formatEvalResult(value: any): string {
   if (value === undefined) return 'undefined';
   if (value === null) return 'null';
-  if (isProxy(value)) return value.toString();
+  if (isProxy(value)) {
+    if (isObj(value.$unwrapped)) return `[obj ${value.$id}]`;
+    return value.toString();
+  }
   try {
     return '' + value;
   } catch {
@@ -542,7 +586,11 @@ function proxifyFun(fun: Fun): Proxy {
   };
 
   let funProxy: Proxy;
-  funProxy = new Proxy(function () {}, {
+  const target = function () {};
+  Object.defineProperty(target, Symbol.hasInstance, {
+    value: (instance: unknown) => lmInstanceOf(instance, funProxy!),
+  });
+  funProxy = new Proxy(target, {
     set(_, prop, value) {
       if (prop === 'prototype') {
         if (!isConstructibleFun(fun)) {
@@ -554,7 +602,9 @@ function proxifyFun(fun: Fun): Proxy {
         fun.$prototypeId = value === null ? undefined : value.$id;
         return true;
       }
-      throw new Error('setting function properties is a no-no!');
+      if (lmIsReservedKey(prop)) return false;
+      if (!lmSetOwn(fun, prop, value, toVal)) return false;
+      return true;
     },
     get(_, prop) {
       switch (prop) {
@@ -573,7 +623,14 @@ function proxifyFun(fun: Fun): Proxy {
           return getFunPrototype(fun, funProxy);
         case 'toString':
           return () => fun.$codeForShow;
+        case 'call':
+          return (thisArg: unknown, ...args: unknown[]) => fn().apply(thisArg, args);
+        case 'apply':
+          return (thisArg: unknown, args: unknown[]) => fn().apply(thisArg, args);
       }
+      if (lmIsReservedKey(prop)) return undefined;
+      const own = lmGetOwn(fun, prop);
+      if (own !== undefined) return deserialize(own);
       return undefined;
     },
     apply(_, thisArg, args) {
@@ -638,6 +695,9 @@ function gc() {
       }
       if (val.$prototypeId != null) {
         visit(val.$prototypeId);
+      }
+      for (const prop of lmOwnUserPropertyKeys(val)) {
+        lookAt(lmGetOwn(val, prop) as Val);
       }
     } else {
       throw new Error('WAT');

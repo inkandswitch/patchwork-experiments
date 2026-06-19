@@ -192,6 +192,10 @@ $global.f = $fun("() => x + y", "() => () => $global.x + $global.y");`);
   });
 
   describe('implicit world bindings', () => {
+    it('parenthesizes global constructors in new expressions', () => {
+      expect(transpile(`new C(5).n()`)).toBe(`new ($global.C)(5).n()`);
+    });
+
     it('rewrites unbound top-level references to $global', () => {
       expect(transpile(`foo = 1;`)).toBe(`$global.foo = 1;`);
     });

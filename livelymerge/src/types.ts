@@ -23,6 +23,7 @@ export interface Fun {
   $code: string;
   $scopes: Ref[];
   $prototypeId?: string;
+  [key: string]: any;
 }
 
 export interface Ref {

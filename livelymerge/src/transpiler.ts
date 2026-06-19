@@ -1,5 +1,6 @@
 import type { SyntaxNode } from '@lezer/common';
 import { parser } from '@lezer/javascript';
+import { expandClasses } from './classTranspiler';
 
 const ARRAY_WRAP = 'ArrayExpression';
 const OBJECT_WRAP = 'ObjectExpression';
@@ -16,6 +17,8 @@ const INJECTED_NAMES = new Set([
   'setInterval',
   'clearInterval',
 ]);
+
+const WORLD_LITERAL_NAMES = new Set(['undefined', 'NaN', 'Infinity', 'TypeError', 'Error']);
 
 type BindingKind = 'block' | 'param' | 'var' | 'function';
 
@@ -135,7 +138,7 @@ function isRootScope(scope: LexicalScope): boolean {
 }
 
 function shouldRewriteToWorld(name: string): boolean {
-  return !INJECTED_NAMES.has(name);
+  return !INJECTED_NAMES.has(name) && !WORLD_LITERAL_NAMES.has(name);
 }
 
 function isAncestorScope(ancestor: LexicalScope, scope: LexicalScope): boolean {
@@ -1178,15 +1181,43 @@ function collectWorldRefEdits(builder: ScopeBuilder, rootScope: LexicalScope, to
   }
 }
 
-function collectLiteralEdits(node: SyntaxNode, edits: Edit[]): void {
+function isObjOrArrCall(node: SyntaxNode, source: string): boolean {
+  if (node.name !== 'CallExpression') return false;
+  const callee = node.firstChild;
+  if (!callee || callee.name !== 'VariableName') return false;
+  const name = nodeText(callee, source);
+  return name === '$obj' || name === '$arr';
+}
+
+function isDirectObjOrArrCallArg(node: SyntaxNode, ancestors: SyntaxNode[], source: string): boolean {
+  const argList = ancestors[ancestors.length - 1];
+  if (!argList || argList.name !== 'ArgList') return false;
+  const call = ancestors[ancestors.length - 2];
+  if (!call || !isObjOrArrCall(call, source)) return false;
+  const calleeName = nodeText(call.firstChild!, source);
+  const expectNode = calleeName === '$obj' ? OBJECT_WRAP : ARRAY_WRAP;
+  if (node.name !== expectNode) return false;
+  for (let child = argList.firstChild; child; child = child.nextSibling) {
+    if (child.name === '(' || child.name === ')' || child.name === ',') continue;
+    return child.from === node.from && child.to === node.to;
+  }
+  return false;
+}
+
+function collectLiteralEdits(node: SyntaxNode, source: string, edits: Edit[], ancestors: SyntaxNode[]): void {
   if (node.name === ARRAY_WRAP) {
-    edits.push({ kind: 'arr', from: node.from, to: node.to });
+    if (!isDirectObjOrArrCallArg(node, ancestors, source)) {
+      edits.push({ kind: 'arr', from: node.from, to: node.to });
+    }
   } else if (node.name === OBJECT_WRAP) {
-    edits.push({ kind: 'obj', from: node.from, to: node.to });
+    if (!isDirectObjOrArrCallArg(node, ancestors, source)) {
+      edits.push({ kind: 'obj', from: node.from, to: node.to });
+    }
   }
 
+  const nextAncestors = [...ancestors, node];
   for (let child = node.firstChild; child; child = child.nextSibling) {
-    collectLiteralEdits(child, edits);
+    collectLiteralEdits(child, source, edits, nextAncestors);
   }
 }
 
@@ -1358,7 +1389,11 @@ function applyEdits(source: string, edits: Edit[]): string {
   return out;
 }
 
-export function transpile(source: string): string {
+function parenthesizeNewGlobalTargets(source: string): string {
+  return source.replace(/\bnew (?!\()(\$global(?:\.[\w$]+)+)(\s*\()/g, 'new ($1)$2');
+}
+
+export function transpileCore(source: string): string {
   const tree = parser.parse(source);
   rejectVarDeclarations(tree.topNode, source);
   const builder = new ScopeBuilder(source);
@@ -1378,10 +1413,14 @@ export function transpile(source: string): string {
   }
 
   const edits: Edit[] = [];
-  collectLiteralEdits(tree.topNode, edits);
+  collectLiteralEdits(tree.topNode, source, edits, []);
   collectScopeEdits(builder, freeVarUses, edits);
   collectWorldRefEdits(builder, rootScope, tree.topNode, edits);
   collectFunctionEdits(functions, freeVarUses, edits);
   const result = applyEdits(source, edits);
-  return transformTopLevelDeclarations(result);
+  return parenthesizeNewGlobalTargets(transformTopLevelDeclarations(result));
+}
+
+export function transpile(source: string): string {
+  return transpileCore(expandClasses(source));
 }
