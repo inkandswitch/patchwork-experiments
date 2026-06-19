@@ -5,7 +5,7 @@ const ARRAY_WRAP = 'ArrayExpression';
 const OBJECT_WRAP = 'ObjectExpression';
 const FUNCTION_NODES = new Set(['FunctionExpression', 'ArrowFunction']);
 const INJECTED_NAMES = new Set([
-  '$w',
+  '$global',
   '$obj',
   '$arr',
   '$fun',
@@ -892,7 +892,7 @@ function renderObjectDestructuringWorld(
     .join(', ');
   statements.push(`const { ${patternText} } = ${rhs}`);
   for (let i = 0; i < bindings.length; i++) {
-    statements.push(`$w.${bindings[i].worldName} = ${tmpNames[i]}`);
+    statements.push(`$global.${bindings[i].worldName} = ${tmpNames[i]}`);
   }
 }
 
@@ -909,7 +909,7 @@ function renderArrayDestructuringWorld(
   const tmpNames = names.map(() => freshWorldTmp());
   statements.push(`const [${tmpNames.join(', ')}] = ${rhs}`);
   for (let i = 0; i < names.length; i++) {
-    statements.push(`$w.${names[i]} = ${tmpNames[i]}`);
+    statements.push(`$global.${names[i]} = ${tmpNames[i]}`);
   }
 }
 
@@ -923,15 +923,15 @@ function renderWorldDeclarator(
     let init = bindingNode.nextSibling;
     while (init && init.name !== 'Equals') init = init.nextSibling;
     if (!init || init.name !== 'Equals') {
-      statements.push(`$w.${name} = undefined`);
+      statements.push(`$global.${name} = undefined`);
       return;
     }
     let expr = init.nextSibling;
     if (!expr || expr.name === ',' || expr.name === ';') {
-      statements.push(`$w.${name} = undefined`);
+      statements.push(`$global.${name} = undefined`);
       return;
     }
-    statements.push(`$w.${name} = ${source.slice(expr.from, expr.to)}`);
+    statements.push(`$global.${name} = ${source.slice(expr.from, expr.to)}`);
     return;
   }
 
@@ -1012,7 +1012,7 @@ function walkForWorldRefs(
       }
       if (!binding || isRootScope(binding.scope)) {
         if (shouldRewriteToWorld(name)) {
-          edits.push({ kind: 'replace', from: lhs.from, to: lhs.to, text: `$w.${name}` });
+          edits.push({ kind: 'replace', from: lhs.from, to: lhs.to, text: `$global.${name}` });
         }
       }
     }
@@ -1030,7 +1030,7 @@ function walkForWorldRefs(
         throw new Error(`cannot assign to const-declared variable '${name}'`);
       }
       if ((!binding || isRootScope(binding.scope)) && shouldRewriteToWorld(name)) {
-        edits.push({ kind: 'replace', from: varName.from, to: varName.to, text: `$w.${name}` });
+        edits.push({ kind: 'replace', from: varName.from, to: varName.to, text: `$global.${name}` });
       }
     }
     return;
@@ -1041,7 +1041,7 @@ function walkForWorldRefs(
     if (!shouldRewriteToWorld(name)) return;
     const binding = builder.resolve(name, currentScope);
     if (binding && !isRootScope(binding.scope)) return;
-    edits.push({ kind: 'replace', from: node.from, to: node.to, text: `$w.${name}` });
+    edits.push({ kind: 'replace', from: node.from, to: node.to, text: `$global.${name}` });
     return;
   }
 
@@ -1246,7 +1246,7 @@ function collectScopeEdits(builder: ScopeBuilder, freeVarUses: FreeVarUse[], edi
         kind: 'replace',
         from: use.from,
         to: use.to,
-        text: `$w.${use.name}`,
+        text: `$global.${use.name}`,
       });
     } else if (use.scope.needsObject()) {
       edits.push({

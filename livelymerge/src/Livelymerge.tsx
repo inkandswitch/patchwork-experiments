@@ -34,7 +34,6 @@ import './styles.css';
 import { transpile } from './transpiler';
 import { wrapForCompletionValue } from './completionValue';
 
-// TODO: rename w to global (in representation, i.e., the id of the global object in the object table)
 // TODO: make classes work
 
 interface Proxy {
@@ -48,7 +47,7 @@ let docHandle: DocHandle<LivelymergeDoc>;
 let doc: LivelymergeDoc;
 let newObjects: Map<string, Obj | Arr | Fun> | null = null;
 let proxies: Map<string, Proxy> | null = null;
-let w: any;
+let $global: any;
 
 let inChangeCall = false;
 
@@ -65,7 +64,7 @@ function change(fn: () => void) {
   try {
     docHandle.change((_doc) => {
       doc = _doc;
-      w = (window as any).$w = deserialize(doc.objectTable['w']);
+      $global = (window as any).$global = deserialize(doc.objectTable['global']);
       try {
         fn();
       } catch (e) {
@@ -651,7 +650,7 @@ function gc() {
     }
   }
 
-  visit('w');
+  visit('global');
   let numReclaimed = 0;
   for (const id of Object.keys(doc.objectTable)) {
     if (!visited.has(id)) {
@@ -830,7 +829,7 @@ function $clearInterval(id: number) {
 
 function getRuntimeParams(): Record<string, unknown> {
   return {
-    $w: w,
+    $global,
     $obj,
     $arr,
     $fun,

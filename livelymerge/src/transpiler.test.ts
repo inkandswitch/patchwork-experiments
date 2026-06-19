@@ -6,18 +6,18 @@ describe('transpile', () => {
     it('wraps a flat array literal', () => {
       expect(transpile(`function f(x) {
   return [x, 5].join(',');
-}`)).toBe(`$w.f = $fun("function f(x) {\\n  return [x, 5].join(',');\\n}", "() => function(x) {\\n  return $arr([x, 5]).join(',');\\n}");`);
+}`)).toBe(`$global.f = $fun("function f(x) {\\n  return [x, 5].join(',');\\n}", "() => function(x) {\\n  return $arr([x, 5]).join(',');\\n}");`);
     });
 
     it('wraps nested array literals inside-out', () => {
       expect(transpile(`function f(x) {
   return [x, [5, 6]].join(',');
-}`)).toBe(`$w.f = $fun("function f(x) {\\n  return [x, [5, 6]].join(',');\\n}", "() => function(x) {\\n  return $arr([x, $arr([5, 6])]).join(',');\\n}");`);
+}`)).toBe(`$global.f = $fun("function f(x) {\\n  return [x, [5, 6]].join(',');\\n}", "() => function(x) {\\n  return $arr([x, $arr([5, 6])]).join(',');\\n}");`);
     });
 
     it('wraps nested object and array literals', () => {
       expect(transpile(`const foo = { x: 1, bar: { a: 3, b: [4, 5] } };`)).toBe(
-        `$w.foo = $obj({ x: 1, bar: $obj({ a: 3, b: $arr([4, 5]) }) });`,
+        `$global.foo = $obj({ x: 1, bar: $obj({ a: 3, b: $arr([4, 5]) }) });`,
       );
     });
   });
@@ -25,13 +25,13 @@ describe('transpile', () => {
   describe('$fun wrapping', () => {
     it('wraps an arrow function with no block scopes in the free-var list', () => {
       expect(transpile(`const f = (x) => x + y;`)).toBe(
-        `$w.f = $fun("(x) => x + y", "() => (x) => x + $w.y");`,
+        `$global.f = $fun("(x) => x + y", "() => (x) => x + $global.y");`,
       );
     });
 
     it('wraps nested function literals separately', () => {
       expect(transpile(`const f = (x) => (y) => x + y;`)).toBe(
-        `$w.f = $fun("(x) => (y) => x + y", "() => (x) => $fun(\\"(y) => x + y\\", \\"() => (y) => x + y\\")");`,
+        `$global.f = $fun("(x) => (y) => x + y", "() => (x) => $fun(\\"(y) => x + y\\", \\"() => (y) => x + y\\")");`,
       );
     });
 
@@ -43,26 +43,26 @@ describe('transpile', () => {
 
     it('handles destructured parameters', () => {
       expect(transpile(`const f = ({x, y}) => x + z;`)).toBe(
-        `$w.f = $fun("({x, y}) => x + z", "() => ({x, y}) => x + $w.z");`,
+        `$global.f = $fun("({x, y}) => x + z", "() => ({x, y}) => x + $global.z");`,
       );
     });
 
     it('treats unbound w like any other world property', () => {
       expect(transpile(`const f = (x) => { let z = w; return x + z; };`)).toBe(
-        `$w.f = $fun("(x) => { let z = w; return x + z; }", "() => (x) => { let z = $w.w; return x + z; }");`,
+        `$global.f = $fun("(x) => { let z = w; return x + z; }", "() => (x) => { let z = $global.w; return x + z; }");`,
       );
     });
 
     it('combines $fun wrapping with literal wrapping inside the function body', () => {
       expect(transpile(`const f = (x) => [x, y];`)).toBe(
-        `$w.f = $fun("(x) => [x, y]", "() => (x) => $arr([x, $w.y])");`,
+        `$global.f = $fun("(x) => [x, y]", "() => (x) => $arr([x, $global.y])");`,
       );
     });
 
     it('wraps function declarations and leaves non-block default-param refs bare', () => {
       expect(transpile(`function f(x = g(5)) {
   return x + 1;
-}`)).toBe(`$w.f = $fun("function f(x = g(5)) {\\n  return x + 1;\\n}", "() => function(x = $w.g(5)) {\\n  return x + 1;\\n}");`);
+}`)).toBe(`$global.f = $fun("function f(x = g(5)) {\\n  return x + 1;\\n}", "() => function(x = $global.g(5)) {\\n  return x + 1;\\n}");`);
     });
   });
 
@@ -151,30 +151,30 @@ describe('transpile', () => {
       expect(transpile(`{ let x = 1; x + 1 }`)).toBe(`{ let x = 1; x + 1 }`);
     });
 
-    it('stores top-level bindings on $w and captures them via $w in closures', () => {
+    it('stores top-level bindings on $global and captures them via $global in closures', () => {
       expect(transpile(`let count = 0;
-inc = () => ++count;`)).toBe(`$w.count = 0;
-$w.inc = $fun("() => ++count", "() => () => ++$w.count");`);
+inc = () => ++count;`)).toBe(`$global.count = 0;
+$global.inc = $fun("() => ++count", "() => () => ++$global.count");`);
     });
 
     it('stores top-level bindings without a trailing semicolon', () => {
       expect(transpile(`let c = 0
-inc = () => ++c`)).toBe(`$w.c = 0
-$w.inc = $fun("() => ++c", "() => () => ++$w.c")`);
+inc = () => ++c`)).toBe(`$global.c = 0
+$global.inc = $fun("() => ++c", "() => () => ++$global.c")`);
     });
 
-    it('puts every top-level binding on $w', () => {
+    it('puts every top-level binding on $global', () => {
       expect(transpile(`let x = 'aaa', y = 'bbb';
-f = () => x;`)).toBe(`$w.x = 'aaa';
-$w.y = 'bbb';
-$w.f = $fun("() => x", "() => () => $w.x");`);
+f = () => x;`)).toBe(`$global.x = 'aaa';
+$global.y = 'bbb';
+$global.f = $fun("() => x", "() => () => $global.x");`);
     });
 
-    it('captures multiple top-level bindings via $w', () => {
+    it('captures multiple top-level bindings via $global', () => {
       expect(transpile(`let x = 'aaa', y = 'bbb';
-f = () => x + y;`)).toBe(`$w.x = 'aaa';
-$w.y = 'bbb';
-$w.f = $fun("() => x + y", "() => () => $w.x + $w.y");`);
+f = () => x + y;`)).toBe(`$global.x = 'aaa';
+$global.y = 'bbb';
+$global.f = $fun("() => x + y", "() => () => $global.x + $global.y");`);
     });
 
     it('preserves declaration order when splitting mixed multi-declarator lets', () => {
@@ -192,25 +192,25 @@ $w.f = $fun("() => x + y", "() => () => $w.x + $w.y");`);
   });
 
   describe('implicit world bindings', () => {
-    it('rewrites unbound top-level references to $w', () => {
-      expect(transpile(`foo = 1;`)).toBe(`$w.foo = 1;`);
+    it('rewrites unbound top-level references to $global', () => {
+      expect(transpile(`foo = 1;`)).toBe(`$global.foo = 1;`);
     });
 
-    it('rewrites top-level references to declared bindings via $w', () => {
+    it('rewrites top-level references to declared bindings via $global', () => {
       expect(transpile(`let x = 1;
-x + 2`)).toBe(`$w.x = 1;
-$w.x + 2`);
+x + 2`)).toBe(`$global.x = 1;
+$global.x + 2`);
     });
 
     it('allows w as a normal top-level variable name', () => {
       expect(transpile(`let w = foo;
-return w;`)).toBe(`$w.w = $w.foo;
-return $w.w;`);
+return w;`)).toBe(`$global.w = $global.foo;
+return $global.w;`);
     });
 
     it('does not rewrite w when shadowed by a parameter', () => {
       expect(transpile(`const f = (w) => w + 1;`)).toBe(
-        `$w.f = $fun("(w) => w + 1", "() => (w) => w + 1");`,
+        `$global.f = $fun("(w) => w + 1", "() => (w) => w + 1");`,
       );
     });
 
@@ -226,9 +226,9 @@ return $w.w;`);
 
     it('rewrites top-level destructuring without evaluating the rhs twice', () => {
       expect(transpile(`let {x, y} = obj;`)).toBe(
-        `const { $tmp1, $tmp2 } = $w.obj;
-$w.x = $tmp1;
-$w.y = $tmp2;`,
+        `const { $tmp1, $tmp2 } = $global.obj;
+$global.x = $tmp1;
+$global.y = $tmp2;`,
       );
     });
 

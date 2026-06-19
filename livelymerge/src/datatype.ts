@@ -10,7 +10,7 @@ export const LivelymergeDatatype: DatatypeImplementation<LivelymergeDoc> = {
         $type: "obj",
         $id: "object-prototype",
       }, // object prototype (top of the delegation chain)
-      "w": {
+      "global": {
         $type: "obj",
         $id: "w",
         $protoId: "object-prototype",
