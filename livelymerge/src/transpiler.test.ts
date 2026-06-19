@@ -154,6 +154,35 @@ w.inc = () => ++c`)).toBe(`const $scope1 = $obj({});
 $scope1.c = 0
 $w.inc = $fun("() => ++c", "($scope1) => () => ++$scope1.c", [$scope1])`);
     });
+
+    it('splits a multi-declarator let when only some bindings are captured', () => {
+      expect(transpile(`let x = 'aaa', y = 'bbb';
+w.f = () => x;`)).toBe(`const $scope1 = $obj({});
+$scope1.x = 'aaa';
+let y='bbb';
+$w.f = $fun("() => x", "($scope1) => () => $scope1.x", [$scope1]);`);
+    });
+
+    it('objectifies every captured binding in a multi-declarator let', () => {
+      expect(transpile(`let x = 'aaa', y = 'bbb';
+w.f = () => x + y;`)).toBe(`const $scope1 = $obj({});
+$scope1.x = 'aaa';
+$scope1.y = 'bbb';
+$w.f = $fun("() => x + y", "($scope1) => () => $scope1.x + $scope1.y", [$scope1]);`);
+    });
+
+    it('preserves declaration order when splitting mixed multi-declarator lets', () => {
+      expect(transpile(`{
+  let x = 1, y = 2, z = 3;
+  return [() => y, () => z];
+}`)).toBe(`{
+  const $scope2 = $obj({});
+  let x=1;
+  $scope2.y = 2;
+  $scope2.z = 3;
+  return $arr([$fun("() => y", "($scope2) => () => $scope2.y", [$scope2]), $fun("() => z", "($scope2) => () => $scope2.z", [$scope2])]);
+}`);
+    });
   });
 
   describe('global w renaming', () => {

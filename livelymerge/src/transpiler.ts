@@ -650,8 +650,8 @@ function renderScopeAssignment(source: string, bindingNode: SyntaxNode, scopeNam
   return `${scopeName}.${bindingName} = ${source.slice(expr.from, expr.to)}`;
 }
 
-function renderDeclarator(source: string, keyword: string, bindingNode: SyntaxNode): string {
-  let result = `${keyword} ${source.slice(bindingNode.from, bindingNode.to)}`;
+function renderDeclaratorText(source: string, bindingNode: SyntaxNode): string {
+  let result = source.slice(bindingNode.from, bindingNode.to);
   let node: SyntaxNode | null = bindingNode.nextSibling;
   while (node && node.name !== ',' && node.name !== ';') {
     result += source.slice(node.from, node.to);
@@ -660,21 +660,84 @@ function renderDeclarator(source: string, keyword: string, bindingNode: SyntaxNo
   return result;
 }
 
-function transformBindingDeclaration(source: string, declNode: SyntaxNode, scopeName: string, bindingName: string): string | null {
+function declaratorNeedsScope(bindingNode: SyntaxNode, source: string, scopedBindings: Set<string>): boolean {
+  if (bindingNode.name === 'VariableDefinition') {
+    return scopedBindings.has(nodeText(bindingNode, source));
+  }
+  const names = new Set<string>();
+  collectPatternBindings(bindingNode, source, names);
+  for (const name of names) {
+    if (scopedBindings.has(name)) return true;
+  }
+  return false;
+}
+
+function declarationIndent(source: string, declNode: SyntaxNode): string {
+  let lineStart = declNode.from;
+  while (lineStart > 0 && source[lineStart - 1] !== '\n') lineStart--;
+  return source.slice(lineStart, declNode.from);
+}
+
+function joinTransformedStatements(
+  statements: string[],
+  hasTrailingSemicolon: boolean,
+  indent: string,
+): string {
+  if (statements.length === 0) return '';
+  return statements
+    .map((statement, index) => {
+      const bare = statement.replace(/;$/, '');
+      const isLast = index === statements.length - 1;
+      const text = !isLast || hasTrailingSemicolon ? `${bare};` : bare;
+      return index === 0 ? text : `${indent}${text}`;
+    })
+    .join('\n');
+}
+
+function transformBindingDeclaration(
+  source: string,
+  declNode: SyntaxNode,
+  scopeName: string,
+  scopedBindings: Set<string>,
+): string | null {
   const keyword = declarationKeyword(declNode, source);
   if (!keyword || keyword === 'var') return null;
 
   let pending: SyntaxNode | null = null;
-  const parts: string[] = [];
+  const statements: string[] = [];
+  let localDeclarators: string[] = [];
   let transformedAny = false;
+  const hasTrailingSemicolon = source[declNode.to - 1] === ';';
 
-  const flush = (terminator: string) => {
+  const flushLocal = () => {
+    if (localDeclarators.length === 0) return;
+    statements.push(`${keyword} ${localDeclarators.join(', ')}`);
+    localDeclarators = [];
+  };
+
+  const flushDeclarator = () => {
     if (!pending) return;
-    if (bindingNodeContainsName(pending, source, bindingName)) {
-      parts.push(renderScopeAssignment(source, pending, scopeName, bindingName) + terminator.trimEnd());
-      transformedAny = true;
+    if (declaratorNeedsScope(pending, source, scopedBindings)) {
+      flushLocal();
+      if (pending.name === 'VariableDefinition') {
+        const name = nodeText(pending, source);
+        if (scopedBindings.has(name)) {
+          statements.push(renderScopeAssignment(source, pending, scopeName, name));
+          transformedAny = true;
+        } else {
+          localDeclarators.push(renderDeclaratorText(source, pending));
+        }
+      } else {
+        const names = new Set<string>();
+        collectPatternBindings(pending, source, names);
+        for (const name of names) {
+          if (!scopedBindings.has(name)) continue;
+          statements.push(renderScopeAssignment(source, pending, scopeName, name));
+          transformedAny = true;
+        }
+      }
     } else {
-      parts.push(renderDeclarator(source, keyword, pending) + terminator);
+      localDeclarators.push(renderDeclaratorText(source, pending));
     }
     pending = null;
   };
@@ -682,15 +745,14 @@ function transformBindingDeclaration(source: string, declNode: SyntaxNode, scope
   for (let child = declNode.firstChild; child; child = child.nextSibling) {
     if (child.name === 'VariableDefinition' || child.name === 'ObjectPattern' || child.name === 'ArrayPattern') {
       pending = child;
-    } else if (child.name === ',') {
-      flush(',');
-    } else if (child.name === ';') {
-      flush(';');
+    } else if (child.name === ',' || child.name === ';') {
+      flushDeclarator();
     }
   }
-  flush('');
+  flushDeclarator();
+  flushLocal();
 
-  return transformedAny ? parts.join(' ') : null;
+  return transformedAny ? joinTransformedStatements(statements, hasTrailingSemicolon, declarationIndent(source, declNode)) : null;
 }
 
 function maybeRenameGlobalW(
@@ -909,7 +971,26 @@ function collectLiteralEdits(node: SyntaxNode, edits: Edit[]): void {
   }
 }
 
+function collectScopedBindingNames(
+  builder: ScopeBuilder,
+  scope: LexicalScope,
+  freeVarUses: FreeVarUse[],
+): Set<string> {
+  const names = new Set<string>();
+  for (const use of freeVarUses) {
+    if (use.scope !== scope) continue;
+    const binding = builder.resolve(use.name, scope);
+    if (binding?.scope === scope && binding.kind === 'block') {
+      names.add(use.name);
+    }
+  }
+  return names;
+}
+
 function collectScopeEdits(builder: ScopeBuilder, freeVarUses: FreeVarUse[], edits: Edit[]): void {
+  type DeclTransform = { declNode: SyntaxNode; scopeName: string; bindings: Set<string> };
+  const declTransforms = new Map<string, DeclTransform>();
+
   for (const scope of builder.scopes) {
     if (!scope.needsObject() || !scope.blockNode) continue;
 
@@ -920,13 +1001,23 @@ function collectScopeEdits(builder: ScopeBuilder, freeVarUses: FreeVarUse[], edi
       edits.push({ kind: 'insert', pos: 0, text: `const ${scope.name} = $obj({});\n` });
     }
 
-    for (const bindingName of scope.freeVarBindings) {
+    for (const bindingName of collectScopedBindingNames(builder, scope, freeVarUses)) {
       const declNode = findBindingDeclaration(scope.blockNode, builder.source, bindingName);
       if (!declNode) continue;
-      const transformed = transformBindingDeclaration(builder.source, declNode, scope.name, bindingName);
-      if (transformed) {
-        edits.push({ kind: 'replace', from: declNode.from, to: declNode.to, text: transformed });
+      const declKey = `${declNode.from}:${declNode.to}`;
+      let entry = declTransforms.get(declKey);
+      if (!entry) {
+        entry = { declNode, scopeName: scope.name, bindings: new Set() };
+        declTransforms.set(declKey, entry);
       }
+      entry.bindings.add(bindingName);
+    }
+  }
+
+  for (const { declNode, scopeName, bindings } of declTransforms.values()) {
+    const transformed = transformBindingDeclaration(builder.source, declNode, scopeName, bindings);
+    if (transformed) {
+      edits.push({ kind: 'replace', from: declNode.from, to: declNode.to, text: transformed });
     }
   }
 
