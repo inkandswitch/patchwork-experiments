@@ -83,7 +83,7 @@ function MessageView(props: { message: Message }) {
             }>
               <Show when={(block as any).text?.trim()}>
                 <div class="assistant-text">
-                  <SolidMarkdown children={(block as any).text} remarkPlugins={[remarkGfm]} renderingStrategy="reconcile" />
+                  <SolidMarkdown children={(block as any).text} remarkPlugins={[remarkGfm]} />
                 </div>
               </Show>
             </Show>
