@@ -112,6 +112,24 @@
   border-bottom-color: var(--chat-fg);
 }
 
+/* ---- Block: context indicator (context-sidebar variant) ---- */
+.chat-context-bar {
+  font-size: 12px;
+  color: #666;
+  padding: 0.375rem 1rem;
+  border-bottom: 1px solid #e5e5e5;
+  background: #f5f7fa;
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-context-bar strong {
+  color: #1a1a1a;
+  font-weight: 600;
+}
+
 /* ---- Block: messages ---- */
 .chat-messages {
   flex: 1;

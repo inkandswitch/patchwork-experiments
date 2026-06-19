@@ -18,6 +18,8 @@
     "@chee/patchwork-llm": "automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE",
     "@inkandswitch/patchwork-filesystem": "^0.0.3",
     "@inkandswitch/patchwork-plugins": "^0.0.2",
+    "@inkandswitch/patchwork-providers": "^0.2.1",
+    "@inkandswitch/patchwork-providers-solid": "^0.2.1",
     "lucide-solid": "^1.8.0",
     "pnpm-plugin-patchwork": "^0.2.0",
     "remark-gfm": "^4.0.1",

@@ -47,6 +47,12 @@ importers:
       '@inkandswitch/patchwork-plugins':
         specifier: ^0.0.2
         version: 0.0.2
+      '@inkandswitch/patchwork-providers':
+        specifier: ^0.2.1
+        version: 0.2.2(@automerge/automerge-repo@2.5.0)
+      '@inkandswitch/patchwork-providers-solid':
+        specifier: ^0.2.1
+        version: 0.2.4(@automerge/automerge-repo-solid-primitives@2.5.3(@automerge/automerge@3.2.1)(solid-js@1.9.11))(@automerge/automerge-repo@2.5.0)(solid-js@1.9.11)
       lucide-solid:
         specifier: ^1.8.0
         version: 1.8.0(solid-js@1.9.11)
@@ -446,8 +452,20 @@ packages:
       '@automerge/automerge-repo': '*'
       '@inkandswitch/patchwork-filesystem': ^0.0.4
 
+  '@inkandswitch/patchwork-providers-solid@0.2.4':
+    resolution: {integrity: sha512-YNWdq8qFTiIAzE8uoYa0oONYeliEg6N5MF5i6R37yjif8pQlVcOQMKEAi4TwWGgIeJWNedNMdzi7KjTgCmoKGQ==}
+    peerDependencies:
+      '@automerge/automerge-repo': '*'
+      '@automerge/automerge-repo-solid-primitives': '*'
+      solid-js: ^1.9.0
+
   '@inkandswitch/patchwork-providers@0.2.2':
     resolution: {integrity: sha512-Yh/21N+1gBbtZmf2MRqmkK9y0PGS7LIHHq7fgzVS07IfDtELS36fhasODtHCUQ7+LDKTdNNlw9CkFLHSMlZY8Q==}
+    peerDependencies:
+      '@automerge/automerge-repo': '*'
+
+  '@inkandswitch/patchwork-providers@0.3.0':
+    resolution: {integrity: sha512-CUxWbONfOiz5SCzOpX/7zDTMePWgq7e4778eBJpbjC5Et4lnyL2/UrOZ6YJ4HiCG7r7MbfM86GUi63bqjTeutg==}
     peerDependencies:
       '@automerge/automerge-repo': '*'
 
@@ -1749,7 +1767,18 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  '@inkandswitch/patchwork-providers-solid@0.2.4(@automerge/automerge-repo-solid-primitives@2.5.3(@automerge/automerge@3.2.1)(solid-js@1.9.11))(@automerge/automerge-repo@2.5.0)(solid-js@1.9.11)':
+    dependencies:
+      '@automerge/automerge-repo': 2.5.0
+      '@automerge/automerge-repo-solid-primitives': 2.5.3(@automerge/automerge@3.2.1)(solid-js@1.9.11)
+      '@inkandswitch/patchwork-providers': 0.3.0(@automerge/automerge-repo@2.5.0)
+      solid-js: 1.9.11
+
   '@inkandswitch/patchwork-providers@0.2.2(@automerge/automerge-repo@2.5.0)':
+    dependencies:
+      '@automerge/automerge-repo': 2.5.0
+
+  '@inkandswitch/patchwork-providers@0.3.0(@automerge/automerge-repo@2.5.0)':
     dependencies:
       '@automerge/automerge-repo': 2.5.0
 
