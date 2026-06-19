@@ -196,6 +196,10 @@ $global.f = $fun("() => x + y", "() => () => $global.x + $global.y");`);
       expect(transpile(`new C(5).n()`)).toBe(`new ($global.C)(5).n()`);
     });
 
+    it('parenthesizes zero-arg global constructors before member calls', () => {
+      expect(transpile(`new A().m()`)).toBe(`new ($global.A)().m()`);
+    });
+
     it('rewrites unbound top-level references to $global', () => {
       expect(transpile(`foo = 1;`)).toBe(`$global.foo = 1;`);
     });

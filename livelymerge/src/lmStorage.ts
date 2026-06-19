@@ -54,10 +54,12 @@ export interface LmProtoEntry {
   $protoId?: string;
 }
 
+export type LmHeapLookup = (id: string) => (LmProtoEntry & Record<string, any>) | undefined;
+
 export function lmGetWithDelegation(
   entry: LmProtoEntry & Record<string, any>,
   prop: PropertyKey,
-  protoTable: Record<string, LmProtoEntry & Record<string, any>>,
+  lookup: LmHeapLookup,
   deserialize: (value: unknown) => unknown,
 ): unknown {
   if (typeof prop === 'symbol') return undefined;
@@ -67,7 +69,7 @@ export function lmGetWithDelegation(
   while (current) {
     if (Object.hasOwn(current, userKey)) return deserialize(current[userKey]);
     if (!plain.startsWith('$') && Object.hasOwn(current, plain)) return deserialize(current[plain]);
-    if (current.$protoId) current = protoTable[current.$protoId];
+    if (current.$protoId) current = lookup(current.$protoId);
     else break;
   }
   return undefined;

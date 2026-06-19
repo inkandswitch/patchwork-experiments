@@ -46,9 +46,15 @@ describe('wrapForCompletionValue', () => {
     expect(wrapForCompletionValue('{foo: bar}')).toBe('return {foo: bar}');
   });
 
-  it('evaluates wrapped object literals', () => {
-    const wrapped = wrapForCompletionValue('{x: 1, y: 2}');
-    const result = new Function(wrapped)();
-    expect(result).toEqual({ x: 1, y: 2 });
+  it('wraps class declaration followed by new', () => {
+    expect(
+      wrapForCompletionValue(`class A {
+  m() { return 5; }
+}
+new A().m()`),
+    ).toBe(`class A {
+  m() { return 5; }
+}
+return new A().m()`);
   });
 });

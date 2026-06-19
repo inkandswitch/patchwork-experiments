@@ -140,14 +140,19 @@ function lmHasOwn(obj: Obj, prop: string): boolean {
   return Object.hasOwn(obj, '@' + prop) || Object.hasOwn(obj, prop);
 }
 
-function lmGetPrototypeOf(obj: Obj): Proxy | null {
-  if (!obj.$protoId) return null;
-  return deserialize(doc.objectTable[obj.$protoId]);
+function lookupHeapEntry(id: string): Obj | Arr | Fun | undefined {
+  return newObjects?.get(id) ?? doc.objectTable[id];
 }
 
-function lookupHeapObj(id: string): Obj | undefined {
-  const val = newObjects?.get(id) ?? doc.objectTable[id];
+function lookupHeapProto(id: string): Obj | undefined {
+  const val = lookupHeapEntry(id);
   return isObj(val) ? val : undefined;
+}
+
+function lmGetPrototypeOf(obj: Obj): Proxy | null {
+  if (!obj.$protoId) return null;
+  const entry = lookupHeapEntry(obj.$protoId);
+  return entry ? deserialize(entry) : null;
 }
 
 function lmInstanceOf(instance: unknown, constructor: Proxy): boolean {
@@ -158,7 +163,7 @@ function lmInstanceOf(instance: unknown, constructor: Proxy): boolean {
   if (!instanceObj) return false;
   const proto = unwrapLmObj(getFunPrototype(fun, constructor));
   if (!proto) return false;
-  return lmObjDelegatesTo(instanceObj, proto, lookupHeapObj);
+  return lmObjDelegatesTo(instanceObj, proto, lookupHeapProto);
 }
 
 function $obj(obj: Record<string, Val>, proto?: Proxy | null) {
@@ -264,18 +269,18 @@ function proxifyObj(obj: Obj): Proxy {
         case '$unwrapped':
           return obj;
         case '__proto__':
-          return !obj.$protoId ? null : deserialize(doc.objectTable[obj.$protoId]);
+          return !obj.$protoId ? null : lmGetPrototypeOf(obj);
       }
 
       if (lmIsReservedKey(prop)) return undefined;
 
       if (prop === 'toString') {
-        const value = lmGetWithDelegation(obj, prop, doc.objectTable, deserialize);
+        const value = lmGetWithDelegation(obj, prop, lookupHeapProto, deserialize);
         if (value !== undefined) return value;
         return () => `[obj ${obj.$id}]`;
       }
 
-      const value = lmGetWithDelegation(obj, prop, doc.objectTable, deserialize);
+      const value = lmGetWithDelegation(obj, prop, lookupHeapProto, deserialize);
       if (value !== undefined) return value;
 
       return undefined;
@@ -582,6 +587,18 @@ function getFunPrototype(fun: Fun, funProxy: Proxy): Proxy {
   return proto;
 }
 
+function constructorName(fun: Fun): string {
+  const match = fun.$codeForShow.match(/^function\s+(\w+)/);
+  return match?.[1] ?? 'Function';
+}
+
+function rejectClassConstructorCallWithoutNew(fun: Fun, thisArg: unknown): void {
+  if (!isConstructibleFun(fun)) return;
+  if (isProxy(thisArg) && thisArg.$id === $global?.$id) {
+    throw new TypeError(`Class constructor ${constructorName(fun)} cannot be invoked without 'new'`);
+  }
+}
+
 function proxifyFun(fun: Fun): Proxy {
   const existing = proxies?.get(fun.$id);
   if (existing) {
@@ -643,9 +660,15 @@ function proxifyFun(fun: Fun): Proxy {
         case 'toString':
           return () => fun.$codeForShow;
         case 'call':
-          return (thisArg: unknown, ...args: unknown[]) => fn().apply(thisArg, args);
+          return (thisArg: unknown, ...args: unknown[]) => {
+            rejectClassConstructorCallWithoutNew(fun, thisArg);
+            return fn().apply(thisArg, args);
+          };
         case 'apply':
-          return (thisArg: unknown, args: unknown[]) => fn().apply(thisArg, args);
+          return (thisArg: unknown, args: unknown[]) => {
+            rejectClassConstructorCallWithoutNew(fun, thisArg);
+            return fn().apply(thisArg, args);
+          };
       }
       if (lmIsReservedKey(prop)) return undefined;
       const own = lmGetOwn(fun, prop);
@@ -653,6 +676,7 @@ function proxifyFun(fun: Fun): Proxy {
       return undefined;
     },
     apply(_, thisArg, args) {
+      rejectClassConstructorCallWithoutNew(fun, thisArg);
       return fn().apply(thisArg, args);
     },
     construct(_, args) {
