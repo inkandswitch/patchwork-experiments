@@ -7,6 +7,7 @@ import {
 import {
   AutomergeUrl,
   isValidAutomergeUrl,
+  parseAutomergeUrl,
   type DocHandle,
   type Repo,
 } from "@automerge/automerge-repo";
@@ -38,6 +39,7 @@ import {
   findLeafIdByUrl,
   goBackIn,
   makeLeaf,
+  moveLeafIn,
   navigateLeafIn,
   removeLeafIn,
   setLeafToolIn,
@@ -48,6 +50,7 @@ import { TopBar } from "./TopBar";
 import { FrameProviders } from "./FrameProviders";
 import "./styles.css";
 import type {
+  DropSide,
   LayoutNode,
   LeafNode,
   PanelView,
@@ -147,6 +150,56 @@ const writeLayoutParam = (url: AutomergeUrl): void => {
   }
 };
 
+// The host's hash router owns the `doc`/`tool` (and `heads`/`title`/`type`)
+// params: it writes them when an open bubbles up, and — crucially — re-dispatches
+// `patchwork:open-document` for the URL's `doc` on every `patchwork:mounted` and
+// `hashchange`. If that param ever names a doc we *don't* have open, the
+// re-dispatch resurrects it (the "closing a panel reopens it" bug). So the frame
+// keeps `doc`/`tool` pointed at the selected panel; the re-dispatch then always
+// lands on an open doc and is a harmless focus.
+const DOC_PARAM = "doc";
+
+const readDocParam = (): string | null => {
+  try {
+    return new URLSearchParams(window.location.hash.slice(1)).get(DOC_PARAM);
+  } catch {
+    return null;
+  }
+};
+
+const syncDocParam = (
+  url: AutomergeUrl | undefined,
+  toolId: string | null,
+): void => {
+  try {
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    const before = params.toString();
+    if (url) {
+      const { documentId, heads } = parseAutomergeUrl(url);
+      params.set(DOC_PARAM, documentId);
+      if (heads && heads.length) params.set("heads", heads.join("|"));
+      else params.delete("heads");
+    } else {
+      params.delete(DOC_PARAM);
+      params.delete("heads");
+    }
+    if (toolId) params.set("tool", toolId);
+    else params.delete("tool");
+    // `title`/`type` belonged to whatever the host last routed; the host
+    // recomputes them from the doc, so dropping them is safe and stops a stale
+    // `type` from being applied to a different document.
+    params.delete("title");
+    params.delete("type");
+    if (params.toString() === before) return;
+    const href = `${window.location.pathname}${window.location.search}#${params.toString()}`;
+    // replaceState (not `location.hash =`) so we don't add history entries or
+    // fire a `hashchange` that would loop back through the host's router.
+    window.history.replaceState(window.history.state, "", href);
+  } catch {
+    // Non-fatal: the URL just won't reflect the selection.
+  }
+};
+
 type TabLayoutSession = {
   /** This tab's layout document (from the URL, or freshly minted). */
   layoutUrl: AutomergeUrl | undefined;
@@ -217,6 +270,13 @@ type LayoutOps = {
   goBack: (leafId: string) => void;
   split: (leafId: string, direction: SplitDirection) => void;
   close: (leafId: string) => void;
+  /** Re-tile `sourceLeafId` against `targetLeafId` on the given side (drag/drop). */
+  moveLeaf: (sourceLeafId: string, targetLeafId: string, side: DropSide) => void;
+  /** The panel currently being dragged (drives drop-zone overlays), or null. */
+  draggingId: string | null;
+  /** Begin/end a panel drag. */
+  beginDrag: (leafId: string) => void;
+  endDrag: () => void;
   setSizes: (splitId: string, sizes: [number, number]) => void;
   setTool: (leafId: string, toolId: string | undefined) => void;
   /** Open a context tool (comments, history, …) as a panel beside `sourceLeafId`. */
@@ -425,6 +485,80 @@ const SubjectChip = ({ ops }: { ops: LayoutOps }) => {
   );
 };
 
+const GripIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+    <circle cx="6" cy="4" r="1.1" />
+    <circle cx="10" cy="4" r="1.1" />
+    <circle cx="6" cy="8" r="1.1" />
+    <circle cx="10" cy="8" r="1.1" />
+    <circle cx="6" cy="12" r="1.1" />
+    <circle cx="10" cy="12" r="1.1" />
+  </svg>
+);
+
+/** Which edge of `el` the cursor is nearest — the 4 triangular drop zones. */
+const computeDropSide = (
+  event: { clientX: number; clientY: number },
+  el: HTMLElement,
+): DropSide => {
+  const r = el.getBoundingClientRect();
+  const x = r.width ? (event.clientX - r.left) / r.width : 0.5;
+  const y = r.height ? (event.clientY - r.top) / r.height : 0.5;
+  const dist = { left: x, right: 1 - x, top: y, bottom: 1 - y };
+  let side: DropSide = "right";
+  let min = Infinity;
+  (Object.keys(dist) as DropSide[]).forEach((k) => {
+    if (dist[k] < min) {
+      min = dist[k];
+      side = k;
+    }
+  });
+  return side;
+};
+
+/**
+ * Drop surface laid over a (non-source) panel's body while a drag is active.
+ * It sits above the embedded view so drag events land here rather than inside
+ * an iframe/tool, previews the target edge, and commits the move on drop.
+ */
+const DropZones = ({ leaf, ops }: { leaf: LeafNode; ops: LayoutOps }) => {
+  const [side, setSide] = useState<DropSide | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  return (
+    <div
+      ref={ref}
+      className="tile-dropzone"
+      onDragOver={(event) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        if (ref.current) setSide(computeDropSide(event, ref.current));
+      }}
+      onDragLeave={(event) => {
+        // Ignore leaves into child nodes of the overlay.
+        if (event.currentTarget.contains(event.relatedTarget as Node | null))
+          return;
+        setSide(null);
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        const sourceId =
+          event.dataTransfer.getData("text/plain") || ops.draggingId;
+        const dropSide = ref.current
+          ? computeDropSide(event, ref.current)
+          : (side ?? "right");
+        setSide(null);
+        if (sourceId) ops.moveLeaf(sourceId, leaf.id, dropSide);
+      }}
+    >
+      {side && (
+        <div
+          className={`tile-dropzone__preview tile-dropzone__preview--${side}`}
+        />
+      )}
+    </div>
+  );
+};
+
 const TilePanel = ({
   leaf,
   ops,
@@ -452,15 +586,39 @@ const TilePanel = ({
     ops.toolPreferences,
   );
 
+  const panelRef = useRef<HTMLDivElement>(null);
+  const isDragging = ops.draggingId === leaf.id;
+  const isDropTarget = ops.draggingId !== null && !isDragging;
+
   return (
     <div
+      ref={panelRef}
       data-leaf-id={leaf.id}
       className={`tile-panel${isActive ? " tile-panel--active" : ""}${
         isSelected ? " tile-panel--selected" : ""
-      }${isContext ? " tile-panel--context" : ""}`}
+      }${isContext ? " tile-panel--context" : ""}${
+        isDragging ? " tile-panel--dragging" : ""
+      }`}
       onMouseDownCapture={() => focusLeaf(leaf.id)}
     >
       <div className="tile-panel__header">
+        <button
+          className="tile-panel__grip"
+          title="Drag to rearrange"
+          aria-label="Drag to rearrange panel"
+          draggable
+          onDragStart={(event) => {
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData("text/plain", leaf.id);
+            if (panelRef.current) {
+              event.dataTransfer.setDragImage(panelRef.current, 24, 16);
+            }
+            ops.beginDrag(leaf.id);
+          }}
+          onDragEnd={() => ops.endDrag()}
+        >
+          <GripIcon />
+        </button>
         <button
           className="tile-panel__icon-btn"
           title="Back"
@@ -517,6 +675,7 @@ const TilePanel = ({
           doc-url={leaf.view.url}
           tool-id={effectiveToolId}
         />
+        {isDropTarget && <DropZones leaf={leaf} ops={ops} />}
       </div>
     </div>
   );
@@ -725,9 +884,75 @@ export const PatchworkFrame = ({
   const handleRef = useRef<DocHandle<TilingLayoutDoc> | undefined>(undefined);
   handleRef.current = layoutHandle;
 
-  const change = useCallback((fn: (doc: TilingLayoutDoc) => void) => {
-    handleRef.current?.change(fn);
+  // Mirror the selected content panel into the URL's `doc`/`tool` params (see
+  // `syncDocParam`). Two subtleties:
+  //  - We read the *post-change* layout straight off the handle (`doc()` is
+  //    synchronous and already reflects the just-applied change) so that a close
+  //    pins the URL to the survivor *before* React commits the remount that
+  //    would otherwise let the host re-dispatch — and resurrect — the closed doc.
+  //  - On first load we must not overwrite an inbound deep-link before the host
+  //    has opened it. We hold off syncing until the URL's `doc` is actually the
+  //    selected panel (or there was none); a timeout failsafe re-enables it.
+  const initialDocRef = useRef<string | null>(readDocParam());
+  const syncEnabledRef = useRef(false);
+  useEffect(() => {
+    if (syncEnabledRef.current) return;
+    const t = setTimeout(() => {
+      syncEnabledRef.current = true;
+    }, 5000);
+    return () => clearTimeout(t);
   }, []);
+
+  const syncUrlToSelection = useCallback(() => {
+    let current: TilingLayoutDoc["layout"] | null = null;
+    try {
+      current = handleRef.current?.doc()?.layout ?? null;
+    } catch {
+      current = null;
+    }
+    if (!current) current = docRef.current?.layout ?? null;
+    if (!current) return;
+    const layout = current;
+    const order = focusRef.current.focusOrder;
+    let leaf: LeafNode | null = null;
+    for (let i = order.length - 1; i >= 0 && !leaf; i--) {
+      const l = findLeaf(layout, order[i]);
+      if (l && l.view.role !== "context") leaf = l;
+    }
+    if (!leaf) {
+      for (const id of collectLeafIds(layout)) {
+        const l = findLeaf(layout, id);
+        if (l && l.view.role !== "context") {
+          leaf = l;
+          break;
+        }
+      }
+    }
+    if (!syncEnabledRef.current) {
+      const want = initialDocRef.current;
+      const have = leaf ? parseAutomergeUrl(leaf.view.url).documentId : null;
+      if (want && want !== have) return; // deep-link not opened yet — leave it
+      syncEnabledRef.current = true;
+    }
+    syncDocParam(leaf?.view.url, leaf?.view.toolId ?? null);
+  }, []);
+
+  const change = useCallback(
+    (fn: (doc: TilingLayoutDoc) => void) => {
+      handleRef.current?.change(fn);
+      syncUrlToSelection();
+    },
+    [syncUrlToSelection],
+  );
+
+  // Catch selection changes that don't flow through change()/focusLeaf() — e.g.
+  // the prune effect re-selecting after another tab edited a shared layout. The
+  // synchronous calls above still matter for close (they beat the commit-phase
+  // remount); this is the after-commit backstop. Gating in syncUrlToSelection
+  // keeps this from clobbering an inbound deep-link on first load.
+  useEffect(() => {
+    syncUrlToSelection();
+  }, [selectedDocUrl, selectedToolId, syncUrlToSelection]);
 
   // Seed a freshly-minted session doc once: clone the last session's
   // arrangement (so a new tab resumes where you left off), otherwise open a
@@ -773,8 +998,11 @@ export const PatchworkFrame = ({
         order.push(id);
         return { activeLeafId: id, focusOrder: order };
       });
+      // commitFocus updates focusRef synchronously, so the selection read here
+      // reflects the new focus order.
+      syncUrlToSelection();
     },
-    [commitFocus],
+    [commitFocus, syncUrlToSelection],
   );
 
   const navigate = useCallback(
@@ -853,6 +1081,21 @@ export const PatchworkFrame = ({
       });
     },
     [change, rootFolderUrl],
+  );
+
+  // Which panel is mid-drag (frame-level so every panel can show drop zones).
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const beginDrag = useCallback((leafId: string) => setDraggingId(leafId), []);
+  const endDrag = useCallback(() => setDraggingId(null), []);
+
+  const moveLeaf = useCallback(
+    (sourceLeafId: string, targetLeafId: string, side: DropSide) => {
+      setDraggingId(null);
+      if (sourceLeafId === targetLeafId) return;
+      change((d) => moveLeafIn(d, sourceLeafId, targetLeafId, side));
+      focusLeaf(sourceLeafId);
+    },
+    [change, focusLeaf],
   );
 
   // Resize fires continuously while dragging; debounce per-split so only the
@@ -1031,6 +1274,10 @@ export const PatchworkFrame = ({
     goBack,
     split,
     close,
+    moveLeaf,
+    draggingId,
+    beginDrag,
+    endDrag,
     setSizes,
     setTool,
     openContext,

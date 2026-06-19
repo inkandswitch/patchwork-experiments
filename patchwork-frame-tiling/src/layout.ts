@@ -1,4 +1,5 @@
 import type {
+  DropSide,
   LayoutNode,
   LeafNode,
   PanelView,
@@ -223,6 +224,41 @@ export const splitLeafIn = (
     direction,
     insertAfter ? [existing, newLeaf] : [newLeaf, existing],
   );
+};
+
+/**
+ * Move a leaf so it tiles against another leaf on the given side. The leaf is
+ * first removed from its current slot (its sibling collapses up), then the
+ * target leaf is split with the moved leaf placed on the chosen side. The moved
+ * leaf keeps its id and history (so focus/selection and its mounted view
+ * survive the move). No-op if source and target are the same leaf.
+ */
+export const moveLeafIn = (
+  doc: TilingLayoutDoc,
+  sourceLeafId: string,
+  targetLeafId: string,
+  side: DropSide,
+): void => {
+  if (sourceLeafId === targetLeafId) return;
+  const root = doc.layout;
+  if (!root) return;
+  const source = findLeaf(root, sourceLeafId);
+  if (!source) return;
+  // Snapshot the dragged leaf before removal drops it from the tree.
+  const moved = cloneLayout(source) as LeafNode;
+
+  removeLeafIn(doc, sourceLeafId);
+  // The only way the tree is now empty is if `source` was the sole leaf, which
+  // can't happen here (target differs and still exists) — but guard anyway.
+  if (!doc.layout) {
+    doc.layout = moved;
+    return;
+  }
+
+  const direction: SplitDirection =
+    side === "left" || side === "right" ? "horizontal" : "vertical";
+  const insertAfter = side === "right" || side === "bottom";
+  splitLeafIn(doc, targetLeafId, direction, moved, insertAfter);
 };
 
 /**

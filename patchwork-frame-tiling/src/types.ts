@@ -59,6 +59,9 @@ export type PanelView = {
 
 export type SplitDirection = "horizontal" | "vertical";
 
+/** The edge of a target panel a dragged panel is dropped against. */
+export type DropSide = "left" | "right" | "top" | "bottom";
+
 /** A leaf panel shows a single document with a back-history stack. */
 export type LeafNode = {
   kind: "leaf";

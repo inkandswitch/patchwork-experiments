@@ -387,6 +387,75 @@ patchwork-view {
   inset: 0;
 }
 
+/* --- Drag & drop to rearrange panels --- */
+
+/* Drag handle (grip) at the head of each panel header. */
+.tile-panel__grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 24px;
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: var(--color-base-content, oklch(0.45 0.02 270));
+  opacity: 0.45;
+  cursor: grab;
+  border-radius: 5px;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+
+.tile-panel__grip:hover {
+  opacity: 0.9;
+  background: var(--color-base-300, oklch(0.9 0.01 270));
+}
+
+.tile-panel__grip:active {
+  cursor: grabbing;
+}
+
+/* The panel being dragged reads as lifted/ghosted. */
+.tile-panel--dragging {
+  opacity: 0.55;
+}
+
+/* Drop surface over a candidate target panel's body during a drag. */
+.tile-dropzone {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+
+/* Edge preview: a translucent slab on the half the drop will land in. */
+.tile-dropzone__preview {
+  position: absolute;
+  background: oklch(0.6 0.18 250 / 0.2);
+  background: color-mix(
+    in oklch,
+    var(--color-primary, oklch(0.6 0.18 250)) 22%,
+    transparent
+  );
+  outline: 2px solid var(--color-primary, oklch(0.6 0.18 250));
+  outline-offset: -2px;
+  border-radius: 4px;
+  pointer-events: none;
+  transition: inset 0.08s ease;
+}
+
+.tile-dropzone__preview--left {
+  inset: 0 50% 0 0;
+}
+.tile-dropzone__preview--right {
+  inset: 0 0 0 50%;
+}
+.tile-dropzone__preview--top {
+  inset: 0 0 50% 0;
+}
+.tile-dropzone__preview--bottom {
+  inset: 50% 0 0 0;
+}
+
 /* Resize handles between tiled panels */
 .tile-resize-handle {
   position: relative;
