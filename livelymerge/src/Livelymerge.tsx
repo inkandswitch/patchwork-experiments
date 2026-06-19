@@ -34,6 +34,9 @@ import './styles.css';
 import { transpile } from './transpiler';
 import { wrapForCompletionValue } from './completionValue';
 
+// TODO: rename w to global (in representation, i.e., the id of the global object in the object table)
+// TODO: make classes work
+
 interface Proxy {
   $isProxy: boolean;
   $id: string;
@@ -121,7 +124,7 @@ function $obj(obj: Record<string, Val>, proto?: Proxy | null) {
     entry.$protoId = proto?.$id ?? 'object-prototype';
   }
   for (const [k, v] of Object.entries(obj)) {
-    entry[k] = toVal(v);
+    entry[k.startsWith('@') ? k : '@' + k] = toVal(v);
   }
   ensureNewObjects().set($id, entry);
   return deserialize(entry);
@@ -222,6 +225,10 @@ function proxifyObj(obj: Obj): Proxy {
       while (o) {
         if (Object.hasOwn(o, prop)) {
           return deserialize((o as any)[prop]);
+        }
+        const plain = (prop as string).slice(1);
+        if (plain && Object.hasOwn(o, plain)) {
+          return deserialize((o as any)[plain]);
         } else if (o.$protoId) {
           o = doc.objectTable[o.$protoId] as Obj;
         } else {
@@ -513,17 +520,6 @@ function getFunPrototype(fun: Fun, funProxy: Proxy): Proxy {
   return proto;
 }
 
-const scopesToFnCache = new Map<string, (...args: any[]) => () => any>();
-
-function getScopesToFn(code: string) {
-  let scopesToFn = scopesToFnCache.get(code);
-  if (!scopesToFn) {
-    scopesToFn = new Function('return ' + code)() as (...args: any[]) => () => any;
-    scopesToFnCache.set(code, scopesToFn);
-  }
-  return scopesToFn;
-}
-
 function proxifyFun(fun: Fun): Proxy {
   const existing = proxies?.get(fun.$id);
   if (existing) {
@@ -538,10 +534,10 @@ function proxifyFun(fun: Fun): Proxy {
     return _ref;
   };
 
-  let _fn: (() => any) | null = null;
+  let _fn: ((...args: any[]) => any) | null = null;
   const fn: () => (...args: any[]) => any = () => {
     if (!_fn) {
-      _fn = getScopesToFn(fun.$code)(...fun.$scopes.map(deserialize));
+      _fn = getCodeFactory(fun.$code)(...fun.$scopes.map(deserialize)) as (...args: any[]) => any;
     }
     return _fn;
   };
@@ -832,6 +828,39 @@ function $clearInterval(id: number) {
   });
 }
 
+function getRuntimeParams(): Record<string, unknown> {
+  return {
+    $w: w,
+    $obj,
+    $arr,
+    $fun,
+    Object: $Object,
+    Array: $Array,
+    setTimeout: $setTimeout,
+    clearTimeout: $clearTimeout,
+    setInterval: $setInterval,
+    clearInterval: $clearInterval,
+  };
+}
+
+const codeFactoryCache = new Map<
+  string,
+  (...runtime: unknown[]) => (...scopeArgs: unknown[]) => unknown
+>();
+
+function getCodeFactory(code: string): (...scopeArgs: unknown[]) => unknown {
+  let factory = codeFactoryCache.get(code);
+  if (!factory) {
+    const runtimeParams = getRuntimeParams();
+    factory = new Function(...Object.keys(runtimeParams), 'return ' + code) as (
+      ...runtime: unknown[]
+    ) => (...scopeArgs: unknown[]) => unknown;
+    codeFactoryCache.set(code, factory);
+  }
+  const runtimeParams = getRuntimeParams();
+  return factory(...Object.values(runtimeParams));
+}
+
 function doIt(view: EditorView, print = false) {
   // compute the from- and to-indices of the code we're about to execute
   let { from, to, head } = view.state.selection.main;
@@ -849,29 +878,9 @@ function doIt(view: EditorView, print = false) {
     change(() => {
       const realCode = transpile(wrapForCompletionValue(code));
       console.log('evaluating', realCode);
-      result = (window as any).result = new Function(
-        '$w',
-        '$obj',
-        '$arr',
-        '$fun',
-        'Object',
-        'Array',
-        'setTimeout',
-        'clearTimeout',
-        'setInterval',
-        'clearInterval',
-        realCode,
-      )(
-        w,
-        $obj,
-        $arr,
-        $fun,
-        $Object,
-        $Array,
-        $setTimeout,
-        $clearTimeout,
-        $setInterval,
-        $clearInterval,
+      const runtimeParams = getRuntimeParams();
+      result = (window as any).result = new Function(...Object.keys(runtimeParams), realCode)(
+        ...Object.values(runtimeParams),
       );
     });
     console.log('result', result);

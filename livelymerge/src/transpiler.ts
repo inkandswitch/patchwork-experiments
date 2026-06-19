@@ -4,6 +4,18 @@ import { parser } from '@lezer/javascript';
 const ARRAY_WRAP = 'ArrayExpression';
 const OBJECT_WRAP = 'ObjectExpression';
 const FUNCTION_NODES = new Set(['FunctionExpression', 'ArrowFunction']);
+const INJECTED_NAMES = new Set([
+  '$w',
+  '$obj',
+  '$arr',
+  '$fun',
+  'Object',
+  'Array',
+  'setTimeout',
+  'clearTimeout',
+  'setInterval',
+  'clearInterval',
+]);
 
 type BindingKind = 'block' | 'param' | 'var' | 'function';
 
@@ -19,6 +31,7 @@ type FreeVarUse = {
   from: number;
   to: number;
   funcNode: SyntaxNode;
+  world?: boolean;
 };
 
 class LexicalScope {
@@ -117,6 +130,14 @@ function collectTypeParamBindings(typeParamList: SyntaxNode, source: string, bin
   }
 }
 
+function isRootScope(scope: LexicalScope): boolean {
+  return scope.parent === null;
+}
+
+function shouldRewriteToWorld(name: string): boolean {
+  return !INJECTED_NAMES.has(name);
+}
+
 function isAncestorScope(ancestor: LexicalScope, scope: LexicalScope): boolean {
   let current: LexicalScope | null = scope;
   while (current) {
@@ -144,6 +165,7 @@ function findEnclosingScopeForFunction(
 class ScopeBuilder {
   readonly source: string;
   readonly scopes: LexicalScope[] = [];
+  readonly rootConstNames = new Set<string>();
   private nextScopeId = 1;
 
   constructor(source: string) {
@@ -260,9 +282,16 @@ function registerDeclaration(node: SyntaxNode, builder: ScopeBuilder, currentSco
   const commit = () => {
     if (!pending) return;
     if (pending.name === 'VariableDefinition') {
-      builder.addBinding(currentScope, nodeText(pending, builder.source), kind);
+      const name = nodeText(pending, builder.source);
+      builder.addBinding(currentScope, name, kind);
+      if (isRootScope(currentScope) && keyword === 'const') builder.rootConstNames.add(name);
     } else {
-      addPatternBindings(pending, builder, currentScope, kind);
+      const names = new Set<string>();
+      collectPatternBindings(pending, builder.source, names);
+      for (const name of names) {
+        builder.addBinding(currentScope, name, kind);
+        if (isRootScope(currentScope) && keyword === 'const') builder.rootConstNames.add(name);
+      }
     }
     pending = null;
   };
@@ -537,6 +566,51 @@ function walkDeclarationForFreeVars(
   commit();
 }
 
+function functionDeclaresName(funcNode: SyntaxNode, name: string, source: string): boolean {
+  const nameNode = funcNode.getChild('VariableDefinition');
+  if (nameNode && nodeText(nameNode, source) === name) return true;
+
+  const paramList = funcNode.getChild('ParamList');
+  if (!paramList) return false;
+
+  const bindings = new Set<string>();
+  let currentParam: SyntaxNode[] = [];
+  const processParam = () => {
+    for (const part of currentParam) collectParamBindings(part, source, bindings);
+    currentParam = [];
+  };
+
+  for (let child = paramList.firstChild; child; child = child.nextSibling) {
+    if (child.name === '(' || child.name === ')') continue;
+    if (child.name === ',') processParam();
+    else currentParam.push(child);
+  }
+  processParam();
+  return bindings.has(name);
+}
+
+function isClosedOverByEnclosingFunction(
+  name: string,
+  varNode: SyntaxNode,
+  funcNode: SyntaxNode,
+  source: string,
+): boolean {
+  let node: SyntaxNode | null = varNode.parent;
+  while (node) {
+    if (
+      node !== funcNode &&
+      (node.name === 'ArrowFunction' || node.name === 'FunctionExpression' || node.name === 'FunctionDeclaration') &&
+      node.from <= funcNode.from &&
+      node.to >= funcNode.to &&
+      functionDeclaresName(node, name, source)
+    ) {
+      return true;
+    }
+    node = node.parent;
+  }
+  return false;
+}
+
 function walkFreeVarNode(
   builder: ScopeBuilder,
   node: SyntaxNode,
@@ -552,12 +626,23 @@ function walkFreeVarNode(
     const name = nodeText(node, builder.source);
     const binding = builder.resolve(name, currentScope);
     if (binding && (binding.scope === funcScope || isAncestorScope(funcScope, binding.scope))) return;
+    if (binding?.kind === 'param' || binding?.kind === 'function') return;
+    if (isClosedOverByEnclosingFunction(name, node, funcNode, builder.source)) return;
 
-    if (binding?.kind === 'block') {
+    if (binding?.kind === 'block' && !isRootScope(binding.scope)) {
       binding.scope.freeVarBindings.add(name);
       freeVarUses.push({ name, scope: binding.scope, from: node.from, to: node.to, funcNode });
+    } else if (!binding || isRootScope(binding.scope)) {
+      freeVarUses.push({
+        name,
+        scope: binding?.scope ?? currentScope,
+        from: node.from,
+        to: node.to,
+        funcNode,
+        world: shouldRewriteToWorld(name),
+      });
     } else {
-      freeVarUses.push({ name, scope: binding?.scope ?? currentScope, from: node.from, to: node.to, funcNode });
+      freeVarUses.push({ name, scope: binding.scope, from: node.from, to: node.to, funcNode });
     }
     return;
   }
@@ -755,19 +840,270 @@ function transformBindingDeclaration(
   return transformedAny ? joinTransformedStatements(statements, hasTrailingSemicolon, declarationIndent(source, declNode)) : null;
 }
 
-function maybeRenameGlobalW(
-  builder: ScopeBuilder,
-  node: SyntaxNode,
-  currentScope: LexicalScope,
-  edits: Edit[],
-): void {
-  const name = nodeText(node, builder.source);
-  if (name === 'w' && !builder.resolve('w', currentScope)) {
-    edits.push({ kind: 'replace', from: node.from, to: node.to, text: '$w' });
+let nextWorldTmpId = 0;
+
+function freshWorldTmp(): string {
+  return `$tmp${++nextWorldTmpId}`;
+}
+
+function collectWorldPatternNames(pattern: SyntaxNode, source: string, names: string[]): void {
+  if (pattern.name === 'VariableDefinition') {
+    names.push(nodeText(pattern, source));
+    return;
+  }
+  for (let child = pattern.firstChild; child; child = child.nextSibling) {
+    if (child.name === 'VariableDefinition' || child.name === 'ObjectPattern' || child.name === 'ArrayPattern') {
+      collectWorldPatternNames(child, source, names);
+    } else if (child.name === 'PatternProperty') {
+      const varDef = child.getChild('VariableDefinition');
+      if (varDef) names.push(nodeText(varDef, source));
+      else {
+        const propName = child.getChild('PropertyName');
+        if (propName) names.push(nodeText(propName, source));
+      }
+    }
   }
 }
 
-function walkDeclarationForGlobalW(
+function renderObjectDestructuringWorld(
+  pattern: SyntaxNode,
+  source: string,
+  rhs: string,
+  statements: string[],
+): void {
+  const bindings: { worldName: string; key: string }[] = [];
+  for (let child = pattern.firstChild; child; child = child.nextSibling) {
+    if (child.name !== 'PatternProperty') continue;
+    const propName = child.getChild('PropertyName');
+    const varDef = child.getChild('VariableDefinition');
+    if (!propName) continue;
+    const key = nodeText(propName, source);
+    const worldName = varDef ? nodeText(varDef, source) : key;
+    bindings.push({ worldName, key });
+  }
+  if (bindings.length === 0) return;
+
+  const tmpNames = bindings.map(() => freshWorldTmp());
+  const patternText = bindings
+    .map((binding, index) => {
+      const tmp = tmpNames[index];
+      return binding.key === binding.worldName ? tmp : `${binding.key}: ${tmp}`;
+    })
+    .join(', ');
+  statements.push(`const { ${patternText} } = ${rhs}`);
+  for (let i = 0; i < bindings.length; i++) {
+    statements.push(`$w.${bindings[i].worldName} = ${tmpNames[i]}`);
+  }
+}
+
+function renderArrayDestructuringWorld(
+  pattern: SyntaxNode,
+  source: string,
+  rhs: string,
+  statements: string[],
+): void {
+  const names: string[] = [];
+  collectWorldPatternNames(pattern, source, names);
+  if (names.length === 0) return;
+
+  const tmpNames = names.map(() => freshWorldTmp());
+  statements.push(`const [${tmpNames.join(', ')}] = ${rhs}`);
+  for (let i = 0; i < names.length; i++) {
+    statements.push(`$w.${names[i]} = ${tmpNames[i]}`);
+  }
+}
+
+function renderWorldDeclarator(
+  bindingNode: SyntaxNode,
+  source: string,
+  statements: string[],
+): void {
+  if (bindingNode.name === 'VariableDefinition') {
+    const name = nodeText(bindingNode, source);
+    let init = bindingNode.nextSibling;
+    while (init && init.name !== 'Equals') init = init.nextSibling;
+    if (!init || init.name !== 'Equals') {
+      statements.push(`$w.${name} = undefined`);
+      return;
+    }
+    let expr = init.nextSibling;
+    if (!expr || expr.name === ',' || expr.name === ';') {
+      statements.push(`$w.${name} = undefined`);
+      return;
+    }
+    statements.push(`$w.${name} = ${source.slice(expr.from, expr.to)}`);
+    return;
+  }
+
+  let init = bindingNode.nextSibling;
+  while (init && init.name !== 'Equals') init = init.nextSibling;
+  const rhs =
+    init?.name === 'Equals' && init.nextSibling && init.nextSibling.name !== ',' && init.nextSibling.name !== ';'
+      ? source.slice(init.nextSibling.from, init.nextSibling.to)
+      : 'undefined';
+
+  if (bindingNode.name === 'ObjectPattern') {
+    renderObjectDestructuringWorld(bindingNode, source, rhs, statements);
+  } else if (bindingNode.name === 'ArrayPattern') {
+    renderArrayDestructuringWorld(bindingNode, source, rhs, statements);
+  }
+}
+
+function transformTopLevelDeclaration(source: string, declNode: SyntaxNode): string | null {
+  const keyword = declarationKeyword(declNode, source);
+  if (!keyword || keyword === 'var') return null;
+
+  let pending: SyntaxNode | null = null;
+  const statements: string[] = [];
+  const hasTrailingSemicolon = source[declNode.to - 1] === ';';
+  const indent = declarationIndent(source, declNode);
+
+  const flushDeclarator = () => {
+    if (!pending) return;
+    renderWorldDeclarator(pending, source, statements);
+    pending = null;
+  };
+
+  for (let child = declNode.firstChild; child; child = child.nextSibling) {
+    if (child.name === 'VariableDefinition' || child.name === 'ObjectPattern' || child.name === 'ArrayPattern') {
+      pending = child;
+    } else if (child.name === ',' || child.name === ';') {
+      flushDeclarator();
+    }
+  }
+  flushDeclarator();
+
+  return joinTransformedStatements(statements, hasTrailingSemicolon, indent);
+}
+
+function transformTopLevelDeclarations(source: string): string {
+  nextWorldTmpId = 0;
+  const tree = parser.parse(source);
+  const edits: Edit[] = [];
+
+  for (let child = tree.topNode.firstChild; child; child = child.nextSibling) {
+    if (child.name === 'VariableDeclaration') {
+      const transformed = transformTopLevelDeclaration(source, child);
+      if (transformed) {
+        edits.push({ kind: 'replace', from: child.from, to: child.to, text: transformed });
+      }
+    }
+  }
+
+  return applyEdits(source, edits);
+}
+
+function walkForWorldRefs(
+  builder: ScopeBuilder,
+  node: SyntaxNode,
+  currentScope: LexicalScope,
+  funcScope: LexicalScope | null,
+  edits: Edit[],
+): void {
+  if (FUNCTION_NODES.has(node.name)) return;
+
+  if (node.name === 'AssignmentExpression') {
+    const lhs = node.firstChild;
+    if (lhs?.name === 'VariableName' && isRootScope(currentScope)) {
+      const name = nodeText(lhs, builder.source);
+      const binding = builder.resolve(name, currentScope);
+      if (binding && isRootScope(binding.scope) && builder.rootConstNames.has(name)) {
+        throw new Error(`cannot assign to const-declared variable '${name}'`);
+      }
+      if (!binding || isRootScope(binding.scope)) {
+        if (shouldRewriteToWorld(name)) {
+          edits.push({ kind: 'replace', from: lhs.from, to: lhs.to, text: `$w.${name}` });
+        }
+      }
+    }
+    const rhs = node.lastChild;
+    if (rhs && rhs !== lhs) walkForWorldRefs(builder, rhs, currentScope, funcScope, edits);
+    return;
+  }
+
+  if (node.name === 'UpdateExpression') {
+    const varName = node.getChild('VariableName');
+    if (varName && isRootScope(currentScope)) {
+      const name = nodeText(varName, builder.source);
+      const binding = builder.resolve(name, currentScope);
+      if (binding && isRootScope(binding.scope) && builder.rootConstNames.has(name)) {
+        throw new Error(`cannot assign to const-declared variable '${name}'`);
+      }
+      if ((!binding || isRootScope(binding.scope)) && shouldRewriteToWorld(name)) {
+        edits.push({ kind: 'replace', from: varName.from, to: varName.to, text: `$w.${name}` });
+      }
+    }
+    return;
+  }
+
+  if (node.name === 'VariableName') {
+    const name = nodeText(node, builder.source);
+    if (!shouldRewriteToWorld(name)) return;
+    const binding = builder.resolve(name, currentScope);
+    if (binding && !isRootScope(binding.scope)) return;
+    edits.push({ kind: 'replace', from: node.from, to: node.to, text: `$w.${name}` });
+    return;
+  }
+
+  if (node.name === 'Block') {
+    const innerScope = funcScope
+      ? ephemeralScope(funcScope, node)
+      : findBuiltBlockScope(builder, node, currentScope) ?? ephemeralScope(currentScope, node);
+    for (let child = node.firstChild; child; child = child.nextSibling) {
+      if (child.name === '{' || child.name === '}') continue;
+      walkForWorldRefsInBlock(builder, child, innerScope, funcScope ?? innerScope, edits);
+    }
+    return;
+  }
+
+  if (node.name === 'VariableDeclaration') {
+    registerDeclarationForWorldWalk(builder, node, currentScope, funcScope, edits);
+    return;
+  }
+
+  if (node.name === 'FunctionDeclaration') {
+    const nameNode = node.getChild('VariableDefinition');
+    if (nameNode) builder.addBinding(currentScope, nodeText(nameNode, builder.source), 'function');
+    const block = node.getChild('Block');
+    if (block) {
+      const innerFuncScope = ephemeralScope(currentScope);
+      if (nameNode) builder.addBinding(innerFuncScope, nodeText(nameNode, builder.source), 'function');
+      populateFunctionBindings(builder, innerFuncScope, node);
+      const bodyScope = ephemeralScope(innerFuncScope, block);
+      walkBlockForWorldRefs(builder, block, bodyScope, innerFuncScope, edits);
+    }
+    return;
+  }
+
+  if (node.name === 'ForStatement') {
+    const loopScope = ephemeralScope(currentScope, node.getChild('Block'));
+    const spec = node.getChild('ForSpec') ?? node.getChild('ForInSpec') ?? node.getChild('ForOfSpec');
+    if (spec) registerForSpec(spec, builder, loopScope);
+    const block = node.getChild('Block');
+    if (block) walkBlockForWorldRefs(builder, block, loopScope, funcScope ?? loopScope, edits);
+    return;
+  }
+
+  if (node.name === 'CatchClause') {
+    const catchScope = ephemeralScope(currentScope, node.getChild('Block'));
+    for (let child = node.firstChild; child; child = child.nextSibling) {
+      if (child.name === 'VariableDefinition') {
+        builder.addBinding(catchScope, nodeText(child, builder.source), 'block');
+      } else if (child.name === 'ObjectPattern' || child.name === 'ArrayPattern') {
+        addPatternBindings(child, builder, catchScope, 'block');
+      } else if (child.name === 'Block') {
+        walkBlockForWorldRefs(builder, child, catchScope, funcScope ?? catchScope, edits);
+      }
+    }
+    return;
+  }
+
+  for (let child = node.firstChild; child; child = child.nextSibling) {
+    walkForWorldRefs(builder, child, currentScope, funcScope, edits);
+  }
+}
+
+function registerDeclarationForWorldWalk(
   builder: ScopeBuilder,
   node: SyntaxNode,
   currentScope: LexicalScope,
@@ -782,9 +1118,16 @@ function walkDeclarationForGlobalW(
   const commit = () => {
     if (!pending) return;
     if (pending.name === 'VariableDefinition') {
-      builder.addBinding(bindingScope, nodeText(pending, builder.source), kind);
+      const name = nodeText(pending, builder.source);
+      builder.addBinding(bindingScope, name, kind);
+      if (isRootScope(bindingScope) && keyword === 'const') builder.rootConstNames.add(name);
     } else {
-      addPatternBindings(pending, builder, bindingScope, kind);
+      const names = new Set<string>();
+      collectPatternBindings(pending, builder.source, names);
+      for (const name of names) {
+        builder.addBinding(bindingScope, name, kind);
+        if (isRootScope(bindingScope) && keyword === 'const') builder.rootConstNames.add(name);
+      }
     }
     pending = null;
   };
@@ -795,7 +1138,7 @@ function walkDeclarationForGlobalW(
     } else if (child.name === 'Equals') {
       for (let init = child.nextSibling; init; init = init.nextSibling) {
         if (init.name === ';' || init.name === ',') break;
-        walkForGlobalW(builder, init, currentScope, funcScope, edits);
+        walkForWorldRefs(builder, init, currentScope, funcScope, edits);
       }
     } else if (child.name === ',' || child.name === ';') {
       commit();
@@ -804,36 +1147,7 @@ function walkDeclarationForGlobalW(
   commit();
 }
 
-function walkFunctionForGlobalW(
-  builder: ScopeBuilder,
-  funcNode: SyntaxNode,
-  enclosingScope: LexicalScope,
-  edits: Edit[],
-): void {
-  const funcScope = ephemeralScope(enclosingScope);
-  populateFunctionBindings(builder, funcScope, funcNode);
-
-  if (funcNode.name === 'ArrowFunction') {
-    const block = funcNode.getChild('Block');
-    if (block) {
-      const bodyScope = ephemeralScope(funcScope, block);
-      walkBlockForGlobalW(builder, block, bodyScope, funcScope, edits);
-    } else {
-      let body: SyntaxNode | null = funcNode.getChild('Arrow')?.nextSibling ?? null;
-      while (body && (body.name === 'TypeAnnotation' || body.name === '⚠')) body = body.nextSibling;
-      if (body) walkForGlobalW(builder, body, funcScope, funcScope, edits);
-    }
-    return;
-  }
-
-  const block = funcNode.getChild('Block');
-  if (block) {
-    const bodyScope = ephemeralScope(funcScope, block);
-    walkBlockForGlobalW(builder, block, bodyScope, funcScope, edits);
-  }
-}
-
-function walkBlockForGlobalW(
+function walkBlockForWorldRefs(
   builder: ScopeBuilder,
   block: SyntaxNode,
   currentScope: LexicalScope,
@@ -842,120 +1156,25 @@ function walkBlockForGlobalW(
 ): void {
   for (let child = block.firstChild; child; child = child.nextSibling) {
     if (child.name === '{' || child.name === '}') continue;
-    walkForGlobalWInBlock(builder, child, currentScope, funcScope, edits);
+    walkForWorldRefsInBlock(builder, child, currentScope, funcScope, edits);
   }
 }
 
-function walkForGlobalWInBlock(
+function walkForWorldRefsInBlock(
   builder: ScopeBuilder,
   node: SyntaxNode,
   currentScope: LexicalScope,
   funcScope: LexicalScope | null,
   edits: Edit[],
 ): void {
-  if (FUNCTION_NODES.has(node.name)) {
-    walkFunctionForGlobalW(builder, node, funcScope ?? currentScope, edits);
-    return;
-  }
+  if (FUNCTION_NODES.has(node.name)) return;
 
-  if (node.name === 'Block') {
-    const innerScope = funcScope
-      ? ephemeralScope(funcScope, node)
-      : findBuiltBlockScope(builder, node, currentScope) ?? ephemeralScope(currentScope, node);
-    walkBlockForGlobalW(builder, node, innerScope, funcScope ?? innerScope, edits);
-    return;
-  }
-
-  if (node.name === 'VariableDeclaration') {
-    walkDeclarationForGlobalW(builder, node, currentScope, funcScope, edits);
-    return;
-  }
-
-  if (node.name === 'FunctionDeclaration') {
-    const nameNode = node.getChild('VariableDefinition');
-    if (nameNode) builder.addBinding(currentScope, nodeText(nameNode, builder.source), 'function');
-    const block = node.getChild('Block');
-    if (block) {
-      const innerFuncScope = ephemeralScope(currentScope);
-      if (nameNode) builder.addBinding(innerFuncScope, nodeText(nameNode, builder.source), 'function');
-      populateFunctionBindings(builder, innerFuncScope, node);
-      const bodyScope = ephemeralScope(innerFuncScope, block);
-      walkBlockForGlobalW(builder, block, bodyScope, innerFuncScope, edits);
-    }
-    return;
-  }
-
-  if (node.name === 'ForStatement') {
-    const loopScope = ephemeralScope(currentScope, node.getChild('Block'));
-    const spec = node.getChild('ForSpec') ?? node.getChild('ForInSpec') ?? node.getChild('ForOfSpec');
-    if (spec) registerForSpec(spec, builder, loopScope);
-    const block = node.getChild('Block');
-    if (block) walkBlockForGlobalW(builder, block, loopScope, funcScope ?? loopScope, edits);
-    return;
-  }
-
-  if (node.name === 'CatchClause') {
-    const catchScope = ephemeralScope(currentScope, node.getChild('Block'));
-    for (let child = node.firstChild; child; child = child.nextSibling) {
-      if (child.name === 'VariableDefinition') {
-        builder.addBinding(catchScope, nodeText(child, builder.source), 'block');
-      } else if (child.name === 'ObjectPattern' || child.name === 'ArrayPattern') {
-        addPatternBindings(child, builder, catchScope, 'block');
-      } else if (child.name === 'Block') {
-        walkBlockForGlobalW(builder, child, catchScope, funcScope ?? catchScope, edits);
-      }
-    }
-    return;
-  }
-
-  walkForGlobalW(builder, node, currentScope, funcScope, edits);
+  walkForWorldRefs(builder, node, currentScope, funcScope, edits);
 }
 
-function walkForGlobalW(
-  builder: ScopeBuilder,
-  node: SyntaxNode,
-  currentScope: LexicalScope,
-  funcScope: LexicalScope | null,
-  edits: Edit[],
-): void {
-  if (FUNCTION_NODES.has(node.name)) {
-    walkFunctionForGlobalW(builder, node, funcScope ?? currentScope, edits);
-    return;
-  }
-
-  if (node.name === 'VariableName') {
-    maybeRenameGlobalW(builder, node, currentScope, edits);
-    return;
-  }
-
-  if (node.name === 'Block') {
-    walkForGlobalWInBlock(builder, node, currentScope, funcScope, edits);
-    return;
-  }
-
-  if (node.name === 'VariableDeclaration') {
-    walkDeclarationForGlobalW(builder, node, currentScope, funcScope, edits);
-    return;
-  }
-
-  if (node.name === 'FunctionDeclaration') {
-    walkForGlobalWInBlock(builder, node, currentScope, funcScope, edits);
-    return;
-  }
-
-  if (node.name === 'ForStatement' || node.name === 'CatchClause') {
-    walkForGlobalWInBlock(builder, node, currentScope, funcScope, edits);
-    return;
-  }
-
-  for (let child = node.firstChild; child; child = child.nextSibling) {
-    walkForGlobalW(builder, child, currentScope, funcScope, edits);
-  }
-}
-
-function collectGlobalWEdits(builder: ScopeBuilder, rootScope: LexicalScope, topNode: SyntaxNode, edits: Edit[]): void {
+function collectWorldRefEdits(builder: ScopeBuilder, rootScope: LexicalScope, topNode: SyntaxNode, edits: Edit[]): void {
   for (let child = topNode.firstChild; child; child = child.nextSibling) {
-    walkForGlobalWInBlock(builder, child, rootScope, null, edits);
+    walkForWorldRefsInBlock(builder, child, rootScope, null, edits);
   }
 }
 
@@ -992,7 +1211,7 @@ function collectScopeEdits(builder: ScopeBuilder, freeVarUses: FreeVarUse[], edi
   const declTransforms = new Map<string, DeclTransform>();
 
   for (const scope of builder.scopes) {
-    if (!scope.needsObject() || !scope.blockNode) continue;
+    if (!scope.needsObject() || !scope.blockNode || isRootScope(scope)) continue;
 
     const openBrace = scope.blockNode.firstChild;
     if (openBrace?.name === '{') {
@@ -1022,13 +1241,21 @@ function collectScopeEdits(builder: ScopeBuilder, freeVarUses: FreeVarUse[], edi
   }
 
   for (const use of freeVarUses) {
-    if (!use.scope.needsObject()) continue;
-    edits.push({
-      kind: 'replace',
-      from: use.from,
-      to: use.to,
-      text: `${use.scope.name}.${use.name}`,
-    });
+    if (use.world) {
+      edits.push({
+        kind: 'replace',
+        from: use.from,
+        to: use.to,
+        text: `$w.${use.name}`,
+      });
+    } else if (use.scope.needsObject()) {
+      edits.push({
+        kind: 'replace',
+        from: use.from,
+        to: use.to,
+        text: `${use.scope.name}.${use.name}`,
+      });
+    }
   }
 }
 
@@ -1153,7 +1380,8 @@ export function transpile(source: string): string {
   const edits: Edit[] = [];
   collectLiteralEdits(tree.topNode, edits);
   collectScopeEdits(builder, freeVarUses, edits);
-  collectGlobalWEdits(builder, rootScope, tree.topNode, edits);
+  collectWorldRefEdits(builder, rootScope, tree.topNode, edits);
   collectFunctionEdits(functions, freeVarUses, edits);
-  return applyEdits(source, edits);
+  const result = applyEdits(source, edits);
+  return transformTopLevelDeclarations(result);
 }
