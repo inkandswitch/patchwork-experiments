@@ -1,0 +1,17 @@
+{
+  "name": "@patchwork/llm",
+  "version": "0.1.0",
+  "description": "LLM toolkit for Patchwork tools: a <dialog> model picker, a refresh-surviving SharedWorker that runs local (transformers.js) / OpenRouter / Ollama generation, and a streaming API that carries rich telemetry — next-token predictions, temperature, tokens/sec — alongside the text so you can build UIs that show how the model thinks.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./worker.js": "./worker.js"
+  },
+  "files": ["index.js", "config.js", "client.js", "worker.js", "picker.js", "README.md"],
+  "author": "chee",
+  "license": "MIT",
+  "dependencies": {
+    "@inkandswitch/patchwork-providers": "^0.2.1"
+  }
+}
