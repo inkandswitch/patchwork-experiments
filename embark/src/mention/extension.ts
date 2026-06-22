@@ -155,7 +155,9 @@ function deriveFromDoc(prev: MenuState, state: EditorState): MenuState {
 }
 
 // Detects `@query` immediately before a caret. The `@` must start a line or
-// follow whitespace so emails and the like don't trigger it.
+// follow whitespace so emails and the like don't trigger it. The query may
+// contain spaces — only a newline ends it (and `before` is already a single
+// line, so the menu closes the moment the user presses Enter).
 function activeMention(
   state: EditorState,
 ): { from: number; to: number; query: string } | null {
@@ -164,7 +166,7 @@ function activeMention(
   const head = range.head;
   const line = state.doc.lineAt(head);
   const before = state.doc.sliceString(line.from, head);
-  const match = /(?:^|\s)@([^\s@]*)$/.exec(before);
+  const match = /(?:^|\s)@([^@\n]*)$/.exec(before);
   if (!match) return null;
   const query = match[1];
   return { from: head - query.length - 1, to: head, query };
@@ -511,9 +513,9 @@ const focusController = ViewPlugin.fromClass(
     private onDocChange?: () => void;
     private discover?: () => void;
     private destroyed = false;
-    // The highlight entry this editor currently owns (its focused token's
-    // target), cleared when focus moves elsewhere.
-    private written?: AutomergeUrl;
+    // The highlight entries this editor currently owns (the targets of every
+    // token the caret/selection touches), cleared when focus moves off them.
+    private written = new Set<AutomergeUrl>();
 
     constructor(private readonly view: EditorView) {
       // One-shot discovery of the shared focus doc, like `brokerProbe`.
@@ -537,7 +539,12 @@ const focusController = ViewPlugin.fromClass(
     }
 
     update(update: ViewUpdate) {
-      if (update.selectionSet || update.docChanged) {
+      // The active autocomplete result is previewed in `highlight` too, so the
+      // menu's selection (changed by arrow keys or freshly-arrived results)
+      // also needs to retrigger a write.
+      const previewChanged =
+        activeResultUrl(update.startState) !== activeResultUrl(update.state);
+      if (update.selectionSet || update.docChanged || previewChanged) {
         // Defer: writing the focus doc emits a "change" that dispatches back
         // into the editor, which must not happen mid-update.
         queueMicrotask(() => this.syncWrite());
@@ -564,16 +571,18 @@ const focusController = ViewPlugin.fromClass(
       });
     }
 
-    // Reflect the token under the caret into the shared `highlight` map.
+    // Reflect every token the caret/selection touches — plus the active
+    // autocomplete result, so navigating the menu previews its target — into
+    // the shared `highlight` map.
     private syncWrite() {
       if (this.destroyed) return;
-      const target = focusedMentionUrl(this.view.state);
-      if (target === this.written) return;
-      const handle = this.handle;
+      const targets = focusedMentionUrls(this.view.state);
+      const previewing = activeResultUrl(this.view.state);
+      if (previewing) targets.add(previewing);
+      if (sameSet(this.written, targets)) return;
       const previous = this.written;
-      this.written = target;
-      if (!handle) return;
-      handle.change((doc) => rewriteHighlight(doc, previous, target));
+      this.written = targets;
+      this.handle?.change((doc) => rewriteHighlight(doc, previous, targets));
     }
 
     destroy() {
@@ -584,37 +593,40 @@ const focusController = ViewPlugin.fromClass(
       }
       const handle = this.handle;
       const previous = this.written;
-      if (handle && previous) {
-        handle.change((doc) => rewriteHighlight(doc, previous, undefined));
+      if (handle && previous.size) {
+        handle.change((doc) => rewriteHighlight(doc, previous, new Set()));
       }
     }
   },
 );
 
-// Swap this editor's owned highlight entry by reassigning the whole map (a
-// `put`) rather than deleting a key in place. The host editor projects this
+// Swap this editor's owned highlight entries by reassigning the whole map (a
+// `put`) rather than deleting keys in place. The host editor projects this
 // doc via automerge-repo-solid-primitives, whose patch reconciler throws
-// ("index is not a number for patch") on map-key `del` patches.
+// ("index is not a number for patch") on map-key `del` patches. Other writers'
+// entries (the editor's own selection, the map's hover) are preserved.
 function rewriteHighlight(
   doc: FocusDoc,
-  remove: AutomergeUrl | undefined,
-  add: AutomergeUrl | undefined,
+  remove: Set<AutomergeUrl>,
+  add: Set<AutomergeUrl>,
 ): void {
   const next: Record<AutomergeUrl, true> = {};
   for (const url of Object.keys(doc.highlight ?? {}) as AutomergeUrl[]) {
-    if (url !== remove) next[url] = true;
+    if (!remove.has(url)) next[url] = true;
   }
-  if (add) next[add] = true;
+  for (const url of add) next[url] = true;
   doc.highlight = next;
 }
 
-// The url of the mention token the selection is focused on: the caret sitting
-// anywhere inside a token, or a non-empty selection overlapping one. Scans only
-// the lines spanning the selection, so it stays cheap.
-function focusedMentionUrl(state: EditorState): AutomergeUrl | undefined {
+// The urls of every mention token the selection is focused on: the caret
+// sitting anywhere inside a token, or a non-empty selection overlapping one (a
+// range can cover several). Scans only the lines spanning the selection, so it
+// stays cheap.
+function focusedMentionUrls(state: EditorState): Set<AutomergeUrl> {
   const sel = state.selection.main;
   const base = state.doc.lineAt(sel.from).from;
   const text = state.doc.sliceString(base, state.doc.lineAt(sel.to).to);
+  const urls = new Set<AutomergeUrl>();
   for (const match of text.matchAll(MENTION_RE)) {
     const raw = match[2].trim();
     if (!isValidAutomergeUrl(raw)) continue;
@@ -622,9 +634,20 @@ function focusedMentionUrl(state: EditorState): AutomergeUrl | undefined {
     const end = start + match[0].length;
     const caretInside = sel.empty && sel.head >= start && sel.head <= end;
     const selectionOverlaps = !sel.empty && sel.from < end && sel.to > start;
-    if (caretInside || selectionOverlaps) return raw;
+    if (caretInside || selectionOverlaps) urls.add(raw);
   }
-  return undefined;
+  return urls;
+}
+
+// The target of the result currently highlighted in the autocomplete menu, if
+// the menu is open with results. Used to preview that document's emphasis
+// before the user commits the mention. Undefined when the menu feature isn't
+// installed (no broker yet) or there's nothing to preview.
+function activeResultUrl(state: EditorState): AutomergeUrl | undefined {
+  const active = state.field(menuState, false)?.active;
+  if (!active || active.results.length === 0) return undefined;
+  const url = active.results[active.index]?.url;
+  return url && isValidAutomergeUrl(url) ? url : undefined;
 }
 
 function sameSet(a: Set<string>, b: Set<string>): boolean {
