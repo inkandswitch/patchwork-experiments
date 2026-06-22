@@ -491,17 +491,18 @@ base values; individual themes override with `[theme="name"]` only.
 
 ### CSS cascade layers
 
-Tool CSS is wrapped in `@layer package { }` so that theme CSS (which is unlayered) always
-wins over it, regardless of load order or specificity. Unlayered CSS beats all layered CSS
-in the cascade.
+Only **CSS custom property definitions** are wrapped in `@layer package { }`. Actual style
+rules live **outside** any layer (unlayered) so they can't be overridden by unlayered resets
+or normalise stylesheets.
 
 | CSS type | Layer | Priority |
 |---|---|---|
 | Base system variables (`theme.css`) | `@layer patchwork` | lowest |
-| Tool/component CSS | `@layer package` | middle |
-| Theme CSS (lychee, gloom, custom) | unlayered | highest (always wins) |
+| Tool variable defaults | `@layer package` | middle |
+| Tool style rules | unlayered | high |
+| Theme CSS (lychee, gloom, custom) | unlayered | high (specificity wins) |
 
-**Every tool CSS file must wrap its content in `@layer package { }`:**
+**Variable definitions go in `@layer package`; style rules stay unlayered:**
 
 ```css
 @layer package {
@@ -510,12 +511,14 @@ in the cascade.
 [theme] {
   --my-tool-bg: var(--studio-fill, white);
 }
+}
 
 .my-tool {
   background: var(--my-tool-bg);
 }
-}
 ```
+
+If a tool CSS file has **no** variable definitions, it should have **no** `@layer` wrapper at all.
 
 Theme CSS files (`lychee.css`, `gloom.css`, custom themes) must **not** be wrapped in any
 layer — they stay unlayered so they reliably override everything.
