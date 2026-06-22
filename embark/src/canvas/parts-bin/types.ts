@@ -13,4 +13,7 @@ export type PartsBinItem = {
   url: AutomergeUrl;
   // Which tool renders the in-bin preview (the host's default is used on drop).
   toolId?: string;
+  // A user-editable display name for the example, shown on its token. Falls back
+  // to the document's own title/type when unset.
+  label?: string;
 };

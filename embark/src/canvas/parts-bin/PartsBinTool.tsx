@@ -92,6 +92,14 @@ function PartsBin(props: { handle: DocHandle<PartsBinDoc> }) {
                   binDoc.items.splice(index(), 1);
                 })
               }
+              onRename={(label) =>
+                props.handle.change((binDoc) => {
+                  const entry = binDoc.items[index()];
+                  if (!entry) return;
+                  if (label) entry.label = label;
+                  else delete entry.label;
+                })
+              }
             />
           )}
         </For>
@@ -100,15 +108,38 @@ function PartsBin(props: { handle: DocHandle<PartsBinDoc> }) {
   );
 }
 
+// A document whose name we want to show on the token. Patchwork keeps the
+// display title under `@patchwork.title`; some datatypes also mirror it at the
+// root, and we fall back to the type or a generic label.
+type NamedDoc = {
+  "@patchwork"?: { title?: string; type?: string };
+  title?: string;
+};
+
 function PartsBinRow(props: {
   repo: Repo;
   item: PartsBinItem;
   onRemove: () => void;
+  onRename: (label: string) => void;
 }) {
   // Resolve the source handle up front (waits for ready) so dragstart — which
   // must write its payload synchronously — always has a loaded doc to clone
   // instead of falling back to sharing the original.
   const source = useDocHandle<unknown>(() => props.item.url);
+  const [doc] = useDocument<NamedDoc>(() => props.item.url);
+
+  // The stored label wins; otherwise fall back to the document's own
+  // title/type so a fresh example still reads sensibly.
+  const fallbackName = () => {
+    const value = doc();
+    return (
+      value?.["@patchwork"]?.title ||
+      value?.title ||
+      value?.["@patchwork"]?.type ||
+      "Untitled"
+    );
+  };
+  const name = () => props.item.label || fallbackName();
 
   const onDragStart = (event: DragEvent) => {
     const handle = source();
@@ -123,15 +154,29 @@ function PartsBinRow(props: {
     event.dataTransfer.setData("text/x-patchwork-urls", JSON.stringify([url]));
   };
 
+  // A header drag bar (the only draggable part, so the drag ghost is just the
+  // bar - never the preview) with the editable name, above an interactive live
+  // preview of the example.
   return (
-    <div
-      class="embark-parts-bin__item"
-      draggable={true}
-      title="Drag onto the canvas to copy"
-      on:dragstart={onDragStart}
-    >
-      <div class="embark-parts-bin__grip">
-        <GripIcon />
+    <div class="embark-parts-bin__item">
+      <div
+        class="embark-parts-bin__bar"
+        draggable={true}
+        title="Drag onto the canvas to copy"
+        on:dragstart={onDragStart}
+      >
+        <span class="embark-parts-bin__grip" aria-hidden="true">
+          <GripIcon />
+        </span>
+        <input
+          class="embark-parts-bin__name"
+          value={name()}
+          placeholder={fallbackName()}
+          title="Rename this example"
+          draggable={false}
+          on:pointerdown={(event) => event.stopPropagation()}
+          on:change={(event) => props.onRename(event.currentTarget.value.trim())}
+        />
         <button
           type="button"
           class="embark-parts-bin__delete"
@@ -162,7 +207,7 @@ function PartsBinRow(props: {
   );
 }
 
-// Six-dot grip glyph for the drag affordance; inherits the grip's text color.
+// Six-dot grip glyph for the drag affordance; inherits the bar's text color.
 function GripIcon() {
   return (
     <svg

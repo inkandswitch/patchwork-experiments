@@ -233,8 +233,11 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
         )}
       </For>
       <Show when={embeds().length === 0}>
-        <div class="embark-canvas__empty">Drag documents here to embed them</div>
+        <div class="embark-canvas__empty">
+          Drag documents here to embed them
+        </div>
       </Show>
+      <div style={{ position: "absolute", bottom: 0, right: 0 }}>v 0.0.1</div>
     </div>
   );
 }
@@ -258,25 +261,24 @@ function EmbedView(props: {
   let rootEl: HTMLDivElement | undefined;
   let interaction: Interaction | null = null;
 
-  const beginInteraction =
-    (mode: InteractionMode) => (event: PointerEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
-      props.onSelect();
-      const handle = event.currentTarget as HTMLElement;
-      handle.setPointerCapture(event.pointerId);
-      interaction = {
-        mode,
-        pointerId: event.pointerId,
-        startClientX: event.clientX,
-        startClientY: event.clientY,
-        originX: props.embed.x,
-        originY: props.embed.y,
-        originWidth: props.embed.width,
-        originHeight: props.embed.height,
-      };
-      bringToFront();
+  const beginInteraction = (mode: InteractionMode) => (event: PointerEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    props.onSelect();
+    const handle = event.currentTarget as HTMLElement;
+    handle.setPointerCapture(event.pointerId);
+    interaction = {
+      mode,
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      originX: props.embed.x,
+      originY: props.embed.y,
+      originWidth: props.embed.width,
+      originHeight: props.embed.height,
     };
+    bringToFront();
+  };
 
   const onPointerMove = (event: PointerEvent) => {
     const state = interaction;
@@ -378,7 +380,10 @@ function EmbedView(props: {
         </button>
       </div>
       <div class="embark-embed__view">
-        <patchwork-view doc-url={props.embed.docUrl} tool-id={props.embed.toolId} />
+        <patchwork-view
+          doc-url={props.embed.docUrl}
+          tool-id={props.embed.toolId}
+        />
       </div>
       <div
         class="embark-embed__resize"
@@ -395,7 +400,13 @@ function EmbedView(props: {
 // Six-dot grip glyph for the move handle; inherits the handle's text color.
 function GripIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+    >
       <circle cx="5" cy="9" r="1.2" />
       <circle cx="12" cy="9" r="1.2" />
       <circle cx="19" cy="9" r="1.2" />
