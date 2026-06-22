@@ -7,6 +7,7 @@ import { plugins as llmCardPlugins } from "./llm-card";
 import { plugins as mapPlugins } from "./map";
 import { plugins as mentionPlugins } from "./mention";
 import { plugins as stickerPlugins } from "./stickers";
+import { plugins as todoPlugins } from "./todo";
 
 export const plugins = [
   ...canvasPlugins,
@@ -18,4 +19,5 @@ export const plugins = [
   ...mapPlugins,
   ...mentionPlugins,
   ...stickerPlugins,
+  ...todoPlugins,
 ];

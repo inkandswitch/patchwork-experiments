@@ -1,0 +1,131 @@
+.embark-todo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  font-size: 0.95rem;
+  color: #1f2937;
+}
+
+.embark-todo__row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.15rem 0.25rem;
+  border-radius: 0.4rem;
+}
+
+.embark-todo__row:hover {
+  background: #f3f4f6;
+}
+
+.embark-todo__row:hover .embark-todo__delete {
+  opacity: 1;
+}
+
+.embark-todo__checkbox {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  cursor: pointer;
+}
+
+.embark-todo__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  cursor: text;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.embark-todo__row--done .embark-todo__text {
+  color: #9ca3af;
+  text-decoration: line-through;
+}
+
+.embark-todo__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  color: inherit;
+  padding: 0.1rem 0.25rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.3rem;
+  background: #fff;
+}
+
+.embark-todo__slot {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* A text sticker chip, echoing the markdown renderer's `.cm-sticker--text`. */
+.embark-todo__sticker {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 0.2em;
+  padding: 0 0.35em;
+  border-radius: 0.5em;
+  font-size: 0.85em;
+  line-height: 1.4;
+  color: #1f2937;
+  background: #e5e7eb;
+  white-space: nowrap;
+}
+
+.embark-todo__tool {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin: 0 0.2em;
+}
+
+.embark-todo__tool patchwork-view {
+  display: inline-block;
+  width: 5.5em;
+  height: 1.6em;
+  vertical-align: middle;
+}
+
+.embark-todo__delete {
+  flex: none;
+  opacity: 0;
+  width: 1.3rem;
+  height: 1.3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 0.3rem;
+  background: transparent;
+  color: #9ca3af;
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.embark-todo__delete:hover {
+  background: #e5e7eb;
+  color: #ef4444;
+}
+
+.embark-todo__add {
+  align-self: flex-start;
+  margin-top: 0.25rem;
+  padding: 0.2rem 0.5rem;
+  border: 1px dashed #d1d5db;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: #6b7280;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.embark-todo__add:hover {
+  border-color: #9ca3af;
+  color: #374151;
+}

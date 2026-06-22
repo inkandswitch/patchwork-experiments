@@ -1,31 +1,49 @@
 @import url("https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap");
 
-/* The card looks like a paper index card: ruled lines, a red margin rule, and
-   handwriting. Its only chrome is a single orb in a corner. */
+/* The card looks like a faintly purple index card: ruled lines and handwriting.
+   It is a 3D scene so it can flip between its writing side and a read-only back.
+   The box-shadow / state glow live on this (non-rotating) layer. */
 .embark-llm-card {
   position: relative;
   height: 100%;
   box-sizing: border-box;
-  background: #fffdf5;
   border-radius: 6px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
   transition: box-shadow 0.2s ease;
+  perspective: 1200px;
   /* The orb, glow and trace popover live outside the card box, so never clip
      them. (Drop the card into a frameless embed so the embed frame doesn't clip
      them either.) */
   overflow: visible;
 }
 
-/* Red margin rule down the left, like a real index card. */
-.embark-llm-card::before {
-  content: "";
+/* The rotating layer that carries the two faces. */
+.embark-llm-card__flip {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.embark-llm-card--flipped .embark-llm-card__flip {
+  transform: rotateY(180deg);
+}
+
+/* Each face is flat, so backface-visibility hides the whole face (and all of
+   its contents, including the overflowing orb) once it is turned away. */
+.embark-llm-card__face {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 40px;
-  width: 1px;
-  background: #f3b0b0;
-  pointer-events: none;
+  inset: 0;
+  box-sizing: border-box;
+  border-radius: 6px;
+  background: #f7f5ff;
+  backface-visibility: hidden;
+  overflow: visible;
+}
+
+.embark-llm-card__face--back {
+  transform: rotateY(180deg);
 }
 
 /* The writing surface is the textarea itself, painted with ruled lines. */
@@ -37,70 +55,140 @@
   outline: none;
   resize: none;
   box-sizing: border-box;
-  padding: 8px 14px 0 52px;
+  padding: 8px 14px 0 14px;
   background: transparent;
   background-image: repeating-linear-gradient(
     to bottom,
     transparent 0,
-    transparent 31px,
-    #d3deef 31px,
-    #d3deef 32px
+    transparent 37px,
+    #e4dcf7 37px,
+    #e4dcf7 38px
   );
-  line-height: 32px;
+  line-height: 38px;
   font-family: "Patrick Hand", cursive;
   font-size: 20px;
   color: #1c1917;
+  /* When the effect goes live the text turns purple; editing it drops the card
+     back to draft and the colour fades back to normal. */
+  transition: color 0.4s ease;
 }
 
-.embark-llm-card__paper::placeholder {
-  color: #bdb7ab;
+/* The back of the card: the same paper, but a greyed, read-only copy. */
+.embark-llm-card__back {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  box-sizing: border-box;
+  padding: 8px 14px 0 14px;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 37px,
+    #e4dcf7 37px,
+    #e4dcf7 38px
+  );
+  line-height: 38px;
+  font-family: "Patrick Hand", cursive;
+  font-size: 20px;
+  color: #b3acc6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
 }
 
-/* Blue glow the moment the orb is pressed, and it stays while the effect runs
-   and once it is active. */
-.embark-llm-card--generating,
-.embark-llm-card--active {
-  box-shadow: 0 0 0 2px #2c6cf6, 0 0 18px rgba(44, 108, 246, 0.45);
-}
-
-/* Red glow when generation failed. */
-.embark-llm-card--failed {
-  box-shadow: 0 0 0 2px #ef4444, 0 0 18px rgba(239, 68, 68, 0.4);
-}
-
-/* The orb: the card's single control / status indicator. */
-.embark-llm-card__orb {
+/* Corner control that turns the card over. */
+.embark-llm-card__flip-btn {
   position: absolute;
-  width: 22px;
-  height: 22px;
+  top: -11px;
+  left: -11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: none;
   border-radius: 50%;
+  outline: none;
   cursor: pointer;
-  background: radial-gradient(circle at 32% 30%, #7aa6ff, #2c6cf6 70%);
-  box-shadow: 0 0 10px rgba(44, 108, 246, 0.7);
-  transition: top 0.25s ease, bottom 0.25s ease, right 0.25s ease;
+  background: #ffffff;
+  color: #8b5cf6;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  opacity: 0.7;
+  transition: opacity 0.15s ease, transform 0.15s ease;
 }
 
-/* Ready-to-activate draft: nestled in the bottom-right corner. */
-.embark-llm-card__orb--corner {
-  right: -7px;
-  bottom: -7px;
+.embark-llm-card__flip-btn:hover {
+  opacity: 1;
+  transform: scale(1.08);
 }
 
-/* Running / active / failed: floats up to the top-right. */
-.embark-llm-card__orb--floating {
-  right: -9px;
-  top: -9px;
+.embark-llm-card__paper::placeholder {
+  color: #b5add0;
 }
 
-.embark-llm-card--generating .embark-llm-card__orb {
-  animation: embark-orb-pulse 1.1s ease-in-out infinite;
+/* A live effect is signalled purely by purple text — no card outline. */
+.embark-llm-card--active .embark-llm-card__paper {
+  color: #7c3aed;
+}
+
+/* Soft purple glow while the LLM is working (the orb also pulses). */
+.embark-llm-card--generating {
+  box-shadow: 0 0 16px rgba(139, 92, 246, 0.4);
+}
+
+/* Soft red glow when generation failed (plus the red orb + error bubble). */
+.embark-llm-card--failed {
+  box-shadow: 0 0 16px rgba(239, 68, 68, 0.4);
+}
+
+/* The orb: the card's single control / status indicator, top-right. The blob
+   always morphs (speed driven from JS); glow + pulse signal how busy it is. */
+.embark-llm-card__orb {
+  position: absolute;
+  top: -11px;
+  right: -11px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+  background: none;
+  cursor: pointer;
+  /* Pending: faint glow, no pulse. */
+  filter: drop-shadow(0 0 3px rgba(139, 92, 246, 0.4));
+}
+
+.embark-llm-card__orb svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.embark-llm-card__orb-shape {
+  fill: #8b5cf6;
+  transition: fill 0.3s ease;
+}
+
+/* Pending: an un-run change — a touch more glow to invite a click. */
+.embark-llm-card__orb--pending {
+  filter: drop-shadow(0 0 6px rgba(139, 92, 246, 0.7));
+}
+
+/* Working: the LLM is running — unmistakably energetic, bright glow + pulse
+   (and the blob morphs much faster). */
+.embark-llm-card__orb--working {
+  filter: drop-shadow(0 0 11px rgba(139, 92, 246, 0.95));
+  animation: embark-orb-pulse 1s ease-in-out infinite;
+}
+
+.embark-llm-card--failed .embark-llm-card__orb-shape {
+  fill: #ef4444;
 }
 
 .embark-llm-card--failed .embark-llm-card__orb {
-  background: radial-gradient(circle at 32% 30%, #ff8a8a, #ef4444 70%);
-  box-shadow: 0 0 10px rgba(239, 68, 68, 0.7);
+  filter: drop-shadow(0 0 9px rgba(239, 68, 68, 0.7));
 }
 
 @keyframes embark-orb-pulse {
@@ -109,7 +197,7 @@
     transform: scale(1);
   }
   50% {
-    transform: scale(1.28);
+    transform: scale(1.22);
   }
 }
 

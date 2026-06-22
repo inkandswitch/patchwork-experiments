@@ -178,8 +178,9 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
         canvas.embeds[id] = {
           id,
           docUrl: item.url,
-          x: dropX - DEFAULT_WIDTH / 2 + cascade,
-          y: dropY - DEFAULT_HEIGHT / 2 + cascade,
+          // Top-left corner sits at the drop point (not centered on it).
+          x: dropX + cascade,
+          y: dropY + cascade,
           width: DEFAULT_WIDTH,
           height: DEFAULT_HEIGHT,
           z: ++z,

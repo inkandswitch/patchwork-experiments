@@ -34,10 +34,11 @@ const ISOLATED_SELECTORS = new Set<string>([
   STICKERS_REGISTRY,
 ]);
 
-// A palette of example documents. Each row previews a live document; dragging
-// the row out (anywhere on the card) writes the standard Patchwork drag payload
-// (see the drag-and-drop recipe) so the canvas can drop it as an embed. The
-// payload points at a clone, so the example stays editable in place.
+// A palette of example documents. Each row shows an editable headline above a
+// non-interactive live preview; dragging that preview writes the standard
+// Patchwork drag payload (see the drag-and-drop recipe) so the canvas can drop
+// it as an embed. The payload points at a clone, so the example stays editable
+// in place.
 export const PartsBinTool: ToolRender = (handle, element) => {
   // Stop the search-related subscriptions at the bin's root so they never reach
   // the canvas search broker — the bin's contents are examples, not active
@@ -164,29 +165,29 @@ function PartsBinRow(props: {
       JSON.stringify({ source: "parts-bin", items: [item] }),
     );
     event.dataTransfer.setData("text/x-patchwork-urls", JSON.stringify([url]));
+
+    // Use a small title token as the drag image instead of the browser's
+    // snapshot of the live preview (whose full height bled into the ghost). The
+    // token must be in the document when captured, then removed next tick.
+    const token = document.createElement("div");
+    token.className = "embark-parts-bin__drag-token";
+    token.textContent = name();
+    document.body.appendChild(token);
+    event.dataTransfer.setDragImage(token, 12, 12);
+    setTimeout(() => token.remove(), 0);
   };
 
-  // A header drag bar (the only draggable part, so the drag ghost is just the
-  // bar - never the preview) with the editable name, above an interactive live
-  // preview of the example.
+  // An editable headline with hover-revealed frame/delete actions, above a
+  // non-interactive live preview that is the drag source. The preview ghost is
+  // replaced by the title token (see onDragStart), so its height is irrelevant.
   return (
     <div class="embark-parts-bin__item">
-      <div
-        class="embark-parts-bin__bar"
-        draggable={true}
-        title="Drag onto the canvas to copy"
-        on:dragstart={onDragStart}
-      >
-        <span class="embark-parts-bin__grip" aria-hidden="true">
-          <GripIcon />
-        </span>
+      <div class="embark-parts-bin__head">
         <input
           class="embark-parts-bin__name"
           value={name()}
           placeholder={fallbackName()}
           title="Rename this example"
-          draggable={false}
-          on:pointerdown={(event) => event.stopPropagation()}
           on:change={(event) => props.onRename(event.currentTarget.value.trim())}
         />
         <button
@@ -202,16 +203,7 @@ function PartsBinRow(props: {
           }
           aria-label="Toggle frame on drop"
           aria-pressed={props.item.frameless === true}
-          draggable={false}
-          on:pointerdown={(event) => event.stopPropagation()}
-          on:dragstart={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-          on:click={(event) => {
-            event.stopPropagation();
-            props.onToggleFrameless();
-          }}
+          on:click={() => props.onToggleFrameless()}
         >
           <FrameIcon off={props.item.frameless === true} />
         </button>
@@ -220,21 +212,17 @@ function PartsBinRow(props: {
           class="embark-parts-bin__delete"
           title="Remove from parts bin"
           aria-label="Remove from parts bin"
-          draggable={false}
-          on:pointerdown={(event) => event.stopPropagation()}
-          on:dragstart={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-          on:click={(event) => {
-            event.stopPropagation();
-            props.onRemove();
-          }}
+          on:click={() => props.onRemove()}
         >
           <CloseIcon />
         </button>
       </div>
-      <div class="embark-parts-bin__preview">
+      <div
+        class="embark-parts-bin__preview"
+        draggable={true}
+        title="Drag onto the canvas to copy"
+        on:dragstart={onDragStart}
+      >
         <patchwork-view
           doc-url={props.item.url}
           tool-id={props.item.toolId}
@@ -242,26 +230,6 @@ function PartsBinRow(props: {
         />
       </div>
     </div>
-  );
-}
-
-// Six-dot grip glyph for the drag affordance; inherits the bar's text color.
-function GripIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      aria-hidden="true"
-    >
-      <circle cx="5" cy="9" r="1.2" />
-      <circle cx="12" cy="9" r="1.2" />
-      <circle cx="19" cy="9" r="1.2" />
-      <circle cx="5" cy="15" r="1.2" />
-      <circle cx="12" cy="15" r="1.2" />
-      <circle cx="19" cy="15" r="1.2" />
-    </svg>
   );
 }
 
