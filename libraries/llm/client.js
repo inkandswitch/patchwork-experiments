@@ -13,7 +13,12 @@
 
 import {readConfig, ensureConfig, callConfig, applyPrompts, effectiveSystem} from "./config.js"
 import {builtinGenerate} from "./builtin.js"
-import {resolveTools, buildToolsSystem, parseToolCalls, runTool, resolveCfgPrompts} from "./tools.js"
+import {resolveTools, toToolSchemas, buildToolsSystem, parseToolCalls, runTool, resolveCfgPrompts, sanitizeToolName} from "./tools.js"
+
+// Providers with real function-calling APIs (the worker passes tool schemas and
+// parses structured tool_calls). Everything else (local transformers, Chrome
+// built-in) uses the <tool_call> XML prompt convention, parsed from the text.
+const NATIVE_TOOL_PROVIDERS = new Set(["openrouter", "ollama", "webllm"])
 
 let connection = null
 let idSeq = 0
@@ -123,6 +128,16 @@ export async function generate(messages, opts = {}) {
 	const cfg = await resolveCfgPrompts(cfg0)
 	const config = callConfig(cfg, opts)
 
+	// Tools: native providers get JSON schemas on `config.tools`; the rest get the
+	// <tool_call> XML convention prepended to the system prompt (parsed from text).
+	const hasTools = Array.isArray(opts.tools) && opts.tools.length > 0
+	const native = hasTools && NATIVE_TOOL_PROVIDERS.has(config.provider)
+	if (native) config.tools = toToolSchemas(opts.tools)
+	const extraSystem =
+		hasTools && !native
+			? [buildToolsSystem(opts.tools), opts.system].filter(Boolean).join("\n\n")
+			: opts.system
+
 	// Built-in (Chrome Prompt API) runs on the main thread, not the worker.
 	if (config.provider === "builtin") {
 		const pre = cfg.resolved?.pre || ""
@@ -135,11 +150,11 @@ export async function generate(messages, opts = {}) {
 		return builtinGenerate(text, {
 			temperature: config.temperature,
 			topK: config.topK,
-			system: effectiveSystem(cfg, opts.system),
+			system: effectiveSystem(cfg, extraSystem),
 			onToken: opts.onToken,
 			onStatus: opts.onStatus,
 			signal: opts.signal,
-		}).then((t) => ({text: t, stats: null}))
+		}).then((t) => ({text: t, toolCalls: null, stats: null}))
 	}
 
 	// A string input is CHAT by default — wrapped as a user turn, so instruct/chat
@@ -154,7 +169,7 @@ export async function generate(messages, opts = {}) {
 			? [{role: "user", content: messages}]
 			: messages
 	// Prepend the configured system + pre-prompt (and any tool-supplied system).
-	const input = applyPrompts(prepared, cfg, opts.system)
+	const input = applyPrompts(prepared, cfg, extraSystem)
 	const conn = getConnection()
 	const id = nextId()
 	const sessionKey = opts.sessionKey || id
@@ -188,7 +203,7 @@ export async function generate(messages, opts = {}) {
 					break
 				case "result":
 					cleanup()
-					resolve({text: msg.text, stats})
+					resolve({text: msg.text, toolCalls: msg.toolCalls || null, stats})
 					break
 				case "error":
 					cleanup()
@@ -303,6 +318,72 @@ export async function predict(text, opts = {}) {
 }
 
 /**
+ * Score every token in `text` — runs a forward pass at each position and
+ * returns the model's probability, rank, entropy, and top-k alternatives for
+ * the actual next token. Powers the attention heatmap ("how surprised was the
+ * model by what you actually wrote?"). Only works for local models.
+ *
+ * Yields progress events and a final result:
+ *   { type:"progress", step, total }
+ *   { type:"done", scores:[{token, p, rank, entropy, topk:[{token,p}]}] }
+ *
+ * @param {string} text
+ * @param {Object} [opts]  { config?, signal? }
+ * @returns {AsyncGenerator}
+ */
+export async function* scoreTokens(text, opts = {}) {
+	const cfg = await resolveCfgPrompts(opts.config ?? (await ensureConfig()))
+	const config = callConfig(cfg, opts)
+	if (config.provider !== "local") return // only local models expose raw logits
+	const conn = getConnection()
+	const id = nextId()
+	const sessionKey = id
+
+	const queue = []
+	let wake = null
+	let finished = false
+	let error = null
+	const push = (ev) => { queue.push(ev); wake?.() }
+
+	handlers.set(id, (msg) => {
+		if (msg.type === "score-progress") push({type: "progress", step: msg.step, total: msg.total})
+		else if (msg.type === "token-scores") {
+			push({type: "done", scores: msg.scores})
+			finished = true
+			handlers.delete(id)
+			wake?.()
+		} else if (msg.type === "error") {
+			error = new Error(msg.message)
+			finished = true
+			handlers.delete(id)
+			wake?.()
+		}
+	})
+
+	function onAbort() {
+		conn.post({type: "abort", sessionKey})
+		handlers.delete(id)
+		error = new DOMException("Aborted", "AbortError")
+		finished = true
+		wake?.()
+	}
+	if (opts.signal) {
+		if (opts.signal.aborted) { onAbort(); return }
+		opts.signal.addEventListener("abort", onAbort)
+	}
+
+	conn.post({type: "score-tokens", id, sessionKey, provider: config.provider, text, config})
+
+	while (true) {
+		if (queue.length) { yield queue.shift(); continue }
+		if (finished) break
+		await new Promise((r) => (wake = r))
+	}
+	if (opts.signal) opts.signal.removeEventListener("abort", onAbort)
+	if (error) throw error
+}
+
+/**
  * Chat with the user's configured tools available. Tells the model what tools
  * exist, runs an agentic loop: generate → parse `tool-call` blocks → run each
  * handler (in the MAIN thread, full page access) → feed the result back →
@@ -317,48 +398,118 @@ export async function predict(text, opts = {}) {
  */
 export async function generateWithTools(messages, opts = {}) {
 	const cfg = opts.config ?? (await ensureConfig())
-	const tools = await resolveTools(cfg)
-	const toolSystem = buildToolsSystem(tools)
-	const system = [toolSystem, opts.system].filter(Boolean).join("\n\n") || undefined
+	// Inline tools (each with a `handler(args)` fn) + the user's folder tools.
+	const inline = (opts.tools || []).map((t) => ({...t}))
+	const folder = await resolveTools(cfg)
+	const tools = [...inline, ...folder]
 	const convo = Array.isArray(messages)
 		? [...messages]
 		: [{role: "user", content: String(messages)}]
 	const maxRounds = opts.maxRounds ?? 6
 	let finalText = ""
 
+	// Find a tool by name, matching either the original or sanitized name.
+	const findTool = (name) =>
+		tools.find((t) => t.name === name || sanitizeToolName(t.name) === name)
+
+	// Execute a single tool call, returning the result text.
+	const execTool = async (call) => {
+		const tool = findTool(call.name)
+		if (!tool) {
+			opts.onToolCall?.({name: call.name, args: call.args, error: "unknown tool"})
+			return `Error: no tool named "${call.name}"`
+		}
+		try {
+			const result = tool.handler
+				? await tool.handler(call.args || {})
+				: await runTool(tool, call.args)
+			opts.onToolCall?.({name: call.name, args: call.args, result})
+			return typeof result === "string" ? result : JSON.stringify(result)
+		} catch (e) {
+			opts.onToolCall?.({name: call.name, args: call.args, error: e?.message || String(e)})
+			return "Error: " + (e?.message || String(e))
+		}
+	}
+
+	// Whether to use native tool schemas vs text-based XML convention.
+	// Starts true for native providers, falls back to false on error.
+	const provider = (callConfig(cfg, opts)).provider
+	let useNative = tools.length > 0 && NATIVE_TOOL_PROVIDERS.has(provider)
+	// Text-based tool system prompt, built once and reused across rounds.
+	const textToolSystem = tools.length
+		? [buildToolsSystem(tools), opts.system].filter(Boolean).join("\n\n") || undefined
+		: opts.system
+
 	for (let round = 0; round < maxRounds; round++) {
-		const {text} = await generate(convo, {
+		const genOpts = {
 			...opts,
-			system,
+			config: cfg,
 			onToken: opts.onToken
 				? (delta, full) => opts.onToken(delta, full, round)
 				: undefined,
-		})
-		finalText = text
-		const calls = tools.length ? parseToolCalls(text) : []
-		if (!calls.length) break
-		convo.push({role: "assistant", content: text})
-		for (const call of calls) {
-			const tool = tools.find((t) => t.name === call.tool)
-			let resultText
-			if (!tool) {
-				resultText = `Error: no tool named "${call.tool}"`
-				opts.onToolCall?.({tool: call.tool, args: call.args, error: "unknown tool"})
+		}
+		if (useNative) {
+			// Native: pass tools for generate() to convert to schemas
+			genOpts.tools = tools
+		} else {
+			// Text-based: inject tool descriptions into system prompt ourselves;
+			// don't pass tools so generate() won't attempt native for a provider
+			// we've already fallen back from.
+			genOpts.tools = undefined
+			genOpts.system = textToolSystem
+		}
+
+		let res
+		try {
+			res = await generate(convo, genOpts)
+		} catch (err) {
+			// If native tool calling failed on the first round, fall back to
+			// text-based tool descriptions injected into the system prompt.
+			if (useNative && round === 0) {
+				useNative = false
+				res = await generate(convo, {
+					...genOpts,
+					tools: undefined,
+					system: textToolSystem,
+				})
 			} else {
-				try {
-					const result = await runTool(tool, call.args)
-					resultText = typeof result === "string" ? result : JSON.stringify(result)
-					opts.onToolCall?.({tool: call.tool, args: call.args, result})
-				} catch (e) {
-					resultText = "Error: " + (e?.message || String(e))
-					opts.onToolCall?.({
-						tool: call.tool,
-						args: call.args,
-						error: e?.message || String(e),
-					})
-				}
+				throw err
 			}
-			convo.push({role: "user", content: `Tool "${call.tool}" returned:\n${resultText}`})
+		}
+		finalText = res.text
+
+		// Native structured tool_calls if the provider returned them; otherwise
+		// parse the model's text (XML <tool_call> / fenced / bare JSON).
+		const nativeCalls = res.toolCalls && res.toolCalls.length > 0
+		const calls = nativeCalls ? res.toolCalls : parseToolCalls(res.text)
+		if (!calls.length) break
+
+		if (nativeCalls) {
+			// OpenAI format: assistant message includes tool_calls array, each
+			// tool result is role:"tool" with a matching tool_call_id.
+			convo.push({
+				role: "assistant",
+				content: res.text || null,
+				tool_calls: calls.map((call, i) => ({
+					id: call.id || "call_" + round + "_" + i,
+					type: "function",
+					function: {
+						name: call.name,
+						arguments: JSON.stringify(call.args || {}),
+					},
+				})),
+			})
+			for (let i = 0; i < calls.length; i++) {
+				const call = calls[i]
+				const callId = call.id || "call_" + round + "_" + i
+				convo.push({role: "tool", tool_call_id: callId, content: await execTool(call)})
+			}
+		} else {
+			// Text-based fallback: assistant text + user message with results.
+			convo.push({role: "assistant", content: res.text})
+			for (const call of calls) {
+				convo.push({role: "user", content: `Tool "${call.name}" returned:\n${await execTool(call)}`})
+			}
 		}
 	}
 	return {text: finalText, messages: convo}

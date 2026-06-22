@@ -32,6 +32,7 @@ import {
 	addToFolder,
 	removeFromFolder,
 } from "./tools.js"
+import {PROMPT_TEMPLATES} from "./templates.js"
 
 const DTYPES = ["q4f16", "q4", "q8", "int8", "fp16", "fp32"]
 const SECTIONS = [
@@ -1241,6 +1242,20 @@ function buildPickerInto(host, opts) {
 				reload()
 			},
 		})
+		const templates = PROMPT_TEMPLATES.filter((t) => t.kind === kind)
+		const templateBtns = templates.map((t) =>
+			el("button", {
+				class: "llmp-btn",
+				text: "+ " + t.name,
+				onClick: async () => {
+					if (!repo) return
+					const w = await createPromptDoc(repo, kind, {name: t.name, text: t.text})
+					await addLink(w.url, t.name)
+					setSel(w.url)
+					reload()
+				},
+			})
+		)
 		const importIn = el("input", {
 			class: "llmp-input",
 			placeholder: "paste a URL to import a shared prompt…",
@@ -1265,7 +1280,7 @@ function buildPickerInto(host, opts) {
 				el("p", {class: "llmp-note llmp-explain", text: note}),
 				list,
 				empty,
-				el("div", {class: "llmp-row"}, [newBtn, openBtn]),
+				el("div", {class: "llmp-row"}, [newBtn, ...templateBtns, openBtn]),
 				importIn,
 			]),
 			editorBox
@@ -1346,7 +1361,7 @@ function buildPickerInto(host, opts) {
 							onToken: (_d, full) => (tryOut.textContent = full),
 							onToolCall: (c) => {
 								tryOut.textContent +=
-									`\n\n▶ ${c.tool}(${JSON.stringify(c.args)}) → ` +
+									`\n\n▶ ${c.name}(${JSON.stringify(c.args)}) → ` +
 									(c.error ? "⚠ " + c.error : JSON.stringify(c.result)) +
 									"\n"
 							},

@@ -50,6 +50,7 @@ export {
 	generateWithTools,
 	stream,
 	predict,
+	scoreTokens,
 	preload,
 	abort,
 	resume,
@@ -66,7 +67,9 @@ export {
 	createLLMTool,
 	createToolFile,
 	LLMToolDatatype,
+	sanitizeToolName,
 	resolveTools,
+	toToolSchemas,
 	buildToolsSystem,
 	parseToolCalls,
 	loadHandler,
@@ -90,3 +93,6 @@ export {
 	PatchworkLLMConfigProvider,
 	definePatchworkLLMConfigProvider,
 } from "./provider.js"
+
+// Built-in prompt templates
+export {PROMPT_TEMPLATES} from "./templates.js"

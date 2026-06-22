@@ -12,6 +12,14 @@
 
 import {ensureSettingsDoc} from "./config.js"
 
+/** Sanitize a tool name for OpenAI's function-calling format: [a-zA-Z0-9_-]{1,64}. */
+export function sanitizeToolName(name) {
+	return (name || "tool")
+		.replace(/[^a-zA-Z0-9_-]/g, "_")
+		.replace(/^[_-]+|[_-]+$/g, "")
+		.slice(0, 64) || "tool"
+}
+
 const DEFAULT_HANDLER = `// Tool handler. The model calls this tool by name; \`args\` is an object of the
 // parameters you describe in the tool's description. Return a string or any
 // JSON-serialisable value — it's fed back to the model.
@@ -112,6 +120,9 @@ export async function resolveTools(cfg, repo) {
 					name: d.name || link.name || "Tool",
 					description: d.description || "",
 					handlerUrl: d.tool ?? d.handlerUrl, // `tool`, or legacy `handlerUrl`
+					// Folder tools carry no JSON Schema — permissive params; the model
+					// learns the shape from the description.
+					parameters: d.parameters || {type: "object", additionalProperties: true},
 				})
 		} catch {
 			/* unreachable — skip */
@@ -120,34 +131,91 @@ export async function resolveTools(cfg, repo) {
 	return out
 }
 
-/** Build the system-prompt block that tells the model which tools exist + how to call them. */
+/** OpenAI-style tool schemas, for providers with native function calling. */
+export function toToolSchemas(tools) {
+	return (tools || []).map((t) => ({
+		type: "function",
+		function: {
+			name: sanitizeToolName(t.name),
+			description: t.description || "",
+			parameters: t.parameters || {type: "object", properties: {}, additionalProperties: true},
+		},
+	}))
+}
+
+/**
+ * System-prompt block for providers WITHOUT native tool calling (local
+ * transformers, Chrome built-in). Uses the Hermes/Qwen `<tool_call>` XML
+ * convention — what those models are tuned to emit.
+ */
 export function buildToolsSystem(tools) {
 	if (!tools || !tools.length) return ""
-	const list = tools.map((t) => `- ${t.name}: ${t.description}`).join("\n")
+	const describe = (t) => {
+		const props = t.parameters?.properties
+		const params =
+			props && Object.keys(props).length
+				? " — args: " +
+					Object.entries(props)
+						.map(([k, v]) => `${k}${v?.type ? ":" + v.type : ""}`)
+						.join(", ")
+				: ""
+		return `- ${sanitizeToolName(t.name)}: ${t.description || ""}${params}`
+	}
 	return [
-		"You can call tools. When you need one, output a fenced code block EXACTLY like this and then stop:",
-		"```tool-call",
-		'{"tool": "<name>", "args": { ... }}',
-		"```",
-		"You'll then be given the tool's result; use it to continue. Only call a tool when it genuinely helps — otherwise just answer.",
+		"You can call tools. To call one, emit a tool call wrapped in <tool_call></tool_call> tags containing JSON, exactly:",
+		'<tool_call>{"name": "<tool>", "arguments": { ... }}</tool_call>',
+		"You'll then be given the tool's result and can call another tool or answer. Call a tool only when it genuinely helps — otherwise just answer in plain prose.",
 		"",
 		"Available tools:",
-		list,
+		tools.map(describe).join("\n"),
 	].join("\n")
 }
 
-/** Parse `tool-call` fenced blocks out of model output → [{ tool, args }]. */
+/**
+ * Parse tool calls out of model TEXT (the prompt-convention fallback for
+ * local/built-in). Handles, in order of preference:
+ *   - <tool_call>{…}</tool_call>  (Hermes/Qwen XML)
+ *   - ```json / ```tool_call / ```tool-call  fenced JSON
+ *   - a bare {…} object containing a name/tool key
+ * Each accepts {name|tool, arguments|args}. Returns [{ name, args }].
+ */
 export function parseToolCalls(text) {
+	if (!text) return []
 	const calls = []
-	const re = /```tool-call\s*\n?([\s\S]*?)```/g
-	let m
-	while ((m = re.exec(text))) {
-		try {
-			const obj = JSON.parse(m[1].trim())
-			if (obj && obj.tool) calls.push({tool: obj.tool, args: obj.args || {}})
-		} catch {
-			/* malformed block — ignore */
+	const push = (obj) => {
+		const name = obj?.name || obj?.tool
+		if (!name) return
+		let args = obj.arguments ?? obj.args ?? {}
+		if (typeof args === "string") {
+			try {
+				args = JSON.parse(args)
+			} catch {
+				args = {}
+			}
 		}
+		calls.push({name, args: args || {}})
+	}
+	let m
+	const xml = /<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/g
+	let sawXml = false
+	while ((m = xml.exec(text))) {
+		sawXml = true
+		try {
+			push(JSON.parse(m[1].trim()))
+		} catch {}
+	}
+	if (sawXml) return calls
+	const fence = /```(?:json|tool[_-]call)?\s*([\s\S]*?)```/g
+	while ((m = fence.exec(text))) {
+		try {
+			push(JSON.parse(m[1].trim()))
+		} catch {}
+	}
+	if (calls.length) return calls
+	for (const b of text.match(/\{[\s\S]*?"(?:name|tool)"[\s\S]*?\}/g) || []) {
+		try {
+			push(JSON.parse(b))
+		} catch {}
 	}
 	return calls
 }

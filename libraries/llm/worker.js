@@ -236,6 +236,17 @@ function topkFromLogits(data, vocab, k) {
 
 // Optional OpenAI-style sampling params, omitting off/default values so a
 // provider that doesn't support one isn't upset.
+// Parse a tool-call arguments value (string or already-object) → object.
+function safeJson(v) {
+	if (v && typeof v === "object") return v
+	if (typeof v !== "string") return {}
+	try {
+		return JSON.parse(v)
+	} catch {
+		return {}
+	}
+}
+
 function samplingExtras(config) {
 	const p = {}
 	if (config.topK > 0) p.top_k = config.topK
@@ -292,10 +303,21 @@ async function doGenerateLocal(gen, input, config) {
 						if (step < PREDICTION_CAP) {
 							try {
 								const vocab = logits.dims.at(-1)
-								const candidates = topkFromLogits(logits.data, vocab, topk).map(
+								const data = logits.data
+								const candidates = topkFromLogits(data, vocab, topk).map(
 									({id, p}) => ({token: tokenizer.decode([id]), p: +p.toFixed(4)})
 								)
-								post(gen, {type: "prediction", step, candidates})
+								// Full-distribution entropy (bits) from raw logits
+								let mx = -Infinity
+								for (let j = 0; j < vocab; j++) if (data[j] > mx) mx = data[j]
+								let sm = 0
+								for (let j = 0; j < vocab; j++) sm += Math.exp(data[j] - mx)
+								let ent = 0
+								for (let j = 0; j < vocab; j++) {
+									const p = Math.exp(data[j] - mx) / sm
+									if (p > 0) ent -= p * Math.log2(p)
+								}
+								post(gen, {type: "prediction", step, candidates, entropy: +ent.toFixed(3)})
 							} catch {}
 						}
 						step++
@@ -337,11 +359,13 @@ async function doGenerateLocal(gen, input, config) {
 			greedy: !(temperature > 0),
 			temperature,
 			top_p: config.topP ?? 0.9,
-			repetition_penalty: 1.1,
+			repetition_penalty: config.repetitionPenalty ?? 1.1,
 			maxNewTokens,
 		},
 	})
-	return text
+	// Local has no native tool API; the client parses the model's text (XML/JSON)
+	// when tools were requested via the system prompt.
+	return {text, toolCalls: null}
 }
 
 // ---------------------------------------------------------------------------
@@ -382,6 +406,47 @@ async function doGenerateOpenRouter(gen, input, config) {
 	if (topk > 0) {
 		body.logprobs = true
 		body.top_logprobs = Math.min(topk, 20) // OpenAI caps top_logprobs at 20
+	}
+
+	// Native function calling: a non-streaming request so we get structured
+	// tool_calls back (streaming tool_calls deltas aren't worth reassembling here).
+	if (config.tools && config.tools.length) {
+		body.tools = config.tools
+		body.tool_choice = "auto"
+		body.stream = false
+		delete body.stream_options
+		delete body.logprobs
+		delete body.top_logprobs
+		const t0 = performance.now()
+		const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+			method: "POST",
+			headers: {Authorization: "Bearer " + config.apiKey, "Content-Type": "application/json"},
+			body: JSON.stringify(body),
+			signal: gen.abortController.signal,
+		})
+		if (!res.ok) throw new Error("OpenRouter: " + (await res.text()))
+		const data = await res.json()
+		const msg = data.choices?.[0]?.message || {}
+		const text = msg.content || ""
+		if (text) post(gen, {type: "token", delta: text, text})
+		gen.fullText = text
+		const toolCalls = (msg.tool_calls || []).map((tc) => ({
+			id: tc.id,
+			name: tc.function?.name,
+			args: safeJson(tc.function?.arguments),
+		}))
+		post(gen, {
+			type: "stats",
+			provider: "openrouter",
+			model: config.model,
+			promptTokens: data.usage?.prompt_tokens ?? null,
+			genTokens: data.usage?.completion_tokens ?? null,
+			ttftMs: null,
+			totalMs: Math.round(performance.now() - t0),
+			tokPerSec: null,
+			decode: {greedy: temperature === 0, temperature},
+		})
+		return {text, toolCalls}
 	}
 
 	const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -462,7 +527,7 @@ async function doGenerateOpenRouter(gen, input, config) {
 				: null,
 		decode: {greedy: temperature === 0, temperature},
 	})
-	return full
+	return {text: full, toolCalls: null}
 }
 
 // ---------------------------------------------------------------------------
@@ -490,6 +555,42 @@ async function doGenerateOllama(gen, input, config) {
 	}
 	if (isText) body.prompt = input
 	else body.messages = input
+
+	// Native tool calling (chat only): non-streaming, parse message.tool_calls.
+	if (config.tools && config.tools.length && !isText) {
+		body.tools = config.tools
+		body.stream = false
+		const t0 = performance.now()
+		const r = await fetch(baseUrl + "/api/chat", {
+			method: "POST",
+			headers: {"Content-Type": "application/json"},
+			body: JSON.stringify(body),
+			signal: gen.abortController.signal,
+		})
+		if (!r.ok) throw new Error("Ollama: " + (await r.text()))
+		const data = await r.json()
+		const text = data.message?.content || ""
+		if (text) post(gen, {type: "token", delta: text, text})
+		gen.fullText = text
+		const toolCalls = (data.message?.tool_calls || []).map((tc, i) => ({
+			id: tc.id || "call_" + i,
+			name: tc.function?.name,
+			args: safeJson(tc.function?.arguments), // Ollama already gives an object
+		}))
+		post(gen, {
+			type: "stats",
+			provider: "ollama",
+			model: config.model,
+			promptTokens: data.prompt_eval_count ?? null,
+			genTokens: data.eval_count ?? null,
+			ttftMs: null,
+			totalMs: Math.round(performance.now() - t0),
+			tokPerSec: null,
+			decode: {greedy: (config.temperature ?? 0.7) === 0, temperature: config.temperature ?? 0.7},
+		})
+		return {text, toolCalls}
+	}
+
 	const res = await fetch(baseUrl + (isText ? "/api/generate" : "/api/chat"), {
 		method: "POST",
 		headers: {"Content-Type": "application/json"},
@@ -542,7 +643,7 @@ async function doGenerateOllama(gen, input, config) {
 				: null,
 		decode: {temperature: config.temperature ?? 0.7},
 	})
-	return full
+	return {text: full, toolCalls: null}
 }
 
 // ---------------------------------------------------------------------------
@@ -575,6 +676,78 @@ async function predictLocal(text, config) {
 		],
 	})
 	return candidates
+}
+
+// Score every token position in the input — one forward pass per position,
+// extracting exact probability (from full vocab), rank, entropy, and top-k
+// alternatives. Powers the attention heatmap: "how surprised was the model
+// by what you actually wrote?"
+async function scoreTokensLocal(gen, text, config) {
+	await ensureModel(config.model)
+	const tokenizer = generator.tokenizer
+	const ids = tokenizer.encode(text)
+	const scores = []
+
+	for (let i = 0; i < ids.length; i++) {
+		if (gen.abortController.signal.aborted) break
+
+		const prefix = i === 0 ? "" : tokenizer.decode(ids.slice(0, i), {skip_special_tokens: true})
+		let result = null
+
+		await generator(prefix || " ", {
+			max_new_tokens: 1,
+			do_sample: false,
+			logits_processor: [
+				(inputIds, logits) => {
+					if (result) return logits // only first call matters
+					const vocab = logits.dims.at(-1)
+					const data = logits.data
+					const actualId = ids[i]
+
+					// Softmax (numerically stable)
+					let mx = -Infinity
+					for (let j = 0; j < vocab; j++) if (data[j] > mx) mx = data[j]
+					let sm = 0
+					for (let j = 0; j < vocab; j++) sm += Math.exp(data[j] - mx)
+
+					// Exact probability + rank of actual next token
+					const actualP = Math.exp(data[actualId] - mx) / sm
+					let rank = 1
+					const actualLogit = data[actualId]
+					for (let j = 0; j < vocab; j++) {
+						if (data[j] > actualLogit + 1e-8) rank++
+					}
+
+					// Full-distribution entropy
+					let ent = 0
+					for (let j = 0; j < vocab; j++) {
+						const p = Math.exp(data[j] - mx) / sm
+						if (p > 0) ent -= p * Math.log2(p)
+					}
+
+					// Top-k alternatives for context
+					const topk = topkFromLogits(data, vocab, 10).map(({id, p}) => ({
+						token: tokenizer.decode([id]),
+						p: +p.toFixed(4),
+					}))
+
+					result = {
+						token: tokenizer.decode([actualId]),
+						p: +actualP.toFixed(6),
+						rank,
+						entropy: +ent.toFixed(3),
+						topk,
+					}
+					return logits
+				},
+			],
+		})
+
+		if (result) scores.push(result)
+		post(gen, {type: "score-progress", step: i, total: ids.length})
+	}
+
+	post(gen, {type: "token-scores", scores})
 }
 
 async function predictOpenRouter(text, config, signal) {
@@ -704,6 +877,41 @@ async function ensureWebLLM(model, custom) {
 async function doGenerateWebLLM(gen, input, config) {
 	await ensureWebLLM(config.model, config.custom)
 	const isText = typeof input === "string"
+
+	// Native tool calling (chat only): non-streaming, parse message.tool_calls.
+	if (config.tools && config.tools.length && !isText) {
+		const t0 = performance.now()
+		const res = await webllmEngine.chat.completions.create({
+			messages: input,
+			tools: config.tools,
+			tool_choice: "auto",
+			stream: false,
+			temperature: config.temperature ?? 0.7,
+			...(config.topP != null ? {top_p: config.topP} : {}),
+			...(config.maxNewTokens ? {max_tokens: config.maxNewTokens} : {}),
+		})
+		const msg = res.choices?.[0]?.message || {}
+		const text = msg.content || ""
+		if (text) post(gen, {type: "token", delta: text, text})
+		gen.fullText = text
+		const toolCalls = (msg.tool_calls || []).map((tc) => ({
+			id: tc.id,
+			name: tc.function?.name,
+			args: safeJson(tc.function?.arguments),
+		}))
+		post(gen, {
+			type: "stats",
+			provider: "webllm",
+			model: config.model,
+			promptTokens: res.usage?.prompt_tokens ?? null,
+			genTokens: res.usage?.completion_tokens ?? null,
+			ttftMs: null,
+			totalMs: Math.round(performance.now() - t0),
+			tokPerSec: null,
+			decode: {temperature: config.temperature ?? 0.7},
+		})
+		return {text, toolCalls}
+	}
 	const temperature = config.temperature ?? 0.7
 	const topk = config.topk | 0
 	const common = {
@@ -763,7 +971,7 @@ async function doGenerateWebLLM(gen, input, config) {
 			tFirst && genTokens ? +(genTokens / ((now - tFirst) / 1000)).toFixed(1) : null,
 		decode: {temperature, top_p: config.topP},
 	})
-	return full
+	return {text: full, toolCalls: null}
 }
 
 async function predictWebLLM(text, config) {
@@ -794,11 +1002,11 @@ function post(gen, msg) {
 	} catch {}
 }
 
-function finalize(sessionKey, gen, text) {
+function finalize(sessionKey, gen, text, toolCalls) {
 	gen.done = true
 	gen.finalText = text
 	try {
-		gen.port.postMessage({type: "result", id: gen.id, text})
+		gen.port.postMessage({type: "result", id: gen.id, text, toolCalls: toolCalls || null})
 	} catch {}
 	broadcast({type: "status", message: ""})
 	if (sessionKey) setTimeout(() => activeGenerations.delete(sessionKey), 5000)
@@ -817,15 +1025,12 @@ function fail(sessionKey, gen, message) {
 async function runGeneration(sessionKey, gen, provider, input, config) {
 	try {
 		broadcast({type: "status", message: "Thinking…"})
-		let text
-		if (provider === "openrouter")
-			text = await doGenerateOpenRouter(gen, input, config)
-		else if (provider === "ollama")
-			text = await doGenerateOllama(gen, input, config)
-		else if (provider === "webllm")
-			text = await doGenerateWebLLM(gen, input, config)
-		else text = await doGenerateLocal(gen, input, config)
-		finalize(sessionKey, gen, text)
+		let out
+		if (provider === "openrouter") out = await doGenerateOpenRouter(gen, input, config)
+		else if (provider === "ollama") out = await doGenerateOllama(gen, input, config)
+		else if (provider === "webllm") out = await doGenerateWebLLM(gen, input, config)
+		else out = await doGenerateLocal(gen, input, config)
+		finalize(sessionKey, gen, out.text, out.toolCalls)
 	} catch (err) {
 		if (gen.abortController.signal.aborted) return
 		if (gen.fullText) finalize(sessionKey, gen, gen.fullText)
@@ -843,6 +1048,32 @@ function handleMessage(port, data) {
 	}
 	if (type === "predict") {
 		handlePredict(port, data)
+		return
+	}
+	if (type === "score-tokens") {
+		const {provider, config = {}} = data
+		if (provider !== "local") {
+			port.postMessage({type: "token-scores", id, scores: []})
+			return
+		}
+		const gen = {id, port, fullText: "", done: false, finalText: "", abortController: new AbortController()}
+		activeGenerations.set(sessionKey, gen)
+		const requested = config.model || DEFAULT_MODEL_ID
+		const run = () =>
+			scoreTokensLocal(gen, data.text, config)
+				.then(() => { gen.done = true; activeGenerations.delete(sessionKey) })
+				.catch((e) => {
+					if (!gen.abortController.signal.aborted)
+						port.postMessage({type: "error", id, message: e?.message || String(e)})
+					activeGenerations.delete(sessionKey)
+				})
+		if (!generator || currentModelId !== requested) {
+			if (currentModelId !== requested) generator = null
+			loadModel(requested).then(() => {
+				if (!generator) { port.postMessage({type: "error", id, message: "Model not loaded"}); return }
+				run()
+			})
+		} else run()
 		return
 	}
 	if (type === "register-local-model") {
