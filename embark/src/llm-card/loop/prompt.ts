@@ -111,6 +111,10 @@ Each sticker's \`target\` is NOT the document url - it is a RANGE sub-url inside
 2. text - insert a small text annotation relative to the targeted range:
    { type: "text", text: "note", target, slot: "after" }   // slot: "before" | "after" | "replace"
 
+# Iterating on a previous version
+
+If a previous effect.js is supplied with the brief, the card was generated before and the user has edited its description. Use that source as your starting point: keep what still applies, change only what the new description requires, and write the result back with writeFile. Do not start from a blank file unless the previous version is unrelated to the new request.
+
 # Rules
 
 - Use ONLY schema:matches and stickers:registry. If the user's request cannot be expressed through them, call giveUp("...explain why...") and stop.

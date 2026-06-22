@@ -29,6 +29,23 @@ function LlmCard(props: { handle: DocHandle<LlmCardDoc>; element: ToolElement })
   const [doc] = useDocument<LlmCardDoc>(() => props.handle.url);
   const status = (): LlmCardStatus => doc()?.status ?? "draft";
 
+  // Local UI state (never persisted): is the textarea focused, and is the
+  // orb's anchored popover (trace while running/active, error when failed) open.
+  const [focused, setFocused] = createSignal(false);
+  const [popoverOpen, setPopoverOpen] = createSignal(false);
+
+  const hasText = () => (doc()?.description?.trim().length ?? 0) > 0;
+  // The orb sits in the bottom-right "ready" corner only while a fresh draft is
+  // being written; once it activates it floats up to the top-right.
+  const orbInCorner = () => status() === "draft";
+  // Draft orb is a focus affordance (hides on blur); the running/active/failed
+  // orb is the card's persistent state indicator, so it stays put.
+  const orbVisible = () =>
+    (status() === "draft" && hasText() && focused()) ||
+    status() === "generating" ||
+    status() === "active" ||
+    status() === "failed";
+
   let textarea: HTMLTextAreaElement | undefined;
   let abort: AbortController | undefined;
   let effectCleanup: (() => void) | void;
@@ -59,9 +76,44 @@ function LlmCard(props: { handle: DocHandle<LlmCardDoc>; element: ToolElement })
 
   const onInput = (event: InputEvent & { currentTarget: HTMLTextAreaElement }) => {
     const value = event.currentTarget.value;
+    const prev = doc()?.status;
     props.handle.change((card) => {
       card.description = value;
+      // Editing a live card disables its effect and drops back to draft, so the
+      // orb returns to the corner to re-trigger generation. Same for a failed
+      // card: editing clears the error and lets the user retry.
+      if (card.status === "active" || card.status === "failed") {
+        card.status = "draft";
+        delete card.failure;
+      }
     });
+    if (prev === "active") disposeEffect();
+    if (prev === "active" || prev === "failed") setPopoverOpen(false);
+  };
+
+  // The orb is the card's only control. What a click does depends on state:
+  // draft -> kick off generation; otherwise toggle the anchored popover (the
+  // live trace while running/active, or the error bubble when failed).
+  const onOrbClick = () => {
+    if (status() === "draft") {
+      setPopoverOpen(false);
+      void activate();
+    } else {
+      setPopoverOpen((open) => !open);
+    }
+  };
+
+  const orbTitle = (): string => {
+    switch (status()) {
+      case "generating":
+        return "Generating… click to view progress";
+      case "active":
+        return "Active · click to view trace";
+      case "failed":
+        return "Failed · click to view error";
+      default:
+        return "Activate";
+    }
   };
 
   const activate = async () => {
@@ -149,42 +201,66 @@ function LlmCard(props: { handle: DocHandle<LlmCardDoc>; element: ToolElement })
 
   return (
     <div class={`embark-llm-card embark-llm-card--${status()}`}>
-      <div class="embark-llm-card__header">
-        <span class="embark-llm-card__dot" />
-        <span class="embark-llm-card__title">LLM Card</span>
-        <span class="embark-llm-card__badge">{statusLabel(status())}</span>
-      </div>
-
       <textarea
         ref={textarea}
-        class="embark-llm-card__text"
-        placeholder="Describe what this card should do… e.g. 'List birds recently seen near the map and drop a pin for each.'"
+        class="embark-llm-card__paper"
+        placeholder="Describe what this card should do…"
         readOnly={status() === "generating"}
         on:input={onInput}
+        on:focus={() => setFocused(true)}
+        on:blur={() => setFocused(false)}
+        // Editing the text must not be read as a frameless-embed surface drag,
+        // so keep pointer presses local to the textarea.
+        on:pointerdown={(event) => event.stopPropagation()}
       />
 
-      <div class="embark-llm-card__controls">
-        <Show when={status() === "generating"}>
-          <button class="embark-llm-card__btn" on:click={stop}>
-            Stop
-          </button>
-        </Show>
-        <Show when={status() !== "generating"}>
-          <button
-            class="embark-llm-card__btn embark-llm-card__btn--primary"
-            on:click={() => void activate()}
-          >
-            {activateLabel(status())}
-          </button>
-        </Show>
-      </div>
-
-      <Show when={doc()?.failure}>
-        <div class="embark-llm-card__failure">{doc()?.failure}</div>
+      <Show when={orbVisible()}>
+        <button
+          type="button"
+          class="embark-llm-card__orb"
+          classList={{
+            "embark-llm-card__orb--corner": orbInCorner(),
+            "embark-llm-card__orb--floating": !orbInCorner(),
+          }}
+          title={orbTitle()}
+          aria-label={orbTitle()}
+          // Keep the textarea focused through the click so the draft orb does
+          // not vanish (it is focus-gated) before the handler runs, and don't
+          // let the press start a frameless-embed surface drag.
+          on:mousedown={(event) => event.preventDefault()}
+          on:pointerdown={(event) => event.stopPropagation()}
+          on:click={onOrbClick}
+        />
       </Show>
 
-      <Show when={(doc()?.transcript?.length ?? 0) > 0}>
-        <div class="embark-llm-card__transcript">
+      <Show when={popoverOpen() && status() === "failed"}>
+        <div
+          class="embark-llm-card__bubble embark-llm-card__bubble--error"
+          on:pointerdown={(event) => event.stopPropagation()}
+        >
+          {doc()?.failure ?? "Something went wrong."}
+        </div>
+      </Show>
+
+      <Show
+        when={
+          popoverOpen() &&
+          status() !== "failed" &&
+          (doc()?.transcript?.length ?? 0) > 0
+        }
+      >
+        <div
+          class="embark-llm-card__trace"
+          on:pointerdown={(event) => event.stopPropagation()}
+        >
+          <Show when={status() === "generating"}>
+            <div class="embark-llm-card__trace-head">
+              <span>generating…</span>
+              <button class="embark-llm-card__trace-stop" on:click={stop}>
+                Stop
+              </button>
+            </div>
+          </Show>
           <For each={doc()?.transcript ?? []}>
             {(entry) => <TranscriptBlock entry={entry} />}
           </For>
@@ -222,26 +298,3 @@ function TranscriptBlock(props: { entry: TranscriptEntry }) {
   );
 }
 
-function statusLabel(status: LlmCardStatus): string {
-  switch (status) {
-    case "draft":
-      return "draft";
-    case "generating":
-      return "generating…";
-    case "active":
-      return "active";
-    case "failed":
-      return "failed";
-  }
-}
-
-function activateLabel(status: LlmCardStatus): string {
-  switch (status) {
-    case "active":
-      return "Regenerate";
-    case "failed":
-      return "Retry";
-    default:
-      return "Activate";
-  }
-}

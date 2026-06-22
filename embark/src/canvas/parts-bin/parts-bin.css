@@ -94,8 +94,9 @@
   background: #ffffff;
 }
 
-/* Delete button at the end of the bar; fades up on hover. Stops drags so
-   clicking it never starts one. */
+/* Frame toggle + delete buttons at the end of the bar; fade up on hover. They
+   stop drags so clicking one never starts one. */
+.embark-parts-bin__frame,
 .embark-parts-bin__delete {
   flex: 0 0 auto;
   display: flex;
@@ -114,14 +115,28 @@
   transition: opacity 120ms ease;
 }
 
+.embark-parts-bin__item:hover .embark-parts-bin__frame,
 .embark-parts-bin__item:hover .embark-parts-bin__delete,
+.embark-parts-bin__frame:focus-visible,
 .embark-parts-bin__delete:focus-visible {
   opacity: 1;
 }
 
+.embark-parts-bin__frame:hover,
 .embark-parts-bin__delete:hover {
   background: #e7e5e4;
   color: #44403c;
+}
+
+/* When this example drops frameless, keep its toggle lit so the state reads at
+   a glance even without hovering. */
+.embark-parts-bin__frame--off {
+  opacity: 1;
+  color: #6366f1;
+}
+
+.embark-parts-bin__frame--off:hover {
+  color: #4f46e5;
 }
 
 .embark-parts-bin__preview {

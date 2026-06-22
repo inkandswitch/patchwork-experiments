@@ -23,6 +23,9 @@ export type EmbarkEmbed = {
   height: number;
   z: number;
   toolId?: string;
+  // Frameless embeds render without the drag border / clipping; the embedded
+  // tool brings its own chrome and is dragged by grabbing its surface.
+  frameless?: boolean;
 };
 
 export type EmbarkCanvasDoc = {
@@ -147,11 +150,12 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
     ]);
     const clone = repo.clone(sourceHandle);
     binHandle.change((binDoc) => {
-      // Automerge rejects an explicit `undefined`, so only set `toolId` when the
-      // source embed actually pins one.
+      // Automerge rejects an explicit `undefined`, so only set optional fields
+      // when the source embed actually carries them.
       binDoc.items.push({
         url: clone.url,
         ...(source.toolId !== undefined && { toolId: source.toolId }),
+        ...(source.frameless ? { frameless: true } : {}),
       });
     });
   };
@@ -179,6 +183,8 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
           width: DEFAULT_WIDTH,
           height: DEFAULT_HEIGHT,
           z: ++z,
+          // Only set when asked; Automerge rejects an explicit `undefined`.
+          ...(item.frameless ? { frameless: true } : {}),
         };
       });
     });
@@ -343,11 +349,26 @@ function EmbedView(props: {
     });
   };
 
+  const frameless = () => props.embed.frameless === true;
+
+  // Frameless embeds have no handle bar, so the whole surface moves them. The
+  // embedded tool opts a region out of dragging by calling stopPropagation on
+  // its pointerdown (then this never fires). Framed embeds move from the bar
+  // only, so the surface press is ignored there.
+  const beginMove = beginInteraction("move");
+  const onSurfacePointerDown = (event: PointerEvent) => {
+    if (!frameless()) return;
+    beginMove(event);
+  };
+
   return (
     <div
       ref={rootEl}
       class="embark-embed"
-      classList={{ "embark-embed--selected": props.selected }}
+      classList={{
+        "embark-embed--selected": props.selected,
+        "embark-embed--frameless": frameless(),
+      }}
       style={{
         left: `${props.embed.x}px`,
         top: `${props.embed.y}px`,
@@ -356,30 +377,38 @@ function EmbedView(props: {
         "z-index": props.embed.z,
       }}
     >
+      <Show when={!frameless()}>
+        <div
+          class="embark-embed__handle"
+          title="Drag to move"
+          on:pointerdown={beginMove}
+          on:pointermove={onPointerMove}
+          on:pointerup={endInteraction}
+          on:pointercancel={endInteraction}
+        >
+          <GripIcon />
+          <button
+            type="button"
+            class="embark-embed__delete"
+            title="Remove from canvas"
+            aria-label="Remove from canvas"
+            on:pointerdown={(event) => event.stopPropagation()}
+            on:click={(event) => {
+              event.stopPropagation();
+              props.onDelete();
+            }}
+          >
+            <CloseIcon />
+          </button>
+        </div>
+      </Show>
       <div
-        class="embark-embed__handle"
-        title="Drag to move"
-        on:pointerdown={beginInteraction("move")}
+        class="embark-embed__view"
+        on:pointerdown={onSurfacePointerDown}
         on:pointermove={onPointerMove}
         on:pointerup={endInteraction}
         on:pointercancel={endInteraction}
       >
-        <GripIcon />
-        <button
-          type="button"
-          class="embark-embed__delete"
-          title="Remove from canvas"
-          aria-label="Remove from canvas"
-          on:pointerdown={(event) => event.stopPropagation()}
-          on:click={(event) => {
-            event.stopPropagation();
-            props.onDelete();
-          }}
-        >
-          <CloseIcon />
-        </button>
-      </div>
-      <div class="embark-embed__view">
         <patchwork-view
           doc-url={props.embed.docUrl}
           tool-id={props.embed.toolId}

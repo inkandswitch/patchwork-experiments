@@ -100,6 +100,14 @@ function PartsBin(props: { handle: DocHandle<PartsBinDoc> }) {
                   else delete entry.label;
                 })
               }
+              onToggleFrameless={() =>
+                props.handle.change((binDoc) => {
+                  const entry = binDoc.items[index()];
+                  if (!entry) return;
+                  if (entry.frameless) delete entry.frameless;
+                  else entry.frameless = true;
+                })
+              }
             />
           )}
         </For>
@@ -121,6 +129,7 @@ function PartsBinRow(props: {
   item: PartsBinItem;
   onRemove: () => void;
   onRename: (label: string) => void;
+  onToggleFrameless: () => void;
 }) {
   // Resolve the source handle up front (waits for ready) so dragstart — which
   // must write its payload synchronously — always has a loaded doc to clone
@@ -145,11 +154,14 @@ function PartsBinRow(props: {
     const handle = source();
     if (!event.dataTransfer || !handle) return;
     event.dataTransfer.effectAllowed = "copy";
-    // Drop an independent copy so the example in the bin stays pristine.
+    // Drop an independent copy so the example in the bin stays pristine. Carry
+    // the frameless choice in the rich payload so the canvas drops it framed or
+    // frameless to match this example.
     const url = props.repo.clone(handle).url;
+    const item = { url, ...(props.item.frameless ? { frameless: true } : {}) };
     event.dataTransfer.setData(
       "text/x-patchwork-dnd",
-      JSON.stringify({ source: "parts-bin", items: [{ url }] }),
+      JSON.stringify({ source: "parts-bin", items: [item] }),
     );
     event.dataTransfer.setData("text/x-patchwork-urls", JSON.stringify([url]));
   };
@@ -177,6 +189,32 @@ function PartsBinRow(props: {
           on:pointerdown={(event) => event.stopPropagation()}
           on:change={(event) => props.onRename(event.currentTarget.value.trim())}
         />
+        <button
+          type="button"
+          class="embark-parts-bin__frame"
+          classList={{
+            "embark-parts-bin__frame--off": props.item.frameless === true,
+          }}
+          title={
+            props.item.frameless
+              ? "Drops without a frame — click to add one"
+              : "Drops with a frame — click to remove it"
+          }
+          aria-label="Toggle frame on drop"
+          aria-pressed={props.item.frameless === true}
+          draggable={false}
+          on:pointerdown={(event) => event.stopPropagation()}
+          on:dragstart={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          on:click={(event) => {
+            event.stopPropagation();
+            props.onToggleFrameless();
+          }}
+        >
+          <FrameIcon off={props.item.frameless === true} />
+        </button>
         <button
           type="button"
           class="embark-parts-bin__delete"
@@ -223,6 +261,27 @@ function GripIcon() {
       <circle cx="5" cy="15" r="1.2" />
       <circle cx="12" cy="15" r="1.2" />
       <circle cx="19" cy="15" r="1.2" />
+    </svg>
+  );
+}
+
+// Frame glyph for the frame toggle: a solid rounded rect when framed, a dashed
+// one when the example drops frameless. Inherits the button's text color.
+function FrameIcon(props: { off: boolean }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-dasharray={props.off ? "4 3" : undefined}
+      aria-hidden="true"
+    >
+      <rect x="3" y="4" width="18" height="16" rx="2.5" />
     </svg>
   );
 }

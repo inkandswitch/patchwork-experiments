@@ -48,6 +48,10 @@ export async function runLlmLoop(
   // model what it's working with (name + type only; it reads contents itself).
   const inventory = await gatherCanvasInventory(api, cardHandle.url);
 
+  // If this card was generated before, hand the model its previous effect.js as
+  // a starting point so it edits rather than rewrites from scratch.
+  const previousEffect = await api.readFile(doc.entry ?? "effect.js");
+
   let gaveUp: string | undefined;
 
   for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
@@ -59,6 +63,7 @@ export async function runLlmLoop(
     const messages = buildMessages(
       current.description,
       inventory,
+      previousEffect,
       current.transcript,
     );
     const stream = streamChatCompletion(apiUrl, apiKey, model, messages, signal);
@@ -148,17 +153,23 @@ function recordResult(
 function buildMessages(
   description: string,
   inventory: CanvasDocInfo[],
+  previousEffect: string | undefined,
   transcript: TranscriptEntry[],
 ): ChatMessage[] {
+  const parts = [
+    `Generate effect.js for this card. The desired effect:\n\n${description}`,
+    `Documents currently on the canvas:\n${formatInventory(inventory)}`,
+  ];
+  if (previousEffect) {
+    parts.push(
+      `This card already has a working effect.js from a previous run. Treat it ` +
+        `as the starting point and modify it to match the description above ` +
+        `instead of rewriting from scratch:\n\n\`\`\`js\n${previousEffect}\n\`\`\``,
+    );
+  }
   const messages: ChatMessage[] = [
     { role: "system", content: SYSTEM_PROMPT },
-    {
-      role: "user",
-      content: [
-        `Generate effect.js for this card. The desired effect:\n\n${description}`,
-        `Documents currently on the canvas:\n${formatInventory(inventory)}`,
-      ].join("\n\n"),
-    },
+    { role: "user", content: parts.join("\n\n") },
   ];
   appendTranscriptMessages(messages, transcript);
   return messages;

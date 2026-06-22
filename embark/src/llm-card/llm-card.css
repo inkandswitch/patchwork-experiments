@@ -1,140 +1,179 @@
 @import url("https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap");
 
+/* The card looks like a paper index card: ruled lines, a red margin rule, and
+   handwriting. Its only chrome is a single orb in a corner. */
 .embark-llm-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  position: relative;
   height: 100%;
-  padding: 12px;
   box-sizing: border-box;
-  background: #ffffff;
+  background: #fffdf5;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  transition: box-shadow 0.2s ease;
+  /* The orb, glow and trace popover live outside the card box, so never clip
+     them. (Drop the card into a frameless embed so the embed frame doesn't clip
+     them either.) */
+  overflow: visible;
+}
+
+/* Red margin rule down the left, like a real index card. */
+.embark-llm-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 40px;
+  width: 1px;
+  background: #f3b0b0;
+  pointer-events: none;
+}
+
+/* The writing surface is the textarea itself, painted with ruled lines. */
+.embark-llm-card__paper {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border: none;
+  outline: none;
+  resize: none;
+  box-sizing: border-box;
+  padding: 8px 14px 0 52px;
+  background: transparent;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 31px,
+    #d3deef 31px,
+    #d3deef 32px
+  );
+  line-height: 32px;
+  font-family: "Patrick Hand", cursive;
+  font-size: 20px;
   color: #1c1917;
-  font-family: system-ui, -apple-system, sans-serif;
-  overflow: auto;
 }
 
-.embark-llm-card__header {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 14px;
-  font-weight: 600;
+.embark-llm-card__paper::placeholder {
+  color: #bdb7ab;
 }
 
-.embark-llm-card__dot {
-  width: 8px;
-  height: 8px;
+/* Blue glow the moment the orb is pressed, and it stays while the effect runs
+   and once it is active. */
+.embark-llm-card--generating,
+.embark-llm-card--active {
+  box-shadow: 0 0 0 2px #2c6cf6, 0 0 18px rgba(44, 108, 246, 0.45);
+}
+
+/* Red glow when generation failed. */
+.embark-llm-card--failed {
+  box-shadow: 0 0 0 2px #ef4444, 0 0 18px rgba(239, 68, 68, 0.4);
+}
+
+/* The orb: the card's single control / status indicator. */
+.embark-llm-card__orb {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
   border-radius: 50%;
-  background: #a8a29e;
-  box-shadow: 0 0 0 3px rgba(168, 162, 158, 0.18);
+  cursor: pointer;
+  background: radial-gradient(circle at 32% 30%, #7aa6ff, #2c6cf6 70%);
+  box-shadow: 0 0 10px rgba(44, 108, 246, 0.7);
+  transition: top 0.25s ease, bottom 0.25s ease, right 0.25s ease;
 }
 
-.embark-llm-card--generating .embark-llm-card__dot {
-  background: #f59e0b;
-  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18);
+/* Ready-to-activate draft: nestled in the bottom-right corner. */
+.embark-llm-card__orb--corner {
+  right: -7px;
+  bottom: -7px;
 }
 
-.embark-llm-card--active .embark-llm-card__dot {
-  background: #22c55e;
-  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
+/* Running / active / failed: floats up to the top-right. */
+.embark-llm-card__orb--floating {
+  right: -9px;
+  top: -9px;
 }
 
-.embark-llm-card--failed .embark-llm-card__dot {
-  background: #ef4444;
-  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18);
+.embark-llm-card--generating .embark-llm-card__orb {
+  animation: embark-orb-pulse 1.1s ease-in-out infinite;
 }
 
-.embark-llm-card__title {
-  flex: 1 1 auto;
+.embark-llm-card--failed .embark-llm-card__orb {
+  background: radial-gradient(circle at 32% 30%, #ff8a8a, #ef4444 70%);
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.7);
 }
 
-.embark-llm-card__badge {
-  flex: 0 0 auto;
-  font-size: 11px;
-  font-weight: 500;
-  color: #78716c;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+@keyframes embark-orb-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.28);
+  }
 }
 
-/* Draft / generating / failed: the user's handwriting. */
-.embark-llm-card__text {
-  flex: 0 0 auto;
-  min-height: 90px;
-  padding: 10px;
+/* Anchored popovers spawned by the orb, floating just to the right of the
+   card: the live generation trace, or the error bubble. */
+.embark-llm-card__trace,
+.embark-llm-card__bubble {
+  position: absolute;
+  left: calc(100% + 14px);
+  top: 0;
+  z-index: 5;
+  width: 280px;
+  max-height: 100%;
+  box-sizing: border-box;
+  overflow-y: auto;
+  background: #ffffff;
   border: 1px solid #e7e5e4;
   border-radius: 8px;
-  font-family: "Patrick Hand", cursive;
-  font-size: 18px;
-  line-height: 1.4;
-  resize: vertical;
-  box-sizing: border-box;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
+  padding: 8px;
+  font-family: system-ui, -apple-system, sans-serif;
 }
 
-/* Active: the machine has taken over - switch to monospace. */
-.embark-llm-card--active .embark-llm-card__text {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.embark-llm-card__text:focus {
-  outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-}
-
-.embark-llm-card__controls {
-  display: flex;
-  gap: 8px;
-}
-
-.embark-llm-card__btn {
-  padding: 6px 14px;
-  border: 1px solid #d6d3d1;
-  border-radius: 6px;
-  background: #fafaf9;
-  color: #292524;
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.embark-llm-card__btn:hover {
-  background: #f5f5f4;
-}
-
-.embark-llm-card__btn--primary {
-  background: #3b82f6;
-  border-color: #3b82f6;
-  color: #ffffff;
-}
-
-.embark-llm-card__btn--primary:hover {
-  background: #2563eb;
-}
-
-.embark-llm-card__failure {
-  padding: 8px 10px;
-  border-radius: 6px;
-  background: rgba(239, 68, 68, 0.1);
+.embark-llm-card__bubble--error {
+  width: 240px;
   color: #b91c1c;
+  background: #fff5f5;
+  border-color: #fecaca;
   font-size: 12px;
+  line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-.embark-llm-card__transcript {
-  flex: 1 1 auto;
-  min-height: 0;
+.embark-llm-card__trace {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  overflow-y: auto;
-  padding-top: 4px;
-  border-top: 1px solid #f5f5f4;
 }
 
+.embark-llm-card__trace-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #78716c;
+}
+
+.embark-llm-card__trace-stop {
+  border: 1px solid #d6d3d1;
+  border-radius: 5px;
+  background: #fafaf9;
+  color: #292524;
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.embark-llm-card__trace-stop:hover {
+  background: #f5f5f4;
+}
+
+/* Transcript entries inside the trace popover. */
 .embark-llm-card__text-block {
   font-size: 13px;
   line-height: 1.5;
@@ -182,56 +221,4 @@
 .embark-llm-card__error {
   background: rgba(239, 68, 68, 0.1);
   color: #b91c1c;
-}
-
-@media (prefers-color-scheme: dark) {
-  .embark-llm-card {
-    background: #1c1917;
-    color: #e7e5e4;
-  }
-
-  .embark-llm-card__text {
-    background: #0c0a09;
-    border-color: #292524;
-    color: #e7e5e4;
-  }
-
-  .embark-llm-card__btn {
-    background: #292524;
-    border-color: #44403c;
-    color: #e7e5e4;
-  }
-
-  .embark-llm-card__btn:hover {
-    background: #44403c;
-  }
-
-  .embark-llm-card__btn--primary {
-    background: #3b82f6;
-    border-color: #3b82f6;
-    color: #ffffff;
-  }
-
-  .embark-llm-card__transcript {
-    border-top-color: #292524;
-  }
-
-  .embark-llm-card__text-block {
-    color: #d6d3d1;
-  }
-
-  .embark-llm-card__code {
-    background: #0c0a09;
-    color: #e7e5e4;
-  }
-
-  .embark-llm-card__output {
-    background: rgba(34, 197, 94, 0.12);
-    color: #86efac;
-  }
-
-  .embark-llm-card__error {
-    background: rgba(239, 68, 68, 0.14);
-    color: #fca5a5;
-  }
 }

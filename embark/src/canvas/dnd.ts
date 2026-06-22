@@ -6,6 +6,10 @@ export type DocumentDragItem = {
   url: AutomergeUrl;
   name?: string;
   type?: string;
+  // When true, the source asked for this to be dropped as a frameless embed
+  // (no drag border, no clipping). Only the rich x-patchwork-dnd payload carries
+  // it; bare url drags default to framed.
+  frameless?: boolean;
 };
 
 // MIME types a document drag can arrive on, in order of preference. The first

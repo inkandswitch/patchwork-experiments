@@ -16,4 +16,7 @@ export type PartsBinItem = {
   // A user-editable display name for the example, shown on its token. Falls back
   // to the document's own title/type when unset.
   label?: string;
+  // When true, this example drops onto the canvas as a frameless embed: no drag
+  // border and no clipping, with the embedded tool providing its own chrome.
+  frameless?: boolean;
 };
