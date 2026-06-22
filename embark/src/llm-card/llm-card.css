@@ -1,0 +1,237 @@
+@import url("https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap");
+
+.embark-llm-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+  padding: 12px;
+  box-sizing: border-box;
+  background: #ffffff;
+  color: #1c1917;
+  font-family: system-ui, -apple-system, sans-serif;
+  overflow: auto;
+}
+
+.embark-llm-card__header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.embark-llm-card__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #a8a29e;
+  box-shadow: 0 0 0 3px rgba(168, 162, 158, 0.18);
+}
+
+.embark-llm-card--generating .embark-llm-card__dot {
+  background: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18);
+}
+
+.embark-llm-card--active .embark-llm-card__dot {
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
+}
+
+.embark-llm-card--failed .embark-llm-card__dot {
+  background: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18);
+}
+
+.embark-llm-card__title {
+  flex: 1 1 auto;
+}
+
+.embark-llm-card__badge {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 500;
+  color: #78716c;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Draft / generating / failed: the user's handwriting. */
+.embark-llm-card__text {
+  flex: 0 0 auto;
+  min-height: 90px;
+  padding: 10px;
+  border: 1px solid #e7e5e4;
+  border-radius: 8px;
+  font-family: "Patrick Hand", cursive;
+  font-size: 18px;
+  line-height: 1.4;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+/* Active: the machine has taken over - switch to monospace. */
+.embark-llm-card--active .embark-llm-card__text {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.embark-llm-card__text:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.embark-llm-card__controls {
+  display: flex;
+  gap: 8px;
+}
+
+.embark-llm-card__btn {
+  padding: 6px 14px;
+  border: 1px solid #d6d3d1;
+  border-radius: 6px;
+  background: #fafaf9;
+  color: #292524;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.embark-llm-card__btn:hover {
+  background: #f5f5f4;
+}
+
+.embark-llm-card__btn--primary {
+  background: #3b82f6;
+  border-color: #3b82f6;
+  color: #ffffff;
+}
+
+.embark-llm-card__btn--primary:hover {
+  background: #2563eb;
+}
+
+.embark-llm-card__failure {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(239, 68, 68, 0.1);
+  color: #b91c1c;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.embark-llm-card__transcript {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  padding-top: 4px;
+  border-top: 1px solid #f5f5f4;
+}
+
+.embark-llm-card__text-block {
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #44403c;
+}
+
+.embark-llm-card__script {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.embark-llm-card__script-desc {
+  font-size: 11px;
+  font-weight: 600;
+  color: #78716c;
+}
+
+.embark-llm-card__code,
+.embark-llm-card__output,
+.embark-llm-card__error {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+}
+
+.embark-llm-card__code {
+  background: #f5f5f4;
+  color: #1c1917;
+}
+
+.embark-llm-card__output {
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.embark-llm-card__error {
+  background: rgba(239, 68, 68, 0.1);
+  color: #b91c1c;
+}
+
+@media (prefers-color-scheme: dark) {
+  .embark-llm-card {
+    background: #1c1917;
+    color: #e7e5e4;
+  }
+
+  .embark-llm-card__text {
+    background: #0c0a09;
+    border-color: #292524;
+    color: #e7e5e4;
+  }
+
+  .embark-llm-card__btn {
+    background: #292524;
+    border-color: #44403c;
+    color: #e7e5e4;
+  }
+
+  .embark-llm-card__btn:hover {
+    background: #44403c;
+  }
+
+  .embark-llm-card__btn--primary {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: #ffffff;
+  }
+
+  .embark-llm-card__transcript {
+    border-top-color: #292524;
+  }
+
+  .embark-llm-card__text-block {
+    color: #d6d3d1;
+  }
+
+  .embark-llm-card__code {
+    background: #0c0a09;
+    color: #e7e5e4;
+  }
+
+  .embark-llm-card__output {
+    background: rgba(34, 197, 94, 0.12);
+    color: #86efac;
+  }
+
+  .embark-llm-card__error {
+    background: rgba(239, 68, 68, 0.14);
+    color: #fca5a5;
+  }
+}
