@@ -1,4 +1,4 @@
-import type { DocHandle, Repo } from "@automerge/automerge-repo";
+import type { Repo } from "@automerge/automerge-repo";
 import type { DatatypeImplementation } from "@inkandswitch/patchwork-plugins";
 import type { PartsBinDoc, PartsBinItem } from "./types";
 import type { SearchDoc } from "../../search/datatype";
@@ -42,18 +42,6 @@ export const PartsBinDatatype: DatatypeImplementation<PartsBinDoc> = {
     doc.title = title;
   },
 };
-
-// Create a ready-to-embed parts bin seeded with the example documents. Used by
-// the canvas datatype, which embeds one in every fresh canvas. Raw
-// `repo.create` doesn't run a datatype's `init`, so the seeding lives here
-// (shared with `init`) rather than relying on the host to seed nested docs.
-export function createPartsBin(repo: Repo): DocHandle<PartsBinDoc> {
-  return repo.create<PartsBinDoc>({
-    "@patchwork": { type: "parts-bin" },
-    title: "Parts bin",
-    items: seedExampleItems(repo),
-  });
-}
 
 // The starter set: a search box, a POI provider, a map, the three sticker
 // sources, and a demo markdown note for them to annotate. Each is a real
