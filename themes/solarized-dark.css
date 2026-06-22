@@ -1,0 +1,111 @@
+/* Solarized Dark — Ethan Schoonover's precision colours for machines and people */
+[theme="solarized-dark"] {
+	color-scheme: dark;
+	--studio-fill: #002b36;
+	--studio-line: #839496;
+	--studio-primary: #268bd2;
+	--studio-secondary: #2aa198;
+	--studio-danger: #dc322f;
+	--studio-warning: #b58900;
+	--studio-added: #859900;
+	--studio-deleted: #dc322f;
+	--studio-modified: #268bd2;
+	--studio-link: #268bd2;
+	--studio-selection-fill: #073642;
+
+	--text-editor-fill: #002b36;
+	--text-editor-line: #839496;
+	--text-editor-cursor-fill: #dc322f;
+	--text-editor-selection-fill: #073642;
+	--text-editor-selection-line: #839496;
+
+	--text-editor-active-line-fill: color-mix(
+		in oklch,
+		var(--text-editor-fill-offset-10),
+		transparent 80%
+	);
+	--text-editor-active-line-fill--gutter: var(--text-editor-fill-offset-20);
+
+	--text-editor-gutter-fill: #073642;
+	--text-editor-gutter-line: #586e75;
+	--text-editor-gutter-border: #073642;
+	--text-editor-gutter-fill--line-numbers: #073642;
+	--text-editor-gutter-line--line-numbers: #586e75;
+
+	--text-editor-tooltip-fill: #073642;
+	--text-editor-tooltip-color: #93a1a1;
+
+	--syntax-comment: #586e75;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #586e75;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #586e75;
+	--syntax-invalid: #dc322f;
+
+	--syntax-operator: #839496;
+	--syntax-punctuation: #839496;
+
+	--syntax-bool: #268bd2;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #2aa198;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #859900;
+
+	--syntax-type-name: #b58900;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #b58900;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #cb4b16;
+
+	--syntax-function--variable-name: #268bd2;
+	--syntax-function--property-name: #268bd2;
+
+	--syntax-variable-name: #839496;
+	--syntax-definition--variable-name: #268bd2;
+
+	--syntax-string: #2aa198;
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #d33682;
+	--syntax-integer: #d33682;
+	--syntax-float: #d33682;
+
+	--syntax-escape: #cb4b16;
+	--syntax-regexp: #d33682;
+	--syntax-special--string: #2aa198;
+
+	--syntax-tag-name: #268bd2;
+	--syntax-angle-bracket: #839496;
+
+	--syntax-attribute-name: #93a1a1;
+	--syntax-style-attribute-name: normal;
+
+	--syntax-namespace: #cb4b16;
+
+	--syntax-strong: #93a1a1;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #93a1a1;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #cb4b16;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #268bd2;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #586e75;
+	--syntax-list: #839496;
+
+	--syntax-inserted: #859900;
+	--syntax-deleted: #dc322f;
+	--syntax-changed: #268bd2;
+
+	--syntax-content-separator: #586e75;
+}

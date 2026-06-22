@@ -1,0 +1,111 @@
+/* Everforest Dark — comfortable and pleasant green forest at night */
+[theme="everforest-dark"] {
+	color-scheme: dark;
+	--studio-fill: #2d353b;
+	--studio-line: #d3c6aa;
+	--studio-primary: #7fbbb3;
+	--studio-secondary: #83c092;
+	--studio-danger: #e67e80;
+	--studio-warning: #dbbc7f;
+	--studio-added: #a7c080;
+	--studio-deleted: #e67e80;
+	--studio-modified: #7fbbb3;
+	--studio-link: #7fbbb3;
+	--studio-selection-fill: #3d484d;
+
+	--text-editor-fill: #2d353b;
+	--text-editor-line: #d3c6aa;
+	--text-editor-cursor-fill: #d3c6aa;
+	--text-editor-selection-fill: #3d484d;
+	--text-editor-selection-line: #d3c6aa;
+
+	--text-editor-active-line-fill: color-mix(
+		in oklch,
+		var(--text-editor-fill-offset-10),
+		transparent 80%
+	);
+	--text-editor-active-line-fill--gutter: var(--text-editor-fill-offset-20);
+
+	--text-editor-gutter-fill: #2d353b;
+	--text-editor-gutter-line: #859289;
+	--text-editor-gutter-border: #343f44;
+	--text-editor-gutter-fill--line-numbers: #2d353b;
+	--text-editor-gutter-line--line-numbers: #859289;
+
+	--text-editor-tooltip-fill: #343f44;
+	--text-editor-tooltip-color: #d3c6aa;
+
+	--syntax-comment: #859289;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #859289;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #859289;
+	--syntax-invalid: #e67e80;
+
+	--syntax-operator: #e69875;
+	--syntax-punctuation: #d3c6aa;
+
+	--syntax-bool: #d699b6;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #d699b6;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #e67e80;
+
+	--syntax-type-name: #dbbc7f;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #dbbc7f;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #e69875;
+
+	--syntax-function--variable-name: #a7c080;
+	--syntax-function--property-name: #a7c080;
+
+	--syntax-variable-name: #7fbbb3;
+	--syntax-definition--variable-name: #7fbbb3;
+
+	--syntax-string: #a7c080;
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #d699b6;
+	--syntax-integer: #d699b6;
+	--syntax-float: #d699b6;
+
+	--syntax-escape: #e69875;
+	--syntax-regexp: #83c092;
+	--syntax-special--string: #a7c080;
+
+	--syntax-tag-name: #e69875;
+	--syntax-angle-bracket: #d3c6aa;
+
+	--syntax-attribute-name: #dbbc7f;
+	--syntax-style-attribute-name: normal;
+
+	--syntax-namespace: #83c092;
+
+	--syntax-strong: #d3c6aa;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #d3c6aa;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #e67e80;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #7fbbb3;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #859289;
+	--syntax-list: #d3c6aa;
+
+	--syntax-inserted: #a7c080;
+	--syntax-deleted: #e67e80;
+	--syntax-changed: #7fbbb3;
+
+	--syntax-content-separator: #4f585e;
+}

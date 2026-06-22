@@ -1,0 +1,111 @@
+/* Zenburn — low-contrast colour scheme, easy on the eyes */
+[theme="zenburn"] {
+	color-scheme: dark;
+	--studio-fill: #3f3f3f;
+	--studio-line: #dcdccc;
+	--studio-primary: #8cd0d3;
+	--studio-secondary: #93e0e3;
+	--studio-danger: #cc9393;
+	--studio-warning: #f0dfaf;
+	--studio-added: #7f9f7f;
+	--studio-deleted: #cc9393;
+	--studio-modified: #8cd0d3;
+	--studio-link: #8cd0d3;
+	--studio-selection-fill: #4f4f4f;
+
+	--text-editor-fill: #3f3f3f;
+	--text-editor-line: #dcdccc;
+	--text-editor-cursor-fill: #dcdccc;
+	--text-editor-selection-fill: #4f4f4f;
+	--text-editor-selection-line: #dcdccc;
+
+	--text-editor-active-line-fill: color-mix(
+		in oklch,
+		var(--text-editor-fill-offset-10),
+		transparent 80%
+	);
+	--text-editor-active-line-fill--gutter: var(--text-editor-fill-offset-20);
+
+	--text-editor-gutter-fill: #383838;
+	--text-editor-gutter-line: #7f7f7f;
+	--text-editor-gutter-border: #4f4f4f;
+	--text-editor-gutter-fill--line-numbers: #383838;
+	--text-editor-gutter-line--line-numbers: #7f7f7f;
+
+	--text-editor-tooltip-fill: #4f4f4f;
+	--text-editor-tooltip-color: #dcdccc;
+
+	--syntax-comment: #7f9f7f;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #7f9f7f;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #7f9f7f;
+	--syntax-invalid: #cc9393;
+
+	--syntax-operator: #f0dfaf;
+	--syntax-punctuation: #dcdccc;
+
+	--syntax-bool: #dca3a3;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #dca3a3;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #f0dfaf;
+
+	--syntax-type-name: #dfdfbf;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #dfdfbf;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #8cd0d3;
+
+	--syntax-function--variable-name: #efef8f;
+	--syntax-function--property-name: #efef8f;
+
+	--syntax-variable-name: #dcdccc;
+	--syntax-definition--variable-name: #efdcbc;
+
+	--syntax-string: #cc9393;
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #8cd0d3;
+	--syntax-integer: #8cd0d3;
+	--syntax-float: #8cd0d3;
+
+	--syntax-escape: #dca3a3;
+	--syntax-regexp: #dfaf8f;
+	--syntax-special--string: #cc9393;
+
+	--syntax-tag-name: #e89393;
+	--syntax-angle-bracket: #dcdccc;
+
+	--syntax-attribute-name: #dfaf8f;
+	--syntax-style-attribute-name: normal;
+
+	--syntax-namespace: #93e0e3;
+
+	--syntax-strong: #dcdccc;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #dcdccc;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #f0dfaf;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #8cd0d3;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #7f9f7f;
+	--syntax-list: #dcdccc;
+
+	--syntax-inserted: #7f9f7f;
+	--syntax-deleted: #cc9393;
+	--syntax-changed: #f0dfaf;
+
+	--syntax-content-separator: #5f5f5f;
+}

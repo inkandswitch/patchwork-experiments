@@ -1,0 +1,112 @@
+/* Plan 9 — the operating system from Bell Labs */
+[theme="plan9"] {
+	color-scheme: light;
+	--studio-fill: #ffffea;
+	--studio-line: #000000;
+	--studio-primary: #005599;
+	--studio-secondary: #2b7b6f;
+	--studio-danger: #a0342b;
+	--studio-warning: #b58900;
+	--studio-added: #2b7b6f;
+	--studio-deleted: #a0342b;
+	--studio-modified: #005599;
+	--studio-link: #005599;
+	--studio-selection-fill: #eeee9e;
+
+	--studio-family-sans: "Lucida Grande", "Lucida Sans", Geneva, Verdana,
+		sans-serif;
+	--studio-family-code: "Plan9", "Go Mono", "Lucida Console", "Courier New",
+		monospace;
+
+	--text-editor-fill: #ffffea;
+	--text-editor-line: #000000;
+	--text-editor-cursor-fill: #000000;
+	--text-editor-selection-fill: #eeee9e;
+	--text-editor-selection-line: #000000;
+
+	--text-editor-active-line-fill: #00559905;
+	--text-editor-active-line-line: var(--text-editor-line);
+	--text-editor-active-line-fill--gutter: #eaffff;
+	--text-editor-active-line-line--gutter: var(--text-editor-line);
+	--text-editor-gutter-fill: #eaffff;
+	--text-editor-gutter-line: #005599;
+	--text-editor-gutter-border: #88cccc;
+	--text-editor-gutter-font-size: 0.8em;
+	--text-editor-gutter-font-size--line-numbers: 0.8em;
+	--text-editor-tooltip-fill: #eaffff;
+	--text-editor-tooltip-color: #005599;
+
+	--syntax-comment: #999999;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #777777;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #555555;
+	--syntax-invalid: #a0342b;
+
+	--syntax-operator: #005599;
+	--syntax-punctuation: #333333;
+
+	--syntax-bool: #2b7b6f;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #6054d0;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #6054d0;
+
+	--syntax-type-name: #005599;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #005599;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #2b7b6f;
+
+	--syntax-function--variable-name: #a0342b;
+	--syntax-function--property-name: #a0342b;
+
+	--syntax-variable-name: #333333;
+	--syntax-definition--variable-name: #333333;
+
+	--syntax-string: #b76e23;
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #6054d0;
+	--syntax-integer: #6054d0;
+	--syntax-float: #6054d0;
+
+	--syntax-escape: #a0342b;
+	--syntax-regexp: #b76e23;
+	--syntax-special--string: #b76e23;
+
+	--syntax-tag-name: #6054d0;
+	--syntax-angle-bracket: #333333;
+
+	--syntax-attribute-name: #005599;
+	--syntax-style-attribute-name: normal;
+
+	--syntax-namespace: #2b7b6f;
+
+	--syntax-strong: #000000;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #000000;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #005599;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #005599;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #555555;
+	--syntax-list: #000000;
+
+	--syntax-inserted: #2b7b6f;
+	--syntax-deleted: #a0342b;
+	--syntax-changed: #005599;
+
+	--syntax-content-separator: #999999;
+}

@@ -1,0 +1,111 @@
+/* Catppuccin Mocha — soothing pastel dark theme */
+[theme="catppuccin-mocha"] {
+	color-scheme: dark;
+	--studio-fill: #1e1e2e;
+	--studio-line: #cdd6f4;
+	--studio-primary: #89b4fa;
+	--studio-secondary: #94e2d5;
+	--studio-danger: #f38ba8;
+	--studio-warning: #f9e2af;
+	--studio-added: #a6e3a1;
+	--studio-deleted: #f38ba8;
+	--studio-modified: #89b4fa;
+	--studio-link: #89b4fa;
+	--studio-selection-fill: #313244;
+
+	--text-editor-fill: #1e1e2e;
+	--text-editor-line: #cdd6f4;
+	--text-editor-cursor-fill: #f5e0dc;
+	--text-editor-selection-fill: #313244;
+	--text-editor-selection-line: #cdd6f4;
+
+	--text-editor-active-line-fill: color-mix(
+		in oklch,
+		var(--text-editor-fill-offset-10),
+		transparent 80%
+	);
+	--text-editor-active-line-fill--gutter: var(--text-editor-fill-offset-20);
+
+	--text-editor-gutter-fill: #181825;
+	--text-editor-gutter-line: #6c7086;
+	--text-editor-gutter-border: #313244;
+	--text-editor-gutter-fill--line-numbers: #181825;
+	--text-editor-gutter-line--line-numbers: #6c7086;
+
+	--text-editor-tooltip-fill: #313244;
+	--text-editor-tooltip-color: #cdd6f4;
+
+	--syntax-comment: #6c7086;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #6c7086;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #a6adc8;
+	--syntax-invalid: #f38ba8;
+
+	--syntax-operator: #89dceb;
+	--syntax-punctuation: #bac2de;
+
+	--syntax-bool: #fab387;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #fab387;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #cba6f7;
+
+	--syntax-type-name: #f9e2af;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #f9e2af;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #89dceb;
+
+	--syntax-function--variable-name: #89b4fa;
+	--syntax-function--property-name: #89b4fa;
+
+	--syntax-variable-name: #cdd6f4;
+	--syntax-definition--variable-name: #b4befe;
+
+	--syntax-string: #a6e3a1;
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #fab387;
+	--syntax-integer: #fab387;
+	--syntax-float: #fab387;
+
+	--syntax-escape: #f5c2e7;
+	--syntax-regexp: #f5c2e7;
+	--syntax-special--string: #a6e3a1;
+
+	--syntax-tag-name: #cba6f7;
+	--syntax-angle-bracket: #bac2de;
+
+	--syntax-attribute-name: #f9e2af;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #fab387;
+
+	--syntax-strong: #cdd6f4;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #cdd6f4;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #cba6f7;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #89b4fa;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #6c7086;
+	--syntax-list: #cdd6f4;
+
+	--syntax-inserted: #a6e3a1;
+	--syntax-deleted: #f38ba8;
+	--syntax-changed: #89b4fa;
+
+	--syntax-content-separator: #45475a;
+}
