@@ -1,0 +1,16 @@
+{
+  "name": "@patchwork/spatial-calibration",
+  "version": "0.0.4",
+  "description": "Manual camera-projector calibration with homography solving and test projection",
+  "type": "module",
+  "main": "spatial-calibration.js",
+  "exports": {
+    ".": "spatial-calibration.js"
+  },
+  "scripts": {
+    "push": "pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  },
+  "keywords": [],
+  "author": "Ink & Switch"
+}
