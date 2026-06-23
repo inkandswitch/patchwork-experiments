@@ -583,20 +583,6 @@ function getFunPrototype(fun: Fun, funProxy: Proxy): Proxy {
   return proto;
 }
 
-function constructorName(fun: Fun): string {
-  const match = fun.$codeForShow.match(/^function\s+(\w+)/);
-  return match?.[1] ?? 'Function';
-}
-
-function rejectClassConstructorCallWithoutNew(fun: Fun, thisArg: unknown): void {
-  if (!isConstructibleFun(fun)) return;
-  if (isProxy(thisArg) && thisArg.$id === $global?.$id) {
-    throw new TypeError(
-      `Class constructor ${constructorName(fun)} cannot be invoked without 'new'`,
-    );
-  }
-}
-
 function proxifyFun(fun: Fun): Proxy {
   const existing = proxies?.get(fun.$id);
   if (existing) {
@@ -658,15 +644,9 @@ function proxifyFun(fun: Fun): Proxy {
         case 'toString':
           return () => fun.$codeForShow;
         case 'call':
-          return (thisArg: unknown, ...args: unknown[]) => {
-            rejectClassConstructorCallWithoutNew(fun, thisArg);
-            return fn().apply(thisArg, args);
-          };
+          return (thisArg: unknown, ...args: unknown[]) => fn().apply(thisArg, args);
         case 'apply':
-          return (thisArg: unknown, args: unknown[]) => {
-            rejectClassConstructorCallWithoutNew(fun, thisArg);
-            return fn().apply(thisArg, args);
-          };
+          return (thisArg: unknown, args: unknown[]) => fn().apply(thisArg, args);
       }
       if (lmIsReservedKey(prop)) return undefined;
       const own = lmGetOwn(fun, prop);
@@ -674,7 +654,6 @@ function proxifyFun(fun: Fun): Proxy {
       return undefined;
     },
     apply(_, thisArg, args) {
-      rejectClassConstructorCallWithoutNew(fun, thisArg);
       return fn().apply(thisArg, args);
     },
     construct(_, args) {

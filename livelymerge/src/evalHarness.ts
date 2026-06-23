@@ -150,7 +150,6 @@ function proxifyFun(fun: Fun): TestProxy {
       return undefined;
     },
     apply(_, thisArg, args) {
-      rejectClassConstructorCallWithoutNew(fun, thisArg);
       return callFn().apply(thisArg, args);
     },
     construct(_, args) {
@@ -243,15 +242,6 @@ export function evalTranspiled(source: string): unknown {
     console,
   };
   return new Function(...Object.keys(runtime), source)(...Object.values(runtime));
-}
-
-function rejectClassConstructorCallWithoutNew(fun: Fun, thisArg: unknown): void {
-  if (!/=>\s*(async\s+)?function\b/.test(fun.$code)) return;
-  if (isTestProxy(thisArg) && thisArg.$id === $global.$id) {
-    const match = fun.$codeForShow.match(/^function\s+(\w+)/);
-    const name = match?.[1] ?? 'Function';
-    throw new TypeError(`Class constructor ${name} cannot be invoked without 'new'`);
-  }
 }
 
 export function lmInstanceOf(instance: unknown, constructor: TestProxy): boolean {

@@ -280,18 +280,6 @@ function injectInstanceFields(
   return constructorSource.slice(0, open.to) + newInner + constructorSource.slice(close.from);
 }
 
-function injectGuard(constructorSource: string, guard: string): string {
-  const tree = parser.parse(constructorSource);
-  const func = tree.topNode.firstChild;
-  const block = func?.getChild('Block');
-  if (!block) return constructorSource;
-  const open = block.firstChild;
-  const close = block.lastChild;
-  if (open?.name !== '{' || close?.name !== '}') return constructorSource;
-  const inner = constructorSource.slice(open.to, close.from);
-  return constructorSource.slice(0, open.to) + `\n${guard}\n` + inner + constructorSource.slice(close.from);
-}
-
 function buildConstructorSource(
   className: string,
   members: ClassMember[],
@@ -323,9 +311,7 @@ function buildConstructorSource(
     isDerived || hasExplicitSuperInCtor,
     superGlobal,
   );
-  ctorSource = rewriteThisMemberAccess(ctorSource);
-  const guard = `if (!(this && this.$isProxy)) throw new TypeError("Class constructor ${className} cannot be invoked without 'new'");`;
-  return injectGuard(ctorSource, guard);
+  return rewriteThisMemberAccess(ctorSource);
 }
 
 function transpileFunctionSource(source: string): string {

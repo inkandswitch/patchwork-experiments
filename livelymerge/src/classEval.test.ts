@@ -23,15 +23,6 @@ new A().m()`;
     expect(result).toBe(5);
   });
 
-  it('rejects calling a class constructor through $global without new', () => {
-    const setup = transpile(wrapForCompletionValue(`class A {
-  m() { return 5; }
-}`));
-    expect(() => evalTranspiled(`${setup}\nreturn $global.A().m()`)).toThrow(
-      /cannot be invoked without 'new'/,
-    );
-  });
-
   it('works without extra constructor parentheses after transpile', () => {
     const transpiled = transpile(wrapForCompletionValue(`class A {
   m() { return 5; }

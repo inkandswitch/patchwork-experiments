@@ -14,7 +14,6 @@ describe('class transpilation', () => {
     expect(result).toMatch(/\$global\.Point = \$fun\(/);
     expect(result).toMatch(/\$global\.Point\['@add'\] = \$fun\(/);
     expect(result).toContain("$global.Point.prototype = $obj({ '@add': $global.Point['@add'] });");
-    expect(result).toContain('if (!(this && this.$isProxy))');
     expect(result).toContain("this['@x'] = 0");
   });
 
