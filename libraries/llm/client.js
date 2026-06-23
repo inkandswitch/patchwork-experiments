@@ -394,8 +394,8 @@ export async function* scoreTokens(text, opts = {}) {
  * model — genuine importance, not an attention proxy. See Li, Chen, Zhu &
  * Rudin 2016, "Understanding Neural Networks through Representation Erasure".
  *
- * NB: despite the name, this does NOT use attention weights; the name predates
- * the erasure implementation. Returns `{decoded, spans}` where decoded is the
+ * This is erasure-based importance, NOT attention weights — for real attention
+ * see computeAttentionWeights. Returns `{decoded, spans}` where decoded is the
  * tokenizer's round-tripped text and spans is `[{from, to, importance}]`
  * (importance normalized to [0,1]) with positions relative to `decoded`. Only
  * works for local models (others resolve to null).
@@ -404,7 +404,7 @@ export async function* scoreTokens(text, opts = {}) {
  * @param {Object} [opts]  { config?, signal? }
  * @returns {Promise<{decoded:string, spans:Array}|null>}
  */
-export async function computeAttention(text, opts = {}) {
+export async function computeImportance(text, opts = {}) {
 	const cfg = await resolveCfgPrompts(opts.config ?? (await ensureConfig()))
 	const config = callConfig(cfg, opts)
 	if (config.provider !== "local") return null
@@ -412,7 +412,7 @@ export async function computeAttention(text, opts = {}) {
 	const id = nextId()
 	return new Promise((resolve, reject) => {
 		handlers.set(id, (msg) => {
-			if (msg.type === "attention-scores") {
+			if (msg.type === "importance-scores") {
 				handlers.delete(id)
 				resolve({decoded: msg.decoded, spans: msg.spans || []})
 			} else if (msg.type === "error") {
@@ -420,7 +420,53 @@ export async function computeAttention(text, opts = {}) {
 				reject(new Error(msg.message))
 			}
 		})
-		conn.post({type: "compute-attention", id, sessionKey: id, provider: config.provider, text, config})
+		conn.post({type: "compute-importance", id, sessionKey: id, provider: config.provider, text, config})
+	})
+}
+
+/**
+ * Compute REAL attention weights for `text` (not the erasure proxy that
+ * computeImportance returns). Only works for local models exported with an
+ * `attentions` output (see glomper-tuning/onnx_attn.py). One forward pass.
+ *
+ * Resolves to:
+ *   { supported:true, dims:{layers,heads,seq}, received, fromLast, spans, tokens, decoded }
+ * where `received` and `fromLast` are Float32Arrays of length layers*heads*seq
+ * laid out as [(layer*heads + head)*seq + key]:
+ *   received[…] = mean attention key j gets across all queries i≥j (causal)
+ *   fromLast[…] = attention the final token places on key j
+ * `spans` is [{from,to,index}] (char positions in `decoded`, keyed by token
+ * index). Resolves to { supported:false } when the model has no attention
+ * output, or null for non-local providers.
+ *
+ * @param {string} text
+ * @param {Object} [opts]  { config?, signal? }
+ * @returns {Promise<Object|null>}
+ */
+export async function computeAttentionWeights(text, opts = {}) {
+	const cfg = await resolveCfgPrompts(opts.config ?? (await ensureConfig()))
+	const config = callConfig(cfg, opts)
+	if (config.provider !== "local") return null
+	const conn = getConnection()
+	const id = nextId()
+	return new Promise((resolve, reject) => {
+		const onAbort = () => { handlers.delete(id); reject(new DOMException("Aborted", "AbortError")) }
+		if (opts.signal) {
+			if (opts.signal.aborted) return onAbort()
+			opts.signal.addEventListener("abort", onAbort, {once: true})
+		}
+		handlers.set(id, (msg) => {
+			if (msg.type === "attention-weights") {
+				handlers.delete(id)
+				opts.signal?.removeEventListener("abort", onAbort)
+				resolve(msg)
+			} else if (msg.type === "error") {
+				handlers.delete(id)
+				opts.signal?.removeEventListener("abort", onAbort)
+				reject(new Error(msg.message))
+			}
+		})
+		conn.post({type: "compute-attention-weights", id, sessionKey: id, provider: config.provider, text, config})
 	})
 }
 

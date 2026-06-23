@@ -786,13 +786,13 @@ async function scoreTokensLocal(gen, text, config) {
 // change — tokens whose removal most affects the output are most important.
 // N+1 forward passes (one baseline + one per token). Genuine importance
 // scores, not a proxy.
-async function computeAttentionLocal(gen, text, config) {
+async function computeImportanceLocal(gen, text, config) {
 	const model = generator.model
 	const tokenizer = generator.tokenizer
 	const inputs = tokenizer(text, {return_tensor: true})
 	const ids = Array.from(inputs.input_ids.data)
 	const seqLen = ids.length
-	if (seqLen < 2) { post(gen, {type: "attention-scores", decoded: text, spans: []}); return }
+	if (seqLen < 2) { post(gen, {type: "importance-scores", decoded: text, spans: []}); return }
 
 	const vocab = model.config?.vocab_size || 151936
 	const lastOff = (seqLen - 1) * vocab
@@ -869,7 +869,80 @@ async function computeAttentionLocal(gen, text, config) {
 	}
 	const decoded = tokenizer.decode(ids, {skip_special_tokens: true})
 
-	post(gen, {type: "attention-scores", decoded, spans})
+	post(gen, {type: "importance-scores", decoded, spans})
+	broadcast({type: "status", message: ""})
+}
+
+// REAL attention weights (not erasure). For models exported with an `attentions`
+// output (see glomper-tuning/onnx_attn.py — shape [batch, layers, heads, seq,
+// seq], post-softmax, rows sum to 1 over keys). One forward pass; we reduce the
+// big [L,H,S,S] tensor server-side to two per-(layer,head) vectors so the client
+// can re-slice layer/head/view instantly without re-running:
+//   received[l][h][j] = mean over queries i≥j of A[i,j]  — how attended-to key j
+//                        is across the whole sequence (causal: only i≥j see it)
+//   fromLast[l][h][j] = A[S-1, j]                         — what the final token
+//                        (the next-token prediction position) attends to
+// If the model has no `attentions` output, posts {supported:false}.
+async function computeAttentionWeightsLocal(gen, text, config) {
+	const model = generator.model
+	const tokenizer = generator.tokenizer
+	const inputs = tokenizer(text, {return_tensor: true})
+	const ids = Array.from(inputs.input_ids.data)
+	const seqLen = ids.length
+	if (seqLen < 2) {
+		post(gen, {type: "attention-weights", supported: true, dims: {layers: 0, heads: 0, seq: seqLen}, received: new Float32Array(0), fromLast: new Float32Array(0), spans: [], tokens: [], decoded: text})
+		return
+	}
+
+	broadcast({type: "status", message: "Attention: forward pass…"})
+	const outputs = await model(inputs)
+	const att = outputs.attentions
+	if (!att || !att.dims || att.dims.length !== 5) {
+		post(gen, {type: "attention-weights", supported: false})
+		broadcast({type: "status", message: ""})
+		return
+	}
+
+	// dims: [batch, layers, heads, queries, keys]
+	const [, L, H, Sq, Sk] = att.dims
+	const data = att.data // Float32Array, batch index 0
+	const S = Sk
+	const strideL = H * Sq * Sk
+	const strideH = Sq * Sk
+	const strideQ = Sk
+	const received = new Float32Array(L * H * S)
+	const fromLast = new Float32Array(L * H * S)
+	const lastQ = Sq - 1
+	for (let l = 0; l < L; l++) {
+		for (let h = 0; h < H; h++) {
+			const base = l * strideL + h * strideH
+			const out = (l * H + h) * S
+			const lastRow = base + lastQ * strideQ
+			for (let j = 0; j < S; j++) fromLast[out + j] = data[lastRow + j]
+			for (let j = 0; j < S; j++) {
+				let sum = 0, cnt = 0
+				for (let i = j; i < Sq; i++) { sum += data[base + i * strideQ + j]; cnt++ }
+				received[out + j] = cnt ? sum / cnt : 0
+			}
+		}
+	}
+
+	// Char-position spans (skip_special_tokens, like the other passes) keyed by
+	// token index so the client can map a span back to its attention row/col.
+	const spans = []
+	const tokens = []
+	let prevLen = 0
+	for (let i = 0; i < seqLen; i++) {
+		const partial = tokenizer.decode(ids.slice(0, i + 1), {skip_special_tokens: true})
+		const from = prevLen
+		const to = partial.length
+		tokens.push(tokenizer.decode([ids[i]]))
+		if (to > from) spans.push({from, to, index: i})
+		prevLen = partial.length
+	}
+	const decoded = tokenizer.decode(ids, {skip_special_tokens: true})
+
+	post(gen, {type: "attention-weights", supported: true, dims: {layers: L, heads: H, seq: S}, received, fromLast, spans, tokens, decoded})
 	broadcast({type: "status", message: ""})
 }
 
@@ -1210,17 +1283,43 @@ function handleMessage(port, data) {
 		} else run()
 		return
 	}
-	if (type === "compute-attention") {
+	if (type === "compute-importance") {
 		const {provider, config = {}} = data
 		if (provider !== "local") {
-			port.postMessage({type: "attention-scores", id, scores: []})
+			port.postMessage({type: "importance-scores", id, scores: []})
 			return
 		}
 		const gen = {id, port, fullText: "", done: false, finalText: "", abortController: new AbortController()}
 		activeGenerations.set(sessionKey, gen)
 		const requested = config.model || DEFAULT_MODEL_ID
 		const run = () =>
-			computeAttentionLocal(gen, data.text, config)
+			computeImportanceLocal(gen, data.text, config)
+				.then(() => { gen.done = true; activeGenerations.delete(sessionKey) })
+				.catch((e) => {
+					if (!gen.abortController.signal.aborted)
+						port.postMessage({type: "error", id, message: e?.message || String(e)})
+					activeGenerations.delete(sessionKey)
+				})
+		if (!generator || currentModelId !== requested) {
+			if (currentModelId !== requested) generator = null
+			loadModel(requested).then(() => {
+				if (!generator) { port.postMessage({type: "error", id, message: "Model not loaded"}); return }
+				run()
+			})
+		} else run()
+		return
+	}
+	if (type === "compute-attention-weights") {
+		const {provider, config = {}} = data
+		if (provider !== "local") {
+			port.postMessage({type: "attention-weights", id, supported: false})
+			return
+		}
+		const gen = {id, port, fullText: "", done: false, finalText: "", abortController: new AbortController()}
+		activeGenerations.set(sessionKey, gen)
+		const requested = config.model || DEFAULT_MODEL_ID
+		const run = () =>
+			computeAttentionWeightsLocal(gen, data.text, config)
 				.then(() => { gen.done = true; activeGenerations.delete(sessionKey) })
 				.catch((e) => {
 					if (!gen.abortController.signal.aborted)

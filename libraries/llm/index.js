@@ -58,7 +58,8 @@ export {
 	resume,
 	onStatus,
 	registerLocalModel,
-	computeAttention,
+	computeImportance,
+	computeAttentionWeights,
 	probeAttention,
 } from "./client.js"
 
