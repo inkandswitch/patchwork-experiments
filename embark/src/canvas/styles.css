@@ -48,12 +48,12 @@
   overflow: hidden;
 }
 
-/* Selected embed: lifts off the canvas with a deeper shadow rather than a
-   colored ring. Press Backspace/Delete to remove it. */
+/* Selected embed: lifts off the canvas with a slightly deeper shadow rather
+   than a colored ring. Press Backspace/Delete to remove it. */
 .embark-embed--selected {
   box-shadow:
-    0 2px 6px rgba(0, 0, 0, 0.12),
-    0 14px 32px rgba(0, 0, 0, 0.22);
+    0 1px 3px rgba(0, 0, 0, 0.08),
+    0 8px 20px rgba(0, 0, 0, 0.14);
 }
 
 /* Frameless embed: the embedded tool supplies its own chrome, so drop the
@@ -72,6 +72,15 @@
   cursor: grab;
 }
 
+/* Locked embeds are pinned, so the surface isn't a drag handle. The embedded
+   tool (e.g. the parts-bin drawer) may also leave transparent margins around
+   its chrome; dropping pointer events here lets clicks fall through to the
+   canvas/embeds behind, and the tool re-enables them on its own elements. */
+.embark-embed--locked .embark-embed__view {
+  cursor: default;
+  pointer-events: none;
+}
+
 .embark-embed--frameless .embark-embed__view:active {
   cursor: grabbing;
 }
@@ -80,7 +89,7 @@
    shape (e.g. a rounded card) instead of boxing a transparent rectangle. */
 .embark-embed--frameless.embark-embed--selected {
   box-shadow: none;
-  filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.28));
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.16));
 }
 
 /* The little drag handle: a slim strip with a grip glyph centered, and a
@@ -159,4 +168,15 @@
   height: 18px;
   cursor: nwse-resize;
   touch-action: none;
+}
+
+/* When resize is only unlocked by holding Shift (a normally fixed-size tool),
+   paint a faint corner wedge so the temporary affordance is discoverable. */
+.embark-embed__resize--forced {
+  background: linear-gradient(
+    135deg,
+    transparent 55%,
+    rgba(120, 113, 108, 0.55) 55%
+  );
+  border-bottom-right-radius: 4px;
 }

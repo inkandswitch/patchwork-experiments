@@ -1,7 +1,7 @@
 import type { DocHandle, Repo } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import type { SubscribeEvent } from "@inkandswitch/patchwork-providers";
-import { For } from "solid-js";
+import { For, createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import {
   RepoContext,
@@ -74,44 +74,62 @@ export const PartsBinTool: ToolRender = (handle, element) => {
   };
 };
 
+// The bin renders as a drawer pinned to the canvas's left edge: a vertical tab
+// is always visible, and clicking it slides the panel of examples out to the
+// side. Open/closed is per-view chrome state, so it stays local rather than
+// syncing into the shared document.
 function PartsBin(props: { handle: DocHandle<PartsBinDoc> }) {
   const repo = useRepo();
   const [doc] = useDocument<PartsBinDoc>(() => props.handle.url);
   const items = () => doc()?.items ?? [];
+  const [open, setOpen] = createSignal(true);
 
   return (
-    <div class="embark-parts-bin">
-      <div class="embark-parts-bin__header">{doc()?.title ?? "Parts bin"}</div>
-      <div class="embark-parts-bin__list">
-        <For each={items()}>
-          {(item, index) => (
-            <PartsBinRow
-              repo={repo}
-              item={item}
-              onRemove={() =>
-                props.handle.change((binDoc) => {
-                  binDoc.items.splice(index(), 1);
-                })
-              }
-              onRename={(label) =>
-                props.handle.change((binDoc) => {
-                  const entry = binDoc.items[index()];
-                  if (!entry) return;
-                  if (label) entry.label = label;
-                  else delete entry.label;
-                })
-              }
-              onToggleFrameless={() =>
-                props.handle.change((binDoc) => {
-                  const entry = binDoc.items[index()];
-                  if (!entry) return;
-                  if (entry.frameless) delete entry.frameless;
-                  else entry.frameless = true;
-                })
-              }
-            />
-          )}
-        </For>
+    <div
+      class="embark-parts-bin"
+      classList={{ "embark-parts-bin--open": open() }}
+    >
+      <div class="embark-parts-bin__drawer">
+        <div class="embark-parts-bin__panel">
+          <div class="embark-parts-bin__list">
+            <For each={items()}>
+              {(item, index) => (
+                <PartsBinRow
+                  repo={repo}
+                  item={item}
+                  onRemove={() =>
+                    props.handle.change((binDoc) => {
+                      binDoc.items.splice(index(), 1);
+                    })
+                  }
+                  onRename={(label) =>
+                    props.handle.change((binDoc) => {
+                      const entry = binDoc.items[index()];
+                      if (!entry) return;
+                      if (label) entry.label = label;
+                      else delete entry.label;
+                    })
+                  }
+                />
+              )}
+            </For>
+          </div>
+        </div>
+        <button
+          type="button"
+          class="embark-parts-bin__tab"
+          title={open() ? "Close drawer" : "Open drawer"}
+          aria-expanded={open()}
+          // Keep the press off the canvas surface so it can't be read as a drag;
+          // a plain click toggles the drawer.
+          on:pointerdown={(event) => event.stopPropagation()}
+          on:click={() => setOpen((value) => !value)}
+        >
+          <ChevronIcon open={open()} />
+          <span class="embark-parts-bin__tab-label">
+            {doc()?.title ?? "Parts bin"}
+          </span>
+        </button>
       </div>
     </div>
   );
@@ -130,7 +148,6 @@ function PartsBinRow(props: {
   item: PartsBinItem;
   onRemove: () => void;
   onRename: (label: string) => void;
-  onToggleFrameless: () => void;
 }) {
   // Resolve the source handle up front (waits for ready) so dragstart — which
   // must write its payload synchronously — always has a loaded doc to clone
@@ -155,11 +172,21 @@ function PartsBinRow(props: {
     const handle = source();
     if (!event.dataTransfer || !handle) return;
     event.dataTransfer.effectAllowed = "copy";
-    // Drop an independent copy so the example in the bin stays pristine. Carry
-    // the frameless choice in the rich payload so the canvas drops it framed or
-    // frameless to match this example.
+    // Drop an independent copy so the example in the bin stays pristine. The
+    // canvas decides framed vs. frameless from the dropped doc's tool, so the
+    // payload only needs to carry the url.
     const url = props.repo.clone(handle).url;
-    const item = { url, ...(props.item.frameless ? { frameless: true } : {}) };
+    // Carry the recorded footprint so the canvas recreates this example at the
+    // size it was captured at (the canvas falls back to its default when unset).
+    const item: {
+      url: typeof url;
+      width?: number;
+      height?: number;
+    } = {
+      url,
+      ...(props.item.width !== undefined && { width: props.item.width }),
+      ...(props.item.height !== undefined && { height: props.item.height }),
+    };
     event.dataTransfer.setData(
       "text/x-patchwork-dnd",
       JSON.stringify({ source: "parts-bin", items: [item] }),
@@ -177,9 +204,13 @@ function PartsBinRow(props: {
     setTimeout(() => token.remove(), 0);
   };
 
-  // An editable headline with hover-revealed frame/delete actions, above a
+  // An editable headline with a hover-revealed delete action, above a
   // non-interactive live preview that is the drag source. The preview ghost is
   // replaced by the title token (see onDragStart), so its height is irrelevant.
+  // Interactive bits stop pointerdown so the frameless embed doesn't read them
+  // as a surface drag — the input can focus, the button can click, and the
+  // preview's native HTML5 drag (which the embed's preventDefault would kill)
+  // can start.
   return (
     <div class="embark-parts-bin__item">
       <div class="embark-parts-bin__head">
@@ -188,30 +219,15 @@ function PartsBinRow(props: {
           value={name()}
           placeholder={fallbackName()}
           title="Rename this example"
+          on:pointerdown={(event) => event.stopPropagation()}
           on:change={(event) => props.onRename(event.currentTarget.value.trim())}
         />
-        <button
-          type="button"
-          class="embark-parts-bin__frame"
-          classList={{
-            "embark-parts-bin__frame--off": props.item.frameless === true,
-          }}
-          title={
-            props.item.frameless
-              ? "Drops without a frame — click to add one"
-              : "Drops with a frame — click to remove it"
-          }
-          aria-label="Toggle frame on drop"
-          aria-pressed={props.item.frameless === true}
-          on:click={() => props.onToggleFrameless()}
-        >
-          <FrameIcon off={props.item.frameless === true} />
-        </button>
         <button
           type="button"
           class="embark-parts-bin__delete"
           title="Remove from parts bin"
           aria-label="Remove from parts bin"
+          on:pointerdown={(event) => event.stopPropagation()}
           on:click={() => props.onRemove()}
         >
           <CloseIcon />
@@ -221,6 +237,7 @@ function PartsBinRow(props: {
         class="embark-parts-bin__preview"
         draggable={true}
         title="Drag onto the canvas to copy"
+        on:pointerdown={(event) => event.stopPropagation()}
         on:dragstart={onDragStart}
       >
         <patchwork-view
@@ -233,23 +250,24 @@ function PartsBinRow(props: {
   );
 }
 
-// Frame glyph for the frame toggle: a solid rounded rect when framed, a dashed
-// one when the example drops frameless. Inherits the button's text color.
-function FrameIcon(props: { off: boolean }) {
+// Caret on the drawer tab: points right when closed ("pull out this way") and
+// flips to point left when open. Inherits the tab's text color.
+function ChevronIcon(props: { open: boolean }) {
   return (
     <svg
+      class="embark-parts-bin__chevron"
+      classList={{ "embark-parts-bin__chevron--open": props.open }}
       width="14"
       height="14"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      stroke-width="2"
+      stroke-width="2.5"
       stroke-linecap="round"
       stroke-linejoin="round"
-      stroke-dasharray={props.off ? "4 3" : undefined}
       aria-hidden="true"
     >
-      <rect x="3" y="4" width="18" height="16" rx="2.5" />
+      <path d="M9 6l6 6-6 6" />
     </svg>
   );
 }

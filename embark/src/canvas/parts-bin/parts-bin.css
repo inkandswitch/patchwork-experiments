@@ -1,21 +1,99 @@
+/* The bin is a drawer pinned to the canvas's left edge. The root is just a
+   positioning context; pointer events fall through it (the locked embed view is
+   pointer-events:none) and are re-enabled on the panel and tab below. */
 .embark-parts-bin {
+  --parts-bin-panel-width: 260px;
+  --parts-bin-tab-width: 30px;
+  position: relative;
+  height: 100%;
+  font-family: system-ui, -apple-system, sans-serif;
+  pointer-events: none;
+}
+
+/* The sliding container holds the panel and its tab side by side. Closed, it's
+   shifted left by the panel's width so only the tab pokes past the edge; open,
+   it slides back to reveal the panel with the tab on its outer edge. */
+.embark-parts-bin__drawer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  transform: translateX(calc(-1 * var(--parts-bin-panel-width)));
+  transition: transform 260ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.embark-parts-bin--open .embark-parts-bin__drawer {
+  transform: translateX(0);
+}
+
+.embark-parts-bin__panel {
+  pointer-events: auto;
+  flex: 0 0 auto;
+  width: var(--parts-bin-panel-width);
+  height: 100%;
   display: flex;
   flex-direction: column;
-  height: 100%;
   background: #ffffff;
-  font-family: system-ui, -apple-system, sans-serif;
+  border: 1px solid #d6d3d1;
+  border-left: none;
+  border-radius: 0 10px 10px 0;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 8px 22px rgba(0, 0, 0, 0.14);
   overflow: hidden;
 }
 
-.embark-parts-bin__header {
+/* The always-visible handle: a small vertical tab on the panel's outer edge. */
+.embark-parts-bin__tab {
+  pointer-events: auto;
   flex: 0 0 auto;
-  padding: 8px 12px;
+  align-self: flex-start;
+  margin-top: 14px;
+  width: var(--parts-bin-tab-width);
+  min-height: 104px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  border: 1px solid #d6d3d1;
+  border-left: none;
+  border-radius: 0 9px 9px 0;
+  background: #f5f5f4;
+  color: #57534e;
+  cursor: pointer;
+  user-select: none;
+  box-shadow: 3px 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.embark-parts-bin__tab:hover {
+  background: #eeedec;
+}
+
+.embark-parts-bin__tab:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 1px;
+}
+
+.embark-parts-bin__tab-label {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
   font-size: 12px;
   font-weight: 600;
-  color: #57534e;
-  background: #f5f5f4;
-  border-bottom: 1px solid #ececeb;
-  user-select: none;
+  letter-spacing: 0.02em;
+}
+
+.embark-parts-bin__chevron {
+  flex: 0 0 auto;
+  color: #a8a29e;
+  transition: transform 200ms ease;
+}
+
+.embark-parts-bin__chevron--open {
+  transform: rotate(180deg);
 }
 
 /* The list reads like a scrolling document: each entry is a heading followed by
@@ -40,8 +118,8 @@
   gap: 6px;
 }
 
-/* Heading row: the editable title with frame/delete actions that fade up on
-   hover. Not draggable - dragging happens on the preview below. */
+/* Heading row: the editable title with a delete action that fades up on hover.
+   Not draggable - dragging happens on the preview below. */
 .embark-parts-bin__head {
   flex: 0 0 auto;
   display: flex;
@@ -80,8 +158,7 @@
   background: #ffffff;
 }
 
-/* Frame toggle + delete buttons at the end of the headline; fade up on hover. */
-.embark-parts-bin__frame,
+/* Delete button at the end of the headline; fades up on hover. */
 .embark-parts-bin__delete {
   flex: 0 0 auto;
   display: flex;
@@ -100,28 +177,14 @@
   transition: opacity 120ms ease;
 }
 
-.embark-parts-bin__item:hover .embark-parts-bin__frame,
 .embark-parts-bin__item:hover .embark-parts-bin__delete,
-.embark-parts-bin__frame:focus-visible,
 .embark-parts-bin__delete:focus-visible {
   opacity: 1;
 }
 
-.embark-parts-bin__frame:hover,
 .embark-parts-bin__delete:hover {
   background: #e7e5e4;
   color: #44403c;
-}
-
-/* When this example drops frameless, keep its toggle lit so the state reads at
-   a glance even without hovering. */
-.embark-parts-bin__frame--off {
-  opacity: 1;
-  color: #6366f1;
-}
-
-.embark-parts-bin__frame--off:hover {
-  color: #4f46e5;
 }
 
 /* The preview is its own card and the drag source: a non-interactive window

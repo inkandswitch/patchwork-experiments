@@ -16,7 +16,8 @@ export type PartsBinItem = {
   // A user-editable display name for the example, shown on its token. Falls back
   // to the document's own title/type when unset.
   label?: string;
-  // When true, this example drops onto the canvas as a frameless embed: no drag
-  // border and no clipping, with the embedded tool providing its own chrome.
-  frameless?: boolean;
+  // The canvas footprint to recreate when this example is dropped. Recorded
+  // from an embed dragged into the bin; when unset the canvas default is used.
+  width?: number;
+  height?: number;
 };

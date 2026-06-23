@@ -1,19 +1,18 @@
-@import url("https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap");
-
-/* The card looks like a faintly purple index card: ruled lines and handwriting.
-   It is a 3D scene so it can flip between its writing side and a read-only back.
-   The box-shadow / state glow live on this (non-rotating) layer. */
+/* The card looks like a playing card: a blank upper area, the effect
+   description in a box near the bottom, and an action button below it. It is a
+   3D scene so it can flip between its writing side and a read-only back. State
+   is read from the border: dashed (draft), blue (generating), black (active),
+   red (failed). */
 .embark-llm-card {
   position: relative;
   height: 100%;
   box-sizing: border-box;
-  border-radius: 6px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
   transition: box-shadow 0.2s ease;
   perspective: 1200px;
-  /* The orb, glow and trace popover live outside the card box, so never clip
-     them. (Drop the card into a frameless embed so the embed frame doesn't clip
-     them either.) */
+  /* The action button and trace popover live outside the card box, so never
+     clip them. (Drop the card into a frameless embed so the embed frame doesn't
+     clip them either.) */
   overflow: visible;
 }
 
@@ -30,14 +29,18 @@
   transform: rotateY(180deg);
 }
 
-/* Each face is flat, so backface-visibility hides the whole face (and all of
-   its contents, including the overflowing orb) once it is turned away. */
+/* Each face is a flat column: blank top, description box at the bottom.
+   backface-visibility hides the whole face once it is turned away. */
 .embark-llm-card__face {
   position: absolute;
   inset: 0;
+  display: flex;
+  flex-direction: column;
   box-sizing: border-box;
-  border-radius: 6px;
-  background: #f7f5ff;
+  border-radius: 8px;
+  border: 2px dashed #d4d4d8;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
   backface-visibility: hidden;
   overflow: visible;
 }
@@ -46,170 +49,115 @@
   transform: rotateY(180deg);
 }
 
-/* The writing surface is the textarea itself, painted with ruled lines. */
-.embark-llm-card__paper {
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  border: none;
-  outline: none;
-  resize: none;
-  box-sizing: border-box;
-  padding: 8px 14px 0 14px;
-  background: transparent;
-  background-image: repeating-linear-gradient(
-    to bottom,
-    transparent 0,
-    transparent 37px,
-    #e4dcf7 37px,
-    #e4dcf7 38px
-  );
-  line-height: 38px;
-  font-family: "Patrick Hand", cursive;
-  font-size: 20px;
-  color: #1c1917;
-  /* When the effect goes live the text turns purple; editing it drops the card
-     back to draft and the colour fades back to normal. */
-  transition: color 0.4s ease;
+/* State is carried entirely by the border. */
+.embark-llm-card--generating .embark-llm-card__face {
+  border: 2px solid #3b6bf5;
 }
 
-/* The back of the card: the same paper, but a greyed, read-only copy. */
-.embark-llm-card__back {
-  width: 100%;
-  height: 100%;
-  margin: 0;
+.embark-llm-card--active .embark-llm-card__face {
+  border: 2px solid #a1a1aa;
+}
+
+.embark-llm-card--failed .embark-llm-card__face {
+  border: 2px solid #ef4444;
+}
+
+/* The blank upper area that gives the card its "playing card" feel. */
+.embark-llm-card__top {
+  flex: 1 1 auto;
+}
+
+/* The effect description, in a box near the bottom of the card. */
+.embark-llm-card__desc {
+  flex: 0 0 auto;
+  height: 38%;
+  min-height: 64px;
+  margin: 12px;
+  padding: 8px 10px;
   box-sizing: border-box;
-  padding: 8px 14px 0 14px;
-  background-image: repeating-linear-gradient(
-    to bottom,
-    transparent 0,
-    transparent 37px,
-    #e4dcf7 37px,
-    #e4dcf7 38px
-  );
-  line-height: 38px;
-  font-family: "Patrick Hand", cursive;
-  font-size: 20px;
-  color: #b3acc6;
-  white-space: pre-wrap;
-  word-break: break-word;
+  border: 1px solid #d6d3d1;
+  border-radius: 5px;
+  outline: none;
+  resize: none;
+  background: #ffffff;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
+  color: #1c1917;
   overflow-y: auto;
 }
 
-/* Corner control that turns the card over. */
+.embark-llm-card__desc::placeholder {
+  color: #a8a29e;
+}
+
+/* The back of the card: a greyed, read-only copy of the description. */
+.embark-llm-card__desc--back {
+  color: #b3acc6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* The action rail below the card (make real / stop). */
+.embark-llm-card__action {
+  position: absolute;
+  top: calc(100% + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 22px;
+  border: 1px solid #1c1917;
+  border-radius: 5px;
+  background: #ffffff;
+  color: #1c1917;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  transition: background 0.15s ease;
+}
+
+.embark-llm-card__action:hover {
+  background: #f5f5f4;
+}
+
+/* Corner control that turns the card over. It lives inside the card and only
+   surfaces while the card is hovered, so it stays out of the way otherwise. */
 .embark-llm-card__flip-btn {
   position: absolute;
-  top: -11px;
-  left: -11px;
+  top: 8px;
+  left: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: none;
   border-radius: 50%;
   outline: none;
   cursor: pointer;
-  background: #ffffff;
-  color: #8b5cf6;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
-  opacity: 0.7;
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  background: transparent;
+  color: #a8a29e;
+  opacity: 0;
+  transition: opacity 0.15s ease, transform 0.15s ease, color 0.15s ease;
+}
+
+.embark-llm-card:hover .embark-llm-card__flip-btn {
+  opacity: 1;
 }
 
 .embark-llm-card__flip-btn:hover {
-  opacity: 1;
-  transform: scale(1.08);
+  color: #57534e;
+  transform: scale(1.12);
 }
 
-.embark-llm-card__paper::placeholder {
-  color: #b5add0;
-}
-
-/* A live effect is signalled purely by purple text — no card outline. */
-.embark-llm-card--active .embark-llm-card__paper {
-  color: #7c3aed;
-}
-
-/* Soft purple glow while the LLM is working (the orb also pulses). */
-.embark-llm-card--generating {
-  box-shadow: 0 0 16px rgba(139, 92, 246, 0.4);
-}
-
-/* Soft red glow when generation failed (plus the red orb + error bubble). */
-.embark-llm-card--failed {
-  box-shadow: 0 0 16px rgba(239, 68, 68, 0.4);
-}
-
-/* The orb: the card's single control / status indicator, top-right. The blob
-   always morphs (speed driven from JS); glow + pulse signal how busy it is. */
-.embark-llm-card__orb {
-  position: absolute;
-  top: -11px;
-  right: -11px;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: none;
-  outline: none;
-  -webkit-tap-highlight-color: transparent;
-  background: none;
-  cursor: pointer;
-  /* Pending: faint glow, no pulse. */
-  filter: drop-shadow(0 0 3px rgba(139, 92, 246, 0.4));
-}
-
-.embark-llm-card__orb svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-
-.embark-llm-card__orb-shape {
-  fill: #8b5cf6;
-  transition: fill 0.3s ease;
-}
-
-/* Pending: an un-run change — a touch more glow to invite a click. */
-.embark-llm-card__orb--pending {
-  filter: drop-shadow(0 0 6px rgba(139, 92, 246, 0.7));
-}
-
-/* Working: the LLM is running — unmistakably energetic, bright glow + pulse
-   (and the blob morphs much faster). */
-.embark-llm-card__orb--working {
-  filter: drop-shadow(0 0 11px rgba(139, 92, 246, 0.95));
-  animation: embark-orb-pulse 1s ease-in-out infinite;
-}
-
-.embark-llm-card--failed .embark-llm-card__orb-shape {
-  fill: #ef4444;
-}
-
-.embark-llm-card--failed .embark-llm-card__orb {
-  filter: drop-shadow(0 0 9px rgba(239, 68, 68, 0.7));
-}
-
-@keyframes embark-orb-pulse {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.22);
-  }
-}
-
-/* Anchored popovers spawned by the orb, floating just to the right of the
-   card: the live generation trace, or the error bubble. */
-.embark-llm-card__trace,
+/* The error bubble, floating just to the right of the card when a run fails. */
 .embark-llm-card__bubble {
   position: absolute;
   left: calc(100% + 14px);
   top: 0;
   z-index: 5;
-  width: 280px;
   max-height: 100%;
   box-sizing: border-box;
   overflow-y: auto;
@@ -230,83 +178,4 @@
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
-}
-
-.embark-llm-card__trace {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.embark-llm-card__trace-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 11px;
-  color: #78716c;
-}
-
-.embark-llm-card__trace-stop {
-  border: 1px solid #d6d3d1;
-  border-radius: 5px;
-  background: #fafaf9;
-  color: #292524;
-  font: inherit;
-  font-size: 11px;
-  padding: 2px 8px;
-  cursor: pointer;
-}
-
-.embark-llm-card__trace-stop:hover {
-  background: #f5f5f4;
-}
-
-/* Transcript entries inside the trace popover. */
-.embark-llm-card__text-block {
-  font-size: 13px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: #44403c;
-}
-
-.embark-llm-card__script {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.embark-llm-card__script-desc {
-  font-size: 11px;
-  font-weight: 600;
-  color: #78716c;
-}
-
-.embark-llm-card__code,
-.embark-llm-card__output,
-.embark-llm-card__error {
-  margin: 0;
-  padding: 8px 10px;
-  border-radius: 6px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow-x: auto;
-}
-
-.embark-llm-card__code {
-  background: #f5f5f4;
-  color: #1c1917;
-}
-
-.embark-llm-card__output {
-  background: #f0fdf4;
-  color: #166534;
-}
-
-.embark-llm-card__error {
-  background: rgba(239, 68, 68, 0.1);
-  color: #b91c1c;
 }

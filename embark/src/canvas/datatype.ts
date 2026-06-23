@@ -24,16 +24,20 @@ export const EmbarkCanvasDatatype: DatatypeImplementation<EmbarkCanvasDoc> = {
 
 // A fresh canvas comes pre-wired with the shared parts bin so there's something
 // to drag onto it out of the box: the bin previews example documents (a search
-// box and a POI provider) and hands out clones on drag.
+// box and a POI provider) and hands out clones on drag. It sits near the
+// top-left and reads as a drawer that pulls out from the edge.
 function seedDefaultEmbeds(): EmbarkCanvasDoc["embeds"] {
+  // Fit the open drawer to the viewport at creation time, leaving some headroom.
+  const viewportHeight =
+    typeof window !== "undefined" ? window.innerHeight : 620;
   const partsBinEmbed: EmbarkEmbed = {
     id: crypto.randomUUID(),
     docUrl: SHARED_PARTS_BIN_URL,
     toolId: "parts-bin",
-    x: 40,
-    y: 40,
-    width: 280,
-    height: 360,
+    x: 0,
+    y: 50,
+    width: 290,
+    height: viewportHeight - 200,
     z: 1,
   };
 

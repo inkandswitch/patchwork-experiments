@@ -1,6 +1,6 @@
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
-import { For, Show, createSignal } from "solid-js";
+import { For, Show, createSignal, onCleanup } from "solid-js";
 import { render } from "solid-js/web";
 import { RepoContext, useDocument, useRepo } from "solid-automerge";
 import "@inkandswitch/patchwork-elements";
@@ -23,9 +23,9 @@ export type EmbarkEmbed = {
   height: number;
   z: number;
   toolId?: string;
-  // Frameless embeds render without the drag border / clipping; the embedded
-  // tool brings its own chrome and is dragged by grabbing its surface.
-  frameless?: boolean;
+  // Locked embeds are pinned in place: the canvas won't move or resize them.
+  // (Used by the parts-bin drawer; there's no UI yet to lock arbitrary embeds.)
+  locked?: boolean;
 };
 
 export type EmbarkCanvasDoc = {
@@ -33,6 +33,17 @@ export type EmbarkCanvasDoc = {
   title: string;
   embeds: { [id: string]: EmbarkEmbed };
 };
+
+// Framelessness is intrinsic to a tool rather than configured per embed: these
+// tools bring their own chrome, so they render without the canvas drag border /
+// clipping and are dragged by grabbing their surface. Keyed by tool id; an
+// embed with no explicit `toolId` falls back to its document's datatype, which
+// for these tools matches the tool id.
+const FRAMELESS_TOOLS = new Set<string>(["llm-card", "parts-bin"]);
+
+// Likewise, some tools own their size (e.g. a fixed-size card) and shouldn't
+// expose the canvas resize handle. Resolved the same way as FRAMELESS_TOOLS.
+const NOT_RESIZABLE_TOOLS = new Set<string>(["llm-card"]);
 
 const DEFAULT_WIDTH = 360;
 const DEFAULT_HEIGHT = 280;
@@ -88,12 +99,34 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
   // than in the shared document.
   const [selectedId, setSelectedId] = createSignal<string | null>(null);
 
+  // Holding Shift temporarily exposes the resize handle on tools that are
+  // normally fixed-size (e.g. the llm-card). Tracked at the window so it stays
+  // in sync regardless of which element has focus.
+  const [shiftHeld, setShiftHeld] = createSignal(false);
+  const syncShift = (event: KeyboardEvent) => setShiftHeld(event.shiftKey);
+  const clearShift = () => setShiftHeld(false);
+  window.addEventListener("keydown", syncShift);
+  window.addEventListener("keyup", syncShift);
+  window.addEventListener("blur", clearShift);
+  onCleanup(() => {
+    window.removeEventListener("keydown", syncShift);
+    window.removeEventListener("keyup", syncShift);
+    window.removeEventListener("blur", clearShift);
+  });
+
   // Selecting focuses the canvas root so it — not an embedded document —
   // receives key events. That's what lets Backspace/Delete remove the selected
-  // embed without also firing while you type inside an embed.
+  // embed without also firing while you type inside an embed. Selecting also
+  // raises the embed to the top so it isn't left hidden behind its neighbors.
   const selectEmbed = (id: string) => {
     setSelectedId(id);
     canvasEl()?.focus();
+    props.handle.change((canvas) => {
+      const target = canvas.embeds[id];
+      if (!target) return;
+      const top = highestZ(canvas.embeds);
+      if (target.z < top) target.z = top + 1;
+    });
   };
 
   const deleteEmbed = (id: string) => {
@@ -151,11 +184,13 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
     const clone = repo.clone(sourceHandle);
     binHandle.change((binDoc) => {
       // Automerge rejects an explicit `undefined`, so only set optional fields
-      // when the source embed actually carries them.
+      // when the source embed actually carries them. Record the embed's current
+      // footprint so dropping the example back out recreates the same size.
       binDoc.items.push({
         url: clone.url,
         ...(source.toolId !== undefined && { toolId: source.toolId }),
-        ...(source.frameless ? { frameless: true } : {}),
+        width: source.width,
+        height: source.height,
       });
     });
   };
@@ -181,11 +216,10 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
           // Top-left corner sits at the drop point (not centered on it).
           x: dropX + cascade,
           y: dropY + cascade,
-          width: DEFAULT_WIDTH,
-          height: DEFAULT_HEIGHT,
+          // A parts-bin example may carry the size it was captured at.
+          width: item.width ?? DEFAULT_WIDTH,
+          height: item.height ?? DEFAULT_HEIGHT,
           z: ++z,
-          // Only set when asked; Automerge rejects an explicit `undefined`.
-          ...(item.frameless ? { frameless: true } : {}),
         };
       });
     });
@@ -232,6 +266,7 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
             embed={embed}
             handle={props.handle}
             selected={selectedId() === embed.id}
+            shiftHeld={shiftHeld()}
             onSelect={() => selectEmbed(embed.id)}
             onDelete={() => deleteEmbed(embed.id)}
             findBinAt={binEmbedAt}
@@ -256,6 +291,7 @@ function EmbedView(props: {
   embed: EmbarkEmbed;
   handle: DocHandle<EmbarkCanvasDoc>;
   selected: boolean;
+  shiftHeld: boolean;
   onSelect: () => void;
   onDelete: () => void;
   findBinAt: (
@@ -269,6 +305,9 @@ function EmbedView(props: {
   let interaction: Interaction | null = null;
 
   const beginInteraction = (mode: InteractionMode) => (event: PointerEvent) => {
+    // Locked embeds can't be moved or resized — leave the event alone so the
+    // tool inside keeps full control of its own interactions.
+    if (props.embed.locked) return;
     event.preventDefault();
     event.stopPropagation();
     props.onSelect();
@@ -284,7 +323,6 @@ function EmbedView(props: {
       originWidth: props.embed.width,
       originHeight: props.embed.height,
     };
-    bringToFront();
   };
 
   const onPointerMove = (event: PointerEvent) => {
@@ -341,16 +379,29 @@ function EmbedView(props: {
     );
   };
 
-  const bringToFront = () => {
-    props.handle.change((canvas) => {
-      const target = canvas.embeds[props.embed.id];
-      if (!target) return;
-      const top = highestZ(canvas.embeds);
-      if (target.z < top) target.z = top + 1;
-    });
+  // Framelessness / resizability are properties of the rendering tool: use the
+  // pinned `toolId` when set, otherwise fall back to the document's datatype
+  // (which equals the default tool id for these tools). The doc loads async, so
+  // these may settle a frame after mount.
+  const [embedDoc] = useDocument<{ "@patchwork"?: { type?: string } }>(
+    () => props.embed.docUrl,
+  );
+  const toolId = () => props.embed.toolId ?? embedDoc()?.["@patchwork"]?.type;
+  const frameless = () => {
+    const id = toolId();
+    return id !== undefined && FRAMELESS_TOOLS.has(id);
   };
-
-  const frameless = () => props.embed.frameless === true;
+  const locked = () => props.embed.locked === true;
+  // Tools in NOT_RESIZABLE_TOOLS own their size, so the handle is normally
+  // hidden — but holding Shift exposes it anyway (locked embeds stay pinned).
+  const baseResizable = () => {
+    const id = toolId();
+    return id === undefined || !NOT_RESIZABLE_TOOLS.has(id);
+  };
+  const resizable = () => {
+    if (locked()) return false;
+    return baseResizable() || props.shiftHeld;
+  };
 
   // Frameless embeds have no handle bar, so the whole surface moves them. The
   // embedded tool opts a region out of dragging by calling stopPropagation on
@@ -369,6 +420,7 @@ function EmbedView(props: {
       classList={{
         "embark-embed--selected": props.selected,
         "embark-embed--frameless": frameless(),
+        "embark-embed--locked": locked(),
       }}
       style={{
         left: `${props.embed.x}px`,
@@ -415,14 +467,17 @@ function EmbedView(props: {
           tool-id={props.embed.toolId}
         />
       </div>
-      <div
-        class="embark-embed__resize"
-        title="Drag to resize"
-        on:pointerdown={beginInteraction("resize")}
-        on:pointermove={onPointerMove}
-        on:pointerup={endInteraction}
-        on:pointercancel={endInteraction}
-      />
+      <Show when={resizable()}>
+        <div
+          class="embark-embed__resize"
+          classList={{ "embark-embed__resize--forced": !baseResizable() }}
+          title="Drag to resize"
+          on:pointerdown={beginInteraction("resize")}
+          on:pointermove={onPointerMove}
+          on:pointerup={endInteraction}
+          on:pointercancel={endInteraction}
+        />
+      </Show>
     </div>
   );
 }
