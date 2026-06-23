@@ -32,7 +32,7 @@ export const DEFAULTS = {
 	seed: null, // fixed seed for reproducibility (null = random)
 	maxTokens: null, // output cap (null = provider default / per-call)
 	outputAttentions: false, // request per-token attention scores (only some providers)
-	local: {model: "onnx-community/Qwen3-0.6B-ONNX"},
+	local: {model: "onnx-community/Qwen3-0.6B-ONNX", dtype: null}, // dtype null = auto (catalogue default / q4f16)
 	openrouter: {
 		apiKey: "",
 		model: "anthropic/claude-sonnet-4",
@@ -419,7 +419,7 @@ export function callConfig(cfg, overrides = {}) {
 			custom: cfg.webllm.custom || [], // self-compiled MLC model records
 		}
 	}
-	return {...base, model: overrides.model ?? cfg.local.model}
+	return {...base, model: overrides.model ?? cfg.local.model, dtype: overrides.dtype ?? cfg.local.dtype ?? undefined}
 }
 
 // ---------------------------------------------------------------------------

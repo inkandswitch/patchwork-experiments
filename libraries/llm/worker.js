@@ -73,8 +73,19 @@ const PREDICTION_CAP = 256 // cap per-step prediction events so a long gen can't
 let TF = null
 let generator = null
 let currentModelId = DEFAULT_MODEL_ID
+let currentDtype = null // the dtype the loaded model was compiled with
 let loading = false
 let loadingPromise = null
+// The real error from the most recent loadModel() failure. Without this the
+// device-fallback loop swallows the cause ("WASM failed") and callers can only
+// report a useless "Model not loaded". Surfaced via modelLoadError().
+let lastLoadError = null
+
+function modelLoadError() {
+	return lastLoadError
+		? "Model load failed: " + (lastLoadError.message || String(lastLoadError))
+		: "Model not loaded"
+}
 const compiledModels = new Set()
 
 // User-supplied local ONNX models (in transformers.js layout) uploaded from
@@ -117,20 +128,28 @@ function withTimeout(promise, ms, label) {
 	])
 }
 
-async function loadModel(modelId) {
+async function loadModel(modelId, dtypeOverride) {
 	modelId = modelId || DEFAULT_MODEL_ID
-	if (generator && currentModelId !== modelId) generator = null
+	// A dtype change for the same id must force a reload (e.g. switching a custom
+	// HF model from q4f16 → q4 to match the variant the repo actually ships).
+	const dtypeChanged = dtypeOverride && currentDtype && dtypeOverride !== currentDtype
+	if (generator && (currentModelId !== modelId || dtypeChanged)) generator = null
 	if (generator) return
 	if (loading && loadingPromise) return loadingPromise
 	currentModelId = modelId
 	loading = true
 	let resolveLoading
 	loadingPromise = new Promise((r) => (resolveLoading = r))
+	lastLoadError = null
 	const reg = localModelFiles.get(modelId)
 	if (reg) ensureLocalFetchPatch()
-	const modelDef = reg
+	// dtype precedence: explicit override (picker) > registered upload > catalogue
+	// entry > q4f16. Lets you pick the quantization suffix for any HF id.
+	const baseDef = reg
 		? {dtype: reg.dtype}
 		: LOCAL_MODELS.find((m) => m.id === modelId) || {dtype: "q4f16"}
+	const modelDef = {...baseDef, dtype: dtypeOverride || baseDef.dtype}
+	currentDtype = modelDef.dtype
 
 	try {
 		broadcast({type: "status", message: "Loading transformers.js…"})
@@ -139,6 +158,9 @@ async function loadModel(modelId) {
 		TF.env.useBrowserCache = true
 		if (navigator.storage?.persist) await navigator.storage.persist()
 	} catch (err) {
+		lastLoadError = err
+		console.error("[llm worker] failed to load transformers.js from", CDN, err)
+		broadcast({type: "status", message: "Failed to load transformers.js: " + (err?.message || err)})
 		loading = false
 		loadingPromise = null
 		resolveLoading()
@@ -213,13 +235,25 @@ async function loadModel(modelId) {
 			}
 			broadcast({type: "status", message: `Model ready (${attempt.label})`})
 			broadcast({type: "ready", model: modelId, device: attempt.label})
+			lastLoadError = null
 			break
 		} catch (err) {
+			lastLoadError = err
+			// Keep the actual cause — the device-fallback loop used to discard it,
+			// leaving only "WASM failed" with no way to see what actually broke.
+			console.error(`[llm worker] ${attempt.label} load failed for ${modelId}:`, err)
 			broadcast({
 				type: "status",
-				message: attempt.label + " failed" + (attempt.device ? " — trying WASM…" : ""),
+				message: `${attempt.label} failed: ${err?.message || err}` + (attempt.device ? " — trying WASM…" : ""),
 			})
 		}
+	}
+	// Every device attempt failed — surface the last real error to the main
+	// thread (callers otherwise report a contentless "Model not loaded").
+	if (!generator) {
+		console.error(`[llm worker] all backends failed to load ${modelId}:`, lastLoadError)
+		broadcast({type: "status", message: modelLoadError()})
+		broadcast({type: "load-error", model: modelId, message: modelLoadError()})
 	}
 	loading = false
 	loadingPromise = null
@@ -898,7 +932,11 @@ async function computeAttentionWeightsLocal(gen, text, config) {
 	const outputs = await model(inputs)
 	const att = outputs.attentions
 	if (!att || !att.dims || att.dims.length !== 5) {
-		post(gen, {type: "attention-weights", supported: false})
+		// Report what the forward pass actually produced so the UI can say why
+		// (wrong model vs. an attentions output that's named/shaped unexpectedly).
+		const outputKeys = Object.keys(outputs || {})
+		console.warn(`[llm worker] ${currentModelId} has no usable attentions output. forward outputs:`, outputKeys, att ? `(attentions dims: [${att.dims}])` : "(no `attentions` key)")
+		post(gen, {type: "attention-weights", supported: false, model: currentModelId, outputKeys, attnDims: att?.dims || null})
 		broadcast({type: "status", message: ""})
 		return
 	}
@@ -1018,8 +1056,8 @@ function handlePredict(port, data) {
 			.catch((e) => failPredict(e?.message || String(e)))
 	if (!generator || currentModelId !== requested) {
 		if (currentModelId !== requested) generator = null
-		loadModel(requested).then(() =>
-			generator ? run() : failPredict("Model not loaded")
+		loadModel(requested, config.dtype).then(() =>
+			generator ? run() : failPredict(modelLoadError())
 		)
 	} else run()
 }
@@ -1249,6 +1287,15 @@ function handleMessage(port, data) {
 	const {type, id} = data
 	const sessionKey = data.sessionKey || id
 
+	// If a local request asks for a dtype different from the loaded model's, drop
+	// the cached generator so every handler's `!generator` guard forces a reload.
+	// (Same model id, different quantization — e.g. q4f16 → q4 — still needs a
+	// fresh compile.) Handled centrally so individual handlers stay simple.
+	const reqDtype = data.config?.dtype
+	if (generator && !loading && reqDtype && currentDtype && reqDtype !== currentDtype) {
+		generator = null
+	}
+
 	if (type === "list-local-models") {
 		port.postMessage({type: "local-models", models: LOCAL_MODELS})
 		return
@@ -1276,8 +1323,8 @@ function handleMessage(port, data) {
 				})
 		if (!generator || currentModelId !== requested) {
 			if (currentModelId !== requested) generator = null
-			loadModel(requested).then(() => {
-				if (!generator) { port.postMessage({type: "error", id, message: "Model not loaded"}); return }
+			loadModel(requested, config.dtype).then(() => {
+				if (!generator) { port.postMessage({type: "error", id, message: modelLoadError()}); return }
 				run()
 			})
 		} else run()
@@ -1302,8 +1349,8 @@ function handleMessage(port, data) {
 				})
 		if (!generator || currentModelId !== requested) {
 			if (currentModelId !== requested) generator = null
-			loadModel(requested).then(() => {
-				if (!generator) { port.postMessage({type: "error", id, message: "Model not loaded"}); return }
+			loadModel(requested, config.dtype).then(() => {
+				if (!generator) { port.postMessage({type: "error", id, message: modelLoadError()}); return }
 				run()
 			})
 		} else run()
@@ -1328,8 +1375,8 @@ function handleMessage(port, data) {
 				})
 		if (!generator || currentModelId !== requested) {
 			if (currentModelId !== requested) generator = null
-			loadModel(requested).then(() => {
-				if (!generator) { port.postMessage({type: "error", id, message: "Model not loaded"}); return }
+			loadModel(requested, config.dtype).then(() => {
+				if (!generator) { port.postMessage({type: "error", id, message: modelLoadError()}); return }
 				run()
 			})
 		} else run()
@@ -1385,7 +1432,7 @@ function handleMessage(port, data) {
 		}
 		const requested = data.config?.model || DEFAULT_MODEL_ID
 		if (!generator || currentModelId !== requested) {
-			loadModel(requested).then(() => generator ? run() : port.postMessage({type: "probe-attention-result", id, error: "Model not loaded"}))
+			loadModel(requested, data.config?.dtype).then(() => generator ? run() : port.postMessage({type: "probe-attention-result", id, error: modelLoadError()}))
 		} else run()
 		return
 	}
@@ -1399,7 +1446,7 @@ function handleMessage(port, data) {
 	}
 	if (type === "preload") {
 		if (data.provider === "local") {
-			if (!generator && !loading) loadModel(data.config?.model)
+			if (!generator && !loading) loadModel(data.config?.model, data.config?.dtype)
 			if (generator) port.postMessage({type: "ready"})
 		} else port.postMessage({type: "ready"})
 		return
@@ -1440,7 +1487,7 @@ function handleMessage(port, data) {
 			const requested = config.model || DEFAULT_MODEL_ID
 			if (!generator || currentModelId !== requested) {
 				if (currentModelId !== requested) generator = null
-				loadModel(requested)
+				loadModel(requested, config.dtype)
 					.then(() => {
 						if (!generator)
 							return fail(sessionKey, gen, `Model "${requested}" failed to load (still not ready after load). Try a different local model, or check the device has enough memory.`)

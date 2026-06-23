@@ -997,12 +997,28 @@ function buildPickerInto(host, opts) {
 			onClick: () => fileInput.click(),
 		})
 
+		// Quantization picker for the chosen model id. transformers.js loads
+		// onnx/model_<dtype>.onnx, so a repo that only ships, say, q4 needs this
+		// set explicitly — otherwise the default q4f16 file 404s. "auto" = let the
+		// worker fall back to the catalogue default / q4f16.
+		const modelDtypeSel = el("select", {style: "width:auto"})
+		for (const d of ["auto", ...DTYPES]) modelDtypeSel.append(el("option", {value: d, text: d}))
+		modelDtypeSel.value = cfg.local.dtype || "auto"
+		modelDtypeSel.addEventListener("change", () => {
+			cfg.local.dtype = modelDtypeSel.value === "auto" ? null : modelDtypeSel.value
+		})
+
 		refreshPills()
 		scheduleValidate() // validate a pre-set custom id once on open
 		body.append(
 			el("label", {class: "llmp-label"}, ["Model", c.field]),
 			pills,
 			warn,
+			el("label", {class: "llmp-label"}, [
+				"Quantization",
+				el("div", {class: "llmp-row"}, [modelDtypeSel]),
+			]),
+			el("p", {class: "llmp-note", text: "Which ONNX variant to load (onnx/model_<dtype>.onnx). Auto = the model's default. Set this if a repo only ships a specific one (e.g. q4)."}),
 			el("label", {class: "llmp-label"}, [
 				"Load local ONNX from disk",
 				el("div", {class: "llmp-row"}, [loadBtn, dtypeSel]),
