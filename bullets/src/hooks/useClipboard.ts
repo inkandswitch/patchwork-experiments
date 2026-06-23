@@ -31,6 +31,51 @@ export function useClipboard(deps: {
 }) {
   const { doc, handle } = deps;
 
+  /**
+   * Copies a single bullet and its entire subtree to the clipboard.
+   *
+   * Triggered from the context menu rather than a native copy keystroke, so we
+   * synthesize a copy event via execCommand to write all three formats with the
+   * same fidelity as Cmd+C. If that fails (some browsers refuse execCommand
+   * without a selection) we fall back to the async clipboard API with the plain
+   * and HTML formats.
+   */
+  function copyBullet(id: string) {
+    if (!doc.nodes[id]) return;
+    const trees = [serializeSubtree(doc.nodes, id)];
+
+    const onCopy = (e: ClipboardEvent) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      e.clipboardData!.setData("text/plain", toPlainText(trees));
+      e.clipboardData!.setData("text/html", toHtml(trees));
+      e.clipboardData!.setData(BULLETS_MIME, toInternalJson(trees));
+    };
+
+    document.addEventListener("copy", onCopy, { capture: true, once: true });
+    let copied = false;
+    try {
+      copied = document.execCommand("copy");
+    } catch {
+      copied = false;
+    } finally {
+      document.removeEventListener("copy", onCopy, { capture: true });
+    }
+
+    if (!copied) {
+      try {
+        navigator.clipboard.write([
+          new ClipboardItem({
+            "text/plain": new Blob([toPlainText(trees)], { type: "text/plain" }),
+            "text/html": new Blob([toHtml(trees)], { type: "text/html" }),
+          }),
+        ]);
+      } catch {
+        navigator.clipboard.writeText(toPlainText(trees));
+      }
+    }
+  }
+
   function handleCopyEvent(e: ClipboardEvent) {
     deps.setMirrorClipboardId(null);
 
@@ -175,5 +220,6 @@ export function useClipboard(deps: {
     handleCopyEvent,
     handleCutEvent,
     handlePasteEvent,
+    copyBullet,
   };
 }

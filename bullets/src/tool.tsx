@@ -204,7 +204,7 @@ export function BulletsTool(props: {
   useMigration({ doc, handle: props.handle });
   useTreeRepair({ doc, handle: props.handle, structuralVersion });
 
-  const { handleCopyEvent, handleCutEvent, handlePasteEvent } = useClipboard({
+  const { handleCopyEvent, handleCutEvent, handlePasteEvent, copyBullet } = useClipboard({
     doc,
     handle: props.handle,
     selectedIds,
@@ -764,6 +764,7 @@ export function BulletsTool(props: {
         isCompleted={(id) => !!doc.nodes[id]?.completed}
         onDelete={deleteBullet}
         onComplete={toggleComplete}
+        onCopyBullet={copyBullet}
         onCopyLink={copyLink}
         // DISABLED: mirroring feature temporarily disabled, will be re-enabled later
         // onCopyAsMirror={copyAsMirror}

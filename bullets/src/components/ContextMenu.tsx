@@ -13,6 +13,7 @@ export function ContextMenu(props: {
   isCompleted: (id: string) => boolean;
   onDelete: (id: string, parentId: string, childIndex: number) => void;
   onComplete: (id: string) => void;
+  onCopyBullet: (id: string) => void;
   onCopyLink: (id: string) => void;
   onCopyAsMirror: (id: string) => void;
   onClose: () => void;
@@ -63,6 +64,15 @@ export function ContextMenu(props: {
             Copy as mirror
           </button>
           */}
+          <button
+            class="bullets-context-menu-item"
+            onClick={() => {
+              props.onCopyBullet(menu().bulletId);
+              props.onClose();
+            }}
+          >
+            Copy bullet
+          </button>
           <button
             class="bullets-context-menu-item"
             onClick={() => {
