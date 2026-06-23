@@ -348,7 +348,7 @@ export async function* scoreTokens(text, opts = {}) {
 	handlers.set(id, (msg) => {
 		if (msg.type === "score-progress") push({type: "progress", step: msg.step, total: msg.total})
 		else if (msg.type === "token-scores") {
-			push({type: "done", scores: msg.scores})
+			push({type: "done", scores: msg.scores, spans: msg.spans, decoded: msg.decoded})
 			finished = true
 			handlers.delete(id)
 			wake?.()
@@ -387,24 +387,25 @@ export async function* scoreTokens(text, opts = {}) {
  * Compute per-token attention importance for `text`. Runs a single forward
  * pass on the local model, extracts Key tensors from the KV cache, and
  * computes an attention proxy (K·K^T) averaged across heads and layers.
- * Returns `[{token, importance}]` where importance is 0–1.
- * Only works for local models (others resolve to []).
+ * Returns `{decoded, spans}` where decoded is the tokenizer's round-tripped
+ * text and spans is `[{from, to, importance}]` with positions relative to
+ * `decoded`. Only works for local models (others resolve to null).
  *
  * @param {string} text
  * @param {Object} [opts]  { config?, signal? }
- * @returns {Promise<Array<{token:string, importance:number}>>}
+ * @returns {Promise<{decoded:string, spans:Array}>}
  */
 export async function computeAttention(text, opts = {}) {
 	const cfg = await resolveCfgPrompts(opts.config ?? (await ensureConfig()))
 	const config = callConfig(cfg, opts)
-	if (config.provider !== "local") return []
+	if (config.provider !== "local") return null
 	const conn = getConnection()
 	const id = nextId()
 	return new Promise((resolve, reject) => {
 		handlers.set(id, (msg) => {
 			if (msg.type === "attention-scores") {
 				handlers.delete(id)
-				resolve(msg.scores || [])
+				resolve({decoded: msg.decoded, spans: msg.spans || []})
 			} else if (msg.type === "error") {
 				handlers.delete(id)
 				reject(new Error(msg.message))

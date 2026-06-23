@@ -703,7 +703,6 @@ async function predictLocal(text, config) {
 // alternatives. Powers the attention heatmap: "how surprised was the model
 // by what you actually wrote?"
 async function scoreTokensLocal(gen, text, config) {
-	await ensureModel(config.model)
 	const tokenizer = generator.tokenizer
 	const ids = tokenizer.encode(text)
 	const scores = []
@@ -767,76 +766,85 @@ async function scoreTokensLocal(gen, text, config) {
 		post(gen, {type: "score-progress", step: i, total: ids.length})
 	}
 
-	post(gen, {type: "token-scores", scores})
+	// Build character position spans via cumulative decode
+	const spans = []
+	let prevLen = 0
+	for (let i = 0; i < ids.length && i < scores.length; i++) {
+		const partial = tokenizer.decode(ids.slice(0, i + 1), {skip_special_tokens: true})
+		const from = prevLen
+		const to = partial.length
+		if (to > from) spans.push({from, to, index: i})
+		prevLen = partial.length
+	}
+	const decoded = tokenizer.decode(ids, {skip_special_tokens: true})
+
+	post(gen, {type: "token-scores", scores, spans, decoded})
 }
 
-// Compute per-token attention importance from the KV cache key tensors.
-// One forward pass on the full text → extract Key tensors from the last few
-// layers → for each position, compute how much later positions "attend to" it
-// via scaled dot-product of their key vectors, softmaxed per-position, then
-// averaged across heads and layers. This is K·K^T (not Q·K^T), so it's a
-// proxy, not true attention — but it's instant and uses real model internals.
+// Perturbation-based token importance (erasure-based attribution).
+// For each token, mask it out and measure how much the model's predictions
+// change — tokens whose removal most affects the output are most important.
+// N+1 forward passes (one baseline + one per token). Genuine importance
+// scores, not a proxy.
 async function computeAttentionLocal(gen, text, config) {
-	await ensureModel(config.model)
 	const model = generator.model
 	const tokenizer = generator.tokenizer
 	const inputs = tokenizer(text, {return_tensor: true})
+	const ids = Array.from(inputs.input_ids.data)
+	const seqLen = ids.length
+	if (seqLen < 2) { post(gen, {type: "attention-scores", decoded: text, spans: []}); return }
 
-	broadcast({type: "status", message: "Computing attention…"})
-	const outputs = await model(inputs)
+	const vocab = model.config?.vocab_size || 151936
+	const lastOff = (seqLen - 1) * vocab
 
-	// Count layers in the KV cache
-	let numLayers = 0
-	while (outputs[`present.${numLayers}.key`]) numLayers++
-	if (!numLayers) {
-		post(gen, {type: "attention-scores", scores: []})
-		return
+	// Helper: softmax of logits at the last position
+	function lastProbs(logitsData) {
+		const p = new Float64Array(vocab)
+		let mx = -Infinity
+		for (let j = 0; j < vocab; j++) { const v = logitsData[lastOff + j]; if (v > mx) mx = v }
+		let sm = 0
+		for (let j = 0; j < vocab; j++) { p[j] = Math.exp(logitsData[lastOff + j] - mx); sm += p[j] }
+		for (let j = 0; j < vocab; j++) p[j] /= sm
+		return p
 	}
 
-	// Use the last few layers (higher layers capture more semantic attention)
-	const layersToUse = Math.min(numLayers, 4)
-	const startLayer = numLayers - layersToUse
-
-	const sampleKey = outputs[`present.${startLayer}.key`]
-	const [, numHeads, seqLen, headDim] = sampleKey.dims
-	const sqrtD = Math.sqrt(headDim)
-
-	// Accumulate importance: for each position i, how much do later positions
-	// attend to it? importance[i] = mean over j>i of attn(j→i).
-	const importance = new Float64Array(seqLen)
-
-	for (let l = startLayer; l < numLayers; l++) {
-		const K = outputs[`present.${l}.key`].data
-
-		for (let h = 0; h < numHeads; h++) {
-			const hOff = h * seqLen * headDim
-
-			// For each "query" position j, compute softmax(K[j]·K[:]^T / √d)
-			// over positions 0..j (causal mask), then add each weight to
-			// importance[i] for i in 0..j.
-			for (let j = 1; j < seqLen; j++) {
-				const jOff = hOff + j * headDim
-
-				// Scaled dot products (causal: only i <= j)
-				const dots = new Float64Array(j + 1)
-				let mx = -Infinity
-				for (let i = 0; i <= j; i++) {
-					const iOff = hOff + i * headDim
-					let dot = 0
-					for (let d = 0; d < headDim; d++) dot += K[jOff + d] * K[iOff + d]
-					dots[i] = dot / sqrtD
-					if (dots[i] > mx) mx = dots[i]
-				}
-
-				// Softmax
-				let sm = 0
-				for (let i = 0; i <= j; i++) { dots[i] = Math.exp(dots[i] - mx); sm += dots[i] }
-
-				// Accumulate: how much does position j attend to position i?
-				const w = 1 / (numHeads * layersToUse * (seqLen - 1))
-				for (let i = 0; i <= j; i++) importance[i] += (dots[i] / sm) * w
+	// JS divergence between two probability distributions
+	function jsDiv(p, q) {
+		let d = 0
+		for (let j = 0; j < vocab; j++) {
+			const m = (p[j] + q[j]) / 2
+			if (m > 0) {
+				if (p[j] > 0) d += p[j] * Math.log(p[j] / m)
+				if (q[j] > 0) d += q[j] * Math.log(q[j] / m)
 			}
 		}
+		return d / 2
+	}
+
+	// 1. Baseline forward pass
+	broadcast({type: "status", message: "Saliency: baseline…"})
+	const baseOut = await model(inputs)
+	const baseP = lastProbs(baseOut.logits.data)
+
+	// 2. For each token, replace it with unk/pad and measure divergence
+	const importance = new Float64Array(seqLen)
+	const idsData = new BigInt64Array(inputs.input_ids.data)
+
+	for (let i = 0; i < seqLen; i++) {
+		if (gen.abortController.signal.aborted) break
+		broadcast({type: "status", message: `Saliency: ${i + 1}/${seqLen}…`})
+		post(gen, {type: "score-progress", step: i, total: seqLen})
+
+		// Replace token i with 0 (unk/pad) — semantic erasure
+		const modIds = new BigInt64Array(idsData)
+		modIds[i] = 0n
+		const modInputs = {
+			input_ids: new TF.Tensor("int64", modIds, inputs.input_ids.dims),
+			attention_mask: inputs.attention_mask,
+		}
+		const modOut = await model(modInputs)
+		const modP = lastProbs(modOut.logits.data)
+		importance[i] = jsDiv(baseP, modP)
 	}
 
 	// Normalize to [0, 1]
@@ -847,13 +855,21 @@ async function computeAttentionLocal(gen, text, config) {
 	}
 	const range = hi - lo || 1
 
-	const ids = Array.from(inputs.input_ids.data)
-	const scores = ids.map((id, i) => ({
-		token: tokenizer.decode([id]),
-		importance: (importance[i] - lo) / range,
-	}))
+	// Build spans via cumulative decode
+	const spans = []
+	let prevLen = 0
+	for (let i = 0; i < ids.length; i++) {
+		const partial = tokenizer.decode(ids.slice(0, i + 1), {skip_special_tokens: true})
+		const from = prevLen
+		const to = partial.length
+		if (to > from) {
+			spans.push({from, to, importance: (importance[i] - lo) / range})
+		}
+		prevLen = partial.length
+	}
+	const decoded = tokenizer.decode(ids, {skip_special_tokens: true})
 
-	post(gen, {type: "attention-scores", scores})
+	post(gen, {type: "attention-scores", decoded, spans})
 	broadcast({type: "status", message: ""})
 }
 
@@ -1314,10 +1330,15 @@ function handleMessage(port, data) {
 			const requested = config.model || DEFAULT_MODEL_ID
 			if (!generator || currentModelId !== requested) {
 				if (currentModelId !== requested) generator = null
-				loadModel(requested).then(() => {
-					if (!generator) return fail(sessionKey, gen, "Model not loaded")
-					runGeneration(sessionKey, gen, provider, input, config)
-				})
+				loadModel(requested)
+					.then(() => {
+						if (!generator)
+							return fail(sessionKey, gen, `Model "${requested}" failed to load (still not ready after load). Try a different local model, or check the device has enough memory.`)
+						runGeneration(sessionKey, gen, provider, input, config)
+					})
+					.catch((e) =>
+						fail(sessionKey, gen, `Couldn't load local model "${requested}": ${e?.message || e}`),
+					)
 			} else runGeneration(sessionKey, gen, provider, input, config)
 		} else {
 			runGeneration(sessionKey, gen, provider, input, config)

@@ -212,10 +212,29 @@ export function parseToolCalls(text) {
 		} catch {}
 	}
 	if (calls.length) return calls
-	for (const b of text.match(/\{[\s\S]*?"(?:name|tool)"[\s\S]*?\}/g) || []) {
-		try {
-			push(JSON.parse(b))
-		} catch {}
+	// Bare JSON objects — brace-depth-aware scan so nested objects (e.g.
+	// "arguments": { ... }) are captured whole instead of truncated at the
+	// first inner `}`.
+	let depth = 0, start = -1, inStr = false, esc = false
+	for (let i = 0; i < text.length; i++) {
+		const ch = text[i]
+		if (esc) { esc = false; continue }
+		if (ch === '\\' && inStr) { esc = true; continue }
+		if (ch === '"') { inStr = !inStr; continue }
+		if (inStr) continue
+		if (ch === '{') {
+			if (depth === 0) start = i
+			depth++
+		} else if (ch === '}') {
+			depth--
+			if (depth === 0 && start >= 0) {
+				const block = text.slice(start, i + 1)
+				if (/"(?:name|tool)"/.test(block)) {
+					try { push(JSON.parse(block)) } catch {}
+				}
+				start = -1
+			}
+		}
 	}
 	return calls
 }

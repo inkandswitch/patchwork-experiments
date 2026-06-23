@@ -1639,8 +1639,12 @@ export function popup(opts = {}) {
 		ctl?.revert()
 		close()
 	}
+	const onEsc = (e) => {
+		if (e.key === "Escape") { e.stopPropagation(); close() }
+	}
 	frame.addEventListener("toggle", (e) => {
-		if (e.newState === "closed") finalize()
+		if (e.newState === "open") window.addEventListener("keydown", onEsc)
+		else { window.removeEventListener("keydown", onEsc); finalize() }
 	})
 	const start = () => {
 		const inner = el("div", {class: "llmp-inner"})
