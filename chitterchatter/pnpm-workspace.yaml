@@ -1,0 +1,5 @@
+allowBuilds:
+  cbor-extract: set this to true or false
+  esbuild: set this to true or false
+minimumReleaseAgeExclude:
+  - '@chee/patchwork-llm@0.1.0'

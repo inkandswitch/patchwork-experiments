@@ -1,14 +1,35 @@
 # Chat Tool
 
-A patchwork chat tool with Discord/IRC-style layout, built as a single vanilla JS file (`chat.js`) with no framework dependencies.
+A patchwork chat tool with Discord/IRC-style layout, built with Solid.js + TypeScript.
 
 ## Architecture
 
-- **Pure DOM** — no React/Solid/Svelte, just `document.createElement` and manual rendering
-- **Single file** — everything (styles, GIF encoder, emoji data, UI, datatype) lives in `chat.js`
-- **Re-renders fully** on every `handle.on("change")` — rebuilds the entire messages DOM each time
+- **Solid.js + JSX** — full reactive UI with signals, contexts, and fine-grained updates
+- **Bundled** — `src/` compiled via Vite to `dist/index.js`
 - **Ephemeral messaging** for presence/typing via `handle.broadcast()` / `handle.on("ephemeral-message")`
-- **No build step** — `package.json` has no build script, `main` points directly to `chat.js`
+- **Build:** `pnpm build` then `pushwork sync` after any change
+
+### Plugin registration (`src/index.ts`)
+
+Exports a `plugins` array with one `patchwork:datatype` and one `patchwork:tool`:
+
+```js
+export const plugins = [
+  { type: "patchwork:datatype", id: "chat", name: "Chat", icon: "MessageCircle",
+    async load() { return (await import("./datatype")).ChatDatatype } },
+  { type: "patchwork:tool", id: "chat", name: "Chat", icon: "MessageCircle",
+    supportedDatatypes: ["chat"],
+    async load() { return (await import("./tool")).ChatTool } },
+]
+```
+
+### Render contract (`src/tool.tsx`)
+
+`ChatTool(handle, element)` mounts a Solid root and returns `dispose` as cleanup.
+
+### Datatype contract (`src/datatype.ts`)
+
+Implements `init(doc)`, `getTitle(doc)`, `setTitle(doc, title)`.
 
 ## Document Schema
 
@@ -152,6 +173,75 @@ The tool uses `e.preventDefault()` + `e.stopPropagation()` on critical button cl
 
 All UI icons are inline SVGs (defined in `SVG_ICONS` object) — no emoji used for UI chrome. The emoji list itself (`EMOJI_LIST`) is only used as data for the reaction picker.
 
-## Sync
+## Build & Sync
 
-Run `pushwork sync` from this directory to sync to automerge. There is no build step.
+After any change: `cd` into this directory, run `pnpm build`, then `pushwork sync`.
+
+## Patchwork API patterns
+
+### Globals
+
+```js
+window.repo                  // the automerge Repo
+window.accountDocHandle      // current user's account DocHandle
+window.hive                  // tool/datatype registry
+```
+
+### automerge-repo (current API)
+
+```js
+const handle = await repo.find(url)        // returns Promise<DocHandle>, already ready
+const fresh  = await repo.create2(initial) // create a new doc (repo.create is deprecated)
+```
+
+Do NOT use the old pattern: `const handle = repo.find(url); await handle.whenReady()`.
+
+### Reading & writing
+
+```js
+const doc = handle.doc()             // synchronous snapshot
+handle.change(d => { d.foo = 1 })    // ALL writes go through change()
+handle.on("change", render)          // fires on local + remote edits
+```
+
+### Automerge gotchas
+
+- **No `undefined`** — use `delete d.prop` inside `change()` or set to `null`.
+- Always mutate inside `handle.change(d => …)`. Never mutate `handle.doc()` directly.
+
+### Custom DOM events
+
+```js
+import { openDocument } from "@inkandswitch/patchwork-elements"
+openDocument(element, url, toolId)   // navigate Patchwork to another document
+```
+
+### Ephemeral messaging
+
+```js
+handle.broadcast({ type: "typing", name })   // to all peers with this doc open
+handle.on("ephemeral-message", payload => {
+  const msg = payload.message                 // the wrapped payload
+})
+```
+
+### Files & assets
+
+```js
+import { automergeUrlToServiceWorkerUrl } from "@inkandswitch/patchwork-filesystem"
+// converts automerge URL to a URL usable as <img src> / <audio src>
+```
+
+### Importmap (bare imports, no CDN needed)
+
+Available via Patchwork's importmap: `@automerge/automerge`, `@automerge/automerge-repo`,
+`@inkandswitch/patchwork-elements`, `@inkandswitch/patchwork-filesystem`,
+`@inkandswitch/patchwork-plugins`, `@codemirror/state`, `@codemirror/view`,
+`@codemirror/language`, `solid-js` and subpaths.
+
+## Gotchas
+
+- **Never `stopPropagation()` on `click`.** Solid delegates `click` to `document`; stopping it kills `onClick`. Only stop propagation on `pointerdown`/`pointerup`.
+- **Always return a cleanup function** from the render function — remove listeners, dispose roots, cancel intervals.
+- **Pin id === tool id.** Mismatched ids mean the pin won't resolve to the tool.
+- **No shadow DOM.** Tools render into the light DOM. Namespace CSS classes.
