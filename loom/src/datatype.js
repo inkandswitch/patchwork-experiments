@@ -2,6 +2,7 @@ export const LoomDatatype = {
 	init(doc) {
 		doc.title = "Loom"
 		doc.content = ""
+		doc.config = {}
 	},
 	getTitle(doc) {
 		return doc.title || "Loom"
