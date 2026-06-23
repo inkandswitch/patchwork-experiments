@@ -1,5 +1,6 @@
 import type { Arr, Fun, Obj } from './types';
 import { isObj } from './types';
+import { lmHeapHasOwn } from './lmStorage';
 
 export const OBJECT_PROTOTYPE_TO_STRING_FUN_ID = 'object-prototype-toString';
 
@@ -18,7 +19,7 @@ export function ensureObjectPrototypeDefaults(
     objectTable[OBJECT_PROTOTYPE_TO_STRING_FUN_ID] = objectPrototypeToStringFun;
   }
   const proto = objectTable['object-prototype'];
-  if (isObj(proto) && !Object.hasOwn(proto, '@toString')) {
+  if (isObj(proto) && !lmHeapHasOwn(proto, '@toString')) {
     proto['@toString'] = { $type: 'ref', $id: OBJECT_PROTOTYPE_TO_STRING_FUN_ID };
   }
 }

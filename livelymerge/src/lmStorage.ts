@@ -1,3 +1,10 @@
+/** Plain keys that Automerge materializations may spuriously expose — never delegate on these. */
+const LM_INTRINSIC_PLAIN_KEYS = new Set(['toString', 'valueOf', 'constructor', '__proto__']);
+
+function lmIsDelegatablePlainKey(plain: string): boolean {
+  return !plain.startsWith('$') && !LM_INTRINSIC_PLAIN_KEYS.has(plain);
+}
+
 export function lmIsReservedKey(prop: PropertyKey): boolean {
   return typeof prop === 'string' && prop.startsWith('$');
 }
@@ -7,12 +14,25 @@ export function lmUserKey(prop: PropertyKey): string {
   return plain.startsWith('@') ? plain : '@' + plain;
 }
 
+export function lmHeapHasOwn(entry: Record<string, unknown>, key: string): boolean {
+  if (Object.hasOwn(entry, key)) return true;
+  // Automerge materializations may expose @-prefixed keys via `in` but not Object.hasOwn.
+  // Never use `in` for plain names like "toString" — that inherits from Object.prototype.
+  if (key.startsWith('@') && key in entry) return true;
+  return false;
+}
+
+export function lmHeapGet(entry: Record<string, unknown>, key: string): unknown {
+  if (lmHeapHasOwn(entry, key)) return entry[key];
+  return undefined;
+}
+
 export function lmGetOwn(entry: Record<string, any>, prop: PropertyKey): unknown {
   if (typeof prop === 'symbol') return undefined;
   const userKey = lmUserKey(prop);
-  if (Object.hasOwn(entry, userKey)) return entry[userKey];
+  if (lmHeapHasOwn(entry, userKey)) return entry[userKey];
   const plain = String(prop);
-  if (Object.hasOwn(entry, plain)) return entry[plain];
+  if (lmIsDelegatablePlainKey(plain) && Object.hasOwn(entry, plain)) return entry[plain];
   return undefined;
 }
 
@@ -28,7 +48,7 @@ export function lmSetOwn(
 }
 
 export function lmHasOwnUser(entry: Record<string, any>, prop: string): boolean {
-  return Object.hasOwn(entry, lmUserKey(prop)) || Object.hasOwn(entry, prop);
+  return lmHeapHasOwn(entry, lmUserKey(prop)) || (lmIsDelegatablePlainKey(prop) && Object.hasOwn(entry, prop));
 }
 
 export interface LmHeapEntry {
@@ -67,16 +87,72 @@ export function lmGetWithDelegation(
   const plain = String(prop);
   let current: (LmProtoEntry & Record<string, any>) | undefined = entry;
   while (current) {
-    if (Object.hasOwn(current, userKey)) return deserialize(current[userKey]);
-    if (!plain.startsWith('$') && Object.hasOwn(current, plain)) return deserialize(current[plain]);
+    if (lmHeapHasOwn(current, userKey)) return deserialize(lmHeapGet(current, userKey));
+    if (lmIsDelegatablePlainKey(plain) && Object.hasOwn(current, plain)) {
+      return deserialize(current[plain]);
+    }
     if (current.$protoId) current = lookup(current.$protoId);
     else break;
   }
   return undefined;
 }
 
+export function lmHeapPropertyNames(entry: Record<string, unknown>): string[] {
+  const keys = new Set<string>(Object.getOwnPropertyNames(entry));
+  for (const p in entry) {
+    if (p.startsWith('@') && lmHeapHasOwn(entry, p)) keys.add(p);
+  }
+  return [...keys];
+}
+
 export function lmOwnUserPropertyKeys(entry: Record<string, any>): string[] {
-  return Object.getOwnPropertyNames(entry)
+  return lmHeapPropertyNames(entry)
     .filter((p) => p.startsWith('@'))
     .map((p) => p.slice(1));
+}
+
+export function lmCallToString(
+  entry: LmProtoEntry & Record<string, unknown> & LmHeapEntry,
+  receiver: unknown,
+  lookup: LmHeapLookup,
+  deserialize: (value: unknown) => unknown,
+): string {
+  const method = lmGetWithDelegation(entry, 'toString', lookup, deserialize);
+  if (method !== undefined) {
+    return Reflect.apply(method as (...args: unknown[]) => string, receiver, []);
+  }
+  return `[obj ${entry.$id}]`;
+}
+
+export interface LmFormatEvalResultOpts {
+  isProxy: (value: unknown) => boolean;
+  isObj: (value: unknown) => value is LmProtoEntry & Record<string, unknown> & LmHeapEntry;
+  liveHeapObj: (entry: LmProtoEntry & Record<string, unknown> & LmHeapEntry) => LmProtoEntry & Record<string, unknown> & LmHeapEntry;
+  lookupHeapProto: LmHeapLookup;
+  deserialize: (value: unknown) => unknown;
+}
+
+/** Format a print-it / eval result for display. Handles proxies and raw heap entries. */
+export function lmFormatEvalResult(value: unknown, opts: LmFormatEvalResultOpts): string {
+  if (value === undefined) return 'undefined';
+  if (value === null) return 'null';
+
+  const proxyEntry =
+    opts.isProxy(value) && opts.isObj((value as { $unwrapped: unknown }).$unwrapped)
+      ? opts.liveHeapObj((value as { $unwrapped: LmProtoEntry & Record<string, unknown> & LmHeapEntry }).$unwrapped)
+      : null;
+  const rawEntry = !proxyEntry && opts.isObj(value) ? opts.liveHeapObj(value) : null;
+  const objEntry = proxyEntry ?? rawEntry;
+
+  if (objEntry) {
+    const receiver = proxyEntry ? value : opts.deserialize(objEntry);
+    return lmCallToString(objEntry, receiver, opts.lookupHeapProto, opts.deserialize);
+  }
+
+  try {
+    if (opts.isProxy(value)) return (value as { toString(): string }).toString();
+    return '' + value;
+  } catch {
+    return `[${typeof value}]`;
+  }
 }

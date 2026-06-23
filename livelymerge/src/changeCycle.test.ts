@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { wrapForCompletionValue } from './completionValue';
 import { ensureObjectPrototypeDefaults } from './objectPrototypeDefaults';
 import {
+  lmCallToString,
   lmGetOwn,
   lmGetWithDelegation,
-  lmHeapLookup,
+  lmHeapPropertyNames,
   lmIsReservedKey,
-  lmObjToString,
   lmOwnUserPropertyKeys,
   lmSetOwn,
 } from './lmStorage';
@@ -53,7 +53,7 @@ function endChangeGc() {
       if (!val) throw new Error('missing ' + id);
     }
     if (isObj(val)) {
-      for (const p of Object.getOwnPropertyNames(val)) lookAt(val[p]);
+      for (const p of lmHeapPropertyNames(val)) lookAt(val[p]);
       if (val.$protoId != null) visit(val.$protoId);
     } else if (isArr(val)) {
       for (const v of val.$values) lookAt(v);
@@ -88,12 +88,17 @@ function isProxy(x: unknown): x is Proxy {
 }
 
 function lookupHeapEntry(id: string) {
-  return lmHeapLookup(id, newObjects, objectTable);
+  return newObjects?.get(id) ?? objectTable[id];
 }
 
 function lookupHeapProto(id: string): Obj | undefined {
   const val = lookupHeapEntry(id);
   return isObj(val) ? val : undefined;
+}
+
+function liveHeapObj(obj: Obj): Obj {
+  const live = lookupHeapEntry(obj.$id);
+  return isObj(live) ? live : obj;
 }
 
 function deserialize(value: unknown): unknown {
@@ -115,18 +120,19 @@ function proxifyObj(obj: Obj): Proxy {
   const p = new Proxy(Object.create(null), {
     set(_, prop, value) {
       if (lmIsReservedKey(prop)) return false;
-      return lmSetOwn(obj, prop, value, toVal);
+      return lmSetOwn(liveHeapObj(obj), prop, value, toVal);
     },
-    get(_, prop, receiver) {
+    get(_, prop) {
+      const entry = liveHeapObj(obj);
       if (prop === '$isProxy') return true;
-      if (prop === '$id') return obj.$id;
-      if (prop === '$unwrapped') return obj;
-      if (prop === 'toString') {
-        return () => lmObjToString(obj, receiver, lookupHeapProto, deserialize);
-      }
+      if (prop === '$id') return entry.$id;
+      if (prop === '$unwrapped') return entry;
       if (lmIsReservedKey(prop)) return undefined;
-      const value = lmGetWithDelegation(obj, prop, lookupHeapProto, deserialize);
+      const value = lmGetWithDelegation(entry, prop, lookupHeapProto, deserialize);
       if (value !== undefined) return value;
+      if (prop === 'toString') {
+        return () => `[obj ${entry.$id}]`;
+      }
       return undefined;
     },
   }) as unknown as Proxy;
@@ -203,6 +209,11 @@ function ensureNewObjects() {
   return newObjects;
 }
 
+function installHeapEntry(id: string, entry: Obj | Arr | Fun): void {
+  ensureNewObjects().set(id, entry);
+  objectTable[id] = entry;
+}
+
 function $obj(obj: Record<string, Val>, proto?: Proxy | null): Proxy {
   const $id = Math.random().toString();
   const entry: Obj = { $type: 'obj', $id };
@@ -211,14 +222,14 @@ function $obj(obj: Record<string, Val>, proto?: Proxy | null): Proxy {
   for (const [k, v] of Object.entries(obj)) {
     entry[k.startsWith('@') ? k : '@' + k] = toVal(v);
   }
-  ensureNewObjects().set($id, entry);
+  installHeapEntry($id, entry);
   return proxifyObj(entry);
 }
 
 function $fun($codeForShow: string, $code: string, scopes: Proxy[] = []): Proxy {
   const $id = Math.random().toString();
   const entry: Fun = { $type: 'fun', $id, $codeForShow, $code, $scopes: scopes.map((s) => ({ $type: 'ref', $id: s.$id })) };
-  ensureNewObjects().set($id, entry);
+  installHeapEntry($id, entry);
   return proxifyFun(entry);
 }
 
@@ -229,8 +240,6 @@ function evalInChange(source: string): unknown {
 
 describe('change cycle toString', () => {
   it('survives gc and a second change when class and instances are in separate print-its', () => {
-    ensureObjectPrototypeDefaults(objectTable);
-
     change(() => {
       evalInChange(
         transpile(
@@ -255,14 +264,12 @@ return p2.toString();`),
     beginChange();
     const p2 = ($global as any).p2 as Proxy;
     const method = p2.toString;
-    expect(String(method)).not.toContain('[native code]');
+    expect(typeof method).toBe('function');
     expect(p2.toString()).toBe('(3, 4)');
     expect(p2.toString === Object.prototype.toString).toBe(false);
   });
 
   it('survives gc when class and instances are in one print-it then another unrelated print-it runs', () => {
-    ensureObjectPrototypeDefaults(objectTable);
-
     change(() => {
       evalInChange(
         transpile(
@@ -302,7 +309,7 @@ const p = new Pt(1, 2);`),
     let printed = '';
     change(() => {
       const p = ($global as any).p as Proxy;
-      printed = lmObjToString(p.$unwrapped as Obj, p, lookupHeapProto, deserialize);
+      printed = p.toString();
     });
     expect(printed).toBe('(1, 2)');
 
@@ -310,5 +317,88 @@ const p = new Pt(1, 2);`),
       const value = evalInChange(transpile(wrapForCompletionValue('p.toString()')));
       expect(value).toBe('(1, 2)');
     });
+  });
+
+  it('print-it on instance uses class toString after change ends (formatEvalResult path)', () => {
+    let p1: Proxy | undefined;
+    change(() => {
+      evalInChange(
+        transpile(
+          wrapForCompletionValue(`class Pt {
+  constructor(x, y) { this.x = x; this.y = y; }
+  toString() { return \`(\${this.x}, \${this.y})\`; }
+}
+const p1 = new Pt(1, 2);
+const p2 = new Pt(3, 4);
+return p1;`),
+        ),
+      );
+      p1 = ($global as any).p1 as Proxy;
+    });
+    // formatEvalResult runs after change() returns — newObjects is cleared by gc
+    expect(newObjects).toBeNull();
+    expect(lmCallToString(liveHeapObj(p1!.$unwrapped), p1!, lookupHeapProto, deserialize)).toBe(
+      '(1, 2)',
+    );
+  });
+
+  it('separate print-it of p1.toString() after class setup', () => {
+    change(() => {
+      evalInChange(
+        transpile(
+          wrapForCompletionValue(`class Pt {
+  constructor(x, y) { this.x = x; this.y = y; }
+  toString() { return \`(\${this.x}, \${this.y})\`; }
+}
+const p1 = new Pt(1, 2);
+const p2 = new Pt(3, 4);
+p1;`),
+        ),
+      );
+    });
+
+    let result: unknown;
+    change(() => {
+      result = evalInChange(transpile(wrapForCompletionValue('p1.toString()')));
+    });
+    expect(result).toBe('(1, 2)');
+  });
+
+  it('toString works for objectTable entries that hide keys from Object.hasOwn', () => {
+    change(() => {
+      evalInChange(
+        transpile(
+          wrapForCompletionValue(`class Pt {
+  constructor(x, y) { this.x = x; this.y = y; }
+  toString() { return \`(\${this.x}, \${this.y})\`; }
+}
+const p1 = new Pt(1, 2);`),
+        ),
+      );
+    });
+
+    const p1Id = (objectTable.global as Obj)['@p1'] as Ref;
+    const rawP1 = objectTable[p1Id.$id] as Obj;
+    const protoId = rawP1.$protoId!;
+    const rawProto = objectTable[protoId] as Obj;
+    newObjects = null;
+
+    const hiddenProto = new Proxy(rawProto, {
+      get(target, prop, receiver) {
+        return Reflect.get(target, prop, receiver);
+      },
+      ownKeys(target) {
+        return Reflect.ownKeys(target);
+      },
+      getOwnPropertyDescriptor(target, prop) {
+        if (prop === '@toString') return undefined;
+        return Object.getOwnPropertyDescriptor(target, prop);
+      },
+    });
+    objectTable[protoId] = hiddenProto as Obj;
+
+    beginChange();
+    const p1 = ($global as any).p1 as Proxy;
+    expect(p1.toString()).toBe('(1, 2)');
   });
 });

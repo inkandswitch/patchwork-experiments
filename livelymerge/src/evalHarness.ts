@@ -29,6 +29,11 @@ function ensureNewObjects() {
   return newObjects;
 }
 
+function installHeapEntry(id: string, entry: Obj | Fun): void {
+  ensureNewObjects().set(id, entry);
+  objectTable[id] = entry;
+}
+
 function ensureProxies() {
   if (!proxies) proxies = new Map();
   return proxies;
@@ -65,26 +70,35 @@ function lookupHeapProto(id: string): Obj | undefined {
   return isObj(val) ? val : undefined;
 }
 
+function liveHeapObj(obj: Obj): Obj {
+  const live = newObjects?.get(obj.$id) ?? objectTable[obj.$id];
+  return isObj(live) ? live : obj;
+}
+
 function proxifyObj(obj: Obj): TestProxy {
   const existing = ensureProxies().get(obj.$id);
   if (existing) return existing;
 
-  const p = new Proxy(obj, {
+  const p = new Proxy(Object.create(null), {
     set(_, prop, value) {
       if (lmIsReservedKey(prop)) return false;
-      return lmSetOwn(obj, prop, value, toVal);
+      return lmSetOwn(liveHeapObj(obj), prop, value, toVal);
     },
     get(_, prop) {
+      const entry = liveHeapObj(obj);
       if (prop === '$isProxy') return true;
-      if (prop === '$id') return obj.$id;
-      if (prop === '$unwrapped') return obj;
+      if (prop === '$id') return entry.$id;
+      if (prop === '$unwrapped') return entry;
       if (prop === '__proto__') {
-        if (!obj.$protoId) return null;
-        const entry = lookupHeapProto(obj.$protoId);
-        return entry ? deserialize(entry) : null;
+        if (!entry.$protoId) return null;
+        const protoEntry = lookupHeapProto(entry.$protoId);
+        return protoEntry ? deserialize(protoEntry) : null;
       }
-      const value = lmGetWithDelegation(obj, prop, lookupHeapProto, deserialize);
+      const value = lmGetWithDelegation(entry, prop, lookupHeapProto, deserialize);
       if (value !== undefined) return value;
+      if (prop === 'toString') {
+        return () => `[obj ${entry.$id}]`;
+      }
       return undefined;
     },
   }) as unknown as TestProxy;
@@ -176,7 +190,7 @@ export function $obj(obj: Record<string, Val>, proto?: TestProxy | null): TestPr
   for (const [k, v] of Object.entries(obj)) {
     entry[k.startsWith('@') ? k : '@' + k] = toVal(v);
   }
-  ensureNewObjects().set($id, entry);
+  installHeapEntry($id, entry);
   return proxifyObj(entry);
 }
 
@@ -196,7 +210,7 @@ export function $fun($codeForShow: string, $code: string, scopes: TestProxy[] = 
     $code,
     $scopes: scopes.map(toRef),
   };
-  ensureNewObjects().set($id, entry);
+  installHeapEntry($id, entry);
   return proxifyFun(entry);
 }
 
