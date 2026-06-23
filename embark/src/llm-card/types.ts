@@ -90,6 +90,7 @@ export type LoopApi = {
   repo: Repo;
   subscribe: typeof subscribe;
   accept: typeof accept;
+  loadSkill: (name: string) => string;
   writeFile: (path: string, content: string) => Promise<void>;
   readFile: (path: string) => Promise<string | undefined>;
   listFiles: () => Promise<string[]>;

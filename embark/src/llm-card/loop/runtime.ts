@@ -2,6 +2,7 @@ import { accept, subscribe } from "@inkandswitch/patchwork-providers";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import { listFiles, readFile, writeFile } from "../folder";
+import { loadSkill } from "./skills";
 import type { CapturedConsole, LoopApi } from "../types";
 
 // Thrown by `giveUp(reason)` inside a generation script to abort the run with a
@@ -29,6 +30,7 @@ export function createLoopApi(
     repo,
     subscribe,
     accept,
+    loadSkill,
     writeFile: (path, content) => writeFile(repo, folderUrl, path, content),
     readFile: (path) => readFile(repo, folderUrl, path),
     listFiles: () => listFiles(repo, folderUrl),

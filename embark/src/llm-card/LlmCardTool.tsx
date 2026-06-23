@@ -1,6 +1,6 @@
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
-import { For, Show, createEffect, createSignal, onCleanup } from "solid-js";
+import { For, Show, createEffect, createSignal, on, onCleanup } from "solid-js";
 import { render } from "solid-js/web";
 import { RepoContext, useDocument } from "solid-automerge";
 import { loadEffect } from "./effect-loader";
@@ -78,6 +78,23 @@ function LlmCard(props: { handle: DocHandle<LlmCardDoc>; element: ToolElement })
       void runEffect(current.folderUrl);
     }
   });
+
+  // Turning the card to its back suspends a live effect; turning it back to the
+  // front resumes it. `defer` skips the initial run — bootstrap owns the first
+  // run, and `on` keeps the status/doc reads here non-reactive.
+  createEffect(
+    on(
+      flipped,
+      (isFlipped) => {
+        if (status() !== "active") return;
+        const folderUrl = doc()?.folderUrl;
+        if (!folderUrl) return;
+        if (isFlipped) disposeEffect();
+        else void runEffect(folderUrl);
+      },
+      { defer: true },
+    ),
+  );
 
   onCleanup(() => {
     abort?.abort();
@@ -179,11 +196,14 @@ function LlmCard(props: { handle: DocHandle<LlmCardDoc>; element: ToolElement })
     try {
       const run = await loadEffect(props.element.repo, folderUrl, entry);
       disposeEffect();
-      effectCleanup = run(props.element);
       props.handle.change((card) => {
         card.status = "active";
         delete card.failure;
       });
+      // If the card was turned to its back while the module loaded, keep it
+      // active but leave the effect suspended until it returns to the front.
+      if (flipped()) return;
+      effectCleanup = run(props.element);
     } catch (err) {
       props.handle.change((card) => {
         card.status = "failed";
