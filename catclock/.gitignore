@@ -1,0 +1,8 @@
+.DS_Store
+UserInterfaceState.xcuserstate
+xcuserdata
+build
+DerivedData
+xclock
+tags
+compile_commands.json
