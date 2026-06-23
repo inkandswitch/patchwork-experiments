@@ -18,7 +18,7 @@ export const LivelymergeDatatype: DatatypeImplementation<LivelymergeDoc> = {
       }, // object prototype (top of the delegation chain)
       "global": {
         $type: "obj",
-        $id: "w",
+        $id: "global",
         $protoId: "object-prototype",
         $timeoutFns: { $type: "ref", $id: "timeout-fns" },
         $intervalFns: { $type: "ref", $id: "interval-fns" }

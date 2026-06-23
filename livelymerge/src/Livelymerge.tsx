@@ -72,7 +72,7 @@ function ensureHeapRoots(): void {
   if (!doc.objectTable['global']) {
     doc.objectTable['global'] = {
       $type: 'obj',
-      $id: 'w',
+      $id: 'global',
       $protoId: 'object-prototype',
       $timeoutFns: { $type: 'ref', $id: 'timeout-fns' },
       $intervalFns: { $type: 'ref', $id: 'interval-fns' },
@@ -591,7 +591,9 @@ function constructorName(fun: Fun): string {
 function rejectClassConstructorCallWithoutNew(fun: Fun, thisArg: unknown): void {
   if (!isConstructibleFun(fun)) return;
   if (isProxy(thisArg) && thisArg.$id === $global?.$id) {
-    throw new TypeError(`Class constructor ${constructorName(fun)} cannot be invoked without 'new'`);
+    throw new TypeError(
+      `Class constructor ${constructorName(fun)} cannot be invoked without 'new'`,
+    );
   }
 }
 
