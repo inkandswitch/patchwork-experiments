@@ -1,0 +1,25 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# Model weights, adapters, and training outputs (large, regenerable)
+models/
+adapters/
+adapters-*/
+adapters[0-9]*/
+out/
+exports/
+a/
+
+# Cloned upstream repo (not part of this project)
+transformers.js/
+
+# Generated datasets (regenerable via gen_*.py / prepare.py)
+*.jsonl
+data/
+
+# OS
+.DS_Store
