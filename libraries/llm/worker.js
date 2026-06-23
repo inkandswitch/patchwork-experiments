@@ -313,6 +313,18 @@ function samplingExtras(config) {
 	return p
 }
 
+// Render a chat conversation to a plain ChatML prompt string. Fallback for
+// local models (base / coder checkpoints) whose tokenizer ships no
+// `chat_template` — without this, transformers.js throws inside the pipeline.
+function messagesToPrompt(messages) {
+	let out = ""
+	for (const m of messages) {
+		const content = typeof m.content === "string" ? m.content : ""
+		out += `<|im_start|>${m.role || "user"}\n${content}<|im_end|>\n`
+	}
+	return out + "<|im_start|>assistant\n"
+}
+
 async function doGenerateLocal(gen, input, config) {
 	const tokenizer = generator.tokenizer
 	const isText = typeof input === "string"
@@ -320,14 +332,26 @@ async function doGenerateLocal(gen, input, config) {
 	const topk = config.topk | 0
 	const maxNewTokens = config.maxNewTokens ?? 2048
 
+	// The text-generation pipeline applies the chat template itself when handed a
+	// messages array. If the model has no template, do it ourselves and pass a
+	// plain string instead (a string input skips templating entirely).
+	const genInput = !isText && !tokenizer.chat_template ? messagesToPrompt(input) : input
+
+	// On the no-template fallback a base model may not stop at the turn boundary
+	// and keeps going, role-playing further <|im_start|> turns — which surface as
+	// repeated text. For such models these aren't special tokens, so they stream
+	// as literal text and we can cut the output there.
+	const stopMarkers = genInput !== input ? ["<|im_end|>", "<|im_start|>"] : []
+
 	let promptTokens = 0
 	try {
-		const prompt = isText
-			? input
-			: tokenizer.apply_chat_template(input, {
-					tokenize: false,
-					add_generation_prompt: true,
-			  })
+		const prompt =
+			typeof genInput === "string"
+				? genInput
+				: tokenizer.apply_chat_template(genInput, {
+						tokenize: false,
+						add_generation_prompt: true,
+				  })
 		promptTokens = tokenizer.encode(prompt).length
 	} catch {}
 
@@ -335,14 +359,28 @@ async function doGenerateLocal(gen, input, config) {
 	let tFirst = 0
 	let full = ""
 
+	let stopped = false
+	let posted = 0
 	const streamer = new TF.TextStreamer(tokenizer, {
 		skip_prompt: true,
 		skip_special_tokens: true,
 		callback_function: (text) => {
+			if (stopped) return
 			if (!tFirst) tFirst = performance.now()
 			full += text
+			let cut = -1
+			for (const m of stopMarkers) {
+				const i = full.indexOf(m)
+				if (i !== -1 && (cut === -1 || i < cut)) cut = i
+			}
+			if (cut !== -1) {
+				full = full.slice(0, cut)
+				stopped = true
+			}
 			gen.fullText = full
-			post(gen, {type: "token", delta: text, text: full})
+			const delta = full.slice(posted)
+			posted = full.length
+			if (delta) post(gen, {type: "token", delta, text: full})
 		},
 	})
 
@@ -380,7 +418,7 @@ async function doGenerateLocal(gen, input, config) {
 			  ]
 			: undefined
 
-	const output = await generator(input, {
+	const output = await generator(genInput, {
 		max_new_tokens: maxNewTokens,
 		do_sample: temperature > 0,
 		temperature,
@@ -1283,6 +1321,51 @@ async function runGeneration(sessionKey, gen, provider, input, config) {
 	}
 }
 
+// Extract per-position features for training a LoRA adapter ON the head: ONE
+// forward pass → the final hidden state h and the base logits at EVERY position,
+// plus token ids. Requires a model exported with a `last_hidden_state` output
+// (glomper-tuning/onnx_hidden.py); otherwise reports {supported:false}.
+async function extractFeaturesLocal(gen, text) {
+	const model = generator.model
+	const tokenizer = generator.tokenizer
+	const inputs = tokenizer(text || " ", {return_tensor: true})
+	const ids = Array.from(inputs.input_ids.data, Number)
+	const seq = ids.length
+
+	broadcast({type: "status", message: "Extracting features (forward pass)…"})
+	const outputs = await model(inputs)
+	const hs = outputs.last_hidden_state
+	const lg = outputs.logits
+	if (!hs || !lg) {
+		post(gen, {
+			type: "features",
+			supported: false,
+			outputKeys: Object.keys(outputs || {}),
+			message: `${currentModelId} has no last_hidden_state output — needs a hidden-state export (onnx_hidden.py).`,
+		})
+		broadcast({type: "status", message: ""})
+		return
+	}
+	const H = hs.dims.at(-1)
+	const V = lg.dims.at(-1)
+	const hidden = Float32Array.from(hs.data) // [seq*H], batch 0
+	const logits = Float32Array.from(lg.data) // [seq*V], batch 0
+
+	// char-position spans per token (skip_special_tokens), like the other passes
+	const spans = []
+	let prevLen = 0
+	for (let i = 0; i < seq; i++) {
+		const partial = tokenizer.decode(ids.slice(0, i + 1), {skip_special_tokens: true})
+		if (partial.length > prevLen) spans.push({from: prevLen, to: partial.length, index: i})
+		prevLen = partial.length
+	}
+	const decoded = tokenizer.decode(ids, {skip_special_tokens: true})
+	const tokens = ids.map((tid) => tokenizer.decode([tid]))
+
+	post(gen, {type: "features", supported: true, seq, H, V, ids, tokens, spans, decoded, hidden, logits})
+	broadcast({type: "status", message: ""})
+}
+
 function handleMessage(port, data) {
 	const {type, id} = data
 	const sessionKey = data.sessionKey || id
@@ -1367,6 +1450,32 @@ function handleMessage(port, data) {
 		const requested = config.model || DEFAULT_MODEL_ID
 		const run = () =>
 			computeAttentionWeightsLocal(gen, data.text, config)
+				.then(() => { gen.done = true; activeGenerations.delete(sessionKey) })
+				.catch((e) => {
+					if (!gen.abortController.signal.aborted)
+						port.postMessage({type: "error", id, message: e?.message || String(e)})
+					activeGenerations.delete(sessionKey)
+				})
+		if (!generator || currentModelId !== requested) {
+			if (currentModelId !== requested) generator = null
+			loadModel(requested, config.dtype).then(() => {
+				if (!generator) { port.postMessage({type: "error", id, message: modelLoadError()}); return }
+				run()
+			})
+		} else run()
+		return
+	}
+	if (type === "extract-features") {
+		const {provider, config = {}} = data
+		if (provider !== "local") {
+			port.postMessage({type: "features", id, supported: false, message: "features require a local model"})
+			return
+		}
+		const gen = {id, port, fullText: "", done: false, finalText: "", abortController: new AbortController()}
+		activeGenerations.set(sessionKey, gen)
+		const requested = config.model || DEFAULT_MODEL_ID
+		const run = () =>
+			extractFeaturesLocal(gen, data.text)
 				.then(() => { gen.done = true; activeGenerations.delete(sessionKey) })
 				.catch((e) => {
 					if (!gen.abortController.signal.aborted)

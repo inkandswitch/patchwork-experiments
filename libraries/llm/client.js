@@ -471,6 +471,44 @@ export async function computeAttentionWeights(text, opts = {}) {
 }
 
 /**
+ * Extract per-position features from a local model for LoRA-on-head training:
+ * a single forward pass returning, for every token position, the final hidden
+ * state `h` and the base logits, plus token ids/spans. Requires a model
+ * exported with a `last_hidden_state` output (glomper-tuning/onnx_hidden.py).
+ *
+ * Resolves to { supported, seq, H, V, ids, tokens, spans, decoded, hidden, logits }
+ * where `hidden` is a Float32Array(seq*H) and `logits` is a Float32Array(seq*V),
+ * both row-major over positions. Returns null for non-local providers, and
+ * { supported:false, message } if the model lacks the hidden-state output.
+ */
+export async function extractFeatures(text, opts = {}) {
+	const cfg = await resolveCfgPrompts(opts.config ?? (await ensureConfig()))
+	const config = callConfig(cfg, opts)
+	if (config.provider !== "local") return null
+	const conn = getConnection()
+	const id = nextId()
+	return new Promise((resolve, reject) => {
+		const onAbort = () => { handlers.delete(id); reject(new DOMException("Aborted", "AbortError")) }
+		if (opts.signal) {
+			if (opts.signal.aborted) return onAbort()
+			opts.signal.addEventListener("abort", onAbort, {once: true})
+		}
+		handlers.set(id, (msg) => {
+			if (msg.type === "features") {
+				handlers.delete(id)
+				opts.signal?.removeEventListener("abort", onAbort)
+				resolve(msg)
+			} else if (msg.type === "error") {
+				handlers.delete(id)
+				opts.signal?.removeEventListener("abort", onAbort)
+				reject(new Error(msg.message))
+			}
+		})
+		conn.post({type: "extract-features", id, sessionKey: id, provider: config.provider, text, config})
+	})
+}
+
+/**
  * Diagnostic: probe the loaded model for attention weight support. Posts a
  * `probe-attention` message to the worker and returns the result — includes
  * the ONNX session output names, forward-pass output keys, and whether any

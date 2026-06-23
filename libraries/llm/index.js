@@ -60,6 +60,7 @@ export {
 	registerLocalModel,
 	computeImportance,
 	computeAttentionWeights,
+	extractFeatures,
 	probeAttention,
 } from "./client.js"
 
