@@ -1,0 +1,16 @@
+{
+  "name": "@patchwork/spatial-alignment",
+  "version": "0.0.1",
+  "description": "Spatial alignment: an adjustable projected rectangle marking the camera-visible working area",
+  "type": "module",
+  "main": "spatial-alignment.js",
+  "exports": {
+    ".": "spatial-alignment.js"
+  },
+  "scripts": {
+    "push": "pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  },
+  "keywords": [],
+  "author": "Ink & Switch"
+}
