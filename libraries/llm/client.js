@@ -384,6 +384,57 @@ export async function* scoreTokens(text, opts = {}) {
 }
 
 /**
+ * Compute per-token attention importance for `text`. Runs a single forward
+ * pass on the local model, extracts Key tensors from the KV cache, and
+ * computes an attention proxy (K·K^T) averaged across heads and layers.
+ * Returns `[{token, importance}]` where importance is 0–1.
+ * Only works for local models (others resolve to []).
+ *
+ * @param {string} text
+ * @param {Object} [opts]  { config?, signal? }
+ * @returns {Promise<Array<{token:string, importance:number}>>}
+ */
+export async function computeAttention(text, opts = {}) {
+	const cfg = await resolveCfgPrompts(opts.config ?? (await ensureConfig()))
+	const config = callConfig(cfg, opts)
+	if (config.provider !== "local") return []
+	const conn = getConnection()
+	const id = nextId()
+	return new Promise((resolve, reject) => {
+		handlers.set(id, (msg) => {
+			if (msg.type === "attention-scores") {
+				handlers.delete(id)
+				resolve(msg.scores || [])
+			} else if (msg.type === "error") {
+				handlers.delete(id)
+				reject(new Error(msg.message))
+			}
+		})
+		conn.post({type: "compute-attention", id, sessionKey: id, provider: config.provider, text, config})
+	})
+}
+
+/**
+ * Diagnostic: probe the loaded model for attention weight support. Posts a
+ * `probe-attention` message to the worker and returns the result — includes
+ * the ONNX session output names, forward-pass output keys, and whether any
+ * attention tensors are available. Only works for local models.
+ */
+export async function probeAttention(text = "Hello world", opts = {}) {
+	const cfg = opts.config ?? (await ensureConfig())
+	const config = callConfig(cfg, opts)
+	const conn = getConnection()
+	const id = nextId()
+	return new Promise((resolve) => {
+		handlers.set(id, (msg) => {
+			handlers.delete(id)
+			resolve(msg)
+		})
+		conn.post({type: "probe-attention", id, text, config})
+	})
+}
+
+/**
  * Chat with the user's configured tools available. Tells the model what tools
  * exist, runs an agentic loop: generate → parse `tool-call` blocks → run each
  * handler (in the MAIN thread, full page access) → feed the result back →

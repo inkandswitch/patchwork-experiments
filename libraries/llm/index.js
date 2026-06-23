@@ -35,6 +35,8 @@ export {
 	effectiveSystem,
 	accountHandle,
 	DEFAULTS,
+	PARAM_KEYS,
+	PROVIDER_CAPS,
 	ACCOUNT_LLM_FIELD,
 	CONFIG_SELECTOR,
 	// catalogues / labels
@@ -56,6 +58,8 @@ export {
 	resume,
 	onStatus,
 	registerLocalModel,
+	computeAttention,
+	probeAttention,
 } from "./client.js"
 
 export {dom, popup} from "./picker.js"

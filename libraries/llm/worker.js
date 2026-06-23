@@ -191,6 +191,26 @@ async function loadModel(modelId) {
 				attempt.label + " pipeline"
 			)
 			compiledModels.add(modelId)
+			// Probe the model for attention output support
+			try {
+				const model = generator.model
+				const sessionInfo = {}
+				const sessions = model?.sessions || {}
+				for (const [name, session] of Object.entries(sessions)) {
+					const outNames = session?.outputNames || []
+					sessionInfo[name] = outNames
+				}
+				broadcast({type: "model-info", model: modelId, sessions: sessionInfo,
+					config: model?.config ? {
+						output_attentions: model.config.output_attentions,
+						num_hidden_layers: model.config.num_hidden_layers,
+						num_attention_heads: model.config.num_attention_heads,
+						model_type: model.config.model_type,
+					} : null,
+				})
+			} catch (e) {
+				broadcast({type: "model-info", model: modelId, error: e.message})
+			}
 			broadcast({type: "status", message: `Model ready (${attempt.label})`})
 			broadcast({type: "ready", model: modelId, device: attempt.label})
 			break
@@ -750,6 +770,93 @@ async function scoreTokensLocal(gen, text, config) {
 	post(gen, {type: "token-scores", scores})
 }
 
+// Compute per-token attention importance from the KV cache key tensors.
+// One forward pass on the full text → extract Key tensors from the last few
+// layers → for each position, compute how much later positions "attend to" it
+// via scaled dot-product of their key vectors, softmaxed per-position, then
+// averaged across heads and layers. This is K·K^T (not Q·K^T), so it's a
+// proxy, not true attention — but it's instant and uses real model internals.
+async function computeAttentionLocal(gen, text, config) {
+	await ensureModel(config.model)
+	const model = generator.model
+	const tokenizer = generator.tokenizer
+	const inputs = tokenizer(text, {return_tensor: true})
+
+	broadcast({type: "status", message: "Computing attention…"})
+	const outputs = await model(inputs)
+
+	// Count layers in the KV cache
+	let numLayers = 0
+	while (outputs[`present.${numLayers}.key`]) numLayers++
+	if (!numLayers) {
+		post(gen, {type: "attention-scores", scores: []})
+		return
+	}
+
+	// Use the last few layers (higher layers capture more semantic attention)
+	const layersToUse = Math.min(numLayers, 4)
+	const startLayer = numLayers - layersToUse
+
+	const sampleKey = outputs[`present.${startLayer}.key`]
+	const [, numHeads, seqLen, headDim] = sampleKey.dims
+	const sqrtD = Math.sqrt(headDim)
+
+	// Accumulate importance: for each position i, how much do later positions
+	// attend to it? importance[i] = mean over j>i of attn(j→i).
+	const importance = new Float64Array(seqLen)
+
+	for (let l = startLayer; l < numLayers; l++) {
+		const K = outputs[`present.${l}.key`].data
+
+		for (let h = 0; h < numHeads; h++) {
+			const hOff = h * seqLen * headDim
+
+			// For each "query" position j, compute softmax(K[j]·K[:]^T / √d)
+			// over positions 0..j (causal mask), then add each weight to
+			// importance[i] for i in 0..j.
+			for (let j = 1; j < seqLen; j++) {
+				const jOff = hOff + j * headDim
+
+				// Scaled dot products (causal: only i <= j)
+				const dots = new Float64Array(j + 1)
+				let mx = -Infinity
+				for (let i = 0; i <= j; i++) {
+					const iOff = hOff + i * headDim
+					let dot = 0
+					for (let d = 0; d < headDim; d++) dot += K[jOff + d] * K[iOff + d]
+					dots[i] = dot / sqrtD
+					if (dots[i] > mx) mx = dots[i]
+				}
+
+				// Softmax
+				let sm = 0
+				for (let i = 0; i <= j; i++) { dots[i] = Math.exp(dots[i] - mx); sm += dots[i] }
+
+				// Accumulate: how much does position j attend to position i?
+				const w = 1 / (numHeads * layersToUse * (seqLen - 1))
+				for (let i = 0; i <= j; i++) importance[i] += (dots[i] / sm) * w
+			}
+		}
+	}
+
+	// Normalize to [0, 1]
+	let lo = Infinity, hi = -Infinity
+	for (let i = 0; i < seqLen; i++) {
+		if (importance[i] < lo) lo = importance[i]
+		if (importance[i] > hi) hi = importance[i]
+	}
+	const range = hi - lo || 1
+
+	const ids = Array.from(inputs.input_ids.data)
+	const scores = ids.map((id, i) => ({
+		token: tokenizer.decode([id]),
+		importance: (importance[i] - lo) / range,
+	}))
+
+	post(gen, {type: "attention-scores", scores})
+	broadcast({type: "status", message: ""})
+}
+
 async function predictOpenRouter(text, config, signal) {
 	const topk = Math.min(Math.max(1, config.topk | 0 || 10), 20)
 	// Chat with the continuation framing (raw /completions doesn't work for
@@ -1073,6 +1180,86 @@ function handleMessage(port, data) {
 				if (!generator) { port.postMessage({type: "error", id, message: "Model not loaded"}); return }
 				run()
 			})
+		} else run()
+		return
+	}
+	if (type === "compute-attention") {
+		const {provider, config = {}} = data
+		if (provider !== "local") {
+			port.postMessage({type: "attention-scores", id, scores: []})
+			return
+		}
+		const gen = {id, port, fullText: "", done: false, finalText: "", abortController: new AbortController()}
+		activeGenerations.set(sessionKey, gen)
+		const requested = config.model || DEFAULT_MODEL_ID
+		const run = () =>
+			computeAttentionLocal(gen, data.text, config)
+				.then(() => { gen.done = true; activeGenerations.delete(sessionKey) })
+				.catch((e) => {
+					if (!gen.abortController.signal.aborted)
+						port.postMessage({type: "error", id, message: e?.message || String(e)})
+					activeGenerations.delete(sessionKey)
+				})
+		if (!generator || currentModelId !== requested) {
+			if (currentModelId !== requested) generator = null
+			loadModel(requested).then(() => {
+				if (!generator) { port.postMessage({type: "error", id, message: "Model not loaded"}); return }
+				run()
+			})
+		} else run()
+		return
+	}
+	if (type === "probe-attention") {
+		// Diagnostic: try to get attention weights from the model directly.
+		const run = async () => {
+			const model = generator.model
+			const tokenizer = generator.tokenizer
+			const text = data.text || "Hello world"
+			const inputs = tokenizer(text, {return_tensor: true})
+			const report = {type: "probe-attention-result", id}
+
+			// What sessions does the ONNX model have?
+			const sessions = {}
+			for (const [name, session] of Object.entries(model?.sessions || {})) {
+				sessions[name] = {
+					inputNames: session?.inputNames || [],
+					outputNames: session?.outputNames || [],
+				}
+			}
+			report.sessions = sessions
+
+			// Try a direct forward pass and see what the output object contains
+			try {
+				const outputs = await model(inputs)
+				report.outputKeys = Object.keys(outputs || {})
+				report.hasAttentions = "attentions" in (outputs || {})
+				// Check for attention-like keys
+				report.attentionKeys = Object.keys(outputs || {}).filter(k =>
+					/attention|attn/i.test(k)
+				)
+			} catch (e) {
+				report.forwardError = e.message
+			}
+
+			// Try calling generate with output_attentions
+			try {
+				const genOut = await model.generate({
+					...inputs,
+					max_new_tokens: 1,
+					output_attentions: true,
+					return_dict_in_generate: true,
+				})
+				report.generateKeys = Object.keys(genOut || {})
+				report.generateHasAttentions = "attentions" in (genOut || {})
+			} catch (e) {
+				report.generateError = e.message
+			}
+
+			port.postMessage(report)
+		}
+		const requested = data.config?.model || DEFAULT_MODEL_ID
+		if (!generator || currentModelId !== requested) {
+			loadModel(requested).then(() => generator ? run() : port.postMessage({type: "probe-attention-result", id, error: "Model not loaded"}))
 		} else run()
 		return
 	}

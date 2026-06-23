@@ -11,6 +11,7 @@
 import {
 	DEFAULTS,
 	PARAM_KEYS,
+	PROVIDER_CAPS,
 	LOCAL_MODELS,
 	WEBLLM_MODELS,
 	ensureSettingsDoc,
@@ -137,6 +138,8 @@ const CSS = `
 
 .llmp-note { margin: 0; font-size: 11px; line-height: 1.5; color: var(--dim); }
 .llmp-explain { font-style: italic; color: #aaa3ae; }
+.llmp-disabled { opacity: 0.45; }
+.llmp-locked { font-style: italic; }
 
 /* saved-prompt manager: an inline-editable list */
 .llmp-pp-list { display: flex; flex-direction: column; gap: 6px; }
@@ -606,7 +609,7 @@ function buildPickerInto(host, opts) {
 		renderRecent() // keep the active chip in sync with the current provider
 	}
 
-	function slider(label, value, {min, max, step, onInput, note}) {
+	function slider(label, value, {min, max, step, onInput, note, disabled}) {
 		const out = el("b", {text: (+value).toFixed(2)})
 		const range = el("input", {
 			type: "range",
@@ -620,14 +623,17 @@ function buildPickerInto(host, opts) {
 				onInput(v)
 			},
 		})
-		return el("label", {class: "llmp-label"}, [
+		if (disabled) range.disabled = true
+		const wrapper = el("label", {class: "llmp-label" + (disabled ? " llmp-disabled" : "")}, [
 			label,
 			el("div", {class: "llmp-temp"}, [range, out]),
 			note ? el("p", {class: "llmp-note", text: note}) : null,
 		])
+		if (disabled) wrapper.append(el("p", {class: "llmp-note llmp-locked", text: disabled}))
+		return wrapper
 	}
 
-	function numberField(label, value, {min, step, placeholder, onInput, note} = {}) {
+	function numberField(label, value, {min, step, placeholder, onInput, note, disabled} = {}) {
 		const input = el("input", {
 			class: "llmp-input",
 			type: "number",
@@ -640,17 +646,29 @@ function buildPickerInto(host, opts) {
 			},
 		})
 		if (value != null) input.value = String(value)
-		return el("label", {class: "llmp-label"}, [
+		if (disabled) input.disabled = true
+		const wrapper = el("label", {class: "llmp-label" + (disabled ? " llmp-disabled" : "")}, [
 			label,
 			input,
 			note ? el("p", {class: "llmp-note", text: note}) : null,
 		])
+		if (disabled) wrapper.append(el("p", {class: "llmp-note llmp-locked", text: disabled}))
+		return wrapper
 	}
 
 	// Dedicated "Parameters" section — every sampling/decoding knob.
 	function renderParamsSection() {
 		const wrap = el("div", {class: "llmp-body"})
 		content.append(wrap)
+
+		const caps = PROVIDER_CAPS[cfg.provider] || {}
+		const locked = opts.locked || []
+		function paramState(key) {
+			if (locked.includes(key)) return "controlled by tool"
+			if (caps[key] === false) return "not supported by this provider"
+			return null
+		}
+
 		const atDefaults = PARAM_KEYS.every((k) => (cfg[k] ?? null) === (DEFAULTS[k] ?? null))
 		wrap.append(
 			el("div", {class: "llmp-params-head"}, [
@@ -669,32 +687,22 @@ function buildPickerInto(host, opts) {
 				step: "0.05",
 				onInput: (v) => (cfg.temperature = v),
 				note: "Randomness of each pick. 0 = always the top token (deterministic); ~0.7 balanced; past ~1.5 it tips into incoherence.",
-			})
-		)
-		if (cfg.provider === "builtin") {
-			wrap.append(
-				numberField("Top-k", cfg.topK, {
-					min: "0",
-					step: "1",
-					onInput: (v) => (cfg.topK = v || 0),
-					note: "Sample only from the k most likely tokens. Chrome's built-in model only uses temperature + top-k; the parameters below are ignored for it.",
-				})
-			)
-			return
-		}
-		wrap.append(
+				disabled: paramState("temperature"),
+			}),
 			slider("Top-p (nucleus)", cfg.topP, {
 				min: "0",
 				max: "1",
 				step: "0.01",
 				onInput: (v) => (cfg.topP = v),
 				note: "Sample from the smallest set of tokens whose probabilities sum to p. 1 = off.",
+				disabled: paramState("topP"),
 			}),
 			numberField("Top-k", cfg.topK, {
 				min: "0",
 				step: "1",
 				onInput: (v) => (cfg.topK = v || 0),
 				note: "Sample only from the k most likely tokens. 0 = off.",
+				disabled: paramState("topK"),
 			}),
 			slider("Min-p", cfg.minP, {
 				min: "0",
@@ -702,6 +710,7 @@ function buildPickerInto(host, opts) {
 				step: "0.01",
 				onInput: (v) => (cfg.minP = v),
 				note: "Drop tokens below this fraction of the top token's probability. 0 = off.",
+				disabled: paramState("minP"),
 			}),
 			slider("Repetition penalty", cfg.repetitionPenalty, {
 				min: "1",
@@ -709,6 +718,7 @@ function buildPickerInto(host, opts) {
 				step: "0.01",
 				onInput: (v) => (cfg.repetitionPenalty = v),
 				note: "Penalise tokens already used. 1 = off. (transformers · Ollama · OpenRouter)",
+				disabled: paramState("repetitionPenalty"),
 			}),
 			slider("Frequency penalty", cfg.frequencyPenalty, {
 				min: "-2",
@@ -716,6 +726,7 @@ function buildPickerInto(host, opts) {
 				step: "0.05",
 				onInput: (v) => (cfg.frequencyPenalty = v),
 				note: "Penalise tokens by how often they've appeared. 0 = off. (OpenRouter · Ollama · WebLLM)",
+				disabled: paramState("frequencyPenalty"),
 			}),
 			slider("Presence penalty", cfg.presencePenalty, {
 				min: "-2",
@@ -723,11 +734,13 @@ function buildPickerInto(host, opts) {
 				step: "0.05",
 				onInput: (v) => (cfg.presencePenalty = v),
 				note: "Penalise tokens that have appeared at all. 0 = off.",
+				disabled: paramState("presencePenalty"),
 			}),
 			numberField("Max output tokens", cfg.maxTokens, {
 				min: "1",
 				placeholder: "model default",
 				onInput: (v) => (cfg.maxTokens = v),
+				disabled: paramState("maxTokens"),
 			}),
 			numberField("Seed", cfg.seed, {
 				min: "0",
@@ -735,10 +748,7 @@ function buildPickerInto(host, opts) {
 				placeholder: "random",
 				onInput: (v) => (cfg.seed = v),
 				note: "Fix the seed for reproducible output where supported. Blank = random.",
-			}),
-			el("p", {
-				class: "llmp-note",
-				text: "Not every provider supports every parameter — unsupported ones are ignored.",
+				disabled: paramState("seed"),
 			})
 		)
 	}

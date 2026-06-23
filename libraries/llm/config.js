@@ -31,6 +31,7 @@ export const DEFAULTS = {
 	presencePenalty: 0, // -2..2
 	seed: null, // fixed seed for reproducibility (null = random)
 	maxTokens: null, // output cap (null = provider default / per-call)
+	outputAttentions: false, // request per-token attention scores (only some providers)
 	local: {model: "onnx-community/Qwen3-0.6B-ONNX"},
 	openrouter: {
 		apiKey: "",
@@ -59,7 +60,16 @@ export const PARAM_KEYS = [
 	"presencePenalty",
 	"seed",
 	"maxTokens",
+	"outputAttentions",
 ]
+
+export const PROVIDER_CAPS = {
+	local:      { logprobs: true,  attention: true,  topP: true,  topK: true,  minP: true,  repetitionPenalty: true,  frequencyPenalty: true,  presencePenalty: true,  seed: true,  maxTokens: true  },
+	openrouter: { logprobs: true,  attention: false, topP: true,  topK: true,  minP: true,  repetitionPenalty: true,  frequencyPenalty: true,  presencePenalty: true,  seed: true,  maxTokens: true  },
+	ollama:     { logprobs: false, attention: false, topP: true,  topK: true,  minP: true,  repetitionPenalty: true,  frequencyPenalty: false, presencePenalty: false, seed: true,  maxTokens: true  },
+	webllm:     { logprobs: true,  attention: false, topP: true,  topK: false, minP: false, repetitionPenalty: false, frequencyPenalty: true,  presencePenalty: true,  seed: true,  maxTokens: true  },
+	builtin:    { logprobs: false, attention: false, topP: false, topK: true,  minP: false, repetitionPenalty: false, frequencyPenalty: false, presencePenalty: false, seed: false, maxTokens: false },
+}
 
 /** The live account DocHandle, or null if unavailable. */
 export function accountHandle() {
@@ -172,6 +182,7 @@ export function normalizeConfig(raw = {}) {
 				: DEFAULTS.presencePenalty,
 		seed: raw.seed ?? DEFAULTS.seed,
 		maxTokens: raw.maxTokens ?? DEFAULTS.maxTokens,
+		outputAttentions: raw.outputAttentions ?? DEFAULTS.outputAttentions,
 		local: {...DEFAULTS.local, ...(raw.local ?? {})},
 		openrouter: {...DEFAULTS.openrouter, ...(raw.openrouter ?? {})},
 		ollama: {...DEFAULTS.ollama, ...(raw.ollama ?? {})},
@@ -337,6 +348,7 @@ export function writeConfig(next) {
 				"presencePenalty",
 				"seed",
 				"maxTokens",
+				"outputAttentions",
 				"tools", // folder URL
 				"prompts", // folder URL
 				"systemUrl", // selected prompt docs
