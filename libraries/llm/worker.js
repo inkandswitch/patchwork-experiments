@@ -84,8 +84,8 @@ const compiledModels = new Set()
 const localModelFiles = new Map() // id -> { files: Map<relpath, Blob>, dtype }
 
 function ensureLocalFetchPatch() {
-	if (self.__loomFetchPatched) return
-	self.__loomFetchPatched = true
+	if (self.__llmFetchPatched) return
+	self.__llmFetchPatched = true
 	const realFetch = self.fetch.bind(self)
 	self.fetch = (input, init) => {
 		try {
@@ -907,12 +907,23 @@ async function predictOpenRouter(text, config, signal) {
 function handlePredict(port, data) {
 	const {id, text, config = {}} = data
 	const provider = data.provider
-	const reply = (candidates) =>
+	const sessionKey = data.sessionKey || id
+	// Register an abortable entry so an "abort" message (keyed by sessionKey) can
+	// cancel the in-flight request — the OpenRouter/WebLLM fetch honours the signal.
+	const abortController = new AbortController()
+	activeGenerations.set(sessionKey, {id, port, done: false, fullText: "", abortController})
+	const cleanup = () => activeGenerations.delete(sessionKey)
+	const reply = (candidates) => {
+		cleanup()
 		port.postMessage({type: "predictions", id, candidates})
-	const failPredict = (message) => port.postMessage({type: "error", id, message})
+	}
+	const failPredict = (message) => {
+		cleanup()
+		if (!abortController.signal.aborted) port.postMessage({type: "error", id, message})
+	}
 
 	if (provider === "openrouter") {
-		predictOpenRouter(text, config, new AbortController().signal)
+		predictOpenRouter(text, config, abortController.signal)
 			.then(reply)
 			.catch((e) => failPredict(e?.message || String(e)))
 		return

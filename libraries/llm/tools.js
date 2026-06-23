@@ -239,16 +239,23 @@ export function parseToolCalls(text) {
 	return calls
 }
 
+/** Fetch a handler file doc's JS source as a string. */
+async function loadHandlerCode(handlerUrl, repo) {
+	const h = await theRepo(repo).find(handlerUrl)
+	const content = h.doc()?.content
+	return typeof content === "string"
+		? content
+		: new TextDecoder().decode(content || new Uint8Array())
+}
+
 /**
  * Load a tool's handler as a function. The handler file's JS is imported as an
- * ES module (via a blob URL) and runs in the MAIN thread with full page access.
+ * ES module (via a blob URL) and runs in the MAIN thread with full page access
+ * (window.repo, the account doc, the DOM). Use a sandbox (see runTool) for
+ * untrusted / shared tools that shouldn't have that reach.
  */
 export async function loadHandler(handlerUrl, repo) {
-	const r = theRepo(repo)
-	const h = await r.find(handlerUrl)
-	const content = h.doc()?.content
-	const code =
-		typeof content === "string" ? content : new TextDecoder().decode(content || new Uint8Array())
+	const code = await loadHandlerCode(handlerUrl, repo)
 	const blobUrl = URL.createObjectURL(new Blob([code], {type: "text/javascript"}))
 	try {
 		const mod = await import(/* @vite-ignore */ blobUrl)
@@ -261,9 +268,75 @@ export async function loadHandler(handlerUrl, repo) {
 	}
 }
 
-/** Run a resolved tool with args (loads + calls its handler in the main thread). */
-export async function runTool(tool, args, repo) {
-	const fn = await loadHandler(tool.handlerUrl, repo)
+// A module worker that imports the handler code in its OWN realm and runs it on
+// just the args we hand in — no window, no DOM, no window.repo, no account doc,
+// no network of ours. Only structured-cloneable args/results cross the boundary.
+const SANDBOX_BOOTSTRAP = `
+self.onmessage = async (e) => {
+	const {code, args} = e.data
+	let url
+	try {
+		url = URL.createObjectURL(new Blob([code], {type: "text/javascript"}))
+		const mod = await import(url)
+		const fn = mod.default || mod.handle
+		if (typeof fn !== "function") throw new Error("tool handler must export default a function")
+		const result = await fn(args || {})
+		self.postMessage({ok: true, result})
+	} catch (err) {
+		self.postMessage({ok: false, error: (err && err.message) || String(err)})
+	} finally {
+		if (url) URL.revokeObjectURL(url)
+	}
+}
+`
+
+/**
+ * Run handler `code` in an isolated Worker — no page access. A runaway handler
+ * is killed after `timeoutMs` (default 10s). Throws on handler error/timeout.
+ */
+export async function runHandlerSandboxed(code, args, {timeoutMs = 10000} = {}) {
+	const bootUrl = URL.createObjectURL(new Blob([SANDBOX_BOOTSTRAP], {type: "text/javascript"}))
+	const worker = new Worker(bootUrl, {type: "module"})
+	try {
+		return await new Promise((resolve, reject) => {
+			const timer = setTimeout(() => reject(new Error("tool handler timed out")), timeoutMs)
+			worker.onmessage = (e) => {
+				clearTimeout(timer)
+				if (e.data?.ok) resolve(e.data.result)
+				else reject(new Error(e.data?.error || "tool handler failed"))
+			}
+			worker.onerror = (e) => {
+				clearTimeout(timer)
+				reject(new Error(e.message || "tool handler worker error"))
+			}
+			worker.postMessage({code, args: args || {}})
+		})
+	} finally {
+		worker.terminate()
+		URL.revokeObjectURL(bootUrl)
+	}
+}
+
+/**
+ * Run a resolved tool with args. By default loads + calls its handler in the
+ * MAIN thread (full page access). Pass `{sandbox: true}` to run it in an
+ * isolated Worker with no page access — for untrusted / shared tools.
+ *
+ * @param {object} tool   resolved tool ({handlerUrl, …})
+ * @param {object} args
+ * @param {object|Repo} [opts]  options, or a Repo (back-compat positional repo)
+ *   @param {Repo}   [opts.repo]
+ *   @param {boolean} [opts.sandbox]
+ *   @param {number} [opts.timeoutMs=10000]  sandbox kill-switch
+ */
+export async function runTool(tool, args, opts = {}) {
+	// Back-compat: runTool(tool, args, repo) — a Repo has a `.find` method.
+	const o = opts && typeof opts.find === "function" ? {repo: opts} : opts || {}
+	if (o.sandbox) {
+		const code = await loadHandlerCode(tool.handlerUrl, o.repo)
+		return runHandlerSandboxed(code, args, {timeoutMs: o.timeoutMs})
+	}
+	const fn = await loadHandler(tool.handlerUrl, o.repo)
 	return fn(args || {})
 }
 

@@ -119,7 +119,7 @@ function getConnection() {
  * @param {(stats:object)=>void}                      [opts.onStats]
  * @param {(message:string)=>void}                    [opts.onStatus]
  * @param {AbortSignal} [opts.signal]
- * @returns {Promise<{text:string, stats:object|null}>}
+ * @returns {Promise<{text:string, toolCalls:object[]|null, stats:object|null}>}
  */
 export async function generate(messages, opts = {}) {
 	const cfg0 = opts.config ?? (await ensureConfig())
@@ -291,12 +291,14 @@ export async function predict(text, opts = {}) {
 	const promptedText = applyPrompts(text, cfg, opts.system) // prepends pre-prompt (no system in raw)
 	const conn = getConnection()
 	const id = nextId()
+	const sessionKey = id // so an abort can reach the in-flight request in the worker
 	return new Promise((resolve, reject) => {
 		const cleanup = () => {
 			handlers.delete(id)
 			if (opts.signal) opts.signal.removeEventListener("abort", onAbort)
 		}
 		function onAbort() {
+			conn.post({type: "abort", sessionKey}) // cancel the worker-side fetch (OpenRouter/WebLLM)
 			cleanup()
 			reject(new DOMException("Aborted", "AbortError"))
 		}
@@ -313,15 +315,16 @@ export async function predict(text, opts = {}) {
 			if (opts.signal.aborted) return onAbort()
 			opts.signal.addEventListener("abort", onAbort)
 		}
-		conn.post({type: "predict", id, provider: config.provider, text: promptedText, config})
+		conn.post({type: "predict", id, sessionKey, provider: config.provider, text: promptedText, config})
 	})
 }
 
 /**
  * Score every token in `text` — runs a forward pass at each position and
  * returns the model's probability, rank, entropy, and top-k alternatives for
- * the actual next token. Powers the attention heatmap ("how surprised was the
- * model by what you actually wrote?"). Only works for local models.
+ * the actual next token. Powers the surprisal and info-gain overlays ("how
+ * surprised was the model by what you actually wrote?" and "how much did each
+ * token reduce its uncertainty?"). Only works for local models.
  *
  * Yields progress events and a final result:
  *   { type:"progress", step, total }
@@ -384,16 +387,22 @@ export async function* scoreTokens(text, opts = {}) {
 }
 
 /**
- * Compute per-token attention importance for `text`. Runs a single forward
- * pass on the local model, extracts Key tensors from the KV cache, and
- * computes an attention proxy (K·K^T) averaged across heads and layers.
- * Returns `{decoded, spans}` where decoded is the tokenizer's round-tripped
- * text and spans is `[{from, to, importance}]` with positions relative to
- * `decoded`. Only works for local models (others resolve to null).
+ * Compute per-token importance for `text` by erasure-based attribution: a
+ * baseline forward pass, then one pass per token with that token masked out,
+ * scoring each token by how much its removal shifts the model's next-token
+ * distribution (Jensen–Shannon divergence). N+1 forward passes on the local
+ * model — genuine importance, not an attention proxy. See Li, Chen, Zhu &
+ * Rudin 2016, "Understanding Neural Networks through Representation Erasure".
+ *
+ * NB: despite the name, this does NOT use attention weights; the name predates
+ * the erasure implementation. Returns `{decoded, spans}` where decoded is the
+ * tokenizer's round-tripped text and spans is `[{from, to, importance}]`
+ * (importance normalized to [0,1]) with positions relative to `decoded`. Only
+ * works for local models (others resolve to null).
  *
  * @param {string} text
  * @param {Object} [opts]  { config?, signal? }
- * @returns {Promise<{decoded:string, spans:Array}>}
+ * @returns {Promise<{decoded:string, spans:Array}|null>}
  */
 export async function computeAttention(text, opts = {}) {
 	const cfg = await resolveCfgPrompts(opts.config ?? (await ensureConfig()))
@@ -438,18 +447,24 @@ export async function probeAttention(text = "Hello world", opts = {}) {
 /**
  * Chat with the user's configured tools available. Tells the model what tools
  * exist, runs an agentic loop: generate → parse `tool-call` blocks → run each
- * handler (in the MAIN thread, full page access) → feed the result back →
- * generate again, until the model stops calling tools (or maxRounds).
+ * handler → feed the result back → generate again, until the model stops calling
+ * tools (or maxRounds). Folder-tool handlers run in the MAIN thread (full page
+ * access) by default; pass `sandbox` (or set the config's `toolSandbox`) to run
+ * them in an isolated Worker instead. Inline tools (with their own `handler` fn)
+ * always run as given.
  *
  * @param {Array|string} messages  chat messages (or a string → one user turn)
  * @param {Object} [opts]  same as generate(), plus:
  *   @param {(delta,full,round)=>void} [opts.onToken]
  *   @param {({tool,args,result,error})=>void} [opts.onToolCall]
  *   @param {number} [opts.maxRounds=6]
+ *   @param {boolean} [opts.sandbox]  run folder-tool handlers in an isolated Worker
  * @returns {Promise<{text:string, messages:Array}>}
  */
 export async function generateWithTools(messages, opts = {}) {
 	const cfg = opts.config ?? (await ensureConfig())
+	// Folder-tool handlers run sandboxed when the call or the config asks for it.
+	const sandbox = opts.sandbox ?? cfg.toolSandbox ?? false
 	// Inline tools (each with a `handler(args)` fn) + the user's folder tools.
 	const inline = (opts.tools || []).map((t) => ({...t}))
 	const folder = await resolveTools(cfg)
@@ -474,7 +489,7 @@ export async function generateWithTools(messages, opts = {}) {
 		try {
 			const result = tool.handler
 				? await tool.handler(call.args || {})
-				: await runTool(tool, call.args)
+				: await runTool(tool, call.args, {sandbox})
 			opts.onToolCall?.({name: call.name, args: call.args, result})
 			return typeof result === "string" ? result : JSON.stringify(result)
 		} catch (e) {

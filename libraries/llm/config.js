@@ -43,6 +43,7 @@ export const DEFAULTS = {
 	webllm: {model: "Qwen2.5-1.5B-Instruct-q4f16_1-MLC", custom: []}, // MLC WebLLM (WebGPU); custom = self-compiled model records
 	builtin: {}, // Chrome built-in AI (Gemini Nano) — one model, no config
 	tools: null, // URL of a "folder" doc — its .docs are the llm:tool DocLinks
+	toolSandbox: false, // run folder-tool handlers in an isolated Worker (no page access)
 	prompts: null, // URL of a "folder" doc — its .docs are the prompt DocLinks
 	systemUrl: null, // selected llm:system-prompt doc
 	preUrl: null, // selected llm:pre-prompt doc
@@ -64,7 +65,7 @@ export const PARAM_KEYS = [
 ]
 
 export const PROVIDER_CAPS = {
-	local:      { logprobs: true,  attention: true,  topP: true,  topK: true,  minP: true,  repetitionPenalty: true,  frequencyPenalty: true,  presencePenalty: true,  seed: true,  maxTokens: true  },
+	local:      { logprobs: true,  attention: true,  topP: true,  topK: true,  minP: true,  repetitionPenalty: true,  frequencyPenalty: false, presencePenalty: false, seed: false, maxTokens: true  },
 	openrouter: { logprobs: true,  attention: false, topP: true,  topK: true,  minP: true,  repetitionPenalty: true,  frequencyPenalty: true,  presencePenalty: true,  seed: true,  maxTokens: true  },
 	ollama:     { logprobs: false, attention: false, topP: true,  topK: true,  minP: true,  repetitionPenalty: true,  frequencyPenalty: false, presencePenalty: false, seed: true,  maxTokens: true  },
 	webllm:     { logprobs: true,  attention: false, topP: true,  topK: false, minP: false, repetitionPenalty: false, frequencyPenalty: true,  presencePenalty: true,  seed: true,  maxTokens: true  },
@@ -203,6 +204,7 @@ export function normalizeConfig(raw = {}) {
 		// Folders (URLs). The legacy array/object shapes resolve to null here; the
 		// one-time migrateConfig() converts them and rewrites the account doc.
 		tools: typeof raw.tools === "string" ? raw.tools : null,
+		toolSandbox: !!raw.toolSandbox,
 		prompts: typeof raw.prompts === "string" ? raw.prompts : null,
 		systemUrl:
 			raw.systemUrl ??
@@ -350,6 +352,7 @@ export function writeConfig(next) {
 				"maxTokens",
 				"outputAttentions",
 				"tools", // folder URL
+				"toolSandbox", // run folder-tool handlers in an isolated Worker
 				"prompts", // folder URL
 				"systemUrl", // selected prompt docs
 				"preUrl",

@@ -961,9 +961,7 @@ function buildPickerInto(host, opts) {
 		// ---- load a local ONNX model from disk ----
 		const dtypeSel = el("select", {style: "flex:0 0 auto;width:auto"})
 		for (const d of DTYPES) {
-			const o = el("option", {value: d, text: d})
-			if (d === DEFAULTS.local && false) o.selected = true
-			dtypeSel.append(o)
+			dtypeSel.append(el("option", {value: d, text: d}))
 		}
 		const fileInput = el("input", {
 			type: "file",
@@ -1414,6 +1412,25 @@ function buildPickerInto(host, opts) {
 			  ])
 			: null
 
+		// Sandbox toggle: run folder-tool handlers in an isolated Worker (no page
+		// access). Autosaved to the config (cfg.toolSandbox), so the "Try it" runner
+		// and every generateWithTools call honour it.
+		const sandboxCb = el("input", {type: "checkbox"})
+		sandboxCb.checked = !!cfg.toolSandbox
+		sandboxCb.addEventListener("change", () => (cfg.toolSandbox = sandboxCb.checked))
+		const sandboxToggle = el(
+			"label",
+			{
+				class: "llmp-label",
+				style: "flex-direction: row; align-items: center; gap: 8px; color: var(--ink);",
+			},
+			[sandboxCb, el("span", {text: "Run handlers in a sandbox (no page access)"})]
+		)
+		const sandboxNote = el("p", {
+			class: "llmp-note llmp-explain",
+			text: "Runs each tool's JS in an isolated Worker with no access to this page, your repo, or your account — safer for tools added by URL. Off = handlers run on the page with full access (needed for tools that read/write documents or the DOM).",
+		})
+
 		wrap.append(
 			...[
 				builtinGroup,
@@ -1421,6 +1438,8 @@ function buildPickerInto(host, opts) {
 					class: "llmp-note llmp-explain",
 					text: "Tools you give the model: a name, a description of how/when to use it + its parameters, and a JS handler (edited with the file tool). They live in a folder you can open and manage.",
 				}),
+				sandboxToggle,
+				sandboxNote,
 				el("div", {class: "llmp-row"}, [urlInput, addBtn, newBtn, openBtn]),
 				list,
 				tryBox,

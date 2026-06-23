@@ -8,7 +8,7 @@
     ".": "./index.js",
     "./worker.js": "./worker.js"
   },
-  "files": ["index.js", "config.js", "client.js", "worker.js", "picker.js", "README.md"],
+  "files": ["index.js", "config.js", "client.js", "worker.js", "picker.js", "tools.js", "provider.js", "builtin.js", "templates.js", "README.md"],
   "author": "chee",
   "license": "MIT",
   "dependencies": {

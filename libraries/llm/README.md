@@ -3,9 +3,11 @@
 An LLM toolkit for Patchwork tools, extracted from `chat` and enriched with
 `rlm`'s teaching telemetry. It gives you:
 
-- **`prompt()`** — a native `<dialog>` model picker (Local / OpenRouter / Ollama
-  + a temperature slider). Writes the choice to the user's **account doc**, so
-  the model + API key are shared across every tool and synced across devices.
+- **`popup()` / `dom()`** — a `<div popover>` model picker (Browser / OpenRouter
+  / Ollama + sampling parameters, prompts, and tools). `popup()` is framed
+  (header + Cancel/Done); `dom()` is the bare panel to embed. Writes the choice
+  to the user's **account settings doc**, so the model + API key are shared
+  across every tool and synced across devices.
 - **A refresh-surviving `SharedWorker`** that runs all three providers off the
   main thread (cross-tab, survives reload — keyed by an optional `sessionKey`).
 - **A streaming API** (`generate` callback-style, `stream` async-iterator-style)
@@ -18,9 +20,10 @@ An LLM toolkit for Patchwork tools, extracted from `chat` and enriched with
     tokens/sec, and the exact decode settings used (`temperature`, `top_p`,
     greedy, …).
 
-Plain vanilla JS, zero dependencies, no build step. The one runtime dependency —
-transformers.js — is imported from a CDN inside the worker, only when the local
-provider is used.
+Plain vanilla JS, no build step. Its only npm dependency is
+`@inkandswitch/patchwork-providers` (the request/provide config plumbing);
+transformers.js — the model runtime — is imported from a CDN inside the worker,
+only when the local provider is used.
 
 ## Install / consume
 
@@ -44,10 +47,13 @@ The package lives at `libraries/llm` and is named `@patchwork/llm`.
 ## Usage
 
 ```js
-import { prompt, stream, generate, readConfig } from "@patchwork/llm"
+import { popup, stream, generate, readConfig } from "@patchwork/llm"
 
 // 1. Let the user choose a model / paste their OpenRouter key.
-await prompt()
+const el = popup()
+document.body.append(el)
+el.showPopover()
+await el.result            // resolves to the config on close (null if cancelled)
 
 // 2a. Stream with telemetry (async iterator):
 let text = ""
@@ -88,7 +94,7 @@ Everything lives under `accountDoc.llm`:
 ```
 
 `readConfig()` / `writeConfig(patch)` read/write it (defaulting missing fields);
-`prompt()` is the UI over them.
+`popup()` / `dom()` are the UI over them.
 
 ### Resume after refresh
 

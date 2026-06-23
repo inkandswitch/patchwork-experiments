@@ -15,7 +15,7 @@
  *
  *   const { text, stats } = await generate(messages, { onToken, onPrediction })
  *
- * Provider/model/key/temperature live on the account doc (set via prompt()).
+ * Provider/model/key/temperature live on the account doc (set via popup()/dom()).
  * Telemetry (top-k next-token predictions + decode stats) works for local
  * transformers.js AND OpenRouter.
  */
@@ -78,6 +78,7 @@ export {
 	parseToolCalls,
 	loadHandler,
 	runTool,
+	runHandlerSandboxed,
 	// saved prompts (system + pre), same doc shape as tools
 	createPromptDoc,
 	resolvePromptDocs,
