@@ -1,5 +1,5 @@
 {
-  "name": "@chee/patchwork-llm",
+  "name": "@patchwork/llm",
   "version": "0.0.1",
   "description": "LLM Process module for Patchwork",
   "type": "module",
