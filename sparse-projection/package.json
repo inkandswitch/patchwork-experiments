@@ -1,0 +1,16 @@
+{
+  "name": "@patchwork/sparse-projection",
+  "version": "0.0.0",
+  "description": "Manual sparse projection: bright islands on a black canvas",
+  "type": "module",
+  "main": "sparse-projection.js",
+  "exports": {
+    ".": "sparse-projection.js"
+  },
+  "scripts": {
+    "push": "pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  },
+  "keywords": [],
+  "author": "Ink & Switch"
+}
