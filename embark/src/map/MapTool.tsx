@@ -10,7 +10,12 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { z } from "zod";
 import { coreSubscribe, type JSONValue } from "../lib/providers-solid";
 import { MATCHES_SELECTOR } from "../canvas/providers/SchemaMatchProvider";
-import { DEFAULT_CENTER, DEFAULT_ZOOM, type MapDoc } from "./datatype";
+import {
+  DEFAULT_CENTER,
+  DEFAULT_ZOOM,
+  type MapBounds,
+  type MapDoc,
+} from "./datatype";
 import "./map.css";
 
 // The shared focus store keyed by url (see providers' FocusProvider). The map
@@ -56,19 +61,37 @@ export const MapTool: ToolRender = (rawHandle, element) => {
     attributionControl: false,
   });
 
-  // Local pan/zoom -> document. Only write when the viewport actually moved
-  // away from what's stored, so applying a remote change doesn't echo back.
-  const onMoveEnd = () => {
+  // Local pan/zoom -> document. Center/zoom are only written when the viewport
+  // actually moved away from what's stored, so applying a remote change doesn't
+  // echo back. `bounds` is derived (nothing writes it back into the map), so it
+  // just tracks the visible box whenever it changes — including on resize, where
+  // center/zoom hold steady but the box doesn't.
+  const currentBounds = (): MapBounds => {
+    const b = map.getBounds();
+    return {
+      west: b.getWest(),
+      south: b.getSouth(),
+      east: b.getEast(),
+      north: b.getNorth(),
+    };
+  };
+
+  const syncViewport = () => {
     const { lng, lat } = map.getCenter();
     const zoom = map.getZoom();
+    const bounds = currentBounds();
     handle.change((doc) => {
       if (!viewportsEqual(doc, [lng, lat], zoom)) {
         doc.center = [lng, lat];
         doc.zoom = zoom;
       }
+      if (!boundsEqual(doc.bounds, bounds)) doc.bounds = bounds;
     });
   };
-  map.on("moveend", onMoveEnd);
+  map.on("moveend", syncViewport);
+  // The first accurate bounds are only available once the map has measured its
+  // container, so seed them on load too (center/zoom already match the doc).
+  map.on("load", syncViewport);
 
   // Document -> map. Skip when the map is already there (e.g. our own write
   // coming back) to avoid interrupting an in-flight interaction.
@@ -82,8 +105,15 @@ export const MapTool: ToolRender = (rawHandle, element) => {
   handle.on("change", onDocChange);
 
   // maplibre only tracks window resizes; the embed is resized directly, so
-  // observe the container and tell the map to re-measure.
-  const resizeObserver = new ResizeObserver(() => map.resize());
+  // observe the container and tell the map to re-measure. Resizing changes the
+  // visible box (but not center/zoom, so no moveend fires) — re-sync the bounds,
+  // debounced so a drag-resize doesn't spam the doc.
+  let resizeSyncTimer: ReturnType<typeof setTimeout> | undefined;
+  const resizeObserver = new ResizeObserver(() => {
+    map.resize();
+    if (resizeSyncTimer) clearTimeout(resizeSyncTimer);
+    resizeSyncTimer = setTimeout(syncViewport, 150);
+  });
   resizeObserver.observe(container);
 
   // Consume schema matches: one marker per matched {lat, lon} location. Each
@@ -263,9 +293,11 @@ export const MapTool: ToolRender = (rawHandle, element) => {
     if (focusHandle && onFocusChange) focusHandle.off("change", onFocusChange);
     for (const marker of markers.values()) marker.remove();
     markers.clear();
+    if (resizeSyncTimer) clearTimeout(resizeSyncTimer);
     resizeObserver.disconnect();
     handle.off("change", onDocChange);
-    map.off("moveend", onMoveEnd);
+    map.off("moveend", syncViewport);
+    map.off("load", syncViewport);
     map.remove();
     container.remove();
   };
@@ -290,5 +322,17 @@ function viewportsEqual(
     Math.abs(doc.center[0] - center[0]) < COORD_EPSILON &&
     Math.abs(doc.center[1] - center[1]) < COORD_EPSILON &&
     Math.abs(doc.zoom - zoom) < ZOOM_EPSILON
+  );
+}
+
+// True when the stored bounds already match within epsilon, so a re-read of the
+// same box never churns the doc (and never re-triggers subscribers downstream).
+function boundsEqual(a: MapBounds | undefined, b: MapBounds): boolean {
+  if (!a) return false;
+  return (
+    Math.abs(a.west - b.west) < COORD_EPSILON &&
+    Math.abs(a.south - b.south) < COORD_EPSILON &&
+    Math.abs(a.east - b.east) < COORD_EPSILON &&
+    Math.abs(a.north - b.north) < COORD_EPSILON
   );
 }

@@ -1,7 +1,7 @@
 import { accept, subscribe } from "@inkandswitch/patchwork-providers";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type { ToolElement } from "@inkandswitch/patchwork-plugins";
-import { listFiles, readFile, writeFile } from "../folder";
+import { listFiles, readFile, writeFile, writeSpec } from "../folder";
 import { loadSkill } from "./skills";
 import type { CapturedConsole, LoopApi } from "../types";
 
@@ -22,6 +22,7 @@ export class GiveUpSignal extends Error {
 export function createLoopApi(
   element: ToolElement,
   folderUrl: AutomergeUrl,
+  specUrl: AutomergeUrl,
   captured: CapturedConsole,
 ): LoopApi {
   const repo = element.repo;
@@ -34,6 +35,7 @@ export function createLoopApi(
     writeFile: (path, content) => writeFile(repo, folderUrl, path, content),
     readFile: (path) => readFile(repo, folderUrl, path),
     listFiles: () => listFiles(repo, folderUrl),
+    writeSpec: (markdown) => writeSpec(repo, specUrl, markdown),
     giveUp: (reason: string) => {
       throw new GiveUpSignal(reason);
     },

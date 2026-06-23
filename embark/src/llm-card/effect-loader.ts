@@ -3,7 +3,7 @@ import {
   type AutomergeUrl,
   type Repo,
 } from "@automerge/automerge-repo";
-import type { DirectoryDoc, EffectModule } from "./types";
+import type { EffectModule, FolderDoc } from "./types";
 
 // Load the generated effect module and return its default export.
 //
@@ -22,7 +22,7 @@ export async function loadEffect(
   folderUrl: AutomergeUrl,
   entry: string,
 ): Promise<EffectModule["default"]> {
-  const folder = await repo.find<DirectoryDoc>(folderUrl);
+  const folder = await repo.find<FolderDoc>(folderUrl);
   const pinned = stringifyAutomergeUrl({
     documentId: folder.documentId,
     heads: folder.heads(),

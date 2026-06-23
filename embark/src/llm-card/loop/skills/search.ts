@@ -6,10 +6,12 @@ import type { Skill } from "./index";
 export const SEARCH_SKILL: Skill = {
   name: "search",
   summary:
-    "answer canvas searches: turn live queries into result cards (e.g. via a public web API)",
+    "answer typed search-box queries: turn the live text query into result cards (e.g. via a public web API)",
   doc: `# Skill: search
 
-Act as a search contributor. The canvas runs a search broker: search-box embeds publish a query, and contributors like you answer it with result documents. The box renders whatever cards you report. The effect renders nothing itself - it is pure behavior.
+Act as a search contributor driven by a TEXT query. The canvas runs a search broker: search-box embeds publish a typed query string, and contributors like you answer it with result documents. The box renders whatever cards you report. The effect renders nothing itself - it is pure behavior.
+
+(If instead the search should be driven by a region the user is looking at - e.g. "show X in the current map view, updating as I pan" - that is the \`map-search\` skill. The two compose: load both to bound a typed query by the map's view.)
 
 You have exactly one provider:
   search:responses - join as a contributor and answer the active queries.

@@ -5,6 +5,7 @@ import {
   gatherCanvasInventory,
   type CanvasDocInfo,
 } from "./canvas-inventory";
+import { readSpec } from "../folder";
 import { parseScriptBlocks } from "./parser";
 import { SYSTEM_PROMPT } from "./prompt";
 import {
@@ -32,6 +33,7 @@ export async function runLlmLoop(
   element: ToolElement,
   cardHandle: DocHandle<LlmCardDoc>,
   folderUrl: AutomergeUrl,
+  specUrl: AutomergeUrl,
   signal?: AbortSignal,
 ): Promise<{ gaveUp?: string }> {
   const doc = cardHandle.doc();
@@ -42,15 +44,17 @@ export async function runLlmLoop(
     ?.VITE_LLM_API_KEY ?? "";
 
   const captured = createCapturedConsole();
-  const api = createLoopApi(element, folderUrl, captured);
+  const api = createLoopApi(element, folderUrl, specUrl, captured);
 
   // Snapshot what's on the canvas once up front so every turn can tell the
   // model what it's working with (name + type only; it reads contents itself).
   const inventory = await gatherCanvasInventory(api, cardHandle.url);
 
-  // If this card was generated before, hand the model its previous effect.js as
-  // a starting point so it edits rather than rewrites from scratch.
+  // If this card was generated before, hand the model its previous effect.js
+  // AND its previous spec as a starting point so it edits both rather than
+  // rewriting from scratch.
   const previousEffect = await api.readFile(doc.entry ?? "effect.js");
+  const previousSpec = await readSpec(element.repo, specUrl);
 
   let gaveUp: string | undefined;
 
@@ -64,6 +68,7 @@ export async function runLlmLoop(
       current.description,
       inventory,
       previousEffect,
+      previousSpec,
       current.transcript,
     );
     const stream = streamChatCompletion(apiUrl, apiKey, model, messages, signal);
@@ -154,17 +159,29 @@ function buildMessages(
   description: string,
   inventory: CanvasDocInfo[],
   previousEffect: string | undefined,
+  previousSpec: string | undefined,
   transcript: TranscriptEntry[],
 ): ChatMessage[] {
   const parts = [
-    `Generate effect.js for this card. The desired effect:\n\n${description}`,
+    `Generate this card (effect.js + spec). The user's request below is the ` +
+      `source of truth — the code must do what it says:\n\n${description}`,
     `Documents currently on the canvas:\n${formatInventory(inventory)}`,
   ];
   if (previousEffect) {
     parts.push(
-      `This card already has a working effect.js from a previous run. Treat it ` +
-        `as the starting point and modify it to match the description above ` +
-        `instead of rewriting from scratch:\n\n\`\`\`js\n${previousEffect}\n\`\`\``,
+      `This card already has an effect.js from a previous run. It may be out of ` +
+        `date — the request/spec is the source of truth. Treat it as a starting ` +
+        `point and change the CODE to satisfy the request above (don't rewrite ` +
+        `from scratch unless it's unrelated):\n\n\`\`\`js\n${previousEffect}\n\`\`\``,
+    );
+  }
+  if (previousSpec && previousSpec.trim().length > 0) {
+    parts.push(
+      `The card's current spec — the source of truth for what it should do (the ` +
+        `user may have edited it). Make the code satisfy this spec; keep it ` +
+        `accurate and keep any extra notes the user added, only refining wording ` +
+        `rather than changing documented behavior to match stale code:` +
+        `\n\n\`\`\`markdown\n${previousSpec}\n\`\`\``,
     );
   }
   const messages: ChatMessage[] = [
@@ -238,6 +255,7 @@ async function evalScript(
       "writeFile",
       "readFile",
       "listFiles",
+      "writeSpec",
       "giveUp",
       "console",
       `"use strict";\nreturn (async () => {\n${code}\n})();`,
@@ -251,6 +269,7 @@ async function evalScript(
       api.writeFile,
       api.readFile,
       api.listFiles,
+      api.writeSpec,
       api.giveUp,
       api.console,
     );

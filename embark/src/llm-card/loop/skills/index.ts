@@ -1,4 +1,5 @@
 import { ANNOTATE_SKILL } from "./annotate";
+import { MAP_SEARCH_SKILL } from "./map-search";
 import { SEARCH_SKILL } from "./search";
 
 // A "skill" is a self-contained slice of the system prompt that documents one
@@ -14,6 +15,7 @@ export type Skill = {
 export const SKILLS: Record<string, Skill> = {
   [ANNOTATE_SKILL.name]: ANNOTATE_SKILL,
   [SEARCH_SKILL.name]: SEARCH_SKILL,
+  [MAP_SEARCH_SKILL.name]: MAP_SEARCH_SKILL,
 };
 
 // The one-line-per-skill menu injected into the system prompt.
