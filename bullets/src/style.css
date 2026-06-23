@@ -1,0 +1,879 @@
+.bullets-container {
+  background: var(--color-base-100, #1d232a);
+  color: var(--color-base-content, #a6adbb);
+  font-family: "Merriweather Sans", sans-serif;
+  font-size: 16px;
+  line-height: 1.5rem;
+  width: 100%;
+  height: 100%;
+  padding: 16px 24px;
+  box-sizing: border-box;
+  position: relative;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* Version gate: read-only mode for docs with a newer schema */
+.bullets-container.read-only .bullets-list,
+.bullets-container.read-only .bullets-add-btn,
+.bullets-container.read-only .bullets-title {
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.bullets-version-gate {
+  background: #3a2a1a;
+  color: #e8c872;
+  padding: 8px 14px;
+  border-radius: 4px;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+/* File drag-over indicator */
+.bullets-container.file-drag-over::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border: 2px dashed #4a9eff;
+  border-radius: 8px;
+  pointer-events: none;
+  z-index: 100;
+}
+
+/* Top bar (nav + hamburger) */
+.bullets-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--color-base-300, #15191e);
+}
+
+/* Navigation bar */
+.bullets-nav-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 0;
+}
+
+.bullets-nav-btn {
+  background: none;
+  border: none;
+  color: var(--color-base-content, #a6adbb);
+  opacity: 0.6;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.bullets-nav-btn:hover {
+  opacity: 1;
+  background: var(--color-base-200, #191e24);
+}
+
+.bullets-nav-sep {
+  color: var(--color-base-content, #a6adbb);
+  opacity: 0.4;
+  font-size: 12px;
+}
+
+/* Context title */
+.bullets-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.bullets-home-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: var(--color-base-content, #a6adbb);
+  opacity: 0.5;
+}
+
+.bullets-context-title {
+  font-family: "Merriweather Sans", sans-serif;
+  font-size: 1.5rem;
+  line-height: 2rem;
+  font-weight: 400;
+  color: var(--color-base-content, #a6adbb);
+  margin: 0;
+  padding: 0;
+  outline: none;
+  flex: 1;
+  min-width: 0;
+}
+
+.bullets-context-title:empty::before {
+  content: "Untitled";
+  color: var(--color-base-content, #a6adbb);
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+/* Bullet list */
+.bullets-list {
+  padding: 0;
+  position: relative;
+}
+
+.bullets-list.drag-selecting {
+  user-select: none;
+}
+
+/* Single bullet item */
+.bullet-item {
+  position: relative;
+}
+
+.bullet-row {
+  display: flex;
+  align-items: flex-start;
+  min-height: 28px;
+  padding: 1px 0;
+}
+
+.bullet-row:hover {
+  background: var(--color-base-200, rgba(255, 255, 255, 0.03));
+  border-radius: 3px;
+}
+
+.bullet-row.link-row {
+  background: linear-gradient(to right, transparent 36px, rgba(74, 144, 226, 0.08) 36px);
+  border-radius: 3px;
+}
+
+.bullet-row.link-row:hover {
+  background: linear-gradient(to right, transparent 36px, rgba(74, 144, 226, 0.12) 36px);
+}
+
+.bullets-title-row.link-row {
+  background: rgba(74, 144, 226, 0.08);
+  border-radius: 3px;
+}
+
+.bullets-title-row.link-row:hover {
+  background: rgba(74, 144, 226, 0.12);
+}
+
+.bullet-row.selected {
+  background: rgba(74, 158, 255, 0.15);
+  border-radius: 3px;
+}
+
+.bullet-controls {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  width: 32px;
+  justify-content: flex-end;
+  margin-right: 4px;
+  padding-top: 3px;
+}
+
+/* Collapse triangle */
+.bullet-triangle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-size: 8px;
+  color: var(--color-base-content, #a6adbb);
+  opacity: 0.3;
+  cursor: default;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.bullet-triangle.has-children {
+  cursor: pointer;
+  opacity: 0.5;
+}
+
+.bullet-triangle.has-children:hover {
+  opacity: 0.8;
+}
+
+/* Bullet dot. Padding expands the click target, background-clip keeps the dot small */
+.bullet-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  min-width: 6px;
+  padding: 6px;
+  background: var(--color-base-content, #a6adbb);
+  background-clip: content-box;
+  opacity: 0.5;
+  border-radius: 50%;
+  margin-right: -4px;
+  margin-left: -2px;
+  flex-shrink: 0;
+  cursor: pointer;
+  box-sizing: content-box;
+  position: relative;
+}
+
+.bullet-dot.has-collapsed-children::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px rgba(128, 128, 128, 0.6);
+  pointer-events: none;
+}
+
+.bullet-dot.mirrored {
+  border-radius: 1px;
+  transform: rotate(45deg);
+}
+
+.bullet-dot:hover {
+  opacity: 0.8;
+}
+
+/* Content editable */
+.bullet-content {
+  flex: 1;
+  outline: none;
+  padding: 0 4px;
+  min-height: 1.5rem;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+  cursor: text;
+  line-height: 1.5rem;
+}
+
+.bullet-content:focus {
+  background: var(--color-base-200, rgba(255, 255, 255, 0.04));
+  border-radius: 2px;
+}
+
+/* Children container with indent line */
+.bullet-children {
+  margin-left: 18px;
+  padding-left: 9px;
+  border-left: 1px solid var(--color-base-300, #15191e);
+}
+
+/* Add button */
+.bullets-add-btn {
+  background: none;
+  border: none;
+  color: var(--color-base-content, #a6adbb);
+  opacity: 0.3;
+  font-size: 30px;
+  cursor: pointer;
+  padding: 0;
+  margin-top: 4px;
+  margin-left: 18px;
+  line-height: 1;
+}
+
+.bullets-add-btn:hover {
+  opacity: 0.6;
+}
+
+/* Context menu */
+.bullets-context-menu {
+  position: absolute;
+  background: var(--color-base-200, #191e24);
+  border: 1px solid var(--color-base-300, #15191e);
+  border-radius: 6px;
+  padding: 4px 0;
+  min-width: 140px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+}
+
+.bullets-context-menu-item {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--color-base-content, #a6adbb);
+  font-size: 13px;
+  padding: 6px 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bullets-context-menu-item:hover {
+  background: var(--color-base-300, #15191e);
+}
+
+/* Drag and drop */
+.bullet-item.dragging {
+  opacity: 0.25;
+}
+
+.bullets-drop-indicator {
+  position: absolute;
+  height: 2px;
+  background: #4a9eff;
+  pointer-events: none;
+  z-index: 10;
+  border-radius: 1px;
+}
+
+.bullets-drop-indicator::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4a9eff;
+}
+
+/* Tag link in bullet content */
+.bullet-tag {
+  color: #a78bfa;
+  cursor: pointer;
+}
+.bullet-tag:hover {
+  text-decoration: underline;
+}
+
+/* Tag results page */
+.bullets-tag-header {
+  font-size: 1.25rem;
+  font-weight: 500;
+  color: #a78bfa;
+  margin-bottom: 12px;
+}
+.bullets-tag-results { /* container */ }
+.bullets-tag-result {
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--color-base-content, #a6adbb);
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bullets-tag-result:hover {
+  background: var(--color-base-300, #15191e);
+}
+
+/* Clickable web links in bullet content */
+.bullet-link {
+  color: #7ab4f5;
+  text-decoration: underline;
+  text-decoration-color: rgba(122, 180, 245, 0.4);
+  cursor: pointer;
+}
+
+.bullet-link:hover {
+  text-decoration-color: #7ab4f5;
+}
+
+/* Hidden content span when title is displayed */
+.bullet-content.link-hidden {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* Automerge URL content when editing (title hidden, content visible) */
+.bullet-content.automerge-url {
+  font-family: monospace;
+  font-size: 13px;
+}
+
+/* Image label (default label for image bullets. Replaced when title is set) */
+.bullet-content.image-label {
+  color: var(--color-base-content, #a6adbb);
+  opacity: 0.55;
+  font-style: italic;
+}
+
+/* Context-level: hidden h1 when title is displayed */
+.bullets-context-title.link-hidden {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.bullets-context-title.image-label {
+  color: var(--color-base-content, #a6adbb);
+  opacity: 0.55;
+  font-style: italic;
+}
+
+/* Automerge/YouTube doc title. Primary display, clickable to edit link */
+.bullet-am-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+  line-height: 1.5rem;
+  color: var(--color-base-content, #a6adbb);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 4px;
+  cursor: text;
+}
+
+/* Context-level title for automerge URL bullets. Primary display */
+.bullets-context-am-title {
+  flex: 1;
+  min-width: 0;
+  font-family: "Merriweather Sans", sans-serif;
+  font-size: 1.5rem;
+  line-height: 2rem;
+  font-weight: 400;
+  color: var(--color-base-content, #a6adbb);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: text;
+}
+
+/* Embed toggle arrow (before content, after bullet dot) */
+.embed-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  font-size: 10px;
+  color: #7ab4f5;
+  opacity: 0.7;
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+  margin-right: 2px;
+  border-radius: 3px;
+}
+
+.embed-toggle:hover {
+  opacity: 1;
+  background: rgba(74, 144, 226, 0.15);
+}
+
+/* Embed wrapper (same indent as .bullet-children) */
+.automerge-embed-wrapper {
+  margin-left: 18px;
+  padding-left: 9px;
+  border-left: 1px solid var(--color-base-300, #15191e);
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+/* Context-level embed (no indent) */
+.automerge-embed-wrapper.context-embed {
+  margin-left: 0;
+  padding-left: 0;
+  border-left: none;
+  margin-bottom: 12px;
+}
+
+/* Blocked embed message (circular or depth limit) */
+.embed-blocked {
+  color: var(--color-base-content, #a6adbb);
+  opacity: 0.5;
+  font-size: 13px;
+  font-style: italic;
+  padding: 8px 12px;
+}
+
+/* Container for the patchwork-view element */
+.automerge-embed-container {
+  border: 1px solid var(--color-base-content, #a6adbb);
+  border-radius: 4px;
+  overflow: hidden;
+  height: 400px;
+}
+
+/* YouTube embed */
+.youtube-embed {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: none;
+  border-radius: 4px;
+}
+
+/* Image embed */
+.bullet-image-embed {
+  max-width: 100%;
+  border-radius: 4px;
+}
+
+
+/* Search button */
+.bullets-search-btn {
+  background: none;
+  border: none;
+  color: var(--color-base-content, #a6adbb);
+  opacity: 0.5;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.bullets-search-btn:hover,
+.bullets-search-btn.active {
+  opacity: 1;
+  background: var(--color-base-200, #191e24);
+}
+
+/* Info button */
+.bullets-info-btn {
+  background: none;
+  border: none;
+  color: var(--color-base-content, #a6adbb);
+  opacity: 0.5;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.bullets-info-btn:hover,
+.bullets-info-btn.active {
+  opacity: 1;
+  background: var(--color-base-200, #191e24);
+}
+
+/* Info panel */
+.bullets-info-panel {
+  background: var(--color-base-200, #191e24);
+  border: 1px solid var(--color-base-300, #15191e);
+  border-radius: 6px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.bullets-info-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-base-content, #a6adbb);
+  margin-bottom: 4px;
+}
+
+.bullets-info-section {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-base-content, #a6adbb);
+  opacity: 0.5;
+  margin-top: 8px;
+  margin-bottom: 2px;
+}
+
+.bullets-info-text {
+  color: var(--color-base-content, #a6adbb);
+  opacity: 0.7;
+}
+
+.bullets-info-text b {
+  opacity: 1;
+  color: var(--color-base-content, #a6adbb);
+}
+
+/* Search panel */
+.bullets-search-panel {
+  background: var(--color-base-200, #191e24);
+  border: 1px solid var(--color-base-300, #15191e);
+  border-radius: 6px;
+  padding: 8px;
+  margin-bottom: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  max-height: 350px;
+  overflow-y: auto;
+}
+
+.bullets-search-input {
+  width: 100%;
+  background: var(--color-base-100, #1d232a);
+  border: 1px solid var(--color-base-300, #15191e);
+  border-radius: 4px;
+  color: var(--color-base-content, #a6adbb);
+  font-family: "Merriweather Sans", sans-serif;
+  font-size: 14px;
+  padding: 6px 10px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.bullets-search-input:focus {
+  border-color: #4a9eff;
+}
+
+.bullets-search-empty {
+  font-size: 13px;
+  color: var(--color-base-content, #a6adbb);
+  opacity: 0.4;
+  padding: 8px 6px;
+  font-style: italic;
+}
+
+.bullets-search-result {
+  padding: 6px 6px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--color-base-content, #a6adbb);
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bullets-search-result:hover,
+.bullets-search-result.selected {
+  background: var(--color-base-300, #15191e);
+}
+
+.bullets-search-match {
+  background: rgba(74, 158, 255, 0.25);
+  border-radius: 2px;
+}
+
+/* Hamburger menu button */
+.bullets-hamburger {
+  background: none;
+  border: none;
+  color: var(--color-base-content, #a6adbb);
+  opacity: 0.5;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.bullets-hamburger:hover,
+.bullets-hamburger.active {
+  opacity: 1;
+  background: var(--color-base-200, #191e24);
+}
+
+/* Favorites panel */
+.bullets-favorites-panel {
+  position: relative;
+  background: var(--color-base-200, #191e24);
+  border: 1px solid var(--color-base-300, #15191e);
+  border-radius: 6px;
+  padding: 8px 0;
+  margin-bottom: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.bullets-favorites-header {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-base-content, #a6adbb);
+  opacity: 0.5;
+  padding: 4px 14px 8px;
+}
+
+.bullets-favorites-empty {
+  font-size: 13px;
+  color: var(--color-base-content, #a6adbb);
+  opacity: 0.4;
+  padding: 8px 14px;
+  font-style: italic;
+}
+
+.bullets-favorites-item {
+  display: flex;
+  align-items: center;
+  padding: 6px 14px;
+  cursor: pointer;
+  gap: 8px;
+}
+
+.bullets-favorites-item:hover {
+  background: var(--color-base-300, #15191e);
+}
+
+.bullets-favorites-item-text {
+  flex: 1;
+  font-size: 14px;
+  color: var(--color-base-content, #a6adbb);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* Star icon on bullet rows */
+.bullet-star {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--color-base-content, #a6adbb);
+  opacity: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-left: 4px;
+  border-radius: 3px;
+  transition: opacity 0.1s;
+}
+
+.bullet-row:hover .bullet-star {
+  opacity: 0.3;
+}
+
+.bullet-row:hover .bullet-star:hover {
+  opacity: 0.7;
+}
+
+.bullet-star.starred {
+  opacity: 0.7;
+  color: #f5c842;
+}
+
+.bullet-star.starred:hover {
+  opacity: 1;
+}
+
+.bullet-row:hover .bullet-star.starred {
+  opacity: 0.7;
+}
+
+.bullet-row:hover .bullet-star.starred:hover {
+  opacity: 1;
+}
+
+/* Completed bullets */
+.bullet-item.completed .bullet-content {
+  text-decoration: line-through;
+  opacity: 0.4;
+}
+
+.bullet-item.completed .bullet-dot {
+  opacity: 0.25;
+}
+
+.bullet-row.completed {
+  opacity: 0.6;
+}
+
+/* Show completed toggle button */
+.bullets-completed-btn {
+  background: none;
+  border: none;
+  color: var(--color-base-content, #a6adbb);
+  opacity: 0.35;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.bullets-completed-btn:hover {
+  opacity: 0.7;
+  background: var(--color-base-200, #191e24);
+}
+
+.bullets-completed-btn.active {
+  opacity: 1;
+  color: #4ade80;
+  background: var(--color-base-200, #191e24);
+}
+
+/* Mobile toolbar */
+.bullets-mobile-toolbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+  background: var(--color-base-200, #191e24);
+  border-top: 1px solid var(--color-base-300, #15191e);
+  padding: 8px 0;
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+  z-index: 1000;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.bullets-mobile-toolbar-btn {
+  background: none;
+  border: 1px solid var(--color-base-300, #15191e);
+  color: var(--color-base-content, #a6adbb);
+  cursor: pointer;
+  padding: 10px 14px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.bullets-mobile-toolbar-btn:active {
+  background: var(--color-base-300, #15191e);
+}
+
+.bullets-container.mobile-toolbar-active {
+  padding-bottom: 70px;
+}
+
+/* Favorites drag-to-reorder */
+.bullets-favorites-item.dragging {
+  opacity: 0.25;
+}
+
+.bullets-fav-drop-indicator {
+  position: absolute;
+  height: 2px;
+  background: #4a9eff;
+  pointer-events: none;
+  z-index: 10;
+  border-radius: 1px;
+}
+
+.bullets-fav-drop-indicator::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4a9eff;
+}

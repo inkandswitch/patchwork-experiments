@@ -1,0 +1,6 @@
+[build]
+  command = "pnpm build:standalone"
+  publish = "dist-standalone"
+
+[build.environment]
+  NODE_VERSION = "20"
