@@ -32,7 +32,7 @@ export function serializeSubtree(
   }
   const result: ClipboardNode = {
     content: node.content,
-    collapsed: node.collapsed,
+    collapsed: node.collapsed ?? false,
     starred: node.starred,
     children,
   };

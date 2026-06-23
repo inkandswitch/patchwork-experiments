@@ -1,6 +1,6 @@
 import { updateText } from "@automerge/automerge";
 import type { DocHandle } from "@automerge/automerge-repo";
-import { createSignal, createEffect, createMemo, Show, type Accessor } from "solid-js";
+import { createSignal, createEffect, Show, type Accessor } from "solid-js";
 import type { BulletsDoc } from "../datatype.ts";
 import type { ToolContext } from "../tool-context.ts";
 import {

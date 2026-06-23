@@ -1,6 +1,6 @@
 import type { DocHandle } from "@automerge/automerge-repo";
 import type { Accessor } from "solid-js";
-import type { BulletsDoc } from "../datatype.ts";
+import type { BulletsDoc, UndoOp } from "../datatype.ts";
 import { findParentId } from "../tree-utils.ts";
 import { getActiveBulletId } from "../dom-utils.ts";
 import type { ToolContext } from "../tool-context.ts";

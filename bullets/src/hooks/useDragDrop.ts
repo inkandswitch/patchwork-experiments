@@ -1,6 +1,6 @@
 import { createSignal, type Accessor } from "solid-js";
 import type { DocHandle } from "@automerge/automerge-repo";
-import type { BulletsDoc, ImageDoc } from "../datatype.ts";
+import type { BulletsDoc, ImageDoc, UndoOp } from "../datatype.ts";
 import { findParentId, flattenVisibleWithDepth, collectDescendantIds, imageLabelFromMimeType } from "../tree-utils.ts";
 import { isNodeInSet } from "../instance-keys.ts";
 import { getActiveBulletId } from "../dom-utils.ts";
@@ -357,7 +357,7 @@ export function useDragDrop(deps: {
       const mimeType = file.type;
 
       file.arrayBuffer().then((buffer) => {
-        const repo = (deps.getElement() as Record<string, unknown>).repo as
+        const repo = (deps.getElement() as unknown as Record<string, unknown>).repo as
           | { create<T>(init?: T): { url: string } }
           | undefined;
 

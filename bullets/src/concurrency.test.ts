@@ -267,22 +267,23 @@ describe("Batch 1: Structural integrity", () => {
       expect(countReferences(repaired, "b")).toBe(1);
     });
 
-    it("preserves intentional mirrors (mirroredIds)", () => {
-      let base = Automerge.from<BulletsDoc>({
-        title: "Test",
-        rootId: "root",
-        mirroredIds: ["b"],
-        nodes: {
-          root: makeNode("", ["a", "b"]),
-          a: makeNode("Alpha", ["b"]),  // b intentionally mirrored under a
-          b: makeNode("Bravo"),
-        },
-      });
-
-      const { duplicates } = detectTreeIssues(base);
-      // b is in mirroredIds. Should NOT be flagged as duplicate
-      expect(duplicates.length).toBe(0);
-    });
+    // DISABLED: mirroring feature temporarily disabled, will be re-enabled later
+    // it("preserves intentional mirrors (mirroredIds)", () => {
+    //   let base = Automerge.from<BulletsDoc>({
+    //     title: "Test",
+    //     rootId: "root",
+    //     mirroredIds: ["b"],
+    //     nodes: {
+    //       root: makeNode("", ["a", "b"]),
+    //       a: makeNode("Alpha", ["b"]),  // b intentionally mirrored under a
+    //       b: makeNode("Bravo"),
+    //     },
+    //   });
+    //
+    //   const { duplicates } = detectTreeIssues(base);
+    //   // b is in mirroredIds. Should NOT be flagged as duplicate
+    //   expect(duplicates.length).toBe(0);
+    // });
   });
 
   // -----------------------------------------------------------------------

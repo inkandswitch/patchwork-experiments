@@ -549,20 +549,21 @@ describe("Tree Utilities", () => {
       expect(orphanedCycles.length).toBeGreaterThan(0);
     });
 
-    it("preserves intentional mirrors in mirroredIds", () => {
-      const doc: BulletsDoc = {
-        title: "Test",
-        rootId: "root",
-        mirroredIds: ["b"],
-        nodes: {
-          root: makeNode("", ["a", "b"]),
-          a: makeNode("Alpha", ["b"]),
-          b: makeNode("Bravo"),
-        },
-      };
-      const { duplicates } = detectTreeIssues(doc);
-      expect(duplicates.length).toBe(0);
-    });
+    // DISABLED: mirroring feature temporarily disabled, will be re-enabled later
+    // it("preserves intentional mirrors in mirroredIds", () => {
+    //   const doc: BulletsDoc = {
+    //     title: "Test",
+    //     rootId: "root",
+    //     mirroredIds: ["b"],
+    //     nodes: {
+    //       root: makeNode("", ["a", "b"]),
+    //       a: makeNode("Alpha", ["b"]),
+    //       b: makeNode("Bravo"),
+    //     },
+    //   };
+    //   const { duplicates } = detectTreeIssues(doc);
+    //   expect(duplicates.length).toBe(0);
+    // });
   });
 
   // -----------------------------------------------------------------------
@@ -1688,29 +1689,30 @@ describe("Search", () => {
 // ===========================================================================
 
 describe("Mirrors", () => {
-  it("same ID in two parents creates a mirror", () => {
-    const doc = Automerge.from<BulletsDoc>({
-      title: "Test",
-      rootId: "root",
-      mirroredIds: ["b"],
-      nodes: {
-        root: makeNode("", ["a", "b"]),
-        a: makeNode("Alpha", ["b"]),
-        b: makeNode("Bravo"),
-      },
-    });
-
-    // b appears in both root and a
-    expect(doc.nodes.root.children).toContain("b");
-    expect(doc.nodes.a.children).toContain("b");
-
-    // Marked as intentional mirror
-    expect(doc.mirroredIds).toContain("b");
-
-    // detectTreeIssues does NOT flag it as duplicate
-    const { duplicates } = detectTreeIssues(doc);
-    expect(duplicates.length).toBe(0);
-  });
+  // DISABLED: mirroring feature temporarily disabled, will be re-enabled later
+  // it("same ID in two parents creates a mirror", () => {
+  //   const doc = Automerge.from<BulletsDoc>({
+  //     title: "Test",
+  //     rootId: "root",
+  //     mirroredIds: ["b"],
+  //     nodes: {
+  //       root: makeNode("", ["a", "b"]),
+  //       a: makeNode("Alpha", ["b"]),
+  //       b: makeNode("Bravo"),
+  //     },
+  //   });
+  //
+  //   // b appears in both root and a
+  //   expect(doc.nodes.root.children).toContain("b");
+  //   expect(doc.nodes.a.children).toContain("b");
+  //
+  //   // Marked as intentional mirror
+  //   expect(doc.mirroredIds).toContain("b");
+  //
+  //   // detectTreeIssues does NOT flag it as duplicate
+  //   const { duplicates } = detectTreeIssues(doc);
+  //   expect(duplicates.length).toBe(0);
+  // });
 
   it("cycle guard prevents pasting mirror into its own subtree", () => {
     const doc = Automerge.from<BulletsDoc>({
@@ -1724,8 +1726,8 @@ describe("Mirrors", () => {
       },
     });
 
-    const mirrorId = "a";
-    const targetParentId = "c"; // c is a descendant of a
+    const mirrorId: string = "a";
+    const targetParentId: string = "c"; // c is a descendant of a
 
     // Guard check: cannot paste a into c (c is descendant of a)
     const wouldCycle = targetParentId === mirrorId ||
@@ -1745,8 +1747,8 @@ describe("Mirrors", () => {
       },
     });
 
-    const mirrorId = "a1";
-    const targetParentId = "b"; // b is not a descendant of a1
+    const mirrorId: string = "a1";
+    const targetParentId: string = "b"; // b is not a descendant of a1
 
     const wouldCycle = targetParentId === mirrorId ||
       isDescendantOf(doc, targetParentId, mirrorId);

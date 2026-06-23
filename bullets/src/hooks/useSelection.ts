@@ -1,6 +1,6 @@
 import { createSignal, type Accessor } from "solid-js";
 import type { DocHandle } from "@automerge/automerge-repo";
-import type { BulletsDoc } from "../datatype.ts";
+import type { BulletsDoc, UndoOp } from "../datatype.ts";
 import { flattenVisibleWithParent, findParentId } from "../tree-utils.ts";
 import { ikey, isNodeInSet } from "../instance-keys.ts";
 import { getActiveBulletId } from "../dom-utils.ts";
@@ -26,7 +26,7 @@ export function useSelection(deps: {
   let _skipNextClickClear = false;
 
   function clearSelection() {
-    setSelectedIds(new Set());
+    setSelectedIds(new Set<string>());
     selectionAnchorId = null;
   }
 

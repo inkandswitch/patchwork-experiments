@@ -6,6 +6,7 @@
   "main": "./dist/main.js",
   "scripts": {
     "build": "vite build",
+    "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.node.json && tsc -p tsconfig.test.json",
     "dev": "vite build --watch",
     "dev:standalone": "vite --config vite.standalone.config.ts",
     "build:standalone": "vite build --config vite.standalone.config.ts"

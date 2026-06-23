@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, type PluginOption } from "vite";
 import solid from "vite-plugin-solid";
 import cssInjectedByJsPlugin from "vite-plugin-css-injected-by-js";
 import pkg from "./package.json" with { type: "json" };
@@ -8,7 +8,10 @@ export default defineConfig({
   define: {
     __BULLETS_VERSION__: JSON.stringify(pkg.version),
   },
-  plugins: [solid(), cssInjectedByJsPlugin()],
+  // The plugins return a Plugin type from vite-plugin-solid's peer-resolved copy
+  // of vite, which pnpm keys separately from the root vite. They are the same
+  // version, so this assertion reconciles the two structurally identical types.
+  plugins: [solid(), cssInjectedByJsPlugin()] as PluginOption[],
   build: {
     sourcemap: "inline",
     target: "esnext",

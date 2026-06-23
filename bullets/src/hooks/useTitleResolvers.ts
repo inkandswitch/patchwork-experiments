@@ -20,7 +20,7 @@ export function useTitleResolvers(deps: {
       return title;
     }
 
-    const repo = (deps.element as Record<string, unknown>).repo as
+    const repo = (deps.element as unknown as Record<string, unknown>).repo as
       | { find(url: string): Promise<{ whenReady(): Promise<void>; doc(): Record<string, unknown> | null; on(event: string, cb: () => void): void }> }
       | undefined;
     if (!repo) return title;
@@ -101,7 +101,7 @@ export function useTitleResolvers(deps: {
     const [src, setSrc] = createSignal<string | null>(null);
     imageSrcCache.set(url, src);
 
-    const repo = (deps.element as Record<string, unknown>).repo as
+    const repo = (deps.element as unknown as Record<string, unknown>).repo as
       | { find(url: string): Promise<{ whenReady(): Promise<void>; doc(): Record<string, unknown> | null }> }
       | undefined;
     if (!repo) return src;
@@ -112,7 +112,7 @@ export function useTitleResolvers(deps: {
         await handle.whenReady();
         const d = handle.doc() as ImageDoc | null;
         if (d?.data && d.mimeType) {
-          const blob = new Blob([d.data], { type: d.mimeType });
+          const blob = new Blob([d.data as BlobPart], { type: d.mimeType });
           const blobUrl = URL.createObjectURL(blob);
           blobUrls.push(blobUrl);
           setSrc(blobUrl);

@@ -3,7 +3,7 @@ import type { Patch } from "@automerge/automerge";
 import type { DocHandle } from "@automerge/automerge-repo";
 import { makeDocumentProjection } from "@automerge/automerge-repo-solid-primitives";
 import { createSignal, createMemo, For, Show, onMount, onCleanup, untrack } from "solid-js";
-import type { BulletsDoc, UndoOp } from "./datatype.ts";
+import type { BulletsDoc } from "./datatype.ts";
 import {
   findParentId,
   isAutomergeUrl,
@@ -70,7 +70,7 @@ export function BulletsTool(props: {
   // Debounced so rapid remote sync messages coalesce into a single DFS run.
   const [structuralVersion, setStructuralVersion] = createSignal(0);
   let structuralTimer: number | undefined;
-  const off = props.handle.on("change", ({ patches }) => {
+  const onStructuralChange = ({ patches }: { patches: Patch[] }) => {
     if (hasStructuralChange(patches)) {
       if (structuralTimer === undefined) {
         setStructuralVersion((v) => v + 1);
@@ -81,9 +81,10 @@ export function BulletsTool(props: {
         setStructuralVersion((v) => v + 1);
       }, STRUCTURAL_DEBOUNCE_MS);
     }
-  });
+  };
+  props.handle.on("change", onStructuralChange);
   onCleanup(() => {
-    if (typeof off === "function") off();
+    props.handle.off("change", onStructuralChange);
     clearTimeout(structuralTimer);
     try { cleanupBlobUrls(); } catch {}
   });
@@ -146,7 +147,7 @@ export function BulletsTool(props: {
   });
   const {
     contextId, contextRootId, focusedBulletId, focusedParentHint, focusCursorOffset,
-    setFocusedBulletId, contextMenu, setContextMenu, activeTag, setActiveTag,
+    setFocusedBulletId, contextMenu, setContextMenu, activeTag,
     allTags, tagResults, openTag, goToContext, focusTitle, goBack, goUp, goHome,
     addBulletAtEnd, restoreContext,
   } = nav;
@@ -199,7 +200,6 @@ export function BulletsTool(props: {
   const mirrorClipboardId = () => null;
   const setMirrorClipboardId = (_id: string | null) => {};
   const isNodeMirrored = (_id: string) => false;
-  const handleMirrorKeys = (_e: KeyboardEvent) => {};
 
   useMigration({ doc, handle: props.handle });
   useTreeRepair({ doc, handle: props.handle, structuralVersion });
@@ -267,7 +267,7 @@ export function BulletsTool(props: {
     }
   }
 
-  function handleFocusOut(e: FocusEvent) {
+  function handleFocusOut(_e: FocusEvent) {
     if (!isTouchDevice()) return;
     // Delay to allow clicks on toolbar buttons before hiding
     setTimeout(() => {
