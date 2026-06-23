@@ -309,6 +309,32 @@ w.allMethodSpecs = function () {
   });
   return methodSpecs;
 };
+w.exportMethodShouldOmit = function (name) {
+  if (
+    name === 'downloadTextFile' ||
+    name === '_finishSystemExport' ||
+    name === 'viewExportedSystem' ||
+    name === 'loadExportCatalog' ||
+    name === 'exportEntireSystem' ||
+    name === 'exportOrganizedSystemString' ||
+    name === '_exportCatalogApi' ||
+    name === 'exportMethodShouldOmit' ||
+    name === 'exportOmitMethodNames'
+  )
+    return true;
+  if (name.indexOf('exportCatalog') === 0) return true;
+  if (
+    name === 'exportClassChunk' ||
+    name === 'exportMethodLinesOn' ||
+    name === 'exportProtoDataLines' ||
+    name === 'exportColorDataLines'
+  )
+    return true;
+  if (name.indexOf('systemCategory') === 0 || name.indexOf('systemClass') === 0) return true;
+  if (name === 'systemCatalog' || name === 'systemClassBlurbs') return true;
+  if (name === 'systemFileHeader' || name === 'systemBootstrapSource') return true;
+  return false;
+};
 w.exportPartsForSelection = function (selection, optsIfAny) {
   let opts = optsIfAny || {};
   let includeClassDef = opts.includeClassDef !== false;
@@ -337,6 +363,7 @@ w.exportPartsForSelection = function (selection, optsIfAny) {
 
   let names = Object.getOwnPropertyNames(obj)
     .filter((name) => typeof obj[name] == 'function')
+    .filter((name) => !w.exportMethodShouldOmit(name))
     .sort();
   lines = names.map((name) => {
     if (classSelection == 'w.') return 'w.' + name + ' = ' + obj[name].toString();
@@ -602,6 +629,315 @@ w.pointerOnOskKeyUI = function (world, worldPt) {
   }
   return false;
 };
+w.stackTraceLines = function (err, catchStackIfAny) {
+  let lines = [];
+  if (err && err.stack) lines = String(err.stack).split('\n');
+  else if (catchStackIfAny) lines = String(catchStackIfAny).split('\n').slice(1);
+  return lines.map((line) => line.trimEnd()).filter((line) => line.length > 0);
+};
+w.parseStackFrameLine = function (line) {
+  let m = String(line)
+    .trim()
+    .match(/^at\s+(?:([\s\S]+?)\s+\(([\s\S]+?):(\d+):(\d+)\)|([\s\S]+?):(\d+):(\d+))$/);
+  if (!m) return null;
+  if (m[1] != null)
+    return { name: m[1].trim(), file: m[2], line: +m[3], col: +m[4] };
+  return { name: null, file: m[5], line: +m[6], col: +m[7] };
+};
+w.extractAlldefsLineFromFrame = function (line) {
+  let m = String(line).match(/alldefs\.js(?:\?[^:]*)?:(\d+):(\d+)/i);
+  if (!m) return null;
+  return { line: +m[1], col: +m[2] };
+};
+w.stackFrameLabelName = function (line) {
+  let m = String(line).trim().match(/^at\s+(.+?)\s+\(/);
+  if (m) return m[1].trim();
+  m = String(line).trim().match(/^at\s+(\S+)/);
+  return m ? m[1] : 'frame';
+};
+w.scrubStackFrameUrls = function (line) {
+  return String(line).replace(/https?:\/\/[^\s):]+/g, function (url) {
+    return w.shortStackFileName(url);
+  });
+};
+w.shortStackFileName = function (file) {
+  let s = String(file || '');
+  let q = s.indexOf('?');
+  if (q >= 0) s = s.slice(0, q);
+  let ix = s.lastIndexOf('/');
+  if (ix >= 0) s = s.slice(ix + 1);
+  return s || file;
+};
+w.isAlldefsStackFile = function (file) {
+  return /alldefs\.js$/i.test(w.shortStackFileName(file));
+};
+w.formatStackFrameLine = function (rawLine) {
+  let line = String(rawLine).trim();
+  let frame = w.parseStackFrameLine(line);
+  if (frame) {
+    let shortFile = w.shortStackFileName(frame.file);
+    if (frame.name)
+      return ['  at ' + frame.name + ' (' + shortFile + ':' + frame.line + ')'];
+    return ['  at ' + shortFile + ':' + frame.line];
+  }
+  let alldefsRef = w.extractAlldefsLineFromFrame(line);
+  if (alldefsRef) {
+    let name = w.stackFrameLabelName(line);
+    return ['  at ' + name + ' (alldefs.js:' + alldefsRef.line + ')'];
+  }
+  let scrubbed = w.scrubStackFrameUrls(line);
+  return [scrubbed.startsWith('at ') ? '  ' + scrubbed : scrubbed];
+};
+w.formatStackTraceForReport = function (err) {
+  let trace = w.stackTraceLines(err);
+  if (!trace.length) {
+    try {
+      throw new Error('stack capture');
+    } catch (cap) {
+      trace = w.stackTraceLines(cap).slice(1);
+    }
+  }
+  let msg = err && err.message != null ? String(err.message) : String(err);
+  let errName = err && err.name ? err.name : 'Error';
+  let parts = [];
+  trace.forEach(function (line) {
+    if (line.indexOf('Error:') === 0 && line.indexOf(msg) >= 0) return;
+    if (line.indexOf(errName + ':') === 0 && line.indexOf(msg) >= 0) return;
+    parts.push.apply(parts, w.formatStackFrameLine(line));
+  });
+  return parts;
+};
+w.stackNameToMethodSpec = function (name) {
+  if (!name || name === 'eval' || name === '<anonymous>') return null;
+  let s = String(name).trim();
+  if (s.startsWith('w.')) s = s.slice(2);
+  if (/^\w+\.proto\.\w+$/.test(s)) return s;
+  if (/^\w+\.class\.\w+$/.test(s)) return s;
+  if (/^\w+$/.test(s) && typeof w[s] === 'function') return 'w.' + s;
+  return null;
+};
+w.methodSpecForAlldefsLine = function (lineNo) {
+  let lines = w._alldefsSourceLines;
+  if (!lines || lineNo < 1 || lineNo > lines.length) return null;
+  for (let i = lineNo - 1; i >= 0; i--) {
+    let line = lines[i];
+    let m = line.match(/^w\.(\w+)\.proto\.(\w+)\s*=/);
+    if (m) return m[1] + '.proto.' + m[2];
+    m = line.match(/^w\.(\w+)\s*=\s*function/);
+    if (m) return 'w.' + m[1];
+  }
+  return null;
+};
+w.stackFrameSourceText = function (frame) {
+  if (frame.methodSpec) {
+    try {
+      if (frame.methodSpec.startsWith('w.')) {
+        let fn = w[frame.methodSpec.slice(2)];
+        if (typeof fn === 'function') return frame.methodSpec + ' = ' + fn.toString();
+      } else {
+        let fn = w.methodFromSpec(frame.methodSpec);
+        if (typeof fn === 'function')
+          return 'w.' + frame.methodSpec + ' = ' + fn.toString();
+      }
+    } catch (e) {
+      /* fall through */
+    }
+  }
+  if (frame.alldefsLine && w._alldefsSourceLines) {
+    return w
+      .alldefsSourceExcerpt(frame.alldefsLine, 4)
+      .map(function (ex) {
+        return String(ex.no).padStart(5) + '  ' + ex.text;
+      })
+      .join('\n');
+  }
+  if ((frame.name === 'eval' || frame.name === '<anonymous>') && w._lastEvalSource)
+    return w._lastEvalSource;
+  return null;
+};
+w.stackFrameListLabel = function (frame) {
+  if (frame.methodSpec) return frame.methodSpec;
+  if (frame.name === 'eval' || frame.name === '<anonymous>') {
+    if (w._lastEvalSource)
+      return 'eval: ' + w.truncateString(w._lastEvalSource.replace(/\s+/g, ' ').trim(), 52);
+    return 'eval';
+  }
+  if (frame.name && frame.file && frame.line)
+    return frame.name + ' (' + w.shortStackFileName(frame.file) + ':' + frame.line + ')';
+  if (frame.name) return frame.name;
+  if (frame.alldefsLine) return 'alldefs.js:' + frame.alldefsLine;
+  return 'frame';
+};
+w.stackFrameHighlightName = function (frame) {
+  if (!frame) return null;
+  if (frame.methodSpec) {
+    let spec = frame.methodSpec.startsWith('w.') ? frame.methodSpec.slice(2) : frame.methodSpec;
+    let dot = spec.lastIndexOf('.');
+    return dot >= 0 ? spec.slice(dot + 1) : spec;
+  }
+  let n = frame.name ? String(frame.name).trim() : '';
+  if (!n || n === 'eval' || n === '<anonymous>') return null;
+  if (n.startsWith('w.')) n = n.slice(2);
+  let dot = n.lastIndexOf('.');
+  return dot >= 0 ? n.slice(dot + 1) : n;
+};
+w.stackFrameFromRawLine = function (rawLine) {
+  let line = String(rawLine).trim();
+  let name = w.stackFrameLabelName(line);
+  let parsed = w.parseStackFrameLine(line);
+  let alldefsRef = w.extractAlldefsLineFromFrame(line);
+  let methodSpec = w.stackNameToMethodSpec(name);
+  if (!methodSpec && alldefsRef) methodSpec = w.methodSpecForAlldefsLine(alldefsRef.line);
+  let frame = {
+    name: name,
+    file: parsed ? parsed.file : null,
+    line: parsed ? parsed.line : alldefsRef ? alldefsRef.line : null,
+    alldefsLine: alldefsRef ? alldefsRef.line : null,
+    methodSpec: methodSpec,
+  };
+  frame.listLabel = w.stackFrameListLabel(frame);
+  frame.sourceText = w.stackFrameSourceText(frame);
+  return frame;
+};
+w.stackFramesFromError = function (err) {
+  let trace = w.stackTraceLines(err);
+  let msg = err && err.message != null ? String(err.message) : String(err);
+  let errName = err && err.name ? err.name : 'Error';
+  let frames = [];
+  trace.forEach(function (line) {
+    if (line.indexOf('Error:') === 0 && line.indexOf(msg) >= 0) return;
+    if (line.indexOf(errName + ':') === 0 && line.indexOf(msg) >= 0) return;
+    frames.push(w.stackFrameFromRawLine(line));
+  });
+  return frames;
+};
+w.errorReportHeader = function (err, contextIfAny) {
+  let when = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  let name = err && err.name ? err.name : 'Error';
+  let msg = err && err.message != null ? String(err.message) : String(err);
+  let parts = ['// Runtime error — ' + when];
+  if (contextIfAny) parts.push('// Context: ' + contextIfAny);
+  parts.push('', name + ': ' + msg);
+  return parts.join('\n');
+};
+w.formatErrorReport = function (err, contextIfAny) {
+  let parts = [w.errorReportHeader(err, contextIfAny), '', '// Stack trace:'];
+  w.formatStackTraceForReport(err).forEach(function (line) {
+    parts.push(line);
+  });
+  return parts.join('\n');
+};
+w.ensureAlldefsSourceLines = function () {
+  if (w._alldefsSourceLines) return Promise.resolve(w._alldefsSourceLines);
+  let url = w.alldefsScriptUrl != null ? w.alldefsScriptUrl : 'alldefs.js';
+  return fetch(url)
+    .then(function (r) {
+      if (!r.ok) throw new Error('ensureAlldefsSourceLines: ' + r.status + ' ' + url);
+      return r.text();
+    })
+    .then(function (text) {
+      w._alldefsSourceLines = text.split('\n');
+      return w._alldefsSourceLines;
+    })
+    .catch(function (e) {
+      console.warn('alldefs source not loaded for stack excerpts', e);
+      return null;
+    });
+};
+w.alldefsSourceExcerpt = function (lineNo, radiusIfAny) {
+  let lines = w._alldefsSourceLines;
+  if (!lines || lineNo < 1 || lineNo > lines.length) return [];
+  let radius = radiusIfAny != null ? radiusIfAny : 1;
+  let out = [];
+  let lo = Math.max(0, lineNo - 1 - radius);
+  let hi = Math.min(lines.length, lineNo - 1 + radius + 1);
+  for (let i = lo; i < hi; i++) out.push({ no: i + 1, text: lines[i] });
+  return out;
+};
+w.handleRuntimeError = function (err, contextIfAny) {
+  if (w.Lively && w.Lively.addMorph) {
+    w.presentError(err, contextIfAny);
+    return true;
+  }
+  w.recoverFromRuntimeError(err, contextIfAny);
+  return false;
+};
+w.errorPanelTitle = function (err) {
+  let name = err && err.name ? err.name : 'Error';
+  let msg = err && err.message != null ? String(err.message) : String(err);
+  return 'Error: ' + w.truncateString(name + ' — ' + msg, 72);
+};
+w.errorReportPanelBounds = function () {
+  let b = w.getBounds();
+  if (!b) return w.rect(40, 40, 520, 420);
+  let wdt = Math.min(560, Math.max(320, Math.floor(b.width() * 0.55)));
+  let ht = Math.min(520, Math.max(240, Math.floor(b.height() * 0.65)));
+  return w.rect(24, 24, wdt, ht);
+};
+w.openErrorStackPanel = function (err, contextIfAny, titleIfAny) {
+  if (!w.Lively || !w.Lively.addMorph) return null;
+  let panel = w.ErrorStackPanel.new(
+    w.errorReportPanelBounds(),
+    err,
+    contextIfAny,
+    titleIfAny || w.errorPanelTitle(err),
+  );
+  w.Lively.addMorph(panel);
+  panel.beTopMorph();
+  return panel;
+};
+w.presentError = function (err, contextIfAny) {
+  let report = w.formatErrorReport(err, contextIfAny);
+  w._lastErrorReport = report;
+  console.error(report);
+  let panel = w.openErrorStackPanel(err, contextIfAny);
+  if (!w._alldefsSourceLines) {
+    w.ensureAlldefsSourceLines().then(function () {
+      if (panel && panel.refreshStackSources) panel.refreshStackSources();
+    });
+  }
+  return panel;
+};
+w.recoverFromRuntimeError = function (err, contextIfAny) {
+  if (w._errorRecoveryInProgress) {
+    console.error('error during recovery', err);
+    return null;
+  }
+  w._errorRecoveryInProgress = true;
+  try {
+    let report = w.formatErrorReport(err, contextIfAny);
+    w._lastErrorReport = report;
+    console.error(report);
+    if (window._uiRafId != null) {
+      cancelAnimationFrame(window._uiRafId);
+      window._uiRafId = null;
+    }
+    if (window._uiAbortController) window._uiAbortController.abort();
+    w.initUI();
+    w.initLively();
+    let panel = w.openErrorStackPanel(err, contextIfAny);
+    w.render();
+    return panel;
+  } finally {
+    w._errorRecoveryInProgress = false;
+  }
+};
+w.evaluateWithErrorRecovery = function (fn, contextIfAny) {
+  w._evalJustFailed = false;
+  try {
+    return fn();
+  } catch (err) {
+    w._evalJustFailed = true;
+    w.presentError(err, contextIfAny);
+    return undefined;
+  }
+};
+w.triggerTestError = function (messageIfAny) {
+  throw new Error(messageIfAny != null ? String(messageIfAny) : 'intentional test error');
+};
+w.scheduleFrameTestError = function (messageIfAny) {
+  w._frameTestError = messageIfAny != null ? String(messageIfAny) : 'scheduled animation-frame error';
+};
 w.init = function (restart) {
   // w.init()
   console.log('init!');
@@ -709,13 +1045,18 @@ w.initUI = function () {
   function onFrame() {
     try {
       impl.change(() => {
+        if (w._frameTestError) {
+          let msg = w._frameTestError;
+          w._frameTestError = null;
+          throw new Error(msg);
+        }
         processEvents();
         w.render();
         window._uiRafId = requestAnimationFrame(onFrame);
       });
     } catch (e) {
-      console.error(e);
-      debugger;
+      w.handleRuntimeError(e, 'animation frame');
+      window._uiRafId = requestAnimationFrame(onFrame);
     }
   }
 
@@ -762,6 +1103,7 @@ w.initUI = function () {
     canvasEvents = [];
   }
   console.log('initUI loaded');
+  w.ensureAlldefsSourceLines();
 };
 w.inspect = function (obj, optionalBounds) {
   // w.inspect(w.pt(3, 5));
@@ -1117,25 +1459,40 @@ w.storageEditItem = function (key) {
   //w.storageEditItem('ToDoList')
   w.Lively.addMorph(
     w.MethodPanel.new(null, 'to do list', 'localStorage.' + key), );
-}
-w.storeEntireSystem = function () {
-  // w.storeEntireSystem();
-  // This method will write the entire sources of PyonPyon
-  // in the same form as it was when we were debugging with VSCode.
-  // It writes to working storeage as "system.methods".
-  // it should be possible to read ithat file in to patchwork,
-  // and start it up with w.init().
-  // JSON.parse(w.storageGetItem('system.methods')).length ==> 340;
-
-  let parts = [w.preamble()];
-  w.exportSelectionsForEntireSystem().forEach((selection) => {
-    let chunk = w.exportStringForSelection(selection, {
-      includeHeader: false,
-      includeClassDef: true,
+};
+w.viewExportedSystem = function () {
+  let text = w.storageGetItem('system.export') || w.storageGetItem('system.methods');
+  if (!text) text = '// No export yet. Run w.exportEntireSystem() first.';
+  let ts =
+    w.storageGetItem('system.export.timestamp') ||
+    w.storageGetItem('system.methods.timestamp') ||
+    '';
+  let title = ts ? 'alldefs export (' + ts + ')' : 'alldefs export';
+  w.Lively.addMorph(w.MethodPanel.new(null, text, title));
+  return text.length;
+};
+w.loadExportCatalog = function () {
+  if (w._exportCatalogApi && w._exportCatalogApi.version === 2) return Promise.resolve();
+  let base = w.exportCatalogUrl != null ? w.exportCatalogUrl : 'alldefs-export-catalog.js';
+  let url = base + (base.indexOf('?') >= 0 ? '&' : '?') + 'v=2';
+  return fetch(url)
+    .then(function (r) {
+      if (!r.ok) throw new Error('loadExportCatalog: ' + r.status + ' ' + url);
+      return r.text();
+    })
+    .then(function (code) {
+      delete w._exportCatalogApi;
+      delete w.exportOrganizedSystemString;
+      new Function('w', code)(w);
+      if (!w._exportCatalogApi || w._exportCatalogApi.version !== 2)
+        throw new Error('loadExportCatalog: catalog did not install');
     });
-    if (chunk) parts.push(chunk);
+};
+w.exportEntireSystem = function () {
+  // w.exportEntireSystem() — categorized alldefs; w.viewExportedSystem() to browse
+  return w.loadExportCatalog().then(function () {
+    return w._exportCatalogApi.finish(w._exportCatalogApi.organizedString());
   });
-  w.storageSetItem('system.methods', parts.join(';\n\n'));
 };
 w.subclassDepth = function (cls) {
   // w.subclassDepth(w.Ellipse);
@@ -1547,8 +1904,7 @@ w.Morph.proto.dragFrom = function (p, evt) {
   this.world().setPointerFocus(this);
 };
 w.Morph.proto.evalInMe = function (str) {
-  // Eval in me, as for use in the debugger
-  //  should probably be in Object, a superclass of all
+  // Eval in me, as for use in the debugger / TextBox workspace
   return eval(str);
 };
 w.Morph.proto.forEverySubmorph = function (fn) {
@@ -4292,6 +4648,64 @@ w.MethodListPanel.proto.promptDeleteThisMethod = function () {
   );
 };
 
+w.ErrorStackPanel = w.MethodListPanel.subClass('ErrorStackPanel');
+w.ErrorStackPanel.proto.initialize = function (
+  initialBounds,
+  err,
+  contextIfAny,
+  optionalTitle,
+) {
+  this.errorErr = err;
+  this.errorContext = contextIfAny;
+  this.stackFrames = w.stackFramesFromError(err);
+  this.methodSpecs = this.stackFrames.map(function (f) {
+    return f.listLabel;
+  });
+  this.recents = null;
+  this.searchString = null;
+  this._occurrenceLastSpec = null;
+  w.PanelMorph.proto.initialize.call(this, this.boundsForNew(initialBounds));
+  this.initMethodsPane();
+  this.initPrintPane();
+  this.setPanelTitle(optionalTitle || w.errorPanelTitle(err));
+  this.layoutChrome();
+  this.relayoutContentPanes();
+  if (this.printPane)
+    this.printPane.setText(
+      w.errorReportHeader(err, contextIfAny) + '\n\n// Select a stack frame above',
+      { force: true },
+    );
+  let self = this;
+  this.methodsPane.onSelect(function (label, shiftKey) {
+    let idx = self.methodSpecs.indexOf(label);
+    if (idx >= 0) self.showStackFrame(idx);
+    if (shiftKey && idx >= 0 && self.printPane) {
+      let text = self.printPane.contentPane.shape.string;
+      w.Lively.addMorph(
+        w.MethodPanel.new(self.rectForSpawnedPanel(28, 320, 220), text, label),
+      );
+    }
+  });
+  if (this.stackFrames.length) this.methodsPane.setSelectionString(this.methodSpecs[0]);
+};
+w.ErrorStackPanel.proto.showStackFrame = function (index) {
+  let frame = this.stackFrames[index];
+  if (!frame || !this.printPane) return;
+  frame.sourceText = w.stackFrameSourceText(frame);
+  let text = frame.sourceText || '// source not available for ' + frame.listLabel;
+  this.printPane.setText(text, { force: true });
+  this._occurrenceLastSpec = this.methodSpecs[index];
+  if (index > 0 && this.printPane.contentPane && this.printPane.contentPane.shape) {
+    let hl = w.stackFrameHighlightName(this.stackFrames[index - 1]);
+    if (hl) this.printPane.contentPane.shape.selectSearchString(hl);
+  }
+};
+w.ErrorStackPanel.proto.refreshStackSources = function () {
+  let idx = this.methodSpecs.indexOf(this._occurrenceLastSpec);
+  if (idx < 0 && this.stackFrames.length) idx = 0;
+  if (idx >= 0) this.showStackFrame(idx);
+};
+
 w.ScrollPane = w.Morph.subClass('ScrollPane');
 w.ScrollPane.proto.getScrollPosition = function () {
   var ht = this.contentPane.getBounds().height();
@@ -5765,8 +6179,17 @@ w.WorldMorph.proto.handleStepList = function () {
     // If spec was removed during earlier step processing, skip it.
     if (!this.stepList.includes(spec)) return;
     spec.nextStepTime = now + spec.stepPeriod;
-    if (spec.arg) spec.stepMorph[spec.methodName](spec.arg);
-    else spec.stepMorph[spec.methodName]();
+    try {
+      if (spec.arg) spec.stepMorph[spec.methodName](spec.arg);
+      else spec.stepMorph[spec.methodName]();
+    } catch (err) {
+      let morphName = spec.stepMorph.className || 'Morph';
+      let fn = spec.stepMorph[spec.methodName];
+      if (typeof fn === 'function') w._lastEvalSource = fn.toString();
+      w.handleRuntimeError(err, 'stepping ' + morphName + '.' + spec.methodName);
+      if (spec.stepMorph.stopStepping) spec.stepMorph.stopStepping(spec.methodName);
+      else this.stopSteppingMorph(spec.stepMorph, spec.methodName);
+    }
   });
 };
 w.WorldMorph.proto.hitMorphAt = function (pt) {
@@ -7267,6 +7690,7 @@ w.TextBox.proto.handleKeyboardShortcuts = function (evt) {
     let start = Math.min(selA, selB);
     let end = Math.max(selA, selB); // end is exclusive
     let evalThing = this.wsEval.call(this.workspaceObj, this.string.slice(start, end));
+    if (w._evalJustFailed) return;
     let ins = ' ==> ' + this.printitString(evalThing);
 
     // Save undo state so ctrl-Z can restore both string and selection.
@@ -7349,9 +7773,11 @@ w.TextBox.proto.paste = function (str) {
   this.selStart = this.selStop = this.charSpecForIndex(this.selStart.strIx + str.length);
 };
 w.TextBox.proto.printitString = function (obj) {
-  // until we get everything working with toString()
-  if (obj.toString) return obj.toString();
-  return obj.asString();
+  if (obj === undefined) return 'undefined';
+  if (obj === null) return 'null';
+  if (obj.toString && obj.toString !== Object.prototype.toString) return obj.toString();
+  if (obj.asString) return obj.asString();
+  return String(obj);
 };
 w.TextBox.proto.redoReplacement = function (str) {
   // The selection is at the end of last replacement.  We simply have to
@@ -7676,9 +8102,11 @@ w.TextBox.proto.undoReplacement = function () {
   this.clearTyping();
 };
 w.TextBox.proto.wsEval = function (str) {
-  // By putting eval here, a remote call can point 'this' at workspaceObj
-  if (this.evalContext) return this.evalContext.evalInMe(str);
-  return eval(str);
+  w._lastEvalSource = str;
+  let label = 'evaluate: ' + w.truncateString(str, 80);
+  if (this.evalContext)
+    return w.evaluateWithErrorRecovery(() => this.evalContext.evalInMe(str), label);
+  return w.evaluateWithErrorRecovery(() => eval(str), label);
 };
 w.TextBox.proto.xValuesForLine = function (lineNo) {
   // NOTE:  this should receive a line (this.lines.at(lineNo)), insteaad of lineNo
