@@ -1,0 +1,196 @@
+/* Citrus — a zesty lemon-and-lime pop. Bright, juicy, and energetic on cream. */
+[theme="citrus"] {
+	color-scheme: light;
+	/* ── core studio ─────────────────────────────────────────────── */
+	--studio-fill: #fffceb; /* lemon cream */
+	--studio-line: #3d3a14; /* deep olive */
+	--studio-primary: #e8a000; /* amber */
+	--studio-secondary: #7bd000; /* lime green */
+	--studio-danger: #e8451a; /* tangerine red */
+	--studio-warning: #f59e00;
+	--studio-added: #7bd000;
+	--studio-deleted: #e8451a;
+	--studio-modified: #e8a000;
+	--studio-link: #7bd000;
+	--studio-selection-fill: #fff3b0;
+	--studio-selection-line: #3d3a14;
+	--studio-family-sans: "Quicksand", "Nunito", system-ui, -apple-system,
+		sans-serif;
+	--studio-family-code: "Fantasque Sans Mono", "IBM Plex Mono", ui-monospace,
+		monospace;
+	--studio-font-size: 16px;
+	--studio-line-height: 1.5;
+
+	--studio-radius-xs: 4px;
+	--studio-radius-sm: 8px;
+	--studio-radius: 12px;
+	--studio-radius-md: 16px;
+	--studio-radius-lg: 22px;
+	--studio-radius-xl: 28px;
+	--studio-radius-round: 9999px;
+
+	--studio-shadow-sm: 0 1px 2px oklch(0.85 0.12 95 / 0.14);
+	--studio-shadow: 0 2px 6px oklch(0.8 0.14 95 / 0.18);
+	--studio-shadow-md: 0 6px 14px -3px oklch(0.78 0.16 95 / 0.22),
+		0 3px 6px -3px oklch(0.78 0.16 95 / 0.16);
+	--studio-shadow-lg: 0 14px 28px -8px oklch(0.75 0.18 95 / 0.28),
+		0 6px 10px -6px oklch(0.75 0.18 95 / 0.18);
+
+	--studio-transition-fast: 0.11s cubic-bezier(0.34, 1.7, 0.64, 1);
+	--studio-transition: 0.17s cubic-bezier(0.34, 1.7, 0.64, 1);
+	--studio-transition-slow: 0.27s cubic-bezier(0.34, 1.7, 0.64, 1);
+
+	/* ── text editor ─────────────────────────────────────────────── */
+	--text-editor-fill: #fffceb;
+	--text-editor-line: #3d3a14;
+	--text-editor-cursor-fill: #e8a000;
+	--text-editor-selection-fill: #fff3b0;
+	--text-editor-selection-line: #3d3a14;
+
+	--text-editor-active-line-fill: #e8a0000c;
+	--text-editor-active-line-line: var(--text-editor-line);
+	--text-editor-active-line-fill--gutter: #fff8d0;
+	--text-editor-active-line-line--gutter: var(--text-editor-line);
+
+	--text-editor-gutter-fill: #fff8d0;
+	--text-editor-gutter-line: #b8b070;
+	--text-editor-gutter-border: #f0e8a0;
+	--text-editor-gutter-font-size: 0.8em;
+	--text-editor-gutter-font-size--line-numbers: 0.8em;
+
+	--text-editor-tooltip-fill: #fff3b0;
+	--text-editor-tooltip-color: #3d3a14;
+
+	/* ── syntax (juice box) ──────────────────────────────────────── */
+	--syntax-comment: #b8b070;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #a89c50;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #c45a00;
+	--syntax-invalid: #e8451a;
+
+	--syntax-operator: #7bd000;
+	--syntax-punctuation: #9a9040;
+
+	--syntax-bool: #c45a00;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #c45a00;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #e8a000;
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: #e8a000;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #e8a000;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #7bd000;
+
+	--syntax-function--variable-name: #7bd000;
+	--syntax-function--property-name: #7bd000;
+
+	--syntax-variable-name: #3d3a14;
+	--syntax-definition--variable-name: #e8a000;
+
+	--syntax-string: #7bd000;
+	--syntax-fill-string: #7bd00014;
+
+	--syntax-number: #c45a00;
+	--syntax-integer: #c45a00;
+	--syntax-float: #c45a00;
+
+	--syntax-escape: #e8451a;
+	--syntax-regexp: #7bd000;
+	--syntax-special--string: #7bd000;
+
+	--syntax-tag-name: #e8451a;
+	--syntax-angle-bracket: #9a9040;
+
+	--syntax-attribute-name: #c45a00;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #c45a00;
+
+	--syntax-strong: #3d3a14;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #e8a000;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #e8a000;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #7bd000;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #b8b070;
+	--syntax-list: #3d3a14;
+
+	--syntax-inserted: #7bd000;
+	--syntax-deleted: #e8451a;
+	--syntax-changed: #e8a000;
+
+	--syntax-content-separator: #f0e8a0;
+
+	/* ── sideboard: lemon sidebar ────────────────────────────────── */
+	--sideboard-fill: #fff8d0;
+	--sideboard-fill-offset: #fff0a8;
+	--sideboard-footer-fill: #ffe890;
+	--sideboard-line: #3d3a14;
+	--sideboard-widget-fill: #fffceb;
+	--sideboard-widget-line: #3d3a14;
+	--sideboard-border: #f0e8a0;
+	--sideboard-border-strong: #e6d870;
+	--sideboard-muted: #b8b070;
+	--sideboard-primary: #e8a000;
+	--sideboard-added: #7bd000;
+	--sideboard-danger: #e8451a;
+	--sideboard-search-line: #e8a000;
+	--sideboard-toggle-hover: #e8a00014;
+	--sideboard-create-new-fill: #fff8d0;
+	--sideboard-create-new-line: #e8a000;
+	--sideboard-create-new-border-line: #e6d870;
+	--sideboard-create-new-shadow-color: #e6d870;
+	--sideboard-radius: 10px;
+
+	/* ── comments-view ───────────────────────────────────────────── */
+	--comments-fg: #3d3a14;
+	--comments-muted-fg: #b8b070;
+	--comments-bg: #fffceb;
+	--comments-border: #f0e8a0;
+	--comments-hover-bg: #fff8d0;
+	--comments-accent: #e8a000;
+
+	/* ── tasks ───────────────────────────────────────────────────── */
+	--task-fg: #3d3a14;
+	--task-bg: #fffceb;
+	--task-muted: #b8b070;
+	--task-border: #f0e8a0;
+	--task-radius: 12px;
+	--task-danger: #e8451a;
+	--task-success: #7bd000;
+
+	/* ── contact ─────────────────────────────────────────────────── */
+	--contact-fg: #3d3a14;
+	--contact-muted-fg: #b8b070;
+	--contact-border: #f0e8a0;
+	--contact-fallback-bg: #fff3b0;
+	--contact-fallback-fg: #a87000;
+	--contact-presence-color: #7bd000;
+}
+
+[theme="citrus"] button,
+[theme="citrus"] [role="button"] {
+	transition:
+		transform var(--studio-transition-fast),
+		box-shadow var(--studio-transition-fast);
+}
+[theme="citrus"] button:active,
+[theme="citrus"] [role="button"]:active {
+	transform: scale(0.96);
+}

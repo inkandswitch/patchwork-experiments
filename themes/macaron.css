@@ -1,0 +1,261 @@
+/* Macaron — bright, sweet, cute. A pastry-shop palette: candy pink, sky blue,
+   sunny amber, mint and grape on warm cream. Rounded corners, soft pink
+   shadows, and a specific override for (almost) every tool that exposes a
+   themeable variable — a showpiece for how far the variable system reaches. */
+[theme="macaron"] {
+	color-scheme: light;
+	/* ── core studio ─────────────────────────────────────────────── */
+	--studio-fill: #fffaff; /* warm cream with a breath of pink */
+	--studio-line: #4a3b52; /* soft deep berry, never harsh black */
+	--studio-primary: #ff5fa2; /* candy pink */
+	--studio-secondary: #4fc3ff; /* bright sky blue */
+	--studio-danger: #ff4d6d; /* candy apple red */
+	--studio-warning: #ffb627; /* sunny amber */
+	--studio-added: #36d399; /* mint green */
+	--studio-deleted: #ff4d6d;
+	--studio-modified: #b76bff; /* grape purple */
+	--studio-link: #4fc3ff;
+	--studio-selection-fill: #ffd6ec;
+	--studio-selection-line: #4a3b52;
+	--studio-family-sans: "Jost*", "Jost", system-ui, -apple-system, sans-serif;
+	--studio-family-code:
+		"Fantasque Sans Mono", "IBM Plex Mono", "Fira Code", ui-monospace,
+		monospace;
+	--studio-font-size: 16px;
+	--studio-font-weight: 400;
+	--studio-line-height: 1.55;
+
+	/* extra-rounded everything — cute */
+	--studio-radius-xs: 4px;
+	--studio-radius-sm: 8px;
+	--studio-radius: 12px;
+	--studio-radius-md: 16px;
+	--studio-radius-lg: 22px;
+	--studio-radius-xl: 28px;
+	--studio-radius-round: 9999px;
+
+	/* soft pink-tinted shadows */
+	--studio-shadow-sm: 0 1px 2px oklch(0.85 0.08 350 / 0.12);
+	--studio-shadow: 0 2px 6px oklch(0.8 0.1 350 / 0.16);
+	--studio-shadow-md: 0 6px 14px -3px oklch(0.78 0.12 350 / 0.22),
+		0 3px 6px -3px oklch(0.78 0.12 350 / 0.16);
+	--studio-shadow-lg: 0 14px 28px -8px oklch(0.75 0.14 350 / 0.28),
+		0 6px 10px -6px oklch(0.75 0.14 350 / 0.18);
+
+	--studio-transition-fast: 0.12s cubic-bezier(0.34, 1.56, 0.64, 1);
+	--studio-transition: 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+	--studio-transition-slow: 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+	/* ── text editor ─────────────────────────────────────────────── */
+	--text-editor-fill: #fffaff;
+	--text-editor-line: #4a3b52;
+	--text-editor-cursor-fill: #ff5fa2;
+	--text-editor-selection-fill: #ffd6ec;
+	--text-editor-selection-line: #4a3b52;
+
+	--text-editor-active-line-fill: #ff5fa208;
+	--text-editor-active-line-line: var(--text-editor-line);
+	--text-editor-active-line-fill--gutter: #fff0f6;
+	--text-editor-active-line-line--gutter: var(--text-editor-line);
+
+	--text-editor-gutter-fill: #fff4f9;
+	--text-editor-gutter-line: #c792c4;
+	--text-editor-gutter-border: #ffd6ec;
+	--text-editor-gutter-font-size: 0.8em;
+	--text-editor-gutter-font-size--line-numbers: 0.8em;
+
+	--text-editor-tooltip-fill: #ffe3f1;
+	--text-editor-tooltip-color: #4a3b52;
+
+	/* ── syntax (candy box) ──────────────────────────────────────── */
+	--syntax-comment: #c792c4;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #b591c4;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #b76bff;
+	--syntax-invalid: #ff4d6d;
+
+	--syntax-operator: #4fc3ff;
+	--syntax-punctuation: #7a6a82;
+
+	--syntax-bool: #b76bff;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #b76bff;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #ff5fa2;
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: #ffb627;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #ffb627;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #4fc3ff;
+
+	--syntax-function--variable-name: #36d399;
+	--syntax-function--property-name: #36d399;
+
+	--syntax-variable-name: #4a3b52;
+	--syntax-definition--variable-name: #ff8c42;
+
+	--syntax-string: #36d399;
+	--syntax-fill-string: #36d39914;
+
+	--syntax-number: #b76bff;
+	--syntax-integer: #b76bff;
+	--syntax-float: #b76bff;
+
+	--syntax-escape: #ff4d6d;
+	--syntax-regexp: #4fc3ff;
+	--syntax-special--string: #36d399;
+
+	--syntax-tag-name: #ff5fa2;
+	--syntax-angle-bracket: #7a6a82;
+
+	--syntax-attribute-name: #ff8c42;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #4fc3ff;
+
+	--syntax-strong: #4a3b52;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #ff5fa2;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #ff5fa2;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #4fc3ff;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #c792c4;
+	--syntax-list: #4a3b52;
+
+	--syntax-inserted: #36d399;
+	--syntax-deleted: #ff4d6d;
+	--syntax-changed: #b76bff;
+
+	--syntax-content-separator: #ffd6ec;
+
+	/* ── sideboard: pink sidebar ─────────────────────────────────── */
+	--sideboard-fill: #ffe9f3;
+	--sideboard-fill-offset: #ffd9ec;
+	--sideboard-footer-fill: #ffd0e8;
+	--sideboard-line: #4a3b52;
+	--sideboard-widget-fill: #fffaff;
+	--sideboard-widget-line: #4a3b52;
+	--sideboard-border: #ffd6ec;
+	--sideboard-border-strong: #ffc2e0;
+	--sideboard-muted: #c898b8;
+	--sideboard-primary: #ff5fa2;
+	--sideboard-added: #36d399;
+	--sideboard-danger: #ff4d6d;
+	--sideboard-search-line: #ff5fa2;
+	--sideboard-toggle-hover: #ff5fa214;
+	--sideboard-create-new-fill: #fff0f6;
+	--sideboard-create-new-line: #ff5fa2;
+	--sideboard-create-new-border-line: #ffc2e0;
+	--sideboard-create-new-shadow-color: #ffc2e0;
+	--sideboard-radius: 10px;
+
+	/* ── comments-view: pink-accented cards ─────────────────────── */
+	--comments-fg: #4a3b52;
+	--comments-muted-fg: #c898b8;
+	--comments-bg: #fffaff;
+	--comments-border: #ffd6ec;
+	--comments-hover-bg: #ffe9f3;
+	--comments-accent: #ff5fa2;
+
+	/* ── tasks: mint/pink accents ────────────────────────────────── */
+	--task-fg: #4a3b52;
+	--task-bg: #fffaff;
+	--task-muted: #c898b8;
+	--task-border: #ffd6ec;
+	--task-radius: 12px;
+	--task-danger: #ff4d6d;
+	--task-success: #36d399;
+
+	/* ── contact: pink fallbacks, mint presence ring ─────────────── */
+	--contact-fg: #4a3b52;
+	--contact-muted-fg: #c898b8;
+	--contact-border: #ffd6ec;
+	--contact-fallback-bg: #ffe3f1;
+	--contact-fallback-fg: #b1466a;
+	--contact-presence-color: #36d399;
+
+	/* ── account-history ─────────────────────────────────────────── */
+	--account-history-primary: #ff5fa2;
+	--account-history-bg: #fffaff;
+	--account-history-text: #4a3b52;
+	--account-history-text-secondary: #8a6a8a;
+	--account-history-text-tertiary: #c898b8;
+	--account-history-border: #ffd6ec;
+	--account-history-hover: #ffe9f3;
+	--account-history-radius: 14px;
+	--account-history-danger: #ff4d6d;
+	--account-history-danger-bg: #ffe3f1;
+
+	/* ── history-view ────────────────────────────────────────────── */
+	--history-accent: #ff5fa2;
+	--history-accent-fg: #fffaff;
+	--history-card-bg: #fffaff;
+	--history-card-border: #ffd6ec;
+	--history-card-hover-bg: #ffe9f3;
+	--history-section-bg: #fff4f9;
+	--history-active-bg: #ffd6ec;
+	--history-active-border: #ff5fa2;
+	--history-fg: #4a3b52;
+
+	/* ── patchwork-frame ─────────────────────────────────────────── */
+	--patchwork-frame-bg: #fffaff;
+	--patchwork-frame-fg: #4a3b52;
+	--patchwork-frame-muted: #c898b8;
+	--patchwork-frame-toolbar: #fffaff;
+	--patchwork-frame-toolbar-border: #ffd6ec;
+	--patchwork-frame-sidebar-toggle-hover: #ff5fa2;
+	--patchwork-frame-resize-accent: #ff5fa2cc;
+	--patchwork-frame-resize-indicator: #c898b8;
+
+	/* ── account-picker ──────────────────────────────────────────── */
+	--account-picker-fg: #4a3b52;
+	--account-picker-muted: #c898b8;
+	--account-picker-bg: #fffaff;
+	--account-picker-border: #ffd6ec;
+	--account-picker-hover: #ffe9f3;
+	--account-picker-tooltip-bg: #ff5fa2;
+	--account-picker-tooltip-fg: #fffaff;
+
+	/* ── module-settings-manager ─────────────────────────────────── */
+	--module-settings-manager-line: #4a3b52;
+	--module-settings-manager-widget-fill: #fffaff;
+	--module-settings-manager-widget-line: #4a3b52;
+	--module-settings-manager-radius: 10px;
+	--module-settings-manager-primary: #ff5fa2;
+
+	/* ── sync-indicator ──────────────────────────────────────────── */
+	--sync-fg: #4a3b52;
+	--sync-muted: #8a6a8a;
+	--sync-subtle: #c898b8;
+	--sync-dim: #b090b0;
+	--sync-bg: #fffaff;
+	--sync-border: #ffd6ec;
+	--sync-hover: #ffe9f3;
+}
+
+/* a little bounce on focusable things — cute, not noisy */
+[theme="macaron"] button,
+[theme="macaron"] [role="button"] {
+	transition:
+		transform var(--studio-transition-fast),
+		box-shadow var(--studio-transition-fast);
+}
+[theme="macaron"] button:active,
+[theme="macaron"] [role="button"]:active {
+	transform: scale(0.96);
+}

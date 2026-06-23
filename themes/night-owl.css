@@ -1,0 +1,111 @@
+/* Night Owl — Sarah Drasner's deep navy night theme for code owls */
+[theme="night-owl"] {
+	color-scheme: dark;
+	--studio-fill: #011627;
+	--studio-line: #d6deeb;
+	--studio-primary: #82aaff;
+	--studio-secondary: #c792ea;
+	--studio-danger: #ff5874;
+	--studio-warning: #ffcb8b;
+	--studio-added: #addb67;
+	--studio-deleted: #ff5874;
+	--studio-modified: #82aaff;
+	--studio-link: #82aaff;
+	--studio-selection-fill: #1d3b53;
+
+	--text-editor-fill: #011627;
+	--text-editor-line: #d6deeb;
+	--text-editor-cursor-fill: #82aaff;
+	--text-editor-selection-fill: #1d3b53;
+	--text-editor-selection-line: #d6deeb;
+
+	--text-editor-active-line-fill: color-mix(
+		in oklch,
+		var(--text-editor-fill-offset-10),
+		transparent 80%
+	);
+	--text-editor-active-line-fill--gutter: var(--text-editor-fill-offset-20);
+
+	--text-editor-gutter-fill: #011627;
+	--text-editor-gutter-line: #637777;
+	--text-editor-gutter-border: #1d2b3a;
+	--text-editor-gutter-fill--line-numbers: #011627;
+	--text-editor-gutter-line--line-numbers: #637777;
+
+	--text-editor-tooltip-fill: #11243d;
+	--text-editor-tooltip-color: #d6deeb;
+
+	--syntax-comment: #637777;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #637777;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #7fdbca;
+	--syntax-invalid: #ff5874;
+
+	--syntax-operator: #c792ea;
+	--syntax-punctuation: #8094a8;
+
+	--syntax-bool: #82aaff;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #82aaff;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #c792ea;
+
+	--syntax-type-name: #ffcb8b;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #ffcb8b;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #7fdbca;
+
+	--syntax-function--variable-name: #82aaff;
+	--syntax-function--property-name: #82aaff;
+
+	--syntax-variable-name: #d6deeb;
+	--syntax-definition--variable-name: #addb67;
+
+	--syntax-string: #ecc48d;
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #f78c6c;
+	--syntax-integer: #f78c6c;
+	--syntax-float: #f78c6c;
+
+	--syntax-escape: #7fdbca;
+	--syntax-regexp: #7fdbca;
+	--syntax-special--string: #ecc48d;
+
+	--syntax-tag-name: #7fdbca;
+	--syntax-angle-bracket: #8094a8;
+
+	--syntax-attribute-name: #80cbc4;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #ffcb8b;
+
+	--syntax-strong: #d6deeb;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #d6deeb;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #82aaff;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #82aaff;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #637777;
+	--syntax-list: #d6deeb;
+
+	--syntax-inserted: #addb67;
+	--syntax-deleted: #ff5874;
+	--syntax-changed: #82aaff;
+
+	--syntax-content-separator: #1d2b3a;
+}

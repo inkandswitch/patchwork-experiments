@@ -1,0 +1,192 @@
+/* Ivy — based on feelingof.com: a green-tinted monochrome (hue 160°) on a
+   warm near-white, with the signature "foc green" sidebar. Flat, editorial,
+   sharp corners, light weights — like the source site. */
+[theme="ivy"] {
+	color-scheme: light;
+	/* ── core studio ─────────────────────────────────────────────── */
+	--studio-fill: #f5faf8; /* hsl(160, 29%, 97%) — green-tinted white */
+	--studio-line: #021810; /* hsl(160, 85%, 5%) — green-tinted black */
+	--studio-primary: #00cc88; /* hsl(160, 100%, 40%) — foc green */
+	--studio-secondary: #009966; /* hsl(160, 100%, 30%) — link green */
+	--studio-danger: #b03020;
+	--studio-warning: #b08410;
+	--studio-added: #00aa55;
+	--studio-deleted: #b03020;
+	--studio-modified: #009966;
+	--studio-link: #009966;
+	--studio-selection-fill: #cdf5e3;
+	--studio-selection-line: #021810;
+	--studio-family-sans: ui-sans-serif, system-ui, -apple-system,
+		"Helvetica Neue", sans-serif;
+	--studio-family-code: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+	--studio-font-size: 16px;
+	--studio-font-weight: 400;
+	--studio-line-height: 1.5; /* the site is 24px / 16px */
+
+	/* sharp, editorial — the source uses 1px radii */
+	--studio-radius-xs: 1px;
+	--studio-radius-sm: 2px;
+	--studio-radius: 2px;
+	--studio-radius-md: 3px;
+	--studio-radius-lg: 4px;
+	--studio-radius-xl: 6px;
+	--studio-radius-round: 9999px;
+
+	/* flat — the source has no shadows */
+	--studio-shadow-sm: none;
+	--studio-shadow: none;
+	--studio-shadow-md: 0 1px 2px oklch(0.4 0.08 160 / 0.08);
+	--studio-shadow-lg: 0 4px 12px -4px oklch(0.4 0.08 160 / 0.12);
+
+	--studio-transition-fast: 0.08s linear;
+	--studio-transition: 0.12s linear;
+	--studio-transition-slow: 0.2s linear;
+
+	/* ── text editor ─────────────────────────────────────────────── */
+	--text-editor-fill: #f5faf8;
+	--text-editor-line: #021810;
+	--text-editor-cursor-fill: #00cc88;
+	--text-editor-selection-fill: #cdf5e3;
+	--text-editor-selection-line: #021810;
+
+	--text-editor-active-line-fill: #00cc8808;
+	--text-editor-active-line-line: var(--text-editor-line);
+	--text-editor-active-line-fill--gutter: #eef5f0;
+	--text-editor-active-line-line--gutter: var(--text-editor-line);
+
+	--text-editor-gutter-fill: #eef5f0;
+	--text-editor-gutter-line: #5a8a72;
+	--text-editor-gutter-border: #d6ebe0;
+	--text-editor-gutter-font-size: 0.8em;
+	--text-editor-gutter-font-size--line-numbers: 0.8em;
+
+	--text-editor-tooltip-fill: #eaf5ee;
+	--text-editor-tooltip-color: #021810;
+
+	/* ── syntax (green monochrome, like the site) ────────────────── */
+	--syntax-comment: #4f7a68;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #4f7a68;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #00805a;
+	--syntax-invalid: #b03020;
+
+	--syntax-operator: #00805a;
+	--syntax-punctuation: #2a4a3a;
+
+	--syntax-bool: #00945f;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #00945f;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #007a52;
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: #005c3d;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #005c3d;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #00b377;
+
+	--syntax-function--variable-name: #00b377;
+	--syntax-function--property-name: #00b377;
+
+	--syntax-variable-name: #021810;
+	--syntax-definition--variable-name: #00b377;
+
+	--syntax-string: #00a066;
+	--syntax-fill-string: #00a06614;
+
+	--syntax-number: #007049;
+	--syntax-integer: #007049;
+	--syntax-float: #007049;
+
+	--syntax-escape: #b03020;
+	--syntax-regexp: #00b377;
+	--syntax-special--string: #00a066;
+
+	--syntax-tag-name: #007a52;
+	--syntax-angle-bracket: #2a4a3a;
+
+	--syntax-attribute-name: #005c3d;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #005c3d;
+
+	--syntax-strong: #021810;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #007a52;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #009966;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #009966;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #4f7a68;
+	--syntax-list: #021810;
+
+	--syntax-inserted: #00aa55;
+	--syntax-deleted: #b03020;
+	--syntax-changed: #009966;
+
+	--syntax-content-separator: #d6ebe0;
+
+	/* ── sideboard: the foc-green sidebar ────────────────────────── */
+	--sideboard-fill: #00cc88; /* foc green */
+	--sideboard-fill-offset: #00b377;
+	--sideboard-footer-fill: #00aa6e;
+	--sideboard-line: #021810; /* dark green-black text reads on green */
+	--sideboard-widget-fill: #f5faf8; /* light cards on the green sidebar */
+	--sideboard-widget-line: #021810;
+	--sideboard-border: #00b377;
+	--sideboard-border-strong: #009966;
+	--sideboard-muted: #024030;
+	--sideboard-primary: #00cc88; /* foc green — selected item on the light doclist card */
+	--sideboard-added: #007a52;
+	--sideboard-danger: #b03020;
+	--sideboard-search-line: #021810;
+	--sideboard-toggle-hover: #0218100f;
+	--sideboard-create-new-fill: #f5faf8;
+	--sideboard-create-new-line: #005c3d;
+	--sideboard-create-new-border-line: #009966;
+	--sideboard-create-new-shadow-color: #00996622;
+	--sideboard-radius: 2px;
+
+	/* ── comments-view ───────────────────────────────────────────── */
+	--comments-fg: #021810;
+	--comments-muted-fg: #4f7a68;
+	--comments-bg: #f5faf8;
+	--comments-border: #d6ebe0;
+	--comments-hover-bg: #eaf5ee;
+	--comments-accent: #009966;
+
+	/* ── tasks ───────────────────────────────────────────────────── */
+	--task-fg: #021810;
+	--task-bg: #f5faf8;
+	--task-muted: #4f7a68;
+	--task-border: #d6ebe0;
+	--task-radius: 2px;
+	--task-danger: #b03020;
+	--task-success: #009966;
+
+	/* ── contact ─────────────────────────────────────────────────── */
+	--contact-fg: #021810;
+	--contact-muted-fg: #4f7a68;
+	--contact-border: #d6ebe0;
+	--contact-fallback-bg: #cdf5e3;
+	--contact-fallback-fg: #005c3d;
+	--contact-presence-color: #00cc88;
+}
+
+/* links behave like the source: bold, green, underline on hover */
+[theme="ivy"] a {
+	font-weight: bold;
+}

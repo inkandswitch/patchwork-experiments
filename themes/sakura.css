@@ -1,0 +1,200 @@
+/* Sakura — cherry blossom: soft pink petals, leaf green, and a warm spring sky.
+   Light, rounded, and gentle. */
+[theme="sakura"] {
+	color-scheme: light;
+	/* ── core studio ─────────────────────────────────────────────── */
+	--studio-fill: #fef6f7; /* blossom white with a breath of pink */
+	--studio-line: #5b3a4a; /* deep plum, never harsh black */
+	--studio-primary: #ff6b9d; /* cherry pink */
+	--studio-secondary: #6ec6e6; /* spring sky */
+	--studio-danger: #e84d6f;
+	--studio-warning: #f6a96b; /* apricot */
+	--studio-added: #7ec678; /* leaf green */
+	--studio-deleted: #e84d6f;
+	--studio-modified: #c865d6; /* wisteria */
+	--studio-link: #ff6b9d;
+	--studio-selection-fill: #ffd9e6;
+	--studio-selection-line: #5b3a4a;
+	--studio-family-sans: "Quicksand", "Nunito", system-ui, -apple-system,
+		sans-serif;
+	--studio-family-code: "Fantasque Sans Mono", "IBM Plex Mono", ui-monospace,
+		monospace;
+	--studio-font-size: 16px;
+	--studio-line-height: 1.55;
+
+	/* rounded and soft — petals */
+	--studio-radius-xs: 4px;
+	--studio-radius-sm: 8px;
+	--studio-radius: 12px;
+	--studio-radius-md: 16px;
+	--studio-radius-lg: 22px;
+	--studio-radius-xl: 28px;
+	--studio-radius-round: 9999px;
+
+	/* pink-tinted soft shadows */
+	--studio-shadow-sm: 0 1px 2px oklch(0.85 0.06 350 / 0.12);
+	--studio-shadow: 0 2px 6px oklch(0.8 0.08 350 / 0.16);
+	--studio-shadow-md: 0 6px 14px -3px oklch(0.78 0.1 350 / 0.2),
+		0 3px 6px -3px oklch(0.78 0.1 350 / 0.14);
+	--studio-shadow-lg: 0 14px 28px -8px oklch(0.75 0.12 350 / 0.26),
+		0 6px 10px -6px oklch(0.75 0.12 350 / 0.16);
+
+	--studio-transition-fast: 0.12s cubic-bezier(0.34, 1.56, 0.64, 1);
+	--studio-transition: 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+	--studio-transition-slow: 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+	/* ── text editor ─────────────────────────────────────────────── */
+	--text-editor-fill: #fef6f7;
+	--text-editor-line: #5b3a4a;
+	--text-editor-cursor-fill: #ff6b9d;
+	--text-editor-selection-fill: #ffd9e6;
+	--text-editor-selection-line: #5b3a4a;
+
+	--text-editor-active-line-fill: #ff6b9d0a;
+	--text-editor-active-line-line: var(--text-editor-line);
+	--text-editor-active-line-fill--gutter: #fff2f6;
+	--text-editor-active-line-line--gutter: var(--text-editor-line);
+
+	--text-editor-gutter-fill: #fff2f6;
+	--text-editor-gutter-line: #c89bb0;
+	--text-editor-gutter-border: #ffd9e6;
+	--text-editor-gutter-font-size: 0.8em;
+	--text-editor-gutter-font-size--line-numbers: 0.8em;
+
+	--text-editor-tooltip-fill: #ffe3ef;
+	--text-editor-tooltip-color: #5b3a4a;
+
+	/* ── syntax (petal box) ──────────────────────────────────────── */
+	--syntax-comment: #c89bb0;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #b98aa6;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #c865d6;
+	--syntax-invalid: #e84d6f;
+
+	--syntax-operator: #6ec6e6;
+	--syntax-punctuation: #a07090;
+
+	--syntax-bool: #c865d6;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #c865d6;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #e84d8f;
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: #6ec6e6;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #6ec6e6;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #6ec6e6;
+
+	--syntax-function--variable-name: #ff6b9d;
+	--syntax-function--property-name: #ff6b9d;
+
+	--syntax-variable-name: #5b3a4a;
+	--syntax-definition--variable-name: #ff8fab;
+
+	--syntax-string: #7ec678;
+	--syntax-fill-string: #7ec67814;
+
+	--syntax-number: #c865d6;
+	--syntax-integer: #c865d6;
+	--syntax-float: #c865d6;
+
+	--syntax-escape: #e84d6f;
+	--syntax-regexp: #6ec6e6;
+	--syntax-special--string: #7ec678;
+
+	--syntax-tag-name: #ff6b9d;
+	--syntax-angle-bracket: #a07090;
+
+	--syntax-attribute-name: #f6a96b;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #f6a96b;
+
+	--syntax-strong: #5b3a4a;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #e84d8f;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #ff6b9d;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #6ec6e6;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #c89bb0;
+	--syntax-list: #5b3a4a;
+
+	--syntax-inserted: #7ec678;
+	--syntax-deleted: #e84d6f;
+	--syntax-changed: #c865d6;
+
+	--syntax-content-separator: #ffd9e6;
+
+	/* ── sideboard: blossom sidebar ──────────────────────────────── */
+	--sideboard-fill: #ffe9f1;
+	--sideboard-fill-offset: #ffd9e8;
+	--sideboard-footer-fill: #ffd0e6;
+	--sideboard-line: #5b3a4a;
+	--sideboard-widget-fill: #fef6f7;
+	--sideboard-widget-line: #5b3a4a;
+	--sideboard-border: #ffd9e6;
+	--sideboard-border-strong: #ffc2dc;
+	--sideboard-muted: #c89bb0;
+	--sideboard-primary: #ff6b9d;
+	--sideboard-added: #7ec678;
+	--sideboard-danger: #e84d6f;
+	--sideboard-search-line: #ff6b9d;
+	--sideboard-toggle-hover: #ff6b9d14;
+	--sideboard-create-new-fill: #fff2f6;
+	--sideboard-create-new-line: #ff6b9d;
+	--sideboard-create-new-border-line: #ffc2dc;
+	--sideboard-create-new-shadow-color: #ffc2dc;
+	--sideboard-radius: 10px;
+
+	/* ── comments-view ───────────────────────────────────────────── */
+	--comments-fg: #5b3a4a;
+	--comments-muted-fg: #c89bb0;
+	--comments-bg: #fef6f7;
+	--comments-border: #ffd9e6;
+	--comments-hover-bg: #ffe9f1;
+	--comments-accent: #ff6b9d;
+
+	/* ── tasks ───────────────────────────────────────────────────── */
+	--task-fg: #5b3a4a;
+	--task-bg: #fef6f7;
+	--task-muted: #c89bb0;
+	--task-border: #ffd9e6;
+	--task-radius: 12px;
+	--task-danger: #e84d6f;
+	--task-success: #7ec678;
+
+	/* ── contact ─────────────────────────────────────────────────── */
+	--contact-fg: #5b3a4a;
+	--contact-muted-fg: #c89bb0;
+	--contact-border: #ffd9e6;
+	--contact-fallback-bg: #ffe3ef;
+	--contact-fallback-fg: #b1466a;
+	--contact-presence-color: #7ec678;
+}
+
+/* a gentle petal-bounce on press */
+[theme="sakura"] button,
+[theme="sakura"] [role="button"] {
+	transition:
+		transform var(--studio-transition-fast),
+		box-shadow var(--studio-transition-fast);
+}
+[theme="sakura"] button:active,
+[theme="sakura"] [role="button"]:active {
+	transform: scale(0.96);
+}

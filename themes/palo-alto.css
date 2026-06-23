@@ -1,0 +1,118 @@
+/* Palo Alto Research Center — the Alto/Smalltalk look: paper-white, crisp black, restrained Xerox red */
+[theme="palo-alto"] {
+	color-scheme: light;
+	--studio-fill: #f6f5f1;
+	--studio-line: #111111;
+	--studio-primary: #c8102e;
+	--studio-secondary: #1a1a1a;
+	--studio-danger: #c8102e;
+	--studio-warning: #8a6d00;
+	--studio-added: #2e6b3f;
+	--studio-deleted: #c8102e;
+	--studio-modified: #1f4e8c;
+	--studio-link: #1f4e8c;
+	--studio-selection-fill: #d9d7cf;
+
+	/* lab-equipment light gray panel */
+	--sideboard-fill: #eceae4;
+	--sideboard-fill-offset: color-mix(
+		in oklab,
+		var(--sideboard-fill),
+		oklch(0 0 0 / 1) 5%
+	);
+
+	--text-editor-fill: #f6f5f1;
+	--text-editor-line: #111111;
+	--text-editor-cursor-fill: #c8102e;
+	--text-editor-selection-fill: #d9d7cf;
+	--text-editor-selection-line: #111111;
+
+	--text-editor-active-line-fill: #11111106;
+	--text-editor-active-line-line: var(--text-editor-line);
+	--text-editor-active-line-fill--gutter: #e8e6df;
+	--text-editor-active-line-line--gutter: var(--text-editor-line);
+
+	--text-editor-gutter-fill: #eceae4;
+	--text-editor-gutter-line: #6b6b6b;
+	--text-editor-gutter-border: #d9d7cf;
+	--text-editor-gutter-font-size: 0.8em;
+	--text-editor-gutter-font-size--line-numbers: 0.8em;
+
+	--text-editor-tooltip-fill: #eceae4;
+	--text-editor-tooltip-color: #111111;
+
+	/* monochrome-leaning syntax, Bravo printout + a single red accent */
+	--syntax-comment: #6b6b6b;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #4a4a4a;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #3a3a3a;
+	--syntax-invalid: #c8102e;
+
+	--syntax-operator: #111111;
+	--syntax-punctuation: #3a3a3a;
+
+	--syntax-bool: #c8102e;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #1f4e8c;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #c8102e;
+
+	--syntax-type-name: #1a1a1a;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #1a1a1a;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #3a3a3a;
+
+	--syntax-function--variable-name: #1f4e8c;
+	--syntax-function--property-name: #1f4e8c;
+
+	--syntax-variable-name: #111111;
+	--syntax-definition--variable-name: #c8102e;
+
+	--syntax-string: #2e6b3f;
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #1f4e8c;
+	--syntax-integer: #1f4e8c;
+	--syntax-float: #1f4e8c;
+
+	--syntax-escape: #c8102e;
+	--syntax-regexp: #1f4e8c;
+	--syntax-special--string: #2e6b3f;
+
+	--syntax-tag-name: #c8102e;
+	--syntax-angle-bracket: #3a3a3a;
+
+	--syntax-attribute-name: #1f4e8c;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #1f4e8c;
+
+	--syntax-strong: #111111;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #111111;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #c8102e;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #1f4e8c;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #6b6b6b;
+	--syntax-list: #111111;
+
+	--syntax-inserted: #2e6b3f;
+	--syntax-deleted: #c8102e;
+	--syntax-changed: #1f4e8c;
+
+	--syntax-content-separator: #d9d7cf;
+}

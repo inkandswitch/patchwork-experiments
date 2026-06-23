@@ -1,0 +1,196 @@
+/* Watermelon — summer slice: pink flesh, green rind, sunny accents on warm cream. */
+[theme="watermelon"] {
+	color-scheme: light;
+	/* ── core studio ─────────────────────────────────────────────── */
+	--studio-fill: #fffdf5; /* warm seed-white */
+	--studio-line: #2d4a2d; /* deep rind green */
+	--studio-primary: #ff5c8a; /* watermelon pink */
+	--studio-secondary: #3aa755; /* rind green */
+	--studio-danger: #e84068;
+	--studio-warning: #ffb627; /* sunshine */
+	--studio-added: #3aa755;
+	--studio-deleted: #e84068;
+	--studio-modified: #ff8c42; /* orange slice */
+	--studio-link: #3aa755;
+	--studio-selection-fill: #ffe0e8;
+	--studio-selection-line: #2d4a2d;
+	--studio-family-sans: "Quicksand", "Nunito", system-ui, -apple-system,
+		sans-serif;
+	--studio-family-code: "Fantasque Sans Mono", "IBM Plex Mono", ui-monospace,
+		monospace;
+	--studio-font-size: 16px;
+	--studio-line-height: 1.55;
+
+	--studio-radius-xs: 4px;
+	--studio-radius-sm: 8px;
+	--studio-radius: 12px;
+	--studio-radius-md: 16px;
+	--studio-radius-lg: 22px;
+	--studio-radius-xl: 28px;
+	--studio-radius-round: 9999px;
+
+	--studio-shadow-sm: 0 1px 2px oklch(0.82 0.08 140 / 0.12);
+	--studio-shadow: 0 2px 6px oklch(0.78 0.1 140 / 0.16);
+	--studio-shadow-md: 0 6px 14px -3px oklch(0.76 0.12 140 / 0.2),
+		0 3px 6px -3px oklch(0.76 0.12 140 / 0.14);
+	--studio-shadow-lg: 0 14px 28px -8px oklch(0.74 0.14 140 / 0.26),
+		0 6px 10px -6px oklch(0.74 0.14 140 / 0.16);
+
+	--studio-transition-fast: 0.12s cubic-bezier(0.34, 1.56, 0.64, 1);
+	--studio-transition: 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+	--studio-transition-slow: 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+	/* ── text editor ─────────────────────────────────────────────── */
+	--text-editor-fill: #fffdf5;
+	--text-editor-line: #2d4a2d;
+	--text-editor-cursor-fill: #ff5c8a;
+	--text-editor-selection-fill: #ffe0e8;
+	--text-editor-selection-line: #2d4a2d;
+
+	--text-editor-active-line-fill: #ff5c8a0a;
+	--text-editor-active-line-line: var(--text-editor-line);
+	--text-editor-active-line-fill--gutter: #f4f9ee;
+	--text-editor-active-line-line--gutter: var(--text-editor-line);
+
+	--text-editor-gutter-fill: #f4f9ee;
+	--text-editor-gutter-line: #9bb89b;
+	--text-editor-gutter-border: #d6ebd6;
+	--text-editor-gutter-font-size: 0.8em;
+	--text-editor-gutter-font-size--line-numbers: 0.8em;
+
+	--text-editor-tooltip-fill: #eaf5ea;
+	--text-editor-tooltip-color: #2d4a2d;
+
+	/* ── syntax (slice box) ──────────────────────────────────────── */
+	--syntax-comment: #9bb89b;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #8aa88a;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #ff8c42;
+	--syntax-invalid: #e84068;
+
+	--syntax-operator: #3aa755;
+	--syntax-punctuation: #7a9a7a;
+
+	--syntax-bool: #c44d6e;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #c44d6e;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #ff5c8a;
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: #3aa755;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #3aa755;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #3aa755;
+
+	--syntax-function--variable-name: #ff8c42;
+	--syntax-function--property-name: #ff8c42;
+
+	--syntax-variable-name: #2d4a2d;
+	--syntax-definition--variable-name: #ff5c8a;
+
+	--syntax-string: #3aa755;
+	--syntax-fill-string: #3aa75514;
+
+	--syntax-number: #ff8c42;
+	--syntax-integer: #ff8c42;
+	--syntax-float: #ff8c42;
+
+	--syntax-escape: #e84068;
+	--syntax-regexp: #3aa755;
+	--syntax-special--string: #3aa755;
+
+	--syntax-tag-name: #ff5c8a;
+	--syntax-angle-bracket: #7a9a7a;
+
+	--syntax-attribute-name: #ffb627;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #ffb627;
+
+	--syntax-strong: #2d4a2d;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #ff5c8a;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #ff5c8a;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #3aa755;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #9bb89b;
+	--syntax-list: #2d4a2d;
+
+	--syntax-inserted: #3aa755;
+	--syntax-deleted: #e84068;
+	--syntax-changed: #ff8c42;
+
+	--syntax-content-separator: #d6ebd6;
+
+	/* ── sideboard: rind-tinted sidebar ──────────────────────────── */
+	--sideboard-fill: #eaf5ea;
+	--sideboard-fill-offset: #dcf0dc;
+	--sideboard-footer-fill: #d4ecd4;
+	--sideboard-line: #2d4a2d;
+	--sideboard-widget-fill: #fffdf5;
+	--sideboard-widget-line: #2d4a2d;
+	--sideboard-border: #d6ebd6;
+	--sideboard-border-strong: #bce0bc;
+	--sideboard-muted: #9bb89b;
+	--sideboard-primary: #ff5c8a;
+	--sideboard-added: #3aa755;
+	--sideboard-danger: #e84068;
+	--sideboard-search-line: #ff5c8a;
+	--sideboard-toggle-hover: #ff5c8a14;
+	--sideboard-create-new-fill: #f4f9ee;
+	--sideboard-create-new-line: #ff5c8a;
+	--sideboard-create-new-border-line: #bce0bc;
+	--sideboard-create-new-shadow-color: #bce0bc;
+	--sideboard-radius: 10px;
+
+	/* ── comments-view ───────────────────────────────────────────── */
+	--comments-fg: #2d4a2d;
+	--comments-muted-fg: #9bb89b;
+	--comments-bg: #fffdf5;
+	--comments-border: #d6ebd6;
+	--comments-hover-bg: #eaf5ea;
+	--comments-accent: #ff5c8a;
+
+	/* ── tasks ───────────────────────────────────────────────────── */
+	--task-fg: #2d4a2d;
+	--task-bg: #fffdf5;
+	--task-muted: #9bb89b;
+	--task-border: #d6ebd6;
+	--task-radius: 12px;
+	--task-danger: #e84068;
+	--task-success: #3aa755;
+
+	/* ── contact ─────────────────────────────────────────────────── */
+	--contact-fg: #2d4a2d;
+	--contact-muted-fg: #9bb89b;
+	--contact-border: #d6ebd6;
+	--contact-fallback-bg: #ffe0e8;
+	--contact-fallback-fg: #c4356e;
+	--contact-presence-color: #3aa755;
+}
+
+[theme="watermelon"] button,
+[theme="watermelon"] [role="button"] {
+	transition:
+		transform var(--studio-transition-fast),
+		box-shadow var(--studio-transition-fast);
+}
+[theme="watermelon"] button:active,
+[theme="watermelon"] [role="button"]:active {
+	transform: scale(0.96);
+}
