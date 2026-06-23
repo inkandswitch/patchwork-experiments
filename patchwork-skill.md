@@ -91,6 +91,32 @@ export const plugins = [
 - `load()` is **async** and lazy — `import()` the heavy code inside it so the registry stays
   cheap. Bundleless tools often `return SomeObject` directly; bundled tools
   `const { X } = await import("./x"); return X`.
+- **Split the datatype and the tool into separate files and `import()` each inside its own
+  `load()`.** The entry module that exports `plugins` should contain only the plugin metadata
+  (`type`, `id`, `name`, `icon`, `supportedDatatypes`) plus thin `load()` functions — no
+  datatype object, no render function, no heavy deps in the top-level scope. Put the datatype
+  in e.g. `datatype.js` and the tool in `tool.js`, then:
+
+  ```js
+  export const plugins = [
+    { type: "patchwork:datatype", id: "counter", name: "Counter", icon: "Hash",
+      async load() { return (await import("./datatype.js")).CounterDatatype } },
+    { type: "patchwork:tool", id: "counter", name: "Counter", icon: "Hash",
+      supportedDatatypes: ["counter"],
+      async load() { return (await import("./tool.js")).default } },
+  ]
+  ```
+
+  The tool file should **`export default`** its render function so `load()` can grab `.default`
+  without caring what it's named. (The datatype file can do the same, or use a named export.)
+
+  Why: Patchwork reads the `plugins` array up front just to list tools/datatypes (names,
+  icons, supported types). If the datatype and render code live in the entry module, that whole
+  payload — codemirror, solid, audio/wasm, etc. — gets parsed just to show a description.
+  Keeping each `load()` as a one-line dynamic import means the entry module is tiny, descriptions
+  load instantly, and a heavy file is only fetched when that specific plugin is actually used.
+  (For the smallest single-file demos you can still `return SomeObject` directly, but split as
+  soon as the tool carries real weight.)
 - **`id` rule:** a tool's `id` and the pin `id` must match. When pinning a tool, use the same
   id the tool registers with.
 - `icon` is a [lucide](https://lucide.dev) icon name (`"Music"`, `"Database"`, `"File"`,
