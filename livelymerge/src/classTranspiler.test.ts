@@ -165,4 +165,24 @@ class D extends C {
     expect(result).toContain('$global.C.x = 2');
     expect(result).toContain('$global.C.y = 3');
   });
+
+  it('preserves original this.x in $codeForShow for instance methods', () => {
+    const result = transpile(`class Pt {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+  }
+  m() {
+    return this.x + this.y;
+  }
+}`);
+    const funStrings = [...result.matchAll(/\$fun\("((?:\\.|[^"\\])*)"\s*,\s*"((?:\\.|[^"\\])*)"/g)].map((m) => ({
+      show: JSON.parse(`"${m[1]}"`),
+      code: JSON.parse(`"${m[2]}"`),
+    }));
+    const method = funStrings.find((f) => f.show.includes('function m()'))!;
+    expect(method.show).toContain('return this.x + this.y');
+    expect(method.show).not.toContain("this['@x']");
+    expect(method.code).toContain("this['@x']");
+  });
 });

@@ -285,7 +285,7 @@ function buildConstructorSource(
   members: ClassMember[],
   superGlobal: string,
   explicitSuper: string | null,
-): string {
+): { show: string; code: string } {
   const instanceFields = members.filter((m): m is Extract<ClassMember, { kind: 'field' }> => m.kind === 'field');
   const ctorMember = members.find(
     (m): m is Extract<ClassMember, { kind: 'method' }> => m.kind === 'method' && m.name === 'constructor',
@@ -311,12 +311,25 @@ function buildConstructorSource(
     isDerived || hasExplicitSuperInCtor,
     superGlobal,
   );
-  return rewriteThisMemberAccess(ctorSource);
+  return { show: ctorSource, code: rewriteThisMemberAccess(ctorSource) };
 }
 
-function transpileFunctionSource(source: string): string {
-  const wrapped = transpileCore(`(${source})`).trim().replace(/;$/, '');
-  return wrapped.startsWith('(') && wrapped.endsWith(')') ? wrapped.slice(1, -1) : wrapped;
+function extractFunShowArg(transpiled: string): string {
+  const trimmed = transpiled.trim().replace(/;$/, '');
+  const inner = trimmed.startsWith('(') && trimmed.endsWith(')') ? trimmed.slice(1, -1) : trimmed;
+  const match = inner.match(/\$fun\("((?:\\.|[^"\\])*)"/);
+  if (!match) throw new Error('Expected $fun call');
+  return JSON.parse(`"${match[1]}"`);
+}
+
+function transpileFunctionSource(codeSource: string, showSource?: string): string {
+  const wrapped = transpileCore(`(${codeSource})`).trim().replace(/;$/, '');
+  let result = wrapped.startsWith('(') && wrapped.endsWith(')') ? wrapped.slice(1, -1) : wrapped;
+  if (showSource && showSource !== codeSource) {
+    const showArg = JSON.stringify(extractFunShowArg(transpileCore(`(${showSource})`)));
+    result = result.replace(/\$fun\("((?:\\.|[^"\\])*)"/, `$fun(${showArg}`);
+  }
+  return result;
 }
 
 function renderPrototypeAccessor(member: Extract<ClassMember, { kind: 'method' }>): string {
@@ -358,9 +371,8 @@ function renderClassSetup(
   const lines: string[] = [];
   const firstAssign = bindGlobal ? `${ref} =` : `const ${className} =`;
 
-  lines.push(
-    `${firstAssign} ${transpileFunctionSource(buildConstructorSource(className, members, superGlobal, explicitSuper))};`,
-  );
+  const ctor = buildConstructorSource(className, members, superGlobal, explicitSuper);
+  lines.push(`${firstAssign} ${transpileFunctionSource(ctor.code, ctor.show)};`);
 
   const instanceMethods = members.filter(
     (m): m is Extract<ClassMember, { kind: 'method' }> =>
@@ -372,9 +384,9 @@ function renderClassSetup(
   );
 
   for (const method of instanceMethods) {
-    let funcSource = rewriteSuperCalls(method.funcSource, superGlobal, 'instance');
-    funcSource = rewriteThisMemberAccess(funcSource);
-    lines.push(`${memberRef(ref, method.name)} = ${transpileFunctionSource(funcSource)};`);
+    const showSource = rewriteSuperCalls(method.funcSource, superGlobal, 'instance');
+    const codeSource = rewriteThisMemberAccess(showSource);
+    lines.push(`${memberRef(ref, method.name)} = ${transpileFunctionSource(codeSource, showSource)};`);
   }
 
   if (prototypeAccessors.length === 0 && instanceMethods.length > 0) {
