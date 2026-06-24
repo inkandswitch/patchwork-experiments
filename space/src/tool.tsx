@@ -46,11 +46,6 @@ import {
   setNewDocToolContext,
 } from './NewDocTool';
 import {
-  tryCardTableCanvasDrop,
-  CARD_TABLE_MIME,
-  shouldDeferCardTableDropToEmbeddedTool,
-} from './cardTableCanvasDrop';
-import {
   createPatchworkDocShapes,
   hasPatchworkDrag,
   parsePatchworkDrop,
@@ -1167,34 +1162,16 @@ async function initializeSync(
   const handlePatchworkDrop = async (e: DragEvent) => {
     if (!e.dataTransfer) return;
 
-    const dropPoint = editor.screenToPage({ x: e.clientX, y: e.clientY });
-
-    if (e.dataTransfer.types.includes(CARD_TABLE_MIME)) {
-      if (shouldDeferCardTableDropToEmbeddedTool(e.target)) {
-        return;
-      }
-      e.preventDefault();
-      e.stopPropagation();
-      try {
-        const handled = await tryCardTableCanvasDrop(
-          repo,
-          editor,
-          dropPoint,
-          e.dataTransfer,
-        );
-        if (handled) return;
-      } catch (err) {
-        console.error(LOG, 'card-table drop failed', err);
-      }
-      return;
-    }
+    // An embedded tool gets first crack at the drop and claims it by calling
+    // preventDefault; if nothing claimed it, the canvas handles it.
+    if (e.defaultPrevented) return;
 
     const items = parsePatchworkDrop(e.dataTransfer);
     if (items.length === 0) return;
 
     e.preventDefault();
-    e.stopPropagation();
 
+    const dropPoint = editor.screenToPage({ x: e.clientX, y: e.clientY });
     await createPatchworkDocShapes(
       repo,
       editor,
@@ -1205,41 +1182,30 @@ async function initializeSync(
   };
 
   const handleDragEnter = (e: DragEvent) => {
+    if (e.defaultPrevented) return;
     if (hasPatchworkDrag(e.dataTransfer)) {
-      e.preventDefault();
-      return;
-    }
-    if (
-      e.dataTransfer?.types.includes(CARD_TABLE_MIME) &&
-      !shouldDeferCardTableDropToEmbeddedTool(e.target)
-    ) {
       e.preventDefault();
     }
   };
 
   const handleDragOver = (e: DragEvent) => {
+    if (e.defaultPrevented) return;
     if (hasPatchworkDrag(e.dataTransfer)) {
       e.preventDefault();
       e.dataTransfer!.dropEffect = 'copy';
-      return;
-    }
-    if (
-      e.dataTransfer?.types.includes(CARD_TABLE_MIME) &&
-      !shouldDeferCardTableDropToEmbeddedTool(e.target)
-    ) {
-      e.preventDefault();
-      e.dataTransfer!.dropEffect = 'move';
     }
   };
 
-  // Use capture phase so we intercept before tldraw's handlers
-  container.addEventListener('dragenter', handleDragEnter, true);
-  container.addEventListener('drop', handlePatchworkDrop, true);
-  container.addEventListener('dragover', handleDragOver, true);
+  // Bubble phase: embedded tools (which run on inner DOM) handle the event
+  // first and claim it via preventDefault. We only act on what bubbles up
+  // unclaimed.
+  container.addEventListener('dragenter', handleDragEnter);
+  container.addEventListener('drop', handlePatchworkDrop);
+  container.addEventListener('dragover', handleDragOver);
   cleanupFnsRef.current.push(() => {
-    container.removeEventListener('dragenter', handleDragEnter, true);
-    container.removeEventListener('drop', handlePatchworkDrop, true);
-    container.removeEventListener('dragover', handleDragOver, true);
+    container.removeEventListener('dragenter', handleDragEnter);
+    container.removeEventListener('drop', handlePatchworkDrop);
+    container.removeEventListener('dragover', handleDragOver);
   });
 
   // ------------------------------------------------------------------

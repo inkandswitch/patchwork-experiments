@@ -41,7 +41,11 @@ export function ZoneDropTarget({
         setOver(false);
         const payload = readDragPayload(event.dataTransfer);
         if (!payload || !accepts(payload)) return;
+        // We own this drop: prevent default *and* stop it bubbling to the
+        // canvas, so the surrounding space doesn't also spawn a widget for the
+        // card we just moved. Unclaimed drops fall through and bubble normally.
         event.preventDefault();
+        event.stopPropagation();
         onDrop(payload);
       }}
     >

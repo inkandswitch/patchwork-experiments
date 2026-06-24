@@ -4,8 +4,20 @@ import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type { ZoneRef } from "./types";
 
 export type CardDragPayload =
-  | { type: "stock"; tableUrl: AutomergeUrl }
-  | { type: "card"; from: ZoneRef; offset: number; index: number };
+  | {
+      type: "stock";
+      tableUrl: AutomergeUrl;
+      /** Empty zone minted at dragstart; dealt into if the drag lands on canvas. */
+      speculativeId?: string;
+    }
+  | {
+      type: "card";
+      from: ZoneRef;
+      offset: number;
+      index: number;
+      /** Empty zone minted at dragstart; embedded if the card lands on canvas. */
+      speculativeId?: string;
+    };
 
 export function writeDragPayload(
   dataTransfer: DataTransfer,

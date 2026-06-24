@@ -78,7 +78,7 @@ function DeckSurface({
     suspense: true,
   });
   const canDrag = canDragDeck(table, deck);
-  const dragDeckCard = useStockDrag(tableUrl);
+  const dragDeckCard = useStockDrag(handle);
   const onInitError = useCallback((message: string) => {
     console.error("[card-zone:deck]", message);
   }, []);
@@ -427,7 +427,7 @@ function ZoneSurface({
               cards={zone.cards}
               decrypted={decrypted}
               draggable={dnd.canDragOut && gameReady}
-              onCardDragStart={dnd.dragCard}
+              onCardDragStart={dnd.beginCardDrag}
               faceDownForOffset={(offset) =>
                 isHand && !isOwner && !revealedSet.has(offset)
               }
@@ -445,9 +445,9 @@ function ZoneSurface({
             <CardStack
               count={zone.cards.length}
               size="sm"
-              draggable={dnd.ready}
+              draggable={dnd.ready && dnd.canDragOut}
               onDragStart={(event) =>
-                dnd.dragCard(event, zone.cards[lastIndex], lastIndex)
+                dnd.beginCardDrag(event, zone.cards[lastIndex], lastIndex)
               }
             />
           ) : (
