@@ -23,6 +23,7 @@ import './styles.css';
 import { createLivelymergeRuntime, type LivelymergeRuntime } from './livelymergeRuntime';
 
 let runtime: LivelymergeRuntime;
+let alreadyInitialized = false;
 
 const DEFAULT_DRAWER_HEIGHT = 250;
 const MIN_DRAWER_HEIGHT = 120;
@@ -243,6 +244,20 @@ export const LivelymergeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!alreadyInitialized) {
+      doCatchingErrors(() => {
+        runtime.change(() => {
+          const g = (globalThis as any).$global;
+          if (typeof g?.initUI === 'function') {
+            g.initUI();
+          }
+        });
+      });
+      alreadyInitialized = true;
+    }
+  }, [docUrl]);
 
   useEffect(() => {
     const onResize = () => setDrawerHeight((h) => clampDrawerHeight(h));
