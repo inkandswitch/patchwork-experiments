@@ -137,11 +137,11 @@ function isFiniteNumber(value) {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-function clonePoint(point) {
+export function clonePoint(point) {
   return [point[0], point[1]];
 }
 
-function cloneSize(size) {
+export function cloneSize(size) {
   return size ? { w: size.w, h: size.h } : null;
 }
 
@@ -291,7 +291,7 @@ function getTargetById(targets, targetId) {
   return targets.find((target) => target.id === targetId) || null;
 }
 
-function countCapturedTargets(targets, pairs) {
+export function countCapturedTargets(targets, pairs) {
   let count = 0;
   for (const target of targets) {
     if (pairs[target.id]) count++;
@@ -299,7 +299,7 @@ function countCapturedTargets(targets, pairs) {
   return count;
 }
 
-function nextIncompleteTargetId(targets, pairs, afterId) {
+export function nextIncompleteTargetId(targets, pairs, afterId) {
   if (!targets.length) return "";
   const startIndex = Math.max(0, getTargetIndex(targets, afterId));
   for (let offset = 1; offset <= targets.length; offset++) {
@@ -321,11 +321,11 @@ function nextTargetId(targets, activeTargetId) {
   return targets[(index + 1) % targets.length].id;
 }
 
-function projectBoardToStage(box, board) {
+export function projectBoardToStage(box, board) {
   return [box.x + board[0] * box.w, box.y + board[1] * box.h];
 }
 
-function chooseCalibrationSize(targets, pairs, preferredSize) {
+export function chooseCalibrationSize(targets, pairs, preferredSize) {
   const preferred = normalizeCameraSize(preferredSize);
   if (preferred) return preferred;
   for (const target of targets) {
@@ -337,7 +337,7 @@ function chooseCalibrationSize(targets, pairs, preferredSize) {
   return null;
 }
 
-function scalePoint(point, fromSize, toSize) {
+export function scalePoint(point, fromSize, toSize) {
   const from = normalizeCameraSize(fromSize);
   const to = normalizeCameraSize(toSize);
   if (!from || !to) return clonePoint(point);
@@ -501,7 +501,7 @@ export function invertHomography(H) {
   ];
 }
 
-function solveCameraToBoardHomography(targets, pairs, calibrationSize) {
+export function solveCameraToBoardHomography(targets, pairs, calibrationSize) {
   const size = normalizeCameraSize(calibrationSize);
   if (!size) return null;
   const srcPts = [];
@@ -520,7 +520,7 @@ function solveCameraToBoardHomography(targets, pairs, calibrationSize) {
   return multiplyMatrices3(normalizedHomography, sourceScale);
 }
 
-function computeMeanReprojectionErrorPx(
+export function computeMeanReprojectionErrorPx(
   targets,
   pairs,
   boardToCam,
@@ -559,7 +559,7 @@ export function cameraPointToBoard(docState, cameraPoint, liveSize) {
   return applyHomography(H, calibrationPoint);
 }
 
-function boardPointToCamera(docState, boardPoint, liveSize) {
+export function boardPointToCamera(docState, boardPoint, liveSize) {
   const H = docState.homographyBoardToCam;
   const calibrationSize =
     docState.cameraCalibrationSize || normalizeCameraSize(liveSize);

@@ -1,15 +1,9 @@
 /**
- * Live AprilTag detection subsystem for the spatial host.
- *
- * Ported from apriltag-projector's detector + runDetectionPass, but instead of
- * keeping only the tag center and broadcasting board coords over the ephemeral
- * channel, it maps the center AND all four corners through the same
- * camera->board homography (board space == the aligned box, so these are
- * already normalized 0..1 within the box), derives an angle, and pushes a
+ * Live AprilTag detection subsystem (tag36h11 WASM detector in a Comlink Web
+ * Worker). Each pass maps the tag center AND all four corners through the
+ * camera->board homography — board space == the aligned box, so these are
+ * already normalized 0..1 within the box — derives an angle, and pushes a
  * normalized-only tag list into the host's SpatialSource.apriltags emitter.
- *
- * The detector runs in a classic Web Worker (vendor/apriltag.js, tag36h11) via
- * Comlink so per-frame CV never blocks the projector UI.
  */
 
 import {
@@ -18,27 +12,33 @@ import {
   BOARD_MARGIN,
   cameraPointToBoard,
 } from "./apriltag-core.js";
+import type { Emitter, SpatialTags, SpatialTag } from "./spatial-source.js";
 
-function nowMs() {
+function nowMs(): number {
   return typeof performance !== "undefined" && performance.now
     ? performance.now()
     : Date.now();
 }
 
-/**
- * Create a detector bound to a <video> element, a docState getter (returns the
- * calibration docState: { mode, homographyCamToBoard, cameraCalibrationSize, ... }),
- * and a SpatialSource to push tags into.
- *
- * @param {Object} opts
- * @param {HTMLVideoElement} opts.video       the live camera video element
- * @param {() => Object|null} opts.getDocState calibration docState (or null)
- * @param {() => {w:number,h:number}|null} opts.getLiveSize  intrinsic camera size
- * @param {import("./spatial-source.js").Emitter} opts.tagsEmitter  source.apriltags
- * @param {(state: string, error?: string) => void} [opts.onStateChange]
- * @param {number} [opts.staleMs] drop a tag not seen for this long (ms)
- */
-export function createDetector(opts) {
+type Size = { w: number; h: number };
+type DetectorState = "idle" | "loading" | "ready" | "error";
+
+export interface DetectorOptions {
+  video: HTMLVideoElement;
+  getDocState: () => { homographyCamToBoard: number[] | null } | null;
+  getLiveSize: () => Size | null;
+  tagsEmitter: Emitter<SpatialTags>;
+  onStateChange?: (state: DetectorState, error?: string) => void;
+  staleMs?: number;
+}
+
+export interface Detector {
+  ensure(): Promise<void>;
+  readonly state: DetectorState;
+  stop(): void;
+}
+
+export function createDetector(opts: DetectorOptions): Detector {
   const {
     video,
     getDocState,
@@ -48,26 +48,26 @@ export function createDetector(opts) {
     staleMs = 600,
   } = opts;
 
-  let worker = null;
-  let detector = null;
-  let state = "idle"; // idle | loading | ready | error
-  let loopTimer = null;
+  let worker: Worker | null = null;
+  let detector: { detect(gray: Uint8Array, w: number, h: number): Promise<RawDetection[]> } | null =
+    null;
+  let state: DetectorState = "idle";
+  let loopTimer: ReturnType<typeof setInterval> | null = null;
   let inFlight = false;
   const canvas = document.createElement("canvas");
-  // id -> { tag, at }
-  const liveTags = new Map();
+  const liveTags = new Map<string, { tag: SpatialTag; at: number }>();
 
-  function setState(next, error) {
+  function setState(next: DetectorState, error?: string) {
     state = next;
     onStateChange?.(next, error);
   }
 
-  async function ensure() {
+  async function ensure(): Promise<void> {
     if (state === "ready" || state === "loading") return;
     setState("loading");
     try {
       const { wrap, proxy } = await import(
-        new URL("../vendor/comlink.mjs", import.meta.url).href
+        /* @vite-ignore */ new URL("../vendor/comlink.mjs", import.meta.url).href
       );
       worker = new Worker(new URL("../vendor/apriltag.js", import.meta.url));
       worker.addEventListener("error", (event) => {
@@ -78,17 +78,17 @@ export function createDetector(opts) {
       const timeout = new Promise((_, reject) =>
         setTimeout(() => reject(new Error("detector load timed out")), 20000),
       );
-      detector = await Promise.race([instancePromise, timeout]);
+      detector = (await Promise.race([instancePromise, timeout])) as typeof detector;
       setState("ready");
       startLoop();
     } catch (err) {
-      setState("error", String((err && err.message) || err));
+      setState("error", String((err as Error)?.message ?? err));
     }
   }
 
   function startLoop() {
     if (loopTimer || state !== "ready") return;
-    loopTimer = setInterval(() => runPass(), DETECT_INTERVAL_MS);
+    loopTimer = setInterval(() => void runPass(), DETECT_INTERVAL_MS);
   }
 
   function stopLoop() {
@@ -99,7 +99,7 @@ export function createDetector(opts) {
     inFlight = false;
   }
 
-  function sweepStale() {
+  function sweepStale(): boolean {
     const cutoff = nowMs() - staleMs;
     let changed = false;
     for (const [key, entry] of liveTags) {
@@ -118,7 +118,7 @@ export function createDetector(opts) {
     tagsEmitter.set({ tags });
   }
 
-  async function runPass() {
+  async function runPass(): Promise<void> {
     if (inFlight || !detector || state !== "ready") return;
     const docState = getDocState();
     if (!docState || !docState.homographyCamToBoard) return;
@@ -138,17 +138,16 @@ export function createDetector(opts) {
       const rgba = ctx.getImageData(0, 0, w, h).data;
       const gray = new Uint8Array(w * h);
       for (let i = 0, p = 0; i < gray.length; i++, p += 4) {
-        // Rec. 601 luma.
         gray[i] = (rgba[p] * 77 + rgba[p + 1] * 150 + rgba[p + 2] * 29) >> 8;
       }
       const detections = (await detector.detect(gray, w, h)) || [];
       const now = nowMs();
 
-      // Map a downscaled-image pixel through the camera->board homography to
-      // normalized box coords [0..1]. Returns null if outside the box (+margin).
-      const toBox = (px) => {
-        const cameraPoint = [px.x / scale, px.y / scale];
-        return cameraPointToBoard(docState, cameraPoint, liveSize);
+      const toBox = (px: { x: number; y: number }) => {
+        const cameraPoint: [number, number] = [px.x / scale, px.y / scale];
+        return cameraPointToBoard(docState, cameraPoint, liveSize) as
+          | [number, number]
+          | null;
       };
 
       for (const det of detections) {
@@ -165,18 +164,20 @@ export function createDetector(opts) {
         }
         const rawCorners = Array.isArray(det.corners) ? det.corners : [];
         const corners = rawCorners.map(toBox);
-        // Require all corners to map; otherwise we can't draw an oriented tag.
         const cornersOk = corners.length === 4 && corners.every(Boolean);
         const angle = cornersOk
-          ? Math.atan2(corners[1][1] - corners[0][1], corners[1][0] - corners[0][0])
+          ? Math.atan2(
+              corners[1]![1] - corners[0]![1],
+              corners[1]![0] - corners[0]![0],
+            )
           : 0;
-        const tag = {
+        const tag: SpatialTag = {
           id: det.id,
           nx: center[0],
           ny: center[1],
           angle,
           corners: cornersOk
-            ? corners.map(([nx, ny]) => ({ nx, ny }))
+            ? corners.map((c) => ({ nx: c![0], ny: c![1] }))
             : [],
         };
         liveTags.set(String(det.id), { tag, at: now });
@@ -188,7 +189,6 @@ export function createDetector(opts) {
     }
   }
 
-  // Periodically expire stale tags even when no new detections arrive.
   const staleTimer = setInterval(() => {
     if (liveTags.size && sweepStale()) publish();
   }, 250);
@@ -211,3 +211,9 @@ export function createDetector(opts) {
     },
   };
 }
+
+type RawDetection = {
+  id: number;
+  center: { x: number; y: number };
+  corners: { x: number; y: number }[];
+};

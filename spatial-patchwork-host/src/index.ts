@@ -1,10 +1,9 @@
 /**
  * Spatial Patchwork Host — plugin registration.
  *
- * Registers:
- *  - the host folder datatype + the host tool
- *  - a dedicated calibration datatype (reuses the apriltag-projector schema)
- *  - the two spatial provider components (coordinate-system + apriltags)
+ * Registers the host folder datatype + the host tool, a dedicated calibration
+ * datatype (reuses the apriltag-projector schema, hidden from menus), and the
+ * two spatial provider components (coordinate-system + apriltags).
  */
 
 export const plugins = [
@@ -24,7 +23,7 @@ export const plugins = [
     icon: "Frame",
     supportedDatatypes: ["spatial-patchwork-host"],
     async load() {
-      return (await import("./host.js")).HostTool;
+      return (await import("./main.js")).HostTool;
     },
   },
   {
@@ -32,7 +31,6 @@ export const plugins = [
     id: "spatial-host-calibration",
     name: "Spatial Calibration",
     icon: "ScanLine",
-    // Created/managed by the host; hidden from the new-document menu.
     unlisted: true,
     async load() {
       return (await import("./folder-datatype.js")).SpatialCalibrationDatatype;

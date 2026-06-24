@@ -85,23 +85,47 @@ to `DETECT_MAX_DIM` (1280) — see `apriltag-core.js` constants.
 
 ## Files
 
+A **bundled SolidJS (TypeScript/JSX)** tool — the host renders the entire
+align/calibrate/test/use UI itself. It reuses only the *pure logic* of the
+`apriltag-projector` proof-of-concept (homography math + the detector worker),
+not its DOM.
+
 ```
 src/
-  index.ts/.js         plugins[]: host datatype + tool, calibration datatype, 2 providers
-  folder-datatype.js   SpatialHostFolderDatatype + SpatialCalibrationDatatype
-  host.js              HostTool orchestrator (phases, box, provider wrappers, detector)
-  detection.js         camera + Comlink worker; maps center+corners; feeds SpatialSource
-  spatial-source.js    Emitter + SpatialSource + SPATIAL_SOURCE_KEY + selector constants
-  providers.js         the two relay provider components
-  apriltag-core.js     verbatim copy of apriltag-projector (math, Tool, detection consts)
+  index.ts             plugins[]: host datatype + tool, calibration datatype, 2 providers
+  main.tsx             render contract: mounts <App> in RepoContext, returns disposer
+  App.tsx              phase switch; ensures calibration doc; reactive host/cal docs
+  ControlPanel.tsx     ONE unified draggable/collapsible bar (Setup/Use + mode controls)
+  CreateNew.tsx        kobalte dropdown of listed datatypes → child doc
+  camera.ts            shared reactive camera controller (one getUserMedia stream)
+  setup/
+    SetupPhase.tsx     stage: align view-box, target dots, test markers + arrow-key nudge
+    AlignBox.tsx       draggable/resizable alignment outline
+    CameraPanel.tsx    large draggable click-to-capture camera + overlay crosshairs
+    calibrate-logic.ts solveSetup / calibrationStatus / captureCount (wrap core math)
+  use/
+    UseStage.tsx       box sub-rect + provider wrappers + embedded view + detector wiring
+  spatial-source.ts    Emitter + SpatialSource + SPATIAL_SOURCE_KEY + selectors
+  providers.ts         the two relay provider components
+  detection.ts         camera + Comlink worker; maps center+corners; feeds SpatialSource
+  apriltag-core.js     copied apriltag-projector, used as a MATH/DETECTOR LIBRARY
+  apriltag-core.d.ts   type declarations for the reused exports
 vendor/                apriltag.js (worker), apriltag_wasm.js/.wasm, comlink.js/.mjs
 ```
 
-This is a **bundled (vite)** tool. `vite.config.js` externalizes the patchwork +
-automerge packages (provided by the host importmap), bundles
-`@inkandswitch/patchwork-providers`, and copies the worker's `importScripts`
-siblings (`apriltag_wasm.js`, `apriltag_wasm.wasm`, `comlink.js`) next to the
-emitted worker chunk in `dist/assets/`.
+`vite.config.js` uses `vite-plugin-solid`, externalizes the patchwork + automerge
+packages (provided by the host importmap), bundles `@inkandswitch/patchwork-providers`
++ Solid + kobalte, and copies the worker's `importScripts` siblings
+(`apriltag_wasm.js`, `apriltag_wasm.wasm`, `comlink.js`) next to the emitted worker
+chunk in `dist/assets/`.
+
+## Control panel
+
+A single draggable, collapsible panel (position + collapsed state persisted in the
+host doc, so it's the same on every screen). First control is the **Setup / Use**
+switch; mode-specific controls follow in the same bar. **Fullscreen** is available in
+both phases. In **Setup**: Align / Calibrate / Test sub-modes, Grid 4/9, Solve, Show
+camera. In **Use**: active-doc picker, **Create new ▾**, Start/Stop camera.
 
 ## Build & sync
 

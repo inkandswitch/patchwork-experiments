@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import { copyFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import solidPlugin from "vite-plugin-solid";
 import cssInjectedByJsPlugin from "vite-plugin-css-injected-by-js";
 import externals from "@inkandswitch/patchwork-bootloader/externals";
 
@@ -27,7 +28,7 @@ function copyWorkerSiblings() {
 
 export default defineConfig({
   base: "./",
-  plugins: [cssInjectedByJsPlugin(), copyWorkerSiblings()],
+  plugins: [solidPlugin(), cssInjectedByJsPlugin(), copyWorkerSiblings()],
   // The AprilTag detector runs in a classic Web Worker (vendor/apriltag.js uses
   // importScripts), loaded via `new Worker(new URL("../vendor/apriltag.js",
   // import.meta.url))`. We do NOT bundle it as a module worker.
@@ -40,7 +41,7 @@ export default defineConfig({
       // patchwork-providers is NOT externalized (not in the importmap) so it's
       // bundled in. The vendored wasm/worker/comlink are emitted as assets.
       external: externals,
-      input: "./src/index.js",
+      input: "./src/index.ts",
       output: {
         format: "es",
         entryFileNames: "[name].js",
