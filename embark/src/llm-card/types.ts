@@ -1,12 +1,12 @@
 import type { AutomergeUrl, Repo } from "@automerge/automerge-repo";
 import type { ToolElement } from "@inkandswitch/patchwork-plugins";
-import type { accept, subscribe } from "@inkandswitch/patchwork-providers";
+import type { findContextStore } from "../lib/context";
 
 // An LLM card: the user writes a plain-language `description`, hits Activate,
 // and an LLM agentic loop generates two things — a dependency-free `effect.js`
 // into the card's own automerge folder, and a human-readable markdown `spec`.
 // The card then loads the file via the service worker and runs it against the
-// card's element, where it hooks into the canvas providers.
+// card's element, where it hooks into the canvas context.
 export type LlmCardDoc = {
   "@patchwork": { type: "llm-card" };
   // The user's paragraph describing the desired effect.
@@ -108,12 +108,12 @@ export type CapturedConsole = {
 
 // The eval-scope API handed to the LLM loop's <script> blocks while it
 // generates. NOTE: the activated effect is NOT handed this object - it receives
-// only `element` and imports any deps from esm.sh.
+// only `element` and reaches the canvas context by dispatching a
+// patchwork:context-request DOM event (see the prompt).
 export type LoopApi = {
   element: ToolElement;
   repo: Repo;
-  subscribe: typeof subscribe;
-  accept: typeof accept;
+  findContextStore: typeof findContextStore;
   loadSkill: (name: string) => string;
   writeFile: (path: string, content: string) => Promise<void>;
   readFile: (path: string) => Promise<string | undefined>;

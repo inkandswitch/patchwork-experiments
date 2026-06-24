@@ -1,16 +1,23 @@
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
-import { For, Show, createSignal, onCleanup } from "solid-js";
+import { For, Show, createEffect, createSignal, onCleanup } from "solid-js";
 import { render } from "solid-js/web";
 import { RepoContext, useDocument, useRepo } from "solid-automerge";
 import "@inkandswitch/patchwork-elements";
-import { getDocumentDragPayload, getDragSource, hasDocumentDrag } from "./dnd";
+import {
+  getDocumentDragPayload,
+  getDragSource,
+  hasDocumentDrag,
+  type DocumentDragItem,
+} from "./dnd";
 import { deepCloneDocument } from "./deep-clone";
-import type { PartsBinDoc } from "./parts-bin/types";
-import { SearchProvider } from "./providers/SearchProvider";
-import { CommandsProvider } from "./providers/CommandsProvider";
-import { SchemaMatchProvider } from "./providers/SchemaMatchProvider";
-import { StickerProvider } from "./providers/StickerProvider";
+import {
+  registerContextElement,
+  type PatchworkContextElement,
+} from "../lib/context";
+import { useContextHandle } from "../lib/context-solid";
+import { runSchemaResolver } from "./schema-resolver";
+import { Selection } from "./channels";
 import "./styles.css";
 
 // One embedded document placed on the canvas. `x`/`y` are the top-left corner
@@ -68,24 +75,25 @@ export const EmbarkCanvasTool: ToolRender = (handle, element) => {
     element.style.position = "relative";
   }
 
-  // The search broker lives on the canvas element so search boxes and POI
-  // providers dropped onto the canvas can find each other (the provider
-  // protocol only flows up the DOM, and the embeds are siblings).
-  const disposeProvider = SearchProvider(element);
+  // A <patchwork-context> owns the shared store and answers discovery requests
+  // from anywhere in its subtree. Rendering the canvas *into* it makes it an
+  // ancestor of every embed, so search boxes, sticker sources, editors, the
+  // map, and dynamically-loaded card code all resolve to the same store. It is
+  // `display: contents`, so it doesn't disturb the embeds' positioning.
+  registerContextElement();
+  const contextEl = document.createElement(
+    "patchwork-context",
+  ) as PatchworkContextElement;
+  element.appendChild(contextEl);
 
-  // The slash-command broker is the search broker's sibling: `/`-command menus
-  // in editors publish a query and contributors answer it with suggestions
-  // (text snippets to insert). No contributors ship yet — llm-cards become them
-  // via the `commands` skill.
-  const disposeCommands = CommandsProvider(element);
-
-  // The schema-match provider also sits on the canvas: it watches every embed
-  // mounted beneath it and answers `schema:matches` for descendants.
-  const disposeSchemaMatch = SchemaMatchProvider(element);
-
-  // The sticker broker bridges sticker sources (which publish annotations) and
-  // renderers (which draw them), scoped per target document.
-  const disposeStickers = StickerProvider(element);
+  // Schema resolution is plain canvas code, not a provider: it reads requested
+  // schemas from the context and writes match urls back. Mount discovery still
+  // rides the `patchwork:mounted` / `patchwork:unmounted` events on `element`.
+  const disposeResolver = runSchemaResolver(
+    contextEl.store,
+    element,
+    element.repo,
+  );
 
   const disposeRender = render(
     () => (
@@ -93,15 +101,13 @@ export const EmbarkCanvasTool: ToolRender = (handle, element) => {
         <EmbarkCanvas handle={handle as DocHandle<EmbarkCanvasDoc>} />
       </RepoContext.Provider>
     ),
-    element,
+    contextEl,
   );
 
   return () => {
     disposeRender();
-    disposeStickers();
-    disposeSchemaMatch();
-    disposeCommands();
-    disposeProvider();
+    disposeResolver();
+    contextEl.remove();
   };
 };
 
@@ -113,6 +119,20 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
   // Selection is per-user view state, so it lives in a local signal rather
   // than in the shared document.
   const [selectedId, setSelectedId] = createSignal<string | null>(null);
+
+  // Promote the selected embed's document into the shared `Selection` channel
+  // so decorators (the editor's mention highlight, the map's pins) can read it
+  // without prop-drilling. Single writer, so the slice is just the one url.
+  const selectionHandle = useContextHandle(() => canvasEl(), Selection);
+  createEffect(() => {
+    const id = selectedId();
+    const url = id ? doc()?.embeds[id]?.docUrl : undefined;
+    selectionHandle.change((slice) => {
+      const entries = slice as Record<string, true>;
+      for (const key of Object.keys(entries)) delete entries[key];
+      if (url) entries[url] = true;
+    });
+  });
 
   // Holding Shift temporarily exposes the resize handle on tools that are
   // normally fixed-size (e.g. the llm-card). Tracked at the window so it stays
@@ -236,56 +256,6 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
       a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
     );
 
-  // The topmost parts-bin embed under a client point, if any. Matched against
-  // each bin's stored rect (in canvas space) rather than the DOM, so we never
-  // have to reach into the embedded <patchwork-view>. Used to detect when a
-  // dragged embed is released over a bin.
-  const binEmbedAt = (
-    clientX: number,
-    clientY: number,
-    excludeId: string,
-  ): EmbarkEmbed | null => {
-    const rect = canvasEl()?.getBoundingClientRect();
-    if (!rect) return null;
-    const bins = embeds()
-      .filter((embed) => embed.toolId === "parts-bin" && embed.id !== excludeId)
-      .sort((a, b) => b.z - a.z);
-    for (const bin of bins) {
-      const left = rect.left + bin.x;
-      const top = rect.top + bin.y;
-      if (
-        clientX >= left &&
-        clientX <= left + bin.width &&
-        clientY >= top &&
-        clientY <= top + bin.height
-      ) {
-        return bin;
-      }
-    }
-    return null;
-  };
-
-  // Copy an embed's document into a parts bin as a deep copy — so the bin holds
-  // a fully self-contained template that shares no documents with the original
-  // embed (or anything it links to).
-  const copyEmbedToBin = async (bin: EmbarkEmbed, source: EmbarkEmbed) => {
-    const [binHandle, clonedUrl] = await Promise.all([
-      repo.find<PartsBinDoc>(bin.docUrl),
-      deepCloneDocument(repo, source.docUrl),
-    ]);
-    binHandle.change((binDoc) => {
-      // Automerge rejects an explicit `undefined`, so only set optional fields
-      // when the source embed actually carries them. Record the embed's current
-      // footprint so dropping the example back out recreates the same size.
-      binDoc.items.push({
-        url: clonedUrl,
-        ...(source.toolId !== undefined && { toolId: source.toolId }),
-        width: source.width,
-        height: source.height,
-      });
-    });
-  };
-
   const dropDocuments = async (event: DragEvent) => {
     setIsDraggingOver(false);
     const payload = getDocumentDragPayload(event.dataTransfer);
@@ -393,8 +363,6 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
             onContextMenu={(clientX, clientY, toolId) =>
               openMenu(embed.id, clientX, clientY, toolId)
             }
-            findBinAt={binEmbedAt}
-            onCopyToBin={copyEmbedToBin}
           />
         )}
       </For>
@@ -426,7 +394,7 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
           </div>
         )}
       </Show>
-      <div style={{ position: "absolute", bottom: 0, right: 0 }}>v 0.0.2</div>
+      <div style={{ position: "absolute", bottom: 0, right: 0 }}>v0.0.6</div>
     </div>
   );
 }
@@ -446,15 +414,13 @@ function EmbedView(props: {
     clientY: number,
     toolId: string | undefined,
   ) => void;
-  findBinAt: (
-    clientX: number,
-    clientY: number,
-    excludeId: string,
-  ) => EmbarkEmbed | null;
-  onCopyToBin: (bin: EmbarkEmbed, source: EmbarkEmbed) => void;
 }) {
   let rootEl: HTMLDivElement | undefined;
   let interaction: Interaction | null = null;
+  // Native-DnD bridge for a move: the DataTransfer describing this embed's
+  // document, plus the drop target currently under the cursor. Null for resizes
+  // and moves that haven't started.
+  let drag: DragBridge | null = null;
 
   const beginInteraction = (mode: InteractionMode) => (event: PointerEvent) => {
     // Locked embeds can't be moved or resized — leave the event alone so the
@@ -475,6 +441,17 @@ function EmbedView(props: {
       originWidth: props.embed.width,
       originHeight: props.embed.height,
     };
+    // Only a move can be dropped onto another embed; prime the DnD bridge so
+    // pointermove can advertise this embed to drop targets under the cursor.
+    drag =
+      mode === "move"
+        ? {
+            data: buildDragData(),
+            overEl: null,
+            overEmbed: null,
+            accepted: false,
+          }
+        : null;
   };
 
   const onPointerMove = (event: PointerEvent) => {
@@ -493,6 +470,9 @@ function EmbedView(props: {
         target.height = Math.max(MIN_HEIGHT, state.originHeight + dy);
       }
     });
+    if (state.mode === "move" && drag) {
+      updateDragOver(event.clientX, event.clientY);
+    }
   };
 
   const endInteraction = (event: PointerEvent) => {
@@ -504,12 +484,42 @@ function EmbedView(props: {
     }
     interaction = null;
 
-    // Dropping a move onto a parts bin copies the embed in and springs it back
-    // to where the drag began, so it reads as "took a copy" rather than a move.
-    // Resizes never copy, and a bin can't be dropped into a bin.
-    if (state.mode !== "move" || props.embed.toolId === "parts-bin") return;
-    const bin = props.findBinAt(event.clientX, event.clientY, props.embed.id);
-    if (!bin) return;
+    // Resizes, and moves that never hovered a drop target, just leave the embed
+    // where it landed (the live position updates already happened).
+    const bridge = drag;
+    drag = null;
+    if (state.mode !== "move" || !bridge) return;
+
+    // Released over the bare canvas, or over an embed that didn't accept the
+    // drop: clear any lingering hover state and keep the embed where it landed.
+    if (!bridge.overEl || !bridge.accepted) {
+      if (bridge.overEl) {
+        dispatchDragEvent(
+          "dragleave",
+          bridge.overEl,
+          event.clientX,
+          event.clientY,
+          bridge.data,
+        );
+      }
+      return;
+    }
+
+    // Hand the document to the drop target and let it choose the effect through
+    // the native DnD API: "move" means it claimed the embed (delete it here),
+    // anything else (e.g. "copy") means it took a copy, so the original springs
+    // back to where the drag began.
+    dispatchDragEvent(
+      "drop",
+      bridge.overEl,
+      event.clientX,
+      event.clientY,
+      bridge.data,
+    );
+    if (bridge.data.dropEffect === "move") {
+      props.onDelete();
+      return;
+    }
 
     const dx = event.clientX - state.startClientX;
     const dy = event.clientY - state.startClientY;
@@ -519,7 +529,6 @@ function EmbedView(props: {
       target.x = state.originX;
       target.y = state.originY;
     });
-    void props.onCopyToBin(bin, props.embed);
     // The reset above moves the element to its origin synchronously, so animate
     // the transform from the drop point back to zero for the spring-back.
     rootEl?.animate(
@@ -529,6 +538,94 @@ function EmbedView(props: {
       ],
       { duration: 240, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
     );
+  };
+
+  // Build the drag payload describing this embed's document, in the same shape a
+  // real document drag carries — so a drop target (e.g. a parts bin) handles
+  // canvas embeds with no special-casing.
+  const buildDragData = (): DataTransfer => {
+    const data = new DataTransfer();
+    const item: DocumentDragItem = {
+      url: props.embed.docUrl,
+      width: props.embed.width,
+      height: props.embed.height,
+      ...(props.embed.toolId !== undefined && { toolId: props.embed.toolId }),
+    };
+    data.setData(
+      "text/x-patchwork-dnd",
+      JSON.stringify({ source: "canvas", items: [item] }),
+    );
+    data.setData("text/x-patchwork-urls", JSON.stringify([props.embed.docUrl]));
+    data.effectAllowed = "copyMove";
+    return data;
+  };
+
+  // Keep the hovered drop target informed with dragleave/dragover (so it can
+  // highlight and advertise its drop effect), tracking whether it accepts.
+  const updateDragOver = (clientX: number, clientY: number) => {
+    if (!drag) return;
+    const overEl = dropElementUnder(clientX, clientY);
+    const overEmbed = overEl?.closest(".embark-embed") ?? null;
+    if (overEmbed !== drag.overEmbed) {
+      if (drag.overEl) {
+        dispatchDragEvent(
+          "dragleave",
+          drag.overEl,
+          clientX,
+          clientY,
+          drag.data,
+        );
+      }
+      drag.overEmbed = overEmbed;
+      drag.accepted = false;
+    }
+    drag.overEl = overEl;
+    if (overEl) {
+      drag.accepted = dispatchDragEvent(
+        "dragover",
+        overEl,
+        clientX,
+        clientY,
+        drag.data,
+      );
+    }
+  };
+
+  // The topmost element under the cursor that belongs to a *different* embed, or
+  // null when that's the bare canvas (dragging over empty space is a no-op).
+  // elementsFromPoint is needed because the dragged embed sits on top; it also
+  // skips pointer-events:none chrome, so it lands on a bin's panel directly.
+  const dropElementUnder = (
+    clientX: number,
+    clientY: number,
+  ): Element | null => {
+    for (const el of document.elementsFromPoint(clientX, clientY)) {
+      if (rootEl && rootEl.contains(el)) continue; // skip the dragged embed
+      const embed = el.closest(".embark-embed");
+      return embed && embed !== rootEl ? el : null;
+    }
+    return null;
+  };
+
+  // Dispatch a synthetic DnD event at a target and report whether it accepted
+  // the drop (preventDefault). The same DataTransfer rides every phase, so the
+  // target's dropEffect set on "drop" is readable back afterwards.
+  const dispatchDragEvent = (
+    type: "dragover" | "dragleave" | "drop",
+    target: Element,
+    clientX: number,
+    clientY: number,
+    data: DataTransfer,
+  ): boolean => {
+    const event = new DragEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      clientX,
+      clientY,
+      dataTransfer: data,
+    });
+    target.dispatchEvent(event);
+    return event.defaultPrevented;
   };
 
   // Framelessness / resizability are properties of the rendering tool: use the
@@ -587,6 +684,9 @@ function EmbedView(props: {
         props.onSelect();
         props.onContextMenu(event.clientX, event.clientY, toolId());
       }}
+      on:dragover={(event) => event.stopPropagation()}
+      on:dragleave={(event) => event.stopPropagation()}
+      on:drop={(event) => event.stopPropagation()}
     >
       <Show when={!frameless()}>
         <div
@@ -698,6 +798,16 @@ type Interaction = {
   originY: number;
   originWidth: number;
   originHeight: number;
+};
+
+// Live state for a move's native-DnD bridge: the DataTransfer offered to drop
+// targets, the element/embed currently under the cursor, and whether that target
+// accepted the latest dragover.
+type DragBridge = {
+  data: DataTransfer;
+  overEl: Element | null;
+  overEmbed: Element | null;
+  accepted: boolean;
 };
 
 // Largest z across all embeds (0 when empty), used to place fresh/raised

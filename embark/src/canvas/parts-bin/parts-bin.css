@@ -29,6 +29,17 @@
   transform: translateX(0);
 }
 
+/* Drop affordance: while a canvas embed / document hovers the bin, tint the
+   panel and outline it so it reads as a place to drop a copy. */
+.embark-parts-bin--drag-over .embark-parts-bin__panel {
+  outline: 2px dashed #6366f1;
+  outline-offset: -2px;
+}
+
+.embark-parts-bin--drag-over .embark-parts-bin__list {
+  background: rgba(99, 102, 241, 0.06);
+}
+
 .embark-parts-bin__panel {
   pointer-events: auto;
   flex: 0 0 auto;

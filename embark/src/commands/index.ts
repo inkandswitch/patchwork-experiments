@@ -22,14 +22,4 @@ export const plugins: Plugin<any>[] = [
       return commandEmbeds();
     },
   },
-  {
-    type: "patchwork:datatype",
-    id: "commands",
-    name: "Commands",
-    icon: "Command",
-    async load() {
-      const { CommandsDatatype } = await import("./datatype");
-      return CommandsDatatype;
-    },
-  },
 ];

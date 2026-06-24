@@ -17,17 +17,18 @@ import {
   type AutomergeUrl,
   type DocHandle,
 } from "@automerge/automerge-repo";
-import { subscribe } from "@inkandswitch/patchwork-providers";
-import { STICKERS_ON_DOCUMENT, type Sticker } from "./types";
+import { subscribeContext } from "../lib/context";
+import { Stickers } from "../canvas/channels";
+import type { Sticker } from "./types";
 import "./stickers.css";
 
-// CodeMirror renderer for stickers (see ./types). The editor asks the canvas
-// sticker broker "what targets this document?" via `STICKERS_ON_DOCUMENT`, gets
-// back the sub-urls of every sticker, resolves each to a live `Sticker` plus a
-// handle to its target range, and draws decorations. This is the only target
-// that exists today, so it owns the slot vocabulary: "before", "after",
-// "replace" (and "after" as the fallback for unknown slots). `style` stickers
-// decorate the target range itself.
+// CodeMirror renderer for stickers (see ./types). The editor reads the canvas
+// `Stickers` context channel and takes the array filed under its own document
+// url — plain `Sticker[]`, no per-sticker documents to resolve. Each sticker's
+// `target` is still resolved to a live range handle so its `rangePositions()`
+// can be tracked. This is the only target that exists today, so it owns the
+// slot vocabulary: "before", "after", "replace" (and "after" as the fallback
+// for unknown slots). `style` stickers decorate the target range itself.
 //
 // Built as a vanilla CodeMirror extension (no Solid) so it can be registered as
 // a `codemirror:extension` and loaded into any markdown editor, mirroring the
@@ -36,10 +37,9 @@ export function stickerRenderer(): Extension {
   return [stickerItemsField, stickerController, stickerDecorations];
 }
 
-// A sticker resolved against the repo: its value plus a handle to the target
-// range, whose `rangePositions()` gives the live `[from, to]` in the document.
+// A sticker paired with a handle to its target range, whose `rangePositions()`
+// gives the live `[from, to]` in the document.
 type ResolvedSticker = {
-  url: AutomergeUrl;
   sticker: Sticker;
   target: DocHandle<unknown>;
 };
@@ -57,28 +57,24 @@ const stickerItemsField = StateField.define<ResolvedSticker[]>({
   },
 });
 
-// Discovers this editor's document url, subscribes to the broker, and resolves
-// the emitted sticker urls into live `ResolvedSticker`s. Re-resolves whenever
-// the url set changes or any resolved sticker's own document changes (the
-// broker only re-emits on add/remove, so content edits are caught here).
+// Discovers this editor's document url, reads the `Stickers` channel, and
+// resolves the inline stickers filed under that url into live
+// `ResolvedSticker`s. Sticker content edits arrive as fresh channel emissions
+// (the values are inline, so there are no separate sticker documents to watch);
+// target repositioning rides the editor's own `docChanged`.
 const stickerController = ViewPlugin.fromClass(
   class {
     private unsubscribe?: () => void;
-    private urls: AutomergeUrl[] = [];
+    private stickers: Sticker[] = [];
     private generation = 0;
-    private listeners = new Map<DocHandle<unknown>, () => void>();
 
     constructor(private readonly view: EditorView) {
       const url = documentUrl(view);
       if (!url) return;
-      this.unsubscribe = subscribe<AutomergeUrl[]>(
-        view.dom,
-        { type: STICKERS_ON_DOCUMENT, url },
-        (urls) => {
-          this.urls = urls;
-          void this.resolve();
-        },
-      );
+      this.unsubscribe = subscribeContext(view.dom, Stickers, (all) => {
+        this.stickers = all[url] ?? [];
+        void this.resolve();
+      });
     }
 
     private async resolve() {
@@ -86,53 +82,22 @@ const stickerController = ViewPlugin.fromClass(
       if (!repo) return;
       const generation = ++this.generation;
       const resolved: ResolvedSticker[] = [];
-      for (const url of this.urls) {
+      for (const sticker of this.stickers) {
         try {
-          const handle = await Promise.resolve(repo.find<Sticker>(url));
-          const sticker = handle.doc();
-          if (!sticker) continue;
           const target = await Promise.resolve(
             repo.find<unknown>(sticker.target),
           );
-          resolved.push({ url, sticker, target });
+          resolved.push({ sticker, target });
         } catch {
-          // skip stickers that fail to load
+          // skip stickers whose target fails to load
         }
       }
       if (generation !== this.generation) return;
-      this.watchStickers(resolved);
       this.view.dispatch({ effects: setStickers.of(resolved) });
-    }
-
-    // Listen for content changes on each sticker's own document so edits to a
-    // sticker (e.g. an updated converted value) redraw even when the url set is
-    // unchanged. Target repositioning rides the editor's own `docChanged`.
-    private watchStickers(resolved: ResolvedSticker[]) {
-      this.detachStickers();
-      for (const item of resolved) {
-        const repo = window.repo;
-        if (!repo) continue;
-        void Promise.resolve(repo.find(item.url))
-          .then((handle) => {
-            if (this.listeners.has(handle)) return;
-            const onChange = () => void this.resolve();
-            handle.on("change", onChange);
-            this.listeners.set(handle, onChange);
-          })
-          .catch(() => {});
-      }
-    }
-
-    private detachStickers() {
-      for (const [handle, onChange] of this.listeners) {
-        handle.off("change", onChange);
-      }
-      this.listeners.clear();
     }
 
     destroy() {
       this.unsubscribe?.();
-      this.detachStickers();
     }
   },
 );

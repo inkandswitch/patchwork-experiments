@@ -1,4 +1,10 @@
 import type { AutomergeUrl } from "@automerge/automerge-repo";
+import type { JsonSchema } from "../../lib/schema";
+import {
+  SchemaMatches,
+  SchemaQueries,
+  schemaKey,
+} from "../../canvas/channels";
 import type { LoopApi } from "../types";
 
 // One document reachable on the canvas: its url plus the bare metadata the model
@@ -11,10 +17,10 @@ export type CanvasDocInfo = {
 };
 
 // A JSON Schema that matches only document *roots*: `@patchwork.type` (a string)
-// lives at the top of every patchwork document and nowhere else, so the
-// schema-match provider returns one bare document url per reachable doc rather
-// than a sub-url for every nested object.
-const ROOT_SCHEMA = {
+// lives at the top of every patchwork document and nowhere else, so the schema
+// resolver returns one bare document url per reachable doc rather than a sub-url
+// for every nested object.
+const ROOT_SCHEMA: JsonSchema = {
   type: "object",
   properties: {
     "@patchwork": {
@@ -26,8 +32,10 @@ const ROOT_SCHEMA = {
   required: ["@patchwork"],
 };
 
-// How long to wait for the schema-match provider's first emit. It debounces
-// 50ms (SchemaMatchProvider.ts), so this is comfortable headroom.
+const ROOT_KEY = schemaKey(ROOT_SCHEMA);
+
+// How long to wait for the schema resolver's first emit. It debounces 50ms
+// (schema-resolver.ts), so this is comfortable headroom.
 const SETTLE_MS = 300;
 
 // Snapshot the documents currently on the canvas so the prompt can tell the
@@ -53,21 +61,23 @@ export function formatInventory(items: CanvasDocInfo[]): string {
   return items.map((item) => `- "${item.title}" (${item.type})`).join("\n");
 }
 
-// Open a transient schema:matches subscription, wait for it to settle, capture
-// the matched urls, then unsubscribe.
+// Publish a transient root-schema query into the context, wait for the resolver
+// to settle, capture the matched urls, then withdraw the query.
 function collectMatchUrls(api: LoopApi): Promise<AutomergeUrl[]> {
   return new Promise((resolve) => {
-    let latest: AutomergeUrl[] = [];
-    const unsubscribe = api.subscribe<AutomergeUrl[]>(
-      api.element,
-      { type: "schema:matches", schema: ROOT_SCHEMA },
-      (urls) => {
-        latest = urls;
-      },
-    );
+    const store = api.findContextStore(api.element);
+    if (!store) {
+      resolve([]);
+      return;
+    }
+    const queries = store.handle(SchemaQueries);
+    queries.change((slice) => {
+      slice[ROOT_KEY] = ROOT_SCHEMA;
+    });
     setTimeout(() => {
-      unsubscribe();
-      resolve(latest);
+      const matches = store.read(SchemaMatches)[ROOT_KEY] ?? [];
+      queries.release();
+      resolve(matches);
     }, SETTLE_MS);
   });
 }

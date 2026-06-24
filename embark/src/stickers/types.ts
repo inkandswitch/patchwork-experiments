@@ -30,20 +30,3 @@ export type ToolSticker = {
 };
 
 export type Sticker = StyleSticker | TextSticker | ToolSticker;
-
-// An ephemeral contributor document the StickerProvider mints per contributor
-// (see `STICKERS_REGISTRY`). It's keyed by the *target document* url; each
-// entry's stickers carry a `target` that's a range sub-url within that
-// document. The provider owns the doc's lifecycle; the contributor owns its
-// contents.
-export type StickerRegistryDoc = Record<AutomergeUrl, Sticker[]>;
-
-// Renderer side: "what stickers target this document?". Subscribe with
-// `{ type: STICKERS_ON_DOCUMENT, url }` and receive an `AutomergeUrl[]` of
-// sticker sub-urls (each resolvable via `repo.find` to a live `Sticker`).
-export const STICKERS_ON_DOCUMENT = "stickers:on-document";
-
-// Contributor side: "give me somewhere to publish stickers". Subscribe with
-// `{ type: STICKERS_REGISTRY }` and receive the `AutomergeUrl` of a fresh
-// registry document to write into.
-export const STICKERS_REGISTRY = "stickers:registry";

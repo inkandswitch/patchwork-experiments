@@ -6,8 +6,12 @@ export type DocumentDragItem = {
   url: AutomergeUrl;
   name?: string;
   type?: string;
-  // Optional canvas footprint carried by parts-bin drags so the dropped embed
-  // recreates the recorded size instead of the canvas default.
+  // The tool to render the item with, carried by canvas-embed drags so a parts
+  // bin recreates the same preview tool. Absent for plain document drags (the
+  // dropped doc's default tool is used).
+  toolId?: string;
+  // Optional canvas footprint carried by parts-bin / canvas-embed drags so the
+  // dropped embed recreates the recorded size instead of the canvas default.
   width?: number;
   height?: number;
 };

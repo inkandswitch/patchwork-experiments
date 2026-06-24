@@ -25,29 +25,31 @@ You ship TWO modules (write both with writeFile), plus the spec:
 - When the user picks the suggestion, the HOST deep-clones your prototype (so every insertion is independent) and inserts a token \`[label]{cloneUrl?view=<your view.js url>}\` into the note.
 - That token is rendered by importing your view.js and calling \`default(element, handle)\` with a handle to the CLONE. The user changes the command through the widget's own UI (which writes to the handle) — NOT by editing text.
 
-## Half 1: effect.js — answer the active /-query (commands:responses)
+## Half 1: effect.js — answer the active /-query (commands:queries / commands:suggestions)
 
-  subscribe(element, { type: "commands:responses" }, (responseDocUrl) => { ... })
+You use two channels:
+  commands:queries      { [query]: true }                                        - the active /-queries. The editor writes these; you READ them (the keys). The empty string "" means the user typed "/" with nothing after it.
+  commands:suggestions  { [query]: { label, url, viewUrl? }[] }                   - the suggestions per query. You WRITE your own slice.
 
-The callback is invoked once with the url of a fresh response document minted for you. It is a plain map:
-
-  { [query: string]: { label: string, url: AutomergeUrl, viewUrl?: string }[] }
-
-The broker OWNS the keys: the active \`/\` queries (the empty string \`""\` means the user typed \`/\` with nothing after it). You OWN the values: for each query key, write the array of suggestions you offer. Each suggestion is:
+Reach the store with getStore(element), then for each active query write the array of suggestions you offer. Each suggestion is:
   - label   - what the menu shows
-  - url     - a card you minted (\`repo.create(...).url\`): the command's prototype
+  - url     - a card you minted (repo.create(...).url): the command's prototype
   - viewUrl - the import url of your renderer (see "Getting your renderer's url")
 
-Mint each prototype card ONCE and cache it (a module-level variable) — do NOT create a new card on every keystroke. Offer the SAME url across queries so the broker dedupes it. Match the query loosely (case-insensitive prefix/substring on the label or command name), return [] when nothing fits, and offer your full list for the empty query.
+Mint each prototype card ONCE and cache it (a module-level variable) — do NOT create a new card on every keystroke. Offer the SAME url across queries so the host dedupes it. Match the query loosely (case-insensitive prefix/substring on the label or command name), return [] when nothing fits, and offer your full list for the empty query.
 
-  const handle = await repo.find(responseDocUrl);
-  const answer = () => handle.change((doc) => {
-    for (const query of Object.keys(doc)) doc[query] = suggestionsFor(query);
+  const CommandQueries = { name: "commands:queries", empty: {} };
+  const CommandSuggestions = { name: "commands:suggestions", empty: {} };
+  const store = getStore(element);
+  const suggestions = store.handle(CommandSuggestions);
+  const answer = () => suggestions.change((s) => {
+    for (const key of Object.keys(s)) delete s[key]; // clear stale queries
+    for (const query of Object.keys(store.read(CommandQueries))) s[query] = suggestionsFor(query);
   });
-  handle.on("change", answer); // re-answer when the broker adds/removes a query
-  answer();
+  const unsubscribe = store.subscribe(CommandQueries, answer); // re-answer as queries change
+  answer(); // subscribe does not fire an initial call, so seed once
 
-In the returned teardown, unsubscribe and remove the "change" listener.
+In the returned teardown, unsubscribe and call suggestions.release().
 
 ### Getting your renderer's url (IMPORTANT)
 
@@ -90,12 +92,21 @@ view.js runs standalone in the browser with NO access to secrets, env vars, or a
 
 effect.js (the contributor):
 
-  import { subscribe } from "https://esm.sh/@inkandswitch/patchwork-providers@0.2.2";
-
+  function getStore(node) {
+    const detail = {};
+    node.dispatchEvent(new CustomEvent("patchwork:context-request", { detail, bubbles: true, composed: true }));
+    return detail.store;
+  }
+  const CommandQueries = { name: "commands:queries", empty: {} };
+  const CommandSuggestions = { name: "commands:suggestions", empty: {} };
   const VIEW_URL = new URL("./view.js", import.meta.url).pathname;
 
   export default function activate(element) {
     const repo = element.repo;
+    const store = getStore(element);
+    if (!store) return () => {};
+    const suggestions = store.handle(CommandSuggestions);
+
     let proto; // cache the prototype card so we don't mint one per keystroke
     const prototypeUrl = () => {
       if (!proto) proto = repo.create({
@@ -105,22 +116,20 @@ effect.js (the contributor):
       });
       return proto.url;
     };
+    const suggestionsFor = (query) => {
+      const q = query.toLowerCase();
+      if (q && !"route".startsWith(q)) return [];
+      return [{ label: "Route from … to …", url: prototypeUrl(), viewUrl: VIEW_URL }];
+    };
 
-    const stop = subscribe(element, { type: "commands:responses" }, async (responseDocUrl) => {
-      const handle = await repo.find(responseDocUrl);
-      const suggestionsFor = (query) => {
-        const q = query.toLowerCase();
-        if (q && !"route".startsWith(q)) return [];
-        return [{ label: "Route from … to …", url: prototypeUrl(), viewUrl: VIEW_URL }];
-      };
-      const answer = () => handle.change((doc) => {
-        for (const query of Object.keys(doc)) doc[query] = suggestionsFor(query);
-      });
-      handle.on("change", answer);
-      answer();
+    const answer = () => suggestions.change((s) => {
+      for (const key of Object.keys(s)) delete s[key];
+      for (const query of Object.keys(store.read(CommandQueries))) s[query] = suggestionsFor(query);
     });
+    const unsubscribe = store.subscribe(CommandQueries, answer);
+    answer();
 
-    return () => stop();
+    return () => { unsubscribe(); suggestions.release(); };
   }
 
 view.js (the renderer):

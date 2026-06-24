@@ -15,14 +15,16 @@ import {
   type Tooltip,
   type ViewUpdate,
 } from "@codemirror/view";
-import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
-import { subscribe } from "@inkandswitch/patchwork-providers";
+import type { AutomergeUrl } from "@automerge/automerge-repo";
 import {
-  COMMANDS_QUERY_SELECTOR,
-  COMMANDS_RESPONSES_SELECTOR,
-} from "../canvas/providers/CommandsProvider";
+  findContextStore,
+  getContextHandle,
+  subscribeContext,
+  type ScopeHandle,
+} from "../lib/context";
+import { CommandQueries, CommandSuggestions } from "../canvas/channels";
 import { deepCloneDocument } from "../canvas/deep-clone";
-import type { CommandsDoc, Suggestion } from "./datatype";
+import type { Suggestion } from "./datatype";
 import "./commands.css";
 
 // An in-progress `/command`: the document span being replaced (from the `/` to
@@ -53,28 +55,35 @@ export function slashCommands(): Extension {
 
 const activation = new Compartment();
 
-// Opens a discovery subscription on mount. The broker only answers
-// `commands:responses` over the channel, so a first emission is proof that a
-// commands provider is reachable from this editor; at that point we install the
-// real feature and stop probing.
+// Stays dormant until a canvas context is reachable from this editor (so a
+// markdown editor opened outside a canvas leaves `/` inert). Discovery is a
+// synchronous one-shot, retried on updates until the editor is connected; the
+// activation dispatch is deferred to a microtask so it never runs mid-update.
 const brokerProbe = ViewPlugin.fromClass(
   class {
-    private unsubscribe?: () => void;
+    private activated = false;
+    private destroyed = false;
 
     constructor(view: EditorView) {
-      this.unsubscribe = subscribe(
-        view.dom,
-        { type: COMMANDS_RESPONSES_SELECTOR },
-        () => {
-          this.unsubscribe?.();
-          this.unsubscribe = undefined;
-          view.dispatch({ effects: activation.reconfigure(commandsFeature()) });
-        },
-      );
+      this.schedule(view);
+    }
+
+    update(update: ViewUpdate) {
+      this.schedule(update.view);
+    }
+
+    private schedule(view: EditorView) {
+      if (this.activated || this.destroyed) return;
+      if (!findContextStore(view.dom)) return;
+      this.activated = true;
+      queueMicrotask(() => {
+        if (this.destroyed) return;
+        view.dispatch({ effects: activation.reconfigure(commandsFeature()) });
+      });
     }
 
     destroy() {
-      this.unsubscribe?.();
+      this.destroyed = true;
     }
   },
 );
@@ -89,8 +98,8 @@ function commandsFeature(): Extension {
   ];
 }
 
-// Async suggestion arrival (the broker writes them into the CommandsDoc over
-// time as contributors answer).
+// Async suggestion arrival (contributors fill the CommandSuggestions channel
+// over time as they answer the query).
 const setSuggestions = StateEffect.define<{
   suggestions: Suggestion[];
   index: number;
@@ -173,14 +182,14 @@ function activeCommand(
   return { from: head - query.length - 1, to: head, query };
 }
 
-// Drives the commands broker: lazily creates a throwaway CommandsDoc to receive
-// suggestions into, (re)subscribes to the broker whenever the query changes,
-// and pushes the suggestions back into the editor as the broker fills the doc.
+// Drives the commands system over the shared context: publishes the active
+// query into `CommandQueries` (its own scoped slice) and reads back the
+// suggestions contributors offered for it from `CommandSuggestions`.
 const suggestionController = ViewPlugin.fromClass(
   class {
-    private handle?: DocHandle<CommandsDoc>;
-    private onDocChange?: () => void;
+    private queries?: ScopeHandle<Record<string, true>>;
     private unsubscribe?: () => void;
+    private latestSuggestions: Record<string, Suggestion[]> = {};
     private query: string | null = null;
 
     constructor(private readonly view: EditorView) {
@@ -200,47 +209,46 @@ const suggestionController = ViewPlugin.fromClass(
     private sync() {
       const active = this.view.state.field(menuState, false)?.active;
       if (!active) {
-        this.query = null;
-        this.unsubscribe?.();
-        this.unsubscribe = undefined;
+        if (this.query !== null) {
+          this.query = null;
+          this.publishQuery(null);
+        }
         return;
       }
-      const repo = window.repo;
-      if (!repo) return;
-      if (!this.handle) {
-        // Intentionally never deleted — it's scratch state for receiving
-        // suggestions, and leaking it is acceptable here.
-        this.handle = repo.create<CommandsDoc>({
-          "@patchwork": { type: "commands" },
-          query: "",
-          suggestions: [],
-        });
-        this.onDocChange = () => this.publishSuggestions();
-        this.handle.on("change", this.onDocChange);
+      if (!this.queries) {
+        this.queries = getContextHandle(this.view.dom, CommandQueries);
       }
-      // Re-register on every query change, including the empty query (`/` with
+      if (!this.unsubscribe) {
+        this.unsubscribe = subscribeContext(
+          this.view.dom,
+          CommandSuggestions,
+          (all) => {
+            this.latestSuggestions = all;
+            this.publishSuggestions();
+          },
+        );
+      }
+      // Re-publish on every query change, including the empty query (`/` with
       // nothing typed) so contributors can offer their full command list.
       if (active.query !== this.query) {
         this.query = active.query;
-        this.unsubscribe?.();
-        this.unsubscribe = subscribe(
-          this.view.dom,
-          {
-            type: COMMANDS_QUERY_SELECTOR,
-            query: active.query,
-            doc: this.handle.url,
-          },
-          () => {},
-        );
+        this.publishQuery(active.query);
       }
     }
 
+    // A single-key slice. Unlike search, the empty query is meaningful (typing
+    // `/` alone should surface every command), so it is published too.
+    private publishQuery(query: string | null) {
+      this.queries?.change((slice) => {
+        for (const key of Object.keys(slice)) delete slice[key];
+        if (query !== null) slice[query.trim()] = true;
+      });
+    }
+
     private publishSuggestions() {
-      const handle = this.handle;
-      if (!handle) return;
       const active = this.view.state.field(menuState, false)?.active;
       if (!active) return;
-      const suggestions = handle.doc()?.suggestions ?? [];
+      const suggestions = this.latestSuggestions[active.query.trim()] ?? [];
       this.view.dispatch({
         effects: setSuggestions.of({
           suggestions,
@@ -251,9 +259,7 @@ const suggestionController = ViewPlugin.fromClass(
 
     destroy() {
       this.unsubscribe?.();
-      if (this.handle && this.onDocChange) {
-        this.handle.off("change", this.onDocChange);
-      }
+      this.queries?.release();
     }
   },
 );
@@ -304,6 +310,7 @@ async function insertEmbed(
   to: number,
   expected: string,
 ): Promise<void> {
+  // `repo` is published on the window by the host frame.
   const repo = window.repo;
   let cardUrl = suggestion.url;
   if (repo) {

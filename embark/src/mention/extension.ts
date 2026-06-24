@@ -23,10 +23,19 @@ import {
   isValidAutomergeUrl,
   parseAutomergeUrl,
   type AutomergeUrl,
-  type DocHandle,
 } from "@automerge/automerge-repo";
-import { subscribe } from "@inkandswitch/patchwork-providers";
-import type { SearchDoc } from "../search/datatype";
+import {
+  findContextStore,
+  getContextHandle,
+  subscribeContext,
+  type ScopeHandle,
+} from "../lib/context";
+import {
+  Highlight,
+  SearchQueries,
+  SearchResults,
+  Selection,
+} from "../canvas/channels";
 import "./mention.css";
 
 // The mention token literal `[Name]{automerge-url}`. The url is stored
@@ -34,14 +43,6 @@ import "./mention.css";
 // `automerge:<id>/contextToolIds/@0`), validated with `isValidAutomergeUrl`
 // before it's rendered as a pill.
 const MENTION_RE = /\[([^\]\n]+)\]\{([^}\n]+)\}/g;
-
-// The shared focus store ([providers/src/FocusProvider.ts]) keyed by url.
-// Defined locally so the (vanilla CodeMirror) extension needn't depend on the
-// Solid provider package.
-type FocusDoc = {
-  selection: Record<AutomergeUrl, true>;
-  highlight: Record<AutomergeUrl, true>;
-};
 
 // One result the broker surfaced for the active query: the document it points
 // at (`automerge:…`, used verbatim as the link target) and a resolved title.
@@ -73,24 +74,35 @@ export function mentionSearch(): Extension {
 
 const activation = new Compartment();
 
-// Opens a discovery subscription on mount. The broker only answers
-// `search:responses` over the channel, so a first emission is proof that a
-// search provider is reachable from this editor; at that point we install the
-// real feature and stop probing.
+// Stays dormant until a canvas context is reachable from this editor (so a
+// markdown editor opened outside a canvas leaves `@` inert). Discovery is a
+// synchronous one-shot, retried on updates until the editor is connected; the
+// activation dispatch is deferred to a microtask so it never runs mid-update.
 const brokerProbe = ViewPlugin.fromClass(
   class {
-    private unsubscribe?: () => void;
+    private activated = false;
+    private destroyed = false;
 
     constructor(view: EditorView) {
-      this.unsubscribe = subscribe(view.dom, { type: "search:responses" }, () => {
-        this.unsubscribe?.();
-        this.unsubscribe = undefined;
+      this.schedule(view);
+    }
+
+    update(update: ViewUpdate) {
+      this.schedule(update.view);
+    }
+
+    private schedule(view: EditorView) {
+      if (this.activated || this.destroyed) return;
+      if (!findContextStore(view.dom)) return;
+      this.activated = true;
+      queueMicrotask(() => {
+        if (this.destroyed) return;
         view.dispatch({ effects: activation.reconfigure(mentionFeature()) });
       });
     }
 
     destroy() {
-      this.unsubscribe?.();
+      this.destroyed = true;
     }
   },
 );
@@ -172,14 +184,15 @@ function activeMention(
   return { from: head - query.length - 1, to: head, query };
 }
 
-// Drives the search system: lazily creates a throwaway SearchDoc to receive
-// results into, (re)subscribes to the broker whenever the query changes, and
-// pushes resolved results back into the editor as the broker fills the doc.
+// Drives the search system over the shared context: publishes the active query
+// into `SearchQueries` (its own scoped slice) and reads back whatever
+// contributors surfaced for it from `SearchResults`, resolving result urls to
+// displayable titles for the menu.
 const searchController = ViewPlugin.fromClass(
   class {
-    private handle?: DocHandle<SearchDoc>;
-    private onDocChange?: () => void;
+    private queries?: ScopeHandle<Record<string, true>>;
     private unsubscribe?: () => void;
+    private latestResults: Record<string, AutomergeUrl[]> = {};
     private query: string | null = null;
 
     constructor(private readonly view: EditorView) {
@@ -199,55 +212,60 @@ const searchController = ViewPlugin.fromClass(
     private sync() {
       const active = this.view.state.field(menuState, false)?.active;
       if (!active) {
-        this.query = null;
-        this.unsubscribe?.();
-        this.unsubscribe = undefined;
+        if (this.query !== null) {
+          this.query = null;
+          this.publishQuery(null);
+        }
         return;
       }
-      const repo = window.repo;
-      if (!repo) return;
-      if (!this.handle) {
-        // Intentionally never deleted — it's scratch state for receiving
-        // results, and leaking it is acceptable here.
-        this.handle = repo.create<SearchDoc>({
-          "@patchwork": { type: "search" },
-          query: "",
-          results: [],
-        });
-        this.onDocChange = () => this.publishResults();
-        this.handle.on("change", this.onDocChange);
+      if (!this.queries) {
+        this.queries = getContextHandle(this.view.dom, SearchQueries);
+      }
+      if (!this.unsubscribe) {
+        this.unsubscribe = subscribeContext(
+          this.view.dom,
+          SearchResults,
+          (all) => {
+            this.latestResults = all;
+            this.publishResults();
+          },
+        );
       }
       if (active.query !== this.query) {
         this.query = active.query;
-        this.unsubscribe?.();
-        // Same selector SearchBox registers; the broker writes aggregated
-        // result urls straight into our SearchDoc.results.
-        this.unsubscribe = subscribe(
-          this.view.dom,
-          { type: "search:query", query: active.query, doc: this.handle.url },
-          () => {},
-        );
+        this.publishQuery(active.query);
       }
     }
 
+    // A single-key slice: the active (trimmed) query, or nothing when closed.
+    private publishQuery(query: string | null) {
+      const trimmed = query?.trim();
+      this.queries?.change((slice) => {
+        for (const key of Object.keys(slice)) delete slice[key];
+        if (trimmed) slice[trimmed] = true;
+      });
+    }
+
     private publishResults() {
-      const handle = this.handle;
-      if (!handle) return;
-      if (!this.view.state.field(menuState, false)?.active) return;
-      const query = this.query;
-      const urls = handle.doc()?.results ?? [];
+      const active = this.view.state.field(menuState, false)?.active;
+      if (!active) return;
+      const query = active.query.trim();
+      const urls = (query && this.latestResults[query]) || [];
       void Promise.all(urls.map(resolveResult)).then((results) => {
-        const active = this.view.state.field(menuState, false)?.active;
-        if (!active || this.query !== query) return; // stale or closed
+        const current = this.view.state.field(menuState, false)?.active;
+        if (!current || current.query.trim() !== query) return; // stale/closed
         this.view.dispatch({
-          effects: setResults.of({ results, index: wrapIndex(active.index, results.length) }),
+          effects: setResults.of({
+            results,
+            index: wrapIndex(current.index, results.length),
+          }),
         });
       });
     }
 
     destroy() {
       this.unsubscribe?.();
-      if (this.handle && this.onDocChange) this.handle.off("change", this.onDocChange);
+      this.queries?.release();
     }
   },
 );
@@ -480,17 +498,16 @@ class MentionWidget extends WidgetType {
 //
 // Tokens light up when their target *document* is in focus, and focusing a
 // token (caret inside it, or a selection overlapping it) writes that document
-// into the shared focus store so the target's own views light up too. This
-// mirrors `searchController`'s plumbing rather than the Solid helper, because
-// the extension is vanilla CodeMirror. Degrades to a no-op when no
-// FocusProvider is reachable.
+// into the canvas `Highlight` channel so the target's own views light up too.
+// Focus is read from the union of the `Selection` and `Highlight` channels.
+// Degrades to a no-op when no canvas context is reachable.
 // ---------------------------------------------------------------------------
 
 const EMPTY_FOCUS = new Set<string>();
 
-// The set of focused document ids (selection ∪ highlight from the FocusDoc),
-// normalized to bare documentIds so a token matches whether the store holds a
-// plain url or a sub-url for its target.
+// The set of focused document ids (Selection ∪ Highlight), normalized to bare
+// documentIds so a token matches whether the channel holds a plain url or a
+// sub-url for its target.
 const setFocusUrls = StateEffect.define<Set<string>>();
 
 const focusedUrls = StateField.define<Set<string>>({
@@ -509,58 +526,57 @@ function focusHighlight(): Extension {
 
 const focusController = ViewPlugin.fromClass(
   class {
-    private handle?: DocHandle<FocusDoc>;
-    private onDocChange?: () => void;
-    private discover?: () => void;
+    private unsubscribeSelection?: () => void;
+    private unsubscribeHighlight?: () => void;
+    private highlight?: ScopeHandle<Record<string, true>>;
     private destroyed = false;
+    private selectionUrls: Record<string, true> = {};
+    private highlightUrls: Record<string, true> = {};
     // The highlight entries this editor currently owns (the targets of every
     // token the caret/selection touches), cleared when focus moves off them.
     private written = new Set<AutomergeUrl>();
 
     constructor(private readonly view: EditorView) {
-      // One-shot discovery of the shared focus doc, like `brokerProbe`.
-      this.discover = subscribe(
+      this.unsubscribeSelection = subscribeContext(
         view.dom,
-        { type: "patchwork:focus" },
-        (url: AutomergeUrl) => {
-          if (this.handle || !url) return;
-          const repo = window.repo;
-          if (!repo) return;
-          void Promise.resolve(repo.find<FocusDoc>(url)).then((handle) => {
-            if (this.destroyed) return;
-            this.handle = handle;
-            this.onDocChange = () => this.publishFocus();
-            handle.on("change", this.onDocChange);
-            this.publishFocus();
-            this.syncWrite();
-          });
+        Selection,
+        (all) => {
+          this.selectionUrls = all;
+          this.publishFocus();
         },
       );
+      this.unsubscribeHighlight = subscribeContext(
+        view.dom,
+        Highlight,
+        (all) => {
+          this.highlightUrls = all;
+          this.publishFocus();
+        },
+      );
+      // The editor's own slice of the Highlight channel.
+      this.highlight = getContextHandle(view.dom, Highlight);
     }
 
     update(update: ViewUpdate) {
-      // The active autocomplete result is previewed in `highlight` too, so the
+      // The active autocomplete result is previewed in Highlight too, so the
       // menu's selection (changed by arrow keys or freshly-arrived results)
       // also needs to retrigger a write.
       const previewChanged =
         activeResultUrl(update.startState) !== activeResultUrl(update.state);
       if (update.selectionSet || update.docChanged || previewChanged) {
-        // Defer: writing the focus doc emits a "change" that dispatches back
-        // into the editor, which must not happen mid-update.
+        // Defer: writing the channel emits back into the editor, which must not
+        // happen mid-update.
         queueMicrotask(() => this.syncWrite());
       }
     }
 
-    // Project selection ∪ highlight to a set of documentIds and push it in.
+    // Project Selection ∪ Highlight to a set of documentIds and push it in.
     private publishFocus() {
-      const doc = this.handle?.doc();
-      if (!doc) return;
       const ids = new Set<string>();
-      const urls = [
-        ...Object.keys(doc.selection ?? {}),
-        ...Object.keys(doc.highlight ?? {}),
-      ];
-      for (const url of urls) {
+      for (const url of [
+        ...Object.keys(this.selectionUrls),
+        ...Object.keys(this.highlightUrls),
+      ]) {
         if (isValidAutomergeUrl(url)) ids.add(parseAutomergeUrl(url).documentId);
       }
       queueMicrotask(() => {
@@ -573,49 +589,36 @@ const focusController = ViewPlugin.fromClass(
 
     // Reflect every token the caret/selection touches — plus the active
     // autocomplete result, so navigating the menu previews its target — into
-    // the shared `highlight` map.
+    // the editor's own Highlight slice.
     private syncWrite() {
       if (this.destroyed) return;
       const targets = focusedMentionUrls(this.view.state);
       const previewing = activeResultUrl(this.view.state);
       if (previewing) targets.add(previewing);
       if (sameSet(this.written, targets)) return;
-      const previous = this.written;
       this.written = targets;
-      this.handle?.change((doc) => rewriteHighlight(doc, previous, targets));
+      this.highlight?.change((slice) => writeHighlightSlice(slice, targets));
     }
 
     destroy() {
       this.destroyed = true;
-      this.discover?.();
-      if (this.handle && this.onDocChange) {
-        this.handle.off("change", this.onDocChange);
-      }
-      const handle = this.handle;
-      const previous = this.written;
-      if (handle && previous.size) {
-        handle.change((doc) => rewriteHighlight(doc, previous, new Set()));
-      }
+      this.unsubscribeSelection?.();
+      this.unsubscribeHighlight?.();
+      // Releasing the slice drops every highlight this editor owned.
+      this.highlight?.release();
     }
   },
 );
 
-// Swap this editor's owned highlight entries by reassigning the whole map (a
-// `put`) rather than deleting keys in place. The host editor projects this
-// doc via automerge-repo-solid-primitives, whose patch reconciler throws
-// ("index is not a number for patch") on map-key `del` patches. Other writers'
-// entries (the editor's own selection, the map's hover) are preserved.
-function rewriteHighlight(
-  doc: FocusDoc,
-  remove: Set<AutomergeUrl>,
-  add: Set<AutomergeUrl>,
+// Rewrite the editor's own Highlight slice to exactly `targets`. The editor
+// owns this slice outright (other writers — the canvas selection, the map's
+// hover — keep their own), so this is a plain clear-and-set.
+function writeHighlightSlice(
+  slice: Record<string, true>,
+  targets: Set<AutomergeUrl>,
 ): void {
-  const next: Record<AutomergeUrl, true> = {};
-  for (const url of Object.keys(doc.highlight ?? {}) as AutomergeUrl[]) {
-    if (!remove.has(url)) next[url] = true;
-  }
-  for (const url of add) next[url] = true;
-  doc.highlight = next;
+  for (const key of Object.keys(slice)) delete slice[key];
+  for (const url of targets) slice[url] = true;
 }
 
 // The urls of every mention token the selection is focused on: the caret

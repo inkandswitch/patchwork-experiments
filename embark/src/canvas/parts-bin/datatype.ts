@@ -52,7 +52,6 @@ function seedExampleItems(repo: Repo): PartsBinItem[] {
   const search = repo.create<SearchDoc>({
     "@patchwork": { type: "search" },
     query: "",
-    results: [],
   });
   const poi = repo.create<PoiProviderDoc>({
     "@patchwork": { type: "poi-provider" },

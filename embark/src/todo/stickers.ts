@@ -1,94 +1,60 @@
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import { createSignal, onCleanup, onMount, type Accessor } from "solid-js";
-import { coreSubscribe } from "../lib/providers-solid";
-import { STICKERS_ON_DOCUMENT, type Sticker } from "../stickers/types";
+import { subscribeContext } from "../lib/context";
+import { Stickers } from "../canvas/channels";
+import type { Sticker } from "../stickers/types";
 import type { TodoItem } from "./datatype";
 
 // The todo tool's sticker controller and grouping logic — the Solid analog of
-// the markdown editor's `stickers/renderer.ts`. The controller asks the canvas
-// sticker broker "what targets this document?" and resolves each url to a live
-// `Sticker` plus a handle to its target. `groupByItem` then reads each target's
-// path (and cursor range, if any) to bucket the stickers per item: around the
-// whole item (before / after / replace, plus `style`) or inline at a sub-range
-// of the item's text.
+// the markdown editor's `stickers/renderer.ts`. The controller reads the canvas
+// `Stickers` context channel, takes the inline `Sticker[]` filed under `docUrl`,
+// and resolves each sticker's target to a live handle. `groupByItem` then reads
+// each target's path (and cursor range, if any) to bucket the stickers per item:
+// around the whole item (before / after / replace, plus `style`) or inline at a
+// sub-range of the item's text.
 
-// A sticker resolved against the repo: its value plus a handle to the target,
-// whose `path` names the item and whose `rangePositions()` gives an inline span.
+// A sticker paired with a handle to its target, whose `path` names the item and
+// whose `rangePositions()` gives an inline span.
 export type ResolvedSticker = {
-  url: AutomergeUrl;
   sticker: Sticker;
   target: DocHandle<unknown>;
 };
 
-// Subscribe to the broker for `docUrl`, resolve the emitted sticker urls into
-// live `ResolvedSticker`s, and re-resolve whenever the url set changes or any
-// resolved sticker's own document changes (the broker only re-emits on
-// add/remove, so content edits are caught by the per-sticker listeners).
+// Read the inline stickers filed under `docUrl` on the `Stickers` channel and
+// resolve each one's target into a live `ResolvedSticker`. Content edits arrive
+// as fresh channel emissions (the sticker values are inline), so there are no
+// per-sticker listeners to maintain.
 export function useItemStickers(
   element: ToolElement,
   docUrl: AutomergeUrl,
 ): Accessor<ResolvedSticker[]> {
   const [resolved, setResolved] = createSignal<ResolvedSticker[]>([]);
-  const listeners = new Map<DocHandle<unknown>, () => void>();
-  let urls: AutomergeUrl[] = [];
+  let stickers: Sticker[] = [];
   let generation = 0;
 
   const resolve = async () => {
     const repo = element.repo;
     const current = ++generation;
     const out: ResolvedSticker[] = [];
-    for (const url of urls) {
+    for (const sticker of stickers) {
       try {
-        const handle = await Promise.resolve(repo.find<Sticker>(url));
-        const sticker = handle.doc();
-        if (!sticker) continue;
         const target = await Promise.resolve(repo.find<unknown>(sticker.target));
-        out.push({ url, sticker, target });
+        out.push({ sticker, target });
       } catch {
-        // skip stickers that fail to load
+        // skip stickers whose target fails to load
       }
     }
     if (current !== generation) return;
-    watch(out);
     setResolved(out);
   };
 
-  // Listen for content changes on each sticker's own document so edits to a
-  // sticker (e.g. updated text) redraw even when the url set is unchanged.
-  const watch = (items: ResolvedSticker[]) => {
-    detach();
-    const repo = element.repo;
-    for (const item of items) {
-      void Promise.resolve(repo.find(item.url))
-        .then((handle) => {
-          if (listeners.has(handle)) return;
-          const onChange = () => void resolve();
-          handle.on("change", onChange);
-          listeners.set(handle, onChange);
-        })
-        .catch(() => {});
-    }
-  };
-
-  const detach = () => {
-    for (const [handle, onChange] of listeners) handle.off("change", onChange);
-    listeners.clear();
-  };
-
   onMount(() => {
-    const unsubscribe = coreSubscribe<AutomergeUrl[]>(
-      element,
-      { type: STICKERS_ON_DOCUMENT, url: docUrl },
-      (next) => {
-        urls = next;
-        void resolve();
-      },
-    );
-    onCleanup(() => {
-      unsubscribe();
-      detach();
+    const unsubscribe = subscribeContext(element, Stickers, (all) => {
+      stickers = all[docUrl] ?? [];
+      void resolve();
     });
+    onCleanup(unsubscribe);
   });
 
   return resolved;

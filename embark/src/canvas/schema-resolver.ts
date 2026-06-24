@@ -1,61 +1,70 @@
-import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
-import type { ToolElement } from "@inkandswitch/patchwork-plugins";
-import { accept, type SubscribeEvent } from "@inkandswitch/patchwork-providers";
-import type { MountedEvent, UnmountedEvent } from "@inkandswitch/patchwork-elements";
+import type { AutomergeUrl, DocHandle, Repo } from "@automerge/automerge-repo";
+import type {
+  MountedEvent,
+  UnmountedEvent,
+} from "@inkandswitch/patchwork-elements";
 import type { z } from "zod";
-import { jsonSchemaToZod, type JsonSchema } from "../../lib/schema";
-import { extractDocLinks } from "../../lib/doc-links";
+import { jsonSchemaToZod, type JsonSchema } from "../lib/schema";
+import { extractDocLinks } from "../lib/doc-links";
+import type { ContextStore } from "../lib/context";
+import { SchemaMatches, SchemaQueries } from "./channels";
 
-// A provider that answers "where does this schema occur?". A consumer subscribes
-// with a JSON Schema:
+// Resolves "where does this schema occur?" for the canvas. This is plain canvas
+// code, not a provider: it reads the requested schemas from the `SchemaQueries`
+// channel and writes match urls into `SchemaMatches`, keyed by the same
+// correlation key (`schemaKey`). Mounted-doc discovery stays on the
+// `patchwork:mounted` / `patchwork:unmounted` events (a DOM concern), so this
+// covers nested views and synthetic POI mounts for free.
 //
-//   subscribe<AutomergeUrl[]>(el, { type: "schema:matches", schema })
-//
-// and gets back match urls — each a native automerge sub-url
-// (`automerge:<id>/seg/seg`, from `handle.sub(...segments).url`) pointing at the
-// exact subtree that matched (the bare document url when the whole doc matched).
-// The provider watches every document mounted beneath it (via
-// `patchwork:mounted` / `patchwork:unmounted` from `<patchwork-view>`),
-// traverses each one — plus any document it links to via an `automerge:` string
-// — and re-emits whenever the reachable docs, their contents, or the set of
-// subscribers change. Documents that live *inside* an opaque container (see
+// Each match url is a native automerge sub-url (`automerge:<id>/seg/seg`, from
+// `handle.sub(...segments).url`) pointing at the exact subtree that matched (the
+// bare document url when the whole doc matched). It watches every document
+// mounted beneath `element` (plus any document they link to via an `automerge:`
+// string) and recomputes whenever the reachable docs, their contents, or the
+// requested schemas change. Documents inside an opaque container (see
 // OPAQUE_CONTAINER_TYPES) are deliberately hidden from this traversal.
-export const MATCHES_SELECTOR = "schema:matches";
 
 // Coalesce bursts (a doc change plus a mount, say) into a single pass.
 const REEVAL_DEBOUNCE_MS = 50;
 
 // Opaque containers: documents whose internals are private machinery rather than
-// canvas content, so the schema matcher must treat everything *inside* them as
+// canvas content, so the matcher must treat everything *inside* them as
 // invisible. An llm-card is the motivating case — it keeps its generated spec
 // (a markdown doc) and effect code (a folder of files) only to implement
-// itself, and those must never surface as canvas matches (otherwise, e.g., an
-// annotation contributor would decorate a card's private spec). For these types
-// we don't follow the container's links into its internals, AND we exclude
-// those internal docs from matching even when they're mounted directly (e.g. a
-// spec opened in the inspector tool). The container document itself stays
-// matchable; only its contents are ignored. Flag-driven so it's easy to extend.
+// itself, and those must never surface as canvas matches. For these types we
+// don't follow the container's links into its internals, AND we exclude those
+// internal docs from matching even when mounted directly. The container itself
+// stays matchable; only its contents are ignored.
 const OPAQUE_CONTAINER_TYPES = new Set<string>(["llm-card"]);
 
-type Subscriber = {
-  schema: z.ZodType;
-  respond: (urls: AutomergeUrl[]) => void;
-  last?: AutomergeUrl[];
-};
-
 // A mounted document. The same url can be mounted by several embeds at once, so
-// we refcount and only resolve/release the handle on the 0↔1 edges.
+// we refcount and only resolve/release the handle on the 0<->1 edges.
 type MountedDoc = { refs: number; handle?: DocHandle<unknown> };
 
 // A document reached only by following a link from another doc. Loaded lazily
 // and pruned once nothing links to it anymore.
 type ReferencedDoc = { handle?: DocHandle<unknown> };
 
-export function SchemaMatchProvider(element: ToolElement): () => void {
-  const repo = element.repo;
-  const subscribers = new Set<Subscriber>();
+export function runSchemaResolver(
+  store: ContextStore,
+  element: HTMLElement,
+  repo: Repo,
+): () => void {
   const mounted = new Map<AutomergeUrl, MountedDoc>();
   const referenced = new Map<AutomergeUrl, ReferencedDoc>();
+
+  // The resolver is the single writer of the SchemaMatches channel.
+  const matchesHandle = store.handle(SchemaMatches);
+
+  // The requested schemas, keyed by schemaKey, plus a cache of their compiled
+  // zod equivalents so we hydrate each JSON Schema only once.
+  let queries: Record<string, JsonSchema> = store.read(SchemaQueries);
+  const compiled = new Map<string, z.ZodType>();
+
+  const unsubscribeQueries = store.subscribe(SchemaQueries, (next) => {
+    queries = next;
+    scheduleReevaluate();
+  });
 
   let scheduled = false;
   const scheduleReevaluate = () => {
@@ -67,21 +76,10 @@ export function SchemaMatchProvider(element: ToolElement): () => void {
     }, REEVAL_DEBOUNCE_MS);
   };
 
-  const onSubscribe = (event: SubscribeEvent) => {
-    if (event.detail.selector.type !== MATCHES_SELECTOR) return;
-    const schema = jsonSchemaToZod(event.detail.selector.schema as JsonSchema);
-    accept<AutomergeUrl[]>(event, (respond) => {
-      const subscriber: Subscriber = { schema, respond };
-      subscribers.add(subscriber);
-      scheduleReevaluate();
-      return () => subscribers.delete(subscriber);
-    });
-  };
-
   // Track docs mounted by descendant `<patchwork-view>`s (and synthetic mounts,
   // e.g. the POI provider's cards). The canvas's own mount event (target ===
-  // the provider element) is ignored — we match the contents inside the canvas,
-  // not the container. Component mounts carry no doc url, so they're ignored.
+  // element) is ignored — we match the contents inside the canvas, not the
+  // container. Component mounts carry no doc url, so they're ignored.
   const onMounted = (event: MountedEvent) => {
     if (event.target === element) return;
     if (!("url" in event.detail)) return;
@@ -122,19 +120,31 @@ export function SchemaMatchProvider(element: ToolElement): () => void {
     scheduleReevaluate();
   };
 
-  // Recompute each subscriber's matches over the reachable doc closure and push
-  // only when they changed, so an unrelated doc edit doesn't churn subscribers.
+  // Recompute every requested schema's matches over the reachable doc closure
+  // and write the whole map. The store suppresses identical emissions, so an
+  // unrelated doc edit doesn't churn readers.
   const reevaluateAll = () => {
     const reachable = collectReachable();
-    for (const subscriber of subscribers) {
+    const result: Record<string, AutomergeUrl[]> = {};
+    for (const [key, json] of Object.entries(queries)) {
+      let schema = compiled.get(key);
+      if (!schema) {
+        schema = jsonSchemaToZod(json);
+        compiled.set(key, schema);
+      }
       const matches: AutomergeUrl[] = [];
       for (const handle of reachable.values()) {
-        collectMatches(handle.doc(), [], subscriber.schema, handle, matches);
+        collectMatches(handle.doc(), [], schema, handle, matches);
       }
-      if (subscriber.last && sameUrls(subscriber.last, matches)) continue;
-      subscriber.last = matches;
-      subscriber.respond(matches);
+      result[key] = matches;
     }
+    for (const key of [...compiled.keys()]) {
+      if (!(key in queries)) compiled.delete(key);
+    }
+    matchesHandle.change((slice) => {
+      for (const key of Object.keys(slice)) delete slice[key];
+      Object.assign(slice, result);
+    });
   };
 
   // Breadth-first closure from the mounted roots, following document links found
@@ -145,36 +155,27 @@ export function SchemaMatchProvider(element: ToolElement): () => void {
   //
   // Anything that lives inside an opaque container is hidden: such docs are
   // never added to the result and the closure never expands into them, so they
-  // can't be matched no matter how they were reached (linked from the container
-  // or mounted on their own).
+  // can't be matched no matter how they were reached.
   const collectReachable = (): Map<AutomergeUrl, DocHandle<unknown>> => {
-    // Decide what to hide first, so it doesn't matter whether a hidden doc is
-    // dequeued before or after the container that owns it.
     const ignored = collectIgnored();
 
     const reachable = new Map<AutomergeUrl, DocHandle<unknown>>();
-    // Keep the hidden docs loaded (we need the folder/files to know they're
-    // hidden) so the prune step below doesn't immediately drop them.
     const neededRefs = new Set<AutomergeUrl>(ignored);
     const enqueued = new Set<AutomergeUrl>(mounted.keys());
     const queue = [...mounted.keys()];
 
     while (queue.length > 0) {
       const url = queue.shift()!;
-      // A mounted root that is really a container's internal doc (e.g. a card's
-      // spec opened in the inspector) is hidden, not matched.
       if (ignored.has(url)) continue;
       const handle = mounted.get(url)?.handle ?? referenced.get(url)?.handle;
       const doc = handle?.doc();
-      if (!handle || !doc) continue; // a referenced doc still resolving — revisit on load
+      if (!handle || !doc) continue; // a referenced doc still resolving
       reachable.set(url, handle);
 
-      // An opaque container exposes nothing to the matcher: don't descend into
-      // its links — its internals are already accounted for in `ignored`.
       if (OPAQUE_CONTAINER_TYPES.has(docType(doc) ?? "")) continue;
 
       for (const link of linkedUrls(doc)) {
-        if (ignored.has(link)) continue; // never traverse into hidden internals
+        if (ignored.has(link)) continue;
         if (!mounted.has(link)) {
           neededRefs.add(link);
           ensureReferenced(link);
@@ -195,13 +196,11 @@ export function SchemaMatchProvider(element: ToolElement): () => void {
     return reachable;
   };
 
-  // Compute the closure of documents that live inside an opaque container and so
-  // must be hidden from matching. Seeded with the links out of every loaded
-  // opaque container (e.g. an llm-card -> its spec doc + effect folder) and
-  // extended transitively (folder -> its files). Internal docs are loaded as
-  // referenced so we can read their own links, but they are never matched and
-  // never expand the reachable closure. The container itself is NOT added here —
-  // only its contents are ignored.
+  // The closure of documents that live inside an opaque container and so must be
+  // hidden from matching. Seeded with the links out of every loaded opaque
+  // container and extended transitively. Internal docs are loaded as referenced
+  // so we can read their own links, but they are never matched and never expand
+  // the reachable closure. The container itself is NOT added here.
   const collectIgnored = (): Set<AutomergeUrl> => {
     const ignored = new Set<AutomergeUrl>();
     const queue: AutomergeUrl[] = [];
@@ -215,8 +214,6 @@ export function SchemaMatchProvider(element: ToolElement): () => void {
       }
     };
 
-    // Seed from every opaque container currently loaded (mounted on the canvas
-    // or pulled in as a reference by an earlier pass).
     for (const entry of mounted.values()) {
       const doc = entry.handle?.doc();
       if (doc && OPAQUE_CONTAINER_TYPES.has(docType(doc) ?? "")) {
@@ -230,9 +227,6 @@ export function SchemaMatchProvider(element: ToolElement): () => void {
       }
     }
 
-    // Walk inward so nested internals are hidden too (a card's folder pulls in
-    // the folder's files). Docs still loading are revisited on a later pass,
-    // since their load/change reschedules a re-evaluation.
     while (queue.length > 0) {
       const url = queue.shift()!;
       const doc =
@@ -258,14 +252,16 @@ export function SchemaMatchProvider(element: ToolElement): () => void {
       .catch(() => {});
   };
 
-  element.addEventListener("patchwork:subscribe", onSubscribe);
-  element.addEventListener("patchwork:mounted", onMounted);
-  element.addEventListener("patchwork:unmounted", onUnmounted);
+  element.addEventListener("patchwork:mounted", onMounted as EventListener);
+  element.addEventListener("patchwork:unmounted", onUnmounted as EventListener);
+  scheduleReevaluate();
 
   return () => {
-    element.removeEventListener("patchwork:subscribe", onSubscribe);
-    element.removeEventListener("patchwork:mounted", onMounted);
-    element.removeEventListener("patchwork:unmounted", onUnmounted);
+    element.removeEventListener("patchwork:mounted", onMounted as EventListener);
+    element.removeEventListener(
+      "patchwork:unmounted",
+      onUnmounted as EventListener,
+    );
     for (const entry of mounted.values()) {
       entry.handle?.off("change", scheduleReevaluate);
     }
@@ -274,7 +270,9 @@ export function SchemaMatchProvider(element: ToolElement): () => void {
     }
     mounted.clear();
     referenced.clear();
-    subscribers.clear();
+    compiled.clear();
+    unsubscribeQueries();
+    matchesHandle.release();
   };
 }
 
@@ -325,9 +323,4 @@ function collectMatches(
       collectMatches(child, [...segments, key], schema, handle, out);
     }
   }
-}
-
-function sameUrls(a: AutomergeUrl[], b: AutomergeUrl[]): boolean {
-  if (a.length !== b.length) return false;
-  return a.every((url, index) => url === b[index]);
 }

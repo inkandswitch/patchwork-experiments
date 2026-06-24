@@ -249,8 +249,7 @@ async function evalScript(
     const fn = new Function(
       "element",
       "repo",
-      "subscribe",
-      "accept",
+      "findContextStore",
       "loadSkill",
       "writeFile",
       "readFile",
@@ -263,8 +262,7 @@ async function evalScript(
     const returnValue = await fn(
       api.element,
       api.repo,
-      api.subscribe,
-      api.accept,
+      api.findContextStore,
       api.loadSkill,
       api.writeFile,
       api.readFile,

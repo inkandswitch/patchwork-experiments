@@ -1,21 +1,11 @@
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
 import { MountedEvent, UnmountedEvent } from "@inkandswitch/patchwork-elements";
-import {
-  For,
-  Show,
-  createEffect,
-  createMemo,
-  createSignal,
-  onCleanup,
-} from "solid-js";
+import { For, Show, createEffect, createSignal, onCleanup } from "solid-js";
 import { render } from "solid-js/web";
 import { RepoContext } from "solid-automerge";
-import { subscribeDoc } from "../lib/providers-solid";
-import {
-  RESPONSES_SELECTOR,
-  type SearchResponseDoc,
-} from "../canvas/providers/SearchProvider";
+import { readContext, useContextHandle } from "../lib/context-solid";
+import { SearchQueries, SearchResults } from "../canvas/channels";
 import type { CardDoc } from "../card/datatype";
 import type { Place } from "./datatype";
 import "./poi.css";
@@ -56,10 +46,11 @@ export const PoiProviderTool: ToolRender = (_handle, element) => {
 
 function PoiProvider(props: { element: ToolElement }) {
   const repo = props.element.repo;
-  const [respDoc, respHandle] = subscribeDoc<SearchResponseDoc>(
-    props.element,
-    { type: RESPONSES_SELECTOR },
-  );
+  // Read the active queries from the context and write results back as our own
+  // scoped slice. The two are separate channels, so writing results never
+  // retriggers the query effect (no custom-equals memo needed anymore).
+  const searchQueries = readContext(props.element, SearchQueries);
+  const results = useContextHandle(props.element, SearchResults);
 
   // Per-query debounce timers, the queries we've already answered, the card
   // urls minted per query (so they can be unmounted when the query goes away),
@@ -69,14 +60,8 @@ function PoiProvider(props: { element: ToolElement }) {
   const cardsByQuery = new Map<string, AutomergeUrl[]>();
   const [status, setStatus] = createSignal<Record<string, QueryStatus>>({});
 
-  // The active query set, recomputed only when the set itself changes (not when
-  // a contributor's result values change) so writing results never retriggers a
-  // fetch.
-  const queries = createMemo(
-    () => Object.keys(respDoc() ?? {}).sort(),
-    [] as string[],
-    { equals: (a, b) => a.length === b.length && a.every((v, i) => v === b[i]) },
-  );
+  // The active query set, sorted for a stable UI list.
+  const queries = (): string[] => Object.keys(searchQueries()).sort();
 
   createEffect(() => {
     const active = new Set(queries());
@@ -104,6 +89,12 @@ function PoiProvider(props: { element: ToolElement }) {
     for (const query of [...cardsByQuery.keys()]) {
       if (!active.has(query)) unmountCards(query);
     }
+    // Drop our result slice entries for queries that are gone.
+    results.change((slice) => {
+      for (const query of Object.keys(slice)) {
+        if (!active.has(query)) delete slice[query];
+      }
+    });
     setStatus((s) => {
       const next: Record<string, QueryStatus> = {};
       for (const query of active) if (query in s) next[query] = s[query];
@@ -121,12 +112,11 @@ function PoiProvider(props: { element: ToolElement }) {
     setStatus((s) => ({ ...s, [query]: "searching" }));
     try {
       const places = await fetchPois(query);
-      const handle = respHandle();
-      // The broker may have dropped this query while we were fetching; don't
-      // resurrect a stale key.
-      if (!handle || !(query in (handle.doc() ?? {}))) return;
+      // The query may have been dropped while we were fetching; don't resurrect
+      // a stale key.
+      if (!(query in searchQueries())) return;
       // One card document per place so each can be linked and matched
-      // separately. Coordinates live in `props` for the schema-match provider.
+      // separately. Coordinates live in `props` for the schema matcher.
       const urls = places.map(
         (place) =>
           repo.create<CardDoc>({
@@ -140,8 +130,8 @@ function PoiProvider(props: { element: ToolElement }) {
             content: place.name,
           }).url,
       );
-      handle.change((doc) => {
-        if (query in doc) doc[query] = urls;
+      results.change((slice) => {
+        slice[query] = urls;
       });
       handled.add(query);
       mountCards(query, urls);

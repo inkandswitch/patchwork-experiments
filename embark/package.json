@@ -16,7 +16,6 @@
     "@codemirror/view": "^6.38.4",
     "@inkandswitch/patchwork-elements": "^0.2.0",
     "@inkandswitch/patchwork-plugins": "^0.0.11",
-    "@inkandswitch/patchwork-providers": "^0.2.2",
     "maplibre-gl": "^5.24.0",
     "solid-automerge": "^1.1.0",
     "solid-js": "^1.9.11",

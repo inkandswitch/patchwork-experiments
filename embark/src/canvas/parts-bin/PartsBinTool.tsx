@@ -1,7 +1,7 @@
 import type { DocHandle, Repo } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
-import type { SubscribeEvent } from "@inkandswitch/patchwork-providers";
-import { For, createEffect, createSignal } from "solid-js";
+import { For, createEffect, createSignal, onCleanup } from "solid-js";
+import { createStore, reconcile } from "solid-js/store";
 import { render } from "solid-js/web";
 import {
   RepoContext,
@@ -11,28 +11,17 @@ import {
 } from "solid-automerge";
 import "@inkandswitch/patchwork-elements";
 import {
-  QUERY_SELECTOR,
-  RESPONSES_SELECTOR,
-} from "../providers/SearchProvider";
+  registerContextElement,
+  type PatchworkContextElement,
+} from "../../lib/context";
+import { deepCloneDocument } from "../deep-clone";
+import {
+  getDocumentDragPayload,
+  getDragSource,
+  hasDocumentDrag,
+} from "../dnd";
 import type { PartsBinDoc, PartsBinItem } from "./types";
 import "./parts-bin.css";
-import { MATCHES_SELECTOR } from "../providers/SchemaMatchProvider";
-import { STICKERS_ON_DOCUMENT, STICKERS_REGISTRY } from "../../stickers/types";
-
-// Selectors the bin must isolate. The previews are live documents, so the
-// search box / POI provider / sticker sources rendered inside them dispatch
-// `patchwork:subscribe` for these. We can't blanket-stop every subscribe (that
-// breaks the providers the previews legitimately rely on, e.g.
-// `<patchwork-view>`'s own repo lookups), so for now we hard-code the known
-// canvas-broker selectors. Isolating `stickers:registry` in particular keeps a
-// previewed sticker source from publishing onto the live canvas's documents.
-const ISOLATED_SELECTORS = new Set<string>([
-  QUERY_SELECTOR,
-  RESPONSES_SELECTOR,
-  MATCHES_SELECTOR,
-  STICKERS_ON_DOCUMENT,
-  STICKERS_REGISTRY,
-]);
 
 // A palette of example documents. Each row shows an editable headline above a
 // non-interactive live preview; dragging that preview writes the standard
@@ -40,19 +29,21 @@ const ISOLATED_SELECTORS = new Set<string>([
 // it as an embed. The payload points at a clone, so the example stays editable
 // in place.
 export const PartsBinTool: ToolRender = (handle, element) => {
-  // Stop the search-related subscriptions at the bin's root so they never reach
-  // the canvas search broker — the bin's contents are examples, not active
-  // participants in the canvas. Everything else propagates as normal.
-  const stopSubscribe = (event: SubscribeEvent) => {
-    if (ISOLATED_SELECTORS.has(event.detail.selector.type)) {
-      event.stopPropagation();
-    }
-  };
-  element.addEventListener("patchwork:subscribe", stopSubscribe);
+  // Host a local context and render the previews into it. Context discovery
+  // resolves to the nearest <patchwork-context> (which stops the request), so
+  // the previews' search boxes, sticker sources, etc. find this throwaway store
+  // instead of the live canvas one — the bin's contents are examples, not
+  // active participants in the canvas. Nothing answers their queries here, so
+  // they stay inert.
+  registerContextElement();
+  const contextEl = document.createElement(
+    "patchwork-context",
+  ) as PatchworkContextElement;
+  element.appendChild(contextEl);
 
-  // Likewise keep the previews' mount/unmount events from reaching the canvas:
-  // the schema-match provider watches these, and the bin's examples shouldn't
-  // show up as matches.
+  // Keep the previews' mount/unmount events from reaching the canvas: the
+  // schema resolver watches these, and the bin's examples shouldn't show up as
+  // matches.
   const stopMountEvent = (event: Event) => event.stopPropagation();
   element.addEventListener("patchwork:mounted", stopMountEvent);
   element.addEventListener("patchwork:unmounted", stopMountEvent);
@@ -63,14 +54,14 @@ export const PartsBinTool: ToolRender = (handle, element) => {
         <PartsBin handle={handle as DocHandle<PartsBinDoc>} />
       </RepoContext.Provider>
     ),
-    element,
+    contextEl,
   );
 
   return () => {
-    element.removeEventListener("patchwork:subscribe", stopSubscribe);
     element.removeEventListener("patchwork:mounted", stopMountEvent);
     element.removeEventListener("patchwork:unmounted", stopMountEvent);
     dispose();
+    contextEl.remove();
   };
 };
 
@@ -80,9 +71,67 @@ export const PartsBinTool: ToolRender = (handle, element) => {
 // syncing into the shared document.
 function PartsBin(props: { handle: DocHandle<PartsBinDoc> }) {
   const repo = useRepo();
-  const [doc] = useDocument<PartsBinDoc>(() => props.handle.url);
-  const items = () => doc()?.items ?? [];
+  // Drive the list from a full snapshot reconciled on every change rather than
+  // solid-automerge's fine-grained projection. That projection applies Automerge
+  // *insert* patches incrementally (via cabbages) and can transiently duplicate
+  // a freshly pushed array item — so a dropped example rendered twice until
+  // reload. Reconciling the whole doc keeps the item count correct while still
+  // preserving unchanged rows (and their live previews) by matching on `url`.
+  const [doc, setDoc] = createStore<PartsBinDoc>(props.handle.doc());
+  const syncFromHandle = () =>
+    setDoc(reconcile(props.handle.doc(), { key: "url" }));
+  props.handle.on("change", syncFromHandle);
+  onCleanup(() => props.handle.off("change", syncFromHandle));
+
+  const items = () => doc.items ?? [];
   const [open, setOpen] = createSignal(true);
+  const [dragOver, setDragOver] = createSignal(false);
+
+  // The bin doubles as a drop target: dropping a canvas embed (or any document)
+  // onto it deep-copies the document in as a fresh example. Canvas embeds arrive
+  // as synthetic DnD events dispatched by the embed being dragged; external
+  // document drags flow through the same handlers. We ignore the bin's own
+  // example drags (source "parts-bin") so dragging a token out and back is inert.
+  const acceptsDrop = (dataTransfer: DataTransfer | null) =>
+    hasDocumentDrag(dataTransfer) && getDragSource(dataTransfer) !== "parts-bin";
+
+  const onDragOver = (event: DragEvent) => {
+    if (!acceptsDrop(event.dataTransfer)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    setDragOver(true);
+    // Slide the panel out so the drop zone is visible even if the drawer was
+    // closed when the drag reached the tab.
+    setOpen(true);
+  };
+
+  const onDragLeave = () => setDragOver(false);
+
+  const onDrop = (event: DragEvent) => {
+    if (!acceptsDrop(event.dataTransfer)) return;
+    event.preventDefault();
+    // Tell the source this was a copy: it keeps the original and springs back.
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    setDragOver(false);
+    // Read the payload synchronously, before any await — a real drop clears the
+    // DataTransfer once the handler yields.
+    const payload = getDocumentDragPayload(event.dataTransfer);
+    if (!payload) return;
+    for (const item of payload) {
+      void deepCloneDocument(repo, item.url).then((url) => {
+        props.handle.change((binDoc) => {
+          // Automerge rejects explicit `undefined`, so only set optional fields
+          // the drag actually carried.
+          binDoc.items.push({
+            url,
+            ...(item.toolId !== undefined && { toolId: item.toolId }),
+            ...(item.width !== undefined && { width: item.width }),
+            ...(item.height !== undefined && { height: item.height }),
+          });
+        });
+      });
+    }
+  };
 
   // Smoothly scroll the list to the newest entry. The new row's
   // <patchwork-view> reports its height a few frames later, so re-pin once after
@@ -103,7 +152,6 @@ function PartsBin(props: { handle: DocHandle<PartsBinDoc> }) {
   let knownCount = -1;
   createEffect(() => {
     const count = items().length;
-    if (!doc()) return;
     if (knownCount < 0) {
       knownCount = count;
       return;
@@ -115,7 +163,13 @@ function PartsBin(props: { handle: DocHandle<PartsBinDoc> }) {
   return (
     <div
       class="embark-parts-bin"
-      classList={{ "embark-parts-bin--open": open() }}
+      classList={{
+        "embark-parts-bin--open": open(),
+        "embark-parts-bin--drag-over": dragOver(),
+      }}
+      on:dragover={onDragOver}
+      on:dragleave={onDragLeave}
+      on:drop={onDrop}
     >
       <div class="embark-parts-bin__drawer">
         <div class="embark-parts-bin__panel">
@@ -155,7 +209,7 @@ function PartsBin(props: { handle: DocHandle<PartsBinDoc> }) {
         >
           <ChevronIcon open={open()} />
           <span class="embark-parts-bin__tab-label">
-            {doc()?.title ?? "Parts bin"}
+            {doc.title ?? "Parts bin"}
           </span>
         </button>
       </div>

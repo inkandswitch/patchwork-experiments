@@ -8,8 +8,15 @@ import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { z } from "zod";
-import { coreSubscribe, type JSONValue } from "../lib/providers-solid";
-import { MATCHES_SELECTOR } from "../canvas/providers/SchemaMatchProvider";
+import { getContextHandle, subscribeContext } from "../lib/context";
+import {
+  Highlight,
+  SchemaMatches,
+  SchemaQueries,
+  Selection,
+  schemaKey,
+} from "../canvas/channels";
+import type { JsonSchema } from "../lib/schema";
 import {
   DEFAULT_CENTER,
   DEFAULT_ZOOM,
@@ -17,13 +24,6 @@ import {
   type MapDoc,
 } from "./datatype";
 import "./map.css";
-
-// The shared focus store keyed by url (see providers' FocusProvider). The map
-// lights up a marker when its card document appears in selection ∪ highlight.
-type FocusDoc = {
-  selection: Record<AutomergeUrl, true>;
-  highlight: Record<AutomergeUrl, true>;
-};
 
 // openfreemap's hosted Liberty style — no API key required.
 const STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
@@ -36,10 +36,12 @@ const ZOOM_EPSILON = 1e-3;
 
 // The map asks the canvas "where, in any mounted document, is a {lat, lon}
 // pair?" and drops a marker on each answer. The schema travels as JSON Schema
-// (the only thing a selector can carry); the provider hydrates it back to zod.
+// (the channel's payload type); the resolver hydrates it back to zod.
 const LATLNG_JSON_SCHEMA = z.toJSONSchema(
   z.object({ lat: z.number(), lon: z.number() }),
-) as unknown as JSONValue;
+) as unknown as JsonSchema;
+
+const LATLNG_KEY = schemaKey(LATLNG_JSON_SCHEMA);
 
 // Tool entry point: maplibre owns its own subtree, so this renders into a plain
 // container rather than through Solid. The map's viewport is mirrored to the
@@ -125,12 +127,13 @@ export const MapTool: ToolRender = (rawHandle, element) => {
   let epoch = 0;
 
   // Focus highlight, both directions. A marker glows while its card document is
-  // in focus (selection ∪ highlight in the shared focus store), so focusing a
-  // mention token that points at a card lights up its pin. Hovering a marker
-  // writes its document into `highlight`, so the pointing token lights up too.
+  // in focus (the union of the `Selection` and `Highlight` context channels),
+  // so focusing a mention token that points at a card lights up its pin.
+  // Hovering a marker writes its document into our `Highlight` slice, so the
+  // pointing token lights up too.
   let focusedDocIds = new Set<string>();
-  let focusHandle: DocHandle<FocusDoc> | undefined;
-  let onFocusChange: (() => void) | undefined;
+  let selectionUrls: Record<string, true> = {};
+  let highlightUrls: Record<string, true> = {};
   // The highlight entry this map currently owns (the hovered marker's doc),
   // cleared on mouse-out or when the marker goes away.
   let hovered: AutomergeUrl | undefined;
@@ -233,22 +236,19 @@ export const MapTool: ToolRender = (rawHandle, element) => {
     });
   };
 
-  // Swap this map's owned highlight entry by reassigning the whole map (a
-  // `put`) rather than deleting a key in place — the host editor projects this
-  // doc via a reconciler that throws on map-key `del` patches. Other writers'
-  // entries are preserved, so the editor's own highlight survives.
+  // The map's own scoped slice of the Highlight channel (just the hovered pin's
+  // document). Because each writer owns its slice, this is a plain key add/
+  // delete — other writers' highlights live in their own slices and merge in.
+  const highlightHandle = getContextHandle(element, Highlight);
   const writeHighlight = (
     remove: AutomergeUrl | undefined,
     add: AutomergeUrl | undefined,
   ) => {
     if (remove === add) return;
-    focusHandle?.change((doc) => {
-      const next: Record<AutomergeUrl, true> = {};
-      for (const url of Object.keys(doc.highlight ?? {}) as AutomergeUrl[]) {
-        if (url !== remove) next[url] = true;
-      }
-      if (add) next[add] = true;
-      doc.highlight = next;
+    highlightHandle?.change((slice) => {
+      const entries = slice as Record<string, true>;
+      if (remove) delete entries[remove];
+      if (add) entries[add] = true;
     });
   };
 
@@ -266,17 +266,12 @@ export const MapTool: ToolRender = (rawHandle, element) => {
   };
 
   const recomputeFocus = () => {
-    const doc = focusHandle?.doc();
     const ids = new Set<string>();
-    if (doc) {
-      const urls = [
-        ...Object.keys(doc.selection ?? {}),
-        ...Object.keys(doc.highlight ?? {}),
-      ];
-      for (const url of urls) {
-        if (isValidAutomergeUrl(url))
-          ids.add(parseAutomergeUrl(url).documentId);
-      }
+    for (const url of [
+      ...Object.keys(selectionUrls),
+      ...Object.keys(highlightUrls),
+    ]) {
+      if (isValidAutomergeUrl(url)) ids.add(parseAutomergeUrl(url).documentId);
     }
     focusedDocIds = ids;
     const nowFocused = new Set<AutomergeUrl>();
@@ -288,19 +283,15 @@ export const MapTool: ToolRender = (rawHandle, element) => {
     if (appeared.length) panMatchesIntoView(appeared);
   };
 
-  const unsubscribeFocus = coreSubscribe<AutomergeUrl>(
-    element,
-    { type: "patchwork:focus" },
-    (url) => {
-      if (focusHandle || !url) return;
-      void Promise.resolve(repo.find<FocusDoc>(url)).then((found) => {
-        focusHandle = found;
-        onFocusChange = () => recomputeFocus();
-        found.on("change", onFocusChange);
-        recomputeFocus();
-      });
-    },
-  );
+  // Focus is read from the union of the Selection and Highlight channels.
+  const unsubscribeSelection = subscribeContext(element, Selection, (all) => {
+    selectionUrls = all;
+    recomputeFocus();
+  });
+  const unsubscribeHighlight = subscribeContext(element, Highlight, (all) => {
+    highlightUrls = all;
+    recomputeFocus();
+  });
 
   const addMarker = async (match: AutomergeUrl, generation: number) => {
     try {
@@ -358,17 +349,21 @@ export const MapTool: ToolRender = (rawHandle, element) => {
     }
   };
 
-  const unsubscribe = coreSubscribe<AutomergeUrl[]>(
-    element,
-    { type: MATCHES_SELECTOR, schema: LATLNG_JSON_SCHEMA },
-    onMatches,
-  );
+  // Publish the {lat, lon} schema query and consume its matches.
+  const schemaQueries = getContextHandle(element, SchemaQueries);
+  schemaQueries?.change((slice) => {
+    slice[LATLNG_KEY] = LATLNG_JSON_SCHEMA;
+  });
+  const unsubscribeMatches = subscribeContext(element, SchemaMatches, (all) => {
+    onMatches(all[LATLNG_KEY] ?? []);
+  });
 
   return () => {
-    unsubscribe();
-    unsubscribeFocus();
-    if (hovered) writeHighlight(hovered, undefined);
-    if (focusHandle && onFocusChange) focusHandle.off("change", onFocusChange);
+    unsubscribeMatches();
+    schemaQueries?.release();
+    unsubscribeSelection();
+    unsubscribeHighlight();
+    highlightHandle?.release();
     if (hideTimer) clearTimeout(hideTimer);
     popup.remove();
     for (const marker of markers.values()) marker.remove();

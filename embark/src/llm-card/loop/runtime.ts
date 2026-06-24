@@ -1,6 +1,6 @@
-import { accept, subscribe } from "@inkandswitch/patchwork-providers";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type { ToolElement } from "@inkandswitch/patchwork-plugins";
+import { findContextStore } from "../../lib/context";
 import { listFiles, readFile, writeFile, writeSpec } from "../folder";
 import { loadSkill } from "./skills";
 import type { CapturedConsole, LoopApi } from "../types";
@@ -15,10 +15,10 @@ export class GiveUpSignal extends Error {
 }
 
 // Build the API exposed to the loop's <script> blocks while it generates. The
-// loop runs inside embark's bundle, so it gets embark's own `subscribe`/`accept`
+// loop runs inside embark's bundle, so it gets embark's own `findContextStore`
 // (no esm.sh needed) plus a file API bound to this card's folder. The activated
-// effect does NOT get this object - it receives only `element` and imports any
-// deps from esm.sh itself.
+// effect does NOT get this object - it receives only `element` and reaches the
+// canvas context via the patchwork:context-request DOM event itself.
 export function createLoopApi(
   element: ToolElement,
   folderUrl: AutomergeUrl,
@@ -29,8 +29,7 @@ export function createLoopApi(
   return {
     element,
     repo,
-    subscribe,
-    accept,
+    findContextStore,
     loadSkill,
     writeFile: (path, content) => writeFile(repo, folderUrl, path, content),
     readFile: (path) => readFile(repo, folderUrl, path),

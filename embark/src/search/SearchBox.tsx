@@ -1,10 +1,10 @@
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
-import { For, Show, createEffect, onCleanup } from "solid-js";
+import { For, Show, createEffect } from "solid-js";
 import { render } from "solid-js/web";
 import { RepoContext, useDocument } from "solid-automerge";
-import { coreSubscribe } from "../lib/providers-solid";
-import { QUERY_SELECTOR } from "../canvas/providers/SearchProvider";
+import { readContext, useContextHandle } from "../lib/context-solid";
+import { SearchQueries, SearchResults } from "../canvas/channels";
 import type { SearchDoc } from "./datatype";
 import "./search.css";
 
@@ -36,20 +36,20 @@ export const SearchBoxTool: ToolRender = (handle, element) => {
 function SearchBox(props: { handle: DocHandle<SearchDoc>; element: ToolElement }) {
   const [doc] = useDocument<SearchDoc>(() => props.handle.url);
   const query = () => doc()?.query ?? "";
-  const results = () => doc()?.results ?? [];
 
-  // Register with the broker whenever the query changes. The broker learns the
-  // active query from this subscription and writes aggregated results straight
-  // into our doc, so there's nothing to read off the channel here.
+  // Publish the active query into the shared context (a single-key slice) and
+  // read back whatever contributors surfaced for it. Contributors own the
+  // values; the box only ever writes its query.
+  const queries = useContextHandle(props.element, SearchQueries);
   createEffect(() => {
     const q = query().trim();
-    const unsubscribe = coreSubscribe(
-      props.element,
-      { type: QUERY_SELECTOR, query: q, doc: props.handle.url },
-      () => {},
-    );
-    onCleanup(unsubscribe);
+    queries.change((slice) => {
+      for (const key of Object.keys(slice)) delete slice[key];
+      if (q) slice[q] = true;
+    });
   });
+  const allResults = readContext(props.element, SearchResults);
+  const results = (): AutomergeUrl[] => allResults()[query().trim()] ?? [];
 
   const onInput = (event: InputEvent & { currentTarget: HTMLInputElement }) => {
     const value = event.currentTarget.value;

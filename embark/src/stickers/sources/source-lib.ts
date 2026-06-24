@@ -6,19 +6,21 @@ import {
 } from "@automerge/automerge-repo";
 import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import { z } from "zod";
-import { coreSubscribe, type JSONValue } from "../../lib/providers-solid";
-import { MATCHES_SELECTOR } from "../../canvas/providers/SchemaMatchProvider";
+import { getContextHandle, subscribeContext } from "../../lib/context";
 import {
-  STICKERS_REGISTRY,
-  type Sticker,
-  type StickerRegistryDoc,
-} from "../types";
+  SchemaMatches,
+  SchemaQueries,
+  Stickers,
+  schemaKey,
+} from "../../canvas/channels";
+import type { JsonSchema } from "../../lib/schema";
+import type { Sticker } from "../types";
 
 // Shared engine for sticker sources. A source watches every markdown document
-// reachable on the canvas (via the schema-match provider), scans each one's
-// text, and publishes stickers into an ephemeral registry doc handed to it by
-// the sticker broker. The three example sources (color styler, unit converter,
-// timer) differ only in their `scan` function.
+// reachable on the canvas (via the `SchemaQueries`/`SchemaMatches` channels),
+// scans each one's text, and publishes stickers into its own scoped slice of
+// the `Stickers` channel keyed by document url. The three example sources
+// (color styler, unit converter, timer) differ only in their `scan` function.
 //
 // The contract a source implements is `scan(ctx)`: given a document's content
 // (and helpers to address ranges and mint reusable docs), return the stickers
@@ -27,13 +29,15 @@ import {
 
 // Only the markdown root matches this (it has both keys), so each markdown
 // document yields its bare document url — exactly the key the renderer asks
-// about. Shipped as JSON Schema because that's all a selector can carry.
+// about. Shipped as JSON Schema because that's the channel's payload type.
 const MARKDOWN_SCHEMA = z.toJSONSchema(
   z.object({
     "@patchwork": z.object({ type: z.literal("markdown") }),
     content: z.string(),
   }),
-) as unknown as JSONValue;
+) as unknown as JsonSchema;
+
+const MARKDOWN_KEY = schemaKey(MARKDOWN_SCHEMA);
 
 // Coalesce a burst of edits into a single rescan.
 const RESCAN_DEBOUNCE_MS = 250;
@@ -80,7 +84,10 @@ export function runStickerSource(
 ): () => void {
   const repo = element.repo;
   const docs = new Map<AutomergeUrl, DocEntry>();
-  let registry: DocHandle<StickerRegistryDoc> | undefined;
+  // Our own scoped slice of the Stickers channel. When the source tears down,
+  // releasing it drops every sticker we published (scope GC replaces the old
+  // manual registry-doc deletion).
+  const stickersHandle = getContextHandle(element, Stickers);
 
   // Discover markdown documents on the canvas; add/drop watched docs to match.
   const onMatches = (urls: AutomergeUrl[]) => {
@@ -113,7 +120,7 @@ export function runStickerSource(
     }
     for (const docUrl of entry.resources.values()) deleteResource(repo, docUrl);
     entry.resources.clear();
-    if (writeRegistry) registry?.change((doc) => delete doc[url]);
+    if (writeRegistry) stickersHandle?.change((slice) => delete slice[url]);
     emitCount();
   };
 
@@ -127,11 +134,11 @@ export function runStickerSource(
     }, RESCAN_DEBOUNCE_MS);
   };
 
-  // Re-derive a document's stickers and write them into the registry under its
+  // Re-derive a document's stickers and write them into our slice under its
   // url, garbage-collecting any resource docs whose keys no longer appear.
   const rescan = (url: AutomergeUrl) => {
     const entry = docs.get(url);
-    if (!entry?.handle || !registry) return;
+    if (!entry?.handle || !stickersHandle) return;
     const content = entry.handle.doc()?.content ?? "";
     const used = new Set<AutomergeUrl>();
     const ctx: ScanContext = {
@@ -158,8 +165,8 @@ export function runStickerSource(
     }
 
     entry.count = stickers.length;
-    registry.change((doc) => {
-      doc[url] = stickers;
+    stickersHandle.change((slice) => {
+      slice[url] = stickers;
     });
     emitCount();
   };
@@ -171,34 +178,23 @@ export function runStickerSource(
     onCount(total);
   };
 
-  // Ask the broker for a registry doc to publish into; rescan everything once
-  // it resolves so any docs discovered first get written.
-  const unsubscribeRegistry = coreSubscribe<AutomergeUrl>(
-    element,
-    { type: STICKERS_REGISTRY },
-    (url) => {
-      if (!url || registry) return;
-      void Promise.resolve(repo.find<StickerRegistryDoc>(url))
-        .then((handle) => {
-          registry = handle;
-          for (const docUrl of docs.keys()) scheduleRescan(docUrl);
-        })
-        .catch(() => {});
-    },
-  );
-
-  const unsubscribeMatches = coreSubscribe<AutomergeUrl[]>(
-    element,
-    { type: MATCHES_SELECTOR, schema: MARKDOWN_SCHEMA },
-    onMatches,
-  );
+  // Publish the markdown schema query and watch for matching documents on the
+  // canvas. Both ride the schema channels; the canvas resolver answers.
+  const schemaQueries = getContextHandle(element, SchemaQueries);
+  schemaQueries?.change((slice) => {
+    slice[MARKDOWN_KEY] = MARKDOWN_SCHEMA;
+  });
+  const unsubscribeMatches = subscribeContext(element, SchemaMatches, (all) => {
+    onMatches(all[MARKDOWN_KEY] ?? []);
+  });
 
   return () => {
     unsubscribeMatches();
-    unsubscribeRegistry();
-    // Skip registry writes on teardown — the broker deletes the registry doc
-    // when our subscription closes — but still reclaim minted resource docs.
+    schemaQueries?.release();
+    // Releasing the slice drops every sticker we published; here we only need
+    // to reclaim minted resource docs (no per-key sticker writes needed).
     for (const url of [...docs.keys()]) dropDoc(url, false);
+    stickersHandle?.release();
   };
 }
 
