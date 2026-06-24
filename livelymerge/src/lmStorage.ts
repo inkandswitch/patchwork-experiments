@@ -123,36 +123,3 @@ export function lmCallToString(
   }
   return `[obj ${entry.$id}]`;
 }
-
-export interface LmFormatEvalResultOpts {
-  isProxy: (value: unknown) => boolean;
-  isObj: (value: unknown) => value is LmProtoEntry & Record<string, unknown> & LmHeapEntry;
-  liveHeapObj: (entry: LmProtoEntry & Record<string, unknown> & LmHeapEntry) => LmProtoEntry & Record<string, unknown> & LmHeapEntry;
-  lookupHeapProto: LmHeapLookup;
-  deserialize: (value: unknown) => unknown;
-}
-
-/** Format a print-it / eval result for display. Handles proxies and raw heap entries. */
-export function lmFormatEvalResult(value: unknown, opts: LmFormatEvalResultOpts): string {
-  if (value === undefined) return 'undefined';
-  if (value === null) return 'null';
-
-  const proxyEntry =
-    opts.isProxy(value) && opts.isObj((value as { $unwrapped: unknown }).$unwrapped)
-      ? opts.liveHeapObj((value as { $unwrapped: LmProtoEntry & Record<string, unknown> & LmHeapEntry }).$unwrapped)
-      : null;
-  const rawEntry = !proxyEntry && opts.isObj(value) ? opts.liveHeapObj(value) : null;
-  const objEntry = proxyEntry ?? rawEntry;
-
-  if (objEntry) {
-    const receiver = proxyEntry ? value : opts.deserialize(objEntry);
-    return lmCallToString(objEntry, receiver, opts.lookupHeapProto, opts.deserialize);
-  }
-
-  try {
-    if (opts.isProxy(value)) return (value as { toString(): string }).toString();
-    return '' + value;
-  } catch {
-    return `[${typeof value}]`;
-  }
-}
