@@ -6,7 +6,7 @@
   "exports": "./dist/index.js",
   "scripts": {
     "build": "tsc && vite build",
-    "test:crypto": "node scripts/test-crypto-protocol.mjs",
+    "test:crypto": "node scripts/test-crypto-protocol.mjs && node scripts/test-crypto-automerge.mjs",
     "sync": "pnpm build && pushwork sync",
     "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
   },

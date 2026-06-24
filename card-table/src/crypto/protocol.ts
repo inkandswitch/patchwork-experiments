@@ -161,6 +161,9 @@ export function advanceShuffleTurn(doc: CardTableDoc) {
     if (doc.shuffleTurn >= count - 1) {
       doc.phase = "shuffle-back";
       doc.shuffleTurn = count - 1;
+      for (const participant of doc.shuffleParticipants) {
+        participant.shuffleDone = false;
+      }
     } else {
       doc.shuffleTurn += 1;
     }
