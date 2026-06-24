@@ -1,0 +1,83 @@
+/* The slash-command menu renders inside CodeMirror's .cm-tooltip wrapper.
+   Neutralize the wrapper's chrome so only our own surface shows. */
+.cm-tooltip:has(.cm-command-menu) {
+  border: none;
+  background: transparent;
+}
+
+.cm-command-menu {
+  min-width: 220px;
+  max-width: 420px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.cm-command-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.cm-command-row--active,
+.cm-command-row:hover {
+  background: rgba(59, 130, 246, 0.15);
+}
+
+.cm-command-row__label {
+  color: #111827;
+  font-weight: 500;
+  flex: 0 0 auto;
+}
+
+/* The literal text that will be inserted, shown muted in a monospace face so
+   command snippets like {Route(from: A to: B)} read as code. */
+.cm-command-row__preview {
+  color: #6b7280;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cm-command-empty {
+  padding: 6px 8px;
+  color: #6b7280;
+  font-style: italic;
+}
+
+@media (prefers-color-scheme: dark) {
+  .cm-command-menu {
+    border-color: rgba(255, 255, 255, 0.12);
+    background: #1f2937;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  }
+
+  .cm-command-row--active,
+  .cm-command-row:hover {
+    background: rgba(96, 165, 250, 0.25);
+  }
+
+  .cm-command-row__label {
+    color: #e5e7eb;
+  }
+
+  .cm-command-row__preview {
+    color: #9ca3af;
+  }
+
+  .cm-command-empty {
+    color: #9ca3af;
+  }
+}

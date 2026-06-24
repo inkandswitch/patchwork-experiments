@@ -7,6 +7,7 @@ import "@inkandswitch/patchwork-elements";
 import { getDocumentDragPayload, hasDocumentDrag } from "./dnd";
 import type { PartsBinDoc } from "./parts-bin/types";
 import { SearchProvider } from "./providers/SearchProvider";
+import { CommandsProvider } from "./providers/CommandsProvider";
 import { SchemaMatchProvider } from "./providers/SchemaMatchProvider";
 import { StickerProvider } from "./providers/StickerProvider";
 import "./styles.css";
@@ -69,6 +70,12 @@ export const EmbarkCanvasTool: ToolRender = (handle, element) => {
   // protocol only flows up the DOM, and the embeds are siblings).
   const disposeProvider = SearchProvider(element);
 
+  // The slash-command broker is the search broker's sibling: `/`-command menus
+  // in editors publish a query and contributors answer it with suggestions
+  // (text snippets to insert). No contributors ship yet — llm-cards become them
+  // via the `commands` skill.
+  const disposeCommands = CommandsProvider(element);
+
   // The schema-match provider also sits on the canvas: it watches every embed
   // mounted beneath it and answers `schema:matches` for descendants.
   const disposeSchemaMatch = SchemaMatchProvider(element);
@@ -90,6 +97,7 @@ export const EmbarkCanvasTool: ToolRender = (handle, element) => {
     disposeRender();
     disposeStickers();
     disposeSchemaMatch();
+    disposeCommands();
     disposeProvider();
   };
 };
@@ -337,8 +345,9 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
         </div>
       </Show>
 
-      {/* Right-click menu. For now its only action is Inspect, which applies to
-          LLM cards; it's shown for every embed but disabled otherwise. */}
+      {/* Right-click menu. Its only action is Inspect, which works for any
+          document (raw tab, plus spec/code for LLM cards). It's disabled on
+          inspect embeds themselves to avoid inspecting an inspector. */}
       <Show when={menu()}>
         {(activeMenu) => (
           <div
@@ -350,7 +359,7 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
             <button
               type="button"
               class="embark-canvas__menu-item"
-              disabled={activeMenu().toolId !== "llm-card"}
+              disabled={activeMenu().toolId === "inspect"}
               on:click={() => inspectEmbed(activeMenu().embedId)}
             >
               Inspect

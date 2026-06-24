@@ -1,5 +1,6 @@
 import { plugins as canvasPlugins } from "./canvas";
 import { plugins as partsBinPlugins } from "./canvas/parts-bin";
+import { plugins as commandsPlugins } from "./commands";
 import { plugins as searchPlugins } from "./search";
 import { plugins as poiPlugins } from "./poi";
 import { plugins as cardPlugins } from "./card";
@@ -13,6 +14,7 @@ import { plugins as todoPlugins } from "./todo";
 export const plugins = [
   ...canvasPlugins,
   ...partsBinPlugins,
+  ...commandsPlugins,
   ...searchPlugins,
   ...poiPlugins,
   ...cardPlugins,

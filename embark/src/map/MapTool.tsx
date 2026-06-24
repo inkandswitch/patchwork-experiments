@@ -214,7 +214,9 @@ export const MapTool: ToolRender = (rawHandle, element) => {
   const panMatchesIntoView = (matches: AutomergeUrl[]) => {
     const offscreen = matches
       .map((match) => markers.get(match)?.getLngLat())
-      .filter((p): p is maplibregl.LngLat => !!p && !map.getBounds().contains(p));
+      .filter(
+        (p): p is maplibregl.LngLat => !!p && !map.getBounds().contains(p),
+      );
     if (offscreen.length === 0) return;
     if (offscreen.length === 1) {
       map.easeTo({ center: offscreen[0], duration: 600 });
@@ -224,7 +226,11 @@ export const MapTool: ToolRender = (rawHandle, element) => {
       (acc, p) => acc.extend(p),
       new maplibregl.LngLatBounds(offscreen[0], offscreen[0]),
     );
-    map.fitBounds(bounds, { padding: 64, maxZoom: map.getZoom(), duration: 600 });
+    map.fitBounds(bounds, {
+      padding: 64,
+      maxZoom: map.getZoom(),
+      duration: 600,
+    });
   };
 
   // Swap this map's owned highlight entry by reassigning the whole map (a
@@ -268,7 +274,8 @@ export const MapTool: ToolRender = (rawHandle, element) => {
         ...Object.keys(doc.highlight ?? {}),
       ];
       for (const url of urls) {
-        if (isValidAutomergeUrl(url)) ids.add(parseAutomergeUrl(url).documentId);
+        if (isValidAutomergeUrl(url))
+          ids.add(parseAutomergeUrl(url).documentId);
       }
     }
     focusedDocIds = ids;
