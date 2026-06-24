@@ -122,6 +122,25 @@ describe('UI eval: regression guards', () => {
     expect(out).toBe('(1, 2)');
   });
 
+  it('for-of over Object.entries(Pt) after class do-it', () => {
+    const rt = createFreshRuntime();
+    rt.eval(`class Pt {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+  }
+
+  toString() {
+    return \`(\${this.x}, \${this.y})\`;
+  }
+}`);
+    expect(() =>
+      rt.eval(`for (const [k, v] of Object.entries(Pt)) {
+  console.log('k', k, 'v', v);
+}`),
+    ).not.toThrow();
+  });
+
   it('print-it on p2.m shows user-written method source, not transpiled @-access', () => {
     const rt = createFreshRuntime();
     const setup = `class Pt {

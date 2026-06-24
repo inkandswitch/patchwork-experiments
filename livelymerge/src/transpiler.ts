@@ -331,6 +331,31 @@ function registerForSpec(spec: SyntaxNode, builder: ScopeBuilder, loopScope: Lex
   }
 }
 
+function forEachForSpecExpression(spec: SyntaxNode, visit: (expr: SyntaxNode) => void): void {
+  for (let child = spec.firstChild; child; child = child.nextSibling) {
+    if (child.name === 'VariableDeclaration') {
+      for (let declChild = child.firstChild; declChild; declChild = declChild.nextSibling) {
+        if (declChild.name !== 'Equals') continue;
+        for (let init = declChild.nextSibling; init; init = init.nextSibling) {
+          if (init.name === ';' || init.name === ',') break;
+          visit(init);
+        }
+      }
+    } else if (
+      child.name === 'VariableDefinition' ||
+      child.name === 'ObjectPattern' ||
+      child.name === 'ArrayPattern' ||
+      child.name === 'of' ||
+      child.name === 'in' ||
+      child.name === ';'
+    ) {
+      continue;
+    } else {
+      visit(child);
+    }
+  }
+}
+
 function populateFunctionBindings(builder: ScopeBuilder, funcScope: LexicalScope, funcNode: SyntaxNode): void {
   if (funcNode.name === 'FunctionExpression') {
     for (let child = funcNode.firstChild; child; child = child.nextSibling) {
@@ -510,7 +535,12 @@ function walkFunctionBodyNode(
   if (node.name === 'ForStatement') {
     const loopScope = builder.createScope(currentScope, node.getChild('Block'));
     const spec = node.getChild('ForSpec') ?? node.getChild('ForInSpec') ?? node.getChild('ForOfSpec');
-    if (spec) registerForSpec(spec, builder, loopScope);
+    if (spec) {
+      registerForSpec(spec, builder, loopScope);
+      forEachForSpecExpression(spec, (expr) =>
+        walkFreeVarNode(builder, expr, funcNode, currentScope, funcScope, freeVarUses, []),
+      );
+    }
     const block = node.getChild('Block');
     if (block) walkFunctionBody(builder, block, funcNode, loopScope, funcScope, freeVarUses);
     return;
@@ -1082,7 +1112,12 @@ function walkForWorldRefs(
   if (node.name === 'ForStatement') {
     const loopScope = ephemeralScope(currentScope, node.getChild('Block'));
     const spec = node.getChild('ForSpec') ?? node.getChild('ForInSpec') ?? node.getChild('ForOfSpec');
-    if (spec) registerForSpec(spec, builder, loopScope);
+    if (spec) {
+      registerForSpec(spec, builder, loopScope);
+      forEachForSpecExpression(spec, (expr) =>
+        walkForWorldRefs(builder, expr, currentScope, funcScope, edits),
+      );
+    }
     const block = node.getChild('Block');
     if (block) walkBlockForWorldRefs(builder, block, loopScope, funcScope ?? loopScope, edits);
     return;

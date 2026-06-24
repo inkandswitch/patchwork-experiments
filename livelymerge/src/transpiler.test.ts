@@ -251,5 +251,13 @@ x = 2;`)).toThrow("cannot assign to const-declared variable 'x'");
         `$global.f = $fun("() => console.info(y)", "() => () => console.info($global.y)");`,
       );
     });
+
+    it('rewrites world refs in for-of iterable expressions', () => {
+      expect(
+        transpile(`for (const [k, v] of Object.entries(Pt)) {
+  console.log(k, v);
+}`),
+      ).toContain('Object.entries($global.Pt)');
+    });
   });
 });
