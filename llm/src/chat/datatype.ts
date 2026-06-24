@@ -11,7 +11,6 @@ export const LLMChatDatatype: DatatypeImplementation<LLMChatDoc> = {
   init(doc: LLMChatDoc, repo: Repo) {
     doc["@patchwork"] = { type: "llm-chat" };
     doc.title = "LLM Chat";
-    doc.model = "anthropic/claude-sonnet-4.6";
 
     const folderHandle = repo.create<any>();
     folderHandle.change((d: any) => {
@@ -25,7 +24,6 @@ export const LLMChatDatatype: DatatypeImplementation<LLMChatDoc> = {
     processHandle.change((d) => {
       d["@patchwork"] = { type: "llm-process" };
       d.title = "Chat Process";
-      d.model = doc.model;
       d.systemPrompt = DEFAULT_SYSTEM_PROMPT;
       d.docFolderUrl = doc.docFolderUrl;
       if (doc.skills) d.skills = doc.skills;

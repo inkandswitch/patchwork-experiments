@@ -1,12 +1,11 @@
 import type { DocHandle, Repo } from "@automerge/automerge-repo";
-import { updateText } from "@automerge/automerge-repo";
+import { updateText, splice } from "@automerge/automerge-repo";
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { stream } from "@chee/patchwork-llm";
 import { parseScriptBlocks } from "./parser";
 import { createWorkspace } from "../workspace";
 import type { LLMProcessDoc, Message, ContentBlock, Workspace } from "../types";
 
-const API_URL = "https://openrouter.ai/api/v1";
-const API_KEY = "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";
 const MAX_ITERATIONS = 20;
 
 type ApiMessage = {
@@ -28,27 +27,34 @@ export async function runLLMProcess(repo: Repo, handle: DocHandle<LLMProcessDoc>
     const currentDoc = await handle.doc();
     if (!currentDoc) break;
 
-    const apiMessages = serializeForApi(systemPrompt, currentDoc.messages);
+    const apiMessages = serializeForApi(currentDoc.messages);
 
     handle.change((d) => {
       d.messages.push({ role: "assistant", content: [] });
     });
     const assistantIdx = (await handle.doc())!.messages.length - 1;
 
-    const stream = streamChatCompletion(currentDoc.model, apiMessages, signal);
+    const tokenStream = streamTokens(apiMessages, {
+      system: systemPrompt,
+      signal,
+    });
     let foundScript = false;
 
-    for await (const block of parseScriptBlocks(stream)) {
+    for await (const block of parseScriptBlocks(tokenStream)) {
       if (signal?.aborted) break;
 
-      if (block.type === "text" && block.content.trim().length > 0) {
+      if (block.type === "text" && block.content.length > 0) {
         handle.change((d) => {
           const msg = d.messages[assistantIdx];
           const content = msg.content as ContentBlock[];
           const lastPart = content[content.length - 1];
           if (lastPart && lastPart.type === "text") {
-            updateText(d, ["messages", assistantIdx, "content", content.length - 1, "text"], lastPart.text + block.content);
-          } else {
+            // Append-only: splice the delta at the end. updateText re-diffs the
+            // whole field every token and, on repetitive prose, scatters the
+            // splices — which corrupts the streaming markdown render until you
+            // refresh. splice is a deterministic end-insert.
+            splice(d, ["messages", assistantIdx, "content", content.length - 1, "text"], lastPart.text.length, 0, block.content);
+          } else if (block.content.trim().length > 0) {
             content.push({ type: "text", text: block.content });
           }
         });
@@ -60,7 +66,16 @@ export async function runLLMProcess(repo: Repo, handle: DocHandle<LLMProcessDoc>
           const content = msg.content as ContentBlock[];
           const lastPart = content[content.length - 1];
           if (lastPart?.type === "script" && lastPart.output === undefined && lastPart.error === undefined) {
-            updateText(d, ["messages", assistantIdx, "content", content.length - 1, "code"], block.code);
+            // block.code is the cumulative script text; append only the new
+            // suffix via splice (same reasoning as the text branch).
+            const cur = lastPart.code;
+            if (block.code.startsWith(cur)) {
+              if (block.code.length > cur.length) {
+                splice(d, ["messages", assistantIdx, "content", content.length - 1, "code"], cur.length, 0, block.code.slice(cur.length));
+              }
+            } else {
+              updateText(d, ["messages", assistantIdx, "content", content.length - 1, "code"], block.code);
+            }
           } else {
             const scriptBlock: any = {
               type: "script",
@@ -140,8 +155,8 @@ async function buildSystemPrompt(basePrompt: string, skillIds?: string[]): Promi
   return parts.join("\n\n");
 }
 
-function serializeForApi(systemPrompt: string, messages: Message[]): ApiMessage[] {
-  const apiMessages: ApiMessage[] = [{ role: "system", content: systemPrompt }];
+function serializeForApi(messages: Message[]): ApiMessage[] {
+  const apiMessages: ApiMessage[] = [];
 
   for (const msg of messages) {
     if (msg.role === "assistant") {
@@ -248,56 +263,17 @@ function createCapturedConsole() {
   };
 }
 
-async function* streamChatCompletion(model: string, messages: ApiMessage[], signal?: AbortSignal): AsyncGenerator<string> {
-  const url = `${API_URL}/chat/completions`;
+type StreamOpts = {
+  system?: string;
+  signal?: AbortSignal;
+};
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${API_KEY}`,
-    },
-    body: JSON.stringify({ model, messages, stream: true }),
-    signal,
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`LLM API error (${response.status}): ${text}`);
-  }
-
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error("No response body");
-
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith("data: ")) continue;
-
-        const data = trimmed.slice(6);
-        if (data === "[DONE]") return;
-
-        try {
-          const parsed = JSON.parse(data);
-          const content = parsed.choices?.[0]?.delta?.content;
-          if (content) yield content;
-        } catch {
-          // Skip malformed JSON
-        }
-      }
-    }
-  } finally {
-    reader.cancel().catch(() => {});
+// Adapt @chee/patchwork-llm's telemetry stream down to a plain stream of text
+// deltas, which is what parseScriptBlocks() consumes. Provider / model / API
+// key / temperature all come from the account-doc config (set via the library's
+// picker), shared across every tool.
+async function* streamTokens(messages: ApiMessage[], opts: StreamOpts): AsyncGenerator<string> {
+  for await (const ev of stream(messages, opts)) {
+    if (ev.type === "token") yield ev.delta as string;
   }
 }

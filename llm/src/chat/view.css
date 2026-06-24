@@ -1,30 +1,94 @@
+/* LLM Chat — themed via the studio CSS variables.
+   All rules scoped under .chat-root. */
+
+@layer package {
+  :root,
+  :host,
+  [theme] {
+    --chat-bg: var(--studio-fill, white);
+    --chat-fg: var(--studio-line, #1a1a1a);
+    --chat-muted: var(--studio-line-offset-50, #999);
+    --chat-muted-strong: var(--studio-line-offset-30, #666);
+    --chat-border: var(--studio-fill-offset-10, #e5e5e5);
+    --chat-input-border: var(--studio-fill-offset-20, #ddd);
+    --chat-bar-bg: color-mix(in oklch, var(--studio-fill, white), var(--studio-line, black) 2%);
+    --chat-accent: var(--studio-primary, #007aff);
+    --chat-accent-fg: color-mix(in oklch, var(--chat-accent), white 92%);
+    --chat-accent-hover: color-mix(in oklch, var(--chat-accent), var(--studio-line, black) 15%);
+    --chat-focus: var(--studio-link, #007aff);
+    --chat-danger: var(--studio-danger, #d32f2f);
+    --chat-danger-fg: color-mix(in oklch, var(--chat-danger), white 92%);
+    --chat-danger-hover: color-mix(in oklch, var(--chat-danger), var(--studio-line, black) 15%);
+    --chat-family: var(--studio-family-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  }
+}
+
+/* ---- Block: root ---- */
 .chat-root {
   display: flex;
   flex-direction: column;
   height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--chat-family);
   font-size: 14px;
-  color: #1a1a1a;
-  background: #fff;
+  color: var(--chat-fg);
+  background: var(--chat-bg);
 }
 
 .chat-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid #e5e5e5;
-  padding-right: 1rem;
+  border-bottom: 1px solid var(--chat-border);
+  padding-right: var(--studio-space, 1rem);
   flex-shrink: 0;
 }
 
 .chat-tabs {
   display: flex;
-  padding: 0 0.75rem;
+  padding: 0 var(--studio-space-sm, 0.75rem);
+}
+
+.chat-header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--studio-space-xs, 0.5rem);
 }
 
 .chat-version {
   font-size: 11px;
-  color: #999;
+  color: var(--chat-muted);
+}
+
+.chat-model {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--chat-muted-strong);
+  font-size: 12px;
+  font-family: var(--chat-family);
+  padding: 2px 4px;
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-model:hover {
+  color: var(--chat-fg);
+}
+
+.chat-settings {
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--chat-muted);
+  padding: 2px;
+}
+
+.chat-settings:hover {
+  color: var(--chat-muted-strong);
 }
 
 .chat-tabs button {
@@ -33,21 +97,22 @@
   background: none;
   cursor: pointer;
   font-size: 13px;
-  color: #666;
+  color: var(--chat-muted-strong);
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
 }
 
-.chat-tabs button.active {
-  color: #1a1a1a;
-  border-bottom-color: #1a1a1a;
+.chat-tabs button:hover {
+  color: var(--chat-fg);
 }
 
-.chat-tabs button:hover:not(.active) {
-  color: #333;
+/* ---- Exception: active tab ---- */
+.chat-tabs button[data-active] {
+  color: var(--chat-fg);
+  border-bottom-color: var(--chat-fg);
 }
 
-/* Messages */
+/* ---- Block: messages ---- */
 .chat-messages {
   flex: 1;
   overflow: hidden;
@@ -58,44 +123,44 @@
   height: 100%;
 }
 
-/* Input */
+/* ---- Block: input ---- */
 .chat-input {
   display: flex;
-  gap: 0.5rem;
-  padding: 0.75rem 1rem;
-  border-top: 1px solid #e5e5e5;
-  background: #fafafa;
+  gap: var(--studio-space-xs, 0.5rem);
+  padding: var(--studio-space-sm, 0.75rem) var(--studio-space, 1rem);
+  border-top: 1px solid var(--chat-border);
+  background: var(--chat-bar-bg);
   flex-shrink: 0;
 }
 
 .chat-input input[type="text"] {
   flex: 1;
   padding: 0.5rem 0.75rem;
-  border: 1px solid #ddd;
-  border-radius: 0.375rem;
+  border: 1px solid var(--chat-input-border);
+  border-radius: var(--studio-radius-sm, 0.375rem);
   font-size: 14px;
-  background: #fff;
-  color: #1a1a1a;
+  background: var(--chat-bg);
+  color: var(--chat-fg);
 }
 
 .chat-input input[type="text"]:focus {
   outline: none;
-  border-color: #007aff;
+  border-color: var(--chat-focus);
 }
 
 .chat-input button {
   padding: 0.5rem 1rem;
-  background: #007aff;
-  color: white;
+  background: var(--chat-accent);
+  color: var(--chat-accent-fg);
   border: none;
-  border-radius: 0.375rem;
+  border-radius: var(--studio-radius-sm, 0.375rem);
   cursor: pointer;
   font-size: 14px;
   font-weight: 500;
 }
 
 .chat-input button:hover:not(:disabled) {
-  background: #0066d6;
+  background: var(--chat-accent-hover);
 }
 
 .chat-input button:disabled {
@@ -107,14 +172,15 @@
   display: flex;
   align-items: center;
   gap: 0.375rem;
-  background: #d32f2f;
+  background: var(--chat-danger);
+  color: var(--chat-danger-fg);
 }
 
 .chat-input button.stop-button:hover {
-  background: #b71c1c;
+  background: var(--chat-danger-hover);
 }
 
-/* Documents tab */
+/* ---- Block: documents tab ---- */
 .chat-documents {
   flex: 1;
   overflow: hidden;

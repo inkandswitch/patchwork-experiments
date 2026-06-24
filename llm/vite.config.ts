@@ -3,12 +3,13 @@ import cssInjectedByJsPlugin from "vite-plugin-css-injected-by-js";
 import solid from "vite-plugin-solid";
 import topLevelAwait from "vite-plugin-top-level-await";
 import wasm from "vite-plugin-wasm";
+import patchworkBundles from "@chee/patchwork-bundles/vite";
 
 import external from "@inkandswitch/patchwork-bootloader/externals";
 
 export default defineConfig({
   base: "./",
-  plugins: [topLevelAwait(), wasm(), solid(), cssInjectedByJsPlugin()],
+  plugins: [topLevelAwait(), wasm(), solid(), cssInjectedByJsPlugin(), patchworkBundles()],
 
   esbuild: {
     target: "es2022",

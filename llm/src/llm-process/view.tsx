@@ -1,6 +1,6 @@
 import { render } from "solid-js/web";
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import { RepoContext, useDocument } from "@automerge/automerge-repo-solid-primitives";
+import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { RepoContext, useRepo } from "@automerge/automerge-repo-solid-primitives";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import { ChevronRight, ChevronDown, X } from "lucide-solid";
@@ -22,8 +22,37 @@ export const LLMProcessTool: ToolRender = (handle, element) => {
   return dispose;
 };
 
+// Re-read the whole doc from each change event instead of using the
+// incremental-patch Solid projection (useDocument). Under the rapid per-token
+// writes of a streaming generation, that projection's batched applyPatches
+// diverges from the real doc — text deltas land reversed and blocks duplicate
+// — and only a refresh (full re-read) heals it. The change-event payload
+// already carries the clean full doc, so we just take that.
+function useLiveDoc(url: () => AutomergeUrl) {
+  const repo = useRepo();
+  const [doc, setDoc] = createSignal<LLMProcessDoc | undefined>(undefined, { equals: false });
+  createEffect(() => {
+    const u = url();
+    if (!u) return;
+    let handle: DocHandle<LLMProcessDoc> | undefined;
+    let cancelled = false;
+    const onChange = (payload: { doc: LLMProcessDoc }) => setDoc(payload.doc);
+    repo.find<LLMProcessDoc>(u).then(async (h) => {
+      if (cancelled) return;
+      handle = h;
+      setDoc(await h.doc());
+      h.on("change", onChange);
+    });
+    onCleanup(() => {
+      cancelled = true;
+      handle?.off("change", onChange);
+    });
+  });
+  return doc;
+}
+
 export function LLMProcessView(props: { url: AutomergeUrl }) {
-  const [doc] = useDocument<LLMProcessDoc>(() => props.url);
+  const doc = useLiveDoc(() => props.url);
   let containerRef: HTMLDivElement | undefined;
   let shouldAutoScroll = true;
 
@@ -83,7 +112,11 @@ function MessageView(props: { message: Message }) {
             }>
               <Show when={(block as any).text?.trim()}>
                 <div class="assistant-text">
-                  <SolidMarkdown children={(block as any).text} remarkPlugins={[remarkGfm]} renderingStrategy="reconcile" />
+                  {/* "memo" (the default) regenerates the AST each tick. The
+                      "reconcile" strategy diffs the growing markdown tree by
+                      index and scrambles children mid-stream — garbled until a
+                      refresh rebuilds it. */}
+                  <SolidMarkdown children={(block as any).text} remarkPlugins={[remarkGfm]} renderingStrategy="memo" />
                 </div>
               </Show>
             </Show>
