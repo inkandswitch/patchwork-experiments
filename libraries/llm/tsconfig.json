@@ -1,13 +1,14 @@
 {
   "compilerOptions": {
     "allowJs": true,
-    "checkJs": false,
+    "checkJs": true,
     "declaration": true,
     "emitDeclarationOnly": true,
     "module": "esnext",
     "moduleResolution": "bundler",
     "target": "esnext",
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "outDir": "types"
   },
   "include": [
     "index.js",
@@ -19,6 +20,5 @@
     "provider.js",
     "builtin.js",
     "templates.js"
-  ],
-  "exclude": ["*.d.ts"]
+  ]
 }
