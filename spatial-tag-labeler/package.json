@@ -1,0 +1,16 @@
+{
+  "name": "@patchwork/spatial-tag-labeler",
+  "version": "0.0.1",
+  "description": "Demo embedded tool for the spatial host: labels AprilTags via the spatial:apriltags provider",
+  "type": "module",
+  "main": "spatial-tag-labeler.js",
+  "exports": {
+    ".": "spatial-tag-labeler.js"
+  },
+  "scripts": {
+    "push": "pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  },
+  "keywords": [],
+  "author": "Ink & Switch"
+}
