@@ -51,6 +51,10 @@ const MIN_WIDTH = 160;
 const MIN_HEIGHT = 100;
 // Offset stacked drops so dragging several docs in at once doesn't hide them.
 const DROP_CASCADE = 28;
+// An inspect embed opens just to the right of the card it inspects.
+const INSPECT_GAP = 24;
+const INSPECT_WIDTH = 360;
+const INSPECT_MIN_HEIGHT = 280;
 
 // Tool entry point: Solid renders into the host element and returns its own
 // disposer. Absolutely-positioned embeds need a positioned ancestor, so the
@@ -135,6 +139,53 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
     });
     setSelectedId(null);
   };
+
+  // Right-click menu state: which embed was clicked, its resolved tool id (so
+  // items can enable per datatype), and the click point in canvas-local space.
+  const [menu, setMenu] = createSignal<ContextMenu | null>(null);
+
+  const openMenu = (
+    embedId: string,
+    clientX: number,
+    clientY: number,
+    toolId: string | undefined,
+  ) => {
+    const rect = canvasEl()?.getBoundingClientRect();
+    setMenu({
+      embedId,
+      toolId,
+      x: rect ? clientX - rect.left : clientX,
+      y: rect ? clientY - rect.top : clientY,
+    });
+  };
+
+  // Inspect: drop a fresh embed beside the clicked card that renders the same
+  // document with the inspect tool (showing its spec + code).
+  const inspectEmbed = (id: string) => {
+    setMenu(null);
+    props.handle.change((canvas) => {
+      const source = canvas.embeds[id];
+      if (!source) return;
+      const newId = crypto.randomUUID();
+      canvas.embeds[newId] = {
+        id: newId,
+        docUrl: source.docUrl,
+        x: source.x + source.width + INSPECT_GAP,
+        y: source.y,
+        width: INSPECT_WIDTH,
+        height: Math.max(source.height, INSPECT_MIN_HEIGHT),
+        z: highestZ(canvas.embeds) + 1,
+        toolId: "inspect",
+      };
+    });
+  };
+
+  // Escape closes the context menu wherever focus happens to be.
+  const onWindowKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "Escape") setMenu(null);
+  };
+  window.addEventListener("keydown", onWindowKeyDown);
+  onCleanup(() => window.removeEventListener("keydown", onWindowKeyDown));
 
   // Stable render order (by id) so <For> never reorders the DOM nodes — that
   // would tear down and remount the embedded <patchwork-view>. Stacking is
@@ -242,6 +293,9 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
         deleteEmbed(id);
       }}
       on:pointerdown={(event) => {
+        // Any press outside the menu dismisses it (the menu stops propagation
+        // on its own pointerdown, so it survives clicks on itself).
+        setMenu(null);
         // Embeds stop propagation in their own handlers, so a press that
         // reaches the canvas root is on empty space — clear the selection.
         if (event.target === event.currentTarget) setSelectedId(null);
@@ -269,6 +323,9 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
             shiftHeld={shiftHeld()}
             onSelect={() => selectEmbed(embed.id)}
             onDelete={() => deleteEmbed(embed.id)}
+            onContextMenu={(clientX, clientY, toolId) =>
+              openMenu(embed.id, clientX, clientY, toolId)
+            }
             findBinAt={binEmbedAt}
             onCopyToBin={copyEmbedToBin}
           />
@@ -278,6 +335,28 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
         <div class="embark-canvas__empty">
           Drag documents here to embed them
         </div>
+      </Show>
+
+      {/* Right-click menu. For now its only action is Inspect, which applies to
+          LLM cards; it's shown for every embed but disabled otherwise. */}
+      <Show when={menu()}>
+        {(activeMenu) => (
+          <div
+            class="embark-canvas__menu"
+            style={{ left: `${activeMenu().x}px`, top: `${activeMenu().y}px` }}
+            on:pointerdown={(event) => event.stopPropagation()}
+            on:contextmenu={(event) => event.preventDefault()}
+          >
+            <button
+              type="button"
+              class="embark-canvas__menu-item"
+              disabled={activeMenu().toolId !== "llm-card"}
+              on:click={() => inspectEmbed(activeMenu().embedId)}
+            >
+              Inspect
+            </button>
+          </div>
+        )}
       </Show>
       <div style={{ position: "absolute", bottom: 0, right: 0 }}>v 0.0.1</div>
     </div>
@@ -294,6 +373,11 @@ function EmbedView(props: {
   shiftHeld: boolean;
   onSelect: () => void;
   onDelete: () => void;
+  onContextMenu: (
+    clientX: number,
+    clientY: number,
+    toolId: string | undefined,
+  ) => void;
   findBinAt: (
     clientX: number,
     clientY: number,
@@ -429,6 +513,12 @@ function EmbedView(props: {
         height: `${props.embed.height}px`,
         "z-index": props.embed.z,
       }}
+      on:contextmenu={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        props.onSelect();
+        props.onContextMenu(event.clientX, event.clientY, toolId());
+      }}
     >
       <Show when={!frameless()}>
         <div
@@ -519,6 +609,15 @@ function CloseIcon() {
     </svg>
   );
 }
+
+// An open right-click menu: the embed it targets, that embed's resolved tool
+// id, and the anchor point in canvas-local pixels.
+type ContextMenu = {
+  embedId: string;
+  toolId: string | undefined;
+  x: number;
+  y: number;
+};
 
 type InteractionMode = "move" | "resize";
 

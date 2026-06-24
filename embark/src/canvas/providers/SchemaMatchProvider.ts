@@ -18,11 +18,24 @@ import { extractDocLinks } from "../../lib/doc-links";
 // `patchwork:mounted` / `patchwork:unmounted` from `<patchwork-view>`),
 // traverses each one — plus any document it links to via an `automerge:` string
 // — and re-emits whenever the reachable docs, their contents, or the set of
-// subscribers change.
+// subscribers change. Documents that live *inside* an opaque container (see
+// OPAQUE_CONTAINER_TYPES) are deliberately hidden from this traversal.
 export const MATCHES_SELECTOR = "schema:matches";
 
 // Coalesce bursts (a doc change plus a mount, say) into a single pass.
 const REEVAL_DEBOUNCE_MS = 50;
+
+// Opaque containers: documents whose internals are private machinery rather than
+// canvas content, so the schema matcher must treat everything *inside* them as
+// invisible. An llm-card is the motivating case — it keeps its generated spec
+// (a markdown doc) and effect code (a folder of files) only to implement
+// itself, and those must never surface as canvas matches (otherwise, e.g., an
+// annotation contributor would decorate a card's private spec). For these types
+// we don't follow the container's links into its internals, AND we exclude
+// those internal docs from matching even when they're mounted directly (e.g. a
+// spec opened in the inspector tool). The container document itself stays
+// matchable; only its contents are ignored. Flag-driven so it's easy to extend.
+const OPAQUE_CONTAINER_TYPES = new Set<string>(["llm-card"]);
 
 type Subscriber = {
   schema: z.ZodType;
@@ -129,20 +142,39 @@ export function SchemaMatchProvider(element: ToolElement): () => void {
   // referenced. Returns every loaded doc's handle reachable this pass, keyed by
   // url (so a doc reached both directly and via a link appears once). The handle
   // (not just the doc) is carried so matches can be emitted as sub-urls.
+  //
+  // Anything that lives inside an opaque container is hidden: such docs are
+  // never added to the result and the closure never expands into them, so they
+  // can't be matched no matter how they were reached (linked from the container
+  // or mounted on their own).
   const collectReachable = (): Map<AutomergeUrl, DocHandle<unknown>> => {
+    // Decide what to hide first, so it doesn't matter whether a hidden doc is
+    // dequeued before or after the container that owns it.
+    const ignored = collectIgnored();
+
     const reachable = new Map<AutomergeUrl, DocHandle<unknown>>();
-    const neededRefs = new Set<AutomergeUrl>();
+    // Keep the hidden docs loaded (we need the folder/files to know they're
+    // hidden) so the prune step below doesn't immediately drop them.
+    const neededRefs = new Set<AutomergeUrl>(ignored);
     const enqueued = new Set<AutomergeUrl>(mounted.keys());
     const queue = [...mounted.keys()];
 
     while (queue.length > 0) {
       const url = queue.shift()!;
+      // A mounted root that is really a container's internal doc (e.g. a card's
+      // spec opened in the inspector) is hidden, not matched.
+      if (ignored.has(url)) continue;
       const handle = mounted.get(url)?.handle ?? referenced.get(url)?.handle;
       const doc = handle?.doc();
       if (!handle || !doc) continue; // a referenced doc still resolving — revisit on load
       reachable.set(url, handle);
 
+      // An opaque container exposes nothing to the matcher: don't descend into
+      // its links — its internals are already accounted for in `ignored`.
+      if (OPAQUE_CONTAINER_TYPES.has(docType(doc) ?? "")) continue;
+
       for (const link of linkedUrls(doc)) {
+        if (ignored.has(link)) continue; // never traverse into hidden internals
         if (!mounted.has(link)) {
           neededRefs.add(link);
           ensureReferenced(link);
@@ -161,6 +193,55 @@ export function SchemaMatchProvider(element: ToolElement): () => void {
     }
 
     return reachable;
+  };
+
+  // Compute the closure of documents that live inside an opaque container and so
+  // must be hidden from matching. Seeded with the links out of every loaded
+  // opaque container (e.g. an llm-card -> its spec doc + effect folder) and
+  // extended transitively (folder -> its files). Internal docs are loaded as
+  // referenced so we can read their own links, but they are never matched and
+  // never expand the reachable closure. The container itself is NOT added here —
+  // only its contents are ignored.
+  const collectIgnored = (): Set<AutomergeUrl> => {
+    const ignored = new Set<AutomergeUrl>();
+    const queue: AutomergeUrl[] = [];
+
+    const hide = (links: AutomergeUrl[]) => {
+      for (const link of links) {
+        if (ignored.has(link)) continue;
+        ignored.add(link);
+        ensureReferenced(link);
+        queue.push(link);
+      }
+    };
+
+    // Seed from every opaque container currently loaded (mounted on the canvas
+    // or pulled in as a reference by an earlier pass).
+    for (const entry of mounted.values()) {
+      const doc = entry.handle?.doc();
+      if (doc && OPAQUE_CONTAINER_TYPES.has(docType(doc) ?? "")) {
+        hide(linkedUrls(doc));
+      }
+    }
+    for (const ref of referenced.values()) {
+      const doc = ref.handle?.doc();
+      if (doc && OPAQUE_CONTAINER_TYPES.has(docType(doc) ?? "")) {
+        hide(linkedUrls(doc));
+      }
+    }
+
+    // Walk inward so nested internals are hidden too (a card's folder pulls in
+    // the folder's files). Docs still loading are revisited on a later pass,
+    // since their load/change reschedules a re-evaluation.
+    while (queue.length > 0) {
+      const url = queue.shift()!;
+      const doc =
+        mounted.get(url)?.handle?.doc() ?? referenced.get(url)?.handle?.doc();
+      if (!doc) continue;
+      hide(linkedUrls(doc));
+    }
+
+    return ignored;
   };
 
   const ensureReferenced = (url: AutomergeUrl) => {
@@ -195,6 +276,14 @@ export function SchemaMatchProvider(element: ToolElement): () => void {
     referenced.clear();
     subscribers.clear();
   };
+}
+
+// The patchwork datatype a document declares (`@patchwork.type`), if any. Used
+// to recognize opaque containers (see OPAQUE_CONTAINER_TYPES).
+function docType(doc: unknown): string | undefined {
+  if (doc === null || typeof doc !== "object") return undefined;
+  const meta = (doc as { "@patchwork"?: { type?: unknown } })["@patchwork"];
+  return meta && typeof meta.type === "string" ? meta.type : undefined;
 }
 
 // Every document url referenced by a string anywhere in `doc`.

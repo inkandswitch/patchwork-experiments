@@ -24,3 +24,22 @@
     drop-shadow(0 0 8px rgba(37, 99, 235, 0.7));
   z-index: 3;
 }
+
+/* Hover tooltip: strip maplibre's default chrome so the embedded
+   <patchwork-view> supplies its own surface, then size and clip it. */
+.embark-map-popup .maplibregl-popup-content {
+  padding: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.18);
+}
+
+.embark-map-popup__body {
+  width: 240px;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.embark-map-popup__body patchwork-view {
+  display: block;
+}

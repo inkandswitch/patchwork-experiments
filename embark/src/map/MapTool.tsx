@@ -138,6 +138,70 @@ export const MapTool: ToolRender = (rawHandle, element) => {
   // which ones *just* became focused and pan only those into view.
   let focusedMatches = new Set<AutomergeUrl>();
 
+  // Hover tooltip: a single reused popup that embeds a <patchwork-view> of the
+  // hovered pin's document. The match url points at the {lat, lon} subtree,
+  // which carries no @patchwork metadata, so we render the OWNING document and
+  // let patchwork-view fall back to that type's tool. Reused (not one per
+  // marker) so only the hovered card is ever mounted.
+  const popup = new maplibregl.Popup({
+    closeButton: false,
+    closeOnClick: false,
+    maxWidth: "none",
+    offset: 18,
+    className: "embark-map-popup",
+  });
+  let popupMatch: AutomergeUrl | undefined;
+  let overPopup = false;
+  let hideTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const showPopup = (
+    match: AutomergeUrl,
+    coords: [number, number],
+    docUrl: AutomergeUrl,
+  ) => {
+    if (hideTimer) clearTimeout(hideTimer);
+    if (popupMatch !== match) {
+      popupMatch = match;
+      const body = document.createElement("div");
+      body.className = "embark-map-popup__body";
+      const view = document.createElement("patchwork-view");
+      view.setAttribute("doc-url", docUrl);
+      body.appendChild(view);
+      // The pin's own mouseleave fires as the pointer crosses onto the popup,
+      // so track hovering the popup itself to keep it open (and interactive).
+      body.addEventListener("mouseenter", () => {
+        overPopup = true;
+        if (hideTimer) clearTimeout(hideTimer);
+      });
+      body.addEventListener("mouseleave", () => {
+        overPopup = false;
+        scheduleHidePopup();
+      });
+      popup.setDOMContent(body);
+    }
+    popup.setLngLat(coords).addTo(map);
+  };
+
+  // Close after a short grace period unless the pointer landed on the popup,
+  // so moving from pin to popup (and back) doesn't make it flicker.
+  const scheduleHidePopup = () => {
+    if (hideTimer) clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => {
+      if (overPopup) return;
+      popup.remove();
+      popupMatch = undefined;
+    }, 160);
+  };
+
+  // Close immediately for a specific match (e.g. its pin is being removed).
+  const hidePopupFor = (match: AutomergeUrl) => {
+    if (popupMatch !== match) return;
+    if (hideTimer) clearTimeout(hideTimer);
+    overPopup = false;
+    popup.remove();
+    popupMatch = undefined;
+  };
+
   const styleMarker = (match: AutomergeUrl, marker: maplibregl.Marker) => {
     const focused = focusedDocIds.has(parseAutomergeUrl(match).documentId);
     marker.getElement().classList.toggle("embark-map-marker--focused", focused);
@@ -247,8 +311,14 @@ export const MapTool: ToolRender = (rawHandle, element) => {
       const markerEl = marker.getElement();
       markerEl.classList.add("embark-map-marker");
       markerEl.dataset.docUrl = docUrl;
-      markerEl.addEventListener("mouseenter", () => setHovered(docUrl));
-      markerEl.addEventListener("mouseleave", () => clearHovered(docUrl));
+      markerEl.addEventListener("mouseenter", () => {
+        setHovered(docUrl);
+        showPopup(match, coords, docUrl);
+      });
+      markerEl.addEventListener("mouseleave", () => {
+        clearHovered(docUrl);
+        scheduleHidePopup();
+      });
       marker.addTo(map);
       markers.set(match, marker);
       // A pin can resolve after its doc is already focused (async find); treat
@@ -271,6 +341,7 @@ export const MapTool: ToolRender = (rawHandle, element) => {
         | AutomergeUrl
         | undefined;
       if (docUrl) clearHovered(docUrl);
+      hidePopupFor(match);
       marker.remove();
       markers.delete(match);
       focusedMatches.delete(match);
@@ -291,6 +362,8 @@ export const MapTool: ToolRender = (rawHandle, element) => {
     unsubscribeFocus();
     if (hovered) writeHighlight(hovered, undefined);
     if (focusHandle && onFocusChange) focusHandle.off("change", onFocusChange);
+    if (hideTimer) clearTimeout(hideTimer);
+    popup.remove();
     for (const marker of markers.values()) marker.remove();
     markers.clear();
     if (resizeSyncTimer) clearTimeout(resizeSyncTimer);
