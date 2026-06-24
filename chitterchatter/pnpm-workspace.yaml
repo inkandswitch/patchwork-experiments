@@ -5,3 +5,4 @@ configDependencies:
   pnpm-plugin-patchwork: latest
 minimumReleaseAgeExclude:
   - '@chee/patchwork-llm@0.1.0'
+  - '@chee/patchwork-bundles@0.0.1'

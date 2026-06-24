@@ -9,11 +9,17 @@
        it's ever loaded outside the host.
        ================================================================ */
     .chat-root {
-      --bg-dark:     var(--studio-fill, oklch(0.15 0.03 270));            /* base surface (messages) */
-      --bg-darkest:  var(--studio-fill-offset-10, oklch(0.12 0.02 270)); /* chrome / menus / popovers */
-      --bg-mid:      var(--studio-fill-offset-10, oklch(0.19 0.03 270)); /* secondary surfaces */
-      --bg-input:    var(--studio-fill-offset-10, oklch(0.17 0.03 270)); /* inputs / pills */
-      --bg-hover:    var(--studio-fill-offset-20, oklch(0.22 0.04 270)); /* hover states */
+      /* Gentle themey tint: each host fill surface nudged toward the theme's
+         primary (colour) with a touch of the line (depth). Kept low so it reads
+         as a tint, not a recolour. The INPUT stays plain --studio-fill on purpose
+         (editor: line on fill), so it reads as a clean surface against the tint. */
+      --tint:   var(--studio-primary, oklch(0.55 0.18 270));
+      --tint-2: var(--studio-line, oklch(1 0 0));
+      --bg-dark:     color-mix(in oklch, color-mix(in oklch, var(--studio-fill, oklch(0.15 0.03 270)),            var(--tint) 8%), var(--tint-2) 4%);  /* base surface (messages) */
+      --bg-darkest:  color-mix(in oklch, color-mix(in oklch, var(--studio-fill-offset-10, oklch(0.12 0.02 270)),  var(--tint) 8%), var(--tint-2) 4%);  /* chrome / menus / popovers */
+      --bg-mid:      color-mix(in oklch, color-mix(in oklch, var(--studio-fill-offset-10, oklch(0.19 0.03 270)),  var(--tint) 8%), var(--tint-2) 4%);  /* secondary surfaces */
+      --bg-input:    var(--studio-fill, oklch(0.15 0.03 270));            /* inputs / pills — plain fill (line on fill) */
+      --bg-hover:    color-mix(in oklch, color-mix(in oklch, var(--studio-fill-offset-20, oklch(0.22 0.04 270)),  var(--tint) 10%), var(--tint-2) 5%); /* hover states */
       --border:      var(--studio-fill-offset-20, oklch(0.28 0.05 270));
 
       --accent:       var(--studio-primary, oklch(0.55 0.18 270));

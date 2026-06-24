@@ -30,8 +30,26 @@ function nextId() {
 	return "llm-" + ++idSeq + "-" + (performance.now() | 0)
 }
 
+// Main-thread diagnostics. The worker forwards its own logs via {type:"log"}
+// (see dispatch); this is for client-side events — aborts and worker errors —
+// so a caller (e.g. loom) that only surfaces a generic AbortError still leaves a
+// trail in the console explaining what actually happened.
+function clog(...args) {
+	try {
+		console.log("[llm]", ...args)
+	} catch {}
+}
+
 function dispatch(msg) {
 	if (!msg) return
+	// Worker diagnostics: the SharedWorker's own console is hidden, so re-print
+	// its logs here on the main thread where the tool's devtools can see them.
+	if (msg.type === "log") {
+		try {
+			console.log("[llm worker]", ...(msg.args || []))
+		} catch {}
+		return
+	}
 	if (msg.type === "status") {
 		for (const f of statusListeners) f(msg.message)
 		return
@@ -184,6 +202,7 @@ export async function generate(messages, opts = {}) {
 			if (opts.signal) opts.signal.removeEventListener("abort", onAbort)
 		}
 		function onAbort() {
+			clog("generate: aborted by caller", {provider: config.provider, model: config.model})
 			conn.post({type: "abort", sessionKey})
 			cleanup()
 			reject(new DOMException("Aborted", "AbortError"))
@@ -206,6 +225,7 @@ export async function generate(messages, opts = {}) {
 					resolve({text: msg.text, toolCalls: msg.toolCalls || null, stats})
 					break
 				case "error":
+					clog("generate: worker error", msg.message)
 					cleanup()
 					reject(new Error(msg.message))
 					break
@@ -450,7 +470,7 @@ export async function computeAttentionWeights(text, opts = {}) {
 	const conn = getConnection()
 	const id = nextId()
 	return new Promise((resolve, reject) => {
-		const onAbort = () => { handlers.delete(id); reject(new DOMException("Aborted", "AbortError")) }
+		const onAbort = () => { clog("computeAttentionWeights: aborted by caller", {model: config.model}); handlers.delete(id); reject(new DOMException("Aborted", "AbortError")) }
 		if (opts.signal) {
 			if (opts.signal.aborted) return onAbort()
 			opts.signal.addEventListener("abort", onAbort, {once: true})
@@ -461,6 +481,7 @@ export async function computeAttentionWeights(text, opts = {}) {
 				opts.signal?.removeEventListener("abort", onAbort)
 				resolve(msg)
 			} else if (msg.type === "error") {
+				clog("computeAttentionWeights: worker error", msg.message)
 				handlers.delete(id)
 				opts.signal?.removeEventListener("abort", onAbort)
 				reject(new Error(msg.message))
@@ -525,6 +546,27 @@ export async function decodeTokens(ids, opts = {}) {
 			else if (msg.type === "error") { handlers.delete(id); reject(new Error(msg.message)) }
 		})
 		conn.post({type: "decode-tokens", id, sessionKey: id, provider: config.provider, ids, config})
+	})
+}
+
+/**
+ * Like extractFeatures, but returns the `cut_hidden` state (the residual just
+ * before the last block's MLP) — for training a LoRA adapter on that MLP (rung 2).
+ * Requires a model exported with onnx_block.py. Resolves to
+ * { supported, seq, d, ids, tokens, spans, decoded, hidden: Float32Array(seq*d) }.
+ */
+export async function extractCutFeatures(text, opts = {}) {
+	const cfg = await resolveCfgPrompts(opts.config ?? (await ensureConfig()))
+	const config = callConfig(cfg, opts)
+	if (config.provider !== "local") return null
+	const conn = getConnection()
+	const id = nextId()
+	return new Promise((resolve, reject) => {
+		handlers.set(id, (msg) => {
+			if (msg.type === "cut-features") { handlers.delete(id); resolve(msg) }
+			else if (msg.type === "error") { handlers.delete(id); reject(new Error(msg.message)) }
+		})
+		conn.post({type: "extract-cut-features", id, sessionKey: id, provider: config.provider, text, config})
 	})
 }
 

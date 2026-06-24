@@ -23,7 +23,7 @@ import {
 	readConfig as llmReadConfig,
 	describeConfig as llmDescribeConfig,
 	fetchOpenRouterModels as llmFetchOpenRouterModels,
-} from "@patchwork/llm"
+} from "@chee/patchwork-llm"
 import {generateId} from "../lib/helpers"
 import {
 	getNotificationSound,
@@ -57,7 +57,7 @@ export function ChatRoot(props: {
 	// Sidebar state
 	const [sidebarVisible, setSidebarVisible] = createSignal(false)
 
-	// Model picker (the @patchwork/llm popover lives in the light DOM)
+	// Model picker (the @chee/patchwork-llm popover lives in the light DOM)
 	let modelPickerEl: HTMLElement | null = null
 	async function openModelPicker() {
 		if (modelPickerEl) return
@@ -353,18 +353,38 @@ export function Tool(handle, element) {
 3. **plugins array** — registers both:
 \`\`\`js
 export const plugins = [
-  { type: "patchwork:datatype", id: "my-datatype-id", name: "My Tool Name", async load() { return MyDatatype; } },
-  { type: "patchwork:tool", id: "my-tool-id", name: "My Tool Name", supportedDatatypes: ["my-datatype-id"], async load() { return Tool; } },
+  { type: "patchwork:datatype", id: "my-datatype-id", name: "My Tool Name", icon: "Box", async load() { return MyDatatype; } },
+  { type: "patchwork:tool", id: "my-tool-id", name: "My Tool Name", icon: "Box", supportedDatatypes: ["my-datatype-id"], async load() { return Tool; } },
 ];
 \`\`\`
 
 Rules:
-- Use vanilla DOM APIs only (createElement, innerHTML, etc.) — NO frameworks
-- Scope ALL CSS classes with a unique prefix to avoid conflicts
+- Use vanilla DOM APIs only (createElement, innerHTML, etc.) — NO frameworks. (If you genuinely need fine-grained reactivity, \`solid-js\` is in the importmap — but reach for it only when hand-diffing the DOM gets painful. Never React.)
+- \`icon\` is a [lucide](https://lucide.dev) icon NAME, e.g. "Box", "Music", "Grid3x3", "File", "Sparkles".
+- No shadow DOM — tools render into the light DOM, so scope ALL CSS classes with a unique prefix to avoid conflicts.
+- **Never call \`stopPropagation()\` on a \`click\` event.** Patchwork frameworks (Solid, tldraw host) delegate \`click\` to \`document\`; stopping it kills their handlers. Only stop propagation on \`pointerdown\`/\`pointerup\`.
+- \`repo.find(url)\` and \`repo.create2(initial)\` return Promises that resolve to an already-ready handle — \`const handle = await repo.find(url)\`. Never use the old \`repo.find(url); await handle.whenReady()\` pattern. (\`repo.create()\` is deprecated — use \`create2\`.)
 - The datatype id and supportedDatatypes must match. The tool id can be different — a tool can support an existing datatype. When creating a new self-contained tool, use the suggested tool ID for both.
-- Keep it self-contained in one file
-- Automerge docs cannot contain \`undefined\` — use \`null\` or \`delete\`
+- Keep it self-contained in one file.
+- Always RETURN a cleanup function from the tool that tears down everything: \`handle.off("change", …)\`, removed nodes, cleared intervals/timeouts/rAF, closed AudioContexts.
+- Automerge docs cannot contain \`undefined\` — use \`null\` or \`delete d.field\` inside a \`change()\`.
 - Strings in Automerge are collaborative text; use \`splice()\` for efficient editing, or just assign for simple values
+
+## Styling & Theming
+Patchwork supplies CSS custom properties — derive from them so your tool matches the active theme. **Never hardcode hex colors** and **never add \`@media (prefers-color-scheme)\` blocks** — the theme system swaps the variable values to handle light/dark for you. (In a tool, derive fill/line/typography from \`--editor-*\`; accents come from \`--studio-*\`, which has no editor equivalent.)
+
+- Background / foreground: \`var(--editor-fill, white)\` / \`var(--editor-line, black)\`
+- Tinted backgrounds: \`var(--editor-fill-offset-10)\` … \`-50\`; muted text: \`var(--editor-line-offset-10)\` … \`-50\`
+- Accent colors: \`var(--studio-primary)\`, \`--studio-secondary\`, \`--studio-danger\`, \`--studio-warning\`, \`--studio-link\`
+- Fonts: \`var(--editor-family-sans, system-ui, sans-serif)\`, \`var(--editor-family-code, ui-monospace, monospace)\`, \`var(--editor-font-size, 16px)\`, \`var(--editor-line-height, 1.5)\`
+- Spacing \`var(--studio-space-2xs)\` … \`-2xl\`; radius \`var(--studio-radius-sm)\` … \`-xl\` (\`-round\` for pills); shadows \`var(--studio-shadow-sm)\` … \`-lg\`
+- To go lighter/darker, mix toward fill or line (NOT literal white/black, so it inverts in dark themes): \`color-mix(in oklch, var(--editor-fill), var(--editor-line) 8%)\`
+
+## More Capabilities
+- **Importmap (bare imports, no CDN):** \`@automerge/automerge\`, \`@automerge/automerge-repo\`, \`solid-js\` (+ \`/web\` \`/html\` \`/store\`), \`@codemirror/state|view|language\`, and \`@inkandswitch/patchwork-elements|filesystem|plugins\`. Import these by bare specifier — never esm.sh/unpkg for them.
+- **Ephemeral (non-persisted) peer messages** for presence / cursors / typing indicators: \`handle.broadcast({ type: "ping" })\` and \`handle.on("ephemeral-message", ({ message }) => …)\`. Delivered only to currently-connected peers, never written to the doc.
+- **Files & assets:** \`import { automergeUrlToServiceWorkerUrl } from "@inkandswitch/patchwork-filesystem"\` turns a file doc's automerge URL into a URL usable as \`<img src>\` / \`<audio src>\`.
+- **Navigate to another document:** \`import { openDocument } from "@inkandswitch/patchwork-elements"; openDocument(element, url, toolId)\`.
 
 ## Updating Existing Tools
 When you update files in a tool folder (e.g. updating JS source via edit_doc or patchwork-tool), you MUST also update the \`lastSyncAt\` field on the root folder doc with the current epoch timestamp (\`Date.now()\`). This triggers the module system to reload.

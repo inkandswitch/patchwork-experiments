@@ -42,6 +42,27 @@ function broadcast(msg) {
 	}
 }
 
+// Forward worker diagnostics to every connected page. A SharedWorker has its own
+// (usually hidden) console, so without this its logs are invisible from the tool.
+// `client.js` re-prints `{type:"log"}` on the main thread. Each arg is reduced to
+// something structured-clonable so postMessage never throws on a live object.
+function log(...args) {
+	try {
+		console.log("[llm worker]", ...args)
+	} catch {}
+	broadcast({
+		type: "log",
+		args: args.map((a) => {
+			if (a == null || typeof a !== "object") return a
+			try {
+				return JSON.parse(JSON.stringify(a))
+			} catch {
+				return String(a)
+			}
+		}),
+	})
+}
+
 // sessionKey -> { id, port, fullText, done, finalText, abortController }
 const activeGenerations = new Map()
 
@@ -81,10 +102,53 @@ let loadingPromise = null
 // report a useless "Model not loaded". Surfaced via modelLoadError().
 let lastLoadError = null
 
+// Map a raw backend error to something a user can act on. onnxruntime's
+// out-of-memory surfaces as `std::bad_alloc` / "Can't create a session" /
+// "memory access out of bounds" — none of which mean "your machine is out of
+// RAM". The WASM backend is wasm32 (a ~4GB address-space ceiling, independent of
+// system RAM) and WebGPU is bound by GPU buffer/VRAM limits (and is disabled in
+// incognito). Say that, and point at the escape hatches.
+function friendlyError(err) {
+	const raw = String((err && (err.message || err)) || "unknown error")
+	if (/bad_alloc|out of memory|can'?t create a session|memory access out of bounds|RuntimeError: Aborted/i.test(raw)) {
+		return (
+			"Out of memory while loading this model. Big models can exceed the browser's " +
+			"WASM memory ceiling (~4GB — independent of your system RAM). Try a smaller model, " +
+			"or open in a normal (non-incognito) window so WebGPU can run it on the GPU instead. " +
+			"(raw: " + raw + ")"
+		)
+	}
+	if (/unaligned/i.test(raw)) {
+		return "The WASM backend hit an unaligned-access fault. Try a normal window so WebGPU is available, or a smaller model. (raw: " + raw + ")"
+	}
+	return raw
+}
+
 function modelLoadError() {
 	return lastLoadError
-		? "Model load failed: " + (lastLoadError.message || String(lastLoadError))
+		? "Model load failed: " + friendlyError(lastLoadError)
 		: "Model not loaded"
+}
+
+// Dispose the current model's onnxruntime session(s) before dropping the
+// reference. GC does NOT free native wasm/GPU sessions, so without an explicit
+// dispose the old model's memory lingers and loading another can `std::bad_alloc`
+// even though nothing uses the old one. Nulls synchronously (so a caller's
+// `if (generator)` guard sees it gone immediately) then disposes in background.
+function releaseGenerator() {
+	const g = generator
+	const wasModel = currentModelId
+	generator = null
+	if (!g) return Promise.resolve()
+	return (async () => {
+		try {
+			if (typeof g.dispose === "function") await g.dispose()
+			else if (g.model && typeof g.model.dispose === "function") await g.model.dispose()
+			log("releaseGenerator: disposed previous session", {model: wasModel})
+		} catch (e) {
+			log("releaseGenerator: dispose failed", {model: wasModel, message: e?.message || String(e)})
+		}
+	})()
 }
 const compiledModels = new Set()
 
@@ -133,7 +197,10 @@ async function loadModel(modelId, dtypeOverride) {
 	// A dtype change for the same id must force a reload (e.g. switching a custom
 	// HF model from q4f16 → q4 to match the variant the repo actually ships).
 	const dtypeChanged = dtypeOverride && currentDtype && dtypeOverride !== currentDtype
-	if (generator && (currentModelId !== modelId || dtypeChanged)) generator = null
+	if (generator && (currentModelId !== modelId || dtypeChanged)) {
+		log("loadModel: switching model — releasing previous", {from: currentModelId, to: modelId, dtypeChanged})
+		await releaseGenerator()
+	}
 	if (generator) return
 	if (loading && loadingPromise) return loadingPromise
 	currentModelId = modelId
@@ -150,6 +217,7 @@ async function loadModel(modelId, dtypeOverride) {
 		: LOCAL_MODELS.find((m) => m.id === modelId) || {dtype: "q4f16"}
 	const modelDef = {...baseDef, dtype: dtypeOverride || baseDef.dtype}
 	currentDtype = modelDef.dtype
+	log("loadModel: start", {modelId, dtype: modelDef.dtype})
 
 	try {
 		broadcast({type: "status", message: "Loading transformers.js…"})
@@ -200,9 +268,11 @@ async function loadModel(modelId, dtypeOverride) {
 	const attempts = []
 	if (hasWebGPU) attempts.push({device: "webgpu", label: "WebGPU"})
 	attempts.push({device: undefined, label: "WASM"})
+	log("loadModel: backends to try", {hasWebGPU, order: attempts.map((a) => a.label)})
 
 	for (const attempt of attempts) {
 		try {
+			log("loadModel: trying backend", {backend: attempt.label, dtype: modelDef.dtype})
 			generator = await withTimeout(
 				TF.pipeline("text-generation", modelId, {
 					dtype: modelDef.dtype,
@@ -233,6 +303,7 @@ async function loadModel(modelId, dtypeOverride) {
 			} catch (e) {
 				broadcast({type: "model-info", model: modelId, error: e.message})
 			}
+			log("loadModel: ready", {modelId, backend: attempt.label, dtype: modelDef.dtype})
 			broadcast({type: "status", message: `Model ready (${attempt.label})`})
 			broadcast({type: "ready", model: modelId, device: attempt.label})
 			lastLoadError = null
@@ -241,6 +312,7 @@ async function loadModel(modelId, dtypeOverride) {
 			lastLoadError = err
 			// Keep the actual cause — the device-fallback loop used to discard it,
 			// leaving only "WASM failed" with no way to see what actually broke.
+			log("loadModel: backend failed", {backend: attempt.label, modelId, message: err?.message || String(err)})
 			console.error(`[llm worker] ${attempt.label} load failed for ${modelId}:`, err)
 			broadcast({
 				type: "status",
@@ -251,6 +323,7 @@ async function loadModel(modelId, dtypeOverride) {
 	// Every device attempt failed — surface the last real error to the main
 	// thread (callers otherwise report a contentless "Model not loaded").
 	if (!generator) {
+		log("loadModel: all backends failed", {modelId, message: lastLoadError?.message || String(lastLoadError)})
 		console.error(`[llm worker] all backends failed to load ${modelId}:`, lastLoadError)
 		broadcast({type: "status", message: modelLoadError()})
 		broadcast({type: "load-error", model: modelId, message: modelLoadError()})
@@ -353,11 +426,19 @@ async function doGenerateLocal(gen, input, config) {
 						add_generation_prompt: true,
 				  })
 		promptTokens = tokenizer.encode(prompt).length
-	} catch {}
+	} catch (e) {
+		log("doGenerateLocal: prompt build/encode failed (continuing)", {
+			model: currentModelId,
+			hasChatTemplate: !!tokenizer.chat_template,
+			usedFallback: genInput !== input,
+			message: e?.message || String(e),
+		})
+	}
 
 	const tStart = performance.now()
 	let tFirst = 0
 	let full = ""
+	let heartbeat = null
 
 	let stopped = false
 	let posted = 0
@@ -366,7 +447,17 @@ async function doGenerateLocal(gen, input, config) {
 		skip_special_tokens: true,
 		callback_function: (text) => {
 			if (stopped) return
-			if (!tFirst) tFirst = performance.now()
+			if (!tFirst) {
+				tFirst = performance.now()
+				if (heartbeat) {
+					clearInterval(heartbeat)
+					heartbeat = null
+				}
+				log("doGenerateLocal: first token", {
+					ttftMs: Math.round(tFirst - tStart),
+					promptTokens,
+				})
+			}
 			full += text
 			let cut = -1
 			for (const m of stopMarkers) {
@@ -418,17 +509,44 @@ async function doGenerateLocal(gen, input, config) {
 			  ]
 			: undefined
 
-	const output = await generator(genInput, {
-		max_new_tokens: maxNewTokens,
-		do_sample: temperature > 0,
+	// The await below is the big silent gap: prefill of the whole prompt runs
+	// before the first token streams. On the WASM backend a long prompt can take
+	// many seconds, so emit a heartbeat (also resets a caller's inactivity
+	// watchdog) and log the parameters we're running with.
+	log("doGenerateLocal: generating", {
+		model: currentModelId,
+		dtype: currentDtype,
+		promptTokens,
+		maxNewTokens,
 		temperature,
-		top_p: config.topP ?? 0.9,
-		...(config.topK > 0 ? {top_k: config.topK} : {}),
-		...(config.minP > 0 ? {min_p: config.minP} : {}),
-		repetition_penalty: config.repetitionPenalty ?? 1.1,
-		streamer,
-		logits_processor,
+		inputKind: typeof genInput === "string" ? "text" : "messages",
 	})
+	heartbeat = setInterval(() => {
+		if (tFirst) return
+		const s = Math.round((performance.now() - tStart) / 1000)
+		broadcast({type: "status", message: `Generating… ${s}s (prefilling, no token yet)`})
+		log("doGenerateLocal: still prefilling", {elapsedS: s})
+	}, 2000)
+
+	let output
+	try {
+		output = await generator(genInput, {
+			max_new_tokens: maxNewTokens,
+			do_sample: temperature > 0,
+			temperature,
+			top_p: config.topP ?? 0.9,
+			...(config.topK > 0 ? {top_k: config.topK} : {}),
+			...(config.minP > 0 ? {min_p: config.minP} : {}),
+			repetition_penalty: config.repetitionPenalty ?? 1.1,
+			streamer,
+			logits_processor,
+		})
+	} finally {
+		if (heartbeat) {
+			clearInterval(heartbeat)
+			heartbeat = null
+		}
+	}
 
 	const text =
 		full || output?.[0]?.generated_text?.at(-1)?.content || ""
@@ -966,6 +1084,7 @@ async function computeAttentionWeightsLocal(gen, text, config) {
 		return
 	}
 
+	log("computeAttentionWeights: forward pass", {model: currentModelId, seqLen})
 	broadcast({type: "status", message: "Attention: forward pass…"})
 	const outputs = await model(inputs)
 	const att = outputs.attentions
@@ -973,6 +1092,7 @@ async function computeAttentionWeightsLocal(gen, text, config) {
 		// Report what the forward pass actually produced so the UI can say why
 		// (wrong model vs. an attentions output that's named/shaped unexpectedly).
 		const outputKeys = Object.keys(outputs || {})
+		log("computeAttentionWeights: no usable attentions output", {model: currentModelId, outputKeys, attnDims: att?.dims || null})
 		console.warn(`[llm worker] ${currentModelId} has no usable attentions output. forward outputs:`, outputKeys, att ? `(attentions dims: [${att.dims}])` : "(no `attentions` key)")
 		post(gen, {type: "attention-weights", supported: false, model: currentModelId, outputKeys, attnDims: att?.dims || null})
 		broadcast({type: "status", message: ""})
@@ -1307,15 +1427,26 @@ function fail(sessionKey, gen, message) {
 // (→ plain continuation, what the loom editor wants).
 async function runGeneration(sessionKey, gen, provider, input, config) {
 	try {
+		log("runGeneration: start", {
+			provider,
+			model: config.model || currentModelId,
+			inputKind: typeof input === "string" ? "text" : "messages",
+			messages: Array.isArray(input) ? input.length : undefined,
+		})
 		broadcast({type: "status", message: "Thinking…"})
 		let out
 		if (provider === "openrouter") out = await doGenerateOpenRouter(gen, input, config)
 		else if (provider === "ollama") out = await doGenerateOllama(gen, input, config)
 		else if (provider === "webllm") out = await doGenerateWebLLM(gen, input, config)
 		else out = await doGenerateLocal(gen, input, config)
+		log("runGeneration: done", {provider, chars: out.text?.length || 0})
 		finalize(sessionKey, gen, out.text, out.toolCalls)
 	} catch (err) {
-		if (gen.abortController.signal.aborted) return
+		if (gen.abortController.signal.aborted) {
+			log("runGeneration: aborted", {provider, chars: gen.fullText?.length || 0})
+			return
+		}
+		log("runGeneration: error", {provider, message: err?.message || String(err)})
 		if (gen.fullText) finalize(sessionKey, gen, gen.fullText)
 		else fail(sessionKey, gen, err?.message || String(err))
 	}
@@ -1366,6 +1497,43 @@ async function extractFeaturesLocal(gen, text) {
 	broadcast({type: "status", message: ""})
 }
 
+// Like extractFeaturesLocal but reads the `cut_hidden` output (the residual just
+// before the last block's MLP) — for rung 2 (LoRA on the last block's MLP).
+// Requires a model exported with onnx_block.py.
+async function extractCutFeaturesLocal(gen, text) {
+	const model = generator.model
+	const tokenizer = generator.tokenizer
+	const inputs = tokenizer(text || " ", {return_tensor: true})
+	const ids = Array.from(inputs.input_ids.data, Number)
+	const seq = ids.length
+	broadcast({type: "status", message: "Extracting cut features (forward pass)…"})
+	const outputs = await model(inputs)
+	const cut = outputs.cut_hidden
+	if (!cut) {
+		post(gen, {
+			type: "cut-features",
+			supported: false,
+			outputKeys: Object.keys(outputs || {}),
+			message: `${currentModelId} has no cut_hidden output — needs a cut-point export (onnx_block.py).`,
+		})
+		broadcast({type: "status", message: ""})
+		return
+	}
+	const d = cut.dims.at(-1)
+	const hidden = Float32Array.from(cut.data) // [seq*d], batch 0
+	const spans = []
+	let prevLen = 0
+	for (let i = 0; i < seq; i++) {
+		const partial = tokenizer.decode(ids.slice(0, i + 1), {skip_special_tokens: true})
+		if (partial.length > prevLen) spans.push({from: prevLen, to: partial.length, index: i})
+		prevLen = partial.length
+	}
+	const decoded = tokenizer.decode(ids, {skip_special_tokens: true})
+	const tokens = ids.map((tid) => tokenizer.decode([tid]))
+	post(gen, {type: "cut-features", supported: true, seq, d, ids, tokens, spans, decoded, hidden})
+	broadcast({type: "status", message: ""})
+}
+
 function handleMessage(port, data) {
 	const {type, id} = data
 	const sessionKey = data.sessionKey || id
@@ -1405,7 +1573,7 @@ function handleMessage(port, data) {
 					activeGenerations.delete(sessionKey)
 				})
 		if (!generator || currentModelId !== requested) {
-			if (currentModelId !== requested) generator = null
+			if (currentModelId !== requested) releaseGenerator()
 			loadModel(requested, config.dtype).then(() => {
 				if (!generator) { port.postMessage({type: "error", id, message: modelLoadError()}); return }
 				run()
@@ -1431,7 +1599,7 @@ function handleMessage(port, data) {
 					activeGenerations.delete(sessionKey)
 				})
 		if (!generator || currentModelId !== requested) {
-			if (currentModelId !== requested) generator = null
+			if (currentModelId !== requested) releaseGenerator()
 			loadModel(requested, config.dtype).then(() => {
 				if (!generator) { port.postMessage({type: "error", id, message: modelLoadError()}); return }
 				run()
@@ -1448,20 +1616,31 @@ function handleMessage(port, data) {
 		const gen = {id, port, fullText: "", done: false, finalText: "", abortController: new AbortController()}
 		activeGenerations.set(sessionKey, gen)
 		const requested = config.model || DEFAULT_MODEL_ID
-		const run = () =>
-			computeAttentionWeightsLocal(gen, data.text, config)
+		const run = () => {
+			log("compute-attention-weights: run", {model: requested})
+			return computeAttentionWeightsLocal(gen, data.text, config)
 				.then(() => { gen.done = true; activeGenerations.delete(sessionKey) })
 				.catch((e) => {
-					if (!gen.abortController.signal.aborted)
-						port.postMessage({type: "error", id, message: e?.message || String(e)})
+					const aborted = gen.abortController.signal.aborted
+					// Always log the real cause — even on abort, where the client only
+					// ever sees a generic AbortError and the true error would be lost.
+					log("compute-attention-weights: error", {model: requested, aborted, message: e?.message || String(e)})
+					if (!aborted)
+						port.postMessage({type: "error", id, message: friendlyError(e)})
 					activeGenerations.delete(sessionKey)
 				})
+		}
 		if (!generator || currentModelId !== requested) {
-			if (currentModelId !== requested) generator = null
-			loadModel(requested, config.dtype).then(() => {
-				if (!generator) { port.postMessage({type: "error", id, message: modelLoadError()}); return }
-				run()
-			})
+			if (currentModelId !== requested) releaseGenerator()
+			loadModel(requested, config.dtype)
+				.then(() => {
+					if (!generator) { port.postMessage({type: "error", id, message: modelLoadError()}); return }
+					run()
+				})
+				.catch((e) => {
+					log("compute-attention-weights: loadModel threw", {model: requested, message: e?.message || String(e)})
+					port.postMessage({type: "error", id, message: friendlyError(e)})
+				})
 		} else run()
 		return
 	}
@@ -1474,8 +1653,43 @@ function handleMessage(port, data) {
 		const gen = {id, port, fullText: "", done: false, finalText: "", abortController: new AbortController()}
 		activeGenerations.set(sessionKey, gen)
 		const requested = config.model || DEFAULT_MODEL_ID
+		const run = () => {
+			log("extract-features: run", {model: requested})
+			return extractFeaturesLocal(gen, data.text)
+				.then(() => { gen.done = true; activeGenerations.delete(sessionKey) })
+				.catch((e) => {
+					const aborted = gen.abortController.signal.aborted
+					log("extract-features: error", {model: requested, aborted, message: e?.message || String(e)})
+					if (!aborted)
+						port.postMessage({type: "error", id, message: friendlyError(e)})
+					activeGenerations.delete(sessionKey)
+				})
+		}
+		if (!generator || currentModelId !== requested) {
+			if (currentModelId !== requested) releaseGenerator()
+			loadModel(requested, config.dtype)
+				.then(() => {
+					if (!generator) { port.postMessage({type: "error", id, message: modelLoadError()}); return }
+					run()
+				})
+				.catch((e) => {
+					log("extract-features: loadModel threw", {model: requested, message: e?.message || String(e)})
+					port.postMessage({type: "error", id, message: friendlyError(e)})
+				})
+		} else run()
+		return
+	}
+	if (type === "extract-cut-features") {
+		const {provider, config = {}} = data
+		if (provider !== "local") {
+			port.postMessage({type: "cut-features", id, supported: false, message: "features require a local model"})
+			return
+		}
+		const gen = {id, port, fullText: "", done: false, finalText: "", abortController: new AbortController()}
+		activeGenerations.set(sessionKey, gen)
+		const requested = config.model || DEFAULT_MODEL_ID
 		const run = () =>
-			extractFeaturesLocal(gen, data.text)
+			extractCutFeaturesLocal(gen, data.text)
 				.then(() => { gen.done = true; activeGenerations.delete(sessionKey) })
 				.catch((e) => {
 					if (!gen.abortController.signal.aborted)
@@ -1483,7 +1697,7 @@ function handleMessage(port, data) {
 					activeGenerations.delete(sessionKey)
 				})
 		if (!generator || currentModelId !== requested) {
-			if (currentModelId !== requested) generator = null
+			if (currentModelId !== requested) releaseGenerator()
 			loadModel(requested, config.dtype).then(() => {
 				if (!generator) { port.postMessage({type: "error", id, message: modelLoadError()}); return }
 				run()
@@ -1505,7 +1719,7 @@ function handleMessage(port, data) {
 		}
 		const requested = data.config?.model || DEFAULT_MODEL_ID
 		if (!generator || currentModelId !== requested) {
-			if (currentModelId !== requested) generator = null
+			if (currentModelId !== requested) releaseGenerator()
 			loadModel(requested, data.config?.dtype).then(() => generator ? run() : port.postMessage({type: "error", id, message: modelLoadError()}))
 		} else run()
 		return
@@ -1568,7 +1782,7 @@ function handleMessage(port, data) {
 		const files = new Map((data.files || []).map((f) => [f.path, f.blob]))
 		localModelFiles.set(data.id, {files, dtype: data.dtype || "q4f16"})
 		ensureLocalFetchPatch()
-		if (currentModelId === data.id) generator = null // force a reload
+		if (currentModelId === data.id) releaseGenerator() // force a reload (dispose old session)
 		port.postMessage({type: "local-model-registered", id: data.id, count: files.size})
 		return
 	}
@@ -1614,7 +1828,7 @@ function handleMessage(port, data) {
 		if (provider === "local") {
 			const requested = config.model || DEFAULT_MODEL_ID
 			if (!generator || currentModelId !== requested) {
-				if (currentModelId !== requested) generator = null
+				if (currentModelId !== requested) releaseGenerator()
 				loadModel(requested, config.dtype)
 					.then(() => {
 						if (!generator)

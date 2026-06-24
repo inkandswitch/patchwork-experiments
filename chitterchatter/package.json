@@ -30,6 +30,7 @@
     "solid-js": "^1.9.11"
   },
   "devDependencies": {
+    "@chee/patchwork-bundles": "^0.0.1",
     "@inkandswitch/patchwork-bootloader": "^0.0.3",
     "typescript": "^5.8.3",
     "vite": "^5.4.19",

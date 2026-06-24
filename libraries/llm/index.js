@@ -61,6 +61,7 @@ export {
 	computeImportance,
 	computeAttentionWeights,
 	extractFeatures,
+	extractCutFeatures,
 	decodeTokens,
 	probeAttention,
 } from "./client.js"
