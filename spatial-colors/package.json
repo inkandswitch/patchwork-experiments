@@ -1,0 +1,16 @@
+{
+  "name": "@patchwork/spatial-colors",
+  "version": "0.0.1",
+  "description": "Spatial host tool: outlines each detected AprilTag in a hardcoded color (0=red, 1=green, 2=blue)",
+  "type": "module",
+  "main": "spatial-colors.js",
+  "exports": {
+    ".": "spatial-colors.js"
+  },
+  "scripts": {
+    "push": "pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  },
+  "keywords": [],
+  "author": "Ink & Switch"
+}
