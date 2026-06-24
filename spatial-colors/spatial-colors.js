@@ -8,7 +8,10 @@
  * opaque WALL (its quad + border ring) that blocks the light from other tags:
  *   - at each pixel, a tag contributes to the blend only if it has clear
  *     line-of-sight (the segment pixel→tag doesn't cross another tag's blocker),
- *   - weight_i = 1 / dist_i^POWER over the visible tags,
+ *   - weight_i = 1 / dist_i^POWER over the visible tags, normalized so the
+ *     nearest visible tag = 1, scaled by GAIN, then colors are ADDED (light
+ *     mixing) and clamped: a lone tag → its pure color; red+green → yellow; all
+ *     three → white (not the muddy grey a weighted average would give),
  *   - so behind each tag lies a hard-edged shadow cone where that blocker's tag
  *     is removed from the blend → the cone reads as the blocker's own color.
  *   2 tags → one cone of solid color behind each; 3 tags → two (overlapping)
@@ -76,6 +79,9 @@ function cssRgb([r, g, b]) {
 
 // Inverse-distance falloff power. Higher = tighter color zones near each tag.
 const POWER = 0.5;
+// Brightness applied to the additive color sum before clamping. >1 saturates to
+// white sooner (punchier mixes); <1 keeps mixes dimmer / delays the blowout.
+const GAIN = 1;
 // Longest edge (px) of the offscreen field; scaled up smoothly to the box.
 const FIELD_MAX = 256;
 // Border ring thickness (px). Half is used to size the colored outline.
@@ -259,15 +265,14 @@ export function Tool(handle, element) {
     const img = fieldCtx.createImageData(fw, fh);
     const data = img.data;
     const EPS = 1e-6;
+    const weights = new Array(pts.length).fill(0); // per-pixel scratch
     for (let y = 0; y < fh; y++) {
       for (let x = 0; x < fw; x++) {
         const px = x + 0.5;
         const py = y + 0.5;
-        let wsum = 0;
-        let r = 0;
-        let g = 0;
-        let b = 0;
         let snapped = null;
+        // Collect visible (line-of-sight) tags' weights for this pixel.
+        let maxW = 0;
         for (let i = 0; i < pts.length; i++) {
           const p = pts[i];
           const dx = px - p.x;
@@ -277,8 +282,6 @@ export function Tool(handle, element) {
             snapped = p.rgb; // exactly on a tag
             break;
           }
-          // Line-of-sight: skip this source if ANY other tag's blocker
-          // polygon lies between the pixel and this source.
           let blocked = false;
           for (let j = 0; j < pts.length; j++) {
             if (j === i) continue;
@@ -287,22 +290,41 @@ export function Tool(handle, element) {
               break;
             }
           }
-          if (blocked) continue;
+          if (blocked) {
+            weights[i] = 0;
+            continue;
+          }
           const w = 1 / Math.pow(d2, POWER / 2);
-          wsum += w;
-          r += w * p.rgb[0];
-          g += w * p.rgb[1];
-          b += w * p.rgb[2];
+          weights[i] = w;
+          if (w > maxW) maxW = w;
         }
+
         const idx = (y * fw + x) * 4;
         if (snapped) {
           data[idx] = snapped[0];
           data[idx + 1] = snapped[1];
           data[idx + 2] = snapped[2];
-        } else if (wsum > 0) {
-          data[idx] = r / wsum;
-          data[idx + 1] = g / wsum;
-          data[idx + 2] = b / wsum;
+        } else if (maxW > 0) {
+          // ADDITIVE (light) mixing: normalize weights so the nearest visible
+          // tag has weight 1, then SUM the colors and clamp to 255. A lone
+          // visible tag → its pure full-brightness color; comparably-close tags
+          // ADD (red+green→yellow, all three→white) instead of averaging to mud.
+          let r = 0;
+          let g = 0;
+          let b = 0;
+          for (let i = 0; i < pts.length; i++) {
+            const w = weights[i] / maxW;
+            if (!w) continue;
+            r += w * pts[i].rgb[0];
+            g += w * pts[i].rgb[1];
+            b += w * pts[i].rgb[2];
+          }
+          r *= GAIN;
+          g *= GAIN;
+          b *= GAIN;
+          data[idx] = r > 255 ? 255 : r;
+          data[idx + 1] = g > 255 ? 255 : g;
+          data[idx + 2] = b > 255 ? 255 : b;
         } else {
           // Fully occluded from every tag (rare) → black.
           data[idx] = 0;
