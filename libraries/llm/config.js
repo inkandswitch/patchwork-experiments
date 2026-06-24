@@ -6,12 +6,69 @@
  * personal API key — reachable via `window.accountDocHandle`. See
  * `ensureSettingsDoc()` for resolution/creation + the inline→doc migration.
  *
+ * @typedef {"local"|"openrouter"|"ollama"|"webllm"|"builtin"} ProviderId
+ *
+ * @typedef {Object} CustomModel
+ * @property {string} model_id   HuggingFace repo of a self-compiled MLC model
+ * @property {string} model_lib  URL/name of its compiled wasm lib
+ *
+ * @typedef {Object} RecentModel
+ * @property {ProviderId} provider
+ * @property {string|null} model
+ *
+ * @typedef {Object} ResolvedPrompts
+ * @property {string} [system]  resolved system-prompt text
+ * @property {string} [pre]     resolved pre-prompt text
+ *
  * @typedef {Object} LLMConfig
- * @property {"local"|"openrouter"|"ollama"} provider
- * @property {number} temperature  default sampling temperature (0 = greedy)
- * @property {{model:string}} local
- * @property {{apiKey:string,model:string,contextLength:?number,maxCompletionTokens:?number}} openrouter
+ * @property {ProviderId} provider
+ * @property {number} temperature       default sampling temperature (0 = greedy)
+ * @property {number} topP              nucleus sampling (1 = off)
+ * @property {number} topK              top-k sampling (0 = off)
+ * @property {number} minP              min-p sampling (0 = off)
+ * @property {number} repetitionPenalty 1 = off
+ * @property {number} frequencyPenalty  -2..2
+ * @property {number} presencePenalty   -2..2
+ * @property {number|null} seed         fixed seed (null = random)
+ * @property {number|null} maxTokens    output cap (null = provider default)
+ * @property {boolean} outputAttentions request per-token attention scores
+ * @property {{model:string,dtype:string|null}} local
+ * @property {{apiKey:string,model:string,contextLength:number|null,maxCompletionTokens:number|null}} openrouter
  * @property {{url:string,model:string}} ollama
+ * @property {{model:string,custom:CustomModel[]}} webllm
+ * @property {Object} builtin
+ * @property {string|null} tools        URL of a folder doc of llm:tool DocLinks
+ * @property {boolean} toolSandbox      run folder-tool handlers in an isolated Worker
+ * @property {string|null} prompts      URL of a folder doc of prompt DocLinks
+ * @property {string|null} systemUrl    selected llm:system-prompt doc
+ * @property {string|null} preUrl       selected llm:pre-prompt doc
+ * @property {RecentModel[]} recentModels  most-recently-chosen, newest first
+ * @property {Record<string, boolean>} [toolToggles]  {toolName: false} for host-tool built-ins the user disabled
+ * @property {ResolvedPrompts} [resolved]  prompt TEXT, filled in by resolveCfgPrompts
+ *
+ * The flat per-provider shape the worker's `generate` message wants. Built by
+ * {@link callConfig} from an {@link LLMConfig} plus per-call overrides.
+ * @typedef {Object} CallConfig
+ * @property {ProviderId} provider
+ * @property {number} temperature
+ * @property {number} topP
+ * @property {number} topK
+ * @property {number} minP
+ * @property {number} repetitionPenalty
+ * @property {number} frequencyPenalty
+ * @property {number} presencePenalty
+ * @property {number|null} seed
+ * @property {number} topk            how many candidate logprobs to stream (viz)
+ * @property {number} [maxNewTokens]
+ * @property {string} [apiKey]
+ * @property {string} [model]
+ * @property {number|null} [contextLength]
+ * @property {number|null} [maxCompletionTokens]
+ * @property {string} [url]
+ * @property {string} [dtype]
+ * @property {CustomModel[]} [custom]
+ *
+ * @typedef {import("@automerge/automerge-repo").DocHandle<any>} DocHandle
  */
 
 import {subscribe} from "@inkandswitch/patchwork-providers"
@@ -48,6 +105,11 @@ export const DEFAULTS = {
 	systemUrl: null, // selected llm:system-prompt doc
 	preUrl: null, // selected llm:pre-prompt doc
 	recentModels: [], // most-recently-chosen {provider, model}, newest first
+	toolToggles: {}, // {toolName: false} — a host tool's built-in tools the user turned off
+	// Per-tool / per-doc whole-config overrides. Shape:
+	//   pertool[toolId] = { config?: <full LLMConfig>, perdoc?: { [docId]: <full LLMConfig> } }
+	// Resolution (see scopedRaw): most-specific present wins — doc → tool → default.
+	pertool: {},
 }
 
 // Sampling/decoding params reset together by the picker's "Reset to defaults".
@@ -89,7 +151,9 @@ function repoRef() {
 // room for inline state next to the pointer later. The resolved handle is
 // cached so reads/writes stay synchronous after a one-time async bootstrap.
 
+/** @type {DocHandle|null} */
 let settingsHandle = null
+/** @type {Promise<DocHandle|null>|null} */
 let settingsReady = null // de-dupes concurrent ensureSettingsDoc() calls
 
 /** The pointer on the account doc → settings-doc URL (string), or null. */
@@ -133,9 +197,10 @@ export function ensureSettingsDoc() {
 		const legacy = legacyInline()
 		const seed = legacy ? JSON.parse(JSON.stringify(legacy)) : {}
 		seed["@patchwork"] = {type: "llm:settings"}
-		settingsHandle = await repo.create2(seed)
-		account.change((d) => {
-			d[ACCOUNT_LLM_FIELD] = settingsHandle.url
+		const created = await repo.create2(seed)
+		settingsHandle = created
+		account.change((/** @type {any} */ d) => {
+			d[ACCOUNT_LLM_FIELD] = created.url
 		})
 		return settingsHandle
 	})()
@@ -143,15 +208,16 @@ export function ensureSettingsDoc() {
 }
 
 /** Ensure the settings doc is resolved, then return the normalized config. */
-export async function ensureConfig() {
+export async function ensureConfig(scope) {
 	await ensureSettingsDoc()
-	return readConfig()
+	return scope ? readScopedConfig(scope) : readConfig()
 }
 
 /**
  * Read the normalized LLM config. Reads the cached settings doc; before that
  * resolves it falls back to a legacy inline config (if any) or defaults. Pass a
  * settings-doc snapshot to normalize that instead.
+ * @param {Record<string, any>} [snapshot]
  * @returns {LLMConfig}
  */
 export function readConfig(snapshot) {
@@ -160,7 +226,11 @@ export function readConfig(snapshot) {
 	return normalizeConfig(legacyInline() ?? {})
 }
 
-/** Fill in defaults for any missing fields of a raw `llm` config object. */
+/**
+ * Fill in defaults for any missing fields of a raw `llm` config object.
+ * @param {any} [raw]
+ * @returns {LLMConfig}
+ */
 export function normalizeConfig(raw = {}) {
 	return {
 		provider: raw.provider ?? DEFAULTS.provider,
@@ -196,8 +266,11 @@ export function normalizeConfig(raw = {}) {
 			// re-inserting its own proxy objects.
 			custom: Array.isArray(raw.webllm?.custom)
 				? raw.webllm.custom
-						.map((c) => ({model_id: c.model_id ?? "", model_lib: c.model_lib ?? ""}))
-						.filter((c) => c.model_id || c.model_lib)
+						.map((/** @type {any} */ c) => ({
+							model_id: c.model_id ?? "",
+							model_lib: c.model_lib ?? "",
+						}))
+						.filter((/** @type {CustomModel} */ c) => c.model_id || c.model_lib)
 				: [],
 		},
 		builtin: {...DEFAULTS.builtin, ...(raw.builtin ?? {})},
@@ -216,14 +289,101 @@ export function normalizeConfig(raw = {}) {
 			null,
 		// Plain copies (see webllm.custom note) — re-assigned into the doc on save.
 		recentModels: Array.isArray(raw.recentModels)
-			? raw.recentModels.map((r) => ({provider: r.provider, model: r.model ?? null}))
+			? raw.recentModels.map((/** @type {any} */ r) => ({
+					provider: r.provider,
+					model: r.model ?? null,
+			  }))
 			: [],
+		// {toolName: false} for any host-tool built-in tool the user disabled.
+		// Plain copy (see webllm.custom note) — re-assigned into the doc on save.
+		toolToggles:
+			raw.toolToggles && typeof raw.toolToggles === "object"
+				? {...raw.toolToggles}
+				: {},
+		// Per-tool / per-doc whole-config overrides. Deep plain copy; each nested
+		// config is normalized on resolve (scopedRaw → normalizeConfig).
+		pertool:
+			raw.pertool && typeof raw.pertool === "object"
+				? JSON.parse(JSON.stringify(raw.pertool))
+				: {},
 	}
+}
+
+// Pick the raw config for a scope: the most-specific override present wins —
+// per-doc → per-tool → the top-level default. `scope` is {toolId, docId?}.
+// Whole-scope semantics: an override is a complete config, not a partial.
+export function scopedRaw(raw, scope) {
+	if (!raw || !scope || !scope.toolId) return raw
+	const pt = raw.pertool && raw.pertool[scope.toolId]
+	if (!pt) return raw
+	if (scope.docId && pt.perdoc && pt.perdoc[scope.docId]) return pt.perdoc[scope.docId]
+	if (pt.config) return pt.config
+	return raw
+}
+
+// Does THIS exact scope level hold its own override? (Used by the picker to show
+// create-vs-remove and the active scope.) docId omitted → checks the tool level.
+export function hasScopeOverride(raw, scope) {
+	if (!raw || !scope || !scope.toolId) return false
+	const pt = raw.pertool && raw.pertool[scope.toolId]
+	if (!pt) return false
+	return scope.docId ? !!(pt.perdoc && pt.perdoc[scope.docId]) : !!pt.config
+}
+
+// The raw settings-doc body (or a snapshot), used by scope read/write helpers.
+function rawSettings() {
+	if (settingsHandle) return settingsHandle.doc() ?? {}
+	return legacyInline() ?? {}
+}
+
+// Read a scope's effective config (normalized). Falls back through tool → default.
+export function readScopedConfig(scope) {
+	return normalizeConfig(scopedRaw(rawSettings(), scope))
+}
+
+// Create/replace a scope's whole-config override (writes a full normalized config
+// into pertool). `cfgObj` defaults to the current default config (seed a fork).
+export function writeScopeOverride(scope, cfgObj) {
+	if (!scope || !scope.toolId) return
+	const full = JSON.parse(JSON.stringify(normalizeConfig(cfgObj ?? readConfig())))
+	delete full.pertool // overrides never nest
+	const apply = (/** @type {DocHandle|null} */ handle) => {
+		if (!handle) return
+		handle.change((/** @type {any} */ d) => {
+			if (!d.pertool) d.pertool = {}
+			if (!d.pertool[scope.toolId]) d.pertool[scope.toolId] = {}
+			if (scope.docId) {
+				if (!d.pertool[scope.toolId].perdoc) d.pertool[scope.toolId].perdoc = {}
+				d.pertool[scope.toolId].perdoc[scope.docId] = full
+			} else {
+				d.pertool[scope.toolId].config = full
+			}
+		})
+	}
+	if (settingsHandle) apply(settingsHandle)
+	else ensureSettingsDoc().then(apply)
+}
+
+// Remove a scope's override (fall back to the less-specific scope / default).
+export function clearScopeOverride(scope) {
+	if (!scope || !scope.toolId || !settingsHandle) return
+	settingsHandle.change((/** @type {any} */ d) => {
+		const pt = d.pertool && d.pertool[scope.toolId]
+		if (!pt) return
+		if (scope.docId) {
+			if (pt.perdoc) delete pt.perdoc[scope.docId]
+		} else {
+			delete pt.config
+		}
+	})
 }
 
 /**
  * Combine the configured system prompt with any tool-supplied one. Tools may
  * append their own instructions to the user's system prompt.
+ * @param {LLMConfig} [cfg]
+ * @param {string} [extraSystem]
+ * @returns {string}
  */
 export function effectiveSystem(cfg, extraSystem) {
 	// `cfg.resolved.{system,pre}` is the prompt TEXT, filled in by resolveCfgPrompts
@@ -232,9 +392,17 @@ export function effectiveSystem(cfg, extraSystem) {
 }
 
 /**
+ * @typedef {{role:string, content:string}} ChatMessage
+ */
+
+/**
  * Apply the configured pre-prompt + system prompt to a generation input.
  * - string input (raw continuation): prefixes `system\n\npre\n\n…`
  * - chat messages: prepends a system message.
+ * @param {string|ChatMessage[]} input
+ * @param {LLMConfig} [cfg]
+ * @param {string} [extraSystem]
+ * @returns {string|ChatMessage[]}
  */
 export function applyPrompts(input, cfg, extraSystem) {
 	const sys = effectiveSystem(cfg, extraSystem)
@@ -272,9 +440,11 @@ export function applyPrompts(input, cfg, extraSystem) {
  */
 export function subscribeConfig(element, callback, {timeoutMs = 50} = {}) {
 	let providerAnswered = false
+	/** @type {(() => void)|null} */
 	let fallbackOff = null
 	let providerOff = () => {}
-	let timer = null
+	/** @type {ReturnType<typeof setTimeout>|undefined} */
+	let timer = undefined
 
 	let cancelled = false
 	const startFallback = () => {
@@ -312,9 +482,15 @@ export function subscribeConfig(element, callback, {timeoutMs = 50} = {}) {
 	}
 }
 
-/** One-shot resolve of the active config (request + account-doc fallback). */
+/**
+ * One-shot resolve of the active config (request + account-doc fallback).
+ * @param {HTMLElement|null} element
+ * @param {{timeoutMs?: number}} [opts]
+ * @returns {Promise<LLMConfig>}
+ */
 export function resolveConfig(element, opts) {
 	return new Promise((resolve) => {
+		/** @type {(() => void)|null} */
 		let off = null
 		let done = false
 		off = subscribeConfig(
@@ -334,11 +510,13 @@ export function resolveConfig(element, opts) {
  * Merge a partial config into the account doc under `llm`. Pass the account
  * DocHandle, or omit to use the global one. `undefined` values are skipped;
  * `null` is stored (e.g. an unknown context length).
+ * @param {Partial<LLMConfig> & Record<string, any>} next
  */
 export function writeConfig(next) {
+	/** @param {DocHandle|null} handle */
 	const apply = (handle) => {
 		if (!handle) return
-		handle.change((d) => {
+		handle.change((/** @type {any} */ d) => {
 			if (next.provider !== undefined) d.provider = next.provider
 			for (const k of [
 				"temperature",
@@ -357,6 +535,7 @@ export function writeConfig(next) {
 				"systemUrl", // selected prompt docs
 				"preUrl",
 				"recentModels", // [{provider, model}], newest first
+				"toolToggles", // {toolName: false} host-tool built-ins turned off
 			]) {
 				if (next[k] !== undefined) d[k] = next[k]
 			}
@@ -379,6 +558,9 @@ export function writeConfig(next) {
 /**
  * Resolve the flat call config for a given provider from a full LLMConfig — the
  * shape the worker's `generate` message wants.
+ * @param {LLMConfig} cfg
+ * @param {Partial<CallConfig>} [overrides]
+ * @returns {CallConfig}
  */
 export function callConfig(cfg, overrides = {}) {
 	const provider = overrides.provider ?? cfg.provider
@@ -393,7 +575,7 @@ export function callConfig(cfg, overrides = {}) {
 		frequencyPenalty: cfg.frequencyPenalty,
 		presencePenalty: cfg.presencePenalty,
 		seed: cfg.seed,
-		topk: overrides.topk | 0, // how many candidate logprobs to stream (viz)
+		topk: (overrides.topk ?? 0) | 0, // how many candidate logprobs to stream (viz)
 		maxNewTokens: overrides.maxNewTokens ?? cfg.maxTokens ?? undefined,
 	}
 	if (provider === "openrouter") {
@@ -498,8 +680,8 @@ export async function fetchOpenRouterModels() {
 	const resp = await fetch("https://openrouter.ai/api/v1/models")
 	const data = await resp.json()
 	return (data.data || [])
-		.filter((m) => m.id)
-		.map((m) => ({
+		.filter((/** @type {any} */ m) => m.id)
+		.map((/** @type {any} */ m) => ({
 			id: m.id,
 			name: m.name || m.id,
 			context_length: m.context_length || m.top_provider?.context_length,
@@ -508,18 +690,29 @@ export async function fetchOpenRouterModels() {
 			input_modalities: m.architecture?.input_modalities || [],
 			pricing: m.pricing || null,
 		}))
-		.sort((a, b) => a.name.localeCompare(b.name))
+		.sort((/** @type {{name:string}} */ a, /** @type {{name:string}} */ b) =>
+			a.name.localeCompare(b.name)
+		)
 }
 
-/** Probe an Ollama server for installed models. */
+/**
+ * Probe an Ollama server for installed models.
+ * @param {string} [url]
+ * @returns {Promise<string[]>}
+ */
 export async function fetchOllamaModels(url) {
 	const base = (url || DEFAULTS.ollama.url).replace(/\/$/, "")
 	const resp = await fetch(base + "/api/tags")
 	const data = await resp.json()
-	return (data.models || []).map((m) => m.name || m.model)
+	return (data.models || []).map((/** @type {any} */ m) => m.name || m.model)
 }
 
-/** Human label for the current selection. */
+/**
+ * Human label for the current selection.
+ * @param {LLMConfig} cfg
+ * @param {{openrouterModels?: Array<{id:string,name:string}>}} [opts]
+ * @returns {string}
+ */
 export function describeConfig(cfg, {openrouterModels = []} = {}) {
 	if (cfg.provider === "local") {
 		const m = LOCAL_MODELS.find((x) => x.id === cfg.local.model)

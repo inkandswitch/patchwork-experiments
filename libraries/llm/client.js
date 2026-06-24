@@ -15,15 +15,73 @@ import {readConfig, ensureConfig, callConfig, applyPrompts, effectiveSystem} fro
 import {builtinGenerate} from "./builtin.js"
 import {resolveTools, toToolSchemas, buildToolsSystem, parseToolCalls, runTool, resolveCfgPrompts, sanitizeToolName} from "./tools.js"
 
+/**
+ * Per-call options. A superset of every option any exported function accepts;
+ * individual functions document the subset they use. Open-ended on purpose.
+ * @typedef {Object} GenOpts
+ * @property {import("./config.js").LLMConfig} [config]
+ * @property {boolean} [continuation]
+ * @property {number} [topk]
+ * @property {number} [temperature]
+ * @property {string} [model]
+ * @property {string} [provider]
+ * @property {number} [maxNewTokens]
+ * @property {string} [sessionKey]
+ * @property {string} [system]
+ * @property {any[]} [tools]
+ * @property {boolean} [sandbox]
+ * @property {number} [maxRounds]
+ * @property {AbortSignal} [signal]
+ * @property {(delta:string, full:string, round?:number)=>void} [onToken]
+ * @property {(candidates:{token:string,p:number}[], step:number)=>void} [onPrediction]
+ * @property {(stats:any)=>void} [onStats]
+ * @property {(message:string)=>void} [onStatus]
+ * @property {(info:{name?:string,tool?:string,args?:any,result?:any,error?:any})=>void} [onToolCall]
+ */
+
+/**
+ * A message coming back from the worker (or built locally). Open-ended:
+ * the discriminant is `type` and the rest depends on it. Routing fields are
+ * typed non-optional because the dispatch guards (`msg.id != null`, etc.)
+ * already ensure they're present before use.
+ * @typedef {Object} WorkerMsg
+ * @property {string} type
+ * @property {string} id
+ * @property {string|number} sessionKey
+ * @property {string} text
+ * @property {string} delta
+ * @property {string} message
+ * @property {any[]} args
+ * @property {any} candidates
+ * @property {number} step
+ * @property {any} scores
+ * @property {any} spans
+ * @property {any} decoded
+ * @property {number} total
+ * @property {any} strings
+ * @property {any[]|null} toolCalls
+ */
+
+/** @typedef {{post: (m:any)=>void}} Connection */
+
+/** CallConfig plus the extra mutable fields the client tacks on per-call.
+ * @typedef {import("./config.js").CallConfig & {tools?:any, continuation?:boolean}} CallConfigExt */
+
+/** @typedef {{type:string, id:string, sessionKey:string, provider:import("./config.js").ProviderId, config:import("./config.js").CallConfig, text?:string, messages?:any}} GeneratePayload */
+
 // Providers with real function-calling APIs (the worker passes tool schemas and
 // parses structured tool_calls). Everything else (local transformers, Chrome
 // built-in) uses the <tool_call> XML prompt convention, parsed from the text.
 const NATIVE_TOOL_PROVIDERS = new Set(["openrouter", "ollama", "webllm"])
 
+/** @type {Connection|null} */
 let connection = null
 let idSeq = 0
+/** @type {Map<string, (msg:WorkerMsg)=>void>} */
 const handlers = new Map() // generation id -> (msg) => void
+/** @type {Map<string|number, {onToken?:(t?:string)=>void, onDone?:(t?:string)=>void, onError?:(m?:string)=>void, onNone?:()=>void}>} */
 const resumeHandlers = new Map() // sessionKey -> { onToken, onDone, onError, onNone }
+/** @type {Set<(message:string)=>void>} */
 const statusListeners = new Set() // (message) => void
 
 function nextId() {
@@ -34,19 +92,28 @@ function nextId() {
 // (see dispatch); this is for client-side events — aborts and worker errors —
 // so a caller (e.g. loom) that only surfaces a generic AbortError still leaves a
 // trail in the console explaining what actually happened.
+/** @param {...any} args */
 function clog(...args) {
 	try {
 		console.log("[llm]", ...args)
 	} catch {}
 }
 
+/** @param {WorkerMsg} msg */
 function dispatch(msg) {
 	if (!msg) return
 	// Worker diagnostics: the Worker's own console is separate, so re-print its
 	// logs here on the main thread where the tool's devtools can see them.
 	if (msg.type === "log") {
 		try {
-			console.log("[llm worker]", ...(msg.args || []))
+			// Stringify object args inline so the console shows the actual values
+			// (a bare object logs as a collapsed "Object" and hides what we need).
+			console.log(
+				"[llm worker]",
+				...(msg.args || []).map((a) =>
+					a && typeof a === "object" ? JSON.stringify(a) : a
+				)
+			)
 		} catch {}
 		return
 	}
@@ -72,7 +139,7 @@ function dispatch(msg) {
 			rh.onDone?.(msg.text)
 		} else {
 			rh.onToken?.(msg.text)
-			handlers.set(msg.id, (m) => {
+			handlers.set(msg.id, (/** @type {WorkerMsg} */ m) => {
 				if (m.type === "token") rh.onToken?.(m.text)
 				else if (m.type === "result") {
 					handlers.delete(msg.id)
@@ -105,7 +172,7 @@ function getConnection() {
 	// constructor — that's the exact pattern bundlers (vite) statically detect to
 	// emit the worker chunk; hoisting it to a variable silently breaks bundling.
 	const w = new Worker(new URL("./worker.js", import.meta.url), {type: "module"})
-	w.onmessage = (ev) => dispatch(ev.data)
+	w.onmessage = (/** @type {MessageEvent} */ ev) => dispatch(ev.data)
 	connection = {post: (m) => w.postMessage(m)}
 	return connection
 }
@@ -121,28 +188,17 @@ function getConnection() {
  *     OpenRouter is framed with a "continue, output only the continuation"
  *     instruction. (This is what Loom uses; everyone else gets plain chat.)
  *
- * @param {Array|string} messages  chat messages, or a string
- * @param {Object} [opts]
- * @param {boolean} [opts.continuation]  treat a string input as a continuation
- * @param {number} [opts.topk]         stream top-k next-token predictions (0 = off)
- * @param {number} [opts.temperature]  override the configured temperature
- * @param {string} [opts.model]        override the configured model
- * @param {string} [opts.provider]     override the configured provider
- * @param {number} [opts.maxNewTokens]
- * @param {string} [opts.sessionKey]   key for resume-after-refresh / cross-tab
- * @param {(delta:string, full:string)=>void}        [opts.onToken]
- * @param {(candidates:{token,p}[], step:number)=>void} [opts.onPrediction]
- * @param {(stats:object)=>void}                      [opts.onStats]
- * @param {(message:string)=>void}                    [opts.onStatus]
- * @param {AbortSignal} [opts.signal]
+ * @param {Array<any>|string} messages  chat messages, or a string
+ * @param {GenOpts} [opts]
  * @returns {Promise<{text:string, toolCalls:object[]|null, stats:object|null}>}
  */
 export async function generate(messages, opts = {}) {
-	const cfg0 = opts.config ?? (await ensureConfig())
+	const cfg0 = opts.config ?? (await ensureConfig(opts.scope))
 	// Resolve the selected system/pre prompt docs → their text. repo.find is
 	// cached, so this is cheap after first load.
 	const cfg = await resolveCfgPrompts(cfg0)
-	const config = callConfig(cfg, opts)
+	/** @type {CallConfigExt} */
+	const config = callConfig(/** @type {any} */ (cfg), /** @type {any} */ (opts))
 
 	// Tools: native providers get JSON schemas on `config.tools`; the rest get the
 	// <tool_call> XML convention prepended to the system prompt (parsed from text).
@@ -166,7 +222,7 @@ export async function generate(messages, opts = {}) {
 		return builtinGenerate(text, {
 			temperature: config.temperature,
 			topK: config.topK,
-			system: effectiveSystem(cfg, extraSystem),
+			system: effectiveSystem(/** @type {any} */ (cfg), extraSystem),
 			onToken: opts.onToken,
 			onStatus: opts.onStatus,
 			signal: opts.signal,
@@ -185,10 +241,11 @@ export async function generate(messages, opts = {}) {
 			? [{role: "user", content: messages}]
 			: messages
 	// Prepend the configured system + pre-prompt (and any tool-supplied system).
-	const input = applyPrompts(prepared, cfg, extraSystem)
+	const input = applyPrompts(prepared, /** @type {any} */ (cfg), extraSystem)
 	const conn = getConnection()
 	const id = nextId()
 	const sessionKey = opts.sessionKey || id
+	/** @type {any} */
 	let stats = null
 
 	return new Promise((resolve, reject) => {
@@ -206,7 +263,7 @@ export async function generate(messages, opts = {}) {
 			reject(new DOMException("Aborted", "AbortError"))
 		}
 
-		handlers.set(id, (msg) => {
+		handlers.set(id, (/** @type {WorkerMsg} */ msg) => {
 			switch (msg.type) {
 				case "token":
 					opts.onToken?.(msg.delta, msg.text)
@@ -235,6 +292,7 @@ export async function generate(messages, opts = {}) {
 			opts.signal.addEventListener("abort", onAbort)
 		}
 		// A string is a raw continuation prompt; an array is chat messages.
+		/** @type {GeneratePayload} */
 		const payload = {type: "generate", id, sessionKey, provider: config.provider, config}
 		if (typeof input === "string") payload.text = input
 		else payload.messages = input
@@ -252,12 +310,19 @@ export async function generate(messages, opts = {}) {
  *
  * @returns {AsyncGenerator}
  */
+/**
+ * @param {Array<any>|string} messages
+ * @param {GenOpts} [opts]
+ */
 export async function* stream(messages, opts = {}) {
+	/** @type {any[]} */
 	const queue = []
+	/** @type {((v?:any) => void)|null} */
 	let wake = null
 	let finished = false
+	/** @type {any} */
 	let error = null
-	const push = (ev) => {
+	const push = (/** @type {any} */ ev) => {
 		queue.push(ev)
 		wake?.()
 	}
@@ -295,18 +360,19 @@ export async function* stream(messages, opts = {}) {
  * (chat-only models return `[]`); Ollama returns `[]`.
  *
  * @param {string} text
- * @param {Object} [opts]  { topk?, model?, provider?, config?, signal? }
+ * @param {GenOpts} [opts]
  * @returns {Promise<{token:string,p:number}[]>}
  */
 export async function predict(text, opts = {}) {
-	const cfg = await resolveCfgPrompts(opts.config ?? (await ensureConfig()))
-	const config = callConfig(cfg, {...opts, topk: opts.topk || 10})
+	const cfg = await resolveCfgPrompts(opts.config ?? (await ensureConfig(opts.scope)))
+	/** @type {CallConfigExt} */
+	const config = callConfig(/** @type {any} */ (cfg), /** @type {any} */ ({...opts, topk: opts.topk || 10}))
 	// continuation → frame chat-only providers (OpenRouter) to predict the
 	// *continuation's* next token, not a chat reply's. Opt-in (Loom sets it).
 	config.continuation = !!opts.continuation
 	// Built-in exposes no next-token logprobs.
 	if (config.provider === "builtin") return Promise.resolve([])
-	const promptedText = applyPrompts(text, cfg, opts.system) // prepends pre-prompt (no system in raw)
+	const promptedText = applyPrompts(text, /** @type {any} */ (cfg), opts.system) // prepends pre-prompt (no system in raw)
 	const conn = getConnection()
 	const id = nextId()
 	const sessionKey = id // so an abort can reach the in-flight request in the worker
@@ -320,7 +386,7 @@ export async function predict(text, opts = {}) {
 			cleanup()
 			reject(new DOMException("Aborted", "AbortError"))
 		}
-		handlers.set(id, (msg) => {
+		handlers.set(id, (/** @type {WorkerMsg} */ msg) => {
 			if (msg.type === "predictions") {
 				cleanup()
 				resolve(msg.candidates)
@@ -349,24 +415,27 @@ export async function predict(text, opts = {}) {
  *   { type:"done", scores:[{token, p, rank, entropy, topk:[{token,p}]}] }
  *
  * @param {string} text
- * @param {Object} [opts]  { config?, signal? }
+ * @param {GenOpts} [opts]
  * @returns {AsyncGenerator}
  */
 export async function* scoreTokens(text, opts = {}) {
-	const cfg = await resolveCfgPrompts(opts.config ?? (await ensureConfig()))
-	const config = callConfig(cfg, opts)
+	const cfg = await resolveCfgPrompts(opts.config ?? (await ensureConfig(opts.scope)))
+	const config = callConfig(/** @type {any} */ (cfg), /** @type {any} */ (opts))
 	if (config.provider !== "local") return // only local models expose raw logits
 	const conn = getConnection()
 	const id = nextId()
 	const sessionKey = id
 
+	/** @type {any[]} */
 	const queue = []
+	/** @type {((v?:any) => void)|null} */
 	let wake = null
 	let finished = false
+	/** @type {any} */
 	let error = null
-	const push = (ev) => { queue.push(ev); wake?.() }
+	const push = (/** @type {any} */ ev) => { queue.push(ev); wake?.() }
 
-	handlers.set(id, (msg) => {
+	handlers.set(id, (/** @type {WorkerMsg} */ msg) => {
 		if (msg.type === "score-progress") push({type: "progress", step: msg.step, total: msg.total})
 		else if (msg.type === "token-scores") {
 			push({type: "done", scores: msg.scores, spans: msg.spans, decoded: msg.decoded})
@@ -419,17 +488,17 @@ export async function* scoreTokens(text, opts = {}) {
  * works for local models (others resolve to null).
  *
  * @param {string} text
- * @param {Object} [opts]  { config?, signal? }
- * @returns {Promise<{decoded:string, spans:Array}|null>}
+ * @param {GenOpts} [opts]
+ * @returns {Promise<{decoded:string, spans:Array<any>}|null>}
  */
 export async function computeImportance(text, opts = {}) {
-	const cfg = await resolveCfgPrompts(opts.config ?? (await ensureConfig()))
-	const config = callConfig(cfg, opts)
+	const cfg = await resolveCfgPrompts(opts.config ?? (await ensureConfig(opts.scope)))
+	const config = callConfig(/** @type {any} */ (cfg), /** @type {any} */ (opts))
 	if (config.provider !== "local") return null
 	const conn = getConnection()
 	const id = nextId()
 	return new Promise((resolve, reject) => {
-		handlers.set(id, (msg) => {
+		handlers.set(id, (/** @type {WorkerMsg} */ msg) => {
 			if (msg.type === "importance-scores") {
 				handlers.delete(id)
 				resolve({decoded: msg.decoded, spans: msg.spans || []})
@@ -458,12 +527,12 @@ export async function computeImportance(text, opts = {}) {
  * output, or null for non-local providers.
  *
  * @param {string} text
- * @param {Object} [opts]  { config?, signal? }
+ * @param {GenOpts} [opts]
  * @returns {Promise<Object|null>}
  */
 export async function computeAttentionWeights(text, opts = {}) {
-	const cfg = await resolveCfgPrompts(opts.config ?? (await ensureConfig()))
-	const config = callConfig(cfg, opts)
+	const cfg = await resolveCfgPrompts(opts.config ?? (await ensureConfig(opts.scope)))
+	const config = callConfig(/** @type {any} */ (cfg), /** @type {any} */ (opts))
 	if (config.provider !== "local") return null
 	const conn = getConnection()
 	const id = nextId()
@@ -473,7 +542,7 @@ export async function computeAttentionWeights(text, opts = {}) {
 			if (opts.signal.aborted) return onAbort()
 			opts.signal.addEventListener("abort", onAbort, {once: true})
 		}
-		handlers.set(id, (msg) => {
+		handlers.set(id, (/** @type {WorkerMsg} */ msg) => {
 			if (msg.type === "attention-weights") {
 				handlers.delete(id)
 				opts.signal?.removeEventListener("abort", onAbort)
@@ -499,10 +568,13 @@ export async function computeAttentionWeights(text, opts = {}) {
  * where `hidden` is a Float32Array(seq*H) and `logits` is a Float32Array(seq*V),
  * both row-major over positions. Returns null for non-local providers, and
  * { supported:false, message } if the model lacks the hidden-state output.
+ *
+ * @param {string} text
+ * @param {GenOpts} [opts]
  */
 export async function extractFeatures(text, opts = {}) {
-	const cfg = await resolveCfgPrompts(opts.config ?? (await ensureConfig()))
-	const config = callConfig(cfg, opts)
+	const cfg = await resolveCfgPrompts(opts.config ?? (await ensureConfig(opts.scope)))
+	const config = callConfig(/** @type {any} */ (cfg), /** @type {any} */ (opts))
 	if (config.provider !== "local") return null
 	const conn = getConnection()
 	const id = nextId()
@@ -512,7 +584,7 @@ export async function extractFeatures(text, opts = {}) {
 			if (opts.signal.aborted) return onAbort()
 			opts.signal.addEventListener("abort", onAbort, {once: true})
 		}
-		handlers.set(id, (msg) => {
+		handlers.set(id, (/** @type {WorkerMsg} */ msg) => {
 			if (msg.type === "features") {
 				handlers.delete(id)
 				opts.signal?.removeEventListener("abort", onAbort)
@@ -531,15 +603,18 @@ export async function extractFeatures(text, opts = {}) {
  * Decode vocab ids to token strings using the loaded local model's tokenizer.
  * Used to label the next-token bars when training a LoRA adapter. Returns a
  * string[] aligned with `ids`, or null for non-local providers.
+ *
+ * @param {any} ids
+ * @param {GenOpts} [opts]
  */
 export async function decodeTokens(ids, opts = {}) {
-	const cfg = await resolveCfgPrompts(opts.config ?? (await ensureConfig()))
-	const config = callConfig(cfg, opts)
+	const cfg = await resolveCfgPrompts(opts.config ?? (await ensureConfig(opts.scope)))
+	const config = callConfig(/** @type {any} */ (cfg), /** @type {any} */ (opts))
 	if (config.provider !== "local") return null
 	const conn = getConnection()
 	const id = nextId()
 	return new Promise((resolve, reject) => {
-		handlers.set(id, (msg) => {
+		handlers.set(id, (/** @type {WorkerMsg} */ msg) => {
 			if (msg.type === "decoded-tokens") { handlers.delete(id); resolve(msg.strings) }
 			else if (msg.type === "error") { handlers.delete(id); reject(new Error(msg.message)) }
 		})
@@ -552,15 +627,18 @@ export async function decodeTokens(ids, opts = {}) {
  * before the last block's MLP) — for training a LoRA adapter on that MLP (rung 2).
  * Requires a model exported with onnx_block.py. Resolves to
  * { supported, seq, d, ids, tokens, spans, decoded, hidden: Float32Array(seq*d) }.
+ *
+ * @param {string} text
+ * @param {GenOpts} [opts]
  */
 export async function extractCutFeatures(text, opts = {}) {
-	const cfg = await resolveCfgPrompts(opts.config ?? (await ensureConfig()))
-	const config = callConfig(cfg, opts)
+	const cfg = await resolveCfgPrompts(opts.config ?? (await ensureConfig(opts.scope)))
+	const config = callConfig(/** @type {any} */ (cfg), /** @type {any} */ (opts))
 	if (config.provider !== "local") return null
 	const conn = getConnection()
 	const id = nextId()
 	return new Promise((resolve, reject) => {
-		handlers.set(id, (msg) => {
+		handlers.set(id, (/** @type {WorkerMsg} */ msg) => {
 			if (msg.type === "cut-features") { handlers.delete(id); resolve(msg) }
 			else if (msg.type === "error") { handlers.delete(id); reject(new Error(msg.message)) }
 		})
@@ -573,14 +651,17 @@ export async function extractCutFeatures(text, opts = {}) {
  * `probe-attention` message to the worker and returns the result — includes
  * the ONNX session output names, forward-pass output keys, and whether any
  * attention tensors are available. Only works for local models.
+ *
+ * @param {string} [text]
+ * @param {GenOpts} [opts]
  */
 export async function probeAttention(text = "Hello world", opts = {}) {
-	const cfg = opts.config ?? (await ensureConfig())
-	const config = callConfig(cfg, opts)
+	const cfg = opts.config ?? (await ensureConfig(opts.scope))
+	const config = callConfig(/** @type {any} */ (cfg), /** @type {any} */ (opts))
 	const conn = getConnection()
 	const id = nextId()
 	return new Promise((resolve) => {
-		handlers.set(id, (msg) => {
+		handlers.set(id, (/** @type {WorkerMsg} */ msg) => {
 			handlers.delete(id)
 			resolve(msg)
 		})
@@ -597,20 +678,16 @@ export async function probeAttention(text = "Hello world", opts = {}) {
  * them in an isolated Worker instead. Inline tools (with their own `handler` fn)
  * always run as given.
  *
- * @param {Array|string} messages  chat messages (or a string → one user turn)
- * @param {Object} [opts]  same as generate(), plus:
- *   @param {(delta,full,round)=>void} [opts.onToken]
- *   @param {({tool,args,result,error})=>void} [opts.onToolCall]
- *   @param {number} [opts.maxRounds=6]
- *   @param {boolean} [opts.sandbox]  run folder-tool handlers in an isolated Worker
- * @returns {Promise<{text:string, messages:Array}>}
+ * @param {Array<any>|string} messages  chat messages (or a string → one user turn)
+ * @param {GenOpts} [opts]  same as generate(), plus onToolCall / maxRounds / sandbox
+ * @returns {Promise<{text:string, messages:Array<any>}>}
  */
 export async function generateWithTools(messages, opts = {}) {
-	const cfg = opts.config ?? (await ensureConfig())
+	const cfg = opts.config ?? (await ensureConfig(opts.scope))
 	// Folder-tool handlers run sandboxed when the call or the config asks for it.
 	const sandbox = opts.sandbox ?? cfg.toolSandbox ?? false
 	// Inline tools (each with a `handler(args)` fn) + the user's folder tools.
-	const inline = (opts.tools || []).map((t) => ({...t}))
+	const inline = (opts.tools || []).map((/** @type {any} */ t) => ({...t}))
 	const folder = await resolveTools(cfg)
 	const tools = [...inline, ...folder]
 	const convo = Array.isArray(messages)
@@ -620,11 +697,11 @@ export async function generateWithTools(messages, opts = {}) {
 	let finalText = ""
 
 	// Find a tool by name, matching either the original or sanitized name.
-	const findTool = (name) =>
-		tools.find((t) => t.name === name || sanitizeToolName(t.name) === name)
+	const findTool = (/** @type {string} */ name) =>
+		tools.find((/** @type {any} */ t) => t.name === name || sanitizeToolName(t.name) === name)
 
 	// Execute a single tool call, returning the result text.
-	const execTool = async (call) => {
+	const execTool = async (/** @type {any} */ call) => {
 		const tool = findTool(call.name)
 		if (!tool) {
 			opts.onToolCall?.({name: call.name, args: call.args, error: "unknown tool"})
@@ -637,14 +714,15 @@ export async function generateWithTools(messages, opts = {}) {
 			opts.onToolCall?.({name: call.name, args: call.args, result})
 			return typeof result === "string" ? result : JSON.stringify(result)
 		} catch (e) {
-			opts.onToolCall?.({name: call.name, args: call.args, error: e?.message || String(e)})
-			return "Error: " + (e?.message || String(e))
+			const err = /** @type {any} */ (e)
+			opts.onToolCall?.({name: call.name, args: call.args, error: err?.message || String(e)})
+			return "Error: " + (err?.message || String(e))
 		}
 	}
 
 	// Whether to use native tool schemas vs text-based XML convention.
 	// Starts true for native providers, falls back to false on error.
-	const provider = (callConfig(cfg, opts)).provider
+	const provider = (callConfig(/** @type {any} */ (cfg), /** @type {any} */ (opts))).provider
 	let useNative = tools.length > 0 && NATIVE_TOOL_PROVIDERS.has(provider)
 	// Text-based tool system prompt, built once and reused across rounds.
 	const textToolSystem = tools.length
@@ -652,11 +730,13 @@ export async function generateWithTools(messages, opts = {}) {
 		: opts.system
 
 	for (let round = 0; round < maxRounds; round++) {
+		const cb = opts.onToken
+		/** @type {GenOpts} */
 		const genOpts = {
 			...opts,
 			config: cfg,
-			onToken: opts.onToken
-				? (delta, full) => opts.onToken(delta, full, round)
+			onToken: cb
+				? (/** @type {string} */ delta, /** @type {string} */ full) => cb(delta, full, round)
 				: undefined,
 		}
 		if (useNative) {
@@ -692,7 +772,7 @@ export async function generateWithTools(messages, opts = {}) {
 		// Native structured tool_calls if the provider returned them; otherwise
 		// parse the model's text (XML <tool_call> / fenced / bare JSON).
 		const nativeCalls = res.toolCalls && res.toolCalls.length > 0
-		const calls = nativeCalls ? res.toolCalls : parseToolCalls(res.text)
+		const calls = /** @type {any[]} */ (nativeCalls ? res.toolCalls : parseToolCalls(res.text))
 		if (!calls.length) break
 
 		if (nativeCalls) {
@@ -726,16 +806,20 @@ export async function generateWithTools(messages, opts = {}) {
 	return {text: finalText, messages: convo}
 }
 
-/** Warm the model/connection ahead of the first real call. */
+/**
+ * Warm the model/connection ahead of the first real call.
+ * @param {GenOpts} [opts]
+ */
 export function preload(opts = {}) {
 	const cfg = opts.config ?? readConfig()
-	const config = callConfig(cfg, opts)
+	const config = callConfig(/** @type {any} */ (cfg), /** @type {any} */ (opts))
 	getConnection().post({type: "preload", provider: config.provider, config})
 }
 
 /**
  * Subscribe to worker status messages (model download / shader compile / etc.).
  * Returns an unsubscribe function.
+ * @param {(message:string)=>void} cb
  */
 export function onStatus(cb) {
 	getConnection()
@@ -743,7 +827,8 @@ export function onStatus(cb) {
 	return () => statusListeners.delete(cb)
 }
 
-/** Abort an in-flight generation by its sessionKey. */
+/** Abort an in-flight generation by its sessionKey.
+ * @param {string|number} sessionKey */
 export function abort(sessionKey) {
 	getConnection().post({type: "abort", sessionKey})
 }
@@ -765,6 +850,8 @@ export function registerLocalModel(id, files, dtype = "q4f16") {
 /**
  * Resume a generation that may have survived a refresh, by sessionKey.
  * Handlers: { onToken(full), onDone(text), onError(msg), onNone() }.
+ * @param {string|number} sessionKey
+ * @param {{onToken?:(t?:string)=>void, onDone?:(t?:string)=>void, onError?:(m?:string)=>void, onNone?:()=>void}} [handlers2]
  */
 export function resume(sessionKey, handlers2 = {}) {
 	resumeHandlers.set(sessionKey, handlers2)

@@ -12,7 +12,53 @@
 
 import {ensureSettingsDoc} from "./config.js"
 
-/** Sanitize a tool name for OpenAI's function-calling format: [a-zA-Z0-9_-]{1,64}. */
+/**
+ * @typedef {import("@automerge/automerge-repo").Repo} Repo
+ * @typedef {import("./config.js").LLMConfig} LLMConfig
+ * @typedef {import("./config.js").DocHandle} DocHandle
+ */
+
+/**
+ * @typedef {Object} DocLink
+ * @property {string} name
+ * @property {string} type
+ * @property {string} url
+ * @property {string} [icon]
+ * @property {string} [copyOf]
+ */
+
+/**
+ * @typedef {Object} FolderDoc
+ * @property {string} [title]
+ * @property {DocLink[]} [docs]
+ */
+
+/**
+ * @typedef {Object} ResolvedTool
+ * @property {string} url
+ * @property {string} name
+ * @property {string} description
+ * @property {string} [handlerUrl]
+ * @property {any} [parameters]
+ */
+
+/**
+ * @typedef {Object} ToolCall
+ * @property {string} name
+ * @property {Record<string, any>} args
+ */
+
+/**
+ * @typedef {Object} PromptKind
+ * @property {string} type
+ * @property {string} listKey
+ * @property {string} urlKey
+ * @property {string} default
+ */
+
+/** Sanitize a tool name for OpenAI's function-calling format: [a-zA-Z0-9_-]{1,64}.
+ * @param {string} [name]
+ */
 export function sanitizeToolName(name) {
 	return (name || "tool")
 		.replace(/[^a-zA-Z0-9_-]/g, "_")
@@ -31,15 +77,19 @@ export default async function handle(args) {
 const DEFAULT_DESCRIPTION =
 	"Describe what this tool does, when the model should call it, and the parameters it takes — e.g. { city: string, units?: \"c\" | \"f\" }."
 
+/** @param {Repo} [repo] @returns {Repo} */
 function theRepo(repo) {
-	return repo || (typeof window !== "undefined" && window.repo) || null
+	return /** @type {Repo} */ (repo || (typeof window !== "undefined" && window.repo) || null)
 }
 
+/** @param {string} [name] */
 function slug(name) {
 	return (name || "tool").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "tool"
 }
 
-/** Create the handler file doc (a standard `file` doc the file tool can edit). */
+/** Create the handler file doc (a standard `file` doc the file tool can edit).
+ * @param {Repo} [repo] @param {string} [name] @param {string} [content]
+ */
 export async function createToolFile(repo, name = "handler.js", content = DEFAULT_HANDLER) {
 	const r = theRepo(repo)
 	return r.create2({
@@ -51,7 +101,9 @@ export async function createToolFile(repo, name = "handler.js", content = DEFAUL
 	})
 }
 
-/** Create a new llm-tool (handler file + wrapper doc). Returns the wrapper handle. */
+/** Create a new llm-tool (handler file + wrapper doc). Returns the wrapper handle.
+ * @param {Repo} [repo] @param {{name?: string, description?: string}} [opts]
+ */
 export async function createLLMTool(repo, {name = "New tool", description = DEFAULT_DESCRIPTION} = {}) {
 	const r = theRepo(repo)
 	const file = await createToolFile(r, slug(name) + ".js")
@@ -69,11 +121,14 @@ export async function createLLMTool(repo, {name = "New tool", description = DEFA
 // folder URLs; the folder's `.docs` are the DocLinks.
 // ---------------------------------------------------------------------------
 
-/** Read a folder's DocLinks, optionally filtered by `.type`. */
+/** Read a folder's DocLinks, optionally filtered by `.type`.
+ * @param {string|null|undefined} folderUrl @param {string} [type] @param {Repo} [repo]
+ * @returns {Promise<DocLink[]>}
+ */
 export async function folderLinks(folderUrl, type, repo) {
 	if (typeof folderUrl !== "string") return []
 	try {
-		const folder = (await theRepo(repo).find(folderUrl)).doc()
+		const folder = /** @type {FolderDoc} */ ((await theRepo(repo).find(/** @type {any} */ (folderUrl))).doc())
 		const docs = folder?.docs || []
 		return type ? docs.filter((l) => l.type === type) : docs
 	} catch {
@@ -81,7 +136,9 @@ export async function folderLinks(folderUrl, type, repo) {
 	}
 }
 
-/** Ensure a folder URL exists; create an empty `folder` doc if missing. Returns the URL. */
+/** Ensure a folder URL exists; create an empty `folder` doc if missing. Returns the URL.
+ * @param {Repo} [repo] @param {string|null|undefined} [url] @param {string} [title]
+ */
 export async function ensureFolderUrl(repo, url, title = "Folder") {
 	if (typeof url === "string") return url
 	return (
@@ -89,31 +146,36 @@ export async function ensureFolderUrl(repo, url, title = "Folder") {
 	).url
 }
 
+/** @param {Repo} repo @param {string} folderUrl @param {DocLink} docLink */
 export async function addToFolder(repo, folderUrl, docLink) {
-	const h = await theRepo(repo).find(folderUrl)
-	h.change((d) => {
+	const h = await theRepo(repo).find(/** @type {any} */ (folderUrl))
+	h.change((/** @type {FolderDoc} */ d) => {
 		if (!d.docs) d.docs = []
 		d.docs.push(docLink)
 	})
 }
 
+/** @param {Repo} repo @param {string} folderUrl @param {string} docUrl */
 export async function removeFromFolder(repo, folderUrl, docUrl) {
-	const h = await theRepo(repo).find(folderUrl)
-	h.change((d) => {
+	const h = await theRepo(repo).find(/** @type {any} */ (folderUrl))
+	h.change((/** @type {FolderDoc} */ d) => {
 		if (!d.docs) return
 		const i = d.docs.findIndex((l) => l.url === docUrl)
 		if (i !== -1) d.docs.splice(i, 1)
 	})
 }
 
-/** Resolve the tools folder into [{ url, name, description, handlerUrl }]. */
+/** Resolve the tools folder into [{ url, name, description, handlerUrl }].
+ * @param {LLMConfig} [cfg] @param {Repo} [repo] @returns {Promise<ResolvedTool[]>}
+ */
 export async function resolveTools(cfg, repo) {
 	const r = theRepo(repo)
 	const links = await folderLinks(cfg?.tools, "llm:tool", repo)
+	/** @type {ResolvedTool[]} */
 	const out = []
 	for (const link of links) {
 		try {
-			const d = (await r.find(link.url)).doc()
+			const d = /** @type {any} */ ((await r.find(/** @type {any} */ (link.url))).doc())
 			if (d)
 				out.push({
 					url: link.url,
@@ -131,7 +193,9 @@ export async function resolveTools(cfg, repo) {
 	return out
 }
 
-/** OpenAI-style tool schemas, for providers with native function calling. */
+/** OpenAI-style tool schemas, for providers with native function calling.
+ * @param {ResolvedTool[]} [tools]
+ */
 export function toToolSchemas(tools) {
 	return (tools || []).map((t) => ({
 		type: "function",
@@ -148,9 +212,10 @@ export function toToolSchemas(tools) {
  * transformers, Chrome built-in). Uses the Hermes/Qwen `<tool_call>` XML
  * convention — what those models are tuned to emit.
  */
+/** @param {ResolvedTool[]} [tools] */
 export function buildToolsSystem(tools) {
 	if (!tools || !tools.length) return ""
-	const describe = (t) => {
+	const describe = (/** @type {ResolvedTool} */ t) => {
 		const props = t.parameters?.properties
 		const params =
 			props && Object.keys(props).length
@@ -179,10 +244,12 @@ export function buildToolsSystem(tools) {
  *   - a bare {…} object containing a name/tool key
  * Each accepts {name|tool, arguments|args}. Returns [{ name, args }].
  */
+/** @param {string} [text] @returns {ToolCall[]} */
 export function parseToolCalls(text) {
 	if (!text) return []
+	/** @type {ToolCall[]} */
 	const calls = []
-	const push = (obj) => {
+	const push = (/** @type {any} */ obj) => {
 		const name = obj?.name || obj?.tool
 		if (!name) return
 		let args = obj.arguments ?? obj.args ?? {}
@@ -239,10 +306,12 @@ export function parseToolCalls(text) {
 	return calls
 }
 
-/** Fetch a handler file doc's JS source as a string. */
+/** Fetch a handler file doc's JS source as a string.
+ * @param {string} handlerUrl @param {Repo} [repo]
+ */
 async function loadHandlerCode(handlerUrl, repo) {
-	const h = await theRepo(repo).find(handlerUrl)
-	const content = h.doc()?.content
+	const h = await theRepo(repo).find(/** @type {any} */ (handlerUrl))
+	const content = /** @type {any} */ (h.doc())?.content
 	return typeof content === "string"
 		? content
 		: new TextDecoder().decode(content || new Uint8Array())
@@ -253,6 +322,7 @@ async function loadHandlerCode(handlerUrl, repo) {
  * ES module (via a blob URL) and runs in the MAIN thread with full page access
  * (window.repo, the account doc, the DOM). Use a sandbox (see runTool) for
  * untrusted / shared tools that shouldn't have that reach.
+ * @param {string} handlerUrl @param {Repo} [repo]
  */
 export async function loadHandler(handlerUrl, repo) {
 	const code = await loadHandlerCode(handlerUrl, repo)
@@ -293,6 +363,7 @@ self.onmessage = async (e) => {
 /**
  * Run handler `code` in an isolated Worker — no page access. A runaway handler
  * is killed after `timeoutMs` (default 10s). Throws on handler error/timeout.
+ * @param {string} code @param {any} args @param {{timeoutMs?: number}} [opts]
  */
 export async function runHandlerSandboxed(code, args, {timeoutMs = 10000} = {}) {
 	const bootUrl = URL.createObjectURL(new Blob([SANDBOX_BOOTSTRAP], {type: "text/javascript"}))
@@ -322,37 +393,38 @@ export async function runHandlerSandboxed(code, args, {timeoutMs = 10000} = {}) 
  * MAIN thread (full page access). Pass `{sandbox: true}` to run it in an
  * isolated Worker with no page access — for untrusted / shared tools.
  *
- * @param {object} tool   resolved tool ({handlerUrl, …})
- * @param {object} args
- * @param {object|Repo} [opts]  options, or a Repo (back-compat positional repo)
- *   @param {Repo}   [opts.repo]
- *   @param {boolean} [opts.sandbox]
- *   @param {number} [opts.timeoutMs=10000]  sandbox kill-switch
+ * @param {ResolvedTool} tool   resolved tool ({handlerUrl, …})
+ * @param {any} args
+ * @param {any} [opts]  options, or a Repo (back-compat positional repo)
  */
 export async function runTool(tool, args, opts = {}) {
 	// Back-compat: runTool(tool, args, repo) — a Repo has a `.find` method.
 	const o = opts && typeof opts.find === "function" ? {repo: opts} : opts || {}
 	if (o.sandbox) {
-		const code = await loadHandlerCode(tool.handlerUrl, o.repo)
+		const code = await loadHandlerCode(/** @type {string} */ (tool.handlerUrl), o.repo)
 		return runHandlerSandboxed(code, args, {timeoutMs: o.timeoutMs})
 	}
-	const fn = await loadHandler(tool.handlerUrl, o.repo)
+	const fn = await loadHandler(/** @type {string} */ (tool.handlerUrl), o.repo)
 	return fn(args || {})
 }
 
 /** Datatype so an `llm:tool` doc has a title/icon and can be opened. */
 export const LLMToolDatatype = {
+	/** @param {any} doc */
 	init(doc) {
 		doc["@patchwork"] = {type: "llm:tool"}
 		doc.name = "New tool"
 		doc.description = DEFAULT_DESCRIPTION
 	},
+	/** @param {any} doc */
 	getTitle(doc) {
 		return doc.name || "LLM tool"
 	},
+	/** @param {any} doc @param {string} title */
 	setTitle(doc, title) {
 		doc.name = title
 	},
+	/** @param {any} doc */
 	markCopy(doc) {
 		doc.name = "Copy of " + (doc.name || "tool")
 	},
@@ -366,15 +438,18 @@ export const LLMToolDatatype = {
 // `llm.prompts.systemUrl` / `llm.prompts.preUrl`.
 // ---------------------------------------------------------------------------
 
+/** @type {Record<string, PromptKind>} */
 const PROMPT_KINDS = {
 	system: {type: "llm:system-prompt", listKey: "systemPrompts", urlKey: "systemUrl", default: "LLMs are a computer program. They should respond like a computer program."},
 	pre: {type: "llm:pre-prompt", listKey: "prePrompts", urlKey: "preUrl", default: "Genre: noir detective."},
 }
 
-/** Create a saved prompt (text file + wrapper). `kind` = "system" | "pre". */
+/** Create a saved prompt (text file + wrapper). `kind` = "system" | "pre".
+ * @param {Repo} [repo] @param {string} [kind] @param {{name?: string, text?: string}} [opts]
+ */
 export async function createPromptDoc(repo, kind, {name, text} = {}) {
 	const r = theRepo(repo)
-	const k = PROMPT_KINDS[kind] || PROMPT_KINDS.system
+	const k = PROMPT_KINDS[/** @type {string} */ (kind)] || PROMPT_KINDS.system
 	const file = await r.create2({
 		"@patchwork": {type: "file"},
 		name: slug(name || kind) + ".txt",
@@ -389,15 +464,18 @@ export async function createPromptDoc(repo, kind, {name, text} = {}) {
 	})
 }
 
-/** Resolve the prompts folder (filtered by `kind`) into [{ url, name, promptUrl }]. */
+/** Resolve the prompts folder (filtered by `kind`) into [{ url, name, promptUrl }].
+ * @param {LLMConfig} [cfg] @param {string} [kind] @param {Repo} [repo]
+ */
 export async function resolvePromptDocs(cfg, kind, repo) {
-	const k = PROMPT_KINDS[kind] || PROMPT_KINDS.system
+	const k = PROMPT_KINDS[/** @type {string} */ (kind)] || PROMPT_KINDS.system
 	const r = theRepo(repo)
 	const links = await folderLinks(cfg?.prompts, k.type, repo)
+	/** @type {{url: string, name: string, promptUrl: any}[]} */
 	const out = []
 	for (const link of links) {
 		try {
-			const d = (await r.find(link.url)).doc()
+			const d = /** @type {any} */ ((await r.find(/** @type {any} */ (link.url))).doc())
 			out.push({url: link.url, name: d?.name || link.name || "Prompt", promptUrl: d?.promptUrl})
 		} catch {
 			/* unreachable — skip */
@@ -406,16 +484,18 @@ export async function resolvePromptDocs(cfg, kind, repo) {
 	return out
 }
 
-/** Read the text of the currently-selected prompt for `kind` (its file content). */
+/** Read the text of the currently-selected prompt for `kind` (its file content).
+ * @param {LLMConfig} [cfg] @param {string} [kind] @param {Repo} [repo]
+ */
 export async function resolvePromptText(cfg, kind, repo) {
-	const k = PROMPT_KINDS[kind] || PROMPT_KINDS.system
-	const url = cfg?.[k.urlKey] // top-level systemUrl / preUrl
+	const k = PROMPT_KINDS[/** @type {string} */ (kind)] || PROMPT_KINDS.system
+	const url = /** @type {any} */ (cfg)?.[k.urlKey] // top-level systemUrl / preUrl
 	if (!url) return ""
 	const r = theRepo(repo)
 	try {
-		const promptUrl = (await r.find(url)).doc()?.promptUrl
+		const promptUrl = /** @type {any} */ ((await r.find(url)).doc())?.promptUrl
 		if (!promptUrl) return ""
-		const content = (await r.find(promptUrl)).doc()?.content
+		const content = /** @type {any} */ ((await r.find(promptUrl)).doc())?.content
 		return typeof content === "string"
 			? content
 			: new TextDecoder().decode(content || new Uint8Array())
@@ -424,7 +504,9 @@ export async function resolvePromptText(cfg, kind, repo) {
 	}
 }
 
-/** Resolve a cfg's selected system + pre prompt docs into `cfg.resolved.{system,pre}` text. */
+/** Resolve a cfg's selected system + pre prompt docs into `cfg.resolved.{system,pre}` text.
+ * @param {LLMConfig} [cfg] @param {Repo} [repo]
+ */
 export async function resolveCfgPrompts(cfg, repo) {
 	const system = await resolvePromptText(cfg, "system", repo)
 	const pre = await resolvePromptText(cfg, "pre", repo)
@@ -437,12 +519,13 @@ export async function resolveCfgPrompts(cfg, repo) {
  * URL). Then this converts the legacy `tools` (URL array),
  * `systemPrompts`/`prePrompts` (URL arrays) and `prompts` (object) inside that
  * doc into `folder` docs + the new scalar shape. Idempotent.
+ * @param {Repo} [repo]
  */
 export async function migrateConfig(repo) {
 	const r = theRepo(repo)
 	const handle = await ensureSettingsDoc()
 	if (!r || !handle) return
-	const llm = handle.doc() ?? {}
+	const llm = /** @type {any} */ (handle.doc() ?? {})
 	const oldTools = Array.isArray(llm.tools) ? llm.tools : null
 	const oldPromptsObj = llm.prompts && typeof llm.prompts === "object" ? llm.prompts : null
 	const oldSys = Array.isArray(llm.systemPrompts) ? llm.systemPrompts : []
@@ -451,23 +534,26 @@ export async function migrateConfig(repo) {
 		!!oldPromptsObj || oldSys.length || oldPre.length || "systemPrompts" in llm || "prePrompts" in llm
 	if (!oldTools && !needsPrompts) return // already migrated
 
-	const linkFor = async (url, type, fallback) => {
+	const linkFor = async (/** @type {any} */ url, /** @type {string} */ type, /** @type {string} */ fallback) => {
 		try {
-			return {name: (await r.find(url)).doc()?.name || fallback, type, url}
+			return {name: /** @type {any} */ ((await r.find(url)).doc())?.name || fallback, type, url}
 		} catch {
 			return {name: fallback, type, url}
 		}
 	}
-	let toolsFolder, promptsFolder
+	/** @type {string|undefined} */
+	let toolsFolder
+	/** @type {string|undefined} */
+	let promptsFolder
 	if (oldTools) {
-		const links = await Promise.all(oldTools.map((u) => linkFor(u, "llm:tool", "Tool")))
+		const links = await Promise.all(oldTools.map((/** @type {any} */ u) => linkFor(u, "llm:tool", "Tool")))
 		toolsFolder = (
 			await r.create2({"@patchwork": {type: "folder"}, title: "LLM Tools", docs: links})
 		).url
 	}
 	if (needsPrompts) {
-		const sysLinks = await Promise.all(oldSys.map((u) => linkFor(u, "llm:system-prompt", "System prompt")))
-		const preLinks = await Promise.all(oldPre.map((u) => linkFor(u, "llm:pre-prompt", "Pre-prompt")))
+		const sysLinks = await Promise.all(oldSys.map((/** @type {any} */ u) => linkFor(u, "llm:system-prompt", "System prompt")))
+		const preLinks = await Promise.all(oldPre.map((/** @type {any} */ u) => linkFor(u, "llm:pre-prompt", "Pre-prompt")))
 		promptsFolder = (
 			await r.create2({
 				"@patchwork": {type: "folder"},
@@ -476,7 +562,7 @@ export async function migrateConfig(repo) {
 			})
 		).url
 	}
-	handle.change((d) => {
+	handle.change((/** @type {any} */ d) => {
 		// `d` is the settings-doc body (the config itself).
 		if (toolsFolder) {
 			delete d.tools
@@ -493,19 +579,24 @@ export async function migrateConfig(repo) {
 	})
 }
 
+/** @param {string} kind */
 function promptDatatype(kind) {
 	const k = PROMPT_KINDS[kind]
 	return {
+		/** @param {any} doc */
 		init(doc) {
 			doc["@patchwork"] = {type: k.type}
 			doc.name = "New prompt"
 		},
+		/** @param {any} doc */
 		getTitle(doc) {
 			return doc.name || "Prompt"
 		},
+		/** @param {any} doc @param {string} title */
 		setTitle(doc, title) {
 			doc.name = title
 		},
+		/** @param {any} doc */
 		markCopy(doc) {
 			doc.name = "Copy of " + (doc.name || "prompt")
 		},

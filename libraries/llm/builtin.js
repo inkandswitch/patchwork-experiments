@@ -35,6 +35,7 @@ export async function builtinAvailability() {
 	return "unavailable"
 }
 
+/** @param {import("./config.js").ChatMessage[]} messages */
 function messagesToText(messages) {
 	return messages
 		.filter((m) => m.role !== "system")
@@ -42,6 +43,7 @@ function messagesToText(messages) {
 		.join("\n\n")
 }
 
+/** @param {ReadableStream<any>} stream */
 async function* readStream(stream) {
 	const reader = stream.getReader()
 	try {
@@ -58,8 +60,20 @@ async function* readStream(stream) {
 }
 
 /**
+ * @typedef {Object} BuiltinOpts
+ * @property {number} [temperature]
+ * @property {number} [topK]
+ * @property {string} [system]
+ * @property {(delta: string, full: string) => void} [onToken]
+ * @property {(status: string) => void} [onStatus]
+ * @property {AbortSignal} [signal]
+ */
+
+/**
  * Generate via the Prompt API. `onToken(delta, full)` per chunk; returns full
  * text. Handles both the old (cumulative chunk) and new (delta chunk) shapes.
+ * @param {string|import("./config.js").ChatMessage[]} input
+ * @param {BuiltinOpts} [opts]
  */
 export async function builtinGenerate(input, opts = {}) {
 	const {temperature, topK, system, onToken, onStatus, signal} = opts
@@ -68,15 +82,16 @@ export async function builtinGenerate(input, opts = {}) {
 		throw new Error(
 			"Built-in AI isn't available here (needs Chrome with the Prompt API)."
 		)
+	/** @type {any} */
 	const createOpts = {}
 	if (typeof temperature === "number") {
 		createOpts.temperature = Math.min(2, Math.max(0, temperature))
-		createOpts.topK = topK > 0 ? topK : 8 // Prompt API needs topK alongside temperature
+		createOpts.topK = topK && topK > 0 ? topK : 8 // Prompt API needs topK alongside temperature
 	}
 	if (system) createOpts.initialPrompts = [{role: "system", content: system}]
-	createOpts.monitor = (m) => {
+	createOpts.monitor = (/** @type {any} */ m) => {
 		try {
-			m.addEventListener("downloadprogress", (e) =>
+			m.addEventListener("downloadprogress", (/** @type {any} */ e) =>
 				onStatus?.(
 					"Downloading built-in model… " + Math.round((e.loaded || 0) * 100) + "%"
 				)

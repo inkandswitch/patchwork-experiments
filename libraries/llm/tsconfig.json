@@ -11,6 +11,7 @@
     "outDir": "types"
   },
   "include": [
+    "globals.d.ts",
     "index.js",
     "config.js",
     "client.js",

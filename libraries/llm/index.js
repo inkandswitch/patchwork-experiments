@@ -30,6 +30,12 @@ export {
 	resolveConfig,
 	ensureSettingsDoc,
 	ensureConfig,
+	// per-tool / per-doc whole-config overrides
+	scopedRaw,
+	hasScopeOverride,
+	readScopedConfig,
+	writeScopeOverride,
+	clearScopeOverride,
 	settingsDocHandle,
 	applyPrompts,
 	effectiveSystem,

@@ -18,6 +18,10 @@ import {
 	settingsDocHandle,
 	readConfig,
 	writeConfig,
+	readScopedConfig,
+	writeScopeOverride,
+	clearScopeOverride,
+	hasScopeOverride,
 	describeConfig,
 	fetchOpenRouterModels,
 	fetchOllamaModels,
@@ -190,6 +194,36 @@ const CSS = `
 .llmp-btn.primary:hover { background: #ff63a6; }
 `
 
+/**
+ * @typedef {{value: string, label?: string}} ComboOption
+ * @typedef {Object} ComboOpts
+ * @property {string} [value]
+ * @property {string} [placeholder]
+ * @property {ComboOption[]} [options]
+ * @property {(v: string) => void} [onChange]
+ * @property {(v: string) => void} [onCommit]
+ *
+ * @typedef {Object} ComboHandle
+ * @property {HTMLInputElement} input
+ * @property {HTMLElement} field
+ * @property {(next: ComboOption[]) => void} setOptions
+ * @property {(v: string|null|undefined) => void} setValue
+ *
+ * @typedef {Object} PickerSource
+ * @property {() => import("./config.js").LLMConfig} read
+ * @property {(next: import("./config.js").LLMConfig) => void} write
+ * @property {string} [url]
+ *
+ * @typedef {Object} PickerOpts
+ * @property {PickerSource} [source]
+ * @property {string[]} [locked]
+ * @property {{name?: string, text?: string}} [toolPrompt]
+ * @property {any[]} [tools]
+ * @property {Array<{name: string, description?: string}>} [toolTools]  host-tool-provided built-in tools
+ * @property {string} [toolName]  label for the host tool's built-in tools
+ * @property {() => void} [onRequestClose]
+ */
+
 function injectStyles() {
 	if (document.getElementById(STYLE_ID)) return
 	const s = document.createElement("style")
@@ -198,6 +232,12 @@ function injectStyles() {
 	document.head.appendChild(s)
 }
 
+/**
+ * @param {string} tag
+ * @param {Record<string, any>} [attrs]
+ * @param {any} [children]
+ * @returns {any}
+ */
 function el(tag, attrs = {}, children = []) {
 	const node = document.createElement(tag)
 	for (const [k, v] of Object.entries(attrs)) {
@@ -207,7 +247,7 @@ function el(tag, attrs = {}, children = []) {
 			node.addEventListener(k.slice(2).toLowerCase(), v)
 		else if (v != null) node.setAttribute(k, v)
 	}
-	for (const c of [].concat(children)) {
+	for (const c of /** @type {any[]} */ ([].concat(children))) {
 		if (c == null) continue
 		node.append(c.nodeType ? c : document.createTextNode(String(c)))
 	}
@@ -222,6 +262,10 @@ function el(tag, attrs = {}, children = []) {
 // the top layer (paints above everything) yet escapes the content area's
 // `overflow: auto` clipping. `onChange(v)` fires live as you type; `onCommit(v)`
 // fires when a value is committed (pick / Enter / blur).
+/**
+ * @param {ComboOpts} opts
+ * @returns {ComboHandle}
+ */
 function combo({value, placeholder, options = [], onChange, onCommit}) {
 	let opts = options.slice()
 	let view = opts // currently shown (filtered) options
@@ -230,7 +274,7 @@ function combo({value, placeholder, options = [], onChange, onCommit}) {
 	let isOpen = false
 	let committed = value || ""
 
-	const input = el("input", {
+	const input = /** @type {HTMLInputElement} */ (el("input", {
 		class: "llmp-input llmp-combo-input",
 		placeholder: placeholder || "",
 		value: value || "",
@@ -239,7 +283,7 @@ function combo({value, placeholder, options = [], onChange, onCommit}) {
 		spellcheck: "false",
 		role: "combobox",
 		"aria-expanded": "false",
-	})
+	}))
 	const caret = el("span", {class: "llmp-combo-caret", text: "▾"})
 	const field = el("div", {class: "llmp-combo"}, [input, caret])
 	const menu = el("div", {class: "llmp-combo-menu", role: "listbox"})
@@ -285,7 +329,7 @@ function combo({value, placeholder, options = [], onChange, onCommit}) {
 			if (o.label && o.label !== o.value)
 				item.append(el("span", {class: "llmp-combo-opt-sub", text: o.value}))
 			// mousedown (not click) so it runs before the input's blur closes us.
-			item.addEventListener("mousedown", (e) => {
+			item.addEventListener("mousedown", (/** @type {MouseEvent} */ e) => {
 				e.preventDefault()
 				choose(o.value)
 			})
@@ -299,7 +343,7 @@ function combo({value, placeholder, options = [], onChange, onCommit}) {
 		})
 	}
 	const onScroll = () => isOpen && position()
-	const open = (selectAll) => {
+	const open = (/** @type {boolean} */ selectAll) => {
 		if (!isOpen) {
 			isOpen = true
 			dirty = false
@@ -321,13 +365,14 @@ function combo({value, placeholder, options = [], onChange, onCommit}) {
 		window.removeEventListener("scroll", onScroll, true)
 		window.removeEventListener("resize", position)
 	}
+	/** @param {string} [v] */
 	const commit = (v) => {
 		v = (v == null ? input.value : v).trim()
 		if (v === committed) return
 		committed = v
 		onCommit && onCommit(v)
 	}
-	const choose = (v) => {
+	const choose = (/** @type {string} */ v) => {
 		input.value = v
 		dirty = false
 		onChange && onChange(v)
@@ -351,7 +396,7 @@ function combo({value, placeholder, options = [], onChange, onCommit}) {
 		commit()
 		closeMenu()
 	}, 0))
-	input.addEventListener("keydown", (e) => {
+	input.addEventListener("keydown", (/** @type {KeyboardEvent} */ e) => {
 		if (e.key === "ArrowDown") {
 			e.preventDefault()
 			if (!isOpen) return open(false)
@@ -375,7 +420,7 @@ function combo({value, placeholder, options = [], onChange, onCommit}) {
 			closeMenu()
 		}
 	})
-	caret.addEventListener("mousedown", (e) => {
+	caret.addEventListener("mousedown", (/** @type {MouseEvent} */ e) => {
 		e.preventDefault()
 		if (isOpen) return closeMenu()
 		input.focus()
@@ -385,39 +430,49 @@ function combo({value, placeholder, options = [], onChange, onCommit}) {
 	return {
 		input,
 		field,
-		setOptions(next) {
+		setOptions(/** @type {ComboOption[]} */ next) {
 			opts = next.slice()
 			if (isOpen) renderMenu()
 		},
-		setValue(v) {
+		setValue(/** @type {string|null|undefined} */ v) {
 			input.value = v || ""
 			committed = v || ""
 		},
 	}
 }
 
+/**
+ * @param {string} text
+ * @param {string} [kind]
+ */
 function pill(text, kind) {
 	return el("span", {class: "llmp-pill" + (kind ? " " + kind : ""), text})
 }
 
+/** @param {number} [n] */
 function fmtParams(n) {
 	if (!n) return null
 	return n >= 1e9
 		? (n / 1e9).toFixed(n >= 1e10 ? 0 : 1) + "B params"
 		: Math.round(n / 1e6) + "M params"
 }
+/** @param {number} n */
 function fmtCtx(n) {
 	return n >= 1000 ? Math.round(n / 1000) + "K" : String(n)
 }
 
 // Ask the HuggingFace API whether a model exists and ships an ONNX export —
 // that's the requirement for transformers.js to run it in the browser.
+/**
+ * @param {string} id
+ * @returns {Promise<{exists?: boolean, error?: boolean, hasOnnx?: boolean, params?: number, gated?: boolean}>}
+ */
 async function fetchModelInfo(id) {
 	const res = await fetch("https://huggingface.co/api/models/" + id)
 	if (res.status === 404) return {exists: false}
 	if (!res.ok) return {error: true}
 	const data = await res.json()
-	const hasOnnx = (data.siblings || []).some((s) =>
+	const hasOnnx = (data.siblings || []).some((/** @type {any} */ s) =>
 		/(^|\/)onnx\/.+\.onnx$|^.+\.onnx$/.test(s.rfilename || "")
 	)
 	return {
@@ -435,15 +490,21 @@ async function fetchModelInfo(id) {
  * config (settings doc or custom source), so reads are synchronous here.
  * Returns `{commit, revert}` (the wrappers drive close/cancel).
  */
+/**
+ * @param {HTMLElement} host
+ * @param {PickerOpts} opts
+ * @returns {{commit: () => any, revert: () => void}}
+ */
 function buildPickerInto(host, opts) {
 	const source = opts.source || {
 		read: () => readConfig(),
-		write: (next) => writeConfig(next),
+		write: (/** @type {any} */ next) => writeConfig(next),
 	}
 
 	// Snapshot to revert to if the user cancels (pristine — cfg's nested objects
 	// are copies, and arrays are only ever replaced, never mutated in place).
 	const before = source.read()
+	/** @type {any} */
 	const baseCfg = {
 		...before, // all scalar params (temperature, topP, topK, penalties, seed, maxTokens, …)
 		local: {...before.local},
@@ -458,6 +519,7 @@ function buildPickerInto(host, opts) {
 	// Autosave: every change writes through to the account doc (debounced so a
 	// slider drag or typing coalesces into one write). `cfg` is a reactive proxy
 	// over `baseCfg`; mutating any field — at any depth — schedules a persist.
+	/** @type {any} */
 	let persistTimer = null
 	function flushPersist() {
 		if (persistTimer) {
@@ -470,7 +532,7 @@ function buildPickerInto(host, opts) {
 		clearTimeout(persistTimer)
 		persistTimer = setTimeout(flushPersist, 300)
 	}
-	const reactive = (target) =>
+	const reactive = (/** @type {any} */ target) =>
 		new Proxy(target, {
 			get(t, k, r) {
 				const v = Reflect.get(t, k, r)
@@ -489,9 +551,12 @@ function buildPickerInto(host, opts) {
 				return ok
 			},
 		})
+	/** @type {any} */
 	const cfg = reactive(baseCfg)
 
+	/** @type {any[]} */
 	let orModels = []
+	/** @type {string[]} */
 	let ollamaModels = []
 
 	const body = el("div", {class: "llmp-body"})
@@ -509,7 +574,7 @@ function buildPickerInto(host, opts) {
 		source.write(before)
 	}
 	// Open a folder doc in the host app, then ask the wrapper to close the picker.
-	function openFolder(url) {
+	function openFolder(/** @type {string|null|undefined} */ url) {
 		if (!url) return
 		host.dispatchEvent(
 			new CustomEvent("patchwork:open-document", {
@@ -522,22 +587,22 @@ function buildPickerInto(host, opts) {
 	}
 
 	// --- recent-models history -------------------------------------------------
-	function modelForProvider(provider) {
+	function modelForProvider(/** @type {string} */ provider) {
 		if (provider === "openrouter") return cfg.openrouter.model
 		if (provider === "ollama") return cfg.ollama.model
 		if (provider === "webllm") return cfg.webllm.model
 		if (provider === "builtin") return null // one model, no id
 		return cfg.local.model
 	}
-	const sameRecent = (a, b) =>
+	const sameRecent = (/** @type {any} */ a, /** @type {any} */ b) =>
 		a.provider === b.provider && (a.model || null) === (b.model || null)
 	function recordRecent() {
 		const entry = {provider: cfg.provider, model: modelForProvider(cfg.provider) || null}
 		if (entry.provider !== "builtin" && !entry.model) return
 		const prev = Array.isArray(cfg.recentModels) ? cfg.recentModels : []
-		cfg.recentModels = [entry, ...prev.filter((r) => !sameRecent(r, entry))].slice(0, 12)
+		cfg.recentModels = [entry, ...prev.filter((/** @type {any} */ r) => !sameRecent(r, entry))].slice(0, 12)
 	}
-	function applyRecent(r) {
+	function applyRecent(/** @type {any} */ r) {
 		cfg.provider = r.provider
 		if (r.provider === "openrouter") cfg.openrouter.model = r.model
 		else if (r.provider === "ollama") cfg.ollama.model = r.model
@@ -570,7 +635,7 @@ function buildPickerInto(host, opts) {
 	}
 
 	function resetParams() {
-		for (const k of PARAM_KEYS) cfg[k] = DEFAULTS[k]
+		for (const k of PARAM_KEYS) cfg[k] = /** @type {Record<string, any>} */ (DEFAULTS)[k]
 		renderSection() // re-render the Parameters section with the defaults
 	}
 
@@ -609,6 +674,11 @@ function buildPickerInto(host, opts) {
 		renderRecent() // keep the active chip in sync with the current provider
 	}
 
+	/**
+	 * @param {string} label
+	 * @param {number} value
+	 * @param {{min?: any, max?: any, step?: any, onInput: (v: number) => void, note?: string, disabled?: string|null}} cfg2
+	 */
 	function slider(label, value, {min, max, step, onInput, note, disabled}) {
 		const out = el("b", {text: (+value).toFixed(2)})
 		const range = el("input", {
@@ -617,7 +687,7 @@ function buildPickerInto(host, opts) {
 			max,
 			step,
 			value: String(value),
-			onInput: (e) => {
+			onInput: (/** @type {any} */ e) => {
 				const v = +e.currentTarget.value
 				out.textContent = v.toFixed(2)
 				onInput(v)
@@ -633,14 +703,20 @@ function buildPickerInto(host, opts) {
 		return wrapper
 	}
 
-	function numberField(label, value, {min, step, placeholder, onInput, note, disabled} = {}) {
+	/**
+	 * @param {string} label
+	 * @param {number|null} value
+	 * @param {{min?: any, step?: any, placeholder?: string, onInput: (v: number|null) => void, note?: string, disabled?: string|null}} [cfg2]
+	 */
+	function numberField(label, value, cfg2 = /** @type {any} */ ({})) {
+		const {min, step, placeholder, onInput, note, disabled} = cfg2
 		const input = el("input", {
 			class: "llmp-input",
 			type: "number",
 			min,
 			step,
 			placeholder,
-			onInput: (e) => {
+			onInput: (/** @type {any} */ e) => {
 				const raw = e.currentTarget.value
 				onInput(raw === "" ? null : +raw)
 			},
@@ -661,15 +737,15 @@ function buildPickerInto(host, opts) {
 		const wrap = el("div", {class: "llmp-body"})
 		content.append(wrap)
 
-		const caps = PROVIDER_CAPS[cfg.provider] || {}
+		const caps = /** @type {Record<string, any>} */ (PROVIDER_CAPS)[cfg.provider] || {}
 		const locked = opts.locked || []
-		function paramState(key) {
+		function paramState(/** @type {string} */ key) {
 			if (locked.includes(key)) return "controlled by tool"
 			if (caps[key] === false) return "not supported by this provider"
 			return null
 		}
 
-		const atDefaults = PARAM_KEYS.every((k) => (cfg[k] ?? null) === (DEFAULTS[k] ?? null))
+		const atDefaults = PARAM_KEYS.every((k) => (cfg[k] ?? null) === (/** @type {Record<string, any>} */ (DEFAULTS)[k] ?? null))
 		wrap.append(
 			el("div", {class: "llmp-params-head"}, [
 				el("button", {
@@ -761,7 +837,7 @@ function buildPickerInto(host, opts) {
 		]
 		if (builtinSupported()) engines.push(["builtin", "Built-in (Chrome) ✨"])
 		const engine = el("select", {
-			onChange: (e) => {
+			onChange: (/** @type {any} */ e) => {
 				cfg.provider = e.currentTarget.value
 				// Built-in has no model combo to commit, so the engine pick *is* the
 				// model selection — record it directly.
@@ -779,10 +855,10 @@ function buildPickerInto(host, opts) {
 		if (cfg.provider === "webllm") {
 			if (!Array.isArray(cfg.webllm.custom)) cfg.webllm.custom = []
 			const validCustom = () =>
-				cfg.webllm.custom.filter((c) => (c.model_id || "").trim())
+				cfg.webllm.custom.filter((/** @type {any} */ c) => (c.model_id || "").trim())
 			const webllmOptions = () => [
 				...WEBLLM_MODELS.map((m) => ({value: m.id, label: m.name})),
-				...validCustom().map((c) => ({value: c.model_id, label: "📦 " + c.model_id})),
+				...validCustom().map((/** @type {any} */ c) => ({value: c.model_id, label: "📦 " + c.model_id})),
 			]
 			const wc = combo({
 				value: cfg.webllm.model,
@@ -799,13 +875,17 @@ function buildPickerInto(host, opts) {
 			const rows = el("div", {class: "llmp-custom-rows"})
 			function commitRows() {
 				cfg.webllm.custom = [...rows.children]
-					.map((r) => ({
+					.map((/** @type {any} */ r) => ({
 						model_id: r._id.value.trim(),
 						model_lib: r._lib.value.trim(),
 					}))
 					.filter((c) => c.model_id || c.model_lib)
 				wc.setOptions(webllmOptions())
 			}
+			/**
+			 * @param {any} model
+			 * @param {boolean} [focus]
+			 */
 			function addRow(model, focus) {
 				const idIn = el("input", {
 					class: "llmp-input",
@@ -909,6 +989,7 @@ function buildPickerInto(host, opts) {
 			},
 		})
 
+		/** @type {any} */
 		let validateTimer = null
 		// Catalogue/uploaded pills only — no network.
 		function refreshPills() {
@@ -929,7 +1010,7 @@ function buildPickerInto(host, opts) {
 			if (!/^[^/\s]+\/[^/\s]{2,}$/.test(id)) return // must look like org/repo
 			validateTimer = setTimeout(() => validate(id), 500)
 		}
-		async function validate(id) {
+		async function validate(/** @type {string} */ id) {
 			refreshPills()
 			pills.append(pill("checking HuggingFace…", "muted"))
 			let info
@@ -946,7 +1027,7 @@ function buildPickerInto(host, opts) {
 				warn.textContent = "⚠ Not found on HuggingFace — check the id."
 				return
 			}
-			if (info.params) pills.append(pill(fmtParams(info.params), "muted"))
+			if (info.params) pills.append(pill(/** @type {string} */ (fmtParams(info.params)), "muted"))
 			if (info.hasOnnx) pills.append(pill("✓ ONNX"))
 			else {
 				pills.append(pill("no ONNX", "warn"))
@@ -1034,7 +1115,7 @@ function buildPickerInto(host, opts) {
 			class: "llmp-input",
 			placeholder: "sk-or-...",
 			value: cfg.openrouter.apiKey || "",
-			onInput: (e) => (cfg.openrouter.apiKey = e.currentTarget.value),
+			onInput: (/** @type {any} */ e) => (cfg.openrouter.apiKey = e.currentTarget.value),
 		})
 		const orOptions = () => orModels.map((m) => ({value: m.id, label: m.name}))
 		const pills = el("div", {class: "llmp-pills"})
@@ -1101,10 +1182,10 @@ function buildPickerInto(host, opts) {
 			class: "llmp-input",
 			placeholder: DEFAULTS.ollama.url,
 			value: cfg.ollama.url || "",
-			onInput: (e) => (cfg.ollama.url = e.currentTarget.value),
+			onInput: (/** @type {any} */ e) => (cfg.ollama.url = e.currentTarget.value),
 		})
 		const select = el("select", {
-			onChange: (e) => {
+			onChange: (/** @type {any} */ e) => {
 				cfg.ollama.model = e.currentTarget.value
 				recordRecent()
 			},
@@ -1156,6 +1237,10 @@ function buildPickerInto(host, opts) {
 	// A saved-prompt manager (used for both system + pre): a list of named prompts
 	// you can rename in place, copy, remove, or make active (●); `+ New` creates
 	// one, and you can import by URL. The active prompt's text editor shows below.
+	/**
+	 * @param {any} wrap
+	 * @param {"system"|"pre"} kind
+	 */
 	function renderPromptPicker(wrap, kind) {
 		const repo = typeof window !== "undefined" ? window.repo : null
 		const isPre = kind === "pre"
@@ -1167,11 +1252,18 @@ function buildPickerInto(host, opts) {
 			: "“Be like this.” Standing instructions sent as a chat system message. ⚠ Not used during raw completions (continuation / keystroke predictions): a completion has no system role."
 
 		const sel = () => cfg[urlKey]
-		const setSel = (u) => (cfg[urlKey] = u || null)
+		const setSel = (/** @type {string|null|undefined} */ u) => (cfg[urlKey] = u || null)
 		const newName = isPre ? "Pre-prompt" : "System prompt"
+		/** @type {any[]} */
 		let resolved = []
+		/** @type {(() => void)|null} */
+		let paintToolCard = null // refreshes the tool-default card's active state
 
 		// Add a prompt doc URL to the prompts folder (creating the folder if needed).
+		/**
+		 * @param {string} url
+		 * @param {string} [name]
+		 */
 		async function addLink(url, name) {
 			if (!repo || !url) return
 			cfg.prompts = await ensureFolderUrl(repo, cfg.prompts, "LLM Prompts")
@@ -1179,10 +1271,14 @@ function buildPickerInto(host, opts) {
 		}
 		// Rename: the name lives on the wrapper doc. (Folder DocLinks resolve their
 		// name from the doc, so renaming the doc is enough.)
+		/**
+		 * @param {string} url
+		 * @param {string} [name]
+		 */
 		async function rename(url, name) {
 			if (!repo || !url) return
-			const h = await repo.find(url)
-			h.change((d) => (d.name = name || "Prompt"))
+			const h = await repo.find(/** @type {any} */ (url))
+			h.change((/** @type {any} */ d) => (d.name = name || "Prompt"))
 		}
 
 		const list = el("div", {class: "llmp-pp-list"})
@@ -1198,6 +1294,7 @@ function buildPickerInto(host, opts) {
 					value: p.name || "",
 					spellcheck: "false",
 				})
+				/** @type {any} */
 				let renameTimer = null
 				nameIn.addEventListener("input", () => {
 					clearTimeout(renameTimer)
@@ -1224,7 +1321,7 @@ function buildPickerInto(host, opts) {
 					title: "Remove",
 					text: "✕",
 					onClick: async () => {
-						if (cfg.prompts) await removeFromFolder(repo, cfg.prompts, p.url)
+						if (repo && cfg.prompts) await removeFromFolder(repo, cfg.prompts, p.url)
 						if (active) setSel(null)
 						reload()
 					},
@@ -1249,6 +1346,7 @@ function buildPickerInto(host, opts) {
 				view.className = "llmp-handler"
 				editorBox.append(view)
 			}
+			if (paintToolCard) paintToolCard()
 		}
 		async function reload() {
 			resolved = repo ? await resolvePromptDocs(cfg, kind, repo) : []
@@ -1298,10 +1396,63 @@ function buildPickerInto(host, opts) {
 			onClick: () => openFolder(cfg.prompts),
 		})
 
+		// A tool can pass its built-in system prompt via `opts.toolPrompt`
+		// ({name, text}). Shown read-only with an active dot (active = the tool
+		// default, i.e. NO saved prompt selected) and a "Fork & edit" button that
+		// creates an editable copy and selects it — overriding the default. The dot
+		// refreshes via paintToolCard() whenever the selection changes. System only.
+		/** @type {any} */
+		let toolCard = null
+		const toolPrompt = !isPre && opts && opts.toolPrompt
+		if (toolPrompt && toolPrompt.text) {
+			const preview = el("pre", {class: "llmp-note"})
+			preview.textContent = toolPrompt.text
+			preview.style.cssText =
+				"max-height:120px;overflow:auto;white-space:pre-wrap;font:11px/1.45 ui-monospace,Menlo,monospace;opacity:0.8;margin:6px 0 0;"
+			const pick = el("button", {
+				class: "llmp-pp-pick",
+				onClick: () => {
+					setSel(null) // clicking returns to the tool default
+					paint()
+				},
+			})
+			const status = el("span", {class: "llmp-note", style: "margin-left:auto;font-style:italic;white-space:nowrap"})
+			const forkBtn = el("button", {
+				class: "llmp-btn primary",
+				text: "Fork & edit",
+				onClick: async () => {
+					if (!repo) return
+					const name = (toolPrompt.name || "Tool prompt") + " (fork)"
+					const w = await createPromptDoc(repo, "system", {name, text: toolPrompt.text})
+					await addLink(w.url, name)
+					setSel(w.url) // the fork becomes active → overrides the tool default
+					reload()
+				},
+			})
+			toolCard = el("div", {class: "llmp-builtin"}, [
+				el("div", {class: "llmp-row", style: "align-items:center;gap:8px"}, [
+					pick,
+					el("b", {text: toolPrompt.name || "Provided by the tool"}),
+					status,
+					forkBtn,
+				]),
+				el("p", {class: "llmp-note llmp-explain", text: "The tool's built-in default — active when no saved prompt below is selected. Fork it to make an editable copy that overrides it."}),
+				preview,
+			])
+			paintToolCard = () => {
+				const active = !sel()
+				pick.textContent = active ? "●" : "○"
+				pick.title = active ? "Active (tool default)" : "Click to use the tool default"
+				status.textContent = active ? "active — default" : "overridden ↓"
+				toolCard.classList.toggle("active", active)
+			}
+		}
+
 		wrap.append(
 			el("label", {class: "llmp-label"}, [
 				header,
 				el("p", {class: "llmp-note llmp-explain", text: note}),
+				...(toolCard ? [toolCard] : []),
 				list,
 				empty,
 				el("div", {class: "llmp-row"}, [newBtn, ...templateBtns, openBtn]),
@@ -1325,6 +1476,10 @@ function buildPickerInto(host, opts) {
 		const list = el("div", {class: "llmp-tools"})
 		const tryBox = el("div")
 
+		/**
+		 * @param {string} url
+		 * @param {string} [name]
+		 */
 		async function addLink(url, name) {
 			if (!repo || !url) return
 			cfg.tools = await ensureFolderUrl(repo, cfg.tools, "LLM Tools")
@@ -1380,17 +1535,17 @@ function buildPickerInto(host, opts) {
 					runBtn.disabled = true
 					tryOut.textContent = "…"
 					try {
-						await generateWithTools(tryInput.value, {
+						await generateWithTools(tryInput.value, /** @type {any} */ ({
 							config: baseCfg, // raw target — a Proxy can't be postMessage'd to the worker
-							onToken: (_d, full) => (tryOut.textContent = full),
-							onToolCall: (c) => {
+							onToken: (/** @type {any} */ _d, /** @type {any} */ full) => (tryOut.textContent = full),
+							onToolCall: (/** @type {any} */ c) => {
 								tryOut.textContent +=
 									`\n\n▶ ${c.name}(${JSON.stringify(c.args)}) → ` +
 									(c.error ? "⚠ " + c.error : JSON.stringify(c.result)) +
 									"\n"
 							},
-						})
-					} catch (e) {
+						}))
+					} catch (/** @type {any} */ e) {
 						tryOut.textContent = "Error: " + (e?.message || e)
 					}
 					runBtn.disabled = false
@@ -1447,8 +1602,39 @@ function buildPickerInto(host, opts) {
 			text: "Runs each tool's JS in an isolated Worker with no access to this page, your repo, or your account — safer for tools added by URL. Off = handlers run on the page with full access (needed for tools that read/write documents or the DOM).",
 		})
 
+		// Tools the host tool itself provides (opts.toolTools: [{name, description}]).
+		// Read-only — their handlers live in the tool — but each can be toggled off;
+		// the tool reads cfg.toolToggles[name] to decide what to offer the model.
+		let providedCard = null
+		const provided = (opts && opts.toolTools) || []
+		if (provided.length) {
+			if (!cfg.toolToggles) cfg.toolToggles = {}
+			const rows = provided.map((/** @type {{name: string, description?: string}} */ t) => {
+				const cb = el("input", {type: "checkbox"})
+				cb.checked = cfg.toolToggles[t.name] !== false
+				cb.addEventListener("change", () => {
+					cfg.toolToggles = {...(cfg.toolToggles || {}), [t.name]: cb.checked}
+				})
+				return el("label", {class: "llmp-pp-row", style: "display:flex;align-items:flex-start;gap:8px;cursor:pointer"}, [
+					cb,
+					el("div", {}, [
+						el("b", {text: t.name}),
+						t.description
+							? el("p", {class: "llmp-note", style: "margin:2px 0 0"}, [t.description])
+							: null,
+					]),
+				])
+			})
+			providedCard = el("div", {class: "llmp-builtin"}, [
+				el("b", {text: (opts.toolName ? opts.toolName + " — " : "") + "Built-in tools"}),
+				el("p", {class: "llmp-note llmp-explain", text: "Tools this tool gives the model. Toggle one off to stop offering it."}),
+				...rows,
+			])
+		}
+
 		wrap.append(
 			...[
+				providedCard,
 				builtinGroup,
 				el("p", {
 					class: "llmp-note llmp-explain",
@@ -1464,6 +1650,12 @@ function buildPickerInto(host, opts) {
 		reload()
 	}
 
+	/**
+	 * @param {any} card
+	 * @param {string} url
+	 * @param {any} repo
+	 * @param {() => void} [reload]
+	 */
 	async function renderToolCard(card, url, repo, reload) {
 		if (!repo) return
 		let handle
@@ -1477,13 +1669,13 @@ function buildPickerInto(host, opts) {
 		const nameInput = el("input", {
 			class: "llmp-input",
 			placeholder: "tool name",
-			onInput: (e) => handle.change((d) => (d.name = e.currentTarget.value)),
+			onInput: (/** @type {any} */ e) => handle.change((/** @type {any} */ d) => (d.name = e.currentTarget.value)),
 		})
 		nameInput.value = doc.name || ""
 		const desc = el("textarea", {
 			class: "llmp-input llmp-textarea",
 			placeholder: "How/when to use it + its parameters…",
-			onInput: (e) => handle.change((d) => (d.description = e.currentTarget.value)),
+			onInput: (/** @type {any} */ e) => handle.change((/** @type {any} */ d) => (d.description = e.currentTarget.value)),
 		})
 		desc.value = doc.description || ""
 		const copyBtn = el("button", {
@@ -1503,6 +1695,7 @@ function buildPickerInto(host, opts) {
 				reload?.()
 			},
 		})
+		/** @type {any} */
 		let view = null
 		const editBtn = el("button", {
 			class: "llmp-btn",
@@ -1593,6 +1786,94 @@ function buildPickerInto(host, opts) {
 
 const spinner = () => el("div", {class: "llmp-loading"}, [el("div", {class: "llmp-spinner"})])
 
+// Build the picker into `mount`, optionally with a whole-scope switcher. When
+// `opts.scope = {toolId, docId?, toolName?, docName?}` is given, a Default · This
+// tool · This doc bar swaps which config the editor edits: a scope either has its
+// own complete override or inherits the default. Returns a getter for the live
+// controller (commit/revert target the active scope's editor). No scope → plain.
+function buildScopedPicker(mount, opts, onRequestClose) {
+	const scope = opts.scope
+	/** @type {{commit:()=>any,revert:()=>void}|null} */
+	let ctl = null
+	const getCtl = () => ctl
+	if (!scope || !scope.toolId) {
+		ctl = buildPickerInto(mount, {...opts, onRequestClose})
+		return getCtl
+	}
+
+	let active = "default" // "default" | "tool" | "doc"
+	const bar = el("div", {
+		class: "llmp-row",
+		style: "padding:8px 12px;gap:6px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--line,rgba(128,128,128,0.25))",
+	})
+	const bodyHost = el("div")
+	mount.replaceChildren(bar, bodyHost)
+
+	const scopeFor = (which) =>
+		which === "doc"
+			? {toolId: scope.toolId, docId: scope.docId}
+			: {toolId: scope.toolId}
+	const sourceFor = (which) => {
+		if (which === "default")
+			return opts.source || {read: () => readConfig(), write: (n) => writeConfig(n)}
+		const sc = scopeFor(which)
+		return {read: () => readScopedConfig(sc), write: (n) => writeScopeOverride(sc, n)}
+	}
+
+	function rebuild() {
+		// Flush any pending edit of the scope we're leaving before swapping.
+		try { ctl && ctl.commit && ctl.commit() } catch {}
+		const mkBtn = (id, label) =>
+			el("button", {
+				class: "llmp-btn" + (active === id ? " primary" : ""),
+				text: label,
+				onClick: () => { active = id; rebuild() },
+			})
+		bar.replaceChildren(
+			...[
+				el("span", {class: "llmp-note", text: "Settings for"}),
+				mkBtn("default", "Default"),
+				mkBtn("tool", scope.toolName || "This tool"),
+				scope.docId ? mkBtn("doc", scope.docName || "This doc") : null,
+			].filter(Boolean)
+		)
+
+		bodyHost.replaceChildren()
+		if (active === "default") {
+			ctl = buildPickerInto(bodyHost, {...opts, source: sourceFor("default"), onRequestClose})
+			return
+		}
+		const sc = scopeFor(active)
+		if (!hasScopeOverride(readConfig(), sc)) {
+			ctl = null
+			const what = active === "doc" ? "This document" : "“" + (scope.toolName || "This tool") + "”"
+			bodyHost.append(
+				el("div", {class: "llmp-body"}, [
+					el("p", {class: "llmp-note llmp-explain", text: what + " inherits the default settings."}),
+					el("button", {
+						class: "llmp-btn primary",
+						text: "Create separate settings",
+						onClick: () => { writeScopeOverride(sc); rebuild() },
+					}),
+				])
+			)
+			return
+		}
+		const editorHost = el("div")
+		const resetRow = el("div", {class: "llmp-row", style: "padding:8px 12px"}, [
+			el("button", {
+				class: "llmp-btn",
+				text: "Reset to default (remove these settings)",
+				onClick: () => { try { ctl && ctl.commit && ctl.commit() } catch {} ; clearScopeOverride(sc); active = "default"; rebuild() },
+			}),
+		])
+		bodyHost.append(resetRow, editorHost)
+		ctl = buildPickerInto(editorHost, {...opts, source: sourceFor(active), onRequestClose})
+	}
+	rebuild()
+	return getCtl
+}
+
 /**
  * The config picker as a BARE inline element (no popover, no header/footer) — for
  * a tool to embed and own. Returned synchronously, Suspense-style: it shows a
@@ -1606,31 +1887,34 @@ const spinner = () => el("div", {class: "llmp-loading"}, [el("div", {class: "llm
  * tools in the Tools section. The element carries `.result` (resolves on
  * `.destroy()`), `.destroy()` (flush + remove), `.revert()` (revert + remove).
  *
- * @param {Object} [opts]
+ * @param {PickerOpts} [opts]
  * @returns {HTMLElement}
  */
 export function dom(opts = {}) {
 	injectStyles()
 	const root = el("div", {class: "llmp llmp--bare", role: "group"})
 	root.append(spinner())
+	/** @type {(v: any) => void} */
 	let resolveResult
 	root.result = new Promise((r) => (resolveResult = r))
+	/** @type {{commit: () => any, revert: () => void}|null} */
 	let ctl = null
 	let done = false
-	const finish = (saved) => {
+	let getCtl = () => ctl
+	const finish = (/** @type {any} */ saved) => {
 		if (done) return
 		done = true
 		resolveResult(saved)
 		root.remove()
 	}
-	root.destroy = () => finish(ctl ? ctl.commit() : null)
+	root.destroy = () => finish(getCtl() ? getCtl().commit() : null)
 	root.revert = () => {
-		ctl?.revert()
+		getCtl()?.revert()
 		finish(null)
 	}
 	const start = () => {
 		root.replaceChildren()
-		ctl = buildPickerInto(root, {...opts, onRequestClose: () => root.destroy()})
+		getCtl = buildScopedPicker(root, opts, () => root.destroy())
 	}
 	if (opts.source) start()
 	else ensureSettingsDoc().then(start)
@@ -1647,22 +1931,25 @@ export function dom(opts = {}) {
  * Same options as `dom()`. Changes autosave live; Done keeps them, Cancel reverts
  * to the open-time snapshot, light-dismiss keeps them.
  *
- * @param {Object} [opts]
+ * @param {PickerOpts} [opts]
  * @returns {HTMLElement}
  */
 export function popup(opts = {}) {
 	injectStyles()
 	const frame = el("div", {class: "llmp", popover: "auto", role: "dialog"})
 	frame.append(spinner())
+	/** @type {(v: any) => void} */
 	let resolveResult
 	frame.result = new Promise((r) => (resolveResult = r))
+	/** @type {{commit: () => any, revert: () => void}|null} */
 	let ctl = null
+	let getCtl = () => ctl
 	let done = false
 	let reverting = false
 	const finalize = () => {
 		if (done) return
 		done = true
-		resolveResult(reverting ? null : ctl ? ctl.commit() : null)
+		resolveResult(reverting ? null : getCtl() ? getCtl().commit() : null)
 		frame.remove()
 	}
 	const close = () => {
@@ -1671,13 +1958,13 @@ export function popup(opts = {}) {
 	}
 	const cancel = () => {
 		reverting = true
-		ctl?.revert()
+		getCtl()?.revert()
 		close()
 	}
-	const onEsc = (e) => {
+	const onEsc = (/** @type {KeyboardEvent} */ e) => {
 		if (e.key === "Escape") { e.stopPropagation(); close() }
 	}
-	frame.addEventListener("toggle", (e) => {
+	frame.addEventListener("toggle", (/** @type {any} */ e) => {
 		if (e.newState === "open") window.addEventListener("keydown", onEsc)
 		else { window.removeEventListener("keydown", onEsc); finalize() }
 	})
@@ -1694,7 +1981,7 @@ export function popup(opts = {}) {
 				el("button", {class: "llmp-btn primary", text: "Done", onClick: close}),
 			])
 		)
-		ctl = buildPickerInto(inner, {...opts, onRequestClose: close})
+		getCtl = buildScopedPicker(inner, opts, close)
 	}
 	if (opts.source) start()
 	else ensureSettingsDoc().then(start)

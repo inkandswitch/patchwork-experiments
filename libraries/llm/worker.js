@@ -31,9 +31,36 @@
 
 // v4: the version where TextStreamer + a logits_processor probe (the per-token
 // prediction telemetry) are verified working together (rlm uses this combo).
+
+/**
+ * @typedef {import("./config.js").CallConfig} CallConfig
+ * The config the worker actually receives. Shaped like a {@link CallConfig} but
+ * kept fully loose: the worker reads extra fields (tools, continuation, custom)
+ * and compares some numeric fields against "" defensively, so a permissive
+ * record is intentional here.
+ * @typedef {Record<string, any>} WorkerConfig
+ *
+ * Any worker message payload (request or response) — these are dynamic blobs
+ * over postMessage, so a permissive shape is intentional.
+ * @typedef {Record<string, any>} AnyMsg
+ *
+ * A single in-flight generation entry.
+ * @typedef {Object} Gen
+ * @property {any} id
+ * @property {any} port
+ * @property {string} fullText
+ * @property {boolean} done
+ * @property {string} [finalText]
+ * @property {AbortController} abortController
+ *
+ * @typedef {{token:string, p:number}} Candidate
+ */
+
 const CDN = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4"
+/** @type {Set<any>} */
 const ports = new Set()
 
+/** @param {AnyMsg} msg */
 function broadcast(msg) {
 	for (const port of ports) {
 		try {
@@ -52,20 +79,22 @@ function broadcast(msg) {
 // We deliberately do NOT track `.onnx` files (transformers.js already reports those)
 // or anything under the size threshold (tokenizer/config/API calls) — only the big
 // external-data blob transformers.js is blind to.
+/** @param {number} b */
 function fmtMB(b) {
 	return (b / 1048576).toFixed(0) + " MB"
 }
 
 function installWeightsProgress() {
-	if (self.__llmWeightsFetchPatched) return
-	self.__llmWeightsFetchPatched = true
+	const sg = /** @type {any} */ (self)
+	if (sg.__llmWeightsFetchPatched) return
+	sg.__llmWeightsFetchPatched = true
 	const orig = self.fetch.bind(self)
 	const THRESHOLD = 50 * 1024 * 1024 // 50MB — well above tokenizer/config/graph files
 	self.fetch = async (input, init) => {
 		const res = await orig(input, init)
 		try {
-			const cl = +res.headers.get("content-length")
-			const url = res.url || (typeof input === "string" ? input : input?.url || "")
+			const cl = +(res.headers.get("content-length") || 0)
+			const url = res.url || (typeof input === "string" ? input : /** @type {any} */ (input)?.url || "")
 			const name = (url.split("?")[0].split("/").pop() || "").toLowerCase()
 			// `.onnx` graph files are already tracked by transformers.js; skip them so
 			// the two don't fight over the status line. Everything else big is weights.
@@ -77,10 +106,11 @@ function installWeightsProgress() {
 	}
 }
 
+/** @param {Response} res @param {number} total */
 function trackDownload(res, total) {
 	let loaded = 0
 	let lastPct = -1
-	const reader = res.body.getReader()
+	const reader = /** @type {ReadableStream<Uint8Array>} */ (res.body).getReader()
 	const stream = new ReadableStream({
 		async pull(controller) {
 			const {done, value} = await reader.read()
@@ -114,6 +144,7 @@ function trackDownload(res, total) {
 // (usually hidden) console, so without this its logs are invisible from the tool.
 // `client.js` re-prints `{type:"log"}` on the main thread. Each arg is reduced to
 // something structured-clonable so postMessage never throws on a live object.
+/** @param {...any} args */
 function log(...args) {
 	try {
 		console.log("[llm worker]", ...args)
@@ -132,15 +163,16 @@ function log(...args) {
 }
 
 // sessionKey -> { id, port, fullText, done, finalText, abortController }
+/** @type {Map<any, Gen>} */
 const activeGenerations = new Map()
 
 self.addEventListener("error", (e) =>
-	broadcast({type: "status", message: "Worker error: " + (e.message || "")})
+	broadcast({type: "status", message: "Worker error: " + (/** @type {ErrorEvent} */ (e).message || "")})
 )
 self.addEventListener("unhandledrejection", (e) =>
 	broadcast({
 		type: "status",
-		message: "Worker error: " + (e.reason?.message || e.reason || ""),
+		message: "Worker error: " + (/** @type {PromiseRejectionEvent} */ (e).reason?.message || /** @type {PromiseRejectionEvent} */ (e).reason || ""),
 	})
 )
 
@@ -159,15 +191,20 @@ const LOCAL_MODELS = [
 const DEFAULT_MODEL_ID = LOCAL_MODELS[2].id
 const PREDICTION_CAP = 256 // cap per-step prediction events so a long gen can't flood
 
+/** @type {any} */
 let TF = null
+/** @type {any} */
 let generator = null
 let currentModelId = DEFAULT_MODEL_ID
+/** @type {string|null} */
 let currentDtype = null // the dtype the loaded model was compiled with
 let loading = false
+/** @type {Promise<void>|null} */
 let loadingPromise = null
 // The real error from the most recent loadModel() failure. Without this the
 // device-fallback loop swallows the cause ("WASM failed") and callers can only
 // report a useless "Model not loaded". Surfaced via modelLoadError().
+/** @type {any} */
 let lastLoadError = null
 
 // Map a raw backend error to something a user can act on. onnxruntime's
@@ -176,6 +213,7 @@ let lastLoadError = null
 // RAM". The WASM backend is wasm32 (a ~4GB address-space ceiling, independent of
 // system RAM) and WebGPU is bound by GPU buffer/VRAM limits (and is disabled in
 // incognito). Say that, and point at the escape hatches.
+/** @param {any} err */
 function friendlyError(err) {
 	const raw = String((err && (err.message || err)) || "unknown error")
 	if (/bad_alloc|out of memory|can'?t create a session|memory access out of bounds|RuntimeError: Aborted/i.test(raw)) {
@@ -222,26 +260,29 @@ function releaseGenerator() {
 			if (typeof g.dispose === "function") await g.dispose()
 			else if (g.model && typeof g.model.dispose === "function") await g.model.dispose()
 			log("releaseGenerator: disposed previous session", {model: wasModel})
-		} catch (e) {
+		} catch (/** @type {any} */ e) {
 			log("releaseGenerator: dispose failed", {model: wasModel, message: e?.message || String(e)})
 		}
 	})()
 }
+/** @type {Set<string>} */
 const compiledModels = new Set()
 
 // User-supplied local ONNX models (in transformers.js layout) uploaded from
 // disk. We serve their files to transformers.js by patching the worker's fetch
 // — the same trick rlm uses for CDN files — so a model id like "local/<name>"
 // loads from memory instead of the network.
+/** @type {Map<string, {files: Map<string, Blob>, dtype: string}>} */
 const localModelFiles = new Map() // id -> { files: Map<relpath, Blob>, dtype }
 
 function ensureLocalFetchPatch() {
-	if (self.__llmFetchPatched) return
-	self.__llmFetchPatched = true
+	const sg = /** @type {any} */ (self)
+	if (sg.__llmFetchPatched) return
+	sg.__llmFetchPatched = true
 	const realFetch = self.fetch.bind(self)
 	self.fetch = (input, init) => {
 		try {
-			const url = typeof input === "string" ? input : input?.url || ""
+			const url = typeof input === "string" ? input : /** @type {any} */ (input)?.url || ""
 			for (const [id, entry] of localModelFiles) {
 				const marker = "/" + id + "/resolve/"
 				const at = url.indexOf(marker)
@@ -249,7 +290,7 @@ function ensureLocalFetchPatch() {
 				const after = url.slice(at + marker.length) // "<rev>/<relpath>"
 				const rel = after.substring(after.indexOf("/") + 1)
 				const file =
-					entry.files.get(rel) || entry.files.get(rel.split("/").pop())
+					entry.files.get(rel) || entry.files.get(rel.split("/").pop() || "")
 				if (file) return Promise.resolve(new Response(file, {status: 200}))
 				return Promise.resolve(
 					new Response("local model file not found: " + rel, {status: 404})
@@ -260,6 +301,7 @@ function ensureLocalFetchPatch() {
 	}
 }
 
+/** @param {Promise<any>} promise @param {number} ms @param {string} label */
 function withTimeout(promise, ms, label) {
 	return Promise.race([
 		promise,
@@ -269,6 +311,7 @@ function withTimeout(promise, ms, label) {
 	])
 }
 
+/** @param {string} [modelId] @param {string} [dtypeOverride] */
 async function loadModel(modelId, dtypeOverride) {
 	modelId = modelId || DEFAULT_MODEL_ID
 	// A dtype change for the same id must force a reload (e.g. switching a custom
@@ -282,7 +325,8 @@ async function loadModel(modelId, dtypeOverride) {
 	if (loading && loadingPromise) return loadingPromise
 	currentModelId = modelId
 	loading = true
-	let resolveLoading
+	/** @type {() => void} */
+	let resolveLoading = () => {}
 	loadingPromise = new Promise((r) => (resolveLoading = r))
 	lastLoadError = null
 	const reg = localModelFiles.get(modelId)
@@ -303,7 +347,7 @@ async function loadModel(modelId, dtypeOverride) {
 		TF.env.useBrowserCache = true
 		installWeightsProgress() // byte-level progress for the external-data weights blob
 		if (navigator.storage?.persist) await navigator.storage.persist()
-	} catch (err) {
+	} catch (/** @type {any} */ err) {
 		lastLoadError = err
 		console.error("[llm worker] failed to load transformers.js from", CDN, err)
 		broadcast({type: "status", message: "Failed to load transformers.js: " + (err?.message || err)})
@@ -314,9 +358,11 @@ async function loadModel(modelId, dtypeOverride) {
 	}
 
 	const isFirstCompile = !compiledModels.has(modelId)
+	/** @param {string} backend */
 	function progressCb(backend) {
+		/** @type {Map<string, {loaded:number, total:number}>} */
 		const fileProgress = new Map()
-		return (p) => {
+		return (/** @type {any} */ p) => {
 			if (p.status === "progress" && p.progress != null && p.file) {
 				fileProgress.set(p.file, {loaded: p.loaded || 0, total: p.total || 0})
 				const shortName = p.file.split("/").pop() || p.file
@@ -364,6 +410,7 @@ async function loadModel(modelId, dtypeOverride) {
 			// Probe the model for attention output support
 			try {
 				const model = generator.model
+				/** @type {Record<string, any>} */
 				const sessionInfo = {}
 				const sessions = model?.sessions || {}
 				for (const [name, session] of Object.entries(sessions)) {
@@ -378,7 +425,7 @@ async function loadModel(modelId, dtypeOverride) {
 						model_type: model.config.model_type,
 					} : null,
 				})
-			} catch (e) {
+			} catch (/** @type {any} */ e) {
 				broadcast({type: "model-info", model: modelId, error: e.message})
 			}
 			log("loadModel: ready", {modelId, backend: attempt.label, dtype: modelDef.dtype})
@@ -386,7 +433,7 @@ async function loadModel(modelId, dtypeOverride) {
 			broadcast({type: "ready", model: modelId, device: attempt.label})
 			lastLoadError = null
 			break
-		} catch (err) {
+		} catch (/** @type {any} */ err) {
 			lastLoadError = err
 			// Keep the actual cause — the device-fallback loop used to discard it,
 			// leaving only "WASM failed" with no way to see what actually broke.
@@ -413,12 +460,15 @@ async function loadModel(modelId, dtypeOverride) {
 
 // Top-k of a logits row as softmax probabilities (two passes + a tiny top-k
 // scan — cheap enough to run every decode step). Adapted from rlm.
+/** @param {ArrayLike<number>} data @param {number} vocab @param {number} k */
 function topkFromLogits(data, vocab, k) {
 	let max = -Infinity
 	for (let i = 0; i < vocab; i++) if (data[i] > max) max = data[i]
 	let sum = 0
-	const idx = [],
-		val = []
+	/** @type {number[]} */
+	const idx = []
+	/** @type {number[]} */
+	const val = []
 	for (let i = 0; i < vocab; i++) {
 		const v = data[i]
 		sum += Math.exp(v - max)
@@ -442,6 +492,7 @@ function topkFromLogits(data, vocab, k) {
 // Optional OpenAI-style sampling params, omitting off/default values so a
 // provider that doesn't support one isn't upset.
 // Parse a tool-call arguments value (string or already-object) → object.
+/** @param {any} v @returns {any} */
 function safeJson(v) {
 	if (v && typeof v === "object") return v
 	if (typeof v !== "string") return {}
@@ -452,7 +503,9 @@ function safeJson(v) {
 	}
 }
 
+/** @param {WorkerConfig} config */
 function samplingExtras(config) {
+	/** @type {Record<string, any>} */
 	const p = {}
 	if (config.topK > 0) p.top_k = config.topK
 	if (config.minP > 0) p.min_p = config.minP
@@ -467,6 +520,7 @@ function samplingExtras(config) {
 // Render a chat conversation to a plain ChatML prompt string. Fallback for
 // local models (base / coder checkpoints) whose tokenizer ships no
 // `chat_template` — without this, transformers.js throws inside the pipeline.
+/** @param {any[]} messages */
 function messagesToPrompt(messages) {
 	let out = ""
 	for (const m of messages) {
@@ -476,6 +530,7 @@ function messagesToPrompt(messages) {
 	return out + "<|im_start|>assistant\n"
 }
 
+/** @param {Gen} gen @param {any} input @param {WorkerConfig} config */
 async function doGenerateLocal(gen, input, config) {
 	const tokenizer = generator.tokenizer
 	const isText = typeof input === "string"
@@ -504,7 +559,7 @@ async function doGenerateLocal(gen, input, config) {
 						add_generation_prompt: true,
 				  })
 		promptTokens = tokenizer.encode(prompt).length
-	} catch (e) {
+	} catch (/** @type {any} */ e) {
 		log("doGenerateLocal: prompt build/encode failed (continuing)", {
 			model: currentModelId,
 			hasChatTemplate: !!tokenizer.chat_template,
@@ -516,6 +571,7 @@ async function doGenerateLocal(gen, input, config) {
 	const tStart = performance.now()
 	let tFirst = 0
 	let full = ""
+	/** @type {any} */
 	let heartbeat = null
 
 	let stopped = false
@@ -523,7 +579,7 @@ async function doGenerateLocal(gen, input, config) {
 	const streamer = new TF.TextStreamer(tokenizer, {
 		skip_prompt: true,
 		skip_special_tokens: true,
-		callback_function: (text) => {
+		callback_function: (/** @type {string} */ text) => {
 			if (stopped) return
 			if (!tFirst) {
 				tFirst = performance.now()
@@ -560,7 +616,7 @@ async function doGenerateLocal(gen, input, config) {
 	const logits_processor =
 		topk > 0
 			? [
-					(inputIds, logits) => {
+					(/** @type {any} */ inputIds, /** @type {any} */ logits) => {
 						if (step < PREDICTION_CAP) {
 							try {
 								const vocab = logits.dims.at(-1)
@@ -666,10 +722,12 @@ async function doGenerateLocal(gen, input, config) {
 const CONTINUE_SYS =
 	"You are a text-continuation engine inside a writing tool. Continue the user's text seamlessly from exactly where it ends, matching its voice, tense, and style. Output ONLY the continuation — no preamble, no commentary, no explanation, no quotation marks — and never restate or acknowledge the user's text. If it ends mid-word or mid-sentence, finish it."
 
+/** @param {Gen} gen @param {any} input @param {WorkerConfig} config */
 async function doGenerateOpenRouter(gen, input, config) {
 	const isText = typeof input === "string"
 	const temperature = config.temperature ?? 0.7
 	const topk = config.topk | 0
+	/** @type {Record<string, any>} */
 	const body = {
 		model: config.model || "anthropic/claude-sonnet-4",
 		stream: true,
@@ -718,7 +776,7 @@ async function doGenerateOpenRouter(gen, input, config) {
 		const text = msg.content || ""
 		if (text) post(gen, {type: "token", delta: text, text})
 		gen.fullText = text
-		const toolCalls = (msg.tool_calls || []).map((tc) => ({
+		const toolCalls = (msg.tool_calls || []).map((/** @type {any} */ tc) => ({
 			id: tc.id,
 			name: tc.function?.name,
 			args: safeJson(tc.function?.arguments),
@@ -752,12 +810,13 @@ async function doGenerateOpenRouter(gen, input, config) {
 	let tFirst = 0
 	let full = ""
 	let step = 0
+	/** @type {any} */
 	let usage = null
-	const reader = res.body.getReader()
+	const reader = /** @type {ReadableStream<Uint8Array>} */ (res.body).getReader()
 	const decoder = new TextDecoder()
 	let buf = ""
 
-	const handleLine = (line) => {
+	const handleLine = (/** @type {string} */ line) => {
 		if (!line.startsWith("data: ")) return
 		const data = line.slice(6).trim()
 		if (data === "[DONE]") return
@@ -779,7 +838,7 @@ async function doGenerateOpenRouter(gen, input, config) {
 		if (topk > 0) {
 			for (const item of choice?.logprobs?.content || []) {
 				if (step >= PREDICTION_CAP) break
-				const candidates = (item.top_logprobs || []).map((tl) => ({
+				const candidates = (item.top_logprobs || []).map((/** @type {any} */ tl) => ({
 					token: tl.token,
 					p: +Math.exp(tl.logprob).toFixed(4),
 				}))
@@ -794,7 +853,7 @@ async function doGenerateOpenRouter(gen, input, config) {
 		if (done) break
 		buf += decoder.decode(value, {stream: true})
 		const lines = buf.split("\n")
-		buf = lines.pop()
+		buf = lines.pop() || ""
 		for (const line of lines) handleLine(line)
 	}
 	if (buf.trim()) for (const line of buf.split("\n")) handleLine(line)
@@ -822,9 +881,11 @@ async function doGenerateOpenRouter(gen, input, config) {
 // Ollama (NDJSON) — tokens + basic stats (no logprobs available)
 // ---------------------------------------------------------------------------
 
+/** @param {Gen} gen @param {any} input @param {WorkerConfig} config */
 async function doGenerateOllama(gen, input, config) {
 	const isText = typeof input === "string"
 	const baseUrl = (config.url || "http://localhost:11434").replace(/\/$/, "")
+	/** @type {Record<string, any>} */
 	const body = {
 		model: config.model || "llama3.2",
 		stream: true,
@@ -860,7 +921,7 @@ async function doGenerateOllama(gen, input, config) {
 		const text = data.message?.content || ""
 		if (text) post(gen, {type: "token", delta: text, text})
 		gen.fullText = text
-		const toolCalls = (data.message?.tool_calls || []).map((tc, i) => ({
+		const toolCalls = (data.message?.tool_calls || []).map((/** @type {any} */ tc, /** @type {number} */ i) => ({
 			id: tc.id || "call_" + i,
 			name: tc.function?.name,
 			args: safeJson(tc.function?.arguments), // Ollama already gives an object
@@ -890,8 +951,9 @@ async function doGenerateOllama(gen, input, config) {
 	const tStart = performance.now()
 	let tFirst = 0
 	let full = ""
+	/** @type {any} */
 	let final = null
-	const reader = res.body.getReader()
+	const reader = /** @type {ReadableStream<Uint8Array>} */ (res.body).getReader()
 	const decoder = new TextDecoder()
 	let buf = ""
 	while (true) {
@@ -899,7 +961,7 @@ async function doGenerateOllama(gen, input, config) {
 		if (done) break
 		buf += decoder.decode(value, {stream: true})
 		const lines = buf.split("\n")
-		buf = lines.pop()
+		buf = lines.pop() || ""
 		for (const line of lines) {
 			if (!line.trim()) continue
 			try {
@@ -941,15 +1003,17 @@ async function doGenerateOllama(gen, input, config) {
 // won't return any — the caller just sees an empty list).
 // ---------------------------------------------------------------------------
 
+/** @param {any} text @param {WorkerConfig} config */
 async function predictLocal(text, config) {
 	const topk = Math.max(1, config.topk | 0 || 10)
 	const tokenizer = generator.tokenizer
+	/** @type {Candidate[]} */
 	let candidates = []
 	await generator(text || " ", {
 		max_new_tokens: 1,
 		do_sample: false,
 		logits_processor: [
-			(inputIds, logits) => {
+			(/** @type {any} */ inputIds, /** @type {any} */ logits) => {
 				if (!candidates.length) {
 					try {
 						const vocab = logits.dims.at(-1)
@@ -970,22 +1034,25 @@ async function predictLocal(text, config) {
 // extracting exact probability (from full vocab), rank, entropy, and top-k
 // alternatives. Powers the attention heatmap: "how surprised was the model
 // by what you actually wrote?"
+/** @param {Gen} gen @param {any} text @param {WorkerConfig} config */
 async function scoreTokensLocal(gen, text, config) {
 	const tokenizer = generator.tokenizer
 	const ids = tokenizer.encode(text)
+	/** @type {any[]} */
 	const scores = []
 
 	for (let i = 0; i < ids.length; i++) {
 		if (gen.abortController.signal.aborted) break
 
 		const prefix = i === 0 ? "" : tokenizer.decode(ids.slice(0, i), {skip_special_tokens: true})
+		/** @type {any} */
 		let result = null
 
 		await generator(prefix || " ", {
 			max_new_tokens: 1,
 			do_sample: false,
 			logits_processor: [
-				(inputIds, logits) => {
+				(/** @type {any} */ inputIds, /** @type {any} */ logits) => {
 					if (result) return logits // only first call matters
 					const vocab = logits.dims.at(-1)
 					const data = logits.data
@@ -1054,6 +1121,7 @@ async function scoreTokensLocal(gen, text, config) {
 // change — tokens whose removal most affects the output are most important.
 // N+1 forward passes (one baseline + one per token). Genuine importance
 // scores, not a proxy.
+/** @param {Gen} gen @param {any} text @param {WorkerConfig} config */
 async function computeImportanceLocal(gen, text, config) {
 	const model = generator.model
 	const tokenizer = generator.tokenizer
@@ -1066,6 +1134,7 @@ async function computeImportanceLocal(gen, text, config) {
 	const lastOff = (seqLen - 1) * vocab
 
 	// Helper: softmax of logits at the last position
+	/** @param {ArrayLike<number>} logitsData */
 	function lastProbs(logitsData) {
 		const p = new Float64Array(vocab)
 		let mx = -Infinity
@@ -1077,6 +1146,7 @@ async function computeImportanceLocal(gen, text, config) {
 	}
 
 	// JS divergence between two probability distributions
+	/** @param {ArrayLike<number>} p @param {ArrayLike<number>} q */
 	function jsDiv(p, q) {
 		let d = 0
 		for (let j = 0; j < vocab; j++) {
@@ -1151,6 +1221,7 @@ async function computeImportanceLocal(gen, text, config) {
 //   fromLast[l][h][j] = A[S-1, j]                         — what the final token
 //                        (the next-token prediction position) attends to
 // If the model has no `attentions` output, posts {supported:false}.
+/** @param {Gen} gen @param {any} text @param {WorkerConfig} config */
 async function computeAttentionWeightsLocal(gen, text, config) {
 	const model = generator.model
 	const tokenizer = generator.tokenizer
@@ -1220,6 +1291,7 @@ async function computeAttentionWeightsLocal(gen, text, config) {
 	broadcast({type: "status", message: ""})
 }
 
+/** @param {any} text @param {WorkerConfig} config @param {AbortSignal} signal */
 async function predictOpenRouter(text, config, signal) {
 	const topk = Math.min(Math.max(1, config.topk | 0 || 10), 20)
 	// Chat with the continuation framing (raw /completions doesn't work for
@@ -1247,10 +1319,11 @@ async function predictOpenRouter(text, config, signal) {
 	const top = data.choices?.[0]?.logprobs?.content?.[0]?.top_logprobs
 	if (!top) return []
 	return top
-		.map((tl) => ({token: tl.token, p: +Math.exp(tl.logprob).toFixed(4)}))
-		.sort((a, b) => b.p - a.p)
+		.map((/** @type {any} */ tl) => ({token: tl.token, p: +Math.exp(tl.logprob).toFixed(4)}))
+		.sort((/** @type {any} */ a, /** @type {any} */ b) => b.p - a.p)
 }
 
+/** @param {any} port @param {AnyMsg} data */
 function handlePredict(port, data) {
 	const {id, text, config = {}} = data
 	const provider = data.provider
@@ -1260,11 +1333,11 @@ function handlePredict(port, data) {
 	const abortController = new AbortController()
 	activeGenerations.set(sessionKey, {id, port, done: false, fullText: "", abortController})
 	const cleanup = () => activeGenerations.delete(sessionKey)
-	const reply = (candidates) => {
+	const reply = (/** @type {any} */ candidates) => {
 		cleanup()
 		port.postMessage({type: "predictions", id, candidates})
 	}
-	const failPredict = (message) => {
+	const failPredict = (/** @type {any} */ message) => {
 		cleanup()
 		if (!abortController.signal.aborted) port.postMessage({type: "error", id, message})
 	}
@@ -1304,14 +1377,19 @@ function handlePredict(port, data) {
 // give the same per-token predictions as the rest. (Mirrors rlm's WebLLMClient.)
 // ---------------------------------------------------------------------------
 
+/** @type {any} */
 let webllmMod = null
+/** @type {any} */
 let webllmEngine = null
+/** @type {any} */
 let webllmModel = null
 
+/** @param {string} [model] @param {any} [custom] */
 async function ensureWebLLM(model, custom) {
 	model = model || "Qwen2.5-1.5B-Instruct-q4f16_1-MLC"
 	if (!webllmMod) {
 		broadcast({type: "status", message: "Loading WebLLM…"})
+		// @ts-ignore — remote ESM URL, no type declarations
 		webllmMod = await import(/* @vite-ignore */ "https://esm.run/@mlc-ai/web-llm")
 	}
 	if (webllmEngine && webllmModel === model) return
@@ -1327,8 +1405,8 @@ async function ensureWebLLM(model, custom) {
 	// model_lib}; the weights URL is the model_id's HuggingFace repo. Stored in the
 	// config (not localStorage), threaded through as config.custom.
 	const customList = (Array.isArray(custom) ? custom : [])
-		.filter((c) => c && c.model_id && c.model_lib)
-		.map((c) => ({
+		.filter((/** @type {any} */ c) => c && c.model_id && c.model_lib)
+		.map((/** @type {any} */ c) => ({
 			...c,
 			// weights URL defaults to the HF repo named by model_id (matches rlm —
 			// WebLLM appends the resolve path itself, so NO /resolve/main/ suffix)
@@ -1342,7 +1420,7 @@ async function ensureWebLLM(model, custom) {
 		: undefined
 	webllmEngine = await webllmMod.CreateMLCEngine(model, {
 		appConfig,
-		initProgressCallback: (r) =>
+		initProgressCallback: (/** @type {any} */ r) =>
 			broadcast({
 				type: "status",
 				message:
@@ -1355,6 +1433,7 @@ async function ensureWebLLM(model, custom) {
 	broadcast({type: "ready", model, device: "WebGPU"})
 }
 
+/** @param {Gen} gen @param {any} input @param {WorkerConfig} config */
 async function doGenerateWebLLM(gen, input, config) {
 	await ensureWebLLM(config.model, config.custom)
 	const isText = typeof input === "string"
@@ -1375,7 +1454,7 @@ async function doGenerateWebLLM(gen, input, config) {
 		const text = msg.content || ""
 		if (text) post(gen, {type: "token", delta: text, text})
 		gen.fullText = text
-		const toolCalls = (msg.tool_calls || []).map((tc) => ({
+		const toolCalls = (msg.tool_calls || []).map((/** @type {any} */ tc) => ({
 			id: tc.id,
 			name: tc.function?.name,
 			args: safeJson(tc.function?.arguments),
@@ -1423,7 +1502,7 @@ async function doGenerateWebLLM(gen, input, config) {
 		if (lp && topk > 0) {
 			for (const e of lp) {
 				if (step >= PREDICTION_CAP) break
-				const candidates = (e.top_logprobs || []).map((c) => ({
+				const candidates = (e.top_logprobs || []).map((/** @type {any} */ c) => ({
 					token: c.token,
 					p: +Math.exp(c.logprob).toFixed(4),
 				}))
@@ -1455,6 +1534,7 @@ async function doGenerateWebLLM(gen, input, config) {
 	return {text: full, toolCalls: null}
 }
 
+/** @param {any} text @param {WorkerConfig} config */
 async function predictWebLLM(text, config) {
 	await ensureWebLLM(config.model, config.custom)
 	const topk = Math.max(1, config.topk | 0 || 10)
@@ -1469,20 +1549,22 @@ async function predictWebLLM(text, config) {
 	const lp = res.choices?.[0]?.logprobs?.content?.[0]?.top_logprobs
 	if (!lp) return []
 	return lp
-		.map((c) => ({token: c.token, p: +Math.exp(c.logprob).toFixed(4)}))
-		.sort((a, b) => b.p - a.p)
+		.map((/** @type {any} */ c) => ({token: c.token, p: +Math.exp(c.logprob).toFixed(4)}))
+		.sort((/** @type {any} */ a, /** @type {any} */ b) => b.p - a.p)
 }
 
 // ---------------------------------------------------------------------------
 // Dispatch + lifecycle
 // ---------------------------------------------------------------------------
 
+/** @param {Gen} gen @param {AnyMsg} msg */
 function post(gen, msg) {
 	try {
 		gen.port.postMessage({...msg, id: gen.id})
 	} catch {}
 }
 
+/** @param {any} sessionKey @param {Gen} gen @param {string} text @param {any} [toolCalls] */
 function finalize(sessionKey, gen, text, toolCalls) {
 	gen.done = true
 	gen.finalText = text
@@ -1493,6 +1575,7 @@ function finalize(sessionKey, gen, text, toolCalls) {
 	if (sessionKey) setTimeout(() => activeGenerations.delete(sessionKey), 5000)
 }
 
+/** @param {any} sessionKey @param {Gen} gen @param {string} message */
 function fail(sessionKey, gen, message) {
 	try {
 		gen.port.postMessage({type: "error", id: gen.id, message})
@@ -1503,6 +1586,7 @@ function fail(sessionKey, gen, message) {
 
 // `input` is either chat messages (array → chat-templated) or a raw string
 // (→ plain continuation, what the loom editor wants).
+/** @param {any} sessionKey @param {Gen} gen @param {string} provider @param {any} input @param {WorkerConfig} config */
 async function runGeneration(sessionKey, gen, provider, input, config) {
 	try {
 		log("runGeneration: start", {
@@ -1519,7 +1603,7 @@ async function runGeneration(sessionKey, gen, provider, input, config) {
 		else out = await doGenerateLocal(gen, input, config)
 		log("runGeneration: done", {provider, chars: out.text?.length || 0})
 		finalize(sessionKey, gen, out.text, out.toolCalls)
-	} catch (err) {
+	} catch (/** @type {any} */ err) {
 		if (gen.abortController.signal.aborted) {
 			log("runGeneration: aborted", {provider, chars: gen.fullText?.length || 0})
 			return
@@ -1534,6 +1618,7 @@ async function runGeneration(sessionKey, gen, provider, input, config) {
 // forward pass → the final hidden state h and the base logits at EVERY position,
 // plus token ids. Requires a model exported with a `last_hidden_state` output
 // (glomper-tuning/onnx_hidden.py); otherwise reports {supported:false}.
+/** @param {Gen} gen @param {any} text */
 async function extractFeaturesLocal(gen, text) {
 	const model = generator.model
 	const tokenizer = generator.tokenizer
@@ -1569,7 +1654,7 @@ async function extractFeaturesLocal(gen, text) {
 		prevLen = partial.length
 	}
 	const decoded = tokenizer.decode(ids, {skip_special_tokens: true})
-	const tokens = ids.map((tid) => tokenizer.decode([tid]))
+	const tokens = ids.map((/** @type {any} */ tid) => tokenizer.decode([tid]))
 
 	post(gen, {type: "features", supported: true, seq, H, V, ids, tokens, spans, decoded, hidden, logits})
 	broadcast({type: "status", message: ""})
@@ -1578,6 +1663,7 @@ async function extractFeaturesLocal(gen, text) {
 // Like extractFeaturesLocal but reads the `cut_hidden` output (the residual just
 // before the last block's MLP) — for rung 2 (LoRA on the last block's MLP).
 // Requires a model exported with onnx_block.py.
+/** @param {Gen} gen @param {any} text */
 async function extractCutFeaturesLocal(gen, text) {
 	const model = generator.model
 	const tokenizer = generator.tokenizer
@@ -1607,11 +1693,12 @@ async function extractCutFeaturesLocal(gen, text) {
 		prevLen = partial.length
 	}
 	const decoded = tokenizer.decode(ids, {skip_special_tokens: true})
-	const tokens = ids.map((tid) => tokenizer.decode([tid]))
+	const tokens = ids.map((/** @type {any} */ tid) => tokenizer.decode([tid]))
 	post(gen, {type: "cut-features", supported: true, seq, d, ids, tokens, spans, decoded, hidden})
 	broadcast({type: "status", message: ""})
 }
 
+/** @param {any} port @param {AnyMsg} data */
 function handleMessage(port, data) {
 	const {type, id} = data
 	const sessionKey = data.sessionKey || id
@@ -1789,9 +1876,9 @@ function handleMessage(port, data) {
 		const run = () => {
 			try {
 				const tokenizer = generator.tokenizer
-				const strings = (data.ids || []).map((tid) => tokenizer.decode([tid]))
+				const strings = (data.ids || []).map((/** @type {any} */ tid) => tokenizer.decode([tid]))
 				port.postMessage({type: "decoded-tokens", id, strings})
-			} catch (e) {
+			} catch (/** @type {any} */ e) {
 				port.postMessage({type: "error", id, message: e?.message || String(e)})
 			}
 		}
@@ -1809,14 +1896,16 @@ function handleMessage(port, data) {
 			const tokenizer = generator.tokenizer
 			const text = data.text || "Hello world"
 			const inputs = tokenizer(text, {return_tensor: true})
+			/** @type {Record<string, any>} */
 			const report = {type: "probe-attention-result", id}
 
 			// What sessions does the ONNX model have?
+			/** @type {Record<string, any>} */
 			const sessions = {}
 			for (const [name, session] of Object.entries(model?.sessions || {})) {
 				sessions[name] = {
-					inputNames: session?.inputNames || [],
-					outputNames: session?.outputNames || [],
+					inputNames: /** @type {any} */ (session)?.inputNames || [],
+					outputNames: /** @type {any} */ (session)?.outputNames || [],
 				}
 			}
 			report.sessions = sessions
@@ -1830,7 +1919,7 @@ function handleMessage(port, data) {
 				report.attentionKeys = Object.keys(outputs || {}).filter(k =>
 					/attention|attn/i.test(k)
 				)
-			} catch (e) {
+			} catch (/** @type {any} */ e) {
 				report.forwardError = e.message
 			}
 
@@ -1844,7 +1933,7 @@ function handleMessage(port, data) {
 				})
 				report.generateKeys = Object.keys(genOut || {})
 				report.generateHasAttentions = "attentions" in (genOut || {})
-			} catch (e) {
+			} catch (/** @type {any} */ e) {
 				report.generateError = e.message
 			}
 
@@ -1857,7 +1946,8 @@ function handleMessage(port, data) {
 		return
 	}
 	if (type === "register-local-model") {
-		const files = new Map((data.files || []).map((f) => [f.path, f.blob]))
+		/** @type {Map<string, Blob>} */
+		const files = new Map((data.files || []).map((/** @type {any} */ f) => [f.path, f.blob]))
 		localModelFiles.set(data.id, {files, dtype: data.dtype || "q4f16"})
 		ensureLocalFetchPatch()
 		if (currentModelId === data.id) releaseGenerator() // force a reload (dispose old session)
@@ -1924,17 +2014,17 @@ function handleMessage(port, data) {
 }
 
 // SharedWorker entry — one port per connecting tab.
-self.onconnect = (e) => {
+/** @type {any} */ (self).onconnect = (/** @type {any} */ e) => {
 	const port = e.ports[0]
 	ports.add(port)
-	port.onmessage = (ev) => handleMessage(port, ev.data)
+	port.onmessage = (/** @type {any} */ ev) => handleMessage(port, ev.data)
 	if (generator) port.postMessage({type: "ready"})
 	port.start()
 }
 
 // Dedicated-Worker fallback (browsers without module SharedWorker, e.g. Safari):
 // treat `self` as the single port. `self.postMessage` reaches the main thread.
-if (typeof SharedWorkerGlobalScope === "undefined") {
+if (typeof (/** @type {any} */ (self).SharedWorkerGlobalScope) === "undefined") {
 	ports.add(self)
-	self.onmessage = (ev) => handleMessage(self, ev.data)
+	self.onmessage = (/** @type {any} */ ev) => handleMessage(self, ev.data)
 }

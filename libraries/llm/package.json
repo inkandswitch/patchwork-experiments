@@ -39,6 +39,10 @@
     "@inkandswitch/patchwork-providers": "^0.2.1"
   },
   "devDependencies": {
+    "@automerge/automerge-repo": "^2.5.6",
     "typescript": "^6.0.3"
+  },
+  "peerDependencies": {
+    "@automerge/automerge-repo": "^2.5.6"
   }
 }

@@ -28,6 +28,7 @@ const TAG = "patchwork-llm-config-provider"
 export class PatchworkLLMConfigProvider extends HTMLElement {
 	constructor() {
 		super()
+		/** @type {import("./config.js").LLMConfig | null} */
 		this._config = null // null = "not configured" → don't answer
 		this._subs = new Set() // live responders (one per consumer subscription)
 		this._onSubscribe = this._onSubscribe.bind(this)
@@ -48,6 +49,7 @@ export class PatchworkLLMConfigProvider extends HTMLElement {
 		this._emit()
 	}
 
+	/** @param {any} base */
 	_fromAttrs(base) {
 		const raw = {...base}
 		const provider = this.getAttribute("provider")
@@ -59,10 +61,11 @@ export class PatchworkLLMConfigProvider extends HTMLElement {
 		return normalizeConfig(raw)
 	}
 
+	/** @param {any} e */
 	_onSubscribe(e) {
 		if (e.detail?.selector?.type !== CONFIG_SELECTOR.type) return
 		if (!this._config) return // not configured — let it bubble to the account doc
-		accept(e, (respond) => {
+		accept(e, (/** @type {(cfg: any) => void} */ respond) => {
 			this._subs.add(respond)
 			respond(this._config)
 			return () => this._subs.delete(respond)
@@ -73,6 +76,7 @@ export class PatchworkLLMConfigProvider extends HTMLElement {
 		for (const r of this._subs) r(this._config)
 	}
 
+	/** @returns {import("./config.js").LLMConfig | null} */
 	get config() {
 		return this._config
 	}
@@ -83,12 +87,14 @@ export class PatchworkLLMConfigProvider extends HTMLElement {
 
 	/** Open the picker scoped to this provider (writes back here). */
 	configure() {
-		const node = dom({
-			source: {
-				read: () => this._config ?? normalizeConfig({}),
-				write: (cfg) => (this.config = cfg),
-			},
-		})
+		const node = /** @type {any} */ (
+			dom({
+				source: {
+					read: () => this._config ?? normalizeConfig({}),
+					write: (/** @type {any} */ cfg) => (this.config = cfg),
+				},
+			})
+		)
 		this.appendChild(node) // keep it in this subtree so embedded views get context
 		node.showPopover()
 		return node.result
