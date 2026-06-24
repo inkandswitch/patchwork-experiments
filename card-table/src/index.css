@@ -1,0 +1,240 @@
+@import "tailwindcss";
+
+.card-table {
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+}
+
+.card-table-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border-radius: 0.5rem;
+  border: 1px solid rgb(203 213 225);
+  box-shadow:
+    0 1px 2px rgb(15 23 42 / 0.08),
+    0 4px 10px rgb(15 23 42 / 0.12);
+  user-select: none;
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.card-table-card[draggable="true"] {
+  cursor: grab;
+}
+
+.card-table-card[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.card-table-card.is-revealable {
+  cursor: pointer;
+  box-shadow:
+    0 0 0 2px rgb(251 191 36 / 0.85),
+    0 4px 10px rgb(15 23 42 / 0.12);
+}
+
+.card-table-card.is-revealable:hover {
+  transform: translateY(-2px);
+}
+
+.card-table-card-back {
+  background:
+    radial-gradient(circle at 30% 20%, rgb(129 140 248 / 0.45), transparent 45%),
+    linear-gradient(145deg, rgb(49 46 129), rgb(30 27 75));
+  border-color: rgb(165 180 252 / 0.45);
+}
+
+.card-table-card-back::before {
+  content: "";
+  position: absolute;
+  inset: 0.35rem;
+  border-radius: 0.3rem;
+  border: 1px solid rgb(199 210 254 / 0.35);
+  background:
+    repeating-linear-gradient(
+      45deg,
+      rgb(255 255 255 / 0.06) 0 6px,
+      transparent 6px 12px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      rgb(255 255 255 / 0.05) 0 6px,
+      transparent 6px 12px
+    );
+}
+
+.card-table-card-face {
+  background: linear-gradient(180deg, rgb(255 255 255), rgb(248 250 252));
+}
+
+.card-table-card-face.is-red {
+  color: rgb(185 28 28);
+}
+
+.card-table-card-face.is-black {
+  color: rgb(15 23 42);
+}
+
+.card-table-corner {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.card-table-corner-top {
+  top: 0.3rem;
+  left: 0.35rem;
+}
+
+.card-table-corner-bottom {
+  right: 0.35rem;
+  bottom: 0.3rem;
+  transform: rotate(180deg);
+}
+
+.card-table-rank {
+  font-size: 1.05em;
+}
+
+.card-table-suit {
+  font-size: 0.95em;
+}
+
+.card-table-center {
+  margin: auto;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.card-table-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.card-table-row.is-fan {
+  flex-wrap: nowrap;
+}
+
+.card-table-row.is-fan .card-table-card {
+  margin-right: -1.75rem;
+}
+
+.card-table-row.is-fan .card-table-card:last-child {
+  margin-right: 0;
+}
+
+.card-table-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.card-table-stack-pile {
+  position: relative;
+  width: 4.25rem;
+  height: 6rem;
+}
+
+.card-table-stack-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.card-table-stack-count {
+  position: absolute;
+  right: -0.35rem;
+  top: -0.35rem;
+  z-index: 20;
+  min-width: 1.5rem;
+  border-radius: 9999px;
+  background: rgb(15 23 42);
+  color: white;
+  padding: 0.125rem 0.375rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-align: center;
+  box-shadow: 0 2px 6px rgb(15 23 42 / 0.25);
+}
+
+.card-table-stack-label {
+  font-size: 0.75rem;
+  color: rgb(209 250 229);
+  font-weight: 600;
+}
+
+.card-table-stack-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 4.25rem;
+  height: 6rem;
+  border-radius: 0.5rem;
+  border: 1px dashed rgb(167 243 208 / 0.35);
+}
+
+.card-table-felt {
+  border-radius: 1rem;
+  background:
+    radial-gradient(ellipse at center, rgb(6 95 70), rgb(4 47 46));
+  box-shadow: inset 0 0 0 1px rgb(16 185 129 / 0.25);
+}
+
+.card-table-drop-zone {
+  position: relative;
+  border-radius: 0.75rem;
+  transition:
+    box-shadow 120ms ease,
+    background-color 120ms ease;
+}
+
+.card-table-deck-tool {
+  min-width: 8rem;
+}
+
+.card-table-drop-zone.is-over {
+  min-height: 5rem;
+  box-shadow: inset 0 0 0 2px rgb(250 204 21);
+  background: rgb(250 204 21 / 0.08);
+}
+
+
+.card-table-drop-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.75rem;
+  background: rgb(250 204 21 / 0.15);
+  color: rgb(120 53 15);
+  font-size: 0.75rem;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.card-table-zone-shell {
+  border-radius: 0.75rem;
+  border: 1px solid rgb(226 232 240);
+  background: rgb(248 250 252);
+  padding: 0.75rem;
+}
+
+.card-table-play-layout {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 768px) {
+  .card-table-play-layout {
+    grid-template-columns: minmax(6rem, auto) 1fr;
+    align-items: start;
+  }
+}
