@@ -1,0 +1,16 @@
+{
+  "name": "@patchwork/apriltag-projector",
+  "version": "0.0.1",
+  "description": "Camera-projector calibration plus live AprilTag (tag36h11) detection that projects an editable label next to each detected tag",
+  "type": "module",
+  "main": "apriltag-projector.js",
+  "exports": {
+    ".": "apriltag-projector.js"
+  },
+  "scripts": {
+    "push": "pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  },
+  "keywords": [],
+  "author": "Ink & Switch"
+}
