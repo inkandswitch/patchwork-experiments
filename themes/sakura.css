@@ -7,6 +7,7 @@
 	--studio-line: #5b3a4a; /* deep plum, never harsh black */
 	--studio-primary: #ff6b9d; /* cherry pink */
 	--studio-secondary: #6ec6e6; /* spring sky */
+	--studio-offset-tint: var(--studio-primary); /* keep offsets pink, not the blue secondary */
 	--studio-danger: #e84d6f;
 	--studio-warning: #f6a96b; /* apricot */
 	--studio-added: #7ec678; /* leaf green */

@@ -11,6 +11,10 @@ importers:
       '@inkandswitch/patchwork-providers':
         specifier: ^0.2.1
         version: 0.2.2(@automerge/automerge-repo@2.5.6)
+    devDependencies:
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
 
 packages:
 
@@ -99,6 +103,11 @@ packages:
 
   node-gyp-build-optional-packages@5.1.1:
     resolution: {integrity: sha512-+P72GAjVAbTxjjwUmwjVrqrdZROD4nf8KgpBoDxqXXTiYZZt/ud60dE5yvCSr9lRO8e8yv6kgJIC0K0PfZFVQw==}
+    hasBin: true
+
+  typescript@6.0.3:
+    resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
+    engines: {node: '>=14.17'}
     hasBin: true
 
   uuid@9.0.1:
@@ -194,6 +203,8 @@ snapshots:
     dependencies:
       detect-libc: 2.1.2
     optional: true
+
+  typescript@6.0.3: {}
 
   uuid@9.0.1: {}
 

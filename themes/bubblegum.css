@@ -9,6 +9,7 @@
 	--studio-secondary: #3db8ff; /* candy blue */
 	--studio-danger: #ff3d6e;
 	--studio-warning: #ffc23d; /* candy yellow */
+	--studio-offset-tint: var(--studio-warning); /* candy-yellow offsets, not the blue secondary */
 	--studio-added: #3dd97e; /* candy green */
 	--studio-deleted: #ff3d6e;
 	--studio-modified: #b03dff; /* grape */

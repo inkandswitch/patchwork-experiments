@@ -42,6 +42,74 @@ function broadcast(msg) {
 	}
 }
 
+// The big model weights are fetched by onnxruntime-web DIRECTLY (an external-data
+// blob: a `.onnx_data`/`.bin`/hash-named LFS file), bypassing transformers.js's
+// `progress_callback` — which only ever sees the small tokenizer/config/onnx-graph
+// files. So those instantly hit "100%" while a 400MB+ weights download silently
+// streams for minutes with no feedback. Fix: wrap the worker's global `fetch` and
+// stream-count bytes on the large weights download, broadcasting real progress.
+//
+// We deliberately do NOT track `.onnx` files (transformers.js already reports those)
+// or anything under the size threshold (tokenizer/config/API calls) — only the big
+// external-data blob transformers.js is blind to.
+function fmtMB(b) {
+	return (b / 1048576).toFixed(0) + " MB"
+}
+
+function installWeightsProgress() {
+	if (self.__llmWeightsFetchPatched) return
+	self.__llmWeightsFetchPatched = true
+	const orig = self.fetch.bind(self)
+	const THRESHOLD = 50 * 1024 * 1024 // 50MB — well above tokenizer/config/graph files
+	self.fetch = async (input, init) => {
+		const res = await orig(input, init)
+		try {
+			const cl = +res.headers.get("content-length")
+			const url = res.url || (typeof input === "string" ? input : input?.url || "")
+			const name = (url.split("?")[0].split("/").pop() || "").toLowerCase()
+			// `.onnx` graph files are already tracked by transformers.js; skip them so
+			// the two don't fight over the status line. Everything else big is weights.
+			if (res.ok && res.body && cl > THRESHOLD && !name.endsWith(".onnx")) {
+				return trackDownload(res, cl)
+			}
+		} catch {}
+		return res
+	}
+}
+
+function trackDownload(res, total) {
+	let loaded = 0
+	let lastPct = -1
+	const reader = res.body.getReader()
+	const stream = new ReadableStream({
+		async pull(controller) {
+			const {done, value} = await reader.read()
+			if (done) {
+				controller.close()
+				return
+			}
+			loaded += value.byteLength
+			const pct = total ? Math.round((100 * loaded) / total) : 0
+			if (pct !== lastPct) {
+				lastPct = pct
+				broadcast({
+					type: "status",
+					message: `Downloading model weights… ${pct}% (${fmtMB(loaded)} / ${fmtMB(total)})`,
+				})
+			}
+			controller.enqueue(value)
+		},
+		cancel(reason) {
+			return reader.cancel(reason)
+		},
+	})
+	return new Response(stream, {
+		status: res.status,
+		statusText: res.statusText,
+		headers: res.headers,
+	})
+}
+
 // Forward worker diagnostics to every connected page. A SharedWorker has its own
 // (usually hidden) console, so without this its logs are invisible from the tool.
 // `client.js` re-prints `{type:"log"}` on the main thread. Each arg is reduced to
@@ -120,6 +188,15 @@ function friendlyError(err) {
 	}
 	if (/unaligned/i.test(raw)) {
 		return "The WASM backend hit an unaligned-access fault. Try a normal window so WebGPU is available, or a smaller model. (raw: " + raw + ")"
+	}
+	if (/tensor shape is too large|failed to call OrtRun|op_kernel\.cc/i.test(raw)) {
+		return (
+			"The model produced a tensor too large for this backend during the forward pass. " +
+			"That usually means either a very long prompt, or a model that emits extra big outputs " +
+			"every step — e.g. an attention-export model (…-attn) meant for analysis/overlays, not " +
+			"chat generation. Use the standard (non-attention) model for chat, shorten the prompt, " +
+			"or open in a normal window for WebGPU. (raw: " + raw + ")"
+		)
 	}
 	return raw
 }
@@ -224,6 +301,7 @@ async function loadModel(modelId, dtypeOverride) {
 		TF = await import(/* @vite-ignore */ CDN)
 		TF.env.allowLocalModels = false
 		TF.env.useBrowserCache = true
+		installWeightsProgress() // byte-level progress for the external-data weights blob
 		if (navigator.storage?.persist) await navigator.storage.persist()
 	} catch (err) {
 		lastLoadError = err
@@ -1446,9 +1524,9 @@ async function runGeneration(sessionKey, gen, provider, input, config) {
 			log("runGeneration: aborted", {provider, chars: gen.fullText?.length || 0})
 			return
 		}
-		log("runGeneration: error", {provider, message: err?.message || String(err)})
+		log("runGeneration: error", {provider, model: currentModelId, message: err?.message || String(err)})
 		if (gen.fullText) finalize(sessionKey, gen, gen.fullText)
-		else fail(sessionKey, gen, err?.message || String(err))
+		else fail(sessionKey, gen, friendlyError(err))
 	}
 }
 

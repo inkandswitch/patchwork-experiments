@@ -1,7 +1,7 @@
 /**
  * Main-thread client for the @patchwork/llm worker.
  *
- * Connects to the SharedWorker (falling back to a dedicated Worker), routes
+ * Connects to a dedicated Worker (one per page), routes
  * messages back to the right in-flight generation, and exposes two call styles:
  *
  *   const { text, stats } = await generate(messages, { onToken, onPrediction, onStats })
@@ -42,8 +42,8 @@ function clog(...args) {
 
 function dispatch(msg) {
 	if (!msg) return
-	// Worker diagnostics: the SharedWorker's own console is hidden, so re-print
-	// its logs here on the main thread where the tool's devtools can see them.
+	// Worker diagnostics: the Worker's own console is separate, so re-print its
+	// logs here on the main thread where the tool's devtools can see them.
 	if (msg.type === "log") {
 		try {
 			console.log("[llm worker]", ...(msg.args || []))
@@ -93,22 +93,20 @@ function dispatch(msg) {
 
 function getConnection() {
 	if (connection) return connection
+	// A dedicated Worker (one per page), NOT a SharedWorker. A SharedWorker is a
+	// single instance shared across every tab/tool on the origin — which serialises
+	// all generation through one model and keeps running stale code until every
+	// page closes. A per-page Worker reloads with the page, is isolated, and dies
+	// with it; a page that wants many models running at once gets its own worker
+	// rather than fighting over one. (Trade-off: loses resume-after-refresh, which
+	// relied on the worker outliving the page — `resume()` now just reports
+	// no-active-generation, handled gracefully.)
 	// NOTE: `new URL("./worker.js", import.meta.url)` MUST stay inline inside the
 	// constructor — that's the exact pattern bundlers (vite) statically detect to
 	// emit the worker chunk; hoisting it to a variable silently breaks bundling.
-	if (typeof SharedWorker !== "undefined") {
-		const sw = new SharedWorker(new URL("./worker.js", import.meta.url), {
-			type: "module",
-			name: "patchwork-llm",
-		})
-		sw.port.onmessage = (ev) => dispatch(ev.data)
-		sw.port.start()
-		connection = {post: (m) => sw.port.postMessage(m)}
-	} else {
-		const w = new Worker(new URL("./worker.js", import.meta.url), {type: "module"})
-		w.onmessage = (ev) => dispatch(ev.data)
-		connection = {post: (m) => w.postMessage(m)}
-	}
+	const w = new Worker(new URL("./worker.js", import.meta.url), {type: "module"})
+	w.onmessage = (ev) => dispatch(ev.data)
+	connection = {post: (m) => w.postMessage(m)}
 	return connection
 }
 
