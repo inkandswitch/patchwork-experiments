@@ -15,10 +15,10 @@ Exports a `plugins` array with one `patchwork:datatype` and one `patchwork:tool`
 
 ```js
 export const plugins = [
-  { type: "patchwork:datatype", id: "chat", name: "Chat", icon: "MessageCircle",
+  { type: "patchwork:datatype", id: "chitterchatter", name: "Chitterchatter", icon: "MessageCircle",
     async load() { return (await import("./datatype")).ChatDatatype } },
-  { type: "patchwork:tool", id: "chat", name: "Chat", icon: "MessageCircle",
-    supportedDatatypes: ["chat"],
+  { type: "patchwork:tool", id: "chitterchatter", name: "Chitterchatter", icon: "MessageCircle",
+    supportedDatatypes: ["chitterchatter", "chat"], // "chat" = legacy docs created before the rename
     async load() { return (await import("./tool")).ChatTool } },
 ]
 ```
@@ -115,16 +115,20 @@ Implements `init(doc)`, `getTitle(doc)`, `setTitle(doc, title)`.
 - Recording feedback: button dims with spinner, input row shows processing state
 
 ### Theme System
-- Single `--theme` oklch color drives the entire UI via `color-mix(in oklch, ...)`
-- Dark mode: theme mixed 15-40% into black
-- Light mode (L > 0.65): theme mixed 5-20% into white
-- `contrast-color()` used where supported for text/accent foreground
-- Theme picker popover with:
-  - 14 preset dots (Indigo, Rose, Emerald, Amber, Cyan, Purple, Slate, Light Pink, Light Blue, Light Green, Lavender, Peach, White, Black)
-  - Hue slider (0-360)
-  - Luminosity slider (0-100)
-  - Chroma slider (0-40)
-- Saved to `localStorage("chat-theme-color")`
+- Uses the **Patchwork system theme** — the host sets `[theme]`, `color-scheme`
+  and the `--studio-*` design tokens (see `patchwork-base/theming`). There is no
+  in-tool theme picker.
+- `chat.css` (`.chat-root`) maps the studio tokens onto the names the rest of the
+  stylesheet uses: `--studio-fill` / `--studio-fill-offset-N` → `--bg-*`,
+  `--studio-line` / `--studio-line-offset-N` → `--text-*`, `--studio-primary` →
+  `--accent`, `--studio-link` → `--link`, plus `--studio-font-size` /
+  `--studio-family-sans` for the root font. oklch fallbacks keep it legible if
+  loaded outside the host.
+- `ThemeContext` no longer computes colours — it only derives `isLightBg` from
+  the rendered background (luminance of computed `--studio-fill`) so syntax
+  highlighting and named-colour resolution pick the right light/dark variant. It
+  re-evaluates via a `MutationObserver` on the `[theme]` host + a
+  `prefers-color-scheme` listener when the host swaps themes at runtime.
 
 ### Avatars & Cat Ears
 - Reads `avatarUrl` from contact doc, renders in circle

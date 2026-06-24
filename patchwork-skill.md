@@ -378,21 +378,43 @@ We structure CSS using **Composition, Utility, Block, Exception** layers:
 }
 ```
 
+### `--editor-*` vs `--studio-*`: which to derive from
+
+The theme exposes two families of surface variables:
+
+- **`--editor-*`** — the surface a *tool/editor* paints on (the document content area). **Most
+  tools should derive their fill, line, and typography from `--editor-*`.** The editor surface
+  can be themed independently of the studio chrome (e.g. a document with its own paper colour),
+  and `--editor-*` defaults to the matching `--studio-*` value, so deriving from editor is
+  always at least as correct as deriving from studio.
+- **`--studio-*`** — the studio's own **chrome**: the top bar, bottom bar, and sidebar. These
+  belong to `patchwork-frame` (the studio shell). Only UI that *is* the studio chrome should
+  derive its fill/line from `--studio-*`.
+
+Rule of thumb: if you're building a tool, derive fill/line/typography from `--editor-*`. Reach
+for `--studio-*` only when you're styling the studio frame itself.
+
+Accent colours (`--studio-primary` etc.), spacing, radius, shadow, and transition tokens have
+**no `--editor-*` equivalent** — use the `--studio-*` versions everywhere.
+
 ### CSS variables
 
 Use these variables (with fallbacks) instead of hardcoded values:
 
-**Colors:**
-- `var(--studio-fill, white)` / `var(--studio-line, black)` — background/foreground
-- `var(--studio-fill-offset-10)` through `-50` — tinted backgrounds (mix of fill + line)
-- `var(--studio-line-offset-10)` through `-50` — muted text (mix of line + fill)
+**Colors (derive from `--editor-*` in tools):**
+- `var(--editor-fill, white)` / `var(--editor-line, black)` — background/foreground
+- `var(--editor-fill-offset-10)` through `-50` — tinted backgrounds (mix of fill + line)
+- `var(--editor-line-offset-10)` through `-50` — muted text (mix of line + fill)
+- `var(--editor-selection-fill)` / `var(--editor-selection-line)`, `var(--editor-cursor-fill)`
+
+**Accent colors (studio-only — no editor equivalent):**
 - `var(--studio-primary, #35f7ca)`, `--studio-secondary`, `--studio-danger`, `--studio-warning`
 - `var(--studio-added)`, `--studio-deleted`, `--studio-modified`, `--studio-link`
 
-**Typography:**
-- `var(--studio-family-sans, system-ui, sans-serif)` — UI text
-- `var(--studio-family-code, ui-monospace, monospace)` — code/mono
-- `var(--studio-font-size, 16px)`, `var(--studio-line-height, 1.5)`
+**Typography (derive from `--editor-*` in tools):**
+- `var(--editor-family-sans, system-ui, sans-serif)` — UI text
+- `var(--editor-family-code, ui-monospace, monospace)` — code/mono
+- `var(--editor-font-size, 16px)`, `var(--editor-line-height, 1.5)`, `var(--editor-font-weight)`
 
 **Spacing:**
 - `var(--studio-space-2xs)` (4px) through `var(--studio-space-2xl)` (48px)
@@ -418,21 +440,30 @@ Every tool's CSS follows this structure:
 :root,
 :host,
 [theme] {
-  --my-tool-bg: var(--studio-fill, white);
-  --my-tool-fg: var(--studio-line, black);
-  --my-tool-muted: var(--studio-line-offset-50, #999);
-  --my-tool-border: var(--studio-fill-offset-20, #ccc);
+  --my-tool-bg: var(--editor-fill, white);
+  --my-tool-fg: var(--editor-line, black);
+  --my-tool-muted: var(--editor-line-offset-50, #999);
+  --my-tool-border: var(--editor-fill-offset-20, #ccc);
   --my-tool-accent: var(--studio-primary, #35f7ca);
-  --my-tool-hover: color-mix(in oklch, var(--studio-fill), var(--studio-line) 5%);
-  --my-tool-family: var(--studio-family-sans, system-ui, sans-serif);
-  --my-tool-family-code: var(--studio-family-code, ui-monospace, monospace);
+  --my-tool-hover: color-mix(in oklch, var(--editor-fill), var(--editor-line) 5%);
+  --my-tool-family: var(--editor-family-sans, system-ui, sans-serif);
+  --my-tool-family-code: var(--editor-family-code, ui-monospace, monospace);
 }
 ```
 
-**Important:** Global `--studio-*` variables must NEVER be used directly in CSS rules. They
-should ONLY appear inside `:root, :host, [theme]` derivation blocks. The derived
+Note fill/line/typography derive from `--editor-*` (this is a tool), while the accent comes from
+`--studio-primary` (accents have no editor equivalent).
+
+**Important:** Global `--editor-*` and `--studio-*` variables must NEVER be used directly in CSS
+rules. They should ONLY appear inside `:root, :host, [theme]` derivation blocks. The derived
 `--my-tool-*` variables are what you use in actual rules. This ensures themes re-evaluate
 correctly when the `[theme]` attribute changes (e.g. switching between light/dark mode).
+
+This holds for **every** tool, even one that only touches a couple of globals — a tool whose
+CSS is just `color: var(--editor-line)` and one `font-family` still needs a derivation block
+with `--my-tool-fg` / `--my-tool-family` rather than referencing the globals inline. If you find
+a global `var(--editor-*)`/`var(--studio-*)` (color, font, or background) anywhere in a style
+rule, lift it into a `--my-tool-*` variable in the derivation block and reference that instead.
 
 2. **Composition classes** (if needed) for layout patterns:
 
@@ -479,10 +510,10 @@ their fallbacks — only color, font, and background vars need to be derived.
 `color-mix()`:
 
 ```css
-/* Good — derived from theme */
-background: color-mix(in oklch, var(--studio-fill), var(--studio-line) 5%);
+/* Good — derived from theme (editor surface for a tool) */
+background: color-mix(in oklch, var(--editor-fill), var(--editor-line) 5%);
 border-color: color-mix(in oklch, var(--studio-primary), transparent 50%);
-color: color-mix(in oklch, var(--studio-line), var(--studio-fill) 40%);
+color: color-mix(in oklch, var(--editor-line), var(--editor-fill) 40%);
 
 /* Bad — hardcoded */
 background: #f5f5f5;
@@ -490,9 +521,20 @@ border-color: rgba(53, 247, 202, 0.5);
 color: #666;
 ```
 
-When you need "lighter" or "darker", mix with `var(--studio-fill)` or `var(--studio-line)`
-respectively — **not** literal `white`/`black` — so the derivations invert correctly in
-dark themes.
+When you need "lighter" or "darker", mix with `var(--editor-fill)` or `var(--editor-line)`
+respectively (or the `--studio-*` equivalents if you're styling the studio chrome) — **not**
+literal `white`/`black` — so the derivations invert correctly in dark themes.
+
+When you **tint an accent** toward the surface (e.g. a soft-filled badge), keep the accent as
+`--studio-*` but anchor the mix on the editor surface so it still inverts with the document:
+
+```css
+/* Good — studio accent, editor-surface anchor */
+--my-tool-badge: color-mix(in oklch, var(--studio-secondary), var(--editor-fill) 60%);
+
+/* Bad — anchoring the tint on the studio surface inside a tool */
+--my-tool-badge: color-mix(in oklch, var(--studio-secondary), var(--studio-fill) 60%);
+```
 
 ### Do not handle dark mode
 
@@ -535,7 +577,7 @@ or normalise stylesheets.
 :root,
 :host,
 [theme] {
-  --my-tool-bg: var(--studio-fill, white);
+  --my-tool-bg: var(--editor-fill, white);
 }
 }
 
