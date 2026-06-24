@@ -3,8 +3,8 @@ import type { DocHandle } from "@automerge/automerge-repo";
 import { z } from "zod";
 import { startShuffle } from "../crypto/protocol";
 import { deckCardCount } from "../ops/deck";
-import { dealCards, moveCardByRef, addHand, addPile } from "../ops/zones";
-import type { CardTableDoc, ZoneRef } from "../types";
+import { dealCards, moveCardByRef, addZone } from "../ops/zones";
+import type { CardTableDoc } from "../types";
 
 export const shuffleTableAction: Plugin<any> = {
   type: "patchwork:action",
@@ -32,16 +32,14 @@ export const dealCardsAction: Plugin<any> = {
   supportedDatatypes: ["card-table"],
   module: {
     argsSchema: (doc: CardTableDoc) => {
-      const handIds = doc.hands.map((h) => h.id);
-      const pileIds = doc.piles.map((p) => p.id);
+      const zoneIds = doc.zones
+        .filter((zone) => zone.role !== "deck")
+        .map((zone) => zone.id);
       return z.object({
         count: z.number().int().min(1).describe("Number of cards to deal"),
-        handId: handIds.length
-          ? z.enum(handIds as [string, ...string[]]).optional()
-          : z.string().optional(),
-        pileId: pileIds.length
-          ? z.enum(pileIds as [string, ...string[]]).optional()
-          : z.string().optional(),
+        zoneId: zoneIds.length
+          ? z.enum(zoneIds as [string, ...string[]])
+          : z.string(),
       });
     },
     isApplicable: (doc: CardTableDoc) =>
@@ -49,11 +47,9 @@ export const dealCardsAction: Plugin<any> = {
     default: (
       handle: DocHandle<CardTableDoc>,
       _repo: unknown,
-      args: { count: number; handId?: string; pileId?: string },
+      args: { count: number; zoneId: string },
     ) => {
-      handle.change((doc) =>
-        dealCards(doc, { handId: args.handId, pileId: args.pileId }, args.count),
-      );
+      handle.change((doc) => dealCards(doc, args.zoneId, args.count));
     },
   },
 };
@@ -67,9 +63,7 @@ export const moveCardAction: Plugin<any> = {
   module: {
     argsSchema: () =>
       z.object({
-        fromKind: z.enum(["deck", "hand", "pile"]),
         fromId: z.string().describe("Source zone id"),
-        toKind: z.enum(["deck", "hand", "pile"]),
         toId: z.string().describe("Target zone id"),
         fromIndex: z.number().int().min(0).describe("Index in source zone"),
       }),
@@ -77,19 +71,13 @@ export const moveCardAction: Plugin<any> = {
     default: (
       handle: DocHandle<CardTableDoc>,
       _repo: unknown,
-      args: {
-        fromKind: ZoneRef["kind"];
-        fromId: string;
-        toKind: ZoneRef["kind"];
-        toId: string;
-        fromIndex: number;
-      },
+      args: { fromId: string; toId: string; fromIndex: number },
     ) => {
       handle.change((doc) =>
         moveCardByRef(
           doc,
-          { kind: args.fromKind, id: args.fromId },
-          { kind: args.toKind, id: args.toId },
+          { id: args.fromId },
+          { id: args.toId },
           args.fromIndex,
         ),
       );
@@ -106,10 +94,12 @@ export const addZoneAction: Plugin<any> = {
   module: {
     argsSchema: () =>
       z.object({
-        kind: z.enum(["hand", "pile"]),
         id: z.string().describe("Stable zone id slug"),
         title: z.string(),
-        ownerId: z.string().optional().describe("Contact identity URL"),
+        ownerId: z
+          .string()
+          .optional()
+          .describe("Contact identity URL — present makes this a private hand"),
         faceUp: z.boolean().optional(),
       }),
     isApplicable: () => true,
@@ -117,7 +107,6 @@ export const addZoneAction: Plugin<any> = {
       handle: DocHandle<CardTableDoc>,
       _repo: unknown,
       args: {
-        kind: "hand" | "pile";
         id: string;
         title: string;
         ownerId?: string;
@@ -125,19 +114,12 @@ export const addZoneAction: Plugin<any> = {
       },
     ) => {
       handle.change((doc) => {
-        if (args.kind === "hand") {
-          addHand(doc, {
-            id: args.id,
-            title: args.title,
-            ownerId: args.ownerId ?? "",
-          });
-        } else {
-          addPile(doc, {
-            id: args.id,
-            title: args.title,
-            faceUp: args.faceUp,
-          });
-        }
+        addZone(doc, {
+          id: args.id,
+          title: args.title,
+          ownerId: args.ownerId,
+          faceUp: args.faceUp,
+        });
       });
     },
   },

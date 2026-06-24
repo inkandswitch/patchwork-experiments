@@ -56,31 +56,30 @@ export type PublicKeyFields = {
   q: string;
 };
 
-export type SecureDeckZone = {
-  "@patchwork"?: { type: "secure-deck" };
-  id: string;
-  title: string;
-  cards: number[];
-};
+export type ZoneLayout = "fan" | "row" | "stack";
 
-export type SecureHandZone = {
-  "@patchwork"?: { type: "secure-hand" };
+/**
+ * A single unified card container. A "hand" is a zone with an `ownerId`
+ * (a private viewer); a "pile" is an unowned zone; the "deck" is an unowned
+ * zone with `role: "deck"` that the shuffle fills and that is drawn from the
+ * front. Reveal state is per-card (`revealedOffsets`) plus an optional
+ * `faceUp` reveal-all policy.
+ */
+export type CardZone = {
+  "@patchwork"?: { type: "card-zone" };
   id: string;
   title: string;
-  /** Empty until a player claims this hand on the canvas. */
-  /** Contact doc URL (or repo peer id). Empty until claimed. */
-  ownerId: string;
   cards: number[];
-  /** Deck offsets the owner has revealed to other players. */
+  /** Contact doc URL of the private viewer. Absent/"" = shared (pile/deck). */
+  ownerId?: string;
+  /** Offsets revealed publicly to everyone (per-card reveal). */
   revealedOffsets?: number[];
-};
-
-export type SecurePileZone = {
-  "@patchwork"?: { type: "secure-pile" };
-  id: string;
-  title: string;
-  faceUp: boolean;
-  cards: number[];
+  /** Reveal-all policy — every card (incl. future ones) is face up to all. */
+  faceUp?: boolean;
+  /** Presentation hint. */
+  layout?: ZoneLayout;
+  /** "deck" = filled by the shuffle, drawn from the front, never auto-revealed. */
+  role?: "deck";
 };
 
 export type IndividualKeyShare = {
@@ -120,8 +119,8 @@ export type CardTableDoc = {
   workingDeck: string[] | null;
   publishedDeck: string[] | null;
 
-  /** Face-down draw pile — path-addressed sub-document (`decks/{id}`). */
-  decks: SecureDeckZone[];
+  /** All card containers (deck, hands, piles) — path-addressed as `zones/{id}`. */
+  zones: CardZone[];
 
   /** Cached individual key shares — populated as players cooperate to reveal cards. */
   keyShares: KeyShareCache;
@@ -129,15 +128,10 @@ export type CardTableDoc = {
   keyShareEnvelopes: KeyShareEnvelopeCache;
   /** Outstanding requests for missing shuffle key material (synced, not ephemeral). */
   keyRequests: KeyRequest[];
-
-  hands: SecureHandZone[];
-  piles: SecurePileZone[];
 };
 
-export type ZoneRef =
-  | { kind: "deck"; id: string }
-  | { kind: "hand"; id: string }
-  | { kind: "pile"; id: string };
+/** Reference to a zone by id. */
+export type ZoneRef = { id: string };
 
 export const CRYPTO_BITS = 32;
 

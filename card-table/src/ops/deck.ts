@@ -1,33 +1,42 @@
-import type { CardTableDoc, SecureDeckZone } from "../types";
+import type { CardTableDoc, CardZone } from "../types";
 
 export const DEFAULT_DECK_ID = "deck";
 
-/** Ensures the default deck sub-zone exists. */
-export function ensureDecks(doc: CardTableDoc) {
-  if (!doc.decks) doc.decks = [];
-
-  if (doc.decks.some((entry) => entry.id === DEFAULT_DECK_ID)) return;
-
-  doc.decks.push({
-    "@patchwork": { type: "secure-deck" },
+/** Ensures the default deck zone (role: "deck") exists. */
+export function ensureDeck(doc: CardTableDoc) {
+  if (!doc.zones) doc.zones = [];
+  if (doc.zones.some((zone) => zone.role === "deck")) return;
+  doc.zones.push({
+    "@patchwork": { type: "card-zone" },
     id: DEFAULT_DECK_ID,
     title: "Deck",
     cards: [],
+    layout: "stack",
+    role: "deck",
   });
 }
 
-export function findDeck(
-  doc: CardTableDoc,
-  id: string = DEFAULT_DECK_ID,
-): SecureDeckZone {
-  ensureDecks(doc);
-  const deck = doc.decks.find((entry) => entry.id === id);
-  if (!deck) throw new Error(`Deck not found: ${id}`);
+/** Pure lookup of the deck zone — safe in render/read-only contexts. */
+export function deckZone(doc: CardTableDoc): CardZone | undefined {
+  return (
+    doc.zones?.find((zone) => zone.role === "deck") ??
+    doc.zones?.find((zone) => zone.id === DEFAULT_DECK_ID)
+  );
+}
+
+/**
+ * The primary deck zone — the shuffle's output, drawn from the front.
+ * Creates it if missing, so only call inside an Automerge `change`.
+ */
+export function findDeck(doc: CardTableDoc): CardZone {
+  ensureDeck(doc);
+  const deck = deckZone(doc);
+  if (!deck) throw new Error("Deck zone not found");
   return deck;
 }
 
 export function deckCardCount(doc: CardTableDoc): number {
-  return findDeck(doc).cards.length;
+  return deckZone(doc)?.cards.length ?? 0;
 }
 
 export function fillDeck(doc: CardTableDoc) {

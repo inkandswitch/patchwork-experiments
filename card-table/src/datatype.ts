@@ -1,6 +1,7 @@
 import type { Repo } from "@automerge/automerge-repo";
 import type { DatatypeImplementation } from "@inkandswitch/patchwork-plugins";
 import type { CardTableDoc } from "./types";
+import { DEFAULT_DECK_ID } from "./ops/deck";
 
 export const CardTableDatatype: DatatypeImplementation<CardTableDoc> = {
   init(doc: CardTableDoc, _repo: Repo) {
@@ -14,19 +15,19 @@ export const CardTableDatatype: DatatypeImplementation<CardTableDoc> = {
     doc.publicKey = null;
     doc.workingDeck = null;
     doc.publishedDeck = null;
-    doc.decks = [
+    doc.zones = [
       {
-        "@patchwork": { type: "secure-deck" },
-        id: "deck",
+        "@patchwork": { type: "card-zone" },
+        id: DEFAULT_DECK_ID,
         title: "Deck",
         cards: [],
+        layout: "stack",
+        role: "deck",
       },
     ];
     doc.keyShares = {};
     doc.keyShareEnvelopes = {};
     doc.keyRequests = [];
-    doc.hands = [];
-    doc.piles = [];
   },
 
   getTitle(doc: CardTableDoc) {

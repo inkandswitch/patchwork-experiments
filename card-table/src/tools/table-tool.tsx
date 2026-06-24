@@ -15,7 +15,7 @@ import { usePlayerIdentity } from "../hooks/use-player-identity";
 import { CARD_TABLE_BUILT_AT } from "../build-info";
 import { makeTool } from "../make-tool";
 import { dealCards } from "../ops/zones";
-import { DEFAULT_DECK_ID, deckCardCount } from "../ops/deck";
+import { deckCardCount, deckZone } from "../ops/deck";
 import type { CardTableDoc } from "../types";
 
 function TableEditor({ docUrl }: { docUrl: AutomergeUrl }) {
@@ -25,8 +25,7 @@ function TableEditor({ docUrl }: { docUrl: AutomergeUrl }) {
   const [doc, changeDoc] = useDocument<CardTableDoc>(docUrl, { suspense: true });
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [dealTargetHand, setDealTargetHand] = useState("");
-  const [dealTargetPile, setDealTargetPile] = useState("");
+  const [dealTargetZone, setDealTargetZone] = useState("");
   const [dealCount, setDealCount] = useState(1);
 
   const onInitError = useCallback((message: string) => {
@@ -75,10 +74,15 @@ function TableEditor({ docUrl }: { docUrl: AutomergeUrl }) {
     );
   }
 
-  const deal = (target: { handId?: string; pileId?: string }, count = 1) =>
+  const deal = (zoneId: string, count = 1) =>
     run("deal", () => {
-      changeDoc((draft) => dealCards(draft, target, count));
+      changeDoc((draft) => dealCards(draft, zoneId, count));
     });
+
+  const deck = deckZone(doc);
+  const playableZones = (doc.zones ?? []).filter(
+    (zone) => zone.role !== "deck",
+  );
 
   return (
     <div className="card-table h-full overflow-y-auto bg-slate-50 p-4 text-slate-900">
@@ -154,66 +158,49 @@ function TableEditor({ docUrl }: { docUrl: AutomergeUrl }) {
           <div className="card-table-felt p-4">
             <div className="card-table-play-layout">
               <div className="flex justify-center md:justify-start">
-                <patchwork-view
-                  doc-url={handle.sub("decks", { id: DEFAULT_DECK_ID }).url}
-                  tool-id="secure-deck"
-                  class="block min-h-[8rem] w-full max-w-[10rem]"
-                />
+                {deck ? (
+                  <patchwork-view
+                    doc-url={handle.sub("zones", { id: deck.id }).url}
+                    tool-id="card-zone"
+                    class="block min-h-[8rem] w-full max-w-[10rem]"
+                  />
+                ) : null}
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
-                {doc.hands.map((hand) => {
-                  const handUrl = handle.sub("hands", { id: hand.id }).url;
+                {playableZones.map((zone) => {
+                  const zoneUrl = handle.sub("zones", { id: zone.id }).url;
                   return (
                     <div
-                      key={hand.id}
+                      key={zone.id}
                       className="card-table-zone-shell space-y-2"
                     >
                       <div>
                         <p className="text-sm font-medium text-slate-900">
-                          {hand.title}
-                          {hand.revealedOffsets?.length
-                            ? ` · ${hand.revealedOffsets.length} revealed`
+                          {zone.title}
+                          {zone.ownerId && zone.revealedOffsets?.length
+                            ? ` · ${zone.revealedOffsets.length} revealed`
                             : ""}
+                          {!zone.ownerId && zone.faceUp ? " (face up)" : ""}
                         </p>
                         <p className="text-xs text-slate-500">
-                          {hand.ownerId ? (
-                            <ContactName identity={hand.ownerId} />
+                          {zone.ownerId ? (
+                            <ContactName identity={zone.ownerId} />
                           ) : (
-                            "Unclaimed"
+                            "Shared"
                           )}
                         </p>
                       </div>
                       <patchwork-view
-                        key={handUrl}
-                        doc-url={handUrl}
-                        tool-id="secure-hand"
+                        key={zoneUrl}
+                        doc-url={zoneUrl}
+                        tool-id="card-zone"
                         class="block min-h-[5rem]"
                       />
                     </div>
                   );
                 })}
-                {doc.piles.map((pile) => {
-                  const pileUrl = handle.sub("piles", { id: pile.id }).url;
-                  return (
-                    <div
-                      key={pile.id}
-                      className="card-table-zone-shell space-y-2"
-                    >
-                      <p className="text-sm font-medium text-slate-900">
-                        {pile.title}
-                        {pile.faceUp ? " (face up)" : ""}
-                      </p>
-                      <patchwork-view
-                        key={pileUrl}
-                        doc-url={pileUrl}
-                        tool-id="secure-pile"
-                        class="block min-h-[5rem]"
-                      />
-                    </div>
-                  );
-                })}
-                {!doc.hands.length && !doc.piles.length ? (
+                {playableZones.length === 0 ? (
                   <p className="col-span-full text-center text-sm text-emerald-100/80 italic py-8">
                     Drag New hand or New pile from the deck tool, or deal cards
                     directly onto zones.
@@ -229,37 +216,17 @@ function TableEditor({ docUrl }: { docUrl: AutomergeUrl }) {
             <h2 className="font-medium">Deal from stock</h2>
             <div className="flex flex-wrap gap-2 items-end text-sm">
               <label className="text-xs space-y-1">
-                Hand
+                Zone
                 <select
                   className="block rounded border border-slate-300 px-2 py-1"
-                  value={dealTargetHand}
-                  onChange={(e) => {
-                    setDealTargetHand(e.target.value);
-                    setDealTargetPile("");
-                  }}
+                  value={dealTargetZone}
+                  onChange={(e) => setDealTargetZone(e.target.value)}
                 >
                   <option value="">—</option>
-                  {doc.hands.map((hand) => (
-                    <option key={hand.id} value={hand.id}>
-                      {hand.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="text-xs space-y-1">
-                Pile
-                <select
-                  className="block rounded border border-slate-300 px-2 py-1"
-                  value={dealTargetPile}
-                  onChange={(e) => {
-                    setDealTargetPile(e.target.value);
-                    setDealTargetHand("");
-                  }}
-                >
-                  <option value="">—</option>
-                  {doc.piles.map((pile) => (
-                    <option key={pile.id} value={pile.id}>
-                      {pile.title}
+                  {playableZones.map((zone) => (
+                    <option key={zone.id} value={zone.id}>
+                      {zone.title}
+                      {zone.ownerId ? " (hand)" : zone.faceUp ? " (face up)" : ""}
                     </option>
                   ))}
                 </select>
@@ -277,20 +244,8 @@ function TableEditor({ docUrl }: { docUrl: AutomergeUrl }) {
               <button
                 type="button"
                 className="rounded-md bg-indigo-700 px-3 py-1.5 text-white disabled:opacity-50"
-                disabled={
-                  !!busy ||
-                  !deckCardCount(doc) ||
-                  (!dealTargetHand && !dealTargetPile)
-                }
-                onClick={() =>
-                  deal(
-                    {
-                      handId: dealTargetHand || undefined,
-                      pileId: dealTargetPile || undefined,
-                    },
-                    dealCount,
-                  )
-                }
+                disabled={!!busy || !deckCardCount(doc) || !dealTargetZone}
+                onClick={() => deal(dealTargetZone, dealCount)}
               >
                 Deal
               </button>

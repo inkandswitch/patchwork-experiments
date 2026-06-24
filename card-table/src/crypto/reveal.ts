@@ -13,9 +13,9 @@ import {
 import { sortedParticipants } from "./protocol";
 import type {
   CardTableDoc,
+  CardZone,
   DecryptedCard,
   IndividualKeyShare,
-  SecureHandZone,
   ShuffleParticipant,
 } from "../types";
 import { suitSymbol } from "../types";
@@ -393,30 +393,30 @@ export function keyMaterialDigest(
     .join("|");
 }
 
-export function revealedOffsetsForHand(hand: SecureHandZone): Set<number> {
-  return new Set(hand.revealedOffsets ?? []);
+export function revealedOffsetsForZone(zone: CardZone): Set<number> {
+  return new Set(zone.revealedOffsets ?? []);
 }
 
 /** Owner publishes one card's key material so other players can decrypt it. */
 export async function publishCardReveal(
   handle: DocHandle<CardTableDoc>,
   doc: CardTableDoc,
-  handId: string,
+  zoneId: string,
   ownerId: string,
   player: Player,
   offset: number,
 ) {
-  const hand = doc.hands.find((entry) => entry.id === handId);
-  if (!hand) throw new Error(`Hand not found: ${handId}`);
-  if (hand.ownerId !== ownerId) {
-    throw new Error("Only the hand owner can reveal cards");
+  const zone = doc.zones.find((entry) => entry.id === zoneId);
+  if (!zone) throw new Error(`Zone not found: ${zoneId}`);
+  if (zone.ownerId !== ownerId) {
+    throw new Error("Only the zone owner can reveal cards");
   }
-  if (!hand.cards.includes(offset)) {
-    throw new Error("Card is not in this hand");
+  if (!zone.cards.includes(offset)) {
+    throw new Error("Card is not in this zone");
   }
 
   handle.change((draft) => {
-    const target = draft.hands.find((entry) => entry.id === handId);
+    const target = draft.zones.find((entry) => entry.id === zoneId);
     if (!target) return;
     if (!target.revealedOffsets) target.revealedOffsets = [];
     if (!target.revealedOffsets.includes(offset)) {

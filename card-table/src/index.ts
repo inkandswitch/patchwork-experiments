@@ -15,32 +15,12 @@ export const plugins: Plugin<any>[] = [
   } as Datatype,
   {
     type: "patchwork:datatype",
-    id: "secure-deck",
-    name: "Secure Deck",
-    icon: "Copy",
+    id: "card-zone",
+    name: "Card Zone",
+    icon: "Layers",
     async load() {
-      const { SecureDeckDatatype } = await import("./sub-datatypes");
-      return SecureDeckDatatype;
-    },
-  } as Datatype,
-  {
-    type: "patchwork:datatype",
-    id: "secure-hand",
-    name: "Secure Hand",
-    icon: "Hand",
-    async load() {
-      const { SecureHandDatatype } = await import("./sub-datatypes");
-      return SecureHandDatatype;
-    },
-  } as Datatype,
-  {
-    type: "patchwork:datatype",
-    id: "secure-pile",
-    name: "Secure Pile",
-    icon: "SquareStack",
-    async load() {
-      const { SecurePileDatatype } = await import("./sub-datatypes");
-      return SecurePileDatatype;
+      const { CardZoneDatatype } = await import("./sub-datatypes");
+      return CardZoneDatatype;
     },
   } as Datatype,
   {
@@ -66,35 +46,13 @@ export const plugins: Plugin<any>[] = [
   } satisfies Tool,
   {
     type: "patchwork:tool",
-    id: "secure-deck",
-    name: "Deck",
-    icon: "Copy",
-    supportedDatatypes: ["secure-deck"],
+    id: "card-zone",
+    name: "Card Zone",
+    icon: "Layers",
+    supportedDatatypes: ["card-zone"],
     async load() {
-      const { SecureDeckTool } = await import("./tools/deck-tool");
-      return SecureDeckTool;
-    },
-  } satisfies Tool,
-  {
-    type: "patchwork:tool",
-    id: "secure-hand",
-    name: "Secure Hand",
-    icon: "Hand",
-    supportedDatatypes: ["secure-hand"],
-    async load() {
-      const { SecureHandTool } = await import("./tools/hand-tool");
-      return SecureHandTool;
-    },
-  } satisfies Tool,
-  {
-    type: "patchwork:tool",
-    id: "secure-pile",
-    name: "Secure Pile",
-    icon: "SquareStack",
-    supportedDatatypes: ["secure-pile"],
-    async load() {
-      const { SecurePileTool } = await import("./tools/pile-tool");
-      return SecurePileTool;
+      const { CardZoneTool } = await import("./tools/zone-tool");
+      return CardZoneTool;
     },
   } satisfies Tool,
   ...actions,

@@ -1,150 +1,95 @@
-import type {
-  CardTableDoc,
-  SecureHandZone,
-  SecurePileZone,
-  ZoneRef,
-} from "../types";
+import type { CardTableDoc, CardZone, ZoneLayout, ZoneRef } from "../types";
 import { deckCardCount, findDeck } from "./deck";
-import { assertReady } from "./validate";
+import { assertReady, findZone } from "./validate";
 
-/** The mutable card array backing a zone (deck, hand, or pile). */
-function zoneCards(doc: CardTableDoc, ref: ZoneRef): number[] {
-  if (ref.kind === "deck") return findDeck(doc, ref.id).cards;
-  if (ref.kind === "hand") {
-    const hand = doc.hands.find((entry) => entry.id === ref.id);
-    if (!hand) throw new Error(`Hand not found: ${ref.id}`);
-    return hand.cards;
-  }
-  const pile = doc.piles.find((entry) => entry.id === ref.id);
-  if (!pile) throw new Error(`Pile not found: ${ref.id}`);
-  return pile.cards;
-}
-
-export function addHand(
+export function addZone(
   doc: CardTableDoc,
   props: {
     id: string;
     title: string;
     ownerId?: string;
+    faceUp?: boolean;
+    layout?: ZoneLayout;
   },
 ) {
-  if (doc.hands.some((hand) => hand.id === props.id)) {
-    throw new Error(`Hand already exists: ${props.id}`);
+  if (!doc.zones) doc.zones = [];
+  if (doc.zones.some((zone) => zone.id === props.id)) {
+    throw new Error(`Zone already exists: ${props.id}`);
   }
-  const hand: SecureHandZone = {
-    "@patchwork": { type: "secure-hand" },
+  const zone: CardZone = {
+    "@patchwork": { type: "card-zone" },
     id: props.id,
     title: props.title,
-    ownerId: props.ownerId ?? "",
     cards: [],
+    ownerId: props.ownerId ?? "",
     revealedOffsets: [],
+    faceUp: props.faceUp ?? false,
+    layout: props.layout ?? (props.ownerId === undefined ? "row" : "fan"),
   };
-  doc.hands.push(hand);
+  doc.zones.push(zone);
 }
 
-export function claimHand(
-  doc: CardTableDoc,
-  handId: string,
-  ownerId: string,
-) {
-  const hand = doc.hands.find((entry) => entry.id === handId);
-  if (!hand) throw new Error(`Hand not found: ${handId}`);
-  if (hand.ownerId && hand.ownerId !== ownerId) {
-    throw new Error("This hand is already claimed");
+export function removeZone(doc: CardTableDoc, id: string) {
+  const index = doc.zones.findIndex((zone) => zone.id === id);
+  if (index === -1) throw new Error(`Zone not found: ${id}`);
+  if (doc.zones[index].role === "deck") {
+    throw new Error("Cannot remove the deck zone");
   }
-  hand.ownerId = ownerId;
+  doc.zones.splice(index, 1);
 }
 
-export function removeHandIfEmpty(doc: CardTableDoc, handId: string) {
-  const index = doc.hands.findIndex((hand) => hand.id === handId);
+export function removeZoneIfEmpty(doc: CardTableDoc, id: string): boolean {
+  const index = doc.zones.findIndex((zone) => zone.id === id);
   if (index === -1) return false;
-  const hand = doc.hands[index];
-  if (hand.cards.length > 0 || hand.ownerId) return false;
-  doc.hands.splice(index, 1);
+  const zone = doc.zones[index];
+  if (zone.role === "deck" || zone.cards.length > 0 || zone.ownerId) return false;
+  doc.zones.splice(index, 1);
   return true;
 }
 
-export function addPile(
-  doc: CardTableDoc,
-  props: {
-    id: string;
-    title: string;
-    faceUp?: boolean;
-  },
-) {
-  if (doc.piles.some((pile) => pile.id === props.id)) {
-    throw new Error(`Pile already exists: ${props.id}`);
+/** Claim an unowned (non-deck) zone as your private hand. */
+export function claimZone(doc: CardTableDoc, id: string, ownerId: string) {
+  const zone = findZone(doc, id);
+  if (zone.role === "deck") throw new Error("The deck cannot be claimed");
+  if (zone.ownerId && zone.ownerId !== ownerId) {
+    throw new Error("This zone is already claimed");
   }
-  const pile: SecurePileZone = {
-    "@patchwork": { type: "secure-pile" },
-    id: props.id,
-    title: props.title,
-    faceUp: props.faceUp ?? false,
-    cards: [],
-  };
-  doc.piles.push(pile);
+  zone.ownerId = ownerId;
 }
 
-export function removeHand(doc: CardTableDoc, id: string) {
-  const index = doc.hands.findIndex((hand) => hand.id === id);
-  if (index === -1) throw new Error(`Hand not found: ${id}`);
-  doc.hands.splice(index, 1);
+export function setZoneFaceUp(doc: CardTableDoc, id: string, faceUp: boolean) {
+  const zone = findZone(doc, id);
+  if (zone.role === "deck") throw new Error("The deck is always face down");
+  zone.faceUp = faceUp;
 }
 
-export function removePile(doc: CardTableDoc, id: string) {
-  const index = doc.piles.findIndex((pile) => pile.id === id);
-  if (index === -1) throw new Error(`Pile not found: ${id}`);
-  doc.piles.splice(index, 1);
-}
-
-export function setPileFaceUp(doc: CardTableDoc, id: string, faceUp: boolean) {
-  const pile = doc.piles.find((entry) => entry.id === id);
-  if (!pile) throw new Error(`Pile not found: ${id}`);
-  pile.faceUp = faceUp;
-}
-
-export function dealCards(
-  doc: CardTableDoc,
-  target: { handId?: string; pileId?: string },
-  count: number,
-) {
+/** Deal `count` cards from the deck into a target zone. */
+export function dealCards(doc: CardTableDoc, targetId: string, count: number) {
   assertReady(doc);
   if (count <= 0) throw new Error("Deal count must be positive");
-  if (!target.handId && !target.pileId) {
-    throw new Error("Specify handId or pileId");
-  }
   if (deckCardCount(doc) < count) {
     throw new Error(`Not enough cards in deck (${deckCardCount(doc)} left)`);
   }
 
   const deck = findDeck(doc);
-  const cards: number[] = [];
+  const target = findZone(doc, targetId);
+  if (target.id === deck.id) throw new Error("Cannot deal onto the deck");
+
   for (let i = 0; i < count; i++) {
     const offset = deck.cards.shift();
     if (offset == null) break;
-    cards.push(offset);
+    target.cards.push(offset);
   }
-
-  if (target.handId) {
-    const hand = doc.hands.find((entry) => entry.id === target.handId);
-    if (!hand) throw new Error(`Hand not found: ${target.handId}`);
-    for (const offset of cards) hand.cards.push(offset);
-    return;
-  }
-
-  const pile = doc.piles.find((entry) => entry.id === target.pileId);
-  if (!pile) throw new Error(`Pile not found: ${target.pileId}`);
-  for (const offset of cards) pile.cards.push(offset);
 }
 
-/** Drop a card's revealed-offset marker when it leaves a hand. */
-function dropRevealedOffset(hand: SecureHandZone, offset: number) {
-  if (!hand.revealedOffsets) return;
-  const at = [...hand.revealedOffsets].indexOf(offset);
-  if (at !== -1) hand.revealedOffsets.splice(at, 1);
+/** Drop a card's revealed-offset marker when it leaves a zone. */
+function dropRevealedOffset(zone: CardZone, offset: number) {
+  if (!zone.revealedOffsets) return;
+  const at = [...zone.revealedOffsets].indexOf(offset);
+  if (at !== -1) zone.revealedOffsets.splice(at, 1);
 }
 
-/** Move a single card between any two zones (deck, hand, pile). */
+/** Move a single card between any two zones by id. */
 export function moveCardByRef(
   doc: CardTableDoc,
   from: ZoneRef,
@@ -152,20 +97,17 @@ export function moveCardByRef(
   fromIndex: number,
 ) {
   assertReady(doc);
-  if (from.kind === to.kind && from.id === to.id) return;
+  if (from.id === to.id) return;
 
-  const source = zoneCards(doc, from);
-  if (fromIndex < 0 || fromIndex >= source.length) {
+  const source = findZone(doc, from.id);
+  const target = findZone(doc, to.id);
+  if (fromIndex < 0 || fromIndex >= source.cards.length) {
     throw new Error("Invalid source index");
   }
 
-  const [offset] = source.splice(fromIndex, 1);
+  const [offset] = source.cards.splice(fromIndex, 1);
   if (offset == null) throw new Error("Failed to move card");
 
-  if (from.kind === "hand") {
-    const hand = doc.hands.find((entry) => entry.id === from.id);
-    if (hand) dropRevealedOffset(hand, offset);
-  }
-
-  zoneCards(doc, to).push(offset);
+  dropRevealedOffset(source, offset);
+  target.cards.push(offset);
 }

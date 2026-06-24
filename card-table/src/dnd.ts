@@ -28,5 +28,5 @@ export function readDragPayload(
 }
 
 export function sameZone(a: ZoneRef, b: ZoneRef): boolean {
-  return a.kind === b.kind && a.id === b.id;
+  return a.id === b.id;
 }

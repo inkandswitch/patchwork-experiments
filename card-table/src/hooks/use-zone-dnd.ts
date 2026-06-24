@@ -8,48 +8,47 @@ import {
   writeDragPayload,
   type CardDragPayload,
 } from "../dnd";
-import type { CardTableDoc, SecureDeckZone, ZoneRef } from "../types";
+import type { CardTableDoc, CardZone } from "../types";
 
 /**
- * Drag/drop wiring shared by hands and piles: accept stock deals from the deck
- * and card moves from any other zone, and emit card drags from this zone.
+ * Drag/drop wiring shared by every zone: accept stock deals from the deck and
+ * card moves from any other zone, and emit card drags from this zone. The deck
+ * zone (`role: "deck"`) only emits stock drags and accepts nothing.
  */
 export function useZoneDnd(
   handle: DocHandle<CardTableDoc>,
   table: CardTableDoc,
-  zone: ZoneRef,
-  options?: { canDragOut?: boolean },
+  zoneId: string,
+  options?: { canDragOut?: boolean; isDeck?: boolean },
 ) {
   const ready = table.phase === "ready" && !!table.publishedDeck?.length;
   const canDragOut = options?.canDragOut ?? true;
+  const isDeck = options?.isDeck ?? false;
+  const zone = { id: zoneId };
 
   const accepts = useCallback(
     (payload: CardDragPayload): boolean => {
-      if (!ready) return false;
+      if (!ready || isDeck) return false;
       if (payload.type === "stock") {
-        return zone.kind !== "deck" && deckCardCount(table) > 0;
+        return deckCardCount(table) > 0;
       }
       return !sameZone(payload.from, zone);
     },
-    [ready, table, zone.kind, zone.id],
+    [ready, isDeck, table, zoneId],
   );
 
   const onDrop = useCallback(
     (payload: CardDragPayload) => {
+      if (isDeck) return;
       handle.change((draft) => {
         if (payload.type === "stock") {
-          if (zone.kind === "deck") return;
-          dealCards(
-            draft,
-            zone.kind === "hand" ? { handId: zone.id } : { pileId: zone.id },
-            1,
-          );
+          dealCards(draft, zoneId, 1);
           return;
         }
         moveCardByRef(draft, payload.from, zone, payload.index);
       });
     },
-    [handle, zone.kind, zone.id],
+    [handle, isDeck, zoneId],
   );
 
   const dragCard = useCallback(
@@ -62,7 +61,7 @@ export function useZoneDnd(
         index,
       });
     },
-    [canDragOut, zone.kind, zone.id],
+    [canDragOut, zoneId],
   );
 
   return { ready, accepts, onDrop, dragCard, canDragOut };
@@ -77,11 +76,11 @@ export function useStockDrag(tableUrl: AutomergeUrl) {
   );
 }
 
-export function deckLabel(deck: SecureDeckZone, table: CardTableDoc): string {
+export function deckLabel(deck: CardZone, table: CardTableDoc): string {
   return `${deck.title} · ${deck.cards.length}/${table.deckSize}`;
 }
 
-export function canDragDeck(table: CardTableDoc, deck: SecureDeckZone): boolean {
+export function canDragDeck(table: CardTableDoc, deck: CardZone): boolean {
   return table.phase === "ready" && deck.cards.length > 0;
 }
 

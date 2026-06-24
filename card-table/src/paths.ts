@@ -6,38 +6,27 @@ export function rootDocUrl(url: AutomergeUrl): AutomergeUrl {
   return url.split("/")[0] as AutomergeUrl;
 }
 
+export function subZoneUrl(
+  tableUrl: AutomergeUrl,
+  zoneId: string,
+): AutomergeUrl {
+  return `${tableUrl}/zones/${JSON.stringify({ id: zoneId })}` as AutomergeUrl;
+}
+
 export function subDeckUrl(
   tableUrl: AutomergeUrl,
   deckId: string = DEFAULT_DECK_ID,
 ): AutomergeUrl {
-  return `${tableUrl}/decks/${JSON.stringify({ id: deckId })}` as AutomergeUrl;
+  return subZoneUrl(tableUrl, deckId);
 }
 
-export function subHandUrl(
-  tableUrl: AutomergeUrl,
-  handId: string,
-): AutomergeUrl {
-  return `${tableUrl}/hands/${JSON.stringify({ id: handId })}` as AutomergeUrl;
+export function isSubZoneUrl(url: AutomergeUrl): boolean {
+  return url.includes("/zones/");
 }
 
-export function subPileUrl(
-  tableUrl: AutomergeUrl,
-  pileId: string,
-): AutomergeUrl {
-  return `${tableUrl}/piles/${JSON.stringify({ id: pileId })}` as AutomergeUrl;
-}
-
-export function isSubDeckUrl(url: AutomergeUrl): boolean {
-  return url.includes("/decks/");
-}
-
-export function isSubHandUrl(url: AutomergeUrl): boolean {
-  return url.includes("/hands/");
-}
-
-/** Parse hand id from a path-addressed hand sub-doc URL. */
-export function handIdFromSubUrl(url: AutomergeUrl): string | null {
-  const marker = "/hands/";
+/** Parse the zone id from a path-addressed zone sub-doc URL. */
+export function zoneIdFromSubUrl(url: AutomergeUrl): string | null {
+  const marker = "/zones/";
   const index = url.indexOf(marker);
   if (index === -1) return null;
   const encoded = url.slice(index + marker.length).split("?")[0];
@@ -49,19 +38,8 @@ export function handIdFromSubUrl(url: AutomergeUrl): string | null {
   }
 }
 
-export function isSubPileUrl(url: AutomergeUrl): boolean {
-  return url.includes("/piles/");
-}
-
 export function isRootTableUrl(url: AutomergeUrl): boolean {
-  return !isSubDeckUrl(url) && !isSubHandUrl(url) && !isSubPileUrl(url);
-}
-
-export function zoneKind(url: AutomergeUrl): "table" | "deck" | "hand" | "pile" {
-  if (isSubDeckUrl(url)) return "deck";
-  if (isSubHandUrl(url)) return "hand";
-  if (isSubPileUrl(url)) return "pile";
-  return "table";
+  return !isSubZoneUrl(url);
 }
 
 /** Strip `?tool=` query params before resolving automerge URLs. */
