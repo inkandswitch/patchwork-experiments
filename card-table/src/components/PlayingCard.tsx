@@ -28,7 +28,8 @@ export function PlayingCard({
   draggable = false,
   onDragStart,
   onClick,
-  revealable = false,
+  armed = false,
+  revealed = false,
   className = "",
   style,
 }: {
@@ -38,11 +39,15 @@ export function PlayingCard({
   draggable?: boolean;
   onDragStart?: (event: DragEvent<HTMLDivElement>) => void;
   onClick?: () => void;
-  revealable?: boolean;
+  /** First click: armed for reveal (red highlight). */
+  armed?: boolean;
+  /** Card is shared with everyone (emphasized). */
+  revealed?: boolean;
   className?: string;
   style?: CSSProperties;
 }) {
   const sizeClass = sizeClasses[size];
+  const stateClass = `${armed ? "is-armed" : ""} ${revealed ? "is-revealed" : ""}`;
 
   if (faceDown || !card) {
     return (
@@ -51,8 +56,10 @@ export function PlayingCard({
         onDragStart={onDragStart}
         onClick={onClick}
         style={style}
-        className={`card-table-card card-table-card-back ${sizeClass} ${revealable ? "is-revealable" : ""} ${className}`.trim()}
-        aria-label={revealable ? "Face-down card — click to reveal" : "Face-down card"}
+        className={`card-table-card card-table-card-back ${sizeClass} ${stateClass} ${className}`
+          .replace(/\s+/g, " ")
+          .trim()}
+        aria-label={armed ? "Face-down card — click again to reveal" : "Face-down card"}
       />
     );
   }
@@ -68,8 +75,10 @@ export function PlayingCard({
       onDragStart={onDragStart}
       onClick={onClick}
       style={style}
-      className={`card-table-card card-table-card-face ${sizeClass} ${red ? "is-red" : "is-black"} ${revealable ? "is-revealable" : ""} ${className}`.trim()}
-      aria-label={`${rank} of ${card.suit}`}
+      className={`card-table-card card-table-card-face ${sizeClass} ${red ? "is-red" : "is-black"} ${stateClass} ${className}`
+        .replace(/\s+/g, " ")
+        .trim()}
+      aria-label={`${rank} of ${card.suit}${revealed ? " (revealed)" : ""}`}
     >
       <div className="card-table-corner card-table-corner-top">
         <span className="card-table-rank">{rank}</span>
@@ -94,7 +103,8 @@ export function CardRow({
   onCardDragStart,
   faceDownForOffset,
   onCardClick,
-  revealableForOffset,
+  armedForOffset,
+  revealedForOffset,
 }: {
   cards: number[];
   decrypted?: Map<number, DecryptedCard | null>;
@@ -110,7 +120,8 @@ export function CardRow({
   /** Per-card face-down (overrides `faceDown` when set). */
   faceDownForOffset?: (offset: number) => boolean;
   onCardClick?: (offset: number, index: number) => void;
-  revealableForOffset?: (offset: number) => boolean;
+  armedForOffset?: (offset: number) => boolean;
+  revealedForOffset?: (offset: number) => boolean;
 }) {
   if (!cards.length) {
     return <p className="text-xs text-slate-400 italic">No cards</p>;
@@ -129,7 +140,8 @@ export function CardRow({
             card={cardFaceDown ? undefined : decrypted?.get(offset)}
             size={size}
             draggable={draggable}
-            revealable={revealableForOffset?.(offset) ?? false}
+            armed={armedForOffset?.(offset) ?? false}
+            revealed={revealedForOffset?.(offset) ?? false}
             onClick={
               onCardClick ? () => onCardClick(offset, index) : undefined
             }

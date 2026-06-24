@@ -192,10 +192,10 @@ function DeckSurface({
               spawn(event, {
                 id: newZoneId("play"),
                 title: `Play area ${playAreaCount + 1}`,
-                faceUp: true,
+                faceUp: false,
               }),
             "New play area",
-            "Drag onto the canvas to create a face-up play area",
+            "Drag onto the canvas to create a play area",
           )}
         </div>
         <p className="max-w-[14rem] text-center text-[11px] leading-snug text-emerald-100/80">
@@ -229,6 +229,7 @@ function ZoneSurface({
   const [decryptError, setDecryptError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [revealingOffset, setRevealingOffset] = useState<number | null>(null);
+  const [armedOffset, setArmedOffset] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const isHand = !!zone.ownerId;
@@ -259,6 +260,7 @@ function ZoneSurface({
     async (offset: number) => {
       if (!userId || !isOwner || !gameReady || revealedSet.has(offset)) return;
       setError(null);
+      setArmedOffset(null);
       setRevealingOffset(offset);
       try {
         const player = await loadLocalPlayer(repo, table, userId);
@@ -271,6 +273,21 @@ function ZoneSurface({
       }
     },
     [gameReady, zone.id, handle, isOwner, repo, revealedSet, table, userId],
+  );
+
+  // Revealing is deliberate: the first click arms a card (red ring), a second
+  // click on the same card publishes the reveal.
+  const handleCardClick = useCallback(
+    (offset: number) => {
+      if (!isOwner || !gameReady || revealedSet.has(offset)) return;
+      if (revealingOffset === offset) return;
+      if (armedOffset === offset) {
+        void revealCard(offset);
+      } else {
+        setArmedOffset(offset);
+      }
+    },
+    [armedOffset, gameReady, isOwner, revealCard, revealedSet, revealingOffset],
   );
 
   useEffect(() => {
@@ -412,11 +429,6 @@ function ZoneSurface({
             ) : null}
           </div>
 
-          {isOwner && gameReady && zone.cards.length > 0 ? (
-            <p className="text-[10px] text-slate-500">
-              Click a card with a gold ring to reveal it to other players.
-            </p>
-          ) : null}
           {error ? <p className="text-[10px] text-red-300">{error}</p> : null}
           {decryptError ? (
             <p className="text-[10px] text-amber-200">{decryptError}</p>
@@ -431,13 +443,15 @@ function ZoneSurface({
               faceDownForOffset={(offset) =>
                 isHand && !isOwner && !revealedSet.has(offset)
               }
-              revealableForOffset={(offset) =>
+              armedForOffset={(offset) =>
                 isOwner &&
                 gameReady &&
+                armedOffset === offset &&
                 !revealedSet.has(offset) &&
                 revealingOffset !== offset
               }
-              onCardClick={(offset) => void revealCard(offset)}
+              revealedForOffset={(offset) => revealedSet.has(offset)}
+              onCardClick={handleCardClick}
               size="sm"
               fan={isHand}
             />

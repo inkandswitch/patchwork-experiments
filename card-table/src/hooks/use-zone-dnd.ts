@@ -119,7 +119,7 @@ export function useZoneDnd(
         addZone(draft, {
           id: speculativeId,
           title: "Play area",
-          faceUp: true,
+          faceUp: false,
           layout: "row",
         });
       });
@@ -175,7 +175,7 @@ export function useStockDrag(handle: DocHandle<CardTableDoc>) {
         addZone(draft, {
           id: speculativeId,
           title: "Play area",
-          faceUp: true,
+          faceUp: false,
           layout: "row",
         });
       });

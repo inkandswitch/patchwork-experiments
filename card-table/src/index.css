@@ -27,15 +27,25 @@
   cursor: grabbing;
 }
 
-.card-table-card.is-revealable {
+/* First click: armed for reveal — a deliberate red warning ring. */
+.card-table-card.is-armed {
   cursor: pointer;
   box-shadow:
-    0 0 0 2px rgb(251 191 36 / 0.85),
+    0 0 0 2px rgb(220 38 38 / 0.95),
+    0 0 12px rgb(220 38 38 / 0.55),
     0 4px 10px rgb(15 23 42 / 0.12);
 }
 
-.card-table-card.is-revealable:hover {
+.card-table-card.is-armed:hover {
   transform: translateY(-2px);
+}
+
+/* Shared with everyone: emphasized with a gold glow. Private cards stay plain. */
+.card-table-card.is-revealed {
+  box-shadow:
+    0 0 0 2px rgb(251 191 36 / 0.9),
+    0 0 14px rgb(251 191 36 / 0.55),
+    0 4px 10px rgb(15 23 42 / 0.12);
 }
 
 .card-table-card-back {
