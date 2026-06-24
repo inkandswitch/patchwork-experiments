@@ -86,6 +86,39 @@ function ensureStyles() {
     }
     .sph-bar button[data-active] { border-color: var(--studio-primary, #35f7ca); }
     .sph-bar .sph-status { font-size: 0.78rem; color: var(--studio-line-offset-50, #888); }
+
+    .sph-create-new { position: relative; display: inline-block; }
+    .sph-create-menu {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      z-index: 40;
+      min-width: 12rem;
+      max-height: 16rem;
+      overflow: auto;
+      padding: 0.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      background: var(--studio-fill, white);
+      border: 1px solid var(--studio-fill-offset-20, #ccc);
+      border-radius: var(--studio-radius-sm, 4px);
+      box-shadow: var(--studio-shadow-md, 0 4px 12px rgba(0,0,0,0.3));
+    }
+    .sph-create-item {
+      text-align: left;
+      border: none !important;
+      background: transparent !important;
+      border-radius: var(--studio-radius-sm, 4px);
+    }
+    .sph-create-item:hover {
+      background: color-mix(in oklch, var(--studio-fill, white), var(--studio-line, black) 8%) !important;
+    }
+    .sph-create-empty {
+      font-size: 0.78rem;
+      color: var(--studio-line-offset-50, #888);
+      padding: 0.35rem 0.5rem;
+    }
   `;
   document.head.appendChild(style);
 }
@@ -285,10 +318,7 @@ export function HostTool(handle, element) {
         handle.change((d) => { d.activeIndex = Number(picker.value) || 0; });
       bar.appendChild(picker);
 
-      const addBtn = document.createElement("button");
-      addBtn.textContent = "Add doc…";
-      addBtn.onclick = onAddDoc;
-      bar.appendChild(addBtn);
+      bar.appendChild(buildCreateNew());
 
       const camBtn = document.createElement("button");
       camBtn.textContent = useStream ? "Stop camera" : "Start camera";
@@ -311,30 +341,95 @@ export function HostTool(handle, element) {
     root.appendChild(bar);
   }
 
-  async function onAddDoc() {
-    // Minimal datatype picker: prompt for a registered datatype id.
-    const reg = getRegistry("patchwork:datatype");
-    let listed = [];
-    try {
-      listed = (reg.getListedDescriptions?.() ?? reg.getDescriptions?.() ?? [])
-        .map((d) => d.id)
-        .filter(Boolean);
-    } catch {
-      /* ignore */
+  // "Create new ▾" — a dropdown of listed datatypes (like the sideboard's Create
+  // New button). Creates a child doc of the chosen datatype, links it into the
+  // host folder, and makes it the active embedded doc.
+  function buildCreateNew() {
+    const wrap = document.createElement("div");
+    wrap.className = "sph-create-new";
+
+    const trigger = document.createElement("button");
+    trigger.textContent = "Create new ▾";
+    wrap.appendChild(trigger);
+
+    const menu = document.createElement("div");
+    menu.className = "sph-create-menu";
+    menu.style.display = "none";
+    wrap.appendChild(menu);
+
+    const datatypes = listedDatatypes();
+    if (!datatypes.length) {
+      const empty = document.createElement("div");
+      empty.className = "sph-create-empty";
+      empty.textContent = "No datatypes registered";
+      menu.appendChild(empty);
+    } else {
+      for (const dt of datatypes) {
+        const item = document.createElement("button");
+        item.className = "sph-create-item";
+        item.textContent = dt.name || dt.id;
+        item.onclick = () => {
+          closeMenu();
+          createNewDoc(dt);
+        };
+        menu.appendChild(item);
+      }
     }
-    const hint = listed.length ? `\nKnown: ${listed.join(", ")}` : "";
-    const datatypeId = window.prompt("Datatype id for the new spatial doc:" + hint);
-    if (!datatypeId) return;
+
+    const closeMenu = () => {
+      menu.style.display = "none";
+      document.removeEventListener("pointerdown", onOutside, true);
+    };
+    const onOutside = (event) => {
+      if (!wrap.contains(event.target)) closeMenu();
+    };
+    trigger.onclick = () => {
+      const open = menu.style.display !== "none";
+      if (open) {
+        closeMenu();
+      } else {
+        menu.style.display = "block";
+        document.addEventListener("pointerdown", onOutside, true);
+      }
+    };
+
+    return wrap;
+  }
+
+  function listedDatatypes() {
     try {
-      const dt = await reg.loadWhenReady(datatypeId);
+      const reg = getRegistry("patchwork:datatype");
+      const all = reg.filter ? reg.filter((d) => !d.unlisted) : [];
+      // Don't offer the host's own folder type or the calibration type.
+      return all.filter(
+        (d) =>
+          d.id !== "spatial-patchwork-host" &&
+          d.id !== CALIBRATION_DATATYPE_ID,
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  async function createNewDoc(datatypePlugin) {
+    try {
+      const reg = getRegistry("patchwork:datatype");
+      const dt = await reg.loadWhenReady(datatypePlugin.id);
       const child = await createDocOfDatatype2(dt, repo);
+      // Prefer the datatype's own title for the link name (matches sideboard).
+      let name = datatypePlugin.name || datatypePlugin.id;
+      try {
+        name = dt.module.getTitle(child.doc()) || name;
+      } catch {
+        /* getTitle optional */
+      }
       handle.change((d) => {
         if (!Array.isArray(d.docs)) d.docs = [];
-        d.docs.push({ name: datatypeId, type: datatypeId, url: child.url });
+        d.docs.push({ name, type: datatypePlugin.id, url: child.url });
         d.activeIndex = d.docs.length - 1;
       });
     } catch (err) {
-      window.alert("Could not create doc of type " + datatypeId + ": " + err);
+      window.alert("Could not create doc: " + err);
     }
   }
 

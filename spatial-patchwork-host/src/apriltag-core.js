@@ -1038,7 +1038,9 @@ function createStyles() {
       top: var(--studio-space-sm, 0.5rem);
       right: var(--studio-space-sm, 0.5rem);
       z-index: 20;
-      width: 360px;
+      /* Large by default to make calibration clicks precise; still draggable
+         and capped to the viewport. */
+      width: min(72vw, 960px);
       max-width: calc(100% - 1rem);
       display: flex;
       flex-direction: column;
@@ -2224,9 +2226,11 @@ export function Tool(handle, element) {
       align: "Align",
       calibrate: "Calibrate",
       test: "Test",
-      use: "Use",
     };
-    for (const nextMode of ["align", "calibrate", "test", "use"]) {
+    // Host calibration UI: only the alignment workflow. "use" (live projection)
+    // is owned by the spatial host's own Use mode, not this embedded tool. The
+    // "Project" / "Hide cursor" controls are likewise dropped here.
+    for (const nextMode of ["align", "calibrate", "test"]) {
       const modeBtn = button(MODE_LABELS[nextMode], () => {
         transientStatus = "";
         handle.change((d) => {
@@ -2241,12 +2245,6 @@ export function Tool(handle, element) {
 
     bar.appendChild(sep());
 
-    bar.appendChild(
-      button("Project", () => {
-        cleanView = true;
-        render();
-      }),
-    );
     bar.appendChild(button("Fullscreen", enterFullscreen));
 
     bar.appendChild(sep());
@@ -2255,19 +2253,6 @@ export function Tool(handle, element) {
     cameraToggleBtn.setAttribute("data-variant", "primary");
     updateCameraButton();
     bar.appendChild(cameraToggleBtn);
-
-    const cursorLabel = document.createElement("label");
-    const cursorCb = document.createElement("input");
-    cursorCb.type = "checkbox";
-    cursorCb.checked = docState.hideCursor;
-    cursorCb.addEventListener("change", () => {
-      const checked = cursorCb.checked;
-      handle.change((d) => {
-        d.hideCursor = checked;
-      });
-    });
-    cursorLabel.append(cursorCb, document.createTextNode("Hide cursor"));
-    bar.appendChild(cursorLabel);
 
     bar.appendChild(sep());
 
