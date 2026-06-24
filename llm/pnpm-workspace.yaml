@@ -3,6 +3,6 @@ allowBuilds:
   cbor-extract: set this to true or false
   esbuild: set this to true or false
 configDependencies:
-  pnpm-plugin-patchwork: 0.3.0+sha512-E7oySEbdZCf3Nt1PsiQtQfNIPTE5EgBel3iZhxJs9a764FqzMP/TIb0ZCE6yScG5LozXCBbTlVOkqQp+ikrShQ==
+  pnpm-plugin-patchwork: 0.4.0
 minimumReleaseAgeExclude:
   - '@chee/patchwork-bundles@0.0.1'
