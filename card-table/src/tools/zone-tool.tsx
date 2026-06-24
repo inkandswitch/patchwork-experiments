@@ -16,6 +16,7 @@ import { CardRow } from "../components/PlayingCard";
 import { CardStack } from "../components/CardStack";
 import { ContactHandLabel } from "../components/ContactName";
 import { ReadyToStartButton } from "../components/ReadyToStartButton";
+import { ReshuffleButton } from "../components/ReshuffleButton";
 import { ZoneDropTarget } from "../components/ZoneDropTarget";
 import { loadLocalPlayer, loadExchangePrivateKey } from "../crypto/player-keys";
 import { playerMatchesTablePublicKey } from "../crypto/validate-keys";
@@ -160,6 +161,9 @@ function DeckSurface({
         />
         {joined && table.phase === "setup" ? (
           <ReadyToStartButton doc={table} userId={userId!} changeDoc={changeDoc} />
+        ) : null}
+        {joined && table.phase === "ready" ? (
+          <ReshuffleButton doc={table} userId={userId!} changeDoc={changeDoc} />
         ) : null}
         <div className="flex flex-wrap items-center justify-center gap-2">
           {spawnButton(

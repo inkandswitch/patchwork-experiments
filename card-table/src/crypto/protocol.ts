@@ -194,6 +194,41 @@ export function completeVerifiedShuffle(doc: CardTableDoc) {
   fillDeck(doc);
 }
 
+/**
+ * Reshuffle an already-dealt table. Collects every card back, drops the reveal
+ * state, and forces a fresh key generation + shuffle round (reusing the same
+ * SRA keys would let anyone who saw a previously revealed card re-derive it,
+ * since individual keys are position-indexed). Participants keep their seats and
+ * `readyToStart`, so the new round runs automatically without re-readying.
+ */
+export function requestReshuffle(doc: CardTableDoc) {
+  if (doc.phase !== "ready") return;
+
+  // Gather every dealt card back to the (about to be refilled) deck and clear
+  // any per-card reveals.
+  for (const zone of doc.zones) {
+    if (zone.cards.length > 0) zone.cards.splice(0, zone.cards.length);
+    if (zone.revealedOffsets && zone.revealedOffsets.length > 0) {
+      zone.revealedOffsets.splice(0, zone.revealedOffsets.length);
+    }
+  }
+
+  doc.publicKey = null;
+  doc.workingDeck = null;
+  doc.publishedDeck = null;
+  doc.keyShares = {};
+  doc.keyShareEnvelopes = {};
+  doc.keyRequests = [];
+  for (const participant of doc.shuffleParticipants) {
+    participant.shuffleDone = false;
+    participant.keygenReady = false;
+    participant.keyDocUrl = null;
+  }
+
+  // Back to keygen; useAutoInit regenerates keys and starts the shuffle.
+  doc.phase = "keygen";
+}
+
 export function abortShuffle(doc: CardTableDoc) {
   doc.phase = "setup";
   doc.shuffleTurn = 0;
