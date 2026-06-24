@@ -16,8 +16,9 @@ import {
 } from "../crypto/reveal";
 import { useKeyExchange } from "../hooks/use-key-exchange";
 import { usePlayerIdentity } from "../hooks/use-player-identity";
-import { useDeckDropTarget } from "../hooks/use-deck-dnd";
+import { useZoneDnd } from "../hooks/use-zone-dnd";
 import { makeTool } from "../make-tool";
+import { setPileFaceUp } from "../ops/zones";
 import { rootDocUrl } from "../paths";
 import type { CardTableDoc, DecryptedCard, SecurePileZone } from "../types";
 
@@ -40,7 +41,11 @@ function PileEditor({ docUrl }: { docUrl: AutomergeUrl }) {
     pile.cards.length > 0 &&
     !!table.publishedDeck?.length;
 
-  const stockDrop = useDeckDropTarget(handle, table, { pileId: pile.id });
+  const dnd = useZoneDnd(handle, table, { kind: "pile", id: pile.id });
+
+  const toggleFaceUp = () => {
+    handle.change((draft) => setPileFaceUp(draft, pile.id, !pile.faceUp));
+  };
 
   useKeyExchange(handle, table, userId);
 
@@ -108,18 +113,28 @@ function PileEditor({ docUrl }: { docUrl: AutomergeUrl }) {
     );
   }
 
+  const lastIndex = pile.cards.length - 1;
+
   return (
-    <ZoneDropTarget
-      active={stockDrop.active}
-      label={pile.title}
-      onDropStock={stockDrop.onDropStock}
-    >
+    <ZoneDropTarget label={pile.title} accepts={dnd.accepts} onDrop={dnd.onDrop}>
       <div className="card-table h-full min-h-[5rem] p-1">
         <div className="space-y-2">
-          <p className="text-xs text-slate-500">
-            {pile.cards.length} card{pile.cards.length === 1 ? "" : "s"}
-            {loading ? " · revealing…" : ""}
-          </p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-slate-500">
+              {pile.title} · {pile.cards.length} card
+              {pile.cards.length === 1 ? "" : "s"}
+              {pile.faceUp ? " · face up" : ""}
+              {loading ? " · revealing…" : ""}
+            </p>
+            <button
+              type="button"
+              onClick={toggleFaceUp}
+              className="rounded border border-slate-400/40 px-1.5 py-0.5 text-[10px] text-slate-500 hover:bg-slate-200/40"
+              title={pile.faceUp ? "Flip pile face down" : "Flip pile face up"}
+            >
+              {pile.faceUp ? "Flip down" : "Flip up"}
+            </button>
+          </div>
 
           {pile.faceUp ? (
             <CardRow
@@ -127,9 +142,18 @@ function PileEditor({ docUrl }: { docUrl: AutomergeUrl }) {
               decrypted={decrypted}
               faceDown={false}
               size="sm"
+              draggable={dnd.ready}
+              onCardDragStart={dnd.dragCard}
             />
           ) : pile.cards.length > 0 ? (
-            <CardStack count={pile.cards.length} size="sm" />
+            <CardStack
+              count={pile.cards.length}
+              size="sm"
+              draggable={dnd.ready}
+              onDragStart={(event) =>
+                dnd.dragCard(event, pile.cards[lastIndex], lastIndex)
+              }
+            />
           ) : (
             <p className="text-xs text-slate-400 italic">Drop cards here</p>
           )}

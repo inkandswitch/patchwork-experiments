@@ -1,21 +1,11 @@
 export const CARD_TABLE_MIME = "application/x-patchwork-card-table";
 
 import type { AutomergeUrl } from "@automerge/automerge-repo";
+import type { ZoneRef } from "./types";
 
 export type CardDragPayload =
-  | { source: "stock"; tableUrl: AutomergeUrl }
-  | {
-      source: "hand";
-      handId: string;
-      cardIndex: number;
-      offset: number;
-    }
-  | {
-      source: "pile";
-      pileId: string;
-      cardIndex: number;
-      offset: number;
-    };
+  | { type: "stock"; tableUrl: AutomergeUrl }
+  | { type: "card"; from: ZoneRef; offset: number; index: number };
 
 export function writeDragPayload(
   dataTransfer: DataTransfer,
@@ -35,4 +25,8 @@ export function readDragPayload(
   } catch {
     return null;
   }
+}
+
+export function sameZone(a: ZoneRef, b: ZoneRef): boolean {
+  return a.kind === b.kind && a.id === b.id;
 }

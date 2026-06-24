@@ -16,12 +16,12 @@ import {
   joinParticipant,
   linkKeyDoc,
   markReady,
-  mergePeerDocs,
   publishAllKeyShares,
   referenceDecrypt,
   runFullShuffleOnDoc,
   runOneShuffleStep,
   startShuffle,
+  syncDocToNewPeer,
   tryDecryptFromDoc,
   verifyShuffledDeck,
   advancePastCompletedTurns,
@@ -248,7 +248,7 @@ async function testTwoPeerMergeDuringShuffle() {
   }
 
   peerA = runFullShuffleOnDoc(peerA, roster);
-  let peerB = mergePeerDocs(peerA, initTableAutomergeDoc());
+  let peerB = syncDocToNewPeer(peerA);
 
   ok("merged peer receives shuffle-verify state", peerB.phase === "shuffle-verify");
   ok(

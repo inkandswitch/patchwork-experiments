@@ -21,7 +21,7 @@ import {
 } from "../crypto/reveal";
 import { useKeyExchange } from "../hooks/use-key-exchange";
 import { usePlayerIdentity } from "../hooks/use-player-identity";
-import { useDeckDropTarget } from "../hooks/use-deck-dnd";
+import { useZoneDnd } from "../hooks/use-zone-dnd";
 import { makeTool } from "../make-tool";
 import { claimHand } from "../ops/zones";
 import { handIdFromSubUrl, rootDocUrl } from "../paths";
@@ -71,7 +71,12 @@ function HandEditor({ docUrl }: { docUrl: AutomergeUrl }) {
     return hand.cards.filter((offset) => revealedSet.has(offset));
   }, [gameReady, hand.cards, isOwner, revealedSet]);
 
-  const stockDrop = useDeckDropTarget(handle, table, { handId: hand.id });
+  const dnd = useZoneDnd(
+    handle,
+    table,
+    { kind: "hand", id: hand.id },
+    { canDragOut: isOwner },
+  );
 
   useKeyExchange(handle, table, userId);
 
@@ -217,11 +222,7 @@ function HandEditor({ docUrl }: { docUrl: AutomergeUrl }) {
   const publicCount = hand.cards.filter((offset) => revealedSet.has(offset)).length;
 
   return (
-    <ZoneDropTarget
-      active={stockDrop.active}
-      label={hand.title}
-      onDropStock={stockDrop.onDropStock}
-    >
+    <ZoneDropTarget label={hand.title} accepts={dnd.accepts} onDrop={dnd.onDrop}>
       <div className="card-table h-full bg-slate-900 p-2 text-white">
         <div className="space-y-2">
           <p className="text-xs text-slate-400">
@@ -260,6 +261,8 @@ function HandEditor({ docUrl }: { docUrl: AutomergeUrl }) {
           <CardRow
             cards={hand.cards}
             decrypted={decrypted}
+            draggable={dnd.canDragOut && gameReady}
+            onCardDragStart={dnd.dragCard}
             faceDownForOffset={(offset) =>
               !isOwner && !revealedSet.has(offset)
             }

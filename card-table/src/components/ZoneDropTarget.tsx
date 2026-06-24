@@ -1,35 +1,34 @@
 import { useState, type ReactNode } from "react";
-import { CARD_TABLE_MIME, readDragPayload } from "../dnd";
+import { CARD_TABLE_MIME, readDragPayload, type CardDragPayload } from "../dnd";
 
-function acceptsCardDrop(dataTransfer: DataTransfer): boolean {
+function hasCardPayload(dataTransfer: DataTransfer): boolean {
   return dataTransfer.types.includes(CARD_TABLE_MIME);
 }
 
 export function ZoneDropTarget({
   children,
-  active,
   label,
-  onDropStock,
+  accepts,
+  onDrop,
 }: {
   children: ReactNode;
-  active: boolean;
   label: string;
-  onDropStock: () => void;
+  /** Whether this zone accepts the given drag payload. */
+  accepts: (payload: CardDragPayload) => boolean;
+  onDrop: (payload: CardDragPayload) => void;
 }) {
   const [over, setOver] = useState(false);
-
-  if (!active) {
-    return <>{children}</>;
-  }
 
   return (
     <div
       className={`card-table-drop-zone ${over ? "is-over" : ""}`.trim()}
       onDragEnter={(event) => {
-        if (acceptsCardDrop(event.dataTransfer)) setOver(true);
+        if (hasCardPayload(event.dataTransfer)) setOver(true);
       }}
       onDragOver={(event) => {
-        if (!acceptsCardDrop(event.dataTransfer)) return;
+        if (!hasCardPayload(event.dataTransfer)) return;
+        // Payload contents aren't readable during dragover, so we optimistically
+        // allow the drop and validate on drop.
         event.preventDefault();
         event.dataTransfer.dropEffect = "move";
         setOver(true);
@@ -39,15 +38,16 @@ export function ZoneDropTarget({
         setOver(false);
       }}
       onDrop={(event) => {
-        event.preventDefault();
         setOver(false);
         const payload = readDragPayload(event.dataTransfer);
-        if (payload?.source === "stock") onDropStock();
+        if (!payload || !accepts(payload)) return;
+        event.preventDefault();
+        onDrop(payload);
       }}
     >
       {over ? (
         <div className="card-table-drop-hint" aria-hidden>
-          Deal to {label}
+          Drop on {label}
         </div>
       ) : null}
       {children}

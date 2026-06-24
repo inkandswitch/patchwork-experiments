@@ -1,6 +1,24 @@
-import type { CardTableDoc, SecureHandZone, SecurePileZone } from "../types";
+import type {
+  CardTableDoc,
+  SecureHandZone,
+  SecurePileZone,
+  ZoneRef,
+} from "../types";
 import { deckCardCount, findDeck } from "./deck";
 import { assertReady } from "./validate";
+
+/** The mutable card array backing a zone (deck, hand, or pile). */
+function zoneCards(doc: CardTableDoc, ref: ZoneRef): number[] {
+  if (ref.kind === "deck") return findDeck(doc, ref.id).cards;
+  if (ref.kind === "hand") {
+    const hand = doc.hands.find((entry) => entry.id === ref.id);
+    if (!hand) throw new Error(`Hand not found: ${ref.id}`);
+    return hand.cards;
+  }
+  const pile = doc.piles.find((entry) => entry.id === ref.id);
+  if (!pile) throw new Error(`Pile not found: ${ref.id}`);
+  return pile.cards;
+}
 
 export function addHand(
   doc: CardTableDoc,
@@ -79,6 +97,12 @@ export function removePile(doc: CardTableDoc, id: string) {
   doc.piles.splice(index, 1);
 }
 
+export function setPileFaceUp(doc: CardTableDoc, id: string, faceUp: boolean) {
+  const pile = doc.piles.find((entry) => entry.id === id);
+  if (!pile) throw new Error(`Pile not found: ${id}`);
+  pile.faceUp = faceUp;
+}
+
 export function dealCards(
   doc: CardTableDoc,
   target: { handId?: string; pileId?: string },
@@ -113,34 +137,35 @@ export function dealCards(
   for (const offset of cards) pile.cards.push(offset);
 }
 
-export function moveCard(
+/** Drop a card's revealed-offset marker when it leaves a hand. */
+function dropRevealedOffset(hand: SecureHandZone, offset: number) {
+  if (!hand.revealedOffsets) return;
+  const at = [...hand.revealedOffsets].indexOf(offset);
+  if (at !== -1) hand.revealedOffsets.splice(at, 1);
+}
+
+/** Move a single card between any two zones (deck, hand, pile). */
+export function moveCardByRef(
   doc: CardTableDoc,
-  from: { handId?: string; pileId?: string },
-  to: { handId?: string; pileId?: string },
+  from: ZoneRef,
+  to: ZoneRef,
   fromIndex: number,
 ) {
   assertReady(doc);
+  if (from.kind === to.kind && from.id === to.id) return;
 
-  const sourceCards = from.handId
-    ? doc.hands.find((hand) => hand.id === from.handId)?.cards
-    : doc.piles.find((pile) => pile.id === from.pileId)?.cards;
-
-  if (!sourceCards) throw new Error("Source zone not found");
-  if (fromIndex < 0 || fromIndex >= sourceCards.length) {
+  const source = zoneCards(doc, from);
+  if (fromIndex < 0 || fromIndex >= source.length) {
     throw new Error("Invalid source index");
   }
 
-  const [offset] = sourceCards.splice(fromIndex, 1);
+  const [offset] = source.splice(fromIndex, 1);
   if (offset == null) throw new Error("Failed to move card");
 
-  if (to.handId) {
-    const hand = doc.hands.find((entry) => entry.id === to.handId);
-    if (!hand) throw new Error(`Hand not found: ${to.handId}`);
-    hand.cards.push(offset);
-    return;
+  if (from.kind === "hand") {
+    const hand = doc.hands.find((entry) => entry.id === from.id);
+    if (hand) dropRevealedOffset(hand, offset);
   }
 
-  const pile = doc.piles.find((entry) => entry.id === to.pileId);
-  if (!pile) throw new Error(`Pile not found: ${to.pileId}`);
-  pile.cards.push(offset);
+  zoneCards(doc, to).push(offset);
 }

@@ -541,3 +541,15 @@ export function referenceDecrypt(publishedDeck, offset, roster) {
 export function mergePeerDocs(docA, docB) {
   return Automerge.merge(docA, docB);
 }
+
+/**
+ * Simulate a second browser opening the same doc by URL: it receives peer A's
+ * actual document (and full change history) over sync, rather than creating its
+ * own independently-initialized doc. Merging two separately-`init`ed docs would
+ * put every top-level field (shuffleParticipants, publishedDeck, publicKey, …)
+ * in conflict, and Automerge would pick a winner by random actor id — which is
+ * NOT how production works (peers share the creator's history via repo.find).
+ */
+export function syncDocToNewPeer(docA) {
+  return Automerge.load(Automerge.save(docA));
+}

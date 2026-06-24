@@ -8,8 +8,7 @@ import { Suspense, useCallback, type DragEvent } from "react";
 import { CardStack } from "../components/CardStack";
 import { ReadyToStartButton } from "../components/ReadyToStartButton";
 import { canJoinTable } from "../crypto/protocol";
-import { writeDragPayload } from "../dnd";
-import { deckLabel, useDeckDrag } from "../hooks/use-deck-dnd";
+import { canDragDeck, deckLabel, useStockDrag } from "../hooks/use-zone-dnd";
 import { useAutoInit, useInitStatus } from "../hooks/use-auto-init";
 import { useKeyExchange } from "../hooks/use-key-exchange";
 import { useJoinTable } from "../hooks/use-join-table";
@@ -31,13 +30,18 @@ function DeckEditor({ docUrl }: { docUrl: AutomergeUrl }) {
   const { ready: identityReady, userId } = usePlayerIdentity();
   const handle = useDocHandle<CardTableDoc>(tableUrl, { suspense: true });
   const [deck] = useDocument<SecureDeckZone>(docUrl, { suspense: true });
-  const [table, changeDoc] = useDocument<CardTableDoc>(tableUrl, { suspense: true });
-  const { canDrag, count } = useDeckDrag(table, deck);
+  const [table, changeDoc] = useDocument<CardTableDoc>(tableUrl, {
+    suspense: true,
+  });
+  const canDrag = canDragDeck(table, deck);
+  const count = deck.cards.length;
+  const dragDeckCard = useStockDrag(tableUrl);
   const onInitError = useCallback((message: string) => {
     console.error("[secure-deck]", message);
   }, []);
 
-  const joined = !!userId && table.shuffleParticipants.some((p) => p.id === userId);
+  const joined =
+    !!userId && table.shuffleParticipants.some((p) => p.id === userId);
   const canJoin = !!userId && canJoinTable(table);
 
   useJoinTable(table, changeDoc, userId, identityReady);
@@ -47,10 +51,6 @@ function DeckEditor({ docUrl }: { docUrl: AutomergeUrl }) {
   useAutoInit(tableUrl, handle, repo, userId, table, changeDoc, onInitError);
 
   useKeyExchange(handle, table, userId);
-
-  const dragDeckCard = (event: DragEvent<HTMLDivElement>) => {
-    writeDragPayload(event.dataTransfer, { source: "stock", tableUrl });
-  };
 
   const dragDeckToCanvas = (event: DragEvent<HTMLButtonElement>) => {
     const deckSubUrl = subDeckUrl(tableUrl, deck.id ?? DEFAULT_DECK_ID);
@@ -79,23 +79,26 @@ function DeckEditor({ docUrl }: { docUrl: AutomergeUrl }) {
     ]);
   };
 
-  const dragSpawnPile = (event: DragEvent<HTMLButtonElement>) => {
-    const pileId = newZoneId("pile");
-    const title = `Pile ${table.piles.length + 1}`;
-    handle.change((draft) => addPile(draft, { id: pileId, title }));
-    const pileUrl = subPileUrl(tableUrl, pileId);
-    writePatchworkDrag(event.dataTransfer, "secure-deck", [
-      {
-        id: pileId,
-        url: dragUrlWithTool(pileUrl, "secure-pile"),
-        name: title,
-      },
-    ]);
-  };
+  const dragSpawnPile =
+    (faceUp: boolean) => (event: DragEvent<HTMLButtonElement>) => {
+      const pileId = newZoneId("pile");
+      const title = faceUp
+        ? `Play area ${table.piles.length + 1}`
+        : `Pile ${table.piles.length + 1}`;
+      handle.change((draft) => addPile(draft, { id: pileId, title, faceUp }));
+      const pileUrl = subPileUrl(tableUrl, pileId);
+      writePatchworkDrag(event.dataTransfer, "secure-deck", [
+        {
+          id: pileId,
+          url: dragUrlWithTool(pileUrl, "secure-pile"),
+          name: title,
+        },
+      ]);
+    };
 
   const hint =
     table.phase === "ready"
-      ? "Drag the top card onto a hand or pile to deal. Drag handles below to place zones on the canvas."
+      ? ""
       : identityReady && userId
         ? initMessage
         : "Loading…";
@@ -138,11 +141,20 @@ function DeckEditor({ docUrl }: { docUrl: AutomergeUrl }) {
           <button
             type="button"
             draggable
-            onDragStart={dragSpawnPile}
+            onDragStart={dragSpawnPile(false)}
             className="card-table-canvas-drag rounded border border-emerald-200/40 bg-emerald-950/40 px-2 py-1 text-[10px] text-emerald-100/90 cursor-grab active:cursor-grabbing"
-            title="Drag onto the canvas to create a pile zone"
+            title="Drag onto the canvas to create a face-down pile zone"
           >
             New pile
+          </button>
+          <button
+            type="button"
+            draggable
+            onDragStart={dragSpawnPile(true)}
+            className="card-table-canvas-drag rounded border border-emerald-200/40 bg-emerald-950/40 px-2 py-1 text-[10px] text-emerald-100/90 cursor-grab active:cursor-grabbing"
+            title="Drag onto the canvas to create a face-up play area"
+          >
+            New play area
           </button>
         </div>
         <p className="max-w-[14rem] text-center text-[11px] leading-snug text-emerald-100/80">
@@ -155,7 +167,9 @@ function DeckEditor({ docUrl }: { docUrl: AutomergeUrl }) {
 
 function DeckToolView({ docUrl }: { docUrl: AutomergeUrl }) {
   return (
-    <Suspense fallback={<p className="p-3 text-xs text-slate-400">Loading deck…</p>}>
+    <Suspense
+      fallback={<p className="p-3 text-xs text-slate-400">Loading deck…</p>}
+    >
       <DeckEditor docUrl={docUrl} />
     </Suspense>
   );

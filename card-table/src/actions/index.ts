@@ -3,8 +3,8 @@ import type { DocHandle } from "@automerge/automerge-repo";
 import { z } from "zod";
 import { startShuffle } from "../crypto/protocol";
 import { deckCardCount } from "../ops/deck";
-import { dealCards, moveCard, addHand, addPile } from "../ops/zones";
-import type { CardTableDoc } from "../types";
+import { dealCards, moveCardByRef, addHand, addPile } from "../ops/zones";
+import type { CardTableDoc, ZoneRef } from "../types";
 
 export const shuffleTableAction: Plugin<any> = {
   type: "patchwork:action",
@@ -67,10 +67,10 @@ export const moveCardAction: Plugin<any> = {
   module: {
     argsSchema: () =>
       z.object({
-        fromHandId: z.string().optional(),
-        fromPileId: z.string().optional(),
-        toHandId: z.string().optional(),
-        toPileId: z.string().optional(),
+        fromKind: z.enum(["deck", "hand", "pile"]),
+        fromId: z.string().describe("Source zone id"),
+        toKind: z.enum(["deck", "hand", "pile"]),
+        toId: z.string().describe("Target zone id"),
         fromIndex: z.number().int().min(0).describe("Index in source zone"),
       }),
     isApplicable: (doc: CardTableDoc) => doc.phase === "ready",
@@ -78,18 +78,18 @@ export const moveCardAction: Plugin<any> = {
       handle: DocHandle<CardTableDoc>,
       _repo: unknown,
       args: {
-        fromHandId?: string;
-        fromPileId?: string;
-        toHandId?: string;
-        toPileId?: string;
+        fromKind: ZoneRef["kind"];
+        fromId: string;
+        toKind: ZoneRef["kind"];
+        toId: string;
         fromIndex: number;
       },
     ) => {
       handle.change((doc) =>
-        moveCard(
+        moveCardByRef(
           doc,
-          { handId: args.fromHandId, pileId: args.fromPileId },
-          { handId: args.toHandId, pileId: args.toPileId },
+          { kind: args.fromKind, id: args.fromId },
+          { kind: args.toKind, id: args.toId },
           args.fromIndex,
         ),
       );
