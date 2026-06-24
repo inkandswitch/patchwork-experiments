@@ -2,22 +2,22 @@
  * Spatial Colors — a bundleless demo tool for the spatial host.
  *
  * Subscribes to the host's `spatial:apriltags` provider. Colors are hardcoded by
- * tag id (v1): tag 0 → hue 0 (red), 1 → hue 120 (green), 2 → hue 240 (blue).
+ * tag id (v1): tag 0 → red, 1 → green, 2 → blue.
  *
- * Behavior by how many recognized tags are visible:
- *   0 tags  → blank.
- *   1 tag   → the whole background fills with that tag's color.
- *   2 tags  → a gradient anchored to each tag's whole footprint: the color is
- *             held SOLID from each tag out to the outer edge of its border ring,
- *             and only the gap between the two borders transitions (HSL shortest
- *             arc). So immediately outside a tag's border you see exactly that
- *             tag's color; the geometric midpoint of the gap is the HSL mix.
- *   3+ tags → fall back to per-tag colored outlines (blending isn't specified).
+ * Background = an inverse-distance-weighted RGB blend of every recognized tag's
+ * color (one unified model for any tag count):
+ *   weight_i = 1 / dist_i^POWER   →   color = Σ wᵢ·cᵢ / Σ wᵢ
+ *   - exact at each tag (weight → ∞ there),
+ *   - at a point equidistant from all tags (e.g. the centroid of a symmetric
+ *     layout) it's the equal RGB mix of all of them — red+green+blue → white,
+ *   - smooth everywhere, defined over the whole box.
+ *   0 tags → blank; 1 tag → solid fill.
  *
- * In all cases each tag's quad is filled BLACK (so the projector throws no light
- * on the tag) and framed by a thick colored outline ring. Geometry is computed
- * in true box pixels (via the coordinate-system provider) so the gradient axis
- * projection is Euclidean despite the box's aspect ratio.
+ * The field is computed on a small offscreen canvas (~FIELD_MAX px longest edge)
+ * and scaled up smoothly. Each tag's quad is then masked BLACK (projector throws
+ * no light on the tag) and framed by a thick colored outline ring, drawn in an
+ * SVG overlay on top. Geometry is in true box pixels (coordinate-system provider)
+ * so distances are Euclidean despite the box's aspect ratio.
  *
  * @typedef {Object} SpatialColorsDoc
  * @property {string} title
@@ -58,29 +58,27 @@ function subscribe(element, selector, listener) {
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
-// Hardcoded tag id -> hue (v1). Pure, fully saturated colors.
-const TAG_HUES = { 0: 0, 1: 120, 2: 240 };
+// Hardcoded tag id -> RGB (v1). Pure, fully saturated colors.
+const TAG_RGB = {
+  0: [255, 0, 0], // red
+  1: [0, 255, 0], // green
+  2: [0, 0, 255], // blue
+};
 
-function hueForTag(id) {
-  const hue = TAG_HUES[id];
-  return hue == null ? null : hue;
+function rgbForTag(id) {
+  return TAG_RGB[id] ?? null;
 }
 
-function cssHsl(hue) {
-  return `hsl(${((hue % 360) + 360) % 360}, 100%, 50%)`;
+function cssRgb([r, g, b]) {
+  return `rgb(${r | 0}, ${g | 0}, ${b | 0})`;
 }
 
-function colorForTag(id) {
-  const hue = hueForTag(id);
-  return hue == null ? null : cssHsl(hue);
-}
-
-// Interpolate two hues along the SHORTEST arc around the wheel. t in [0,1].
-// e.g. 0↔120 at t=0.5 → 60 (yellow); 0↔240 → 300 at t=0.5 (magenta, short way).
-function lerpHueShortest(h0, h1, t) {
-  let delta = ((h1 - h0 + 540) % 360) - 180; // shortest signed delta in [-180,180]
-  return h0 + delta * t;
-}
+// Inverse-distance falloff power. Higher = tighter color zones near each tag.
+const POWER = 2;
+// Longest edge (px) of the offscreen field; scaled up smoothly to the box.
+const FIELD_MAX = 64;
+// Border ring thickness (px). Half is used to size the colored outline.
+const BORDER_PX = 20;
 
 // ---------------------------------------------------------------------------
 // Datatype
@@ -112,6 +110,13 @@ export function Tool(handle, element) {
       overflow: hidden;
       background: transparent;
     }
+    .spatial-colors canvas.sc-field {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      image-rendering: auto;
+    }
     .spatial-colors svg {
       position: absolute;
       inset: 0;
@@ -121,14 +126,11 @@ export function Tool(handle, element) {
     }
     .spatial-colors polygon.sc-outline {
       fill: none;
-      stroke-width: 20px;
+      stroke-width: ${BORDER_PX}px;
       stroke-linejoin: round;
     }
     .spatial-colors polygon.sc-tag-black {
       fill: #000;
-      stroke: none;
-    }
-    .spatial-colors rect.sc-bg {
       stroke: none;
     }
   `;
@@ -143,29 +145,25 @@ export function Tool(handle, element) {
   root.className = "spatial-colors";
   element.appendChild(root);
 
-  // A single SVG spanning the whole box, in TRUE PIXEL coordinates (viewBox set
-  // from the coordinate-system provider). Working in pixels keeps the gradient
-  // geometry Euclidean (the box has a non-square aspect ratio, so a normalized
-  // 0..1 space would distort projections onto the A→B axis).
+  // Background blend field (low-res offscreen, displayed scaled-up).
+  const fieldCanvas = document.createElement("canvas");
+  fieldCanvas.className = "sc-field";
+  root.appendChild(fieldCanvas);
+  const fieldCtx = fieldCanvas.getContext("2d");
+
+  // SVG overlay for the black tag masks + colored rings.
   const svg = document.createElementNS(SVG_NS, "svg");
   svg.setAttribute("preserveAspectRatio", "none");
   root.appendChild(svg);
 
   let tags = [];
-  // Box size in CSS px (from the coordinate-system provider). Fallback keeps the
-  // tool usable before the first emission.
   let boxW = 100;
   let boxH = 100;
-  // Border ring half-thickness in px — half of the stroke-width so the gradient
-  // starts at the OUTER edge of the border ring.
-  const BORDER_PX = 20;
-  const BORDER_HALF = BORDER_PX / 2;
 
   function syncViewBox() {
     svg.setAttribute("viewBox", `0 0 ${boxW} ${boxH}`);
   }
 
-  // Tag corners as pixel points {x,y}.
   function cornerPx(tag) {
     const corners = Array.isArray(tag.corners) ? tag.corners : [];
     if (corners.length < 3) return null;
@@ -174,6 +172,72 @@ export function Tool(handle, element) {
 
   function pointsAttr(pts) {
     return pts.map((p) => `${p.x},${p.y}`).join(" ");
+  }
+
+  // Compute the inverse-distance-weighted RGB field on the offscreen canvas.
+  function drawField(anchors) {
+    const aspect = boxH / boxW || 1;
+    const fw = Math.max(1, Math.round(boxW >= boxH ? FIELD_MAX : FIELD_MAX / aspect));
+    const fh = Math.max(1, Math.round(boxW >= boxH ? FIELD_MAX * aspect : FIELD_MAX));
+    if (fieldCanvas.width !== fw) fieldCanvas.width = fw;
+    if (fieldCanvas.height !== fh) fieldCanvas.height = fh;
+    if (!fieldCtx) return;
+
+    if (!anchors.length) {
+      fieldCtx.clearRect(0, 0, fw, fh);
+      return;
+    }
+    if (anchors.length === 1) {
+      fieldCtx.fillStyle = cssRgb(anchors[0].rgb);
+      fieldCtx.fillRect(0, 0, fw, fh);
+      return;
+    }
+
+    // Anchor positions in field-pixel space.
+    const pts = anchors.map((a) => ({
+      x: (a.cx / boxW) * fw,
+      y: (a.cy / boxH) * fh,
+      rgb: a.rgb,
+    }));
+
+    const img = fieldCtx.createImageData(fw, fh);
+    const data = img.data;
+    const EPS = 1e-6;
+    for (let y = 0; y < fh; y++) {
+      for (let x = 0; x < fw; x++) {
+        let wsum = 0;
+        let r = 0;
+        let g = 0;
+        let b = 0;
+        let snapped = null;
+        for (const p of pts) {
+          const dx = x + 0.5 - p.x;
+          const dy = y + 0.5 - p.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < EPS) {
+            snapped = p.rgb; // exactly on a tag
+            break;
+          }
+          const w = 1 / Math.pow(d2, POWER / 2);
+          wsum += w;
+          r += w * p.rgb[0];
+          g += w * p.rgb[1];
+          b += w * p.rgb[2];
+        }
+        const idx = (y * fw + x) * 4;
+        if (snapped) {
+          data[idx] = snapped[0];
+          data[idx + 1] = snapped[1];
+          data[idx + 2] = snapped[2];
+        } else {
+          data[idx] = r / wsum;
+          data[idx + 1] = g / wsum;
+          data[idx + 2] = b / wsum;
+        }
+        data[idx + 3] = 255;
+      }
+    }
+    fieldCtx.putImageData(img, 0, 0);
   }
 
   function makeOutline(pts, color) {
@@ -192,132 +256,31 @@ export function Tool(handle, element) {
     return polygon;
   }
 
-  // Project a point onto the A→B axis, returning the signed distance from A in
-  // px (0 at A's center, |B−A| at B's center).
-  function projectOnAxis(p, a, ux, uy) {
-    return (p.x - a.x) * ux + (p.y - a.y) * uy;
-  }
-
-  // Build the gradient between two tags' anchor regions. The color is held
-  // SOLID from each tag out to the near edge of its border ring; only the gap
-  // between the two borders transitions (HSL shortest arc). userSpaceOnUse in
-  // pixel coords so projection is Euclidean.
-  function makeGradientDef(aCenter, bCenter, aCorners, bCorners, hueA, hueB) {
-    const dx = bCenter.x - aCenter.x;
-    const dy = bCenter.y - aCenter.y;
-    const L = Math.hypot(dx, dy) || 1;
-    const ux = dx / L;
-    const uy = dy / L;
-
-    // Far reach of A toward B = max projection of A's (border-expanded) corners.
-    const aReach =
-      Math.max(...aCorners.map((p) => projectOnAxis(p, aCenter, ux, uy))) +
-      BORDER_HALF;
-    // Near reach of B (toward A) = min projection of B's corners, minus border.
-    const bReach =
-      L +
-      Math.min(...bCorners.map((p) => projectOnAxis(p, bCenter, ux, uy))) -
-      BORDER_HALF;
-
-    // Offsets along the gradient vector (0 at A center, 1 at B center).
-    let aEnd = aReach / L;
-    let bStart = bReach / L;
-    // Guard against overlap/degenerate ordering.
-    if (bStart <= aEnd) {
-      const mid = (aEnd + bStart) / 2;
-      aEnd = bStart = Math.min(Math.max(mid, 0), 1);
-    }
-    aEnd = Math.min(Math.max(aEnd, 0), 1);
-    bStart = Math.min(Math.max(bStart, 0), 1);
-
-    const grad = document.createElementNS(SVG_NS, "linearGradient");
-    grad.setAttribute("id", "sc-grad");
-    grad.setAttribute("gradientUnits", "userSpaceOnUse");
-    grad.setAttribute("x1", String(aCenter.x));
-    grad.setAttribute("y1", String(aCenter.y));
-    grad.setAttribute("x2", String(bCenter.x));
-    grad.setAttribute("y2", String(bCenter.y));
-    grad.setAttribute("spreadMethod", "pad");
-
-    const addStop = (offset, hue) => {
-      const stop = document.createElementNS(SVG_NS, "stop");
-      stop.setAttribute("offset", `${offset * 100}%`);
-      stop.setAttribute("stop-color", cssHsl(hue));
-      grad.appendChild(stop);
-    };
-
-    // Solid A up to its border edge.
-    addStop(0, hueA);
-    addStop(aEnd, hueA);
-    // HSL transition across the gap (sampled so it follows HSL, not sRGB).
-    const STEPS = 10;
-    for (let i = 1; i < STEPS; i++) {
-      const t = i / STEPS;
-      addStop(aEnd + (bStart - aEnd) * t, lerpHueShortest(hueA, hueB, t));
-    }
-    // Solid B from its border edge onward.
-    addStop(bStart, hueB);
-    addStop(1, hueB);
-    return grad;
-  }
-
-  function center(tag) {
-    return { x: tag.nx * boxW, y: tag.ny * boxH };
-  }
-
   function render() {
-    svg.replaceChildren();
     syncViewBox();
+    svg.replaceChildren();
 
-    // Recognized tags only (those with a hardcoded color), each with a usable quad.
+    // Recognized tags only (those with a hardcoded color) + a usable quad.
     const colored = tags
-      .map((tag) => ({ tag, hue: hueForTag(tag.id), corners: cornerPx(tag) }))
-      .filter((t) => t.hue != null && t.corners);
+      .map((tag) => ({ tag, rgb: rgbForTag(tag.id), corners: cornerPx(tag) }))
+      .filter((t) => t.rgb && t.corners);
 
-    // --- Background: solid (1 tag) or gradient (2 tags) ---
-    if (colored.length === 1) {
-      const rect = bgRect();
-      rect.setAttribute("fill", cssHsl(colored[0].hue));
-      svg.appendChild(rect);
-    } else if (colored.length === 2) {
-      const [a, b] = colored;
-      const defs = document.createElementNS(SVG_NS, "defs");
-      defs.appendChild(
-        makeGradientDef(
-          center(a.tag),
-          center(b.tag),
-          a.corners,
-          b.corners,
-          a.hue,
-          b.hue,
-        ),
-      );
-      svg.appendChild(defs);
-      const rect = bgRect();
-      rect.setAttribute("fill", "url(#sc-grad)");
-      svg.appendChild(rect);
-    }
-    // 0 tags → blank; 3+ → no background (outlines only, below).
+    // Anchor = each tag's center + color, for the blend field.
+    const anchors = colored.map(({ tag, rgb }) => ({
+      cx: tag.nx * boxW,
+      cy: tag.ny * boxH,
+      rgb,
+    }));
+    drawField(anchors);
 
-    // --- Black tag quads (mask the tag so nothing is projected onto it) ---
+    // Black tag masks (no light on the tag).
     for (const { corners } of colored) {
       svg.appendChild(makeBlackTag(corners));
     }
-
-    // --- Colored outline rings around each tag ---
-    for (const { corners, hue } of colored) {
-      svg.appendChild(makeOutline(corners, cssHsl(hue)));
+    // Colored outline rings.
+    for (const { corners, rgb } of colored) {
+      svg.appendChild(makeOutline(corners, cssRgb(rgb)));
     }
-  }
-
-  function bgRect() {
-    const rect = document.createElementNS(SVG_NS, "rect");
-    rect.setAttribute("class", "sc-bg");
-    rect.setAttribute("x", "0");
-    rect.setAttribute("y", "0");
-    rect.setAttribute("width", String(boxW));
-    rect.setAttribute("height", String(boxH));
-    return rect;
   }
 
   const unsubTags = subscribe(
