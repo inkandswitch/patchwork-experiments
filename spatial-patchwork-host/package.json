@@ -1,0 +1,28 @@
+{
+  "name": "@patchwork/spatial-patchwork-host",
+  "version": "0.0.1",
+  "description": "Spatial host: camera/projector alignment, calibration, AprilTag detection, and an embedded patchwork-view fed via providers",
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build",
+    "push": "vite build && pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  },
+  "keywords": [],
+  "author": "Ink & Switch",
+  "dependencies": {
+    "@inkandswitch/patchwork-elements": "^0.2.0",
+    "@inkandswitch/patchwork-plugins": "^0.0.11",
+    "@inkandswitch/patchwork-providers": "^0.2.1"
+  },
+  "devDependencies": {
+    "@inkandswitch/patchwork-bootloader": "^0.2.4",
+    "vite": "^7.1.9",
+    "vite-plugin-css-injected-by-js": "^3.5.2"
+  }
+}
