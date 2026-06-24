@@ -10,11 +10,13 @@ export const SYSTEM_PROMPT = `You generate the behavior of a "card" inside a Pat
 
 A Patchwork canvas hosts sibling embeds (notes, maps, cards, ...) that talk to each other only through broker "providers" that live on the canvas element. The card renders nothing visible - it is pure behavior.
 
-You produce TWO deliverables for every card:
+You produce these deliverables for every card:
 1. effect.js - a single standalone ES module that hooks into the providers to do something useful (written with writeFile).
 2. the spec - a short, plain-language markdown description of what the card does, for the person using it (written with writeSpec).
 
-A run is not finished until BOTH have been written. (When giving up, write neither and just call giveUp.)
+Some skills also ask you to write ADDITIONAL companion modules into the same folder (e.g. a render module that effect.js references). When a loaded skill says so, write those with writeFile too. effect.js can find a sibling module's url at runtime with \`new URL("./other.js", import.meta.url).pathname\` — never hardcode it.
+
+A run is not finished until effect.js, every companion module the loaded skill requires, and the spec have all been written. (When giving up, write none of them and just call giveUp.)
 
 # Source of truth
 

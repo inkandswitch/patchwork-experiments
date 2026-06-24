@@ -1,160 +1,179 @@
 import type { Skill } from "./index";
 
 // The slash-command capability: offer `/` command suggestions into editors, and
-// then act on the command text the user inserts by decorating it with a sticker
-// that shows the result. It is the search skill's sibling (suggestions instead
-// of result cards) fused with the annotate skill (match text, attach stickers).
+// have each chosen command drop a LIVE, self-rendering card into the note. It is
+// the search skill's sibling (it mints cards and reports their urls) plus a
+// companion render module that draws each card inline — replacing the older
+// "insert a text snippet, then sticker it" approach.
 export const COMMANDS_SKILL: Skill = {
   name: "commands",
   summary:
-    "offer /-command suggestions (e.g. {Route(from: A to: B)}) and show each command's result inline as a sticker",
+    "offer /-commands that each drop a live, self-rendering card into the note (e.g. /Route → an interactive route widget)",
   doc: `# Skill: commands
 
-Give the user slash commands. When they type \`/\` in a note, you offer suggestions; picking one inserts a short text snippet like \`{Route(from: Aachen to: Berlin)}\` into the note. Then you watch for that snippet in the text, compute its result, and show the answer inline as a sticker. The effect renders nothing itself - it is pure behavior.
+Give the user slash commands that each drop a LIVE, self-rendering card into their note. When they type \`/\` you offer suggestions; picking one inserts an interactive embed (e.g. a route widget) bound to its own copy of a card document.
 
-This is two halves working together:
-  1. commands:responses - be a SUGGESTION contributor: answer the live \`/\` query with command snippets to insert.
-  2. schema:matches + stickers:registry - find the snippets the user inserted and decorate them with their result.
+You ship TWO modules (write both with writeFile), plus the spec:
+  1. effect.js - the command CONTRIBUTOR: answer the live \`/\` query with suggestions. Each suggestion points at a prototype card you mint, plus the url of your renderer.
+  2. view.js   - the RENDERER: a default-export \`(element, handle) => cleanup\` that draws ONE card inline and lets the user interact with it.
 
-The second half is exactly the \`annotate\` skill (find a data shape, attach stickers). Load it too - \`loadSkill("annotate")\` - for the full schema:matches / stickers:registry / range-target contract; this skill only covers what is specific to commands.
+(This replaces the older "insert a {Command(...)} text snippet and decorate it with a sticker" approach. Now the embed renders itself and owns its data.)
 
-## Choose a command token format
+## How a command flows
 
-Pick a compact, recognizable token the user can also hand-edit, and one regex that both your suggestions and your matcher agree on. The convention is:
+- effect.js mints ONE prototype card per command — a normal card doc \`{ "@patchwork": { type: "card" }, props, content }\` — with sensible default args, and offers it as a suggestion.
+- When the user picks the suggestion, the HOST deep-clones your prototype (so every insertion is independent) and inserts a token \`[label]{cloneUrl?view=<your view.js url>}\` into the note.
+- That token is rendered by importing your view.js and calling \`default(element, handle)\` with a handle to the CLONE. The user changes the command through the widget's own UI (which writes to the handle) — NOT by editing text.
 
-  {Name(arg: value, arg: value)}     e.g. {Route(from: Aachen to: Berlin)}
-
-A matcher for the example above:
-
-  const COMMAND_RE = /\\{Route\\(from:\\s*([^,}]+?)\\s+to:\\s*([^)}]+?)\\)\\}/g;
-
-The args the user ends up with are read from the DOCUMENT TEXT at match time, NOT from the suggestion - the suggestion is just a starting template the user edits in place.
-
-## Half 1: commands:responses - answer the active /-query
+## Half 1: effect.js — answer the active /-query (commands:responses)
 
   subscribe(element, { type: "commands:responses" }, (responseDocUrl) => { ... })
 
 The callback is invoked once with the url of a fresh response document minted for you. It is a plain map:
 
-  { [query: string]: { label: string, insert: string }[] }
+  { [query: string]: { label: string, url: AutomergeUrl, viewUrl?: string }[] }
 
-The broker OWNS the keys: it writes the current set of active query strings - i.e. whatever the user has typed after \`/\` in any open menu (the empty string \`""\` means they typed \`/\` with nothing after it yet). You OWN the values: for each query key, write the array of suggestions you offer. Each suggestion is { label, insert }: \`label\` shows in the menu, \`insert\` is the literal text dropped into the note when chosen.
+The broker OWNS the keys: the active \`/\` queries (the empty string \`""\` means the user typed \`/\` with nothing after it). You OWN the values: for each query key, write the array of suggestions you offer. Each suggestion is:
+  - label   - what the menu shows
+  - url     - a card you minted (\`repo.create(...).url\`): the command's prototype
+  - viewUrl - the import url of your renderer (see "Getting your renderer's url")
+
+Mint each prototype card ONCE and cache it (a module-level variable) — do NOT create a new card on every keystroke. Offer the SAME url across queries so the broker dedupes it. Match the query loosely (case-insensitive prefix/substring on the label or command name), return [] when nothing fits, and offer your full list for the empty query.
 
   const handle = await repo.find(responseDocUrl);
-  const answer = () => {
-    handle.change((doc) => {
-      for (const query of Object.keys(doc)) {
-        doc[query] = suggestionsFor(query); // filter your commands by the query
-      }
-    });
-  };
+  const answer = () => handle.change((doc) => {
+    for (const query of Object.keys(doc)) doc[query] = suggestionsFor(query);
+  });
   handle.on("change", answer); // re-answer when the broker adds/removes a query
   answer();
 
-Match your commands against the query loosely (case-insensitive prefix/substring on the label or command name) and return [] when nothing fits. Offer your full list for the empty query. In the returned teardown, unsubscribe and remove the "change" listener.
+In the returned teardown, unsubscribe and remove the "change" listener.
 
-## Half 2: act on the inserted snippet (schema:matches + stickers:registry)
+### Getting your renderer's url (IMPORTANT)
 
-Once the user picks a suggestion, the snippet is ordinary text inside a markdown note - so find it with the SAME schema:matches markdown shape the annotate skill uses, scan each note's \`content\` with your COMMAND_RE, compute the result for each occurrence, and publish a sticker over its character range.
+effect.js and view.js live in the SAME folder, so derive view.js's url from your own module url at runtime — never hardcode it:
 
-- Build the range target from the matched [from, to) characters with the inline cursor marker (see annotate skill): handle.sub("content", { AUTOMERGE_REF_CURSOR_MARKER: true, start: from, end: to }).url
-- Show the result with a TEXT sticker placed after the token, so the original (still editable) command text stays put:
-    { type: "text", text: " → 320 km, 3h40", target, slot: "after" }
-  (Use slot: "replace" instead if the card should swap the command out for just its result; a style sticker can additionally tint the token.)
-- Re-scan a note when its content changes, overwrite that note's registry entry, drop notes that no longer contain a command, and clear everything in teardown.
+  const VIEW_URL = new URL("./view.js", import.meta.url).pathname;
 
-If results come from the network, the search-skill API rules apply: keyless PUBLIC endpoints only, probe before writing effect.js, throw on fetch failure, and giveUp(...) if it genuinely needs a key. Debounce recomputation and guard against a stale in-flight fetch overwriting a newer one.
+Put that exact string in every suggestion's \`viewUrl\`.
 
-## Example effect.js (a /Route command backed by a keyless routing API)
+## Half 2: view.js — render ONE card inline
+
+view.js is loaded standalone by the service worker, exactly like effect.js, but it RENDERS (effect.js renders nothing). It receives the card's host element and a handle to that card's own clone:
+
+  export default function view(element, handle) {
+    const repo = element.repo; // the repo is on the element; no import needed
+    const render = () => {
+      const card = handle.doc();
+      element.replaceChildren(/* build DOM from card.props, attach inputs */);
+    };
+    const onChange = () => render();
+    handle.on("change", onChange);
+    render();
+    return () => { handle.off("change", onChange); element.replaceChildren(); };
+  }
+
+- Plain JavaScript, render into \`element\`. No React/Solid. Every import MUST be a full https://esm.sh/... url. Do NOT import @automerge/automerge-repo (use \`element.repo\` and the handle).
+- Read the card's data from \`handle.doc()\`; write the user's edits back with \`handle.change(...)\`. Each embed has its OWN clone, so mutate freely.
+- If the command computes a result from the network, compute it IN view.js, store it on the card (\`handle.change\`), and re-render. The API rules below apply.
+
+## API access (IMPORTANT — applies to view.js)
+
+view.js runs standalone in the browser with NO access to secrets, env vars, or an API-key store. So:
+
+- Use only PUBLIC, keyless HTTP endpoints (e.g. OpenStreetMap Nominatim, OSRM). Respect each service's usage policy.
+- Before writing view.js, PROBE your chosen endpoint with a \`<script>\` fetch to confirm it returns usable data WITHOUT a key.
+- If the request genuinely needs a key you cannot obtain, do NOT hardcode a placeholder — call giveUp("...") and stop.
+- Throw a clear Error if a fetch fails (e.g. \`if (!res.ok) throw new Error("OSRM " + res.status)\`). Debounce recomputation and guard against a stale in-flight fetch overwriting a newer result.
+
+## Example: a /Route command
+
+effect.js (the contributor):
 
   import { subscribe } from "https://esm.sh/@inkandswitch/patchwork-providers@0.2.2";
 
-  const MARKDOWN_SCHEMA = { type: "object", properties: { "@patchwork": { type: "object", properties: { type: { const: "markdown" } }, required: ["type"] }, content: { type: "string" } }, required: ["@patchwork", "content"] };
-  const COMMAND_RE = /\\{Route\\(from:\\s*([^,}]+?)\\s+to:\\s*([^)}]+?)\\)\\}/g;
+  const VIEW_URL = new URL("./view.js", import.meta.url).pathname;
 
   export default function activate(element) {
     const repo = element.repo;
-    const stops = [];
+    let proto; // cache the prototype card so we don't mint one per keystroke
+    const prototypeUrl = () => {
+      if (!proto) proto = repo.create({
+        "@patchwork": { type: "card" },
+        props: { command: "Route", from: "Aachen", to: "Berlin" },
+        content: "Route",
+      });
+      return proto.url;
+    };
 
-    // --- Half 1: suggest the command as the user types "/..." ---
-    const COMMANDS = [{ label: "Route from … to …", insert: "{Route(from: Aachen to: Berlin)}" }];
-    stops.push(subscribe(element, { type: "commands:responses" }, async (responseDocUrl) => {
+    const stop = subscribe(element, { type: "commands:responses" }, async (responseDocUrl) => {
       const handle = await repo.find(responseDocUrl);
+      const suggestionsFor = (query) => {
+        const q = query.toLowerCase();
+        if (q && !"route".startsWith(q)) return [];
+        return [{ label: "Route from … to …", url: prototypeUrl(), viewUrl: VIEW_URL }];
+      };
       const answer = () => handle.change((doc) => {
-        for (const query of Object.keys(doc)) {
-          const q = query.toLowerCase();
-          doc[query] = COMMANDS.filter((c) => c.label.toLowerCase().includes(q) || "route".startsWith(q));
-        }
+        for (const query of Object.keys(doc)) doc[query] = suggestionsFor(query);
       });
       handle.on("change", answer);
       answer();
-    }));
+    });
 
-    // --- Half 2: find inserted {Route(...)} tokens and sticker their result ---
-    let registry; // the sticker registry handle
-    const noteHandles = new Map(); // url -> { handle, onChange }
-    const geocode = async (place) => {
-      const res = await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=" + encodeURIComponent(place), { headers: { Accept: "application/json" } });
-      if (!res.ok) throw new Error("Nominatim responded " + res.status);
-      const hits = await res.json();
-      return hits[0] && { lat: Number(hits[0].lat), lon: Number(hits[0].lon) };
-    };
-    const routeKm = async (from, to) => {
-      const a = await geocode(from), b = await geocode(to);
-      if (!a || !b) return null;
-      const res = await fetch("https://router.project-osrm.org/route/v1/driving/" + a.lon + "," + a.lat + ";" + b.lon + "," + b.lat + "?overview=false");
-      if (!res.ok) throw new Error("OSRM responded " + res.status);
-      const data = await res.json();
-      const r = data.routes && data.routes[0];
-      return r ? Math.round(r.distance / 1000) : null;
-    };
-
-    const rescan = async (noteUrl) => {
-      if (!registry) return;
-      const handle = noteHandles.get(noteUrl)?.handle;
-      const content = handle?.doc()?.content;
-      if (typeof content !== "string") return;
-      const stickers = [];
-      for (const m of content.matchAll(COMMAND_RE)) {
-        const from = m.index, to = m.index + m[0].length;
-        const target = handle.sub("content", { AUTOMERGE_REF_CURSOR_MARKER: true, start: from, end: to }).url;
-        let text = " → …";
-        try { const km = await routeKm(m[1].trim(), m[2].trim()); text = km != null ? " → " + km + " km" : " → no route"; }
-        catch (err) { console.error(err); text = " → error"; }
-        stickers.push({ type: "text", text, target, slot: "after" });
-      }
-      registry.change((doc) => { if (stickers.length) doc[noteUrl] = stickers; else delete doc[noteUrl]; });
-    };
-
-    stops.push(subscribe(element, { type: "stickers:registry" }, async (registryDocUrl) => {
-      registry = await repo.find(registryDocUrl);
-      for (const url of noteHandles.keys()) rescan(url);
-    }));
-
-    stops.push(subscribe(element, { type: "schema:matches", schema: MARKDOWN_SCHEMA }, async (urls) => {
-      const next = new Set(urls);
-      for (const [url, entry] of noteHandles) {
-        if (next.has(url)) continue;
-        entry.handle.off("change", entry.onChange);
-        noteHandles.delete(url);
-        registry && registry.change((doc) => { delete doc[url]; });
-      }
-      for (const url of urls) {
-        if (noteHandles.has(url)) continue;
-        const handle = await repo.find(url);
-        const onChange = () => rescan(url);
-        handle.on("change", onChange);
-        noteHandles.set(url, { handle, onChange });
-        rescan(url);
-      }
-    }));
-
-    return () => {
-      for (const stop of stops) stop();
-      for (const { handle, onChange } of noteHandles.values()) handle.off("change", onChange);
-      if (registry) registry.change((doc) => { for (const k of Object.keys(doc)) delete doc[k]; });
-    };
+    return () => stop();
   }
 
-(The two halves are independent: you can ship only Half 1 to provide insertable snippets, or only Half 2 to act on tokens the user types by hand - but together they make a complete command.)`,
+view.js (the renderer):
+
+  const geocode = async (place) => {
+    const res = await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=" + encodeURIComponent(place), { headers: { Accept: "application/json" } });
+    if (!res.ok) throw new Error("Nominatim " + res.status);
+    const hits = await res.json();
+    return hits[0] && { lat: Number(hits[0].lat), lon: Number(hits[0].lon) };
+  };
+  const routeKm = async (from, to) => {
+    const a = await geocode(from), b = await geocode(to);
+    if (!a || !b) return null;
+    const res = await fetch("https://router.project-osrm.org/route/v1/driving/" + a.lon + "," + a.lat + ";" + b.lon + "," + b.lat + "?overview=false");
+    if (!res.ok) throw new Error("OSRM " + res.status);
+    const data = await res.json();
+    const r = data.routes && data.routes[0];
+    return r ? Math.round(r.distance / 1000) : null;
+  };
+
+  export default function view(element, handle) {
+    let token = 0; // guards against a stale fetch overwriting a newer one
+    const recompute = async () => {
+      const mine = ++token;
+      const { from, to } = handle.doc().props;
+      try {
+        const km = await routeKm(from, to);
+        if (mine === token) handle.change((d) => { d.props.km = km; });
+      } catch (err) { if (mine === token) handle.change((d) => { d.props.km = null; }); }
+    };
+
+    const render = () => {
+      const { from, to, km } = handle.doc().props;
+      element.replaceChildren();
+      const box = document.createElement("span");
+      box.className = "route-embed";
+      const fromI = document.createElement("input"); fromI.value = from;
+      const toI = document.createElement("input"); toI.value = to;
+      fromI.addEventListener("change", () => { handle.change((d) => { d.props.from = fromI.value; }); recompute(); });
+      toI.addEventListener("change", () => { handle.change((d) => { d.props.to = toI.value; }); recompute(); });
+      const result = document.createElement("span");
+      result.textContent = km == null ? " → …" : " → " + km + " km";
+      box.append(fromI, document.createTextNode(" → "), toI, result);
+      element.append(box);
+    };
+
+    const onChange = () => render();
+    handle.on("change", onChange);
+    render();
+    if (handle.doc().props.km === undefined) recompute();
+
+    return () => { handle.off("change", onChange); element.replaceChildren(); };
+  }
+
+(Half 1 and Half 2 are one command: effect.js advertises it, view.js is what the user actually sees and interacts with. Write BOTH files, then write the spec.)`,
 };

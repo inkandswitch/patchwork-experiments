@@ -1,7 +1,7 @@
 import type { DocHandle, Repo } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import type { SubscribeEvent } from "@inkandswitch/patchwork-providers";
-import { For, createSignal } from "solid-js";
+import { For, createEffect, createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import {
   RepoContext,
@@ -84,6 +84,34 @@ function PartsBin(props: { handle: DocHandle<PartsBinDoc> }) {
   const items = () => doc()?.items ?? [];
   const [open, setOpen] = createSignal(true);
 
+  // Smoothly scroll the list to the newest entry. The new row's
+  // <patchwork-view> reports its height a few frames later, so re-pin once after
+  // it settles to make sure the whole entry lands in view.
+  let listEl: HTMLDivElement | undefined;
+  const scrollListToBottom = () => {
+    const el = listEl;
+    if (!el) return;
+    const toBottom = () =>
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    requestAnimationFrame(toBottom);
+    setTimeout(toBottom, 300);
+  };
+
+  // Animate to the bottom whenever an item is added (e.g. an embed dragged into
+  // the bin) so the fresh entry slides into view. We capture the count on the
+  // first load instead of scrolling, so only real additions trigger it.
+  let knownCount = -1;
+  createEffect(() => {
+    const count = items().length;
+    if (!doc()) return;
+    if (knownCount < 0) {
+      knownCount = count;
+      return;
+    }
+    if (count > knownCount) scrollListToBottom();
+    knownCount = count;
+  });
+
   return (
     <div
       class="embark-parts-bin"
@@ -91,7 +119,7 @@ function PartsBin(props: { handle: DocHandle<PartsBinDoc> }) {
     >
       <div class="embark-parts-bin__drawer">
         <div class="embark-parts-bin__panel">
-          <div class="embark-parts-bin__list">
+          <div class="embark-parts-bin__list" ref={listEl}>
             <For each={items()}>
               {(item, index) => (
                 <PartsBinRow

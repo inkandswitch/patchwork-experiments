@@ -120,8 +120,8 @@ export function CommandsProvider(element: ToolElement): () => void {
     }
   };
 
-  // Union (dedup by insert text, order-stable) the suggestions every
-  // contributor wrote for `query`.
+  // Union (dedup by card url, order-stable) the suggestions every contributor
+  // wrote for `query`.
   const suggestionsForQuery = (query: string): Suggestion[] => {
     const seen = new Set<string>();
     const out: Suggestion[] = [];
@@ -129,10 +129,16 @@ export function CommandsProvider(element: ToolElement): () => void {
       const suggestions = handle.doc()?.[query];
       if (!suggestions) continue;
       for (const suggestion of suggestions) {
-        if (!suggestion || typeof suggestion.insert !== "string") continue;
-        if (seen.has(suggestion.insert)) continue;
-        seen.add(suggestion.insert);
-        out.push({ label: String(suggestion.label ?? suggestion.insert), insert: suggestion.insert });
+        if (!suggestion || typeof suggestion.url !== "string") continue;
+        if (seen.has(suggestion.url)) continue;
+        seen.add(suggestion.url);
+        out.push({
+          label: String(suggestion.label ?? suggestion.url),
+          url: suggestion.url,
+          ...(typeof suggestion.viewUrl === "string"
+            ? { viewUrl: suggestion.viewUrl }
+            : {}),
+        });
       }
     }
     return out;
@@ -167,6 +173,8 @@ function sameSuggestions(a: Suggestion[] | undefined, b: Suggestion[]): boolean 
   if (!a || a.length !== b.length) return false;
   return a.every(
     (suggestion, i) =>
-      suggestion.insert === b[i].insert && suggestion.label === b[i].label,
+      suggestion.url === b[i].url &&
+      suggestion.label === b[i].label &&
+      suggestion.viewUrl === b[i].viewUrl,
   );
 }

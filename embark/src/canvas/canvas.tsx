@@ -4,7 +4,8 @@ import { For, Show, createSignal, onCleanup } from "solid-js";
 import { render } from "solid-js/web";
 import { RepoContext, useDocument, useRepo } from "solid-automerge";
 import "@inkandswitch/patchwork-elements";
-import { getDocumentDragPayload, hasDocumentDrag } from "./dnd";
+import { getDocumentDragPayload, getDragSource, hasDocumentDrag } from "./dnd";
+import { deepCloneDocument } from "./deep-clone";
 import type { PartsBinDoc } from "./parts-bin/types";
 import { SearchProvider } from "./providers/SearchProvider";
 import { CommandsProvider } from "./providers/CommandsProvider";
@@ -52,6 +53,8 @@ const MIN_WIDTH = 160;
 const MIN_HEIGHT = 100;
 // Offset stacked drops so dragging several docs in at once doesn't hide them.
 const DROP_CASCADE = 28;
+// How far a Cmd+D duplicate is nudged down-and-right from its original.
+const DUPLICATE_OFFSET = 24;
 // An inspect embed opens just to the right of the card it inspects.
 const INSPECT_GAP = 24;
 const INSPECT_WIDTH = 360;
@@ -148,6 +151,36 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
     setSelectedId(null);
   };
 
+  // Cmd/Ctrl+D: duplicate the selected embed. The document is deep-copied (so
+  // the copy — and everything it links to — is fully independent of the
+  // original) and dropped slightly down-and-right. Positions are re-read inside
+  // the change since the deep copy awaits.
+  const duplicateEmbed = async (id: string) => {
+    const source = doc()?.embeds[id];
+    if (!source) return;
+    const clonedUrl = await deepCloneDocument(repo, source.docUrl);
+    const newId = crypto.randomUUID();
+    props.handle.change((canvas) => {
+      const src = canvas.embeds[id];
+      if (!src) return;
+      // Automerge rejects an explicit `undefined`, so only carry over the
+      // optional fields the source actually has.
+      const copy: EmbarkEmbed = {
+        id: newId,
+        docUrl: clonedUrl,
+        x: src.x + DUPLICATE_OFFSET,
+        y: src.y + DUPLICATE_OFFSET,
+        width: src.width,
+        height: src.height,
+        z: highestZ(canvas.embeds) + 1,
+      };
+      if (src.toolId !== undefined) copy.toolId = src.toolId;
+      if (src.locked !== undefined) copy.locked = src.locked;
+      canvas.embeds[newId] = copy;
+    });
+    selectEmbed(newId);
+  };
+
   // Right-click menu state: which embed was clicked, its resolved tool id (so
   // items can enable per datatype), and the click point in canvas-local space.
   const [menu, setMenu] = createSignal<ContextMenu | null>(null);
@@ -232,21 +265,20 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
     return null;
   };
 
-  // Copy an embed's document into a parts bin as a fresh clone — mirroring the
-  // bin's drag-out behavior — so the bin keeps a stable template independent of
-  // the original embed.
+  // Copy an embed's document into a parts bin as a deep copy — so the bin holds
+  // a fully self-contained template that shares no documents with the original
+  // embed (or anything it links to).
   const copyEmbedToBin = async (bin: EmbarkEmbed, source: EmbarkEmbed) => {
-    const [binHandle, sourceHandle] = await Promise.all([
+    const [binHandle, clonedUrl] = await Promise.all([
       repo.find<PartsBinDoc>(bin.docUrl),
-      repo.find(source.docUrl),
+      deepCloneDocument(repo, source.docUrl),
     ]);
-    const clone = repo.clone(sourceHandle);
     binHandle.change((binDoc) => {
       // Automerge rejects an explicit `undefined`, so only set optional fields
       // when the source embed actually carries them. Record the embed's current
       // footprint so dropping the example back out recreates the same size.
       binDoc.items.push({
-        url: clone.url,
+        url: clonedUrl,
         ...(source.toolId !== undefined && { toolId: source.toolId }),
         width: source.width,
         height: source.height,
@@ -254,19 +286,34 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
     });
   };
 
-  const dropDocuments = (event: DragEvent) => {
+  const dropDocuments = async (event: DragEvent) => {
     setIsDraggingOver(false);
     const payload = getDocumentDragPayload(event.dataTransfer);
     if (!payload) return;
     event.preventDefault();
 
+    // Read everything off the drag synchronously — the dataTransfer is cleared
+    // once we await the deep copy below.
+    const fromPartsBin = getDragSource(event.dataTransfer) === "parts-bin";
     const rect = canvasEl()?.getBoundingClientRect();
     const dropX = rect ? event.clientX - rect.left : event.clientX;
     const dropY = rect ? event.clientY - rect.top : event.clientY;
 
+    // Items dragged out of the parts bin are deep-copied so the new embed (and
+    // every doc it links to) is fully independent of the bin's template. Plain
+    // document drags stay as references to the existing document.
+    const items = fromPartsBin
+      ? await Promise.all(
+          payload.map(async (item) => ({
+            ...item,
+            url: await deepCloneDocument(repo, item.url),
+          })),
+        )
+      : payload;
+
     props.handle.change((canvas) => {
       let z = highestZ(canvas.embeds);
-      payload.forEach((item, index) => {
+      items.forEach((item, index) => {
         const id = crypto.randomUUID();
         const cascade = index * DROP_CASCADE;
         canvas.embeds[id] = {
@@ -291,12 +338,24 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
       classList={{ "embark-canvas--drag-over": isDraggingOver() }}
       tabindex={0}
       on:keydown={(event) => {
-        if (event.key !== "Backspace" && event.key !== "Delete") return;
         // Ignore keys bubbling out of an embedded document; only act when the
-        // canvas root itself holds focus (target === currentTarget).
+        // canvas root itself holds focus (target === currentTarget). Selecting
+        // an embed focuses the root, so the shortcuts work right after a click.
         if (event.target !== event.currentTarget) return;
         const id = selectedId();
         if (!id) return;
+
+        // Cmd/Ctrl+D duplicates the selected embed (deep copy).
+        if (
+          (event.metaKey || event.ctrlKey) &&
+          event.key.toLowerCase() === "d"
+        ) {
+          event.preventDefault();
+          void duplicateEmbed(id);
+          return;
+        }
+
+        if (event.key !== "Backspace" && event.key !== "Delete") return;
         event.preventDefault();
         deleteEmbed(id);
       }}
@@ -367,7 +426,7 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
           </div>
         )}
       </Show>
-      <div style={{ position: "absolute", bottom: 0, right: 0 }}>v 0.0.1</div>
+      <div style={{ position: "absolute", bottom: 0, right: 0 }}>v 0.0.2</div>
     </div>
   );
 }

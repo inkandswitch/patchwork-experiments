@@ -31,6 +31,22 @@ export function hasDocumentDrag(dataTransfer: DataTransfer | null): boolean {
   );
 }
 
+// The `source` tag a rich Patchwork payload may carry (e.g. "parts-bin"), used
+// by the canvas to decide whether a drop should be deep-copied. Null when the
+// payload is absent, unparseable, or untagged. Must be read synchronously
+// during the drop event, before any await clears the dataTransfer.
+export function getDragSource(dataTransfer: DataTransfer | null): string | null {
+  if (!dataTransfer) return null;
+  const dndData = dataTransfer.getData("text/x-patchwork-dnd");
+  if (!dndData) return null;
+  try {
+    const parsed = JSON.parse(dndData) as { source?: unknown };
+    return typeof parsed.source === "string" ? parsed.source : null;
+  } catch {
+    return null;
+  }
+}
+
 // Pull every droppable document out of a drag, trying the rich Patchwork
 // payload first and falling back to bare url lists. Returns null when nothing
 // resolves to a valid automerge document.

@@ -15,12 +15,13 @@ import {
   type Tooltip,
   type ViewUpdate,
 } from "@codemirror/view";
-import type { DocHandle } from "@automerge/automerge-repo";
+import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import { subscribe } from "@inkandswitch/patchwork-providers";
 import {
   COMMANDS_QUERY_SELECTOR,
   COMMANDS_RESPONSES_SELECTOR,
 } from "../canvas/providers/CommandsProvider";
+import { deepCloneDocument } from "../canvas/deep-clone";
 import type { CommandsDoc, Suggestion } from "./datatype";
 import "./commands.css";
 
@@ -275,21 +276,69 @@ function navigate(view: EditorView, delta: number): boolean {
   return true;
 }
 
-// Replaces the `/query` span with the chosen suggestion's `insert` text,
-// verbatim. The text is plain and editable — a card effect later finds and acts
-// on it (and may decorate it with a sticker showing the result).
+// Replaces the `/query` span with a mention-style token for the chosen
+// suggestion's card. Cloning the card (so each insertion is independent) is
+// async, so the menu is closed immediately and the token is filled in once the
+// clone resolves (see `insertEmbed`).
 function applySelected(view: EditorView, index?: number): boolean {
   const active = view.state.field(menuState, false)?.active;
   if (!active || active.suggestions.length === 0) return false;
   const suggestion = active.suggestions[index ?? active.index];
   if (!suggestion) return false;
-  const insert = suggestion.insert;
-  view.dispatch({
-    changes: { from: active.from, to: active.to, insert },
-    selection: { anchor: active.from + insert.length },
-  });
+  const { from, to } = active;
+  const expected = view.state.doc.sliceString(from, to);
+  view.dispatch({ effects: dismiss.of(null) });
+  void insertEmbed(view, suggestion, from, to, expected);
   view.focus();
   return true;
+}
+
+// Deep-clone the suggestion's prototype card so the inserted embed is an
+// independent instance, then drop a token referencing the clone (and its
+// renderer) into the note. The `/query` span may have shifted while we cloned,
+// so it is only replaced when still exactly what we captured.
+async function insertEmbed(
+  view: EditorView,
+  suggestion: Suggestion,
+  from: number,
+  to: number,
+  expected: string,
+): Promise<void> {
+  const repo = window.repo;
+  let cardUrl = suggestion.url;
+  if (repo) {
+    try {
+      cardUrl = await deepCloneDocument(repo, suggestion.url);
+    } catch {
+      // Fall back to referencing the prototype directly if cloning fails.
+    }
+  }
+  const token = buildToken(suggestion.label, cardUrl, suggestion.viewUrl);
+  const docLength = view.state.doc.length;
+  const stillThere =
+    to <= docLength && view.state.doc.sliceString(from, to) === expected;
+  const head = view.state.selection.main.head;
+  const at = stillThere ? { from, to } : { from: head, to: head };
+  view.dispatch({
+    changes: { from: at.from, to: at.to, insert: token },
+    selection: { anchor: at.from + token.length },
+  });
+  view.focus();
+}
+
+// Build the mention-style token the embed renderer understands: `[label]{url}`
+// for a plain mention, or `[label]{url?view=<encoded>}` when a render module is
+// attached. The label is sanitized so `]`/newlines can't close the token early.
+function buildToken(
+  label: string,
+  cardUrl: AutomergeUrl,
+  viewUrl?: string,
+): string {
+  const name = label.replace(/[\]\n]/g, " ").trim() || "card";
+  const url = viewUrl
+    ? `${cardUrl}?view=${encodeURIComponent(viewUrl)}`
+    : cardUrl;
+  return `[${name}]{${url}}`;
 }
 
 function closeMenu(view: EditorView): boolean {
@@ -333,7 +382,7 @@ function renderMenu(dom: HTMLElement, view: EditorView, active: Command) {
 
     const preview = document.createElement("span");
     preview.className = "cm-command-row__preview";
-    preview.textContent = suggestion.insert;
+    preview.textContent = shortUrl(suggestion.url);
     row.appendChild(preview);
 
     // mousedown (not click) + preventDefault so the editor keeps its selection.
@@ -343,6 +392,10 @@ function renderMenu(dom: HTMLElement, view: EditorView, active: Command) {
     });
     dom.appendChild(row);
   });
+}
+
+function shortUrl(url: string): string {
+  return url.replace(/^automerge:/, "").slice(0, 8);
 }
 
 function triggerKey(t: { from: number; query: string }): string {
