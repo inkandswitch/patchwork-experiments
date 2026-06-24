@@ -45,6 +45,17 @@ import {
   NewDocToolbar,
   setNewDocToolContext,
 } from './NewDocTool';
+import {
+  tryCardTableCanvasDrop,
+  CARD_TABLE_MIME,
+  shouldDeferCardTableDropToEmbeddedTool,
+} from './cardTableCanvasDrop';
+import {
+  createPatchworkDocShapes,
+  hasPatchworkDrag,
+  parsePatchworkDrop,
+} from './patchworkDrop';
+import { createPresenceBroadcaster } from './presenceBroadcast';
 import '@inkandswitch/patchwork-elements';
 
 // ---- Logging ----------------------------------------------------------------
@@ -195,11 +206,15 @@ function usePresence(
     userId,
     initialState: {},
   });
+  const updateLocalStateRef = useRef(updateLocalState);
+  updateLocalStateRef.current = updateLocalState;
 
   const [peerStates] = useRemoteAwareness({
     handle: handle as DocHandle<any>,
     localUserId: userId,
   });
+
+  const presenceBroadcasterRef = useRef(createPresenceBroadcaster());
 
   // Sync remote presence records into the editor's store
   useEffect(() => {
@@ -247,13 +262,21 @@ function usePresence(
       presenceId,
     )(editor.store);
 
-    return react('when presence changes', () => {
+    presenceBroadcasterRef.current.reset();
+
+    const stopReact = react('when presence changes', () => {
       const presence = presenceDerivation.get();
-      requestAnimationFrame(() => {
-        updateLocalState(presence);
-      });
+      presenceBroadcasterRef.current.maybeBroadcast(
+        presence as Record<string, unknown> | null,
+        (p) => updateLocalStateRef.current(p),
+      );
     });
-  }, [editorRef.current, userId, updateLocalState, name, color]);
+
+    return () => {
+      stopReact();
+      presenceBroadcasterRef.current.dispose();
+    };
+  }, [editorRef.current, userId, name, color]);
 }
 
 // ---- Tool entry point -------------------------------------------------------
@@ -1142,73 +1165,79 @@ async function initializeSync(
   const container = editor.getContainer();
 
   const handlePatchworkDrop = async (e: DragEvent) => {
-    const raw = e.dataTransfer?.getData('text/x-patchwork-urls');
-    if (!raw) return;
+    if (!e.dataTransfer) return;
+
+    const dropPoint = editor.screenToPage({ x: e.clientX, y: e.clientY });
+
+    if (e.dataTransfer.types.includes(CARD_TABLE_MIME)) {
+      if (shouldDeferCardTableDropToEmbeddedTool(e.target)) {
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        const handled = await tryCardTableCanvasDrop(
+          repo,
+          editor,
+          dropPoint,
+          e.dataTransfer,
+        );
+        if (handled) return;
+      } catch (err) {
+        console.error(LOG, 'card-table drop failed', err);
+      }
+      return;
+    }
+
+    const items = parsePatchworkDrop(e.dataTransfer);
+    if (items.length === 0) return;
 
     e.preventDefault();
     e.stopPropagation();
 
-    let urls: string[];
-    try {
-      urls = JSON.parse(raw);
-      if (!Array.isArray(urls)) return;
-    } catch {
-      return;
-    }
-
-    const dropPoint = editor.screenToPage({ x: e.clientX, y: e.clientY });
-
-    for (let i = 0; i < urls.length; i++) {
-      const url = urls[i] as AutomergeUrl;
-      const shapeId = makeShapeId(url);
-
-      let docName = '';
-      let docType = '';
-      try {
-        const docHandle = await repo.find(url);
-        const doc = docHandle.doc();
-        if (doc) {
-          docType = doc['@patchwork']?.type || '';
-          docName = doc.title || doc.name || '';
-        }
-      } catch {
-        // Proceed with empty metadata
-      }
-
-      handle.change((d: any) => {
-        if (!d.docs) d.docs = [];
-        d.docs.push({ name: docName, type: docType, url });
-      });
-
-      editor.createShape({
-        id: shapeId,
-        type: PATCHWORK_DOC_SHAPE_TYPE,
-        x: dropPoint.x + i * 30 - DEFAULT_W / 2,
-        y: dropPoint.y + i * 30 - DEFAULT_H / 2,
-        props: {
-          w: DEFAULT_W,
-          h: DEFAULT_H,
-          docUrl: url,
-          docName,
-          docType,
-          toolId: '',
-        },
-      } as any);
-
-      console.log(LOG, 'dropped patchwork doc:', url, docName);
-    }
+    await createPatchworkDocShapes(
+      repo,
+      editor,
+      handle,
+      dropPoint,
+      items,
+    );
   };
 
-  const handleDragOver = (e: DragEvent) => {
-    if (e.dataTransfer?.types.includes('text/x-patchwork-urls')) {
+  const handleDragEnter = (e: DragEvent) => {
+    if (hasPatchworkDrag(e.dataTransfer)) {
+      e.preventDefault();
+      return;
+    }
+    if (
+      e.dataTransfer?.types.includes(CARD_TABLE_MIME) &&
+      !shouldDeferCardTableDropToEmbeddedTool(e.target)
+    ) {
       e.preventDefault();
     }
   };
 
+  const handleDragOver = (e: DragEvent) => {
+    if (hasPatchworkDrag(e.dataTransfer)) {
+      e.preventDefault();
+      e.dataTransfer!.dropEffect = 'copy';
+      return;
+    }
+    if (
+      e.dataTransfer?.types.includes(CARD_TABLE_MIME) &&
+      !shouldDeferCardTableDropToEmbeddedTool(e.target)
+    ) {
+      e.preventDefault();
+      e.dataTransfer!.dropEffect = 'move';
+    }
+  };
+
   // Use capture phase so we intercept before tldraw's handlers
+  container.addEventListener('dragenter', handleDragEnter, true);
   container.addEventListener('drop', handlePatchworkDrop, true);
   container.addEventListener('dragover', handleDragOver, true);
   cleanupFnsRef.current.push(() => {
+    container.removeEventListener('dragenter', handleDragEnter, true);
     container.removeEventListener('drop', handlePatchworkDrop, true);
     container.removeEventListener('dragover', handleDragOver, true);
   });

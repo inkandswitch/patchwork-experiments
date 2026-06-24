@@ -45,13 +45,13 @@ const PlusIcon = () => (
 
 const GearIcon = () => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-    <circle cx="8" cy="8" r="2.1" stroke="currentColor" strokeWidth="1.3" />
     <path
-      d="M8 1.5v1.6M8 12.9v1.6M14.5 8h-1.6M3.1 8H1.5M12.6 3.4l-1.13 1.13M4.53 11.47 3.4 12.6M12.6 12.6l-1.13-1.13M4.53 4.53 3.4 3.4"
+      d="M13 8 L15 8 L14.47 10.68 L12.62 9.91 L11.54 11.54 L12.95 12.95 L10.68 14.47 L9.91 12.62 L8 13 L8 15 L5.32 14.47 L6.09 12.62 L4.46 11.54 L3.05 12.95 L1.53 10.68 L3.38 9.91 L3 8 L1 8 L1.53 5.32 L3.38 6.09 L4.46 4.46 L3.05 3.05 L5.32 1.53 L6.09 3.38 L8 3 L8 1 L10.68 1.53 L9.91 3.38 L11.54 4.46 L12.95 3.05 L14.47 5.32 L12.62 6.09 Z"
       stroke="currentColor"
       strokeWidth="1.3"
-      strokeLinecap="round"
+      strokeLinejoin="round"
     />
+    <circle cx="8" cy="8" r="2.1" stroke="currentColor" strokeWidth="1.3" />
   </svg>
 );
 

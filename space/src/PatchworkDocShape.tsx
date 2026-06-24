@@ -424,14 +424,9 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
     return () => el.removeEventListener('patchwork:mounted', handler);
   }, []);
 
-  // Stop keyboard, wheel, and pointer events from reaching tldraw when
-  // the shape content is focused.  This prevents tldraw keybindings from
-  // activating, wheel-to-zoom from hijacking scroll, and pointer capture
-  // from blocking text selection inside embedded tools.
-  //
-  // After stopping propagation we re-dispatch a clone of the event
-  // directly on `document` so that frameworks with document-level event
-  // delegation (Solid.js, etc.) still receive keyboard and pointer events.
+  // Stop keyboard and wheel events from reaching tldraw when the shape content
+  // is focused. Pointer events use bubble-phase handlers on the content area
+  // so embedded tools (Solid.js card-table, etc.) receive clicks normally.
   useEffect(() => {
     if (!isFocused) return;
     const el = contentRef.current;
@@ -445,7 +440,8 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
       const path = e.composedPath();
       const clone = new (e.constructor as any)(e.type, e);
       (clone as any)[REDISPATCHED] = true;
-      Object.defineProperty(clone, 'target', { value: target });
+      // Solid.js retargets `target` during delegation — must be configurable.
+      Object.defineProperty(clone, 'target', { configurable: true, value: target });
       clone.composedPath = () => path;
       document.dispatchEvent(clone);
     };
@@ -460,28 +456,17 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
       if (e.ctrlKey) return;
       e.stopPropagation();
     };
-    const stopPointer = (e: PointerEvent) => {
-      if ((e as any)[REDISPATCHED]) return;
-      e.stopPropagation();
-      redispatchToDocument(e);
-    };
 
     el.addEventListener('keydown', stopKey);
     el.addEventListener('keyup', stopKey);
     el.addEventListener('keypress', stopKey);
     el.addEventListener('wheel', stopWheel);
-    el.addEventListener('pointerdown', stopPointer, true);
-    el.addEventListener('pointermove', stopPointer, true);
-    el.addEventListener('pointerup', stopPointer, true);
 
     return () => {
       el.removeEventListener('keydown', stopKey);
       el.removeEventListener('keyup', stopKey);
       el.removeEventListener('keypress', stopKey);
       el.removeEventListener('wheel', stopWheel);
-      el.removeEventListener('pointerdown', stopPointer, true);
-      el.removeEventListener('pointermove', stopPointer, true);
-      el.removeEventListener('pointerup', stopPointer, true);
     };
   }, [isFocused]);
 
@@ -820,29 +805,38 @@ function PatchworkDocComponent({ shape }: { shape: PatchworkDocShape }) {
           WebkitUserSelect: isFocused ? 'text' : 'none',
           cursor: isFocused ? 'auto' : undefined,
         }}
-        onPointerDown={isSelectTool ? (e) => {
-          e.stopPropagation();
-          if (!isEditingShape) {
-            editor.setEditingShape(shape.id);
-          }
-        } : undefined}
-        onPointerUp={isSelectTool ? (e) => {
-          e.stopPropagation();
-          // Synthesize a click event so frameworks with document-level
-          // event delegation (Solid.js) receive it. tldraw's preventDefault
-          // on pointerdown suppresses the browser's native click event.
-          const target = e.target as HTMLElement;
-          if (target) {
-            const click = new MouseEvent('click', {
-              bubbles: true,
-              cancelable: true,
-              view: window,
-              clientX: e.clientX,
-              clientY: e.clientY,
-            });
-            target.dispatchEvent(click);
-          }
-        } : undefined}
+        onPointerDown={
+          isSelectTool || isFocused
+            ? (e) => {
+                e.stopPropagation();
+                if (!isEditingShape) {
+                  editor.setEditingShape(shape.id);
+                }
+              }
+            : undefined
+        }
+        onPointerMove={isFocused ? (e) => e.stopPropagation() : undefined}
+        onPointerUp={
+          isSelectTool || isFocused
+            ? (e) => {
+                e.stopPropagation();
+                // Synthesize a click so Solid.js delegation receives it.
+                // tldraw's preventDefault on pointerdown suppresses the native click.
+                const target = e.target as HTMLElement;
+                if (target) {
+                  target.dispatchEvent(
+                    new MouseEvent('click', {
+                      bubbles: true,
+                      cancelable: true,
+                      view: window,
+                      clientX: e.clientX,
+                      clientY: e.clientY,
+                    }),
+                  );
+                }
+              }
+            : undefined
+        }
       >
         {docUrl && isImage ? (
           <img

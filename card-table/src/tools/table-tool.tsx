@@ -12,6 +12,7 @@ import { useAutoInit, useInitStatus } from "../hooks/use-auto-init";
 import { useKeyExchange } from "../hooks/use-key-exchange";
 import { useJoinTable } from "../hooks/use-join-table";
 import { usePlayerIdentity } from "../hooks/use-player-identity";
+import { CARD_TABLE_COMMIT } from "../build-info";
 import { makeTool } from "../make-tool";
 import { dealCards } from "../ops/zones";
 import { DEFAULT_DECK_ID, deckCardCount } from "../ops/deck";
@@ -88,6 +89,12 @@ function TableEditor({ docUrl }: { docUrl: AutomergeUrl }) {
             Phase: <span className="font-medium">{doc.phase}</span>
             {" · "}
             Stock: {deckCardCount(doc)}/{doc.deckSize}
+          </p>
+          <p
+            className="font-mono text-[10px] text-slate-400"
+            title="card-table build commit"
+          >
+            build {CARD_TABLE_COMMIT}
           </p>
         </header>
 

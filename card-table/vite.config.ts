@@ -1,4 +1,5 @@
 import react from "@vitejs/plugin-react";
+import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
@@ -10,12 +11,26 @@ import external from "@inkandswitch/patchwork-bootloader/externals";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+function gitCommitHash(): string {
+  try {
+    return execSync("git rev-parse --short HEAD", {
+      encoding: "utf8",
+      cwd: __dirname,
+    }).trim();
+  } catch {
+    return "unknown";
+  }
+}
+
 const moduleExternals = external.filter(
   (dep) => dep !== "@automerge/automerge-repo-react-hooks",
 );
 
 export default defineConfig({
   base: "./",
+  define: {
+    __CARD_TABLE_COMMIT__: JSON.stringify(gitCommitHash()),
+  },
   plugins: [
     wasm(),
     topLevelAwait(),

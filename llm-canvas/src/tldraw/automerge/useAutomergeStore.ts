@@ -15,7 +15,7 @@ import {
   type TLStoreSnapshot,
   sortById,
 } from "@tldraw/tldraw";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   type DocHandle,
   type DocHandleChangePayload,
@@ -27,6 +27,7 @@ import {
 
 import { applyAutomergePatchesToTLStore } from "./AutomergeToTLStore.js";
 import { applyTLStoreChangesToAutomerge } from "./TLStoreToAutomerge.js";
+import { createPresenceBroadcaster } from "../presenceBroadcast.js";
 
 export function useAutomergeStore({
   handle,
@@ -133,11 +134,15 @@ export function useAutomergePresence({
     userId,
     initialState: {},
   });
+  const updateLocalStateRef = useRef(updateLocalState);
+  updateLocalStateRef.current = updateLocalState;
 
   const [peerStates] = useRemoteAwareness({
     handle,
     localUserId: userId,
   });
+
+  const presenceBroadcasterRef = useRef(createPresenceBroadcaster());
 
   /* ----------- Presence stuff ----------- */
   useEffect(() => {
@@ -183,12 +188,20 @@ export function useAutomergePresence({
       presenceId
     )(innerStore);
 
-    return react("when presence changes", () => {
+    presenceBroadcasterRef.current.reset();
+
+    const stopReact = react("when presence changes", () => {
       const presence = presenceDerivation.get();
-      requestAnimationFrame(() => {
-        updateLocalState(presence);
-      });
+      presenceBroadcasterRef.current.maybeBroadcast(
+        presence as Record<string, unknown> | null,
+        (p) => updateLocalStateRef.current(p)
+      );
     });
-  }, [innerStore, userId, updateLocalState]);
+
+    return () => {
+      stopReact();
+      presenceBroadcasterRef.current.dispose();
+    };
+  }, [innerStore, userId, name, color]);
   /* ----------- End presence stuff ----------- */
 }
