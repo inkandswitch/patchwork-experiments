@@ -50,7 +50,9 @@ const STYLES = `
 	}
 	.se-menu-dropdown {
 		display: none;
-		position: fixed;
+		position: absolute;
+		left: 0;
+		top: 100%;
 		background: #1e1e32;
 		border: 1px solid #444;
 		min-width: 220px;
@@ -58,6 +60,9 @@ const STYLES = `
 		box-shadow: 0 4px 12px rgba(0,0,0,0.5);
 		max-height: 80vh;
 		overflow-y: auto;
+	}
+	.se-menu-item {
+		position: relative;
 	}
 	.se-menu-item.open > .se-menu-dropdown {
 		display: block;
@@ -134,6 +139,16 @@ const STYLES = `
 	}
 	.se-transport .sep {
 		width: 12px;
+	}
+	.se-transport button.rec-active {
+		background: #c0392b;
+		color: #fff;
+		border-color: #e74c3c;
+		animation: se-rec-blink 1s ease-in-out infinite;
+	}
+	@keyframes se-rec-blink {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.6; }
 	}
 
 	/* ── Position display ── */
@@ -1015,6 +1030,32 @@ function formatTime(seconds) {
 
 
 // ══════════════════════════════════════════════════════════════════════════════
+// RECORDER WORKLET (shared by empty-state recording and record-at-playhead)
+// ══════════════════════════════════════════════════════════════════════════════
+
+const RECORDER_WORKLET_SRC = `
+class RecorderProcessor extends AudioWorkletProcessor {
+	constructor() {
+		super()
+		this.recording = true
+		this.port.onmessage = (e) => {
+			if (e.data.type === "stop") this.recording = false
+		}
+	}
+	process(inputs) {
+		if (!this.recording) return false
+		const input = inputs[0]
+		if (input && input[0]) {
+			const samples = new Float32Array(input[0])
+			this.port.postMessage({ type: "chunk", samples }, [samples.buffer])
+		}
+		return true
+	}
+}
+registerProcessor("recorder-processor", RecorderProcessor)
+`
+
+// ══════════════════════════════════════════════════════════════════════════════
 // MAIN EDITOR
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -1028,10 +1069,6 @@ export default function SoundEditorTool(handle, element) {
 	element.appendChild(root)
 
 	const doc = handle.doc()
-	if (!doc.audio) {
-		root.innerHTML = '<div class="se-empty">No audio recorded yet</div>'
-		return () => { style.remove(); root.remove() }
-	}
 
 	// ── State ──
 	let pcmData = null
@@ -1203,19 +1240,14 @@ export default function SoundEditorTool(handle, element) {
 		}
 
 		menuItem.appendChild(dropdown)
-		function positionDropdown() {
-			const rect = menuItem.getBoundingClientRect()
-			dropdown.style.left = rect.left + "px"
-			dropdown.style.top = rect.bottom + "px"
-		}
 		menuItem.addEventListener("click", e => {
 			e.stopPropagation()
 			if (openMenu === menuItem) { closeMenus() }
-			else { closeMenus(); menuItem.classList.add("open"); openMenu = menuItem; positionDropdown(); updateMenuStates(dropdown) }
+			else { closeMenus(); menuItem.classList.add("open"); openMenu = menuItem; updateMenuStates(dropdown) }
 		})
 		menuItem.addEventListener("mouseenter", () => {
 			if (openMenu && openMenu !== menuItem) {
-				closeMenus(); menuItem.classList.add("open"); openMenu = menuItem; positionDropdown(); updateMenuStates(dropdown)
+				closeMenus(); menuItem.classList.add("open"); openMenu = menuItem; updateMenuStates(dropdown)
 			}
 		})
 		menubar.appendChild(menuItem)
@@ -1246,6 +1278,8 @@ export default function SoundEditorTool(handle, element) {
 	const btnPause = mkTransBtn("\u23F8", "Pause")
 	const btnStop = mkTransBtn("\u23F9", "Stop (Esc)")
 	const btnLoop = mkTransBtn("\uD83D\uDD01", "Loop (L)")
+	const btnRec = mkTransBtn("\u23FA", "Record at playhead (R)")
+	btnRec.style.color = "#c0392b"
 	const posDsp = el("div", "se-position")
 	posDsp.textContent = "0:00.000"
 	const volLabel = el("span", "")
@@ -1260,7 +1294,7 @@ export default function SoundEditorTool(handle, element) {
 		if (gainNode) gainNode.gain.value = volume
 	})
 
-	transport.append(btnRewind, btnPlay, btnPause, btnStop, sep(), btnLoop, posDsp, volLabel, volSlider)
+	transport.append(btnRewind, btnPlay, btnPause, btnStop, sep(), btnLoop, btnRec, sep(), posDsp, volLabel, volSlider)
 
 	// Canvas area
 	const canvasArea = el("div", "se-canvas-area")
@@ -1320,7 +1354,7 @@ export default function SoundEditorTool(handle, element) {
 			root.innerHTML = '<div class="se-empty">Failed to load audio</div>'
 		}
 	}
-	loadAudioFromDoc(doc.audio)
+	if (doc.audio) loadAudioFromDoc(doc.audio)
 
 	// ── Collaborative: listen for document changes ──
 	let reloadingFromRemote = false
@@ -1401,7 +1435,7 @@ export default function SoundEditorTool(handle, element) {
 	}
 
 	function drawWaveform() {
-		if (destroyed || !pcmData) return
+		if (destroyed) return
 		const w = (waveCanvas.width = waveCanvas.clientWidth * DPI)
 		const h = (waveCanvas.height = waveCanvas.clientHeight * DPI)
 		if (w === 0 || h === 0) return
@@ -1410,6 +1444,7 @@ export default function SoundEditorTool(handle, element) {
 		ctx.fillStyle = "#0a0a14"
 		ctx.fillRect(0, 0, w, h)
 
+		if (!pcmData) return
 		const vLen = viewEnd - viewStart
 		if (vLen <= 0) return
 		const mid = h / 2
@@ -2490,10 +2525,123 @@ export default function SoundEditorTool(handle, element) {
 	})
 	btnPlay.addEventListener("click", () => { if (playing) teardownAudio(); startPlayback() })
 	btnPause.addEventListener("click", pausePlayback)
-	btnStop.addEventListener("click", stopPlayback)
+	btnStop.addEventListener("click", () => { if (isRecordingAtPlayhead) stopRecAtPlayhead(); else stopPlayback() })
 	btnLoop.addEventListener("click", () => {
 		looping = !looping; btnLoop.classList.toggle("active", looping)
 		if (playing) { const h = playhead; teardownAudio(); playhead = h; startPlayback() }
+	})
+
+	// ── Record at playhead ──
+	let recStream = null
+	let recAudioCtx = null
+	let recNode = null
+	let isRecordingAtPlayhead = false
+	let recInsertPos = 0
+	let recChunks = []
+	let recSamplesRecorded = 0
+	let recAnimFrame = null
+	let preRecordPcm = null // snapshot of pcmData before recording started
+	let recDirty = false // flag: new chunks arrived since last draw
+
+	function rebuildPcmFromRecording() {
+		const before = preRecordPcm ? preRecordPcm.subarray(0, recInsertPos) : new Float32Array(0)
+		const after = preRecordPcm ? preRecordPcm.subarray(recInsertPos) : new Float32Array(0)
+		const newLen = before.length + recSamplesRecorded + after.length
+		const newData = new Float32Array(newLen)
+		newData.set(before, 0)
+		let off = before.length
+		for (const c of recChunks) { newData.set(c, off); off += c.length }
+		newData.set(after, before.length + recSamplesRecorded)
+		pcmData = newData
+		playhead = recInsertPos + recSamplesRecorded
+		viewStart = 0; viewEnd = pcmData.length
+	}
+
+	async function startRecAtPlayhead() {
+		if (isRecordingAtPlayhead) return
+		if (playing) teardownAudio()
+
+		try {
+			recStream = await navigator.mediaDevices.getUserMedia({
+				audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, channelCount: 1 }
+			})
+		} catch { return }
+
+		recAudioCtx = new AudioContext({sampleRate: sampleRate || 48000})
+		sampleRate = recAudioCtx.sampleRate
+		const source = recAudioCtx.createMediaStreamSource(recStream)
+		const blob = new Blob([RECORDER_WORKLET_SRC], {type: "application/javascript"})
+		const url = URL.createObjectURL(blob)
+		await recAudioCtx.audioWorklet.addModule(url)
+		URL.revokeObjectURL(url)
+
+		recInsertPos = playhead >= 0 ? playhead : (pcmData ? pcmData.length : 0)
+		recSamplesRecorded = 0
+		recChunks = []
+		recDirty = false
+		preRecordPcm = pcmData ? new Float32Array(pcmData) : null
+
+		recNode = new AudioWorkletNode(recAudioCtx, "recorder-processor")
+		recNode.port.onmessage = e => {
+			if (e.data.type === "chunk") {
+				recChunks.push(e.data.samples)
+				recSamplesRecorded += e.data.samples.length
+				recDirty = true
+			}
+		}
+		source.connect(recNode)
+		recNode.connect(recAudioCtx.destination)
+
+		isRecordingAtPlayhead = true
+		btnRec.classList.add("rec-active")
+		selStart = -1; selEnd = -1
+
+		// Animate waveform while recording (~30fps rebuild)
+		function recDraw() {
+			if (!isRecordingAtPlayhead) return
+			if (recDirty) {
+				recDirty = false
+				rebuildPcmFromRecording()
+			}
+			drawAll()
+			recAnimFrame = requestAnimationFrame(recDraw)
+		}
+		recDraw()
+	}
+
+	async function stopRecAtPlayhead() {
+		if (!isRecordingAtPlayhead) return
+		isRecordingAtPlayhead = false
+		btnRec.classList.remove("rec-active")
+		if (recAnimFrame) { cancelAnimationFrame(recAnimFrame); recAnimFrame = null }
+
+		if (recNode) { recNode.port.postMessage({type: "stop"}); recNode.disconnect(); recNode = null }
+		if (recStream) { for (const t of recStream.getTracks()) t.stop(); recStream = null }
+		if (recAudioCtx) { await recAudioCtx.close(); recAudioCtx = null }
+
+		if (recSamplesRecorded === 0) {
+			if (preRecordPcm) pcmData = preRecordPcm
+			else pcmData = null
+			preRecordPcm = null
+			recChunks = []
+			drawAll(); return
+		}
+
+		// Push undo with the pre-record state so user can undo
+		undoStack.push(preRecordPcm || new Float32Array(0))
+		if (undoStack.length > MAX_UNDO) undoStack.shift()
+		redoStack = []
+		// Final rebuild
+		rebuildPcmFromRecording()
+		preRecordPcm = null
+		recChunks = []
+		selStart = -1; selEnd = -1
+		clampView(); drawAll(); saveAudio()
+	}
+
+	btnRec.addEventListener("click", () => {
+		if (isRecordingAtPlayhead) stopRecAtPlayhead()
+		else startRecAtPlayhead()
 	})
 
 	// ── Keyboard shortcuts ──
@@ -2521,7 +2669,7 @@ export default function SoundEditorTool(handle, element) {
 			if (playing) pausePlayback()
 			else startPlayback()
 		}
-		else if (e.key === "Escape") { if (playing) stopPlayback() }
+		else if (e.key === "Escape") { if (isRecordingAtPlayhead) stopRecAtPlayhead(); else if (playing) stopPlayback() }
 		else if (e.key === "Home") { e.preventDefault(); playhead = 0; selStart = -1; selEnd = -1; drawAll() }
 		else if (e.key === "End") { e.preventDefault(); playhead = pcmData.length; selStart = -1; selEnd = -1; drawAll() }
 		else if (e.key === "ArrowUp") { e.preventDefault(); zoomBy(0.5) }
@@ -2529,6 +2677,7 @@ export default function SoundEditorTool(handle, element) {
 		else if (e.key === "ArrowLeft") { e.preventDefault(); scrollView(-Math.floor((viewEnd - viewStart) * 0.1)) }
 		else if (e.key === "ArrowRight") { e.preventDefault(); scrollView(Math.floor((viewEnd - viewStart) * 0.1)) }
 		else if (e.key === "l") { btnLoop.click() }
+		else if (e.key === "r") { btnRec.click() }
 	}
 
 	element.addEventListener("keydown", onKeyDown)
@@ -2543,6 +2692,10 @@ export default function SoundEditorTool(handle, element) {
 	// ── Cleanup ──
 	return () => {
 		destroyed = true; teardownAudio()
+		if (isRecordingAtPlayhead) { isRecordingAtPlayhead = false }
+		if (recNode) { recNode.port.postMessage({type: "stop"}); recNode.disconnect(); recNode = null }
+		if (recStream) { for (const t of recStream.getTracks()) t.stop(); recStream = null }
+		if (recAudioCtx && recAudioCtx.state !== "closed") { recAudioCtx.close(); recAudioCtx = null }
 		document.removeEventListener("click", closeMenus)
 		element.removeEventListener("keydown", onKeyDown)
 		resizeObserver.disconnect()

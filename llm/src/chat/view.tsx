@@ -83,9 +83,9 @@ function LLMChatView(props: { handle: DocHandle<LLMChatDoc>; repo: Repo }) {
   onCleanup(unsubscribe);
 
   return (
-    <Show when={doc()} fallback={<div class="chat-root">Loading…</div>}>
+    <Show when={doc()} fallback={<div class="llm-process-chat chat-root">Loading…</div>}>
       {(currentDoc) => (
-        <div class="chat-root">
+        <div class="llm-process-chat chat-root">
           <div class="chat-header">
             <div class="chat-tabs">
               <button

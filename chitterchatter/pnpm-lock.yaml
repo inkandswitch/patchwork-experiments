@@ -1,3 +1,24 @@
+---
+lockfileVersion: '9.0'
+
+importers:
+
+  .:
+    configDependencies:
+      pnpm-plugin-patchwork:
+        specifier: latest
+        version: 0.4.0
+
+packages:
+
+  pnpm-plugin-patchwork@0.4.0:
+    resolution: {integrity: sha512-ppHlw5UOoMCzseTp0X1vmMnWen/AsDPLf0Ft9YMLERPItErfZVyeM1pWefKY0onXZrD43afyB2ZJx1ztLteMkA==}
+
+snapshots:
+
+  pnpm-plugin-patchwork@0.4.0: {}
+
+---
 lockfileVersion: '9.0'
 
 settings:
@@ -18,8 +39,8 @@ importers:
         specifier: ^2.5.1
         version: 2.5.3(@automerge/automerge@3.2.4)(solid-js@1.9.11)
       '@chee/patchwork-llm':
-        specifier: ^0.1.0
-        version: 0.1.0(@automerge/automerge-repo@2.5.3)
+        specifier: automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE
+        version: automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE@Qkyv3ykVyfdZHvWcNA7EZZnjypAERhsW1x7acSfpswHsG6nJo(@automerge/automerge-repo@2.5.3)
       '@inkandswitch/patchwork-elements':
         specifier: ^0.0.5
         version: 0.0.5
@@ -201,8 +222,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@chee/patchwork-llm@0.1.0':
-    resolution: {integrity: sha512-dlCYotR58gSWzgKluaLnRkjdWCsVinK+4tl16UqyrlZ8H+Xo8WPpawmEUwpmx6aV62QI9/Rbh8uLs3bwwXooxg==}
+  '@chee/patchwork-llm@automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE@Qkyv3ykVyfdZHvWcNA7EZZnjypAERhsW1x7acSfpswHsG6nJo':
+    resolution: {automergeUrl: automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE, type: custom:automerge}
+    version: 0.1.1
 
   '@esbuild/aix-ppc64@0.21.5':
     resolution: {integrity: sha512-1SDgH6ZSPTlggy1yI6+Dbkiz8xzpHJEVAlF/AM1tHPLsf5STom9rwtjE4hKAF20FfXXNTFqEYXyJNWh1GiZedQ==}
@@ -1081,7 +1103,7 @@ snapshots:
   '@cbor-extract/cbor-extract-win32-x64@2.2.0':
     optional: true
 
-  '@chee/patchwork-llm@0.1.0(@automerge/automerge-repo@2.5.3)':
+  '@chee/patchwork-llm@automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE@Qkyv3ykVyfdZHvWcNA7EZZnjypAERhsW1x7acSfpswHsG6nJo(@automerge/automerge-repo@2.5.3)':
     dependencies:
       '@inkandswitch/patchwork-providers': 0.2.2(@automerge/automerge-repo@2.5.3)
     transitivePeerDependencies:

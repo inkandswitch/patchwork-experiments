@@ -1491,6 +1491,25 @@ function handleMessage(port, data) {
 		} else run()
 		return
 	}
+	if (type === "decode-tokens") {
+		// Decode a list of vocab ids to their token strings (for labelling the
+		// LoRA panel's next-token bars). Uses the loaded model's tokenizer.
+		const run = () => {
+			try {
+				const tokenizer = generator.tokenizer
+				const strings = (data.ids || []).map((tid) => tokenizer.decode([tid]))
+				port.postMessage({type: "decoded-tokens", id, strings})
+			} catch (e) {
+				port.postMessage({type: "error", id, message: e?.message || String(e)})
+			}
+		}
+		const requested = data.config?.model || DEFAULT_MODEL_ID
+		if (!generator || currentModelId !== requested) {
+			if (currentModelId !== requested) generator = null
+			loadModel(requested, data.config?.dtype).then(() => generator ? run() : port.postMessage({type: "error", id, message: modelLoadError()}))
+		} else run()
+		return
+	}
 	if (type === "probe-attention") {
 		// Diagnostic: try to get attention weights from the model directly.
 		const run = async () => {

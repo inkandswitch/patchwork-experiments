@@ -15,7 +15,15 @@ import {EmoticonAddDialog} from "./EmoticonAddDialog"
 import {FontAddDialog} from "./FontAddDialog"
 import {Sidebar} from "./Sidebar"
 import {Lightbox} from "./Lightbox"
-import {ModelDialog} from "./ModelDialog"
+// @ts-ignore — plain-JS library, ships no type declarations
+import {
+	generate as llmGenerate,
+	popup as llmPopup,
+	ensureConfig as llmEnsureConfig,
+	readConfig as llmReadConfig,
+	describeConfig as llmDescribeConfig,
+	fetchOpenRouterModels as llmFetchOpenRouterModels,
+} from "@patchwork/llm"
 import {generateId} from "../lib/helpers"
 import {
 	getNotificationSound,
@@ -49,8 +57,22 @@ export function ChatRoot(props: {
 	// Sidebar state
 	const [sidebarVisible, setSidebarVisible] = createSignal(false)
 
-	// Model dialog state
-	const [showModelDialog, setShowModelDialog] = createSignal(false)
+	// Model picker (the @patchwork/llm popover lives in the light DOM)
+	let modelPickerEl: HTMLElement | null = null
+	async function openModelPicker() {
+		if (modelPickerEl) return
+		const el = llmPopup()
+		modelPickerEl = el
+		document.body.append(el)
+		;(el as any).showPopover?.()
+		try {
+			await (el as any).result
+		} finally {
+			el.remove()
+			modelPickerEl = null
+			refreshModelLabel()
+		}
+	}
 
 	// Drop state
 	const [showDropOverlay, setShowDropOverlay] = createSignal(false)
@@ -66,19 +88,19 @@ export function ChatRoot(props: {
 	const [computerActive, setComputerActive] = createSignal(false)
 	const [computerAutoMode, setComputerAutoMode] = createSignal(false)
 	const [llmStatus, setLlmStatus] = createSignal("")
+	// Human-readable label of the model the computer is currently running, shown
+	// in the computer's username (e.g. "computer (OpenRouter Claude Opus 4)").
+	const [modelLabel, setModelLabel] = createSignal("")
+	function refreshModelLabel() {
+		describeCurrentModel().then(setModelLabel).catch(() => {})
+	}
+	// The computer's display name, including the current model label when known.
+	function computerName() {
+		const label = modelLabel()
+		return label ? "computer (" + label + ")" : "computer"
+	}
 	const [computerAbort, setComputerAbort] =
 		createSignal<AbortController | null>(null)
-	let llmWorker: SharedWorker | null = null
-	let llmReady = false
-	const llmCallbacks = new Map<
-		string,
-		{
-			resolve: (v: string) => void
-			reject: (e: any) => void
-			onToken?: (t: string) => void
-			onStatus?: (s: string) => void
-		}
-	>()
 	const computerRespondedToIds = new Set<string>()
 	let computerResponding = false
 	let computerListenerActive = false
@@ -113,10 +135,6 @@ export function ChatRoot(props: {
 		}
 		if (emojiPickerState().open) {
 			closeEmojiPicker()
-			return
-		}
-		if (showModelDialog()) {
-			setShowModelDialog(false)
 			return
 		}
 		if (showEmoticonDialog()) {
@@ -358,241 +376,46 @@ You can include \`\`\`file blocks to create and embed files, \`\`\`embed blocks 
 
 Keep responses concise. When you create a tool, explain briefly what it does.`
 
-	// ---- LLM Worker (local model only) ----
-	async function initLLMWorker() {
-		if (llmWorker) return
-		try {
-			const workerUrl = new URL(
-				/* @vite-ignore */ "../llm-worker.js",
-				import.meta.url
-			).href
-			llmWorker = new SharedWorker(workerUrl, {
-				type: "module",
-				name: "llm-chat",
-			})
-			llmWorker.port.onmessage = (e: any) => {
-				const msg = e.data
-				if (msg.type === "ready") llmReady = true
-				else if (msg.type === "result") {
-					const cb = llmCallbacks.get(msg.id)
-					if (cb) {
-						cb.resolve(msg.text)
-						llmCallbacks.delete(msg.id)
-					}
-				} else if (msg.type === "token") {
-					const cb = llmCallbacks.get(msg.id)
-					if (cb?.onToken) cb.onToken(msg.text)
-				} else if (msg.type === "error") {
-					const cb = llmCallbacks.get(msg.id)
-					if (cb) {
-						cb.reject(new Error(msg.message))
-						llmCallbacks.delete(msg.id)
-					}
-				} else if (msg.type === "log") {
-					console.log("[llm-worker]", ...msg.args)
-				} else if (msg.type === "status" && msg.message) {
-					// Forward model loading status to any active generation's onStatus
-					for (const cb of llmCallbacks.values()) {
-						if (cb.onStatus) cb.onStatus(msg.message)
-					}
-				}
-			}
-			llmWorker.port.start()
-		} catch (e) {
-			console.warn("[Chat] LLM worker init:", e)
-		}
-	}
-
-	function getActiveProvider(): string {
-		try {
-			const adh = (window as any).accountDocHandle
-			if (!adh) return "local"
-			const ad = adh.doc()
-			if (!ad?.chatProfileUrl) return "local"
-			// Can't await here, use sync access - profile should be loaded already
-			return "local" // Will be read async in generateLLM
-		} catch {
-			return "local"
-		}
-	}
-
-	async function getProfileDoc(): Promise<any> {
-		const repo = (window as any).repo
-		const adh = (window as any).accountDocHandle
-		if (!adh || !repo) return null
-		const ad = adh.doc()
-		if (!ad?.chatProfileUrl) return null
-		const ph = await repo.find(ad.chatProfileUrl)
-		return ph.doc()
-	}
-
+	// ---- LLM generation (via @chee/patchwork-llm) ----
+	// Provider / model / API key / sampling parameters all live on the account
+	// doc and are configured through the shared model picker (`/model` →
+	// openModelPicker). The library runs local (transformers.js) / OpenRouter /
+	// Ollama in a refresh-surviving SharedWorker and streams tokens back.
 	async function generateLLM(
 		messages: any[],
 		onToken: (text: string) => void,
 		signal?: AbortSignal,
 		onStatus?: (status: string) => void
 	): Promise<string> {
-		const profile = await getProfileDoc()
-		const provider = profile?.llmProvider || "local"
-
-		if (provider === "openrouter")
-			return generateOpenRouter(messages, onToken, profile, signal)
-		if (provider === "ollama")
-			return generateOllama(messages, onToken, profile, signal)
-		return generateLocal(messages, onToken, onStatus)
-	}
-
-	async function generateLocal(
-		messages: any[],
-		onToken: (text: string) => void,
-		onStatus?: (status: string) => void
-	): Promise<string> {
-		if (!llmWorker) await initLLMWorker()
-		if (!llmWorker) throw new Error("LLM not available")
-		const profile = await getProfileDoc()
-		const localModel = profile?.localModel || undefined
-		const id = generateId()
-		return new Promise((resolve, reject) => {
-			llmCallbacks.set(id, {resolve, reject, onToken, onStatus})
-			llmWorker!.port.postMessage({
-				type: "generate",
-				id,
-				chatUrl: props.handle.url,
-				provider: "local",
-				messages,
-				config: {model: localModel},
-			})
-			setTimeout(() => {
-				if (llmCallbacks.has(id)) {
-					llmCallbacks.delete(id)
-					reject(new Error("LLM timeout"))
-				}
-			}, 600000)
-		})
-	}
-
-	async function generateOpenRouter(
-		messages: any[],
-		onToken: (text: string) => void,
-		profile: any,
-		signal?: AbortSignal
-	): Promise<string> {
-		const apiKey = profile?.openrouterApiKey
-		if (!apiKey)
-			throw new Error("No OpenRouter API key. Use /model to set one.")
-		const model = profile?.openrouterModel || "anthropic/claude-sonnet-4"
-		const contextLength = profile?.openrouterModelContextLength
-		const maxCompletionTokens = profile?.openrouterModelMaxCompletionTokens
-		// Estimate input tokens (~4 chars per token) and leave room for output
-		const inputEstimate = Math.ceil(JSON.stringify(messages).length / 4)
-		let maxTokens: number | undefined
-		if (contextLength) {
-			// Use the model's max completion tokens if known, otherwise default to 8192
-			const maxOutput = maxCompletionTokens || 8192
-			// Ensure we don't exceed context: max_tokens <= contextLength - inputEstimate
-			const available = Math.max(1024, contextLength - inputEstimate - 256)
-			maxTokens = Math.min(maxOutput, available)
-		} else {
-			// No model info stored — omit max_tokens and let OpenRouter decide
-			maxTokens = undefined
-		}
-		const body: any = {model, messages, stream: true}
-		if (maxTokens !== undefined) body.max_tokens = maxTokens
-		const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-			method: "POST",
-			headers: {
-				Authorization: "Bearer " + apiKey,
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify(body),
+		const {text} = await llmGenerate(messages, {
+			sessionKey: props.handle.url,
+			onToken: (_delta: string, full: string) => onToken(full),
+			onStatus: (status: string) => onStatus?.(status),
 			signal,
 		})
-		if (!res.ok) throw new Error("OpenRouter: " + (await res.text()))
-		let full = ""
-		const reader = res.body!.getReader()
-		const decoder = new TextDecoder()
-		let buf = ""
-		try {
-			while (true) {
-				const {done, value} = await reader.read()
-				if (done) break
-				buf += decoder.decode(value, {stream: true})
-				const lines = buf.split("\n")
-				buf = lines.pop()!
-				for (const line of lines) {
-					if (!line.startsWith("data: ")) continue
-					const data = line.slice(6).trim()
-					if (data === "[DONE]") continue
-					try {
-						const parsed = JSON.parse(data)
-						const delta = parsed.choices?.[0]?.delta?.content
-						if (delta) {
-							full += delta
-							onToken(full)
-						}
-					} catch {}
-				}
-			}
-		} catch (streamErr: any) {
-			// Stream interrupted — return partial text if we have any
-			if (full) {
-				console.warn("[chat] OpenRouter stream error, returning partial text:", streamErr.message)
-				return full
-			}
-			throw streamErr
-		}
-		return full
+		return text
 	}
 
-	async function generateOllama(
-		messages: any[],
-		onToken: (text: string) => void,
-		profile: any,
-		signal?: AbortSignal
-	): Promise<string> {
-		const baseUrl = (profile?.ollamaUrl || "http://localhost:11434").replace(
-			/\/$/,
-			""
-		)
-		const model = profile?.ollamaModel || "llama3.2"
-		const res = await fetch(baseUrl + "/api/chat", {
-			method: "POST",
-			headers: {"Content-Type": "application/json"},
-			body: JSON.stringify({model, messages, stream: true}),
-			signal,
-		})
-		if (!res.ok) throw new Error("Ollama: " + (await res.text()))
-		let full = ""
-		const reader = res.body!.getReader()
-		const decoder = new TextDecoder()
-		let buf = ""
+	// Human-readable label for the model that's currently selected (provider +
+	// model name). Used in the computer's join message so people can see/change
+	// which model is answering. Falls back gracefully if the config or the
+	// OpenRouter catalogue can't be read.
+	async function describeCurrentModel(): Promise<string> {
 		try {
-			while (true) {
-				const {done, value} = await reader.read()
-				if (done) break
-				buf += decoder.decode(value, {stream: true})
-				const lines = buf.split("\n")
-				buf = lines.pop()!
-				for (const line of lines) {
-					if (!line.trim()) continue
-					try {
-						const parsed = JSON.parse(line)
-						const content = parsed.message?.content
-						if (content) {
-							full += content
-							onToken(full)
-						}
-					} catch {}
+			await llmEnsureConfig()
+			const cfg = llmReadConfig()
+			let openrouterModels: any[] = []
+			if (cfg.provider === "openrouter") {
+				try {
+					openrouterModels = await llmFetchOpenRouterModels()
+				} catch {
+					openrouterModels = []
 				}
 			}
-		} catch (streamErr: any) {
-			if (full) {
-				console.warn("[chat] Ollama stream error, returning partial text:", streamErr.message)
-				return full
-			}
-			throw streamErr
+			return llmDescribeConfig(cfg, {openrouterModels})
+		} catch {
+			return "the configured model"
 		}
-		return full
 	}
 
 	// ---- Rich block parsing ----
@@ -1413,7 +1236,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		if (!repo) return
 		const msgData: any = {
 			id: generateId(),
-			name: "computer",
+			name: computerName(),
 			text: text || "",
 			timestamp: Date.now(),
 			isComputer: true,
@@ -1485,7 +1308,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 			return
 		}
 		if (sub === "model" || sub === "models") {
-			setShowModelDialog(true)
+			void openModelPicker()
 			return
 		}
 		// Default: invite — claim this tab as the computer host
@@ -1495,9 +1318,19 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		}
 		setComputerActive(true)
 		claimComputerHost()
-		sendComputerMessage(
-			"hello! i'm computer, an AI assistant. mention @computer or reply to my messages and i'll respond. use /computer nosey to make me respond to everything. use /model to configure which AI model and provider i use."
-		)
+		describeCurrentModel().then((model) => {
+			setModelLabel(model)
+			sendComputerMessage(
+				[
+					"hello! i'm computer, an AI assistant. mention @computer or reply to my messages and i'll respond.",
+					"",
+					"• currently running: " + model,
+					"• /model — pick a different model or provider",
+					"• /computer nosey — make me respond to everything",
+					"• /computer kick — send me away",
+				].join("\n")
+			)
+		})
 		startComputerListener()
 	}
 
@@ -2303,6 +2136,10 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 	}
 
 	onCleanup(() => {
+		if (modelPickerEl) {
+			modelPickerEl.remove()
+			modelPickerEl = null
+		}
 		if (heartbeatInterval) {
 			clearInterval(heartbeatInterval)
 			heartbeatInterval = null
@@ -2594,7 +2431,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 									onToggleSidebar={toggleSidebar}
 									onComputerCommand={handleComputerCommand}
 									onCallCommand={handleCallCommand}
-									onModelCommand={() => setShowModelDialog(true)}
+									onModelCommand={() => void openModelPicker()}
 									onPinCommand={handlePinCommand}
 									pendingFiles={pendingFiles()}
 									setPendingFiles={setPendingFiles}
@@ -2628,9 +2465,6 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 									on:click={() => setShowFontDialog(false)}>
 									<FontAddDialog onClose={() => setShowFontDialog(false)} />
 								</div>
-							</Show>
-							<Show when={showModelDialog()}>
-								<ModelDialog onClose={() => setShowModelDialog(false)} />
 							</Show>
 							<NotificationManager handle={props.handle} />
 							<Lightbox

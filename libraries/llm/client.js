@@ -509,6 +509,26 @@ export async function extractFeatures(text, opts = {}) {
 }
 
 /**
+ * Decode vocab ids to token strings using the loaded local model's tokenizer.
+ * Used to label the next-token bars when training a LoRA adapter. Returns a
+ * string[] aligned with `ids`, or null for non-local providers.
+ */
+export async function decodeTokens(ids, opts = {}) {
+	const cfg = await resolveCfgPrompts(opts.config ?? (await ensureConfig()))
+	const config = callConfig(cfg, opts)
+	if (config.provider !== "local") return null
+	const conn = getConnection()
+	const id = nextId()
+	return new Promise((resolve, reject) => {
+		handlers.set(id, (msg) => {
+			if (msg.type === "decoded-tokens") { handlers.delete(id); resolve(msg.strings) }
+			else if (msg.type === "error") { handlers.delete(id); reject(new Error(msg.message)) }
+		})
+		conn.post({type: "decode-tokens", id, sessionKey: id, provider: config.provider, ids, config})
+	})
+}
+
+/**
  * Diagnostic: probe the loaded model for attention weight support. Posts a
  * `probe-attention` message to the worker and returns the result — includes
  * the ONNX session output names, forward-pass output keys, and whether any

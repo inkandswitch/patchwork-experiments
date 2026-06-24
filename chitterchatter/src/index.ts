@@ -3,8 +3,8 @@ import {ChatDatatype} from "./datatype"
 export const plugins = [
 	{
 		type: "patchwork:datatype",
-		id: "chat",
-		name: "Chat",
+		id: "chitterchatter",
+		name: "Chitter chatter",
 		icon: "MessageCircle",
 		async load() {
 			return ChatDatatype
@@ -12,10 +12,10 @@ export const plugins = [
 	},
 	{
 		type: "patchwork:tool",
-		id: "chat",
-		name: "Chat",
+		id: "chitterchatter",
+		name: "Chitter chatter",
 		icon: "MessageCircle",
-		supportedDatatypes: ["chat"],
+		supportedDatatypes: ["chitterchatter", "chat"],
 		async load() {
 			const {ChatTool} = await import("./tool")
 			return ChatTool

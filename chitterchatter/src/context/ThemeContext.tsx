@@ -3,125 +3,69 @@ import {
 	useContext,
 	createSignal,
 	onMount,
+	onCleanup,
 	type ParentComponent,
 	type Accessor,
-	type Setter,
 } from "solid-js"
 
 interface ThemeContextValue {
-	themeColor: Accessor<string>
-	setThemeColor: (color: string) => void
 	isLightBg: Accessor<boolean>
-	fontSize: Accessor<number>
-	setFontSize: (size: number) => void
 }
 
 const ThemeCtx = createContext<ThemeContextValue>()
 
+/**
+ * Theming comes from the Patchwork system theme. The host sets `[theme]`,
+ * `color-scheme` and the `--studio-*` design tokens; chat.css maps those onto
+ * the `--bg-*` / `--text-*` / `--accent*` names the rest of the styles use.
+ *
+ * This provider no longer computes any colours — it only derives `isLightBg`
+ * from the *rendered* background so the bits that still need to know (syntax
+ * highlighting, named-colour resolution) pick the right light/dark variant. It
+ * re-evaluates when the host swaps themes at runtime.
+ */
 export const ThemeProvider: ParentComponent<{rootEl: HTMLElement}> = (props) => {
-	const [themeColor, setThemeColorSignal] = createSignal("oklch(0.80 0.12 350)")
 	const [isLightBg, setIsLightBg] = createSignal(false)
-	const [fontSize, setFontSizeSignal] = createSignal(15)
 
-	function applyTheme(color: string) {
-		const root = props.rootEl
-		root.style.setProperty("--theme", color)
-
-		const m = color.match(/oklch\(([\d.]+)\s+([\d.]+)\s+([\d.]+)\)/)
-		const L = m ? parseFloat(m[1]) : 0.55
-		const C = m ? parseFloat(m[2]) : 0.18
-		const H = m ? parseFloat(m[3]) : 270
-
-		const t = Math.max(0, Math.min(1, (L - 0.3) / 0.4))
-		const lerp = (a: number, b: number) => a + (b - a) * t
-		const sc = C * 0.3
-		const set = (k: string, v: string) => root.style.setProperty(k, v)
-		const oklch = (l: number, c: number, h: number) =>
-			`oklch(${l.toFixed(3)} ${c.toFixed(3)} ${h})`
-
-		set("--bg-darkest", oklch(lerp(0.08, 1.0), sc, H))
-		set("--bg-dark", oklch(lerp(0.11, 0.98), sc, H))
-		set("--bg-mid", oklch(lerp(0.15, 0.95), sc, H))
-		set("--bg-hover", oklch(lerp(0.18, 0.92), sc, H))
-		set("--bg-input", oklch(lerp(0.13, 1.0), sc, H))
-		set("--border", oklch(lerp(0.25, 0.85), sc * 1.3, H))
-
-		const bgL = lerp(0.11, 0.98)
-		const lightBg = bgL > 0.55
-		setIsLightBg(lightBg)
-		const textL = lightBg ? 0 : 1
-		set("--text-primary", `oklch(${textL} 0 0)`)
-		set("--text-secondary", `oklch(${textL} 0 0 / 0.6)`)
-		set("--text-muted", `oklch(${textL} 0 0 / 0.4)`)
-
-		const linkL = lightBg ? 0.45 : 0.78
-		const linkC = Math.max(C, 0.12)
-		set("--link", oklch(linkL, linkC, H))
-
-		const darkBg = L < 0.32
-		if (C < 0.04) {
-			const accentL = darkBg || t < 0.5 ? 0.75 : 0.25
-			set("--accent", oklch(accentL, 0, H))
-			set("--accent-hover", oklch(accentL + (accentL > 0.5 ? -0.1 : 0.1), 0, H))
-			set("--accent-fg", oklch(accentL > 0.5 ? 0.1 : 0.95, 0, 0))
-		} else if (darkBg) {
-			set("--accent", oklch(Math.max(L + 0.35, 0.55), C, H))
-			set("--accent-hover", oklch(Math.max(L + 0.45, 0.65), C, H))
-			set("--accent-fg", oklch(0.1, 0, 0))
-		} else {
-			set("--accent", color)
-			set("--accent-hover", oklch(L + (t > 0.5 ? -0.1 : 0.1), C, H))
-			set("--accent-fg", oklch(L > 0.6 ? 0.1 : 0.97, 0, 0))
-		}
-		set("--accent-soft", `oklch(${L.toFixed(3)} ${C.toFixed(3)} ${H} / 0.15)`)
-
-		try {
-			localStorage.setItem("chat-theme-color", color)
-		} catch (e) {}
+	function luminance(color: string): number {
+		const m = color.match(/[\d.]+/g)
+		if (!m || m.length < 3) return 0
+		const [r, g, b] = m.map(Number)
+		return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
 	}
 
-	function setThemeColor(color: string) {
-		setThemeColorSignal(color)
-		applyTheme(color)
+	function recompute() {
+		// `.chat-root` background resolves to var(--studio-fill); the computed
+		// value is always an rgb()/rgba() string, so luminance is reliable.
+		const bg = getComputedStyle(props.rootEl).backgroundColor
+		setIsLightBg(luminance(bg) > 0.5)
 	}
 
-	function setFontSize(size: number) {
-		setFontSizeSignal(size)
-		props.rootEl.style.fontSize = size + "px"
-		try {
-			localStorage.setItem("chat-font-size", String(size))
-		} catch (e) {}
-	}
+	let mo: MutationObserver | null = null
+	let mq: MediaQueryList | null = null
+	const onChange = () => recompute()
 
 	onMount(() => {
-		try {
-			const saved = localStorage.getItem("chat-theme-color")
-			if (saved) {
-				setThemeColorSignal(saved)
-				applyTheme(saved)
-			} else {
-				applyTheme(themeColor())
-			}
-		} catch (e) {
-			applyTheme(themeColor())
-		}
+		recompute()
+		// The host can switch themes at runtime (theme editor) or follow the OS.
+		mo = new MutationObserver(onChange)
+		mo.observe(document.documentElement, {
+			attributes: true,
+			attributeFilter: ["theme", "class", "style"],
+		})
+		const el = props.rootEl.closest("[theme]")
+		if (el) mo.observe(el, {attributes: true, attributeFilter: ["theme", "style"]})
+		mq = window.matchMedia("(prefers-color-scheme: dark)")
+		mq.addEventListener("change", onChange)
+	})
 
-		try {
-			const savedSize = localStorage.getItem("chat-font-size")
-			if (savedSize) {
-				const s = parseInt(savedSize, 10) || 15
-				setFontSizeSignal(s)
-				if (s !== 15) props.rootEl.style.fontSize = s + "px"
-			}
-		} catch (e) {}
+	onCleanup(() => {
+		mo?.disconnect()
+		mq?.removeEventListener("change", onChange)
 	})
 
 	return (
-		<ThemeCtx.Provider
-			value={{themeColor, setThemeColor, isLightBg, fontSize, setFontSize}}
-		>
-			{props.children}
-		</ThemeCtx.Provider>
+		<ThemeCtx.Provider value={{isLightBg}}>{props.children}</ThemeCtx.Provider>
 	)
 }
 
