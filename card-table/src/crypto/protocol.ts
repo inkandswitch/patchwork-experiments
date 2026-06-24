@@ -12,7 +12,6 @@ import {
 } from "../ops/deck";
 import type { CardTableDoc, CardTableKeysDoc } from "../types";
 import { CRYPTO_BITS } from "../types";
-import { cryptoLog } from "./debug-log";
 import {
   bigintStrings,
   parseBigintStrings,
@@ -27,12 +26,34 @@ import {
   loadPlayerFromKeyDoc,
   writePlayerToKeyDoc,
 } from "./player-keys";
-import {
-  logPlayerMismatch,
-  playerMatchesTablePublicKey,
-} from "./validate-keys";
+import { playerMatchesTablePublicKey } from "./validate-keys";
+import type { ShuffleParticipant } from "../types";
 
-const log = cryptoLog("protocol");
+/** Plain-object copy — required when reordering Automerge array entries. */
+function cloneShuffleParticipant(
+  participant: ShuffleParticipant,
+): ShuffleParticipant {
+  return {
+    id: participant.id,
+    readyToStart: participant.readyToStart,
+    keygenReady: participant.keygenReady,
+    shuffleDone: participant.shuffleDone,
+    keyDocUrl: participant.keyDocUrl,
+    exchangePublicKey: participant.exchangePublicKey
+      ? {
+          jwk: {
+            kty: participant.exchangePublicKey.jwk.kty,
+            n: participant.exchangePublicKey.jwk.n,
+            e: participant.exchangePublicKey.jwk.e,
+          },
+        }
+      : null,
+  };
+}
+
+function copyStringArray(values: string[]): string[] {
+  return values.map((value) => `${value}`);
+}
 
 /** Stable participant order — must match between shuffle and decrypt. */
 export function sortedParticipants(doc: CardTableDoc) {
@@ -44,19 +65,17 @@ export function hostParticipantId(doc: CardTableDoc): string | null {
 }
 
 /** Persist lexicographic participant order (call inside handle.change). */
-export function ensureSortedParticipants(doc: CardTableDoc): boolean {
-  const sorted = sortedParticipants(doc);
+export function ensureSortedParticipants(doc: CardTableDoc): void {
+  const sorted = [...doc.shuffleParticipants]
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map(cloneShuffleParticipant);
   const changed = sorted.some(
     (participant, index) =>
       participant.id !== doc.shuffleParticipants[index]?.id,
   );
   if (changed) {
     doc.shuffleParticipants.splice(0, doc.shuffleParticipants.length, ...sorted);
-    log.info("ensureSortedParticipants: reordered", {
-      participantOrder: sorted.map((p) => p.id),
-    });
   }
-  return changed;
 }
 
 export function buildInitialDeck(deckSize: number): EncodedDeck {
@@ -117,7 +136,6 @@ export async function ensureLocalPlayer(
   cachePlayer(keyHandle.url, player);
   await ensureExchangeKeys(tableHandle, keyHandle, peerId);
 
-  // Fresh keys invalidate cached individual key shares from a prior shuffle.
   tableHandle.change((table) => {
     table.keyShares = {};
     table.keyShareEnvelopes = {};
@@ -160,33 +178,17 @@ export function advanceShuffleTurn(doc: CardTableDoc) {
 
 function finishShuffle(doc: CardTableDoc) {
   if (doc.phase === "shuffle-verify" || doc.phase === "ready") return;
-  if (!doc.workingDeck || doc.workingDeck.length !== doc.deckSize) {
-    log.debug("finishShuffle: waiting for full working deck", {
-      shuffleId: doc.shuffleId,
-      workingDeckLength: doc.workingDeck?.length ?? 0,
-      deckSize: doc.deckSize,
-    });
-    return;
-  }
+  if (!doc.workingDeck || doc.workingDeck.length !== doc.deckSize) return;
+
   doc.phase = "shuffle-verify";
   doc.shuffleTurn = 0;
-  doc.publishedDeck = [...doc.workingDeck];
-  log.info("finishShuffle: awaiting verification", {
-    shuffleId: doc.shuffleId,
-    participantOrder: doc.shuffleParticipants.map((p) => p.id),
-    publicKey: doc.publicKey,
-    deckSize: doc.publishedDeck.length,
-  });
+  doc.publishedDeck = copyStringArray(doc.workingDeck);
 }
 
 export function completeVerifiedShuffle(doc: CardTableDoc) {
   if (doc.phase !== "shuffle-verify") return;
   doc.phase = "ready";
   fillDeck(doc);
-  log.info("completeVerifiedShuffle: deck ready", {
-    shuffleId: doc.shuffleId,
-    participantOrder: doc.shuffleParticipants.map((p) => p.id),
-  });
 }
 
 export function abortShuffle(doc: CardTableDoc) {
@@ -202,9 +204,6 @@ export function abortShuffle(doc: CardTableDoc) {
     participant.shuffleDone = false;
     participant.readyToStart = false;
   }
-  log.warn("abortShuffle: verification failed, reset to setup", {
-    shuffleId: doc.shuffleId,
-  });
 }
 
 /** Reference decrypt offset 0 using every participant's key doc. */
@@ -213,39 +212,18 @@ export async function verifyShuffledDeck(
   doc: CardTableDoc,
   localPeerId?: string,
 ): Promise<boolean> {
-  if (!doc.publishedDeck?.length || !doc.publicKey) {
-    log.warn("verifyShuffledDeck: missing deck or public key", {
-      shuffleId: doc.shuffleId,
-      hasDeck: !!doc.publishedDeck?.length,
-      deckLength: doc.publishedDeck?.length ?? 0,
-      deckSize: doc.deckSize,
-      hasPublicKey: !!doc.publicKey,
-    });
+  if (
+    !doc.publishedDeck?.length ||
+    !doc.publicKey ||
+    doc.publishedDeck.length !== doc.deckSize
+  ) {
     return false;
   }
-
-  if (doc.publishedDeck.length !== doc.deckSize) {
-    log.warn("verifyShuffledDeck: published deck incomplete", {
-      shuffleId: doc.shuffleId,
-      deckLength: doc.publishedDeck.length,
-      deckSize: doc.deckSize,
-    });
-    return false;
-  }
-
-  const participants = doc.shuffleParticipants;
 
   let cipher = BigInt(doc.publishedDeck[0]);
-  const initialCipher = cipher.toString();
 
-  for (const participant of participants) {
-    if (!participant.keyDocUrl) {
-      log.warn("verifyShuffledDeck: missing key doc", {
-        participantId: participant.id,
-        shuffleId: doc.shuffleId,
-      });
-      return false;
-    }
+  for (const participant of doc.shuffleParticipants) {
+    if (!participant.keyDocUrl) return false;
 
     let player =
       participant.id === localPeerId
@@ -255,39 +233,12 @@ export async function verifyShuffledDeck(
       waitAttempts: 8,
       waitMs: 300,
     });
-    if (!player) {
-      log.warn("verifyShuffledDeck: could not load keys", {
-        participantId: participant.id,
-        keyDocUrl: participant.keyDocUrl,
-        shuffleId: doc.shuffleId,
-        isLocal: participant.id === localPeerId,
-      });
-      return false;
-    }
-    if (!playerMatchesTablePublicKey(doc, player)) {
-      logPlayerMismatch(doc, player, participant.id);
-      return false;
-    }
-    const before = cipher.toString();
+    if (!player || !playerMatchesTablePublicKey(doc, player)) return false;
     cipher = player.getIndividualKey(0).decrypt(cipher);
-    log.debug("verifyShuffledDeck: step", {
-      participantId: participant.id,
-      cipherBefore: before,
-      cipherAfter: cipher.toString(),
-    });
   }
 
   const value = Number(cipher);
-  const valid = Number.isSafeInteger(value) && value >= 1 && value <= 52;
-  log.info("verifyShuffledDeck", {
-    shuffleId: doc.shuffleId,
-    participantOrder: participants.map((p) => p.id),
-    publicKey: doc.publicKey,
-    initialCipher,
-    decodedValue: value,
-    valid,
-  });
-  return valid;
+  return Number.isSafeInteger(value) && value >= 1 && value <= 52;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -311,30 +262,15 @@ export async function verifyShuffledDeckWithRetry(
     if (doc.publishedDeck?.length === doc.deckSize) {
       const ok = await verifyShuffledDeck(repo, doc, localPeerId);
       if (ok) return true;
-      log.debug("verifyShuffledDeckWithRetry: attempt failed", {
-        attempt: attempt + 1,
-        shuffleId: doc.shuffleId,
-      });
-    } else {
-      log.debug("verifyShuffledDeckWithRetry: waiting for published deck", {
-        attempt: attempt + 1,
-        publishedLength: doc.publishedDeck?.length ?? 0,
-        deckSize: doc.deckSize,
-      });
     }
 
-    if (attempt < attempts - 1) {
-      await sleep(delayMs);
-    }
+    if (attempt < attempts - 1) await sleep(delayMs);
   }
 
   return false;
 }
 
-/**
- * Recover from a partial shuffle (e.g. refresh mid-step): advance past turns
- * whose participant already has shuffleDone, or finalize if everyone is done.
- */
+/** Advance past turns whose participant already has shuffleDone. */
 export function advancePastCompletedTurns(doc: CardTableDoc): boolean {
   if (doc.phase !== "shuffle-forward" && doc.phase !== "shuffle-back") {
     return false;
@@ -370,7 +306,6 @@ export function runShuffleStep(
   if (participant.shuffleDone) return false;
 
   if (!playerMatchesTablePublicKey(doc, player)) {
-    logPlayerMismatch(doc, player, peerId);
     throw new Error(
       "Your shuffle keys do not match this table's public key. Create a new card table and shuffle again.",
     );
@@ -383,21 +318,16 @@ export function runShuffleStep(
         : buildInitialDeck(doc.deckSize);
 
     const output = player.encryptAndShuffle(input);
-    doc.workingDeck = bigintStrings(output.cards);
+    doc.workingDeck = copyStringArray(bigintStrings(output.cards));
 
     if (doc.shuffleTurn === 0 && !doc.publicKey) {
       doc.publicKey = publicKeyToFields(player.publicKey);
-      log.info("runShuffleStep: published table public key", {
-        shuffleId: doc.shuffleId,
-        peerId,
-        publicKey: doc.publicKey,
-      });
     }
   } else if (doc.phase === "shuffle-back") {
     if (!doc.workingDeck) throw new Error("Missing working deck");
     const input = new EncodedDeck(parseBigintStrings(doc.workingDeck));
     const output = player.decryptAndEncryptIndividually(input);
-    doc.workingDeck = bigintStrings(output.cards);
+    doc.workingDeck = copyStringArray(bigintStrings(output.cards));
   } else {
     throw new Error(`Cannot shuffle in phase ${doc.phase}`);
   }
@@ -426,7 +356,6 @@ export function readyToStartCount(doc: CardTableDoc): number {
   return doc.shuffleParticipants.filter((p) => p.readyToStart === true).length;
 }
 
-/** All joined players (>1) have clicked ready — triggers keygen/shuffle. */
 export function allReadyToStart(doc: CardTableDoc): boolean {
   const count = doc.shuffleParticipants.length;
   return count >= 2 && doc.shuffleParticipants.every((p) => p.readyToStart === true);
@@ -445,16 +374,6 @@ export function allParticipantsReady(doc: CardTableDoc): boolean {
   );
 }
 
-/** @deprecated use allReadyToStart */
-export function expectedPlayerCount(doc: CardTableDoc): number {
-  return doc.expectedPlayers ?? 2;
-}
-
-/** @deprecated use allReadyToStart */
-export function rosterFull(doc: CardTableDoc): boolean {
-  return doc.shuffleParticipants.length >= expectedPlayerCount(doc);
-}
-
 export function canJoinTable(doc: CardTableDoc): boolean {
   return (
     doc.phase === "setup" &&
@@ -467,7 +386,7 @@ export function startShuffle(doc: CardTableDoc) {
     throw new Error("All participants must finish key generation first");
   }
   ensureSortedParticipants(doc);
-  doc.shuffleId = (doc.shuffleId ?? 0) + 1;
+  doc.shuffleId += 1;
   doc.phase = "shuffle-forward";
   doc.shuffleTurn = 0;
   doc.workingDeck = null;
@@ -479,9 +398,4 @@ export function startShuffle(doc: CardTableDoc) {
   for (const participant of doc.shuffleParticipants) {
     participant.shuffleDone = false;
   }
-  log.info("startShuffle", {
-    shuffleId: doc.shuffleId,
-    participantOrder: doc.shuffleParticipants.map((p) => p.id),
-    publicKey: doc.publicKey,
-  });
 }

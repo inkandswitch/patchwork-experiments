@@ -20,8 +20,6 @@ export type ShuffleParticipant = {
   keyDocUrl: AutomergeUrl | null;
   /** RSA-OAEP public key others use to post encrypted key shares on the table doc. */
   exchangePublicKey: ExchangePublicKey | null;
-  /** @deprecated names are resolved from `id` */
-  name?: string;
 };
 
 export type ExchangePublicKey = {
@@ -72,13 +70,9 @@ export type SecureHandZone = {
   /** Empty until a player claims this hand on the canvas. */
   /** Contact doc URL (or repo peer id). Empty until claimed. */
   ownerId: string;
-  /** @deprecated resolved from `ownerId` */
-  ownerName?: string;
   cards: number[];
   /** Deck offsets the owner has revealed to other players. */
   revealedOffsets?: number[];
-  /** @deprecated migrated into `revealedOffsets` */
-  revealed?: boolean;
 };
 
 export type SecurePileZone = {
@@ -92,8 +86,7 @@ export type SecurePileZone = {
 export type IndividualKeyShare = {
   d: string;
   n: string;
-  /** Stamped when published; must match doc.shuffleId to be used. */
-  shuffleId?: number;
+  shuffleId: number;
 };
 
 /** Published individual decryption material per deck offset and shuffle participant. */
@@ -121,8 +114,6 @@ export type CardTableDoc = {
   /** Incremented on each shuffle; key shares must match this id. */
   shuffleId: number;
   shuffleTurn: number;
-  /** @deprecated open join + ready-to-start replaces fixed player count */
-  expectedPlayers: number;
   shuffleParticipants: ShuffleParticipant[];
 
   publicKey: PublicKeyFields | null;

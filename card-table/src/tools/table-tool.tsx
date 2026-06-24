@@ -174,9 +174,7 @@ function TableEditor({ docUrl }: { docUrl: AutomergeUrl }) {
                           {hand.title}
                           {hand.revealedOffsets?.length
                             ? ` · ${hand.revealedOffsets.length} revealed`
-                            : hand.revealed
-                              ? " · revealed"
-                              : ""}
+                            : ""}
                         </p>
                         <p className="text-xs text-slate-500">
                           {hand.ownerId ? (

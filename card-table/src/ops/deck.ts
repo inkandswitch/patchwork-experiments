@@ -2,18 +2,17 @@ import type { CardTableDoc, SecureDeckZone } from "../types";
 
 export const DEFAULT_DECK_ID = "deck";
 
-/** Ensures the default deck sub-zone exists (migrates legacy `stock[]` if present). */
+/** Ensures the default deck sub-zone exists. */
 export function ensureDecks(doc: CardTableDoc) {
   if (!doc.decks) doc.decks = [];
 
   if (doc.decks.some((entry) => entry.id === DEFAULT_DECK_ID)) return;
 
-  const legacy = (doc as CardTableDoc & { stock?: number[] }).stock;
   doc.decks.push({
     "@patchwork": { type: "secure-deck" },
     id: DEFAULT_DECK_ID,
     title: "Deck",
-    cards: legacy?.length ? [...legacy] : [],
+    cards: [],
   });
 }
 

@@ -3,10 +3,7 @@ import { useRepo } from "@automerge/automerge-repo-react-hooks";
 import { useEffect } from "react";
 import { fulfillKeyRequests } from "../crypto/reveal";
 import { loadLocalPlayer } from "../crypto/player-keys";
-import { cryptoLog } from "../crypto/debug-log";
 import type { CardTableDoc } from "../types";
-
-const log = cryptoLog("key-exchange");
 
 /** Watch synced key requests and post encrypted shares on the table doc. */
 export function useKeyExchange(
@@ -26,23 +23,7 @@ export function useKeyExchange(
       const latest = handle.doc();
       if (!latest || canceled) return;
       const player = await loadLocalPlayer(repo, latest, userId);
-      if (!player) {
-        log.warn("useKeyExchange: no local player", {
-          userId,
-          phase: latest.phase,
-          keyDocUrl: latest.shuffleParticipants.find((p) => p.id === userId)
-            ?.keyDocUrl,
-        });
-        return;
-      }
-      if (canceled) return;
-      const requestCount = latest.keyRequests?.length ?? 0;
-      if (requestCount > 0) {
-        log.debug("useKeyExchange: fulfilling", {
-          userId,
-          requestCount,
-        });
-      }
+      if (!player || canceled) return;
       await fulfillKeyRequests(handle, latest, player, userId);
     };
 

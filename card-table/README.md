@@ -29,9 +29,9 @@ pnpm register   # optional
 
 ## Usage
 
-1. Create a **Card Table** document and set the player count (default 2).
+1. Create a **Card Table** document.
 2. Each player opens the table — they **auto-join** when the table tool loads.
-3. Once all players have joined, initialization runs automatically (keys → shuffle → ready).
+3. When everyone has joined, click **Ready** — keys, shuffle, and verification run automatically.
 4. Add hands/piles — drag from the **Deck** tool to deal.
 
 ### External layouts
@@ -59,6 +59,5 @@ Use `handle.sub("decks", { id: "deck" })`, `handle.sub("hands", { id })`, `handl
 ## Security notes
 
 - Each player's shuffle keys live in a linked **`card-table-keys`** Automerge doc (`ShuffleParticipant.keyDocUrl` on the table). Keys survive refresh; restrict access with doc ACL when Patchwork supports it.
-- Key requests and encrypted key shares are synced on the table doc (`keyRequests`, `keyShareEnvelopes`). Each player publishes an RSA-OAEP exchange public key on join; responders encrypt `{d,n}` material for the requester only. Ephemeral messages are not used.
-- Legacy plaintext entries in `keyShares` are still read if present.
+- Key requests and encrypted key shares are synced on the table doc (`keyRequests`, `keyShareEnvelopes`, `keyShares`). Each player publishes an RSA-OAEP exchange public key on join; responders encrypt `{d,n}` material for the requester only.
 - Shuffle RNG uses `Math.random()` inside the toolkit.

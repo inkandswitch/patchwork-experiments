@@ -612,23 +612,6 @@ section("RSA-OAEP key share envelope round-trip");
   );
 }
 
-section("diagnostic: log decrypt steps for offset 0");
-{
-  const roster = await createProtocolPlayers(["player-a", "player-b"]);
-  const published = runShuffleProtocol(roster.map((entry) => entry.player));
-  const offset = 0;
-  let cipher = BigInt(published[offset]);
-  console.log(`    initial cipher: ${cipher}`);
-  for (const { id, player } of roster) {
-    const before = cipher.toString();
-    cipher = player.getIndividualKey(offset).decrypt(cipher);
-    console.log(`    ${id}: ${before} -> ${cipher}`);
-  }
-  const card = decodeStandardCard(Number(cipher));
-  console.log(`    => ${card.rank}${card.suit}`);
-  ok("diagnostic card valid", card.rank && card.suit);
-}
-
 // --- summary ----------------------------------------------------------------
 
 console.log(`\n${"=".repeat(50)}`);

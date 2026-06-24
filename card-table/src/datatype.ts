@@ -10,7 +10,6 @@ export const CardTableDatatype: DatatypeImplementation<CardTableDoc> = {
     doc.phase = "setup";
     doc.shuffleId = 0;
     doc.shuffleTurn = 0;
-    doc.expectedPlayers = 2;
     doc.shuffleParticipants = [];
     doc.publicKey = null;
     doc.workingDeck = null;

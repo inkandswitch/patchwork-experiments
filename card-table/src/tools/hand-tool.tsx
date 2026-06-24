@@ -25,11 +25,8 @@ import { useDeckDropTarget } from "../hooks/use-deck-dnd";
 import { makeTool } from "../make-tool";
 import { claimHand } from "../ops/zones";
 import { handIdFromSubUrl, rootDocUrl } from "../paths";
-import { cryptoLog } from "../crypto/debug-log";
 import { playerMatchesTablePublicKey } from "../crypto/validate-keys";
 import type { CardTableDoc, DecryptedCard, SecureHandZone } from "../types";
-
-const log = cryptoLog("hand");
 
 function resolveHand(
   table: CardTableDoc,
@@ -127,24 +124,10 @@ function HandEditor({ docUrl }: { docUrl: AutomergeUrl }) {
     setDecryptError(null);
 
     (async () => {
-      log.info("hand decrypt: start", {
-        handId: hand.id,
-        userId,
-        isOwner,
-        offsetsToDecrypt,
-        gameReady,
-      });
-
       const latestTable = () => handle.doc() ?? table;
       const doc = latestTable();
       const player = await loadLocalPlayer(repo, doc, userId);
       if (!player) {
-        log.warn("hand decrypt: no local player", {
-          handId: hand.id,
-          userId,
-          keyDocUrl: doc.shuffleParticipants.find((p) => p.id === userId)?.keyDocUrl,
-          phase: doc.phase,
-        });
         if (!canceled) {
           setDecrypted(new Map());
           setDecryptError("Could not load your shuffle keys — finish setup on the table first.");
@@ -154,32 +137,11 @@ function HandEditor({ docUrl }: { docUrl: AutomergeUrl }) {
       }
 
       const exchangePrivateKey = await loadExchangePrivateKey(repo, doc, userId);
-      log.info("hand decrypt: keys loaded", {
-        handId: hand.id,
-        userId,
-        hasExchangePrivateKey: !!exchangePrivateKey,
-        shuffleParticipants: doc.shuffleParticipants.map((p) => ({
-          id: p.id,
-          hasExchangePublicKey: !!p.exchangePublicKey?.jwk?.n,
-          keygenReady: p.keygenReady,
-        })),
-      });
 
       const missingOffsets = offsetsToDecrypt.filter(
         (offset) => missingKeyParticipants(doc, offset, userId).length > 0,
       );
       if (missingOffsets.length > 0) {
-        log.info("hand decrypt: submitting key requests", {
-          handId: hand.id,
-          userId,
-          missingOffsets,
-          missingByOffset: Object.fromEntries(
-            missingOffsets.map((offset) => [
-              offset,
-              missingKeyParticipants(doc, offset, userId).map((p) => p.id),
-            ]),
-          ),
-        });
         submitKeyRequests(handle, userId, missingOffsets);
       }
       await fulfillKeyRequests(handle, latestTable(), player, userId);
@@ -217,14 +179,6 @@ function HandEditor({ docUrl }: { docUrl: AutomergeUrl }) {
         const stillWaiting = offsetsToDecrypt.filter(
           (offset) => missingKeyParticipants(latest, offset, userId).length > 0,
         ).length;
-        log.info("hand decrypt: done", {
-          handId: hand.id,
-          userId,
-          decryptedCount: [...next.values()].filter(Boolean).length,
-          total: offsetsToDecrypt.length,
-          failed,
-          stillWaiting,
-        });
         setDecryptError(
           stillWaiting > 0
             ? `Waiting for key shares on ${stillWaiting} card${stillWaiting === 1 ? "" : "s"} — other players need a card-table view open.`

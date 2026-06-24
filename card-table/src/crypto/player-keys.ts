@@ -6,7 +6,6 @@ import {
   generateExchangeKeyPair,
   importExchangePrivateKey,
 } from "./exchange-keys";
-import { cryptoLog } from "./debug-log";
 import {
   deserializeSra,
   serializeSra,
@@ -15,7 +14,6 @@ import {
 
 const memory = new Map<AutomergeUrl, Player>();
 const exchangeMemory = new Map<AutomergeUrl, CryptoKey>();
-const log = cryptoLog("player-keys");
 
 export function cachePlayer(keyDocUrl: AutomergeUrl, player: Player): void {
   memory.set(keyDocUrl, player);
@@ -100,10 +98,7 @@ export async function loadPlayerFromKeyDoc(
   options?: { waitAttempts?: number; waitMs?: number },
 ): Promise<Player | null> {
   const cached = memory.get(keyDocUrl);
-  if (cached) {
-    log.debug("loadPlayerFromKeyDoc: cache hit", { keyDocUrl });
-    return cached;
-  }
+  if (cached) return cached;
 
   const waitAttempts = options?.waitAttempts ?? 1;
   const waitMs = options?.waitMs ?? 0;
@@ -112,36 +107,14 @@ export async function loadPlayerFromKeyDoc(
     const keyHandle = await repo.find<CardTableKeysDoc>(keyDocUrl);
     await keyHandle.whenReady();
     const keyDoc = keyHandle.doc();
-    if (!keyDoc?.main || !isValidSerializedSra(keyDoc.main)) {
-      log.warn("loadPlayerFromKeyDoc: invalid or missing main key", {
-        keyDocUrl,
-        hasMain: !!keyDoc?.main,
-        attempt: attempt + 1,
-      });
-    } else if (
-      !keyDoc.individual?.length ||
-      keyDoc.individual.length !== keyDoc.deckSize
+    if (
+      keyDoc?.main &&
+      isValidSerializedSra(keyDoc.main) &&
+      keyDoc.individual?.length === keyDoc.deckSize &&
+      keyDoc.individual.every(isValidSerializedSra)
     ) {
-      log.warn("loadPlayerFromKeyDoc: individual keys mismatch", {
-        keyDocUrl,
-        individualCount: keyDoc.individual?.length ?? 0,
-        deckSize: keyDoc.deckSize,
-        attempt: attempt + 1,
-      });
-    } else if (!keyDoc.individual.every(isValidSerializedSra)) {
-      log.warn("loadPlayerFromKeyDoc: invalid individual key entry", {
-        keyDocUrl,
-        attempt: attempt + 1,
-      });
-    } else {
       const player = storedToPlayer(keyDoc);
       memory.set(keyDocUrl, player);
-      log.info("loadPlayerFromKeyDoc: loaded", {
-        keyDocUrl,
-        playerId: keyDoc.playerId,
-        deckSize: keyDoc.deckSize,
-        attempt: attempt + 1,
-      });
       return player;
     }
 
@@ -159,38 +132,18 @@ export async function loadExchangePrivateKey(
   peerId: string,
 ): Promise<CryptoKey | null> {
   const participant = doc.shuffleParticipants.find((entry) => entry.id === peerId);
-  if (!participant?.keyDocUrl) {
-    log.warn("loadExchangePrivateKey: no key doc for participant", { peerId });
-    return null;
-  }
+  if (!participant?.keyDocUrl) return null;
 
   const cached = exchangeMemory.get(participant.keyDocUrl);
-  if (cached) {
-    log.debug("loadExchangePrivateKey: cache hit", {
-      peerId,
-      keyDocUrl: participant.keyDocUrl,
-    });
-    return cached;
-  }
+  if (cached) return cached;
 
   const keyHandle = await repo.find<CardTableKeysDoc>(participant.keyDocUrl);
   await keyHandle.whenReady();
   const jwk = keyHandle.doc()?.exchangePrivateJwk;
-  if (!jwk?.d) {
-    log.warn("loadExchangePrivateKey: no exchange private key in key doc", {
-      peerId,
-      keyDocUrl: participant.keyDocUrl,
-      hasExchangePublicOnTable: !!participant.exchangePublicKey?.jwk?.n,
-    });
-    return null;
-  }
+  if (!jwk?.d) return null;
 
   const privateKey = await importExchangePrivateKey(jwk);
   exchangeMemory.set(participant.keyDocUrl, privateKey);
-  log.info("loadExchangePrivateKey: loaded", {
-    peerId,
-    keyDocUrl: participant.keyDocUrl,
-  });
   return privateKey;
 }
 
@@ -204,13 +157,8 @@ export async function ensureExchangeKeys(
     const participant = tableHandle.doc()?.shuffleParticipants.find(
       (entry) => entry.id === peerId,
     );
-    if (participant?.exchangePublicKey?.jwk?.n) {
-      log.debug("ensureExchangeKeys: already configured", { peerId });
-      return;
-    }
+    if (participant?.exchangePublicKey?.jwk?.n) return;
 
-    // Restore the published public key from the key doc — do not rotate the
-    // private key or previously encrypted envelopes become undecipherable.
     const privateJwk = keyDoc.exchangePrivateJwk;
     const publicJwk =
       keyDoc.exchangePublicJwk ??
@@ -218,10 +166,6 @@ export async function ensureExchangeKeys(
         ? { kty: privateJwk.kty, n: privateJwk.n, e: privateJwk.e }
         : undefined);
     if (publicJwk?.n) {
-      log.info("ensureExchangeKeys: restored public key from key doc", {
-        peerId,
-        keyDocUrl: keyHandle.url,
-      });
       tableHandle.change((table) => {
         const entry = table.shuffleParticipants.find((p) => p.id === peerId);
         if (entry && !entry.exchangePublicKey?.jwk?.n) {
@@ -230,16 +174,8 @@ export async function ensureExchangeKeys(
       });
       return;
     }
-    log.warn("ensureExchangeKeys: private key exists but no public jwk to restore", {
-      peerId,
-      keyDocUrl: keyHandle.url,
-    });
   }
 
-  log.info("ensureExchangeKeys: generating new exchange key pair", {
-    peerId,
-    keyDocUrl: keyHandle.url,
-  });
   const generated = await generateExchangeKeyPair();
   exchangeMemory.set(keyHandle.url, generated.privateKey);
 

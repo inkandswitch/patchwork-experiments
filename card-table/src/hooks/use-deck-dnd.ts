@@ -30,21 +30,3 @@ export function useDeckDrag(table: CardTableDoc, deck: SecureDeckZone) {
 export function deckLabel(deck: SecureDeckZone, table: CardTableDoc): string {
   return `${deck.title} · ${deck.cards.length}/${table.deckSize}`;
 }
-
-/** @deprecated use useDeckDropTarget */
-export const useStockDropTarget = useDeckDropTarget;
-
-/** @deprecated use useDeckDrag */
-export function useStockDrag(table: CardTableDoc) {
-  const count = deckCardCount(table);
-  return {
-    canDrag: table.phase === "ready" && count > 0,
-    count,
-    deckSize: table.deckSize,
-  };
-}
-
-/** @deprecated use deckLabel */
-export function stockLabel(table: CardTableDoc): string {
-  return `Deck · ${deckCardCount(table)}/${table.deckSize}`;
-}
