@@ -4,14 +4,15 @@
  * Subscribes to the host's `spatial:apriltags` provider. Colors are hardcoded by
  * tag id (v1): tag 0 → red, 1 → green, 2 → blue.
  *
- * Background = an inverse-distance-weighted RGB blend of every recognized tag's
- * color (one unified model for any tag count):
- *   weight_i = 1 / dist_i^POWER   →   color = Σ wᵢ·cᵢ / Σ wᵢ
- *   - exact at each tag (weight → ∞ there),
- *   - at a point equidistant from all tags (e.g. the centroid of a symmetric
- *     layout) it's the equal RGB mix of all of them — red+green+blue → white,
- *   - smooth everywhere, defined over the whole box.
- *   0 tags → blank; 1 tag → solid fill.
+ * Background = an inverse-distance-weighted RGB blend, but each tag acts as an
+ * opaque WALL (its quad + border ring) that blocks the light from other tags:
+ *   - at each pixel, a tag contributes to the blend only if it has clear
+ *     line-of-sight (the segment pixel→tag doesn't cross another tag's blocker),
+ *   - weight_i = 1 / dist_i^POWER over the visible tags,
+ *   - so behind each tag lies a hard-edged shadow cone where that blocker's tag
+ *     is removed from the blend → the cone reads as the blocker's own color.
+ *   2 tags → one cone of solid color behind each; 3 tags → two (overlapping)
+ *   cones per tag. 0 tags → blank; 1 tag → solid fill.
  *
  * The field is computed on a small offscreen canvas (~FIELD_MAX px longest edge)
  * and scaled up smoothly. Each tag's quad is then masked BLACK (projector throws
@@ -74,11 +75,52 @@ function cssRgb([r, g, b]) {
 }
 
 // Inverse-distance falloff power. Higher = tighter color zones near each tag.
-const POWER = 2;
+const POWER = 0.5;
 // Longest edge (px) of the offscreen field; scaled up smoothly to the box.
-const FIELD_MAX = 64;
+const FIELD_MAX = 256;
 // Border ring thickness (px). Half is used to size the colored outline.
 const BORDER_PX = 20;
+
+// ---------------------------------------------------------------------------
+// Geometry helpers for the occlusion model.
+// ---------------------------------------------------------------------------
+
+// Orientation-based segment intersection test (segments p1p2 and p3p4).
+function segmentsIntersect(p1x, p1y, p2x, p2y, p3x, p3y, p4x, p4y) {
+  const d = (ax, ay, bx, by, cx, cy) =>
+    (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+  const d1 = d(p3x, p3y, p4x, p4y, p1x, p1y);
+  const d2 = d(p3x, p3y, p4x, p4y, p2x, p2y);
+  const d3 = d(p1x, p1y, p2x, p2y, p3x, p3y);
+  const d4 = d(p1x, p1y, p2x, p2y, p4x, p4y);
+  return (
+    ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+    ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
+  );
+}
+
+// Does segment a→b cross any edge of polygon `poly` (array of {x,y})?
+function segmentCrossesPolygon(ax, ay, bx, by, poly) {
+  for (let i = 0; i < poly.length; i++) {
+    const c = poly[i];
+    const d = poly[(i + 1) % poly.length];
+    if (segmentsIntersect(ax, ay, bx, by, c.x, c.y, d.x, d.y)) return true;
+  }
+  return false;
+}
+
+// Expand a convex polygon outward from its centroid by `pad` px. Used to grow
+// each tag's quad by the border ring so the border is part of the blocker.
+function expandPolygon(poly, pad) {
+  const cx = poly.reduce((s, p) => s + p.x, 0) / poly.length;
+  const cy = poly.reduce((s, p) => s + p.y, 0) / poly.length;
+  return poly.map((p) => {
+    const dx = p.x - cx;
+    const dy = p.y - cy;
+    const len = Math.hypot(dx, dy) || 1;
+    return { x: p.x + (dx / len) * pad, y: p.y + (dy / len) * pad };
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Datatype
@@ -177,8 +219,14 @@ export function Tool(handle, element) {
   // Compute the inverse-distance-weighted RGB field on the offscreen canvas.
   function drawField(anchors) {
     const aspect = boxH / boxW || 1;
-    const fw = Math.max(1, Math.round(boxW >= boxH ? FIELD_MAX : FIELD_MAX / aspect));
-    const fh = Math.max(1, Math.round(boxW >= boxH ? FIELD_MAX * aspect : FIELD_MAX));
+    const fw = Math.max(
+      1,
+      Math.round(boxW >= boxH ? FIELD_MAX : FIELD_MAX / aspect),
+    );
+    const fh = Math.max(
+      1,
+      Math.round(boxW >= boxH ? FIELD_MAX * aspect : FIELD_MAX),
+    );
     if (fieldCanvas.width !== fw) fieldCanvas.width = fw;
     if (fieldCanvas.height !== fh) fieldCanvas.height = fh;
     if (!fieldCtx) return;
@@ -193,11 +241,19 @@ export function Tool(handle, element) {
       return;
     }
 
-    // Anchor positions in field-pixel space.
+    // Per-anchor: center + color + its blocker polygon (quad grown by the
+    // border ring), all in field-pixel space. The blocker is treated as an
+    // opaque wall: a tag only lights a pixel with clear line-of-sight to it.
+    const sx = fw / boxW;
+    const sy = fh / boxH;
     const pts = anchors.map((a) => ({
-      x: (a.cx / boxW) * fw,
-      y: (a.cy / boxH) * fh,
+      x: a.cx * sx,
+      y: a.cy * sy,
       rgb: a.rgb,
+      blocker: expandPolygon(a.corners, BORDER_PX / 2).map((p) => ({
+        x: p.x * sx,
+        y: p.y * sy,
+      })),
     }));
 
     const img = fieldCtx.createImageData(fw, fh);
@@ -205,19 +261,33 @@ export function Tool(handle, element) {
     const EPS = 1e-6;
     for (let y = 0; y < fh; y++) {
       for (let x = 0; x < fw; x++) {
+        const px = x + 0.5;
+        const py = y + 0.5;
         let wsum = 0;
         let r = 0;
         let g = 0;
         let b = 0;
         let snapped = null;
-        for (const p of pts) {
-          const dx = x + 0.5 - p.x;
-          const dy = y + 0.5 - p.y;
+        for (let i = 0; i < pts.length; i++) {
+          const p = pts[i];
+          const dx = px - p.x;
+          const dy = py - p.y;
           const d2 = dx * dx + dy * dy;
           if (d2 < EPS) {
             snapped = p.rgb; // exactly on a tag
             break;
           }
+          // Line-of-sight: skip this source if ANY other tag's blocker
+          // polygon lies between the pixel and this source.
+          let blocked = false;
+          for (let j = 0; j < pts.length; j++) {
+            if (j === i) continue;
+            if (segmentCrossesPolygon(px, py, p.x, p.y, pts[j].blocker)) {
+              blocked = true;
+              break;
+            }
+          }
+          if (blocked) continue;
           const w = 1 / Math.pow(d2, POWER / 2);
           wsum += w;
           r += w * p.rgb[0];
@@ -229,10 +299,15 @@ export function Tool(handle, element) {
           data[idx] = snapped[0];
           data[idx + 1] = snapped[1];
           data[idx + 2] = snapped[2];
-        } else {
+        } else if (wsum > 0) {
           data[idx] = r / wsum;
           data[idx + 1] = g / wsum;
           data[idx + 2] = b / wsum;
+        } else {
+          // Fully occluded from every tag (rare) → black.
+          data[idx] = 0;
+          data[idx + 1] = 0;
+          data[idx + 2] = 0;
         }
         data[idx + 3] = 255;
       }
@@ -265,11 +340,12 @@ export function Tool(handle, element) {
       .map((tag) => ({ tag, rgb: rgbForTag(tag.id), corners: cornerPx(tag) }))
       .filter((t) => t.rgb && t.corners);
 
-    // Anchor = each tag's center + color, for the blend field.
-    const anchors = colored.map(({ tag, rgb }) => ({
+    // Anchor = each tag's center + color + quad (px), for the blend field.
+    const anchors = colored.map(({ tag, rgb, corners }) => ({
       cx: tag.nx * boxW,
       cy: tag.ny * boxH,
       rgb,
+      corners,
     }));
     drawField(anchors);
 
