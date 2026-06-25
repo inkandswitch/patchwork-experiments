@@ -36,9 +36,12 @@ const ZOOM_EPSILON = 1e-3;
 // pair?" (the shared LATLNG schema) and drops a marker on each answer.
 
 // Tool entry point: maplibre owns its own subtree, so this renders into a plain
-// container rather than through Solid. The map's viewport is mirrored to the
-// document — local pans/zooms write to the doc, remote edits move the map — with
-// an epsilon guard on both sides to break the write/read feedback loop.
+// container rather than through Solid. The viewport is split in two: a persisted
+// "home" (center/zoom/bounds in the doc) that only manual pans/zooms write — and
+// echo back to other peers — and a transient overlay the map eases around to
+// frame markers / focused pins, which is never persisted and reverts when its
+// reason clears. An epsilon guard on the persisted side breaks the write/read
+// feedback loop.
 export const MapTool: ToolRender = (rawHandle, element) => {
   const handle = rawHandle as DocHandle<MapDoc>;
 
@@ -55,11 +58,13 @@ export const MapTool: ToolRender = (rawHandle, element) => {
     attributionControl: false,
   });
 
-  // Local pan/zoom -> document. Center/zoom are only written when the viewport
-  // actually moved away from what's stored, so applying a remote change doesn't
-  // echo back. `bounds` is derived (nothing writes it back into the map), so it
-  // just tracks the visible box whenever it changes — including on resize, where
-  // center/zoom hold steady but the box doesn't.
+  // The map keeps two viewports apart: the *persisted* one (center/zoom/bounds
+  // in the doc), which only a manual pan/zoom updates, and the *live* camera,
+  // which the overlay (marker framing + focus) eases around transiently and
+  // never persists. `overlayActive` is true whenever the live camera has been
+  // moved away from the persisted "home" by the overlay.
+  let overlayActive = false;
+
   const currentBounds = (): MapBounds => {
     const b = map.getBounds();
     return {
@@ -70,7 +75,23 @@ export const MapTool: ToolRender = (rawHandle, element) => {
     };
   };
 
-  const syncViewport = () => {
+  // Persist the visible box as the home box. Only ever called while the camera
+  // is at home (manual move, load, resize-at-home), so map-search consumers that
+  // read doc.bounds see the manual view, never a transient overlay.
+  const persistBounds = () => {
+    const bounds = currentBounds();
+    handle.change((doc) => {
+      if (!boundsEqual(doc.bounds, bounds)) doc.bounds = bounds;
+    });
+  };
+
+  // A user gesture (drag/scroll/touch) is the only thing that updates the
+  // persisted viewport: those moveends carry an `originalEvent`, while our own
+  // overlay eases and remote-change jumps do not. Taking manual control also
+  // makes the current view the new home and cancels any overlay framing.
+  const onMoveEnd = (event: { originalEvent?: unknown }) => {
+    if (!event.originalEvent) return;
+    overlayActive = false;
     const { lng, lat } = map.getCenter();
     const zoom = map.getZoom();
     const bounds = currentBounds();
@@ -82,31 +103,40 @@ export const MapTool: ToolRender = (rawHandle, element) => {
       if (!boundsEqual(doc.bounds, bounds)) doc.bounds = bounds;
     });
   };
-  map.on("moveend", syncViewport);
+  map.on("moveend", onMoveEnd);
   // The first accurate bounds are only available once the map has measured its
-  // container, so seed them on load too (center/zoom already match the doc).
-  map.on("load", syncViewport);
+  // container, so seed the home box on load (center/zoom already match the doc).
+  // Skip if an overlay has already moved the camera, so we never freeze a
+  // widened frame as home.
+  const onLoad = () => {
+    if (!overlayActive) persistBounds();
+  };
+  map.on("load", onLoad);
 
   // Document -> map. Skip when the map is already there (e.g. our own write
-  // coming back) to avoid interrupting an in-flight interaction.
+  // coming back) to avoid interrupting an in-flight interaction. A genuine
+  // remote viewport change becomes the new home, so re-derive the overlay.
   const onDocChange = () => {
     const doc = handle.doc();
     if (!doc) return;
     const { lng, lat } = map.getCenter();
     if (viewportsEqual(doc, [lng, lat], map.getZoom())) return;
     map.jumpTo({ center: doc.center, zoom: doc.zoom });
+    scheduleApply();
   };
   handle.on("change", onDocChange);
 
   // maplibre only tracks window resizes; the embed is resized directly, so
   // observe the container and tell the map to re-measure. Resizing changes the
-  // visible box (but not center/zoom, so no moveend fires) — re-sync the bounds,
-  // debounced so a drag-resize doesn't spam the doc.
+  // home box (center/zoom hold steady, so no moveend fires) — re-persist it,
+  // debounced, but only while resting at home so an active overlay never leaks
+  // its widened box into the persisted bounds.
   let resizeSyncTimer: ReturnType<typeof setTimeout> | undefined;
   const resizeObserver = new ResizeObserver(() => {
     map.resize();
+    if (overlayActive) return;
     if (resizeSyncTimer) clearTimeout(resizeSyncTimer);
-    resizeSyncTimer = setTimeout(syncViewport, 150);
+    resizeSyncTimer = setTimeout(persistBounds, 150);
   });
   resizeObserver.observe(container);
 
@@ -117,10 +147,6 @@ export const MapTool: ToolRender = (rawHandle, element) => {
   const repo = element.repo;
   const markers = new Map<AutomergeUrl, maplibregl.Marker>();
   let epoch = 0;
-  // Whether we've adopted an initial set of markers as the baseline. The first
-  // batch (e.g. pins restored on open) keeps the document's saved viewport;
-  // markers that appear *after* that zoom the map out to come into view.
-  let seeded = false;
 
   // Focus highlight, both directions. A marker glows while its card document is
   // in focus (the union of the `Selection` and `Highlight` context channels),
@@ -133,9 +159,6 @@ export const MapTool: ToolRender = (rawHandle, element) => {
   // The highlight entry this map currently owns (the hovered marker's doc),
   // cleared on mouse-out or when the marker goes away.
   let hovered: AutomergeUrl | undefined;
-  // Matches whose pin was focused as of the last recompute, so we can detect
-  // which ones *just* became focused and pan only those into view.
-  let focusedMatches = new Set<AutomergeUrl>();
 
   // Hover tooltip: a single reused popup that embeds a <patchwork-view> of the
   // hovered pin's document. The match url points at the {lat, lon} subtree,
@@ -207,59 +230,140 @@ export const MapTool: ToolRender = (rawHandle, element) => {
     return focused;
   };
 
-  // Bring freshly-focused pins into view. Already-visible pins are left alone
-  // (so hovering a pin that's on screen never yanks the map), and a single
-  // off-screen pin is gently panned to while a cluster is framed together.
-  const panMatchesIntoView = (matches: AutomergeUrl[]) => {
-    const offscreen = matches
-      .map((match) => markers.get(match)?.getLngLat())
-      .filter(
-        (p): p is maplibregl.LngLat => !!p && !map.getBounds().contains(p),
-      );
-    if (offscreen.length === 0) return;
-    if (offscreen.length === 1) {
-      map.easeTo({ center: offscreen[0], duration: 600 });
-      return;
-    }
-    const bounds = offscreen.reduce(
-      (acc, p) => acc.extend(p),
-      new maplibregl.LngLatBounds(offscreen[0], offscreen[0]),
-    );
-    map.fitBounds(bounds, {
-      padding: 64,
-      maxZoom: map.getZoom(),
-      duration: 600,
-    });
+  // --- Viewport overlay -----------------------------------------------------
+  // Pixel gap we try to keep between a focused pin and its nearest neighbour,
+  // and the zoom we refuse to exceed when prising apart (near-)coincident pins.
+  const MIN_PIN_GAP_PX = 30;
+  const MAX_FOCUS_ZOOM = 18;
+  // maplibre renders 512px tiles, so a normalized-mercator distance d shows as
+  // d * 512 * 2^zoom pixels on screen.
+  const TILE_SIZE = 512;
+
+  const homeView = (): { center: [number, number]; zoom: number } => {
+    const doc = handle.doc();
+    return {
+      center: (doc?.center ?? DEFAULT_CENTER) as [number, number],
+      zoom: doc?.zoom ?? DEFAULT_ZOOM,
+    };
   };
 
-  // Bring genuinely new markers into view by zooming the map out. Batched so a
-  // burst of new pins eases once, and a no-op when every new pin is already on
-  // screen, so it never fights the user's current view.
-  let pendingFit: maplibregl.LngLat[] = [];
-  let fitTimer: ReturnType<typeof setTimeout> | undefined;
-
-  const scheduleFit = (position: maplibregl.LngLat) => {
-    pendingFit.push(position);
-    if (fitTimer) clearTimeout(fitTimer);
-    fitTimer = setTimeout(flushFit, 120);
+  const homeBounds = (): maplibregl.LngLatBounds | undefined => {
+    const b = handle.doc()?.bounds;
+    if (!b) return undefined;
+    return new maplibregl.LngLatBounds([b.west, b.south], [b.east, b.north]);
   };
 
-  const flushFit = () => {
-    fitTimer = undefined;
-    const positions = pendingFit;
-    pendingFit = [];
-    const view = map.getBounds();
-    if (positions.length === 0 || positions.every((p) => view.contains(p))) {
-      return;
+  const markerPositions = (): maplibregl.LngLat[] =>
+    [...markers.values()].map((marker) => marker.getLngLat());
+
+  // The resting frame: home, widened just enough to also show any markers that
+  // fall outside the home box (never tighter than the home zoom). `widened` is
+  // false when home already contains every marker — then we rest exactly at
+  // home, which is also what we return to as markers are removed.
+  const baseCamera = (): {
+    center: maplibregl.LngLat;
+    zoom: number;
+    widened: boolean;
+  } => {
+    const home = homeView();
+    const homeCenter = new maplibregl.LngLat(home.center[0], home.center[1]);
+    const positions = markerPositions();
+    const box = homeBounds();
+    const outside = box ? positions.filter((p) => !box.contains(p)) : positions;
+    if (positions.length === 0 || outside.length === 0) {
+      return { center: homeCenter, zoom: home.zoom, widened: false };
     }
-    // Extend the *current* view so existing pins stay framed; because the box
-    // only grows, fitBounds can only zoom out (or hold).
-    const bounds = new maplibregl.LngLatBounds(
-      view.getSouthWest(),
-      view.getNorthEast(),
+    const union = box
+      ? new maplibregl.LngLatBounds(box.getSouthWest(), box.getNorthEast())
+      : new maplibregl.LngLatBounds(positions[0], positions[0]);
+    for (const p of positions) union.extend(p);
+    const cam = map.cameraForBounds(union, { padding: 64, maxZoom: home.zoom });
+    if (!cam?.center || cam.zoom === undefined) {
+      return { center: homeCenter, zoom: home.zoom, widened: false };
+    }
+    return {
+      center: maplibregl.LngLat.convert(cam.center),
+      zoom: cam.zoom,
+      widened: true,
+    };
+  };
+
+  // Normalized-mercator distance, so a pixel gap can be derived at any zoom.
+  const mercatorDistance = (
+    a: maplibregl.LngLat,
+    b: maplibregl.LngLat,
+  ): number => {
+    const ma = maplibregl.MercatorCoordinate.fromLngLat(a);
+    const mb = maplibregl.MercatorCoordinate.fromLngLat(b);
+    return Math.hypot(ma.x - mb.x, ma.y - mb.y);
+  };
+
+  // The absolute zoom at which two points sit MIN_PIN_GAP_PX apart on screen.
+  const separationZoom = (mercDist: number): number => {
+    if (mercDist <= 0) return MAX_FOCUS_ZOOM;
+    return Math.log2(MIN_PIN_GAP_PX / (TILE_SIZE * mercDist));
+  };
+
+  // If a focused pin would be crowded (< MIN_PIN_GAP_PX from its nearest
+  // neighbour) at the base zoom, zoom in on the tightest such pin until it
+  // clears. Returns null when nothing focused is crowded (rest at the base).
+  const focusCamera = (
+    baseZoom: number,
+  ): { center: maplibregl.LngLat; zoom: number } | null => {
+    const entries = [...markers.entries()].map(([match, marker]) => ({
+      match,
+      pos: marker.getLngLat(),
+    }));
+    if (entries.length < 2) return null;
+    let best: { center: maplibregl.LngLat; zoom: number } | null = null;
+    for (const focused of entries) {
+      if (!focusedDocIds.has(parseAutomergeUrl(focused.match).documentId)) {
+        continue;
+      }
+      let nearest = Infinity;
+      for (const other of entries) {
+        if (other.match === focused.match) continue;
+        nearest = Math.min(nearest, mercatorDistance(focused.pos, other.pos));
+      }
+      if (nearest === Infinity) continue;
+      const needed = separationZoom(nearest);
+      if (best === null || needed > best.zoom) {
+        best = { center: focused.pos, zoom: needed };
+      }
+    }
+    if (best === null || best.zoom <= baseZoom + ZOOM_EPSILON) return null;
+    return { center: best.center, zoom: Math.min(best.zoom, MAX_FOCUS_ZOOM) };
+  };
+
+  const cameraEquals = (center: maplibregl.LngLat, zoom: number): boolean => {
+    const c = map.getCenter();
+    return (
+      Math.abs(c.lng - center.lng) < COORD_EPSILON &&
+      Math.abs(c.lat - center.lat) < COORD_EPSILON &&
+      Math.abs(map.getZoom() - zoom) < ZOOM_EPSILON
     );
-    for (const position of positions) bounds.extend(position);
-    map.fitBounds(bounds, { padding: 64, maxZoom: map.getZoom(), duration: 600 });
+  };
+
+  // Recompute and ease to the overlay target: the base frame, possibly
+  // overridden by a focus zoom-in. Always programmatic, so it never persists —
+  // only the manual-move handler writes the doc.
+  const applyViewport = () => {
+    const base = baseCamera();
+    const focus = focusCamera(base.zoom);
+    const target = focus ?? base;
+    overlayActive = focus !== null || base.widened;
+    if (cameraEquals(target.center, target.zoom)) return;
+    map.easeTo({ center: target.center, zoom: target.zoom, duration: 600 });
+  };
+
+  // Marker arrivals are async and focus/marker changes can burst, so coalesce.
+  let applyTimer: ReturnType<typeof setTimeout> | undefined;
+  const scheduleApply = () => {
+    if (applyTimer) clearTimeout(applyTimer);
+    applyTimer = setTimeout(() => {
+      applyTimer = undefined;
+      applyViewport();
+    }, 120);
   };
 
   // The map's own scoped slice of the Highlight channel (just the hovered pin's
@@ -300,13 +404,10 @@ export const MapTool: ToolRender = (rawHandle, element) => {
       if (isValidAutomergeUrl(url)) ids.add(parseAutomergeUrl(url).documentId);
     }
     focusedDocIds = ids;
-    const nowFocused = new Set<AutomergeUrl>();
-    for (const [match, marker] of markers) {
-      if (styleMarker(match, marker)) nowFocused.add(match);
-    }
-    const appeared = [...nowFocused].filter((m) => !focusedMatches.has(m));
-    focusedMatches = nowFocused;
-    if (appeared.length) panMatchesIntoView(appeared);
+    for (const [match, marker] of markers) styleMarker(match, marker);
+    // A focus change can crowd/uncrowd a pin, so re-derive the overlay (zoom in
+    // on a crowded focused pin, or fall back to the base frame when it clears).
+    scheduleApply();
   };
 
   // Focus is read from the union of the Selection and Highlight channels.
@@ -319,11 +420,7 @@ export const MapTool: ToolRender = (rawHandle, element) => {
     recomputeFocus();
   });
 
-  const addMarker = async (
-    match: AutomergeUrl,
-    generation: number,
-    fitNew: boolean,
-  ) => {
+  const addMarker = async (match: AutomergeUrl, generation: number) => {
     try {
       const docHandle = await Promise.resolve(repo.find<unknown>(match));
       if (generation !== epoch || markers.has(match)) return;
@@ -349,15 +446,10 @@ export const MapTool: ToolRender = (rawHandle, element) => {
       });
       marker.addTo(map);
       markers.set(match, marker);
-      // A pin can resolve after its doc is already focused (async find); treat
-      // that as a fresh appearance so it still pans into view. The focus pan
-      // already brings it on screen, so only the unfocused case needs the fit.
-      if (styleMarker(match, marker) && !focusedMatches.has(match)) {
-        focusedMatches.add(match);
-        panMatchesIntoView([match]);
-      } else if (fitNew) {
-        scheduleFit(marker.getLngLat());
-      }
+      styleMarker(match, marker);
+      // A new pin may push the frame open (to reveal it) or, if its doc is
+      // already focused, warrant a focus zoom-in — let the overlay decide.
+      scheduleApply();
     } catch {
       // ignore docs that fail to load
     }
@@ -375,15 +467,13 @@ export const MapTool: ToolRender = (rawHandle, element) => {
       hidePopupFor(match);
       marker.remove();
       markers.delete(match);
-      focusedMatches.delete(match);
     }
-    // Only zoom out for markers added after the baseline set; the first batch
-    // adopts the document's saved viewport as-is.
-    const fitNew = seeded;
     for (const match of matches) {
-      if (!markers.has(match)) void addMarker(match, generation, fitNew);
+      if (!markers.has(match)) void addMarker(match, generation);
     }
-    if (matches.length > 0) seeded = true;
+    // Each addMarker also schedules, but removals need their own nudge so the
+    // frame can shrink back toward home once a pin disappears.
+    scheduleApply();
   };
 
   // Publish the {lat, lon} schema query and consume its matches.
@@ -402,15 +492,15 @@ export const MapTool: ToolRender = (rawHandle, element) => {
     unsubscribeHighlight();
     highlightHandle?.release();
     if (hideTimer) clearTimeout(hideTimer);
-    if (fitTimer) clearTimeout(fitTimer);
+    if (applyTimer) clearTimeout(applyTimer);
     popup.remove();
     for (const marker of markers.values()) marker.remove();
     markers.clear();
     if (resizeSyncTimer) clearTimeout(resizeSyncTimer);
     resizeObserver.disconnect();
     handle.off("change", onDocChange);
-    map.off("moveend", syncViewport);
-    map.off("load", syncViewport);
+    map.off("moveend", onMoveEnd);
+    map.off("load", onLoad);
     map.remove();
     container.remove();
   };

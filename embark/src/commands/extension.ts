@@ -166,8 +166,8 @@ function deriveFromDoc(prev: MenuState, state: EditorState): MenuState {
 
 // Detects `/query` immediately before a caret. The `/` must start a line or
 // follow whitespace (so URLs like `https://` and dates like `6/24` don't
-// trigger it), and the query runs until the next whitespace or `/` — so the
-// menu closes the moment the user types past the command word.
+// trigger it). The query may contain spaces so commands can take arguments
+// (e.g. `/weather berlin`); it ends only at a newline or a second `/`.
 function activeCommand(
   state: EditorState,
 ): { from: number; to: number; query: string } | null {
@@ -176,7 +176,7 @@ function activeCommand(
   const head = range.head;
   const line = state.doc.lineAt(head);
   const before = state.doc.sliceString(line.from, head);
-  const match = /(?:^|\s)\/([^/\s]*)$/.exec(before);
+  const match = /(?:^|\s)\/([^/\n]*)$/.exec(before);
   if (!match) return null;
   const query = match[1];
   return { from: head - query.length - 1, to: head, query };

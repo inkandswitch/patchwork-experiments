@@ -3,6 +3,7 @@ import type { DatatypeImplementation } from "@inkandswitch/patchwork-plugins";
 import type { PartsBinDoc, PartsBinItem } from "./types";
 import type { SearchDoc } from "../../search/datatype";
 import type { PoiProviderDoc } from "../../cards/poi/datatype";
+import type { WeatherProviderDoc } from "../../cards/weather/datatype";
 import {
   DEFAULT_CENTER,
   DEFAULT_ZOOM,
@@ -56,6 +57,9 @@ function seedExampleItems(repo: Repo): PartsBinItem[] {
   const poi = repo.create<PoiProviderDoc>({
     "@patchwork": { type: "poi-provider" },
   });
+  const weather = repo.create<WeatherProviderDoc>({
+    "@patchwork": { type: "weather-provider" },
+  });
   const map = repo.create<MapDoc>({
     "@patchwork": { type: "map" },
     center: [...DEFAULT_CENTER],
@@ -78,6 +82,7 @@ function seedExampleItems(repo: Repo): PartsBinItem[] {
   return [
     { url: search.url, toolId: "search" },
     { url: poi.url, toolId: "poi-provider" },
+    { url: weather.url, toolId: "weather-provider" },
     { url: map.url, toolId: "map" },
     { url: colorStyler.url, toolId: "color-styler" },
     { url: unitConverter.url, toolId: "unit-converter" },

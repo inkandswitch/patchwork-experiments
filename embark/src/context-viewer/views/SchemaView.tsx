@@ -1,8 +1,4 @@
-import {
-  isValidAutomergeUrl,
-  parseAutomergeUrl,
-  type AutomergeUrl,
-} from "@automerge/automerge-repo";
+import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import {
   For,
@@ -15,11 +11,11 @@ import {
 } from "solid-js";
 import type { ContextStore } from "../../lib/context";
 import {
-  Highlight,
   SchemaMatches,
   SchemaQueries,
   type SchemaQuery,
 } from "../../canvas/channels";
+import { splitDocUrl, useDocTitles, useHighlight } from "./tokens";
 
 // A domain-specific view over the schema channels: instead of dumping the raw
 // `schema:queries` / `schema:matches` JSON, it shows each registered schema by
@@ -51,12 +47,13 @@ export function SchemaView(props: {
   onCleanup(props.store.subscribe(SchemaQueries, (q) => setQueries(() => q)));
   onCleanup(props.store.subscribe(SchemaMatches, (m) => setMatches(() => m)));
 
-  // Lazily-resolved match values + document titles, filled in as `repo.find`
-  // settles. The `*ing` sets dedupe in-flight lookups.
+  const titles = useDocTitles(props.element);
+  const highlight = useHighlight(props.store);
+
+  // Lazily-resolved match values, filled in as `repo.find` settles (the sub-url
+  // resolves straight to the matched subtree). `resolving` dedupes lookups.
   const [resolved, setResolved] = createSignal<Record<string, Resolved>>({});
-  const [titles, setTitles] = createSignal<Record<string, string>>({});
   const resolving = new Set<string>();
-  const resolvingTitle = new Set<string>();
 
   // Resolve any match urls we haven't seen yet whenever the match set changes.
   // `untrack` keeps the effect keyed to `matches()` only (the resolution writes
@@ -77,27 +74,13 @@ export function SchemaView(props: {
   const resolveMatch = async (url: AutomergeUrl) => {
     try {
       const handle = await props.element.repo.find<unknown>(url);
-      const { docUrl } = splitMatch(url);
+      const { docUrl } = splitDocUrl(url);
       setResolved((prev) => ({ ...prev, [url]: { docUrl, value: handle.doc() } }));
-      void resolveTitle(docUrl);
+      titles.request(docUrl);
     } catch {
       // Leave it unresolved; the token shows a placeholder.
     } finally {
       resolving.delete(url);
-    }
-  };
-
-  const resolveTitle = async (docUrl: AutomergeUrl) => {
-    if (resolvingTitle.has(docUrl) || titles()[docUrl]) return;
-    resolvingTitle.add(docUrl);
-    try {
-      const handle = await props.element.repo.find<DocLike>(docUrl);
-      const title = docTitle(handle.doc());
-      setTitles((prev) => ({ ...prev, [docUrl]: title ?? shortId(docUrl) }));
-    } catch {
-      setTitles((prev) => ({ ...prev, [docUrl]: shortId(docUrl) }));
-    } finally {
-      resolvingTitle.delete(docUrl);
     }
   };
 
@@ -109,7 +92,7 @@ export function SchemaView(props: {
       const urls = m[key] ?? [];
       const byDoc = new Map<string, DocGroup>();
       for (const url of urls) {
-        const { docUrl, docId } = splitMatch(url);
+        const { docUrl, docId } = splitDocUrl(url);
         let group = byDoc.get(docId);
         if (!group) {
           group = { docUrl, docId, matches: [] };
@@ -125,31 +108,6 @@ export function SchemaView(props: {
       };
     });
   });
-
-  // The document ids currently highlighted by anyone, so groups light up when a
-  // sibling view (e.g. a map pin) highlights the same document.
-  const [highlight, setHighlight] = createSignal(props.store.read(Highlight));
-  onCleanup(props.store.subscribe(Highlight, (h) => setHighlight(() => h)));
-  const highlightedDocIds = createMemo(() => {
-    const ids = new Set<string>();
-    for (const url of Object.keys(highlight())) {
-      if (isValidAutomergeUrl(url)) ids.add(parseAutomergeUrl(url).documentId);
-    }
-    return ids;
-  });
-
-  // This view's own Highlight slice — rewritten to exactly the hovered document.
-  const highlightHandle = props.store.handle(Highlight);
-  onCleanup(() => highlightHandle.release());
-  const writeHighlight = (urls: AutomergeUrl[]) => {
-    highlightHandle.change((slice) => {
-      const entries = slice as Record<string, true>;
-      for (const key of Object.keys(entries)) delete entries[key];
-      for (const url of urls) entries[url] = true;
-    });
-  };
-
-  const docLabel = (docUrl: AutomergeUrl) => titles()[docUrl] ?? shortId(docUrl);
 
   return (
     <div class="embark-context__channel embark-schema">
@@ -177,13 +135,13 @@ export function SchemaView(props: {
                         class="embark-schema__group"
                         classList={{
                           "embark-schema__group--highlighted":
-                            highlightedDocIds().has(group.docId),
+                            highlight.highlightedDocIds().has(group.docId),
                         }}
-                        on:mouseenter={() => writeHighlight([group.docUrl])}
-                        on:mouseleave={() => writeHighlight([])}
+                        on:mouseenter={() => highlight.hover([group.docUrl])}
+                        on:mouseleave={() => highlight.clear()}
                       >
                         <div class="embark-schema__doc">
-                          {docLabel(group.docUrl)}
+                          {titles.titleOf(group.docUrl)}
                         </div>
                         <div class="embark-schema__tokens">
                           <For each={group.matches}>
@@ -220,17 +178,6 @@ function queryName(query: SchemaQuery | undefined, key: string): string {
   return typeof name === "string" && name.trim() ? name : key;
 }
 
-// Split a match sub-url (`automerge:<id>/seg/seg`) into its owning document url
-// and id. Match urls always validate, but fall back to the raw url defensively.
-function splitMatch(url: AutomergeUrl): { docUrl: AutomergeUrl; docId: string } {
-  try {
-    const { documentId } = parseAutomergeUrl(url);
-    return { docUrl: `automerge:${documentId}` as AutomergeUrl, docId: documentId };
-  } catch {
-    return { docUrl: url, docId: url };
-  }
-}
-
 // The truncated token label: the value we actually extracted from the document,
 // stringified compactly and cut to MAX_TOKEN_LEN. `undefined` means "still
 // resolving".
@@ -245,32 +192,4 @@ function tokenLabel(value: unknown): string {
 function fullValue(value: unknown): string {
   if (value === undefined) return "resolving…";
   return typeof value === "string" ? value : JSON.stringify(value, null, 2);
-}
-
-type DocLike = {
-  "@patchwork"?: { title?: unknown };
-  props?: { name?: unknown };
-  title?: unknown;
-  name?: unknown;
-};
-
-// A human label for a document, trying the common title-bearing fields without
-// pulling in the datatype registry.
-function docTitle(doc: DocLike | undefined): string | undefined {
-  if (!doc) return undefined;
-  const candidates = [
-    doc["@patchwork"]?.title,
-    doc.props?.name,
-    doc.title,
-    doc.name,
-  ];
-  for (const candidate of candidates) {
-    if (typeof candidate === "string" && candidate.trim()) return candidate;
-  }
-  return undefined;
-}
-
-function shortId(docUrl: AutomergeUrl): string {
-  const id = docUrl.replace(/^automerge:/, "");
-  return id.length > 8 ? `${id.slice(0, 8)}…` : id;
 }

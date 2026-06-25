@@ -9,6 +9,7 @@ import { plugins as llmCardPlugins } from "./llm-card";
 import { plugins as inspectPlugins } from "./inspect";
 import { plugins as mapPlugins } from "./map";
 import { plugins as mentionPlugins } from "./mention";
+import { plugins as runningTrackerPlugins } from "./running-tracker";
 import { plugins as stickerPlugins } from "./stickers";
 import { plugins as todoPlugins } from "./todo";
 
@@ -23,6 +24,7 @@ export const plugins = [
   ...inspectPlugins,
   ...mapPlugins,
   ...mentionPlugins,
+  ...runningTrackerPlugins,
   ...stickerPlugins,
   ...todoPlugins,
   ...contextViewerPlugins,

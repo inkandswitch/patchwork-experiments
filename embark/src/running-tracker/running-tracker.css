@@ -1,0 +1,542 @@
+.embark-run {
+  --accent: #16a34a;
+  --accent-press: #15803d;
+  --danger: #ef4444;
+  --danger-press: #dc2626;
+  --ink: #0f172a;
+  --muted: #64748b;
+  --line: #e2e8f0;
+  --card: #ffffff;
+  --bg: #f4f6f8;
+
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+}
+
+.embark-run__loading {
+  margin: auto;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+/* ---- App shell: scrolling content over a fixed bottom tab bar ------------- */
+
+.embark-run__app {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.embark-run__content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  padding: max(0.9rem, env(safe-area-inset-top)) 1.1rem 0.9rem;
+}
+
+.embark-run__pane {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.embark-run__tabs {
+  flex: none;
+  display: flex;
+  border-top: 1px solid var(--line);
+  background: var(--card);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.embark-run__tab {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.5rem 0 0.55rem;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.embark-run__tab--active {
+  color: var(--accent);
+}
+
+/* ---- Screens (full-screen views: recorder + detail) ----------------------- */
+
+.embark-run__screen {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: max(0.9rem, env(safe-area-inset-top)) 1.1rem
+    max(0.9rem, env(safe-area-inset-bottom));
+}
+
+/* ---- Top bar -------------------------------------------------------------- */
+
+.embark-run__topbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+}
+
+.embark-run__title {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.embark-run__title--center {
+  flex: 1 1 auto;
+  text-align: center;
+  font-size: 1.2rem;
+}
+
+.embark-run__icon-btn {
+  flex: none;
+  width: 2.4rem;
+  height: 2.4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.embark-run__icon-btn:hover {
+  background: #00000010;
+}
+
+.embark-run__icon-btn-spacer {
+  width: 2.4rem;
+  height: 2.4rem;
+  flex: none;
+}
+
+/* ---- Run tab: green start button ----------------------------------------- */
+
+.embark-run__run-pane {
+  align-items: center;
+  justify-content: center;
+  gap: 0.9rem;
+}
+
+.embark-run__ready {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--muted);
+}
+
+.embark-run__start {
+  width: 10rem;
+  height: 10rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border: none;
+  border-radius: 999px;
+  background: radial-gradient(circle at 50% 35%, #22c55e, var(--accent));
+  color: #fff;
+  font-size: 1.2rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  box-shadow:
+    0 14px 34px rgba(22, 163, 74, 0.4),
+    inset 0 -3px 8px rgba(0, 0, 0, 0.18);
+  transition:
+    transform 0.08s ease,
+    box-shadow 0.15s ease;
+}
+
+.embark-run__start:active {
+  transform: scale(0.96);
+  box-shadow: 0 6px 16px rgba(22, 163, 74, 0.4);
+}
+
+.embark-run__start-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* ---- Activities list ------------------------------------------------------ */
+
+.embark-run__empty {
+  margin-top: 0.5rem;
+  padding: 1.4rem 1rem;
+  border: 1px dashed var(--line);
+  border-radius: 0.9rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.embark-run__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.embark-run__card {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: var(--card);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  transition:
+    transform 0.08s ease,
+    box-shadow 0.15s ease;
+}
+
+.embark-run__card:active {
+  transform: scale(0.99);
+}
+
+.embark-run__card:hover {
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+}
+
+.embark-run__card-loading {
+  display: block;
+  width: 100%;
+  height: 2.4rem;
+}
+
+.embark-run__card-head {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.embark-run__card-name {
+  font-weight: 700;
+  font-size: 0.98rem;
+}
+
+.embark-run__card-date {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.embark-run__badge {
+  align-self: flex-start;
+  padding: 0.05rem 0.4rem;
+  border-radius: 0.4rem;
+  background: #fef2f2;
+  color: var(--danger);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.embark-run__card-stats {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.1rem;
+}
+
+.embark-run__card-distance {
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.embark-run__card-distance small {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.embark-run__card-meta {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.embark-run__chevron {
+  flex: none;
+  color: #cbd5e1;
+}
+
+/* ---- Recorder (light, immersive) ----------------------------------------- */
+
+.embark-run__recorder {
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.embark-run__gps {
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.2rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: #eef2f7;
+  color: #475569;
+}
+
+.embark-run__gps--good {
+  background: rgba(22, 163, 74, 0.12);
+  color: var(--accent-press);
+}
+
+.embark-run__gps--ok {
+  background: rgba(234, 179, 8, 0.18);
+  color: #a16207;
+}
+
+.embark-run__gps--poor,
+.embark-run__gps--wait {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--danger-press);
+}
+
+.embark-run__hero {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+}
+
+.embark-run__hero-clock {
+  font-size: clamp(3.5rem, 18vw, 5.5rem);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.embark-run__hero-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--muted);
+}
+
+/* ---- Stat grid (shared) --------------------------------------------------- */
+
+.embark-run__stats {
+  flex: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+.embark-run__detail .embark-run__stats {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.embark-run__stat {
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.9rem;
+  background: var(--card);
+  border: 1px solid var(--line);
+}
+
+.embark-run__stat-value {
+  font-size: 1.7rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.embark-run__stat--accent .embark-run__stat-value {
+  color: var(--accent);
+}
+
+.embark-run__stat-unit {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.embark-run__stat-label {
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+/* ---- Recorder controls ---------------------------------------------------- */
+
+.embark-run__controls {
+  flex: none;
+  display: flex;
+  gap: 0.7rem;
+  padding-top: 0.6rem;
+}
+
+.embark-run__btn {
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 3.4rem;
+  border: none;
+  border-radius: 999px;
+  font-size: 1.05rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.08s ease;
+}
+
+.embark-run__btn:active {
+  transform: scale(0.97);
+}
+
+.embark-run__btn--ghost {
+  background: #e7ebf0;
+  color: var(--ink);
+}
+
+.embark-run__btn--stop {
+  background: var(--danger);
+  color: #fff;
+}
+
+.embark-run__btn--stop:hover {
+  background: var(--danger-press);
+}
+
+/* ---- Detail + statistics -------------------------------------------------- */
+
+.embark-run__detail {
+  gap: 0.6rem;
+}
+
+.embark-run__detail-date {
+  margin: 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.embark-run__detail-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.6rem 0 1rem;
+}
+
+.embark-run__detail-distance {
+  font-size: clamp(3rem, 16vw, 4.5rem);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.embark-run__detail-unit {
+  margin-top: 0.2rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+.embark-run__note {
+  margin-top: 0.2rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.7rem;
+  background: #fef2f2;
+  color: var(--danger-press);
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.embark-run__probes {
+  display: none;
+}
+
+.embark-run__chart {
+  margin-top: 0.8rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: var(--card);
+}
+
+.embark-run__chart-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 0.4rem;
+}
+
+.embark-run__chart-svg {
+  display: block;
+  width: 100%;
+  height: 48px;
+}
+
+.embark-run__chart-svg polyline {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}

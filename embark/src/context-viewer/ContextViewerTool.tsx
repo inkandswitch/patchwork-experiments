@@ -6,31 +6,17 @@ import {
   type Channel,
   type ContextStore,
 } from "../lib/context";
-import {
-  CommandQueries,
-  CommandSuggestions,
-  Highlight,
-  SearchQueries,
-  SearchResults,
-  Selection,
-  Stickers,
-} from "../canvas/channels";
+import { Highlight, Selection, Stickers } from "../canvas/channels";
 import { SchemaView } from "./views/SchemaView";
+import { SearchView } from "./views/SearchView";
+import { CommandsView } from "./views/CommandsView";
+import { UrlSetView } from "./views/UrlSetView";
 import "./context-viewer.css";
 
-// The canvas channels shown with the generic default view (raw merged JSON).
-// Empty channels still render (as "empty"), so this doubles as a list of what's
-// available. The schema channels (`schema:queries` / `schema:matches`) are
-// deliberately omitted — the custom SchemaView renders them instead.
-const CHANNELS: Channel<Record<string, unknown>>[] = [
-  Selection,
-  Highlight,
-  Stickers,
-  SearchQueries,
-  SearchResults,
-  CommandQueries,
-  CommandSuggestions,
-];
+// The canvas channels still shown with the generic default view (raw merged
+// JSON). Most channels now have a custom domain view (see below); only the
+// remaining ones fall back to the raw card.
+const CHANNELS: Channel<Record<string, unknown>>[] = [Stickers];
 
 // Tool entry point: a live, read-only view of every canvas context channel.
 export const ContextViewerTool: ToolRender = (_handle, element) => {
@@ -59,6 +45,18 @@ function ContextViewer(props: { element: ToolElement }) {
         {(ctx) => (
           <>
             <SchemaView store={ctx()} element={props.element} />
+            <SearchView store={ctx()} element={props.element} />
+            <CommandsView store={ctx()} element={props.element} />
+            <UrlSetView
+              store={ctx()}
+              element={props.element}
+              channel={Selection}
+            />
+            <UrlSetView
+              store={ctx()}
+              element={props.element}
+              channel={Highlight}
+            />
             <For each={CHANNELS}>
               {(channel) => <ChannelCard store={ctx()} channel={channel} />}
             </For>
