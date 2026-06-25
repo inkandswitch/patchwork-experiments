@@ -56,6 +56,7 @@ export const plugins = [
 	themePlugin("fairyfloss", "Fairyfloss", "./fairyfloss.css"),
 	themePlugin("macaron", "Macaron", "./macaron.css"),
 	themePlugin("sakura", "Sakura", "./sakura.css"),
+	themePlugin("sundae", "Sundae", "./sundae.css"),
 	themePlugin("bubblegum", "Bubblegum", "./bubblegum.css"),
 	themePlugin("unicorn", "Unicorn", "./unicorn.css"),
 	themePlugin("watermelon", "Watermelon", "./watermelon.css"),

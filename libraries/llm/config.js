@@ -45,6 +45,9 @@
  * @property {RecentModel[]} recentModels  most-recently-chosen, newest first
  * @property {Record<string, boolean>} [toolToggles]  {toolName: false} for host-tool built-ins the user disabled
  * @property {ResolvedPrompts} [resolved]  prompt TEXT, filled in by resolveCfgPrompts
+ * @property {Record<string, {config?:any, perdoc?:Record<string, any>}>} [pertool]  per-tool / per-doc whole-config overrides
+ *
+ * @typedef {{toolId:string, docId?:string}} Scope  config resolution scope (per-tool / per-doc override target)
  *
  * The flat per-provider shape the worker's `generate` message wants. Built by
  * {@link callConfig} from an {@link LLMConfig} plus per-call overrides.
@@ -207,7 +210,10 @@ export function ensureSettingsDoc() {
 	return settingsReady
 }
 
-/** Ensure the settings doc is resolved, then return the normalized config. */
+/**
+ * Ensure the settings doc is resolved, then return the normalized config.
+ * @param {Scope} [scope]
+ */
 export async function ensureConfig(scope) {
 	await ensureSettingsDoc()
 	return scope ? readScopedConfig(scope) : readConfig()
@@ -312,6 +318,10 @@ export function normalizeConfig(raw = {}) {
 // Pick the raw config for a scope: the most-specific override present wins —
 // per-doc → per-tool → the top-level default. `scope` is {toolId, docId?}.
 // Whole-scope semantics: an override is a complete config, not a partial.
+/**
+ * @param {any} raw
+ * @param {Scope} [scope]
+ */
 export function scopedRaw(raw, scope) {
 	if (!raw || !scope || !scope.toolId) return raw
 	const pt = raw.pertool && raw.pertool[scope.toolId]
@@ -323,6 +333,10 @@ export function scopedRaw(raw, scope) {
 
 // Does THIS exact scope level hold its own override? (Used by the picker to show
 // create-vs-remove and the active scope.) docId omitted → checks the tool level.
+/**
+ * @param {any} raw
+ * @param {Scope} [scope]
+ */
 export function hasScopeOverride(raw, scope) {
 	if (!raw || !scope || !scope.toolId) return false
 	const pt = raw.pertool && raw.pertool[scope.toolId]
@@ -337,12 +351,17 @@ function rawSettings() {
 }
 
 // Read a scope's effective config (normalized). Falls back through tool → default.
+/** @param {Scope} [scope] */
 export function readScopedConfig(scope) {
 	return normalizeConfig(scopedRaw(rawSettings(), scope))
 }
 
 // Create/replace a scope's whole-config override (writes a full normalized config
 // into pertool). `cfgObj` defaults to the current default config (seed a fork).
+/**
+ * @param {Scope} scope
+ * @param {any} [cfgObj]
+ */
 export function writeScopeOverride(scope, cfgObj) {
 	if (!scope || !scope.toolId) return
 	const full = JSON.parse(JSON.stringify(normalizeConfig(cfgObj ?? readConfig())))
@@ -365,6 +384,7 @@ export function writeScopeOverride(scope, cfgObj) {
 }
 
 // Remove a scope's override (fall back to the less-specific scope / default).
+/** @param {Scope} scope */
 export function clearScopeOverride(scope) {
 	if (!scope || !scope.toolId || !settingsHandle) return
 	settingsHandle.change((/** @type {any} */ d) => {

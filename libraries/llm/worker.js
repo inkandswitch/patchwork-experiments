@@ -216,12 +216,28 @@ let lastLoadError = null
 /** @param {any} err */
 function friendlyError(err) {
 	const raw = String((err && (err.message || err)) || "unknown error")
-	if (/bad_alloc|out of memory|can'?t create a session|memory access out of bounds|RuntimeError: Aborted/i.test(raw)) {
+	// A genuine allocation failure. Big models really can exceed the wasm32
+	// address space; this message is only right when the allocator actually
+	// said so.
+	if (/bad_alloc|out of memory|can'?t create a session/i.test(raw)) {
 		return (
 			"Out of memory while loading this model. Big models can exceed the browser's " +
 			"WASM memory ceiling (~4GB — independent of your system RAM). Try a smaller model, " +
 			"or open in a normal (non-incognito) window so WebGPU can run it on the GPU instead. " +
 			"(raw: " + raw + ")"
+		)
+	}
+	// A WASM *trap*, not an allocation failure. `memory access out of bounds` /
+	// `RuntimeError: Aborted` on the CPU backend almost always means an op the
+	// WASM build can't run — most commonly an fp16 dtype (q4f16/fp16), which is
+	// a WebGPU dtype. A tiny model hits this without being anywhere near the 4GB
+	// ceiling, so DON'T call it "out of memory".
+	if (/memory access out of bounds|RuntimeError: Aborted/i.test(raw)) {
+		return (
+			"The WASM backend crashed running this model — usually an fp16 weight " +
+			"format (q4f16/fp16) the CPU backend can't execute, not a size problem. " +
+			"Use an integer quantization (q4/q8) for WASM, or open in a normal " +
+			"(non-incognito) window so WebGPU is available. (raw: " + raw + ")"
 		)
 	}
 	if (/unaligned/i.test(raw)) {
@@ -237,6 +253,24 @@ function friendlyError(err) {
 		)
 	}
 	return raw
+}
+
+// Map a dtype to something the WASM/CPU backend can actually execute. The fp16
+// formats (q4f16, q8f16, fp16) are WebGPU-only and trap on WASM, so swap them
+// for their integer-quant / fp32 equivalents. Anything already WASM-safe is
+// returned unchanged.
+/** @param {string} dtype @returns {string} */
+function wasmSafeDtype(dtype) {
+	switch (dtype) {
+		case "q4f16":
+			return "q4"
+		case "q8f16":
+			return "q8"
+		case "fp16":
+			return "fp32"
+		default:
+			return dtype
+	}
 }
 
 function modelLoadError() {
@@ -392,14 +426,25 @@ async function loadModel(modelId, dtypeOverride) {
 	const attempts = []
 	if (hasWebGPU) attempts.push({device: "webgpu", label: "WebGPU"})
 	attempts.push({device: undefined, label: "WASM"})
+	// Tell the page WHY a backend isn't in the running, so "it went to WASM" is
+	// never a mystery. navigator.gpu is absent in incognito and in any context
+	// that doesn't expose WebGPU (e.g. SharedWorkers — but this is a dedicated
+	// Worker, where it should be present).
+	if (!hasWebGPU) {
+		broadcast({type: "status", message: "WebGPU unavailable (navigator.gpu missing — incognito or unsupported context); using WASM"})
+	}
 	log("loadModel: backends to try", {hasWebGPU, order: attempts.map((a) => a.label)})
 
 	for (const attempt of attempts) {
+		// The WASM/CPU backend can't execute fp16 — q4f16/fp16 trap with "memory
+		// access out of bounds". Downgrade to the integer-quant equivalent for the
+		// WASM attempt only; WebGPU keeps the requested dtype.
+		const attemptDtype = attempt.device ? modelDef.dtype : wasmSafeDtype(modelDef.dtype)
 		try {
-			log("loadModel: trying backend", {backend: attempt.label, dtype: modelDef.dtype})
+			log("loadModel: trying backend", {backend: attempt.label, dtype: attemptDtype, requested: modelDef.dtype})
 			generator = await withTimeout(
 				TF.pipeline("text-generation", modelId, {
-					dtype: modelDef.dtype,
+					dtype: attemptDtype,
 					device: attempt.device,
 					progress_callback: progressCb(attempt.label),
 				}),
@@ -407,6 +452,9 @@ async function loadModel(modelId, dtypeOverride) {
 				attempt.label + " pipeline"
 			)
 			compiledModels.add(modelId)
+			// Record the dtype that actually loaded (WASM may have downgraded), so
+			// the reload-on-dtype-change check and model-info report stay accurate.
+			currentDtype = attemptDtype
 			// Probe the model for attention output support
 			try {
 				const model = generator.model

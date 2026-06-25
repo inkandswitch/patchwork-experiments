@@ -54,18 +54,21 @@ const STYLE_ID = "llmp-picker-styles"
 // adapts to whatever foreground/accent the surrounding UI uses.
 const CSS = `
 .llmp {
-	--accent: var(--llmp-accent, #ff4d97);
-	--accent-text: var(--llmp-accent-text, #fff);
-	--accent2: var(--llmp-accent2, #58cfb0);
-	--paper: var(--llmp-bg, #fdfbf7);
-	--card: var(--llmp-card, #fff);
-	--ink: var(--llmp-fg, #34313a);
+	/* Follow the active Patchwork theme: accents from --studio-*, fill/line from
+	   --editor-*. An explicit --llmp-* override still wins; the pink/cream values
+	   are the last-resort fallback (e.g. the "Sundae" theme reproduces them). */
+	--accent: var(--llmp-accent, var(--studio-primary, #ff4d97));
+	--accent-text: var(--llmp-accent-text, var(--editor-fill, #fff));
+	--accent2: var(--llmp-accent2, var(--studio-secondary, #58cfb0));
+	--paper: var(--llmp-bg, var(--editor-fill-offset-10, #fdfbf7));
+	--card: var(--llmp-card, var(--editor-fill, #fff));
+	--ink: var(--llmp-fg, var(--editor-line, #34313a));
 	--accent-soft: var(--llmp-accent-soft, color-mix(in srgb, var(--accent) 13%, var(--card)));
 	--line: var(--llmp-line, color-mix(in srgb, var(--ink) 12%, transparent));
 	--highlight: var(--llmp-highlight, color-mix(in srgb, var(--accent) 8%, var(--card)));
 	--dim: var(--llmp-dim, color-mix(in srgb, var(--ink) 45%, transparent));
-	--radius: var(--llmp-radius, 14px); --radius-sm: var(--llmp-radius-sm, 9px);
-	--shadow: var(--llmp-shadow, 0 12px 34px rgba(0,0,0,.18)); --shadow-sm: 0 1px 3px rgba(0,0,0,.08);
+	--radius: var(--llmp-radius, var(--studio-radius, 14px)); --radius-sm: var(--llmp-radius-sm, var(--studio-radius-sm, 9px));
+	--shadow: var(--llmp-shadow, var(--studio-shadow-lg, 0 12px 34px rgba(0,0,0,.18))); --shadow-sm: 0 1px 3px rgba(0,0,0,.08);
 	width: min(840px, 96vw); height: min(760px, 90vh); margin: auto;
 	overflow: hidden;
 	border: 1px solid var(--line); border-radius: var(--radius); padding: 0;
@@ -192,6 +195,10 @@ const CSS = `
 .llmp-btn[disabled] { opacity: .5; cursor: default; }
 .llmp-btn.primary { background: var(--accent); color: var(--accent-text); border-color: transparent; }
 .llmp-btn.primary:hover { background: #ff63a6; }
+/* scope switcher: text-link buttons in the accent colour, not chunky buttons */
+.llmp-scopebtn { padding: 4px 4px; font: inherit; font-weight: 600; cursor: pointer; color: var(--dim); background: none; border: none; border-radius: var(--radius-sm); }
+.llmp-scopebtn:hover { color: var(--accent); }
+.llmp-scopebtn.active { color: var(--accent); text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
 `
 
 /**
@@ -222,6 +229,9 @@ const CSS = `
  * @property {Array<{name: string, description?: string}>} [toolTools]  host-tool-provided built-in tools
  * @property {string} [toolName]  label for the host tool's built-in tools
  * @property {() => void} [onRequestClose]
+ * @property {{toolId: string, docId?: string, toolName?: string, docName?: string}} [scope]
+ *
+ * @typedef {{commit: () => any, revert: () => void}} Ctl  the live picker controller
  */
 
 function injectStyles() {
@@ -1791,15 +1801,21 @@ const spinner = () => el("div", {class: "llmp-loading"}, [el("div", {class: "llm
 // tool · This doc bar swaps which config the editor edits: a scope either has its
 // own complete override or inherits the default. Returns a getter for the live
 // controller (commit/revert target the active scope's editor). No scope → plain.
+/**
+ * @param {HTMLElement} mount
+ * @param {PickerOpts} opts
+ * @param {() => void} onRequestClose
+ * @returns {() => Ctl|null}
+ */
 function buildScopedPicker(mount, opts, onRequestClose) {
-	const scope = opts.scope
-	/** @type {{commit:()=>any,revert:()=>void}|null} */
+	/** @type {Ctl|null} */
 	let ctl = null
 	const getCtl = () => ctl
-	if (!scope || !scope.toolId) {
+	if (!opts.scope || !opts.scope.toolId) {
 		ctl = buildPickerInto(mount, {...opts, onRequestClose})
 		return getCtl
 	}
+	const scope = opts.scope
 
 	let active = "default" // "default" | "tool" | "doc"
 	const bar = el("div", {
@@ -1809,23 +1825,23 @@ function buildScopedPicker(mount, opts, onRequestClose) {
 	const bodyHost = el("div")
 	mount.replaceChildren(bar, bodyHost)
 
-	const scopeFor = (which) =>
+	const scopeFor = (/** @type {string} */ which) =>
 		which === "doc"
 			? {toolId: scope.toolId, docId: scope.docId}
 			: {toolId: scope.toolId}
-	const sourceFor = (which) => {
+	const sourceFor = (/** @type {string} */ which) => {
 		if (which === "default")
-			return opts.source || {read: () => readConfig(), write: (n) => writeConfig(n)}
+			return opts.source || {read: () => readConfig(), write: (/** @type {any} */ n) => writeConfig(n)}
 		const sc = scopeFor(which)
-		return {read: () => readScopedConfig(sc), write: (n) => writeScopeOverride(sc, n)}
+		return {read: () => readScopedConfig(sc), write: (/** @type {any} */ n) => writeScopeOverride(sc, n)}
 	}
 
 	function rebuild() {
 		// Flush any pending edit of the scope we're leaving before swapping.
 		try { ctl && ctl.commit && ctl.commit() } catch {}
-		const mkBtn = (id, label) =>
+		const mkBtn = (/** @type {string} */ id, /** @type {string} */ label) =>
 			el("button", {
-				class: "llmp-btn" + (active === id ? " primary" : ""),
+				class: "llmp-scopebtn" + (active === id ? " active" : ""),
 				text: label,
 				onClick: () => { active = id; rebuild() },
 			})
@@ -1897,9 +1913,10 @@ export function dom(opts = {}) {
 	/** @type {(v: any) => void} */
 	let resolveResult
 	root.result = new Promise((r) => (resolveResult = r))
-	/** @type {{commit: () => any, revert: () => void}|null} */
+	/** @type {Ctl|null} */
 	let ctl = null
 	let done = false
+	/** @type {() => Ctl|null} */
 	let getCtl = () => ctl
 	const finish = (/** @type {any} */ saved) => {
 		if (done) return
@@ -1907,7 +1924,7 @@ export function dom(opts = {}) {
 		resolveResult(saved)
 		root.remove()
 	}
-	root.destroy = () => finish(getCtl() ? getCtl().commit() : null)
+	root.destroy = () => { const c = getCtl(); finish(c ? c.commit() : null) }
 	root.revert = () => {
 		getCtl()?.revert()
 		finish(null)
@@ -1941,15 +1958,17 @@ export function popup(opts = {}) {
 	/** @type {(v: any) => void} */
 	let resolveResult
 	frame.result = new Promise((r) => (resolveResult = r))
-	/** @type {{commit: () => any, revert: () => void}|null} */
+	/** @type {Ctl|null} */
 	let ctl = null
+	/** @type {() => Ctl|null} */
 	let getCtl = () => ctl
 	let done = false
 	let reverting = false
 	const finalize = () => {
 		if (done) return
 		done = true
-		resolveResult(reverting ? null : getCtl() ? getCtl().commit() : null)
+		const c = getCtl()
+		resolveResult(reverting ? null : c ? c.commit() : null)
 		frame.remove()
 	}
 	const close = () => {

@@ -20,6 +20,7 @@ import {resolveTools, toToolSchemas, buildToolsSystem, parseToolCalls, runTool, 
  * individual functions document the subset they use. Open-ended on purpose.
  * @typedef {Object} GenOpts
  * @property {import("./config.js").LLMConfig} [config]
+ * @property {import("./config.js").Scope} [scope]
  * @property {boolean} [continuation]
  * @property {number} [topk]
  * @property {number} [temperature]
