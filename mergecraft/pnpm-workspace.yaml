@@ -1,0 +1,9 @@
+# pnpm 11 no longer runs dependency build scripts unless they're approved here
+# (the package.json `pnpm` field is no longer read). All three are transitive
+# native deps that ship prebuilt platform binaries as separate packages, so
+# `tsc && vite build` works without running their postinstall scripts — deny
+# them to clear the ERR_PNPM_IGNORED_BUILDS that blocks `pnpm build`/`push`.
+allowBuilds:
+  '@swc/core': false
+  cbor-extract: false
+  esbuild: false

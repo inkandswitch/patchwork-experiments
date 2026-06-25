@@ -9,7 +9,8 @@ export type Doc = {
 export const MergecraftDatatype: DatatypeImplementation<Doc> = {
   init(doc: Doc, _repo: Repo) {
     doc.title = "Mergecraft World";
-    doc.cubes = [[0, 0.5, -10]];
+    // Integer coordinates: cube centres land on whole numbers, ground at y=-0.5.
+    doc.cubes = [[0, 0, -10]];
   },
   getTitle(doc: Doc) {
     return doc.title || "Mergecraft World";

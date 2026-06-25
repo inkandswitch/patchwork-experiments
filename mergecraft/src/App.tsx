@@ -20,7 +20,7 @@ function Scene({ docUrl }: { docUrl: AutomergeUrl }) {
   const store = createXRStore();
 
   return (
-    <Canvas shadows camera={{ fov: 45 }}>
+    <Canvas shadows camera={{ fov: 75 }}>
       <XR store={store}>
         <Sky sunPosition={[100, 20, 100]} />
         <ambientLight intensity={1.5} />
@@ -41,6 +41,23 @@ export default function App({ docUrl }: { docUrl: AutomergeUrl }) {
 
   return (
     <>
+      {/* Fixed crosshair at screen centre — marks where the raycast targets. */}
+      <div
+        style={{
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          width: "20px",
+          height: "20px",
+          transform: "translate(-50%, -50%)",
+          zIndex: 10000,
+          pointerEvents: "none",
+          background:
+            "linear-gradient(white, white) center/2px 20px no-repeat," +
+            "linear-gradient(white, white) center/20px 2px no-repeat",
+          mixBlendMode: "difference",
+        }}
+      />
       <button
         style={{
           position: "absolute",
