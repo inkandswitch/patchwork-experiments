@@ -1,4 +1,9 @@
-import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
+import {
+  isValidAutomergeUrl,
+  parseAutomergeUrl,
+  type AutomergeUrl,
+  type DocHandle,
+} from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import {
   For,
@@ -14,6 +19,12 @@ import {
 } from "solid-js";
 import { render } from "solid-js/web";
 import { RepoContext, useDocument, useRepo } from "solid-automerge";
+import { Highlight } from "../canvas/channels";
+import {
+  readContext,
+  useContextHandle,
+  type ElementSource,
+} from "../lib/context-solid";
 import { newRunDoc, type RunDoc, type RunLogDoc } from "./datatype";
 import {
   MAX_ACCURACY_M,
@@ -75,7 +86,7 @@ function RunLogApp(props: { handle: DocHandle<RunLogDoc> }) {
   const runs = () => log()?.runs ?? [];
   const activeRunUrl = () => log()?.activeRunUrl ?? null;
 
-  const [tab, setTab] = createSignal<Tab>("run");
+  const [tab, setTab] = createSignal<Tab>("activities");
   const [selectedRunUrl, setSelectedRunUrl] = createSignal<AutomergeUrl | null>(
     null,
   );
@@ -232,8 +243,18 @@ function RunCard(props: {
   };
   const distance = () => run()?.distanceM ?? 0;
 
+  // The context store is found by bubbling a request from this row's own node,
+  // so no host element has to be threaded down through the app.
+  let row: HTMLLIElement | undefined;
+  const highlight = useHighlightSync(() => row, () => props.url);
+
   return (
-    <li>
+    <li
+      ref={row}
+      classList={{ "embark-run__card-row--highlighted": highlight.isHighlighted() }}
+      on:pointerenter={() => highlight.set(true)}
+      on:pointerleave={() => highlight.set(false)}
+    >
       <button
         type="button"
         class="embark-run__card"
@@ -265,6 +286,44 @@ function RunCard(props: {
       </button>
     </li>
   );
+}
+
+// Two-way highlight sync over the shared `Highlight` channel, bound to one run.
+// `isHighlighted` is reactive — true while this run's document is emphasized
+// anywhere on the canvas (e.g. its route line hovered on the map), so the row
+// glows. `set` publishes/retracts this run's document into the app's own slice,
+// so hovering the row lights its route up on the map. Highlight keys can be
+// sub-document urls, so emphasis is matched by document id, like the canvas.
+function useHighlightSync(
+  source: ElementSource,
+  url: () => AutomergeUrl,
+): { isHighlighted: () => boolean; set: (on: boolean) => void } {
+  const highlight = readContext(source, Highlight);
+  const handle = useContextHandle(source, Highlight);
+
+  const highlightedDocIds = createMemo(() => {
+    const ids = new Set<string>();
+    for (const key of Object.keys(highlight())) {
+      if (isValidAutomergeUrl(key)) ids.add(parseAutomergeUrl(key).documentId);
+    }
+    return ids;
+  });
+
+  return {
+    isHighlighted: () => {
+      const u = url();
+      return (
+        isValidAutomergeUrl(u) &&
+        highlightedDocIds().has(parseAutomergeUrl(u).documentId)
+      );
+    },
+    set: (on) =>
+      handle.change((slice) => {
+        const entries = slice as Record<string, true>;
+        if (on) entries[url()] = true;
+        else delete entries[url()];
+      }),
+  };
 }
 
 // Run: a centred green start button. Recording replaces this whole shell, so by

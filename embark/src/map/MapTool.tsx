@@ -270,6 +270,9 @@ export const MapTool: ToolRender = (rawHandle, element) => {
   };
 
   // --- Viewport overlay -----------------------------------------------------
+  // True while the pointer is inside the map: automatic camera moves are paused
+  // so a hover never yanks the view (see `applyViewport`).
+  let pointerOver = false;
   // Pixel gap we try to keep between a focused pin and its nearest neighbour,
   // and the zoom we refuse to exceed when prising apart (near-)coincident pins.
   const MIN_PIN_GAP_PX = 30;
@@ -418,6 +421,10 @@ export const MapTool: ToolRender = (rawHandle, element) => {
   // Always programmatic, so it never persists — only the manual-move handler
   // writes the doc.
   const applyViewport = () => {
+    // While the pointer is over the map the user is reading/interacting, so an
+    // automatic camera move (marker framing, focus zoom-in) would yank the view
+    // out from under them. Hold off; pointerleave re-evaluates the frame.
+    if (pointerOver) return;
     const fit = focusBounds();
     if (fit) {
       const cam = map.cameraForBounds(fit, { padding: 80, maxZoom: MAX_FOCUS_ZOOM });
@@ -448,6 +455,19 @@ export const MapTool: ToolRender = (rawHandle, element) => {
       applyViewport();
     }, 120);
   };
+
+  // Pause automatic camera moves while the pointer is over the map, then catch
+  // up to the latest frame once it leaves (markers/focus may have changed while
+  // suppressed). Manual pans/zooms still flow through `moveend` untouched.
+  const onPointerEnter = () => {
+    pointerOver = true;
+  };
+  const onPointerLeave = () => {
+    pointerOver = false;
+    scheduleApply();
+  };
+  container.addEventListener("pointerenter", onPointerEnter);
+  container.addEventListener("pointerleave", onPointerLeave);
 
   // The map's own scoped slice of the Highlight channel (just the hovered pin's
   // document). Because each writer owns its slice, this is a plain key add/
@@ -545,12 +565,6 @@ export const MapTool: ToolRender = (rawHandle, element) => {
     // A point that is an interior vertex of a line gets no marker of its own —
     // only the line's start and end do.
     const visible = matches.filter((match) => !interiorPoints.has(match));
-    console.log("[embark-map] onMatches", {
-      matches,
-      interior: [...interiorPoints],
-      suppressed: matches.filter((m) => interiorPoints.has(m)),
-      visible,
-    });
     const wanted = new Set(visible);
     for (const [match, marker] of markers) {
       if (wanted.has(match)) continue;
@@ -704,22 +718,6 @@ export const MapTool: ToolRender = (rawHandle, element) => {
     }
     interiorPoints = interior;
 
-    console.log("[embark-map] rebuilt geometries", {
-      lineUrls,
-      resolved: [...geometries.values()].map((g) => ({
-        url: g.url,
-        n: g.coords.length,
-      })),
-      interior: [...interiorPoints],
-      pointMatchesSample: lastPointMatches.slice(0, 8),
-      // Does the first line's first interior vertex url appear among the point
-      // matches? If not, the sub-url format doesn't line up.
-      sampleVertexInMatches:
-        [...interiorPoints][0] !== undefined
-          ? lastPointMatches.includes([...interiorPoints][0] as AutomergeUrl)
-          : "n/a",
-    });
-
     renderLines();
     // Re-apply suppression to the markers now that interiorPoints is current.
     onMatches(lastPointMatches);
@@ -736,10 +734,6 @@ export const MapTool: ToolRender = (rawHandle, element) => {
   const unsubscribeMatches = subscribeContext(element, SchemaMatches, (all) => {
     lastPointMatches = all[LATLNG_KEY] ?? [];
     const lineMatches = all[LATLNG_LINE_KEY] ?? [];
-    console.log("[embark-map] schema matches", {
-      points: lastPointMatches,
-      lines: lineMatches,
-    });
     void rebuildGeometries(lineMatches);
     onMatches(lastPointMatches);
   });
@@ -757,6 +751,8 @@ export const MapTool: ToolRender = (rawHandle, element) => {
     markers.clear();
     if (resizeSyncTimer) clearTimeout(resizeSyncTimer);
     resizeObserver.disconnect();
+    container.removeEventListener("pointerenter", onPointerEnter);
+    container.removeEventListener("pointerleave", onPointerLeave);
     geometries.clear();
     handle.off("change", onDocChange);
     map.off("moveend", onMoveEnd);
