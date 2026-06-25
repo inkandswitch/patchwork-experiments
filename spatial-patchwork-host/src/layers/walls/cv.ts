@@ -53,20 +53,95 @@ export function buildDarkMask(
 }
 
 /**
- * Foreground mask via background difference: 1 where the live pixel is at least
- * `delta` DARKER than the sampled empty-surface reference, EXCEPT where
- * `claimed`=1 (already taken by an earlier layer → forced background).
+ * Foreground mask via background difference with HYSTERESIS, to keep thin marker
+ * strokes solid instead of flickering. A pixel is "weak" foreground if it's at
+ * least `deltaLo` darker than the empty-surface reference, "strong" if `deltaHi`
+ * darker. We return `weak` (inclusive) here and use a strong map (below) to drop
+ * components that contain no strong pixel — so faint noise doesn't register but a
+ * stroke whose body is strong keeps its weaker edges. Excludes `claimed` pixels.
+ *
+ * @returns { weak, strong } — both length w*h, 1/0.
  */
-export function buildForegroundMask(
+export function buildForegroundMasks(
   gray: Uint8Array,
   background: Uint8Array,
   claimed: Uint8Array,
-  delta: number,
-): Uint8Array {
-  const out = new Uint8Array(gray.length);
+  deltaLo: number,
+  deltaHi: number,
+): { weak: Uint8Array; strong: Uint8Array } {
+  const weak = new Uint8Array(gray.length);
+  const strong = new Uint8Array(gray.length);
   for (let i = 0; i < gray.length; i++) {
-    out[i] = !claimed[i] && background[i] - gray[i] > delta ? 1 : 0;
+    if (claimed[i]) continue;
+    const d = background[i] - gray[i];
+    if (d > deltaLo) {
+      weak[i] = 1;
+      if (d > deltaHi) strong[i] = 1;
+    }
   }
+  return { weak, strong };
+}
+
+/**
+ * Morphological DILATE with a (2r+1)² square structuring element (returns a new
+ * buffer). Bridges noise-broken gaps in thin marker strokes into one connected
+ * component and thickens faint strokes so they survive — without the erode of a
+ * full "close", which would eat thin lines (a few px wide) out of existence.
+ * Growing the mask slightly is fine here (it only affects the blackout outline).
+ */
+export function dilateMask(
+  src: Uint8Array,
+  w: number,
+  h: number,
+  r: number,
+): Uint8Array {
+  return morph(src, w, h, r, true);
+}
+
+// dilate (max) when `grow`, else erode (min), over a square radius r.
+function morph(
+  src: Uint8Array,
+  w: number,
+  h: number,
+  r: number,
+  grow: boolean,
+): Uint8Array {
+  // Separable: horizontal pass then vertical pass.
+  const tmp = new Uint8Array(src.length);
+  const out = new Uint8Array(src.length);
+  const pass = (
+    inBuf: Uint8Array,
+    outBuf: Uint8Array,
+    horizontal: boolean,
+  ) => {
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let val = grow ? 0 : 1;
+        for (let k = -r; k <= r; k++) {
+          const xx = horizontal ? x + k : x;
+          const yy = horizontal ? y : y + k;
+          if (xx < 0 || yy < 0 || xx >= w || yy >= h) {
+            // Out-of-bounds treated as background (0).
+            if (!grow) val = 0;
+            continue;
+          }
+          const s = inBuf[yy * w + xx];
+          if (grow) {
+            if (s) {
+              val = 1;
+              break;
+            }
+          } else if (!s) {
+            val = 0;
+            break;
+          }
+        }
+        outBuf[y * w + x] = val;
+      }
+    }
+  };
+  pass(src, tmp, true);
+  pass(tmp, out, false);
   return out;
 }
 

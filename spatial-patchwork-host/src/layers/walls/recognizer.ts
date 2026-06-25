@@ -13,7 +13,8 @@ import type { Emitter } from "../../spatial-source.js";
 import type { Frame, Recognizer, RecognizerStatus, FramePoint } from "../types.js";
 import { fillPolygon } from "../raster.js";
 import {
-  buildForegroundMask,
+  buildForegroundMasks,
+  dilateMask,
   connectedComponents,
   traceContour,
   simplify,
@@ -21,18 +22,34 @@ import {
 import type { Walls, WallShape } from "./types.js";
 
 // Tunables.
-const MIN_AREA = 80; // drop blobs smaller than this many frame px (noise specks)
+// Thin marker strokes are only a few px wide and noise breaks them into
+// sub-MIN_AREA segments that drop out (flashing). Keep MIN_AREA low so strokes
+// survive; the morphological close + strong-pixel requirement reject real noise.
+const MIN_AREA = 24; // drop blobs smaller than this many frame px (noise specks)
 // Drop blobs larger than this fraction of the frame — that's the surface /
-// background, not a drawing. Prevents a full-frame "blob" from blacking out the
-// whole box (rare with background-diff, but a cheap safety net).
+// background, not a drawing.
 const MAX_AREA_FRAC = 0.4;
 const RDP_EPSILON = 2.0; // contour simplification tolerance (frame px)
-// A pixel counts as a black marker mark if it's at least this many gray levels
-// DARKER than the sampled empty-surface background. Tuned high so only genuinely
-// dark marks register (black ink), not faint shadows / mid-tones / color. Tunable.
-const DARKNESS_DELTA = 60;
-const MATCH_DIST = 0.06; // box-space centroid distance to keep a tag's id (tracking)
+// Hysteresis on "darker than background": a stroke pixel turns the mask on at
+// DELTA_LO but a component is kept only if it contains a pixel ≥ DELTA_HI. Stops
+// marginal/noisy edge pixels from toggling while keeping genuinely dark marks.
+// (Kept modest so a black mark reliably clears DELTA_HI.)
+const DELTA_LO = 35;
+const DELTA_HI = 55;
+// Dilation radius (px) to bridge noise-broken thin lines into one component.
+// A bit larger keeps a stroke a single connected piece (less 'disconnected'
+// flashing) at the cost of a slightly thicker outline.
+const DILATE_RADIUS = 3;
+const MATCH_DIST = 0.06; // box-space centroid distance to keep a shape's id (tracking)
 const STALE_MS = 600;
+// Appear-debounce: a shape must be detected this many consecutive frames before
+// it's published — a transient noise speck (1 frame) never survives.
+const APPEAR_FRAMES = 3;
+// Hold geometry: once published, keep a matched shape's outline steady until the
+// new detection's centroid moves more than this (box coords). Kills per-frame
+// vertex wobble. Presence is still decided live (stale removal), so a held shape
+// can't get "stuck" — it's dropped when detection stops seeing it.
+const HOLD_TOL = 0.015;
 // Temporary diagnostics — flip off once walls detection is confirmed working.
 const DEBUG = true;
 
@@ -43,6 +60,8 @@ type Tracked = {
   frame: FramePoint[]; // outline in frame px (for mask/blackout)
   box: { nx: number; ny: number }[]; // outline in box coords (published)
   at: number;
+  seen: number; // consecutive frames matched (appear-debounce)
+  published: boolean; // has cleared APPEAR_FRAMES and is being emitted
 };
 
 function centroid(points: { nx: number; ny: number }[]): [number, number] {
@@ -63,8 +82,10 @@ export function createWallsRecognizer(emitter: Emitter<Walls>): Recognizer {
   let lastFramePolys: FramePoint[][] = [];
 
   function publish() {
+    // Only emit shapes that have cleared the appear-debounce.
     emitter.set({
       shapes: tracked
+        .filter((t) => t.published)
         .map<WallShape>((t) => ({ id: t.id, points: t.box }))
         .sort((a, b) => a.id - b.id),
     });
@@ -89,16 +110,33 @@ export function createWallsRecognizer(emitter: Emitter<Walls>): Recognizer {
       return;
     }
 
-    const bin = buildForegroundMask(gray, backgroundGray, mask, DARKNESS_DELTA);
+    // Hysteresis foreground: weak (DELTA_LO) defines the mask; strong (DELTA_HI)
+    // gates which components are real. Dilate the weak mask to bridge noise gaps
+    // in thin strokes into one component (dilate, not close — a close's erode
+    // would eat thin lines).
+    const { weak, strong } = buildForegroundMasks(
+      gray,
+      backgroundGray,
+      mask,
+      DELTA_LO,
+      DELTA_HI,
+    );
+    const bin = dilateMask(weak, w, h, DILATE_RADIUS);
     const { labels, components } = connectedComponents(bin, w, h, MIN_AREA);
     const maxArea = w * h * MAX_AREA_FRAC;
+
+    // Which labels contain at least one strong pixel (hysteresis gate).
+    const labelHasStrong = new Set<number>();
+    for (let i = 0; i < strong.length; i++) {
+      if (strong[i] && labels[i]) labelHasStrong.add(labels[i]);
+    }
 
     if (DEBUG) {
       let fgCount = 0;
       for (let i = 0; i < bin.length; i++) fgCount += bin[i];
       console.log(
         `[walls] fg px ${fgCount}/${bin.length}, components ${components.length}` +
-          ` (kept area ${MIN_AREA}..${Math.round(maxArea)})`,
+          `, strong-gated ${labelHasStrong.size}`,
       );
     }
 
@@ -108,6 +146,7 @@ export function createWallsRecognizer(emitter: Emitter<Walls>): Recognizer {
       const comp = components[ci];
       if (comp.pixels > maxArea) continue; // background/surface, not a drawing
       const label = comp.label; // actual value stored in `labels` for this blob
+      if (!labelHasStrong.has(label)) continue; // no strong pixel → noise, drop
       const inside = (x: number, y: number) => labels[y * w + x] === label;
       const raw = traceContour(comp.startX, comp.startY, w, h, inside);
       const framePoly = simplify(raw, RDP_EPSILON);
@@ -137,13 +176,41 @@ export function createWallsRecognizer(emitter: Emitter<Walls>): Recognizer {
           best = t;
         }
       }
-      const id = best ? best.id : nextId++;
-      if (best) used.add(best.id);
-      nextTracked.push({ id, cx, cy, frame: det.frame, box: det.box, at: now });
+      if (best) {
+        used.add(best.id);
+        const seen = best.seen + 1;
+        const published = best.published || seen >= APPEAR_FRAMES;
+        // Hold the existing outline while the shape is essentially still; adopt
+        // the new outline only when it has moved enough. Kills per-frame wobble.
+        const held = bestD < HOLD_TOL;
+        nextTracked.push({
+          id: best.id,
+          cx: held ? best.cx : cx,
+          cy: held ? best.cy : cy,
+          frame: held ? best.frame : det.frame,
+          box: held ? best.box : det.box,
+          at: now,
+          seen,
+          published,
+        });
+      } else {
+        // New candidate — not published until it survives APPEAR_FRAMES.
+        nextTracked.push({
+          id: nextId++,
+          cx,
+          cy,
+          frame: det.frame,
+          box: det.box,
+          at: now,
+          seen: 1,
+          published: 1 >= APPEAR_FRAMES,
+        });
+      }
     }
 
     // Keep recently-seen tracked shapes that weren't matched this frame, until
-    // they go stale (smooths brief detection dropouts).
+    // they go stale (smooths brief detection dropouts). Presence is decided here
+    // (live), so a held shape is still removed when it actually disappears.
     for (const t of tracked) {
       if (!nextTracked.some((n) => n.id === t.id) && now - t.at < STALE_MS) {
         nextTracked.push(t);
@@ -151,7 +218,9 @@ export function createWallsRecognizer(emitter: Emitter<Walls>): Recognizer {
     }
 
     tracked = nextTracked;
-    lastFramePolys = tracked.map((t) => t.frame);
+    // Mask/blackout only claim PUBLISHED shapes (post-debounce), matching what's
+    // emitted to consumers.
+    lastFramePolys = tracked.filter((t) => t.published).map((t) => t.frame);
     publish();
   }
 
