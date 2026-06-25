@@ -19,6 +19,7 @@ import {
   deletePlayhead,
   playheadHasClipsInExtent,
   removePlayheadsWithoutClips,
+  commitPlayheadOriginX,
 } from './canvas/playheads';
 import { createSourceLoader, registerRecordingBlob } from './diffusion/sync-composition';
 import {
@@ -61,6 +62,7 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   const [playheadCurrentX, setPlayheadCurrentX] = useState<Map<string, number>>(new Map());
   const [isSweeping, setIsSweeping] = useState(false);
   const [playingPlayheadId, setPlayingPlayheadId] = useState<string | null>(null);
+  const [loopingPlayheads, setLoopingPlayheads] = useState<Set<string>>(() => new Set());
   const timingRef = useRef<Map<string, { playDuration: number; sourceLength: number | undefined }>>(
     new Map(),
   );
@@ -76,6 +78,9 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   isSweepingRef.current = isSweeping;
   const playingPlayheadIdRef = useRef<string | null>(null);
   playingPlayheadIdRef.current = playingPlayheadId;
+  const loopingPlayheadsRef = useRef(loopingPlayheads);
+  loopingPlayheadsRef.current = loopingPlayheads;
+  const loopToDuringPlaybackRef = useRef<(x: number) => void>(() => {});
   const docRef = useRef(doc);
   docRef.current = doc;
   const pendingSweepRef = useRef<{ playheadId: string; startX: number } | null>(null);
@@ -125,6 +130,14 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     void pauseRef.current();
   }, []);
 
+  const loopActivePlayhead = useCallback(
+    (playhead: { id: string; x: number }) => {
+      setCurrentXForPlayhead(playhead.id, playhead.x);
+      loopToDuringPlaybackRef.current(playhead.x);
+    },
+    [setCurrentXForPlayhead],
+  );
+
   const handlePlaybackX = useCallback(
     (x: number) => {
       if (!sweepActiveRef.current) return;
@@ -135,26 +148,45 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
 
       const maxEnd = maxEndXForPlayhead(docRef.current, timingRef.current, playhead);
       if (x >= maxEnd - 0.5) {
+        if (loopingPlayheadsRef.current.has(playhead.id)) {
+          loopActivePlayhead(playhead);
+          return;
+        }
         stopSweep();
         setCurrentXForPlayhead(playhead.id, playhead.x);
         return;
       }
       setCurrentXForPlayhead(phId, Math.max(playhead.x, x));
     },
-    [setCurrentXForPlayhead, stopSweep],
+    [setCurrentXForPlayhead, stopSweep, loopActivePlayhead],
   );
 
-  const { mountRef, playerState, play, pause, endScrub, previewClipTiming } = usePlayheadPlayer(
+  const handlePlaybackEnd = useCallback(() => {
+    if (!sweepActiveRef.current) return;
+    const phId = playingPlayheadIdRef.current ?? activePlayheadIdRef.current;
+    if (!phId || !loopingPlayheadsRef.current.has(phId)) {
+      stopSweep();
+      return;
+    }
+    const playhead = docRef.current.playheads.find((ph) => ph.id === phId);
+    if (!playhead) return;
+    loopActivePlayhead(playhead);
+  }, [stopSweep, loopActivePlayhead]);
+
+  const { mountRef, playerState, play, pause, endScrub, previewClipTiming, loopToDuringPlayback } =
+    usePlayheadPlayer(
     doc,
     activePlayhead,
     currentX,
     sweepActiveRef,
     handlePlaybackX,
     scrubbingActiveRef,
+    handlePlaybackEnd,
   );
 
   playRef.current = play;
   pauseRef.current = pause;
+  loopToDuringPlaybackRef.current = loopToDuringPlayback;
 
   const beginSweep = useCallback(
     (playheadId: string, startX: number) => {
@@ -212,6 +244,18 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     if (activePlayheadId && !doc.playheads.some((ph) => ph.id === activePlayheadId)) {
       onActivePlayheadChange(doc.playheads[0]?.id ?? null);
     }
+
+    setLoopingPlayheads((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const id of prev) {
+        if (!doc.playheads.some((ph) => ph.id === id)) {
+          next.delete(id);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
   }, [doc.playheads, activePlayheadId, onActivePlayheadChange]);
 
   const togglePlayPause = useCallback(() => {
@@ -241,12 +285,20 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     if (maxEnd <= playhead.x + 1) return;
 
     const startX = playheadCurrentX.get(playhead.id) ?? playhead.x;
+    if (
+      !isSweepingRef.current &&
+      loopingPlayheads.has(playhead.id) &&
+      startX >= maxEnd - 0.5
+    ) {
+      beginSweep(playhead.id, playhead.x);
+      return;
+    }
     if (autoSelected) {
       pendingSweepRef.current = { playheadId: playhead.id, startX };
       return;
     }
     beginSweep(playhead.id, startX);
-  }, [activePlayhead, doc, playheadCurrentX, beginSweep, stopSweep]);
+  }, [activePlayhead, doc, playheadCurrentX, loopingPlayheads, beginSweep, stopSweep]);
 
   togglePlayPauseRef.current = togglePlayPause;
 
@@ -378,6 +430,37 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
       return;
     }
 
+    if (event.key === 'l' || event.key === 'L') {
+      if (event.repeat) return;
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      if (!activePlayheadId) return;
+      event.preventDefault();
+      setLoopingPlayheads((prev) => {
+        const next = new Set(prev);
+        if (next.has(activePlayheadId)) next.delete(activePlayheadId);
+        else next.add(activePlayheadId);
+        return next;
+      });
+      return;
+    }
+
+    if (event.key === ',') {
+      if (event.repeat) return;
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      if (!activePlayheadId || !activePlayhead) return;
+      const originX = playheadCurrentX.get(activePlayhead.id) ?? activePlayhead.x;
+      if (originX === activePlayhead.x) return;
+      event.preventDefault();
+      changeDoc((d) => {
+        commitPlayheadOriginX(d, activePlayheadId, originX);
+      });
+      return;
+    }
+
     if (event.key === 'Delete' || event.key === 'Backspace') {
       if (event.target instanceof HTMLInputElement) return;
       event.preventDefault();
@@ -492,6 +575,8 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
           onScrubbingChange={onScrubbingChange}
           ghostPlayheads={ghostPlayheads}
           recordingPreview={recordingPreview}
+          loopingPlayheadIds={loopingPlayheads}
+          followPlayback={isSweeping && activePlayheadId !== null}
         />
 
         <Monitor

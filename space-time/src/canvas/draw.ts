@@ -155,6 +155,14 @@ function drawPlayhead(
   ctx.lineTo(ph.currentX, ph.y + ph.height);
   ctx.stroke();
 
+  if (ph.looping) {
+    ctx.font = '13px ui-sans-serif, system-ui, sans-serif';
+    ctx.fillStyle = ph.active ? theme.playheadActive : theme.playhead;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('↺', ph.currentX, ph.y + ph.height + 4);
+  }
+
   ctx.restore();
 }
 

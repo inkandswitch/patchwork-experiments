@@ -31,6 +31,7 @@ export type PlayheadLayout = {
   currentX: number;
   maxEndX: number;
   active: boolean;
+  looping: boolean;
 };
 
 export type GhostPlayheadLayout = GhostPlayhead & {
@@ -112,6 +113,7 @@ export function computeCanvasLayout(
   activePlayheadId: string | null,
   ghostPlayheads: GhostPlayhead[] = [],
   recordingPreview: RecordingPreview | null = null,
+  loopingPlayheadIds: ReadonlySet<string> = new Set(),
 ): CanvasLayout {
   const clips = doc.clips
     .map((clip) => computeClipLayout(doc, timing, clip))
@@ -125,6 +127,7 @@ export function computeCanvasLayout(
     currentX: playheadCurrentX.get(ph.id) ?? ph.x,
     maxEndX: maxEndXForPlayhead(doc, timing, ph),
     active: ph.id === activePlayheadId,
+    looping: loopingPlayheadIds.has(ph.id),
   }));
 
   const ghostLayouts = ghostPlayheads.map((ghost) => ({
@@ -248,6 +251,7 @@ export function applyPlayheadDuplicatePreview(
         currentX: playheadPreview.currentX,
         maxEndX,
         active: true,
+        looping: false,
       },
     ],
   };

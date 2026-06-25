@@ -42,6 +42,7 @@ import {
 import { drawCanvas, drawTimeRuler } from './draw';
 import {
   loadCamera,
+  panCameraToKeepPageXVisible,
   HANDLE_WIDTH,
   MIN_CLIP_DURATION,
   MIN_PLAYHEAD_HEIGHT,
@@ -265,6 +266,8 @@ type CanvasProps = {
   onScrubbingChange?: (scrubbing: boolean) => void;
   ghostPlayheads?: GhostPlayhead[];
   recordingPreview?: RecordingPreview | null;
+  loopingPlayheadIds?: ReadonlySet<string>;
+  followPlayback?: boolean;
 };
 
 export function Canvas({
@@ -283,6 +286,8 @@ export function Canvas({
   onScrubbingChange,
   ghostPlayheads = [],
   recordingPreview = null,
+  loopingPlayheadIds = new Set(),
+  followPlayback = false,
 }: CanvasProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -311,6 +316,8 @@ export function Canvas({
     hoveredClipId: null as string | null,
     ghostPlayheads,
     recordingPreview,
+    loopingPlayheadIds,
+    followPlayback,
     verticalDragPreview: null as { x: number; y0: number; y1: number; valid: boolean } | null,
   });
 
@@ -509,6 +516,7 @@ export function Canvas({
       deps.activePlayheadId,
       deps.ghostPlayheads,
       deps.recordingPreview,
+      deps.loopingPlayheadIds,
     );
   }, []);
 
@@ -529,10 +537,24 @@ export function Canvas({
     const w = ensureCanvasSize();
     if (w <= 0) return;
 
+    const deps = paintDepsRef.current;
+    if (
+      deps.followPlayback &&
+      deps.activePlayheadId &&
+      dragRef.current?.kind !== 'pan'
+    ) {
+      const playhead = deps.doc.playheads.find((ph) => ph.id === deps.activePlayheadId);
+      if (playhead) {
+        const currentX = deps.playheadCurrentX.get(playhead.id) ?? playhead.x;
+        if (panCameraToKeepPageXVisible(cameraRef.current, currentX, w)) {
+          saveCamera(docUrl, cameraRef.current);
+        }
+      }
+    }
+
     const h = root.clientHeight - 24;
     const theme = readCanvasTheme(root);
     const dpr = window.devicePixelRatio || 1;
-    const deps = paintDepsRef.current;
 
     const layout = computeCanvasLayout(
       deps.doc,
@@ -544,6 +566,7 @@ export function Canvas({
       deps.activePlayheadId,
       deps.ghostPlayheads,
       deps.recordingPreview,
+      deps.loopingPlayheadIds,
     );
 
     if (clipDragPreviewRef.current) {
@@ -597,10 +620,12 @@ export function Canvas({
       hoveredClipId,
       ghostPlayheads,
       recordingPreview,
+      loopingPlayheadIds,
+      followPlayback,
       verticalDragPreview: paintDepsRef.current.verticalDragPreview,
     };
     schedulePaint();
-  }, [doc, activePlayheadId, playheadCurrentX, selectedClipId, hoveredClipId, ghostPlayheads, recordingPreview, editingClipId]);
+  }, [doc, activePlayheadId, playheadCurrentX, selectedClipId, hoveredClipId, ghostPlayheads, recordingPreview, loopingPlayheadIds, followPlayback, editingClipId]);
 
   useEffect(() => {
     if (!editingClipId) return;

@@ -73,6 +73,7 @@ export function usePlayheadPlayer(
   sweepActiveRef?: React.RefObject<boolean>,
   onPlaybackX?: (x: number) => void,
   scrubbingActiveRef?: React.RefObject<boolean>,
+  onPlaybackEnd?: () => void,
 ) {
   const mountRef = useRef<HTMLDivElement>(null);
   const compositionRef = useRef<core.Composition | null>(null);
@@ -97,6 +98,8 @@ export function usePlayheadPlayer(
   const timeLogCountRef = useRef(0);
   const onPlaybackXRef = useRef(onPlaybackX);
   onPlaybackXRef.current = onPlaybackX;
+  const onPlaybackEndRef = useRef(onPlaybackEnd);
+  onPlaybackEndRef.current = onPlaybackEnd;
   const clipPreviewRef = useRef<ReadonlyMap<string, ClipTimingOverride> | null>(null);
   const clipPreviewTimerRef = useRef<number | null>(null);
   const clipPreviewGenerationRef = useRef(0);
@@ -262,6 +265,11 @@ export function usePlayheadPlayer(
     };
     composition.on('playback:time', onTime);
 
+    const onEnd = () => {
+      onPlaybackEndRef.current?.();
+    };
+    composition.on('playback:end', onEnd);
+
     const ro = new ResizeObserver(() => {
       layoutPlayer(mountEl, composition);
     });
@@ -270,6 +278,7 @@ export function usePlayheadPlayer(
 
     return () => {
       composition.off('playback:time', onTime);
+      composition.off('playback:end', onEnd);
       ro.disconnect();
       composition.unmount();
       compositionRef.current = null;
@@ -488,6 +497,26 @@ export function usePlayheadPlayer(
     }, 80);
   };
 
+  const loopToDuringPlayback = useCallback((x: number) => {
+    const composition = compositionRef.current;
+    if (!composition) return;
+    const seekTime = clampSeekTime(composition, xToTime(x));
+    enqueueCompositionTask(async () => {
+      if (composition.playing) {
+        setPlaybackPosition(composition, seekTime);
+        await safeCompositionUpdate(composition);
+        return;
+      }
+      playingRef.current = true;
+      try {
+        await composition.play(seekTime);
+      } catch (error) {
+        playingRef.current = false;
+        console.warn('[space-time] loop playback failed', error);
+      }
+    });
+  }, [enqueueCompositionTask]);
+
   const endScrub = async () => {
     scrubPlaybackActiveRef.current = false;
     stopScrubSyncLoop();
@@ -511,6 +540,7 @@ export function usePlayheadPlayer(
     seek,
     endScrub,
     previewClipTiming,
+    loopToDuringPlayback,
     loader: loaderRef.current,
   };
 }

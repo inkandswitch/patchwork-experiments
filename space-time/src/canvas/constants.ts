@@ -9,6 +9,8 @@ export const MIN_CLIP_DURATION = 0.25;
 export const MIN_PLAYHEAD_HEIGHT = 20;
 export const MIN_VERTICAL_DRAG_PX = 12;
 export const DEFAULT_IMAGE_DURATION = 5;
+/** Horizontal margin kept around the playhead line during playback follow-pan. */
+export const PLAYBACK_FOLLOW_MARGIN_SCREEN_PX = 120;
 
 export type Camera = {
   x: number;
@@ -79,6 +81,27 @@ export function pageToScreen(pageX: number, pageY: number, camera: Camera): { x:
     x: (pageX + camera.x) * camera.z,
     y: (pageY + camera.y) * camera.z,
   };
+}
+
+/** Pan camera.x only, as much as needed so pageX stays within horizontal screen margins. */
+export function panCameraToKeepPageXVisible(
+  camera: Camera,
+  pageX: number,
+  viewportWidthScreen: number,
+  marginLeftScreen = PLAYBACK_FOLLOW_MARGIN_SCREEN_PX,
+  marginRightScreen = PLAYBACK_FOLLOW_MARGIN_SCREEN_PX,
+): boolean {
+  if (viewportWidthScreen <= marginLeftScreen + marginRightScreen) return false;
+
+  const z = camera.z;
+  const screenX = (pageX + camera.x) * z;
+  const maxScreenX = viewportWidthScreen - marginRightScreen;
+  if (screenX >= marginLeftScreen && screenX <= maxScreenX) return false;
+
+  const prevX = camera.x;
+  camera.x =
+    screenX < marginLeftScreen ? marginLeftScreen / z - pageX : maxScreenX / z - pageX;
+  return camera.x !== prevX;
 }
 
 export function formatRulerTime(seconds: number): string {

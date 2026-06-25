@@ -53,6 +53,16 @@ export function commitPlayheadPosition(
   playhead.y = y;
 }
 
+export function commitPlayheadOriginX(
+  doc: SpaceTimeDoc,
+  playheadId: string,
+  x: number,
+): void {
+  const playhead = findPlayhead(doc, playheadId);
+  if (!playhead) return;
+  playhead.x = x;
+}
+
 export function deletePlayhead(doc: SpaceTimeDoc, playheadId: string): void {
   const index = doc.playheads.findIndex((ph) => ph.id === playheadId);
   if (index >= 0) doc.playheads.splice(index, 1);
