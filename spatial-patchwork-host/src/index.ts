@@ -2,9 +2,23 @@
  * Spatial Patchwork Host — plugin registration.
  *
  * Registers the host folder datatype + the host tool, a dedicated calibration
- * datatype (reuses the apriltag-projector schema, hidden from menus), and the
- * two spatial provider components (coordinate-system + apriltags).
+ * datatype (hidden from menus), the host-owned coordinate-system provider, and
+ * one provider component per recognition layer (derived from LAYERS, so adding
+ * a layer needs no edit here).
  */
+
+import { LAYERS } from "./layers/index.js";
+
+const layerComponentPlugins = LAYERS.map((layer) => ({
+  type: "patchwork:component" as const,
+  id: layer.providerComponentId,
+  name: layer.name,
+  async load() {
+    return (await import("./providers.js")).layerProviders[
+      layer.providerComponentId
+    ];
+  },
+}));
 
 export const plugins = [
   {
@@ -44,12 +58,5 @@ export const plugins = [
       return (await import("./providers.js")).SpatialCoordinateSystemProvider;
     },
   },
-  {
-    type: "patchwork:component",
-    id: "spatial-apriltags-provider",
-    name: "Spatial AprilTags Provider",
-    async load() {
-      return (await import("./providers.js")).SpatialApriltagsProvider;
-    },
-  },
+  ...layerComponentPlugins,
 ];

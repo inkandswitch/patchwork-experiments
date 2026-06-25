@@ -15,7 +15,6 @@ import type {
   CalibrationDoc,
 } from "./folder-datatype";
 import { CALIBRATION_DATATYPE_ID } from "./folder-datatype";
-import { createSpatialSource } from "./spatial-source";
 import { createCamera } from "./camera";
 import { ControlPanel } from "./ControlPanel";
 import { SetupPhase } from "./setup/SetupPhase";
@@ -27,9 +26,6 @@ export function App(props: {
 }) {
   const repo = useRepo() as Repo;
   const doc = makeDocumentProjection<SpatialHostDoc>(props.handle);
-
-  // Per-instance live data channel for the providers (no globals).
-  const source = createSpatialSource();
 
   // Single shared camera (panel toggle + setup capture + use detector).
   const camera = createCamera();
@@ -87,7 +83,6 @@ export function App(props: {
             hostDoc={doc}
             calDoc={calDoc()!}
             repo={repo}
-            source={source}
             camera={camera}
           />
         </Show>

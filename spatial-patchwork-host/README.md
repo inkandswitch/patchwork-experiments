@@ -38,11 +38,13 @@ Two top-level phases (toggled by `doc.hostMode`):
 
 ## The providers (the data interface)
 
-The host registers two `patchwork:component` providers and mounts them as
-`<patchwork-view component="…">` wrappers around the embedded view. They are
-**independent** (distinct selectors, no inter-dependency), so their nesting order
-is irrelevant. A tool inside the box subscribes with the inlined `subscribe`
-helper from `@inkandswitch/patchwork-providers`:
+The host mounts one `patchwork:component` provider per data source as
+`<patchwork-view component="…">` wrappers around the embedded view: the
+host-owned `spatial:coordinate-system`, plus one provider per **recognition
+layer** (AprilTags today; see Layers below). They are **independent** (distinct
+selectors), so their nesting order is irrelevant. A tool inside the box
+subscribes with the inlined `subscribe` helper from
+`@inkandswitch/patchwork-providers`:
 
 ```js
 // box dimensions (live CSS pixels), re-emitted on resize / re-align
@@ -67,21 +69,32 @@ returns box-normalized coordinates — there is no extra transform.
 
 ### Live data handoff (per instance, no globals)
 
-The host owns one `SpatialSource` (two `Emitter`s). It stamps it on each provider
-wrapper element via the `SPATIAL_SOURCE_KEY` JS property; each provider reads that
-property off its own element (lazily, at subscribe time) and relays its emitter to
-subscribers via `accept`. Because the source is per-host-instance, multiple hosts
-on one page never collide.
+The host builds, per instance, one `Emitter` per provider (coordinate-system +
+one per layer) and a `SpatialRegistry` (`Map<selector, Emitter>`). It stamps that
+registry on each provider wrapper via the `SPATIAL_REGISTRY_KEY` JS property; each
+relay provider looks up its Emitter by selector (lazily, at subscribe time) and
+relays it to subscribers via `accept`. Per-host-instance → multiple hosts on one
+page never collide.
 
-## Detection
+## Recognition layers
 
-The camera + detector subsystem is ported from `apriltag-projector` (`tag36h11`
-WASM detector in a Comlink Web Worker). Each pass maps the tag **center and all
-four corners** through the camera→board homography into normalized box coords,
-derives `angle` from corner0→corner1, and pushes the tag list into
-`source.apriltags`. Autofocus/zoom are locked (`applyConstraints`) so the image
-stays geometrically stable, and 4K capture is kept while the detector downscales
-to `DETECT_MAX_DIM` (1280) — see `apriltag-core.js` constants.
+Recognition is **pluggable**. The host owns the camera, calibration, and a single
+shared **frame loop** (`frame-loop.ts`) that each tick grabs the camera frame,
+downscales it to grayscale, builds a `mapPointToBox(px)→[0..1]` mapper from the
+calibration homography, and fans a `Frame` to every layer's recognizer. A layer
+(`src/layers/<name>/`) provides a `Recognizer` (`ensure`/`process(frame)`/`stop`)
+and publishes its results into an Emitter the host relays on the layer's selector.
+
+The only layer today is **AprilTags** (`src/layers/apriltags/`): a `tag36h11` WASM
+detector in a Comlink Web Worker. Per frame it maps each tag's **center and four
+corners** to normalized box coords, derives `angle`, culls out-of-board tags, and
+publishes `{ tags }` on `spatial:apriltags`. (Autofocus/zoom are locked and 4K
+capture kept while the loop downscales to `DETECT_MAX_DIM` — see `apriltag-core.js`.)
+
+**Adding a layer** (line drawings, words, …): create `src/layers/<name>/` with a
+recognizer + a `SpatialLayer` descriptor, and add it to `LAYERS` in
+`src/layers/index.ts`. `index.ts`, `providers.ts`, and `UseStage.tsx` all derive
+from `LAYERS`, so nothing else changes. Layers never touch the camera directly.
 
 ## Files
 
@@ -92,22 +105,31 @@ not its DOM.
 
 ```
 src/
-  index.ts             plugins[]: host datatype + tool, calibration datatype, 2 providers
+  index.ts             plugins[]: host datatype + tool, calibration datatype,
+                       coord-system provider + one provider per layer (from LAYERS)
   main.tsx             render contract: mounts <App> in RepoContext, returns disposer
   App.tsx              phase switch; ensures calibration doc; reactive host/cal docs
   ControlPanel.tsx     ONE unified draggable/collapsible bar (Setup/Use + mode controls)
   CreateNew.tsx        kobalte dropdown of listed datatypes → child doc
   camera.ts            shared reactive camera controller (one getUserMedia stream)
+  frame-loop.ts        shared per-tick grab→downscale→grayscale + mapPointToBox;
+                       fans the Frame to every layer's recognizer
   setup/
     SetupPhase.tsx     stage: align view-box, target dots, test markers + arrow-key nudge
     AlignBox.tsx       draggable/resizable alignment outline
     CameraPanel.tsx    large draggable click-to-capture camera + overlay crosshairs
     calibrate-logic.ts solveSetup / calibrationStatus / captureCount (wrap core math)
   use/
-    UseStage.tsx       box sub-rect + provider wrappers + embedded view + detector wiring
-  spatial-source.ts    Emitter + SpatialSource + SPATIAL_SOURCE_KEY + selectors
-  providers.ts         the two relay provider components
-  detection.ts         camera + Comlink worker; maps center+corners; feeds SpatialSource
+    UseStage.tsx       box sub-rect + N+1 provider wrappers + embedded view + frame loop
+  layers/
+    types.ts           Frame / Recognizer / SpatialLayer contract
+    index.ts           LAYERS[] — the one place to register a layer
+    apriltags/
+      types.ts         SpatialTag(s) + "spatial:apriltags" selector
+      recognizer.ts    tag36h11 Comlink WASM worker; maps center+corners; publishes
+      index.ts         apriltagsLayer descriptor
+  spatial-source.ts    Emitter + CoordinateSystem + SPATIAL_REGISTRY_KEY (generic)
+  providers.ts         makeRelayProvider(selector) + coord provider + per-layer providers
   apriltag-core.js     copied apriltag-projector, used as a MATH/DETECTOR LIBRARY
   apriltag-core.d.ts   type declarations for the reused exports
 vendor/                apriltag.js (worker), apriltag_wasm.js/.wasm, comlink.js/.mjs

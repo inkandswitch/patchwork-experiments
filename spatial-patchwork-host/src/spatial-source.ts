@@ -1,9 +1,15 @@
 /**
- * Per-host-instance live data channel between the host tool and the provider
- * components wrapping its embedded view. The host owns one SpatialSource and
- * stamps it on the provider wrapper elements (SPATIAL_SOURCE_KEY); each provider
- * reads it off its own element and relays the relevant Emitter to subscribers.
- * Per-instance (never global) → multiple hosts on one page never collide.
+ * Generic per-host-instance plumbing shared by the host framework and the
+ * recognition layers.
+ *
+ * The host owns the camera + calibration and exposes live data to embedded tools
+ * through provider components. Each provider relays one `Emitter` to its
+ * subscribers; the host wires emitter→provider by stamping a per-instance
+ * registry (selector → Emitter) on every provider wrapper element. Per-instance
+ * (never global) → multiple hosts on one page never collide.
+ *
+ * Layer-specific payload types (e.g. AprilTags) live in their layer module, not
+ * here, so this stays generic.
  */
 
 /** A tiny last-value pub/sub. New subscribers immediately get the current value. */
@@ -36,40 +42,19 @@ export class Emitter<T> {
   }
 }
 
+/** Host-owned provider: the aligned box size in live CSS pixels. */
 export type CoordinateSystem = { width: number; height: number };
-
-export type SpatialTagCorner = { nx: number; ny: number };
-
-export type SpatialTag = {
-  id: number;
-  /** center, normalized 0..1 within the box (canonical) */
-  nx: number;
-  ny: number;
-  /** radians, derived from corner0 -> corner1 */
-  angle: number;
-  corners: SpatialTagCorner[];
-};
-
-export type SpatialTags = { tags: SpatialTag[] };
-
-export interface SpatialSource {
-  coordinateSystem: Emitter<CoordinateSystem>;
-  apriltags: Emitter<SpatialTags>;
-}
-
-export function createSpatialSource(): SpatialSource {
-  return {
-    coordinateSystem: new Emitter<CoordinateSystem>({ width: 0, height: 0 }),
-    apriltags: new Emitter<SpatialTags>({ tags: [] }),
-  };
-}
-
-/** Property key the host stamps on the provider wrapper <patchwork-view> elements. */
-export const SPATIAL_SOURCE_KEY = "__spatialSource";
-
-export type SpatialSourceHost = HTMLElement & {
-  [SPATIAL_SOURCE_KEY]?: SpatialSource;
-};
-
 export const COORDINATE_SYSTEM_SELECTOR = "spatial:coordinate-system";
-export const APRILTAGS_SELECTOR = "spatial:apriltags";
+
+/**
+ * Per-host registry stamped on every provider wrapper element: maps a provider
+ * selector to the Emitter that wrapper should relay. Replaces the old hardcoded
+ * SpatialSource shape so any number of layers can plug in.
+ */
+export type SpatialRegistry = Map<string, Emitter<unknown>>;
+
+export const SPATIAL_REGISTRY_KEY = "__spatialRegistry";
+
+export type SpatialRegistryHost = HTMLElement & {
+  [SPATIAL_REGISTRY_KEY]?: SpatialRegistry;
+};
