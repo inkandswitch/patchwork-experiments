@@ -21,3 +21,17 @@ export const LATLNG_QUERY: SchemaQuery = {
   name: "Geo positions",
   schema: LATLNG_JSON_SCHEMA,
 };
+
+// An ordered list of places — a path / route. The map draws each match as a
+// polyline and renders markers only for its start and end. The empty array is
+// filtered by the schema resolver; 1-point arrays are filtered by the map.
+export const LATLNG_LINE_JSON_SCHEMA = z.toJSONSchema(
+  z.array(z.object({ lat: z.number(), lon: z.number() })),
+) as unknown as JsonSchema;
+
+export const LATLNG_LINE_KEY = schemaKey(LATLNG_LINE_JSON_SCHEMA);
+
+export const LATLNG_LINE_QUERY: SchemaQuery = {
+  name: "Geo lines",
+  schema: LATLNG_LINE_JSON_SCHEMA,
+};

@@ -14,7 +14,12 @@ import {
   SchemaQueries,
   Selection,
 } from "../canvas/channels";
-import { LATLNG_KEY, LATLNG_QUERY } from "../canvas/well-known-schemas";
+import {
+  LATLNG_KEY,
+  LATLNG_QUERY,
+  LATLNG_LINE_KEY,
+  LATLNG_LINE_QUERY,
+} from "../canvas/well-known-schemas";
 import {
   DEFAULT_CENTER,
   DEFAULT_ZOOM,
@@ -27,6 +32,15 @@ import "./map.css";
 const STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
 // Pins are blue; CSS intensifies/glows them while focused (see map.css).
 const MARKER_COLOR = "#3b82f6";
+// Geo lines are drawn through a GeoJSON source/layer (a DOM marker can't sit
+// behind a polyline). A focused line — its owning document is emphasized
+// elsewhere — thickens and darkens via maplibre feature-state.
+const LINE_SOURCE = "embark-lines";
+const LINE_LAYER = "embark-lines";
+const LINE_COLOR = "#3b82f6";
+const LINE_FOCUS_COLOR = "#1d4ed8";
+const LINE_WIDTH = 3;
+const LINE_FOCUS_WIDTH = 6;
 // Floating-point slack so a viewport we just wrote (then read straight back)
 // doesn't count as a change and bounce between map and doc forever.
 const COORD_EPSILON = 1e-6;
@@ -107,8 +121,11 @@ export const MapTool: ToolRender = (rawHandle, element) => {
   // The first accurate bounds are only available once the map has measured its
   // container, so seed the home box on load (center/zoom already match the doc).
   // Skip if an overlay has already moved the camera, so we never freeze a
-  // widened frame as home.
+  // widened frame as home. The line source/layer can only be added once the
+  // style is loaded, so set it up here and draw whatever has resolved so far.
   const onLoad = () => {
+    setupLines();
+    renderLines();
     if (!overlayActive) persistBounds();
   };
   map.on("load", onLoad);
@@ -159,6 +176,28 @@ export const MapTool: ToolRender = (rawHandle, element) => {
   // The highlight entry this map currently owns (the hovered marker's doc),
   // cleared on mouse-out or when the marker goes away.
   let hovered: AutomergeUrl | undefined;
+
+  // Geo lines, drawn into one GeoJSON source. A line is keyed by its match url
+  // (the point array) and carries its owning document so it highlights in step
+  // with that document. A multi-line / polygon arrives as several of these — one
+  // per ring — since each ring is itself an `array of {lat,lon}` match.
+  type Geometry = {
+    url: AutomergeUrl;
+    docId: string;
+    docUrl: AutomergeUrl;
+    coords: [number, number][];
+  };
+  const geometries = new Map<AutomergeUrl, Geometry>();
+  let geomEpoch = 0;
+  // Point matches that are interior vertices of a line — suppressed so a line
+  // shows markers only at its start and end.
+  let interiorPoints = new Set<string>();
+  // The latest {lat,lon} point emission, replayed once geometries (which resolve
+  // async) settle, so interior-vertex suppression can be applied to markers.
+  let lastPointMatches: AutomergeUrl[] = [];
+  // The line-doc whose hover currently owns a highlight entry, so the layer's
+  // mouseleave can release exactly it.
+  let hoveredLineDoc: AutomergeUrl | undefined;
 
   // Hover tooltip: a single reused popup that embeds a <patchwork-view> of the
   // hovered pin's document. The match url points at the {lat, lon} subtree,
@@ -256,6 +295,14 @@ export const MapTool: ToolRender = (rawHandle, element) => {
   const markerPositions = (): maplibregl.LngLat[] =>
     [...markers.values()].map((marker) => marker.getLngLat());
 
+  const linePositions = (): maplibregl.LngLat[] => {
+    const out: maplibregl.LngLat[] = [];
+    for (const g of geometries.values()) {
+      for (const [lng, lat] of g.coords) out.push(new maplibregl.LngLat(lng, lat));
+    }
+    return out;
+  };
+
   // The resting frame: home, widened just enough to also show any markers that
   // fall outside the home box (never tighter than the home zoom). `widened` is
   // false when home already contains every marker — then we rest exactly at
@@ -267,7 +314,7 @@ export const MapTool: ToolRender = (rawHandle, element) => {
   } => {
     const home = homeView();
     const homeCenter = new maplibregl.LngLat(home.center[0], home.center[1]);
-    const positions = markerPositions();
+    const positions = [...markerPositions(), ...linePositions()];
     const box = homeBounds();
     const outside = box ? positions.filter((p) => !box.contains(p)) : positions;
     if (positions.length === 0 || outside.length === 0) {
@@ -344,10 +391,46 @@ export const MapTool: ToolRender = (rawHandle, element) => {
     );
   };
 
-  // Recompute and ease to the overlay target: the base frame, possibly
-  // overridden by a focus zoom-in. Always programmatic, so it never persists —
-  // only the manual-move handler writes the doc.
+  // When a line/line-group's document is focused, the whole geometry is framed
+  // (together with any focused markers of the same doc). Returns the bounds to
+  // fit, or null when nothing geometric is focused — then point crowding and the
+  // base frame take over. Depends only on geometry (not the live camera), so it
+  // is stable across recomputes and simply clears when the focus does.
+  const focusBounds = (): maplibregl.LngLatBounds | null => {
+    const points: [number, number][] = [];
+    for (const g of geometries.values()) {
+      if (!focusedDocIds.has(g.docId)) continue;
+      for (const c of g.coords) points.push(c);
+    }
+    if (points.length === 0) return null;
+    for (const [match, marker] of markers) {
+      if (!focusedDocIds.has(parseAutomergeUrl(match).documentId)) continue;
+      const ll = marker.getLngLat();
+      points.push([ll.lng, ll.lat]);
+    }
+    const bounds = new maplibregl.LngLatBounds(points[0], points[0]);
+    for (const c of points) bounds.extend(c);
+    return bounds;
+  };
+
+  // Recompute and ease to the overlay target. Precedence: a focused line (frame
+  // the whole geometry) > a crowded focused pin (zoom in) > the base frame.
+  // Always programmatic, so it never persists — only the manual-move handler
+  // writes the doc.
   const applyViewport = () => {
+    const fit = focusBounds();
+    if (fit) {
+      const cam = map.cameraForBounds(fit, { padding: 80, maxZoom: MAX_FOCUS_ZOOM });
+      if (cam?.center && cam.zoom !== undefined) {
+        overlayActive = true;
+        const center = maplibregl.LngLat.convert(cam.center);
+        const zoom = Math.min(cam.zoom, MAX_FOCUS_ZOOM);
+        if (!cameraEquals(center, zoom)) {
+          map.easeTo({ center, zoom, duration: 600 });
+        }
+        return;
+      }
+    }
     const base = baseCamera();
     const focus = focusCamera(base.zoom);
     const target = focus ?? base;
@@ -405,8 +488,10 @@ export const MapTool: ToolRender = (rawHandle, element) => {
     }
     focusedDocIds = ids;
     for (const [match, marker] of markers) styleMarker(match, marker);
-    // A focus change can crowd/uncrowd a pin, so re-derive the overlay (zoom in
-    // on a crowded focused pin, or fall back to the base frame when it clears).
+    applyLineFocus();
+    // A focus change can crowd/uncrowd a pin or (un)focus a line, so re-derive
+    // the overlay (frame a focused line, zoom in on a crowded pin, or fall back
+    // to the base frame when focus clears).
     scheduleApply();
   };
 
@@ -457,7 +542,16 @@ export const MapTool: ToolRender = (rawHandle, element) => {
 
   const onMatches = (matches: AutomergeUrl[]) => {
     const generation = ++epoch;
-    const wanted = new Set(matches);
+    // A point that is an interior vertex of a line gets no marker of its own —
+    // only the line's start and end do.
+    const visible = matches.filter((match) => !interiorPoints.has(match));
+    console.log("[embark-map] onMatches", {
+      matches,
+      interior: [...interiorPoints],
+      suppressed: matches.filter((m) => interiorPoints.has(m)),
+      visible,
+    });
+    const wanted = new Set(visible);
     for (const [match, marker] of markers) {
       if (wanted.has(match)) continue;
       const docUrl = marker.getElement().dataset.docUrl as
@@ -468,7 +562,7 @@ export const MapTool: ToolRender = (rawHandle, element) => {
       marker.remove();
       markers.delete(match);
     }
-    for (const match of matches) {
+    for (const match of visible) {
       if (!markers.has(match)) void addMarker(match, generation);
     }
     // Each addMarker also schedules, but removals need their own nudge so the
@@ -476,13 +570,178 @@ export const MapTool: ToolRender = (rawHandle, element) => {
     scheduleApply();
   };
 
-  // Publish the {lat, lon} schema query and consume its matches.
+  // --- Geo lines ------------------------------------------------------------
+  // Hovering a line emphasizes its source document (so its embed glows and, via
+  // the focus union, the line itself thickens). Routed through the same single
+  // `hovered` token as markers — only one thing is ever under the pointer.
+  const onLineMove = (event: maplibregl.MapLayerMouseEvent) => {
+    const feature = event.features?.[0];
+    const docUrl = feature?.properties?.docUrl as AutomergeUrl | undefined;
+    if (!docUrl) return;
+    map.getCanvas().style.cursor = "pointer";
+    if (hoveredLineDoc === docUrl) return;
+    if (hoveredLineDoc) clearHovered(hoveredLineDoc);
+    hoveredLineDoc = docUrl;
+    setHovered(docUrl);
+  };
+
+  const onLineLeave = () => {
+    map.getCanvas().style.cursor = "";
+    if (!hoveredLineDoc) return;
+    clearHovered(hoveredLineDoc);
+    hoveredLineDoc = undefined;
+  };
+
+  const setupLines = () => {
+    if (map.getSource(LINE_SOURCE)) return;
+    map.addSource(LINE_SOURCE, {
+      type: "geojson",
+      // Drive feature-state by the geometry's url, so highlight survives data
+      // updates (markers and lines reconcile independently).
+      promoteId: "url",
+      data: { type: "FeatureCollection", features: [] },
+    });
+    map.addLayer({
+      id: LINE_LAYER,
+      type: "line",
+      source: LINE_SOURCE,
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": [
+          "case",
+          ["boolean", ["feature-state", "focused"], false],
+          LINE_FOCUS_COLOR,
+          LINE_COLOR,
+        ],
+        "line-width": [
+          "case",
+          ["boolean", ["feature-state", "focused"], false],
+          LINE_FOCUS_WIDTH,
+          LINE_WIDTH,
+        ],
+        "line-opacity": 0.9,
+      },
+    });
+    map.on("mousemove", LINE_LAYER, onLineMove);
+    map.on("mouseleave", LINE_LAYER, onLineLeave);
+  };
+
+  const renderLines = () => {
+    const source = map.getSource(LINE_SOURCE) as
+      | maplibregl.GeoJSONSource
+      | undefined;
+    if (!source) return;
+    const features: GeoJSON.Feature[] = [...geometries.values()].map((g) => ({
+      type: "Feature",
+      id: g.url,
+      properties: { url: g.url, docUrl: g.docUrl },
+      geometry: { type: "LineString", coordinates: g.coords },
+    }));
+    source.setData({ type: "FeatureCollection", features });
+    applyLineFocus();
+  };
+
+  // Mirror the focus union onto the line layer (feature-state drives the paint
+  // expression). No-op until the style — and thus the source — has loaded.
+  const applyLineFocus = () => {
+    if (!map.getSource(LINE_SOURCE)) return;
+    for (const g of geometries.values()) {
+      map.setFeatureState(
+        { source: LINE_SOURCE, id: g.url },
+        { focused: focusedDocIds.has(g.docId) },
+      );
+    }
+  };
+
+  // Resolve each line match (an `array of {lat,lon}`) into its coordinates,
+  // skipping the degenerate 1-point case. A multi-line / polygon shows up as
+  // several matches here (one per ring), so each is just another line.
+  const resolveLines = async (urls: AutomergeUrl[]): Promise<Geometry[]> => {
+    const geoms: Geometry[] = [];
+    for (const url of urls) {
+      try {
+        const handle = await Promise.resolve(repo.find<unknown>(url));
+        const coords = toRing(handle.doc());
+        if (!coords || coords.length < 2) continue;
+        const docId = parseAutomergeUrl(url).documentId;
+        geoms.push({
+          url,
+          docId,
+          docUrl: `automerge:${docId}` as AutomergeUrl,
+          coords,
+        });
+      } catch {
+        // ignore docs that fail to load
+      }
+    }
+    return geoms;
+  };
+
+  // Rebuild the whole line set from the latest matches, recompute interior-
+  // vertex suppression (so a line keeps only its start/end markers), and redraw.
+  // A generation guard drops a pass superseded by a newer emission.
+  const rebuildGeometries = async (lineUrls: AutomergeUrl[]) => {
+    const generation = ++geomEpoch;
+    const lines = await resolveLines(lineUrls);
+    if (generation !== geomEpoch) return;
+
+    const next = new Map<AutomergeUrl, Geometry>();
+    for (const g of lines) next.set(g.url, g);
+    for (const url of geometries.keys()) {
+      if (!next.has(url) && map.getSource(LINE_SOURCE)) {
+        map.removeFeatureState({ source: LINE_SOURCE, id: url });
+      }
+    }
+    geometries.clear();
+    for (const [url, g] of next) geometries.set(url, g);
+
+    // A vertex's match url is the line's url plus an automerge array-index
+    // segment, which serializes with an `@` prefix (e.g. `…/route/@1`). Only the
+    // interior vertices are suppressed, so the start and end keep their markers.
+    const interior = new Set<string>();
+    for (const g of geometries.values()) {
+      for (let i = 1; i < g.coords.length - 1; i++) interior.add(`${g.url}/@${i}`);
+    }
+    interiorPoints = interior;
+
+    console.log("[embark-map] rebuilt geometries", {
+      lineUrls,
+      resolved: [...geometries.values()].map((g) => ({
+        url: g.url,
+        n: g.coords.length,
+      })),
+      interior: [...interiorPoints],
+      pointMatchesSample: lastPointMatches.slice(0, 8),
+      // Does the first line's first interior vertex url appear among the point
+      // matches? If not, the sub-url format doesn't line up.
+      sampleVertexInMatches:
+        [...interiorPoints][0] !== undefined
+          ? lastPointMatches.includes([...interiorPoints][0] as AutomergeUrl)
+          : "n/a",
+    });
+
+    renderLines();
+    // Re-apply suppression to the markers now that interiorPoints is current.
+    onMatches(lastPointMatches);
+    scheduleApply();
+  };
+
+  // Publish the geo schema queries (positions, lines) and consume their matches:
+  // points become markers, lines become polylines.
   const schemaQueries = getContextHandle(element, SchemaQueries);
   schemaQueries?.change((slice) => {
     slice[LATLNG_KEY] = LATLNG_QUERY;
+    slice[LATLNG_LINE_KEY] = LATLNG_LINE_QUERY;
   });
   const unsubscribeMatches = subscribeContext(element, SchemaMatches, (all) => {
-    onMatches(all[LATLNG_KEY] ?? []);
+    lastPointMatches = all[LATLNG_KEY] ?? [];
+    const lineMatches = all[LATLNG_LINE_KEY] ?? [];
+    console.log("[embark-map] schema matches", {
+      points: lastPointMatches,
+      lines: lineMatches,
+    });
+    void rebuildGeometries(lineMatches);
+    onMatches(lastPointMatches);
   });
 
   return () => {
@@ -498,13 +757,30 @@ export const MapTool: ToolRender = (rawHandle, element) => {
     markers.clear();
     if (resizeSyncTimer) clearTimeout(resizeSyncTimer);
     resizeObserver.disconnect();
+    geometries.clear();
     handle.off("change", onDocChange);
     map.off("moveend", onMoveEnd);
     map.off("load", onLoad);
+    map.off("mousemove", LINE_LAYER, onLineMove);
+    map.off("mouseleave", LINE_LAYER, onLineLeave);
     map.remove();
     container.remove();
   };
 };
+
+// Read a ring of [lng, lat] pairs from an array of `{ lat, lon }` nodes. Returns
+// null for a non-array or any malformed element, so a partial ring is dropped
+// rather than drawn wrong.
+function toRing(node: unknown): [number, number][] | null {
+  if (!Array.isArray(node)) return null;
+  const out: [number, number][] = [];
+  for (const element of node) {
+    const coords = toLngLat(element);
+    if (!coords) return null;
+    out.push(coords);
+  }
+  return out;
+}
 
 // Read a [lng, lat] tuple from a matched node shaped like `{ lat, lon }`.
 function toLngLat(node: unknown): [number, number] | null {

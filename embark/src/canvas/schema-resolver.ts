@@ -329,7 +329,14 @@ function collectMatches(
   handle: DocHandle<unknown>,
   out: AutomergeUrl[],
 ): void {
-  if (schema.safeParse(node).success) out.push(handle.sub(...segments).url);
+  // An empty array vacuously satisfies any "array of X" schema, but an empty
+  // collection is never a meaningful occurrence (e.g. an empty route), so don't
+  // report it. Non-empty arrays that are merely too short for a given consumer
+  // are left for that consumer to filter (the map drops 1-point lines).
+  const vacuousArray = Array.isArray(node) && node.length === 0;
+  if (!vacuousArray && schema.safeParse(node).success) {
+    out.push(handle.sub(...segments).url);
+  }
 
   if (Array.isArray(node)) {
     node.forEach((child, index) =>
