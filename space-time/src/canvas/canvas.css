@@ -1,0 +1,29 @@
+.st-canvas-root {
+  --st-bg: oklch(96% 0.01 260);
+  --st-grid: oklch(90% 0.01 260);
+  --st-grid-major: oklch(84% 0.02 260);
+  --st-border: oklch(82% 0.02 260);
+  --st-text: oklch(25% 0.02 260);
+  --st-text-muted: oklch(50% 0.02 260);
+  --st-clip-fill: oklch(78% 0.08 250);
+  --st-clip-fill-hover: oklch(74% 0.1 250);
+  --st-clip-stroke: oklch(60% 0.1 250);
+  --st-clip-selected-fill: oklch(72% 0.12 280);
+  --st-clip-selected-stroke: oklch(55% 0.14 280);
+  --st-handle-fill: oklch(88% 0.02 260);
+  --st-playhead: oklch(65% 0.15 25);
+  --st-playhead-active: oklch(55% 0.2 25);
+  --st-playhead-band: oklch(65% 0.15 25);
+  --st-playhead-band-active: oklch(55% 0.2 25);
+  --st-danger: oklch(55% 0.2 25);
+  background: var(--st-bg);
+}
+
+.st-ruler {
+  background: var(--st-bg);
+  border-bottom: 1px solid var(--st-border);
+}
+
+.st-canvas {
+  touch-action: none;
+}
