@@ -5,11 +5,10 @@ import type { Clip, Playhead, SpaceTimeDoc, Source } from '../types';
 import {
   clipSequenceTime,
   clipToDiffusionTiming,
-  clipWidth,
   resolveClipPlayDuration,
 } from '../clip-timing';
 import { isDocEmpty, resolveSourceMimeType, resolveSourceUrl } from '../helpers';
-import { CLIP_HEIGHT, rangesOverlap } from '../canvas/constants';
+import { clipsInPlayheadExtent } from '../canvas/playhead-extent';
 
 type LoadedSource = core.BaseSource;
 
@@ -167,60 +166,15 @@ function effectiveClip(clip: Clip, override: ClipTimingOverride | undefined): Cl
   };
 }
 
-function clipOverlapsPlayheadVertically(clip: Clip, playhead: Playhead): boolean {
-  return rangesOverlap(
-    clip.y,
-    clip.y + CLIP_HEIGHT,
-    playhead.y,
-    playhead.y + playhead.height,
-  );
-}
-
-function maxEndXForTouchableClips(
-  doc: SpaceTimeDoc,
-  playhead: Playhead,
-  timing: Map<string, ClipTimingInfo>,
-): number {
-  let max = playhead.x;
-  for (const clip of doc.clips) {
-    if (!clipOverlapsPlayheadVertically(clip, playhead)) continue;
-    const playDuration = resolveClipPlayDuration(clip, timing.get(clip.id)?.sourceLength);
-    max = Math.max(max, clip.x + clipWidth(clip, playDuration));
-  }
-  return max;
-}
-
-function clipOverlapsPlayheadRegion(
-  clip: Clip,
-  playhead: Playhead,
-  timing: Map<string, ClipTimingInfo>,
-  maxEndX: number,
-): boolean {
-  if (!clipOverlapsPlayheadVertically(clip, playhead)) return false;
-  const playDuration = resolveClipPlayDuration(clip, timing.get(clip.id)?.sourceLength);
-  const width = clipWidth(clip, playDuration);
-  return rangesOverlap(clip.x, clip.x + width, playhead.x, maxEndX);
-}
-
 function touchableClipsForPlayhead(
   doc: SpaceTimeDoc,
   playhead: Playhead,
   timing: Map<string, ClipTimingInfo>,
 ): Clip[] {
-  const maxEndX = maxEndXForTouchableClips(doc, playhead, timing);
-  return doc.clips
-    .filter((clip) => clipOverlapsPlayheadRegion(clip, playhead, timing, maxEndX))
-    .sort((a, b) => a.y - b.y || a.id.localeCompare(b.id));
+  return clipsInPlayheadExtent(doc, playhead, timing);
 }
 
-/** Clips inside the active playhead's vertical band and horizontal extent. */
-export function clipsInPlayheadExtent(
-  doc: SpaceTimeDoc,
-  playhead: Playhead,
-  timing: Map<string, ClipTimingInfo>,
-): Clip[] {
-  return touchableClipsForPlayhead(doc, playhead, timing);
-}
+export { clipsInPlayheadExtent } from '../canvas/playhead-extent';
 
 export function playheadCompositionStructureKey(
   doc: SpaceTimeDoc,

@@ -4,6 +4,7 @@ import type { ClipTimingInfo } from '../diffusion/sync-composition';
 import type { Clip, Playhead, SpaceTimeDoc } from '../types';
 import { clipDisplayName, DEFAULT_IMAGE_DURATION } from '../helpers';
 import { clipWidth } from '../clip-timing';
+import { clipsInPlayheadExtent, maxEndXForPlayhead } from './playhead-extent';
 import {
   CLIP_HEIGHT,
   HANDLE_WIDTH,
@@ -331,19 +332,7 @@ export function clipTouchesPlayhead(
   return rangesOverlap(clip.y, clip.y + clip.height, playhead.y, playhead.y + playhead.height);
 }
 
-export function maxEndXForPlayhead(
-  doc: SpaceTimeDoc,
-  timing: Map<string, ClipTimingInfo>,
-  playhead: Playhead,
-): number {
-  let max = playhead.x;
-  for (const clip of doc.clips) {
-    const layout = computeClipLayout(doc, timing, clip);
-    if (!clipTouchesPlayhead(layout, playhead)) continue;
-    max = Math.max(max, layout.x + layout.width);
-  }
-  return max;
-}
+export { maxEndXForPlayhead } from './playhead-extent';
 
 export function clipStartBeforePlayhead(
   doc: SpaceTimeDoc,
@@ -352,9 +341,8 @@ export function clipStartBeforePlayhead(
   currentX: number,
 ): number | null {
   let best: number | null = null;
-  for (const clip of doc.clips) {
+  for (const clip of clipsInPlayheadExtent(doc, playhead, timing)) {
     const layout = computeClipLayout(doc, timing, clip);
-    if (!clipTouchesPlayhead(layout, playhead)) continue;
     if (layout.x >= currentX) continue;
     if (best === null || layout.x > best) best = layout.x;
   }
@@ -368,9 +356,8 @@ export function clipStartAfterPlayhead(
   currentX: number,
 ): number | null {
   let best: number | null = null;
-  for (const clip of doc.clips) {
+  for (const clip of clipsInPlayheadExtent(doc, playhead, timing)) {
     const layout = computeClipLayout(doc, timing, clip);
-    if (!clipTouchesPlayhead(layout, playhead)) continue;
     if (layout.x <= currentX) continue;
     if (best === null || layout.x < best) best = layout.x;
   }
