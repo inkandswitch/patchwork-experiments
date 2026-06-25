@@ -40,8 +40,8 @@ export function createApriltagRecognizer(
   } | null = null;
   let status: RecognizerStatus = "idle";
   let inFlight = false;
-  // `framePoly` = the tag's detected quad in downscaled-frame px (for the mask +
-  // host blackout); `tag` = the published box-coord payload.
+  // `framePoly` = the tag's detected quad in downscaled-frame px (for the claim
+  // mask); `tag` = the published box-coord payload.
   const liveTags = new Map<
     string,
     { tag: SpatialTag; framePoly: FramePoint[]; at: number }
@@ -124,7 +124,7 @@ export function createApriltagRecognizer(
                 corners[1]![0] - corners[0]![0],
               )
             : 0;
-          // Raw quad in downscaled-frame px for the claim mask / blackout.
+          // Raw quad in downscaled-frame px for the claim mask.
           const framePoly: FramePoint[] = cornersOk
             ? rawCorners.map((c) => ({ x: c.x, y: c.y }))
             : [];
@@ -154,8 +154,8 @@ export function createApriltagRecognizer(
   // NOTE: tags are only expired by the post-detection sweep above — never on a
   // wall clock. The host frame loop skips detection when the scene is static
   // (no frame change), so a held-still tag's timestamp isn't refreshed; a
-  // wall-clock sweep would then delete it ~once per `staleMs` and the blackout
-  // would flash on/off. Expiring only after a detection pass that actually
+  // wall-clock sweep would then delete it ~once per `staleMs` and the published
+  // tag would flash on/off. Expiring only after a detection pass that actually
   // missed the tag keeps a static tag stable, and a removed tag IS a frame
   // change so detection re-runs and expires it correctly.
 

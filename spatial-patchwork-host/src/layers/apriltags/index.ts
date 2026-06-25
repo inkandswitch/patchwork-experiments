@@ -9,7 +9,4 @@ export const apriltagsLayer: SpatialLayer<SpatialTags> = {
   name: "Spatial AprilTags Provider",
   initialResult: () => ({ tags: [] }),
   createRecognizer: (emitter) => createApriltagRecognizer(emitter),
-  // Black out each tag's published quad (corners are already box-normalized).
-  toBlackoutPolygons: (result) =>
-    result.tags.map((t) => t.corners).filter((c) => c.length >= 3),
 };

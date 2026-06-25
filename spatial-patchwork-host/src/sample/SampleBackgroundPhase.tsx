@@ -4,8 +4,8 @@ import type { Camera } from "../camera";
 
 /**
  * Sample-background phase. The aligned box projects the NEUTRAL Use view — a
- * black fill with the white border, and nothing else (no embedded tool, no
- * blackout) — so the camera samples the empty surface under exactly the lighting
+ * black fill with the white border, and nothing else (no embedded tool) — so
+ * the camera samples the empty surface under exactly the lighting
  * present during Use. The actual "Sample background" action + status live in the
  * control panel (no camera preview here). Auto-starts the camera (off-screen) so
  * a grab is available when the operator samples.

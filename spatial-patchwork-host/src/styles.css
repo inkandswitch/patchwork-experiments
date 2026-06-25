@@ -37,10 +37,8 @@
   position: absolute;
   inset: 2px;
   background: #000;
-  /* Establish a stacking context so everything inside the stage (incl. the
-     z-index:100 blackout) stays BELOW the host control panel (z-index:40 at
-     root). Without this the blackout would paint over the panel and you
-     couldn't interact with anything. */
+  /* Establish a stacking context so everything inside the stage stays BELOW the
+     host control panel (z-index:40 at root). */
   z-index: 0;
 }
 
@@ -76,25 +74,14 @@
 /* The embedded-tool subtree (outermost provider wrapper) is given its OWN
    stacking context with a low z-index. `isolation: isolate` means any z-index
    the embedded tool sets internally is trapped inside this context and can
-   never paint over the blackout or the host chrome. */
+   never paint over the host chrome. */
 .sph-box > .sph-provider {
   isolation: isolate;
   z-index: 1;
 }
 
-/* Host blackout — fills recognized polygons black, above the embedded tool.
-   Below the host border/chrome. Non-interactive. */
-.sph-blackout {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 2;
-}
-
-/* Always-visible outline of the active area — above the blackout so a blacked
-   out shape near the edge never covers the border. Non-interactive. Corners
+/* Always-visible outline of the active area — above the embedded tool so a
+   tool overlay near the edge never covers the border. Non-interactive. Corners
    sit inside the box so .sph-box overflow:hidden doesn't clip them. */
 .sph-box-outline {
   position: absolute;
@@ -102,11 +89,7 @@
   box-sizing: border-box;
   border: 3px solid rgba(255, 255, 255, 0.85);
   pointer-events: none;
-  z-index: 3;
-}
-.sph-blackout polygon {
-  fill: #000;
-  stroke: none;
+  z-index: 2;
 }
 
 /* ---- Alignment view-box (setup/align) ---- */

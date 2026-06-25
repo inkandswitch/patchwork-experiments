@@ -1,11 +1,10 @@
 /**
  * Host-owned shared frame loop + ordered recognition pipeline.
  *
- * Each tick: grab the camera frame, downscale to grayscale, and — if the frame
- * changed meaningfully since last tick — run every recognizer IN ORDER, sharing
- * a per-tick claim mask so later layers ignore regions earlier layers claimed.
- * After the pipeline, the union of all claimed polygons (mapped to box coords)
- * is published on `blackout` so the host can fill them black above everything.
+ * Each tick: grab the camera frame, downscale to grayscale, and run every
+ * recognizer IN ORDER, sharing a per-tick claim mask so later layers ignore
+ * regions earlier layers claimed. Each layer publishes its own results (box
+ * coords) via its Emitter for embedded tools to subscribe to.
  */
 
 import { DETECT_INTERVAL_MS, cameraPointToBoard } from "./apriltag-core.js";
@@ -75,7 +74,7 @@ export function createFrameLoop(opts: FrameLoopOptions): FrameLoop {
 
       // Detection runs every tick (no frame-change skip): recognized things must
       // re-evaluate live so transient occlusions (e.g. a person walking through)
-      // clear immediately instead of leaving a stuck blackout.
+      // clear immediately instead of leaving a stuck recognition.
 
       // Shared per-tick claim mask.
       if (!mask || mask.length !== w * h) mask = new Uint8Array(w * h);
@@ -107,8 +106,6 @@ export function createFrameLoop(opts: FrameLoopOptions): FrameLoop {
       // Ordered pipeline. Each layer processes the frame (reading the mask =
       // regions EARLIER layers already claimed), then stamps its OWN claims into
       // the mask so LATER layers ignore them. A layer never masks itself out.
-      // (The host blackout is derived separately in UseStage from each layer's
-      // published box-coord results — not here.)
       for (const r of recognizers) {
         if (r.status !== "ready") continue;
         try {

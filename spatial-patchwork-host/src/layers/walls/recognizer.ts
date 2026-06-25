@@ -3,7 +3,7 @@
  * grayscale frame (ignoring pixels earlier layers already claimed), simplifies
  * each outline to a polygon, tracks stable ids frame-to-frame, and publishes
  * box-normalized shapes on `spatial:walls`. It also stamps its outlines into the
- * shared mask (claimSync) and reports them (frame px) for the host blackout.
+ * shared claim mask (claimSync) so later layers ignore them.
  *
  * Pure JS, runs on the main thread within the per-tick budget at the downscaled
  * frame size. Tunables are the constants below.
@@ -57,7 +57,7 @@ type Tracked = {
   id: number;
   cx: number; // box-space centroid
   cy: number;
-  frame: FramePoint[]; // outline in frame px (for mask/blackout)
+  frame: FramePoint[]; // outline in frame px (for the claim mask)
   box: { nx: number; ny: number }[]; // outline in box coords (published)
   at: number;
   seen: number; // consecutive frames matched (appear-debounce)
@@ -218,8 +218,8 @@ export function createWallsRecognizer(emitter: Emitter<Walls>): Recognizer {
     }
 
     tracked = nextTracked;
-    // Mask/blackout only claim PUBLISHED shapes (post-debounce), matching what's
-    // emitted to consumers.
+    // The claim mask only claims PUBLISHED shapes (post-debounce), matching
+    // what's emitted to consumers.
     lastFramePolys = tracked.filter((t) => t.published).map((t) => t.frame);
     publish();
   }

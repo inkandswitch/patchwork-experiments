@@ -9,7 +9,4 @@ export const wallsLayer: SpatialLayer<Walls> = {
   name: "Spatial Walls Provider",
   initialResult: () => ({ shapes: [] }),
   createRecognizer: (emitter) => createWallsRecognizer(emitter),
-  // Black out each recognized drawing/object outline.
-  toBlackoutPolygons: (result) =>
-    result.shapes.map((s) => s.points).filter((p) => p.length >= 3),
 };

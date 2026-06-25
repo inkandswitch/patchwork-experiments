@@ -88,14 +88,4 @@ export interface SpatialLayer<Result = unknown> {
    * stamp it on the wrapper) and passes it in; the recognizer publishes via it.
    */
   createRecognizer(emitter: Emitter<Result>): Recognizer;
-  /**
-   * Map this layer's PUBLISHED result to the polygons (box-normalized 0..1) the
-   * host should fill black ("blackout"). A pure function of the published
-   * payload — the single source of truth — so the blackout never lags the
-   * publish or diverges in coordinates. Return [] when there's nothing to mask.
-   */
-  toBlackoutPolygons(result: Result): BoxPoint[][];
 }
-
-/** A point in box-normalized [0..1] coordinates. */
-export type BoxPoint = { nx: number; ny: number };

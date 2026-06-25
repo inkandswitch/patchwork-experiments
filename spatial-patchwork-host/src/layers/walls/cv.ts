@@ -87,7 +87,7 @@ export function buildForegroundMasks(
  * buffer). Bridges noise-broken gaps in thin marker strokes into one connected
  * component and thickens faint strokes so they survive — without the erode of a
  * full "close", which would eat thin lines (a few px wide) out of existence.
- * Growing the mask slightly is fine here (it only affects the blackout outline).
+ * Growing the mask slightly is fine here (it only affects the recognized outline).
  */
 export function dilateMask(
   src: Uint8Array,
