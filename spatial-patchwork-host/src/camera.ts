@@ -8,6 +8,7 @@
  */
 
 import { createSignal } from "solid-js";
+import { grabGray } from "./grab-gray.js";
 
 export type CameraSize = { w: number; h: number };
 
@@ -16,6 +17,8 @@ export function createCamera() {
   video.autoplay = true;
   video.muted = true;
   video.playsInline = true;
+  // Scratch canvas for one-off grabs (background sampling).
+  const grabCanvas = document.createElement("canvas");
 
   const [active, setActive] = createSignal(false);
   const [liveSize, setLiveSize] = createSignal<CameraSize | null>(null);
@@ -144,6 +147,12 @@ export function createCamera() {
     refreshDevices,
     dispose,
     getLiveSize: () => liveSize(),
+    /**
+     * Grab the current frame as a downscaled grayscale buffer (detector dims),
+     * for background sampling. Returns null if no frame is available.
+     */
+    grabGray: (): Uint8Array | null =>
+      grabGray(video, grabCanvas, liveSize())?.gray ?? null,
   };
 }
 

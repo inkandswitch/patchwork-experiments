@@ -1,4 +1,11 @@
-import { createMemo, createResource, onCleanup, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  onCleanup,
+  Show,
+} from "solid-js";
 import type { AutomergeUrl, DocHandle, Repo } from "@automerge/automerge-repo";
 import {
   makeDocumentProjection,
@@ -19,6 +26,7 @@ import { createCamera } from "./camera";
 import { ControlPanel } from "./ControlPanel";
 import { SetupPhase } from "./setup/SetupPhase";
 import { UseStage } from "./use/UseStage";
+import type { HostMode } from "./folder-datatype";
 
 export function App(props: {
   handle: DocHandle<SpatialHostDoc>;
@@ -30,6 +38,19 @@ export function App(props: {
   // Single shared camera (panel toggle + setup capture + use detector).
   const camera = createCamera();
   onCleanup(() => camera.dispose());
+
+  // Ephemeral, per-instance empty-surface background reference (downscaled
+  // grayscale). Sampled in the Sample phase, read by the Use frame loop. Never
+  // persisted. Switching camera device invalidates it.
+  const [background, setBackground] = createSignal<Uint8Array | null>(null);
+  let lastDeviceId: string | undefined = camera.deviceId();
+  createEffect(() => {
+    const id = camera.deviceId();
+    if (id !== lastDeviceId) {
+      lastDeviceId = id;
+      setBackground(null);
+    }
+  });
 
   // Ensure the dedicated calibration doc exists; create it lazily once.
   const [calibrationUrl] = createResource<AutomergeUrl, string>(
@@ -51,12 +72,21 @@ export function App(props: {
   const calHandle = useDocHandle<CalibrationDoc>(() => calibrationUrl());
   const calDoc = createDocumentProjection<CalibrationDoc>(calHandle);
 
-  const mode = createMemo(() => (doc.hostMode === "use" ? "use" : "setup"));
+  // Flow is Setup → Use (the Sample phase is shelved with walls). An old
+  // persisted "sample" value falls through to "setup".
+  const mode = createMemo<HostMode>(() =>
+    doc.hostMode === "use" ? "use" : "setup",
+  );
 
-  const setHostMode = (m: "setup" | "use") =>
+  // Calibration must be solved before Use is usable.
+  const calibrated = createMemo(() => !!calDoc()?.homographyCamToBoard);
+
+  const setHostMode = (m: HostMode) => {
+    if (m === "use" && !calibrated()) return; // gate Use behind a solved calibration
     props.handle.change((d) => {
       d.hostMode = m;
     });
+  };
 
   const requestFullscreen = () => {
     props.element.requestFullscreen?.().catch(() => {});
@@ -84,6 +114,7 @@ export function App(props: {
             calDoc={calDoc()!}
             repo={repo}
             camera={camera}
+            getBackground={background}
           />
         </Show>
       </Show>
@@ -98,6 +129,9 @@ export function App(props: {
         setHostMode={setHostMode}
         requestFullscreen={requestFullscreen}
         camera={camera}
+        calibrated={calibrated()}
+        hasBackground={!!background()}
+        onSample={() => setBackground(camera.grabGray())}
       />
     </div>
   );

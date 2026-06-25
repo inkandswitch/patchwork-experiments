@@ -1,18 +1,22 @@
 /**
- * Host-owned shared frame loop. Each tick it grabs the camera frame, downscales
- * it to grayscale, builds a camera→box mapper from the current calibration
- * homography, and fans the resulting `Frame` to every registered recognizer.
- * Recognition itself lives in the layers (src/layers/<name>/recognizer.ts).
+ * Host-owned shared frame loop + ordered recognition pipeline.
+ *
+ * Each tick: grab the camera frame, downscale to grayscale, and — if the frame
+ * changed meaningfully since last tick — run every recognizer IN ORDER, sharing
+ * a per-tick claim mask so later layers ignore regions earlier layers claimed.
+ * After the pipeline, the union of all claimed polygons (mapped to box coords)
+ * is published on `blackout` so the host can fill them black above everything.
  */
 
-import {
-  DETECT_INTERVAL_MS,
-  DETECT_MAX_DIM,
-  cameraPointToBoard,
-} from "./apriltag-core.js";
-import type { Frame, Recognizer } from "./layers/types.js";
+import { DETECT_INTERVAL_MS, cameraPointToBoard } from "./apriltag-core.js";
+import { grabGray } from "./grab-gray.js";
+import type { Frame, Recognizer, FramePoint } from "./layers/types.js";
 
 type Size = { w: number; h: number };
+
+// Mean abs grayscale diff below this (0..255) → treat the frame as unchanged and
+// skip the recognition pipeline this tick (keeps last published results).
+const CHANGE_THRESHOLD = 2.0;
 
 export interface FrameLoopOptions {
   video: HTMLVideoElement;
@@ -20,11 +24,22 @@ export interface FrameLoopOptions {
   getDocState: () => { homographyCamToBoard: number[] | null } | null;
   getLiveSize: () => Size | null;
   recognizers: Recognizer[];
+  /**
+   * The sampled empty-surface grayscale reference (or null), read fresh each
+   * tick and handed to recognizers as `frame.backgroundGray`. In-memory only.
+   */
+  getBackground: () => Uint8Array | null;
 }
 
 export interface FrameLoop {
   /** ensure() every recognizer (lazy worker spin-up) and start the loop. */
   ensureAll(): Promise<void>;
+  /**
+   * Grab the current camera frame at the SAME downscaled dims the detector uses
+   * and return it as a grayscale reference (for background sampling), or null if
+   * no frame is available. (Dormant while no layer uses a background.)
+   */
+  sampleBackground(): Uint8Array | null;
   stop(): void;
 }
 
@@ -35,18 +50,31 @@ function nowMs(): number {
 }
 
 export function createFrameLoop(opts: FrameLoopOptions): FrameLoop {
-  const { video, getDocState, getLiveSize, recognizers } = opts;
+  const { video, getDocState, getLiveSize, recognizers, getBackground } = opts;
   const canvas = document.createElement("canvas");
   let timer: ReturnType<typeof setInterval> | null = null;
   let inFlight = false;
+  let mask: Uint8Array | null = null;
+  let prevGray: Uint8Array | null = null;
 
   function startLoop() {
     if (timer) return;
     timer = setInterval(() => tick(), DETECT_INTERVAL_MS);
   }
 
-  // Only the synchronous grab/downscale/grayscale is guarded by `inFlight`;
-  // each recognizer guards its own async work internally.
+  const grab = () => grabGray(video, canvas, getLiveSize());
+
+  // Mean absolute per-pixel grayscale difference vs the previous frame.
+  function meanAbsDiff(gray: Uint8Array): number {
+    if (!prevGray || prevGray.length !== gray.length) return Infinity;
+    let sum = 0;
+    for (let i = 0; i < gray.length; i++) {
+      const d = gray[i] - prevGray[i];
+      sum += d < 0 ? -d : d;
+    }
+    return sum / gray.length;
+  }
+
   function tick(): void {
     if (inFlight) return;
     const docState = getDocState();
@@ -57,35 +85,54 @@ export function createFrameLoop(opts: FrameLoopOptions): FrameLoop {
 
     inFlight = true;
     try {
-      const scale = Math.min(
-        1,
-        DETECT_MAX_DIM / Math.max(liveSize.w, liveSize.h),
-      );
-      const w = Math.max(1, Math.round(liveSize.w * scale));
-      const h = Math.max(1, Math.round(liveSize.h * scale));
-      if (canvas.width !== w) canvas.width = w;
-      if (canvas.height !== h) canvas.height = h;
-      const ctx = canvas.getContext("2d", { willReadFrequently: true });
-      if (!ctx) return;
-      ctx.drawImage(video, 0, 0, w, h);
-      const rgba = ctx.getImageData(0, 0, w, h).data;
-      const gray = new Uint8Array(w * h);
-      for (let i = 0, p = 0; i < gray.length; i++, p += 4) {
-        gray[i] = (rgba[p] * 77 + rgba[p + 1] * 150 + rgba[p + 2] * 29) >> 8;
-      }
+      const grabbed = grab();
+      if (!grabbed) return;
+      const { gray, w, h, scale } = grabbed;
 
-      const mapPointToBox = (px: { x: number; y: number }) => {
+      // Frame-change skip: leave last results + blackout untouched when static.
+      if (meanAbsDiff(gray) < CHANGE_THRESHOLD) {
+        prevGray = gray;
+        return;
+      }
+      prevGray = gray;
+
+      // Shared per-tick claim mask.
+      if (!mask || mask.length !== w * h) mask = new Uint8Array(w * h);
+      else mask.fill(0);
+
+      const mapPointToBox = (px: FramePoint): [number, number] | null => {
         const cameraPoint: [number, number] = [px.x / scale, px.y / scale];
         return cameraPointToBoard(docState, cameraPoint, liveSize) as
           | [number, number]
           | null;
       };
 
-      const frame: Frame = { gray, w, h, scale, mapPointToBox, now: nowMs() };
+      // Hand the background reference to recognizers only if it aligns with the
+      // current frame dims (camera renegotiation would invalidate it).
+      const bg = getBackground();
+      const backgroundGray = bg && bg.length === w * h ? bg : null;
+
+      const frame: Frame = {
+        gray,
+        w,
+        h,
+        scale,
+        mask,
+        backgroundGray,
+        mapPointToBox,
+        now: nowMs(),
+      };
+
+      // Ordered pipeline. Each layer processes the frame (reading the mask =
+      // regions EARLIER layers already claimed), then stamps its OWN claims into
+      // the mask so LATER layers ignore them. A layer never masks itself out.
+      // (The host blackout is derived separately in UseStage from each layer's
+      // published box-coord results — not here.)
       for (const r of recognizers) {
         if (r.status !== "ready") continue;
         try {
           r.process(frame);
+          r.claimSync(frame);
         } catch (err) {
           console.error("[frame-loop] recognizer threw:", err);
         }
@@ -96,6 +143,9 @@ export function createFrameLoop(opts: FrameLoopOptions): FrameLoop {
   }
 
   return {
+    sampleBackground() {
+      return grab()?.gray ?? null;
+    },
     async ensureAll() {
       await Promise.all(recognizers.map((r) => r.ensure().catch(() => {})));
       startLoop();
@@ -106,6 +156,8 @@ export function createFrameLoop(opts: FrameLoopOptions): FrameLoop {
         timer = null;
       }
       inFlight = false;
+      mask = null;
+      prevGray = null;
       for (const r of recognizers) r.stop();
     },
   };

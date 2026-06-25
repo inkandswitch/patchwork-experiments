@@ -15,7 +15,7 @@ export type DocLink = {
 
 export type BarPosition = { left: number; top: number };
 
-export type HostMode = "setup" | "use";
+export type HostMode = "setup" | "sample" | "use";
 
 export type SpatialHostDoc = {
   title: string;

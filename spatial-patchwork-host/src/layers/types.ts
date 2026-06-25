@@ -12,6 +12,9 @@
 
 import type { Emitter } from "../spatial-source.js";
 
+/** A pixel point in downscaled-frame coordinates. */
+export type FramePoint = { x: number; y: number };
+
 /** One downscaled camera frame, fanned to every layer's recognizer per tick. */
 export interface Frame {
   /** Grayscale buffer, length w*h. */
@@ -22,11 +25,23 @@ export interface Frame {
   /** Downscaled px = camera px * scale. */
   scale: number;
   /**
+   * Shared per-tick claim mask, length w*h, 1 = a pixel already claimed by an
+   * earlier layer in the pipeline. Recognizers READ it to ignore claimed
+   * regions and WRITE it (via claimSync) to mark their own. Reset each tick.
+   */
+  mask: Uint8Array;
+  /**
+   * The sampled empty-surface grayscale reference (same w*h as `gray`), or null
+   * if none sampled. In-memory detection data only — never displayed. Layers
+   * that do background-difference detection compare `gray` against this.
+   */
+  backgroundGray: Uint8Array | null;
+  /**
    * Map a downscaled-image pixel to box-normalized [0..1] coordinates (board
    * space == the aligned box), or null if it can't be mapped. Built by the host
    * from the current calibration homography.
    */
-  mapPointToBox(px: { x: number; y: number }): [number, number] | null;
+  mapPointToBox(px: FramePoint): [number, number] | null;
   /** performance.now() for this tick. */
   now: number;
 }
@@ -37,6 +52,13 @@ export type RecognizerStatus = "idle" | "loading" | "ready" | "error";
 export interface Recognizer {
   /** Lazy/async init (e.g. spin up a wasm worker). Idempotent. */
   ensure(): Promise<void>;
+  /**
+   * Synchronously stamp this layer's currently-claimed regions into
+   * `frame.mask` (set claimed pixels to 1) BEFORE later layers run. Stamped
+   * from the recognizer's most recent results, so it stays synchronous even if
+   * `process` is async. Runs before `process` each tick.
+   */
+  claimSync(frame: Frame): void;
   /** Called once per tick with the shared frame. Cheap no-op until ready. */
   process(frame: Frame): void;
   /** Tear down workers/timers and clear published state. */
@@ -66,4 +88,14 @@ export interface SpatialLayer<Result = unknown> {
    * stamp it on the wrapper) and passes it in; the recognizer publishes via it.
    */
   createRecognizer(emitter: Emitter<Result>): Recognizer;
+  /**
+   * Map this layer's PUBLISHED result to the polygons (box-normalized 0..1) the
+   * host should fill black ("blackout"). A pure function of the published
+   * payload — the single source of truth — so the blackout never lags the
+   * publish or diverges in coordinates. Return [] when there's nothing to mask.
+   */
+  toBlackoutPolygons(result: Result): BoxPoint[][];
 }
+
+/** A point in box-normalized [0..1] coordinates. */
+export type BoxPoint = { nx: number; ny: number };

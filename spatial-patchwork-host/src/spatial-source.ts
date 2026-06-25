@@ -38,6 +38,13 @@ export class Emitter<T> {
 
   subscribe(listener: (value: T) => void): () => void {
     this.#listeners.add(listener);
+    // Deliver the current value immediately (matches the doc comment) so late
+    // subscribers sync without waiting for the next set().
+    try {
+      listener(this.#value);
+    } catch (err) {
+      console.error("[spatial-source] listener threw:", err);
+    }
     return () => this.#listeners.delete(listener);
   }
 }

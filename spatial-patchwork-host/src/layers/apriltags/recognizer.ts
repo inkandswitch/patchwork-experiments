@@ -10,7 +10,13 @@
 
 import { BOARD_MARGIN } from "../../apriltag-core.js";
 import type { Emitter } from "../../spatial-source.js";
-import type { Frame, Recognizer, RecognizerStatus } from "../types.js";
+import type {
+  Frame,
+  Recognizer,
+  RecognizerStatus,
+  FramePoint,
+} from "../types.js";
+import { fillPolygon } from "../raster.js";
 import type { SpatialTag, SpatialTags } from "./types.js";
 
 type RawDetection = {
@@ -18,12 +24,6 @@ type RawDetection = {
   center: { x: number; y: number };
   corners: { x: number; y: number }[];
 };
-
-function nowMs(): number {
-  return typeof performance !== "undefined" && performance.now
-    ? performance.now()
-    : Date.now();
-}
 
 export function createApriltagRecognizer(
   emitter: Emitter<SpatialTags>,
@@ -40,7 +40,12 @@ export function createApriltagRecognizer(
   } | null = null;
   let status: RecognizerStatus = "idle";
   let inFlight = false;
-  const liveTags = new Map<string, { tag: SpatialTag; at: number }>();
+  // `framePoly` = the tag's detected quad in downscaled-frame px (for the mask +
+  // host blackout); `tag` = the published box-coord payload.
+  const liveTags = new Map<
+    string,
+    { tag: SpatialTag; framePoly: FramePoint[]; at: number }
+  >();
 
   function setStatus(next: RecognizerStatus, error?: string) {
     status = next;
@@ -119,6 +124,10 @@ export function createApriltagRecognizer(
                 corners[1]![0] - corners[0]![0],
               )
             : 0;
+          // Raw quad in downscaled-frame px for the claim mask / blackout.
+          const framePoly: FramePoint[] = cornersOk
+            ? rawCorners.map((c) => ({ x: c.x, y: c.y }))
+            : [];
           liveTags.set(String(det.id), {
             tag: {
               id: det.id,
@@ -129,6 +138,7 @@ export function createApriltagRecognizer(
                 ? corners.map((c) => ({ nx: c![0], ny: c![1] }))
                 : [],
             },
+            framePoly,
             at: now,
           });
         }
@@ -141,19 +151,38 @@ export function createApriltagRecognizer(
       });
   }
 
-  // Expire stale tags independent of detection cadence.
-  const staleTimer = setInterval(() => {
-    if (liveTags.size && sweepStale(nowMs())) publish();
-  }, 250);
+  // NOTE: tags are only expired by the post-detection sweep above — never on a
+  // wall clock. The host frame loop skips detection when the scene is static
+  // (no frame change), so a held-still tag's timestamp isn't refreshed; a
+  // wall-clock sweep would then delete it ~once per `staleMs` and the blackout
+  // would flash on/off. Expiring only after a detection pass that actually
+  // missed the tag keeps a static tag stable, and a removed tag IS a frame
+  // change so detection re-runs and expires it correctly.
+
+  function framePolys(): FramePoint[][] {
+    const out: FramePoint[][] = [];
+    for (const entry of liveTags.values()) {
+      if (entry.framePoly.length >= 3) out.push(entry.framePoly);
+    }
+    return out;
+  }
 
   return {
     ensure,
     process,
+    claimSync(frame: Frame) {
+      // Stamp the most recent tag quads into the shared mask (frame px) so a
+      // later layer (e.g. walls) ignores them. From last results → synchronous
+      // despite the async worker; one-frame lag, self-correcting. (Dormant while
+      // walls is unregistered; harmless.)
+      for (const poly of framePolys()) {
+        fillPolygon(frame.mask, frame.w, frame.h, poly);
+      }
+    },
     get status() {
       return status;
     },
     stop() {
-      clearInterval(staleTimer);
       detector = null;
       if (worker) {
         worker.terminate();

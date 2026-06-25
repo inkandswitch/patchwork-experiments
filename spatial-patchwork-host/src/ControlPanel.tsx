@@ -4,6 +4,7 @@ import type {
   SpatialHostDoc,
   CalibrationDoc,
   CalibrationMode,
+  HostMode,
 } from "./folder-datatype";
 import { CreateNew } from "./CreateNew";
 import {
@@ -28,10 +29,16 @@ export function ControlPanel(props: {
   calHandle: DocHandle<CalibrationDoc> | undefined;
   calDoc: CalibrationDoc | undefined;
   repo: Repo;
-  mode: "setup" | "use";
-  setHostMode: (m: "setup" | "use") => void;
+  mode: HostMode;
+  setHostMode: (m: HostMode) => void;
   requestFullscreen: () => void;
   camera: Camera;
+  /** Whether calibration is solved (gates Sample/Use). */
+  calibrated: boolean;
+  /** Whether a background has been sampled (for status + Use readiness). */
+  hasBackground: boolean;
+  /** Sample the current frame as the empty-surface background. */
+  onSample: () => void;
 }) {
   // Collapse is LOCAL to this screen — not persisted to the doc — so collapsing
   // on one display doesn't hide the panel on the projector or other viewers.
@@ -80,7 +87,8 @@ export function ControlPanel(props: {
       </div>
 
       <Show when={!collapsed()}>
-        {/* Top-level Setup / Use switch — always first. */}
+        {/* Top-level Setup / Use switch — always first. Use is gated until
+            calibration is solved. */}
         <div class="sph-seg">
           <button
             data-active={props.mode === "setup" ? "" : undefined}
@@ -90,6 +98,7 @@ export function ControlPanel(props: {
           </button>
           <button
             data-active={props.mode === "use" ? "" : undefined}
+            disabled={!props.calibrated}
             onClick={() => props.setHostMode("use")}
           >
             Use

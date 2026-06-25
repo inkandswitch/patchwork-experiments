@@ -1,4 +1,11 @@
-import { createEffect, onCleanup, onMount, type JSX } from "solid-js";
+import {
+  createEffect,
+  createSignal,
+  For,
+  onCleanup,
+  onMount,
+  type JSX,
+} from "solid-js";
 import type { DocHandle, Repo } from "@automerge/automerge-repo";
 import type { SpatialHostDoc, CalibrationDoc } from "../folder-datatype";
 import {
@@ -30,6 +37,8 @@ export function UseStage(props: {
   calDoc: CalibrationDoc;
   repo: Repo;
   camera: Camera;
+  /** Ephemeral empty-surface grayscale reference (or null). */
+  getBackground: () => Uint8Array | null;
 }) {
   let boxEl!: HTMLDivElement;
   let embedded!: HTMLElement; // patchwork-view
@@ -47,6 +56,12 @@ export function UseStage(props: {
   registry.set(COORDINATE_SYSTEM_SELECTOR, coordEmitter as Emitter<unknown>);
   LAYERS.forEach((l, i) =>
     registry.set(l.selector, layerEmitters[i] as Emitter<unknown>),
+  );
+
+  // Host blackout: union of all recognized polygons (box coords), filled black
+  // ABOVE everything so the projector never lights a recognized thing.
+  const [blackout, setBlackout] = createSignal<{ nx: number; ny: number }[][]>(
+    [],
   );
 
   const box = () => props.calDoc.cameraViewBox;
@@ -94,11 +109,29 @@ export function UseStage(props: {
       getDocState: () => makeDefaultDocState(props.calDoc) as never,
       getLiveSize: () => props.camera.getLiveSize(),
       recognizers,
+      getBackground: () => props.getBackground(),
     });
     if (props.camera.active()) void loop.ensureAll();
 
+    // Host blackout: union the box-coord blackout polygons of EVERY layer's
+    // latest PUBLISHED result. A pure function of published results — no
+    // frame-loop timing, no async lag; each Emitter holds its last value across
+    // change-detection skips. Generic across N layers (no index hardcoding).
+    const recompute = () => {
+      const polys: { nx: number; ny: number }[][] = [];
+      LAYERS.forEach((layer, i) => {
+        for (const poly of layer.toBlackoutPolygons(layerEmitters[i].value)) {
+          if (poly.length >= 3) polys.push(poly);
+        }
+      });
+      setBlackout(polys);
+    };
+    // subscribe() fires once immediately with the current value, seeding the signal.
+    const offs = layerEmitters.map((e) => e.subscribe(recompute));
+
     onCleanup(() => {
       ro.disconnect();
+      offs.forEach((off) => off());
       loop?.stop(); // tears down every recognizer + worker
       loop = null;
       if (video.parentElement) video.parentElement.removeChild(video);
@@ -151,6 +184,23 @@ export function UseStage(props: {
           <div class="sph-corner bl" />
           <div class="sph-corner br" />
         </div>
+
+        {/* Host blackout — fills every recognized polygon black, ABOVE
+            everything (incl. tool overlays), so the projector never lights a
+            recognized thing and corrupts the next frame's recognition. */}
+        <svg
+          class="sph-blackout"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+        >
+          <For each={blackout()}>
+            {(poly) => (
+              <polygon
+                points={poly.map((p) => `${p.nx * 100},${p.ny * 100}`).join(" ")}
+              />
+            )}
+          </For>
+        </svg>
       </div>
     </div>
   );
