@@ -1,0 +1,16 @@
+{
+  "name": "@patchwork/spatial-walls",
+  "version": "0.0.1",
+  "description": "Demo tool for the spatial host: echoes recognized drawings/objects as black polygons with white borders",
+  "type": "module",
+  "main": "spatial-walls.js",
+  "exports": {
+    ".": "spatial-walls.js"
+  },
+  "scripts": {
+    "push": "pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  },
+  "keywords": [],
+  "author": "Ink & Switch"
+}
