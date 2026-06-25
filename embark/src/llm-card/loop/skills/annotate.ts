@@ -12,7 +12,7 @@ export const ANNOTATE_SKILL: Skill = {
 Find where a data shape occurs on the canvas and attach stickers (highlights / inline text) to those documents. The effect renders nothing visible - it is pure behavior.
 
 You use these channels:
-  schema:queries  { [key]: JSONSchema }       - ask "where does this shape occur?" by writing your schema under a key you pick.
+  schema:queries  { [key]: { name, schema } } - ask "where does this shape occur?" by writing a named JSON Schema under a key you pick (name is a short human label).
   schema:matches  { [key]: AutomergeUrl[] }   - the canvas writes the matching urls back under that same key.
   stickers        { [docUrl]: Sticker[] }     - attach stickers to documents, keyed by the TARGET DOCUMENT url.
 
@@ -31,7 +31,7 @@ Reach the store with getStore(element). Write your schema under a key you choose
   const store = getStore(element);
   const KEY = "annotate:markdown"; // any unique string; matches come back under it
   const queries = store.handle(SchemaQueries);
-  queries.change((s) => { s[KEY] = MARKDOWN_SCHEMA; });
+  queries.change((s) => { s[KEY] = { name: "Markdown documents", schema: MARKDOWN_SCHEMA }; });
   const onMatches = (urls) => { /* urls = store.read(SchemaMatches)[KEY] ?? [] */ };
   const unsubscribe = store.subscribe(SchemaMatches, () => onMatches(store.read(SchemaMatches)[KEY] ?? []));
   onMatches(store.read(SchemaMatches)[KEY] ?? []); // seed: subscribe has no initial call

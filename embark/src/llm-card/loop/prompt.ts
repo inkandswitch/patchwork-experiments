@@ -49,7 +49,7 @@ const SchemaMatches = { name: "schema:matches", empty: {} };
 const schema = { type: "object", properties: { "@patchwork": { type: "object", properties: { type: { const: "markdown" } }, required: ["type"] }, content: { type: "string" } }, required: ["@patchwork", "content"] };
 const KEY = "probe:markdown"; // any unique key; matches come back under the same key
 const q = store.handle(SchemaQueries);
-q.change((s) => { s[KEY] = schema; });
+q.change((s) => { s[KEY] = { name: "Markdown documents", schema }; }); // value is { name, schema }
 await new Promise((r) => setTimeout(r, 400));
 for (const url of store.read(SchemaMatches)[KEY] ?? []) {
   const doc = (await repo.find(url)).doc();
@@ -90,11 +90,11 @@ The channels (name — shape — who reads / writes):
   search:results        { [query]: AutomergeUrl[] }     you write result urls per query
   commands:queries      { [query]: true }              the editor writes ("" = bare "/"); you read
   commands:suggestions  { [query]: Suggestion[] }       you write suggestions per query
-  schema:queries        { [key]: JSONSchema }           you write a schema under any unique key you pick
+  schema:queries        { [key]: { name, schema } }     you write a named JSON Schema under any unique key you pick
   schema:matches        { [key]: AutomergeUrl[] }       the canvas writes match urls under your key
   stickers              { [docUrl]: Sticker[] }         you write stickers per target doc; renderers read
 
-For schema matching you choose the key and read the answer back under the SAME key (use a unique string so you don't collide with another card). The loaded skill tells you which channels to use and their exact shapes.
+For schema matching you choose the key and read the answer back under the SAME key (use a unique string so you don't collide with another card). The value you write is { name, schema }: a short human label (e.g. "Markdown documents") plus the JSON Schema to match — the name is shown in the context viewer. The loaded skill tells you which channels to use and their exact shapes.
 
 ## API available inside <script> blocks (NOT inside effect.js)
 

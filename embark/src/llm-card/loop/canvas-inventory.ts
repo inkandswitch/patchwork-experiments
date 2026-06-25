@@ -72,7 +72,7 @@ function collectMatchUrls(api: LoopApi): Promise<AutomergeUrl[]> {
     }
     const queries = store.handle(SchemaQueries);
     queries.change((slice) => {
-      slice[ROOT_KEY] = ROOT_SCHEMA;
+      slice[ROOT_KEY] = { name: "Documents", schema: ROOT_SCHEMA };
     });
     setTimeout(() => {
       const matches = store.read(SchemaMatches)[ROOT_KEY] ?? [];

@@ -57,3 +57,96 @@
   color: #a8a29e;
   font-size: 12px;
 }
+
+/* --- Schema view --------------------------------------------------------- */
+/* A domain-specific panel: each registered schema by name, its matches grouped
+   by owning document, every match a token of the extracted value. */
+.embark-schema__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 10px;
+}
+
+.embark-schema__item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.embark-schema__schema-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1c1917;
+}
+
+.embark-schema__no-matches {
+  font-size: 11px;
+  font-style: italic;
+  color: #a8a29e;
+  padding-left: 2px;
+}
+
+.embark-schema__group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease;
+  cursor: default;
+}
+
+.embark-schema__group--highlighted {
+  background: #eef4ff;
+  border-color: #c7dbff;
+}
+
+/* The owning document, styled as a strong bordered pill (cf. the mockup's
+   "Doc 1" / "Doc 2"). */
+.embark-schema__doc {
+  flex: 0 0 auto;
+  padding: 5px 12px;
+  border: 1.5px solid #1c1917;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1c1917;
+  background: #ffffff;
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.embark-schema__tokens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* One token per match, showing the value extracted at that location. */
+.embark-schema__token {
+  padding: 4px 10px;
+  border: 1px solid #cbd2da;
+  border-radius: 8px;
+  font-size: 11px;
+  color: #6b7280;
+  background: #f7f8fa;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+  transition:
+    border-color 0.12s ease,
+    color 0.12s ease,
+    background-color 0.12s ease;
+}
+
+.embark-schema__token:hover {
+  border-color: #1d4ed8;
+  color: #1d4ed8;
+  background: #eef4ff;
+}

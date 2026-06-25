@@ -50,10 +50,17 @@ export const CommandSuggestions = defineChannel<Record<string, Suggestion[]>>({
   empty: {},
 });
 
-// Request/response pair for schema matching: consumers publish a JSON Schema
-// (keyed by `schemaKey`), the canvas resolver answers with match urls. Schema
-// resolution is plain canvas code (./schema-resolver.ts), not a provider.
-export const SchemaQueries = defineChannel<Record<string, JsonSchema>>({
+// A published schema query: the schema to match plus a short human-readable
+// name for it (so views like the context viewer can label "where does this
+// occur?" sections). Keyed by `schemaKey` (derived from the schema alone), so
+// two consumers with the same schema share a key, matches, and — last writer
+// wins — a name.
+export type SchemaQuery = { name: string; schema: JsonSchema };
+
+// Request/response pair for schema matching: consumers publish a named JSON
+// Schema (keyed by `schemaKey`), the canvas resolver answers with match urls.
+// Schema resolution is plain canvas code (./schema-resolver.ts), not a provider.
+export const SchemaQueries = defineChannel<Record<string, SchemaQuery>>({
   name: "schema:queries",
   empty: {},
 });

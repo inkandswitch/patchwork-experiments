@@ -11,7 +11,7 @@ import {
   SearchQueries,
   SearchResults,
 } from "../../canvas/channels";
-import { LATLNG_JSON_SCHEMA, LATLNG_KEY } from "../../canvas/well-known-schemas";
+import { LATLNG_KEY, LATLNG_QUERY } from "../../canvas/well-known-schemas";
 import type { CardDoc } from "../../card/datatype";
 import type { Place } from "./datatype";
 import "./poi.css";
@@ -111,7 +111,7 @@ function PoiProvider(props: { element: ToolElement }) {
 
   const schemaQueries = useContextHandle(props.element, SchemaQueries);
   schemaQueries.change((slice) => {
-    slice[LATLNG_KEY] = LATLNG_JSON_SCHEMA;
+    slice[LATLNG_KEY] = LATLNG_QUERY;
   });
   const schemaMatches = readContext(props.element, SchemaMatches);
   createEffect(() => {

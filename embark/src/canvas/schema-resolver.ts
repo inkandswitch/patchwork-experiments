@@ -7,7 +7,7 @@ import type { z } from "zod";
 import { jsonSchemaToZod, type JsonSchema } from "../lib/schema";
 import { extractDocLinks } from "../lib/doc-links";
 import type { ContextStore } from "../lib/context";
-import { SchemaMatches, SchemaQueries } from "./channels";
+import { SchemaMatches, SchemaQueries, type SchemaQuery } from "./channels";
 
 // Resolves "where does this schema occur?" for the canvas. This is plain canvas
 // code, not a provider: it reads the requested schemas from the `SchemaQueries`
@@ -58,7 +58,7 @@ export function runSchemaResolver(
 
   // The requested schemas, keyed by schemaKey, plus a cache of their compiled
   // zod equivalents so we hydrate each JSON Schema only once.
-  let queries: Record<string, JsonSchema> = store.read(SchemaQueries);
+  let queries: Record<string, SchemaQuery> = store.read(SchemaQueries);
   const compiled = new Map<string, z.ZodType>();
 
   const unsubscribeQueries = store.subscribe(SchemaQueries, (next) => {
@@ -126,10 +126,10 @@ export function runSchemaResolver(
   const reevaluateAll = () => {
     const reachable = collectReachable();
     const result: Record<string, AutomergeUrl[]> = {};
-    for (const [key, json] of Object.entries(queries)) {
+    for (const [key, query] of Object.entries(queries)) {
       let schema = compiled.get(key);
       if (!schema) {
-        schema = jsonSchemaToZod(json);
+        schema = jsonSchemaToZod(querySchema(query));
         compiled.set(key, schema);
       }
       const matches: AutomergeUrl[] = [];
@@ -274,6 +274,23 @@ export function runSchemaResolver(
     unsubscribeQueries();
     matchesHandle.release();
   };
+}
+
+// The schema to match from a query value. New consumers publish a
+// `{ name, schema }` query; older generated cards may still write a bare JSON
+// Schema, so unwrap `.schema` only when present and otherwise treat the value
+// as the schema itself. (JSON Schema's own keyword is `$schema`, never bare
+// `schema`, so this discrimination is safe.)
+function querySchema(query: SchemaQuery | JsonSchema): JsonSchema {
+  if (
+    query !== null &&
+    typeof query === "object" &&
+    !Array.isArray(query) &&
+    "schema" in query
+  ) {
+    return (query as SchemaQuery).schema;
+  }
+  return query as JsonSchema;
 }
 
 // The patchwork datatype a document declares (`@patchwork.type`), if any. Used

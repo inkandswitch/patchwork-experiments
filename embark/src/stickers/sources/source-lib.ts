@@ -182,7 +182,7 @@ export function runStickerSource(
   // canvas. Both ride the schema channels; the canvas resolver answers.
   const schemaQueries = getContextHandle(element, SchemaQueries);
   schemaQueries?.change((slice) => {
-    slice[MARKDOWN_KEY] = MARKDOWN_SCHEMA;
+    slice[MARKDOWN_KEY] = { name: "Markdown documents", schema: MARKDOWN_SCHEMA };
   });
   const unsubscribeMatches = subscribeContext(element, SchemaMatches, (all) => {
     onMatches(all[MARKDOWN_KEY] ?? []);

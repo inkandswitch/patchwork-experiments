@@ -225,7 +225,11 @@ const CommandSuggestions = defineChannel<Record<string, Suggestion[]>>({
   empty: {},
 });
 
-const SchemaQueries = defineChannel<Record<string, JsonSchema>>({
+// A query carries a short human name alongside the schema (so views like the
+// context viewer can label each "where does this occur?" section). Keyed by
+// `schemaKey`, derived from the schema alone.
+type SchemaQuery = { name: string; schema: JsonSchema };
+const SchemaQueries = defineChannel<Record<string, SchemaQuery>>({
   name: "schema:queries",
   empty: {},
 });
@@ -306,7 +310,7 @@ Schema matching is **not its own concept**. The request (schema) and response
 // consumer (sticker source-lib, map tool): publish schema, read matches
 const key = schemaKey(MARKDOWN_SCHEMA); // stable stringified hash
 useContextHandle(element, SchemaQueries).change((s) => {
-  s[key] = MARKDOWN_SCHEMA;
+  s[key] = { name: "Markdown documents", schema: MARKDOWN_SCHEMA };
 });
 const matches = readContext(element, SchemaMatches);
 const onMatches = () => apply(matches()[key] ?? []);

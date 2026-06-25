@@ -14,7 +14,7 @@ import {
   SchemaQueries,
   Selection,
 } from "../canvas/channels";
-import { LATLNG_JSON_SCHEMA, LATLNG_KEY } from "../canvas/well-known-schemas";
+import { LATLNG_KEY, LATLNG_QUERY } from "../canvas/well-known-schemas";
 import {
   DEFAULT_CENTER,
   DEFAULT_ZOOM,
@@ -389,7 +389,7 @@ export const MapTool: ToolRender = (rawHandle, element) => {
   // Publish the {lat, lon} schema query and consume its matches.
   const schemaQueries = getContextHandle(element, SchemaQueries);
   schemaQueries?.change((slice) => {
-    slice[LATLNG_KEY] = LATLNG_JSON_SCHEMA;
+    slice[LATLNG_KEY] = LATLNG_QUERY;
   });
   const unsubscribeMatches = subscribeContext(element, SchemaMatches, (all) => {
     onMatches(all[LATLNG_KEY] ?? []);

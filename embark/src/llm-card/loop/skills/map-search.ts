@@ -23,14 +23,14 @@ A map document looks like { "@patchwork": { type: "map" }, center, zoom, bounds 
 
   const MAP_SCHEMA = { type: "object", properties: { "@patchwork": { type: "object", properties: { type: { const: "map" } }, required: ["type"] }, bounds: { type: "object", properties: { west: { type: "number" }, south: { type: "number" }, east: { type: "number" }, north: { type: "number" } }, required: ["west", "south", "east", "north"] } }, required: ["@patchwork", "bounds"] };
 
-Reach the store with getStore(element). Publish MAP_SCHEMA in schema:queries under a key you pick and read the matching map urls back from schema:matches under that key:
+Reach the store with getStore(element). Publish a named MAP_SCHEMA in schema:queries (the value is { name, schema }) under a key you pick and read the matching map urls back from schema:matches under that key:
 
   const SchemaQueries = { name: "schema:queries", empty: {} };
   const SchemaMatches = { name: "schema:matches", empty: {} };
   const store = getStore(element);
   const KEY = "map-search:map";
   const queries = store.handle(SchemaQueries);
-  queries.change((s) => { s[KEY] = MAP_SCHEMA; });
+  queries.change((s) => { s[KEY] = { name: "Maps", schema: MAP_SCHEMA }; });
   const onMaps = (urls) => { /* urls = matching map documents */ };
   const unsubscribe = store.subscribe(SchemaMatches, () => onMaps(store.read(SchemaMatches)[KEY] ?? []));
   onMaps(store.read(SchemaMatches)[KEY] ?? []); // seed: subscribe has no initial call
@@ -129,7 +129,7 @@ effect.js runs standalone in the browser with NO secrets, env vars, or API-key s
     };
 
     const queries = store.handle(SchemaQueries);
-    queries.change((s) => { s[KEY] = MAP_SCHEMA; });
+    queries.change((s) => { s[KEY] = { name: "Maps", schema: MAP_SCHEMA }; });
     const unsubscribe = store.subscribe(SchemaMatches, () => trackMap(store.read(SchemaMatches)[KEY] ?? []));
     trackMap(store.read(SchemaMatches)[KEY] ?? []); // seed
 
