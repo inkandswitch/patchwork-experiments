@@ -20,6 +20,7 @@ import {
   simplify,
 } from "./cv.js";
 import type { Walls, WallShape } from "./types.js";
+import { wallsDebug, type WallsDebugStats } from "./debug.js";
 
 // Tunables.
 // Thin marker strokes are only a few px wide and noise breaks them into
@@ -74,12 +75,79 @@ function centroid(points: { nx: number; ny: number }[]): [number, number] {
   return [x / points.length, y / points.length];
 }
 
+/**
+ * Brightness/noise diagnostics for the debug overlay. `prevGray` is the previous
+ * frame's gray (for temporal-noise); null on the first frame. Pipeline counts
+ * are filled in by the caller (they're computed there).
+ */
+function computeDebugStats(
+  gray: Uint8Array,
+  bg: Uint8Array,
+  claimed: Uint8Array,
+  prevGray: Uint8Array | null,
+): Pick<
+  WallsDebugStats,
+  | "grayMean" | "grayMin" | "grayMax" | "bgMean" | "diffMean"
+  | "absDiffP50" | "absDiffP95" | "absDiffP99" | "temporalNoiseMean"
+> {
+  const n = gray.length;
+  let graySum = 0,
+    grayMin = 255,
+    grayMax = 0,
+    bgSum = 0,
+    diffSum = 0,
+    tempSum = 0,
+    tempCount = 0;
+  const absHist = new Uint32Array(256); // |bg - gray| over non-claimed pixels
+  let absCount = 0;
+  for (let i = 0; i < n; i++) {
+    const g = gray[i];
+    graySum += g;
+    if (g < grayMin) grayMin = g;
+    if (g > grayMax) grayMax = g;
+    bgSum += bg[i];
+    if (prevGray) {
+      tempSum += Math.abs(g - prevGray[i]);
+      tempCount++;
+    }
+    if (!claimed[i]) {
+      const d = bg[i] - g;
+      diffSum += d;
+      const ad = d < 0 ? -d : d;
+      absHist[ad > 255 ? 255 : ad]++;
+      absCount++;
+    }
+  }
+  const pct = (p: number): number => {
+    if (absCount === 0) return 0;
+    const target = p * absCount;
+    let cum = 0;
+    for (let v = 0; v < 256; v++) {
+      cum += absHist[v];
+      if (cum >= target) return v;
+    }
+    return 255;
+  };
+  return {
+    grayMean: graySum / n,
+    grayMin,
+    grayMax,
+    bgMean: bgSum / n,
+    diffMean: absCount ? diffSum / absCount : 0,
+    absDiffP50: pct(0.5),
+    absDiffP95: pct(0.95),
+    absDiffP99: pct(0.99),
+    temporalNoiseMean: tempCount ? tempSum / tempCount : 0,
+  };
+}
+
 export function createWallsRecognizer(emitter: Emitter<Walls>): Recognizer {
   // Always "ready" — no async init (pure JS).
   let status: RecognizerStatus = "ready";
   let nextId = 1;
   let tracked: Tracked[] = [];
   let lastFramePolys: FramePoint[][] = [];
+  let prevGray: Uint8Array | null = null; // for temporal-noise diagnostics
 
   function publish() {
     // Only emit shapes that have cleared the appear-debounce.
@@ -131,12 +199,32 @@ export function createWallsRecognizer(emitter: Emitter<Walls>): Recognizer {
       if (strong[i] && labels[i]) labelHasStrong.add(labels[i]);
     }
 
+    let binPx = 0;
+    if (DEBUG || wallsDebug.enabled) {
+      for (let i = 0; i < bin.length; i++) binPx += bin[i];
+    }
     if (DEBUG) {
-      let fgCount = 0;
-      for (let i = 0; i < bin.length; i++) fgCount += bin[i];
+      // Brightness diagnostic: how dark is the frame, how bright is the sampled
+      // background, and what is the strongest darkening (max d = bg-gray) seen?
+      // maxD near 0 = the marker isn't reading darker than the surface at all
+      // (no signal); maxD well above DELTA_LO but fg px 0 = a threshold bug.
+      let graySum = 0;
+      let bgSum = 0;
+      let maxD = -255;
+      let minD = 255;
+      for (let i = 0; i < gray.length; i++) {
+        graySum += gray[i];
+        bgSum += backgroundGray[i];
+        const d = backgroundGray[i] - gray[i];
+        if (d > maxD) maxD = d;
+        if (d < minD) minD = d;
+      }
+      const n = gray.length;
       console.log(
-        `[walls] fg px ${fgCount}/${bin.length}, components ${components.length}` +
-          `, strong-gated ${labelHasStrong.size}`,
+        `[walls] fg px ${binPx}/${n}, components ${components.length}` +
+          `, strong-gated ${labelHasStrong.size}` +
+          ` | gray μ${(graySum / n).toFixed(0)} bg μ${(bgSum / n).toFixed(0)}` +
+          ` d[${minD}..${maxD}] (DELTA_LO ${DELTA_LO})`,
       );
     }
 
@@ -222,6 +310,38 @@ export function createWallsRecognizer(emitter: Emitter<Walls>): Recognizer {
     // what's emitted to consumers.
     lastFramePolys = tracked.filter((t) => t.published).map((t) => t.frame);
     publish();
+
+    // Diagnostics overlay (only when enabled): publish CV intermediates + stats.
+    if (wallsDebug.enabled) {
+      let weakPx = 0;
+      let strongPx = 0;
+      for (let i = 0; i < weak.length; i++) {
+        weakPx += weak[i];
+        strongPx += strong[i];
+      }
+      const base = computeDebugStats(gray, backgroundGray, mask, prevGray);
+      wallsDebug.publish({
+        w,
+        h,
+        weak,
+        strong,
+        bin,
+        publishedPolys: lastFramePolys,
+        stats: {
+          ...base,
+          weakPx,
+          strongPx,
+          binPx,
+          components: components.length,
+          strongGated: labelHasStrong.size,
+          published: lastFramePolys.length,
+        },
+      });
+      // Keep a copy for next frame's temporal-noise measurement.
+      prevGray = gray.slice();
+    } else {
+      prevGray = null;
+    }
   }
 
   return {

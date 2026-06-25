@@ -1,7 +1,9 @@
 import {
   createEffect,
+  createSignal,
   onCleanup,
   onMount,
+  Show,
   type JSX,
 } from "solid-js";
 import type { DocHandle, Repo } from "@automerge/automerge-repo";
@@ -16,6 +18,11 @@ import {
 } from "../spatial-source";
 import { makeDefaultDocState } from "../apriltag-core.js";
 import { LAYERS } from "../layers/index";
+import {
+  wallsDebug,
+  initWallsDebugFromUrl,
+  type WallsDebugStats,
+} from "../layers/walls/debug";
 import { createFrameLoop, type FrameLoop } from "../frame-loop";
 import type { Recognizer } from "../layers/types";
 import type { Camera } from "../camera";
@@ -59,6 +66,44 @@ export function UseStage(props: {
   const box = () => props.calDoc.cameraViewBox;
   const activeUrl = () =>
     props.hostDoc.docs?.[props.hostDoc.activeIndex ?? 0]?.url;
+  // 0–100 brightness → 0–255 gray for the projected "paper" underlay.
+  const surfaceLevel = () =>
+    Math.round((Math.max(0, Math.min(100, props.hostDoc.surfaceBrightness ?? 0)) / 100) * 255);
+
+  // ---- Walls debug overlay (temporary; enabled via ?wallsDebug) ----------
+  initWallsDebugFromUrl();
+  let debugCanvas: HTMLCanvasElement | undefined;
+  const [debugStats, setDebugStats] = createSignal<WallsDebugStats | null>(null);
+  if (wallsDebug.enabled) {
+    const off = wallsDebug.subscribe(() => {
+      const snap = wallsDebug.snapshot;
+      if (!snap || !debugCanvas) return;
+      const { w, h, weak, strong, bin } = snap;
+      if (debugCanvas.width !== w || debugCanvas.height !== h) {
+        debugCanvas.width = w;
+        debugCanvas.height = h;
+      }
+      const ctx = debugCanvas.getContext("2d");
+      if (!ctx) return;
+      const img = ctx.createImageData(w, h);
+      const d = img.data;
+      // weak-only = blue, strong = red, dilated-but-not-weak = faint green.
+      for (let i = 0, p = 0; i < weak.length; i++, p += 4) {
+        if (strong[i]) {
+          d[p] = 255; d[p + 1] = 40; d[p + 2] = 40; d[p + 3] = 200;
+        } else if (weak[i]) {
+          d[p] = 40; d[p + 1] = 120; d[p + 2] = 255; d[p + 3] = 170;
+        } else if (bin[i]) {
+          d[p] = 40; d[p + 1] = 200; d[p + 2] = 40; d[p + 3] = 90;
+        } else {
+          d[p + 3] = 0;
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+      setDebugStats({ ...snap.stats });
+    });
+    onCleanup(off);
+  }
 
   // Keep the embedded view pointed at the active doc (remounts the inner tool).
   createEffect(() => {
@@ -149,6 +194,15 @@ export function UseStage(props: {
           height: `${box().h * 100}%`,
         }}
       >
+        {/* Projected "paper": a light underlay behind the embedded tool so the
+            camera sees a bright surface (high contrast vs. dark markers). Driven
+            by doc.surfaceBrightness; 0 = black (transparent over the box bg). */}
+        <div
+          class="sph-surface"
+          style={{
+            background: `rgb(${surfaceLevel()}, ${surfaceLevel()}, ${surfaceLevel()})`,
+          }}
+        />
         {wrapped()}
 
         {/* Always-visible outline of the active area (above the embedded view,
@@ -159,6 +213,36 @@ export function UseStage(props: {
           <div class="sph-corner bl" />
           <div class="sph-corner br" />
         </div>
+
+        {/* Temporary walls-debug overlay: paints what the recognizer detects
+            (strong=red, weak=blue, dilated-only=green) + brightness/noise stats.
+            Enabled via ?wallsDebug. */}
+        <Show when={wallsDebug.enabled}>
+          <canvas
+            ref={debugCanvas}
+            class="sph-walls-debug"
+            style={{
+              position: "absolute",
+              inset: "0",
+              width: "100%",
+              height: "100%",
+              "pointer-events": "none",
+              "image-rendering": "pixelated",
+              "z-index": "3",
+            }}
+          />
+          <Show when={debugStats()}>
+            {(s) => (
+              <pre class="sph-walls-debug-stats">
+                {`gray μ${s().grayMean.toFixed(0)} [${s().grayMin}–${s().grayMax}]  bg μ${s().bgMean.toFixed(0)}
+diff(bg-gray) μ${s().diffMean.toFixed(1)}  |diff| p50 ${s().absDiffP50} p95 ${s().absDiffP95} p99 ${s().absDiffP99}
+temporal-noise μ${s().temporalNoiseMean.toFixed(2)}/px
+weak ${s().weakPx}  strong ${s().strongPx}  bin ${s().binPx}
+components ${s().components}  strong-gated ${s().strongGated}  published ${s().published}`}
+              </pre>
+            )}
+          </Show>
+        </Show>
       </div>
     </div>
   );

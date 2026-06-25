@@ -29,6 +29,14 @@ export type SpatialHostDoc = {
   hostMode: HostMode;
   /** unified control panel position (synced to all screens) */
   barPosition: BarPosition | null;
+  /**
+   * Brightness (0–100) of the light the projector paints behind the embedded
+   * tool, i.e. the "paper" the camera sees. 0 = black (legacy). Raising it
+   * floods the surface with projector light so a dark marker has high contrast
+   * against it — essential for the walls layer in a dim room. Applied during
+   * BOTH the background sample and Use so the reference matches the live scene.
+   */
+  surfaceBrightness?: number;
 };
 
 export const SpatialHostFolderDatatype = {
@@ -39,6 +47,7 @@ export const SpatialHostFolderDatatype = {
     doc.activeIndex = 0;
     doc.hostMode = "setup";
     doc.barPosition = null;
+    doc.surfaceBrightness = 0;
   },
   getTitle(doc: SpatialHostDoc) {
     return doc.title || "Spatial Host";

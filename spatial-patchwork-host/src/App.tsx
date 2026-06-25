@@ -112,7 +112,7 @@ export function App(props: {
           }
         >
           <Match when={mode() === "sample"}>
-            <SampleBackgroundPhase calDoc={calDoc()!} camera={camera} />
+            <SampleBackgroundPhase calDoc={calDoc()!} hostDoc={doc} camera={camera} />
           </Match>
           <Match when={mode() === "use"}>
             <UseStage

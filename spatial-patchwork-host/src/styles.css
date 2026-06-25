@@ -80,6 +80,15 @@
   z-index: 1;
 }
 
+/* Projected "paper" underlay — the lit surface the camera sees, behind the
+   embedded tool. Brightness set inline from doc.surfaceBrightness. */
+.sph-box > .sph-surface {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
 /* Always-visible outline of the active area — above the embedded tool so a
    tool overlay near the edge never covers the border. Non-interactive. Corners
    sit inside the box so .sph-box overflow:hidden doesn't clip them. */
@@ -90,6 +99,39 @@
   border: 3px solid rgba(255, 255, 255, 0.85);
   pointer-events: none;
   z-index: 2;
+}
+
+/* ---- Surface-brightness control ---- */
+.sph-surface-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.sph-surface-ctrl input[type="range"] {
+  flex: 1;
+  min-width: 80px;
+}
+.sph-surface-val {
+  min-width: 2.5em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Temporary walls-debug overlay (?wallsDebug) ---- */
+.sph-walls-debug-stats {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  margin: 0;
+  padding: 4px 6px;
+  z-index: 4;
+  font: 10px/1.35 ui-monospace, Menlo, monospace;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.7);
+  white-space: pre;
+  pointer-events: none;
 }
 
 /* ---- Alignment view-box (setup/align) ---- */

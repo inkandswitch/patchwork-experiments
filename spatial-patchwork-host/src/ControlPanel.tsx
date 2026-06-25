@@ -124,6 +124,30 @@ export function ControlPanel(props: {
           />
         </Show>
 
+        {/* Projected surface brightness — affects Sample + Use. Raising it
+            floods the "paper" with projector light so dark markers stand out
+            (needed for walls detection in a dim room). Re-sample the background
+            after changing this so the reference matches. */}
+        <Show when={props.mode === "sample" || props.mode === "use"}>
+          <label class="sph-surface-ctrl">
+            <span>Surface</span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              step="5"
+              value={props.hostDoc.surfaceBrightness ?? 0}
+              onInput={(e) => {
+                const v = Number(e.currentTarget.value);
+                props.hostHandle.change((d) => {
+                  d.surfaceBrightness = v;
+                });
+              }}
+            />
+            <span class="sph-surface-val">{props.hostDoc.surfaceBrightness ?? 0}%</span>
+          </label>
+        </Show>
+
         <Show when={props.mode === "sample"}>
           <button data-variant="primary" onClick={props.onSample}>
             Sample background
