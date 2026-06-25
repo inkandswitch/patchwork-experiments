@@ -268,6 +268,9 @@
 /* Briefly hidden during background sampling so the panel isn't captured into
    the reference. visibility (not display) keeps position for a clean return. */
 .sph-panel[data-hidden] { visibility: hidden; }
+/* While sampling, hide the mouse cursor everywhere so it isn't captured into
+   the background reference either. !important overrides per-element cursors. */
+body.sph-sampling, body.sph-sampling * { cursor: none !important; }
 .sph-drag {
   display: inline-flex; align-items: center; justify-content: center;
   width: 1.6rem; height: 1.6rem;

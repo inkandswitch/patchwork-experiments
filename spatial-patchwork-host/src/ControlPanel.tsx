@@ -77,11 +77,13 @@ export function ControlPanel(props: {
   const toggleCollapsed = () => setCollapsed((c) => !c);
 
   // Sampling the background grabs whatever the camera sees — including THIS
-  // panel, which is in frame. So hide the panel, wait a couple frames for the
-  // projector/camera to show the clean surface, sample, then bring it back.
+  // panel AND the mouse cursor, both in frame. So hide the panel + cursor, wait
+  // a couple frames for the projector/camera to show the clean surface, sample,
+  // then bring them back.
   const [hidden, setHidden] = createSignal(false);
   const sampleWithPanelHidden = () => {
     setHidden(true);
+    document.body.classList.add("sph-sampling"); // hides the cursor (see css)
     // Two rAFs ensure the hide has painted; the timeout gives the projector +
     // camera a beat to actually display/capture the panel-free surface.
     requestAnimationFrame(() =>
@@ -89,6 +91,7 @@ export function ControlPanel(props: {
         setTimeout(() => {
           props.onSample();
           setHidden(false);
+          document.body.classList.remove("sph-sampling");
         }, 250),
       ),
     );
