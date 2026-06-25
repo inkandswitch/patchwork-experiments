@@ -2,6 +2,12 @@ import type { ChangeFn } from '@automerge/automerge/slim';
 import type { AutomergeUrl } from '@automerge/automerge-repo';
 import type { SpaceTimeDoc } from '../types';
 import type { GhostPlayhead } from '../presence/types';
+import {
+  advanceGhostSmoothStates,
+  ghostDisplaysFromStates,
+  syncGhostSmoothStates,
+  type GhostSmoothState,
+} from '../presence/smooth-ghost-playheads';
 import type { RecordingPreview } from '../audio/use-audio-recorder';
 import type { ClipTimingOverride } from '../diffusion/sync-composition';
 
@@ -327,6 +333,8 @@ export function Canvas({
   const [, bump] = useState(0);
   const editingClipIdRef = useRef<string | null>(null);
   const rafRef = useRef<number | null>(null);
+  const ghostSmoothRef = useRef(new Map<string, GhostSmoothState>());
+  const ghostAdvanceTimeRef = useRef<number | null>(null);
   const pKeyHeldRef = useRef(false);
   const sKeyHeldRef = useRef(false);
   const mKeyHeldRef = useRef(false);
@@ -556,6 +564,15 @@ export function Canvas({
     const theme = readCanvasTheme(root);
     const dpr = window.devicePixelRatio || 1;
 
+    const now = performance.now();
+    const lastAdvance = ghostAdvanceTimeRef.current;
+    ghostAdvanceTimeRef.current = now;
+    const dtMs =
+      lastAdvance === null ? 0 : Math.min(50, Math.max(0, now - lastAdvance));
+    syncGhostSmoothStates(deps.ghostPlayheads, ghostSmoothRef.current);
+    const ghostAnimating = advanceGhostSmoothStates(ghostSmoothRef.current, dtMs);
+    const smoothedGhostPlayheads = ghostDisplaysFromStates(ghostSmoothRef.current);
+
     const layout = computeCanvasLayout(
       deps.doc,
       timingRef.current,
@@ -564,7 +581,7 @@ export function Canvas({
       h,
       deps.playheadCurrentX,
       deps.activePlayheadId,
-      deps.ghostPlayheads,
+      smoothedGhostPlayheads,
       deps.recordingPreview,
       deps.loopingPlayheadIds,
     );
@@ -608,7 +625,17 @@ export function Canvas({
         drawTimeRuler(rctx, theme, layoutRef.current, dpr);
       }
     }
+
+    if (ghostAnimating) {
+      schedulePaint();
+    }
   };
+
+  useEffect(() => {
+    syncGhostSmoothStates(ghostPlayheads, ghostSmoothRef.current);
+    ghostAdvanceTimeRef.current = null;
+    schedulePaint();
+  }, [ghostPlayheads]);
 
   useEffect(() => {
     paintDepsRef.current = {

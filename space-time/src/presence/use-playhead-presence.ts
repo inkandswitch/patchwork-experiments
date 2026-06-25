@@ -17,8 +17,25 @@ type PlayheadPresenceState = {
   } | null;
 };
 
-const PRESENCE_INTERVAL_MS = 500;
+/** Fallback publish while idle (heartbeats are handled by usePresence). */
+const PRESENCE_IDLE_INTERVAL_MS = 2000;
 const PEER_TTL_MS = 8000;
+
+type PublishedSnapshot = {
+  x: number;
+  y: number;
+  height: number;
+  currentX: number;
+};
+
+function snapshotMatches(a: PublishedSnapshot, b: PublishedSnapshot): boolean {
+  return (
+    a.x === b.x &&
+    a.y === b.y &&
+    a.height === b.height &&
+    Math.abs(a.currentX - b.currentX) < 0.5
+  );
+}
 
 export function usePlayheadPresence(
   handle: DocHandle<SpaceTimeDoc>,
@@ -33,6 +50,9 @@ export function usePlayheadPresence(
   currentXRef.current = currentX;
   identityRef.current = identity;
 
+  const lastPublishedRef = useRef<PublishedSnapshot | null>(null);
+  const publishRafRef = useRef<number | null>(null);
+
   const { peerStates, update } = usePresence<PlayheadPresenceState>({
     handle,
     initialState: { playhead: null },
@@ -44,29 +64,58 @@ export function usePlayheadPresence(
     const ph = playheadRef.current;
     const id = identityRef.current;
     if (!ph) {
+      lastPublishedRef.current = null;
       update('playhead', null);
       return;
     }
-    update('playhead', {
-      name: id.name,
-      color: id.color,
+
+    const snapshot: PublishedSnapshot = {
       x: ph.x,
       y: ph.y,
       height: ph.height,
       currentX: currentXRef.current,
+    };
+    if (lastPublishedRef.current && snapshotMatches(lastPublishedRef.current, snapshot)) {
+      return;
+    }
+    lastPublishedRef.current = snapshot;
+
+    update('playhead', {
+      name: id.name,
+      color: id.color,
+      ...snapshot,
     });
   }, [update]);
 
+  const schedulePublish = useCallback(() => {
+    if (publishRafRef.current !== null) return;
+    publishRafRef.current = requestAnimationFrame(() => {
+      publishRafRef.current = null;
+      publish();
+    });
+  }, [publish]);
+
+  useEffect(() => {
+    schedulePublish();
+  }, [currentX, playhead?.id, playhead?.x, playhead?.y, playhead?.height, schedulePublish]);
+
   useEffect(() => {
     publish();
-    const interval = window.setInterval(publish, PRESENCE_INTERVAL_MS);
-    return () => window.clearInterval(interval);
+    const interval = window.setInterval(publish, PRESENCE_IDLE_INTERVAL_MS);
+    return () => {
+      window.clearInterval(interval);
+      if (publishRafRef.current !== null) {
+        cancelAnimationFrame(publishRafRef.current);
+        publishRafRef.current = null;
+      }
+    };
   }, [publish, playhead?.id, playhead?.x, playhead?.y, playhead?.height]);
 
   return useMemo(() => {
     const ghosts: GhostPlayhead[] = [];
     for (const peer of peerStates.peers) {
-      const ph = peer.value.playhead;
+      // Heartbeats can create peer entries before any snapshot/update (value undefined).
+      const ph = peer.value?.playhead;
       if (!ph) continue;
       ghosts.push({
         name: ph.name,
