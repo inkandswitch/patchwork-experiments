@@ -17,8 +17,7 @@
   },
   "scripts": {
     "build": "pnpm build:types",
-    "build:types": "tsc --noCheck",
-    "typecheck": "tsc --noEmit"
+    "build:types": "tsc"
   },
   "files": [
     "types",
