@@ -265,6 +265,9 @@
   box-shadow: var(--studio-shadow-sm, 0 1px 3px rgba(0,0,0,0.2));
 }
 .sph-panel[data-collapsed] { padding: 0.15rem; }
+/* Briefly hidden during background sampling so the panel isn't captured into
+   the reference. visibility (not display) keeps position for a clean return. */
+.sph-panel[data-hidden] { visibility: hidden; }
 .sph-drag {
   display: inline-flex; align-items: center; justify-content: center;
   width: 1.6rem; height: 1.6rem;
