@@ -72,11 +72,53 @@ export function createCamera() {
         : min;
       advanced.push({ zoom: Math.max(min, Math.min(cur, max)) } as never);
     }
+
+    // Lock EXPOSURE, GAIN and WHITE BALANCE to manual. This is the important one
+    // for background-difference detection: if the camera keeps auto-exposing /
+    // auto-white-balancing, it renormalizes the whole frame's brightness between
+    // the moment we sample the background and the moment we look at the surface,
+    // so `bg - gray` drifts and detection flips between working and failing for
+    // no apparent reason. Pin each controllable value to its CURRENT setting so
+    // the picture stops moving. Devices that don't support a knob just ignore it.
+    const c = caps as Record<string, unknown>;
+    const s = settings as Record<string, unknown>;
+    const pinCurrent = (key: string) => {
+      if (key in c && Number.isFinite(s[key] as number)) {
+        advanced.push({ [key]: s[key] } as never);
+      }
+    };
+    const exposureModes = (c.exposureMode as string[] | undefined) ?? [];
+    if (Array.isArray(exposureModes) && exposureModes.includes("manual")) {
+      advanced.push({ exposureMode: "manual" } as never);
+      pinCurrent("exposureTime");
+      pinCurrent("iso");
+    } else {
+      // Some devices expose exposureCompensation without a manual mode.
+      pinCurrent("exposureCompensation");
+    }
+    pinCurrent("brightness");
+    const wbModes = (c.whiteBalanceMode as string[] | undefined) ?? [];
+    if (Array.isArray(wbModes) && wbModes.includes("manual")) {
+      advanced.push({ whiteBalanceMode: "manual" } as never);
+      pinCurrent("colorTemperature");
+    }
+
     if (!advanced.length) return;
     try {
       await track.applyConstraints({ advanced });
     } catch {
-      /* device rejected a lock; leave as-is */
+      /* device rejected the combined lock; retry with just the modes */
+      try {
+        await track.applyConstraints({
+          advanced: advanced.filter((a) =>
+            ["focusMode", "exposureMode", "whiteBalanceMode", "zoom"].some(
+              (k) => k in (a as Record<string, unknown>),
+            ),
+          ),
+        });
+      } catch {
+        /* device rejected a lock; leave as-is */
+      }
     }
   }
 
@@ -147,6 +189,15 @@ export function createCamera() {
     refreshDevices,
     dispose,
     getLiveSize: () => liveSize(),
+    /**
+     * Re-pin focus/zoom/exposure/gain/white-balance to the CURRENT picture.
+     * Call right before sampling the background so the picture is frozen at the
+     * exact state the reference was captured in (and can't drift afterward).
+     */
+    async relock(): Promise<void> {
+      const track = stream?.getVideoTracks()[0];
+      if (track) await lockControls(track);
+    },
     /**
      * Grab the current frame as a downscaled grayscale buffer (detector dims),
      * for background sampling. Returns null if no frame is available.

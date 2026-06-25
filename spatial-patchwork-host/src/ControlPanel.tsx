@@ -88,7 +88,11 @@ export function ControlPanel(props: {
     // camera a beat to actually display/capture the panel-free surface.
     requestAnimationFrame(() =>
       requestAnimationFrame(() =>
-        setTimeout(() => {
+        setTimeout(async () => {
+          // Freeze the camera (exposure/gain/white-balance) at THIS moment so the
+          // picture can't drift between sampling the background and drawing on it
+          // — the main cause of detection working then suddenly failing.
+          await props.camera.relock();
           props.onSample();
           setHidden(false);
           document.body.classList.remove("sph-sampling");
