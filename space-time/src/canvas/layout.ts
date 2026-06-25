@@ -334,6 +334,23 @@ export function clipTouchesPlayhead(
 
 export { maxEndXForPlayhead } from './playhead-extent';
 
+const PLAYHEAD_JUMP_EPSILON_PX = 0.5;
+
+/** Unique clip start/end x positions in playhead extent, plus the playhead origin. */
+export function playheadJumpEdges(
+  doc: SpaceTimeDoc,
+  timing: Map<string, ClipTimingInfo>,
+  playhead: Playhead,
+): number[] {
+  const edges = new Set<number>([playhead.x]);
+  for (const clip of clipsInPlayheadExtent(doc, playhead, timing)) {
+    const layout = computeClipLayout(doc, timing, clip);
+    edges.add(layout.x);
+    edges.add(layout.x + layout.width);
+  }
+  return [...edges].sort((a, b) => a - b);
+}
+
 export function clipStartBeforePlayhead(
   doc: SpaceTimeDoc,
   timing: Map<string, ClipTimingInfo>,
@@ -341,10 +358,9 @@ export function clipStartBeforePlayhead(
   currentX: number,
 ): number | null {
   let best: number | null = null;
-  for (const clip of clipsInPlayheadExtent(doc, playhead, timing)) {
-    const layout = computeClipLayout(doc, timing, clip);
-    if (layout.x >= currentX) continue;
-    if (best === null || layout.x > best) best = layout.x;
+  for (const x of playheadJumpEdges(doc, timing, playhead)) {
+    if (x >= currentX - PLAYHEAD_JUMP_EPSILON_PX) continue;
+    if (best === null || x > best) best = x;
   }
   return best;
 }
@@ -356,10 +372,9 @@ export function clipStartAfterPlayhead(
   currentX: number,
 ): number | null {
   let best: number | null = null;
-  for (const clip of clipsInPlayheadExtent(doc, playhead, timing)) {
-    const layout = computeClipLayout(doc, timing, clip);
-    if (layout.x <= currentX) continue;
-    if (best === null || layout.x < best) best = layout.x;
+  for (const x of playheadJumpEdges(doc, timing, playhead)) {
+    if (x <= currentX + PLAYHEAD_JUMP_EPSILON_PX) continue;
+    if (best === null || x < best) best = x;
   }
   return best;
 }
