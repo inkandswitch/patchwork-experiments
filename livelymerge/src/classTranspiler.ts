@@ -182,15 +182,22 @@ function rewriteThisMemberAccess(source: string): string {
   });
 }
 
-function containsBareSuper(source: string): boolean {
-  return /\bsuper\b/.test(source);
-}
-
-function rejectBareSuper(source: string, className: string, superGlobal: string): void {
-  if (!containsBareSuper(source)) return;
-  throw new Error(
-    `class ${className} still contains bare 'super' after transpilation (extends ${superGlobal})`,
-  );
+function constructorCallsSuper(funcSource: string): boolean {
+  const tree = parser.parse(funcSource);
+  let found = false;
+  function walk(node: SyntaxNode): void {
+    if (found) return;
+    if (node.name === 'CallExpression') {
+      const callee = node.firstChild;
+      if (callee && isSuperCallee(callee, funcSource)) {
+        found = true;
+        return;
+      }
+    }
+    for (let child = node.firstChild; child; child = child.nextSibling) walk(child);
+  }
+  walk(tree.topNode);
+  return found;
 }
 
 function rewriteSuperCalls(
@@ -302,9 +309,8 @@ function buildConstructorSource(
   }
 
   ctorSource = rewriteSuperCalls(ctorSource, superGlobal, 'constructor');
-  rejectBareSuper(ctorSource, className, superGlobal);
 
-  const hasExplicitSuperInCtor = ctorMember != null && containsBareSuper(ctorMember.funcSource);
+  const hasExplicitSuperInCtor = ctorMember != null && constructorCallsSuper(ctorMember.funcSource);
   ctorSource = injectInstanceFields(
     ctorSource,
     instanceFields,
@@ -326,7 +332,9 @@ function transpileFunctionSource(codeSource: string, showSource?: string): strin
   const wrapped = transpileCore(`(${codeSource})`).trim().replace(/;$/, '');
   let result = wrapped.startsWith('(') && wrapped.endsWith(')') ? wrapped.slice(1, -1) : wrapped;
   if (showSource && showSource !== codeSource) {
-    const showArg = JSON.stringify(extractFunShowArg(transpileCore(`(${showSource})`)));
+    const showArg = showSource.trimStart().startsWith('class ')
+      ? JSON.stringify(showSource)
+      : JSON.stringify(extractFunShowArg(transpileCore(`(${showSource})`)));
     result = result.replace(/\$fun\("((?:\\.|[^"\\])*)"/, `$fun(${showArg}`);
   }
   return result;
@@ -366,13 +374,14 @@ function renderClassSetup(
   superGlobal: string,
   explicitSuper: string | null,
   bindGlobal: boolean,
+  classSource: string,
 ): string {
   const ref = bindGlobal ? `$global.${className}` : className;
   const lines: string[] = [];
   const firstAssign = bindGlobal ? `${ref} =` : `const ${className} =`;
 
   const ctor = buildConstructorSource(className, members, superGlobal, explicitSuper);
-  lines.push(`${firstAssign} ${transpileFunctionSource(ctor.code, ctor.show)};`);
+  lines.push(`${firstAssign} ${transpileFunctionSource(ctor.code, classSource)};`);
 
   const instanceMethods = members.filter(
     (m): m is Extract<ClassMember, { kind: 'method' }> =>
@@ -414,23 +423,22 @@ function renderClassSetup(
     if (line) lines.push(line);
   }
 
-  const output = lines.join('\n');
-  rejectBareSuper(output, className, superGlobal);
-  return output;
+  return lines.join('\n');
 }
 
 function renderClass(node: SyntaxNode, source: string, topLevel: boolean): string {
   const className = getClassName(node, source) ?? '_Class';
+  const classSource = nodeText(node, source);
   const explicitSuper = getExplicitSuperGlobalRef(node, source);
   const superGlobal = resolveSuperGlobal(node, source);
   const classBody = node.getChild('ClassBody');
   const members = classBody ? parseClassBody(classBody, source) : [];
 
   if (topLevel && node.name === 'ClassDeclaration') {
-    return renderClassSetup(className, members, superGlobal, explicitSuper, true);
+    return renderClassSetup(className, members, superGlobal, explicitSuper, true, classSource);
   }
 
-  const setup = renderClassSetup(className, members, superGlobal, explicitSuper, false);
+  const setup = renderClassSetup(className, members, superGlobal, explicitSuper, false, classSource);
   return `(() => {\n${setup}\nreturn ${className};\n})()`;
 }
 

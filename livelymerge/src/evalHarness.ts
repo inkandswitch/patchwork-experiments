@@ -159,6 +159,9 @@ function proxifyFun(fun: Fun): TestProxy {
         if (!isConstructibleFun(fun)) return undefined;
         return getFunPrototype(fun, funProxy);
       }
+      if (prop === 'toString') {
+        return () => fun.$codeForShow;
+      }
       const own = lmGetOwn(fun, prop);
       if (own !== undefined) return deserialize(own);
       return undefined;

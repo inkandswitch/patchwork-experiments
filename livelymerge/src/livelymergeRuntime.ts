@@ -988,6 +988,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   function evaluateSource(source: string): unknown {
     return change(() => {
       const realCode = transpile(wrapForCompletionValue(source));
+      console.log('realCode', realCode);
       const runtimeParams = getRuntimeParams();
       return new Function(...Object.keys(runtimeParams), realCode)(
         ...Object.values(runtimeParams),

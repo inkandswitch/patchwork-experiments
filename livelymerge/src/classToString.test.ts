@@ -51,4 +51,20 @@ o.toString === Object.prototype.toString
     );
     expect(result).toBe(false);
   });
+
+  it('returns full class source from constructor toString', () => {
+    const source = `class Point {
+  constructor(x, y) { this.x = x; this.y = y; }
+  add(p) { return this.x + p.x; }
+}`;
+    const result = evalTranspiled(
+      transpile(
+        wrapForCompletionValue(`
+${source}
+$global.Point.toString()
+`),
+      ),
+    );
+    expect(result).toBe(source);
+  });
 });

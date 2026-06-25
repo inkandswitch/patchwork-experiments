@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { transpile } from './transpiler';
 
+function funCodes(result: string): string[] {
+  return [...result.matchAll(/\$fun\("(?:\\.|[^"\\])*"\s*,\s*"((?:\\.|[^"\\])*)"/g)].map((m) =>
+    JSON.parse(`"${m[1]}"`),
+  );
+}
+
 describe('class transpilation', () => {
   it('transpiles a basic class with instance fields and methods', () => {
     const result = transpile(`class Point {
@@ -35,23 +41,24 @@ describe('class transpilation', () => {
   });
 
   it('transpiles extends, super(), and super sends', () => {
-    const result = transpile(`class C extends D {
+    const source = `class C extends D {
   constructor() { super(1); }
   m() { super.m(2); }
   static n() { super.n(3); }
-}`);
-    expect(result).not.toMatch(/\bclass\b/);
+}`;
+    const result = transpile(source);
     const funStrings = [...result.matchAll(/\$fun\("((?:\\.|[^"\\])*)"\s*,\s*"((?:\\.|[^"\\])*)"/g)].map((m) => ({
       show: JSON.parse(`"${m[1]}"`),
       code: JSON.parse(`"${m[2]}"`),
     }));
     const ctor = funStrings[0]!;
-    expect(ctor.show).not.toMatch(/\bsuper\s*\(/);
+    expect(ctor.show).toBe(source);
     expect(ctor.code).not.toMatch(/\bsuper\s*\(/);
-    expect(ctor.show).toContain('$global.D.call(this, 1)');
     expect(ctor.code).toContain('$global.D.call(this, 1)');
     expect(result).toMatch(/\$global\.C = \$fun\(/);
-    expect(result).not.toMatch(/\bsuper\s*\(/);
+    for (const code of funCodes(result)) {
+      expect(code).not.toMatch(/\bsuper\s*\(/);
+    }
     expect(result).toContain('$global.D.call(this, 1)');
     expect(result).toContain('$global.D.m.call(this, 2)');
     expect(result).toContain('$global.D.n(3)');
@@ -59,23 +66,26 @@ describe('class transpilation', () => {
   });
 
   it('rewrites bare super() in constructor', () => {
-    const result = transpile(`class C extends D {
+    const source = `class C extends D {
   constructor() { super(); }
-}`);
-    expect(result).not.toMatch(/\bsuper\s*\(/);
+}`;
+    const result = transpile(source);
     expect(result).toContain('$global.D.call(this)');
-    const strings = [...result.matchAll(/"((?:\\.|[^"\\])*)"/g)].map((m) => JSON.parse(`"${m[1]}"`));
-    for (const s of strings) {
-      expect(s).not.toMatch(/\bsuper\s*\(/);
-    }
-    expect(strings.some((s) => s.includes('$global.D.call(this)'))).toBe(true);
+    const funStrings = [...result.matchAll(/\$fun\("((?:\\.|[^"\\])*)"\s*,\s*"((?:\\.|[^"\\])*)"/g)].map((m) => ({
+      show: JSON.parse(`"${m[1]}"`),
+      code: JSON.parse(`"${m[2]}"`),
+    }));
+    expect(funStrings[0]!.show).toBe(source);
+    expect(funStrings[0]!.code).toContain('$global.D.call(this)');
   });
 
   it('rewrites super(...args) in constructor', () => {
     const result = transpile(`class C extends D {
   constructor(...args) { super(...args); }
 }`);
-    expect(result).not.toMatch(/\bsuper\s*\(/);
+    for (const code of funCodes(result)) {
+      expect(code).not.toMatch(/\bsuper\s*\(/);
+    }
     expect(result).toContain('$global.D.call(this, ...args)');
   });
 
@@ -83,7 +93,9 @@ describe('class transpilation', () => {
     const result = transpile(`class C extends D {
   x = 1;
 }`);
-    expect(result).not.toMatch(/\bsuper\s*\(/);
+    for (const code of funCodes(result)) {
+      expect(code).not.toMatch(/\bsuper\s*\(/);
+    }
     expect(result).toContain('$global.D.call(this, ...args)');
   });
 
@@ -91,7 +103,9 @@ describe('class transpilation', () => {
     const result = transpile(`class Child extends globalThis.Parent {
   constructor() { super(); }
 }`);
-    expect(result).not.toMatch(/\bsuper\s*\(/);
+    for (const code of funCodes(result)) {
+      expect(code).not.toMatch(/\bsuper\s*\(/);
+    }
     expect(result).toContain('$global.globalThis.Parent.call(this)');
   });
 
@@ -100,8 +114,8 @@ describe('class transpilation', () => {
   x = 1;
   constructor() { super(); }
 }`);
-    const show = JSON.parse(`"${result.match(/\$fun\("((?:\\.|[^"\\])*)"/)![1]}"`);
-    expect(show.indexOf('$global.globalThis.Parent.call(this)')).toBeLessThan(show.indexOf("this['@x'] = 1"));
+    const code = JSON.parse(`"${result.match(/\$fun\("(?:\\.|[^"\\])*"\s*,\s*"((?:\\.|[^"\\])*)"/)![1]}"`);
+    expect(code.indexOf('$global.globalThis.Parent.call(this)')).toBeLessThan(code.indexOf("this['@x'] = 1"));
   });
 
   it('rewrites super() to Object when class has no explicit extends', () => {
@@ -111,7 +125,9 @@ class D {
     super();
   }
 }`);
-    expect(result).not.toMatch(/\bsuper\b/);
+    for (const code of funCodes(result)) {
+      expect(code).not.toMatch(/\bsuper\b/);
+    }
     expect(result).toContain('Object.call(this)');
   });
 
@@ -138,7 +154,9 @@ class D extends C {
     super();
   }
 }`);
-    expect(result).not.toMatch(/\bsuper\b/);
+    for (const code of funCodes(result)) {
+      expect(code).not.toMatch(/\bsuper\b/);
+    }
     expect(result).toContain('$global.C.call(this)');
   });
 
@@ -152,7 +170,19 @@ class D extends C {
   }
 }`);
     expect(result).toContain('$global.C.call(this)');
-    expect(result).not.toMatch(/\bsuper\b/);
+    for (const code of funCodes(result)) {
+      expect(code).not.toMatch(/\bsuper\b/);
+    }
+  });
+
+  it('does not treat super in comments as a bare super call', () => {
+    const result = transpile(`class C {
+  constructor(str, i1) {
+    // Dan's super bracket matching feature
+    if (!str) return i1;
+  }
+}`);
+    expect(result).toMatch(/\$global\.C = \$fun\(/);
   });
 
   it('transpiles static blocks and static fields', () => {
@@ -184,5 +214,23 @@ class D extends C {
     expect(method.show).toContain('return this.x + this.y');
     expect(method.show).not.toContain("this['@x']");
     expect(method.code).toContain("this['@x']");
+  });
+
+  it('stores full class source in constructor $codeForShow', () => {
+    const source = `class Point {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+  }
+  add(p) { return this.x + p.x; }
+}`;
+    const result = transpile(source);
+    const funStrings = [...result.matchAll(/\$fun\("((?:\\.|[^"\\])*)"\s*,\s*"((?:\\.|[^"\\])*)"/g)].map((m) => ({
+      show: JSON.parse(`"${m[1]}"`),
+      code: JSON.parse(`"${m[2]}"`),
+    }));
+    const ctor = funStrings[0]!;
+    expect(ctor.show).toBe(source);
+    expect(ctor.code).toContain("this['@x'] = x");
   });
 });
