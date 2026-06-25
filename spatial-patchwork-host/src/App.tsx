@@ -139,7 +139,17 @@ export function App(props: {
         camera={camera}
         calibrated={calibrated()}
         hasBackground={!!background()}
-        onSample={() => setBackground(camera.grabGray())}
+        onSample={() => {
+          const g = camera.grabGray();
+          // Only overwrite on a successful grab; a null grab (camera not ready)
+          // shouldn't silently clear an existing reference.
+          if (g) setBackground(g);
+          else
+            console.warn(
+              "[spatial-host] background sample failed — camera not ready?",
+              { active: camera.active(), liveSize: camera.getLiveSize() },
+            );
+        }}
       />
     </div>
   );
