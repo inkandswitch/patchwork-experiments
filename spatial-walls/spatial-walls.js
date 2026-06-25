@@ -2,16 +2,16 @@
  * Spatial Walls — a bundleless demo tool for the spatial host.
  *
  * Subscribes to the host's `spatial:walls` provider (the drawing/object
- * recognition layer) and echoes every recognized shape as a black polygon with
- * a white border on a black background — the geometry the layer captured,
- * mirrored back onto the surface. (Analogous to how spatial-colors echoes tags.)
+ * recognition layer) and echoes every recognized shape as a white outline on a
+ * transparent background — the geometry the layer captured, mirrored back onto
+ * the surface. (Analogous to how spatial-colors echoes tags.)
  *
  * Each shape is a polygon of normalized {nx,ny} points in box space, so
  * placement is pure CSS percentages — no coordinate-system provider needed.
  *
- * Note: the host blacks out each recognized shape ABOVE everything, so this
- * tool's black fill is largely redundant with the host's; the white border's
- * outer half is what reads as the outline around the black shape.
+ * The background + polygon fill are transparent so the host's lit "paper"
+ * surface (surfaceBrightness) reaches the surface — an opaque fill would
+ * re-darken exactly the area the camera needs lit for detection.
  *
  * @typedef {Object} SpatialWallsDoc
  * @property {string} title
@@ -79,7 +79,10 @@ export function Tool(handle, element) {
       position: absolute;
       inset: 0;
       overflow: hidden;
-      background: #000;
+      /* Transparent so the host's lit "paper" surface (surfaceBrightness) shows
+         through. An opaque fill here would re-darken the surface the camera
+         needs lit, breaking walls detection in a dim room. */
+      background: transparent;
     }
     .spatial-walls svg {
       position: absolute;
@@ -89,7 +92,9 @@ export function Tool(handle, element) {
       pointer-events: none;
     }
     .spatial-walls polygon {
-      fill: #000;
+      /* Outline only — don't paint the recognized shape black (that would
+         re-darken the lit surface right where you drew). Just echo the outline. */
+      fill: none;
       stroke: #fff;
       stroke-width: 12px;
       stroke-linejoin: round;
