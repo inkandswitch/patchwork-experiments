@@ -14,10 +14,6 @@ import type { Frame, Recognizer, FramePoint } from "./layers/types.js";
 
 type Size = { w: number; h: number };
 
-// Mean abs grayscale diff below this (0..255) → treat the frame as unchanged and
-// skip the recognition pipeline this tick (keeps last published results).
-const CHANGE_THRESHOLD = 2.0;
-
 export interface FrameLoopOptions {
   video: HTMLVideoElement;
   /** Read FRESH each tick so live re-calibration during Use takes effect. */
@@ -55,7 +51,6 @@ export function createFrameLoop(opts: FrameLoopOptions): FrameLoop {
   let timer: ReturnType<typeof setInterval> | null = null;
   let inFlight = false;
   let mask: Uint8Array | null = null;
-  let prevGray: Uint8Array | null = null;
 
   function startLoop() {
     if (timer) return;
@@ -63,17 +58,6 @@ export function createFrameLoop(opts: FrameLoopOptions): FrameLoop {
   }
 
   const grab = () => grabGray(video, canvas, getLiveSize());
-
-  // Mean absolute per-pixel grayscale difference vs the previous frame.
-  function meanAbsDiff(gray: Uint8Array): number {
-    if (!prevGray || prevGray.length !== gray.length) return Infinity;
-    let sum = 0;
-    for (let i = 0; i < gray.length; i++) {
-      const d = gray[i] - prevGray[i];
-      sum += d < 0 ? -d : d;
-    }
-    return sum / gray.length;
-  }
 
   function tick(): void {
     if (inFlight) return;
@@ -89,12 +73,9 @@ export function createFrameLoop(opts: FrameLoopOptions): FrameLoop {
       if (!grabbed) return;
       const { gray, w, h, scale } = grabbed;
 
-      // Frame-change skip: leave last results + blackout untouched when static.
-      if (meanAbsDiff(gray) < CHANGE_THRESHOLD) {
-        prevGray = gray;
-        return;
-      }
-      prevGray = gray;
+      // Detection runs every tick (no frame-change skip): recognized things must
+      // re-evaluate live so transient occlusions (e.g. a person walking through)
+      // clear immediately instead of leaving a stuck blackout.
 
       // Shared per-tick claim mask.
       if (!mask || mask.length !== w * h) mask = new Uint8Array(w * h);
@@ -157,7 +138,6 @@ export function createFrameLoop(opts: FrameLoopOptions): FrameLoop {
       }
       inFlight = false;
       mask = null;
-      prevGray = null;
       for (const r of recognizers) r.stop();
     },
   };

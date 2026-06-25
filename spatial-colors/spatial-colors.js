@@ -177,10 +177,6 @@ export function Tool(handle, element) {
       stroke-width: ${BORDER_PX}px;
       stroke-linejoin: round;
     }
-    .spatial-colors polygon.sc-tag-black {
-      fill: #000;
-      stroke: none;
-    }
   `;
   element.appendChild(style);
 
@@ -346,13 +342,6 @@ export function Tool(handle, element) {
     return polygon;
   }
 
-  function makeBlackTag(pts) {
-    const polygon = document.createElementNS(SVG_NS, "polygon");
-    polygon.setAttribute("class", "sc-tag-black");
-    polygon.setAttribute("points", pointsAttr(pts));
-    return polygon;
-  }
-
   function render() {
     syncViewBox();
     svg.replaceChildren();
@@ -371,11 +360,9 @@ export function Tool(handle, element) {
     }));
     drawField(anchors);
 
-    // Black tag masks (no light on the tag).
-    for (const { corners } of colored) {
-      svg.appendChild(makeBlackTag(corners));
-    }
-    // Colored outline rings.
+    // NOTE: the host blacks out each tag quad (above everything), so we no
+    // longer draw our own black fill. We only draw the colored outline ring;
+    // its outer half shows around the host's black fill.
     for (const { corners, rgb } of colored) {
       svg.appendChild(makeOutline(corners, cssRgb(rgb)));
     }

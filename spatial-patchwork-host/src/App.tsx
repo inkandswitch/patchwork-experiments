@@ -3,8 +3,10 @@ import {
   createMemo,
   createResource,
   createSignal,
+  Match,
   onCleanup,
   Show,
+  Switch,
 } from "solid-js";
 import type { AutomergeUrl, DocHandle, Repo } from "@automerge/automerge-repo";
 import {
@@ -25,6 +27,7 @@ import { CALIBRATION_DATATYPE_ID } from "./folder-datatype";
 import { createCamera } from "./camera";
 import { ControlPanel } from "./ControlPanel";
 import { SetupPhase } from "./setup/SetupPhase";
+import { SampleBackgroundPhase } from "./sample/SampleBackgroundPhase";
 import { UseStage } from "./use/UseStage";
 import type { HostMode } from "./folder-datatype";
 
@@ -72,17 +75,18 @@ export function App(props: {
   const calHandle = useDocHandle<CalibrationDoc>(() => calibrationUrl());
   const calDoc = createDocumentProjection<CalibrationDoc>(calHandle);
 
-  // Flow is Setup → Use (the Sample phase is shelved with walls). An old
-  // persisted "sample" value falls through to "setup".
+  // Flow is Setup → Sample → Use.
   const mode = createMemo<HostMode>(() =>
-    doc.hostMode === "use" ? "use" : "setup",
+    doc.hostMode === "use" || doc.hostMode === "sample" ? doc.hostMode : "setup",
   );
 
-  // Calibration must be solved before Use is usable.
+  // Calibration must be solved before Sample/Use are usable.
   const calibrated = createMemo(() => !!calDoc()?.homographyCamToBoard);
 
   const setHostMode = (m: HostMode) => {
-    if (m === "use" && !calibrated()) return; // gate Use behind a solved calibration
+    if ((m === "sample" || m === "use") && !calibrated()) return; // gate behind calibration
+    // Use needs a sampled background (for the walls layer) → nudge to Sample first.
+    if (m === "use" && !background()) m = "sample";
     props.handle.change((d) => {
       d.hostMode = m;
     });
@@ -98,8 +102,7 @@ export function App(props: {
         when={calHandle()}
         fallback={<div class="sph-loading">Preparing calibration…</div>}
       >
-        <Show
-          when={mode() === "use"}
+        <Switch
           fallback={
             <SetupPhase
               calHandle={calHandle()!}
@@ -108,15 +111,20 @@ export function App(props: {
             />
           }
         >
-          <UseStage
-            hostHandle={props.handle}
-            hostDoc={doc}
-            calDoc={calDoc()!}
-            repo={repo}
-            camera={camera}
-            getBackground={background}
-          />
-        </Show>
+          <Match when={mode() === "sample"}>
+            <SampleBackgroundPhase calDoc={calDoc()!} camera={camera} />
+          </Match>
+          <Match when={mode() === "use"}>
+            <UseStage
+              hostHandle={props.handle}
+              hostDoc={doc}
+              calDoc={calDoc()!}
+              repo={repo}
+              camera={camera}
+              getBackground={background}
+            />
+          </Match>
+        </Switch>
       </Show>
 
       <ControlPanel

@@ -87,14 +87,21 @@ export function ControlPanel(props: {
       </div>
 
       <Show when={!collapsed()}>
-        {/* Top-level Setup / Use switch — always first. Use is gated until
-            calibration is solved. */}
+        {/* Top-level Setup / Sample / Use switch — always first. Sample + Use
+            are gated until calibration is solved. */}
         <div class="sph-seg">
           <button
             data-active={props.mode === "setup" ? "" : undefined}
             onClick={() => props.setHostMode("setup")}
           >
             Setup
+          </button>
+          <button
+            data-active={props.mode === "sample" ? "" : undefined}
+            disabled={!props.calibrated}
+            onClick={() => props.setHostMode("sample")}
+          >
+            Sample
           </button>
           <button
             data-active={props.mode === "use" ? "" : undefined}
@@ -115,6 +122,18 @@ export function ControlPanel(props: {
             setMode={setMode}
             setGrid={setGrid}
           />
+        </Show>
+
+        <Show when={props.mode === "sample"}>
+          <button data-variant="primary" onClick={props.onSample}>
+            Sample background
+          </button>
+          <span
+            class="sph-status"
+            data-kind={props.hasBackground ? "accent" : "danger"}
+          >
+            {props.hasBackground ? "Background sampled ✓" : "Not sampled"}
+          </span>
         </Show>
 
         <Show when={props.mode === "use"}>
