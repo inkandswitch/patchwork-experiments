@@ -83,7 +83,7 @@ const POWER = 0.5;
 // white sooner (punchier mixes); <1 keeps mixes dimmer / delays the blowout.
 const GAIN = 1;
 // Longest edge (px) of the offscreen field; scaled up smoothly to the box.
-const FIELD_MAX = 256;
+const FIELD_MAX = 512;
 // Border ring thickness (px). Half is used to size the colored outline.
 const BORDER_PX = 20;
 
