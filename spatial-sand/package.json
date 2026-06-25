@@ -1,0 +1,16 @@
+{
+  "name": "@patchwork/spatial-sand",
+  "version": "0.0.1",
+  "description": "Falling-sand tool for the spatial host: sand rains from the top and piles against detected wall drawings",
+  "type": "module",
+  "main": "spatial-sand.js",
+  "exports": {
+    ".": "spatial-sand.js"
+  },
+  "scripts": {
+    "push": "pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  },
+  "keywords": [],
+  "author": "Ink & Switch"
+}
