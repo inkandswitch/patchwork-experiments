@@ -7,16 +7,14 @@ import {
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { z } from "zod";
 import { getContextHandle, subscribeContext } from "../lib/context";
 import {
   Highlight,
   SchemaMatches,
   SchemaQueries,
   Selection,
-  schemaKey,
 } from "../canvas/channels";
-import type { JsonSchema } from "../lib/schema";
+import { LATLNG_JSON_SCHEMA, LATLNG_KEY } from "../canvas/well-known-schemas";
 import {
   DEFAULT_CENTER,
   DEFAULT_ZOOM,
@@ -35,13 +33,7 @@ const COORD_EPSILON = 1e-6;
 const ZOOM_EPSILON = 1e-3;
 
 // The map asks the canvas "where, in any mounted document, is a {lat, lon}
-// pair?" and drops a marker on each answer. The schema travels as JSON Schema
-// (the channel's payload type); the resolver hydrates it back to zod.
-const LATLNG_JSON_SCHEMA = z.toJSONSchema(
-  z.object({ lat: z.number(), lon: z.number() }),
-) as unknown as JsonSchema;
-
-const LATLNG_KEY = schemaKey(LATLNG_JSON_SCHEMA);
+// pair?" (the shared LATLNG schema) and drops a marker on each answer.
 
 // Tool entry point: maplibre owns its own subtree, so this renders into a plain
 // container rather than through Solid. The map's viewport is mirrored to the
@@ -125,6 +117,10 @@ export const MapTool: ToolRender = (rawHandle, element) => {
   const repo = element.repo;
   const markers = new Map<AutomergeUrl, maplibregl.Marker>();
   let epoch = 0;
+  // Whether we've adopted an initial set of markers as the baseline. The first
+  // batch (e.g. pins restored on open) keeps the document's saved viewport;
+  // markers that appear *after* that zoom the map out to come into view.
+  let seeded = false;
 
   // Focus highlight, both directions. A marker glows while its card document is
   // in focus (the union of the `Selection` and `Highlight` context channels),
@@ -236,6 +232,36 @@ export const MapTool: ToolRender = (rawHandle, element) => {
     });
   };
 
+  // Bring genuinely new markers into view by zooming the map out. Batched so a
+  // burst of new pins eases once, and a no-op when every new pin is already on
+  // screen, so it never fights the user's current view.
+  let pendingFit: maplibregl.LngLat[] = [];
+  let fitTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const scheduleFit = (position: maplibregl.LngLat) => {
+    pendingFit.push(position);
+    if (fitTimer) clearTimeout(fitTimer);
+    fitTimer = setTimeout(flushFit, 120);
+  };
+
+  const flushFit = () => {
+    fitTimer = undefined;
+    const positions = pendingFit;
+    pendingFit = [];
+    const view = map.getBounds();
+    if (positions.length === 0 || positions.every((p) => view.contains(p))) {
+      return;
+    }
+    // Extend the *current* view so existing pins stay framed; because the box
+    // only grows, fitBounds can only zoom out (or hold).
+    const bounds = new maplibregl.LngLatBounds(
+      view.getSouthWest(),
+      view.getNorthEast(),
+    );
+    for (const position of positions) bounds.extend(position);
+    map.fitBounds(bounds, { padding: 64, maxZoom: map.getZoom(), duration: 600 });
+  };
+
   // The map's own scoped slice of the Highlight channel (just the hovered pin's
   // document). Because each writer owns its slice, this is a plain key add/
   // delete — other writers' highlights live in their own slices and merge in.
@@ -293,7 +319,11 @@ export const MapTool: ToolRender = (rawHandle, element) => {
     recomputeFocus();
   });
 
-  const addMarker = async (match: AutomergeUrl, generation: number) => {
+  const addMarker = async (
+    match: AutomergeUrl,
+    generation: number,
+    fitNew: boolean,
+  ) => {
     try {
       const docHandle = await Promise.resolve(repo.find<unknown>(match));
       if (generation !== epoch || markers.has(match)) return;
@@ -320,10 +350,13 @@ export const MapTool: ToolRender = (rawHandle, element) => {
       marker.addTo(map);
       markers.set(match, marker);
       // A pin can resolve after its doc is already focused (async find); treat
-      // that as a fresh appearance so it still pans into view.
+      // that as a fresh appearance so it still pans into view. The focus pan
+      // already brings it on screen, so only the unfocused case needs the fit.
       if (styleMarker(match, marker) && !focusedMatches.has(match)) {
         focusedMatches.add(match);
         panMatchesIntoView([match]);
+      } else if (fitNew) {
+        scheduleFit(marker.getLngLat());
       }
     } catch {
       // ignore docs that fail to load
@@ -344,9 +377,13 @@ export const MapTool: ToolRender = (rawHandle, element) => {
       markers.delete(match);
       focusedMatches.delete(match);
     }
+    // Only zoom out for markers added after the baseline set; the first batch
+    // adopts the document's saved viewport as-is.
+    const fitNew = seeded;
     for (const match of matches) {
-      if (!markers.has(match)) void addMarker(match, generation);
+      if (!markers.has(match)) void addMarker(match, generation, fitNew);
     }
+    if (matches.length > 0) seeded = true;
   };
 
   // Publish the {lat, lon} schema query and consume its matches.
@@ -365,6 +402,7 @@ export const MapTool: ToolRender = (rawHandle, element) => {
     unsubscribeHighlight();
     highlightHandle?.release();
     if (hideTimer) clearTimeout(hideTimer);
+    if (fitTimer) clearTimeout(fitTimer);
     popup.remove();
     for (const marker of markers.values()) marker.remove();
     markers.clear();

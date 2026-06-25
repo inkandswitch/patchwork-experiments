@@ -1,12 +1,18 @@
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
 import { MountedEvent, UnmountedEvent } from "@inkandswitch/patchwork-elements";
-import { For, Show, createEffect, createSignal, onCleanup } from "solid-js";
+import { createEffect, onCleanup } from "solid-js";
 import { render } from "solid-js/web";
 import { RepoContext } from "solid-automerge";
-import { readContext, useContextHandle } from "../lib/context-solid";
-import { SearchQueries, SearchResults } from "../canvas/channels";
-import type { CardDoc } from "../card/datatype";
+import { readContext, useContextHandle } from "../../lib/context-solid";
+import {
+  SchemaMatches,
+  SchemaQueries,
+  SearchQueries,
+  SearchResults,
+} from "../../canvas/channels";
+import { LATLNG_JSON_SCHEMA, LATLNG_KEY } from "../../canvas/well-known-schemas";
+import type { CardDoc } from "../../card/datatype";
 import type { Place } from "./datatype";
 import "./poi.css";
 
@@ -28,11 +34,10 @@ type NominatimItem = {
   type?: string;
 };
 
-type QueryStatus = "queued" | "searching" | "error" | number;
-
-// Tool entry point: a contributor that answers the canvas search broker with
-// OpenStreetMap places. It reads the active queries from its response doc and
-// writes a result document url back under each.
+// Tool entry point: a contributor that answers the canvas search channel with
+// OpenStreetMap places. It reads the active queries and writes a result
+// document url back under each. The card itself only shows a title and a
+// description of what it does — like a playing card in a game.
 export const PoiProviderTool: ToolRender = (_handle, element) => {
   return render(
     () => (
@@ -48,27 +53,84 @@ function PoiProvider(props: { element: ToolElement }) {
   const repo = props.element.repo;
   // Read the active queries from the context and write results back as our own
   // scoped slice. The two are separate channels, so writing results never
-  // retriggers the query effect (no custom-equals memo needed anymore).
+  // retriggers the query effect.
   const searchQueries = readContext(props.element, SearchQueries);
   const results = useContextHandle(props.element, SearchResults);
 
-  // Per-query debounce timers, the queries we've already answered, the card
-  // urls minted per query (so they can be unmounted when the query goes away),
-  // and a status map purely for the UI.
+  // Find places already in the canvas the same way the map does: publish the
+  // {lat, lon} schema query and read its matches. Each match url resolves
+  // straight to the matched `{lat, lon}` subtree. We keep their coordinates so
+  // the search can be biased toward the region the canvas is already about.
+  const placeCoords = new Map<string, [number, number]>();
+  let matchEpoch = 0;
+
+  const reconcilePlaces = async (matches: AutomergeUrl[]) => {
+    const generation = ++matchEpoch;
+    const wanted = new Set<string>(matches);
+    for (const key of [...placeCoords.keys()]) {
+      if (!wanted.has(key)) placeCoords.delete(key);
+    }
+    for (const match of matches) {
+      if (placeCoords.has(match)) continue;
+      try {
+        const docHandle = await Promise.resolve(repo.find<unknown>(match));
+        if (generation !== matchEpoch) return;
+        const coords = toLngLat(docHandle.doc());
+        if (coords) placeCoords.set(match, coords);
+      } catch {
+        // ignore docs that fail to load
+      }
+    }
+  };
+
+  // A padded bounding box around the existing places, as Nominatim's `viewbox`
+  // (x1,y1,x2,y2 = west,north,east,south). Used WITHOUT `bounded=1`, so it only
+  // biases results toward the box rather than restricting to it. `undefined`
+  // when the canvas has no places yet (an unbiased search).
+  const biasViewbox = (): string | undefined => {
+    if (placeCoords.size === 0) return undefined;
+    let minLon = Infinity;
+    let maxLon = -Infinity;
+    let minLat = Infinity;
+    let maxLat = -Infinity;
+    for (const [lon, lat] of placeCoords.values()) {
+      minLon = Math.min(minLon, lon);
+      maxLon = Math.max(maxLon, lon);
+      minLat = Math.min(minLat, lat);
+      maxLat = Math.max(maxLat, lat);
+    }
+    const padLon = Math.max((maxLon - minLon) * 0.5, 0.5);
+    const padLat = Math.max((maxLat - minLat) * 0.5, 0.5);
+    return [
+      minLon - padLon,
+      maxLat + padLat,
+      maxLon + padLon,
+      minLat - padLat,
+    ].join(",");
+  };
+
+  const schemaQueries = useContextHandle(props.element, SchemaQueries);
+  schemaQueries.change((slice) => {
+    slice[LATLNG_KEY] = LATLNG_JSON_SCHEMA;
+  });
+  const schemaMatches = readContext(props.element, SchemaMatches);
+  createEffect(() => {
+    void reconcilePlaces(schemaMatches()[LATLNG_KEY] ?? []);
+  });
+
+  // Per-query debounce timers, the queries we've already answered, and the card
+  // urls minted per query (so they can be unmounted when the query goes away).
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
   const handled = new Set<string>();
   const cardsByQuery = new Map<string, AutomergeUrl[]>();
-  const [status, setStatus] = createSignal<Record<string, QueryStatus>>({});
 
-  // The active query set, sorted for a stable UI list.
-  const queries = (): string[] => Object.keys(searchQueries()).sort();
+  const queries = (): string[] => Object.keys(searchQueries());
 
   createEffect(() => {
     const active = new Set(queries());
 
     for (const query of active) {
       if (handled.has(query) || timers.has(query)) continue;
-      setStatus((s) => ({ ...s, [query]: "queued" }));
       const timer = setTimeout(() => {
         timers.delete(query);
         void runSearch(query);
@@ -76,8 +138,8 @@ function PoiProvider(props: { element: ToolElement }) {
       timers.set(query, timer);
     }
 
-    // Forget queries the broker dropped: cancel pending fetches, clear status,
-    // and unmount the cards we created for them.
+    // Forget queries the search dropped: cancel pending fetches and unmount the
+    // cards we created for them.
     for (const query of [...handled]) {
       if (!active.has(query)) handled.delete(query);
     }
@@ -95,11 +157,6 @@ function PoiProvider(props: { element: ToolElement }) {
         if (!active.has(query)) delete slice[query];
       }
     });
-    setStatus((s) => {
-      const next: Record<string, QueryStatus> = {};
-      for (const query of active) if (query in s) next[query] = s[query];
-      return next;
-    });
   });
 
   onCleanup(() => {
@@ -109,9 +166,8 @@ function PoiProvider(props: { element: ToolElement }) {
   });
 
   const runSearch = async (query: string) => {
-    setStatus((s) => ({ ...s, [query]: "searching" }));
     try {
-      const places = await fetchPois(query);
+      const places = await fetchPois(query, biasViewbox());
       // The query may have been dropped while we were fetching; don't resurrect
       // a stale key.
       if (!(query in searchQueries())) return;
@@ -135,14 +191,13 @@ function PoiProvider(props: { element: ToolElement }) {
       });
       handled.add(query);
       mountCards(query, urls);
-      setStatus((s) => ({ ...s, [query]: places.length }));
     } catch {
-      setStatus((s) => ({ ...s, [query]: "error" }));
+      // Leave the query unanswered; a later edit re-queues it.
     }
   };
 
   // Announce the cards minted for a query as mounted documents so the canvas
-  // schema-match provider can discover and traverse them — they're never put in
+  // schema-match resolver can discover and traverse them — they're never put in
   // a `<patchwork-view>`, so these synthetic events are their only signal.
   const mountCards = (query: string, urls: AutomergeUrl[]) => {
     unmountCards(query); // replace any previous generation for this query
@@ -162,46 +217,67 @@ function PoiProvider(props: { element: ToolElement }) {
   };
 
   return (
-    <div class="embark-poi">
-      <div class="embark-poi__header">
-        <span class="embark-poi__dot" />
-        POI Provider
+    <div class="embark-poi-card">
+      <span class="embark-poi-card__pip embark-poi-card__pip--tl">
+        <PinIcon />
+      </span>
+      <div class="embark-poi-card__body">
+        <div class="embark-poi-card__title">Place Finder</div>
+        <p class="embark-poi-card__desc">
+          Watches the canvas for active searches and looks each one up on
+          OpenStreetMap, biased toward the places already on the canvas, and
+          drops the matches down as cards.
+        </p>
+        <div class="embark-poi-card__source">Nominatim · OpenStreetMap</div>
       </div>
-      <div class="embark-poi__sub">Nominatim / OpenStreetMap</div>
-      <Show
-        when={queries().length > 0}
-        fallback={<div class="embark-poi__empty">Waiting for searches…</div>}
-      >
-        <ul class="embark-poi__list">
-          <For each={queries()}>
-            {(query) => (
-              <li class="embark-poi__item">
-                <span class="embark-poi__query">{query}</span>
-                <span class="embark-poi__status">{statusLabel(status()[query])}</span>
-              </li>
-            )}
-          </For>
-        </ul>
-      </Show>
+      <span class="embark-poi-card__pip embark-poi-card__pip--br">
+        <PinIcon />
+      </span>
     </div>
   );
 }
 
-function statusLabel(status: QueryStatus | undefined): string {
-  if (status === undefined || status === "queued") return "queued";
-  if (status === "searching") return "searching…";
-  if (status === "error") return "error";
-  return `${status} places`;
+// A small map-pin glyph used as the card's corner "pips", the way a playing
+// card carries its suit in opposite corners.
+function PinIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M20 10c0 4.4-8 12-8 12s-8-7.6-8-12a8 8 0 0 1 16 0Z" />
+      <circle cx="12" cy="10" r="3" />
+    </svg>
+  );
+}
+
+// Read a [lng, lat] tuple from a matched node shaped like `{ lat, lon }` (the
+// same shape the map reads off its pin matches).
+function toLngLat(node: unknown): [number, number] | null {
+  if (node === null || typeof node !== "object") return null;
+  const { lat, lon } = node as Record<string, unknown>;
+  if (typeof lat !== "number" || typeof lon !== "number") return null;
+  return [lon, lat];
 }
 
 // Query Nominatim for a free-text place search, mapped to our flat `Place`
 // shape. `jsonv2` is requested specifically because it returns a short `name`
 // per result; `addressdetails=1` is cheap and handy for future disambiguation.
-async function fetchPois(query: string): Promise<Place[]> {
+// `viewbox` (when given) biases results toward the canvas's existing places; it
+// is deliberately passed without `bounded=1` so far-away matches still surface.
+async function fetchPois(query: string, viewbox?: string): Promise<Place[]> {
   await reserveNominatimSlot();
-  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
+  let url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
     query,
   )}&format=jsonv2&addressdetails=1&limit=10`;
+  if (viewbox) url += `&viewbox=${encodeURIComponent(viewbox)}`;
   const response = await fetch(url, { headers: { Accept: "application/json" } });
   if (!response.ok) throw new Error(`Nominatim responded ${response.status}`);
   const items = (await response.json()) as NominatimItem[];

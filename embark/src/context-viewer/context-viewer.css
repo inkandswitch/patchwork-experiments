@@ -1,0 +1,59 @@
+/* A scrollable column of channel cards: a monospace channel name over its
+   pretty-printed merged JSON value (or "empty"). */
+.embark-context {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 8px;
+  overflow: auto;
+  background: #ffffff;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.embark-context__channel {
+  /* Keep each card at its natural height so the column scrolls instead of
+     squishing the sections together when the content overflows. */
+  flex: 0 0 auto;
+  border: 1px solid #f0eeec;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.embark-context__channel--empty {
+  opacity: 0.55;
+}
+
+.embark-context__name {
+  padding: 6px 8px;
+  background: #faf9f8;
+  border-bottom: 1px solid #f0eeec;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1c1917;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.embark-context__value {
+  margin: 0;
+  padding: 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #44403c;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.embark-context__value--empty {
+  color: #a8a29e;
+  font-style: italic;
+}
+
+.embark-context__empty {
+  padding: 16px;
+  color: #a8a29e;
+  font-size: 12px;
+}

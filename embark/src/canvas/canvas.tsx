@@ -394,7 +394,7 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
           </div>
         )}
       </Show>
-      <div style={{ position: "absolute", bottom: 0, right: 0 }}>v0.0.6</div>
+      <div style={{ position: "absolute", bottom: 0, right: 0 }}>v0.0.7</div>
     </div>
   );
 }

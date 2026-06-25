@@ -1,8 +1,9 @@
 import { plugins as canvasPlugins } from "./canvas";
 import { plugins as partsBinPlugins } from "./canvas/parts-bin";
 import { plugins as commandsPlugins } from "./commands";
+import { plugins as contextViewerPlugins } from "./context-viewer";
 import { plugins as searchPlugins } from "./search";
-import { plugins as poiPlugins } from "./poi";
+import { plugins as cardsPlugins } from "./cards";
 import { plugins as cardPlugins } from "./card";
 import { plugins as llmCardPlugins } from "./llm-card";
 import { plugins as inspectPlugins } from "./inspect";
@@ -16,7 +17,7 @@ export const plugins = [
   ...partsBinPlugins,
   ...commandsPlugins,
   ...searchPlugins,
-  ...poiPlugins,
+  ...cardsPlugins,
   ...cardPlugins,
   ...llmCardPlugins,
   ...inspectPlugins,
@@ -24,4 +25,5 @@ export const plugins = [
   ...mentionPlugins,
   ...stickerPlugins,
   ...todoPlugins,
+  ...contextViewerPlugins,
 ];

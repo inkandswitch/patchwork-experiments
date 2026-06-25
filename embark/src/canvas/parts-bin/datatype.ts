@@ -2,7 +2,7 @@ import type { Repo } from "@automerge/automerge-repo";
 import type { DatatypeImplementation } from "@inkandswitch/patchwork-plugins";
 import type { PartsBinDoc, PartsBinItem } from "./types";
 import type { SearchDoc } from "../../search/datatype";
-import type { PoiProviderDoc } from "../../poi/datatype";
+import type { PoiProviderDoc } from "../../cards/poi/datatype";
 import {
   DEFAULT_CENTER,
   DEFAULT_ZOOM,

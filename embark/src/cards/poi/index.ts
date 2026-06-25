@@ -4,7 +4,7 @@ export const plugins: Plugin<any>[] = [
   {
     type: "patchwork:tool",
     id: "poi-provider",
-    name: "POI Provider",
+    name: "Place Finder",
     icon: "MapPin",
     supportedDatatypes: ["poi-provider"],
     async load() {
@@ -15,7 +15,7 @@ export const plugins: Plugin<any>[] = [
   {
     type: "patchwork:datatype",
     id: "poi-provider",
-    name: "POI Provider",
+    name: "Place Finder",
     icon: "MapPin",
     async load() {
       const { PoiProviderDatatype } = await import("./datatype");
