@@ -1,7 +1,0 @@
-/* Host for an inline command embed. The render module owns everything inside;
-   we only give it a sensible inline-block box that flows with the text. */
-.cm-command-embed {
-  display: inline-block;
-  vertical-align: top;
-  max-width: 100%;
-}

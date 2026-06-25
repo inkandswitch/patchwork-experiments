@@ -21,7 +21,7 @@
 
 .cm-command-row {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   padding: 5px 8px;
   border-radius: 5px;
@@ -35,20 +35,11 @@
   background: rgba(59, 130, 246, 0.15);
 }
 
-.cm-command-row__label {
+/* The suggestion's inline face (its card's `viewUrl` preview) or, when the card
+   has no custom face, its plain label text. */
+.cm-command-row__embed {
   color: #111827;
   font-weight: 500;
-  flex: 0 0 auto;
-}
-
-/* The literal text that will be inserted, shown muted in a monospace face so
-   command snippets like {Route(from: A to: B)} read as code. */
-.cm-command-row__preview {
-  color: #6b7280;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.92em;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .cm-command-empty {
@@ -69,12 +60,8 @@
     background: rgba(96, 165, 250, 0.25);
   }
 
-  .cm-command-row__label {
+  .cm-command-row__embed {
     color: #e5e7eb;
-  }
-
-  .cm-command-row__preview {
-    color: #9ca3af;
   }
 
   .cm-command-empty {

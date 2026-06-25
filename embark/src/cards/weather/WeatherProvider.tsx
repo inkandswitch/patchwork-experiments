@@ -47,8 +47,10 @@ const LATLNG_JSON_SCHEMA = z.toJSONSchema(
 ) as unknown as JsonSchema;
 const LATLNG_KEY = schemaKey(LATLNG_JSON_SCHEMA);
 
-// A resolved place: coordinates plus a display name for the card and menu.
-type Located = { lat: number; lon: number; place: string };
+// A resolved place: coordinates, a display name for the card and menu, and —
+// when known — the url of the document the place came from, so the minted card
+// can link its inline place pill back to the real place document.
+type Located = { lat: number; lon: number; place: string; url?: AutomergeUrl };
 
 // Today's forecast for one location.
 type DayWeather = {
@@ -100,9 +102,10 @@ function WeatherProvider(props: {
   let searchQueries: ScopeHandle<Record<string, true>> | undefined;
   let unsubscribeQueries: (() => void) | undefined;
   // The import url of our inline renderer, served by the host service worker out
-  // of a folder doc. Resolved async on mount; suggestions made before it lands
-  // fall back to a plain mention pill.
-  let viewUrl: string | undefined;
+  // of a folder doc. Set up once on mount; minted cards await it (so the folder
+  // is created at most once) and bake it onto the card doc — a card whose view
+  // can't be set up falls back to a plain title pill.
+  let viewUrlPromise: Promise<string | undefined> | undefined;
   let disposed = false;
 
   onMount(() => {
@@ -115,9 +118,7 @@ function WeatherProvider(props: {
     schemaQueries.change((slice) => {
       slice[LATLNG_KEY] = LATLNG_JSON_SCHEMA;
     });
-    void ensureViewUrl().then((url) => {
-      viewUrl = url;
-    });
+    viewUrlPromise = ensureViewUrl();
     // Re-answer whenever the active commands change. `subscribe` doesn't fire an
     // initial call, so seed once.
     unsubscribeQueries = store.subscribe(CommandQueries, onQueries);
@@ -142,14 +143,17 @@ function WeatherProvider(props: {
     const active = new Set(Object.keys(store.read(CommandQueries)));
 
     for (const query of active) {
-      const place = parseWeather(query);
-      if (!place) continue; // not our command, or no place typed yet
+      // We answer two kinds of query: one with a typed place (`/weather berlin`),
+      // and — for discoverability — the bare or partial command (`/`, `/weath`),
+      // for which we offer one eager sample built from a place already on the
+      // canvas so the user sees what the command does.
+      if (!parseWeather(query) && !isWeatherDiscovery(query)) continue;
       if (handled.has(query) || inFlight.has(query) || timers.has(query)) {
         continue;
       }
       const timer = setTimeout(() => {
         timers.delete(query);
-        void resolve(query, place);
+        void resolve(query);
       }, DEBOUNCE_MS);
       timers.set(query, timer);
     }
@@ -170,13 +174,16 @@ function WeatherProvider(props: {
   };
 
   // Resolve a weather query end to end: place -> coordinates -> forecast -> card
-  // -> suggestion. Bails out (leaving the query unanswered, so a later edit
-  // re-queues it) if the place can't be located or the query is dropped mid-way.
-  const resolve = async (query: string, place: string) => {
+  // -> suggestion. A query with a typed place is geocoded; a discovery query
+  // (`/`, `/weath`) instead showcases one place already on the canvas. Bails out
+  // (leaving the query unanswered, so a later edit re-queues it) if no place can
+  // be located or the query is dropped mid-way.
+  const resolve = async (query: string) => {
     if (!store || disposed) return;
     inFlight.add(query);
     try {
-      const located = await resolveLatLon(place);
+      const place = parseWeather(query);
+      const located = place ? await resolveLatLon(place) : await resolveSample();
       if (disposed || !located) return;
       if (!(query in store.read(CommandQueries))) return; // dropped while resolving
 
@@ -185,15 +192,20 @@ function WeatherProvider(props: {
       if (!cached) {
         const weather = await fetchWeather(located.lat, located.lon);
         if (disposed || !(query in store.read(CommandQueries))) return;
-        cached = { url: mintCard(located, weather), label: menuLabel(located, weather) };
+        // The renderer travels on the card doc now, so resolve it before
+        // minting (the folder is created at most once, on mount).
+        const viewUrl = viewUrlPromise ? await viewUrlPromise : undefined;
+        if (disposed || !(query in store.read(CommandQueries))) return;
+        cached = {
+          url: mintCard(located, weather, viewUrl),
+          label: menuLabel(located, weather),
+        };
         cardCache.set(key, cached);
       }
 
       const entry = cached;
       suggestions?.change((slice) => {
-        slice[query] = [
-          { label: entry.label, url: entry.url, ...(viewUrl ? { viewUrl } : {}) },
-        ];
+        slice[query] = [{ label: entry.label, url: entry.url }];
       });
       handled.add(query);
     } catch {
@@ -216,11 +228,23 @@ function WeatherProvider(props: {
     return resolveViaSearch(place);
   };
 
-  // Read a {lat, lon} match's coordinates and the name of the document it lives
-  // in, returning it only when that name fuzzily matches the requested place.
-  const locationFromMatch = async (
+  // Pick one place already on the canvas to showcase the command before the
+  // user has typed anything: the first {lat, lon} match with a usable name.
+  const resolveSample = async (): Promise<Located | null> => {
+    if (!store) return null;
+    const matches = store.read(SchemaMatches)[LATLNG_KEY] ?? [];
+    for (const match of matches) {
+      const found = await locatedFromMatch(match);
+      if (found) return found;
+    }
+    return null;
+  };
+
+  // Read a {lat, lon} match's coordinates and the display name of the document
+  // it lives in (no filtering). The owner url lets the card link its place pill
+  // back to the real place document.
+  const locatedFromMatch = async (
     match: AutomergeUrl,
-    place: string,
   ): Promise<Located | null> => {
     try {
       const node = (await Promise.resolve(repo.find<unknown>(match))).doc() as
@@ -229,19 +253,33 @@ function WeatherProvider(props: {
       const lat = node?.lat;
       const lon = node?.lon;
       if (typeof lat !== "number" || typeof lon !== "number") return null;
+      // The place lives in the document that owns the matched {lat, lon} node;
+      // link the card's place pill back to it.
+      const ownerUrl =
+        `automerge:${parseAutomergeUrl(match).documentId}` as AutomergeUrl;
       // The matched node is often a card's `props` (which carries `name`); if
       // not, fall back to the owning document's title.
       let name = typeof node?.name === "string" ? node.name : "";
       if (!name) {
-        const ownerUrl =
-          `automerge:${parseAutomergeUrl(match).documentId}` as AutomergeUrl;
-        name = docTitle((await Promise.resolve(repo.find<unknown>(ownerUrl))).doc());
+        name = docTitle(
+          (await Promise.resolve(repo.find<unknown>(ownerUrl))).doc(),
+        );
       }
-      if (name && fuzzyMatch(name, place)) return { lat, lon, place: name };
+      if (!name) return null;
+      return { lat, lon, place: name, url: ownerUrl };
     } catch {
       // ignore matches that fail to load
+      return null;
     }
-    return null;
+  };
+
+  // As above, but only when the place name fuzzily matches what the user typed.
+  const locationFromMatch = async (
+    match: AutomergeUrl,
+    place: string,
+  ): Promise<Located | null> => {
+    const found = await locatedFromMatch(match);
+    return found && fuzzyMatch(found.place, place) ? found : null;
   };
 
   // Drive the search channel for `place` and keep the first result document
@@ -256,7 +294,9 @@ function WeatherProvider(props: {
       const urls = await waitForResults(store, place, SEARCH_TIMEOUT_MS);
       for (const url of urls) {
         try {
-          const card = (await Promise.resolve(repo.find<unknown>(url))).doc() as
+          const card = (
+            await Promise.resolve(repo.find<unknown>(url))
+          ).doc() as
             | { props?: { lat?: unknown; lon?: unknown; name?: unknown } }
             | undefined;
           const lat = card?.props?.lat;
@@ -264,7 +304,7 @@ function WeatherProvider(props: {
           if (typeof lat === "number" && typeof lon === "number") {
             const name =
               typeof card?.props?.name === "string" ? card.props.name : place;
-            return { lat, lon, place: name };
+            return { lat, lon, place: name, url };
           }
         } catch {
           // skip results that fail to load
@@ -279,13 +319,25 @@ function WeatherProvider(props: {
   };
 
   // One generic card per forecast, with the weather flattened into `props` so
-  // both our inline renderer and the standalone CardTool can read it.
-  const mintCard = (located: Located, weather: DayWeather): AutomergeUrl =>
-    repo.create<CardDoc>({
-      "@patchwork": { type: "card" },
+  // both our inline renderer and the standalone CardTool can read it. The
+  // display name lives in `@patchwork.title`; the renderer rides on `viewUrl`;
+  // and the place's document id is stored *bare* (no `automerge:` prefix) so
+  // `deepCloneDocument` leaves it alone — cloning a weather card keeps its place
+  // pill pointing at the real place rather than cloning the place too.
+  const mintCard = (
+    located: Located,
+    weather: DayWeather,
+    viewUrl: string | undefined,
+  ): AutomergeUrl => {
+    const placeId = located.url
+      ? parseAutomergeUrl(located.url).documentId
+      : undefined;
+    return repo.create<CardDoc>({
+      "@patchwork": { type: "card", title: `Weather in ${located.place}` },
       props: {
         name: `Weather: ${located.place}`,
         place: located.place,
+        ...(placeId ? { placeId } : {}),
         lat: located.lat,
         lon: located.lon,
         date: weather.date,
@@ -296,7 +348,9 @@ function WeatherProvider(props: {
         summary: weather.label,
       },
       content: `${located.place}: ${weather.label}, ${weather.max}\u00b0/${weather.min}\u00b0 (${weather.date})`,
+      ...(viewUrl ? { viewUrl } : {}),
     }).url;
+  };
 
   // Ensure the renderer folder exists (persisted on the provider doc so the url
   // is stable across reloads), write view.js once, and pin the import url to the
@@ -381,11 +435,24 @@ function parseWeather(query: string): string | null {
   const trimmed = query.trim();
   if (!trimmed) return null;
   const space = trimmed.search(/\s/);
-  const command = (space === -1 ? trimmed : trimmed.slice(0, space)).toLowerCase();
+  const command = (
+    space === -1 ? trimmed : trimmed.slice(0, space)
+  ).toLowerCase();
   const place = space === -1 ? "" : trimmed.slice(space + 1).trim();
   const isWeather = command.length >= 4 && "weather".startsWith(command);
   if (!isWeather || !place) return null;
   return place;
+}
+
+// Whether a `/` query should surface the eager weather sample: the bare command
+// (`/`, query "") or a partial command prefix with no place yet (`/w`,
+// `/weather`). A query with a typed place goes through `parseWeather` instead,
+// and unrelated commands (whose prefix isn't part of "weather") are ignored.
+function isWeatherDiscovery(query: string): boolean {
+  const trimmed = query.trim();
+  if (trimmed === "") return true;
+  if (/\s/.test(trimmed)) return false; // a place was typed → not discovery
+  return "weather".startsWith(trimmed.toLowerCase());
 }
 
 // Resolve with the first non-empty results for `place`, or [] after `timeoutMs`.
@@ -433,7 +500,8 @@ function docTitle(doc: unknown): string {
     return record.props.name;
   }
   if (typeof record.title === "string" && record.title) return record.title;
-  if (typeof record.content === "string" && record.content) return record.content;
+  if (typeof record.content === "string" && record.content)
+    return record.content;
   return "";
 }
 
@@ -444,7 +512,9 @@ async function fetchWeather(lat: number, lon: number): Promise<DayWeather> {
     `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
     `&daily=weather_code,temperature_2m_max,temperature_2m_min` +
     `&timezone=auto&forecast_days=1`;
-  const response = await fetch(url, { headers: { Accept: "application/json" } });
+  const response = await fetch(url, {
+    headers: { Accept: "application/json" },
+  });
   if (!response.ok) throw new Error(`Open-Meteo responded ${response.status}`);
   const data = (await response.json()) as {
     daily?: {
@@ -455,7 +525,8 @@ async function fetchWeather(lat: number, lon: number): Promise<DayWeather> {
     };
   };
   const daily = data.daily;
-  if (!daily?.time?.length) throw new Error("Open-Meteo returned no daily data");
+  if (!daily?.time?.length)
+    throw new Error("Open-Meteo returned no daily data");
   const code = daily.weather_code?.[0] ?? 0;
   const { label, emoji } = describeWeather(code);
   return {

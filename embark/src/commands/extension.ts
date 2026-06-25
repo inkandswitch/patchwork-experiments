@@ -24,6 +24,7 @@ import {
 } from "../lib/context";
 import { CommandQueries, CommandSuggestions } from "../canvas/channels";
 import { deepCloneDocument } from "../canvas/deep-clone";
+import { renderEmbedView } from "../lib/embed-view";
 import type { Suggestion } from "./datatype";
 import "./commands.css";
 
@@ -300,9 +301,10 @@ function applySelected(view: EditorView, index?: number): boolean {
 }
 
 // Deep-clone the suggestion's prototype card so the inserted embed is an
-// independent instance, then drop a token referencing the clone (and its
-// renderer) into the note. The `/query` span may have shifted while we cloned,
-// so it is only replaced when still exactly what we captured.
+// independent instance, then drop a `{cloneUrl}` token into the note. How that
+// token renders is decided later by the resolved clone (its title, or a `viewUrl`
+// render module baked onto the doc). The `/query` span may have shifted while we
+// cloned, so it is only replaced when still exactly what we captured.
 async function insertEmbed(
   view: EditorView,
   suggestion: Suggestion,
@@ -320,7 +322,7 @@ async function insertEmbed(
       // Fall back to referencing the prototype directly if cloning fails.
     }
   }
-  const token = buildToken(suggestion.label, cardUrl, suggestion.viewUrl);
+  const token = buildToken(cardUrl);
   const docLength = view.state.doc.length;
   const stillThere =
     to <= docLength && view.state.doc.sliceString(from, to) === expected;
@@ -333,19 +335,12 @@ async function insertEmbed(
   view.focus();
 }
 
-// Build the mention-style token the embed renderer understands: `[label]{url}`
-// for a plain mention, or `[label]{url?view=<encoded>}` when a render module is
-// attached. The label is sanitized so `]`/newlines can't close the token early.
-function buildToken(
-  label: string,
-  cardUrl: AutomergeUrl,
-  viewUrl?: string,
-): string {
-  const name = label.replace(/[\]\n]/g, " ").trim() || "card";
-  const url = viewUrl
-    ? `${cardUrl}?view=${encodeURIComponent(viewUrl)}`
-    : cardUrl;
-  return `[${name}]{${url}}`;
+// Build the token the unified renderer understands: `{automerge:<url>}`. The
+// name shown and whether a custom face is drawn are both decided by the resolved
+// document (its title, and an optional `viewUrl` render module on the doc), so
+// the token itself carries nothing but the card url.
+function buildToken(cardUrl: AutomergeUrl): string {
+  return `{${cardUrl}}`;
 }
 
 function closeMenu(view: EditorView): boolean {
@@ -355,7 +350,8 @@ function closeMenu(view: EditorView): boolean {
 }
 
 // Builds the popup. A fresh tooltip is produced whenever the field changes, so
-// rendering is one-shot per state.
+// rendering is one-shot per state; the row embeds are torn down when the tooltip
+// is destroyed.
 function buildMenu(active: Command): Tooltip {
   return {
     pos: active.from,
@@ -363,34 +359,55 @@ function buildMenu(active: Command): Tooltip {
     create: (view) => {
       const dom = document.createElement("div");
       dom.className = "cm-command-menu";
-      renderMenu(dom, view, active);
-      return { dom };
+      const teardowns = renderMenu(dom, view, active);
+      return {
+        dom,
+        destroy() {
+          for (const teardown of teardowns) teardown();
+        },
+      };
     },
   };
 }
 
-function renderMenu(dom: HTMLElement, view: EditorView, active: Command) {
+// Render the menu rows, returning a teardown per row (the embed faces subscribe
+// to their card, so they must be disposed when the menu is rebuilt or closed).
+function renderMenu(
+  dom: HTMLElement,
+  view: EditorView,
+  active: Command,
+): (() => void)[] {
   if (active.suggestions.length === 0) {
     const empty = document.createElement("div");
     empty.className = "cm-command-empty";
     empty.textContent = active.query ? "No commands" : "Type a command…";
     dom.appendChild(empty);
-    return;
+    return [];
   }
+  const teardowns: (() => void)[] = [];
   active.suggestions.forEach((suggestion, i) => {
     const row = document.createElement("div");
     row.className = "cm-command-row";
     if (i === active.index) row.classList.add("cm-command-row--active");
 
-    const label = document.createElement("span");
-    label.className = "cm-command-row__label";
-    label.textContent = suggestion.label;
-    row.appendChild(label);
-
-    const preview = document.createElement("span");
-    preview.className = "cm-command-row__preview";
-    preview.textContent = shortUrl(suggestion.url);
-    row.appendChild(preview);
+    // Preview each suggestion with the SAME inline face it gets once embedded
+    // (its card's `viewUrl` module), so the menu shows the real thing rather
+    // than a label. Falls back to the label for cards with no custom face.
+    // pointer-events are off so the row owns the click; this is a preview.
+    const host = document.createElement("span");
+    host.className = "cm-command-row__embed";
+    host.style.pointerEvents = "none";
+    row.appendChild(host);
+    teardowns.push(
+      renderEmbedView(host, suggestion.url, window.repo, {
+        fallback: () => {
+          host.textContent = suggestion.label;
+        },
+        onError: () => {
+          host.textContent = suggestion.label;
+        },
+      }),
+    );
 
     // mousedown (not click) + preventDefault so the editor keeps its selection.
     row.addEventListener("mousedown", (event) => {
@@ -399,10 +416,7 @@ function renderMenu(dom: HTMLElement, view: EditorView, active: Command) {
     });
     dom.appendChild(row);
   });
-}
-
-function shortUrl(url: string): string {
-  return url.replace(/^automerge:/, "").slice(0, 8);
+  return teardowns;
 }
 
 function triggerKey(t: { from: number; query: string }): string {

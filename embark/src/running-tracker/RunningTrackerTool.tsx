@@ -272,12 +272,9 @@ function RunCard(props: {
 function RunScreen(props: { onStart: () => void }) {
   return (
     <div class="embark-run__pane embark-run__run-pane">
-      <span class="embark-run__ready">Ready to run</span>
       <button type="button" class="embark-run__start" on:click={props.onStart}>
-        <IconFootsteps />
-        <span>START</span>
+        START
       </button>
-      <p class="embark-run__start-hint">Records your run with GPS</p>
     </div>
   );
 }

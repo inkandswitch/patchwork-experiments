@@ -151,50 +151,33 @@
 .embark-run__run-pane {
   align-items: center;
   justify-content: center;
-  gap: 0.9rem;
-}
-
-.embark-run__ready {
-  font-size: 0.78rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  color: var(--muted);
 }
 
 .embark-run__start {
   width: 10rem;
   height: 10rem;
-  display: flex;
-  flex-direction: column;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.35rem;
   border: none;
   border-radius: 999px;
-  background: radial-gradient(circle at 50% 35%, #22c55e, var(--accent));
+  background: var(--accent);
   color: #fff;
-  font-size: 1.2rem;
+  font-size: 1.3rem;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   cursor: pointer;
-  box-shadow:
-    0 14px 34px rgba(22, 163, 74, 0.4),
-    inset 0 -3px 8px rgba(0, 0, 0, 0.18);
   transition:
     transform 0.08s ease,
-    box-shadow 0.15s ease;
+    background 0.15s ease;
+}
+
+.embark-run__start:hover {
+  background: var(--accent-press);
 }
 
 .embark-run__start:active {
   transform: scale(0.96);
-  box-shadow: 0 6px 16px rgba(22, 163, 74, 0.4);
-}
-
-.embark-run__start-hint {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.85rem;
 }
 
 /* ---- Activities list ------------------------------------------------------ */

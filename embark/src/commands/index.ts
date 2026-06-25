@@ -12,14 +12,4 @@ export const plugins: Plugin<any>[] = [
       return slashCommands();
     },
   },
-  {
-    type: "codemirror:extension",
-    id: "embark-command-embeds",
-    name: "Embark command embeds",
-    supportedDatatypes: ["markdown", "essay"],
-    async load(): Promise<Extension> {
-      const { commandEmbeds } = await import("./command-embed");
-      return commandEmbeds();
-    },
-  },
 ];

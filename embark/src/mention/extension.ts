@@ -23,6 +23,7 @@ import {
   isValidAutomergeUrl,
   parseAutomergeUrl,
   type AutomergeUrl,
+  type DocHandle,
 } from "@automerge/automerge-repo";
 import {
   findContextStore,
@@ -30,6 +31,7 @@ import {
   subscribeContext,
   type ScopeHandle,
 } from "../lib/context";
+import { renderEmbedView } from "../lib/embed-view";
 import {
   Highlight,
   SearchQueries,
@@ -38,11 +40,12 @@ import {
 } from "../canvas/channels";
 import "./mention.css";
 
-// The mention token literal `[Name]{automerge-url}`. The url is stored
-// verbatim (it may be an extended sub-url such as
-// `automerge:<id>/contextToolIds/@0`), validated with `isValidAutomergeUrl`
-// before it's rendered as a pill.
-const MENTION_RE = /\[([^\]\n]+)\]\{([^}\n]+)\}/g;
+// The embed token literal `{automerge-url}`. The url is stored verbatim (it may
+// be an extended sub-url such as `automerge:<id>/contextToolIds/@0`), validated
+// with `isValidAutomergeUrl` before it's rendered. The token carries no name and
+// no renderer: the resolved document supplies both (its title for the pill, and
+// an optional `viewUrl` render module for a custom inline face).
+const MENTION_RE = /\{(automerge:[^}\n]+)\}/g;
 
 // One result the broker surfaced for the active query: the document it points
 // at (`automerge:…`, used verbatim as the link target) and a resolved title.
@@ -63,11 +66,12 @@ type Mention = {
 // the token into something new.
 type MenuState = { active: Mention | null; dismissed: string | null };
 
-// Entry point. The pill renderer and focus wiring are always installed (they
-// only act on tokens already in the document). The `@mention` search menu,
-// by contrast, stays dormant until a search broker is discovered: the empty
-// compartment plus a probe fill it in once a provider answers. Until then
-// (possibly forever) typing `@` does nothing special.
+// Entry point. The token renderer and focus wiring are always installed (they
+// only act on tokens already in the document, rendering each as a live-title
+// pill or, when the doc names a `viewUrl`, a custom inline face). The `@mention`
+// search menu, by contrast, stays dormant until a search broker is discovered:
+// the empty compartment plus a probe fill it in once a provider answers. Until
+// then (possibly forever) typing `@` does nothing special.
 export function mentionSearch(): Extension {
   return [mentionTokens(), focusHighlight(), activation.of([]), brokerProbe];
 }
@@ -288,17 +292,16 @@ function navigate(view: EditorView, delta: number): boolean {
   return true;
 }
 
-// Replaces the `@query` span with a mention token for the chosen result:
-// `[Name]{automerge-url}`. The url is stored verbatim (native automerge url,
-// possibly a sub-url); the pill renderer below turns it into an atomic chip.
+// Replaces the `@query` span with an embed token for the chosen result:
+// `{automerge-url}`. The url is stored verbatim (native automerge url, possibly a
+// sub-url); the renderer below turns it into an atomic chip whose label is the
+// document's live title.
 function applySelected(view: EditorView, index?: number): boolean {
   const active = view.state.field(menuState, false)?.active;
   if (!active || active.results.length === 0) return false;
   const result = active.results[index ?? active.index];
   if (!result) return false;
-  // `]` and newlines would prematurely close the name part of the token.
-  const name = result.title.replace(/[\]\n]/g, " ").trim() || shortUrl(result.url);
-  const token = `[${name}]{${result.url}}`;
+  const token = `{${result.url}}`;
   view.dispatch({
     changes: { from: active.from, to: active.to, insert: token },
     selection: { anchor: active.from + token.length },
@@ -364,17 +367,31 @@ async function resolveResult(url: AutomergeUrl): Promise<Result> {
   }
 }
 
+// A display title for a document, preferring the patchwork display title
+// (`@patchwork.title`) and falling back through the other common title-bearing
+// fields, then a short url. Mirrors the convention used elsewhere (e.g.
+// ../context-viewer/views/tokens.tsx) so tokens read the same name as the rest
+// of the app.
 function docTitle(doc: unknown, url: AutomergeUrl): string {
   const record = (doc ?? {}) as {
+    "@patchwork"?: { title?: unknown };
     title?: unknown;
     content?: unknown;
+    name?: unknown;
     props?: { name?: unknown };
     place?: { name?: unknown };
   };
-  if (typeof record.title === "string" && record.title) return record.title;
-  if (typeof record.props?.name === "string" && record.props.name) return record.props.name;
-  if (typeof record.content === "string" && record.content) return record.content;
-  if (typeof record.place?.name === "string" && record.place.name) return record.place.name;
+  const candidates = [
+    record["@patchwork"]?.title,
+    record.props?.name,
+    record.place?.name,
+    record.content,
+    record.title,
+    record.name,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) return candidate;
+  }
   return shortUrl(url);
 }
 
@@ -392,12 +409,21 @@ function wrapIndex(index: number, length: number): number {
 }
 
 // ---------------------------------------------------------------------------
-// Pill renderer
+// Token renderer
 //
-// Every `[Name]{url}` whose url validates is replaced by an atomic chip. The
-// raw source is never revealed for editing — to change a mention, delete it
-// (Backspace removes the whole token) and mention again. Always on, regardless
-// of whether a search broker was ever found.
+// Every `{automerge:url}` whose url validates is replaced by an atomic chip.
+// The chip's content is decided by the resolved document: if the doc carries a
+// `viewUrl` render module, that module is imported and run to paint a custom
+// inline face (the `(element, handle) => cleanup` contract the generation loop
+// also uses); otherwise the chip is a pill showing the doc's live title. The raw
+// source is never revealed for editing — to change a token, delete it (Backspace
+// removes the whole token) and re-insert. Always on, regardless of whether a
+// search broker was ever found.
+//
+// Focus is *not* baked into the widget: the decoration set is rebuilt only on
+// text/viewport changes, and focus is applied as a class toggle on the rendered
+// pill DOM (see `applyFocus`). This keeps view modules from being torn down and
+// re-run every time the caret moves.
 // ---------------------------------------------------------------------------
 
 function mentionTokens(): Extension {
@@ -413,19 +439,22 @@ const mentionPlugin = ViewPlugin.fromClass(
     }
 
     update(update: ViewUpdate) {
-      // Selection never affects rendering (we always show the pill); only the
-      // text, the viewport, or the focus set can change what's drawn.
+      if (update.docChanged || update.viewportChanged) {
+        this.decorations = buildMentions(update.view);
+      }
+      // Focus only changes a class on existing pills, never the widget set, so
+      // view modules survive caret moves. Defer so the DOM patch is in place.
       const focusChanged =
         update.startState.field(focusedUrls, false) !==
         update.state.field(focusedUrls, false);
-      if (update.docChanged || update.viewportChanged || focusChanged) {
-        this.decorations = buildMentions(update.view);
+      if (focusChanged || update.docChanged || update.viewportChanged) {
+        queueMicrotask(() => applyFocus(update.view));
       }
     }
   },
   {
     decorations: (plugin) => plugin.decorations,
-    // Treat each pill as one unit: the caret skips over it and Backspace
+    // Treat each token as one unit: the caret skips over it and Backspace
     // deletes the whole token rather than peeling off the trailing `}`.
     provide: (plugin) =>
       EditorView.atomicRanges.of(
@@ -434,62 +463,101 @@ const mentionPlugin = ViewPlugin.fromClass(
   },
 );
 
-// Replace each valid mention token over the visible ranges with a pill.
+// Replace each valid token over the visible ranges with an atomic widget.
 function buildMentions(view: EditorView): DecorationSet {
-  const focused = view.state.field(focusedUrls, false) ?? EMPTY_FOCUS;
   const widgets: Range<Decoration>[] = [];
   for (const { from, to } of view.visibleRanges) {
     const text = view.state.doc.sliceString(from, to);
     for (const match of text.matchAll(MENTION_RE)) {
-      const raw = match[2].trim();
+      const raw = match[1].trim();
       if (!isValidAutomergeUrl(raw)) continue; // leave malformed tokens as text
       const start = from + (match.index ?? 0);
       const end = start + match[0].length;
-      const isFocused = focused.has(parseAutomergeUrl(raw).documentId);
       widgets.push(
-        Decoration.replace({
-          widget: new MentionWidget(match[1], raw, isFocused),
-        }).range(start, end),
+        Decoration.replace({ widget: new MentionWidget(raw) }).range(start, end),
       );
     }
   }
   return Decoration.set(widgets, true);
 }
 
+// Reflect the current focus set onto rendered pills. Only pills carry the
+// `cm-mention` class, so view-module hosts are never touched.
+function applyFocus(view: EditorView): void {
+  const focused = view.state.field(focusedUrls, false) ?? EMPTY_FOCUS;
+  const nodes = view.contentDOM.querySelectorAll<HTMLElement>(
+    ".cm-mention[data-embark-doc]",
+  );
+  nodes.forEach((node) => {
+    const id = node.dataset.embarkDoc ?? "";
+    node.classList.toggle("cm-mention--focused", focused.has(id));
+  });
+}
+
+// One token, identified solely by its url. Resolving the document (and thus
+// deciding pill vs custom view) happens asynchronously in `toDOM`, so identity
+// must not depend on the title, focus, or which face it ends up drawing.
 class MentionWidget extends WidgetType {
-  constructor(
-    readonly name: string,
-    readonly url: AutomergeUrl,
-    readonly focused: boolean,
-  ) {
+  constructor(readonly url: AutomergeUrl) {
     super();
   }
 
   eq(other: MentionWidget): boolean {
-    return (
-      other.url === this.url &&
-      other.name === this.name &&
-      other.focused === this.focused
-    );
+    return other.url === this.url;
   }
 
-  toDOM(): HTMLElement {
-    const span = document.createElement("span");
-    span.className = this.focused ? "cm-mention cm-mention--focused" : "cm-mention";
-    span.textContent = this.name;
-    span.title = this.url;
-    span.addEventListener("click", (event) => {
-      event.preventDefault();
-      // Open the target document via the app's hash route (`#doc=<id>`).
-      const params = new URLSearchParams();
-      params.set("doc", parseAutomergeUrl(this.url).documentId);
-      window.location.hash = params.toString();
+  toDOM(view: EditorView): HTMLElement {
+    const host = document.createElement("span");
+    const documentId = parseAutomergeUrl(this.url).documentId;
+    host.dataset.embarkDoc = documentId;
+
+    // Paint a pill showing the document's live title, re-rendering on change.
+    // Used as the fallback face when the doc declares no `viewUrl` of its own.
+    const renderPill = (handle: DocHandle<unknown>): (() => void) => {
+      const focused = view.state.field(focusedUrls, false) ?? EMPTY_FOCUS;
+      host.className = focused.has(documentId)
+        ? "cm-mention cm-mention--focused"
+        : "cm-mention";
+      host.title = this.url;
+      const paint = () => {
+        host.textContent = docTitle(handle.doc(), this.url);
+      };
+      paint();
+      handle.on("change", paint);
+      const onClick = (event: MouseEvent) => {
+        event.preventDefault();
+        // Open the target document via the app's hash route (`#doc=<id>`).
+        const params = new URLSearchParams();
+        params.set("doc", documentId);
+        window.location.hash = params.toString();
+      };
+      host.addEventListener("click", onClick);
+      return () => {
+        handle.off("change", paint);
+        host.removeEventListener("click", onClick);
+      };
+    };
+
+    const teardown = renderEmbedView(host, this.url, window.repo, {
+      fallback: (_host, handle) => renderPill(handle),
+      onError: () => {
+        host.className = "cm-mention";
+        host.textContent = shortUrl(this.url);
+      },
     });
-    return span;
+    (host as unknown as { __embedTeardown?: () => void }).__embedTeardown =
+      teardown;
+    return host;
   }
 
-  ignoreEvent(event: Event): boolean {
-    return event.type !== "click";
+  destroy(dom: HTMLElement): void {
+    (dom as unknown as { __embedTeardown?: () => void }).__embedTeardown?.();
+  }
+
+  // Ignore all editor handling inside the chip: pills navigate via their own DOM
+  // click listener, and view modules own their pointer/key events entirely.
+  ignoreEvent(): boolean {
+    return true;
   }
 }
 
@@ -631,7 +699,7 @@ function focusedMentionUrls(state: EditorState): Set<AutomergeUrl> {
   const text = state.doc.sliceString(base, state.doc.lineAt(sel.to).to);
   const urls = new Set<AutomergeUrl>();
   for (const match of text.matchAll(MENTION_RE)) {
-    const raw = match[2].trim();
+    const raw = match[1].trim();
     if (!isValidAutomergeUrl(raw)) continue;
     const start = base + (match.index ?? 0);
     const end = start + match[0].length;

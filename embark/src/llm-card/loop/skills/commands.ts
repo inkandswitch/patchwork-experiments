@@ -14,27 +14,26 @@ export const COMMANDS_SKILL: Skill = {
 Give the user slash commands that each drop a LIVE, self-rendering card into their note. When they type \`/\` you offer suggestions; picking one inserts an interactive embed (e.g. a route widget) bound to its own copy of a card document.
 
 You ship TWO modules (write both with writeFile), plus the spec:
-  1. effect.js - the command CONTRIBUTOR: answer the live \`/\` query with suggestions. Each suggestion points at a prototype card you mint, plus the url of your renderer.
+  1. effect.js - the command CONTRIBUTOR: answer the live \`/\` query with suggestions. Each suggestion points at a prototype card you mint; the card itself carries the url of your renderer (its \`viewUrl\` field).
   2. view.js   - the RENDERER: a default-export \`(element, handle) => cleanup\` that draws ONE card inline and lets the user interact with it.
 
 (This replaces the older "insert a {Command(...)} text snippet and decorate it with a sticker" approach. Now the embed renders itself and owns its data.)
 
 ## How a command flows
 
-- effect.js mints ONE prototype card per command — a normal card doc \`{ "@patchwork": { type: "card" }, props, content }\` — with sensible default args, and offers it as a suggestion.
-- When the user picks the suggestion, the HOST deep-clones your prototype (so every insertion is independent) and inserts a token \`[label]{cloneUrl?view=<your view.js url>}\` into the note.
-- That token is rendered by importing your view.js and calling \`default(element, handle)\` with a handle to the CLONE. The user changes the command through the widget's own UI (which writes to the handle) — NOT by editing text.
+- effect.js mints ONE prototype card per command — a normal card doc \`{ "@patchwork": { type: "card", title }, props, content, viewUrl }\` — with sensible default args. The \`viewUrl\` is the url of your renderer; \`@patchwork.title\` is the name the token pill shows.
+- When the user picks the suggestion, the HOST deep-clones your prototype (so every insertion is independent) and inserts a token \`{cloneUrl}\` into the note. The renderer travels on the doc (the clone keeps your \`viewUrl\`), so the token needs nothing but the url.
+- That token is rendered by importing the clone's \`viewUrl\` and calling \`default(element, handle)\` with a handle to the CLONE. The user changes the command through the widget's own UI (which writes to the handle) — NOT by editing text. (A card with no \`viewUrl\` just renders as a title pill.)
 
 ## Half 1: effect.js — answer the active /-query (commands:queries / commands:suggestions)
 
 You use two channels:
   commands:queries      { [query]: true }                                        - the active /-queries. The editor writes these; you READ them (the keys). The empty string "" means the user typed "/" with nothing after it.
-  commands:suggestions  { [query]: { label, url, viewUrl? }[] }                   - the suggestions per query. You WRITE your own slice.
+  commands:suggestions  { [query]: { label, url }[] }                            - the suggestions per query. You WRITE your own slice.
 
 Reach the store with getStore(element), then for each active query write the array of suggestions you offer. Each suggestion is:
   - label   - what the menu shows
-  - url     - a card you minted (repo.create(...).url): the command's prototype
-  - viewUrl - the import url of your renderer (see "Getting your renderer's url")
+  - url     - a card you minted (repo.create(...).url): the command's prototype. Bake your renderer's url onto that card's \`viewUrl\` field (see "Getting your renderer's url") — it is NOT part of the suggestion.
 
 Mint each prototype card ONCE and cache it (a module-level variable) — do NOT create a new card on every keystroke. Offer the SAME url across queries so the host dedupes it. Match the query loosely (case-insensitive prefix/substring on the label or command name), return [] when nothing fits, and offer your full list for the empty query.
 
@@ -57,7 +56,7 @@ effect.js and view.js live in the SAME folder, so derive view.js's url from your
 
   const VIEW_URL = new URL("./view.js", import.meta.url).pathname;
 
-Put that exact string in every suggestion's \`viewUrl\`.
+Store that exact string on the prototype card's \`viewUrl\` field (\`repo.create({ ..., viewUrl: VIEW_URL })\`), NOT on the suggestion. The host clones the card on insert, and the path-string \`viewUrl\` is copied verbatim onto the clone, so each embed keeps your renderer.
 
 ## Half 2: view.js — render ONE card inline
 
@@ -110,16 +109,17 @@ effect.js (the contributor):
     let proto; // cache the prototype card so we don't mint one per keystroke
     const prototypeUrl = () => {
       if (!proto) proto = repo.create({
-        "@patchwork": { type: "card" },
+        "@patchwork": { type: "card", title: "Route" },
         props: { command: "Route", from: "Aachen", to: "Berlin" },
         content: "Route",
+        viewUrl: VIEW_URL, // the renderer rides on the card, not the suggestion
       });
       return proto.url;
     };
     const suggestionsFor = (query) => {
       const q = query.toLowerCase();
       if (q && !"route".startsWith(q)) return [];
-      return [{ label: "Route from … to …", url: prototypeUrl(), viewUrl: VIEW_URL }];
+      return [{ label: "Route from … to …", url: prototypeUrl() }];
     };
 
     const answer = () => suggestions.change((s) => {
