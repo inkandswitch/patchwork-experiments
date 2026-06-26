@@ -240,6 +240,13 @@ export function readConfig(snapshot) {
 export function normalizeConfig(raw = {}) {
 	return {
 		provider: raw.provider ?? DEFAULTS.provider,
+		// Optional in-memory request handler. A config provider can attach
+		// { predict, ... } to intercept calls on the main thread before they reach
+		// the worker — e.g. choochoo runs a base model and adds a live LoRA delta.
+		// Never stored in a doc (it holds functions); only set programmatically via
+		// a provider element, and carried through normalize so predict() can find it.
+		handler:
+			raw.handler && typeof raw.handler === "object" ? raw.handler : null,
 		temperature:
 			typeof raw.temperature === "number" ? raw.temperature : DEFAULTS.temperature,
 		topP: typeof raw.topP === "number" ? raw.topP : DEFAULTS.topP,
@@ -395,6 +402,10 @@ export function clearScopeOverride(scope) {
 		} else {
 			delete pt.config
 		}
+		// Drop now-empty containers so the tool falls all the way back to default
+		// and the settings doc doesn't accumulate dead `pertool` entries.
+		if (pt.perdoc && Object.keys(pt.perdoc).length === 0) delete pt.perdoc
+		if (!pt.config && !pt.perdoc) delete d.pertool[scope.toolId]
 	})
 }
 

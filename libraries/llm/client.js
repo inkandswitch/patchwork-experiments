@@ -365,7 +365,12 @@ export async function* stream(messages, opts = {}) {
  * @returns {Promise<{token:string,p:number}[]>}
  */
 export async function predict(text, opts = {}) {
-	const cfg = await resolveCfgPrompts(opts.config ?? (await ensureConfig(opts.scope)))
+	const base = opts.config ?? (await ensureConfig(opts.scope))
+	// A config provider can carry an in-memory handler that intercepts the request
+	// on the main thread (e.g. choochoo runs a base model and adds a live LoRA
+	// delta). Opt-in — no handler means normal worker dispatch below.
+	if (typeof base?.handler?.predict === "function") return base.handler.predict(text, opts)
+	const cfg = await resolveCfgPrompts(base)
 	/** @type {CallConfigExt} */
 	const config = callConfig(/** @type {any} */ (cfg), /** @type {any} */ ({...opts, topk: opts.topk || 10}))
 	// continuation → frame chat-only providers (OpenRouter) to predict the

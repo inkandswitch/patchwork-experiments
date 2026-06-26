@@ -797,50 +797,18 @@ async function doGenerateOpenRouter(gen, input, config) {
 			Math.max(1024, config.contextLength - inputEstimate - 256)
 		)
 	}
-	if (topk > 0) {
-		body.logprobs = true
-		body.top_logprobs = Math.min(topk, 20) // OpenAI caps top_logprobs at 20
-	}
-
-	// Native function calling: a non-streaming request so we get structured
-	// tool_calls back (streaming tool_calls deltas aren't worth reassembling here).
-	if (config.tools && config.tools.length) {
+	// Native function calling streams just like a normal completion: we emit
+	// content deltas live AND reassemble the tool_call deltas (each chunk carries
+	// partial {index, id?, function:{name?, arguments?}}) so the text still streams
+	// token-by-token instead of arriving all at once. logprobs and tools don't
+	// combine on OpenRouter, so only request logprobs when no tools are in play.
+	const hasTools = !!(config.tools && config.tools.length)
+	if (hasTools) {
 		body.tools = config.tools
 		body.tool_choice = "auto"
-		body.stream = false
-		delete body.stream_options
-		delete body.logprobs
-		delete body.top_logprobs
-		const t0 = performance.now()
-		const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-			method: "POST",
-			headers: {Authorization: "Bearer " + config.apiKey, "Content-Type": "application/json"},
-			body: JSON.stringify(body),
-			signal: gen.abortController.signal,
-		})
-		if (!res.ok) throw new Error("OpenRouter: " + (await res.text()))
-		const data = await res.json()
-		const msg = data.choices?.[0]?.message || {}
-		const text = msg.content || ""
-		if (text) post(gen, {type: "token", delta: text, text})
-		gen.fullText = text
-		const toolCalls = (msg.tool_calls || []).map((/** @type {any} */ tc) => ({
-			id: tc.id,
-			name: tc.function?.name,
-			args: safeJson(tc.function?.arguments),
-		}))
-		post(gen, {
-			type: "stats",
-			provider: "openrouter",
-			model: config.model,
-			promptTokens: data.usage?.prompt_tokens ?? null,
-			genTokens: data.usage?.completion_tokens ?? null,
-			ttftMs: null,
-			totalMs: Math.round(performance.now() - t0),
-			tokPerSec: null,
-			decode: {greedy: temperature === 0, temperature},
-		})
-		return {text, toolCalls}
+	} else if (topk > 0) {
+		body.logprobs = true
+		body.top_logprobs = Math.min(topk, 20) // OpenAI caps top_logprobs at 20
 	}
 
 	const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -863,6 +831,10 @@ async function doGenerateOpenRouter(gen, input, config) {
 	const reader = /** @type {ReadableStream<Uint8Array>} */ (res.body).getReader()
 	const decoder = new TextDecoder()
 	let buf = ""
+	// Reassemble streamed tool_calls: each chunk carries partial deltas keyed by
+	// `index`; `id`/`name` arrive once, `arguments` accrues as a JSON string.
+	/** @type {Map<number, {id?:string, name?:string, args:string}>} */
+	const toolAcc = new Map()
 
 	const handleLine = (/** @type {string} */ line) => {
 		if (!line.startsWith("data: ")) return
@@ -882,6 +854,17 @@ async function doGenerateOpenRouter(gen, input, config) {
 			full += delta
 			gen.fullText = full
 			post(gen, {type: "token", delta, text: full})
+		}
+		for (const tc of choice?.delta?.tool_calls || []) {
+			const idx = tc.index ?? 0
+			let acc = toolAcc.get(idx)
+			if (!acc) {
+				acc = {id: undefined, name: undefined, args: ""}
+				toolAcc.set(idx, acc)
+			}
+			if (tc.id) acc.id = tc.id
+			if (tc.function?.name) acc.name = tc.function.name
+			if (tc.function?.arguments) acc.args += tc.function.arguments
 		}
 		if (topk > 0) {
 			for (const item of choice?.logprobs?.content || []) {
@@ -922,7 +905,14 @@ async function doGenerateOpenRouter(gen, input, config) {
 				: null,
 		decode: {greedy: temperature === 0, temperature},
 	})
-	return {text: full, toolCalls: null}
+	// Build structured tool calls from the accumulated deltas (named ones only).
+	const toolCalls = toolAcc.size
+		? [...toolAcc.entries()]
+				.sort((a, b) => a[0] - b[0])
+				.map(([, acc]) => ({id: acc.id, name: acc.name, args: safeJson(acc.args)}))
+				.filter((tc) => tc.name)
+		: []
+	return {text: full, toolCalls: toolCalls.length ? toolCalls : null}
 }
 
 // ---------------------------------------------------------------------------

@@ -81,6 +81,9 @@ const CSS = `
 .llmp--bare { display: flex; flex-direction: column; width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; border: none; border-radius: 0; box-shadow: none; --paper: var(--llmp-bg, transparent); }
 /* inner: popup()'s content region between the header + footer */
 .llmp-inner { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* scopebody: the per-scope editor region under the scope switcher bar — grows to
+   fill so the status bar stays pinned at the bottom of the modal */
+.llmp-scopebody { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
 .llmp-statusbar { flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-top: 1px solid var(--line); background: var(--card); }
 .llmp-statusbar-label { font-size: 9px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--dim); }
@@ -195,10 +198,11 @@ const CSS = `
 .llmp-btn[disabled] { opacity: .5; cursor: default; }
 .llmp-btn.primary { background: var(--accent); color: var(--accent-text); border-color: transparent; }
 .llmp-btn.primary:hover { background: #ff63a6; }
-/* scope switcher: text-link buttons in the accent colour, not chunky buttons */
-.llmp-scopebtn { padding: 4px 4px; font: inherit; font-weight: 600; cursor: pointer; color: var(--dim); background: none; border: none; border-radius: var(--radius-sm); }
+/* scope switcher: text-link buttons; the active one is primary with a primary
+   underline drawn as a real bottom border (so it sits on the bar baseline) */
+.llmp-scopebtn { padding: 4px 2px; font: inherit; font-weight: 600; cursor: pointer; color: var(--dim); background: none; border: none; border-bottom: 2px solid transparent; border-radius: 0; }
 .llmp-scopebtn:hover { color: var(--accent); }
-.llmp-scopebtn.active { color: var(--accent); text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.llmp-scopebtn.active { color: var(--accent); border-bottom-color: var(--accent); }
 `
 
 /**
@@ -230,16 +234,22 @@ const CSS = `
  * @property {string} [toolName]  label for the host tool's built-in tools
  * @property {() => void} [onRequestClose]
  * @property {{toolId: string, docId?: string, toolName?: string, docName?: string}} [scope]
+ * @property {boolean} [scopePanel]  show the Default·Tool·Doc scope switcher (default true when `scope` is given; set false to hide it and edit the default config)
  *
- * @typedef {{commit: () => any, revert: () => void}} Ctl  the live picker controller
+ * @typedef {{commit: () => any, revert: () => void, cancel: () => void}} Ctl  the live picker controller
  */
 
 function injectStyles() {
-	if (document.getElementById(STYLE_ID)) return
-	const s = document.createElement("style")
-	s.id = STYLE_ID
-	s.textContent = CSS
-	document.head.appendChild(s)
+	// Upsert: if an older bundle already injected this stylesheet, refresh its
+	// contents so CSS changes (new rules, tweaks) actually take effect instead of
+	// being shadowed by the stale copy in <head>.
+	let s = /** @type {HTMLStyleElement|null} */ (document.getElementById(STYLE_ID))
+	if (!s) {
+		s = document.createElement("style")
+		s.id = STYLE_ID
+		document.head.appendChild(s)
+	}
+	if (s.textContent !== CSS) s.textContent = CSS
 }
 
 /**
@@ -498,12 +508,12 @@ async function fetchModelInfo(id) {
  * outer frame. `dom()` hands you `host` directly; `popup()` wraps it in a
  * popover frame with a header + Cancel/Done. The caller has already resolved
  * config (settings doc or custom source), so reads are synchronous here.
- * Returns `{commit, revert}` (the wrappers drive close/cancel).
+ * Returns `{commit, revert, cancel}` (the wrappers drive close/cancel).
  */
 /**
  * @param {HTMLElement} host
  * @param {PickerOpts} opts
- * @returns {{commit: () => any, revert: () => void}}
+ * @returns {Ctl}
  */
 function buildPickerInto(host, opts) {
 	const source = opts.source || {
@@ -582,6 +592,13 @@ function buildPickerInto(host, opts) {
 	function revert() {
 		clearTimeout(persistTimer)
 		source.write(before)
+	}
+	// Drop any pending write WITHOUT touching the source (neither commit nor
+	// revert writes). Used when the caller is about to delete this scope's config
+	// entirely — a flush/revert would re-create the very override we're removing.
+	function cancel() {
+		clearTimeout(persistTimer)
+		persistTimer = null
 	}
 	// Open a folder doc in the host app, then ask the wrapper to close the picker.
 	function openFolder(/** @type {string|null|undefined} */ url) {
@@ -1767,10 +1784,22 @@ function buildPickerInto(host, opts) {
 		}
 	}
 
-	// Status bar: the URL of the config doc being edited (the account settings doc
-	// by default, or `source.url` when a host scopes it — e.g. duet's per-box docs).
+	// The status bar (config-doc URL) lives at the very bottom of the modal now,
+	// built once by buildScopedPicker — not per scope editor. See statusBar().
+	host.append(el("div", {class: "llmp-main"}, [sideNav, content]))
+
+	renderNav()
+	renderSection()
+	return {commit, revert, cancel}
+}
+
+// The bottom status bar: the URL of the config doc being edited (the account
+// settings doc by default, or `source.url` when a host scopes it). Rendered once
+// at the bottom of the modal, below every scope editor.
+/** @param {PickerOpts} opts */
+function statusBar(opts) {
 	const configUrl = opts.source?.url || settingsDocHandle()?.url || null
-	const statusbar = el("div", {class: "llmp-statusbar"}, [
+	return el("div", {class: "llmp-statusbar"}, [
 		el("span", {class: "llmp-statusbar-label", text: "config"}),
 		el("code", {
 			class: "llmp-statusbar-url",
@@ -1786,12 +1815,6 @@ function buildPickerInto(host, opts) {
 			  })
 			: null,
 	])
-
-	host.append(el("div", {class: "llmp-main"}, [sideNav, content]), statusbar)
-
-	renderNav()
-	renderSection()
-	return {commit, revert}
 }
 
 const spinner = () => el("div", {class: "llmp-loading"}, [el("div", {class: "llmp-spinner"})])
@@ -1811,19 +1834,16 @@ function buildScopedPicker(mount, opts, onRequestClose) {
 	/** @type {Ctl|null} */
 	let ctl = null
 	const getCtl = () => ctl
-	if (!opts.scope || !opts.scope.toolId) {
+	// The scope switcher is shown only when a tool opts in: it must pass a `scope`
+	// AND not disable the panel (`scopePanel: false`). Without it we render a plain
+	// picker that edits the default config (or the caller's `source`).
+	const showPanel = !!(opts.scope && opts.scope.toolId && opts.scopePanel !== false)
+	if (!showPanel) {
 		ctl = buildPickerInto(mount, {...opts, onRequestClose})
+		mount.append(statusBar(opts))
 		return getCtl
 	}
-	const scope = opts.scope
-
-	let active = "default" // "default" | "tool" | "doc"
-	const bar = el("div", {
-		class: "llmp-row",
-		style: "padding:8px 12px;gap:6px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--line,rgba(128,128,128,0.25))",
-	})
-	const bodyHost = el("div")
-	mount.replaceChildren(bar, bodyHost)
+	const scope = /** @type {NonNullable<PickerOpts["scope"]>} */ (opts.scope)
 
 	const scopeFor = (/** @type {string} */ which) =>
 		which === "doc"
@@ -1835,6 +1855,23 @@ function buildScopedPicker(mount, opts, onRequestClose) {
 		const sc = scopeFor(which)
 		return {read: () => readScopedConfig(sc), write: (/** @type {any} */ n) => writeScopeOverride(sc, n)}
 	}
+
+	// Open on the most-specific scope that already has its own settings — so the
+	// modal shows what's actually in effect for this tool/doc, not always Default.
+	const initialActive = () => {
+		const raw = readConfig()
+		if (scope.docId && hasScopeOverride(raw, scopeFor("doc"))) return "doc"
+		if (hasScopeOverride(raw, scopeFor("tool"))) return "tool"
+		return "default"
+	}
+	let active = initialActive() // "default" | "tool" | "doc"
+
+	const bar = el("div", {
+		class: "llmp-row",
+		style: "padding:8px 12px;gap:6px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--line,rgba(128,128,128,0.25))",
+	})
+	const bodyHost = el("div", {class: "llmp-scopebody"})
+	mount.replaceChildren(bar, bodyHost, statusBar(opts))
 
 	function rebuild() {
 		// Flush any pending edit of the scope we're leaving before swapping.
@@ -1875,12 +1912,21 @@ function buildScopedPicker(mount, opts, onRequestClose) {
 			)
 			return
 		}
-		const editorHost = el("div")
+		const editorHost = el("div", {class: "llmp-scopebody"})
 		const resetRow = el("div", {class: "llmp-row", style: "padding:8px 12px"}, [
 			el("button", {
 				class: "llmp-btn",
 				text: "Reset to default (remove these settings)",
-				onClick: () => { try { ctl && ctl.commit && ctl.commit() } catch {} ; clearScopeOverride(sc); active = "default"; rebuild() },
+				// Drop the editor's pending write FIRST (cancel, not commit/revert —
+				// either would re-write the override we're about to delete), then null
+				// `ctl` so rebuild()'s leading commit can't resurrect it either.
+				onClick: () => {
+					try { ctl && ctl.cancel && ctl.cancel() } catch {}
+					ctl = null
+					clearScopeOverride(sc)
+					active = "default"
+					rebuild()
+				},
 			}),
 		])
 		bodyHost.append(resetRow, editorHost)
