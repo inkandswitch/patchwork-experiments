@@ -1,6 +1,6 @@
 /**
  * Calibration helpers shared by the control panel and the Calibrate UI. Thin
- * wrappers over the math reused from apriltag-core.
+ * wrappers over the math in calibration-core.
  */
 
 import type { DocHandle } from "@automerge/automerge-repo";
@@ -14,7 +14,7 @@ import {
   invertHomography,
   normalizeCameraSize,
   cloneSize,
-} from "../apriltag-core.js";
+} from "../calibration-core.js";
 
 /** Clear the currently-active target's captured pair (re-capture it). */
 export function recaptureActive(calHandle: DocHandle<CalibrationDoc>): void {

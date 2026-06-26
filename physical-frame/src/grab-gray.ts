@@ -5,7 +5,7 @@
  * with live detection frames.
  */
 
-import { DETECT_MAX_DIM } from "./apriltag-core.js";
+import { DETECT_MAX_DIM } from "./calibration-core.js";
 
 export type GrayFrame = {
   gray: Uint8Array;

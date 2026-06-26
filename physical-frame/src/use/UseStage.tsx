@@ -16,7 +16,7 @@ import {
   type SpatialRegistry,
   type SpatialRegistryHost,
 } from "../spatial-source";
-import { makeDefaultDocState } from "../apriltag-core.js";
+import { makeDefaultDocState } from "../calibration-core.js";
 import { loadPhysicalLayerDescriptors } from "../registry";
 import type { PhysicalLayer, Reader } from "../physical-layer";
 import { createFrameLoop, type FrameLoop } from "../frame-loop";

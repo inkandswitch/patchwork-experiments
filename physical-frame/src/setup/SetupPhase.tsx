@@ -4,7 +4,7 @@ import type { CalibrationDoc } from "../folder-datatype";
 import {
   getCalibrationTargets,
   projectBoardToStage,
-} from "../apriltag-core.js";
+} from "../calibration-core.js";
 import { AlignBox } from "./AlignBox";
 import { CameraPanel } from "./CameraPanel";
 import type { Camera } from "../camera";

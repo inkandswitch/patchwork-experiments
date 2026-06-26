@@ -11,7 +11,7 @@ import {
   cloneSize,
   nextIncompleteTargetId,
   makeDefaultDocState,
-} from "../apriltag-core.js";
+} from "../calibration-core.js";
 import { makeDraggable } from "../lib/draggable";
 import type { Camera } from "../camera";
 

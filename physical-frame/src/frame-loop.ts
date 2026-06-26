@@ -8,7 +8,7 @@
  * CameraFrame independently; there is no cross-layer masking here.
  */
 
-import { DETECT_INTERVAL_MS, cameraPointToBoard } from "./apriltag-core.js";
+import { DETECT_INTERVAL_MS, cameraPointToBoard } from "./calibration-core.js";
 import { grabGray } from "./grab-gray.js";
 import type { CameraFrame, Reader, FramePoint } from "./physical-layer.js";
 

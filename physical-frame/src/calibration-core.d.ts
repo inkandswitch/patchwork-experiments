@@ -1,6 +1,6 @@
-// Type declarations for the math/detector functions reused from the copied
-// apriltag-projector module (apriltag-core.js). Only the exports the host uses
-// are declared here; the module's own Tool/DOM/plugins go unused.
+// Type declarations for calibration-core.js — the camera/projector homography +
+// coordinate math used by physical-frame. (The standalone AprilTag detector tool
+// has been stripped; tag detection lives in physical-layer-apriltags.)
 
 export const DETECT_INTERVAL_MS: number;
 export const DETECT_MAX_DIM: number;

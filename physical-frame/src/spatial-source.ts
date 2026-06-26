@@ -93,7 +93,7 @@ export class Emitter<T> {
 
 /** Host-owned provider: the aligned box size in live CSS pixels. */
 export type CoordinateSystem = { width: number; height: number };
-export const COORDINATE_SYSTEM_SELECTOR = "spatial:coordinate-system";
+export const COORDINATE_SYSTEM_SELECTOR = "physical:coordinate-system";
 
 /**
  * Per-host registry stamped on every provider wrapper element: maps a provider
