@@ -23,12 +23,12 @@ import type { PhysicalLayer, Reader } from "../physical-layer";
 import { createFrameLoop, type FrameLoop } from "../frame-loop";
 import type { Camera } from "../camera";
 import {
-  DEFAULT_CONTROLS,
   createControlResolver,
   reservedIds,
   emptyControlState,
   type ControlState,
 } from "../controls";
+import type { ControlMap } from "../folder-datatype";
 
 const COORD_PROVIDER_ID = "physical-coordinate-system-provider";
 /** The apriltags layer selector the frame interposes on for controls. */
@@ -65,6 +65,14 @@ export function UseStage(props: {
   camera: Camera;
   /** Ephemeral empty-surface grayscale reference (or null). */
   getBackground: () => Uint8Array | null;
+  /** Reserved-tag control map for the current system. */
+  controls: ControlMap;
+  /** The doc to embed in the box (sidebar-selected), or undefined for none. */
+  selectedDocUrl: () => string | undefined;
+  /** Tool to render the selected doc with, or undefined for its default. */
+  selectedToolId: () => string | undefined;
+  /** Report resolved control state up to the frame (drives the account sidebar). */
+  onControlState?: (s: ControlState) => void;
 }) {
   let boxEl!: HTMLDivElement;
   let embedded!: HTMLElement; // patchwork-view
@@ -82,17 +90,16 @@ export function UseStage(props: {
   const [layers, setLayers] = createSignal<PhysicalLayer[]>([]);
 
   // ---- Physical controls (reserved AprilTags → frame UI) -------------------
-  // Phase 2: a single hardcoded control map. Phase 3 moves it into per-system
-  // frame config. Controls read tag PRESENCE (ids), so they work pre-calibration.
-  const controls = () => DEFAULT_CONTROLS;
+  // The control map comes from the current system's config. Controls read tag
+  // PRESENCE (ids), so they work pre-calibration.
+  const controls = () => props.controls;
   const controlResolver = createControlResolver(controls);
   const [controlState, setControlState] = createSignal<ControlState>(
     emptyControlState(),
   );
 
   const box = () => props.calDoc.cameraViewBox;
-  const activeUrl = () =>
-    props.hostDoc.docs?.[props.hostDoc.activeIndex ?? 0]?.url;
+  const activeUrl = () => props.selectedDocUrl();
   // 0–100 brightness → 0–255 gray for the projected "paper" underlay.
   const surfaceLevel = () =>
     Math.round(
@@ -188,7 +195,9 @@ export function UseStage(props: {
         const idStr = String(t.id);
         if (reserved.has(idStr)) presentReserved.add(idStr);
       }
-      setControlState(controlResolver.resolve(presentReserved));
+      const next = controlResolver.resolve(presentReserved);
+      setControlState(next);
+      props.onControlState?.(next);
 
       // (b) public payload: same shape, reserved control tags removed.
       pub.set({
@@ -213,6 +222,14 @@ export function UseStage(props: {
     const url = activeUrl();
     if (embedded && url && embedded.getAttribute("doc-url") !== url) {
       embedded.setAttribute("doc-url", url);
+    }
+    const toolId = props.selectedToolId();
+    if (embedded) {
+      if (toolId && embedded.getAttribute("tool-id") !== toolId) {
+        embedded.setAttribute("tool-id", toolId);
+      } else if (!toolId && embedded.hasAttribute("tool-id")) {
+        embedded.removeAttribute("tool-id");
+      }
     }
   });
 
@@ -329,7 +346,11 @@ export function UseStage(props: {
   const wrapped = () => {
     const ids = providerIds();
     const embeddedView = (
-      <patchwork-view ref={embedded} attr:doc-url={activeUrl()} />
+      <patchwork-view
+        ref={embedded}
+        attr:doc-url={activeUrl()}
+        attr:tool-id={props.selectedToolId()}
+      />
     ) as JSX.Element;
     return ids.reduceRight<JSX.Element>(
       (inner, componentId) => (
@@ -363,21 +384,15 @@ export function UseStage(props: {
           }}
         />
 
-        {/* Left sidebar — shown while the left-sidebar control is active. The
-            main area insets to make room (the embedded view never remounts). */}
-        <Show when={controlState()["left-sidebar"]}>
-          <div class="sph-left-sidebar">
-            <div class="sph-sidebar-title">Documents</div>
-            <div class="sph-sidebar-hint">
-              (Phase 2 placeholder — doc picker comes later)
-            </div>
-          </div>
-        </Show>
-
-        {/* Main area holds the embedded document tool. Insets from the left when
-            the sidebar is open. Re-render wrappers when the layer set changes. */}
-        <div class="sph-main" data-sidebar={controlState()["left-sidebar"] ? "" : undefined}>
+        {/* Main area holds the embedded document tool (the sidebar-selected doc).
+            The real account sidebar is App-level and covers this when open (one
+            thing active at a time), so no inset here. The embedded view + its
+            physical-layer subscriptions stay mounted regardless of selection. */}
+        <div class="sph-main">
           <For each={[providerIds().join("|")]}>{() => wrapped()}</For>
+          <Show when={!props.selectedDocUrl()}>
+            <div class="sph-main-placeholder">Select a document</div>
+          </Show>
         </div>
 
         {/* Setup mode — shown while the setup control is active. Phase 4 mounts

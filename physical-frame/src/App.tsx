@@ -5,38 +5,70 @@ import {
   createSignal,
   Match,
   onCleanup,
+  onMount,
   Show,
   Switch,
 } from "solid-js";
-import type { AutomergeUrl, DocHandle, Repo } from "@automerge/automerge-repo";
+import type { AutomergeUrl, Repo } from "@automerge/automerge-repo";
 import {
-  makeDocumentProjection,
   useDocHandle,
   createDocumentProjection,
-  useRepo,
 } from "@automerge/automerge-repo-solid-primitives";
-import {
-  getRegistry,
-  createDocOfDatatype2,
-} from "@inkandswitch/patchwork-plugins";
+import { subscribe } from "@inkandswitch/patchwork-providers";
 import type {
-  SpatialHostDoc,
+  PhysicalFrameConfig,
   CalibrationDoc,
+  ControlMap,
+  HostMode,
 } from "./folder-datatype";
-import { CALIBRATION_DATATYPE_ID } from "./folder-datatype";
+import type { AccountDoc } from "./account";
+import {
+  ensurePhysicalFrameConfig,
+  ensureRootFolder,
+  DEFAULT_SIDEBAR_TOOL_ID,
+} from "./account";
+import type { ControlState } from "./controls";
+import {
+  addSystem,
+  currentSystem,
+  firstSystemId,
+  loadCurrentSystemId,
+  saveCurrentSystemId,
+} from "./systems";
 import { createCamera } from "./camera";
 import { ControlPanel } from "./ControlPanel";
 import { SetupPhase } from "./setup/SetupPhase";
 import { SampleBackgroundPhase } from "./sample/SampleBackgroundPhase";
 import { UseStage } from "./use/UseStage";
-import type { HostMode } from "./folder-datatype";
+import type { DocHandle } from "@automerge/automerge-repo";
+
+// Inline so a host-app `button` reset can't collapse the chrome buttons to 0×0
+// (the cause of the earlier invisible/unclickable chrome).
+const CHROME_BTN_STYLE: Record<string, string> = {
+  height: "2rem",
+  "min-width": "2rem",
+  padding: "0 0.6rem",
+  display: "inline-flex",
+  "align-items": "center",
+  "justify-content": "center",
+  font: "inherit",
+  "font-size": "0.9rem",
+  "line-height": "1",
+  cursor: "pointer",
+  background: "var(--studio-fill, #fff)",
+  color: "var(--studio-line, #111)",
+  border: "1px solid var(--studio-fill-offset-20, #ccc)",
+  "border-radius": "4px",
+  "pointer-events": "auto",
+};
 
 export function App(props: {
-  handle: DocHandle<SpatialHostDoc>;
+  accountHandle: DocHandle<AccountDoc>;
+  repo: Repo;
   element: HTMLElement;
 }) {
-  const repo = useRepo() as Repo;
-  const doc = makeDocumentProjection<SpatialHostDoc>(props.handle);
+  const repo = props.repo;
+  const accountUrl = props.accountHandle.url;
 
   // Single shared camera (panel toggle + setup capture + use detector).
   const camera = createCamera();
@@ -55,39 +87,84 @@ export function App(props: {
     }
   });
 
-  // Ensure the dedicated calibration doc exists; create it lazily once.
-  const [calibrationUrl] = createResource<AutomergeUrl, string>(
-    () => doc.calibrationUrl ?? "__create__",
-    async (marker): Promise<AutomergeUrl> => {
-      if (marker !== "__create__") return marker as AutomergeUrl;
-      const dt = await getRegistry("patchwork:datatype").loadWhenReady(
-        CALIBRATION_DATATYPE_ID,
-      );
-      const created = await createDocOfDatatype2(dt as never, repo);
-      props.handle.change((d) => {
-        d.calibrationUrl = created.url;
-      });
-      return created.url;
-    },
+  // Ensure the frame's config subdoc exists on the account; create lazily once.
+  const [configUrl] = createResource(async () =>
+    ensurePhysicalFrameConfig(props.accountHandle, repo),
   );
+  const configHandle = useDocHandle<PhysicalFrameConfig>(() => configUrl() ?? undefined);
+  const config = createDocumentProjection<PhysicalFrameConfig>(configHandle);
 
-  // Reactive calibration handle + doc.
+  // Ensure the account's root folder so the sidebar can list/create docs.
+  void ensureRootFolder(props.accountHandle, repo);
+
+  // The account sidebar tool (default chee/sideboard). Read reactively from the
+  // account doc so a configured override wins.
+  const accountDoc = createDocumentProjection<AccountDoc>(
+    useDocHandle<AccountDoc>(() => props.accountHandle.url),
+  );
+  const sidebarToolId = () =>
+    accountDoc()?.accountSidebarToolId ?? DEFAULT_SIDEBAR_TOOL_ID;
+
+  // ---- Current system (per-frame-instance; localStorage-persisted) ---------
+  const [systemId, setSystemId] = createSignal<string | null>(
+    loadCurrentSystemId(accountUrl),
+  );
+  const selectSystem = (id: string) => {
+    saveCurrentSystemId(accountUrl, id);
+    setSystemId(id);
+  };
+
+  // Ensure at least one system exists, and a current selection. Auto-creates a
+  // default "System 1" the first time, so a fresh account behaves like a single
+  // rig without the user having to add one.
+  let ensuringSystem = false;
+  createEffect(() => {
+    const cfg = config();
+    const handle = configHandle();
+    if (!cfg || !handle || ensuringSystem) return;
+    const ids = Object.keys(cfg.systems ?? {});
+    if (ids.length === 0) {
+      ensuringSystem = true;
+      void addSystem(handle, repo, "System 1")
+        .then((id) => selectSystem(id))
+        .finally(() => (ensuringSystem = false));
+      return;
+    }
+    // If our selected id is missing/unknown, fall back to the first system.
+    if (!systemId() || !cfg.systems[systemId()!]) {
+      selectSystem(firstSystemId(cfg)!);
+    }
+  });
+
+  const system = createMemo(() => currentSystem(config(), systemId()));
+  const controls = createMemo<ControlMap>(() => system()?.controls ?? {});
+
+  // The current system's calibration doc.
+  const calibrationUrl = createMemo<AutomergeUrl | undefined>(
+    () => system()?.calibrationUrl ?? undefined,
+  );
   const calHandle = useDocHandle<CalibrationDoc>(() => calibrationUrl());
   const calDoc = createDocumentProjection<CalibrationDoc>(calHandle);
 
-  // Flow is Setup → Sample → Use.
-  const mode = createMemo<HostMode>(() =>
-    doc.hostMode === "use" || doc.hostMode === "sample" ? doc.hostMode : "setup",
-  );
+  // Phase 3.5 quick fix: default to "use" (not "setup") so the main document
+  // area + camera loop + apriltags reader + physical controls run by default —
+  // controls need the loop running regardless of any "mode". (Modes are being
+  // dismantled; setup/sample stay reachable via the panel until Phase 4 extracts
+  // calibration into its own tool.) The camera loop runs uncalibrated too
+  // (presence-only), which is exactly what control tags need.
+  const mode = createMemo<HostMode>(() => {
+    const m = config()?.hostMode;
+    return m === "setup" || m === "sample" ? m : "use";
+  });
 
   // Calibration must be solved before Sample/Use are usable.
   const calibrated = createMemo(() => !!calDoc()?.homographyCamToBoard);
 
   const setHostMode = (m: HostMode) => {
     if ((m === "sample" || m === "use") && !calibrated()) return; // gate behind calibration
-    // Use needs a sampled background (for the walls layer) → nudge to Sample first.
+    // Use needs a sampled background (for the marks layer) → nudge to Sample first.
     if (m === "use" && !background()) m = "sample";
-    props.handle.change((d) => {
+    configHandle()?.change((d) => {
       d.hostMode = m;
     });
   };
@@ -96,11 +173,90 @@ export function App(props: {
     props.element.requestFullscreen?.().catch(() => {});
   };
 
+  // ---- Selected document (via SelectedDocProvider) -------------------------
+  // The account sidebar dispatches `patchwork:open-document`, which the
+  // `patchwork-selected-doc-provider` wrapper turns into `patchwork:selected-view`.
+  // We subscribe from an element INSIDE that wrapper to learn the current
+  // { url, toolId } and feed it to the box.
+  //
+  // IMPORTANT: the provider component loads ASYNC and attaches its
+  // `patchwork:subscribe` listener only once mounted. `subscribe()` is one-shot,
+  // so subscribing too early drops the request forever (selection never arrives).
+  // Mirror patchwork-frame: wait for the provider's `patchwork:mounted` event
+  // (with matching componentId) before subscribing.
+  type SelectedView = { url: AutomergeUrl; toolId: string | null };
+  const [selectedView, setSelectedView] = createSignal<SelectedView | null>(
+    null,
+  );
+  let selectionEl!: HTMLDivElement;
+  let selectedDocProviderEl!: HTMLElement;
+  const [selectedDocProviderReady, setSelectedDocProviderReady] =
+    createSignal(false);
+  onMount(() => {
+    const onMounted = (event: Event) => {
+      const detail = (event as CustomEvent<{ componentId?: string }>).detail;
+      if (detail?.componentId !== "patchwork-selected-doc-provider") return;
+      setSelectedDocProviderReady(true);
+    };
+    selectedDocProviderEl.addEventListener("patchwork:mounted", onMounted);
+    onCleanup(() =>
+      selectedDocProviderEl.removeEventListener("patchwork:mounted", onMounted),
+    );
+  });
+  // Subscribe only once the provider is ready (re-runs when readiness flips).
+  createEffect(() => {
+    if (!selectedDocProviderReady()) return;
+    const off = subscribe<SelectedView | null>(
+      selectionEl,
+      { type: "patchwork:selected-view" },
+      (view) => setSelectedView(view),
+    );
+    onCleanup(off);
+  });
+  const selectedDocUrl = () => selectedView()?.url ?? undefined;
+  const selectedToolId = () => selectedView()?.toolId ?? undefined;
+
+  // Control state (resolved from reserved-tag presence inside UseStage) is
+  // reported up here so App can drive frame-level layout — chiefly the account
+  // sidebar's visibility via the left-sidebar control.
+  const [controlState, setControlState] = createSignal<ControlState>({
+    setup: false,
+    fullscreen: false,
+    "left-sidebar": false,
+  });
+  // Manual sidebar override (button in the panel) — usable while control tags
+  // are being debugged. Sidebar is open if the control tag OR the manual toggle
+  // says so.
+  const [manualSidebar, setManualSidebar] = createSignal(false);
+  const sidebarOpen = () => controlState()["left-sidebar"] || manualSidebar();
+
   return (
-    <div class="sph-root">
+    // SelectedDocProvider wraps the whole frame: the sidebar's
+    // `patchwork:open-document` events bubble up to it, and our
+    // `patchwork:selected-view` subscription (on .sph-root inside) reads back
+    // the current selection. `patchwork-view` defaults to display:contents (no
+    // box) — but .sph-root uses position:absolute;inset:0, which then resolves
+    // against an ancestor that collapses to 0 height. So give THIS wrapper an
+    // explicit sized, positioned box to be .sph-root's containing block.
+    <patchwork-view
+      component="patchwork-selected-doc-provider"
+      ref={selectedDocProviderEl}
+      style={{
+        display: "block",
+        position: "relative",
+        width: "100%",
+        // The mount element collapses to 0 height in this host, so percentage /
+        // inset chains bottom out at 0. A physical frame fills the projected
+        // screen, so anchor to the viewport height directly (robust regardless
+        // of the parent chain). min-height keeps it from collapsing.
+        height: "100dvh",
+        "min-height": "100dvh",
+      }}
+    >
+    <div class="sph-root" ref={selectionEl}>
       <Show
-        when={calHandle()}
-        fallback={<div class="sph-loading">Preparing calibration…</div>}
+        when={configHandle() && config() && calHandle()}
+        fallback={<div class="sph-loading">Preparing physical frame…</div>}
       >
         <Switch
           fallback={
@@ -112,45 +268,118 @@ export function App(props: {
           }
         >
           <Match when={mode() === "sample"}>
-            <SampleBackgroundPhase calDoc={calDoc()!} hostDoc={doc} camera={camera} />
+            <SampleBackgroundPhase
+              calDoc={calDoc()!}
+              hostDoc={config()!}
+              camera={camera}
+            />
           </Match>
           <Match when={mode() === "use"}>
             <UseStage
-              hostHandle={props.handle}
-              hostDoc={doc}
+              hostHandle={configHandle()!}
+              hostDoc={config()!}
               calDoc={calDoc()!}
               repo={repo}
               camera={camera}
               getBackground={background}
+              controls={controls()}
+              selectedDocUrl={selectedDocUrl}
+              selectedToolId={selectedToolId}
+              onControlState={setControlState}
             />
           </Match>
         </Switch>
       </Show>
 
-      <ControlPanel
-        hostHandle={props.handle}
-        hostDoc={doc}
-        calHandle={calHandle()}
-        calDoc={calDoc()}
-        repo={repo}
-        mode={mode()}
-        setHostMode={setHostMode}
-        requestFullscreen={requestFullscreen}
-        camera={camera}
-        calibrated={calibrated()}
-        hasBackground={!!background()}
-        onSample={() => {
-          const g = camera.grabGray();
-          // Only overwrite on a successful grab; a null grab (camera not ready)
-          // shouldn't silently clear an existing reference.
-          if (g) setBackground(g);
-          else
-            console.warn(
-              "[physical-frame] background sample failed — camera not ready?",
-              { active: camera.active(), liveSize: camera.getLiveSize() },
-            );
-        }}
-      />
+      {/* Frame-level chrome — always available, not tied to any mode.
+          • Camera toggle: nothing physical works until the camera stream is
+            started (getUserMedia needs a user gesture), so this is a top-level
+            control. Camera on → the loop runs → apriltags + physical controls.
+          • Sidebar toggle: the manual equivalent of the left-sidebar control tag. */}
+      <Show when={configHandle() && config()}>
+        <div
+          class="sph-frame-chrome"
+          style={{
+            position: "absolute",
+            top: "0.4rem",
+            right: "0.4rem",
+            "z-index": "41",
+            display: "flex",
+            gap: "0.35rem",
+            "pointer-events": "auto",
+          }}
+        >
+          <button
+            style={CHROME_BTN_STYLE}
+            data-active={camera.active() ? "" : undefined}
+            title={camera.active() ? "Stop camera" : "Start camera"}
+            onClick={() => camera.toggle()}
+          >
+            {camera.active() ? "◉ Camera" : "○ Camera"}
+          </button>
+          <button
+            style={CHROME_BTN_STYLE}
+            data-active={sidebarOpen() ? "" : undefined}
+            title={sidebarOpen() ? "Hide documents" : "Show documents"}
+            onClick={() => setManualSidebar((v) => !v)}
+          >
+            ☰
+          </button>
+        </div>
+      </Show>
+
+      {/* Account sidebar — the real document navigation + create-new (sideboard).
+          Open via the left-sidebar control tag or the toggle above; when open it
+          overlays the document area (one thing active at a time). Dispatches
+          patchwork:open-document, caught by the SelectedDocProvider wrapper. The
+          embedded document stays mounted underneath, just covered. */}
+      <Show when={sidebarOpen()}>
+        <div class="sph-account-sidebar">
+          <patchwork-view
+            attr:tool-id={sidebarToolId()}
+            attr:doc-url={props.accountHandle.url}
+          />
+        </div>
+      </Show>
+
+      {/* The panel reads the config doc (barPosition, surfaceBrightness, …), so
+          only render it once the config subdoc has loaded — it's lazily created
+          on first mount and is undefined for the first frame(s). */}
+      <Show when={configHandle() && config()}>
+        <ControlPanel
+          hostHandle={configHandle()!}
+          hostDoc={config()!}
+          calHandle={calHandle()}
+          calDoc={calDoc()}
+          repo={repo}
+          mode={mode()}
+          setHostMode={setHostMode}
+          requestFullscreen={requestFullscreen}
+          camera={camera}
+          calibrated={calibrated()}
+          hasBackground={!!background()}
+          config={config()}
+          configHandle={configHandle()}
+          currentSystemId={systemId()}
+          onSelectSystem={selectSystem}
+          onAddSystem={(name: string) => {
+            const handle = configHandle();
+            if (handle) void addSystem(handle, repo, name).then(selectSystem);
+          }}
+          onSample={() => {
+            const g = camera.grabGray();
+            // Only overwrite on a successful grab; a null grab (camera not ready)
+            // shouldn't silently clear an existing reference.
+            if (g) setBackground(g);
+            else
+              console.warn(
+                "[physical-frame] background sample failed — camera not ready?",
+                { active: camera.active(), liveSize: camera.getLiveSize() },
+              );
+          }}
+        />
+      </Show>
     </div>
+    </patchwork-view>
   );
 }

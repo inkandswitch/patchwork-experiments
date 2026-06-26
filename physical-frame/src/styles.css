@@ -87,33 +87,49 @@
   inset: 0;
   z-index: 1;
 }
-.sph-main[data-sidebar] {
-  left: var(--sph-sidebar-w, 22%);
-}
 
-/* Left sidebar — appears while the left-sidebar control tag is present. */
-.sph-left-sidebar {
+/* Frame-level chrome (top-right): camera + sidebar toggles. Above the sidebar
+   + control panel so they're always clickable (incl. to close the sidebar). */
+.sph-frame-chrome {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: var(--sph-sidebar-w, 22%);
-  z-index: 2;
-  box-sizing: border-box;
-  padding: 0.6rem;
+  top: 0.4rem;
+  right: 0.4rem;
+  z-index: 41;
+  display: flex;
+  gap: 0.35rem;
+}
+.sph-frame-chrome button {
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
   background: var(--studio-fill, #fff);
   color: var(--studio-line, #111);
-  border-right: 1px solid var(--studio-fill-offset-20, #ccc);
+  border: 1px solid var(--studio-fill-offset-20, #ccc);
+  border-radius: var(--studio-radius-sm, 4px);
+}
+.sph-frame-chrome button[data-active] {
+  background: var(--sph-accent, #2d7ff9);
+  color: #fff;
+}
+
+/* Account sidebar (real document navigation; App-level). Shown while the
+   left-sidebar control is active; covers the active area (one thing active at a
+   time). Above the stage, below the control panel (z-index:40). The embedded
+   document stays mounted underneath. */
+.sph-account-sidebar {
+  position: absolute;
+  inset: 2px; /* match .sph-stage inset */
+  z-index: 30;
   overflow: auto;
+  background: var(--studio-fill, #fff);
+  color: var(--studio-line, #111);
   font-family: var(--studio-family-sans, system-ui, sans-serif);
-}
-.sph-sidebar-title {
-  font-weight: 700;
-  margin-bottom: 0.3rem;
-}
-.sph-sidebar-hint {
-  font-size: 0.8rem;
-  opacity: 0.65;
 }
 
 /* Setup overlay — appears while the setup control tag is toggled on. Covers the
@@ -164,6 +180,35 @@
   border: 3px solid rgba(255, 255, 255, 0.85);
   pointer-events: none;
   z-index: 2;
+}
+
+/* Placeholder shown in the box when no document is selected. */
+.sph-main-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.6);
+  font-family: var(--studio-family-sans, system-ui, sans-serif);
+  font-size: 0.9rem;
+  pointer-events: none;
+}
+
+/* ---- System selector ---- */
+.sph-system-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+  font-size: 0.85rem;
+}
+.sph-system-row select {
+  flex: 1;
+  min-width: 0;
+}
+.sph-system-label {
+  opacity: 0.7;
 }
 
 /* ---- Surface-brightness control ---- */

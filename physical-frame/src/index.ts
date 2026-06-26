@@ -1,8 +1,10 @@
 /**
  * Physical Frame — plugin registration.
  *
- * Registers the frame folder datatype + the frame tool, a dedicated calibration
- * datatype (hidden from menus), and the frame-owned coordinate-system provider.
+ * Registers the frame TOOL (a frame-tool over the `account` datatype), the
+ * physical-frame CONFIG datatype (its per-account subdoc; unlisted — not a
+ * user-created doc type), a dedicated calibration datatype (hidden), and the
+ * frame-owned coordinate-system provider.
  *
  * Recognition layers are NOT registered here — each ships in its own package as
  * a `patchwork:physical-layer` plugin (+ its relay provider) and is discovered
@@ -13,8 +15,9 @@ export const plugins = [
   {
     type: "patchwork:datatype",
     id: "physical-frame",
-    name: "Physical Frame",
+    name: "Physical Frame Config",
     icon: "Frame",
+    unlisted: true,
     async load() {
       return (await import("./folder-datatype.js")).SpatialHostFolderDatatype;
     },
@@ -24,7 +27,8 @@ export const plugins = [
     id: "physical-frame",
     name: "Physical Frame",
     icon: "Frame",
-    supportedDatatypes: ["physical-frame"],
+    tags: ["frame-tool"],
+    supportedDatatypes: ["account"],
     async load() {
       return (await import("./main.js")).HostTool;
     },

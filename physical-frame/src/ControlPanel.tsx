@@ -2,11 +2,11 @@ import { createMemo, createSignal, For, Show } from "solid-js";
 import type { DocHandle, Repo } from "@automerge/automerge-repo";
 import type {
   SpatialHostDoc,
+  PhysicalFrameConfig,
   CalibrationDoc,
   CalibrationMode,
   HostMode,
 } from "./folder-datatype";
-import { CreateNew } from "./CreateNew";
 import {
   solveSetup,
   calibrationStatus,
@@ -39,6 +39,12 @@ export function ControlPanel(props: {
   hasBackground: boolean;
   /** Sample the current frame as the empty-surface background. */
   onSample: () => void;
+  // ---- Multi-system selector ----
+  config: PhysicalFrameConfig | undefined;
+  configHandle: DocHandle<PhysicalFrameConfig> | undefined;
+  currentSystemId: string | null;
+  onSelectSystem: (id: string) => void;
+  onAddSystem: (name: string) => void;
 }) {
   // Collapse is LOCAL to this screen — not persisted to the doc — so collapsing
   // on one display doesn't hide the panel on the projector or other viewers.
@@ -113,8 +119,31 @@ export function ControlPanel(props: {
       </div>
 
       <Show when={!collapsed()}>
-        {/* Top-level Setup / Sample / Use switch — always first. Sample + Use
-            are gated until calibration is solved. */}
+        {/* System selector — which physical rig this frame instance is driving.
+            Per-instance (localStorage), so two windows can run two rigs. */}
+        <div class="sph-system-row">
+          <span class="sph-system-label">System</span>
+          <select
+            value={props.currentSystemId ?? ""}
+            onChange={(e) => props.onSelectSystem(e.currentTarget.value)}
+          >
+            <For each={Object.entries(props.config?.systems ?? {})}>
+              {([id, sys]) => <option value={id}>{sys.name || id}</option>}
+            </For>
+          </select>
+          <button
+            title="Add a new physical system (rig)"
+            onClick={() => {
+              const name = window.prompt("New system name?", "System");
+              if (name != null) props.onAddSystem(name);
+            }}
+          >
+            +
+          </button>
+        </div>
+
+        {/* Top-level Setup / Sample / Use switch. Sample + Use are gated until
+            calibration is solved. */}
         <div class="sph-seg">
           <button
             data-active={props.mode === "setup" ? "" : undefined}
@@ -279,37 +308,11 @@ function UseControls(props: {
   repo: Repo;
   camera: Camera;
 }) {
-  const docs = () => props.hostDoc.docs ?? [];
+  // Document navigation + create-new now live in the account sidebar (toggled
+  // by the left-sidebar control tag), not here.
   return (
-    <>
-      <select
-        disabled={!docs().length}
-        value={String(props.hostDoc.activeIndex ?? 0)}
-        onChange={(e) =>
-          props.hostHandle.change((d) => {
-            d.activeIndex = Number(e.currentTarget.value) || 0;
-          })
-        }
-      >
-        <Show when={docs().length} fallback={<option>(no docs yet)</option>}>
-          <For each={docs()}>
-            {(link, i) => (
-              <option value={String(i())}>
-                {link.name || link.type || `Doc ${i() + 1}`}
-              </option>
-            )}
-          </For>
-        </Show>
-      </select>
-
-      <CreateNew
-        hostHandle={props.hostHandle}
-        repo={props.repo}
-      />
-
-      <button data-variant="primary" onClick={() => props.camera.toggle()}>
-        {props.camera.active() ? "Stop camera" : "Start camera"}
-      </button>
-    </>
+    <button data-variant="primary" onClick={() => props.camera.toggle()}>
+      {props.camera.active() ? "Stop camera" : "Start camera"}
+    </button>
   );
 }
