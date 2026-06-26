@@ -1,0 +1,28 @@
+{
+  "name": "@patchwork/physical-layer-apriltags",
+  "version": "0.0.1",
+  "description": "AprilTag physical-layer for physical-frame: a tag36h11 WASM reader + a relay provider publishing physical:apriltags",
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "push": "vite build && pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  },
+  "keywords": [],
+  "author": "Ink & Switch",
+  "dependencies": {
+    "@inkandswitch/patchwork-providers": "^0.2.1"
+  },
+  "devDependencies": {
+    "@inkandswitch/patchwork-bootloader": "^0.2.4",
+    "typescript": "^5.8.3",
+    "vite": "^7.1.9",
+    "vite-plugin-css-injected-by-js": "^3.5.2"
+  }
+}
