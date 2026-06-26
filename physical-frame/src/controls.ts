@@ -18,7 +18,7 @@ import type { ControlAction, ControlMap } from "./folder-datatype";
 export type ControlState = Record<ControlAction, boolean>;
 
 export function emptyControlState(): ControlState {
-  return { setup: false, fullscreen: false, "left-sidebar": false };
+  return { setup: false, "hide-controls": false, "left-sidebar": false };
 }
 
 /**

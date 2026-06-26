@@ -88,6 +88,35 @@
   z-index: 1;
 }
 
+/* Startup overlay — one-time gesture to start camera + fullscreen. Covers all. */
+.sph-start-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  background: #000;
+  color: #fff;
+  font-family: var(--studio-family-sans, system-ui, sans-serif);
+}
+.sph-start-button {
+  font: inherit;
+  font-size: 1.4rem;
+  padding: 0.8rem 1.6rem;
+  cursor: pointer;
+  background: var(--sph-accent, #2d7ff9);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+}
+.sph-start-hint {
+  font-size: 0.9rem;
+  opacity: 0.6;
+}
+
 /* Frame-level chrome (top-right): camera + sidebar toggles. Above the sidebar
    + control panel so they're always clickable (incl. to close the sidebar). */
 .sph-frame-chrome {

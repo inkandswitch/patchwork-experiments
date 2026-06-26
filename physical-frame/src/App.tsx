@@ -221,9 +221,22 @@ export function App(props: {
   // sidebar's visibility via the left-sidebar control.
   const [controlState, setControlState] = createSignal<ControlState>({
     setup: false,
-    fullscreen: false,
+    "hide-controls": false,
     "left-sidebar": false,
   });
+  // Hide frame chrome (control panel + top-right buttons) for a clean projector
+  // view — driven by the hide-controls control tag.
+  const hideControls = () => controlState()["hide-controls"];
+
+  // One-time startup gesture: camera start AND browser fullscreen both require a
+  // user gesture (can't be auto-triggered on load). Show a "Start projecting"
+  // overlay; clicking it (the gesture) starts the camera + enters fullscreen.
+  const [started, setStarted] = createSignal(false);
+  const startProjecting = () => {
+    setStarted(true);
+    if (!camera.active()) void camera.start(camera.deviceId());
+    void props.element.requestFullscreen?.().catch(() => {});
+  };
   // Manual sidebar override (button in the panel) — usable while control tags
   // are being debugged. Sidebar is open if the control tag OR the manual toggle
   // says so.
@@ -254,6 +267,17 @@ export function App(props: {
       }}
     >
     <div class="sph-root" ref={selectionEl}>
+      {/* Startup overlay: one click to start the camera + enter fullscreen
+          (both need a user gesture, so they can't auto-run on load). */}
+      <Show when={configHandle() && config() && !started()}>
+        <div class="sph-start-overlay">
+          <button class="sph-start-button" onClick={startProjecting}>
+            ▶ Start projecting
+          </button>
+          <div class="sph-start-hint">Starts the camera and goes fullscreen</div>
+        </div>
+      </Show>
+
       <Show
         when={configHandle() && config() && calHandle()}
         fallback={<div class="sph-loading">Preparing physical frame…</div>}
@@ -295,8 +319,9 @@ export function App(props: {
           • Camera toggle: nothing physical works until the camera stream is
             started (getUserMedia needs a user gesture), so this is a top-level
             control. Camera on → the loop runs → apriltags + physical controls.
-          • Sidebar toggle: the manual equivalent of the left-sidebar control tag. */}
-      <Show when={configHandle() && config()}>
+          • Sidebar toggle: the manual equivalent of the left-sidebar control tag.
+          Hidden while the hide-controls control is active (clean projector view). */}
+      <Show when={configHandle() && config() && !hideControls()}>
         <div
           class="sph-frame-chrome"
           style={{
@@ -344,8 +369,9 @@ export function App(props: {
 
       {/* The panel reads the config doc (barPosition, surfaceBrightness, …), so
           only render it once the config subdoc has loaded — it's lazily created
-          on first mount and is undefined for the first frame(s). */}
-      <Show when={configHandle() && config()}>
+          on first mount and is undefined for the first frame(s). Hidden while the
+          hide-controls control is active (clean projector view). */}
+      <Show when={configHandle() && config() && !hideControls()}>
         <ControlPanel
           hostHandle={configHandle()!}
           hostDoc={config()!}

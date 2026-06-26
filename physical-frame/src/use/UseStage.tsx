@@ -313,22 +313,6 @@ export function UseStage(props: {
     if (props.camera.active()) loop?.start();
   });
 
-  // Fullscreen control: a tag in the camera feed is NOT a user gesture, so the
-  // Fullscreen API's requestFullscreen() is blocked by the browser. Instead we
-  // "maximize" the stage with fixed positioning over the whole viewport (a CSS
-  // class) — no permission needed, works from a tag, and for a projector that's
-  // the actual goal. (We still TRY real fullscreen best-effort; harmless if the
-  // browser ignores it, e.g. when a real user gesture happens to be active.)
-  createEffect(() => {
-    const want = controlState().fullscreen;
-    const stage = boxEl?.closest<HTMLElement>(".sph-stage");
-    stage?.classList.toggle("sph-maximized", want);
-    if (want && !document.fullscreenElement) {
-      void stage?.requestFullscreen?.().catch(() => {});
-    } else if (!want && document.fullscreenElement) {
-      void document.exitFullscreen?.().catch(() => {});
-    }
-  });
 
   // Re-stamp whenever the set of layer wrappers changes (descriptors loaded).
   createEffect(() => {

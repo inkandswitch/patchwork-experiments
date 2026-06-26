@@ -22,7 +22,7 @@ export type BarPosition = { left: number; top: number };
 export type HostMode = "setup" | "sample" | "use";
 
 // ---- Physical controls (reserved AprilTags → frame UI) --------------------
-export type ControlAction = "setup" | "fullscreen" | "left-sidebar";
+export type ControlAction = "setup" | "hide-controls" | "left-sidebar";
 export type ControlTrigger = "momentary" | "toggle";
 export type ControlEntry = { action: ControlAction; trigger: ControlTrigger };
 /** tag id (as string) → control entry */
@@ -69,7 +69,7 @@ export const MAX_TAG_ID = 586;
 // top-of-space defaults (586/585/584) once those are printed.
 export function defaultControls(): ControlMap {
   return {
-    "5": { action: "fullscreen", trigger: "toggle" },
+    "5": { action: "hide-controls", trigger: "toggle" },
     "4": { action: "setup", trigger: "toggle" },
     "3": { action: "left-sidebar", trigger: "momentary" },
   };
