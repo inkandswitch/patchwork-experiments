@@ -1547,6 +1547,10 @@ export function LoomTool(handle, element) {
 		state.config.ollama = cfg.ollama
 		state.config.webllm = cfg.webllm
 		state.config.builtin = cfg.builtin
+		// A config provider can attach an in-memory request handler (e.g. choochoo
+		// applies a live LoRA delta on top of a base model). Carry it so predict()
+		// can intercept; null in normal use, so no effect when unset.
+		state.config.handler = cfg.handler
 		modelBtn.lastChild.textContent = describeConfig(cfg)
 		// A different model/quantization makes every model-derived overlay stale.
 		if (cfg.local?.model !== prevModel || cfg.local?.dtype !== prevDtype) {
