@@ -5,7 +5,6 @@
 	--studio-line: #d8dee9;
 	--studio-primary: #88c0d0;
 	--studio-secondary: #81a1c1;
-	--studio-chrome: #3b4252; /* nord1 polar-night surface, like the sidebar */
 	--studio-danger: #bf616a;
 	--studio-warning: #ebcb8b;
 	--studio-added: #a3be8c;
@@ -14,27 +13,8 @@
 	--studio-link: #88c0d0;
 	--studio-selection-fill: #434c5e;
 
-	--text-editor-fill: #2e3440;
-	--text-editor-line: #d8dee9;
-	--text-editor-cursor-fill: #d8dee9;
-	--text-editor-selection-fill: #434c5e;
-	--text-editor-selection-line: #d8dee9;
-
-	--text-editor-active-line-fill: color-mix(
-		in oklch,
-		var(--text-editor-fill-offset-10),
-		transparent 80%
-	);
-	--text-editor-active-line-fill--gutter: var(--text-editor-fill-offset-20);
-
-	--text-editor-gutter-fill: #2e3440;
+	/* line numbers in nord3 polar-night */
 	--text-editor-gutter-line: #4c566a;
-	--text-editor-gutter-border: #3b4252;
-	--text-editor-gutter-fill--line-numbers: #2e3440;
-	--text-editor-gutter-line--line-numbers: #4c566a;
-
-	--text-editor-tooltip-fill: #3b4252;
-	--text-editor-tooltip-color: #eceff4;
 
 	--syntax-comment: #616e88;
 	--syntax-style-comment: italic;

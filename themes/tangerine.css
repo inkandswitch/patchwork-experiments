@@ -1,8 +1,6 @@
-/* Tangerine — warm and glowing: tangerine and amber on cream, with leaf-green
-   strings. Bright, friendly, and sunny. */
+/* Tangerine — warm and sunny: tangerine and amber on cream, leaf-green strings */
 [theme="tangerine"] {
 	color-scheme: light;
-	/* ── core studio ─────────────────────────────────────────────── */
 	--studio-fill: #fff7f0; /* cream */
 	--studio-line: #4a2a14; /* deep roast */
 	--studio-primary: #ff6a1a; /* tangerine */
@@ -14,55 +12,10 @@
 	--studio-modified: #c8451a; /* burnt orange */
 	--studio-link: #ff6a1a;
 	--studio-selection-fill: #ffe0c8;
-	--studio-selection-line: #4a2a14;
-	--studio-family-sans: "Quicksand", "Nunito", system-ui, -apple-system,
-		sans-serif;
-	--studio-family-code: "Fantasque Sans Mono", "IBM Plex Mono", ui-monospace,
-		monospace;
-	--studio-font-size: 16px;
-	--studio-line-height: 1.55;
 
-	--studio-radius-xs: 4px;
-	--studio-radius-sm: 8px;
-	--studio-radius: 12px;
-	--studio-radius-md: 16px;
-	--studio-radius-lg: 22px;
-	--studio-radius-xl: 28px;
-	--studio-radius-round: 9999px;
+	--text-editor-cursor-fill: var(--studio-primary);
+	--text-editor-gutter-line: var(--text-editor-line-offset-40);
 
-	--studio-shadow-sm: 0 1px 2px oklch(0.82 0.1 55 / 0.12);
-	--studio-shadow: 0 2px 6px oklch(0.78 0.12 55 / 0.16);
-	--studio-shadow-md: 0 6px 14px -3px oklch(0.76 0.14 55 / 0.2),
-		0 3px 6px -3px oklch(0.76 0.14 55 / 0.14);
-	--studio-shadow-lg: 0 14px 28px -8px oklch(0.74 0.16 55 / 0.26),
-		0 6px 10px -6px oklch(0.74 0.16 55 / 0.16);
-
-	--studio-transition-fast: 0.12s cubic-bezier(0.34, 1.56, 0.64, 1);
-	--studio-transition: 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
-	--studio-transition-slow: 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
-
-	/* ── text editor ─────────────────────────────────────────────── */
-	--text-editor-fill: #fff7f0;
-	--text-editor-line: #4a2a14;
-	--text-editor-cursor-fill: #ff6a1a;
-	--text-editor-selection-fill: #ffe0c8;
-	--text-editor-selection-line: #4a2a14;
-
-	--text-editor-active-line-fill: #ff6a1a0c;
-	--text-editor-active-line-line: var(--text-editor-line);
-	--text-editor-active-line-fill--gutter: #fff0e0;
-	--text-editor-active-line-line--gutter: var(--text-editor-line);
-
-	--text-editor-gutter-fill: #fff0e0;
-	--text-editor-gutter-line: #c89a78;
-	--text-editor-gutter-border: #ffd8b8;
-	--text-editor-gutter-font-size: 0.8em;
-	--text-editor-gutter-font-size--line-numbers: 0.8em;
-
-	--text-editor-tooltip-fill: #ffe0c8;
-	--text-editor-tooltip-color: #4a2a14;
-
-	/* ── syntax (sunny box) ──────────────────────────────────────── */
 	--syntax-comment: #c89a78;
 	--syntax-style-comment: italic;
 
@@ -70,9 +23,9 @@
 	--syntax-style-doc-comment: italic;
 
 	--syntax-meta: #c8451a;
-	--syntax-invalid: #e8341a;
+	--syntax-invalid: var(--studio-danger);
 
-	--syntax-operator: #ff9e3d;
+	--syntax-operator: var(--studio-secondary);
 	--syntax-punctuation: #a87a5a;
 
 	--syntax-bool: #c8451a;
@@ -81,7 +34,7 @@
 	--syntax-atom: #c8451a;
 	--syntax-weight-atom: bold;
 
-	--syntax-keyword: #ff6a1a;
+	--syntax-keyword: var(--studio-primary);
 	--syntax-weight-keyword: bold;
 
 	--syntax-type-name: #c8451a;
@@ -90,108 +43,46 @@
 	--syntax-class-name: #c8451a;
 	--syntax-weight-class-name: bold;
 
-	--syntax-type-operator: #ff9e3d;
+	--syntax-type-operator: var(--studio-secondary);
 
-	--syntax-function--variable-name: #ff9e3d;
-	--syntax-function--property-name: #ff9e3d;
+	--syntax-function--variable-name: var(--studio-secondary);
+	--syntax-function--property-name: var(--studio-secondary);
 
-	--syntax-variable-name: #4a2a14;
-	--syntax-definition--variable-name: #ff6a1a;
+	--syntax-definition--variable-name: var(--studio-primary);
 
-	--syntax-string: #2fa84f;
+	--syntax-string: var(--studio-added);
 	--syntax-fill-string: #2fa84f14;
 
 	--syntax-number: #c8451a;
 	--syntax-integer: #c8451a;
 	--syntax-float: #c8451a;
 
-	--syntax-escape: #e8341a;
-	--syntax-regexp: #ff9e3d;
-	--syntax-special--string: #2fa84f;
+	--syntax-escape: var(--studio-danger);
+	--syntax-regexp: var(--studio-secondary);
+	--syntax-special--string: var(--studio-added);
 
-	--syntax-tag-name: #ff6a1a;
+	--syntax-tag-name: var(--studio-primary);
 	--syntax-angle-bracket: #a87a5a;
 
-	--syntax-attribute-name: #ffc23d;
+	--syntax-attribute-name: var(--studio-warning);
 	--syntax-style-attribute-name: italic;
 
-	--syntax-namespace: #ffc23d;
+	--syntax-namespace: var(--studio-warning);
 
-	--syntax-strong: #4a2a14;
-	--syntax-weight-strong: bold;
-
-	--syntax-emphasis: #ff6a1a;
+	--syntax-emphasis: var(--studio-primary);
 	--syntax-style-emphasis: italic;
 
-	--syntax-heading: #ff6a1a;
+	--syntax-heading: var(--studio-primary);
 	--syntax-weight-heading: bold;
 
-	--syntax-link: #ff6a1a;
+	--syntax-link: var(--studio-link);
 	--syntax-style-link: underline;
 
 	--syntax-quote: #c89a78;
-	--syntax-list: #4a2a14;
 
-	--syntax-inserted: #2fa84f;
-	--syntax-deleted: #e8341a;
-	--syntax-changed: #ff6a1a;
+	--syntax-inserted: var(--studio-added);
+	--syntax-deleted: var(--studio-deleted);
+	--syntax-changed: var(--studio-modified);
 
 	--syntax-content-separator: #ffd8b8;
-
-	/* ── sideboard: warm cream sidebar ───────────────────────────── */
-	--sideboard-fill: #ffead8;
-	--sideboard-fill-offset: #ffddc0;
-	--sideboard-footer-fill: #ffd2a8;
-	--sideboard-line: #4a2a14;
-	--sideboard-widget-fill: #fff7f0;
-	--sideboard-widget-line: #4a2a14;
-	--sideboard-border: #ffd8b8;
-	--sideboard-border-strong: #ffc090;
-	--sideboard-muted: #c89a78;
-	--sideboard-primary: #ff6a1a;
-	--sideboard-added: #2fa84f;
-	--sideboard-danger: #e8341a;
-	--sideboard-search-line: #ff6a1a;
-	--sideboard-toggle-hover: #ff6a1a14;
-	--sideboard-create-new-fill: #fff0e0;
-	--sideboard-create-new-line: #ff6a1a;
-	--sideboard-create-new-border-line: #ffc090;
-	--sideboard-create-new-shadow-color: #ffc090;
-	--sideboard-radius: 10px;
-
-	/* ── comments-view ───────────────────────────────────────────── */
-	--comments-fg: #4a2a14;
-	--comments-muted-fg: #c89a78;
-	--comments-bg: #fff7f0;
-	--comments-border: #ffd8b8;
-	--comments-hover-bg: #ffead8;
-	--comments-accent: #ff6a1a;
-
-	/* ── tasks ───────────────────────────────────────────────────── */
-	--task-fg: #4a2a14;
-	--task-bg: #fff7f0;
-	--task-muted: #c89a78;
-	--task-border: #ffd8b8;
-	--task-radius: 12px;
-	--task-danger: #e8341a;
-	--task-success: #2fa84f;
-
-	/* ── contact ─────────────────────────────────────────────────── */
-	--contact-fg: #4a2a14;
-	--contact-muted-fg: #c89a78;
-	--contact-border: #ffd8b8;
-	--contact-fallback-bg: #ffe0c8;
-	--contact-fallback-fg: #c45a1a;
-	--contact-presence-color: #2fa84f;
-}
-
-[theme="tangerine"] button,
-[theme="tangerine"] [role="button"] {
-	transition:
-		transform var(--studio-transition-fast),
-		box-shadow var(--studio-transition-fast);
-}
-[theme="tangerine"] button:active,
-[theme="tangerine"] [role="button"]:active {
-	transform: scale(0.96);
 }

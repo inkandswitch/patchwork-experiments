@@ -5,36 +5,17 @@
 	--studio-line: #c0caf5;
 	--studio-primary: #7aa2f7;
 	--studio-secondary: #7dcfff;
-	--studio-chrome: #1f2335; /* bg-dark, like the sidebar */
 	--studio-danger: #f7768e;
 	--studio-warning: #e0af68;
 	--studio-added: #9ece6a;
 	--studio-deleted: #f7768e;
 	--studio-modified: #7aa2f7;
 	--studio-link: #7aa2f7;
-	--studio-selection-fill: #2d3f76;
+	--studio-selection-fill: #2e3c64;
 
-	--text-editor-fill: #24283b;
-	--text-editor-line: #c0caf5;
-	--text-editor-cursor-fill: #c0caf5;
-	--text-editor-selection-fill: #2d3f76;
-	--text-editor-selection-line: #c0caf5;
-
-	--text-editor-active-line-fill: color-mix(
-		in oklch,
-		var(--text-editor-fill-offset-10),
-		transparent 80%
-	);
-	--text-editor-active-line-fill--gutter: var(--text-editor-fill-offset-20);
-
-	--text-editor-gutter-fill: #24283b;
+	--text-editor-gutter-fill: var(--text-editor-fill);
 	--text-editor-gutter-line: #3b4261;
-	--text-editor-gutter-border: #24283b;
-	--text-editor-gutter-fill--line-numbers: #24283b;
-	--text-editor-gutter-line--line-numbers: #3b4261;
-
-	--text-editor-tooltip-fill: #1f2335;
-	--text-editor-tooltip-color: #c0caf5;
+	--text-editor-gutter-border: none;
 
 	--syntax-comment: #565f89;
 	--syntax-style-comment: italic;

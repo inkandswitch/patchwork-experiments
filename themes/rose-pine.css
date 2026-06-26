@@ -5,7 +5,6 @@
 	--studio-line: #e0def4;
 	--studio-primary: #c4a7e7;
 	--studio-secondary: #9ccfd8;
-	--studio-chrome: #1f1d2e; /* surface, like the sidebar */
 	--studio-danger: #eb6f92;
 	--studio-warning: #f6c177;
 	--studio-added: #9ccfd8;
@@ -14,27 +13,9 @@
 	--studio-link: #c4a7e7;
 	--studio-selection-fill: #2a283e;
 
-	--text-editor-fill: #191724;
-	--text-editor-line: #e0def4;
+	/* cursor in rose; line numbers in muted */
 	--text-editor-cursor-fill: #ebbcba;
-	--text-editor-selection-fill: #2a283e;
-	--text-editor-selection-line: #e0def4;
-
-	--text-editor-active-line-fill: color-mix(
-		in oklch,
-		var(--text-editor-fill-offset-10),
-		transparent 80%
-	);
-	--text-editor-active-line-fill--gutter: var(--text-editor-fill-offset-20);
-
-	--text-editor-gutter-fill: #191724;
 	--text-editor-gutter-line: #6e6a86;
-	--text-editor-gutter-border: #1f1d2e;
-	--text-editor-gutter-fill--line-numbers: #191724;
-	--text-editor-gutter-line--line-numbers: #6e6a86;
-
-	--text-editor-tooltip-fill: #1f1d2e;
-	--text-editor-tooltip-color: #e0def4;
 
 	--syntax-comment: #6e6a86;
 	--syntax-style-comment: italic;

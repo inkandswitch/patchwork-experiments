@@ -3,34 +3,19 @@
 	color-scheme: light;
 	--studio-fill: #fbf1c7;
 	--studio-line: #3c3836;
-	--studio-primary: #458588;
-	--studio-secondary: #689d6a;
-	--studio-chrome: #ebdbb2; /* bg1, like the sidebar */
-	--studio-danger: #cc241d;
-	--studio-warning: #d79921;
-	--studio-added: #98971a;
-	--studio-deleted: #cc241d;
-	--studio-modified: #458588;
-	--studio-link: #458588;
+	--studio-primary: #076678;
+	--studio-secondary: #427b58;
+	--studio-danger: #9d0006;
+	--studio-warning: #b57614;
+	--studio-added: #79740e;
+	--studio-deleted: #9d0006;
+	--studio-modified: #076678;
+	--studio-link: #076678;
 	--studio-selection-fill: #ebdbb2;
 
-	--text-editor-fill: #fbf1c7;
-	--text-editor-line: #3c3836;
-	--text-editor-cursor-fill: #3c3836;
-	--text-editor-selection-fill: #ebdbb2;
-	--text-editor-selection-line: #3c3836;
-
-	--text-editor-active-line-fill: #45858805;
-	--text-editor-active-line-line: var(--text-editor-line);
-	--text-editor-active-line-fill--gutter: #ebdbb2;
-	--text-editor-active-line-line--gutter: var(--text-editor-line);
 	--text-editor-gutter-fill: #ebdbb2;
 	--text-editor-gutter-line: #928374;
 	--text-editor-gutter-border: none;
-	--text-editor-gutter-font-size: 0.8em;
-	--text-editor-gutter-font-size--line-numbers: 0.8em;
-	--text-editor-tooltip-fill: #ebdbb2;
-	--text-editor-tooltip-color: #3c3836;
 
 	--syntax-comment: #928374;
 	--syntax-style-comment: italic;
@@ -39,7 +24,7 @@
 	--syntax-style-doc-comment: italic;
 
 	--syntax-meta: #928374;
-	--syntax-invalid: #cc241d;
+	--syntax-invalid: #9d0006;
 
 	--syntax-operator: #3c3836;
 	--syntax-punctuation: #3c3836;
@@ -50,40 +35,40 @@
 	--syntax-atom: #8f3f71;
 	--syntax-weight-atom: bold;
 
-	--syntax-keyword: #cc241d;
+	--syntax-keyword: #9d0006;
 
-	--syntax-type-name: #d79921;
+	--syntax-type-name: #b57614;
 	--syntax-weight-type-name: bold;
 
-	--syntax-class-name: #d79921;
+	--syntax-class-name: #b57614;
 	--syntax-weight-class-name: bold;
 
-	--syntax-type-operator: #d65d0e;
+	--syntax-type-operator: #af3a03;
 
-	--syntax-function--variable-name: #689d6a;
-	--syntax-function--property-name: #689d6a;
+	--syntax-function--variable-name: #79740e;
+	--syntax-function--property-name: #79740e;
 
-	--syntax-variable-name: #458588;
-	--syntax-definition--variable-name: #458588;
+	--syntax-variable-name: #076678;
+	--syntax-definition--variable-name: #076678;
 
-	--syntax-string: #98971a;
+	--syntax-string: #79740e;
 	--syntax-fill-string: transparent;
 
 	--syntax-number: #8f3f71;
 	--syntax-integer: #8f3f71;
 	--syntax-float: #8f3f71;
 
-	--syntax-escape: #d65d0e;
-	--syntax-regexp: #98971a;
-	--syntax-special--string: #98971a;
+	--syntax-escape: #af3a03;
+	--syntax-regexp: #79740e;
+	--syntax-special--string: #79740e;
 
-	--syntax-tag-name: #cc241d;
+	--syntax-tag-name: #9d0006;
 	--syntax-angle-bracket: #3c3836;
 
-	--syntax-attribute-name: #d79921;
+	--syntax-attribute-name: #b57614;
 	--syntax-style-attribute-name: normal;
 
-	--syntax-namespace: #d65d0e;
+	--syntax-namespace: #af3a03;
 
 	--syntax-strong: #3c3836;
 	--syntax-weight-strong: bold;
@@ -91,18 +76,18 @@
 	--syntax-emphasis: #3c3836;
 	--syntax-style-emphasis: italic;
 
-	--syntax-heading: #cc241d;
+	--syntax-heading: #9d0006;
 	--syntax-weight-heading: bold;
 
-	--syntax-link: #458588;
+	--syntax-link: #076678;
 	--syntax-style-link: underline;
 
 	--syntax-quote: #928374;
 	--syntax-list: #3c3836;
 
-	--syntax-inserted: #98971a;
-	--syntax-deleted: #cc241d;
-	--syntax-changed: #458588;
+	--syntax-inserted: #79740e;
+	--syntax-deleted: #9d0006;
+	--syntax-changed: #076678;
 
 	--syntax-content-separator: #928374;
 }

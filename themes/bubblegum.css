@@ -1,201 +1,53 @@
-/* Bubblegum — pop! bright candy pink meets candy blue and grape purple.
-   Loud, round, and sweet. */
+/* Bubblegum — bright candy pink, poppy and light, with candy blue and grape purple */
 [theme="bubblegum"] {
 	color-scheme: light;
-	/* ── core studio ─────────────────────────────────────────────── */
-	--studio-fill: #fff5fa; /* bubblegum white */
-	--studio-line: #4a2a5a; /* grape */
-	--studio-primary: #ff3d9a; /* bubblegum pink */
-	--studio-secondary: #3db8ff; /* candy blue */
+	--studio-fill: #fff4fb;
+	--studio-line: #46235a;
+	--studio-primary: #ff2e98;
+	--studio-secondary: #34b6ff;
 	--studio-danger: #ff3d6e;
-	--studio-warning: #ffc23d; /* candy yellow */
-	--studio-offset-tint: var(--studio-warning); /* candy-yellow offsets, not the blue secondary */
-	--studio-added: #3dd97e; /* candy green */
+	--studio-warning: #ffc23d;
+	--studio-added: #2fd07a;
 	--studio-deleted: #ff3d6e;
-	--studio-modified: #b03dff; /* grape */
-	--studio-link: #3db8ff;
-	--studio-selection-fill: #ffd6ec;
-	--studio-selection-line: #4a2a5a;
-	--studio-family-sans: "Baloo 2", "Quicksand", "Nunito", system-ui,
-		-apple-system, sans-serif;
-	--studio-family-code: "Fantasque Sans Mono", "IBM Plex Mono", ui-monospace,
-		monospace;
-	--studio-font-size: 16px;
-	--studio-line-height: 1.5;
+	--studio-modified: #b03dff;
+	--studio-link: #34b6ff;
+	--studio-selection-fill: #ffd2ec;
+	/* blow the chrome bubblegum-pink, not candy-blue */
+	--studio-offset-tint: var(--studio-primary);
 
-	/* extra-rounded, extra-poppy */
-	--studio-radius-xs: 5px;
-	--studio-radius-sm: 10px;
-	--studio-radius: 14px;
-	--studio-radius-md: 18px;
-	--studio-radius-lg: 24px;
-	--studio-radius-xl: 32px;
-	--studio-radius-round: 9999px;
+	--editor-cursor-fill: var(--studio-primary);
 
-	/* magenta-tinted candy shadows */
-	--studio-shadow-sm: 0 1px 2px oklch(0.82 0.12 340 / 0.14);
-	--studio-shadow: 0 2px 6px oklch(0.78 0.16 340 / 0.18);
-	--studio-shadow-md: 0 6px 14px -3px oklch(0.75 0.18 340 / 0.24),
-		0 3px 6px -3px oklch(0.75 0.18 340 / 0.16);
-	--studio-shadow-lg: 0 14px 28px -8px oklch(0.72 0.2 340 / 0.3),
-		0 6px 10px -6px oklch(0.72 0.2 340 / 0.18);
-
-	--studio-transition-fast: 0.1s cubic-bezier(0.34, 1.8, 0.64, 1);
-	--studio-transition: 0.16s cubic-bezier(0.34, 1.8, 0.64, 1);
-	--studio-transition-slow: 0.26s cubic-bezier(0.34, 1.8, 0.64, 1);
-
-	/* ── text editor ─────────────────────────────────────────────── */
-	--text-editor-fill: #fff5fa;
-	--text-editor-line: #4a2a5a;
-	--text-editor-cursor-fill: #ff3d9a;
-	--text-editor-selection-fill: #ffd6ec;
-	--text-editor-selection-line: #4a2a5a;
-
-	--text-editor-active-line-fill: #ff3d9a0c;
-	--text-editor-active-line-line: var(--text-editor-line);
-	--text-editor-active-line-fill--gutter: #ffeff6;
-	--text-editor-active-line-line--gutter: var(--text-editor-line);
-
-	--text-editor-gutter-fill: #ffeff6;
-	--text-editor-gutter-line: #c89bd0;
-	--text-editor-gutter-border: #ffd6ec;
-	--text-editor-gutter-font-size: 0.8em;
-	--text-editor-gutter-font-size--line-numbers: 0.8em;
-
-	--text-editor-tooltip-fill: #ffe0f0;
-	--text-editor-tooltip-color: #4a2a5a;
-
-	/* ── syntax (candy box) ──────────────────────────────────────── */
-	--syntax-comment: #c89bd0;
-	--syntax-style-comment: italic;
-
-	--syntax-doc-comment: #b88dc4;
-	--syntax-style-doc-comment: italic;
-
-	--syntax-meta: #b03dff;
-	--syntax-invalid: #ff3d6e;
-
-	--syntax-operator: #3db8ff;
-	--syntax-punctuation: #8a6a9a;
-
-	--syntax-bool: #b03dff;
-	--syntax-weight-bool: bold;
-
-	--syntax-atom: #b03dff;
-	--syntax-weight-atom: bold;
-
-	--syntax-keyword: #ff3d9a;
+	--syntax-keyword: var(--studio-primary);
 	--syntax-weight-keyword: bold;
 
-	--syntax-type-name: #3db8ff;
+	--syntax-operator: var(--studio-secondary);
+	--syntax-punctuation: var(--text-editor-line-offset-30);
+
+	--syntax-bool: var(--studio-modified);
+	--syntax-weight-bool: bold;
+	--syntax-atom: var(--studio-modified);
+	--syntax-weight-atom: bold;
+
+	--syntax-type-name: var(--studio-secondary);
 	--syntax-weight-type-name: bold;
-
-	--syntax-class-name: #3db8ff;
+	--syntax-class-name: var(--studio-secondary);
 	--syntax-weight-class-name: bold;
-
-	--syntax-type-operator: #3db8ff;
 
 	--syntax-function--variable-name: #ff5cb0;
 	--syntax-function--property-name: #ff5cb0;
+	--syntax-definition--variable-name: var(--studio-primary);
 
-	--syntax-variable-name: #4a2a5a;
-	--syntax-definition--variable-name: #ff5cb0;
+	--syntax-string: #1fae66;
+	--syntax-number: var(--studio-modified);
+	--syntax-escape: var(--studio-danger);
 
-	--syntax-string: #3dd97e;
-	--syntax-fill-string: #3dd97e14;
-
-	--syntax-number: #b03dff;
-	--syntax-integer: #b03dff;
-	--syntax-float: #b03dff;
-
-	--syntax-escape: #ff3d6e;
-	--syntax-regexp: #3db8ff;
-	--syntax-special--string: #3dd97e;
-
-	--syntax-tag-name: #ff3d9a;
-	--syntax-angle-bracket: #8a6a9a;
-
-	--syntax-attribute-name: #ffc23d;
+	--syntax-tag-name: var(--studio-primary);
+	--syntax-attribute-name: #d99a1f;
 	--syntax-style-attribute-name: italic;
+	--syntax-namespace: #d99a1f;
+	--syntax-meta: var(--studio-modified);
 
-	--syntax-namespace: #ffc23d;
-
-	--syntax-strong: #4a2a5a;
-	--syntax-weight-strong: bold;
-
-	--syntax-emphasis: #ff3d9a;
-	--syntax-style-emphasis: italic;
-
-	--syntax-heading: #ff3d9a;
+	--syntax-heading: var(--studio-primary);
 	--syntax-weight-heading: bold;
-
-	--syntax-link: #3db8ff;
 	--syntax-style-link: underline;
-
-	--syntax-quote: #c89bd0;
-	--syntax-list: #4a2a5a;
-
-	--syntax-inserted: #3dd97e;
-	--syntax-deleted: #ff3d6e;
-	--syntax-changed: #b03dff;
-
-	--syntax-content-separator: #ffd6ec;
-
-	/* ── sideboard: pink candy sidebar ───────────────────────────── */
-	--sideboard-fill: #ffe4f2;
-	--sideboard-fill-offset: #ffd2e8;
-	--sideboard-footer-fill: #ffc9e4;
-	--sideboard-line: #4a2a5a;
-	--sideboard-widget-fill: #fff5fa;
-	--sideboard-widget-line: #4a2a5a;
-	--sideboard-border: #ffd6ec;
-	--sideboard-border-strong: #ffb8da;
-	--sideboard-muted: #c89bd0;
-	--sideboard-primary: #ff3d9a;
-	--sideboard-added: #3dd97e;
-	--sideboard-danger: #ff3d6e;
-	--sideboard-search-line: #ff3d9a;
-	--sideboard-toggle-hover: #ff3d9a16;
-	--sideboard-create-new-fill: #ffeff6;
-	--sideboard-create-new-line: #ff3d9a;
-	--sideboard-create-new-border-line: #ffb8da;
-	--sideboard-create-new-shadow-color: #ffb8da;
-	--sideboard-radius: 12px;
-
-	/* ── comments-view ───────────────────────────────────────────── */
-	--comments-fg: #4a2a5a;
-	--comments-muted-fg: #c89bd0;
-	--comments-bg: #fff5fa;
-	--comments-border: #ffd6ec;
-	--comments-hover-bg: #ffe4f2;
-	--comments-accent: #ff3d9a;
-
-	/* ── tasks ───────────────────────────────────────────────────── */
-	--task-fg: #4a2a5a;
-	--task-bg: #fff5fa;
-	--task-muted: #c89bd0;
-	--task-border: #ffd6ec;
-	--task-radius: 14px;
-	--task-danger: #ff3d6e;
-	--task-success: #3dd97e;
-
-	/* ── contact ─────────────────────────────────────────────────── */
-	--contact-fg: #4a2a5a;
-	--contact-muted-fg: #c89bd0;
-	--contact-border: #ffd6ec;
-	--contact-fallback-bg: #ffe0f0;
-	--contact-fallback-fg: #b0296e;
-	--contact-presence-color: #3dd97e;
-}
-
-/* a bouncy pop on press */
-[theme="bubblegum"] button,
-[theme="bubblegum"] [role="button"] {
-	transition:
-		transform var(--studio-transition-fast),
-		box-shadow var(--studio-transition-fast);
-}
-[theme="bubblegum"] button:active,
-[theme="bubblegum"] [role="button"]:active {
-	transform: scale(0.94);
 }

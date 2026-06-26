@@ -1,15 +1,13 @@
-/* Classic macOS — Platinum / System 7 era: 1-bit black on window-gray,
-   sharp corners, hard offset drop shadows, no animation. Document areas
-   are white like a MacWrite page; selection inverts to white-on-black;
-   tooltips are Balloon Help yellow. Code is MPW/THINK-C monochrome with
-   a restrained two-accent palette (blue types, green strings). */
+/* Classic macOS — Platinum / System 7 era: 1-bit black on window-gray, sharp
+   corners, hard offset drop shadows, no animation. Document areas are white
+   like a MacWrite page; selection inverts to white-on-black; tooltips are
+   Balloon Help yellow. Code is MPW/THINK-C monochrome with two restrained
+   accents (blue types, green strings). */
 [theme="classic-macos"] {
 	color-scheme: light;
-
-	/* --- core: platinum window gray, pure black line --- */
-	--studio-fill: #c3c3c3;
+	--studio-fill: #c3c3c3; /* platinum window gray */
 	--studio-line: #000000;
-	--studio-primary: #1e51d0;
+	--studio-primary: #1e51d0; /* restrained system blue */
 	--studio-secondary: #5a5a5a;
 	--studio-danger: #c00000;
 	--studio-warning: #b35a00;
@@ -25,16 +23,15 @@
 	--studio-family-code: "Monaco", "Andale Mono", "Lucida Console",
 		"Courier New", monospace;
 
-	/* --- geometry: sharp corners, hard offset shadows, no motion --- */
+	/* sharp corners */
 	--studio-radius-xs: 0px;
 	--studio-radius-sm: 0px;
 	--studio-radius: 2px;
 	--studio-radius-md: 3px;
 	--studio-radius-lg: 4px;
 	--studio-radius-xl: 6px;
-	--studio-radius-round: 9999px;
 
-	/* classic Mac windows cast a hard, solid drop shadow — no blur */
+	/* hard, solid drop shadows — no blur */
 	--studio-shadow-sm: 1px 1px 0 #000000;
 	--studio-shadow: 2px 2px 0 #000000;
 	--studio-shadow-md: 3px 3px 0 #000000;
@@ -45,29 +42,18 @@
 	--studio-transition: 0s;
 	--studio-transition-slow: 0s;
 
-	/* --- text editor: white page, black ink, inverted selection --- */
+	/* white MacWrite page, inverted selection, hard black gutter rule */
 	--text-editor-fill: #ffffff;
-	--text-editor-line: #000000;
-	--text-editor-cursor-fill: #000000;
 	--text-editor-selection-fill: #000000;
 	--text-editor-selection-line: #ffffff;
-
-	--text-editor-active-line-fill: #00000008;
-	--text-editor-active-line-line: var(--text-editor-line);
-	--text-editor-active-line-fill--gutter: #d8d8d8;
-	--text-editor-active-line-line--gutter: var(--text-editor-line);
-
-	--text-editor-gutter-fill: #e0e0e0;
-	--text-editor-gutter-line: #666666;
+	--text-editor-gutter-line: var(--text-editor-line-offset-40);
 	--text-editor-gutter-border: #000000;
-	--text-editor-gutter-font-size: 0.8em;
-	--text-editor-gutter-font-size--line-numbers: 0.8em;
 
 	/* Balloon Help: pale yellow balloon, black text */
 	--text-editor-tooltip-fill: #ffffcc;
 	--text-editor-tooltip-color: #000000;
 
-	/* --- syntax: MPW/THINK-C monochrome + two restrained accents --- */
+	/* MPW/THINK-C monochrome + two restrained accents */
 	--syntax-comment: #6e6e6e;
 	--syntax-style-comment: italic;
 
@@ -75,18 +61,10 @@
 	--syntax-style-doc-comment: italic;
 
 	--syntax-meta: #4a4a4a;
-	--syntax-invalid: #c00000;
+	--syntax-invalid: var(--studio-danger);
 
-	--syntax-operator: #000000;
-	--syntax-punctuation: #000000;
-
-	--syntax-bool: #000000;
 	--syntax-weight-bool: bold;
-
-	--syntax-atom: #000000;
 	--syntax-weight-atom: bold;
-
-	--syntax-keyword: #000000;
 	--syntax-weight-keyword: bold;
 
 	--syntax-type-name: #0a3d91;
@@ -95,74 +73,33 @@
 	--syntax-class-name: #0a3d91;
 	--syntax-weight-class-name: bold;
 
-	--syntax-type-operator: #000000;
-
-	--syntax-function--variable-name: #000000;
-	--syntax-function--property-name: #000000;
-
-	--syntax-variable-name: #000000;
 	--syntax-definition--variable-name: #0a3d91;
 
 	--syntax-string: #0a6e2e;
-	--syntax-fill-string: transparent;
 
-	--syntax-number: #000000;
-	--syntax-integer: #000000;
-	--syntax-float: #000000;
-
-	--syntax-escape: #c00000;
+	--syntax-escape: var(--studio-danger);
 	--syntax-regexp: #0a6e2e;
 	--syntax-special--string: #0a6e2e;
 
 	--syntax-tag-name: #0a3d91;
 	--syntax-weight-tag-name: bold;
-	--syntax-angle-bracket: #000000;
 
 	--syntax-attribute-name: #6e6e6e;
 	--syntax-style-attribute-name: italic;
 
 	--syntax-namespace: #0a3d91;
 
-	--syntax-strong: #000000;
-	--syntax-weight-strong: bold;
-
-	--syntax-emphasis: #000000;
 	--syntax-style-emphasis: italic;
 
-	--syntax-heading: #000000;
-	--syntax-weight-heading: bold;
-
-	--syntax-link: #1e51d0;
+	--syntax-link: var(--studio-link);
 	--syntax-style-link: underline;
 
 	--syntax-quote: #6e6e6e;
 	--syntax-style-quote: italic;
-	--syntax-list: #000000;
 
-	--syntax-inserted: #007a2e;
-	--syntax-deleted: #c00000;
-	--syntax-changed: #1e51d0;
+	--syntax-inserted: var(--studio-added);
+	--syntax-deleted: var(--studio-deleted);
+	--syntax-changed: var(--studio-modified);
 
 	--syntax-content-separator: #8a8a8a;
-
-	/* --- sideboard: a classic Mac window, gray with white widgets --- */
-	--sideboard-fill: #c3c3c3;
-	--sideboard-fill-offset: #b0b0b0;
-	--sideboard-line: #000000;
-	--sideboard-widget-fill: #ffffff;
-	--sideboard-widget-line: #000000;
-	--sideboard-padding-x: 0.5rem;
-	--sideboard-radius: 2px;
-	--sideboard-search-line: #000000;
-	--sideboard-primary: #1e51d0;
-	--sideboard-create-new-fill: #ffffff;
-	--sideboard-create-new-line: #000000;
-	--sideboard-create-new-border-line: #000000;
-	--sideboard-create-new-shadow-color: #00000040;
-	--sideboard-muted: #5a5a5a;
-	--sideboard-border: #000000;
-	--sideboard-border-strong: #000000;
-	--sideboard-added: #007a2e;
-	--sideboard-danger: #c00000;
-	--sideboard-toggle-hover: #0000001a;
 }

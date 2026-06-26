@@ -1,200 +1,53 @@
-/* Unicorn — a sparkly magical night: deep purple sky with neon pink, cyan,
-   gold and mint. Round, glowy, and unapologetically fun. */
+/* Unicorn — a magical purple night sky with iridescent pink, cyan, mint and gold */
 [theme="unicorn"] {
 	color-scheme: dark;
-	/* ── core studio ─────────────────────────────────────────────── */
-	--studio-fill: #261a3e; /* magical purple night */
-	--studio-line: #f0e6ff; /* sparkle white */
-	--studio-primary: #ff6ac1; /* unicorn pink */
-	--studio-secondary: #5cf0ff; /* cyan */
-	--studio-danger: #ff5c7a;
-	--studio-warning: #ffd86b; /* gold */
-	--studio-added: #6bff9e; /* mint */
-	--studio-deleted: #ff5c7a;
-	--studio-modified: #b58bff; /* lavender */
+	--studio-fill: #221538;
+	--studio-line: #f1e7ff;
+	--studio-primary: #ff7ad1;
+	--studio-secondary: #5cf0ff;
+	--studio-danger: #ff6385;
+	--studio-warning: #ffd86b;
+	--studio-added: #6bffae;
+	--studio-deleted: #ff6385;
+	--studio-modified: #b58bff;
 	--studio-link: #5cf0ff;
 	--studio-selection-fill: #3d2a5c;
-	--studio-selection-line: #f0e6ff;
-	--studio-family-sans: "Quicksand", "Nunito", system-ui, -apple-system,
-		sans-serif;
-	--studio-family-code: "Fantasque Sans Mono", "IBM Plex Mono", ui-monospace,
-		monospace;
-	--studio-font-size: 16px;
-	--studio-line-height: 1.5;
+	/* tint the dark ramp lavender so chrome stays purple-night, not cyan */
+	--studio-offset-tint: var(--studio-modified);
 
-	/* rounded and glowy */
-	--studio-radius-xs: 5px;
-	--studio-radius-sm: 10px;
-	--studio-radius: 14px;
-	--studio-radius-md: 18px;
-	--studio-radius-lg: 24px;
-	--studio-radius-xl: 32px;
-	--studio-radius-round: 9999px;
+	--editor-cursor-fill: var(--studio-primary);
 
-	/* purple glow shadows */
-	--studio-shadow-sm: 0 1px 2px oklch(0.2 0.12 300 / 0.4);
-	--studio-shadow: 0 2px 6px oklch(0.18 0.16 300 / 0.5);
-	--studio-shadow-md: 0 6px 14px -3px oklch(0.15 0.2 300 / 0.6),
-		0 3px 6px -3px oklch(0.18 0.16 300 / 0.5);
-	--studio-shadow-lg: 0 14px 28px -8px oklch(0.12 0.24 300 / 0.7),
-		0 6px 10px -6px oklch(0.15 0.2 300 / 0.5);
-
-	--studio-transition-fast: 0.12s cubic-bezier(0.34, 1.8, 0.64, 1);
-	--studio-transition: 0.18s cubic-bezier(0.34, 1.8, 0.64, 1);
-	--studio-transition-slow: 0.28s cubic-bezier(0.34, 1.8, 0.64, 1);
-
-	/* ── text editor ─────────────────────────────────────────────── */
-	--text-editor-fill: #261a3e;
-	--text-editor-line: #f0e6ff;
-	--text-editor-cursor-fill: #ff6ac1;
-	--text-editor-selection-fill: #3d2a5c;
-	--text-editor-selection-line: #f0e6ff;
-
-	--text-editor-active-line-fill: #ff6ac110;
-	--text-editor-active-line-line: var(--text-editor-line);
-	--text-editor-active-line-fill--gutter: #1f1535;
-	--text-editor-active-line-line--gutter: var(--text-editor-line);
-
-	--text-editor-gutter-fill: #1f1535;
-	--text-editor-gutter-line: #8a7aa8;
-	--text-editor-gutter-border: #3d2a5c;
-	--text-editor-gutter-font-size: 0.8em;
-	--text-editor-gutter-font-size--line-numbers: 0.8em;
-
-	--text-editor-tooltip-fill: #3d2a5c;
-	--text-editor-tooltip-color: #f0e6ff;
-
-	/* ── syntax (sparkle box) ────────────────────────────────────── */
-	--syntax-comment: #8a7aa8;
-	--syntax-style-comment: italic;
-
-	--syntax-doc-comment: #7a6a98;
-	--syntax-style-doc-comment: italic;
-
-	--syntax-meta: #b58bff;
-	--syntax-invalid: #ff5c7a;
-
-	--syntax-operator: #5cf0ff;
-	--syntax-punctuation: #a896c8;
-
-	--syntax-bool: #c08bff;
-	--syntax-weight-bool: bold;
-
-	--syntax-atom: #c08bff;
-	--syntax-weight-atom: bold;
-
-	--syntax-keyword: #ff6ac1;
+	--syntax-keyword: var(--studio-primary);
 	--syntax-weight-keyword: bold;
 
-	--syntax-type-name: #5cf0ff;
-	--syntax-weight-type-name: bold;
+	--syntax-operator: var(--studio-secondary);
+	--syntax-punctuation: var(--text-editor-line-offset-30);
 
-	--syntax-class-name: #5cf0ff;
+	--syntax-bool: var(--studio-modified);
+	--syntax-weight-bool: bold;
+	--syntax-atom: var(--studio-modified);
+	--syntax-weight-atom: bold;
+
+	--syntax-type-name: var(--studio-secondary);
+	--syntax-weight-type-name: bold;
+	--syntax-class-name: var(--studio-secondary);
 	--syntax-weight-class-name: bold;
 
-	--syntax-type-operator: #5cf0ff;
+	--syntax-function--variable-name: var(--studio-warning);
+	--syntax-function--property-name: var(--studio-warning);
+	--syntax-definition--variable-name: var(--studio-primary);
 
-	--syntax-function--variable-name: #ffd86b;
-	--syntax-function--property-name: #ffd86b;
+	--syntax-string: var(--studio-added);
+	--syntax-number: var(--studio-modified);
+	--syntax-escape: var(--studio-danger);
 
-	--syntax-variable-name: #f0e6ff;
-	--syntax-definition--variable-name: #ff6ac1;
-
-	--syntax-string: #6bff9e;
-	--syntax-fill-string: #6bff9e18;
-
-	--syntax-number: #c08bff;
-	--syntax-integer: #c08bff;
-	--syntax-float: #c08bff;
-
-	--syntax-escape: #5cf0ff;
-	--syntax-regexp: #5cf0ff;
-	--syntax-special--string: #6bff9e;
-
-	--syntax-tag-name: #ff6ac1;
-	--syntax-angle-bracket: #a896c8;
-
-	--syntax-attribute-name: #ffd86b;
+	--syntax-tag-name: var(--studio-primary);
+	--syntax-attribute-name: var(--studio-warning);
 	--syntax-style-attribute-name: italic;
+	--syntax-namespace: var(--studio-warning);
+	--syntax-meta: var(--studio-modified);
 
-	--syntax-namespace: #ffd86b;
-
-	--syntax-strong: #f0e6ff;
-	--syntax-weight-strong: bold;
-
-	--syntax-emphasis: #ff6ac1;
-	--syntax-style-emphasis: italic;
-
-	--syntax-heading: #ff6ac1;
+	--syntax-heading: var(--studio-primary);
 	--syntax-weight-heading: bold;
-
-	--syntax-link: #5cf0ff;
 	--syntax-style-link: underline;
-
-	--syntax-quote: #8a7aa8;
-	--syntax-list: #f0e6ff;
-
-	--syntax-inserted: #6bff9e;
-	--syntax-deleted: #ff5c7a;
-	--syntax-changed: #b58bff;
-
-	--syntax-content-separator: #3d2a5c;
-
-	/* ── sideboard: purple night sidebar ─────────────────────────── */
-	--sideboard-fill: #1f1535;
-	--sideboard-fill-offset: #2c2046;
-	--sideboard-footer-fill: #2c2046;
-	--sideboard-line: #f0e6ff;
-	--sideboard-widget-fill: #2c2046;
-	--sideboard-widget-line: #f0e6ff;
-	--sideboard-border: #3d2a5c;
-	--sideboard-border-strong: #4d3a78;
-	--sideboard-muted: #8a7aa8;
-	--sideboard-primary: #ff6ac1;
-	--sideboard-added: #6bff9e;
-	--sideboard-danger: #ff5c7a;
-	--sideboard-search-line: #ff6ac1;
-	--sideboard-toggle-hover: #ff6ac118;
-	--sideboard-create-new-fill: #2c2046;
-	--sideboard-create-new-line: #ff6ac1;
-	--sideboard-create-new-border-line: #4d3a78;
-	--sideboard-create-new-shadow-color: #4d3a78;
-	--sideboard-radius: 12px;
-
-	/* ── comments-view ───────────────────────────────────────────── */
-	--comments-fg: #f0e6ff;
-	--comments-muted-fg: #8a7aa8;
-	--comments-bg: #2c2046;
-	--comments-border: #3d2a5c;
-	--comments-hover-bg: #3d2a5c;
-	--comments-accent: #ff6ac1;
-
-	/* ── tasks ───────────────────────────────────────────────────── */
-	--task-fg: #f0e6ff;
-	--task-bg: #2c2046;
-	--task-muted: #8a7aa8;
-	--task-border: #3d2a5c;
-	--task-radius: 14px;
-	--task-danger: #ff5c7a;
-	--task-success: #6bff9e;
-
-	/* ── contact ─────────────────────────────────────────────────── */
-	--contact-fg: #f0e6ff;
-	--contact-muted-fg: #8a7aa8;
-	--contact-border: #3d2a5c;
-	--contact-fallback-bg: #3d2a5c;
-	--contact-fallback-fg: #c9b0ff;
-	--contact-presence-color: #6bff9e;
-}
-
-/* a magical bounce on press */
-[theme="unicorn"] button,
-[theme="unicorn"] [role="button"] {
-	transition:
-		transform var(--studio-transition-fast),
-		box-shadow var(--studio-transition-fast);
-}
-[theme="unicorn"] button:active,
-[theme="unicorn"] [role="button"]:active {
-	transform: scale(0.94);
 }

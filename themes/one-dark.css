@@ -5,7 +5,6 @@
 	--studio-line: #abb2bf;
 	--studio-primary: #61afef;
 	--studio-secondary: #56b6c2;
-	--studio-chrome: #21252b; /* darker sidebar surface */
 	--studio-danger: #e06c75;
 	--studio-warning: #e5c07b;
 	--studio-added: #98c379;
@@ -14,27 +13,10 @@
 	--studio-link: #61afef;
 	--studio-selection-fill: #3e4451;
 
-	--text-editor-fill: #282c34;
-	--text-editor-line: #abb2bf;
+	/* One Dark's signature blue caret */
 	--text-editor-cursor-fill: #528bff;
-	--text-editor-selection-fill: #3e4451;
-	--text-editor-selection-line: #abb2bf;
-
-	--text-editor-active-line-fill: color-mix(
-		in oklch,
-		var(--text-editor-fill-offset-10),
-		transparent 80%
-	);
-	--text-editor-active-line-fill--gutter: var(--text-editor-fill-offset-20);
-
-	--text-editor-gutter-fill: #282c34;
+	/* line numbers in the dim comment grey */
 	--text-editor-gutter-line: #5c6370;
-	--text-editor-gutter-border: #282c34;
-	--text-editor-gutter-fill--line-numbers: #282c34;
-	--text-editor-gutter-line--line-numbers: #5c6370;
-
-	--text-editor-tooltip-fill: #21252b;
-	--text-editor-tooltip-color: #abb2bf;
 
 	--syntax-comment: #5c6370;
 	--syntax-style-comment: italic;

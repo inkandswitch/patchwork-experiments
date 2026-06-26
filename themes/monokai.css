@@ -5,7 +5,6 @@
 	--studio-line: #f8f8f2;
 	--studio-primary: #a6e22e;
 	--studio-secondary: #66d9ef;
-	--studio-chrome: #1e1f1c; /* darker panel surface */
 	--studio-danger: #f92672;
 	--studio-warning: #e6db74;
 	--studio-added: #a6e22e;
@@ -14,27 +13,9 @@
 	--studio-link: #66d9ef;
 	--studio-selection-fill: #49483e;
 
-	--text-editor-fill: #272822;
-	--text-editor-line: #f8f8f2;
 	--text-editor-cursor-fill: #f8f8f0;
-	--text-editor-selection-fill: #49483e;
-	--text-editor-selection-line: #f8f8f2;
-
-	--text-editor-active-line-fill: color-mix(
-		in oklch,
-		var(--text-editor-fill-offset-10),
-		transparent 80%
-	);
-	--text-editor-active-line-fill--gutter: var(--text-editor-fill-offset-20);
-
-	--text-editor-gutter-fill: #272822;
+	/* line numbers in monokai's muted grey */
 	--text-editor-gutter-line: #90908a;
-	--text-editor-gutter-border: #3e3d32;
-	--text-editor-gutter-fill--line-numbers: #272822;
-	--text-editor-gutter-line--line-numbers: #90908a;
-
-	--text-editor-tooltip-fill: #3e3d32;
-	--text-editor-tooltip-color: #f8f8f2;
 
 	--syntax-comment: #75715e;
 	--syntax-style-comment: italic;

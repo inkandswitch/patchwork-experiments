@@ -1,12 +1,13 @@
+/* Yalla — a warm parchment notebook: sepia ink and golden olive on aged paper, set in a book serif */
 [theme="yalla"] {
 	color-scheme: light;
-	--studio-fill: #fdf6e3;
-	--studio-line: #3e2c1c;
-	--studio-primary: #8b6914;
-	--studio-secondary: #c49a6c;
-	--studio-danger: #b5453c;
+	--studio-fill: #fdf6e3; /* aged paper */
+	--studio-line: #3e2c1c; /* sepia ink */
+	--studio-primary: #8b6914; /* golden brown */
+	--studio-secondary: #c49a6c; /* tan */
+	--studio-danger: #b5453c; /* clay red */
 	--studio-warning: #d4a843;
-	--studio-added: #6b7f3a;
+	--studio-added: #6b7f3a; /* olive */
 	--studio-deleted: #b5453c;
 	--studio-modified: #8b6914;
 	--studio-link: #7a5c2e;
@@ -17,23 +18,9 @@
 	--studio-family-code: "IBM Plex Mono", "Courier Prime", "Courier New",
 		monospace;
 
-	--text-editor-fill: #fdf8ee;
-	--text-editor-line: #3e2c1c;
-	--text-editor-cursor-fill: #8b6914;
-	--text-editor-selection-fill: #f0e4c8;
-	--text-editor-selection-line: #3e2c1c;
-
-	--text-editor-active-line-fill: #8b691405;
-	--text-editor-active-line-line: var(--text-editor-line);
-	--text-editor-active-line-fill--gutter: #f0e4c8;
-	--text-editor-active-line-line--gutter: var(--text-editor-line);
-	--text-editor-gutter-fill: #f7edd5;
-	--text-editor-gutter-line: #8b6914;
-	--text-editor-gutter-border: none;
-	--text-editor-gutter-font-size: 0.8em;
-	--text-editor-gutter-font-size--line-numbers: 0.8em;
-	--text-editor-tooltip-fill: #f7edd5;
-	--text-editor-tooltip-color: #5c3d1e;
+	--text-editor-fill: #fdf8ee; /* a touch lighter than the page */
+	--text-editor-cursor-fill: var(--studio-primary);
+	--text-editor-gutter-line: var(--studio-primary);
 
 	--syntax-comment: #a08a6e;
 	--syntax-style-comment: italic;
@@ -42,12 +29,12 @@
 	--syntax-style-doc-comment: italic;
 
 	--syntax-meta: #6b5640;
-	--syntax-invalid: #b5453c;
+	--syntax-invalid: var(--studio-danger);
 
-	--syntax-operator: #8b6914;
+	--syntax-operator: var(--studio-primary);
 	--syntax-punctuation: #6b5640;
 
-	--syntax-bool: #6b7f3a;
+	--syntax-bool: var(--studio-added);
 	--syntax-weight-bool: bold;
 
 	--syntax-atom: #9e5a2a;
@@ -55,13 +42,13 @@
 
 	--syntax-keyword: #874124;
 
-	--syntax-type-name: #7a5c2e;
+	--syntax-type-name: var(--studio-link);
 	--syntax-weight-type-name: bold;
 
-	--syntax-class-name: #7a5c2e;
+	--syntax-class-name: var(--studio-link);
 	--syntax-weight-class-name: bold;
 
-	--syntax-type-operator: #c49a6c;
+	--syntax-type-operator: var(--studio-secondary);
 
 	--syntax-function--variable-name: #5c6e28;
 	--syntax-function--property-name: #5c6e28;
@@ -69,43 +56,36 @@
 	--syntax-variable-name: #9e5a2a;
 	--syntax-definition--variable-name: #9e5a2a;
 
-	--syntax-string: #6b7f3a;
+	--syntax-string: var(--studio-added);
 	--syntax-fill-string: #e8dfca55;
 
-	--syntax-number: #8b6914;
-	--syntax-integer: #8b6914;
-	--syntax-float: #8b6914;
+	--syntax-number: var(--studio-primary);
+	--syntax-integer: var(--studio-primary);
+	--syntax-float: var(--studio-primary);
 
 	--syntax-escape: #874124;
-	--syntax-regexp: #7a5c2e;
-	--syntax-special--string: #6b7f3a;
+	--syntax-regexp: var(--studio-link);
+	--syntax-special--string: var(--studio-added);
 
 	--syntax-tag-name: #874124;
 	--syntax-angle-bracket: #6b5640;
 
-	--syntax-attribute-name: #7a5c2e;
+	--syntax-attribute-name: var(--studio-link);
 	--syntax-style-attribute-name: italic;
 
-	--syntax-namespace: #c49a6c;
+	--syntax-namespace: var(--studio-secondary);
 
-	--syntax-strong: #3e2c1c;
-	--syntax-weight-strong: bold;
-
-	--syntax-emphasis: #3e2c1c;
-	--syntax-style-emphasis: italic;
-
-	--syntax-heading: #8b6914;
+	--syntax-heading: var(--studio-primary);
 	--syntax-weight-heading: bold;
 
-	--syntax-link: #7a5c2e;
+	--syntax-link: var(--studio-link);
 	--syntax-style-link: underline;
 
 	--syntax-quote: #5c3d1e;
-	--syntax-list: #3e2c1c;
 
-	--syntax-inserted: #6b7f3a;
-	--syntax-deleted: #b5453c;
-	--syntax-changed: #8b6914;
+	--syntax-inserted: var(--studio-added);
+	--syntax-deleted: var(--studio-deleted);
+	--syntax-changed: var(--studio-modified);
 
-	--syntax-content-separator: #c49a6c;
+	--syntax-content-separator: var(--studio-secondary);
 }

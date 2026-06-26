@@ -1,4 +1,4 @@
-/* Ocean — deep blue sea */
+/* Ocean — deep blue sea, teal currents, sea-green accents */
 [theme="ocean"] {
 	color-scheme: dark;
 	--studio-fill: #0a1628;
@@ -13,27 +13,7 @@
 	--studio-link: #64b8d0;
 	--studio-selection-fill: #162840;
 
-	--text-editor-fill: #0a1628;
-	--text-editor-line: #c0d0e4;
-	--text-editor-cursor-fill: #4aa8c0;
-	--text-editor-selection-fill: #162840;
-	--text-editor-selection-line: #c0d0e4;
-
-	--text-editor-active-line-fill: color-mix(
-		in oklch,
-		var(--text-editor-fill-offset-10),
-		transparent 80%
-	);
-	--text-editor-active-line-fill--gutter: var(--text-editor-fill-offset-20);
-
-	--text-editor-gutter-fill: #081220;
-	--text-editor-gutter-line: #3a5878;
-	--text-editor-gutter-border: #102030;
-	--text-editor-gutter-fill--line-numbers: #081220;
-	--text-editor-gutter-line--line-numbers: #3a5878;
-
-	--text-editor-tooltip-fill: #102030;
-	--text-editor-tooltip-color: #c0d0e4;
+	--text-editor-cursor-fill: var(--studio-primary);
 
 	--syntax-comment: #3a5878;
 	--syntax-style-comment: italic;
@@ -63,14 +43,13 @@
 
 	--syntax-type-operator: #64b8d0;
 
-	--syntax-function--variable-name: #50b088;
-	--syntax-function--property-name: #50b088;
+	--syntax-function--variable-name: #5ed0a0;
+	--syntax-function--property-name: #5ed0a0;
 
 	--syntax-variable-name: #c0d0e4;
 	--syntax-definition--variable-name: #c0d0e4;
 
 	--syntax-string: #50b088;
-	--syntax-fill-string: transparent;
 
 	--syntax-number: #d4b060;
 	--syntax-integer: #d4b060;
@@ -101,11 +80,10 @@
 	--syntax-style-link: underline;
 
 	--syntax-quote: #4a6888;
+	--syntax-style-quote: italic;
 	--syntax-list: #c0d0e4;
 
 	--syntax-inserted: #50b088;
 	--syntax-deleted: #e05858;
 	--syntax-changed: #d4b060;
-
-	--syntax-content-separator: #1a3050;
 }

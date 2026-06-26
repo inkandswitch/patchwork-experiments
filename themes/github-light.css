@@ -1,11 +1,10 @@
-/* GitHub Light */
+/* GitHub Light — Primer light */
 [theme="github-light"] {
 	color-scheme: light;
 	--studio-fill: #ffffff;
 	--studio-line: #1f2328;
 	--studio-primary: #0969da;
 	--studio-secondary: #8250df;
-	--studio-chrome: #f6f8fa; /* canvas subtle, like the sidebar */
 	--studio-danger: #cf222e;
 	--studio-warning: #bf8700;
 	--studio-added: #1a7f37;
@@ -14,23 +13,10 @@
 	--studio-link: #0969da;
 	--studio-selection-fill: #ddf4ff;
 
-	--text-editor-fill: #ffffff;
-	--text-editor-line: #1f2328;
-	--text-editor-cursor-fill: #0969da;
-	--text-editor-selection-fill: #ddf4ff;
-	--text-editor-selection-line: #1f2328;
-
-	--text-editor-active-line-fill: #0969da05;
-	--text-editor-active-line-line: var(--text-editor-line);
-	--text-editor-active-line-fill--gutter: #ddf4ff;
-	--text-editor-active-line-line--gutter: var(--text-editor-line);
+	--text-editor-cursor-fill: var(--studio-primary);
 	--text-editor-gutter-fill: #f6f8fa;
 	--text-editor-gutter-line: #656d76;
 	--text-editor-gutter-border: #d0d7de;
-	--text-editor-gutter-font-size: 0.8em;
-	--text-editor-gutter-font-size--line-numbers: 0.8em;
-	--text-editor-tooltip-fill: #f6f8fa;
-	--text-editor-tooltip-color: #1f2328;
 
 	--syntax-comment: #6e7781;
 	--syntax-style-comment: normal;

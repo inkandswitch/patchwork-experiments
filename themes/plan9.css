@@ -5,7 +5,6 @@
 	--studio-line: #000000;
 	--studio-primary: #005599;
 	--studio-secondary: #2b7b6f;
-	--studio-chrome: #eaffff; /* acme tag-bar pale blue, like the chrome */
 	--studio-danger: #a0342b;
 	--studio-warning: #b58900;
 	--studio-added: #2b7b6f;
@@ -19,16 +18,8 @@
 	--studio-family-code: "Plan9", "Go Mono", "Lucida Console", "Courier New",
 		monospace;
 
-	--text-editor-fill: #ffffea;
-	--text-editor-line: #000000;
-	--text-editor-cursor-fill: #000000;
-	--text-editor-selection-fill: #eeee9e;
-	--text-editor-selection-line: #000000;
-
 	--text-editor-active-line-fill: #00559905;
-	--text-editor-active-line-line: var(--text-editor-line);
 	--text-editor-active-line-fill--gutter: #eaffff;
-	--text-editor-active-line-line--gutter: var(--text-editor-line);
 	--text-editor-gutter-fill: #eaffff;
 	--text-editor-gutter-line: #005599;
 	--text-editor-gutter-border: #88cccc;

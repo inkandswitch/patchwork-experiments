@@ -5,7 +5,6 @@
 	--studio-line: #f8f8f2;
 	--studio-primary: #bd93f9;
 	--studio-secondary: #8be9fd;
-	--studio-chrome: #21222c; /* darker background, like the sidebar */
 	--studio-danger: #ff5555;
 	--studio-warning: #f1fa8c;
 	--studio-added: #50fa7b;
@@ -14,27 +13,8 @@
 	--studio-link: #8be9fd;
 	--studio-selection-fill: #44475a;
 
-	--text-editor-fill: #282a36;
-	--text-editor-line: #f8f8f2;
-	--text-editor-cursor-fill: #f8f8f2;
-	--text-editor-selection-fill: #44475a;
-	--text-editor-selection-line: #f8f8f2;
-
-	--text-editor-active-line-fill: color-mix(
-		in oklch,
-		var(--text-editor-fill-offset-10),
-		transparent 80%
-	);
-	--text-editor-active-line-fill--gutter: var(--text-editor-fill-offset-20);
-
-	--text-editor-gutter-fill: var(--text-editor-fill-offset-30);
-	--text-editor-gutter-line: var(--text-editor-line);
-	--text-editor-gutter-border: var(--text-editor-fill-offset-40);
-	--text-editor-gutter-fill--line-numbers: var(--text-editor-fill-offset-50);
-	--text-editor-gutter-line--line-numbers: var(--text-editor-line);
-
-	--text-editor-tooltip-fill: #44475a;
-	--text-editor-tooltip-color: #f8f8f2;
+	/* line numbers in the dracula comment colour */
+	--text-editor-gutter-line: #6272a4;
 
 	--syntax-comment: #6272a4;
 	--syntax-style-comment: italic;

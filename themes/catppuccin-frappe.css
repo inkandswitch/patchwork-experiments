@@ -5,7 +5,6 @@
 	--studio-line: #c6d0f5;
 	--studio-primary: #8caaee;
 	--studio-secondary: #81c8be;
-	--studio-chrome: #292c3c; /* mantle, like the sidebar */
 	--studio-danger: #e78284;
 	--studio-warning: #e5c890;
 	--studio-added: #a6d189;
@@ -14,27 +13,11 @@
 	--studio-link: #8caaee;
 	--studio-selection-fill: #414559;
 
-	--text-editor-fill: #303446;
-	--text-editor-line: #c6d0f5;
 	--text-editor-cursor-fill: #f2d5cf;
-	--text-editor-selection-fill: #414559;
-	--text-editor-selection-line: #c6d0f5;
-
-	--text-editor-active-line-fill: color-mix(
-		in oklch,
-		var(--text-editor-fill-offset-10),
-		transparent 80%
-	);
-	--text-editor-active-line-fill--gutter: var(--text-editor-fill-offset-20);
 
 	--text-editor-gutter-fill: #292c3c;
 	--text-editor-gutter-line: #626880;
 	--text-editor-gutter-border: #414559;
-	--text-editor-gutter-fill--line-numbers: #292c3c;
-	--text-editor-gutter-line--line-numbers: #626880;
-
-	--text-editor-tooltip-fill: #414559;
-	--text-editor-tooltip-color: #c6d0f5;
 
 	--syntax-comment: #626880;
 	--syntax-style-comment: italic;

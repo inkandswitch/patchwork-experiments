@@ -5,7 +5,6 @@
 	--studio-line: #cccac2;
 	--studio-primary: #ffad66;
 	--studio-secondary: #73d0ff;
-	--studio-chrome: #232834; /* panel surface, like the sidebar */
 	--studio-danger: #f28779;
 	--studio-warning: #ffcc77;
 	--studio-added: #d5ff80;
@@ -14,25 +13,9 @@
 	--studio-link: #73d0ff;
 	--studio-selection-fill: #323843;
 
-	--text-editor-fill: #1f2430;
-	--text-editor-line: #cccac2;
-	--text-editor-cursor-fill: #ffad66;
-	--text-editor-selection-fill: #323843;
-	--text-editor-selection-line: #cccac2;
-
-	--text-editor-active-line-fill: #ffffff06;
-	--text-editor-active-line-line: var(--text-editor-line);
-	--text-editor-active-line-fill--gutter: #1a1f29;
-	--text-editor-active-line-line--gutter: var(--text-editor-line);
-
-	--text-editor-gutter-fill: #1a1f29;
+	/* cursor in the ayu orange accent; line numbers dimmed */
+	--text-editor-cursor-fill: var(--studio-primary);
 	--text-editor-gutter-line: #565b66;
-	--text-editor-gutter-border: #323843;
-	--text-editor-gutter-font-size: 0.8em;
-	--text-editor-gutter-font-size--line-numbers: 0.8em;
-
-	--text-editor-tooltip-fill: #323843;
-	--text-editor-tooltip-color: #cccac2;
 
 	--syntax-comment: #565b66;
 	--syntax-style-comment: italic;

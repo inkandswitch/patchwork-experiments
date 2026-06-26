@@ -1,111 +1,89 @@
-/* Sunset — warm glow of a fading sun */
+/* Sunset — warm dusk glow: coral and amber fading into a purple sky */
 [theme="sunset"] {
 	color-scheme: dark;
-	--studio-fill: #1a0f0f;
-	--studio-line: #e8d5c4;
-	--studio-primary: #e8946a;
-	--studio-secondary: #d4a06a;
-	--studio-danger: #d45050;
-	--studio-warning: #e8c46a;
-	--studio-added: #8cb870;
-	--studio-deleted: #d45050;
-	--studio-modified: #e8946a;
-	--studio-link: #d4a06a;
-	--studio-selection-fill: #3a1f1f;
+	--studio-fill: #1c0f12;
+	--studio-line: #ecd6c6;
+	--studio-primary: #ec8a5e;
+	--studio-secondary: #c887a0;
+	--studio-danger: #e05656;
+	--studio-warning: #ecc266;
+	--studio-added: #9cc070;
+	--studio-deleted: #e05656;
+	--studio-modified: #ec8a5e;
+	--studio-link: #b48ad0;
+	--studio-selection-fill: #3c1f28;
 
-	--text-editor-fill: #1a0f0f;
-	--text-editor-line: #e8d5c4;
-	--text-editor-cursor-fill: #e8946a;
-	--text-editor-selection-fill: #3a1f1f;
-	--text-editor-selection-line: #e8d5c4;
+	--text-editor-cursor-fill: var(--studio-primary);
 
-	--text-editor-active-line-fill: color-mix(
-		in oklch,
-		var(--text-editor-fill-offset-10),
-		transparent 80%
-	);
-	--text-editor-active-line-fill--gutter: var(--text-editor-fill-offset-20);
-
-	--text-editor-gutter-fill: #150b0b;
-	--text-editor-gutter-line: #7a5a4a;
-	--text-editor-gutter-border: #2a1515;
-	--text-editor-gutter-fill--line-numbers: #150b0b;
-	--text-editor-gutter-line--line-numbers: #7a5a4a;
-
-	--text-editor-tooltip-fill: #2a1515;
-	--text-editor-tooltip-color: #e8d5c4;
-
-	--syntax-comment: #7a5a4a;
+	--syntax-comment: #7e5a52;
 	--syntax-style-comment: italic;
 
-	--syntax-doc-comment: #8a6a5a;
+	--syntax-doc-comment: #8e6a60;
 	--syntax-style-doc-comment: italic;
 
-	--syntax-meta: #8a6a5a;
-	--syntax-invalid: #d45050;
+	--syntax-meta: #8e6a60;
+	--syntax-invalid: #e05656;
 
-	--syntax-operator: #e8946a;
-	--syntax-punctuation: #b0987a;
+	--syntax-operator: #ec8a5e;
+	--syntax-punctuation: #b4947e;
 
-	--syntax-bool: #e8c46a;
+	--syntax-bool: #ecc266;
 	--syntax-weight-bool: bold;
 
-	--syntax-atom: #e8c46a;
+	--syntax-atom: #ecc266;
 	--syntax-weight-atom: bold;
 
-	--syntax-keyword: #d47070;
+	--syntax-keyword: #d4708a;
 
-	--syntax-type-name: #e8946a;
+	--syntax-type-name: #ec8a5e;
 	--syntax-weight-type-name: bold;
 
-	--syntax-class-name: #e8946a;
+	--syntax-class-name: #ec8a5e;
 	--syntax-weight-class-name: bold;
 
-	--syntax-type-operator: #d4a06a;
+	--syntax-type-operator: #c887a0;
 
-	--syntax-function--variable-name: #e8c46a;
-	--syntax-function--property-name: #e8c46a;
+	--syntax-function--variable-name: #ecc266;
+	--syntax-function--property-name: #ecc266;
 
-	--syntax-variable-name: #e8d5c4;
-	--syntax-definition--variable-name: #e8d5c4;
+	--syntax-variable-name: #ecd6c6;
+	--syntax-definition--variable-name: #ecd6c6;
 
-	--syntax-string: #8cb870;
-	--syntax-fill-string: transparent;
+	--syntax-string: #9cc070;
 
-	--syntax-number: #d4a06a;
-	--syntax-integer: #d4a06a;
-	--syntax-float: #d4a06a;
+	--syntax-number: #b48ad0;
+	--syntax-integer: #b48ad0;
+	--syntax-float: #b48ad0;
 
-	--syntax-escape: #d47070;
-	--syntax-regexp: #e8946a;
-	--syntax-special--string: #8cb870;
+	--syntax-escape: #d4708a;
+	--syntax-regexp: #ec8a5e;
+	--syntax-special--string: #9cc070;
 
-	--syntax-tag-name: #d47070;
-	--syntax-angle-bracket: #b0987a;
+	--syntax-tag-name: #d4708a;
+	--syntax-angle-bracket: #b4947e;
 
-	--syntax-attribute-name: #e8946a;
+	--syntax-attribute-name: #ec8a5e;
 	--syntax-style-attribute-name: italic;
 
-	--syntax-namespace: #d4a06a;
+	--syntax-namespace: #c887a0;
 
-	--syntax-strong: #e8d5c4;
+	--syntax-strong: #ecd6c6;
 	--syntax-weight-strong: bold;
 
-	--syntax-emphasis: #e8d5c4;
+	--syntax-emphasis: #ecd6c6;
 	--syntax-style-emphasis: italic;
 
-	--syntax-heading: #e8946a;
+	--syntax-heading: #ec8a5e;
 	--syntax-weight-heading: bold;
 
-	--syntax-link: #d4a06a;
+	--syntax-link: #b48ad0;
 	--syntax-style-link: underline;
 
-	--syntax-quote: #7a5a4a;
-	--syntax-list: #e8d5c4;
+	--syntax-quote: #7e5a52;
+	--syntax-style-quote: italic;
+	--syntax-list: #ecd6c6;
 
-	--syntax-inserted: #8cb870;
-	--syntax-deleted: #d45050;
-	--syntax-changed: #e8c46a;
-
-	--syntax-content-separator: #3a2020;
+	--syntax-inserted: #9cc070;
+	--syntax-deleted: #e05656;
+	--syntax-changed: #ecc266;
 }

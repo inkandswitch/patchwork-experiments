@@ -1,95 +1,78 @@
-/* Paper — minimal, clean, like writing on good paper */
+/* Paper — warm off-white paper, near-black ink, very restrained accents */
 [theme="paper"] {
 	color-scheme: light;
-	--studio-fill: #f5f5f0;
+	--studio-fill: #f4f1e8;
 	--studio-line: #2b2b2b;
-	--studio-primary: #555555;
-	--studio-secondary: #777777;
-	--studio-danger: #c23621;
-	--studio-warning: #b58900;
-	--studio-added: #2e7d32;
-	--studio-deleted: #c23621;
-	--studio-modified: #555555;
-	--studio-link: #37474f;
-	--studio-selection-fill: #e8e8e0;
+	--studio-primary: #5a5346;
+	--studio-secondary: #8a8170;
+	--studio-danger: #b23a2a;
+	--studio-warning: #9a7b1a;
+	--studio-added: #4a7a3a;
+	--studio-deleted: #b23a2a;
+	--studio-modified: #5a5346;
+	--studio-link: #3d5a66;
+	--studio-selection-fill: #e6e0cf;
 
-	--studio-family-sans: "iA Writer Quattro", "Literata", "Source Serif 4",
-		"Charter", Georgia, serif;
-	--studio-family-code: "iA Writer Mono", "JetBrains Mono", "Fira Code",
-		ui-monospace, monospace;
+	/* a clean system serif keeps the print-reading feel without web fonts */
+	--studio-family-sans: Georgia, "Iowan Old Style", "Times New Roman", serif;
 
-	--text-editor-fill: #fafaf5;
-	--text-editor-line: #2b2b2b;
-	--text-editor-cursor-fill: #2b2b2b;
-	--text-editor-selection-fill: #e8e8e0;
-	--text-editor-selection-line: #2b2b2b;
+	/* the page sits a touch brighter than the surrounding app */
+	--text-editor-fill: #fbfaf3;
 
-	--text-editor-active-line-fill: #55555505;
-	--text-editor-active-line-line: var(--text-editor-line);
-	--text-editor-active-line-fill--gutter: #e8e8e0;
-	--text-editor-active-line-line--gutter: var(--text-editor-line);
-	--text-editor-gutter-fill: #eeeeea;
-	--text-editor-gutter-line: #999999;
-	--text-editor-gutter-border: none;
-	--text-editor-gutter-font-size: 0.8em;
-	--text-editor-gutter-font-size--line-numbers: 0.8em;
-	--text-editor-tooltip-fill: #eeeeea;
-	--text-editor-tooltip-color: #2b2b2b;
-
-	--syntax-comment: #999999;
+	--syntax-comment: #9a9483;
 	--syntax-style-comment: italic;
 
-	--syntax-doc-comment: #777777;
+	--syntax-doc-comment: #8a8170;
 	--syntax-style-doc-comment: italic;
 
-	--syntax-meta: #777777;
-	--syntax-invalid: #c23621;
+	--syntax-meta: #8a8170;
+	--syntax-invalid: #b23a2a;
 
-	--syntax-operator: #555555;
-	--syntax-punctuation: #555555;
+	--syntax-operator: #5a5346;
+	--syntax-punctuation: #5a5346;
 
-	--syntax-bool: #555555;
+	--syntax-bool: #5a5346;
 	--syntax-weight-bool: bold;
 
-	--syntax-atom: #555555;
+	--syntax-atom: #5a5346;
 	--syntax-weight-atom: bold;
 
 	--syntax-keyword: #2b2b2b;
 	--syntax-weight-keyword: bold;
 
-	--syntax-type-name: #555555;
+	--syntax-type-name: #5a5346;
 	--syntax-weight-type-name: bold;
 
-	--syntax-class-name: #555555;
+	--syntax-class-name: #5a5346;
 	--syntax-weight-class-name: bold;
 
-	--syntax-type-operator: #777777;
+	--syntax-type-operator: #8a8170;
 
 	--syntax-function--variable-name: #2b2b2b;
 	--syntax-function--property-name: #2b2b2b;
 
-	--syntax-variable-name: #444444;
-	--syntax-definition--variable-name: #444444;
+	--syntax-variable-name: #44403a;
+	--syntax-definition--variable-name: #44403a;
 
-	--syntax-string: #555555;
-	--syntax-fill-string: #f0f0e888;
+	--syntax-string: #4a7a3a;
+	--syntax-fill-string: #eef1e288;
 	--syntax-style-string: italic;
 
-	--syntax-number: #555555;
-	--syntax-integer: #555555;
-	--syntax-float: #555555;
+	--syntax-number: #5a5346;
+	--syntax-integer: #5a5346;
+	--syntax-float: #5a5346;
 
 	--syntax-escape: #2b2b2b;
-	--syntax-regexp: #777777;
-	--syntax-special--string: #555555;
+	--syntax-regexp: #8a8170;
+	--syntax-special--string: #4a7a3a;
 
 	--syntax-tag-name: #2b2b2b;
-	--syntax-angle-bracket: #555555;
+	--syntax-angle-bracket: #5a5346;
 
-	--syntax-attribute-name: #777777;
+	--syntax-attribute-name: #8a8170;
 	--syntax-style-attribute-name: italic;
 
-	--syntax-namespace: #777777;
+	--syntax-namespace: #8a8170;
 
 	--syntax-strong: #2b2b2b;
 	--syntax-weight-strong: bold;
@@ -100,15 +83,14 @@
 	--syntax-heading: #2b2b2b;
 	--syntax-weight-heading: bold;
 
-	--syntax-link: #37474f;
+	--syntax-link: #3d5a66;
 	--syntax-style-link: underline;
 
-	--syntax-quote: #777777;
+	--syntax-quote: #8a8170;
+	--syntax-style-quote: italic;
 	--syntax-list: #2b2b2b;
 
-	--syntax-inserted: #2e7d32;
-	--syntax-deleted: #c23621;
-	--syntax-changed: #555555;
-
-	--syntax-content-separator: #cccccc;
+	--syntax-inserted: #4a7a3a;
+	--syntax-deleted: #b23a2a;
+	--syntax-changed: #5a5346;
 }

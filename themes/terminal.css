@@ -16,23 +16,14 @@
 	--studio-family-sans: "VT323", "Courier New", "Lucida Console", monospace;
 	--studio-family-code: "VT323", "Courier New", "Lucida Console", monospace;
 
-	--text-editor-fill: #000000;
-	--text-editor-line: #00cc00;
-	--text-editor-cursor-fill: #00ff00;
-	--text-editor-selection-fill: #003300;
-	--text-editor-selection-line: #00ff00;
-
+	--text-editor-cursor-fill: var(--studio-primary);
+	--text-editor-selection-line: var(--studio-primary);
 	--text-editor-active-line-fill: #00ff0008;
 	--text-editor-active-line-fill--gutter: #002200;
-
-	--text-editor-gutter-fill: #000000;
+	--text-editor-gutter-fill: var(--text-editor-fill);
 	--text-editor-gutter-line: #006600;
 	--text-editor-gutter-border: #003300;
-	--text-editor-gutter-fill--line-numbers: #000000;
-	--text-editor-gutter-line--line-numbers: #006600;
-
 	--text-editor-tooltip-fill: #001a00;
-	--text-editor-tooltip-color: #00cc00;
 
 	--syntax-comment: #006600;
 	--syntax-style-comment: normal;

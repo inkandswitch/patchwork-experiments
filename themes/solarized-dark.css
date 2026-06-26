@@ -5,7 +5,6 @@
 	--studio-line: #839496;
 	--studio-primary: #268bd2;
 	--studio-secondary: #2aa198;
-	--studio-chrome: #073642; /* base02 highlight, like the panels */
 	--studio-danger: #dc322f;
 	--studio-warning: #b58900;
 	--studio-added: #859900;
@@ -14,27 +13,9 @@
 	--studio-link: #268bd2;
 	--studio-selection-fill: #073642;
 
-	--text-editor-fill: #002b36;
-	--text-editor-line: #839496;
 	--text-editor-cursor-fill: #dc322f;
-	--text-editor-selection-fill: #073642;
-	--text-editor-selection-line: #839496;
-
-	--text-editor-active-line-fill: color-mix(
-		in oklch,
-		var(--text-editor-fill-offset-10),
-		transparent 80%
-	);
-	--text-editor-active-line-fill--gutter: var(--text-editor-fill-offset-20);
-
-	--text-editor-gutter-fill: #073642;
+	/* line numbers in base01 */
 	--text-editor-gutter-line: #586e75;
-	--text-editor-gutter-border: #073642;
-	--text-editor-gutter-fill--line-numbers: #073642;
-	--text-editor-gutter-line--line-numbers: #586e75;
-
-	--text-editor-tooltip-fill: #073642;
-	--text-editor-tooltip-color: #93a1a1;
 
 	--syntax-comment: #586e75;
 	--syntax-style-comment: italic;

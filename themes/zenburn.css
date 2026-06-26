@@ -5,7 +5,6 @@
 	--studio-line: #dcdccc;
 	--studio-primary: #8cd0d3;
 	--studio-secondary: #93e0e3;
-	--studio-chrome: #2b2b2b; /* darker panel surface */
 	--studio-danger: #cc9393;
 	--studio-warning: #f0dfaf;
 	--studio-added: #7f9f7f;
@@ -14,27 +13,8 @@
 	--studio-link: #8cd0d3;
 	--studio-selection-fill: #4f4f4f;
 
-	--text-editor-fill: #3f3f3f;
-	--text-editor-line: #dcdccc;
-	--text-editor-cursor-fill: #dcdccc;
-	--text-editor-selection-fill: #4f4f4f;
-	--text-editor-selection-line: #dcdccc;
-
-	--text-editor-active-line-fill: color-mix(
-		in oklch,
-		var(--text-editor-fill-offset-10),
-		transparent 80%
-	);
-	--text-editor-active-line-fill--gutter: var(--text-editor-fill-offset-20);
-
-	--text-editor-gutter-fill: #383838;
+	/* line numbers in zenburn's muted grey */
 	--text-editor-gutter-line: #7f7f7f;
-	--text-editor-gutter-border: #4f4f4f;
-	--text-editor-gutter-fill--line-numbers: #383838;
-	--text-editor-gutter-line--line-numbers: #7f7f7f;
-
-	--text-editor-tooltip-fill: #4f4f4f;
-	--text-editor-tooltip-color: #dcdccc;
 
 	--syntax-comment: #7f9f7f;
 	--syntax-style-comment: italic;

@@ -1,4 +1,4 @@
-/* Lavender — soft purple haze */
+/* Lavender — soft lilac haze, gentle and calm */
 [theme="lavender"] {
 	color-scheme: light;
 	--studio-fill: #f5f0fa;
@@ -6,30 +6,16 @@
 	--studio-primary: #7c5cbf;
 	--studio-secondary: #9b7ad8;
 	--studio-danger: #c4475a;
-	--studio-warning: #c09030;
+	--studio-warning: #b07f24;
 	--studio-added: #4a8a5e;
 	--studio-deleted: #c4475a;
 	--studio-modified: #7c5cbf;
 	--studio-link: #7c5cbf;
 	--studio-selection-fill: #e8ddf5;
 
-	--text-editor-fill: #f8f4fc;
-	--text-editor-line: #2d2843;
-	--text-editor-cursor-fill: #7c5cbf;
-	--text-editor-selection-fill: #e8ddf5;
-	--text-editor-selection-line: #2d2843;
-
-	--text-editor-active-line-fill: #7c5cbf05;
-	--text-editor-active-line-line: var(--text-editor-line);
-	--text-editor-active-line-fill--gutter: #e8ddf5;
-	--text-editor-active-line-line--gutter: var(--text-editor-line);
-	--text-editor-gutter-fill: #ede6f5;
-	--text-editor-gutter-line: #9a8ab0;
-	--text-editor-gutter-border: none;
-	--text-editor-gutter-font-size: 0.8em;
-	--text-editor-gutter-font-size--line-numbers: 0.8em;
-	--text-editor-tooltip-fill: #ede6f5;
-	--text-editor-tooltip-color: #2d2843;
+	--text-editor-cursor-fill: var(--studio-primary);
+	/* the page sits a touch brighter than the surrounding app */
+	--text-editor-fill: #faf6fe;
 
 	--syntax-comment: #9a8ab0;
 	--syntax-style-comment: italic;
@@ -66,7 +52,6 @@
 	--syntax-definition--variable-name: #5a4a70;
 
 	--syntax-string: #4a8a5e;
-	--syntax-fill-string: transparent;
 
 	--syntax-number: #9b7ad8;
 	--syntax-integer: #9b7ad8;
@@ -97,11 +82,10 @@
 	--syntax-style-link: underline;
 
 	--syntax-quote: #9a8ab0;
+	--syntax-style-quote: italic;
 	--syntax-list: #2d2843;
 
 	--syntax-inserted: #4a8a5e;
 	--syntax-deleted: #c4475a;
 	--syntax-changed: #7c5cbf;
-
-	--syntax-content-separator: #d0c4e0;
 }
