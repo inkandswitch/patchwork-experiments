@@ -1,0 +1,541 @@
+/* newspace — System 7 chrome × chee-rabbit pastels × Mimi-Reyburn riso warmth,
+   theme-aware (follows the Patchwork dark/light theme). */
+
+/* Caroni — handwritten face (Franzi Paetzold, SIL OFL). bundled woff2. */
+@font-face {
+  font-family: "Caroni";
+  src: url("./fonts/Caroni-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+/* the "hand" text font as an overridable token (a theme can replace it) */
+@layer package {
+  :root, :host, [theme] {
+    --newspace-family-hand: "Caroni", ui-rounded, "Comic Sans MS", cursive;
+  }
+}
+
+.ns-root {
+  --ns-ink: var(--studio-line, #1c1a17);
+  --ns-chrome: var(--studio-fill, #ddd4c0);
+  /* the canvas IS the editor surface (pull --editor-fill straight from the
+     theme); docs are the same fill, lifted by their outline + a soft shadow */
+  --ns-paper: var(--editor-fill, var(--studio-fill, #f0e8d6));
+  --ns-editor: var(--editor-fill, var(--studio-fill, #fff));
+  /* a well sinks: its floor shades from slightly-darker-than-the-outer-canvas
+     (the lit lip) down to an offset below it (the deep floor), with the top
+     lip casting a directional shadow. */
+  --ns-well-top: color-mix(in oklch, var(--ns-paper), #000 6%);
+  --ns-well-floor: var(--editor-fill-offset-20, #e3d8bf);
+  --ns-well-shadow: color-mix(in oklch, var(--ns-well-floor), #000 55%);
+  --ns-chrome-lo: color-mix(in oklch, var(--ns-chrome), var(--ns-ink) 24%);
+  --ns-hi: color-mix(in oklch, var(--ns-chrome), white 55%);
+  --ns-shadow: color-mix(in oklch, var(--ns-ink), transparent 70%);
+  --ns-sky: var(--studio-secondary, #5b8def);
+  --ns-pink: #e36588;
+  --ns-font: "Geneva", "Chicago", "Charcoal", "Verdana", system-ui, sans-serif;
+
+  /* drawing palette — items store the NAME (e.g. "deep yellow"), mapped here.
+     light-dark(light, dark): line goes light in dark mode, offset light too (but
+     less so); the dark/deep hues are lifted a touch so they read on a dark bg. */
+  --space-color-line: var(--studio-line, #1c1a17);
+  --space-color-offset: var(--studio-fill-offset-50, #8a857c);
+  --space-color-purple: light-dark(#9879e8, #b29bf2);
+  --space-color-deep-purple: light-dark(#5a3fa6, #8265c8);
+  --space-color-blue: light-dark(#33ccff, #5ad8ff);
+  --space-color-deep-blue: light-dark(#3772ff, #6f9bff);
+  --space-color-green: light-dark(#36f9c0, #36f9c0);
+  --space-color-deep-green: light-dark(#417b5a, #68b08a);
+  --space-color-yellow: light-dark(#fee973, #fee973);
+  --space-color-deep-yellow: light-dark(#fdca40, #ffd65e);
+  --space-color-red: light-dark(#ff2a50, #ff5d78);
+  --space-color-deep-red: light-dark(#9f2042, #d2466a);
+
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--ns-paper);
+  color: var(--ns-ink);
+  font-family: var(--ns-font);
+  user-select: none;
+  touch-action: none;
+}
+.ns-cur-default { cursor: default; }
+.ns-cur-cross { cursor: crosshair; }
+.ns-cur-grab { cursor: grab; }
+.ns-cur-grab:active { cursor: grabbing; }
+
+.ns-world {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+
+/* transient overlay (draft preview, marquee, multi-select outline) */
+.ns-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 30;
+}
+.ns-sel { fill: none; stroke: var(--ns-sky); stroke-width: 1.5; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
+.ns-bindhl { fill: color-mix(in oklch, var(--ns-sky), transparent 88%); stroke: var(--ns-sky); stroke-width: 2; stroke-dasharray: 6 4; }
+/* an arrow endpoint grab dot (screen-space, like the resize handles) */
+.ns-end { position: absolute; width: 15px; height: 15px; transform: translate(-50%, -50%); border: 2.5px solid var(--ns-sky); border-radius: 50%; background: var(--ns-paper); box-shadow: 0 1px 3px var(--ns-shadow); cursor: grab; z-index: 46; pointer-events: auto; }
+.ns-end:active { cursor: grabbing; }
+/* a line's bezier control handle — smaller, hollow diamond */
+.ns-ctrl { width: 12px; height: 12px; border-radius: 2px; background: var(--ns-chrome); border-color: var(--ns-pink); transform: translate(-50%, -50%) rotate(45deg); }
+.ns-marquee { fill: color-mix(in oklch, var(--ns-sky), transparent 85%); stroke: var(--ns-sky); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.ns-place { fill: none; stroke: var(--ns-ink); stroke-width: 1.5; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; }
+
+/* ---- a drawn mark (stroke / shape) --------------------------------- */
+.ns-mark { position: absolute; transform-origin: center; pointer-events: none; }
+.ns-mark-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.ns-hit-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.ns-hit { position: absolute; inset: 0; pointer-events: auto; cursor: move; background: transparent; }
+/* static text and the editor share identical metrics + box so editing in a
+   rectangle is WYSIWYG (no jump between the two states); text sits centred in
+   the shape (align-content centres the textarea's own content vertically) */
+.ns-shape-text, .ns-shape-edit {
+  position: absolute;
+  inset: 8px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  text-align: center;
+  align-content: center;
+  font-family: var(--newspace-family-hand, "Caroni", var(--ns-font));
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ns-ink);
+  white-space: pre-wrap;
+  overflow: hidden;
+}
+.ns-shape-text { display: flex; align-items: center; justify-content: center; pointer-events: none; }
+.ns-shape-edit { resize: none; pointer-events: auto; /* .ns-mark is pe:none */ }
+
+/* ---- text item ----------------------------------------------------- */
+.ns-text-item { position: absolute; transform-origin: center; pointer-events: none; }
+.ns-text-static {
+  display: inline-block;
+  width: max-content;
+  min-height: 1em;
+  font-family: var(--ns-font);
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: pre;
+  cursor: move;
+  pointer-events: auto;
+}
+/* a drawn text BOX wraps at its fixed width (point text stays auto-width) */
+.ns-text-wrap { white-space: pre-wrap; overflow-wrap: anywhere; width: 100%; }
+/* while dragging a child out of a box, let it spill past the box edge (preview) */
+.ns-unclip { overflow: visible !important; }
+/* transparent wheel-catcher while panning (sits above tools, below chrome) */
+.ns-panlock { position: absolute; inset: 0; z-index: 30; }
+.ns-text-edit {
+  display: block;
+  box-sizing: content-box;
+  padding: 0;
+  margin: 0;
+  min-width: 8px;
+  white-space: pre;
+  overflow: hidden;
+  border: none;
+  outline: none; /* just the caret while editing — no box */
+  resize: none;
+  background: transparent;
+  font-family: var(--ns-font);
+  font-weight: 600;
+  line-height: 1.4;
+  pointer-events: auto;
+}
+
+/* ---- doc / frame (a completely regular shape) ---------------------- */
+.ns-doc {
+  position: absolute;
+  transform-origin: center;
+  /* use --editor-fill directly (not the .ns-root-computed --ns-editor) so a box
+     with its own [theme] attribute re-resolves its bg under that theme */
+  background: var(--editor-fill, var(--studio-fill, #fff));
+  border-radius: 3px;
+  cursor: move;
+  box-shadow: 1px 2px 10px -4px var(--ns-shadow);
+}
+.ns-doc.well { box-shadow: none; }
+/* a box a dragged item will drop INTO: glowing ring + lift, and (because we bump
+   its z-index above the dragged item) it occludes the part hanging over the edge,
+   so the thing reads as going inside */
+.ns-drop-into { box-shadow: 0 0 0 2.5px var(--ns-sky), 0 6px 20px -6px var(--ns-shadow); }
+.ns-drop-into > .ns-doc-body { background: color-mix(in oklch, var(--editor-fill, #fff), var(--ns-sky) 8%); }
+.ns-doc-title {
+  position: absolute;
+  left: 2px;
+  bottom: 100%;
+  margin-bottom: 4px;
+  max-width: 320px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--ns-ink);
+  cursor: move;
+}
+.ns-doc-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: grab; user-select: none; }
+.ns-doc-name:active { cursor: grabbing; }
+.ns-doc-open {
+  flex: 0 0 auto;
+  border: 1px solid var(--ns-ink);
+  border-radius: 4px;
+  background: var(--ns-chrome);
+  box-shadow: inset 1px 1px 0 var(--ns-hi);
+  color: var(--ns-ink);
+  font-family: var(--ns-font);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+.ns-doc-open:hover { background: var(--ns-sky); color: #fff; border-color: var(--ns-ink); }
+.ns-doc-outline {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  color: var(--ns-ink);
+  z-index: 1;
+}
+.ns-doc-body {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--editor-fill, var(--studio-fill, #fff));
+  border-radius: 2px;
+  cursor: auto;
+}
+.ns-doc-img { width: 100%; height: 100%; object-fit: contain; display: block; }
+/* a too-deeply-nested box is just a named placeholder (no recursion) */
+.ns-box-stub {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 10px;
+  font-family: var(--ns-font);
+  font-weight: 700;
+  color: var(--ns-chrome-lo);
+}
+/* grab strips around a box's outline (its interior is its own canvas) */
+.ns-grabframe { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+.ns-gf { position: absolute; pointer-events: auto; cursor: move; }
+.ns-gf-t { top: 0; left: 0; right: 0; height: 12px; }
+.ns-gf-b { bottom: 0; left: 0; right: 0; height: 12px; }
+.ns-gf-l { top: 0; bottom: 0; left: 0; width: 12px; }
+.ns-gf-r { top: 0; bottom: 0; right: 0; width: 12px; }
+.ns-doc.sel .ns-doc-title { color: var(--ns-sky); }
+/* "entered" = innards are live; lift the cursor and show a focus ring */
+/* a "well": no outline, no inset ring — just a deep sunken shadow that sits
+   OVER the contents so it reads as recessed */
+/* well floor: a vertical gradient (lit lip at top -> deeper floor at bottom) */
+.ns-doc.well > .ns-doc-body {
+  inset: 0;
+  background: linear-gradient(to bottom, var(--ns-well-top), var(--ns-well-floor));
+}
+/* directional shadow: the top lip casts down into the well (reads as sunken,
+   not domed); a faint highlight at the very bottom lip catches the light */
+.ns-well {
+  position: absolute;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  border-radius: 3px;
+  box-shadow:
+    inset 0 3px 4px -1px var(--ns-well-shadow),
+    inset 0 12px 18px -8px color-mix(in srgb, var(--ns-well-shadow), transparent 15%),
+    inset 0 -2px 3px -2px color-mix(in oklch, var(--ns-well-floor), #fff 30%),
+    inset 0 0 0 1px color-mix(in srgb, var(--ns-well-shadow), transparent 45%);
+}
+.ns-title-edit {
+  font-family: var(--ns-font);
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid var(--ns-sky);
+  border-radius: 3px;
+  background: var(--ns-chrome);
+  color: var(--ns-ink);
+  padding: 0 4px;
+  outline: none;
+}
+
+/* ---- selection handles + rotate knob (screen overlay) -------------- */
+.ns-handles { position: absolute; pointer-events: none; z-index: 45; transform-origin: center; }
+.ns-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  transform: translate(-50%, -50%);
+  background: var(--ns-chrome);
+  border: 1px solid var(--ns-ink);
+  box-shadow: inset 1px 1px 0 var(--ns-hi);
+  pointer-events: auto;
+}
+.ns-rotate {
+  position: absolute;
+  left: 50%;
+  top: -24px;
+  width: 12px;
+  height: 12px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: var(--ns-sky);
+  border: 1px solid var(--ns-ink);
+  pointer-events: auto;
+  cursor: grab;
+}
+.ns-rotate-stem {
+  position: absolute;
+  left: 50%;
+  top: -14px;
+  width: 1px;
+  height: 14px;
+  transform: translateX(-50%);
+  background: var(--ns-ink);
+  opacity: 0.5;
+}
+
+/* ---- toolbar (System 7 palette) ------------------------------------ */
+.ns-toolbar {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 5px 7px;
+  background: var(--ns-chrome);
+  border: 1px solid var(--ns-ink);
+  border-radius: 6px;
+  box-shadow: inset 1px 1px 0 var(--ns-hi), inset -1px -1px 0 var(--ns-chrome-lo), 3px 4px 0 var(--ns-shadow);
+  z-index: 50;
+}
+.ns-bunny { display: inline-flex; align-items: center; color: var(--ns-ink); padding: 0 3px; cursor: grab; user-select: none; }
+.ns-bunny:active { cursor: grabbing; }
+.ns-tool { display: grid; place-items: center; width: 32px; height: 30px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--ns-ink); cursor: pointer; }
+.ns-tool:hover { background: var(--ns-paper); border-color: var(--ns-chrome-lo); }
+.ns-tool.active { background: var(--ns-ink); color: var(--ns-chrome); border-color: var(--ns-ink); box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.18); }
+.ns-add.active { background: var(--ns-pink); color: #fff; border-color: var(--ns-ink); }
+.ns-sep { width: 1px; height: 22px; margin: 0 3px; background: var(--ns-chrome-lo); box-shadow: 1px 0 0 var(--ns-hi); }
+
+/* ---- new-doc menu -------------------------------------------------- */
+.ns-add-wrap { position: relative; display: inline-flex; align-items: center; }
+.ns-menu {
+  position: absolute;
+  bottom: 42px;
+  right: 0;
+  z-index: 60;
+  width: 196px;
+  max-height: min(56vh, 380px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 3px;
+  background: var(--ns-chrome);
+  border: 1px solid var(--ns-ink);
+  border-radius: 5px;
+  box-shadow: inset 1px 1px 0 var(--ns-hi), inset -1px -1px 0 var(--ns-chrome-lo), 3px 4px 0 var(--ns-shadow);
+}
+.ns-menu-grid { width: auto; display: grid; grid-template-columns: repeat(4, 32px); gap: 3px; }
+.ns-menu-search { box-sizing: border-box; width: 100%; margin: 1px 0 4px; }
+.ns-menu-head { padding: 4px 8px 5px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ns-chrome-lo); border-bottom: 1px solid var(--ns-chrome-lo); margin-bottom: 3px; }
+.ns-menu-item { display: block; width: 100%; padding: 6px 9px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--ns-ink); font-family: var(--ns-font); font-size: 13px; font-weight: 600; text-align: left; cursor: pointer; }
+.ns-menu-item:hover { background: var(--ns-ink); color: var(--ns-chrome); }
+
+/* ---- properties palette (draggable) -------------------------------- */
+.ns-props, .ns-props * { box-sizing: border-box; }
+.ns-props {
+  position: absolute;
+  width: 178px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  background: var(--ns-chrome);
+  border: 1px solid var(--ns-ink);
+  border-radius: 6px;
+  box-shadow: inset 1px 1px 0 var(--ns-hi), inset -1px -1px 0 var(--ns-chrome-lo), 3px 4px 0 var(--ns-shadow);
+  z-index: 48;
+}
+.ns-props-head { display: flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ns-ink); border-bottom: 1px solid var(--ns-chrome-lo); box-shadow: 0 1px 0 var(--ns-hi); padding-bottom: 5px; cursor: grab; user-select: none; }
+.ns-props-head:active { cursor: grabbing; }
+.ns-grip { flex: 0 0 auto; width: 14px; height: 8px; background-image: repeating-linear-gradient(0deg, var(--ns-chrome-lo) 0 1px, transparent 1px 3px); border-top: 1px solid var(--ns-chrome-lo); border-bottom: 1px solid var(--ns-chrome-lo); }
+.ns-field { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ns-chrome-lo); margin-bottom: -3px; }
+.ns-row { display: flex; flex-wrap: wrap; gap: 5px; }
+.ns-swatches { gap: 6px; }
+.ns-swatch { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--ns-ink); cursor: pointer; padding: 0; box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.35); }
+.ns-swatch.active { box-shadow: 0 0 0 2px var(--ns-chrome), 0 0 0 3px var(--ns-ink); }
+.ns-swatch.ns-none { background: var(--ns-chrome); position: relative; overflow: hidden; }
+.ns-swatch.ns-none::after { content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1.5px; background: var(--ns-pink); transform: rotate(45deg); transform-origin: center; }
+.ns-sizes { gap: 4px; }
+.ns-size { display: grid; place-items: center; flex: 1; height: 26px; border: 1px solid var(--ns-chrome-lo); border-radius: 4px; background: var(--ns-paper); cursor: pointer; }
+.ns-fatline { display: block; width: 70%; border-radius: 999px; background: var(--ns-ink); }
+.ns-size.active { background: var(--ns-ink); border-color: var(--ns-ink); }
+.ns-size.active .ns-fatline { background: var(--ns-chrome); }
+
+/* style pickers (fill style + stroke style) — preview boxes, not a <select> */
+.ns-styles { gap: 5px; }
+.ns-stylebtn { display: grid; place-items: center; flex: 1; height: 28px; padding: 3px; border: 1px solid var(--ns-chrome-lo); border-radius: 4px; background: var(--ns-paper); cursor: pointer; }
+.ns-stylebtn:hover { background: var(--ns-chrome); }
+.ns-stylebtn.active { border-color: var(--ns-ink); box-shadow: 0 0 0 1px var(--ns-ink) inset; }
+.ns-stylebtn > span { display: block; width: 100%; height: 100%; border-radius: 2px; background-repeat: repeat; }
+.ns-strokeprev { height: 0 !important; align-self: center; border-top: 2.5px solid var(--ns-ink); }
+.ns-group { display: flex; flex-direction: column; gap: 6px; }
+.ns-slider { display: flex; flex-direction: column; gap: 2px; }
+.ns-slider > span { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ns-ink); }
+.ns-slider input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 6px; border: 1px solid var(--ns-ink); border-radius: 3px; background: var(--ns-paper); box-shadow: inset 1px 1px 0 var(--ns-chrome-lo); }
+.ns-slider input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 12px; height: 14px; border: 1px solid var(--ns-ink); border-radius: 3px; background: var(--ns-chrome); box-shadow: inset 1px 1px 0 var(--ns-hi); cursor: pointer; }
+.ns-slider input[type="range"]::-moz-range-thumb { width: 12px; height: 14px; border: 1px solid var(--ns-ink); border-radius: 3px; background: var(--ns-chrome); cursor: pointer; }
+.ns-fill-row { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
+.ns-fill-row > span { font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--ns-chrome-lo); }
+.ns-select, .ns-text { flex: 1; min-width: 0; max-width: 100%; font-family: var(--ns-font); font-size: 11px; border: 1px solid var(--ns-ink); border-radius: 4px; background: var(--ns-paper); color: var(--ns-ink); padding: 3px 5px; }
+.ns-text { width: 100%; display: block; }
+.ns-check { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
+.ns-check input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--ns-sky); }
+/* searchable tool picker */
+.ns-picker { position: relative; width: 100%; }
+.ns-picker-list {
+  position: absolute;
+  left: 0; right: 0; top: 100%;
+  margin-top: 2px;
+  max-height: 180px;
+  overflow-y: auto;
+  z-index: 5;
+  background: var(--ns-chrome);
+  border: 1px solid var(--ns-ink);
+  border-radius: 4px;
+  box-shadow: 2px 3px 0 var(--ns-shadow);
+}
+.ns-picker-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 4px 7px;
+  border: none;
+  background: transparent;
+  color: var(--ns-ink);
+  font-family: var(--ns-font);
+  font-size: 11px;
+  cursor: pointer;
+}
+.ns-picker-item:hover { background: var(--ns-ink); color: var(--ns-chrome); }
+.ns-fillswatches .ns-swatch { width: 16px; height: 16px; }
+.ns-order { gap: 6px; padding-top: 4px; border-top: 1px solid var(--ns-chrome-lo); box-shadow: 0 -1px 0 var(--ns-hi) inset; }
+.ns-obtn { flex: 1; height: 24px; border: 1px solid var(--ns-ink); border-radius: 4px; background: var(--ns-paper); color: var(--ns-ink); font-size: 14px; cursor: pointer; }
+.ns-obtn:hover { background: var(--ns-chrome); }
+.ns-obtn.active { background: var(--ns-ink); color: var(--ns-chrome); border-color: var(--ns-ink); }
+.ns-iconbtn { display: grid; place-items: center; padding: 0; }
+.ns-iconbtn svg { display: block; }
+
+/* ---- presence ------------------------------------------------------ */
+.ns-presence { position: absolute; inset: 0; pointer-events: none; z-index: 44; overflow: hidden; }
+.ns-cursor { position: absolute; transform: translate(-1px, -1px); will-change: left, top; }
+.ns-cursor-tag {
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px 2px 2px;
+  border-radius: 999px;
+  color: #fff;
+  font-family: var(--ns-font);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+.ns-face {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--c, #888);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  overflow: hidden;
+  flex-shrink: 0;
+  background-color: #fff;
+  background-size: cover;
+  background-position: center;
+  color: #333;
+}
+.ns-cursor-tag .ns-face { border-color: #fff; }
+.ns-view-box { position: absolute; border: 2px solid; border-radius: 4px; }
+.ns-view-tag {
+  position: absolute;
+  left: -1px;
+  top: -18px;
+  padding: 1px 6px;
+  border-radius: 4px 4px 0 0;
+  color: #fff;
+  font-family: var(--ns-font);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* ---- minimap ------------------------------------------------------- */
+.ns-minimap {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 46;
+  background: color-mix(in srgb, var(--ns-chrome), transparent 8%);
+  border: 1px solid var(--ns-ink);
+  border-radius: 6px;
+  box-shadow: inset 1px 1px 0 var(--ns-hi), 3px 4px 0 var(--ns-shadow);
+  overflow: hidden;
+  cursor: pointer;
+}
+.ns-mm-rect { position: absolute; background: color-mix(in srgb, var(--ns-ink), transparent 78%); border-radius: 1px; pointer-events: none; }
+.ns-mm-rect.box { background: none; border: 1px solid color-mix(in srgb, var(--ns-ink), transparent 55%); }
+.ns-mm-view { position: absolute; border: 1px solid var(--ns-sky); background: color-mix(in srgb, var(--ns-sky), transparent 80%); pointer-events: none; }
+.ns-mm-face { position: absolute; transform: translate(-50%, -50%); pointer-events: none; }
+.ns-mm-face .ns-face { width: 16px; height: 16px; }
+
+.ns-views {
+  position: absolute;
+  bottom: 18px;
+  right: 64px;
+  z-index: 46;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 26px;
+  border: 1px solid var(--ns-ink);
+  border-radius: 5px;
+  background: var(--ns-chrome);
+  box-shadow: inset 1px 1px 0 var(--ns-hi), inset -1px -1px 0 var(--ns-chrome-lo);
+  color: var(--ns-ink);
+  cursor: pointer;
+}
+.ns-views.active { background: var(--ns-sky); color: #fff; }
+
+/* ---- zoom chip ----------------------------------------------------- */
+.ns-zoom { position: absolute; bottom: 18px; right: 16px; z-index: 40; padding: 4px 9px; border: 1px solid var(--ns-ink); border-radius: 5px; background: var(--ns-chrome); box-shadow: inset 1px 1px 0 var(--ns-hi), inset -1px -1px 0 var(--ns-chrome-lo); color: var(--ns-ink); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; cursor: pointer; }
+.ns-zoom:hover { background: var(--ns-paper); }
