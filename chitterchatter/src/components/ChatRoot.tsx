@@ -21,8 +21,10 @@ import {
 	popup as llmPopup,
 	ensureConfig as llmEnsureConfig,
 	readConfig as llmReadConfig,
+	readScopedConfig as llmReadScopedConfig,
 	describeConfig as llmDescribeConfig,
 	fetchOpenRouterModels as llmFetchOpenRouterModels,
+	parseToolCalls as llmParseToolCalls,
 } from "@chee/patchwork-llm"
 import {generateId} from "../lib/helpers"
 import {
@@ -57,11 +59,43 @@ export function ChatRoot(props: {
 	// Sidebar state
 	const [sidebarVisible, setSidebarVisible] = createSignal(false)
 
+	// The per-tool / per-doc config scope this chat resolves against. Generation
+	// passes the same scope to generate(), so every config READ in the UI must go
+	// through scopedCfg() too — otherwise the UI shows the global default while the
+	// computer runs with this chat's override.
+	const llmScope = () => ({toolId: "chitterchatter", docId: props.handle.url})
+	function scopedCfg(): any {
+		try {
+			return llmReadScopedConfig(llmScope())
+		} catch {
+			return llmReadConfig()
+		}
+	}
+
 	// Model picker (the @chee/patchwork-llm popover lives in the light DOM)
 	let modelPickerEl: HTMLElement | null = null
 	async function openModelPicker() {
 		if (modelPickerEl) return
-		const el = llmPopup()
+		// Surface @computer's built-in system prompt in the picker so it's visible
+		// and can be forked into an editable override.
+		const el = llmPopup({
+			toolName: "Chitterchatter",
+			// Per-tool / per-doc config scope (Default · This tool · This doc switcher).
+			scope: {
+				toolId: "chitterchatter",
+				docId: props.handle.url,
+				toolName: "Chitterchatter",
+				docName: (props.handle.doc() as any)?.title || "this chat",
+			},
+			toolPrompt: {
+				name: "Chitterchatter · Computer",
+				text: computerSystemPrompt(),
+			},
+			toolTools: COMPUTER_TOOLS.map((t) => ({
+				name: t.name,
+				description: t.description,
+			})),
+		})
 		modelPickerEl = el
 		document.body.append(el)
 		;(el as any).showPopover?.()
@@ -70,7 +104,10 @@ export function ChatRoot(props: {
 		} finally {
 			el.remove()
 			modelPickerEl = null
-			refreshModelLabel()
+			// Refresh the label and, if the model actually changed, announce it in
+			// the chat — regardless of whether this tab is the computer host, so a
+			// model switch is always visible to everyone.
+			void syncModelLabel({announce: true})
 		}
 	}
 
@@ -94,11 +131,32 @@ export function ChatRoot(props: {
 	function refreshModelLabel() {
 		describeCurrentModel().then(setModelLabel).catch(() => {})
 	}
+	// Resolve the live model label and, if it changed, announce it in the chat so
+	// everyone sees which model the computer switched to. Returns the new label.
+	async function syncModelLabel({announce = false} = {}): Promise<string> {
+		const before = modelLabel()
+		const after = await describeCurrentModel().catch(() => before)
+		setModelLabel(after)
+		if (announce && after && after !== before) {
+			sendComputerMessage("🔌 switched model to " + after)
+		}
+		return after
+	}
+	// The model name suffix shown after the computer's username, e.g. " (Browser
+	// Qwen3 0.6B)". Empty until the label resolves.
+	function modelSuffix() {
+		const label = modelLabel()
+		return label ? " (" + label + ")" : ""
+	}
 	// The computer's display name, including the current model label when known.
 	function computerName() {
-		const label = modelLabel()
-		return label ? "computer (" + label + ")" : "computer"
+		return "computer" + modelSuffix()
 	}
+	// Keep the label populated from the start so the very first computer message
+	// already carries the model name (not just messages sent after the picker).
+	onMount(() => {
+		refreshModelLabel()
+	})
 	const [computerAbort, setComputerAbort] =
 		createSignal<AbortController | null>(null)
 	const computerRespondedToIds = new Set<string>()
@@ -197,122 +255,102 @@ export function ChatRoot(props: {
 
 	let computerFolderUrl: AutomergeUrl | null = null
 
-	const COMPUTER_SYSTEM_PROMPT = `You are Computer, an AI assistant participating in a Patchwork collaborative chat.
+	// The COMPACT prompt — terse, for small/local models with limited context.
+	// Capable cloud models get COMPUTER_SYSTEM_PROMPT_FULL below, which keeps the
+	// worked code examples (the compact version's lack of them regressed tool
+	// generation — models emitted `load(){ return { Tool } }` instead of
+	// `return Tool`). computerSystemPrompt() picks between them by provider.
+	const COMPUTER_SYSTEM_PROMPT_COMPACT = `You are Computer, a computer program in a Patchwork collaborative chat. Respond like a computer program — direct, precise, no anthropomorphic fluff. Never prefix messages with [Computer] or your name (other users show as "[Name] message"; that's just context formatting, don't imitate it).
 
-IMPORTANT: Never prefix your messages with [Computer] or your name. Other users' messages are shown as [Name] message but that's just context formatting — you must NOT imitate it. Just respond naturally with your message content.
-
-## What You Can Do
-- Answer questions and have conversations
-- Build interactive Patchwork tools (vanilla JS mini-apps that run in the browser)
-- Read and edit Automerge documents directly
-- Inspect pinned tools (iframes) for errors and DOM state
-- Run code inside pinned tool iframes
-
-## Patchwork Architecture
-Patchwork is a collaborative document system built on Automerge (JSON-like CRDTs synced peer-to-peer).
-
-Key concepts:
-- \`const handle = await window.repo.find("automerge:XXXXX")\` — find a document by URL
-- \`handle.doc()\` — read current document state (synchronous, returns snapshot)
-- \`handle.change(doc => { doc.field = value })\` — mutate document
-- \`handle.on("change", fn)\` — listen for local and remote changes
-- \`import { splice } from "@automerge/automerge"\` — use splice for efficient text edits on collaborative strings
-- Documents sync automatically across peers via Automerge
+## Patchwork / Automerge
+Docs are Automerge CRDTs synced peer-to-peer.
+- \`const h = await window.repo.find("automerge:…")\` → handle; \`h.doc()\` reads a snapshot; \`h.change(d => { d.x = … })\` mutates; \`h.on("change", fn)\` listens.
+- \`import { splice } from "@automerge/automerge"\` for text edits. Docs can't hold \`undefined\` — use \`null\` or \`delete d.x\`.
 
 ## Tools
-You have access to tools. To use a tool, output a fenced block tagged \`\`\`tool-call:
+Call a tool with a fenced block; you get the result back, then continue:
 \`\`\`tool-call
-tool: tool_name
-arg1: value1
-arg2: value2
+tool: name
+arg: value
 \`\`\`
+- read_doc {url} — read a doc
+- edit_doc {url, field, value(JSON)} — set a field (strings diff collaboratively); returns the field's new value
+- splice_doc {url, field, index, deleteCount, insert} — targeted text edit
+- create_doc {data(JSON)} — returns the new url
+- pin_tool {url, toolId?, name?} — pin a doc to the sidebar
+- edit_tool {toolId|url, code} — replace a tool's source and reload
+- inspect_iframe {url} — a pinned tool's DOM + console errors
+- eval_in_iframe {url, code} — run JS in a pinned tool, get the result
 
-After you use a tool, you'll receive the result and can continue reasoning. You can use multiple tools in sequence.
+Rules: ALWAYS read_doc before edit_doc/splice_doc, and re-read the returned value after (peers may have changed it). NEVER change a doc's \`@patchwork.type\`, or a tool's datatype/tool \`id\`/\`supportedDatatypes\` (breaks existing docs). To ask the user something, reply in plain text with NO tool call — tool results are not user answers.
 
-Available tools:
+## Building a tool
+Output the COMPLETE module in a \`\`\`patchwork-tool block. Follow this skeleton EXACTLY — note what each \`load()\` returns:
+\`\`\`patchwork-tool
+const datatype = {
+  init(doc) { doc.title = "My Tool"; },
+  getTitle(doc) { return doc.title || "My Tool"; },
+  setTitle(doc, t) { doc.title = t; },
+};
+export function Tool(handle, element) {
+  const root = document.createElement("div");
+  element.appendChild(root);
+  function render() { const doc = handle.doc(); /* build UI, handlers call handle.change() */ }
+  handle.on("change", render); render();
+  return () => { handle.off("change", render); root.remove(); }; // ALWAYS return cleanup
+}
+export const plugins = [
+  { type: "patchwork:datatype", id: "ID", name: "NAME", icon: "Box", async load() { return datatype; } },
+  { type: "patchwork:tool", id: "ID", name: "NAME", icon: "Box", supportedDatatypes: ["ID"], async load() { return Tool; } },
+];
+\`\`\`
+CRITICAL: the datatype \`load()\` returns \`datatype\` and the tool \`load()\` returns \`Tool\` — return the value DIRECTLY, never \`return { Tool }\` (that breaks the tool). \`icon\` is a lucide name ("Box", "Music", …).
 
-### read_doc
-Read the contents of an Automerge document.
+Rules: vanilla DOM only (solid-js is in the importmap if you truly need reactivity — never React). Light DOM, so prefix ALL CSS classes. \`icon\` is a lucide name ("Box", "Music", …). \`repo.find\`/\`repo.create2\` return already-ready handles — \`await\` them (no whenReady; \`create()\` is deprecated). Self-contained, one file. NEVER \`stopPropagation()\` on \`click\` (frameworks delegate it to document) — only on pointerdown/up. When updating a tool, keep its ids and bump \`lastSyncAt = Date.now()\` on the root folder doc to trigger a reload.
+
+## Theming (inside tools)
+Derive fill/line/fonts from \`--editor-*\`; accents from \`--studio-*\`. Never hardcode colors or add prefers-color-scheme.
+- bg \`var(--editor-fill)\`, fg \`var(--editor-line)\`; offsets \`--editor-fill-offset-10…-50\`, \`--editor-line-offset-10…-50\`
+- accents \`--studio-primary|secondary|danger|warning|link\`; spacing \`--studio-space-2xs…-2xl\`; radius \`--studio-radius-sm…-xl\`
+- lighten/darken via \`color-mix(in oklch, var(--editor-fill), var(--editor-line) 8%)\` (so it inverts in dark themes)
+
+## Also
+- Importmap (bare imports, no CDN): \`@automerge/automerge\`, \`@automerge/automerge-repo\`, \`solid-js\` (+\`/web\` \`/html\` \`/store\`), \`@codemirror/state|view|language\`, \`@inkandswitch/patchwork-elements|filesystem|plugins\`.
+- Ephemeral peer messages: \`handle.broadcast({…})\` / \`handle.on("ephemeral-message", ({message}) => …)\` — connected peers only, not persisted.
+- Files: \`automergeUrlToServiceWorkerUrl(url)\` from patchwork-filesystem → usable as \`<img src>\`/\`<audio src>\`.
+- Navigate: \`openDocument(element, url, toolId)\` from patchwork-elements.
+- Rich output: \`\`\`file blocks create+embed files; \`\`\`embed blocks embed existing docs.
+
+Keep responses concise. When you build a tool, briefly say what it does.`
+
+	// The FULL prompt — detailed, with worked code examples — for capable cloud
+	// models (OpenRouter / Ollama). Same intro + tool-calling section as the
+	// compact prompt, but the tool-building / theming / capabilities guidance is
+	// spelled out with concrete examples so the model produces a correct plugins
+	// array (e.g. \`load(){ return Tool }\`, not \`return { Tool }\`).
+	const COMPUTER_SYSTEM_PROMPT_FULL = `You are Computer, a computer program in a Patchwork collaborative chat. Respond like a computer program — direct, precise, no anthropomorphic fluff. Never prefix messages with [Computer] or your name (other users show as "[Name] message"; that's just context formatting, don't imitate it).
+
+## Patchwork / Automerge
+Docs are Automerge CRDTs synced peer-to-peer.
+- \`const h = await window.repo.find("automerge:…")\` → handle; \`h.doc()\` reads a snapshot; \`h.change(d => { d.x = … })\` mutates; \`h.on("change", fn)\` listens.
+- \`import { splice } from "@automerge/automerge"\` for text edits. Docs can't hold \`undefined\` — use \`null\` or \`delete d.x\`.
+
+## Tools
+Call a tool with a fenced block; you get the result back, then continue:
 \`\`\`tool-call
-tool: read_doc
-url: automerge:XXXXX
+tool: name
+arg: value
 \`\`\`
+- read_doc {url} — read a doc
+- edit_doc {url, field, value(JSON)} — set a field (strings diff collaboratively); returns the field's new value
+- splice_doc {url, field, index, deleteCount, insert} — targeted text edit
+- create_doc {data(JSON)} — returns the new url
+- pin_tool {url, toolId?, name?} — pin a doc to the sidebar
+- edit_tool {toolId|url, code} — replace a tool's source and reload
+- inspect_iframe {url} — a pinned tool's DOM + console errors
+- eval_in_iframe {url, code} — run JS in a pinned tool, get the result
 
-### edit_doc
-Edit an Automerge document by setting a field. The value is parsed as JSON. For string fields, this uses collaborative text diffing (updateText) so only the changed parts are modified.
-**IMPORTANT:** Both edit_doc and splice_doc return the CURRENT value of the field after the edit. You MUST read this returned value carefully — it shows what the document actually contains now. Use it to update your mental model before making further edits. If the result doesn't look right, use read_doc to get the full current state before trying again.
-**CRITICAL:** When editing a document, NEVER change the \`@patchwork\` field — especially \`@patchwork.type\`. This field controls which tool renders the document. Changing it will break the document. Similarly, when editing tool source code, NEVER change the datatype \`id\` or tool \`id\` in the \`plugins\` array — these must stay the same as they were when the tool was created, or the tool will stop working.
-\`\`\`tool-call
-tool: edit_doc
-url: automerge:XXXXX
-field: title
-value: "New Title"
-\`\`\`
-
-### create_doc
-Create a new Automerge document with the given initial data (JSON). Returns the new document's automerge URL.
-\`\`\`tool-call
-tool: create_doc
-data: {"title": "My Doc", "items": []}
-\`\`\`
-
-### pin_tool
-Pin an existing document to the chat sidebar so it's visible to everyone. Optionally specify which tool should render it.
-\`\`\`tool-call
-tool: pin_tool
-url: automerge:XXXXX
-toolId: optional-tool-id
-name: Optional display name
-\`\`\`
-
-### edit_tool
-Update source code for an existing tool and force a reload. You can target by tool ID or URL.
-\`\`\`tool-call
-tool: edit_tool
-toolId: tiny-hedgehog
-code: export const plugins = [...]
-\`\`\`
-
-Alternative targeting:
-\`\`\`tool-call
-tool: edit_tool
-url: automerge:XXXXX
-code: export const plugins = [...]
-\`\`\`
-
-### splice_doc
-Splice text in a string field of an Automerge document. Specify the field, the index to start at, how many characters to delete, and the text to insert. Use this for targeted text changes when you know the exact position. Always use read_doc first to get the current content and calculate correct indices.
-\`\`\`tool-call
-tool: splice_doc
-url: automerge:XXXXX
-field: content
-index: 42
-deleteCount: 10
-insert: replacement text here
-\`\`\`
-
-### inspect_iframe
-Get the DOM HTML and any console errors from a pinned tool iframe.
-\`\`\`tool-call
-tool: inspect_iframe
-url: automerge:XXXXX
-\`\`\`
-
-### eval_in_iframe
-Run JavaScript code inside a pinned tool's iframe and get the result.
-\`\`\`tool-call
-tool: eval_in_iframe
-url: automerge:XXXXX
-code: document.querySelector('.my-element')?.textContent
-\`\`\`
-
-When you need information before answering (e.g. checking what a doc contains, or inspecting an error), use a tool first. After receiving the tool result, respond to the user.
-
-**IMPORTANT: If you need to ask the user a question, do NOT use any tools in the same response.** Just ask your question as plain text and stop. Tool results and self-check messages are NOT user answers — only actual chat messages from users are answers. If you ask a question while also using tools, the tool results will be fed back to you and you may mistake them for the user's reply.
-
-**CRITICAL: Before editing code or text with edit_doc or splice_doc, ALWAYS use read_doc first** to see the current state of the document. After any edit, carefully read the returned current value to verify your changes were applied correctly. Never assume the document content matches what you last saw — other peers may have changed it.
-
-When a user asks to update an existing tool (for example, they reference a current tool ID or say "you broke it"), treat this as an in-place update only. Preserve the existing datatype id, tool id, and supportedDatatypes exactly as currently stored. Do not invent replacement IDs.
+Rules: ALWAYS read_doc before edit_doc/splice_doc, and re-read the returned value after (peers may have changed it). NEVER change a doc's \`@patchwork.type\`, or a tool's datatype/tool \`id\`/\`supportedDatatypes\` (breaks existing docs). To ask the user something, reply in plain text with NO tool call — tool results are not user answers.
 
 ## Building a Patchwork Tool
 When asked to build something, output the COMPLETE JavaScript module in a fenced code block tagged \`\`\`patchwork-tool.
@@ -396,6 +434,53 @@ You can include \`\`\`file blocks to create and embed files, \`\`\`embed blocks 
 
 Keep responses concise. When you create a tool, explain briefly what it does.`
 
+	// Pick the prompt for the active model: local/in-browser models (small,
+	// limited context) get the compact prompt; capable cloud providers get the
+	// full one with worked examples. Falls back to full on any read error.
+	function computerSystemPrompt(): string {
+		try {
+			const cfg = scopedCfg()
+			return cfg?.provider === "local"
+				? COMPUTER_SYSTEM_PROMPT_COMPACT
+				: COMPUTER_SYSTEM_PROMPT_FULL
+		} catch {
+			return COMPUTER_SYSTEM_PROMPT_FULL
+		}
+	}
+
+	// @computer's tools as lib tool schemas. Passed to generate({tools}) so the
+	// model gets native function-calling (OpenRouter/Ollama) or the <tool_call>
+	// convention (local). They run in-process via runToolByName (live repo/DOM/
+	// iframe access), so no `handler` here. Users can disable individual tools in
+	// the model picker (cfg.toolToggles).
+	const COMPUTER_TOOLS: {name: string; description: string; parameters: any}[] = [
+		{name: "read_doc", description: "Read an Automerge document's full contents.", parameters: {type: "object", properties: {url: {type: "string", description: "automerge: URL"}}, required: ["url"]}},
+		{name: "edit_doc", description: "Set a field on a document (string fields diff collaboratively). Returns the field's new value.", parameters: {type: "object", properties: {url: {type: "string"}, field: {type: "string"}, value: {description: "new value (JSON)"}}, required: ["url", "field", "value"]}},
+		{name: "splice_doc", description: "Targeted text edit on a string field: delete deleteCount chars at index, insert text. read_doc first for indices.", parameters: {type: "object", properties: {url: {type: "string"}, field: {type: "string"}, index: {type: "number"}, deleteCount: {type: "number"}, insert: {type: "string"}}, required: ["url", "field", "index"]}},
+		{name: "create_doc", description: "Create a new document with initial data. Returns the new automerge URL.", parameters: {type: "object", properties: {data: {description: "initial doc (JSON object)"}}, required: ["data"]}},
+		{name: "pin_tool", description: "Pin a document to the chat sidebar for everyone.", parameters: {type: "object", properties: {url: {type: "string"}, toolId: {type: "string"}, name: {type: "string"}}, required: ["url"]}},
+		{name: "edit_tool", description: "Replace an existing tool's source code and reload it. Target by toolId or url.", parameters: {type: "object", properties: {toolId: {type: "string"}, url: {type: "string"}, code: {type: "string"}}, required: ["code"]}},
+		{name: "inspect_iframe", description: "Get a pinned tool iframe's DOM HTML and console errors.", parameters: {type: "object", properties: {url: {type: "string"}}}},
+		{name: "eval_in_iframe", description: "Run JS inside a pinned tool's iframe and return the result.", parameters: {type: "object", properties: {url: {type: "string"}, code: {type: "string"}}, required: ["code"]}},
+	]
+
+	// Render a structured tool call as the text shown in its card — mirrors the old
+	// fenced-block look so the existing rich-block UI renders unchanged.
+	function renderCallText(call: any): string {
+		const a = call.args || {}
+		const lines = Object.entries(a).map(
+			([k, v]) => k + ": " + (typeof v === "string" ? v : JSON.stringify(v))
+		)
+		return ["tool: " + call.name, ...lines].join("\n")
+	}
+
+	// Tools to offer this turn — all minus any the user disabled in the picker
+	// (cfg.toolToggles[name] === false). Defaults to enabled.
+	function enabledComputerTools() {
+		const toggles = (scopedCfg()?.toolToggles) || {}
+		return COMPUTER_TOOLS.filter((t) => toggles[t.name] !== false)
+	}
+
 	// ---- LLM generation (via @chee/patchwork-llm) ----
 	// Provider / model / API key / sampling parameters all live on the account
 	// doc and are configured through the shared model picker (`/model` →
@@ -405,15 +490,26 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		messages: any[],
 		onToken: (text: string) => void,
 		signal?: AbortSignal,
-		onStatus?: (status: string) => void
-	): Promise<string> {
-		const {text} = await llmGenerate(messages, {
+		onStatus?: (status: string) => void,
+		system?: string,
+		tools?: any[]
+	): Promise<{text: string; toolCalls: any[] | null}> {
+		const {text, toolCalls} = await llmGenerate(messages, {
 			sessionKey: props.handle.url,
+			// Resolve config for this tool + this chat doc (whole-scope overrides
+			// configured in the picker; falls back to tool, then default).
+			scope: llmScope(),
+			// The system prompt goes through the lib (opts.system) so it composes
+			// with any user-selected/forked system prompt via effectiveSystem.
+			...(system ? {system} : {}),
+			// Real tool calls: native function-calling for OpenRouter/Ollama, the
+			// <tool_call> convention for local. Execution stays in runToolByName.
+			...(tools && tools.length ? {tools} : {}),
 			onToken: (_delta: string, full: string) => onToken(full),
 			onStatus: (status: string) => onStatus?.(status),
 			signal,
 		})
-		return text
+		return {text, toolCalls: (toolCalls as any) || null}
 	}
 
 	// Human-readable label for the model that's currently selected (provider +
@@ -422,8 +518,8 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 	// OpenRouter catalogue can't be read.
 	async function describeCurrentModel(): Promise<string> {
 		try {
-			await llmEnsureConfig()
-			const cfg = llmReadConfig()
+			await llmEnsureConfig(llmScope())
+			const cfg = scopedCfg()
 			let openrouterModels: any[] = []
 			if (cfg.provider === "openrouter") {
 				try {
@@ -716,9 +812,12 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		}
 	}
 
-	async function executeToolCall(block: any): Promise<string> {
-		const args = parseToolCallArgs(block.content)
-		const toolName = args.tool
+	// Execute one tool call by name with structured args (from the lib's native
+	// tool_calls or parsed <tool_call> JSON). Args may already be typed (objects/
+	// numbers) or strings, so each branch is tolerant of both. Returns a result
+	// string fed back to the model.
+	async function runToolByName(toolName: string, rawArgs: any): Promise<string> {
+		const args = rawArgs || {}
 		const repo = (window as any).repo
 		try {
 			if (toolName === "read_doc") {
@@ -726,11 +825,13 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 				return JSON.stringify(h.doc(), null, 2) || "null"
 			} else if (toolName === "edit_doc") {
 				const h = await repo.find(args.url)
-				let val: any
-				try {
-					val = JSON.parse(args.value)
-				} catch {
-					val = args.value
+				let val: any = args.value
+				if (typeof args.value === "string") {
+					try {
+						val = JSON.parse(args.value)
+					} catch {
+						val = args.value
+					}
 				}
 				h.change((d: any) => {
 					if (typeof val === "string" && typeof d[args.field] === "string") {
@@ -851,10 +952,13 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 				)
 			} else if (toolName === "create_doc") {
 				let data: any = {}
-				try {
-					data = JSON.parse(args.data)
-				} catch {
-					data = {title: args.data || "Untitled"}
+				if (args.data && typeof args.data === "object") data = args.data
+				else {
+					try {
+						data = JSON.parse(args.data)
+					} catch {
+						data = {title: args.data || "Untitled"}
+					}
 				}
 				const h = await repo.create2(data)
 				return (
@@ -1342,7 +1446,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 			setModelLabel(model)
 			sendComputerMessage(
 				[
-					"hello! i'm computer, an AI assistant. mention @computer or reply to my messages and i'll respond.",
+					"hello! i'm computer, a computer program. mention @computer or reply to my messages and i'll respond.",
 					"",
 					"• currently running: " + model,
 					"• /model — pick a different model or provider",
@@ -1669,25 +1773,28 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 				.includes("@momputer")
 			// Generate a tool name for this response — the LLM uses it if it builds a tool
 			const suggestedToolName = randomToolName()
-			let systemPrompt =
-				COMPUTER_SYSTEM_PROMPT +
-				'\n\n## Your Tool ID\nIf you build a patchwork tool in this response, use `"' +
+			// The built-in COMPUTER_SYSTEM_PROMPT is the *default* — but if the user
+			// forked it (a selected system prompt doc, cfg.systemUrl), that override
+			// fully replaces it (the lib prepends it via effectiveSystem). Either way,
+			// the per-response addenda below always apply. System goes through
+			// opts.system (not a chat message) so the lib can compose them.
+			const forked = !!scopedCfg()?.systemUrl
+			let systemPrompt = forked ? "" : computerSystemPrompt()
+			systemPrompt +=
+				(systemPrompt ? "\n\n" : "") +
+				'## Your Tool ID\nIf you build a patchwork tool in this response, use `"' +
 				suggestedToolName +
 				'"` as the id for both the datatype and tool plugins, and in supportedDatatypes.'
 			if (isMomputer) {
 				systemPrompt +=
 					'\n\n## Special Mode: Momputer\nThe user addressed you as @momputer. Be warm, nurturing, and motherly in your response. Use gentle encouragement, express care and concern, and be supportive like a loving mom would be. You can use pet names like "sweetie", "honey", "dear", etc. Still be helpful and knowledgeable, but with a cozy maternal energy.'
 			}
-			const messages = [
-				{role: "system", content: systemPrompt},
-				...context,
-				{role: "user", content: userMsg.text},
-			]
+			const messages = [...context, {role: "user", content: userMsg.text}]
 
 			// Create streaming message — use `let` so we can reassign
 			const streamMsgData: any = {
 				id: generateId(),
-				name: isMomputer ? "momputer" : "computer",
+				name: (isMomputer ? "momputer" : "computer") + modelSuffix(),
 				text: "",
 				timestamp: Date.now(),
 				isComputer: true,
@@ -1731,31 +1838,39 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 			let madeChanges = false
 			let completedResponse = false
 			for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-				let response = await generateLLM(
+				const gen = await generateLLM(
 					messages,
 					onToken,
 					abortController.signal,
-					onStatus
+					onStatus,
+					systemPrompt,
+					enabledComputerTools()
 				)
 				resetInactivityTimer()
 				if (tokenThrottleTimer) {
 					clearTimeout(tokenThrottleTimer)
 					tokenThrottleTimer = null
 				}
-				response = response.replace(/^\[Computer\]\s*/i, "")
-				const parsed = parseRichBlocks(response)
+				let response = (gen.text || "").replace(/^\[Computer\]\s*/i, "")
+				// Real tool calls: structured from the provider (native function
+				// calling), else parsed from the model's <tool_call> text (local).
+				const calls =
+					gen.toolCalls && gen.toolCalls.length
+						? gen.toolCalls
+						: llmParseToolCalls(response)
+				// Strip any tool-call markup from the text we display (local models
+				// emit <tool_call>…</tool_call> inline; that's plumbing, not prose).
+				const visible = response
+					.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, "")
+					.replace(/```tool[-_]?call[\s\S]*?```/g, "")
+					.trim()
+				const parsed = parseRichBlocks(visible)
 
-				const toolCalls = parsed.blocks.filter(
-					(b: any) => b.type === "tool-call"
-				)
-				const otherBlocks = parsed.blocks.filter(
-					(b: any) => b.type !== "tool-call"
-				)
 				const hasPatchworkTool = parsed.blocks.some(
 					(b: any) => b.type === "patchwork-tool"
 				)
 
-				if (toolCalls.length > 0 || hasPatchworkTool) {
+				if (calls.length > 0 || hasPatchworkTool) {
 					// If the LLM wrote text that ends with a question, it's asking the user.
 					// Finalize this message and stop looping — don't feed tool results as if they're the answer.
 					const trimmedText = parsed.text.trim()
@@ -1766,21 +1881,29 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 								trimmedText.slice(-200)
 							))
 
-					// Process non-tool-call blocks (patchwork-tool, file, embed, image)
-					const partial = {blocks: otherBlocks, text: parsed.text}
+					// Process output blocks (patchwork-tool, file, embed, image) — tool
+					// calls are structured now, so parsed.blocks are all output blocks.
+					const partial = {blocks: parsed.blocks, text: parsed.text}
 					const {text, opts} = await processRichBlocks(partial)
 					if (hasPatchworkTool) madeChanges = true
 
-					// Store rich blocks for UI display
-					const displayBlocks = parsed.blocks
-						.filter(
-							(b: any) => b.type === "tool-call" || b.type === "patchwork-tool"
-						)
-						.map((b: any) => ({
-							type: b.type,
-							content: b.content,
-							meta: b.meta || "",
-						}))
+					// Store rich blocks for UI display: tool-call cards synthesized from
+					// the structured calls (mirroring the old fenced look), plus any
+					// patchwork-tool output blocks.
+					const displayBlocks = [
+						...calls.map((c: any) => ({
+							type: "tool-call",
+							content: renderCallText(c),
+							meta: "",
+						})),
+						...parsed.blocks
+							.filter((b: any) => b.type === "patchwork-tool")
+							.map((b: any) => ({
+								type: b.type,
+								content: b.content,
+								meta: b.meta || "",
+							})),
+					]
 
 					currentStreamHandle.change((d: any) => {
 						d.text = text || ""
@@ -1795,8 +1918,8 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 					// If asking a question, stop here — don't loop
 					if (endsWithQuestion) {
 						// Still execute tool calls so side effects happen, but don't feed results back
-						for (const tc of toolCalls) {
-							await executeToolCall(tc)
+						for (const c of calls) {
+							await runToolByName(c.name, c.args)
 						}
 						completedResponse = true
 						break
@@ -1804,12 +1927,11 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 
 					// Execute tool calls and store results
 					let toolResults = ""
-					for (const tc of toolCalls) {
-						const result = await executeToolCall(tc)
+					for (const c of calls) {
+						const result = await runToolByName(c.name, c.args)
 						resetInactivityTimer()
-						const toolArgs = tc.content.trim().split("\n")[0]
 						toolResults +=
-							"\n[Tool result for " + toolArgs + "]\n" + result + "\n"
+							"\n[Tool result for " + c.name + "]\n" + result + "\n"
 						// Store result on the corresponding rich block
 						currentStreamHandle.change((d: any) => {
 							if (d.richBlocks) {
@@ -1822,7 +1944,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 					}
 
 					// Self-check: after making changes, check pinned iframes for errors
-					let needsNextRound = toolCalls.length > 0
+					let needsNextRound = calls.length > 0
 					if (madeChanges) {
 						await new Promise(r => setTimeout(r, 2000))
 						resetInactivityTimer()
@@ -1885,7 +2007,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 					}
 
 					if (needsNextRound) {
-						if (toolCalls.length > 0) {
+						if (calls.length > 0) {
 							messages.push({role: "assistant", content: response})
 							messages.push({
 								role: "user",

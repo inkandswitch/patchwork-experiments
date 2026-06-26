@@ -6,7 +6,7 @@ importers:
   .:
     configDependencies:
       pnpm-plugin-patchwork:
-        specifier: latest
+        specifier: 0.4.0
         version: 0.4.0
 
 packages:
@@ -39,8 +39,8 @@ importers:
         specifier: ^2.5.1
         version: 2.5.3(@automerge/automerge@3.2.4)(solid-js@1.9.11)
       '@chee/patchwork-llm':
-        specifier: automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE
-        version: automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE@Qkyv3ykVyfdZHvWcNA7EZZnjypAERhsW1x7acSfpswHsG6nJo(@automerge/automerge-repo@2.5.3)
+        specifier: automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE#eZCZsHHNozEHijqpAVp91CVsEruykpwh7mvHkmC5bKQsJMHiV
+        version: automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE#eZCZsHHNozEHijqpAVp91CVsEruykpwh7mvHkmC5bKQsJMHiV@eZCZsHHNozEHijqpAVp91CVsEruykpwh7mvHkmC5bKQsJMHiV(@automerge/automerge-repo@2.5.3)
       '@inkandswitch/patchwork-elements':
         specifier: ^0.0.5
         version: 0.0.5
@@ -222,9 +222,11 @@ packages:
   '@chee/patchwork-bundles@0.0.1':
     resolution: {integrity: sha512-8bpY62m1uU5482nWez4hbhQnCFr0xQT+sR90tIXzWbzOioaD1S9fuPjJdLlDjYPtNxb9GEBcQb5u84BpltAWWQ==}
 
-  '@chee/patchwork-llm@automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE@Qkyv3ykVyfdZHvWcNA7EZZnjypAERhsW1x7acSfpswHsG6nJo':
-    resolution: {automergeUrl: automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE, type: custom:automerge}
+  '@chee/patchwork-llm@automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE#eZCZsHHNozEHijqpAVp91CVsEruykpwh7mvHkmC5bKQsJMHiV@eZCZsHHNozEHijqpAVp91CVsEruykpwh7mvHkmC5bKQsJMHiV':
+    resolution: {automergeUrl: automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE#eZCZsHHNozEHijqpAVp91CVsEruykpwh7mvHkmC5bKQsJMHiV, type: custom:automerge}
     version: 0.1.1
+    peerDependencies:
+      '@automerge/automerge-repo': ^2.5.6
 
   '@esbuild/aix-ppc64@0.21.5':
     resolution: {integrity: sha512-1SDgH6ZSPTlggy1yI6+Dbkiz8xzpHJEVAlF/AM1tHPLsf5STom9rwtjE4hKAF20FfXXNTFqEYXyJNWh1GiZedQ==}
@@ -1133,11 +1135,10 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@chee/patchwork-llm@automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE@Qkyv3ykVyfdZHvWcNA7EZZnjypAERhsW1x7acSfpswHsG6nJo(@automerge/automerge-repo@2.5.3)':
+  '@chee/patchwork-llm@automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE#eZCZsHHNozEHijqpAVp91CVsEruykpwh7mvHkmC5bKQsJMHiV@eZCZsHHNozEHijqpAVp91CVsEruykpwh7mvHkmC5bKQsJMHiV(@automerge/automerge-repo@2.5.3)':
     dependencies:
+      '@automerge/automerge-repo': 2.5.3
       '@inkandswitch/patchwork-providers': 0.2.2(@automerge/automerge-repo@2.5.3)
-    transitivePeerDependencies:
-      - '@automerge/automerge-repo'
 
   '@esbuild/aix-ppc64@0.21.5':
     optional: true

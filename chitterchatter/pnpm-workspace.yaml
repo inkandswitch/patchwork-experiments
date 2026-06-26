@@ -2,7 +2,7 @@ allowBuilds:
   cbor-extract: true
   esbuild: true
 configDependencies:
-  pnpm-plugin-patchwork: latest
+  pnpm-plugin-patchwork: 0.4.0
 minimumReleaseAgeExclude:
   - '@chee/patchwork-llm@0.1.0'
   - '@chee/patchwork-bundles@0.0.1'
