@@ -5,6 +5,7 @@
 	--studio-line: #e6edf3;
 	--studio-primary: #58a6ff;
 	--studio-secondary: #d2a8ff;
+	--studio-chrome: #161b22; /* canvas inset, like the sidebar */
 	--studio-danger: #f85149;
 	--studio-warning: #d29922;
 	--studio-added: #3fb950;

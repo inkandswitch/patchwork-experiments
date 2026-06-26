@@ -5,6 +5,7 @@
 	--studio-line: #000000;
 	--studio-primary: #0031a9;
 	--studio-secondary: #721045;
+	--studio-chrome: #f2f2f2; /* bg-dim, like the panels */
 	--studio-danger: #a60000;
 	--studio-warning: #6f5500;
 	--studio-added: #006800;
