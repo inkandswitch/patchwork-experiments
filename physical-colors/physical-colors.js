@@ -201,6 +201,7 @@ export function Tool(handle, element) {
   root.appendChild(svg);
 
   let tags = [];
+  let calibrated = false; // graded physical:apriltags → positions valid only when true
   let boxW = 100;
   let boxH = 100;
 
@@ -346,6 +347,14 @@ export function Tool(handle, element) {
     syncViewBox();
     svg.replaceChildren();
 
+    // physical:apriltags is graded: uncalibrated → presence-only tags (no
+    // nx/ny/corners). This tool is purely positional, so it draws nothing until
+    // the frame is calibrated. (cornerPx also guards, but this is explicit.)
+    if (!calibrated) {
+      drawField([]);
+      return;
+    }
+
     // Recognized tags only (those with a hardcoded color) + a usable quad.
     const colored = tags
       .map((tag) => ({ tag, rgb: rgbForTag(tag.id), corners: cornerPx(tag) }))
@@ -373,6 +382,7 @@ export function Tool(handle, element) {
     { type: "physical:apriltags" },
     (value) => {
       tags = (value && value.tags) || [];
+      calibrated = !!(value && value.calibrated);
       render();
     },
   );

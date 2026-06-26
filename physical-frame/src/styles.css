@@ -42,6 +42,14 @@
   z-index: 0;
 }
 
+/* Fullscreen control: "maximize" the stage to cover the whole viewport via fixed
+   positioning (no Fullscreen-API gesture required — driven by a control tag). */
+.sph-stage.sph-maximized {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
 .sph-board-box {
   position: absolute;
   box-sizing: border-box;
@@ -69,6 +77,63 @@
   inset: 0;
   width: 100%;
   height: 100%;
+}
+
+/* Main area: holds the embedded document tool. Fills the box; insets from the
+   left when the sidebar is open (the embedded view never remounts — only the
+   container resizes). z above the surface, below the outline + chrome. */
+.sph-main {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+.sph-main[data-sidebar] {
+  left: var(--sph-sidebar-w, 22%);
+}
+
+/* Left sidebar — appears while the left-sidebar control tag is present. */
+.sph-left-sidebar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--sph-sidebar-w, 22%);
+  z-index: 2;
+  box-sizing: border-box;
+  padding: 0.6rem;
+  background: var(--studio-fill, #fff);
+  color: var(--studio-line, #111);
+  border-right: 1px solid var(--studio-fill-offset-20, #ccc);
+  overflow: auto;
+  font-family: var(--studio-family-sans, system-ui, sans-serif);
+}
+.sph-sidebar-title {
+  font-weight: 700;
+  margin-bottom: 0.3rem;
+}
+.sph-sidebar-hint {
+  font-size: 0.8rem;
+  opacity: 0.65;
+}
+
+/* Setup overlay — appears while the setup control tag is toggled on. Covers the
+   box; Phase 4 will mount the calibration tool here instead of this placeholder. */
+.sph-setup-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  background: var(--studio-fill, #fff);
+  color: var(--studio-line, #111);
+  font-family: var(--studio-family-sans, system-ui, sans-serif);
+}
+.sph-setup-title {
+  font-weight: 700;
+  font-size: 1.4rem;
 }
 
 /* The embedded-tool subtree (outermost provider wrapper) is given its OWN

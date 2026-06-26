@@ -40,6 +40,7 @@ export function createApriltagReader(
   } | null = null;
   let status: ReaderStatus = "idle";
   let inFlight = false;
+  let calibrated = false; // last frame's calibration state (for publish)
   const liveTags = new Map<string, { tag: PhysicalTag; at: number }>();
 
   function setStatus(next: ReaderStatus, error?: string) {
@@ -86,6 +87,7 @@ export function createApriltagReader(
 
   function publish() {
     emitter.set({
+      calibrated,
       tags: [...liveTags.values()].map((e) => e.tag).sort((a, b) => a.id - b.id),
     });
   }
@@ -94,11 +96,23 @@ export function createApriltagReader(
     if (inFlight || !detector || status !== "ready") return;
     inFlight = true;
     const { gray, w, h, mapPointToBox, now } = cameraFrame;
+    const isCalibrated = cameraFrame.calibrated;
     void detector
       .detect(gray, w, h)
       .then((detections) => {
+        calibrated = isCalibrated;
         for (const det of detections || []) {
-          if (!det || det.center == null || det.id == null) continue;
+          if (!det || det.id == null) continue;
+
+          // UNCALIBRATED → presence only (id), no position. Lets frame controls
+          // work pre-calibration; positional tools guard on `calibrated`.
+          if (!isCalibrated) {
+            liveTags.set(String(det.id), { tag: { id: det.id }, at: now });
+            continue;
+          }
+
+          // CALIBRATED → map center + corners to box coords; cull off-board.
+          if (det.center == null) continue;
           const center = mapPointToBox(det.center);
           if (!center) continue;
           if (

@@ -4,6 +4,7 @@ import {
   For,
   onCleanup,
   onMount,
+  Show,
   type JSX,
 } from "solid-js";
 import type { DocHandle, Repo } from "@automerge/automerge-repo";
@@ -21,8 +22,20 @@ import { loadPhysicalLayerDescriptors } from "../registry";
 import type { PhysicalLayer, Reader } from "../physical-layer";
 import { createFrameLoop, type FrameLoop } from "../frame-loop";
 import type { Camera } from "../camera";
+import {
+  DEFAULT_CONTROLS,
+  createControlResolver,
+  reservedIds,
+  emptyControlState,
+  type ControlState,
+} from "../controls";
 
 const COORD_PROVIDER_ID = "physical-coordinate-system-provider";
+/** The apriltags layer selector the frame interposes on for controls. */
+const APRILTAGS_SELECTOR = "physical:apriltags";
+
+/** Minimal shape the frame reads from the apriltags payload (graded). */
+type ApriltagsValue = { calibrated?: boolean; tags?: { id: number }[] };
 
 /** How long after the last unsubscribe to keep a reader warm before stopping. */
 const READER_IDLE_STOP_MS = 5000;
@@ -67,6 +80,15 @@ export function UseStage(props: {
   // Discovered layers + their runtime; populated async at mount.
   const runtimes: LayerRuntime[] = [];
   const [layers, setLayers] = createSignal<PhysicalLayer[]>([]);
+
+  // ---- Physical controls (reserved AprilTags → frame UI) -------------------
+  // Phase 2: a single hardcoded control map. Phase 3 moves it into per-system
+  // frame config. Controls read tag PRESENCE (ids), so they work pre-calibration.
+  const controls = () => DEFAULT_CONTROLS;
+  const controlResolver = createControlResolver(controls);
+  const [controlState, setControlState] = createSignal<ControlState>(
+    emptyControlState(),
+  );
 
   const box = () => props.calDoc.cameraViewBox;
   const activeUrl = () =>
@@ -116,6 +138,76 @@ export function UseStage(props: {
     }, READER_IDLE_STOP_MS);
   }
 
+  // A generic (demand-driven) layer: reader writes straight to the registered
+  // Emitter; ensure/stop are driven by tool-subscription activity on it.
+  function setupGenericLayer(layer: PhysicalLayer) {
+    const emitter = new Emitter<unknown>(layer.initialResult());
+    const reader = layer.createReader(emitter);
+    const rt: LayerRuntime = {
+      layer,
+      emitter,
+      reader,
+      active: false,
+      ensuring: false,
+      stopTimer: null,
+    };
+    emitter.setActivityHooks({
+      onActive: () => onLayerActive(rt),
+      onIdle: () => onLayerIdle(rt),
+    });
+    registry.set(layer.selector, emitter);
+    runtimes.push(rt);
+  }
+
+  // The apriltags layer is special: the FRAME itself consumes it (for physical
+  // controls), so it runs ALWAYS (not demand-driven). The reader writes to a RAW
+  // Emitter; the frame taps raw to (a) resolve control state from reserved-tag
+  // presence and (b) republish a reserved-id-STRIPPED payload into the PUBLIC
+  // Emitter that tools subscribe to. Tools never see control tags.
+  function setupApriltagsLayer(layer: PhysicalLayer) {
+    const raw = new Emitter<unknown>(layer.initialResult());
+    const pub = new Emitter<unknown>(layer.initialResult());
+    const reader = layer.createReader(raw);
+    const rt: LayerRuntime = {
+      layer,
+      emitter: raw,
+      reader,
+      active: true, // always on — the frame depends on it for controls
+      ensuring: false,
+      stopTimer: null,
+    };
+
+    raw.subscribe((value) => {
+      const v = (value ?? {}) as ApriltagsValue;
+      const allTags = Array.isArray(v.tags) ? v.tags : [];
+      const reserved = reservedIds(controls());
+
+      // (a) controls: which reserved ids are present → resolve action state.
+      const presentReserved = new Set<string>();
+      for (const t of allTags) {
+        const idStr = String(t.id);
+        if (reserved.has(idStr)) presentReserved.add(idStr);
+      }
+      setControlState(controlResolver.resolve(presentReserved));
+
+      // (b) public payload: same shape, reserved control tags removed.
+      pub.set({
+        ...(v as object),
+        tags: allTags.filter((t) => !reserved.has(String(t.id))),
+      });
+    });
+
+    // Register the PUBLIC emitter under the selector (what tools relay from).
+    registry.set(layer.selector, pub);
+    runtimes.push(rt);
+    // Start the reader immediately (frame is a permanent consumer).
+    void reader
+      .ensure()
+      .catch((err) =>
+        console.error(`[physical-frame] apriltags ensure failed:`, err),
+      );
+  }
+
   // Keep the embedded view pointed at the active doc (remounts the inner tool).
   createEffect(() => {
     const url = activeUrl();
@@ -158,22 +250,11 @@ export function UseStage(props: {
     void loadPhysicalLayerDescriptors()
       .then((descriptors) => {
         for (const layer of descriptors) {
-          const emitter = new Emitter<unknown>(layer.initialResult());
-          const reader = layer.createReader(emitter);
-          const rt: LayerRuntime = {
-            layer,
-            emitter,
-            reader,
-            active: false,
-            ensuring: false,
-            stopTimer: null,
-          };
-          emitter.setActivityHooks({
-            onActive: () => onLayerActive(rt),
-            onIdle: () => onLayerIdle(rt),
-          });
-          registry.set(layer.selector, emitter);
-          runtimes.push(rt);
+          if (layer.selector === APRILTAGS_SELECTOR) {
+            setupApriltagsLayer(layer);
+          } else {
+            setupGenericLayer(layer);
+          }
         }
         setLayers(descriptors);
         // Re-stamp the registry on any provider wrappers that just rendered.
@@ -213,6 +294,23 @@ export function UseStage(props: {
   // Start the loop when the camera turns on.
   createEffect(() => {
     if (props.camera.active()) loop?.start();
+  });
+
+  // Fullscreen control: a tag in the camera feed is NOT a user gesture, so the
+  // Fullscreen API's requestFullscreen() is blocked by the browser. Instead we
+  // "maximize" the stage with fixed positioning over the whole viewport (a CSS
+  // class) — no permission needed, works from a tag, and for a projector that's
+  // the actual goal. (We still TRY real fullscreen best-effort; harmless if the
+  // browser ignores it, e.g. when a real user gesture happens to be active.)
+  createEffect(() => {
+    const want = controlState().fullscreen;
+    const stage = boxEl?.closest<HTMLElement>(".sph-stage");
+    stage?.classList.toggle("sph-maximized", want);
+    if (want && !document.fullscreenElement) {
+      void stage?.requestFullscreen?.().catch(() => {});
+    } else if (!want && document.fullscreenElement) {
+      void document.exitFullscreen?.().catch(() => {});
+    }
   });
 
   // Re-stamp whenever the set of layer wrappers changes (descriptors loaded).
@@ -264,8 +362,35 @@ export function UseStage(props: {
             background: `rgb(${surfaceLevel()}, ${surfaceLevel()}, ${surfaceLevel()})`,
           }}
         />
-        {/* Re-render wrappers when the discovered layer set changes. */}
-        <For each={[providerIds().join("|")]}>{() => wrapped()}</For>
+
+        {/* Left sidebar — shown while the left-sidebar control is active. The
+            main area insets to make room (the embedded view never remounts). */}
+        <Show when={controlState()["left-sidebar"]}>
+          <div class="sph-left-sidebar">
+            <div class="sph-sidebar-title">Documents</div>
+            <div class="sph-sidebar-hint">
+              (Phase 2 placeholder — doc picker comes later)
+            </div>
+          </div>
+        </Show>
+
+        {/* Main area holds the embedded document tool. Insets from the left when
+            the sidebar is open. Re-render wrappers when the layer set changes. */}
+        <div class="sph-main" data-sidebar={controlState()["left-sidebar"] ? "" : undefined}>
+          <For each={[providerIds().join("|")]}>{() => wrapped()}</For>
+        </div>
+
+        {/* Setup mode — shown while the setup control is active. Phase 4 mounts
+            the real calibration tool here; Phase 2 is a placeholder proving the
+            toggle drives it. */}
+        <Show when={controlState().setup}>
+          <div class="sph-setup-overlay">
+            <div class="sph-setup-title">Setup mode</div>
+            <div class="sph-sidebar-hint">
+              (Phase 4 mounts the calibration tool here)
+            </div>
+          </div>
+        </Show>
 
         {/* Always-visible outline of the active area (above the embedded view,
             non-interactive) so the user can see which region is live. */}

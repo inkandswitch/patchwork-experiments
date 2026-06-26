@@ -25,7 +25,7 @@ const apriltagsLayer: PhysicalLayer<PhysicalTags> = {
   selector: APRILTAGS_SELECTOR,
   providerComponentId: APRILTAGS_PROVIDER_ID,
   name: "AprilTags Physical Layer",
-  initialResult: () => ({ tags: [] }),
+  initialResult: () => ({ calibrated: false, tags: [] }),
   createReader: (emitter) => createApriltagReader(emitter),
 };
 

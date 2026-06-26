@@ -45,6 +45,12 @@ export interface CameraFrame {
    */
   backgroundGray: Uint8Array | null;
   /**
+   * Whether a calibration homography exists this frame. When false,
+   * `mapPointToBox` returns null for everything — a reader can still report
+   * detection PRESENCE (ids), just not position.
+   */
+  calibrated: boolean;
+  /**
    * Map a downscaled-image pixel to box-normalized [0..1] coordinates (board
    * space == the aligned box), or null if it can't be mapped. Built by the frame
    * from the current calibration homography.

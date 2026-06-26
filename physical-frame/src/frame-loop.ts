@@ -63,11 +63,16 @@ export function createFrameLoop(opts: FrameLoopOptions): FrameLoop {
   function tick(): void {
     if (inFlight) return;
     const docState = getDocState();
-    if (!docState || !docState.homographyCamToBoard) return;
     const liveSize = getLiveSize();
     if (!liveSize) return;
     const readers = getActiveReaders().filter((r) => r.status === "ready");
     if (readers.length === 0) return; // nothing subscribed → skip the grab
+
+    // Run readers even BEFORE calibration: without a homography, mapPointToBox
+    // returns null (no position), but a reader can still report detection
+    // PRESENCE (e.g. apriltags ids for frame controls). `calibrated` tells each
+    // reader which mode it's in.
+    const calibrated = !!docState?.homographyCamToBoard;
 
     inFlight = true;
     try {
@@ -80,6 +85,7 @@ export function createFrameLoop(opts: FrameLoopOptions): FrameLoop {
       // clear immediately instead of leaving a stuck recognition.
 
       const mapPointToBox = (px: FramePoint): [number, number] | null => {
+        if (!docState || !docState.homographyCamToBoard) return null;
         const cameraPoint: [number, number] = [px.x / scale, px.y / scale];
         return cameraPointToBoard(docState, cameraPoint, liveSize) as
           | [number, number]
@@ -97,6 +103,7 @@ export function createFrameLoop(opts: FrameLoopOptions): FrameLoop {
         h,
         scale,
         backgroundGray,
+        calibrated,
         mapPointToBox,
         now: nowMs(),
       };
