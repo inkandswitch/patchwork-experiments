@@ -433,26 +433,33 @@ Use these variables (with fallbacks) instead of hardcoded values:
 
 Every tool's CSS follows this structure:
 
-1. **Define local variables in `:root, :host, [theme]`** so they re-evaluate when a theme is
-   applied (the theme system sets a `[theme]` attribute on `<html>`):
+1. **Define local variables in a `@layer package` block targeting `:root, :host, [theme]`** so
+   they re-evaluate when a theme is applied (the theme system sets a `[theme]` attribute on
+   `<html>`) and sit at the right cascade priority (see "CSS cascade layers" below). The
+   `@layer package { … }` wrapper is **required** — do NOT define these variables in your
+   top-level/root rule or any other unlayered block:
 
 ```css
-:root,
-:host,
-[theme] {
-  --my-tool-bg: var(--editor-fill, white);
-  --my-tool-fg: var(--editor-line, black);
-  --my-tool-muted: var(--editor-line-offset-50, #999);
-  --my-tool-border: var(--editor-fill-offset-20, #ccc);
-  --my-tool-accent: var(--studio-primary, #35f7ca);
-  --my-tool-hover: color-mix(in oklch, var(--editor-fill), var(--editor-line) 5%);
-  --my-tool-family: var(--editor-family-sans, system-ui, sans-serif);
-  --my-tool-family-code: var(--editor-family-code, ui-monospace, monospace);
+@layer package {
+  :root,
+  :host,
+  [theme] {
+    --my-tool-bg: var(--editor-fill, white);
+    --my-tool-fg: var(--editor-line, black);
+    --my-tool-muted: var(--editor-line-offset-50, #999);
+    --my-tool-border: var(--editor-fill-offset-20, #ccc);
+    --my-tool-accent: var(--studio-primary, #35f7ca);
+    --my-tool-hover: color-mix(in oklch, var(--editor-fill), var(--editor-line) 5%);
+    --my-tool-family: var(--editor-family-sans, system-ui, sans-serif);
+    --my-tool-family-code: var(--editor-family-code, ui-monospace, monospace);
+  }
 }
 ```
 
 Note fill/line/typography derive from `--editor-*` (this is a tool), while the accent comes from
-`--studio-primary` (accents have no editor equivalent).
+`--studio-primary` (accents have no editor equivalent). The `@layer package` wrapper is the one
+place every host var your tool consumes is mapped to a `--my-tool-*` token; style rules below
+reference only those tokens.
 
 **Important:** Global `--editor-*` and `--studio-*` variables must NEVER be used directly in CSS
 rules. They should ONLY appear inside `:root, :host, [theme]` derivation blocks. The derived
@@ -641,6 +648,16 @@ tools.)
 
 - **No shadow DOM.** Tools render into the light DOM. Namespace CSS classes; don't rely on
   scoped styles. Bundle CSS into the JS (`vite-plugin-css-injected-by-js`).
+- **Scope all CSS under a root class.** Put a unique-enough class (the tool id is ideal,
+  e.g. `class="my-tool-id"`) on your root element, and nest every selector under it (e.g.
+  `.my-tool-id .message { ... }`). Otherwise your styles leak into the rest of Patchwork and
+  other tools' styles bleed into yours, since everything shares the light DOM.
+- **Size your outermost container; handle scrolling internally.** The host renders tools
+  with `layout: contain`, so your tool is a bounded box that won't grow the page or scroll
+  itself. Give the outermost container you mount `height: 100%`, then make whichever part
+  should scroll handle its own overflow (`overflow: auto`) — that may be the root, or just
+  an inner pane (e.g. a message list under a fixed header). Without this the tool clips or
+  overflows instead of scrolling within its pane.
 - **Never `stopPropagation()` on `click`.** Solid (and other frameworks) delegate `click` to
   `document`; stopping it kills their `onClick`. Only stop propagation on
   `pointerdown`/`pointerup` (what tldraw uses).
