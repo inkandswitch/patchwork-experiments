@@ -1,0 +1,16 @@
+{
+  "name": "@patchwork/physical-sand",
+  "version": "0.0.1",
+  "description": "Falling-sand tool for physical Patchwork: sand rains from the top and piles against detected mark drawings/objects",
+  "type": "module",
+  "main": "physical-sand.js",
+  "exports": {
+    ".": "physical-sand.js"
+  },
+  "scripts": {
+    "push": "pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  },
+  "keywords": [],
+  "author": "Ink & Switch"
+}

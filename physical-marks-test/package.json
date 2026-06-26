@@ -1,0 +1,16 @@
+{
+  "name": "@patchwork/physical-marks-test",
+  "version": "0.0.1",
+  "description": "Test tool for the physical patchwork 'marks' layer: places white borders around recognized marks",
+  "type": "module",
+  "main": "physical-marks-test.js",
+  "exports": {
+    ".": "physical-marks-test.js"
+  },
+  "scripts": {
+    "push": "pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  },
+  "keywords": [],
+  "author": "Ink & Switch"
+}
