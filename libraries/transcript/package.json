@@ -1,0 +1,44 @@
+{
+  "name": "@chee/patchwork-transcript",
+  "version": "0.1.0",
+  "description": "Speech-to-text toolkit for Patchwork tools: a worker-backed in-browser ASR provider (transformers.js — Moonshine/Whisper, WebGPU→WASM) and an OpenAI-compatible /audio/transcriptions provider, behind one account-doc config resolvable per DOM subtree.",
+  "type": "module",
+  "main": "index.js",
+  "types": "./types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./index.js"
+    },
+    "./worker.js": {
+      "types": "./types/worker.d.ts",
+      "default": "./worker.js"
+    }
+  },
+  "scripts": {
+    "build": "pnpm build:types",
+    "build:types": "tsc"
+  },
+  "files": [
+    "types",
+    "index.js",
+    "config.js",
+    "client.js",
+    "worker.js",
+    "doc.js",
+    "provider.js",
+    "README.md"
+  ],
+  "author": "chee",
+  "license": "MIT",
+  "dependencies": {
+    "@inkandswitch/patchwork-providers": "^0.2.2"
+  },
+  "devDependencies": {
+    "@automerge/automerge-repo": "^2.5.6",
+    "typescript": "^6.0.3"
+  },
+  "peerDependencies": {
+    "@automerge/automerge-repo": "^2.5.6"
+  }
+}

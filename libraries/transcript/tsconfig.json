@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "target": "esnext",
+    "lib": ["esnext", "dom", "dom.iterable", "webworker"],
+    "skipLibCheck": true,
+    "outDir": "types"
+  },
+  "include": [
+    "globals.d.ts",
+    "index.js",
+    "config.js",
+    "client.js",
+    "worker.js",
+    "doc.js",
+    "provider.js"
+  ]
+}
