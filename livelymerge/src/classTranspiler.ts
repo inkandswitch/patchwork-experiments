@@ -128,11 +128,11 @@ function parseClassBody(classBody: SyntaxNode, source: string): ClassMember[] {
     let isStatic = false;
     let accessor: 'method' | 'get' | 'set' = 'method';
     while (cursor) {
+      if (cursor.name === 'PropertyDefinition') break;
       const text = nodeText(cursor, source);
       if (text === 'static') isStatic = true;
       else if (text === 'get') accessor = 'get';
       else if (text === 'set') accessor = 'set';
-      else if (cursor.name === 'PropertyDefinition') break;
       cursor = cursor.nextSibling;
     }
 
