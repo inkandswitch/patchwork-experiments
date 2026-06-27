@@ -158,6 +158,9 @@ export const LivelymergeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
+    (window as any).canvas = canvas;
+    (window as any).ctx = canvas.getContext('2d');
+
     const syncCanvasSize = () => {
       const { width, height } = canvas.getBoundingClientRect();
       const w = Math.max(1, Math.floor(width));
@@ -175,6 +178,8 @@ export const LivelymergeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     return () => {
       ro.disconnect();
       window.removeEventListener('resize', syncCanvasSize);
+      delete (window as any).canvas;
+      delete (window as any).ctx;
     };
   }, []);
 

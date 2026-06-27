@@ -64,6 +64,50 @@ describe('transpile', () => {
   return x + 1;
 }`)).toBe(`$global.f = $fun("function f(x = g(5)) {\\n  return x + 1;\\n}", "() => function(x = $global.g(5)) {\\n  return x + 1;\\n}");`);
     });
+
+    it('leaves functions with a do-not-transpile marker untouched', () => {
+      expect(transpile(`{
+  let x = 5;
+  x++;
+  function f(a) {
+    // $$$ do not transpile $$$
+    return a + 1;
+  }
+  let y = f(x);
+  console.log(y);
+}`)).toBe(`{
+  let x = 5;
+  x++;
+  function f(a) {
+    // $$$ do not transpile $$$
+    return a + 1;
+  }
+  let y = f(x);
+  console.log(y);
+}`);
+    });
+
+    it('leaves arrow functions with a do-not-transpile marker untouched', () => {
+      expect(transpile(`const f = (a) => {
+  // $$$ do not transpile $$$
+  return [a, y];
+};`)).toBe(`$global.f = (a) => {
+  // $$$ do not transpile $$$
+  return [a, y];
+};`);
+    });
+
+    it('allows var inside do-not-transpile functions', () => {
+      expect(transpile(`function f() {
+  // $$$ do not transpile $$$
+  var x = 1;
+  return x;
+}`)).toBe(`function f() {
+  // $$$ do not transpile $$$
+  var x = 1;
+  return x;
+}`);
+    });
   });
 
   describe('scope objects', () => {

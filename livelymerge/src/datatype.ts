@@ -22,8 +22,34 @@ export const LivelymergeDatatype: DatatypeImplementation<LivelymergeDoc> = {
         $protoId: "object-prototype",
         $timeoutFns: { $type: "ref", $id: "timeout-fns" },
         $intervalFns: { $type: "ref", $id: "interval-fns" },
-        "@global": { $type: "ref", $id: "global" }
+        "@global": { $type: "ref", $id: "global" },
+        "@canvas": { $type: "ref", $id: "canvas" },
+        "@ctx": { $type: "ref", $id: "ctx" },
+        "@document": { $type: "ref", $id: "document" },
+        "@window": { $type: "ref", $id: "window" },
+
       }, // root object
+      // JS global objects (escape hatch!)
+      "canvas": {
+        $type: "obj",
+        $id: "canvas",
+        $jsGlobal: "canvas",
+      },
+      "ctx": {
+        $type: "obj",
+        $id: "ctx",
+        $jsGlobal: "ctx",
+      },
+      "document": {
+        $type: "obj",
+        $id: "document",
+        $jsGlobal: "document",
+      },
+      "window": {
+        $type: "obj",
+        $id: "window",
+        $jsGlobal: "window",
+      }, // the ultimate escape hatch!
       "timeout-fns": { $type: "obj", $id: "timeout-fns" },
       "interval-fns": { $type: "obj", $id: "interval-fns" },
     };

@@ -1,5 +1,11 @@
 import { transpile } from './transpiler';
 import { wrapForCompletionValue } from './completionValue';
+import {
+  getJsGlobalTarget,
+  isJsGlobalObj,
+  readJsGlobalProperty,
+  toJsValue,
+} from './jsGlobal';
 import { ensureObjectPrototypeDefaults } from './objectPrototypeDefaults';
 import {
   lmCallToString,
@@ -74,6 +80,16 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         $timeoutFns: { $type: 'ref', $id: 'timeout-fns' },
         $intervalFns: { $type: 'ref', $id: 'interval-fns' },
       };
+    }
+    for (const id of ['canvas', 'ctx', 'document'] as const) {
+      if (!doc.objectTable[id]) {
+        doc.objectTable[id] = { $type: 'obj', $id: id, $jsGlobal: id };
+      }
+      const globalObj = doc.objectTable['global'] as Obj;
+      const key = '@' + id;
+      if (!globalObj[key]) {
+        globalObj[key] = { $type: 'ref', $id: id };
+      }
     }
   }
 
@@ -269,6 +285,10 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       return p;
     }
 
+    if (isJsGlobalObj(obj)) {
+      return proxifyJsGlobalObj(obj);
+    }
+
     let _ref: Ref | null = null;
     const ref = () => {
       if (!_ref) {
@@ -307,6 +327,64 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         }
 
         return undefined;
+      },
+    }) as unknown as Proxy;
+
+    ensureProxies().set(obj.$id, p);
+    return p;
+  }
+
+  function proxifyJsGlobalObj(obj: Obj): Proxy {
+    let p = proxies?.get(obj.$id);
+    if (p) {
+      return p;
+    }
+
+    let _ref: Ref | null = null;
+    const ref = () => {
+      if (!_ref) {
+        _ref = { $type: 'ref', $id: obj.$id };
+      }
+      return _ref;
+    };
+
+    const jsTarget = () => {
+      const target = getJsGlobalTarget(liveHeapObj(obj));
+      return typeof target === 'object' && target !== null ? target : null;
+    };
+
+    p = new Proxy(Object.create(null), {
+      set(_, prop, value) {
+        if (lmIsReservedKey(prop)) return false;
+        const target = jsTarget();
+        if (!target) return false;
+        return Reflect.set(target, prop, toJsValue(value));
+      },
+      get(_, prop) {
+        const entry = liveHeapObj(obj);
+        switch (prop) {
+          case '$isProxy':
+            return true;
+          case '$id':
+            return entry.$id;
+          case '$toRef':
+            return ref();
+          case '$unwrapped':
+            return entry;
+          case '__proto__':
+            return null;
+        }
+
+        if (lmIsReservedKey(prop)) return undefined;
+
+        const target = jsTarget();
+        if (!target) return undefined;
+
+        if (prop === 'toString') {
+          return () => String(target);
+        }
+
+        return readJsGlobalProperty(target, prop);
       },
     }) as unknown as Proxy;
 
@@ -573,6 +651,16 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     if (isProxy(value)) {
       const unwrapped = value.$unwrapped;
       if (isObj(unwrapped)) {
+        if (isJsGlobalObj(unwrapped)) {
+          const target = getJsGlobalTarget(liveHeapObj(unwrapped));
+          if (target != null) {
+            try {
+              return String(target);
+            } catch {
+              return `[obj ${unwrapped.$id}]`;
+            }
+          }
+        }
         return lmCallToString(liveHeapObj(unwrapped), value, lookupHeapProto, deserialize);
       }
       return value.toString();
@@ -831,7 +919,13 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
 
   $Object.keys = function (obj: unknown) {
     const objUnwrapped = unwrapLmObj(obj);
-    if (objUnwrapped) return ownUserPropertyKeys(objUnwrapped);
+    if (objUnwrapped) {
+      if (isJsGlobalObj(objUnwrapped)) {
+        const target = getJsGlobalTarget(liveHeapObj(objUnwrapped));
+        return $arr(target && typeof target === 'object' ? Object.keys(target) : []);
+      }
+      return ownUserPropertyKeys(objUnwrapped);
+    }
     const arrUnwrapped = unwrapLmArr(obj);
     if (arrUnwrapped) return $arr(lmArrayIndexKeys(arrUnwrapped));
     return $arr(Object.keys(obj as object));
@@ -849,6 +943,10 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     const unwrapped = unwrapLmObj(obj);
     if (unwrapped) {
       if (typeof prop !== 'string') return false;
+      if (isJsGlobalObj(unwrapped)) {
+        const target = getJsGlobalTarget(liveHeapObj(unwrapped));
+        return target != null && typeof target === 'object' && Object.hasOwn(target, prop);
+      }
       return lmHasOwn(unwrapped, prop);
     }
     return Object.hasOwn(obj as object, prop);
@@ -856,7 +954,13 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
 
   $Object.getOwnPropertyNames = function (obj: unknown) {
     const objUnwrapped = unwrapLmObj(obj);
-    if (objUnwrapped) return ownUserPropertyKeys(objUnwrapped);
+    if (objUnwrapped) {
+      if (isJsGlobalObj(objUnwrapped)) {
+        const target = getJsGlobalTarget(liveHeapObj(objUnwrapped));
+        return $arr(target && typeof target === 'object' ? Object.getOwnPropertyNames(target) : []);
+      }
+      return ownUserPropertyKeys(objUnwrapped);
+    }
     const arrUnwrapped = unwrapLmArr(obj);
     if (arrUnwrapped) return $arr([...lmArrayIndexKeys(arrUnwrapped), 'length']);
     return $arr(Object.getOwnPropertyNames(obj as object));
@@ -864,7 +968,14 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
 
   $Object.getPrototypeOf = function (obj: unknown) {
     const unwrapped = unwrapLmObj(obj);
-    return unwrapped ? lmGetPrototypeOf(unwrapped) : Object.getPrototypeOf(obj as object);
+    if (unwrapped) {
+      if (isJsGlobalObj(unwrapped)) {
+        const target = getJsGlobalTarget(liveHeapObj(unwrapped));
+        return target != null && typeof target === 'object' ? Object.getPrototypeOf(target) : null;
+      }
+      return lmGetPrototypeOf(unwrapped);
+    }
+    return Object.getPrototypeOf(obj as object);
   };
 
   Object.defineProperty($Object, Symbol.hasInstance, {

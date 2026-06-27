@@ -8,6 +8,7 @@ export type Obj = {
   $type: 'obj';
   $id: string;
   $protoId?: string;
+  $jsGlobal?: string; // if set, this object is a stand-in for an object that's defined in the JS global scope (in which case $protoId is ignored)
 } & Record<string, any>;
 
 export interface Arr {

@@ -5,6 +5,8 @@ import { expandClasses } from './classTranspiler';
 const ARRAY_WRAP = 'ArrayExpression';
 const OBJECT_WRAP = 'ObjectExpression';
 const FUNCTION_NODES = new Set(['FunctionExpression', 'ArrowFunction']);
+const ALL_FUNCTION_NODES = new Set(['FunctionDeclaration', 'FunctionExpression', 'ArrowFunction']);
+const DO_NOT_TRANSPILE_COMMENT = '// $$$ do not transpile $$$';
 const INJECTED_NAMES = new Set([
   '$global',
   '$obj',
@@ -76,6 +78,30 @@ function nodeText(node: SyntaxNode, source: string): string {
   return source.slice(node.from, node.to);
 }
 
+function firstBlockStatement(block: SyntaxNode): SyntaxNode | null {
+  for (let child = block.firstChild; child; child = child.nextSibling) {
+    if (child.name === '{' || child.name === '}') continue;
+    return child;
+  }
+  return null;
+}
+
+function isDoNotTranspileFunction(funcNode: SyntaxNode, source: string): boolean {
+  if (!ALL_FUNCTION_NODES.has(funcNode.name)) return false;
+  const block = funcNode.getChild('Block');
+  if (!block) return false;
+  const first = firstBlockStatement(block);
+  if (!first || first.name !== 'LineComment') return false;
+  return nodeText(first, source).trim() === DO_NOT_TRANSPILE_COMMENT;
+}
+
+function isInsideDoNotTranspileFunction(ancestors: SyntaxNode[], source: string): boolean {
+  for (const node of ancestors) {
+    if (isDoNotTranspileFunction(node, source)) return true;
+  }
+  return false;
+}
+
 function collectPatternBindings(pattern: SyntaxNode, source: string, bindings: Set<string>): void {
   if (pattern.name === 'VariableDefinition') {
     bindings.add(nodeText(pattern, source));
@@ -114,15 +140,17 @@ function declarationKeyword(node: SyntaxNode, source: string): string | null {
   return null;
 }
 
-function rejectVarDeclarations(node: SyntaxNode, source: string): void {
+function rejectVarDeclarations(node: SyntaxNode, source: string, ancestors: SyntaxNode[] = []): void {
+  if (isInsideDoNotTranspileFunction(ancestors, source)) return;
   if (node.name === 'VariableDeclaration') {
     const keyword = declarationKeyword(node, source);
     if (keyword === 'var') {
       throw new Error("'var' is not allowed");
     }
   }
+  const nextAncestors = [...ancestors, node];
   for (let child = node.firstChild; child; child = child.nextSibling) {
-    rejectVarDeclarations(child, source);
+    rejectVarDeclarations(child, source, nextAncestors);
   }
 }
 
@@ -198,14 +226,19 @@ class ScopeBuilder {
 }
 
 function collectFunctions(node: SyntaxNode, source: string, out: FunctionTarget[]): void {
-  if (node.name === 'FunctionExpression' || node.name === 'ArrowFunction') {
-    out.push({ node, kind: 'expr' });
-  } else if (node.name === 'FunctionDeclaration') {
-    const nameNode = node.getChild('VariableDefinition');
-    if (nameNode) out.push({ node, kind: 'decl', declName: nodeText(nameNode, source) });
+  const skipBody = isDoNotTranspileFunction(node, source);
+
+  if (!skipBody) {
+    if (node.name === 'FunctionExpression' || node.name === 'ArrowFunction') {
+      out.push({ node, kind: 'expr' });
+    } else if (node.name === 'FunctionDeclaration') {
+      const nameNode = node.getChild('VariableDefinition');
+      if (nameNode) out.push({ node, kind: 'decl', declName: nodeText(nameNode, source) });
+    }
   }
 
   for (let child = node.firstChild; child; child = child.nextSibling) {
+    if (skipBody && child.name === 'Block') continue;
     collectFunctions(child, source, out);
   }
 }
@@ -224,6 +257,8 @@ function buildScopes(node: SyntaxNode, builder: ScopeBuilder, currentScope: Lexi
 }
 
 function buildScopesInBlock(node: SyntaxNode, builder: ScopeBuilder, currentScope: LexicalScope): void {
+  if (isDoNotTranspileFunction(node, builder.source)) return;
+
   if (node.name === 'Block') {
     buildScopes(node, builder, currentScope);
     return;
@@ -1099,7 +1134,7 @@ function walkForWorldRefs(
     const nameNode = node.getChild('VariableDefinition');
     if (nameNode) builder.addBinding(currentScope, nodeText(nameNode, builder.source), 'function');
     const block = node.getChild('Block');
-    if (block) {
+    if (block && !isDoNotTranspileFunction(node, builder.source)) {
       const innerFuncScope = ephemeralScope(currentScope);
       if (nameNode) builder.addBinding(innerFuncScope, nodeText(nameNode, builder.source), 'function');
       populateFunctionBindings(builder, innerFuncScope, node);
@@ -1241,6 +1276,8 @@ function isDirectObjOrArrCallArg(node: SyntaxNode, ancestors: SyntaxNode[], sour
 }
 
 function collectLiteralEdits(node: SyntaxNode, source: string, edits: Edit[], ancestors: SyntaxNode[]): void {
+  if (isInsideDoNotTranspileFunction(ancestors, source)) return;
+
   if (node.name === ARRAY_WRAP) {
     if (!isDirectObjOrArrCallArg(node, ancestors, source)) {
       edits.push({ kind: 'arr', from: node.from, to: node.to });
