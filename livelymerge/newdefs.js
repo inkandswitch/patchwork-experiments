@@ -256,7 +256,6 @@ Color.yellow = new Color(0.8, 0.8, 0);
 // Canvas viewport, initUI, pointer/keyboard entry, demo world bootstrap.
 
 function render() {
-  debugger;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   topLevelMorph.render(ctx);
 }
@@ -369,7 +368,128 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
     Lively.spiral.startStepping('animatedSpiral', { goDist: 2, turnAngle: 60, nSteps: 26 }, 50);
   }, 2000);
 }
-// (previous newdefsX initUI replaced by alldefs initUI below)
+
+// comment this out if you want to run in pyonpyon
+class Map {
+  entries = [];
+
+  set(key, value) {
+    for (const e of this.entries) {
+      if (e[0] === key) {
+        e[1] = value;
+        return;
+      }
+    }
+    this.entries.push([key, value]);
+  }
+
+  get(key) {
+    for (const [k, v] of this.entries) {
+      if (k === key) {
+        return v;
+      }
+    }
+    return undefined;
+  }
+
+  delete(key) {
+    for (let i = 0; i < this.entries.length; i++) {
+      if (this.entries[i][0] === key) {
+        this.entries.splice(i, 1);
+        return;
+      }
+    }
+  }
+
+  has(key) {
+    for (const [k, v] of this.entries) {
+      if (k === key) {
+        return true;
+      }
+    }
+  }
+
+  clear() {
+    clearArray(this.entries);
+  }
+
+  forEach(callback) {
+    for (const [k, v] of this.entries) {
+      callback(v, k, this);
+    }
+  }
+
+  size() {
+    return this.entries.length;
+  }
+
+  keys() {
+    return this.entries.map(([k, v]) => k);
+  }
+
+  values() {
+    return this.entries.map(([k, v]) => v);
+  }
+}
+
+// comment this out if you want to run in pyonpyon
+class Set {
+  entries = [];
+
+  add(value) {
+    for (const [k, v] of this.entries) {
+      if (v === value) {
+        return;
+      }
+    }
+  }
+
+  delete(value) {
+    for (let i = 0; i < this.entries.length; i++) {
+      if (this.entries[i][1] === value) {
+        this.entries.splice(i, 1);
+        return;
+      }
+    }
+  }
+
+  has(value) {
+    for (const [k, v] of this.entries) {
+      if (v === value) {
+        return true;
+      }
+    }
+  }
+
+  clear() {
+    this.entries = [];
+  }
+
+  forEach(callback) {
+    for (const [k, v] of this.entries) {
+      callback(v, k, this);
+    }
+  }
+
+  size() {
+    return this.entries.length;
+  }
+
+  keys() {
+    return this.entries.map(([k, v]) => k);
+  }
+
+  values() {
+    return this.entries.map(([k, v]) => v);
+  }
+}
+
+window.gcRoot = { eventListeners: [] };
+function addEventListener(source, type, listener) {
+  // prevents GC from collecting the listener
+  window.gcRoot.eventListeners.push(listener);
+  source.addEventListener(type, listener);
+}
 function initUI() {
   /** After this many ms with the pointer still down, the original pointerdown gets `longClick === true`. */
   window.LONG_CLICK_MS = 700;
@@ -378,21 +498,21 @@ function initUI() {
   /** When true, a completed long-click runs halo cycling like meta-click (see {@link WorldMorph.longClickHaloDefersAt}). Default false; toggled from world menu "Long click for halos". */
   window.longClickForHalos = false;
   /** pointerId → { timer, downEvt, pressPt, startPt } */
-  window._longClickByPointerId = new window.Map();
-  window._longClickDisarmPointer = function (pointerId) {
-    let arm = window._longClickByPointerId.get(pointerId);
+  window.gcRoot._longClickByPointerId = new Map();
+  window.gcRoot._longClickDisarmPointer = function (pointerId) {
+    let arm = window.gcRoot._longClickByPointerId.get(pointerId);
     if (!arm) return;
     if (arm.timer) clearTimeout(arm.timer);
-    window._longClickByPointerId.delete(pointerId);
+    window.gcRoot._longClickByPointerId.delete(pointerId);
   };
-  window._longClickArmIfNeeded = function (pressPt, downEvt) {
+  window.gcRoot._longClickArmIfNeeded = function (pressPt, downEvt) {
     if (!downEvt || typeof downEvt.pointerId !== 'number') return;
     if (typeof downEvt.button === 'number' && downEvt.button !== 0) return;
-    window._longClickDisarmPointer(downEvt.pointerId);
+    window.gcRoot._longClickDisarmPointer(downEvt.pointerId);
     let pid = downEvt.pointerId;
     let ms = window.LONG_CLICK_MS != null ? window.LONG_CLICK_MS : 1000;
-    let timer = window.setTimeout(function () {
-      let arm = window._longClickByPointerId.get(pid);
+    let timer = setTimeout(function () {
+      let arm = window.gcRoot._longClickByPointerId.get(pid);
       if (!arm) return;
       try {
         arm.downEvt.longClick = true;
@@ -402,7 +522,7 @@ function initUI() {
       if (window.longClickForHalos !== false && topLevelMorph && topLevelMorph.onLongClickHalo)
         topLevelMorph.onLongClickHalo(arm.pressPt, arm.downEvt);
     }, ms);
-    window._longClickByPointerId.set(pid, {
+    window.gcRoot._longClickByPointerId.set(pid, {
       timer,
       downEvt,
       pressPt: pt(pressPt.x, pressPt.y),
@@ -424,27 +544,24 @@ function initUI() {
   let canvasEvents = [];
 
   canvas.style.touchAction = 'none';
-  canvas.addEventListener('pointerdown', (e) => canvasEvents.push(e));
-  canvas.addEventListener('pointerup', (e) => canvasEvents.push(e));
-  canvas.addEventListener('pointermove', (e) => canvasEvents.push(e));
-  canvas.addEventListener('pointercancel', (ev) => {
-    if (ev && ev.pointerId != null) window._longClickDisarmPointer(ev.pointerId);
+  addEventListener(canvas, 'pointerdown', (e) => canvasEvents.push(e));
+  addEventListener(canvas, 'pointerup', (e) => canvasEvents.push(e));
+  addEventListener(canvas, 'pointermove', (e) => canvasEvents.push(e));
+  addEventListener(canvas, 'pointercancel', (ev) => {
+    if (ev && ev.pointerId != null) window.gcRoot._longClickDisarmPointer(ev.pointerId);
   });
   canvas.tabIndex = 1;
-  canvas.addEventListener('keydown', (e) => canvasEvents.push(e));
-  canvas.addEventListener('keypress', (e) => canvasEvents.push(e));
-  canvas.addEventListener('keyup', (e) => canvasEvents.push(e));
+  addEventListener(canvas, 'keydown', (e) => canvasEvents.push(e));
+  addEventListener(canvas, 'keypress', (e) => canvasEvents.push(e));
+  addEventListener(canvas, 'keyup', (e) => canvasEvents.push(e));
 
   function onFrame() {
     try {
       window.runtime.change(() => {
-        if (window._frameTestError) {
-          let msg = window._frameTestError;
-          window._frameTestError = null;
-          throw new Error(msg);
-        }
         processEvents();
-        if (render) render();
+        if (render) {
+          render();
+        }
         window._uiRafId = window.requestAnimationFrame(onFrame);
       });
     } catch (e) {
@@ -457,7 +574,7 @@ function initUI() {
   window._uiRafId = window.requestAnimationFrame(onFrame);
 
   function processEvents() {
-    const seen = new window.Set();
+    const seen = new Set();
     for (const e of canvasEvents) {
       if (seen.has(e)) continue;
       seen.add(e);
@@ -550,7 +667,7 @@ function onPointerDownNow(p, e) {
 function onPointerMove(p, e) {
   if (e && e.actorID == null) e.actorID = window.actorID;
   if (e && typeof e.pointerId === 'number') {
-    let arm = window._longClickByPointerId.get(e.pointerId);
+    let arm = window.gcRoot._longClickByPointerId.get(e.pointerId);
     if (arm) {
       let lim = window.LONG_CLICK_MOVE_CANCEL_PX != null ? window.LONG_CLICK_MOVE_CANCEL_PX : 18;
       if (p.dist(arm.startPt) > lim) window._longClickDisarmPointer(e.pointerId);
@@ -5344,7 +5461,7 @@ class PanelMorph extends Morph {
     return this.titleBar ? this.titleBar.collapsedTitleBarWidth() : this.titleButtonWidth + 24;
   }
   contentMorphs() {
-    return this.submorphs.filter((m) => m !== this.titleBar);
+    return deleteFromArray(this.submorphs, this.titleBar);
   }
   defaultRect() {
     return rect(400, 60, 400, 300);
@@ -8542,10 +8659,6 @@ function evaluateWithErrorRecovery(fn, contextIfAny) {
 function triggerTestError(messageIfAny) {
   throw new Error(messageIfAny != null ? String(messageIfAny) : 'intentional test error');
 }
-function scheduleFrameTestError(messageIfAny) {
-  window._frameTestError =
-    messageIfAny != null ? String(messageIfAny) : 'scheduled animation-frame error';
-}
 // +---------------------------------------+
 // |  Sundry Global — Storage and History  |
 // +---------------------------------------+
@@ -8597,8 +8710,8 @@ function timeSheet() {
   //  and finally methods worked on
   let report = '';
   let date = '';
+  // TODO: startMS is not initialized -- looks like a bug to me!
   let startMS;
-  let timeMS;
   let hours = 0;
   let methods = new Set();
   recentChanges.forEach((tuple) => {
