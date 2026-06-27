@@ -102,6 +102,23 @@ $global.f(5)`);
 }`)).toBe(`$global.outer = $fun("function outer() {\\n  function inner(n) {\\n    return n <= 1 ? 1 : inner(n - 1) * n;\\n  }\\n  return inner(5);\\n}", "() => function() {\\n  const inner = $fun(\\"function inner(n) {\\\\n    return n <= 1 ? 1 : inner(n - 1) * n;\\\\n  }\\", \\"() => function(n) {\\\\n    return n <= 1 ? 1 : inner(n - 1) * n;\\\\n  }\\");\\n  return inner(5);\\n}");`);
     });
 
+    it('threads scope objects through intermediate nested functions', () => {
+      expect(transpile(`function f() {
+  let x = 5;
+  function g() {
+    function h() {
+      return x * 2;
+    }
+    return h();
+  }
+  return g();
+}
+
+f()`)).toBe(`$global.f = $fun("function f() {\\n  let x = 5;\\n  function g() {\\n    function h() {\\n      return x * 2;\\n    }\\n    return h();\\n  }\\n  return g();\\n}", "() => function() {\\n  const $scope6 = $obj({});\\n  $scope6.x = 5;\\n  const g = $fun(\\"function g() {\\\\n    function h() {\\\\n      return x * 2;\\\\n    }\\\\n    return h();\\\\n  }\\", \\"($scope6) => function() {\\\\n    const h = $fun(\\\\\\"function h() {\\\\\\\\n      return x * 2;\\\\\\\\n    }\\\\\\", \\\\\\"($scope6) => function() {\\\\\\\\n      return $scope6.x * 2;\\\\\\\\n    }\\\\\\", [$scope6]);\\\\n    return h();\\\\n  }\\", [$scope6]);\\n  return g();\\n}");
+
+$global.f()`);
+    });
+
     it('leaves functions with a do-not-transpile marker untouched', () => {
       expect(transpile(`{
   let x = 5;

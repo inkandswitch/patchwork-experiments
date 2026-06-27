@@ -793,12 +793,50 @@ function walkFreeVarNode(
   }
 }
 
-function scopesForFunction(freeVarUses: FreeVarUse[], funcNode: SyntaxNode): LexicalScope[] {
+function functionBlockNode(funcNode: SyntaxNode): SyntaxNode | null {
+  return funcNode.getChild('Block');
+}
+
+function nodeContains(outer: SyntaxNode, inner: SyntaxNode): boolean {
+  return inner.from >= outer.from && inner.to <= outer.to;
+}
+
+function scopeIsCreatedInFunction(scope: LexicalScope, funcNode: SyntaxNode): boolean {
+  const block = functionBlockNode(funcNode);
+  if (!block || !scope.blockNode) return false;
+  return nodeContains(block, scope.blockNode);
+}
+
+function functionDirectlyContainsFunction(outer: SyntaxNode, inner: SyntaxNode): boolean {
+  if (outer.from === inner.from && outer.to === inner.to) return false;
+  const block = functionBlockNode(outer);
+  if (block) return nodeContains(block, inner);
+  return nodeContains(outer, inner);
+}
+
+function directScopesForFunction(freeVarUses: FreeVarUse[], funcNode: SyntaxNode): Set<LexicalScope> {
   const scopeSet = new Set<LexicalScope>();
   for (const use of freeVarUses) {
     if (use.funcNode.from !== funcNode.from || use.funcNode.to !== funcNode.to) continue;
     if (use.scope.needsObject()) scopeSet.add(use.scope);
   }
+  return scopeSet;
+}
+
+function scopesForFunction(
+  freeVarUses: FreeVarUse[],
+  funcNode: SyntaxNode,
+  allFunctions: FunctionTarget[],
+): LexicalScope[] {
+  const scopeSet = directScopesForFunction(freeVarUses, funcNode);
+
+  for (const target of allFunctions) {
+    if (!functionDirectlyContainsFunction(funcNode, target.node)) continue;
+    for (const scope of scopesForFunction(freeVarUses, target.node, allFunctions)) {
+      if (!scopeIsCreatedInFunction(scope, funcNode)) scopeSet.add(scope);
+    }
+  }
+
   return [...scopeSet].sort((a, b) => a.id - b.id);
 }
 
@@ -1415,7 +1453,7 @@ function collectScopeEdits(builder: ScopeBuilder, freeVarUses: FreeVarUse[], edi
 
 function collectFunctionEdits(functions: FunctionTarget[], freeVarUses: FreeVarUse[], edits: Edit[]): void {
   for (const target of functions) {
-    const scopes = scopesForFunction(freeVarUses, target.node);
+    const scopes = scopesForFunction(freeVarUses, target.node, functions);
     if (target.kind === 'decl') {
       edits.push({
         kind: 'funcDecl',
