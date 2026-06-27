@@ -179,6 +179,28 @@ function isAncestorScope(ancestor: LexicalScope, scope: LexicalScope): boolean {
   return false;
 }
 
+function functionDeclaredName(funcNode: SyntaxNode, source: string): string | null {
+  const nameNode = funcNode.getChild('VariableDefinition');
+  return nameNode ? nodeText(nameNode, source) : null;
+}
+
+function isGlobalFunctionSelfRef(
+  name: string,
+  binding: Binding,
+  funcNode: SyntaxNode,
+  funcScope: LexicalScope,
+  enclosingScope: LexicalScope,
+  source: string,
+): boolean {
+  return (
+    funcNode.name === 'FunctionDeclaration' &&
+    isRootScope(enclosingScope) &&
+    binding.kind === 'function' &&
+    binding.scope === funcScope &&
+    functionDeclaredName(funcNode, source) === name
+  );
+}
+
 function findEnclosingScopeForFunction(
   builder: ScopeBuilder,
   funcNode: SyntaxNode,
@@ -472,17 +494,17 @@ function analyzeFreeVarsForFunction(
   const funcScope = buildFunctionScope(builder, funcNode, enclosingScope);
   const funcBodyScope = funcScope;
 
-  walkParamDefaults(builder, funcNode.getChild('ParamList'), funcNode, funcScope, funcScope, freeVarUses);
+  walkParamDefaults(builder, funcNode.getChild('ParamList'), funcNode, funcScope, funcScope, enclosingScope, freeVarUses);
 
   if (funcNode.name === 'ArrowFunction') {
     const block = funcNode.getChild('Block');
     if (block) {
       const bodyScope = builder.createScope(funcScope, block);
-      walkFunctionBody(builder, block, funcNode, bodyScope, funcScope, freeVarUses);
+      walkFunctionBody(builder, block, funcNode, bodyScope, funcScope, enclosingScope, freeVarUses);
     } else {
       let body: SyntaxNode | null = funcNode.getChild('Arrow')?.nextSibling ?? null;
       while (body && (body.name === 'TypeAnnotation' || body.name === '⚠')) body = body.nextSibling;
-      if (body) walkFreeVarNode(builder, body, funcNode, funcBodyScope, funcScope, freeVarUses, []);
+      if (body) walkFreeVarNode(builder, body, funcNode, funcBodyScope, funcScope, enclosingScope, freeVarUses, []);
     }
     return;
   }
@@ -490,7 +512,7 @@ function analyzeFreeVarsForFunction(
   const block = funcNode.getChild('Block');
   if (block) {
     const bodyScope = builder.createScope(funcScope, block);
-    walkFunctionBody(builder, block, funcNode, bodyScope, funcScope, freeVarUses);
+    walkFunctionBody(builder, block, funcNode, bodyScope, funcScope, enclosingScope, freeVarUses);
   }
 }
 
@@ -500,6 +522,7 @@ function walkParamDefaults(
   funcNode: SyntaxNode,
   currentScope: LexicalScope,
   funcScope: LexicalScope,
+  enclosingScope: LexicalScope,
   freeVarUses: FreeVarUse[],
 ): void {
   if (!paramList) return;
@@ -510,7 +533,7 @@ function walkParamDefaults(
       if (part.name !== 'Equals') continue;
       for (let init = part.nextSibling; init; init = init.nextSibling) {
         if (init.name === ',' || init.name === ')') break;
-        walkFreeVarNode(builder, init, funcNode, currentScope, funcScope, freeVarUses, [paramList]);
+        walkFreeVarNode(builder, init, funcNode, currentScope, funcScope, enclosingScope, freeVarUses, [paramList]);
       }
     }
     currentParam = [];
@@ -530,11 +553,12 @@ function walkFunctionBody(
   funcNode: SyntaxNode,
   currentScope: LexicalScope,
   funcScope: LexicalScope,
+  enclosingScope: LexicalScope,
   freeVarUses: FreeVarUse[],
 ): void {
   for (let child = block.firstChild; child; child = child.nextSibling) {
     if (child.name === '{' || child.name === '}') continue;
-    walkFunctionBodyNode(builder, child, funcNode, currentScope, funcScope, freeVarUses);
+    walkFunctionBodyNode(builder, child, funcNode, currentScope, funcScope, enclosingScope, freeVarUses);
   }
 }
 
@@ -544,26 +568,29 @@ function walkFunctionBodyNode(
   funcNode: SyntaxNode,
   currentScope: LexicalScope,
   funcScope: LexicalScope,
+  enclosingScope: LexicalScope,
   freeVarUses: FreeVarUse[],
 ): void {
   if (node !== funcNode && FUNCTION_NODES.has(node.name)) return;
 
   if (node.name === 'Block') {
     const innerScope = builder.createScope(funcScope, node);
-    walkFunctionBody(builder, node, funcNode, innerScope, funcScope, freeVarUses);
+    walkFunctionBody(builder, node, funcNode, innerScope, funcScope, enclosingScope, freeVarUses);
     return;
   }
 
   if (node.name === 'VariableDeclaration') {
-    walkDeclarationForFreeVars(builder, node, funcNode, currentScope, funcScope, freeVarUses);
+    walkDeclarationForFreeVars(builder, node, funcNode, currentScope, funcScope, enclosingScope, freeVarUses);
     return;
   }
 
   if (node.name === 'FunctionDeclaration') {
     const nameNode = node.getChild('VariableDefinition');
     if (nameNode) builder.addBinding(funcScope, nodeText(nameNode, builder.source), 'function');
-    const block = node.getChild('Block');
-    if (block) walkFunctionBody(builder, block, funcNode, currentScope, funcScope, freeVarUses);
+    if (node === funcNode) {
+      const block = node.getChild('Block');
+      if (block) walkFunctionBody(builder, block, funcNode, currentScope, funcScope, enclosingScope, freeVarUses);
+    }
     return;
   }
 
@@ -573,11 +600,11 @@ function walkFunctionBodyNode(
     if (spec) {
       registerForSpec(spec, builder, loopScope);
       forEachForSpecExpression(spec, (expr) =>
-        walkFreeVarNode(builder, expr, funcNode, currentScope, funcScope, freeVarUses, []),
+        walkFreeVarNode(builder, expr, funcNode, currentScope, funcScope, enclosingScope, freeVarUses, []),
       );
     }
     const block = node.getChild('Block');
-    if (block) walkFunctionBody(builder, block, funcNode, loopScope, funcScope, freeVarUses);
+    if (block) walkFunctionBody(builder, block, funcNode, loopScope, funcScope, enclosingScope, freeVarUses);
     return;
   }
 
@@ -588,13 +615,13 @@ function walkFunctionBodyNode(
       else if (child.name === 'ObjectPattern' || child.name === 'ArrayPattern') {
         addPatternBindings(child, builder, catchScope, 'block');
       } else if (child.name === 'Block') {
-        walkFunctionBody(builder, child, funcNode, catchScope, funcScope, freeVarUses);
+        walkFunctionBody(builder, child, funcNode, catchScope, funcScope, enclosingScope, freeVarUses);
       }
     }
     return;
   }
 
-  walkFreeVarNode(builder, node, funcNode, currentScope, funcScope, freeVarUses, []);
+  walkFreeVarNode(builder, node, funcNode, currentScope, funcScope, enclosingScope, freeVarUses, []);
 }
 
 function walkDeclarationForFreeVars(
@@ -603,6 +630,7 @@ function walkDeclarationForFreeVars(
   funcNode: SyntaxNode,
   currentScope: LexicalScope,
   funcScope: LexicalScope,
+  enclosingScope: LexicalScope,
   freeVarUses: FreeVarUse[],
 ): void {
   const keyword = declarationKeyword(node, builder.source);
@@ -626,7 +654,7 @@ function walkDeclarationForFreeVars(
     } else if (child.name === 'Equals') {
       for (let init = child.nextSibling; init; init = init.nextSibling) {
         if (init.name === ';' || init.name === ',') break;
-        walkFreeVarNode(builder, init, funcNode, currentScope, funcScope, freeVarUses, [node]);
+        walkFreeVarNode(builder, init, funcNode, currentScope, funcScope, enclosingScope, freeVarUses, [node]);
       }
     } else if (child.name === ',' || child.name === ';') {
       commit();
@@ -686,6 +714,7 @@ function walkFreeVarNode(
   funcNode: SyntaxNode,
   currentScope: LexicalScope,
   funcScope: LexicalScope,
+  enclosingScope: LexicalScope,
   freeVarUses: FreeVarUse[],
   ancestors: SyntaxNode[],
 ): void {
@@ -694,8 +723,28 @@ function walkFreeVarNode(
   if (node.name === 'VariableName') {
     const name = nodeText(node, builder.source);
     const binding = builder.resolve(name, currentScope);
+    if (
+      binding &&
+      isGlobalFunctionSelfRef(name, binding, funcNode, funcScope, enclosingScope, builder.source)
+    ) {
+      freeVarUses.push({
+        name,
+        scope: binding.scope,
+        from: node.from,
+        to: node.to,
+        funcNode,
+        world: true,
+      });
+      return;
+    }
     if (binding && (binding.scope === funcScope || isAncestorScope(funcScope, binding.scope))) return;
-    if (binding?.kind === 'param' || binding?.kind === 'function') return;
+    if (binding?.kind === 'param') return;
+    if (
+      binding?.kind === 'function' &&
+      (binding.scope === funcScope || isAncestorScope(funcScope, binding.scope))
+    ) {
+      return;
+    }
     if (isClosedOverByEnclosingFunction(name, node, funcNode, builder.source)) return;
 
     if (binding?.kind === 'block' && !isRootScope(binding.scope)) {
@@ -718,28 +767,29 @@ function walkFreeVarNode(
 
   if (node.name === 'Block') {
     const innerScope = builder.createScope(funcScope, node);
-    walkFunctionBody(builder, node, funcNode, innerScope, funcScope, freeVarUses);
+    walkFunctionBody(builder, node, funcNode, innerScope, funcScope, enclosingScope, freeVarUses);
     return;
   }
 
   if (node.name === 'VariableDeclaration') {
-    walkDeclarationForFreeVars(builder, node, funcNode, currentScope, funcScope, freeVarUses);
+    walkDeclarationForFreeVars(builder, node, funcNode, currentScope, funcScope, enclosingScope, freeVarUses);
     return;
   }
 
   if (node.name === 'FunctionDeclaration') {
-    walkFunctionBodyNode(builder, node, funcNode, currentScope, funcScope, freeVarUses);
+    const nameNode = node.getChild('VariableDefinition');
+    if (nameNode) builder.addBinding(funcScope, nodeText(nameNode, builder.source), 'function');
     return;
   }
 
   if (node.name === 'ForStatement' || node.name === 'CatchClause') {
-    walkFunctionBodyNode(builder, node, funcNode, currentScope, funcScope, freeVarUses);
+    walkFunctionBodyNode(builder, node, funcNode, currentScope, funcScope, enclosingScope, freeVarUses);
     return;
   }
 
   const nextAncestors = [...ancestors, node];
   for (let child = node.firstChild; child; child = child.nextSibling) {
-    walkFreeVarNode(builder, child, funcNode, currentScope, funcScope, freeVarUses, nextAncestors);
+    walkFreeVarNode(builder, child, funcNode, currentScope, funcScope, enclosingScope, freeVarUses, nextAncestors);
   }
 }
 

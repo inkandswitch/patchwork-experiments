@@ -65,6 +65,43 @@ describe('transpile', () => {
 }`)).toBe(`$global.f = $fun("function f(x = g(5)) {\\n  return x + 1;\\n}", "() => function(x = $global.g(5)) {\\n  return x + 1;\\n}");`);
     });
 
+    it('rewrites top-level function references used as arguments to $global', () => {
+      expect(transpile(`function f() { return 5; }
+
+function g() {
+  console.log(f);
+}
+
+g();`)).toBe(`$global.f = $fun("function f() { return 5; }", "() => function() { return 5; }");
+
+$global.g = $fun("function g() {\\n  console.log(f);\\n}", "() => function() {\\n  console.log($global.f);\\n}");
+
+$global.g();`);
+    });
+
+    it('rewrites recursive calls in top-level function declarations to $global', () => {
+      expect(transpile(`function f(x) {
+  if (x === 0) {
+    return 1;
+  } else {
+    return f(x - 1) * x;
+  }
+}
+
+f(5)`)).toBe(`$global.f = $fun("function f(x) {\\n  if (x === 0) {\\n    return 1;\\n  } else {\\n    return f(x - 1) * x;\\n  }\\n}", "() => function(x) {\\n  if (x === 0) {\\n    return 1;\\n  } else {\\n    return $global.f(x - 1) * x;\\n  }\\n}");
+
+$global.f(5)`);
+    });
+
+    it('leaves recursive calls in nested function declarations bare', () => {
+      expect(transpile(`function outer() {
+  function inner(n) {
+    return n <= 1 ? 1 : inner(n - 1) * n;
+  }
+  return inner(5);
+}`)).toBe(`$global.outer = $fun("function outer() {\\n  function inner(n) {\\n    return n <= 1 ? 1 : inner(n - 1) * n;\\n  }\\n  return inner(5);\\n}", "() => function() {\\n  const inner = $fun(\\"function inner(n) {\\\\n    return n <= 1 ? 1 : inner(n - 1) * n;\\\\n  }\\", \\"() => function(n) {\\\\n    return n <= 1 ? 1 : inner(n - 1) * n;\\\\n  }\\");\\n  return inner(5);\\n}");`);
+    });
+
     it('leaves functions with a do-not-transpile marker untouched', () => {
       expect(transpile(`{
   let x = 5;
