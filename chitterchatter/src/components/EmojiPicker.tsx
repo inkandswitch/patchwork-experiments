@@ -1,5 +1,6 @@
 import {createSignal, For, Show, createMemo} from "solid-js"
 import {useChat} from "../context/ChatContext"
+import {getRepo} from "../lib/repo"
 import {useIdentity} from "../context/IdentityContext"
 import {usePresence} from "../context/PresenceContext"
 import {automergeUrlToServiceWorkerUrl} from "@inkandswitch/patchwork-filesystem"
@@ -90,7 +91,7 @@ export function EmojiPicker(props: {
 
 		if (entry.ref && entry.url) {
 			try {
-				const repo = (window as any).repo
+				const repo = getRepo()
 				if (!repo) return
 				const mh = await repo.find(entry.url)
 				mh.change((md: any) => {

@@ -1,6 +1,7 @@
 import {createSignal, createEffect, createMemo, For, Show, onMount, onCleanup} from "solid-js"
 import {useChat} from "../context/ChatContext"
 import {SVG_ICONS} from "../lib/svg-icons"
+import {getActiveDraftUrl, buildPreviewSrc, buildPreviewSrcdoc, reloadPreviewIframe} from "../lib/preview-frame"
 
 function hasPatchworkDrop(dt: DataTransfer | null): boolean {
 	return !!dt?.types?.includes("text/x-patchwork-dnd") ||
@@ -37,7 +38,7 @@ export function Sidebar(props: {
 	let sidebarRef!: HTMLDivElement
 	let resizeRef!: HTMLDivElement
 	let pinnedRef!: HTMLDivElement
-	const {handle, doc} = useChat()
+	const {handle, doc, element} = useChat()
 	const [collapsed, setCollapsed] = createSignal(false)
 	const [dropTarget, setDropTarget] = createSignal(false)
 	const [pinVersion, setPinVersion] = createSignal(0)
@@ -85,15 +86,6 @@ export function Sidebar(props: {
 		})
 	}
 
-	function buildIframeSrc(dl: any): string {
-		const params = new URLSearchParams()
-		params.set("doc", docIdFromUrl(dl.url))
-		if (dl.name) params.set("title", dl.name)
-		if (dl.type) params.set("type", dl.type)
-		if (typeof dl.pin === "string" && dl.pin) params.set("frame", dl.pin)
-		return "/#" + params.toString()
-	}
-
 	function openInTab(dl: any) {
 		const params = new URLSearchParams()
 		params.set("doc", docIdFromUrl(dl.url))
@@ -105,7 +97,7 @@ export function Sidebar(props: {
 	}
 
 	function openAsFrame(dl: any) {
-		window.open(buildIframeSrc(dl), "_blank")
+		window.open(buildPreviewSrc(dl), "_blank")
 	}
 
 	// Resize handle for sidebar width
@@ -192,11 +184,14 @@ export function Sidebar(props: {
 		props.onVisibilityChange?.(true)
 	}
 
-	// Auto-show sidebar when there are pinned docs
+	// Auto-show the sidebar when a doc is newly pinned (count increases). We only
+	// react to the pin count — NOT to `props.visible` — so a manual close sticks
+	// instead of being immediately reopened by this effect.
+	let prevPinnedCount = 0
 	createEffect(() => {
-		if (pinnedDocs().length > 0 && !props.visible) {
-			props.onVisibilityChange?.(true)
-		}
+		const count = pinnedDocs().length
+		if (count > prevPinnedCount) props.onVisibilityChange?.(true)
+		prevPinnedCount = count
 	})
 
 	return (
@@ -238,7 +233,7 @@ export function Sidebar(props: {
 					{(dl: any, i) => (
 						<PinnedDocWrap
 							dl={dl}
-							iframeSrc={buildIframeSrc(dl)}
+							draftUrl={getActiveDraftUrl(element)}
 							onUnpin={() => unpinDoc(dl.url)}
 							onOpenInTab={() => openInTab(dl)}
 							onOpenAsFrame={() => openAsFrame(dl)}
@@ -254,7 +249,7 @@ export function Sidebar(props: {
 
 function PinnedDocWrap(props: {
 	dl: any
-	iframeSrc: string
+	draftUrl: string
 	onUnpin: () => void
 	onOpenInTab: () => void
 	onOpenAsFrame: () => void
@@ -275,9 +270,22 @@ function PinnedDocWrap(props: {
 	onMount(() => {
 		if (!wrapRef) return
 		const iframe = document.createElement("iframe")
-		iframe.src = props.iframeSrc
 		iframe.title = props.dl.name || "Pinned doc"
 		iframe.style.cssText = "width:100%;flex:1;border:none;border-radius:4px;min-height:200px;background:var(--bg-mid)"
+		if (props.draftUrl) {
+			// On a draft: boot the preview with the draft overlay so it shows the
+			// drafted tool source. Falls back to the plain src on failure.
+			buildPreviewSrcdoc(props.dl, props.draftUrl)
+				.then((srcdoc) => {
+					iframe.srcdoc = srcdoc
+				})
+				.catch((e) => {
+					console.warn("[Chat] draft preview failed, using Main:", e)
+					iframe.src = buildPreviewSrc(props.dl)
+				})
+		} else {
+			iframe.src = buildPreviewSrc(props.dl)
+		}
 		wrapRef.appendChild(iframe)
 		iframeRef = iframe
 
@@ -296,11 +304,7 @@ function PinnedDocWrap(props: {
 	})
 
 	function refreshIframe() {
-		if (iframeRef?.contentWindow) {
-			try { iframeRef.contentWindow.location.reload() } catch {
-				try { iframeRef.src = iframeRef.src } catch {}
-			}
-		}
+		if (iframeRef) reloadPreviewIframe(iframeRef)
 	}
 
 	function goFullscreen() {

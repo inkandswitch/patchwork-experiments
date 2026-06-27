@@ -2,6 +2,7 @@ import {Show, For, createMemo, createSignal, onMount} from "solid-js"
 import type {ChatMessage, DocEmbed} from "../types"
 import {automergeUrlToServiceWorkerUrl} from "@inkandswitch/patchwork-filesystem"
 import {useChat} from "../context/ChatContext"
+import {getRepo} from "../lib/repo"
 import {SVG_ICONS} from "../lib/svg-icons"
 
 export function MessageAttachments(props: {msg: ChatMessage}) {
@@ -80,7 +81,7 @@ function ResizeHandle(props: {
 }
 
 function persistDimensions(msg: ChatMessage, key: string, w: number, h: number) {
-	const repo = (window as any).repo
+	const repo = getRepo()
 	if (!repo) return
 	const ref = msg._ref as any
 	if (ref?.url) {

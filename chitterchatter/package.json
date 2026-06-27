@@ -25,6 +25,7 @@
     "@automerge/automerge-repo": "^2.5.0",
     "@automerge/automerge-repo-solid-primitives": "^2.5.1",
     "@chee/patchwork-llm": "automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE#eZCZsHHNozEHijqpAVp91CVsEruykpwh7mvHkmC5bKQsJMHiV",
+    "@chee/patchwork-transcript": "automerge:2AdvAyQ85NfazBA4TtDyRYCqfvYb#RUCqgHPjqB8fwhZczav5rwJ9J7rBLj3rSfQ9ykaCkR3HrEN2n",
     "@inkandswitch/patchwork-elements": "^0.0.5",
     "@inkandswitch/patchwork-filesystem": "^0.0.3",
     "solid-js": "^1.9.11"

@@ -9,6 +9,7 @@ import {
 } from "solid-js"
 import type {DocHandle, AutomergeUrl} from "@automerge/automerge-repo"
 import type {ChatProfileDoc} from "../types"
+import {getRepo} from "../lib/repo"
 
 interface IdentityContextValue {
 	myName: Accessor<string>
@@ -37,7 +38,7 @@ export const IdentityProvider: ParentComponent = (props) => {
 
 	onMount(async () => {
 		try {
-			const repo = (window as any).repo
+			const repo = getRepo()
 			if (!repo) return
 			const adh = (window as any).accountDocHandle
 			if (!adh) return

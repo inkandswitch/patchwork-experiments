@@ -13,6 +13,7 @@ import {usePresence} from "../context/PresenceContext"
 import type {ChatMessage, ChatMessageRef} from "../types"
 import {MessageRow} from "./MessageRow"
 import {formatTimeGap} from "../lib/helpers"
+import {getRepo} from "../lib/repo"
 
 export function MessageList(props: {
 	replyToId: string | null
@@ -41,7 +42,8 @@ export function MessageList(props: {
 	function getActiveRepo(): any | null {
 		const ctxRepo = repo as any
 		if (ctxRepo && typeof ctxRepo.find === "function") return ctxRepo
-		const globalRepo = (window as any).repo
+		let globalRepo: any = null
+		try { globalRepo = getRepo() } catch { globalRepo = null }
 		if (globalRepo && typeof globalRepo.find === "function") return globalRepo
 		if (!warnedBadRepo) {
 			warnedBadRepo = true

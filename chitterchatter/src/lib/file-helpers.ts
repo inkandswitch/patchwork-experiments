@@ -1,11 +1,12 @@
 import type {AutomergeUrl} from "@automerge/automerge-repo"
+import {getRepo} from "./repo"
 
 export async function createFileDoc(
 	blob: Blob,
 	fileName?: string,
 	mimeType?: string
 ): Promise<AutomergeUrl> {
-	const repo = (window as any).repo
+	const repo = getRepo()
 	if (!repo) throw new Error("No repo")
 	const u8 = new Uint8Array(await blob.arrayBuffer())
 	const ext = fileName
@@ -26,7 +27,7 @@ export async function createRecordingDoc(
 	audioBlob: Blob,
 	duration: number
 ): Promise<{url: AutomergeUrl}> {
-	const repo = (window as any).repo
+	const repo = getRepo()
 	if (!repo) throw new Error("No repo")
 	const u8 = new Uint8Array(await audioBlob.arrayBuffer())
 	const ah = await repo.create2({content: u8})

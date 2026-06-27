@@ -1,4 +1,5 @@
 import type {AutomergeUrl} from "@automerge/automerge-repo"
+import {getRepo} from "./repo"
 
 const blobCache = new Map<string, string>()
 
@@ -6,7 +7,7 @@ export async function loadBlobUrl(automergeUrl: AutomergeUrl): Promise<string | 
 	if (!automergeUrl) return null
 	if (blobCache.has(automergeUrl)) return blobCache.get(automergeUrl)!
 	try {
-		const repo = (window as any).repo
+		const repo = getRepo()
 		if (!repo) return null
 		const fh = await repo.find(automergeUrl)
 		const doc = fh.doc()
@@ -28,7 +29,7 @@ export async function loadBlobUrl(automergeUrl: AutomergeUrl): Promise<string | 
 
 export async function loadAudioUrl(automergeUrl: AutomergeUrl): Promise<string | null> {
 	try {
-		const repo = (window as any).repo
+		const repo = getRepo()
 		if (!repo) return null
 		const rh = await repo.find(automergeUrl)
 		const rd = rh.doc()

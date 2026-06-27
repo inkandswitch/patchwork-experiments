@@ -41,6 +41,9 @@ importers:
       '@chee/patchwork-llm':
         specifier: automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE#eZCZsHHNozEHijqpAVp91CVsEruykpwh7mvHkmC5bKQsJMHiV
         version: automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE#eZCZsHHNozEHijqpAVp91CVsEruykpwh7mvHkmC5bKQsJMHiV@eZCZsHHNozEHijqpAVp91CVsEruykpwh7mvHkmC5bKQsJMHiV(@automerge/automerge-repo@2.5.3)
+      '@chee/patchwork-transcript':
+        specifier: automerge:2AdvAyQ85NfazBA4TtDyRYCqfvYb#RUCqgHPjqB8fwhZczav5rwJ9J7rBLj3rSfQ9ykaCkR3HrEN2n
+        version: automerge:2AdvAyQ85NfazBA4TtDyRYCqfvYb#RUCqgHPjqB8fwhZczav5rwJ9J7rBLj3rSfQ9ykaCkR3HrEN2n@RUCqgHPjqB8fwhZczav5rwJ9J7rBLj3rSfQ9ykaCkR3HrEN2n(@automerge/automerge-repo@2.5.3)
       '@inkandswitch/patchwork-elements':
         specifier: ^0.0.5
         version: 0.0.5
@@ -225,6 +228,12 @@ packages:
   '@chee/patchwork-llm@automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE#eZCZsHHNozEHijqpAVp91CVsEruykpwh7mvHkmC5bKQsJMHiV@eZCZsHHNozEHijqpAVp91CVsEruykpwh7mvHkmC5bKQsJMHiV':
     resolution: {automergeUrl: automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE#eZCZsHHNozEHijqpAVp91CVsEruykpwh7mvHkmC5bKQsJMHiV, type: custom:automerge}
     version: 0.1.1
+    peerDependencies:
+      '@automerge/automerge-repo': ^2.5.6
+
+  '@chee/patchwork-transcript@automerge:2AdvAyQ85NfazBA4TtDyRYCqfvYb#RUCqgHPjqB8fwhZczav5rwJ9J7rBLj3rSfQ9ykaCkR3HrEN2n@RUCqgHPjqB8fwhZczav5rwJ9J7rBLj3rSfQ9ykaCkR3HrEN2n':
+    resolution: {automergeUrl: automerge:2AdvAyQ85NfazBA4TtDyRYCqfvYb#RUCqgHPjqB8fwhZczav5rwJ9J7rBLj3rSfQ9ykaCkR3HrEN2n, type: custom:automerge}
+    version: 0.1.0
     peerDependencies:
       '@automerge/automerge-repo': ^2.5.6
 
@@ -1136,6 +1145,11 @@ snapshots:
       - utf-8-validate
 
   '@chee/patchwork-llm@automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE#eZCZsHHNozEHijqpAVp91CVsEruykpwh7mvHkmC5bKQsJMHiV@eZCZsHHNozEHijqpAVp91CVsEruykpwh7mvHkmC5bKQsJMHiV(@automerge/automerge-repo@2.5.3)':
+    dependencies:
+      '@automerge/automerge-repo': 2.5.3
+      '@inkandswitch/patchwork-providers': 0.2.2(@automerge/automerge-repo@2.5.3)
+
+  '@chee/patchwork-transcript@automerge:2AdvAyQ85NfazBA4TtDyRYCqfvYb#RUCqgHPjqB8fwhZczav5rwJ9J7rBLj3rSfQ9ykaCkR3HrEN2n@RUCqgHPjqB8fwhZczav5rwJ9J7rBLj3rSfQ9ykaCkR3HrEN2n(@automerge/automerge-repo@2.5.3)':
     dependencies:
       '@automerge/automerge-repo': 2.5.3
       '@inkandswitch/patchwork-providers': 0.2.2(@automerge/automerge-repo@2.5.3)

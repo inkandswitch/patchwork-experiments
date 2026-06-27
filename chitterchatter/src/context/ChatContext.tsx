@@ -16,7 +16,7 @@ export const ChatProvider: ParentComponent<{
 	handle: DocHandle<ChatDoc>
 	element: HTMLElement
 }> = (props) => {
-	const repo = (window as any).repo as Repo
+	const repo = (props.element as any).repo as Repo
 
 	// Manual doc signal — subscribes directly to handle changes.
 	// This is more reliable than useDocument on reload since it doesn't

@@ -34,6 +34,7 @@ import {
 } from "../lib/notifications"
 import {automergeUrlToServiceWorkerUrl} from "@inkandswitch/patchwork-filesystem"
 import {transcribeVoiceNote} from "../lib/transcription"
+import {reloadPreviewIframe} from "../lib/preview-frame"
 import "../styles/chat.css"
 
 export function ChatRoot(props: {
@@ -567,7 +568,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 	}
 
 	async function processRichBlocks(parsed: {blocks: any[]; text: string}) {
-		const repo = (window as any).repo
+		const repo = (props.element as any).repo
 		const encoder = new TextEncoder()
 		const embeds: any[] = []
 		let extraText = ""
@@ -818,7 +819,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 	// string fed back to the model.
 	async function runToolByName(toolName: string, rawArgs: any): Promise<string> {
 		const args = rawArgs || {}
-		const repo = (window as any).repo
+		const repo = (props.element as any).repo
 		try {
 			if (toolName === "read_doc") {
 				const h = await repo.find(args.url)
@@ -1021,13 +1022,9 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 				}
 
 				const iframes = document.querySelectorAll(
-					".chat-sidebar-pinned-wrap patchwork-view iframe"
+					".chat-sidebar-pinned-wrap iframe"
 				) as NodeListOf<HTMLIFrameElement>
-				for (const iframe of iframes) {
-					try {
-						iframe.src = iframe.src
-					} catch {}
-				}
+				for (const iframe of iframes) reloadPreviewIframe(iframe)
 
 				const updatedDoc = sourceHandle.doc() as any
 				const updatedContent =
@@ -1069,7 +1066,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 	}
 
 	async function createAndPinTool(code: string): Promise<any> {
-		const repo = (window as any).repo
+		const repo = (props.element as any).repo
 		const doc = props.handle.doc() as any
 
 		// Extract the datatype ID from the code — this is what the instance doc type must match
@@ -1121,13 +1118,9 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 						}
 						// Reload iframe after update
 						const iframes = document.querySelectorAll(
-							".chat-sidebar-pinned-wrap patchwork-view iframe"
+							".chat-sidebar-pinned-wrap iframe"
 						) as NodeListOf<HTMLIFrameElement>
-						for (const iframe of iframes) {
-							try {
-								iframe.src = iframe.src
-							} catch {}
-						}
+						for (const iframe of iframes) reloadPreviewIframe(iframe)
 						return {
 							toolName: existingPinned.name || existingDatatypeId,
 							toolId: existingDatatypeId,
@@ -1232,7 +1225,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 
 	// ---- Context assembly ----
 	async function assembleContext(): Promise<any[]> {
-		const repo = (window as any).repo
+		const repo = (props.element as any).repo
 		const doc = props.handle.doc() as any
 		const msgs = doc?.messages || []
 		const contextMessages: any[] = []
@@ -1356,7 +1349,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 	}
 
 	function sendComputerMessage(text: string, replyTo?: string, opts?: any) {
-		const repo = (window as any).repo
+		const repo = (props.element as any).repo
 		if (!repo) return
 		const msgData: any = {
 			id: generateId(),
@@ -1495,7 +1488,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		async function processQueue() {
 			if (processing) return
 			processing = true
-			const repo = (window as any).repo
+			const repo = (props.element as any).repo
 			try {
 				while (pendingQueue.length > 0) {
 					const url = pendingQueue.shift()!
@@ -1740,7 +1733,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 	}
 
 	async function respondToUser(userMsg: any) {
-		const repo = (window as any).repo
+		const repo = (props.element as any).repo
 		if (!repo || computerResponding) return
 		computerResponding = true
 
@@ -1803,6 +1796,11 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 				replyTo: userMsg.id,
 			}
 			currentStreamHandle = await repo.create2(streamMsgData)
+			// Resolve through repo.find so that on a draft our streaming writes
+			// target the same clone the UI subscribes to when it renders this ref.
+			// (The overlay forks the doc on repo.find; the create2 handle is the
+			// un-forked original, so writing to it leaves the displayed clone empty.)
+			currentStreamHandle = await repo.find(currentStreamHandle.url)
 			props.handle.change((dd: any) => {
 				if (!dd.messages) dd.messages = []
 				dd.messages.push({
@@ -1958,13 +1956,9 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 							// Try reloading iframes if empty
 							if (isEmpty) {
 								const iframes = document.querySelectorAll(
-									".chat-sidebar-pinned-wrap patchwork-view iframe"
+									".chat-sidebar-pinned-wrap iframe"
 								) as NodeListOf<HTMLIFrameElement>
-								for (const iframe of iframes) {
-									try {
-										iframe.src = iframe.src
-									} catch {}
-								}
+								for (const iframe of iframes) reloadPreviewIframe(iframe)
 								await new Promise(r => setTimeout(r, 2500))
 								resetInactivityTimer()
 							}
@@ -2025,6 +2019,9 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 							streaming: true,
 						}
 						currentStreamHandle = await repo.create2(nextMsgData)
+						// See note above: resolve via repo.find so streaming writes
+						// hit the same (possibly draft-cloned) handle the UI renders.
+						currentStreamHandle = await repo.find(currentStreamHandle.url)
 						props.handle.change((dd: any) => {
 							if (!dd.messages) dd.messages = []
 							dd.messages.push({
@@ -2125,7 +2122,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 			return
 		}
 		// Check new messages for @computer mentions
-		const repo = (window as any).repo
+		const repo = (props.element as any).repo
 		if (!repo) return
 		for (let i = watchMsgCount; i < msgs.length; i++) {
 			const entry = msgs[i]
@@ -2304,7 +2301,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 
 	// ---- Call ----
 	async function handleCallCommand() {
-		const repo = (window as any).repo
+		const repo = (props.element as any).repo
 		if (!repo) return
 		const d = props.handle.doc() as any
 		let callUrl = d?.callUrl
@@ -2624,7 +2621,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 
 /** Watches for new messages and triggers sound/OS notifications + title updates */
 function NotificationManager(props: {handle: DocHandle<ChatDoc>}) {
-	const {doc} = useChat()
+	const {doc, repo} = useChat()
 	const {myName, chatProfileHandle} = useIdentity()
 	const {isFocused, typingUsers} = usePresence()
 
@@ -2694,7 +2691,8 @@ function NotificationManager(props: {handle: DocHandle<ChatDoc>}) {
 			// New message(s) arrived
 			const lastEntry = d.messages[count - 1] as any
 			if (lastEntry?.ref && lastEntry?.url) {
-				const repo = (window as any).repo
+				// NotificationManager has no `element` prop — use the repo from
+				// useChat() (already destructured above), not props.element.repo.
 				if (repo) {
 					repo.find(lastEntry.url).then(async (mh: any) => {
 						const msg = mh.doc()
