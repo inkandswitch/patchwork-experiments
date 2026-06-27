@@ -132,7 +132,7 @@ function AutomergeDocStats({ handle }: { handle: DocHandle<LivelymergeDoc> }) {
 
 export const LivelymergeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   const docHandle = useDocHandle<LivelymergeDoc>(docUrl, { suspense: true })!;
-  runtime = createLivelymergeRuntime(docHandle);
+  (window as any).runtime = runtime = createLivelymergeRuntime(docHandle);
   (window as any).handle = docHandle; // needed for historical reasons, will go away once we update alldefs
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
