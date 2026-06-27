@@ -892,10 +892,22 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       }
     }
 
+    // -- visit the root objects --
+
+    // root 1 of 3: the global object
     visit('global');
+
+    // root 2 of 3: the local-only state that's stored in window
+    const windowGcRoot = (window as any).gcRoot;
+    if (windowGcRoot && isProxy(windowGcRoot)) {
+      visit(windowGcRoot.$id);
+    }
+
+    // root 3 of 3: usually the result of a do-it
     if (isProxy(extraRoot)) {
       visit(extraRoot.$id);
     }
+
     let numReclaimed = 0;
     for (const id of Object.keys(doc.objectTable)) {
       if (!visited.has(id)) {
