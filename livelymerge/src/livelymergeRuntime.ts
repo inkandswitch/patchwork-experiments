@@ -3,7 +3,9 @@ import { wrapForCompletionValue } from './completionValue';
 import {
   getJsGlobalTarget,
   isJsGlobalObj,
+  isJsGlobalTarget,
   readJsGlobalProperty,
+  toJsCallArgs,
   toJsValue,
 } from './jsGlobal';
 import { ensureObjectPrototypeDefaults } from './objectPrototypeDefaults';
@@ -350,15 +352,18 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
 
     const jsTarget = () => {
       const target = getJsGlobalTarget(liveHeapObj(obj));
-      return typeof target === 'object' && target !== null ? target : null;
+      return isJsGlobalTarget(target) ? target : null;
     };
 
-    p = new Proxy(Object.create(null), {
+    const nativeTarget = getJsGlobalTarget(liveHeapObj(obj));
+    const target =
+      typeof nativeTarget === 'function' ? (function () { }) as (...args: never[]) => unknown : Object.create(null);
+    p = new Proxy(target, {
       set(_, prop, value) {
         if (lmIsReservedKey(prop)) return false;
-        const target = jsTarget();
-        if (!target) return false;
-        return Reflect.set(target, prop, toJsValue(value));
+        const nativeTarget = jsTarget();
+        if (!nativeTarget) return false;
+        return Reflect.set(nativeTarget, prop, toJsValue(value));
       },
       get(_, prop) {
         const entry = liveHeapObj(obj);
@@ -377,14 +382,28 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
 
         if (lmIsReservedKey(prop)) return undefined;
 
-        const target = jsTarget();
-        if (!target) return undefined;
+        const nativeTarget = jsTarget();
+        if (!nativeTarget) return undefined;
 
         if (prop === 'toString') {
-          return () => String(target);
+          return () => String(nativeTarget);
         }
 
-        return readJsGlobalProperty(target, prop);
+        return readJsGlobalProperty(nativeTarget, prop);
+      },
+      apply(_, thisArg, args) {
+        const nativeTarget = jsTarget();
+        if (typeof nativeTarget !== 'function') {
+          throw new TypeError(`${liveHeapObj(obj).$jsGlobal} is not a function`);
+        }
+        return Reflect.apply(nativeTarget, toJsValue(thisArg), toJsCallArgs(args));
+      },
+      construct(_, args) {
+        const nativeTarget = jsTarget();
+        if (typeof nativeTarget !== 'function') {
+          throw new TypeError(`${liveHeapObj(obj).$jsGlobal} is not a constructor`);
+        }
+        return Reflect.construct(nativeTarget, toJsCallArgs(args));
       },
     }) as unknown as Proxy;
 
@@ -922,7 +941,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     if (objUnwrapped) {
       if (isJsGlobalObj(objUnwrapped)) {
         const target = getJsGlobalTarget(liveHeapObj(objUnwrapped));
-        return $arr(target && typeof target === 'object' ? Object.keys(target) : []);
+        return $arr(isJsGlobalTarget(target) ? Object.keys(target) : []);
       }
       return ownUserPropertyKeys(objUnwrapped);
     }
@@ -945,7 +964,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       if (typeof prop !== 'string') return false;
       if (isJsGlobalObj(unwrapped)) {
         const target = getJsGlobalTarget(liveHeapObj(unwrapped));
-        return target != null && typeof target === 'object' && Object.hasOwn(target, prop);
+        return isJsGlobalTarget(target) && Object.hasOwn(target, prop);
       }
       return lmHasOwn(unwrapped, prop);
     }
@@ -957,7 +976,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     if (objUnwrapped) {
       if (isJsGlobalObj(objUnwrapped)) {
         const target = getJsGlobalTarget(liveHeapObj(objUnwrapped));
-        return $arr(target && typeof target === 'object' ? Object.getOwnPropertyNames(target) : []);
+        return $arr(isJsGlobalTarget(target) ? Object.getOwnPropertyNames(target) : []);
       }
       return ownUserPropertyKeys(objUnwrapped);
     }
@@ -971,7 +990,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     if (unwrapped) {
       if (isJsGlobalObj(unwrapped)) {
         const target = getJsGlobalTarget(liveHeapObj(unwrapped));
-        return target != null && typeof target === 'object' ? Object.getPrototypeOf(target) : null;
+        return isJsGlobalTarget(target) ? Object.getPrototypeOf(target) : null;
       }
       return lmGetPrototypeOf(unwrapped);
     }
@@ -1101,9 +1120,13 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       const realCode = transpile(wrapForCompletionValue(source));
       console.log('realCode', realCode);
       const runtimeParams = getRuntimeParams();
-      return new Function(...Object.keys(runtimeParams), realCode)(
+      const fn = new Function(...Object.keys(runtimeParams), realCode);
+      console.log('fn', fn);
+      const ans = fn(
         ...Object.values(runtimeParams),
       );
+      console.log('ans', ans);
+      return ans;
     });
   }
 

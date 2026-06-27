@@ -26,8 +26,10 @@ export const LivelymergeDatatype: DatatypeImplementation<LivelymergeDoc> = {
         "@canvas": { $type: "ref", $id: "canvas" },
         "@ctx": { $type: "ref", $id: "ctx" },
         "@document": { $type: "ref", $id: "document" },
+        "@Math": { $type: "ref", $id: "Math" },
+        "@String": { $type: "ref", $id: "String" },
+        "@Date": { $type: "ref", $id: "Date" },
         "@window": { $type: "ref", $id: "window" },
-
       }, // root object
       // JS global objects (escape hatch!)
       "canvas": {
@@ -44,6 +46,21 @@ export const LivelymergeDatatype: DatatypeImplementation<LivelymergeDoc> = {
         $type: "obj",
         $id: "document",
         $jsGlobal: "document",
+      },
+      "Math": {
+        $type: "obj",
+        $id: "Math",
+        $jsGlobal: "Math",
+      },
+      "String": {
+        $type: "obj",
+        $id: "String",
+        $jsGlobal: "String",
+      },
+      "Date": {
+        $type: "obj",
+        $id: "Date",
+        $jsGlobal: "Date",
       },
       "window": {
         $type: "obj",

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { transpile } from './transpiler';
 
@@ -65,6 +67,18 @@ describe('transpile', () => {
 }`)).toBe(`$global.f = $fun("function f(x = g(5)) {\\n  return x + 1;\\n}", "() => function(x = $global.g(5)) {\\n  return x + 1;\\n}");`);
     });
 
+    it('rewrites top-level function references in block initializers to $global', () => {
+      const result = transpile(`function aaa() {}
+
+{
+  let foo = aaa;
+  function f() {
+    console.log(foo);
+  }
+}`);
+      expect(result).toMatch(/\$scope\d+\.foo = \$global\.aaa/);
+    });
+
     it('rewrites top-level function references used as arguments to $global', () => {
       expect(transpile(`function f() { return 5; }
 
@@ -102,6 +116,57 @@ $global.f(5)`);
 }`)).toBe(`$global.outer = $fun("function outer() {\\n  function inner(n) {\\n    return n <= 1 ? 1 : inner(n - 1) * n;\\n  }\\n  return inner(5);\\n}", "() => function() {\\n  const inner = $fun(\\"function inner(n) {\\\\n    return n <= 1 ? 1 : inner(n - 1) * n;\\\\n  }\\", \\"() => function(n) {\\\\n    return n <= 1 ? 1 : inner(n - 1) * n;\\\\n  }\\");\\n  return inner(5);\\n}");`);
     });
 
+    it('captures sibling function declarations used before their definition', () => {
+      expect(transpile(`function initUI() {
+  let canvasEvents = [];
+
+  function onFrame() {
+    processEvents();
+  }
+
+  function processEvents() {
+    canvasEvents = [];
+  }
+}`)).toMatch(/\(\$scope\d+\.processEvents\)\(\)/);
+      expect(transpile(`function initUI() {
+  let canvasEvents = [];
+
+  function onFrame() {
+    processEvents();
+  }
+
+  function processEvents() {
+    canvasEvents = [];
+  }
+}`)).toMatch(/\$scope\d+\.processEvents = \$fun/);
+    });
+
+    it('scopes function declarations passed as callbacks to scope-assigned siblings', () => {
+      const result = transpile(`function initUI() {
+  let canvasEvents = [];
+  function onFrame() {
+    try {
+      window.runtime.change(() => {
+        processEvents();
+        window._uiRafId = window.requestAnimationFrame(onFrame);
+      });
+    } catch (e) {
+      window._uiRafId = window.requestAnimationFrame(onFrame);
+    }
+  }
+  function processEvents() {
+    canvasEvents = [];
+  }
+  window._uiRafId = window.requestAnimationFrame(onFrame);
+}`);
+      expect(result).toMatch(
+        /catch \(e\) \{\\\\n      \$global\.window\._uiRafId = \$global\.window\.requestAnimationFrame\(\$scope\d+\.onFrame\);/,
+      );
+      expect(result).toMatch(
+        /\$global\.window\._uiRafId = \$global\.window\.requestAnimationFrame\(\$scope\d+\.onFrame\);\\n\}"\);$/,
+      );
+    });
+
     it('threads scope objects through intermediate nested functions', () => {
       expect(transpile(`function f() {
   let x = 5;
@@ -117,6 +182,18 @@ $global.f(5)`);
 f()`)).toBe(`$global.f = $fun("function f() {\\n  let x = 5;\\n  function g() {\\n    function h() {\\n      return x * 2;\\n    }\\n    return h();\\n  }\\n  return g();\\n}", "() => function() {\\n  const $scope6 = $obj({});\\n  $scope6.x = 5;\\n  const g = $fun(\\"function g() {\\\\n    function h() {\\\\n      return x * 2;\\\\n    }\\\\n    return h();\\\\n  }\\", \\"($scope6) => function() {\\\\n    const h = $fun(\\\\\\"function h() {\\\\\\\\n      return x * 2;\\\\\\\\n    }\\\\\\", \\\\\\"($scope6) => function() {\\\\\\\\n      return $scope6.x * 2;\\\\\\\\n    }\\\\\\", [$scope6]);\\\\n    return h();\\\\n  }\\", [$scope6]);\\n  return g();\\n}");
 
 $global.f()`);
+    });
+
+    it('does not pass locally-created scope objects into a function $fun wrapper', () => {
+      expect(transpile(`function outer() {
+  let x = 1;
+  window.f = function (a) {
+    let pid = a;
+    window.setTimeout(function () {
+      return pid + x;
+    }, 0);
+  };
+}`)).toBe(`$global.outer = $fun("function outer() {\\n  let x = 1;\\n  window.f = function (a) {\\n    let pid = a;\\n    window.setTimeout(function () {\\n      return pid + x;\\n    }, 0);\\n  };\\n}", "() => function() {\\n  const $scope6 = $obj({});\\n  $scope6.x = 1;\\n  $global.window.f = $fun(\\"function (a) {\\\\n    let pid = a;\\\\n    window.setTimeout(function () {\\\\n      return pid + x;\\\\n    }, 0);\\\\n  }\\", \\"($scope6) => function (a) {\\\\n  const $scope8 = $obj({});\\\\n    $scope8.pid = a;\\\\n    $global.window.setTimeout($fun(\\\\\\"function () {\\\\\\\\n      return pid + x;\\\\\\\\n    }\\\\\\", \\\\\\"($scope6, $scope8) => function () {\\\\\\\\n      return $scope8.pid + $scope6.x;\\\\\\\\n    }\\\\\\", [$scope6, $scope8]), 0);\\\\n  }\\", [$scope6]);\\n}");`);
     });
 
     it('leaves functions with a do-not-transpile marker untouched', () => {
@@ -249,6 +326,125 @@ $global.f()`);
       expect(transpile(`{ let x = 1; x + 1 }`)).toBe(`{ let x = 1; x + 1 }`);
     });
 
+    it('keeps for-loop let variables local when not captured by closures', () => {
+      expect(transpile(`{
+  for (let i = 0; i < 5; i++) {
+    console.log(i);
+  }
+}`)).toBe(`{
+  for (let i = 0; i < 5; i++) {
+    console.log(i);
+  }
+}`);
+    });
+
+    it('promotes for-loop let variables to scope object when captured by closures', () => {
+      expect(transpile(`{
+  for (let i = 0; i < 5; i++) {
+    f = () => i;
+  }
+}`)).toBe(`{
+  const $scope3 = $obj({});
+  for ($scope3.i = 0; $scope3.i < 5; $scope3.i++) {
+    f = $fun("() => i", "($scope3) => () => $scope3.i", [$scope3]);
+  }
+}`);
+    });
+
+    it('does not scope locals referenced across blocks when no closure captures them', () => {
+      const result = transpile(`function compose() {
+  let str = this.string;
+  let lineStart = 0;
+  for (let idx = 0; idx < str.length; idx++) {
+    let c = str[idx];
+    if (c == '\\n') {
+      let line = str.slice(lineStart, idx + 1);
+      lineStart = idx + 1;
+    }
+  }
+  return lineStart;
+}`);
+      expect(result).not.toContain('$scope');
+      expect(result).toContain('let str = this.string');
+      expect(result).toContain('for (let idx = 0; idx < str.length; idx++)');
+      expect(result).toContain('let c = str[idx]');
+      expect(result).toContain('str.slice(lineStart, idx + 1)');
+    });
+
+    it('rewrites scoped binding references outside closures in the same block', () => {
+      expect(transpile(`{
+  let x = 1;
+  let y = x + 1;
+  return () => x + y;
+}`)).toBe(`{
+  const $scope2 = $obj({});
+  $scope2.x = 1;
+  $scope2.y = $scope2.x + 1;
+  return $fun("() => x + y", "($scope2) => () => $scope2.x + $scope2.y", [$scope2]);
+}`);
+    });
+
+    it('rewrites a scoped binding in a later non-scoped declaration initializer', () => {
+      const result = transpile(`fit() {
+  let maxW = 0;
+  this.displayItems.forEach((item) => {
+    maxW = Math.max(maxW, item.width);
+  });
+  let targetW = Math.ceil(maxW + 14);
+  return targetW;
+}`);
+      expect(result).toMatch(/let targetW = \$global\.Math\.ceil\(\$scope\d+\.maxW \+ 14\)/);
+    });
+
+    it('threads a captured parameter through a scope object', () => {
+      const result = transpile(`class M {
+  stopSteppingMorph(morph, methodName) {
+    if (methodName) {
+      this.stepList = this.stepList.filter(
+        (spec) => !(spec.stepMorph === morph && spec.methodName === methodName),
+      );
+      return;
+    }
+    this.stepList = this.stepList.filter((spec) => spec.stepMorph !== morph);
+  }
+}`);
+      expect(result).toMatch(/const \$scope\d+ = \$obj\(\{\}\);/);
+      expect(result).toMatch(/\$scope\d+\.morph = morph;/);
+      expect(result).toMatch(/\$scope\d+\.methodName = methodName;/);
+      expect(result).toMatch(/if \(\$scope\d+\.methodName\)/);
+      expect(result).toMatch(
+        /\(\$scope\d+\) => \(spec\) => !\(spec\.stepMorph === \$scope\d+\.morph && spec\.methodName === \$scope\d+\.methodName\)/,
+      );
+      expect(result).toMatch(/\(\$scope\d+\) => \(spec\) => spec\.stepMorph !== \$scope\d+\.morph/);
+    });
+
+    it('rewrites assignments to a captured parameter through the scope object', () => {
+      const result = transpile(`function f(morph) {
+  morph = morph || {};
+  arr.forEach((x) => { morph = x; });
+  return morph;
+}`);
+      expect(result).toMatch(/\$scope\d+\.morph = morph;/);
+      expect(result).toMatch(/\$scope\d+\.morph = \$scope\d+\.morph \|\| \$obj\(\{\}\)/);
+      expect(result).toMatch(/\(\$scope\d+\) => \(x\) => \{ \$scope\d+\.morph = x; \}/);
+      expect(result).toMatch(/return \$scope\d+\.morph;/);
+    });
+
+    it('leaves an expression-bodied curry parameter bare (no body to host a scope object)', () => {
+      expect(transpile(`const g = (x) => (y) => x + y;`)).toBe(
+        `$global.g = $fun("(x) => (y) => x + y", "() => (x) => $fun(\\"(y) => x + y\\", \\"() => (y) => x + y\\")");`,
+      );
+    });
+
+    it('rewrites earlier scoped bindings used in later declarations and expressions', () => {
+      expect(transpile(`setBounds(newBnds) {
+  let oldBnds = this.getBounds();
+  let oldCtr = oldBnds.center();
+  let scale = pt(1, 1);
+  return items.map((x) => x + oldCtr + oldBnds.width() + scale.x);
+}`)).toMatch(/\$scope\d+\.oldCtr = \$scope\d+\.oldBnds\.center\(\)/);
+    });
+
     it('stores top-level bindings on $global and captures them via $global in closures', () => {
       expect(transpile(`let count = 0;
 inc = () => ++count;`)).toBe(`$global.count = 0;
@@ -302,6 +498,14 @@ $global.f = $fun("() => x + y", "() => () => $global.x + $global.y");`);
       expect(transpile(`foo = 1;`)).toBe(`$global.foo = 1;`);
     });
 
+    it('rewrites top-level member assignment lhs to $global', () => {
+      expect(transpile(`class C {}
+C.foo = 'bar';`)).toContain("$global.C.foo = 'bar'");
+      expect(transpile(`obj = {};
+obj.x = 1;`)).toBe(`$global.obj = $obj({});
+$global.obj.x = 1;`);
+    });
+
     it('rewrites top-level references to declared bindings via $global', () => {
       expect(transpile(`let x = 1;
 x + 2`)).toBe(`$global.x = 1;
@@ -348,6 +552,135 @@ x = 2;`)).toThrow("cannot assign to const-declared variable 'x'");
       expect(transpile(`f = () => console.info(y);`)).toBe(
         `$global.f = $fun("() => console.info(y)", "() => () => console.info($global.y)");`,
       );
+    });
+
+    it('rewrites unbound global member calls in initializer expressions', () => {
+      expect(
+        transpile(`class LineMorph extends Morph {
+  constructor(vertices, opts = {}) {
+    let verts = vertices.map((v) => pt(v.x, v.y));
+    let worldBounds = PolyLine.boundsForVertices(verts, 2);
+    let pl = new PolyLine(verts, 2, Color.black);
+    super(null, pl);
+  }
+}`),
+      ).toContain('$global.PolyLine.boundsForVertices');
+    });
+
+    it('rewrites class name static member access in constructor initializers', () => {
+      expect(
+        transpile(`class PolyLine extends Shape {
+  constructor(verts, width, color) {
+    const bounds = PolyLine.boundsForVertices(verts, width);
+    super('PolyLine', bounds, null, width, color);
+  }
+  static boundsForVertices(vertices, borderWidth) {
+    return rect(0, 0, 1, 1);
+  }
+}`),
+      ).toContain(
+        'const bounds = $global.PolyLine.boundsForVertices(verts, width)',
+      );
+    });
+
+    it('rewrites unbound global member calls in return expressions', () => {
+      expect(
+        transpile(`function f(verts) {
+  return PolyLine.boundsForVertices(verts, 2);
+}`),
+      ).toBe(
+        `$global.f = $fun("function f(verts) {\\n  return PolyLine.boundsForVertices(verts, 2);\\n}", "() => function(verts) {\\n  return $global.PolyLine.boundsForVertices(verts, 2);\\n}");`,
+      );
+    });
+
+    it('rewrites scoped bindings inside function expression callbacks', () => {
+      const result = transpile(`function initUI() {
+  let canvasEvents = [];
+  canvas.addEventListener('pointerdown', function (e) {
+    canvasEvents.push(e);
+  });
+}`);
+      expect(result).toMatch(/\(\$scope\d+\) => function \(e\) \{[^"]*\$scope\d+\.canvasEvents\.push\(e\)/);
+    });
+
+    it('rewrites canvasEvents in initUI.js arrow callbacks and processEvents', () => {
+      const source = readFileSync(join(__dirname, '../initUI.js'), 'utf8');
+      const result = transpile(source);
+      expect(result).toMatch(/\(\$scope\d+\) => \(e\) => \$scope\d+\.canvasEvents\.push\(e\)/);
+      expect(result).toMatch(/for \(const e of \$scope\d+\.canvasEvents\)/);
+      expect(result).toMatch(/\$scope\d+\.canvasEvents = \$arr\(\[\]\)/);
+    });
+
+    it('rewrites scoped bindings inside arrow callbacks passed to addEventListener', () => {
+      const result = transpile(`function initUI() {
+  let canvasEvents = [];
+  canvas.addEventListener('pointerdown', (e) => canvasEvents.push(e));
+}`);
+      expect(result).toContain('($scope');
+      expect(result).toMatch(/\(\$scope\d+\) => \(e\) => \$scope\d+\.canvasEvents\.push\(e\)/);
+    });
+
+    it('rewrites scoped bindings inside sibling function declarations', () => {
+      const result = transpile(`function initUI() {
+  let canvasEvents = [];
+  function processEvents() {
+    for (const e of canvasEvents) {
+      console.log(e);
+    }
+    canvasEvents = [];
+  }
+  processEvents();
+}`);
+      expect(result).toContain('for (const e of $scope');
+      expect(result).toMatch(/\$scope\d+\.canvasEvents = \$arr\(\[\]\)/);
+    });
+
+    it('leaves injected console bare inside scoped nested functions', () => {
+      expect(
+        transpile(`function initUI() {
+  let canvasEvents = [];
+  function processEvents() {
+    for (const e of canvasEvents) {
+      switch (e.type) {
+        default:
+          console.error('unsupported event type', e.type);
+      }
+    }
+    canvasEvents = [];
+  }
+  console.log('initUI loaded');
+}`),
+      ).toContain("console.error('unsupported event type', e.type)");
+      expect(
+        transpile(`function initUI() {
+  let canvasEvents = [];
+  function processEvents() {
+    for (const e of canvasEvents) {
+      switch (e.type) {
+        default:
+          console.error('unsupported event type', e.type);
+      }
+    }
+    canvasEvents = [];
+  }
+  console.log('initUI loaded');
+}`),
+      ).toContain("console.log('initUI loaded')");
+      expect(
+        transpile(`function initUI() {
+  let canvasEvents = [];
+  function processEvents() {
+    for (const e of canvasEvents) {
+      switch (e.type) {
+        default:
+          console.error('unsupported event type', e.type);
+      }
+    }
+    canvasEvents = [];
+  }
+  console.log('initUI loaded');
+}`),
+      ).not.toMatch(/\$scope\d+\.console/);
     });
 
     it('rewrites world refs in for-of iterable expressions', () => {

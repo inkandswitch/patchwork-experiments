@@ -63,4 +63,18 @@ describe('jsGlobal proxies', () => {
     expect(rt.eval('$global.ctx.lineWidth')).toBe(3);
     expect(rt.eval('typeof $global.document')).toBe('object');
   });
+
+  it('calls function jsGlobals like String', () => {
+    expect(rt.eval('$global.String(42)')).toBe('42');
+    expect(rt.eval('$global.String.fromCharCode(65, 66)')).toBe('AB');
+  });
+
+  it('constructs with function jsGlobals like String', () => {
+    expect(rt.eval('new ($global.String)("hi").length')).toBe(2);
+  });
+
+  it('reads properties from object jsGlobals like Math', () => {
+    expect(rt.eval('$global.Math.PI > 3')).toBe(true);
+    expect(rt.eval('$global.Math.floor(3.7)')).toBe(3);
+  });
 });
