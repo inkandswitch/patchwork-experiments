@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import solidPlugin from "vite-plugin-solid";
 import cssInjectedByJsPlugin from "vite-plugin-css-injected-by-js";
+import patchworkBundles from "@chee/patchwork-bundles/vite";
 import bootloaderExternals from "@inkandswitch/patchwork-bootloader/externals";
 
 // The installed bootloader's externals list lags behind the live host
@@ -35,7 +36,10 @@ function isHostProvided(id) {
 
 export default defineConfig({
   base: "./",
-  plugins: [solidPlugin(), cssInjectedByJsPlugin()],
+  // patchworkBundles() rewrites the `automerge:`-versioned dep
+  // (@chee/patchwork-transcript) to a shared service-worker URL marked external,
+  // so the lib + its worker load as ONE copy shared across tools (not per-tool).
+  plugins: [solidPlugin(), cssInjectedByJsPlugin(), patchworkBundles()],
   build: {
     minify: false,
     // inline the Caroni woff2 (~29kB) into the injected CSS as a data URI, so the

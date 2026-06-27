@@ -1,7 +1,7 @@
 import { render } from "solid-js/web";
 import { createSignal, createMemo, createEffect, For, Show, onCleanup, onMount } from "solid-js";
 import { createStore } from "solid-js/store";
-import { makeDocumentProjection } from "automerge-repo-solid-primitives";
+import { makeDocumentProjection } from "solid-automerge";
 import { makePersisted } from "@solid-primitives/storage";
 import {
   getRegistry,
@@ -10,12 +10,17 @@ import {
 } from "@inkandswitch/patchwork-plugins";
 import { automergeUrlToServiceWorkerUrl, getType } from "@inkandswitch/patchwork-filesystem";
 import { NewspaceDatatype } from "./datatype.js";
+import { relax, nodeCopies, barCopies, mergeNodes as mergeSketchNodes } from "./sketch.js";
+import { claimVoice, startVoiceStream, saveAudioFile } from "./voice.js";
+import { createHistory, snapshotItems, diffCommand } from "./history.js";
 import {
   freehandPath, shapePaths, shapeBounds, strokeBounds, roughRectPath, seedFromId,
 } from "./draw.js";
 import {
   rad, rot, isBoxType, localToWorld, worldToLocal, pointInFrame,
   itemBounds, cloneItem, linksNeedingItems, itemPresent, shouldUnlinkDoc, arrowGeometry, worldAnchor,
+  linkItemId, duplicateItemIds,
+  applyReorder, expandGroups as expandGroupsIn, groupBounds, clickSelection,
 } from "./model.js";
 import "./style.css";
 
@@ -43,7 +48,8 @@ const colorVar = (c) => {
 // is the exact canvas colour (no mix), so it occludes what's behind.
 const fillVar = (c) => (!c || c === "none") ? c : c === "paper" ? FILL_BG : `color-mix(in oklab, ${colorVar(c)} 55%, ${FILL_BG})`;
 
-const SIZES = [2, 5];
+const SIZES = [2, 5, 10, 18];   // pencil + shapes: four fatnesses
+const ARROW_SIZES = [2, 5];     // arrows: just the two thin ones
 const FILL_STYLES = ["hachure", "cross-hatch", "zigzag", "dots", "solid"];
 // little CSS previews so the fill-style picker shows what each style looks like
 const FILL_PREVIEW = {
@@ -168,7 +174,9 @@ function Canvas(props) {
   });
   const [tool, setTool] = createSignal("select");
   const [draft, setDraft] = createSignal(null);
+  const [guides, setGuides] = createSignal(null); // snap-constraint overlay (behaviour brushes)
   const [selected, setSelected] = createSignal([]);
+  const [enteredGroup, setEnteredGroup] = createSignal(null); // a group you've double-clicked INTO (scoped editing of its members)
   const [placing, setPlacing] = createSignal(null);
   const [datatypes, setDatatypes] = createSignal([]);
   const [brushes, setBrushes] = createSignal([]); // newspace:brush plugins (used later)
@@ -176,7 +184,7 @@ function Canvas(props) {
   const [shapeMenuOpen, setShapeMenuOpen] = createSignal(false); // shape overflow menu
   const [extraShape, setExtraShape] = createSignal("line"); // last-used overflow shape, surfaced in the bar
   const [dropTarget, setDropTarget] = createSignal(null); // frame id a dragged item would drop INTO
-  const [unclipBox, setUnclipBox] = createSignal(null); // box (surface id) to un-clip while dragging a child out
+  const [escapeId, setEscapeId] = createSignal(null); // a box child whose CENTRE has left it — render it unclipped (escaping)
   const [panActive, setPanActive] = createSignal(false); // an in-flight pan/zoom — overlay captures wheel so it wins over tool scroll
   const [arrowHover, setArrowHover] = createSignal(null); // item id an arrow end would bind to
   const [propsPos, setPropsPos] = createSignal({ x: 16, y: 16 });
@@ -191,18 +199,22 @@ function Canvas(props) {
 
   let viewportRef;
   try { setDatatypes(getRegistry("patchwork:datatype").filter((d) => !d.unlisted)); } catch (e) { console.warn("[newspace] datatypes", e); }
-  // custom brushes live in a newspace:brush registry (may not exist yet). We
-  // list them in the shape overflow, and load each brush MODULE (its stroke
-  // config) so drawing with the brush uses it.
+  // custom brushes live in the `sketchy:brush` registry (legacy `newspace:brush`
+  // still supported). We list them in the shape overflow, and load each brush
+  // MODULE (its stroke config / behaviour) so drawing with the brush uses it.
   const brushMods = new Map(); // id -> brush module ({ stroke, iconPath, ... })
-  try {
-    const r = getRegistry("newspace:brush");
-    if (r) {
-      const list = typeof r.filter === "function" ? r.filter(() => true) : (Array.isArray(r) ? r : []);
-      setBrushes(list);
-      for (const b of list) Promise.resolve(b.load ? b.load() : b).then((m) => { if (m) brushMods.set(m.id || b.id, m); }).catch(() => {});
+  {
+    const all = [], seen = new Set();
+    for (const reg of ["sketchy:brush", "newspace:brush"]) {
+      try {
+        const r = getRegistry(reg);
+        const list = r ? (typeof r.filter === "function" ? r.filter(() => true) : (Array.isArray(r) ? r : [])) : [];
+        for (const b of list) { if (b && !seen.has(b.id)) { seen.add(b.id); all.push(b); } }
+      } catch {}
     }
-  } catch {}
+    setBrushes(all);
+    for (const b of all) Promise.resolve(b.load ? b.load() : b).then((m) => { if (m) brushMods.set(m.id || b.id, m); }).catch(() => {});
+  }
   const isBrushTool = (t) => brushMods.has(t);
 
   const interactive = createMemo(() => tool() === "select");
@@ -220,6 +232,13 @@ function Canvas(props) {
   const [activeId, setActiveId] = createSignal("root");
   const active = () => surfaceById(activeId());
   const rootItems = () => rootSurface().doc?.items || [];
+
+  // Paint shapes/outlines IMMEDIATELY when the layout loads; mount the heavy
+  // embedded tools (patchwork-views) a frame later so they don't block first
+  // paint. (A doc's outline + title still show right away — only the live tool
+  // waits, behind a striped placeholder.)
+  const [embedsReady, setEmbedsReady] = createSignal(false);
+  createEffect(() => { if (rootItems().length && !embedsReady()) requestAnimationFrame(() => requestAnimationFrame(() => setEmbedsReady(true))); });
 
   // load a space's folder + layout handles together
   const spaceCache = new Map();
@@ -242,8 +261,10 @@ function Canvas(props) {
       const it = items[i];
       if (it.kind === "stroke") continue;
       if (it.kind === "shape" && (it.type === "arrow" || it.type === "line")) continue;
-      const b = itemBounds(it);
-      if (wx >= b.x && wx <= b.x + b.w && wy >= b.y && wy <= b.y + b.h) return it.id;
+      // hit-test the ROTATED shape (anchor in [0,1] ⇔ inside it), so you only
+      // bind when over the actual tool and the stored anchor is in-bounds
+      const a = worldAnchor(it, wx, wy);
+      if (a.x >= 0 && a.x <= 1 && a.y >= 0 && a.y <= 1) return it.id;
     }
     return null;
   };
@@ -259,7 +280,7 @@ function Canvas(props) {
     if (!dstHandle) return;
     convertToLocal(item, dstFrame);
     const id = uid();
-    dstHandle.change((d) => d.items.push({ id, ...item }));
+    transact(dstHandle, "add", () => dstHandle.change((d) => d.items.push({ id, ...item })));
     setActiveId(dstFrame ? targetFrame.url : "root");
     setSelected([id]);
     if (opts.edit) setEditingId(id);
@@ -270,17 +291,9 @@ function Canvas(props) {
   const isSelected = (id) => selSet().has(id);
 
   // grouping: items sharing a `group` id select / move / rotate as one unit
-  function expandGroups(ids) {
-    const items = active().doc?.items || [];
-    const gids = new Set();
-    for (const id of ids) { const o = items.find((x) => x.id === id); if (o && o.group) gids.add(o.group); }
-    if (!gids.size) return ids;
-    const out = new Set(ids);
-    for (const o of items) if (o.group && gids.has(o.group)) out.add(o.id);
-    return [...out];
-  }
-  function groupSelected() { const ids = selected(); if (ids.length < 2) return; const gid = "g" + uid(); active().handle.change((d) => { for (const id of ids) { const o = d.items.find((x) => x.id === id); if (o) o.group = gid; } }); }
-  function ungroupSelected() { active().handle.change((d) => { for (const id of selected()) { const o = d.items.find((x) => x.id === id); if (o && o.group != null) delete o.group; } }); }
+  const expandGroups = (ids) => expandGroupsIn(active().doc?.items || [], ids);
+  function groupSelected() { const ids = selected(); if (ids.length < 2) return; const gid = "g" + uid(); transact(active().handle, "group", () => active().handle.change((d) => { for (const id of ids) { const o = d.items.find((x) => x.id === id); if (o) o.group = gid; } })); }
+  function ungroupSelected() { transact(active().handle, "ungroup", () => active().handle.change((d) => { for (const id of selected()) { const o = d.items.find((x) => x.id === id); if (o && o.group != null) delete o.group; } })); }
   const hasGroup = () => { const items = active().doc?.items || []; return selected().some((id) => { const o = items.find((x) => x.id === id); return o && o.group != null; }); };
 
   // itemBounds / localToWorld / worldToLocal / pointInFrame are imported from model.js
@@ -318,11 +331,17 @@ function Canvas(props) {
     if (surface.id !== activeId()) { setActiveId(surface.id); setSelected([]); }
     if (tool() === "eraser") return removeItems(surface, [it.id]);
     if (tool() !== "select") return;
+    // inside an entered group, a click picks the individual member; otherwise a
+    // grouped item selects its whole group (clicking elsewhere exits the group)
+    const { ids: sel1, exitGroup } = clickSelection(surface.doc?.items || [], it.id, enteredGroup());
+    if (exitGroup) setEnteredGroup(null);
     if (e.shiftKey) {
-      const grp = expandGroups([it.id]);
-      const allIn = grp.every((id) => isSelected(id));
-      setSelected(allIn ? selected().filter((id) => !grp.includes(id)) : [...new Set([...selected(), ...grp])]);
-    } else if (!isSelected(it.id)) setSelected(expandGroups([it.id]));
+      const allIn = sel1.every((id) => isSelected(id));
+      setSelected(allIn ? selected().filter((id) => !sel1.includes(id)) : [...new Set([...selected(), ...sel1])]);
+    } else if (!isSelected(it.id)) setSelected(sel1);
+    // the SECOND press of a double-click must not start a move — beginGesture's
+    // preventDefault would otherwise swallow the dblclick (→ no text editing)
+    if (e.detail >= 2) return;
     if (e.altKey) return startCopyMove(e, surface);
     startMove(e, surface);
   }
@@ -341,7 +360,7 @@ function Canvas(props) {
       if (!o) continue;
       const c = cloneItem(o); c.id = uid();
       clones.push(c);
-      orig[c.id] = c.kind === "stroke" ? { points: c.points.map((p) => p.slice()) } : { x: c.x, y: c.y };
+      orig[c.id] = c.kind === "stroke" ? { points: c.points.map((p) => p.slice()) } : c.kind === "sketch" ? { nodes: c.nodes.map((n) => ({ x: n.x, y: n.y })) } : { x: c.x, y: c.y };
     }
     if (!clones.length) return;
     surface.handle.change((d) => { for (const c of clones) d.items.push(c); });
@@ -359,9 +378,9 @@ function Canvas(props) {
     const orig = {};
     for (const id of ids) {
       const o = surface.doc.items.find((x) => x.id === id);
-      if (o) orig[id] = o.kind === "stroke" ? { points: o.points.map((p) => p.slice()) } : { x: o.x, y: o.y, cx: o.cx, cy: o.cy };
+      if (o) orig[id] = o.kind === "stroke" ? { points: o.points.map((p) => p.slice()) } : o.kind === "sketch" ? { nodes: o.nodes.map((n) => ({ x: n.x, y: n.y })) } : { x: o.x, y: o.y, cx: o.cx, cy: o.cy };
     }
-    gesture = { kind: "move", ids, start, orig, surface, fr };
+    gesture = { kind: "move", ids, start, orig, surface, fr, txn: beginTxn(surface.handle) };
     beginGesture(e);
   }
 
@@ -376,15 +395,37 @@ function Canvas(props) {
     for (const s of surfaceReg.values()) if ((s.doc?.items || []).some((x) => x.id === id)) return s;
     return null;
   }
+  // ---- local undo/redo (command pattern) ------------------------------
+  const history = createHistory();
+  // run `fn` (which mutates the layout) and record an undoable command from the
+  // before/after diff. Used for atomic operations.
+  function transact(handle, label, fn) {
+    if (!handle || history.applying) return fn && fn();
+    const before = snapshotItems(handle.doc().items);
+    const r = fn && fn();
+    const cmd = diffCommand(before, snapshotItems(handle.doc().items), (mut) => handle.change((d) => mut(d.items)), label);
+    history.push(cmd);
+    return r;
+  }
+  // for gestures: snapshot at the start, build the command at the end
+  const beginTxn = (handle) => (handle && !history.applying ? { handle, before: snapshotItems(handle.doc().items) } : null);
+  function endTxn(txn, label) {
+    if (!txn || history.applying) return;
+    const cmd = diffCommand(txn.before, snapshotItems(txn.handle.doc().items), (mut) => txn.handle.change((d) => mut(d.items)), label);
+    history.push(cmd);
+  }
+
   // remove items: drop the folder link FIRST (so docs→items can't recreate the
   // shape), then the shape a microtask later (after the reconcile has settled)
   function removeItems(_ignored, ids) {
     const idSet = new Set(ids);
+    const captured = []; // for undo: re-add the removed layout items
     for (const id of ids) {
       const surface = surfaceOf(id);
       if (!surface) continue;
       const item = (surface.doc?.items || []).find((x) => x.id === id);
       if (!item) continue;
+      captured.push({ handle: surface.handle, item: JSON.parse(JSON.stringify(item)) }); // plain clone (item is a Solid store proxy)
       if (item.kind === "doc" || item.kind === "frame") {
         // only unlink the doc when this is the LAST shape pointing at its url —
         // copies (alt-drag) can share a url, so others may still reference it
@@ -397,6 +438,14 @@ function Canvas(props) {
     }
     const set = new Set(ids);
     setSelected(selected().filter((s) => !set.has(s)));
+    // undo a delete by re-adding the layout item(s); redo removes them again.
+    // (the folder link isn't restored — an undone doc-delete is an orphan shape,
+    // which is fine: it already points at its still-present doc.)
+    if (captured.length && !history.applying) history.push({
+      label: "delete",
+      undo: () => { for (const { handle, item } of captured) handle.change((d) => { if (!d.items.some((x) => x.id === item.id)) d.items.push(JSON.parse(JSON.stringify(item))); }); },
+      redo: () => { for (const { handle, item } of captured) handle.change((d) => { const i = d.items.findIndex((x) => x.id === item.id); if (i >= 0) d.items.splice(i, 1); }); },
+    });
   }
   function deleteSelected() { removeItems(null, selected()); }
 
@@ -411,8 +460,11 @@ function Canvas(props) {
     const frame = surface.frame;
     const ob = itemBounds(it);
     const r = rad(it.rotation || 0);
-    const orig = it.kind === "stroke" ? it.points.map((p) => p.slice()) : { x: it.x, y: it.y, w: it.w, h: it.h };
+    const orig = it.kind === "stroke" ? it.points.map((p) => p.slice())
+      : it.kind === "text" ? { x: it.x, y: it.y, w: it.w, h: it.h, fontSize: it.fontSize || 20, wrap: !!it.wrap }
+      : { x: it.x, y: it.y, w: it.w, h: it.h };
     const ax = -hx * ob.w / 2, ay = -hy * ob.h / 2;
+    const txn = beginTxn(surface.handle);
     const move = (ev) => {
       const p = toSpace(ev.clientX, ev.clientY, frame);
       const cx0 = ob.x + ob.w / 2, cy0 = ob.y + ob.h / 2;
@@ -424,7 +476,7 @@ function Canvas(props) {
       const [ncx, ncy] = rot((minx + maxx) / 2, (miny + maxy) / 2, r);
       applyResize(surface.handle, it.id, ob, { x: cx0 + ncx - nw / 2, y: cy0 + ncy - nh / 2, w: nw, h: nh }, orig, it.kind);
     };
-    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+    const up = () => { endTxn(txn, "resize"); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
   }
 
@@ -436,6 +488,7 @@ function Canvas(props) {
       if (!o) return;
       if (kind === "stroke") { for (let i = 0; i < o.points.length; i++) { o.points[i][0] = mapX(orig[i][0]); o.points[i][1] = mapY(orig[i][1]); } }
       else if (kind === "shape") { const x1 = mapX(orig.x), y1 = mapY(orig.y), x2 = mapX(orig.x + orig.w), y2 = mapY(orig.y + orig.h); o.x = x1; o.y = y1; o.w = x2 - x1; o.h = y2 - y1; }
+      else if (kind === "text") { o.fontSize = Math.max(6, Math.round((orig.fontSize || 20) * (ob.h > 0.001 ? nb.h / ob.h : 1))); o.x = nb.x; o.y = nb.y; if (orig.wrap) o.w = nb.w; /* height re-measures from content */ }
       else { o.x = mapX(orig.x); o.y = mapY(orig.y); o.w = nb.w; o.h = nb.h; }
     });
   }
@@ -449,8 +502,44 @@ function Canvas(props) {
     return { x: minx, y: miny, w: maxx - minx, h: maxy - miny };
   });
 
+  // a faint outline around EACH selected item (only when multi-selecting), so
+  // you can see exactly which shapes are in the selection
+  const selItemOutlines = createMemo(() => {
+    const ids = selected();
+    if (ids.length < 2) return [];
+    const frame = active().frame, fr = frame ? frame.rotation || 0 : 0;
+    return ids.map((id) => {
+      const it = itemById(id); if (!it) return null;
+      const b = itemBounds(it);
+      const [wx, wy] = localToWorld(frame, b.x + b.w / 2, b.y + b.h / 2);
+      return { x: wx - b.w / 2, y: wy - b.h / 2, w: b.w, h: b.h, cx: wx, cy: wy, rot: (it.rotation || 0) + fr };
+    }).filter(Boolean);
+  });
+
+  // outline for a group rendered "as a shape of its own": shown when a group is
+  // entered, or when the selection is exactly one whole group. (root only — the
+  // bounds are surface-local, which equals world at the root.)
+  const groupOutline = createMemo(() => {
+    if (active().frame) return null;
+    const items = active().doc?.items || [];
+    const eg = enteredGroup();
+    let gid = eg;
+    if (!gid) {
+      const sel = selected();
+      if (sel.length < 2) return null;
+      const groups = new Set(sel.map((id) => items.find((x) => x.id === id)?.group).filter(Boolean));
+      if (groups.size !== 1) return null;
+      gid = [...groups][0];
+      const members = items.filter((x) => x.group === gid).map((x) => x.id);
+      if (sel.length !== members.length || !members.every((id) => sel.includes(id))) return null;
+    }
+    const b = groupBounds(items, gid);
+    return b ? { ...b, entered: gid === eg } : null;
+  });
+
   function startGroupResize(hx, hy, e) {
     const surface = active();
+    const txn = beginTxn(surface.handle);
     const ids = selected();
     const U = selWorldBounds();
     if (!U) return;
@@ -473,7 +562,7 @@ function Canvas(props) {
         }
       });
     };
-    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+    const up = () => { endTxn(txn, "transform"); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
   }
 
@@ -482,6 +571,7 @@ function Canvas(props) {
   function startGroupRotate(e) {
     e.stopPropagation(); e.preventDefault();
     const surface = active(), frame = surface.frame;
+    const txn = beginTxn(surface.handle);
     const U = selWorldBounds();
     if (!U) return;
     const [gcx, gcy] = worldToLocal(frame, U.x + U.w / 2, U.y + U.h / 2); // group centre (surface-local)
@@ -506,8 +596,13 @@ function Canvas(props) {
         }
       });
     };
-    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+    const up = () => { endTxn(txn, "transform"); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+  }
+
+  // double-clicking the rotate knob resets the selection's rotation to 0
+  function resetRotation() {
+    transact(active().handle, "reset rotation", () => active().handle.change((d) => { for (const id of selected()) { const o = d.items.find((x) => x.id === id); if (o && o.rotation) o.rotation = 0; } }));
   }
 
   function startRotate(e) {
@@ -516,6 +611,7 @@ function Canvas(props) {
     const it = single();
     if (!it) return;
     const surface = active();
+    const txn = beginTxn(surface.handle);
     const frame = surface.frame;
     const b = itemBounds(it);
     const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
@@ -528,7 +624,7 @@ function Canvas(props) {
       if (ev.shiftKey) deg = Math.round(deg / 15) * 15;
       surface.handle.change((d) => { const o = d.items.find((x) => x.id === it.id); if (o) o.rotation = deg; });
     };
-    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+    const up = () => { endTxn(txn, "transform"); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
   }
 
@@ -569,25 +665,67 @@ function Canvas(props) {
   }
 
   function reorder(mode) {
-    const sel = new Set(selected());
-    if (!sel.size) return;
-    active().handle.change((d) => {
-      const arr = d.items;
-      // clone to a plain object before re-inserting (re-inserting a live
-      // automerge proxy doesn't move it)
-      const cloneAt = (i) => cloneItem(arr[i]);
-      if (mode === "front" || mode === "back") {
-        const moved = [];
-        for (let i = arr.length - 1; i >= 0; i--) if (sel.has(arr[i].id)) { moved.unshift(cloneAt(i)); arr.splice(i, 1); }
-        if (mode === "front") for (const m of moved) arr.push(m);
-        else for (let k = moved.length - 1; k >= 0; k--) arr.splice(0, 0, moved[k]);
-      } else {
-        const dir = mode === "forward" ? 1 : -1;
-        const ids = selected().slice().sort((a, b) => arr.findIndex((x) => x.id === a) - arr.findIndex((x) => x.id === b));
-        const seq = dir === 1 ? ids.reverse() : ids;
-        for (const id of seq) { const i = arr.findIndex((x) => x.id === id); const j = i + dir; if (j < 0 || j >= arr.length || sel.has(arr[j].id)) continue; const m = cloneAt(i); arr.splice(i, 1); arr.splice(j, 0, m); }
+    if (!selected().length) return;
+    transact(active().handle, "reorder", () => active().handle.change((d) => applyReorder(d.items, selected(), mode)));
+  }
+
+  // ---- behaviour brushes ---------------------------------------------
+  // A `newspace:brush` may carry a `behavior` ({down,move,up}) instead of (or
+  // besides) a passive `stroke`. Such a brush owns its whole gesture: we hand it
+  // a context with the live pointer, the existing canvas geometry (in world
+  // coords, for snapping), a screen-constant snap tolerance, and callbacks to
+  // preview (setDraft), badge constraints (setGuides), and commit. See
+  // constraint.js for the Sketchpad/Crosscut-style constraint-line brush.
+
+  // existing geometry the brush can snap to — segments (lines/arrows) and the
+  // points worth snapping to (segment ends, shape corners + centres), all world.
+  function brushGeometry() {
+    const segments = [], points = [];
+    for (const it of rootItems()) {
+      const b = itemBounds(it);
+      if (it.kind === "sketch") {
+        // sketch nodes are the prime snap targets — landing on one shares a pivot
+        for (const n of it.nodes || []) points.push({ x: n.x, y: n.y, sketchId: it.id, nodeId: n.id });
+        for (const bar of it.bars || []) {
+          const a = (it.nodes || []).find((n) => n.id === bar.a), c = (it.nodes || []).find((n) => n.id === bar.b);
+          if (a && c) segments.push({ x1: a.x, y1: a.y, x2: c.x, y2: c.y, id: it.id });
+        }
+        continue;
       }
-    });
+      if (it.kind === "shape" && (it.type === "line" || it.type === "arrow")) {
+        const cx = it.x + it.w / 2, cy = it.y + it.h / 2, a = rad(it.rotation || 0);
+        const [e1x, e1y] = rot(it.x - cx, it.y - cy, a);
+        const [e2x, e2y] = rot(it.x + it.w - cx, it.y + it.h - cy, a);
+        const x1 = cx + e1x, y1 = cy + e1y, x2 = cx + e2x, y2 = cy + e2y;
+        segments.push({ x1, y1, x2, y2, id: it.id });
+        points.push({ x: x1, y: y1, id: it.id }, { x: x2, y: y2, id: it.id });
+      } else if (it.kind !== "stroke") {
+        points.push(
+          { x: b.x, y: b.y }, { x: b.x + b.w, y: b.y },
+          { x: b.x, y: b.y + b.h }, { x: b.x + b.w, y: b.y + b.h },
+          { x: b.x + b.w / 2, y: b.y + b.h / 2 },
+        );
+      }
+    }
+    return { segments, points };
+  }
+
+  function brushCtx(g, e, p) {
+    return {
+      p, start: g.start, event: e, state: g.state,
+      brush: { color: brush.color, size: brush.size, roughness: brush.roughness, bowing: brush.bowing },
+      geometry: g.geometry || (g.geometry = brushGeometry()),
+      tol: 12 / (cam().z || 1), // snap radius: ~12 screen px, constant on screen
+      setDraft, setGuides, uid, history,
+      items: rootItems(),
+      // mutate the surface the gesture started on (root for v1 behaviour brushes)
+      change: (fn) => { const h = rootLayoutH(); if (h) h.change((d) => fn(d.items, d)); },
+      commit: (item) => { if (item) pushItem(g.targetFrame, item); },
+    };
+  }
+  function callBrush(phase, g, e, p) {
+    const fn = g.mod?.behavior?.[phase];
+    if (fn) fn(brushCtx(g, e, p));
   }
 
   // ---- canvas-level gestures (root surface) ---------------------------
@@ -610,11 +748,20 @@ function Canvas(props) {
     const p = toWorld(e.clientX, e.clientY);
     if (t === "select") {
       if (!e.shiftKey) setSelected([]);
+      setEnteredGroup(null); // clicking empty canvas exits a group
       setActiveId("root");
       gesture = { kind: "marquee", x0: p.x, y0: p.y, add: selected() };
       setDraft({ kind: "marquee", x: p.x, y: p.y, w: 0, h: 0 });
     } else if (t === "pen" || isBrushTool(t)) {
-      const bs = brushMods.get(t)?.stroke; // a custom brush (e.g. highlighter)
+      const mod = brushMods.get(t);
+      if (mod?.behavior) {
+        // a behaviour brush owns its gesture (e.g. constraint lines)
+        gesture = { kind: "brush", mod, targetFrame: frameAtWorld(p.x, p.y), start: { x: p.x, y: p.y }, state: {}, txn: beginTxn(rootLayoutH()) };
+        callBrush("down", gesture, e, p);
+        beginGesture(e);
+        return;
+      }
+      const bs = mod?.stroke; // a custom brush (e.g. highlighter)
       gesture = { kind: "pen", targetFrame: frameAtWorld(p.x, p.y) };
       setDraft({ kind: "stroke", points: [[p.x, p.y, e.pressure || 0.5]], color: brush.color, size: bs?.size || brush.size, opacity: bs?.opacity, blend: bs?.blend, thinning: bs?.thinning });
     } else if (SHAPE_TOOLS.has(t)) {
@@ -659,6 +806,7 @@ function Canvas(props) {
     const k = gesture.kind;
     if (k === "pan") { setCam((c) => ({ ...c, x: gesture.cx + (e.clientX - gesture.sx), y: gesture.cy + (e.clientY - gesture.sy) })); return; }
     const p = toWorld(e.clientX, e.clientY);
+    if (k === "brush") return callBrush("move", gesture, e, p);
     if (k === "pen") setDraft((d) => ({ ...d, points: [...d.points, [p.x, p.y, e.pressure || 0.5]] }));
     else if (k === "shape" || k === "place" || k === "text") setDraft((d) => ({ ...d, w: p.x - d.x, h: p.y - d.y }));
     else if (k === "marquee") setDraft((d) => ({ ...d, w: p.x - gesture.x0, h: p.y - gesture.y0 }));
@@ -670,20 +818,24 @@ function Canvas(props) {
           const o = d.items.find((x) => x.id === id); const og = gesture.orig[id];
           if (!o || !og) continue;
           if (o.kind === "stroke") for (let i = 0; i < o.points.length; i++) { o.points[i][0] = og.points[i][0] + ldx; o.points[i][1] = og.points[i][1] + ldy; }
+          else if (o.kind === "sketch") for (let i = 0; i < o.nodes.length; i++) { o.nodes[i].x = og.nodes[i].x + ldx; o.nodes[i].y = og.nodes[i].y + ldy; }
           else { o.x = og.x + ldx; o.y = og.y + ldy; if (og.cx != null) { o.cx = og.cx + ldx; o.cy = og.cy + ldy; } }
         }
       });
       setDropTarget(gesture.ids.length === 1 ? moveDropTarget(gesture.surface, gesture.ids[0]) : null);
-      // dragging a child OUT of its box: un-clip the box so you can see it leave
-      setUnclipBox(gesture.surface.frame ? gesture.surface.id : null);
+      // un-clip a box ONLY once the dragged child's CENTRE has actually left it
+      // (dropping there would put it outside) — so while it's still inside it
+      // stays clipped, and you feel it cross the edge
+      setEscapeId(gesture.surface.frame && gesture.ids.length === 1 && childLeavingBox(gesture.surface, gesture.ids[0]) ? gesture.ids[0] : null);
     }
   }
 
   function onPointerUp(e) {
     const g = gesture; gesture = null;
-    setDropTarget(null); setUnclipBox(null);
+    setDropTarget(null); setEscapeId(null);
     window.removeEventListener("pointermove", onPointerMove); window.removeEventListener("pointerup", onPointerUp);
     if (!g) return;
+    if (g.kind === "brush") { callBrush("up", g, e, toWorld(e.clientX, e.clientY)); endTxn(g.txn, "brush"); setGuides(null); setDraft(null); return; }
     const d = draft();
     if (g.kind === "pen" && d && d.points.length > 1) {
       const s = { kind: "stroke", points: d.points, color: d.color, size: d.size, rotation: 0 };
@@ -732,8 +884,9 @@ function Canvas(props) {
       const links = outside ? selectedDocLinks(g.surface) : [];
       if (links.length) {
         dropToExternal(e.clientX, e.clientY, links);
-        g.surface.handle.change((dd) => { for (const id of g.ids) { const o = dd.items.find((x) => x.id === id); const og = g.orig[id]; if (!o || !og) continue; if (o.kind === "stroke") { for (let i = 0; i < o.points.length; i++) { o.points[i][0] = og.points[i][0]; o.points[i][1] = og.points[i][1]; } } else { o.x = og.x; o.y = og.y; } } });
+        g.surface.handle.change((dd) => { for (const id of g.ids) { const o = dd.items.find((x) => x.id === id); const og = g.orig[id]; if (!o || !og) continue; if (o.kind === "stroke") { for (let i = 0; i < o.points.length; i++) { o.points[i][0] = og.points[i][0]; o.points[i][1] = og.points[i][1]; } } else if (o.kind === "sketch") { for (let i = 0; i < o.nodes.length; i++) { o.nodes[i].x = og.nodes[i].x; o.nodes[i].y = og.nodes[i].y; } } else { o.x = og.x; o.y = og.y; } } });
       } else if (selected().length === 1) maybeReparent(g.surface, selected()[0]);
+      if (!links.length) endTxn(g.txn, "move"); // record the move for undo (in-surface moves; revert/drag-out are no-ops)
     }
     setDraft(null);
   }
@@ -746,6 +899,13 @@ function Canvas(props) {
   }
 
   // which root frame a moving item would drop INTO (null if none / already there)
+  // is the child's CENTRE outside its box (so a drop here lands it at root)?
+  function childLeavingBox(srcSurface, id) {
+    const f = srcSurface.frame; if (!f) return false;
+    const it = srcSurface.doc.items.find((x) => x.id === id); if (!it) return false;
+    const b = itemBounds(it), cx = b.x + b.w / 2, cy = b.y + b.h / 2; // box-local centre
+    return cx < 0 || cx > f.w || cy < 0 || cy > f.h;
+  }
   function moveDropTarget(srcSurface, id) {
     const it = srcSurface.doc.items.find((x) => x.id === id);
     if (!it) return null;
@@ -794,6 +954,15 @@ function Canvas(props) {
   // a pan/zoom in flight: keep it alive (overlay captures wheel) until ~60ms idle
   let panTimer;
   function bumpPan() { setPanActive(true); clearTimeout(panTimer); panTimer = setTimeout(() => setPanActive(false), 60); }
+  // zoom around the viewport centre (keyboard = / -)
+  function zoomBy(factor) {
+    if (!viewportRef) return;
+    const c = cam();
+    const px = viewportRef.offsetWidth / 2, py = viewportRef.offsetHeight / 2;
+    const nz = clamp(c.z * factor, 0.15, 8);
+    const wx = (px - c.x) / c.z, wy = (py - c.y) / c.z;
+    setCam({ z: nz, x: px - wx * nz, y: py - wy * nz });
+  }
   function onWheel(e) {
     // a wheel that STARTS over an embedded tool (and we're not mid-pan) scrolls
     // the tool; once a pan is underway the overlay captures, so it keeps panning
@@ -825,8 +994,10 @@ function Canvas(props) {
       if (!layout) return;
       const isFrame = isBoxType(datatypeId);
       // push the item FIRST (idempotent) so the docs→items reconcile, which
-      // fires when we add the folder link, sees it and doesn't duplicate
-      const id = uid();
+      // fires when we add the folder link, sees it and doesn't duplicate. The id
+      // is DETERMINISTIC from the url so another viewer's reconcile makes the
+      // same id (then de-dupes), rather than a second item.
+      const id = linkItemId(url);
       layout.change((d) => {
         if (d.items.some((x) => x.url === url)) return;
         if (isFrame) d.items.push({ id, kind: "frame", url, x, y, w: Math.max(w, 200), h: Math.max(h, 160) });
@@ -932,7 +1103,7 @@ function Canvas(props) {
         const ext = (file.type.split("/")[1] || "png").replace("jpeg", "jpg");
         const child = await repo.create2({ "@patchwork": { type: "file" }, content: buf, extension: ext, mimeType: file.type, name: file.name || `image.${ext}` });
         const pos = at(i);
-        layout.change((d) => { if (!d.items.some((x) => x.url === child.url)) d.items.push({ id: uid(), kind: "doc", url: child.url, x: pos.x, y: pos.y, w: 320, h: 240, rotation: 0, toolId: "" }); });
+        layout.change((d) => { if (!d.items.some((x) => x.url === child.url)) d.items.push({ id: linkItemId(child.url), kind: "doc", url: child.url, x: pos.x, y: pos.y, w: 320, h: 240, rotation: 0, toolId: "" }); });
         folder.change((d) => { if (!d.docs.some((l) => l.url === child.url)) d.docs.push({ name: file.name || `image.${ext}`, type: "file", url: child.url }); });
         i++;
       }
@@ -943,7 +1114,7 @@ function Canvas(props) {
       fresh.forEach((it, i) => {
         if (d.items.some((x) => x.url === it.url)) return;
         const pos = at(i);
-        const base = { id: uid(), url: it.url, x: pos.x, y: pos.y, w: 360, h: 280 };
+        const base = { id: linkItemId(it.url), url: it.url, x: pos.x, y: pos.y, w: 360, h: 280 };
         if (isBoxType(it.type)) d.items.push({ ...base, kind: "frame" });
         else d.items.push({ ...base, kind: "doc", rotation: 0, toolId: "" });
       });
@@ -966,18 +1137,25 @@ function Canvas(props) {
     const c = cam();
     const layout = rootLayoutH();
     if (!layout) return;
-    layout.change((d) => { if (!d.items.some((x) => x.url === child.url)) d.items.push({ id: uid(), kind: "doc", url: child.url, x: (r.width / 2 - c.x) / c.z - 160, y: (r.height / 2 - c.y) / c.z - 120, w: 320, h: 240, rotation: 0, toolId: "" }); });
+    layout.change((d) => { if (!d.items.some((x) => x.url === child.url)) d.items.push({ id: linkItemId(child.url), kind: "doc", url: child.url, x: (r.width / 2 - c.x) / c.z - 160, y: (r.height / 2 - c.y) / c.z - 120, w: 320, h: 240, rotation: 0, toolId: "" }); });
     handle.change((d) => { if (!d.docs.some((l) => l.url === child.url)) d.docs.push({ name, type: "file", url: child.url }); });
   }
 
   function onKeyDown(e) {
     // Escape always works (even while an embedded tool has focus): blur it,
     // drop selection, back to the pointer
-    if (e.key === "Escape") { const a = document.activeElement; if (a && a.blur) a.blur(); setSelected([]); setPlacing(null); setTool("select"); return; }
-    // group / ungroup (works even with an embedded tool focused)
+    if (e.key === "Escape") { const a = document.activeElement; if (a && a.blur) a.blur(); if (enteredGroup()) { setEnteredGroup(null); return; } setSelected([]); setPlacing(null); setTool("select"); return; }
+    // group / ungroup + undo / redo (work even with an embedded tool focused)
     if ((e.metaKey || e.ctrlKey) && (e.key === "g" || e.key === "G")) { e.preventDefault(); if (e.shiftKey) ungroupSelected(); else groupSelected(); return; }
+    if ((e.metaKey || e.ctrlKey) && (e.key === "z" || e.key === "Z")) { e.preventDefault(); if (e.shiftKey) history.redo(); else history.undo(); return; }
+    if ((e.metaKey || e.ctrlKey) && (e.key === "y" || e.key === "Y")) { e.preventDefault(); history.redo(); return; }
     if (isTypingTarget(e.target)) return;
     if ((e.key === "Backspace" || e.key === "Delete") && selected().length) { e.preventDefault(); return deleteSelected(); }
+    // bare z = undo, shift-z = redo; = / - zoom
+    if (e.key === "z") { history.undo(); return; }
+    if (e.key === "Z") { history.redo(); return; }
+    if (e.key === "=" || e.key === "+") { zoomBy(1.2); return; }
+    if (e.key === "-" || e.key === "_") { zoomBy(1 / 1.2); return; }
     if (e.key === "]") return reorder("forward");
     if (e.key === "[") return reorder("backward");
     // number row 1..9 selects the toolbar tools in order, alongside the letters
@@ -1020,12 +1198,21 @@ function Canvas(props) {
       let i = 0;
       for (const l of missing) {
         if (d.items.some((it) => it.url === l.url)) continue;
-        const id = uid();
+        const id = linkItemId(l.url); // deterministic → two peers create the same id, not two
         if (isBoxType(l.type)) d.items.push({ id, kind: "frame", url: l.url, x: bx + i * 28, y: by + i * 28, w: 360, h: 280 });
         else d.items.push({ id, kind: "doc", url: l.url, x: bx + i * 28, y: by + i * 28, w: 360, h: 280, rotation: 0, toolId: "" });
         i++;
       }
     });
+  });
+
+  // de-dup the root layout: two peers reconciling the same new link both push a
+  // (now identically-id'd) item — collapse them to one. By ID, so intentional
+  // alt-drag copies (same url, unique id) survive.
+  createEffect(() => {
+    const layout = rootLayoutH(); if (!layout) return;
+    const dup = duplicateItemIds(rootItems());
+    if (dup.length) layout.change((d) => { for (let k = dup.length - 1; k >= 0; k--) d.items.splice(dup[k], 1); });
   });
 
   // ---- presence (cursors, faces, shared view) -------------------------
@@ -1113,14 +1300,14 @@ function Canvas(props) {
   function setProp(key, val) {
     const ts = editTargets();
     if (ts.length) {
-      active().handle.change((d) => { for (const t of ts) { const o = d.items.find((x) => x.id === t.id); if (!o || (SHAPE_ONLY.has(key) && o.kind !== "shape") || (TEXT_ONLY.has(key) && o.kind !== "text")) continue; o[storedKey(o.kind, key)] = val; } });
+      transact(active().handle, "style", () => active().handle.change((d) => { for (const t of ts) { const o = d.items.find((x) => x.id === t.id); if (!o || (SHAPE_ONLY.has(key) && o.kind !== "shape") || (TEXT_ONLY.has(key) && o.kind !== "text")) continue; o[storedKey(o.kind, key)] = val; } }));
       // editing a selection ALSO becomes the default for the next thing you draw
       setBrush(key === "size" && ts[0].kind === "text" ? "fontSize" : key, val);
       return;
     }
     setBrush(key, val);
   }
-  function setItemField(id, field, val) { active().handle.change((d) => { const o = d.items.find((x) => x.id === id); if (o) o[field] = val; }); }
+  function setItemField(id, field, val) { transact(active().handle, "edit", () => active().handle.change((d) => { const o = d.items.find((x) => x.id === id); if (o) o[field] = val; })); }
 
   const propMode = createMemo(() => {
     const sel = selected();
@@ -1129,6 +1316,7 @@ function Canvas(props) {
     if (tool() === "pen") return "stroke";
     if (SHAPE_TOOLS.has(tool())) return "shape";
     if (tool() === "text") return "text";
+    if (isBrushTool(tool()) && brushMods.get(tool())?.params) return "brush";
     return null;
   });
   const showProps = createMemo(() => propMode() !== null);
@@ -1142,8 +1330,13 @@ function Canvas(props) {
     serviceUrl: automergeUrlToServiceWorkerUrl, loadSpace, loadDoc, loadDatatype, registerSurface, unregisterSurface,
     editingId, setEditingId, tombstoned: (url) => tombstones.has(url),
     deselect: () => setSelected([]),
+    toWorld, select: (ids) => setSelected(ids),
     removeItem: (id) => removeItems(null, [id]),
-    dropTarget, unclipBox,
+    dropTarget, escapeId, embedsReady, history,
+    enteredGroup,
+    // double-clicking a grouped item descends INTO its group (figma-style); a
+    // second double-click then reaches the member's own action (text edit, …)
+    enterGroup: (it) => { if (it.group && it.group !== enteredGroup()) { setEnteredGroup(it.group); setSelected([it.id]); return true; } return false; },
     boxBounds: (id) => { const f = rootItems().find((x) => x.id === id); return f ? itemBounds(f) : null; },
   };
 
@@ -1154,6 +1347,7 @@ function Canvas(props) {
     const it = single();
     if (it) {
       if (it.kind === "shape" && (it.type === "arrow" || it.type === "line")) return null; // use endpoint handles
+      if (it.kind === "sketch") return null; // sketches articulate via their nodes, not resize/rotate handles
       const b = itemBounds(it); const frame = active().frame;
       const [wx, wy] = localToWorld(frame, b.x + b.w / 2, b.y + b.h / 2);
       const sw = b.w * c.z, sh = b.h * c.z;
@@ -1177,7 +1371,7 @@ function Canvas(props) {
     return { start: toScreen(g.x, g.y), end: toScreen(g.x + g.w, g.y + g.h), control: ctrl };
   });
   // world bounds of the shape an arrow end is hovering, for the bind highlight
-  const arrowHoverBox = createMemo(() => { const id = arrowHover(); if (!id) return null; const it = rootItems().find((x) => x.id === id); return it ? itemBounds(it) : null; });
+  const arrowHoverBox = createMemo(() => { const id = arrowHover(); if (!id) return null; const it = rootItems().find((x) => x.id === id); if (!it) return null; const b = itemBounds(it); return { ...b, rotation: it.rotation || 0, cx: b.x + b.w / 2, cy: b.y + b.h / 2 }; });
 
   return (
     <div class={"ns-root " + cursorClass()} ref={viewportRef} onPointerDown={onPointerDown} onPointerMove={trackCursor} onDblClick={onCanvasDblClick} onWheel={onWheel} onDragOver={onDragOver} onDrop={onDrop}>
@@ -1205,12 +1399,27 @@ function Canvas(props) {
               </Show>
             )}
           </Show>
+          <Show when={guides()}>
+            <For each={guides()}>{(g) => (
+              <Show when={g.t === "seg"} fallback={
+                <Show when={g.t === "pt"} fallback={
+                  <text class="ns-guide-badge" x={g.x} y={g.y}>{g.text}</text>
+                }>
+                  <circle class="ns-guide-pt" classList={{ hot: g.hot }} cx={g.x} cy={g.y} r="4" vector-effect="non-scaling-stroke" />
+                </Show>
+              }>
+                <line class="ns-guide-seg" x1={g.x1} y1={g.y1} x2={g.x2} y2={g.y2} vector-effect="non-scaling-stroke" />
+              </Show>
+            )}</For>
+          </Show>
           <Show when={selWorldBounds()}>{(b) => <rect class="ns-sel" x={b().x} y={b().y} width={b().w} height={b().h} />}</Show>
-          <Show when={arrowHoverBox()}>{(b) => <rect class="ns-bindhl" x={b().x - 3} y={b().y - 3} width={b().w + 6} height={b().h + 6} rx="5" vector-effect="non-scaling-stroke" />}</Show>
+          <For each={selItemOutlines()}>{(o) => <rect class="ns-sel-each" x={o.x} y={o.y} width={o.w} height={o.h} transform={`rotate(${o.rot} ${o.cx} ${o.cy})`} vector-effect="non-scaling-stroke" />}</For>
+          <Show when={groupOutline()}>{(g) => <rect class={g().entered ? "ns-group ns-group-in" : "ns-group"} x={g().x} y={g().y} width={g().w} height={g().h} rx="4" vector-effect="non-scaling-stroke" />}</Show>
+          <Show when={arrowHoverBox()}>{(b) => <rect class="ns-bindhl" x={b().x - 3} y={b().y - 3} width={b().w + 6} height={b().h + 6} rx="5" transform={`rotate(${b().rotation} ${b().cx} ${b().cy})`} vector-effect="non-scaling-stroke" />}</Show>
         </g>
       </svg>
 
-      <Show when={handleBox()}>{(b) => <Handles box={b()} onResize={startResizeSel} onRotate={startRotate} />}</Show>
+      <Show when={handleBox()}>{(b) => <Handles box={b()} onResize={startResizeSel} onRotate={startRotate} onResetRotate={resetRotation} />}</Show>
       <Show when={segSel()}>{(a) => <>
         <div class="ns-end" style={{ left: `${a().start.x}px`, top: `${a().start.y}px` }} onPointerDown={(e) => startSegEnd("start", e)} />
         <div class="ns-end" style={{ left: `${a().end.x}px`, top: `${a().end.y}px` }} onPointerDown={(e) => startSegEnd("end", e)} />
@@ -1274,6 +1483,43 @@ function InlineEdit(props) {
   );
 }
 
+// Editor for a text ITEM. It's the SAME element as the static display (a
+// `.ns-text-static` div, contenteditable) so editing has identical shape + size
+// — no jump between display and edit. plaintext-only keeps Enter = newline and
+// paste plain. The element sizes itself (point text grows both ways; a wrap box
+// keeps its width), which we mirror back into the item's w/h.
+function TextEdit(props) {
+  let el;
+  const save = () => props.surface.handle.change((d) => {
+    const o = d.items.find((x) => x.id === props.id);
+    if (!o) return;
+    o.text = el.innerText;
+    const h = Math.max(1, el.offsetHeight);
+    if (!props.wrap) { const w = Math.max(8, el.offsetWidth); if (Math.abs((o.w || 0) - w) > 1) o.w = w; }
+    if (Math.abs((o.h || 0) - h) > 1) o.h = h;
+  });
+  onMount(() => {
+    el.innerText = props.text || "";
+    el.focus();
+    const r = document.createRange(); r.selectNodeContents(el); r.collapse(false);
+    const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    save();
+  });
+  return (
+    <div
+      ref={el}
+      class="ns-text-static ns-text-editing"
+      classList={{ "ns-text-wrap": !!props.wrap }}
+      contenteditable="plaintext-only"
+      style={props.style}
+      onPointerDown={(e) => e.stopPropagation()}
+      onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); el.blur(); } }}
+      onInput={save}
+      onBlur={() => props.done()}
+    />
+  );
+}
+
 function Item(props) {
   const it = () => props.it;
   const ctx = props.ctx;
@@ -1296,10 +1542,14 @@ function Item(props) {
     if (props.surface.frame || !ctx.isSelected(it().id)) return null; // root items only (box-local coords don't match)
     const box = ctx.dropTarget() && ctx.boxBounds(ctx.dropTarget());
     if (!box) return null;
+    // clip the (possibly ROTATED) item to the box: express the box's corners in
+    // the item's own local space (clip-path is applied pre-transform), so the
+    // clip rotates with the shape
     const a = b();
-    const top = Math.max(0, box.y - a.y), left = Math.max(0, box.x - a.x);
-    const right = Math.max(0, (a.x + a.w) - (box.x + box.w)), bottom = Math.max(0, (a.y + a.h) - (box.y + box.h));
-    return `inset(${top}px ${right}px ${bottom}px ${left}px)`;
+    const r = -rad(it().rotation || 0), wcx = a.x + a.w / 2, wcy = a.y + a.h / 2;
+    const corners = [[box.x, box.y], [box.x + box.w, box.y], [box.x + box.w, box.y + box.h], [box.x, box.y + box.h]];
+    const local = corners.map(([wx, wy]) => { const [rx, ry] = rot(wx - wcx, wy - wcy, r); return `${rx + a.w / 2}px ${ry + a.h / 2}px`; });
+    return `polygon(${local.join(", ")})`;
   };
   const baseStyle = () => {
     const clip = dropClip();
@@ -1307,6 +1557,9 @@ function Item(props) {
   };
   const down = (e) => ctx.onItemDown(it(), props.surface, e);
   const edit = () => { if (selectMode()) ctx.setEditingId(it().id); };
+  // double-click descends into a group first; only once you're inside does it
+  // reach the item's own action (text edit)
+  const onDbl = (e) => { e?.stopPropagation?.(); if (selectMode() && ctx.enterGroup(it())) return; edit(); };
 
   // keep a text item's stored w/h in sync with the actually-rendered text, so
   // the selection box always fits (size changes from the panel re-measure too)
@@ -1323,6 +1576,8 @@ function Item(props) {
   });
 
   return (
+    <Show when={it().kind === "voice"} fallback={
+    <Show when={it().kind === "sketch"} fallback={
     <Show when={it().kind === "doc" || it().kind === "frame"} fallback={
       <Show when={it().kind === "text"} fallback={
         // ---- shape / stroke ----
@@ -1341,15 +1596,15 @@ function Item(props) {
           <Show when={it().kind === "shape"}>
             <Show when={editing()} fallback={
               <Show when={it().text}>
-                <div class="ns-shape-text" style={{ color: "var(--ns-ink)", "font-size": `${it().fontSize || 16}px` }}>{it().text}</div>
+                <div class="ns-shape-text" style={{ color: "var(--ns-ink)", "font-size": `${it().fontSize || 28}px` }}>{it().text}</div>
               </Show>
             }>
-              <InlineEdit id={it().id} surface={props.surface} text={it().text || ""} cls="ns-shape-edit" style={{ "font-size": `${it().fontSize || 16}px` }} done={() => ctx.setEditingId(null)} />
+              <InlineEdit id={it().id} surface={props.surface} text={it().text || ""} cls="ns-shape-edit" style={{ "font-size": `${it().fontSize || 28}px` }} done={() => ctx.setEditingId(null)} />
             </Show>
           </Show>
           <Show when={hittable() && !editing()}>
             <Show when={it().kind === "shape" && (it().type === "line" || it().type === "arrow")} fallback={
-              <div class="ns-hit" onPointerDown={down} onDblClick={() => it().kind === "shape" && edit()} />
+              <div class="ns-hit" onPointerDown={down} onDblClick={() => { if (selectMode() && ctx.enterGroup(it())) return; if (it().kind === "shape") edit(); }} />
             }>
               {/* a line/arrow is hit only ALONG the stroke, not its bounding box */}
               <svg class="ns-hit-svg" style={{ overflow: "visible" }}>
@@ -1364,17 +1619,221 @@ function Item(props) {
         {/* ---- text ---- */}
         <div class="ns-text-item" style={baseStyle()}>
           <Show when={editing()} fallback={
-            <div class="ns-text-static" classList={{ "ns-text-wrap": !!it().wrap }} ref={staticEl} style={{ color: colorVar(it().color), "font-family": fontFamily(it().font), "font-size": `${it().fontSize || 20}px`, ...(it().wrap ? { width: `${it().w}px` } : {}) }} onPointerDown={(e) => hittable() && down(e)} onDblClick={edit}>
+            <div class="ns-text-static" classList={{ "ns-text-wrap": !!it().wrap }} ref={staticEl} style={{ color: colorVar(it().color), "font-family": fontFamily(it().font), "font-size": `${it().fontSize || 20}px`, ...(it().wrap ? { width: `${it().w}px` } : {}) }} onPointerDown={(e) => hittable() && down(e)} onDblClick={onDbl}>
               {it().text || ""}
             </div>
           }>
-            <InlineEdit id={it().id} surface={props.surface} text={it().text || ""} cls="ns-text-edit" autosize wrap={!!it().wrap} style={{ color: colorVar(it().color), "font-family": fontFamily(it().font), "font-size": `${it().fontSize || 20}px`, ...(it().wrap ? { width: `${it().w}px` } : {}) }} done={() => { ctx.setEditingId(null); if (!(it().text || "").trim()) ctx.removeItem(it().id); }} />
+            <TextEdit id={it().id} surface={props.surface} text={it().text || ""} wrap={!!it().wrap} style={{ color: colorVar(it().color), "font-family": fontFamily(it().font), "font-size": `${it().fontSize || 20}px`, ...(it().wrap ? { width: `${it().w}px` } : {}) }} done={() => { ctx.setEditingId(null); if (!(it().text || "").trim()) ctx.removeItem(it().id); }} />
           </Show>
         </div>
       </Show>
     }>
       <DocOrFrame it={it} b={b} ctx={ctx} surface={props.surface} depth={props.depth || 0} baseStyle={baseStyle} selectMode={selectMode} />
     </Show>
+    }>
+      <SketchItem it={it} b={b} ctx={ctx} surface={props.surface} baseStyle={baseStyle} down={down} />
+    </Show>
+    }>
+      <VoiceItem it={it} ctx={ctx} surface={props.surface} baseStyle={baseStyle} down={down} />
+    </Show>
+  );
+}
+
+// ---- a voice note (records on the creating client, then plays + transcript) --
+// A click with the Voice brush dropped this item in `recording: true` state and
+// began capturing audio on this client (voice.js). Here we render the card: a
+// stop button while recording (only the recorder sees it), else a ▶ play button
+// over the transcript in the hand font. On stop we save the audio as a file doc,
+// stamp its `.transcript`, and write the text onto the card.
+function VoiceItem(props) {
+  const it = props.it, ctx = props.ctx, surface = props.surface;
+  const setItem = (fn) => surface.handle.change((d) => { const o = d.items.find((x) => x.id === it().id); if (o) fn(o); });
+  const [interim, setInterim] = createSignal(""); // live (un-committed) words
+  const [status, setStatus] = createSignal("");
+  const [live, setLive] = createSignal(false); // true once OUR mic stream is open
+  const [playing, setPlaying] = createSignal(false);
+  const [progress, setProgress] = createSignal(0); // 0..1 playback position
+  let session = null, recStart = 0, audioEl;
+  let editEl; // the editable transcript field (done state)
+  const fmtDur = (s) => { s = Math.max(0, Math.round(s || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+  // mirror the doc text into the editable field when it changes from OUTSIDE
+  // (a final phrase landing, or a peer edit) — never while you're typing in it
+  createEffect(() => {
+    const t = it().text || "";
+    if (editEl && !it().recording && document.activeElement !== editEl && editEl.innerText !== t) editEl.innerText = t;
+  });
+
+  onMount(async () => {
+    // only the client that created this note opens the mic + stream
+    if (!it().recording || !claimVoice(it().id)) return;
+    try {
+      session = await startVoiceStream({
+        onStatus: (m) => setStatus(m || ""),
+        onReady: () => setStatus(""),
+        onInterim: (t) => setInterim(t),
+        onFinal: (t) => { setInterim(""); if (t) setItem((o) => { o.text = ((o.text || "") + " " + t).trim(); }); },
+      });
+      recStart = Date.now();
+      setLive(true);
+    } catch (e) {
+      console.warn("[voice] mic unavailable", e);
+      ctx.removeItem(it().id);
+    }
+  });
+  onCleanup(() => { if (session) session.stop(); if (audioEl) audioEl.pause(); });
+
+  async function stop(e) {
+    e.stopPropagation();
+    const s = session; session = null; setLive(false);
+    const dur = recStart ? (Date.now() - recStart) / 1000 : 0; // webm blobs report Infinity, so we time it ourselves
+    const blob = s ? await s.stop() : null;
+    setInterim("");
+    const text = (it().text || "").trim();
+    if (blob) {
+      const url = await saveAudioFile(window.repo, blob, text); // file carries the transcript
+      setItem((o) => { o.url = url; o.duration = dur; o.recording = false; });
+    } else setItem((o) => { o.recording = false; });
+  }
+  function togglePlay(e) {
+    e.stopPropagation();
+    if (!audioEl || !it().url) return;
+    if (playing()) { audioEl.pause(); setPlaying(false); }
+    else audioEl.play().then(() => setPlaying(true)).catch((err) => console.warn("[voice] play", err));
+  }
+
+  return (
+    <div class="ns-mark ns-voice" style={props.baseStyle()}>
+      <div class="ns-voice-card" classList={{ recording: !!it().recording }} onPointerDown={props.down}>
+        <div class="ns-voice-row">
+          <Show when={it().recording} fallback={
+            <button class="ns-voice-btn" title={playing() ? "pause" : "play"} onPointerDown={(e) => e.stopPropagation()} onClick={togglePlay}>{playing() ? "❚❚" : "▶"}</button>
+          }>
+            <button class="ns-voice-btn stop" title="stop" onPointerDown={(e) => e.stopPropagation()} onClick={stop}>■</button>
+          </Show>
+          <Show when={it().recording} fallback={<Show when={it().url}><span class="ns-voice-dur">{fmtDur(it().duration)}</span></Show>}>
+            <span class="ns-voice-hint">{live() ? (status() || "listening…") : "starting…"}</span>
+          </Show>
+        </div>
+        <Show when={playing() || progress() > 0}>
+          <div class="ns-voice-bar"><div class="ns-voice-bar-fill" style={{ width: `${progress() * 100}%` }} /></div>
+        </Show>
+        <audio ref={audioEl} preload="metadata" src={!it().recording && it().url ? ctx.serviceUrl(it().url) : undefined}
+          onTimeUpdate={() => { if (audioEl && it().duration) setProgress(Math.min(1, audioEl.currentTime / it().duration)); }}
+          onEnded={() => { setPlaying(false); setProgress(0); }} />
+        <Show when={it().recording} fallback={
+          <div ref={editEl} class="ns-voice-text edit" contenteditable="plaintext-only"
+            onPointerDown={(e) => e.stopPropagation()}
+            onInput={() => setItem((o) => { o.text = editEl.innerText; })} />
+        }>
+          <div class="ns-voice-text">{it().text || ""}<Show when={interim()}>{" "}<span class="interim">{interim()}</span></Show></div>
+        </Show>
+      </div>
+    </div>
+  );
+}
+
+// ---- a constraint sketch (nodes + rigid bars) ------------------------
+// Bars are drawn with rough.js (sketchy) and every joint gets a little circle,
+// so a sketch reads as a constraint figure, not plain lines. Interactions:
+//   • drag a node            → articulate (pin it, relax the rest: sketch.js)
+//   • drag a node onto another → SNAP/merge them into one point (Crosscut-style)
+//   • press a bar             → select/move the whole sketch (host onItemDown)
+// Pivots aren't made here: drawing two crossing bars auto-welds a pinned pivot
+// (the brush, via weldCrossings), which is what makes a scissors articulate.
+function SketchItem(props) {
+  const it = props.it; // already an accessor (Item passes its own `it`)
+  const ctx = props.ctx;
+  const b = props.b;
+  const selectMode = () => ctx.tool() === "select";
+  const hittable = () => selectMode() || ctx.tool() === "eraser";
+  const nodeOf = (id) => (it().nodes || []).find((n) => n.id === id);
+  const [mergeTarget, setMergeTarget] = createSignal(null); // node we'd snap onto on release
+  const change = (fn) => props.surface.handle.change((d) => { const s = d.items.find((x) => x.id === it().id); if (s) fn(s); });
+
+  // a bar drawn with rough.js (sketchy), deterministic per bar id
+  const barShape = (bar, a, c) => ({
+    type: "line", x: a.x, y: a.y, w: c.x - a.x, h: c.y - a.y,
+    color: ctx.resolveColor(colorVar(it().color)), fill: "none",
+    strokeWidth: it().strokeWidth || 2, roughness: it().roughness ?? 1.1, bowing: it().bowing ?? 0.6,
+    seed: seedFromId(bar.id || bar.a + bar.b),
+  });
+
+  function startNodeDrag(nodeId, e) {
+    if (!selectMode()) return;
+    e.stopPropagation(); // pointerdown only — safe to stop (tldraw/host marquee); never on click
+    ctx.select([it().id]);
+    const surface = props.surface;
+    const move = (ev) => {
+      const w = ctx.toWorld(ev.clientX, ev.clientY);
+      // snap radius: ~14 screen px in world units (so it feels constant on screen)
+      const tol = Math.abs(ctx.toWorld(ev.clientX + 14, ev.clientY).x - w.x) || 14;
+      let target = null, bd = tol;
+      for (const n of it().nodes || []) { if (n.id === nodeId) continue; const dd = Math.hypot(n.x - w.x, n.y - w.y); if (dd < bd) { bd = dd; target = n; } }
+      setMergeTarget(target ? target.id : null);
+      surface.handle.change((d) => {
+        const s = d.items.find((x) => x.id === it().id);
+        if (!s) return;
+        const nodes = nodeCopies(s);
+        const dn = nodes.find((n) => n.id === nodeId);
+        if (!dn) return;
+        // hovering a merge target snaps exactly onto it (clear "they'll coincide")
+        dn.x = target ? target.x : w.x; dn.y = target ? target.y : w.y;
+        relax(nodes, barCopies(s), new Set([nodeId]));
+        for (let i = 0; i < s.nodes.length; i++) { s.nodes[i].x = nodes[i].x; s.nodes[i].y = nodes[i].y; }
+      });
+    };
+    const up = () => {
+      const tgt = mergeTarget();
+      setMergeTarget(null);
+      if (tgt) mergeNodes(tgt, nodeId); // Crosscut-style: drop one point on another → they coincide
+      window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+  }
+  // SNAP lives in sketch.js (pure, tested); we run it inside a doc change when a
+  // node is dropped onto another. Pivots come from auto-welded crossings (the
+  // brush) — there are no double-click gestures.
+  function mergeNodes(keepId, dropId) { change((s) => mergeSketchNodes(s, keepId, dropId)); }
+
+  return (
+    <div class="ns-mark ns-sketch" style={props.baseStyle()}>
+      <svg class="ns-mark-svg" style={{ overflow: "visible" }}>
+        <g transform={`translate(${-b().x}, ${-b().y})`}>
+          <Show when={selectMode() && ctx.isSelected(it().id)}>
+            <rect class="ns-sel-sketch" x={b().x} y={b().y} width={b().w} height={b().h} vector-effect="non-scaling-stroke" />
+          </Show>
+          <For each={(ctx.themeTick(), it().bars || [])}>{(bar) => {
+            const a = nodeOf(bar.a), c = nodeOf(bar.b);
+            return (
+              <Show when={a && c}>
+                {/* the rough.js bar (visual only) */}
+                <For each={shapePaths(barShape(bar, a, c))}>
+                  {(p) => <path d={p.d} stroke={p.stroke} fill="none" stroke-width={p.strokeWidth} stroke-linecap="round" stroke-linejoin="round" style={{ "pointer-events": "none" }} />}
+                </For>
+                {/* an invisible fat line for hit-testing (select/move; dbl-click = pivot) */}
+                <Show when={hittable()}>
+                  <line x1={a.x} y1={a.y} x2={c.x} y2={c.y} stroke="transparent" stroke-width={Math.max(14, (it().strokeWidth || 2) + 10)} stroke-linecap="round" style={{ "pointer-events": "stroke", cursor: "move" }} onPointerDown={props.down} />
+                </Show>
+              </Show>
+            );
+          }}</For>
+          {/* a little circle on every joint — so these read as constraint lines,
+              not plain lines. Visible dot + a larger invisible grab target. */}
+          <For each={it().nodes || []}>{(n) => (
+            <>
+              <circle cx={n.x} cy={n.y} r={(it().strokeWidth || 2) + (n.fixed ? 4 : 2.5)}
+                class="ns-sketch-node" classList={{ fixed: !!n.fixed, merge: mergeTarget() === n.id }}
+                style={{ "pointer-events": "none" }} />
+              <Show when={hittable()}>
+                <circle cx={n.x} cy={n.y} r={Math.max(9, (it().strokeWidth || 2) + 6)} fill="transparent"
+                  style={{ "pointer-events": "auto", cursor: "grab" }}
+                  onPointerDown={(e) => startNodeDrag(n.id, e)} />
+              </Show>
+            </>
+          )}</For>
+        </g>
+      </svg>
+    </div>
   );
 }
 
@@ -1414,12 +1873,18 @@ function DocOrFrame(props) {
       let i = 0;
       for (const l of missing) {
         if (d.items.some((x) => x.url === l.url)) continue;
-        const id = uid();
+        const id = linkItemId(l.url); // deterministic (collab-safe, see root reconcile)
         if (isBoxType(l.type)) d.items.push({ id, kind: "frame", url: l.url, x: 24 + i * 26, y: 24 + i * 26, w: 300, h: 220 });
         else d.items.push({ id, kind: "doc", url: l.url, x: 24 + i * 26, y: 24 + i * 26, w: 300, h: 220, rotation: 0, toolId: "" });
         i++;
       }
     });
+  });
+  // de-dup the box's own layout too (same two-viewers race as the root)
+  createEffect(() => {
+    const s = childSurface(); if (!s) return;
+    const dup = duplicateItemIds(s.doc.items || []);
+    if (dup.length) s.handle.change((d) => { for (let k = dup.length - 1; k >= 0; k--) d.items.splice(dup[k], 1); });
   });
 
   // resolve the doc's REAL title via its datatype's getTitle (a box reads its
@@ -1492,11 +1957,13 @@ function DocOrFrame(props) {
           <For each={outline()}>{(p) => <path d={p.d} stroke="currentColor" fill="none" stroke-width={p.strokeWidth} stroke-linecap="round" />}</For>
         </svg>
       </Show>
-      <div class="ns-doc-body" ref={(el) => { bodyRef = el; enableAtomicMove(el); }} classList={{ "ns-frame-body": isFrame() && !isList(), "ns-unclip": ctx.unclipBox() === it().url }} style={{ "pointer-events": bodyPE() }} onFocusIn={() => ctx.deselect()}>
+      <div class="ns-doc-body" ref={(el) => { bodyRef = el; enableAtomicMove(el); }} classList={{ "ns-frame-body": isFrame() && !isList() }} style={{ "pointer-events": bodyPE() }} onFocusIn={() => ctx.deselect()}>
         <Show when={isFrame()} fallback={
           <Show when={link()?.type === "file"} fallback={
-            // @ts-ignore custom element
-            <patchwork-view doc-url={it().url} {...(it().toolId ? { "tool-id": it().toolId } : {})} style="display:block;width:100%;height:100%" />
+            <Show when={ctx.embedsReady()} fallback={<div class="ns-doc-pending" />}>
+              {/* @ts-ignore custom element */}
+              <patchwork-view doc-url={it().url} {...(it().toolId ? { "tool-id": it().toolId } : {})} style="display:block;width:100%;height:100%" />
+            </Show>
           }>
             <img class="ns-doc-img" src={ctx.serviceUrl(it().url)} alt={title()} />
           </Show>
@@ -1504,15 +1971,28 @@ function DocOrFrame(props) {
           <Show when={!tooDeep()} fallback={<div class="ns-box-stub">{title()}</div>}>
             <Show when={isList()} fallback={
               <Show when={childSurface()}>
-                <For each={sortById(childSurface().doc.items)}>{(child) => <Item it={child} surface={childSurface()} ctx={ctx} depth={(props.depth || 0) + 1} />}</For>
+                {/* the child whose centre has left this box renders in the
+                    unclipped escape layer below (so only IT shows escaping, not
+                    every overflowing item) */}
+                <For each={sortById(childSurface().doc.items).filter((c) => c.id !== ctx.escapeId())}>{(child) => <Item it={child} surface={childSurface()} ctx={ctx} depth={(props.depth || 0) + 1} />}</For>
               </Show>
             }>
               {/* list style: render the box's doc with the folder viewer */}
-              <patchwork-view doc-url={it().url} tool-id="folder-viewer" style="display:block;width:100%;height:100%" />
+              <Show when={ctx.embedsReady()} fallback={<div class="ns-doc-pending" />}>
+                <patchwork-view doc-url={it().url} tool-id="folder-viewer" style="display:block;width:100%;height:100%" />
+              </Show>
             </Show>
           </Show>
         </Show>
       </div>
+      {/* escape layer: an unclipped sibling that renders ONLY the child currently
+          leaving this box, at the same coords as the body — so it spills out
+          while everything else stays clipped */}
+      <Show when={isFrame() && !isList() && !tooDeep() && childSurface() && childSurface().doc.items.some((c) => c.id === ctx.escapeId())}>
+        <div class="ns-doc-escape">
+          <For each={childSurface().doc.items.filter((c) => c.id === ctx.escapeId())}>{(child) => <Item it={child} surface={childSurface()} ctx={ctx} depth={(props.depth || 0) + 1} />}</For>
+        </div>
+      </Show>
       {/* interiors are interactive, so a doc/box is only movable by its outline:
           thin grab strips around the edge (select/eraser only, so drawing at
           the edge still works) */}
@@ -1550,7 +2030,7 @@ function PresenceLayer(props) {
         <For each={list()}>
           {(p) => (
             <Show when={p.view}>
-              <div class="ns-view-box" style={{ left: `${sx(p.view.x)}px`, top: `${sy(p.view.y)}px`, width: `${p.view.w * props.cam().z}px`, height: `${p.view.h * props.cam().z}px`, "border-color": p.color, background: `color-mix(in srgb, ${p.color}, transparent 50%)` }}>
+              <div class="ns-view-box" style={{ left: `${sx(p.view.x)}px`, top: `${sy(p.view.y)}px`, width: `${p.view.w * props.cam().z}px`, height: `${p.view.h * props.cam().z}px`, "border-color": p.color, background: `color-mix(in srgb, ${p.color}, transparent 93%)` }}>
                 <span class="ns-view-tag" style={{ background: p.color }}>{p.name}</span>
               </div>
             </Show>
@@ -1613,7 +2093,7 @@ function Handles(props) {
   return (
     <div class="ns-handles" style={{ left: `${box().x}px`, top: `${box().y}px`, width: `${box().w}px`, height: `${box().h}px`, transform: `rotate(${box().rot}deg)` }}>
       <For each={HDIRS}>{([hx, hy]) => <div class="ns-handle" style={{ left: `${((hx + 1) / 2) * 100}%`, top: `${((hy + 1) / 2) * 100}%`, cursor: hCursor(hx, hy) }} onPointerDown={(e) => props.onResize(hx, hy, e)} />}</For>
-      <div class="ns-rotate" onPointerDown={(e) => props.onRotate(e)} />
+      <div class="ns-rotate" title="drag to rotate · double-click to reset" onPointerDown={(e) => props.onRotate(e)} onDblClick={() => props.onResetRotate?.()} />
       <div class="ns-rotate-stem" />
     </div>
   );
@@ -1633,6 +2113,8 @@ const TOOL_META = {
   text: ["Text  (T)", "M5 6h12M11 6v11"],
   box: ["Box  (F)", "M8 3H3V8 M14 3H19V8 M14 19H19V14 M8 19H3V14"],
   highlighter: ["Highlighter", "M5 15l7-7 4 4-7 7H5v-4z M14 6l3-3 3 3-3 3z M4 21h8"],
+  constraint: ["Constraint line", "M5 18a1.6 1.6 0 100-.1z M17 6a1.6 1.6 0 100-.1z M6 17L16 7 M6 17h5"],
+  voice: ["Voice note", "M12 4a2.5 2.5 0 012.5 2.5v4a2.5 2.5 0 01-5 0v-4A2.5 2.5 0 0112 4z M7 10a5 5 0 0010 0 M12 15v4 M9 19h6"],
 };
 const SHAPE_DRAGGABLE = new Set(["rectangle", "ellipse", "line", "arrow"]);
 
@@ -1797,6 +2279,59 @@ const FONT_SIZES = [
   { label: "L", size: 40 },
   { label: "XL", size: 60 },
 ];
+
+// The params panel for a custom `newspace:brush`. A brush declares `params`
+// either as an ARRAY of descriptors (we render standard controls bound to the
+// brush store via get/set) or as a FUNCTION (element, {get,set}) => cleanup that
+// renders its own whole panel — so a brush can ship its own UI, like its own CSS.
+function BrushPanel(props) {
+  const mod = props.mod, g = props.get, s = props.set;
+  let customEl;
+  createEffect(() => {
+    const m = mod();
+    if (!customEl || typeof m?.params !== "function") return;
+    customEl.innerHTML = "";
+    const cleanup = m.params(customEl, { get: g, set: s });
+    onCleanup(() => { try { cleanup && cleanup(); } catch {} });
+  });
+  function startDrag(e) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const sx = e.clientX, sy = e.clientY, o = props.pos();
+    const move = (ev) => props.setPos({ x: o.x + (ev.clientX - sx), y: o.y + (ev.clientY - sy) });
+    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+  }
+  return (
+    <div class="ns-props" style={{ left: `${props.pos().x}px`, top: `${props.pos().y}px` }} onPointerDown={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()}>
+      <div class="ns-props-head" onPointerDown={startDrag}><span class="ns-grip" />{mod()?.name || "Tool"}</div>
+      <Show when={typeof mod()?.params === "function"} fallback={
+        <For each={mod()?.params || []}>{(p) => (
+          <>
+            <div class="ns-field">{p.label || p.key}</div>
+            <Show when={p.type === "color"}>
+              <div class="ns-row ns-swatches"><For each={PALETTE}>{(c) => <button class="ns-swatch" classList={{ active: g(p.key) === c }} style={{ background: colorVar(c) }} onClick={() => s(p.key, c)} />}</For></div>
+            </Show>
+            <Show when={p.type === "size"}>
+              <div class="ns-row ns-sizes"><For each={SIZES}>{(sz) => <button class="ns-size" classList={{ active: g(p.key) === sz }} onClick={() => s(p.key, sz)}><span class="ns-fatline" style={{ height: `${Math.max(2, sz)}px` }} /></button>}</For></div>
+            </Show>
+            <Show when={p.type === "slider"}>
+              <div class="ns-row"><input type="range" style={{ width: "100%" }} min={p.min ?? 0} max={p.max ?? 1} step={p.step ?? 0.1} value={g(p.key) ?? p.min ?? 0} onInput={(e) => s(p.key, parseFloat(e.currentTarget.value))} /></div>
+            </Show>
+            <Show when={p.type === "toggle"}>
+              <div class="ns-row ns-order"><button class="ns-obtn" classList={{ active: !!g(p.key) }} onClick={() => s(p.key, !g(p.key))}>{g(p.key) ? "on" : "off"}</button></div>
+            </Show>
+            <Show when={p.type === "select"}>
+              <div class="ns-row ns-order"><For each={p.options || []}>{(o) => <button class="ns-obtn" classList={{ active: g(p.key) === o.value }} onClick={() => s(p.key, o.value)}>{o.label}</button>}</For></div>
+            </Show>
+          </>
+        )}</For>
+      }>
+        <div ref={customEl} class="ns-brush-custom" />
+      </Show>
+    </div>
+  );
+}
 function Properties(props) {
   const g = props.get, s = props.set, mode = props.mode;
   const isStroke = () => mode() === "stroke";
@@ -1842,7 +2377,7 @@ function Properties(props) {
         <div class="ns-field">color</div>
         <div class="ns-row ns-swatches"><For each={PALETTE}>{(c) => <button class="ns-swatch" classList={{ active: g("color") === c }} style={{ background: colorVar(c) }} onClick={() => s("color", c)} />}</For></div>
         <div class="ns-field">how fat</div>
-        <div class="ns-row ns-sizes"><For each={SIZES}>{(sz) => <button class="ns-size" classList={{ active: g("size") === sz }} onClick={() => s("size", sz)}><span class="ns-fatline" style={{ height: `${Math.max(2, sz)}px` }} /></button>}</For></div>
+        <div class="ns-row ns-sizes"><For each={props.arrow() ? ARROW_SIZES : SIZES}>{(sz) => <button class="ns-size" classList={{ active: g("size") === sz }} onClick={() => s("size", sz)}><span class="ns-fatline" style={{ height: `${Math.max(2, sz)}px` }} /></button>}</For></div>
         <Show when={isShape()}>
           <div class="ns-field">stroke style</div>
           <div class="ns-row ns-styles">

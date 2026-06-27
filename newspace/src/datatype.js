@@ -18,16 +18,16 @@
 
 export const NewspaceDatatype = {
   init(doc) {
-    doc.title = "New Space";
+    doc.title = "Sketchy";
     doc.docs = [];
   },
   getTitle(doc) {
-    return doc.title || "New Space";
+    return doc.title || "Sketchy";
   },
   setTitle(doc, title) {
     doc.title = title;
   },
   markCopy(doc) {
-    doc.title = "Copy of " + (doc.title || "New Space");
+    doc.title = "Copy of " + (doc.title || "Sketchy");
   },
 };

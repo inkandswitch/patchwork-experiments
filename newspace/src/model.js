@@ -2,6 +2,7 @@
 // tested (the interaction/CSS bugs need a real browser, but these data rules
 // caused most of the regressions: reconcile, transfer dedupe, coord transforms).
 import { shapeBounds, strokeBounds } from "./draw.js";
+import { sketchBounds } from "./sketch.js";
 
 export const rad = (d) => (d * Math.PI) / 180;
 export function rot(x, y, a) {
@@ -35,6 +36,7 @@ export const pointInFrame = (f, wx, wy) => {
 export function itemBounds(it) {
   if (it.kind === "shape") return shapeBounds(it);
   if (it.kind === "stroke") return strokeBounds(it);
+  if (it.kind === "sketch") return sketchBounds(it);
   return { x: it.x, y: it.y, w: it.w, h: it.h };
 }
 
@@ -42,8 +44,24 @@ export function itemBounds(it) {
 export function cloneItem(o) {
   const c = { ...o };
   if (o.kind === "stroke" && Array.isArray(o.points)) c.points = o.points.map((p) => p.slice());
+  if (o.kind === "sketch") { c.nodes = (o.nodes || []).map((n) => ({ ...n })); c.bars = (o.bars || []).map((b) => ({ ...b })); }
   delete c.parent;
   return c;
+}
+
+// The canonical layout-item id for a folder link's url. DETERMINISTIC, so when
+// two peers reconcile the same just-added link they create the SAME id — which
+// then de-dupes to one item — instead of two random ids that both survive (the
+// "doc appears twice with two viewers" bug).
+export function linkItemId(url) { return "li-" + url; }
+
+// indices of items whose id already appeared earlier in the array (duplicates to
+// remove). Dedup is by ID, never URL, so intentional alt-drag COPIES (same url,
+// unique ids) are preserved. Returns ascending indices (splice high→low).
+export function duplicateItemIds(items) {
+  const seen = new Set(), dup = [];
+  for (let i = 0; i < items.length; i++) { const id = items[i].id; if (seen.has(id)) dup.push(i); else seen.add(id); }
+  return dup;
 }
 
 // docs→items reconcile: which folder links still need a layout shape (skipping
@@ -117,6 +135,74 @@ export function arrowGeometry(it, items) {
   if (from) { if (it.fromAnchor) [sx, sy] = anchorWorld(from, it.fromAnchor); else [sx, sy] = edgeMidpoint(fb, tc ? tc[0] : ex, tc ? tc[1] : ey); }
   if (to) { if (it.toAnchor) [ex, ey] = anchorWorld(to, it.toAnchor); else [ex, ey] = edgeMidpoint(tb, fc ? fc[0] : sx, fc ? fc[1] : sy); }
   return { x: sx, y: sy, w: ex - sx, h: ey - sy };
+}
+
+// reorder the `arr` of items in place (z-order = array order). `mode` is
+// front|back|forward|backward. Re-inserts a CLONE of each moved item (a live
+// automerge proxy can't be re-inserted), preserving everything but identity —
+// callers rely on the reconcile keeping DOM nodes by `id`. Works on a plain
+// array or a live automerge list.
+export function applyReorder(arr, selectedIds, mode) {
+  const sel = new Set(selectedIds);
+  if (!sel.size) return;
+  const cloneAt = (i) => cloneItem(arr[i]);
+  if (mode === "front" || mode === "back") {
+    const moved = [];
+    for (let i = arr.length - 1; i >= 0; i--) if (sel.has(arr[i].id)) { moved.unshift(cloneAt(i)); arr.splice(i, 1); }
+    if (mode === "front") for (const m of moved) arr.push(m);
+    else for (let k = moved.length - 1; k >= 0; k--) arr.splice(0, 0, moved[k]);
+  } else {
+    const dir = mode === "forward" ? 1 : -1;
+    const ids = [...selectedIds].sort((a, b) => arr.findIndex((x) => x.id === a) - arr.findIndex((x) => x.id === b));
+    const seq = dir === 1 ? ids.reverse() : ids;
+    for (const id of seq) { const i = arr.findIndex((x) => x.id === id); const j = i + dir; if (j < 0 || j >= arr.length || sel.has(arr[j].id)) continue; const m = cloneAt(i); arr.splice(i, 1); arr.splice(j, 0, m); }
+  }
+}
+
+// compose a chain of frame transforms (outermost first) to turn a point in the
+// innermost frame's local space into world coords — the basis for binding an
+// arrow to an item that lives inside a box.
+export function framesToWorld(frames, x, y) {
+  let px = x, py = y;
+  for (let i = frames.length - 1; i >= 0; i--) [px, py] = localToWorld(frames[i], px, py);
+  return [px, py];
+}
+
+// axis-aligned bounds enclosing every item in `groupId` (group-as-shape basis)
+export function groupBounds(items, groupId) {
+  let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+  for (const it of items) {
+    if (it.group !== groupId) continue;
+    const b = itemBounds(it);
+    minx = Math.min(minx, b.x); miny = Math.min(miny, b.y);
+    maxx = Math.max(maxx, b.x + b.w); maxy = Math.max(maxy, b.y + b.h);
+  }
+  if (minx === Infinity) return null;
+  return { x: minx, y: miny, w: maxx - minx, h: maxy - miny };
+}
+
+// what a plain click selects, honouring an ENTERED group (group-as-shape): when
+// you're inside the clicked item's group, the click picks that single member;
+// otherwise it picks the item's whole group (and signals to exit any group you
+// were in). returns { ids, exitGroup }.
+export function clickSelection(items, clickedId, enteredGroupId) {
+  const it = items.find((x) => x.id === clickedId);
+  const grp = it && it.group != null ? it.group : null;
+  if (grp != null && grp === enteredGroupId) return { ids: [clickedId], exitGroup: false };
+  // not inside the clicked item's group → select its whole group; if we WERE in
+  // some (other) group, signal to leave it
+  return { ids: expandGroups(items, [clickedId]), exitGroup: enteredGroupId != null };
+}
+
+// grouping: given a selection, expand it to every item sharing a `group` id with
+// any selected item (so groups select/move/rotate as a unit)
+export function expandGroups(items, ids) {
+  const gids = new Set();
+  for (const id of ids) { const o = items.find((x) => x.id === id); if (o && o.group != null) gids.add(o.group); }
+  if (!gids.size) return ids;
+  const out = new Set(ids);
+  for (const o of items) if (o.group != null && gids.has(o.group)) out.add(o.id);
+  return [...out];
 }
 
 // alt-drag can leave several doc/frame shapes pointing at ONE url. When deleting

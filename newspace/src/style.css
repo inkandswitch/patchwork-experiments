@@ -84,7 +84,12 @@
   z-index: 30;
 }
 .ns-sel { fill: none; stroke: var(--ns-sky); stroke-width: 1.5; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
+/* a per-shape outline shown for each item in a multi-selection */
+.ns-sel-each { fill: none; stroke: var(--ns-sky); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.55; }
 .ns-bindhl { fill: color-mix(in oklch, var(--ns-sky), transparent 88%); stroke: var(--ns-sky); stroke-width: 2; stroke-dasharray: 6 4; }
+/* a group as a shape of its own; solid + tinted once you've entered it */
+.ns-group { fill: none; stroke: var(--ns-sky); stroke-width: 1.5; stroke-dasharray: 2 4; opacity: 0.65; }
+.ns-group-in { fill: color-mix(in oklch, var(--ns-sky), transparent 94%); stroke-dasharray: none; stroke-width: 2; opacity: 1; }
 /* an arrow endpoint grab dot (screen-space, like the resize handles) */
 .ns-end { position: absolute; width: 15px; height: 15px; transform: translate(-50%, -50%); border: 2.5px solid var(--ns-sky); border-radius: 50%; background: var(--ns-paper); box-shadow: 0 1px 3px var(--ns-shadow); cursor: grab; z-index: 46; pointer-events: auto; }
 .ns-end:active { cursor: grabbing; }
@@ -92,6 +97,11 @@
 .ns-ctrl { width: 12px; height: 12px; border-radius: 2px; background: var(--ns-chrome); border-color: var(--ns-pink); transform: translate(-50%, -50%) rotate(45deg); }
 .ns-marquee { fill: color-mix(in oklch, var(--ns-sky), transparent 85%); stroke: var(--ns-sky); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
 .ns-place { fill: none; stroke: var(--ns-ink); stroke-width: 1.5; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; }
+
+/* NB: the constraint brush's marks (.ns-guide-*, .ns-sketch-node, .ns-sel-sketch)
+   are styled by the brush itself (src/constraint.js injects them), so a brush —
+   even one from another package — carries its own look and leaves no orphan CSS
+   here if removed. */
 
 /* ---- a drawn mark (stroke / shape) --------------------------------- */
 .ns-mark { position: absolute; transform-origin: center; pointer-events: none; }
@@ -136,10 +146,15 @@
 }
 /* a drawn text BOX wraps at its fixed width (point text stays auto-width) */
 .ns-text-wrap { white-space: pre-wrap; overflow-wrap: anywhere; width: 100%; }
+/* editing IS the same .ns-text-static element (so no jump) — just a text caret */
+.ns-text-editing { cursor: text; outline: none; }
 /* while dragging a child out of a box, let it spill past the box edge (preview) */
-.ns-unclip { overflow: visible !important; }
+/* unclipped sibling of the box body that holds ONLY the item leaving the box */
+.ns-doc-escape { position: absolute; inset: 0; overflow: visible; pointer-events: none; z-index: 1; }
 /* transparent wheel-catcher while panning (sits above tools, below chrome) */
 .ns-panlock { position: absolute; inset: 0; z-index: 30; }
+/* placeholder shown in a doc while its (deferred) embedded tool mounts */
+.ns-doc-pending { width: 100%; height: 100%; background: repeating-linear-gradient(45deg, transparent 0 8px, color-mix(in oklch, var(--ns-chrome), transparent 70%) 8px 16px); }
 .ns-text-edit {
   display: block;
   box-sizing: content-box;
@@ -224,6 +239,9 @@
   cursor: auto;
 }
 .ns-doc-img { width: 100%; height: 100%; object-fit: contain; display: block; }
+/* a CANVAS box clips its children a few px inside its (sketchy, inward-bowing)
+   outline, so a nested tool never spills over the box's own line */
+.ns-frame-body { clip-path: inset(5px); }
 /* a too-deeply-nested box is just a named placeholder (no recursion) */
 .ns-box-stub {
   position: absolute;
@@ -392,6 +410,16 @@
 .ns-fatline { display: block; width: 70%; border-radius: 999px; background: var(--ns-ink); }
 .ns-size.active { background: var(--ns-ink); border-color: var(--ns-ink); }
 .ns-size.active .ns-fatline { background: var(--ns-chrome); }
+
+/* a System-7 slider (brush params): recessed pinstripe track + a hard-bevelled
+   knob that flips to the riso pink while you drag it */
+.ns-props input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 16px; margin: 1px 0; background: transparent; cursor: pointer; }
+.ns-props input[type="range"]::-webkit-slider-runnable-track { height: 8px; border-radius: 999px; background: var(--ns-paper); border: 1px solid var(--ns-chrome-lo); box-shadow: inset 1px 1px 0 var(--ns-shadow); }
+.ns-props input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 14px; height: 14px; margin-top: -4px; border-radius: 50%; background: var(--ns-sky); border: 1.5px solid var(--ns-ink); box-shadow: inset 1px 1px 0 var(--ns-hi), 1px 1px 0 var(--ns-shadow); }
+.ns-props input[type="range"]:active::-webkit-slider-thumb { background: var(--ns-pink); }
+.ns-props input[type="range"]::-moz-range-track { height: 8px; border-radius: 999px; background: var(--ns-paper); border: 1px solid var(--ns-chrome-lo); box-shadow: inset 1px 1px 0 var(--ns-shadow); }
+.ns-props input[type="range"]::-moz-range-thumb { width: 13px; height: 13px; border-radius: 50%; background: var(--ns-sky); border: 1.5px solid var(--ns-ink); box-shadow: inset 1px 1px 0 var(--ns-hi); }
+.ns-props input[type="range"]:active::-moz-range-thumb { background: var(--ns-pink); }
 
 /* style pickers (fill style + stroke style) — preview boxes, not a <select> */
 .ns-styles { gap: 5px; }
