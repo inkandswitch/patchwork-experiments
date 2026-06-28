@@ -14,29 +14,26 @@ import { createTranscriptionStream } from "@chee/patchwork-transcript";
 // ---- self-contained styling (injected once) --------------------------------
 const CSS = `
 .ns-voice { pointer-events: none; }
-.ns-voice-card { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 5px; padding: 7px 9px; pointer-events: auto; cursor: move;
-  background: var(--ns-paper); border: 1.5px solid var(--ns-ink); border-radius: 10px; overflow: hidden;
-  box-shadow: inset 1px 1px 0 var(--ns-hi), 3px 4px 0 var(--ns-shadow); }
-.ns-voice-card.recording { border-color: var(--ns-pink); }
-.ns-voice-row { display: flex; align-items: center; gap: 7px; flex: 0 0 auto; }
+/* a play/stop button + status, with the transcript below rendered like plain
+   text-tool text (no card chrome). */
+.ns-voice-head { position: absolute; left: 0; top: -30px; display: flex; align-items: center; gap: 7px; pointer-events: auto; cursor: move; }
 .ns-voice-btn { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
   border: 1.5px solid var(--ns-ink); background: var(--ns-sky); color: #fff; font-size: 12px; cursor: pointer;
   box-shadow: inset 1px 1px 0 var(--ns-hi), 1px 1px 0 var(--ns-shadow); user-select: none; }
 .ns-voice-btn:active { transform: translate(1px, 1px); box-shadow: inset 1px 1px 0 var(--ns-hi); }
 .ns-voice-btn.stop { background: var(--ns-pink); animation: ns-voice-pulse 1s ease-in-out infinite; }
 @keyframes ns-voice-pulse { 50% { opacity: 0.5; } }
-.ns-voice-hint { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ns-chrome-lo); font-family: var(--ns-font, system-ui); }
-.ns-voice-dur { margin-left: auto; font-size: 11px; font-weight: 700; color: var(--ns-chrome-lo); font-family: var(--ns-font, system-ui); font-variant-numeric: tabular-nums; }
+.ns-voice-status { font-size: 11px; font-weight: 700; color: var(--ns-chrome-lo); font-family: var(--ns-font, system-ui); font-variant-numeric: tabular-nums; }
 /* the playback progress bar grows into existence when you hit play */
-.ns-voice-bar { flex: 0 0 auto; height: 5px; border-radius: 999px; background: var(--ns-chrome-lo); overflow: hidden;
+.ns-voice-bar { flex: 0 0 auto; width: 60px; height: 5px; border-radius: 999px; background: var(--ns-chrome-lo); overflow: hidden;
   transform-origin: left center; animation: ns-voice-bar-in 0.28s cubic-bezier(.2,.9,.3,1.25); }
 @keyframes ns-voice-bar-in { from { transform: scaleX(0); opacity: 0; } to { transform: scaleX(1); opacity: 1; } }
-.ns-voice-bar-fill { height: 100%; background: var(--ns-pink); border-radius: 999px; box-shadow: 1px 0 0 var(--ns-pink); transition: width 0.1s linear; }
-.ns-voice-text { flex: 1 1 auto; overflow-y: auto; line-height: 1.3; color: var(--ns-ink); white-space: pre-wrap; overflow-wrap: anywhere;
-  font-family: var(--newspace-family-hand, "Caroni", ui-rounded, cursive); font-size: 22px; }
-.ns-voice-text .interim { opacity: 0.5; }
-.ns-voice-text.edit { cursor: text; outline: none; }
-.ns-voice-text.edit:empty::after, .ns-voice-text:empty::after { content: "speak…"; color: var(--ns-chrome-lo); font-size: 15px; }
+.ns-voice-bar-fill { display: block; height: 100%; background: var(--ns-pink); border-radius: 999px; transition: width 0.1s linear; }
+/* transcript — indistinguishable from text-tool text; editable in place */
+.ns-voice-transcript { position: absolute; inset: 0; pointer-events: auto; cursor: text; outline: none;
+  line-height: 1.3; white-space: pre-wrap; overflow-wrap: anywhere; overflow-y: auto; }
+.ns-voice-transcript:empty::after { content: "speak…"; color: var(--ns-chrome-lo); }
+.ns-voice-interim { position: absolute; inset: 0; pointer-events: none; opacity: 0.5; line-height: 1.3; white-space: pre-wrap; }
 `;
 function injectCSS() {
   if (typeof document === "undefined" || document.getElementById("newspace-voice-brush")) return;

@@ -22,6 +22,14 @@ const HOST_PROVIDED = new Set([
   "@automerge/automerge-subduction",
   "@automerge/automerge-subduction/slim",
   "@automerge/automerge-repo-react-hooks",
+  // CodeMirror core is host-provided via the importmap — these MUST be external so
+  // we share ONE instance with the host (facet / StateField identity matters; a
+  // second copy breaks every extension). The bootloader externals list only has
+  // state+view (it lags), so add language too. The lang packs / commands / search
+  // are NOT host-provided and bundle normally (they import the external core).
+  "@codemirror/state",
+  "@codemirror/view",
+  "@codemirror/language",
 ]);
 
 function isHostProvided(id) {

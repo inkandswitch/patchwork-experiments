@@ -3,7 +3,7 @@ import { createRoot, For } from "solid-js";
 import { render } from "solid-js/web";
 import { makeDocumentProjection } from "solid-automerge";
 import { makeRepo, makeSurface, withProjection, flush } from "./test-harness.js";
-import { applyReorder, framesToWorld, groupBounds, linksNeedingItems, linkItemId, duplicateItemIds } from "./model.js";
+import { applyReorder, framesToWorld, groupBounds, linksNeedingItems, linkItemId, duplicateItemIds, itemsInRect } from "./model.js";
 import { snapshotItems, diffCommand } from "./history.js";
 
 const sortById = (items) => [...(items || [])].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -59,6 +59,20 @@ describe("groupBounds", () => {
   });
   it("returns null for an empty group", () => {
     expect(groupBounds([{ id: "a" }], "nope")).toBe(null);
+  });
+});
+
+describe("itemsInRect (marquee = items whose centre is inside)", () => {
+  const items = [
+    { id: "a", kind: "doc", x: 0, y: 0, w: 20, h: 20 },   // centre 10,10
+    { id: "b", kind: "doc", x: 100, y: 100, w: 20, h: 20 }, // centre 110,110
+    { id: "c", kind: "doc", x: 40, y: 40, w: 20, h: 20 },  // centre 50,50
+  ];
+  it("selects by centre containment, normalising the rect corners", () => {
+    expect(itemsInRect(items, 0, 0, 60, 60)).toEqual(["a", "c"]);
+    expect(itemsInRect(items, 60, 60, 0, 0)).toEqual(["a", "c"]); // reversed corners
+    expect(itemsInRect(items, 105, 105, 200, 200)).toEqual(["b"]);
+    expect(itemsInRect(items, 200, 200, 300, 300)).toEqual([]);
   });
 });
 

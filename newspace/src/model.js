@@ -181,6 +181,19 @@ export function groupBounds(items, groupId) {
   return { x: minx, y: miny, w: maxx - minx, h: maxy - miny };
 }
 
+// ids of items whose CENTRE falls within the rect (marquee selection)
+export function itemsInRect(items, x0, y0, x1, y1) {
+  const minx = Math.min(x0, x1), maxx = Math.max(x0, x1);
+  const miny = Math.min(y0, y1), maxy = Math.max(y0, y1);
+  const hit = [];
+  for (const it of items) {
+    const b = itemBounds(it);
+    const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    if (cx >= minx && cx <= maxx && cy >= miny && cy <= maxy) hit.push(it.id);
+  }
+  return hit;
+}
+
 // what a plain click selects, honouring an ENTERED group (group-as-shape): when
 // you're inside the clicked item's group, the click picks that single member;
 // otherwise it picks the item's whole group (and signals to exit any group you
