@@ -115,8 +115,8 @@ export function createPlaceResolver(
   };
 
   // Drive the search channel for `place` and keep the first result document that
-  // carries coordinates (e.g. a POI card's `props.lat`/`props.lon`). The query
-  // is cleared again afterwards so it doesn't linger on the canvas.
+  // carries coordinates (a poi-card's top-level `lat`/`lon`). The query is
+  // cleared again afterwards so it doesn't linger on the canvas.
   const resolveViaSearch = async (place: string): Promise<Located | null> => {
     searchQueries.change((slice) => {
       slice[place] = true;
@@ -128,13 +128,12 @@ export function createPlaceResolver(
           const card = (
             await Promise.resolve(repo.find<unknown>(url))
           ).doc() as
-            | { props?: { lat?: unknown; lon?: unknown; name?: unknown } }
+            | { name?: unknown; lat?: unknown; lon?: unknown }
             | undefined;
-          const lat = card?.props?.lat;
-          const lon = card?.props?.lon;
+          const lat = card?.lat;
+          const lon = card?.lon;
           if (typeof lat === "number" && typeof lon === "number") {
-            const name =
-              typeof card?.props?.name === "string" ? card.props.name : place;
+            const name = typeof card?.name === "string" ? card.name : place;
             return { lat, lon, place: name, url };
           }
         } catch {

@@ -18,6 +18,7 @@ import {
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import {
   findContextStore,
+  findRepo,
   getContextHandle,
   subscribeContext,
   type ScopeHandle,
@@ -25,7 +26,6 @@ import {
 import {
   CommandQueries,
   CommandSuggestions,
-  deepCloneDocument,
   renderEmbedView,
   type Suggestion,
 } from "@embark/core";
@@ -286,62 +286,43 @@ function navigate(view: EditorView, delta: number): boolean {
   return true;
 }
 
-// Replaces the `/query` span with a mention-style token for the chosen
-// suggestion's card. Cloning the card (so each insertion is independent) is
-// async, so the menu is closed immediately and the token is filled in once the
-// clone resolves (see `insertEmbed`).
+// Replaces the `/query` span with a mention-style token referencing the chosen
+// suggestion's card directly (no clone — the suggestion already minted a fresh
+// card).
 function applySelected(view: EditorView, index?: number): boolean {
   const active = view.state.field(menuState, false)?.active;
   if (!active || active.suggestions.length === 0) return false;
   const suggestion = active.suggestions[index ?? active.index];
   if (!suggestion) return false;
   const { from, to } = active;
-  const expected = view.state.doc.sliceString(from, to);
   view.dispatch({ effects: dismiss.of(null) });
-  void insertEmbed(view, suggestion, from, to, expected);
+  insertEmbed(view, suggestion, from, to);
   view.focus();
   return true;
 }
 
-// Deep-clone the suggestion's prototype card so the inserted embed is an
-// independent instance, then drop a `{cloneUrl}` token into the note. How that
-// token renders is decided later by the resolved clone (its title, or a `viewUrl`
-// render module baked onto the doc). The `/query` span may have shifted while we
-// cloned, so it is only replaced when still exactly what we captured.
-async function insertEmbed(
+// Drop a `{cardUrl}` token into the note for the suggestion's card. How that
+// token renders is decided later by the resolved document (its title, or a
+// registered token tool for its datatype), so the token carries nothing but the
+// card url.
+function insertEmbed(
   view: EditorView,
   suggestion: Suggestion,
   from: number,
   to: number,
-  expected: string,
-): Promise<void> {
-  // `repo` is published on the window by the host frame.
-  const repo = window.repo;
-  let cardUrl = suggestion.url;
-  if (repo) {
-    try {
-      cardUrl = await deepCloneDocument(repo, suggestion.url);
-    } catch {
-      // Fall back to referencing the prototype directly if cloning fails.
-    }
-  }
-  const token = buildToken(cardUrl);
-  const docLength = view.state.doc.length;
-  const stillThere =
-    to <= docLength && view.state.doc.sliceString(from, to) === expected;
-  const head = view.state.selection.main.head;
-  const at = stillThere ? { from, to } : { from: head, to: head };
+): void {
+  const token = buildToken(suggestion.url);
   view.dispatch({
-    changes: { from: at.from, to: at.to, insert: token },
-    selection: { anchor: at.from + token.length },
+    changes: { from, to, insert: token },
+    selection: { anchor: from + token.length },
   });
   view.focus();
 }
 
 // Build the token the unified renderer understands: `{automerge:<url>}`. The
 // name shown and whether a custom face is drawn are both decided by the resolved
-// document (its title, and an optional `viewUrl` render module on the doc), so
-// the token itself carries nothing but the card url.
+// document (its title, and an optional registered token tool for its datatype),
+// so the token itself carries nothing but the card url.
 function buildToken(cardUrl: AutomergeUrl): string {
   return `{${cardUrl}}`;
 }
@@ -388,21 +369,22 @@ function renderMenu(
     return [];
   }
   const teardowns: (() => void)[] = [];
+  const repo = findRepo(view.dom);
   active.suggestions.forEach((suggestion, i) => {
     const row = document.createElement("div");
     row.className = "cm-command-row";
     if (i === active.index) row.classList.add("cm-command-row--active");
 
-    // Preview each suggestion with the SAME inline face it gets once embedded
-    // (its card's `viewUrl` module), so the menu shows the real thing rather
-    // than a label. Falls back to the label for cards with no custom face.
-    // pointer-events are off so the row owns the click; this is a preview.
+    // Preview each suggestion with the same inline face it gets once embedded
+    // (a registered token tool for its datatype), so the menu shows the real
+    // thing rather than a label. Falls back to the label when no tool is
+    // available. pointer-events are off so the row owns the click.
     const host = document.createElement("span");
     host.className = "cm-command-row__embed";
     host.style.pointerEvents = "none";
     row.appendChild(host);
     teardowns.push(
-      renderEmbedView(host, suggestion.url, window.repo, {
+      renderEmbedView(host, suggestion.url, repo, {
         fallback: () => {
           host.textContent = suggestion.label;
         },

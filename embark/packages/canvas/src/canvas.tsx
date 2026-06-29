@@ -19,12 +19,10 @@ import { RepoContext, useDocument, useRepo } from "solid-automerge";
 import "@inkandswitch/patchwork-elements";
 import {
   getDocumentDragPayload,
-  getDragSource,
   hasDocumentDrag,
   type DocumentDragItem,
 } from "./dnd";
 import {
-  deepCloneDocument,
   registerContextElement,
   readContext,
   useContextHandle,
@@ -133,7 +131,6 @@ export const EmbarkCanvasTool: ToolRender = (handle, element) => {
 };
 
 function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
-  const repo = useRepo();
   const [doc] = useDocument<EmbarkCanvasDoc>(() => props.handle.url);
   const [canvasEl, setCanvasEl] = createSignal<HTMLDivElement>();
   const [isDraggingOver, setIsDraggingOver] = createSignal(false);
@@ -204,17 +201,10 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
     setSelectedId(null);
   };
 
-  // Cmd/Ctrl+D: duplicate the selected embed. A document embed is deep-copied
-  // (so the copy — and everything it links to — is fully independent of the
-  // original); a component embed just copies its (shared, head-less) url. The
-  // copy is dropped slightly down-and-right. Positions are re-read inside the
-  // change since the deep copy awaits.
-  const duplicateEmbed = async (id: string) => {
-    const source = doc()?.embeds[id];
-    if (!source) return;
-    const clonedUrl = source.docUrl
-      ? await deepCloneDocument(repo, source.docUrl)
-      : undefined;
+  // Cmd/Ctrl+D: duplicate the selected embed. The copy references the same
+  // document (or shared, head-less component url) as the original — there is no
+  // deep copy — and is dropped slightly down-and-right.
+  const duplicateEmbed = (id: string) => {
     const newId = crypto.randomUUID();
     props.handle.change((canvas) => {
       const src = canvas.embeds[id];
@@ -229,7 +219,7 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
         height: src.height,
         z: highestZ(canvas.embeds) + 1,
       };
-      if (clonedUrl) copy.docUrl = clonedUrl;
+      if (src.docUrl !== undefined) copy.docUrl = src.docUrl;
       if (src.componentUrl !== undefined) copy.componentUrl = src.componentUrl;
       if (src.toolId !== undefined) copy.toolId = src.toolId;
       if (src.locked !== undefined) copy.locked = src.locked;
@@ -296,37 +286,21 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
       a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
     );
 
-  const dropDocuments = async (event: DragEvent) => {
+  const dropDocuments = (event: DragEvent) => {
     setIsDraggingOver(false);
     const payload = getDocumentDragPayload(event.dataTransfer);
     if (!payload) return;
     event.preventDefault();
 
-    // Read everything off the drag synchronously — the dataTransfer is cleared
-    // once we await the deep copy below.
-    const fromPartsBin = getDragSource(event.dataTransfer) === "parts-bin";
     const rect = canvasEl()?.getBoundingClientRect();
     const dropX = rect ? event.clientX - rect.left : event.clientX;
     const dropY = rect ? event.clientY - rect.top : event.clientY;
 
-    // Document items dragged out of the parts bin are deep-copied so the new
-    // embed (and every doc it links to) is fully independent of the bin's
-    // template. Component items have no document — they point to a shared,
-    // head-less module url — so they're carried through untouched. Plain
-    // document drags stay as references to the existing document.
-    const items = fromPartsBin
-      ? await Promise.all(
-          payload.map(async (item) =>
-            item.url
-              ? { ...item, url: await deepCloneDocument(repo, item.url) }
-              : item,
-          ),
-        )
-      : payload;
-
+    // Dropped items become embeds that reference the dragged document (or
+    // shared, head-less component url) directly — there is no deep copy.
     props.handle.change((canvas) => {
       let z = highestZ(canvas.embeds);
-      items.forEach((item, index) => {
+      payload.forEach((item, index) => {
         const id = crypto.randomUUID();
         const cascade = index * DROP_CASCADE;
         const embed: EmbarkEmbed = {
@@ -369,7 +343,7 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
           event.key.toLowerCase() === "d"
         ) {
           event.preventDefault();
-          void duplicateEmbed(id);
+          duplicateEmbed(id);
           return;
         }
 

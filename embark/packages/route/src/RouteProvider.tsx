@@ -1,7 +1,4 @@
-import {
-  parseAutomergeUrl,
-  type AutomergeUrl,
-} from "@automerge/automerge-repo";
+import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import { onCleanup, onMount } from "solid-js";
 import {
@@ -9,23 +6,14 @@ import {
   CommandSuggestions,
   createPlaceResolver,
   findContextStore,
-  type CardDoc,
   type ContextStore,
   type Located,
   type PlaceResolver,
   type ScopeHandle,
   type Suggestion,
 } from "@embark/core";
+import type { RouteCardDoc } from "./datatype";
 import "./route.css";
-
-// The token face built alongside this module (dist/view.js), pinned onto every
-// card we mint so the unified token renderer imports it (no runtime folder doc,
-// no view source string). We read import.meta.url into a variable first: Vite
-// statically rewrites the literal `new URL("...", import.meta.url)` form at build
-// time (it would inline view.ts as a data URL), but a variable base is left as a
-// runtime value that resolves to this served module's sibling view.js.
-const moduleUrl = import.meta.url;
-const VIEW_URL = new URL("./view.js", moduleUrl).pathname;
 
 // Wait this long after the query last changed before resolving it, so each
 // keystroke of `/Drive berl…` doesn't fire a routing request.
@@ -169,42 +157,30 @@ export function RouteProvider(props: { element: ToolElement }) {
     }
   };
 
-  // One generic card per route, with the trip flattened into `props` so both our
-  // inline renderer and the standalone CardTool can read it. `props.route` is
-  // the decoded polyline (an array of {lat, lon}); the canvas schema resolver
-  // surfaces it as a "geo line" so the map draws it (markers only at the
-  // endpoints). The endpoint document ids are stored *bare* (no `automerge:`
-  // prefix) so `deepCloneDocument` leaves them alone — cloning a route card
-  // keeps its place pills pointing at the real places.
+  // One route-card per trip. The endpoints aren't duplicated — `from` and `to`
+  // link to the poi-cards the resolver located (their canonical names +
+  // coordinates), which the card's faces resolve live. `route` is the decoded
+  // polyline (an array of {lat, lon}); the canvas schema resolver surfaces it as
+  // a "geo line" so the map draws it. The datatype's registered tools paint the
+  // board and token faces.
   const mintCard = (
     mode: Mode,
     from: Located,
     to: Located,
     route: RouteResult,
   ): AutomergeUrl => {
-    const fromId = from.url ? parseAutomergeUrl(from.url).documentId : undefined;
-    const toId = to.url ? parseAutomergeUrl(to.url).documentId : undefined;
-    return repo.create<CardDoc>({
+    return repo.create<RouteCardDoc>({
       "@patchwork": {
-        type: "card",
+        type: "route-card",
         title: `${mode.mode}: ${from.place} \u2192 ${to.place}`,
       },
-      props: {
-        name: `${mode.mode}: ${from.place} \u2192 ${to.place}`,
-        mode: mode.mode,
-        emoji: mode.emoji,
-        from: from.place,
-        to: to.place,
-        ...(fromId ? { fromId } : {}),
-        ...(toId ? { toId } : {}),
-        distanceKm: route.distanceKm,
-        durationS: route.durationS,
-        route: route.coords,
-      },
-      content: `${mode.mode}: ${from.place} \u2192 ${to.place} (${formatKm(
-        route.distanceKm,
-      )}, ${formatDuration(route.durationS)})`,
-      viewUrl: VIEW_URL,
+      mode: mode.mode,
+      emoji: mode.emoji,
+      ...(from.url ? { from: from.url } : {}),
+      ...(to.url ? { to: to.url } : {}),
+      distanceKm: route.distanceKm,
+      durationS: route.durationS,
+      route: route.coords,
     }).url;
   };
 

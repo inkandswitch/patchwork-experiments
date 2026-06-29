@@ -1,7 +1,4 @@
-import {
-  parseAutomergeUrl,
-  type AutomergeUrl,
-} from "@automerge/automerge-repo";
+import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import { onCleanup, onMount } from "solid-js";
 import {
@@ -9,23 +6,14 @@ import {
   CommandSuggestions,
   createPlaceResolver,
   findContextStore,
-  type CardDoc,
   type ContextStore,
   type Located,
   type PlaceResolver,
   type ScopeHandle,
   type Suggestion,
 } from "@embark/core";
+import type { WeatherCardDoc } from "./datatype";
 import "./weather.css";
-
-// The token face built alongside this module (dist/view.js), pinned onto every
-// card we mint so the unified token renderer imports it (no runtime folder doc,
-// no view source string). We read import.meta.url into a variable first: Vite
-// statically rewrites the literal `new URL("...", import.meta.url)` form at build
-// time (it would inline view.ts as a data URL), but a variable base is left as a
-// runtime value that resolves to this served module's sibling view.js.
-const moduleUrl = import.meta.url;
-const VIEW_URL = new URL("./view.js", moduleUrl).pathname;
 
 // Wait this long after the query last changed before resolving it (so each
 // keystroke of `/weather berl…` doesn't fire a fetch).
@@ -164,33 +152,19 @@ export function WeatherProvider(props: { element: ToolElement }) {
     }
   };
 
-  // One generic card per forecast, with the weather flattened into `props` so
-  // both our inline renderer and the standalone CardTool can read it. The
-  // display name lives in `@patchwork.title`; the renderer rides on `viewUrl`;
-  // and the place's document id is stored *bare* (no `automerge:` prefix) so
-  // `deepCloneDocument` leaves it alone — cloning a weather card keeps its place
-  // pill pointing at the real place rather than cloning the place too.
+  // One weather-card per forecast. The place isn't duplicated — `place` links to
+  // the poi-card the resolver located (its canonical name + coordinates), which
+  // the card's faces resolve live. The display name lives in `@patchwork.title`,
+  // and the datatype's registered tools paint the board and token faces.
   const mintCard = (located: Located, weather: DayWeather): AutomergeUrl => {
-    const placeId = located.url
-      ? parseAutomergeUrl(located.url).documentId
-      : undefined;
-    return repo.create<CardDoc>({
-      "@patchwork": { type: "card", title: `Weather in ${located.place}` },
-      props: {
-        name: `Weather: ${located.place}`,
-        place: located.place,
-        ...(placeId ? { placeId } : {}),
-        lat: located.lat,
-        lon: located.lon,
-        date: weather.date,
-        tempMax: weather.max,
-        tempMin: weather.min,
-        code: weather.code,
-        emoji: weather.emoji,
-        summary: weather.label,
-      },
-      content: `${located.place}: ${weather.label}, ${weather.max}\u00b0/${weather.min}\u00b0 (${weather.date})`,
-      viewUrl: VIEW_URL,
+    return repo.create<WeatherCardDoc>({
+      "@patchwork": { type: "weather-card", title: `Weather in ${located.place}` },
+      ...(located.url ? { place: located.url } : {}),
+      date: weather.date,
+      tempMax: weather.max,
+      tempMin: weather.min,
+      emoji: weather.emoji,
+      summary: weather.label,
     }).url;
   };
 

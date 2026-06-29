@@ -12,7 +12,6 @@ import {
 import "@inkandswitch/patchwork-elements";
 import {
   registerContextElement,
-  deepCloneDocument,
   renderComponentEmbed,
   type PatchworkContextElement,
 } from "@embark/core";
@@ -92,10 +91,11 @@ function PartsBin(props: { handle: DocHandle<PartsBinDoc> }) {
   const [dragOver, setDragOver] = createSignal(false);
 
   // The bin doubles as a drop target: dropping a canvas embed (or any document)
-  // onto it deep-copies the document in as a fresh example. Canvas embeds arrive
-  // as synthetic DnD events dispatched by the embed being dragged; external
-  // document drags flow through the same handlers. We ignore the bin's own
-  // example drags (source "parts-bin") so dragging a token out and back is inert.
+  // onto it adds the document as a new example (a reference — drag-out clones it
+  // so the bin's copy stays pristine). Canvas embeds arrive as synthetic DnD
+  // events dispatched by the embed being dragged; external document drags flow
+  // through the same handlers. We ignore the bin's own example drags (source
+  // "parts-bin") so dragging a token out and back is inert.
   const acceptsDrop = (dataTransfer: DataTransfer | null) =>
     hasDocumentDrag(dataTransfer) && getDragSource(dataTransfer) !== "parts-bin";
 
@@ -138,17 +138,16 @@ function PartsBin(props: { handle: DocHandle<PartsBinDoc> }) {
         continue;
       }
       if (!item.url) continue;
-      void deepCloneDocument(repo, item.url).then((url) => {
-        props.handle.change((binDoc) => {
-          // Automerge rejects explicit `undefined`, so only set optional fields
-          // the drag actually carried.
-          binDoc.items.push({
-            id: crypto.randomUUID(),
-            url,
-            ...(item.toolId !== undefined && { toolId: item.toolId }),
-            ...(item.width !== undefined && { width: item.width }),
-            ...(item.height !== undefined && { height: item.height }),
-          });
+      const url = item.url;
+      props.handle.change((binDoc) => {
+        // Automerge rejects explicit `undefined`, so only set optional fields
+        // the drag actually carried.
+        binDoc.items.push({
+          id: crypto.randomUUID(),
+          url,
+          ...(item.toolId !== undefined && { toolId: item.toolId }),
+          ...(item.width !== undefined && { width: item.width }),
+          ...(item.height !== undefined && { height: item.height }),
         });
       });
     }

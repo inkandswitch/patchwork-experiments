@@ -11,12 +11,13 @@ import {
   SearchResults,
   readContext,
   useContextHandle,
-  type CardDoc,
 } from "@embark/core";
+import type { PoiCardDoc } from "./datatype";
 import "./poi.css";
 
 // A single OpenStreetMap place, flattened from a Nominatim result. Minted into a
-// `card` document's `props` so the schema matcher can find its `{lat, lon}`.
+// `poi-card` document with top-level coordinates so the schema matcher can find
+// its `{lat, lon}`.
 type Place = {
   name: string;
   lat: number;
@@ -169,19 +170,16 @@ export function PoiProvider(props: { element: ToolElement }) {
       // The query may have been dropped while we were fetching; don't resurrect
       // a stale key.
       if (!(query in searchQueries())) return;
-      // One card document per place so each can be linked and matched
-      // separately. Coordinates live in `props` for the schema matcher.
+      // One poi-card document per place so each can be linked and matched
+      // separately. Coordinates live at the top level for the schema matcher.
       const urls = places.map(
         (place) =>
-          repo.create<CardDoc>({
-            "@patchwork": { type: "card" },
-            props: {
-              name: place.name,
-              lat: place.lat,
-              lon: place.lon,
-              type: place.type,
-            },
-            content: place.name,
+          repo.create<PoiCardDoc>({
+            "@patchwork": { type: "poi-card", title: place.name },
+            name: place.name,
+            lat: place.lat,
+            lon: place.lon,
+            ...(place.type ? { type: place.type } : {}),
           }).url,
       );
       results.change((slice) => {
@@ -201,7 +199,7 @@ export function PoiProvider(props: { element: ToolElement }) {
     unmountCards(query); // replace any previous generation for this query
     cardsByQuery.set(query, urls);
     for (const url of urls) {
-      props.element.dispatchEvent(new MountedEvent({ url, toolId: "card" }));
+      props.element.dispatchEvent(new MountedEvent({ url, toolId: "poi-card" }));
     }
   };
 
@@ -210,7 +208,9 @@ export function PoiProvider(props: { element: ToolElement }) {
     if (!urls) return;
     cardsByQuery.delete(query);
     for (const url of urls) {
-      props.element.dispatchEvent(new UnmountedEvent({ url, toolId: "card" }));
+      props.element.dispatchEvent(
+        new UnmountedEvent({ url, toolId: "poi-card" }),
+      );
     }
   };
 

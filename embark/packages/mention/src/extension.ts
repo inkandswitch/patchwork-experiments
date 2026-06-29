@@ -24,9 +24,11 @@ import {
   parseAutomergeUrl,
   type AutomergeUrl,
   type DocHandle,
+  type Repo,
 } from "@automerge/automerge-repo";
 import {
   findContextStore,
+  findRepo,
   getContextHandle,
   subscribeContext,
   type ScopeHandle,
@@ -255,7 +257,8 @@ const searchController = ViewPlugin.fromClass(
       if (!active) return;
       const query = active.query.trim();
       const urls = (query && this.latestResults[query]) || [];
-      void Promise.all(urls.map(resolveResult)).then((results) => {
+      const repo = findRepo(this.view.dom);
+      void Promise.all(urls.map((url) => resolveResult(url, repo))).then((results) => {
         const current = this.view.state.field(menuState, false)?.active;
         if (!current || current.query.trim() !== query) return; // stale/closed
         this.view.dispatch({
@@ -356,8 +359,10 @@ function renderMenu(dom: HTMLElement, view: EditorView, active: Mention) {
 // Resolves a result document to a displayable title. Titles aren't guaranteed
 // in cache, so this awaits the handle; the row shows a short url fallback if it
 // can't be resolved.
-async function resolveResult(url: AutomergeUrl): Promise<Result> {
-  const repo = window.repo;
+async function resolveResult(
+  url: AutomergeUrl,
+  repo: Repo | undefined,
+): Promise<Result> {
   if (!repo) return { url, title: shortUrl(url) };
   try {
     const handle = await Promise.resolve(repo.find(url));
@@ -538,7 +543,7 @@ class MentionWidget extends WidgetType {
       };
     };
 
-    const teardown = renderEmbedView(host, this.url, window.repo, {
+    const teardown = renderEmbedView(host, this.url, findRepo(view.dom), {
       fallback: (_host, handle) => renderPill(handle),
       onError: () => {
         host.className = "cm-mention";

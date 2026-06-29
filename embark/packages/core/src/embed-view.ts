@@ -3,32 +3,31 @@ import type {
   DocHandle,
   Repo,
 } from "@automerge/automerge-repo";
-import type { ToolElement } from "@inkandswitch/patchwork-plugins";
+import {
+  getRegistry,
+  getSupportedToolsForType,
+  type ToolElement,
+  type LoadedTool,
+} from "@inkandswitch/patchwork-plugins";
 
-// The shape a render module must default-export. It receives a ToolElement-like
-// host (with `repo` stamped on) and the card handle, and may return a teardown.
-type ViewModule = {
-  default: (
-    element: ToolElement,
-    handle: DocHandle<unknown>,
-  ) => (() => void) | void;
-};
-
-// Paints the default face when the document has no `viewUrl` of its own (e.g. a
-// title pill). Returns its own teardown.
+// Paints the default face when no registered tool wants to draw the document's
+// token (e.g. a title pill). Returns its own teardown.
 export type EmbedFallback = (
   host: HTMLElement,
   handle: DocHandle<unknown>,
 ) => (() => void) | void;
 
 // Render a document's inline face into `host`, the single source of truth for
-// "how does an embed token look". If the resolved doc carries a string
-// `viewUrl`, that render module is imported and run against `host` (with `repo`
-// stamped on as `ToolElement.repo`, the embed contract) so the same face shows
-// wherever the doc is embedded — a token, a command-menu preview, anywhere.
-// Otherwise `fallback` paints a default face. `onError` runs if the doc or its
-// module can't be resolved. Returns a teardown that disposes whatever was set up
-// and cancels an in-flight resolve.
+// "how does an embed token look". The token literal carries nothing but the
+// document url; the face is decided by the registry: if a `patchwork:tool`
+// supports the document's datatype AND is tagged `"token"`, that tool's module
+// paints the face (with `repo` stamped on `host` as `ToolElement.repo`, the
+// embed contract) so the same custom face shows wherever the doc is embedded.
+// Otherwise `fallback` paints a default face. Because tools register
+// asynchronously (their module bundles load over time), a token that finds no
+// tool yet renders the fallback and upgrades in place if a matching token tool
+// registers later. `onError` runs if the doc can't be resolved. Returns a
+// teardown that disposes whatever was set up and cancels an in-flight resolve.
 export function renderEmbedView(
   host: HTMLElement,
   url: AutomergeUrl,
@@ -37,39 +36,14 @@ export function renderEmbedView(
 ): () => void {
   let cleanup: (() => void) | void;
   let disposed = false;
+  let unsubscribe: (() => void) | undefined;
 
   if (!repo) {
     options.onError?.();
     return () => {};
   }
 
-  void (async () => {
-    try {
-      const handle = (await Promise.resolve(
-        repo.find(url),
-      )) as DocHandle<unknown>;
-      if (disposed) return;
-      const viewUrl = (handle.doc() as { viewUrl?: unknown } | undefined)
-        ?.viewUrl;
-      if (typeof viewUrl === "string" && viewUrl) {
-        host.className = "cm-embed-view";
-        (host as unknown as { repo: Repo }).repo = repo;
-        const mod = (await import(/* @vite-ignore */ viewUrl)) as ViewModule;
-        if (disposed) return;
-        cleanup =
-          typeof mod.default === "function"
-            ? mod.default(host as unknown as ToolElement, handle)
-            : options.fallback(host, handle);
-      } else {
-        cleanup = options.fallback(host, handle);
-      }
-    } catch {
-      if (!disposed) options.onError?.();
-    }
-  })();
-
-  return () => {
-    disposed = true;
+  const dispose = () => {
     if (typeof cleanup === "function") {
       try {
         cleanup();
@@ -77,5 +51,76 @@ export function renderEmbedView(
         // ignore teardown errors
       }
     }
+    cleanup = undefined;
   };
+
+  const paintWithTool = (handle: DocHandle<unknown>, tool: LoadedTool) => {
+    dispose();
+    host.className = "cm-embed-view";
+    (host as unknown as { repo: Repo }).repo = repo;
+    cleanup = (tool.module as (h: DocHandle<unknown>, el: ToolElement) => void)(
+      handle,
+      host as unknown as ToolElement,
+    );
+  };
+
+  void (async () => {
+    try {
+      const handle = (await Promise.resolve(
+        repo.find(url),
+      )) as DocHandle<unknown>;
+      if (disposed) return;
+      const type = docType(handle.doc());
+
+      const tool = type ? await loadTokenTool(type) : undefined;
+      if (disposed) return;
+      if (tool) {
+        paintWithTool(handle, tool);
+        return;
+      }
+
+      // No token tool yet — paint the default face, then upgrade in place if a
+      // matching token tool registers afterwards (module bundles load async).
+      cleanup = options.fallback(host, handle);
+      if (!type) return;
+      const registry = getRegistry("patchwork:tool");
+      unsubscribe = registry.on("registered", () => {
+        void (async () => {
+          if (disposed) return;
+          const upgraded = await loadTokenTool(type);
+          if (disposed || !upgraded) return;
+          unsubscribe?.();
+          unsubscribe = undefined;
+          paintWithTool(handle, upgraded);
+        })();
+      });
+    } catch {
+      if (!disposed) options.onError?.();
+    }
+  })();
+
+  return () => {
+    disposed = true;
+    unsubscribe?.();
+    dispose();
+  };
+}
+
+// Find a registered tool that paints the token for `type` (supports the
+// datatype and carries the `"token"` tag) and ensure its module is loaded.
+// Returns undefined when none is registered.
+async function loadTokenTool(type: string): Promise<LoadedTool | undefined> {
+  const candidate = getSupportedToolsForType(type).find((tool) =>
+    tool.tags?.includes("token"),
+  );
+  if (!candidate) return undefined;
+  const loaded = await getRegistry("patchwork:tool").load(candidate.id);
+  return (loaded as LoadedTool | undefined) ?? undefined;
+}
+
+// The patchwork datatype a document declares (`@patchwork.type`), if any.
+function docType(doc: unknown): string | undefined {
+  if (doc === null || typeof doc !== "object") return undefined;
+  const meta = (doc as { "@patchwork"?: { type?: unknown } })["@patchwork"];
+  return meta && typeof meta.type === "string" ? meta.type : undefined;
 }
