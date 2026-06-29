@@ -8,6 +8,15 @@ importers:
 
   .:
     devDependencies:
+      '@automerge/automerge-repo':
+        specifier: 2.6.0-subduction.29
+        version: 2.6.0-subduction.29
+      '@automerge/automerge-repo-storage-nodefs':
+        specifier: 2.6.0-subduction.29
+        version: 2.6.0-subduction.29
+      '@automerge/automerge-subduction':
+        specifier: 0.15.0
+        version: 0.15.0
       '@inkandswitch/patchwork-bootloader':
         specifier: ^0.2.5
         version: 0.2.7(@automerge/automerge-repo-keyhive@0.3.0-alpha.sub.1c(ws@8.21.0))(@automerge/automerge-repo@2.6.0-subduction.29)(@automerge/automerge@3.3.0-fragments.1)(@automerge/vanillajs@2.6.0-subduction.29)(solid-js@1.9.13)
@@ -1015,6 +1024,9 @@ packages:
   '@automerge/automerge-repo-storage-indexeddb@2.6.0-subduction.29':
     resolution: {integrity: sha512-Tzr3n3rfUFq2rOgc0HeIDm1dorUBHkg0DUl7qXqMa9iyincSOCdFfyr8GQBGe9rDIWYfhy8QSccwY8gEqflrWg==}
 
+  '@automerge/automerge-repo-storage-nodefs@2.6.0-subduction.29':
+    resolution: {integrity: sha512-5q0gJxpSu6Qi2LWMMwuQTix5EowQnTiG4wHAY5ywzFyogufDUVOD4pIpVtaw7BMNTtgrMjrcONVZSE/szgs2wQ==}
+
   '@automerge/automerge-repo@2.6.0-subduction.21':
     resolution: {integrity: sha512-MG9v9c7z0zrGmXpdwkeuSiOcdAO+vmPp857WoJrECBG6au0uKJqXszndahLZYXUoolZw3TvByVAOe7Swosft+w==}
 
@@ -1953,6 +1965,14 @@ snapshots:
       - utf-8-validate
 
   '@automerge/automerge-repo-storage-indexeddb@2.6.0-subduction.29':
+    dependencies:
+      '@automerge/automerge-repo': 2.6.0-subduction.29
+    transitivePeerDependencies:
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+
+  '@automerge/automerge-repo-storage-nodefs@2.6.0-subduction.29':
     dependencies:
       '@automerge/automerge-repo': 2.6.0-subduction.29
     transitivePeerDependencies:
