@@ -1,2 +1,5 @@
-allowBuilds:
-  cbor-extract: set this to true or false
+packages:
+  - "packages/*"
+
+onlyBuiltDependencies:
+  - cbor-extract
