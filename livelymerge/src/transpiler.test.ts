@@ -485,6 +485,52 @@ $global.f = $fun("() => x + y", "() => () => $global.x + $global.y");`);
     });
   });
 
+  describe('this in closures', () => {
+    it('threads `this` into a nested closure via the owning scope object', () => {
+      const result = transpile(`class M {
+  handleStepList() {
+    let due = this.stepList.filter((spec) => spec.t < now);
+    due.forEach((spec) => {
+      if (!this.stepList.includes(spec)) return;
+    });
+  }
+}`);
+      // Owner seeds the captured receiver.
+      expect(result).toMatch(/\$scope\d+\.this = this;/);
+      // The owner's own top-level `this` stays bare (set by apply at call time).
+      expect(result).toMatch(/let due = this\['@stepList'\]\.filter/);
+      // The closure reads `this` through the threaded scope object.
+      expect(result).toMatch(
+        /\(\$scope\d+\) => \(spec\) => \{[^}]*!\$scope\d+\.this\['@stepList'\]\.includes\(spec\)/,
+      );
+    });
+
+    it('threads `this` through intermediate arrow closures', () => {
+      const result = transpile(`class C {
+  m() {
+    foo(() => { bar(() => this.y); });
+  }
+}`);
+      expect(result).toMatch(/\$scope\d+\.this = this;/);
+      // Both the inner and the intervening arrow receive the scope object.
+      expect(result).toMatch(/\(\$scope\d+\) => \(\) => \$scope\d+\.this\['@y'\]/);
+    });
+
+    it('leaves `this` bare in a regular function (receiver comes from apply)', () => {
+      expect(transpile(`function f() {
+  return this.x;
+}`)).toBe(
+        `$global.f = $fun("function f() {\\n  return this.x;\\n}", "() => function() {\\n  return this.x;\\n}");`,
+      );
+    });
+
+    it('leaves a top-level arrow `this` bare (no enclosing function owns it)', () => {
+      expect(transpile(`const f = () => this.x;`)).toBe(
+        `$global.f = $fun("() => this.x", "() => () => this.x");`,
+      );
+    });
+  });
+
   describe('implicit world bindings', () => {
     it('parenthesizes global constructors in new expressions', () => {
       expect(transpile(`new C(5).n()`)).toBe(`new ($global.C)(5).n()`);

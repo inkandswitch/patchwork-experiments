@@ -52,6 +52,11 @@ class LexicalScope {
   // no `let`/`const` declaration to transform, so they need an explicit seed
   // assignment (`$scopeN.p = p;`) at the top of the body.
   capturedParams = new Set<string>();
+  // True when a nested closure references `this` and this scope is the body scope of
+  // the regular function that owns that `this`. Serialized closures lose JS's lexical
+  // `this`, so the owner seeds `$scopeN.$this = this;` at the top of its body and the
+  // closure reads `$scopeN.$this` instead of a bare `this`.
+  capturedThis = false;
 
   constructor(parent: LexicalScope | null, blockNode: SyntaxNode | null, id: number) {
     this.id = id;
@@ -805,6 +810,24 @@ function enclosingFunctionParamOwner(
   return null;
 }
 
+// Property name used to thread a captured `this` through a scope object. `this` is a
+// reserved word, so no user identifier can collide with it; it must not start with `$`,
+// since the heap-storage layer treats `$`-prefixed keys as reserved and refuses to store
+// them (which would make the captured receiver read back as undefined).
+const THIS_BINDING = 'this';
+
+// Finds the nearest function that lexically owns `funcNode`'s `this`. Arrow functions
+// inherit `this` lexically, so we skip them and return the closest enclosing regular
+// (non-arrow) function — the one whose `this` is established at call time via apply.
+function enclosingThisOwner(funcNode: SyntaxNode): SyntaxNode | null {
+  let node: SyntaxNode | null = funcNode.parent;
+  while (node) {
+    if (node.name === 'FunctionDeclaration' || node.name === 'FunctionExpression') return node;
+    node = node.parent;
+  }
+  return null;
+}
+
 function findScopeByBlockNode(builder: ScopeBuilder, block: SyntaxNode): LexicalScope | null {
   // SyntaxNode objects are not reference-equal across getChild() calls, so match on the
   // block's source span instead of identity.
@@ -849,6 +872,24 @@ function walkFreeVarNode(
   ancestors: SyntaxNode[],
 ): void {
   if (node !== funcNode && FUNCTION_NODES.has(node.name)) return;
+
+  if (node.name === 'this') {
+    // A regular function's own `this` is set by apply at call time, so it stays bare.
+    // Inside an arrow it must be threaded: promote it onto the owning regular function's
+    // body scope and rewrite the reference to `$scopeN.$this`.
+    if (funcNode.name === 'ArrowFunction') {
+      const owner = enclosingThisOwner(funcNode);
+      const ownerBlock = owner?.getChild('Block') ?? null;
+      const ownerScope = ownerBlock ? findScopeByBlockNode(builder, ownerBlock) : null;
+      if (ownerScope) {
+        if (!ownerScope.bindings.has(THIS_BINDING)) builder.addBinding(ownerScope, THIS_BINDING, 'block');
+        ownerScope.freeVarBindings.add(THIS_BINDING);
+        ownerScope.capturedThis = true;
+        freeVarUses.push({ name: THIS_BINDING, scope: ownerScope, from: node.from, to: node.to, funcNode });
+      }
+    }
+    return;
+  }
 
   if (node.name === 'VariableName') {
     const name = nodeText(node, builder.source);
@@ -2208,6 +2249,15 @@ function collectScopeEdits(builder: ScopeBuilder, freeVarUses: FreeVarUse[], edi
           kind: 'insert',
           pos: openBraceForSeed.to,
           text: `\n  ${scope.name}.${paramName} = ${paramName};`,
+        });
+      }
+      // Seed the captured `this` from the still-bare receiver. Inserted text is not
+      // re-walked, so the right-hand `this` is never rewritten to `$scopeN.$this`.
+      if (scope.capturedThis) {
+        edits.push({
+          kind: 'insert',
+          pos: openBraceForSeed.to,
+          text: `\n  ${scope.name}.${THIS_BINDING} = this;`,
         });
       }
     }

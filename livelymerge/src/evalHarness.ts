@@ -123,7 +123,11 @@ function getFunPrototype(fun: Fun, funProxy: TestProxy): TestProxy {
 }
 
 function getCodeFactory(code: string): (...args: unknown[]) => unknown {
-  return new Function('return ' + code)() as (...args: unknown[]) => unknown;
+  const runtime = runtimeParams();
+  const factory = new Function(...Object.keys(runtime), 'return ' + code) as (
+    ...args: unknown[]
+  ) => (...scopeArgs: unknown[]) => unknown;
+  return factory(...Object.values(runtime)) as (...args: unknown[]) => unknown;
 }
 
 function proxifyFun(fun: Fun): TestProxy {
@@ -247,9 +251,8 @@ export function resetEvalHarness() {
   $global = $obj({});
 }
 
-export function evalTranspiled(source: string): unknown {
-  resetEvalHarness();
-  const runtime = {
+function runtimeParams(): Record<string, unknown> {
+  return {
     $global,
     $obj,
     $arr,
@@ -258,6 +261,11 @@ export function evalTranspiled(source: string): unknown {
     Array: { isArray: Array.isArray },
     console,
   };
+}
+
+export function evalTranspiled(source: string): unknown {
+  resetEvalHarness();
+  const runtime = runtimeParams();
   return new Function(...Object.keys(runtime), source)(...Object.values(runtime));
 }
 

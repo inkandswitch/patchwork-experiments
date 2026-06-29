@@ -30,4 +30,31 @@ new A().m()`;
 new A().m()`)).replace('new ($global.A)', 'new $global.A');
     expect(evalTranspiled(transpiled)).toBe(5);
   });
+
+  it('threads `this` into a closure so the captured receiver is the instance', () => {
+    const code = `class A {
+  constructor() { this.x = 42; }
+  m() {
+    let f = () => this.x;
+    return f();
+  }
+}
+new A().m()`;
+    expect(evalTranspiled(transpile(wrapForCompletionValue(code)))).toBe(42);
+  });
+
+  it('threads `this` through nested closures', () => {
+    const code = `class A {
+  constructor() { this.x = 7; }
+  m() {
+    let outer = () => {
+      let inner = () => this.x;
+      return inner();
+    };
+    return outer();
+  }
+}
+new A().m()`;
+    expect(evalTranspiled(transpile(wrapForCompletionValue(code)))).toBe(7);
+  });
 });

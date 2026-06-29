@@ -81,6 +81,7 @@ function deleteFromArray(xs, x) {
   if (idx >= 0) {
     xs.splice(idx, 1);
   }
+  return xs;
 }
 function deleteFromArrayPred(xs, pred) {
   while (true) {
@@ -334,7 +335,7 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
   help -- select this and press ctrl-F
 
 `,
-      'Welcome to Pyonpyon! (' + new Date().toLocaleString() + ')',
+      'Welcome to Livelymerge! (' + new Date().toLocaleString() + ')',
     ),
   );
 
