@@ -80,10 +80,30 @@ function readPkg(dir) {
   }
 }
 
-function run(cmd, args, cwd) {
-  const res = spawnSync(cmd, args, { cwd, stdio: "inherit", shell: false });
+function run(cmd, args, cwd, extraEnv) {
+  const res = spawnSync(cmd, args, {
+    cwd,
+    stdio: "inherit",
+    shell: false,
+    env: extraEnv ? { ...process.env, ...extraEnv } : process.env,
+  });
   return res.status === 0;
 }
+
+// pnpm 11 blocks dependency build scripts by default (the "Ignored build
+// scripts: esbuild, cbor-extract …" warning). On a clean CI checkout that can
+// leave native deps (esbuild, cbor-extract, @swc/core, core-js …) unbuilt and
+// fail a tool's build. patchwork-base approves these via its single workspace
+// `allowBuilds`; patchwork-tools isn't a workspace and most tools don't, so we
+// approve all builds for the orchestrated install. In v11 the only global,
+// non-interactive lever is `dangerouslyAllowAllBuilds` (the per-allowlist
+// `onlyBuiltDependencies` env was removed). This only affects installs run by
+// this script — a tool's own `pnpm install` is unchanged. Override by exporting
+// `npm_config_dangerously_allow_all_builds` yourself.
+const INSTALL_ENV = {
+  npm_config_dangerously_allow_all_builds:
+    process.env.npm_config_dangerously_allow_all_builds ?? "true",
+};
 
 function main() {
   const { out, install, build, strict, filters } = parseArgs(process.argv.slice(2));
@@ -107,7 +127,7 @@ function main() {
 
       if (install) {
         console.log(`\n── install ${name} ──`);
-        if (!run("pnpm", ["install"], dir)) {
+        if (!run("pnpm", ["install"], dir, INSTALL_ENV)) {
           console.error(`[fail]  ${name}: pnpm install`);
           failures.push(`${name} (install)`);
           continue;
