@@ -2,6 +2,7 @@
 .pushwork
 node_modules
 dist/
+static-dist/
 .claude/
 .env
 .pnpm-store
