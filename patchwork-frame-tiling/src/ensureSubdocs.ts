@@ -5,7 +5,7 @@ import {
   type DatatypeDescription,
   type LoadedDatatype,
 } from "@inkandswitch/patchwork-plugins";
-import type { TinyPatchworkConfigDoc } from "./types";
+import type { ThreepaneConfigDoc, TinyPatchworkConfigDoc } from "./types";
 
 type SubdocField = "rootFolderUrl" | "moduleSettingsUrl" | "contactUrl";
 
@@ -99,6 +99,41 @@ function ensureContextToolIds(
 }
 
 /**
+ * Ensure the shared frame-layout config doc (`tools["threepane"]`) exists, so the
+ * frame configurator and system tray have something to read/write. It's shared
+ * with the threepane frame; whichever frame mounts first creates it. We use the
+ * `threepane:config` datatype directly (not `loadDatatypeWhenReady`, which would
+ * wait forever) so that when threepane isn't installed we simply skip — the tray
+ * just stays empty. Idempotent and concurrency-safe.
+ */
+async function ensureThreepaneConfig(
+  accountHandle: DocHandle<TinyPatchworkConfigDoc>,
+  repo: Repo,
+) {
+  const existing = accountHandle.doc()?.tools?.["threepane"];
+  if (existing) {
+    // Backfill the tray lane for configs created before it existed.
+    const configHandle = await repo.find<ThreepaneConfigDoc>(existing);
+    configHandle.change((doc) => {
+      if (!doc.tray) doc.tray = { tools: [] };
+    });
+    return;
+  }
+  const registry = getRegistry<DatatypeDescription>("patchwork:datatype");
+  const datatype = await registry.load("threepane:config");
+  if (!datatype) return; // threepane not installed → no tray/configurator config
+  if (accountHandle.doc()?.tools?.["threepane"]) return; // raced with another tab
+  const configHandle = await createDocOfDatatype2<ThreepaneConfigDoc>(
+    datatype,
+    repo,
+  );
+  accountHandle.change((doc) => {
+    if (!doc.tools) doc.tools = {};
+    if (!doc.tools["threepane"]) doc.tools["threepane"] = configHandle.url;
+  });
+}
+
+/**
  * Lazily populate the subdoc URLs the tiling frame depends on. Idempotent:
  * fields already set (including those set concurrently by another tab) win.
  */
@@ -116,5 +151,6 @@ export async function ensureAccountSubdocs(
       "patchwork:module-settings",
     ),
     ensureContact(accountHandle, repo),
+    ensureThreepaneConfig(accountHandle, repo),
   ]);
 }

@@ -30,8 +30,32 @@ export type TinyPatchworkConfigDoc = {
   contextToolIds?: string[];
   documentToolbarToolIds?: string[];
 
+  /**
+   * Per-tool config doc urls, keyed by tool id. `tools["threepane"]` points at a
+   * {@link ThreepaneConfigDoc}; the tiling frame reuses it (shared with the
+   * threepane frame) so the frame configurator and **system tray** are driven by
+   * the same configuration across frames.
+   */
+  tools?: { [toolId: string]: AutomergeUrl };
+
   /** Remembered per-doc / per-datatype tool choices (see {@link ToolPreferences}). */
   toolPreferences?: ToolPreferences;
+};
+
+/** A configured tool: a `[toolId, docId]` tuple, or a bare `patchwork:component` id. */
+export type ToolRef = [toolId: string, docId: AutomergeUrl];
+export type ToolSlot = ToolRef | string;
+
+/**
+ * The shared frame layout config (its own document, referenced from
+ * `tools["threepane"]`). The tiling frame only consumes the **tray** lane; the
+ * other lanes are owned by the threepane frame but kept here for type parity.
+ */
+export type ThreepaneConfigDoc = {
+  sidebar?: { widgets: ToolSlot[] };
+  contextbar?: { tabs: ToolSlot[] };
+  doctitle?: { tools: ToolSlot[] };
+  tray?: { tools: ToolSlot[] };
 };
 
 /**

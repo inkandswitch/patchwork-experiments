@@ -61,6 +61,7 @@ import type {
   LeafNode,
   PanelView,
   SplitDirection,
+  ThreepaneConfigDoc,
   TilingLayoutDoc,
   TinyPatchworkConfigDoc,
   ToolPreferences,
@@ -770,6 +771,15 @@ export const PatchworkFrame = ({
     suspense: false,
   });
 
+  // The shared frame-layout config (also used by the threepane frame). We only
+  // consume its `tray` lane to render the system tray in the top bar; the frame
+  // configurator (opened from the gear) edits the rest.
+  const [frameConfigDoc] = useDocument<ThreepaneConfigDoc>(
+    accountDoc.tools?.["threepane"],
+    { suspense: false },
+  );
+  const traySlots = frameConfigDoc?.tray?.tools ?? [];
+
   // Each tab gets its own layout document, identified in the URL, so tabs are
   // independent sessions rather than one mirrored workspace. A freshly-minted
   // session clones `cloneSourceUrl` (the last session) so a new tab resumes
@@ -1427,6 +1437,7 @@ export const PatchworkFrame = ({
           moduleSettingsUrl={accountDoc.moduleSettingsUrl}
           contactUrl={accountDoc.contactUrl}
           rootFolderHandle={rootFolderHandle}
+          traySlots={traySlots}
           onHome={goHome}
           onOpen={openFromChrome}
         />

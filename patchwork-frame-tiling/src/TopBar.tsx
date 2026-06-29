@@ -17,8 +17,8 @@ import {
   type DatatypeDescription,
   type Plugin,
 } from "@inkandswitch/patchwork-plugins";
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { PanelView } from "./types";
+import { useEffect, useRef, useState } from "react";
+import type { PanelView, ToolSlot } from "./types";
 
 const HomeIcon = () => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -48,6 +48,23 @@ const GearIcon = () => (
     <circle cx="8" cy="8" r="2.1" stroke="currentColor" strokeWidth="1.3" />
     <path
       d="M8 1.5v1.6M8 12.9v1.6M14.5 8h-1.6M3.1 8H1.5M12.6 3.4l-1.13 1.13M4.53 11.47 3.4 12.6M12.6 12.6l-1.13-1.13M4.53 4.53 3.4 3.4"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+    />
+  </svg>
+);
+
+const ShoppingBagIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+    <path
+      d="M3 5h10l-.7 8.1a1 1 0 0 1-1 .9H4.7a1 1 0 0 1-1-.9L3 5Z"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinejoin="round"
+    />
+    <path
+      d="M5.6 5V4a2.4 2.4 0 0 1 4.8 0v1"
       stroke="currentColor"
       strokeWidth="1.3"
       strokeLinecap="round"
@@ -222,12 +239,39 @@ const CreateNewMenu = ({
   );
 };
 
+/**
+ * The system tray: a row of configured `patchwork:component`s (tagged
+ * `system-tray`) from the shared frame config's `tray` lane. A bare slot is a
+ * component id; a `[toolId, docId]` tuple renders that tool against its doc.
+ * Discriminate by `Array.isArray` (an Automerge raw-string slot isn't a native
+ * `string`, so `typeof` would misfire).
+ */
+const Tray = ({ slots }: { slots: ToolSlot[] }) => {
+  if (slots.length === 0) return null;
+  return (
+    <div className="tile-topbar__tray">
+      {slots.map((slot, i) =>
+        Array.isArray(slot) ? (
+          <patchwork-view
+            key={`${i}:${String(slot[0])}`}
+            doc-url={String(slot[1])}
+            tool-id={String(slot[0])}
+          />
+        ) : (
+          <patchwork-view key={`${i}:${String(slot)}`} component={String(slot)} />
+        ),
+      )}
+    </div>
+  );
+};
+
 export const TopBar = ({
   repo,
   accountDocUrl,
   moduleSettingsUrl,
   contactUrl,
   rootFolderHandle,
+  traySlots,
   onHome,
   onOpen,
 }: {
@@ -236,6 +280,7 @@ export const TopBar = ({
   moduleSettingsUrl?: AutomergeUrl;
   contactUrl?: AutomergeUrl;
   rootFolderHandle?: DocHandle<FolderDoc>;
+  traySlots: ToolSlot[];
   onHome: () => void;
   onOpen: (view: PanelView) => void;
 }) => {
@@ -262,14 +307,26 @@ export const TopBar = ({
 
       <div className="tile-topbar__spacer" />
 
+      <Tray slots={traySlots} />
+
       <div className="tile-topbar__group">
         <button
           className="tile-topbar__btn"
-          title="Module settings"
-          aria-label="Module settings"
+          title="Packages"
+          aria-label="Packages"
           disabled={!moduleSettingsUrl}
           onClick={() =>
             moduleSettingsUrl && onOpen({ url: moduleSettingsUrl })
+          }
+        >
+          <ShoppingBagIcon />
+        </button>
+        <button
+          className="tile-topbar__btn"
+          title="Settings"
+          aria-label="Settings"
+          onClick={() =>
+            onOpen({ url: accountDocUrl, toolId: "frame-configurator" })
           }
         >
           <GearIcon />

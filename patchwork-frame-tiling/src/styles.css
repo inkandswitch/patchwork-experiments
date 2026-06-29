@@ -53,6 +53,18 @@ patchwork-view {
   flex: 1 1 auto;
 }
 
+/* System tray: a row of configured component widgets in the top bar. */
+.tile-topbar__tray {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-right: 0.25rem;
+}
+
+.tile-topbar__tray:empty {
+  display: none;
+}
+
 .tile-topbar__menu {
   position: relative;
   display: inline-flex;

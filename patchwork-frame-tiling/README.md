@@ -9,11 +9,20 @@ and resize freely.
 
 - A persistent **app bar** runs across the top: a **home** button (focuses the
   root-folder panel if open, else opens it as a full-height column on the left),
-  a **+** button (create-new dialog
-  that makes a document of any registered datatype, inserts it into the root
-  folder, and opens it — also accepts a pasted automerge URL), a **gear** to
-  open module settings, and an **avatar** showing the logged-in contact that
-  opens the account picker when clicked.
+  a **+** button (create-new dialog that makes a document of any registered
+  datatype, inserts it into the root folder, and opens it — also accepts a pasted
+  automerge URL), the **system tray**, a **shopping-bag** button that opens
+  **Packages** (module settings / the app-store), a **gear** that opens
+  **Settings** (the `frame-configurator` tool, bound to the account doc), and an
+  **avatar** showing the logged-in contact that opens the account picker when
+  clicked.
+- The **system tray** mirrors the threepane frame: a row of configured
+  `patchwork:component`s (tagged `system-tray`) read from the shared frame config
+  doc (`account.tools["threepane"].tray`). It's the same configuration the
+  threepane frame uses, edited via the gear's frame configurator, so the tray and
+  settings stay in sync across frames. The config doc is created lazily if absent
+  (skipped when the `threepane:config` datatype isn't installed, leaving the tray
+  empty).
 - On open, the account's **root folder** is shown as a narrow **navigator**
   beside a (wide) **empty content frame**, so the folder never spans the full
   width and there's always a slot ready for the first document.
