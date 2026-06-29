@@ -256,7 +256,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   }
 
   function toVal(x: any): Val {
-    return isProxy(x) ? toRef(x) : x;
+    return isProxy(x) ? toRef(x) : x === undefined ? null : x;
   }
 
   function toRef(proxy: Proxy): Ref {
