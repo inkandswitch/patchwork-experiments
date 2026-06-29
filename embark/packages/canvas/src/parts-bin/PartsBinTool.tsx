@@ -1,6 +1,13 @@
 import type { DocHandle, Repo } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
-import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import {
+  For,
+  Show,
+  createEffect,
+  createSignal,
+  onCleanup,
+  onMount,
+} from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { render } from "solid-js/web";
 import {
@@ -15,11 +22,7 @@ import {
   renderComponentEmbed,
   type PatchworkContextElement,
 } from "@embark/core";
-import {
-  getDocumentDragPayload,
-  getDragSource,
-  hasDocumentDrag,
-} from "../dnd";
+import { getDocumentDragPayload, getDragSource, hasDocumentDrag } from "../dnd";
 import type { PartsBinDoc, PartsBinItem } from "./types";
 import "./parts-bin.css";
 
@@ -97,7 +100,8 @@ function PartsBin(props: { handle: DocHandle<PartsBinDoc> }) {
   // through the same handlers. We ignore the bin's own example drags (source
   // "parts-bin") so dragging a token out and back is inert.
   const acceptsDrop = (dataTransfer: DataTransfer | null) =>
-    hasDocumentDrag(dataTransfer) && getDragSource(dataTransfer) !== "parts-bin";
+    hasDocumentDrag(dataTransfer) &&
+    getDragSource(dataTransfer) !== "parts-bin";
 
   const onDragOver = (event: DragEvent) => {
     if (!acceptsDrop(event.dataTransfer)) return;
@@ -363,7 +367,9 @@ function PartsBinRow(props: {
           placeholder={fallbackName()}
           title="Rename this example"
           on:pointerdown={(event) => event.stopPropagation()}
-          on:change={(event) => props.onRename(event.currentTarget.value.trim())}
+          on:change={(event) =>
+            props.onRename(event.currentTarget.value.trim())
+          }
         />
         <button
           type="button"
