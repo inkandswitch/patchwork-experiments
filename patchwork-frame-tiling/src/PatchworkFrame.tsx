@@ -35,12 +35,18 @@ import type { FolderDoc } from "@inkandswitch/patchwork-filesystem";
 import {
   cloneLayout,
   collectLeafIds,
+  ensureContentFrameIn,
   findLeaf,
   findLeafIdByUrl,
+  findRootFolderLeafId,
   goBackIn,
+  isContentLeaf,
+  makeInitialLayout,
   makeLeaf,
+  makeRootFolderLeaf,
   moveLeafIn,
   navigateLeafIn,
+  normalizeRootFolderIn,
   removeLeafIn,
   setLeafToolIn,
   setSizesIn,
@@ -283,6 +289,8 @@ type LayoutOps = {
   openContext: (sourceLeafId: string, toolId: string) => void;
   /** Context tools available to launch from a content panel. */
   contextTools: ContextTool[];
+  /** The viewer's own root-folder url, used to resolve `"root-folder"` panels. */
+  rootFolderUrl: AutomergeUrl | undefined;
   /** Id of the content panel that is the current "selected document". */
   selectedLeafId: string | null;
   /** URL of the current selected document (what context panels describe). */
@@ -380,7 +388,7 @@ const ToolPicker = ({
         // the preferred tool for this doc and datatype so future opens default
         // to it.
         ops.setTool(leaf.id, toolId);
-        ops.rememberTool(leaf.view.url, type, toolId);
+        if (leaf.view.url) ops.rememberTool(leaf.view.url, type, toolId);
       }}
       onMouseDown={(event) => event.stopPropagation()}
     >
@@ -568,20 +576,31 @@ const TilePanel = ({
   ops: LayoutOps;
   canClose: boolean;
 }) => {
-  const docTitle = useDocTitle(leaf.view.url);
   const isActive = ops.activeLeafId === leaf.id;
   const isContext = leaf.view.role === "context";
-  const isSelected = !isContext && ops.selectedLeafId === leaf.id;
+  const isRootFolder = leaf.view.role === "root-folder";
+  // A `"root-folder"` panel stores no url; resolve it to the *viewer's* own
+  // root folder so a shared layout shows the recipient's folders, not the
+  // author's.
+  const resolvedUrl = isRootFolder ? ops.rootFolderUrl : leaf.view.url;
+  const isEmpty = !isContext && !isRootFolder && !resolvedUrl;
+  const docTitle = useDocTitle(resolvedUrl);
+  const isSelected =
+    !isContext && !isRootFolder && !isEmpty && ops.selectedLeafId === leaf.id;
   const contextToolName = isContext
     ? ops.contextTools.find((tool) => tool.id === leaf.view.toolId)?.name
     : undefined;
-  const title = isContext ? (contextToolName ?? "Context") : docTitle;
+  const title = isContext
+    ? (contextToolName ?? "Context")
+    : isEmpty
+      ? "Empty"
+      : docTitle;
   const { focusLeaf } = ops;
 
   // Resolve the tool to render: explicit panel choice, else the remembered
   // preference for this doc / datatype, else the datatype default.
   const { toolId: effectiveToolId, tools, fallbackId, type } = useEffectiveTool(
-    leaf.view.url,
+    resolvedUrl,
     leaf.view.toolId,
     ops.toolPreferences,
   );
@@ -632,8 +651,10 @@ const TilePanel = ({
         </span>
         {isContext && <SubjectChip ops={ops} />}
         <div className="tile-panel__actions">
-          {!isContext && <ContextLauncher leaf={leaf} ops={ops} />}
-          {!isContext && (
+          {!isContext && !isRootFolder && !isEmpty && (
+            <ContextLauncher leaf={leaf} ops={ops} />
+          )}
+          {!isContext && !isRootFolder && !isEmpty && (
             <ToolPicker
               leaf={leaf}
               ops={ops}
@@ -669,12 +690,19 @@ const TilePanel = ({
         </div>
       </div>
       <div className="tile-panel__body">
-        <patchwork-view
-          key={leaf.id}
-          className="tile-panel__view"
-          doc-url={leaf.view.url}
-          tool-id={effectiveToolId}
-        />
+        {isEmpty ? (
+          <div className="tile-panel__empty">
+            <p>No document open</p>
+            <span>Open one from the folder, or use + in the top bar.</span>
+          </div>
+        ) : (
+          <patchwork-view
+            key={leaf.id}
+            className="tile-panel__view"
+            doc-url={resolvedUrl}
+            tool-id={effectiveToolId}
+          />
+        )}
         {isDropTarget && <DropZones leaf={leaf} ops={ops} />}
       </div>
     </div>
@@ -861,14 +889,14 @@ export const PatchworkFrame = ({
     const order = focusOrder ?? [];
     for (let i = order.length - 1; i >= 0; i--) {
       const leaf = findLeaf(layout, order[i]);
-      if (leaf && leaf.view.role !== "context") return leaf.id;
+      if (leaf && isContentLeaf(leaf, rootFolderUrl) && leaf.view.url) return leaf.id;
     }
     for (const id of collectLeafIds(layout)) {
       const leaf = findLeaf(layout, id);
-      if (leaf && leaf.view.role !== "context") return leaf.id;
+      if (leaf && isContentLeaf(leaf, rootFolderUrl) && leaf.view.url) return leaf.id;
     }
     return null;
-  }, [layout, focusOrder]);
+  }, [layout, focusOrder, rootFolderUrl]);
 
   const selectedLeafView = useMemo(() => {
     if (!layout || !selectedLeafId) return undefined;
@@ -917,12 +945,12 @@ export const PatchworkFrame = ({
     let leaf: LeafNode | null = null;
     for (let i = order.length - 1; i >= 0 && !leaf; i--) {
       const l = findLeaf(layout, order[i]);
-      if (l && l.view.role !== "context") leaf = l;
+      if (l && l.view.role !== "context" && l.view.url) leaf = l;
     }
     if (!leaf) {
       for (const id of collectLeafIds(layout)) {
         const l = findLeaf(layout, id);
-        if (l && l.view.role !== "context") {
+        if (l && l.view.role !== "context" && l.view.url) {
           leaf = l;
           break;
         }
@@ -930,7 +958,9 @@ export const PatchworkFrame = ({
     }
     if (!syncEnabledRef.current) {
       const want = initialDocRef.current;
-      const have = leaf ? parseAutomergeUrl(leaf.view.url).documentId : null;
+      const have = leaf?.view.url
+        ? parseAutomergeUrl(leaf.view.url).documentId
+        : null;
       if (want && want !== have) return; // deep-link not opened yet — leave it
       syncEnabledRef.current = true;
     }
@@ -972,18 +1002,36 @@ export const PatchworkFrame = ({
         seededRef.current = true;
         layoutHandle.change((doc) => {
           doc.layout = cloneLayout(sourceLayout);
+          // Drop the author's embedded folder url in favor of the symbolic
+          // role so the clone resolves to *this* viewer's folder.
+          if (rootFolderUrl) normalizeRootFolderIn(doc, rootFolderUrl);
+          // Older sessions were seeded as a lone folder pane; give them a
+          // content frame so the clone doesn't start full-width-folder.
+          ensureContentFrameIn(doc, rootFolderUrl);
         });
         return;
       }
-      // Source exists but is empty → fall through to a root-folder pane.
+      // Source exists but is empty → fall through to the initial layout.
     }
-    if (!rootFolderUrl) return;
     seededRef.current = true;
-    const leaf = makeLeaf({ url: rootFolderUrl });
     layoutHandle.change((doc) => {
-      doc.layout = leaf;
+      doc.layout = makeInitialLayout();
     });
   }, [layoutDoc, layoutHandle, cloneSourceUrl, cloneSourceDoc, rootFolderUrl]);
+
+  // One-time migration for already-seeded sessions: rewrite a legacy url-based
+  // root-folder pane to the symbolic role so this session (and shares of it)
+  // shows the viewer's own folder rather than embedding a specific one. The
+  // edit removes the url, so it's idempotent and won't re-fire.
+  const normalizedRef = useRef(false);
+  useEffect(() => {
+    if (normalizedRef.current || !layoutHandle || !rootFolderUrl) return;
+    if (!layoutDoc?.layout) return;
+    normalizedRef.current = true;
+    layoutHandle.change((doc) => {
+      normalizeRootFolderIn(doc, rootFolderUrl);
+    });
+  }, [layoutDoc, layoutHandle, rootFolderUrl]);
 
   const focusLeaf = useCallback(
     (id: string) => {
@@ -1042,15 +1090,15 @@ export const PatchworkFrame = ({
       const current = docRef.current?.layout ?? null;
       const source = current ? findLeaf(current, leafId) : null;
       const newView: PanelView = source
-        ? { url: source.view.url, toolId: source.view.toolId }
-        : rootFolderUrl
-          ? { url: rootFolderUrl }
-          : { url: leafId as AutomergeUrl };
+        ? source.view.role === "root-folder"
+          ? { role: "root-folder" }
+          : { url: source.view.url, toolId: source.view.toolId }
+        : { role: "root-folder" };
       const newLeaf = makeLeaf(newView);
       change((d) => splitLeafIn(d, leafId, direction, newLeaf));
       focusLeaf(newLeaf.id);
     },
-    [change, focusLeaf, rootFolderUrl],
+    [change, focusLeaf],
   );
 
   // Spawn a context tool as a new panel beside the source. The source becomes
@@ -1076,8 +1124,9 @@ export const PatchworkFrame = ({
       // reconciled reactively by the prune effect once `layout` updates.
       change((d) => {
         removeLeafIn(d, leafId);
-        // Never leave an empty frame: fall back to the root folder.
-        if (!d.layout && rootFolderUrl) d.layout = makeLeaf({ url: rootFolderUrl });
+        // Never leave the folder/context panes alone and full-width: keep an
+        // (empty) content frame around for documents to open into.
+        ensureContentFrameIn(d, rootFolderUrl);
       });
     },
     [change, rootFolderUrl],
@@ -1122,12 +1171,19 @@ export const PatchworkFrame = ({
   // mount element).
   const openView = useCallback(
     (view: PanelView, sourceId: string | null) => {
+      if (!view.url) return;
       const doc = docRef.current;
       const current = doc?.layout ?? null;
       if (!current) return;
 
       const leafIds = collectLeafIds(current);
       const liveIds = new Set(leafIds);
+
+      // A normal document must never land in (rule 1) the root-folder navigator
+      // or a context pane: those panels stay put so the folder tree and
+      // comments/history keep describing the content beside them.
+      const isContentId = (id: string | null | undefined): id is string =>
+        !!id && liveIds.has(id) && isContentLeaf(findLeaf(current, id), rootFolderUrl);
 
       // 1. Already open? Just focus it. Opening a doc that's already on screen
       //    (a folder click on it, or the host re-dispatching the URL's `doc`
@@ -1139,15 +1195,42 @@ export const PatchworkFrame = ({
         return;
       }
 
-      // 2. A request *from* a panel (e.g. the folder tree) navigates the
-      //    last-focused *other* panel, so the source pane isn't replaced.
+      // 1b. Opening the viewer's own root folder targets the (symbolic) folder
+      //     navigator rather than dropping the folder into a content pane.
+      if (rootFolderUrl && view.url === rootFolderUrl) {
+        const folderId = findRootFolderLeafId(current, rootFolderUrl);
+        if (folderId) focusLeaf(folderId);
+        return;
+      }
+
+      // 2. Fill an empty content frame if one is waiting (the seeded slot beside
+      //    the folder). Preferring it means a doc never splits the folder or
+      //    clobbers an open document while a ready slot sits empty.
+      const isEmptyId = (id: string): boolean =>
+        isContentLeaf(findLeaf(current, id), rootFolderUrl) &&
+        !findLeaf(current, id)?.view.url;
+      const order = focusRef.current.focusOrder;
+      let emptyId: string | null = null;
+      for (let i = order.length - 1; i >= 0 && !emptyId; i--) {
+        if (liveIds.has(order[i]) && isEmptyId(order[i])) emptyId = order[i];
+      }
+      if (!emptyId) emptyId = leafIds.find((id) => isEmptyId(id)) ?? null;
+      if (emptyId) {
+        navigate(emptyId, view);
+        focusLeaf(emptyId);
+        return;
+      }
+
+      // 3. A request *from* a panel (e.g. the folder tree) navigates the
+      //    last-focused *other content* panel, so the source pane isn't
+      //    replaced and the doc never lands in the folder/context panes.
       //    Sourceless opens (URL deep-links, top bar) deliberately skip this:
       //    they must not navigate — i.e. clobber — whatever panel is active.
       if (sourceId !== null) {
         const order = focusRef.current.focusOrder;
         for (let i = order.length - 1; i >= 0; i--) {
           const id = order[i];
-          if (id !== sourceId && liveIds.has(id)) {
+          if (id !== sourceId && isContentId(id)) {
             navigate(id, view);
             focusLeaf(id);
             return;
@@ -1155,10 +1238,16 @@ export const PatchworkFrame = ({
         }
       }
 
-      // 3. Otherwise open a new panel beside the source/active panel, leaving
-      //    existing panels untouched.
+      // 4. Otherwise open a new panel by splitting a *content* panel, so we
+      //    never carve up the root-folder navigator (rule 2) or a context pane.
+      //    Only when no content panel exists at all do we fall back to splitting
+      //    the source/active panel so the document can still open.
       const active = focusRef.current.activeLeafId;
+      const firstContentId = leafIds.find((id) => isContentId(id)) ?? null;
       const splitSource =
+        (isContentId(sourceId) && sourceId) ||
+        (isContentId(active) && active) ||
+        firstContentId ||
         (sourceId && liveIds.has(sourceId) && sourceId) ||
         (active && liveIds.has(active) && active) ||
         leafIds[0];
@@ -1167,7 +1256,7 @@ export const PatchworkFrame = ({
       change((d) => splitLeafIn(d, splitSource, "horizontal", newLeaf));
       focusLeaf(newLeaf.id);
     },
-    [change, navigate, focusLeaf],
+    [change, navigate, focusLeaf, rootFolderUrl],
   );
 
   const handleOpenDocument = useCallback(
@@ -1199,7 +1288,11 @@ export const PatchworkFrame = ({
       if (sourceId) {
         const layout = docRef.current?.layout;
         const leaf = layout ? findLeaf(layout, sourceId) : null;
-        if (leaf && leaf.view.url === url) {
+        // The symbolic folder pane resolves to the viewer's root folder, so
+        // compare against that when deciding if this is a self-announcement.
+        const leafUrl =
+          leaf?.view.role === "root-folder" ? rootFolderUrl : leaf?.view.url;
+        if (leaf && leafUrl === url) {
           event.stopImmediatePropagation();
           return;
         }
@@ -1207,7 +1300,7 @@ export const PatchworkFrame = ({
 
       openView({ url, toolId: event.detail.toolId }, sourceId);
     },
-    [openView],
+    [openView, rootFolderUrl],
   );
 
   // Keep the latest handler in a ref so the once-attached listener always
@@ -1245,6 +1338,7 @@ export const PatchworkFrame = ({
   // opens, which must never clobber the active panel (see `openView`).
   const openFromChrome = useCallback(
     (view: PanelView) => {
+      if (!view.url) return;
       const current = docRef.current?.layout ?? null;
       if (!current) return;
       const existing = findLeafIdByUrl(current, view.url);
@@ -1253,19 +1347,48 @@ export const PatchworkFrame = ({
         return;
       }
       const ids = collectLeafIds(current);
+      const liveIds = new Set(ids);
+      const isContentId = (id: string | null | undefined): id is string =>
+        !!id && liveIds.has(id) && isContentLeaf(findLeaf(current, id), rootFolderUrl);
+
+      // Act on the *content* panel you're in (the active one if it qualifies),
+      // never the root-folder navigator or a context pane (rule 1).
       const active = focusRef.current.activeLeafId;
-      const target = (active && ids.includes(active) && active) || ids[0];
-      if (!target) return;
-      navigate(target, view);
-      focusLeaf(target);
+      const target =
+        (isContentId(active) && active) || ids.find((id) => isContentId(id)) || null;
+      if (target) {
+        navigate(target, view);
+        focusLeaf(target);
+        return;
+      }
+
+      // No content panel yet: open beside the folder rather than replacing it
+      // (we still must split the lone folder pane to make room for the doc).
+      const splitSource = (active && liveIds.has(active) && active) || ids[0];
+      if (!splitSource) return;
+      const newLeaf = makeLeaf(view);
+      change((d) => splitLeafIn(d, splitSource, "horizontal", newLeaf));
+      focusLeaf(newLeaf.id);
     },
-    [navigate, focusLeaf],
+    [navigate, focusLeaf, change, rootFolderUrl],
   );
 
-  // Home: focus the root-folder panel if open, else bring the active panel home.
+  // Home: focus the (symbolic) root-folder navigator if open, else add one to
+  // the left of the first panel.
   const goHome = useCallback(() => {
-    if (rootFolderUrl) openFromChrome({ url: rootFolderUrl });
-  }, [rootFolderUrl, openFromChrome]);
+    const current = docRef.current?.layout ?? null;
+    if (!current) return;
+    const folderId = findRootFolderLeafId(current, rootFolderUrl);
+    if (folderId) {
+      focusLeaf(folderId);
+      return;
+    }
+    const target = collectLeafIds(current)[0];
+    if (!target) return;
+    const newLeaf = makeRootFolderLeaf();
+    change((d) => splitLeafIn(d, target, "horizontal", newLeaf, false));
+    focusLeaf(newLeaf.id);
+  }, [rootFolderUrl, focusLeaf, change]);
 
   const ops: LayoutOps = {
     activeLeafId,
@@ -1282,6 +1405,7 @@ export const PatchworkFrame = ({
     setTool,
     openContext,
     contextTools,
+    rootFolderUrl,
     selectedLeafId,
     selectedDocUrl,
     toolPreferences: accountDoc.toolPreferences,

@@ -47,14 +47,25 @@ export type ToolPreferences = {
 };
 
 export type PanelView = {
-  url: AutomergeUrl;
+  /**
+   * The document shown in this panel. **Absent** for an *empty content frame* —
+   * a placeholder content panel kept beside the folder/context panes so they
+   * never span the full width. The next document opened fills the empty frame
+   * instead of splitting the folder.
+   */
+  url?: AutomergeUrl;
   toolId?: string;
   /**
-   * Marks a panel as a *context* panel (comments, history, etc.) rather than a
-   * content document. Context panels describe the selected content panel and
-   * are excluded from being the "selected document" themselves.
+   * Marks a panel's special role:
+   * - `"context"` — a context panel (comments, history, …) that describes the
+   *   selected content panel and is itself excluded from being the "selected
+   *   document".
+   * - `"root-folder"` — the account's root folder navigator. The url is
+   *   deliberately **not** stored; it's resolved to the *viewer's*
+   *   `rootFolderUrl` at render time, so a shared layout doesn't carry (and
+   *   leak) the author's folder — the recipient sees their own folders instead.
    */
-  role?: "context";
+  role?: "context" | "root-folder";
 };
 
 export type SplitDirection = "horizontal" | "vertical";

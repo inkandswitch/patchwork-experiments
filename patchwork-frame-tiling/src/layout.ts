@@ -1,3 +1,4 @@
+import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type {
   DropSide,
   LayoutNode,
@@ -17,7 +18,8 @@ const nextId = (prefix: string) =>
 
 /** Build a clean (no `undefined`) view object safe to store in Automerge. */
 const cleanView = (view: PanelView): PanelView => {
-  const out: PanelView = { url: view.url };
+  const out: PanelView = {};
+  if (view.url !== undefined && view.url !== null) out.url = view.url;
   if (view.toolId !== undefined && view.toolId !== null) out.toolId = view.toolId;
   if (view.role !== undefined && view.role !== null) out.role = view.role;
   return out;
@@ -30,16 +32,35 @@ export const makeLeaf = (view: PanelView): LeafNode => ({
   history: [],
 });
 
+/** An empty *content* frame: a placeholder panel awaiting its first document. */
+export const makeEmptyLeaf = (): LeafNode => makeLeaf({});
+
+/**
+ * The root-folder navigator, stored *symbolically* (no url): it resolves to the
+ * viewer's own `rootFolderUrl` at render time so a shared layout never carries
+ * the author's folder document.
+ */
+export const makeRootFolderLeaf = (): LeafNode => makeLeaf({ role: "root-folder" });
+
 const makeSplit = (
   direction: SplitDirection,
   children: [LayoutNode, LayoutNode],
+  sizes: [number, number] = [50, 50],
 ): SplitNode => ({
   kind: "split",
   id: nextId("split"),
   direction,
   children,
-  sizes: [50, 50],
+  sizes,
 });
+
+/**
+ * The arrangement a fresh session starts from: the root folder as a narrow
+ * navigator beside a (wide) empty content frame, so the folder never spans the
+ * full width and there's always a slot ready for the first document.
+ */
+export const makeInitialLayout = (): SplitNode =>
+  makeSplit("horizontal", [makeRootFolderLeaf(), makeEmptyLeaf()], [28, 72]);
 
 /**
  * Deep-clone a (possibly Automerge-proxied) subtree into plain objects, reading
@@ -79,6 +100,40 @@ export const findLeafIdByUrl = (
   return (
     findLeafIdByUrl(node.children[0], url) ??
     findLeafIdByUrl(node.children[1], url)
+  );
+};
+
+/**
+ * A "content" leaf is a normal document panel (an empty content frame counts) —
+ * i.e. *not* the root-folder navigator and *not* a context (comments/history/…)
+ * panel. Used so document opens never land in (or carve up) those special
+ * panels. The optional `rootFolderUrl` also excludes legacy url-based folder
+ * leaves that predate the symbolic `"root-folder"` role.
+ */
+export const isContentLeaf = (
+  leaf: LeafNode | null,
+  rootFolderUrl?: string,
+): boolean =>
+  !!leaf &&
+  leaf.view.role !== "context" &&
+  leaf.view.role !== "root-folder" &&
+  !(rootFolderUrl !== undefined && leaf.view.url === rootFolderUrl);
+
+/** Find the id of the root-folder navigator panel, if one is open. */
+export const findRootFolderLeafId = (
+  node: LayoutNode | null,
+  rootFolderUrl?: string,
+): string | null => {
+  if (!node) return null;
+  if (node.kind === "leaf") {
+    const isFolder =
+      node.view.role === "root-folder" ||
+      (rootFolderUrl !== undefined && node.view.url === rootFolderUrl);
+    return isFolder ? node.id : null;
+  }
+  return (
+    findRootFolderLeafId(node.children[0], rootFolderUrl) ??
+    findRootFolderLeafId(node.children[1], rootFolderUrl)
   );
 };
 
@@ -133,7 +188,12 @@ const childIndexOfLeaf = (split: SplitNode, leafId: string): 0 | 1 =>
 
 /** Set `target.url`/`target.toolId` in place, avoiding `undefined` writes. */
 const writeView = (target: PanelView, view: PanelView): void => {
-  if (target.url !== view.url) target.url = view.url;
+  const url = view.url;
+  if (url === undefined || url === null) {
+    if (target.url !== undefined) delete (target as { url?: string }).url;
+  } else if (target.url !== url) {
+    target.url = url;
+  }
   const toolId = view.toolId;
   if (toolId === undefined || toolId === null) {
     if (target.toolId !== undefined)
@@ -155,7 +215,9 @@ export const navigateLeafIn = (
   if (!leaf) return;
   if (leaf.view.url === view.url && (leaf.view.toolId ?? null) === (view.toolId ?? null))
     return;
-  leaf.history.push(cleanView(leaf.view));
+  // Filling an *empty* content frame isn't a navigation, so it leaves no
+  // back-history entry to return to.
+  if (leaf.view.url) leaf.history.push(cleanView(leaf.view));
   writeView(leaf.view, view);
 };
 
@@ -282,4 +344,67 @@ export const removeLeafIn = (doc: TilingLayoutDoc, leafId: string): void => {
   } else {
     loc.parent.children[loc.indexInParent] = siblingClone;
   }
+};
+
+/** Does the tree contain at least one content leaf (empty frames count)? */
+const hasContentLeaf = (
+  node: LayoutNode,
+  rootFolderUrl?: string,
+): boolean =>
+  node.kind === "leaf"
+    ? isContentLeaf(node, rootFolderUrl)
+    : hasContentLeaf(node.children[0], rootFolderUrl) ||
+      hasContentLeaf(node.children[1], rootFolderUrl);
+
+/**
+ * Keep the invariant that there's always a content frame for documents to open
+ * into, so the folder/context panes never end up alone and full-width. If the
+ * layout is missing or has no content leaf, (re)introduce an empty content
+ * frame beside the folder.
+ */
+export const ensureContentFrameIn = (
+  doc: TilingLayoutDoc,
+  rootFolderUrl?: AutomergeUrl,
+): void => {
+  const root = doc.layout;
+  if (!root) {
+    doc.layout = makeInitialLayout();
+    return;
+  }
+  if (hasContentLeaf(root, rootFolderUrl)) return;
+  const firstId = collectLeafIds(root)[0];
+  if (!firstId) {
+    doc.layout = makeInitialLayout();
+    return;
+  }
+  splitLeafIn(doc, firstId, "horizontal", makeEmptyLeaf());
+};
+
+/**
+ * Convert any legacy url-based root-folder leaves (which embed the author's
+ * folder document) into the symbolic `"root-folder"` role, so this session — and
+ * anything shared from it — resolves the folder to the *viewer's* own. Only the
+ * current viewer's `rootFolderUrl` is recognizable here; a foreign folder url in
+ * a received layout can't be detected. Returns whether anything changed.
+ */
+export const normalizeRootFolderIn = (
+  doc: TilingLayoutDoc,
+  rootFolderUrl: AutomergeUrl,
+): boolean => {
+  let changed = false;
+  const visit = (node: LayoutNode): void => {
+    if (node.kind === "leaf") {
+      if (node.view.role !== "root-folder" && node.view.url === rootFolderUrl) {
+        node.view.role = "root-folder";
+        delete (node.view as { url?: string }).url;
+        node.history.splice(0, node.history.length);
+        changed = true;
+      }
+      return;
+    }
+    visit(node.children[0]);
+    visit(node.children[1]);
+  };
+  if (doc.layout) visit(doc.layout);
+  return changed;
 };

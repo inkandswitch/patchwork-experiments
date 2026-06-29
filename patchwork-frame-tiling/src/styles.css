@@ -387,6 +387,31 @@ patchwork-view {
   inset: 0;
 }
 
+/* Placeholder shown in an empty content frame (no document open yet). */
+.tile-panel__empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 1rem;
+  text-align: center;
+}
+
+.tile-panel__empty p {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 500;
+  opacity: 0.65;
+}
+
+.tile-panel__empty span {
+  font-size: 0.8rem;
+  opacity: 0.45;
+}
+
 /* --- Drag & drop to rearrange panels --- */
 
 /* Drag handle (grip) at the head of each panel header. */

@@ -13,13 +13,23 @@ and resize freely.
   folder, and opens it — also accepts a pasted automerge URL), a **gear** to
   open module settings, and an **avatar** showing the logged-in contact that
   opens the account picker when clicked.
-- On open, the account's **root folder** is shown as the first panel.
-- Opening a document from inside a panel (e.g. clicking an entry in the folder
-  view) routes to the **last-focused other panel**, navigating it to the
-  document rather than replacing the panel you clicked in. If there is no other
-  panel yet, a **new panel** opens beside the source. This keeps navigators
-  like the folder tree in place while documents open next to them. Use a
-  panel's **back** button to return to its previous document.
+- On open, the account's **root folder** is shown as a narrow **navigator**
+  beside a (wide) **empty content frame**, so the folder never spans the full
+  width and there's always a slot ready for the first document.
+- The folder navigator is stored **symbolically** (a `"root-folder"` panel with
+  no document url): it resolves to the **viewer's own** `rootFolderUrl` at render
+  time. So sharing a layout (by copying its URL) never carries your folder
+  document — the recipient sees **their own** folders in that pane. Legacy
+  url-based folder panes are migrated to the symbolic form on load.
+- Documents only ever open into **content** panels — never the root-folder
+  navigator or a **context** pane (comments, history, …). Opening one:
+  - **fills an empty content frame** if one is waiting (the seeded slot beside
+    the folder), otherwise
+  - navigates the **last-focused other content panel** (so clicking an entry in
+    the folder view opens it next to the folder, not in it), otherwise
+  - splits an existing **content** panel — never the folder — to open a new one.
+
+  Use a panel's **back** button to return to its previous document.
 - **Split right** / **split down** tile the panel into two; the new panel
   mirrors the source so you can take each side somewhere different.
 - Drag the handles between panels to **resize**.
@@ -27,8 +37,9 @@ and resize freely.
   panel) is **persisted to its own document**, so a reload restores your
   layout exactly where you left it.
 - **Close** removes a panel and collapses its sibling into the freed space.
-  The frame never goes empty — closing the last panel returns you to the
-  root folder.
+  The frame never goes empty, and there's always at least one content frame:
+  closing the last content panel leaves an **empty content frame** beside the
+  folder rather than letting the folder/context panes go full-width.
 - Each panel's titlebar has a **tool picker** (shown when a document supports
   more than one tool). Choosing a tool re-renders just that panel's document
   with the selected tool; the default tool is marked accordingly.
@@ -54,7 +65,14 @@ and resize freely.
   - `navigateLeafIn`, `goBackIn`, `setLeafToolIn`, `setSizesIn` make
     **field-level** edits (set a url, push/pop a history entry, set a size),
   - `splitLeafIn` / `removeLeafIn` only rewrite the **one subtree slot** they
-    touch (the rest of the tree is untouched).
+    touch (the rest of the tree is untouched),
+  - `makeInitialLayout` seeds a new session as `[folder | empty content frame]`,
+    and `ensureContentFrameIn` upholds the invariant that a content frame always
+    exists (a leaf whose `view.url` is absent is an empty content frame),
+  - `makeRootFolderLeaf` builds the **symbolic** folder pane (`role:
+    "root-folder"`, no url) and `normalizeRootFolderIn` migrates legacy url-based
+    folder leaves to it, so a shared layout resolves the folder to the viewer's
+    own `rootFolderUrl` instead of embedding the author's.
 - `datatype.ts` — the **`patchwork-frame-tiling:layout`** datatype. Its
   document (`TilingLayoutDoc`) is the **single source of truth**: it stores the
   layout tree, the active panel id, and the focus order. The frame derives all
