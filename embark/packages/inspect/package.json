@@ -4,7 +4,14 @@
   "version": "0.0.1",
   "private": true,
   "main": "./dist/index.js",
-  "exports": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "scripts": {
     "build": "vite build",
     "sync": "pushwork sync",
@@ -12,7 +19,6 @@
   },
   "dependencies": {
     "@embark/core": "workspace:*",
-    "@embark/llm-card": "workspace:*",
     "@automerge/automerge-repo": "2.6.0-subduction.29",
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.38.4",

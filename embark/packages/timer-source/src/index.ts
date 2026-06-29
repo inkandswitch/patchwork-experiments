@@ -1,25 +1,17 @@
 import type { Plugin } from "@inkandswitch/patchwork-plugins";
 
+// The Timer source is a `patchwork:component`, not a tool+datatype: it has no
+// state of its own, so it ships as a handle-less view (./component) that the
+// canvas embeds directly by url.
 export const plugins: Plugin<any>[] = [
   {
-    type: "patchwork:tool",
-    id: "timer-source",
-    name: "Timer",
-    icon: "Timer",
-    supportedDatatypes: ["timer-source"],
-    async load() {
-      const { TimerSourceTool } = await import("./tool");
-      return TimerSourceTool;
-    },
-  },
-  {
-    type: "patchwork:datatype",
+    type: "patchwork:component",
     id: "timer-source",
     name: "Timer",
     icon: "Timer",
     async load() {
-      const { TimerSourceDatatype } = await import("./datatype");
-      return TimerSourceDatatype;
+      const { default: component } = await import("./component");
+      return component;
     },
   },
 ];

@@ -1,15 +1,19 @@
 import type { JSX } from "solid-js";
+import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import {
   stickerSourceCard,
   type ScanContext,
   type Sticker,
 } from "@embark/core";
 
-// A card that scans text for imperial quantities and annotates each with the
-// metric equivalent as a `text` sticker in the "after" slot. Behaves like the
-// POI/weather cards (a contributor with a playing-card face) but its work is
-// the shared sticker-scanning engine.
-export const UnitConverterTool = stickerSourceCard(
+// A handle-less `patchwork:component` that scans text for imperial quantities
+// and annotates each with the metric equivalent as a `text` sticker in the
+// "after" slot. Behaves like the POI/weather components (a contributor with a
+// playing-card face) but its work is the shared sticker-scanning engine.
+// `stickerSourceCard` ignores its doc handle, so the default export adapts it to
+// the handle-less component shape: the canvas runs it into the embed host with
+// `repo` stamped on, and it reaches the shared context via DOM discovery.
+const UnitConverterCard = stickerSourceCard(
   {
     title: "Unit Converter",
     description:
@@ -20,6 +24,9 @@ export const UnitConverterTool = stickerSourceCard(
   },
   { scan: scanUnits },
 );
+
+export default (element: ToolElement): (() => void) | void =>
+  UnitConverterCard(undefined as never, element);
 
 function scanUnits(ctx: ScanContext): Sticker[] {
   const stickers: Sticker[] = [];

@@ -1,4 +1,5 @@
 import type { JSX } from "solid-js";
+import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import {
   stickerSourceCard,
   type ScanContext,
@@ -6,11 +7,13 @@ import {
   type StickerSource,
 } from "@embark/core";
 
-// A card that scans text for amounts in other currencies and annotates each
-// with today's value in US dollars. Unlike the unit converter its `scan` needs
-// live exchange rates, so the card fetches them once on mount (keyless, from
-// frankfurter.app / ECB data) and forces a rescan when they land.
-export const CurrencyConverterTool = stickerSourceCard(
+// A handle-less `patchwork:component` that scans text for amounts in other
+// currencies and annotates each with today's value in US dollars. Unlike the
+// unit converter its `scan` needs live exchange rates, so the card fetches them
+// once on mount (keyless, from frankfurter.app / ECB data) and forces a rescan
+// when they land. `stickerSourceCard` ignores its doc handle, so the default
+// export adapts it to the handle-less component shape.
+const CurrencyConverterCard = stickerSourceCard(
   {
     title: "Currency Converter",
     description:
@@ -22,6 +25,9 @@ export const CurrencyConverterTool = stickerSourceCard(
   { scan: scanCurrency },
   onReady,
 );
+
+export default (element: ToolElement): (() => void) | void =>
+  CurrencyConverterCard(undefined as never, element);
 
 // Kick off the (deduped, module-level) rate fetch, then re-publish stickers once
 // rates are available — scans before that point produce nothing.

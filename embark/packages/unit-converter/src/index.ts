@@ -1,25 +1,17 @@
 import type { Plugin } from "@inkandswitch/patchwork-plugins";
 
+// The Unit Converter is a `patchwork:component`, not a tool+datatype: it has no
+// state of its own, so it ships as a handle-less view (./component) that the
+// canvas embeds directly by url.
 export const plugins: Plugin<any>[] = [
   {
-    type: "patchwork:tool",
-    id: "unit-converter",
-    name: "Unit Converter",
-    icon: "Ruler",
-    supportedDatatypes: ["unit-converter"],
-    async load() {
-      const { UnitConverterTool } = await import("./tool");
-      return UnitConverterTool;
-    },
-  },
-  {
-    type: "patchwork:datatype",
+    type: "patchwork:component",
     id: "unit-converter",
     name: "Unit Converter",
     icon: "Ruler",
     async load() {
-      const { UnitConverterDatatype } = await import("./datatype");
-      return UnitConverterDatatype;
+      const { default: component } = await import("./component");
+      return component;
     },
   },
 ];

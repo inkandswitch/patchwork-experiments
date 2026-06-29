@@ -1,13 +1,12 @@
 import type { Extension } from "@codemirror/state";
 import type { Plugin } from "@inkandswitch/patchwork-plugins";
-import { plugins as colorStylerPlugins } from "./sources/color-styler";
 import { plugins as timerPlugins } from "./timer";
 
 // The sticker system: a CodeMirror renderer (loaded into every markdown editor)
-// that draws stickers targeting the doc, plus the example sources that publish
-// them and the timer widget a `tool` sticker embeds. The unit/currency/timer
-// *sources* now live as playing-card tools under ../cards; only the color
-// styler ships here (alongside the renderer and the timer widget).
+// that draws stickers targeting the doc, plus the timer widget a `tool` sticker
+// embeds. The sticker *sources* (unit/currency/timer scanners) now live as
+// standalone `patchwork:component` packages; this package ships the renderer and
+// the timer widget.
 export const plugins: Plugin<any>[] = [
   {
     type: "codemirror:extension",
@@ -19,6 +18,5 @@ export const plugins: Plugin<any>[] = [
       return stickerRenderer();
     },
   },
-  ...colorStylerPlugins,
   ...timerPlugins,
 ];

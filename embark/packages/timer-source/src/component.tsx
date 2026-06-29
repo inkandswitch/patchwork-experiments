@@ -1,4 +1,5 @@
 import type { JSX } from "solid-js";
+import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import {
   stickerSourceCard,
   type ScanContext,
@@ -6,20 +7,22 @@ import {
 } from "@embark/core";
 
 // The timer sticker's backing-doc shape (rendered by @embark/stickers' timer
-// tool). Inlined here as a contract type so this card keeps zero dependency on
-// the stickers package — it only mints docs of this shape.
+// tool). Inlined here as a contract type so this component keeps zero dependency
+// on the stickers package — it only mints docs of this shape.
 type TimerDoc = {
   "@patchwork": { type: "timer" };
   durationMs: number;
   startedAt?: number;
 };
 
-// A card that turns timer tokens into live timer widgets via a `tool` sticker in
-// the "replace" slot. Each token gets a backing `timer` document, reused across
-// edits (keyed by the cursor-based target url). The countdown widget itself is
-// the separate timer tool (../../stickers/timer); this card only finds the
-// tokens and mints the widgets.
-export const TimerSourceTool = stickerSourceCard(
+// A handle-less `patchwork:component` that turns timer tokens into live timer
+// widgets via a `tool` sticker in the "replace" slot. Each token gets a backing
+// `timer` document, reused across edits (keyed by the cursor-based target url).
+// The countdown widget itself is the separate timer tool (@embark/stickers'
+// timer); this component only finds the tokens and mints the widgets.
+// `stickerSourceCard` ignores its doc handle, so the default export adapts it to
+// the handle-less component shape.
+const TimerSourceCard = stickerSourceCard(
   {
     title: "Timer",
     description:
@@ -30,6 +33,9 @@ export const TimerSourceTool = stickerSourceCard(
   },
   { scan: scanTimers },
 );
+
+export default (element: ToolElement): (() => void) | void =>
+  TimerSourceCard(undefined as never, element);
 
 // `@timer <n><h|m|s>` (e.g. `@timer 5m`) or a bare `MM:SS` (e.g. `5:00`).
 const TOKEN_RE = /@timer\s+(\d+)\s*(h|m|s)\b|\b(\d{1,2}):([0-5]\d)\b/gi;

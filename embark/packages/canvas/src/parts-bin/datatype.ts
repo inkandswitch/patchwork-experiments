@@ -12,10 +12,12 @@ const DEFAULT_ZOOM = 9.5;
 // one creates a component embed pointing at the shared module rather than a
 // minted provider document. The urls are head-less (the service worker redirects
 // to the latest heads on load), so a fresh bin always wires up the newest
-// published component. Each is `automerge:<package rootUrl>/component.js`,
-// encoded the way the worker serves module files.
+// published component. The package folder doc mirrors the package directory, and
+// the build output lives under `dist/`, so the component file is served at
+// `automerge:<package rootUrl>/dist/component.js` (this raw module path bypasses
+// package.json `exports`, so it must spell out `dist/`).
 const componentUrl = (rootUrl: string): string =>
-  `/${encodeURIComponent(rootUrl)}/component.js`;
+  `/${encodeURIComponent(rootUrl)}/dist/component.js`;
 
 const POI_COMPONENT_URL = componentUrl(
   "automerge:r1gkpehGtt4WTR1pz7mBac9SnJp",
@@ -26,17 +28,24 @@ const WEATHER_COMPONENT_URL = componentUrl(
 const ROUTE_COMPONENT_URL = componentUrl(
   "automerge:41HBbYkbrqYd9STaojjQUsFc1jDW",
 );
+const UNIT_COMPONENT_URL = componentUrl(
+  "automerge:2YXL4FwZ7crmDpgcm2FobPGpQyE7",
+);
+const CURRENCY_COMPONENT_URL = componentUrl(
+  "automerge:27NZacXx1DQVusdWaNS9US9t5spB",
+);
+const TIMER_COMPONENT_URL = componentUrl(
+  "automerge:3wGbMYtuZ7EtBvDsbuwRBcP6v7P2",
+);
 
-// A sample note exercising every sticker source at once: a named color and a
-// hex color (styler), imperial quantities (unit converter), a foreign amount
-// (currency converter), and a timer token.
+// A sample note exercising every sticker source at once: imperial quantities
+// (unit converter), a foreign amount (currency converter), and a timer token.
 const DEMO_MARKDOWN = `# Trip notes
 
-The route is about 5 miles along a red trail.
+The route is about 5 miles along the ridge trail.
 Take a break partway: @timer 5m
 
 Bring 10 lb of gear; the permit costs €20.
-The summit hut is painted #2f80ed.
 `;
 
 export const PartsBinDatatype: DatatypeImplementation<PartsBinDoc> = {
@@ -53,33 +62,17 @@ export const PartsBinDatatype: DatatypeImplementation<PartsBinDoc> = {
   },
 };
 
-// The starter set: a search box; the Place Finder, Weather and Routes
-// components; a map; the three sticker sources; and a demo markdown note for
-// them to annotate. Documents are real docs the bin previews live and hands out
-// clones of; the behavioral-role features are components the bin references by
-// url. `repo.create` doesn't run a datatype's `init`, so each child doc's
-// initial value is set inline here.
+// The starter set: the Place Finder, Weather and Routes components; a map; the
+// three sticker-source components (Unit/Currency/Timer); and a demo markdown
+// note for them to annotate. Documents are real docs the bin previews live and
+// hands out clones of; the behavioral-role features are components the bin
+// references by url. `repo.create` doesn't run a datatype's `init`, so each
+// child doc's initial value is set inline here.
 export function seedExampleItems(repo: Repo): PartsBinItem[] {
-  const search = repo.create({
-    "@patchwork": { type: "search" },
-    query: "",
-  });
   const map = repo.create({
     "@patchwork": { type: "map" },
     center: [...DEFAULT_CENTER],
     zoom: DEFAULT_ZOOM,
-  });
-  const colorStyler = repo.create({
-    "@patchwork": { type: "color-styler" },
-  });
-  const unitConverter = repo.create({
-    "@patchwork": { type: "unit-converter" },
-  });
-  const currencyConverter = repo.create({
-    "@patchwork": { type: "currency-converter" },
-  });
-  const timerSource = repo.create({
-    "@patchwork": { type: "timer-source" },
   });
   const note = repo.create({
     "@patchwork": { type: "markdown" },
@@ -87,7 +80,6 @@ export function seedExampleItems(repo: Repo): PartsBinItem[] {
   });
 
   return [
-    { id: crypto.randomUUID(), url: search.url, toolId: "search" },
     {
       id: crypto.randomUUID(),
       componentUrl: POI_COMPONENT_URL,
@@ -104,18 +96,21 @@ export function seedExampleItems(repo: Repo): PartsBinItem[] {
       label: "Routes",
     },
     { id: crypto.randomUUID(), url: map.url, toolId: "map" },
-    { id: crypto.randomUUID(), url: colorStyler.url, toolId: "color-styler" },
     {
       id: crypto.randomUUID(),
-      url: unitConverter.url,
-      toolId: "unit-converter",
+      componentUrl: UNIT_COMPONENT_URL,
+      label: "Unit Converter",
     },
     {
       id: crypto.randomUUID(),
-      url: currencyConverter.url,
-      toolId: "currency-converter",
+      componentUrl: CURRENCY_COMPONENT_URL,
+      label: "Currency Converter",
     },
-    { id: crypto.randomUUID(), url: timerSource.url, toolId: "timer-source" },
+    {
+      id: crypto.randomUUID(),
+      componentUrl: TIMER_COMPONENT_URL,
+      label: "Timer",
+    },
     { id: crypto.randomUUID(), url: note.url, toolId: "codemirror-base" },
   ];
 }

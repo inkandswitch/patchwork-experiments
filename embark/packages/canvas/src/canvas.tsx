@@ -31,6 +31,7 @@ import {
   Selection,
   type PatchworkContextElement,
 } from "@embark/core";
+import { resolveInspectTarget, type InspectDoc } from "@embark/inspect";
 import { runSchemaResolver } from "./schema-resolver";
 import "./styles.css";
 
@@ -132,6 +133,7 @@ export const EmbarkCanvasTool: ToolRender = (handle, element) => {
 
 function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
   const [doc] = useDocument<EmbarkCanvasDoc>(() => props.handle.url);
+  const repo = useRepo();
   const [canvasEl, setCanvasEl] = createSignal<HTMLDivElement>();
   const [isDraggingOver, setIsDraggingOver] = createSignal(false);
   // Selection is per-user view state, so it lives in a local signal rather
@@ -249,18 +251,32 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
     });
   };
 
-  // Inspect: drop a fresh embed beside the clicked card that renders the same
-  // document with the inspect tool (showing its spec + code). Only documents can
-  // be inspected — component embeds have no backing document, so they're skipped.
-  const inspectEmbed = (id: string) => {
+  // Inspect: resolve what paints the clicked embed (its package, and — for a
+  // tool — the document it shows) from the rendered DOM, mint a small inspect
+  // doc carrying those urls, and drop a fresh embed beside it that renders that
+  // inspect doc. Works for both document embeds and standalone components.
+  const inspectEmbed = async (id: string) => {
     setMenu(null);
+    const source = doc()?.embeds[id];
+    const root = canvasEl()?.querySelector<HTMLElement>(
+      `[data-embed-id="${id}"]`,
+    );
+    if (!source || !root) return;
+
+    const target = await resolveInspectTarget(root, repo);
+    if (!target) return;
+
+    const inspectDoc = repo.create<InspectDoc>({
+      "@patchwork": { type: "inspect" },
+      packageUrl: target.packageUrl,
+      ...(target.documentUrl ? { documentUrl: target.documentUrl } : {}),
+    });
+
     props.handle.change((canvas) => {
-      const source = canvas.embeds[id];
-      if (!source || !source.docUrl) return;
       const newId = crypto.randomUUID();
       canvas.embeds[newId] = {
         id: newId,
-        docUrl: source.docUrl,
+        docUrl: inspectDoc.url,
         x: source.x + source.width + INSPECT_GAP,
         y: source.y,
         width: INSPECT_WIDTH,
@@ -393,7 +409,7 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
                 clientX,
                 clientY,
                 toolId,
-                Boolean(embed.docUrl),
+                Boolean(embed.docUrl || embed.componentUrl),
               )
             }
           />
@@ -405,9 +421,9 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
         </div>
       </Show>
 
-      {/* Right-click menu. Its only action is Inspect, which works for any
-          document (raw tab, plus spec/code for LLM cards). It's disabled on
-          inspect embeds themselves to avoid inspecting an inspector. */}
+      {/* Right-click menu. Its only action is Inspect, which opens the embed's
+          package (and the document it renders, if any). It's disabled on inspect
+          embeds themselves to avoid inspecting an inspector. */}
       <Show when={menu()}>
         {(activeMenu) => (
           <div
@@ -422,14 +438,14 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
               disabled={
                 !activeMenu().inspectable || activeMenu().toolId === "inspect"
               }
-              on:click={() => inspectEmbed(activeMenu().embedId)}
+              on:click={() => void inspectEmbed(activeMenu().embedId)}
             >
               Inspect
             </button>
           </div>
         )}
       </Show>
-      <div style={{ position: "absolute", bottom: 0, right: 0 }}>v0.0.12</div>
+      <div style={{ position: "absolute", bottom: 0, right: 0 }}>v0.0.14</div>
     </div>
   );
 }
@@ -710,6 +726,7 @@ function EmbedView(props: {
     <div
       ref={rootEl}
       class="embark-embed"
+      data-embed-id={props.embed.id}
       classList={{
         "embark-embed--selected": props.selected,
         "embark-embed--highlighted": props.highlighted,
@@ -806,7 +823,13 @@ function ComponentEmbed(props: { componentUrl: string }) {
     const dispose = renderComponentEmbed(host, props.componentUrl, repo);
     onCleanup(dispose);
   });
-  return <div ref={hostEl} class="embark-embed__component" />;
+  return (
+    <div
+      ref={hostEl}
+      class="embark-embed__component"
+      data-component-url={props.componentUrl}
+    />
+  );
 }
 
 // Six-dot grip glyph for the move handle; inherits the handle's text color.

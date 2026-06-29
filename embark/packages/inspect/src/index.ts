@@ -1,16 +1,23 @@
 import type { Plugin } from "@inkandswitch/patchwork-plugins";
 
-// A read/edit inspector for any document, pinned onto an embed via
-// `toolId: "inspect"`. Every document gets a `raw` tab (the `raw` tool). LLM
-// cards additionally get `spec` and `code` tabs (their plain-language spec and
-// generated effect.js), shown before `raw`.
+export {
+  resolveInspectTarget,
+  type InspectTarget,
+  type InspectDoc,
+} from "./resolve-target";
+
+// A two-pane inspector pinned onto an embed via `toolId: "inspect"`. It renders
+// the package that paints the inspected embed (its source folder doc) and, when
+// the embed shows a document, that document — each with a plain `<patchwork-view>`.
+// The package + document urls are resolved at inspect time (see
+// `resolveInspectTarget`) and stored on the minted inspect doc this tool reads.
 export const plugins: Plugin<any>[] = [
   {
     type: "patchwork:tool",
     id: "inspect",
     name: "Inspect",
     icon: "Search",
-    supportedDatatypes: "*",
+    supportedDatatypes: ["inspect"],
     unlisted: true,
     async load() {
       const { InspectTool } = await import("./InspectTool");
