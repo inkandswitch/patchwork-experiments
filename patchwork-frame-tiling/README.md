@@ -99,6 +99,13 @@ and resize freely.
   `patchwork:open-document`, identifies the source panel via its `data-leaf-id`,
   and routes the document to the most-recently-focused *other* panel (tracked in
   a focus-order ref) — or opens a new panel beside the source if none exists.
+  Because this is a `frame-tool`, the frame configurator's preview cards would
+  otherwise mount it inside itself and loop forever, so `renderPatchworkFrame`
+  guards against being mounted inside *any* frame: `isMountedInsideFrame` walks
+  the DOM (across shadow boundaries) and bails if an ancestor is marked
+  `data-patchwork-frame` (the convention this frame sets on its root) **or** is a
+  `<patchwork-view>` hosting a `frame-tool`. When nested, it renders a static
+  placeholder instead of the live frame.
 - `ensureSubdocs.ts` — lazily creates the `rootFolderUrl`, `moduleSettingsUrl`,
   `contactUrl`, and `tilingLayoutUrl` subdocs so the frame works against a
   fresh account document.

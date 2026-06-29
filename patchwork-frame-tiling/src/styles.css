@@ -192,6 +192,14 @@ patchwork-view {
   opacity: 0.6;
 }
 
+/* Static stand-in shown when the frame is previewed inside another frame
+   (e.g. the frame configurator's "Frame Tool" cards) — avoids recursive mount. */
+.tile-frame--nested {
+  width: 100%;
+  height: 100%;
+  display: flex;
+}
+
 .tile-group {
   width: 100%;
   height: 100%;

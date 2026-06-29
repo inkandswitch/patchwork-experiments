@@ -12,6 +12,7 @@ import {
   type Repo,
 } from "@automerge/automerge-repo";
 import { OpenDocumentEvent } from "@inkandswitch/patchwork-elements";
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import type {
   ToolDescription,
   ToolElement,
@@ -1430,7 +1431,7 @@ export const PatchworkFrame = ({
       selectedDocUrl={selectedDocUrl}
       selectedToolId={selectedToolId}
     >
-      <div className="tile-app">
+      <div className="tile-app" data-patchwork-frame="tiling">
         <TopBar
           repo={repo}
           accountDocUrl={accountDocUrl}
@@ -1459,11 +1460,59 @@ export const PatchworkFrame = ({
   );
 };
 
+/**
+ * Is this frame being mounted *inside another frame* (of any kind)? The frame
+ * configurator's "Frame Tool" preview cards render every `frame-tool` against the
+ * account doc — including frames themselves — so a frame mounted there would
+ * re-render its whole UI (configurator pane and all), looping forever.
+ *
+ * We detect a frame ancestor generally, crossing shadow boundaries, by either:
+ *   - an element a frame marks with `data-patchwork-frame` (the convention this
+ *     frame follows on its root), or
+ *   - an ancestor `<patchwork-view>` hosting a tool tagged `frame-tool` (so we
+ *     also bail inside frames that don't set the marker).
+ * Callers render a static placeholder instead, breaking the recursion.
+ */
+function isMountedInsideFrame(element: HTMLElement | ShadowRoot): boolean {
+  let registry: ReturnType<typeof getRegistry<ToolDescription>> | null = null;
+  const hostsFrameTool = (toolId: string): boolean => {
+    registry ??= getRegistry<ToolDescription>("patchwork:tool");
+    return !!registry.get(toolId)?.tags?.includes("frame-tool");
+  };
+
+  let node: Node | null =
+    (element instanceof ShadowRoot ? element.host : element)?.parentNode ?? null;
+  while (node) {
+    if (node instanceof Element) {
+      if (node.hasAttribute("data-patchwork-frame")) return true;
+      if (node.tagName === "PATCHWORK-VIEW") {
+        const toolId = node.getAttribute("tool-id");
+        if (toolId && hostsFrameTool(toolId)) return true;
+      }
+    }
+    let next: Node | null = node.parentNode;
+    if (!next) {
+      const root = node.getRootNode();
+      next = root instanceof ShadowRoot ? root.host : null;
+    }
+    node = next;
+  }
+  return false;
+}
+
 export function renderPatchworkFrame(
   handle: { url: AutomergeUrl },
   element: ToolElement,
 ) {
   const root = createRoot(element);
+  if (isMountedInsideFrame(element)) {
+    root.render(
+      <div className="tile-frame tile-frame--nested">
+        <div className="tile-frame__empty">Tiling Frame</div>
+      </div>,
+    );
+    return () => root.unmount();
+  }
   root.render(
     <RepoContext.Provider value={element.repo}>
       <Suspense
