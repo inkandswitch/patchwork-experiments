@@ -33,6 +33,7 @@ import {
 import { ensureAccountSubdocs } from "./ensureSubdocs";
 import type { FolderDoc } from "@inkandswitch/patchwork-filesystem";
 import {
+  addRootFolderColumnIn,
   cloneLayout,
   collectLeafIds,
   ensureContentFrameIn,
@@ -43,7 +44,6 @@ import {
   isContentLeaf,
   makeInitialLayout,
   makeLeaf,
-  makeRootFolderLeaf,
   moveLeafIn,
   navigateLeafIn,
   normalizeRootFolderIn,
@@ -1240,16 +1240,17 @@ export const PatchworkFrame = ({
 
       // 4. Otherwise open a new panel by splitting a *content* panel, so we
       //    never carve up the root-folder navigator (rule 2) or a context pane.
-      //    Only when no content panel exists at all do we fall back to splitting
-      //    the source/active panel so the document can still open.
+      //    We never split the folder strip (that yields a super-narrow doc):
+      //    when there's no content panel, split any other (e.g. context) pane,
+      //    falling back to the folder only when it's the sole pane.
       const active = focusRef.current.activeLeafId;
       const firstContentId = leafIds.find((id) => isContentId(id)) ?? null;
+      const folderId = findRootFolderLeafId(current, rootFolderUrl);
       const splitSource =
         (isContentId(sourceId) && sourceId) ||
         (isContentId(active) && active) ||
         firstContentId ||
-        (sourceId && liveIds.has(sourceId) && sourceId) ||
-        (active && liveIds.has(active) && active) ||
+        leafIds.find((id) => id !== folderId) ||
         leafIds[0];
       if (!splitSource) return;
       const newLeaf = makeLeaf(view);
@@ -1373,21 +1374,22 @@ export const PatchworkFrame = ({
     [navigate, focusLeaf, change, rootFolderUrl],
   );
 
-  // Home: focus the (symbolic) root-folder navigator if open, else add one to
-  // the left of the first panel.
+  // Home: focus the (symbolic) root-folder navigator if it's open, else open it
+  // as a full-height column on the left, wrapping the current arrangement.
   const goHome = useCallback(() => {
     const current = docRef.current?.layout ?? null;
-    if (!current) return;
-    const folderId = findRootFolderLeafId(current, rootFolderUrl);
+    const folderId = current
+      ? findRootFolderLeafId(current, rootFolderUrl)
+      : null;
     if (folderId) {
       focusLeaf(folderId);
       return;
     }
-    const target = collectLeafIds(current)[0];
-    if (!target) return;
-    const newLeaf = makeRootFolderLeaf();
-    change((d) => splitLeafIn(d, target, "horizontal", newLeaf, false));
-    focusLeaf(newLeaf.id);
+    let newId: string | null = null;
+    change((d) => {
+      newId = addRootFolderColumnIn(d);
+    });
+    if (newId) focusLeaf(newId);
   }, [rootFolderUrl, focusLeaf, change]);
 
   const ops: LayoutOps = {

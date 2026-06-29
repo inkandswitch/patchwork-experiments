@@ -372,12 +372,33 @@ export const ensureContentFrameIn = (
     return;
   }
   if (hasContentLeaf(root, rootFolderUrl)) return;
-  const firstId = collectLeafIds(root)[0];
-  if (!firstId) {
+  // Add the empty frame beside a *non-folder* pane so we never carve the new
+  // frame out of the narrow folder strip (which would make both halves tiny).
+  // Only split the folder when it's the sole pane (then it's full-width anyway).
+  const folderId = findRootFolderLeafId(root, rootFolderUrl);
+  const ids = collectLeafIds(root);
+  const target = ids.find((id) => id !== folderId) ?? ids[0];
+  if (!target) {
     doc.layout = makeInitialLayout();
     return;
   }
-  splitLeafIn(doc, firstId, "horizontal", makeEmptyLeaf());
+  splitLeafIn(doc, target, "horizontal", makeEmptyLeaf());
+};
+
+/**
+ * Add the root-folder navigator as a full-height column on the **left**,
+ * wrapping the current arrangement. Returns the new folder leaf's id (so the
+ * caller can focus it). Used by the Home action when no folder pane is open.
+ */
+export const addRootFolderColumnIn = (doc: TilingLayoutDoc): string => {
+  const folder = makeRootFolderLeaf();
+  const root = doc.layout;
+  if (!root) {
+    doc.layout = makeSplit("horizontal", [folder, makeEmptyLeaf()], [28, 72]);
+  } else {
+    doc.layout = makeSplit("horizontal", [folder, cloneLayout(root)], [28, 72]);
+  }
+  return folder.id;
 };
 
 /**

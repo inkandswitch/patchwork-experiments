@@ -7,8 +7,9 @@ and resize freely.
 
 ## Behaviour
 
-- A persistent **app bar** runs across the top: a **home** button (focuses an
-  existing root-folder panel, or opens one), a **+** button (create-new dialog
+- A persistent **app bar** runs across the top: a **home** button (focuses the
+  root-folder panel if open, else opens it as a full-height column on the left),
+  a **+** button (create-new dialog
   that makes a document of any registered datatype, inserts it into the root
   folder, and opens it — also accepts a pasted automerge URL), a **gear** to
   open module settings, and an **avatar** showing the logged-in contact that
