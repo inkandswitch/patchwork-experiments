@@ -22,3 +22,11 @@
   # pin PNPM_VERSION here too if you need an exact pnpm.
   NODE_VERSION = "22"
   # PNPM_VERSION = "11"
+  # pnpm 11 turns blocked dependency build scripts into a hard error
+  # (ERR_PNPM_IGNORED_BUILDS) on a clean install, which fails any tool whose
+  # native deps (esbuild, cbor-extract, @swc/core, core-js …) need a build and
+  # that doesn't approve them in its own pnpm-workspace.yaml `allowBuilds`.
+  # Since patchwork-tools isn't a workspace, approve all builds for the CI
+  # install. build-static.mjs also sets this per tool install; keeping it here
+  # makes the CI behaviour explicit and covers Netlify's own install step.
+  npm_config_dangerously_allow_all_builds = "true"

@@ -45,6 +45,17 @@ node scripts/build-static.mjs --install --strict      # fail the run if any tool
 `modules.json` uses relative `./tools/…` URLs that resolve against the
 manifest's own URL, so the bundle works at any host or base path.
 
+**pnpm 11 build scripts:** on a clean install pnpm 11 turns blocked dependency
+build scripts into a hard error (`ERR_PNPM_IGNORED_BUILDS`), which fails any
+tool whose native deps (esbuild, cbor-extract, …) need a build and that doesn't
+approve them in its own `pnpm-workspace.yaml` `allowBuilds`. Because this repo
+isn't a workspace, `build-static.mjs` (and `netlify.toml`) set
+`npm_config_dangerously_allow_all_builds=true` for the orchestrated install so
+every tool builds regardless. A handful of tools instead fail because they
+`link:` packages outside this repo (e.g. `../../patchwork-next/…`,
+`codemirror-base`/`codemirror-markdown`); those can't build in a standalone
+clone and are simply skipped.
+
 ### Point a shell at the bundle
 
 A shell can load any tools host without rebuilding, via `VITE_DEFAULT_MODULES`
