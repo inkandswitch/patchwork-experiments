@@ -16,6 +16,7 @@ import { accept } from "@inkandswitch/patchwork-providers";
 import {
   SPATIAL_REGISTRY_KEY,
   COORDINATE_SYSTEM_SELECTOR,
+  CALIBRATION_DOC_SELECTOR,
   type Emitter,
   type SpatialRegistryHost,
 } from "./spatial-source.js";
@@ -49,3 +50,6 @@ export function makeRelayProvider(selectorType: string) {
 export const SpatialCoordinateSystemProvider = makeRelayProvider(
   COORDINATE_SYSTEM_SELECTOR,
 );
+
+/** Frame-owned calibration-doc-URL broker (current system; re-emits on switch). */
+export const CalibrationDocProvider = makeRelayProvider(CALIBRATION_DOC_SELECTOR);

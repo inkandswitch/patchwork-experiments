@@ -10,16 +10,7 @@
 
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 
-export type DocLink = {
-  name: string;
-  type: string;
-  url: AutomergeUrl;
-  icon?: string;
-};
-
 export type BarPosition = { left: number; top: number };
-
-export type HostMode = "setup" | "sample" | "use";
 
 // ---- Physical controls (reserved AprilTags → frame UI) --------------------
 export type ControlAction = "setup" | "hide-controls" | "left-sidebar";
@@ -41,21 +32,8 @@ export type PhysicalFrameConfig = {
   title: string;
   /** the physical rigs this account can run, keyed by system id */
   systems: Record<string, PhysicalSystem>;
-  /** openable docs shown one-at-a-time in the box */
-  docs: DocLink[];
-  /** which docs[] entry is mounted in use mode */
-  activeIndex: number;
-  /** top-level phase */
-  hostMode: HostMode;
   /** unified control panel position */
   barPosition: BarPosition | null;
-  /**
-   * Brightness (0–100) of the light the projector paints behind the embedded
-   * tool, i.e. the "paper" the camera sees. 0 = black. Raising it floods the
-   * surface with projector light so a dark marker has high contrast against it.
-   * Applied during BOTH the background sample and Use so the reference matches.
-   */
-  surfaceBrightness?: number;
 };
 
 /** Back-compat alias — the config doc replaces the old host doc shape. */
@@ -79,14 +57,7 @@ export const SpatialHostFolderDatatype = {
   init(doc: PhysicalFrameConfig) {
     doc.title = "Physical Frame";
     doc.systems = {};
-    doc.docs = [];
-    doc.activeIndex = 0;
-    // Start in "use" so the document area + camera loop + physical controls run
-    // by default. setup/sample remain reachable from the panel (until Phase 4
-    // moves calibration into its own tool driven by the setup control tag).
-    doc.hostMode = "use";
     doc.barPosition = null;
-    doc.surfaceBrightness = 0;
   },
   getTitle(doc: PhysicalFrameConfig) {
     return doc.title || "Physical Frame";
@@ -121,6 +92,12 @@ export type CalibrationDoc = {
   cameraCalibrationSize: CameraSize | null;
   activeTargetId: string;
   testMarkers: { board: [number, number]; camera: [number, number] }[];
+  /**
+   * Brightness (0–100) of the projected "paper" the camera sees, per rig. Lives
+   * here (not the frame config) so it's part of calibration and matches the
+   * sampled background. Optional for back-compat with older calibration docs.
+   */
+  surfaceBrightness?: number;
 };
 
 /**
@@ -139,6 +116,7 @@ export const SpatialCalibrationDatatype = {
     doc.cameraCalibrationSize = null;
     doc.activeTargetId = "A";
     doc.testMarkers = [];
+    doc.surfaceBrightness = 0;
   },
   getTitle(doc: CalibrationDoc) {
     return doc.title || "Spatial Calibration";

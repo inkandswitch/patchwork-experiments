@@ -96,6 +96,14 @@ export type CoordinateSystem = { width: number; height: number };
 export const COORDINATE_SYSTEM_SELECTOR = "physical:coordinate-system";
 
 /**
+ * Selector brokering the CURRENT system's calibration doc URL (a string).
+ * Distinct from the `physical:calibration` plugin TYPE (different namespace —
+ * provider selector vs. registry plugin-type). Consumers recover the live
+ * handle from the repo via this url; re-emits when the frame switches systems.
+ */
+export const CALIBRATION_DOC_SELECTOR = "physical:calibration-doc";
+
+/**
  * Per-host registry stamped on every provider wrapper element: maps a provider
  * selector to the Emitter that wrapper should relay. Replaces the old hardcoded
  * SpatialSource shape so any number of layers can plug in.

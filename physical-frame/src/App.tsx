@@ -3,11 +3,10 @@ import {
   createMemo,
   createResource,
   createSignal,
-  Match,
+  For,
   onCleanup,
   onMount,
   Show,
-  Switch,
 } from "solid-js";
 import type { AutomergeUrl, Repo } from "@automerge/automerge-repo";
 import {
@@ -19,7 +18,6 @@ import type {
   PhysicalFrameConfig,
   CalibrationDoc,
   ControlMap,
-  HostMode,
 } from "./folder-datatype";
 import type { AccountDoc } from "./account";
 import {
@@ -34,11 +32,12 @@ import {
   firstSystemId,
   loadCurrentSystemId,
   saveCurrentSystemId,
+  loadCalibrationPluginId,
+  saveCalibrationPluginId,
 } from "./systems";
+import { loadCalibrationPlugins } from "./registry";
+import type { PhysicalCalibration, CalibrationContext } from "./physical-calibration";
 import { createCamera } from "./camera";
-import { ControlPanel } from "./ControlPanel";
-import { SetupPhase } from "./setup/SetupPhase";
-import { SampleBackgroundPhase } from "./sample/SampleBackgroundPhase";
 import { UseStage } from "./use/UseStage";
 import type { DocHandle } from "@automerge/automerge-repo";
 
@@ -146,31 +145,49 @@ export function App(props: {
   const calHandle = useDocHandle<CalibrationDoc>(() => calibrationUrl());
   const calDoc = createDocumentProjection<CalibrationDoc>(calHandle);
 
-  // Phase 3.5 quick fix: default to "use" (not "setup") so the main document
-  // area + camera loop + apriltags reader + physical controls run by default —
-  // controls need the loop running regardless of any "mode". (Modes are being
-  // dismantled; setup/sample stay reachable via the panel until Phase 4 extracts
-  // calibration into its own tool.) The camera loop runs uncalibrated too
-  // (presence-only), which is exactly what control tags need.
-  const mode = createMemo<HostMode>(() => {
-    const m = config()?.hostMode;
-    return m === "setup" || m === "sample" ? m : "use";
+  // Discover calibration plugins (the `physical:calibration` bucket). The chosen
+  // plugin is per-frame-instance (localStorage, keyed account+system); a built-in
+  // default is always registered. If >1, a picker (in the calibration overlay).
+  const [calPlugins] = createResource(async () => loadCalibrationPlugins());
+  const [chosenCalPluginId, setChosenCalPluginId] = createSignal<string | null>(
+    null,
+  );
+  // Restore the saved choice when the system changes.
+  createEffect(() => {
+    const sid = systemId();
+    if (sid) setChosenCalPluginId(loadCalibrationPluginId(accountUrl, sid));
   });
-
-  // Calibration must be solved before Sample/Use are usable.
-  const calibrated = createMemo(() => !!calDoc()?.homographyCamToBoard);
-
-  const setHostMode = (m: HostMode) => {
-    if ((m === "sample" || m === "use") && !calibrated()) return; // gate behind calibration
-    // Use needs a sampled background (for the marks layer) → nudge to Sample first.
-    if (m === "use" && !background()) m = "sample";
-    configHandle()?.change((d) => {
-      d.hostMode = m;
-    });
+  const calPlugin = createMemo<PhysicalCalibration | undefined>(() => {
+    const list = calPlugins() ?? [];
+    if (list.length === 0) return undefined;
+    const chosen = list.find((p) => p.id === chosenCalPluginId());
+    return chosen ?? list[0];
+  });
+  const chooseCalPlugin = (id: string) => {
+    const sid = systemId();
+    if (sid) saveCalibrationPluginId(accountUrl, sid, id);
+    setChosenCalPluginId(id);
   };
+
+  // No more setup/sample/use "mode": the document area + camera loop + controls
+  // always run. Calibration is a SETUP state that swaps the box content for the
+  // in-process calibration plugin. `setup` is opened by the setup control tag OR
+  // a manual ⚙ button; either flips this. (The doc remounts when setup closes.)
+  const [manualSetup, setManualSetup] = createSignal(false);
 
   const requestFullscreen = () => {
     props.element.requestFullscreen?.().catch(() => {});
+  };
+
+  // Sample the empty-surface background (used by the calibration plugin via ctx).
+  const doSampleBackground = () => {
+    const g = camera.grabGray();
+    if (g) setBackground(g);
+    else
+      console.warn(
+        "[physical-frame] background sample failed — camera not ready?",
+        { active: camera.active(), liveSize: camera.getLiveSize() },
+      );
   };
 
   // ---- Selected document (via SelectedDocProvider) -------------------------
@@ -228,6 +245,9 @@ export function App(props: {
   // view — driven by the hide-controls control tag.
   const hideControls = () => controlState()["hide-controls"];
 
+  // Setup is on if the setup control tag is present OR the ⚙ button toggled it.
+  const setupOpen = () => controlState().setup || manualSetup();
+
   // One-time startup gesture: camera start AND browser fullscreen both require a
   // user gesture (can't be auto-triggered on load). Show a "Start projecting"
   // overlay; clicking it (the gesture) starts the camera + enters fullscreen.
@@ -282,37 +302,40 @@ export function App(props: {
         when={configHandle() && config() && calHandle()}
         fallback={<div class="sph-loading">Preparing physical frame…</div>}
       >
-        <Switch
-          fallback={
-            <SetupPhase
-              calHandle={calHandle()!}
-              calDoc={calDoc()!}
-              camera={camera}
-            />
-          }
-        >
-          <Match when={mode() === "sample"}>
-            <SampleBackgroundPhase
-              calDoc={calDoc()!}
-              hostDoc={config()!}
-              camera={camera}
-            />
-          </Match>
-          <Match when={mode() === "use"}>
-            <UseStage
-              hostHandle={configHandle()!}
-              hostDoc={config()!}
-              calDoc={calDoc()!}
-              repo={repo}
-              camera={camera}
-              getBackground={background}
-              controls={controls()}
-              selectedDocUrl={selectedDocUrl}
-              selectedToolId={selectedToolId}
-              onControlState={setControlState}
-            />
-          </Match>
-        </Switch>
+        {/* The document area always runs (camera loop + controls). */}
+        <UseStage
+          hostHandle={configHandle()!}
+          hostDoc={config()!}
+          calDoc={calDoc()!}
+          repo={repo}
+          camera={camera}
+          getBackground={background}
+          controls={controls()}
+          selectedDocUrl={selectedDocUrl}
+          selectedToolId={selectedToolId}
+          onControlState={setControlState}
+          calDocUrl={calibrationUrl}
+        />
+
+        {/* SETUP: swap the box content for the in-process calibration plugin
+            (camera by reference). Covers the doc area while active. */}
+        <Show when={setupOpen() && calPlugin() && calHandle()}>
+          <CalibrationHost
+            plugin={calPlugin()!}
+            ctx={{
+              camera,
+              repo,
+              calibrationHandle: calHandle()!,
+              calibrationDoc: calDoc,
+              sampleBackground: doSampleBackground,
+              hasBackground: () => !!background(),
+              close: () => setManualSetup(false),
+            }}
+            plugins={calPlugins() ?? []}
+            chosenId={calPlugin()!.id}
+            onChoose={chooseCalPlugin}
+          />
+        </Show>
       </Show>
 
       {/* Frame-level chrome — always available, not tied to any mode.
@@ -350,6 +373,37 @@ export function App(props: {
           >
             ☰
           </button>
+          <button
+            style={CHROME_BTN_STYLE}
+            data-active={setupOpen() ? "" : undefined}
+            title={setupOpen() ? "Exit setup" : "Calibrate / setup this system"}
+            onClick={() => setManualSetup((v) => !v)}
+          >
+            ⚙ Setup
+          </button>
+          {/* System selector — which rig this frame instance drives. */}
+          <select
+            style={CHROME_BTN_STYLE}
+            title="Physical system"
+            value={systemId() ?? ""}
+            onChange={(e) => selectSystem(e.currentTarget.value)}
+          >
+            <For each={Object.entries(config()?.systems ?? {}) as [string, { name: string }][]}>
+              {([id, sys]) => <option value={id}>{sys.name || id}</option>}
+            </For>
+          </select>
+          <button
+            style={CHROME_BTN_STYLE}
+            title="Add a new physical system"
+            onClick={() => {
+              const name = window.prompt("New system name?", "System");
+              const handle = configHandle();
+              if (name != null && handle)
+                void addSystem(handle, repo, name).then(selectSystem);
+            }}
+          >
+            ＋
+          </button>
         </div>
       </Show>
 
@@ -367,45 +421,54 @@ export function App(props: {
         </div>
       </Show>
 
-      {/* The panel reads the config doc (barPosition, surfaceBrightness, …), so
-          only render it once the config subdoc has loaded — it's lazily created
-          on first mount and is undefined for the first frame(s). Hidden while the
-          hide-controls control is active (clean projector view). */}
-      <Show when={configHandle() && config() && !hideControls()}>
-        <ControlPanel
-          hostHandle={configHandle()!}
-          hostDoc={config()!}
-          calHandle={calHandle()}
-          calDoc={calDoc()}
-          repo={repo}
-          mode={mode()}
-          setHostMode={setHostMode}
-          requestFullscreen={requestFullscreen}
-          camera={camera}
-          calibrated={calibrated()}
-          hasBackground={!!background()}
-          config={config()}
-          configHandle={configHandle()}
-          currentSystemId={systemId()}
-          onSelectSystem={selectSystem}
-          onAddSystem={(name: string) => {
-            const handle = configHandle();
-            if (handle) void addSystem(handle, repo, name).then(selectSystem);
-          }}
-          onSample={() => {
-            const g = camera.grabGray();
-            // Only overwrite on a successful grab; a null grab (camera not ready)
-            // shouldn't silently clear an existing reference.
-            if (g) setBackground(g);
-            else
-              console.warn(
-                "[physical-frame] background sample failed — camera not ready?",
-                { active: camera.active(), liveSize: camera.getLiveSize() },
-              );
-          }}
-        />
-      </Show>
+      {/* The floating control panel is retired: the mode switch is gone, and its
+          setup/surface/sample controls moved into the calibration plugin. Frame
+          chrome (camera / sidebar / ⚙ setup / system selector) lives top-right. */}
     </div>
     </patchwork-view>
+  );
+}
+
+/**
+ * In-process bridge that mounts the chosen calibration plugin into a DOM element
+ * via `plugin.mount(element, ctx)` (the live camera is in `ctx`, by reference),
+ * and shows a plugin picker when more than one is registered.
+ */
+function CalibrationHost(props: {
+  plugin: PhysicalCalibration;
+  ctx: CalibrationContext;
+  plugins: PhysicalCalibration[];
+  chosenId: string;
+  onChoose: (id: string) => void;
+}) {
+  let host!: HTMLDivElement;
+  // Re-mount whenever the chosen plugin changes.
+  createEffect(() => {
+    const plugin = props.plugin;
+    if (!host) return;
+    const cleanup = plugin.mount(host, props.ctx);
+    onCleanup(() => {
+      try {
+        cleanup();
+      } catch {
+        /* ignore */
+      }
+    });
+  });
+  return (
+    <div class="sph-calibration-host">
+      <Show when={props.plugins.length > 1}>
+        <select
+          class="sph-cal-plugin-picker"
+          value={props.chosenId}
+          onChange={(e) => props.onChoose(e.currentTarget.value)}
+        >
+          <For each={props.plugins}>
+            {(p) => <option value={p.id}>{p.name}</option>}
+          </For>
+        </select>
+      </Show>
+      <div class="sph-calibration-mount" ref={host} />
+    </div>
   );
 }

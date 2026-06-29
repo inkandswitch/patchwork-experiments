@@ -20,8 +20,8 @@
 
 import type { Emitter } from "./spatial-source.js";
 
-/** The plugin type a layer package registers (in addition to its provider). */
-export const PHYSICAL_LAYER_PLUGIN_TYPE = "patchwork:physical-layer";
+/** The registry bucket sensor plugins (apriltags, marks, …) register into. */
+export const PHYSICAL_LAYER_PLUGIN_TYPE = "physical:sensor";
 
 /** A pixel point in downscaled camera-frame coordinates. */
 export type FramePoint = { x: number; y: number };

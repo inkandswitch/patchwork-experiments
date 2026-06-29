@@ -13,6 +13,7 @@ import {
   Emitter,
   SPATIAL_REGISTRY_KEY,
   COORDINATE_SYSTEM_SELECTOR,
+  CALIBRATION_DOC_SELECTOR,
   type CoordinateSystem,
   type SpatialRegistry,
   type SpatialRegistryHost,
@@ -31,6 +32,7 @@ import {
 import type { ControlMap } from "../folder-datatype";
 
 const COORD_PROVIDER_ID = "physical-coordinate-system-provider";
+const CAL_DOC_PROVIDER_ID = "physical-calibration-doc-provider";
 /** The apriltags layer selector the frame interposes on for controls. */
 const APRILTAGS_SELECTOR = "physical:apriltags";
 
@@ -73,6 +75,8 @@ export function UseStage(props: {
   selectedToolId: () => string | undefined;
   /** Report resolved control state up to the frame (drives the account sidebar). */
   onControlState?: (s: ControlState) => void;
+  /** Current system's calibration doc URL (brokered to consumers). */
+  calDocUrl: () => string | undefined;
 }) {
   let boxEl!: HTMLDivElement;
   let embedded!: HTMLElement; // patchwork-view
@@ -80,10 +84,16 @@ export function UseStage(props: {
 
   // Coordinate-system Emitter is always-on (frame-owned).
   const coordEmitter = new Emitter<CoordinateSystem>({ width: 0, height: 0 });
+  // Calibration-doc-URL broker (current system; re-emits on system switch).
+  const calDocUrlEmitter = new Emitter<string | null>(
+    props.calDocUrl() ?? null,
+  );
+  createEffect(() => calDocUrlEmitter.set(props.calDocUrl() ?? null));
 
   // Per-instance registry stamped on provider wrappers: selector → Emitter.
   const registry: SpatialRegistry = new Map<string, Emitter<unknown>>();
   registry.set(COORDINATE_SYSTEM_SELECTOR, coordEmitter as Emitter<unknown>);
+  registry.set(CALIBRATION_DOC_SELECTOR, calDocUrlEmitter as Emitter<unknown>);
 
   // Discovered layers + their runtime; populated async at mount.
   const runtimes: LayerRuntime[] = [];
@@ -100,10 +110,12 @@ export function UseStage(props: {
 
   const box = () => props.calDoc.cameraViewBox;
   const activeUrl = () => props.selectedDocUrl();
-  // 0–100 brightness → 0–255 gray for the projected "paper" underlay.
+  // 0–100 brightness → 0–255 gray for the projected "paper" underlay. Surface
+  // brightness now lives on the per-system calibration doc (set during setup, so
+  // it matches the sampled background).
   const surfaceLevel = () =>
     Math.round(
-      (Math.max(0, Math.min(100, props.hostDoc.surfaceBrightness ?? 0)) / 100) *
+      (Math.max(0, Math.min(100, props.calDoc?.surfaceBrightness ?? 0)) / 100) *
         255,
     );
 
@@ -320,9 +332,11 @@ export function UseStage(props: {
     queueMicrotask(stampRegistry);
   });
 
-  // The provider component ids to wrap with: coordinate-system + one per layer.
+  // The provider component ids to wrap with: coordinate-system + calibration-doc
+  // + one per layer.
   const providerIds = () => [
     COORD_PROVIDER_ID,
+    CAL_DOC_PROVIDER_ID,
     ...layers().map((l) => l.providerComponentId),
   ];
 
@@ -379,17 +393,8 @@ export function UseStage(props: {
           </Show>
         </div>
 
-        {/* Setup mode — shown while the setup control is active. Phase 4 mounts
-            the real calibration tool here; Phase 2 is a placeholder proving the
-            toggle drives it. */}
-        <Show when={controlState().setup}>
-          <div class="sph-setup-overlay">
-            <div class="sph-setup-title">Setup mode</div>
-            <div class="sph-sidebar-hint">
-              (Phase 4 mounts the calibration tool here)
-            </div>
-          </div>
-        </Show>
+        {/* (Setup is handled at the App level: the calibration plugin is mounted
+            in-process over the box when the setup control/⚙ is active.) */}
 
         {/* Always-visible outline of the active area (above the embedded view,
             non-interactive) so the user can see which region is live. */}

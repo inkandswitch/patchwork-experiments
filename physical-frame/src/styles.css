@@ -42,6 +42,72 @@
   z-index: 0;
 }
 
+/* Calibration overlay — the in-process calibration plugin, mounted over the doc
+   area while setup is active. Above the stage; below the frame chrome (z-index
+   41) so the ⚙ exit button stays clickable. */
+.sph-calibration-host {
+  position: absolute;
+  inset: 2px;
+  z-index: 35;
+  background: #000;
+}
+.sph-calibration-mount {
+  position: absolute;
+  inset: 0;
+}
+.sph-cal-plugin-picker {
+  position: absolute;
+  top: 0.4rem;
+  left: 0.4rem;
+  z-index: 2;
+}
+/* The built-in calibration plugin's own root + lit surface fill the host. */
+.sph-cal-root {
+  position: absolute;
+  inset: 0;
+}
+.sph-cal-surface {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+/* Calibration control bar (mode/grid/solve/surface/sample/done). */
+.sph-cal-bar {
+  position: absolute;
+  bottom: 0.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: calc(100% - 1rem);
+  padding: 0.4rem 0.6rem;
+  background: var(--sph-bar-bg, #fff);
+  color: var(--sph-bar-fg, #111);
+  border: 1px solid var(--sph-bar-border, #ccc);
+  border-radius: var(--studio-radius-sm, 4px);
+  box-shadow: var(--studio-shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.2));
+  font-family: var(--studio-family-sans, system-ui, sans-serif);
+  font-size: 0.85rem;
+}
+.sph-cal-bar button,
+.sph-cal-bar select {
+  font: inherit;
+  padding: 0.25rem 0.5rem;
+  background: var(--sph-bar-bg, #fff);
+  color: var(--sph-bar-fg, #111);
+  border: 1px solid var(--sph-bar-border, #ccc);
+  border-radius: var(--studio-radius-sm, 4px);
+  cursor: pointer;
+}
+.sph-cal-bar button[data-active],
+.sph-cal-bar button[data-variant="primary"] {
+  border-color: var(--sph-accent, #2d7ff9);
+}
+
 /* Fullscreen control: "maximize" the stage to cover the whole viewport via fixed
    positioning (no Fullscreen-API gesture required — driven by a control tag). */
 .sph-stage.sph-maximized {

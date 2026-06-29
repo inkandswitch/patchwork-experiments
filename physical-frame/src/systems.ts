@@ -37,6 +37,36 @@ export function saveCurrentSystemId(accountUrl: string, systemId: string): void 
   }
 }
 
+// Chosen calibration plugin id — per-frame-instance (local preference, not synced),
+// keyed by account + system so different rigs can prefer different plugins.
+const CAL_PLUGIN_PREFIX = "physical-frame-calplugin:";
+
+export function loadCalibrationPluginId(
+  accountUrl: string,
+  systemId: string,
+): string | null {
+  try {
+    return localStorage.getItem(`${CAL_PLUGIN_PREFIX}${accountUrl}:${systemId}`);
+  } catch {
+    return null;
+  }
+}
+
+export function saveCalibrationPluginId(
+  accountUrl: string,
+  systemId: string,
+  pluginId: string,
+): void {
+  try {
+    localStorage.setItem(
+      `${CAL_PLUGIN_PREFIX}${accountUrl}:${systemId}`,
+      pluginId,
+    );
+  } catch {
+    /* storage unavailable */
+  }
+}
+
 /** Deterministic-ish id without Math.random (avoids harness restrictions). */
 function newSystemId(config: PhysicalFrameConfig): string {
   let n = Object.keys(config.systems ?? {}).length + 1;

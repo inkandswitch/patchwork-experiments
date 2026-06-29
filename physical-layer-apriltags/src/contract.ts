@@ -7,7 +7,7 @@
 
 import { accept } from "@inkandswitch/patchwork-providers";
 
-export const PHYSICAL_LAYER_PLUGIN_TYPE = "patchwork:physical-layer";
+export const PHYSICAL_LAYER_PLUGIN_TYPE = "physical:sensor";
 
 export type FramePoint = { x: number; y: number };
 
