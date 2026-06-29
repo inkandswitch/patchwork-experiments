@@ -29,4 +29,7 @@
   # Since patchwork-tools isn't a workspace, approve all builds for the CI
   # install. build-static.mjs also sets this per tool install; keeping it here
   # makes the CI behaviour explicit and covers Netlify's own install step.
+  # The settings env prefix differs by pnpm major: 10 reads `npm_config_*`,
+  # 11 reads `pnpm_config_*`. Set both so it works regardless of version.
+  pnpm_config_dangerously_allow_all_builds = "true"
   npm_config_dangerously_allow_all_builds = "true"
