@@ -1,14 +1,7 @@
-// newdefsX.js — class-based Livelymerge definitions (full catalog)
-// Conventional ES classes; no w.* prefixes in source. installOnW(w) bridges back to w.*.
+// newdefs.js — class-based Livelymerge definitions (full catalog)
+// Conventional ES classes; no w.* prefixes in source.
 
 window.gcRoot = {};
-
-/** Pyonpyon/Livelymerge heap (`$global`) or legacy `w` — same object after installOnW. */
-function globalNamespace() {
-  if (typeof globalThis !== 'undefined' && globalThis.$global != null) return globalThis.$global;
-  if (typeof w !== 'undefined' && w != null) return w;
-  return null;
-}
 
 // +-----------------------+
 // |  Classes and Objects  |
@@ -485,13 +478,14 @@ class Set {
   }
 }
 
-window.gcRoot = { eventListeners: [] };
-function addEventListener(source, type, listener) {
-  // prevents GC from collecting the listener
-  window.gcRoot.eventListeners.push(listener);
-  source.addEventListener(type, listener);
-}
 function initUI() {
+  window.gcRoot = { eventListeners: [] };
+  function addEventListener(source, type, listener) {
+    // prevents GC from collecting the listener
+    window.gcRoot.eventListeners.push(listener);
+    source.addEventListener(type, listener);
+  }
+
   /** After this many ms with the pointer still down, the original pointerdown gets `longClick === true`. */
   window.LONG_CLICK_MS = 700;
   /** Cancel long-click timer if the pointer moves farther than this from press (CSS px). */
