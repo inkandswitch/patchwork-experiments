@@ -270,6 +270,38 @@ async function publishKeyShare(
   }
 }
 
+/**
+ * Publish this player's individual key shares for a set of offsets, so other
+ * players (who hold their own keys) can decrypt those cards even while this
+ * player is offline. Publishing your own share never reveals your own private
+ * cards — callers must therefore exclude offsets that live in their own hand.
+ */
+export async function publishKeyShares(
+  handle: DocHandle<CardTableDoc>,
+  doc: CardTableDoc,
+  player: Player,
+  responderId: string,
+  offsets: number[],
+) {
+  const recipients = doc.shuffleParticipants
+    .map((participant) => participant.id)
+    .filter((id) => id !== responderId);
+
+  for (const offset of offsets) {
+    if (recipients.length === 0) continue;
+    for (const recipientId of recipients) {
+      await publishKeyShare(
+        handle,
+        handle.doc() ?? doc,
+        player,
+        responderId,
+        recipientId,
+        offset,
+      );
+    }
+  }
+}
+
 /** Respond to synced key requests by posting shares on the table doc. */
 export async function fulfillKeyRequests(
   handle: DocHandle<CardTableDoc>,

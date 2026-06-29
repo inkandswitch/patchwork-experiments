@@ -317,7 +317,7 @@ function ZoneSurface({
       const player = await loadLocalPlayer(repo, doc, userId);
       if (!player) {
         if (!canceled) {
-          setDecrypted(new Map());
+          // Don't blank already-revealed cards on a transient key-load miss.
           setDecryptError(
             "Could not load your shuffle keys — finish setup on the table first.",
           );
@@ -364,7 +364,20 @@ function ZoneSurface({
         next.set(offset, card);
       }
       if (!canceled) {
-        setDecrypted(next);
+        // Merge into prior results so a card already shown is never blanked by
+        // a transient miss; only keep offsets we still want, and never replace
+        // a good card with null.
+        setDecrypted((prev) => {
+          const merged = new Map(prev);
+          for (const [offset, card] of next) {
+            if (card) merged.set(offset, card);
+            else if (!merged.has(offset)) merged.set(offset, null);
+          }
+          for (const offset of [...merged.keys()]) {
+            if (!offsetsToDecrypt.includes(offset)) merged.delete(offset);
+          }
+          return merged;
+        });
         const latest = latestTable();
         const stillWaiting = offsetsToDecrypt.filter(
           (offset) => missingKeyParticipants(latest, offset, userId).length > 0,
@@ -387,13 +400,16 @@ function ZoneSurface({
     return () => {
       canceled = true;
     };
+    // Gate on the inputs that actually affect decryption, not the whole doc —
+    // depending on `table` would re-run on our own key-share writes and thrash.
   }, [
     offsetsToDecrypt.join(","),
     keyMaterialDigest(table, offsetsToDecrypt, userId ?? ""),
+    table.shuffleId,
+    table.publishedDeck?.length ?? 0,
     handle,
     isShuffleParticipant,
     repo,
-    table,
     tableUrl,
     userId,
   ]);

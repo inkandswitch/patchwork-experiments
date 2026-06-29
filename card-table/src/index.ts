@@ -55,5 +55,19 @@ export const plugins: Plugin<any>[] = [
       return CardZoneTool;
     },
   } satisfies Tool,
+  {
+    type: "patchwork:skill",
+    id: "card-table",
+    name: "Card Table",
+    icon: "Layers",
+    description:
+      "Lets an agent sit at a secure card table as its own player and run table mechanics — shuffle, deal, draw into a private hand, move cards between zones, reveal cards, and read public or its own private cards. Uses mental-poker encryption so each player's hand stays hidden. Use when the user wants to play a card game with the AI, deal or draw cards, or have the agent join a card table. Does not encode any specific game's rules.",
+    async load() {
+      return {
+        documentation: (await import("./SKILL.md?raw")).default,
+        api: (await import("./skill-api")).default,
+      };
+    },
+  },
   ...actions,
 ];

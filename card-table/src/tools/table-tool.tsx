@@ -4,7 +4,7 @@ import {
   useRepo,
 } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
-import { Suspense, useCallback, useState } from "react";
+import { Suspense, useCallback, useState, type DragEvent } from "react";
 import { ContactName, ShuffleParticipantRow } from "../components/ContactName";
 import { ReadyToStartButton } from "../components/ReadyToStartButton";
 import { canJoinTable } from "../crypto/protocol";
@@ -14,9 +14,10 @@ import { useJoinTable } from "../hooks/use-join-table";
 import { usePlayerIdentity } from "../hooks/use-player-identity";
 import { CARD_TABLE_BUILT_AT } from "../build-info";
 import { makeTool } from "../make-tool";
-import { dealCards } from "../ops/zones";
+import { dealCards, removeZone } from "../ops/zones";
 import { deckCardCount, deckZone } from "../ops/deck";
-import type { CardTableDoc } from "../types";
+import { dragUrlWithTool, writePatchworkDrag } from "../patchwork-drag";
+import type { CardTableDoc, CardZone } from "../types";
 
 function TableEditor({ docUrl }: { docUrl: AutomergeUrl }) {
   const repo = useRepo();
@@ -78,6 +79,23 @@ function TableEditor({ docUrl }: { docUrl: AutomergeUrl }) {
     run("deal", () => {
       changeDoc((draft) => dealCards(draft, zoneId, count));
     });
+
+  const dragZoneOut = (
+    event: DragEvent<HTMLElement>,
+    zone: CardZone,
+    zoneUrl: AutomergeUrl,
+  ) => {
+    writePatchworkDrag(event.dataTransfer, "card-zone", [
+      {
+        id: zone.id,
+        url: dragUrlWithTool(zoneUrl, "card-zone"),
+        name: zone.title,
+      },
+    ]);
+  };
+
+  const removeEmptyZone = (zoneId: string) =>
+    changeDoc((draft) => removeZone(draft, zoneId));
 
   const deck = deckZone(doc);
   const playableZones = (doc.zones ?? []).filter(
@@ -170,32 +188,58 @@ function TableEditor({ docUrl }: { docUrl: AutomergeUrl }) {
               <div className="grid gap-3 sm:grid-cols-2">
                 {playableZones.map((zone) => {
                   const zoneUrl = handle.sub("zones", { id: zone.id }).url;
+                  const isEmpty = zone.cards.length === 0;
                   return (
                     <div
                       key={zone.id}
                       className="card-table-zone-shell space-y-2"
                     >
-                      <div>
-                        <p className="text-sm font-medium text-slate-900">
-                          {zone.title}
-                          {zone.ownerId && zone.revealedOffsets?.length
-                            ? ` · ${zone.revealedOffsets.length} revealed`
-                            : ""}
-                          {!zone.ownerId && zone.faceUp ? " (face up)" : ""}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          {zone.ownerId ? (
-                            <ContactName identity={zone.ownerId} />
-                          ) : (
-                            "Shared"
-                          )}
-                        </p>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex min-w-0 items-start gap-2">
+                          <span
+                            draggable
+                            onDragStart={(event) =>
+                              dragZoneOut(event, zone, zoneUrl)
+                            }
+                            className="card-table-drag-handle mt-0.5 cursor-grab select-none text-slate-400 hover:text-slate-600 active:cursor-grabbing"
+                            title="Drag onto the canvas to pull this zone out"
+                            aria-label="Drag zone out"
+                          >
+                            ⠿
+                          </span>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-slate-900">
+                              {zone.title}
+                              {zone.ownerId && zone.revealedOffsets?.length
+                                ? ` · ${zone.revealedOffsets.length} revealed`
+                                : ""}
+                              {!zone.ownerId && zone.faceUp ? " (face up)" : ""}
+                            </p>
+                            <p className="truncate text-xs text-slate-500">
+                              {zone.ownerId ? (
+                                <ContactName identity={zone.ownerId} />
+                              ) : (
+                                "Shared"
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                        {isEmpty ? (
+                          <button
+                            type="button"
+                            onClick={() => removeEmptyZone(zone.id)}
+                            className="shrink-0 rounded border border-slate-300 px-1.5 py-0.5 text-[10px] text-slate-500 hover:bg-red-50 hover:text-red-600"
+                            title="Remove this empty zone"
+                          >
+                            Remove
+                          </button>
+                        ) : null}
                       </div>
                       <patchwork-view
                         key={zoneUrl}
                         doc-url={zoneUrl}
                         tool-id="card-zone"
-                        class="block min-h-[5rem]"
+                        class="block min-h-[5rem] overflow-hidden rounded-md"
                       />
                     </div>
                   );

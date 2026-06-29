@@ -87,8 +87,13 @@
   padding: 2px;
 }
 
-.chat-settings:hover {
+.chat-settings:hover:not(:disabled) {
   color: var(--chat-muted-strong);
+}
+
+.chat-settings:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .chat-tabs button {

@@ -1,18 +1,15 @@
 import { render } from "solid-js/web";
-import { createEffect, createResource, createSignal, Show } from "solid-js";
+import { createResource } from "solid-js";
 import { RepoContext, useDocument } from "@automerge/automerge-repo-solid-primitives";
 import { subscribe } from "@inkandswitch/patchwork-providers-solid";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import type { AutomergeUrl, DocHandle, Repo } from "@automerge/automerge-repo";
-import { Square } from "lucide-solid";
 
 import type { LLMProcessDoc } from "../types";
-import { runLLMProcess } from "../llm-process/run";
 import INSTRUCTIONS from "../INSTRUCTIONS.md?raw";
+import { ChatShell } from "./chat-shell";
 import "./view.css";
 
-const VERSION = "0.12.0";
-const MODEL = "anthropic/claude-sonnet-4.6";
 const CHAT_PREAMBLE = `You are a helpful assistant embedded in the Patchwork context sidebar. Be concise and friendly. The user is working in Patchwork; when they have a document focused you can read and edit it.`;
 const BASE_SYSTEM_PROMPT = `${CHAT_PREAMBLE}\n\n${INSTRUCTIONS}`;
 
@@ -31,6 +28,9 @@ type FocusedDoc = { title?: string; "@patchwork"?: { type?: string } };
  * everywhere. The chat's *context follows focus*: whatever document the user
  * currently has selected (via `patchwork:selected-doc`) is injected into the
  * process's system prompt at send time, so the assistant can read or edit it.
+ *
+ * All shared chat UI lives in `ChatShell`; this component only resolves the
+ * account-scoped process and supplies the focus-aware system prompt + banner.
  */
 export const LLMContextChatTool: ToolRender = (handle, element) => {
   const dispose = render(
@@ -43,7 +43,7 @@ export const LLMContextChatTool: ToolRender = (handle, element) => {
         />
       </RepoContext.Provider>
     ),
-    element
+    element,
   );
   return dispose;
 };
@@ -53,14 +53,10 @@ function ContextChatView(props: {
   element: HTMLElement;
   accountHandle: DocHandle<AccountChatDoc>;
 }) {
-  const [activeTab, setActiveTab] = createSignal<"chat" | "documents">("chat");
-  const [input, setInput] = createSignal("");
-  let abortController: AbortController | null = null;
-
   const selectedDocUrls = subscribe<AutomergeUrl[]>(
     props.element,
     { type: "patchwork:selected-doc" },
-    []
+    [],
   );
   const focusedUrl = () => selectedDocUrls()[0] as AutomergeUrl | undefined;
 
@@ -90,7 +86,6 @@ function ContextChatView(props: {
     processHandle.change((d) => {
       d["@patchwork"] = { type: "llm-process" };
       d.title = "Assistant";
-      d.model = MODEL;
       d.systemPrompt = BASE_SYSTEM_PROMPT;
       d.docFolderUrl = folderHandle.url;
       d.messages = [];
@@ -105,29 +100,10 @@ function ContextChatView(props: {
 
   const [processUrl] = createResource(
     () => props.accountHandle.url,
-    () => ensureAccountChat()
+    () => ensureAccountChat(),
   );
   const [processDoc] = useDocument<LLMProcessDoc>(() => processUrl());
   const folderUrl = () => processDoc()?.docFolderUrl;
-
-  // A run cannot survive a page reload (the AbortController is in-memory only),
-  // so a `running` flag still set when we first resolve the chat is stale and
-  // would otherwise leave the UI stuck. Clear it once on load.
-  let clearedStaleRunning = false;
-  createEffect(() => {
-    const url = processUrl();
-    if (!url || clearedStaleRunning) return;
-    clearedStaleRunning = true;
-    void props.repo.find<LLMProcessDoc>(url).then((handle) => {
-      if (handle.doc()?.running) {
-        handle.change((d) => {
-          d.running = false;
-        });
-      }
-    });
-  });
-
-  const isDone = () => !processDoc()?.running;
 
   const buildFocusContext = (): string => {
     const url = focusedUrl();
@@ -147,114 +123,25 @@ function ContextChatView(props: {
     );
   };
 
-  const sendMessage = async () => {
-    const url = processUrl();
-    if (!url || !input().trim() || !isDone()) return;
-
-    const userMessage = input().trim();
-    setInput("");
-    abortController = new AbortController();
-
+  // Rebuilt on every send so the assistant always sees the currently-focused
+  // document.
+  const buildSystemPrompt = (): string => {
     const focusContext = buildFocusContext();
-
-    try {
-      const processHandle = await props.repo.find<LLMProcessDoc>(url);
-      processHandle.change((d) => {
-        d.systemPrompt = focusContext
-          ? `${BASE_SYSTEM_PROMPT}\n\n${focusContext}`
-          : BASE_SYSTEM_PROMPT;
-        d.messages.push({ role: "user", content: userMessage });
-        d.running = true;
-      });
-
-      await runLLMProcess(props.repo, processHandle, abortController.signal);
-    } catch (err) {
-      if (!(err instanceof Error && err.name === "AbortError")) {
-        console.error("[context-chat] error:", err);
-      }
-    } finally {
-      abortController = null;
-      const processHandle = await props.repo.find<LLMProcessDoc>(url);
-      processHandle.change((d) => {
-        d.running = false;
-      });
-    }
-  };
-
-  const stopGeneration = async () => {
-    abortController?.abort();
-    // Force the flag down even if there's no live controller (e.g. the run was
-    // started before a reload), so the UI never gets stuck in "running".
-    const url = processUrl();
-    if (!url) return;
-    const processHandle = await props.repo.find<LLMProcessDoc>(url);
-    processHandle.change((d) => {
-      d.running = false;
-    });
+    return focusContext
+      ? `${BASE_SYSTEM_PROMPT}\n\n${focusContext}`
+      : BASE_SYSTEM_PROMPT;
   };
 
   return (
-    <div class="chat-root">
-      <div class="chat-header">
-        <div class="chat-tabs">
-          <button
-            class={activeTab() === "chat" ? "active" : ""}
-            onClick={() => setActiveTab("chat")}
-          >
-            Chat
-          </button>
-          <button
-            class={activeTab() === "documents" ? "active" : ""}
-            onClick={() => setActiveTab("documents")}
-          >
-            Documents
-          </button>
-        </div>
-        <div class="chat-version">v{VERSION}</div>
-      </div>
-
+    <ChatShell
+      repo={props.repo}
+      processUrl={() => processUrl()}
+      docFolderUrl={() => folderUrl()}
+      buildSystemPrompt={buildSystemPrompt}
+    >
       <div class="chat-context-bar">
         Context: <strong>{focusedLabel()}</strong>
       </div>
-
-      <Show when={processUrl()} fallback={<div class="chat-messages">Starting…</div>}>
-        <Show when={activeTab() === "chat"}>
-          <div class="chat-messages">
-            <patchwork-view doc-url={processUrl()} />
-          </div>
-
-          <div class="chat-input">
-            <input
-              type="text"
-              value={input()}
-              onInput={(e) => setInput(e.currentTarget.value)}
-              onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-              placeholder="Ask anything (or about the focused document)…"
-              disabled={!isDone()}
-            />
-            <Show
-              when={!isDone()}
-              fallback={
-                <button onClick={sendMessage} disabled={!isDone()}>
-                  Send
-                </button>
-              }
-            >
-              <button class="stop-button" onClick={stopGeneration}>
-                <Square size={14} /> Stop
-              </button>
-            </Show>
-          </div>
-        </Show>
-
-        <Show when={activeTab() === "documents"}>
-          <div class="chat-documents">
-            <Show when={folderUrl()}>
-              <patchwork-view doc-url={folderUrl()} />
-            </Show>
-          </div>
-        </Show>
-      </Show>
-    </div>
+    </ChatShell>
   );
 }
