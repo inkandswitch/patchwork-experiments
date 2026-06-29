@@ -18,7 +18,6 @@ import {
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import {
   findContextStore,
-  findRepo,
   getContextHandle,
   subscribeContext,
   type ScopeHandle,
@@ -369,7 +368,6 @@ function renderMenu(
     return [];
   }
   const teardowns: (() => void)[] = [];
-  const repo = findRepo(view.dom);
   active.suggestions.forEach((suggestion, i) => {
     const row = document.createElement("div");
     row.className = "cm-command-row";
@@ -384,7 +382,7 @@ function renderMenu(
     host.style.pointerEvents = "none";
     row.appendChild(host);
     teardowns.push(
-      renderEmbedView(host, suggestion.url, repo, {
+      renderEmbedView(host, suggestion.url, view.dom, {
         fallback: () => {
           host.textContent = suggestion.label;
         },

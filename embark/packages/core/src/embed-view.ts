@@ -17,6 +17,17 @@ export type EmbedFallback = (
   handle: DocHandle<unknown>,
 ) => (() => void) | void;
 
+// The repo stamped on the enclosing `<patchwork-view>` that hosts this editor
+// or embed subtree. CodeMirror extensions pass `view.dom`; token tools read
+// `element.repo` directly because the host is the view element itself.
+export function repoFromView(node: Node): Repo | undefined {
+  const view =
+    node instanceof Element
+      ? node.closest("patchwork-view")
+      : node.parentElement?.closest("patchwork-view");
+  return view ? (view as ToolElement).repo : undefined;
+}
+
 // Render a document's inline face into `host`, the single source of truth for
 // "how does an embed token look". The token literal carries nothing but the
 // document url; the face is decided by the registry: if a `patchwork:tool`
@@ -31,9 +42,10 @@ export type EmbedFallback = (
 export function renderEmbedView(
   host: HTMLElement,
   url: AutomergeUrl,
-  repo: Repo | undefined,
+  view: Node,
   options: { fallback: EmbedFallback; onError?: () => void },
 ): () => void {
+  const repo = repoFromView(view);
   let cleanup: (() => void) | void;
   let disposed = false;
   let unsubscribe: (() => void) | undefined;

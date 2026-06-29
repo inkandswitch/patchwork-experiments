@@ -9,8 +9,6 @@
 // reached from other render trees and from dynamically-loaded card code; Solid
 // bindings (./context-solid.ts) are a thin wrapper on top.
 
-import type { Repo } from "@automerge/automerge-repo";
-
 // A typed, named slot whose value is always a record (so it is always
 // mergeable). Defined once and imported by both readers and writers, replacing
 // the old per-broker selector strings and minted doc types.
@@ -269,18 +267,6 @@ export function findContextStore(node: Node): ContextStore | undefined {
     }),
   );
   return detail.store;
-}
-
-// Walk up from `node` to the nearest `<repo-provider>` and read its repo. The
-// bootloader mounts one above the app root; editors and other DOM subtrees reach
-// it through ancestry rather than a global.
-export function findRepo(node: Node): Repo | undefined {
-  const root =
-    node instanceof Element
-      ? node.closest("repo-provider")
-      : node.parentElement?.closest("repo-provider");
-  if (!root) return undefined;
-  return (root as { repo?: Repo }).repo;
 }
 
 // Node-relative subscribe: resolve the store from `node`, deliver the current

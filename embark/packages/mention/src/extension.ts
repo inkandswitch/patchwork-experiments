@@ -28,12 +28,12 @@ import {
 } from "@automerge/automerge-repo";
 import {
   findContextStore,
-  findRepo,
   getContextHandle,
+  renderEmbedView,
+  repoFromView,
   subscribeContext,
   type ScopeHandle,
 } from "@embark/core";
-import { renderEmbedView } from "@embark/core";
 import {
   Highlight,
   SearchQueries,
@@ -257,7 +257,7 @@ const searchController = ViewPlugin.fromClass(
       if (!active) return;
       const query = active.query.trim();
       const urls = (query && this.latestResults[query]) || [];
-      const repo = findRepo(this.view.dom);
+      const repo = repoFromView(this.view.dom);
       void Promise.all(urls.map((url) => resolveResult(url, repo))).then((results) => {
         const current = this.view.state.field(menuState, false)?.active;
         if (!current || current.query.trim() !== query) return; // stale/closed
@@ -543,7 +543,7 @@ class MentionWidget extends WidgetType {
       };
     };
 
-    const teardown = renderEmbedView(host, this.url, findRepo(view.dom), {
+    const teardown = renderEmbedView(host, this.url, view.dom, {
       fallback: (_host, handle) => renderPill(handle),
       onError: () => {
         host.className = "cm-mention";
