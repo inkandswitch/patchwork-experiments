@@ -1,12 +1,9 @@
 import {
   parseAutomergeUrl,
   type AutomergeUrl,
-  type DocHandle,
 } from "@automerge/automerge-repo";
-import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
+import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import { onCleanup, onMount } from "solid-js";
-import { render } from "solid-js/web";
-import { RepoContext } from "solid-automerge";
 import {
   CommandQueries,
   CommandSuggestions,
@@ -19,7 +16,6 @@ import {
   type ScopeHandle,
   type Suggestion,
 } from "@embark/core";
-import type { RouteProviderDoc } from "./datatype";
 import "./route.css";
 
 // The token face built alongside this module (dist/view.js), pinned onto every
@@ -48,30 +44,15 @@ const COMMANDS: Mode[] = [
 type LatLon = { lat: number; lon: number };
 type RouteResult = { coords: LatLon[]; distanceKm: number; durationS: number };
 
-// Tool entry point: a contributor that answers the canvas command channel with
-// `/Drive`, `/Walk`, and `/Transit` commands. For each it resolves the two
-// places (`<from> to <to>`) to coordinates — reusing the shared place resolver,
-// so it biases toward places already on the canvas just like weather — fetches a
-// route from Valhalla, mints a `card` whose `props.route` is the decoded
-// polyline (which the map then draws as a line), and offers it as a suggestion.
-export const RouteProviderTool: ToolRender = (handle, element) => {
-  return render(
-    () => (
-      <RepoContext.Provider value={element.repo}>
-        <RouteProvider
-          handle={handle as DocHandle<RouteProviderDoc>}
-          element={element}
-        />
-      </RepoContext.Provider>
-    ),
-    element,
-  );
-};
-
-function RouteProvider(props: {
-  handle: DocHandle<RouteProviderDoc>;
-  element: ToolElement;
-}) {
+// A contributor that answers the canvas command channel with `/Drive`, `/Walk`,
+// and `/Transit` commands. For each it resolves the two places (`<from> to
+// <to>`) to coordinates — reusing the shared place resolver, so it biases toward
+// places already on the canvas just like weather — fetches a route from
+// Valhalla, mints a `card` whose `props.route` is the decoded polyline (which
+// the map then draws as a line), and offers it as a suggestion. It is
+// handle-less: there is no backing document, so all of its state lives in the
+// shared canvas context.
+export function RouteProvider(props: { element: ToolElement }) {
   const repo = props.element.repo;
 
   // Per-query debounce timers, the queries we've answered, and the ones

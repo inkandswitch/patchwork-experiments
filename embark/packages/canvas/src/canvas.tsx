@@ -12,6 +12,7 @@ import {
   createMemo,
   createSignal,
   onCleanup,
+  onMount,
 } from "solid-js";
 import { render } from "solid-js/web";
 import { RepoContext, useDocument, useRepo } from "solid-automerge";
@@ -27,6 +28,7 @@ import {
   registerContextElement,
   readContext,
   useContextHandle,
+  renderComponentEmbed,
   Highlight,
   Selection,
   type PatchworkContextElement,
@@ -34,12 +36,17 @@ import {
 import { runSchemaResolver } from "./schema-resolver";
 import "./styles.css";
 
-// One embedded document placed on the canvas. `x`/`y` are the top-left corner
-// in canvas pixels, `z` is the stacking order, and `toolId` optionally pins
-// which tool renders it (otherwise the embedded doc's default tool is used).
+// One embedded item placed on the canvas. `x`/`y` are the top-left corner in
+// canvas pixels, `z` is the stacking order, and `toolId` optionally pins which
+// tool renders it (otherwise the embedded doc's default tool is used).
+//
+// An embed renders either a document (`docUrl`) or a standalone
+// `patchwork:component` (`componentUrl` — a stable, head-less module url that is
+// imported and run directly, with no backing document). Exactly one is set.
 export type EmbarkEmbed = {
   id: string;
-  docUrl: AutomergeUrl;
+  docUrl?: AutomergeUrl;
+  componentUrl?: string;
   x: number;
   y: number;
   width: number;
@@ -197,14 +204,17 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
     setSelectedId(null);
   };
 
-  // Cmd/Ctrl+D: duplicate the selected embed. The document is deep-copied (so
-  // the copy — and everything it links to — is fully independent of the
-  // original) and dropped slightly down-and-right. Positions are re-read inside
-  // the change since the deep copy awaits.
+  // Cmd/Ctrl+D: duplicate the selected embed. A document embed is deep-copied
+  // (so the copy — and everything it links to — is fully independent of the
+  // original); a component embed just copies its (shared, head-less) url. The
+  // copy is dropped slightly down-and-right. Positions are re-read inside the
+  // change since the deep copy awaits.
   const duplicateEmbed = async (id: string) => {
     const source = doc()?.embeds[id];
     if (!source) return;
-    const clonedUrl = await deepCloneDocument(repo, source.docUrl);
+    const clonedUrl = source.docUrl
+      ? await deepCloneDocument(repo, source.docUrl)
+      : undefined;
     const newId = crypto.randomUUID();
     props.handle.change((canvas) => {
       const src = canvas.embeds[id];
@@ -213,13 +223,14 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
       // optional fields the source actually has.
       const copy: EmbarkEmbed = {
         id: newId,
-        docUrl: clonedUrl,
         x: src.x + DUPLICATE_OFFSET,
         y: src.y + DUPLICATE_OFFSET,
         width: src.width,
         height: src.height,
         z: highestZ(canvas.embeds) + 1,
       };
+      if (clonedUrl) copy.docUrl = clonedUrl;
+      if (src.componentUrl !== undefined) copy.componentUrl = src.componentUrl;
       if (src.toolId !== undefined) copy.toolId = src.toolId;
       if (src.locked !== undefined) copy.locked = src.locked;
       canvas.embeds[newId] = copy;
@@ -236,23 +247,26 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
     clientX: number,
     clientY: number,
     toolId: string | undefined,
+    inspectable: boolean,
   ) => {
     const rect = canvasEl()?.getBoundingClientRect();
     setMenu({
       embedId,
       toolId,
+      inspectable,
       x: rect ? clientX - rect.left : clientX,
       y: rect ? clientY - rect.top : clientY,
     });
   };
 
   // Inspect: drop a fresh embed beside the clicked card that renders the same
-  // document with the inspect tool (showing its spec + code).
+  // document with the inspect tool (showing its spec + code). Only documents can
+  // be inspected — component embeds have no backing document, so they're skipped.
   const inspectEmbed = (id: string) => {
     setMenu(null);
     props.handle.change((canvas) => {
       const source = canvas.embeds[id];
-      if (!source) return;
+      if (!source || !source.docUrl) return;
       const newId = crypto.randomUUID();
       canvas.embeds[newId] = {
         id: newId,
@@ -295,15 +309,18 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
     const dropX = rect ? event.clientX - rect.left : event.clientX;
     const dropY = rect ? event.clientY - rect.top : event.clientY;
 
-    // Items dragged out of the parts bin are deep-copied so the new embed (and
-    // every doc it links to) is fully independent of the bin's template. Plain
+    // Document items dragged out of the parts bin are deep-copied so the new
+    // embed (and every doc it links to) is fully independent of the bin's
+    // template. Component items have no document — they point to a shared,
+    // head-less module url — so they're carried through untouched. Plain
     // document drags stay as references to the existing document.
     const items = fromPartsBin
       ? await Promise.all(
-          payload.map(async (item) => ({
-            ...item,
-            url: await deepCloneDocument(repo, item.url),
-          })),
+          payload.map(async (item) =>
+            item.url
+              ? { ...item, url: await deepCloneDocument(repo, item.url) }
+              : item,
+          ),
         )
       : payload;
 
@@ -312,9 +329,8 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
       items.forEach((item, index) => {
         const id = crypto.randomUUID();
         const cascade = index * DROP_CASCADE;
-        canvas.embeds[id] = {
+        const embed: EmbarkEmbed = {
           id,
-          docUrl: item.url,
           // Top-left corner sits at the drop point (not centered on it).
           x: dropX + cascade,
           y: dropY + cascade,
@@ -323,6 +339,12 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
           height: item.height ?? DEFAULT_HEIGHT,
           z: ++z,
         };
+        // Automerge rejects an explicit `undefined`, so only set the fields the
+        // dropped item actually carries.
+        if (item.componentUrl) embed.componentUrl = item.componentUrl;
+        else if (item.url) embed.docUrl = item.url;
+        if (item.toolId !== undefined) embed.toolId = item.toolId;
+        canvas.embeds[id] = embed;
       });
     });
   };
@@ -383,12 +405,22 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
             embed={embed}
             handle={props.handle}
             selected={selectedId() === embed.id}
-            highlighted={highlightedDocIds().has(docIdOf(embed.docUrl))}
+            highlighted={
+              embed.docUrl
+                ? highlightedDocIds().has(docIdOf(embed.docUrl))
+                : false
+            }
             shiftHeld={shiftHeld()}
             onSelect={() => selectEmbed(embed.id)}
             onDelete={() => deleteEmbed(embed.id)}
             onContextMenu={(clientX, clientY, toolId) =>
-              openMenu(embed.id, clientX, clientY, toolId)
+              openMenu(
+                embed.id,
+                clientX,
+                clientY,
+                toolId,
+                Boolean(embed.docUrl),
+              )
             }
           />
         )}
@@ -413,7 +445,9 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
             <button
               type="button"
               class="embark-canvas__menu-item"
-              disabled={activeMenu().toolId === "inspect"}
+              disabled={
+                !activeMenu().inspectable || activeMenu().toolId === "inspect"
+              }
               on:click={() => inspectEmbed(activeMenu().embedId)}
             >
               Inspect
@@ -421,7 +455,7 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
           </div>
         )}
       </Show>
-      <div style={{ position: "absolute", bottom: 0, right: 0 }}>v0.0.11</div>
+      <div style={{ position: "absolute", bottom: 0, right: 0 }}>v0.0.12</div>
     </div>
   );
 }
@@ -568,22 +602,30 @@ function EmbedView(props: {
     );
   };
 
-  // Build the drag payload describing this embed's document, in the same shape a
-  // real document drag carries — so a drop target (e.g. a parts bin) handles
-  // canvas embeds with no special-casing.
+  // Build the drag payload describing this embed (document or component), in the
+  // same shape a real document drag carries — so a drop target (e.g. a parts
+  // bin) handles canvas embeds with no special-casing.
   const buildDragData = (): DataTransfer => {
     const data = new DataTransfer();
     const item: DocumentDragItem = {
-      url: props.embed.docUrl,
       width: props.embed.width,
       height: props.embed.height,
       ...(props.embed.toolId !== undefined && { toolId: props.embed.toolId }),
     };
+    if (props.embed.componentUrl) item.componentUrl = props.embed.componentUrl;
+    else if (props.embed.docUrl) item.url = props.embed.docUrl;
     data.setData(
       "text/x-patchwork-dnd",
       JSON.stringify({ source: "canvas", items: [item] }),
     );
-    data.setData("text/x-patchwork-urls", JSON.stringify([props.embed.docUrl]));
+    // Only document embeds advertise a bare url list; a component embed has no
+    // document, so it travels in the rich payload alone.
+    if (props.embed.docUrl) {
+      data.setData(
+        "text/x-patchwork-urls",
+        JSON.stringify([props.embed.docUrl]),
+      );
+    }
     data.effectAllowed = "copyMove";
     return data;
   };
@@ -749,10 +791,17 @@ function EmbedView(props: {
         on:pointerup={endInteraction}
         on:pointercancel={endInteraction}
       >
-        <patchwork-view
-          doc-url={props.embed.docUrl}
-          tool-id={props.embed.toolId}
-        />
+        <Show
+          when={props.embed.componentUrl}
+          fallback={
+            <patchwork-view
+              doc-url={props.embed.docUrl}
+              tool-id={props.embed.toolId}
+            />
+          }
+        >
+          {(componentUrl) => <ComponentEmbed componentUrl={componentUrl()} />}
+        </Show>
       </div>
       <Show when={resizable()}>
         <div
@@ -767,6 +816,23 @@ function EmbedView(props: {
       </Show>
     </div>
   );
+}
+
+// A component embed's body: a host div that imports and runs the standalone
+// `patchwork:component` module at `componentUrl`. The host lives inside the
+// canvas <patchwork-context>, so the component resolves the shared store through
+// DOM discovery; renderComponentEmbed stamps `repo` on the host (the embed
+// contract) and tears the component down on cleanup.
+function ComponentEmbed(props: { componentUrl: string }) {
+  const repo = useRepo();
+  let hostEl: HTMLDivElement | undefined;
+  onMount(() => {
+    const host = hostEl;
+    if (!host) return;
+    const dispose = renderComponentEmbed(host, props.componentUrl, repo);
+    onCleanup(dispose);
+  });
+  return <div ref={hostEl} class="embark-embed__component" />;
 }
 
 // Six-dot grip glyph for the move handle; inherits the handle's text color.
@@ -808,10 +874,12 @@ function CloseIcon() {
 }
 
 // An open right-click menu: the embed it targets, that embed's resolved tool
-// id, and the anchor point in canvas-local pixels.
+// id, whether it can be inspected (only document embeds can), and the anchor
+// point in canvas-local pixels.
 type ContextMenu = {
   embedId: string;
   toolId: string | undefined;
+  inspectable: boolean;
   x: number;
   y: number;
 };

@@ -1,12 +1,9 @@
 import {
   parseAutomergeUrl,
   type AutomergeUrl,
-  type DocHandle,
 } from "@automerge/automerge-repo";
-import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
+import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import { onCleanup, onMount } from "solid-js";
-import { render } from "solid-js/web";
-import { RepoContext } from "solid-automerge";
 import {
   CommandQueries,
   CommandSuggestions,
@@ -19,7 +16,6 @@ import {
   type ScopeHandle,
   type Suggestion,
 } from "@embark/core";
-import type { WeatherProviderDoc } from "./datatype";
 import "./weather.css";
 
 // The token face built alongside this module (dist/view.js), pinned onto every
@@ -45,30 +41,14 @@ type DayWeather = {
   emoji: string;
 };
 
-// Tool entry point: a contributor that answers the canvas command channel with
-// a `/weather <place>` command. It reads the active queries and, for each
-// weather query, resolves the place to coordinates, fetches the day's forecast,
-// mints a `card` document, and offers it as a suggestion whose inserted token
-// renders an inline weather widget. The card itself only shows a title and a
-// description of what it does — like a playing card in a game.
-export const WeatherProviderTool: ToolRender = (handle, element) => {
-  return render(
-    () => (
-      <RepoContext.Provider value={element.repo}>
-        <WeatherProvider
-          handle={handle as DocHandle<WeatherProviderDoc>}
-          element={element}
-        />
-      </RepoContext.Provider>
-    ),
-    element,
-  );
-};
-
-function WeatherProvider(props: {
-  handle: DocHandle<WeatherProviderDoc>;
-  element: ToolElement;
-}) {
+// A contributor that answers the canvas command channel with a `/weather
+// <place>` command. It reads the active queries and, for each weather query,
+// resolves the place to coordinates, fetches the day's forecast, mints a `card`
+// document, and offers it as a suggestion whose inserted token renders an inline
+// weather widget. The component itself only shows a title and a description of
+// what it does — like a playing card in a game. It is handle-less: there is no
+// backing document, so all of its state lives in the shared canvas context.
+export function WeatherProvider(props: { element: ToolElement }) {
   const repo = props.element.repo;
 
   // Per-query debounce timers, the queries we've already answered, and the ones

@@ -1,9 +1,7 @@
 import type { AutomergeUrl } from "@automerge/automerge-repo";
-import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
+import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import { MountedEvent, UnmountedEvent } from "@inkandswitch/patchwork-elements";
 import { createEffect, onCleanup } from "solid-js";
-import { render } from "solid-js/web";
-import { RepoContext } from "solid-automerge";
 import {
   LATLNG_KEY,
   LATLNG_QUERY,
@@ -15,8 +13,16 @@ import {
   useContextHandle,
   type CardDoc,
 } from "@embark/core";
-import type { Place } from "./datatype";
 import "./poi.css";
+
+// A single OpenStreetMap place, flattened from a Nominatim result. Minted into a
+// `card` document's `props` so the schema matcher can find its `{lat, lon}`.
+type Place = {
+  name: string;
+  lat: number;
+  lon: number;
+  type?: string;
+};
 
 const DEBOUNCE_MS = 350;
 // Nominatim's usage policy asks for at most one request per second, so calls
@@ -36,22 +42,12 @@ type NominatimItem = {
   type?: string;
 };
 
-// Tool entry point: a contributor that answers the canvas search channel with
-// OpenStreetMap places. It reads the active queries and writes a result
-// document url back under each. The card itself only shows a title and a
-// description of what it does — like a playing card in a game.
-export const PoiProviderTool: ToolRender = (_handle, element) => {
-  return render(
-    () => (
-      <RepoContext.Provider value={element.repo}>
-        <PoiProvider element={element} />
-      </RepoContext.Provider>
-    ),
-    element,
-  );
-};
-
-function PoiProvider(props: { element: ToolElement }) {
+// A contributor that answers the canvas search channel with OpenStreetMap
+// places. It reads the active queries and writes a result document url back
+// under each. The component itself only shows a title and a description of what
+// it does — like a playing card in a game. It is handle-less: there is no
+// backing document, so all of its state lives in the shared canvas context.
+export function PoiProvider(props: { element: ToolElement }) {
   const repo = props.element.repo;
   // Read the active queries from the context and write results back as our own
   // scoped slice. The two are separate channels, so writing results never

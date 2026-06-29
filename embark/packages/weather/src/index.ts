@@ -1,25 +1,18 @@
 import type { Plugin } from "@inkandswitch/patchwork-plugins";
 
+// The Weather feature is a `patchwork:component`, not a tool+datatype: it has no
+// state of its own, so it ships as a handle-less view (./component) that the
+// canvas embeds directly by url. Registering it here keeps the package a valid
+// patchwork module and makes the component discoverable by id.
 export const plugins: Plugin<any>[] = [
   {
-    type: "patchwork:tool",
-    id: "weather-provider",
-    name: "Weather",
-    icon: "CloudSun",
-    supportedDatatypes: ["weather-provider"],
-    async load() {
-      const { WeatherProviderTool } = await import("./WeatherProvider");
-      return WeatherProviderTool;
-    },
-  },
-  {
-    type: "patchwork:datatype",
-    id: "weather-provider",
+    type: "patchwork:component",
+    id: "weather",
     name: "Weather",
     icon: "CloudSun",
     async load() {
-      const { WeatherProviderDatatype } = await import("./datatype");
-      return WeatherProviderDatatype;
+      const { default: component } = await import("./component");
+      return component;
     },
   },
 ];

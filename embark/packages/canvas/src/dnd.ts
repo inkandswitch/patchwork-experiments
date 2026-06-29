@@ -1,9 +1,13 @@
 import { isValidAutomergeUrl, type AutomergeUrl } from "@automerge/automerge-repo";
 
-// A single document extracted from a drag. Mirrors the payload Patchwork's
-// sideboard writes when you drag a document out of a folder/list.
+// A single droppable extracted from a drag. Mirrors the payload Patchwork's
+// sideboard writes when you drag a document out of a folder/list. A drag carries
+// either a document (`url`) or a standalone `patchwork:component` (`componentUrl`
+// — a head-less module url); exactly one is set.
 export type DocumentDragItem = {
-  url: AutomergeUrl;
+  url?: AutomergeUrl;
+  // A stable, head-less component module url for component embeds (no document).
+  componentUrl?: string;
   name?: string;
   type?: string;
   // The tool to render the item with, carried by canvas-embed drags so a parts
@@ -15,6 +19,13 @@ export type DocumentDragItem = {
   width?: number;
   height?: number;
 };
+
+// True when a drag item resolves to something droppable: a component url, or a
+// valid automerge document url.
+function isDroppableItem(item: DocumentDragItem): boolean {
+  if (typeof item.componentUrl === "string" && item.componentUrl) return true;
+  return item.url != null && isValidAutomergeUrl(item.url);
+}
 
 // MIME types a document drag can arrive on, in order of preference. The first
 // is Patchwork's rich payload; the rest are fallbacks for plain url drags
@@ -63,9 +74,7 @@ export function getDocumentDragPayload(
   if (dndData) {
     try {
       const parsed = JSON.parse(dndData) as { items?: DocumentDragItem[] };
-      const items = (parsed.items ?? []).filter((item) =>
-        isValidAutomergeUrl(item.url)
-      );
+      const items = (parsed.items ?? []).filter(isDroppableItem);
       if (items.length > 0) return items;
     } catch {
       // fall through to the other types

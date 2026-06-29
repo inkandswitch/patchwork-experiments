@@ -1,25 +1,18 @@
 import type { Plugin } from "@inkandswitch/patchwork-plugins";
 
+// The Routes feature is a `patchwork:component`, not a tool+datatype: it has no
+// state of its own, so it ships as a handle-less view (./component) that the
+// canvas embeds directly by url. Registering it here keeps the package a valid
+// patchwork module and makes the component discoverable by id.
 export const plugins: Plugin<any>[] = [
   {
-    type: "patchwork:tool",
-    id: "route-provider",
-    name: "Routes",
-    icon: "Route",
-    supportedDatatypes: ["route-provider"],
-    async load() {
-      const { RouteProviderTool } = await import("./RouteProvider");
-      return RouteProviderTool;
-    },
-  },
-  {
-    type: "patchwork:datatype",
-    id: "route-provider",
+    type: "patchwork:component",
+    id: "route",
     name: "Routes",
     icon: "Route",
     async load() {
-      const { RouteProviderDatatype } = await import("./datatype");
-      return RouteProviderDatatype;
+      const { default: component } = await import("./component");
+      return component;
     },
   },
 ];

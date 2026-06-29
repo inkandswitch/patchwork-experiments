@@ -1,6 +1,6 @@
 import type { DocHandle, Repo } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
-import { For, createEffect, createSignal, onCleanup } from "solid-js";
+import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { render } from "solid-js/web";
 import {
@@ -13,6 +13,7 @@ import "@inkandswitch/patchwork-elements";
 import {
   registerContextElement,
   deepCloneDocument,
+  renderComponentEmbed,
   type PatchworkContextElement,
 } from "@embark/core";
 import {
@@ -79,7 +80,7 @@ function PartsBin(props: { handle: DocHandle<PartsBinDoc> }) {
   // preserving unchanged rows (and their live previews) by matching on `url`.
   const [doc, setDoc] = createStore<PartsBinDoc>(props.handle.doc());
   const syncFromHandle = () =>
-    setDoc(reconcile(props.handle.doc(), { key: "url" }));
+    setDoc(reconcile(props.handle.doc(), { key: "id" }));
   props.handle.on("change", syncFromHandle);
   onCleanup(() => props.handle.off("change", syncFromHandle));
 
@@ -121,11 +122,28 @@ function PartsBin(props: { handle: DocHandle<PartsBinDoc> }) {
     const payload = getDocumentDragPayload(event.dataTransfer);
     if (!payload) return;
     for (const item of payload) {
+      // Component items have no document — store the (shared, head-less) url as
+      // an example directly, no cloning.
+      if (item.componentUrl) {
+        const componentUrl = item.componentUrl;
+        props.handle.change((binDoc) => {
+          binDoc.items.push({
+            id: crypto.randomUUID(),
+            componentUrl,
+            ...(item.toolId !== undefined && { toolId: item.toolId }),
+            ...(item.width !== undefined && { width: item.width }),
+            ...(item.height !== undefined && { height: item.height }),
+          });
+        });
+        continue;
+      }
+      if (!item.url) continue;
       void deepCloneDocument(repo, item.url).then((url) => {
         props.handle.change((binDoc) => {
           // Automerge rejects explicit `undefined`, so only set optional fields
           // the drag actually carried.
           binDoc.items.push({
+            id: crypto.randomUUID(),
             url,
             ...(item.toolId !== undefined && { toolId: item.toolId }),
             ...(item.width !== undefined && { width: item.width }),
@@ -255,15 +273,19 @@ function PartsBinRow(props: {
   onRemove: () => void;
   onRename: (label: string) => void;
 }) {
+  const isComponent = () => Boolean(props.item.componentUrl);
+
   // Resolve the source handle up front (waits for ready) so dragstart — which
   // must write its payload synchronously — always has a loaded doc to clone
-  // instead of falling back to sharing the original.
+  // instead of falling back to sharing the original. Component items have no
+  // document, so these stay inert for them.
   const source = useDocHandle<unknown>(() => props.item.url);
   const [doc] = useDocument<NamedDoc>(() => props.item.url);
 
-  // The stored label wins; otherwise fall back to the document's own
-  // title/type so a fresh example still reads sensibly.
+  // The stored label wins; otherwise fall back to the document's own title/type
+  // (component items have no document, so they fall back to a generic name).
   const fallbackName = () => {
+    if (isComponent()) return "Component";
     const value = doc();
     return (
       value?.["@patchwork"]?.title ||
@@ -275,8 +297,33 @@ function PartsBinRow(props: {
   const name = () => props.item.label || fallbackName();
 
   const onDragStart = (event: DragEvent) => {
+    if (!event.dataTransfer) return;
+
+    // A component item drops a reference to its shared, head-less url — no
+    // cloning, no document. The canvas imports and runs it directly.
+    if (props.item.componentUrl) {
+      event.dataTransfer.effectAllowed = "copy";
+      const item: {
+        componentUrl: string;
+        toolId?: string;
+        width?: number;
+        height?: number;
+      } = {
+        componentUrl: props.item.componentUrl,
+        ...(props.item.toolId !== undefined && { toolId: props.item.toolId }),
+        ...(props.item.width !== undefined && { width: props.item.width }),
+        ...(props.item.height !== undefined && { height: props.item.height }),
+      };
+      event.dataTransfer.setData(
+        "text/x-patchwork-dnd",
+        JSON.stringify({ source: "parts-bin", items: [item] }),
+      );
+      setDragToken(event, name());
+      return;
+    }
+
     const handle = source();
-    if (!event.dataTransfer || !handle) return;
+    if (!handle) return;
     event.dataTransfer.effectAllowed = "copy";
     // Drop an independent copy so the example in the bin stays pristine. The
     // canvas decides framed vs. frameless from the dropped doc's tool, so the
@@ -298,16 +345,7 @@ function PartsBinRow(props: {
       JSON.stringify({ source: "parts-bin", items: [item] }),
     );
     event.dataTransfer.setData("text/x-patchwork-urls", JSON.stringify([url]));
-
-    // Use a small title token as the drag image instead of the browser's
-    // snapshot of the live preview (whose full height bled into the ghost). The
-    // token must be in the document when captured, then removed next tick.
-    const token = document.createElement("div");
-    token.className = "embark-parts-bin__drag-token";
-    token.textContent = name();
-    document.body.appendChild(token);
-    event.dataTransfer.setDragImage(token, 12, 12);
-    setTimeout(() => token.remove(), 0);
+    setDragToken(event, name());
   };
 
   // An editable headline with a hover-revealed delete action, above a
@@ -346,14 +384,48 @@ function PartsBinRow(props: {
         on:pointerdown={(event) => event.stopPropagation()}
         on:dragstart={onDragStart}
       >
-        <patchwork-view
-          doc-url={props.item.url}
-          tool-id={props.item.toolId}
-          hide-controls=""
-        />
+        <Show
+          when={props.item.componentUrl}
+          fallback={
+            <patchwork-view
+              doc-url={props.item.url}
+              tool-id={props.item.toolId}
+              hide-controls=""
+            />
+          }
+        >
+          {(componentUrl) => <ComponentPreview componentUrl={componentUrl()} />}
+        </Show>
       </div>
     </div>
   );
+}
+
+// A non-interactive live preview of a component example: a host div that imports
+// and runs the component module (against the bin's throwaway context, so its
+// provider logic stays inert). renderComponentEmbed stamps `repo` on the host.
+function ComponentPreview(props: { componentUrl: string }) {
+  const repo = useRepo();
+  let hostEl: HTMLDivElement | undefined;
+  onMount(() => {
+    const host = hostEl;
+    if (!host) return;
+    const dispose = renderComponentEmbed(host, props.componentUrl, repo);
+    onCleanup(dispose);
+  });
+  return <div ref={hostEl} class="embark-parts-bin__component" />;
+}
+
+// Use a small title token as the drag image instead of the browser's snapshot of
+// the live preview (whose full height bled into the ghost). The token must be in
+// the document when captured, then removed next tick.
+function setDragToken(event: DragEvent, label: string): void {
+  const token = document.createElement("div");
+  token.className = "embark-parts-bin__drag-token";
+  token.textContent = label;
+  document.body.appendChild(token);
+  event.dataTransfer?.setDragImage(token, 12, 12);
+  setTimeout(() => token.remove(), 0);
 }
 
 // Caret on the drawer tab: points right when closed ("pull out this way") and

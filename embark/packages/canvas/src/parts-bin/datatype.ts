@@ -7,6 +7,26 @@ import type { PartsBinDoc, PartsBinItem } from "./types";
 const DEFAULT_CENTER: [number, number] = [13.388, 52.517];
 const DEFAULT_ZOOM = 9.5;
 
+// The behavioral-role features (Place Finder, Weather, Routes) are
+// `patchwork:component`s, not documents — the bin seeds them by url so dropping
+// one creates a component embed pointing at the shared module rather than a
+// minted provider document. The urls are head-less (the service worker redirects
+// to the latest heads on load), so a fresh bin always wires up the newest
+// published component. Each is `automerge:<package rootUrl>/component.js`,
+// encoded the way the worker serves module files.
+const componentUrl = (rootUrl: string): string =>
+  `/${encodeURIComponent(rootUrl)}/component.js`;
+
+const POI_COMPONENT_URL = componentUrl(
+  "automerge:r1gkpehGtt4WTR1pz7mBac9SnJp",
+);
+const WEATHER_COMPONENT_URL = componentUrl(
+  "automerge:2gtsy4b6hU38DQAMPk6kYHLwxrxE",
+);
+const ROUTE_COMPONENT_URL = componentUrl(
+  "automerge:41HBbYkbrqYd9STaojjQUsFc1jDW",
+);
+
 // A sample note exercising every sticker source at once: a named color and a
 // hex color (styler), imperial quantities (unit converter), a foreign amount
 // (currency converter), and a timer token.
@@ -33,21 +53,16 @@ export const PartsBinDatatype: DatatypeImplementation<PartsBinDoc> = {
   },
 };
 
-// The starter set: a search box, a POI provider, a map, the three sticker
-// sources, and a demo markdown note for them to annotate. Each is a real
-// document; the bin previews them live and hands out clones on drag.
-// `repo.create` doesn't run a datatype's `init`, so each child doc's initial
-// value is set inline here.
-function seedExampleItems(repo: Repo): PartsBinItem[] {
+// The starter set: a search box; the Place Finder, Weather and Routes
+// components; a map; the three sticker sources; and a demo markdown note for
+// them to annotate. Documents are real docs the bin previews live and hands out
+// clones of; the behavioral-role features are components the bin references by
+// url. `repo.create` doesn't run a datatype's `init`, so each child doc's
+// initial value is set inline here.
+export function seedExampleItems(repo: Repo): PartsBinItem[] {
   const search = repo.create({
     "@patchwork": { type: "search" },
     query: "",
-  });
-  const poi = repo.create({
-    "@patchwork": { type: "poi-provider" },
-  });
-  const weather = repo.create({
-    "@patchwork": { type: "weather-provider" },
   });
   const map = repo.create({
     "@patchwork": { type: "map" },
@@ -72,14 +87,35 @@ function seedExampleItems(repo: Repo): PartsBinItem[] {
   });
 
   return [
-    { url: search.url, toolId: "search" },
-    { url: poi.url, toolId: "poi-provider" },
-    { url: weather.url, toolId: "weather-provider" },
-    { url: map.url, toolId: "map" },
-    { url: colorStyler.url, toolId: "color-styler" },
-    { url: unitConverter.url, toolId: "unit-converter" },
-    { url: currencyConverter.url, toolId: "currency-converter" },
-    { url: timerSource.url, toolId: "timer-source" },
-    { url: note.url, toolId: "codemirror-base" },
+    { id: crypto.randomUUID(), url: search.url, toolId: "search" },
+    {
+      id: crypto.randomUUID(),
+      componentUrl: POI_COMPONENT_URL,
+      label: "Place Finder",
+    },
+    {
+      id: crypto.randomUUID(),
+      componentUrl: WEATHER_COMPONENT_URL,
+      label: "Weather",
+    },
+    {
+      id: crypto.randomUUID(),
+      componentUrl: ROUTE_COMPONENT_URL,
+      label: "Routes",
+    },
+    { id: crypto.randomUUID(), url: map.url, toolId: "map" },
+    { id: crypto.randomUUID(), url: colorStyler.url, toolId: "color-styler" },
+    {
+      id: crypto.randomUUID(),
+      url: unitConverter.url,
+      toolId: "unit-converter",
+    },
+    {
+      id: crypto.randomUUID(),
+      url: currencyConverter.url,
+      toolId: "currency-converter",
+    },
+    { id: crypto.randomUUID(), url: timerSource.url, toolId: "timer-source" },
+    { id: crypto.randomUUID(), url: note.url, toolId: "codemirror-base" },
   ];
 }

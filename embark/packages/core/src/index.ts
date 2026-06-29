@@ -9,6 +9,7 @@ export * from "./well-known-schemas";
 export * from "./schema";
 export * from "./doc-links";
 export * from "./embed-view";
+export * from "./embed-component";
 export * from "./fuzzy";
 export * from "./deep-clone";
 export * from "./place-resolve";

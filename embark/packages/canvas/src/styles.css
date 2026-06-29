@@ -196,6 +196,14 @@
   height: 100%;
 }
 
+/* A component embed renders into a plain host div (no <patchwork-view>); fill
+   the embed body the same way so the component sizes to the frame. */
+.embark-embed__component {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 /* Invisible resize target in the bottom-right corner: no fill, just the
    resize cursor so it reveals itself on hover. */
 .embark-embed__resize {
