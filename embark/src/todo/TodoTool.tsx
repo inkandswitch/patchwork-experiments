@@ -50,12 +50,45 @@ function Todo(props: { handle: DocHandle<TodoDoc>; element: ToolElement }) {
 
   const [editingId, setEditingId] = createSignal<string | null>(null);
 
+  // Append a blank item and start editing it — the bottom "New To-Do" row.
   const addItem = () => {
     const id = crypto.randomUUID();
     props.handle.change((d) => {
       d.items.push({ id, text: "", done: false });
     });
     setEditingId(id);
+  };
+
+  // Enter while editing: a written item spawns a fresh sibling below and moves
+  // the caret onto it (Things' "keep typing to keep adding"); a blank item ends
+  // the run and is discarded so no empty rows pile up.
+  const advance = (item: () => TodoItem, index: number) => {
+    if (item().text.trim() === "") {
+      discardEmpty(index);
+      return;
+    }
+    const id = crypto.randomUUID();
+    props.handle.change((d) => {
+      d.items.splice(index + 1, 0, { id, text: "", done: false });
+    });
+    setEditingId(id);
+  };
+
+  // Blur ends editing. Ignore the blur that fires as focus advances onto a
+  // freshly spawned row (editing has already moved on). A row left blank is
+  // discarded, the way Things drops an abandoned new to-do.
+  const stopEditing = (item: () => TodoItem, index: number) => {
+    if (editingId() !== item().id) return;
+    if (item().text.trim() === "") discardEmpty(index);
+    else setEditingId(null);
+  };
+
+  const discardEmpty = (index: number) => {
+    props.handle.change((d) => {
+      const item = d.items[index];
+      if (item && item.text.trim() === "") d.items.splice(index, 1);
+    });
+    setEditingId(null);
   };
 
   return (
@@ -69,12 +102,14 @@ function Todo(props: { handle: DocHandle<TodoDoc>; element: ToolElement }) {
             group={() => groupFor(item().id)}
             editing={() => editingId() === item().id}
             onEdit={() => setEditingId(item().id)}
-            onStopEdit={() => setEditingId(null)}
+            onEnter={() => advance(item, index)}
+            onBlur={() => stopEditing(item, index)}
           />
         )}
       </Index>
       <button type="button" class="embark-todo__add" on:click={addItem}>
-        + Add item
+        <span class="embark-todo__add-icon" aria-hidden="true">+</span>
+        <span class="embark-todo__add-label">New To-Do</span>
       </button>
     </div>
   );
@@ -87,7 +122,8 @@ function TodoRow(props: {
   group: () => ItemStickerGroup;
   editing: () => boolean;
   onEdit: () => void;
-  onStopEdit: () => void;
+  onEnter: () => void;
+  onBlur: () => void;
 }) {
   const whole = () => props.group().whole;
 
@@ -102,7 +138,6 @@ function TodoRow(props: {
     props.handle.change((d) => {
       d.items.splice(props.index, 1);
     });
-    props.onStopEdit();
   };
 
   const writeText = (value: string) => {
@@ -142,13 +177,13 @@ function TodoRow(props: {
             el.value = props.item().text;
             queueMicrotask(() => el.focus());
           }}
-          placeholder="Write a task…"
+          placeholder="New To-Do"
           on:input={(event) => writeText(event.currentTarget.value)}
-          on:blur={props.onStopEdit}
+          on:blur={props.onBlur}
           on:keydown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
-              props.onStopEdit();
+              props.onEnter();
             }
           }}
         />
@@ -156,15 +191,17 @@ function TodoRow(props: {
       <For each={whole().after}>
         {(sticker) => <span class="embark-todo__slot">{stickerNode(sticker)}</span>}
       </For>
-      <button
-        type="button"
-        class="embark-todo__delete"
-        title="Remove item"
-        aria-label="Remove item"
-        on:click={remove}
-      >
-        x
-      </button>
+      <Show when={!props.editing()}>
+        <button
+          type="button"
+          class="embark-todo__delete"
+          title="Remove item"
+          aria-label="Remove item"
+          on:click={remove}
+        >
+          ×
+        </button>
+      </Show>
     </div>
   );
 }

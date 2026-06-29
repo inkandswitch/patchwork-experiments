@@ -67,8 +67,8 @@ export const PartsBinTool: ToolRender = (handle, element) => {
 
 // The bin renders as a drawer pinned to the canvas's left edge: a vertical tab
 // is always visible, and clicking it slides the panel of examples out to the
-// side. Open/closed is per-view chrome state, so it stays local rather than
-// syncing into the shared document.
+// side. Open/closed is per-view chrome state, so it persists to localStorage
+// rather than syncing into the shared document.
 function PartsBin(props: { handle: DocHandle<PartsBinDoc> }) {
   const repo = useRepo();
   // Drive the list from a full snapshot reconciled on every change rather than
@@ -84,7 +84,10 @@ function PartsBin(props: { handle: DocHandle<PartsBinDoc> }) {
   onCleanup(() => props.handle.off("change", syncFromHandle));
 
   const items = () => doc.items ?? [];
-  const [open, setOpen] = createSignal(true);
+  // Open/closed is per-view chrome, persisted to localStorage so the drawer
+  // restores to however it was last left on the next load.
+  const [open, setOpen] = createSignal(readStoredOpen());
+  createEffect(() => writeStoredOpen(open()));
   const [dragOver, setDragOver] = createSignal(false);
 
   // The bin doubles as a drop target: dropping a canvas embed (or any document)
@@ -215,6 +218,27 @@ function PartsBin(props: { handle: DocHandle<PartsBinDoc> }) {
       </div>
     </div>
   );
+}
+
+// Persisted open/closed preference. A single global key (the bin is browser-
+// local chrome, not document state), defaulting to open when nothing is stored
+// or storage is unavailable (private mode, disabled).
+const OPEN_STORAGE_KEY = "embark:parts-bin:open";
+
+function readStoredOpen(): boolean {
+  try {
+    return localStorage.getItem(OPEN_STORAGE_KEY) !== "false";
+  } catch {
+    return true;
+  }
+}
+
+function writeStoredOpen(open: boolean): void {
+  try {
+    localStorage.setItem(OPEN_STORAGE_KEY, String(open));
+  } catch {
+    // Ignore: storage can be unavailable (private mode / disabled).
+  }
 }
 
 // A document whose name we want to show on the token. Patchwork keeps the

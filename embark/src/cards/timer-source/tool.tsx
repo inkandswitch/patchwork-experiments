@@ -1,13 +1,23 @@
-import type { Sticker } from "../../types";
-import type { TimerDoc } from "../../timer/datatype";
-import type { ScanContext } from "../source-lib";
-import { stickerSourceTool } from "../source-tool";
+import type { JSX } from "solid-js";
+import type { Sticker } from "../../stickers/types";
+import type { TimerDoc } from "../../stickers/timer/datatype";
+import type { ScanContext } from "../../stickers/sources/source-lib";
+import { stickerSourceCard } from "../source-card";
 
-// A sticker source that turns timer tokens into live timer widgets via a
-// `tool` sticker in the "replace" slot. Each token gets a backing `timer`
-// document, reused across edits (keyed by the cursor-based target url).
-export const TimerSourceTool = stickerSourceTool(
-  { title: "Timer Source", subtitle: "@timer 5m or 5:00 becomes a widget" },
+// A card that turns timer tokens into live timer widgets via a `tool` sticker in
+// the "replace" slot. Each token gets a backing `timer` document, reused across
+// edits (keyed by the cursor-based target url). The countdown widget itself is
+// the separate timer tool (../../stickers/timer); this card only finds the
+// tokens and mints the widgets.
+export const TimerSourceTool = stickerSourceCard(
+  {
+    title: "Timer",
+    description:
+      "Turns timer tokens in your notes — @timer 5m or a bare 5:00 — into live countdown widgets you can start and reset.",
+    source: "@timer 5m · MM:SS",
+    accent: "#8b5cf6",
+    icon: ClockIcon,
+  },
   { scan: scanTimers },
 );
 
@@ -53,4 +63,23 @@ function durationOf(match: RegExpMatchArray): number | null {
     return (Number(match[3]) * 60 + Number(match[4])) * 1000;
   }
   return null;
+}
+
+function ClockIcon(): JSX.Element {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
 }

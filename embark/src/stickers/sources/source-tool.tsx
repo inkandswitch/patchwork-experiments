@@ -28,7 +28,7 @@ function SourcePanel(props: {
   const [count, setCount] = createSignal(0);
 
   onMount(() => {
-    const stop = runStickerSource(props.element, props.config, setCount);
+    const { stop } = runStickerSource(props.element, props.config, setCount);
     onCleanup(stop);
   });
 

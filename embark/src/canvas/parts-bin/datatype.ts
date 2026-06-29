@@ -10,8 +10,9 @@ import {
   type MapDoc,
 } from "../../map/datatype";
 import type { ColorStylerDoc } from "../../stickers/sources/color-styler/datatype";
-import type { UnitConverterDoc } from "../../stickers/sources/unit-converter/datatype";
-import type { TimerSourceDoc } from "../../stickers/sources/timer-source/datatype";
+import type { UnitConverterDoc } from "../../cards/unit-converter/datatype";
+import type { CurrencyConverterDoc } from "../../cards/currency-converter/datatype";
+import type { TimerSourceDoc } from "../../cards/timer-source/datatype";
 
 // A markdown document, shaped for both the schema-match provider (it has
 // `@patchwork.type` + `content`) and the CodeMirror editor (reads `content`).
@@ -20,14 +21,16 @@ type MarkdownDoc = {
   content: string;
 };
 
-// A sample note exercising all three sticker sources at once: a named color and
-// a hex color (styler), imperial quantities (converter), and a timer token.
+// A sample note exercising every sticker source at once: a named color and a
+// hex color (styler), imperial quantities (unit converter), a foreign amount
+// (currency converter), and a timer token.
 const DEMO_MARKDOWN = `# Trip notes
 
 The route is about 5 miles along a red trail.
 Take a break partway: @timer 5m
 
-Bring 10 lb of gear. The summit hut is painted #2f80ed.
+Bring 10 lb of gear; the permit costs €20.
+The summit hut is painted #2f80ed.
 `;
 
 export const PartsBinDatatype: DatatypeImplementation<PartsBinDoc> = {
@@ -71,6 +74,9 @@ function seedExampleItems(repo: Repo): PartsBinItem[] {
   const unitConverter = repo.create<UnitConverterDoc>({
     "@patchwork": { type: "unit-converter" },
   });
+  const currencyConverter = repo.create<CurrencyConverterDoc>({
+    "@patchwork": { type: "currency-converter" },
+  });
   const timerSource = repo.create<TimerSourceDoc>({
     "@patchwork": { type: "timer-source" },
   });
@@ -86,6 +92,7 @@ function seedExampleItems(repo: Repo): PartsBinItem[] {
     { url: map.url, toolId: "map" },
     { url: colorStyler.url, toolId: "color-styler" },
     { url: unitConverter.url, toolId: "unit-converter" },
+    { url: currencyConverter.url, toolId: "currency-converter" },
     { url: timerSource.url, toolId: "timer-source" },
     { url: note.url, toolId: "codemirror-base" },
   ];

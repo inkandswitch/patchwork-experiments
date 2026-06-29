@@ -8,49 +8,24 @@ import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
 import { onCleanup, onMount } from "solid-js";
 import { render } from "solid-js/web";
 import { RepoContext } from "solid-automerge";
-import { z } from "zod";
 import {
   findContextStore,
   type ContextStore,
   type ScopeHandle,
 } from "../../lib/context";
-import {
-  CommandQueries,
-  CommandSuggestions,
-  SchemaMatches,
-  SchemaQueries,
-  SearchQueries,
-  SearchResults,
-  schemaKey,
-} from "../../canvas/channels";
-import type { JsonSchema } from "../../lib/schema";
-import { fuzzyMatch } from "../../lib/fuzzy";
+import { CommandQueries, CommandSuggestions } from "../../canvas/channels";
 import { listFiles, writeFile } from "../../llm-card/folder";
 import type { FolderDoc } from "../../llm-card/types";
 import type { CardDoc } from "../../card/datatype";
 import type { Suggestion } from "../../commands/datatype";
+import { createPlaceResolver, type Located, type PlaceResolver } from "../place-resolve";
 import type { WeatherProviderDoc } from "./datatype";
 import { VIEW_SOURCE } from "./view-source";
 import "./weather.css";
 
 // Wait this long after the query last changed before resolving it (so each
-// keystroke of `/weather berl…` doesn't fire a fetch), and give the search
-// fallback this long to answer before giving up.
+// keystroke of `/weather berl…` doesn't fire a fetch).
 const DEBOUNCE_MS = 350;
-const SEARCH_TIMEOUT_MS = 8000;
-
-// The map's question, reused verbatim: "where, in any mounted document, is a
-// {lat, lon} pair?" The schema travels as JSON Schema; the canvas resolver
-// answers on SchemaMatches keyed by `schemaKey`.
-const LATLNG_JSON_SCHEMA = z.toJSONSchema(
-  z.object({ lat: z.number(), lon: z.number() }),
-) as unknown as JsonSchema;
-const LATLNG_KEY = schemaKey(LATLNG_JSON_SCHEMA);
-
-// A resolved place: coordinates, a display name for the card and menu, and —
-// when known — the url of the document the place came from, so the minted card
-// can link its inline place pill back to the real place document.
-type Located = { lat: number; lon: number; place: string; url?: AutomergeUrl };
 
 // Today's forecast for one location.
 type DayWeather = {
@@ -97,9 +72,8 @@ function WeatherProvider(props: {
   const cardCache = new Map<string, { url: AutomergeUrl; label: string }>();
 
   let store: ContextStore | undefined;
+  let resolver: PlaceResolver | undefined;
   let suggestions: ScopeHandle<Record<string, Suggestion[]>> | undefined;
-  let schemaQueries: ScopeHandle<Record<string, JsonSchema>> | undefined;
-  let searchQueries: ScopeHandle<Record<string, true>> | undefined;
   let unsubscribeQueries: (() => void) | undefined;
   // The import url of our inline renderer, served by the host service worker out
   // of a folder doc. Set up once on mount; minted cards await it (so the folder
@@ -111,13 +85,9 @@ function WeatherProvider(props: {
   onMount(() => {
     store = findContextStore(props.element);
     if (!store) return; // opened outside a canvas — nothing to contribute to
+    // Shared place resolution (canvas {lat, lon} matches first, then search).
+    resolver = createPlaceResolver(store, repo);
     suggestions = store.handle(CommandSuggestions);
-    schemaQueries = store.handle(SchemaQueries);
-    searchQueries = store.handle(SearchQueries);
-    // Ask the canvas where {lat, lon} pairs live, exactly like the map.
-    schemaQueries.change((slice) => {
-      slice[LATLNG_KEY] = LATLNG_JSON_SCHEMA;
-    });
     viewUrlPromise = ensureViewUrl();
     // Re-answer whenever the active commands change. `subscribe` doesn't fire an
     // initial call, so seed once.
@@ -131,8 +101,7 @@ function WeatherProvider(props: {
     timers.clear();
     unsubscribeQueries?.();
     suggestions?.release();
-    schemaQueries?.release();
-    searchQueries?.release();
+    resolver?.release();
   });
 
   // Reconcile our scheduled work against the currently active command queries:
@@ -179,11 +148,13 @@ function WeatherProvider(props: {
   // (leaving the query unanswered, so a later edit re-queues it) if no place can
   // be located or the query is dropped mid-way.
   const resolve = async (query: string) => {
-    if (!store || disposed) return;
+    if (!store || disposed || !resolver) return;
     inFlight.add(query);
     try {
       const place = parseWeather(query);
-      const located = place ? await resolveLatLon(place) : await resolveSample();
+      const located = place
+        ? await resolver.resolveLatLon(place)
+        : (await resolver.resolveSamples(1))[0] ?? null;
       if (disposed || !located) return;
       if (!(query in store.read(CommandQueries))) return; // dropped while resolving
 
@@ -212,109 +183,6 @@ function WeatherProvider(props: {
       // Leave the query unanswered; a later edit re-queues it.
     } finally {
       inFlight.delete(query);
-    }
-  };
-
-  // Locate a place: first among the {lat, lon} pairs already on the canvas
-  // (matched by the canvas schema resolver, like the map sees), then — if none
-  // of those names fuzzily match — via a one-off search.
-  const resolveLatLon = async (place: string): Promise<Located | null> => {
-    if (!store) return null;
-    const matches = store.read(SchemaMatches)[LATLNG_KEY] ?? [];
-    for (const match of matches) {
-      const found = await locationFromMatch(match, place);
-      if (found) return found;
-    }
-    return resolveViaSearch(place);
-  };
-
-  // Pick one place already on the canvas to showcase the command before the
-  // user has typed anything: the first {lat, lon} match with a usable name.
-  const resolveSample = async (): Promise<Located | null> => {
-    if (!store) return null;
-    const matches = store.read(SchemaMatches)[LATLNG_KEY] ?? [];
-    for (const match of matches) {
-      const found = await locatedFromMatch(match);
-      if (found) return found;
-    }
-    return null;
-  };
-
-  // Read a {lat, lon} match's coordinates and the display name of the document
-  // it lives in (no filtering). The owner url lets the card link its place pill
-  // back to the real place document.
-  const locatedFromMatch = async (
-    match: AutomergeUrl,
-  ): Promise<Located | null> => {
-    try {
-      const node = (await Promise.resolve(repo.find<unknown>(match))).doc() as
-        | { lat?: unknown; lon?: unknown; name?: unknown }
-        | undefined;
-      const lat = node?.lat;
-      const lon = node?.lon;
-      if (typeof lat !== "number" || typeof lon !== "number") return null;
-      // The place lives in the document that owns the matched {lat, lon} node;
-      // link the card's place pill back to it.
-      const ownerUrl =
-        `automerge:${parseAutomergeUrl(match).documentId}` as AutomergeUrl;
-      // The matched node is often a card's `props` (which carries `name`); if
-      // not, fall back to the owning document's title.
-      let name = typeof node?.name === "string" ? node.name : "";
-      if (!name) {
-        name = docTitle(
-          (await Promise.resolve(repo.find<unknown>(ownerUrl))).doc(),
-        );
-      }
-      if (!name) return null;
-      return { lat, lon, place: name, url: ownerUrl };
-    } catch {
-      // ignore matches that fail to load
-      return null;
-    }
-  };
-
-  // As above, but only when the place name fuzzily matches what the user typed.
-  const locationFromMatch = async (
-    match: AutomergeUrl,
-    place: string,
-  ): Promise<Located | null> => {
-    const found = await locatedFromMatch(match);
-    return found && fuzzyMatch(found.place, place) ? found : null;
-  };
-
-  // Drive the search channel for `place` and keep the first result document
-  // that carries coordinates (e.g. a POI card's `props.lat`/`props.lon`). The
-  // query is cleared again once we're done so it doesn't linger on the canvas.
-  const resolveViaSearch = async (place: string): Promise<Located | null> => {
-    if (!store) return null;
-    searchQueries?.change((slice) => {
-      slice[place] = true;
-    });
-    try {
-      const urls = await waitForResults(store, place, SEARCH_TIMEOUT_MS);
-      for (const url of urls) {
-        try {
-          const card = (
-            await Promise.resolve(repo.find<unknown>(url))
-          ).doc() as
-            | { props?: { lat?: unknown; lon?: unknown; name?: unknown } }
-            | undefined;
-          const lat = card?.props?.lat;
-          const lon = card?.props?.lon;
-          if (typeof lat === "number" && typeof lon === "number") {
-            const name =
-              typeof card?.props?.name === "string" ? card.props.name : place;
-            return { lat, lon, place: name, url };
-          }
-        } catch {
-          // skip results that fail to load
-        }
-      }
-      return null;
-    } finally {
-      searchQueries?.change((slice) => {
-        delete slice[place];
-      });
     }
   };
 
@@ -455,54 +323,9 @@ function isWeatherDiscovery(query: string): boolean {
   return "weather".startsWith(trimmed.toLowerCase());
 }
 
-// Resolve with the first non-empty results for `place`, or [] after `timeoutMs`.
-function waitForResults(
-  store: ContextStore,
-  place: string,
-  timeoutMs: number,
-): Promise<AutomergeUrl[]> {
-  const current = store.read(SearchResults)[place];
-  if (current && current.length) return Promise.resolve(current);
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (urls: AutomergeUrl[]) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      unsubscribe();
-      resolve(urls);
-    };
-    const unsubscribe = store.subscribe(SearchResults, (all) => {
-      const urls = all[place];
-      if (urls && urls.length) finish(urls);
-    });
-    const timer = setTimeout(() => finish([]), timeoutMs);
-  });
-}
-
 // The menu label for a forecast suggestion, e.g. "Weather: Berlin ☀️ 12°/5°".
 function menuLabel(located: Located, weather: DayWeather): string {
   return `Weather: ${located.place} ${weather.emoji} ${weather.max}\u00b0/${weather.min}\u00b0`;
-}
-
-// A best-effort display title for a document: its patchwork title, a card's
-// name, or its content.
-function docTitle(doc: unknown): string {
-  const record = (doc ?? {}) as {
-    "@patchwork"?: { title?: unknown };
-    title?: unknown;
-    content?: unknown;
-    props?: { name?: unknown };
-  };
-  const metaTitle = record["@patchwork"]?.title;
-  if (typeof metaTitle === "string" && metaTitle) return metaTitle;
-  if (typeof record.props?.name === "string" && record.props.name) {
-    return record.props.name;
-  }
-  if (typeof record.title === "string" && record.title) return record.title;
-  if (typeof record.content === "string" && record.content)
-    return record.content;
-  return "";
 }
 
 // Today's forecast for a coordinate from Open-Meteo (keyless). `forecast_days=1`

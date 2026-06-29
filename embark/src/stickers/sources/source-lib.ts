@@ -1,5 +1,6 @@
 import {
   cursor,
+  parseAutomergeUrl,
   type AutomergeUrl,
   type DocHandle,
   type Repo,
@@ -16,44 +17,57 @@ import {
 import type { JsonSchema } from "../../lib/schema";
 import type { Sticker } from "../types";
 
-// Shared engine for sticker sources. A source watches every markdown document
-// reachable on the canvas (via the `SchemaQueries`/`SchemaMatches` channels),
-// scans each one's text, and publishes stickers into its own scoped slice of
-// the `Stickers` channel keyed by document url. The three example sources
-// (color styler, unit converter, timer) differ only in their `scan` function.
+// Shared engine for sticker sources. A source watches every text-bearing
+// document reachable on the canvas (via the `SchemaQueries`/`SchemaMatches`
+// channels), scans each one's text, and publishes stickers into its own scoped
+// slice of the `Stickers` channel keyed by document url. The example sources
+// (color styler, unit converter, currency converter, timer) differ only in
+// their `scan` function.
 //
-// The contract a source implements is `scan(ctx)`: given a document's content
-// (and helpers to address ranges and mint reusable docs), return the stickers
-// it wants on that document. The engine handles discovery, debouncing,
-// reconciliation as docs come and go, and cleanup.
+// The contract a source implements is `scan(ctx)`: given a text field's content
+// (and helpers to address ranges and mint reusable docs), return the stickers it
+// wants. A document may carry text in any of several fields, so the engine runs
+// `scan` once per text field it finds and binds the field into `ctx.target`; the
+// source itself only ever sees a single string.
+//
+// The engine handles discovery, debouncing, reconciliation as docs come and go,
+// and cleanup.
 
-// Only the markdown root matches this (it has both keys), so each markdown
-// document yields its bare document url — exactly the key the renderer asks
-// about. Shipped as JSON Schema because that's the channel's payload type.
-const MARKDOWN_SCHEMA = z.toJSONSchema(
-  z.object({
-    "@patchwork": z.object({ type: z.literal("markdown") }),
-    content: z.string(),
-  }),
+// The text fields we scan, in priority order. Generalized from the original
+// markdown-only `content`: any document with a *root-level* string named one of
+// these is scanned, so notes, essays, and other text docs all qualify
+// regardless of their `@patchwork.type` or which field holds their prose.
+const TEXT_FIELDS = ["content", "description", "text"] as const;
+
+// Matches any object carrying at least one of the text fields as a string. The
+// resolver reports the subtree that matched; the engine keeps only root matches
+// (a bare document url) since that's the text an editor actually shows.
+const TEXT_SCHEMA = z.toJSONSchema(
+  z.union([
+    z.object({ content: z.string() }),
+    z.object({ description: z.string() }),
+    z.object({ text: z.string() }),
+  ]),
 ) as unknown as JsonSchema;
 
-const MARKDOWN_KEY = schemaKey(MARKDOWN_SCHEMA);
+const TEXT_KEY = schemaKey(TEXT_SCHEMA);
 
 // Coalesce a burst of edits into a single rescan.
 const RESCAN_DEBOUNCE_MS = 250;
 
-type MarkdownDoc = { "@patchwork"?: { type: string }; content?: string };
+type TextDoc = Record<string, unknown>;
 
 export type ScanContext = {
-  // The scanned document's text.
+  // One text field's content. The engine calls `scan` once per text field a
+  // document carries, each time with that field's text here.
   content: string;
   // The repo, for sources (e.g. the timer) that mint backing docs inside
   // `resource`.
   repo: Repo;
-  // Build the range sub-url for `[from, to)` within this document's content.
-  // Use it as a sticker's `target`. The url encodes automerge cursors, so it is
-  // stable across edits (it tracks the same characters) — which is what makes
-  // it a good `resource` key.
+  // Build the range sub-url for `[from, to)` within the field currently being
+  // scanned. Use it as a sticker's `target`. The url encodes automerge cursors,
+  // so it is stable across edits (it tracks the same characters) — which is what
+  // makes it a good `resource` key.
   target: (from: number, to: number) => AutomergeUrl;
   // Get-or-create a cached document for a span, keyed by its (cursor-based)
   // `target` url so the key is stable across edits. `create` runs only the
@@ -67,9 +81,17 @@ export type StickerSourceConfig = {
   scan: (ctx: ScanContext) => Sticker[];
 };
 
-// One watched markdown document.
+// The engine's public handle: `stop` tears it down; `rescanAll` forces a fresh
+// pass over every watched document (used by sources whose `scan` depends on
+// async state — e.g. the currency converter, once exchange rates arrive).
+export type StickerSource = {
+  stop: () => void;
+  rescanAll: () => void;
+};
+
+// One watched document.
 type DocEntry = {
-  handle?: DocHandle<MarkdownDoc>;
+  handle?: DocHandle<TextDoc>;
   onChange?: () => void;
   timer?: ReturnType<typeof setTimeout>;
   // target url -> minted doc url, for tool stickers' backing docs.
@@ -81,7 +103,7 @@ export function runStickerSource(
   element: ToolElement,
   config: StickerSourceConfig,
   onCount?: (count: number) => void,
-): () => void {
+): StickerSource {
   const repo = element.repo;
   const docs = new Map<AutomergeUrl, DocEntry>();
   // Our own scoped slice of the Stickers channel. When the source tears down,
@@ -89,17 +111,20 @@ export function runStickerSource(
   // manual registry-doc deletion).
   const stickersHandle = getContextHandle(element, Stickers);
 
-  // Discover markdown documents on the canvas; add/drop watched docs to match.
+  // Discover text-bearing documents on the canvas; add/drop watched docs to
+  // match. Only root matches (a bare document url) are kept — nested matches
+  // point at subtrees no editor renders.
   const onMatches = (urls: AutomergeUrl[]) => {
-    const wanted = new Set(urls);
-    for (const url of urls) if (!docs.has(url)) addDoc(url);
+    const roots = urls.filter(isRootUrl);
+    const wanted = new Set(roots);
+    for (const url of roots) if (!docs.has(url)) addDoc(url);
     for (const url of [...docs.keys()]) if (!wanted.has(url)) dropDoc(url, true);
   };
 
   const addDoc = (url: AutomergeUrl) => {
     const entry: DocEntry = { resources: new Map(), count: 0 };
     docs.set(url, entry);
-    void Promise.resolve(repo.find<MarkdownDoc>(url))
+    void Promise.resolve(repo.find<TextDoc>(url))
       .then((handle) => {
         if (docs.get(url) !== entry) return; // dropped before it resolved
         entry.handle = handle;
@@ -135,28 +160,34 @@ export function runStickerSource(
   };
 
   // Re-derive a document's stickers and write them into our slice under its
-  // url, garbage-collecting any resource docs whose keys no longer appear.
+  // url, scanning every text field it carries and garbage-collecting any
+  // resource docs whose keys no longer appear.
   const rescan = (url: AutomergeUrl) => {
     const entry = docs.get(url);
     if (!entry?.handle || !stickersHandle) return;
-    const content = entry.handle.doc()?.content ?? "";
+    const doc = entry.handle.doc();
     const used = new Set<AutomergeUrl>();
-    const ctx: ScanContext = {
-      content,
-      repo,
-      target: (from, to) => entry.handle!.sub("content", cursor(from, to)).url,
-      resource: (target, create) => {
-        used.add(target);
-        let existing = entry.resources.get(target);
-        if (!existing) {
-          existing = create();
-          entry.resources.set(target, existing);
-        }
-        return existing;
-      },
-    };
+    const stickers: Sticker[] = [];
 
-    const stickers = config.scan(ctx);
+    for (const field of TEXT_FIELDS) {
+      const value = doc?.[field];
+      if (typeof value !== "string" || value.length === 0) continue;
+      const ctx: ScanContext = {
+        content: value,
+        repo,
+        target: (from, to) => entry.handle!.sub(field, cursor(from, to)).url,
+        resource: (target, create) => {
+          used.add(target);
+          let existing = entry.resources.get(target);
+          if (!existing) {
+            existing = create();
+            entry.resources.set(target, existing);
+          }
+          return existing;
+        },
+      };
+      stickers.push(...config.scan(ctx));
+    }
 
     for (const [target, docUrl] of [...entry.resources]) {
       if (used.has(target)) continue;
@@ -178,17 +209,17 @@ export function runStickerSource(
     onCount(total);
   };
 
-  // Publish the markdown schema query and watch for matching documents on the
+  // Publish the text-field schema query and watch for matching documents on the
   // canvas. Both ride the schema channels; the canvas resolver answers.
   const schemaQueries = getContextHandle(element, SchemaQueries);
   schemaQueries?.change((slice) => {
-    slice[MARKDOWN_KEY] = { name: "Markdown documents", schema: MARKDOWN_SCHEMA };
+    slice[TEXT_KEY] = { name: "Text fields", schema: TEXT_SCHEMA };
   });
   const unsubscribeMatches = subscribeContext(element, SchemaMatches, (all) => {
-    onMatches(all[MARKDOWN_KEY] ?? []);
+    onMatches(all[TEXT_KEY] ?? []);
   });
 
-  return () => {
+  const stop = () => {
     unsubscribeMatches();
     schemaQueries?.release();
     // Releasing the slice drops every sticker we published; here we only need
@@ -196,6 +227,17 @@ export function runStickerSource(
     for (const url of [...docs.keys()]) dropDoc(url, false);
     stickersHandle?.release();
   };
+
+  const rescanAll = () => {
+    for (const url of docs.keys()) scheduleRescan(url);
+  };
+
+  return { stop, rescanAll };
+}
+
+// True when the url points at a whole document (no sub-path), i.e. a root match.
+function isRootUrl(url: AutomergeUrl): boolean {
+  return url === `automerge:${parseAutomergeUrl(url).documentId}`;
 }
 
 function deleteResource(repo: Repo, docUrl: AutomergeUrl) {

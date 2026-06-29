@@ -56,14 +56,17 @@ export function newRunDoc(startedAt: number = Date.now()): RunDoc {
   };
 }
 
-// Name runs by time of day, the way most running apps do ("Morning Run").
+// Name runs by their start date and time (24h), so each run has a unique,
+// recognizable title — handy for mentioning a specific run in a note.
 export function defaultRunTitle(startedAt: number): string {
-  const hour = new Date(startedAt).getHours();
-  if (hour < 5) return "Night Run";
-  if (hour < 12) return "Morning Run";
-  if (hour < 17) return "Afternoon Run";
-  if (hour < 21) return "Evening Run";
-  return "Night Run";
+  return new Date(startedAt).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 export const RunDatatype: DatatypeImplementation<RunDoc> = {

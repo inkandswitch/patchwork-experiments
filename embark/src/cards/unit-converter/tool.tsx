@@ -1,13 +1,36 @@
-import type { Sticker } from "../../types";
-import type { ScanContext } from "../source-lib";
-import { stickerSourceTool } from "../source-tool";
+import type { JSX } from "solid-js";
+import type { Sticker } from "../../stickers/types";
+import type { ScanContext } from "../../stickers/sources/source-lib";
+import { stickerSourceCard } from "../source-card";
 
-// A sticker source that finds imperial quantities and appends the metric
-// equivalent as a `text` sticker in the "after" slot.
-export const UnitConverterTool = stickerSourceTool(
-  { title: "Unit Converter", subtitle: "Imperial to metric" },
+// A card that scans text for imperial quantities and annotates each with the
+// metric equivalent as a `text` sticker in the "after" slot. Behaves like the
+// POI/weather cards (a contributor with a playing-card face) but its work is
+// the shared sticker-scanning engine.
+export const UnitConverterTool = stickerSourceCard(
+  {
+    title: "Unit Converter",
+    description:
+      "Scans your notes for imperial quantities — miles, feet, pounds, °F — and annotates each with its metric equivalent.",
+    source: "Imperial → metric",
+    accent: "#0ea5e9",
+    icon: RulerIcon,
+  },
   { scan: scanUnits },
 );
+
+function scanUnits(ctx: ScanContext): Sticker[] {
+  const stickers: Sticker[] = [];
+  for (const { from, to, text } of findUnits(ctx.content)) {
+    stickers.push({
+      type: "text",
+      text,
+      target: ctx.target(from, to),
+      slot: "after",
+    });
+  }
+  return stickers;
+}
 
 // Each converter matches `<number> <unit>` and formats the metric result. The
 // number is captured in group 1; the whole match is the span to annotate.
@@ -32,19 +55,6 @@ const CONVERTERS: Converter[] = [
     convert: (f) => `${round(((f - 32) * 5) / 9)} °C`,
   },
 ];
-
-function scanUnits(ctx: ScanContext): Sticker[] {
-  const stickers: Sticker[] = [];
-  for (const { from, to, text } of findUnits(ctx.content)) {
-    stickers.push({
-      type: "text",
-      text,
-      target: ctx.target(from, to),
-      slot: "after",
-    });
-  }
-  return stickers;
-}
 
 type UnitMatch = { from: number; to: number; text: string };
 
@@ -76,4 +86,23 @@ function findUnits(content: string): UnitMatch[] {
 
 function round(value: number): string {
   return (Math.round(value * 10) / 10).toString();
+}
+
+function RulerIcon(): JSX.Element {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 8h18v8H3z" transform="rotate(45 12 12)" />
+      <path d="M9 7v2M12 6v3M15 7v2" transform="rotate(45 12 12)" />
+    </svg>
+  );
 }

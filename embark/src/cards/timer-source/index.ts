@@ -4,7 +4,7 @@ export const plugins: Plugin<any>[] = [
   {
     type: "patchwork:tool",
     id: "timer-source",
-    name: "Timer Source",
+    name: "Timer",
     icon: "Timer",
     supportedDatatypes: ["timer-source"],
     async load() {
@@ -15,7 +15,7 @@ export const plugins: Plugin<any>[] = [
   {
     type: "patchwork:datatype",
     id: "timer-source",
-    name: "Timer Source",
+    name: "Timer",
     icon: "Timer",
     async load() {
       const { TimerSourceDatatype } = await import("./datatype");
