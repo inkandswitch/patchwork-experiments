@@ -17,6 +17,9 @@
     "config.js",
     "client.js",
     "worker.js",
+    "stream.js",
+    "stream-worker.js",
+    "worker-loader.js",
     "doc.js",
     "provider.js"
   ]

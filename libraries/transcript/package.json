@@ -13,6 +13,10 @@
     "./worker.js": {
       "types": "./types/worker.d.ts",
       "default": "./worker.js"
+    },
+    "./stream-worker.js": {
+      "types": "./types/stream-worker.d.ts",
+      "default": "./stream-worker.js"
     }
   },
   "scripts": {
@@ -25,6 +29,9 @@
     "config.js",
     "client.js",
     "worker.js",
+    "stream.js",
+    "stream-worker.js",
+    "worker-loader.js",
     "doc.js",
     "provider.js",
     "README.md"

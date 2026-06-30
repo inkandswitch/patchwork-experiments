@@ -19,6 +19,10 @@ It gives you:
 - **`transcribeDoc(url)`** — transcribe the audio a recording/file doc points
   at and **cache the transcript back onto the doc** (so it syncs to peers and is
   read back instantly). This is what chat's voice notes use.
+- **`createTranscriptionStream({ track })`** — real-time transcription off a live
+  microphone track: Silero VAD segments speech and emits **interim + final**
+  transcripts as the user talks. This is what `call`'s live meeting transcript
+  uses.
 - **`<patchwork-transcript-config-provider>`** — scope a different engine to one
   tool/view.
 
@@ -69,6 +73,26 @@ const text = await transcribeDoc(recordingUrl, {
 
 // already-decoded PCM (e.g. from the Web Audio API) works too
 const text = await transcribe(float32PcmAt16k)
+```
+
+### Real-time (streaming) transcription
+
+```js
+import { createTranscriptionStream } from "@chee/patchwork-transcript"
+
+const session = await createTranscriptionStream({
+  track: localStream.getAudioTracks()[0], // library reads + resamples frames
+  onStatus:      (m) => setStatus(m),
+  onSpeechStart: () => beginUtterance(),
+  onInterim:     (text) => showInterim(text),   // fires ~1×/s while talking
+  onFinal:       (text) => commit(text),        // fires on each silence
+  onSpeechEnd:   () => clearInterim(),
+})
+session.setEnabled(false)  // mute (drops frames, keeps the model warm)
+session.close()            // tear down worker + track reader
+
+// no track? drive it yourself with 16 kHz mono PCM:
+session.push(float32At16k)
 ```
 
 ### Config (on the account doc)

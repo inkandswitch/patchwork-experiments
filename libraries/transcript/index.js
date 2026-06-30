@@ -36,6 +36,8 @@ export {
 
 export {transcribe, decodeAudio, preload, onStatus} from "./client.js"
 
+export {createTranscriptionStream} from "./stream.js"
+
 export {transcribeDoc, getExistingTranscription} from "./doc.js"
 
 // Registers <patchwork-transcript-config-provider> on import.

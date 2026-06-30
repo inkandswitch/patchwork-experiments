@@ -19,11 +19,12 @@
  */
 
 import {ensureConfig, callConfig} from "./config.js"
+import {spawnWorker} from "./worker-loader.js"
 
 // --- local worker -----------------------------------------------------------
 
 /** @typedef {{post:(m:any, transfer?:Transferable[])=>void}} Connection */
-/** @type {Connection|null} */
+/** @type {Promise<Connection>|null} */
 let connection = null
 let nextId = 1
 /** @type {Map<number, {resolve:(t:string)=>void, reject:(e:any)=>void}>} */
@@ -44,19 +45,20 @@ function dispatch(/** @type {any} */ msg) {
 	else if (msg.type === "error") h.reject(new Error(msg.message || "transcription failed"))
 }
 
-/** @returns {Connection} */
+/** @returns {Promise<Connection>} */
 function getConnection() {
 	if (connection) return connection
 	// A dedicated Worker (one per page), reloaded with the page and isolated from
-	// other tabs. NOTE: `new URL("./worker.js", import.meta.url)` MUST stay inline
-	// inside the constructor — that's the exact pattern bundlers (vite) statically
-	// detect to emit the worker chunk; hoisting it to a variable breaks bundling.
-	const w = new Worker(new URL("./worker.js", import.meta.url), {type: "module"})
-	w.onmessage = (/** @type {MessageEvent} */ ev) => dispatch(ev.data)
-	connection = {
-		post: (/** @type {any} */ m, /** @type {Transferable[]=} */ transfer) =>
-			w.postMessage(m, transfer || []),
-	}
+	// other tabs. spawnWorker handles the `automerge:` service-worker-URL case via
+	// a blob fallback. `new URL("./worker.js", import.meta.url)` stays inline so
+	// bundlers (vite) that emit a worker chunk still see the pattern.
+	connection = spawnWorker(new URL("./worker.js", import.meta.url)).then((w) => {
+		w.onmessage = (/** @type {MessageEvent} */ ev) => dispatch(ev.data)
+		return {
+			post: (/** @type {any} */ m, /** @type {Transferable[]=} */ transfer) =>
+				w.postMessage(m, transfer || []),
+		}
+	})
 	return connection
 }
 
@@ -74,7 +76,8 @@ export async function preload(opts = {}) {
 	const cfg = opts.config ?? (await ensureConfig())
 	const call = callConfig(cfg)
 	if (call.provider !== "local") return
-	getConnection().post({type: "preload", model: call.model, dtype: call.dtype})
+	const conn = await getConnection()
+	conn.post({type: "preload", model: call.model, dtype: call.dtype})
 }
 
 // --- audio helpers ----------------------------------------------------------
@@ -162,7 +165,7 @@ export async function transcribe(input, opts = {}) {
 			? input
 			: await decodeAudio(input)
 
-	const conn = getConnection()
+	const conn = await getConnection()
 	const id = nextId++
 	const onStatusCb = opts.onStatus
 	if (onStatusCb) statusListeners.add(onStatusCb)
