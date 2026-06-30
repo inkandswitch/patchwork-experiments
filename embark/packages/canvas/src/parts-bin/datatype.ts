@@ -87,6 +87,14 @@ export function seedExampleItems(repo: Repo): PartsBinItem[] {
     "@patchwork": { type: "markdown" },
     content: DEMO_MARKDOWN,
   });
+  // A fresh, empty deck. Dragging the example out clones it, so each canvas
+  // starts its own pile; cards are added by dragging embeds into it.
+  const deck = repo.create({
+    "@patchwork": { type: "deck" },
+    title: "Deck",
+    fanned: false,
+    cards: [],
+  });
 
   return [
     {
@@ -126,5 +134,6 @@ export function seedExampleItems(repo: Repo): PartsBinItem[] {
       label: "Schedule",
     },
     { id: crypto.randomUUID(), url: note.url, toolId: "codemirror-base" },
+    { id: crypto.randomUUID(), url: deck.url, toolId: "deck" },
   ];
 }

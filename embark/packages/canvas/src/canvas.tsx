@@ -39,6 +39,7 @@ import {
   type InspectTarget,
 } from "@embark/inspect";
 import { runSchemaResolver } from "./schema-resolver";
+import { wasEmbedClaimed } from "./drop-claim";
 import "./styles.css";
 
 // One embedded item placed on the canvas. `x`/`y` are the top-left corner in
@@ -78,7 +79,13 @@ const FRAMELESS_TOOLS = new Set<string>(["llm-card", "parts-bin"]);
 
 // Likewise, some tools own their size (e.g. a fixed-size card) and shouldn't
 // expose the canvas resize handle. Resolved the same way as FRAMELESS_TOOLS.
-const NOT_RESIZABLE_TOOLS = new Set<string>(["llm-card"]);
+const NOT_RESIZABLE_TOOLS = new Set<string>(["llm-card", "deck"]);
+
+// Auto-size tools report their own intrinsic size and change it as their state
+// changes (e.g. the deck, which grows when fanned and shrinks when folded).
+// Their embed omits the stored width/height and shrink-wraps the content
+// instead (see `.embark-embed--autosize`), so the card resizes dynamically.
+const AUTOSIZE_TOOLS = new Set<string>(["deck"]);
 
 const DEFAULT_WIDTH = 360;
 const DEFAULT_HEIGHT = 280;
@@ -497,7 +504,7 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
           </div>
         )}
       </Show>
-      <div style={{ position: "absolute", bottom: 0, right: 0 }}>v0.0.14</div>
+      <div style={{ position: "absolute", bottom: 0, right: 0 }}>v0.0.16</div>
     </div>
   );
 }
@@ -609,18 +616,19 @@ function EmbedView(props: {
       return;
     }
 
-    // Hand the document to the drop target and let it choose the effect through
-    // the native DnD API: "move" means it claimed the embed (delete it here),
-    // anything else (e.g. "copy") means it took a copy, so the original springs
-    // back to where the drag began.
-    dispatchDragEvent(
+    // Hand the document to the drop target. If it claimed the embed (e.g. the
+    // deck moving the card in), delete it here; otherwise it took a copy (e.g.
+    // the parts bin) and the original springs back to where the drag began. We
+    // can't read this off `dropEffect` — the bridge's DataTransfer ignores the
+    // effect setters — so targets mark the drop event itself (see drop-claim).
+    const dropEvent = dispatchDragEvent(
       "drop",
       bridge.overEl,
       event.clientX,
       event.clientY,
       bridge.data,
     );
-    if (bridge.data.dropEffect === "move") {
+    if (wasEmbedClaimed(dropEvent)) {
       props.onDelete();
       return;
     }
@@ -699,7 +707,7 @@ function EmbedView(props: {
         clientX,
         clientY,
         drag.data,
-      );
+      ).defaultPrevented;
     }
   };
 
@@ -719,16 +727,16 @@ function EmbedView(props: {
     return null;
   };
 
-  // Dispatch a synthetic DnD event at a target and report whether it accepted
-  // the drop (preventDefault). The same DataTransfer rides every phase, so the
-  // target's dropEffect set on "drop" is readable back afterwards.
+  // Dispatch a synthetic DnD event at a target and return the event, so callers
+  // can read `defaultPrevented` (did it accept?) and whether the target claimed
+  // the embed (see drop-claim). The same DataTransfer rides every phase.
   const dispatchDragEvent = (
     type: "dragover" | "dragleave" | "drop",
     target: Element,
     clientX: number,
     clientY: number,
     data: DataTransfer,
-  ): boolean => {
+  ): DragEvent => {
     const event = new DragEvent(type, {
       bubbles: true,
       cancelable: true,
@@ -737,7 +745,7 @@ function EmbedView(props: {
       dataTransfer: data,
     });
     target.dispatchEvent(event);
-    return event.defaultPrevented;
+    return event;
   };
 
   // Framelessness / resizability are properties of the rendering tool: use the
@@ -753,6 +761,12 @@ function EmbedView(props: {
     return id !== undefined && FRAMELESS_TOOLS.has(id);
   };
   const locked = () => props.embed.locked === true;
+  // Auto-size embeds derive their bounds from the tool's content, so the stored
+  // width/height aren't applied — and a manual resize would have no effect.
+  const autosize = () => {
+    const id = toolId();
+    return id !== undefined && AUTOSIZE_TOOLS.has(id);
+  };
   // Tools in NOT_RESIZABLE_TOOLS own their size, so the handle is normally
   // hidden — but holding Shift exposes it anyway (locked embeds stay pinned).
   const baseResizable = () => {
@@ -760,7 +774,7 @@ function EmbedView(props: {
     return id === undefined || !NOT_RESIZABLE_TOOLS.has(id);
   };
   const resizable = () => {
-    if (locked()) return false;
+    if (locked() || autosize()) return false;
     return baseResizable() || props.shiftHeld;
   };
 
@@ -784,12 +798,19 @@ function EmbedView(props: {
         "embark-embed--highlighted": props.highlighted,
         "embark-embed--frameless": frameless(),
         "embark-embed--locked": locked(),
+        "embark-embed--autosize": autosize(),
       }}
       style={{
         left: `${props.embed.x}px`,
         top: `${props.embed.y}px`,
-        width: `${props.embed.width}px`,
-        height: `${props.embed.height}px`,
+        // Auto-size embeds shrink-wrap their content (see CSS), so don't pin a
+        // width/height; every other embed uses its stored footprint.
+        ...(autosize()
+          ? {}
+          : {
+              width: `${props.embed.width}px`,
+              height: `${props.embed.height}px`,
+            }),
         "z-index": props.embed.z,
       }}
       on:contextmenu={(event) => {

@@ -1,5 +1,6 @@
 import { Plugin } from "@inkandswitch/patchwork-plugins";
 import { plugins as partsBinPlugins } from "./parts-bin";
+import { plugins as deckPlugins } from "./deck";
 
 export const plugins: Plugin<any>[] = [
   {
@@ -24,4 +25,5 @@ export const plugins: Plugin<any>[] = [
     },
   },
   ...partsBinPlugins,
+  ...deckPlugins,
 ];

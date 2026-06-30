@@ -130,6 +130,29 @@
     drop-shadow(0 0 8px rgba(59, 130, 246, 0.5));
 }
 
+/* Auto-size embed: the tool reports its own intrinsic size and changes it as
+   its state changes (e.g. the deck fanning out), so the frame shrink-wraps the
+   content instead of being pinned to a stored width/height. A min size avoids a
+   0×0 flash before the tool's module finishes loading. */
+.embark-embed--autosize {
+  width: max-content;
+  height: max-content;
+  min-width: 140px;
+  min-height: 160px;
+  /* The content animates its own size (e.g. cards fanning out); don't clip it
+     mid-transition if the frame resizes a beat ahead of the content. */
+  overflow: visible;
+}
+
+/* Let the body size to its content rather than filling a fixed frame. */
+.embark-embed--autosize .embark-embed__view {
+  flex: 0 0 auto;
+}
+
+.embark-embed--autosize .embark-embed__view patchwork-view {
+  height: auto;
+}
+
 /* The little drag handle: a slim strip with a grip glyph centered, and a
    delete button parked at the right edge. */
 .embark-embed__handle {
