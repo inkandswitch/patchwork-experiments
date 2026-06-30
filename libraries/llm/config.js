@@ -22,6 +22,7 @@
  *
  * @typedef {Object} LLMConfig
  * @property {ProviderId} provider
+ * @property {{predict?:Function}|null} [handler]  in-memory request handler attached programmatically by a config provider (never persisted) to intercept calls on the main thread before the worker
  * @property {number} temperature       default sampling temperature (0 = greedy)
  * @property {number} topP              nucleus sampling (1 = off)
  * @property {number} topK              top-k sampling (0 = off)
