@@ -1,6 +1,6 @@
-/* The inspector fills its embed and stacks its panes: the package on top, the
-   inspected document (when there is one) below. Each pane has a slim label over
-   a <patchwork-view> that scrolls on its own. */
+/* The inspector fills its embed: a tab bar across the top (doc / spec / source)
+   over a single pane that shows the selected <patchwork-view> and scrolls on its
+   own. */
 .embark-inspect {
   display: flex;
   flex-direction: column;
@@ -9,31 +9,51 @@
   box-sizing: border-box;
   background: #ffffff;
   font-family: system-ui, -apple-system, sans-serif;
+  overflow: hidden;
+}
+
+.embark-inspect__tabs {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 2px;
+  padding: 4px 4px 0;
+  border-bottom: 1px solid #f0eeec;
+  background: #faf9f8;
+}
+
+.embark-inspect__tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 12px;
+  color: #78716c;
+  cursor: pointer;
+  border-radius: 6px 6px 0 0;
+  border-bottom: 2px solid transparent;
+}
+
+.embark-inspect__tab:hover {
+  color: #44403c;
+  background: #f0eeec;
+}
+
+.embark-inspect__tab--active {
+  color: #1c1917;
+  background: #ffffff;
+  border-bottom-color: #1c1917;
+}
+
+.embark-inspect__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
 }
 
-.embark-inspect__pane {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 0;
-  min-height: 0;
-}
-
-.embark-inspect__pane + .embark-inspect__pane {
-  border-top: 1px solid #f0eeec;
-}
-
-.embark-inspect__label {
-  flex: 0 0 auto;
-  padding: 6px 10px;
-  border-bottom: 1px solid #f0eeec;
-  color: #78716c;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-/* The embedded viewer fills its pane and scrolls on its own. */
+/* The embedded viewer fills the body and scrolls on its own. */
 .embark-inspect__view {
   display: block;
   flex: 1 1 auto;

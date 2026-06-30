@@ -6,8 +6,8 @@ import {
   type Repo,
 } from "@automerge/automerge-repo";
 import {
+  getFallbackTool,
   getRegistry,
-  getSupportedToolsForType,
 } from "@inkandswitch/patchwork-plugins";
 
 // The document inspect mints and renders: it carries nothing but the package
@@ -50,8 +50,7 @@ export async function resolveInspectTarget(
 
 // A tool embed: the package is the plugin's `importUrl`, the document is the
 // view's `doc-url`. The tool id is read from the element when pinned, otherwise
-// recovered the way the view itself would resolve a fallback — the first listed
-// tool supporting the document's datatype.
+// recovered the way the view itself resolves its fallback (see `fallbackToolId`).
 async function resolveFromView(
   view: Element,
   repo: Repo,
@@ -66,24 +65,35 @@ async function resolveFromView(
   if (!toolId) return null;
 
   const importUrl = getRegistry("patchwork:tool").get(toolId)?.importUrl;
-  if (!importUrl || !isValidAutomergeUrl(importUrl)) return null;
+  // Only `automerge:` packages (pushwork folder docs) can be inspected; a tool
+  // served from an HTTP bundle (e.g. the wildcard "raw" tool) has no folder doc
+  // to render, so there is nothing to show.
+  if (!importUrl || !isValidAutomergeUrl(importUrl)) {
+    if (importUrl) {
+      console.warn(
+        `[inspect] tool "${toolId}" is served from a non-automerge bundle (${importUrl}); cannot inspect its package`,
+      );
+    }
+    return null;
+  }
 
   return documentUrl
     ? { packageUrl: importUrl, documentUrl }
     : { packageUrl: importUrl };
 }
 
-// The tool a view falls back to for a document with no pinned tool-id: the first
-// listed tool registered for the document's `@patchwork.type`.
+// The tool a view falls back to for a document with no pinned tool-id. Mirrors
+// exactly how `<patchwork-view>` chooses its default (`getFallbackTool`), which
+// sorts specific-datatype tools ahead of wildcard (`*`) ones — a plain "first
+// supported tool" pick would wrongly land on a wildcard tool (e.g. "raw") for a
+// typed document like a map, naming the wrong package.
 async function fallbackToolId(
   repo: Repo,
   documentUrl: AutomergeUrl,
 ): Promise<string | undefined> {
   try {
     const handle = await repo.find(documentUrl);
-    const type = docType(handle.doc());
-    if (!type) return undefined;
-    return getSupportedToolsForType(type).find((tool) => !tool.unlisted)?.id;
+    return getFallbackTool(handle.doc())?.id;
   } catch {
     return undefined;
   }
@@ -100,11 +110,4 @@ function folderDocFromComponentUrl(
   const decoded = decodeURIComponent(segment);
   if (!isValidAutomergeUrl(decoded)) return undefined;
   return stringifyAutomergeUrl({ documentId: parseAutomergeUrl(decoded).documentId });
-}
-
-// The patchwork datatype a document declares (`@patchwork.type`), if any.
-function docType(doc: unknown): string | undefined {
-  if (doc === null || typeof doc !== "object") return undefined;
-  const meta = (doc as { "@patchwork"?: { type?: unknown } })["@patchwork"];
-  return meta && typeof meta.type === "string" ? meta.type : undefined;
 }
