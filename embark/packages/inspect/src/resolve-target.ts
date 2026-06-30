@@ -93,7 +93,9 @@ async function fallbackToolId(
 ): Promise<string | undefined> {
   try {
     const handle = await repo.find(documentUrl);
-    return getFallbackTool(handle.doc())?.id;
+    return getFallbackTool(
+      handle.doc() as Parameters<typeof getFallbackTool>[0],
+    )?.id;
   } catch {
     return undefined;
   }

@@ -4,12 +4,21 @@ import {
   type DocHandle,
 } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
-import { Match, Show, Switch, createEffect, createMemo, createSignal } from "solid-js";
+import {
+  For,
+  Match,
+  Show,
+  Switch,
+  createEffect,
+  createMemo,
+  createSignal,
+} from "solid-js";
 import { render } from "solid-js/web";
 import { RepoContext, useDocument } from "solid-automerge";
 import "@inkandswitch/patchwork-elements";
 import type { DocLink } from "@embark/core";
 import type { InspectDoc } from "./resolve-target";
+import { SourceBrowser } from "./SourceBrowser";
 import "./inspect.css";
 
 // The host-registered tool that shows any document as plain data; used by the
@@ -17,13 +26,20 @@ import "./inspect.css";
 // editor.
 const RAW_TOOL_ID = "raw";
 
+// The private spec editor registered alongside this tool (see `index.ts`): a
+// codemirror view that gives the package's `spec.md` (a `file` doc) the full
+// markdown face. Pinned by id since it declares no datatypes.
+const SPEC_TOOL_ID = "inspect-spec";
+
 type Tab = "doc" | "spec" | "source";
 
 // Tool entry point: a tabbed inspector over the embed its backing doc (minted at
-// inspect time) points to. Three tabs, each a plain `<patchwork-view>`:
-//   - doc: the inspected document, shown with the raw data tool
-//   - spec: the `spec.md` file in the root of the package that paints the embed
-//   - source: the package's root folder
+// inspect time) points to. The tabs adapt to what the embed actually has:
+//   - doc: the inspected document (only for tool embeds), shown with the raw tool
+//   - spec: the package's `spec.md`, shown with the markdown spec editor
+//   - source: the package folder, shown as a file browser
+// A tab bar only appears when there's more than one; a component with no spec is
+// just its source.
 export const InspectTool: ToolRender = (handle, element) => {
   const dispose = render(
     () => (
@@ -56,17 +72,29 @@ function Inspect(props: { handle: DocHandle<InspectDoc> }) {
     return asDocUrl(dir["spec.md"]);
   });
 
-  // Open on the document when there is one (component embeds have none), else
-  // the spec — until the user picks a tab themselves.
-  const [tab, setTab] = createSignal<Tab>("doc");
+  // Only the tabs that have something to show. Order is the open priority:
+  // document first (tool embeds), then spec, then the always-present source.
+  const availableTabs = createMemo<Tab[]>(() => {
+    const tabs: Tab[] = [];
+    if (documentUrl()) tabs.push("doc");
+    if (specUrl()) tabs.push("spec");
+    tabs.push("source");
+    return tabs;
+  });
+
+  const [tab, setTab] = createSignal<Tab>("source");
   let userPicked = false;
   const select = (next: Tab) => {
     userPicked = true;
     setTab(next);
   };
+  // Snap to the first available tab until the user picks one; if a picked tab
+  // later disappears (e.g. the doc went away), fall back to the first again.
   createEffect(() => {
-    if (userPicked) return;
-    setTab(documentUrl() ? "doc" : "spec");
+    const tabs = availableTabs();
+    if (!userPicked || !tabs.includes(tab())) {
+      setTab(tabs[0]);
+    }
   });
 
   return (
@@ -76,18 +104,28 @@ function Inspect(props: { handle: DocHandle<InspectDoc> }) {
     >
       {(pkg) => (
         <div class="embark-inspect">
-          <div class="embark-inspect__tabs">
-            <TabButton label="Doc" active={tab() === "doc"} onSelect={() => select("doc")} />
-            <TabButton label="Spec" active={tab() === "spec"} onSelect={() => select("spec")} />
-            <TabButton label="Source" active={tab() === "source"} onSelect={() => select("source")} />
-          </div>
+          <Show when={availableTabs().length > 1}>
+            <div class="embark-inspect__tabs">
+              <For each={availableTabs()}>
+                {(name) => (
+                  <TabButton
+                    label={TAB_LABELS[name]}
+                    active={tab() === name}
+                    onSelect={() => select(name)}
+                  />
+                )}
+              </For>
+            </div>
+          </Show>
 
           <div class="embark-inspect__body">
             <Switch>
               <Match when={tab() === "doc"}>
                 <Show
                   when={documentUrl()}
-                  fallback={<div class="embark-inspect__empty">No document to show.</div>}
+                  fallback={
+                    <div class="embark-inspect__empty">No document to show.</div>
+                  }
                 >
                   {(url) => (
                     <patchwork-view
@@ -107,13 +145,17 @@ function Inspect(props: { handle: DocHandle<InspectDoc> }) {
                   }
                 >
                   {(url) => (
-                    <patchwork-view class="embark-inspect__view" doc-url={url()} />
+                    <patchwork-view
+                      class="embark-inspect__view"
+                      doc-url={url()}
+                      tool-id={SPEC_TOOL_ID}
+                    />
                   )}
                 </Show>
               </Match>
 
               <Match when={tab() === "source"}>
-                <patchwork-view class="embark-inspect__view" doc-url={pkg()} />
+                <SourceBrowser packageUrl={pkg()} />
               </Match>
             </Switch>
           </div>
@@ -122,6 +164,12 @@ function Inspect(props: { handle: DocHandle<InspectDoc> }) {
     </Show>
   );
 }
+
+const TAB_LABELS: Record<Tab, string> = {
+  doc: "Doc",
+  spec: "Spec",
+  source: "Source",
+};
 
 // A package folder in either shape: a `FolderDoc` (`docs: [{ name, url }]`) or a
 // pushwork "directory" doc whose keys are child paths mapped to their urls.
