@@ -1,0 +1,13 @@
+# pnpm 11 reads build-script approvals from here (the package.json `pnpm` field
+# is no longer read). These transitive native deps don't need their build
+# scripts for this tool's `vite build`, so they're explicitly denied.
+allowBuilds:
+  cbor-extract: false
+  esbuild: false
+
+# Force a single `@automerge/automerge-repo` across the whole tree so the
+# `DocHandle<T>` from `ToolRender` and from `bireactive`'s `connectStore` come
+# from the same copy and unify. The host externalizes and serves this exact
+# version at runtime, so the types match the runtime too.
+overrides:
+  "@automerge/automerge-repo": 2.6.0-subduction.37
