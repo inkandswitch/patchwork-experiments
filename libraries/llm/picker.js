@@ -44,7 +44,7 @@ const SECTIONS = [
 	{id: "model", label: "Model"},
 	{id: "params", label: "Parameters"},
 	{id: "prompts", label: "Prompts"},
-	{id: "tools", label: "Tools"},
+	{id: "tools", label: "Tool Calling"},
 ]
 
 const STYLE_ID = "llmp-picker-styles"
@@ -991,7 +991,7 @@ function buildPickerInto(host, opts) {
 		function localOptions() {
 			const opts = LOCAL_MODELS.map((m) => ({
 				value: m.id,
-				label: m.name + (m.canUseTool ? " (tools)" : ""),
+				label: m.name + (m.canUseTool ? " (tool calls)" : ""),
 			}))
 			if (cfg.local.model?.startsWith("local/"))
 				opts.push({value: cfg.local.model, label: "📁 uploaded"})
@@ -1027,7 +1027,7 @@ function buildPickerInto(host, opts) {
 			if (!id) return
 			if (id.startsWith("local/")) return void pills.append(pill("📁 uploaded", "muted"))
 			const cat = LOCAL_MODELS.find((m) => m.id === id)
-			if (cat?.canUseTool) pills.append(pill("can use tools"))
+			if (cat?.canUseTool) pills.append(pill("supports tool calling"))
 		}
 		function scheduleValidate() {
 			clearTimeout(validateTimer)
@@ -1155,7 +1155,7 @@ function buildPickerInto(host, opts) {
 			if (m.context_length) pills.append(pill(fmtCtx(m.context_length) + " context", "muted"))
 			if (mods.includes("image")) pills.append(pill("👁 vision"))
 			if (mods.includes("audio")) pills.append(pill("🔊 audio"))
-			if (sp.includes("tools")) pills.append(pill("🔧 tools"))
+			if (sp.includes("tools")) pills.append(pill("🔧 tool calling"))
 			if (sp.includes("reasoning") || sp.includes("include_reasoning"))
 				pills.append(pill("🧠 reasoning"))
 			if (sp.includes("logprobs")) pills.append(pill("logprobs"))
@@ -1509,8 +1509,8 @@ function buildPickerInto(host, opts) {
 		 */
 		async function addLink(url, name) {
 			if (!repo || !url) return
-			cfg.tools = await ensureFolderUrl(repo, cfg.tools, "LLM Tools")
-			await addToFolder(repo, cfg.tools, {name: name || "Tool", type: "llm:tool", url})
+			cfg.tools = await ensureFolderUrl(repo, cfg.tools, "Tool Calls")
+			await addToFolder(repo, cfg.tools, {name: name || "Tool Call", type: "llm:tool", url})
 			reload()
 		}
 		const addBtn = el("button", {
@@ -1524,11 +1524,11 @@ function buildPickerInto(host, opts) {
 		})
 		const newBtn = el("button", {
 			class: "llmp-btn primary",
-			text: "New tool",
+			text: "New tool call",
 			onClick: async () => {
 				if (!repo) return
 				const h = await createLLMTool(repo)
-				await addLink(h.url, h.doc()?.name || "New tool")
+				await addLink(h.url, h.doc()?.name || "New tool call")
 			},
 		})
 		const openBtn = el("button", {
@@ -1552,7 +1552,7 @@ function buildPickerInto(host, opts) {
 		function renderTry() {
 			tryBox.replaceChildren()
 			if (!tools.length) return
-			const tryInput = el("input", {class: "llmp-input", placeholder: "Ask something that needs a tool…"})
+			const tryInput = el("input", {class: "llmp-input", placeholder: "Ask something that needs a tool call…"})
 			const tryOut = el("pre", {class: "llmp-tryout"})
 			const runBtn = el("button", {
 				class: "llmp-btn primary",
@@ -1592,7 +1592,7 @@ function buildPickerInto(host, opts) {
 		const builtin = Array.isArray(opts.tools) ? opts.tools : []
 		const builtinGroup = builtin.length
 			? el("label", {class: "llmp-label"}, [
-					"Built-in tools",
+					"Built-in tool calls",
 					el("p", {
 						class: "llmp-note llmp-explain",
 						text: "Provided by this tool — always available to the model, not editable here.",
@@ -1626,7 +1626,7 @@ function buildPickerInto(host, opts) {
 		)
 		const sandboxNote = el("p", {
 			class: "llmp-note llmp-explain",
-			text: "Runs each tool's JS in an isolated Worker with no access to this page, your repo, or your account — safer for tools added by URL. Off = handlers run on the page with full access (needed for tools that read/write documents or the DOM).",
+			text: "Runs each tool call's JS in an isolated Worker with no access to this page, your repo, or your account — safer for tool calls added by URL. Off = handlers run on the page with full access (needed for tool calls that read/write documents or the DOM).",
 		})
 
 		// Tools the host tool itself provides (opts.toolTools: [{name, description}]).
@@ -1653,8 +1653,8 @@ function buildPickerInto(host, opts) {
 				])
 			})
 			providedCard = el("div", {class: "llmp-builtin"}, [
-				el("b", {text: (opts.toolName ? opts.toolName + " — " : "") + "Built-in tools"}),
-				el("p", {class: "llmp-note llmp-explain", text: "Tools this tool gives the model. Toggle one off to stop offering it."}),
+				el("b", {text: (opts.toolName ? opts.toolName + " — " : "") + "Built-in tool calls"}),
+				el("p", {class: "llmp-note llmp-explain", text: "Tool calls this tool gives the model. Toggle one off to stop offering it."}),
 				...rows,
 			])
 		}
@@ -1665,7 +1665,7 @@ function buildPickerInto(host, opts) {
 				builtinGroup,
 				el("p", {
 					class: "llmp-note llmp-explain",
-					text: "Tools you give the model: a name, a description of how/when to use it + its parameters, and a JS handler (edited with the file tool). They live in a folder you can open and manage.",
+					text: "Tool calls you give the model: a name, a description of how/when to use it + its parameters, and a JS handler (edited with the file tool). They live in a folder you can open and manage.",
 				}),
 				sandboxToggle,
 				sandboxNote,
@@ -1695,7 +1695,7 @@ function buildPickerInto(host, opts) {
 		const doc = handle.doc() || {}
 		const nameInput = el("input", {
 			class: "llmp-input",
-			placeholder: "tool name",
+			placeholder: "tool call name",
 			onInput: (/** @type {any} */ e) => handle.change((/** @type {any} */ d) => (d.name = e.currentTarget.value)),
 		})
 		nameInput.value = doc.name || ""
