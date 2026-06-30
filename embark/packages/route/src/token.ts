@@ -26,7 +26,7 @@ export const RouteCardToken: ToolRender = (handle, element) => {
       emoji?: unknown;
       mode?: unknown;
       distanceKm?: unknown;
-      durationS?: unknown;
+      duration?: unknown;
       "@patchwork"?: { title?: unknown };
     };
     element.replaceChildren();
@@ -63,7 +63,7 @@ export const RouteCardToken: ToolRender = (handle, element) => {
     meta.style.cssText = "color:#6b7280;font-weight:600;";
     const bits = [
       formatKm(doc.distanceKm),
-      formatDuration(doc.durationS),
+      formatDuration(doc.duration),
     ].filter(Boolean);
     meta.textContent = bits.length ? " · " + bits.join(" · ") : "";
 

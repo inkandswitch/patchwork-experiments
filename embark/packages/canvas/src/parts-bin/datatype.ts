@@ -37,15 +37,24 @@ const CURRENCY_COMPONENT_URL = componentUrl(
 const TIMER_COMPONENT_URL = componentUrl(
   "automerge:3wGbMYtuZ7EtBvDsbuwRBcP6v7P2",
 );
+const SCHEDULE_COMPONENT_URL = componentUrl(
+  "automerge:3jBqTXqoHp8pyXeUZKbXcJch7qxm",
+);
 
 // A sample note exercising every sticker source at once: imperial quantities
-// (unit converter), a foreign amount (currency converter), and a timer token.
+// (unit converter), a foreign amount (currency converter), a timer token, and a
+// running schedule of times + durations (schedule card).
 const DEMO_MARKDOWN = `# Trip notes
 
 The route is about 5 miles along the ridge trail.
 Take a break partway: @timer 5m
 
 Bring 10 lb of gear; the permit costs €20.
+
+Morning plan:
+- start at 8:00
+- pack the car for 30 minutes
+- drive to the trailhead for 1 hour
 `;
 
 export const PartsBinDatatype: DatatypeImplementation<PartsBinDoc> = {
@@ -63,10 +72,10 @@ export const PartsBinDatatype: DatatypeImplementation<PartsBinDoc> = {
 };
 
 // The starter set: the Place Finder, Weather and Routes components; a map; the
-// three sticker-source components (Unit/Currency/Timer); and a demo markdown
-// note for them to annotate. Documents are real docs the bin previews live and
-// hands out clones of; the behavioral-role features are components the bin
-// references by url. `repo.create` doesn't run a datatype's `init`, so each
+// four sticker-source components (Unit/Currency/Timer/Schedule); and a demo
+// markdown note for them to annotate. Documents are real docs the bin previews
+// live and hands out clones of; the behavioral-role features are components the
+// bin references by url. `repo.create` doesn't run a datatype's `init`, so each
 // child doc's initial value is set inline here.
 export function seedExampleItems(repo: Repo): PartsBinItem[] {
   const map = repo.create({
@@ -110,6 +119,11 @@ export function seedExampleItems(repo: Repo): PartsBinItem[] {
       id: crypto.randomUUID(),
       componentUrl: TIMER_COMPONENT_URL,
       label: "Timer",
+    },
+    {
+      id: crypto.randomUUID(),
+      componentUrl: SCHEDULE_COMPONENT_URL,
+      label: "Schedule",
     },
     { id: crypto.randomUUID(), url: note.url, toolId: "codemirror-base" },
   ];

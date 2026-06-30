@@ -159,7 +159,7 @@ function decorationFor(
 
   const widget =
     sticker.type === "text"
-      ? new TextStickerWidget(sticker.text)
+      ? new TextStickerWidget(sticker.text, sticker.styles)
       : new ToolStickerWidget(sticker.docUrl, sticker.toolId);
 
   if (sticker.slot === "replace") {
@@ -190,24 +190,39 @@ function documentUrl(view: EditorView): AutomergeUrl | undefined {
 }
 
 class TextStickerWidget extends WidgetType {
-  constructor(readonly text: string) {
+  constructor(
+    readonly text: string,
+    readonly styles?: Record<string, string>,
+  ) {
     super();
   }
 
   eq(other: TextStickerWidget): boolean {
-    return other.text === this.text;
+    return other.text === this.text && sameStyles(other.styles, this.styles);
   }
 
   toDOM(): HTMLElement {
     const span = document.createElement("span");
     span.className = "cm-sticker cm-sticker--text";
     span.textContent = this.text;
+    if (this.styles) span.style.cssText = cssText(this.styles);
     return span;
   }
 
   ignoreEvent(): boolean {
     return false;
   }
+}
+
+function sameStyles(
+  a: Record<string, string> | undefined,
+  b: Record<string, string> | undefined,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every((key) => a[key] === b[key]);
 }
 
 class ToolStickerWidget extends WidgetType {

@@ -19,6 +19,9 @@ export type TextSticker = {
   text: string;
   target: AutomergeUrl;
   slot: string;
+  // Optional inline styles for the rendered chip itself (e.g. a red computed
+  // time). Merged onto the widget's default look; absent means the default.
+  styles?: Record<string, string>;
 };
 
 export type ToolSticker = {

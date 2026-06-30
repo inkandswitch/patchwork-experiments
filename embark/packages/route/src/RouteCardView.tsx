@@ -33,7 +33,7 @@ function RouteCard(props: { handle: DocHandle<RouteCardDoc> }) {
     to()?.name || to()?.["@patchwork"]?.title || ends().to || "to";
   const meta = () => {
     const d = doc();
-    return [formatKm(d?.distanceKm), formatDuration(d?.durationS)]
+    return [formatKm(d?.distanceKm), formatDuration(d?.duration)]
       .filter(Boolean)
       .join(" · ");
   };

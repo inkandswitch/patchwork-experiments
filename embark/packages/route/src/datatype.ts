@@ -13,7 +13,9 @@ export type RouteCardDoc = {
   from?: AutomergeUrl;
   to?: AutomergeUrl;
   distanceKm: number;
-  durationS: number;
+  // Travel time in seconds (Valhalla's unit). Named without a unit suffix so
+  // other features (e.g. the schedule card) can read a generic `duration`.
+  duration: number;
   route: { lat: number; lon: number }[];
 };
 
@@ -23,7 +25,7 @@ export const RouteCardDatatype: DatatypeImplementation<RouteCardDoc> = {
     doc.mode = "";
     doc.emoji = "";
     doc.distanceKm = Number.NaN;
-    doc.durationS = Number.NaN;
+    doc.duration = Number.NaN;
     doc.route = [];
   },
   getTitle(doc) {

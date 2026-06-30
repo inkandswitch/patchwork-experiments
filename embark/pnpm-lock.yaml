@@ -664,6 +664,55 @@ importers:
         specifier: ^2.10.0
         version: 2.11.12(solid-js@1.9.13)(vite@8.0.16(@types/node@20.19.43))
 
+  packages/schedule:
+    dependencies:
+      '@automerge/automerge-repo':
+        specifier: 2.6.0-subduction.29
+        version: 2.6.0-subduction.29
+      '@codemirror/state':
+        specifier: ^6.5.2
+        version: 6.7.0
+      '@codemirror/view':
+        specifier: ^6.38.4
+        version: 6.43.1
+      '@embark/core':
+        specifier: workspace:*
+        version: link:../core
+      '@inkandswitch/patchwork-elements':
+        specifier: ^0.2.0
+        version: 0.2.0(@automerge/automerge-repo@2.6.0-subduction.29)(@inkandswitch/patchwork-filesystem@0.0.8(@automerge/automerge-repo@2.6.0-subduction.29)(@automerge/automerge@3.3.0-fragments.1))(@inkandswitch/patchwork-plugins@0.0.11(@automerge/automerge-repo@2.6.0-subduction.29)(@automerge/automerge@3.3.0-fragments.1)(@inkandswitch/patchwork-filesystem@0.0.8(@automerge/automerge-repo@2.6.0-subduction.29)(@automerge/automerge@3.3.0-fragments.1)))(@inkandswitch/patchwork-providers@0.2.2(@automerge/automerge-repo@2.6.0-subduction.29))(solid-js@1.9.13)
+      '@inkandswitch/patchwork-plugins':
+        specifier: ^0.0.11
+        version: 0.0.11(@automerge/automerge-repo@2.6.0-subduction.29)(@automerge/automerge@3.3.0-fragments.1)(@inkandswitch/patchwork-filesystem@0.0.8(@automerge/automerge-repo@2.6.0-subduction.29)(@automerge/automerge@3.3.0-fragments.1))
+      maplibre-gl:
+        specifier: ^5.24.0
+        version: 5.24.0
+      solid-automerge:
+        specifier: ^1.1.0
+        version: 1.1.0(solid-js@1.9.13)
+      solid-js:
+        specifier: ^1.9.11
+        version: 1.9.13
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@inkandswitch/patchwork-bootloader':
+        specifier: ^0.2.5
+        version: 0.2.7(@automerge/automerge-repo-keyhive@0.3.0-alpha.sub.1c(ws@8.21.0))(@automerge/automerge-repo@2.6.0-subduction.29)(@automerge/automerge@3.3.0-fragments.1)(@automerge/vanillajs@2.6.0-subduction.29)(solid-js@1.9.13)
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vite:
+        specifier: ^8.0.16
+        version: 8.0.16(@types/node@20.19.43)
+      vite-plugin-css-injected-by-js:
+        specifier: ^3.5.2
+        version: 3.5.2(vite@8.0.16(@types/node@20.19.43))
+      vite-plugin-solid:
+        specifier: ^2.10.0
+        version: 2.11.12(solid-js@1.9.13)(vite@8.0.16(@types/node@20.19.43))
+
   packages/stickers:
     dependencies:
       '@automerge/automerge-repo':
@@ -2113,7 +2162,7 @@ snapshots:
   '@codemirror/autocomplete@6.20.3':
     dependencies:
       '@codemirror/language': 6.12.4
-      '@codemirror/state': 6.6.0
+      '@codemirror/state': 6.7.0
       '@codemirror/view': 6.43.1
       '@lezer/common': 1.5.2
 
@@ -2126,7 +2175,7 @@ snapshots:
 
   '@codemirror/language@6.12.4':
     dependencies:
-      '@codemirror/state': 6.6.0
+      '@codemirror/state': 6.7.0
       '@codemirror/view': 6.43.1
       '@lezer/common': 1.5.2
       '@lezer/highlight': 1.2.3
@@ -2135,13 +2184,13 @@ snapshots:
 
   '@codemirror/lint@6.9.7':
     dependencies:
-      '@codemirror/state': 6.6.0
+      '@codemirror/state': 6.7.0
       '@codemirror/view': 6.43.1
       crelt: 1.0.6
 
   '@codemirror/search@6.7.1':
     dependencies:
-      '@codemirror/state': 6.6.0
+      '@codemirror/state': 6.7.0
       '@codemirror/view': 6.43.1
       crelt: 1.0.6
 
@@ -2517,7 +2566,7 @@ snapshots:
       '@codemirror/language': 6.12.4
       '@codemirror/lint': 6.9.7
       '@codemirror/search': 6.7.1
-      '@codemirror/state': 6.6.0
+      '@codemirror/state': 6.7.0
       '@codemirror/view': 6.43.1
 
   convert-source-map@2.0.0: {}

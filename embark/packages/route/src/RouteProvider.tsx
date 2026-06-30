@@ -179,7 +179,7 @@ export function RouteProvider(props: { element: ToolElement }) {
       ...(from.url ? { from: from.url } : {}),
       ...(to.url ? { to: to.url } : {}),
       distanceKm: route.distanceKm,
-      durationS: route.durationS,
+      duration: route.durationS,
       route: route.coords,
     }).url;
   };
