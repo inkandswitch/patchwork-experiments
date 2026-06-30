@@ -25,6 +25,17 @@ export type InspectTarget = {
   documentUrl?: AutomergeUrl;
 };
 
+// A package root inspect can render comes in two shapes, both discriminated by
+// `@patchwork.type`: a patchwork-folder doc ("folder", with a `docs` list) or a
+// pushwork vfs "directory" doc (path -> url map). Used to decide whether an
+// opened link points at something the inspector can show as a package.
+export function isFolderDoc(doc: unknown): boolean {
+  const type = (doc as { "@patchwork"?: { type?: string } } | undefined)?.[
+    "@patchwork"
+  ]?.type;
+  return type === "folder" || type === "directory";
+}
+
 // Find the closest rendered `<patchwork-view>` (a tool) or component host under
 // `root` and resolve the package that paints it — plus, for a tool, the document
 // it shows. The package is always an `automerge:` folder doc (a pushwork

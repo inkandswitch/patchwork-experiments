@@ -2,6 +2,7 @@ import type { Plugin } from "@inkandswitch/patchwork-plugins";
 
 export {
   resolveInspectTarget,
+  isFolderDoc,
   type InspectTarget,
   type InspectDoc,
 } from "./resolve-target";

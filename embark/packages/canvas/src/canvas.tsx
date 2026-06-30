@@ -17,6 +17,7 @@ import {
 import { render } from "solid-js/web";
 import { RepoContext, useDocument, useRepo } from "solid-automerge";
 import "@inkandswitch/patchwork-elements";
+import { OpenDocumentEvent } from "@inkandswitch/patchwork-elements";
 import {
   getDocumentDragPayload,
   hasDocumentDrag,
@@ -31,7 +32,12 @@ import {
   Selection,
   type PatchworkContextElement,
 } from "@embark/core";
-import { resolveInspectTarget, type InspectDoc } from "@embark/inspect";
+import {
+  resolveInspectTarget,
+  isFolderDoc,
+  type InspectDoc,
+  type InspectTarget,
+} from "@embark/inspect";
 import { runSchemaResolver } from "./schema-resolver";
 import "./styles.css";
 
@@ -266,6 +272,13 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
     const target = await resolveInspectTarget(root, repo);
     if (!target) return;
 
+    spawnInspector(source, target);
+  };
+
+  // Mint an inspect doc for `target` and drop a fresh inspect embed just to the
+  // right of `source`. Shared by the right-click Inspect action and by opening a
+  // folder link from inside an existing inspector.
+  const spawnInspector = (source: Rect, target: InspectTarget) => {
     const inspectDoc = repo.create<InspectDoc>({
       "@patchwork": { type: "inspect" },
       packageUrl: target.packageUrl,
@@ -286,6 +299,45 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
       };
     });
   };
+
+  // Open-document events bubble out of an inspector's spec/source views (links
+  // and embeds dispatch `patchwork:open-document`). Catch them at the canvas:
+  // when the link points at a package folder, open it as a new inspector beside
+  // the one it came from; otherwise refire so the host frame opens it normally.
+  const onOpenDocument = async (event: Event) => {
+    const detail = (event as OpenDocumentEvent).detail;
+    const embedEl = (event.target as HTMLElement | null)?.closest?.(
+      "[data-embed-id]",
+    ) as HTMLElement | null;
+    const originId = embedEl?.dataset.embedId;
+    const origin = originId ? doc()?.embeds[originId] : undefined;
+
+    // Only hijack links that come from inside an inspector embed.
+    if (!origin || origin.toolId !== "inspect") return;
+
+    event.stopPropagation();
+    const url = detail.url;
+    if (!isValidAutomergeUrl(url)) return;
+
+    const handle = await repo.find(url);
+    if (isFolderDoc(handle.doc())) {
+      spawnInspector(origin, { packageUrl: url });
+    } else {
+      // Not a folder: let normal open behavior happen. Refiring from canvasEl
+      // (which is not inside an embed) means this handler ignores it and it
+      // bubbles on to the host frame.
+      canvasEl()?.dispatchEvent(new OpenDocumentEvent(detail));
+    }
+  };
+
+  createEffect(() => {
+    const el = canvasEl();
+    if (!el) return;
+    el.addEventListener("patchwork:open-document", onOpenDocument);
+    onCleanup(() =>
+      el.removeEventListener("patchwork:open-document", onOpenDocument),
+    );
+  });
 
   // Escape closes the context menu wherever focus happens to be.
   const onWindowKeyDown = (event: KeyboardEvent) => {
@@ -880,6 +932,10 @@ type ContextMenu = {
   x: number;
   y: number;
 };
+
+// The position + size an inspector is placed relative to. An `EmbarkEmbed`
+// satisfies this, so the source embed can be passed straight through.
+type Rect = { x: number; y: number; width: number; height: number };
 
 type InteractionMode = "move" | "resize";
 
