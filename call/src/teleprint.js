@@ -17,6 +17,7 @@ import {
   MatchDecorator,
 } from "@codemirror/view";
 import { automergeSyncPlugin } from "@automerge/automerge-codemirror";
+import { generate, popup } from "@chee/patchwork-llm";
 
 // Highlight <speaker> names at the start of lines
 const nameDeco = Decoration.mark({ class: "tp-speaker" });
@@ -91,82 +92,103 @@ function inlineMarkdown(text) {
 }
 
 export default function TeleprintTool(handle, element) {
-  let summaryWorker = null;
   let summaryVisible = false;
-  let chatProfileHandle = null;
-
-  // Try to load chat profile for reusing OpenRouter settings
-  const repo = element.repo;
-  async function loadChatProfile() {
-    try {
-      const adh = window.accountDocHandle;
-      if (!adh) return;
-      const ad = adh.doc();
-      if (ad?.chatProfileUrl) {
-        chatProfileHandle = await repo.find(ad.chatProfileUrl);
-      }
-    } catch (err) {
-      console.warn("[teleprint] Could not load chat profile:", err);
-    }
-  }
-  const chatProfileReady = loadChatProfile();
 
   const container = document.createElement("div");
+  container.className = "tp-root";
   container.style.cssText =
     "width:100%;height:100%;overflow:hidden;display:flex;flex-direction:column;";
   element.appendChild(container);
 
   const style = document.createElement("style");
   style.textContent = `
-    @font-face {
-      font-family: "Chicago";
-      src: url("https://cdn.jsdelivr.net/gh/LigatureInc/ChicagoFLF@master/ChicagoFLF.ttf");
+    /* Teleprint keeps its teletype character — a monospace transcript — but the
+       chrome around it is softened into warm rounded cards. Every colour is
+       driven from the theme: paper/ink for content, the --studio-chrome family
+       for the summary chrome, --studio-primary for playful accents. Fallbacks
+       reproduce the original look when the tool runs unthemed. */
+    .tp-root {
+      /* The transcript is the family's light "paper" surface (same sticker
+         tokens as glomper / newspace / loom): warm-white paper, hot-pink #ff2284
+         accent, mint #40dcba, lemon #fffdc7 highlight, hard ink outlines, chunky
+         3px offset shadows + translate(2px,2px) press. system-ui for words, the
+         teletype keeps its mono body. */
+      --paper: var(--studio-fill, #fffaff);
+      --ink: var(--studio-line, #1a1714);
+      --ink-soft: var(--studio-line-offset-30, #6f675f);
+      --chrome: var(--studio-chrome, #fff);
+      --chrome-ink: var(--studio-chrome-line, #1a1714);
+      --chrome-edge: var(--studio-chrome-line, #000);
+      --accent: var(--studio-primary, #ff2284);
+      --accent2: var(--studio-secondary, #40dcba);
+      --accent-ink: #fff;
+      --lemon: #fffdc7;
+      --link: var(--studio-link, #5b8def);
+      --bw: 1.5px;
+      --radius: 10px;
+      --radius-sm: 7px;
+      --press: translate(2px, 2px);
+      --font-ui: var(--studio-family-sans, system-ui, -apple-system, "Segoe UI", sans-serif);
+      --font-mono: var(--studio-family-code, ui-monospace, "Fantasque Sans Mono", monospace);
+      --font-head: var(--studio-family-sans, system-ui, -apple-system, "Segoe UI", sans-serif);
     }
 
-    .cm-editor { height: 100%; }
-    .cm-scroller { overflow: auto; }
+    .tp-editor-wrap .cm-editor {
+      height: 100%;
+      background: var(--paper);
+      color: var(--ink);
+    }
+    .tp-editor-wrap .cm-content {
+      font-family: var(--font-mono);
+      caret-color: var(--ink);
+      padding: 12px 16px;
+    }
+    .tp-editor-wrap .cm-cursor {
+      border-left-color: var(--ink);
+    }
+    .tp-editor-wrap .cm-scroller { overflow: auto; }
     .tp-speaker {
-      color: #666;
-      font-weight: bold;
+      color: var(--link);
+      font-weight: 600;
     }
     .tp-editor-wrap {
       flex: 1;
       min-height: 0;
       overflow: hidden;
-      border-bottom: 1px solid #000;
     }
     .tp-summary-bar {
       display: flex;
       align-items: center;
-      gap: 6px;
-      padding: 3px 8px;
-      background: #c0c0c0;
-      border-top: 2px solid #fff;
-      border-bottom: 2px solid #808080;
-      font-family: "Chicago", "ChicagoFLF", Geneva, system-ui, sans-serif;
-      font-size: 12px;
+      gap: 8px;
+      margin: var(--studio-space-sm, 8px);
+      padding: 8px 14px;
+      background: var(--chrome);
+      color: var(--chrome-ink);
+      border: var(--bw) solid var(--chrome-edge);
+      border-radius: var(--radius-sm);
+      box-shadow: 2px 2px 0 0 var(--chrome-edge);
+      font-family: var(--font-ui);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
       flex-shrink: 0;
       cursor: pointer;
       user-select: none;
-      color: #000;
+      transition: background var(--studio-transition, 0.15s ease);
     }
     .tp-summary-bar:hover {
-      background: #d0d0d0;
+      background: var(--studio-chrome-offset-10, #e6e3dd);
     }
-    .tp-summary-bar:active {
-      background: #000;
-      color: #fff;
-      border-top-color: #000;
-      border-bottom-color: #000;
-    }
+    .tp-summary-bar:active,
     .tp-summary-bar.active {
-      background: #000;
-      color: #fff;
-      border-top-color: #000;
-      border-bottom-color: #000;
+      background: var(--ink);
+      color: var(--paper);
+      border-color: var(--ink);
     }
     .tp-summary-bar .tp-summary-arrow {
       font-size: 9px;
+      transition: transform var(--studio-transition, 0.15s ease);
     }
     .tp-summary-bar.active .tp-summary-arrow {
       transform: rotate(180deg);
@@ -174,130 +196,142 @@ export default function TeleprintTool(handle, element) {
     .tp-summary-bar .tp-status {
       margin-left: auto;
       font-size: 11px;
+      font-weight: 400;
     }
     .tp-summary-panel {
       overflow: auto;
-      padding: 10px 16px 14px;
-      background: #fff;
-      border-top: 1px solid #808080;
-      font-family: Geneva, "Chicago", system-ui, sans-serif;
-      font-size: 12px;
-      line-height: 1.5;
-      color: #000;
+      padding: 6px 18px 18px;
+      margin: 0 var(--studio-space-sm, 8px) var(--studio-space-sm, 8px);
+      background: var(--paper);
+      border: var(--bw) solid var(--chrome-edge);
+      border-radius: var(--radius);
+      font-family: var(--font-ui);
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--ink);
       max-height: 50%;
       flex-shrink: 0;
     }
     .tp-summary-panel h1 {
-      font-family: "Chicago", "ChicagoFLF", Geneva, system-ui, sans-serif;
-      font-size: 14px;
-      font-weight: bold;
-      margin: 0 0 8px 0;
-      padding-bottom: 4px;
-      border-bottom: 2px solid #000;
-      color: #000;
+      font-family: var(--font-head);
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      margin: 12px 0 10px 0;
+      padding-bottom: 6px;
+      border-bottom: 2px solid var(--accent);
+      color: var(--ink);
     }
     .tp-summary-panel h2 {
-      font-family: "Chicago", "ChicagoFLF", Geneva, system-ui, sans-serif;
-      font-size: 12px;
-      font-weight: bold;
-      margin: 12px 0 4px 0;
-      color: #000;
+      font-family: var(--font-head);
+      font-size: 13px;
+      font-weight: 700;
+      margin: 16px 0 6px 0;
+      color: var(--ink);
       text-decoration: underline;
+      text-decoration-color: var(--accent);
+      text-underline-offset: 3px;
     }
     .tp-summary-panel h3 {
-      font-size: 12px;
-      font-weight: bold;
-      margin: 8px 0 4px 0;
-      color: #000;
+      font-family: var(--font-head);
+      font-size: 13px;
+      font-weight: 700;
+      margin: 10px 0 4px 0;
+      color: var(--ink);
     }
     .tp-summary-panel ul {
-      margin: 2px 0;
-      padding-left: 16px;
+      margin: 4px 0;
+      padding-left: 18px;
     }
     .tp-summary-panel li {
-      margin: 1px 0;
+      margin: 2px 0;
     }
     .tp-summary-panel li::marker {
       content: "\\25C6  ";
       font-size: 8px;
+      color: var(--accent);
     }
     .tp-summary-panel p {
-      margin: 4px 0;
+      margin: 6px 0;
     }
     .tp-summary-panel code {
-      font-family: Monaco, "Courier New", monospace;
-      font-size: 11px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      background: var(--studio-fill-offset-20, #f0eee9);
+      padding: 1px 5px;
+      border-radius: var(--studio-radius-sm, 4px);
     }
     .tp-summary-panel strong {
-      font-weight: bold;
+      font-weight: 600;
     }
     .tp-summary-panel hr {
       border: none;
-      border-top: 1px solid #808080;
-      margin: 10px 0;
+      border-top: 1px solid var(--chrome-edge);
+      margin: 12px 0;
     }
     .tp-summary-panel .tp-summary-actions {
       display: flex;
       align-items: center;
       gap: 8px;
-      margin-bottom: 8px;
+      margin-bottom: 10px;
     }
+    /* the family's sticker press-button */
     .tp-summary-panel .tp-generate-btn {
-      padding: 2px 12px;
-      border: 2px outset #c0c0c0;
-      border-radius: 4px;
-      background: #c0c0c0;
+      padding: 7px 16px;
+      border: var(--bw) solid #000;
+      border-radius: var(--radius);
+      background: var(--accent);
       cursor: pointer;
       font-size: 12px;
-      font-family: "Chicago", "ChicagoFLF", Geneva, system-ui, sans-serif;
-      color: #000;
+      font-weight: 800;
+      font-family: var(--font-ui);
+      color: var(--accent-ink);
+      box-shadow: 3px 3px 0 0 #000;
+      transition: transform 0.06s, box-shadow 0.06s, filter 0.1s;
     }
     .tp-summary-panel .tp-generate-btn:hover {
-      background: #d0d0d0;
+      filter: brightness(1.04);
     }
     .tp-summary-panel .tp-generate-btn:active {
-      border-style: inset;
-      background: #b0b0b0;
+      transform: var(--press);
+      box-shadow: 0 0 0 0 #000;
     }
     .tp-summary-panel .tp-generate-btn:disabled {
-      color: #808080;
+      transform: none;
+      box-shadow: 3px 3px 0 0 #000;
+      filter: none;
+    }
+    .tp-summary-panel .tp-generate-btn:disabled {
+      opacity: 0.5;
       cursor: default;
     }
     .tp-summary-panel .tp-summary-empty {
-      color: #808080;
+      color: var(--ink-soft);
       font-style: italic;
     }
     .tp-summary-content {
       margin-top: 4px;
     }
-    .tp-settings-row {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      margin-bottom: 6px;
-      font-family: "Chicago", "ChicagoFLF", Geneva, system-ui, sans-serif;
-      font-size: 11px;
-      color: #000;
+    /* secondary sticker button — opens the @chee/patchwork-llm model picker */
+    .tp-summary-panel .tp-model-btn {
+      padding: 7px 14px;
+      border: var(--bw) solid #000;
+      border-radius: var(--radius);
+      background: var(--paper);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 800;
+      font-family: var(--font-ui);
+      color: var(--ink);
+      box-shadow: 3px 3px 0 0 #000;
+      transition: transform 0.06s, box-shadow 0.06s, filter 0.1s;
     }
-    .tp-settings-row label {
-      white-space: nowrap;
+    .tp-summary-panel .tp-model-btn:hover {
+      filter: brightness(0.97);
     }
-    .tp-settings-row input,
-    .tp-settings-row select {
-      font-family: Geneva, system-ui, sans-serif;
-      font-size: 11px;
-      border: 2px inset #c0c0c0;
-      background: #fff;
-      color: #000;
-      padding: 1px 4px;
-    }
-    .tp-settings-row input[type="password"] {
-      flex: 1;
-      min-width: 0;
-    }
-    .tp-settings-row select {
-      flex: 1;
-      min-width: 0;
+    .tp-summary-panel .tp-model-btn:active {
+      transform: var(--press);
+      box-shadow: 0 0 0 0 #000;
     }
   `;
   element.appendChild(style);
@@ -319,15 +353,28 @@ export default function TeleprintTool(handle, element) {
       minimalSetup,
       EditorView.lineWrapping,
       EditorView.theme({
-        "&": { height: "100%", fontSize: "12px", background: "#fff" },
-        ".cm-scroller": { overflow: "auto", fontFamily: "Geneva, 'Chicago', system-ui, sans-serif" },
-        ".cm-content": { color: "#000" },
-        ".cm-gutters": { background: "#c0c0c0", borderRight: "1px solid #808080", color: "#000" },
-        ".cm-activeLineGutter": { background: "#a0a0a0" },
-        ".cm-activeLine": { background: "#e8e8e8" },
-        ".cm-cursor": { borderLeftColor: "#000" },
-        "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": { background: "#ffb0cb !important" },
-        "&.cm-focused .cm-selectionMatch": { background: "#c0c0c0" },
+        "&": {
+          height: "100%",
+          fontSize: "var(--studio-font-size, 13px)",
+          background: "var(--studio-fill, #fff)",
+        },
+        ".cm-scroller": {
+          overflow: "auto",
+          fontFamily: "var(--studio-family-code, ui-monospace, monospace)",
+        },
+        ".cm-content": { color: "var(--studio-line, #111)" },
+        ".cm-gutters": {
+          background: "var(--studio-fill-offset-20, #f0eee9)",
+          borderRight: "1px solid var(--studio-fill-offset-40, #808080)",
+          color: "var(--studio-line-offset-40, #444)",
+        },
+        ".cm-activeLineGutter": { background: "var(--studio-fill-offset-30, #a0a0a0)" },
+        ".cm-activeLine": { background: "var(--studio-fill-offset-10, #e8e8e8)" },
+        ".cm-cursor": { borderLeftColor: "var(--studio-line, #111)" },
+        "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
+          background: "var(--studio-selection-fill, #ffb0cb) !important",
+        },
+        "&.cm-focused .cm-selectionMatch": { background: "var(--studio-fill-offset-20, #c0c0c0)" },
       }),
       nameHighlighter,
       automergeSyncPlugin({ handle, path: ["content"] }),
@@ -388,108 +435,23 @@ export default function TeleprintTool(handle, element) {
   generateBtn.title = "Generate meeting notes from transcript";
   actionsRow.appendChild(generateBtn);
 
+  // Model / provider selection is delegated to @chee/patchwork-llm's picker,
+  // which writes to the shared account-doc config (one model + key across every
+  // tool). No tool-local OpenRouter key/model UI.
+  const modelBtn = document.createElement("button");
+  modelBtn.className = "tp-model-btn";
+  modelBtn.textContent = "Model…";
+  modelBtn.title = "Choose the model used for summaries";
+  modelBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const el = popup();
+    document.body.appendChild(el);
+    el.showPopover();
+    el.result.finally(() => el.remove());
+  });
+  actionsRow.appendChild(modelBtn);
+
   summaryPanel.appendChild(actionsRow);
-
-  // ---- OpenRouter settings row ----
-  const settingsRow = document.createElement("div");
-  settingsRow.className = "tp-settings-row";
-
-  const keyLabel = document.createElement("label");
-  keyLabel.textContent = "Key:";
-  settingsRow.appendChild(keyLabel);
-
-  const keyInput = document.createElement("input");
-  keyInput.type = "password";
-  keyInput.placeholder = "sk-or-v1-…";
-  settingsRow.appendChild(keyInput);
-
-  const modelLabel = document.createElement("label");
-  modelLabel.textContent = "Model:";
-  settingsRow.appendChild(modelLabel);
-
-  const modelSelect = document.createElement("select");
-  settingsRow.appendChild(modelSelect);
-
-  summaryPanel.appendChild(settingsRow);
-
-  const DEFAULT_MODEL = "anthropic/claude-sonnet-4";
-  const MODEL_DISPLAY_NAMES = {
-    "google/gemini-2.5-flash-preview": "Gemini 2.5 Flash",
-  };
-
-  function getOpenRouterKey() {
-    return keyInput.value.trim() || chatProfileHandle?.doc()?.openrouterApiKey || "";
-  }
-
-  function getOpenRouterModel() {
-    return modelSelect.value || chatProfileHandle?.doc()?.openrouterModel || DEFAULT_MODEL;
-  }
-
-  function populateModelSelect(currentModel) {
-    modelSelect.innerHTML = "";
-    const opt = document.createElement("option");
-    opt.value = currentModel;
-    opt.textContent = MODEL_DISPLAY_NAMES[currentModel] || currentModel;
-    opt.selected = true;
-    modelSelect.appendChild(opt);
-  }
-
-  function fetchModels(apiKey) {
-    if (!apiKey) return;
-    const lo = document.createElement("option");
-    lo.disabled = true;
-    lo.textContent = "Loading…";
-    modelSelect.innerHTML = "";
-    modelSelect.appendChild(lo);
-    const currentModel = getOpenRouterModel();
-    fetch("https://openrouter.ai/api/v1/models", {
-      headers: { "Authorization": "Bearer " + apiKey },
-    }).then(r => r.json()).then(data => {
-      modelSelect.innerHTML = "";
-      const models = (data.data || []).sort((a, b) => (a.id || "").localeCompare(b.id || ""));
-      for (const m of models) {
-        const opt = document.createElement("option");
-        opt.value = m.id;
-        opt.textContent = MODEL_DISPLAY_NAMES[m.id] || m.name || m.id;
-        if (m.id === currentModel) opt.selected = true;
-        modelSelect.appendChild(opt);
-      }
-    }).catch(() => {
-      populateModelSelect(currentModel);
-    });
-  }
-
-  // Initialize settings from chat profile when it loads
-  chatProfileReady.then(() => {
-    const profile = chatProfileHandle?.doc();
-    if (profile?.openrouterApiKey && !keyInput.value) {
-      keyInput.value = profile.openrouterApiKey;
-    }
-    const model = profile?.openrouterModel || DEFAULT_MODEL;
-    populateModelSelect(model);
-    if (profile?.openrouterApiKey) {
-      fetchModels(profile.openrouterApiKey);
-    }
-  });
-
-  keyInput.addEventListener("change", () => {
-    const k = keyInput.value.trim();
-    if (k) fetchModels(k);
-  });
-
-  // Save key/model back to chat profile on change
-  function saveSettingsToProfile() {
-    if (!chatProfileHandle) return;
-    const key = keyInput.value.trim();
-    const model = modelSelect.value;
-    chatProfileHandle.change((d) => {
-      if (key) d.openrouterApiKey = key;
-      if (model) d.openrouterModel = model;
-      if (key) d.llmProvider = "openrouter";
-    });
-  }
-  keyInput.addEventListener("change", saveSettingsToProfile);
-  modelSelect.addEventListener("change", saveSettingsToProfile);
 
   const summaryContent = document.createElement("div");
   summaryContent.className = "tp-summary-content";
@@ -534,7 +496,23 @@ export default function TeleprintTool(handle, element) {
     return [...names];
   }
 
-  function buildSummaryPrompt(transcript) {
+  const SUMMARY_SYSTEM =
+    "You are a meeting notes assistant. You receive call transcripts " +
+    "where each line is formatted as `<Speaker Name> what they said`. " +
+    "Produce clear, structured meeting notes in markdown.\n\n" +
+    "Include these sections:\n" +
+    "# Meeting Notes\n" +
+    "- A **one-sentence summary** of what the meeting was about\n" +
+    "- **Participants** list\n" +
+    "- **Key Discussion Points** as bullet points\n" +
+    "- **Decisions** (if any were made)\n" +
+    "- **Action Items** (if any, with who is responsible)\n" +
+    "- A brief **Per-Participant Summary** section with a short " +
+    "paragraph for each speaker describing their main contributions\n\n" +
+    "Be concise but thorough. Use markdown formatting with headers. " +
+    "Do not include the raw transcript in your output.";
+
+  function buildSummaryInput(transcript) {
     const MAX_INPUT_CHARS = 8000;
     let text = transcript;
     if (text.length > MAX_INPUT_CHARS) {
@@ -544,114 +522,13 @@ export default function TeleprintTool(handle, element) {
     }
     const speakers = extractSpeakers(text);
     const speakerList = speakers.length > 0 ? `\nParticipants: ${speakers.join(", ")}` : "";
-    return [
-      {
-        role: "system",
-        content:
-          "You are a meeting notes assistant. You receive call transcripts " +
-          "where each line is formatted as `<Speaker Name> what they said`. " +
-          "Produce clear, structured meeting notes in markdown.\n\n" +
-          "Include these sections:\n" +
-          "# Meeting Notes\n" +
-          "- A **one-sentence summary** of what the meeting was about\n" +
-          "- **Participants** list\n" +
-          "- **Key Discussion Points** as bullet points\n" +
-          "- **Decisions** (if any were made)\n" +
-          "- **Action Items** (if any, with who is responsible)\n" +
-          "- A brief **Per-Participant Summary** section with a short " +
-          "paragraph for each speaker describing their main contributions\n\n" +
-          "Be concise but thorough. Use markdown formatting with headers. " +
-          "Do not include the raw transcript in your output.",
-      },
-      {
-        role: "user",
-        content:
-          `Here is the meeting transcript:${speakerList}\n\n${text}\n\n` +
-          "Please generate the meeting notes.",
-      },
-    ];
+    return (
+      `Here is the meeting transcript:${speakerList}\n\n${text}\n\n` +
+      "Please generate the meeting notes."
+    );
   }
 
-  async function generateViaOpenRouter(content) {
-    const apiKey = getOpenRouterKey();
-    const model = getOpenRouterModel();
-    const messages = buildSummaryPrompt(content);
-
-    statusEl.textContent = "Summarizing via " + (MODEL_DISPLAY_NAMES[model] || model) + "…";
-    generateBtn.disabled = true;
-
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": "Bearer " + apiKey,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ model, messages, stream: true }),
-    });
-
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error("OpenRouter: " + err);
-    }
-
-    let full = "";
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      const lines = buf.split("\n");
-      buf = lines.pop();
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        const data = line.slice(6).trim();
-        if (data === "[DONE]") continue;
-        try {
-          const parsed = JSON.parse(data);
-          const delta = parsed.choices?.[0]?.delta?.content;
-          if (delta) {
-            full += delta;
-            // Live-update the summary as tokens stream in
-            summaryContent.innerHTML = renderMarkdown(full);
-          }
-        } catch {}
-      }
-    }
-    return full;
-  }
-
-  function generateViaWorker(content) {
-    return new Promise((resolve, reject) => {
-      if (!summaryWorker) {
-        const workerUrl = new URL("./summary-worker.js", import.meta.url);
-        summaryWorker = new Worker(workerUrl, { type: "module" });
-
-        summaryWorker.onerror = (err) => {
-          console.error("[teleprint] Summary worker error:", err);
-          summaryWorker.terminate();
-          summaryWorker = null;
-          reject(err);
-        };
-      }
-
-      summaryWorker.onmessage = (ev) => {
-        const { type, message, summary } = ev.data;
-        if (type === "status") {
-          statusEl.textContent = message;
-        } else if (type === "ready") {
-          // model loaded, generation will follow
-        } else if (type === "result") {
-          resolve(summary);
-        }
-      };
-
-      statusEl.textContent = "Summarizing…";
-      generateBtn.disabled = true;
-      summaryWorker.postMessage({ type: "summarize", text: content });
-    });
-  }
+  let summaryAbort = null;
 
   generateBtn.addEventListener("click", async (e) => {
     e.stopPropagation();
@@ -663,34 +540,40 @@ export default function TeleprintTool(handle, element) {
     }
 
     generateBtn.disabled = true;
+    statusEl.textContent = "Summarizing…";
+    summaryAbort = new AbortController();
 
     try {
-      let summary;
-      if (getOpenRouterKey()) {
-        summary = await generateViaOpenRouter(content);
-      } else {
-        summary = await generateViaWorker(content);
-      }
+      // Provider/model/key come from the shared account-doc config via
+      // @chee/patchwork-llm (local transformers.js / OpenRouter / Ollama / …).
+      const { text } = await generate(buildSummaryInput(content), {
+        system: SUMMARY_SYSTEM,
+        signal: summaryAbort.signal,
+        onStatus: (m) => { statusEl.textContent = m; },
+        onToken: (_delta, full) => {
+          // Live-update the summary as tokens stream in.
+          summaryContent.innerHTML = renderMarkdown(full);
+        },
+      });
 
       statusEl.textContent = "";
       generateBtn.disabled = false;
       generateBtn.textContent = "Regenerate";
       handle.change((doc) => {
-        doc.summary = summary;
+        doc.summary = text;
       });
       renderSummaryContent();
     } catch (err) {
       console.error("[teleprint] Summary error:", err);
       statusEl.textContent = "Error: " + (err.message || err);
       generateBtn.disabled = false;
+    } finally {
+      summaryAbort = null;
     }
   });
 
   return () => {
-    if (summaryWorker) {
-      summaryWorker.terminate();
-      summaryWorker = null;
-    }
+    summaryAbort?.abort();
     handle.off("change", onDocChange);
     view.destroy();
     container.remove();

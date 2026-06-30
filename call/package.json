@@ -21,10 +21,13 @@
   "author": "Ink & Switch",
   "dependencies": {
     "@automerge/automerge-codemirror": "^0.1.0",
+    "@chee/patchwork-llm": "automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE#eZCZsHHNozEHijqpAVp91CVsEruykpwh7mvHkmC5bKQsJMHiV",
+    "@chee/patchwork-transcript": "automerge:2AdvAyQ85NfazBA4TtDyRYCqfvYb#RUCqgHPjqB8fwhZczav5rwJ9J7rBLj3rSfQ9ykaCkR3HrEN2n",
     "@inkandswitch/patchwork-bootloader": "^0.0.4",
     "codemirror": "^6.0.0"
   },
   "devDependencies": {
+    "@chee/patchwork-bundles": "^0.0.1",
     "esbuild": "^0.23.1"
   }
 }
