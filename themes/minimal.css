@@ -1,6 +1,5 @@
-/* Minimal — just fill + line; everything else derives from the base theme */
 [theme="minimal"] {
 	color-scheme: light;
-	--studio-fill: #fcfcfa;
-	--studio-line: #1c1c1a;
+	--studio-fill: #f9fffc;
+	--studio-line: #333;
 }
