@@ -87,6 +87,12 @@ export function seedExampleItems(repo: Repo): PartsBinItem[] {
     "@patchwork": { type: "markdown" },
     content: DEMO_MARKDOWN,
   });
+  // The Mention Finder contributor (its own `@embark/doc-finder` module). It is
+  // configuration-free, so the seeded doc just carries its type; dropping it
+  // wires the card onto the canvas where it answers @mention searches.
+  const docFinder = repo.create({
+    "@patchwork": { type: "doc-finder-provider" },
+  });
   // A fresh, empty deck. Dragging the example out clones it, so each canvas
   // starts its own pile; cards are added by dragging embeds into it.
   const deck = repo.create({
@@ -111,6 +117,11 @@ export function seedExampleItems(repo: Repo): PartsBinItem[] {
       id: crypto.randomUUID(),
       componentUrl: ROUTE_COMPONENT_URL,
       label: "Routes",
+    },
+    {
+      id: crypto.randomUUID(),
+      url: docFinder.url,
+      toolId: "doc-finder-provider",
     },
     { id: crypto.randomUUID(), url: map.url, toolId: "map" },
     {

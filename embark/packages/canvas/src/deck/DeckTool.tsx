@@ -5,11 +5,7 @@ import { createStore, reconcile } from "solid-js/store";
 import { render } from "solid-js/web";
 import { RepoContext, useDocument, useRepo } from "solid-automerge";
 import "@inkandswitch/patchwork-elements";
-import {
-  registerContextElement,
-  renderComponentEmbed,
-  type PatchworkContextElement,
-} from "@embark/core";
+import { renderComponentEmbed } from "@embark/core";
 import {
   getDocumentDragPayload,
   getDragSource,
@@ -35,36 +31,27 @@ const FAN_STEP = 104;
 const FAN_MAX_W = 660;
 const FAN_TILT = 3;
 
-// Tool entry point. Like the parts bin, the deck hosts its own throwaway
-// <patchwork-context> and renders the card thumbnails into it, so their search
-// boxes / sticker sources resolve there and stay inert — they're stored cards,
-// not live participants in the canvas. Mount/unmount events are swallowed so the
-// canvas schema resolver doesn't treat the thumbnails as matches.
+// Tool entry point. Unlike the parts bin, the deck does NOT host its own
+// context: the cards are live participants, not inert examples. We render the
+// thumbnails straight into `element`, which already sits inside the canvas's
+// <patchwork-context>, so each card's context discovery bubbles past the deck
+// to the shared store — its queries, sticker sources, selection reads, etc. are
+// answered by the canvas. We also let the cards' patchwork:mounted/unmounted
+// events bubble through, so the canvas schema resolver tracks the card docs as
+// real mounted participants. The deck is purely a way to organize and collapse;
+// folding is visual only, so cards stay mounted and active in either state.
 export const DeckTool: ToolRender = (handle, element) => {
-  registerContextElement();
-  const contextEl = document.createElement(
-    "patchwork-context",
-  ) as PatchworkContextElement;
-  element.appendChild(contextEl);
-
-  const stopMountEvent = (event: Event) => event.stopPropagation();
-  element.addEventListener("patchwork:mounted", stopMountEvent);
-  element.addEventListener("patchwork:unmounted", stopMountEvent);
-
   const dispose = render(
     () => (
       <RepoContext.Provider value={element.repo}>
         <Deck handle={handle as DocHandle<DeckDoc>} />
       </RepoContext.Provider>
     ),
-    contextEl,
+    element,
   );
 
   return () => {
-    element.removeEventListener("patchwork:mounted", stopMountEvent);
-    element.removeEventListener("patchwork:unmounted", stopMountEvent);
     dispose();
-    contextEl.remove();
   };
 };
 
@@ -388,7 +375,10 @@ function DeckCardView(props: {
 }
 
 // A non-interactive live preview of a component card: a host div that imports
-// and runs the component module against the deck's throwaway context.
+// and runs the component module. The host lives inside the canvas
+// <patchwork-context> (the deck adds none of its own), so the component
+// resolves the shared store through DOM discovery and runs as a live canvas
+// participant; renderComponentEmbed stamps `repo` on the host.
 function ComponentPreview(props: { componentUrl: string }) {
   const repo = useRepo();
   let hostEl: HTMLDivElement | undefined;
