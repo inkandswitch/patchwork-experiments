@@ -1,10 +1,12 @@
-import {Show, Index, Switch, Match, createMemo, createEffect, createSignal} from "solid-js"
+import {Show, Index, For, Switch, Match, createMemo, createEffect, createSignal} from "solid-js"
 import type {ChatMessage} from "../types"
 import {parseTextSegments, isEmojiOnly} from "../lib/format-text"
 import type {TextSegment} from "../lib/format-text"
 import {highlightCode} from "../lib/highlighter"
 import {ensureFontLoaded} from "../lib/blob-cache"
 import {resolveNamedColor} from "../lib/named-colors"
+import {generateId} from "../lib/helpers"
+import {useChat} from "../context/ChatContext"
 import {useIdentity} from "../context/IdentityContext"
 import {usePresence} from "../context/PresenceContext"
 import {useTheme} from "../context/ThemeContext"
@@ -16,7 +18,7 @@ function ThinkBlock(props: {content: string}) {
 	const [open, setOpen] = createSignal(true)
 	return (
 		<details class="chat-think-block" open={open()} on:toggle={(e: Event) => setOpen((e.target as HTMLDetailsElement).open)}>
-			<summary>thinking</summary>
+			<summary>computing</summary>
 			<div class="chat-think-content">{props.content}</div>
 		</details>
 	)
@@ -153,8 +155,49 @@ export function MessageBody(props: {
 			<Show when={props.msg.richBlocks?.length}>
 				<RichBlockList blocks={props.msg.richBlocks!} />
 			</Show>
+			<Show when={props.msg.quickReplies?.length}>
+				<QuickReplies options={props.msg.quickReplies!} />
+			</Show>
 			<MessageAttachments msg={props.msg} />
 		</>
+	)
+}
+
+/** Clickable answer buttons for an ask_user question — sends the choice as a message. */
+function QuickReplies(props: {options: string[]}) {
+	const {handle, repo} = useChat()
+	const {myName} = useIdentity()
+	const [used, setUsed] = createSignal(false)
+
+	async function pick(opt: string) {
+		if (used()) return
+		setUsed(true)
+		const msgData: any = {
+			id: generateId(),
+			name: myName(),
+			text: opt,
+			timestamp: Date.now(),
+		}
+		const mh = await repo.create2(msgData)
+		handle.change((d: any) => {
+			if (!d.messages) d.messages = []
+			d.messages.push({ref: true, url: mh.url, timestamp: msgData.timestamp})
+		})
+	}
+
+	return (
+		<div class="chat-quick-replies">
+			<For each={props.options}>
+				{(opt) => (
+					<button
+						class="chat-quick-reply"
+						disabled={used()}
+						on:click={() => pick(opt)}>
+						{opt}
+					</button>
+				)}
+			</For>
+		</div>
 	)
 }
 

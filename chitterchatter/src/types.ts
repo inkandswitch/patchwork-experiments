@@ -25,6 +25,7 @@ export interface ChatMessage {
 	streaming?: boolean
 	isComputer?: boolean
 	richBlocks?: RichBlock[]
+	quickReplies?: string[] // ask_user: suggested answers shown as clickable buttons
 
 	// Runtime fields (not persisted)
 	_loading?: boolean

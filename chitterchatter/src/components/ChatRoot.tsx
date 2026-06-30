@@ -1,6 +1,7 @@
 import {createSignal, createEffect, Show, onMount, onCleanup} from "solid-js"
 import type {DocHandle, AutomergeUrl} from "@automerge/automerge-repo"
 import {updateText, splice} from "@automerge/automerge"
+import {applyAutomerge} from "../lib/automerge-ops"
 import type {ChatDoc} from "../types"
 import {ChatProvider, useChat} from "../context/ChatContext"
 import {IdentityProvider, useIdentity} from "../context/IdentityContext"
@@ -21,6 +22,7 @@ import {
 	popup as llmPopup,
 	ensureConfig as llmEnsureConfig,
 	readConfig as llmReadConfig,
+	writeConfig as llmWriteConfig,
 	readScopedConfig as llmReadScopedConfig,
 	describeConfig as llmDescribeConfig,
 	fetchOpenRouterModels as llmFetchOpenRouterModels,
@@ -40,8 +42,16 @@ import "../styles/chat.css"
 export function ChatRoot(props: {
 	handle: DocHandle<ChatDoc>
 	element: HTMLElement
+	// "context" mode (the `context-tool` variant): no sidebar, and the computer
+	// edits a *focused* document instead of building tools. targetDocUrl is the
+	// currently-selected doc the computer reads/writes.
+	mode?: "chat" | "context"
+	targetDocUrl?: () => AutomergeUrl | undefined
 }) {
 	let rootRef!: HTMLDivElement
+
+	// Are we the streamlined doc-editing "context tool"?
+	const isContext = () => props.mode === "context"
 
 	// Emoji picker state
 	const [emojiPickerState, setEmojiPickerState] = createSignal<{
@@ -92,7 +102,7 @@ export function ChatRoot(props: {
 				name: "Chitterchatter · Computer",
 				text: computerSystemPrompt(),
 			},
-			toolTools: COMPUTER_TOOLS.map((t) => ({
+			toolTools: activeTools().map((t) => ({
 				name: t.name,
 				description: t.description,
 			})),
@@ -149,9 +159,11 @@ export function ChatRoot(props: {
 		const label = modelLabel()
 		return label ? " (" + label + ")" : ""
 	}
-	// The computer's display name, including the current model label when known.
+	// The computer's display name: includes who OWNS it (the host) when claimed,
+	// then the current model label when known — e.g. "computer (chee) (Opus 4)".
 	function computerName() {
-		return "computer" + modelSuffix()
+		const owner = (props.handle.doc() as any)?.computerOwner
+		return "computer" + (owner ? " (" + owner + ")" : "") + modelSuffix()
 	}
 	// Keep the label populated from the start so the very first computer message
 	// already carries the model name (not just messages sent after the picker).
@@ -172,6 +184,39 @@ export function ChatRoot(props: {
 	const STALE_THRESHOLD = 45000 // 3 missed heartbeats = stale
 	const PING_TIMEOUT = 2000 // wait 2s for pong before claiming
 	const RESPONSE_TIMEOUT = 8000 // wait 8s for computer to start responding
+
+	// The human name of whoever currently OWNS (hosts) the computer. Stored on the
+	// doc as `computerOwner`, shown in the computer's display name, and surfaced /
+	// changed via /computer owner|own|pwn. ownerName() is THIS user's name.
+	const [ownerName, setOwnerName] = createSignal<string>("")
+	onMount(async () => {
+		try {
+			const ad = (window as any).accountDocHandle
+			const contactUrl = ad?.doc?.()?.contactUrl
+			if (!contactUrl) return
+			const contact = await (props.element as any).repo.find(contactUrl)
+			const n = (contact.doc() as any)?.name
+			if (n) setOwnerName(n)
+		} catch {}
+	})
+	// If this tab is the host, keep the doc's `computerOwner` (our name) and
+	// `computerModel` (the model label) up to date so everyone — including the
+	// avatar tooltip and the computer's display name — can see who's running it
+	// and with what model. Runs when our name or the model label resolves/changes.
+	createEffect(() => {
+		const n = ownerName()
+		const m = modelLabel()
+		const d = props.handle.doc() as any
+		if (d?.computerInstanceId !== myInstanceId) return
+		const needOwner = !!n && d?.computerOwner !== n
+		const needModel = !!m && d?.computerModel !== m
+		if (needOwner || needModel) {
+			props.handle.change((dd: any) => {
+				if (needOwner) dd.computerOwner = n
+				if (needModel) dd.computerModel = m
+			})
+		}
+	})
 
 	function openEmojiPicker(idx: number, anchorEl: HTMLElement) {
 		setEmojiPickerState({open: true, targetIdx: idx, anchorEl})
@@ -439,6 +484,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 	// limited context) get the compact prompt; capable cloud providers get the
 	// full one with worked examples. Falls back to full on any read error.
 	function computerSystemPrompt(): string {
+		if (isContext()) return CONTEXT_SYSTEM_PROMPT
 		try {
 			const cfg = scopedCfg()
 			return cfg?.provider === "local"
@@ -454,6 +500,45 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 	// convention (local). They run in-process via runToolByName (live repo/DOM/
 	// iframe access), so no `handler` here. Users can disable individual tools in
 	// the model picker (cfg.toolToggles).
+	// A meta-tool: lets the computer EXTEND its own toolset by writing JavaScript.
+	// The new tool is persisted on the chat doc (computerCustomTools) and offered on
+	// the computer's NEXT run. Powerful (runs arbitrary JS in-process), so it's
+	// DEFAULT-OFF (GLOBAL_DEFAULT_OFF) — enable per-doc in the model picker.
+	// Ask the user a question and PAUSE: posts the question (with optional clickable
+	// choices) to the chat and ends the turn. The user's reply arrives as a new
+	// message the computer then responds to — so it's non-blocking by design.
+	const ASK_USER_TOOL = {
+		name: "ask_user",
+		description:
+			"Ask the user a question and wait for their answer. Posts your question to the chat (with optional clickable choices) and ENDS your turn — do not call other tools after it. Their reply comes back as a new message you'll then respond to. Use when you need a decision or missing detail before continuing.",
+		parameters: {
+			type: "object",
+			properties: {
+				question: {type: "string", description: "the question to ask"},
+				options: {
+					type: "array",
+					items: {type: "string"},
+					description: "optional suggested answers, shown as clickable buttons",
+				},
+			},
+			required: ["question"],
+		},
+	}
+	const DEFINE_TOOL = {
+		name: "define_tool",
+		description:
+			"Extend your OWN toolset: define a new tool by writing a JavaScript body. It is saved and becomes callable on your NEXT run (not this turn). The code runs in-process as `async (args, ctx) => { <your code> }` where ctx = {repo, handle (this chat), element, focusedUrl, applyAutomerge}; return a value (string or JSON). Use this to build whatever capability a task needs. Disabled by default.",
+		parameters: {
+			type: "object",
+			properties: {
+				name: {type: "string", description: "tool name — identifier chars only (e.g. word_count)"},
+				description: {type: "string", description: "what the tool does + when to use it"},
+				parameters: {type: "object", description: "JSON Schema for the tool's args (an object schema)"},
+				code: {type: "string", description: "JS function body. Receives (args, ctx); return the result. async/await allowed."},
+			},
+			required: ["name", "description", "code"],
+		},
+	}
 	const COMPUTER_TOOLS: {name: string; description: string; parameters: any}[] = [
 		{name: "read_doc", description: "Read an Automerge document's full contents.", parameters: {type: "object", properties: {url: {type: "string", description: "automerge: URL"}}, required: ["url"]}},
 		{name: "edit_doc", description: "Set a field on a document (string fields diff collaboratively). Returns the field's new value.", parameters: {type: "object", properties: {url: {type: "string"}, field: {type: "string"}, value: {description: "new value (JSON)"}}, required: ["url", "field", "value"]}},
@@ -463,7 +548,99 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		{name: "edit_tool", description: "Replace an existing tool's source code and reload it. Target by toolId or url.", parameters: {type: "object", properties: {toolId: {type: "string"}, url: {type: "string"}, code: {type: "string"}}, required: ["code"]}},
 		{name: "inspect_iframe", description: "Get a pinned tool iframe's DOM HTML and console errors.", parameters: {type: "object", properties: {url: {type: "string"}}}},
 		{name: "eval_in_iframe", description: "Run JS inside a pinned tool's iframe and return the result.", parameters: {type: "object", properties: {url: {type: "string"}, code: {type: "string"}}, required: ["code"]}},
+		ASK_USER_TOOL,
+		DEFINE_TOOL,
 	]
+
+	// ---- Context-tool ("context-tool" tag) mode ----------------------------
+	// The streamlined variant edits whatever document the user has FOCUSED, using
+	// a universal Automerge op tool instead of the tool-building tools above.
+	const CONTEXT_SYSTEM_PROMPT = `You are Computer, a computer program embedded in Patchwork's context sidebar. You help edit the document the user currently has FOCUSED. Respond like a computer program — direct, precise, no anthropomorphic fluff. Never prefix messages with [Computer] or your name (other users show as "[Name] message"; that's just context formatting).
+
+## What you're editing
+Every turn, a [Context] block gives you the focused document: its \`url\`, its current \`heads\`, its \`type\`, and a snapshot of its contents (possibly truncated — call read_doc for the full doc). All your edits go to THIS document unless the user gives another url. It is a live Automerge CRDT synced peer-to-peer, so other people may be editing it at the same time as you.
+
+## Automerge / Patchwork in 30 seconds
+- A document is a JSON-like tree: maps (objects), lists (arrays), strings (collaborative TEXT, edited by character splice), numbers, booleans, bytes (Uint8Array).
+- Documents CANNOT hold \`undefined\` — to remove something, delete the key (an automerge_op with no value).
+- Strings are collaborative text: never overwrite a whole string when you mean to change part of it — splice the changed range so concurrent edits merge instead of clobbering.
+- Patchwork metadata lives under \`@patchwork\` (e.g. \`@patchwork.type\`). NEVER change \`@patchwork.type\` — it binds the doc to its tool and renaming it breaks the document.
+
+## Tools
+- read_doc {url?} — read a document (defaults to the focused doc). Returns its full JSON contents AND its current \`heads\`. ALWAYS read_doc before a non-trivial edit, and pass the returned heads to automerge_op only if you want a back-dated change.
+- find_text {query, path?, url?} — locate a substring so you DON'T have to count characters. Returns every match as {path, start, end, context}. Feed start/end straight into an automerge_op range.
+- replace_text {find, replace, path?, occurrence?, url?} — the EASY, preferred way to edit text: find-and-replace a literal substring, no offsets at all. It splices just that range (collaborative-safe). Errors if \`find\` is missing or ambiguous (then add \`occurrence\` (1-based) or a \`path\`). Empty \`replace\` deletes. To replace a tangled multi-line region, pass the whole bad text as \`find\` and the corrected text as \`replace\`.
+- automerge_op {path?, range, value?, heads?, url?} — the general primitive for STRUCTURED edits (maps, lists, numbers) and precise text splices. One op expresses every edit:
+    • path — array of keys/indices from the doc root to the container or string you're touching. \`[]\` is the root. e.g. \`["settings","color"]\`, \`["items"]\`, \`["body"]\`.
+    • range — TWO MODES:
+        ◦ \`[from, to]\` (an array) = SPLICE: replace the half-open slice \`from\` (inclusive) … \`to\` (exclusive) — exactly JS \`slice(from,to)\`. \`[5,5]\` inserts at 5 (deletes nothing); \`[3,7]\` covers the 4 items at 3,4,5,6.
+            – on a STRING field (path points AT the string): from/to are 0-based CHARACTER offsets, NOT lines — every char counts, and each newline (\\n) is ONE char. Prefer replace_text/find_text so you never hand-count; use a raw splice only when you already have exact offsets from find_text. Insert "hi" at char 5 → path:["body"], range:[5,5], value:"hi". Delete chars 3–6 → path:["body"], range:[3,7] (no value).
+            – on a LIST (path points AT the array): a list edit. value is the item(s) to insert (an array, or a single item). Insert at index 2 → path:["items"], range:[2,2], value:[{...}]. Delete items[2] → path:["items"], range:[2,3] (no value).
+        ◦ a string/number KEY = ASSIGN or DELETE on the map/list at \`path\`.
+            – set d.title → path:[], range:"title", value:"New title".
+            – set d.settings.color → path:["settings"], range:"color", value:"red".
+            – delete d.draft → path:[], range:"draft" (no value).
+    • value — what to insert/set. Omit it (or null) to delete. JSON of any shape for maps/lists.
+    • heads — OPTIONAL. The heads array from read_doc. When given, the edit is applied as a back-dated change (changeAt) relative to that version. Omit for a normal "edit current state" change.
+    • url — OPTIONAL. Edit a different document than the focused one.
+  Returns the affected container's new value so you can verify.
+- ask_user {question, options?} — ask the user something and PAUSE. Posts your question (with optional clickable choices) and ends your turn; their reply comes back as a new message. Use this instead of guessing when you need a decision or missing detail.
+- inspect_dom {selector?} — (usually disabled) return the live DOM HTML of the running tool/page, optionally narrowed to a CSS selector. Use to see how the focused doc is actually rendered.
+- eval_js {code} — (usually disabled) evaluate JavaScript in the page and return the result. Powerful and unsandboxed; only when explicitly needed.
+
+## Editing text — this is where edits go wrong, so follow it
+The reliable recipe for ANY text change:
+1. read_doc to get the field's EXACT current string — don't trust a truncated snapshot or your memory; whitespace and newlines must match.
+2. Use replace_text {find, replace}: paste the exact substring to change as \`find\` and the new text as \`replace\`. No counting. For a corrupted multi-line region, make \`find\` the whole bad span and \`replace\` the corrected text — ONE clean replacement beats many fragile splices.
+3. If you genuinely need positions (e.g. an insertion point with no nearby text), call find_text to get exact {start,end}, then automerge_op range:[start,end].
+4. Read the returned value to confirm the edit landed; if it's off, your \`find\`/offsets didn't match the real text — read_doc again and retry.
+Never overwrite an entire long field with a key-assign (range:"content") just to fix part of it — that discards everyone's concurrent edits. Edit the smallest correct span.
+
+## Rules
+- read_doc → edit → then verify (check the returned value, or read_doc again). Offsets and list indices shift under concurrent edits, so a stale read = a wrong edit.
+- For text, reach for replace_text first, find_text second, raw automerge_op splices last. Edit the smallest correct span; don't overwrite whole fields.
+- Never change \`@patchwork.type\`. Don't invent fields the tool won't understand — match the document's existing shape.
+- To ASK the user something, use ask_user (or just reply in plain text with no tool call). Tool results are never the user's answer.
+- Keep replies concise. After editing, say briefly what you changed.`
+
+	// Default-OFF tools in context mode: DOM inspection + arbitrary JS eval are
+	// powerful/unsandboxed, so they're opt-in (enable per-doc in the picker).
+	const CONTEXT_DEFAULT_OFF = ["inspect_dom", "eval_js"]
+	const CONTEXT_TOOLS: {name: string; description: string; parameters: any}[] = [
+		{name: "read_doc", description: "Read a document's full JSON contents AND its current heads (defaults to the focused document). Pass the heads to automerge_op for a back-dated change.", parameters: {type: "object", properties: {url: {type: "string", description: "automerge: URL (optional; defaults to the focused doc)"}}}},
+		{name: "find_text", description: "Locate a substring in the document's string fields so you DON'T have to count character offsets by hand. Returns every match as {path, start, end, context}. Use start/end directly as an automerge_op range. Searches all string fields, or just the one at `path` if given.", parameters: {type: "object", properties: {query: {type: "string", description: "the exact substring to locate"}, path: {type: "array", items: {}, description: "optional: restrict to the string field at this path"}, url: {type: "string", description: "optional target doc (defaults to the focused doc)"}}, required: ["query"]}},
+		{name: "replace_text", description: "Find-and-replace a literal substring in a string field — the EASY way to edit text, with no character counting. Replaces `find` with `replace` (collaboratively, splicing just that range). Errors if `find` is absent or ambiguous (then pass `occurrence`, or a `path`, to disambiguate). To delete text, use an empty `replace`.", parameters: {type: "object", properties: {find: {type: "string", description: "exact substring to replace"}, replace: {type: "string", description: "replacement text (empty string deletes)"}, path: {type: "array", items: {}, description: "optional: the string field to edit (else the unique field containing `find`)"}, occurrence: {type: "number", description: "optional 1-based index when `find` occurs more than once"}, url: {type: "string", description: "optional target doc (defaults to the focused doc)"}}, required: ["find", "replace"]}},
+		{name: "automerge_op", description: "Apply ONE universal Automerge edit to a doc (defaults to the focused doc). range=[from,to] splices a string field (text — from/to are 0-based CHARACTER offsets, to exclusive, every char incl. newlines counts) or a list; range=key assigns (with value) or deletes (without value) on the map/list at path. Omit value to delete. For text, prefer replace_text/find_text so you don't miscount.", parameters: {type: "object", properties: {path: {type: "array", items: {}, description: "keys/indices from the doc root to the container or string ([]=root)"}, range: {description: "[from,to] for a splice, or a string/number key for assign/delete"}, value: {description: "value to insert/set (JSON); omit to delete"}, heads: {type: "array", items: {type: "string"}, description: "optional heads (from read_doc) → back-dated changeAt"}, url: {type: "string", description: "optional target doc (defaults to the focused doc)"}}, required: ["range"]}},
+		{name: "inspect_dom", description: "Return the live DOM HTML of the running tool/page (optionally narrowed by a CSS selector). Disabled by default.", parameters: {type: "object", properties: {selector: {type: "string", description: "optional CSS selector to narrow the result"}}}},
+		{name: "eval_js", description: "Evaluate JavaScript in the page and return the result. Unsandboxed. Disabled by default.", parameters: {type: "object", properties: {code: {type: "string"}}, required: ["code"]}},
+		ASK_USER_TOOL,
+		DEFINE_TOOL,
+	]
+
+	// Always opt-IN, in any mode: define_tool runs arbitrary JS the model writes.
+	const GLOBAL_DEFAULT_OFF = ["define_tool"]
+
+	// Tools the computer defined for itself via define_tool, as lib tool schemas
+	// (code stripped). Read live from the doc so a tool defined last turn shows up.
+	function customTools(): {name: string; description: string; parameters: any}[] {
+		const list = (props.handle.doc() as any)?.computerCustomTools
+		if (!Array.isArray(list)) return []
+		return list
+			.filter((t: any) => t && typeof t.name === "string")
+			.map((t: any) => ({
+				name: t.name,
+				description: t.description || "(custom tool)",
+				parameters:
+					t.parameters && typeof t.parameters === "object"
+						? t.parameters
+						: {type: "object", properties: {}},
+			}))
+	}
+
+	// The tool set for whichever mode we're in, plus any self-defined tools.
+	function activeTools() {
+		return [...(isContext() ? CONTEXT_TOOLS : COMPUTER_TOOLS), ...customTools()]
+	}
 
 	// Render a structured tool call as the text shown in its card — mirrors the old
 	// fenced-block look so the existing rich-block UI renders unchanged.
@@ -475,12 +652,39 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		return ["tool: " + call.name, ...lines].join("\n")
 	}
 
-	// Tools to offer this turn — all minus any the user disabled in the picker
-	// (cfg.toolToggles[name] === false). Defaults to enabled.
+	// Tools to offer this turn — the active mode's set, minus any the user disabled
+	// in the picker (cfg.toolToggles[name] === false). Most default to enabled;
+	// define_tool (any mode) and context mode's inspect_dom/eval_js are opt-IN
+	// (offered only if the toggle is explicitly true).
 	function enabledComputerTools() {
 		const toggles = (scopedCfg()?.toolToggles) || {}
-		return COMPUTER_TOOLS.filter((t) => toggles[t.name] !== false)
+		return activeTools().filter((t) => {
+			const optIn =
+				GLOBAL_DEFAULT_OFF.includes(t.name) ||
+				(isContext() && CONTEXT_DEFAULT_OFF.includes(t.name))
+			if (optIn) return toggles[t.name] === true
+			return toggles[t.name] !== false
+		})
 	}
+
+	// The model picker renders a tool's checkbox CHECKED unless
+	// toolToggles[name] === false (it has no "default off" concept). So our opt-in
+	// tools would show checked while actually being off. Seed them to `false` once
+	// (only if unset — a user who turns one ON stays ON) so the picker shows them
+	// unchecked, matching enabledComputerTools().
+	onMount(() => {
+		try {
+			const tg = {...((llmReadConfig() as any)?.toolToggles || {})}
+			let changed = false
+			for (const n of [...GLOBAL_DEFAULT_OFF, ...CONTEXT_DEFAULT_OFF]) {
+				if (tg[n] === undefined) {
+					tg[n] = false
+					changed = true
+				}
+			}
+			if (changed) llmWriteConfig({toolToggles: tg} as any)
+		} catch {}
+	})
 
 	// ---- LLM generation (via @chee/patchwork-llm) ----
 	// Provider / model / API key / sampling parameters all live on the account
@@ -813,6 +1017,61 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		}
 	}
 
+	// A located substring match in a doc's string fields (for find_text /
+	// replace_text — so the model never hand-counts character offsets).
+	type TextMatch = {path: (string | number)[]; start: number; end: number; context: string}
+
+	// Walk every string-valued field of `doc` and collect occurrences of `query`.
+	// If `restrict` is given, only the string at that path is searched.
+	function findTextMatches(
+		doc: any,
+		query: string,
+		restrict?: (string | number)[] | null
+	): TextMatch[] {
+		const out: TextMatch[] = []
+		const CONTEXT = 24
+		const scanString = (s: string, path: (string | number)[]) => {
+			let from = 0
+			while (out.length < 200) {
+				const i = s.indexOf(query, from)
+				if (i < 0) break
+				const end = i + query.length
+				out.push({
+					path,
+					start: i,
+					end,
+					context:
+						(i > CONTEXT ? "…" : "") +
+						s.slice(Math.max(0, i - CONTEXT), i) +
+						"⟦" +
+						s.slice(i, end) +
+						"⟧" +
+						s.slice(end, end + CONTEXT) +
+						(end + CONTEXT < s.length ? "…" : ""),
+				})
+				from = end || from + 1 // empty query guard
+			}
+		}
+		if (restrict && restrict.length) {
+			let node: any = doc
+			for (const k of restrict) node = node == null ? node : node[k]
+			if (typeof node === "string") scanString(node, restrict)
+			return out
+		}
+		const walk = (node: any, path: (string | number)[]) => {
+			if (out.length >= 200) return
+			if (typeof node === "string") {
+				scanString(node, path)
+			} else if (Array.isArray(node)) {
+				for (let i = 0; i < node.length; i++) walk(node[i], [...path, i])
+			} else if (node && typeof node === "object") {
+				for (const k of Object.keys(node)) walk(node[k], [...path, k])
+			}
+		}
+		walk(doc, [])
+		return out
+	}
+
 	// Execute one tool call by name with structured args (from the lib's native
 	// tool_calls or parsed <tool_call> JSON). Args may already be typed (objects/
 	// numbers) or strings, so each branch is tolerant of both. Returns a result
@@ -820,10 +1079,218 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 	async function runToolByName(toolName: string, rawArgs: any): Promise<string> {
 		const args = rawArgs || {}
 		const repo = (props.element as any).repo
+		// In context mode, doc-editing tools default to the focused document.
+		const focusedUrl = () => props.targetDocUrl?.()
 		try {
 			if (toolName === "read_doc") {
-				const h = await repo.find(args.url)
-				return JSON.stringify(h.doc(), null, 2) || "null"
+				const url = args.url || (isContext() ? focusedUrl() : undefined)
+				if (!url) return "Error: no url and no focused document."
+				const h = await repo.find(url)
+				const doc = h.doc()
+				if (isContext()) {
+					// Context mode also returns heads so a follow-up automerge_op can
+					// back-date its change (changeAt). handle.heads() is the UrlHeads
+					// that changeAt() expects.
+					let heads: any = []
+					try {
+						heads = h.heads()
+					} catch {}
+					return JSON.stringify({url: h.url, heads, doc}, null, 2)
+				}
+				return JSON.stringify(doc, null, 2) || "null"
+			} else if (toolName === "automerge_op") {
+				const url = args.url || focusedUrl()
+				if (!url) return "Error: no url and no focused document."
+				const h = await repo.find(url)
+				// path / range / value may arrive typed (native function calling) or as
+				// JSON strings (local <tool_call> convention) — be tolerant of both.
+				const parseMaybe = (v: any) => {
+					if (typeof v !== "string") return v
+					try {
+						return JSON.parse(v)
+					} catch {
+						return v
+					}
+				}
+				const path = Array.isArray(args.path)
+					? args.path
+					: parseMaybe(args.path) ?? []
+				if (!Array.isArray(path)) {
+					return "Error: path must be an array of keys/indices."
+				}
+				const range = parseMaybe(args.range)
+				if (range === undefined || range === null) {
+					return "Error: range is required ([from,to] for a splice, or a key for assign/delete)."
+				}
+				// `value` is intentionally NOT JSON-parsed when it's a string: a string
+				// is a legitimate text/scalar value. Native function-calling already
+				// sends real JSON types for objects/lists.
+				const hasValue = Object.prototype.hasOwnProperty.call(args, "value")
+				const value = hasValue ? args.value : undefined
+				const heads = parseMaybe(args.heads)
+				const mut = (d: any) => applyAutomerge(d, path, range, value)
+				if (Array.isArray(heads) && heads.length) {
+					h.changeAt(heads, mut)
+				} else {
+					h.change(mut)
+				}
+				// Return the affected container so the model can verify.
+				const after = h.doc() as any
+				let container: any = after
+				for (const k of path) container = container == null ? container : container[k]
+				let preview: string
+				try {
+					preview = JSON.stringify(container, null, 2)
+				} catch {
+					preview = String(container)
+				}
+				if (preview && preview.length > 4000)
+					preview = preview.slice(0, 4000) + "\n…(truncated)"
+				return (
+					"OK — applied op to " +
+					h.url +
+					" at path " +
+					JSON.stringify(path) +
+					".\nValue at path now:\n" +
+					preview
+				)
+			} else if (toolName === "find_text") {
+				const url = args.url || focusedUrl()
+				if (!url) return "Error: no url and no focused document."
+				const query =
+					typeof args.query === "string" ? args.query : String(args.query ?? "")
+				if (!query) return "Error: find_text requires a non-empty `query`."
+				let restrict: any = args.path
+				if (typeof restrict === "string") {
+					try {
+						restrict = JSON.parse(restrict)
+					} catch {
+						restrict = undefined
+					}
+				}
+				const h = await repo.find(url)
+				const matches = findTextMatches(h.doc(), query, restrict)
+				if (!matches.length) {
+					return (
+						"No matches for " +
+						JSON.stringify(query) +
+						(restrict ? " at " + JSON.stringify(restrict) : "") +
+						". read_doc to see the exact current text."
+					)
+				}
+				return (
+					"Found " +
+					matches.length +
+					" match(es). Use start/end as an automerge_op range (or call replace_text):\n" +
+					JSON.stringify(matches, null, 2)
+				)
+			} else if (toolName === "replace_text") {
+				const url = args.url || focusedUrl()
+				if (!url) return "Error: no url and no focused document."
+				const find =
+					typeof args.find === "string" ? args.find : String(args.find ?? "")
+				if (!find) return "Error: replace_text requires a non-empty `find`."
+				const replacement =
+					typeof args.replace === "string"
+						? args.replace
+						: args.replace == null
+							? ""
+							: String(args.replace)
+				let restrict: any = args.path
+				if (typeof restrict === "string") {
+					try {
+						restrict = JSON.parse(restrict)
+					} catch {
+						restrict = undefined
+					}
+				}
+				const h = await repo.find(url)
+				const matches = findTextMatches(h.doc(), find, restrict)
+				if (!matches.length) {
+					return (
+						"Error: " +
+						JSON.stringify(find) +
+						" not found" +
+						(restrict ? " at " + JSON.stringify(restrict) : "") +
+						". read_doc to check the exact current text (whitespace/newlines included)."
+					)
+				}
+				let chosen: TextMatch
+				const occ =
+					args.occurrence != null ? parseInt(args.occurrence, 10) : NaN
+				if (matches.length > 1) {
+					if (!occ || Number.isNaN(occ)) {
+						return (
+							"Ambiguous — " +
+							matches.length +
+							" occurrences of " +
+							JSON.stringify(find) +
+							". Re-call with `occurrence` (1-based) or a `path`:\n" +
+							JSON.stringify(matches, null, 2)
+						)
+					}
+					if (occ < 1 || occ > matches.length) {
+						return "Error: occurrence " + occ + " out of range (1.." + matches.length + ")."
+					}
+					chosen = matches[occ - 1]
+				} else {
+					chosen = matches[0]
+				}
+				h.change((d: any) =>
+					applyAutomerge(d, chosen.path, [chosen.start, chosen.end], replacement)
+				)
+				let after: any = h.doc()
+				for (const k of chosen.path)
+					after = after == null ? after : after[k]
+				let preview: string
+				try {
+					preview = typeof after === "string" ? after : JSON.stringify(after)
+				} catch {
+					preview = String(after)
+				}
+				if (preview && preview.length > 4000)
+					preview = preview.slice(0, 4000) + "\n…(truncated)"
+				return (
+					"OK — replaced " +
+					JSON.stringify(find) +
+					" → " +
+					JSON.stringify(replacement) +
+					" at path " +
+					JSON.stringify(chosen.path) +
+					".\nField now:\n" +
+					preview
+				)
+			} else if (toolName === "inspect_dom") {
+				const sel = args.selector
+				try {
+					if (sel) {
+						const els = Array.from(
+							document.querySelectorAll(sel)
+						) as HTMLElement[]
+						if (!els.length) return "No elements match selector: " + sel
+						return els
+							.map((el) => el.outerHTML)
+							.join("\n\n")
+							.slice(0, 8000)
+					}
+					return (document.body?.outerHTML || "(empty)").slice(0, 8000)
+				} catch (e: any) {
+					return "inspect_dom error: " + (e?.message || String(e))
+				}
+			} else if (toolName === "eval_js") {
+				const code = args.code || ""
+				if (!code.trim()) return "Error: eval_js requires `code`."
+				try {
+					// indirect eval → runs in the page's global scope
+					const result = (0, eval)(code)
+					try {
+						return result === undefined ? "undefined" : JSON.stringify(result)
+					} catch {
+						return String(result)
+					}
+				} catch (e: any) {
+					return "eval error: " + (e?.message || String(e))
+				}
 			} else if (toolName === "edit_doc") {
 				const h = await repo.find(args.url)
 				let val: any = args.value
@@ -961,7 +1428,12 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 						data = {title: args.data || "Untitled"}
 					}
 				}
-				const h = await repo.create2(data)
+				const created = await repo.create2(data)
+				// Resolve through repo.find so that on a draft the new doc is forked
+				// into this draft's clones — otherwise later edit_doc/read_doc (which
+				// go through repo.find) operate on a fresh empty clone of the original
+				// while our create2 data sits on the un-forked original.
+				const h = await repo.find(created.url)
 				return (
 					"Created document: " + h.url + "\n" + JSON.stringify(h.doc(), null, 2)
 				)
@@ -1045,6 +1517,85 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 						linesCount +
 						" lines",
 				].join("\n")
+			}
+			if (toolName === "define_tool") {
+				const name = typeof args.name === "string" ? args.name.trim() : ""
+				if (!name || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+					return "Error: define_tool needs a valid `name` (identifier chars only, e.g. word_count)."
+				}
+				const builtin = [...COMPUTER_TOOLS, ...CONTEXT_TOOLS].some(
+					(t) => t.name === name
+				)
+				if (builtin) {
+					return "Error: " + name + " is a built-in tool name — choose another."
+				}
+				const code = typeof args.code === "string" ? args.code : ""
+				if (!code.trim()) {
+					return "Error: define_tool needs `code` (a JavaScript function body)."
+				}
+				let parameters: any = args.parameters
+				if (typeof parameters === "string") {
+					try {
+						parameters = JSON.parse(parameters)
+					} catch {
+						parameters = undefined
+					}
+				}
+				if (!parameters || typeof parameters !== "object") {
+					parameters = {type: "object", properties: {}}
+				}
+				const description =
+					typeof args.description === "string" ? args.description : ""
+				props.handle.change((d: any) => {
+					if (!Array.isArray(d.computerCustomTools)) d.computerCustomTools = []
+					const existing = d.computerCustomTools.find(
+						(t: any) => t?.name === name
+					)
+					if (existing) {
+						existing.description = description
+						existing.parameters = parameters
+						existing.code = code
+					} else {
+						d.computerCustomTools.push({name, description, parameters, code})
+					}
+				})
+				return (
+					"OK — defined tool `" +
+					name +
+					"`. It becomes available on your NEXT run (not this turn)."
+				)
+			}
+			// A tool the computer defined for itself via define_tool — run its JS.
+			const custom = (
+				(props.handle.doc() as any)?.computerCustomTools || []
+			).find((t: any) => t?.name === toolName)
+			if (custom && typeof custom.code === "string") {
+				try {
+					const ctx = {
+						repo,
+						handle: props.handle,
+						element: props.element,
+						focusedUrl: focusedUrl(),
+						applyAutomerge,
+					}
+					// eslint-disable-next-line no-new-func
+					const fn = new Function(
+						"args",
+						"ctx",
+						'"use strict";return (async()=>{' + custom.code + "\n})();"
+					)
+					const result = await fn(args, ctx)
+					if (result === undefined) return "(tool ran; no return value)"
+					try {
+						return typeof result === "string"
+							? result
+							: JSON.stringify(result, null, 2)
+					} catch {
+						return String(result)
+					}
+				} catch (e: any) {
+					return "custom tool error: " + (e?.message || String(e))
+				}
 			}
 			return "Unknown tool: " + toolName
 		} catch (e: any) {
@@ -1175,10 +1726,15 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		})
 
 		// Create instance doc — type must match the datatype id
-		const instanceHandle = await repo.create2({
+		let instanceHandle = await repo.create2({
 			title: datatypeId,
 			"@patchwork": {type: datatypeId, suggestedImportUrl: folderHandle.url},
 		})
+		// Resolve through repo.find so that on a draft we write init() into the
+		// same clone the pin/UI renders. (The overlay forks on repo.find; the
+		// create2 handle is the un-forked original, so init()'ing it would leave
+		// the displayed clone empty — the find<->create2 draft gotcha.)
+		instanceHandle = await repo.find(instanceHandle.url)
 
 		// Try to auto-initialize with datatype.init()
 		try {
@@ -1296,6 +1852,48 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 		// Add context info
 		const logParts: string[] = []
 
+		// Context tool: inject the FOCUSED document (url + heads + contents) so the
+		// computer knows what it's editing without always having to read_doc first.
+		if (isContext()) {
+			const turl = props.targetDocUrl?.()
+			if (turl) {
+				try {
+					const th = await repo.find(turl)
+					const td = th.doc() as any
+					let heads: any = []
+					try {
+						heads = th.heads()
+					} catch {}
+					let snap = ""
+					try {
+						snap = JSON.stringify(td, null, 2)
+					} catch {
+						snap = String(td)
+					}
+					if (snap.length > 8000) {
+						snap =
+							snap.slice(0, 8000) +
+							"\n…(truncated — call read_doc for the full document)"
+					}
+					logParts.push(
+						"Focused document (the document you are editing):\n" +
+							"url=" +
+							turl +
+							"\nheads=" +
+							JSON.stringify(heads) +
+							"\ntype=" +
+							(td?.["@patchwork"]?.type || "unknown") +
+							"\ncontents:\n" +
+							snap
+					)
+				} catch {}
+			} else {
+				logParts.push(
+					"No document is currently focused. Ask the user to select one, or work from a url they give you."
+				)
+			}
+		}
+
 		// Chat shared files
 		if (doc?.docs?.length > 0) {
 			const fileList = doc.docs
@@ -1395,6 +1993,8 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 				d.hasComputer = false
 				delete d.computerInstanceId
 				delete d.computerHeartbeat
+				delete d.computerOwner
+				delete d.computerModel
 			})
 			sendComputerMessage("computer has left the chat.")
 			return
@@ -1424,6 +2024,46 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 			)
 			return
 		}
+		if (sub === "owner" || sub === "who") {
+			const d = props.handle.doc() as any
+			if (!d?.hasComputer) {
+				sendComputerMessage(
+					"computer isn't active — nobody owns it. /computer invite to add it."
+				)
+				return
+			}
+			const owner = d.computerOwner
+			const mine = isComputerHost()
+			sendComputerMessage(
+				owner
+					? "computer is owned by " + owner + (mine ? " (that's you)" : "") + "."
+					: "computer is active but unclaimed" +
+							(mine ? " — and you're the host" : "") +
+							". /computer own to claim it."
+			)
+			return
+		}
+		if (sub === "own" || sub === "pwn") {
+			const prevOwner = (props.handle.doc() as any)?.computerOwner
+			const me = ownerName()
+			if (isComputerHost() && computerActive() && prevOwner && prevOwner === me) {
+				sendComputerMessage("you already own computer.")
+				return
+			}
+			setComputerActive(true)
+			claimComputerHost()
+			startComputerListener()
+			const verb = sub === "pwn" ? "pwned" : "took ownership of"
+			sendComputerMessage(
+				(me || "you") +
+					" " +
+					verb +
+					" computer" +
+					(prevOwner && prevOwner !== me ? " (was " + prevOwner + ")" : "") +
+					"."
+			)
+			return
+		}
 		if (sub === "model" || sub === "models") {
 			void openModelPicker()
 			return
@@ -1444,6 +2084,7 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 					"• currently running: " + model,
 					"• /model — pick a different model or provider",
 					"• /computer nosey — make me respond to everything",
+					"• /computer owner — see who's hosting me; /computer own to take over",
 					"• /computer kick — send me away",
 				].join("\n")
 			)
@@ -1456,6 +2097,10 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 			d.hasComputer = true
 			d.computerInstanceId = myInstanceId
 			d.computerHeartbeat = Date.now()
+			const n = ownerName()
+			if (n) d.computerOwner = n
+			const m = modelLabel()
+			if (m) d.computerModel = m
 		})
 		// We're the host now, stop watching for staleness
 		if (stalenessWatchInterval) {
@@ -1829,7 +2474,9 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 				if (!status || latestTokenText) return // don't overwrite real tokens
 				showingStatus = true
 				resetInactivityTimer()
-				setLlmStatus(status)
+				// The computer computes — it doesn't "think". Rewrite the lib's
+				// anthropomorphic status text before showing it.
+				setLlmStatus(status.replace(/think(ing)?/gi, "computing"))
 			}
 
 			const MAX_TOOL_ROUNDS = 5
@@ -1878,6 +2525,9 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 							/\b(what|which|how|should|would|do you|can you|could you|shall|prefer)\b/i.test(
 								trimmedText.slice(-200)
 							))
+					// Explicit ask_user tool call — treated like a question: post it and
+					// end the turn (the reply comes back as a fresh user message).
+					const askCall = calls.find((c: any) => c.name === "ask_user")
 
 					// Process output blocks (patchwork-tool, file, embed, image) — tool
 					// calls are structured now, so parsed.blocks are all output blocks.
@@ -1911,12 +2561,35 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 							if (!d.richBlocks) d.richBlocks = []
 							for (const bl of displayBlocks) d.richBlocks.push(bl)
 						}
+						// ask_user: surface the question as this message's text + render
+						// its options as clickable quick-reply buttons.
+						if (askCall) {
+							const q =
+								typeof askCall.args?.question === "string"
+									? askCall.args.question
+									: ""
+							d.text = (text ? text + "\n\n" : "") + q
+							let o: any = askCall.args?.options
+							if (typeof o === "string") {
+								try {
+									o = JSON.parse(o)
+								} catch {
+									o = undefined
+								}
+							}
+							if (Array.isArray(o) && o.length) {
+								d.quickReplies = o.map((x: any) => String(x))
+							}
+						}
 					})
 
-					// If asking a question, stop here — don't loop
-					if (endsWithQuestion) {
-						// Still execute tool calls so side effects happen, but don't feed results back
+					// If asking a question (prose or the ask_user tool), stop here —
+					// don't loop; the answer arrives as a new user message.
+					if (endsWithQuestion || askCall) {
+						// Run any real side-effecting tool calls (but ask_user is
+						// display-only — it's already been rendered above).
 						for (const c of calls) {
+							if (c.name === "ask_user") continue
 							await runToolByName(c.name, c.args)
 						}
 						completedResponse = true
@@ -2578,10 +3251,12 @@ Keep responses concise. When you create a tool, explain briefly what it does.`
 									setPendingEmbeds={setPendingEmbeds}
 								/>
 							</div>
-							<Sidebar
-								visible={sidebarVisible()}
-								onVisibilityChange={setSidebarVisible}
-							/>
+							<Show when={!isContext()}>
+								<Sidebar
+									visible={sidebarVisible()}
+									onVisibilityChange={setSidebarVisible}
+								/>
+							</Show>
 							<Show when={emojiPickerState().open}>
 								<EmojiPicker
 									targetIdx={emojiPickerState().targetIdx}

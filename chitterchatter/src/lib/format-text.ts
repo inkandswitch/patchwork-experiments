@@ -119,7 +119,7 @@ export function formatText(
 		const escaped = escapeHtml(content)
 		out = out.replace(
 			"\x00THINK" + j + "\x00",
-			'<details class="chat-think-block"><summary>thinking</summary><div class="chat-think-content">' + escaped + '</div></details>'
+			'<details class="chat-think-block"><summary>computing</summary><div class="chat-think-content">' + escaped + '</div></details>'
 		)
 	}
 

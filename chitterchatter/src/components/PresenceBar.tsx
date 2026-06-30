@@ -22,7 +22,13 @@ export function PresenceBar(props: {
 	let notifyBtnRef!: HTMLButtonElement
 
 	const presenceUsers = createMemo(() => {
-		const result: {name: string; avatarSrc?: string; active: boolean; isComputer?: boolean}[] = []
+		const result: {
+			name: string
+			avatarSrc?: string
+			active: boolean
+			isComputer?: boolean
+			tooltip?: string
+		}[] = []
 		// Self
 		const myAvUrl = myAvatarUrl()
 		result.push({
@@ -39,9 +45,23 @@ export function PresenceBar(props: {
 				avatarSrc: info.avatarUrl ? automergeUrlToServiceWorkerUrl(info.avatarUrl as any) : undefined,
 			})
 		}
-		// Computer
+		// Computer — tooltip surfaces who owns (hosts) it and which model it runs.
 		if (props.computerActive) {
-			result.push({name: "computer", active: true, avatarSrc: computerPngUrl, isComputer: true})
+			const d = doc() as any
+			const owner = d?.computerOwner
+			const model = d?.computerModel
+			const tooltip =
+				"Computer" +
+				(owner ? " — owned by " + owner : " — unclaimed") +
+				(model ? " · running " + model : "") +
+				(owner ? "\n(/computer own to take over)" : "")
+			result.push({
+				name: "computer",
+				active: true,
+				avatarSrc: computerPngUrl,
+				isComputer: true,
+				tooltip,
+			})
 		}
 		return result
 	})
@@ -68,7 +88,10 @@ export function PresenceBar(props: {
 		<div class="chat-presence-bar" title={doc()?.title || "Chat"}>
 			<For each={presenceUsers()}>
 				{(user) => (
-					<div class="chat-presence-user" classList={{away: !user.active}}>
+					<div
+						class="chat-presence-user"
+						classList={{away: !user.active}}
+						title={user.tooltip || user.name}>
 						<span class="chat-presence-avatar">
 							<Show when={user.avatarSrc} fallback={(user.name || "?")[0].toUpperCase()}>
 								<img src={user.avatarSrc} />

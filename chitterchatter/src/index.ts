@@ -21,4 +21,18 @@ export const plugins = [
 			return ChatTool
 		},
 	},
+	{
+		// Streamlined context-sidebar variant: no sidebar, chats about whatever
+		// document is focused (chat stored at focusedDoc['@patchwork'].chitchat),
+		// and the computer edits that document via universal Automerge ops.
+		type: "patchwork:component",
+		id: "chitterchatter-context",
+		name: "Chitchat",
+		icon: "MessageCircle",
+		tags: ["context-tool"],
+		async load() {
+			const {ChatContextComponent} = await import("./context-tool")
+			return ChatContextComponent
+		},
+	},
 ]

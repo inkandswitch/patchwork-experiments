@@ -38,8 +38,8 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 	},
 	{
 		cmd: "/computer",
-		usage: "/computer [invite|kick|nosey|clear]",
-		desc: "Manage the AI assistant: invite, kick, toggle nosey mode, or clear context",
+		usage: "/computer [invite|kick|nosey|clear|owner|own|pwn]",
+		desc: "Manage the AI assistant: invite, kick, toggle nosey, clear context, see the owner (owner), or take over (own/pwn)",
 	},
 	{
 		cmd: "/call",
