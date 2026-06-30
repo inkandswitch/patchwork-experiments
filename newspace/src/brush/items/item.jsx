@@ -1,8 +1,9 @@
 // Item — the per-item renderer + kind dispatch — and DocOrFrame (the embedded
 // patchwork-view / box). Mutually recursive (a box renders child Items), so they
 // live together. Extracted from tool.jsx; prop-driven via `ctx`.
-import { createSignal, createMemo, createEffect, onCleanup, Show, For } from "solid-js";
+import { createSignal, createMemo, createEffect, createResource, onCleanup, Show, For, Suspense } from "solid-js";
 import { makeDocumentProjection } from "solid-automerge";
+import { surfaceDoc } from "../../surface-doc.js";
 import { getType } from "@inkandswitch/patchwork-filesystem";
 import { isBoxType, rad, rot, itemBounds, arrowGeometry } from "../../model.js";
 import { roughRectPath, seedFromId, freehandPath, shapePaths } from "../../draw.js";
@@ -25,7 +26,8 @@ export function Item(props) {
   const b = createMemo(() => ctx.itemBounds(renderIt()));
   // stacking comes from the item's position in its surface's array (not DOM order)
   const z = createMemo(() => (props.surface.doc?.items || []).findIndex((x) => x.id === it().id));
-  const selectMode = () => ctx.tool() === "select";
+  // the wire tool is a pointer++ — items are selectable/movable/editable in it too
+  const selectMode = () => ctx.tool() === "select" || ctx.tool() === "wire";
   const hittable = () => selectMode() || ctx.tool() === "eraser";
   const editing = () => ctx.editingId() === it().id;
   // while dragging this item INTO a box, preview the drop: clip it to the box's
@@ -95,6 +97,13 @@ export function Item(props) {
               <InlineEdit id={it().id} surface={props.surface} text={it().text || ""} cls="ns-shape-edit" style={{ "font-size": `${it().fontSize || 28}px` }} done={() => ctx.setEditingId(null)} />
             </Show>
           </Show>
+          {/* SHAPE OUTLETS — a drawn shape's geometry as wireable opstreams (x/y/w/h),
+              grabbable in wire mode. Writable, so a stream can also DRIVE the shape. */}
+          <Show when={ctx.tool() === "wire"}>
+            <div class="ns-node-outlets">
+              <div class="ns-node-port ns-node-outlet bidi" data-sketchy-node={it().id} data-sketchy-outlet="props" data-tip="props : json (read/write)" />
+            </div>
+          </Show>
           <Show when={hittable() && !editing()}>
             <Show when={it().kind === "shape" && (it().type === "line" || it().type === "arrow")} fallback={
               <div class="ns-hit" onPointerDown={down} onDblClick={() => { if (selectMode() && ctx.enterGroup(it())) return; if (it().kind === "shape") edit(); }} />
@@ -158,7 +167,7 @@ export function DocOrFrame(props) {
   const childSurface = createMemo(() => {
     const s = space();
     if (!s) return null;
-    return { id: it().url, handle: s.layoutHandle, doc: makeDocumentProjection(s.layoutHandle), folderHandle: s.folderHandle, folderDoc: makeDocumentProjection(s.folderHandle), frame: it() };
+    return { id: it().url, handle: s.layoutHandle, doc: surfaceDoc(s.layoutHandle), folderHandle: s.folderHandle, folderDoc: makeDocumentProjection(s.folderHandle), frame: it() };
   });
   createEffect(() => { const s = childSurface(); if (s) { ctx.registerSurface(s.id, s); onCleanup(() => ctx.unregisterSurface(s.id)); } });
   // a canvas box reconciles its folder's links into positioned layout items
@@ -187,9 +196,11 @@ export function DocOrFrame(props) {
   });
 
   // resolve the doc's REAL title via its datatype's getTitle (a box reads its
-  // FOLDER doc; a plain doc loads itself), reactive to the doc's own changes
-  const [docHandle, setDocHandle] = createSignal(null);
-  createEffect(() => { if (!isFrame()) ctx.loadDoc(it().url).then((h) => h && setDocHandle(h)); });
+  // FOLDER doc; a plain doc loads itself), reactive to the doc's own changes. As a
+  // RESOURCE so a <Suspense> on the body renders a fallback until the doc is in hand
+  // (best-effort: the title shows, the embed swaps in when ready). Frames pass a
+  // falsy source → the fetcher never runs (they use childSurface instead).
+  const [docHandle] = createResource(() => (isFrame() ? false : it().url), (url) => ctx.loadDoc(url));
   const proj = createMemo(() => (isFrame() ? childSurface()?.folderDoc : (docHandle() ? makeDocumentProjection(docHandle()) : null)));
   // the datatype comes from the DOC's own @patchwork.type (the link's type can
   // be empty/stale), so getTitle uses the right datatype
@@ -216,7 +227,8 @@ export function DocOrFrame(props) {
   const bodyPE = () => {
     if (tooDeep()) return "none";
     if (isFrame() && !isList()) return "auto"; // canvas box: children manage
-    return props.selectMode() ? "auto" : "none"; // doc / list box: live in select
+    // live in select mode OR while wiring (so you can grab a PORT inside an embed)
+    return props.selectMode() || ctx.tool() === "wire" ? "auto" : "none";
   };
   const openToolId = () => isFrame() ? (isList() ? "folder-viewer" : "newspace") : it().toolId || undefined;
   const open = (e) => {
@@ -259,10 +271,14 @@ export function DocOrFrame(props) {
       <div class="ns-doc-body" ref={(el) => { bodyRef = el; enableAtomicMove(el); }} classList={{ "ns-frame-body": isFrame() && !isList() }} style={{ "pointer-events": bodyPE() }} onFocusIn={() => ctx.deselect()}>
         <Show when={isFrame()} fallback={
           <Show when={link()?.type === "file"} fallback={
-            <Show when={ctx.embedsReady()} fallback={<div class="ns-doc-pending" />}>
-              {/* @ts-ignore custom element */}
-              <patchwork-view doc-url={it().url} {...(it().toolId ? { "tool-id": it().toolId } : {})} style="display:block;width:100%;height:100%" />
-            </Show>
+            // Suspense: render a placeholder until the doc handle resolves (reading the
+            // resource is what suspends), then swap in the live embed best-effort.
+            <Suspense fallback={<div class="ns-doc-pending">{title()}</div>}>
+              <Show when={ctx.embedsReady() && docHandle()} fallback={<div class="ns-doc-pending">{title()}</div>}>
+                {/* @ts-ignore custom element */}
+                <patchwork-view doc-url={it().url} {...(it().toolId ? { "tool-id": it().toolId } : {})} style="display:block;width:100%;height:100%" />
+              </Show>
+            </Suspense>
           }>
             <img class="ns-doc-img" src={ctx.serviceUrl(it().url)} alt={title()} />
           </Show>

@@ -4,8 +4,8 @@
 // embedded docs, sub-boxes) lives in that layout doc as one ordered `items`
 // array — kept out of the folder so the folder stays a clean list.
 //
-//   folder/newspace doc : { title, docs: DocLink[], newspace: <layout url> }
-//   layout doc          : { "@patchwork": { type: "newspace-layout" }, items: Item[] }
+//   folder/sketch doc : { title, docs: DocLink[], sketch: <layout url> }   (was `.newspace`)
+//   layout doc        : { "@patchwork": { type: "sketch-layout" }, items: Item[], layout }
 //
 // Item kinds (in the layout doc; array order = draw order):
 //   stroke { id, kind, points:[[x,y,pressure]], color, size, thinning, smoothing, streamline, rotation }
@@ -18,16 +18,16 @@
 
 export const NewspaceDatatype = {
   init(doc) {
-    doc.title = "Sketchy";
+    doc.title = "New sketch";
     doc.docs = [];
   },
   getTitle(doc) {
-    return doc.title || "Sketchy";
+    return doc.title || "Sketch";
   },
   setTitle(doc, title) {
     doc.title = title;
   },
   markCopy(doc) {
-    doc.title = "Copy of " + (doc.title || "Sketchy");
+    doc.title = "Copy of " + (doc.title || "Sketch");
   },
 };

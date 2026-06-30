@@ -40,6 +40,19 @@ export function itemBounds(it) {
   return { x: it.x, y: it.y, w: it.w, h: it.h };
 }
 
+// WORLD position of a node's inlet/outlet port, computed from the item BOUNDS (not
+// the DOM) so wire endpoints update exactly with the item — no getBoundingClientRect
+// lag — and stay put even when the port chips are hidden (wire tool off). `side` is
+// "in" (left edge) or "out" (right edge); ports are distributed around the vertical
+// centre by index, with a capped gap so they never spill past the box.
+export function portPoint(bounds, side, index = 0, count = 1) {
+  const n = Math.max(count, 1);
+  const x = side === "out" ? bounds.x + bounds.w : bounds.x;
+  const gap = Math.min(bounds.h / (n + 1), 20); // matches the CSS nub pitch (12px nub + 8px gap)
+  const y = bounds.y + bounds.h / 2 + (index - (n - 1) / 2) * gap;
+  return { x, y };
+}
+
 // deep-clone an item to a plain object (for moving between automerge docs)
 export function cloneItem(o) {
   const c = { ...o };

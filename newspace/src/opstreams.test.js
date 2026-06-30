@@ -32,6 +32,14 @@ describe("apply — one op for everything", () => {
     expect(apply("hello", splice([], 0, 1, "J"))).toBe("Jello"); // replace
   });
 
+  it("a STRING-valued splice into undefined/null stays a STRING (not an array)", () => {
+    // an unwired text buffer starts as Opstream(undefined); its first keystroke must keep it
+    // text. Without this the codemirror `text` outlet became an array of characters.
+    expect(apply(undefined, splice([], 0, 0, "hi"))).toBe("hi");
+    expect(apply(null, splice([], 0, 0, "a"))).toBe("a");
+    expect(apply(apply(undefined, splice([], 0, 0, "ho")), splice([], 2, 2, "la"))).toBe("hola");
+  });
+
   it("splices bytes — and GROWS / SHRINKS (the old BytesOp couldn't)", () => {
     const b = Uint8Array.from([1, 2, 3]);
     const grown = apply(b, splice([], 1, 1, Uint8Array.from([9, 9]))); // insert 2

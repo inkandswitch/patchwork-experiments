@@ -194,6 +194,76 @@ export function roughRectPath(w, h, seed) {
   return generator.toPaths(d).map((p) => ({ d: p.d, strokeWidth: p.strokeWidth || 2.4 }));
 }
 
+// A roughened ELLIPSE outline (for round nodes like the new-doc store).
+export function roughEllipsePath(w, h, seed) {
+  const d = generator.ellipse(w / 2, h / 2, Math.max(2, w - 4), Math.max(2, h - 4), {
+    roughness: 0.9, bowing: 0.8, seed, stroke: "currentColor", strokeWidth: 2.4,
+  });
+  return generator.toPaths(d).map((p) => ({ d: p.d, strokeWidth: p.strokeWidth || 2.4 }));
+}
+
+// A fat, hand-drawn arrowhead pointing +x (for a wire's direction marker). Filled
+// rough triangle; translate+rotate it into place. `currentColor` drives the colour.
+export function roughArrowHead(seed, size = 13) {
+  const s = size;
+  const shape = generator.polygon(
+    [[-s * 0.55, -s * 0.7], [s * 0.85, 0], [-s * 0.55, s * 0.7]],
+    { fill: "currentColor", fillStyle: "solid", fillWeight: 2, stroke: "currentColor", strokeWidth: 1.6, roughness: 1.05, seed: seed || 1 },
+  );
+  return generator.toPaths(shape).map((p) => ({ d: p.d, fill: p.fill || "none", strokeWidth: p.strokeWidth || 1 }));
+}
+
+// A roughened wire — a sketchy cubic between two points (S-curve through the
+// horizontal midpoint), so connections share the hand-drawn register. Seed per
+// wire keeps it stable across re-renders. stroke is "currentColor".
+export function roughLinkPath(x1, y1, x2, y2, seed) {
+  const mx = (x1 + x2) / 2;
+  const d = `M${x1} ${y1} C ${mx} ${y1} ${mx} ${y2} ${x2} ${y2}`;
+  const shape = generator.path(d, { roughness: 1.1, bowing: 1, seed: seed || 1, stroke: "currentColor", strokeWidth: 2 });
+  return generator.toPaths(shape).map((p) => ({ d: p.d, strokeWidth: p.strokeWidth || 2 }));
+}
+
+// RELATIVE + MEMOISED wire path: drawn (0,0)→(dx,dy), so a wire that only PANS keeps
+// the same dx/dy and hits the cache — no roughjs work per frame (the caller just
+// updates a translate). Generating roughjs every frame for every wire was the cost.
+const _linkCache = new Map();
+export function roughLink(dx, dy, seed = 1) {
+  const k = (Math.round(dx)) + "," + (Math.round(dy)) + "," + seed;
+  let v = _linkCache.get(k);
+  if (!v) {
+    const mx = dx / 2;
+    const d = `M0 0 C ${mx} 0 ${mx} ${dy} ${dx} ${dy}`;
+    const shape = generator.path(d, { roughness: 1.1, bowing: 1, seed, stroke: "currentColor", strokeWidth: 2 });
+    v = generator.toPaths(shape).map((p) => ({ d: p.d, strokeWidth: p.strokeWidth || 2 }));
+    if (_linkCache.size > 600) _linkCache.clear();
+    _linkCache.set(k, v);
+  }
+  return v;
+}
+// the arrowhead only depends on its seed/size → memoise outright
+const _arrowCache = new Map();
+export function roughArrow(seed = 1, size = 13) {
+  const k = seed + "," + size;
+  let v = _arrowCache.get(k);
+  if (!v) { v = roughArrowHead(seed, size); if (_arrowCache.size > 300) _arrowCache.clear(); _arrowCache.set(k, v); }
+  return v;
+}
+// An OPEN chevron arrowhead (unfilled `>` strokes), tip at (0,0) pointing +x —
+// small, hand-drawn, memoised. Place at a point and rotate to the curve tangent.
+const _chevCache = new Map();
+export function roughChevron(seed = 1, size = 8) {
+  const k = seed + "," + size;
+  let v = _chevCache.get(k);
+  if (!v) {
+    const s = size;
+    const shape = generator.path(`M${-s} ${-s * 0.75} L0 0 L${-s} ${s * 0.75}`, { roughness: 1, seed, stroke: "currentColor", strokeWidth: 2 });
+    v = generator.toPaths(shape).map((p) => ({ d: p.d, strokeWidth: p.strokeWidth || 2 }));
+    if (_chevCache.size > 300) _chevCache.clear();
+    _chevCache.set(k, v);
+  }
+  return v;
+}
+
 // Axis-aligned bounds for a shape (handles negative w/h).
 export function shapeBounds(s) {
   return {

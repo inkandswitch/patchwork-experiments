@@ -26,12 +26,12 @@ function mountView(opstream, doc) {
 }
 
 describe("languageFor", () => {
-  it("maps mime / extension to a language extension (or null)", () => {
-    expect(languageFor({ mimeType: "text/markdown" })).toBeTruthy();
-    expect(languageFor({ name: "a.js" })).toBeTruthy();
-    expect(languageFor({ extension: "css" })).toBeTruthy();
-    expect(languageFor({ extension: "json" })).toBeTruthy();
-    expect(languageFor({ mimeType: "text/plain" })).toBe(null);
+  it("maps mime / extension to a language extension (or null) — async, lazy-loaded packs", async () => {
+    expect(await languageFor({ mimeType: "text/markdown" })).toBeTruthy();
+    expect(await languageFor({ name: "a.js" })).toBeTruthy();
+    expect(await languageFor({ extension: "css" })).toBeTruthy();
+    expect(await languageFor({ extension: "json" })).toBeTruthy();
+    expect(await languageFor({ mimeType: "text/plain" })).toBe(null);
   });
 });
 

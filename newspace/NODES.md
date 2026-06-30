@@ -1,0 +1,172 @@
+# Nodes: sources, sinks, transforms, editors
+
+The canvas wires **opstreams** between **nodes**. A node has typed **inlets** (it
+consumes) and **outlets** (it provides). Everything else is a *role* — a
+consequence of a node's port topology, not a separate plugin type.
+
+## Roles are topology (see `nodeRole` in `editors.js`)
+
+| role | inlets | outlets | examples |
+|------|:------:|:-------:|----------|
+| **source** | 0 | ≥1 | file, clock, gamepad, geolocation, midi, camera |
+| **sink** | ≥1 | 0 | (a "save to…", a logger — none built yet) |
+| **transform** | ≥1 | ≥1 | a *lens you can see* — `json-path` |
+| **editor** | ≥1 | ≥1 | codemirror (rich UI, writes back) |
+
+`transform` and `editor` share a topology; we tag editors by intent so the menu
+can group them. A bare, UI-less, ~bijective transform is registered as the lighter
+**`sketchy:lens`** type (`number→string`, `File→text`, `File→JSON`) — it has no
+mount, just a `project`/`map`/`apply` spec applied by `applyLens`.
+
+The + menu now groups placeable nodes: **sources · editors · lenses**.
+
+## The umbrella type: `sketchy:window` (decided)
+
+`sketchy:editor` was the wrong name — a source (gamepad) and a transform (json-path)
+aren't "editors", and a lens with UI (json-path) *is* a surface, which was the tell.
+The registry type is now **`sketchy:window`**. (Internal symbols — `listEditors`,
+`EditorItem`, `editor-item.jsx` — keep their names for now; they're implementation
+detail. Stored items reference `editorId` the id string, not the type, so the rename
+was internal and safe.)
+
+A surface is the universal framed thing on the canvas: typed inlets/outlets, optional
+UI, optional `params`. Its ROLE (source/sink/transform/editor) is derived from its
+ports (`nodeRole`). `sketchy:lens` stays as the lighter UI-less transform.
+
+## Sources (`src/sources.js`, mounted via `src/source-nodes.js`)
+
+Each factory returns `{ stream, stop }` with the `Source` created **synchronously**
+(so a node can register it as an outlet immediately) and the device fed into it.
+Values are JSON-shaped snapshots (lens-friendly); opaque handles (a `MediaStream`)
+ride in the stream's complement.
+
+- **file** — pick a local file → a read-only `File` snapshot `{name,type,size,
+  lastModified,extension,text}`, **watched** so it reflects on-disk changes. A
+  read-only source has no edits to be dirty, so it reloads unconditionally.
+- **clock / gamepad / geolocation / midi / camera** — thin wrappers over the Web
+  platform. Gamepad polls each animation frame (controllers only appear after a
+  button press — a browser rule). midi/geolocation/camera prompt for permission.
+
+## File: watch + decompose
+
+- The **`file` source** provides only the `File` outlet (your "it's only meant to
+  provide outlets"); compose `file → (File→JSON) → inspector` or
+  `file → (File→text) → codemirror`.
+- **`file-edit`** keeps the edit-in-codemirror-with-Save flow, now **watched**:
+  `watchFileStream` reloads from disk *unless the stream is dirty* (unsaved edits
+  win), and `save()` re-baselines so your own write isn't seen as an external
+  change. (`fs-opstream.js`: `diskChanged`, `isDirty` are the pure decisions.)
+- Editing a file *through* a read-only lens (so codemirror could save back to the
+  File source) needs a **bidirectional lens** (a `File→text` with `apply` that
+  writes the handle). Not built — the read-only view path is done.
+
+## Lens-with-UI = a node (`src/json-path.js`)
+
+`json-path` is a `sketchy:editor` (a node) with an inlet, a **path text field**,
+and an outlet — a jq-ish narrowing (`.a.b[2]`, `["key"]`, identity `.`). Because it
+carries UI state (the path), it can't be a bare `sketchy:lens`. This is the
+concrete proof that *a visible/stateful lens is just a node*.
+
+## Lenses as optics (Getter / Lens)
+
+A lens is an optic. `project` alone is a **Getter** (read-only); `project` +
+`unproject` is a **Lens** (get *and* set). `applyLens` composes the optic with its
+source: over an editable source a Lens stays a Lens (bidirectional — codemirror can
+write back); over a **read-only** source it collapses to a Getter (we drop `apply`,
+so a downstream editor presents read-only rather than silently dropping edits). The
+`number → string` lens is bidirectional (`unproject` parses the text back to a
+number); the `File → text/JSON` lenses are Getters (their File source is read-only).
+
+## json-set — the write counterpart of json-path
+
+`json-path` narrows (a Getter). **`json-set`** writes: wire a `value` and a target
+`into` opstream, give a path, and it writes the value to that field
+(`into.apply({path, range, value})`). A sink (no outlet); the target must be editable.
+`writeOp(steps, value)` is the pure op-builder (the last path step is the `range`).
+(Writing a value to a *visible* field is already possible by wiring straight to its
+`data-automerge-*` port; json-set generalises to any path of any wired doc.)
+
+## codemirror authors too (a surface can be its own source)
+
+The codemirror `content` inlet is **optional**: wired ⇒ it views/edits that stream;
+unwired ⇒ it's a **source** — it makes its own editable `Opstream("")` and exposes it
+on `text`. So "the code editor doesn't *need* an inlet." Generalises: any surface can
+fall back to an internal stream when an inlet is unwired.
+
+## params schema (groundwork — `editors.js`)
+
+A surface (and a brush) may declare `params: [{name, type, schema?, default?}]` —
+configurable knobs. The insight: a param is ALSO wireable. `paramsAsInlets(descriptor)`
+projects each param to an OPTIONAL, `param`-tagged inlet; `effectiveInlets` =
+declared inlets + param-inlets. So a knob can be driven by the properties panel OR by
+a wire. (The pure projection + role/menu are done; the params UI + feeding param
+values into mounts is the remaining TODO.)
+
+## Complement across a JSON boundary (`boundary.js`)
+
+When a stream crosses a JSON-only channel (a MessagePort to an embedded tool), the
+VALUE crosses by structured-clone but the COMPLEMENT can't carry functions/handles.
+`serializeComplement` splits it: JSON fields → `data` (by value); functions →
+`capabilities` (proxied as async calls back over the channel — safe when args are
+0/JSON/transferable, arity recorded); live handles (File, MediaStream) → `dropped`.
+`hydrateComplement` rebuilds the far side: data + async stubs that call `invoke(name,
+args)`, so capability feature-detection (presence of `save()`) still works across the
+boundary. (The pure split is done; wiring it to a real MessagePort proxy is TODO.)
+
+The concrete consumer: a **sandbox box** — a "sand" boolean on a box (or its own
+tool) that makes the box an *iframe boundary*, so tools drawn inside run sandboxed.
+Streams crossing in/out use exactly this split: value by structured-clone, complement
+functions proxied over postMessage, live handles dropped.
+
+## Related: bireactive
+
+`~/soft/orionreed/bireactive`'s `lens(source, fwd, bwd)` is the same shape as our
+`transform` (`fwd` = `project` getter, `bwd` = `unproject`/`apply` setter); lenses
+compose by feeding one's output as the next's source, mirroring our wire chains — so
+that work validates this model. Two ideas worth lifting later (TODO): a `SKIP`
+sentinel (a backward write that leaves a source untouched — our `unproject`
+returning `undefined` already means this) and `lensN` (a multi-source fan-in lens,
+the one thing our single-source lens can't express).
+
+## Borders
+
+Surfaces (editors/lenses/sources) now draw a **rough.js** hand-drawn border like docs
+and frames — `roughRectPath(w,h, seedFromId(id))`, deterministic per item.
+
+## OPEN: collaborative sources
+
+A gamepad/midi/camera source is **local** to whoever placed it (each viewer reads
+their own device). Two interesting wants the design raised:
+
+1. **Share one source's stream to peers** — viewer A's gamepad drives a node
+   everyone sees. This is presence: publish the source's snapshots over the doc's
+   ephemeral channel keyed by the node id; peers mirror them into a local Source.
+2. **Shared ownership** — two people send presses into the *same* logical
+   controller source (merged input). Same transport, but inputs union rather than
+   one owner. "Should just be an option" — a per-source `share: "own" | "merge"`.
+
+Neither is built. The hook: sources already produce a plain `Source`; a presence
+bridge can publish/subscribe its values without the source knowing.
+
+## Performance: wires (Solid signal arrangement)
+
+The wire layer is split so only signal results cause work, nothing redundant:
+- **`wireSpecs`** — a memo of the wiring STRUCTURE (which ports connect + bidi-ness),
+  with **stable identity** (returns the previous array when its structural signature
+  is unchanged). So panning, zooming, or moving an item does NOT recreate wire rows.
+- **per-row geometry memo** (`geomFor`) — reads `cam()` + live item positions, so a
+  pan/zoom/move updates only the row's `transform`/`d` ATTRS, never its DOM.
+- **cached, pan-invariant rough paths** (`roughLink`/`roughArrow` in draw.js) — drawn
+  relative to `from` and positioned by `translate`, so a wire that only pans keeps the
+  same `(dx,dy)` and hits the cache → roughjs is not re-run per frame. Was: roughjs
+  regenerated for every wire every frame + `<For>` recreated every row every frame.
+
+## PLANNED: generative LLM tool (LLM that draws a world)
+
+An LLM block that CONTRIBUTES new brushes/shapes/tools — say "let's live in a world
+with rabbits and cats I can name, pet, and feed carrots" and it writes JavaScript that
+runs on the page and makes that work. Render the generated code in a FRAMELESS iframe
+(the sandbox boundary), but let it talk over OPSTREAMS: the prompt teaches it the
+opstream + postMessage interface and how to declare inlets/outlets. Depends on:
+boundary.js (serializeComplement/hydrateComplement) + the sandbox-box iframe boundary
++ a value-by-structured-clone / capability-by-postMessage proxy. NOT built.

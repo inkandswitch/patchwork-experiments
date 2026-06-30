@@ -8,7 +8,11 @@
 // doc straight from the list and wire it into an editor.
 //
 // Plain DOM + a `change` listener (the house default), self-contained styles.
-import { complementSummary, complementBanner } from "./layouts.js";
+import { complementSummary, complementBanner, layoutsFor } from "./layouts.js";
+
+const SWITCH = "display:flex;gap:4px;margin:2px 4px 8px;";
+const SWBTN = "padding:3px 9px;border:1px solid currentColor;border-radius:5px;background:transparent;color:inherit;font:600 11px ui-monospace,monospace;cursor:pointer;";
+const SWBTN_ON = SWBTN + "background:var(--ns-ink,#2b2b2b);color:var(--ns-paper,#fff);";
 
 const WRAP = "display:flex;flex-direction:column;gap:2px;padding:6px;font:13px ui-sans-serif,system-ui,sans-serif;color:var(--ns-ink,inherit);";
 const BANNER = "margin:2px 4px 8px;padding:6px 9px;border:1.5px dashed #ff2284;border-radius:6px;font:600 11px ui-monospace,monospace;color:#ff2284;line-height:1.4;";
@@ -33,6 +37,24 @@ export function ListTool(handle, element) {
     const positioned = summary.positioned;
 
     root.replaceChildren();
+
+    // layout switcher — re-open this folder through another lens (same docs)
+    const layouts = layoutsFor("folder");
+    if (layouts.length > 1) {
+      const sw = document.createElement("div");
+      sw.style.cssText = SWITCH;
+      for (const l of layouts) {
+        const b = document.createElement("button");
+        b.textContent = l.name;
+        b.style.cssText = l.toolId === "sketchy:list" ? SWBTN_ON : SWBTN;
+        b.onclick = () => {
+          if (l.toolId === "sketchy:list") return;
+          element.dispatchEvent(new CustomEvent("patchwork:open-document", { detail: { url: handle.url, toolId: l.toolId }, bubbles: true, composed: true }));
+        };
+        sw.append(b);
+      }
+      root.append(sw);
+    }
 
     // surface the complement: what this list ISN'T showing
     if (summary.has) {

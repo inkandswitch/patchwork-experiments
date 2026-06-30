@@ -18,22 +18,30 @@ export function opstreamPlugin(opstream) {
       constructor(view) {
         this.view = view;
         this.sending = false;
-        this.cleanup = opstream.connect((op) => {
+        // `connect` fires the initial snapshot SYNCHRONOUSLY — during view
+        // construction — and CodeMirror forbids dispatching while an update is in
+        // progress. So defer any dispatch that happens during construction to a
+        // microtask. (Also coerce non-string values, since an `any`/json stream may
+        // be wired here before it holds text.)
+        let constructing = true;
+        const asText = (v) => (typeof v === "string" ? v : v == null ? "" : String(v));
+        const handle = (op) => {
           if (this.sending) return; // our own edit echoing back
+          // the INITIAL snapshot fires synchronously during construction — skip it
+          // (the editor was built with this value via the `content` option), which
+          // also avoids dispatching while the view is mid-construction.
+          if (constructing) return;
           if (isSnapshot(op)) {
-            if (op.value === view.state.doc.toString()) return; // no-op (e.g. initial)
-            view.dispatch({
-              annotations: [Transaction.remote.of(true)],
-              changes: { from: 0, to: view.state.doc.length, insert: op.value },
-            });
+            const v = asText(op.value);
+            if (v === view.state.doc.toString()) return; // no-op
+            view.dispatch({ annotations: [Transaction.remote.of(true)], changes: { from: 0, to: view.state.doc.length, insert: v } });
           } else {
             const [from = 0, to = from] = op.range; // op { path:[], range:[from,to], value }
-            view.dispatch({
-              annotations: [Transaction.remote.of(true)],
-              changes: { from, to, insert: op.value || "" },
-            });
+            view.dispatch({ annotations: [Transaction.remote.of(true)], changes: { from, to, insert: asText(op.value) } });
           }
-        });
+        };
+        this.cleanup = opstream.connect(handle);
+        constructing = false;
       }
       update(update) {
         if (!update.docChanged) return;

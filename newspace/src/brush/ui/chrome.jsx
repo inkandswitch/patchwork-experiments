@@ -3,6 +3,8 @@
 // prop-driven; none of this is the headless canvas core (it reads the context).
 import { createSignal, createMemo, createEffect, onCleanup, For, Show } from "solid-js";
 import { rot } from "../../model.js";
+import { nodeRole } from "../../editors.js";
+import { brushParamDefs } from "../../brush-host.js";
 import {
   colorVar, fillVar, fontFamily, PALETTE, SIZES, ARROW_SIZES, FILL_STYLES,
   FILL_PREVIEW, STROKE_STYLES, CORNERS, ROUGHNESS_LEVELS, FONT_OPTIONS, FILL_BG,
@@ -34,7 +36,7 @@ export const TOOL_META = {
   arrow: ["Arrow  (A)", "M4 18L17 6m0 0H9m8 0v8"],
   text: ["Text  (T)", "M5 6h12M11 6v11"],
   box: ["Box  (F)", "M8 3H3V8 M14 3H19V8 M14 19H19V14 M8 19H3V14"],
-  wire: ["Wire  (W)", "M5 17a2 2 0 100-.1z M19 7a2 2 0 100-.1z M7 16C12 16 12 8 17 8"],
+  wire: ["Wire — pointer++  (W)", "M4 3l9 3.7-3.7 1.2-1.2 3.7z M12 11c2 2 3.2 3.2 4.2 4.6 M18.8 15.6a2 2 0 10.02 0z"],
   highlighter: ["Highlighter", "M5 15l7-7 4 4-7 7H5v-4z M14 6l3-3 3 3-3 3z M4 21h8"],
   constraint: ["Constraint line", "M5 18a1.6 1.6 0 100-.1z M17 6a1.6 1.6 0 100-.1z M6 17L16 7 M6 17h5"],
   voice: ["Voice note", "M12 4a2.5 2.5 0 012.5 2.5v4a2.5 2.5 0 01-5 0v-4A2.5 2.5 0 0112 4z M7 10a5 5 0 0010 0 M12 15v4 M9 19h6"],
@@ -107,31 +109,43 @@ export function ToolBtn(props) {
     </button>
   );
 }
-export function Toolbar(props) {
+export function Toolbar(outer) {
+  // CHROME READS THE CONTEXT: one `host` bundle instead of ~15 props. (Back-compat: also
+  // accepts flat props.) Internals below read `props.X` unchanged.
+  const props = outer.host || outer;
+  // opts.tools (an explicit subset) restricts which tool buttons show; absent ⇒ all.
+  const showTool = (id) => !props.tools || props.tools.includes(id);
   const armOverflow = (id) => { props.setExtraShape(id); props.setTool(id); props.setShapeMenuOpen(false); };
   const [docQuery, setDocQuery] = createSignal("");
   createEffect(() => { if (!props.addOpen()) setDocQuery(""); });
-  const docList = createMemo(() => {
-    const q = docQuery().trim().toLowerCase();
-    const label = (dt) => (dt.name || dt.id || "").toLowerCase();
-    return props.datatypes()
-      .filter((dt) => !q || label(dt).includes(q) || (dt.id || "").toLowerCase().includes(q))
-      .sort((a, b) => label(a).localeCompare(label(b)));
-  });
+  // ONE search filters everything in the add menu (no "New…" expander, no add-by-id —
+  // those read as clutter). Each section is the filtered slice of its list.
+  const q = () => docQuery().trim().toLowerCase();
+  const match = (x) => { const s = q(); return !s || (x.name || x.id || "").toLowerCase().includes(s) || (x.id || "").toLowerCase().includes(s); };
+  const byName = (a, b) => (a.name || a.id || "").localeCompare(b.name || b.id || "");
+  const docList = createMemo(() => props.datatypes().filter(match).sort(byName));
+  // placeable nodes, split by role: a SOURCE produces (no inlets), everything else
+  // is an editor/sink/transform you wire into
+  const allNodes = () => (props.editors ? props.editors() : []);
+  const sources = createMemo(() => allNodes().filter((e) => nodeRole(e) === "source").filter(match));
+  const editors = createMemo(() => allNodes().filter((e) => nodeRole(e) !== "source").filter(match));
+  const lenses = createMemo(() => (props.lenses ? props.lenses() : []).filter(match));
   return (
     <div class="ns-toolbar" onPointerDown={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()}>
-      {/* nav + draw (eraser sits beside the pencil); each drags out as a drawing */}
-      <ToolBtn id="select" dragId="mouse" tool={props.tool} setTool={props.setTool} />
-      <ToolBtn id="hand" dragId="hand" tool={props.tool} setTool={props.setTool} />
-      <ToolBtn id="pen" dragId="pencil" tool={props.tool} setTool={props.setTool} />
-      <ToolBtn id="eraser" tool={props.tool} setTool={props.setTool} />
-      <ToolBtn id="wire" tool={props.tool} setTool={props.setTool} />
+      {/* nav + draw (eraser sits beside the pencil); each drags out as a drawing.
+          In `minimal` mode (the sketchpad tool) only the pencil shows. */}
+      <Show when={!props.minimal && showTool("select")}><ToolBtn id="select" dragId="mouse" tool={props.tool} setTool={props.setTool} /></Show>
+      <Show when={!props.minimal && showTool("hand")}><ToolBtn id="hand" dragId="hand" tool={props.tool} setTool={props.setTool} /></Show>
+      <Show when={showTool("pen")}><ToolBtn id="pen" dragId="pencil" tool={props.tool} setTool={props.setTool} /></Show>
+      <Show when={!props.minimal}>
+      <Show when={showTool("eraser")}><ToolBtn id="eraser" tool={props.tool} setTool={props.setTool} /></Show>
+      <Show when={showTool("wire")}><ToolBtn id="wire" tool={props.tool} setTool={props.setTool} /></Show>
       <div class="ns-sep" />
       {/* shapes: rectangle, ellipse, arrow, text, the last-used overflow item, then ▾ */}
-      <ToolBtn id="rectangle" tool={props.tool} setTool={props.setTool} />
-      <ToolBtn id="ellipse" tool={props.tool} setTool={props.setTool} />
-      <ToolBtn id="arrow" tool={props.tool} setTool={props.setTool} />
-      <ToolBtn id="text" tool={props.tool} setTool={props.setTool} />
+      <Show when={showTool("rectangle")}><ToolBtn id="rectangle" tool={props.tool} setTool={props.setTool} /></Show>
+      <Show when={showTool("ellipse")}><ToolBtn id="ellipse" tool={props.tool} setTool={props.setTool} /></Show>
+      <Show when={showTool("arrow")}><ToolBtn id="arrow" tool={props.tool} setTool={props.setTool} /></Show>
+      <Show when={showTool("text")}><ToolBtn id="text" tool={props.tool} setTool={props.setTool} /></Show>
       <ToolBtn id={props.extraShape()} tool={props.tool} setTool={props.setTool} />
       <div class="ns-add-wrap">
         <button class="ns-tool" classList={{ active: props.shapeMenuOpen() }} title="More shapes" onClick={() => { props.setShapeMenuOpen(!props.shapeMenuOpen()); props.setAddOpen(false); }}><Icon d="M6 8l5 5 5-5" /></button>
@@ -144,7 +158,10 @@ export function Toolbar(props) {
         </Show>
       </div>
       <div class="ns-sep" />
-      {/* docs overflow — a little window with a titlebar + three dots */}
+      {/* docs overflow — a searchable add menu. HAND-ROLLED (not Kobalte Popover): the
+          popover portaled to document.body and broke inside a nested <patchwork-view>
+          (Sketchier) — dismiss read the opening click as "outside" and closed instantly.
+          A plain positioned menu + a backdrop for outside-close works everywhere. */}
       <div class="ns-add-wrap">
         <button class="ns-tool ns-add" classList={{ active: props.tool() === "place" || props.addOpen() }} title="New document" onClick={() => { props.setAddOpen(!props.addOpen()); props.setShapeMenuOpen(false); }}>
           <svg viewBox="0 0 22 22" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
@@ -152,12 +169,30 @@ export function Toolbar(props) {
           </svg>
         </button>
         <Show when={props.addOpen()}>
-          <div class="ns-menu" onWheel={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
-            <input class="ns-text ns-menu-search" autofocus placeholder="search documents…" value={docQuery()} onInput={(e) => setDocQuery(e.currentTarget.value)} />
-            <For each={docList()}>{(dt) => <button class="ns-menu-item" onClick={() => props.selectPlacing(dt)}>{dt.name || dt.id}</button>}</For>
+          <div class="ns-menu-backdrop" onPointerDown={() => props.setAddOpen(false)} />
+          <div class="ns-menu ns-menu-add" onWheel={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+            {/* ONE searchable list: new docs, sources, editors, lenses — all filtered together */}
+            <input class="ns-text ns-menu-search" autofocus placeholder="search…" value={docQuery()} onInput={(e) => setDocQuery(e.currentTarget.value)} />
+            <Show when={docList().length}>
+              <div class="ns-menu-sep">new</div>
+              <For each={docList()}>{(dt) => <button class="ns-menu-item" onClick={() => props.selectPlacing(dt)}>＋ {dt.name || dt.id}</button>}</For>
+            </Show>
+            <Show when={sources().length}>
+              <div class="ns-menu-sep">sources</div>
+              <For each={sources()}>{(ed) => <button class="ns-menu-item" onClick={() => { props.placeEditor(ed); props.setAddOpen(false); }}>● {ed.name || ed.id}</button>}</For>
+            </Show>
+            <Show when={editors().length}>
+              <div class="ns-menu-sep">editors</div>
+              <For each={editors()}>{(ed) => <button class="ns-menu-item" onClick={() => { props.placeEditor(ed); props.setAddOpen(false); }}>⚡ {ed.name || ed.id}</button>}</For>
+            </Show>
+            <Show when={lenses().length}>
+              <div class="ns-menu-sep">lenses</div>
+              <For each={lenses()}>{(ln) => <button class="ns-menu-item" onClick={() => { props.placeLens(ln); props.setAddOpen(false); }}>◇ {ln.name || ln.id}</button>}</For>
+            </Show>
           </div>
         </Show>
       </div>
+      </Show>
     </div>
   );
 }
@@ -230,7 +265,7 @@ export function BrushPanel(props) {
     <div class="ns-props" style={{ left: `${props.pos().x}px`, top: `${props.pos().y}px` }} onPointerDown={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()}>
       <div class="ns-props-head" onPointerDown={startDrag}><span class="ns-grip" />{mod()?.name || "Tool"}</div>
       <Show when={typeof mod()?.params === "function"} fallback={
-        <For each={mod()?.params || []}>{(p) => (
+        <For each={brushParamDefs(mod())}>{(p) => (
           <>
             <div class="ns-field">{p.label || p.key}</div>
             <Show when={p.type === "color"}>
@@ -256,7 +291,9 @@ export function BrushPanel(props) {
     </div>
   );
 }
-export function Properties(props) {
+export function Properties(outer) {
+  // chrome reads the context: one `host` bundle (back-compat: also accepts flat props)
+  const props = outer.host || outer;
   const g = props.get, s = props.set, mode = props.mode;
   const isStroke = () => mode() === "stroke";
   const isShape = () => mode() === "shape";
@@ -283,8 +320,38 @@ export function Properties(props) {
     <div class="ns-props" style={{ left: `${props.pos().x}px`, top: `${props.pos().y}px` }} onPointerDown={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()}>
       <div class="ns-props-head" onPointerDown={startDrag}>
         <span class="ns-grip" />
-        {isStroke() ? "Ink" : isShape() ? "Shape" : isText() ? "Text" : isMulti() ? "Multiple" : isFrame() ? "Box" : isDoc() ? "Document" : "Tool"}
+        {isStroke() ? "Ink" : isShape() ? "Shape" : isText() ? "Text" : isMulti() ? "Multiple" : isFrame() ? "Box" : isDoc() ? "Document" : (props.params && props.params()?.title) || "Tool"}
       </div>
+
+      {/* PARAMS — a single generic control block driven by paramDefs (schema fields OR a
+          legacy array), bound to whatever the host points `params` at: a selected NODE's
+          config, or the active brush's per-viewer config. One renderer, both cases. */}
+      <Show when={props.params && props.params()}>{(pt) => {
+        const k = (p) => p.key || p.name;
+        return <For each={pt().defs}>{(p) => (
+          <>
+            <div class="ns-field">{p.label || k(p)}</div>
+            <Show when={p.type === "color"}>
+              <div class="ns-row ns-swatches"><For each={PALETTE}>{(c) => <button class="ns-swatch" classList={{ active: pt().get(k(p)) === c }} style={{ background: colorVar(c) }} onClick={() => pt().set(k(p), c)} />}</For></div>
+            </Show>
+            <Show when={p.type === "size"}>
+              <div class="ns-row ns-sizes"><For each={SIZES}>{(sz) => <button class="ns-size" classList={{ active: pt().get(k(p)) === sz }} onClick={() => pt().set(k(p), sz)}><span class="ns-fatline" style={{ height: `${Math.max(2, sz)}px` }} /></button>}</For></div>
+            </Show>
+            <Show when={p.type === "slider" || p.type === "number"}>
+              <div class="ns-row"><input type="range" style={{ width: "100%" }} min={p.min ?? 0} max={p.max ?? 1} step={p.step ?? 0.1} value={pt().get(k(p)) ?? p.min ?? 0} onInput={(e) => pt().set(k(p), parseFloat(e.currentTarget.value))} /></div>
+            </Show>
+            <Show when={p.type === "toggle"}>
+              <div class="ns-row ns-order"><button class="ns-obtn" classList={{ active: !!pt().get(k(p)) }} onClick={() => pt().set(k(p), !pt().get(k(p)))}>{pt().get(k(p)) ? "on" : "off"}</button></div>
+            </Show>
+            <Show when={p.type === "select"}>
+              <div class="ns-row ns-order"><For each={p.options || []}>{(o) => { const val = o && typeof o === "object" ? o.value : o; const lab = o && typeof o === "object" ? o.label : o; return <button class="ns-obtn" classList={{ active: pt().get(k(p)) === val }} onClick={() => pt().set(k(p), val)}>{lab}</button>; }}</For></div>
+            </Show>
+            <Show when={p.type === "text"}>
+              <div class="ns-row"><input class="ns-text" style={{ width: "100%" }} value={pt().get(k(p)) ?? ""} onInput={(e) => pt().set(k(p), e.currentTarget.value)} /></div>
+            </Show>
+          </>
+        )}</For>;
+      }}</Show>
 
       <Show when={isText()}>
         <div class="ns-field">color</div>

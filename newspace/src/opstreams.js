@@ -18,7 +18,7 @@
 import { splice as amSplice, view as amView } from "@automerge/automerge";
 import { createSignal, onCleanup } from "solid-js";
 import { createEmitter } from "./util/emitter.js";
-import { snapshot, isSnapshot } from "./ops.js";
+import { snapshot, isSnapshot, errorOp } from "./ops.js";
 
 export * from "./ops.js";
 
@@ -46,8 +46,12 @@ function patchPath(node, path, op) {
 function patchHere(container, range, value) {
   if (Array.isArray(range)) {
     const [from = 0, to = from] = range;
-    if (typeof container === "string") {
-      return container.slice(0, from) + (value == null ? "" : value) + container.slice(to);
+    // a string container OR an empty/undefined one spliced with a STRING value → TEXT. The
+    // null case matters: an unwired text buffer starts as Opstream(undefined), so without
+    // this its first keystroke would fall to the array branch and the value becomes an array.
+    if (typeof container === "string" || (container == null && typeof value === "string")) {
+      const base = typeof container === "string" ? container : "";
+      return base.slice(0, from) + (value == null ? "" : value) + base.slice(to);
     }
     if (container instanceof Uint8Array) {
       const insert = value == null ? [] : Array.from(value);
@@ -125,13 +129,22 @@ export class Source {
   get value() {
     return this._val;
   }
+  get error() { return this._error || null; }
   push(value) {
     this._val = value;
+    this._error = null; // a fresh value clears the error state
     this.emitter.emit("op", snapshot(value));
+  }
+  // emit an ERROR down the stream (keeps the last good value; marks `.error`)
+  pushError(e) {
+    const op = errorOp(e);
+    this._error = op.error;
+    this.emitter.emit("op", op);
   }
   connect(callback) {
     const off = this.emitter.on("op", callback);
     callback(snapshot(this.value));
+    if (this._error) callback(errorOp(this._error)); // late subscribers see the error too
     return off;
   }
 }
@@ -299,13 +312,16 @@ function nodeAt(root, path) {
 }
 
 // apply a universal op to an automerge draft at an absolute `path`
-function applyAutomerge(draft, path, range, value) {
+export function applyAutomerge(draft, path, range, value) {
   if (Array.isArray(range)) {
     const [from = 0, to = from] = range;
     const target = nodeAt(draft, path);
-    if (typeof target === "string" || Array.isArray(target)) {
-      const insert = value == null ? (typeof target === "string" ? "" : []) : value;
-      amSplice(draft, path, from, to - from, insert);
+    if (typeof target === "string") {
+      amSplice(draft, path, from, to - from, value == null ? "" : value);
+    } else if (Array.isArray(target)) {
+      // a LIST splice — use the proxy's splice so OBJECT elements are materialised correctly
+      // (automerge's `splice()` helper is for text/scalars; it won't insert object values).
+      target.splice(from, to - from, ...(value == null ? [] : [].concat(value)));
     } else {
       // bytes / scalar: COW-rebuild the whole value and assign it
       replaceAt(draft, path, apply(target, { path: [], range, value }));
@@ -341,7 +357,7 @@ function replaceAt(draft, path, value) {
 // translate automerge change patches into universal ops, relative to `boundPath`.
 // returns `[]` when nothing under the scope changed, or `null` when a patch can't
 // be expressed as an op (caller resnapshots).
-function patchesToOps(patches, boundPath) {
+export function patchesToOps(patches, boundPath) {
   const ops = [];
   for (const p of patches || []) {
     const pp = p.path || [];

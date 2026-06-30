@@ -49,7 +49,8 @@ export default defineConfig({
   // so the lib + its worker load as ONE copy shared across tools (not per-tool).
   plugins: [solidPlugin(), cssInjectedByJsPlugin(), patchworkBundles()],
   build: {
-    minify: false,
+    // sorry ivy
+    minify: true,
     // inline the Caroni woff2 (~29kB) into the injected CSS as a data URI, so the
     // font travels inside the bundle (no separate asset request to serve)
     assetsInlineLimit: 100000,

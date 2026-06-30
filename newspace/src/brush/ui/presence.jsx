@@ -74,13 +74,23 @@ export function Minimap(props) {
   const fx = (wx) => (wx - props.bounds().x) * scale();
   const fy = (wy) => (wy - props.bounds().y) * scale();
   const list = () => [...props.peers().values()];
-  function jump(e) {
-    const r = e.currentTarget.getBoundingClientRect();
+  function jumpAt(rect, clientX, clientY) {
     const b = props.bounds(), s = scale();
-    props.onJump(b.x + (e.clientX - r.left) / s, b.y + (e.clientY - r.top) / s);
+    props.onJump(b.x + (clientX - rect.left) / s, b.y + (clientY - rect.top) / s);
+  }
+  // click OR drag to move around — track the pointer while it's down
+  function startJump(e) {
+    e.stopPropagation();
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    jumpAt(rect, e.clientX, e.clientY);
+    const move = (ev) => jumpAt(rect, ev.clientX, ev.clientY);
+    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
   }
   return (
-    <div class="ns-minimap" style={{ width: `${SIZE.w}px`, height: `${SIZE.h}px` }} onPointerDown={(e) => { e.stopPropagation(); jump(e); }}>
+    <div class="ns-minimap" style={{ width: `${SIZE.w}px`, height: `${SIZE.h}px` }} onPointerDown={startJump}>
       <For each={props.rects()}>
         {(r) => <div class="ns-mm-rect" classList={{ box: r.box }} style={{ left: `${fx(r.x)}px`, top: `${fy(r.y)}px`, width: `${Math.max(1, r.w * scale())}px`, height: `${Math.max(1, r.h * scale())}px` }} />}
       </For>

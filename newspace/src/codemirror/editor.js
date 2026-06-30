@@ -16,16 +16,18 @@ import { languageFor } from "./languages.js";
 
 export function codemirrorEditor(opstream, { parent } = {}) {
   const c = opstream.complement || {};
-  const language = languageFor(c);
 
   const cm = new Codemirror({
     parent,
     content: typeof opstream.value === "string" ? opstream.value : "",
-    language: language ?? [],
+    language: [], // loaded on demand below (each language pack is its own chunk)
     // read-only is the ABSENCE of `apply` (e.g. a stream pinned at heads)
     readOnly: typeof opstream.apply !== "function",
     extensions: [opstreamPlugin(opstream)],
   });
+  // the language pack loads ASYNC (dynamic import) so it doesn't bloat the editor
+  // chunk — the editor mounts immediately, syntax highlighting snaps in a tick later
+  Promise.resolve(languageFor(c)).then((lang) => { if (lang) cm.setLanguage(lang); }).catch(() => {});
 
   return {
     view: cm.view,

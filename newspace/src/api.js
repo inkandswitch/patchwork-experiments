@@ -6,7 +6,7 @@ import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { createProtocols, automergeProtocol } from "./protocols.js";
 import { listEditors, editorsFor } from "./editors.js";
 
-const REGISTRY_TYPES = ["sketchy:editor", "sketchy:brush", "patchwork:tool", "patchwork:datatype", "patchwork:component"];
+const REGISTRY_TYPES = ["sketchy:window", "sketchy:brush", "patchwork:tool", "patchwork:datatype", "patchwork:component"];
 
 // Introspect anything: a registered plugin id, a function, an opstream, an object.
 // emacs-help-ish, from devtools.

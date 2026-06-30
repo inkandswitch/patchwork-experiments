@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   rot, isBoxType, localToWorld, worldToLocal, pointInFrame,
   itemBounds, cloneItem, linksNeedingItems, itemPresent, shouldUnlinkDoc,
-  edgePoint, edgeMidpoint, arrowGeometry, anchorWorld, worldAnchor,
+  edgePoint, edgeMidpoint, arrowGeometry, anchorWorld, worldAnchor, portPoint,
 } from "./model.js";
 
 describe("isBoxType", () => {
@@ -197,5 +197,31 @@ describe("shouldUnlinkDoc (alt-drag shared-doc deletion)", () => {
   it("ignores strokes/shapes that happen to carry no url", () => {
     const items = [{ id: "a", kind: "doc", url: "u1" }, { id: "s", kind: "stroke" }];
     expect(shouldUnlinkDoc(items, "u1", ["a"])).toBe(true);
+  });
+});
+
+describe("portPoint (wire endpoints from bounds, not the DOM)", () => {
+  const b = { x: 100, y: 100, w: 200, h: 100 }; // centre y = 150
+
+  it("a single inlet sits at the left-edge mid; a single outlet at the right-edge mid", () => {
+    expect(portPoint(b, "in", 0, 1)).toEqual({ x: 100, y: 150 });
+    expect(portPoint(b, "out", 0, 1)).toEqual({ x: 300, y: 150 });
+  });
+
+  it("two ports straddle the centre by the CSS pitch (20px between centres)", () => {
+    const a = portPoint(b, "in", 0, 2);
+    const c = portPoint(b, "in", 1, 2);
+    expect(a.x).toBe(100); expect(c.x).toBe(100);
+    expect(a.y).toBe(140); expect(c.y).toBe(160); // ±10 around 150
+  });
+
+  it("the gap caps at 20 even for a tall box (ports cluster near centre, never spill)", () => {
+    const tall = { x: 0, y: 0, w: 10, h: 1000 };
+    const lo = portPoint(tall, "in", 0, 2), hi = portPoint(tall, "in", 1, 2);
+    expect(hi.y - lo.y).toBe(20); // not 1000/3
+  });
+
+  it("defaults to a single centred port", () => {
+    expect(portPoint(b, "in")).toEqual({ x: 100, y: 150 });
   });
 });

@@ -105,20 +105,32 @@ export function clonePlain(o) {
   delete c.parent;
   return c;
 }
-// a "space" doc (folder/newspace) references its canvas layout doc via `.newspace`.
-// ensureLayout makes/loads that layout doc, migrating any older top-level `items`.
+// The DEFAULT per-sketch LAYOUT — seeded into a new layout doc so the layout is visible +
+// editable AS DATA: the tools in the toolbar, which chrome parts show, and which component
+// renders it. The layered resolver (chromePart / chromeHost.tools) reads this; an empty slot
+// still falls back to the tool's opts. `component` names the patchwork:component.
+export const DEFAULT_LAYOUT = {
+  component: "sketchy",
+  tools: ["select", "hand", "pen", "eraser", "wire", "rectangle", "ellipse", "arrow", "text"],
+  toolbar: true, properties: true, minimap: true, presence: true, zoom: true,
+};
+
+// a "space" doc (a folder/sketch) references its canvas layout doc via `.sketch` (was
+// `.newspace` — still read for back-compat + migrated forward). ensureLayout makes/loads
+// that layout doc, seeding DEFAULT_LAYOUT and migrating any older top-level `items`.
 export async function ensureLayout(repo, folderHandle) {
   folderHandle.change((d) => { if (!d.docs) d.docs = []; });
-  let url = folderHandle.doc().newspace;
+  let url = folderHandle.doc().sketch || folderHandle.doc().newspace;
   if (!url) {
     const old = folderHandle.doc().items;
     const seed = Array.isArray(old) ? old.map(clonePlain) : [];
-    const layout = await repo.create2({ "@patchwork": { type: "newspace-layout" }, items: seed });
-    folderHandle.change((d) => { d.newspace = layout.url; if (Array.isArray(d.items)) d.items.splice(0); });
+    const layout = await repo.create2({ "@patchwork": { type: "sketch-layout" }, items: seed, layout: { ...DEFAULT_LAYOUT } });
+    folderHandle.change((d) => { d.sketch = layout.url; if (Array.isArray(d.items)) d.items.splice(0); });
     return layout;
   }
+  if (!folderHandle.doc().sketch) folderHandle.change((d) => { d.sketch = url; }); // migrate .newspace → .sketch
   const lh = await repo.find(url);
-  lh.change((d) => { if (!d.items) d.items = []; });
+  lh.change((d) => { if (!d.items) d.items = []; if (!d.layout) d.layout = { ...DEFAULT_LAYOUT }; }); // seed layout on older docs too
   return lh;
 }
 

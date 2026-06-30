@@ -36,15 +36,19 @@ export function FormTool(handle, element) {
       const grip = document.createElement("span");
       grip.textContent = "⠿";
       grip.title = "drag to wire this field";
-      grip.style.cssText = "cursor:grab;opacity:.45;user-select:none;font-size:14px;touch-action:none;";
-      // own the drag, then announce the drop via a COMPOSED custom event — it
-      // bubbles out of any shadow boundary to the host canvas, which wires it. (More
-      // robust than relying on the canvas catching the raw pointerdown across the
-      // embed boundary.)
+      grip.draggable = true; // HTML5 DnD — the ONE mechanism that crosses an iframe
+      grip.style.cssText = "cursor:grab;opacity:.45;user-select:none;font-size:14px;";
+      const port = { kind: "automerge", url: handle.url, path: [key] };
+      // HTML5 DnD: crosses iframe boundaries (the canvas onDrop reads it)
+      grip.addEventListener("dragstart", (e) => {
+        e.dataTransfer.setData("application/sketchy-port", JSON.stringify(port));
+        e.dataTransfer.setData("text/plain", JSON.stringify(port)); // some hosts only forward known types
+        e.dataTransfer.effectAllowed = "copy";
+      });
+      // ALSO composed custom events (for shadow-DOM / same-doc embeds, with a live
+      // wire line). preventDefault is skipped so the native drag can still start.
       grip.addEventListener("pointerdown", (e) => {
-        e.preventDefault();
         e.stopPropagation();
-        const port = { kind: "automerge", url: handle.url, path: [key] };
         grip.dispatchEvent(new CustomEvent("sketchy:wire-from", { bubbles: true, composed: true, detail: { port, clientX: e.clientX, clientY: e.clientY } }));
         const move = (ev) => grip.dispatchEvent(new CustomEvent("sketchy:wire-move", { bubbles: true, composed: true, detail: { clientX: ev.clientX, clientY: ev.clientY } }));
         const up = (ev) => {
