@@ -367,6 +367,7 @@ const ToolPicker = ({
   fallbackId,
   type,
   selected,
+  url,
 }: {
   leaf: LeafNode;
   ops: LayoutOps;
@@ -374,6 +375,12 @@ const ToolPicker = ({
   fallbackId: string | undefined;
   type: string | undefined;
   selected: string | undefined;
+  /**
+   * The document this panel actually renders. For a symbolic `"root-folder"`
+   * panel this is the viewer's resolved `rootFolderUrl` (not `leaf.view.url`,
+   * which is absent), so a choice made here is still remembered for the folder.
+   */
+  url: AutomergeUrl | undefined;
 }) => {
   if (tools.length <= 1) {
     return null;
@@ -390,7 +397,7 @@ const ToolPicker = ({
         // the preferred tool for this doc and datatype so future opens default
         // to it.
         ops.setTool(leaf.id, toolId);
-        if (leaf.view.url) ops.rememberTool(leaf.view.url, type, toolId);
+        if (url) ops.rememberTool(url, type, toolId);
       }}
       onMouseDown={(event) => event.stopPropagation()}
     >
@@ -656,7 +663,7 @@ const TilePanel = ({
           {!isContext && !isRootFolder && !isEmpty && (
             <ContextLauncher leaf={leaf} ops={ops} />
           )}
-          {!isContext && !isRootFolder && !isEmpty && (
+          {!isContext && !isEmpty && (
             <ToolPicker
               leaf={leaf}
               ops={ops}
@@ -664,6 +671,7 @@ const TilePanel = ({
               fallbackId={fallbackId}
               type={type}
               selected={effectiveToolId}
+              url={resolvedUrl}
             />
           )}
           <button
