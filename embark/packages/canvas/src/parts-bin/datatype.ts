@@ -97,6 +97,15 @@ export function seedExampleItems(repo: Repo): PartsBinItem[] {
   const docFinder = repo.create({
     "@patchwork": { type: "doc-finder-provider" },
   });
+  // The Bird Sightings finder (its own `@embark/bird-sighting` module). It
+  // watches any map on the canvas and asks eBird what's been seen in view,
+  // minting a pin per species. `repo.create` skips its datatype `init`, so the
+  // two madlib defaults are set inline here.
+  const birdSighting = repo.create({
+    "@patchwork": { type: "bird-sighting" },
+    kind: "all",
+    period: "week",
+  });
   // The two unit converters (their own `@embark/metric-converter` and
   // `@embark/unit-converter` modules). Configuration-free document-backed
   // contributors: dropping one wires its card onto the canvas where it scans
@@ -157,6 +166,11 @@ export function seedExampleItems(repo: Repo): PartsBinItem[] {
       toolId: "doc-finder-provider",
     },
     { id: crypto.randomUUID(), url: map.url, toolId: "map" },
+    {
+      id: crypto.randomUUID(),
+      url: birdSighting.url,
+      toolId: "bird-sighting",
+    },
     {
       id: crypto.randomUUID(),
       url: convertToMetric.url,

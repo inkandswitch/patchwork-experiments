@@ -25,3 +25,18 @@
   height: 1.6em;
   vertical-align: middle;
 }
+
+/* Emphasis: set on every sticker from a source card while that card's embed is
+   selected, so you can see at a glance which annotations it owns. A warm ring +
+   tint that reads on top of any per-sticker styling. */
+.cm-sticker--emphasized {
+  outline: 1.5px solid #f59e0b;
+  outline-offset: 1px;
+  border-radius: 0.4em;
+  background-color: #fef3c7;
+}
+
+.cm-sticker--text.cm-sticker--emphasized {
+  color: #92400e;
+  font-weight: 600;
+}

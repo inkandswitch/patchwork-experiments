@@ -17,6 +17,7 @@ import {
 } from "@embark/core";
 import { splitDocUrl, useDocTitles, useHighlight } from "./tokens";
 import { ChannelValue } from "./ChannelValue";
+import { SearchResultsTable } from "./SearchResultsTable";
 
 // Every channel a card can *read* from. For the focused embed we show the ones
 // it currently subscribes to (see resolveOwner attribution on the read path in
@@ -78,12 +79,22 @@ export function UsedView(props: {
           <div class="embark-context__channel">
             <div class="embark-context__name">{channel.name}</div>
             <div class="embark-tokens-panel">
-              <ChannelValue
-                channel={channel.name}
-                value={valueFor(channel)}
-                titles={titles}
-                highlight={highlight}
-              />
+              <Show
+                when={channel.name === SearchResults.name}
+                fallback={
+                  <ChannelValue
+                    channel={channel.name}
+                    value={valueFor(channel)}
+                    highlight={highlight}
+                  />
+                }
+              >
+                <SearchResultsTable
+                  store={props.store}
+                  titles={titles}
+                  highlight={highlight}
+                />
+              </Show>
             </div>
           </div>
         )}

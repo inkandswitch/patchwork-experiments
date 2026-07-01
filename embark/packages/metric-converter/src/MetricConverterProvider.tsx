@@ -1,4 +1,5 @@
 import type { JSX } from "solid-js";
+import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
 import { onCleanup, onMount } from "solid-js";
 import { render } from "solid-js/web";
@@ -10,16 +11,29 @@ import "./metric-converter.css";
 // mounted inside, annotating metric quantities with their imperial equivalents.
 // The backing doc is just a marker (see ./datatype); `element.repo` is the embed
 // contract and the shared context store is found by DOM discovery from
-// `element`. It shares no scanning code with the Convert-to-metric card.
-export const ConvertToImperialTool: ToolRender = (_handle, element) =>
-  render(() => <MetricConverterCard element={element} />, element);
+// `element`. Its url is passed down as `selfUrl` so the engine can emphasize
+// this card's stickers while it is the selected embed. It shares no scanning
+// code with the Convert-to-metric card.
+export const ConvertToImperialTool: ToolRender = (handle, element) =>
+  render(
+    () => <MetricConverterCard element={element} selfUrl={handle.url} />,
+    element,
+  );
 
 // The card face: a playing-card surface that starts the scanning engine on mount
 // and tears it down on cleanup. It carries no live state of its own — releasing
 // the engine drops every sticker it published.
-function MetricConverterCard(props: { element: ToolElement }) {
+function MetricConverterCard(props: {
+  element: ToolElement;
+  selfUrl: AutomergeUrl;
+}) {
   onMount(() => {
-    const source = runStickerSource(props.element, { scan: scanMetric });
+    const source = runStickerSource(
+      props.element,
+      { scan: scanMetric },
+      undefined,
+      props.selfUrl,
+    );
     onCleanup(source.stop);
   });
 

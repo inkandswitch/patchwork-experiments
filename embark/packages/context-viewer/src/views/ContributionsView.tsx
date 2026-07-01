@@ -15,6 +15,7 @@ import {
 } from "@embark/core";
 import { belongsToDoc, useDocTitles, useHighlight } from "./tokens";
 import { ChannelValue } from "./ChannelValue";
+import { SearchResultsTable } from "./SearchResultsTable";
 
 // "Contributed by this embed": every channel a card can *write* to, showing —
 // per channel — the slice(s) authored by scopes the store attributed to the
@@ -79,12 +80,23 @@ export function ContributionsView(props: {
           <div class="embark-context__channel">
             <div class="embark-context__name">{entry.channel}</div>
             <div class="embark-tokens-panel">
-              <ChannelValue
-                channel={entry.channel}
-                value={entry.slice}
-                titles={titles}
-                highlight={highlight}
-              />
+              <Show
+                when={entry.channel === SearchResults.name}
+                fallback={
+                  <ChannelValue
+                    channel={entry.channel}
+                    value={entry.slice}
+                    highlight={highlight}
+                  />
+                }
+              >
+                <SearchResultsTable
+                  store={props.store}
+                  titles={titles}
+                  highlight={highlight}
+                  focusDocUrl={props.focusDocUrl}
+                />
+              </Show>
             </div>
           </div>
         )}

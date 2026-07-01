@@ -10,7 +10,10 @@
   padding: 8px;
   overflow: auto;
   background: #ffffff;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
 }
 
 .embark-context__channel {
@@ -59,20 +62,12 @@
 }
 
 /* --- Focused embed view -------------------------------------------------- */
-/* The default layout: two labeled sections (contributed / added-to) for the
+/* The default layout: two labeled sections (contributed / used) for the
    currently-selected embed. */
 .embark-focus {
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-
-.embark-focus__title {
-  padding: 2px 2px 0;
-  font-size: 13px;
-  font-weight: 700;
-  color: #1c1917;
-  word-break: break-word;
 }
 
 .embark-focus__section {
@@ -108,106 +103,8 @@
   display: none;
 }
 
-/* --- Full-context escape hatch ------------------------------------------- */
-/* A collapsible view onto the whole, unfiltered canvas context. */
-.embark-context__full {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 4px;
-  padding-top: 8px;
-  border-top: 1px dashed #e7e5e4;
-}
-
-.embark-context__full-toggle {
-  align-self: flex-start;
-  padding: 4px 10px;
-  border: 1px solid #e7e5e4;
-  border-radius: 6px;
-  background: #faf9f8;
-  color: #57534e;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.embark-context__full-toggle:hover {
-  background: #f5f5f4;
-  color: #1c1917;
-}
-
-/* --- Schema view --------------------------------------------------------- */
-/* A domain-specific panel: each registered schema by name, its matches grouped
-   by owning document, every match a token of the extracted value. */
-.embark-schema__body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 10px;
-}
-
-.embark-schema__item {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.embark-schema__schema-name {
-  font-size: 12px;
-  font-weight: 700;
-  color: #1c1917;
-}
-
-.embark-schema__no-matches {
-  font-size: 11px;
-  font-style: italic;
-  color: #a8a29e;
-  padding-left: 2px;
-}
-
-.embark-schema__group {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 4px 6px;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  transition:
-    background-color 0.12s ease,
-    border-color 0.12s ease;
-  cursor: default;
-}
-
-.embark-schema__group--highlighted {
-  background: #eef4ff;
-  border-color: #c7dbff;
-}
-
-/* The owning document, styled as a strong bordered pill (cf. the mockup's
-   "Doc 1" / "Doc 2"). */
-.embark-schema__doc {
-  flex: 0 0 auto;
-  padding: 5px 12px;
-  border: 1.5px solid #1c1917;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #1c1917;
-  background: #ffffff;
-  white-space: nowrap;
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.embark-schema__tokens {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-/* One token per match, showing the value extracted at that location. */
+/* --- Chips --------------------------------------------------------------- */
+/* Small monospace pills for string-keyed channels (query text, schema names). */
 .embark-schema__token {
   padding: 4px 10px;
   border: 1px solid #cbd2da;
@@ -230,9 +127,9 @@
 }
 
 /* --- Document tokens (selection / highlight / search / commands) ---------- */
-/* A mention-style pill (mirrors .cm-mention) for any token that points at a
-   document. Hovering drives the shared Highlight channel; the pill lights up
-   while its document is highlighted by anyone. */
+/* Each document renders its real embed face (see EmbedToken / renderEmbedView),
+   falling back to a mention-style pill. The wrapper drives the shared Highlight
+   channel on hover and lights up while its document is highlighted by anyone. */
 .embark-tokens-panel {
   display: flex;
   flex-direction: column;
@@ -279,32 +176,76 @@
   background: rgba(59, 130, 246, 0.22);
 }
 
-.embark-token--highlighted {
-  background: rgba(59, 130, 246, 0.34);
-  color: #1e3a8a;
-  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.6);
+/* The hover/highlight wrapper around an embed's inline face. Kept separate from
+   the face itself (a pill or a card's custom token view) so highlighting works
+   regardless of what the embed renderer paints inside. Named distinctly from the
+   canvas's own `.embark-embed` frame class (this stylesheet is injected page-
+   wide) to avoid clobbering it. */
+.embark-embed-token {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  border-radius: 999px;
+  cursor: default;
+  transition: box-shadow 0.12s ease;
 }
 
-.embark-token--highlighted:hover {
-  background: rgba(59, 130, 246, 0.44);
+.embark-embed-token--highlighted {
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.6);
 }
 
-/* A request/response box: the active query string over its result tokens. */
-.embark-querybox {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  border: 1px solid #f0eeec;
-  border-radius: 8px;
-  background: #faf9f8;
-}
-
-.embark-querybox__query {
+/* --- Search results table ------------------------------------------------ */
+/* `search → results`, one row per active query, results grouped by the card
+   that produced them. */
+.embark-results {
+  width: 100%;
+  border-collapse: collapse;
   font-size: 12px;
-  font-weight: 600;
-  color: #1c1917;
+}
+
+.embark-results th {
+  padding: 6px 8px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #78716c;
+  border-bottom: 1px solid #f0eeec;
+}
+
+.embark-results td {
+  padding: 8px;
+  vertical-align: top;
+  border-bottom: 1px solid #f0eeec;
+}
+
+.embark-results tr:last-child td {
+  border-bottom: none;
+}
+
+.embark-results__query {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #1c1917;
   white-space: pre-wrap;
   word-break: break-word;
+  width: 30%;
+}
+
+.embark-results__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.embark-results__group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.embark-results__card {
+  font-size: 11px;
+  font-weight: 600;
+  color: #57534e;
 }

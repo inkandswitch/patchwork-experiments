@@ -1,0 +1,140 @@
+/* A hard-coded "card" rendered to look like a playing card in a game: a framed
+   surface filling the embed, with the title and a fill-in-the-blank sentence,
+   plus a small bird-shaped pip in opposite corners (mirroring the poi card). */
+.embark-bird-card {
+  position: relative;
+  display: flex;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 16px;
+  border: 1px solid #e0f2fe;
+  border-radius: 12px;
+  background: linear-gradient(160deg, #ffffff 0%, #f0f9ff 100%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  user-select: none;
+  overflow: hidden;
+}
+
+/* A subtle ring while this card is the selected embed (its pins glow in step). */
+.embark-bird-card.is-selected {
+  outline: 2px solid #0ea5e9;
+  outline-offset: -2px;
+}
+
+.embark-bird-card__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 20px 20px;
+  text-align: left;
+  overflow: hidden;
+}
+
+.embark-bird-card__title {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #0c4a6e;
+}
+
+/* The madlib sentence: normal prose with the two choices rendered as editable
+   "blanks" rather than obvious form controls. */
+.embark-bird-card__madlib {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.7;
+  color: #292524;
+}
+
+.embark-bird-card__swap {
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  border-bottom: 2px dotted #0ea5e9;
+  border-radius: 0;
+  background: transparent;
+  padding: 0 2px;
+  margin: 0 1px;
+  font: inherit;
+  font-weight: 700;
+  color: #0369a1;
+  cursor: pointer;
+}
+
+.embark-bird-card__swap:focus {
+  outline: none;
+  background: #e0f2fe;
+}
+
+.embark-bird-card__status {
+  font-size: 12px;
+  color: #78716c;
+}
+
+.embark-bird-card__status.is-error {
+  color: #dc2626;
+}
+
+.embark-bird-card__status.is-busy {
+  color: #0284c7;
+}
+
+/* The compact list of found species (the full cards live on the map as pins). */
+.embark-bird-card__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  max-height: 180px;
+}
+
+.embark-bird-card__row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.embark-bird-card__row-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1c1917;
+  white-space: nowrap;
+}
+
+.embark-bird-card__row-sub {
+  font-size: 11px;
+  color: #94a3b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Corner pips, mirrored like a playing card's suit marks. */
+.embark-bird-card__pip {
+  position: absolute;
+  display: flex;
+  color: #0ea5e9;
+}
+
+.embark-bird-card__pip--tl {
+  top: 10px;
+  left: 10px;
+}
+
+.embark-bird-card__pip--br {
+  bottom: 10px;
+  right: 10px;
+  transform: rotate(180deg);
+}
