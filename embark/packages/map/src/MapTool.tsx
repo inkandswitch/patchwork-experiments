@@ -7,6 +7,7 @@ import {
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { render } from "solid-js/web";
 import { getContextHandle, subscribeContext } from "@embark/core";
 import {
   Highlight,
@@ -26,6 +27,7 @@ import {
   type MapBounds,
   type MapDoc,
 } from "./datatype";
+import { SearchPanel } from "./SearchPanel";
 import "./map.css";
 
 // openfreemap's hosted Liberty style — no API key required.
@@ -78,6 +80,11 @@ export const MapTool: ToolRender = (rawHandle, element) => {
   // never persists. `overlayActive` is true whenever the live camera has been
   // moved away from the persisted "home" by the overlay.
   let overlayActive = false;
+
+  // True while the search panel is driving the camera (a picked place / drawn
+  // route). Automatic marker/focus framing is paused so the searched view sticks
+  // until the search is cleared.
+  let searchControlsCamera = false;
 
   const currentBounds = (): MapBounds => {
     const b = map.getBounds();
@@ -421,6 +428,10 @@ export const MapTool: ToolRender = (rawHandle, element) => {
   // Always programmatic, so it never persists — only the manual-move handler
   // writes the doc.
   const applyViewport = () => {
+    // While the search panel owns the camera (a picked place / drawn route),
+    // automatic framing would yank the view off the searched target. Hold off
+    // until the search is cleared.
+    if (searchControlsCamera) return;
     // While the pointer is over the map the user is reading/interacting, so an
     // automatic camera move (marker framing, focus zoom-in) would yank the view
     // out from under them. Hold off; pointerleave re-evaluates the frame.
@@ -738,7 +749,28 @@ export const MapTool: ToolRender = (rawHandle, element) => {
     onMatches(lastPointMatches);
   });
 
+  // Mount the Google-Maps-style search overlay. It draws its own ephemeral pins
+  // and routes straight onto this map, and while it owns the camera it suppresses
+  // the automatic marker/focus framing above.
+  const searchHost = document.createElement("div");
+  searchHost.className = "embark-map-search-host";
+  container.appendChild(searchHost);
+  const disposeSearch = render(
+    () => (
+      <SearchPanel
+        map={map}
+        onCameraControl={(active) => {
+          searchControlsCamera = active;
+          if (!active) scheduleApply();
+        }}
+      />
+    ),
+    searchHost,
+  );
+
   return () => {
+    disposeSearch();
+    searchHost.remove();
     unsubscribeMatches();
     schemaQueries?.release();
     unsubscribeSelection();

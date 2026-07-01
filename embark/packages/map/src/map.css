@@ -43,3 +43,389 @@
 .embark-map-popup__body patchwork-view {
   display: block;
 }
+
+/* --- Search overlay ------------------------------------------------------- */
+
+/* A full-bleed host so the panel can be absolutely placed; it never intercepts
+   pointer events, so the map stays draggable everywhere except the panel. */
+.embark-map-search-host {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+/* The overlay: a card plus a fold tab beside it. The container itself never
+   intercepts pointer events; the card and tab do. */
+.embark-map-search {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  max-width: calc(100% - 24px);
+  pointer-events: none;
+  font-family: "Google Sans", Roboto, system-ui, -apple-system, "Segoe UI",
+    sans-serif;
+  font-size: 14px;
+  color: #202124;
+}
+
+/* The Google-Maps-style card: a search bar (or directions header) with an
+   optional scrollable panel of results below it. */
+.embark-map-search__card {
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  pointer-events: auto;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(60, 64, 67, 0.3),
+    0 4px 8px 3px rgba(60, 64, 67, 0.15);
+}
+
+/* A small tab beside the card to fold it away; when collapsed only the tab
+   remains and its chevron flips to point outward. */
+.embark-map-search__fold {
+  flex: 0 0 auto;
+  margin-left: 6px;
+  width: 22px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  background: #fff;
+  color: #5f6368;
+  box-shadow: 0 1px 3px rgba(60, 64, 67, 0.3),
+    0 1px 2px rgba(60, 64, 67, 0.15);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.embark-map-search__fold:hover {
+  background: #f8f9fa;
+}
+
+.embark-map-search.is-collapsed .embark-map-search__fold {
+  margin-left: 0;
+}
+
+.embark-map-search.is-collapsed .embark-map-search__fold svg {
+  transform: rotate(180deg);
+}
+
+/* Search bar */
+.embark-map-search__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 14px;
+}
+
+.embark-map-search__bar-icon {
+  display: flex;
+  color: #5f6368;
+}
+
+.embark-map-search__bar-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 0;
+  border: none;
+  outline: none;
+  background: none;
+  font: inherit;
+  color: #202124;
+}
+
+.embark-map-search__bar-input::placeholder {
+  color: #5f6368;
+}
+
+.embark-map-search__clear {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: #5f6368;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.embark-map-search__clear:hover {
+  background: #f1f3f4;
+}
+
+.embark-map-search__dir {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+
+.embark-map-search__dir:hover {
+  background: #f1f3f4;
+}
+
+/* Directions header: mode strip */
+.embark-map-search__modebar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 8px 8px 12px;
+  border-bottom: 1px solid #e8eaed;
+}
+
+.embark-map-search__mode {
+  flex: 1;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.embark-map-search__mode:hover {
+  background: #f1f3f4;
+}
+
+.embark-map-search__mode.is-active {
+  background: #e8f0fe;
+}
+
+.embark-map-search__close {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  margin-left: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: #5f6368;
+  cursor: pointer;
+}
+
+.embark-map-search__close:hover {
+  background: #f1f3f4;
+}
+
+/* Directions form: origin/destination gutter + inputs + swap */
+.embark-map-search__dirform {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  padding: 14px 10px 14px 12px;
+}
+
+.embark-map-search__gutter {
+  flex: 0 0 auto;
+  width: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 0 4px;
+}
+
+.embark-map-search__origin {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #5f6368;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.embark-map-search__connector {
+  width: 0;
+  flex: 1;
+  min-height: 14px;
+  margin: 3px 0;
+  border-left: 2px dotted #bdc1c6;
+}
+
+.embark-map-search__dest {
+  flex: 0 0 auto;
+  display: flex;
+  line-height: 0;
+}
+
+.embark-map-search__fields {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.embark-map-search__field-input {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  font: inherit;
+  outline: none;
+  background: #fff;
+  color: #202124;
+}
+
+.embark-map-search__field-input:focus {
+  border-color: #1a73e8;
+  box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.15);
+}
+
+.embark-map-search__swap {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: #5f6368;
+  cursor: pointer;
+}
+
+.embark-map-search__swap:hover:not(:disabled) {
+  background: #f1f3f4;
+}
+
+.embark-map-search__swap:disabled {
+  color: #bdc1c6;
+  cursor: default;
+}
+
+/* Results / summary panel */
+.embark-map-search__panel {
+  min-height: 0;
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 4px 0;
+  border-top: 1px solid #e8eaed;
+}
+
+.embark-map-search__hint {
+  padding: 8px 16px;
+  font-size: 13px;
+  color: #5f6368;
+}
+
+.embark-map-search__hint--error {
+  color: #d93025;
+}
+
+.embark-map-search__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.embark-map-search__row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 8px 16px;
+  border: none;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.embark-map-search__row:hover {
+  background: #f1f3f4;
+}
+
+.embark-map-search__row-icon {
+  flex: 0 0 auto;
+  width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.embark-map-search__row-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.embark-map-search__row-title {
+  font-weight: 500;
+  color: #202124;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.embark-map-search__row-sub {
+  font-size: 12px;
+  color: #5f6368;
+  text-transform: capitalize;
+}
+
+.embark-map-search__summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 16px;
+}
+
+.embark-map-search__summary-stats {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 18px;
+  font-weight: 500;
+  color: #1a73e8;
+}
+
+.embark-map-search__summary-dist {
+  font-size: 13px;
+  font-weight: 400;
+  color: #5f6368;
+}
+
+.embark-map-search__summary-route {
+  font-size: 12px;
+  color: #5f6368;
+}
+
+/* Ephemeral search markers: SVG pins/dots. maplibre owns the element transform
+   for positioning, so the glyphs carry no transform of their own. */
+.embark-search-pin {
+  cursor: pointer;
+  line-height: 0;
+}
+
+.embark-search-pin svg,
+.embark-search-dot svg {
+  display: block;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.3));
+}
