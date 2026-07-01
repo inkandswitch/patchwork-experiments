@@ -5,7 +5,6 @@ import {
   type DocHandle,
 } from "@automerge/automerge-repo";
 import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
-import { MountedEvent, UnmountedEvent } from "@inkandswitch/patchwork-elements";
 import {
   For,
   Show,
@@ -21,6 +20,7 @@ import {
   SchemaMatches,
   SchemaQueries,
   Selection,
+  jsonSchemaToZod,
   readContext,
   schemaKey,
   useContextHandle,
@@ -117,7 +117,11 @@ function BirdSighting(props: {
   const period = (): BirdPeriod => doc()?.period ?? "week";
 
   const [status, setStatus] = createSignal<Status>({ state: "nomap" });
-  const [sightings, setSightings] = createSignal<Sighting[]>([]);
+
+  // One found species plus the url of the bird-card minted for it, so a list row
+  // can light its own pin on hover. Replaced wholesale on each new search.
+  type Row = Sighting & { url: AutomergeUrl };
+  const [rows, setRows] = createSignal<Row[]>([]);
 
   // Publish the map schema query and read its matches back (a live set of map
   // document urls, usually one).
@@ -126,6 +130,7 @@ function BirdSighting(props: {
     slice[MAP_KEY] = MAP_QUERY;
   });
   const schemaMatches = readContext(props.element, SchemaMatches);
+  const mapUrls = createMemo(() => schemaMatches()[MAP_KEY] ?? []);
 
   // The map we currently track and its "change" listener (fires on pan/zoom/
   // resize, since the map mirrors its box into `bounds`).
@@ -133,27 +138,57 @@ function BirdSighting(props: {
   let mapHandle: DocHandle<MapDocLike> | undefined;
   let mapChange: (() => void) | undefined;
 
-  // The bird-cards minted for the current view, announced as mounted so the
-  // canvas discovers them (they're never placed in a view, so this synthetic
-  // event is their only signal). Replaced wholesale on each new search.
-  let mounted: AutomergeUrl[] = [];
   let timer: ReturnType<typeof setTimeout> | undefined;
   // Bumped per search so a slow fetch from an old view can't overwrite a newer.
   let generation = 0;
 
-  const mount = (url: AutomergeUrl) =>
-    props.element.dispatchEvent(new MountedEvent({ url, toolId: "bird-card" }));
-  const unmount = (url: AutomergeUrl) =>
-    props.element.dispatchEvent(
-      new UnmountedEvent({ url, toolId: "bird-card" }),
-    );
+  // Offer our minted bird-cards to the canvas by writing them straight into
+  // SchemaMatches — under whichever *published* schema they satisfy — rather
+  // than announcing them as mounted docs for the resolver to rediscover. Each
+  // bird-card carries top-level { lat, lon }, so it satisfies the map's geo
+  // query; the map reads the union of every SchemaMatches slice, so ours merges
+  // in and its pins appear alongside everything else. Compiled schemas are
+  // cached by key (schemas are stable per key).
+  const matchesOut = useContextHandle(props.element, SchemaMatches);
+  const publishedQueries = readContext(props.element, SchemaQueries);
+  const compiled = new Map<string, ReturnType<typeof jsonSchemaToZod>>();
+  // A representative bird-card (they all share this shape), tested against each
+  // published schema so we don't have to inspect every minted card.
+  const probe = {
+    "@patchwork": { type: "bird-card" },
+    name: "",
+    sciName: "",
+    lat: 0,
+    lon: 0,
+  };
+  const matchingKeys = (queries: Record<string, SchemaQuery>): string[] => {
+    const keys: string[] = [];
+    for (const [key, query] of Object.entries(queries)) {
+      let schema = compiled.get(key);
+      if (!schema) {
+        schema = jsonSchemaToZod(querySchema(query));
+        compiled.set(key, schema);
+      }
+      if (schema.safeParse(probe).success) keys.push(key);
+    }
+    return keys;
+  };
 
-  // Light up our pins while the card is the selected embed. The map matches a
-  // bird-card by its document id (its top-level {lat,lon} resolves to the doc
-  // root), so highlighting the minted urls glows their markers. We own our
-  // Highlight slice outright, so this is a plain clear-and-set.
-  const selection = readContext(props.element, Selection);
+  // Auxiliary emphasis we contribute on hover: the bird-card under a hovered
+  // list row (lighting its map pin) or the map(s) under the hovered "map" word
+  // (glowing their embeds). We own this slice, so each hover is a clear-and-set.
   const highlight = useContextHandle(props.element, Highlight);
+  const setHighlight = (urls: AutomergeUrl[]) => {
+    highlight.change((slice) => {
+      const entries = slice as Record<string, true>;
+      for (const key of Object.keys(entries)) delete entries[key];
+      for (const url of urls) entries[url] = true;
+    });
+  };
+
+  // A subtle ring on the card itself while it's the selected embed — purely the
+  // card's own affordance; it no longer lights its pins.
+  const selection = readContext(props.element, Selection);
   const isSelected = createMemo(() => {
     if (!isValidAutomergeUrl(props.selfUrl)) return false;
     const selfId = parseAutomergeUrl(props.selfUrl).documentId;
@@ -163,24 +198,15 @@ function BirdSighting(props: {
         parseAutomergeUrl(url).documentId === selfId,
     );
   });
-  const updateHighlight = () => {
-    const lit = isSelected() ? mounted : [];
-    highlight.change((slice) => {
-      const entries = slice as Record<string, true>;
-      for (const key of Object.keys(entries)) delete entries[key];
-      for (const url of lit) entries[url] = true;
-    });
-  };
 
   const clearCards = () => {
-    for (const url of mounted) unmount(url);
-    mounted = [];
-    setSightings([]);
-    updateHighlight();
+    setRows([]);
   };
 
-  // Read the tracked map's box, ask eBird, then mint + mount a card per species
-  // (resolving each photo first). Guarded so a superseded view is discarded.
+  // Read the tracked map's box, ask eBird, then mint a card per species
+  // (resolving each photo first) and record it as a row. Publishing to
+  // SchemaMatches is left to the effect below. Guarded so a superseded view is
+  // discarded.
   const runSearch = async () => {
     const bounds = mapHandle?.doc()?.bounds;
     if (!bounds) {
@@ -196,10 +222,9 @@ function BirdSighting(props: {
         results.map((r) => lookupImage(r.sciName, r.comName)),
       );
       if (mine !== generation) return;
-      clearCards();
-      const urls = results.map((r, i) => {
+      const nextRows: Row[] = results.map((r, i) => {
         const image = images[i];
-        return repo.create<BirdCardDoc>({
+        const url = repo.create<BirdCardDoc>({
           "@patchwork": { type: "bird-card", title: r.comName },
           name: r.comName,
           sciName: r.sciName,
@@ -211,14 +236,12 @@ function BirdSighting(props: {
           ...(image ? { imageUrl: image } : {}),
           learnMoreUrl: speciesUrl(r.speciesCode),
         }).url;
+        return { ...r, url };
       });
-      for (const url of urls) mount(url);
-      mounted = urls;
-      setSightings(results);
-      updateHighlight();
+      setRows(nextRows);
       setStatus(
-        results.length
-          ? { state: "done", count: results.length }
+        nextRows.length
+          ? { state: "done", count: nextRows.length }
           : { state: "empty" },
       );
     } catch {
@@ -242,12 +265,22 @@ function BirdSighting(props: {
       d.period = next;
     });
 
-  // Re-derive highlight whenever selection changes.
-  createEffect(updateHighlight);
+  // (Re)publish our matches whenever the found cards or the set of published
+  // schemas change: clear our whole slice, then list our card urls under every
+  // schema they satisfy.
+  createEffect(() => {
+    const urls = rows().map((r) => r.url);
+    const keys = matchingKeys(publishedQueries());
+    matchesOut.change((slice) => {
+      for (const key of Object.keys(slice)) delete slice[key];
+      if (urls.length === 0) return;
+      for (const key of keys) slice[key] = urls;
+    });
+  });
 
   // Adopt the first matched map as the tracked one.
   createEffect(() => {
-    setMapUrl((schemaMatches()[MAP_KEY] ?? [])[0]);
+    setMapUrl(mapUrls()[0]);
   });
 
   // (Re)wire the tracked map's change listener and kick off a search. When the
@@ -281,9 +314,8 @@ function BirdSighting(props: {
   onCleanup(() => {
     if (timer) clearTimeout(timer);
     if (mapHandle && mapChange) mapHandle.off("change", mapChange);
-    for (const url of mounted) unmount(url);
-    mounted = [];
     schemaQueries.release();
+    matchesOut.release();
     highlight.release();
   });
 
@@ -314,7 +346,15 @@ function BirdSighting(props: {
             <option value="week">this week</option>
             <option value="month">this month</option>
           </select>
-          {" near the map."}
+          {" on any "}
+          <span
+            class="embark-bird-card__maplink"
+            onMouseEnter={() => setHighlight(mapUrls())}
+            onMouseLeave={() => setHighlight([])}
+          >
+            map
+          </span>
+          {"."}
         </p>
 
         <div
@@ -327,11 +367,15 @@ function BirdSighting(props: {
           {statusText(status())}
         </div>
 
-        <Show when={sightings().length > 0}>
+        <Show when={rows().length > 0}>
           <ul class="embark-bird-card__list">
-            <For each={sightings()}>
+            <For each={rows()}>
               {(s) => (
-                <li class="embark-bird-card__row">
+                <li
+                  class="embark-bird-card__row"
+                  onMouseEnter={() => setHighlight([s.url])}
+                  onMouseLeave={() => setHighlight([])}
+                >
                   <span class="embark-bird-card__row-name">{s.comName}</span>
                   <Show when={s.locName}>
                     <span class="embark-bird-card__row-sub">{s.locName}</span>
@@ -347,6 +391,21 @@ function BirdSighting(props: {
       </span>
     </div>
   );
+}
+
+// The schema to match from a published query. Consumers publish `{ name, schema
+// }`, but a bare JSON Schema is unwrapped defensively too (JSON Schema's own
+// keyword is `$schema`, never bare `schema`, so this discrimination is safe).
+function querySchema(query: SchemaQuery | JsonSchema): JsonSchema {
+  if (
+    query !== null &&
+    typeof query === "object" &&
+    !Array.isArray(query) &&
+    "schema" in query
+  ) {
+    return (query as SchemaQuery).schema;
+  }
+  return query as JsonSchema;
 }
 
 function statusText(status: Status): string {

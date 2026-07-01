@@ -19,10 +19,25 @@
   overflow: hidden;
 }
 
-/* A subtle ring while this card is the selected embed (its pins glow in step). */
+/* A subtle ring while this card is the selected embed. */
 .embark-bird-card.is-selected {
   outline: 2px solid #0ea5e9;
   outline-offset: -2px;
+}
+
+/* The "map" word in the sentence: an underlined affordance that, on hover,
+   glows the map(s) this card searches. */
+.embark-bird-card__maplink {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+  font-weight: 600;
+  color: #0369a1;
+  cursor: pointer;
+}
+
+.embark-bird-card__maplink:hover {
+  color: #0ea5e9;
 }
 
 .embark-bird-card__body {
@@ -104,6 +119,15 @@
   align-items: baseline;
   gap: 8px;
   min-width: 0;
+  padding: 1px 4px;
+  margin: 0 -4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* Hovering a row glows its pin on the map; tint the row so the link is felt. */
+.embark-bird-card__row:hover {
+  background: #e0f2fe;
 }
 
 .embark-bird-card__row-name {

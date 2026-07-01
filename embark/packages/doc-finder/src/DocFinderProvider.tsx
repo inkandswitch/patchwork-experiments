@@ -151,14 +151,46 @@ function AtIcon() {
   );
 }
 
+// Datatypes Find Docs must never surface, even when they carry a title. They
+// each belong to another card, so returning them here would just duplicate
+// (and clutter) what that card already handles. Three groups:
+//   1. the finder / source / tool cards themselves — UI controls you'd never
+//      `@mention`. They set no title today so they're already invisible, but
+//      listing them keeps the intent explicit if that ever changes.
+//   2. the result cards those finders auto-mint — a place, a bird sighting, a
+//      forecast, a route. Each has a dedicated card that owns it (Place Finder,
+//      Bird Sightings, Weather, Route), so they're noise in a document search.
+//   3. canvas plumbing (the parts bin, the context viewer) — anchors, not
+//      documents a user refers to by name.
+const BLACKLISTED_TYPES = new Set<string>([
+  // 1. Finder / source / tool cards
+  "place-finder",
+  "bird-sighting",
+  "convert-to-imperial",
+  "convert-to-metric",
+  "schedule",
+  "doc-finder-provider",
+  // 2. Results minted by those finder cards
+  "poi-card",
+  "bird-card",
+  "weather-card",
+  "route-card",
+  // 3. Canvas plumbing, not user content
+  "parts-bin",
+  "context-viewer",
+]);
+
 // A document's display title, read *strictly* from `@patchwork.title` — the one
 // field a document sets when it explicitly wants to be found by name. Returns
-// "" when it's missing or blank, which the caller treats as "untitled, don't
-// surface". There is deliberately no fallback to content/name/etc., so only
-// intentionally-titled documents are matched.
+// "" when it's missing, blank, or owned by a blacklisted card type, which the
+// caller treats as "untitled, don't surface". There is deliberately no fallback
+// to content/name/etc., so only intentionally-titled documents are matched.
 function docTitle(doc: unknown): string {
-  const title = (doc as { "@patchwork"?: { title?: unknown } } | null)?.[
-    "@patchwork"
-  ]?.title;
+  const patchwork = (
+    doc as { "@patchwork"?: { type?: unknown; title?: unknown } } | null
+  )?.["@patchwork"];
+  const type = patchwork?.type;
+  if (typeof type === "string" && BLACKLISTED_TYPES.has(type)) return "";
+  const title = patchwork?.title;
   return typeof title === "string" && title.trim() ? title : "";
 }

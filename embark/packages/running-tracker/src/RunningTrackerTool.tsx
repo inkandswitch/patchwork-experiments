@@ -262,7 +262,9 @@ function RunCard(props: {
       >
         <Show when={run()} fallback={<span class="embark-run__card-loading" />}>
           <div class="embark-run__card-head">
-            <span class="embark-run__card-name">{run()!.title}</span>
+            <span class="embark-run__card-name">
+              {run()!["@patchwork"]?.title ?? "Run"}
+            </span>
             <Show
               when={finished()}
               fallback={<span class="embark-run__badge">unfinished</span>}
@@ -648,7 +650,7 @@ function RunDetail(props: {
           </button>
         </Show>
         <h1 class="embark-run__title embark-run__title--center">
-          {run()?.title ?? "Run"}
+          {run()?.["@patchwork"]?.title ?? "Run"}
         </h1>
         <Show
           when={props.onDelete}

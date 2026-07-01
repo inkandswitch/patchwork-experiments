@@ -1,36 +1,64 @@
 import type { JSX } from "solid-js";
-import type { ToolElement } from "@inkandswitch/patchwork-plugins";
-import { isValidAutomergeUrl, type Repo } from "@automerge/automerge-repo";
+import type { AutomergeUrl, Repo } from "@automerge/automerge-repo";
+import { isValidAutomergeUrl } from "@automerge/automerge-repo";
+import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
+import { onCleanup, onMount } from "solid-js";
+import { render } from "solid-js/web";
 import {
-  stickerSourceCard,
+  runStickerSource,
   type ScanContext,
   type Sticker,
   type StickerSource,
 } from "@embark/core";
+import "./schedule.css";
 
-// A handle-less `patchwork:component` that reads your notes, highlights every
-// clock time and duration, and runs a little schedule calculator: within a
-// paragraph it carries a running clock so each duration shows the time you'll
-// finish, and flags any computed time that overruns a later target. Embedded
-// docs that expose a `duration` (e.g. a route card) count as durations too.
-// Like the unit/currency converters it ships as the shared sticker-scanning
-// engine with a playing-card face; `stickerSourceCard` ignores its doc handle,
-// so the default export adapts it to the handle-less component shape.
-const ScheduleCard = stickerSourceCard(
-  {
-    title: "Schedule",
-    description:
-      "Reads your notes for times (8:00) and durations (1 hour, 30 min, or an embedded route), highlights them, and adds each duration to the running clock — flagging anything that runs late.",
-    source: "Running clock per paragraph",
-    accent: "#7c3aed",
-    icon: ClockIcon,
-  },
-  { scan: scanSchedule },
-  onReady,
-);
+// Tool entry point for the `schedule` datatype: a document-backed view that runs
+// the shared sticker-scanning engine against the canvas it's mounted inside. It
+// highlights every clock time and duration and runs a little schedule
+// calculator: within a paragraph it carries a running clock so each duration
+// shows the time you'll finish, flagging any computed time that overruns a later
+// target. Embedded docs that expose a `duration` (e.g. a route card) count as
+// durations too. The backing doc is just a marker (see ./datatype); its url is
+// passed down as `selfUrl` so the engine emphasizes this card's stickers while
+// it is the selected embed.
+export const ScheduleTool: ToolRender = (handle, element) =>
+  render(() => <ScheduleCard element={element} selfUrl={handle.url} />, element);
 
-export default (element: ToolElement): (() => void) | void =>
-  ScheduleCard(undefined as never, element);
+// The card face: a playing-card surface that starts the scanning engine on mount
+// and tears it down on cleanup. It registers the running source so a
+// resolved/changed embedded duration can re-run every source's scan.
+function ScheduleCard(props: { element: ToolElement; selfUrl: AutomergeUrl }) {
+  onMount(() => {
+    const source = runStickerSource(
+      props.element,
+      { scan: scanSchedule },
+      undefined,
+      props.selfUrl,
+    );
+    sources.add(source);
+    onCleanup(() => {
+      sources.delete(source);
+      source.stop();
+    });
+  });
+
+  return (
+    <div class="embark-schedule-card">
+      <span class="embark-schedule-card__pip embark-schedule-card__pip--tl">
+        <ClockIcon />
+      </span>
+      <div class="embark-schedule-card__body">
+        <div class="embark-schedule-card__title">Schedule</div>
+        <p class="embark-schedule-card__desc">
+          Adds up times and durations in your notes into a running clock.
+        </p>
+      </div>
+      <span class="embark-schedule-card__pip embark-schedule-card__pip--br">
+        <ClockIcon />
+      </span>
+    </div>
+  );
+}
 
 // Highlight colors for the matched spans and the computed-time chip. Times and
 // durations get distinct accents; a chip that overruns its next target goes red.
@@ -216,10 +244,6 @@ const sources = new Set<StickerSource>();
 // duration. Absent means "not fetched yet".
 const durationCache = new Map<string, number | null>();
 const watching = new Set<string>();
-
-function onReady(source: StickerSource) {
-  sources.add(source);
-}
 
 // The cached duration (minutes) for an embed url, or null when unknown/pending
 // or the doc exposes no duration. Kicks off a one-time fetch on a cache miss.

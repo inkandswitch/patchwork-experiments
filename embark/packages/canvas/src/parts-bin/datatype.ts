@@ -31,9 +31,6 @@ const CURRENCY_COMPONENT_URL = componentUrl(
 const TIMER_COMPONENT_URL = componentUrl(
   "automerge:3wGbMYtuZ7EtBvDsbuwRBcP6v7P2",
 );
-const SCHEDULE_COMPONENT_URL = componentUrl(
-  "automerge:3jBqTXqoHp8pyXeUZKbXcJch7qxm",
-);
 const STICKERABLE_COMPONENT_URL = componentUrl(
   "automerge:2BkapPQei7cVRiWryrVPQEQQKCJ9",
 );
@@ -68,9 +65,9 @@ export const PartsBinDatatype: DatatypeImplementation<PartsBinDoc> = {
   },
 };
 
-// The starter set: the Place Finder and the two converters (document-backed
-// contributors), the Weather and Routes components; a map; the remaining
-// sticker-source components (Currency/Timer/Schedule); and a demo markdown note
+// The starter set: the Place Finder, the two converters, and Schedule
+// (document-backed contributors), the Weather and Routes components; a map; the
+// remaining sticker-source components (Currency/Timer); and a demo markdown note
 // for them to annotate. Documents are real docs the bin previews live and hands
 // out clones of; the behavioral-role components the bin references by url.
 // `repo.create` doesn't run a datatype's `init`, so each child doc's initial
@@ -115,6 +112,13 @@ export function seedExampleItems(repo: Repo): PartsBinItem[] {
   });
   const convertToMetric = repo.create({
     "@patchwork": { type: "convert-to-metric" },
+  });
+  // The Schedule contributor (its own `@embark/schedule` module). A
+  // configuration-free document-backed contributor: dropping it wires its card
+  // onto the canvas where it highlights times/durations and runs a per-paragraph
+  // running clock.
+  const schedule = repo.create({
+    "@patchwork": { type: "schedule" },
   });
   // A fresh, empty deck. Dragging the example out clones it, so each canvas
   // starts its own pile; cards are added by dragging embeds into it.
@@ -191,11 +195,7 @@ export function seedExampleItems(repo: Repo): PartsBinItem[] {
       componentUrl: TIMER_COMPONENT_URL,
       label: "Timer",
     },
-    {
-      id: crypto.randomUUID(),
-      componentUrl: SCHEDULE_COMPONENT_URL,
-      label: "Schedule",
-    },
+    { id: crypto.randomUUID(), url: schedule.url, toolId: "schedule" },
     {
       id: crypto.randomUUID(),
       componentUrl: STICKERABLE_COMPONENT_URL,

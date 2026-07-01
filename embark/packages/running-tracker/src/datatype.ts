@@ -8,8 +8,7 @@ import type { DatatypeImplementation } from "@inkandswitch/patchwork-plugins";
 // `(endedAt ?? now) - startedAt - pausedMs` (minus the open pause while
 // `pausedAt` is set). A run is "in progress" while `endedAt` is null.
 export type RunDoc = {
-  "@patchwork": { type: "run" };
-  title: string;
+  "@patchwork": { type: "run"; title?: string };
   startedAt: number;
   endedAt: number | null;
   pausedAt: number | null;
@@ -45,8 +44,7 @@ export type RunLink = { url: AutomergeUrl };
 // the tracker when it mints a run via `repo.create` (which does not run `init`).
 export function newRunDoc(startedAt: number = Date.now()): RunDoc {
   return {
-    "@patchwork": { type: "run" },
-    title: defaultRunTitle(startedAt),
+    "@patchwork": { type: "run", title: defaultRunTitle(startedAt) },
     startedAt,
     endedAt: null,
     pausedAt: null,
@@ -56,24 +54,30 @@ export function newRunDoc(startedAt: number = Date.now()): RunDoc {
   };
 }
 
-// Name runs by their start date and time (24h), so each run has a unique,
-// recognizable title — handy for mentioning a specific run in a note.
+// Name runs by their start date and time (e.g. "Run Jun 29 2026, 08:00"), so
+// each run has a unique, recognizable title — handy for mentioning a specific
+// run in a note.
 export function defaultRunTitle(startedAt: number): string {
-  return new Date(startedAt).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
+  const started = new Date(startedAt);
+  const date = started
+    .toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    })
+    .replace(",", "");
+  const time = started.toLocaleTimeString("en-US", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
   });
+  return `Run ${date}, ${time}`;
 }
 
 export const RunDatatype: DatatypeImplementation<RunDoc> = {
   init(doc) {
     const initial = newRunDoc();
     doc["@patchwork"] = initial["@patchwork"];
-    doc.title = initial.title;
     doc.startedAt = initial.startedAt;
     doc.endedAt = initial.endedAt;
     doc.pausedAt = initial.pausedAt;
@@ -82,10 +86,10 @@ export const RunDatatype: DatatypeImplementation<RunDoc> = {
     doc.samples = initial.samples;
   },
   getTitle(doc) {
-    return doc.title || "Run";
+    return doc["@patchwork"]?.title || "Run";
   },
   setTitle(doc, title) {
-    doc.title = title;
+    doc["@patchwork"].title = title;
   },
 };
 
@@ -135,8 +139,7 @@ function createSampleRun(repo: Repo): AutomergeUrl {
   }
 
   const handle = repo.create<RunDoc>({
-    "@patchwork": { type: "run" },
-    title: defaultRunTitle(startedAt),
+    "@patchwork": { type: "run", title: defaultRunTitle(startedAt) },
     startedAt,
     endedAt: t,
     pausedAt: null,
