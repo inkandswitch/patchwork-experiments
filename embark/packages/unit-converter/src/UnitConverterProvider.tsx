@@ -1,32 +1,45 @@
 import type { JSX } from "solid-js";
-import type { ToolElement } from "@inkandswitch/patchwork-plugins";
-import {
-  stickerSourceCard,
-  type ScanContext,
-  type Sticker,
-} from "@embark/core";
+import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
+import { onCleanup, onMount } from "solid-js";
+import { render } from "solid-js/web";
+import { runStickerSource, type ScanContext, type Sticker } from "@embark/core";
+import "./unit-converter.css";
 
-// A handle-less `patchwork:component` that scans text for imperial quantities
-// and annotates each with the metric equivalent as a `text` sticker in the
-// "after" slot. Behaves like the POI/weather components (a contributor with a
-// playing-card face) but its work is the shared sticker-scanning engine.
-// `stickerSourceCard` ignores its doc handle, so the default export adapts it to
-// the handle-less component shape: the canvas runs it into the embed host with
-// `repo` stamped on, and it reaches the shared context via DOM discovery.
-const UnitConverterCard = stickerSourceCard(
-  {
-    title: "Unit Converter",
-    description:
-      "Scans your notes for imperial quantities — miles, feet, pounds, °F — and annotates each with its metric equivalent.",
-    source: "Imperial → metric",
-    accent: "#0ea5e9",
-    icon: RulerIcon,
-  },
-  { scan: scanUnits },
-);
+// Tool entry point for the `convert-to-metric` datatype: a document-backed view
+// that runs the shared sticker-scanning engine against the canvas it's mounted
+// inside, annotating imperial quantities with their metric equivalents. The
+// backing doc is just a marker (see ./datatype); `element.repo` is the embed
+// contract and the shared context store is found by DOM discovery from
+// `element`. It shares no scanning code with the Convert-to-imperial card.
+export const ConvertToMetricTool: ToolRender = (_handle, element) =>
+  render(() => <UnitConverterCard element={element} />, element);
 
-export default (element: ToolElement): (() => void) | void =>
-  UnitConverterCard(undefined as never, element);
+// The card face: a playing-card surface that starts the scanning engine on mount
+// and tears it down on cleanup. It carries no live state of its own — releasing
+// the engine drops every sticker it published.
+function UnitConverterCard(props: { element: ToolElement }) {
+  onMount(() => {
+    const source = runStickerSource(props.element, { scan: scanUnits });
+    onCleanup(source.stop);
+  });
+
+  return (
+    <div class="embark-unit-card">
+      <span class="embark-unit-card__pip embark-unit-card__pip--tl">
+        <RulerIcon />
+      </span>
+      <div class="embark-unit-card__body">
+        <div class="embark-unit-card__title">Convert to metric</div>
+        <p class="embark-unit-card__desc">
+          Annotates imperial quantities in your notes with metric equivalents.
+        </p>
+      </div>
+      <span class="embark-unit-card__pip embark-unit-card__pip--br">
+        <RulerIcon />
+      </span>
+    </div>
+  );
+}
 
 function scanUnits(ctx: ScanContext): Sticker[] {
   const stickers: Sticker[] = [];

@@ -1,17 +1,29 @@
 import type { Plugin } from "@inkandswitch/patchwork-plugins";
 
-// The Unit Converter is a `patchwork:component`, not a tool+datatype: it has no
-// state of its own, so it ships as a handle-less view (./component) that the
-// canvas embeds directly by url.
+// "Convert to metric" is a document-backed datatype + tool pair (not a
+// handle-less component): the marker document gives the card a stable url, and
+// the tool renders the card face + runs the shared sticker-scanning engine. It
+// is the mirror of "Convert to imperial" and shares no scanning code with it.
 export const plugins: Plugin<any>[] = [
   {
-    type: "patchwork:component",
-    id: "unit-converter",
-    name: "Unit Converter",
+    type: "patchwork:tool",
+    id: "convert-to-metric",
+    name: "Convert to metric",
+    icon: "Ruler",
+    supportedDatatypes: ["convert-to-metric"],
+    async load() {
+      const { ConvertToMetricTool } = await import("./UnitConverterProvider");
+      return ConvertToMetricTool;
+    },
+  },
+  {
+    type: "patchwork:datatype",
+    id: "convert-to-metric",
+    name: "Convert to metric",
     icon: "Ruler",
     async load() {
-      const { default: component } = await import("./component");
-      return component;
+      const { ConvertToMetricDatatype } = await import("./datatype");
+      return ConvertToMetricDatatype;
     },
   },
 ];

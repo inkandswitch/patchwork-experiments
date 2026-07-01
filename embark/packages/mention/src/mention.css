@@ -76,6 +76,27 @@
   background: rgba(59, 130, 246, 0.15);
 }
 
+/* Wraps the result's inline token (or its title-pill fallback) so the row can
+   own padding/selection while the embed view owns its own chrome. */
+.cm-mention-row__content {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+
+/* Results contributed by the Place Finder: a green accent so places stand out
+   from plain document mentions. */
+.cm-mention-row--poi {
+  border-left: 3px solid #16a34a;
+  padding-left: 5px;
+  background: rgba(22, 163, 74, 0.08);
+}
+
+.cm-mention-row--poi.cm-mention-row--active,
+.cm-mention-row--poi:hover {
+  background: rgba(22, 163, 74, 0.18);
+}
+
 .cm-mention-empty {
   padding: 6px 8px;
   color: #6b7280;
@@ -115,6 +136,16 @@
   .cm-mention-row--active,
   .cm-mention-row:hover {
     background: rgba(96, 165, 250, 0.25);
+  }
+
+  .cm-mention-row--poi {
+    border-left-color: #22c55e;
+    background: rgba(34, 197, 94, 0.16);
+  }
+
+  .cm-mention-row--poi.cm-mention-row--active,
+  .cm-mention-row--poi:hover {
+    background: rgba(34, 197, 94, 0.28);
   }
 
   .cm-mention-empty {

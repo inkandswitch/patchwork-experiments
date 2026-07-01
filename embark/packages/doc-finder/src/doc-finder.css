@@ -1,6 +1,7 @@
 /* A hard-coded "card" rendered to look like a playing card in a game: a framed
-   surface filling the embed, a title and a short description of what it does in
-   the middle, and a small suit-like pip in opposite corners. */
+   surface filling the embed, with the title in the top-left and a short
+   description in the bottom-left, plus a small suit-like pip in opposite
+   corners. */
 .embark-docfinder-card {
   position: relative;
   display: flex;
@@ -16,15 +17,19 @@
   overflow: hidden;
 }
 
-/* The title + description, centered like the face of a card. */
+/* Title pinned to the top, description to the bottom, both left-aligned. The
+   horizontal padding keeps the text clear of the corner pips so they never
+   overlap. */
 .embark-docfinder-card__body {
-  margin: auto;
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  justify-content: space-between;
+  align-items: flex-start;
   gap: 8px;
-  text-align: center;
-  max-width: 260px;
+  padding: 20px 20px;
+  text-align: left;
 }
 
 .embark-docfinder-card__title {
@@ -39,14 +44,6 @@
   font-size: 13px;
   line-height: 1.5;
   color: #57534e;
-}
-
-.embark-docfinder-card__source {
-  margin-top: 2px;
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #a8a29e;
 }
 
 /* Corner pips, mirrored like a playing card's suit marks. */

@@ -1,7 +1,9 @@
-import type { AutomergeUrl } from "@automerge/automerge-repo";
-import type { ToolElement } from "@inkandswitch/patchwork-plugins";
+import { type AutomergeUrl } from "@automerge/automerge-repo";
+import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
 import { MountedEvent, UnmountedEvent } from "@inkandswitch/patchwork-elements";
 import { createEffect, onCleanup } from "solid-js";
+import { render } from "solid-js/web";
+import { RepoContext } from "solid-automerge";
 import {
   LATLNG_KEY,
   LATLNG_QUERY,
@@ -14,6 +16,21 @@ import {
 } from "@embark/core";
 import type { PoiCardDoc } from "./datatype";
 import "./poi.css";
+
+// Tool entry point for the `place-finder` datatype: a document-backed view that
+// runs the Place Finder card + search contributor against the shared canvas
+// context it's mounted inside. The backing doc is just a marker (see
+// ./datatype). `element.repo` is the embed contract; the context store is found
+// by DOM discovery from `element`.
+export const PlaceFinderTool: ToolRender = (_handle, element) =>
+  render(
+    () => (
+      <RepoContext.Provider value={element.repo}>
+        <PoiProvider element={element} />
+      </RepoContext.Provider>
+    ),
+    element,
+  );
 
 // A single OpenStreetMap place, flattened from a Nominatim result. Minted into a
 // `poi-card` document with top-level coordinates so the schema matcher can find
@@ -45,9 +62,9 @@ type NominatimItem = {
 
 // A contributor that answers the canvas search channel with OpenStreetMap
 // places. It reads the active queries and writes a result document url back
-// under each. The component itself only shows a title and a description of what
-// it does — like a playing card in a game. It is handle-less: there is no
-// backing document, so all of its state lives in the shared canvas context.
+// under each. Its backing `place-finder` document carries no state (it exists
+// only to give the card a stable url); all working state lives in the shared
+// canvas context.
 export function PoiProvider(props: { element: ToolElement }) {
   const repo = props.element.repo;
   // Read the active queries from the context and write results back as our own
@@ -165,6 +182,8 @@ export function PoiProvider(props: { element: ToolElement }) {
   });
 
   const runSearch = async (query: string) => {
+    // The query may have been dropped while it sat in the debounce; skip it.
+    if (!(query in searchQueries())) return;
     try {
       const places = await fetchPois(query, biasViewbox());
       // The query may have been dropped while we were fetching; don't resurrect
@@ -220,13 +239,10 @@ export function PoiProvider(props: { element: ToolElement }) {
         <PinIcon />
       </span>
       <div class="embark-poi-card__body">
-        <div class="embark-poi-card__title">Place Finder</div>
+        <div class="embark-poi-card__title">Find Places</div>
         <p class="embark-poi-card__desc">
-          Watches the canvas for active searches and looks each one up on
-          OpenStreetMap, biased toward the places already on the canvas, and
-          drops the matches down as cards.
+          For any active search lookup place names on Open Street Map
         </p>
-        <div class="embark-poi-card__source">Nominatim · OpenStreetMap</div>
       </div>
       <span class="embark-poi-card__pip embark-poi-card__pip--br">
         <PinIcon />

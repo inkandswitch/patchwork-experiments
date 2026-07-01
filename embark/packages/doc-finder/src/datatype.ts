@@ -15,6 +15,6 @@ export const DocFinderProviderDatatype: DatatypeImplementation<DocFinderProvider
       doc["@patchwork"] = { type: "doc-finder-provider" };
     },
     getTitle() {
-      return "Mention Finder";
+      return "Find Docs";
     },
   };

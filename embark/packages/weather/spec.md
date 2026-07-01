@@ -7,7 +7,6 @@ Forecasts come from Open-Meteo.
 
 Each forecast is a small card of its own:
 
-- the place it's for (a link to its
-  [place](automerge:r1gkpehGtt4WTR1pz7mBac9SnJp), not a copy)
+- the place it's for (a link to its [place](automerge:r1gkpehGtt4WTR1pz7mBac9SnJp), not a copy)
 - the day's high and low
 - a short summary and emoji

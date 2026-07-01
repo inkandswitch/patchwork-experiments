@@ -4,8 +4,8 @@ import {
   type AutomergeUrl,
 } from "@automerge/automerge-repo";
 import type { ToolElement } from "@inkandswitch/patchwork-plugins";
-import { createMemo, createSignal, onCleanup } from "solid-js";
-import { type ContextStore, Highlight } from "@embark/core";
+import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { type ContextStore, Highlight, renderEmbedView } from "@embark/core";
 
 // Shared building blocks for the context viewer's domain-specific views. Every
 // channel that points at documents (selection, highlight, search results,
@@ -40,6 +40,59 @@ export function DocToken(props: {
       on:mouseleave={() => props.highlight.clear()}
     >
       {text()}
+    </span>
+  );
+}
+
+// An embed's real inline face. Delegates to @embark/core's shared embed
+// renderer — the same one the mention extension uses — so a document draws
+// whatever token-tagged tool it registers (upgrading in place when the module
+// loads), falling back to a plain title pill. The wrapper keeps the shared
+// hover→Highlight wiring so the viewer's other panels still light up together.
+// A custom `label` (e.g. a command suggestion) shows verbatim, skipping the
+// embed face.
+export function EmbedToken(props: {
+  url: AutomergeUrl;
+  highlight: HighlightController;
+  label?: string;
+}) {
+  const { docUrl, docId } = splitDocUrl(props.url);
+  let host!: HTMLSpanElement;
+
+  onMount(() => {
+    if (props.label !== undefined) {
+      host.className = "embark-token";
+      host.textContent = clip(props.label);
+      return;
+    }
+    const teardown = renderEmbedView(host, props.url, host, {
+      fallback: (node, handle) => {
+        node.className = "embark-token";
+        node.textContent = clip(
+          docTitle(handle.doc() as DocLike) ?? shortId(props.url),
+        );
+      },
+      onError: () => {
+        host.className = "embark-token";
+        host.textContent = shortId(props.url);
+      },
+    });
+    onCleanup(teardown);
+  });
+
+  return (
+    <span
+      class="embark-embed"
+      classList={{
+        "embark-embed--highlighted": props.highlight
+          .highlightedDocIds()
+          .has(docId),
+      }}
+      title={props.url}
+      on:mouseenter={() => props.highlight.hover([docUrl])}
+      on:mouseleave={() => props.highlight.clear()}
+    >
+      <span ref={host} />
     </span>
   );
 }
@@ -108,6 +161,14 @@ export function useDocTitles(element: ToolElement): DocTitles {
 
   const titleOf = (docUrl: AutomergeUrl) => titles()[docUrl] ?? shortId(docUrl);
   return { titleOf, request };
+}
+
+// Whether `url` (a document url or a match sub-url) belongs to the same document
+// as `focus`. Compares by document id, so a sub-url pointing inside the focused
+// document still counts. Used by the focused views to keep only rows that touch
+// the selected embed's document.
+export function belongsToDoc(url: AutomergeUrl, focus: AutomergeUrl): boolean {
+  return splitDocUrl(url).docId === splitDocUrl(focus).docId;
 }
 
 // Split a doc or match sub-url (`automerge:<id>/seg/seg`) into its owning

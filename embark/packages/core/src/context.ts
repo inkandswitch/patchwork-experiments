@@ -32,26 +32,63 @@ export type ScopeHandle<T extends Record<string, unknown>> = {
   release(): void;
 };
 
+// An optional descriptor of who owns a scope: the embed/document a writer lives
+// in. Captured structurally at handle-acquisition time (see `resolveOwner`), so
+// inspectors (the context viewer) can attribute a contribution back to the
+// embed that made it. Purely informational — it never affects merging.
+export type ScopeOwner = {
+  docUrl?: string;
+  embedId?: string;
+  toolId?: string;
+};
+
 export type ContextStore = {
   // The current merged value across every live scope.
   read<T extends Record<string, unknown>>(channel: Channel<T>): T;
   // Notified (on a coalesced microtask) only when the merged value structurally
-  // changes. Does not emit an initial value — seed with `read`.
+  // changes. Does not emit an initial value — seed with `read`. `owner`
+  // (optional) tags the read with the embed/document that consumes it, so the
+  // context viewer can show what an embed uses.
   subscribe<T extends Record<string, unknown>>(
     channel: Channel<T>,
     cb: (value: T) => void,
+    owner?: ScopeOwner,
   ): () => void;
   // A fresh scope to write into. Each call is an independent contribution.
-  handle<T extends Record<string, unknown>>(channel: Channel<T>): ScopeHandle<T>;
+  // `owner` (optional) tags the scope with the embed/document that created it.
+  handle<T extends Record<string, unknown>>(
+    channel: Channel<T>,
+    owner?: ScopeOwner,
+  ): ScopeHandle<T>;
+  // A snapshot of every live, non-empty scope slice for a channel, each with its
+  // owner — for inspection (the context viewer groups these by owner). This is a
+  // read-only peek at the un-merged per-scope contributions.
+  scopes<T extends Record<string, unknown>>(
+    channel: Channel<T>,
+  ): Array<{ owner?: ScopeOwner; slice: T }>;
+  // The distinct owners currently subscribed to a channel (deduped by docUrl) —
+  // for inspection (the context viewer shows what an embed reads).
+  readers<T extends Record<string, unknown>>(channel: Channel<T>): ScopeOwner[];
+  // Notified (on a coalesced microtask) whenever any channel's set of readers
+  // changes (a reader subscribing or unsubscribing). Lets inspectors refresh
+  // even when the reader attaches to an empty channel that emits no value.
+  subscribeReaders(cb: () => void): () => void;
 };
 
 type AnyRecord = Record<string, unknown>;
 
+// One scope's contribution: its owner (if any) plus its slice.
+type Scope = { owner?: ScopeOwner; slice: AnyRecord };
+
+type Listener = (value: AnyRecord) => void;
+
 type ChannelState = {
   empty: AnyRecord;
-  // scope id -> that scope's slice.
-  slices: Map<number, AnyRecord>;
-  subscribers: Set<(value: AnyRecord) => void>;
+  // scope id -> that scope's owner + slice.
+  slices: Map<number, Scope>;
+  subscribers: Set<Listener>;
+  // subscriber listener -> the owner (embed/document) that reads through it.
+  readers: Map<Listener, ScopeOwner | undefined>;
   // Cached merged value; null means "recompute on next read".
   merged: AnyRecord | null;
   // What subscribers last saw, for emit-on-change.
@@ -65,6 +102,19 @@ export function createContextStore(): ContextStore {
   const dirty = new Set<ChannelState>();
   let flushScheduled = false;
 
+  // Reader-registry change notification, coalesced onto a microtask so a burst
+  // of (un)subscriptions in one tick fires listeners at most once.
+  const readerSubscribers = new Set<() => void>();
+  let readerFlushScheduled = false;
+  const notifyReaders = () => {
+    if (readerFlushScheduled) return;
+    readerFlushScheduled = true;
+    queueMicrotask(() => {
+      readerFlushScheduled = false;
+      for (const cb of [...readerSubscribers]) cb();
+    });
+  };
+
   const stateFor = (channel: Channel<AnyRecord>): ChannelState => {
     let state = channels.get(channel.name);
     if (!state) {
@@ -72,6 +122,7 @@ export function createContextStore(): ContextStore {
         empty: channel.empty,
         slices: new Map(),
         subscribers: new Set(),
+        readers: new Map(),
         merged: null,
         lastEmitted: null,
       };
@@ -118,32 +169,40 @@ export function createContextStore(): ContextStore {
   const subscribe = <T extends AnyRecord>(
     channel: Channel<T>,
     cb: (value: T) => void,
+    owner?: ScopeOwner,
   ): (() => void) => {
     const state = stateFor(channel as Channel<AnyRecord>);
-    const listener = cb as (value: AnyRecord) => void;
+    const listener = cb as Listener;
     state.subscribers.add(listener);
+    state.readers.set(listener, owner);
+    notifyReaders();
     return () => {
       state.subscribers.delete(listener);
+      state.readers.delete(listener);
+      notifyReaders();
     };
   };
 
-  const handle = <T extends AnyRecord>(channel: Channel<T>): ScopeHandle<T> => {
+  const handle = <T extends AnyRecord>(
+    channel: Channel<T>,
+    owner?: ScopeOwner,
+  ): ScopeHandle<T> => {
     const state = stateFor(channel as Channel<AnyRecord>);
     const id = nextScopeId++;
     let released = false;
     return {
       change(mutate) {
         if (released) return;
-        let slice = state.slices.get(id);
-        if (!slice) {
-          slice = {};
-          state.slices.set(id, slice);
+        let scope = state.slices.get(id);
+        if (!scope) {
+          scope = { owner, slice: {} };
+          state.slices.set(id, scope);
         }
-        mutate(slice as T);
+        mutate(scope.slice as T);
         invalidate(state);
       },
       read() {
-        return (state.slices.get(id) ?? {}) as T;
+        return (state.slices.get(id)?.slice ?? {}) as T;
       },
       release() {
         if (released) return;
@@ -153,7 +212,40 @@ export function createContextStore(): ContextStore {
     };
   };
 
-  return { read, subscribe, handle };
+  const scopes = <T extends AnyRecord>(
+    channel: Channel<T>,
+  ): Array<{ owner?: ScopeOwner; slice: T }> => {
+    const state = stateFor(channel as Channel<AnyRecord>);
+    const out: Array<{ owner?: ScopeOwner; slice: T }> = [];
+    for (const scope of state.slices.values()) {
+      if (Object.keys(scope.slice).length === 0) continue;
+      out.push({ owner: scope.owner, slice: scope.slice as T });
+    }
+    return out;
+  };
+
+  const readers = <T extends AnyRecord>(channel: Channel<T>): ScopeOwner[] => {
+    const state = stateFor(channel as Channel<AnyRecord>);
+    const seen = new Set<string>();
+    const out: ScopeOwner[] = [];
+    for (const owner of state.readers.values()) {
+      if (!owner) continue;
+      const key = owner.docUrl ?? owner.embedId;
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(owner);
+    }
+    return out;
+  };
+
+  const subscribeReaders = (cb: () => void): (() => void) => {
+    readerSubscribers.add(cb);
+    return () => {
+      readerSubscribers.delete(cb);
+    };
+  };
+
+  return { read, subscribe, handle, scopes, readers, subscribeReaders };
 }
 
 // One-level record merge (deliberately not a recursive deep-merge): union the
@@ -163,11 +255,11 @@ export function createContextStore(): ContextStore {
 // scope contributes, the channel's resting `empty` value is returned.
 function mergeSlices(
   empty: AnyRecord,
-  slices: Iterable<AnyRecord>,
+  scopes: Iterable<Scope>,
 ): AnyRecord {
   const out: AnyRecord = {};
   let any = false;
-  for (const slice of slices) {
+  for (const { slice } of scopes) {
     any = true;
     for (const key of Object.keys(slice)) {
       const incoming = slice[key];
@@ -284,7 +376,7 @@ export function subscribeContext<T extends Record<string, unknown>>(
     delivered = true;
     cb(value);
   };
-  const unsubscribe = store.subscribe(channel, wrapped);
+  const unsubscribe = store.subscribe(channel, wrapped, resolveOwner(node));
   queueMicrotask(() => {
     if (!delivered) wrapped(store.read(channel));
   });
@@ -292,10 +384,30 @@ export function subscribeContext<T extends Record<string, unknown>>(
 }
 
 // Node-relative handle: resolve the store from `node` and hand back a fresh
-// scope to write into. `undefined` when no host answers.
+// scope to write into, tagged with the embed/document `node` lives in.
+// `undefined` when no host answers.
 export function getContextHandle<T extends Record<string, unknown>>(
   node: Node,
   channel: Channel<T>,
 ): ScopeHandle<T> | undefined {
-  return findContextStore(node)?.handle(channel);
+  return findContextStore(node)?.handle(channel, resolveOwner(node));
+}
+
+// Walk up from a writer's `node` to the embed/document it lives in so the store
+// can attribute the scope to that embed. Reads the nearest enclosing
+// `<patchwork-view doc-url tool-id>` and `[data-embed-id]` (both light DOM — see
+// repoFromView, which relies on the same `.closest("patchwork-view")`). Returns
+// `undefined` outside any embed (e.g. a writer on the canvas root itself), so
+// that contribution is simply left unattributed.
+export function resolveOwner(node: Node): ScopeOwner | undefined {
+  const el = node instanceof Element ? node : node.parentElement;
+  if (!el) return undefined;
+  const view = el.closest("patchwork-view");
+  const embed = el.closest("[data-embed-id]");
+  const owner: ScopeOwner = {
+    docUrl: view?.getAttribute("doc-url") ?? undefined,
+    embedId: embed?.getAttribute("data-embed-id") ?? undefined,
+    toolId: view?.getAttribute("tool-id") ?? undefined,
+  };
+  return owner.docUrl || owner.embedId ? owner : undefined;
 }

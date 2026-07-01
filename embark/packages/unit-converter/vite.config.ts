@@ -5,17 +5,10 @@ import external from "@inkandswitch/patchwork-bootloader/externals";
 
 export default defineConfig({
   base: "./",
-  plugins: [
-    solidPlugin(),
-    // Keep all injected CSS on the component entry (it renders the board card);
-    // index.js only registers the plugin.
-    cssInjectedByJsPlugin({
-      jsAssetsFilterFunction: (chunk) => chunk.fileName === "component.js",
-    }),
-  ],
+  plugins: [solidPlugin(), cssInjectedByJsPlugin()],
   build: {
     lib: {
-      entry: { index: "src/index.ts", component: "src/component.tsx" },
+      entry: { index: "src/index.ts" },
       formats: ["es"],
       fileName: (_format, entryName) => `${entryName}.js`,
     },

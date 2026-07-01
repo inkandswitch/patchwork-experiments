@@ -1,6 +1,7 @@
 import { createSignal, onCleanup, onMount, type Accessor } from "solid-js";
 import {
   findContextStore,
+  resolveOwner,
   type Channel,
   type ScopeHandle,
 } from "./context";
@@ -29,7 +30,11 @@ export function readContext<T extends Record<string, unknown>>(
     const store = findContextStore(element);
     if (!store) return;
     setValue(() => store.read(channel));
-    const unsubscribe = store.subscribe(channel, (next) => setValue(() => next));
+    const unsubscribe = store.subscribe(
+      channel,
+      (next) => setValue(() => next),
+      resolveOwner(element),
+    );
     onCleanup(unsubscribe);
   });
   return value;
@@ -52,7 +57,7 @@ export function useContextHandle<T extends Record<string, unknown>>(
     if (!element || released) return;
     const store = findContextStore(element);
     if (!store) return;
-    real = store.handle(channel);
+    real = store.handle(channel, resolveOwner(element));
     for (const mutate of buffered) real.change(mutate);
     buffered.length = 0;
   });

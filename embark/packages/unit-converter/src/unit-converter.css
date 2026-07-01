@@ -2,7 +2,7 @@
    surface filling the embed, with the title in the top-left and a short
    description in the bottom-left, plus a small suit-like pip in opposite
    corners. */
-.embark-poi-card {
+.embark-unit-card {
   position: relative;
   display: flex;
   height: 100%;
@@ -21,9 +21,8 @@
 }
 
 /* Title pinned to the top, description to the bottom, both left-aligned. The
-   horizontal padding keeps the text clear of the corner pips (which sit ~26px
-   in from the top-left and bottom-right corners) so they never overlap. */
-.embark-poi-card__body {
+   padding keeps the text clear of the corner pips so they never overlap. */
+.embark-unit-card__body {
   flex: 1;
   min-width: 0;
   display: flex;
@@ -35,14 +34,14 @@
   text-align: left;
 }
 
-.embark-poi-card__title {
+.embark-unit-card__title {
   font-size: 18px;
   font-weight: 700;
   letter-spacing: 0.01em;
   color: #1c1917;
 }
 
-.embark-poi-card__desc {
+.embark-unit-card__desc {
   margin: 0;
   font-size: 13px;
   line-height: 1.4;
@@ -50,18 +49,18 @@
 }
 
 /* Corner pips, mirrored like a playing card's suit marks. */
-.embark-poi-card__pip {
+.embark-unit-card__pip {
   position: absolute;
   display: flex;
-  color: #16a34a;
+  color: #0ea5e9;
 }
 
-.embark-poi-card__pip--tl {
+.embark-unit-card__pip--tl {
   top: 10px;
   left: 10px;
 }
 
-.embark-poi-card__pip--br {
+.embark-unit-card__pip--br {
   bottom: 10px;
   right: 10px;
   transform: rotate(180deg);

@@ -7,32 +7,23 @@ import type { PartsBinDoc, PartsBinItem } from "./types";
 const DEFAULT_CENTER: [number, number] = [13.388, 52.517];
 const DEFAULT_ZOOM = 9.5;
 
-// The behavioral-role features (Place Finder, Weather, Routes) are
-// `patchwork:component`s, not documents — the bin seeds them by url so dropping
-// one creates a component embed pointing at the shared module rather than a
-// minted provider document. The urls are head-less (the service worker redirects
-// to the latest heads on load), so a fresh bin always wires up the newest
-// published component. The package folder doc mirrors the package directory, and
-// the build output lives under `dist/`, so the component file is served at
+// The behavioral-role features (Weather, Routes) are `patchwork:component`s,
+// not documents — the bin seeds them by url so dropping one creates a component
+// embed pointing at the shared module rather than a minted provider document.
+// The urls are head-less (the service worker redirects to the latest heads on
+// load), so a fresh bin always wires up the newest published component. The
+// package folder doc mirrors the package directory, and the build output lives
+// under `dist/`, so the component file is served at
 // `automerge:<package rootUrl>/dist/component.js` (this raw module path bypasses
 // package.json `exports`, so it must spell out `dist/`).
 const componentUrl = (rootUrl: string): string =>
   `/${encodeURIComponent(rootUrl)}/dist/component.js`;
 
-const POI_COMPONENT_URL = componentUrl(
-  "automerge:r1gkpehGtt4WTR1pz7mBac9SnJp",
-);
 const WEATHER_COMPONENT_URL = componentUrl(
   "automerge:2gtsy4b6hU38DQAMPk6kYHLwxrxE",
 );
 const ROUTE_COMPONENT_URL = componentUrl(
   "automerge:41HBbYkbrqYd9STaojjQUsFc1jDW",
-);
-const UNIT_COMPONENT_URL = componentUrl(
-  "automerge:2YXL4FwZ7crmDpgcm2FobPGpQyE7",
-);
-const METRIC_COMPONENT_URL = componentUrl(
-  "automerge:2otX5sW1C3cozUnmGiKZKviSHAaQ",
 );
 const CURRENCY_COMPONENT_URL = componentUrl(
   "automerge:27NZacXx1DQVusdWaNS9US9t5spB",
@@ -77,12 +68,13 @@ export const PartsBinDatatype: DatatypeImplementation<PartsBinDoc> = {
   },
 };
 
-// The starter set: the Place Finder, Weather and Routes components; a map; the
-// four sticker-source components (Unit/Currency/Timer/Schedule); and a demo
-// markdown note for them to annotate. Documents are real docs the bin previews
-// live and hands out clones of; the behavioral-role features are components the
-// bin references by url. `repo.create` doesn't run a datatype's `init`, so each
-// child doc's initial value is set inline here.
+// The starter set: the Place Finder and the two converters (document-backed
+// contributors), the Weather and Routes components; a map; the remaining
+// sticker-source components (Currency/Timer/Schedule); and a demo markdown note
+// for them to annotate. Documents are real docs the bin previews live and hands
+// out clones of; the behavioral-role components the bin references by url.
+// `repo.create` doesn't run a datatype's `init`, so each child doc's initial
+// value is set inline here.
 export function seedExampleItems(repo: Repo): PartsBinItem[] {
   const map = repo.create({
     "@patchwork": { type: "map" },
@@ -93,11 +85,27 @@ export function seedExampleItems(repo: Repo): PartsBinItem[] {
     "@patchwork": { type: "markdown" },
     content: DEMO_MARKDOWN,
   });
+  // The Place Finder contributor (its own `@embark/poi` module). It is
+  // configuration-free, so the seeded doc just carries its type; dropping it
+  // wires the card onto the canvas where it answers searches with places.
+  const placeFinder = repo.create({
+    "@patchwork": { type: "place-finder" },
+  });
   // The Mention Finder contributor (its own `@embark/doc-finder` module). It is
   // configuration-free, so the seeded doc just carries its type; dropping it
   // wires the card onto the canvas where it answers @mention searches.
   const docFinder = repo.create({
     "@patchwork": { type: "doc-finder-provider" },
+  });
+  // The two unit converters (their own `@embark/metric-converter` and
+  // `@embark/unit-converter` modules). Configuration-free document-backed
+  // contributors: dropping one wires its card onto the canvas where it scans
+  // text and annotates matching quantities with converted values.
+  const convertToImperial = repo.create({
+    "@patchwork": { type: "convert-to-imperial" },
+  });
+  const convertToMetric = repo.create({
+    "@patchwork": { type: "convert-to-metric" },
   });
   // A fresh, empty deck. Dragging the example out clones it, so each canvas
   // starts its own pile; cards are added by dragging embeds into it.
@@ -119,12 +127,19 @@ export function seedExampleItems(repo: Repo): PartsBinItem[] {
     "@patchwork": { type: "stickers-card" },
     title: "Stickers",
   });
+  // The context viewer: an anchor doc that, once on the canvas, shows a live,
+  // read-only view of the selected embed's slice of the shared context (see
+  // @embark/context-viewer). Configuration-free, so the seeded doc just declares
+  // its type.
+  const contextViewer = repo.create({
+    "@patchwork": { type: "context-viewer" },
+  });
 
   return [
     {
       id: crypto.randomUUID(),
-      componentUrl: POI_COMPONENT_URL,
-      label: "Place Finder",
+      url: placeFinder.url,
+      toolId: "place-finder",
     },
     {
       id: crypto.randomUUID(),
@@ -144,13 +159,13 @@ export function seedExampleItems(repo: Repo): PartsBinItem[] {
     { id: crypto.randomUUID(), url: map.url, toolId: "map" },
     {
       id: crypto.randomUUID(),
-      componentUrl: UNIT_COMPONENT_URL,
-      label: "Unit Converter",
+      url: convertToMetric.url,
+      toolId: "convert-to-metric",
     },
     {
       id: crypto.randomUUID(),
-      componentUrl: METRIC_COMPONENT_URL,
-      label: "Metric Converter",
+      url: convertToImperial.url,
+      toolId: "convert-to-imperial",
     },
     {
       id: crypto.randomUUID(),
@@ -183,6 +198,11 @@ export function seedExampleItems(repo: Repo): PartsBinItem[] {
       id: crypto.randomUUID(),
       url: stickersCard.url,
       toolId: "stickers-card",
+    },
+    {
+      id: crypto.randomUUID(),
+      url: contextViewer.url,
+      toolId: "context-viewer",
     },
   ];
 }

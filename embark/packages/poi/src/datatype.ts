@@ -29,3 +29,22 @@ export const PoiCardDatatype: DatatypeImplementation<PoiCardDoc> = {
     doc["@patchwork"].title = title;
   },
 };
+
+// The Place Finder card itself: a document-backed search contributor. The doc
+// is configuration-free — it just marks an embed as a place-finding contributor
+// so the canvas renders the card and runs its search behaviour. State lives in
+// the shared canvas context, not here; the backing document exists so the card
+// has a stable url (e.g. for selection) rather than being a handle-less
+// component. It answers searches by minting `poi-card` documents (above).
+export type PlaceFinderDoc = {
+  "@patchwork": { type: "place-finder" };
+};
+
+export const PlaceFinderDatatype: DatatypeImplementation<PlaceFinderDoc> = {
+  init(doc) {
+    doc["@patchwork"] = { type: "place-finder" };
+  },
+  getTitle() {
+    return "Place Finder";
+  },
+};

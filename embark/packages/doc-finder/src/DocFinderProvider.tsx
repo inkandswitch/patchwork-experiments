@@ -118,13 +118,10 @@ function DocFinderProvider(props: { element: ToolElement }) {
         <AtIcon />
       </span>
       <div class="embark-docfinder-card__body">
-        <div class="embark-docfinder-card__title">Mention Finder</div>
+        <div class="embark-docfinder-card__title">Find Docs</div>
         <p class="embark-docfinder-card__desc">
-          Watches the canvas for active @mention searches and answers each one
-          with the documents already here whose title matches — so you can
-          mention runs and other docs from a note.
+          For any active search lookup documents by title
         </p>
-        <div class="embark-docfinder-card__source">Canvas documents</div>
       </div>
       <span class="embark-docfinder-card__pip embark-docfinder-card__pip--br">
         <AtIcon />
@@ -154,29 +151,14 @@ function AtIcon() {
   );
 }
 
-// A human display title for a document, trying the common title-bearing fields
-// (the same ones the mention menu and context viewer read) so the card reads
-// the same name as the rest of the app. Returns "" when nothing matches, which
-// the caller treats as "untitled, don't surface".
+// A document's display title, read *strictly* from `@patchwork.title` — the one
+// field a document sets when it explicitly wants to be found by name. Returns
+// "" when it's missing or blank, which the caller treats as "untitled, don't
+// surface". There is deliberately no fallback to content/name/etc., so only
+// intentionally-titled documents are matched.
 function docTitle(doc: unknown): string {
-  const record = (doc ?? {}) as {
-    "@patchwork"?: { title?: unknown };
-    title?: unknown;
-    content?: unknown;
-    name?: unknown;
-    props?: { name?: unknown };
-    place?: { name?: unknown };
-  };
-  const candidates = [
-    record["@patchwork"]?.title,
-    record.props?.name,
-    record.place?.name,
-    record.content,
-    record.title,
-    record.name,
-  ];
-  for (const candidate of candidates) {
-    if (typeof candidate === "string" && candidate.trim()) return candidate;
-  }
-  return "";
+  const title = (doc as { "@patchwork"?: { title?: unknown } } | null)?.[
+    "@patchwork"
+  ]?.title;
+  return typeof title === "string" && title.trim() ? title : "";
 }

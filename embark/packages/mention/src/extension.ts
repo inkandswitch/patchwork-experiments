@@ -50,8 +50,10 @@ import "./mention.css";
 const MENTION_RE = /\{(automerge:[^}\n]+)\}/g;
 
 // One result the broker surfaced for the active query: the document it points
-// at (`automerge:…`, used verbatim as the link target) and a resolved title.
-type Result = { url: AutomergeUrl; title: string };
+// at (`automerge:…`, used verbatim as the link target), a resolved title (the
+// fallback face + accessibility label), and its `@patchwork` datatype so the
+// menu can flag which results came from the Place Finder.
+type Result = { url: AutomergeUrl; title: string; type?: string };
 
 // An in-progress `@mention`: the document span being replaced, the query the
 // user typed after the `@`, and the results/highlight currently shown.
@@ -320,7 +322,9 @@ function closeMenu(view: EditorView): boolean {
 }
 
 // Builds the popup. A fresh tooltip is produced whenever the field changes, so
-// rendering is one-shot per state.
+// rendering is one-shot per state. Each row paints the result's real inline
+// token (the same face it gets when embedded in text), so those views must be
+// torn down when the tooltip is replaced — hence the `destroy` handler.
 function buildMenu(active: Mention): Tooltip {
   return {
     pos: active.from,
@@ -328,25 +332,57 @@ function buildMenu(active: Mention): Tooltip {
     create: (view) => {
       const dom = document.createElement("div");
       dom.className = "cm-mention-menu";
-      renderMenu(dom, view, active);
-      return { dom };
+      const teardowns = renderMenu(dom, view, active);
+      return {
+        dom,
+        destroy: () => {
+          for (const teardown of teardowns) teardown();
+        },
+      };
     },
   };
 }
 
-function renderMenu(dom: HTMLElement, view: EditorView, active: Mention) {
+// Render the menu rows, returning the teardown for every embed view it mounts.
+function renderMenu(
+  dom: HTMLElement,
+  view: EditorView,
+  active: Mention,
+): Array<() => void> {
   if (active.results.length === 0) {
     const empty = document.createElement("div");
     empty.className = "cm-mention-empty";
     empty.textContent = active.query ? "Searching…" : "Type to search";
     dom.appendChild(empty);
-    return;
+    return [];
   }
+  const teardowns: Array<() => void> = [];
   active.results.forEach((result, i) => {
     const row = document.createElement("div");
     row.className = "cm-mention-row";
     if (i === active.index) row.classList.add("cm-mention-row--active");
-    row.textContent = result.title;
+    // Flag results contributed by the Place Finder so they stand out from
+    // plain document mentions.
+    if (result.type === "poi-card") row.classList.add("cm-mention-row--poi");
+
+    // Paint the result's real inline token into the row. Seed the resolved
+    // title first so the row isn't empty while the (async) embed view resolves,
+    // then let the token tool (or the title-pill fallback) take over.
+    const content = document.createElement("span");
+    content.className = "cm-mention-row__content";
+    content.textContent = result.title;
+    row.appendChild(content);
+    teardowns.push(
+      renderEmbedView(content, result.url, view.dom, {
+        fallback: (host, handle) => {
+          host.textContent = docTitle(handle.doc(), result.url);
+        },
+        onError: () => {
+          content.textContent = result.title;
+        },
+      }),
+    );
+
     // mousedown (not click) + preventDefault so the editor keeps its selection.
     row.addEventListener("mousedown", (event) => {
       event.preventDefault();
@@ -354,11 +390,12 @@ function renderMenu(dom: HTMLElement, view: EditorView, active: Mention) {
     });
     dom.appendChild(row);
   });
+  return teardowns;
 }
 
-// Resolves a result document to a displayable title. Titles aren't guaranteed
-// in cache, so this awaits the handle; the row shows a short url fallback if it
-// can't be resolved.
+// Resolves a result document to a displayable title and its datatype. Neither
+// is guaranteed in cache, so this awaits the handle; the row shows a short url
+// fallback if it can't be resolved.
 async function resolveResult(
   url: AutomergeUrl,
   repo: Repo | undefined,
@@ -366,10 +403,19 @@ async function resolveResult(
   if (!repo) return { url, title: shortUrl(url) };
   try {
     const handle = await Promise.resolve(repo.find(url));
-    return { url, title: docTitle(handle.doc(), url) };
+    const doc = handle.doc();
+    return { url, title: docTitle(doc, url), type: patchworkType(doc) };
   } catch {
     return { url, title: shortUrl(url) };
   }
+}
+
+// The `@patchwork` datatype a document declares, if any — used to flag results
+// by their source (e.g. `poi-card` for Place Finder places).
+function patchworkType(doc: unknown): string | undefined {
+  if (doc === null || typeof doc !== "object") return undefined;
+  const meta = (doc as { "@patchwork"?: { type?: unknown } })["@patchwork"];
+  return meta && typeof meta.type === "string" ? meta.type : undefined;
 }
 
 // A display title for a document, preferring the patchwork display title

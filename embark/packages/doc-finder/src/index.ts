@@ -4,7 +4,7 @@ export const plugins: Plugin<any>[] = [
   {
     type: "patchwork:tool",
     id: "doc-finder-provider",
-    name: "Mention Finder",
+    name: "Find Docs",
     icon: "AtSign",
     supportedDatatypes: ["doc-finder-provider"],
     async load() {
@@ -15,7 +15,7 @@ export const plugins: Plugin<any>[] = [
   {
     type: "patchwork:datatype",
     id: "doc-finder-provider",
-    name: "Mention Finder",
+    name: "Find Docs",
     icon: "AtSign",
     async load() {
       const { DocFinderProviderDatatype } = await import("./datatype");
