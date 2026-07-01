@@ -31,6 +31,9 @@ const ROUTE_COMPONENT_URL = componentUrl(
 const UNIT_COMPONENT_URL = componentUrl(
   "automerge:2YXL4FwZ7crmDpgcm2FobPGpQyE7",
 );
+const METRIC_COMPONENT_URL = componentUrl(
+  "automerge:2otX5sW1C3cozUnmGiKZKviSHAaQ",
+);
 const CURRENCY_COMPONENT_URL = componentUrl(
   "automerge:27NZacXx1DQVusdWaNS9US9t5spB",
 );
@@ -39,6 +42,9 @@ const TIMER_COMPONENT_URL = componentUrl(
 );
 const SCHEDULE_COMPONENT_URL = componentUrl(
   "automerge:3jBqTXqoHp8pyXeUZKbXcJch7qxm",
+);
+const STICKERABLE_COMPONENT_URL = componentUrl(
+  "automerge:2BkapPQei7cVRiWryrVPQEQQKCJ9",
 );
 
 // A sample note exercising every sticker source at once: imperial quantities
@@ -131,6 +137,11 @@ export function seedExampleItems(repo: Repo): PartsBinItem[] {
     },
     {
       id: crypto.randomUUID(),
+      componentUrl: METRIC_COMPONENT_URL,
+      label: "Metric Converter",
+    },
+    {
+      id: crypto.randomUUID(),
       componentUrl: CURRENCY_COMPONENT_URL,
       label: "Currency Converter",
     },
@@ -143,6 +154,11 @@ export function seedExampleItems(repo: Repo): PartsBinItem[] {
       id: crypto.randomUUID(),
       componentUrl: SCHEDULE_COMPONENT_URL,
       label: "Schedule",
+    },
+    {
+      id: crypto.randomUUID(),
+      componentUrl: STICKERABLE_COMPONENT_URL,
+      label: "Make stickerable",
     },
     { id: crypto.randomUUID(), url: note.url, toolId: "codemirror-base" },
     { id: crypto.randomUUID(), url: deck.url, toolId: "deck" },

@@ -1,0 +1,123 @@
+.stickerable-card {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #e6e6ef;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: #1f2937;
+  overflow: hidden;
+}
+
+.stickerable-card__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 650;
+  font-size: 15px;
+  color: #b45309;
+}
+
+.stickerable-card__desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #6b7280;
+}
+
+.stickerable-card__types {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  padding: 2px 0;
+  min-height: 0;
+}
+
+.stickerable-card__type {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 3px 6px;
+  border-radius: 7px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.stickerable-card__type:hover {
+  background: #f8f7f4;
+}
+
+.stickerable-card__type input {
+  accent-color: #b45309;
+  cursor: pointer;
+}
+
+.stickerable-card__type span {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.stickerable-card__empty {
+  font-size: 12px;
+  color: #9ca3af;
+  font-style: italic;
+  padding: 4px 0;
+}
+
+.stickerable-card__status {
+  margin-top: auto;
+  font-size: 11px;
+  color: #9ca3af;
+  border-top: 1px solid #f0eee9;
+  padding-top: 6px;
+}
+
+/* The overlay layer sits above the canvas in viewport coordinates and never
+   intercepts pointer events — chips are purely visual annotations. */
+.stickerable-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  pointer-events: none;
+}
+
+.stickerable-chip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  will-change: transform;
+}
+
+.stickerable-chip--text {
+  transform-origin: top left;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 2px;
+  padding: 0 5px;
+  height: 18px;
+  border-radius: 9px;
+  background: #fef3c7;
+  color: #92400e;
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.18);
+}
+
+.stickerable-chip--tool {
+  /* Tool stickers carry their own widget chrome; the overlay wrapper only
+     positions it and lets it receive its own pointer events. */
+  pointer-events: auto;
+}
