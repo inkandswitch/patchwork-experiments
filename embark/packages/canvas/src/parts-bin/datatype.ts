@@ -107,6 +107,18 @@ export function seedExampleItems(repo: Repo): PartsBinItem[] {
     fanned: false,
     cards: [],
   });
+  // Feature cards: while one sits on a canvas it publishes its codemirror
+  // extension into the shared context, turning that behavior on for every editor
+  // there (see @embark/mentions-card / @embark/stickers-card). They carry no
+  // configuration, so the seeded docs just declare their type.
+  const mentionsCard = repo.create({
+    "@patchwork": { type: "mentions-card" },
+    title: "Mentions",
+  });
+  const stickersCard = repo.create({
+    "@patchwork": { type: "stickers-card" },
+    title: "Stickers",
+  });
 
   return [
     {
@@ -162,5 +174,15 @@ export function seedExampleItems(repo: Repo): PartsBinItem[] {
     },
     { id: crypto.randomUUID(), url: note.url, toolId: "codemirror-base" },
     { id: crypto.randomUUID(), url: deck.url, toolId: "deck" },
+    {
+      id: crypto.randomUUID(),
+      url: mentionsCard.url,
+      toolId: "mentions-card",
+    },
+    {
+      id: crypto.randomUUID(),
+      url: stickersCard.url,
+      toolId: "stickers-card",
+    },
   ];
 }
