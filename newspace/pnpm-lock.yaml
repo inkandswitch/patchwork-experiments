@@ -119,6 +119,9 @@ importers:
       '@solid-primitives/storage':
         specifier: ^4.3.0
         version: 4.3.4(solid-js@1.9.13)
+      leaflet:
+        specifier: ^1.9.4
+        version: 1.9.4
       perfect-freehand:
         specifier: ^1.2.3
         version: 1.2.3
@@ -1135,6 +1138,9 @@ packages:
     resolution: {integrity: sha512-XmOWe7eyHYH14cLdVPoyg+GOH3rYX++KpzrylJwSW98t3Nk+U8XOl8FWKOgwtzdb8lXGf6zYwDUzeHMWfxasyg==}
     engines: {node: '>=6'}
     hasBin: true
+
+  leaflet@1.9.4:
+    resolution: {integrity: sha512-nxS1ynzJOmOlHp+iL3FyWqK89GtNL8U8rvlMOsQdTTssxZwCXh8N2NB3GDQOL+YR3XnWyZAxwQixURb+FA74PA==}
 
   lru-cache@5.1.1:
     resolution: {integrity: sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==}
@@ -2594,6 +2600,8 @@ snapshots:
   jsesc@3.1.0: {}
 
   json5@2.2.3: {}
+
+  leaflet@1.9.4: {}
 
   lru-cache@5.1.1:
     dependencies:

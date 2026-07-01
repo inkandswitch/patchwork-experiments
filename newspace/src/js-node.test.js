@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { EditorView } from "@codemirror/view";
 import { mountJs } from "./js-node.js";
 import { Source } from "./opstreams.js";
 import { snapshot } from "./ops.js";
@@ -36,7 +37,7 @@ describe("mountJs", () => {
     cleanup();
   });
 
-  it("registers the textarea with the code and a ready status into element", () => {
+  it("compiles config.code, computes the outlet, and shows a ready status", () => {
     const input = new Source(1);
     const c = capture();
     const element = document.createElement("div");
@@ -46,31 +47,44 @@ describe("mountJs", () => {
       setOutlet: c.setOutlet,
       config: { code: "(x) => x + 1" },
     });
-    const ta = element.querySelector("textarea");
-    expect(ta).toBeTruthy();
-    expect(ta.value).toBe("(x) => x + 1");
+    expect(c.out.value).toBe(2); // (x) => x + 1 applied to the input
     const status = element.querySelector(".ns-source-status");
     expect(status.textContent).toBe("ready"); // function only → one-way "ready"
     cleanup();
   });
 
-  it("editing the textarea recompiles, persists via setConfig, and recomputes", () => {
+  it("recomputes when the input changes", () => {
     const input = new Source(4);
     const c = capture();
     const element = document.createElement("div");
-    let saved = null;
     const cleanup = mountJs({
       element,
       inlets: { in: input },
       setOutlet: c.setOutlet,
-      setConfig: (cfg) => { saved = cfg; },
+      config: { code: "(x) => x - 1" },
     });
-    expect(c.out.value).toBe(4); // default passthrough
-    const ta = element.querySelector("textarea");
-    ta.value = "(x) => x - 1";
-    ta.oninput();
-    expect(saved).toEqual({ code: "(x) => x - 1" });
-    expect(c.out.value).toBe(3); // recomputed against current input
+    expect(c.out.value).toBe(3);
+    input.push(10);              // a new input value flows in
+    expect(c.out.value).toBe(9); // recomputed against the current input
+    cleanup();
+  });
+
+  it("editing the code editor PERSISTS via setConfig (CodeMirror → opstream → setConfig) + recompiles", () => {
+    const input = new Source(2);
+    const c = capture();
+    const element = document.createElement("div");
+    const configs = [];
+    const cleanup = mountJs({
+      element, inlets: { in: input }, setOutlet: c.setOutlet,
+      config: { code: "(x) => x" }, setConfig: (patch) => configs.push(patch),
+    });
+    // drive the REAL editor: replace its whole doc, as a user edit would
+    const view = EditorView.findFromDOM(element.querySelector(".cm-editor"));
+    expect(view).toBeTruthy();
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: "(x) => x * 3" } });
+    // the edit must have flowed through the code opstream to setConfig (so it survives reload)
+    expect(configs.at(-1)).toEqual({ code: "(x) => x * 3" });
+    expect(c.out.value).toBe(6); // and the transform recompiled: (x)=>x*3 of input 2
     cleanup();
   });
 

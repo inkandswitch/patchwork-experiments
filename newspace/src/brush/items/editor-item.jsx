@@ -9,7 +9,7 @@ import { listEditors, mountEditor, inletDefsFor, outletDefsFor } from "../../edi
 import { listLensDescriptors, applyLens } from "../../lenses.js";
 import { roughRectPath, roughEllipsePath, seedFromId } from "../../draw.js";
 import { jsonPathStream } from "../../json-path.js";
-import { snapshot, describeBinary, isError } from "../../ops.js";
+import { snapshot, describeBinary, isError, fmtNum, previewReplacer } from "../../ops.js";
 import { Opstream } from "../../opstreams.js";
 
 // A node is a function: set up reactive data once, return DOM. Inlets are STABLE
@@ -113,10 +113,15 @@ export function EditorItem(props) {
       const splatW = wiring["*"];
       const splatSync = splatW && !splatW.url ? resolveInletSync(splatW) : null;
       if (splatW && splatW.url) resolveInlet(splatW).then((s) => { if (mine === token && s) for (const def of defs) if (!wiring[def.name]) proxies[def.name].setBacking(jsonPathStream(s, () => "." + def.name)); });
+      // a BARE layer tool (minimap, map) is fed the canvas's own reactive state: any inlet
+      // whose name matches a canvas outlet (items/bounds/peers/camera/view/…) auto-wires to
+      // it unless you've wired it explicitly. The widget always sees live canvas data.
+      const autoOutlets = d.bare && ctx.canvasOutlets ? ctx.canvasOutlets() : null;
       for (const def of defs) {
         const w = wiring[def.name];
         if (w) { if (w.url) resolveInlet(w).then((s) => { if (mine === token) proxies[def.name].setBacking(s); }); else proxies[def.name].setBacking(resolveInletSync(w)); }
         else if (splatSync) proxies[def.name].setBacking(jsonPathStream(splatSync, () => "." + def.name));
+        else if (autoOutlets && autoOutlets[def.name]) proxies[def.name].setBacking(autoOutlets[def.name].stream);
         else proxies[def.name].setBacking(null); // ⇒ the proxy's own editable buffer
         proxies[def.name].setDir(w && w.dir); // per-wire flow override (undefined ⇒ "both")
       }
@@ -183,7 +188,7 @@ export function EditorItem(props) {
       return;
     }
 
-    const c = await mountEditor(d, { element: host, inlets: proxies, outlets, setOutlet, api: ctx.api, config, setConfig, broadcast, onBroadcast, onConfig, share, shareDoc, onShared });
+    const c = await mountEditor(d, { element: host, itemId: it().id, inlets: proxies, outlets, setOutlet, api: ctx.api, config, setConfig, broadcast, onBroadcast, onConfig, share, shareDoc, onShared, canvas: ctx.canvasOutlets ? ctx.canvasOutlets() : null, context: ctx.context });
     if (mine !== token) { try { c(); } catch {} return; }
     ctx.registerOutlets && ctx.registerOutlets(it().id, { ...outlets });
     cleanup = () => { try { c(); } catch {} ctx.unregisterOutlets && ctx.unregisterOutlets(it().id); };
@@ -196,7 +201,18 @@ export function EditorItem(props) {
   // ports — shown for a lens always, for an editor while wiring. Outlets (right)
   // are grabbable sources; inlets (left) are drop targets you wire INTO. Each has
   // its own pointer-events:auto, so the wire tool finds it even when the body is inert.
-  const showPorts = () => { const d = descriptor(); return !!d && (d.lens || ctx.tool() === "wire"); };
+  const bare = () => !!descriptor()?.bare; // a layer widget: no node frame, but full ports
+  // ports only show while WIRING (or always for a lens), and only for items on the ACTIVE
+  // layer. Bare widgets no longer show their ports just because their layer is active — that
+  // buried the overlay in port nubs + wire tangle; the plumbing is invisible until you wire.
+  const showPorts = () => {
+    const d = descriptor(); if (!d) return false;
+    if (ctx.layerIsActive && !ctx.layerIsActive(it())) return false;
+    return d.lens || ctx.tool() === "wire";
+  };
+  // a bare tool's inlet that matches a canvas outlet is fed by the (hidden) canvas provider —
+  // show its nub as CONNECTED even though there's no drawn wire.
+  const autoWired = (name) => bare() && ctx.canvasOutlets && !!ctx.canvasOutlets()[name];
   const inletDefs = () => inletDefsFor(descriptor(), it()); // dynamic-aware (template doc)
   const outletDefs = () => outletDefsFor(descriptor(), it()); // dynamic-aware (LLM @out)
   const hasInlets = () => inletDefs().length > 0;
@@ -222,12 +238,26 @@ export function EditorItem(props) {
   };
 
   return (
-    <div class="ns-doc ns-editor" classList={{ "ns-lens": !!descriptor()?.lens, "ns-round": isRound(), "ns-glass": !!descriptor()?.glass, sel: ctx.isSelected(it().id) }} data-item-id={it().id} style={props.baseStyle()} onPointerDown={props.down}>
-      <div class="ns-doc-title"><span class="ns-doc-name">{descriptor()?.name || it().editorId}</span></div>
-      <svg class="ns-doc-outline" style={{ overflow: "visible" }}>
-        <For each={outline()}>{(p) => <path d={p.d} stroke="currentColor" fill="none" stroke-width={p.strokeWidth} stroke-linecap="round" />}</For>
-      </svg>
-      <div class="ns-editor-body ns-doc-body" ref={host} onPointerDown={(e) => e.stopPropagation()} />
+    <div class={bare() ? "ns-bare ns-editor" : "ns-doc ns-editor"} classList={{ "ns-lens": !!descriptor()?.lens, "ns-round": isRound(), "ns-glass": !!descriptor()?.glass, sel: ctx.isSelected(it().id) }} data-item-id={it().id} style={props.baseStyle()} onPointerDown={props.down}>
+      <Show when={!bare()}>
+        <div class="ns-doc-title"><span class="ns-doc-name">{descriptor()?.name || it().editorId}</span></div>
+        <svg class="ns-doc-outline" style={{ overflow: "visible" }}>
+          <For each={outline()}>{(p) => <path d={p.d} stroke="currentColor" fill="none" stroke-width={p.strokeWidth} stroke-linecap="round" />}</For>
+        </svg>
+      </Show>
+      {/* a GLASS body (the magnifier) is a lens, not a text editor + it hides the title bar,
+          so its body must pass pointerdown through to grab/move the item (its own controls
+          stopPropagation themselves). Normal editor bodies keep grabbing out of the way. */}
+      <div class="ns-editor-body ns-doc-body" ref={host} onPointerDown={(e) => { if (!descriptor()?.glass) e.stopPropagation(); }} />
+      {/* a bare widget's BODY is the interactive widget (clicking the minimap jumps), so it
+          can't also be the move-grip. While its layer is active, a little chrome bar gives a
+          grab handle + name + remove — that's how you edit/move/delete a bare window. */}
+      <Show when={bare() && ctx.layerIsActive && ctx.layerIsActive(it())}>
+        <div class="ns-bare-chrome" onPointerDown={props.down}>
+          <span class="ns-bare-name">{descriptor()?.name || it().editorId}</span>
+          <button class="ns-bare-x" title="remove" onPointerDown={(e) => e.stopPropagation()} onClick={() => ctx.removeItem(it().id)}>×</button>
+        </div>
+      </Show>
       {/* the SPLAT corner inlet (top-left): wire one object to feed every inlet */}
       <Show when={showPorts() && hasInlets()}>
         <div class="ns-node-port ns-node-splat" classList={{ wired: !!it().inlets?.["*"] }} data-item-id={it().id} data-sketchy-inlet="*" title="all fields — wire one object/doc to fill every inlet" />
@@ -236,7 +266,7 @@ export function EditorItem(props) {
       <Show when={showPorts() && hasInlets()}>
         <div class="ns-node-inlets">
           <For each={inletDefs()}>
-            {(i) => <div class="ns-node-port ns-node-inlet" classList={{ wired: !!it().inlets?.[i.name], req: !!i.required, bidi: inletBidi(i.name) }} data-item-id={it().id} data-sketchy-inlet={i.name} data-tip={`${i.name}${i.required ? " *" : ""}${i.type ? " : " + i.type : ""}${inletBidi(i.name) ? " ⇄" : ""}`} />}
+            {(i) => <div class="ns-node-port ns-node-inlet" classList={{ wired: !!it().inlets?.[i.name] || autoWired(i.name), req: !!i.required, bidi: inletBidi(i.name) }} data-item-id={it().id} data-sketchy-inlet={i.name} data-tip={`${i.name}${i.required ? " *" : ""}${i.type ? " : " + i.type : ""}${autoWired(i.name) ? " ← canvas" : ""}${inletBidi(i.name) ? " ⇄" : ""}`} />}
           </For>
         </div>
       </Show>
@@ -253,8 +283,9 @@ export function EditorItem(props) {
 
 function preview(v) {
   if (v == null) return "∅";
+  if (typeof v === "number") return String(fmtNum(v)); // round floats for the readout
   if (typeof v === "string") return JSON.stringify(v.length > 24 ? v.slice(0, 24) + "…" : v);
   const d = describeBinary(v); if (d) return d; // a frame/buffer → tag, never stringify
-  if (typeof v === "object") { try { const s = JSON.stringify(v); return s.length > 24 ? s.slice(0, 24) + "…" : s; } catch { return "{…}"; } }
+  if (typeof v === "object") { try { const s = JSON.stringify(v, previewReplacer); return s.length > 24 ? s.slice(0, 24) + "…" : s; } catch { return "{…}"; } }
   return String(v);
 }

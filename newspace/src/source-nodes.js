@@ -4,7 +4,7 @@
 // a picker button). See src/sources.js for the device factories.
 import { pickFile, fileHandleOpstream, watchFileStream, fileSnapshot } from "./fs-opstream.js";
 import { Source, automergeOpstream, apply } from "./opstreams.js";
-import { snapshot, isSnapshot, valuesEqual } from "./ops.js";
+import { snapshot, isSnapshot, valuesEqual, fmtNum, previewReplacer } from "./ops.js";
 
 // Resolve an automerge:url[#path] → an editable opstream. Prefer window.repo (always
 // present per the host globals) so a source works even before ctx.api is ready;
@@ -26,8 +26,8 @@ async function resolveDoc(url, api) {
 function preview(v) {
   if (v == null) return "…";
   if (typeof v === "string") return v.length > 28 ? v.slice(0, 28) + "…" : v;
-  if (typeof v === "number") return String(v);
-  try { const s = JSON.stringify(v); return s.length > 40 ? s.slice(0, 40) + "…" : s; } catch { return "{…}"; }
+  if (typeof v === "number") return String(fmtNum(v)); // round floats for the readout
+  try { const s = JSON.stringify(v, previewReplacer); return s.length > 40 ? s.slice(0, 40) + "…" : s; } catch { return "{…}"; }
 }
 
 // the automerge source: type an automerge: url, get the doc as an opstream on `doc`

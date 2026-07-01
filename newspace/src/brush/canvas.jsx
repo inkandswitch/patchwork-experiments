@@ -3,6 +3,8 @@ import { createSignal, createMemo, createEffect, For, Show, onCleanup, onMount, 
 import { createStore } from "solid-js/store";
 import { makeDocumentProjection } from "solid-automerge";
 import { surfaceDoc } from "../surface-doc.js";
+import { useLayerTransform, itemLayer, defaultLayers, layerKind } from "../layers.js";
+import { chainToOuter, chainToLocal, chainScale, mapInstanceFor } from "../box-transform.js";
 import { makePersisted } from "@solid-primitives/storage";
 import {
   getRegistry,
@@ -14,7 +16,7 @@ import { NewspaceDatatype } from "../datatype.js";
 import { createHistory, snapshotItems, diffCommand } from "../history.js";
 import { createSketchyApi } from "../api.js";
 import { createCanvasContext } from "../context.js";
-import { opstreamToSignal, Source, automergeOpstream, numberSchema, anySchema } from "../opstreams.js";
+import { opstreamToSignal, Source, automergeOpstream, numberSchema, anySchema, apply as applyOp } from "../opstreams.js";
 import { mountInspector } from "../inspector-editor.js";
 import { readPort, portWiring, makeEditorItem, editorsForStream, firstMatchingInlet, firstMatchingInletForOutlet, streamType, descriptorsFeeding, outletFeedsInlet, usedContextOutlets as computeUsedContextOutlets } from "../wire.js";
 import { listEditors, nodeRole, inletDefsFor, outletDefsFor } from "../editors.js";
@@ -25,18 +27,18 @@ import { textHandlers } from "../text-brush.js";
 import { eraserHandlers } from "../eraser-brush.js";
 import { wireHandlers } from "../wire-brush.js";
 import { placeHandlers } from "../place-brush.js";
-import { describeBinary, isError, binarySafeReplacer, paramsSchema, valuesEqual } from "../ops.js";
+import { describeBinary, isError, binarySafeReplacer, paramsSchema, valuesEqual, isSnapshot } from "../ops.js";
 import { ShareSession, myContactUrl as sessionMyUrl } from "../share-session.js";
 import { listLensDescriptors } from "../lenses.js";
 import { viewRect, fitRect, centerCam, zoomAt, contentBounds } from "./camera.js";
 import { Item } from "./items/item.jsx";
-import { PresenceLayer, Minimap } from "./ui/presence.jsx";
+import { PresenceLayer } from "./ui/presence.jsx"; // Minimap is now a bare tool (minimap-node.js)
 import { Handles, Toolbar, Properties } from "./ui/chrome.jsx";
 import {
-  freehandPath, shapePaths, roughLinkPath, roughLink, roughChevron, seedFromId,
+  freehandPath, shapePaths, roughLinkPath, roughLink, roughChevron, seedFromId, strokeWorldPoints,
 } from "../draw.js";
 import {
-  rad, rot, isBoxType, localToWorld, worldToLocal, pointInFrame,
+  rad, rot, isBoxType, localToWorld, worldToLocal, pointInFrame, itemBox,
   itemBounds, cloneItem, linksNeedingItems, itemPresent, shouldUnlinkDoc, arrowGeometry, worldAnchor,
   linkItemId, duplicateItemIds,
   applyReorder, expandGroups as expandGroupsIn, groupBounds, clickSelection, itemsInRect, portPoint,
@@ -45,6 +47,7 @@ import "../style.css";
 import {
   colorVar, SIZES, shapeRenderProps, sortById, enableAtomicMove,
   SHAPE_TOOLS, clamp, rndSeed, uid, ensureLayout, colorFor, isTypingTarget,
+  anchorAxes, SEED_IDS,
 } from "./constants.js";
 
 export function Canvas(props) {
@@ -79,6 +82,61 @@ export function Canvas(props) {
     name: `newspace:camera:${handle.url}`,
     storage: localStorage,
   });
+  // ── LAYERS ─────────────────────────────────────────────────────────────────
+  // a sketch is an ordered stack of coordinate SPACES (layers.js). The stack is
+  // DATA in the layout doc; each layer's pan/zoom/pin/geo behaviour comes from a
+  // registered transform plugin — the canvas only ever asks the registry.
+  const layersList = () => { const l = rootLayoutDoc()?.layers; return Array.isArray(l) && l.length ? l : defaultLayers(); };
+  const [activeLayerId, setActiveLayerId] = createSignal("canvas");
+  // switching layers clears the selection: you only ever edit the active layer, and a move
+  // gesture computes deltas in ONE layer's space — a selection spanning layers would write
+  // screen-px deltas into world-coord fields (jumps at non-100% zoom).
+  const switchLayer = (id) => { if (id === activeLayerId()) return; setSelected([]); setEditingId(null); setActiveLayerId(id); };
+  const activeLayer = () => layersList().find((l) => l.id === activeLayerId()) || layersList()[0];
+  // reactive env every transform binding reads from (camera + viewport + the layer's own config)
+  const layerEnv = (getLayer) => ({ camera: cam, viewport: () => ({ w: viewportRef?.offsetWidth || 0, h: viewportRef?.offsetHeight || 0 }), layer: getLayer });
+  const txFor = (layer) => useLayerTransform(layer, layerEnv(() => layer));
+  const baseLayer = () => layersList()[0];
+  // editing a frosting layer (e.g. the overlay) dims + blurs everything beneath it
+  const frosting = () => !!(layerKind(activeLayer()?.kind) || {}).frost;
+  // ALWAYS the base camera space — for coords that are inherently world (peer presence
+  // cursors/views), which must not be run through the active layer's transform.
+  const cameraToScreen = (wx, wy) => txFor(baseLayer()).toScreen(wx, wy);
+  // ── COORDINATE-SPACE-AS-BOX (box-transform.js) — the two-half model in ONE place ─────────
+  // the box chain from the canvas root down to a surface: the active LAYER (box "viewport" =
+  // camera pan/zoom, else identity for a pinned overlay) then any FRAME. Composing this replaces
+  // hand-rolled activeToScreen(localToWorld(...)); the frame half is proven identical in
+  // box-transform.test.js. (Selection clears on layer switch, so the selected item is always on
+  // the active layer — the layer box matches activeToScreen.)
+  const boxEnv = { camera: cam };
+  const layerBoxOf = (layerId) => {
+    const layer = layersList().find((l) => l.id === layerId);
+    const isCamera = (layerKind(layer && layer.kind) || {}).transform === "camera";
+    return { x: 0, y: 0, transform: { kind: isCamera ? "viewport" : "identity" } }; // box "viewport" == pan/zoom
+  };
+  // the box chain: active layer, then the surface's frame(s) — each a box via itemBox (uniform).
+  const chainFor = (surface) => { const c = [layerBoxOf(activeLayerId())]; if (surface && surface.frame) c.push(itemBox(surface.frame)); return c; };
+  const boxToScreen = (surface, local) => chainToOuter(chainFor(surface), local, boxEnv);
+  const boxScale = (surface) => chainScale(chainFor(surface), boxEnv);
+  // an anchored item (a corner-pinned overlay widget) stores its (x,y) as an OFFSET from a
+  // viewport CORNER. Positioning is pure CSS (bottom/right — auto resize-reactive); the
+  // selection/handle geometry + drag resolve it to absolute top-left here, per viewer's
+  // viewport (which is why a shared widget can read "bottom-left" for everyone).
+  const resolveItemPos = (it) => {
+    const a = it && it.anchor; if (!a) return { x: (it && it.x) || 0, y: (it && it.y) || 0 };
+    const W = (viewportRef && viewportRef.offsetWidth) || 0, H = (viewportRef && viewportRef.offsetHeight) || 0;
+    const { right, bottom } = anchorAxes(a);
+    return { x: right ? W - (it.w || 0) - (it.x || 0) : (it.x || 0), y: bottom ? H - (it.h || 0) - (it.y || 0) : (it.y || 0) };
+  };
+  // the INVERSE: absolute top-left (ax,ay) + size (w,h) → the stored corner offset. Used when
+  // a resize/rotate gesture (which runs in absolute space) writes an anchored item back.
+  const toAnchorOffset = (it, ax, ay, w, h) => {
+    const a = it && it.anchor; if (!a) return { x: ax, y: ay };
+    const W = (viewportRef && viewportRef.offsetWidth) || 0, H = (viewportRef && viewportRef.offsetHeight) || 0;
+    const { right, bottom } = anchorAxes(a);
+    return { x: right ? W - (w || 0) - ax : ax, y: bottom ? H - (h || 0) - ay : ay };
+  };
+
   // the canvas CONTEXT (camera/pointer/tool/brush/selection) via provide/accept
   // with fallback-to-own. `tool` is context-owned (so a nested canvas can inherit
   // it); cam/selection are mirrored INTO the context below so it's live for
@@ -107,6 +165,14 @@ export function Canvas(props) {
   // is the separate brush-API refactor.)
   createEffect(() => context.camera.set(cam()));
   createEffect(() => context.selection.set(selected()));
+  // the camera outlet is read-WRITE: a tool wired to it (a minimap clicking to jump) can
+  // MOVE the actual camera by writing its stream. `.apply` drives setCam; the mirror effect
+  // above echoes the new value straight back as a plain push (never re-enters .apply), so it
+  // converges without a loop. Writes merge so a partial {x,y} keeps the current zoom.
+  context.camera.apply = (op) => {
+    const next = isSnapshot(op) ? op.value : applyOp(context.camera.value, op);
+    if (next && typeof next === "object") setCam((c) => ({ ...c, ...next }));
+  };
   const [enteredGroup, setEnteredGroup] = createSignal(null); // a group you've double-clicked INTO (scoped editing of its members)
   const [placing, setPlacing] = createSignal(null); // { what:"doc"|"editor"|"lens", descriptor }
   const [placeGhost, setPlaceGhost] = createSignal(null); // world pos the to-be-placed thing follows
@@ -222,7 +288,9 @@ export function Canvas(props) {
   function loadDoc(url) { if (!docHandleCache.has(url)) docHandleCache.set(url, repo.find(url).catch(() => null)); return docHandleCache.get(url); }
   const datatypeCache = new Map();
   function loadDatatype(type) { if (!datatypeCache.has(type)) { try { datatypeCache.set(type, getRegistry("patchwork:datatype").load(type).catch(() => null)); } catch { datatypeCache.set(type, Promise.resolve(null)); } } return datatypeCache.get(type); }
-  const frameAtWorld = (wx, wy, exclude) => { let f = null; for (const it of rootItems()) if (it.kind === "frame" && it.id !== exclude && pointInFrame(it, wx, wy)) f = it; return f; };
+  // frames are CANVAS-layer containers; from a non-base layer the coords are a different
+  // space, so never route an item into a frame (it'd mismatch screen coords vs world bounds).
+  const frameAtWorld = (wx, wy, exclude) => { if (activeLayerId() !== baseLayer()?.id) return null; let f = null; for (const it of rootItems()) if (it.kind === "frame" && it.id !== exclude && pointInFrame(it, wx, wy)) f = it; return f; };
   // topmost root item an arrow endpoint can bind to (not strokes/lines/arrows)
   const bindAtWorld = (wx, wy) => {
     const items = rootItems();
@@ -239,7 +307,7 @@ export function Canvas(props) {
   };
   function convertToLocal(item, frame) {
     if (!frame) return;
-    if (item.kind === "stroke") { item.points = item.points.map(([x, y, pr]) => { const [lx, ly] = worldToLocal(frame, x, y); return [lx, ly, pr]; }); item.rotation = 0; }
+    if (item.kind === "stroke") { item.points = strokeWorldPoints(item).map(([x, y, pr]) => { const [lx, ly] = worldToLocal(frame, x, y); return [lx, ly, pr]; }); item.x = 0; item.y = 0; item.rotation = 0; }
     else if (item.kind === "shape" && (item.type === "line" || item.type === "arrow")) {
       // a line/arrow points in its (w,h) direction, NOT via `rotation` — so the
       // center+rotation transform (below) would turn it. Instead transform its
@@ -262,7 +330,10 @@ export function Canvas(props) {
     if (!dstHandle) return;
     convertToLocal(item, dstFrame);
     const id = uid();
-    transact(dstHandle, "add", () => dstHandle.change((d) => { if (!d.items) d.items = []; d.items.push({ id, ...item }); }));
+    // born on the active layer: its coords are already in that layer's space (toWorld
+    // routed them there). The base layer is the untagged default, so don't store it.
+    const lyr = !dstFrame && activeLayerId() !== baseLayer()?.id ? activeLayerId() : null;
+    transact(dstHandle, "add", () => dstHandle.change((d) => { if (!d.items) d.items = []; d.items.push(lyr ? { id, layer: lyr, ...item } : { id, ...item }); }));
     setActiveId(dstFrame ? targetFrame.url : "root");
     setSelected([id]);
     if (opts.edit) setEditingId(id);
@@ -280,12 +351,16 @@ export function Canvas(props) {
 
   // itemBounds / localToWorld / worldToLocal / pointInFrame are imported from model.js
 
+  // "to the ACTIVE layer's item space": client px → viewport px → the layer's coords
+  // via its transform. On the base canvas layer this is the camera inverse (as before);
+  // on the viewport-pinned overlay it's screen coords; on a map it'd be lat/lon.
   function toWorld(clientX, clientY) {
     const r = viewportRef.getBoundingClientRect();
-    const c = cam();
     const sx = viewportRef.offsetWidth ? r.width / viewportRef.offsetWidth : 1;
     const sy = viewportRef.offsetHeight ? r.height / viewportRef.offsetHeight : 1;
-    return { x: ((clientX - r.left) / sx - c.x) / c.z, y: ((clientY - r.top) / sy - c.y) / c.z };
+    // input goes through the SAME box composer as output (one projection path): screen → the
+    // active layer's local space. The layer box is proven-equivalent to txFor(layer).toItem.
+    return chainToLocal([layerBoxOf(activeLayerId())], { x: (clientX - r.left) / sx, y: (clientY - r.top) / sy }, boxEnv);
   }
   function toSpace(clientX, clientY, frame) { const w = toWorld(clientX, clientY); const [x, y] = worldToLocal(frame, w.x, w.y); return { x, y }; }
   function itemCenterWorld(it, frame) { const b = itemBounds(it); return localToWorld(frame, b.x + b.w / 2, b.y + b.h / 2); }
@@ -361,7 +436,7 @@ export function Canvas(props) {
     const orig = {};
     for (const id of ids) {
       const o = surface.doc.items.find((x) => x.id === id);
-      if (o) orig[id] = o.kind === "stroke" ? { points: o.points.map((p) => p.slice()) } : o.kind === "sketch" ? { nodes: o.nodes.map((n) => ({ x: n.x, y: n.y })) } : { x: o.x, y: o.y, cx: o.cx, cy: o.cy };
+      if (o) orig[id] = o.kind === "stroke" ? { x: o.x || 0, y: o.y || 0 } : o.kind === "sketch" ? { nodes: o.nodes.map((n) => ({ x: n.x, y: n.y })) } : { x: o.x, y: o.y, cx: o.cx, cy: o.cy };
     }
     gesture = { kind: "move", ids, start, orig, surface, fr, txn: beginTxn(surface.handle) };
     beginGesture(e);
@@ -421,6 +496,9 @@ export function Canvas(props) {
     }
     const set = new Set(ids);
     setSelected(selected().filter((s) => !set.has(s)));
+    // deleting a seeded chrome widget must STICK — record it so ensureLayout won't re-seed it.
+    const dismiss = ids.filter((id) => SEED_IDS.includes(id));
+    if (dismiss.length) { const lh = rootLayoutH(); if (lh) lh.change((d) => { if (!d.dismissedSeeds) d.dismissedSeeds = []; for (const id of dismiss) if (!d.dismissedSeeds.includes(id)) d.dismissedSeeds.push(id); }); }
     // undo a delete by re-adding the layout item(s); redo removes them again.
     // (the folder link isn't restored — an undone doc-delete is an orphan shape,
     // which is fine: it already points at its still-present doc.)
@@ -441,11 +519,14 @@ export function Canvas(props) {
     if (!it) return;
     const surface = active();
     const frame = surface.frame;
-    const ob = itemBounds(it);
+    // anchored widgets store a corner OFFSET; the gesture runs in absolute screen space, so
+    // resolve the bounds first and convert back to an offset on write (applyResize).
+    const rp = resolveItemPos(it);
+    const ob = it.anchor ? { ...itemBounds(it), x: rp.x, y: rp.y } : itemBounds(it);
     const r = rad(it.rotation || 0);
-    const orig = it.kind === "stroke" ? it.points.map((p) => p.slice())
+    const orig = it.kind === "stroke" ? strokeWorldPoints(it) // resize in WORLD space; result flattens to origin 0
       : it.kind === "text" ? { x: it.x, y: it.y, w: it.w, h: it.h, fontSize: it.fontSize || 20, wrap: !!it.wrap }
-      : { x: it.x, y: it.y, w: it.w, h: it.h };
+      : { x: ob.x, y: ob.y, w: it.w, h: it.h };
     const ax = -hx * ob.w / 2, ay = -hy * ob.h / 2;
     const txn = beginTxn(surface.handle);
     const move = (ev) => {
@@ -469,10 +550,14 @@ export function Canvas(props) {
     h.change((d) => {
       const o = d.items.find((x) => x.id === id);
       if (!o) return;
-      if (kind === "stroke") { for (let i = 0; i < o.points.length; i++) { o.points[i][0] = mapX(orig[i][0]); o.points[i][1] = mapY(orig[i][1]); } }
+      if (kind === "stroke") { o.points = orig.map(([x, y, pr]) => [mapX(x), mapY(y), pr]); o.x = 0; o.y = 0; } // world result → flatten to origin 0
       else if (kind === "shape") { const x1 = mapX(orig.x), y1 = mapY(orig.y), x2 = mapX(orig.x + orig.w), y2 = mapY(orig.y + orig.h); o.x = x1; o.y = y1; o.w = x2 - x1; o.h = y2 - y1; }
       else if (kind === "text") { o.fontSize = Math.max(6, Math.round((orig.fontSize || 20) * (ob.h > 0.001 ? nb.h / ob.h : 1))); o.x = nb.x; o.y = nb.y; if (orig.wrap) o.w = nb.w; /* height re-measures from content */ }
-      else { o.x = mapX(orig.x); o.y = mapY(orig.y); o.w = nb.w; o.h = nb.h; }
+      else {
+        let nx = mapX(orig.x), ny = mapY(orig.y);
+        if (o.anchor) { const off = toAnchorOffset(o, nx, ny, nb.w, nb.h); nx = off.x; ny = off.y; } // absolute → corner offset
+        o.x = nx; o.y = ny; o.w = nb.w; o.h = nb.h;
+      }
     });
   }
 
@@ -526,7 +611,7 @@ export function Canvas(props) {
     const ids = selected();
     const U = selWorldBounds();
     if (!U) return;
-    const snaps = ids.map((id) => { const o = surface.doc.items.find((x) => x.id === id); if (!o) return null; return o.kind === "stroke" ? { id, kind: "stroke", points: o.points.map((p) => p.slice()) } : { id, kind: o.kind, x: o.x, y: o.y, w: o.w, h: o.h }; }).filter(Boolean);
+    const snaps = ids.map((id) => { const o = surface.doc.items.find((x) => x.id === id); if (!o) return null; return o.kind === "stroke" ? { id, kind: "stroke", points: strokeWorldPoints(o) } : { id, kind: o.kind, x: o.x, y: o.y, w: o.w, h: o.h }; }).filter(Boolean);
     const move = (ev) => {
       const p = toWorld(ev.clientX, ev.clientY);
       let nx = U.x, ny = U.y, nw = U.w, nh = U.h;
@@ -540,7 +625,7 @@ export function Canvas(props) {
         for (const s of snaps) {
           const o = d.items.find((x) => x.id === s.id);
           if (!o) continue;
-          if (s.kind === "stroke") for (let i = 0; i < o.points.length; i++) { o.points[i][0] = mapX(s.points[i][0]); o.points[i][1] = mapY(s.points[i][1]); }
+          if (s.kind === "stroke") { o.points = s.points.map(([x, y, pr]) => [mapX(x), mapY(y), pr]); o.x = 0; o.y = 0; }
           else { o.x = mapX(s.x); o.y = mapY(s.y); o.w = s.w * sx; o.h = s.h * sy; }
         }
       });
@@ -558,7 +643,7 @@ export function Canvas(props) {
     const U = selWorldBounds();
     if (!U) return;
     const [gcx, gcy] = worldToLocal(frame, U.x + U.w / 2, U.y + U.h / 2); // group centre (surface-local)
-    const snaps = selected().map((id) => { const o = surface.doc.items.find((x) => x.id === id); if (!o) return null; return o.kind === "stroke" ? { id, kind: "stroke", points: o.points.map((p) => p.slice()) } : { id, x: o.x, y: o.y, w: o.w, h: o.h, rotation: o.rotation || 0, cx: o.cx, cy: o.cy }; }).filter(Boolean);
+    const snaps = selected().map((id) => { const o = surface.doc.items.find((x) => x.id === id); if (!o) return null; return o.kind === "stroke" ? { id, kind: "stroke", points: strokeWorldPoints(o) } : { id, x: o.x, y: o.y, w: o.w, h: o.h, rotation: o.rotation || 0, cx: o.cx, cy: o.cy }; }).filter(Boolean);
     const s0 = toSpace(e.clientX, e.clientY, frame);
     const startAng = Math.atan2(s0.y - gcy, s0.x - gcx);
     const move = (ev) => {
@@ -569,7 +654,7 @@ export function Canvas(props) {
       surface.handle.change((d) => {
         for (const sn of snaps) {
           const o = d.items.find((x) => x.id === sn.id); if (!o) continue;
-          if (sn.kind === "stroke") { for (let i = 0; i < sn.points.length; i++) { const [rx, ry] = rot(sn.points[i][0] - gcx, sn.points[i][1] - gcy, delta); o.points[i][0] = gcx + rx; o.points[i][1] = gcy + ry; } }
+          if (sn.kind === "stroke") { o.points = sn.points.map(([x, y, pr]) => { const [rx, ry] = rot(x - gcx, y - gcy, delta); return [gcx + rx, gcy + ry, pr]; }); o.x = 0; o.y = 0; }
           else {
             const icx = sn.x + sn.w / 2, icy = sn.y + sn.h / 2;
             const [rx, ry] = rot(icx - gcx, icy - gcy, delta);
@@ -596,8 +681,8 @@ export function Canvas(props) {
     const surface = active();
     const txn = beginTxn(surface.handle);
     const frame = surface.frame;
-    const b = itemBounds(it);
-    const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    const b = itemBounds(it); const rp = resolveItemPos(it); // anchored ⇒ absolute centre
+    const cx = rp.x + b.w / 2, cy = rp.y + b.h / 2;
     const s = toSpace(e.clientX, e.clientY, frame);
     const startAng = Math.atan2(s.y - cy, s.x - cx);
     const r0 = it.rotation || 0;
@@ -1034,9 +1119,15 @@ export function Canvas(props) {
         for (const id of gesture.ids) {
           const o = d.items.find((x) => x.id === id); const og = gesture.orig[id];
           if (!o || !og) continue;
-          if (o.kind === "stroke") o.points = og.points.map((pt) => [pt[0] + ldx, pt[1] + ldy, pt[2]]); // ONE op (whole array) not N per-point ops — moving a many-point line was flooding the wire
+          if (o.kind === "stroke") { o.x = (og.x || 0) + ldx; o.y = (og.y || 0) + ldy; } // translate-only box: bump ORIGIN, points untouched (one tiny op, not the whole array)
           else if (o.kind === "sketch") for (let i = 0; i < o.nodes.length; i++) { o.nodes[i].x = og.nodes[i].x + ldx; o.nodes[i].y = og.nodes[i].y + ldy; }
-          else { o.x = og.x + ldx; o.y = og.y + ldy; if (og.cx != null) { o.cx = og.cx + ldx; o.cy = og.cy + ldy; } }
+          else {
+            // an anchored widget stores an offset from a viewport corner, so dragging toward
+            // that corner DECREASES the offset — flip the delta per anchored axis.
+            const a = o.anchor;
+            const ax = anchorAxes(a); const sx = ax.right ? -1 : 1, sy = ax.bottom ? -1 : 1;
+            o.x = og.x + sx * ldx; o.y = og.y + sy * ldy; if (og.cx != null) { o.cx = og.cx + ldx; o.cy = og.cy + ldy; }
+          }
         }
       });
       setDropTarget(gesture.ids.length === 1 ? moveDropTarget(gesture.surface, gesture.ids[0]) : null);
@@ -1069,15 +1160,22 @@ export function Canvas(props) {
       const links = outside ? selectedDocLinks(g.surface) : [];
       if (links.length) {
         dropToExternal(e.clientX, e.clientY, links);
-        g.surface.handle.change((dd) => { for (const id of g.ids) { const o = dd.items.find((x) => x.id === id); const og = g.orig[id]; if (!o || !og) continue; if (o.kind === "stroke") { for (let i = 0; i < o.points.length; i++) { o.points[i][0] = og.points[i][0]; o.points[i][1] = og.points[i][1]; } } else if (o.kind === "sketch") { for (let i = 0; i < o.nodes.length; i++) { o.nodes[i].x = og.nodes[i].x; o.nodes[i].y = og.nodes[i].y; } } else { o.x = og.x; o.y = og.y; } } });
-      } else if (selected().length === 1) maybeReparent(g.surface, selected()[0]);
+        g.surface.handle.change((dd) => { for (const id of g.ids) { const o = dd.items.find((x) => x.id === id); const og = g.orig[id]; if (!o || !og) continue; if (o.kind === "stroke") { o.x = og.x || 0; o.y = og.y || 0; } else if (o.kind === "sketch") { for (let i = 0; i < o.nodes.length; i++) { o.nodes[i].x = og.nodes[i].x; o.nodes[i].y = og.nodes[i].y; } } else { o.x = og.x; o.y = og.y; } } });
+      } else if (dropOntoMap(e.clientX, e.clientY, g.surface, g.ids)) { /* dropped onto a map → geo pin(s) */ }
+      else if (selected().length === 1) maybeReparent(g.surface, selected()[0]);
       if (!links.length) endTxn(g.txn, "move"); // record the move for undo (in-surface moves; revert/drag-out are no-ops)
     }
     setDraft(null);
   }
 
   function selectInRect(x0, y0, x1, y1, add) {
-    const hit = itemsInRect(rootItems(), x0, y0, x1, y1);
+    // marquee is in the ACTIVE layer's coordinate space, so only consider items ON that layer
+    // (else a box on the frosted overlay would grab canvas items underneath). Anchored widgets
+    // store a corner OFFSET, so resolve them to absolute coords the screen-space rect can hit.
+    const onLayer = rootItems()
+      .filter((it) => itemLayer(it) === activeLayerId())
+      .map((it) => (it.anchor ? { ...it, ...resolveItemPos(it), anchor: undefined } : it));
+    const hit = itemsInRect(onLayer, x0, y0, x1, y1);
     setSelected(expandGroups([...new Set([...(add || []), ...hit])]));
   }
 
@@ -1088,6 +1186,32 @@ export function Canvas(props) {
     const it = srcSurface.doc.items.find((x) => x.id === id); if (!it) return false;
     const b = itemBounds(it), cx = b.x + b.w / 2, cy = b.y + b.h / 2; // box-local centre
     return cx < 0 || cx > f.w || cy < 0 || cy > f.h;
+  }
+  // a map box under the pointer (skipping the items being dragged, which are on top)
+  function mapUnder(clientX, clientY, exclude) {
+    for (const el of document.elementsFromPoint(clientX, clientY)) {
+      const itEl = el.closest && el.closest("[data-item-id]");
+      const id = itEl && itEl.getAttribute("data-item-id");
+      if (!id || (exclude && exclude.has(id))) continue;
+      const it = rootItems().find((x) => x.id === id);
+      if (it && it.kind === "editor" && it.editorId === "map") return it;
+    }
+    return null;
+  }
+  // dropping a DOC onto a map converts it into the map's coordinate space: a geo pin at that
+  // point (via the live map's screen→lat/lng). The doc leaves the canvas; the map holds it.
+  function dropOntoMap(clientX, clientY, surface, ids) {
+    const mapItem = mapUnder(clientX, clientY, new Set(ids));
+    if (!mapItem) return false;
+    const inst = mapInstanceFor(mapItem.id);
+    if (!inst) return false;
+    const links = ids.map((id) => { const o = surface.doc.items.find((x) => x.id === id); if (!o || (o.kind !== "doc" && o.kind !== "frame")) return null; const l = surface.folderDoc && (surface.folderDoc.docs || []).find((dl) => dl.url === o.url); return { id, url: o.url, name: l && l.name }; }).filter(Boolean);
+    if (!links.length) return false;
+    const ll = inst.mouseEventToLatLng({ clientX, clientY });
+    const lh = rootLayoutH();
+    if (lh) lh.change((d) => { const m = d.items.find((x) => x.id === mapItem.id); if (m) { if (!m.config) m.config = {}; if (!m.config.pins) m.config.pins = []; for (const l of links) m.config.pins.push({ lat: ll.lat, lng: ll.lng, url: l.url, name: l.name }); } });
+    removeItems(null, links.map((l) => l.id));
+    return true;
   }
   function moveDropTarget(srcSurface, id) {
     const it = srcSurface.doc.items.find((x) => x.id === id);
@@ -1118,7 +1242,7 @@ export function Canvas(props) {
     const [nlx, nly] = worldToLocal(dstFrame, wx, wy);
     const dx = nlx - (b.x + b.w / 2), dy = nly - (b.y + b.h / 2);
     const dr = (srcSurface.frame ? srcSurface.frame.rotation || 0 : 0) - (dstFrame ? dstFrame.rotation || 0 : 0);
-    if (clone.kind === "stroke") for (let i = 0; i < clone.points.length; i++) { clone.points[i][0] += dx; clone.points[i][1] += dy; }
+    if (clone.kind === "stroke") { clone.x = (clone.x || 0) + dx; clone.y = (clone.y || 0) + dy; }
     else { clone.x += dx; clone.y += dy; if (clone.cx != null) { clone.cx += dx; clone.cy += dy; } } // carry a bent arrow's control point
     clone.rotation = (clone.rotation || 0) + dr;
     // a doc/frame's folder link travels with it (to the destination FOLDER doc)
@@ -1188,7 +1312,7 @@ export function Canvas(props) {
     } catch (e) { console.error("[newspace] createDocAt", e); }
   }
   function selectPlacing(dt) { setPlacing({ what: "doc", descriptor: dt }); setTool("place"); setAddOpen(false); }
-  function linkFor(url) { return folderDoc.docs.find((l) => l.url === url); }
+  function linkFor(url) { return (folderDoc.docs || []).find((l) => l.url === url); }
 
   const DND_TYPES = ["text/x-patchwork-dnd", "text/x-patchwork-urls", "text/uri-list", "text/plain"];
   const hasDocDrag = (dt) => !!dt && (DND_TYPES.some((t) => dt.types.includes(t)) || dt.types.includes("Files"));
@@ -1436,7 +1560,7 @@ export function Canvas(props) {
     const layout = rootLayoutH();
     if (!layout) return;
     const items = rootItems();
-    const missing = linksNeedingItems(folderDoc.docs, items, (u) => tombstones.has(u));
+    const missing = linksNeedingItems(folderDoc.docs || [], items, (u) => tombstones.has(u));
     if (!missing.length) return;
     const c = cam();
     const r = viewportRef?.getBoundingClientRect();
@@ -1525,6 +1649,35 @@ export function Canvas(props) {
     contentBounds(rootItems().map(itemBounds), [...peers().values()].map((p) => p.cursor), myViewRect())
   );
 
+  // THE CANVAS AS A NODE — its full reactive state exposed as opstream OUTLETS, so a tool
+  // placed on a layer is fed exactly what the canvas itself sees: every shape, the bounds
+  // of everything, the peers. (camera/pointer/selection are already context Sources.) A bare
+  // layer tool (minimap, map) wires its inlets to these — auto-wired by type while on the
+  // layer, still real ports. The map reprojects `items`+`bounds`; its outlet IS its layer's
+  // transform. These are the same reactive values the canvas uses, not a parallel copy.
+  context.bounds = context.bounds || new Source(null);
+  context.peers = context.peers || new Source([]);
+  context.view = context.view || new Source(null);
+  context.rects = context.rects || new Source([]);
+  createEffect(() => context.bounds.push(worldBounds()));
+  createEffect(() => context.peers.push([...peers().values()]));
+  createEffect(() => context.view.push(myViewRect()));
+  // item bounds rects {x,y,w,h,box} — precomputed because itemBounds() (per-kind geometry)
+  // lives here, not in a placed node. The map (D) uses `items` raw; the minimap uses these.
+  createEffect(() => context.rects.push(rootItems().map((it) => { const b = itemBounds(it); return { x: b.x, y: b.y, w: b.w, h: b.h, box: it.kind === "frame" }; })));
+  // the named outlet bundle (id → { stream, type }) the layer-tool wiring enumerates.
+  const canvasOutlets = () => ({
+    camera: { stream: context.camera, type: "json" },
+    pointer: { stream: context.pointer, type: "json" },
+    selection: { stream: context.selection, type: "json" },
+    items: { stream: context.board, type: "json" },
+    bounds: { stream: context.bounds, type: "json" },
+    peers: { stream: context.peers, type: "json" },
+    view: { stream: context.view, type: "json" },
+    rects: { stream: context.rects, type: "json" },
+  });
+  if (element && element.api) element.api.canvasOutlets = canvasOutlets; // inspectable; the layer-tool wiring reads this
+
   // THE TOP LAYER — a real, user-owned overlay associated with this doc but living in
   // YOUR account (`accountDoc.tools.sketchy.docs[folderUrl]`, datatype
   // `sketchy:layer:top`), auto-created with a default if absent. It holds the things
@@ -1543,7 +1696,7 @@ export function Canvas(props) {
   // The per-sketch layout is a real shared doc seeded from the tool's defaults (tier 3 is
   // the seed: an unset part resolves to the tool default until someone edits it). A NEW
   // patchwork:tool over the same component just ships different `opts` → different seed.
-  const CHROME_PARTS = ["toolbar", "properties", "minimap", "presence", "zoom"];
+  const CHROME_PARTS = ["toolbar", "properties", "presence"]; // minimap + zoom migrated to bare tools
   const chromePart = (part) => {
     const mine = topLayerDoc()?.chrome?.[part];          // tier 1 — per viewer
     if (mine === true || mine === false) return mine;
@@ -1626,7 +1779,7 @@ export function Canvas(props) {
   // a line from each wired editor inlet back to its source port; drawn whether or
   // not the wire tool is active, until the wire (inlet) is deleted (click it).
   const CTX_NAMES = ["camera", "pointer", "tool", "brush", "selection"];
-  const worldToScreen = (wx, wy) => { const c = cam(); return { x: wx * c.z + c.x, y: wy * c.z + c.y }; };
+  const worldToScreen = (wx, wy) => chainToOuter([layerBoxOf(activeLayerId())], { x: wx, y: wy }, boxEnv); // active-layer world → screen, via the composer (one path)
   function ctxPortPos(name) {
     if (!viewportRef) return null;
     const i = CTX_NAMES.indexOf(name); if (i < 0) return null;
@@ -1664,7 +1817,14 @@ export function Canvas(props) {
   // writes the field back to the item (so a stream can drive the shape); the effect below
   // keeps the value synced from the item (so wiring OUT reflects moves/resizes).
   const shapeStreams = new Map();
-  const shapeProps = (it) => { const o = {}; for (const k in it) if (k !== "parent") o[k] = it[k]; return o; };
+  const shapeProps = (it) => {
+    // SHALLOW copy of the shape's own fields (params + geometry). Deliberately NOT a deep JSON
+    // clone: the sync effect below runs on every rootItems change (every drawn point), so a
+    // deep clone of every wired shape — including a growing stroke's whole points array — was
+    // O(n²). Nested reassignments (points/geometry are replaced, not mutated) still re-fire.
+    const o = {}; for (const k in it) if (k !== "parent") o[k] = it[k];
+    return o;
+  };
   function shapeStreamFor(id) {
     let s = shapeStreams.get(id);
     if (!s) {
@@ -1735,7 +1895,8 @@ export function Canvas(props) {
     const d = descFor(item);
     const ports = (side === "out" ? outletDefsFor(d, item) : inletDefsFor(d, item)) || [];
     const idx = Math.max(0, ports.findIndex((p) => p.name === name));
-    const pt = portPoint(itemBounds(item), side, idx, ports.length || 1);
+    const b = item.anchor ? { ...itemBounds(item), ...resolveItemPos(item) } : itemBounds(item); // anchored ⇒ absolute
+    const pt = portPoint(b, side, idx, ports.length || 1);
     const s = worldToScreen(pt.x, pt.y);
     return { x: s.x + (side === "out" ? 12 : -12), y: s.y }; // match the nubs' outward offset (screen px)
   }
@@ -1770,6 +1931,17 @@ export function Canvas(props) {
     specs.sig = sig;
     return specs;
   });
+  // a wire belongs to the layer of its downstream node; render only the active layer's wires
+  // (each in that layer's space, via worldToScreen → activeToScreen). floats sit in the base.
+  const visibleWires = () => {
+    const active = activeLayerId(), base = baseLayer()?.id;
+    // a non-base layer (the overlay) is CHROME — its wires are plumbing (minimap ← canvas node,
+    // etc.). Hide them unless you're actually wiring, so the overlay isn't a tangle of pink.
+    if (active !== base && tool() !== "wire") return [];
+    const layerById = new Map(rootItems().map((it) => [it.id, itemLayer(it)])); // built ONCE, not per-spec
+    return wireSpecs().filter((s) => (s.floatId ? base : (layerById.get(s.editorId) || base)) === active);
+  };
+
   // geometry for one wire spec — reads cam + the live item positions, so it updates
   // fine-grained (just the transform/d attrs) on pan/zoom/move without rebuilding DOM.
   function geomFor(spec) {
@@ -1779,7 +1951,7 @@ export function Canvas(props) {
       if (!f) return null;
       let from = null;
       if (f.source.context) from = ctxPortPos(f.source.context);
-      else if (f.source.peer) { const p = peers().get(f.source.peer); if (p && p.view) from = worldToScreen(p.view.x + p.view.w, p.view.y + p.view.h / 2); }
+      else if (f.source.peer) { const p = peers().get(f.source.peer); if (p && p.view) from = cameraToScreen(p.view.x + p.view.w, p.view.y + p.view.h / 2); }
       return from ? { from, to: { x: f.x, y: f.y + 10 } } : null;
     }
     const it = rootItems().find((x) => x.id === spec.editorId);
@@ -1787,7 +1959,7 @@ export function Canvas(props) {
     const w = spec.wire;
     let from = null;
     if (w.context) from = ctxPortPos(w.context);
-    else if (w.peer) { const p = peers().get(w.peer); if (p && p.view) from = worldToScreen(p.view.x + p.view.w, p.view.y + p.view.h / 2); }
+    else if (w.peer) { const p = peers().get(w.peer); if (p && p.view) from = cameraToScreen(p.view.x + p.view.w, p.view.y + p.view.h / 2); }
     else if (w.node) { const up = rootItems().find((x) => x.id === w.node); if (up) from = descFor(up)?.round ? roundPortToward(up, nodePortScreen(it, "in", spec.inlet)) : nodePortScreen(up, "out", w.outlet); }
     else if (w.url) from = domPortPos(w.url, w.path);
     return from ? { from, to: nodePortScreen(it, "in", spec.inlet) } : null;
@@ -1996,8 +2168,16 @@ export function Canvas(props) {
   // a chrome part's SLOT, if a wrapping tool supplied one (opts.slots[part]) — else null.
   const slot = (part) => (opts.slots && opts.slots[part]) || null;
 
-  const worldTransform = () => { const c = cam(); return `translate(${c.x}px, ${c.y}px) scale(${c.z})`; };
-  const svgTransform = () => { const c = cam(); return `translate(${c.x} ${c.y}) scale(${c.z})`; };
+  // the base layer's CSS transform, from its registered transform plugin (dogfoods the
+  // registry — for the camera plugin this is the same translate/scale as before).
+  const worldTransform = () => txFor(baseLayer()).transform();
+  // the draft/selection svg lives in the ACTIVE layer's space. Derive the affine from the
+  // transform's toScreen of three basis points → a matrix() that works for ANY transform
+  // (camera, viewport, a future geo projection), so the live preview is sharp on any layer.
+  const svgTransform = () => {
+    const t = txFor(activeLayer()); const o = t.toScreen(0, 0), bx = t.toScreen(1, 0), by = t.toScreen(0, 1);
+    return `matrix(${bx.x - o.x} ${bx.y - o.y} ${by.x - o.x} ${by.y - o.y} ${o.x} ${o.y})`;
+  };
   const cursorClass = () => { const t = tool(); if (t === "hand") return "ns-cur-grab"; if (t === "select" || t === "wire") return "ns-cur-default"; return "ns-cur-cross"; };
 
   // the WebRTC mesh for node sharing — values over a data channel, streams over tracks,
@@ -2023,23 +2203,27 @@ export function Canvas(props) {
     context, // the canvas context Sources, for context-wired editor inlets
     peerStream, // (contactUrl, part) → a live Source of a peer's state, for peer-wired inlets
     nodeStream, registerOutlets, unregisterOutlets, // node outlets (lens outputs) — see registry above
+    canvasOutlets, // the canvas-as-node reactive state (items/bounds/peers/camera/…) for bare layer tools
+    // a bare tool shows its ports + auto-wires while ITS layer is the active one
+    layerIsActive: (it) => itemLayer(it) === activeLayerId(),
   };
 
   const handleBox = createMemo(() => {
     if (!selectish()) return null;
     if (editingId()) return null; // while editing text, show only the caret — no box/handles
-    const c = cam();
+    const z = boxScale(active());
     const it = single();
     if (it) {
       if (it.kind === "shape" && (it.type === "arrow" || it.type === "line")) return null; // use endpoint handles
       if (it.kind === "sketch") return null; // sketches articulate via their nodes, not resize/rotate handles
-      const b = itemBounds(it); const frame = active().frame;
-      const [wx, wy] = localToWorld(frame, b.x + b.w / 2, b.y + b.h / 2);
-      const sw = b.w * c.z, sh = b.h * c.z;
-      return { x: wx * c.z + c.x - sw / 2, y: wy * c.z + c.y - sh / 2, w: sw, h: sh, rot: (it.rotation || 0) + (frame ? frame.rotation || 0 : 0), kind: it.kind };
+      const b = itemBounds(it); const frame = active().frame; const p = resolveItemPos(it);
+      const s = boxToScreen(active(), { x: p.x + b.w / 2, y: p.y + b.h / 2 }); // compose layer → frame → screen
+      const sw = b.w * z, sh = b.h * z;
+      return { x: s.x - sw / 2, y: s.y - sh / 2, w: sw, h: sh, rot: (it.rotation || 0) + (frame ? frame.rotation || 0 : 0), kind: it.kind };
     }
     const u = selWorldBounds();
-    if (u) return { x: u.x * c.z + c.x, y: u.y * c.z + c.y, w: u.w * c.z, h: u.h * c.z, rot: 0, kind: "multi" };
+    // u is already in WORLD (selWorldBounds applied the frame), so project by the LAYER only.
+    if (u) { const s = chainToOuter([layerBoxOf(activeLayerId())], { x: u.x, y: u.y }, boxEnv); return { x: s.x, y: s.y, w: u.w * z, h: u.h * z, rot: 0, kind: "multi" }; }
     return null;
   });
 
@@ -2049,9 +2233,9 @@ export function Canvas(props) {
     if (!selectish() || editingId()) return null;
     const it = single();
     if (!it || it.kind !== "shape" || (it.type !== "arrow" && it.type !== "line")) return null;
-    const frame = active().frame, c = cam();
+    const frame = active().frame;
     const g = (it.type === "arrow" && (it.fromId || it.toId)) ? arrowGeometry(it, active().doc?.items || []) : it;
-    const toScreen = (lx, ly) => { const [wx, wy] = localToWorld(frame, lx, ly); return { x: wx * c.z + c.x, y: wy * c.z + c.y }; };
+    const toScreen = (lx, ly) => boxToScreen(active(), { x: lx, y: ly }); // layer → frame → screen, composed
     // the control HANDLE rides ON the curve (its midpoint), not at the off-curve
     // quadratic control point — so it sits where you'd grab to bend the line.
     // midpoint of a quadratic = ¼·start + ½·control + ¼·end
@@ -2064,9 +2248,10 @@ export function Canvas(props) {
   const arrowHoverBox = createMemo(() => { const id = arrowHover(); if (!id) return null; const it = rootItems().find((x) => x.id === id); if (!it) return null; const b = itemBounds(it); return { ...b, rotation: it.rotation || 0, cx: b.x + b.w / 2, cy: b.y + b.h / 2 }; });
 
   return (
-    <div class={"ns-root " + cursorClass()} classList={{ "ns-wiring": tool() === "wire" }} ref={viewportRef} onPointerDown={onPointerDown} onPointerMove={trackCursor} onDblClick={onCanvasDblClick} onWheel={onWheel} onDragOver={onDragOver} onDrop={onDrop}>
+    <div class={"ns-root " + cursorClass()} classList={{ "ns-wiring": tool() === "wire", "ns-frosted": frosting() }} ref={viewportRef} onPointerDown={onPointerDown} onPointerMove={trackCursor} onDblClick={onCanvasDblClick} onWheel={onWheel} onDragOver={onDragOver} onDrop={onDrop}>
+      {/* BASE layer (the camera coordinate space). Only items tagged onto it live here. */}
       <div class="ns-world" ref={(el) => enableAtomicMove(el)} style={{ transform: worldTransform() }}>
-        <For each={sortById(rootItems())}>{(it) => <Item it={it} surface={rootSurface()} ctx={ctx} depth={0} />}</For>
+        <For each={sortById(rootItems().filter((it) => itemLayer(it) === baseLayer()?.id))}>{(it) => <Item it={it} surface={rootSurface()} ctx={ctx} depth={0} />}</For>
       </div>
       {/* while a pan is in flight this captures the wheel (over iframes too) so
           the pan keeps going; idle → pointer-events:none, tools interactive */}
@@ -2129,11 +2314,12 @@ export function Canvas(props) {
         </g>
       </svg>
 
-      {/* persistent wires from each wired editor inlet to its source port (always
-          visible; click a wire to delete it) */}
-      <Show when={wireSpecs().length}>
-        <svg class="ns-wires" style={{ position: "absolute", inset: "0", width: "100%", height: "100%", "pointer-events": "none", overflow: "visible", "z-index": "30" }}>
-          <For each={wireSpecs()}>
+      {/* persistent wires — only the ACTIVE layer's (a wire lives in the coordinate space of
+          its node's layer). On the base canvas the svg sits behind the nodes (z5); on the
+          overlay it lifts above the frost (z24) so overlay wires read on the glass. */}
+      <Show when={visibleWires().length}>
+        <svg class="ns-wires" style={{ position: "absolute", inset: "0", width: "100%", height: "100%", "pointer-events": "none", overflow: "visible", "z-index": frosting() ? "24" : "5" }}>
+          <For each={visibleWires()}>
             {(spec) => {
               // geometry is a per-row memo → updates the transform/d ATTRS on
               // pan/zoom/move, never rebuilds these DOM nodes. rough paths are
@@ -2202,6 +2388,36 @@ export function Canvas(props) {
             }}
           </For>
         </svg>
+      </Show>
+
+      {/* FROSTED GLASS: while editing a frosting layer (the overlay), a backdrop-blurred
+          tinted pane sits over the base layer + wires, so the active layer reads as glass
+          floating above. Below the active layer, above everything else. */}
+      <Show when={frosting()}>
+        <div class="ns-frost" />
+      </Show>
+
+      {/* NON-BASE layers — viewport-pinned (or whatever their transform says) coordinate
+          spaces, rendered above the frost. The active one is interactive + casts a themed
+          shadow; inactive ones still show their widgets. Generic over the layer stack. */}
+      <For each={layersList().filter((l) => l.id !== baseLayer()?.id)}>
+        {(layer) => (
+          <div class="ns-layer" classList={{ "ns-layer-active": activeLayerId() === layer.id }} style={{ transform: txFor(layer).transform() }}>
+            <For each={sortById(rootItems().filter((it) => itemLayer(it) === layer.id))}>{(it) => <Item it={it} surface={rootSurface()} ctx={ctx} depth={0} />}</For>
+          </div>
+        )}
+      </For>
+
+      {/* LAYER SWITCHER — pick which coordinate space you're drawing/placing on. */}
+      <Show when={layersList().length > 1}>
+        <div class="ns-layers" onPointerDown={(e) => e.stopPropagation()}>
+          <For each={layersList()}>
+            {(layer) => {
+              const k = () => layerKind(layer.kind) || {};
+              return <button class="ns-layer-tab" classList={{ active: activeLayerId() === layer.id }} onClick={() => switchLayer(layer.id)} title={layer.kind}>{layer.name || k().name || layer.id}</button>;
+            }}
+          </For>
+        </div>
       </Show>
 
       {/* the canvas's own context as OUTLET ports down the right edge. All show with
@@ -2280,11 +2496,9 @@ export function Canvas(props) {
           </button>
         </>}>{slot("presence")(chromeHost)}</Show>
       </Show>
-      <Show when={chromePart("minimap")}>
-        <Show when={slot("minimap")} fallback={
-          <Minimap bounds={worldBounds} peers={peers} view={myViewRect} rects={() => rootItems().map((it) => { const b = itemBounds(it); return { x: b.x, y: b.y, w: b.w, h: b.h, box: it.kind === "frame" }; })} serviceUrl={ctx.serviceUrl} onJump={centerOn} />
-        }>{slot("minimap")(chromeHost)}</Show>
-      </Show>
+      {/* the minimap is no longer hardcoded chrome — it's a BARE `minimap` tool seeded on
+          the overlay layer (minimap-node.js), fed by the canvas outlets. Add/move/remove it
+          like any item. */}
 
       <Show when={chromePart("toolbar")}>
         {slot("toolbar") ? slot("toolbar")(chromeHost) : <Toolbar host={chromeHost} />}
@@ -2294,11 +2508,7 @@ export function Canvas(props) {
         {slot("properties") ? slot("properties")(chromeHost) : <Properties host={chromeHost} />}
       </Show>
 
-      <Show when={chromePart("zoom")}>
-        <Show when={slot("zoom")} fallback={
-          <div class="ns-zoom" onPointerDown={(e) => e.stopPropagation()} onClick={() => setCam((c) => ({ ...c, z: 1 }))}>{Math.round(cam().z * 100)}%</div>
-        }>{slot("zoom")(chromeHost)}</Show>
-      </Show>
+      {/* zoom is now a bare `zoom` tool seeded on the overlay (zoom-node.js) */}
 
       {/* CUSTOMIZE THIS LAYOUT — toggle which chrome parts show, just for you, on this
           sketch (persisted in your per-user top layer). Always available so you can get

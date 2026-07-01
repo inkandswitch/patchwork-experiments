@@ -44,6 +44,7 @@
     "@kobalte/core": "^0.13.11",
     "@lezer/highlight": "^1.2.3",
     "@solid-primitives/storage": "^4.3.0",
+    "leaflet": "^1.9.4",
     "perfect-freehand": "^1.2.3",
     "roughjs": "^4.6.6",
     "solid-automerge": "2.0.0",

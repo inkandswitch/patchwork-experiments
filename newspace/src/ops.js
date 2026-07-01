@@ -186,6 +186,12 @@ export function describeBinary(v) {
 // value carrying (or nested with) a frame stringifies safely instead of freezing.
 export const binarySafeReplacer = (_k, val) => describeBinary(val) ?? val;
 
+// DISPLAY helpers — readouts get unreadable with full float precision (a pointer x of
+// 59.1678248461549 wraps over four lines). These round non-integer numbers FOR DISPLAY ONLY;
+// the underlying value/op is never touched. `previewReplacer` also keeps binary values safe.
+export const fmtNum = (v) => (typeof v === "number" && Number.isFinite(v) && !Number.isInteger(v) ? +v.toFixed(2) : v);
+export const previewReplacer = (k, val) => fmtNum(binarySafeReplacer(k, val));
+
 // Cheap value equality — used to make write-backs IDEMPOTENT so bidirectional
 // wires don't loop (a write that changes nothing must not emit → no feedback storm).
 // Object.is for primitives/identity; a bounded JSON compare for plain structures.

@@ -71,6 +71,10 @@
   top: 0;
   left: 0;
   transform-origin: 0 0;
+  z-index: 10; /* ABOVE the persistent wires (which sit at z 5) so a wire passes BEHIND the
+                  nodes it loops around — but below the selection/draft overlay (z 30). The
+                  layer is 0×0 (items are positioned children), so it never blocks open-canvas
+                  clicks on a wire below it. */
 }
 
 /* transient overlay (draft preview, marquee, multi-select outline) */
@@ -705,6 +709,11 @@
 /* template doc — a JSON template textarea with <…> holes */
 .ns-template { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; height: 100%; box-sizing: border-box; }
 .ns-template-src { flex: 1 1 auto; min-height: 0; resize: none; font: 12px ui-monospace, monospace; white-space: pre; }
+/* the CodeMirror-in-a-block host (template doc + others) — let the editor fill the block */
+.ns-cm-host { overflow: auto; min-height: 80px; }
+.ns-cm-host .cm-editor { height: 100%; background: transparent; }
+.ns-cm-host .cm-editor .cm-content { font: 12px ui-monospace, monospace; }
+.ns-cm-host .cm-gutters { background: transparent; border: none; }
 
 /* html box — renders its input as innerHTML */
 .ns-htmlbox { width: 100%; height: 100%; overflow: auto; padding: 8px; box-sizing: border-box; color: var(--ns-ink); }
@@ -947,3 +956,92 @@
 /* JS transform box */
 .ns-js { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; height: 100%; box-sizing: border-box; }
 .ns-js-src { flex: 1 1 auto; min-height: 0; resize: none; font: 12px ui-monospace, monospace; white-space: pre; }
+
+/* ── Layers — a sketch is a stack of coordinate spaces (layers.js) ─────────── */
+/* a non-base layer: a viewport-pinned (or transform-driven) space above the canvas.
+   the container ignores pointer events so empty space falls through to the canvas
+   handler; its widgets opt back in. */
+.ns-layer { position: absolute; inset: 0; z-index: 25; pointer-events: none; transform-origin: 0 0; }
+/* you only ever interact with the ACTIVE layer: a non-base layer's items are inert unless
+   that layer is active (so you can't change overlay widgets while working on the canvas). */
+.ns-layer > * { pointer-events: none; }
+.ns-layer-active > * { pointer-events: auto; }
+/* the active overlay floats: a soft themed shadow on everything it holds */
+.ns-layer-active { filter: drop-shadow(0 5px 14px var(--ns-shadow)); }
+
+/* frosted glass behind the active overlay: blur + a faint themed tint over the canvas.
+   pointer-events:auto so it SHIELDS the canvas below (clicks can't reach canvas items),
+   while still bubbling to the root's draw handler — which is now in overlay space. */
+.ns-frost {
+  position: absolute; inset: 0; z-index: 20; pointer-events: auto;
+  backdrop-filter: blur(4px) saturate(1.15);
+  -webkit-backdrop-filter: blur(4px) saturate(1.15);
+  background: color-mix(in oklch, var(--ns-paper), transparent 55%);
+}
+/* while frosting, the canvas + its wires go inert (the frost shields them anyway), and the
+   persistent inlet/outlet wires of the CANVAS layer are hidden — they belong to the layer
+   below the glass. */
+.ns-frosted .ns-world { pointer-events: none; }
+
+/* the layer switcher — a little System-7 segmented pill, top-centre */
+.ns-layers {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 45;
+  display: flex; gap: 2px; padding: 3px; border-radius: 9px;
+  background: var(--ns-chrome); border: 1.5px solid var(--ns-ink);
+  box-shadow: 2px 2px 0 var(--ns-shadow);
+}
+.ns-layer-tab {
+  appearance: none; border: 0; cursor: pointer; padding: 4px 11px; border-radius: 6px;
+  font: 600 12px var(--ns-font, system-ui); color: var(--ns-ink); background: transparent;
+}
+.ns-layer-tab.active { background: var(--ns-paper); box-shadow: inset 0 0 0 1.5px var(--ns-ink); }
+
+/* ── Bare layer tools — a widget with NO node frame (just body + ports) ────── */
+.ns-bare { position: absolute; box-sizing: border-box; background: none; }
+.ns-bare .ns-editor-body { width: 100%; height: 100%; pointer-events: auto; background: none; }
+/* a reused chrome widget (e.g. the minimap) flows inside the bare wrapper, sized to its own
+   content (no stretched container box, no chrome background — just the widget) */
+/* RELATIVE (not static) so it stays the positioning context for its absolutely-positioned
+   shape rects — static let them escape to a viewport-filling ancestor and render off-screen. */
+.ns-bare .ns-minimap { position: relative; inset: auto; background: none; box-shadow: none; }
+.ns-bare .ns-zoom { position: relative; inset: auto; width: 100%; height: 100%; }
+/* a selected bare widget has no resize/rotate box (it's anchored chrome) — show selection
+   as a simple dashed outline instead */
+.ns-bare.sel { outline: 1.5px dashed var(--ns-sky); outline-offset: 3px; }
+
+/* a bare window's edit chrome — a little grab/name/remove bar shown above the widget while
+   its layer is active (the widget body itself is interactive, so it can't be the move grip) */
+.ns-bare-chrome {
+  position: absolute; left: 0; bottom: 100%; margin-bottom: 5px; z-index: 2;
+  display: flex; align-items: center; gap: 4px; padding: 1px 3px 1px 8px;
+  background: var(--ns-chrome); border: 1.5px solid var(--ns-ink); border-radius: 6px;
+  box-shadow: 2px 2px 0 var(--ns-shadow); cursor: grab; pointer-events: auto;
+  font: 600 11px var(--ns-font, system-ui); color: var(--ns-ink); white-space: nowrap;
+}
+.ns-bare-name { pointer-events: none; }
+.ns-bare-x { appearance: none; border: 0; background: none; cursor: pointer; font: 700 15px/1 var(--ns-font, system-ui); color: var(--ns-ink); padding: 0 3px; opacity: 0.7; }
+.ns-bare-x:hover { opacity: 1; }
+
+/* the canvas-context source node — a small labelled chip on a layer (outlets on the right) */
+.ns-canvas-source {
+  display: grid; place-items: center; width: 100%; height: 100%; box-sizing: border-box;
+  padding: 2px 8px; border: 1.5px solid var(--ns-ink); border-radius: 6px;
+  background: var(--ns-chrome); box-shadow: 2px 2px 0 var(--ns-shadow);
+  font: 600 11px var(--ns-font, system-ui); color: var(--ns-ink); white-space: nowrap;
+}
+
+/* a geo PIN on a map — a labelled chip anchored at its lat/lng (Leaflet reprojects it) */
+.ns-map-pin-wrap { background: none !important; border: none !important; width: auto !important; height: auto !important; }
+.ns-map-pin {
+  display: inline-block; transform: translate(-50%, -100%);
+  padding: 2px 8px; border-radius: 8px; white-space: nowrap; cursor: pointer;
+  background: #40dcba; color: #0a2b24; border: 1.5px solid #0a2b24;
+  font: 600 11px var(--ns-font, system-ui); box-shadow: 1px 1px 0 rgba(0,0,0,0.35);
+}
+.ns-map-pin:hover { background: #5be8c9; }
+
+/* a map pin's live-preview popup */
+.ns-map-pin-pop { width: 240px; position: relative; }
+.ns-map-pin-view { display: block; width: 100%; height: 180px; overflow: hidden; border-radius: 5px; border: 1px solid var(--ns-ink); background: var(--ns-paper); }
+.ns-map-pin-open { margin-top: 6px; width: 100%; padding: 3px 8px; border: 1.5px solid var(--ns-ink); border-radius: 6px; background: var(--ns-chrome); font: 600 11px var(--ns-font, system-ui); color: var(--ns-ink); cursor: pointer; box-shadow: 1px 1px 0 var(--ns-shadow); }
+.ns-map-pin-open:hover { background: var(--ns-paper); }

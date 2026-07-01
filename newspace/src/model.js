@@ -3,11 +3,32 @@
 // caused most of the regressions: reconcile, transfer dedupe, coord transforms).
 import { shapeBounds, strokeBounds } from "./draw.js";
 import { sketchBounds } from "./sketch.js";
+import { chainToOuter, chainToLocal } from "./box-transform.js";
 
 export const rad = (d) => (d * Math.PI) / 180;
 export function rot(x, y, a) {
   const c = Math.cos(a), s = Math.sin(a);
   return [x * c - y * s, x * s + y * c];
+}
+
+// a frame IS a box: origin = its top-left, own transform = rotate about its centre. The
+// coordinate-space-as-box composer ([[box-transform.js]]) does the math — proven identical to
+// the old hand-rolled version in box-transform.test.js, so every localToWorld/worldToLocal
+// caller now goes through the unified model.
+const frameBox = (f) => ({ x: f.x, y: f.y, w: f.w, h: f.h, transform: { kind: "rotate", rotation: f.rotation || 0 } });
+
+// ANY item as a BOX — the single "item → its coordinate space" mapping (no ad-hoc kind
+// inference at call sites). A frame ROTATES about its centre; a map REPROJECTS (lat/lng);
+// everything else (stroke, shape, text, doc, editor, sketch) is placement-only, so its own
+// transform is identity ("translate"). This is "an item is a box with a transform."
+export function transformKindOf(it) {
+  if (!it) return "identity";
+  if (it.kind === "frame") return "rotate";
+  if (it.kind === "editor" && it.editorId === "map") return "reproject";
+  return "translate";
+}
+export function itemBox(it) {
+  return { id: it.id, x: it.x || 0, y: it.y || 0, w: it.w || 0, h: it.h || 0, rotation: it.rotation || 0, transform: { kind: transformKindOf(it) } };
 }
 
 // folders and newspaces both render as a "box" (a managed sub-doc)
@@ -17,15 +38,13 @@ export const isBoxType = (t) => t === "newspace" || t === "folder";
 // about its centre); local<->world is the transform in/out of that space.
 export function localToWorld(frame, x, y) {
   if (!frame) return [x, y];
-  const cx = frame.x + frame.w / 2, cy = frame.y + frame.h / 2;
-  const [rx, ry] = rot(x - frame.w / 2, y - frame.h / 2, rad(frame.rotation || 0));
-  return [cx + rx, cy + ry];
+  const o = chainToOuter([frameBox(frame)], { x, y });
+  return [o.x, o.y];
 }
 export function worldToLocal(frame, x, y) {
   if (!frame) return [x, y];
-  const cx = frame.x + frame.w / 2, cy = frame.y + frame.h / 2;
-  const [rx, ry] = rot(x - cx, y - cy, -rad(frame.rotation || 0));
-  return [rx + frame.w / 2, ry + frame.h / 2];
+  const l = chainToLocal([frameBox(frame)], { x, y });
+  return [l.x, l.y];
 }
 export const pointInFrame = (f, wx, wy) => {
   const [lx, ly] = worldToLocal(f, wx, wy);

@@ -13,6 +13,7 @@ import {
   roughChevron,
   shapeBounds,
   strokeBounds,
+  strokeWorldPoints,
   distToSegment,
 } from "./draw.js";
 
@@ -316,6 +317,26 @@ describe("strokeBounds", () => {
     expect(b.y).toBe(-2);
     expect(b.w).toBe(14); // 10 + 2*2
     expect(b.h).toBe(24); // 20 + 2*2
+  });
+});
+
+describe("a stroke is a TRANSLATE-ONLY box: world = origin + local point", () => {
+  const local = { points: [[0, 0], [10, 0], [10, 10]], size: 4 };
+  it("strokeBounds adds the origin; an origin-0 stroke (the old form) is unchanged", () => {
+    expect(strokeBounds(local)).toEqual(strokeBounds({ ...local, x: 0, y: 0 })); // old strokes already valid
+    const b0 = strokeBounds(local), b1 = strokeBounds({ ...local, x: 100, y: 50 });
+    expect(b1).toEqual({ x: b0.x + 100, y: b0.y + 50, w: b0.w, h: b0.h }); // shifted by the origin only
+  });
+  it("strokeWorldPoints = origin + each point (a no-op at origin 0)", () => {
+    const pts = [[0, 0, 0.5], [10, 5, 0.7]];
+    expect(strokeWorldPoints({ points: pts })).toEqual(pts);
+    expect(strokeWorldPoints({ x: 100, y: 50, points: pts })).toEqual([[100, 50, 0.5], [110, 55, 0.7]]);
+  });
+  it("MOVING is a pure origin bump — the points array is UNTOUCHED (the whole point of the migration)", () => {
+    const s = { x: 0, y: 0, points: [[0, 0, 0.5], [10, 10, 0.6]] };
+    const moved = { ...s, x: 30, y: 20 };        // move = bump origin
+    expect(moved.points).toBe(s.points);          // SAME array reference — no per-point rewrite
+    expect(strokeWorldPoints(moved)).toEqual([[30, 20, 0.5], [40, 30, 0.6]]); // yet the world position moved
   });
 });
 

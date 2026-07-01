@@ -1,6 +1,7 @@
 // Pure constants + helpers for the Sketchy canvas ("brush"). Extracted from
 // tool.jsx so the canvas can be split into modules. No Solid/component state here
 // — only values and pure functions (plus `ensureLayout`, which takes its repo).
+import { defaultLayers } from "../layers.js"; // the base + overlay layer stack (a literal)
 
 // colours are stored as semantic NAMES, mapped to a --space-color-* palette
 export const PALETTE = [
@@ -112,8 +113,30 @@ export function clonePlain(o) {
 export const DEFAULT_LAYOUT = {
   component: "sketchy",
   tools: ["select", "hand", "pen", "eraser", "wire", "rectangle", "ellipse", "arrow", "text"],
-  toolbar: true, properties: true, minimap: true, presence: true, zoom: true,
+  toolbar: true, properties: true, presence: true, // minimap + zoom are now seeded bare tools
 };
+
+// the former hardcoded chrome, now SEEDED bare tools on the overlay — normal items (move/
+// delete/add like any other), corner-anchored, stable ids so migration stays idempotent.
+// Each is WIRED to its own `canvas` context node (a placeable source that re-publishes the
+// canvas's live state as outlets): minimap ← ns-ctx-mm, zoom ← ns-ctx-zoom. Real, visible
+// wires — nodeStream(nodeId, outlet) resolves to the context Source. `camera` is read/WRITE.
+export const MINIMAP_INLETS = { rects: { node: "ns-ctx-mm", outlet: "rects" }, bounds: { node: "ns-ctx-mm", outlet: "bounds" }, peers: { node: "ns-ctx-mm", outlet: "peers" }, view: { node: "ns-ctx-mm", outlet: "view" }, camera: { node: "ns-ctx-mm", outlet: "camera" } };
+export const ZOOM_INLETS = { camera: { node: "ns-ctx-zoom", outlet: "camera" } };
+// which viewport edges a corner anchor pins to — the SINGLE source of truth (resolveItemPos,
+// toAnchorOffset, the move delta-flip, item.jsx baseStyle all read this).
+export const anchorAxes = (anchor) => ({ right: anchor === "bottom-right" || anchor === "top-right", bottom: anchor === "bottom-left" || anchor === "bottom-right" });
+
+// the stable ids of the seeded overlay chrome. Deleting one records it in the layout doc's
+// `dismissedSeeds` so ensureLayout does NOT re-seed it on the next open (the "delete like any
+// item" contract). Fresh sketches + never-dismissed ones still get seeded.
+export const SEED_IDS = ["ns-ctx-mm", "ns-minimap", "ns-ctx-zoom", "ns-zoom"];
+const canvasCtxItem = (id, anchor, x, y) => ({ id, kind: "editor", editorId: "canvas", layer: "overlay", anchor, x, y, w: 74, h: 22, rotation: 0, inlets: {} });
+export const minimapSeedItem = () => ({ id: "ns-minimap", kind: "editor", editorId: "minimap", layer: "overlay", anchor: "bottom-left", x: 16, y: 16, w: 184, h: 136, rotation: 0, inlets: { ...MINIMAP_INLETS } });
+export const zoomSeedItem = () => ({ id: "ns-zoom", kind: "editor", editorId: "zoom", layer: "overlay", anchor: "bottom-right", x: 16, y: 18, w: 56, h: 28, rotation: 0, inlets: { ...ZOOM_INLETS } });
+export const ctxMmSeedItem = () => canvasCtxItem("ns-ctx-mm", "bottom-left", 16, 162);   // above the minimap
+export const ctxZoomSeedItem = () => canvasCtxItem("ns-ctx-zoom", "bottom-right", 16, 54); // above the zoom
+export const defaultOverlayItems = () => [ctxMmSeedItem(), minimapSeedItem(), ctxZoomSeedItem(), zoomSeedItem()];
 
 // a "space" doc (a folder/sketch) references its canvas layout doc via `.sketch` (was
 // `.newspace` — still read for back-compat + migrated forward). ensureLayout makes/loads
@@ -124,13 +147,35 @@ export async function ensureLayout(repo, folderHandle) {
   if (!url) {
     const old = folderHandle.doc().items;
     const seed = Array.isArray(old) ? old.map(clonePlain) : [];
-    const layout = await repo.create2({ "@patchwork": { type: "sketch-layout" }, items: seed, layout: { ...DEFAULT_LAYOUT } });
+    const layout = await repo.create2({ "@patchwork": { type: "sketch-layout" }, items: [...seed, ...defaultOverlayItems()], layers: defaultLayers(), layout: { ...DEFAULT_LAYOUT } });
     folderHandle.change((d) => { d.sketch = layout.url; if (Array.isArray(d.items)) d.items.splice(0); });
     return layout;
   }
   if (!folderHandle.doc().sketch) folderHandle.change((d) => { d.sketch = url; }); // migrate .newspace → .sketch
   const lh = await repo.find(url);
-  lh.change((d) => { if (!d.items) d.items = []; if (!d.layout) d.layout = { ...DEFAULT_LAYOUT }; }); // seed layout on older docs too
+  lh.change((d) => {
+    if (!d.items) d.items = [];
+    if (!d.layout) d.layout = { ...DEFAULT_LAYOUT };
+    if (!d.layers) d.layers = defaultLayers();
+    // seed the overlay chrome — but NEVER re-seed something the user deleted (dismissedSeeds).
+    const dismissed = d.dismissedSeeds || [];
+    const seed = (id, make) => { if (!dismissed.includes(id) && !d.items.some((it) => it.id === id)) d.items.push(make()); };
+    seed("ns-ctx-mm", ctxMmSeedItem);
+    seed("ns-ctx-zoom", ctxZoomSeedItem);
+    seed("ns-minimap", minimapSeedItem);
+    seed("ns-zoom", zoomSeedItem);
+    // rewire/upgrade earlier seeds (older versions used {context} inlets or a top-left zoom).
+    const mm = d.items.find((it) => it.id === "ns-minimap");
+    if (mm) {
+      if (!mm.anchor) Object.assign(mm, { anchor: "bottom-left", x: 16, y: 16, w: 184, h: 136 });
+      if (!mm.inlets || !mm.inlets.rects || !mm.inlets.rects.node) mm.inlets = { ...MINIMAP_INLETS };
+    }
+    const zm = d.items.find((it) => it.id === "ns-zoom");
+    if (zm) {
+      if (!zm.anchor) Object.assign(zm, { anchor: "bottom-right", x: 16, y: 18, w: 56, h: 28 });
+      if (!zm.inlets || !zm.inlets.camera || !zm.inlets.camera.node) zm.inlets = { ...ZOOM_INLETS };
+    }
+  });
   return lh;
 }
 

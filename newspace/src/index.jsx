@@ -3,6 +3,7 @@ import { stringSchema, anySchema, numberSchema, fileSchema, audioSchema, imageSc
 import { templateInlets } from "./template-doc.js"; // tiny sync parser; the mount stays lazy
 import { rleEncode, rleDecode } from "./rle.js"; // run-length codec for the RLE lenses
 import { llmInlets, llmOutlets } from "./llm-inlets.js"; // sync: {{var}} → inlets, @out → outlets
+import { layerTransformPlugins, layerKindPlugins } from "./layers.js"; // camera + viewport ship as plugins
 // self-contained node/lens plugins (each its own file + tests)
 import { plugin as mathOpPlugin } from "./math-op-node.js";
 import { plugin as rangeMapPlugin } from "./range-map-node.js";
@@ -23,6 +24,11 @@ import { plugin as jsonPrettyLens } from "./json-pretty-lens.js";
 import { plugin as throttlePlugin } from "./throttle-node.js";
 import { plugin as pointerLockPlugin } from "./pointerlock-source.js";
 import { plugin as magnifierPlugin } from "./llm-magnifier.js";
+import { plugin as minimapPlugin } from "./minimap-node.js";
+import { plugin as zoomPlugin } from "./zoom-node.js";
+import { plugin as canvasSourcePlugin } from "./canvas-source-node.js";
+// map: metadata static, code (+ bundled Leaflet) lazy-loaded only when a map is placed
+const mapPlugin = { type: "sketchy:window", id: "map", name: "Map", icon: "Map", inlets: [], outlets: [], async load() { return (await import("./map-node.js")).mountMap; } };
 import { plugin as shareTrayPlugin } from "./share-tray.js";
 import { markerPlugin } from "./marker-brush.js";
 import { inkPenPlugin } from "./ink-pen-brush.js";
@@ -44,6 +50,10 @@ function recase(view, src, cased) {
 }
 
 export const plugins = [
+  // layer coordinate-spaces + kinds are plugins, not a core switch: camera/viewport
+  // ship here; a map adds `geo` the same way (register a transform). See layers.js.
+  ...layerTransformPlugins,
+  ...layerKindPlugins,
   // brushes live in their own modules, dynamically imported in load() so their
   // code is a separate chunk (not pulled into the main bundle eagerly)
   {
@@ -706,26 +716,20 @@ export const plugins = [
   throttlePlugin,
   pointerLockPlugin,
   magnifierPlugin, // LLM magnifying glass — describes what's under it on the board
+  minimapPlugin, // BARE layer tool: the minimap, fed by the canvas's own reactive outlets
+  zoomPlugin, // BARE layer tool: the zoom %, reads/writes the camera outlet
+  mapPlugin, // a MAP box (Leaflet from esm.sh) — place geo-located things on a map
+  canvasSourcePlugin, // the CANVAS as a placeable source node (items/bounds/camera/… outlets)
+  // SKETCHY — the THIN/component shape (formerly "Sketchier"): this tool only acquires the
+  // docs and provides them (as opstreams) to a <patchwork-view component="sketchy">. The
+  // canvas runs entirely off the provided streams — fully decomposed tool↔component. This
+  // REPLACES the old monolithic Sketchy tool (same id, so pins keep resolving).
   {
     type: "patchwork:tool",
     id: "sketchy",
     name: "Sketchy",
     icon: "PenTool",
     // its own datatype, the legacy `newspace` datatype, and any plain folder
-    supportedDatatypes: ["sketch", "newspace", "folder"],
-    async load() {
-      const { NewspaceTool } = await import("./tool.jsx");
-      return NewspaceTool;
-    },
-  },
-  // SKETCHIER — the same canvas, but as the THIN/component shape: this tool only acquires
-  // the docs and provides them (as opstreams) to a <patchwork-view component="sketchy">. The
-  // canvas runs entirely off the provided streams. Same picture, fully decomposed tool↔component.
-  {
-    type: "patchwork:tool",
-    id: "sketchier",
-    name: "Sketchier",
-    icon: "PenTool",
     supportedDatatypes: ["sketch", "newspace", "folder"],
     async load() {
       const { SketchyTool } = await import("./tool.jsx");

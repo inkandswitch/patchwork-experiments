@@ -1,6 +1,18 @@
 import { describe, it, expect } from "vitest";
 import { apply } from "./opstreams.js";
-import { snapshot, isSnapshot, valuesEqual, anySchema, stringSchema, numberSchema, fileSchema } from "./ops.js";
+import { snapshot, isSnapshot, valuesEqual, anySchema, stringSchema, numberSchema, fileSchema, fmtNum, previewReplacer } from "./ops.js";
+
+describe("fmtNum / previewReplacer — display rounding (data untouched)", () => {
+  it("rounds noisy floats to 2 dp, leaves integers + clean values alone", () => {
+    expect(fmtNum(59.1678248461549)).toBe(59.17);
+    expect(fmtNum(59)).toBe(59);
+    expect(fmtNum(59.1)).toBe(59.1);
+    expect(fmtNum("x")).toBe("x");
+  });
+  it("previewReplacer rounds numbers inside a JSON.stringify", () => {
+    expect(JSON.stringify({ x: 59.1678248461549, y: 3 }, previewReplacer)).toBe('{"x":59.17,"y":3}');
+  });
+});
 
 describe("apply — the COW op engine ({path, range, value})", () => {
   it("assigns a top-level key without mutating the input", () => {

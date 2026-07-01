@@ -6,8 +6,8 @@ import { makeDocumentProjection } from "solid-automerge";
 import { surfaceDoc } from "../../surface-doc.js";
 import { getType } from "@inkandswitch/patchwork-filesystem";
 import { isBoxType, rad, rot, itemBounds, arrowGeometry } from "../../model.js";
-import { roughRectPath, seedFromId, freehandPath, shapePaths } from "../../draw.js";
-import { shapeRenderProps, colorVar, fontFamily, sortById, enableAtomicMove } from "../constants.js";
+import { roughRectPath, seedFromId, freehandPath, shapePaths, strokeWorldPoints } from "../../draw.js";
+import { shapeRenderProps, colorVar, fontFamily, sortById, enableAtomicMove, anchorAxes } from "../constants.js";
 import { InlineEdit, TextEdit } from "./text-edit.jsx";
 import { VoiceItem } from "./voice-item.jsx";
 import { SketchItem } from "./sketch-item.jsx";
@@ -47,7 +47,12 @@ export function Item(props) {
   };
   const baseStyle = () => {
     const clip = dropClip();
-    return { left: `${b().x}px`, top: `${b().y}px`, width: `${b().w}px`, height: `${b().h}px`, transform: `rotate(${it().rotation || 0}deg)`, "transform-origin": "center", "z-index": clip ? 8000 : z() + 1, ...(clip ? { "clip-path": clip } : {}) };
+    // anchored widgets pin to a viewport CORNER via bottom/right (auto resize-reactive); the
+    // stored x/y is the offset from that corner. Everything else is plain top-left.
+    const { right, bottom } = anchorAxes(it().anchor);
+    const horiz = right ? { right: `${b().x}px` } : { left: `${b().x}px` };
+    const vert = bottom ? { bottom: `${b().y}px` } : { top: `${b().y}px` };
+    return { ...horiz, ...vert, width: `${b().w}px`, height: `${b().h}px`, transform: `rotate(${it().rotation || 0}deg)`, "transform-origin": "center", "z-index": clip ? 8000 : z() + 1, ...(clip ? { "clip-path": clip } : {}) };
   };
   const down = (e) => ctx.onItemDown(it(), props.surface, e);
   const edit = () => { if (selectMode()) ctx.setEditingId(it().id); };
@@ -84,7 +89,7 @@ export function Item(props) {
                   {(p) => <path d={p.d} stroke={p.stroke} fill={p.fill} stroke-width={p.strokeWidth} stroke-dasharray={p.dash} stroke-linecap="round" stroke-linejoin="round" fill-rule="nonzero" />}
                 </For>
               }>
-                <path d={freehandPath(it().points, it().size, it())} style={{ fill: colorVar(it().color), opacity: it().opacity, "mix-blend-mode": it().blend }} />
+                <path d={freehandPath(strokeWorldPoints(it()), it().size, it())} style={{ fill: colorVar(it().color), opacity: it().opacity, "mix-blend-mode": it().blend }} />
               </Show>
             </g>
             </svg>

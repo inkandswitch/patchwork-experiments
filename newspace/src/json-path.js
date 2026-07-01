@@ -7,7 +7,7 @@
 // The path grammar is a small subset of jq: a leading `.`, then `.key`,
 // `["key"]`, `[0]`, chained. `.` alone is identity. Unknown paths → undefined.
 import { apply as applyOp } from "./opstreams.js";
-import { snapshot, isSnapshot, valuesEqual, describeBinary, binarySafeReplacer } from "./ops.js";
+import { snapshot, isSnapshot, valuesEqual, describeBinary, fmtNum, previewReplacer } from "./ops.js";
 
 // parse a path expression into a list of steps (strings = keys, numbers = indices)
 export function parsePath(expr) {
@@ -125,9 +125,10 @@ const PREVIEW_MAX = 2000;
 function preview(v) {
   if (v === undefined) return "undefined";
   if (typeof v === "string") return v.length > PREVIEW_MAX ? v.slice(0, PREVIEW_MAX) + "…" : v;
+  if (typeof v === "number") return String(fmtNum(v)); // round floats for the readout (data is untouched)
   const d = describeBinary(v); if (d) return d; // never stringify a frame/buffer
   let s;
-  try { s = JSON.stringify(v, binarySafeReplacer); } catch { return String(v); }
+  try { s = JSON.stringify(v, previewReplacer); } catch { return String(v); }
   if (s == null) return String(v);
   return s.length > PREVIEW_MAX ? s.slice(0, PREVIEW_MAX) + "…" : s;
 }

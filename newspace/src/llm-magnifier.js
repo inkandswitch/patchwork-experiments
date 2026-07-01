@@ -50,6 +50,7 @@ export function mountLLMMagnifier({ element, api, setOutlet }) {
   // LLM, and a caption shows the answer over a scrim. (Round/glass chrome via CSS on .ns-glass.)
   const root = document.createElement("div"); root.className = "ns-magnifier";
   const btn = document.createElement("button"); btn.className = "ns-magnify-btn"; btn.textContent = "🔍"; btn.title = "describe what's under the glass";
+  btn.addEventListener("pointerdown", (e) => e.stopPropagation()); // clicking the trigger shouldn't grab/move the glass
   const body = document.createElement("div"); body.className = "ns-magnify-cap"; body.textContent = "";
   root.append(btn, body); element.append(root);
 

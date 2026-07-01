@@ -275,7 +275,10 @@ export function shapeBounds(s) {
 }
 
 // Axis-aligned bounds for a freehand stroke.
+// A stroke is a translate-only box: origin (s.x, s.y) + LOCAL points. world = origin + point.
+// Old strokes have no origin (points already absolute) ⇒ ox/oy default 0 ⇒ identical result.
 export function strokeBounds(s) {
+  const ox = s.x || 0, oy = s.y || 0;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const [x, y] of s.points) {
     if (x < minX) minX = x;
@@ -284,7 +287,14 @@ export function strokeBounds(s) {
     if (y > maxY) maxY = y;
   }
   const pad = s.size / 2;
-  return { x: minX - pad, y: minY - pad, w: maxX - minX + 2 * pad, h: maxY - minY + 2 * pad };
+  return { x: ox + minX - pad, y: oy + minY - pad, w: maxX - minX + 2 * pad, h: maxY - minY + 2 * pad };
+}
+
+// world points of a stroke (origin + each local point), keeping pressure. The rest of the
+// system (rendering, eraser, resize) works in world coords via this.
+export function strokeWorldPoints(s) {
+  const ox = s.x || 0, oy = s.y || 0;
+  return (s.points || []).map((p) => [ox + p[0], oy + p[1], p[2]]);
 }
 
 // Cheap distance-to-segment, used for eraser hit-testing of strokes/lines.

@@ -4,8 +4,9 @@
 //   • an object  { get, set }                  — bidirectional (set writes back to `in`)
 // Defaults to passthrough `(x) => x`. Persisted in the doc. (Uses eval — fine on your
 // own canvas; the sandbox boundary is the future isolation story.)
-import { Source, apply as applyOp } from "./opstreams.js";
+import { Source, Opstream, apply as applyOp } from "./opstreams.js";
 import { snapshot, isSnapshot } from "./ops.js";
+import { codemirrorEditor } from "./codemirror/editor.js"; // our real editor, in the block
 
 const DEFAULT = "(x) => x";
 
@@ -17,10 +18,14 @@ export function mountJs({ element, inlets = {}, setOutlet, config = {}, setConfi
   let spec = null; // { get, set }
 
   const root = document.createElement("div"); root.className = "ns-js ns-source";
-  const ta = document.createElement("textarea"); ta.className = "ns-text ns-js-src"; ta.spellcheck = false; ta.rows = 4; ta.value = code;
-  ta.placeholder = "(x) => x   ·   or { get:(x)=>y, set:(y,x)=>x }";
+  const edHost = document.createElement("div"); edHost.className = "ns-js-src ns-cm-host";
   const status = document.createElement("div"); status.className = "ns-source-status";
-  root.append(ta, status); element.append(root);
+  root.append(edHost, status); element.append(root);
+  // the code is edited in OUR CodeMirror (JS highlighting), bound to a text opstream.
+  const codeStream = new Opstream(code);
+  codeStream.complement = { extension: "js", name: "transform.js" };
+  const ed = codemirrorEditor(codeStream, { parent: edHost });
+  let lastCode = code;
 
   const compile = () => {
     try {
@@ -45,8 +50,8 @@ export function mountJs({ element, inlets = {}, setOutlet, config = {}, setConfi
     };
   }
 
-  ta.oninput = () => { code = ta.value; if (setConfig) setConfig({ code }); compile(); recompute(); };
+  const offCode = codeStream.connect(() => { const c = codeStream.value; if (typeof c !== "string" || c === lastCode) return; lastCode = c; code = c; if (setConfig) setConfig({ code }); compile(); recompute(); });
   const off = src && src.connect ? src.connect(recompute) : null;
   recompute();
-  return () => { if (off) off(); root.remove(); };
+  return () => { if (off) off(); if (offCode) offCode(); if (ed && ed.destroy) ed.destroy(); root.remove(); };
 }
